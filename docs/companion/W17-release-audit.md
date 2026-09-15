@@ -5,7 +5,59 @@ permission to publish, or permission to replace the installed application.
 
 ## Frozen engineering run
 
-### Current packaged checkpoint: ad6bc662
+### Current packaged checkpoint: 409f42ea
+
+After the user unlocked the Mac, real native-window inspection proceeded in
+disposable HOME directories, using LaunchServices to open only the temporary
+application. No model, real account, microphone capture, signing identity,
+installed application, or installed application data was used.
+
+The `ad6bc662` package passed real public-browser interaction: the missing-runtime
+gate appeared first; an already pinned browser runtime was then copied into the
+disposable profile without downloading. Example Domain → IANA link navigation,
+back/forward, direct navigation to IANA Protocol Registries, visible scroll
+down/up, and dock resizing worked. Stop cleared the live screenshot, disabled
+navigation, and the owned reader process exited. This is bounded public read-only
+browsing evidence, not authenticated account or arbitrary browser automation.
+
+Native UI inspection found and reproduced two state defects: onboarding language
+was not propagated to App, and Settings saves did not refresh the shared settings
+read by the speech-input control. Fixes `a2eff2f1` and `409f42ea` cover them. Ten
+new regression cases include pending-save dismissal, failure, superseded response,
+field-scoped merging and masked-secret handling. The final complete frontend run
+passed **239 files / 1,866 tests in 20.24s**; typecheck passed and web build took
+5.91s, with existing warning categories retained.
+
+The final sidecar was frozen in 26.32s at
+`/tmp/arslan-candidate-build.BboGj4/dist-voice/arslan-server`; unchanged locked
+compute files were copied from the earlier verified same-turn bundle. Tauri
+rebundled the unchanged native shell with explicit `--no-sign` at the temporary
+application path below. Its actual bundled sidecar passed the frozen smoke,
+15-import/resource verification and sandboxed compute selftest (two durable
+artifacts, outside-file/network access denied). The bundled SPA exactly matches
+`web/dist`. Shell and backend executable hashes are unchanged from `ad6bc662`;
+the new main SPA asset is `index-CccCi4j5.js`, SHA-256
+`f010cd2354d8c039bf40ccb8fcb965336821f45ab130809928bbbbe0c87358f5`.
+
+On the final package, Chinese onboarding → skip → Settings stayed Chinese.
+Settings selection → workspace → Settings passed for Japanese, Spanish, German,
+French and English; switching back to Chinese also updated the workspace.
+Speech-input help showed `ja-JP`, `es-ES`, `de-DE`, `fr-FR`, `en-US` and `zh-CN`
+respectively, without activating recording. Six language-setting layouts were
+visually inspected at 1170×768 in dark mode. Chinese UI/language hint persisted
+after a native quit/relaunch. All temporary application instances and smoke
+processes were closed at the end.
+
+**Still failing / not accepted:** restarting the same disposable profile at its
+new native loopback port showed onboarding again (the seen flag is currently
+origin-local localStorage). After repeated settings round trips, the workspace
+greeting remained in the accessibility tree but disappeared visually, including
+after an additional delayed observation. Root cause of that rendering issue is
+not yet established. Standard native menu titles still appear in English.
+These findings and the broader security/real-task/signing gates keep W17 and W21
+open; this is not a release candidate.
+
+### Earlier packaged checkpoint: ad6bc662
 
 The current temporary application includes the `3d8ca803` native boot/status
 localization, `ac7047b9` execution-intent binding, `93af5001` gated field-draft
