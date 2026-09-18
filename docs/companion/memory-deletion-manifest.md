@@ -356,3 +356,14 @@ is not finalized by a successful response. Dedicated source-process loopback
 HTTP startup/shutdown and subsequent rollback have passed; frozen entry and
 native orchestration are not yet connected. Local storage readiness is not a
 claim that the complete app or real-model workflows have passed acceptance.
+
+The packaged `--activation-trial` entry is now connected to that restricted app.
+It requires a bounded one-line parent-pipe request carrying operation ID, a fresh
+trial token and the original secret. It accepts no profile path and disables
+secret-file bootstrap. Closing the parent pipe ends the process (graceful request
+plus bounded self-exit fallback), leaving the journal for explicit coordination.
+The frozen HTTP trial followed by source rollback and normal frozen restart has
+passed with synthetic credentials. Native orchestration/finalization remains
+unfinished. Restore integrity checks also explicitly close SQLite connections
+and avoid generating WAL/SHM files for standalone snapshots; pending journals
+still cause refusal rather than being ignored.

@@ -1480,3 +1480,51 @@ is still no public trial flag, native recovery UI, automatic finalize or release
 activation. Native token/secret preparation, authenticated trial orchestration,
 health-checked finalization, packaging and full regression remain open. No real
 profile, installed app, provider call, signing or publication occurred.
+
+### Packaged trial pipe entry and WAL-safe restore verification (2026-09-19)
+
+`--activation-trial` now dispatches only to the restricted app. A fresh process
+requires one bounded stdin-pipe JSON message within 10 seconds (16 KiB total,
+8 KiB secret bound, exact keys, canonical operation UUID and 64-hex trial token).
+Secrets/tokens are not command arguments. The normal packaged path sanitizer
+removes data/DB overrides; the message cannot choose a profile path. Its explicit
+original secret is installed in process memory/environment and secret-file
+bootstrap is disabled before config is imported. A preloaded runtime is refused.
+The trial binds an OS-assigned loopback port with a distinct trial handshake.
+Parent-pipe EOF requests graceful exit with a five-second self-exit fallback;
+there is no generic normal-server route or journal-bypass mode.
+
+The first full frozen-chain attempt was correctly refused by credential preflight
+as `preflight_unavailable`, not a successful activation. Investigation reproduced
+lingering restore-side SQLite connections, then confirmed that even a closed
+read-only WAL integrity connection can leave WAL/SHM files. Backup/snapshot
+connections now close explicitly. Integrity checks of our closed standalone
+snapshots/staging use immutable read access only after refusing existing WAL/SHM/
+rollback journals (including symlinks). The strict activation preflight was NOT
+weakened. A regression retains connection references and disables GC, verifies
+explicit closure and no sidecars, then successfully invokes preflight.
+
+Six focused files passed 132 cases in 17.22s, with one existing Starlette warning;
+lint and whitespace checks passed. The source entry test supplies a wrong inherited
+secret and wrong data/DB/key-file overrides, then confirms only the pipe inputs
+and fixed disposable-home profile are used. Parser coverage includes duplicates,
+unknown fields, malformed/missing credentials, size limits, incomplete EOF,
+partial-message timeout and trailing data.
+
+Production sources recorded in `1c7fceac` were rebuilt into the standalone sidecar
+in 28.18s (commit recorded after build, no intervening production edits):
+`/tmp/arslan-candidate-build.BboGj4/dist-trial-fixed/arslan-server/arslan-server`.
+SHA-256 `1af4dbff69eecda918b2ef4579bed307015d3e9fdb125026ded943e99800fd89`.
+Its actual frozen trial passed normal authenticated startup, source backup/restore
+and journaled switch, pipe-controlled restricted HTTP, unauthorized/business-route
+refusal, parent closure, source rollback and normal restart with the synthetic
+stored key still readable. Original DB bytes remain intact; neither inherited
+override path nor key file is created, and captured trial output contains neither
+pipe secret nor token. The current frozen deletion/restore harness also passed
+packaged maintenance, record selection/import, profile exclusion and two restored
+boots. Source coordination versus frozen execution is explicit in both reports.
+
+The temporary desktop app resource has not yet been replaced by this sidecar.
+Finalization, native confirmation/orchestration, full regression, native visual
+checks and broader release gates remain incomplete. No real profile, account,
+installed app or publication was involved; health success did not finalize data.
