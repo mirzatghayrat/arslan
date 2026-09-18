@@ -1627,3 +1627,25 @@ The three targeted suites cover entry behavior, platform paths and existing
 secret-bootstrap compatibility: 71 passed in 0.72s, with one existing Starlette
 warning; targeted lint and whitespace checks passed. Frozen rebuild and complete regression remain
 required; no installed application or release artifact was replaced.
+
+### Frozen pre-configuration refusal and full-regression launch (2026-09-19)
+
+Production source `dea967d8` was rebuilt in 31.26s into
+`/tmp/arslan-candidate-build.BboGj4/dist-preconfig-lock/arslan-server/arslan-server`.
+SHA-256 `027253cf67100f5a565c27ee6aec7f775a72673b8c398e64298bafc61fcbb691`.
+The strengthened frozen harness passed both source-coordinated finalize and
+rollback branches. Before each restricted trial, a fresh normal frozen process
+with no explicit secret or secret-file override returned exactly the pending
+recovery code and exit 1 without creating `.arslan`. Authenticated trial, graceful
+shutdown, original DB retention and normal restart then passed as before.
+Targeted lint and whitespace checks passed. This is not native recovery UI or
+complete-app packaging acceptance.
+
+A full `tests/server` regression began against clean production `dea967d8` with
+live-model calls disabled and isolated HOME. Report target:
+`/tmp/arslan-recovery-regression.HvYYsE/backend.xml`.
+At this checkpoint it is still running (process 95582, tool session 29524);
+completion, counts and report integrity are not yet established. Resume that
+same live process rather than starting a duplicate. Only the frozen harness and
+this audit documentation changed while it ran; production and collected tests
+were unchanged. No real profile, account or installed app was used.

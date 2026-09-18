@@ -41,6 +41,13 @@ def main():
         preflight = check(candidate / "arslan.db", "frozen-smoke-synthetic-only")
         assert preflight["status"] == "compatible", preflight
         operation = profile_activation.switch_for_trial(active, candidate, "frozen-smoke-synthetic-only")["operation_id"]
+        # A normal fresh process must refuse BEFORE config can generate a key.
+        refused = subprocess.run([str(binary)], cwd=home, input=b"", capture_output=True, timeout=15,
+                                 env={"PATH": "/usr/bin:/bin", "HOME": str(home), "TMPDIR": str(home),
+                                      "ARSLAN_LIVE_LLM": "0"})
+        assert refused.returncode == 1
+        assert refused.stdout == b"ARSLAN_ERROR=data_profile_recovery_required\n"
+        assert not (home / ".arslan").exists()
         token = "ab" * 32
         child = subprocess.Popen([str(binary), "--activation-trial"], cwd=home,
                                  stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -113,6 +120,7 @@ def main():
             assert (active.parent / journal["previous"] / "arslan.db").read_bytes() == original
     print(json.dumps({"frozen_activation_trial": "passed", "restricted_http": True,
                       "pipe_credentials": True, "wrong_inherited_key_ignored": True,
+                      "normal_pending_boot_no_secret_generation": True,
                       "parent_pipe_shutdown": True, "normal_restart": True,
                       "source_coordination": "finalize" if args.finalize else "rollback",
                       "original_database_retained": True, "native_ui": False, "finalized": args.finalize,
