@@ -18,6 +18,8 @@ use std::process::{Child, Command, Stdio};
 pub mod endpoint;
 mod listen;
 mod native_locale;
+#[cfg(target_os = "macos")]
+mod native_menu;
 mod proxy;
 mod voice;
 use std::sync::Mutex;
@@ -336,17 +338,10 @@ fn update_status(app: tauri::AppHandle, shared: tauri::State<'_, UpdateShared>) 
 }
 
 fn refresh_update_menu(app: &tauri::AppHandle) {
-    if let Some(menu) = app.menu() {
-        // Tauri Menu::get searches direct children only; our item belongs to
-        // the app submenu, not the top-level menu bar.
-        for entry in menu.items().unwrap_or_default() {
-            if let tauri::menu::MenuItemKind::Submenu(submenu) = entry {
-                if let Some(tauri::menu::MenuItemKind::MenuItem(item)) = submenu.get("check-for-updates") {
-                    let _ = item.set_text(native_locale::text(native_locale::selected(), "check_title"));
-                }
-            }
-        }
-    }
+    #[cfg(target_os = "macos")]
+    native_menu::refresh(app);
+    #[cfg(not(target_os = "macos"))]
+    let _ = app;
 }
 
 /// The user clicked Install on the pill: download, verify, install, restart.
@@ -780,23 +775,11 @@ pub fn run() {
             // window, so nothing here depended on the old ordering.
             //
             // "Check for Updates…" lives in the app submenu, right under About
-            // — the place macOS users actually look. Built from the default
-            // menu so Edit/copy-paste etc. all survive.
+            // — the place macOS users actually look. Native predefined roles
+            // preserve Edit/copy-paste and their system keyboard shortcuts.
             #[cfg(target_os = "macos")]
             {
-                use tauri::menu::{Menu, MenuItem};
-                let menu = Menu::default(app.handle())?;
-                if let Some(tauri::menu::MenuItemKind::Submenu(app_menu)) = menu.items()?.first() {
-                    let check = MenuItem::with_id(
-                        app,
-                        "check-for-updates",
-                        native_locale::text(native_locale::selected(), "check_title"),
-                        true,
-                        None::<&str>,
-                    )?;
-                    app_menu.insert(&check, 1)?;
-                }
-                app.set_menu(menu)?;
+                native_menu::install(app.handle())?;
             }
 
             let handle = app.handle().clone();

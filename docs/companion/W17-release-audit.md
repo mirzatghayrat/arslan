@@ -5,7 +5,32 @@ permission to publish, or permission to replace the installed application.
 
 ## Frozen engineering run
 
-### Current packaged checkpoint: 2026-09-19
+### Current packaged checkpoint: native menus, 2026-09-19 (UI pending)
+
+Six-language native menu labels are implemented with predefined system roles
+and existing handles; W21 details scope and remaining acceptance. Full frontend
+242 files / 1,879 tests passed (26.85s), native 30 tests passed, typecheck passed,
+production web build passed (3.13s). Existing canvas/navigation and large-chunk
+warnings remain. No fresh full backend suite was run for these menu-only changes.
+
+Native release rebuilt offline in 1m39s in the isolated staging project; sidecar
+frozen in 44.14s at `/tmp/arslan-candidate-build.BboGj4/dist-menu/arslan-server`,
+then staged with the unchanged verified compute runtime. Tauri bundled with
+`--no-sign` at the same temporary app path. Actual bundled smoke, 15-import and
+resource verification (431 MiB), no-prohibited-rasterizer/database/secrets checks,
+and sandboxed compute selftest (two durable artifacts) passed. Bundled SPA
+exactly matches `web/dist`.
+
+- Native shell SHA-256: `768bc50f20e1dc7ee094483be8f3c4aa5bc8af077fda66ca6d6daa02d61d45e3`
+- Backend SHA-256: `1e98bb372e9b03ee003a84416ed5711f62dbcaa5243862caabd61fdaa7fadafd`
+- Main SPA `index-KPUVlq6L.js`: `c15e5d4d95050ba82c2c156e27ce6bf2193cf462ef7201f1073e866018506645`
+
+Launch used the existing disposable HOME and unique port 61580. Computer-use
+reported the Mac locked, so no menu display or copy/paste acceptance is claimed.
+The owned temporary app was terminated, and owned smoke processes completed.
+No signing, install replacement, publication or real account/model action.
+
+### Earlier packaged checkpoint: onboarding, 2026-09-19
 
 Research adoption order is recorded in `W22-open-source-adoption.md`; no new
 runtime dependency was installed. Onboarding now writes `first_run_seen` into

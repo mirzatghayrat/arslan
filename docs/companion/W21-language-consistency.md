@@ -1,5 +1,25 @@
 # W21 — six-language consistency (in progress)
 
+## Native menu implementation (2026-09-19, visual acceptance pending)
+
+Product-owned menu labels now have six-language copy. The menu retains Tauri
+predefined native roles for undo/redo, cut/copy/paste/select-all, window controls,
+Services, hide and quit, and retains the special Window/Help IDs. Translation
+updates existing item handles on the main thread rather than replacing actions
+or rebuilding the menu. The locale hint remains display-only. Successful
+language persistence triggers the existing read-only `update_status` command
+to refresh labels; failed writes and unrelated settings do not. No new IPC
+permission or model call was introduced. Focus and existing polling remain
+fallback refresh paths.
+
+Native tests: 30 passed, including full six-language catalog coverage. Frontend:
+242 files / 1,879 tests passed (26.85s), including persistence ordering, failure
+and unrelated-setting cases; typecheck and production build passed. Actual
+menu text and native edit-action behavior are NOT accepted yet: the Mac was
+locked when UI inspection was attempted. The temporary app was stopped after
+the attempt; no production application or account was changed. W17 records
+the rebuilt package and non-UI checks.
+
 ## Native restart follow-up (2026-09-19)
 
 The new durable onboarding flag passed actual quit/relaunch on different

@@ -1,4 +1,5 @@
 import { useAuthStore } from "../stores/authStore";
+import { fetchUpdateStatus } from "../lib/updater";
 import type { CryptoHealth } from "../lib/cryptoHealth";
 import type {
   AccessTokenInfo,
@@ -417,8 +418,14 @@ export const api = {
   listOcrLanguages: () =>
     request<{ available: string[]; max_selectable: number; platform_supported: boolean }>(
       "/settings/ocr-languages"),
-  updateSettings: (body: Partial<AppSettings>) =>
-    request<AppSettings>("/settings", { method: "PUT", body: JSON.stringify(body) }),
+  updateSettings: async (body: Partial<AppSettings>) => {
+    const saved = await request<AppSettings>("/settings", { method: "PUT", body: JSON.stringify(body) });
+    // This existing read-only native command also refreshes menu display copy.
+    // Only after persistence: the shell reads the backend's bounded locale hint.
+    // No new IPC authority, no language payload, and no dependency on shell success.
+    if (body.language !== undefined) void fetchUpdateStatus();
+    return saved;
+  },
   getRegistry: () => request<RegistryCatalog>("/registry"),
   /** PC-5 on-demand skill health probe (bounded storage + script-runnability check on the
    * server; never executes skill code). Mirrors checkMcpHealth. */
