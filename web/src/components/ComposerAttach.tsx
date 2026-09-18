@@ -109,13 +109,49 @@ export function useComposerAttach(
   const dragDepth = useRef(0);
   // URLs already handled (extracted or in flight), so re-scans don't re-extract.
   const handledUrls = useRef<Set<string>>(new Set());
+  const urlPolicy = useRef({ allowed: allowUrlExtraction, revision: 0 });
+  if (urlPolicy.current.allowed !== allowUrlExtraction) {
+    urlPolicy.current = { allowed: allowUrlExtraction, revision: urlPolicy.current.revision + 1 };
+  }
+  const currentItems = useRef<Attachment[]>([]);
+  const generation = useRef(0);
+  const mounted = useRef(true);
+  const changeCallback = useRef(onChange);
+  changeCallback.current = onChange;
+  // True reserves an invisible document/URL slot; image placeholders already
+  // occupy their slot. Tokens also keep busy correct across overlapping batches.
+  const pending = useRef(new Map<object, boolean>());
+  const start = useCallback((reserve: boolean) => {
+    const token = {};
+    pending.current.set(token, reserve);
+    setBusy(true);
+    return token;
+  }, []);
+  const finish = useCallback((token: object) => {
+    pending.current.delete(token);
+    if (mounted.current) setBusy(pending.current.size > 0);
+  }, []);
+  const valid = useCallback((epoch: number) => mounted.current && generation.current === epoch, []);
+  const full = useCallback(() => currentItems.current.length
+    + [...pending.current.values()].filter(Boolean).length >= MAX_ATTACHMENTS, []);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      generation.current += 1;
+      pending.current.clear();
+      for (const item of currentItems.current) if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+    };
+  }, []);
 
   const commit = useCallback(
     (next: Attachment[]) => {
+      if (!mounted.current) return;
+      currentItems.current = next;
       setAttachments(next);
-      onChange(next);
+      changeCallback.current(next);
     },
-    [onChange],
+    [],
   );
 
   const isImage = (f: File) =>
@@ -126,9 +162,10 @@ export function useComposerAttach(
       const list = Array.from(files);
       if (list.length === 0) return;
       setError(null);
-      let current = attachments;
+      const epoch = generation.current;
       for (const file of list) {
-        if (current.length >= MAX_ATTACHMENTS) {
+        if (!valid(epoch)) return;
+        if (full()) {
           setError(t("attach.too_many", { max: MAX_ATTACHMENTS }));
           break;
         }
@@ -152,9 +189,8 @@ export function useComposerAttach(
             previewUrl: URL.createObjectURL(file),
             ocr: "pending" as const,
           };
-          current = [...current, chip];
-          commit(current);
-          setBusy(true);
+          commit([...currentItems.current, chip]);
+          const token = start(false);
           let done: Attachment;
           try {
             done = { ...chip, image: await fileToImagePayload(file), ocr: undefined };
@@ -163,67 +199,77 @@ export function useComposerAttach(
             // rather than sending a frame that would kill the socket.
             done = { ...chip, ocr: "none" as const };
           } finally {
-            setBusy(false);
+            finish(token);
           }
-          current = current.map((a) => (a === chip ? done : a));
-          commit(current);
+          if (!valid(epoch)) return;
+          if (currentItems.current.includes(chip)) {
+            commit(currentItems.current.map((a) => (a === chip ? done : a)));
+          }
           continue;
         }
         if (!documentInputSupported(file.name)) {
           setError(t("attach.unsupported", { name: file.name }));
           continue;
         }
-        setBusy(true);
+        const token = start(true);
         try {
           const r = await api.extractAttachmentFile(file, compress);
+          if (!valid(epoch)) return;
+          pending.current.set(token, false);
           const next = [
-            ...current,
+            ...currentItems.current,
             { name: file.name, text: r.text, chars: r.chars, truncated: r.truncated, kind: "doc" as const, inputKind: inputKind(file.name), images: r.images, videoFrameStatus: r.video_frame_status },
           ];
-          current = next;
           commit(next);
         } catch (e) {
+          if (!valid(epoch)) return;
           const detail = e && typeof e === "object" && "detail" in e ? e.detail : null;
           const code = detail && typeof detail === "object" && "code" in detail ? String(detail.code) : "";
           setError(t(["inputs.limit", "inputs.invalid", "inputs.encoding", "inputs.unsupported", "inputs.videoToolMissing"].includes(code) ? code : "inputs.failed"));
         } finally {
-          setBusy(false);
+          finish(token);
         }
       }
     },
-    [attachments, commit, compress, t],
+    [commit, compress, t, start, finish, valid, full],
   );
 
   /** Extract one or more detected URLs into source chips (sequential; deduped; capped). */
   const addUrls = useCallback(
     async (urls: string[]) => {
-      let current = attachments;
+      const epoch = generation.current;
+      const policyRevision = urlPolicy.current.revision;
+      const allowed = () => valid(epoch) && urlPolicy.current.allowed
+        && urlPolicy.current.revision === policyRevision;
       for (const raw of urls) {
+        if (!allowed()) return;
         const u = raw.trim();
-        if (!u || current.some((a) => a.name === u)) continue;
-        if (current.length >= MAX_ATTACHMENTS) {
+        if (!u || currentItems.current.some((a) => a.name === u)) continue;
+        if (full()) {
           setError(t("attach.too_many", { max: MAX_ATTACHMENTS }));
           break;
         }
-        setBusy(true);
+        const token = start(true);
         setError(null);
         try {
           // 🔒 SSRF-hardened backend path — do NOT replace with a direct fetch.
           const r = await api.extractAttachmentUrl(u, compress);
+          if (!allowed()) return;
+          pending.current.set(token, false);
           const next = [
-            ...current,
+            ...currentItems.current,
             { name: u, text: r.text, chars: r.chars, truncated: r.truncated, kind: "doc" as const },
           ];
-          current = next;
           commit(next);
         } catch (e) {
+          if (!allowed()) return;
           setError(String((e as Error).message ?? e));
         } finally {
-          setBusy(false);
+          finish(token);
         }
       }
     },
-    [attachments, commit, compress, t],
+    [commit, compress, t, start, finish, valid, full],
   );
 
   // scanRef always points at a closure over the LATEST attachments/addUrls, so the
@@ -248,26 +294,29 @@ export function useComposerAttach(
 
   const removeAt = useCallback(
     (i: number) => {
-      const target = attachments[i];
+      const target = currentItems.current[i];
       if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl);
-      commit(attachments.filter((_, idx) => idx !== i));
+      commit(currentItems.current.filter((_, idx) => idx !== i));
     },
-    [attachments, commit],
+    [commit],
   );
 
   const clear = useCallback((opts?: { revokeUrls?: boolean }) => {
+    generation.current += 1;
+    pending.current.clear();
+    if (detectTimer.current) clearTimeout(detectTimer.current);
     // On SEND the caller passes { revokeUrls: false }: the sent user bubble renders image
     // thumbnails straight from these object-URLs, so they must stay alive. They are never
     // revoked afterwards — an accepted small session-only leak (object-URLs die on reload,
     // and revoking on thread switch would blank thumbnails of still-mounted messages).
     if (opts?.revokeUrls !== false) {
-      for (const a of attachments) if (a.previewUrl) URL.revokeObjectURL(a.previewUrl);
+      for (const a of currentItems.current) if (a.previewUrl) URL.revokeObjectURL(a.previewUrl);
     }
     handledUrls.current.clear();
-    setAttachments([]);
+    commit([]);
+    setBusy(false);
     setError(null);
-    onChange([]);
-  }, [attachments, onChange]);
+  }, [commit]);
 
   const dndHandlers = {
     onDragOver: (e: React.DragEvent) => {
@@ -300,6 +349,7 @@ export function useComposerAttach(
       return;
     }
     // Pasted text: auto-extract any URL(s) immediately (the text still lands in the box).
+    if (!allowUrlExtraction) return;
     const text = e.clipboardData?.getData("text") ?? "";
     const fresh = extractUrls(text).filter(
       (u) => !handledUrls.current.has(u) && !attachments.some((a) => a.name === u),

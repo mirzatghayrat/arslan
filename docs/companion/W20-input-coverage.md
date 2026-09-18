@@ -157,3 +157,31 @@ checks passed. The frozen-sidecar smoke driver now also checks actual XLSX/PPTX
 source locators, inert TSX text, fresh browser setup refusal and explicit video
 capability limits. Packaged results are recorded separately in the release audit;
 source-level tests alone do not establish those results.
+
+## Composer async ownership and temporary URL policy (2026-09-19)
+
+Four new tests reproduced stale attachment-list writes: concurrent file reads
+could overwrite one another, a removed pending image could return, clearing a
+batch could still append its results/start later files, and an unmounted composer
+could notify its departed owner. Attachment commits now use the current list;
+generation fences reject cleared/unmounted work. Pending-operation tokens keep
+busy true until all active reads finish and reserve document/URL slots against
+the nine-item cap. Old completion cannot clear a newer batch's busy state.
+Unsent image previews are released on departure; already-sent preview ownership
+is unchanged and `clear({revokeUrls:false})` retains their URLs for message chips.
+
+The same inspection found that pasted URLs bypassed `allowUrlExtraction=false`
+even though typed-URL detection honored it. A regression reproduced the backend
+call from the disabled paste path. Both now honor the policy, and a policy
+revision fences results from requests started before withdrawal, including an
+off/on transition. This prevents stale result delivery; it does NOT claim to
+abort an already-started HTTP request or undo earlier external reads. Explicit
+file/image selection and the existing SSRF-hardened backend path are unchanged.
+
+Ten new tests cover the four reproduced races, mixed URL/file completion, slot
+reservation, clear/new-batch separation, sent-preview lifetime, disabled paste,
+and in-flight policy withdrawal. The complete frontend run passed 243 files /
+1,889 tests in 22.00s; TypeScript and production build (3.17s) passed. Existing
+canvas/navigation and large-chunk warnings remain. Backend production source is
+unchanged; no account, real model or user material was used. These changes have
+not yet been included in a new native candidate or visually accepted.

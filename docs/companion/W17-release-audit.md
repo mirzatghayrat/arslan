@@ -5,6 +5,17 @@ permission to publish, or permission to replace the installed application.
 
 ## Frozen engineering run
 
+### Later source checkpoint: attachment ownership, 2026-09-19
+
+Composer async completion is now fenced against deletion, clear, unmount and
+URL-policy withdrawal. Concurrent extraction merges the latest list and preserves
+busy/slot accounting. Pasted URLs now honor the existing temporary-conversation
+restriction. W20 details the reproduced failures and limits; this is frontend
+source only and has not been folded into the native menu candidate below.
+Full frontend: **243 files / 1,889 tests passed** (22.00s), typecheck and web
+production build passed (3.17s). Existing warning categories remain. Backend
+production code and the previous complete backend evidence are unchanged.
+
 ### Complete backend source regression: a853cf8f, 2026-09-19
 
 The full Python suite ran on clean, unchanged `a853cf8f` in a scrubbed environment
