@@ -37,8 +37,7 @@ def restore_packaged(binary, home, archive, target, current=None, manifest=None)
                           "--new-data-dir", str(target), *mode],
                          cwd=home, input=b"", capture_output=True, timeout=30,
                          env={"PATH": "/usr/bin:/bin", "HOME": str(home), "TMPDIR": str(home),
-                              "ARSLAN_LIVE_LLM": "0", "ARSLAN_SECRET_KEY": "frozen-smoke-synthetic-only",
-                              "ARSLAN_SECRET_KEY_FILE": ""})
+                              "ARSLAN_LIVE_LLM": "0"})
     assert b"ARSLAN_PORT=" not in run.stdout
     return run.returncode, json.loads(run.stdout)
 
@@ -54,6 +53,14 @@ def main():
         source_home.mkdir()
         maintenance_home = root / "maintenance-home"
         maintenance_home.mkdir()
+        for arguments in (["--typo"], ["--new-machine", "--restore-offline"],
+                          ["--selftest", "--restore-offline"], ["--compute-selftest", "--selftest"]):
+            invalid = subprocess.run([str(binary), *arguments], cwd=maintenance_home, input=b"",
+                                     capture_output=True, timeout=15,
+                                     env={"PATH": "/usr/bin:/bin", "HOME": str(maintenance_home),
+                                          "TMPDIR": str(maintenance_home)})
+            assert invalid.returncode == 2 and invalid.stdout == b"ARSLAN_ERROR=invalid_arguments\n"
+            assert not list(maintenance_home.iterdir())
         bodies = [{"content": text, "scope": {"kind": "global"}, "use_policy": "cloud_allowed"}
                   for text in ("Synthetic preference deleted after backup", "Synthetic preference retained for review")]
         process, client, _ = start(binary, source_home)
@@ -180,6 +187,8 @@ def main():
                       "active_profile_restore_refused_then_stopped_restore_passed": True,
                       "current_installation_record_selection": True,
                       "packaged_new_machine_import_and_overwrite_refusal": True,
+                      "invalid_modes_refused_without_bootstrap": True,
+                      "maintenance_requires_no_secret": True,
                       "restore_coordinator": "packaged", "backup_creation": "source", "native_import_ui": False,
                       "host_request_capture": False, "real_model": False, "installed_app": False}))
 

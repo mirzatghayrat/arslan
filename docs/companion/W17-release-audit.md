@@ -1267,3 +1267,44 @@ This standalone sidecar has not yet replaced the prior temporary app's resource
 or undergone a new full-suite run. Native selection, confirmation, stop/restart,
 activation rollback, complete UI checks and the broader release gates remain
 open. A command returning success does not mean the restored profile is active.
+
+### Desktop candidate includes guarded packaged recovery (2026-09-19)
+
+Production commit `b83914c3` rejects unknown/ambiguous process arguments before
+environment sanitization, profile locking or any server/selftest mode. Selftests
+now require an exact single flag; restore options are parsed only after the
+leading offline-restore flag. This closes accidental normal startup after a
+misspelled or reordered maintenance invocation. Seven related test files passed
+110 cases in 3.80s, with one existing Starlette deprecation warning; targeted
+lint/whitespace checks passed.
+
+PyInstaller rebuilt the backend in 26.56s. The existing isolated compute runtime
+was copied into this new build, 9,240 files were staged, and Tauri rebundled the
+temporary app unsigned. XcodeBuildMCP skill/defaults were checked (all defaults
+unset, no macOS workflow available); the Tauri fallback did not use raw Xcode
+commands or change project settings. The native executable was unchanged.
+
+Current app: `/tmp/arslan-native-candidate.xIygc5/target/release/bundle/macos/Arslan.app`.
+Backend SHA-256:
+`f0251905b4ec3c7ab37431bcf493c931058636d59f3368f68a2481da0db10ba9`.
+Native SHA-256 remains
+`1db50bd7eb44c77c1348d7ef1f4c8a172f3b50217b71e7f881e7b4deba55c650`.
+Bundled SPA tree exactly matches current `web/dist`.
+
+Observed exit-0 checks against the app resource: fresh startup/restart and
+six-language/input-format smoke, actual old-release upgrade with four candidate
+boots, packaged deletion-aware restore with two restored boots, module/resource
+and forbidden-file bundle validation (431 MiB), and network-isolated sandboxed
+compute with two durable artifacts. The strengthened recovery harness also
+invokes four invalid mode combinations and verifies exit 2 with only the fixed
+error code. Maintenance subprocesses now receive NO secret variables and use an
+empty disposable HOME; it remains empty after current-installation restore,
+new-machine manifest import and overwrite refusal. No key bootstrap is hidden
+by supplying a synthetic key to those maintenance subprocesses.
+
+The Mac was rechecked and remains locked, so no native visual/UI pass is claimed.
+The latest full 5,009-test regression still predates these recovery changes;
+110 targeted cases and the explicit current-package checks are the new evidence.
+Native picker/confirmation, owned-process stop/restart, reversible profile
+activation and broader live-quality/signing/release gates remain unfinished.
+No formal installation, real profile, model call, signing or release occurred.
