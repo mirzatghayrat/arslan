@@ -918,3 +918,22 @@ See `memory-deletion-manifest.md` for the schema, privacy limits and remaining
 integration. Existing frozen candidate bytes are unchanged and do not include
 this new module. No existing data or restore behavior changed; do not count the
 format foundation as completed deletion reconciliation or release acceptance.
+
+### Staged deletion reconciliation implemented (2026-09-19)
+
+`backup.restore(..., deletion_manifest=...)` now applies validated metadata in
+the quarantined staging transaction, before the final directory install.
+Foreign store IDs/stale epochs/unquarantined databases are refused. Matching
+IDs or same-scope revision fingerprints become content-free deleted stubs,
+with sources/revision payloads/proposals/legacy recovery content erased and
+tombstones retained. The absent-manifest path preserves previous quarantine
+and reports that reconciliation was not applied. No runtime/API authorization
+or automatic manifest discovery is added.
+
+The manifest/backup/restore selection passed 31 tests, covering actual old
+archive/later deletion reconciliation, fingerprint matching, activated legacy
+payload erasure, repeat application, malformed/foreign refusal before install,
+and unchanged original archive. See the manifest document for remaining work.
+The current frozen candidate and full regression predate this production change;
+no package or end-to-end M06-04 completion is claimed. UI/import authority,
+independent latest-ledger retention and host-request verification remain open.

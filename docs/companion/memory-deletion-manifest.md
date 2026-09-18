@@ -1,9 +1,10 @@
-# Deletion manifest — foundation, reconciliation pending
+# Deletion manifest — staged reconciliation, UI integration pending
 
 The approved recovery contract requires the latest independently retained
-deletion ledger to be reconciled before an old backup becomes usable. Existing
-`backup.restore` quarantines memories but does not accept a later deletion
-manifest. Quarantine is not evidence of M06-04 completion.
+deletion ledger to be reconciled before an old backup becomes usable.
+`backup.restore` now accepts an optional deletion manifest and applies it in the
+quarantined staging transaction before installing the restored directory.
+Absent manifests retain quarantine and explicitly report not applied.
 
 `memory_deletion_manifest.py` defines a bounded version-1 metadata format and
 read-only export from a caller-owned database snapshot. It contains store UUID,
@@ -23,15 +24,28 @@ by deterministic export/roundtrip, payload exclusion, malformed metadata and
 resource bounds. Lint and whitespace checks passed. No existing restore path,
 schema, user data or runtime activation behavior changed.
 
+## Staged reconciliation follow-up
+
+The coordinator refuses foreign store UUIDs, stale epochs and unquarantined
+databases. It matches entry IDs or keyed fingerprints of any revision in the
+same scope, erases matched content/source/revision/proposal and legacy recovery
+payloads, retains empty deleted stubs, merges tombstones, and advances the epoch.
+Restore already clears indexes/cached prompts and suppresses old source IDs;
+reconciliation does not relax those controls. Failure leaves the destination
+absent; the input archive is never rewritten. Reapplication is idempotent.
+
+The 31-case manifest/backup/restore selection passed, including old archive →
+later actual repository deletion → exported manifest → reconciled restore.
+Tests cover ID and fingerprint matching, activated legacy recovery-row/index
+erasure, duplicate application, foreign-store/malformed refusal, and unchanged
+archive bytes. Lint/whitespace checks pass. This is source-level evidence, not
+a rebuilt-package or actual host-request acceptance for M06-04.
+
 Still required before this can fulfill the recovery contract:
 
 - A trusted local export/import flow and independently retained latest manifest.
-- Same-store identity validation and cross-store refusal; fingerprints must not
-  be compared under a different store key or assumed portable across stores.
-- Apply deletion IDs/fingerprints and source suppression in the staged restored
-  database before retrieval/index activation, without altering the old archive.
 - Transactional failure/retry and adversarial manifest tests, plus actual
   frozen restore → host-request exclusion evidence.
 - UI explanation for missing later ledgers/new-machine restores and review.
 
-No endpoint or automatic importer is introduced in this foundation commit.
+No endpoint or automatic independently retained ledger is introduced yet.
