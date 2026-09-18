@@ -185,3 +185,18 @@ and in-flight policy withdrawal. The complete frontend run passed 243 files /
 canvas/navigation and large-chunk warnings remain. Backend production source is
 unchanged; no account, real model or user material was used. These changes have
 not yet been included in a new native candidate or visually accepted.
+
+## Malformed Office compression boundary (2026-09-19)
+
+A real ZIP fixture with a reserved DEFLATE block type reproduced an uncaught
+`zlib.error` in the shared OOXML reader. The reader now maps that decoder error
+to `InputError("inputs.invalid")`; it does not expose decoder diagnostics or
+treat malformed content as successful extraction. Existing unsupported ZIP
+compression handling already returned this stable error and remains covered.
+
+Six reader cases cover corrupt/unsupported compression across DOCX, XLSX and
+PPTX. Three actual multipart API cases verify HTTP 400 and the exact localizable
+error envelope, without mocking the extractor. The five-file format, extraction,
+API and source-locator selection passed 55 tests in 6.35s; changed-file lint
+passed. No model, account or user document was used. This is source-level
+verification, not a new complete backend run or rebuilt native candidate.

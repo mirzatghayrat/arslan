@@ -606,3 +606,14 @@ not a new all-green frozen full run, nor real-model or packaged acceptance.
 The Mac was unlocked for the bounded native inspection above. Unverified rows
 are not treated as passed, unsupported tasks are not removed, and development
 checks do not substitute for the reserved real-input evaluation set.
+
+### Subsequent input-boundary checkpoint (2026-09-19)
+
+The shared Office reader now translates malformed DEFLATE errors into the
+existing localizable invalid-file response. A failing real archive fixture
+established the defect before the change. Six reader cases and three real
+multipart API cases cover DOCX/XLSX/PPTX, including the already-safe unsupported
+compression path. The five-file extraction/source-locator selection passed
+55 tests in 6.35s; targeted lint passed. See W20 for scope. This production
+change has not received a new complete backend run or native package rebuild;
+the earlier clean full-run/package evidence must not be attributed to it.

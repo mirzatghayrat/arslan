@@ -78,6 +78,29 @@ async def test_extract_file_upload(client, monkeypatch):
     assert r.json()["text"] == "hello attachment"
 
 
+@pytest.mark.parametrize("extension, member", [
+    ("pptx", "ppt/slides/slide1.xml"),
+    ("xlsx", "xl/worksheets/sheet1.xml"),
+    ("docx", "word/document.xml"),
+])
+async def test_corrupt_office_compression_returns_localizable_400(client, extension, member):
+    import io
+    import struct
+    import zipfile
+
+    stream = io.BytesIO()
+    with zipfile.ZipFile(stream, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(member, "<document/>")
+    data = bytearray(stream.getvalue())
+    name_size, extra_size = struct.unpack_from("<HH", data, 26)
+    data[30 + name_size + extra_size] = 7
+    result = await client.post("/api/v1/extract", files={
+        "file": (f"damaged.{extension}", bytes(data), "application/octet-stream"),
+    })
+    assert result.status_code == 400
+    assert result.json() == {"detail": {"code": "inputs.invalid"}}
+
+
 async def test_input_matrix_and_code_extraction(client):
     matrix = await client.get("/api/v1/input-formats")
     assert matrix.status_code == 200

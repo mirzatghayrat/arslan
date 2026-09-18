@@ -1,5 +1,6 @@
 import io
 import json
+import struct
 import zipfile
 
 import pytest
@@ -49,6 +50,27 @@ def test_zip_and_output_limits_are_explicit(monkeypatch):
     assert read_structured("file.json", b"123456") == ("12345", True)
     with pytest.raises(InputError, match="invalid"):
         read_structured("bad.xlsx", b"not a zip")
+
+
+@pytest.mark.parametrize("damage", ["unsupported_compression", "invalid_deflate"])
+@pytest.mark.parametrize("extension, member", [
+    ("pptx", "ppt/slides/slide1.xml"),
+    ("xlsx", "xl/worksheets/sheet1.xml"),
+    ("docx", "word/document.xml"),
+])
+def test_damaged_zip_members_return_stable_input_error(damage, extension, member):
+    data = bytearray(package({member: "<document/>"}))
+    if damage == "unsupported_compression":
+        central = data.index(b"PK\x01\x02")
+        struct.pack_into("<H", data, 8, 99)
+        struct.pack_into("<H", data, central + 10, 99)
+    else:
+        name_size, extra_size = struct.unpack_from("<HH", data, 26)
+        start = 30 + name_size + extra_size
+        # BFINAL=1 and reserved BTYPE=3: an invalid DEFLATE block.
+        data[start] = 7
+    with pytest.raises(InputError, match=r"^inputs\.invalid$"):
+        read_structured(f"damaged.{extension}", bytes(data))
 
 
 def test_missing_video_tool_is_not_a_success(monkeypatch):

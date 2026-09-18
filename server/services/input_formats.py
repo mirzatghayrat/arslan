@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import re
 import zipfile
+import zlib
 from xml.etree import ElementTree as ET
 
 _SERVER = Path(__file__).resolve().parent.parent
@@ -157,7 +158,7 @@ def read_structured(filename: str, data: bytes) -> tuple[str, bool]:
                     if truncated:
                         break
             return "\n".join(lines), truncated
-    except (zipfile.BadZipFile, OSError, EOFError) as exc:
+    except (zipfile.BadZipFile, OSError, EOFError, zlib.error) as exc:
         raise InputError("inputs.invalid") from exc
 
 
