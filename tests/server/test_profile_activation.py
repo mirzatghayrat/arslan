@@ -396,6 +396,7 @@ def test_trial_factory_does_not_bootstrap_configuration_in_fresh_process(tmp_pat
 
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="packaged macOS profile location")
+@pytest.mark.macos
 def test_restricted_trial_over_real_loopback_http_then_rollback(profiles, tmp_path):
     import httpx
 

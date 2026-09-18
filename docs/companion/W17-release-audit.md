@@ -1649,3 +1649,55 @@ completion, counts and report integrity are not yet established. Resume that
 same live process rather than starting a duplicate. Only the frozen harness and
 this audit documentation changed while it ran; production and collected tests
 were unchanged. No real profile, account or installed app was used.
+
+### Updated temporary desktop bundle (2026-09-19)
+
+The native skill session check again found no Xcode project/scheme/device context;
+the Tauri/Rust candidate was built offline with temporary HOME/target instead.
+The current native source and six-language catalog were staged alongside the
+pre-configuration-lock sidecar and existing compute runtime (9,240 staged files).
+The native release build completed in 1m11s; Tauri bundled with `--no-sign` into
+`/tmp/arslan-native-candidate.xIygc5/target/release/bundle/macos/Arslan.app`.
+Native executable SHA-256:
+`9719f3f28a194de413a23fa6c36ce5c888d0414408e434f9e22ee84248a2f596`.
+The bundled backend retains SHA-256
+`027253cf67100f5a565c27ee6aec7f775a72673b8c398e64298bafc61fcbb691`.
+
+Both staging and actual app resources passed bundle verification: 15 importable
+feature modules, SPA assets, no forbidden rasterizer, DB or secret-shaped files
+(431 MiB sidecar). The actual app-resource backend passed the synthetic pending
+normal-boot refusal, restricted trial, source finalization and normal-restart
+chain, preserving original data. The native window itself was not launched or
+visually accepted. This is an unsigned test bundle, not a release candidate.
+
+The full server-directory regression remains running with at least one failure
+observed. Historical 5,009-test coverage also included non-server Python tests;
+those were separately checked now: all 659 passed in 3.29s. Report:
+`/tmp/arslan-recovery-regression.HvYYsE/other-python.xml`, SHA-256
+`ef60ab926189e441df0a55e383774792167f4a48ecb5e5408f329e41da9d1e6a`.
+Separate runs do not prove cross-directory ordering compatibility. Failure
+diagnosis and a complete combined rerun remain required before a green claim.
+
+### Full server result and verification repairs (2026-09-19)
+
+The server run ended with exit 1: 4,470 passed, 2 failed, 14 skipped and 19 warnings
+in 531.19s; 65 closed-loop aiosqlite deliveries were suppressed by the existing
+teardown guard. Report SHA-256:
+`f671f4956ef08f72513ef386aecf8b2fa37c4060fcf62241c457b1000cef53c7`.
+It is a failed run, not a release pass.
+
+The platform coverage tripwire identified the real macOS restricted-trial test
+missing its selection marker. Added the marker alongside its existing platform
+skip, and updated both the measured file population and CI's expected executed
+count from 42 to 43. The startup backfill test still searched `server.main` text
+for migration calls moved to shared storage boot. Replaced that text check with
+normal-lifespan delegation into the real shared initializer, observing ordered
+schema/migration/salt/credential/memory callbacks and stopping before background
+startup. The existing actual legacy-provider backfill/decryption test remains.
+
+All 6 focused checks passed in 2.98s. Actual macOS selection passed all 43 tests,
+zero skips, in 11.43s (5,102 deselected); report is
+`/tmp/arslan-recovery-regression.HvYYsE/macos.xml`. Targeted lint and whitespace
+checks passed. These repairs change test/CI coverage, not production behavior;
+the temporary app hashes above remain applicable. A single combined run of all
+5,145 collected Python cases is still required. No real account/data was used.

@@ -35,6 +35,8 @@ TESTS = pathlib.Path(__file__).parents[1]
 #: The measured set, 2026-08-06. Files, not test names: names churn, the
 #: platform boundary does not.
 EXPECTED_FILES: dict[str, int] = {
+    # 2026-09-19: actual loopback restricted trial at the macOS packaged path.
+    "server/test_profile_activation.py": 1,
     "server/test_code_sandbox.py": 14,
     "server/test_artifact_store.py": 1,
     # 2026-09-15: fixed artifact parser actually runs inside Seatbelt. The new
@@ -62,7 +64,7 @@ EXPECTED_FILES: dict[str, int] = {
 #: That step re-derives this number from the junit XML, so changing one without
 #: the other turns a green local run into a red CI run, or worse, hides drift
 #: from the guard meant to catch it. Both, same commit, or neither.
-EXPECTED_TOTAL = 42
+EXPECTED_TOTAL = 43
 # The external-file test has six attack cases under one marked function.
 PARAMETERIZED_EXTRA_CASES = 5
 
