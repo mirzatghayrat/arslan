@@ -74,6 +74,41 @@ const REVEAL_DEADLINE: std::time::Duration = std::time::Duration::from_secs(15);
 #[derive(Default)]
 struct Sidecar(Mutex<Option<Child>>);
 
+#[derive(Debug)]
+struct StartupFailure {
+    message: String,
+    recovery_pending: bool,
+}
+
+impl From<String> for StartupFailure {
+    fn from(message: String) -> Self {
+        Self { message, recovery_pending: false }
+    }
+}
+
+fn startup_failure(line: &str, locale: &str) -> Option<StartupFailure> {
+    startup_error(line, locale).map(|message| StartupFailure {
+        message,
+        recovery_pending: line == "ARSLAN_ERROR=data_profile_recovery_required",
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn start_with_recovery<T>(
+    mut start: impl FnMut() -> Result<T, StartupFailure>,
+    confirm: impl FnOnce() -> bool,
+    rollback: impl FnOnce() -> Result<(), String>,
+) -> Result<T, StartupFailure> {
+    match start() {
+        Err(failure) if failure.recovery_pending => {
+            if !confirm() { return Err(failure); }
+            rollback().map_err(StartupFailure::from)?;
+            start() // One retry only; another failure does not repeat consent/actions.
+        }
+        result => result,
+    }
+}
+
 fn startup_error(line: &str, locale: &str) -> Option<String> {
     let key = match line {
         "ARSLAN_ERROR=data_profile_in_use" => "profile_in_use",
@@ -89,7 +124,7 @@ fn startup_error(line: &str, locale: &str) -> Option<String> {
 /// Blocking is deliberate. Doing this asynchronously would let the window
 /// appear before there is anything to show and require a second code path for
 /// "port arrived late"; the splash screen already covers the wait.
-fn start_sidecar(app: &tauri::AppHandle) -> Result<(u16, Child), String> {
+fn start_sidecar(app: &tauri::AppHandle) -> Result<(u16, Child), StartupFailure> {
     let exe = app
         .path()
         .resolve(
@@ -104,7 +139,7 @@ fn start_sidecar(app: &tauri::AppHandle) -> Result<(u16, Child), String> {
              packaging/build_dmg.sh, which stages packaging/dist into \
              src-tauri/binaries/sidecar.",
             exe.display()
-        ));
+        ).into());
     }
 
     let mut cmd = Command::new(&exe);
@@ -168,13 +203,13 @@ fn start_sidecar(app: &tauri::AppHandle) -> Result<(u16, Child), String> {
     // there, so every request produced a "--- Logging error --- BrokenPipeError"
     // traceback in the packaged app. Draining to EOF also gives us the
     // sidecar's own output in Console.app, where it can be read after a crash.
-    let (tx, rx) = std::sync::mpsc::channel::<Result<u16, String>>();
+    let (tx, rx) = std::sync::mpsc::channel::<Result<u16, StartupFailure>>();
     std::thread::spawn(move || {
         let mut announced = false;
         for line in BufReader::new(stdout).lines() {
             let Ok(line) = line else { break };
             if !announced {
-                if let Some(message) = startup_error(&line, native_locale::selected()) {
+                if let Some(message) = startup_failure(&line, native_locale::selected()) {
                     let _ = tx.send(Err(message));
                     announced = true;
                     continue;
@@ -183,7 +218,7 @@ fn start_sidecar(app: &tauri::AppHandle) -> Result<(u16, Child), String> {
                     let parsed = rest
                         .trim()
                         .parse::<u16>()
-                        .map_err(|_| format!("unparseable port line: {line:?}"));
+                        .map_err(|_| StartupFailure::from(format!("unparseable port line: {line:?}")));
                     let _ = tx.send(parsed);
                     announced = true;
                     continue;
@@ -194,7 +229,7 @@ fn start_sidecar(app: &tauri::AppHandle) -> Result<(u16, Child), String> {
         if !announced {
             let _ = tx.send(Err(format!(
                 "sidecar exited without printing {PORT_LINE_PREFIX}<port>"
-            )));
+            ).into()));
         }
     });
 
@@ -211,7 +246,7 @@ fn start_sidecar(app: &tauri::AppHandle) -> Result<(u16, Child), String> {
             Err(format!(
                 "sidecar did not announce a port within {}s",
                 STARTUP_TIMEOUT.as_secs()
-            ))
+            ).into())
         }
     }
 }
@@ -558,12 +593,38 @@ const MAIN_LABEL: &str = "main";
 /// and health comes after that — and on the setup thread either one would
 /// freeze the launch screen rather than play under it.
 fn boot(app: tauri::AppHandle, splash_since: std::time::Instant) {
-    let port = match start_sidecar(&app) {
+    #[cfg(target_os = "macos")]
+    let started = start_with_recovery(
+        || start_sidecar(&app),
+        || {
+            let locale = native_locale::selected();
+            app.dialog().message(native_locale::text(locale, "recovery_rollback_prompt"))
+                .title(native_locale::text(locale, "recovery_title"))
+                .kind(MessageDialogKind::Warning)
+                .buttons(MessageDialogButtons::OkCancelCustom(
+                    native_locale::text(locale, "recovery_rollback"),
+                    native_locale::text(locale, "recovery_keep_paused"),
+                ))
+                .blocking_show()
+        },
+        || {
+            let refused = || native_locale::text(native_locale::selected(), "recovery_unconfirmed");
+            let executable = app.path().resolve("sidecar/arslan-server", tauri::path::BaseDirectory::Resource)
+                .map_err(|_| refused())?;
+            match recovery_control::run(&executable, &recovery_control::Request::Rollback) {
+                Ok(recovery_control::Outcome::RolledBack(true)) => Ok(()),
+                _ => Err(refused()),
+            }
+        },
+    );
+    #[cfg(not(target_os = "macos"))]
+    let started = start_sidecar(&app);
+    let port = match started {
         Ok((port, child)) => {
             app.state::<Sidecar>().0.lock().unwrap().replace(child);
             port
         }
-        Err(e) => return report_boot_failure(&app, &e),
+        Err(e) => return report_boot_failure(&app, &e.message),
     };
     if let Err(e) = wait_for_health(port) {
         return report_boot_failure(&app, &e);
@@ -829,6 +890,63 @@ pub fn run() {
 mod tests {
     use super::*;
 
+    #[cfg(target_os = "macos")]
+    fn pending_failure() -> StartupFailure {
+        startup_failure("ARSLAN_ERROR=data_profile_recovery_required", "en").unwrap()
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn recovery_is_never_offered_for_success_or_unrelated_errors() {
+        assert_eq!(start_with_recovery(|| Ok(17), || panic!("no prompt"), || panic!("no rollback")).unwrap(), 17);
+        let failure = start_with_recovery::<()>(|| Err("ordinary failure".to_string().into()),
+            || panic!("no prompt"), || panic!("no rollback")).unwrap_err();
+        assert!(!failure.recovery_pending);
+        assert!(startup_failure("ARSLAN_ERROR=data_profile_recovery_required extra", "en").is_none());
+        assert!(!startup_failure("ARSLAN_ERROR=data_profile_in_use", "en").unwrap().recovery_pending);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn cancelling_recovery_never_mutates_or_restarts() {
+        let starts = std::cell::Cell::new(0);
+        let failure = start_with_recovery::<()>(|| { starts.set(starts.get() + 1); Err(pending_failure()) },
+            || false, || panic!("cancel must not rollback")).unwrap_err();
+        assert_eq!(starts.get(), 1);
+        assert!(failure.recovery_pending);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn confirmed_rollback_retries_once_and_unknown_outcome_never_retries() {
+        let starts = std::cell::Cell::new(0);
+        let actions = std::cell::Cell::new(0);
+        let result = start_with_recovery(|| {
+            starts.set(starts.get() + 1);
+            if starts.get() == 1 { Err(pending_failure()) } else { Ok(23) }
+        }, || true, || { actions.set(actions.get() + 1); Ok(()) });
+        assert_eq!(result.unwrap(), 23);
+        assert_eq!(starts.get(), 2);
+        assert_eq!(actions.get(), 1);
+        starts.set(0);
+        let failure = start_with_recovery::<()>(|| { starts.set(starts.get() + 1); Err(pending_failure()) },
+            || true, || Err("unconfirmed".to_string())).unwrap_err();
+        assert_eq!(starts.get(), 1);
+        assert_eq!(failure.message, "unconfirmed");
+        assert!(!failure.recovery_pending);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn repeated_pending_status_does_not_repeat_confirmation_or_rollback() {
+        let starts = std::cell::Cell::new(0);
+        let actions = std::cell::Cell::new(0);
+        assert!(start_with_recovery::<()>(|| { starts.set(starts.get() + 1); Err(pending_failure()) },
+            || true, || { actions.set(actions.get() + 1); Ok(()) }).is_err());
+        assert_eq!(starts.get(), 2);
+        assert_eq!(actions.get(), 1);
+    }
+
     #[test]
     fn profile_startup_errors_use_only_known_codes_and_six_language_copy() {
         for locale in ["en", "zh", "ja", "es", "de", "fr"] {
@@ -840,6 +958,12 @@ mod tests {
             assert_eq!(startup_error("ARSLAN_ERROR=data_profile_recovery_required", locale),
                        Some(native_locale::text(locale, "profile_recovery_required")));
             assert_ne!(native_locale::text(locale, "profile_recovery_required"), "Arslan");
+            for key in ["recovery_title", "recovery_rollback_prompt", "recovery_rollback",
+                        "recovery_keep_paused", "recovery_unconfirmed"] {
+                assert_ne!(native_locale::text(locale, key), "Arslan");
+            }
+            assert_ne!(native_locale::text(locale, "recovery_rollback"),
+                       native_locale::text(locale, "recovery_keep_paused"));
         }
         assert!(startup_error("ARSLAN_ERROR=private diagnostic", "en").is_none());
         assert!(startup_error("ARSLAN_ERROR=data_profile_in_use<script>", "en").is_none());

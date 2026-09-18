@@ -1876,3 +1876,35 @@ Targeted lint/whitespace checks passed. This establishes protocol interoperabili
 not the desktop confirmation/picker workflow, full native trial orchestration or
 visual acceptance. No installed app, real user data/secret, provider or publication
 was used; the temporary desktop bundle still predates these native modules.
+
+### User-confirmed interrupted-recovery rollback entry (2026-09-19)
+
+The macOS boot path now preserves a typed pending-recovery flag from the exact
+backend handshake. After the failed normal child has been killed/reaped, only
+that flag opens a native warning dialog on the existing boot worker thread. The
+user can return to original data or keep startup paused. Product-owned title,
+explanation, action/cancel labels and unconfirmed-result guidance exist in all
+six languages. The explanation states that original and candidate folders are
+retained, not deleted. No webpage/model IPC can approve this action.
+
+Cancel returns the existing startup failure without invoking maintenance or
+restarting. Confirmation invokes the bundled control executable with Rollback;
+only `RolledBack(true)` permits one fresh normal-start attempt. No-op, refusal,
+timeout, malformed/uncertain output or unexpected action results keep this boot
+paused. Another pending failure after the retry does not repeat the dialog or
+rollback. Unrelated startup errors never offer recovery. This is an interrupted
+operation's rollback UI, not a backup picker or forward restore/activation UI.
+
+The native skill context had no configured Xcode project/scheme/device; isolated
+offline Rust tests passed 47 cases with one separately exercised opt-in fixture
+ignored (0.27s execution, 1.00s incremental build). Four new state-flow tests cover
+non-recovery paths, cancellation, confirmed single retry, unknown outcomes and
+repeated pending status. Exact handshake matching and six-language nonempty/
+distinct action labels are also checked. Shell/packaged-entry Python checks
+passed 46 cases in 0.63s; native-locale tests were separately exercised. Whitespace
+checks passed. These are code/flow assertions, not a click or visual acceptance.
+
+The desktop remains locked from the latest UI check, so actual dialog behavior
+and translated layout remain unverified. The temporary full app must be rebuilt
+before that acceptance. No actual user confirmation was fabricated and no real
+profile, key, installed app, account or publication was touched by these tests.
