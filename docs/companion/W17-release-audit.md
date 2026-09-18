@@ -906,3 +906,15 @@ or catalog completion status changed; model responses remain scripted. The
 binding document now records partial aspects of 24 scenarios, not 60 completed
 scenarios. The preceding complete backend run does not include these five newer
 tests, though its production-source identity is unchanged.
+
+### Deletion-manifest gap and bounded foundation (2026-09-19)
+
+The approved recovery contract requires coordination with later deletion
+metadata, not just blanket quarantine. Current `backup.restore` has no manifest
+input, so M06-04 remains incomplete. The new isolated manifest service provides
+strict bounded parsing and read-only metadata export; it is not wired into
+runtime/restore/UI yet. Fifteen tests passed in 3.81s with lint/whitespace clean.
+See `memory-deletion-manifest.md` for the schema, privacy limits and remaining
+integration. Existing frozen candidate bytes are unchanged and do not include
+this new module. No existing data or restore behavior changed; do not count the
+format foundation as completed deletion reconciliation or release acceptance.
