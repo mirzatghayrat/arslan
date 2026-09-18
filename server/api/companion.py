@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import Field, model_validator
 from sqlalchemy import and_, or_, select, update
 
@@ -294,6 +294,20 @@ async def list_memory(scope_kind: str | None = None, scope_id: str | None = None
     except ValueError as exc:
         raise HTTPException(422, detail={"code": "invalid_memory_scope"}) from exc
     return await repo.list_entries(scope=scope, include_deleted=include_deleted, limit=limit, offset=offset)
+
+
+@router.get("/memory/deletion-manifest")
+async def export_deletion_manifest(repo=Depends(_repository)):
+    from server.services.memory_deletion_manifest import export_sync
+    try:
+        payload = await repo.db.run_sync(lambda session: export_sync(session.connection()))
+    except ValueError as exc:
+        code = "deletion_store_not_initialized" if str(exc) == "deletion_store_not_initialized" else "deletion_manifest_export_failed"
+        raise HTTPException(409, detail={"code": code}) from exc
+    return Response(content=payload, media_type="application/json", headers={
+        "Content-Disposition": 'attachment; filename="arslan-deletion-manifest.json"',
+        "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+    })
 
 
 @router.post("/memory/entries", status_code=201)

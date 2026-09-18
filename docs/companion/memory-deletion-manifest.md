@@ -48,7 +48,8 @@ Still required before this can fulfill the recovery contract:
   frozen restore → host-request exclusion evidence.
 - UI explanation for missing later ledgers/new-machine restores and review.
 
-No endpoint or automatic independently retained ledger is introduced yet.
+The explicit export endpoint and settings control below are now implemented;
+automatic independent ledger retention and restore-import UI are not.
 
 ## Source runtime evidence after reconciliation
 
@@ -65,3 +66,24 @@ runtime selection passed 44 tests (27 deselected) in 20.59s; the new runtime
 binding separately passed in 2.32s. Lint/whitespace checks passed. No production
 code changed in this follow-up. Package, UI and independent ledger retention
 remain unverified/unimplemented, so M06-04 is not marked fully complete.
+
+## Explicit authenticated export
+
+`GET /api/v1/memory/deletion-manifest` now exports through the authenticated
+companion router and existing session transaction. Responses use `no-store`,
+an attachment filename and `nosniff`. Uninitialized stores and invalid/oversized
+exports produce stable 409 codes; parser diagnostics are not returned. There
+is no import/write method at this endpoint.
+
+Settings → Memory & Data includes a Lucide download control using the existing
+authenticated request helper. It only runs on click, prevents overlapping
+requests, ignores results after departure, cleans up its temporary download
+link/URL, and shows a localized generic failure without backend diagnostics.
+All six languages explain private metadata, separate storage, re-export after
+deletion and the absent restore-import UI. No saved-file success is claimed:
+the browser/desktop download destination still depends on its download support.
+
+API/manifest tests passed 36 cases in 1.53s. Two frontend suites passed 8 tests
+in 1.61s, including delayed URL cleanup and no download after departure;
+TypeScript, targeted lint and whitespace checks passed. Native file download,
+visual layout and a complete regression/package rebuild remain unverified.

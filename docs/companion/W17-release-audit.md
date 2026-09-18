@@ -954,3 +954,16 @@ has 39 cases covering partial aspects of 25 scenarios, not 60 completed cases.
 Trusted import/export UI, independently retained current manifests and actual
 packaged manifest restore remain open; source request evidence alone does not
 close the full recovery contract.
+
+### User-facing deletion-record export (2026-09-19)
+
+Added an authenticated no-store attachment endpoint and explicit Settings →
+Memory & Data download control. Six-language copy describes the privacy,
+separate-storage/re-export requirement and absent restore import. No automatic
+file discovery, import authorization or ledger persistence is inferred. Export
+failure stays generic, duplicate clicks are fenced and departed results cannot
+start a download. Backend API/manifest selection: 36 passed (1.53s). Frontend
+two-suite selection: 8 passed (1.61s), including URL release. TypeScript and
+targeted lint/whitespace checks passed. See the manifest document for scope.
+Native download and live layout remain unverified; current frozen package and
+previous full suites predate these source/UI changes.

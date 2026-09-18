@@ -23,6 +23,28 @@ async def test_auth_and_no_credential_fields(api):
     assert response.status_code == 422
 
 
+async def test_deletion_manifest_export_requires_auth_and_contains_no_memory_text(api):
+    path = "/api/v1/memory/deletion-manifest"
+    assert (await api.get(path, headers={"Authorization": "Bearer wrong"})).status_code == 401
+    empty = await api.get(path)
+    assert empty.status_code == 409
+    assert empty.json() == {"detail": {"code": "deletion_store_not_initialized"}}
+    content = "Synthetic private preference to erase"
+    created = await api.post("/api/v1/memory/entries", json={"content": content, "scope": {"kind": "global"}})
+    assert created.status_code == 201
+    entry = created.json()
+    assert (await api.delete(f"/api/v1/memory/entries/{entry['id']}", params={"expected_version": entry["version"]})).status_code == 200
+    response = await api.get(path)
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert "attachment" in response.headers["content-disposition"]
+    from server.services.memory_deletion_manifest import decode
+    value = decode(response.content)
+    assert value["deletion_epoch"] == 1 and value["deletions"][0]["entry_id"] == entry["id"]
+    assert content not in response.text and "digest_key" not in response.text
+    assert (await api.post(path, json={})).status_code == 405
+
+
 async def test_asc_capabilities_and_exact_project_target_without_account_access(api):
     caps = await api.get("/api/v1/connections/app-store-connect/capabilities")
     assert caps.status_code == 200 and not caps.json()["local"]["read_account"]
