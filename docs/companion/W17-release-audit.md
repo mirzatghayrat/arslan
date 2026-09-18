@@ -5,6 +5,42 @@ permission to publish, or permission to replace the installed application.
 
 ## Frozen engineering run
 
+### Latest temporary desktop bundle: bound recovery consent, 2026-09-19
+
+Source checkpoint `f66e569f` is now in the temporary full desktop application:
+`/tmp/arslan-native-candidate.xIygc5/target/release/bundle/macos/Arslan.app`.
+It includes the read-only existing-secret helper, bounded native control
+transport, six-language interrupted-recovery dialog and operation-bound consent.
+Forward restore picker and native trial orchestration remain incomplete.
+
+The sidecar was staged with the existing verified compute runtime (9,240 files).
+Native source, Cargo files, locale JSON, locale resources and splash were checked
+against the source tree. An initial resource-copy command used the wrong JSON
+location and failed; the root-level locale JSON files were then copied correctly
+and a second release build completed in 1m05s, before bundling. The first build
+is not the final bundle's provenance. XcodeBuildMCP defaults had no configured
+project/scheme/device; compilation used isolated offline Rust. Tauri packaging
+used `--no-sign`; there was no developer signing/notarization or publication.
+
+- Native SHA-256: `89258bca3c79be2a290127c582899a3278b968107c6379e6f970ed2c6a8c676b`.
+- Backend SHA-256: `e8c5651dfdaa94e35756ef3257bac187d15643f44678f6669af0d2f4b4a119c4`.
+- Bundled web resources exactly match the current `web/dist` directory.
+
+Checks against the actual application's resource directory passed: 15-import
+selftest, web assets, absence of AGPL rasterizers/databases/secrets (431 MiB),
+and sandboxed/network-isolated compute with two durable verified artifacts.
+Both native-test-transport-to-bundled-backend smoke branches passed: offline
+restore, inspection, mismatched-operation refusal, restricted trial health,
+ownership refusal, graceful shutdown, original data retention, rollback or
+finalization, and normal restart. These use disposable synthetic data and source
+backup creation; they do not exercise native UI or real model/account actions.
+
+Computer-use freshly reported the Mac locked. No desktop launch or confirmation
+click was attempted, so translated dialog layout, menus and native interaction
+acceptance remain open. The installed app and real profiles were not changed.
+This checkpoint supersedes older bundle hashes below, not their historical
+evidence or the remaining W11/W17/W19/W20/W21 acceptance gates.
+
 ### Later source checkpoint: attachment ownership, 2026-09-19
 
 Composer async completion is now fenced against deletion, clear, unmount and
