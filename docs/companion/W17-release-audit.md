@@ -967,3 +967,26 @@ two-suite selection: 8 passed (1.61s), including URL release. TypeScript and
 targeted lint/whitespace checks passed. See the manifest document for scope.
 Native download and live layout remain unverified; current frozen package and
 previous full suites predate these source/UI changes.
+
+### Restore interruption and current frontend regression (2026-09-19)
+
+Two new failure-injection cases interrupt staged reconciliation immediately
+after revision erasure and after successful reconciliation but before commit.
+Both prove that no destination or temporary restore directory remains, the
+input archive and live deletion manifest stay unchanged, and retrying the same
+archive/manifest succeeds with a content-free deleted stub and a healthy DB.
+These are caught-exception tests, not power-loss or filesystem-crash tests.
+
+The complete manifest/backup/restore/runtime four-file selection passed 73 tests
+in 78.80s, with one dependency deprecation warning, using an isolated temporary
+home/data directory and synthetic encryption secret. This includes all 39
+scripted runtime bindings. An initial invocation without the synthetic secret
+had 26 passes and 8 backup fixture failures: the existing insecure-secret guard
+correctly refused encryption; no security policy was weakened to rerun them.
+
+Current frontend regression passed all 244 files / 1,893 tests in 22.01s;
+existing React act/i18next warnings remain. TypeScript, targeted lint and
+whitespace checks passed. Only tests/docs changed in this checkpoint. Full
+backend regression and frozen-package verification still predate the manifest
+implementation; native download, trusted import and independent ledger storage
+remain open. No real provider calls, publication or installed-app replacement.

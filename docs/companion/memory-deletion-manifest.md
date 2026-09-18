@@ -87,3 +87,19 @@ API/manifest tests passed 36 cases in 1.53s. Two frontend suites passed 8 tests
 in 1.61s, including delayed URL cleanup and no download after departure;
 TypeScript, targeted lint and whitespace checks passed. Native file download,
 visual layout and a complete regression/package rebuild remain unverified.
+
+## Interruption/retry evidence
+
+Failure injection now covers an exception immediately after revision payload
+erasure and an exception after reconciliation finishes, before transaction
+commit. Each leaves no installed destination or staging directory, preserves
+the original archive and live exported metadata, and allows successful retry
+with only an empty deleted revision. This does not simulate process kill,
+power loss or filesystem failure.
+
+The complete manifest/backup/restore/runtime selection passed 73 tests in
+78.80s, including all 39 scripted runtime bindings. Current frontend regression
+passed 244 files / 1,893 tests in 22.01s; TypeScript and targeted lint passed.
+The full backend suite, rebuilt package and native download remain outstanding
+for the manifest changes, as do trusted restore import and independently
+retained current ledgers.

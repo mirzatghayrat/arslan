@@ -151,3 +151,64 @@ async def test_reconciliation_refuses_live_store_and_stale_epoch(execution_db):
         with pytest.raises(ValueError, match="^deletion_manifest_stale$"):
             await connection.run_sync(lambda db: manifest.reconcile_staged_sync(db, json.dumps(stale).encode()))
         assert await connection.run_sync(manifest.export_sync) == payload
+
+
+@pytest.mark.parametrize("failure_point", ["revision_erasure", "after_reconciliation"])
+async def test_failed_reconciliation_discards_staging_and_can_retry(execution_db, tmp_path, monkeypatch, failure_point):
+    from sqlalchemy.engine import Connection
+    from sqlalchemy.sql.dml import Delete
+    from server.services import backup
+
+    content = "Synthetic preference whose restore must remain atomic"
+    async with repository() as repo:
+        entry = await repo.create(MemoryWrite(content=content, scope=MemoryScope(kind="global")), MemoryActor(origin="user"))
+    archive = tmp_path / "old.zip"
+    backup.create(tmp_path, archive, db_path=tmp_path / "execution.db")
+    original = archive.read_bytes()
+    async with repository() as repo:
+        await repo.delete_entry(entry["id"], entry["version"], MemoryActor(origin="user"))
+    async with execution_db.kw["bind"].begin() as connection:
+        payload = await connection.run_sync(manifest.export_sync)
+
+    target = tmp_path / "restored"
+    reached = []
+    execute = Connection.execute
+    reconcile = manifest.reconcile_staged_sync
+
+    def interrupted_execute(connection, statement, *args, **kwargs):
+        result = execute(connection, statement, *args, **kwargs)
+        if isinstance(statement, Delete) and statement.table.name == "memory_revisions":
+            reached.append("revision_erasure")
+            raise RuntimeError("synthetic restore interruption")
+        return result
+
+    def interrupted_reconcile(connection, data):
+        result = reconcile(connection, data)
+        assert result["deleted_entries"] == 1
+        reached.append("after_reconciliation")
+        raise RuntimeError("synthetic restore interruption")
+
+    with monkeypatch.context() as patch:
+        if failure_point == "revision_erasure":
+            patch.setattr(Connection, "execute", interrupted_execute)
+        else:
+            patch.setattr(manifest, "reconcile_staged_sync", interrupted_reconcile)
+        with pytest.raises(RuntimeError, match="^synthetic restore interruption$"):
+            backup.restore(archive, target, deletion_manifest=payload)
+
+    assert reached == [failure_point]
+    assert not target.exists()
+    assert not list(tmp_path.glob(".arslan-restore-*"))
+    assert archive.read_bytes() == original
+    async with execution_db.kw["bind"].begin() as connection:
+        assert await connection.run_sync(manifest.export_sync) == payload
+
+    # The same untouched archive and latest manifest remain usable after failure.
+    result = backup.restore(archive, target, deletion_manifest=payload)
+    assert result["deletion_reconciliation"]["deleted_entries"] == 1
+    with sqlite3.connect(target / "arslan.db") as db:
+        assert db.execute("PRAGMA integrity_check").fetchone() == ("ok",)
+        assert db.execute("SELECT status FROM memory_entries WHERE id=?", (entry["id"],)).fetchone() == ("deleted",)
+        assert db.execute("SELECT content FROM memory_revisions WHERE entry_id=?", (entry["id"],)).fetchall() == [(None,)]
+    assert not list(tmp_path.glob(".arslan-restore-*"))
+    assert archive.read_bytes() == original
