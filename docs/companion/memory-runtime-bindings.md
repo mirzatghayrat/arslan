@@ -1,6 +1,6 @@
 # Multi-turn memory runtime bindings — partial engineering evidence
 
-`tests/server/test_memory_multiturn_runtime.py` now has 39 synthetic runtime cases
+`tests/server/test_memory_multiturn_runtime.py` now has 40 synthetic runtime cases
 covering aspects of 25 catalog scenarios. This is not 60 passing scenarios, a
 real-model score, or release approval. The catalog retains its uncompleted status.
 
@@ -33,7 +33,7 @@ their separate API/UI tests are not replaced by these cases.
 | M07-07 | Local-only memory stays stored but is absent from a synthetic cloud-destination request, even with task-level cloud permission | Sensitive-item acknowledgement UI and a real network capture |
 | M07-07 additional matrix | Sensitive, cloud-eligible project memory enters actual host requests/used receipts only when both task cloud-memory and sensitive-item permissions are true; all four combinations retain the stored item | Natural-language consent interpretation, permission UI and actual provider transport |
 | M06-05 | Restore quarantine removes an existing memory from the next host request and used receipt without erasing it; fresh user review restores later eligibility | Archive I/O/new-machine migration (separate frozen harness), missing-ledger UI explanation and model output |
-| M06-04 | An actual pre-deletion backup is restored with a later exported deletion manifest; a new task bound to the restored DB sends no deleted text/reference, and a repeated save is refused | Independently retained latest manifest, trusted UI import, packaged execution and natural-language/model behavior |
+| M06-04 | An actual pre-deletion backup is restored using either a later imported manifest or automatic record selection from an explicitly supplied current installation; a new task bound to the restored DB sends no deleted text/reference, and a repeated save is refused | Trusted native UI import, packaged host-request capture and natural-language/model behavior |
 | M07-01 | Explicit synthetic credential-save requests are rejected at task admission before host/remember execution; no task/message/run or ordinary memory remains, and a different conversation's prompt/receipt contains no such memory | Detection of every credential shape, UI presentation of the refusal and redaction of unrelated historical sources |
 | M03-06 / M08-02 | Saved report preferences stay out of a code-patch request; saved design preferences stay out of arithmetic requests in six locales; related subsequent tasks can still retrieve them | General semantic relevance, arbitrary paraphrases and generated-answer quality |
 

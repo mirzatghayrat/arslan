@@ -89,8 +89,9 @@ def create(data_dir: Path, destination: Path, *, db_path: Path | None = None,
     return {"files": len(manifest["files"]), "bytes": total, "secret_included": False}
 
 
-def restore(archive: Path, destination: Path, *, deletion_manifest: bytes | None = None) -> dict:
-    """Validate everything in staging and atomically install to an absent path."""
+def restore(archive: Path, destination: Path, *, deletion_manifest: bytes | None = None,
+            current_db_path: Path | None = None) -> dict:
+    """App stopped: reconcile trusted current records, install only to a new path."""
     destination = destination.absolute()
     if destination.exists() or destination.is_symlink():
         raise ValueError("restore requires a NEW directory; existing data is never overwritten")
@@ -136,6 +137,10 @@ def restore(archive: Path, destination: Path, *, deletion_manifest: bytes | None
             with engine.begin() as connection:
                 review = mark_restored_sync(connection)
                 reconciliation = {"applied": False, "reason": "no_deletion_manifest"}
+                selection = {"selected_source": "imported_manifest" if deletion_manifest is not None else "none"}
+                if current_db_path is not None:
+                    from server.services.memory_deletion_ledger import select_for_restore
+                    deletion_manifest, selection = select_for_restore(current_db_path, deletion_manifest)
                 if deletion_manifest is not None:
                     from server.services.memory_deletion_manifest import reconcile_staged_sync
                     reconciliation = reconcile_staged_sync(connection, deletion_manifest)
@@ -149,5 +154,6 @@ def restore(archive: Path, destination: Path, *, deletion_manifest: bytes | None
     return {"files": len(expected), "secret_included": False,
             "memory_review": review,
             "deletion_reconciliation": reconciliation,
+            "deletion_record_selection": selection,
             "next_step": "Keep the app stopped; configure the original secret and restored data path before boot. "
                          "Review restored memories, projects and paused schedules before using them."}

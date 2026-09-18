@@ -168,3 +168,43 @@ Still open: automatic selection/reconciliation of the installation's ledger by
 the application restore workflow, trusted native restore/import, actual native
 download/layout, full regression and a candidate rebuild for this new mirror.
 The previously verified frozen candidate predates the mirror and status UI.
+
+## Restore selection from a stopped current installation
+
+`backup.restore(..., current_db_path=...)` now reads the explicitly supplied
+current SQLite database in a read-only snapshot and locates its independent
+ledger by store UUID. It optionally checks an imported manifest as a third
+source. The current DB export closes a committed-delete/file-mirror gap when
+the local file is missing or behind; a newer independent ledger wins over an
+older DB. Every supplied history must belong to the same store and be contained
+in the newest history; equal-epoch histories must agree exactly. Divergent,
+foreign, corrupt or unsafe local evidence refuses installation rather than
+silently falling back, even if a valid import was also supplied.
+
+The selected payload is reconciled inside the existing quarantined staging
+transaction. It must still match the backup store and pass its epoch checks.
+Neither current DB, local ledger, imported record nor original archive is
+rewritten. The result reports sources checked and which source was selected,
+without exposing paths. No current installation is discovered implicitly: a
+trusted caller supplies its DB path. The application restore UI still needs to
+bind that argument to trusted installation configuration, not arbitrary HTTP
+input. Arslan must be stopped; this service does not terminate or prove absence
+of another running app instance.
+
+The existing offline operator command now supports `--current-db-path` and
+`--deletion-manifest`. Import reads are bounded, regular-file-only and refuse
+symlinks. `restore --help` explicitly states the stop-app requirement. A new
+machine may import an exported record without a current DB. Omitting both
+retains the established quarantine behavior and reports that no later deletion
+record was applied; it cannot infer deletions made after the old backup.
+
+Six-file regression passed 109 cases in 83.27s, including all 40 scripted
+host-runtime bindings. A current-installation variant of M06-04 proves deleted
+content stays out of every captured new-task request and used receipt, and
+re-saving remains refused. The 19-case coordinator/CLI suite was then rerun
+with exact refusal-code assertions and final help text: 19 passed in 1.71s.
+Targeted lint/whitespace checks passed. These tests cover current/lagging/missing
+files, ledger-ahead/import-newest selection, older consistent imports, corrupt
+or conflicting histories, no install/staging leftovers on refusal, unchanged
+inputs, and new-machine import/quarantine. They do not prove native UI, frozen
+execution of the new selector, full regression or physical crash durability.

@@ -276,8 +276,9 @@ async def test_restored_memory_is_absent_from_next_host_request_until_fresh_revi
     assert content in reviewed[0]["system"]
 
 
+@pytest.mark.parametrize("record_source", ["imported", "current_installation"])
 async def test_later_deletion_manifest_blocks_old_backup_in_actual_host_request(
-    runtime, execution_db, tmp_path, monkeypatch,
+    runtime, execution_db, tmp_path, monkeypatch, record_source,
 ):
     # M06-04: real archive/staged reconciliation, then a new host task bound to
     # the restored DB. No model/transport behavior is inferred from the script.
@@ -298,8 +299,12 @@ async def test_later_deletion_manifest_blocks_old_backup_in_actual_host_request(
     async with execution_db.kw["bind"].begin() as connection:
         manifest = await connection.run_sync(memory_deletion_manifest.export_sync)
     restored = tmp_path / "restored-profile"
-    outcome = backup.restore(archive, restored, deletion_manifest=manifest)
+    options = {"deletion_manifest": manifest} if record_source == "imported" else {
+        "current_db_path": tmp_path / "execution.db"}
+    outcome = backup.restore(archive, restored, **options)
     assert outcome["deletion_reconciliation"]["deleted_entries"] == 1
+    if record_source == "current_installation":
+        assert outcome["deletion_record_selection"]["local_ledger_present"] is True
     assert archive.read_bytes() == original
     engine = db_session.build_engine(f"sqlite+aiosqlite:///{restored / 'arslan.db'}")
     maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

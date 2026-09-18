@@ -9,8 +9,10 @@ from __future__ import annotations
 import asyncio
 from contextlib import contextmanager
 import logging
+import json
 import os
 from pathlib import Path
+import sqlite3
 import stat
 import time
 from uuid import UUID, uuid4
@@ -170,3 +172,49 @@ async def status(session) -> dict:
                 "saved_epoch": saved["deletion_epoch"] if saved else None}
     except (OSError, ValueError, SQLAlchemyError):
         return {"status": "unavailable", "database_epoch": None, "saved_epoch": None}
+
+
+def select_for_restore(current_db_path: Path, imported: bytes | None = None) -> tuple[bytes, dict]:
+    """Read a stopped installation; never modify its DB, ledger or imports.
+
+    Read-only DB export closes the post-commit mirror gap. A newer independent
+    ledger wins over an older DB, but divergent histories fail closed. The
+    caller must still match the selected store to the staged backup.
+    """
+    from sqlalchemy import create_engine
+
+    database = current_db_path.absolute()
+    if database.is_symlink() or not database.is_file():
+        raise ValueError("deletion_current_database_unavailable")
+    engine = create_engine("sqlite://", creator=lambda: sqlite3.connect(f"{database.as_uri()}?mode=ro", uri=True))
+    try:
+        with engine.connect() as connection:
+            # Explicit BEGIN gives both export SELECTs one SQLite snapshot,
+            # including under the sqlite3 legacy transaction-control default.
+            connection.exec_driver_sql("BEGIN")
+            current = decode(export_sync(connection))
+    except (OSError, ValueError, SQLAlchemyError, sqlite3.Error) as exc:
+        raise ValueError("deletion_current_database_unavailable") from exc
+    finally:
+        engine.dispose()
+    saved = read(database.parent / DIRECTORY, current["instance_id"])
+    candidates = [("current_database", current)]
+    if saved is not None:
+        candidates.append(("local_ledger", saved))
+    if imported is not None:
+        candidates.append(("imported_manifest", decode(imported)))
+    if any(value["instance_id"] != current["instance_id"] for _, value in candidates):
+        raise ValueError("deletion_manifest_store_mismatch")
+    selected_source, selected = max(candidates, key=lambda item: item[1]["deletion_epoch"])
+    selected_rows = _rows(selected)
+    for _, value in candidates:
+        rows = _rows(value)
+        if not rows.issubset(selected_rows) or (
+                value["deletion_epoch"] == selected["deletion_epoch"] and rows != selected_rows):
+            raise ValueError("deletion_ledger_history_conflict")
+    payload = json.dumps(selected, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    decode(payload)  # Keep the transfer bound after canonical serialization.
+    return payload, {"selected_source": selected_source,
+                     "sources_checked": [source for source, _ in candidates],
+                     "deletion_epoch": selected["deletion_epoch"],
+                     "local_ledger_present": saved is not None}

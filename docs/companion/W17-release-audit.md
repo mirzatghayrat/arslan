@@ -1078,3 +1078,29 @@ change and must be rerun/rebuilt. Restore's automatic ledger selection, trusted
 import UI, native visual/download checks and other release gates remain open.
 No real profile was migrated, model/account called, app installed or release
 published. New filesystem tests use disposable data only.
+
+### Recovery selects current installation records before staged install (2026-09-19)
+
+The restore service accepts an explicitly trusted current DB path, opens a
+read-only SQLite snapshot, discovers its independent ledger by store UUID and
+compares an optional imported manifest. It selects the highest consistent epoch,
+requires older histories to be contained, rejects same-epoch divergence and
+refuses corrupt/foreign/unsafe local records. Missing or behind mirror files can
+be supplemented by the committed DB; a newer ledger cannot be replaced by an
+older DB. All source files and the old backup remain untouched. Reconciliation
+still occurs within quarantined staging, before installation into a new path.
+
+Offline restore now exposes the current-DB and bounded manifest-import options,
+including a new-machine import without a local installation. The command's help
+states that Arslan must already be stopped; no running process is stopped or
+automatically certified absent. This is not yet a native restore/import UI.
+
+Six-file backend selection passed 109 cases in 83.27s, including all 40 scripted
+runtime bindings; the new current-installation M06-04 variant checks actual
+adapter requests, receipts, deleted stubs and repeat-save refusal. After
+tightening exact error assertions and CLI help, the 19-case selection/CLI suite
+passed in 1.71s. Targeted lint/whitespace checks passed. Scenario completion
+remains partial aspects of 25/60, not a 60-scenario or real-model quality pass.
+Latest full regression and frozen candidate predate both the independent mirror
+and this selection path. Native trusted restore/import, runtime stop/activation
+coordination, native UI/download checks and the other release gates remain open.
