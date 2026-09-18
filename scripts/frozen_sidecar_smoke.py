@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 import select
 import socket
+import struct
 import subprocess
 import sys
 import tempfile
@@ -89,6 +90,25 @@ def main():
             formats = client.get("/api/v1/input-formats").json()
             assert "docx" in formats["document"] and "pdf" in formats["document"]
             assert "xlsx" in formats["spreadsheet"] and "mp4" in formats["video"]
+            for body in ([], 7, {"url": ["https://example.com"]}):
+                response = client.post("/api/v1/extract", json=body)
+                assert response.status_code == 400
+                assert response.json() == {"detail": {"code": "inputs.invalid"}}
+            response = client.post("/api/v1/extract", files={"file": (None, "plain text")})
+            assert response.status_code == 400
+            assert response.json() == {"detail": {"code": "inputs.invalid"}}
+            for extension, member in (("docx", "word/document.xml"),
+                                      ("xlsx", "xl/worksheets/sheet1.xml"),
+                                      ("pptx", "ppt/slides/slide1.xml")):
+                damaged = io.BytesIO()
+                with zipfile.ZipFile(damaged, "w", zipfile.ZIP_DEFLATED) as archive:
+                    archive.writestr(member, "<document/>")
+                payload = bytearray(damaged.getvalue())
+                name_size, extra_size = struct.unpack_from("<HH", payload, 26)
+                payload[30 + name_size + extra_size] = 7
+                response = client.post("/api/v1/extract", files={"file": (f"damaged.{extension}", bytes(payload))})
+                assert response.status_code == 400
+                assert response.json() == {"detail": {"code": "inputs.invalid"}}
             data = io.BytesIO()
             with zipfile.ZipFile(data, "w") as archive:
                 archive.writestr("word/document.xml", '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Synthetic body</w:t></w:r></w:p><w:tbl><w:tr><w:tc><w:p><w:r><w:t>Synthetic table</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>')
@@ -167,6 +187,8 @@ def main():
                       "token_and_language_retained": True, "parent_pipe_shutdown": True,
                       "native_locale_cache_repaired": True,
                       "onboarding_seen_retained": True,
+                      "malformed_request_shapes_rejected": True,
+                      "corrupt_office_compression_rejected": True,
                       "real_model": False, "installed_app": False}))
 
 

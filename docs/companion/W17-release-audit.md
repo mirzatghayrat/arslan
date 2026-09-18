@@ -625,3 +625,39 @@ cases cover those shapes and malformed JSON syntax/encoding. The five-file
 input regression now passes 65 tests in 3.20s, with targeted lint and whitespace
 checks passing. This remains source-only evidence; a fresh full regression and
 native candidate are still outstanding.
+
+### Input-hardening candidate rebuild (2026-09-19)
+
+This checkpoint supersedes the earlier candidate's backend and SPA identity.
+Production source was clean at `1048f20fe42adb428bab8f359533829b4f612a3e`;
+only the smoke driver and this audit were subsequently edited. Frontend full
+regression passed 243 files / 1,889 tests in 24.42s, TypeScript passed, and the
+production build passed in 3.31s. Existing test-environment warnings and the
+large-chunk warning remain. PyInstaller completed in 26.65s using the existing
+isolated tooling; no dependency was installed. Native Rust source and the menu
+message catalog matched the existing temporary native build exactly, so its
+unchanged native executable was reused. Tauri bundled with `--no-sign`.
+
+Candidate: `/tmp/arslan-native-candidate.xIygc5/target/release/bundle/macos/Arslan.app`.
+The temporary bundle at this path was replaced, not the installed application.
+Its complete packaged SPA directory matches the fresh `web/dist` byte-for-byte.
+SHA-256 identities:
+
+- Native executable: `768bc50f20e1dc7ee094483be8f3c4aa5bc8af077fda66ca6d6daa02d61d45e3`.
+- Frozen backend: `aa9244f3f344fdf610ed380098d53109baf95dbaa86b9c696d5772c0caa28fb2`.
+- SPA `index-CUnuiQel.js`: `ea11bc6c64081c022fc080bc9d5e617768f758650fb99b7857f26043806af230`.
+
+Actual bundled-backend smoke passed with a disposable HOME, generated inputs,
+loopback-only API calls and no real model. Coverage includes startup/restart,
+authentication, six saved languages, onboarding persistence, source locators,
+inert code, browser activation refusal, capability limits and parent-pipe exit.
+New checks exercise malformed request shapes and corrupt DEFLATE in all three
+Office formats against the frozen executable, asserting the localized 400
+envelope. Bundle verification passed 15 module imports, packaged assets and
+the no-AGPL/no-database/no-secret-shaped-file checks (431 MiB). The actual
+bundled executable's compute selftest passed with sandbox/network isolation
+and two durable artifacts under a separate temporary HOME.
+
+This is not a signed/notarized release or a live native UI acceptance. The full
+backend suite has not been repeated on this revision. All outstanding real
+task, human review, migration and desktop visual gates above remain outstanding.

@@ -215,3 +215,10 @@ requests cannot reach its network/model path. Ten new cases plus existing
 format, extraction, API, DOCX and PDF source-locator tests passed: 65 tests in
 3.20s. Changed-file lint and whitespace checks passed. These are offline source
 checks, not full regression, UI or packaged acceptance.
+
+Subsequent packaged verification: the W17 input-hardening candidate rebuild
+includes these changes and the composer async/policy fixes. Its actual frozen
+backend passed malformed-request and corrupt Office compression API checks,
+alongside existing extraction/source-locator smoke. The full frontend suite
+passed 1,889 tests. Refer to W17 for exact binary identities and limitations;
+native visual acceptance and a fresh complete backend regression remain open.
