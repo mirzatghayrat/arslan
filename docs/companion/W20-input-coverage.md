@@ -222,3 +222,8 @@ backend passed malformed-request and corrupt Office compression API checks,
 alongside existing extraction/source-locator smoke. The full frontend suite
 passed 1,889 tests. Refer to W17 for exact binary identities and limitations;
 native visual acceptance and a fresh complete backend regression remain open.
+
+The subsequent clean `3617083e` complete backend run passed 4,927 tests with
+14 documented skips (492.62s), including all new input cases. W17 records its
+JUnit identity and isolation. The full-regression gap is now closed for this
+candidate; native visual and real selected-model acceptance remain open.

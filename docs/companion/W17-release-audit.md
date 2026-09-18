@@ -590,7 +590,7 @@ not a new all-green frozen full run, nor real-model or packaged acceptance.
 
 | Requirement | Current authoritative state | Remaining evidence |
 | --- | --- | --- |
-| Complete engineering regression | Clean `a853cf8f`: 4,904 Python tests passed, 14 skipped; four later test-only memory cases passed separately; frontend/native/package evidence above | Repeat on final release source after remaining implementation gates |
+| Complete engineering regression | Clean `3617083e`: 4,927 Python tests passed, 14 skipped; frontend 1,889 passed and rebuilt-package evidence below | Repeat on final release source after remaining implementation gates; engineering checks do not close real-task/UI gates |
 | Context evidence UI | Task-scoped receipt history, version review and provider-bound counters; in-flight withdrawal, snapshot fences and retained-source filtering implemented | Real desktop and packaged runtime verification, historical scope snapshots and complete scenario evaluation; see `context-request-evidence.md` and `memory-inflight-revocation.md` |
 | 30 real task families × 3 attempts | All 30 catalog entries are `real_inputs_pending`; fixed denominator is 90 | Authorized real inputs, immutable initial-state/configuration hashes, actual attempts and independent checker evidence |
 | 60 multi-turn memory scenarios | All 60 retain incomplete status; partial host-request/receipt bindings documented in `memory-runtime-bindings.md` | Complete remaining bindings, relevance filtering and separately authorized model-behavior checks |
@@ -661,3 +661,34 @@ and two durable artifacts under a separate temporary HOME.
 This is not a signed/notarized release or a live native UI acceptance. The full
 backend suite has not been repeated on this revision. All outstanding real
 task, human review, migration and desktop visual gates above remain outstanding.
+
+### Complete backend regression on the rebuilt-candidate source (2026-09-19)
+
+Clean commit `3617083eb5eddc8a249c0baedd851f05d7de3c14` was held unchanged for
+the entire run and rechecked afterward. This has the same production source as
+the `1048f20f` input-hardening candidate; the intervening commit only changes
+the smoke driver and audit documentation. The full backend suite passed:
+**4,927 passed, 14 skipped, 18 warnings in 492.62s**, process exit 0.
+
+Run environment: scrubbed environment, disposable HOME and ARSLAN_DATA_DIR
+under `/tmp/arslan-release-regression.fkxf1Z`, synthetic secret, and
+`ARSLAN_LIVE_LLM=0`. JUnit evidence:
+`/tmp/arslan-release-regression.fkxf1Z/backend.xml`, SHA-256
+`d3ae42b43cece4e0a3a0f167427624f7c9b5f7678fb3e65634911aecd9b68b87`.
+The XML records 4,941 cases, zero failures/errors and 14 skips. Its exact skip
+reasons account for 12 live-LLM evaluations, one non-macOS-only fail-closed
+case, and one explicitly allowlisted operator-facing copy check.
+
+All 30 fixed deterministic contracts in `scripts.acceptance_contracts.py`
+were extracted from this same XML and passed, including backup roundtrip/live
+WAL, cancellation, checkpoint preservation, recipe dependencies, network/auth
+refusal, context bounds and memory scope. This is NOT 30 real agent tasks or
+the 90-attempt live evaluation. The latest memory and input regressions are
+now included in one full run rather than only separate focused selections.
+
+Existing dependency deprecation, test-marking and SQLAlchemy lifecycle warnings
+remain; the aiosqlite teardown guard reported 66 closed-loop deliveries. No
+warning is being treated as repaired by this result. No production code changed
+after the run. This closes the fresh backend-regression gap for this candidate,
+not desktop visual acceptance, real-model outcomes, signed installation/
+migration, credential activation or independent human/security review.
