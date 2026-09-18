@@ -7,6 +7,7 @@ or protect against older/uncooperative binaries that do not take this lock.
 from __future__ import annotations
 
 from contextlib import contextmanager
+import hashlib
 import os
 from pathlib import Path
 import stat
@@ -16,11 +17,32 @@ import stat
 def hold(database: Path):
     if os.name != "posix":
         raise ValueError("data_profile_lock_platform_unavailable")
+    database = database.resolve()
+    # The outer namespace stays put when the profile directory is moved during
+    # activation. Acquire it BEFORE creating that directory: a competing startup
+    # must not recreate a temporarily absent active path. Keep the inner lock for
+    # interoperability with the preceding packaged version's ownership check.
+    outer = lifecycle_path(database)
+    outer.parent.mkdir(parents=True, exist_ok=True)
+    with _hold_file(outer):
+        database.parent.mkdir(parents=True, exist_ok=True)
+        with _hold_file(database.with_name(f".{database.name}.arslan-lock")):
+            yield
+
+
+def lifecycle_path(database: Path) -> Path:
+    database = database.resolve()
+    namespace = os.fsencode(database.parent.name) + b"\0" + os.fsencode(database.name)
+    digest = hashlib.sha256(namespace).hexdigest()
+    return database.parent.parent / f".arslan-profile-{digest}.lock"
+
+
+@contextmanager
+def _hold_file(path: Path):
+    if os.name != "posix":
+        raise ValueError("data_profile_lock_platform_unavailable")
     import fcntl
 
-    database = database.resolve()
-    database.parent.mkdir(parents=True, exist_ok=True)
-    path = database.with_name(f".{database.name}.arslan-lock")
     flags = os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK
     try:
         fd = os.open(path, flags | os.O_CREAT | os.O_EXCL, 0o600)

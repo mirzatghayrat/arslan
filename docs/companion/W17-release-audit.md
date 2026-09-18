@@ -1308,3 +1308,31 @@ The latest full 5,009-test regression still predates these recovery changes;
 Native picker/confirmation, owned-process stop/restart, reversible profile
 activation and broader live-quality/signing/release gates remain unfinished.
 No formal installation, real profile, model call, signing or release occurred.
+
+### Stable ownership across a future profile switch (2026-09-19)
+
+Before implementing activation, a new test reproduced another ownership gap:
+moving the active directory also moves its inner lock inode, so a second caller
+could create a replacement directory at the original path and acquire a new
+inner lock. The pre-fix test failed when the second caller became an owner.
+
+The shared packaged/maintenance lock now acquires a stable outer lock in the
+profile directory's parent before it creates the profile directory or acquires
+the original inner DB lock. The outer filename is a SHA-256 namespace of profile
+directory name and DB name; it contains no contents, token or PID. Both files
+use the existing private-file checks and OS locking and are never unlinked.
+The inner lock remains for compatibility with the preceding packaged version;
+failure there releases outer ownership. No directory activation was wired in.
+
+Six focused test files passed 111 cases in 3.32s, with one existing Starlette
+warning; targeted lint/whitespace checks passed. Coverage includes directory
+move with and without a replacement, refusal before recreating a missing active
+directory, a real competing subprocess, unsafe outer symlink/hardlink/FIFO/mode,
+legacy inner ownership, exception cleanup and process-death release.
+
+This changes the cooperative ownership prerequisite, not a complete rollback
+journal or native recovery flow. Trusted parent paths and stopping all older or
+uncooperative writers remain required; old binaries do not acquire the outer
+lock and are not protected throughout directory switching. The current app
+bundle and latest full regression predate this change. No real profile, installed
+app, provider or published build was touched.

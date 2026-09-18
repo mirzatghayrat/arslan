@@ -286,3 +286,20 @@ separate empty maintenance HOME stays empty, without normal profile/token/key
 bootstrap. The command never changes the app's selected data directory, secret
 or installed binary; trusted native activation remains separate unfinished work.
 See W17 for the exact binary hash and source-backup/frozen-restore distinction.
+
+## Ownership during directory switching
+
+The packaged/maintenance `hold()` now acquires two cooperative locks, in order:
+a stable private `.arslan-profile-<namespace-sha256>.lock` in the profile's parent,
+then the existing `.<database-name>.arslan-lock` inside the profile. It must own
+the first before even creating the active directory. Moving the directory can
+therefore no longer let another cooperating startup create a new inner-lock
+domain while the original owner is still active.
+
+The namespace hashes the directory name and DB name with a separator; it is not
+a content fingerprint. Both locks remain empty and private. The existing inner
+lock still respects preceding packaged owners, but those old binaries do not
+take the outer lock and must be stopped before any future directory activation.
+This prerequisite is tested with actual OS locks and a competing subprocess.
+A durable activation journal, secret compatibility preflight, native confirmation
+and health-checked rollback are still required before enabling directory swaps.
