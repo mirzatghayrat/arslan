@@ -692,3 +692,33 @@ warning is being treated as repaired by this result. No production code changed
 after the run. This closes the fresh backend-regression gap for this candidate,
 not desktop visual acceptance, real-model outcomes, signed installation/
 migration, credential activation or independent human/security review.
+
+### Frozen restored-profile boot (2026-09-19)
+
+The Mac remains locked according to a fresh native-control inventory, so native
+menu and live desktop visual acceptance were not attempted against the installed
+app. Instead, `scripts/frozen_restore_smoke.py` now provides a repeatable,
+synthetic restored-profile boot check against the current temporary candidate.
+It passed, as did targeted lint and whitespace checks. No production source was
+changed, so the preceding complete regression and binary identities still apply.
+
+The harness boots the actual candidate backend in a new disposable HOME, saves
+German/onboarding state through the real API, and creates a synthetic provider
+configuration pointing only to loopback port 9. It never calls model-list,
+health-test or chat endpoints. After stopping the backend, it adds one generated
+artifact, creates a backup with the source backup service, and restores into a
+different absent profile directory. This checks the source backup implementation
+plus frozen startup/migrations, NOT a bundled backup CLI or native restore UI.
+
+The restored profile preserved the provider row, ciphertext and database salt
+exactly, and preserved the artifact SHA-256. Booting it with the same synthetic
+external secret returned the same masked provider configuration with key status
+`set`, retained German/onboarding state, minted a new access token and rejected
+the old token with HTTP 401. The archive excludes token/secret files. The restore
+service reports review required; this fixture contains no memory entries or
+schedules and does not establish their end-to-end quarantine acceptance. Both
+owned backend processes exited through parent-pipe closure; temporary profiles
+and archives were removed automatically.
+
+This closes one concrete restored-profile check, not the old-release upgrade,
+signature/notarization, user-library migration, native UI, or real task gates.
