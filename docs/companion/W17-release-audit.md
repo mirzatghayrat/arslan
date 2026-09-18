@@ -722,3 +722,28 @@ and archives were removed automatically.
 
 This closes one concrete restored-profile check, not the old-release upgrade,
 signature/notarization, user-library migration, native UI, or real task gates.
+
+### Restored memory/schedule safety follow-up (2026-09-19)
+
+The frozen restore harness now includes an active, user-created global memory
+with cloud-use permission and a synthetic overdue schedule. The memory is
+created through the candidate's real authenticated API. The enabled schedule
+is inserted only after stopping the source process; the harness asserts that
+restoration has paused it BEFORE starting the restored backend. No enabled
+schedule is ever launched by this test.
+
+Actual packaged API checks passed: the restored memory retains its content,
+has version 2/status `quarantined`, has no confirmation timestamp and only
+`local_only` policy. An edit with its old version 1 receives the exact HTTP 409
+`memory_version_conflict` envelope. The overdue schedule has
+`backup_restore_review_required`, remains disabled, and has zero dispatch
+records before and after the bounded boot. A second restored-profile startup
+preserves the same complete memory response and access token, with no additional
+memory revision or schedule dispatch. Earlier provider/ciphertext/salt/artifact
+and stale-token checks also passed in this expanded run. Lint and whitespace
+checks passed; no production source or candidate binary changed.
+
+This supersedes the prior empty-memory/empty-schedule fixture limitation for
+these particular checks. It does not prove all restore scenarios, downstream
+model-context exclusion, long-running scheduler behavior, fresh human approval
+UX, or old-release migration. The source-service/frozen-boot split is unchanged.
