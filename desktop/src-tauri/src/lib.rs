@@ -21,6 +21,10 @@ mod native_locale;
 #[cfg(target_os = "macos")]
 mod native_menu;
 mod proxy;
+// Internal preparation only; no IPC endpoint until trusted recovery UI is wired.
+#[cfg(target_os = "macos")]
+#[allow(dead_code)]
+mod recovery_secret;
 mod voice;
 use std::sync::Mutex;
 

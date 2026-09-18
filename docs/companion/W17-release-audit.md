@@ -1701,3 +1701,36 @@ zero skips, in 11.43s (5,102 deselected); report is
 checks passed. These repairs change test/CI coverage, not production behavior;
 the temporary app hashes above remain applicable. A single combined run of all
 5,145 collected Python cases is still required. No real account/data was used.
+
+### Native existing-secret preparation primitive (2026-09-19)
+
+The macOS shell now has an internal existing-secret reader for the future trusted
+recovery coordinator. It accepts an explicitly selected absolute file path, or
+an explicit nonblank secret taking precedence without reading that path. There
+is no implicit HOME/environment discovery, secret generation, permission repair,
+IPC command, model tool, logging or automatic activation. The secret wrapper has
+no Debug/Display/Serialize implementation; its value is available only through
+an explicit crate-private accessor for the later pipe protocol.
+
+Read-only open uses no-follow/nonblocking/close-on-exec flags. The open descriptor
+must be a regular file owned by the effective user, single-linked, with no group
+or other permissions; content is bounded to 8 KiB and must be nonblank UTF-8 with
+no NUL. Metadata is checked again after reading. Missing/invalid material returns
+bounded error variants without filenames or content. Parent folders remain a
+trusted-coordinator precondition: this is not hostile-ancestor protection,
+debugger isolation, locked/zeroized memory or credential-broker completion.
+
+The native skill context check had no configured Xcode project/scheme/device;
+isolated offline Rust tests were used. All 38 native tests passed (0.06s execution,
+6.12s final build), including seven new synthetic tests covering preservation,
+no creation, explicit precedence, size boundaries, invalid bytes, relative paths,
+symlinks/hardlinks, unchanged lax permissions, directories and a real FIFO that
+must not block. `libc` is now a direct dependency using the already locked/cached
+version; no new version or package was downloaded. Whitespace checks passed.
+
+This primitive is intentionally not yet wired to a native picker or user
+confirmation; the existing temporary desktop bundle predates it. The combined
+Python run started at `679626db` remains live as process 98436 / tool session
+16626, targeting `/tmp/arslan-recovery-regression.HvYYsE/combined.xml`. Only native
+source/manifest/lock and documentation changed during this checkpoint; the Python
+production/tests under that run remain unchanged. Do not restart that live run.
