@@ -1412,3 +1412,33 @@ Trusted trial boot, health verification, finalize/rollback coordination, native
 confirmation, six-language recovery guidance and a new full/frozen regression
 remain open. No user profile, installed app, model, secret file or release was
 used. The active goal is not release-complete.
+
+### Trial-process ownership without a generic journal bypass (2026-09-19)
+
+Added internal `trial_ownership(active, operation_id, secret)`. It owns the stable
+lifecycle lock, validates the private journal and exact completed-switch layout,
+then owns the candidate's inner lock and repeats credential compatibility with
+the secret actually supplied to the trial. A prior successful switch preflight
+cannot make a launcher using a different key acceptable. No `ignore_journal`
+boolean, HTTP route or generic normal-boot exception was added.
+
+The operation ID binds a trusted coordinator to its journal; it is metadata, NOT
+a user approval or security credential. Normal boot, another trial and rollback
+remain excluded for the lease's lifetime. Leaving the context releases ownership
+but does not finalize the switch or remove the journal; normal boot is still
+blocked until the unfinished coordinator deliberately finalizes or rolls back.
+
+Six focused files passed 128 cases in 13.32s, with one existing Starlette warning;
+targeted lint/whitespace checks passed. Tests cover incomplete switch phases,
+wrong operation/key/missing key, changed layout, ownership conflict and retained
+journal/profile contents. A real synthetic subprocess acquired the trial lease,
+received its synthetic secret over a pipe rather than arguments, excluded parent
+rollback, and released ownership when the parent closed the pipe. Rollback then
+succeeded. This is a process-ownership test, NOT a running backend health test.
+
+Inspection of `server.main.lifespan` confirms that ordinary startup schedules
+classification/reaper/background loops and optional MCP checks. Consequently the
+trial lease is not yet wired to ordinary `_serve()`: a restricted boot/health
+path must prevent those actions before any native recovery activation is enabled.
+Native confirmation, restricted health checks, finalization, packaged validation
+and broader release gates remain open. No real app/profile/provider was used.

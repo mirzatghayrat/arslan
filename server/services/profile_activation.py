@@ -6,7 +6,7 @@ Directory identities, not a possibly stale phase string, determine crash recover
 """
 from __future__ import annotations
 
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 import json
 import os
 from pathlib import Path
@@ -163,3 +163,31 @@ def rollback(active: Path) -> dict:
             record.unlink()
             _sync_parent(record.parent)
     return {"rolled_back": True}
+
+
+@contextmanager
+def trial_ownership(active: Path, operation_id: str, secret: str | None):
+    """Internal lease for a future trusted, restricted trial process.
+
+    The operation ID binds a caller to an existing journal; it is NOT a user
+    approval or a security credential. No generic ignore-journal switch exists.
+    Normal boot, rollback and another trial remain excluded for the whole lease.
+    This does not enable normal server routes or background work.
+    """
+    active = active.absolute()
+    database = active / "arslan.db"
+    with hold_lifecycle(database):
+        value = _read_record(activation_record_path(database), active)
+        if not isinstance(operation_id, str) or operation_id != value["id"]:
+            raise ValueError("activation_operation_mismatch")
+        candidate, previous = (active.parent / value[key] for key in ("candidate", "previous"))
+        if [_identity(path) for path in (active, candidate, previous)] != [
+                value["candidate_identity"], None, value["original_identity"]]:
+            raise ValueError("activation_paths_changed")
+        with _hold_file(active / ".arslan.db.arslan-lock"):
+            # Recheck the actual trial secret, not merely the earlier switch's
+            # preflight result. A launcher may have inherited a different key.
+            result = check(database, secret)
+            if result["status"] not in ("compatible", "no_stored_credentials"):
+                raise ValueError("activation_credentials_refused")
+            yield {"operation_id": value["id"], "status": "trial_owned"}

@@ -338,3 +338,11 @@ finalize operation, native picker or confirmation. Do not invoke the internal
 switch on real data as if it were a finished activation feature. Existing generic
 startup-unavailable copy is only a fail-closed fallback until native recovery
 guidance is implemented. W17 records the actual process-interruption test scope.
+
+The internal `trial_ownership()` context now binds a future restricted trial
+process to the journal's exact operation and installed directory identities,
+rechecks its actual secret and holds both active ownership locks. It rejects
+partial switches and competing trials/rollback. The operation ID is not an
+authorization credential, and lease exit is not finalization. No normal-server
+trial flag or public endpoint is enabled: ordinary startup has background work
+that must be excluded from a dedicated health-validation path first.

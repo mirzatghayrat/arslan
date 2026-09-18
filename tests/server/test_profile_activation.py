@@ -2,6 +2,7 @@ import base64
 import json
 import os
 from pathlib import Path
+import select
 import sqlite3
 import subprocess
 import sys
@@ -77,6 +78,11 @@ def test_each_switch_boundary_rolls_back_without_losing_either_profile(profiles,
                 activation.switch_for_trial(active, candidate, SECRET)
     record = activation_record_path(active / "arslan.db")
     assert record.is_file() and record.stat().st_mode & 0o777 == 0o600
+    if stop_after in (0, 1):
+        operation = json.loads(record.read_bytes())["id"]
+        with pytest.raises(ValueError, match="activation_paths_changed"):
+            with activation.trial_ownership(active, operation, SECRET):
+                pytest.fail("incomplete switch cannot enter a trial")
     with pytest.raises(ValueError, match="data_profile_recovery_required"):
         with hold(active / "arslan.db"):
             pytest.fail("pending switch must not boot")
@@ -197,3 +203,78 @@ def test_abrupt_process_exit_after_first_move_can_be_rolled_back(profiles, tmp_p
     assert activation.rollback(active)["rolled_back"]
     assert (active / "arslan.db").read_bytes() == original
     assert (candidate / "candidate-marker").exists()
+
+
+def test_trial_owns_exact_journal_and_excludes_normal_boot_rollback_and_second_trial(profiles):
+    active, candidate, _ = profiles
+    operation = activation.switch_for_trial(active, candidate, SECRET)["operation_id"]
+    with activation.trial_ownership(active, operation, SECRET) as lease:
+        assert lease == {"operation_id": operation, "status": "trial_owned"}
+        for context in (hold(active / "arslan.db"), activation.trial_ownership(active, operation, SECRET)):
+            with pytest.raises(ValueError, match="data_profile_in_use"):
+                with context:
+                    pytest.fail("trial owns the profile")
+        with pytest.raises(ValueError, match="data_profile_in_use"):
+            activation.rollback(active)
+    # Lease exit is not approval/finalization. Normal boot remains blocked.
+    with pytest.raises(ValueError, match="data_profile_recovery_required"):
+        with hold(active / "arslan.db"):
+            pytest.fail("journal still pending")
+    assert activation.rollback(active)["rolled_back"]
+
+
+@pytest.mark.parametrize("problem", ["wrong_operation", "wrong_secret", "missing_secret", "changed_layout"])
+def test_trial_refusal_preserves_journal_and_both_profiles(profiles, problem):
+    active, candidate, _ = profiles
+    operation = activation.switch_for_trial(active, candidate, SECRET)["operation_id"]
+    record = activation_record_path(active / "arslan.db")
+    before = record.read_bytes()
+    secret = SECRET
+    if problem == "wrong_operation":
+        operation = str(uuid4())
+    elif problem == "wrong_secret":
+        secret = "synthetic-wrong-secret"
+    elif problem == "missing_secret":
+        secret = None
+    else:
+        candidate.mkdir()
+    with pytest.raises(ValueError):
+        with activation.trial_ownership(active, operation, secret):
+            pytest.fail("trial must be refused")
+    assert record.read_bytes() == before
+    assert (active / "candidate-marker").exists()
+    if problem == "changed_layout":
+        candidate.rmdir()
+    assert activation.rollback(active)["rolled_back"]
+
+
+def test_real_trial_process_holds_ownership_until_parent_pipe_closes(profiles, tmp_path):
+    active, candidate, _ = profiles
+    operation = activation.switch_for_trial(active, candidate, SECRET)["operation_id"]
+    code = ("import json, sys\nfrom pathlib import Path\n"
+            "from server.services.profile_activation import trial_ownership\n"
+            "secret = json.loads(sys.stdin.readline())\n"
+            "with trial_ownership(Path(sys.argv[1]), sys.argv[2], secret):\n"
+            " print('TRIAL_OWNED', flush=True)\n"
+            " sys.stdin.read()\n")
+    process = subprocess.Popen([sys.executable, "-c", code, str(active), operation],
+                               stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                               cwd=Path(__file__).resolve().parents[2],
+                               env={"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(tmp_path)})
+    try:
+        process.stdin.write((json.dumps(SECRET) + "\n").encode())
+        process.stdin.flush()
+        assert select.select([process.stdout], [], [], 10)[0]
+        assert process.stdout.readline() == b"TRIAL_OWNED\n"
+        with pytest.raises(ValueError, match="data_profile_in_use"):
+            activation.rollback(active)
+        process.stdin.close()
+        process.wait(timeout=10)
+        assert process.returncode == 0 and process.stderr.read() == b""
+        assert activation.rollback(active)["rolled_back"]
+    finally:
+        if process.poll() is None:
+            process.kill()  # Only the exact synthetic child created by this test.
+            process.wait(timeout=5)
+        for stream in (process.stdin, process.stdout, process.stderr):
+            stream.close()
