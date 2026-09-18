@@ -1734,3 +1734,31 @@ Python run started at `679626db` remains live as process 98436 / tool session
 16626, targeting `/tmp/arslan-recovery-regression.HvYYsE/combined.xml`. Only native
 source/manifest/lock and documentation changed during this checkpoint; the Python
 production/tests under that run remain unchanged. Do not restart that live run.
+
+### Combined Python regression completed (2026-09-19)
+
+The same combined run from clean `679626db` completed with exit 0: 5,131 passed,
+14 skipped and 20 warnings in 529.95s. JUnit independently contains 5,145 cases,
+zero failures and zero errors. Report:
+`/tmp/arslan-recovery-regression.HvYYsE/combined.xml`, SHA-256
+`9f953531531bd69514ff68edda6e8ac295abf57a6066b40f56d3bb515790856f`.
+The process/session above is now terminal; no regression run remains active.
+The current `server`, `packaging` and Python `tests` trees were compared with
+that starting commit and are unchanged. Subsequent native secret-reader work
+has separate 38-test evidence and is not covered by this Python result.
+
+The skips are 12 opt-in real-model evaluations, one actual non-macOS sandbox
+refusal, and one operator-warning localization allowlist. Existing warnings
+include Starlette, async markers, SQLAlchemy schema/connection handling and
+deliberate teardown fixtures; the guard reported 54 closed-loop deliveries.
+The task-evaluation suite checks positive/negative synthetic checker evidence
+for 30 task families, not completion of 30 real tasks or 60 real memory scenarios.
+No real model/credential/account request or payment was made.
+
+Native UI access was checked again via the desktop automation surface: the Mac
+is still locked, so native interaction/visual acceptance remains unavailable.
+No unlock bypass or installed-app launch was attempted. This local limitation
+does not prevent remaining implementation work. Native recovery picker,
+confirmation and process coordination, isolated credential broker/security
+review, live quality and the other previously recorded release gates are still
+open. The goal is not complete and publication is not authorized by these tests.
