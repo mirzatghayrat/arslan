@@ -548,7 +548,8 @@ def main() -> int:
         try:
             stack.enter_context(hold(pathlib.Path(settings.db_path)))
         except (ValueError, OSError) as exc:
-            code = "data_profile_in_use" if str(exc) == "data_profile_in_use" else "data_profile_unavailable"
+            known = {"data_profile_in_use", "data_profile_recovery_required"}
+            code = str(exc) if isinstance(exc, ValueError) and str(exc) in known else "data_profile_unavailable"
             print(f"ARSLAN_ERROR={code}", flush=True)
             return 1
         return _serve()

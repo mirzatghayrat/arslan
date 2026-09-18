@@ -1579,3 +1579,28 @@ This verifies frozen receipt production and normal restart, not a frozen/native
 finalization coordinator, user confirmation UI, independent security review or
 full application regression. The complete temporary desktop bundle has not been
 updated. No installed app, real profile, provider request or publication changed.
+
+### Six-language pending-recovery startup guidance (2026-09-19)
+
+The packaged entry now preserves the exact trusted `data_profile_recovery_required`
+ValueError as a bounded handshake code instead of misclassifying it as a storage
+permission problem. Unknown exceptions and OSErrors remain generic and never echo
+paths or diagnostics. Rust recognizes the exact code and uses product-owned copy
+in all six languages. The copy explains the startup pause and warns against
+deleting/moving data folders or recovery records; it does not invent a recovery
+button or claim no directory switch has occurred.
+
+The native skill's session check found no configured Xcode project, scheme or
+device; this Tauri project was validated using its Rust library tests with an
+isolated temporary HOME/target and offline dependencies. All 31 native tests passed,
+including exact error-code mapping and six-language catalog coverage. This is not
+a rendered desktop dialog or user recovery workflow acceptance. The entry tests
+cover refusal before recreating an absent profile, record preservation and generic
+handling of private diagnostics. No normal server starts on these failures.
+All 39 entry tests passed in 0.52s with one existing Starlette warning; targeted
+lint and whitespace checks passed.
+
+The full recovery picker, explicit user confirmation, native secret preparation
+and orchestration remain unimplemented. Previously built sidecars and the complete
+temporary desktop app predate this new handshake/copy. No real data, account,
+installed app or publication was changed.

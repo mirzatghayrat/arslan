@@ -165,9 +165,23 @@ def test_pending_activation_refuses_startup_before_recreating_profile(entry, mon
     record.write_text("pending record presence is enough to refuse boot")
     monkeypatch.setattr(entry, "_serve", lambda: pytest.fail("pending activation must not serve"))
     assert entry.main() == 1
-    assert capsys.readouterr().out == "ARSLAN_ERROR=data_profile_unavailable\n"
+    assert capsys.readouterr().out == "ARSLAN_ERROR=data_profile_recovery_required\n"
     assert not database.parent.exists()
     assert record.read_text() == "pending record presence is enough to refuse boot"
+
+
+@pytest.mark.parametrize("error", [ValueError("private diagnostic"), OSError("private path"),
+                                  OSError("data_profile_recovery_required")])
+def test_profile_lock_failures_do_not_expose_untrusted_diagnostics(entry, monkeypatch, capsys, error):
+    from server.services import data_profile_lock
+
+    def refuse(database):
+        raise error
+
+    monkeypatch.setattr(data_profile_lock, "hold", refuse)
+    monkeypatch.setattr(entry, "_serve", lambda: pytest.fail("unavailable profile must not serve"))
+    assert entry.main() == 1
+    assert capsys.readouterr().out == "ARSLAN_ERROR=data_profile_unavailable\n"
 
 
 def test_the_entry_script_exists_where_the_pyinstaller_spec_expects_it():

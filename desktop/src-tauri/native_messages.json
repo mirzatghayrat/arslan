@@ -12,6 +12,7 @@
     "boot_failed": "Arslan could not start.",
     "profile_in_use": "This data library is already in use by Arslan or a recovery operation. Close the other copy or finish recovery, then try again. No other process was stopped.",
     "profile_unavailable": "Arslan could not safely lock this data library. Check its storage permissions and try again. Your data has not been replaced.",
+    "profile_recovery_required": "A data recovery operation is unfinished. Normal startup is paused to protect your data. Do not delete or move the data folders or recovery records; the recovery must be safely completed or rolled back before restarting.",
     "install_failed_title": "Installation failed",
     "install_failed": "Could not copy Arslan into /Applications. Please drag it there in Finder."
   },
@@ -28,6 +29,7 @@
     "boot_failed": "Arslan 启动失败。",
     "profile_in_use": "此资料库正由另一份 Arslan 或恢复操作使用。请关闭另一份应用或完成恢复后重试。未停止任何其他程序。",
     "profile_unavailable": "Arslan 无法安全锁定此资料库。请检查存储权限后重试。未替换你的数据。",
+    "profile_recovery_required": "资料恢复尚未完成。为保护数据，已暂停正常启动。请勿删除或移动资料文件夹及恢复记录；需安全完成恢复或回退后才能重新启动。",
     "install_failed_title": "安装失败",
     "install_failed": "无法将 Arslan 复制到 /Applications。请在访达中手动将它拖入「应用程序」。"
   },
@@ -44,6 +46,7 @@
     "boot_failed": "Arslan を起動できませんでした。",
     "profile_in_use": "このデータは別の Arslan または復元処理が使用中です。別のアプリを閉じるか復元を完了してから再試行してください。他のプロセスは停止していません。",
     "profile_unavailable": "このデータを安全にロックできませんでした。保存先の権限を確認して再試行してください。データは置き換えられていません。",
+    "profile_recovery_required": "データの復元が完了していません。データ保護のため通常の起動を停止しています。データフォルダーや復元記録を削除・移動しないでください。安全に復元を完了するか元の状態に戻してから再起動する必要があります。",
     "install_failed_title": "インストールに失敗しました",
     "install_failed": "Arslan を /Applications にコピーできませんでした。Finder で「アプリケーション」にドラッグしてください。"
   },
@@ -60,6 +63,7 @@
     "boot_failed": "No se pudo iniciar Arslan.",
     "profile_in_use": "Otra instancia de Arslan o una recuperación está usando estos datos. Cierra la otra instancia o termina la recuperación y vuelve a intentarlo. No se detuvo ningún otro proceso.",
     "profile_unavailable": "Arslan no pudo bloquear estos datos de forma segura. Revisa los permisos de almacenamiento y vuelve a intentarlo. Tus datos no se han sustituido.",
+    "profile_recovery_required": "La recuperación de datos no ha terminado. El inicio normal está detenido para proteger tus datos. No borres ni muevas las carpetas de datos ni los registros de recuperación; es necesario completar o revertir la recuperación de forma segura antes de reiniciar.",
     "install_failed_title": "Error de instalación",
     "install_failed": "No se pudo copiar Arslan a /Applications. Arrástralo allí con Finder."
   },
@@ -76,6 +80,7 @@
     "boot_failed": "Arslan konnte nicht gestartet werden.",
     "profile_in_use": "Diese Daten werden bereits von Arslan oder einer Wiederherstellung verwendet. Schließe die andere Instanz oder beende die Wiederherstellung und versuche es erneut. Kein anderer Prozess wurde gestoppt.",
     "profile_unavailable": "Arslan konnte diese Daten nicht sicher sperren. Prüfe die Speicherberechtigungen und versuche es erneut. Deine Daten wurden nicht ersetzt.",
+    "profile_recovery_required": "Die Datenwiederherstellung ist noch nicht abgeschlossen. Zum Schutz deiner Daten ist der normale Start angehalten. Lösche oder verschiebe keine Datenordner oder Wiederherstellungsprotokolle. Vor dem Neustart muss die Wiederherstellung sicher abgeschlossen oder rückgängig gemacht werden.",
     "install_failed_title": "Installation fehlgeschlagen",
     "install_failed": "Arslan konnte nicht nach /Applications kopiert werden. Bitte ziehe die App im Finder dorthin."
   },
@@ -92,6 +97,7 @@
     "boot_failed": "Arslan n’a pas pu démarrer.",
     "profile_in_use": "Ces données sont utilisées par une autre instance d’Arslan ou une restauration. Fermez l’autre instance ou terminez la restauration, puis réessayez. Aucun autre processus n’a été arrêté.",
     "profile_unavailable": "Arslan n’a pas pu verrouiller ces données en toute sécurité. Vérifiez les autorisations de stockage, puis réessayez. Vos données n’ont pas été remplacées.",
+    "profile_recovery_required": "La récupération des données est inachevée. Le démarrage normal est suspendu pour protéger vos données. Ne supprimez ni ne déplacez les dossiers de données ou les journaux de récupération. La récupération doit être terminée ou annulée en toute sécurité avant le redémarrage.",
     "install_failed_title": "Échec de l’installation",
     "install_failed": "Impossible de copier Arslan dans /Applications. Faites-y glisser l’application dans le Finder."
   }

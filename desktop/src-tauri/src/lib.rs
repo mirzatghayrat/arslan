@@ -71,6 +71,7 @@ fn startup_error(line: &str, locale: &str) -> Option<String> {
     let key = match line {
         "ARSLAN_ERROR=data_profile_in_use" => "profile_in_use",
         "ARSLAN_ERROR=data_profile_unavailable" => "profile_unavailable",
+        "ARSLAN_ERROR=data_profile_recovery_required" => "profile_recovery_required",
         _ => return None,
     };
     Some(native_locale::text(locale, key))
@@ -829,6 +830,9 @@ mod tests {
             assert_eq!(startup_error("ARSLAN_ERROR=data_profile_unavailable", locale),
                        Some(native_locale::text(locale, "profile_unavailable")));
             assert_ne!(native_locale::text(locale, "profile_in_use"), "Arslan");
+            assert_eq!(startup_error("ARSLAN_ERROR=data_profile_recovery_required", locale),
+                       Some(native_locale::text(locale, "profile_recovery_required")));
+            assert_ne!(native_locale::text(locale, "profile_recovery_required"), "Arslan");
         }
         assert!(startup_error("ARSLAN_ERROR=private diagnostic", "en").is_none());
         assert!(startup_error("ARSLAN_ERROR=data_profile_in_use<script>", "en").is_none());
