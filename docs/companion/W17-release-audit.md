@@ -1200,3 +1200,35 @@ signing, publication or user profile was used. Restore coordination is still
 source-side, not the native import/activation UI. Native visual checks, trusted
 recovery activation, live-model evaluation, external review and release gates
 remain open. The rejected backend described above is superseded, not accepted.
+
+### Atomic no-overwrite recovery installation (2026-09-19)
+
+A deterministic race test found that the final `exists()` check followed by
+ordinary `os.rename()` could replace an empty directory created after the check.
+The pre-fix test failed with DID NOT RAISE; thus the previously stated
+no-overwrite guarantee was too strong at this final boundary.
+
+Restore now uses Darwin `renamex_np(RENAME_EXCL)` or Linux
+`renameat2(RENAME_NOREPLACE)` for kernel-enforced exclusive installation. Darwin
+declarations/flag were checked against the installed SDK's `sys/stdio.h` and
+`sys/attr.h`; Linux semantics were checked against the
+[Linux manual](https://man7.org/linux/man-pages/man2/rename.2.html).
+Unsupported platforms, missing symbols and filesystem refusal fail closed;
+there is no check-then-rename fallback. This protects the final entry, not
+hostile ancestor replacement or physical power-loss durability, and requires
+trusted same-filesystem parents.
+
+Five relevant test files passed 67 cases in 2.98s, with one existing Starlette
+deprecation warning. Coverage includes preserving the exact concurrently created
+directory inode, unchanged archive and staging cleanup, explicit retry, existing
+files/directories/live and dangling links, eight concurrent installers with one
+winner, unsupported environments, and both platform call signatures. Actual
+filesystem execution was on macOS; Linux binding checks are simulated, not a
+Linux runtime validation. Targeted lint and whitespace checks passed.
+
+The deletion/restore smoke also passed using the new source coordinator with
+the previous `11902688...` packaged backend, including two restored boots.
+This does NOT claim the updated helper has been rebuilt into that candidate.
+The 5,009-test full regression predates this change; the evidence above is the
+current targeted regression. Native restore UI/activation and broader release
+gates remain open. No installed app or real profile was touched.

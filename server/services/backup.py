@@ -162,7 +162,8 @@ def _restore_stopped(archive: Path, destination: Path, *, deletion_manifest: byt
         # Destination must remain absent. Never merge into or replace live data.
         if destination.exists() or destination.is_symlink():
             raise ValueError("restore destination appeared during validation")
-        os.rename(staged, destination)
+        from server.services.atomic_install import install_directory
+        install_directory(staged, destination)
     return {"files": len(expected), "secret_included": False,
             "memory_review": review,
             "deletion_reconciliation": reconciliation,

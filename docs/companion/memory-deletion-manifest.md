@@ -258,3 +258,15 @@ fresh/upgrade/quarantined-restore and isolated compute checks passed. Exact hash
 and evidence limitations are recorded in `W17-release-audit.md`.
 This supersedes the earlier pending-rebuild/full-regression status, not the
 remaining native UI, trusted activation or real-model evaluation gates.
+
+## Exclusive final installation
+
+The staged recovery directory is now installed with the platform's atomic
+no-replace rename operation. A target created between validation and installation
+is refused without replacing even an empty directory. Unsupported exclusive
+rename operations fail closed and remove only our staging; the caller can retry
+explicitly after resolving the destination. Tests preserve the competing
+directory's inode and archive bytes and verify that eight concurrent installers
+produce exactly one winner. This does not defend against hostile ancestor-path
+replacement or certify power-loss durability. See the W17 checkpoint for exact
+platform coverage and the still-pending frozen rebuild/native activation gates.

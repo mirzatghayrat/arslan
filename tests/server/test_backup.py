@@ -66,6 +66,65 @@ def test_snapshot_includes_committed_wal_while_writer_remains_open(tmp_path):
         assert db.execute("SELECT value FROM settings WHERE key='wal-only'").fetchone() == ("committed",)
 
 
+def test_restore_never_replaces_directory_created_after_final_check(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    data = source(tmp_path)
+    archive = tmp_path / "backup.zip"
+    backup.create(data, archive)
+    original_archive = archive.read_bytes()
+    target = tmp_path / "target"
+    original_exists = Path.exists
+    checks = 0
+    created_inode = None
+
+    def race_after_check(path):
+        nonlocal checks, created_inode
+        result = original_exists(path)
+        if path == target and not result:
+            checks += 1
+            if checks == 2:
+                target.mkdir()
+                created_inode = target.stat().st_ino
+        return result
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "exists", race_after_check)
+        with pytest.raises(ValueError, match="restore destination appeared"):
+            backup.restore(archive, target)
+    assert created_inode is not None
+    assert target.stat().st_ino == created_inode
+    assert list(target.iterdir()) == []
+    assert archive.read_bytes() == original_archive
+    assert not list(tmp_path.glob(".arslan-restore-*"))
+    target.rmdir()
+    backup.restore(archive, target)
+    assert (target / "artifacts/result.csv").read_text() == "answer\n42\n"
+
+
+def test_install_refusal_cleans_staging_and_allows_explicit_retry(tmp_path, monkeypatch):
+    import errno
+    from server.services import atomic_install
+
+    data = source(tmp_path)
+    archive, target = tmp_path / "backup.zip", tmp_path / "target"
+    backup.create(data, archive)
+    before = archive.read_bytes()
+
+    def refuse(*args):
+        raise OSError(errno.ENOTSUP, "synthetic unsupported filesystem")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(atomic_install, "install_directory", refuse)
+        with pytest.raises(OSError, match="unsupported filesystem"):
+            backup.restore(archive, target)
+    assert archive.read_bytes() == before
+    assert not target.exists()
+    assert not list(tmp_path.glob(".arslan-restore-*"))
+    backup.restore(archive, target)
+    assert (target / "arslan.db").is_file()
+
+
 @pytest.mark.parametrize("mutation", ["checksum", "traversal", "symlink", "extra", "duplicate"])
 def test_corrupt_or_unsafe_archive_never_installs(tmp_path, mutation):
     data = source(tmp_path)
