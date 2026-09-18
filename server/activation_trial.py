@@ -13,7 +13,9 @@ import sys
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import JSONResponse
 
-from server.services.profile_activation import trial_ownership
+from server.services.profile_activation import (
+    trial_ownership, invalidate_trial_receipt_locked, record_trial_success_locked,
+)
 from server.services.storage_boot import initialize
 
 
@@ -33,20 +35,27 @@ def create_app(active: Path, operation_id: str, access_token: str) -> FastAPI:
         from server.db.session import build_engine
 
         with trial_ownership(active, operation_id, config.settings.secret_key):
+            invalidate_trial_receipt_locked(active, operation_id)
             from server.main import _validate_settings
             _validate_settings(config.settings, active_token=access_token)
             # Do not reuse the normal application's global engine/session pool.
             engine = build_engine(f"sqlite+aiosqlite:///{active / 'arslan.db'}")
+            completed = False
+            app.state.health_observed = False
             try:
                 await initialize(engine)
                 app.state.ready = True
                 yield
+                completed = True
             finally:
                 app.state.ready = False
                 await engine.dispose()
+            if completed and app.state.health_observed:
+                record_trial_success_locked(active, operation_id, config.settings.secret_key)
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.ready = False
+    app.state.health_observed = False
 
     @app.get("/api/v1/activation-trial/health")
     async def health(authorization: str | None = Header(default=None)):
@@ -54,6 +63,7 @@ def create_app(active: Path, operation_id: str, access_token: str) -> FastAPI:
             raise HTTPException(status_code=401, detail="unauthorized")
         if not app.state.ready:
             raise HTTPException(status_code=503, detail="not_ready")
+        app.state.health_observed = True
         return JSONResponse({"status": "ready", "mode": "activation_trial", "operation_id": operation_id},
                             headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
 

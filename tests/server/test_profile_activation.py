@@ -327,6 +327,7 @@ def test_restricted_trial_runs_storage_boot_but_exposes_only_authenticated_healt
             activation.rollback(active)
         with sqlite3.connect(active / "arslan.db") as db:
             assert db.execute("SELECT applied FROM memory_restore_guard WHERE id=1").fetchone() == (1,)
+        db.close()
     assert app.state.ready is False
     assert activation_record_path(active / "arslan.db").exists()
     assert activation.rollback(active)["rolled_back"]
@@ -455,3 +456,120 @@ def test_restricted_trial_over_real_loopback_http_then_rollback(profiles, tmp_pa
             process.wait(timeout=5)
         for stream in (process.stdin, process.stdout, process.stderr):
             stream.close()
+
+
+def _healthy_trial(profiles, monkeypatch):
+    from fastapi.testclient import TestClient
+    app, active, operation = _restricted_app(profiles, monkeypatch)
+    with TestClient(app) as client:
+        assert client.get("/api/v1/activation-trial/health",
+                          headers={"Authorization": "Bearer " + "ab" * 32}).status_code == 200
+    return active, operation
+
+
+def test_finalize_requires_completed_health_and_retains_original(profiles, monkeypatch):
+    original = (profiles[0] / "arslan.db").read_bytes()
+    active, operation = _healthy_trial(profiles, monkeypatch)
+    pending = activation_record_path(active / "arslan.db")
+    journal = json.loads(pending.read_bytes())
+    result = activation.finalize(active, operation, SECRET)
+    assert result == {"finalized": True, "already_finalized": False, "original_retained": True}
+    assert not pending.exists()
+    assert (active.parent / journal["previous"] / "arslan.db").read_bytes() == original
+    assert activation._operation_path(active, operation, "completed").is_file()
+    assert activation.finalize(active, operation, SECRET)["already_finalized"] is True
+    assert activation.rollback(active) == {"rolled_back": False}
+    with hold(active / "arslan.db"):
+        pass
+
+
+@pytest.mark.parametrize("problem", ["missing", "wrong_operation", "changed_db", "wrong_key", "corrupt", "unsafe_mode"])
+def test_finalize_refuses_stale_missing_or_invalid_health(profiles, monkeypatch, problem):
+    active, operation = _healthy_trial(profiles, monkeypatch)
+    receipt = activation._operation_path(active, operation, "ready")
+    if problem == "missing":
+        receipt.unlink()
+    elif problem == "changed_db":
+        db = sqlite3.connect(active / "arslan.db")
+        try:
+            db.execute("INSERT INTO settings(key,value) VALUES ('changed-after-trial','yes')")
+            db.commit()
+        finally:
+            db.close()
+    elif problem == "corrupt":
+        receipt.write_text("{}")
+    elif problem == "unsafe_mode":
+        receipt.chmod(0o644)
+    with pytest.raises((ValueError, OSError)):
+        activation.finalize(active, str(uuid4()) if problem == "wrong_operation" else operation,
+                            "wrong" if problem == "wrong_key" else SECRET)
+    assert activation_record_path(active / "arslan.db").exists()
+    assert activation.rollback(active)["rolled_back"]
+
+
+def test_unobserved_health_does_not_create_receipt(profiles, monkeypatch):
+    from fastapi.testclient import TestClient
+    app, active, operation = _restricted_app(profiles, monkeypatch)
+    with TestClient(app) as client:
+        assert client.get("/api/v1/activation-trial/health").status_code == 401
+    assert not activation._operation_path(active, operation, "ready").exists()
+    with pytest.raises(FileNotFoundError):
+        activation.finalize(active, operation, SECRET)
+    activation.rollback(active)
+
+
+def test_new_trial_invalidates_older_success_receipt(profiles, monkeypatch):
+    from fastapi.testclient import TestClient
+    from server.activation_trial import create_app
+    active, operation = _healthy_trial(profiles, monkeypatch)
+    receipt = activation._operation_path(active, operation, "ready")
+    assert receipt.exists()
+    # No authenticated health observation during the newer trial.
+    with TestClient(create_app(active, operation, "cd" * 32)):
+        assert not receipt.exists()
+    assert not receipt.exists()
+    activation.rollback(active)
+
+
+def test_finalize_rechecks_later_original_deletions(profiles, monkeypatch):
+    active, operation = _healthy_trial(profiles, monkeypatch)
+    value = json.loads(activation_record_path(active / "arslan.db").read_bytes())
+    previous = active.parent / value["previous"]
+    db = sqlite3.connect(previous / "arslan.db")
+    try:
+        db.execute("UPDATE memory_store_state SET deletion_epoch=1 WHERE id=1")
+        db.commit()
+    finally:
+        db.close()
+    with pytest.raises(ValueError, match="activation_deletion_records_advanced"):
+        activation.finalize(active, operation, SECRET)
+    assert activation.rollback(active)["rolled_back"]
+
+
+def test_finalize_uncertain_after_atomic_commit_is_idempotent(profiles, monkeypatch):
+    active, operation = _healthy_trial(profiles, monkeypatch)
+    move = activation._move
+    def interrupt(source, destination):
+        move(source, destination)
+        raise RuntimeError("synthetic lost acknowledgement")
+    with monkeypatch.context() as patch:
+        patch.setattr(activation, "_move", interrupt)
+        with pytest.raises(RuntimeError, match="lost acknowledgement"):
+            activation.finalize(active, operation, SECRET)
+    assert activation.finalize(active, operation, SECRET)["already_finalized"] is True
+    with hold(active / "arslan.db"):
+        pass
+
+
+def test_finalize_failure_before_commit_keeps_rollback_available(profiles, monkeypatch):
+    active, operation = _healthy_trial(profiles, monkeypatch)
+    def refuse(source, destination):
+        raise OSError("synthetic rename refusal")
+    with monkeypatch.context() as patch:
+        patch.setattr(activation, "_move", refuse)
+        with pytest.raises(OSError, match="rename refusal"):
+            activation.finalize(active, operation, SECRET)
+    with pytest.raises(ValueError, match="data_profile_recovery_required"):
+        with hold(active / "arslan.db"):
+            pass
+    assert activation.rollback(active)["rolled_back"]

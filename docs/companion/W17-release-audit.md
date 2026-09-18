@@ -1528,3 +1528,29 @@ The temporary desktop app resource has not yet been replaced by this sidecar.
 Finalization, native confirmation/orchestration, full regression, native visual
 checks and broader release gates remain incomplete. No real profile, account,
 installed app or publication was involved; health success did not finalize data.
+
+### Internal health-bound finalization (2026-09-19)
+
+Restricted trials now invalidate any older success receipt on entry. Only an
+authenticated health request followed by graceful lifespan completion and engine
+disposal creates a private receipt bound to the operation, candidate directory
+identity and SHA-256 of the closed database. The coordinator must independently
+observe HTTP success and child exit; the receipt is not user authorization.
+
+The internal `finalize` helper rechecks ownership/layout, receipt, database bytes,
+credential compatibility and the original profile's latest deletion records under
+locks. An exclusive journal rename commits completion and removes the ordinary
+startup block. The original directory and completed metadata remain retained.
+Retry after a lost acknowledgement recognizes the completed layout. No public
+finalize entry, native confirmation or automatic activation was added.
+
+Three focused suites passed 76 tests in 23.60s (one existing Starlette warning),
+covering successful finalization, missing/corrupt/unsafe/stale receipts, wrong
+operation/key, unobserved health, newer-trial invalidation, advanced original
+deletion records and acknowledgement loss after commit. This is source validation;
+An additional pre-commit rename-failure test passed in 1.35s, proving ordinary
+startup remains blocked and rollback remains available; targeted lint and
+whitespace checks passed.
+the previously documented frozen sidecar does not contain these changes. Native
+orchestration, rebuilt packaging and full regression remain open. No real profile,
+account, installed application or publication was touched.
