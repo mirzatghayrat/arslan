@@ -8,12 +8,25 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import sqlite3
+import subprocess
 import sys
 import tempfile
+import time
 
 from scripts.frozen_sidecar_smoke import start, stop
 from server.services import backup
 from server.services.memory_deletion_manifest import decode
+
+
+def assert_record_current(client):
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        response = client.get("/api/v1/memory/deletion-record-status")
+        assert response.status_code == 200
+        if response.json() == {"status": "current", "database_epoch": 1, "saved_epoch": 1}:
+            return
+        time.sleep(0.05)  # Bound startup/repair observation; never accept a stale record.
+    raise AssertionError("Packaged deletion mirror did not become current")
 
 
 def main():
@@ -60,13 +73,44 @@ def main():
             assert value["deletions"][0]["entry_id"] == entries[0]["id"]
             assert all(body["content"].encode() not in payload for body in bodies)
             assert b"digest_key" not in payload
+            assert_record_current(client)
+            ledger = source / ".memory-deletion-ledgers" / (value["instance_id"] + ".json")
+            assert ledger.stat().st_mode & 0o777 == 0o600
+            assert decode(ledger.read_bytes()) == value
+            duplicate = subprocess.run([str(binary)], cwd=source_home, input=b"", capture_output=True,
+                                       timeout=15, env={"PATH": "/usr/bin:/bin", "HOME": str(source_home),
+                                                        "TMPDIR": str(source_home), "ARSLAN_LIVE_LLM": "0",
+                                                        "ARSLAN_SECRET_KEY": "frozen-smoke-synthetic-only",
+                                                        "ARSLAN_SECRET_KEY_FILE": ""})
+            assert duplicate.returncode == 1
+            assert duplicate.stdout == b"ARSLAN_ERROR=data_profile_in_use\n"
+            assert client.get("/api/v1/settings").status_code == 200
+            blocked = root / "blocked-restore"
+            try:
+                backup.restore(archive, blocked, current_db_path=source / "arslan.db")
+            except ValueError as exc:
+                assert str(exc) == "data_profile_in_use"
+            else:
+                raise AssertionError("Restore accepted an active packaged profile")
+            assert not blocked.exists() and not list(root.glob(".arslan-restore-*"))
+        finally:
+            client.close()
+            assert stop(process) == 0
+
+        ledger.unlink()  # Only this disposable fixture: simulate the mirror crash gap.
+        process, client, _ = start(binary, source_home)
+        try:
+            assert_record_current(client)
+            assert decode(ledger.read_bytes()) == value
         finally:
             client.close()
             assert stop(process) == 0
 
         restored_home = root / "restored-home"
         restored = restored_home / "Library/Application Support/Arslan"
-        result = backup.restore(archive, restored, deletion_manifest=payload)
+        result = backup.restore(archive, restored, current_db_path=source / "arslan.db")
+        assert result["deletion_record_selection"]["local_ledger_present"] is True
+        assert result["deletion_record_selection"]["sources_checked"] == ["current_database", "local_ledger"]
         assert result["memory_review"]["quarantined_entries"] == 2
         assert result["deletion_reconciliation"]["deleted_entries"] == 1
         with sqlite3.connect(restored / "arslan.db") as db:
@@ -92,6 +136,7 @@ def main():
                 assert response.json() == {"detail": {"code": "memory_previously_deleted"}}
                 exported = client.get(endpoint)
                 assert exported.status_code == 200 and decode(exported.content) == value
+                assert_record_current(client)
             finally:
                 client.close()
                 assert stop(process) == 0
@@ -101,6 +146,10 @@ def main():
                       "deleted_content_absent_and_resave_refused": True,
                       "other_memory_retained_but_quarantined": True,
                       "stable_across_two_restored_boots": True,
+                      "independent_record_persisted_and_startup_repaired": True,
+                      "duplicate_backend_refused_without_stopping_owner": True,
+                      "active_profile_restore_refused_then_stopped_restore_passed": True,
+                      "current_installation_record_selection": True,
                       "restore_coordinator": "source", "native_import_ui": False,
                       "host_request_capture": False, "real_model": False, "installed_app": False}))
 

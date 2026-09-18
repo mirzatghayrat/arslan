@@ -23,6 +23,63 @@ async def test_auth_and_no_credential_fields(api):
     assert response.status_code == 422
 
 
+def test_all_companion_repository_dependencies_finish_before_response():
+    from server.api.companion import _repository
+
+    checked = 0
+    for route in router.routes:
+        for dependency in route.dependant.dependencies:
+            if dependency.call is _repository:
+                assert dependency.scope == "function", route.path
+                checked += 1
+    assert checked >= 18
+
+
+@pytest.mark.parametrize("locked", [False, True])
+async def test_response_cannot_acknowledge_memory_before_transaction_finishes(execution_db, monkeypatch, locked):
+    import sqlite3
+    from sqlalchemy import func, select
+    from sqlalchemy.exc import OperationalError
+    from sqlalchemy.ext.asyncio import AsyncSession
+    from server.db.models import MemoryEntry
+
+    events = []
+    original_commit = AsyncSession.commit
+
+    async def commit(db):
+        if locked:
+            events.append("commit_refused")
+            raise OperationalError("synthetic commit", {}, sqlite3.OperationalError("database is locked"))
+        await original_commit(db)
+        events.append("committed")
+
+    monkeypatch.setattr(AsyncSession, "commit", commit)
+    monkeypatch.setattr(auth, "active_token", lambda: "synthetic-response-boundary")
+    app = FastAPI()
+    app.include_router(router, prefix="/api/v1")
+
+    async def observed(scope, receive, send):
+        async def capture(message):
+            if message["type"] == "http.response.start":
+                events.append(f"response_{message['status']}")
+            await send(message)
+        await app(scope, receive, capture)
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=observed, raise_app_exceptions=False),
+                                 base_url="http://test", headers={"Authorization": "Bearer synthetic-response-boundary"}) as client:
+        response = await client.post("/api/v1/memory/entries", json={
+            "content": "Synthetic acknowledgement boundary", "scope": {"kind": "global"}})
+    if locked:
+        assert response.status_code == 409
+        assert response.json() == {"detail": {"code": "memory_version_conflict"}}
+        assert events == ["commit_refused", "response_409"]
+    else:
+        assert response.status_code == 201
+        assert events == ["committed", "response_201"]
+    async with execution_db() as db:
+        assert await db.scalar(select(func.count()).select_from(MemoryEntry)) == (0 if locked else 1)
+
+
 async def test_deletion_manifest_export_requires_auth_and_contains_no_memory_text(api):
     path = "/api/v1/memory/deletion-manifest"
     assert (await api.get(path, headers={"Authorization": "Bearer wrong"})).status_code == 401

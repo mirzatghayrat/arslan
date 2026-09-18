@@ -1134,3 +1134,29 @@ older/uncooperative binaries, plain uvicorn launches, every child-process writer
 or manual filesystem replacement. The explicit stop-all-writers requirement
 therefore remains. Full regression, current frozen lock tests, native visual
 checks and the complete trusted recovery/activation workflow remain open.
+
+### Frozen repetition exposed acknowledgement-before-commit (2026-09-19)
+
+The profile-lock candidate was rebuilt from `540ae8b6` (web 3.37s, native
+release build 69s, PyInstaller 26.83s) and exercised with a stronger frozen
+deletion harness. Initial checks passed, but a second run against the staged
+app found fewer restored memories than the two acknowledged creates. That
+candidate backend (`5fe375bd...359f58d`) is NOT accepted on the strength of its
+earlier successful run. Its native executable is
+`1db50bd7eb44c77c1348d7ef1f4c8a172f3b50217b71e7f881e7b4deba55c650`.
+
+An ASGI send-boundary test then reproduced the underlying defect deterministically:
+normal creation sent HTTP 201 before commit; an injected SQLite commit conflict
+also sent 201 even though persistence failed. Both new assertions failed before
+the fix. All companion repository dependencies now use function scope so commit,
+rollback and mapped errors occur before response transmission. The six-file
+selection passed 86 tests in 5.69s after the fix. Full frontend regression on
+the unchanged UI passed 244 files / 1,902 tests in 22.61s (existing React/i18next
+warnings). Targeted lint/whitespace checks passed.
+
+The strengthened frozen harness also checks independent-record persistence and
+startup repair, duplicate-process refusal without harming the owner, active
+profile restore refusal, stopped-current-installation selection, and two
+restored boots. It must be rerun against a newly rebuilt fixed backend; prior
+passing profile checks alone do not close the acknowledgement defect. This is
+not a UI or real-model test, and the restore coordinator remains source code.

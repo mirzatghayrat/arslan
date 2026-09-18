@@ -31,6 +31,8 @@ def _error(exc: MemoryError):
 
 
 async def _repository():
+    # All consumers use function scope: commit/rollback must finish BEFORE
+    # HTTP success is sent, not in request cleanup after the response body.
     try:
         async with repository() as repo:
             yield repo
@@ -105,7 +107,7 @@ async def media_capabilities():
 
 
 @router.get("/projects")
-async def list_projects(include_archived: bool = False, repo=Depends(_repository)):
+async def list_projects(include_archived: bool = False, repo=Depends(_repository, scope="function")):
     query = select(Project).where(Project.owner_id == USER.owner_id)
     if not include_archived:
         query = query.where(Project.status == "active")
@@ -114,7 +116,7 @@ async def list_projects(include_archived: bool = False, repo=Depends(_repository
 
 
 @router.post("/projects", status_code=201)
-async def create_project(body: ProjectInput, repo=Depends(_repository)):
+async def create_project(body: ProjectInput, repo=Depends(_repository, scope="function")):
     await _validate_collections(repo, body.collection_ids)
     row = Project(id=str(uuid4()), owner_id=USER.owner_id, **_project_values(body))
     repo.db.add(row)
@@ -123,7 +125,7 @@ async def create_project(body: ProjectInput, repo=Depends(_repository)):
 
 
 @router.put("/projects/{project_id}")
-async def edit_project(project_id: str, body: ProjectEdit, repo=Depends(_repository)):
+async def edit_project(project_id: str, body: ProjectEdit, repo=Depends(_repository, scope="function")):
     row = await repo.db.get(Project, project_id)
     if row is None or row.owner_id != USER.owner_id:
         raise MemoryError("project_not_available")
@@ -156,7 +158,7 @@ def _conversation(row, conversation_id):
 
 
 @router.get("/conversations/{conversation_id}/context")
-async def conversation_context(conversation_id: str, repo=Depends(_repository)):
+async def conversation_context(conversation_id: str, repo=Depends(_repository, scope="function")):
     row = await repo.db.get(ConversationContext, conversation_id)
     if row and row.owner_id != USER.owner_id:
         raise HTTPException(404, detail={"code": "conversation_not_found"})
@@ -167,7 +169,7 @@ async def conversation_context(conversation_id: str, repo=Depends(_repository)):
 async def context_receipts(conversation_id: str, limit: int = Query(20, ge=1, le=100),
                            task_id: str | None = Query(None, min_length=1, max_length=200),
                            before_id: str | None = Query(None, min_length=1, max_length=200),
-                           repo=Depends(_repository)):
+                           repo=Depends(_repository, scope="function")):
     from server.db.models import ContextReceiptRecord
     statement = select(ContextReceiptRecord).where(
         ContextReceiptRecord.owner_id == USER.owner_id, ContextReceiptRecord.conversation_id == conversation_id,
@@ -197,7 +199,7 @@ async def context_receipts(conversation_id: str, limit: int = Query(20, ge=1, le
 
 
 @router.get("/conversations/{conversation_id}/context/receipts/{receipt_id}/memories/{entry_id}")
-async def receipt_memory(conversation_id: str, receipt_id: str, entry_id: str, repo=Depends(_repository)):
+async def receipt_memory(conversation_id: str, receipt_id: str, entry_id: str, repo=Depends(_repository, scope="function")):
     """Resolve the recorded version on explicit review, never from a cached title.
 
     The receipt stays metadata-only. Deletion or a missing/cross-owner revision
@@ -232,7 +234,7 @@ async def receipt_memory(conversation_id: str, receipt_id: str, entry_id: str, r
 
 
 @router.put("/conversations/{conversation_id}/context")
-async def update_conversation_context(conversation_id: str, body: ConversationSettings, repo=Depends(_repository)):
+async def update_conversation_context(conversation_id: str, body: ConversationSettings, repo=Depends(_repository, scope="function")):
     from server.services import run_registry, turn_journal
     if len(conversation_id) > 100 or not conversation_id.strip():
         raise HTTPException(422, detail={"code": "invalid_conversation_id"})
@@ -288,7 +290,7 @@ async def update_conversation_context(conversation_id: str, body: ConversationSe
 @router.get("/memory/entries")
 async def list_memory(scope_kind: str | None = None, scope_id: str | None = None,
                       include_deleted: bool = False, limit: int = Query(200, ge=1, le=500),
-                      offset: int = Query(0, ge=0), repo=Depends(_repository)):
+                      offset: int = Query(0, ge=0), repo=Depends(_repository, scope="function")):
     try:
         scope = MemoryScope(kind=scope_kind, id=scope_id) if scope_kind else None
     except ValueError as exc:
@@ -297,14 +299,14 @@ async def list_memory(scope_kind: str | None = None, scope_id: str | None = None
 
 
 @router.get("/memory/deletion-record-status")
-async def deletion_record_status(response: Response, repo=Depends(_repository)):
+async def deletion_record_status(response: Response, repo=Depends(_repository, scope="function")):
     from server.services.memory_deletion_ledger import status
     response.headers["Cache-Control"] = "no-store"
     return await status(repo.db)
 
 
 @router.get("/memory/deletion-manifest")
-async def export_deletion_manifest(repo=Depends(_repository)):
+async def export_deletion_manifest(repo=Depends(_repository, scope="function")):
     from server.services.memory_deletion_manifest import export_sync
     try:
         payload = await repo.db.run_sync(lambda session: export_sync(session.connection()))
@@ -318,12 +320,12 @@ async def export_deletion_manifest(repo=Depends(_repository)):
 
 
 @router.post("/memory/entries", status_code=201)
-async def create_memory(body: MemoryWrite, repo=Depends(_repository)):
+async def create_memory(body: MemoryWrite, repo=Depends(_repository, scope="function")):
     return await repo.create(body, USER)
 
 
 @router.get("/memory/entries/{entry_id}")
-async def get_memory(entry_id: str, repo=Depends(_repository)):
+async def get_memory(entry_id: str, repo=Depends(_repository, scope="function")):
     return await repo.present(await repo.get(entry_id))
 
 
@@ -334,7 +336,7 @@ class MemoryEdit(Contract):
 
 
 @router.put("/memory/entries/{entry_id}")
-async def edit_memory(entry_id: str, body: MemoryEdit, repo=Depends(_repository)):
+async def edit_memory(entry_id: str, body: MemoryEdit, repo=Depends(_repository, scope="function")):
     return await repo.revise(entry_id, body.expected_version, body.memory, USER,
                              confirm_scope_change=body.confirm_scope_change)
 
@@ -345,23 +347,23 @@ class MemoryStatus(Contract):
 
 
 @router.post("/memory/entries/{entry_id}/status")
-async def memory_status(entry_id: str, body: MemoryStatus, repo=Depends(_repository)):
+async def memory_status(entry_id: str, body: MemoryStatus, repo=Depends(_repository, scope="function")):
     return await repo.set_status(entry_id, body.expected_version, body.status, USER)
 
 
 @router.delete("/memory/entries/{entry_id}")
-async def delete_memory(entry_id: str, expected_version: int = Query(..., ge=1), repo=Depends(_repository)):
+async def delete_memory(entry_id: str, expected_version: int = Query(..., ge=1), repo=Depends(_repository, scope="function")):
     return await repo.delete_entry(entry_id, expected_version, USER)
 
 
 @router.get("/memory/entries/{entry_id}/history")
-async def memory_history(entry_id: str, repo=Depends(_repository)):
+async def memory_history(entry_id: str, repo=Depends(_repository, scope="function")):
     return await repo.history(entry_id)
 
 
 @router.get("/memory/proposals")
 async def memory_proposals(limit: int = Query(200, ge=1, le=500),
-                           offset: int = Query(0, ge=0), repo=Depends(_repository)):
+                           offset: int = Query(0, ge=0), repo=Depends(_repository, scope="function")):
     rows = (await repo.db.execute(select(MemoryProposal, MemoryEntry).join(
         MemoryEntry, MemoryEntry.id == MemoryProposal.target_entry_id,
     ).where(MemoryProposal.kind == "memory_v2", MemoryProposal.status == "pending",
@@ -379,5 +381,5 @@ class ProposalDecision(Contract):
 
 
 @router.post("/memory/proposals/{proposal_id}/resolve")
-async def resolve_memory_proposal(proposal_id: int, body: ProposalDecision, repo=Depends(_repository)):
+async def resolve_memory_proposal(proposal_id: int, body: ProposalDecision, repo=Depends(_repository, scope="function")):
     return await repo.resolve_proposal(proposal_id, actor=USER, **body.model_dump(exclude={"schema_version"}))
