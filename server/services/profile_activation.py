@@ -140,7 +140,23 @@ def switch_for_trial(active: Path, candidate: Path, secret: str | None) -> dict:
     return {"status": "trial_pending", "operation_id": operation}
 
 
-def rollback(active: Path) -> dict:
+def pending_operation(active: Path) -> dict:
+    """Inspect a validated journal under its lifecycle lock; never move profiles."""
+    active = active.absolute()
+    with hold_lifecycle(active / "arslan.db"):
+        record = activation_record_path(active / "arslan.db")
+        if not record.exists() and not record.is_symlink():
+            return {"operation_id": None}
+        value = _read_record(record, active)
+        candidate, previous = (active.parent / value[key] for key in ("candidate", "previous"))
+        original, replacement = value["original_identity"], value["candidate_identity"]
+        if [_identity(path) for path in (active, candidate, previous)] not in (
+                [original, replacement, None], [None, replacement, original], [replacement, None, original]):
+            raise ValueError("activation_paths_changed")
+        return {"operation_id": value["id"]}
+
+
+def rollback(active: Path, operation_id: str | None = None) -> dict:
     """Restore the original directory without deleting either profile; retryable."""
     active = active.absolute()
     database = active / "arslan.db"
@@ -149,6 +165,8 @@ def rollback(active: Path) -> dict:
         if not record.exists() and not record.is_symlink():
             return {"rolled_back": False}
         value = _read_record(record, active)
+        if operation_id is not None and operation_id != value["id"]:
+            raise ValueError("activation_operation_mismatch")
         candidate, previous = (active.parent / value[key] for key in ("candidate", "previous"))
         with ExitStack() as stack:
             identities = [_identity(path) for path in (active, candidate, previous)]

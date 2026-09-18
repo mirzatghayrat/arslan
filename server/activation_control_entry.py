@@ -26,8 +26,10 @@ def decode_request(data: bytes) -> dict:
     value = json.loads(data, object_pairs_hook=unique)
     if not isinstance(value, dict) or not isinstance(value.get("action"), str):
         raise ValueError("activation_control_request_invalid")
-    fields = {"switch": {"action", "candidate", "secret"}, "rollback": {"action"},
+    fields = {"switch": {"action", "candidate", "secret"}, "rollback": {"action"}, "inspect": {"action"},
               "finalize": {"action", "operation_id", "secret"}}
+    if value["action"] == "rollback" and "operation_id" in value:
+        fields["rollback"] = {"action", "operation_id"}
     if value["action"] not in fields or set(value) != fields[value["action"]]:
         raise ValueError("activation_control_request_invalid")
     if "secret" in value and (not isinstance(value["secret"], str) or not value["secret"].strip()
@@ -59,7 +61,9 @@ def run(sanitize_env) -> int:
         if request["action"] == "switch":
             result = profile_activation.switch_for_trial(active, active.parent / request["candidate"], request["secret"])
         elif request["action"] == "rollback":
-            result = profile_activation.rollback(active)
+            result = profile_activation.rollback(active, request.get("operation_id"))
+        elif request["action"] == "inspect":
+            result = profile_activation.pending_operation(active)
         else:
             result = profile_activation.finalize(active, request["operation_id"], request["secret"])
         del request

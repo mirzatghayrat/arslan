@@ -1908,3 +1908,39 @@ The desktop remains locked from the latest UI check, so actual dialog behavior
 and translated layout remain unverified. The temporary full app must be rebuilt
 before that acceptance. No actual user confirmation was fabricated and no real
 profile, key, installed app, account or publication was touched by these tests.
+
+### Bind interrupted-recovery consent to one operation (2026-09-19)
+
+The native boot path now inspects a validated pending journal before prompting.
+It captures that operation ID and sends a bound rollback after confirmation.
+The backend rechecks the ID while holding the lifecycle lock, before any profile
+move. A different operation is refused without changing its journal, directory
+identity or database. Failed inspection never prompts; missing/uncertain results
+keep startup paused. The operation ID is a binding, not an authorization token.
+Legacy internal unbound rollback remains compatible but is not used by the
+desktop confirmation path. Inspection validates supported interrupted layouts
+without moving profiles or bootstrapping configuration/secrets.
+
+Offline native tests passed 50 cases, with the separately invoked packaged
+fixture ignored in the default run (0.27s). Targeted Python control, activation
+and packaging tests passed 120 cases in 23.83s, with one existing Starlette
+deprecation warning. Tests include state changing during the confirmation and
+stale consent for an earlier operation. Targeted Ruff and whitespace checks
+passed. XcodeBuildMCP session defaults had no project/scheme/device; this Tauri
+validation used the isolated offline Rust environment, not Xcode/UI testing.
+
+A fresh frozen backend built in 27.14s at
+`/tmp/arslan-candidate-build.BboGj4/dist-consent-bound/arslan-server/arslan-server`.
+SHA-256: `e8c5651dfdaa94e35756ef3257bac187d15643f44678f6669af0d2f4b4a119c4`.
+Bundle verification passed 15 import checks, web assets, and absence of AGPL
+rasterizers, databases and secrets (159 MiB). Both native-to-frozen rollback and
+finalize smoke chains passed, including inspection, wrong-operation refusal,
+trial ownership refusal, restricted health, graceful shutdown and normal restart.
+Source code creates only the synthetic backup; packaged restore/control/trial
+operations and native transport are exercised against the actual frozen binary.
+
+These checks do not exercise the native dialog or forward-restore picker. The
+temporary full desktop app still needs rebuilding and visual/click acceptance.
+No real profile, account, model, installed app or publication was used. Full
+Python regression evidence above predates this change and is not relabeled as a
+new full run.

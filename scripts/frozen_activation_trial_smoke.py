@@ -7,6 +7,7 @@ import select
 import subprocess
 import tempfile
 import time
+from uuid import uuid4
 
 import httpx
 
@@ -91,6 +92,9 @@ def main():
         assert (active / "arslan.db").read_bytes() == original
         operation = control({"action": "switch", "candidate": candidate.name,
                              "secret": "frozen-smoke-synthetic-only"})["operation_id"]
+        assert control({"action": "inspect"}) == {"operation_id": operation}
+        control({"action": "rollback", "operation_id": str(uuid4())}, expected=1)
+        assert control({"action": "inspect"}) == {"operation_id": operation}
         finalization = {"action": "finalize", "operation_id": operation, "secret": "frozen-smoke-synthetic-only"}
         control(finalization, expected=1)  # No health receipt yet.
         # A normal fresh process must refuse BEFORE config can generate a key.
@@ -133,7 +137,7 @@ def main():
                 assert probe.get("/api/v1/settings").status_code == 404
                 assert probe.post("/api/v1/memory/entries", json={}).status_code == 404
                 control(finalization, expected=1)  # Trial still owns the profile.
-                control({"action": "rollback"}, expected=1)
+                control({"action": "rollback", "operation_id": operation}, expected=1)
             child.stdin.close()
             child.wait(timeout=10)
             assert child.returncode == 0
@@ -158,7 +162,8 @@ def main():
             assert not record.exists()
             assert (active.parent / journal["previous"] / "arslan.db").read_bytes() == original
         else:
-            assert control({"action": "rollback"})["rolled_back"]
+            assert control({"action": "rollback", "operation_id": operation})["rolled_back"]
+            assert control({"action": "inspect"}) == {"operation_id": None}
             assert (active / "arslan.db").read_bytes() == original
         process, client, _ = start(binary, home)
         try:

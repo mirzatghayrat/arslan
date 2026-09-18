@@ -96,13 +96,15 @@ fn startup_failure(line: &str, locale: &str) -> Option<StartupFailure> {
 #[cfg(target_os = "macos")]
 fn start_with_recovery<T>(
     mut start: impl FnMut() -> Result<T, StartupFailure>,
-    confirm: impl FnOnce() -> bool,
-    rollback: impl FnOnce() -> Result<(), String>,
+    inspect: impl FnOnce() -> Result<String, String>,
+    confirm: impl FnOnce(&str) -> bool,
+    rollback: impl FnOnce(&str) -> Result<(), String>,
 ) -> Result<T, StartupFailure> {
     match start() {
         Err(failure) if failure.recovery_pending => {
-            if !confirm() { return Err(failure); }
-            rollback().map_err(StartupFailure::from)?;
+            let operation = inspect().map_err(StartupFailure::from)?;
+            if !confirm(&operation) { return Err(failure); }
+            rollback(&operation).map_err(StartupFailure::from)?;
             start() // One retry only; another failure does not repeat consent/actions.
         }
         result => result,
@@ -597,6 +599,15 @@ fn boot(app: tauri::AppHandle, splash_since: std::time::Instant) {
     let started = start_with_recovery(
         || start_sidecar(&app),
         || {
+            let refused = || native_locale::text(native_locale::selected(), "recovery_unconfirmed");
+            let executable = app.path().resolve("sidecar/arslan-server", tauri::path::BaseDirectory::Resource)
+                .map_err(|_| refused())?;
+            match recovery_control::run(&executable, &recovery_control::Request::Inspect) {
+                Ok(recovery_control::Outcome::PendingOperation(Some(operation))) => Ok(operation),
+                _ => Err(refused()),
+            }
+        },
+        |_operation| {
             let locale = native_locale::selected();
             app.dialog().message(native_locale::text(locale, "recovery_rollback_prompt"))
                 .title(native_locale::text(locale, "recovery_title"))
@@ -607,11 +618,11 @@ fn boot(app: tauri::AppHandle, splash_since: std::time::Instant) {
                 ))
                 .blocking_show()
         },
-        || {
+        |operation| {
             let refused = || native_locale::text(native_locale::selected(), "recovery_unconfirmed");
             let executable = app.path().resolve("sidecar/arslan-server", tauri::path::BaseDirectory::Resource)
                 .map_err(|_| refused())?;
-            match recovery_control::run(&executable, &recovery_control::Request::Rollback) {
+            match recovery_control::run(&executable, &recovery_control::Request::RollbackBound { operation_id: operation }) {
                 Ok(recovery_control::Outcome::RolledBack(true)) => Ok(()),
                 _ => Err(refused()),
             }
@@ -898,9 +909,9 @@ mod tests {
     #[test]
     #[cfg(target_os = "macos")]
     fn recovery_is_never_offered_for_success_or_unrelated_errors() {
-        assert_eq!(start_with_recovery(|| Ok(17), || panic!("no prompt"), || panic!("no rollback")).unwrap(), 17);
+        assert_eq!(start_with_recovery(|| Ok(17), || panic!("no inspect"), |_| panic!("no prompt"), |_| panic!("no rollback")).unwrap(), 17);
         let failure = start_with_recovery::<()>(|| Err("ordinary failure".to_string().into()),
-            || panic!("no prompt"), || panic!("no rollback")).unwrap_err();
+            || panic!("no inspect"), |_| panic!("no prompt"), |_| panic!("no rollback")).unwrap_err();
         assert!(!failure.recovery_pending);
         assert!(startup_failure("ARSLAN_ERROR=data_profile_recovery_required extra", "en").is_none());
         assert!(!startup_failure("ARSLAN_ERROR=data_profile_in_use", "en").unwrap().recovery_pending);
@@ -911,7 +922,7 @@ mod tests {
     fn cancelling_recovery_never_mutates_or_restarts() {
         let starts = std::cell::Cell::new(0);
         let failure = start_with_recovery::<()>(|| { starts.set(starts.get() + 1); Err(pending_failure()) },
-            || false, || panic!("cancel must not rollback")).unwrap_err();
+            || Ok("selected".into()), |_| false, |_| panic!("cancel must not rollback")).unwrap_err();
         assert_eq!(starts.get(), 1);
         assert!(failure.recovery_pending);
     }
@@ -924,13 +935,14 @@ mod tests {
         let result = start_with_recovery(|| {
             starts.set(starts.get() + 1);
             if starts.get() == 1 { Err(pending_failure()) } else { Ok(23) }
-        }, || true, || { actions.set(actions.get() + 1); Ok(()) });
+        }, || Ok("selected".into()), |operation| { assert_eq!(operation, "selected"); true },
+        |operation| { assert_eq!(operation, "selected"); actions.set(actions.get() + 1); Ok(()) });
         assert_eq!(result.unwrap(), 23);
         assert_eq!(starts.get(), 2);
         assert_eq!(actions.get(), 1);
         starts.set(0);
         let failure = start_with_recovery::<()>(|| { starts.set(starts.get() + 1); Err(pending_failure()) },
-            || true, || Err("unconfirmed".to_string())).unwrap_err();
+            || Ok("selected".into()), |_| true, |_| Err("unconfirmed".to_string())).unwrap_err();
         assert_eq!(starts.get(), 1);
         assert_eq!(failure.message, "unconfirmed");
         assert!(!failure.recovery_pending);
@@ -942,9 +954,32 @@ mod tests {
         let starts = std::cell::Cell::new(0);
         let actions = std::cell::Cell::new(0);
         assert!(start_with_recovery::<()>(|| { starts.set(starts.get() + 1); Err(pending_failure()) },
-            || true, || { actions.set(actions.get() + 1); Ok(()) }).is_err());
+            || Ok("selected".into()), |_| true, |_| { actions.set(actions.get() + 1); Ok(()) }).is_err());
         assert_eq!(starts.get(), 2);
         assert_eq!(actions.get(), 1);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn failed_inspection_never_prompts_or_mutates() {
+        let result = start_with_recovery::<()>(|| Err(pending_failure()),
+            || Err("cannot inspect".into()), |_| panic!("no confirmation"), |_| panic!("no rollback"));
+        assert_eq!(result.unwrap_err().message, "cannot inspect");
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn rollback_uses_the_snapshot_from_before_confirmation() {
+        let current = std::cell::Cell::new("first");
+        let result = start_with_recovery::<()>(|| Err(pending_failure()),
+            || Ok(current.get().into()),
+            |operation| { assert_eq!(operation, "first"); current.set("second"); true },
+            |operation| {
+                assert_eq!(operation, "first");
+                assert_ne!(operation, current.get());
+                Err("operation changed".into())
+            });
+        assert_eq!(result.unwrap_err().message, "operation changed");
     }
 
     #[test]

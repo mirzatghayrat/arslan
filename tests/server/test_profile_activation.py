@@ -617,8 +617,11 @@ def test_pipe_control_process_uses_fixed_profile_without_config_bootstrap(profil
     result = control({"action": "switch", "candidate": candidate.name, "secret": SECRET})
     assert result["ok"] and result["result"]["status"] == "trial_pending"
     operation = result["result"]["operation_id"]
+    assert control({"action": "inspect"})["result"] == {"operation_id": operation}
+    assert control({"action": "rollback", "operation_id": str(uuid4())}, expected=1)["ok"] is False
     if outcome == "rollback":
-        assert control({"action": "rollback"}) == {"ok": True, "result": {"rolled_back": True}}
+        assert control({"action": "rollback", "operation_id": operation}) == {"ok": True, "result": {"rolled_back": True}}
+        assert control({"action": "inspect"})["result"] == {"operation_id": None}
         assert (active / "arslan.db").read_bytes() == original
         return
 
@@ -635,3 +638,20 @@ def test_pipe_control_process_uses_fixed_profile_without_config_bootstrap(profil
     assert control(request)["result"]["finalized"]
     assert control(request)["result"]["already_finalized"]
     assert (active.parent / value["previous"] / "arslan.db").read_bytes() == original
+
+
+def test_stale_rollback_consent_cannot_affect_new_operation(profiles):
+    active, candidate, _ = profiles
+    assert activation.pending_operation(active) == {"operation_id": None}
+    first = activation.switch_for_trial(active, candidate, SECRET)["operation_id"]
+    assert activation.pending_operation(active) == {"operation_id": first}
+    assert activation.rollback(active, first)["rolled_back"]
+    second = activation.switch_for_trial(active, candidate, SECRET)["operation_id"]
+    assert second != first
+    record = activation_record_path(active / "arslan.db")
+    before = record.read_bytes(), active.stat().st_ino, (active / "arslan.db").read_bytes()
+    with pytest.raises(ValueError, match="activation_operation_mismatch"):
+        activation.rollback(active, first)
+    assert (record.read_bytes(), active.stat().st_ino, (active / "arslan.db").read_bytes()) == before
+    assert activation.pending_operation(active) == {"operation_id": second}
+    assert activation.rollback(active, second)["rolled_back"]

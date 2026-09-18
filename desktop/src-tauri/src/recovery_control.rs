@@ -15,6 +15,10 @@ pub(crate) enum Request<'a> {
         secret: &'a ExistingSecret,
     },
     Rollback,
+    Inspect,
+    RollbackBound {
+        operation_id: &'a str,
+    },
     Finalize {
         operation_id: &'a str,
         secret: &'a ExistingSecret,
@@ -25,6 +29,7 @@ pub(crate) enum Request<'a> {
 pub(crate) enum Outcome {
     TrialPending(String),
     RolledBack(bool),
+    PendingOperation(Option<String>),
     Finalized { already_finalized: bool },
 }
 
@@ -60,6 +65,13 @@ fn encode(request: &Request<'_>) -> Result<Vec<u8>, ControlError> {
             serde_json::json!({"action":"switch", "candidate":candidate, "secret":secret.expose()})
         }
         Request::Rollback => serde_json::json!({"action":"rollback"}),
+        Request::Inspect => serde_json::json!({"action":"inspect"}),
+        Request::RollbackBound { operation_id } => {
+            if !valid_id(operation_id) {
+                return Err(ControlError::InvalidRequest);
+            }
+            serde_json::json!({"action":"rollback", "operation_id":operation_id})
+        }
         Request::Finalize {
             operation_id,
             secret,
@@ -107,6 +119,12 @@ struct RolledBack {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct PendingOperation {
+    operation_id: serde_json::Value,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Finalized {
     finalized: bool,
     already_finalized: bool,
@@ -143,9 +161,19 @@ fn decode(bytes: &[u8], exit: Option<i32>, request: &Request<'_>) -> Result<Outc
             }
             Ok(Outcome::TrialPending(r.operation_id))
         }
-        Request::Rollback => {
+        Request::Rollback | Request::RollbackBound { .. } => {
             let r: RolledBack = success(bytes)?;
             Ok(Outcome::RolledBack(r.rolled_back))
+        }
+        Request::Inspect => {
+            let r: PendingOperation = success(bytes)?;
+            match r.operation_id {
+                serde_json::Value::Null => Ok(Outcome::PendingOperation(None)),
+                serde_json::Value::String(id) if valid_id(&id) => {
+                    Ok(Outcome::PendingOperation(Some(id)))
+                }
+                _ => Err(ControlError::OutcomeUnknown),
+            }
         }
         Request::Finalize { .. } => {
             let r: Finalized = success(bytes)?;
@@ -349,6 +377,49 @@ mod tests {
                           Some(0), &finalize), Err(ControlError::OutcomeUnknown));
     }
 
+    #[test]
+    fn inspection_and_bound_rollback_require_canonical_operation_ids() {
+        assert_eq!(
+            decode(
+                br#"{"ok":true,"result":{"operation_id":null}}"#,
+                Some(0),
+                &Request::Inspect
+            ),
+            Ok(Outcome::PendingOperation(None))
+        );
+        let reply = serde_json::json!({"ok":true,"result":{"operation_id":ID}});
+        assert_eq!(
+            decode(
+                &serde_json::to_vec(&reply).unwrap(),
+                Some(0),
+                &Request::Inspect
+            ),
+            Ok(Outcome::PendingOperation(Some(ID.into())))
+        );
+        for bytes in [
+            br#"{"ok":true,"result":{}}"#.as_slice(),
+            br#"{"ok":true,"result":{"operation_id":"invalid"}}"#,
+            br#"{"ok":true,"result":{"operation_id":null,"extra":1}}"#,
+        ] {
+            assert_eq!(
+                decode(bytes, Some(0), &Request::Inspect),
+                Err(ControlError::OutcomeUnknown)
+            );
+        }
+        assert_eq!(
+            encode(&Request::RollbackBound {
+                operation_id: "invalid"
+            })
+            .err(),
+            Some(ControlError::InvalidRequest)
+        );
+        let encoded = encode(&Request::RollbackBound { operation_id: ID }).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&encoded).unwrap(),
+            serde_json::json!({"action":"rollback","operation_id":ID})
+        );
+    }
+
     fn shell(script: &str) -> Command {
         let mut command = Command::new("/bin/sh");
         command.args(["-c", script]);
@@ -468,7 +539,10 @@ mod tests {
                 candidate: "restored",
                 secret: &key,
             },
-            "rollback" => Request::Rollback,
+            "rollback" => Request::RollbackBound {
+                operation_id: &operation,
+            },
+            "inspect" => Request::Inspect,
             "finalize" => Request::Finalize {
                 operation_id: &operation,
                 secret: &key,
@@ -476,6 +550,8 @@ mod tests {
             _ => panic!("invalid fixture action"),
         };
         let message = match run(&binary, &request) {
+            Ok(Outcome::PendingOperation(operation_id)) => serde_json::json!({"ok":true,
+                "result":{"operation_id":operation_id}}),
             Ok(Outcome::TrialPending(operation_id)) => serde_json::json!({"ok":true,
                 "result":{"status":"trial_pending", "operation_id":operation_id}}),
             Ok(Outcome::RolledBack(rolled_back)) => {
