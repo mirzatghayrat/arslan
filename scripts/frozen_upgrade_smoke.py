@@ -90,8 +90,52 @@ def main():
                     first_snapshot = migrated
                 else:
                     assert migrated == first_snapshot
+        process, client, token = start(new, home)
+        try:
+            assert token == old_token
+            listed = client.get("/api/v1/facts")
+            assert listed.status_code == 200
+            fact = next(item for item in listed.json() if item["id"] == 987654)
+            assert fact["entry_id"] == first_snapshot[0][0] and fact["version"] == 1
+            unversioned = client.put("/api/v1/facts/987654", json={"content": "Must not overwrite"})
+            assert unversioned.status_code == 428
+            edited = client.put("/api/v1/facts/987654", json={
+                "content": "Synthetic revised preference: concise tables", "expected_version": 1})
+            assert edited.status_code == 200 and edited.json()["version"] == 2
+            current = client.get(f"/api/v1/memory/entries/{fact['entry_id']}").json()
+            assert current["version"] == 2 and current["content"] == edited.json()["content"]
+            with sqlite3.connect(data / "arslan.db") as db:
+                assert db.execute("SELECT content FROM legacy_user_facts WHERE id=987654").fetchone() == (
+                    "Synthetic legacy preference: concise reports",)
+            stale = client.delete("/api/v1/facts/987654", params={"expected_version": 1})
+            assert stale.status_code == 409
+            deleted = client.delete("/api/v1/facts/987654", params={"expected_version": 2})
+            assert deleted.status_code == 204
+        finally:
+            client.close()
+            assert stop(process) == 0
+        # Editing retains the immutable recovery row; explicit deletion must
+        # erase it as well as active/revision/index payloads, not resurrect it.
+        with sqlite3.connect(data / "arslan.db") as db:
+            assert db.execute("SELECT count(*) FROM legacy_user_facts WHERE id=987654").fetchone() == (0,)
+            assert db.execute("SELECT status,version FROM memory_entries WHERE id=?", (fact["entry_id"],)).fetchone() == ("deleted", 3)
+            assert db.execute("SELECT content FROM memory_revisions WHERE entry_id=?", (fact["entry_id"],)).fetchall() == [(None,)]
+            assert db.execute("SELECT count(*) FROM memory_entries_fts WHERE entry_id=?", (fact["entry_id"],)).fetchone() == (0,)
+        process, client, token = start(new, home)
+        try:
+            assert token == old_token
+            listed = client.get("/api/v1/facts")
+            assert listed.status_code == 200 and all(item["id"] != 987654 for item in listed.json())
+            deleted = client.get(f"/api/v1/memory/entries/{fact['entry_id']}")
+            assert deleted.status_code == 200
+            assert deleted.json()["status"] == "deleted" and deleted.json()["content"] is None
+        finally:
+            client.close()
+            assert stop(process) == 0
         assert hashlib.sha256(archive.read_bytes()).hexdigest() == archive_hash
-    print(json.dumps({"frozen_upgrade_storage": "passed", "pre_v2_schema": True, "candidate_boots": 2,
+    print(json.dumps({"frozen_upgrade_storage": "passed", "pre_v2_schema": True, "candidate_boots": 4,
+                      "legacy_api_edit_delete_and_stale_version_guards": True,
+                      "deletion_erases_recovery_revision_index_and_survives_restart": True,
                       "legacy_snapshot_retained_and_idempotent": True, "memory_v2_activation": "active",
                       "provider_ciphertext_and_salt_retained": True, "provider_key_decryptable": True,
                       "language_token_artifact_retained": True, "pre_upgrade_backup_unchanged": True,

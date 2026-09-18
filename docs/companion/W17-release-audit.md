@@ -872,3 +872,25 @@ post-activation full-regression gap for the current candidate. Native visual
 acceptance, complete memory/task scenarios, credential/security review and
 signature/install acceptance are still not established. No release or installed
 application change occurred.
+
+### Upgraded-profile legacy API writes and deletion (2026-09-19)
+
+The actual frozen-upgrade harness now continues beyond read-only migration.
+Using the unchanged accepted candidate (`3d2df48...a3a4a3`), it obtains the
+migrated preference through `/facts`, verifies its stable v2 ID/version, then
+checks an unversioned edit returns 428. A versioned edit succeeds and is visible
+through `/memory/entries` at version 2 while the recovery row retains its original
+content. A stale version-1 delete returns 409; the current version-2 delete
+returns 204. Direct inspection of the disposable database confirms a version-3
+deleted stub, a single null-content revision, no FTS payload and no legacy
+recovery row. The fourth candidate startup still excludes the fact and exposes
+only the empty deleted stub. All these checks passed, together with the earlier
+upgrade/provider/artifact assertions, and targeted lint/whitespace checks passed.
+
+The pre-upgrade backup hash remains unchanged. This deliberately distinguishes
+deletion in the active profile from erasure of independent external backups;
+the test does not claim to rewrite archived backups. All material is synthetic,
+no model call or real account is involved, and temporary profiles/processes are
+cleaned up. Only the test harness/documentation changed, not production code or
+candidate bytes. This supplies actual packaged legacy edit/delete compatibility
+evidence, not full UI, all-memory-scenario or real-task acceptance.
