@@ -84,6 +84,8 @@ def main():
         try:
             root = client.get("/")
             assert root.status_code == 200 and '<div id="root">' in root.text
+            assert client.get("/api/v1/settings").json()["first_run_seen"] is False
+            assert client.put("/api/v1/settings", json={"first_run_seen": True}).json()["first_run_seen"] is True
             formats = client.get("/api/v1/input-formats").json()
             assert "docx" in formats["document"] and "pdf" in formats["document"]
             assert "xlsx" in formats["spreadsheet"] and "mp4" in formats["video"]
@@ -152,6 +154,7 @@ def main():
         try:
             assert restored_token == token
             assert client.get("/api/v1/settings").json()["language"] == "fr"
+            assert client.get("/api/v1/settings").json()["first_run_seen"] is True
             assert hint.read_text() == "fr\n"
         finally:
             client.close()
@@ -163,6 +166,7 @@ def main():
                       "video_capability_limits_explicit": True,
                       "token_and_language_retained": True, "parent_pipe_shutdown": True,
                       "native_locale_cache_repaired": True,
+                      "onboarding_seen_retained": True,
                       "real_model": False, "installed_app": False}))
 
 

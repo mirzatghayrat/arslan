@@ -1,5 +1,14 @@
 # W21 — six-language consistency (in progress)
 
+## Native restart follow-up (2026-09-19)
+
+The new durable onboarding flag passed actual quit/relaunch on different
+loopback ports using one disposable backend profile. Japanese UI and ja-JP
+speech-input hint survived; onboarding did not reappear. Two Settings round
+trips and the restart retained a visible greeting in this bounded run, but the
+older intermittent rendering finding remains open. Native menu titles still
+remain English. W17 records the package and tests; W21 is not fully accepted.
+
 ## First-run host-state repair (2026-09-15)
 
 The unlocked, isolated native candidate reproduced a real integration defect:

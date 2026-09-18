@@ -10,9 +10,10 @@
  * tag because the packaged shell already controls the JS execution context and
  * a global is trivially set from the native side without templating index.html.
  *
- * On app load we read it once and, if the auth store has no token yet, hydrate
- * the store so the very first API/WS call is already authenticated. In dev the
- * global is absent, so this is a harmless no-op.
+ * On app load the native token takes precedence over the origin-local cache:
+ * the backend token can change while the webview retains its old storage.
+ * Hydrate before the first API/WS call. In dev the global is absent, so browser
+ * credentials remain untouched.
  */
 
 import { useAuthStore } from "../stores/authStore";
@@ -26,7 +27,7 @@ declare global {
 export function bootstrapInjectedToken(): void {
   try {
     const injected = window.__ARSLAN_TOKEN__;
-    if (typeof injected === "string" && injected.trim() && !useAuthStore.getState().token) {
+    if (typeof injected === "string" && injected.trim()) {
       useAuthStore.getState().setToken(injected.trim());
     }
   } catch {

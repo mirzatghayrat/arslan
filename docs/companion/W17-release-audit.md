@@ -5,7 +5,52 @@ permission to publish, or permission to replace the installed application.
 
 ## Frozen engineering run
 
-### Current packaged checkpoint: 409f42ea
+### Current packaged checkpoint: 2026-09-19
+
+Research adoption order is recorded in `W22-open-source-adoption.md`; no new
+runtime dependency was installed. Onboarding now writes `first_run_seen` into
+the existing backend settings table and restores it before deciding whether to
+show the wizard. The old origin-local flag is migrated when available. Failed
+writes fall back locally; cross-origin durability requires a successful save.
+
+An initial temporary-HOME launch reused the default loopback origin and showed
+cached conversation titles while API calls failed. The disposable database had
+zero messages and zero providers; no cached conversations were opened. This
+exposed a separate bootstrap defect: the webview's old cached token took
+precedence over the newly injected native token. Native injection now wins when
+non-empty; absent/blank injection preserves browser credentials. A new regression
+test failed before the change and passed afterward. HOME isolation alone does
+not isolate WKWebView origin storage; subsequent UI acceptance used unique ports.
+
+Validation: final full frontend **241 files / 1,876 tests passed** (24.28s),
+TypeScript and diff whitespace checks passed; focused backend settings suites
+**17 passed**, including a new database-session persistence check. Existing
+canvas/navigation, large-chunk, Starlette deprecation and SQLAlchemy
+connection-cleanup warnings remain. This is not a fresh full backend run.
+
+The final sidecar was frozen at
+`/tmp/arslan-candidate-build.BboGj4/dist-bootstrap/arslan-server` (39.97s), with
+the unchanged locked compute runtime copied from the earlier verified bundle.
+The unchanged Tauri shell was rebundled with `--no-sign` into the same temporary
+application path documented below. Actual bundled sidecar smoke passed fresh
+boot/restart, retained onboarding state, six languages, source locators, auth and
+parent-pipe shutdown. Bundle verification passed (15 imports, 431 MiB); compute
+selftest passed with two durable artifacts and network isolation. Bundled web
+assets exactly match `web/dist`. Backend SHA-256:
+`1e98bb372e9b03ee003a84416ed5711f62dbcaa5243862caabd61fdaa7fadafd`.
+Main SPA `index-BI7IV7Et.js` SHA-256:
+`63fbe98e510763a910975564e76c81d23d45df8232e370f3a47293751c734665`.
+
+Real native UI in `/tmp/arslan-native-ui-onboarding.237zFG` passed Chinese
+onboarding → skip → Japanese settings → two workspace returns. Quit on port
+60118 and relaunch on 60554 retained Japanese UI / ja-JP voice hint and did NOT
+show onboarding. Screenshots confirmed a visible greeting before and after
+restart. This bounded run did not reproduce the previously observed disappearing
+greeting and does not establish its cause or close that finding. Native menus
+still remain English. All owned native and smoke processes exited; no release,
+installation replacement, real model or real account action was performed.
+
+### Earlier packaged checkpoint: 409f42ea
 
 After the user unlocked the Mac, real native-window inspection proceeded in
 disposable HOME directories, using LaunchServices to open only the temporary

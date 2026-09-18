@@ -28,6 +28,20 @@ export function setFirstRunSeen(): void {
   }
 }
 
+/** Backend state survives loopback-port changes; migrate the legacy local hint. */
+export async function restoreFirstRunSeen(
+  persisted: boolean | undefined,
+  save: () => Promise<unknown>,
+): Promise<boolean> {
+  if (persisted === true) {
+    setFirstRunSeen();
+    return true;
+  }
+  const legacySeen = getFirstRunSeen();
+  if (legacySeen) await save().catch(() => {});
+  return legacySeen;
+}
+
 export function firstRunShouldShow(p: {
   ready: boolean;
   hasProvider: boolean;

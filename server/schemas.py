@@ -18,6 +18,7 @@ class SettingsIn(BaseModel):
     llm_base_url: str | None = None
     llm_api_key: str | None = None
     language: str | None = None
+    first_run_seen: bool | None = None
     search_provider: str | None = None
     search_api_key: str | None = None
     #: Base URL of a self-hosted SearXNG instance. Plain, not secret: it is a
@@ -80,6 +81,7 @@ class SettingsOut(BaseModel):
     llm_base_url: str = ""
     llm_api_key: str = ""  # masked
     language: str = "en"
+    first_run_seen: bool = False
     # 🔴 The KEYLESS fallback, and it must stay equal to the registry's own default.
     # It said "tavily" while the registry defaulted to DuckDuckGo, and the Settings
     # screen PUTs a FULL body built from what it was shown — so a fresh install that

@@ -59,7 +59,7 @@ import ConnectionsSection from './components/companion/ConnectionsSection';
 import type { SettingsSectionId } from './components/settings/sectionRegistry';
 import type { McpPrefill } from './components/ToolHubDiscover';
 import { restoreExpertChats, saveExpertChats } from './lib/expertChats';
-import { getFirstRunSeen, setFirstRunSeen, firstRunShouldShow } from './lib/firstRun';
+import { getFirstRunSeen, setFirstRunSeen, firstRunShouldShow, restoreFirstRunSeen } from './lib/firstRun';
 import { threadNavAction } from './lib/threadNav';
 import type { ImagePayload } from './lib/imagePayload';
 import { useDismissable } from './hooks/useDismissable';
@@ -442,7 +442,11 @@ export default function App() {
     });
 
     // Load settings from backend; merge into UI state, preserving UI-only fields
-    api.getSettings().then((backendSettings) => {
+    api.getSettings().then(async (backendSettings) => {
+      setFirstRunSeenState(await restoreFirstRunSeen(
+        backendSettings.first_run_seen,
+        () => api.updateSettings({ first_run_seen: true }),
+      ));
       const mapped = toUiSettings(backendSettings);
       setSettings((prev) => ({ ...prev, ...mapped }));
       // Apply the saved UI language on load — reconciles any legacy label value
@@ -1538,6 +1542,7 @@ export default function App() {
           onClose={() => {
             setFirstRunSeen();
             setFirstRunSeenState(true);
+            api.updateSettings({ first_run_seen: true }).catch(() => {});
           }}
         />
       )}

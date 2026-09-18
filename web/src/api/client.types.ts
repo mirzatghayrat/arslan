@@ -265,6 +265,7 @@ export interface AppSettings {
   llm_base_url: string;
   llm_api_key: string; // masked on read
   language: string;
+  first_run_seen?: boolean;
   search_provider: string;
   search_base_url: string;
   search_api_key: string; // masked on read
