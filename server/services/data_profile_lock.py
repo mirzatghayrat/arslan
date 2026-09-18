@@ -15,6 +15,18 @@ import stat
 
 @contextmanager
 def hold(database: Path):
+    database = database.resolve()
+    with hold_lifecycle(database):
+        record = activation_record_path(database)
+        if record.exists() or record.is_symlink():
+            raise ValueError("data_profile_recovery_required")
+        database.parent.mkdir(parents=True, exist_ok=True)
+        with _hold_file(database.with_name(f".{database.name}.arslan-lock")):
+            yield
+
+
+@contextmanager
+def hold_lifecycle(database: Path):
     if os.name != "posix":
         raise ValueError("data_profile_lock_platform_unavailable")
     database = database.resolve()
@@ -25,9 +37,11 @@ def hold(database: Path):
     outer = lifecycle_path(database)
     outer.parent.mkdir(parents=True, exist_ok=True)
     with _hold_file(outer):
-        database.parent.mkdir(parents=True, exist_ok=True)
-        with _hold_file(database.with_name(f".{database.name}.arslan-lock")):
-            yield
+        yield
+
+
+def activation_record_path(database: Path) -> Path:
+    return lifecycle_path(database).with_suffix(".activation.json")
 
 
 def lifecycle_path(database: Path) -> Path:

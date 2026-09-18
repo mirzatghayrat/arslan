@@ -1371,3 +1371,44 @@ This prerequisite is NOT yet exposed through native recovery or the packaged
 maintenance command, and does not complete the activation journal/rollback.
 The latest frozen bundle and full-suite result predate this change. No actual
 credential, user database, installed app, model account or release was used.
+
+### Internal journaled switch and retryable rollback substrate (2026-09-19)
+
+Added an internal same-parent/same-device profile switch substrate. It acquires
+both profile locks, runs the credential preflight, and reconciles the latest
+current deletion records again before switching (records may have advanced after
+the restore was prepared). It writes an exclusive private journal, fsyncs it and
+its parent, then uses exclusive renames to retain the original directory under
+a unique sibling name and put the candidate at the active path. No profile is
+deleted. A journal contains only operation/name/directory-identity metadata.
+
+Recovery infers state from recorded device/inode identities rather than trusting
+a phase that might not have been updated before a crash. Rollback accepts only
+three exact layouts, preserves the candidate, restores the original, and clears
+the record only after verifying the final layout. It can be retried after its
+own interrupted rename. Invalid/private-file violations, unknown directories,
+links, traversal and changed identities refuse action; no guessed overwrite or
+cleanup is performed. Parent paths and all older/uncooperative writers still
+must be trusted/stopped.
+
+Normal packaged/maintenance ownership now refuses any pending activation record
+BEFORE recreating a temporarily absent profile. The packaged entry test confirms
+no server/port announcement and the existing generic unavailable error. There is
+no public switch/rollback command, native button, trial-boot exception or finalize
+operation yet. This intentionally leaves the switched state blocked until the
+internal rollback is used; it is a substrate, not an enabled user recovery flow.
+
+Six related test files passed 122 cases in 10.78s, with one existing Starlette
+warning. Tests interrupt after durable record creation, after each forward move,
+and during rollback; original DB bytes, both directory identities/markers and
+archive bytes are retained. A synthetic subprocess exits abruptly with `os._exit`
+after the first move; another process then rolls it back successfully. Late
+deletion records are re-reconciled, while wrong credentials, foreign/unrestored
+candidates and busy profiles refuse before moving the original. Targeted lint
+and whitespace checks passed. These are real local filesystem/process tests,
+not physical power-loss durability or a packaged/native activation pass.
+
+Trusted trial boot, health verification, finalize/rollback coordination, native
+confirmation, six-language recovery guidance and a new full/frozen regression
+remain open. No user profile, installed app, model, secret file or release was
+used. The active goal is not release-complete.

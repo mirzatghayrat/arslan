@@ -320,3 +320,21 @@ the restored profile separately before using this result. Pending SQLite journal
 files refuse the check; immutable read access is only valid while writers remain
 stopped. Compatibility alone is not approval to activate a profile. Native
 integration and the reversible switch journal are still unfinished.
+
+## Internal switch journal and rollback
+
+`profile_activation.switch_for_trial()` now provides the internal stopped-profile
+substrate: credential preflight, latest deletion reconciliation, exclusive private
+journal, and two no-overwrite directory moves. It preserves the original under a
+unique sibling name. `rollback()` verifies recorded directory identities, moves
+the candidate back and restores the original without deleting either one.
+Recorded identities let rollback recover after a forward or reverse move even
+when the process did not get to update another phase marker.
+
+The pending journal is outside the moved directory and blocks normal packaged
+boot/maintenance before an absent active directory can be recreated. This is not
+yet exposed to a user: there is no trusted trial-boot permit, health verification,
+finalize operation, native picker or confirmation. Do not invoke the internal
+switch on real data as if it were a finished activation feature. Existing generic
+startup-unavailable copy is only a fail-closed fallback until native recovery
+guidance is implemented. W17 records the actual process-interruption test scope.

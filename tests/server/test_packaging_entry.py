@@ -143,6 +143,22 @@ def test_busy_profile_never_announces_port_or_starts_server(entry, monkeypatch, 
     assert capsys.readouterr().out == "ARSLAN_ERROR=data_profile_in_use\n"
 
 
+def test_pending_activation_refuses_startup_before_recreating_profile(entry, monkeypatch, capsys, tmp_path):
+    from dataclasses import replace
+    from server import config
+    from server.services.data_profile_lock import activation_record_path
+
+    database = tmp_path / "temporarily-absent" / "arslan.db"
+    monkeypatch.setattr(config, "settings", replace(config.settings, db_path=str(database)))
+    record = activation_record_path(database)
+    record.write_text("pending record presence is enough to refuse boot")
+    monkeypatch.setattr(entry, "_serve", lambda: pytest.fail("pending activation must not serve"))
+    assert entry.main() == 1
+    assert capsys.readouterr().out == "ARSLAN_ERROR=data_profile_unavailable\n"
+    assert not database.parent.exists()
+    assert record.read_text() == "pending record presence is enough to refuse boot"
+
+
 def test_the_entry_script_exists_where_the_pyinstaller_spec_expects_it():
     """Pre-assertion (class 0): everything below is vacuous if this path moved."""
     assert _ENTRY.is_file(), f"{_ENTRY} is missing — the .spec references it by path"
