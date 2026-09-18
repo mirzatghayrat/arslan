@@ -28,6 +28,7 @@ import os
 
 from server import crypto
 from server.db.migrations.versions._0039_crypto_salt_into_db import SALT_SETTING_KEY
+from server.services.secret_inventory import CIPHERTEXT_SITES as _CIPHERTEXT_SITES
 
 logger = logging.getLogger(__name__)
 
@@ -46,12 +47,6 @@ GENERATED_OVER_CIPHERTEXT = "generated-over-existing-ciphertext"
 # Kept as data so "did this install have ciphertext?" has ONE answer, and so adding a
 # fifth encrypted column is a one-line edit next to the others rather than a fourth
 # place that quietly disagrees.
-_CIPHERTEXT_SITES = (
-    ("settings", "value",
-     "key IN ('llm_api_key', 'search_api_key', 'github_token')"),
-    ("provider_configs", "api_key", None),
-    ("mcp_servers", "env", None),
-)
 
 
 def _tables(connection) -> set[str]:
@@ -107,7 +102,7 @@ def _stored_ciphertext(connection):
         sql = (f"SELECT {ident}, {column} FROM {table} "
                f"WHERE {column} IS NOT NULL AND {column} != ''")
         if where:
-            sql += f" AND {where}"
+            sql += f" AND ({where})"
         for row in connection.exec_driver_sql(sql).fetchall():
             yield table, row[0], row[1]
 

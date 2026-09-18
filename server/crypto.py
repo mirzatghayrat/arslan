@@ -43,6 +43,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 from server import config
+from server.crypto_material import PBKDF2_ITERATIONS, keyring
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +54,7 @@ _DEV_FALLBACK_SECRET = "arslan-insecure-dev-key"
 
 # PBKDF2 work factor — the OWASP-2023 floor for PBKDF2-HMAC-SHA256. The derived key
 # is cached per (secret, salt), so this cost is paid once per process, not per call.
-_PBKDF2_ITERATIONS = 600_000
+_PBKDF2_ITERATIONS = PBKDF2_ITERATIONS
 _SALT_LEN = 16
 # 🔴 NO LONGER USED FOR DERIVATION, and deliberately still here.
 #
@@ -157,11 +158,7 @@ def _build_multifernet(secret: str, salt: bytes) -> MultiFernet:
     Cached by (secret, salt) so the expensive PBKDF2 derivation runs once per process
     per distinct key. A config reload that changes the secret yields a new cache key.
     """
-    kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt,
-                     iterations=_PBKDF2_ITERATIONS)
-    new_key = base64.urlsafe_b64encode(kdf.derive(secret.encode("utf-8")))
-    legacy_key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode("utf-8")).digest())
-    return MultiFernet([Fernet(new_key), Fernet(legacy_key)])
+    return keyring(secret, salt)
 
 
 def primary_fernet() -> Fernet:

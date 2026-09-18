@@ -303,3 +303,20 @@ take the outer lock and must be stopped before any future directory activation.
 This prerequisite is tested with actual OS locks and a competing subprocess.
 A durable activation journal, secret compatibility preflight, native confirmation
 and health-checked rollback are still required before enabling directory swaps.
+
+## Credential compatibility before activation
+
+The read-only `recovery_preflight.check()` prerequisite now accepts a checkpointed
+restored DB and an explicitly supplied in-memory secret. It returns counts and
+statuses only: compatible, no stored credentials, secret required, unreadable
+credentials, invalid salt, credential limit, or unavailable. It neither loads
+the app configuration nor creates secret files, adopts salt or rewrites values.
+Current and legacy ciphertext reads use shared pure derivation code. The shared
+inventory includes provider/MCP credentials, SSH private identity and MCP OAuth
+token/client settings; public identity and regular settings are not credentials.
+
+The future trusted coordinator must own profile lifecycle exclusion and validate
+the restored profile separately before using this result. Pending SQLite journal
+files refuse the check; immutable read access is only valid while writers remain
+stopped. Compatibility alone is not approval to activate a profile. Native
+integration and the reversible switch journal are still unfinished.

@@ -1336,3 +1336,38 @@ uncooperative writers remain required; old binaries do not acquire the outer
 lock and are not protected throughout directory switching. The current app
 bundle and latest full regression predate this change. No real profile, installed
 app, provider or published build was touched.
+
+### Read-only credential compatibility prerequisite (2026-09-19)
+
+Added `recovery_preflight.check(database, secret)` for a trusted stopped-profile
+activation caller. It reads a checkpointed standalone DB with SQLite read-only
+immutable access, refuses WAL/SHM/rollback sidecars instead of ignoring pending
+data, and returns only bounded status/counts. It never discovers/generates a key,
+adopts a process salt, repairs ciphertext, invokes a provider or activates a
+directory. The original secret must be supplied in memory, not a command line.
+Writer exclusion remains the caller's responsibility; this is not a live-DB
+probe or proof of all restoration/authorization requirements.
+
+Pure key derivation was factored out of normal crypto initialization, preserving
+PBKDF2/current and legacy read compatibility. Existing runtime caching remains
+at the original wrapper. Inventory review found SSH private identity and MCP
+OAuth token/client rows absent from the boot crypto sweep. A shared inventory
+now includes them, along with the three secret settings, provider keys and MCP
+environment values. Boot diagnosis and verified legacy migration use this same
+inventory; public SSH identity and ordinary settings remain excluded.
+
+Eleven crypto/preflight test files passed 118 cases in 30.60s before the final
+journal guard, with existing Starlette and SQLAlchemy cleanup warnings. The
+expanded final preflight suite passed 25 cases in 3.36s (Starlette warning only).
+Coverage includes all eight synthetic credential sites, one-site corruption,
+wrong/missing keys, missing/corrupt salts, valid legacy reads, verified/idempotent
+legacy migration, empty OAuth exclusions, oversized/blob/non-UTF8 credentials,
+count limits, symlinks, missing DBs and pending journals. A fresh subprocess
+verified no config/normal-crypto import or HOME bootstrap. DB bytes and process
+salt stay unchanged; a checkpointed WAL snapshot creates no sidecars even while
+the read connection is open. Targeted lint/whitespace checks passed.
+
+This prerequisite is NOT yet exposed through native recovery or the packaged
+maintenance command, and does not complete the activation journal/rollback.
+The latest frozen bundle and full-suite result predate this change. No actual
+credential, user database, installed app, model account or release was used.
