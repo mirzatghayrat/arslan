@@ -95,6 +95,17 @@ def test_offline_restore_dispatches_without_profile_boot(entry, monkeypatch):
     assert entry.main() == 9
 
 
+def test_activation_trial_dispatches_only_to_restricted_entry(entry, monkeypatch):
+    from server import activation_trial_entry
+    monkeypatch.setattr(sys, "argv", ["arslan-server", "--activation-trial"])
+    monkeypatch.setattr(entry, "_serve", lambda: pytest.fail("must not serve normal app"))
+    def trial(sanitize):
+        assert sanitize is entry._sanitize_env
+        return 8
+    monkeypatch.setattr(activation_trial_entry, "run", trial)
+    assert entry.main() == 8
+
+
 @pytest.fixture
 def entry(tmp_path, monkeypatch):
     from dataclasses import replace

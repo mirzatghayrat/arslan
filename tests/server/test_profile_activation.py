@@ -394,29 +394,36 @@ def test_trial_factory_does_not_bootstrap_configuration_in_fresh_process(tmp_pat
     assert not list(home.iterdir())
 
 
+@pytest.mark.skipif(sys.platform != "darwin", reason="packaged macOS profile location")
 def test_restricted_trial_over_real_loopback_http_then_rollback(profiles, tmp_path):
     import httpx
 
     active, candidate, _ = profiles
-    operation = activation.switch_for_trial(active, candidate, SECRET)["operation_id"]
-    code = ("import socket, sys, threading\nfrom pathlib import Path\n"
-            "from server import config\nfrom server.activation_trial import create_app\nimport uvicorn\n"
-            "app = create_app(Path(sys.argv[1]), sys.argv[2], 'ab' * 32)\n"
-            "sock = socket.socket(); sock.bind(('127.0.0.1', 0)); sock.listen(128)\n"
-            "server = uvicorn.Server(uvicorn.Config(app, log_level='critical', access_log=False))\n"
-            "threading.Thread(target=lambda: (sys.stdin.read(), setattr(server, 'should_exit', True)), daemon=True).start()\n"
-            "print(sock.getsockname()[1], flush=True)\nserver.run(sockets=[sock])\n")
     home = tmp_path / "trial-home"
     home.mkdir()
-    process = subprocess.Popen([sys.executable, "-c", code, str(active), operation],
-                               cwd=Path(__file__).resolve().parents[2],
+    parent = home / "Library/Application Support"
+    parent.mkdir(parents=True)
+    active = active.rename(parent / "Arslan")
+    candidate = candidate.rename(parent / "restored")
+    operation = activation.switch_for_trial(active, candidate, SECRET)["operation_id"]
+    repo = Path(__file__).resolve().parents[2]
+    unrelated = home / "must-not-create"
+    process = subprocess.Popen([sys.executable, str(repo / "packaging/server_entry.py"), "--activation-trial"],
+                               cwd=repo,
                                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                env={"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(home),
-                                    "ARSLAN_DATA_DIR": str(active), "ARSLAN_SECRET_KEY": SECRET,
-                                    "ARSLAN_SECRET_KEY_FILE": "", "ARSLAN_LIVE_LLM": "0"})
+                                    "PYTHONPATH": str(repo), "ARSLAN_DATA_DIR": str(unrelated),
+                                    "ARSLAN_DB_PATH": str(unrelated / "wrong.db"),
+                                    "ARSLAN_SECRET_KEY": "inherited-wrong-key",
+                                    "ARSLAN_SECRET_KEY_FILE": str(unrelated / "secret"), "ARSLAN_LIVE_LLM": "0"})
     try:
+        process.stdin.write((json.dumps({"operation_id": operation, "access_token": "ab" * 32,
+                                        "secret": SECRET}) + "\n").encode())
+        process.stdin.flush()
         assert select.select([process.stdout], [], [], 10)[0]
-        port = int(process.stdout.readline())
+        line = process.stdout.readline()
+        assert line.startswith(b"ARSLAN_TRIAL_PORT=")
+        port = int(line.split(b"=", 1)[1])
         with httpx.Client(base_url=f"http://127.0.0.1:{port}", timeout=0.5, trust_env=False) as client:
             deadline = time.monotonic() + 15
             while True:
@@ -440,7 +447,8 @@ def test_restricted_trial_over_real_loopback_http_then_rollback(profiles, tmp_pa
         assert process.returncode == 0
         assert activation_record_path(active / "arslan.db").exists()
         assert activation.rollback(active)["rolled_back"]
-        assert not list(home.iterdir())
+        assert not unrelated.exists() and not (home / ".arslan").exists()
+        assert not (candidate / "api_token").exists()
     finally:
         if process.poll() is None:
             process.kill()

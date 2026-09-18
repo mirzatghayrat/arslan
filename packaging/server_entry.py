@@ -525,6 +525,9 @@ def main() -> int:
     if arguments[:1] == ["--restore-offline"]:
         from server.services.recovery_cli import main as restore_offline
         return restore_offline(arguments[1:])
+    if arguments == ["--activation-trial"]:
+        from server.activation_trial_entry import run as trial
+        return trial(_sanitize_env)
     if arguments == ["--compute-selftest"]:
         return compute_selftest()
     if arguments == ["--selftest"]:

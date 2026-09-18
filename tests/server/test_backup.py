@@ -66,6 +66,37 @@ def test_snapshot_includes_committed_wal_while_writer_remains_open(tmp_path):
         assert db.execute("SELECT value FROM settings WHERE key='wal-only'").fetchone() == ("committed",)
 
 
+def test_restore_closes_integrity_connections_without_waiting_for_garbage_collection(tmp_path, monkeypatch):
+    import gc
+    from server.services.recovery_preflight import check
+
+    data = source(tmp_path)
+    archive = tmp_path / "closed.zip"
+    backup.create(data, archive)
+    target = tmp_path / "restored-closed"
+    # Retain references so implicit refcount/GC cleanup cannot make this pass.
+    original_connect = sqlite3.connect
+    connections = []
+    def connect(*args, **kwargs):
+        connection = original_connect(*args, **kwargs)
+        connections.append(connection)
+        return connection
+    monkeypatch.setattr(backup.sqlite3, "connect", connect)
+    was_enabled = gc.isenabled()
+    gc.disable()
+    try:
+        backup.create(data, tmp_path / "another-closed.zip")
+        backup.restore(archive, target)
+        for connection in connections:
+            with pytest.raises(sqlite3.ProgrammingError, match="closed database"):
+                connection.execute("SELECT 1")
+        assert not list(target.glob("arslan.db-*"))
+        assert check(target / "arslan.db", None)["status"] != "preflight_unavailable"
+    finally:
+        if was_enabled:
+            gc.enable()
+
+
 def test_restore_never_replaces_directory_created_after_final_check(tmp_path, monkeypatch):
     from pathlib import Path
 

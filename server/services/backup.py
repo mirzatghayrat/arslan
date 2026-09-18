@@ -7,7 +7,7 @@ SQLite's backup API additionally handles committed WAL content correctly.
 from __future__ import annotations
 
 import hashlib
-from contextlib import nullcontext
+from contextlib import closing, nullcontext
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -29,7 +29,14 @@ def _digest(data: bytes) -> str:
 
 
 def _check_db(path: Path) -> None:
-    with sqlite3.connect(f"{path.as_uri()}?mode=ro", uri=True) as db:
+    # Only our closed, standalone snapshot/staging DBs reach this helper.
+    # A read-only WAL connection can itself leave WAL/SHM files behind. Avoid
+    # creating them, but never ignore an already present pending journal.
+    for suffix in ("-wal", "-shm", "-journal"):
+        journal = path.with_name(path.name + suffix)
+        if journal.exists() or journal.is_symlink():
+            raise ValueError("backup database has pending journals")
+    with closing(sqlite3.connect(f"{path.as_uri()}?mode=ro&immutable=1", uri=True)) as db:
         if db.execute("PRAGMA integrity_check").fetchone() != ("ok",):
             raise ValueError("database integrity check failed")
 
@@ -49,8 +56,8 @@ def create(data_dir: Path, destination: Path, *, db_path: Path | None = None,
     total = 0
     with tempfile.TemporaryDirectory(prefix="arslan-backup-") as tmp:
         snapshot = Path(tmp) / "arslan.db"
-        with sqlite3.connect(f"{source_db.as_uri()}?mode=ro", uri=True) as src:
-            with sqlite3.connect(snapshot) as dst:
+        with closing(sqlite3.connect(f"{source_db.as_uri()}?mode=ro", uri=True)) as src:
+            with closing(sqlite3.connect(snapshot)) as dst:
                 src.backup(dst)
         _check_db(snapshot)
         archive = Path(tmp) / "backup.zip"
