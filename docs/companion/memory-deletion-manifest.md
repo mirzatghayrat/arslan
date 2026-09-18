@@ -270,3 +270,19 @@ directory's inode and archive bytes and verify that eight concurrent installers
 produce exactly one winner. This does not defend against hostile ancestor-path
 replacement or certify power-loss durability. See the W17 checkpoint for exact
 platform coverage and the still-pending frozen rebuild/native activation gates.
+
+## Packaged offline restore entry
+
+The sidecar now accepts `--restore-offline --archive PATH --new-data-dir PATH`
+with either `--current-db-path PATH` or explicit `--new-machine`. Both modes may
+also use `--deletion-manifest PATH`. This is a stopped-writers maintenance
+interface, not a live HTTP route. Current-installation mode retains cooperative
+profile ownership and record selection; new-machine mode without an import
+cannot know later deletions and still quarantines restored memory.
+
+The rebuilt binary itself has passed current-installation and imported-record
+restoration, exclusive target refusal and two subsequent restored boots. A
+separate empty maintenance HOME stays empty, without normal profile/token/key
+bootstrap. The command never changes the app's selected data directory, secret
+or installed binary; trusted native activation remains separate unfinished work.
+See W17 for the exact binary hash and source-backup/frozen-restore distinction.

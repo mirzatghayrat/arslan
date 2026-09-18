@@ -52,6 +52,8 @@ def main():
         root = Path(folder)
         source_home = root / "source-home"
         source_home.mkdir()
+        maintenance_home = root / "maintenance-home"
+        maintenance_home.mkdir()
         bodies = [{"content": text, "scope": {"kind": "global"}, "use_policy": "cloud_allowed"}
                   for text in ("Synthetic preference deleted after backup", "Synthetic preference retained for review")]
         process, client, _ = start(binary, source_home)
@@ -100,7 +102,7 @@ def main():
             assert duplicate.stdout == b"ARSLAN_ERROR=data_profile_in_use\n"
             assert client.get("/api/v1/settings").status_code == 200
             blocked = root / "blocked-restore"
-            code, result = restore_packaged(binary, source_home, archive, blocked, source / "arslan.db")
+            code, result = restore_packaged(binary, maintenance_home, archive, blocked, source / "arslan.db")
             assert code == 1 and result == {"ok": False, "code": "data_profile_in_use"}
             assert not blocked.exists() and not list(root.glob(".arslan-restore-*"))
         finally:
@@ -118,7 +120,7 @@ def main():
 
         restored_home = root / "restored-home"
         restored = restored_home / "Library/Application Support/Arslan"
-        code, response = restore_packaged(binary, source_home, archive, restored, source / "arslan.db")
+        code, response = restore_packaged(binary, maintenance_home, archive, restored, source / "arslan.db")
         assert code == 0 and response["ok"] is True
         result = response["result"]
         assert result["deletion_record_selection"]["local_ledger_present"] is True
@@ -129,16 +131,17 @@ def main():
         exported_record = root / "export.json"
         exported_record.write_bytes(payload)
         imported_target = root / "imported"
-        code, imported = restore_packaged(binary, source_home, archive, imported_target,
+        code, imported = restore_packaged(binary, maintenance_home, archive, imported_target,
                                           manifest=exported_record)
         assert code == 0 and imported["result"]["deletion_reconciliation"]["deleted_entries"] == 1
         assert imported["result"]["deletion_record_selection"] == {"selected_source": "imported_manifest"}
         inode = imported_target.stat().st_ino
-        code, refused = restore_packaged(binary, source_home, archive, imported_target,
+        code, refused = restore_packaged(binary, maintenance_home, archive, imported_target,
                                          manifest=exported_record)
         assert code == 1 and refused == {"ok": False, "code": "restore_refused"}
         assert imported_target.stat().st_ino == inode
         assert exported_record.read_bytes() == payload
+        assert not list(maintenance_home.iterdir())  # No implicit profile, token or key bootstrap.
         with sqlite3.connect(restored / "arslan.db") as db:
             assert db.execute("SELECT content FROM memory_revisions WHERE entry_id=?", (entries[0]["id"],)).fetchall() == [(None,)]
         previous = None

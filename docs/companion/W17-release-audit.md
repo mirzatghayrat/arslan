@@ -1232,3 +1232,38 @@ This does NOT claim the updated helper has been rebuilt into that candidate.
 The 5,009-test full regression predates this change; the evidence above is the
 current targeted regression. Native restore UI/activation and broader release
 gates remain open. No installed app or real profile was touched.
+
+### Actual packaged offline recovery coordinator (2026-09-19)
+
+`5fba717d` adds `arslan-server --restore-offline` dispatch before normal profile
+bootstrap. Its argument parser requires an explicit stopped current DB or
+`--new-machine`, accepts a bounded separately exported deletion record, and only
+installs into a new directory. It neither starts HTTP nor activates the result.
+The shared manifest reader also serves the existing source CLI. Operational
+failures produce bounded JSON (`restore_refused`, or `data_profile_in_use`), not
+tracebacks containing archive data or paths. Invalid arguments exit through the
+parser. This local maintenance command is not an authenticated web endpoint or
+a substitute for the future trusted native picker/confirmation workflow.
+
+Seven focused files passed 104 tests in 3.67s (one existing Starlette warning).
+Lint and whitespace checks passed. PyInstaller rebuilt unchanged production
+sources from this commit in 26.61s; the commit was recorded during the build,
+and only smoke-harness changes followed. The new standalone sidecar is at
+`/tmp/arslan-candidate-build.BboGj4/dist-offline-restore/arslan-server/arslan-server`,
+SHA-256 `07f1f5dac91622bfb2445989e7296d7ad382658401f203c8be593d639bfa171e`.
+It contains the exclusive-install helper from the preceding checkpoint.
+
+Two observed packaged deletion/restore runs passed. Recovery now executes in
+the binary itself, rather than the source coordinator. Checks cover active
+profile refusal, current DB/independent ledger selection, new-machine manifest
+import, existing-target inode preservation, unchanged archive/export, and two
+restored server boots with deletion suppression and remaining-memory quarantine.
+The second run used a separate empty maintenance HOME and verified it remained
+empty: no implicit default profile, access token or secret bootstrap.
+Backup creation is still source-side. All fixtures are synthetic; no real model,
+installed app, native import UI or normal-user profile was used.
+
+This standalone sidecar has not yet replaced the prior temporary app's resource
+or undergone a new full-suite run. Native selection, confirmation, stop/restart,
+activation rollback, complete UI checks and the broader release gates remain
+open. A command returning success does not mean the restored profile is active.
