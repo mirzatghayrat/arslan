@@ -296,6 +296,13 @@ async def list_memory(scope_kind: str | None = None, scope_id: str | None = None
     return await repo.list_entries(scope=scope, include_deleted=include_deleted, limit=limit, offset=offset)
 
 
+@router.get("/memory/deletion-record-status")
+async def deletion_record_status(response: Response, repo=Depends(_repository)):
+    from server.services.memory_deletion_ledger import status
+    response.headers["Cache-Control"] = "no-store"
+    return await status(repo.db)
+
+
 @router.get("/memory/deletion-manifest")
 async def export_deletion_manifest(repo=Depends(_repository)):
     from server.services.memory_deletion_manifest import export_sync

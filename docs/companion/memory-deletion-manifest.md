@@ -122,3 +122,49 @@ This harness passed against backend SHA-256
 It does not capture frozen host model requests, exercise native file download,
 provide restore-import UI, or prove independent automatic ledger retention.
 The source scripted host-request binding remains separate evidence.
+
+## Independent local ledger mirror
+
+`memory_deletion_ledger` now stores a private per-store manifest in
+`<database-parent>/.memory-deletion-ledgers/<instance-uuid>.json`. This is outside
+the SQLite snapshot and excluded from the existing backup asset allowlist. It
+is on the same machine/disk, not a separate-device backup. POSIX file-backed
+databases are supported; unavailable platforms/storage report unavailable.
+
+The repository mirrors only after a successful deletion commit. The legacy
+expert-preference route, which commits its own session, does the same. Startup
+refreshes the mirror after the migration/activation transaction, before seeders
+or background work. A rolled-back delete never reaches the mirror. A disk error
+does not undo or report failure for an already committed deletion: it is logged
+generically and exposed through authenticated, no-store
+`GET /api/v1/memory/deletion-record-status` (`current`, `missing`, `stale`,
+`ahead`, `unavailable`). No path, key or memory content is exposed there.
+
+Storage uses a 0700 directory, 0600 files, no-follow descriptor-relative access,
+owner/type/permissions/hardlink checks, a bounded advisory lock, an exclusive
+temporary file, file fsync, atomic replace and directory fsync. It refuses
+corrupt/conflicting existing history and never replaces a higher deletion epoch
+with a lower one. The existing manifest bounds still apply. A snapshot write
+that fails leaves the old record intact where possible; startup can repair the
+DB-commit/file-write gap. This is not a proof against physical disk failure or
+power loss, and it does not turn the separate file and database into one atomic
+transaction. An abrupt process death may leave a private pending file.
+
+Settings offers an explicit local-record check. Six-language copy says “last
+check”, distinguishes an ahead record from missing/stale/unverifiable records,
+and does not claim restore safety merely because epochs match. No periodic
+polling, automatic export download or filesystem path picker was added.
+
+Validation: 77 backend cases passed in 4.98s, including rollback, mirror failure
+and repair, ten concurrent first-write rounds, monotonic/history guards,
+symlink/permissions/hardlink/size refusals, backup exclusion, real repository and
+legacy expert deletion commits, startup and authenticated status. An initial
+concurrent lock-creation failure was fixed with exclusive creation followed by
+opening the existing lock; the final selection passed. Two frontend suites
+passed 17 cases in 2.05s. TypeScript, targeted lint/whitespace and production web
+build passed (3.31s; existing large-chunk warning).
+
+Still open: automatic selection/reconciliation of the installation's ledger by
+the application restore workflow, trusted native restore/import, actual native
+download/layout, full regression and a candidate rebuild for this new mirror.
+The previously verified frozen candidate predates the mirror and status UI.

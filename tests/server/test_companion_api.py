@@ -45,6 +45,21 @@ async def test_deletion_manifest_export_requires_auth_and_contains_no_memory_tex
     assert (await api.post(path, json={})).status_code == 405
 
 
+async def test_deletion_record_status_requires_auth_and_reports_committed_mirror(api):
+    path = "/api/v1/memory/deletion-record-status"
+    assert (await api.get(path, headers={"Authorization": "Bearer wrong"})).status_code == 401
+    assert (await api.get(path)).json()["status"] == "unavailable"
+    response = await api.post("/api/v1/memory/entries", json={
+        "content": "Synthetic status API preference", "scope": {"kind": "global"}})
+    entry = response.json()
+    assert (await api.get(path)).json()["status"] == "missing"
+    assert (await api.delete(f"/api/v1/memory/entries/{entry['id']}", params={"expected_version": entry["version"]})).status_code == 200
+    response = await api.get(path)
+    assert response.status_code == 200 and response.headers["cache-control"] == "no-store"
+    assert response.json() == {"status": "current", "database_epoch": 1, "saved_epoch": 1}
+    assert (await api.post(path, json={})).status_code == 405
+
+
 async def test_asc_capabilities_and_exact_project_target_without_account_access(api):
     caps = await api.get("/api/v1/connections/app-store-connect/capabilities")
     assert caps.status_code == 200 and not caps.json()["local"]["read_account"]

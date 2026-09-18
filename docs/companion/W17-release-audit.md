@@ -1052,3 +1052,29 @@ described as warning-free. All test/smoke processes completed and no candidate
 UI was launched or left running. Targeted harness lint and whitespace checks
 passed. This closes the latest full-backend and package-refresh gap, not the
 remaining native UI, live task-quality, import/ledger or release gates.
+
+### Independent local deletion record and visible status (2026-09-19)
+
+Added a private per-instance file mirror independent of SQLite/backup snapshots,
+updated after committed repository and legacy expert-preference deletions and
+repaired at startup before background work. Rolled-back changes never persist;
+storage failures cannot undo an already committed deletion. Monotonic epochs,
+history-subset checks, bounded cross-process locking, atomic replacement,
+private permissions and no-follow access protect the record. It contains only
+the existing bounded deletion metadata, not deleted text or digest keys.
+
+An authenticated no-store status endpoint and explicit six-language Settings
+check expose current/missing/stale/ahead/unavailable states without private
+paths or error diagnostics. Copy describes a last-checked local record, not an
+external backup or a completed restore. See `memory-deletion-manifest.md` for
+failure semantics, POSIX support and the non-atomic DB-to-file crash window.
+
+Eight backend files passed 77 cases in 4.98s; two frontend suites passed 17 cases
+in 2.05s. TypeScript, targeted lint, whitespace checks and production web build
+(3.31s) passed. Concurrency initially exposed a first-lock-creation race; the
+exclusive-create/open-existing fix passed ten parallel first-write rounds.
+The complete backend suite and frozen candidate above predate this production
+change and must be rerun/rebuilt. Restore's automatic ledger selection, trusted
+import UI, native visual/download checks and other release gates remain open.
+No real profile was migrated, model/account called, app installed or release
+published. New filesystem tests use disposable data only.

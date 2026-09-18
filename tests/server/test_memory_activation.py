@@ -100,6 +100,8 @@ async def test_real_startup_activates_memory_before_seeders_or_background_work(e
                 pytest.fail("must stop before background services")
         assert await is_active()
         async with execution_db() as db:
+            from server.services import memory_deletion_ledger
+            assert (await memory_deletion_ledger.status(db))["status"] == "current"
             assert await db.scalar(text("SELECT content FROM legacy_user_facts WHERE id=700")) == "Startup legacy preference"
             assert await db.scalar(text("SELECT type FROM sqlite_master WHERE name='user_facts'")) == "view"
 

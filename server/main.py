@@ -160,6 +160,12 @@ async def lifespan(app: FastAPI):
     async with AsyncSessionLocal() as native_locale_session:
         await native_locale.sync(native_locale_session)
 
+    # Repair a crash between a committed deletion and its independent file
+    # mirror, before requests/background work. Never overwrite a newer ledger.
+    from server.services import memory_deletion_ledger
+    async with AsyncSessionLocal() as ledger_session:
+        await memory_deletion_ledger.sync(ledger_session)
+
     from server.registry.seeder import seed_registry
 
     await seed_registry()

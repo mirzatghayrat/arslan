@@ -128,6 +128,8 @@ async def delete_preference(spawn_id: int, body: PreferenceDeleteIn,
                 raise HTTPException(403, detail="memory_scope_denied")
             await repo.delete_entry(entry.id, body.expected_version, MemoryActor(origin="user"))
             await session.commit()
+            from server.services.memory_deletion_ledger import sync
+            await sync(session)
         except MemoryError as exc:
             await session.rollback()
             raise HTTPException(409 if exc.code == "memory_version_conflict" else 404, detail=exc.code) from exc

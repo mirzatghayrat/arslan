@@ -45,8 +45,9 @@ async def is_active(db=None) -> bool:
 @asynccontextmanager
 async def repository():
     async with db_session.AsyncSessionLocal() as db:
+        repo = MemoryRepository(db)
         try:
-            yield MemoryRepository(db)
+            yield repo
             await db.commit()
         except OperationalError as exc:
             await db.rollback()
@@ -58,11 +59,15 @@ async def repository():
         except BaseException:
             await db.rollback()
             raise
+        if repo.deletions_changed:
+            from server.services.memory_deletion_ledger import sync
+            await sync(db)
 
 
 class MemoryRepository:
     def __init__(self, db):
         self.db = db
+        self.deletions_changed = False
 
     async def state(self) -> MemoryStoreState:
         state = await self.db.get(MemoryStoreState, 1)
@@ -456,6 +461,7 @@ class MemoryRepository:
         await self._erase_legacy_payload(entry_id)
         await self._sync_index(entry_id)
         await self.db.refresh(entry)
+        self.deletions_changed = True
         return {"id": entry_id, "status": "deleted", "version": entry.version,
                 "deletion_epoch": state.deletion_epoch}
 

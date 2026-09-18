@@ -1,4 +1,5 @@
 const en = {
+  checkDeletionRecord: "Check local deletion record", deletionRecordCurrent: "Last check: this computer's deletion record matches the database. It is not a separate-device backup or a completed restore check.", deletionRecordAhead: "Last check: the local deletion record is newer than this database. Do not replace it with an older export; reconcile it before restoring.", deletionRecordAttention: "The local deletion record is missing, outdated, or could not be verified. Export the current record separately before restoring, and check again after restarting Arslan.",
   exportDeletionManifest: "Export deletion record", deletionManifestHint: "Keep this private file separately from older backups. Export again after deletions. It contains identifiers and fingerprints, not memory text or keys. Restore import is not available in this screen yet.", deletionManifestFailure: "Could not export the deletion record. Retry after checking the connection.",
   loadMore: "Load more", loadedSearch: "Search and filters cover loaded memories. Load more to include older entries.",
   memory: "Memory", about: "About me", materials: "Materials", graph: "Graph", projects: "Projects",
@@ -38,6 +39,7 @@ type Messages = { [Key in keyof typeof en]: string };
 export const companionMessages: Record<"en" | "zh" | "ja" | "es" | "de" | "fr", Messages> = {
   en,
   zh: {
+    checkDeletionRecord: "检查本机删除记录", deletionRecordCurrent: "上次检查：本机删除记录与数据库一致。这不是异机备份，也不代表已完成恢复核对。", deletionRecordAhead: "上次检查：本机删除记录比当前数据库更新。不要用较旧的导出文件覆盖它，恢复前需要先协调核对。", deletionRecordAttention: "本机删除记录缺失、落后或无法验证。恢复前请另行导出当前记录，并在重启 Arslan 后重新检查。",
     exportDeletionManifest: "导出删除记录", deletionManifestHint: "请将此私密文件与旧备份分开保存，后续删除后重新导出。文件只含标识和指纹，不含记忆正文或密钥。此界面暂不支持恢复导入。", deletionManifestFailure: "无法导出删除记录，请检查连接后重试。",
     loadMore: "加载更多", loadedSearch: "搜索和筛选仅涵盖已加载的记忆。加载更多可包含更早的内容。",
     memory:"记忆",about:"了解我",materials:"资料",graph:"关系图",projects:"项目",
@@ -67,6 +69,7 @@ export const companionMessages: Record<"en" | "zh" | "ja" | "es" | "de" | "fr", 
     runningSettings:"请先停止当前任务，再修改这些设置。",memoryUsage:"使用的记忆",viewMemory:"查看记忆",reviewRequired:"请先复核这条内容，再启用。",archived:"已归档",showArchived:"显示已归档项目",
   },
   ja: {
+    checkDeletionRecord: "この端末の削除記録を確認", deletionRecordCurrent: "前回の確認：この端末の削除記録はデータベースと一致しています。別端末のバックアップや復元確認の完了を意味するものではありません。", deletionRecordAhead: "前回の確認：この端末の削除記録はデータベースより新しい状態です。古いエクスポートで置き換えず、復元前に照合してください。", deletionRecordAttention: "この端末の削除記録がない、古い、または確認できません。復元前に現在の記録を別途エクスポートし、Arslanを再起動してから再確認してください。",
     exportDeletionManifest: "削除記録をエクスポート", deletionManifestHint: "この非公開ファイルは古いバックアップと別に保管し、削除後に再エクスポートしてください。識別子と指紋のみを含み、記憶本文やキーは含みません。この画面では復元時のインポートはまだできません。", deletionManifestFailure: "削除記録をエクスポートできませんでした。接続を確認して再試行してください。",
     loadMore: "さらに読み込む", loadedSearch: "検索と絞り込みの対象は読み込み済みの記憶です。古い項目は追加で読み込んでください。",
     memory:"記憶",about:"私について",materials:"資料",graph:"関係図",projects:"プロジェクト",
@@ -96,6 +99,7 @@ export const companionMessages: Record<"en" | "zh" | "ja" | "es" | "de" | "fr", 
     runningSettings:"現在の作業を停止してから設定を変更してください。",memoryUsage:"使用した記憶",viewMemory:"記憶を確認",reviewRequired:"有効にする前に内容を確認してください。",archived:"アーカイブ済み",showArchived:"アーカイブ済みを表示",
   },
   es: {
+    checkDeletionRecord: "Comprobar registro local", deletionRecordCurrent: "Última comprobación: el registro local coincide con la base de datos. No es una copia en otro dispositivo ni una verificación de restauración completada.", deletionRecordAhead: "Última comprobación: el registro local es más reciente que la base de datos. No lo sustituyas por una exportación anterior; concílialo antes de restaurar.", deletionRecordAttention: "El registro local falta, está desactualizado o no se pudo verificar. Exporta el registro actual por separado antes de restaurar y vuelve a comprobarlo tras reiniciar Arslan.",
     exportDeletionManifest: "Exportar registro de eliminaciones", deletionManifestHint: "Guarda este archivo privado separado de las copias antiguas y vuelve a exportarlo tras eliminar recuerdos. Solo contiene identificadores y huellas, no texto ni claves. Esta pantalla aún no permite importarlo al restaurar.", deletionManifestFailure: "No se pudo exportar el registro. Comprueba la conexión y vuelve a intentarlo.",
     loadMore: "Cargar más", loadedSearch: "La búsqueda y los filtros incluyen las memorias cargadas. Carga más para incluir entradas anteriores.",
     memory:"Memoria",about:"Sobre mí",materials:"Materiales",graph:"Relaciones",projects:"Proyectos",
@@ -125,6 +129,7 @@ export const companionMessages: Record<"en" | "zh" | "ja" | "es" | "de" | "fr", 
     runningSettings:"Detén la tarea actual antes de cambiar estos ajustes.",memoryUsage:"Memoria utilizada",viewMemory:"Revisar memoria",reviewRequired:"Revisa este elemento antes de activarlo.",archived:"Archivado",showArchived:"Mostrar proyectos archivados",
   },
   de: {
+    checkDeletionRecord: "Lokales Löschprotokoll prüfen", deletionRecordCurrent: "Letzte Prüfung: Das lokale Löschprotokoll stimmt mit der Datenbank überein. Es ist keine Sicherung auf einem anderen Gerät und keine abgeschlossene Wiederherstellungsprüfung.", deletionRecordAhead: "Letzte Prüfung: Das lokale Löschprotokoll ist neuer als die Datenbank. Ersetze es nicht durch einen älteren Export; gleiche es vor der Wiederherstellung ab.", deletionRecordAttention: "Das lokale Löschprotokoll fehlt, ist veraltet oder konnte nicht geprüft werden. Exportiere das aktuelle Protokoll vor der Wiederherstellung separat und prüfe es nach einem Neustart von Arslan erneut.",
     exportDeletionManifest: "Löschprotokoll exportieren", deletionManifestHint: "Bewahre diese private Datei getrennt von alten Sicherungen auf und exportiere sie nach Löschungen erneut. Sie enthält nur Kennungen und Fingerabdrücke, keine Erinnerungstexte oder Schlüssel. Der Import zur Wiederherstellung ist hier noch nicht verfügbar.", deletionManifestFailure: "Das Löschprotokoll konnte nicht exportiert werden. Prüfe die Verbindung und versuche es erneut.",
     loadMore: "Mehr laden", loadedSearch: "Suche und Filter umfassen geladene Erinnerungen. Lade weitere, um ältere Einträge einzubeziehen.",
     memory:"Gedächtnis",about:"Über mich",materials:"Materialien",graph:"Beziehungen",projects:"Projekte",
@@ -154,6 +159,7 @@ export const companionMessages: Record<"en" | "zh" | "ja" | "es" | "de" | "fr", 
     runningSettings:"Beende die laufende Aufgabe, bevor du diese Einstellungen änderst.",memoryUsage:"Verwendete Erinnerungen",viewMemory:"Gedächtnis prüfen",reviewRequired:"Prüfe diesen Eintrag vor dem Aktivieren.",archived:"Archiviert",showArchived:"Archivierte Projekte anzeigen",
   },
   fr: {
+    checkDeletionRecord: "Vérifier le registre local", deletionRecordCurrent: "Dernière vérification : le registre local correspond à la base de données. Ce n’est ni une sauvegarde sur un autre appareil ni une vérification de restauration terminée.", deletionRecordAhead: "Dernière vérification : le registre local est plus récent que la base de données. Ne le remplacez pas par un ancien export ; rapprochez-les avant la restauration.", deletionRecordAttention: "Le registre local est absent, obsolète ou invérifiable. Exportez le registre actuel séparément avant la restauration et vérifiez à nouveau après avoir redémarré Arslan.",
     exportDeletionManifest: "Exporter le registre des suppressions", deletionManifestHint: "Conservez ce fichier privé séparément des anciennes sauvegardes et exportez-le après chaque suppression. Il contient des identifiants et des empreintes, sans texte de mémoire ni clés. L’importation lors d’une restauration n’est pas encore disponible ici.", deletionManifestFailure: "Impossible d’exporter le registre. Vérifiez la connexion puis réessayez.",
     loadMore: "Charger plus", loadedSearch: "La recherche et les filtres portent sur les souvenirs chargés. Chargez-en plus pour inclure les entrées plus anciennes.",
     memory:"Mémoire",about:"À propos de moi",materials:"Documents",graph:"Relations",projects:"Projets",
