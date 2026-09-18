@@ -1762,3 +1762,31 @@ does not prevent remaining implementation work. Native recovery picker,
 confirmation and process coordination, isolated credential broker/security
 review, live quality and the other previously recorded release gates are still
 open. The goal is not complete and publication is not authorized by these tests.
+
+### Bounded activation-control process entry (2026-09-19)
+
+The exact `--activation-control` mode now accepts a single bounded stdin-pipe
+message and dispatches only switch, rollback or finalize. It shares the existing
+10-second/16-KiB pipe framing with restricted trials. Per-action fields are exact;
+duplicates, path traversal, active-path overrides, extra arguments, invalid UUIDs
+and invalid/oversized secrets are refused. Switch accepts only a sibling basename.
+The existing environment sanitizer and pure path resolver choose the packaged
+active profile, never a request-supplied active path. No config import, HTTP
+server, token bootstrap or secret generation is involved. Secret values travel
+in the pipe, not command arguments; output is bounded result metadata or a generic
+refusal code. This is a local trusted-coordinator entry, not proof of user consent:
+native UI must still collect confirmation and observe trial health/exit.
+
+Four focused suites passed 127 cases in 23.57s (one existing Starlette warning),
+and targeted lint/whitespace checks passed. New actual source-process tests switch
+a synthetic fixed-home profile, exercise rollback, reject finalization before
+health, then accept it after restricted authenticated health/graceful shutdown
+and accept an idempotent retry. Original bytes are preserved. Wrong inherited
+key/path canaries are ignored, secrets are absent from captured output, and each
+child asserts configuration remained unloaded. The initial parser-test collection
+used pytest's reserved `request` parameter name; it was corrected to `payload`
+before the successful run, without changing product acceptance rules.
+
+The complete combined regression above predates this entry. Frozen rebuild,
+packaged-control smoke and native coordinator/UI wiring remain required. No
+real profile, secret, installed application, account or publication was touched.

@@ -574,3 +574,64 @@ def test_finalize_failure_before_commit_keeps_rollback_available(profiles, monke
         with hold(active / "arslan.db"):
             pass
     assert activation.rollback(active)["rolled_back"]
+
+
+@pytest.mark.parametrize("outcome", ["rollback", "finalize"])
+def test_pipe_control_process_uses_fixed_profile_without_config_bootstrap(profiles, tmp_path, monkeypatch, outcome):
+    from dataclasses import replace
+    from fastapi.testclient import TestClient
+    from server import config, crypto
+    from server.activation_trial import create_app
+
+    active, candidate, _ = profiles
+    original = (active / "arslan.db").read_bytes()
+    home = tmp_path / "control-home"
+    parent = home / ("Library/Application Support" if sys.platform == "darwin" else ".local/share")
+    parent.mkdir(parents=True)
+    active = active.rename(parent / "Arslan")
+    candidate = candidate.rename(parent / "restored")
+    entry = Path(__file__).resolve().parents[2] / "packaging/server_entry.py"
+    code = (
+        "import importlib.util,sys; "
+        f"s=importlib.util.spec_from_file_location('entry',{str(entry)!r}); "
+        "m=importlib.util.module_from_spec(s); s.loader.exec_module(m); "
+        "sys.argv=['arslan-server','--activation-control']; "
+        "result=m.main(); assert 'server.config' not in sys.modules; sys.exit(result)"
+    )
+
+    def control(request, expected=0):
+        child = subprocess.run([sys.executable, "-c", code], cwd=entry.parents[1],
+                               input=(json.dumps(request) + "\n").encode(), capture_output=True, timeout=15,
+                               env={"PATH": os.environ["PATH"], "HOME": str(home), "TMPDIR": str(home),
+                                    "ARSLAN_SECRET_KEY": "wrong-inherited-value",
+                                    "ARSLAN_SECRET_KEY_FILE": str(home / "must-not-create-key"),
+                                    "ARSLAN_DATA_DIR": str(home / "must-not-create-profile"),
+                                    "ARSLAN_DB_PATH": str(home / "must-not-create-db")})
+        assert child.returncode == expected, child.stderr.decode()
+        assert SECRET.encode() not in child.stdout + child.stderr
+        assert not (home / ".arslan").exists()
+        for name in ("must-not-create-key", "must-not-create-profile", "must-not-create-db"):
+            assert not (home / name).exists()
+        return json.loads(child.stdout)
+
+    result = control({"action": "switch", "candidate": candidate.name, "secret": SECRET})
+    assert result["ok"] and result["result"]["status"] == "trial_pending"
+    operation = result["result"]["operation_id"]
+    if outcome == "rollback":
+        assert control({"action": "rollback"}) == {"ok": True, "result": {"rolled_back": True}}
+        assert (active / "arslan.db").read_bytes() == original
+        return
+
+    request = {"action": "finalize", "operation_id": operation, "secret": SECRET}
+    assert control(request, expected=1) == {"ok": False, "code": "activation_control_refused"}
+    monkeypatch.setattr(config, "settings", replace(config.settings, secret_key=SECRET,
+                                                   data_dir=active, db_path=str(active / "arslan.db")))
+    monkeypatch.setattr(crypto, "_salt", crypto._salt)
+    monkeypatch.setattr(crypto, "_salt_source", crypto._salt_source)
+    with TestClient(create_app(active, operation, "ab" * 32)) as client:
+        assert client.get("/api/v1/activation-trial/health",
+                          headers={"Authorization": "Bearer " + "ab" * 32}).status_code == 200
+    value = json.loads(activation_record_path(active / "arslan.db").read_bytes())
+    assert control(request)["result"]["finalized"]
+    assert control(request)["result"]["already_finalized"]
+    assert (active.parent / value["previous"] / "arslan.db").read_bytes() == original

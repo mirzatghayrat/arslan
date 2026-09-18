@@ -116,10 +116,22 @@ def entry(tmp_path, monkeypatch):
     return _load_entry()
 
 
+def test_activation_control_dispatch_does_not_start_normal_server(entry, monkeypatch):
+    from server import activation_control_entry
+    monkeypatch.setattr(sys, "argv", ["arslan-server", "--activation-control"])
+    monkeypatch.setattr(entry, "_serve", lambda: pytest.fail("must not serve"))
+    def control(sanitize):
+        assert sanitize is entry._sanitize_env
+        return 9
+    monkeypatch.setattr(activation_control_entry, "run", control)
+    assert entry.main() == 9
+
+
 @pytest.mark.parametrize("arguments", [
     ["--typo"], ["restore-offline"], ["--new-machine", "--restore-offline"],
     ["--selftest", "--restore-offline"], ["--compute-selftest", "--selftest"],
     ["--selftest", "private-unrecognized-value"],
+    ["--activation-control", "--activation-trial"], ["--activation-control", "private-secret"],
 ])
 def test_ambiguous_arguments_never_start_any_mode(entry, monkeypatch, capsys, arguments):
     monkeypatch.setattr(sys, "argv", ["arslan-server", *arguments])

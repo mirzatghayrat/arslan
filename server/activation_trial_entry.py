@@ -38,7 +38,7 @@ def decode_request(data: bytes) -> dict:
     return value
 
 
-def read_request(fd: int, timeout: float = 10) -> dict:
+def read_pipe_line(fd: int, timeout: float = 10) -> bytes:
     if not stat.S_ISFIFO(os.fstat(fd).st_mode):
         raise ValueError("activation_trial_pipe_required")
     deadline = time.monotonic() + timeout
@@ -55,8 +55,12 @@ def read_request(fd: int, timeout: float = 10) -> dict:
             line, remainder = data.split(b"\n", 1)
             if remainder:
                 raise ValueError("activation_trial_request_invalid")
-            return decode_request(bytes(line))
+            return bytes(line)
     raise ValueError("activation_trial_request_invalid")
+
+
+def read_request(fd: int, timeout: float = 10) -> dict:
+    return decode_request(read_pipe_line(fd, timeout))
 
 
 def run(sanitize_env) -> int:

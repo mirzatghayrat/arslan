@@ -528,6 +528,9 @@ def main() -> int:
     if arguments == ["--activation-trial"]:
         from server.activation_trial_entry import run as trial
         return trial(_sanitize_env)
+    if arguments == ["--activation-control"]:
+        from server.activation_control_entry import run as control
+        return control(_sanitize_env)
     if arguments == ["--compute-selftest"]:
         return compute_selftest()
     if arguments == ["--selftest"]:
