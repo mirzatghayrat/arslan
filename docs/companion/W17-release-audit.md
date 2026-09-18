@@ -1547,10 +1547,35 @@ finalize entry, native confirmation or automatic activation was added.
 Three focused suites passed 76 tests in 23.60s (one existing Starlette warning),
 covering successful finalization, missing/corrupt/unsafe/stale receipts, wrong
 operation/key, unobserved health, newer-trial invalidation, advanced original
-deletion records and acknowledgement loss after commit. This is source validation;
+deletion records and acknowledgement loss after commit.
 An additional pre-commit rename-failure test passed in 1.35s, proving ordinary
 startup remains blocked and rollback remains available; targeted lint and
 whitespace checks passed.
-the previously documented frozen sidecar does not contain these changes. Native
+This is source validation; the previously documented frozen sidecar does not
+contain these changes. Native
 orchestration, rebuilt packaging and full regression remain open. No real profile,
 account, installed application or publication was touched.
+
+### Frozen health receipt and both activation outcomes (2026-09-19)
+
+Production code at `12365255` was rebuilt in 26.83s as the standalone sidecar:
+`/tmp/arslan-candidate-build.BboGj4/dist-finalization/arslan-server/arslan-server`.
+SHA-256 `dff8a9e2bc73d0fa9535c38e0dd7ba8874f6e24e6cc118baddcca1bbd1e48797`.
+The synthetic smoke harness now has an explicit `--finalize` option; its default
+still exercises rollback. Both modes passed against that same frozen binary in
+separate disposable homes. Each starts the normal frozen server, stores a fake
+encrypted provider key, stops it, restores/switches via source coordination, runs
+the frozen restricted trial with pipe credentials, observes authenticated health,
+refuses unauthorized/business routes and waits for graceful parent-pipe shutdown.
+
+Rollback preserves the original database bytes and permits normal frozen restart.
+Finalization consumes the frozen process's health receipt through the source
+helper, retains original database bytes, permits normal frozen restart with the
+stored key readable, and remains idempotent after normal startup has written to
+the active database. Inherited wrong-key/path canaries remain unused; captured
+trial output contains no supplied secret/token. Lint and whitespace checks pass.
+
+This verifies frozen receipt production and normal restart, not a frozen/native
+finalization coordinator, user confirmation UI, independent security review or
+full application regression. The complete temporary desktop bundle has not been
+updated. No installed app, real profile, provider request or publication changed.

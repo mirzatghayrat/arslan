@@ -1,10 +1,10 @@
-"""Synthetic frozen normal boot -> source switch -> frozen trial -> rollback."""
+"""Synthetic frozen boots/trial with source switch and rollback or finalization."""
+import argparse
 import hashlib
 import json
 from pathlib import Path
 import select
 import subprocess
-import sys
 import tempfile
 import time
 
@@ -16,7 +16,11 @@ from server.services.recovery_preflight import check
 
 
 def main():
-    binary = Path(sys.argv[1]).resolve()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("binary", type=Path)
+    parser.add_argument("--finalize", action="store_true", help="Finalize disposable synthetic data only")
+    args = parser.parse_args()
+    binary = args.binary.resolve()
     assert binary.name == "arslan-server" and binary.is_file()
     assert binary.is_relative_to(Path(tempfile.gettempdir()).resolve())
     assert any(part.startswith(("arslan-candidate-build.", "arslan-native-candidate.")) for part in binary.parts)
@@ -83,8 +87,17 @@ def main():
         assert not (home / "must-not-create").exists()
         assert not (home / "must-not-create-key").exists()
         assert not (home / ".arslan").exists()
-        assert profile_activation.rollback(active)["rolled_back"]
-        assert (active / "arslan.db").read_bytes() == original
+        if args.finalize:
+            record = profile_activation.activation_record_path(active / "arslan.db")
+            journal = json.loads(record.read_bytes())
+            assert profile_activation.finalize(active, operation, "frozen-smoke-synthetic-only") == {
+                "finalized": True, "already_finalized": False, "original_retained": True,
+            }
+            assert not record.exists()
+            assert (active.parent / journal["previous"] / "arslan.db").read_bytes() == original
+        else:
+            assert profile_activation.rollback(active)["rolled_back"]
+            assert (active / "arslan.db").read_bytes() == original
         process, client, _ = start(binary, home)
         try:
             settings = client.get("/api/v1/settings")
@@ -93,10 +106,16 @@ def main():
         finally:
             client.close()
             assert stop(process) == 0
+        if args.finalize:
+            assert profile_activation.finalize(active, operation, "frozen-smoke-synthetic-only") == {
+                "finalized": True, "already_finalized": True, "original_retained": True,
+            }
+            assert (active.parent / journal["previous"] / "arslan.db").read_bytes() == original
     print(json.dumps({"frozen_activation_trial": "passed", "restricted_http": True,
                       "pipe_credentials": True, "wrong_inherited_key_ignored": True,
-                      "parent_pipe_shutdown": True, "source_rollback_and_normal_restart": True,
-                      "original_database_retained": True, "native_ui": False, "finalized": False,
+                      "parent_pipe_shutdown": True, "normal_restart": True,
+                      "source_coordination": "finalize" if args.finalize else "rollback",
+                      "original_database_retained": True, "native_ui": False, "finalized": args.finalize,
                       "real_model": False, "installed_app": False,
                       "backend_sha256": hashlib.sha256(binary.read_bytes()).hexdigest()}))
 
