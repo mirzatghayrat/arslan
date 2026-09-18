@@ -100,7 +100,21 @@ def entry(tmp_path, monkeypatch):
     from dataclasses import replace
     from server import config
     monkeypatch.setattr(config, "settings", replace(config.settings, db_path=str(tmp_path / "entry.db"), data_dir=tmp_path))
+    monkeypatch.setattr(sys, "argv", ["arslan-server"])
     return _load_entry()
+
+
+@pytest.mark.parametrize("arguments", [
+    ["--typo"], ["restore-offline"], ["--new-machine", "--restore-offline"],
+    ["--selftest", "--restore-offline"], ["--compute-selftest", "--selftest"],
+    ["--selftest", "private-unrecognized-value"],
+])
+def test_ambiguous_arguments_never_start_any_mode(entry, monkeypatch, capsys, arguments):
+    monkeypatch.setattr(sys, "argv", ["arslan-server", *arguments])
+    for name in ("_sanitize_env", "_serve", "selftest", "compute_selftest"):
+        monkeypatch.setattr(entry, name, lambda: pytest.fail("invalid arguments must not run"))
+    assert entry.main() == 2
+    assert capsys.readouterr().out == "ARSLAN_ERROR=invalid_arguments\n"
 
 
 def test_packaged_entry_holds_profile_until_server_returns(entry, monkeypatch):

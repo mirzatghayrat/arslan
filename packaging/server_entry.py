@@ -521,13 +521,17 @@ print("COMPUTE_CANARY_OK")
 
 
 def main() -> int:
-    if sys.argv[1:2] == ["--restore-offline"]:
+    arguments = sys.argv[1:]
+    if arguments[:1] == ["--restore-offline"]:
         from server.services.recovery_cli import main as restore_offline
-        return restore_offline(sys.argv[2:])
-    if "--compute-selftest" in sys.argv[1:]:
+        return restore_offline(arguments[1:])
+    if arguments == ["--compute-selftest"]:
         return compute_selftest()
-    if "--selftest" in sys.argv[1:]:
+    if arguments == ["--selftest"]:
         return selftest()
+    if arguments:
+        print("ARSLAN_ERROR=invalid_arguments", flush=True)
+        return 2
 
     _sanitize_env()
 
