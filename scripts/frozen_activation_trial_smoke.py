@@ -20,11 +20,17 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("binary", type=Path)
     parser.add_argument("--finalize", action="store_true", help="Finalize disposable synthetic data only")
+    parser.add_argument("--native-control-test", type=Path, help="Temporary Rust test executable for native transport")
     args = parser.parse_args()
     binary = args.binary.resolve()
     assert binary.name == "arslan-server" and binary.is_file()
     assert binary.is_relative_to(Path(tempfile.gettempdir()).resolve())
     assert any(part.startswith(("arslan-candidate-build.", "arslan-native-candidate.")) for part in binary.parts)
+    native = args.native_control_test.resolve() if args.native_control_test else None
+    if native:
+        assert native.is_file() and native.name.startswith("arslan_desktop_lib-")
+        assert native.is_relative_to(Path(tempfile.gettempdir()).resolve())
+        assert any(part.startswith("arslan-native-candidate.") for part in native.parts)
     with tempfile.TemporaryDirectory(prefix="arslan-frozen-trial-") as folder:
         home = Path(folder)
         control_env = {"PATH": "/usr/bin:/bin", "HOME": str(home), "TMPDIR": str(home),
@@ -35,12 +41,29 @@ def main():
                        "ARSLAN_LIVE_LLM": "0"}
 
         def control(payload, expected=0):
-            result = subprocess.run([str(binary), "--activation-control"], cwd=home,
-                                    input=(json.dumps(payload) + "\n").encode(), capture_output=True,
-                                    timeout=30, env=control_env)
-            assert result.returncode == expected, "unexpected activation control exit"
+            if native:
+                assert payload.get("candidate", "restored") == "restored"
+                assert payload.get("secret", "frozen-smoke-synthetic-only") in ("frozen-smoke-synthetic-only", "wrong-key")
+                environment = {**control_env, "ARSLAN_CONTROL_TEST_BINARY": str(binary),
+                               "ARSLAN_CONTROL_TEST_ACTION": payload["action"],
+                               "ARSLAN_CONTROL_TEST_OPERATION": payload.get("operation_id", "")}
+                if payload.get("secret") == "wrong-key":
+                    environment["ARSLAN_CONTROL_TEST_WRONG_KEY"] = "1"
+                result = subprocess.run([str(native), "--ignored", "--exact",
+                                         "recovery_control::tests::packaged_control_fixture", "--nocapture"],
+                                        cwd=home, capture_output=True, timeout=35, env=environment)
+                assert result.returncode == 0, "native control fixture failed"
+                lines = [line.split(b"NATIVE_CONTROL_RESULT=", 1)[1] for line in result.stdout.splitlines()
+                         if b"NATIVE_CONTROL_RESULT=" in line]
+                assert len(lines) == 1
+                message = json.loads(lines[0])
+            else:
+                result = subprocess.run([str(binary), "--activation-control"], cwd=home,
+                                        input=(json.dumps(payload) + "\n").encode(), capture_output=True,
+                                        timeout=30, env=control_env)
+                assert result.returncode == expected, "unexpected activation control exit"
+                message = json.loads(result.stdout)
             assert b"frozen-smoke-synthetic-only" not in result.stdout + result.stderr
-            message = json.loads(result.stdout)
             if expected:
                 assert message == {"ok": False, "code": "activation_control_refused"}
             else:
@@ -156,6 +179,7 @@ def main():
                       "parent_pipe_shutdown": True, "normal_restart": True,
                       "packaged_coordination": "finalize" if args.finalize else "rollback",
                       "packaged_offline_restore": True, "source_backup_creation": True,
+                      "native_control_transport": bool(native),
                       "original_database_retained": True, "native_ui": False, "finalized": args.finalize,
                       "real_model": False, "installed_app": False,
                       "backend_sha256": hashlib.sha256(binary.read_bytes()).hexdigest()}))

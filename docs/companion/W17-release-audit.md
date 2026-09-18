@@ -1848,3 +1848,31 @@ checks passed. This is native transport tested with synthetic children, not yet
 a native-to-frozen full-chain run or a confirmed user-facing recovery workflow.
 The existing temporary app bundle predates this module. No real secret/profile,
 installed app, account or publication was used.
+
+### Native-to-frozen control integration (2026-09-19)
+
+The frozen activation harness now optionally drives the actual Rust `run` caller
+through a test-only native executable, rather than constructing control pipes
+itself. The opt-in fixture is ignored in default unit runs and refuses anything
+outside canonical temporary test-home/binary prefixes. It uses only fixed
+synthetic correct/wrong secrets and the fixed `restored` sibling; it is absent
+from release builds and is not a general user-profile control command.
+
+The native skill context remained unconfigured for Xcode; offline Rust testing
+passed 43 regular tests with the one opt-in integration fixture explicitly
+ignored (0.27s execution, 1.96s build). The Python harness then explicitly ran
+that fixture for every control operation in two separate full chains. Both
+native-to-frozen finalize and rollback branches passed against backend SHA-256
+`5c695cb8b5ca2a116f4e4cf6aa87181db5d93d396545b94f015f2411a358ced8`.
+This includes wrong-key refusal, pre-health/active-trial refusal, normal pending
+startup refusal, graceful trial exit, original retention, normal restart and
+idempotent finalize. Packaged offline restore and frozen HTTP trial remain real;
+source backup creation and harness health orchestration remain explicit.
+
+Native test executable:
+`/tmp/arslan-native-candidate.xIygc5/target/debug/deps/arslan_desktop_lib-9c709306606e194d`.
+SHA-256 `bd1cd74644611e31322b365c3f901cf1862d0c5bfd32b2ec96850c44fcd2be6a`.
+Targeted lint/whitespace checks passed. This establishes protocol interoperability,
+not the desktop confirmation/picker workflow, full native trial orchestration or
+visual acceptance. No installed app, real user data/secret, provider or publication
+was used; the temporary desktop bundle still predates these native modules.

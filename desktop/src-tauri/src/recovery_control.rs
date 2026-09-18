@@ -429,4 +429,65 @@ mod tests {
             Some(libc::ECHILD)
         );
     }
+
+    #[test]
+    #[ignore = "requires frozen_activation_trial_smoke disposable fixture and temporary frozen binary"]
+    fn packaged_control_fixture() {
+        let temp = Path::new("/tmp").canonicalize().unwrap();
+        let home = std::path::PathBuf::from(std::env::var_os("HOME").unwrap())
+            .canonicalize()
+            .unwrap();
+        assert_eq!(home.parent(), Some(temp.as_path()));
+        assert!(home
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("arslan-frozen-trial-"));
+        let binary =
+            std::path::PathBuf::from(std::env::var_os("ARSLAN_CONTROL_TEST_BINARY").unwrap())
+                .canonicalize()
+                .unwrap();
+        assert!(binary.starts_with(&temp));
+        assert_eq!(binary.file_name().unwrap(), "arslan-server");
+        assert!(binary.components().any(|part| {
+            let name = part.as_os_str().to_string_lossy();
+            name.starts_with("arslan-candidate-build.")
+                || name.starts_with("arslan-native-candidate.")
+        }));
+        let synthetic = if std::env::var_os("ARSLAN_CONTROL_TEST_WRONG_KEY").is_some() {
+            "wrong-key"
+        } else {
+            "frozen-smoke-synthetic-only"
+        };
+        let key = crate::recovery_secret::prepare(Some(synthetic), Path::new("unused"))
+            .unwrap_or_else(|_| panic!("invalid fixture"));
+        let operation = std::env::var("ARSLAN_CONTROL_TEST_OPERATION").unwrap_or_default();
+        let action = std::env::var("ARSLAN_CONTROL_TEST_ACTION").unwrap();
+        let request = match action.as_str() {
+            "switch" => Request::Switch {
+                candidate: "restored",
+                secret: &key,
+            },
+            "rollback" => Request::Rollback,
+            "finalize" => Request::Finalize {
+                operation_id: &operation,
+                secret: &key,
+            },
+            _ => panic!("invalid fixture action"),
+        };
+        let message = match run(&binary, &request) {
+            Ok(Outcome::TrialPending(operation_id)) => serde_json::json!({"ok":true,
+                "result":{"status":"trial_pending", "operation_id":operation_id}}),
+            Ok(Outcome::RolledBack(rolled_back)) => {
+                serde_json::json!({"ok":true,"result":{"rolled_back":rolled_back}})
+            }
+            Ok(Outcome::Finalized { already_finalized }) => serde_json::json!({"ok":true,
+                "result":{"finalized":true,"already_finalized":already_finalized,"original_retained":true}}),
+            Err(ControlError::Refused) => {
+                serde_json::json!({"ok":false,"code":"activation_control_refused"})
+            }
+            Err(error) => panic!("native transport failed: {error:?}"),
+        };
+        println!("NATIVE_CONTROL_RESULT={message}");
+    }
 }
