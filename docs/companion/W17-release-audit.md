@@ -1160,3 +1160,43 @@ profile restore refusal, stopped-current-installation selection, and two
 restored boots. It must be rerun against a newly rebuilt fixed backend; prior
 passing profile checks alone do not close the acknowledgement defect. This is
 not a UI or real-model test, and the restore coordinator remains source code.
+
+### Fixed candidate and complete offline regression (2026-09-19)
+
+Production source `07e5886f` was clean when the full backend run began. It passed
+5,009 tests, with 14 skips and 18 warnings in 505.72s; process exit was 0.
+The JUnit report at `/tmp/arslan-commit-regression.1jmwX1/backend.xml` contains
+5,023 cases, zero failures/errors, and all 30 engineering acceptance contracts
+passed. Its SHA-256 is
+`27364b126d20dc7ce3245b077548a89bc436211681747a3adbe1690ceef09425`.
+Skips are 12 opt-in live-model evaluations, one non-macOS-only sandbox refusal
+and one operator-copy allowlist. Warnings include existing deprecations, async
+marks, SQLAlchemy connection/schema warnings and deliberate teardown fixtures;
+the aiosqlite guard reported 63 closed-loop deliveries. This is not a clean
+warning run or a real-model quality score. Frontend remains 244 files / 1,902
+passing tests; unchanged native source has 31 passing unit tests.
+
+The fixed backend was rebuilt in 26.08s and staged into the unsigned temporary
+app at `/tmp/arslan-native-candidate.xIygc5/target/release/bundle/macos/Arslan.app`.
+Exact packaged executable hashes:
+
+- Backend: `11902688744d525ea461769acf874e4bd043e967602320c26d11a065951493c6`.
+- Native: `1db50bd7eb44c77c1348d7ef1f4c8a172f3b50217b71e7f881e7b4deba55c650`.
+- SPA: `5343cbf8b9e0030636cc5d1f52d138ccbc1419c70a1b3b42897c8f530c74cef7`.
+
+The enhanced deletion/restore harness has three observed successful runs on the
+fixed backend: one against the build output and two against the app resource.
+It includes immediate shutdown after two acknowledged creates, mirror repair,
+same-profile process refusal without stopping its owner, active-profile restore
+refusal, current-installation record selection and two restored boots. Additional
+app-resource checks passed fresh startup/restart, six saved languages and input
+formats, actual old-release upgrade (four candidate boots), quarantined restore,
+and sandboxed/network-isolated compute with two durable artifacts. Bundle
+validation passed. Lost tool-output observations are not counted as evidence;
+the affected terminal smoke runs were repeated and their exit-0 results observed.
+
+All data/accounts were synthetic and disposable; no real model, installed app,
+signing, publication or user profile was used. Restore coordination is still
+source-side, not the native import/activation UI. Native visual checks, trusted
+recovery activation, live-model evaluation, external review and release gates
+remain open. The rejected backend described above is superseded, not accepted.

@@ -240,3 +240,21 @@ cooperative lock is not proof that every possible writer is absent. Native
 stop/confirmation/file selection/restart activation, current release rebuild
 and full regression remain open. No current user installation was started,
 stopped, restored or replaced by these changes.
+
+## Fixed packaged acknowledgement and regression checkpoint
+
+Repeated packaged recovery checks exposed a separate persistence race: companion
+repository cleanup could commit after HTTP success had already been sent. All
+18 repository dependencies now finish in function scope, before transmission.
+ASGI boundary tests verify commit-before-201 and conflict-before-409, including
+the absence of a row after a refused commit. A dependency-wide guard prevents
+an endpoint from silently returning to post-response cleanup.
+
+The fixed `07e5886f` backend passed the complete offline suite (5,009 passed,
+14 skipped), and repeated packaged checks now cover two immediately stopped
+acknowledged creates, independent-ledger repair, profile ownership and selection
+of current records during restore. The native executable and sidecar were rebuilt;
+fresh/upgrade/quarantined-restore and isolated compute checks passed. Exact hashes
+and evidence limitations are recorded in `W17-release-audit.md`.
+This supersedes the earlier pending-rebuild/full-regression status, not the
+remaining native UI, trusted activation or real-model evaluation gates.
