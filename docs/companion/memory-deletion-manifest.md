@@ -103,3 +103,22 @@ passed 244 files / 1,893 tests in 22.01s; TypeScript and targeted lint passed.
 The full backend suite, rebuilt package and native download remain outstanding
 for the manifest changes, as do trusted restore import and independently
 retained current ledgers.
+
+## Frozen export and restored-boot evidence
+
+`scripts/frozen_deletion_restore_smoke.py` now starts the actual temporary app's
+bundled backend with disposable homes. It creates two synthetic memories,
+stops the process for a pre-deletion archive, restarts to delete one via its
+authenticated API, and exports the later metadata through the frozen endpoint.
+It checks unauthorized refusal, attachment/no-store/nosniff headers, and absence
+of memory text or the digest key. The source restore coordinator applies that
+export before two actual frozen restored boots. Both expose a content-free
+deleted stub, reject re-saving the deleted content, keep the other memory
+quarantined/local-only, and re-export the same deletion metadata. The original
+archive bytes remain unchanged.
+
+This harness passed against backend SHA-256
+`c83fe225bff2349332770559a523a52d89baa249b2fc42f0698b75d0a2a7a5e0`.
+It does not capture frozen host model requests, exercise native file download,
+provide restore-import UI, or prove independent automatic ledger retention.
+The source scripted host-request binding remains separate evidence.

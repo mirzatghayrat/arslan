@@ -990,3 +990,65 @@ whitespace checks passed. Only tests/docs changed in this checkpoint. Full
 backend regression and frozen-package verification still predate the manifest
 implementation; native download, trusted import and independent ledger storage
 remain open. No real provider calls, publication or installed-app replacement.
+
+### Candidate rebuilt with deletion metadata export (2026-09-19)
+
+Rebuilt web assets (3.96s; existing large-chunk warning) and the frozen backend
+(29.25s) from clean `99b826be5431cef90fbced29dbd0b66cbe14c9bd` production
+source. Tauri's existing isolated bundling path produced an unsigned temporary
+app at `/tmp/arslan-native-candidate.xIygc5/target/release/bundle/macos/Arslan.app`.
+XcodeBuildMCP context was checked; no macOS workflow tools were available, and
+this Tauri app used its existing project build rather than raw Xcode commands.
+Native source/localization resources still match the isolated native build;
+only the sidecar and web resources were refreshed. No installed app was changed.
+
+Identity:
+
+- Backend: `c83fe225bff2349332770559a523a52d89baa249b2fc42f0698b75d0a2a7a5e0`.
+- Native: `768bc50f20e1dc7ee094483be8f3c4aa5bc8af077fda66ca6d6daa02d61d45e3`.
+- SPA `index-Cg1uNwNW.js`: `a55a36155cbc890e14a6b0a43552bbdf2f8f809b06d21681976d68f72e1eeac2`.
+
+The packaged web tree exactly matches the current production build. Both frozen
+and staged-app bundle verifiers passed (15 module imports, assets, no forbidden
+rasterizer/database/secret-shaped files); the staged app sidecar is 431 MiB.
+Actual packaged compute self-test passed with network isolation and two durable
+artifacts. Fresh boot/restart/input/six-language tests, quarantined restore with
+paused overdue schedules, and actual copied 0.1.38-to-candidate four-boot upgrade
+including legacy edit/delete all passed using disposable profiles.
+
+The new `frozen_deletion_restore_smoke` also passed: actual frozen API deletion
+and private export, source-coordinated restore of an older archive, then two
+actual restored boots prove the deleted content stays absent and cannot be
+re-saved; the other memory stays quarantined and the archive is unchanged.
+It explicitly does not test native import/download or capture frozen host
+requests. The new harness is not a production-code change.
+
+Mac UI inspection returned locked; no native candidate window was launched.
+Native download/layout, trusted restore-import UI, independent ledger retention,
+signing/notarization and the other existing release gates remain open. This
+candidate is not declared release-ready and has not been published.
+
+### Full regression including deletion-manifest production code (2026-09-19)
+
+Full backend run started from clean `99b826be5431cef90fbced29dbd0b66cbe14c9bd`
+and passed **4,959 tests**, with **14 skips / 21 warnings**, in **505.42s**
+(exit 0). Production code and collected tests were unchanged during the run;
+only the separately executed frozen deletion smoke harness and audit documents
+were added while it ran. The process used scrubbed environment, temporary
+HOME/data storage and a synthetic encryption secret, with live LLMs disabled.
+
+JUnit evidence: `/tmp/arslan-full-regression.2Xv6dz/backend.xml`;
+SHA-256 `145092a826a7a90f846618e8af7ff20adfeb34e25ad92617abc58f4fd92098e4`.
+Parsed XML confirms 4,973 cases, zero errors/failures and 14 skips. All 30 fixed
+engineering contracts extracted from the same XML passed; these are not the
+separate real-task quality gate. Skips remain 12 live-model cases, one real
+non-macOS sandbox-refusal case and one allowlisted operator-facing copy case.
+
+Warnings cover dependency deprecation, existing sync/async test markings,
+SQLAlchemy connection cleanup/cyclic metadata/NULL identities, and intentional
+portal teardown fixtures. The test guard reports 84 attempted aiosqlite
+deliveries into closed loops; no test outcome was affected, but the run is not
+described as warning-free. All test/smoke processes completed and no candidate
+UI was launched or left running. Targeted harness lint and whitespace checks
+passed. This closes the latest full-backend and package-refresh gap, not the
+remaining native UI, live task-quality, import/ledger or release gates.
