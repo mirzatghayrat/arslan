@@ -219,6 +219,63 @@ async def test_local_only_memory_is_filtered_from_cloud_prompt(runtime, executio
         assert (await repo.list_entries())[0]["content"] == content
 
 
+@pytest.mark.parametrize("cloud_allowed,sensitive_allowed", [(False, False), (False, True), (True, False), (True, True)])
+async def test_sensitive_project_memory_needs_both_task_permissions(
+    cloud_allowed, sensitive_allowed, runtime, execution_db,
+):
+    # M07-07: trusted saved permissions, actual outbound synthetic-adapter input.
+    content = "Synthetic sensitive project report preference: blue headings."
+    async with execution_db() as db:
+        db.add(Project(id="sensitive-project", name="Sensitive fixture"))
+        await db.flush()
+        db.add(ConversationContext(id="sensitive-task", project_id="sensitive-project",
+                                   cloud_memory_allowed=cloud_allowed, allow_sensitive=sensitive_allowed))
+        await db.execute(update(ProviderConfig).values(provider="openai", base_url="", model="fixture-cloud"))
+        await db.commit()
+    async with repository() as repo:
+        entry = await repo.create(MemoryWrite(content=content, scope=MemoryScope(kind="project", id="sensitive-project"),
+                                             sensitivity="sensitive", sensitive_acknowledged=True,
+                                             use_policy="cloud_allowed"), MemoryActor(origin="user"))
+    requests = await runtime("sensitive-task", "Prepare a project report with headings.")
+    expected = cloud_allowed and sensitive_allowed
+    assert all((content in request["system"]) == expected for request in requests)
+    async with execution_db() as db:
+        receipts = (await db.scalars(select(ContextReceiptRecord).where(
+            ContextReceiptRecord.conversation_id == "sensitive-task"))).all()
+    assert receipts
+    assert all(any(ref["id"] == entry["id"] for ref in row.receipt["used"]) == expected for row in receipts)
+    async with repository() as repo:
+        retained = await repo.present(await repo.get(entry["id"]))
+    assert retained["status"] == "active" and retained["content"] == content
+
+
+async def test_restored_memory_is_absent_from_next_host_request_until_fresh_review(runtime, execution_db):
+    # M06-05: exercise the real restore quarantine service and host prompt, not
+    # archive I/O (covered by the separate frozen restore harness).
+    from server.services.memory_restore import mark_restored_sync
+
+    content = "Use concise reports with blue headings."
+    await runtime("before-restore", f"Remember: {content}", save=content)
+    async with repository() as repo:
+        entry = (await repo.list_entries())[0]
+    async with execution_db.kw["bind"].begin() as connection:
+        result = await connection.run_sync(mark_restored_sync)
+    assert result["review_required"] and result["quarantined_entries"] == 1
+    after = await runtime("after-restore", "Prepare a report with headings.")
+    assert all(content not in request["system"] for request in after)
+    async with execution_db() as db:
+        receipts = (await db.scalars(select(ContextReceiptRecord).where(
+            ContextReceiptRecord.conversation_id == "after-restore"))).all()
+    assert receipts and all(not row.receipt["used"] for row in receipts)
+    async with repository() as repo:
+        restored = await repo.present(await repo.get(entry["id"]))
+        assert restored["status"] == "quarantined" and restored["content"] == content
+        await repo.revise(entry["id"], restored["version"], MemoryWrite(
+            content=content, scope=MemoryScope(kind="global")), MemoryActor(origin="user"))
+    reviewed = await runtime("after-review", "Prepare a report with headings.")
+    assert content in reviewed[0]["system"]
+
+
 async def test_repeated_save_keeps_one_active_entry(runtime):
     # M01-06: exact equivalent content, not a semantic-paraphrase claim.
     content = "concise reports"

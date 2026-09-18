@@ -894,3 +894,15 @@ no model call or real account is involved, and temporary profiles/processes are
 cleaned up. Only the test harness/documentation changed, not production code or
 candidate bytes. This supplies actual packaged legacy edit/delete compatibility
 evidence, not full UI, all-memory-scenario or real-task acceptance.
+
+### Additional outbound memory-boundary evidence (2026-09-19)
+
+Five test-only bindings extend the actual host-request/receipt checks: four
+sensitive-project/cloud-permission combinations (M07-07), plus restore
+quarantine → excluded next task → fresh review → eligible later task (M06-05).
+The focused new cases passed 6.65s, and the entire expanded binding file passed
+38 cases in 75.81s. Lint/whitespace checks passed. No production source, candidate
+or catalog completion status changed; model responses remain scripted. The
+binding document now records partial aspects of 24 scenarios, not 60 completed
+scenarios. The preceding complete backend run does not include these five newer
+tests, though its production-source identity is unchanged.

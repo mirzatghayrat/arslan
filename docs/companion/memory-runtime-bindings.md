@@ -1,7 +1,7 @@
 # Multi-turn memory runtime bindings — partial engineering evidence
 
-`tests/server/test_memory_multiturn_runtime.py` now has 33 synthetic runtime cases
-covering aspects of 23 catalog scenarios. This is not 60 passing scenarios, a
+`tests/server/test_memory_multiturn_runtime.py` now has 38 synthetic runtime cases
+covering aspects of 24 catalog scenarios. This is not 60 passing scenarios, a
 real-model score, or release approval. The catalog retains its uncompleted status.
 
 The harness runs the real `scoped_turn` / TaskService boundary, user-message
@@ -31,6 +31,8 @@ their separate API/UI tests are not replaced by these cases.
 | M05-01/04 | Advancing the context-selection clock changes effective/expired eligibility in subsequent host requests | Version-specific source revalidation and historical factual interpretation |
 | M06-01/02 | Paused/deleted content is absent from later host requests; pause preserves history and can be restored | Vector/index rebuild, old summaries and backup restoration (separate tests exist; not covered here) |
 | M07-07 | Local-only memory stays stored but is absent from a synthetic cloud-destination request, even with task-level cloud permission | Sensitive-item acknowledgement UI and a real network capture |
+| M07-07 additional matrix | Sensitive, cloud-eligible project memory enters actual host requests/used receipts only when both task cloud-memory and sensitive-item permissions are true; all four combinations retain the stored item | Natural-language consent interpretation, permission UI and actual provider transport |
+| M06-05 | Restore quarantine removes an existing memory from the next host request and used receipt without erasing it; fresh user review restores later eligibility | Archive I/O/new-machine migration (separate frozen harness), missing-ledger UI explanation and model output |
 | M07-01 | Explicit synthetic credential-save requests are rejected at task admission before host/remember execution; no task/message/run or ordinary memory remains, and a different conversation's prompt/receipt contains no such memory | Detection of every credential shape, UI presentation of the refusal and redaction of unrelated historical sources |
 | M03-06 / M08-02 | Saved report preferences stay out of a code-patch request; saved design preferences stay out of arithmetic requests in six locales; related subsequent tasks can still retrieve them | General semantic relevance, arbitrary paraphrases and generated-answer quality |
 
@@ -69,3 +71,17 @@ was weakened. All four new cases then passed in 7.30s. Ruff and whitespace check
 passed. This is a disjoint follow-up, not a claim that the new 33-case file or an
 expanded full suite was rerun in one invocation. No production implementation,
 model, account, real input, or scenario-completion status changed.
+
+## Restore quarantine and sensitive permissions (2026-09-19)
+
+Five additional cases exercise four combinations of trusted cloud/sensitive
+permissions and the real restore-quarantine service followed by a new task.
+Assertions inspect every captured request and persisted used receipts, with
+the stored item checked separately. The restore case also performs a fresh,
+versioned user review and proves a subsequent host request can use the memory.
+The focused five-case run passed in 6.65s; no production code changed. The
+synthetic adapter does not contact a provider or grade a generated answer.
+
+The complete expanded file then passed all 38 cases in 75.81s. Targeted lint
+and whitespace checks passed. This is partial evidence for 24 scenario aspects,
+not 38 or 60 completed catalog scenarios; catalog status remains unchanged.
