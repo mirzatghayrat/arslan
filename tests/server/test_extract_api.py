@@ -217,6 +217,38 @@ async def test_extract_missing_body_400(client):
     assert r.status_code == 400
 
 
+@pytest.mark.parametrize("body", [[], None, 42, "https://example.com", {"url": 7}, {"url": ["https://example.com"]}, {"url": {"target": "https://example.com"}}])
+async def test_extract_rejects_wrong_json_shape_before_extraction(client, monkeypatch, body):
+    import json
+
+    async def forbidden(**kwargs):
+        pytest.fail("invalid request must not reach extraction or network access")
+
+    monkeypatch.setattr(eapi.extract, "extract_text", forbidden)
+    result = await client.post("/api/v1/extract", content=json.dumps(body),
+                               headers={"content-type": "application/json"})
+    assert result.status_code == 400
+    assert result.json() == {"detail": {"code": "inputs.invalid"}}
+
+
+async def test_extract_rejects_plain_form_field_named_file(client, monkeypatch):
+    async def forbidden(**kwargs):
+        pytest.fail("plain form text must not reach extraction")
+
+    monkeypatch.setattr(eapi.extract, "extract_text", forbidden)
+    result = await client.post("/api/v1/extract", files={"file": (None, "not an uploaded file")})
+    assert result.status_code == 400
+    assert result.json() == {"detail": {"code": "inputs.invalid"}}
+
+
+@pytest.mark.parametrize("payload", [b'{"url":', b'\xff'])
+async def test_extract_invalid_json_has_stable_error(client, payload):
+    result = await client.post("/api/v1/extract", content=payload,
+                               headers={"content-type": "application/json"})
+    assert result.status_code == 400
+    assert result.json() == {"detail": {"code": "inputs.invalid"}}
+
+
 async def test_extract_file_missing_field_400(client):
     # multipart without 'file' field
     r = await client.post(

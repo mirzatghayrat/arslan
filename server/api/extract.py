@@ -1,7 +1,10 @@
 """POST /extract — extract text from a file/URL without storing (ephemeral)."""
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, Request
+from starlette.datastructures import UploadFile
 
 from server.api.media_type import is_multipart_form
 from server.auth import require_auth
@@ -33,6 +36,8 @@ async def post_extract(request: Request) -> dict:
             upload = form.get("file")
             if upload is None:
                 raise HTTPException(400, "file required")
+            if not isinstance(upload, UploadFile):
+                raise InputError("inputs.invalid")
             data = await upload.read(REGISTRY["max_bytes"] + 1)
             if len(data) > REGISTRY["max_bytes"]:
                 raise InputError("inputs.limit")
@@ -46,8 +51,16 @@ async def post_extract(request: Request) -> dict:
                 filename=upload.filename, data=data, compress=compress
             )
         else:
-            body = await request.json()
-            url = (body.get("url") or "").strip()
+            try:
+                body = await request.json()
+            except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+                raise InputError("inputs.invalid") from exc
+            if not isinstance(body, dict):
+                raise InputError("inputs.invalid")
+            raw_url = body.get("url")
+            if raw_url is not None and not isinstance(raw_url, str):
+                raise InputError("inputs.invalid")
+            url = (raw_url or "").strip()
             if not url:
                 raise HTTPException(400, "provide url or a file")
             text, truncated = await extract.extract_text(

@@ -200,3 +200,18 @@ error envelope, without mocking the extractor. The five-file format, extraction,
 API and source-locator selection passed 55 tests in 6.35s; changed-file lint
 passed. No model, account or user document was used. This is source-level
 verification, not a new complete backend run or rebuilt native candidate.
+
+## Extraction request-shape validation (2026-09-19)
+
+Eight real HTTP regressions reproduced uncaught attribute errors for JSON
+non-object bodies, non-string URLs, and a multipart text field named `file`.
+The endpoint now verifies the parsed body's shape, URL type and Starlette
+upload type before extraction. Invalid JSON syntax/encoding also maps to the
+existing `inputs.invalid` envelope. Missing/empty URLs retain the previous
+missing-input response; valid file and URL contracts are unchanged.
+
+The malformed-shape cases forbid extractor invocation, establishing that these
+requests cannot reach its network/model path. Ten new cases plus existing
+format, extraction, API, DOCX and PDF source-locator tests passed: 65 tests in
+3.20s. Changed-file lint and whitespace checks passed. These are offline source
+checks, not full regression, UI or packaged acceptance.

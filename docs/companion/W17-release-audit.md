@@ -617,3 +617,11 @@ compression path. The five-file extraction/source-locator selection passed
 55 tests in 6.35s; targeted lint passed. See W20 for scope. This production
 change has not received a new complete backend run or native package rebuild;
 the earlier clean full-run/package evidence must not be attributed to it.
+
+The subsequent extraction request-shape fix rejects non-object JSON, non-string
+URLs and multipart text masquerading as an uploaded file before extraction.
+Eight failing HTTP cases reproduced the original attribute errors; ten added
+cases cover those shapes and malformed JSON syntax/encoding. The five-file
+input regression now passes 65 tests in 3.20s, with targeted lint and whitespace
+checks passing. This remains source-only evidence; a fresh full regression and
+native candidate are still outstanding.
