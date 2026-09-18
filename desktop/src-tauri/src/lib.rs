@@ -28,6 +28,9 @@ mod recovery_secret;
 #[cfg(target_os = "macos")]
 #[allow(dead_code)]
 mod recovery_control;
+#[cfg(target_os = "macos")]
+#[allow(dead_code)]
+mod recovery_trial;
 mod voice;
 use std::sync::Mutex;
 

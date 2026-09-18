@@ -1980,3 +1980,49 @@ temporary full desktop app still needs rebuilding and visual/click acceptance.
 No real profile, account, model, installed app or publication was used. Full
 Python regression evidence above predates this change and is not relabeled as a
 new full run.
+
+### Native restricted-trial launcher (2026-09-19)
+
+An internal macOS launcher now owns `--activation-trial` from start to exit.
+It accepts only an absolute trusted executable, canonical operation ID and the
+existing-secret wrapper. A fresh 32-byte OS-random token and the secret travel
+only in a bounded stdin request; inherited secret/key-file/API-token variables
+are removed. Stdin remains open until verified health, then EOF requests normal
+shutdown. The launcher shares the existing exact-child kill/reap guard; no
+broad process termination or background reader thread is introduced.
+
+The handshake must be the exact trial-specific port line. The health client
+connects directly to numeric IPv4 loopback with no proxy/DNS/redirect handling,
+uses the fixed restricted health path and random bearer token, bounds the whole
+startup/probe to 90 seconds and the response to 4 KiB, and rejects ambiguous
+HTTP framing, duplicate headers/JSON fields, non-200 status, extra JSON fields,
+wrong operation/mode/status or missing no-store/JSON headers. Graceful exit has
+an additional 10-second bound. Success requires both verified health and exit
+code zero with stdout EOF. Neither success nor a receipt is user approval;
+finalization still separately validates the durable receipt and live profile.
+Errors never auto-finalize, retry or roll back.
+
+Offline Rust tests passed 56 cases with one opt-in packaged fixture ignored in
+the default run (0.34s execution, 1.02s build). New tests cover fresh token shape,
+port parsing, strict health framing/content, real loopback request behavior,
+environment scrubbing, healthy response plus failed child exit, hung/oversized
+health, hung child reaping, wrong handshake, excessive stdout and invalid inputs.
+Targeted Ruff and whitespace checks passed. XcodeBuildMCP defaults had no
+project/scheme/device; this is isolated Rust testing, not native UI acceptance.
+
+The opt-in synthetic fixture can invoke the actual native launcher. The frozen
+harness adds a second trial through native code after its existing HTTP security
+probes; that second trial invalidates the earlier receipt. Subsequent successful
+finalization therefore requires the native-launched trial's own health/shutdown
+receipt. Both rollback and finalize chains passed against the temporary app's
+actual backend resources (SHA-256
+`e8c5651dfdaa94e35756ef3257bac187d15643f44678f6669af0d2f4b4a119c4`),
+without a real account/model/profile. Native test executable SHA-256:
+`b63c93e72f8d2bc331820ebc6ff31ced7412abe6eb58878225dfa1fef90ddcc0`.
+
+This module is not yet exposed through a forward-restore picker/confirmation
+workflow, and the release desktop binary predates it. The trusted coordinator
+must still stop its normal child, prepare the selected candidate and secret,
+obtain user confirmation, invoke trial/finalize and restart. There is no web IPC
+or model-callable recovery command. Latest temporary bundle details above remain
+unchanged; a new source module does not constitute completed desktop recovery.

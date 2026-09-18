@@ -22,7 +22,10 @@ def main():
     parser.add_argument("binary", type=Path)
     parser.add_argument("--finalize", action="store_true", help="Finalize disposable synthetic data only")
     parser.add_argument("--native-control-test", type=Path, help="Temporary Rust test executable for native transport")
+    parser.add_argument("--native-trial", action="store_true", help="Also repeat trial through native launcher")
     args = parser.parse_args()
+    if args.native_trial and not args.native_control_test:
+        parser.error("--native-trial requires --native-control-test")
     binary = args.binary.resolve()
     assert binary.name == "arslan-server" and binary.is_file()
     assert binary.is_relative_to(Path(tempfile.gettempdir()).resolve())
@@ -52,7 +55,8 @@ def main():
                     environment["ARSLAN_CONTROL_TEST_WRONG_KEY"] = "1"
                 result = subprocess.run([str(native), "--ignored", "--exact",
                                          "recovery_control::tests::packaged_control_fixture", "--nocapture"],
-                                        cwd=home, capture_output=True, timeout=35, env=environment)
+                                        cwd=home, capture_output=True,
+                                        timeout=110 if payload["action"] == "trial" else 35, env=environment)
                 assert result.returncode == 0, "native control fixture failed"
                 lines = [line.split(b"NATIVE_CONTROL_RESULT=", 1)[1] for line in result.stdout.splitlines()
                          if b"NATIVE_CONTROL_RESULT=" in line]
@@ -149,6 +153,10 @@ def main():
                 child.wait(timeout=5)
             for stream in (child.stdin, child.stdout, child.stderr):
                 stream.close()
+        if args.native_trial:
+            # A second trial invalidates the previous receipt; finalization must
+            # therefore rely on the native launch/health/graceful-exit sequence.
+            assert control({"action": "trial", "operation_id": operation}) == {"trial_completed": True}
         assert not (home / "must-not-create").exists()
         assert not (home / "must-not-create-key").exists()
         assert not (home / "must-not-create-db").exists()
@@ -185,6 +193,7 @@ def main():
                       "packaged_coordination": "finalize" if args.finalize else "rollback",
                       "packaged_offline_restore": True, "source_backup_creation": True,
                       "native_control_transport": bool(native),
+                      "native_trial_transport": args.native_trial,
                       "original_database_retained": True, "native_ui": False, "finalized": args.finalize,
                       "real_model": False, "installed_app": False,
                       "backend_sha256": hashlib.sha256(binary.read_bytes()).hexdigest()}))

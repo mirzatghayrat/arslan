@@ -41,7 +41,7 @@ pub(crate) enum ControlError {
     OutcomeUnknown,
 }
 
-fn valid_id(value: &str) -> bool {
+pub(super) fn valid_id(value: &str) -> bool {
     value.len() == 36
         && value.bytes().enumerate().all(|(i, byte)| {
             if [8, 13, 18, 23].contains(&i) {
@@ -187,7 +187,7 @@ fn decode(bytes: &[u8], exit: Option<i32>, request: &Request<'_>) -> Result<Outc
     }
 }
 
-struct OwnedChild(Child);
+pub(super) struct OwnedChild(pub(super) Child);
 impl Drop for OwnedChild {
     fn drop(&mut self) {
         if !matches!(self.0.try_wait(), Ok(Some(_))) {
@@ -197,7 +197,7 @@ impl Drop for OwnedChild {
     }
 }
 
-fn nonblocking(pipe: &impl AsRawFd) -> Result<(), ControlError> {
+pub(super) fn nonblocking(pipe: &impl AsRawFd) -> Result<(), ControlError> {
     // SAFETY: these borrowed handles remain open during both fcntl calls.
     let flags = unsafe { libc::fcntl(pipe.as_raw_fd(), libc::F_GETFL) };
     if flags < 0
@@ -534,6 +534,12 @@ mod tests {
             .unwrap_or_else(|_| panic!("invalid fixture"));
         let operation = std::env::var("ARSLAN_CONTROL_TEST_OPERATION").unwrap_or_default();
         let action = std::env::var("ARSLAN_CONTROL_TEST_ACTION").unwrap();
+        if action == "trial" {
+            crate::recovery_trial::run(&binary, &operation, &key)
+                .unwrap_or_else(|error| panic!("native trial failed: {error:?}"));
+            println!("NATIVE_CONTROL_RESULT={{\"ok\":true,\"result\":{{\"trial_completed\":true}}}}");
+            return;
+        }
         let request = match action.as_str() {
             "switch" => Request::Switch {
                 candidate: "restored",
