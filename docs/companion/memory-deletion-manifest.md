@@ -49,3 +49,19 @@ Still required before this can fulfill the recovery contract:
 - UI explanation for missing later ledgers/new-machine restores and review.
 
 No endpoint or automatic independently retained ledger is introduced yet.
+
+## Source runtime evidence after reconciliation
+
+The M06-04 binding now makes an actual pre-deletion archive, deletes the memory
+through the repository, exports the later manifest, restores to a new directory,
+and binds the real task/host runtime to that restored database. Captured outbound
+system/user prompts and persisted used receipts exclude the deleted text/ID.
+Only an empty deleted stub/history remains, and a repeated save is refused by
+`memory_previously_deleted`. This uses a scripted adapter, not a real provider.
+
+Another test verifies unquarantined stores and stale epochs are refused without
+changing the exported deletion metadata. The focused manifest/backup/restore/
+runtime selection passed 44 tests (27 deselected) in 20.59s; the new runtime
+binding separately passed in 2.32s. Lint/whitespace checks passed. No production
+code changed in this follow-up. Package, UI and independent ledger retention
+remain unverified/unimplemented, so M06-04 is not marked fully complete.

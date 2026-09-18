@@ -133,3 +133,21 @@ async def test_old_backup_reconciles_later_deletion_before_install(execution_db,
         finally:
             engine.dispose()
     assert archive.read_bytes() == original
+
+
+async def test_reconciliation_refuses_live_store_and_stale_epoch(execution_db):
+    from server.services.memory_restore import mark_restored_sync
+
+    async with repository() as repo:
+        entry = await repo.create(MemoryWrite(content="Synthetic deletion", scope=MemoryScope(kind="global")), MemoryActor(origin="user"))
+        await repo.delete_entry(entry["id"], entry["version"], MemoryActor(origin="user"))
+    async with execution_db.kw["bind"].begin() as connection:
+        payload = await connection.run_sync(manifest.export_sync)
+        with pytest.raises(ValueError, match="^deletion_reconciliation_requires_quarantined_restore$"):
+            await connection.run_sync(lambda db: manifest.reconcile_staged_sync(db, payload))
+        await connection.run_sync(mark_restored_sync)
+        stale = manifest.decode(payload)
+        stale.update(deletion_epoch=0, deletions=[])
+        with pytest.raises(ValueError, match="^deletion_manifest_stale$"):
+            await connection.run_sync(lambda db: manifest.reconcile_staged_sync(db, json.dumps(stale).encode()))
+        assert await connection.run_sync(manifest.export_sync) == payload

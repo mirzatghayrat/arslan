@@ -937,3 +937,20 @@ and unchanged original archive. See the manifest document for remaining work.
 The current frozen candidate and full regression predate this production change;
 no package or end-to-end M06-04 completion is claimed. UI/import authority,
 independent latest-ledger retention and host-request verification remain open.
+
+### Reconciled restore reaches the host-request boundary (2026-09-19)
+
+A new M06-04 synthetic binding now covers real archive creation, later repository
+deletion/manifest export, staged restore and an actual new host task bound to
+the restored DB. Deleted content is absent from all captured adapter requests
+and used receipts; history contains only the empty stub and repeated saving
+fails with `memory_previously_deleted`. Separate tests refuse live/unquarantined
+stores and stale manifests without changing deletion metadata.
+
+The focused four-file selection passed 44 tests, 27 deselected, in 20.59s;
+the new runtime case passed separately in 2.32s. Lint/whitespace checks passed.
+Only tests/docs changed; no real provider was called. The binding catalog now
+has 39 cases covering partial aspects of 25 scenarios, not 60 completed cases.
+Trusted import/export UI, independently retained current manifests and actual
+packaged manifest restore remain open; source request evidence alone does not
+close the full recovery contract.

@@ -276,6 +276,55 @@ async def test_restored_memory_is_absent_from_next_host_request_until_fresh_revi
     assert content in reviewed[0]["system"]
 
 
+async def test_later_deletion_manifest_blocks_old_backup_in_actual_host_request(
+    runtime, execution_db, tmp_path, monkeypatch,
+):
+    # M06-04: real archive/staged reconciliation, then a new host task bound to
+    # the restored DB. No model/transport behavior is inferred from the script.
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+    from arslan.companion.memory import MemoryError
+    from server.db import session as db_session
+    from server.services import backup, memory_deletion_manifest
+
+    content = "For reports use concise conclusions and blue headings."
+    await runtime("pre-backup", f"Remember: {content}", save=content)
+    async with repository() as repo:
+        entry = (await repo.list_entries())[0]
+    archive = tmp_path / "before-delete.zip"
+    backup.create(tmp_path, archive, db_path=tmp_path / "execution.db")
+    original = archive.read_bytes()
+    async with repository() as repo:
+        await repo.delete_entry(entry["id"], entry["version"], MemoryActor(origin="user"))
+    async with execution_db.kw["bind"].begin() as connection:
+        manifest = await connection.run_sync(memory_deletion_manifest.export_sync)
+    restored = tmp_path / "restored-profile"
+    outcome = backup.restore(archive, restored, deletion_manifest=manifest)
+    assert outcome["deletion_reconciliation"]["deleted_entries"] == 1
+    assert archive.read_bytes() == original
+    engine = db_session.build_engine(f"sqlite+aiosqlite:///{restored / 'arslan.db'}")
+    maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    try:
+        with monkeypatch.context() as patch:
+            patch.setattr(db_session, "AsyncSessionLocal", maker)
+            requests = await runtime("post-restore-new-task", "Prepare a report with headings.")
+            assert all(content not in request["system"] and content not in request["user"] for request in requests)
+            async with maker() as db:
+                receipts = (await db.scalars(select(ContextReceiptRecord).where(
+                    ContextReceiptRecord.conversation_id == "post-restore-new-task"))).all()
+            assert receipts and all(not row.receipt["used"] for row in receipts)
+            async with repository() as repo:
+                item = await repo.present(await repo.get(entry["id"]))
+                assert item["status"] == "deleted" and item["content"] is None
+                history = await repo.history(entry["id"])
+                assert all(row["content"] is None for row in history)
+            with pytest.raises(MemoryError, match="^memory_previously_deleted$"):
+                async with repository() as repo:
+                    await repo.create(MemoryWrite(content=content, scope=MemoryScope(kind="global")),
+                                      MemoryActor(origin="user"))
+    finally:
+        await engine.dispose()
+
+
 async def test_repeated_save_keeps_one_active_entry(runtime):
     # M01-06: exact equivalent content, not a semantic-paraphrase claim.
     content = "concise reports"
