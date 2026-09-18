@@ -1442,3 +1442,41 @@ trial lease is not yet wired to ordinary `_serve()`: a restricted boot/health
 path must prevent those actions before any native recovery activation is enabled.
 Native confirmation, restricted health checks, finalization, packaged validation
 and broader release gates remain open. No real app/profile/provider was used.
+
+### Restricted local trial health application (2026-09-19)
+
+Factored normal startup's transactional storage sequence into `storage_boot`:
+table setup, migrations, salt adoption, verified legacy-ciphertext migration and
+memory activation, in the same order/transaction. Normal `main.lifespan` calls
+this shared implementation; it still performs its existing work afterwards.
+The new internal `activation_trial` app calls only the shared storage stage and
+startup settings validation while holding exact-journal trial ownership.
+
+The factory requires an already prepared configuration (it will not import config
+to bootstrap a key), a distinct 64-hex-character trial token, and configuration
+whose DB/data paths match the switched active profile. Actual startup key checks
+occur when acquiring the lease, not at factory construction. It uses its own DB
+engine and disposes it before releasing ownership. It does not run the normal
+lifespan, seeders, classification, reapers, timers, MCP checks or business routes.
+
+Only `GET /api/v1/activation-trial/health` exists, with bearer authentication,
+operation-bound readiness and no-store responses. Docs/OpenAPI, settings/memory
+routes, MCP and WebSockets are absent. Readiness is set only after successful
+local initialization and cleared on shutdown/failure. Readiness is not approval,
+full normal-app readiness, model quality or finalization; the journal remains.
+
+Six related files passed 113 cases in 16.73s, including the existing real normal
+lifespan migration-order tests. Targeted lint/whitespace checks passed (one
+existing Starlette warning). The restricted app was tested both with ASGI client
+and with a real dedicated Python/uvicorn process on OS-assigned loopback HTTP.
+Valid health, unauthorized refusal and business-route absence were observed;
+parent-pipe closure stopped that synthetic process, released locks, left HOME
+empty and allowed rollback. Tests also inject boot failure, change the configured
+key after construction, refuse another profile's data path, verify no implicit
+config import in a fresh process and forbid normal background startup functions.
+
+This is source-process validation, not the frozen entry/native launcher. There
+is still no public trial flag, native recovery UI, automatic finalize or release
+activation. Native token/secret preparation, authenticated trial orchestration,
+health-checked finalization, packaging and full regression remain open. No real
+profile, installed app, provider call, signing or publication occurred.

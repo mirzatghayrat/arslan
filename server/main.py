@@ -8,7 +8,6 @@ from fastapi import Depends, FastAPI, WebSocket
 
 from server.api import health, settings as settings_api
 from server.auth import require_auth
-from server.db.models import Base
 from server.db.session import engine
 
 logger = logging.getLogger(__name__)
@@ -131,29 +130,8 @@ async def lifespan(app: FastAPI):
 
     _log_data_location(settings)
 
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        from server.db.migrations import runner as migration_runner
-        await conn.run_sync(migration_runner.apply_pending)
-        # Install the PBKDF2 salt BEFORE anything can decrypt. Ordered after the
-        # migration chain because 0039 is what adopts a pre-existing on-disk salt
-        # into the database, and inside the same transaction so a boot that fails
-        # here leaves no half-written salt row behind. crypto refuses to derive
-        # without this, so a silent misordering surfaces as a loud error rather
-        # than as keys derived from a guessed salt.
-        from server.services import crypto_boot
-        await conn.run_sync(crypto_boot.resolve_and_adopt_salt)
-        # Group A migration: values the CURRENT inputs can already open (legacy
-        # unsalted ciphertext) are re-encrypted under the primary key now. Not gated —
-        # d6d8afa8 shipped read-time fallback WITHOUT a rewrite, which is why the
-        # legacy key could never be retired. Same transaction, so a verification
-        # failure rolls the whole thing back rather than leaving a row we broke.
-        await conn.run_sync(crypto_boot.migrate_legacy_ciphertext)
-        # Complete the prepared legacy snapshot before any seeder, background
-        # classifier or request can read/write memory. Activation keeps recovery
-        # rows immutable and installs compatibility views in this transaction.
-        from server.services.memory_activation import activate_sync
-        await conn.run_sync(activate_sync)
+    from server.services.storage_boot import initialize
+    await initialize(engine)
 
     from server.services import native_locale
 

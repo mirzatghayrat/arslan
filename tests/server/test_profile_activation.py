@@ -6,6 +6,7 @@ import select
 import sqlite3
 import subprocess
 import sys
+import time
 from uuid import uuid4
 
 import pytest
@@ -275,6 +276,174 @@ def test_real_trial_process_holds_ownership_until_parent_pipe_closes(profiles, t
     finally:
         if process.poll() is None:
             process.kill()  # Only the exact synthetic child created by this test.
+            process.wait(timeout=5)
+        for stream in (process.stdin, process.stdout, process.stderr):
+            stream.close()
+
+
+def _restricted_app(profiles, monkeypatch):
+    from dataclasses import replace
+    from server import config, crypto
+    from server.activation_trial import create_app
+
+    active, candidate, _ = profiles
+    operation = activation.switch_for_trial(active, candidate, SECRET)["operation_id"]
+    monkeypatch.setattr(config, "settings", replace(config.settings, secret_key=SECRET,
+                                                   data_dir=active, db_path=str(active / "arslan.db")))
+    # Restore process-global crypto state after this in-process test.
+    monkeypatch.setattr(crypto, "_salt", crypto._salt)
+    monkeypatch.setattr(crypto, "_salt_source", crypto._salt_source)
+    return create_app(active, operation, "ab" * 32), active, operation
+
+
+def test_restricted_trial_runs_storage_boot_but_exposes_only_authenticated_health(profiles, monkeypatch):
+    from fastapi.testclient import TestClient
+    import server.main as main
+    from server.services import scheduler, evolution_watcher, curation_loop, fact_classify
+
+    app, active, operation = _restricted_app(profiles, monkeypatch)
+    def forbidden(*args, **kwargs):
+        pytest.fail("restricted trial must not start the normal lifespan or background work")
+    monkeypatch.setattr(main, "lifespan", forbidden)
+    for module in (scheduler, evolution_watcher, curation_loop):
+        monkeypatch.setattr(module, "start", forbidden)
+    monkeypatch.setattr(fact_classify, "schedule", forbidden)
+    with TestClient(app) as client:
+        path = "/api/v1/activation-trial/health"
+        assert client.get(path).status_code == 401
+        assert client.get(path, headers={"Authorization": "Bearer wrong"}).status_code == 401
+        response = client.get(path, headers={"Authorization": "Bearer " + "ab" * 32})
+        assert response.json() == {"status": "ready", "mode": "activation_trial", "operation_id": operation}
+        assert response.status_code == 200
+        assert response.headers["cache-control"] == "no-store"
+        for blocked in ("/docs", "/openapi.json", "/api/v1/settings", "/mcp-server", "/api/v1/memory/entries"):
+            assert client.get(blocked).status_code == 404
+            assert client.post(blocked, json={}).status_code == 404
+        from starlette.websockets import WebSocketDisconnect
+        with pytest.raises(WebSocketDisconnect):
+            with client.websocket_connect("/ws/arslan/synthetic"):
+                pytest.fail("no websocket access")
+        with pytest.raises(ValueError, match="data_profile_in_use"):
+            activation.rollback(active)
+        with sqlite3.connect(active / "arslan.db") as db:
+            assert db.execute("SELECT applied FROM memory_restore_guard WHERE id=1").fetchone() == (1,)
+    assert app.state.ready is False
+    assert activation_record_path(active / "arslan.db").exists()
+    assert activation.rollback(active)["rolled_back"]
+
+
+def test_failed_trial_boot_never_reports_ready_and_releases_ownership(profiles, monkeypatch):
+    from fastapi.testclient import TestClient
+    from server import activation_trial
+
+    app, active, _ = _restricted_app(profiles, monkeypatch)
+    async def fail(engine):
+        raise RuntimeError("synthetic boot failure")
+    monkeypatch.setattr(activation_trial, "initialize", fail)
+    with pytest.raises(RuntimeError, match="synthetic boot failure"):
+        with TestClient(app):
+            pytest.fail("failed startup must not serve health")
+    assert app.state.ready is False
+    assert activation.rollback(active)["rolled_back"]
+
+
+def test_restricted_trial_checks_actual_key_at_startup_not_factory_time(profiles, monkeypatch):
+    from dataclasses import replace
+    from fastapi.testclient import TestClient
+    from server import config
+
+    app, active, _ = _restricted_app(profiles, monkeypatch)
+    monkeypatch.setattr(config, "settings", replace(config.settings, secret_key="wrong-at-startup"))
+    with pytest.raises(ValueError, match="activation_credentials_refused"):
+        with TestClient(app):
+            pytest.fail("changed key must not reach initialization")
+    assert app.state.ready is False
+    assert activation.rollback(active)["rolled_back"]
+
+
+def test_trial_refuses_configuration_pointing_at_another_profile(profiles, monkeypatch, tmp_path):
+    from dataclasses import replace
+    from fastapi.testclient import TestClient
+    from server import config
+
+    app, active, _ = _restricted_app(profiles, monkeypatch)
+    wrong = tmp_path / "unrelated-profile"
+    monkeypatch.setattr(config, "settings", replace(config.settings, data_dir=wrong))
+    with pytest.raises(ValueError, match="activation_trial_configuration_mismatch"):
+        with TestClient(app):
+            pytest.fail("must not read migration material from another profile")
+    assert not wrong.exists()
+    assert activation.rollback(active)["rolled_back"]
+
+
+def test_trial_factory_does_not_bootstrap_configuration_in_fresh_process(tmp_path):
+    home = tmp_path / "empty-home"
+    home.mkdir()
+    code = ("from pathlib import Path\nimport sys\n"
+            "from server.activation_trial import create_app\n"
+            "assert 'server.config' not in sys.modules\n"
+            "try: create_app(Path(sys.argv[1]), 'unused', 'ab' * 32)\n"
+            "except ValueError as error:\n"
+            " assert str(error) == 'activation_trial_runtime_not_prepared'\n"
+            "else: raise AssertionError('must require prepared runtime')\n"
+            "assert 'server.config' not in sys.modules\n")
+    run = subprocess.run([sys.executable, "-c", code, str(home / "absent")],
+                         cwd=Path(__file__).resolve().parents[2], timeout=10, capture_output=True,
+                         env={"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(home)})
+    assert run.returncode == 0 and not run.stdout and not run.stderr
+    assert not list(home.iterdir())
+
+
+def test_restricted_trial_over_real_loopback_http_then_rollback(profiles, tmp_path):
+    import httpx
+
+    active, candidate, _ = profiles
+    operation = activation.switch_for_trial(active, candidate, SECRET)["operation_id"]
+    code = ("import socket, sys, threading\nfrom pathlib import Path\n"
+            "from server import config\nfrom server.activation_trial import create_app\nimport uvicorn\n"
+            "app = create_app(Path(sys.argv[1]), sys.argv[2], 'ab' * 32)\n"
+            "sock = socket.socket(); sock.bind(('127.0.0.1', 0)); sock.listen(128)\n"
+            "server = uvicorn.Server(uvicorn.Config(app, log_level='critical', access_log=False))\n"
+            "threading.Thread(target=lambda: (sys.stdin.read(), setattr(server, 'should_exit', True)), daemon=True).start()\n"
+            "print(sock.getsockname()[1], flush=True)\nserver.run(sockets=[sock])\n")
+    home = tmp_path / "trial-home"
+    home.mkdir()
+    process = subprocess.Popen([sys.executable, "-c", code, str(active), operation],
+                               cwd=Path(__file__).resolve().parents[2],
+                               stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                               env={"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(home),
+                                    "ARSLAN_DATA_DIR": str(active), "ARSLAN_SECRET_KEY": SECRET,
+                                    "ARSLAN_SECRET_KEY_FILE": "", "ARSLAN_LIVE_LLM": "0"})
+    try:
+        assert select.select([process.stdout], [], [], 10)[0]
+        port = int(process.stdout.readline())
+        with httpx.Client(base_url=f"http://127.0.0.1:{port}", timeout=0.5, trust_env=False) as client:
+            deadline = time.monotonic() + 15
+            while True:
+                try:
+                    response = client.get("/api/v1/activation-trial/health",
+                                          headers={"Authorization": "Bearer " + "ab" * 32})
+                    if response.status_code == 200:
+                        break
+                except httpx.HTTPError:
+                    pass
+                assert process.poll() is None and time.monotonic() < deadline
+                time.sleep(0.05)
+            assert response.json() == {"status": "ready", "mode": "activation_trial", "operation_id": operation}
+            assert client.get("/api/v1/activation-trial/health").status_code == 401
+            assert client.post("/api/v1/memory/entries", json={}).status_code == 404
+            assert client.get("/api/v1/settings").status_code == 404
+            with pytest.raises(ValueError, match="data_profile_in_use"):
+                activation.rollback(active)
+        process.stdin.close()
+        process.wait(timeout=10)
+        assert process.returncode == 0
+        assert activation_record_path(active / "arslan.db").exists()
+        assert activation.rollback(active)["rolled_back"]
+        assert not list(home.iterdir())
+    finally:
+        if process.poll() is None:
+            process.kill()
             process.wait(timeout=5)
         for stream in (process.stdin, process.stdout, process.stderr):
             stream.close()

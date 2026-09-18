@@ -346,3 +346,13 @@ partial switches and competing trials/rollback. The operation ID is not an
 authorization credential, and lease exit is not finalization. No normal-server
 trial flag or public endpoint is enabled: ordinary startup has background work
 that must be excluded from a dedicated health-validation path first.
+
+A restricted internal trial ASGI application now exists. It shares normal
+transactional storage initialization but exposes only an authenticated,
+operation-bound, no-store health response after success. It does not invoke the
+normal lifespan/background workers or register business/MCP/WebSocket routes.
+Its own engine is disposed before trial ownership is released, and the journal
+is not finalized by a successful response. Dedicated source-process loopback
+HTTP startup/shutdown and subsequent rollback have passed; frozen entry and
+native orchestration are not yet connected. Local storage readiness is not a
+claim that the complete app or real-model workflows have passed acceptance.
