@@ -780,3 +780,31 @@ The revised storage-only run and lint/whitespace checks passed. Temporary
 profiles were removed and owned processes stopped. No model request or real
 credential was used. Native installation/signing and complete upgrade acceptance
 remain open, with production memory activation now an explicit integration gap.
+
+### Production activation wired; new package acceptance pending (2026-09-19)
+
+`server.main.lifespan` now calls `activate_sync` inside the existing boot
+transaction, after schema/crypto preparation and before seeders, classifiers,
+schedulers or served requests. Compatibility views and immutable recovery rows
+are installed together; activation failure propagates instead of serving a
+partially switched application. Existing primary legacy entry points already
+branch on `is_active`, and legacy classification declines background cloud work
+when active. This inspection is not proof of every possible legacy path.
+
+A new test invokes the actual lifespan database sequence, stopping at the first
+seeder to isolate background work. It failed on inactive state before the fix,
+then passed on two startups with retained legacy content and compatibility views.
+An additional rollback test interrupts the activation transaction and verifies
+prepared state/original table/content survive, followed by successful retry.
+The activation/migration/restore/runner selection passed 69 tests in 15.64s;
+after adding rollback coverage, all five activation tests passed in 0.86s.
+Nine compatibility/repository/tool/classifier/facts/learning/distill/brain suites
+passed 72 tests in 11.07s (existing dependency warning and nine guarded aiosqlite
+closed-loop deliveries remain). Targeted lint and whitespace checks passed.
+
+The real frozen-upgrade driver now REQUIRES active state, compatibility views
+and the preserved recovery row; it no longer accepts prepared state. This
+stronger expectation has not yet been run against a rebuilt candidate. The
+existing `aa9244...28fb2` package predates the production fix and is not accepted
+as fixed. Rebuild, frozen fresh/upgrade/restore checks and a new full regression
+remain required before closing the activation blocker.

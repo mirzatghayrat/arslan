@@ -75,9 +75,8 @@ def main():
             with sqlite3.connect(data / "arslan.db") as db:
                 assert db.execute("PRAGMA integrity_check").fetchone() == ("ok",)
                 phase = db.execute("SELECT phase FROM memory_store_state WHERE id=1").fetchone()
-                # Production currently snapshots without activating v2. Report
-                # this release gap explicitly, never silently enable it here.
-                assert phase == ("prepared",)
+                assert phase == ("active",)
+                assert db.execute("SELECT type FROM sqlite_master WHERE name='user_facts'").fetchone() == ("view",)
                 migrated = db.execute("""SELECT e.id,e.version,r.content FROM memory_legacy_map m
                     JOIN memory_entries e ON e.id=m.entry_id
                     JOIN memory_revisions r ON r.id=e.current_revision_id
@@ -85,13 +84,15 @@ def main():
                 assert len(migrated) == 1 and migrated[0][1:] == (1, "Synthetic legacy preference: concise reports")
                 assert db.execute("SELECT content FROM user_facts WHERE id=987654").fetchone() == (
                     "Synthetic legacy preference: concise reports",)
+                assert db.execute("SELECT content FROM legacy_user_facts WHERE id=987654").fetchone() == (
+                    "Synthetic legacy preference: concise reports",)
                 if attempt == 0:
                     first_snapshot = migrated
                 else:
                     assert migrated == first_snapshot
         assert hashlib.sha256(archive.read_bytes()).hexdigest() == archive_hash
     print(json.dumps({"frozen_upgrade_storage": "passed", "pre_v2_schema": True, "candidate_boots": 2,
-                      "legacy_snapshot_retained_and_idempotent": True, "memory_v2_activation": "missing_in_production_boot",
+                      "legacy_snapshot_retained_and_idempotent": True, "memory_v2_activation": "active",
                       "provider_ciphertext_and_salt_retained": True, "provider_key_decryptable": True,
                       "language_token_artifact_retained": True, "pre_upgrade_backup_unchanged": True,
                       "old_binary_sha256": hashlib.sha256(old.read_bytes()).hexdigest(),

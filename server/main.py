@@ -149,6 +149,11 @@ async def lifespan(app: FastAPI):
         # legacy key could never be retired. Same transaction, so a verification
         # failure rolls the whole thing back rather than leaving a row we broke.
         await conn.run_sync(crypto_boot.migrate_legacy_ciphertext)
+        # Complete the prepared legacy snapshot before any seeder, background
+        # classifier or request can read/write memory. Activation keeps recovery
+        # rows immutable and installs compatibility views in this transaction.
+        from server.services.memory_activation import activate_sync
+        await conn.run_sync(activate_sync)
 
     from server.services import native_locale
 
