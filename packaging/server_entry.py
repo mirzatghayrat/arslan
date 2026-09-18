@@ -538,7 +538,7 @@ def main() -> int:
 
     _sanitize_env()
 
-    from server.config import settings
+    from server.profile_paths import resolve_database
     from server.services.data_profile_lock import hold
     from contextlib import ExitStack
 
@@ -546,7 +546,7 @@ def main() -> int:
     # A second packaged backend or an offline restore must not use this profile.
     with ExitStack() as stack:
         try:
-            stack.enter_context(hold(pathlib.Path(settings.db_path)))
+            stack.enter_context(hold(resolve_database()))
         except (ValueError, OSError) as exc:
             known = {"data_profile_in_use", "data_profile_recovery_required"}
             code = str(exc) if isinstance(exc, ValueError) and str(exc) in known else "data_profile_unavailable"

@@ -1604,3 +1604,26 @@ The full recovery picker, explicit user confirmation, native secret preparation
 and orchestration remain unimplemented. Previously built sidecars and the complete
 temporary desktop app predate this new handshake/copy. No real data, account,
 installed app or publication was changed.
+
+### Refuse normal startup before secret bootstrap (2026-09-19)
+
+Review of original-secret preparation found normal packaged startup imported
+configuration before acquiring profile ownership. A pending-recovery or busy
+profile could therefore trigger first-boot key generation before being refused.
+Path resolution now lives in a pure stdlib module shared by configuration and
+the entry point; the entry acquires ownership before configuration is imported
+by normal serving. Platform defaults and packaged override sanitization are
+unchanged. This does not implement the native original-secret reader yet.
+
+Fresh-process tests omit explicit keys and disabling flags, exercise actual
+default paths under disposable HOME, and prove both pending-recovery and busy
+refusals leave `server.config` unloaded and no `.arslan` secret directory or DB.
+The pending case preserves the journal and does not recreate the active folder.
+Initial tests exposed fixture assumptions about preloaded settings and stripped
+path overrides; those fixtures were corrected to exercise the new pure resolver
+and real sanitized default path. No real user profile was used.
+
+The three targeted suites cover entry behavior, platform paths and existing
+secret-bootstrap compatibility: 71 passed in 0.72s, with one existing Starlette
+warning; targeted lint and whitespace checks passed. Frozen rebuild and complete regression remain
+required; no installed application or release artifact was replaced.

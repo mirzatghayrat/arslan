@@ -109,8 +109,9 @@ def test_activation_trial_dispatches_only_to_restricted_entry(entry, monkeypatch
 @pytest.fixture
 def entry(tmp_path, monkeypatch):
     from dataclasses import replace
-    from server import config
+    from server import config, profile_paths
     monkeypatch.setattr(config, "settings", replace(config.settings, db_path=str(tmp_path / "entry.db"), data_dir=tmp_path))
+    monkeypatch.setattr(profile_paths, "resolve_database", lambda: pathlib.Path(config.settings.db_path))
     monkeypatch.setattr(sys, "argv", ["arslan-server"])
     return _load_entry()
 
@@ -161,6 +162,7 @@ def test_pending_activation_refuses_startup_before_recreating_profile(entry, mon
 
     database = tmp_path / "temporarily-absent" / "arslan.db"
     monkeypatch.setattr(config, "settings", replace(config.settings, db_path=str(database)))
+    monkeypatch.setenv("ARSLAN_DB_PATH", str(database))
     record = activation_record_path(database)
     record.write_text("pending record presence is enough to refuse boot")
     monkeypatch.setattr(entry, "_serve", lambda: pytest.fail("pending activation must not serve"))
@@ -182,6 +184,47 @@ def test_profile_lock_failures_do_not_expose_untrusted_diagnostics(entry, monkey
     monkeypatch.setattr(entry, "_serve", lambda: pytest.fail("unavailable profile must not serve"))
     assert entry.main() == 1
     assert capsys.readouterr().out == "ARSLAN_ERROR=data_profile_unavailable\n"
+
+
+@pytest.mark.parametrize("reason", ["pending", "busy"])
+def test_refused_fresh_process_does_not_bootstrap_secret(tmp_path, reason):
+    from contextlib import nullcontext
+    import subprocess
+    from server.services.data_profile_lock import activation_record_path, hold
+
+    home = tmp_path / "home"
+    home.mkdir()
+    if sys.platform == "darwin":
+        database = home / "Library/Application Support/Arslan/arslan.db"
+    elif sys.platform == "win32":
+        pytest.skip("profile lock is POSIX-only")
+    else:
+        database = home / ".local/share/Arslan/arslan.db"
+    database.parent.parent.mkdir(parents=True)
+    record = activation_record_path(database)
+    if reason == "pending":
+        record.write_text("synthetic pending operation")
+    code = (
+        "import importlib.util,sys; "
+        f"s=importlib.util.spec_from_file_location('entry',{str(_ENTRY)!r}); "
+        "m=importlib.util.module_from_spec(s); s.loader.exec_module(m); "
+        "m._serve=lambda: (_ for _ in ()).throw(AssertionError('must not serve')); "
+        "assert 'server.config' not in sys.modules; "
+        "assert m.main()==1; assert 'server.config' not in sys.modules"
+    )
+    with hold(database) if reason == "busy" else nullcontext():
+        result = subprocess.run([sys.executable, "-c", code], cwd=_ENTRY.parents[1],
+                                env={"PATH": os.environ["PATH"], "HOME": str(home),
+                                     "ARSLAN_DB_PATH": str(database), "ARSLAN_DATA_DIR": str(database.parent)},
+                                capture_output=True, timeout=10)
+    assert result.returncode == 0, result.stderr.decode()
+    expected = "data_profile_in_use" if reason == "busy" else "data_profile_recovery_required"
+    assert result.stdout == f"ARSLAN_ERROR={expected}\n".encode()
+    assert not (home / ".arslan").exists()
+    assert not database.exists()
+    if reason == "pending":
+        assert not database.parent.exists()
+        assert record.read_text() == "synthetic pending operation"
 
 
 def test_the_entry_script_exists_where_the_pyinstaller_spec_expects_it():
