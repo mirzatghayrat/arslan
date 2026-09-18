@@ -5,6 +5,34 @@ permission to publish, or permission to replace the installed application.
 
 ## Frozen engineering run
 
+### Complete backend source regression: a853cf8f, 2026-09-19
+
+The full Python suite ran on clean, unchanged `a853cf8f` in a scrubbed environment
+with disposable HOME/data, a synthetic secret, disabled secret-file bootstrap
+and `ARSLAN_LIVE_LLM=0`: **4,904 passed, 14 skipped, 19 warnings in 482.43s**.
+Report: `/tmp/arslan-release-regression.Vc3q8a/backend.xml`. The teardown guard
+recorded 96 closed-loop deliveries. Warnings include existing Starlette
+deprecation, sync tests marked async, SQLAlchemy connection cleanup/cyclic
+metadata/null identity, and deliberately exercised portal teardown diagnostics.
+
+Skips are 12 real-model evaluations, one non-macOS-only refusal check and one
+explicit operator-copy allowlist case. None is a successful real-model result.
+The existing 30 deterministic acceptance contracts were also summarized from
+this actual XML: all 30 passed. They are not the 30 real task families.
+
+After that frozen run, four cross-turn memory tests were added without changing
+production code. Two initial credential cases expected a later boundary than
+the actual early task refusal; corrected assertions verify that stronger
+boundary rather than bypassing it. The four-case follow-up passed (7.30s);
+see `memory-runtime-bindings.md`. Frontend/native/package results remain those
+of the menu checkpoint below; this turn did not rebuild or modify the app.
+
+An explicit all-unrun evaluation report at
+`/tmp/arslan-release-regression.Vc3q8a/unrun-report.json` has denominator 90,
+observed 0 and no eligible live score. No attempt evidence was supplied to this
+report. Real-input evaluation, remaining memory bindings, W11/account boundaries,
+design/media workflows, native visual acceptance and human review remain open.
+
 ### Current packaged checkpoint: native menus, 2026-09-19 (UI pending)
 
 Six-language native menu labels are implemented with predefined system roles
@@ -551,7 +579,7 @@ not a new all-green frozen full run, nor real-model or packaged acceptance.
 
 | Requirement | Current authoritative state | Remaining evidence |
 | --- | --- | --- |
-| Complete engineering regression | `040a7f56` Python population passed in two disjoint selections (4,867 total); frontend/typecheck/build evidence above | Repeat on final release source after remaining implementation gates |
+| Complete engineering regression | Clean `a853cf8f`: 4,904 Python tests passed, 14 skipped; four later test-only memory cases passed separately; frontend/native/package evidence above | Repeat on final release source after remaining implementation gates |
 | Context evidence UI | Task-scoped receipt history, version review and provider-bound counters; in-flight withdrawal, snapshot fences and retained-source filtering implemented | Real desktop and packaged runtime verification, historical scope snapshots and complete scenario evaluation; see `context-request-evidence.md` and `memory-inflight-revocation.md` |
 | 30 real task families × 3 attempts | All 30 catalog entries are `real_inputs_pending`; fixed denominator is 90 | Authorized real inputs, immutable initial-state/configuration hashes, actual attempts and independent checker evidence |
 | 60 multi-turn memory scenarios | All 60 retain incomplete status; partial host-request/receipt bindings documented in `memory-runtime-bindings.md` | Complete remaining bindings, relevance filtering and separately authorized model-behavior checks |

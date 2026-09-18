@@ -12,7 +12,7 @@ from sqlalchemy import insert, select, update
 
 from arslan.models import LLMResponse
 from arslan.companion.memory import MemoryActor, MemoryScope, MemoryWrite
-from server.db.models import ArslanMessage, ContextReceiptRecord, ConversationContext, Project, ProviderConfig, Run
+from server.db.models import ArslanMessage, CompanionTask, ContextReceiptRecord, ConversationContext, Project, ProviderConfig, Run
 from server.orchestrator import arslan, memory, tool_loop
 from server.registry.memory_executors import RememberExecutor
 from server.services import knowledge, personal_context, task_context
@@ -229,6 +229,73 @@ async def test_repeated_save_keeps_one_active_entry(runtime):
     assert len(entries) == 1 and entries[0]["status"] == "active"
     later = await runtime("third", SCENARIOS["M01-06"]["turns"][1]["content"])
     assert later[0]["system"].count(entries[0]["id"]) == 1
+
+
+@pytest.mark.parametrize("scenario_id,project,original,candidate,later_query", [
+    ("M02-01", False, "Use concise reports.", "Use detailed reports.", "Prepare another report."),
+    ("M02-02", True, "Use orange for project design.", "Use blue for project design.",
+     "Create another project design."),
+])
+async def test_one_off_instruction_does_not_replace_later_task_memory(
+    scenario_id, project, original, candidate, later_query, runtime, execution_db,
+):
+    # The scripted model deliberately tries to save its interpretation. This
+    # proves the runtime boundary, not whether a real model follows the request.
+    if project:
+        async with execution_db() as db:
+            db.add(Project(id="one-off-project", name="Project A"))
+            await db.flush()
+            db.add_all([ConversationContext(id=cid, project_id="one-off-project")
+                        for cid in ("save", "one-off", "later")])
+            await db.commit()
+    await runtime("save", f"Remember: {original}", save=original)
+    async with repository() as repo:
+        initial = (await repo.list_entries())[0]
+    instruction = SCENARIOS[scenario_id]["turns"][0]["content"]
+    current = await runtime("one-off", instruction, save=candidate)
+    assert instruction in current[0]["user"]
+    async with repository() as repo:
+        entries = await repo.list_entries()
+        retained = next(entry for entry in entries if entry["id"] == initial["id"])
+        assert retained["content"] == original and retained["version"] == initial["version"]
+        assert retained["status"] == "active"
+        proposed = [entry for entry in entries if entry["content"] == candidate]
+        assert len(proposed) == 1 and proposed[0]["status"] == "proposed"
+    later = await runtime("later", later_query)
+    assert original in later[0]["system"]
+    assert candidate not in later[0]["system"]
+    assert instruction not in later[0]["user"]
+    async with execution_db() as db:
+        receipts = (await db.scalars(select(ContextReceiptRecord).where(
+            ContextReceiptRecord.conversation_id == "later"))).all()
+    used = {ref["id"] for receipt in receipts for ref in receipt.receipt["used"]}
+    assert initial["id"] in used and proposed[0]["id"] not in used
+
+
+@pytest.mark.parametrize("credential", ["sk-proj-" + "A" * 30, "api_key: synthetic-only-not-a-real-key"])
+async def test_explicit_credential_save_does_not_reach_next_task_memory(
+    credential, runtime, execution_db,
+):
+    # M07-01: explicit save authority must not override credential screening.
+    # Task admission refuses the sensitive goal BEFORE the host/remember tool.
+    # Do not bypass that stronger boundary merely to exercise a later one.
+    from server.services.task_repository import TaskError
+    with pytest.raises(TaskError, match="^credentials_not_task_data$") as rejected:
+        await runtime("credential-source", f"Remember: {credential}", save=credential)
+    assert credential not in str(rejected.value)
+    async with execution_db() as db:
+        assert (await db.scalars(select(ArslanMessage))).all() == []
+        assert (await db.scalars(select(CompanionTask))).all() == []
+        assert (await db.scalars(select(Run))).all() == []
+    async with repository() as repo:
+        assert await repo.list_entries() == []
+    later = await runtime("credential-inspection", "Show my preferences")
+    assert all(credential not in request["system"] and credential not in request["user"]
+               for request in later)
+    async with execution_db() as db:
+        receipts = (await db.scalars(select(ContextReceiptRecord).where(
+            ContextReceiptRecord.conversation_id == "credential-inspection"))).all()
+    assert receipts and all(not receipt.receipt["used"] for receipt in receipts)
 
 
 async def test_candidate_cannot_replace_confirmed_context(runtime):
