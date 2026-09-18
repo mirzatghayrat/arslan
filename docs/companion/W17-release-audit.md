@@ -1819,3 +1819,32 @@ picker workflow. The complete temporary desktop app has not yet been refreshed
 with this sidecar/native secret reader. The combined 5,131-pass regression still
 predates activation-control production changes. No real profile, credential,
 model, account, installed application or publication was used.
+
+### Native bounded activation-control transport (2026-09-19)
+
+The macOS shell now contains a crate-private caller for the packaged activation
+control protocol. It takes a trusted absolute executable path and typed requests;
+secrets come from the existing-secret wrapper and appear only in a bounded stdin
+message, never command arguments. Inherited secret/key-file/API-token overrides
+are removed. The caller does not discover a binary, obtain approval, expose web
+IPC, launch a trial or automatically retry/rollback an uncertain operation.
+
+Nonblocking stdin/stdout avoid pipe stalls without unbounded reader threads.
+Requests are capped at 16 KiB, replies at 4 KiB, and the operation deadline is
+30 seconds. Captured stderr is discarded rather than forwarded to UI/logs. Success
+requires a matching strict per-action JSON schema and a successful process exit;
+duplicate/extra fields (including extra null fields), invalid operation identities,
+missing original-retained confirmation and unexpected exit statuses are refused.
+Transport failure/timeouts are explicitly `OutcomeUnknown`. Even a backend refusal
+may follow a partial move, so neither implies unchanged data; journal reconciliation
+remains mandatory. Cleanup kills/reaps only the child owned by this call.
+
+The native skill session had no configured Xcode project/scheme/device; isolated
+offline Rust testing passed all 43 tests in 0.28s after a 1.59s incremental build.
+Five added tests cover request/response validation, actual synthetic process I/O,
+failed exit, busy-loop timeout, unbounded-output refusal, secret-environment
+scrubbing and exact-child reaping (ECHILD after timeout). Formatting/whitespace
+checks passed. This is native transport tested with synthetic children, not yet
+a native-to-frozen full-chain run or a confirmed user-facing recovery workflow.
+The existing temporary app bundle predates this module. No real secret/profile,
+installed app, account or publication was used.
