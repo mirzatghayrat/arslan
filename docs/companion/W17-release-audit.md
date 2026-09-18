@@ -808,3 +808,40 @@ stronger expectation has not yet been run against a rebuilt candidate. The
 existing `aa9244...28fb2` package predates the production fix and is not accepted
 as fixed. Rebuild, frozen fresh/upgrade/restore checks and a new full regression
 remain required before closing the activation blocker.
+
+### Activation candidate: actual upgrade/restore now pass (2026-09-19)
+
+Production source was clean at `5ee448ac5774377c6075696cfd5435f5602dc745` for
+the rebuild and all checks. PyInstaller completed in 26.81s using the same
+isolated existing tooling. Native sources/catalog match the temporary native
+build exactly, so the unchanged shell was reused. Tauri rebundled `--no-sign`
+at `/tmp/arslan-native-candidate.xIygc5/target/release/bundle/macos/Arslan.app`.
+This replaces only the temporary candidate. Packaged SPA matches `web/dist`
+byte-for-byte; frontend source/build and native hash are unchanged.
+
+New backend SHA-256:
+`3d2df48f591019fb876444863b9540760636002e15ab64a1ce1aa6cfb9a3a4a3`.
+Native SHA-256 remains
+`768bc50f20e1dc7ee094483be8f3c4aa5bc8af077fda66ca6d6daa02d61d45e3`.
+
+All three harnesses passed against the actual bundled backend, each with
+independent disposable data: `frozen_sidecar_smoke`, `frozen_restore_smoke`,
+and `frozen_upgrade_smoke`. The latter starts the real copied 0.1.38 backend,
+then boots the candidate twice. It now proves phase `active`, compatibility
+views, preserved immutable legacy preference, stable migrated identity/version,
+and retained provider ciphertext/salt/decryptability, language, token, artifact
+and backup. Restore still quarantines memory, rejects stale confirmation and
+old tokens, pauses the due schedule without dispatch, and remains stable on a
+second boot. Fresh/startup/input/language/restart checks also passed.
+
+Bundle verification passed all 15 imports and the no-AGPL/no-database/no-secret
+checks (431 MiB). No production install, user data, real model or credential was
+used. This verifies the previously missing activation in an actual upgraded
+candidate; it does not close all memory routing, full regression, live desktop,
+installer/signature, real task or independent review gates. The previous full
+backend run predates `5ee448ac` and must be repeated for this startup change.
+
+The bundled compute selftest also passed under a separate temporary HOME:
+sandboxed execution, network isolation and two durable artifacts. All launched
+test processes completed; no background test or native candidate UI was left
+running by this checkpoint.
