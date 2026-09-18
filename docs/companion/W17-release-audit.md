@@ -747,3 +747,36 @@ This supersedes the prior empty-memory/empty-schedule fixture limitation for
 these particular checks. It does not prove all restore scenarios, downstream
 model-context exclusion, long-running scheduler behavior, fresh human approval
 UX, or old-release migration. The source-service/frozen-boot split is unchanged.
+
+### Actual 0.1.38 upgrade: storage passes, activation gap found (2026-09-19)
+
+**Release blocker / next integration priority:** the actual candidate leaves
+`memory_store_state.phase='prepared'` after upgrading an old profile. Migration
+0047 explicitly creates only the snapshot. The only `activate_sync` caller
+outside tests is `scripts/companion_smoke_app.py`, not real startup. Earlier
+synthetic-app checks therefore do not prove production v2 activation. Audit
+routing and legacy-write compatibility before integrating activation, then
+repeat actual frozen upgrade. W04/W05 rollout is not complete.
+
+The new `scripts/frozen_upgrade_smoke.py` uses a temporary copy of the installed
+0.1.38 backend, identified by its installed Info.plist. Installed and copied
+backend hashes match, before/after testing:
+`578caa1f06717684f6235c0fb6039e0b41df423fa999449ed988d03580be5598`.
+The candidate is the previously recorded `aa9244...28fb2` backend. No installed
+app or real user profile was launched, modified or replaced.
+
+The first run failed its expected-active assertion. The revised harness does
+not activate memory in the fixture; it explicitly reports
+`memory_v2_activation=missing_in_production_boot` and checks storage only.
+The old backend creates French settings and a synthetic loopback-only provider
+under a disposable HOME. After stopping it, the harness adds one generated
+legacy manual preference/artifact and makes a pre-upgrade backup. Two candidate
+boots preserve provider ciphertext/salt, decryptable masked key, language,
+access token, artifact hash and backup hash; database integrity checks pass.
+The old profile lacks `memory_entries`; migration creates one stable ID/version/
+content snapshot of the preference across both boots and retains its legacy row.
+
+The revised storage-only run and lint/whitespace checks passed. Temporary
+profiles were removed and owned processes stopped. No model request or real
+credential was used. Native installation/signing and complete upgrade acceptance
+remain open, with production memory activation now an explicit integration gap.
