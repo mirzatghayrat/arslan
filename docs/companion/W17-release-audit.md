@@ -590,7 +590,7 @@ not a new all-green frozen full run, nor real-model or packaged acceptance.
 
 | Requirement | Current authoritative state | Remaining evidence |
 | --- | --- | --- |
-| Complete engineering regression | Clean `3617083e`: 4,927 Python tests passed, 14 skipped; frontend 1,889 passed and rebuilt-package evidence below | Repeat on final release source after remaining implementation gates; engineering checks do not close real-task/UI gates |
+| Complete engineering regression | Clean `6f62e8d1`: 4,929 Python tests passed, 14 skipped, including production activation; frontend 1,889 passed and rebuilt-package evidence below | Repeat after further production changes; engineering checks do not close real-task/UI gates |
 | Context evidence UI | Task-scoped receipt history, version review and provider-bound counters; in-flight withdrawal, snapshot fences and retained-source filtering implemented | Real desktop and packaged runtime verification, historical scope snapshots and complete scenario evaluation; see `context-request-evidence.md` and `memory-inflight-revocation.md` |
 | 30 real task families × 3 attempts | All 30 catalog entries are `real_inputs_pending`; fixed denominator is 90 | Authorized real inputs, immutable initial-state/configuration hashes, actual attempts and independent checker evidence |
 | 60 multi-turn memory scenarios | All 60 retain incomplete status; partial host-request/receipt bindings documented in `memory-runtime-bindings.md` | Complete remaining bindings, relevance filtering and separately authorized model-behavior checks |
@@ -845,3 +845,30 @@ The bundled compute selftest also passed under a separate temporary HOME:
 sandboxed execution, network isolation and two durable artifacts. All launched
 test processes completed; no background test or native candidate UI was left
 running by this checkpoint.
+
+### Full regression after production activation (2026-09-19)
+
+Clean `6f62e8d14248af7bfa6bccf0e5105e9f200f0f19` was verified before and after
+the entire run, with no edits during execution. It has the same production
+source as the preceding `5ee448ac` packaged candidate. Results:
+**4,929 passed, 14 skipped, 20 warnings in 487.42s**, process exit 0.
+The run used a scrubbed environment, synthetic secret, `ARSLAN_LIVE_LLM=0`,
+and disposable HOME/data under `/tmp/arslan-release-regression.KvQV9F`.
+
+JUnit `/tmp/arslan-release-regression.KvQV9F/backend.xml` records 4,943 cases,
+zero failures/errors and 14 skips. SHA-256:
+`b494fab2bbcbba0ce4960c43b51308a40a6485e76d2f14082a64db5b44e66fa5`.
+Skip reasons are exactly 12 live-LLM evaluations, one non-macOS-only sandbox
+refusal and one documented operator-copy allowlist. All 30 fixed deterministic
+contracts extracted from this same XML passed; they are not 30 real agent tasks.
+
+Warnings include existing dependency deprecation, synchronous-test asyncio
+markers, SQLAlchemy connection cleanup/cyclic metadata/null identity, and the
+deliberately adversarial portal teardown cases. The aiosqlite guard reported
+61 closed-loop deliveries. These are recorded, not claimed fixed.
+
+Together with actual frozen fresh/upgrade/restore checks, this closes the
+post-activation full-regression gap for the current candidate. Native visual
+acceptance, complete memory/task scenarios, credential/security review and
+signature/install acceptance are still not established. No release or installed
+application change occurred.
