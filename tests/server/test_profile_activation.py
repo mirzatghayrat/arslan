@@ -583,7 +583,7 @@ def test_pipe_control_process_uses_fixed_profile_without_config_bootstrap(profil
     from server import config, crypto
     from server.activation_trial import create_app
 
-    active, candidate, _ = profiles
+    active, candidate, archive = profiles
     original = (active / "arslan.db").read_bytes()
     home = tmp_path / "control-home"
     parent = home / ("Library/Application Support" if sys.platform == "darwin" else ".local/share")
@@ -614,6 +614,10 @@ def test_pipe_control_process_uses_fixed_profile_without_config_bootstrap(profil
             assert not (home / name).exists()
         return json.loads(child.stdout)
 
+    candidate = parent / "native-restored"
+    prepared = control({"action": "prepare", "archive": str(archive), "candidate": candidate.name})
+    assert prepared == {"ok": True, "result": {
+        "prepared": True, "candidate": candidate.name, "files": 1, "secret_included": False}}
     result = control({"action": "switch", "candidate": candidate.name, "secret": SECRET})
     assert result["ok"] and result["result"]["status"] == "trial_pending"
     operation = result["result"]["operation_id"]
@@ -655,3 +659,63 @@ def test_stale_rollback_consent_cannot_affect_new_operation(profiles):
     assert (record.read_bytes(), active.stat().st_ino, (active / "arslan.db").read_bytes()) == before
     assert activation.pending_operation(active) == {"operation_id": second}
     assert activation.rollback(active, second)["rolled_back"]
+
+
+def test_native_prepare_preserves_active_archive_and_refuses_overwrite(profiles):
+    active, _, archive = profiles
+    candidate = active.with_name("native-restored")
+    original = (active / "arslan.db").read_bytes()
+    archived = archive.read_bytes()
+    result = activation.prepare_from_archive(active, archive, candidate)
+    assert result == {"prepared": True, "candidate": candidate.name, "files": 1, "secret_included": False}
+    assert activation.pending_operation(active) == {"operation_id": None}
+    assert (candidate / "arslan.db").is_file()
+    assert (active / "arslan.db").read_bytes() == original and archive.read_bytes() == archived
+    inode = candidate.stat().st_ino
+    with pytest.raises(ValueError, match="NEW directory"):
+        activation.prepare_from_archive(active, archive, candidate)
+    assert candidate.stat().st_ino == inode
+
+
+@pytest.mark.parametrize("kind", ["symlink", "fifo", "directory", "empty", "busy", "outside", "active"])
+def test_native_prepare_refuses_unsafe_inputs_without_activation(profiles, kind):
+    active, _, archive = profiles
+    candidate = active.with_name("native-restored")
+    if kind in {"symlink", "fifo", "directory", "empty"}:
+        selected = archive.with_name("selected")
+        if kind == "symlink":
+            selected.symlink_to(archive)
+        elif kind == "fifo":
+            os.mkfifo(selected)
+        elif kind == "directory":
+            selected.mkdir()
+        else:
+            selected.touch()
+        archive = selected
+    elif kind == "outside":
+        candidate = active / "nested"
+    elif kind == "active":
+        candidate = active
+    from contextlib import nullcontext
+    with hold(active / "arslan.db") if kind == "busy" else nullcontext():
+        with pytest.raises((ValueError, OSError)):
+            activation.prepare_from_archive(active, archive, candidate)
+    assert activation.pending_operation(active) == {"operation_id": None}
+    if kind != "active":
+        assert not candidate.exists()
+
+
+def test_native_prepare_changed_archive_leaves_candidate_unapproved(profiles, monkeypatch):
+    active, _, archive = profiles
+    candidate = active.with_name("native-restored")
+    restore = backup.restore
+    def changed(*args, **kwargs):
+        result = restore(*args, **kwargs)
+        with archive.open("ab") as handle:
+            handle.write(b"changed")
+        return result
+    monkeypatch.setattr(backup, "restore", changed)
+    with pytest.raises(ValueError, match="activation_archive_changed"):
+        activation.prepare_from_archive(active, archive, candidate)
+    assert candidate.exists()  # Preserve uncertain staging; never activate/delete it.
+    assert activation.pending_operation(active) == {"operation_id": None}

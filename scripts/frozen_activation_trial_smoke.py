@@ -85,10 +85,15 @@ def main():
         candidate = active.with_name("restored")
         archive = home / "backup.zip"
         backup.create(active, archive)
-        restored = subprocess.run([str(binary), "--restore-offline", "--archive", str(archive),
-                                   "--new-data-dir", str(candidate), "--current-db-path", str(active / "arslan.db")],
-                                  cwd=home, capture_output=True, timeout=30, env=control_env)
-        assert restored.returncode == 0 and json.loads(restored.stdout)["ok"] is True
+        if native:
+            prepared = control({"action": "prepare", "archive": str(archive), "candidate": candidate.name})
+            assert prepared["prepared"] and prepared["candidate"] == candidate.name
+            assert not prepared["secret_included"] and prepared["files"] > 0
+        else:
+            restored = subprocess.run([str(binary), "--restore-offline", "--archive", str(archive),
+                                       "--new-data-dir", str(candidate), "--current-db-path", str(active / "arslan.db")],
+                                      cwd=home, capture_output=True, timeout=30, env=control_env)
+            assert restored.returncode == 0 and json.loads(restored.stdout)["ok"] is True
         original = (active / "arslan.db").read_bytes()
         preflight = check(candidate / "arslan.db", "frozen-smoke-synthetic-only")
         assert preflight["status"] == "compatible", preflight
@@ -194,6 +199,7 @@ def main():
                       "packaged_offline_restore": True, "source_backup_creation": True,
                       "native_control_transport": bool(native),
                       "native_trial_transport": args.native_trial,
+                      "native_prepare_transport": bool(native),
                       "original_database_retained": True, "native_ui": False, "finalized": args.finalize,
                       "real_model": False, "installed_app": False,
                       "backend_sha256": hashlib.sha256(binary.read_bytes()).hexdigest()}))

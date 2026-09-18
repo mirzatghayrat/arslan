@@ -10,6 +10,10 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 pub(crate) enum Request<'a> {
+    Prepare {
+        archive: &'a Path,
+        candidate: &'a str,
+    },
     Switch {
         candidate: &'a str,
         secret: &'a ExistingSecret,
@@ -27,6 +31,7 @@ pub(crate) enum Request<'a> {
 
 #[derive(Debug, PartialEq)]
 pub(crate) enum Outcome {
+    Prepared { files: u64 },
     TrialPending(String),
     RolledBack(bool),
     PendingOperation(Option<String>),
@@ -53,13 +58,29 @@ pub(super) fn valid_id(value: &str) -> bool {
 }
 
 fn encode(request: &Request<'_>) -> Result<Vec<u8>, ControlError> {
+    fn valid_candidate(candidate: &str) -> bool {
+        !candidate.is_empty()
+            && ![".", ".."].contains(&candidate)
+            && candidate.len() <= 255
+            && !candidate.contains(['/', '\\', '\0'])
+    }
     let value = match request {
-        Request::Switch { candidate, secret } => {
-            if candidate.is_empty()
-                || [".", ".."].contains(candidate)
-                || candidate.len() > 255
-                || candidate.contains(['/', '\\', '\0'])
+        Request::Prepare { archive, candidate } => {
+            let path = archive.to_str().ok_or(ControlError::InvalidRequest)?;
+            if !archive.is_absolute()
+                || path.len() > 4096
+                || path.contains('\0')
+                || archive
+                    .components()
+                    .any(|part| part == std::path::Component::ParentDir)
+                || !valid_candidate(candidate)
             {
+                return Err(ControlError::InvalidRequest);
+            }
+            serde_json::json!({"action":"prepare", "archive":path, "candidate":candidate})
+        }
+        Request::Switch { candidate, secret } => {
+            if !valid_candidate(candidate) {
                 return Err(ControlError::InvalidRequest);
             }
             serde_json::json!({"action":"switch", "candidate":candidate, "secret":secret.expose()})
@@ -113,6 +134,15 @@ struct Switched {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct Prepared {
+    prepared: bool,
+    candidate: String,
+    files: u64,
+    secret_included: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RolledBack {
     rolled_back: bool,
 }
@@ -154,6 +184,18 @@ fn decode(bytes: &[u8], exit: Option<i32>, request: &Request<'_>) -> Result<Outc
         return Err(ControlError::OutcomeUnknown);
     }
     match request {
+        Request::Prepare { candidate, .. } => {
+            let r: Prepared = success(bytes)?;
+            if !r.prepared
+                || r.candidate != *candidate
+                || r.secret_included
+                || r.files == 0
+                || r.files > 10_000
+            {
+                return Err(ControlError::OutcomeUnknown);
+            }
+            Ok(Outcome::Prepared { files: r.files })
+        }
         Request::Switch { .. } => {
             let r: Switched = success(bytes)?;
             if r.status != "trial_pending" || !valid_id(&r.operation_id) {
@@ -326,6 +368,56 @@ mod tests {
             serde_json::json!({"action":"finalize", "operation_id":ID, "secret":"synthetic-only"})
         );
         assert!(!valid_id("01234567-89AB-cdef-0123-456789abcdef"));
+    }
+
+    #[test]
+    fn prepare_requires_selected_absolute_archive_and_matching_new_candidate() {
+        let request = Request::Prepare {
+            archive: Path::new("/tmp/selected.zip"),
+            candidate: "restored",
+        };
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&encode(&request).unwrap()).unwrap(),
+            serde_json::json!({"action":"prepare", "archive":"/tmp/selected.zip", "candidate":"restored"})
+        );
+        for path in ["relative.zip", "/tmp/../archive", "/tmp/a\0b"] {
+            assert_eq!(
+                encode(&Request::Prepare {
+                    archive: Path::new(path),
+                    candidate: "restored"
+                })
+                .err(),
+                Some(ControlError::InvalidRequest)
+            );
+        }
+        assert_eq!(
+            encode(&Request::Prepare {
+                archive: Path::new("/tmp/a"),
+                candidate: "../elsewhere"
+            })
+            .err(),
+            Some(ControlError::InvalidRequest)
+        );
+        let value = serde_json::json!({"ok":true,"result":{"prepared":true,"candidate":"restored","files":1,"secret_included":false}});
+        assert_eq!(
+            decode(&serde_json::to_vec(&value).unwrap(), Some(0), &request),
+            Ok(Outcome::Prepared { files: 1 })
+        );
+        for (key, bad) in [
+            ("candidate", serde_json::json!("other")),
+            ("prepared", serde_json::json!(false)),
+            ("files", serde_json::json!(0)),
+            ("files", serde_json::json!(10001)),
+            ("secret_included", serde_json::json!(true)),
+            ("extra", serde_json::json!(null)),
+        ] {
+            let mut invalid = value.clone();
+            invalid["result"][key] = bad;
+            assert_eq!(
+                decode(&serde_json::to_vec(&invalid).unwrap(), Some(0), &request),
+                Err(ControlError::OutcomeUnknown)
+            );
+        }
     }
 
     #[test]
@@ -537,10 +629,17 @@ mod tests {
         if action == "trial" {
             crate::recovery_trial::run(&binary, &operation, &key)
                 .unwrap_or_else(|error| panic!("native trial failed: {error:?}"));
-            println!("NATIVE_CONTROL_RESULT={{\"ok\":true,\"result\":{{\"trial_completed\":true}}}}");
+            println!(
+                "NATIVE_CONTROL_RESULT={{\"ok\":true,\"result\":{{\"trial_completed\":true}}}}"
+            );
             return;
         }
+        let archive = home.join("backup.zip");
         let request = match action.as_str() {
+            "prepare" => Request::Prepare {
+                archive: &archive,
+                candidate: "restored",
+            },
             "switch" => Request::Switch {
                 candidate: "restored",
                 secret: &key,
@@ -556,6 +655,8 @@ mod tests {
             _ => panic!("invalid fixture action"),
         };
         let message = match run(&binary, &request) {
+            Ok(Outcome::Prepared { files }) => serde_json::json!({"ok":true,
+                "result":{"prepared":true,"candidate":"restored","files":files,"secret_included":false}}),
             Ok(Outcome::PendingOperation(operation_id)) => serde_json::json!({"ok":true,
                 "result":{"operation_id":operation_id}}),
             Ok(Outcome::TrialPending(operation_id)) => serde_json::json!({"ok":true,

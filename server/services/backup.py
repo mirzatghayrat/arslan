@@ -16,6 +16,7 @@ import sqlite3
 import stat
 import tempfile
 import zipfile
+from typing import BinaryIO
 
 FORMAT = 1
 MAX_FILE = 512 * 1024 * 1024
@@ -97,7 +98,7 @@ def create(data_dir: Path, destination: Path, *, db_path: Path | None = None,
     return {"files": len(manifest["files"]), "bytes": total, "secret_included": False}
 
 
-def restore(archive: Path, destination: Path, *, deletion_manifest: bytes | None = None,
+def restore(archive: Path | BinaryIO, destination: Path, *, deletion_manifest: bytes | None = None,
             current_db_path: Path | None = None) -> dict:
     """App stopped: reconcile trusted current records, install only to a new path."""
     from server.services.data_profile_lock import hold
@@ -109,7 +110,7 @@ def restore(archive: Path, destination: Path, *, deletion_manifest: bytes | None
                                 current_db_path=current_db_path)
 
 
-def _restore_stopped(archive: Path, destination: Path, *, deletion_manifest: bytes | None,
+def _restore_stopped(archive: Path | BinaryIO, destination: Path, *, deletion_manifest: bytes | None,
                      current_db_path: Path | None) -> dict:
     destination = destination.absolute()
     if destination.exists() or destination.is_symlink():

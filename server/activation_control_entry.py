@@ -26,7 +26,8 @@ def decode_request(data: bytes) -> dict:
     value = json.loads(data, object_pairs_hook=unique)
     if not isinstance(value, dict) or not isinstance(value.get("action"), str):
         raise ValueError("activation_control_request_invalid")
-    fields = {"switch": {"action", "candidate", "secret"}, "rollback": {"action"}, "inspect": {"action"},
+    fields = {"prepare": {"action", "archive", "candidate"},
+              "switch": {"action", "candidate", "secret"}, "rollback": {"action"}, "inspect": {"action"},
               "finalize": {"action", "operation_id", "secret"}}
     if value["action"] == "rollback" and "operation_id" in value:
         fields["rollback"] = {"action", "operation_id"}
@@ -40,6 +41,11 @@ def decode_request(data: bytes) -> dict:
         if (not isinstance(name, str) or not name or name in {".", ".."}
                 or any(char in name for char in "/\\\0") or len(name.encode()) > 255
                 or Path(name).name != name):
+            raise ValueError("activation_control_request_invalid")
+    if "archive" in value:
+        archive = value["archive"]
+        if (not isinstance(archive, str) or "\0" in archive or len(archive.encode()) > 4096
+                or not Path(archive).is_absolute() or ".." in Path(archive).parts):
             raise ValueError("activation_control_request_invalid")
     if "operation_id" in value:
         identity = value["operation_id"]
@@ -58,7 +64,10 @@ def run(sanitize_env) -> int:
         from server.services import profile_activation
 
         active = resolve_data_dir()
-        if request["action"] == "switch":
+        if request["action"] == "prepare":
+            result = profile_activation.prepare_from_archive(active, Path(request["archive"]),
+                                                             active.parent / request["candidate"])
+        elif request["action"] == "switch":
             result = profile_activation.switch_for_trial(active, active.parent / request["candidate"], request["secret"])
         elif request["action"] == "rollback":
             result = profile_activation.rollback(active, request.get("operation_id"))

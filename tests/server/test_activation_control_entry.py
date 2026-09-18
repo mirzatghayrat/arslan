@@ -9,6 +9,7 @@ from server.activation_control_entry import decode_request, run
 @pytest.mark.parametrize("payload", [
     {"action": "rollback"},
     {"action": "inspect"},
+    {"action": "prepare", "archive": "/tmp/backup.zip", "candidate": "restored"},
     {"action": "rollback", "operation_id": str(uuid4())},
     {"action": "switch", "candidate": "restored", "secret": "synthetic-only"},
     {"action": "finalize", "operation_id": str(uuid4()), "secret": "synthetic-only"},
@@ -20,6 +21,9 @@ def test_exact_action_requests(payload):
 @pytest.mark.parametrize("payload", [
     {}, [], {"action": []}, {"action": "serve"}, {"action": "rollback", "secret": "extra"},
     {"action": "rollback", "active": "/elsewhere"},
+    *[{"action": "prepare", "archive": archive, "candidate": "restored"}
+      for archive in ("relative.zip", "/tmp/../backup.zip", "/tmp/a\0b", "/" + "x" * 4096, 4)],
+    {"action": "prepare", "archive": "/tmp/backup.zip", "candidate": "restored", "secret": "extra"},
     {"action": "rollback", "operation_id": "invalid"}, {"action": "inspect", "secret": "extra"},
     *[{"action": "switch", "candidate": name, "secret": "synthetic-only"}
       for name in ("", ".", "..", "../active", "/active", "a/b", "a\\b", "a\0b", "x" * 256, 4)],

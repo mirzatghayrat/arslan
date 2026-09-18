@@ -2026,3 +2026,50 @@ must still stop its normal child, prepare the selected candidate and secret,
 obtain user confirmation, invoke trial/finalize and restart. There is no web IPC
 or model-callable recovery command. Latest temporary bundle details above remain
 unchanged; a new source module does not constitute completed desktop recovery.
+
+### Native selected-archive preparation transport (2026-09-19)
+
+The local maintenance protocol now accepts a `prepare` request with an explicit
+absolute archive path and a candidate basename, not an active-profile override.
+The packaged entry sanitizes environment and resolves the fixed active profile
+without configuration/secret bootstrap. Preparation requires an existing owned
+active directory and a new same-parent candidate distinct from it. The selected
+archive is opened read-only/no-follow/nonblocking, checked as a nonempty regular
+file of at most 2 GiB, and passed by its pinned descriptor into the existing
+restore validator. Current-profile ownership locking, archive checksums, atomic
+new-directory installation, restored-memory review and deletion-record
+reconciliation remain in the existing restore path. No key is read or generated.
+
+Before/after archive size, modification and change times must match before a
+prepared result is returned. A changed file or uncertain transport can leave a
+candidate in place; it is retained, not approved, activated, deleted or blindly
+overwritten on retry. Parent-directory trust remains an explicit assumption.
+The Rust response parser requires the exact requested candidate, a bounded
+positive file count, prepared=true and secret_included=false. No web IPC or
+model-callable endpoint is added. The prior CLI remains available unchanged.
+
+Focused Python control/activation/CLI/deletion-restore suites passed 121 tests in
+28.41s (one existing Starlette deprecation warning). Source subprocess tests now
+prepare then switch, and assert configuration stays unloaded and inherited
+secret/path canaries remain absent. Tests cover original/archive preservation,
+existing-destination refusal, links, FIFOs, directories, empty files, active
+ownership, non-sibling/active destinations and changed-archive uncertainty.
+Offline native tests passed 57 cases, one opt-in fixture ignored (0.33s, 7.27s
+build), including strict preparation request/result binding. Ruff and whitespace
+checks passed. XcodeBuildMCP defaults were unconfigured; no Xcode/UI acceptance
+is inferred from these Rust tests.
+
+The frozen backend built in 30.89s at
+`/tmp/arslan-candidate-build.BboGj4/dist-native-prepare/arslan-server/arslan-server`.
+SHA-256: `3f77ae1e9c02da0938b164b413196c0dbd4381a07fbd4105fc2b58f611e4c189`.
+Bundle verification passed 15 imports, web assets and prohibited-rasterizer/
+database/secret checks (159 MiB, before compute-runtime staging). Both rollback
+and finalize smoke chains passed with actual native preparation, control and
+trial launch against this frozen backend. Only synthetic backup creation remains
+source-side. Native test executable SHA-256:
+`eacda53f18c7372f95b5525513fd897171147622d0b82957dc8d893e1145a865`.
+
+The menu, file selection, original-key selection, exclusive UI coordination and
+normal-child shutdown/restart still require integration. The full temporary
+desktop bundle predates this change; no installed app, real data/secret/account,
+paid model, signing identity or publication was used.

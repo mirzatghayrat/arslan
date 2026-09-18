@@ -30,6 +30,33 @@ def _identity(path: Path):
     return [info.st_dev, info.st_ino]
 
 
+def prepare_from_archive(active: Path, archive: Path, candidate: Path) -> dict:
+    """Read a host-selected archive; stage only to a new sibling, never activate.
+
+    An uncertain result can leave the new candidate in place. Do not retry over
+    it or infer that no staging occurred. Parent directories remain trusted.
+    """
+    from server.services import backup
+
+    if (not all(path.is_absolute() and ".." not in path.parts for path in (active, archive, candidate))
+            or candidate.parent != active.parent or candidate == active or _identity(active) is None):
+        raise ValueError("activation_path_unsafe")
+    fd = os.open(archive, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+    with os.fdopen(fd, "rb") as handle:
+        before = os.fstat(handle.fileno())
+        if (not stat.S_ISREG(before.st_mode) or before.st_size > backup.MAX_TOTAL
+                or before.st_size == 0):
+            raise ValueError("activation_archive_unsafe")
+        # The descriptor pins the selected file across renames, and NOFOLLOW /
+        # NONBLOCK reject links/devices/FIFOs before ZipFile can block or parse.
+        result = backup.restore(handle, candidate, current_db_path=active / "arslan.db")
+        after = os.fstat(handle.fileno())
+        fields = ("st_size", "st_mtime_ns", "st_ctime_ns")
+        if any(getattr(before, key) != getattr(after, key) for key in fields):
+            raise ValueError("activation_archive_changed")
+    return {"prepared": True, "candidate": candidate.name, "files": result["files"], "secret_included": False}
+
+
 def _sync_parent(parent):
     fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
