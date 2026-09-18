@@ -521,6 +521,9 @@ print("COMPUTE_CANARY_OK")
 
 
 def main() -> int:
+    if sys.argv[1:2] == ["--restore-offline"]:
+        from server.services.recovery_cli import main as restore_offline
+        return restore_offline(sys.argv[2:])
     if "--compute-selftest" in sys.argv[1:]:
         return compute_selftest()
     if "--selftest" in sys.argv[1:]:

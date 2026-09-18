@@ -30,16 +30,8 @@ def main():
     else:
         payload = None
         if args.deletion_manifest is not None:
-            import os
-            import stat
-            from server.services.memory_deletion_manifest import MAX_BYTES, decode
-            fd = os.open(args.deletion_manifest, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-            with os.fdopen(fd, "rb") as handle:
-                info = os.fstat(handle.fileno())
-                if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_BYTES:
-                    raise ValueError("invalid_deletion_manifest")
-                payload = handle.read(MAX_BYTES + 1)
-            decode(payload)
+            from server.services.recovery_cli import read_manifest
+            payload = read_manifest(args.deletion_manifest)
         result = backup.restore(args.archive, args.new_data_dir,
                                 deletion_manifest=payload, current_db_path=args.current_db_path)
     print(json.dumps(result, ensure_ascii=False))

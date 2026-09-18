@@ -82,6 +82,19 @@ def test_compute_selftest_flag_never_starts_server(entry, monkeypatch):
     assert entry.main() == 7
 
 
+def test_offline_restore_dispatches_without_profile_boot(entry, monkeypatch):
+    from server.services import recovery_cli
+    arguments = ["--archive", "synthetic.zip", "--new-data-dir", "new", "--new-machine"]
+    monkeypatch.setattr(sys, "argv", ["arslan-server", "--restore-offline", *arguments])
+    monkeypatch.setattr(entry, "_sanitize_env", lambda: pytest.fail("must not boot"))
+    monkeypatch.setattr(entry, "_serve", lambda: pytest.fail("must not serve"))
+    def restore(argv):
+        assert argv == arguments
+        return 9
+    monkeypatch.setattr(recovery_cli, "main", restore)
+    assert entry.main() == 9
+
+
 @pytest.fixture
 def entry(tmp_path, monkeypatch):
     from dataclasses import replace

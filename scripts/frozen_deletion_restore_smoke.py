@@ -1,7 +1,7 @@
-"""Frozen API export and boot after source-coordinated deletion-aware restore.
+"""Frozen API export, packaged offline restore and restored boot.
 
 Only disposable homes and synthetic memories; no model or installed-app calls.
-The restore service runs from source, not through a native restore/import UI.
+The restore coordinator runs in the binary, not through a native import UI.
 """
 from __future__ import annotations
 
@@ -27,6 +27,20 @@ def assert_record_current(client):
             return
         time.sleep(0.05)  # Bound startup/repair observation; never accept a stale record.
     raise AssertionError("Packaged deletion mirror did not become current")
+
+
+def restore_packaged(binary, home, archive, target, current=None, manifest=None):
+    mode = ["--current-db-path", str(current)] if current else ["--new-machine"]
+    if manifest:
+        mode += ["--deletion-manifest", str(manifest)]
+    run = subprocess.run([str(binary), "--restore-offline", "--archive", str(archive),
+                          "--new-data-dir", str(target), *mode],
+                         cwd=home, input=b"", capture_output=True, timeout=30,
+                         env={"PATH": "/usr/bin:/bin", "HOME": str(home), "TMPDIR": str(home),
+                              "ARSLAN_LIVE_LLM": "0", "ARSLAN_SECRET_KEY": "frozen-smoke-synthetic-only",
+                              "ARSLAN_SECRET_KEY_FILE": ""})
+    assert b"ARSLAN_PORT=" not in run.stdout
+    return run.returncode, json.loads(run.stdout)
 
 
 def main():
@@ -86,12 +100,8 @@ def main():
             assert duplicate.stdout == b"ARSLAN_ERROR=data_profile_in_use\n"
             assert client.get("/api/v1/settings").status_code == 200
             blocked = root / "blocked-restore"
-            try:
-                backup.restore(archive, blocked, current_db_path=source / "arslan.db")
-            except ValueError as exc:
-                assert str(exc) == "data_profile_in_use"
-            else:
-                raise AssertionError("Restore accepted an active packaged profile")
+            code, result = restore_packaged(binary, source_home, archive, blocked, source / "arslan.db")
+            assert code == 1 and result == {"ok": False, "code": "data_profile_in_use"}
             assert not blocked.exists() and not list(root.glob(".arslan-restore-*"))
         finally:
             client.close()
@@ -108,11 +118,27 @@ def main():
 
         restored_home = root / "restored-home"
         restored = restored_home / "Library/Application Support/Arslan"
-        result = backup.restore(archive, restored, current_db_path=source / "arslan.db")
+        code, response = restore_packaged(binary, source_home, archive, restored, source / "arslan.db")
+        assert code == 0 and response["ok"] is True
+        result = response["result"]
         assert result["deletion_record_selection"]["local_ledger_present"] is True
         assert result["deletion_record_selection"]["sources_checked"] == ["current_database", "local_ledger"]
         assert result["memory_review"]["quarantined_entries"] == 2
         assert result["deletion_reconciliation"]["deleted_entries"] == 1
+        # A new-machine import also exercises bounded decoding inside the binary.
+        exported_record = root / "export.json"
+        exported_record.write_bytes(payload)
+        imported_target = root / "imported"
+        code, imported = restore_packaged(binary, source_home, archive, imported_target,
+                                          manifest=exported_record)
+        assert code == 0 and imported["result"]["deletion_reconciliation"]["deleted_entries"] == 1
+        assert imported["result"]["deletion_record_selection"] == {"selected_source": "imported_manifest"}
+        inode = imported_target.stat().st_ino
+        code, refused = restore_packaged(binary, source_home, archive, imported_target,
+                                         manifest=exported_record)
+        assert code == 1 and refused == {"ok": False, "code": "restore_refused"}
+        assert imported_target.stat().st_ino == inode
+        assert exported_record.read_bytes() == payload
         with sqlite3.connect(restored / "arslan.db") as db:
             assert db.execute("SELECT content FROM memory_revisions WHERE entry_id=?", (entries[0]["id"],)).fetchall() == [(None,)]
         previous = None
@@ -150,7 +176,8 @@ def main():
                       "duplicate_backend_refused_without_stopping_owner": True,
                       "active_profile_restore_refused_then_stopped_restore_passed": True,
                       "current_installation_record_selection": True,
-                      "restore_coordinator": "source", "native_import_ui": False,
+                      "packaged_new_machine_import_and_overwrite_refusal": True,
+                      "restore_coordinator": "packaged", "backup_creation": "source", "native_import_ui": False,
                       "host_request_capture": False, "real_model": False, "installed_app": False}))
 
 
