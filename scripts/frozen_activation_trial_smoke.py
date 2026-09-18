@@ -1,4 +1,4 @@
-"""Synthetic frozen boots/trial with source switch and rollback or finalization."""
+"""Synthetic frozen restore/control/trial/restart; source backup creation only."""
 import argparse
 import hashlib
 import json
@@ -11,7 +11,8 @@ import time
 import httpx
 
 from scripts.frozen_sidecar_smoke import start, stop
-from server.services import backup, profile_activation
+from server.services import backup
+from server.services.data_profile_lock import activation_record_path
 from server.services.recovery_preflight import check
 
 
@@ -26,6 +27,26 @@ def main():
     assert any(part.startswith(("arslan-candidate-build.", "arslan-native-candidate.")) for part in binary.parts)
     with tempfile.TemporaryDirectory(prefix="arslan-frozen-trial-") as folder:
         home = Path(folder)
+        control_env = {"PATH": "/usr/bin:/bin", "HOME": str(home), "TMPDIR": str(home),
+                       "ARSLAN_DATA_DIR": str(home / "must-not-create"),
+                       "ARSLAN_DB_PATH": str(home / "must-not-create-db"),
+                       "ARSLAN_SECRET_KEY": "inherited-wrong-key",
+                       "ARSLAN_SECRET_KEY_FILE": str(home / "must-not-create-key"),
+                       "ARSLAN_LIVE_LLM": "0"}
+
+        def control(payload, expected=0):
+            result = subprocess.run([str(binary), "--activation-control"], cwd=home,
+                                    input=(json.dumps(payload) + "\n").encode(), capture_output=True,
+                                    timeout=30, env=control_env)
+            assert result.returncode == expected, "unexpected activation control exit"
+            assert b"frozen-smoke-synthetic-only" not in result.stdout + result.stderr
+            message = json.loads(result.stdout)
+            if expected:
+                assert message == {"ok": False, "code": "activation_control_refused"}
+            else:
+                assert message["ok"] is True
+            return message.get("result")
+
         process, client, _ = start(binary, home)
         try:
             assert client.put("/api/v1/settings", json={"llm_api_key": "synthetic-trial-provider-key"}).status_code == 200
@@ -36,11 +57,19 @@ def main():
         candidate = active.with_name("restored")
         archive = home / "backup.zip"
         backup.create(active, archive)
-        backup.restore(archive, candidate, current_db_path=active / "arslan.db")
+        restored = subprocess.run([str(binary), "--restore-offline", "--archive", str(archive),
+                                   "--new-data-dir", str(candidate), "--current-db-path", str(active / "arslan.db")],
+                                  cwd=home, capture_output=True, timeout=30, env=control_env)
+        assert restored.returncode == 0 and json.loads(restored.stdout)["ok"] is True
         original = (active / "arslan.db").read_bytes()
         preflight = check(candidate / "arslan.db", "frozen-smoke-synthetic-only")
         assert preflight["status"] == "compatible", preflight
-        operation = profile_activation.switch_for_trial(active, candidate, "frozen-smoke-synthetic-only")["operation_id"]
+        control({"action": "switch", "candidate": candidate.name, "secret": "wrong-key"}, expected=1)
+        assert (active / "arslan.db").read_bytes() == original
+        operation = control({"action": "switch", "candidate": candidate.name,
+                             "secret": "frozen-smoke-synthetic-only"})["operation_id"]
+        finalization = {"action": "finalize", "operation_id": operation, "secret": "frozen-smoke-synthetic-only"}
+        control(finalization, expected=1)  # No health receipt yet.
         # A normal fresh process must refuse BEFORE config can generate a key.
         refused = subprocess.run([str(binary)], cwd=home, input=b"", capture_output=True, timeout=15,
                                  env={"PATH": "/usr/bin:/bin", "HOME": str(home), "TMPDIR": str(home),
@@ -80,6 +109,8 @@ def main():
                 assert probe.get("/api/v1/activation-trial/health").status_code == 401
                 assert probe.get("/api/v1/settings").status_code == 404
                 assert probe.post("/api/v1/memory/entries", json={}).status_code == 404
+                control(finalization, expected=1)  # Trial still owns the profile.
+                control({"action": "rollback"}, expected=1)
             child.stdin.close()
             child.wait(timeout=10)
             assert child.returncode == 0
@@ -93,17 +124,18 @@ def main():
                 stream.close()
         assert not (home / "must-not-create").exists()
         assert not (home / "must-not-create-key").exists()
+        assert not (home / "must-not-create-db").exists()
         assert not (home / ".arslan").exists()
         if args.finalize:
-            record = profile_activation.activation_record_path(active / "arslan.db")
+            record = activation_record_path(active / "arslan.db")
             journal = json.loads(record.read_bytes())
-            assert profile_activation.finalize(active, operation, "frozen-smoke-synthetic-only") == {
+            assert control(finalization) == {
                 "finalized": True, "already_finalized": False, "original_retained": True,
             }
             assert not record.exists()
             assert (active.parent / journal["previous"] / "arslan.db").read_bytes() == original
         else:
-            assert profile_activation.rollback(active)["rolled_back"]
+            assert control({"action": "rollback"})["rolled_back"]
             assert (active / "arslan.db").read_bytes() == original
         process, client, _ = start(binary, home)
         try:
@@ -114,7 +146,7 @@ def main():
             client.close()
             assert stop(process) == 0
         if args.finalize:
-            assert profile_activation.finalize(active, operation, "frozen-smoke-synthetic-only") == {
+            assert control(finalization) == {
                 "finalized": True, "already_finalized": True, "original_retained": True,
             }
             assert (active.parent / journal["previous"] / "arslan.db").read_bytes() == original
@@ -122,7 +154,8 @@ def main():
                       "pipe_credentials": True, "wrong_inherited_key_ignored": True,
                       "normal_pending_boot_no_secret_generation": True,
                       "parent_pipe_shutdown": True, "normal_restart": True,
-                      "source_coordination": "finalize" if args.finalize else "rollback",
+                      "packaged_coordination": "finalize" if args.finalize else "rollback",
+                      "packaged_offline_restore": True, "source_backup_creation": True,
                       "original_database_retained": True, "native_ui": False, "finalized": args.finalize,
                       "real_model": False, "installed_app": False,
                       "backend_sha256": hashlib.sha256(binary.read_bytes()).hexdigest()}))

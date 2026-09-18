@@ -1790,3 +1790,32 @@ before the successful run, without changing product acceptance rules.
 The complete combined regression above predates this entry. Frozen rebuild,
 packaged-control smoke and native coordinator/UI wiring remain required. No
 real profile, secret, installed application, account or publication was touched.
+
+### Packaged activation control end-to-end (2026-09-19)
+
+Production `59e856fc` was rebuilt in 26.97s into the standalone sidecar
+`/tmp/arslan-candidate-build.BboGj4/dist-control-entry/arslan-server/arslan-server`.
+SHA-256 `5c695cb8b5ca2a116f4e4cf6aa87181db5d93d396545b94f015f2411a358ced8`.
+The frozen smoke now uses packaged offline restore and packaged stdin-pipe
+activation control for every switch/finalize/rollback; only backup creation and
+read-only evidence inspection remain source-side. Both finalize and rollback
+branches passed using independent disposable profiles and the same binary.
+
+Each branch rejects wrong-key switching without changing original DB bytes,
+rejects finalization before trial health, blocks normal startup before secret
+bootstrap, observes restricted authenticated health, and refuses both finalize
+and rollback while the trial still owns the profile. After graceful pipe closure,
+the selected packaged transition succeeds and normal frozen startup reads the
+stored synthetic credential. Finalize remains idempotent after normal restart.
+Original bytes remain retained in both outcomes, override/key-file canaries stay
+absent, and supplied secrets/tokens are not present in captured control/trial
+output. Targeted lint and whitespace checks passed.
+The standalone bundle verifier also passed all 15 feature imports, SPA presence
+and prohibited-component/data/secret-file checks (159 MiB, before adding the
+separate compute runtime); this is not a compute-runtime validation.
+
+This advances the actual packaged protocol, not the native user-confirmation or
+picker workflow. The complete temporary desktop app has not yet been refreshed
+with this sidecar/native secret reader. The combined 5,131-pass regression still
+predates activation-control production changes. No real profile, credential,
+model, account, installed application or publication was used.
