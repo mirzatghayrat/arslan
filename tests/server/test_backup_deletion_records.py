@@ -143,6 +143,20 @@ async def test_new_machine_without_later_records_still_quarantines(recovery, tmp
         assert db.execute("SELECT status FROM memory_entries").fetchall() == [("quarantined",), ("quarantined",)]
 
 
+async def test_running_profile_refuses_restore_before_staging_and_releases_afterward(recovery, tmp_path):
+    from server.services.data_profile_lock import hold
+
+    target = tmp_path / "must-stay-absent"
+    with hold(recovery["database"]):
+        with pytest.raises(ValueError, match="^data_profile_in_use$"):
+            backup.restore(recovery["archive"], target, current_db_path=recovery["database"])
+        assert not target.exists() and not list(tmp_path.glob(".arslan-restore-*"))
+    result = backup.restore(recovery["archive"], target, current_db_path=recovery["database"])
+    assert result["deletion_reconciliation"]["deleted_entries"] == 2
+    with hold(recovery["database"]):
+        pass
+
+
 async def test_new_machine_cli_can_import_later_record_without_current_database(recovery, tmp_path, monkeypatch, capsys):
     from scripts import backup_data
 

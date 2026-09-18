@@ -83,8 +83,37 @@ def test_compute_selftest_flag_never_starts_server(entry, monkeypatch):
 
 
 @pytest.fixture
-def entry():
+def entry(tmp_path, monkeypatch):
+    from dataclasses import replace
+    from server import config
+    monkeypatch.setattr(config, "settings", replace(config.settings, db_path=str(tmp_path / "entry.db"), data_dir=tmp_path))
     return _load_entry()
+
+
+def test_packaged_entry_holds_profile_until_server_returns(entry, monkeypatch):
+    from server import config
+    from server.services.data_profile_lock import hold
+
+    def serve():
+        with pytest.raises(ValueError, match="^data_profile_in_use$"):
+            with hold(pathlib.Path(config.settings.db_path)):
+                pytest.fail("running backend must own its profile")
+        return 0
+
+    monkeypatch.setattr(entry, "_serve", serve)
+    assert entry.main() == 0
+    with hold(pathlib.Path(config.settings.db_path)):
+        pass
+
+
+def test_busy_profile_never_announces_port_or_starts_server(entry, monkeypatch, capsys):
+    from server import config
+    from server.services.data_profile_lock import hold
+
+    monkeypatch.setattr(entry, "_serve", lambda: pytest.fail("busy profile must not serve"))
+    with hold(pathlib.Path(config.settings.db_path)):
+        assert entry.main() == 1
+    assert capsys.readouterr().out == "ARSLAN_ERROR=data_profile_in_use\n"
 
 
 def test_the_entry_script_exists_where_the_pyinstaller_spec_expects_it():

@@ -1104,3 +1104,33 @@ remains partial aspects of 25/60, not a 60-scenario or real-model quality pass.
 Latest full regression and frozen candidate predate both the independent mirror
 and this selection path. Native trusted restore/import, runtime stop/activation
 coordination, native UI/download checks and the other release gates remain open.
+
+### Packaged profile/recovery mutual exclusion prerequisite (2026-09-19)
+
+Inspection found that stopping one shell-owned sidecar alone would not rule out
+another packaged copy using the same DB. A new POSIX profile lock now spans the
+packaged server run, and current-installation restore takes the same lock before
+staging. Busy profiles are refused without waiting or signalling their owner.
+The persistent empty lock file is private, validates owner/type/link count,
+refuses symlinks and uses OS locking rather than PID/stale-file heuristics.
+
+Packaged startup emits only a fixed busy/unavailable code before a port line;
+the native handshake converts known codes into six-language product copy. Its
+failure/timeout paths reap only the newly spawned child. No automatic app stop,
+database switch, overwrite, native restore button or release action was added.
+
+Six Python test files passed 77 cases in 3.03s, including actual synthetic
+process death/reacquisition, same-profile refusal, independent profiles, unsafe
+lock slots, packaged-entry ordering, restore refusal before staging and retry.
+Targeted lint/whitespace checks passed. XcodeBuildMCP skill/context was checked;
+no macOS workflow tool was available for this Tauri project. The established
+isolated Cargo fallback compiled the updated native source in 8.47s and passed
+all 31 native tests (0.06s). Native source/catalog were copied only into the
+temporary build workspace; the release executable and app bundle have NOT yet
+been rebuilt with these changes. No real app was launched or replaced.
+
+This is cooperative POSIX protection for the packaged entry, not proof against
+older/uncooperative binaries, plain uvicorn launches, every child-process writer
+or manual filesystem replacement. The explicit stop-all-writers requirement
+therefore remains. Full regression, current frozen lock tests, native visual
+checks and the complete trusted recovery/activation workflow remain open.

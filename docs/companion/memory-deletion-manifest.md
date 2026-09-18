@@ -208,3 +208,35 @@ files, ledger-ahead/import-newest selection, older consistent imports, corrupt
 or conflicting histories, no install/staging leftovers on refusal, unchanged
 inputs, and new-machine import/quarantine. They do not prove native UI, frozen
 execution of the new selector, full regression or physical crash durability.
+
+## Packaged profile ownership before recovery
+
+The packaged entry now holds a cooperative POSIX process lock for the complete
+server run. `backup.restore(..., current_db_path=...)` acquires the same lock
+before reading records or creating staging, retaining it through installation.
+Busy ownership is refused immediately with `data_profile_in_use`; no PID is
+guessed, no other process is signalled, and no wait silently turns a previous
+attempt into a later restore. Missing-current-installation/new-machine restores
+still only target a new directory and do not claim an old profile was stopped.
+
+The stable empty 0600 lock file is `.<database-name>.arslan-lock` beside the
+canonical DB path. Symlinks, hardlinks, non-regular files, foreign ownership and
+unsafe permissions are refused. The file is intentionally not removed on
+release: presence alone is not ownership, and unlinking could split concurrent
+callers across different lock inodes. Closing the descriptor or process death
+releases OS ownership. A real synthetic child-process kill/reacquisition test
+passes; the process killed is only the child created by that test.
+
+Busy/unsafe packaged startup returns a fixed error code before announcing a
+server port. The desktop handshake maps only known codes to six-language
+messages, and startup failure/timeout now reaps its own child. It does not kill
+the owner of the busy profile. Native code compiles and its 31 tests pass; live
+rendering of these messages has not been observed.
+
+This is a prerequisite, not a completed native recovery coordinator. Older
+installed versions and plain `uvicorn server.main:app` launches do not acquire
+the packaged-entry lock. The operator must still stop those writers; a free
+cooperative lock is not proof that every possible writer is absent. Native
+stop/confirmation/file selection/restart activation, current release rebuild
+and full regression remain open. No current user installation was started,
+stopped, restored or replaced by these changes.

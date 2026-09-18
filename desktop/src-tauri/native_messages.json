@@ -10,6 +10,8 @@
     "boot_starting": "Starting Arslan…",
     "boot_slow": "Arslan is preparing your workspace. The first launch may take a little longer.",
     "boot_failed": "Arslan could not start.",
+    "profile_in_use": "This data library is already in use by Arslan or a recovery operation. Close the other copy or finish recovery, then try again. No other process was stopped.",
+    "profile_unavailable": "Arslan could not safely lock this data library. Check its storage permissions and try again. Your data has not been replaced.",
     "install_failed_title": "Installation failed",
     "install_failed": "Could not copy Arslan into /Applications. Please drag it there in Finder."
   },
@@ -24,6 +26,8 @@
     "boot_starting": "正在启动 Arslan…",
     "boot_slow": "Arslan 正在准备工作区，首次启动可能需要稍长时间。",
     "boot_failed": "Arslan 启动失败。",
+    "profile_in_use": "此资料库正由另一份 Arslan 或恢复操作使用。请关闭另一份应用或完成恢复后重试。未停止任何其他程序。",
+    "profile_unavailable": "Arslan 无法安全锁定此资料库。请检查存储权限后重试。未替换你的数据。",
     "install_failed_title": "安装失败",
     "install_failed": "无法将 Arslan 复制到 /Applications。请在访达中手动将它拖入「应用程序」。"
   },
@@ -38,6 +42,8 @@
     "boot_starting": "Arslan を起動しています…",
     "boot_slow": "Arslan がワークスペースを準備しています。初回の起動には少し時間がかかる場合があります。",
     "boot_failed": "Arslan を起動できませんでした。",
+    "profile_in_use": "このデータは別の Arslan または復元処理が使用中です。別のアプリを閉じるか復元を完了してから再試行してください。他のプロセスは停止していません。",
+    "profile_unavailable": "このデータを安全にロックできませんでした。保存先の権限を確認して再試行してください。データは置き換えられていません。",
     "install_failed_title": "インストールに失敗しました",
     "install_failed": "Arslan を /Applications にコピーできませんでした。Finder で「アプリケーション」にドラッグしてください。"
   },
@@ -52,6 +58,8 @@
     "boot_starting": "Iniciando Arslan…",
     "boot_slow": "Arslan está preparando tu espacio de trabajo. El primer inicio puede tardar un poco más.",
     "boot_failed": "No se pudo iniciar Arslan.",
+    "profile_in_use": "Otra instancia de Arslan o una recuperación está usando estos datos. Cierra la otra instancia o termina la recuperación y vuelve a intentarlo. No se detuvo ningún otro proceso.",
+    "profile_unavailable": "Arslan no pudo bloquear estos datos de forma segura. Revisa los permisos de almacenamiento y vuelve a intentarlo. Tus datos no se han sustituido.",
     "install_failed_title": "Error de instalación",
     "install_failed": "No se pudo copiar Arslan a /Applications. Arrástralo allí con Finder."
   },
@@ -66,6 +74,8 @@
     "boot_starting": "Arslan wird gestartet…",
     "boot_slow": "Arslan bereitet deinen Arbeitsbereich vor. Der erste Start kann etwas länger dauern.",
     "boot_failed": "Arslan konnte nicht gestartet werden.",
+    "profile_in_use": "Diese Daten werden bereits von Arslan oder einer Wiederherstellung verwendet. Schließe die andere Instanz oder beende die Wiederherstellung und versuche es erneut. Kein anderer Prozess wurde gestoppt.",
+    "profile_unavailable": "Arslan konnte diese Daten nicht sicher sperren. Prüfe die Speicherberechtigungen und versuche es erneut. Deine Daten wurden nicht ersetzt.",
     "install_failed_title": "Installation fehlgeschlagen",
     "install_failed": "Arslan konnte nicht nach /Applications kopiert werden. Bitte ziehe die App im Finder dorthin."
   },
@@ -80,6 +90,8 @@
     "boot_starting": "Démarrage d’Arslan…",
     "boot_slow": "Arslan prépare votre espace de travail. Le premier démarrage peut prendre un peu plus de temps.",
     "boot_failed": "Arslan n’a pas pu démarrer.",
+    "profile_in_use": "Ces données sont utilisées par une autre instance d’Arslan ou une restauration. Fermez l’autre instance ou terminez la restauration, puis réessayez. Aucun autre processus n’a été arrêté.",
+    "profile_unavailable": "Arslan n’a pas pu verrouiller ces données en toute sécurité. Vérifiez les autorisations de stockage, puis réessayez. Vos données n’ont pas été remplacées.",
     "install_failed_title": "Échec de l’installation",
     "install_failed": "Impossible de copier Arslan dans /Applications. Faites-y glisser l’application dans le Finder."
   }

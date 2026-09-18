@@ -7,6 +7,7 @@ SQLite's backup API additionally handles committed WAL content correctly.
 from __future__ import annotations
 
 import hashlib
+from contextlib import nullcontext
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -92,6 +93,17 @@ def create(data_dir: Path, destination: Path, *, db_path: Path | None = None,
 def restore(archive: Path, destination: Path, *, deletion_manifest: bytes | None = None,
             current_db_path: Path | None = None) -> dict:
     """App stopped: reconcile trusted current records, install only to a new path."""
+    from server.services.data_profile_lock import hold
+
+    # A trusted current installation path is supplied by the maintenance caller.
+    # Never terminate the owner or wait until a stale approval becomes usable.
+    with hold(current_db_path) if current_db_path is not None else nullcontext():
+        return _restore_stopped(archive, destination, deletion_manifest=deletion_manifest,
+                                current_db_path=current_db_path)
+
+
+def _restore_stopped(archive: Path, destination: Path, *, deletion_manifest: bytes | None,
+                     current_db_path: Path | None) -> dict:
     destination = destination.absolute()
     if destination.exists() or destination.is_symlink():
         raise ValueError("restore requires a NEW directory; existing data is never overwritten")

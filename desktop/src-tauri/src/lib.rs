@@ -67,6 +67,15 @@ const REVEAL_DEADLINE: std::time::Duration = std::time::Duration::from_secs(15);
 #[derive(Default)]
 struct Sidecar(Mutex<Option<Child>>);
 
+fn startup_error(line: &str, locale: &str) -> Option<String> {
+    let key = match line {
+        "ARSLAN_ERROR=data_profile_in_use" => "profile_in_use",
+        "ARSLAN_ERROR=data_profile_unavailable" => "profile_unavailable",
+        _ => return None,
+    };
+    Some(native_locale::text(locale, key))
+}
+
 /// Start the sidecar and block until it announces its port.
 ///
 /// Blocking is deliberate. Doing this asynchronously would let the window
@@ -157,6 +166,11 @@ fn start_sidecar(app: &tauri::AppHandle) -> Result<(u16, Child), String> {
         for line in BufReader::new(stdout).lines() {
             let Ok(line) = line else { break };
             if !announced {
+                if let Some(message) = startup_error(&line, native_locale::selected()) {
+                    let _ = tx.send(Err(message));
+                    announced = true;
+                    continue;
+                }
                 if let Some(rest) = line.strip_prefix(PORT_LINE_PREFIX) {
                     let parsed = rest
                         .trim()
@@ -180,10 +194,12 @@ fn start_sidecar(app: &tauri::AppHandle) -> Result<(u16, Child), String> {
         Ok(Ok(port)) => Ok((port, child)),
         Ok(Err(e)) => {
             let _ = child.kill();
+            let _ = child.wait();
             Err(e)
         }
         Err(_) => {
             let _ = child.kill();
+            let _ = child.wait();
             Err(format!(
                 "sidecar did not announce a port within {}s",
                 STARTUP_TIMEOUT.as_secs()
@@ -804,6 +820,19 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn profile_startup_errors_use_only_known_codes_and_six_language_copy() {
+        for locale in ["en", "zh", "ja", "es", "de", "fr"] {
+            assert_eq!(startup_error("ARSLAN_ERROR=data_profile_in_use", locale),
+                       Some(native_locale::text(locale, "profile_in_use")));
+            assert_eq!(startup_error("ARSLAN_ERROR=data_profile_unavailable", locale),
+                       Some(native_locale::text(locale, "profile_unavailable")));
+            assert_ne!(native_locale::text(locale, "profile_in_use"), "Arslan");
+        }
+        assert!(startup_error("ARSLAN_ERROR=private diagnostic", "en").is_none());
+        assert!(startup_error("ARSLAN_ERROR=data_profile_in_use<script>", "en").is_none());
+    }
 
     /// 🔴 These were the first tests CI ever ran for this crate: the module
     /// below predates the `cargo test` step and sat here unexecuted — a test

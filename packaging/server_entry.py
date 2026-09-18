@@ -528,6 +528,23 @@ def main() -> int:
 
     _sanitize_env()
 
+    from server.config import settings
+    from server.services.data_profile_lock import hold
+    from contextlib import ExitStack
+
+    # Keep ownership for the entire server run, not merely SQLite startup.
+    # A second packaged backend or an offline restore must not use this profile.
+    with ExitStack() as stack:
+        try:
+            stack.enter_context(hold(pathlib.Path(settings.db_path)))
+        except (ValueError, OSError) as exc:
+            code = "data_profile_in_use" if str(exc) == "data_profile_in_use" else "data_profile_unavailable"
+            print(f"ARSLAN_ERROR={code}", flush=True)
+            return 1
+        return _serve()
+
+
+def _serve() -> int:
     port = int(os.environ.get("ARSLAN_PORT") or choose_port())
 
     # Announce BEFORE uvicorn.run(), which blocks. flush because stdout is a
