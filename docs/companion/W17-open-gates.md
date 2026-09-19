@@ -1,5 +1,11 @@
 # Remaining release gates — triage, not completion certification
 
+W19 follow-up after `83cd3758`: reproduced and fixed discarded session ownership
+after a failed Stop, plus navigation racing pending closure. Four regression
+cases cover retry, navigation exclusion, unmount cleanup and late frames. Full
+frontend is **2,004 passing**, TypeScript/build pass. Native package refresh and
+actual UI revalidation are pending; this does not certify full browser interaction.
+
 ## Latest packaged regression checkpoint — after `4f89b1c5`
 
 All four current app-bundled smoke processes exited 0: standard frozen

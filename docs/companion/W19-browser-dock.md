@@ -1,5 +1,26 @@
 # W19 — isolated navigation and work dock
 
+## Failed-stop ownership and navigation exclusion — after `83cd3758`
+
+Two new component regressions failed on the unchanged reader: a rejected close
+request disabled Stop permanently by discarding the session ID, and a pending
+close allowed another navigation/session to start. Stop now keeps the owned ID
+until closure succeeds, clears obsolete frame/error state, and keeps navigation
+and duplicate stop controls disabled while the close request is pending. A
+failed request leaves explicit retry and unmount cleanup able to address the
+same session. Generation checks prevent late action frames and close errors
+from updating a superseded/unmounted view.
+
+Four new tests cover failed-close retry, navigation exclusion while closing,
+unmount retry after a failed stop, and suppression of a late frame after a
+failed stop. Full frontend regression: **2,004 passed, zero failures/errors**,
+62.79s; report `/tmp/arslan-reader-stop-full.xml`, SHA-256
+`fdb7fe9636aad749bb6c17bae0f0abaa4a85010cc56d09322193f09eac4311dc`.
+TypeScript and production build pass (6.80s, existing chunk-size warning).
+This is component/API-mock evidence, not actual failed-network process cleanup.
+Temporary native package refresh and UI verification remain pending. Full
+authenticated interaction and broker review remain separate open requirements.
+
 ## Packaged privacy transition and restart — after `bbb335c0`
 
 Refreshed the unsigned temporary app's web resources (no native/backend source

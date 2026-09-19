@@ -12,6 +12,7 @@ export default function BrowserReader({ conversationId, taskId, onTitle }: {
   const [url, setUrl] = useState("");
   const [frame, setFrame] = useState<ReaderFrame | null>(null);
   const [busy, setBusy] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const session = useRef<string | null>(null);
   const generation = useRef(0);
@@ -22,10 +23,22 @@ export default function BrowserReader({ conversationId, taskId, onTitle }: {
   }, []);
 
   async function stop() {
-    generation.current++;
-    const id = session.current; session.current = null;
-    setBusy(false); setFrame(null);
-    if (id) await browserApi.closeReader(id).catch(() => setError("dock.error"));
+    if (stopping) return;
+    const attempt = ++generation.current;
+    const id = session.current;
+    setBusy(true); setStopping(true); setFrame(null); setError(null);
+    try {
+      if (id) await browserApi.closeReader(id);
+      // Keep ownership until closure is confirmed. A failed request must leave
+      // both explicit retry and unmount cleanup able to address this session.
+      if (session.current === id) session.current = null;
+    } catch {
+      if (alive.current && generation.current === attempt) setError("dock.error");
+    } finally {
+      if (alive.current && generation.current === attempt) {
+        setBusy(false); setStopping(false);
+      }
+    }
   }
   async function act(action: ReaderAction) {
     if (busy) return;
@@ -65,7 +78,7 @@ export default function BrowserReader({ conversationId, taskId, onTitle }: {
       <button className={button} disabled={busy || !frame} onClick={() => void act({ action: "refresh" })} aria-label={t("dock.refresh")}><RefreshCw size={15} /></button>
       <button className={button} disabled={busy || !frame} onClick={() => void act({ action: "scroll", direction: -1 })} aria-label={t("dock.scrollUp")}><ArrowUp size={15} /></button>
       <button className={button} disabled={busy || !frame} onClick={() => void act({ action: "scroll", direction: 1 })} aria-label={t("dock.scrollDown")}><ArrowDown size={15} /></button>
-      <button className={button} disabled={!busy && !frame && !session.current} onClick={() => void stop()} aria-label={t("dock.stop")}><Square size={15} /></button>
+      <button className={button} disabled={stopping || (!busy && !frame && !session.current)} onClick={() => void stop()} aria-label={t("dock.stop")}><Square size={15} /></button>
     </div>
     {error && <p role="alert" className="px-3 pb-3 text-sm text-destructive">{t(error)}</p>}
     {busy && <p role="status" className="px-3 pb-3 text-sm">{t("browser.loading")}</p>}
