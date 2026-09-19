@@ -124,3 +124,58 @@ and large-chunk warnings remain. The native bundle has not yet been refreshed
 with this reader/web change, so the preceding packaged hash does not cover it.
 Authenticated browser scope, broker review and the broader W19/W21 acceptance
 matrix remain open; this checkpoint is not a release certification.
+
+## Current packaged reader and native UI — 2026-09-19
+
+Production source `3a0d6177` was frozen in 24.59s to
+`/tmp/arslan-candidate-build.BboGj4/dist-reader-frame/arslan-server`, staged with
+the existing temporary compute runtime (9,240 files), and bundled unsigned into
+`/tmp/arslan-native-candidate.xIygc5/target/release/bundle/macos/Arslan.app`.
+All packaged web assets compare byte-for-byte with the current `web/dist`; the
+packaged reader and policy scripts match source. Reader script SHA-256:
+`94ed2feceefae5bf805bcf4da8186bb958366eb945cc08109ca4f30b0f3ec089`;
+web entry SHA-256:
+`9e3bed0154e0b056b201853a2c5da05d319aeba0f1dcaec0ceb3be792463436c`.
+Native executable remains
+`fa0d2c37c102e8d0d93125423b2e2b28ecd7e494d11b558d4da1303de2052d30`
+and frozen executable remains
+`6e3dc602bdc44b397366a307492644d6bbd3ae099ee207110a9a7bec2abb1401`:
+the reader/web changes are external packaged resources, so executable hashes
+alone would not identify this update. Bundle verification passes 15 module
+imports, assets and prohibited-content checks, 431 MiB.
+
+New `scripts.frozen_browser_reader_smoke` starts the actual frozen server with a
+disposable HOME and tests authenticated browser APIs against real Chromium. It
+reuses the existing temporary pinned runtime through fixture-only symlinks and a
+fixture ready record; no setup endpoint, package installation or download is
+tested. The first run correctly refused a record containing the `/tmp` alias
+while the application resolved `/private/tmp`; canonicalizing the fixture HOME
+fixed the harness without relaxing product checks. The final driver avoids
+server-configuration imports, so importing it cannot bootstrap the invoking
+user's key/profile. Five driver isolation/target-refusal tests pass (0.29s), as do
+Ruff and whitespace checks.
+
+The smoke passes against both the fresh frozen output and the final app-bundled
+server: resource identity, navigation/history/refresh, stale-frame refusal,
+typing/file-URL rejection, session deletion, child termination and temporary
+profile removal. The standard frozen-sidecar smoke also passes fresh boot and
+restart, authentication, six saved languages, onboarding/token retention,
+document/cell/slide/PDF locators, inert source code, malformed inputs and the
+unprovisioned browser gate. It does not invoke a real model.
+
+Actual native UI used the retained synthetic profile
+`/private/tmp/arslan-native-restore-ui-m1tgzvbv`, with only its fixture runtime
+record added. The Chinese/dark side panel visibly opened example.com and followed
+its displayed link to IANA Example Domains. Navigation to the reserved
+`https://arslan-reader-smoke.invalid` failed as expected: old screenshot/link
+controls disappeared, the localized error appeared, and Stop remained available.
+Navigating to example.com again produced a new frame. Stop removed the frame and
+terminated the owned Node/Chromium processes (25554/25556/25557/25558/25820).
+Native Quit then terminated app/backend 25469/25480. Unrelated browser processes
+were not touched. No owned test app or browser remains running.
+
+This closes the package-refresh gap for the frame-integrity change and adds one
+actual native success/failure/recovery path. It is not all-language/narrow-window
+native acceptance, runtime-installation acceptance, arbitrary interactive forms,
+authenticated browser support, independent broker review or release readiness.
+No real account, model cost, production installation or publication was used.
