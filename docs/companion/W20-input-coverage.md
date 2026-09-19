@@ -1,5 +1,34 @@
 # W20 — shared format matrix and local extraction
 
+## Minimal-PATH package/native acceptance — `d21b525a`, 2026-09-19
+
+Rebuilt the temporary frozen backend in 30.96s with the existing build tools
+and reused temporary compute runtime. Bundle verification passes all 15 import
+checks, web assets and no-AGPL/database/secret-shaped-file checks. Standard
+frozen smoke passes startup/restart/auth, six-language settings/refusals/offline
+creation, source locators, malformed inputs and parent-pipe shutdown.
+The video smoke now passes with the sidecar PATH strictly `/usr/bin:/bin`,
+without test compensation: cover-only rejection, three blue video frames rather
+than the red cover, stream index 1 and honest capability disclosures all pass.
+
+Staged and rebundled only the unsigned temporary app. Fresh and app-bundled
+backend SHA-256:
+`e68c13dc72d8269f60ec2e53738ca21bd1604968d664cea6ae995379dbe8f19d`.
+Bundled web tree exactly matches current `web/dist`; native shell is unchanged.
+Launched the actual temporary app using the existing synthetic restore HOME
+and explicit minimal PATH `/usr/bin:/bin`, not the previous Homebrew-extended
+PATH. German/dark native file selection of the synthetic audio/video/cover MP4
+produced a visible three-frame attachment with full filename and wrapped
+no-transcription/no-full-motion warning. The attachment was removed without
+sending; native app/sidecar termination was verified. Fresh log contains no
+external-model HTTP request or traceback. No installation, genuine account,
+user media, signing, formal-app replacement or publication occurred.
+
+This closes the concrete minimal-PATH desktop discovery check on this host,
+not all platforms, codec combinations, real-model quality or W21's full matrix.
+Current-source full regression remains running under
+`/tmp/arslan-media-discovery-full.jl0WQS`; collect its terminal result separately.
+
 ## Desktop codec discovery — after `838533f2`, 2026-09-19
 
 Prior native/video smoke acceptance explicitly added the host codec directory

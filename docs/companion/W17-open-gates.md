@@ -1,5 +1,12 @@
 # Remaining release gates — triage, not completion certification
 
+Latest package `d21b525a`: codec discovery now passes both frozen API and actual
+temporary-native attachment import with PATH strictly `/usr/bin:/bin`, without
+the earlier test-only codec-directory injection. Standard frozen/bundle checks
+pass; W20 records the new backend hash and exact native scope. Current full
+regression is live at `/tmp/arslan-media-discovery-full.jl0WQS/full.log` and is
+not yet counted as passed. No broad release gate is closed by this one check.
+
 Newest source change after `838533f2`: macOS optional codec discovery now
 checks standard local installation directories when desktop PATH is minimal.
 Probe, decoder and capability reporting use one resolver. 147 focused cases
