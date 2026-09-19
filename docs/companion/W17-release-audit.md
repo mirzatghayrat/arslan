@@ -2120,3 +2120,19 @@ the existing external-key/data separation contract: no key was placed inside a
 profile or backup to shortcut restart handling. No real data, keys, accounts,
 installed app, signing or publication were involved. Full Python regression is
 required after this lifespan change; earlier full-run counts do not certify it.
+
+### Full regression after explicit shutdown (2026-09-19)
+
+The complete run on production baseline `81949a01` finished with 5,197 passed,
+one failed, 14 skipped and 19 warnings in 553.31s (exit 1). Report:
+`/tmp/arslan-shutdown-regression.2R4LPk/combined.xml`. The sole failure was the
+legacy memory startup test passing `None` as the application to the lifespan,
+which now records shutdown completion on application state. This failed run is
+retained, not classified as a pass.
+
+The test now supplies a real FastAPI application and seeds completion to true
+before each of two deliberately interrupted startups. Both must reset it to
+false, while retaining the migration, deletion-ledger and legacy identity
+checks. Production shutdown checks were not relaxed. Focused memory activation,
+shutdown services and packaged-entry tests passed 61 cases in 1.26s with one
+existing warning. A fresh full run is still required for the corrected suite.

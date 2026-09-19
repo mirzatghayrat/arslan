@@ -67,6 +67,7 @@ async def test_second_boot_keeps_compatibility_views(execution_db):
 
 async def test_real_startup_activates_memory_before_seeders_or_background_work(execution_db, tmp_path, monkeypatch):
     from types import SimpleNamespace
+    from fastapi import FastAPI
     from server import auth, config, main, token_bootstrap
     from server.registry import seeder
     from server.services import crypto_boot, native_locale
@@ -94,10 +95,13 @@ async def test_real_startup_activates_memory_before_seeders_or_background_work(e
         await db.execute(insert(UserFact).values(id=700, content="Startup legacy preference", source="manual",
                                                 sensitive=False, provenance={"source_kind": "manual"}))
         await db.commit()
+    application = FastAPI()
     for _ in range(2):
+        application.state.shutdown_complete = True
         with pytest.raises(BeforeBackgroundWork):
-            async with main.lifespan(None):
+            async with main.lifespan(application):
                 pytest.fail("must stop before background services")
+        assert application.state.shutdown_complete is False
         assert await is_active()
         async with execution_db() as db:
             from server.services import memory_deletion_ledger
