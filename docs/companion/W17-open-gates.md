@@ -1,5 +1,13 @@
 # Remaining release gates — triage, not completion certification
 
+Newest source change after `838533f2`: macOS optional codec discovery now
+checks standard local installation directories when desktop PATH is minimal.
+Probe, decoder and capability reporting use one resolver. 147 focused cases
+and a real source-process minimal-PATH extraction pass; W20 records evidence.
+The test-only sidecar PATH compensation was removed. Temporary package/native
+refresh and current-source full regression are pending; the 5,325-case result
+below applies to the preceding backend, not this new resolver.
+
 Current backend `970f38e5` full regression is complete: **5,325 passed,
 14 skipped, 20 warnings in 545.15s**, exit 0. W20 records the report hash and
 teardown guard caveat. This supersedes the running-status paragraphs below.

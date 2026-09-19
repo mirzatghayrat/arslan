@@ -10,15 +10,16 @@ from server.api.media_type import is_multipart_form
 from server.auth import require_auth
 from server.services import extract
 from server.services.input_formats import REGISTRY, InputError, kind
+from server.services.media_tools import find_media_tool
 
 router = APIRouter(prefix="/api/v1", tags=["extract"], dependencies=[Depends(require_auth)])
 
 
 @router.get("/input-formats")
 async def input_formats() -> dict:
-    import shutil
-    return {**REGISTRY, "video_metadata_available": bool(shutil.which("ffprobe")),
-            "video_frames": bool(shutil.which("ffprobe") and shutil.which("ffmpeg")),
+    probe, decoder = find_media_tool("ffprobe"), find_media_tool("ffmpeg")
+    return {**REGISTRY, "video_metadata_available": bool(probe),
+            "video_frames": bool(probe and decoder),
             "video_transcription": False, "video_transcription_reason": "no_transcription_adapter",
             "video_visual_understanding": False, "video_visual_mode": "sampled_frames_require_vision_model",
             "spreadsheet_formulas": "cached_values_only", "presentation": REGISTRY["presentation"],

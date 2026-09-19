@@ -20,7 +20,7 @@ def metadata(width=640, duration="2"):
 
 def test_optional_sampler_preserves_metadata_without_claiming_vision(monkeypatch):
     monkeypatch.setattr(video_input, "video_metadata", lambda *_: metadata())
-    monkeypatch.setattr(shutil, "which", lambda _: None)
+    monkeypatch.setattr(shutil, "which", lambda _, **kwargs: None)
     result = video_input.extract_video("test.mp4", b"synthetic")
     assert result["images"] == [] and result["video_frame_status"] == "tool_missing"
     assert json.loads(result["text"])["visual_understanding"] == "not_run"

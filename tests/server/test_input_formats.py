@@ -75,7 +75,7 @@ def test_damaged_zip_members_return_stable_input_error(damage, extension, member
 
 def test_missing_video_tool_is_not_a_success(monkeypatch):
     import shutil
-    monkeypatch.setattr(shutil, "which", lambda _: None)
+    monkeypatch.setattr(shutil, "which", lambda _, **kwargs: None)
     with pytest.raises(InputError, match="videoToolMissing"):
         video_metadata("file.mp4", b"x")
 

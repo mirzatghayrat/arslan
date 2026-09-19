@@ -1,5 +1,33 @@
 # W20 — shared format matrix and local extraction
 
+## Desktop codec discovery — after `838533f2`, 2026-09-19
+
+Prior native/video smoke acceptance explicitly added the host codec directory
+to PATH. Production only used `shutil.which`, so Finder-like minimal PATH
+could report tools absent despite a normal local installation. New shared
+`media_tools.find_media_tool` preserves PATH precedence, then checks only
+`/opt/homebrew/bin:/usr/local/bin` on macOS. Other platforms remain PATH-only.
+The allowlist is ffprobe/ffmpeg; no shell, install, global PATH change or
+additional subprocess environment inheritance is introduced. These are
+discovery checks, not trust/signature, codec or visual-quality certification.
+Capability reporting, metadata probing and frame decoding share the resolver.
+
+Tests cover both tools, explicit PATH precedence, absent tools, non-macOS
+behavior, arbitrary-program rejection and all four probe/decoder availability
+combinations. Focused input/API regression: **147 passed, 1 warning in 3.80s**;
+lint and diff checks pass. JUnit `/tmp/arslan-media-discovery-regression.xml`,
+SHA-256 `d0226ef7f8fe86a0d08ef1cf1b7cbb3825af60cf65e9a7b6c6b451093255782d`.
+An actual source-process extraction under PATH `/usr/bin:/bin` found existing
+host tools at `/opt/homebrew/bin` and decoded three frames from the retained
+synthetic audio/video/cover fixture, reporting absolute stream index 1.
+
+The frozen video smoke no longer augments the sidecar PATH; its shared launch
+helper is back to the original minimal environment. This deliberately makes
+future package checks depend on production discovery rather than a test-only
+workaround. The current temporary binary and 5,325-case full regression predate
+this source change: rebuild, minimal-PATH frozen/native checks and current full
+regression remain pending. No software was installed or real media/model used.
+
 ## Full regression collected — backend `970f38e5`, 2026-09-19
 
 The full run completed: **5,325 passed, 14 skipped, 20 warnings in 545.15s**,

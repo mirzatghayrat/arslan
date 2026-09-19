@@ -9,6 +9,8 @@ import zipfile
 import zlib
 from xml.etree import ElementTree as ET
 
+from server.services.media_tools import find_media_tool
+
 _SERVER = Path(__file__).resolve().parent.parent
 _REGISTRY_PATH = _SERVER / "resources/input_formats.json"
 if not _REGISTRY_PATH.exists():
@@ -189,11 +191,10 @@ def primary_video_stream(metadata: dict) -> dict:
 def video_metadata(filename: str, data: bytes) -> dict:
     """Optional local codec probe. No network protocols, model, or transcript."""
     import os
-    import shutil
     import subprocess
     import tempfile
 
-    executable = shutil.which("ffprobe")
+    executable = find_media_tool("ffprobe")
     if not executable:
         raise InputError("inputs.videoToolMissing")
     if len(data) > REGISTRY["max_bytes"]:

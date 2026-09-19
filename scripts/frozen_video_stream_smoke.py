@@ -48,15 +48,13 @@ def main() -> None:
     assert binary.name == "arslan-server" and binary.is_file()
     ffmpeg, ffprobe = shutil.which("ffmpeg"), shutil.which("ffprobe")
     assert ffmpeg and ffprobe, "Existing local codec tools required; nothing is installed automatically"
-    # Explicitly expose only the discovered tool directories, not the caller's
-    # complete environment. The normal smoke retains its minimal default PATH.
-    tool_path = ":".join(dict.fromkeys([str(Path(ffmpeg).parent), str(Path(ffprobe).parent),
-                                      "/usr/bin", "/bin"]))
     with tempfile.TemporaryDirectory(prefix="arslan-frozen-video-") as folder:
         home = Path(folder)
         sources = [(include_video, fixture(home, ffmpeg, include_video))
                    for include_video in (False, True)]
-        process, client, _ = start(binary, home, tool_path=tool_path)
+        # Keep the sidecar's desktop-like minimal PATH. Production discovery
+        # must find existing codecs; the smoke must not fix its environment.
+        process, client, _ = start(binary, home)
         try:
             assert client.get("/api/v1/input-formats").json()["video_frames"] is True
             for include_video, source in sources:
@@ -87,7 +85,8 @@ def main() -> None:
             assert stop(process) == 0
     print(json.dumps({"frozen_video_api": "passed", "cover_only": "rejected",
                       "selected_stream": 1, "blue_video_not_red_cover": True,
-                      "sampled_frames": 3, "cloud_model": False, "profile_removed": True}))
+                      "sampled_frames": 3, "minimal_path": True,
+                      "cloud_model": False, "profile_removed": True}))
 
 
 if __name__ == "__main__":

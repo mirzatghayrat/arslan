@@ -5,11 +5,11 @@ import base64
 import json
 import math
 from pathlib import Path
-import shutil
 import subprocess
 import tempfile
 
 from server.services.input_formats import primary_video_stream, video_metadata
+from server.services.media_tools import find_media_tool
 
 FRAME_COUNT = 3
 MAX_EDGE = 512
@@ -22,7 +22,7 @@ def extract_video(filename: str, data: bytes) -> dict:
     images: list[dict] = []
     frames: list[dict] = []
     status = "tool_missing"
-    executable = shutil.which("ffmpeg")
+    executable = find_media_tool("ffmpeg")
     if executable:
         status = "time_unavailable"
         try:
