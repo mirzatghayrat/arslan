@@ -1,5 +1,11 @@
 # Remaining release gates — triage, not completion certification
 
+Newest web source checkpoint after `247a896b`: six-language composer notices
+now describe partial extraction rather than assuming truncation. Artifact
+previews distinguish partial extraction from the raw-text display cap. Full
+frontend passes 1,954 tests, TypeScript/build pass. Native candidate still has
+the previous wording; W21 records the pending resource refresh/layout check.
+
 Current candidate `36070eaa`: damaged optional PDF image inventories
 no longer discard readable native text. Both injected enumeration failure and
 an actual malformed Form resource are covered; focused tests/lint pass. This

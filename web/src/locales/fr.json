@@ -1271,7 +1271,7 @@
     "url_placeholder": "Collez une URL (https://…)",
     "read": "Lire",
     "chars": "{{n}} caractères",
-    "truncated": " (tronqué)",
+    "truncated": " (extraction partielle)",
     "image_no_parse": "image (aperçu seulement)",
     "image_ocr_wait": "lecture du texte…",
     "image_ocr_ok": "texte extrait",

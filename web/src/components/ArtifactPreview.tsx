@@ -12,11 +12,12 @@ export default function ArtifactPreview({ file, visible = true }: { file: Stored
   const [kind, setKind] = useState<"image" | "video" | "audio" | "text" | null>(null);
   const [error, setError] = useState(false);
   const [truncated, setTruncated] = useState(false);
+  const [partialExtraction, setPartialExtraction] = useState(false);
   const mediaElement = useRef<HTMLVideoElement & HTMLAudioElement>(null);
   useEffect(() => { if (!visible) mediaElement.current?.pause(); }, [visible]);
   useEffect(() => {
     let active = true; let objectUrl: string | null = null;
-    setError(false); setText(null); setKind(null); setUrl(null); setTruncated(false);
+    setError(false); setText(null); setKind(null); setUrl(null); setTruncated(false); setPartialExtraction(false);
     void (async () => {
       if (file.bytes > 50 * 1024 * 1024) throw new Error("preview limit");
       const blob = await api.downloadRunArtifact(file.run_id, file.filename);
@@ -39,7 +40,7 @@ export default function ArtifactPreview({ file, visible = true }: { file: Stored
         if (active) { setKind("text"); setText(content.slice(0, 100000)); setTruncated(content.length > 100000); }
       } else {
         const extracted = await api.extractAttachmentFile(new File([bytes], file.filename));
-        if (active) { setKind("text"); setText(extracted.text); setTruncated(extracted.truncated); }
+        if (active) { setKind("text"); setText(extracted.text); setPartialExtraction(extracted.truncated); }
       }
     })().catch(() => { if (active) setError(true); });
     return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
@@ -54,6 +55,7 @@ export default function ArtifactPreview({ file, visible = true }: { file: Stored
     {kind === "audio" && url && <audio ref={mediaElement} controls preload="metadata" src={url} className="w-full" onError={() => setError(true)} />}
     {kind === "text" && <pre className="whitespace-pre-wrap break-words text-xs leading-relaxed">{text}</pre>}
     {truncated && <p role="status" className="text-xs text-muted-foreground">{t("dock.truncated")}</p>}
+    {partialExtraction && <p role="status" className="text-xs text-muted-foreground">{t("attach.delivery_truncated")}</p>}
     <ArtifactDownloads files={[file]} preview={false} />
   </div>;
 }

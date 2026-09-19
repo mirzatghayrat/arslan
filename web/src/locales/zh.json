@@ -1205,7 +1205,7 @@
     "url_placeholder": "粘贴网址 (https://…)",
     "read": "读取",
     "chars": "{{n}}字",
-    "truncated": "(截断)",
+    "truncated": "（仅部分提取）",
     "image_no_parse": "图片(暂不解析)",
     "image_ocr_wait": "识别中…",
     "image_ocr_ok": "已识别文字",

@@ -40,3 +40,23 @@ it("rejects changed bytes and never embeds executable HTML", async () => {
   expect(document.querySelector("iframe")).toBeNull();
   expect(URL.createObjectURL).not.toHaveBeenCalled();
 });
+
+it("describes partial extraction without claiming only the beginning was read", async () => {
+  vi.spyOn(api, 'extractAttachmentFile').mockResolvedValue({ text: '[page 1] first\n[page 4] last', chars: 29, truncated: true });
+  const view = render(<ArtifactPreview file={{ ...file, filename: 'mixed.pdf' }} />);
+  expect(await screen.findByText('attach.delivery_truncated')).toBeInTheDocument();
+  expect(screen.queryByText('dock.truncated')).not.toBeInTheDocument();
+  vi.mocked(api.extractAttachmentFile).mockResolvedValue({ text: 'complete', chars: 8, truncated: false });
+  view.rerender(<ArtifactPreview file={{ ...file, filename: 'complete.pdf' }} />);
+  await screen.findByText('complete');
+  expect(screen.queryByText('attach.delivery_truncated')).not.toBeInTheDocument();
+});
+
+it("retains beginning-only wording for the raw text preview display cap", async () => {
+  const bytes = new TextEncoder().encode('x'.repeat(100001));
+  vi.mocked(api.downloadRunArtifact).mockResolvedValue({ arrayBuffer: async () => bytes.buffer } as Blob);
+  render(<ArtifactPreview file={{ ...file, filename: 'large.txt', bytes: bytes.length }} />);
+  expect(await screen.findByText('dock.truncated')).toBeInTheDocument();
+  expect(screen.queryByText('attach.delivery_truncated')).not.toBeInTheDocument();
+  expect(document.querySelector('pre')?.textContent?.length).toBe(100000);
+});

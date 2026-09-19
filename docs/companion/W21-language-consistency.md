@@ -1,5 +1,31 @@
 # W21 — six-language consistency (in progress)
 
+## Partial-extraction wording — after `247a896b`
+
+Native PDF validation showed the composer labelled an unread-page result as
+merely shortened (`gekürzt`). All six `attach.truncated` strings now say the
+source was partially extracted, covering missing OCR pages as well as output
+length limits without inventing the reason. Existing API/status names remain
+compatible; no attachment text or filenames are rewritten.
+
+ArtifactPreview previously used a beginning-only warning for both its raw-text
+display cap and partial document extraction. These states are now separate:
+raw text capped at 100,000 characters retains the beginning-only message;
+incomplete extracted documents use the canonical six-language partial-source
+warning. Both states reset when the selected file changes.
+
+Six real-i18n composer component cases verify partial labels and their absence
+on complete attachments. Preview cases verify noncontiguous page excerpts,
+state reset and the distinct raw-text cap. Focused tests: 11 passed. Complete
+frontend: **252 files / 1,954 tests passed in 25.21s**, TypeScript and production
+build passed (7.74s; existing large-chunk warning). JUnit:
+`/tmp/arslan-partial-copy-regression.xml`, SHA-256
+`5c6072d5d8d862f364e44c551c0bedbe1132b2860e539c5aa94f9e4d4c5d34bf`.
+This is source/component evidence; current native candidate still contains the
+prior wording. Refresh its web resources and verify the changed long labels
+before claiming native acceptance. Backend sources did not change this turn;
+their current full regression remains independently running.
+
 ## Native selection keyboard acceptance — `d8dcedcb`, 2026-09-19
 
 The temporary candidate was refreshed with the current production web build,

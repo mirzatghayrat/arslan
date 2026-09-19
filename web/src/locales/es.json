@@ -1271,7 +1271,7 @@
     "url_placeholder": "Pega una URL (https://…)",
     "read": "Leer",
     "chars": "{{n}} caracteres",
-    "truncated": " (truncado)",
+    "truncated": " (extracción parcial)",
     "image_no_parse": "imagen (solo vista previa)",
     "image_ocr_wait": "leyendo texto…",
     "image_ocr_ok": "texto capturado",

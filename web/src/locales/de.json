@@ -1271,7 +1271,7 @@
     "url_placeholder": "URL einfügen (https://…)",
     "read": "Lesen",
     "chars": "{{n}} Zeichen",
-    "truncated": " (gekürzt)",
+    "truncated": " (teilweise extrahiert)",
     "image_no_parse": "Bild (nur Vorschau)",
     "image_ocr_wait": "Text wird gelesen…",
     "image_ocr_ok": "Text erfasst",
