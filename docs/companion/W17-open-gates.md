@@ -1,19 +1,24 @@
 # Remaining release gates — triage, not completion certification
 
-Snapshot: attachment fidelity and unconfigured-provider guard after `dd150e9a`, 2026-09-19. This index complements the chronological
+Snapshot: packaged runtime-error language switching at `6f0ae897`, 2026-09-19. This index complements the chronological
 `W17-release-audit.md`; it does not replace the approved v1.2 plan, task-package
 acceptance checklist or v1.3 browser/input/language amendment in `README.md`.
 An engineering regression passing does not make the candidate releasable.
 
-Newer source checkpoint after `0a428cbf`: W21's visible-error language-switch
-gap has a source fix with typed/recognized product error catalogs, main/direct
-render-time selection, 1,944 passing frontend tests, TypeScript/build and 90
-focused backend tests. Full Python regression is running under
-`/tmp/arslan-error-locales-regression.aA4g5Z`. The native candidate below still
-predates that fix; do not treat its hashes or earlier native observations as
-acceptance of error-body retranslation. W21 records the precise next check.
+Current checkpoint `6f0ae897`: W21's visible-error language-switch fix is now
+packaged and verified in the temporary native app. Full Python regression:
+5,304 passed / 14 skipped / 18 warnings, 514.36 seconds, exit 0. Frontend:
+1,944 passed, with TypeScript/build passing. Expanded frozen and app-bundled
+smokes verify complete six-language error catalogs and offline expert creation;
+the packaged browser reader smoke passes with owned-child/profile cleanup.
+One French main-chat error was observed changing to en/zh/ja/es/de through
+native settings without another message. User prose stayed unchanged. This
+closes that focused reproduction, not full W21 acceptance. See W21's newest
+section for report/hash identities and exact locale/theme coverage. The
+historical candidate section below records the preceding package, not current
+binary identities. No formal installation was replaced or published.
 
-## Latest candidate: attachment fidelity / no implicit provider
+## Previous candidate: attachment fidelity / no implicit provider
 
 Native validation of `dd150e9a` exposed a legacy configuration defect: absent
 `llm_provider` was treated as `openai`, and preset expansion supplied a model,

@@ -1,5 +1,45 @@
 # W21 — six-language consistency (in progress)
 
+## Packaged runtime-error acceptance — `6f0ae897`, 2026-09-19
+
+The source fix below is now in the unsigned temporary app. Complete Python
+regression passed **5,304 tests, 14 skipped, 18 warnings in 514.36 seconds**,
+exit 0. JUnit `/tmp/arslan-error-locales-regression.aA4g5Z/full.xml`, SHA-256
+`cc3241565be3d72e979add2a074aadc4512224050d15d171741df9a4c071b793`.
+The existing aiosqlite teardown guard reported 74 closed-loop deliveries; that
+known cleanup issue is not claimed fixed. Frontend remains at the source
+checkpoint's 1,944 passing tests, with no subsequent product changes.
+
+Fresh frozen output and the app-bundled executable both passed the expanded
+smoke, including complete six-language error catalogs and offline expert
+creation/readback. Packaged web assets exactly match `web/dist`; the 15-module,
+asset/no-secret/no-database/no-AGPL checks passed. The app's bounded browser
+reader smoke also passed, with zero owned children and removed reader profiles.
+No runtime installation was tested.
+
+Using only `/private/tmp/arslan-native-restore-ui-m1tgzvbv`, one synthetic message
+produced a French no-provider error. Without sending another message, native
+settings switches changed that same error body to English, Chinese, Japanese,
+Spanish and German. The original user message stayed unchanged. French/English
+were light; Chinese/Japanese/Spanish/German were dark. Screenshots inspected
+English, Chinese and German error wrapping at 1171 × 768. This is a focused
+main-chat acceptance, not the complete locale/theme/size/keyboard matrix or a
+native direct-chat acceptance. The fresh `runtime-locales.stderr` log contains
+no external model HTTP request. Native/sidecar PIDs 38384/38392 exited normally;
+the disposable profile is now German/dark.
+
+Temporary bundle:
+`/tmp/arslan-native-candidate.xIygc5/target/release/bundle/macos/Arslan.app`.
+Frozen output: `/tmp/arslan-candidate-build.BboGj4/dist-runtime-error-locales`.
+SHA-256 identities:
+
+- Native executable (unchanged): `fa0d2c37c102e8d0d93125423b2e2b28ecd7e494d11b558d4da1303de2052d30`.
+- Backend: `6280d1c6b03c754330a148ed85dd487a72585a723329a669aff95b1200d4923d`.
+- Web entry `index-B_sfJxwb.js`: `02c87091930a3172717ddeb70bef4fb08cfa910fd1bd40e6a9ecf68998935274`.
+
+No genuine account, model credential, formal installation, signing or publication
+was used. Follow the remaining W17 gates; this does not certify release readiness.
+
 ## Runtime-error language-switch source fix — after `0a428cbf`
 
 Model-error frames now preserve their legacy localized `message` and, only for

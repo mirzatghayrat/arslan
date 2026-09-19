@@ -2612,3 +2612,29 @@ gates: isolated credential broker/review, authorized account paths, browser/inpu
 and media/task outcome acceptance, complete native locale/error/configuration
 matrix, signing and human acceptance remain open. No real account/credential,
 model cost, formal installation replacement or publication occurred.
+
+## Runtime-error candidate refresh — `6f0ae897`, 2026-09-19
+
+The already-running complete Python regression finished successfully: **5,304
+passed, 14 skipped, 18 warnings in 514.36 seconds**, exit 0. Report:
+`/tmp/arslan-error-locales-regression.aA4g5Z/full.xml`, SHA-256
+`cc3241565be3d72e979add2a074aadc4512224050d15d171741df9a4c071b793`.
+The known aiosqlite teardown guard reported 74 closed-loop deliveries and is
+not claimed fixed. Production sources did not change during this validation.
+
+The backend was rebuilt in `dist-runtime-error-locales`, staged and verified,
+then bundled without signing into the existing temporary app. Current source
+web assets match bundled assets exactly. Fresh frozen and app-bundled standard
+smokes passed, now including full six-language `message_i18n` catalog assertions.
+The packaged reader smoke passed navigation/history/refresh and refusal checks,
+with zero remaining owned children and reader-profile cleanup. See W21's latest
+checkpoint for current binary hashes and the 1,944-test frontend source evidence.
+
+Focused native main-chat acceptance used the existing synthetic HOME only:
+one French no-provider error changed to English, Chinese, Japanese, Spanish and
+German as settings changed, without another message. User prose stayed intact.
+Light/dark and observed wrapping coverage is recorded precisely in W21, not
+claimed as the entire six-language native matrix. No external model HTTP request
+appeared in the fresh native log. App/sidecar PIDs 38384/38392 exited normally.
+No real account, genuine key, signing, installed-app replacement or publishing
+occurred. Broad W11/W12/W13/W15/W19/W20/W21 and human release gates remain open.
