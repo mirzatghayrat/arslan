@@ -2174,3 +2174,30 @@ and its exact confirmation/cancellation interaction were NOT reliably captured.
 Neither branch is certified as native click acceptance. The owned application
 and backend PIDs 91551/91708 were stopped and verified absent. No installed app,
 real profile, key, account, live model, signing identity or publication was used.
+
+### Candidate credential adaptation toward durable restart (2026-09-19)
+
+Added the internal offline `recovery_rewrap` primitive, not a user-facing command.
+It stages a bounded copy of a distinct stopped sibling candidate, validates and
+re-encrypts every known stored credential with explicit source/target secrets,
+verifies target-only readback and database integrity, rechecks input identity,
+then atomically replaces only the candidate database. Original data, backups
+and external key files are not modified. Cooperative locks/pending journals,
+links, unsafe files, credential-table triggers, malformed/ambiguous credentials,
+limits and any unreadable member fail closed. A post-replacement fsync failure
+is deliberately an uncertain refusal; callers must not infer unchanged state.
+Full details and remaining source/consent requirements are in
+`W17-recovery-key-restart.md`.
+
+Focused rewrap/preflight/activation/control suites passed 153 cases in 43.69s
+(one existing warning). A subsequently added post-replace sync-failure case
+passed separately in 0.63s. Ruff and whitespace checks passed. The integration
+case bootstraps two fresh storage processes from a disposable default external
+key file, with no backup-secret/environment-key injection, and verifies readable
+credentials plus byte-preserved original/backup after switch and bound rollback.
+It is not two full native launches, and no native UI acceptance is inferred.
+
+The primitive is not yet in packaged control transport, native coordination or
+HTTP/model IPC. Target durable-source validation, explicit consent and full
+desktop restart validation remain required. The preceding full-suite and frozen
+app evidence predates this new source module; neither is relabelled as current.

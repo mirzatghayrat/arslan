@@ -20,6 +20,57 @@ from server.services.data_profile_lock import activation_record_path, hold
 SECRET = "synthetic-activation-only"
 
 
+def test_rewrapped_candidate_survives_two_fresh_storage_boots_with_external_key(profiles, tmp_path):
+    from server.services.recovery_rewrap import rewrap_candidate
+    from server.services.recovery_preflight import check
+
+    active, candidate, archive = profiles
+    target = 'synthetic-durable-installation-key'
+    # The backup predates the installation's current key. Only fixture setup
+    # changes the original; the operation below must preserve it byte-for-byte.
+    with sqlite3.connect(active / 'arslan.db') as db:
+        db.execute("UPDATE settings SET value=? WHERE key='llm_api_key'",
+                   (keyring(target, bytes(range(16))).encrypt(b'synthetic-key').decode(),))
+    original, archived = (active / 'arslan.db').read_bytes(), archive.read_bytes()
+    home = tmp_path / 'disposable-home'
+    key_file = home / '.arslan' / 'secret_key'
+    key_file.parent.mkdir(parents=True)
+    key_file.write_text(target)
+    key_file.chmod(0o600)
+    assert rewrap_candidate(active, candidate, SECRET, target)['credentials'] == 1
+    code = ("import asyncio\nfrom sqlalchemy import text\n"
+            "from server.db.session import engine\nfrom server.services.storage_boot import initialize\n"
+            "from server.services.data_profile_lock import hold\nfrom server import config,crypto\n"
+            "from pathlib import Path\n"
+            "async def run():\n"
+            "  try:\n"
+            "    await initialize(engine)\n"
+            "    async with engine.connect() as db:\n"
+            "      value=await db.scalar(text(\"SELECT value FROM settings WHERE key='llm_api_key'\"))\n"
+            "      assert crypto.decrypt(value)=='synthetic-key'\n"
+            "  finally:\n"
+            "    await engine.dispose()\n"
+            "with hold(Path(config.settings.db_path)):\n"
+            "  asyncio.run(run())\n"
+            "print('storage-key-continuity-ok')\n")
+    environment = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'HOME': str(home),
+                   'ARSLAN_DATA_DIR': str(candidate), 'ARSLAN_DB_PATH': str(candidate / 'arslan.db'),
+                   'ARSLAN_LIVE_LLM': '0'}
+    # No ARSLAN_SECRET_KEY / key-file override: use default durable source.
+    for _ in range(2):
+        result = subprocess.run([sys.executable, '-c', code], cwd=Path(__file__).resolve().parents[2],
+                                capture_output=True, text=True, timeout=20, env=environment)
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == 'storage-key-continuity-ok'
+        assert SECRET not in result.stdout + result.stderr and target not in result.stdout + result.stderr
+    assert key_file.read_text() == target and key_file.stat().st_mode & 0o777 == 0o600
+    assert (active / 'arslan.db').read_bytes() == original and archive.read_bytes() == archived
+    assert check(candidate / 'arslan.db', target)['status'] == 'compatible'
+    operation = activation.switch_for_trial(active, candidate, target)['operation_id']
+    assert activation.rollback(active, operation)['rolled_back']
+    assert (active / 'arslan.db').read_bytes() == original and archive.read_bytes() == archived
+
+
 @pytest.fixture
 def profiles(tmp_path):
     active, candidate = tmp_path / "active", tmp_path / "restored"

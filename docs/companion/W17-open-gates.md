@@ -32,8 +32,10 @@ An engineering regression passing does not make the candidate releasable.
    silently putting key material in the profile/backup. Any new storage/reference
    mechanism needs its own consent, rollback and tamper/error tests.
    `W17-recovery-key-restart.md` records a candidate-only credential re-encryption
-   alternative that preserves the existing durable external key; it is a design
-   direction, not implemented behavior or blanket consent to rewrite secrets.
+   primitive and two fresh storage-process checks that preserve the existing
+   durable external key. Native durable-source validation/consent, transport and
+   coordinator integration are not implemented; this is not full desktop restart
+   acceptance or blanket consent to rewrite secrets.
 3. Connect the trusted native recovery coordinator and UI. Include exclusivity
    against startup/update/another recovery, owned-child shutdown, explicit pending
    state after uncertainty, and retained original/candidate folders. Keep all
