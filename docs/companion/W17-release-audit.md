@@ -2534,3 +2534,81 @@ Draft retention is in-memory only and is not certified across quit/restart.
 Broader release gates and current-source full regression remain open. No real
 profile/account/key, microphone permission, paid model, installed-app replacement,
 signing or publication was used.
+
+## Recovery component refusal and current regression — 2026-09-19
+
+Source starts at `ee20392a`. Recovery previously returned silently if resource
+path resolution failed, and could stop the service before discovering a missing
+sidecar executable. Resolution and a regular/nonempty/executable metadata check
+now run inside the coordinator before file selection/consent/shutdown. The
+snapshot is rechecked at later boundaries and immediately before stopping the
+service after the maintenance window is ready. Missing/replaced components
+produce a localized refusal before stop, or remain fail-closed after the stop
+boundary. This is availability/identity checking, not executable authenticity,
+signature validation or hostile-ancestor/TOCTOU protection.
+
+Native tests pass **77 cases, one opt-in fixture ignored**, 0.34s after 1.72s
+compilation. New checks cover absent, directory, relative/parent-traversal,
+non-executable, empty and symlink paths; valid unchanged files; replacement,
+mode and content changes. All six component-unavailable translations are checked.
+Final temporary release built in 1m37s and bundled unsigned. Executable SHA-256:
+`fa0d2c37c102e8d0d93125423b2e2b28ecd7e494d11b558d4da1303de2052d30`.
+The frozen backend remains unchanged at
+`6e3dc602bdc44b397366a307492644d6bbd3ae099ee207110a9a7bec2abb1401`.
+
+Actual UI fault injection used only disposable profile
+`/private/tmp/arslan-native-restore-ui-m1tgzvbv` and the temporary app bundle.
+After a healthy Chinese startup, the temporary sidecar executable was renamed
+out of its expected location (not deleted). Restore immediately showed the
+component-unavailable notice before opening a picker. App PID 21008 and backend
+PID 21022 remained unchanged, the synthetic unsent draft remained visible, and
+the settings API stayed healthy with the same language/readable masked credential.
+Original active inode 120922081, backup SHA-256
+`9e35ad13b9c9bdb13a24796b462bcc570e141b2a348e6641b4c0a8f2a8121dab`,
+and both synthetic key files stayed unchanged. No candidate or activation journal
+was created. The executable was returned to its original path and verified against
+its original hash. A second Restore opened the normal picker and was cancelled.
+The temporary app/backend were then closed. No real profile or installed app was
+modified. This does not certify all filesystem/timeout failures or all native
+locale layouts.
+
+A complete frontend run first exposed Node 25.5.0's Web Storage globals shadowing
+jsdom storage: **57 failed files, 63 failed tests, 45 suite-import failures and two
+unhandled errors** (1,567 tests passed). The established
+`NODE_OPTIONS=--no-experimental-webstorage` configuration then passed all
+**246 files / 1,905 tests** in 26.38s, report
+`/tmp/arslan-current-regression.nLBLWn/web.xml`, SHA-256
+`7f34428c5d96e29441b5c8792b3aa4b9c0ac13f781c8cdd9ce40b3fac0894880`.
+
+Test initialization now explicitly binds the real per-environment jsdom local
+and session storage objects, rather than relying on absent Node globals or
+replacing storage with a mock. An added contract checks actual object identity,
+Storage prototypes, separate stores and browser round trips. The full suite
+with NODE_OPTIONS absent passes **247 files / 1,906 tests** in 37.06s, report
+`/tmp/arslan-current-regression.nLBLWn/web-default.xml`, SHA-256
+`21facb9aa1db1d2dc2f278c9bc2e3c99a2f14d1893efe34f07089735d4ebcc57`.
+Existing React act/i18next and jsdom canvas/navigation warnings remain; none was
+suppressed by changing product logic or weakening assertions.
+
+TypeScript and whitespace checks pass. The new storage contract plus existing
+session-persistence suite also pass **11 cases** with the old explicit Node flag,
+so the setup works with both launch configurations on the current Node version.
+
+Full Python regression passed **5,267 tests, 14 skipped, 21 warnings in 621.39s**,
+exit 0, on Python/test source from `ee20392a` unchanged throughout this run.
+Report `/tmp/arslan-current-regression.nLBLWn/full.xml`, SHA-256
+`ac03d9b36943a9c78226dea6a1c4b9969c95a45f00b63365eae686803e31c4e4`.
+JUnit confirms 5,281 cases, zero failures and zero errors. The skips remain 12
+explicitly disabled live-model evaluations, one non-macOS refusal assertion and
+one operator-only copy allowlist. Existing warnings include async marks on sync
+tests, Starlette/httpx deprecation and SQLAlchemy cleanup/NULL-identity cases;
+the existing aiosqlite teardown guard reported 69 closed-loop deliveries.
+These are not claimed resolved. The run used an isolated HOME, disabled key-file
+bootstrap and no live model. No backend/product-web sources changed during it;
+only native code, test initialization and audit notes changed in this turn.
+
+The current regression gap is closed for this source, not the broader release
+gates: isolated credential broker/review, authorized account paths, browser/input
+and media/task outcome acceptance, complete native locale/error/configuration
+matrix, signing and human acceptance remain open. No real account/credential,
+model cost, formal installation replacement or publication occurred.

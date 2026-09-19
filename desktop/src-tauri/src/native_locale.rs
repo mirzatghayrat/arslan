@@ -94,7 +94,7 @@ mod tests {
     fn recovery_ui_copy_covers_all_six_locales() {
         let copy: serde_json::Value = serde_json::from_str(include_str!("../recovery_messages.json")).unwrap();
         let keys = copy["en"].as_object().unwrap();
-        assert_eq!(keys.len(), 14);
+        assert_eq!(keys.len(), 15);
         assert_eq!(copy.as_object().unwrap().len(), 6);
         for locale in ["en", "zh", "ja", "es", "de", "fr"] {
             assert_eq!(copy[locale].as_object().unwrap().len(), keys.len());

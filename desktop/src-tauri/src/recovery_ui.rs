@@ -59,6 +59,41 @@ impl LaunchInputs {
 
 #[derive(PartialEq)]
 struct ArchiveStamp(u64, u64, u64, i64, i64, i64, i64);
+
+#[derive(PartialEq)]
+struct ExecutableStamp(u64, u64, u64, u32, u32, i64, i64, i64, i64);
+
+fn executable_stamp(path: &Path) -> Result<ExecutableStamp, ()> {
+    if !path.is_absolute()
+        || path.components().any(|c| c == std::path::Component::ParentDir)
+    {
+        return Err(());
+    }
+    let m = std::fs::symlink_metadata(path).map_err(|_| ())?;
+    if !m.is_file() || m.len() == 0 || m.mode() & 0o111 == 0 {
+        return Err(());
+    }
+    Ok(ExecutableStamp(m.dev(), m.ino(), m.len(), m.mode(), m.uid(),
+        m.mtime(), m.mtime_nsec(), m.ctime(), m.ctime_nsec()))
+}
+
+struct RecoveryExecutable {
+    path: PathBuf,
+    stamp: ExecutableStamp,
+}
+
+impl RecoveryExecutable {
+    fn load(path: PathBuf) -> Result<Self, ()> {
+        let stamp = executable_stamp(&path)?;
+        Ok(Self { path, stamp })
+    }
+    fn recheck(&self) -> Result<&Path, ()> {
+        if executable_stamp(&self.path)? != self.stamp {
+            return Err(());
+        }
+        Ok(&self.path)
+    }
+}
 fn archive_stamp(path: &Path) -> Result<ArchiveStamp, ()> {
     if !path.is_absolute()
         || path
@@ -95,7 +130,7 @@ struct Selection {
 struct NativeSteps {
     app: AppHandle,
     locale: &'static str,
-    executable: PathBuf,
+    executable: Option<RecoveryExecutable>,
     selection: Option<Selection>,
     paused: Arc<AtomicBool>,
 }
@@ -184,11 +219,21 @@ impl NativeSteps {
     fn selected(&self) -> Result<&Selection, ()> {
         self.selection.as_ref().ok_or(())
     }
+    fn executable(&self) -> Result<&Path, ()> {
+        self.executable.as_ref().ok_or(())?.recheck()
+    }
 }
 
 impl Steps for NativeSteps {
     fn select_and_validate(&mut self) -> Result<bool, ()> {
         crate::refresh_update_menu(&self.app);
+        // Resolve and validate inside the coordinator so failures produce a
+        // visible refusal before consent or service shutdown, not a silent
+        // worker return. This metadata snapshot is an availability check, not
+        // code-signature verification or protection from hostile ancestors.
+        self.executable = Some(RecoveryExecutable::load(self.app.path().resolve(
+            "sidecar/arslan-server", tauri::path::BaseDirectory::Resource,
+        ).map_err(|_| ())?)?);
         // A failed/absent backend cannot be treated as acknowledged stopped.
         if self
             .app
@@ -263,6 +308,7 @@ impl Steps for NativeSteps {
         )
     }
     fn recheck_target(&mut self) -> Result<(), ()> {
+        self.executable()?;
         let s = self.selected()?;
         if LaunchInputs::read()? != s.inputs || archive_stamp(&s.archive)? != s.archive_stamp {
             return Err(());
@@ -271,6 +317,7 @@ impl Steps for NativeSteps {
     }
     fn stop(&mut self) -> Result<(), ()> {
         self.show_maintenance()?;
+        self.recheck_target()?;
         let _ = crate::listen::voice_stop(self.app.clone());
         let _ = crate::voice::voice_conversation_stop(self.app.clone());
         let child = self
@@ -286,7 +333,7 @@ impl Steps for NativeSteps {
     fn prepare(&mut self) -> Result<(), ()> {
         let s = self.selected()?;
         match recovery_control::run(
-            &self.executable,
+            self.executable()?,
             &Request::Prepare {
                 archive: &s.archive,
                 candidate: &s.candidate,
@@ -299,7 +346,7 @@ impl Steps for NativeSteps {
     fn rewrap(&mut self) -> Result<(), ()> {
         let s = self.selected()?;
         match recovery_control::run(
-            &self.executable,
+            self.executable()?,
             &Request::Rewrap {
                 candidate: &s.candidate,
                 source: &s.source,
@@ -313,7 +360,7 @@ impl Steps for NativeSteps {
     fn switch(&mut self) -> Result<String, ()> {
         let s = self.selected()?;
         match recovery_control::run(
-            &self.executable,
+            self.executable()?,
             &Request::Switch {
                 candidate: &s.candidate,
                 secret: s.target.secret(),
@@ -325,7 +372,7 @@ impl Steps for NativeSteps {
     }
     fn trial(&mut self, operation: &str) -> Result<(), ()> {
         crate::recovery_trial::run(
-            &self.executable,
+            self.executable()?,
             operation,
             self.selected()?.target.secret(),
         )
@@ -340,7 +387,7 @@ impl Steps for NativeSteps {
     }
     fn finalize(&mut self, operation: &str) -> Result<(), ()> {
         match recovery_control::run(
-            &self.executable,
+            self.executable()?,
             &Request::Finalize {
                 operation_id: operation,
                 secret: self.selected()?.target.secret(),
@@ -362,17 +409,10 @@ impl Steps for NativeSteps {
 pub(crate) fn begin(app: AppHandle) {
     std::thread::spawn(move || {
         let locale = crate::native_locale::selected();
-        let executable = match app.path().resolve(
-            "sidecar/arslan-server",
-            tauri::path::BaseDirectory::Resource,
-        ) {
-            Ok(path) => path,
-            Err(_) => return,
-        };
         let mut steps = NativeSteps {
             app: app.clone(),
             locale,
-            executable,
+            executable: None,
             selection: None,
             paused: Arc::new(AtomicBool::new(false)),
         };
@@ -383,6 +423,7 @@ pub(crate) fn begin(app: AppHandle) {
             steps.show_paused();
         }
         let message = match result {
+            Outcome::Refused if steps.executable().is_err() => Some("restore_component_unavailable"),
             Outcome::Refused => Some("restore_refused"),
             Outcome::Paused(_) => Some("restore_paused"),
             Outcome::Busy | Outcome::Cancelled | Outcome::Complete => None,
@@ -405,6 +446,47 @@ pub(crate) fn begin(app: AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn recovery_component_requires_regular_nonempty_executable_and_stable_identity() {
+        let base = std::env::temp_dir().join(format!(
+            "arslan-component-check-{}-{}", std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                .unwrap().as_nanos(),
+        ));
+        std::fs::create_dir(&base).unwrap();
+        let path = base.join("sidecar");
+        assert!(RecoveryExecutable::load(path.clone()).is_err());
+        assert!(RecoveryExecutable::load(base.clone()).is_err());
+        assert!(RecoveryExecutable::load(PathBuf::from("relative")).is_err());
+        std::fs::write(&path, b"synthetic-never-executed").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        assert!(RecoveryExecutable::load(path.clone()).is_err());
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let proof = RecoveryExecutable::load(path.clone()).unwrap_or_else(|_| panic!());
+        assert_eq!(proof.recheck(), Ok(path.as_path()));
+        let link = base.join("link");
+        std::os::unix::fs::symlink(&path, &link).unwrap();
+        assert!(RecoveryExecutable::load(link).is_err());
+        assert!(RecoveryExecutable::load(base.join("../").join(base.file_name().unwrap()).join("sidecar")).is_err());
+        let replacement = base.join("replacement");
+        std::fs::write(&replacement, b"synthetic-never-executed").unwrap();
+        std::fs::set_permissions(&replacement, std::fs::Permissions::from_mode(0o700)).unwrap();
+        std::fs::rename(&replacement, &path).unwrap();
+        assert!(proof.recheck().is_err());
+        let proof = RecoveryExecutable::load(path.clone()).unwrap_or_else(|_| panic!());
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o500)).unwrap();
+        assert!(proof.recheck().is_err());
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let proof = RecoveryExecutable::load(path.clone()).unwrap_or_else(|_| panic!());
+        std::fs::write(&path, b"different-content").unwrap();
+        assert!(proof.recheck().is_err());
+        std::fs::write(&path, b"").unwrap();
+        assert!(RecoveryExecutable::load(path).is_err());
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
     #[test]
     fn archive_selection_is_regular_bounded_and_detects_replacement() {
         let base = std::env::temp_dir().join(format!(

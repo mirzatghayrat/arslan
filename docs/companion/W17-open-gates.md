@@ -1,13 +1,13 @@
 # Remaining release gates — triage, not completion certification
 
-Snapshot: recovery maintenance isolation after `392f4eac`, 2026-09-19. This index complements the chronological
+Snapshot: component preflight and full regression after `ee20392a`, 2026-09-19. This index complements the chronological
 `W17-release-audit.md`; it does not replace the approved v1.2 plan, task-package
 acceptance checklist or v1.3 browser/input/language amendment in `README.md`.
 An engineering regression passing does not make the candidate releasable.
 
 | Gate | Current evidence / gap | Evidence required to close it |
 | --- | --- | --- |
-| Safe user-facing recovery (I01/I05, W17) | Native cancellation/activation/restart, pause/bound rollback and wrong-key checks pass with retained data/credentials. Six pending-recovery language sheets/notices and cross-language rollback are observed. Dedicated read-only maintenance presentation and native voice/link admission guards now exist; actual Chinese prepare/keep-paused presentation passes. | Remaining filesystem/timeout/error native branches; full six-language maintenance layout acceptance; custom durable key configuration. |
+| Safe user-facing recovery (I01/I05, W17) | Native cancellation/activation/restart, pause/bound rollback and wrong-key checks pass with retained data/credentials. Six pending-recovery language sheets/notices and cross-language rollback are observed. Dedicated read-only maintenance presentation and native voice/link admission guards exist; Chinese prepare/keep-paused and missing-component refusal pass. Refusal preserves the running service and draft. | Remaining filesystem/timeout/error native branches; full six-language maintenance layout acceptance; custom durable key configuration. |
 | Isolated credentials and approvals (W11) | Approval storage/admission and command boundaries have synthetic evidence. ASC contracts still return `isolated_credential_broker_review_required`; no production credential transport. | Trusted broker identity and OS boundary evidence, approval UI, hostile file/process/port/debugger canaries, revocation races and independent security review before genuine secrets. |
 | Account workflow (W12/W13) | Preparation and host-only single-field execution exist; fixture transport is not real account support. | After W11: authorized target binding, real read-only account validation, approved test draft write and independent readback; screenshot/partial-write handling. Submission and publication remain separately disabled unless authorized. |
 | Interactive browser and dock (W19) | Public bounded navigation and dock have component/app/native evidence at recorded checkpoints. Authenticated interaction is not certified. | Finish the approved interaction/permission scope, ownership/cancellation and sensitive-action boundaries; inspect current packaged browser/dock behavior and artifacts. Do not substitute static previews for interaction. |
@@ -15,7 +15,7 @@ An engineering regression passing does not make the candidate releasable.
 | Six-language native UX and old-data compatibility (W16/W21) | Web/component matrices and actual six-language pending-recovery sheets/menus/notices exist. Cross-language rollback refresh is verified. Earlier disappearing-greeting finding is not causally closed. | Full six-locale narrow/wide and light/dark runtime checks, rapid switch/back/reload, other native menus/dialogs, old entry points/data, keyboard focus and restart behavior on the current bundle. |
 | Design/media workflows (W15) | Versioned style references and a restricted local-media adapter exist. Execution provisioning/review and real D01–D08 outcomes are not complete. | Editable/runnable output evidence, verified artifacts/cancellation, authorized pinned backend when available, human assessment of visual dimensions and honest unavailable-backend fallback. No unapproved weights/cloud costs. |
 | Memory and task quality (W01/W04/W05/W17) | Runtime evidence covers aspects of 25 memory scenarios, not all 60. `catalog.json` still labels real task inputs pending. | Remaining multi-turn bindings plus authorized real behavior evaluation; freeze real inputs/hashes and configuration; run all 30 families × 3 attempts without best-of-three selection; preserve missing/unsupported denominator and cost/latency accounting. |
-| Packaging and final human acceptance (W17) | Temporary unsigned app passed recorded bundle, compute, input/locale/restart and native recovery checks, including explicit consent/cancellation and current Chinese maintenance presentation. These are bounded synthetic-profile paths, not complete acceptance. | Current-source full regressions; remaining native first boot/upgrade/recovery and configuration retention matrix; applicable signing/notarization and human installation/security/UX review. No installed-app replacement or public release under the current authorization. |
+| Packaging and final human acceptance (W17) | Current full regressions pass 5,267 Python, 1,906 frontend and 77 native cases, with documented skips/warnings. Temporary unsigned app passed recorded bundle, compute, input/locale/restart and bounded native recovery checks. These synthetic-profile paths are not complete acceptance. | Keep regressions current; remaining native first boot/upgrade/recovery and configuration retention matrix; applicable signing/notarization and human installation/security/UX review. No installed-app replacement or public release under the current authorization. |
 
 ## Next dependency order
 
@@ -27,6 +27,9 @@ An engineering regression passing does not make the candidate releasable.
    changes after this baseline need their own proportional verification. The
    subsequent full Python run on `dfe02692` passed 5,248 cases with 14 skips and
    20 warnings in 570.00s; see the retained `full.xml` in the release audit.
+   Current Python/test source at `ee20392a` passed 5,267 cases, 14 skips and
+   21 warnings in 621.39s. Current frontend/native selections are recorded above;
+   retained reports and the initial Node storage failure are in the release audit.
 2. Resolve recovery key-source persistence **before** wiring a successful trial
    to normal restart. Existing bootstrap precedence and lock-and-box separation
    are constraints, not details to bypass. A selected backup key must work on a

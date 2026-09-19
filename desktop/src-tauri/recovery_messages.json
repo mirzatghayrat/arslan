@@ -13,7 +13,8 @@
     "restore_working_body": "Normal workspace controls are unavailable while recovery is prepared. Wait for the next native confirmation. This screen does not mean that recovery has completed. Your existing workspace is kept hidden until you quit or restart.",
     "restore_paused_title": "Recovery paused",
     "restore_controls_paused": "This action is unavailable while Arslan is starting, updating or recovering data. Try again after maintenance finishes.",
-    "restore_ack": "Understood"
+    "restore_ack": "Understood",
+    "restore_component_unavailable": "Recovery could not begin because its application component is unavailable. No data was replaced and the running service was not stopped. Quit Arslan and check that the application installation is complete before trying again."
   },
   "zh": {
     "restore_title": "从备份恢复…",
@@ -29,7 +30,8 @@
     "restore_working_body": "准备恢复期间，普通工作区操作暂不可用。请等待下一次原生确认。显示此页面不代表恢复已完成。原工作区会保持隐藏，直到退出或重启。",
     "restore_paused_title": "恢复已暂停",
     "restore_controls_paused": "Arslan 正在启动、更新或恢复资料，暂不能执行此操作。请在维护完成后重试。",
-    "restore_ack": "知道了"
+    "restore_ack": "知道了",
+    "restore_component_unavailable": "恢复所需的应用组件不可用，无法开始恢复。未替换资料，也未停止正在运行的服务。请退出 Arslan，确认应用安装完整后再试。"
   },
   "ja": {
     "restore_title": "バックアップから復元…",
@@ -45,7 +47,8 @@
     "restore_working_body": "復元の準備中は通常のワークスペースを操作できません。次のネイティブ確認をお待ちください。この画面は復元の完了を意味しません。元のワークスペースは終了または再起動まで非表示で保持されます。",
     "restore_paused_title": "復元は停止中です",
     "restore_controls_paused": "Arslan の起動、更新、データ復元中はこの操作を利用できません。処理の完了後に再試行してください。",
-    "restore_ack": "確認しました"
+    "restore_ack": "確認しました",
+    "restore_component_unavailable": "復元に必要なアプリの構成要素を利用できないため、復元を開始できませんでした。データの置き換えや実行中サービスの停止は行っていません。Arslan を終了し、アプリが完全にインストールされていることを確認してから再試行してください。"
   },
   "es": {
     "restore_title": "Restaurar desde una copia…",
@@ -61,7 +64,8 @@
     "restore_working_body": "Los controles del espacio de trabajo no están disponibles mientras se prepara la recuperación. Espera la siguiente confirmación nativa. Esta pantalla no indica que la recuperación haya terminado. El espacio de trabajo anterior permanece oculto hasta que cierres o reinicies la aplicación.",
     "restore_paused_title": "Recuperación en pausa",
     "restore_controls_paused": "Esta acción no está disponible mientras Arslan se inicia, actualiza o recupera datos. Inténtalo al terminar el mantenimiento.",
-    "restore_ack": "Entendido"
+    "restore_ack": "Entendido",
+    "restore_component_unavailable": "No se pudo iniciar la recuperación porque un componente de la aplicación no está disponible. No se sustituyeron datos ni se detuvo el servicio. Cierra Arslan y comprueba que la instalación esté completa antes de volver a intentarlo."
   },
   "de": {
     "restore_title": "Aus Sicherung wiederherstellen…",
@@ -77,7 +81,8 @@
     "restore_working_body": "Während die Wiederherstellung vorbereitet wird, sind normale Arbeitsbereich-Aktionen nicht verfügbar. Warte auf die nächste native Bestätigung. Dieser Bildschirm bedeutet nicht, dass die Wiederherstellung abgeschlossen ist. Der bisherige Arbeitsbereich bleibt bis zum Beenden oder Neustart ausgeblendet.",
     "restore_paused_title": "Wiederherstellung pausiert",
     "restore_controls_paused": "Diese Aktion ist während des Starts, Updates oder der Datenwiederherstellung nicht verfügbar. Versuche es nach Abschluss der Wartung erneut.",
-    "restore_ack": "Verstanden"
+    "restore_ack": "Verstanden",
+    "restore_component_unavailable": "Die Wiederherstellung konnte nicht beginnen, da eine benötigte Anwendungskomponente nicht verfügbar ist. Es wurden keine Daten ersetzt und keine laufenden Dienste gestoppt. Beende Arslan und prüfe vor einem erneuten Versuch, ob die Anwendung vollständig installiert ist."
   },
   "fr": {
     "restore_title": "Restaurer une sauvegarde…",
@@ -93,6 +98,7 @@
     "restore_working_body": "Les commandes de l’espace de travail sont indisponibles pendant la préparation. Attendez la prochaine confirmation native. Cet écran ne signifie pas que la restauration est terminée. L’ancien espace reste masqué jusqu’à la fermeture ou au redémarrage.",
     "restore_paused_title": "Restauration en pause",
     "restore_controls_paused": "Cette action est indisponible pendant le démarrage, la mise à jour ou la restauration des données d’Arslan. Réessayez après la maintenance.",
-    "restore_ack": "Compris"
+    "restore_ack": "Compris",
+    "restore_component_unavailable": "La restauration n’a pas pu commencer car un composant de l’application est indisponible. Aucune donnée n’a été remplacée et aucun service en cours n’a été arrêté. Quittez Arslan et vérifiez que l’installation est complète avant de réessayer."
   }
 }
