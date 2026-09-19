@@ -48,3 +48,26 @@ it("closes a newly created session if the tab disappeared while creation was pen
   await waitFor(() => expect(browserApi.closeReader).toHaveBeenCalledWith("late"));
   expect(browserApi.readerAction).not.toHaveBeenCalled();
 });
+
+it.each(["browser.navigation_failed", "browser.frame_too_large", "browser.stale_view", "browser.runtime_failed", "browser.session_expired"])(
+  "removes the previous screenshot and link controls after %s", async code => {
+    render(<BrowserReader conversationId="conversation" taskId={null} onTitle={() => {}} />);
+    fireEvent.change(screen.getByLabelText("browser.url"), { target: { value: "https://example.com" } });
+    fireEvent.click(screen.getByLabelText("browser.open"));
+    await screen.findByAltText("browser.screenshot");
+    vi.mocked(browserApi.readerAction).mockRejectedValueOnce({ detail: { code } });
+    fireEvent.click(screen.getByLabelText("dock.refresh"));
+    await screen.findByRole("alert");
+    expect(screen.queryByAltText("browser.screenshot")).not.toBeInTheDocument();
+    expect(screen.queryByText("Next")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("dock.refresh")).toBeDisabled();
+    if (!["browser.runtime_failed", "browser.session_expired"].includes(code)) {
+      expect(screen.getByLabelText("dock.stop")).not.toBeDisabled();
+    }
+    fireEvent.click(screen.getByLabelText("browser.open"));
+    await screen.findByAltText("browser.screenshot");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(browserApi.createReader).toHaveBeenCalledTimes(
+      ["browser.runtime_failed", "browser.session_expired"].includes(code) ? 2 : 1,
+    );
+  });

@@ -23,6 +23,7 @@ const { validUrl, installPolicy } = require('./browser_reader_policy.cjs');
   page.on('download', download => download.cancel().catch(() => {}));
   page.on('filechooser', () => {}); // No file input is ever filled.
   let revision = 0;
+  let frameValid = false;
   let links = [];
   let history = [];
   let historyIndex = -1;
@@ -32,45 +33,62 @@ const { validUrl, installPolicy } = require('./browser_reader_policy.cjs');
     try {
       const request = JSON.parse(line);
       let target;
+      let nextHistoryIndex = historyIndex;
       if (request.action === 'navigate') target = request.url;
       else if (request.action === 'link') {
-        if (request.revision !== revision) throw new Error('browser.stale_view');
+        if (!frameValid || request.revision !== revision) throw new Error('browser.stale_view');
         target = links.find(link => link.id === request.link_id)?.url;
       } else if (request.action === 'back' || request.action === 'forward') {
         const next = historyIndex + (request.action === 'back' ? -1 : 1);
         if (next < 0 || next >= history.length) throw new Error('browser.history_unavailable');
-        historyIndex = next;
-        target = history[historyIndex];
+        nextHistoryIndex = next;
+        target = history[next];
       } else if (request.action === 'scroll') {
         if (![-1, 1].includes(request.direction)) throw new Error('browser.invalid_request');
+        frameValid = false;
         await page.mouse.wheel(0, request.direction * 560);
       } else if (request.action === 'refresh') {
         target = page.url();
       } else throw new Error('browser.action_not_supported');
       if (target !== undefined) {
         if (!validUrl(target)) throw new Error('browser.invalid_url');
+        // From this point the page may change even if navigation or capture
+        // later fails. Previously displayed link IDs must no longer authorize
+        // a target from this new, unpublished document.
+        frameValid = false;
         await page.goto(target, { waitUntil: 'domcontentloaded' });
-        if (request.action === 'navigate' || request.action === 'link') {
-          history = history.slice(0, historyIndex + 1);
-          history.push(page.url());
-          if (history.length > 100) history.shift();
-          historyIndex = history.length - 1;
-        }
       } else if (request.action === 'link') throw new Error('browser.stale_view');
       if (!validUrl(page.url())) throw new Error('browser.invalid_url');
       const candidates = await page.locator('a[href]').evaluateAll(nodes => nodes.slice(0, 200).map(node => ({
         label: (node.textContent || node.getAttribute('aria-label') || '').trim().slice(0, 200), url: node.href,
       })));
-      links = candidates.filter(link => validUrl(link.url)).slice(0, 100)
+      const nextLinks = candidates.filter(link => validUrl(link.url)).slice(0, 100)
         .map((link, index) => ({ ...link, id: `link-${index}` }));
       const text = (await page.locator('body').innerText()).slice(0, 32000);
       const screenshot = await page.screenshot({ type: 'jpeg', quality: 70, timeout: 5000 });
       if (screenshot.length > 2_000_000) throw new Error('browser.frame_too_large');
+      const title = (await page.title()).slice(0, 240);
+      const scrollY = await page.evaluate(() => window.scrollY);
+      const currentUrl = page.url();
+      if (!validUrl(currentUrl)) throw new Error('browser.invalid_url');
+      // Publish the history cursor and link map only after the whole frame is
+      // available. Failed back/forward must not consume a history step. Refresh
+      // after a partial navigation (or a redirect) records the actual location.
+      if (request.action === 'navigate' || request.action === 'link'
+          || currentUrl !== history[nextHistoryIndex]) {
+        history = history.slice(0, nextHistoryIndex + 1);
+        history.push(currentUrl);
+        if (history.length > 100) history.shift();
+        nextHistoryIndex = history.length - 1;
+      }
+      historyIndex = nextHistoryIndex;
+      links = nextLinks;
       revision += 1;
-      process.stdout.write(JSON.stringify({ ok: true, revision, url: page.url(),
-        title: (await page.title()).slice(0, 240), text, links, screenshot: screenshot.toString('base64'),
+      frameValid = true;
+      process.stdout.write(JSON.stringify({ ok: true, revision, url: currentUrl,
+        title, text, links, screenshot: screenshot.toString('base64'),
         can_back: historyIndex > 0, can_forward: historyIndex < history.length - 1,
-        scroll_y: await page.evaluate(() => window.scrollY),
+        scroll_y: scrollY,
         mode: 'isolated_read_only', scripts: 'enabled', non_get_requests: 'blocked', credentials: 'unavailable' }) + '\n');
     } catch (error) {
       const code = typeof error?.message === 'string' && /^browser\.[a-z_]+$/.test(error.message)

@@ -75,3 +75,52 @@ images across all languages, widths and themes were inspected. This complements
 the synthetic successful-reader component matrix; it does not prove live public
 navigation, authenticated actions, artifact rendering or native packaging.
 The temporary app server and Chromium contexts were closed after verification.
+
+## Published-frame integrity and failed history navigation — 2026-09-19
+
+Source baseline `3a15df9f` had a reproduced frame-binding defect. After a new
+navigation changed the page, link extraction overwrote the link map before
+screenshot/title capture completed. A failed capture left the previous revision
+valid, so an old displayed `link-0` could follow the newly extracted page's
+`link-0` URL. The baseline stdin/stdout program was run against a deterministic
+renderer double: the displayed target was `https://example.com/original/target`,
+but the subsequent refresh revealed navigation to
+`https://example.com/capture-fails/target`. No public request or account was used
+for this defect reproduction. The first diagnostic expected an immediate success
+response, but the double also failed capture on that new target; observing the
+subsequent refresh established the actual wrong destination.
+
+The runtime now invalidates the published frame before navigation/scroll can
+change the page, stages the new links and history cursor, and commits them only
+after the entire frame is available. Failed back/forward no longer consume a
+history step. Refresh after partial navigation records the actual recovered URL.
+Old frame IDs are refused rather than rebound. The UI removes old screenshots
+and link controls on action failure; a still-live session can still be stopped.
+No arbitrary click/type or authenticated action has been enabled by this fix.
+
+Seven new tests run the actual shipped Node program through its stdin/stdout
+protocol with a synthetic renderer: capture/title/oversize/navigation failures,
+failed history retries, failed scroll and refresh after partial navigation.
+Five new component cases check stale frame removal and recovery, including
+terminal session errors. Reader/dock selection: **21 passed**; Python reader,
+proxy and managed-browser selection: **29 passed**, one existing dependency
+warning, 0.74s.
+
+Real temporary Chromium checks also passed: public example.com navigation,
+scroll request, stale-link rejection, refresh and complete child/profile cleanup
+using `scripts.browser_reader_smoke`. The production-policy synthetic-page smoke
+confirmed actual 560px scrolling, blocked POST/PATCH/PUT/DELETE and WebSocket,
+and absent Tauri/Node globals. Runtime:
+`/private/tmp/arslan-reader-runtime.vfxygc`; no real profile/account was used.
+Capture-failure injection remains renderer-double evidence, not a claim of
+all failure modes reproduced in actual Chromium.
+
+Complete frontend suite: **248 files / 1,918 tests passed** in 23.50s, without
+the former Node storage workaround. JUnit report
+`/tmp/arslan-reader-frame-regression.xml`, SHA-256
+`4a0eb3f3e89a96a6fac819b2643f4e695248b529394189ccf900b049ff3413da`.
+TypeScript, whitespace and production build passed (3.15s); existing React/jsdom
+and large-chunk warnings remain. The native bundle has not yet been refreshed
+with this reader/web change, so the preceding packaged hash does not cover it.
+Authenticated browser scope, broker review and the broader W19/W21 acceptance
+matrix remain open; this checkpoint is not a release certification.

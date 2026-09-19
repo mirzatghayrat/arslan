@@ -44,6 +44,9 @@ export default function BrowserReader({ conversationId, taskId, onTitle }: {
     } catch (cause) {
       if (!alive.current || generation.current !== attempt) return;
       const code = (cause as { detail?: { code?: string } }).detail?.code;
+      // The remote page may have navigated before capture failed. Do not keep
+      // presenting its previous screenshot/link controls as a current view.
+      setFrame(null);
       setError(code === "browser.setup_required" ? "dock.setupRequired" : code === "browser.stale_view" ? "dock.stale" : "dock.error");
       if (code === "browser.session_closed" || code === "browser.session_expired" || code === "browser.runtime_failed") session.current = null;
     } finally { if (alive.current && generation.current === attempt) setBusy(false); }
@@ -62,7 +65,7 @@ export default function BrowserReader({ conversationId, taskId, onTitle }: {
       <button className={button} disabled={busy || !frame} onClick={() => void act({ action: "refresh" })} aria-label={t("dock.refresh")}><RefreshCw size={15} /></button>
       <button className={button} disabled={busy || !frame} onClick={() => void act({ action: "scroll", direction: -1 })} aria-label={t("dock.scrollUp")}><ArrowUp size={15} /></button>
       <button className={button} disabled={busy || !frame} onClick={() => void act({ action: "scroll", direction: 1 })} aria-label={t("dock.scrollDown")}><ArrowDown size={15} /></button>
-      <button className={button} disabled={!busy && !frame} onClick={() => void stop()} aria-label={t("dock.stop")}><Square size={15} /></button>
+      <button className={button} disabled={!busy && !frame && !session.current} onClick={() => void stop()} aria-label={t("dock.stop")}><Square size={15} /></button>
     </div>
     {error && <p role="alert" className="px-3 pb-3 text-sm text-destructive">{t(error)}</p>}
     {busy && <p role="status" className="px-3 pb-3 text-sm">{t("browser.loading")}</p>}
