@@ -1263,6 +1263,9 @@
     "close": "Schließen"
   },
   "attach": {
+    "delivery_truncated": "Diese Quelle wurde nur teilweise extrahiert; behandeln Sie sie nicht als vollständig.",
+    "delivery_empty": "Aus dieser Quelle wurde kein lesbarer Text extrahiert.",
+    "delivery_image_unavailable": "Dieses Bild konnte nicht vorbereitet werden und wurde nicht an das Modell gesendet.",
     "add": "Dateien oder Fotos anhängen",
     "url": "Weblink anhängen",
     "url_placeholder": "URL einfügen (https://…)",

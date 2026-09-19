@@ -2532,9 +2532,17 @@ button:disabled {
   max-width: 16rem;
 }
 .sent-attachment__name {
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.sent-attachment__details {
+  min-width: 0;
+}
+.sent-attachment__status {
+  display: block;
+  overflow-wrap: anywhere;
 }
 
 .attach-error {

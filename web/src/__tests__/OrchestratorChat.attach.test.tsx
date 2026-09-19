@@ -20,6 +20,26 @@ const history: Message[] = [
 ];
 
 describe('OrchestratorChat attach', () => {
+
+  it.each([['excerpt', true, 'truncated'], ['', false, 'empty']] as const)(
+    'sends extraction limitations (%s) with the attachment',
+    async (text, truncated, status) => {
+      const { api } = await import('../api/client');
+      vi.mocked(api.extractAttachmentUrl).mockResolvedValue({ text, chars: text.length, truncated });
+      const spy = vi.fn();
+      render(<OrchestratorChat chatHistory={history} setChatHistory={vi.fn()} onSendMessage={spy} spawns={[]} currentStyle="quartz" setCurrentStyle={vi.fn()} activeThread={null} />);
+      const input = screen.getByPlaceholderText(/placeholder_chat/i);
+      fireEvent.paste(input, { clipboardData: { files: [], getData: () => 'https://x.com' } });
+      await screen.findByLabelText('ui.removeAttachment');
+      fireEvent.change(input, { target: { value: 'summarise' } });
+      fireEvent.submit(input.closest('form')!);
+      expect(spy).toHaveBeenCalledWith('summarise', expect.objectContaining({
+        context: '["https://x.com": attach.delivery_' + status + ']\n' + text,
+        names: ['https://x.com'],
+        display: [expect.objectContaining({ extractionStatus: status })],
+      }));
+    },
+  );
   it('sends sampled video frames with their source locators through the real image payload path', async () => {
     const { api } = await import('../api/client');
     const images = [{ name: 'clip.mp4#t=1.000s', source_locator: 'clip.mp4#t=1.000s', mime_type: 'image/png', data: 'cG5n' }];

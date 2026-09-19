@@ -44,6 +44,7 @@ export interface MessageAttachment {
   name: string;
   kind?: 'doc' | 'image';
   previewUrl?: string;
+  extractionStatus?: 'truncated' | 'empty' | 'image_unavailable';
 }
 
 export interface Message {

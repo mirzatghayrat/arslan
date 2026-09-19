@@ -1197,6 +1197,9 @@
     "close": "Close"
   },
   "attach": {
+    "delivery_truncated": "Only part of this source was extracted; do not treat it as complete.",
+    "delivery_empty": "No readable text was extracted from this source.",
+    "delivery_image_unavailable": "This image could not be prepared and was not sent to the model.",
     "add": "Attach files or photos",
     "url": "Attach a web link",
     "url_placeholder": "Paste a URL (https://…)",

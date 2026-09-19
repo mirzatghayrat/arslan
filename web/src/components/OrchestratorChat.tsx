@@ -34,7 +34,7 @@ import PushToTalk from './PushToTalk';
 import ConversationToggle from './ConversationToggle';
 import { useConversationMode } from '../hooks/useConversationMode';
 import { preferredVoiceLocale } from '../lib/speech';
-import { useComposerAttach, AttachChips, AttachControl, SentAttachments, attachmentImages, attachmentImageBudgetExceeded, type Attachment } from './ComposerAttach';
+import { useComposerAttach, AttachChips, AttachControl, SentAttachments, attachmentImages, attachmentDelivery, attachmentImageBudgetExceeded, type Attachment } from './ComposerAttach';
 import InviteConfirmCard from './InviteConfirmCard';
 import ClarifyOptionsCard from './ClarifyOptionsCard';
 import MentionText from './MentionText';
@@ -383,17 +383,15 @@ export default function OrchestratorChat({
     const text = inputValue.trim();
     setInputValue('');
 
-    // Attachments with text (docs/urls/OCR'd images) ride into context; image chips
-    // where OCR found nothing stay preview-only (empty text) and contribute nothing.
-    const context = attachments.map((a) => a.text).filter(Boolean).join("\n\n---\n\n");
-    const names = attachments.filter((a) => a.text).map((a) => a.name);
+    const { display, sources } = attachmentDelivery(attachments, t);
+    const context = sources.map((a) => a.text).join("\n\n---\n\n");
+    const names = sources.map((a) => a.name);
     // Every attachment (incl. OCR-none images) echoes into the sent bubble as a
     // thumbnail/chip. previewUrl is a session-only object-URL — kept alive by clearing
     // with { revokeUrls: false } below so the rendered message can still show it.
-    const display: MessageAttachment[] = attachments.map((a) => ({ name: a.name, kind: a.kind, previewUrl: a.previewUrl }));
     // Images ride as real image blocks (vision round), separate from `context`
     // which is extracted TEXT. An image chip that failed preparation has no
-    // payload and contributes nothing — the chip already says so.
+    // payload; its limitation is instead carried in the text context.
     const images = attachmentImages(attachments);
     const clearAttachments = () => attach.clear({ revokeUrls: false });
 

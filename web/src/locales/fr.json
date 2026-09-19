@@ -1263,6 +1263,9 @@
     "close": "Fermer"
   },
   "attach": {
+    "delivery_truncated": "Seule une partie de cette source a été extraite ; ne la considérez pas comme complète.",
+    "delivery_empty": "Aucun texte lisible n’a été extrait de cette source.",
+    "delivery_image_unavailable": "Cette image n’a pas pu être préparée et n’a pas été envoyée au modèle.",
     "add": "Joindre des fichiers ou des photos",
     "url": "Joindre un lien web",
     "url_placeholder": "Collez une URL (https://…)",

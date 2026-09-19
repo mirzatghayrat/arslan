@@ -1197,6 +1197,9 @@
     "close": "关闭"
   },
   "attach": {
+    "delivery_truncated": "此资料仅提取了部分内容，请勿视为完整资料。",
+    "delivery_empty": "未从此资料中提取到可读文本。",
+    "delivery_image_unavailable": "此图片未能完成处理，未发送给模型。",
     "add": "添加文件或图片",
     "url": "添加网页链接",
     "url_placeholder": "粘贴网址 (https://…)",

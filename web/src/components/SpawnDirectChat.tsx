@@ -5,7 +5,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { formatUiTime } from '../lib/localeFormatting';
 import MatrixSpinner from './MatrixSpinner';
-import { Message, MessageAttachment, Spawn } from '../types';
+import { Message, Spawn } from '../types';
 import { useCapabilityLabel } from '../stores/registryStore';
 import { useProfileStore } from '../stores/profileStore';
 import SFSymbol from './SFSymbol';
@@ -17,7 +17,7 @@ import { getIcon } from './iconMap';
 import { SandboxBackdrop } from './SandboxBackdrop';
 import { SpawnAvatar } from './SpawnAvatar';
 import { useWebSocket } from '../hooks/useWebSocket';
-import { useComposerAttach, AttachChips, AttachControl, SentAttachments, attachmentImages, type Attachment } from './ComposerAttach';
+import { useComposerAttach, AttachChips, AttachControl, SentAttachments, attachmentImages, attachmentDelivery, type Attachment } from './ComposerAttach';
 
 interface SpawnDirectChatProps {
   spawn: Spawn;
@@ -264,7 +264,7 @@ export default function SpawnDirectChat({
     // Every attachment (incl. OCR-none images) echoes into the sent bubble as a
     // thumbnail/chip. previewUrl is a session-only object-URL — kept alive by clearing
     // with { revokeUrls: false } below so the rendered message can still show it.
-    const display: MessageAttachment[] = attachments.map((a) => ({ name: a.name, kind: a.kind, previewUrl: a.previewUrl }));
+    const { display, sources: textAttachments } = attachmentDelivery(attachments, t);
     const userMsg: Message = {
       id: `msg-direct-user-${Date.now()}`,
       sender: 'user',
@@ -277,8 +277,7 @@ export default function SpawnDirectChat({
 
     // In refine mode, the deliverable being refined must reach the spawn reliably
     // via attached_context — independent of the (user-mutable) attachments array.
-    // Image chips carry OCR'd text when found; otherwise empty → no context.
-    const textAttachments = attachments.filter((a) => a.text);
+    // Extraction limitations remain in context even when no text was readable.
     const parts = textAttachments.map((a) => a.text);
     if (refineDeliverable && !parts.includes(refineDeliverable)) parts.unshift(refineDeliverable);
     const attached_context = parts.join('\n\n---\n\n');

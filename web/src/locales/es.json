@@ -1263,6 +1263,9 @@
     "close": "Cerrar"
   },
   "attach": {
+    "delivery_truncated": "Solo se extrajo parte de esta fuente; no la considere completa.",
+    "delivery_empty": "No se extrajo texto legible de esta fuente.",
+    "delivery_image_unavailable": "No se pudo preparar esta imagen y no se envió al modelo.",
     "add": "Adjuntar archivos o fotos",
     "url": "Adjuntar un enlace web",
     "url_placeholder": "Pega una URL (https://…)",

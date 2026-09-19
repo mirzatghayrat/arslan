@@ -38,6 +38,41 @@ const mockSpawn = {
 };
 
 describe('SpawnDirectChat', () => {
+  it('keeps the original refinement deliverable alongside extraction warnings', async () => {
+    const { api } = await import('../api/client');
+    vi.mocked(api.extractAttachmentUrl).mockResolvedValue({ text: 'partial source', chars: 14, truncated: true });
+    sendSpy.mockClear();
+    render(<SpawnDirectChat spawn={mockSpawn} currentStyle="quartz" refineDeliverable="ORIGINAL DELIVERABLE" />);
+    const input = screen.getByPlaceholderText(/spawn_chat/i);
+    fireEvent.paste(input, { clipboardData: { files: [], getData: () => 'https://x.com' } });
+    await screen.findByLabelText('ui.removeAttachment');
+    fireEvent.change(input, { target: { value: 'revise' } });
+    fireEvent.submit(input.closest('form')!);
+    expect(sendSpy).toHaveBeenCalledWith(expect.objectContaining({
+      attached_context: 'ORIGINAL DELIVERABLE\n\n---\n\n["https://x.com": attach.delivery_truncated]\npartial source',
+      attached_names: ['spawn_chat.refine_attach_name', 'https://x.com'],
+    }));
+  });
+
+  it.each([['excerpt', true, 'truncated'], ['', false, 'empty']] as const)(
+    'sends extraction limitations (%s) with the attachment',
+    async (text, truncated, status) => {
+      const { api } = await import('../api/client');
+      vi.mocked(api.extractAttachmentUrl).mockResolvedValue({ text, chars: text.length, truncated });
+      sendSpy.mockClear();
+      render(<SpawnDirectChat spawn={mockSpawn} currentStyle="quartz" />);
+      const input = screen.getByPlaceholderText(/spawn_chat/i);
+      fireEvent.paste(input, { clipboardData: { files: [], getData: () => 'https://x.com' } });
+      await screen.findByLabelText('ui.removeAttachment');
+      fireEvent.change(input, { target: { value: 'summarise' } });
+      fireEvent.submit(input.closest('form')!);
+      expect(sendSpy).toHaveBeenCalledWith(expect.objectContaining({
+        attached_context: '["https://x.com": attach.delivery_' + status + ']\n' + text,
+        attached_names: ['https://x.com'],
+      }));
+      expect(screen.getByText('attach.delivery_' + status)).toBeInTheDocument();
+    },
+  );
   it('does not silently drop sampled images in a text-only expert conversation', async () => {
     sendSpy.mockClear();
     const { api } = await import('../api/client');

@@ -67,5 +67,11 @@ An engineering regression passing does not make the candidate releasable.
   `memory-runtime-bindings.md`; feature limitations: W11/W12-W13/W15/W19/W20/W21
   checkpoint documents. Older sections are historical, not current blanket claims.
 
+Attachment-fidelity source follow-up (2026-09-19, after `3a5cab09`): W20 now
+records model-bound and sent-echo extraction-limit notices for both composers,
+with 249 frontend files / 1,930 tests passing, TypeScript and production build.
+The existing temporary native bundle has not yet been refreshed for this
+frontend-only change. No release gate or real-model acceptance is closed by it.
+
 W18's expanded 100-task improvement phase remains later; it is not a reason to
 postpone W19/W20/W21 or to rename current engineering tests as real task success.

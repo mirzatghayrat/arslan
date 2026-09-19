@@ -1,5 +1,35 @@
 # W20 — shared format matrix and local extraction
 
+## Attachment delivery fidelity — 2026-09-19, after `3a5cab09`
+
+Both main and direct-expert composers now carry extraction limitations into
+model-bound text, not just pre-send chips. Truncated excerpts retain their exact
+content with a localized partial-source notice. Empty/whitespace-only extraction
+and unprepared images carry an explicit unavailable-content notice and source
+name. Successfully prepared image-only inputs keep their existing real image
+payload path without a false empty-text warning. Complete text remains byte-for-byte
+unchanged; expert refinement still includes the original deliverable.
+
+Sent-message attachment echoes retain the same limitation in all six languages.
+Failed image preparation renders a labeled file chip, not a thumbnail suggesting
+successful transmission. Notices wrap independently of ellipsized source names.
+This display metadata remains session-only, matching the existing attachment
+echo contract; it does not retrofit historical messages or recover missing text.
+
+Validation: 249 frontend test files / 1,930 tests passed in 24.22 seconds,
+including main/direct delivery, failed-image/empty/partial helper cases, successful
+visual input, refinement preservation and six-language parity. TypeScript and
+production build passed (3.16 seconds; existing large-chunk warnings). The first
+full run caught the expected locale-key baseline increase from 1,517 to 1,520;
+the baseline was updated only after all six locales gained the three notices.
+JUnit: `/tmp/arslan-attachment-fidelity-regression.xml`, SHA-256
+`d21d51b9c16825912d9ab36aa43325eb5deddf3ebedb45db1239497233c1816b`.
+
+This is source/frontend validation. The temporary native candidate still predates
+this change; packaged visual acceptance and real selected-model quality remain
+open. No account, model call, production data, installed app or publication was
+used or changed.
+
 Checkpoint 2026-09-15, based on `4f2056fd`. This is the extraction foundation, not completion of video-frame understanding or all input acceptance.
 
 The frontend pickers and backend readers share `web/src/lib/input_formats.json`, staged into `server/resources` in the desktop sidecar. This location also works with the isolated frontend build directory. Existing PDF/Word/HTML/image paths remain; code/data text, XLSX, PPTX and common video containers are added. Macro-enabled/legacy Office formats are not advertised. SVG/code are inert text in attachment and artifact preview paths.

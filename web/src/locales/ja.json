@@ -1263,6 +1263,9 @@
     "close": "閉じる"
   },
   "attach": {
+    "delivery_truncated": "この資料は一部のみ抽出されています。完全な資料として扱わないでください。",
+    "delivery_empty": "この資料から読み取り可能なテキストを抽出できませんでした。",
+    "delivery_image_unavailable": "この画像は処理できなかったため、モデルに送信されていません。",
     "add": "ファイルや写真を添付",
     "url": "ウェブリンクを添付",
     "url_placeholder": "URLを貼り付け (https://…)",

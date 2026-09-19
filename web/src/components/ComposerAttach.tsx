@@ -51,6 +51,25 @@ export function attachmentImages(items: Attachment[]): ImagePayload[] {
   return items.flatMap(item => [...(item.image ? [item.image] : []), ...(item.images ?? [])]);
 }
 
+/** Preserve extraction limits in both the model context and the sent-message echo. */
+export function attachmentDelivery(items: Attachment[], t: (key: string) => string) {
+  const display: MessageAttachment[] = [];
+  const sources: { name: string; text: string }[] = [];
+  for (const item of items) {
+    const hasImages = attachmentImages([item]).length > 0;
+    const status: MessageAttachment['extractionStatus'] = item.truncated ? 'truncated'
+      : item.kind === 'image' && !hasImages && !item.text.trim() ? 'image_unavailable'
+      : !hasImages && !item.text.trim() ? 'empty' : undefined;
+    display.push({ name: item.name, kind: item.kind, previewUrl: item.previewUrl,
+      ...(status ? { extractionStatus: status } : {}) });
+    const text = status
+      ? `[${JSON.stringify(item.name)}: ${t(`attach.delivery_${status}`)}]\n${item.text}`
+      : item.text;
+    if (text) sources.push({ name: item.name, text });
+  }
+  return { display, sources };
+}
+
 export function attachmentImageBudgetExceeded(items: Attachment[]): boolean {
   const images = attachmentImages(items);
   return images.length > 9 || images.reduce((sum, item) => sum + item.data.length, 0) > 12 * 1024 * 1024;
@@ -419,16 +438,20 @@ export function AttachChips({
  *  back to a compact file chip. No broken-image icons, no empty block: renders nothing
  *  when there are no attachments. */
 export function SentAttachments({ attachments }: { attachments?: MessageAttachment[] }) {
+  const { t } = useTranslation();
   if (!attachments || attachments.length === 0) return null;
   return (
     <div className="sent-attachments">
       {attachments.map((a, i) =>
-        a.kind === "image" && a.previewUrl ? (
+        a.kind === "image" && a.previewUrl && !a.extractionStatus ? (
           <img key={`${a.name}-${i}`} src={a.previewUrl} alt={a.name} className="sent-attachment__img" />
         ) : (
           <span key={`${a.name}-${i}`} className="sent-attachment__chip" title={a.name}>
             <FileText className="w-3 h-3 shrink-0" />
-            <span className="sent-attachment__name">{a.name}</span>
+            <span className="sent-attachment__details">
+              <span className="sent-attachment__name">{a.name}</span>
+              {a.extractionStatus && <span className="sent-attachment__status">{t(`attach.delivery_${a.extractionStatus}`)}</span>}
+            </span>
           </span>
         ),
       )}
