@@ -1,5 +1,11 @@
 # Remaining release gates — triage, not completion certification
 
+Memory follow-up after `a0c3dd4e`: M06-07 now follows an actual host-generated
+receipt through authenticated historical review, version change, deletion and
+a later host task. Deleted text is not reconstructed and later context excludes
+it. Runtime evidence covers aspects of 29/60 scenarios. This is not native UI
+acceptance or deletion of unrelated conversation history; see the binding matrix.
+
 Current production backend `d21b525a` full run completed: **5,336 passed,
 14 skipped, 19 warnings in 514.20s**, exit 0. W20 records report identity and
 teardown limitations. Later memory-only test additions are counted separately.
@@ -219,7 +225,7 @@ signed or published.
 | Input fidelity (W20) | Shared format registry, bounded extraction, source locators and sampled video frames exist. Three frames are not full-motion understanding; transcription is disclosed unavailable. | Current packaged real-format/codec cases; supported preview/extraction/visual-understanding distinctions; model-visible inputs and output quality where authorized; explicit unavailable capabilities rather than fabricated results. |
 | Six-language native UX and old-data compatibility (W16/W21) | Web/component matrices and actual six-language pending-recovery sheets/menus/notices exist. Cross-language rollback refresh is verified. Earlier disappearing-greeting finding is not causally closed. | Full six-locale narrow/wide and light/dark runtime checks, rapid switch/back/reload, other native menus/dialogs, old entry points/data, keyboard focus and restart behavior on the current bundle. |
 | Design/media workflows (W15) | Versioned style references and a restricted local-media adapter exist. Execution provisioning/review and real D01–D08 outcomes are not complete. | Editable/runnable output evidence, verified artifacts/cancellation, authorized pinned backend when available, human assessment of visual dimensions and honest unavailable-backend fallback. No unapproved weights/cloud costs. |
-| Memory and task quality (W01/W04/W05/W17) | Runtime evidence covers aspects of 28 memory scenarios, not all 60. `catalog.json` still labels real task inputs pending. | Remaining multi-turn bindings plus authorized real behavior evaluation; freeze real inputs/hashes and configuration; run all 30 families × 3 attempts without best-of-three selection; preserve missing/unsupported denominator and cost/latency accounting. |
+| Memory and task quality (W01/W04/W05/W17) | Runtime evidence covers aspects of 29 memory scenarios, not all 60. `catalog.json` still labels real task inputs pending. | Remaining multi-turn bindings plus authorized real behavior evaluation; freeze real inputs/hashes and configuration; run all 30 families × 3 attempts without best-of-three selection; preserve missing/unsupported denominator and cost/latency accounting. |
 | Packaging and final human acceptance (W17) | Full regression baselines pass 5,291 Python and 77 native cases; current frontend passes 1,930 cases. Reader and attachment changes plus the no-implicit-provider/offline-curation fix are packaged; frozen APIs/WebSockets and bounded native UI checks pass. Recorded temporary-app checks remain synthetic-profile evidence, not real-model acceptance. | Keep package/regressions current; remaining native first boot/upgrade/recovery and configuration retention matrix; applicable signing/notarization and human installation/security/UX review. No installed-app replacement or public release under the current authorization. |
 
 ## Next dependency order

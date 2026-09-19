@@ -1,7 +1,7 @@
 # Multi-turn memory runtime bindings — partial engineering evidence
 
-`tests/server/test_memory_multiturn_runtime.py` now has 44 synthetic runtime cases
-covering aspects of 28 catalog scenarios. This is not 60 passing scenarios, a
+`tests/server/test_memory_multiturn_runtime.py` now has 45 synthetic runtime cases
+covering aspects of 29 catalog scenarios. This is not 60 passing scenarios, a
 real-model score, or release approval. The catalog retains its uncompleted status.
 
 The harness runs the real `scoped_turn` / TaskService boundary, user-message
@@ -35,11 +35,34 @@ their separate API/UI tests are not replaced by these cases.
 | M07-07 | Local-only memory stays stored but is absent from a synthetic cloud-destination request, even with task-level cloud permission | Sensitive-item acknowledgement UI and a real network capture |
 | M07-07 additional matrix | Sensitive, cloud-eligible project memory enters actual host requests/used receipts only when both task cloud-memory and sensitive-item permissions are true; all four combinations retain the stored item | Natural-language consent interpretation, permission UI and actual provider transport |
 | M06-05 | Restore quarantine removes an existing memory from the next host request and used receipt without erasing it; fresh user review restores later eligibility | Archive I/O/new-machine migration (separate frozen harness), missing-ledger UI explanation and model output |
+| M06-07 | An actual host-generated receipt resolves its original revision through authenticated HTTP after a newer revision exists; deletion changes that same review to a content-free deletion marker; later host prompts/receipts and revision history contain no deleted memory text | Native review interaction, previously displayed UI text and unrelated historical user-message content |
 | M06-04 | An actual pre-deletion backup is restored using either a later imported manifest or automatic record selection from an explicitly supplied current installation; a new task bound to the restored DB sends no deleted text/reference, and a repeated save is refused | Trusted native UI import, packaged host-request capture and natural-language/model behavior |
 | M07-01 | Explicit synthetic credential-save requests are rejected at task admission before host/remember execution; no task/message/run or ordinary memory remains, and a different conversation's prompt/receipt contains no such memory | Detection of every credential shape, UI presentation of the refusal and redaction of unrelated historical sources |
 | M03-06 / M08-02 | Saved report preferences stay out of a code-patch request; saved design preferences stay out of arithmetic requests in six locales; related subsequent tasks can still retrieve them | General semantic relevance, arbitrary paraphrases and generated-answer quality |
 
 ## Known remaining coverage and implementation gaps
+
+### Historical receipt deletion (2026-09-19, after `a0c3dd4e`)
+
+One new M06-07 binding uses a receipt persisted by an actual synthetic-adapter
+host task, not a fabricated receipt. Authenticated in-process HTTP first resolves
+the recorded old revision while a newer revision exists. Deleting the memory
+then yields `status=deleted` and null content from the same review paths;
+receipt listing contains neither revision's text. A new conversation's host
+request and used receipt exclude both revisions, and stored revision contents
+are erased. This is deletion of memory/revisions, not a promise to erase all
+original conversation messages or previously displayed UI text.
+
+The added case passed in **2.94s**, 44 deselected, one warning. JUnit:
+`/tmp/arslan-memory-historical-receipt.xml`, SHA-256
+`7ec0a7adf45dd8bfeb726fca8994de61ff7fd73bab3c46ed4d3a94d432567fdc`.
+The existing `MemoryEvidence.test.tsx` selection also passed all 13 component
+cases (1.25s), including safe deletion labels and ignoring cached deleted titles.
+Its mocked API responses are separate component evidence, not a native browser
+or end-to-end transport claim.
+Lint/diff checks pass. The complete expanded 45-case file has not been rerun
+in one invocation; preceding complete and incremental results remain distinct.
+No production behavior or catalog completion status changed.
 
 ### Rejected guesses (2026-09-19, after `f97efae7`)
 

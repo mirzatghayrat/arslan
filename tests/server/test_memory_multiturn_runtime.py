@@ -205,6 +205,64 @@ async def test_disable_or_delete_excludes_later_host_prompt(runtime, deleted):
         assert content in restored[0]["system"]
 
 
+async def test_real_task_receipt_reviews_old_revision_but_never_resurrects_deleted_memory(
+    runtime, execution_db, monkeypatch,
+):
+    # M06-07: actual host-generated receipt through authenticated review HTTP,
+    # followed by another real host task. No browser/native rendering claim.
+    import httpx
+    from fastapi import FastAPI
+    from server import auth
+    from server.api.companion import router
+
+    original = "Use green report headings and concise conclusions."
+    updated = "Use blue report headings and concise conclusions."
+    await runtime("receipt-save", f"Remember: {original}", save=original)
+    used = await runtime("receipt-used", "Prepare a report with headings.")
+    assert all(original in request["system"] for request in used)
+    async with repository() as repo:
+        entry = (await repo.list_entries())[0]
+        changed = await repo.revise(entry["id"], entry["version"], MemoryWrite(
+            content=updated, scope=MemoryScope(kind="global")), MemoryActor(origin="user"))
+    async with execution_db() as db:
+        receipts = (await db.scalars(select(ContextReceiptRecord).where(
+            ContextReceiptRecord.conversation_id == "receipt-used"))).all()
+    assert receipts and all(row.receipt["used"] for row in receipts)
+    monkeypatch.setattr(auth, "active_token", lambda: "synthetic-receipt-review")
+    app = FastAPI()
+    app.include_router(router, prefix="/api/v1")
+    base = "/api/v1/conversations/receipt-used/context/receipts"
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test",
+                                headers={"Authorization": "Bearer synthetic-receipt-review"}) as client:
+        for receipt in receipts:
+            path = f"{base}/{receipt.id}/memories/{entry['id']}"
+            response = await client.get(path)
+            assert response.status_code == 200
+            value = response.json()
+            assert value["status"] == "available" and value["content"] == original
+            assert value["recorded_version"] == entry["version"]
+            assert value["current_version"] == changed["version"]
+        async with repository() as repo:
+            await repo.delete_entry(entry["id"], changed["version"], MemoryActor(origin="user"))
+        for receipt in receipts:
+            response = await client.get(f"{base}/{receipt.id}/memories/{entry['id']}")
+            assert response.status_code == 200
+            assert response.json()["status"] == "deleted" and response.json()["content"] is None
+            assert original not in response.text and updated not in response.text
+        listed = await client.get(base)
+        assert listed.status_code == 200
+        assert {row["id"] for row in listed.json()} == {row.id for row in receipts}
+        assert original not in listed.text and updated not in listed.text
+    later = await runtime("receipt-after-delete", "Prepare another report with headings.")
+    assert all(original not in request["system"] and updated not in request["system"] for request in later)
+    async with execution_db() as db:
+        after = (await db.scalars(select(ContextReceiptRecord).where(
+            ContextReceiptRecord.conversation_id == "receipt-after-delete"))).all()
+    assert after and all(not row.receipt["used"] for row in after)
+    async with repository() as repo:
+        assert all(row["content"] is None for row in await repo.history(entry["id"]))
+
+
 async def test_local_only_memory_is_filtered_from_cloud_prompt(runtime, execution_db):
     # M07-07 outbound boundary; adapter is synthetic, no provider request occurs.
     content = "Keep my private report naming preference local."
