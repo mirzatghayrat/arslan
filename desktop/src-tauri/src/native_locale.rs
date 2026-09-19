@@ -78,6 +78,15 @@ pub fn refresh_boot_script(locale: &str) -> String {
     format!("{} window.__arslanRefreshBootCopy && window.__arslanRefreshBootCopy();", boot_script(locale))
 }
 
+pub fn recovery_script(locale: &str, paused: bool) -> String {
+    let copy = serde_json::json!({
+        "locale": locale,
+        "heading": text(locale, if paused { "restore_paused_title" } else { "restore_working" }),
+        "detail": text(locale, if paused { "restore_paused" } else { "restore_working_body" }),
+    });
+    format!("window.__ARSLAN_RECOVERY_COPY__ = {copy}; window.__arslanRenderRecovery && window.__arslanRenderRecovery();")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -85,7 +94,7 @@ mod tests {
     fn recovery_ui_copy_covers_all_six_locales() {
         let copy: serde_json::Value = serde_json::from_str(include_str!("../recovery_messages.json")).unwrap();
         let keys = copy["en"].as_object().unwrap();
-        assert_eq!(keys.len(), 10);
+        assert_eq!(keys.len(), 14);
         assert_eq!(copy.as_object().unwrap().len(), 6);
         for locale in ["en", "zh", "ja", "es", "de", "fr"] {
             assert_eq!(copy[locale].as_object().unwrap().len(), keys.len());

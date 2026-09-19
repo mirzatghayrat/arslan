@@ -36,6 +36,8 @@ fn helper_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
 
 #[tauri::command]
 pub fn voice_start(app: AppHandle, locale: String) -> Result<(), String> {
+    let gate = app.state::<crate::maintenance::Gate>();
+    let _interactive = gate.interactive().ok_or_else(crate::maintenance_refusal)?;
     let state = app.state::<Listener>();
     // Holding the button twice over is not an error worth failing on, but two
     // helpers would fight for the microphone. Stop the first.

@@ -2478,3 +2478,59 @@ is focused plus packaged/native evidence. Dedicated maintenance presentation,
 remaining failure branches, custom durable-key configuration and the broader
 W11/W12/W13/W15/W19/W20/W21 release gates remain. No real account/key, paid model,
 installed-app replacement, signing or publication occurred.
+
+## Recovery maintenance isolation — 2026-09-19
+
+The native recovery adapter now disables and hides the existing main window
+before acknowledged service shutdown. It retains that webview in memory rather
+than navigating/destroying its unsent draft. A separate bundled `recovery.html`
+window shows working or paused text and owns subsequent native confirmation and
+notice sheets. It has no forms, links, network content or IPC capability grant.
+Closing only that window is disabled; the native Quit menu remains available.
+Dispatch timeout fails closed, with a shared paused flag and page-load refresh
+preventing late window creation from leaving stale progress text.
+
+The maintenance gate now serializes admission of native voice starts, unmute and
+external-link opening with maintenance acquisition. An already admitted helper
+must finish publishing its handle before recovery can stop it. Stop/mute remain
+available. This does not claim instantaneous microphone-helper termination or
+replace backend profile locks. The new read-only presentation is not itself the
+security boundary.
+
+Final native tests: **76 passed, one opt-in frozen fixture ignored**, 0.33s after
+1.74s compilation. Shipped recovery/splash DOM tests: **3 passed** in 0.74s;
+working and paused copy across six locales, plain-text rendering and capability
+scope checks pass. TypeScript and whitespace checks pass. The final admission
+test additionally asserts helper publication precedes recovery ownership.
+
+Temporary native release built in 1m11s and bundled unsigned at
+`/tmp/arslan-native-candidate.xIygc5/target/release/bundle/macos/Arslan.app`.
+Executable SHA-256:
+`c18f2598e5687e6f6ce6020c08e9d34f2e000b41dbee2a8e2d7d6785f5805bc5`.
+The backend is unchanged from the prior `dist-recovery-locale` build. Bundle
+verification again passed all 15 imports, assets and prohibited-content checks
+(431 MiB). The release predates only an additional test-body assertion, not a
+production-code change.
+
+Actual Chinese native UI used disposable profile
+`/private/tmp/arslan-native-restore-ui-g5jco3l4`, port 56931. A synthetic unsent
+draft was entered; after consent, the working display replaced the visible main
+workspace. The isolated trial passed and the second consent appeared on the new
+window. Selecting Keep paused showed a Chinese notice with localized acknowledgment,
+then a persistent, visually inspected read-only paused page. No input or voice
+controls were present. The Window menu listed only the recovery window; recovery
+and update menu actions were disabled. Only the app process remained, with no
+normal backend. Quit terminated the owned temporary app; no owned app/backend
+process remains.
+
+Pending operation `643ede43-730b-44e3-b19b-7b51b2f1696f` remains in the disposable
+fixture. Original directory inode 120830987 is retained, backup SHA-256 remains
+`be6c68537201d80a0b73c6ab2b4395bab56039a75648acf742319ebc26622bae`, and both
+synthetic key files are unchanged. No activation or implicit rollback occurred.
+
+This is one actual Chinese/light presentation path, not six-language native
+layout acceptance or injected UI timeout/window-creation failure acceptance.
+Draft retention is in-memory only and is not certified across quit/restart.
+Broader release gates and current-source full regression remain open. No real
+profile/account/key, microphone permission, paid model, installed-app replacement,
+signing or publication was used.

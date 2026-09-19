@@ -9,7 +9,11 @@
     "restore_activate": "Activate and restart",
     "restore_refused": "Recovery could not safely begin. No data was replaced and the running service was not stopped. Check the selected backup and original key file. This recovery path requires a private, existing default external key file; temporary or conflicting key settings are not accepted.",
     "restore_paused": "Recovery is paused. The last operation's result may be uncertain; it will not be retried automatically. Your original data and any restored candidate are retained.\n\nDo not delete or move the data folders or recovery records. Quit and reopen Arslan; if a switch is pending, it will offer a separate confirmation to return to the original data.",
-    "restore_working": "Arslan — Restoring data…"
+    "restore_working": "Arslan — Restoring data…",
+    "restore_working_body": "Normal workspace controls are unavailable while recovery is prepared. Wait for the next native confirmation. This screen does not mean that recovery has completed. Your existing workspace is kept hidden until you quit or restart.",
+    "restore_paused_title": "Recovery paused",
+    "restore_controls_paused": "This action is unavailable while Arslan is starting, updating or recovering data. Try again after maintenance finishes.",
+    "restore_ack": "Understood"
   },
   "zh": {
     "restore_title": "从备份恢复…",
@@ -21,7 +25,11 @@
     "restore_activate": "启用并重启",
     "restore_refused": "无法安全开始恢复。未替换资料，也未停止正在运行的服务。请检查所选备份与原密钥文件。此恢复流程要求默认位置已有仅本人可读的外部密钥；暂不接受临时或相互冲突的密钥设置。",
     "restore_paused": "恢复已暂停。最后一步的结果可能尚不确定，系统不会自动重试。原资料与已创建的恢复候选资料均予以保留。\n\n请勿删除或移动资料文件夹及恢复记录。退出并重新打开 Arslan；如果资料切换尚未完成，应用会另行询问是否回退到原资料。",
-    "restore_working": "Arslan — 正在恢复资料…"
+    "restore_working": "Arslan — 正在恢复资料…",
+    "restore_working_body": "准备恢复期间，普通工作区操作暂不可用。请等待下一次原生确认。显示此页面不代表恢复已完成。原工作区会保持隐藏，直到退出或重启。",
+    "restore_paused_title": "恢复已暂停",
+    "restore_controls_paused": "Arslan 正在启动、更新或恢复资料，暂不能执行此操作。请在维护完成后重试。",
+    "restore_ack": "知道了"
   },
   "ja": {
     "restore_title": "バックアップから復元…",
@@ -33,7 +41,11 @@
     "restore_activate": "有効化して再起動",
     "restore_refused": "安全に復元を開始できませんでした。データの置換や実行中サービスの停止は行っていません。バックアップと元のキーファイルを確認してください。この復元には既定の場所にある本人のみが読める外部キーが必要です。一時的または競合するキー設定は利用できません。",
     "restore_paused": "復元を停止しました。最後の処理結果が不確かな可能性があるため、自動では再試行しません。元のデータと作成済みの復元候補は保持されています。\n\nデータフォルダーや復元記録を削除・移動しないでください。Arslan を終了して再度開くと、切り替えが未完了の場合は元のデータに戻すかを別途確認します。",
-    "restore_working": "Arslan — データを復元中…"
+    "restore_working": "Arslan — データを復元中…",
+    "restore_working_body": "復元の準備中は通常のワークスペースを操作できません。次のネイティブ確認をお待ちください。この画面は復元の完了を意味しません。元のワークスペースは終了または再起動まで非表示で保持されます。",
+    "restore_paused_title": "復元は停止中です",
+    "restore_controls_paused": "Arslan の起動、更新、データ復元中はこの操作を利用できません。処理の完了後に再試行してください。",
+    "restore_ack": "確認しました"
   },
   "es": {
     "restore_title": "Restaurar desde una copia…",
@@ -45,7 +57,11 @@
     "restore_activate": "Activar y reiniciar",
     "restore_refused": "No se pudo iniciar la recuperación con seguridad. No se sustituyeron datos ni se detuvo el servicio. Revisa la copia y la clave original seleccionadas. Esta recuperación requiere una clave externa privada ya existente en la ubicación predeterminada; no admite configuraciones temporales o contradictorias.",
     "restore_paused": "La recuperación está en pausa. El resultado de la última operación puede ser incierto; no se reintentará automáticamente. Se conservan los datos originales y la copia restaurada creada.\n\nNo borres ni muevas las carpetas ni los registros de recuperación. Cierra y vuelve a abrir Arslan; si hay un cambio pendiente, se pedirá confirmación para volver a los datos originales.",
-    "restore_working": "Arslan — Restaurando datos…"
+    "restore_working": "Arslan — Restaurando datos…",
+    "restore_working_body": "Los controles del espacio de trabajo no están disponibles mientras se prepara la recuperación. Espera la siguiente confirmación nativa. Esta pantalla no indica que la recuperación haya terminado. El espacio de trabajo anterior permanece oculto hasta que cierres o reinicies la aplicación.",
+    "restore_paused_title": "Recuperación en pausa",
+    "restore_controls_paused": "Esta acción no está disponible mientras Arslan se inicia, actualiza o recupera datos. Inténtalo al terminar el mantenimiento.",
+    "restore_ack": "Entendido"
   },
   "de": {
     "restore_title": "Aus Sicherung wiederherstellen…",
@@ -57,7 +73,11 @@
     "restore_activate": "Aktivieren und neu starten",
     "restore_refused": "Die Wiederherstellung konnte nicht sicher beginnen. Es wurden keine Daten ersetzt und keine laufenden Dienste gestoppt. Prüfe die Sicherung und die ursprüngliche Schlüsseldatei. Erforderlich ist eine vorhandene private externe Schlüsseldatei am Standardort; vorübergehende oder widersprüchliche Einstellungen werden nicht akzeptiert.",
     "restore_paused": "Die Wiederherstellung ist pausiert. Das Ergebnis des letzten Vorgangs kann ungewiss sein; er wird nicht automatisch wiederholt. Originaldaten und erstellte Wiederherstellungskopien bleiben erhalten.\n\nDatenordner und Wiederherstellungsprotokolle nicht löschen oder verschieben. Beende und öffne Arslan erneut. Bei einem ausstehenden Wechsel wird die Rückkehr zu den Originaldaten gesondert bestätigt.",
-    "restore_working": "Arslan — Daten werden wiederhergestellt…"
+    "restore_working": "Arslan — Daten werden wiederhergestellt…",
+    "restore_working_body": "Während die Wiederherstellung vorbereitet wird, sind normale Arbeitsbereich-Aktionen nicht verfügbar. Warte auf die nächste native Bestätigung. Dieser Bildschirm bedeutet nicht, dass die Wiederherstellung abgeschlossen ist. Der bisherige Arbeitsbereich bleibt bis zum Beenden oder Neustart ausgeblendet.",
+    "restore_paused_title": "Wiederherstellung pausiert",
+    "restore_controls_paused": "Diese Aktion ist während des Starts, Updates oder der Datenwiederherstellung nicht verfügbar. Versuche es nach Abschluss der Wartung erneut.",
+    "restore_ack": "Verstanden"
   },
   "fr": {
     "restore_title": "Restaurer une sauvegarde…",
@@ -69,6 +89,10 @@
     "restore_activate": "Activer et redémarrer",
     "restore_refused": "La restauration n’a pas pu commencer en toute sécurité. Aucune donnée n’a été remplacée et aucun service en cours n’a été arrêté. Vérifiez la sauvegarde et la clé d’origine sélectionnées. Cette procédure exige une clé externe privée existante à l’emplacement par défaut ; les réglages temporaires ou contradictoires ne sont pas acceptés.",
     "restore_paused": "La restauration est en pause. Le résultat de la dernière opération peut être incertain ; elle ne sera pas relancée automatiquement. Les données d’origine et la copie restaurée créée sont conservées.\n\nNe supprimez ni ne déplacez les dossiers ou les journaux de restauration. Quittez puis rouvrez Arslan ; si un changement reste en attente, le retour aux données d’origine fera l’objet d’une confirmation distincte.",
-    "restore_working": "Arslan — Restauration des données…"
+    "restore_working": "Arslan — Restauration des données…",
+    "restore_working_body": "Les commandes de l’espace de travail sont indisponibles pendant la préparation. Attendez la prochaine confirmation native. Cet écran ne signifie pas que la restauration est terminée. L’ancien espace reste masqué jusqu’à la fermeture ou au redémarrage.",
+    "restore_paused_title": "Restauration en pause",
+    "restore_controls_paused": "Cette action est indisponible pendant le démarrage, la mise à jour ou la restauration des données d’Arslan. Réessayez après la maintenance.",
+    "restore_ack": "Compris"
   }
 }

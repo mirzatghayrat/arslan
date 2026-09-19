@@ -441,13 +441,19 @@ fn https_only(url: &str) -> Result<(), String> {
 /// Open a URL in the user's default browser. macOS-only by the same argument as
 /// the rest of this file: darwin-aarch64 is the one platform this shell ships on.
 #[tauri::command]
-fn open_external(url: String) -> Result<(), String> {
+fn open_external(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    let gate = app.state::<maintenance::Gate>();
+    let _interactive = gate.interactive().ok_or_else(maintenance_refusal)?;
     https_only(&url)?;
     std::process::Command::new("open")
         .arg(&url)
         .spawn()
         .map(|_| ())
         .map_err(|e| format!("could not open the browser: {e}"))
+}
+
+fn maintenance_refusal() -> String {
+    native_locale::text(native_locale::selected(), "restore_controls_paused")
 }
 
 /// Poll target for the SPA's corner pill (web/src/components/UpdatePill.tsx).

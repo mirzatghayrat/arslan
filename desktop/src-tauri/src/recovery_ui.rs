@@ -1,12 +1,15 @@
 //! Trusted native picker/dialog adapter; deliberately absent from invoke_handler.
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
+use std::sync::{atomic::{AtomicBool, Ordering}, Arc};
 use tauri::{AppHandle, Manager};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
 use crate::recovery_control::{self, Outcome as Reply, Request};
 use crate::recovery_coordinator::{self, Outcome, Steps};
 use crate::recovery_secret::{read_existing, DurableSecret, ExistingSecret};
+
+const RECOVERY_LABEL: &str = "recovery";
 
 #[derive(PartialEq)]
 struct LaunchInputs {
@@ -94,14 +97,76 @@ struct NativeSteps {
     locale: &'static str,
     executable: PathBuf,
     selection: Option<Selection>,
+    paused: Arc<AtomicBool>,
 }
 
 impl NativeSteps {
     fn text(&self, key: &str) -> String {
         crate::native_locale::text(self.locale, key)
     }
+    fn dialog_window(&self) -> Option<tauri::WebviewWindow> {
+        self.app.get_webview_window(RECOVERY_LABEL)
+            .or_else(|| self.app.get_webview_window(crate::MAIN_LABEL))
+    }
+    fn show_maintenance(&self) -> Result<(), ()> {
+        let app = self.app.clone();
+        let locale = self.locale;
+        let paused = self.paused.clone();
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        self.app.run_on_main_thread(move || {
+            let result = (|| {
+                let main = app.get_webview_window(crate::MAIN_LABEL).ok_or(())?;
+                // Keep the old DOM (including unsent drafts), but do not let
+                // it appear usable after the service is stopped. No recovery
+                // window is granted an IPC capability.
+                main.set_enabled(false).map_err(|_| ())?;
+                let page_paused = paused.clone();
+                let window = tauri::WebviewWindowBuilder::new(
+                    &app, RECOVERY_LABEL,
+                    tauri::WebviewUrl::App("recovery.html".into()),
+                )
+                .title(crate::native_locale::text(locale, "restore_working"))
+                .initialization_script(crate::native_locale::recovery_script(locale, false))
+                .on_page_load(move |webview, payload| {
+                    if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
+                        let _ = webview.eval(&crate::native_locale::recovery_script(
+                            locale, page_paused.load(Ordering::SeqCst),
+                        ));
+                    }
+                })
+                .inner_size(crate::WINDOW_W, crate::WINDOW_H)
+                .min_inner_size(480.0, 360.0)
+                .center()
+                // Quit remains available in the native menu. Closing just this
+                // window would strand a hidden, intentionally disabled main.
+                .closable(false)
+                .build().map_err(|_| ())?;
+                // If main-thread dispatch ran after the worker timed out,
+                // show the paused state rather than stale progress. Publishing
+                // the window before this load also lets show_paused find it.
+                if paused.load(Ordering::SeqCst) {
+                    window.set_title(&crate::native_locale::text(locale, "restore_paused_title")).map_err(|_| ())?;
+                    window.eval(&crate::native_locale::recovery_script(locale, true)).map_err(|_| ())?;
+                }
+                main.hide().map_err(|_| ())?;
+                window.set_focus().map_err(|_| ())?;
+                Ok(())
+            })();
+            let _ = tx.send(result);
+        }).map_err(|_| ())?;
+        // A timeout is an uncertain, fail-closed outcome, never permission to
+        // continue stopping/switching or to re-enable the old workspace.
+        rx.recv_timeout(std::time::Duration::from_secs(10)).map_err(|_| ())?
+    }
+    fn show_paused(&self) {
+        self.paused.store(true, Ordering::SeqCst);
+        if let Some(window) = self.app.get_webview_window(RECOVERY_LABEL) {
+            let _ = window.set_title(&self.text("restore_paused_title"));
+            let _ = window.eval(&crate::native_locale::recovery_script(self.locale, true));
+        }
+    }
     fn confirm(&self, message: String, accept: &str, cancel: &str) -> bool {
-        let Some(window) = self.app.get_webview_window(crate::MAIN_LABEL) else {
+        let Some(window) = self.dialog_window() else {
             return false;
         };
         self.app
@@ -205,11 +270,7 @@ impl Steps for NativeSteps {
         s.target.recheck().map_err(|_| ())
     }
     fn stop(&mut self) -> Result<(), ()> {
-        if let Some(window) = self.app.get_webview_window(crate::MAIN_LABEL) {
-            window
-                .set_title(&self.text("restore_working"))
-                .map_err(|_| ())?;
-        }
+        self.show_maintenance()?;
         let _ = crate::listen::voice_stop(self.app.clone());
         let _ = crate::voice::voice_conversation_stop(self.app.clone());
         let child = self
@@ -313,17 +374,21 @@ pub(crate) fn begin(app: AppHandle) {
             locale,
             executable,
             selection: None,
+            paused: Arc::new(AtomicBool::new(false)),
         };
         let result =
             recovery_coordinator::run(&app.state::<crate::maintenance::Gate>(), &mut steps);
         crate::refresh_update_menu(&app);
+        if matches!(result, Outcome::Paused(_)) {
+            steps.show_paused();
+        }
         let message = match result {
             Outcome::Refused => Some("restore_refused"),
             Outcome::Paused(_) => Some("restore_paused"),
             Outcome::Busy | Outcome::Cancelled | Outcome::Complete => None,
         };
         if let Some(key) = message {
-            let Some(window) = app.get_webview_window(crate::MAIN_LABEL) else {
+            let Some(window) = steps.dialog_window() else {
                 return;
             };
             app.dialog()
@@ -331,6 +396,7 @@ pub(crate) fn begin(app: AppHandle) {
                 .parent(&window)
                 .title(steps.text("restore_title"))
                 .kind(MessageDialogKind::Warning)
+                .buttons(MessageDialogButtons::OkCustom(steps.text("restore_ack")))
                 .blocking_show();
         }
     });
