@@ -285,6 +285,35 @@ JUnit identity and isolation. The full-regression gap is now closed for this
 candidate; native visual and real selected-model acceptance remain open.
 # Real mixed-PDF local OCR checkpoint — after `39705007`
 
+## Packaged follow-up after `2f1632c6`
+
+Full regression completed: **5,310 passed, 14 skipped, 18 warnings in 508.50s**,
+exit 0. JUnit `/tmp/arslan-mixed-pdf-regression.SVOpqO/full.xml`, SHA-256
+`380ddb78b7b61c603a932cd6251209f12bfbecf9dbdbae6bcd00572c15db0f5e`.
+Production sources match `39705007`; the three later tests and corrected
+fixture serialization are covered by the separate 78-test rerun below. The
+known aiosqlite guard reported 69 closed-loop deliveries, not claimed fixed.
+
+The current unsigned temporary application now includes the mixed-PDF backend.
+Staging verification passed 15 imports, assets/no-database/no-secret/no-AGPL
+checks (431 MiB). Packaged web resources exactly match the current web build.
+App-bundled standard API smoke and browser reader smoke passed; owned reader
+children were zero and temporary browser profiles removed. The real mixed-PDF
+smoke passed through both fresh frozen and app-bundled extract APIs. It now
+also sets an unsupported OCR language in its disposable profile and verifies
+the partial flag, exact unread page 2 and preserved page 4, with no fabricated
+scan transcription. All temporary smoke processes/profiles were cleaned up.
+
+Candidate: `/tmp/arslan-native-candidate.xIygc5/target/release/bundle/macos/Arslan.app`.
+Backend hash remains the `50d6672f…` identity below; web entry SHA-256 is
+`2bc16cc7a8430812c160736cf645ac88a4caca05364651251fb66a535defc591`.
+Native executable unchanged:
+`fa0d2c37c102e8d0d93125423b2e2b28ecd7e494d11b558d4da1303de2052d30`.
+Frontend remains at 1,946 passing tests. This is package/API evidence, not a
+new native attachment UI inspection, full language/codec/scan quality matrix,
+or release certification. No installed application, genuine account or key,
+cloud model, signing or publishing was involved.
+
 Added `scripts/mixed_pdf_ocr_smoke.py`: a wholly synthetic in-memory PDF has
 native text on pages 1 and 4, raster-only text on page 2, and blank page 3.
 It verifies the scan has no text layer before extraction. Real macOS OCR

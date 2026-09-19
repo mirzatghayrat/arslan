@@ -94,6 +94,13 @@ Running from source or with Docker (contributors & self-hosters): see **[docs/QU
 
 ### Reading text in images and scanned PDFs
 
+Mixed PDFs with native-text pages and separate scanned pages retain the native
+text and original page numbers. Pages with drawing content but no text layer
+are read with local OCR, within the page budget; unread pages are identified and
+chat attachments are marked as partially read. This does not yet recover extra
+scanned content on a page that already has a usable text layer. Local OCR
+availability and language support still depend on the host as described below.
+
 A model with vision reads your pictures directly. When the model you configured
 cannot — many cheaper models cannot — Arslan falls back to the operating
 system's own text recognition. What that gives you depends on the platform, so

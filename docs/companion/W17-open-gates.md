@@ -1,12 +1,15 @@
 # Remaining release gates — triage, not completion certification
 
-Newest source checkpoint after `2879267c`: mixed PDF extraction now preserves
+Newest packaged checkpoint after `2f1632c6`: mixed PDF extraction now preserves
 native text while locally recognizing drawing-only/no-text pages, with explicit
 unread page markers and a partial flag when recognition cannot complete. The
-75-test focused regression and lint pass; full Python is running under
-`/tmp/arslan-mixed-pdf-regression.SVOpqO`. This fix is not yet packaged or real-OCR
-quality accepted. W20 records scope and next checks; the candidate below still
-contains the preceding PDF implementation.
+78-test focused regression and lint pass. Full Python completed with 5,310
+passed, 14 skipped, 18 warnings in 508.50 seconds (three later-added cases
+were separately verified, not counted in that run). The updated temporary app
+passes standard API, reader and real local-OCR mixed-PDF checks, including an
+unsupported-language partial result. W20 records current hashes and exact
+scope. Synthetic English OCR is not broad scan-quality/native UI acceptance;
+same-page text-plus-scan recovery remains open. Formal installation is unchanged.
 
 Snapshot: packaged runtime-error language switching at `6f0ae897`, 2026-09-19. This index complements the chronological
 `W17-release-audit.md`; it does not replace the approved v1.2 plan, task-package

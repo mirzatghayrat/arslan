@@ -94,6 +94,19 @@ def main() -> None:
                 assert response.status_code == 200, response.status_code
                 result = response.json()
                 text, partial = result["text"], result["truncated"]
+                # An explicitly unsupported OCR language must preserve native
+                # text while exposing partial extraction, not fake success.
+                response = client.put("/api/v1/settings", json={"ocr_languages": "zz-ZZ"})
+                assert response.status_code == 200
+                response = client.post("/api/v1/extract",
+                    files={"file": ("mixed-fixture.pdf", data, "application/pdf")}, timeout=30)
+                assert response.status_code == 200
+                incomplete = response.json()
+                assert incomplete["truncated"] is True
+                assert "[page text not read: unsupported_language]" in incomplete["text"]
+                assert '"unread_pages": [2]' in incomplete["text"]
+                assert "[page 4]\nFinal native source retained." in incomplete["text"]
+                assert "Scanned source recovered" not in incomplete["text"]
             finally:
                 client.close()
                 assert stop(process) == 0
@@ -108,7 +121,8 @@ def main() -> None:
     print(json.dumps({"real_host_ocr": True, "mixed_pdf": "passed",
         "native_text_preserved": True, "scan_has_no_text_layer": True,
         "page_locators": [1, 2, 4], "partial": partial, "cloud_model": False,
-        "frozen_api": len(sys.argv) > 1}))
+        "frozen_api": len(sys.argv) > 1,
+        "unsupported_language_partial": len(sys.argv) > 1}))
 
 
 if __name__ == "__main__":
