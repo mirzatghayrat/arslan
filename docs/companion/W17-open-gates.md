@@ -1,5 +1,15 @@
 # Remaining release gates — triage, not completion certification
 
+Native follow-up after `84133673` recognizes IPv4/IPv6 loopback URLs and shows
+localized errors for real extraction 400s. The positive public-URL control then
+found missing packaged jusText stoplists: HTTP download succeeded but extraction
+crashed. Fixed package collection and added an actual HTML/stoplist resource
+probe; 51 packaging tests and bundle verification pass. Rebuilt/refreshed native
+candidate now extracts the same example.com page into a visible 112-character
+attachment. W21 records before/after logs and new executable identity. Public
+fetch uses the configured proxy (pinning delegated there), not a direct-network
+security certification. No model/account/publication used; app exited.
+
 URL-input follow-up after `9cc7957e`: explicit numeric/IPv6/Unicode HTTP(S)
 addresses now reach the existing safe extraction endpoint instead of being
 silently ignored. Balanced URL punctuation is preserved and repeated candidates

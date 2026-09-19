@@ -110,6 +110,9 @@ for pkg in (
     "certifi",
     "anyio",
     "trafilatura",
+    # Trafilatura's fallback imports jusText code, but its stoplists are data.
+    # Without them real webpages fail after a successful HTTP response.
+    "justext",
     "pypdf",
     "docx",
     "pptx",

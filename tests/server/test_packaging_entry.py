@@ -455,6 +455,20 @@ def test_selftest_covers_the_module_that_a_bad_excludes_entry_broke(entry):
     assert "server.services.deck_pptx" in src
 
 
+def test_webpage_resource_probe_extracts_without_network(entry):
+    probe = dict((name, check) for name, check, _ in entry._lazy_resource_probes())["webpage extraction data"]
+    ok, detail = probe()
+    assert ok, detail
+
+
+def test_webpage_resource_probe_rejects_missing_stoplists(entry, monkeypatch):
+    import justext
+
+    monkeypatch.setattr(justext, "get_stoplists", lambda: frozenset())
+    probe = dict((name, check) for name, check, _ in entry._lazy_resource_probes())["webpage extraction data"]
+    assert probe()[0] is False
+
+
 def test_the_lifeline_fires_on_eof_and_only_on_eof(entry):
     """The sidecar must outlive normal input and die on EOF — both halves.
 

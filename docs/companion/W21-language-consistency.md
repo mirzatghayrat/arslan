@@ -1,5 +1,48 @@
 # W21 — six-language consistency (in progress)
 
+## Native numeric URLs and a discovered packaging defect — after `84133673`
+
+Refreshed the unsigned temporary app, with current web assets matching web/dist.
+Entry `index-CB4JRdPu.js` SHA-256
+`00bbbe92f209c389ad52008bf9ae3d2b63b9b8bc6d4346304ba1f9c4c6af3fc2`.
+In the existing synthetic Chinese/dark profile, pasted
+`http://127.0.0.1/synthetic-url-error` then `http://[::1]`. Both now trigger real
+extraction requests returning 400 and display the Chinese webpage-read error;
+the exact input, including IPv6 brackets, remains intact and no chip is added.
+This closes the prior native silent-ignore gap, not a comprehensive SSRF audit.
+
+A positive control exposed a real packaging failure: example.com downloaded
+with HTTP 200, but trafilatura's jusText fallback raised FileNotFoundError for
+`_internal/justext/stoplists`, turning URL extraction into HTTP 400. The spec
+collected trafilatura's own data but not this dependency's data. Added jusText to
+package collection and a lazy-resource selftest that reads every installed
+stoplist and actually extracts a local short HTML document without networking.
+Two probe tests cover successful extraction and missing stoplist rejection;
+the packaging entry suite passes **51 tests**, Ruff and whitespace checks pass.
+
+Rebuilt frozen backend in 26.75s at
+`/tmp/arslan-candidate-build.BboGj4/dist-url-stoplists/arslan-server` using the
+existing offline build tools. Bundle verification passes feature imports,
+resource probes and forbidden-file checks (161 MiB). Retained the existing
+isolated compute runtime while staging, and rebundled the temporary native app.
+Bundled backend executable SHA-256:
+`8fdf50d36d3c5f42a2e4e1d97e67097712f80eee43d31ac2c5c2cc28bfb277ef`.
+
+Native retest of the SAME example.com URL now returns extraction HTTP 200 and
+visibly creates a **112-character** attachment. Removed that chip and text and
+quit; no app/sidecar remains. No model was configured or called. The public
+request used the configured proxy; logs explicitly warn that address pinning is
+delegated to that proxy. This is not evidence of direct-mode pinning or proxy
+trust certification. No proxy/security policy was changed.
+
+Before/after logs under the synthetic HOME:
+`url-address.stderr` SHA-256
+`ef9e1db192d0cdec14fd21d1f6cd95acc3eadda5d832839ea714514f70cf7c15`
+(includes the reproduced traceback), and `url-stoplists.stderr` SHA-256
+`1a9e49604b53857878071831e64cda0adbf5d7c439aa40828e04a8e92a74e045`
+(successful extraction). Broader document/language/model acceptance remains open;
+formal installation and publication were untouched.
+
 ## Explicit URL recognition — after `9cc7957e`
 
 The prior native URL test showed numeric IP addresses were silently ignored by

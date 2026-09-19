@@ -271,7 +271,24 @@ def _lazy_resource_probes():
         with httpx.Client(timeout=1.0) as client:
             return client is not None, "constructed with a TLS context"
 
+    def webpage_extraction_data():
+        import justext
+        import trafilatura
+
+        languages = justext.get_stoplists()
+        if not languages or not all(justext.get_stoplist(language) for language in languages):
+            return False, "missing or empty jusText stoplists"
+        # Short pages exercise the fallback that import-only checks miss.
+        text = trafilatura.extract(
+            '<html><body><h1>Example Domain</h1><p>This domain is for use in '
+            'illustrative examples in documents. You may use this domain in '
+            'literature without prior coordination or asking for permission.</p></body></html>'
+        )
+        return bool(text and "illustrative examples" in text), f"{len(languages)} stoplists; local HTML extraction"
+
     return [
+        ("webpage extraction data", webpage_extraction_data,
+         "jusText stoplists are missing, so URL attachments fail after download"),
         ("certifi CA bundle", certifi_ca,
          "the CA file is missing, so every outbound HTTPS call would fail with "
          "[Errno 2] long after a healthy boot"),
