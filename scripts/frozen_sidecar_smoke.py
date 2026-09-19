@@ -18,6 +18,7 @@ import time
 import zipfile
 
 import httpx
+from websockets.sync.client import connect
 
 
 def stop(process):
@@ -161,12 +162,29 @@ def main():
             response = client.post("/api/v1/extract", files={"file": ("fixture.pdf", pdf.getvalue())}, data={"compress": "true"})
             assert response.status_code == 200
             assert "[page 3]\nThird source page." in response.json()["text"]
+            # A leftover key must not implicitly select OpenAI on a fresh profile.
+            assert client.put("/api/v1/settings", json={"llm_api_key": "synthetic-no-provider-only"}).status_code == 200
+            from server.services.provider_error_messages import render
             for language in ("en", "zh", "ja", "es", "de", "fr"):
                 assert client.put("/api/v1/settings", json={"language": language}).status_code == 200
                 assert client.get("/api/v1/settings").json()["language"] == language
                 hint = home / "Library/Application Support/Arslan/ui_language"
                 assert hint.read_text() == language + "\n"
                 assert hint.stat().st_mode & 0o777 == 0o600
+                ws_url = str(client.base_url).replace("http://", "ws://").rstrip("/")
+                with connect(f"{ws_url}/ws/arslan/no-provider-{language}?token={token}",
+                             proxy=None, open_timeout=5, close_timeout=5) as ws:
+                    ws.send(json.dumps({"type": "user_message", "content": "Synthetic no-provider smoke."}))
+                    deadline = time.monotonic() + 15
+                    while time.monotonic() < deadline:
+                        frame = json.loads(ws.recv(timeout=max(0.1, deadline - time.monotonic())))
+                        if frame.get("type") == "error":
+                            assert frame.get("code") == "LLM_ERROR"
+                            assert frame.get("message") == render("not_configured", language)
+                            assert frame.get("recoverable") is True
+                            break
+                    else:
+                        raise AssertionError("Unconfigured model did not fail locally")
         finally:
             client.close()
             assert stop(process) == 0
@@ -190,6 +208,7 @@ def main():
                       "onboarding_seen_retained": True,
                       "malformed_request_shapes_rejected": True,
                       "corrupt_office_compression_rejected": True,
+                      "unconfigured_provider_refused_six_languages": True,
                       "real_model": False, "installed_app": False}))
 
 

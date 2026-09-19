@@ -83,9 +83,11 @@ async def curate(need_description: str) -> dict:
     short LLM-flagged needs that NO menu toolset, skill, or MCP covers.
     """
     menu = await registry_service.safe_menu()
-    adapter = _get_adapter()
-    a = await adapter if hasattr(adapter, "__await__") else adapter
     try:
+        # Optional curation must also degrade when no adapter can be built,
+        # not only when an already constructed adapter's request fails.
+        adapter = _get_adapter()
+        a = await adapter if hasattr(adapter, "__await__") else adapter
         resp = await a.chat(
             system=_SYSTEM,
             user=f"Need:\n{need_description}\n\nMENU:\n{_menu_text(menu)}",

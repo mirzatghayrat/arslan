@@ -30,6 +30,32 @@ this change; packaged visual acceptance and real selected-model quality remain
 open. No account, model call, production data, installed app or publication was
 used or changed.
 
+### Subsequent packaged desktop validation
+
+The temporary candidate was refreshed from `dd150e9a` frontend assets. Native
+Chinese/dark normal-width inspection used only the synthetic profile
+`/private/tmp/arslan-native-restore-ui-m1tgzvbv` and generated fixtures under
+`/tmp/arslan-attachment-*-fixture.*`. A 600-line source file really hit the
+12,000-character extraction cap; its sent chip retained the partial-source
+notice. A whitespace-only text file retained the no-readable-text notice, and
+a deliberately invalid PNG became a labeled unavailable-image chip after send,
+not a misleading successful thumbnail. Screenshot and accessibility readings
+confirmed the notices without overlapping the file name or message text.
+
+This test also exposed an unrelated legacy-provider fallback: a profile with
+no selected provider/model but a synthetic restored key attempted the default
+OpenAI endpoint and received 401. Thus the first desktop attempt was NOT fully
+offline; only generated source/test text and a fake key were involved, never
+real credentials or private material. Testing was stopped and the fallback was
+fixed before continuing. With the rebuilt backend, empty-file and failed-image
+sends produced the localized local configuration error; the fresh application
+log contained no external model HTTP requests. W17 records the guard and
+candidate identities. All owned desktop/sidecar processes exited normally.
+
+This closes the three notice-display cases for that specific native layout,
+not the full six-language/narrow/light appearance matrix, history persistence,
+real-model comprehension or direct-expert native acceptance.
+
 Checkpoint 2026-09-15, based on `4f2056fd`. This is the extraction foundation, not completion of video-frame understanding or all input acceptance.
 
 The frontend pickers and backend readers share `web/src/lib/input_formats.json`, staged into `server/resources` in the desktop sidecar. This location also works with the isolated frontend build directory. Existing PDF/Word/HTML/image paths remain; code/data text, XLSX, PPTX and common video containers are added. Macro-enabled/legacy Office formats are not advertised. SVG/code are inert text in attachment and artifact preview paths.

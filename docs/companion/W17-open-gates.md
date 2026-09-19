@@ -1,9 +1,71 @@
 # Remaining release gates — triage, not completion certification
 
-Snapshot: packaged reader verification after `3a0d6177`, 2026-09-19. This index complements the chronological
+Snapshot: attachment fidelity and unconfigured-provider guard after `dd150e9a`, 2026-09-19. This index complements the chronological
 `W17-release-audit.md`; it does not replace the approved v1.2 plan, task-package
 acceptance checklist or v1.3 browser/input/language amendment in `README.md`.
 An engineering regression passing does not make the candidate releasable.
+
+## Latest candidate: attachment fidelity / no implicit provider
+
+Native validation of `dd150e9a` exposed a legacy configuration defect: absent
+`llm_provider` was treated as `openai`, and preset expansion supplied a model,
+despite the UI correctly reporting no configured connection. A synthetic
+restored key and generated attachment text reached the default endpoint and
+received 401; no genuine key, private content or successful model result was
+involved. This contradicts the initial assumption that missing saved model
+configuration alone kept that desktop test offline. The test was stopped.
+
+The legacy adapter now refuses absent/empty/whitespace provider selection before
+requesting the usable provider key for an adapter or constructing that adapter.
+The settings-display reader still performs its existing masked-secret read;
+this change does not claim to remove all in-process decryption. The refusal is localized in
+all six languages. Explicitly selected legacy/provider presets retain their
+existing defaults, and saved data is not migrated or discarded. Tests forbid
+adapter construction/key loading on the refusal path, including a restored-key
+fixture. The 63 focused factory/runtime tests and 38 catalog/smoke-driver tests
+passed; changed-file lint and whitespace checks passed.
+
+The rebuilt frozen candidate passed the standard API smoke plus actual
+WebSocket refusal in all six languages with a synthetic leftover key. Public
+reader smoke passed again: navigation/history/refresh, stale-frame refusal,
+unsupported input rejection and owned-child/profile cleanup. The latter uses
+the already installed temporary browser runtime, not a new runtime installation.
+
+Native Chinese/dark normal-width tests confirmed empty and failed-image sent
+notices and the local model-configuration error. The repaired application's
+fresh log has no external model HTTP requests, unlike the first attempt. W20
+records exact fixture/profile scope and the partial-source display check.
+The native app and sidecar were then quit normally. This is not real-model
+quality evidence or complete native six-language/layout acceptance.
+
+Temporary app: `/tmp/arslan-native-candidate.xIygc5/target/release/bundle/macos/Arslan.app`.
+Frozen build: `/tmp/arslan-candidate-build.BboGj4/dist-no-implicit-provider`.
+Source web assets match packaged assets exactly; bundle verification passed
+15 feature imports, assets and no database/secret/AGPL-rasterizer checks, 431 MiB.
+Identities (SHA-256):
+
+- Native executable (unchanged): `fa0d2c37c102e8d0d93125423b2e2b28ecd7e494d11b558d4da1303de2052d30`.
+- Frozen backend: `c77bf0cb6ae0a2a51a3a4c90736350fb9bea9077cf94271a539596189df0a909`.
+- Web entry: `ea51298c58046453cc0d707dd208ee5a6d9bb62aba1545a300b8b75172be3a81`.
+- Reader resource (unchanged): `94ed2feceefae5bf805bcf4da8186bb958366eb945cc08109ca4f30b0f3ec089`.
+
+Frontend baseline is 249 files / 1,930 tests from `dd150e9a`. The first full
+Python run (`/tmp/arslan-no-provider-regression.p5CfWX/full.xml`) finished with
+5 failed, 5,284 passed, 14 skipped in 508.97 seconds. All five failures were
+real manual-expert creation regressions: optional equipment curation caught
+request errors but did not catch adapter-construction errors. This must not
+be solved by restoring the implicit external-provider destination.
+
+The optional curation try/fallback now includes sync/async adapter construction,
+preserving its existing validated safe-menu fallback with no model connection.
+Both construction-failure forms have new tests. The five original WebSocket
+creation tests were kept unchanged; creation, equipment and factory selection
+passed 59 tests in 8.12 seconds. This source follow-up is NOT yet in the
+temporary bundle identified above. A second full Python run is in progress at
+`/tmp/arslan-provider-fallback-regression.l8rIEP/full.xml`; no passing full-run
+claim is made yet. Next: collect that result, refresh the frozen backend and
+repeat packaged no-provider/manual-create checks. No installed app was
+replaced, signed or published.
 
 | Gate | Current evidence / gap | Evidence required to close it |
 | --- | --- | --- |

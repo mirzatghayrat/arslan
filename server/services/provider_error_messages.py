@@ -3,6 +3,7 @@ from server.services.runtime_messages import normalize
 
 MESSAGES = {
     "en": {
+        "not_configured": "No model connection is configured. Choose a provider and model in connection settings before sending.",
         "context": "This conversation exceeds the model's context limit. Start a new conversation or choose a model with a larger context window.",
         "transport": "The connection to the provider failed or was interrupted. Check the network, proxy, or VPN. This error alone does not establish an API key problem or whether the provider processed the request.",
         "key_limit": "This API key has reached its usage limit; the account may still have a balance. Review the key's limit in the provider's dashboard before deciding what to change.",
@@ -14,6 +15,7 @@ MESSAGES = {
         "connection_failed": "The model connection test failed without a detailed error. Check the connection settings and try again.",
     },
     "zh": {
+        "not_configured": "尚未配置模型连接。请先在连接设置中选择服务商和模型，再发送消息。",
         "context": "这轮对话太长，超过了模型的上下文上限。请新建对话，或选择上下文更大的模型。",
         "transport": "没能连上服务商，或连接中途断开。请检查网络、代理或 VPN。仅凭这个错误，不能确定是 API key 的问题，也不能确定服务商是否已处理请求。",
         "key_limit": "这把 API key 已达到用量上限，账户里可能仍有余额。请到服务商后台检查这把 key 的限额，再决定如何调整。",
@@ -25,6 +27,7 @@ MESSAGES = {
         "connection_failed": "模型连接测试失败，未返回详细原因。请检查连接设置后重试。",
     },
     "ja": {
+        "not_configured": "モデル接続が設定されていません。送信前に接続設定でプロバイダーとモデルを選択してください。",
         "context": "この会話はモデルのコンテキスト上限を超えています。新しい会話を始めるか、上限の大きいモデルを選んでください。",
         "transport": "プロバイダーへの接続に失敗したか、接続が中断されました。ネットワーク、プロキシ、VPN を確認してください。このエラーだけでは、API キーの問題かどうかや、リクエストが処理されたかどうかは判断できません。",
         "key_limit": "この API キーは使用量の上限に達しています。アカウントには残高がある可能性があります。変更する前に、プロバイダーの管理画面でキーの上限を確認してください。",
@@ -36,6 +39,7 @@ MESSAGES = {
         "connection_failed": "モデルの接続テストに失敗しましたが、詳細な原因は返されませんでした。接続設定を確認して再試行してください。",
     },
     "es": {
+        "not_configured": "No hay ninguna conexión de modelo configurada. Elige un proveedor y un modelo en los ajustes de conexión antes de enviar.",
         "context": "Esta conversación supera el límite de contexto del modelo. Inicia una conversación nueva o elige un modelo con una ventana de contexto mayor.",
         "transport": "La conexión con el proveedor falló o se interrumpió. Comprueba la red, el proxy o la VPN. Este error por sí solo no confirma un problema con la clave API ni si el proveedor procesó la solicitud.",
         "key_limit": "Esta clave API ha alcanzado su límite de uso; puede que la cuenta aún tenga saldo. Revisa el límite de la clave en el panel del proveedor antes de decidir qué cambiar.",
@@ -47,6 +51,7 @@ MESSAGES = {
         "connection_failed": "La prueba de conexión del modelo falló sin indicar un error detallado. Revisa los ajustes de conexión y vuelve a intentarlo.",
     },
     "de": {
+        "not_configured": "Es ist keine Modellverbindung eingerichtet. Wähle vor dem Senden in den Verbindungseinstellungen einen Anbieter und ein Modell.",
         "context": "Diese Unterhaltung überschreitet das Kontextlimit des Modells. Beginne eine neue Unterhaltung oder wähle ein Modell mit einem größeren Kontextfenster.",
         "transport": "Die Verbindung zum Anbieter ist fehlgeschlagen oder wurde unterbrochen. Prüfe Netzwerk, Proxy oder VPN. Dieser Fehler allein belegt weder ein Problem mit dem API-Schlüssel noch, ob der Anbieter die Anfrage verarbeitet hat.",
         "key_limit": "Dieser API-Schlüssel hat sein Nutzungslimit erreicht; das Konto kann noch Guthaben haben. Prüfe das Schlüssellimit im Anbieter-Dashboard, bevor du Änderungen vornimmst.",
@@ -58,6 +63,7 @@ MESSAGES = {
         "connection_failed": "Der Modell-Verbindungstest ist ohne detaillierte Fehlermeldung fehlgeschlagen. Prüfe die Verbindungseinstellungen und versuche es erneut.",
     },
     "fr": {
+        "not_configured": "Aucune connexion à un modèle n’est configurée. Choisis un fournisseur et un modèle dans les paramètres de connexion avant l’envoi.",
         "context": "Cette conversation dépasse la limite de contexte du modèle. Ouvre une nouvelle conversation ou choisis un modèle disposant d’une fenêtre de contexte plus grande.",
         "transport": "La connexion au fournisseur a échoué ou a été interrompue. Vérifie le réseau, le proxy ou le VPN. Cette erreur seule ne permet pas de conclure à un problème de clé API ni de savoir si la requête a été traitée.",
         "key_limit": "Cette clé API a atteint sa limite d’utilisation ; le compte peut encore avoir du crédit. Vérifie la limite de la clé dans le tableau de bord du fournisseur avant de décider quoi modifier.",

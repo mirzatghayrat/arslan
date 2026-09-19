@@ -41,7 +41,7 @@ async def test_build_adapter_reads_settings(temp_db):
 
 
 @pytest.mark.asyncio
-async def test_build_adapter_defaults_when_unset(tmp_path, monkeypatch):
+async def test_build_adapter_refuses_unconfigured_destination(tmp_path, monkeypatch):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'g.db'}")
     maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
@@ -51,9 +51,14 @@ async def test_build_adapter_defaults_when_unset(tmp_path, monkeypatch):
 
     from server.services.llm_factory import build_adapter
 
-    adapter = await build_adapter()
-    assert adapter.provider_name == "openai"  # default
-    assert adapter.model == "gpt-5.6-terra"   # preset default (expand_preset fills it)
+    from unittest.mock import Mock
+    import server.services.llm_factory as factory
+    constructor = Mock(side_effect=AssertionError("must not construct a provider"))
+    monkeypatch.setattr(factory, "LLMAdapter", constructor)
+    with pytest.raises(ValueError, match="No model connection"):
+        await build_adapter()
+    constructor.assert_not_called()
+    await engine.dispose()
 
 
 @pytest.mark.asyncio
@@ -153,20 +158,37 @@ async def test_build_adapter_blank_model_native_provider_raises(tmp_path, monkey
 
 
 @pytest.mark.asyncio
-async def test_legacy_fresh_install_blank_model_does_not_raise(tmp_path, monkeypatch):
-    """Regression guard: fresh install (no provider_configs, empty legacy settings)
-    goes through _legacy_build_adapter → expand_preset("openai", "", "") fills the
-    preset default model — the blank-model error must NOT fire here."""
+@pytest.mark.parametrize("language", ["en", "zh", "ja", "es", "de", "fr"])
+@pytest.mark.parametrize("provider", [None, "", "   "])
+async def test_legacy_key_without_provider_never_selects_cloud(tmp_path, monkeypatch, language, provider):
+    """A restored key alone must not select a cloud destination or preset model."""
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'fi.db'}")
     maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", maker)
 
-    from server.services.llm_factory import build_adapter
-
-    adapter = await build_adapter()
-    assert adapter.model == "gpt-5.6-terra"
+    from unittest.mock import AsyncMock, Mock
+    import server.services.llm_factory as factory
+    from server.db.models import Setting
+    from server.services.provider_error_messages import render
+    async with maker() as session:
+        session.add(Setting(key="language", value=language))
+        # Simulates a restored profile's leftover encrypted key without exposing it.
+        session.add(Setting(key="llm_api_key", value="synthetic-unreadable-ciphertext"))
+        if provider is not None:
+            session.add(Setting(key="llm_provider", value=provider))
+        await session.commit()
+    constructor = Mock(side_effect=AssertionError("must not construct a provider"))
+    decrypted = AsyncMock(side_effect=AssertionError("must not load a provider key"))
+    monkeypatch.setattr(factory, "LLMAdapter", constructor)
+    monkeypatch.setattr(settings_service, "get_decrypted_api_key", decrypted)
+    with pytest.raises(ValueError) as error:
+        await factory.build_adapter()
+    assert str(error.value) == render("not_configured", language)
+    constructor.assert_not_called()
+    decrypted.assert_not_called()
+    await engine.dispose()
 
 
 @pytest.mark.asyncio
