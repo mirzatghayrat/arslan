@@ -89,9 +89,30 @@ def test_video_probe_uses_no_network_or_user_environment(monkeypatch):
         assert args[args.index("-protocol_whitelist") + 1] == "file,pipe"
         assert set(kwargs["env"]) == {"PATH", "HOME", "TMPDIR"}
         assert kwargs["timeout"] == 20
-        kwargs["stdout"].write(json.dumps({"streams": [{"codec_type": "video", "width": 640}], "format": {"duration": "1"}}).encode())
+        assert "stream_disposition=attached_pic" in args[args.index("-show_entries") + 1]
+        kwargs["stdout"].write(json.dumps({"streams": [{"index": 0, "codec_type": "video", "width": 640}], "format": {"duration": "1"}}).encode())
         return SimpleNamespace(returncode=0)
     monkeypatch.setattr(subprocess, "run", probe)
     result = video_metadata("file.mp4", b"x")
     assert result["visual_understanding"] == "not_run"
     assert result["transcript"] == "not_generated"
+
+
+@pytest.mark.parametrize("streams", [
+    [{"index": 0, "codec_type": "video", "disposition": {"attached_pic": 1}}],
+    [{"index": -1, "codec_type": "video"}],
+    [{"index": True, "codec_type": "video"}],
+    [{"codec_type": "video"}],
+    [None],
+])
+def test_video_probe_rejects_cover_only_or_invalid_streams(monkeypatch, streams):
+    import shutil
+    import subprocess
+    from types import SimpleNamespace
+    monkeypatch.setattr(shutil, "which", lambda _: "/trusted/ffprobe")
+    def probe(args, **kwargs):
+        kwargs["stdout"].write(json.dumps({"streams": streams}).encode())
+        return SimpleNamespace(returncode=0)
+    monkeypatch.setattr(subprocess, "run", probe)
+    with pytest.raises(InputError, match="inputs.invalid"):
+        video_metadata("cover.mp4", b"x")

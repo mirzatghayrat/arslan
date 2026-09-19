@@ -1,5 +1,12 @@
 # Remaining release gates — triage, not completion certification
 
+Newest source follow-up after `fb9fa2ae`: video probing requests attached-cover
+disposition, rejects cover-only inputs, and samples the exact absolute index
+of the first non-cover video stream. Source regression includes real MP4
+audio/cover/video fixtures; W20 records scope. This backend change is not yet
+in the temporary native bundle or the preceding full 5,317-case regression.
+Package refresh and current-source full regression remain required.
+
 Latest verification of `a5c62c2e`: temporary native web resources now include
 the partial-extraction wording. German/dark at 1171 × 768 visibly preserves
 the complete status; the synthetic 42,490-byte code fixture yields 12,000

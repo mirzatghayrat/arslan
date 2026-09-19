@@ -162,6 +162,30 @@ def read_structured(filename: str, data: bytes) -> tuple[str, bool]:
         raise InputError("inputs.invalid") from exc
 
 
+def primary_video_stream(metadata: dict) -> dict:
+    """Choose one actual video stream, never an attached cover image.
+
+    Use the probe's absolute stream index in the decoder too: a video-relative
+    ordinal can silently select a different stream when audio/covers precede it.
+    """
+    streams = metadata.get("streams")
+    if not isinstance(streams, list) or any(not isinstance(s, dict) for s in streams):
+        raise InputError("inputs.invalid")
+    for stream in streams:
+        if stream.get("codec_type") != "video":
+            continue
+        disposition = stream.get("disposition", {})
+        if not isinstance(disposition, dict):
+            raise InputError("inputs.invalid")
+        if disposition.get("attached_pic", 0) != 0:
+            continue
+        index = stream.get("index")
+        if type(index) is not int or index < 0:
+            raise InputError("inputs.invalid")
+        return stream
+    raise InputError("inputs.invalid")
+
+
 def video_metadata(filename: str, data: bytes) -> dict:
     """Optional local codec probe. No network protocols, model, or transcript."""
     import os
@@ -182,16 +206,17 @@ def video_metadata(filename: str, data: bytes) -> dict:
             with output.open("wb") as stream:
                 result = subprocess.run([executable, "-v", "error", "-protocol_whitelist", "file,pipe",
                     "-format_whitelist", "mov,matroska,webm", "-show_entries",
-                    "format=duration,size,format_name:stream=index,codec_type,codec_name,width,height,duration,avg_frame_rate,sample_rate,channels",
+                    "format=duration,size,format_name:stream=index,codec_type,codec_name,width,height,duration,avg_frame_rate,sample_rate,channels:stream_disposition=attached_pic",
                     "-of", "json", str(source)], stdout=stream, stderr=subprocess.DEVNULL,
                     timeout=20, cwd=folder, env={"PATH": "/usr/bin:/bin", "HOME": folder, "TMPDIR": folder})
             if result.returncode or os.path.getsize(output) > 1_000_000:
                 raise InputError("inputs.invalid")
             metadata = json.loads(output.read_text())
+            if not isinstance(metadata, dict):
+                raise InputError("inputs.invalid")
             if not isinstance(metadata.get("streams"), list) or len(metadata["streams"]) > 32:
                 raise InputError("inputs.limit")
-            if not any(stream.get("codec_type") == "video" for stream in metadata["streams"]):
-                raise InputError("inputs.invalid")
+            primary_video_stream(metadata)
             return {"metadata": metadata, "frames": "not_extracted", "transcript": "not_generated",
                     "visual_understanding": "not_run", "editing": "not_run"}
         except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError) as exc:

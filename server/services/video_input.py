@@ -9,7 +9,7 @@ import shutil
 import subprocess
 import tempfile
 
-from server.services.input_formats import video_metadata
+from server.services.input_formats import primary_video_stream, video_metadata
 
 FRAME_COUNT = 3
 MAX_EDGE = 512
@@ -18,6 +18,7 @@ MAX_FRAME_BYTES = 2 * 1024 * 1024
 
 def extract_video(filename: str, data: bytes) -> dict:
     report = video_metadata(filename, data)
+    stream = primary_video_stream(report["metadata"])
     images: list[dict] = []
     frames: list[dict] = []
     status = "tool_missing"
@@ -28,7 +29,6 @@ def extract_video(filename: str, data: bytes) -> dict:
             duration = float(report["metadata"].get("format", {}).get("duration", 0))
         except (ValueError, TypeError):
             duration = 0
-        stream = next(s for s in report["metadata"]["streams"] if s.get("codec_type") == "video")
         try:
             width, height = int(stream.get("width", 0)), int(stream.get("height", 0))
         except (ValueError, TypeError):
@@ -48,7 +48,7 @@ def extract_video(filename: str, data: bytes) -> dict:
                             executable, "-nostdin", "-hide_banner", "-v", "error", "-y",
                             "-max_alloc", "67108864", "-threads", "1",
                             "-protocol_whitelist", "file,pipe", "-format_whitelist", "mov,matroska,webm",
-                            "-ss", str(timestamp), "-i", str(source), "-map", "0:v:0",
+                            "-ss", str(timestamp), "-i", str(source), "-map", f"0:{stream['index']}",
                             "-an", "-sn", "-dn", "-frames:v", "1",
                             "-vf", f"scale={MAX_EDGE}:{MAX_EDGE}:force_original_aspect_ratio=decrease",
                             "-threads", "1", "-f", "image2", str(target),
@@ -68,7 +68,8 @@ def extract_video(filename: str, data: bytes) -> dict:
             if images:
                 status = "sampled" if len(images) == FRAME_COUNT else "partial"
     report.update({"frames": frames, "frame_status": status,
-                   "sampling": "Up to three still frames at 0%, 50%, 90%; seek times are approximate. Unsampled content is not analyzed.",
+                   "sampled_video_stream_index": stream["index"] if images else None,
+                   "sampling": "Only the first non-cover video stream is sampled, up to three still frames at 0%, 50%, 90%; seek times are approximate. Other streams and unsampled content are not analyzed.",
                    "transcript": "unavailable_no_transcription_adapter",
                    "visual_understanding": "requires_selected_vision_model" if images else "not_run"})
     text = json.dumps(report, ensure_ascii=False, indent=2)

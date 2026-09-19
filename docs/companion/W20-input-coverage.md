@@ -1,5 +1,38 @@
 # W20 — shared format matrix and local extraction
 
+## Video stream identity — after `fb9fa2ae`, 2026-09-19
+
+The previous probe/decoder selected the first video stream without excluding
+attached pictures. A cover image could therefore determine dimension checks
+or be sampled in place of temporal video. New red tests reproduced incorrect
+dimension rejection and acceptance of cover-only/invalid stream metadata.
+The probe now explicitly requests `attached_pic`; a shared selector excludes
+covers, validates an absolute stream index and rejects files with no actual
+video. Decoder mapping uses that same absolute index, including when audio
+or cover streams precede it. Reports identify the sampled stream and disclose
+that other streams are not analyzed. Existing local-only protocol restrictions,
+timeouts, dimensions and frame-count limits remain unchanged.
+
+Real local FFmpeg fixtures verify audio-plus-cover-only rejection and a file
+with audio, blue H.264 video and a red JPEG cover: all three decoded frames
+are blue and correspond to absolute stream 1, not the cover. Mocked cases
+also cover an oversized cover preceding two actual video streams, invalid
+indices and malformed stream entries. The first fixture attempt used an
+encoder frame cap that prematurely ended all streams; the corrected fixture
+uses a finite JPEG input and verifies three frames, rather than relaxing the
+assertion to accept a partial result.
+
+Focused video/format/extraction/API/declared-type regression: **136 passed,
+1 warning in 3.96s**, with lint and diff checks passing. JUnit:
+`/tmp/arslan-video-stream-regression.xml`, SHA-256
+`ac56acd22e93779222e72c691aa33187b80c217092e7aa44326a760ea3f7ce4f`.
+
+This is source-level local decoder/API regression, not real-model visual
+quality, native acceptance, every container/codec, or full-motion understanding.
+No new codec, model, account, formal installation or publication was used.
+The current temporary bundle and the prior 5,317-test full run predate this
+change; refresh and full regression are still pending.
+
 ## Current backend full regression — `36070eaa`, 2026-09-19
 
 Complete isolated regression finished with **5,317 passed, 14 skipped,

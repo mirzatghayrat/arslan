@@ -10,10 +10,11 @@ from PIL import Image
 import pytest
 
 from server.services import video_input
+from server.services.input_formats import InputError
 
 
 def metadata(width=640, duration="2"):
-    return {"metadata": {"streams": [{"codec_type": "video", "width": width, "height": 480}],
+    return {"metadata": {"streams": [{"index": 0, "codec_type": "video", "width": width, "height": 480}],
                          "format": {"duration": duration}}, "editing": "not_run"}
 
 
@@ -60,6 +61,29 @@ def test_sampler_is_bounded_local_and_cleans_temporary_files(monkeypatch):
     assert "test.mp4#t=1.000s" in with_images("inspect video", result["images"])[3]["text"]
 
 
+def test_sampler_maps_the_probed_non_cover_stream(monkeypatch):
+    report = metadata()
+    report["metadata"]["streams"] = [
+        {"index": 0, "codec_type": "audio"},
+        {"index": 1, "codec_type": "video", "width": 90000, "height": 90000,
+         "disposition": {"attached_pic": 1}},
+        {"index": 3, "codec_type": "video", "width": 640, "height": 480,
+         "disposition": {"attached_pic": 0}},
+        {"index": 4, "codec_type": "video", "width": 1280, "height": 720},
+    ]
+    monkeypatch.setattr(video_input, "video_metadata", lambda *_: report)
+    monkeypatch.setattr(shutil, "which", lambda _: "/trusted/ffmpeg")
+    def run(args, **kwargs):
+        assert args[args.index("-map") + 1] == "0:3"
+        Image.new("RGB", (8, 8), "red").save(args[-1])
+        return SimpleNamespace(returncode=0)
+    monkeypatch.setattr(subprocess, "run", run)
+    result = video_input.extract_video("cover.mp4", b"x")
+    assert result["video_frame_status"] == "sampled"
+    assert json.loads(result["text"])["sampled_video_stream_index"] == 3
+    assert "Other streams and unsampled content are not analyzed" in result["text"]
+
+
 @pytest.mark.parametrize("successes,status", [(0, "decode_failed"), (1, "partial")])
 def test_decoder_timeout_is_explicit_and_keeps_only_completed_frames(monkeypatch, successes, status):
     monkeypatch.setattr(video_input, "video_metadata", lambda *_: metadata())
@@ -102,3 +126,41 @@ def test_real_video_frames_are_bounded_and_source_addressed(tmp_path):
     assert len([part for part in user["content"] if part["type"] == "image_url"]) == 3
     assert any("synthetic.mp4#t=1.000s" in part.get("text", "") for part in user["content"])
     assert json.loads(result["text"])["transcript"] == "unavailable_no_transcription_adapter"
+
+
+@pytest.mark.parametrize("include_video", [False, True])
+def test_real_mp4_cover_is_not_sampled_as_video(tmp_path, include_video):
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg or not shutil.which("ffprobe"):
+        pytest.skip("optional local FFmpeg tools unavailable")
+    source = tmp_path / "with-cover.mp4"
+    cover_image = tmp_path / "cover.jpg"
+    Image.new("RGB", (32, 32), "red").save(cover_image)
+    args = [ffmpeg, "-nostdin", "-v", "error",
+            "-f", "lavfi", "-i", "anullsrc=r=8000:cl=mono",
+            "-i", str(cover_image)]
+    if include_video:
+        args += ["-f", "lavfi", "-i", "color=c=blue:size=64x48:rate=5"]
+    args += ["-map", "0:a"]
+    if include_video:
+        args += ["-map", "2:v", "-c:v:0", "libx264"]
+    cover = 1 if include_video else 0
+    args += ["-map", "1:v", f"-c:v:{cover}", "copy",
+             f"-disposition:v:{cover}", "attached_pic",
+             "-c:a", "aac", "-t", "2", str(source)]
+    subprocess.run(args, check=True, timeout=15, stdout=subprocess.DEVNULL,
+                   stderr=subprocess.DEVNULL)
+    if not include_video:
+        with pytest.raises(InputError, match="inputs.invalid"):
+            video_input.extract_video(source.name, source.read_bytes())
+        return
+    result = video_input.extract_video(source.name, source.read_bytes())
+    report = json.loads(result["text"])
+    assert any(s.get("disposition", {}).get("attached_pic") == 1
+               for s in report["metadata"]["streams"])
+    assert result["video_frame_status"] == "sampled"
+    assert report["sampled_video_stream_index"] == 1  # Audio is stream zero.
+    for payload in result["images"]:
+        with Image.open(io.BytesIO(base64.b64decode(payload["data"]))) as frame:
+            red, green, blue = frame.convert("RGB").getpixel((0, 0))
+            assert blue > 200 and red < 30 and green < 30  # Video, not red cover.
