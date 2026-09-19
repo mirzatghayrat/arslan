@@ -6,6 +6,37 @@ from pypdf.generic import DictionaryObject, NameObject, DecodedStreamObject
 from server.services import extract, ingest
 
 
+async def test_same_page_scan_is_not_hidden_by_native_caption(monkeypatch):
+    from scripts.mixed_pdf_ocr_smoke import fixture
+    data = fixture(same_page=True)
+    layer = ingest._pdf_text_layer(data)
+    assert layer.unread_pages == ()
+    assert layer.image_text_pages == (1,)
+    assert layer.ocr_pages == (1,)
+    assert layer.pages[1].strip() == "Native caption stays exact."
+    calls = []
+    monkeypatch.setattr(ingest.ocr_vision, "is_available", lambda: True)
+    def recognize(png, **kwargs):
+        calls.append(png)
+        return "Scanned source recovered 2468.\nNative caption stays exact.", ingest.ocr_vision.OK
+    monkeypatch.setattr(ingest.ocr_fallback, "read_locally", recognize)
+    text, partial = await extract.extract_text(filename="same-page.pdf", data=data)
+    assert len(calls) == 1 and not partial
+    assert "[page 2]\nNative caption stays exact." in text
+    assert "[local OCR of whole page; may repeat native text]" in text
+    assert "Scanned source recovered 2468." in text
+
+
+async def test_same_page_unavailable_keeps_caption_and_reports_partial(monkeypatch):
+    from scripts.mixed_pdf_ocr_smoke import fixture
+    monkeypatch.setattr(ingest.ocr_vision, "is_available", lambda: False)
+    text, partial = await extract.extract_text(filename="same-page.pdf", data=fixture(same_page=True))
+    assert partial
+    assert "[page 2]\nNative caption stays exact." in text
+    assert "[additional image text not read: unavailable]" in text
+    assert '"unread_pages": [2]' in text
+
+
 def mixed_pdf():
     from pypdf import PdfReader
     writer = PdfWriter()

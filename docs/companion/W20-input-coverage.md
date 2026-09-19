@@ -285,6 +285,36 @@ JUnit identity and isolation. The full-regression gap is now closed for this
 candidate; native visual and real selected-model acceptance remain open.
 # Real mixed-PDF local OCR checkpoint — after `39705007`
 
+## Same-page text-plus-image source extension — after `e4509ccf`
+
+The parser now records native-text pages that also contain image resources,
+using pypdf's resource enumeration (including inline/form image keys) without
+decoding every image into PIL. These pages join drawing-only pages in the same
+bounded, ordered OCR queue. Native-only pages still avoid OCR. Original native
+text is never replaced by OCR: a separate whole-page OCR marker warns that
+some text may repeat. No heuristic deduplication or cloud translation is used.
+If OCR is unavailable/failed/capped, original text remains and the marker says
+additional image text was not read, with a partial extraction flag.
+
+The real synthetic fixture now also has a raster-text image and separate native
+caption on the same page. Visual inspection verified both lines; the real host
+recognizer recovered the scan while retaining the exact native caption. The
+expanded smoke checks both mixed-page forms. Two added component-service tests
+verify detection/selection and unavailable-OCR preservation/partial status.
+The combined PDF/extract/ingest suite passed **80 tests in 3.99s**; fixture-only
+pypdf deprecation warnings were then removed by merging a transformed page
+directly instead of mutating an unattached page. Real OCR smoke was rerun
+successfully and the 16-case locator suite passed afterward. Ruff/diff pass.
+
+Full Python regression is running under
+`/tmp/arslan-same-page-regression.N9IZtY/full.xml`, not yet claimed passing.
+The temporary app still has the preceding `e4509ccf` candidate, so this extension
+requires a new frozen/app refresh and API/native verification. Enumerating an
+image resource is deliberately conservative: decorative or unused images may
+cause an OCR pass and repeated text. This is text extraction, not visual diagram
+understanding, and not blanket six-language/scan-quality acceptance. No real
+document, account, cloud model or installed-app change was used.
+
 ## Packaged follow-up after `2f1632c6`
 
 Full regression completed: **5,310 passed, 14 skipped, 18 warnings in 508.50s**,

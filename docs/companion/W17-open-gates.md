@@ -1,5 +1,13 @@
 # Remaining release gates — triage, not completion certification
 
+New source extension after `e4509ccf`: same-page native text plus image resources
+now receives bounded local OCR while preserving original text and separately
+marking whole-page OCR/possible repetition. Real synthetic host OCR and 80
+focused tests pass. Full Python is running at
+`/tmp/arslan-same-page-regression.N9IZtY`; this extension is not yet packaged.
+See W20 for exact evidence/limitations. The preceding package below remains
+the current native candidate, not proof of this newer source behavior.
+
 Newest packaged checkpoint after `2f1632c6`: mixed PDF extraction now preserves
 native text while locally recognizing drawing-only/no-text pages, with explicit
 unread page markers and a partial flag when recognition cannot complete. The

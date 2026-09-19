@@ -36,6 +36,11 @@ class PDFTextLayer:
     # Zero-based pages with drawing content but no extractable text. Truly
     # empty pages are not OCR candidates and must not become fake warnings.
     unread_pages: tuple[int, ...] = ()
+    image_text_pages: tuple[int, ...] = ()
+
+    @property
+    def ocr_pages(self) -> tuple[int, ...]:
+        return tuple(sorted(set(self.unread_pages + self.image_text_pages)))
 
     @property
     def has_text(self) -> bool:
@@ -52,20 +57,28 @@ def _pdf_text_layer(data: bytes) -> PDFTextLayer:
     reader = PdfReader(io.BytesIO(data))
     texts = tuple(page.extract_text() or "" for page in reader.pages)
     unread = []
+    image_text = []
     for i, page in enumerate(reader.pages):
         if texts[i].strip():
+            # Keys enumerate image resources (including forms/inline images)
+            # without decoding each image to a PIL object. A text layer does
+            # not prove the images on this page contain no additional text.
+            if page.images.keys():
+                image_text.append(i)
             continue
         content = page.get_contents()
         if content is not None and content.get_data().strip():
             unread.append(i)
-    return PDFTextLayer(texts, tuple(unread))
+    return PDFTextLayer(texts, tuple(unread), tuple(image_text))
 
 
 def _mixed_pdf_text(data: bytes, layer: PDFTextLayer, ui_language: str | None,
                     chosen_languages: str | None = None) -> tuple[str, bool]:
-    """Keep native text; locally read only drawing-only pages, under the cap.
+    """Keep native text; locally read scan/image-bearing pages under the cap.
 
-    No cloud call or duplicate text-page OCR. Explicit per-page provenance and
+    No cloud call. Whole-page OCR can repeat native text; retain both sources
+    explicitly rather than risk deleting distinct near-matching content.
+    Explicit per-page provenance and
     unresolved-page markers prevent a partially read PDF looking complete.
     """
     import json
@@ -77,7 +90,7 @@ def _mixed_pdf_text(data: bytes, layer: PDFTextLayer, ui_language: str | None,
         if ocr_vision.is_available():
             import pypdfium2 as pdfium
             pdf = pdfium.PdfDocument(data)
-        for ordinal, index in enumerate(layer.unread_pages):
+        for ordinal, index in enumerate(layer.ocr_pages):
             status = "page_limit" if ordinal >= VISION_PDF_MAX_PAGES else "unavailable"
             if pdf is not None and ordinal < VISION_PDF_MAX_PAGES:
                 page = bitmap = None
@@ -94,7 +107,11 @@ def _mixed_pdf_text(data: bytes, layer: PDFTextLayer, ui_language: str | None,
                     finally:
                         image.close()
                     if status == ocr_vision.OK and text.strip():
-                        pages[index] = "[local OCR]\n" + text
+                        original = layer.pages[index]
+                        if original.strip():
+                            pages[index] = original + "\n[local OCR of whole page; may repeat native text]\n" + text
+                        else:
+                            pages[index] = "[local OCR]\n" + text
                         continue
                 except Exception:  # noqa: BLE001 — retain all other source pages
                     status = "error"
@@ -104,11 +121,13 @@ def _mixed_pdf_text(data: bytes, layer: PDFTextLayer, ui_language: str | None,
                     if page is not None:
                         page.close()
             unresolved.append(index + 1)
-            pages[index] = f"[page text not read: {status}]"
+            label = "additional image text not read" if layer.pages[index].strip() else "page text not read"
+            pages[index] = (layer.pages[index] + f"\n[{label}: {status}]").strip()
     except Exception:  # noqa: BLE001 — rasterizer unavailable, preserve native text
-        unresolved = [i + 1 for i in layer.unread_pages]
-        for index in layer.unread_pages:
-            pages[index] = "[page text not read: unavailable]"
+        unresolved = [i + 1 for i in layer.ocr_pages]
+        for index in layer.ocr_pages:
+            label = "additional image text not read" if layer.pages[index].strip() else "page text not read"
+            pages[index] = (layer.pages[index] + f"\n[{label}: unavailable]").strip()
     finally:
         if pdf is not None:
             pdf.close()
@@ -404,7 +423,7 @@ def _extract_file(filename: str, data: bytes, *, ui_language: str | None = None,
         return data.decode("utf-8", errors="replace")
     if name.endswith(".pdf"):
         layer = _pdf_text_layer(data)
-        if layer.has_text and layer.unread_pages:
+        if layer.has_text and layer.ocr_pages:
             return _mixed_pdf_text(data, layer, ui_language, ocr_languages)[0]
         if not layer.has_text:
             if ocr_vision.is_available():
@@ -539,7 +558,7 @@ async def ingest_file(spawn_id: int | None, filename: str, data: bytes, *,
         layer = _pdf_text_layer(data)
         if layer.has_text:
             body = layer.located_text
-            if layer.unread_pages:
+            if layer.ocr_pages:
                 import asyncio
                 body, _ = await asyncio.to_thread(_mixed_pdf_text, data, layer,
                     await ocr_fallback.current_ui_language(),

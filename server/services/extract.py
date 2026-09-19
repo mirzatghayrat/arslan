@@ -45,7 +45,7 @@ async def extract_text(
             language = await ocr_fallback.current_ui_language()
             languages = await ocr_fallback.current_ocr_languages()
             layer = await asyncio.to_thread(ingest._pdf_text_layer, data)
-            if layer.has_text and layer.unread_pages:
+            if layer.has_text and layer.ocr_pages:
                 text, source_truncated = await asyncio.to_thread(
                     ingest._mixed_pdf_text, data, layer, language, languages)
             else:

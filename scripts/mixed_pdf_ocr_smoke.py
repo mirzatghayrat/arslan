@@ -33,8 +33,8 @@ def text_pdf(text: str) -> bytes:
     return output.getvalue()
 
 
-def fixture() -> bytes:
-    from pypdf import PdfReader
+def fixture(*, same_page: bool = False) -> bytes:
+    from pypdf import PdfReader, Transformation
 
     writer = PdfWriter()
     native = "Native source remains unchanged."
@@ -60,6 +60,9 @@ def fixture() -> bytes:
         content = DecodedStreamObject()
         content.set_data(b"q 600 0 0 240 0 0 cm /Scan Do Q")
         target[NameObject("/Contents")] = writer._add_object(content)
+        if same_page:
+            overlay = PdfReader(io.BytesIO(text_pdf("Native caption stays exact."))).pages[0]
+            target.merge_transformed_page(overlay, Transformation().translate(0, -90))
     finally:
         image.close()
         bitmap.close()
@@ -94,6 +97,11 @@ def main() -> None:
                 assert response.status_code == 200, response.status_code
                 result = response.json()
                 text, partial = result["text"], result["truncated"]
+                response = client.post("/api/v1/extract",
+                    files={"file": ("same-page.pdf", fixture(same_page=True), "application/pdf")}, timeout=30)
+                assert response.status_code == 200
+                same = response.json()
+                check_same_page(same["text"], same["truncated"])
                 # An explicitly unsupported OCR language must preserve native
                 # text while exposing partial extraction, not fake success.
                 response = client.put("/api/v1/settings", json={"ocr_languages": "zz-ZZ"})
@@ -113,6 +121,10 @@ def main() -> None:
     else:
         assert ocr_vision.is_available(), "Real host OCR is unavailable; acceptance not performed"
         text, partial = ingest._mixed_pdf_text(data, layer, "en", "en-US")
+        same_data = fixture(same_page=True)
+        same_layer = ingest._pdf_text_layer(same_data)
+        assert same_layer.image_text_pages == (1,)
+        check_same_page(*ingest._mixed_pdf_text(same_data, same_layer, "en", "en-US"))
     assert not partial, text
     assert "[page 1]\nNative source remains unchanged." in text
     assert "[page 2]\n[local OCR]\nScanned source recovered 2468." in text
@@ -121,8 +133,16 @@ def main() -> None:
     print(json.dumps({"real_host_ocr": True, "mixed_pdf": "passed",
         "native_text_preserved": True, "scan_has_no_text_layer": True,
         "page_locators": [1, 2, 4], "partial": partial, "cloud_model": False,
-        "frozen_api": len(sys.argv) > 1,
+        "same_page_text_and_scan": True, "frozen_api": len(sys.argv) > 1,
         "unsupported_language_partial": len(sys.argv) > 1}))
+
+
+def check_same_page(text: str, partial: bool) -> None:
+    assert not partial, text
+    assert "[page 2]\nNative caption stays exact." in text
+    assert "[local OCR of whole page; may repeat native text]" in text
+    assert "Scanned source recovered 2468." in text
+    assert "[page 4]\nFinal native source retained." in text
 
 
 if __name__ == "__main__":
