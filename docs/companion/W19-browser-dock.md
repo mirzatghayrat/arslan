@@ -1,5 +1,35 @@
 # W19 — isolated navigation and work dock
 
+## Same-conversation privacy transition — after `7d20d4f0`
+
+Reproduced a dock ownership defect with the production component: creating a
+normal browser tab, then converting that same conversation to temporary left
+the old reader mounted and its normal restore metadata intact. The existing
+cleanup only handled conversation-ID changes and tabs born temporary, not the
+privacy-mode change of an existing conversation. The added regression failed
+on the unchanged source because the old reader was still mounted.
+
+WorkDock now closes ordinary browser tabs belonging to a conversation when it
+becomes temporary and rewrites safe restoration metadata without those tabs.
+Other ordinary conversations' tabs remain. Closing unmounts the real reader,
+which closes its live session or, if creation is still pending, closes the
+late-created session without navigating. Explicitly opened new temporary tabs
+remain usable/session-only and are removed on leaving the conversation. Hidden
+initial mounts in temporary mode also purge old restore metadata.
+
+Focused tests: **18 passed** across dock, reader and new ownership integration
+tests; TypeScript and production build pass (3.18s, existing chunk warning).
+Integration uses the actual BrowserReader with mocked browser API responses,
+not a mocked reader component. It proves close requests and stale-result
+ownership, not actual renderer process exit for this newly fixed path.
+The temporary native bundle has not yet been refreshed for this change;
+native privacy-transition/browser-process revalidation remains next.
+
+Full frontend regression: **1,976 passed, zero failures/errors**, exit 0.
+JUnit `/tmp/arslan-dock-privacy-full.xml`, SHA-256
+`05ed466bef24270fa11c10db01b23de57f1c3702bb423066736e39f9bf3e3c64`.
+Existing jsdom canvas/navigation warnings remain.
+
 Checkpoint: 2026-09-15, starting from `d3450890`. This implements bounded public-page interaction, not authenticated automation or a completed independent security review.
 
 ## Delivered

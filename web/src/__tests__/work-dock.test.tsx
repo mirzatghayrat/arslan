@@ -14,6 +14,20 @@ beforeEach(() => localStorage.clear());
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("work dock", () => {
+  it("removes a conversation's ordinary browser tabs when it becomes temporary, including saved restoration metadata", () => {
+    saveDock([{ id: 'owned', kind: 'browser', conversationId: 'conversation', taskId: null },
+      { id: 'other', kind: 'browser', conversationId: 'other', taskId: null }], 420, false);
+    const props = { open: true, onOpen: vi.fn(), onClose: vi.fn(), conversationId: 'conversation', taskId: null };
+    const view = render(<WorkDock {...props} temporary={false} />);
+    expect(screen.getByText('Reader: conversation')).toBeInTheDocument();
+    view.rerender(<WorkDock {...props} temporary />);
+    expect(screen.queryByText('Reader: conversation')).not.toBeInTheDocument();
+    expect(screen.getByText('Reader: other')).toBeInTheDocument();
+    expect(restoreDock().tabs.map(tab => tab.id)).toEqual(['other']);
+    view.rerender(<WorkDock {...props} conversationId="next" temporary={false} />);
+    expect(restoreDock().tabs.map(tab => tab.id)).toEqual(['other']);
+  });
+
   it("uses a full-width dismissible dialog on narrow windows and keeps desktop resizing", () => {
     vi.stubGlobal("innerWidth", 600);
     const close = vi.fn();

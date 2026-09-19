@@ -1,5 +1,14 @@
 # Remaining release gates — triage, not completion certification
 
+New W19 source fix after `7d20d4f0`: converting a conversation to temporary now
+closes its pre-existing ordinary browser tabs and deletes their restore metadata,
+including when the dock is hidden. Other conversations' tabs are preserved.
+The defect was reproduced before the fix; 18 focused tests cover metadata,
+actual reader unmount/close requests and late session creation. TypeScript/build
+pass; full frontend has 1,976 passing, zero failures/errors. Temporary native
+bundle refresh and actual browser-process revalidation
+for this path are still pending; no native completion is claimed for this fix.
+
 Follow-up after `96679e53`: native German/dark confirms a prepared image's
 thumbnail survives Settings navigation, and a successful temporary-mode change
 clears both text and image. Real dialog/composer integration tests additionally

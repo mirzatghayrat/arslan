@@ -36,6 +36,17 @@ export default function WorkDock({ open, onOpen, onClose, conversationId, taskId
   }, [conversationId]);
   useEffect(() => { saveDock(tabs, width, temporary); }, [tabs, width, temporary]);
   useEffect(() => {
+    if (!temporary) return;
+    // Privacy can change without changing the conversation ID. Closing the old
+    // readers releases their sessions; remove their prior restore records too.
+    // Newly opened temporary tabs remain session-only and are filtered by saveDock.
+    const next = tabs.filter(tab => !(tab.kind === 'browser'
+      && tab.conversationId === conversationId && !tab.temporary));
+    if (next.length === tabs.length) return;
+    setTabs(next);
+    saveDock(next, width, false);
+  }, [conversationId, temporary, tabs, width]);
+  useEffect(() => {
     if (!tabs.some(tab => tab.id === selected)) setSelected(tabs[0]?.id ?? "");
   }, [tabs, selected]);
   useEffect(() => {
