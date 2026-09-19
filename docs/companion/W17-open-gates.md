@@ -1,5 +1,19 @@
 # Remaining release gates — triage, not completion certification
 
+## Latest packaged regression checkpoint — after `4f89b1c5`
+
+All four current app-bundled smoke processes exited 0: standard frozen
+startup/auth/input/six-language/restart, video stream selection, public browser
+reader lifecycle, and native recovery-control rewrap with two independent
+normal default-key boots. The recovery fixture preserves the original database,
+backup archive and external key; reader shutdown leaves zero owned children and
+removes its profiles. See W17-release-audit for exact package identity and scope.
+This closes the post-jusText-fix packaged regression check, not full native UI,
+runtime installation, authenticated browser interaction or real-model gates.
+
+The paragraphs below are chronological evidence history, not a list of current
+pending actions: later checkpoints supersede earlier pending refresh statements.
+
 Native follow-up after `84133673` recognizes IPv4/IPv6 loopback URLs and shows
 localized errors for real extraction 400s. The positive public-URL control then
 found missing packaged jusText stoplists: HTTP download succeeded but extraction
@@ -310,7 +324,7 @@ signed or published.
 | Six-language native UX and old-data compatibility (W16/W21) | Web/component matrices and actual six-language pending-recovery sheets/menus/notices exist. Cross-language rollback refresh is verified. Earlier disappearing-greeting finding is not causally closed. | Full six-locale narrow/wide and light/dark runtime checks, rapid switch/back/reload, other native menus/dialogs, old entry points/data, keyboard focus and restart behavior on the current bundle. |
 | Design/media workflows (W15) | Versioned style references and a restricted local-media adapter exist. Execution provisioning/review and real D01–D08 outcomes are not complete. | Editable/runnable output evidence, verified artifacts/cancellation, authorized pinned backend when available, human assessment of visual dimensions and honest unavailable-backend fallback. No unapproved weights/cloud costs. |
 | Memory and task quality (W01/W04/W05/W17) | Runtime evidence covers aspects of 31 memory scenarios, not all 60. `catalog.json` still labels real task inputs pending. | Remaining multi-turn bindings plus authorized real behavior evaluation; freeze real inputs/hashes and configuration; run all 30 families × 3 attempts without best-of-three selection; preserve missing/unsupported denominator and cost/latency accounting. |
-| Packaging and final human acceptance (W17) | Full regression baselines pass 5,291 Python and 77 native cases; current frontend passes 1,930 cases. Reader and attachment changes plus the no-implicit-provider/offline-curation fix are packaged; frozen APIs/WebSockets and bounded native UI checks pass. Recorded temporary-app checks remain synthetic-profile evidence, not real-model acceptance. | Keep package/regressions current; remaining native first boot/upgrade/recovery and configuration retention matrix; applicable signing/notarization and human installation/security/UX review. No installed-app replacement or public release under the current authorization. |
+| Packaging and final human acceptance (W17) | Latest full backend baseline is 5,336 passed / 14 skipped at `d21b525a`; subsequent packaging-entry scope passes 51 tests. Latest full frontend is 2,000 passing at `84133673`; native baseline remains 77 passed / one ignored. The `4f89b1c5` app-bundled backend passes standard, video, reader and recovery-rewrap smokes. These are separate source/scope records, not a new full-suite run or real-model acceptance. | Keep package/regressions current; remaining native first boot/upgrade/recovery and configuration retention matrix; applicable signing/notarization and human installation/security/UX review. No installed-app replacement or public release under the current authorization. |
 
 ## Next dependency order
 

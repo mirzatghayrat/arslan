@@ -2638,3 +2638,34 @@ claimed as the entire six-language native matrix. No external model HTTP request
 appeared in the fresh native log. App/sidecar PIDs 38384/38392 exited normally.
 No real account, genuine key, signing, installed-app replacement or publishing
 occurred. Broad W11/W12/W13/W15/W19/W20/W21 and human release gates remain open.
+
+## Post-jusText app-bundled regression — `4f89b1c5`, 2026-09-19
+
+Revalidated the actual temporary app's backend at
+`/tmp/arslan-native-candidate.xIygc5/target/release/bundle/macos/Arslan.app/Contents/Resources/sidecar/arslan-server`.
+SHA-256: `8fdf50d36d3c5f42a2e4e1d97e67097712f80eee43d31ac2c5c2cc28bfb277ef`.
+All four processes completed with exit 0:
+
+- `scripts.frozen_sidecar_smoke`: fresh boot/authentication, malformed-input
+  refusal, Word/table/PDF/spreadsheet/slide locators, inert code, corrupt Office
+  rejection, six saved languages and localized no-provider refusals/manual
+  creation, restart/token/language/onboarding retention, repaired native locale
+  cache and parent-pipe shutdown.
+- `scripts.frozen_video_stream_smoke`: cover-only input rejected; actual blue
+  video selected at stream index 1 instead of red cover, three sampled frames,
+  minimal-PATH codec discovery and disposable profile cleanup.
+- `scripts.frozen_browser_reader_smoke`: resource hashes match, actual public
+  navigation/history/refresh, stale-link/type/file-URL refusals, zero remaining
+  owned child processes and removed reader profiles. Runtime installation was
+  not exercised; no authenticated interaction is certified.
+- `scripts.frozen_rewrap_smoke`: native test transport prepare/rewrap/switch/
+  trial/finalize followed by two independent normal packaged boots using only
+  the default external key. Both decrypted the synthetic credential; original
+  database, archive and external key remained unchanged. The native transport
+  source in the staged project matched current source. This is not a native
+  window/consent test or custom-key configuration acceptance.
+
+All runs used disposable synthetic data with live models disabled. This is
+focused packaged regression after adding jusText data, not a rerun of the full
+backend/frontend suites. No installed app, genuine credential, account, signing
+or publication was involved. Broad release gates remain open.
