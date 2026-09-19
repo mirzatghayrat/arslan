@@ -1,5 +1,13 @@
 # Remaining release gates — triage, not completion certification
 
+Packaged follow-up for `970f38e5`: the temporary app now includes the video
+stream identity fix. Fresh frozen and app-bundled video API checks both reject
+audio-plus-cover-only input and decode three blue video frames rather than
+the red cover. Bundle selftest/resource checks and standard frozen smoke pass.
+Current-source full regression is live at
+`/tmp/arslan-video-stream-full.dcDrSD/full.log`; do not substitute the earlier
+5,317-case result for it. W20 records binary identity and limited scope.
+
 Newest source follow-up after `fb9fa2ae`: video probing requests attached-cover
 disposition, rejects cover-only inputs, and samples the exact absolute index
 of the first non-cover video stream. Source regression includes real MP4

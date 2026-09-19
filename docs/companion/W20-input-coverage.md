@@ -1,5 +1,36 @@
 # W20 — shared format matrix and local extraction
 
+## Packaged stream-selection acceptance — `970f38e5`, 2026-09-19
+
+Rebuilt the frozen backend in 29.41s using the existing isolated build tools;
+no dependency download. Reused only the pre-existing temporary compute runtime.
+Bundle verification passes all 15 feature imports, web resources, no AGPL,
+no databases and no secret-shaped files. Standard frozen API smoke passes
+fresh boot/restart, auth, six-language settings/refusals/offline creation,
+input locators, malformed-input handling and owned parent-pipe shutdown.
+
+New reusable `scripts/frozen_video_stream_smoke.py` runs only a validated
+temporary candidate against a disposable profile. It exposes explicitly
+discovered local FFmpeg tool directories without inheriting the invoking
+environment; ordinary frozen smokes retain their minimal PATH. Real synthetic
+MP4s test a 400 `inputs.invalid` response for audio plus cover only, and three
+blue frames (not the red cover), absolute stream index 1, bounded PNG sizes,
+source time locators and explicit unavailable transcription for actual video.
+Both fresh frozen and final app-bundled sidecar runs pass, with normal owned
+process shutdown and profile/fixture cleanup. This is API/decoder acceptance,
+not native video-picker/layout or selected-model quality acceptance.
+
+The temporary app was rebundled unsigned; no formal installation was replaced.
+Backend SHA-256 (fresh and app-bundled):
+`d2c17a4daf0533a7dd43756a03650c3b2248255c678e9556615ed56f6f3b0d6f`.
+Native shell remains
+`fa0d2c37c102e8d0d93125423b2e2b28ecd7e494d11b558d4da1303de2052d30`.
+Both packaged web trees exactly match the current `web/dist` (entry
+`index-D9o_5oeC.js`, unchanged from W21's partial-copy verification).
+Lint/diff checks pass. The full current backend regression is still running
+under `/tmp/arslan-video-stream-full.dcDrSD`; its result must be collected,
+not inferred from the preceding full run or these focused checks.
+
 ## Video stream identity — after `fb9fa2ae`, 2026-09-19
 
 The previous probe/decoder selected the first video stream without excluding

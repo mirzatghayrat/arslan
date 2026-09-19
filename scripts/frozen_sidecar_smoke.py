@@ -35,11 +35,11 @@ def stop(process):
             process.stdout.close()
 
 
-def start(binary, home, *, secret="frozen-smoke-synthetic-only"):
+def start(binary, home, *, secret="frozen-smoke-synthetic-only", tool_path="/usr/bin:/bin"):
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
-    env = {"PATH": "/usr/bin:/bin", "HOME": str(home), "TMPDIR": str(home),
+    env = {"PATH": tool_path, "HOME": str(home), "TMPDIR": str(home),
            "ARSLAN_PORT": str(port), "ARSLAN_LIVE_LLM": "0"}
     if secret is not None:
         env.update(ARSLAN_SECRET_KEY=secret, ARSLAN_SECRET_KEY_FILE="")
