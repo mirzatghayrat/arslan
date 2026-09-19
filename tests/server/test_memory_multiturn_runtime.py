@@ -263,6 +263,62 @@ async def test_real_task_receipt_reviews_old_revision_but_never_resurrects_delet
         assert all(row["content"] is None for row in await repo.history(entry["id"]))
 
 
+async def test_summary_regeneration_excludes_deleted_memory_sources_from_later_task(
+    runtime, execution_db, monkeypatch,
+):
+    # M06-03: run the real compaction/history path; only the summarizer's
+    # response is scripted, and every summarizer input is inspected.
+    from server.db.models import ArslanSummary
+
+    content = "Use violet report headings as my permanent report preference."
+    conversation = "summary-deletion"
+    await runtime(conversation, f"Remember: {content}", save=content)
+    last = await memory.add_message(conversation, "assistant", f"Saved preference: {content}")
+    async with execution_db() as db:
+        db.add(ArslanSummary(conversation_id=conversation, summary=f"Old summary: {content}",
+                             up_to_message_id=last))
+        await db.commit()
+    async with repository() as repo:
+        entry = (await repo.list_entries())[0]
+        await repo.delete_entry(entry["id"], entry["version"], MemoryActor(origin="user"))
+    async with execution_db() as db:
+        assert not (await db.scalars(select(ArslanSummary))).all()
+        # Deleting memory does not silently erase the user's displayed chat.
+        originals = (await db.scalars(select(ArslanMessage).where(
+            ArslanMessage.conversation_id == conversation))).all()
+        assert any(content in message.content for message in originals)
+    await memory.add_message(conversation, "user", "Prepare an inventory report for this task.")
+    await memory.add_message(conversation, "assistant", "This task concerns an inventory report.")
+    await memory.add_message(conversation, "user", "Regenerate the working summary.")
+    summarizer_requests = []
+    class Summarizer:
+        async def chat(self, system, user, **kwargs):
+            summarizer_requests.append(user)
+            return LLMResponse(content="Current task: prepare an inventory report.", usage={})
+    monkeypatch.setattr(memory, "_get_adapter", lambda: Summarizer())
+    monkeypatch.setattr(memory, "_token_budget", lambda: 1)
+    monkeypatch.setattr(memory, "_summary_token_cap", lambda: 200)
+    await memory.maybe_compact(conversation)
+    assert summarizer_requests
+    assert all(content not in request and "Old summary" not in request for request in summarizer_requests)
+    assert "inventory report" in summarizer_requests[0]
+    async with execution_db() as db:
+        regenerated = (await db.scalars(select(ArslanSummary).where(
+            ArslanSummary.conversation_id == conversation))).all()
+    assert regenerated and all(content not in row.summary for row in regenerated)
+    monkeypatch.setattr(memory, "_token_budget", lambda: 2000)
+    async with execution_db() as db:
+        previous_receipts = (await db.scalars(select(ContextReceiptRecord.id))).all()
+    later = await runtime(conversation, "Continue the current inventory report.")
+    assert all(content not in str(request) for request in later)
+    assert any("inventory report" in str(request) for request in later)
+    async with execution_db() as db:
+        receipts = (await db.scalars(select(ContextReceiptRecord).where(
+            ContextReceiptRecord.conversation_id == conversation,
+            ContextReceiptRecord.id.not_in(previous_receipts)))).all()
+    assert receipts and all(not row.receipt["used"] for row in receipts)
+
+
 async def test_local_only_memory_is_filtered_from_cloud_prompt(runtime, execution_db):
     # M07-07 outbound boundary; adapter is synthetic, no provider request occurs.
     content = "Keep my private report naming preference local."

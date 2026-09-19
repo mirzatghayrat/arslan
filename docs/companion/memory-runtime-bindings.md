@@ -1,7 +1,7 @@
 # Multi-turn memory runtime bindings — partial engineering evidence
 
-`tests/server/test_memory_multiturn_runtime.py` now has 45 synthetic runtime cases
-covering aspects of 29 catalog scenarios. This is not 60 passing scenarios, a
+`tests/server/test_memory_multiturn_runtime.py` now has 46 synthetic runtime cases
+covering aspects of 30 catalog scenarios. This is not 60 passing scenarios, a
 real-model score, or release approval. The catalog retains its uncompleted status.
 
 The harness runs the real `scoped_turn` / TaskService boundary, user-message
@@ -36,11 +36,33 @@ their separate API/UI tests are not replaced by these cases.
 | M07-07 additional matrix | Sensitive, cloud-eligible project memory enters actual host requests/used receipts only when both task cloud-memory and sensitive-item permissions are true; all four combinations retain the stored item | Natural-language consent interpretation, permission UI and actual provider transport |
 | M06-05 | Restore quarantine removes an existing memory from the next host request and used receipt without erasing it; fresh user review restores later eligibility | Archive I/O/new-machine migration (separate frozen harness), missing-ledger UI explanation and model output |
 | M06-07 | An actual host-generated receipt resolves its original revision through authenticated HTTP after a newer revision exists; deletion changes that same review to a content-free deletion marker; later host prompts/receipts and revision history contain no deleted memory text | Native review interaction, previously displayed UI text and unrelated historical user-message content |
+| M06-03 | Deletion invalidates an old summary; actual compaction excludes pre-deletion source messages while retaining displayed chat, rebuilds from new eligible messages, and a later task excludes deleted content | Real summarizer behavior, arbitrary paraphrases and untracked external-source reingestion |
 | M06-04 | An actual pre-deletion backup is restored using either a later imported manifest or automatic record selection from an explicitly supplied current installation; a new task bound to the restored DB sends no deleted text/reference, and a repeated save is refused | Trusted native UI import, packaged host-request capture and natural-language/model behavior |
 | M07-01 | Explicit synthetic credential-save requests are rejected at task admission before host/remember execution; no task/message/run or ordinary memory remains, and a different conversation's prompt/receipt contains no such memory | Detection of every credential shape, UI presentation of the refusal and redaction of unrelated historical sources |
 | M03-06 / M08-02 | Saved report preferences stay out of a code-patch request; saved design preferences stay out of arithmetic requests in six locales; related subsequent tasks can still retrieve them | General semantic relevance, arbitrary paraphrases and generated-answer quality |
 
 ## Known remaining coverage and implementation gaps
+
+### Summary regeneration after deletion (2026-09-19, after `1668a547`)
+
+The new M06-03 binding saves a rule via the real host path, adds a derived reply
+and an old rolling summary, then deletes the memory. Display messages remain,
+but the old summary is invalidated. New post-deletion turns are compacted using
+the real `maybe_compact` and deletion-aware eligible-message query. A scripted
+summarizer captures every input; none contains the deleted preference or old
+summary, while the new task material is present. A subsequent host turn in the
+same conversation uses the regenerated summary without deleted content and has
+no used-memory reference. Receipt assertions select new identities explicitly,
+not incidental database order.
+
+The added case passed in **2.10s**, 45 deselected, one warning. JUnit:
+`/tmp/arslan-memory-summary-deletion.xml`, SHA-256
+`9de91477f0cbdea74bf31dce5f05ca9894b7178d8e090d9eaa24bee239f0afdf`.
+Separately, history-deletion/repository regressions passed **24 tests in 2.48s**.
+Lint/diff checks pass. These are incremental checks, not one complete 46-case
+runtime invocation. No production code or catalog completion status changed.
+M06-06's full external-source deletion/reingestion chain remains unbound here;
+this test must not be counted as that scenario or as real summarizer quality.
 
 ### Historical receipt deletion (2026-09-19, after `a0c3dd4e`)
 
