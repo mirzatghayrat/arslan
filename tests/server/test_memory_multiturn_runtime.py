@@ -422,6 +422,58 @@ async def test_candidate_cannot_replace_confirmed_context(runtime):
     assert old in later[0]["system"] and candidate not in later[0]["system"]
 
 
+@pytest.mark.parametrize("newer_confirmed", [False, True])
+async def test_rejected_guess_stays_out_of_later_context_and_preserves_correction(
+    runtime, execution_db, newer_confirmed,
+):
+    # M04-08: model guess plus explicit trusted dismissal. This does not claim
+    # that a real model recognizes arbitrary natural-language corrections.
+    from server.db.models import MemoryProposal
+
+    guess = "Use blue report headings."
+    corrected = "Use green report headings."
+    correction = "The guess that I prefer blue report headings is wrong."
+    await runtime("guess-task", "Prepare a report with headings.", save=guess)
+    async with repository() as repo:
+        entry = (await repo.list_entries())[0]
+    assert entry["status"] == "proposed" and not entry["confirmed_at"]
+    async with execution_db() as db:
+        proposal_id = await db.scalar(select(MemoryProposal.id).where(
+            MemoryProposal.target_entry_id == entry["id"]))
+    before = await runtime("correction-task", correction)
+    assert all(guess not in request["system"] for request in before)
+    if newer_confirmed:
+        async with repository() as repo:
+            changed = await repo.revise(entry["id"], entry["version"], MemoryWrite(
+                content=corrected, scope=MemoryScope(kind="global")), MemoryActor(origin="user"))
+    async with repository() as repo:
+        await repo.resolve_proposal(proposal_id, accept=False, actor=MemoryActor(origin="user"))
+    later = await runtime("after-dismissal", "Prepare a report with headings.")
+    assert all(guess not in request["system"] for request in later)
+    assert all((corrected in request["system"]) == newer_confirmed for request in later)
+    async with repository() as repo:
+        retained = await repo.present(await repo.get(entry["id"]))
+    assert retained["status"] == ("active" if newer_confirmed else "paused")
+    if newer_confirmed:
+        assert retained["version"] == changed["version"] and retained["content"] == corrected
+    else:
+        assert retained["content"] == guess and not retained["confirmed_at"]
+    async with execution_db() as db:
+        proposal = await db.get(MemoryProposal, proposal_id)
+        assert proposal.status == "dismissed" and proposal.resolved_at is not None
+        messages = (await db.scalars(select(ArslanMessage).where(
+            ArslanMessage.conversation_id == "correction-task", ArslanMessage.role == "user"))).all()
+        assert any(message.content == correction for message in messages)
+        receipts = (await db.scalars(select(ContextReceiptRecord).where(
+            ContextReceiptRecord.conversation_id == "after-dismissal"))).all()
+    assert receipts
+    if newer_confirmed:
+        assert all(any(ref["id"] == entry["id"] and ref["revision"] == changed["version"]
+                       for ref in row.receipt["used"]) for row in receipts)
+    else:
+        assert all(not row.receipt["used"] for row in receipts)
+
+
 async def test_user_revision_replaces_prompt_but_retains_history(runtime):
     # M04-01: exact old/new UI operation, not permission inferred by a model.
     old, new = "Use detailed reports.", "Use concise reports."

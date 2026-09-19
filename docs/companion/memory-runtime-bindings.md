@@ -1,7 +1,7 @@
 # Multi-turn memory runtime bindings — partial engineering evidence
 
-`tests/server/test_memory_multiturn_runtime.py` now has 42 synthetic runtime cases
-covering aspects of 27 catalog scenarios. This is not 60 passing scenarios, a
+`tests/server/test_memory_multiturn_runtime.py` now has 44 synthetic runtime cases
+covering aspects of 28 catalog scenarios. This is not 60 passing scenarios, a
 real-model score, or release approval. The catalog retains its uncompleted status.
 
 The harness runs the real `scoped_turn` / TaskService boundary, user-message
@@ -29,6 +29,7 @@ their separate API/UI tests are not replaced by these cases.
 | M03-01/03/05 | Opposite rules in distinct same-named projects stay isolated; unassigned task inherits neither; receipts exclude the other project's IDs | Output design fidelity, every source type, worker context and old write-grant invalidation |
 | M04-01/02 | User-confirmed revision replaces prompt content with history retained; an inferred candidate cannot replace confirmed content | Model recognition of replacement intent and review-card interaction |
 | M04-03/06 | A stale direct edit or stale second candidate confirmation is refused; a new task sends only the chosen current rule and records its exact revision; the original history remains intact | Concurrent UI interaction, natural-language intent and conflicts across distinct target entries |
+| M04-08 | Dismissing an unconfirmed guess excludes it from later host prompts/receipts and retains the user's correction message; dismissing an older proposal cannot pause a newer confirmed revision | Automatic understanding of natural-language correction, actual review-card UI and real model behavior |
 | M05-01/04 | Advancing the context-selection clock changes effective/expired eligibility in subsequent host requests | Version-specific source revalidation and historical factual interpretation |
 | M06-01/02 | Paused/deleted content is absent from later host requests; pause preserves history and can be restored | Vector/index rebuild, old summaries and backup restoration (separate tests exist; not covered here) |
 | M07-07 | Local-only memory stays stored but is absent from a synthetic cloud-destination request, even with task-level cloud permission | Sensitive-item acknowledgement UI and a real network capture |
@@ -39,6 +40,26 @@ their separate API/UI tests are not replaced by these cases.
 | M03-06 / M08-02 | Saved report preferences stay out of a code-patch request; saved design preferences stay out of arithmetic requests in six locales; related subsequent tasks can still retrieve them | General semantic relevance, arbitrary paraphrases and generated-answer quality |
 
 ## Known remaining coverage and implementation gaps
+
+### Rejected guesses (2026-09-19, after `f97efae7`)
+
+Two added M04-08 cases exercise an actual host-scripted remember attempt
+without explicit save consent, a later user correction message, trusted
+proposal dismissal, and an independent subsequent host task. The unconfirmed
+guess is never injected; dismissal pauses it without inventing confirmation.
+The user's exact correction remains in user-message storage and the proposal
+has a dismissal timestamp. In the second case, a trusted newer revision is
+confirmed before dismissing the old proposal: it stays active and the next
+host request/receipt uses that exact current revision. This is not automatic
+interpretation of correction language or a claim that dismissal creates a
+new corrective long-term preference.
+
+Both added cases pass in **9.07s**, 42 deselected, one warning. JUnit:
+`/tmp/arslan-memory-rejected-guess.xml`, SHA-256
+`24cd0987332b5fd1e798fab2ad6138739364358e732e1f69eba4723f34b5bb68`.
+Lint/diff checks pass. The preceding 42-case full-file pass and these two
+new cases are disjoint runs, not one 44-case invocation. No production code,
+catalog status, account, model or user data was changed.
 
 All other catalog scenarios still need explicit multi-turn bindings at their
 appropriate runtime boundary. Do not count existing single-operation tests as

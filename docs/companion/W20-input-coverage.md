@@ -1,5 +1,17 @@
 # W20 — shared format matrix and local extraction
 
+## Codec-discovery full regression collected — `d21b525a`, 2026-09-19
+
+The isolated full run completed with **5,336 passed, 14 skipped, 19 warnings
+in 514.20s**, exit 0. JUnit:
+`/tmp/arslan-media-discovery-full.jl0WQS/full.xml`, SHA-256
+`d19316f6129d85af55c4fba81f19e34975ca50381b2611ee072ea515daa9ee7c`.
+The existing aiosqlite teardown guard suppressed 39 closed-loop deliveries;
+this does not claim the underlying cleanup issue is fixed. Subsequent memory
+binding tests were added after collection and have separate focused results.
+Production backend sources remain unchanged from this verified package. This
+supersedes the running-status notes below, not the remaining broad release gates.
+
 ## Minimal-PATH package/native acceptance — `d21b525a`, 2026-09-19
 
 Rebuilt the temporary frozen backend in 30.96s with the existing build tools
