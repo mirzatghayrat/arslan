@@ -94,3 +94,29 @@ async def explain_current(raw_error: str, *, had_images=False) -> str | None:
     from server.orchestrator import vision_errors
     locale = await selected_locale()
     return vision_errors.explain(raw_error, had_images=had_images, locale=locale) or explain(raw_error, locale=locale)
+
+
+async def error_frame(exc: Exception, *, code="LLM_ERROR", had_images=False) -> dict:
+    """Keep legacy display text while adding only product-owned translations.
+
+    Clients can re-render a live error after changing language without guessing
+    from its prose. Unknown diagnostics carry no translations and stay exact.
+    """
+    from server.services import provider_error_messages as provider, runtime_messages
+    from server.orchestrator import vision_errors
+
+    raw = str(exc)
+    messages = None
+    if isinstance(exc, provider.ModelNotConfiguredError):
+        messages = {locale: provider.render("not_configured", locale) for locale in provider.MESSAGES}
+    elif vision_errors.explain(raw, had_images=had_images):
+        messages = {locale: runtime_messages.render("image_refused", locale) for locale in provider.MESSAGES}
+    else:
+        category = classify(raw)
+        if category:
+            messages = {locale: provider.render(category, locale) for locale in provider.MESSAGES}
+    frame = {"type": "error", "code": code, "message": raw, "recoverable": True}
+    if messages:
+        frame["message"] = messages[await runtime_messages.selected_locale()]
+        frame["message_i18n"] = messages
+    return frame

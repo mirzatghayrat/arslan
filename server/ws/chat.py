@@ -184,7 +184,8 @@ async def chat_endpoint(ws: WebSocket, spawn_id: int) -> None:
             except Exception as exc:  # noqa: BLE001
                 queue.put_nowait(None)
                 await sender
-                await ws.send_json(protocol.error("LLM_ERROR", str(exc), recoverable=True))
+                from server.orchestrator import llm_errors
+                await ws.send_json(await llm_errors.error_frame(exc))
                 continue
             queue.put_nowait(None)
             await sender

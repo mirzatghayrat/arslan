@@ -401,7 +401,7 @@ export type ServerMessage =
   | { type: "stream_chunk"; content: string }
   | { type: "stream_end"; message_id: number }
   | { type: "message"; message_id: number; content: string; role: string }
-  | { type: "error"; code: string; message: string; recoverable?: boolean }
+  | { type: "error"; code: string; message: string; recoverable?: boolean; message_i18n?: Record<string, string> }
   | { type: "ping"; ts: number };
 
 export interface UserFact {
@@ -593,7 +593,7 @@ export type ArslanServerMessage =
   | { type: "escalation"; spawn_id: number; spawn_name: string | null; kind: string; need: string }
   | { type: "escalation_refused"; spawn_id: number; why: string }
   | { type: "escalation_resolved"; spawn_id: number; how: string; detail: string }
-  | { type: "error"; code: string; message: string; recoverable?: boolean }
+  | { type: "error"; code: string; message: string; recoverable?: boolean; message_i18n?: Record<string, string> }
   | { type: "verdict_recorded"; spawn_id: number; action: string }
   | { type: "deliverable_finalized"; spawn_id: number; message_id: number; content: string; refined_from: number | null; spawn_name?: string }
   | { type: "roster_update"; members: { spawn_id: number; spawn_name: string | null; joined_via: string; status: string }[] }

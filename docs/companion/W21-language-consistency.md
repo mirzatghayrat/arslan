@@ -1,5 +1,41 @@
 # W21 — six-language consistency (in progress)
 
+## Runtime-error language-switch source fix — after `0a428cbf`
+
+Model-error frames now preserve their legacy localized `message` and, only for
+recognized product-owned notices, carry a complete six-language `message_i18n`
+catalog. This reuses the backend's canonical copy rather than maintaining a
+second frontend translation table. The no-provider condition is a typed
+`ModelNotConfiguredError`, not recognized by matching translated prose.
+Existing narrow provider categories and actual-image refusal checks retain
+their precedence. Unknown diagnostics have no catalog and remain unchanged.
+
+Both main chat and expert direct chat render the catalog in the current UI
+language. The main store clears it on dismiss/reset or a subsequent raw error;
+the direct-chat runtime-error echo retains it only for the current session.
+Malformed/incomplete/oversized catalogs are ignored. User/model prose and old
+history messages are not rewritten or guessed from their wording. No database
+migration or model call is needed to switch language.
+
+Evidence: 251 frontend files / 1,944 tests passed in 23.23 seconds; TypeScript
+and production build passed (3.19 seconds, existing chunk-size warnings).
+Tests rerender an already-visible main-chat error across all six languages
+without a new frame; direct-chat checks cover quartz/linear/brutalist layouts
+and preserve original model prose. Backend targeted selection passed 90 tests
+in 8.30 seconds, including actual direct-chat WebSocket metadata transport,
+main/router/answer/delegated error paths, factory refusal and locale catalogs.
+The wider vision/error/run-recording selection passed 46 tests. Lint and
+whitespace checks passed.
+
+Frontend JUnit: `/tmp/arslan-runtime-error-locale-regression.xml`, SHA-256
+`36f409152291549cd4e889ffae0b834913ad14e0ca8a81311690d71cef34f548`.
+A fresh complete Python run is active at
+`/tmp/arslan-error-locales-regression.aA4g5Z/full.xml`; it is not yet claimed
+passing. The existing temporary native app still predates this source fix.
+Next: collect full regression, refresh candidate, verify an existing error
+actually re-renders after a native settings-language change. The frozen smoke
+now asserts all six catalog entries, but awaits that refreshed executable.
+
 ## Native attachment-notice language pass — after `1499ee8b`
 
 The refreshed temporary app uses frozen backend

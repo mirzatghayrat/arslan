@@ -5,6 +5,14 @@ Snapshot: attachment fidelity and unconfigured-provider guard after `dd150e9a`, 
 acceptance checklist or v1.3 browser/input/language amendment in `README.md`.
 An engineering regression passing does not make the candidate releasable.
 
+Newer source checkpoint after `0a428cbf`: W21's visible-error language-switch
+gap has a source fix with typed/recognized product error catalogs, main/direct
+render-time selection, 1,944 passing frontend tests, TypeScript/build and 90
+focused backend tests. Full Python regression is running under
+`/tmp/arslan-error-locales-regression.aA4g5Z`. The native candidate below still
+predates that fix; do not treat its hashes or earlier native observations as
+acceptance of error-body retranslation. W21 records the precise next check.
+
 ## Latest candidate: attachment fidelity / no implicit provider
 
 Native validation of `dd150e9a` exposed a legacy configuration defect: absent

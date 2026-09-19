@@ -569,8 +569,7 @@ async def handle_user_message(
             kind = await _classify_followup(user_message, pending["direction"])
         except Exception as exc:  # noqa: BLE001
             logger.warning("_classify_followup raised (surfacing as error): %s", exc)
-            emit({"type": "error", "code": "LLM_ERROR",
-                  "message": await llm_errors.explain_current(str(exc)) or str(exc), "recoverable": True})
+            emit(await llm_errors.error_frame(exc))
             return
         if kind == "confirm":
             await confirm_and_execute(conversation_id, pending["spawn_id"], emit)
@@ -613,8 +612,7 @@ async def handle_user_message(
         route_ms = int((datetime.utcnow() - t0).total_seconds() * 1000)
     except Exception as exc:  # noqa: BLE001
         logger.warning("router.route raised (surfacing as error): %s", exc)
-        emit({"type": "error", "code": "LLM_ERROR",
-              "message": await llm_errors.explain_current(str(exc)) or str(exc), "recoverable": True})
+        emit(await llm_errors.error_frame(exc))
         return
 
     # 3. persist + announce extracted facts (transparency note)
@@ -1153,18 +1151,14 @@ async def _handle_answer_body(
             except TaskError:
                 raise
             except Exception as retry_exc:  # noqa: BLE001 — report the retry honestly
-                emit({"type": "error", "code": "LLM_ERROR",
-                      "message": await llm_errors.explain_current(str(retry_exc)) or str(retry_exc),
-                      "recoverable": True})
+                emit(await llm_errors.error_frame(retry_exc))
                 return
         else:
             # Order is the point: vision_errors is the NARROWEST reading (it only
             # fires on image-specific refusals), llm_errors covers the
             # billing/auth/rate family, and the raw text is what survives when
             # neither recognises the fault — never an invented diagnosis.
-            emit({"type": "error", "code": "LLM_ERROR",
-                  "message": await llm_errors.explain_current(str(exc), had_images=bool(images)) or str(exc),
-                  "recoverable": True})
+            emit(await llm_errors.error_frame(exc, had_images=bool(images)))
             return
     # PA-3: the model asked for a structured user choice — ask_user_choice is a
     # TERMINAL tool, so the loop ended the turn with validated/clamped {question,
@@ -2173,8 +2167,7 @@ async def _dispatch_spawn(  # noqa: ANN001
                     # other error keeps its original text, because mislabelling a
                     # rate limit as a vision problem sends the user off changing
                     # models over an unrelated fault.
-                    _msg = await llm_errors.explain_current(str(exc), had_images=bool(images)) or str(exc)
-                    tee({"type": "error", "code": "SPAWN_ERROR", "message": _msg, "recoverable": True})
+                    tee(await llm_errors.error_frame(exc, code="SPAWN_ERROR", had_images=bool(images)))
                     _usage = usage_sink.detail()
                     _prompt = run_trace.prompt()
                     await recorder.finalize(

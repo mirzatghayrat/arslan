@@ -48,6 +48,8 @@ export interface MessageAttachment {
 }
 
 export interface Message {
+  /** Session-only translations on a product-owned runtime error, never model prose. */
+  errorTranslations?: Record<string, string>;
   id: string;
   sender: 'user' | 'arslan' | 'spawn';
   senderName: string;

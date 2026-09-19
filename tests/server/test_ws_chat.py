@@ -148,6 +148,29 @@ def test_chat_llm_error_emits_recoverable_error_frame(app_client, monkeypatch):
         assert err["recoverable"] is True
 
 
+@pytest.mark.parametrize("kind", ["not_configured", "auth", "unknown"])
+def test_direct_chat_preserves_structured_error_catalog(app_client, monkeypatch, kind):
+    from server.services import provider_error_messages as messages
+
+    async def fail(**kwargs):
+        if kind == "not_configured":
+            raise messages.ModelNotConfiguredError("original localized text")
+        raise RuntimeError("401 unauthorized" if kind == "auth" else "Exact novel diagnostic")
+
+    monkeypatch.setattr(spawn_loop, "run", fail)
+    with app_client.websocket_connect("/ws/chat/1") as ws:
+        ws.receive_json()
+        ws.send_json({"type": "user_message", "content": "Synthetic error test"})
+        assert ws.receive_json()["type"] == "stream_start"
+        frame = ws.receive_json()
+        assert frame["type"] == "error" and frame["code"] == "LLM_ERROR"
+        if kind == "unknown":
+            assert frame["message"] == "Exact novel diagnostic"
+            assert "message_i18n" not in frame
+        else:
+            assert frame["message_i18n"] == {locale: messages.render(kind, locale) for locale in messages.MESSAGES}
+
+
 def test_chat_injects_kb(app_client, monkeypatch):
     captured = {}
     async def _s(*, spawn_id, system, user_content, history, current_turn,

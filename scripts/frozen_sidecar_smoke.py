@@ -181,6 +181,9 @@ def main():
                         if frame.get("type") == "error":
                             assert frame.get("code") == "LLM_ERROR"
                             assert frame.get("message") == render("not_configured", language)
+                            assert frame.get("message_i18n") == {
+                                locale: render("not_configured", locale)
+                                for locale in ("en", "zh", "ja", "es", "de", "fr")}
                             assert frame.get("recoverable") is True
                             break
                     else:

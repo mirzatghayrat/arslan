@@ -77,5 +77,9 @@ MESSAGES = {
 }
 
 
+class ModelNotConfiguredError(ValueError):
+    """Typed product error; never infer this condition from provider prose."""
+
+
 def render(key, locale, **values):
     return MESSAGES[normalize(locale)][key].format(**values)

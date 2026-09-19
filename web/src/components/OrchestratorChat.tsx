@@ -24,6 +24,7 @@ import LiveActivity from './LiveActivity';
 import ToolActivityCard from './ToolActivityCard';
 import { useArslanStore } from '../stores/arslanStore';
 import { taskErrorKey } from './companion/errors';
+import { runtimeErrorText } from '../lib/runtimeErrorText';
 import { api } from '../api/client';
 import { useSettingsStore } from '../stores/settingsStore';
 import { clampEndpointSilenceMs } from '../api/adapters';
@@ -219,6 +220,7 @@ export default function OrchestratorChat({
     return () => clearInterval(iv);
   }, [turnActive]);
   const llmError = useArslanStore((s) => s.error);
+  const llmErrorTranslations = useArslanStore((s) => s.errorTranslations);
   const clearLlmError = useArslanStore((s) => s.clearError);
   // Draft survives unmount. The composer used to hold its text in plain
   // component state, so switching to Settings (say, to fix an API key) and
@@ -1418,7 +1420,7 @@ export default function OrchestratorChat({
               <AlertTriangle className="w-3.5 h-3.5 text-danger shrink-0 mt-0.5" />
               <div className="flex flex-col gap-1 min-w-0">
                 <span className="text-[11px] text-danger font-semibold">{t('ui.modelError')}</span>
-                <span className="text-[11px] text-danger/80 font-mono break-words">{taskErrorKey(llmError) ? t(taskErrorKey(llmError)!) : llmError}</span>
+                <span className="text-[11px] text-danger/80 font-mono break-words">{taskErrorKey(llmError) ? t(taskErrorKey(llmError)!) : runtimeErrorText(llmError, llmErrorTranslations, i18n?.resolvedLanguage)}</span>
               </div>
               <button
                 onClick={clearLlmError}

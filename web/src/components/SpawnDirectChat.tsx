@@ -4,6 +4,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { formatUiTime } from '../lib/localeFormatting';
+import { runtimeErrorText, runtimeErrorTranslations } from '../lib/runtimeErrorText';
 import MatrixSpinner from './MatrixSpinner';
 import { Message, Spawn } from '../types';
 import { useCapabilityLabel } from '../stores/registryStore';
@@ -217,12 +218,16 @@ export default function SpawnDirectChat({
       }
       case 'error': {
         setStreaming(false);
+        const translations = runtimeErrorTranslations(m.message_i18n);
         const errMsg: Message = {
           id: `err-${Date.now()}`,
           sender: 'spawn',
           senderName: spawn.name,
           senderAvatar: spawn.avatarEmoji,
           text: `⚠️ ${m.detail ?? m.message ?? 'An error occurred.'}`,
+          ...(translations ? { errorTranslations: Object.fromEntries(
+            Object.entries(translations).map(([locale, text]) => [locale, `⚠️ ${text}`]),
+          ) } : {}),
           timestamp: formatUiTime(Date.now(), i18n?.resolvedLanguage),
         };
         setMessages(prev => [...prev, errMsg]);
@@ -383,6 +388,7 @@ export default function SpawnDirectChat({
         <div className="max-w-3xl mx-auto space-y-6">
           {messages.map((msg) => {
             const isUser = msg.sender === 'user';
+            const displayText = runtimeErrorText(msg.text, msg.errorTranslations, i18n?.resolvedLanguage);
 
             // Shared user bubble (all themes use right-aligned cool/neutral bubble)
             if (isUser) {
@@ -430,7 +436,7 @@ export default function SpawnDirectChat({
                       <span className="text-[9px] text-subtle-foreground font-mono">{msg.timestamp}</span>
                     </div>
                     <div className="text-xs text-foreground leading-relaxed font-sans">
-                      <MessageBody text={msg.text} streaming={msg.id === '__streaming__'} hasMessageActions={false} className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
+                      <MessageBody text={displayText} streaming={msg.id === '__streaming__'} hasMessageActions={false} className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
                     </div>
 
                     {/* Tool execution logs inside direct messages */}
@@ -473,7 +479,7 @@ export default function SpawnDirectChat({
                       <span className="text-[10px] font-bold font-mono tracking-widest uppercase">{msg.senderName}</span>
                       <span className="text-[9px] font-mono">{msg.timestamp}</span>
                     </div>
-                    <MessageBody text={msg.text} streaming={msg.id === '__streaming__'} hasMessageActions={false} className="text-xs text-foreground font-sans leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
+                    <MessageBody text={displayText} streaming={msg.id === '__streaming__'} hasMessageActions={false} className="text-xs text-foreground font-sans leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
 
                     {/* Tool Activities */}
                     {msg.toolActivity && (
@@ -515,7 +521,7 @@ export default function SpawnDirectChat({
                   <span className="text-subtle-foreground text-[10px]">{msg.timestamp}</span>
                 </div>
                 <div className="leading-relaxed">
-                  <MessageBody text={msg.text} streaming={msg.id === '__streaming__'} hasMessageActions={false} className="text-foreground [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
+                  <MessageBody text={displayText} streaming={msg.id === '__streaming__'} hasMessageActions={false} className="text-foreground [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
                 </div>
 
                 {msg.toolActivity && (

@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { runtimeErrorTranslations, type RuntimeErrorTranslations } from "../lib/runtimeErrorText";
 import { createSpeaker } from "../lib/speech";
 import type { ArslanServerMessage, ArslanThreadItem, SuggestDraft, ToolStep, OverlapInfo, RosterMember, StaffingCandidate, SpawnUpdateChanges, SpawnUpdateCurrent } from "../api/client.types";
 import type { MessageAttachment } from "../types";
@@ -14,6 +15,7 @@ interface ArslanState {
   suggestion: SuggestDraft | null;
   spawnNames: Record<number, string>;
   error: string | null;
+  errorTranslations: RuntimeErrorTranslations | null;
   lastMessageId: number;
   pending: boolean;
   suggestionTaskBrief: string | null;
@@ -180,6 +182,7 @@ function initialData() {
     suggestion: null as SuggestDraft | null,
     spawnNames: {} as Record<number, string>,
     error: null as string | null,
+    errorTranslations: null as RuntimeErrorTranslations | null,
     lastMessageId: 0,
     pending: false,
     suggestionTaskBrief: null as string | null,
@@ -289,7 +292,7 @@ function makeActions(set: SetState, get: GetState) {
     clearPendingSchedule: () => set({ pendingSchedule: null }),
     clearPendingConnectMcp: () => set({ pendingConnectMcp: null }),
     clearPendingStaffing: () => set({ pendingStaffing: null }),
-    clearError: () => set({ error: null }),
+    clearError: () => set({ error: null, errorTranslations: null }),
 
     // Clear all conversation state so the incoming `history` frame for the new
     // conversation_id repopulates from scratch with no stale carry-over.
@@ -936,6 +939,7 @@ function makeActions(set: SetState, get: GetState) {
         case "error":
           set({
             error: frame.message,
+            errorTranslations: runtimeErrorTranslations(frame.message_i18n),
             pending: false,
             streaming: false,
             streamingText: "",

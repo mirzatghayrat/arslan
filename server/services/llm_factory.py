@@ -142,8 +142,8 @@ async def _legacy_build_adapter(db) -> LLMAdapter:  # noqa: ANN001
     # Never turn an unconfigured profile into an implicit external destination.
     config_provider = str(cfg.get("llm_provider") or "").strip()
     if not config_provider:
-        from server.services.provider_error_messages import render
-        raise ValueError(render("not_configured", cfg.get("language") or "en"))
+        from server.services.provider_error_messages import ModelNotConfiguredError, render
+        raise ModelNotConfiguredError(render("not_configured", cfg.get("language") or "en"))
     api_key = await settings_service.get_decrypted_api_key(db)
     model = cfg.get("llm_model") or ""
     base_url = cfg.get("llm_base_url") or ""
