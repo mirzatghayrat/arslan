@@ -1,5 +1,13 @@
 # Remaining release gates — triage, not completion certification
 
+Native follow-up after `4fab4926`: the refreshed temporary app shows localized
+German and Chinese URL errors for a reserved-domain fixture. Ordinary edits
+leave the extraction count unchanged; explicit re-paste starts one new attempt.
+The exact user URL remains in the input. W21 records asset/log identities and
+the three real 400 responses. App exited cleanly, no model send. This closes the
+pending two-language native failure/retry check, not the full locale matrix or
+native transient-failure-to-success recovery.
+
 W21 follow-up after `92a29f1a`: URL attachment errors now use bounded six-language
 copy rather than raw transport details. Explicitly re-pasting a failed URL can
 retry, while ordinary text edits and successful/pending URLs stay deduplicated.

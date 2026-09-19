@@ -1,5 +1,37 @@
 # W21 — six-language consistency (in progress)
 
+## Native URL failure copy and retry — after `4fab4926`
+
+Refreshed the unsigned temporary app and verified bundled web assets match
+web/dist byte-for-byte. Entry `index-CAqgvLA3.js` SHA-256:
+`c1c883fc03e9552fd38fb1b3da37f466f421ac5f71fc5bea85eb95bcef7adecd`.
+Used the retained synthetic HOME with minimal PATH, no configured model, and
+German/dark initially. Native paste of the reserved fixture URL
+`https://arslan-url-error.invalid/source` produced the localized German webpage
+failure message while preserving the exact URL in the input. One extraction
+request returned 400. Appending ordinary prompt text left the request count at
+one; clearing and explicitly re-pasting the same URL increased it to two and
+displayed the same localized failure. No model send occurred.
+
+Changed the synthetic app's language to Chinese through Settings and returned.
+Pasting the same reserved URL produced a third 400 and the exact Chinese
+message, confirmed in AX and screenshot: `无法读取此网页。请确认链接可公开访问，且网络连接正常。`
+The draft URL was still intact and separate from the error. Cleared it and quit;
+no app/sidecar remains. Synthetic profile now remains Chinese/dark.
+
+The first attempted fixture used a numeric loopback address; the existing URL
+auto-detection regex did not recognize it, so no request occurred. It is not
+counted as a backend safety-refusal test. The reserved-domain fixture above is
+the actual failure/retry evidence. No safety restriction was bypassed.
+
+Fresh log `/private/tmp/arslan-native-restore-ui-m1tgzvbv/url-errors.stderr`
+contains exactly three extraction 400 responses and no traceback; SHA-256:
+`670275e26ec9a3bea567796ad3cd204d9e26cc341c943e9dce958fe75fd1f755`.
+This closes native package/two-language failure/retry verification for the fix,
+not native acceptance of all six languages or successful network recovery after
+a transient error. Six-language copy and successful retry remain component-test
+evidence. Formal installation and publication were untouched.
+
 ## URL extraction errors and explicit retry — after `92a29f1a`
 
 The URL attachment path rendered raw transport exception messages while file
