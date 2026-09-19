@@ -56,7 +56,8 @@ def main():
                 result = subprocess.run([str(native), "--ignored", "--exact",
                                          "recovery_control::tests::packaged_control_fixture", "--nocapture"],
                                         cwd=home, capture_output=True,
-                                        timeout=110 if payload["action"] == "trial" else 35, env=environment)
+                                        timeout=160 if payload["action"] == "shutdown" else (
+                                            110 if payload["action"] == "trial" else 35), env=environment)
                 assert result.returncode == 0, "native control fixture failed"
                 lines = [line.split(b"NATIVE_CONTROL_RESULT=", 1)[1] for line in result.stdout.splitlines()
                          if b"NATIVE_CONTROL_RESULT=" in line]
@@ -82,6 +83,8 @@ def main():
             client.close()
             assert stop(process) == 0
         active = home / "Library/Application Support/Arslan"
+        if native:
+            assert control({"action": "shutdown"}) == {"stopped": True}
         candidate = active.with_name("restored")
         archive = home / "backup.zip"
         backup.create(active, archive)
@@ -200,6 +203,7 @@ def main():
                       "native_control_transport": bool(native),
                       "native_trial_transport": args.native_trial,
                       "native_prepare_transport": bool(native),
+                      "native_normal_shutdown": bool(native),
                       "original_database_retained": True, "native_ui": False, "finalized": args.finalize,
                       "real_model": False, "installed_app": False,
                       "backend_sha256": hashlib.sha256(binary.read_bytes()).hexdigest()}))

@@ -2073,3 +2073,50 @@ The menu, file selection, original-key selection, exclusive UI coordination and
 normal-child shutdown/restart still require integration. The full temporary
 desktop bundle predates this change; no installed app, real data/secret/account,
 paid model, signing identity or publication was used.
+
+### Explicit normal-backend shutdown before recovery (2026-09-19)
+
+UI integration review found that closing the normal backend's parent pipe uses
+immediate `os._exit`, bypassing lifespan cleanup. A new exact parent-pipe
+`ARSLAN_SHUTDOWN` request instead asks the Uvicorn Server instance to stop and
+arms a 10-second failure watchdog. Ordinary EOF/broken-pipe parent-death cleanup
+remains unchanged. Requests arriving before server startup are unconfirmed.
+The normal lifespan records completion only after watcher, scheduler, curation,
+browser and MCP cleanup and database-engine disposal. Previously nonfatal stop
+exceptions remain nonfatal for ordinary shutdown but invalidate recovery-stop
+confirmation. Successful requested shutdown emits `ARSLAN_STOPPED=1`; incomplete
+cleanup returns failure without that receipt. This is tracked-service cleanup,
+not a claim that unrelated/older application processes have been stopped.
+
+The desktop now retains a per-child receipt observer beside its process handle.
+The native stop helper keeps stdin open, sends the request, requires exactly one
+post-request acknowledgement, successful process exit and clean stdout closure.
+Premature/duplicate/malformed acknowledgements, reader errors, already-exited
+children, failed exits and a 15-second deadline all refuse confirmation. On
+failure only the owned child is killed/reaped; this is NOT permission to move
+profiles or infer a safe graceful stop. Ordinary app exit behavior is unchanged.
+The menu coordinator does not invoke this helper yet.
+
+Native tests passed 60 cases with one opt-in fixture ignored (0.32s, 2.56s build).
+Focused packaged-entry, startup-backfill and shutdown-cleanup tests passed 58
+cases in 0.97s (one existing Starlette warning), including each cleanup failure,
+early requests and absent completion state. Ruff and whitespace checks passed.
+XcodeBuildMCP defaults remained unconfigured; tests used isolated offline Rust.
+
+The frozen backend built in 28.40s at
+`/tmp/arslan-candidate-build.BboGj4/dist-graceful-stop/arslan-server/arslan-server`.
+SHA-256: `f6d80eca684e74b035c3b901ad373ae954b46da008bf2e92282f86f8dcadebaf`.
+Bundle verification passed 15 imports, SPA resources and absence of prohibited
+rasterizers, databases and secrets (159 MiB before compute-runtime staging).
+Both actual native-stop → native-prepare → trial → rollback/finalize smoke chains
+passed on disposable synthetic profiles. A subsequent reader-error hardening
+change was unit-tested and the finalize chain rerun with the final native test
+binary (SHA-256 `9fe3e74741def8b5ebad808809e957011bf93935ce2766a3f8cbb4dedd79bc38`).
+The frozen binary predates a later docstring-only change, not a runtime change.
+
+Menu/file selection, operation-wide exclusivity, original-key selection and
+durable restart key-source handling remain unfinished. Review explicitly kept
+the existing external-key/data separation contract: no key was placed inside a
+profile or backup to shortcut restart handling. No real data, keys, accounts,
+installed app, signing or publication were involved. Full Python regression is
+required after this lifespan change; earlier full-run counts do not certify it.

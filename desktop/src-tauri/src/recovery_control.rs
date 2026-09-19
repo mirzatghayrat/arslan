@@ -626,6 +626,11 @@ mod tests {
             .unwrap_or_else(|_| panic!("invalid fixture"));
         let operation = std::env::var("ARSLAN_CONTROL_TEST_OPERATION").unwrap_or_default();
         let action = std::env::var("ARSLAN_CONTROL_TEST_ACTION").unwrap();
+        if action == "shutdown" {
+            crate::recovery_shutdown::packaged_fixture(&binary);
+            println!("NATIVE_CONTROL_RESULT={{\"ok\":true,\"result\":{{\"stopped\":true}}}}");
+            return;
+        }
         if action == "trial" {
             crate::recovery_trial::run(&binary, &operation, &key)
                 .unwrap_or_else(|error| panic!("native trial failed: {error:?}"));

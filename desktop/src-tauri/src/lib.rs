@@ -31,6 +31,9 @@ mod recovery_control;
 #[cfg(target_os = "macos")]
 #[allow(dead_code)]
 mod recovery_trial;
+#[cfg(target_os = "macos")]
+#[allow(dead_code)]
+mod recovery_shutdown;
 mod voice;
 use std::sync::Mutex;
 
@@ -71,11 +74,18 @@ const SPLASH_FADE_OUT: std::time::Duration = std::time::Duration::from_millis(40
 /// end, and the boot veil means a page still rendering looks like the splash.
 const REVEAL_DEADLINE: std::time::Duration = std::time::Duration::from_secs(15);
 
-/// Holds the sidecar so it can be killed on exit. `Mutex<Option<Child>>`
+/// Holds the sidecar so it can be killed on exit. `Mutex<Option<NormalChild>>`
 /// rather than a bare Child: `take()` on shutdown means a second exit event
 /// cannot try to kill an already-reaped process.
 #[derive(Default)]
-struct Sidecar(Mutex<Option<Child>>);
+struct Sidecar(Mutex<Option<NormalChild>>);
+
+struct NormalChild {
+    process: Child,
+    #[cfg(target_os = "macos")]
+    #[allow(dead_code)]
+    shutdown: std::sync::Arc<recovery_shutdown::Receipt>,
+}
 
 #[derive(Debug)]
 struct StartupFailure {
@@ -129,7 +139,7 @@ fn startup_error(line: &str, locale: &str) -> Option<String> {
 /// Blocking is deliberate. Doing this asynchronously would let the window
 /// appear before there is anything to show and require a second code path for
 /// "port arrived late"; the splash screen already covers the wait.
-fn start_sidecar(app: &tauri::AppHandle) -> Result<(u16, Child), StartupFailure> {
+fn start_sidecar(app: &tauri::AppHandle) -> Result<(u16, NormalChild), StartupFailure> {
     let exe = app
         .path()
         .resolve(
@@ -209,10 +219,20 @@ fn start_sidecar(app: &tauri::AppHandle) -> Result<(u16, Child), StartupFailure>
     // traceback in the packaged app. Draining to EOF also gives us the
     // sidecar's own output in Console.app, where it can be read after a crash.
     let (tx, rx) = std::sync::mpsc::channel::<Result<u16, StartupFailure>>();
+    #[cfg(target_os = "macos")]
+    let shutdown = std::sync::Arc::new(recovery_shutdown::Receipt::default());
+    #[cfg(target_os = "macos")]
+    let shutdown_reader = shutdown.clone();
     std::thread::spawn(move || {
         let mut announced = false;
         for line in BufReader::new(stdout).lines() {
-            let Ok(line) = line else { break };
+            let Ok(line) = line else {
+                #[cfg(target_os = "macos")]
+                shutdown_reader.failed();
+                break;
+            };
+            #[cfg(target_os = "macos")]
+            shutdown_reader.observe(&line);
             if !announced {
                 if let Some(message) = startup_failure(&line, native_locale::selected()) {
                     let _ = tx.send(Err(message));
@@ -231,6 +251,8 @@ fn start_sidecar(app: &tauri::AppHandle) -> Result<(u16, Child), StartupFailure>
             }
             eprintln!("[sidecar] {line}");
         }
+        #[cfg(target_os = "macos")]
+        shutdown_reader.closed();
         if !announced {
             let _ = tx.send(Err(format!(
                 "sidecar exited without printing {PORT_LINE_PREFIX}<port>"
@@ -239,7 +261,10 @@ fn start_sidecar(app: &tauri::AppHandle) -> Result<(u16, Child), StartupFailure>
     });
 
     match rx.recv_timeout(STARTUP_TIMEOUT) {
-        Ok(Ok(port)) => Ok((port, child)),
+        Ok(Ok(port)) => Ok((port, NormalChild { process: child,
+            #[cfg(target_os = "macos")]
+            shutdown,
+        })),
         Ok(Err(e)) => {
             let _ = child.kill();
             let _ = child.wait();
@@ -893,8 +918,8 @@ pub fn run() {
             // holding the database lock.
             if matches!(event, RunEvent::Exit | RunEvent::ExitRequested { .. }) {
                 if let Some(mut child) = app.state::<Sidecar>().0.lock().unwrap().take() {
-                    let _ = child.kill();
-                    let _ = child.wait();
+                    let _ = child.process.kill();
+                    let _ = child.process.wait();
                 }
             }
         });

@@ -107,6 +107,7 @@ def _log_data_location(cfg, *, log: logging.Logger = logger) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Create tables and run boot migrations/backfills on startup."""
+    app.state.shutdown_complete = False
     import os
     from pathlib import Path
 
@@ -281,11 +282,19 @@ async def lifespan(app: FastAPI):
     else:  # defensive: app built without the mount
         yield
 
+    await _shutdown_services(app)
+
+
+async def _shutdown_services(app: FastAPI) -> None:
+    """A recovery stop is confirmed only after every tracked cleanup succeeds."""
+    app.state.shutdown_complete = False
+    cleanup_complete = True
     try:
         from server.services import evolution_watcher as _evo_watcher
 
         await _evo_watcher.stop()
     except Exception as exc:  # noqa: BLE001 — watcher stop must never block shutdown
+        cleanup_complete = False
         logger.warning("evolution watcher stop failed (non-fatal): %s", exc)
 
     try:
@@ -293,6 +302,7 @@ async def lifespan(app: FastAPI):
 
         await _scheduler.stop()
     except Exception as exc:  # noqa: BLE001 — scheduler stop must never block shutdown
+        cleanup_complete = False
         logger.warning("scheduler stop failed (non-fatal): %s", exc)
 
     try:
@@ -300,12 +310,15 @@ async def lifespan(app: FastAPI):
 
         await _curation.stop()
     except Exception as exc:  # noqa: BLE001 — curation stop must never block shutdown
+        cleanup_complete = False
         logger.warning("curation loop stop failed (non-fatal): %s", exc)
 
     from server.api import browser as _browser_api
     await _browser_api.shutdown()
     from server.mcp.session import manager as _mcp_manager
     await _mcp_manager.aclose_all()
+    await engine.dispose()
+    app.state.shutdown_complete = cleanup_complete
 
 
 def create_app() -> FastAPI:

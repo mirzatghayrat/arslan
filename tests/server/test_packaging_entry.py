@@ -310,9 +310,9 @@ def test_the_port_is_announced_before_the_blocking_server_call(entry, monkeypatc
 
     import uvicorn
 
-    monkeypatch.setattr(
-        uvicorn, "run", lambda *a, **kw: events.append("served") or captured.update(kw)
-    )
+    from types import SimpleNamespace
+    monkeypatch.setattr(uvicorn, "Server", lambda config: SimpleNamespace(
+        run=lambda: events.append("served") or captured.update(vars(config))))
     monkeypatch.setattr(
         "builtins.print",
         lambda *a, **kw: events.append(f"printed:{a[0]}|flush={kw.get('flush')}"),
@@ -338,7 +338,8 @@ def test_the_server_binds_loopback_only(entry, monkeypatch):
     captured: dict = {}
     import uvicorn
 
-    monkeypatch.setattr(uvicorn, "run", lambda *a, **kw: captured.update(kw))
+    from types import SimpleNamespace
+    monkeypatch.setattr(uvicorn, "Server", lambda config: SimpleNamespace(run=lambda: captured.update(vars(config))))
     monkeypatch.setattr("builtins.print", lambda *a, **kw: None)
     monkeypatch.setenv("ARSLAN_PORT", "54321")
 
@@ -381,7 +382,8 @@ def test_main_routes_through_the_port_chooser_rather_than_hardcoding_one(entry, 
     printed: list[str] = []
     import uvicorn
 
-    monkeypatch.setattr(uvicorn, "run", lambda *a, **kw: captured.update(kw))
+    from types import SimpleNamespace
+    monkeypatch.setattr(uvicorn, "Server", lambda config: SimpleNamespace(run=lambda: captured.update(vars(config))))
     monkeypatch.setattr("builtins.print", lambda *a, **kw: printed.append(a[0]))
 
     entry.main()
@@ -406,7 +408,8 @@ def test_an_explicit_port_env_var_wins_over_the_os_assigned_one(entry, monkeypat
     captured: dict = {}
     import uvicorn
 
-    monkeypatch.setattr(uvicorn, "run", lambda *a, **kw: captured.update(kw))
+    from types import SimpleNamespace
+    monkeypatch.setattr(uvicorn, "Server", lambda config: SimpleNamespace(run=lambda: captured.update(vars(config))))
     monkeypatch.setattr("builtins.print", lambda *a, **kw: None)
 
     entry.main()
@@ -478,6 +481,43 @@ def test_the_lifeline_fires_on_eof_and_only_on_eof(entry):
     fired.clear()
     entry._watch_stdin(Broken(), on_eof=lambda: fired.append("exit"))
     assert fired == ["exit"]
+
+
+def test_exact_parent_shutdown_request_does_not_trigger_abrupt_eof(entry):
+    import io
+    events = []
+    entry._watch_stdin(io.StringIO("ARSLAN_SHUTDOWN\n"),
+                      on_eof=lambda: events.append("abrupt"), on_shutdown=lambda: events.append("graceful"))
+    assert events == ["graceful"]
+    for line in ("ARSLAN_SHUTDOWN extra\n", "ARSLAN_SHUTDOWN", "ARSLAN_SHUTDOWN\r\n"):
+        events.clear()
+        entry._watch_stdin(io.StringIO(line), on_eof=lambda: events.append("abrupt"),
+                          on_shutdown=lambda: events.append("graceful"))
+        assert events == ["abrupt"]
+
+
+@pytest.mark.parametrize("early,failed,complete,expected", [
+    (False, False, True, 0), (True, False, True, 1), (False, True, True, 1), (False, False, False, 1),
+])
+def test_requested_shutdown_requires_completed_lifespan(entry, monkeypatch, capsys, early, failed, complete, expected):
+    from types import SimpleNamespace
+    import uvicorn
+    from server.main import app
+    monkeypatch.setattr(app.state, "shutdown_complete", complete, raising=False)
+    monkeypatch.setenv("ARSLAN_PORT", "54321")
+    callback = []
+    monkeypatch.setattr(entry, "_die_when_the_shell_does", lambda on_shutdown: callback.append(on_shutdown))
+    server = SimpleNamespace(started=not early, should_exit=False,
+                             lifespan=SimpleNamespace(shutdown_failed=failed))
+    def run():
+        callback[0]()
+        server.started = True
+    server.run = run
+    monkeypatch.setattr(uvicorn, "Server", lambda config: server)
+    assert entry._serve() == expected
+    assert server.should_exit
+    output = capsys.readouterr().out
+    assert ("ARSLAN_STOPPED=1\n" in output) is (expected == 0)
 
 
 def test_the_lifeline_is_inert_outside_a_frozen_build(entry, monkeypatch):

@@ -108,7 +108,7 @@ def _point_static_dir_into_the_bundle() -> None:
         )
 
 
-def _die_when_the_shell_does() -> None:
+def _die_when_the_shell_does(on_shutdown=None) -> None:
     """Exit as soon as our parent's end of stdin closes.
 
     The Tauri shell also kills us on its exit events, but that only covers
@@ -146,20 +146,26 @@ def _die_when_the_shell_does() -> None:
         return
 
     threading.Thread(
-        target=_watch_stdin, args=(sys.stdin,), daemon=True, name="parent-watchdog"
+        target=_watch_stdin, args=(sys.stdin,), kwargs={"on_shutdown": on_shutdown},
+        daemon=True, name="parent-watchdog"
     ).start()
 
 
-def _watch_stdin(stream, on_eof=None) -> None:
+def _watch_stdin(stream, on_eof=None, on_shutdown=None) -> None:
     """Block until `stream` hits EOF, then exit the process.
 
+    A trusted parent may send ARSLAN_SHUTDOWN before EOF to request normal
+    lifespan cleanup. Its callback owns a bounded failure watchdog; ordinary
+    EOF/broken-pipe handling remains immediate parent-death cleanup.
     Split out of the thread body so it can be tested with a fake stream and an
     injected on_eof — otherwise the only way to exercise it would be to let it
     call os._exit and take the test runner with it.
     """
     try:
-        while stream.readline():
-            pass  # The shell sends nothing; any input is simply ignored.
+        while line := stream.readline():
+            if line == "ARSLAN_SHUTDOWN\n" and on_shutdown is not None:
+                on_shutdown()
+                return  # The callback arms its own bounded-exit watchdog.
     except Exception:  # noqa: BLE001 — a broken pipe means the same thing
         pass
     print("shell closed our stdin — exiting", file=sys.stderr, flush=True)
@@ -566,23 +572,50 @@ def _serve() -> int:
     # buffer to fill and the app would appear to hang on a blank window.
     print(f"{PORT_LINE_PREFIX}{port}", flush=True)
 
-    _die_when_the_shell_does()
-
     import uvicorn
+    import threading
 
     # 127.0.0.1, never 0.0.0.0: the API is unauthenticated to anything that
     # already has the token, and binding the wildcard would put a desktop
     # app's whole brain on the local network. server/main.py:85 warns about
     # exactly this combination.
-    uvicorn.run(
+    server = uvicorn.Server(uvicorn.Config(
         "server.main:app",
         host="127.0.0.1",
         port=port,
         log_level="info",
         # No reloader, no extra workers: one process, killed by the shell.
         workers=1,
-    )
-    return 0
+    ))
+    requested = threading.Event()
+    early = threading.Event()
+    watchdog = None
+
+    def shutdown():
+        nonlocal watchdog
+        if not server.started:
+            early.set()
+        requested.set()
+        server.should_exit = True
+        watchdog = threading.Timer(10, lambda: os._exit(1))
+        watchdog.daemon = True
+        watchdog.start()
+
+    _die_when_the_shell_does(on_shutdown=shutdown)
+    try:
+        server.run()
+        if requested.is_set():
+            from server.main import app
+            complete = (not early.is_set() and server.started
+                        and not server.lifespan.shutdown_failed
+                        and getattr(app.state, "shutdown_complete", False))
+            if complete:
+                print("ARSLAN_STOPPED=1", flush=True)
+            return 0 if complete else 1
+        return 0
+    finally:
+        if watchdog is not None:
+            watchdog.cancel()
 
 
 if __name__ == "__main__":
