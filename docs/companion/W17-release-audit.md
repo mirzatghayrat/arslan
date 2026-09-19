@@ -2276,3 +2276,66 @@ Rust workflow was used. No new backend runtime changes, full desktop rebundle,
 native UI acceptance, update download/install, real profile/key/account or
 publication was performed. Concrete UI integration and current-bundle click
 validation remain next, not certified by these tests.
+
+### Native recovery UI and actual desktop restart (2026-09-19)
+
+Added the gated native File > Restore from Backup entry and `recovery_ui.rs`
+adapter. It owns selected archive/original-key paths, captures actual launch
+configuration, proves the existing private default target key and rechecks
+archive identity and durable target proof at subsequent boundaries. The source
+key is read from the selected file, never substituted from launch environment.
+All operations remain outside web/model IPC. Native consent precedes shutdown
+and candidate-only credential adaptation; a separate consent follows isolated
+trial and precedes finalization/restart. Uncertain failures retain paused
+maintenance without automatic retry. Six-language product copy is included.
+
+Actual temporary-app clicks caught two integration defects not represented by
+the coordinator unit tests. rfd 0.16.0 reuses NSOpenPanel and only resets its
+allowed types when a filter is supplied: the unfiltered second picker inherited
+the ZIP restriction. An explicit empty-extension filter now clears it, and the
+same `.key` file was selectable on retest. Unparented rfd message dialogs use
+CFUserNotification; the confirmation did not appear in Arslan's accessibility
+tree and the system notification app was inaccessible to the test tool. No
+restricted system UI was operated. Recovery confirmations/notices now have the
+Arslan main window as their parent; actual native sheets and Chinese button
+labels were then observed and clicked normally.
+
+Final source native tests passed **74 cases, one opt-in fixture ignored**, in
+0.33s after 2.08s compilation. Final temporary native release built in 1m06s,
+then bundled without signing at
+`/tmp/arslan-native-candidate.xIygc5/target/release/bundle/macos/Arslan.app`.
+Its native executable SHA-256 is
+`d9c5b6ddc01e6cdb9720dbb95b076e612fd66e31272b5f5db6391b00a1a8acb4`;
+test executable SHA-256 is
+`ea1d1f0f5db59f236ac986459bb8a54f79448dcf43603f2432557ef37383976e`.
+Staged Rust sources/catalog match the worktree. Frozen backend is unchanged
+from the preceding rewrap checkpoint. Full sidecar bundle verification passed
+15 imports, web assets, prohibited-rasterizer, database and secret checks (431 MiB).
+
+Disposable fixture `/private/tmp/arslan-native-restore-ui-gfles374` used different
+synthetic backup/installation keys and a synthetic saved credential. Native ZIP
+and original-key picker cancellation left the same service healthy and original
+directory intact, with no candidate or activation record. On the completed
+path, the first native consent was clicked, acknowledged graceful shutdown was
+observed, then prepare/rewrap/switch/isolated trial reached the second native
+confirmation. Clicking activation caused a real new app/backend process and a
+healthy Chinese workspace. The settings API decrypted/masked the synthetic
+credential successfully. A subsequent full quit and independent desktop launch
+also passed, with **no ARSLAN_SECRET_KEY_FILE override in the app environment**.
+The original directory inode 120515006 is retained under
+`.arslan-previous-5ff95ab0-905a-4adc-ab9a-41f2065cd400`, the active inode differs,
+the pending activation record is absent, and the archive SHA-256 remains
+`01dc34b13df62fe3665609808b470d6f78bd7f2f9de3b2e01405b6b894b271c5`.
+Both synthetic key contents and target private mode remain unchanged. This
+proves original-directory retention, not a pre/post byte hash of every original
+file. The owned temporary app/backend were closed at the end.
+
+Remaining: actual first-consent cancellation, keep-paused and fresh-launch bound
+rollback, wrong-key/error native sheets, all six native language/layout cases,
+locale continuity before normal boot, and a current full regression. The older
+startup rollback confirmation still uses an unparented dialog and needs the
+same native ownership review before click certification. The live main webview
+is not yet replaced by a dedicated maintenance view. Custom key locations are
+still refused by this recovery path. No real profile/key/account, paid model,
+installed-app replacement, signing or publication occurred. This checkpoint
+does not close the overall recovery or release gate.

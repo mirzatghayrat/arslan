@@ -11,7 +11,7 @@ pub struct NativeMenu {
 }
 
 fn text(locale: &str, key: &str) -> String {
-    if key == "check_title" {
+    if key == "check_title" || key.starts_with("restore_") {
         return crate::native_locale::text(locale, key);
     }
     static COPY: std::sync::OnceLock<serde_json::Value> = std::sync::OnceLock::new();
@@ -89,11 +89,13 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
             &role!(quit, "quit"),
         ],
     )?;
+    let restore = labelled(&mut labels, MenuItem::with_id(app, "restore-backup",
+        text(locale, "restore_title"), app.state::<crate::maintenance::Gate>().is_idle(), None::<&str>)?, "restore_title");
     let file = Submenu::with_items(
         app,
         text(locale, "file"),
         true,
-        &[&role!(close_window, "close")],
+        &[&restore, &PredefinedMenuItem::separator(app)?, &role!(close_window, "close")],
     )?;
     let edit = Submenu::with_items(
         app,
@@ -165,7 +167,7 @@ fn refresh_on_main_thread(app: &AppHandle) {
     };
     if let Some(gate) = app.try_state::<crate::maintenance::Gate>() {
         for (item, key) in &menu.labels {
-            if *key == "check_title" {
+            if *key == "check_title" || *key == "restore_title" {
                 if let MenuItemKind::MenuItem(item) = item {
                     let _ = item.set_enabled(gate.is_idle());
                 }

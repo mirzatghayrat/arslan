@@ -7,7 +7,7 @@ An engineering regression passing does not make the candidate releasable.
 
 | Gate | Current evidence / gap | Evidence required to close it |
 | --- | --- | --- |
-| Safe user-facing recovery (I01/I05, W17) | Native prepare, bound rollback, trial, acknowledged stop, durable-key proof and rewrap exist. A shared maintenance gate and ordered coordinator policy now exist, but `native_menu.rs` still has no restore item or concrete recovery UI adapter. | Trusted archive/key selection and explicit consent; connect policy to actual native stop/prepare/rewrap/switch/trial/finalize/restart; cancellation/failure paths; real native clicks; retained original data and credentials after a later independent restart. |
+| Safe user-facing recovery (I01/I05, W17) | Gated native menu and archive/key/dialog adapter exist. Actual temporary-app clicks passed picker cancellation and consent/stop/prepare/rewrap/switch/trial/finalize/restart, followed by independent default-key desktop reopen with readable synthetic credentials and retained original directory. | Native first-consent cancellation, keep-paused/fresh-launch bound rollback and failure branches; parent the older startup rollback dialog; maintenance view and locale continuity; custom durable key configuration. |
 | Isolated credentials and approvals (W11) | Approval storage/admission and command boundaries have synthetic evidence. ASC contracts still return `isolated_credential_broker_review_required`; no production credential transport. | Trusted broker identity and OS boundary evidence, approval UI, hostile file/process/port/debugger canaries, revocation races and independent security review before genuine secrets. |
 | Account workflow (W12/W13) | Preparation and host-only single-field execution exist; fixture transport is not real account support. | After W11: authorized target binding, real read-only account validation, approved test draft write and independent readback; screenshot/partial-write handling. Submission and publication remain separately disabled unless authorized. |
 | Interactive browser and dock (W19) | Public bounded navigation and dock have component/app/native evidence at recorded checkpoints. Authenticated interaction is not certified. | Finish the approved interaction/permission scope, ownership/cancellation and sensitive-action boundaries; inspect current packaged browser/dock behavior and artifacts. Do not substitute static previews for interaction. |
@@ -34,8 +34,9 @@ An engineering regression passing does not make the candidate releasable.
    `W17-recovery-key-restart.md` records a candidate-only credential re-encryption
    primitive, native durable default-file proof and bounded rewrap transport.
    Real frozen-backend tests now cover two independent normal default-key boots
-   after native rewrap/trial/finalize. Consent and coordinator integration remain
-   unfinished, as does durable recovery configuration for custom key locations;
+   after native rewrap/trial/finalize. Consent/coordinator integration is now
+   implemented but native acceptance remains unfinished, as does durable recovery
+   configuration for custom key locations;
    this is not native-window acceptance or blanket consent to rewrite secrets.
 3. Connect the trusted native recovery coordinator and UI. Include exclusivity
    against startup/update/another recovery, owned-child shutdown, explicit pending

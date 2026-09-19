@@ -23,7 +23,7 @@ fn pending(error: &std::io::Error) -> bool {
     )
 }
 
-fn token() -> Result<String, TrialError> {
+pub(super) fn token() -> Result<String, TrialError> {
     let mut bytes = [0u8; 32];
     // SAFETY: getentropy writes exactly this live, writable 32-byte buffer.
     if unsafe { libc::getentropy(bytes.as_mut_ptr().cast(), bytes.len()) } != 0 {

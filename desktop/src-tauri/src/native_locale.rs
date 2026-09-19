@@ -34,6 +34,13 @@ pub fn selected() -> &'static str {
 }
 
 pub fn text(locale: &str, key: &str) -> String {
+    if key.starts_with("restore_") {
+        static RECOVERY: std::sync::OnceLock<serde_json::Value> = std::sync::OnceLock::new();
+        let copy = RECOVERY.get_or_init(|| serde_json::from_str(include_str!("../recovery_messages.json"))
+            .expect("recovery dialog catalog must be valid JSON"));
+        return copy.get(locale).and_then(|row| row.get(key)).or_else(|| copy["en"].get(key))
+            .and_then(|value| value.as_str()).unwrap_or("Arslan").to_string();
+    }
     static COPY: std::sync::OnceLock<serde_json::Value> = std::sync::OnceLock::new();
     let copy = COPY.get_or_init(|| {
         serde_json::from_str(include_str!("../native_messages.json"))
@@ -70,6 +77,20 @@ pub fn boot_error_script(locale: &str, detail: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn recovery_ui_copy_covers_all_six_locales() {
+        let copy: serde_json::Value = serde_json::from_str(include_str!("../recovery_messages.json")).unwrap();
+        let keys = copy["en"].as_object().unwrap();
+        assert_eq!(keys.len(), 10);
+        assert_eq!(copy.as_object().unwrap().len(), 6);
+        for locale in ["en", "zh", "ja", "es", "de", "fr"] {
+            assert_eq!(copy[locale].as_object().unwrap().len(), keys.len());
+            for key in keys.keys() {
+                assert_eq!(text(locale, key), copy[locale][key].as_str().unwrap());
+                assert!(!text(locale, key).trim().is_empty());
+            }
+        }
+    }
     #[test]
     fn boot_data_and_error_details_are_json_not_executable_content() {
         for locale in ["en", "zh", "ja", "es", "de", "fr"] {

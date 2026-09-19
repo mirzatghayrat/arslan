@@ -37,7 +37,8 @@ pub(crate) trait Steps {
     fn trial(&mut self, operation: &str) -> Result<(), ()>;
     fn confirm_finalization(&mut self, operation: &str) -> bool;
     fn finalize(&mut self, operation: &str) -> Result<(), ()>;
-    /// Must observe normal health/readiness, not merely spawn a child.
+    /// Must observe normal health/readiness before returning success, or diverge
+    /// into desktop relaunch whose normal boot owns health and window reveal.
     fn restart(&mut self) -> Result<(), ()>;
 }
 

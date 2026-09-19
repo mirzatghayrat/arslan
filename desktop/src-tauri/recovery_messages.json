@@ -1,0 +1,74 @@
+{
+  "en": {
+    "restore_title": "Restore from Backup…",
+    "restore_archive": "Choose an Arslan backup ZIP",
+    "restore_key": "Choose the backup's original encryption key file (not an API key)",
+    "restore_confirm": "Stop current work and prepare this backup for recovery? Close other copies of Arslan first.\n\nA separate candidate will be created. Its saved credentials will be adapted to this installation's existing external key. Your original data, backup and key files will be retained.\n\nAfter an isolated startup check, you will confirm separately before activation. Selected backup and original key file:",
+    "restore_begin": "Stop work and prepare",
+    "restore_activate_prompt": "The restored candidate passed its isolated startup check. Activate it and restart Arslan?\n\nThe original data remains retained. Normal startup may resume enabled background services. Choose Keep paused to leave recovery unfinished without activating normal startup.",
+    "restore_activate": "Activate and restart",
+    "restore_refused": "Recovery could not safely begin. No data was replaced and the running service was not stopped. Check the selected backup and original key file. This recovery path requires a private, existing default external key file; temporary or conflicting key settings are not accepted.",
+    "restore_paused": "Recovery is paused. The last operation's result may be uncertain; it will not be retried automatically. Your original data and any restored candidate are retained.\n\nDo not delete or move the data folders or recovery records. Quit and reopen Arslan; if a switch is pending, it will offer a separate confirmation to return to the original data.",
+    "restore_working": "Arslan — Restoring data…"
+  },
+  "zh": {
+    "restore_title": "从备份恢复…",
+    "restore_archive": "选择 Arslan 备份 ZIP 文件",
+    "restore_key": "选择备份的原加密密钥文件（不是 API 密钥）",
+    "restore_confirm": "停止当前工作并准备恢复此备份？请先关闭其他 Arslan 实例。\n\n系统会创建独立候选资料，并将其中保存的凭据转换为由本机现有外部密钥保护。原资料、备份及密钥文件都会保留。\n\n隔离试启动通过后，启用前还会再次征求确认。所选备份与原密钥文件：",
+    "restore_begin": "停止工作并准备",
+    "restore_activate_prompt": "恢复候选资料已通过隔离试启动。是否启用它并重启 Arslan？\n\n原资料仍会保留。正常启动可能恢复运行已启用的后台服务。选择“保持暂停”会保留未完成的恢复状态，不启动正常服务。",
+    "restore_activate": "启用并重启",
+    "restore_refused": "无法安全开始恢复。未替换资料，也未停止正在运行的服务。请检查所选备份与原密钥文件。此恢复流程要求默认位置已有仅本人可读的外部密钥；暂不接受临时或相互冲突的密钥设置。",
+    "restore_paused": "恢复已暂停。最后一步的结果可能尚不确定，系统不会自动重试。原资料与已创建的恢复候选资料均予以保留。\n\n请勿删除或移动资料文件夹及恢复记录。退出并重新打开 Arslan；如果资料切换尚未完成，应用会另行询问是否回退到原资料。",
+    "restore_working": "Arslan — 正在恢复资料…"
+  },
+  "ja": {
+    "restore_title": "バックアップから復元…",
+    "restore_archive": "Arslan のバックアップ ZIP を選択",
+    "restore_key": "バックアップの元の暗号化キーファイルを選択（API キーではありません）",
+    "restore_confirm": "現在の作業を停止して、このバックアップの復元を準備しますか？先にほかの Arslan を閉じてください。\n\n独立した復元候補を作成し、保存済み認証情報をこの環境の既存の外部キーで保護し直します。元のデータ、バックアップ、キーファイルは保持されます。\n\n隔離した起動確認後、有効化前に再度確認します。選択したバックアップと元のキーファイル：",
+    "restore_begin": "作業を停止して準備",
+    "restore_activate_prompt": "復元候補の隔離起動確認に成功しました。有効化して Arslan を再起動しますか？\n\n元のデータは保持されます。通常起動では有効なバックグラウンドサービスが再開される場合があります。「停止を維持」を選ぶと復元は未完了のまま保持され、通常のサービスは起動しません。",
+    "restore_activate": "有効化して再起動",
+    "restore_refused": "安全に復元を開始できませんでした。データの置換や実行中サービスの停止は行っていません。バックアップと元のキーファイルを確認してください。この復元には既定の場所にある本人のみが読める外部キーが必要です。一時的または競合するキー設定は利用できません。",
+    "restore_paused": "復元を停止しました。最後の処理結果が不確かな可能性があるため、自動では再試行しません。元のデータと作成済みの復元候補は保持されています。\n\nデータフォルダーや復元記録を削除・移動しないでください。Arslan を終了して再度開くと、切り替えが未完了の場合は元のデータに戻すかを別途確認します。",
+    "restore_working": "Arslan — データを復元中…"
+  },
+  "es": {
+    "restore_title": "Restaurar desde una copia…",
+    "restore_archive": "Elige una copia ZIP de Arslan",
+    "restore_key": "Elige el archivo de clave de cifrado original de la copia (no una clave API)",
+    "restore_confirm": "¿Detener el trabajo actual y preparar esta copia para restaurarla? Cierra primero las otras instancias de Arslan.\n\nSe creará una copia candidata independiente. Sus credenciales se adaptarán a la clave externa existente de esta instalación. Se conservarán los datos originales, la copia y los archivos de claves.\n\nTras una prueba de inicio aislada, se pedirá otra confirmación antes de activarla. Copia y archivo de clave original seleccionados:",
+    "restore_begin": "Detener y preparar",
+    "restore_activate_prompt": "La copia restaurada superó la prueba de inicio aislada. ¿Activarla y reiniciar Arslan?\n\nLos datos originales se conservarán. El inicio normal puede reanudar los servicios en segundo plano habilitados. Mantener en pausa dejará la recuperación pendiente sin iniciar los servicios normales.",
+    "restore_activate": "Activar y reiniciar",
+    "restore_refused": "No se pudo iniciar la recuperación con seguridad. No se sustituyeron datos ni se detuvo el servicio. Revisa la copia y la clave original seleccionadas. Esta recuperación requiere una clave externa privada ya existente en la ubicación predeterminada; no admite configuraciones temporales o contradictorias.",
+    "restore_paused": "La recuperación está en pausa. El resultado de la última operación puede ser incierto; no se reintentará automáticamente. Se conservan los datos originales y la copia restaurada creada.\n\nNo borres ni muevas las carpetas ni los registros de recuperación. Cierra y vuelve a abrir Arslan; si hay un cambio pendiente, se pedirá confirmación para volver a los datos originales.",
+    "restore_working": "Arslan — Restaurando datos…"
+  },
+  "de": {
+    "restore_title": "Aus Sicherung wiederherstellen…",
+    "restore_archive": "Arslan-Sicherung als ZIP auswählen",
+    "restore_key": "Ursprüngliche Verschlüsselungsschlüsseldatei der Sicherung wählen (kein API-Schlüssel)",
+    "restore_confirm": "Aktuelle Arbeit stoppen und diese Sicherung vorbereiten? Schließe zuerst andere Arslan-Instanzen.\n\nEine separate Wiederherstellungskopie wird erstellt. Ihre Zugangsdaten werden für den vorhandenen externen Schlüssel dieser Installation neu verschlüsselt. Originaldaten, Sicherung und Schlüsseldateien bleiben erhalten.\n\nNach einer isolierten Startprüfung wird die Aktivierung gesondert bestätigt. Gewählte Sicherung und ursprüngliche Schlüsseldatei:",
+    "restore_begin": "Arbeit stoppen und vorbereiten",
+    "restore_activate_prompt": "Die Wiederherstellungskopie hat die isolierte Startprüfung bestanden. Aktivieren und Arslan neu starten?\n\nDie Originaldaten bleiben erhalten. Beim normalen Start können aktivierte Hintergrunddienste fortgesetzt werden. Mit „Pausiert lassen“ bleibt die Wiederherstellung offen, ohne normale Dienste zu starten.",
+    "restore_activate": "Aktivieren und neu starten",
+    "restore_refused": "Die Wiederherstellung konnte nicht sicher beginnen. Es wurden keine Daten ersetzt und keine laufenden Dienste gestoppt. Prüfe die Sicherung und die ursprüngliche Schlüsseldatei. Erforderlich ist eine vorhandene private externe Schlüsseldatei am Standardort; vorübergehende oder widersprüchliche Einstellungen werden nicht akzeptiert.",
+    "restore_paused": "Die Wiederherstellung ist pausiert. Das Ergebnis des letzten Vorgangs kann ungewiss sein; er wird nicht automatisch wiederholt. Originaldaten und erstellte Wiederherstellungskopien bleiben erhalten.\n\nDatenordner und Wiederherstellungsprotokolle nicht löschen oder verschieben. Beende und öffne Arslan erneut. Bei einem ausstehenden Wechsel wird die Rückkehr zu den Originaldaten gesondert bestätigt.",
+    "restore_working": "Arslan — Daten werden wiederhergestellt…"
+  },
+  "fr": {
+    "restore_title": "Restaurer une sauvegarde…",
+    "restore_archive": "Choisir une sauvegarde ZIP d’Arslan",
+    "restore_key": "Choisir le fichier de clé de chiffrement d’origine (pas une clé API)",
+    "restore_confirm": "Arrêter le travail en cours et préparer cette sauvegarde ? Fermez d’abord les autres instances d’Arslan.\n\nUne copie candidate distincte sera créée. Ses identifiants seront adaptés à la clé externe existante de cette installation. Les données d’origine, la sauvegarde et les fichiers de clés seront conservés.\n\nAprès un essai de démarrage isolé, une autre confirmation sera demandée avant l’activation. Sauvegarde et fichier de clé d’origine sélectionnés :",
+    "restore_begin": "Arrêter et préparer",
+    "restore_activate_prompt": "La copie restaurée a réussi l’essai de démarrage isolé. L’activer et redémarrer Arslan ?\n\nLes données d’origine seront conservées. Le démarrage normal peut reprendre les services d’arrière-plan activés. « Maintenir en pause » laisse la restauration inachevée sans démarrer les services normaux.",
+    "restore_activate": "Activer et redémarrer",
+    "restore_refused": "La restauration n’a pas pu commencer en toute sécurité. Aucune donnée n’a été remplacée et aucun service en cours n’a été arrêté. Vérifiez la sauvegarde et la clé d’origine sélectionnées. Cette procédure exige une clé externe privée existante à l’emplacement par défaut ; les réglages temporaires ou contradictoires ne sont pas acceptés.",
+    "restore_paused": "La restauration est en pause. Le résultat de la dernière opération peut être incertain ; elle ne sera pas relancée automatiquement. Les données d’origine et la copie restaurée créée sont conservées.\n\nNe supprimez ni ne déplacez les dossiers ou les journaux de restauration. Quittez puis rouvrez Arslan ; si un changement reste en attente, le retour aux données d’origine fera l’objet d’une confirmation distincte.",
+    "restore_working": "Arslan — Restauration des données…"
+  }
+}

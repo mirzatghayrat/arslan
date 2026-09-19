@@ -25,6 +25,8 @@ mod maintenance;
 #[cfg(target_os = "macos")]
 #[allow(dead_code)]
 mod recovery_coordinator;
+#[cfg(target_os = "macos")]
+mod recovery_ui;
 // Internal preparation only; no IPC endpoint until trusted recovery UI is wired.
 #[cfg(target_os = "macos")]
 #[allow(dead_code)]
@@ -893,6 +895,10 @@ pub fn run() {
             refresh_update_menu(app);
             if event.id() == "check-for-updates" {
                 check_for_updates(app.clone(), true);
+            }
+            #[cfg(target_os = "macos")]
+            if event.id() == "restore-backup" {
+                recovery_ui::begin(app.clone());
             }
         })
         .on_window_event(|window, event| {
