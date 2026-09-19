@@ -1,5 +1,14 @@
 # Remaining release gates — triage, not completion certification
 
+Latest verification of `a5c62c2e`: temporary native web resources now include
+the partial-extraction wording. German/dark at 1171 × 768 visibly preserves
+the complete status; the synthetic 42,490-byte code fixture yields 12,000
+characters and `(teilweise extrahiert)`. Attachment removed without sending,
+then the temporary app and sidecar exited. W21 records the bundle identity.
+Current backend `36070eaa` full regression completed: **5,317 passed,
+14 skipped, 19 warnings, 537.59s**, exit 0. W20 records the report hash.
+These close the focused pending checks below, not the broader release gates.
+
 Newest web source checkpoint after `247a896b`: six-language composer notices
 now describe partial extraction rather than assuming truncation. Artifact
 previews distinguish partial extraction from the raw-text display cap. Full

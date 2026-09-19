@@ -1,5 +1,22 @@
 # W21 — six-language consistency (in progress)
 
+## Packaged partial-copy verification — `a5c62c2e`, 2026-09-19
+
+Only the temporary candidate's web resources were refreshed and rebundled,
+unsigned. Source and bundled `index-D9o_5oeC.js` share SHA-256
+`14b60db4561b991fee2bbbe2f51300fb9d0751d5782a5f6b7524bd35e9538c84`.
+Native/backend binaries are unchanged. In the existing synthetic HOME,
+German/dark at 1171 × 768, importing the synthetic 42,490-byte `.ts` fixture
+visibly displayed `12000 Zeichen (teilweise extrahiert)`. The status and
+remove control fit; only the long filename was visually ellipsized, with its
+full name retained in accessibility text. The attachment was removed without
+sending, and native app/sidecar termination was verified. No real model,
+account, formal install replacement or publication was involved.
+
+This supersedes the pending native refresh below. Six-language component
+coverage is not a six-language native/theme/size matrix, and ArtifactPreview's
+new distinction still has component rather than comprehensive native evidence.
+
 ## Partial-extraction wording — after `247a896b`
 
 Native PDF validation showed the composer labelled an unread-page result as

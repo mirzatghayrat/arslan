@@ -1,5 +1,17 @@
 # W20 — shared format matrix and local extraction
 
+## Current backend full regression — `36070eaa`, 2026-09-19
+
+Complete isolated regression finished with **5,317 passed, 14 skipped,
+19 warnings in 537.59s**, exit 0. This includes the damaged image-inventory
+hardening, unlike the earlier 5,315-case report. JUnit:
+`/tmp/arslan-pdf-hardening-regression.JvQWPZ/full.xml`, SHA-256
+`4fda4a24cb0dd1c4983d13788eae3b4d9fbfea5631e2c919305c8d39197e48e0`.
+The existing aiosqlite test guard suppressed 35 closed-loop deliveries; this
+is not a claim that the underlying teardown issue was fixed. Later changes
+through `a5c62c2e` affect frontend wording/tests and audit records, not backend
+sources. Broad real-document/model quality gates remain open.
+
 ## Attachment delivery fidelity — 2026-09-19, after `3a5cab09`
 
 Both main and direct-expert composers now carry extraction limitations into
