@@ -692,7 +692,10 @@ fn boot(app: tauri::AppHandle, splash_since: std::time::Instant, maintenance: Na
             let executable = app.path().resolve("sidecar/arslan-server", tauri::path::BaseDirectory::Resource)
                 .map_err(|_| refused())?;
             match recovery_control::run(&executable, &recovery_control::Request::RollbackBound { operation_id: operation }) {
-                Ok(recovery_control::Outcome::RolledBack(true)) => Ok(()),
+                Ok(recovery_control::Outcome::RolledBack(true)) => {
+                    refresh_boot_locale(&app);
+                    Ok(())
+                },
                 _ => Err(refused()),
             }
         },
@@ -711,6 +714,7 @@ fn boot(app: tauri::AppHandle, splash_since: std::time::Instant, maintenance: Na
             return report_boot_failure(&app, &e.message);
         },
     };
+    refresh_boot_locale(&app);
     if let Err(e) = wait_for_health(port) {
         maintenance.complete();
         return report_boot_failure(&app, &e);
@@ -740,12 +744,15 @@ fn boot(app: tauri::AppHandle, splash_since: std::time::Instant, maintenance: Na
     });
 }
 
-/// Report a failed start on the window that is already in front of the user.
-///
-/// This path used to be `?` out of `setup`, which panicked before any window
-/// had been built: the app died having shown nothing at all, and the user had
-/// no way to tell a crash from a slow launch. The launch screen is on screen
-/// by the time anything here can fail, so it carries the message.
+/// Refresh display-only startup copy after profile rollback or cache repair.
+fn refresh_boot_locale(app: &tauri::AppHandle) {
+    if let Some(splash) = app.get_webview_window(SPLASH_LABEL) {
+        let _ = splash.eval(native_locale::refresh_boot_script(native_locale::selected()));
+    }
+}
+
+/// Report a failed start on the already-visible launch screen, not a panic
+/// before a window exists or a silent disappearance.
 fn report_boot_failure(app: &tauri::AppHandle, message: &str) {
     eprintln!("Arslan failed to start: {message}");
     if let Some(splash) = app.get_webview_window(SPLASH_LABEL) {

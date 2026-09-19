@@ -2407,3 +2407,74 @@ reported 65 deliveries into closed event loops; these and the existing warning
 classes are not claimed fixed. Only the native splash-parent change and audit
 notes changed during this full run. These tests do not certify the unresolved
 native locale or broader release gates.
+
+### Restore-time language cache and six native pending-recovery locales (2026-09-19)
+
+Fixed the confirmed missing-language-hint cause at the restore boundary.
+`backup.restore` now derives `ui_language` in its private staging directory,
+before installing the candidate. It reads only the bounded language setting
+from a real settings table with query-only/trusted-schema-off SQLite, a VM
+budget and duplicate/type/length checks. Missing/legacy/invalid display settings
+fall back to English. It never trusts a cache from the archive, never imports
+configuration/key bootstrap and never gives the cache activation authority.
+The derived file is exclusively created as 0600 and fsynced; output failure
+aborts before installation. Archive member counts retain their original meaning.
+The existing normalization function moved unchanged to a config-free module.
+
+The bundled splash now exposes a textContent-only refresh hook. Native startup
+refreshes its display copy immediately after successful bound rollback and
+after ordinary backend startup repairs its cache. This fixes the stale initial
+language when the original and candidate use different languages. No new web
+IPC command or recovery permission is introduced.
+
+Focused backup/native-locale/runtime-copy/profile-activation/rewrap tests passed
+**162 cases in 48.00s**, one existing warning. The first run caught a test fixture
+retaining a SQLite connection, whose delayed WAL checkpoint invalidated a byte
+comparison; fixture connections are now explicitly closed before snapshots.
+The new shipped-splash DOM test and existing boot-veil tests passed **7 cases**,
+including all six languages, returning to an earlier language and markup treated
+as plain text. Its initial test-only URL-resolution issue was corrected.
+TypeScript, Ruff and whitespace checks passed. Final native tests passed
+**74 cases, one opt-in fixture ignored**, in 0.33s after 2.46s compilation.
+
+The backend froze in 24.92s at
+`/tmp/arslan-candidate-build.BboGj4/dist-recovery-locale/arslan-server/arslan-server`,
+SHA-256 `6e3dc602bdc44b397366a307492644d6bbd3ae099ee207110a9a7bec2abb1401`.
+The temporary native release built in 1m07s and was bundled unsigned at the
+existing temporary app path. Native executable SHA-256:
+`db301d6e045f893791c5aca898bc58c477179d6289483f348344d65fbcaf9e24`.
+Staged Rust/splash sources match the worktree. Full bundle verification passed
+15 imports, assets and prohibited-rasterizer/database/secret checks (431 MiB).
+Frozen native rewrap/trial/finalize plus two independent normal default-key
+boots passed again with preserved original/archive/key evidence.
+
+Six disposable profiles used actual frozen native prepare/switch, with a
+different original language to expose stale-copy problems:
+`arslan-frozen-trial-locale-en-e48b1d_3`,
+`arslan-frozen-trial-locale-zh-_5pqw2cr`,
+`arslan-frozen-trial-locale-ja-4lq8mqdo`,
+`arslan-frozen-trial-locale-es-c97dkms2`,
+`arslan-frozen-trial-locale-de-gpp2n49v`,
+`arslan-frozen-trial-locale-fr-oumct9l4` under `/private/tmp`.
+Each was independently opened as the temporary desktop app. The actual pending
+recovery sheet, product menu labels and declined-recovery startup notice were
+observed in **English, Chinese, Japanese, Spanish, German and French**. Decline
+did not start normal service. All archives/keys remained unchanged and the five
+profiles left pending retain byte-identical original databases.
+
+The Chinese candidate was then reopened and explicitly rolled back to its
+Japanese original (operation `46d99213-3eb9-487b-b704-6563282b7ed2`). The immediate
+post-click AX snapshot showed Japanese starting/slow text and Japanese menus,
+followed by a healthy Japanese workspace with greeting and readable synthetic
+credential. Original inode 120805350 returned to active, the Chinese candidate
+and its hint remain retained, and no pending activation record remains there.
+All owned temporary app/backend processes were closed after checks.
+
+This closes the observed missing candidate-hint and stale rollback-splash
+defects for this path. It is not full six-language layout/theme/resize/accessibility
+acceptance, nor a causal closure of the older disappearing-greeting finding.
+The complete 5,248-case run predates these Python changes; current verification
+is focused plus packaged/native evidence. Dedicated maintenance presentation,
+remaining failure branches, custom durable-key configuration and the broader
+W11/W12/W13/W15/W19/W20/W21 release gates remain. No real account/key, paid model,
+installed-app replacement, signing or publication occurred.

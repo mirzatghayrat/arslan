@@ -100,12 +100,15 @@
     var failed = document.getElementById('failed');
     // Native startup injects display-only JSON before this bundled page runs.
     // Use textContent: translated copy never becomes markup or a capability.
-    var copy = window.__ARSLAN_BOOT_COPY__;
-    if (copy && typeof copy === 'object') {
-      document.documentElement.lang = String(copy.locale || 'en');
-      document.getElementById('starting').textContent = String(copy.starting || document.getElementById('starting').textContent);
-      slow.textContent = String(copy.slow || slow.textContent);
-    }
+    window.__arslanRefreshBootCopy = function () {
+      var copy = window.__ARSLAN_BOOT_COPY__;
+      if (copy && typeof copy === 'object') {
+        document.documentElement.lang = String(copy.locale || 'en');
+        document.getElementById('starting').textContent = String(copy.starting || document.getElementById('starting').textContent);
+        slow.textContent = String(copy.slow || slow.textContent);
+      }
+    };
+    window.__arslanRefreshBootCopy();
 
     // Two different failures hide behind "the clip did not play", and they were
     // measured to be different: served over http, WebKit reached readyState 4

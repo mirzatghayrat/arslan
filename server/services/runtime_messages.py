@@ -4,6 +4,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from server.db import session as db_session
 from server.db.models import Setting
+from server.locale_codes import normalize
 
 
 MESSAGES = {
@@ -74,12 +75,6 @@ MESSAGES = {
         "no_tools_correction": "Correction : je ne dispose pas des outils nécessaires pour produire ce fichier ou ces données. Mon affirmation précédente d’avoir terminé était fausse : je n’ai produit aucun résultat de ce type ni délégué de tâche. Utilise un expert doté des capacités nécessaires.",
     },
 }
-
-
-def normalize(locale):
-    locale = {"English (US)": "en", "Chinese (Simplified)": "zh", "Japanese": "ja", "German": "de"}.get(locale, locale)
-    code = str(locale or "en").replace("_", "-").split("-")[0].lower()
-    return code if code in MESSAGES else "en"
 
 
 async def selected_locale():

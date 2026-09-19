@@ -74,6 +74,10 @@ pub fn boot_error_script(locale: &str, detail: &str) -> String {
     format!("window.__arslanBootError && window.__arslanBootError({encoded});")
 }
 
+pub fn refresh_boot_script(locale: &str) -> String {
+    format!("{} window.__arslanRefreshBootCopy && window.__arslanRefreshBootCopy();", boot_script(locale))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -104,6 +108,8 @@ mod tests {
             assert_eq!(copy["locale"], locale);
             assert_eq!(copy["starting"], text(locale, "boot_starting"));
             assert_eq!(copy["slow"], text(locale, "boot_slow"));
+            assert_eq!(refresh_boot_script(locale), format!(
+                "{script} window.__arslanRefreshBootCopy && window.__arslanRefreshBootCopy();"));
             let detail = "\"\\\r\n\t); window.injected = true; //";
             let error = boot_error_script(locale, detail);
             let argument = error

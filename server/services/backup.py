@@ -42,6 +42,45 @@ def _check_db(path: Path) -> None:
             raise ValueError("database integrity check failed")
 
 
+def _restore_language_hint(staged: Path) -> None:
+    """Derive display-only metadata in our private, not-yet-installed stage.
+
+    Never copy an archive hint or import config/key bootstrap. Missing/legacy
+    language settings fall back to English; no other setting is materialized.
+    The stage is owned by this restore call and cannot contain this root member
+    from the archive. An output failure aborts before candidate installation.
+    """
+    from server.locale_codes import normalize
+
+    language = "en"
+    try:
+        with closing(sqlite3.connect(f"{(staged / 'arslan.db').as_uri()}?mode=ro&immutable=1", uri=True)) as db:
+            db.execute("PRAGMA trusted_schema=OFF")
+            db.execute("PRAGMA query_only=ON")
+            remaining = 100
+
+            def bounded_query():
+                nonlocal remaining
+                remaining -= 1
+                return remaining <= 0
+
+            db.set_progress_handler(bounded_query, 1000)
+            if db.execute("SELECT type FROM sqlite_master WHERE name='settings'").fetchone() == ("table",):
+                rows = db.execute("SELECT substr(value,1,65),length(value),typeof(value) "
+                                  "FROM settings WHERE key='language' LIMIT 2").fetchall()
+                if len(rows) == 1 and rows[0][2] == "text" and rows[0][1] <= 64:
+                    language = normalize(rows[0][0])
+    except sqlite3.Error:
+        # This cache is not schema validation or permission to activate a DB.
+        # Existing restore/preflight/trial checks remain independently required.
+        pass
+    with (staged / "ui_language").open("xb") as output:
+        os.chmod(staged / "ui_language", 0o600)
+        output.write((language + "\n").encode("ascii"))
+        output.flush()
+        os.fsync(output.fileno())
+
+
 def create(data_dir: Path, destination: Path, *, db_path: Path | None = None,
            spawns_dir: Path | None = None) -> dict:
     """Caller must stop the app; archive contains private data but not the key."""
@@ -168,6 +207,7 @@ def _restore_stopped(archive: Path | BinaryIO, destination: Path, *, deletion_ma
             engine.dispose()
         _check_db(staged / "arslan.db")
         # Destination must remain absent. Never merge into or replace live data.
+        _restore_language_hint(staged)
         if destination.exists() or destination.is_symlink():
             raise ValueError("restore destination appeared during validation")
         from server.services.atomic_install import install_directory

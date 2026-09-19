@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from server import config
 from server.db.models import Setting
-from server.services.runtime_messages import normalize
+from server.locale_codes import normalize
 
 logger = logging.getLogger(__name__)
 FILENAME = "ui_language"
