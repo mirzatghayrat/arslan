@@ -670,8 +670,15 @@ fn boot(app: tauri::AppHandle, splash_since: std::time::Instant, maintenance: Na
             }
         },
         |_operation| {
+            // Keep trusted recovery consent attached to this startup window.
+            // An unparented macOS rfd dialog uses a separate system process.
+            // A closed/missing splash is not implicit permission to roll back.
+            let Some(window) = app.get_webview_window(SPLASH_LABEL) else {
+                return false;
+            };
             let locale = native_locale::selected();
             app.dialog().message(native_locale::text(locale, "recovery_rollback_prompt"))
+                .parent(&window)
                 .title(native_locale::text(locale, "recovery_title"))
                 .kind(MessageDialogKind::Warning)
                 .buttons(MessageDialogButtons::OkCancelCustom(

@@ -7,7 +7,7 @@ An engineering regression passing does not make the candidate releasable.
 
 | Gate | Current evidence / gap | Evidence required to close it |
 | --- | --- | --- |
-| Safe user-facing recovery (I01/I05, W17) | Gated native menu and archive/key/dialog adapter exist. Actual temporary-app clicks passed picker cancellation and consent/stop/prepare/rewrap/switch/trial/finalize/restart, followed by independent default-key desktop reopen with readable synthetic credentials and retained original directory. | Native first-consent cancellation, keep-paused/fresh-launch bound rollback and failure branches; parent the older startup rollback dialog; maintenance view and locale continuity; custom durable key configuration. |
+| Safe user-facing recovery (I01/I05, W17) | Actual temporary-app clicks passed picker/first-consent cancellation, full activation/restart, independent default-key reopen, keep-paused, fresh-start rollback refusal/confirmed bound rollback, and wrong-key safe pause/reopen. Original directory/credentials and candidate retention were checked. Both recovery confirmations are parented native sheets. | Remaining filesystem/timeout/error native branches; maintenance view; confirmed missing candidate-language-hint defect and startup locale continuity; custom durable key configuration. |
 | Isolated credentials and approvals (W11) | Approval storage/admission and command boundaries have synthetic evidence. ASC contracts still return `isolated_credential_broker_review_required`; no production credential transport. | Trusted broker identity and OS boundary evidence, approval UI, hostile file/process/port/debugger canaries, revocation races and independent security review before genuine secrets. |
 | Account workflow (W12/W13) | Preparation and host-only single-field execution exist; fixture transport is not real account support. | After W11: authorized target binding, real read-only account validation, approved test draft write and independent readback; screenshot/partial-write handling. Submission and publication remain separately disabled unless authorized. |
 | Interactive browser and dock (W19) | Public bounded navigation and dock have component/app/native evidence at recorded checkpoints. Authenticated interaction is not certified. | Finish the approved interaction/permission scope, ownership/cancellation and sensitive-action boundaries; inspect current packaged browser/dock behavior and artifacts. Do not substitute static previews for interaction. |
@@ -24,7 +24,9 @@ An engineering regression passing does not make the candidate releasable.
    that test without weakening production checks (61 focused cases passed).
    The corrected full run passed 5,198 cases with 14 skips and 19 warnings in
    601.28s; `corrected.xml` is retained beside the failed first report. Runtime
-   changes after this baseline need their own proportional verification.
+   changes after this baseline need their own proportional verification. The
+   subsequent full Python run on `dfe02692` passed 5,248 cases with 14 skips and
+   20 warnings in 570.00s; see the retained `full.xml` in the release audit.
 2. Resolve recovery key-source persistence **before** wiring a successful trial
    to normal restart. Existing bootstrap precedence and lock-and-box separation
    are constraints, not details to bypass. A selected backup key must work on a

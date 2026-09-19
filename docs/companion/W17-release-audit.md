@@ -2339,3 +2339,71 @@ is not yet replaced by a dedicated maintenance view. Custom key locations are
 still refused by this recovery path. No real profile/key/account, paid model,
 installed-app replacement, signing or publication occurred. This checkpoint
 does not close the overall recovery or release gate.
+
+### Native pause, refusal and confirmed rollback (2026-09-19)
+
+Startup's pending-recovery confirmation now has the splash window as its
+native parent. A missing splash returns no consent. This avoids the unparented
+system-notification path observed in the preceding checkpoint. XcodeBuildMCP
+defaults were unset; the existing offline Rust/Tauri workflow was used.
+Native tests passed **74 cases, one opt-in fixture ignored**, in 0.32s after
+2.20s compilation. The temporary native release built in 1m07s and was bundled
+unsigned at the same temporary app path. Native executable SHA-256:
+`cfc7fbb0584feb77b4d9bd3cda577e9a2c99723f1c40089c124b02761aadc83e`;
+test executable SHA-256:
+`fdac7ad4778b1c7dd0234053c11fbd720df5d0d2229dad2aa2e916841b0921df`.
+
+A fresh synthetic fixture at `/private/tmp/arslan-native-restore-ui-bnetzyd1`
+tested the actual native first-consent **Not now** branch: app PID 9972 and
+backend PID 9998 stayed alive/healthy, original directory inode 120564328 stayed
+active, and no candidate or pending record was created. Repeating selection and
+consenting to preparation reached the second confirmation. **Keep paused**
+left no normal backend running, retained both folders and kept operation
+`5c7b6d7b-47df-4e77-8a40-23db6b56bc5d` pending. Updates were disabled.
+
+After a complete quit/reopen, the parented startup rollback sheet was visible.
+Declining it left startup paused, no normal backend, and both database hashes
+unchanged: original
+`7886a933ba9ffb1bbbff689f9f873ceaca20e67465eef82edafe69aa46d4f34b`,
+candidate `425038796c8f03043249590eabe7f3e15144dfeb6099061ec09062ab02750c1b`.
+After another quit/reopen, explicit **Return to original data** restored inode
+120564328 to the active path and returned to the healthy Chinese workspace.
+The settings API read the original synthetic saved credential successfully.
+The candidate remained under its original candidate basename with unchanged
+database hash, the pending activation record was gone, and archive SHA-256
+remained `4583992175b83a788e9d15e7a001b797709f6cdb94df9c4732b512c79cd23a0a`.
+Both synthetic key files remained unchanged; the default target key remained
+0600. The owned app/backend were closed after verification.
+
+The test also **confirmed a language continuity defect**, not a pass: the
+candidate has no `ui_language` hint, so menus after pause and the fresh-start
+rollback sheet fall back to English. The Chinese workspace/menu return after
+rollback loads the original profile. The startup splash also retains its initial
+English text during this transition. `backup.restore` does not restore this
+derived cache, while `native_locale.sync` normally refreshes it only in ordinary
+startup. Fixing the pre-normal-start display cache and then rerunning native
+language acceptance remains required. Wrong-key/error paths and a dedicated
+maintenance view also remain open. No real accounts/keys, paid model, installed
+app replacement, signing or publication were used.
+
+The same retained fixture then exercised a **wrong original-key selection**:
+the existing synthetic installation key was deliberately selected instead of
+the historical backup key. After native consent and acknowledged shutdown,
+rewrap failed closed. The native pause notice appeared, no normal backend or
+new activation record existed, and original inode 120564328 remained active.
+The new candidate was retained and still readable only with the historical
+backup key, confirming that failed adaptation did not rewrite it with the wrong
+key. An explicit quit/reopen returned directly to the healthy original Chinese
+workspace with readable synthetic credentials; neither candidate, archive nor
+key was lost. The temporary processes were closed again. This covers one real
+error branch, not every filesystem/timeout/permission failure.
+
+The complete Python regression on production Python/test baseline `dfe02692`
+(unchanged during the run) passed **5,248 cases, 14 skipped, 20 warnings in
+570.00s**, exit 0. Report `/tmp/arslan-recovery-regression.EcP1fC/full.xml`,
+SHA-256 `a671048eeb01fb855789fb2945411c643b49417410bf884b8f57eb0c407f7341`.
+JUnit confirms 5,262 cases, zero errors and zero failures. The aiosqlite guard
+reported 65 deliveries into closed event loops; these and the existing warning
+classes are not claimed fixed. Only the native splash-parent change and audit
+notes changed during this full run. These tests do not certify the unresolved
+native locale or broader release gates.
