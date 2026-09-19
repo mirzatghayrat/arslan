@@ -1,5 +1,35 @@
 # W21 — six-language consistency (in progress)
 
+## Native selection keyboard acceptance — `d8dcedcb`, 2026-09-19
+
+The temporary candidate was refreshed with the current production web build,
+without recompiling unchanged backend/native sources. Staged and bundled web
+trees exactly match `web/dist`. Web entry `index-DBZwEC1y.js` SHA-256:
+`2bc16cc7a8430812c160736cf645ac88a4caca05364651251fb66a535defc591`.
+Backend identity remains
+`6280d1c6b03c754330a148ed85dd487a72585a723329a669aff95b1200d4923d`.
+The app-bundled standard smoke passed again, including six-language refusal
+catalogs, offline expert creation/readback, restart and parent-pipe cleanup.
+
+Actual macOS UI observations using the synthetic restore HOME, German/dark:
+
+- Pointer activation followed by Down and Return selected French. Focus stayed
+  on the language trigger and the native menu/UI changed to French.
+- Return, Up, Escape kept French and focus on the trigger (no commit).
+- Return, Up, Tab closed the menu, kept French and focused the OCR-language
+  summary immediately after the trigger.
+- Shift-Tab returned to the trigger; Return, Up, Shift-Tab dismissed without
+  committing and focused the display-name input immediately before it.
+- Tab and Return opened the list using only keys; the listbox was observed
+  open with trigger focus. Up and Return selected German and closed the list.
+
+The fresh `select-keyboard.stderr` log contains no external model HTTP request
+or error/traceback. Native/sidecar PIDs 40539/40553 exited normally. No genuine
+account, real model, formal installation or publication was used. This closes
+the focused keyboard reproduction, not all controls, assistive-technology
+semantics or the full W21 locale/theme/size matrix. The previous source-only
+paragraph below is historical; its requested native check is now performed.
+
 ## Shared selection keyboard fix — after `e1f8bf81`
 
 The earlier native observation that Down did not visibly advance the language

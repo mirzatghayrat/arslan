@@ -18,13 +18,16 @@ section for report/hash identities and exact locale/theme coverage. The
 historical candidate section below records the preceding package, not current
 binary identities. No formal installation was replaced or published.
 
-Newer source-only checkpoint after `e1f8bf81`: shared Select now explicitly
+Newer checkpoint `d8dcedcb`: shared Select now explicitly
 focuses its trigger on open and dismisses on Tab without committing. Two new
 tests first reproduced missing pointer focus and a stranded panel after Tab;
 all 1,946 frontend tests, TypeScript and production build pass after the fix.
-The temporary native candidate still predates this keyboard change. Next W21
-check: refresh it, then verify pointer-to-keyboard selection and Tab/Shift-Tab
-on the actual language control. See W21 for exact evidence and report hash.
+The temporary native candidate now includes this keyboard change; current web
+assets match exactly and app-bundled smoke passes. Actual language-control
+pointer-to-keyboard selection, pure-keyboard reopening/selection, Escape and
+Tab/Shift-Tab dismissal/focus traversal passed with synthetic data. See W21
+for exact scope and current web hash; the full native acceptance matrix remains
+open. Backend and native executable are unchanged from the prior candidate.
 
 ## Previous candidate: attachment fidelity / no implicit provider
 
