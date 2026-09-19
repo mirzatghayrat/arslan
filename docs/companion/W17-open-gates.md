@@ -1,5 +1,13 @@
 # Remaining release gates — triage, not completion certification
 
+New open native defect (after `b2da78f1`): navigating from a prepared main-chat
+attachment into Settings and back retains text but loses the attachment.
+German/dark → Chinese/light reproduced this on the current temporary package.
+Source confirms component-local attachment lifetime versus session text drafts.
+W21 records exact reproduction and required privacy/object-URL/pending-work
+boundaries. Fix and native revalidation take precedence over further locale
+matrix sign-off; no production fix is claimed yet.
+
 Memory follow-up after `9a467e0c`: M06-06's task-source branch now executes
 automatic extraction, deletion of source conversation plus derived candidate,
 old-summary re-extraction and a later host task. The focused binding passes;

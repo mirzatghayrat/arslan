@@ -1,5 +1,31 @@
 # W21 — six-language consistency (in progress)
 
+## Open defect: settings navigation drops prepared attachments — 2026-09-19
+
+On the current temporary candidate (backend `d21b525a`, web `838533f2`), imported
+the synthetic `/tmp/arslan-attachment-partial-fixture.ts` in German/dark.
+The composer showed the exact filename and 12,000 partially extracted characters.
+Entered `Synthetic unsent draft — keep this text unchanged.`, opened Settings,
+selected Chinese/light, and returned to the workspace. The draft text remained
+byte-for-byte intact, Chinese UI/native menus and light appearance applied, but
+the prepared attachment was gone. No send/model request occurred. The full
+locale matrix was not pursued past this data-loss reproduction.
+
+Source cause: App renders OrchestratorChat only in the arslan section, so
+settings navigation unmounts it. Text uses the module-scoped `composerDrafts`
+map; attachment state is component-local and the attachment hook revokes image
+preview URLs on unmount. This is not caused by translation lookup. Fix still
+pending: preserve ready attachments as session-only, conversation-isolated
+draft state; handle pending extraction, object-URL ownership, send/remove/clear
+and temporary-conversation cleanup without persisting media to disk or silently
+restarting work. Cover these boundaries before native revalidation; simply
+retaining hidden interactive chat components is not yet an accepted solution.
+
+The synthetic text draft was cleared and the temporary app/sidecar exited.
+Test profile now remains Chinese/light. Fresh log contains no external model
+HTTP request or traceback. No genuine account, installed app or publication
+was used. This finding is an open W21/W20 gate, not a completed locale matrix.
+
 ## Native video disclosure overflow — after `c5d2d217`, 2026-09-19
 
 Real German/dark native attachment validation exposed a visible defect despite
