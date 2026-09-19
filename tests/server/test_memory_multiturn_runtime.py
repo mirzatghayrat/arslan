@@ -436,6 +436,65 @@ async def test_user_revision_replaces_prompt_but_retains_history(runtime):
     assert new in later[0]["system"] and old not in later[0]["system"]
 
 
+@pytest.mark.parametrize("via_proposals", [False, True], ids=["M04-03", "M04-06"])
+async def test_stale_edit_or_conflicting_confirmation_cannot_change_next_task_context(
+    runtime, execution_db, via_proposals,
+):
+    from arslan.companion.memory import MemoryError
+    from server.db.models import MemoryProposal
+
+    old = "Use detailed reports with green headings."
+    chosen = "Use concise reports with blue headings."
+    stale = "Use lengthy reports with red headings."
+    user = MemoryActor(origin="user")
+    await runtime("initial-save", f"Remember: {old}", save=old)
+    async with repository() as repo:
+        entry = (await repo.list_entries())[0]
+    chosen_write = MemoryWrite(content=chosen, scope=MemoryScope(kind="global"))
+    stale_write = MemoryWrite(content=stale, scope=MemoryScope(kind="global"))
+    if via_proposals:
+        # Two candidates for the same target/version; trusted UI review is
+        # represented by the repository call, not inferred from model prose.
+        async with repository() as repo:
+            first = await repo.revise(entry["id"], entry["version"], chosen_write,
+                                      MemoryActor(origin="host"))
+            second = await repo.revise(entry["id"], entry["version"], stale_write,
+                                       MemoryActor(origin="host"))
+        before = await runtime("before-review", "Prepare a report with headings.")
+        assert all(old in request["system"] and chosen not in request["system"]
+                   and stale not in request["system"] for request in before)
+        async with repository() as repo:
+            changed = await repo.resolve_proposal(first["proposal_id"], accept=True, actor=user)
+        with pytest.raises(MemoryError, match="^memory_version_conflict$"):
+            async with repository() as repo:
+                await repo.resolve_proposal(second["proposal_id"], accept=True, actor=user)
+        async with execution_db() as db:
+            accepted = await db.get(MemoryProposal, first["proposal_id"])
+            pending = await db.get(MemoryProposal, second["proposal_id"])
+            assert accepted.status == "accepted" and pending.status == "pending"
+    else:
+        async with repository() as repo:
+            changed = await repo.revise(entry["id"], entry["version"], chosen_write, user)
+        with pytest.raises(MemoryError, match="^memory_version_conflict$"):
+            async with repository() as repo:
+                await repo.revise(entry["id"], entry["version"], stale_write, user)
+    assert changed["version"] == entry["version"] + 1
+    later = await runtime("after-stale-refusal", "Prepare a report with headings.")
+    assert all(chosen in request["system"] and old not in request["system"]
+               and stale not in request["system"] for request in later)
+    async with repository() as repo:
+        current = await repo.present(await repo.get(entry["id"]))
+        history = await repo.history(entry["id"])
+    assert current["version"] == changed["version"] and current["content"] == chosen
+    assert [row["content"] for row in history] == [chosen, old]
+    async with execution_db() as db:
+        receipts = (await db.scalars(select(ContextReceiptRecord).where(
+            ContextReceiptRecord.conversation_id == "after-stale-refusal"))).all()
+    assert receipts
+    assert all(any(ref["id"] == entry["id"] and ref["revision"] == changed["version"]
+                   for ref in row.receipt["used"]) for row in receipts)
+
+
 @pytest.mark.parametrize("field", ["valid_from", "expires_at"], ids=["M05-01", "M05-04"])
 async def test_effective_time_changes_later_task_context(runtime, monkeypatch, field):
     # Clock advances at the actual personal-context selection boundary.

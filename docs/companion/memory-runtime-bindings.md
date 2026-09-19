@@ -1,7 +1,7 @@
 # Multi-turn memory runtime bindings — partial engineering evidence
 
-`tests/server/test_memory_multiturn_runtime.py` now has 40 synthetic runtime cases
-covering aspects of 25 catalog scenarios. This is not 60 passing scenarios, a
+`tests/server/test_memory_multiturn_runtime.py` now has 42 synthetic runtime cases
+covering aspects of 27 catalog scenarios. This is not 60 passing scenarios, a
 real-model score, or release approval. The catalog retains its uncompleted status.
 
 The harness runs the real `scoped_turn` / TaskService boundary, user-message
@@ -28,6 +28,7 @@ their separate API/UI tests are not replaced by these cases.
 | M02-01/02 | One-off report/design request reaches the current adapter; a scripted save attempt becomes only a proposal, the original active version remains unchanged, and a new task's prompt/receipt excludes the proposed rule | Real model obedience to the one-off instruction and semantic equivalence of arbitrary paraphrases |
 | M03-01/03/05 | Opposite rules in distinct same-named projects stay isolated; unassigned task inherits neither; receipts exclude the other project's IDs | Output design fidelity, every source type, worker context and old write-grant invalidation |
 | M04-01/02 | User-confirmed revision replaces prompt content with history retained; an inferred candidate cannot replace confirmed content | Model recognition of replacement intent and review-card interaction |
+| M04-03/06 | A stale direct edit or stale second candidate confirmation is refused; a new task sends only the chosen current rule and records its exact revision; the original history remains intact | Concurrent UI interaction, natural-language intent and conflicts across distinct target entries |
 | M05-01/04 | Advancing the context-selection clock changes effective/expired eligibility in subsequent host requests | Version-specific source revalidation and historical factual interpretation |
 | M06-01/02 | Paused/deleted content is absent from later host requests; pause preserves history and can be restored | Vector/index rebuild, old summaries and backup restoration (separate tests exist; not covered here) |
 | M07-07 | Local-only memory stays stored but is absent from a synthetic cloud-destination request, even with task-level cloud permission | Sensitive-item acknowledgement UI and a real network capture |
@@ -43,6 +44,28 @@ All other catalog scenarios still need explicit multi-turn bindings at their
 appropriate runtime boundary. Do not count existing single-operation tests as
 complete scenario coverage. Model behavior needs separate authorized evaluation;
 scripted answers above are not evidence of quality or uncertainty calibration.
+
+## Stale edits and conflicting candidates (2026-09-19)
+
+Two new bindings cover M04-03 and M04-06 at the actual subsequent host-request
+boundary. Both begin with a remembered rule and retain its history. One submits
+a revision-1 edit after a trusted revision-2 edit. The other creates two host
+proposals against the same target/version, verifies neither enters the next
+task before review, accepts the chosen proposal and rejects the other as stale.
+Later independent tasks contain only the selected current rule; every used
+receipt includes the exact selected revision. Stale attempts add no revision;
+the unaccepted proposal remains pending rather than falsely marked accepted.
+
+The first two-case run failed only at the receipt assertion because the test
+used `version` instead of the existing ResourceRef `revision` field. Product
+behavior and policy were not changed. After correcting the field, the complete
+expanded binding file passed **42 tests in 77.94s**, one warning. JUnit:
+`/tmp/arslan-memory-stale-runtime.xml`, SHA-256
+`5383d114334b37c8ea1a681b72ccb5eec6434759390117590c371f884130582d`.
+Lint and diff checks pass. This adds two scenario aspects (27 of 60), not two
+fully certified natural-language/UI/model scenarios. Catalog completion status
+is unchanged. The separately running full backend regression was collected
+before these two tests were added; do not include them in its case count.
 
 The earlier zero-overlap injection bug now has a local relevance filter and
 actual host-request regressions. See `memory-relevance.md` for the implementation,
