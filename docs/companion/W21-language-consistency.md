@@ -1,5 +1,40 @@
 # W21 — six-language consistency (in progress)
 
+## Native image retention and privacy transition — after `96679e53`
+
+The unchanged production candidate was rechecked with the same synthetic HOME,
+minimal PATH, German/dark UI and no configured model. Imported repository asset
+`web/public/arslan-mark.png` (512 × 512) through the real native file picker and
+typed `Synthetic image privacy draft.`. After Settings → workspace, AX and the
+rendered screenshot retain both exact text and a working image thumbnail, not
+merely a filename. Opened the actual conversation-settings dialog, enabled
+temporary conversation and saved. The backend context PUT returned 200; the
+temporary banner appeared and both prior text and image disappeared. No send
+was performed, no external model or attachment-extraction request appears in
+this fresh log. The app and sidecar then exited. Synthetic profile remains
+German/dark; the last empty conversation was converted to temporary.
+
+New integration tests combine the real ConversationControls dialog and
+OrchestratorChat using App's keyed privacy mount contract, with mock API replies:
+confirmed temporary mode invalidates ordinary drafts and preview ownership;
+temporary drafts do not survive navigation; late ordinary URL results cannot
+enter the temporary composer and new temporary URLs do not auto-extract. A
+failed settings save preserves ordinary text/image drafts and only a successful
+retry clears them. These tests do not mock the draft store or attachment hook.
+The first failure-path test run exposed an incomplete test mock (missing
+ApiError), corrected by retaining the actual client module exports; no product
+error was inferred from that test setup failure.
+
+Focused regression **33/33** across four files, TypeScript passes. JUnit:
+`/tmp/arslan-composer-privacy-regression.xml`, SHA-256
+`f16032e67189320ad9969d1b7bd40fbe7cff724b8c87596dc59f6a2488cd9e23`.
+Final full frontend regression: **1,972 passed, zero failures/errors**, exit 0.
+JUnit `/tmp/arslan-composer-privacy-full.xml`, SHA-256
+`6b18f2e41df572e57cd3820b352162bca5c13197c1496fadcacd21aeebe39513`.
+Existing jsdom canvas/navigation limitations remain in test output.
+This adds native image-retention/confirmed-transition evidence and component
+failure/race coverage; it is not a complete privacy audit or six-language matrix.
+
 ## Attachment draft lifecycle fix and native recheck — 2026-09-19
 
 Prepared main-chat attachments now use a conversation-keyed RAM-only draft,

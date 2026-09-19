@@ -1,5 +1,14 @@
 # Remaining release gates — triage, not completion certification
 
+Follow-up after `96679e53`: native German/dark confirms a prepared image's
+thumbnail survives Settings navigation, and a successful temporary-mode change
+clears both text and image. Real dialog/composer integration tests additionally
+cover rejected settings saves (draft retained), confirmed privacy transitions,
+temporary navigation, and late/disabled URL extraction. Focused 33/33 and
+TypeScript pass; final full frontend is 1,972 passing, zero failures/errors.
+W21 records evidence. Full privacy/security and locale matrices
+remain open; the temporary test app was closed, with no model/account use.
+
 Attachment settings-navigation defect (after `b2da78f1`) is now fixed in source
 and rechecked in the temporary native package: Chinese/light → German/dark
 retains both prepared source and exact text; removal survives another round trip.
