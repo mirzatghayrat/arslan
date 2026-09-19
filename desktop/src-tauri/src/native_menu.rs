@@ -68,7 +68,7 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
             app,
             "check-for-updates",
             text(locale, "check_title"),
-            true,
+            app.state::<crate::maintenance::Gate>().is_idle(),
             None::<&str>,
         )?,
         "check_title",
@@ -163,6 +163,15 @@ fn refresh_on_main_thread(app: &AppHandle) {
     let Some(menu) = app.try_state::<NativeMenu>() else {
         return;
     };
+    if let Some(gate) = app.try_state::<crate::maintenance::Gate>() {
+        for (item, key) in &menu.labels {
+            if *key == "check_title" {
+                if let MenuItemKind::MenuItem(item) = item {
+                    let _ = item.set_enabled(gate.is_idle());
+                }
+            }
+        }
+    }
     let next = crate::native_locale::selected();
     let mut current = menu.locale.lock().unwrap();
     if *current == next {

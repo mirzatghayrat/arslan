@@ -21,6 +21,10 @@ mod native_locale;
 #[cfg(target_os = "macos")]
 mod native_menu;
 mod proxy;
+mod maintenance;
+#[cfg(target_os = "macos")]
+#[allow(dead_code)]
+mod recovery_coordinator;
 // Internal preparation only; no IPC endpoint until trusted recovery UI is wired.
 #[cfg(target_os = "macos")]
 #[allow(dead_code)]
@@ -80,6 +84,30 @@ const REVEAL_DEADLINE: std::time::Duration = std::time::Duration::from_secs(15);
 #[derive(Default)]
 struct Sidecar(Mutex<Option<NormalChild>>);
 
+struct NativeMaintenance {
+    permit: Option<maintenance::Permit>,
+    app: tauri::AppHandle,
+}
+
+impl NativeMaintenance {
+    fn complete(mut self) {
+        if let Some(permit) = self.permit.take() { permit.complete(); }
+    }
+}
+
+impl Drop for NativeMaintenance {
+    fn drop(&mut self) {
+        drop(self.permit.take());
+        refresh_update_menu(&self.app);
+    }
+}
+
+fn begin_maintenance(app: &tauri::AppHandle, operation: maintenance::Operation) -> Option<NativeMaintenance> {
+    let permit = app.state::<maintenance::Gate>().begin(operation)?;
+    refresh_update_menu(app);
+    Some(NativeMaintenance { permit: Some(permit), app: app.clone() })
+}
+
 struct NormalChild {
     process: Child,
     #[cfg(target_os = "macos")]
@@ -115,9 +143,10 @@ fn start_with_recovery<T>(
 ) -> Result<T, StartupFailure> {
     match start() {
         Err(failure) if failure.recovery_pending => {
-            let operation = inspect().map_err(StartupFailure::from)?;
+            let pending = |message| StartupFailure { message, recovery_pending: true };
+            let operation = inspect().map_err(pending)?;
             if !confirm(&operation) { return Err(failure); }
-            rollback(&operation).map_err(StartupFailure::from)?;
+            rollback(&operation).map_err(pending)?;
             start() // One retry only; another failure does not repeat consent/actions.
         }
         result => result,
@@ -438,6 +467,7 @@ fn refresh_update_menu(app: &tauri::AppHandle) {
 /// download_and_install; a tampered artefact fails here, not after.
 #[tauri::command]
 async fn install_update(app: tauri::AppHandle) {
+    let Some(_maintenance) = begin_maintenance(&app, maintenance::Operation::Update) else { return; };
     let shared = app.state::<UpdateShared>();
     let Some(update) = shared.pending.lock().unwrap().take() else {
         return; // double-click race or stale pill — nothing staged
@@ -471,7 +501,9 @@ async fn install_update(app: tauri::AppHandle) {
 /// machine or an unreachable feed is a normal morning, not an error the user
 /// can act on. README's Status section discloses that silence.
 fn check_for_updates(app: tauri::AppHandle, interactive: bool) {
+    let Some(maintenance) = begin_maintenance(&app, maintenance::Operation::Update) else { return; };
     tauri::async_runtime::spawn(async move {
+        let _maintenance = maintenance;
         // Menu-triggered only: the pill shows a "checking" sweep so the click is
         // visibly alive. The startup check stays byte-for-byte silent — its
         // whole failure model (offline is a normal morning) depends on that.
@@ -622,7 +654,7 @@ const MAIN_LABEL: &str = "main";
 /// first launch — the sidecar announces its port only after migrations finish,
 /// and health comes after that — and on the setup thread either one would
 /// freeze the launch screen rather than play under it.
-fn boot(app: tauri::AppHandle, splash_since: std::time::Instant) {
+fn boot(app: tauri::AppHandle, splash_since: std::time::Instant, maintenance: NativeMaintenance) {
     #[cfg(target_os = "macos")]
     let started = start_with_recovery(
         || start_sidecar(&app),
@@ -663,9 +695,15 @@ fn boot(app: tauri::AppHandle, splash_since: std::time::Instant) {
             app.state::<Sidecar>().0.lock().unwrap().replace(child);
             port
         }
-        Err(e) => return report_boot_failure(&app, &e.message),
+        Err(e) => {
+            // Ordinary failed startup is terminal, not uncertain recovery.
+            // Preserve update access so a broken installed version can be fixed.
+            if !e.recovery_pending { maintenance.complete(); }
+            return report_boot_failure(&app, &e.message);
+        },
     };
     if let Err(e) = wait_for_health(port) {
+        maintenance.complete();
         return report_boot_failure(&app, &e);
     }
 
@@ -687,7 +725,10 @@ fn boot(app: tauri::AppHandle, splash_since: std::time::Instant) {
 
     // Windows have to be built on the main thread on macOS.
     let handle = app.clone();
-    let _ = app.run_on_main_thread(move || open_main_window(&handle, port));
+    let _ = app.run_on_main_thread(move || {
+        maintenance.complete();
+        open_main_window(&handle, port);
+    });
 }
 
 /// Report a failed start on the window that is already in front of the user.
@@ -833,6 +874,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .manage(Sidecar::default())
+        .manage(maintenance::Gate::default())
         .manage(UpdateShared::default())
         .manage(listen::Listener::default())
         .manage(voice::Conversation::default())
@@ -881,6 +923,8 @@ pub fn run() {
             //
             // Hence the boot work moves to its own thread below.
             let splash_since = std::time::Instant::now();
+            let maintenance = begin_maintenance(app.handle(), maintenance::Operation::Startup)
+                .expect("startup owns initial maintenance slot");
             WebviewWindowBuilder::new(app, SPLASH_LABEL, WebviewUrl::App("index.html".into()))
                 .title("Arslan")
                 .initialization_script(&native_locale::boot_script(native_locale::selected()))
@@ -907,7 +951,7 @@ pub fn run() {
             }
 
             let handle = app.handle().clone();
-            std::thread::spawn(move || boot(handle, splash_since));
+            std::thread::spawn(move || boot(handle, splash_since, maintenance));
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -973,7 +1017,7 @@ mod tests {
             || Ok("selected".into()), |_| true, |_| Err("unconfirmed".to_string())).unwrap_err();
         assert_eq!(starts.get(), 1);
         assert_eq!(failure.message, "unconfirmed");
-        assert!(!failure.recovery_pending);
+        assert!(failure.recovery_pending);
     }
 
     #[test]
@@ -992,7 +1036,9 @@ mod tests {
     fn failed_inspection_never_prompts_or_mutates() {
         let result = start_with_recovery::<()>(|| Err(pending_failure()),
             || Err("cannot inspect".into()), |_| panic!("no confirmation"), |_| panic!("no rollback"));
-        assert_eq!(result.unwrap_err().message, "cannot inspect");
+        let failure = result.unwrap_err();
+        assert_eq!(failure.message, "cannot inspect");
+        assert!(failure.recovery_pending);
     }
 
     #[test]
@@ -1007,7 +1053,9 @@ mod tests {
                 assert_ne!(operation, current.get());
                 Err("operation changed".into())
             });
-        assert_eq!(result.unwrap_err().message, "operation changed");
+        let failure = result.unwrap_err();
+        assert_eq!(failure.message, "operation changed");
+        assert!(failure.recovery_pending);
     }
 
     #[test]

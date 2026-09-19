@@ -2239,3 +2239,40 @@ original profile, archive and external key remained unchanged. The existing
 native-stop/prepare/trial/rollback frozen chain also passed. No full desktop app
 rebundle, native confirmation click, new full-suite regression, real key/account,
 installed-app replacement, paid model, signing or publication is claimed.
+
+### Maintenance exclusivity and ordered recovery policy (2026-09-19)
+
+Added a process-local atomic maintenance gate shared by startup, update checks,
+update installation and the new recovery coordinator policy. Startup reserves it
+before the event loop can dispatch menu actions and holds it through scheduling
+the main window. Update calls acquire it before consuming a staged update or
+starting a check. Menu availability refreshes on acquisition/release. A dropped
+startup/recovery permit fails closed; known pre-mutation cancellation and safe
+completion explicitly release it. Ordinary terminal startup errors still release
+update access, preserving the ability to fix a broken installed version.
+Backend lifecycle/profile locks remain required: this gate is not cross-process.
+
+Review found that failed pending-operation inspection/rollback discarded the
+`recovery_pending` flag. These errors now retain it, so uncertain recovery does
+not accidentally unlock maintenance. The old test asserting the discarded flag
+failed during the change; its expectation was corrected and additional pending
+flag assertions added. Cancelled recovery still never mutates or restarts.
+
+`recovery_coordinator.rs` defines the ordered native policy: select/validate,
+explicit adaptation consent, target recheck, acknowledged stop, prepare,
+rewrap, switch, trial, explicit finalization consent, finalize and verified
+restart. Target proof is rechecked at every later phase; the one canonical
+operation ID binds trial, final confirmation and finalize. Any error after a
+stop request leaves maintenance paused, with no automatic retry, rollback,
+finalize or restart. Declining finalization retains pending recovery. Busy
+operations never open selection. This is a policy over a `Steps` interface,
+not yet a concrete file-picker/dialog/process adapter or an exposed menu item.
+
+Native tests passed **72 cases, one opt-in fixture ignored**, in 0.34s after
+1.29s compilation, covering ordering, early cancellations/refusals, every failing
+phase, changed keys at all later boundaries, malformed operation identity and
+maintenance exclusivity. XcodeBuildMCP defaults were unconfigured; the offline
+Rust workflow was used. No new backend runtime changes, full desktop rebundle,
+native UI acceptance, update download/install, real profile/key/account or
+publication was performed. Concrete UI integration and current-bundle click
+validation remain next, not certified by these tests.
