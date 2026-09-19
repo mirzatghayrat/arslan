@@ -1,5 +1,10 @@
 # Personal companion implementation
 
+Current delivery policy: [staged delivery amendment](staged-delivery.md).
+The user has authorized an intermediate releasable version and phased work to
+control usage; the original all-packages-before-release order below is retained
+as historical full-v1.2 scope, not a bar on a clearly limited preview candidate.
+
 Status: started on 2026-09-14. Approved direction: Arslan preparation/architecture v1.2, with the user's start-of-work additions below. Implementation branch: `codex/companion-v12-2026-09-14`; starting commit: `d3e8081d0fc7a72072731edfaa0ea33acf095724` (desktop 0.1.39).
 
 ## Start-of-work amendment (v1.3)
