@@ -319,6 +319,55 @@ async def test_summary_regeneration_excludes_deleted_memory_sources_from_later_t
     assert receipts and all(not row.receipt["used"] for row in receipts)
 
 
+async def test_deleted_task_source_cannot_recreate_derived_memory_from_old_summary(
+    runtime, execution_db,
+):
+    # M06-06 task-source branch. This is not an untracked external-document
+    # semantic-matching test. Source identity is retained by the task boundary.
+    from server.api.conversations import delete_conversation
+
+    content = "Use purple headings in all inventory reports."
+    paraphrase = "Inventory reports should always have purple headings."
+    source_conversation = "derived-source"
+
+    @task_context.scoped_turn
+    async def extract_turn(conversation_id, user_message, emit, candidate):
+        message_id = await memory.add_message(conversation_id, "user", user_message)
+        task_context.source_message(message_id)
+        return await memory.save_facts([{"content": candidate, "source": "auto"}],
+            provenance={"source_kind": "router", "conversation_id": conversation_id})
+
+    created = await extract_turn(source_conversation, "Source suggests purple inventory headings.",
+                                 lambda event: None, content)
+    assert len(created) == 1 and created[0].status == "proposed"
+    async with repository() as repo:
+        entry = (await repo.list_entries())[0]
+        assert entry["sources"] and entry["sources"][0]["kind"] == "extractor"
+        await repo.delete_entry(entry["id"], entry["version"], MemoryActor(origin="user"))
+    async with execution_db() as db:
+        deleted = await delete_conversation(source_conversation, db=db)
+        assert deleted["deleted"]["arslan_messages"] >= 1
+    # Re-extraction of an old summary with its retained conversation identity
+    # is blocked even when candidate wording differs from the deleted digest.
+    replayed = await extract_turn(source_conversation, "Reingest old task summary: " + paraphrase,
+                                  lambda event: None, paraphrase)
+    assert replayed == []
+    # Exact deleted content is also suppressed when the importer has a new ID.
+    copied = await extract_turn("copied-source", "Reingest copied summary: " + content,
+                                lambda event: None, content)
+    assert copied == []
+    async with repository() as repo:
+        assert await repo.list_entries() == []
+        retained = await repo.list_entries(include_deleted=True)
+        assert len(retained) == 1 and retained[0]["status"] == "deleted"
+    requests = await runtime("after-reingestion", "Prepare an inventory report with headings.")
+    assert all(content not in str(request) and paraphrase not in str(request) for request in requests)
+    async with execution_db() as db:
+        receipts = (await db.scalars(select(ContextReceiptRecord).where(
+            ContextReceiptRecord.conversation_id == "after-reingestion"))).all()
+    assert receipts and all(not row.receipt["used"] for row in receipts)
+
+
 async def test_local_only_memory_is_filtered_from_cloud_prompt(runtime, execution_db):
     # M07-07 outbound boundary; adapter is synthetic, no provider request occurs.
     content = "Keep my private report naming preference local."

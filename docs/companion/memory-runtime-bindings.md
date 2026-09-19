@@ -1,8 +1,14 @@
 # Multi-turn memory runtime bindings — partial engineering evidence
 
-`tests/server/test_memory_multiturn_runtime.py` now has 46 synthetic runtime cases
-covering aspects of 30 catalog scenarios. This is not 60 passing scenarios, a
+`tests/server/test_memory_multiturn_runtime.py` now has 47 synthetic runtime cases
+covering aspects of 31 catalog scenarios. This is not 60 passing scenarios, a
 real-model score, or release approval. The catalog retains its uncompleted status.
+
+Latest combined verification: the complete expanded file passed **47 tests in
+94.19s**, one warning. JUnit `/tmp/arslan-memory-runtime-expanded.xml`, SHA-256
+`93463204123d0b650777b51eaa4e2a07a975bc7a0cbfddd583285cdfe2b8292e`.
+This supersedes historical notes below that individual additions had not yet
+been rerun together; their original per-case evidence remains documented.
 
 The harness runs the real `scoped_turn` / TaskService boundary, user-message
 persistence and source binding, host Run lifecycle, native tool loop, actual
@@ -37,11 +43,32 @@ their separate API/UI tests are not replaced by these cases.
 | M06-05 | Restore quarantine removes an existing memory from the next host request and used receipt without erasing it; fresh user review restores later eligibility | Archive I/O/new-machine migration (separate frozen harness), missing-ledger UI explanation and model output |
 | M06-07 | An actual host-generated receipt resolves its original revision through authenticated HTTP after a newer revision exists; deletion changes that same review to a content-free deletion marker; later host prompts/receipts and revision history contain no deleted memory text | Native review interaction, previously displayed UI text and unrelated historical user-message content |
 | M06-03 | Deletion invalidates an old summary; actual compaction excludes pre-deletion source messages while retaining displayed chat, rebuilds from new eligible messages, and a later task excludes deleted content | Real summarizer behavior, arbitrary paraphrases and untracked external-source reingestion |
+| M06-06 task-source branch | Real scoped extraction creates a proposal; deleting the derived entry and source conversation blocks a paraphrased old-summary extraction with retained source identity and an exact copied candidate with a fresh identity; later host context/receipts remain empty | File/knowledge-source deletion adapters and paraphrases imported under a new, untracked source identity |
 | M06-04 | An actual pre-deletion backup is restored using either a later imported manifest or automatic record selection from an explicitly supplied current installation; a new task bound to the restored DB sends no deleted text/reference, and a repeated save is refused | Trusted native UI import, packaged host-request capture and natural-language/model behavior |
 | M07-01 | Explicit synthetic credential-save requests are rejected at task admission before host/remember execution; no task/message/run or ordinary memory remains, and a different conversation's prompt/receipt contains no such memory | Detection of every credential shape, UI presentation of the refusal and redaction of unrelated historical sources |
 | M03-06 / M08-02 | Saved report preferences stay out of a code-patch request; saved design preferences stay out of arithmetic requests in six locales; related subsequent tasks can still retrieve them | General semantic relevance, arbitrary paraphrases and generated-answer quality |
 
 ## Known remaining coverage and implementation gaps
+
+### Deleted task source and re-extraction (2026-09-19, after `9a467e0c`)
+
+A new M06-06 binding executes the real scoped task boundary, user-message
+source binding and automatic `save_facts` compatibility path. The first source
+creates an extractor-provenance proposal. The test deletes that memory through
+the versioned repository and deletes its source conversation through the real
+deletion handler. Re-extracting a differently worded candidate under the same
+conversation identity returns no memory; copying the exact deleted candidate
+under a new conversation also returns none. Only the original erased/deleted
+entry remains, and a subsequent host request and used receipt contain neither
+candidate. No HTTP authentication or native deletion-dialog claim is made for
+the handler invocation. These operations affect synthetic data only.
+
+The added case passed in **1.30s**, 46 deselected, one warning. JUnit:
+`/tmp/arslan-memory-source-reingestion.xml`, SHA-256
+`f47ae08bd14bfbd6d169fe2d423276f3f7f9f772f1d70cdea0579c8edacdb80e`.
+Lint/diff checks pass. This is partial task-source coverage, not complete
+external-material lineage or semantic deletion matching. The expanded runtime
+file subsequently passed as one 47-case suite, as recorded at the top.
 
 ### Summary regeneration after deletion (2026-09-19, after `1668a547`)
 
