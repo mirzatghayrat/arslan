@@ -1,5 +1,33 @@
 # W21 — six-language consistency (in progress)
 
+## URL extraction errors and explicit retry — after `92a29f1a`
+
+The URL attachment path rendered raw transport exception messages while file
+errors already used bounded localized messages. It now displays a dedicated
+webpage-read failure message in all six locales, asking the user to check public
+accessibility and connectivity. Upstream English, internal addresses, arbitrary
+objects and token-bearing URL details are not rendered as user-facing errors.
+No SSRF/network policy, endpoint, file content or user input is changed.
+
+Failed URLs were also left permanently in the deduplication set until composer
+clear/unmount. They are now tracked separately so an explicit re-paste retries
+once. Ordinary input edits still do not retry; pending and successful URLs remain
+deduplicated. Clear releases both sets; existing epoch/privacy guards continue
+to suppress results after cancellation or temporary-mode transitions.
+
+Eight new tests use the real six-language resources: six transport-failure
+cases, a non-Error rejection case, and explicit retry versus input-edit/success
+deduplication. Focused attachment/race selection **24 passed**; TypeScript and
+production build pass (3.71s, existing chunk-size warning). The native temporary
+package still contains the preceding dock fix, not this new URL-error change.
+Native runtime/error-language revalidation remains pending; this is not a full
+six-language acceptance claim.
+
+Final full frontend regression: **1,984 passed, zero failures/errors**, exit 0.
+JUnit `/tmp/arslan-url-errors-full.xml`, SHA-256
+`446f5e0ac1defb844e42c6804023e7821de8a2dcf4f32240374c8ecd4cfa82b8`.
+Existing jsdom canvas/navigation warnings remain.
+
 ## Native image retention and privacy transition — after `96679e53`
 
 The unchanged production candidate was rechecked with the same synthetic HOME,

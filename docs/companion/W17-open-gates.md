@@ -1,5 +1,13 @@
 # Remaining release gates — triage, not completion certification
 
+W21 follow-up after `92a29f1a`: URL attachment errors now use bounded six-language
+copy rather than raw transport details. Explicitly re-pasting a failed URL can
+retry, while ordinary text edits and successful/pending URLs stay deduplicated.
+Eight new real-i18n/retry tests and the 24-case focused selection pass; TypeScript
+and build pass; full frontend is 1,984 passing, zero failures/errors.
+Native package refresh/error-language acceptance for this change
+is pending; W21 records the narrow scope.
+
 Native follow-up after `bbb335c0`: the refreshed temporary app opened example.com,
 then a confirmed temporary-mode change removed only the current conversation's
 tab. Its actual reader DELETE succeeded, five observed browser processes exited,

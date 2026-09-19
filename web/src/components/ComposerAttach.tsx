@@ -130,6 +130,7 @@ export function useComposerAttach(
   const dragDepth = useRef(0);
   // URLs already handled (extracted or in flight), so re-scans don't re-extract.
   const handledUrls = useRef<Set<string>>(new Set());
+  const failedUrls = useRef<Set<string>>(new Set());
   const urlPolicy = useRef({ allowed: allowUrlExtraction, revision: 0 });
   if (urlPolicy.current.allowed !== allowUrlExtraction) {
     urlPolicy.current = { allowed: allowUrlExtraction, revision: urlPolicy.current.revision + 1 };
@@ -289,9 +290,12 @@ export function useComposerAttach(
             { name: u, text: r.text, chars: r.chars, truncated: r.truncated, kind: "doc" as const },
           ];
           commit(next);
-        } catch (e) {
+        } catch {
           if (!allowed()) return;
-          setError(String((e as Error).message ?? e));
+          failedUrls.current.add(u);
+          // Transport errors can include upstream English, URLs or internal
+          // addresses. Keep the user-facing message localized and bounded.
+          setError(t("inputs.urlFailed"));
         } finally {
           finish(token);
         }
@@ -341,6 +345,7 @@ export function useComposerAttach(
       for (const a of currentItems.current) if (a.previewUrl) URL.revokeObjectURL(a.previewUrl);
     }
     handledUrls.current.clear();
+    failedUrls.current.clear();
     commit([]);
     setBusy(false);
     setError(null);
@@ -379,6 +384,11 @@ export function useComposerAttach(
     // Pasted text: auto-extract any URL(s) immediately (the text still lands in the box).
     if (!allowUrlExtraction) return;
     const text = e.clipboardData?.getData("text") ?? "";
+    // Only an explicit re-paste retries a failed URL. Ordinary text edits keep
+    // deduplication, and pending/successful URLs are never started twice.
+    for (const u of extractUrls(text)) {
+      if (failedUrls.current.delete(u)) handledUrls.current.delete(u);
+    }
     const fresh = extractUrls(text).filter(
       (u) => !handledUrls.current.has(u) && !attachments.some((a) => a.name === u),
     );

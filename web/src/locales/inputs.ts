@@ -1,5 +1,6 @@
 export const inputMessages = {
   "en": {
+    "urlFailed": "This webpage could not be read. Check that the link is publicly accessible and your network connection is working.",
     "videoSamplingFailed": "Frames could not be sampled: decoding failed or the video has unsupported dimensions/duration (maximum 24 hours). Metadata remains available.",
     "videoSamples": "{{count}} sampled frames will be sent to the selected model; no audio transcript or full-motion analysis",
     "imageBudget": "This message exceeds 9 images/frames or 12 MiB of image payload. Remove some attachments before sending.",
@@ -15,6 +16,7 @@ export const inputMessages = {
     "slideTextOnly": "Slide text only; diagrams and layout are not analyzed"
   },
   "zh": {
+    "urlFailed": "无法读取此网页。请确认链接可公开访问，且网络连接正常。",
     "videoSamplingFailed": "无法采样画面：解码失败，或尺寸/时长不受支持（最长 24 小时）。仍可使用元数据。",
     "videoSamples": "将向所选模型发送 {{count}} 张采样画面，不含语音转写或完整动态分析",
     "imageBudget": "本条消息超过 9 张图片/画面或 12 MiB 图像载荷，请移除部分附件后发送。",
@@ -30,6 +32,7 @@ export const inputMessages = {
     "slideTextOnly": "仅幻灯片文字，未分析图表或布局"
   },
   "ja": {
+    "urlFailed": "このウェブページを読み取れません。リンクが一般公開されていることと、ネットワーク接続を確認してください。",
     "videoSamplingFailed": "フレームを抽出できません。デコード失敗、または未対応の寸法・長さ（最大24時間）です。メタデータは利用できます。",
     "videoSamples": "抽出した {{count}} 枚の画像を選択中のモデルに送信します。音声の文字起こしや動き全体の解析は含みません",
     "imageBudget": "画像・フレームが9枚、または画像データが12 MiBを超えています。一部の添付を削除してから送信してください。",
@@ -45,6 +48,7 @@ export const inputMessages = {
     "slideTextOnly": "スライドの文字のみ。図やレイアウトは未解析"
   },
   "es": {
+    "urlFailed": "No se pudo leer esta página web. Comprueba que el enlace sea público y que la conexión de red funcione.",
     "videoSamplingFailed": "No se pudieron extraer fotogramas: fallo de decodificación o dimensiones/duración no compatibles (máximo 24 horas). Los metadatos siguen disponibles.",
     "videoSamples": "Se enviarán {{count}} fotogramas de muestra al modelo seleccionado; sin transcripción de audio ni análisis completo del movimiento",
     "imageBudget": "El mensaje supera 9 imágenes/fotogramas o 12 MiB de datos de imagen. Elimina algunos adjuntos antes de enviarlo.",
@@ -60,6 +64,7 @@ export const inputMessages = {
     "slideTextOnly": "Solo texto; sin análisis de diagramas ni diseño"
   },
   "de": {
+    "urlFailed": "Diese Webseite konnte nicht gelesen werden. Prüfe, ob der Link öffentlich zugänglich ist und die Netzwerkverbindung funktioniert.",
     "videoSamplingFailed": "Einzelbilder konnten nicht extrahiert werden: Dekodierungsfehler oder nicht unterstützte Abmessungen/Dauer (höchstens 24 Stunden). Metadaten bleiben verfügbar.",
     "videoSamples": "{{count}} ausgewählte Einzelbilder werden an das gewählte Modell gesendet; keine Audiotranskription oder vollständige Bewegungsanalyse",
     "imageBudget": "Die Nachricht überschreitet 9 Bilder/Einzelbilder oder 12 MiB Bilddaten. Entferne vor dem Senden einige Anhänge.",
@@ -75,6 +80,7 @@ export const inputMessages = {
     "slideTextOnly": "Nur Folientext; Diagramme und Layout nicht analysiert"
   },
   "fr": {
+    "urlFailed": "Impossible de lire cette page web. Vérifiez que le lien est accessible publiquement et que la connexion réseau fonctionne.",
     "videoSamplingFailed": "Impossible d’extraire les images : échec du décodage ou dimensions/durée non prises en charge (24 heures maximum). Les métadonnées restent disponibles.",
     "videoSamples": "{{count}} images échantillonnées seront envoyées au modèle sélectionné ; sans transcription audio ni analyse complète du mouvement",
     "imageBudget": "Ce message dépasse 9 images ou 12 Mio de données d’image. Retirez certaines pièces jointes avant l’envoi.",
