@@ -181,7 +181,7 @@ impl NativeSteps {
                     .initialization_script(crate::native_locale::recovery_script(locale, false))
                     .on_page_load(move |webview, payload| {
                         if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
-                            let _ = webview.eval(&crate::native_locale::recovery_script(
+                            let _ = webview.eval(crate::native_locale::recovery_script(
                                 locale,
                                 page_paused.load(Ordering::SeqCst),
                             ));
@@ -203,7 +203,7 @@ impl NativeSteps {
                             .set_title(&crate::native_locale::text(locale, "restore_paused_title"))
                             .map_err(|_| ())?;
                         window
-                            .eval(&crate::native_locale::recovery_script(locale, true))
+                            .eval(crate::native_locale::recovery_script(locale, true))
                             .map_err(|_| ())?;
                     }
                     main.hide().map_err(|_| ())?;
@@ -222,7 +222,7 @@ impl NativeSteps {
         self.paused.store(true, Ordering::SeqCst);
         if let Some(window) = self.app.get_webview_window(RECOVERY_LABEL) {
             let _ = window.set_title(&self.text("restore_paused_title"));
-            let _ = window.eval(&crate::native_locale::recovery_script(self.locale, true));
+            let _ = window.eval(crate::native_locale::recovery_script(self.locale, true));
         }
     }
     fn confirm(&self, message: String, accept: &str, cancel: &str) -> bool {

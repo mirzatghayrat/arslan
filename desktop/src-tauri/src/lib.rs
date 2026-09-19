@@ -1006,7 +1006,7 @@ pub fn run() {
                 .expect("startup owns initial maintenance slot");
             WebviewWindowBuilder::new(app, SPLASH_LABEL, WebviewUrl::App("index.html".into()))
                 .title("Arslan")
-                .initialization_script(&native_locale::boot_script(native_locale::selected()))
+                .initialization_script(native_locale::boot_script(native_locale::selected()))
                 .inner_size(WINDOW_W, WINDOW_H)
                 .resizable(false)
                 .decorations(false)
