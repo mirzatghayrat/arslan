@@ -195,5 +195,8 @@ jobs:
           # update every installed copy will fetch — same "fail closed on the
           # executing side" rule the rest of this project follows.
           draft: true
+          # Preview tags must not become the stable channel's latest release.
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          make_latest: ${{ contains(github.ref_name, '-') && 'false' || 'legacy' }}
           files: dist/*
           generate_release_notes: true

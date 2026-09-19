@@ -67,7 +67,7 @@ def test_the_drift_check_accepts_only_a_matching_tag(tmp_path, case):
     input cannot reach this code.
     """
     version = json.loads(_CONF.read_text())["version"]
-    parts = version.split(".")
+    parts = version.split("-", 1)[0].split(".")
     bumped = ".".join(parts[:-1] + [str(int(parts[-1]) + 1)])
     tag, should_fail = {
         "match": (f"v{version}", False),
@@ -137,6 +137,12 @@ def test_releases_are_drafts_not_published_automatically():
     — the same fail-closed-on-the-executing-side rule as the rest of the repo.
     """
     assert re.search(r"^\s*draft:\s*true\s*$", _RELEASE.read_text(), re.M)
+
+
+def test_preview_tags_are_prereleases_and_not_stable_latest():
+    text = _RELEASE.read_text()
+    assert "prerelease: ${{ contains(github.ref_name, '-') }}" in text
+    assert "make_latest: ${{ contains(github.ref_name, '-') && 'false' || 'legacy' }}" in text
 
 
 # The updater public key that every shipped binary is built with. Changing it
