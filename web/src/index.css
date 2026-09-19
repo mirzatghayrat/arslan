@@ -2459,21 +2459,29 @@ button:disabled {
   color: var(--foreground);
   font-size: 0.625rem;
   line-height: 1.4;
-  max-width: 18rem;
+  max-width: min(24rem, 100%);
+  min-width: 0;
+}
+
+.attach-chip__details {
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .attach-chip__name {
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 10rem;
   color: var(--foreground);
   font-weight: 600;
 }
 
 .attach-chip__meta {
+  display: block;
   color: var(--muted-foreground);
-  flex-shrink: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .attach-chip--image {

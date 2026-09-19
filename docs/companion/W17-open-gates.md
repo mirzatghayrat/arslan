@@ -1,5 +1,16 @@
 # Remaining release gates — triage, not completion certification
 
+Current backend `970f38e5` full regression is complete: **5,325 passed,
+14 skipped, 20 warnings in 545.15s**, exit 0. W20 records the report hash and
+teardown guard caveat. This supersedes the running-status paragraphs below.
+
+Newest native finding after `c5d2d217`: German video capability text overflowed
+the composer and hid the filename. The shared chip now has independent,
+wrapping disclosure details and a preserved removal control. Full frontend
+1,960 cases, TypeScript/build, and actual German/dark 1171/931px native
+before/after checks pass. W21 records current web hashes. This closes that
+specific layout defect, not the full six-language acceptance matrix.
+
 Packaged follow-up for `970f38e5`: the temporary app now includes the video
 stream identity fix. Fresh frozen and app-bundled video API checks both reject
 audio-plus-cover-only input and decode three blue video frames rather than

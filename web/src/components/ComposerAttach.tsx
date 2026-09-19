@@ -401,7 +401,8 @@ export function AttachChips({
           ) : (
             <FileText className="w-3 h-3 shrink-0" />
           )}
-          <span className="attach-chip__name">{a.name}</span>
+          <span className="attach-chip__details">
+          <span className="attach-chip__name" title={a.name}>{a.name}</span>
           <span className="attach-chip__meta">
             {a.kind === "image"
               ? a.image
@@ -419,6 +420,7 @@ export function AttachChips({
               {a.videoFrameStatus === "tool_missing" ? t("inputs.videoToolMissing") : t("inputs.videoSamplingFailed")}
             </span>
           )}
+          </span>
           <button
             type="button"
             aria-label={t('ui.removeAttachment')}

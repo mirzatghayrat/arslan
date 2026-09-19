@@ -1,5 +1,42 @@
 # W21 — six-language consistency (in progress)
 
+## Native video disclosure overflow — after `c5d2d217`, 2026-09-19
+
+Real German/dark native attachment validation exposed a visible defect despite
+passing API tests: the long video capability disclosure did not shrink/wrap,
+escaped the chip and composer, and collapsed the source filename. The shared
+composer chip now groups filename and metadata in a shrinkable details column.
+Filename keeps its own ellipsis/title; disclosures wrap independently; icon
+and removal button remain outside the shrinkable column. Width is capped by
+both 24rem and the available container rather than a fixed 18rem maximum with
+unshrinkable metadata. Image/spreadsheet/presentation disclosures use the same
+layout without removing any warning text.
+
+Six real-i18n cases verify the video disclosure, separate filename/title and
+working removal control. Focused selection: 18 passed. Full frontend:
+**252 files / 1,960 passed in 28.21s**; TypeScript and production build pass
+(3.57s, existing large-chunk warning). JUnit:
+`/tmp/arslan-attachment-layout-regression.xml`, SHA-256
+`ce75359ac1cdac74033129edf0ee9a86fb5f7d8a9ca8203157589ce32cd367c7`.
+
+The temporary app's web resources were refreshed/rebundled unsigned. Native
+German/dark inspection of the same synthetic MP4 now shows the full filename,
+wrapped three-frame/no-transcription/no-full-motion disclosure and removal
+button inside the composer at 1171 × 768 and 931 × 768. Width was restored;
+attachment was removed without sending, then app/sidecar termination was
+verified. Existing synthetic restore HOME only; local codec directory was
+explicitly exposed for this test launch. This does not certify normal-launch
+codec discovery or the complete six-language/theme/window-size matrix.
+
+Bundled web tree exactly matches `web/dist`. New entry
+`index-BhegZmCg.js` SHA-256:
+`225f0fb86cbc8b6f0b14ab9652aa1befb11a7b05bd6daed9be3c4ad143ba5f4a`;
+`index-B8GyhNfi.css` SHA-256:
+`09c7a5c75fd52f1c23dbf5938742998e6c46bb55ee3c86d7e6fa7c818c68962d`.
+Backend/native sources unchanged; the independent backend full run completed
+with 5,325 passed and 14 skipped (report identity in W20).
+No real model, account, formal installation change or publication occurred.
+
 ## Packaged partial-copy verification — `a5c62c2e`, 2026-09-19
 
 Only the temporary candidate's web resources were refreshed and rebundled,

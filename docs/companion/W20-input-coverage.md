@@ -1,5 +1,16 @@
 # W20 — shared format matrix and local extraction
 
+## Full regression collected — backend `970f38e5`, 2026-09-19
+
+The full run completed: **5,325 passed, 14 skipped, 20 warnings in 545.15s**,
+exit 0. JUnit `/tmp/arslan-video-stream-full.dcDrSD/full.xml`, SHA-256
+`135a91d2afdf38fa504e66b2c9bccdf41b84c07ea37f89ba328472c31bcd7c5d`.
+The existing aiosqlite guard suppressed 63 deliveries into closed event loops;
+the underlying teardown issue is not claimed fixed. Later packaged-smoke and
+frontend layout changes did not alter backend production sources. This replaces
+the pending full-run status below. Native video attachment inspection found
+and fixed a separate disclosure overflow; see W21's before/after evidence.
+
 ## Packaged stream-selection acceptance — `970f38e5`, 2026-09-19
 
 Rebuilt the frozen backend in 29.41s using the existing isolated build tools;
