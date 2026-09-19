@@ -1,5 +1,39 @@
 # W21 — six-language consistency (in progress)
 
+## Attachment draft lifecycle fix and native recheck — 2026-09-19
+
+Prepared main-chat attachments now use a conversation-keyed RAM-only draft,
+alongside text drafts. Settings/thread unmount retains completed items and their
+preview URLs. Pending preparations are dropped and late results ignored. Remove,
+clear and send update the retained draft; send transfers preview ownership to
+the message echo. Conversation deletion invalidates the old owner so cleanup
+cannot resurrect a draft. Temporary conversations do not retain drafts, and a
+privacy-mode change remounts the composer and discards the normal draft.
+Nothing here serializes attachments to localStorage or disk.
+
+Frontend regression: **253 files / 1,968 passed in 24.82s**. JUnit
+`/tmp/arslan-attachment-drafts-regression.xml`, SHA-256
+`cd82aac4df09e22dc9f4dd7c9623f1abb9dac2c3a6baca63ed0487547b87f1e6`.
+One additional late-document-result test was added afterwards; the expanded
+draft suite separately passes **8/8**. TypeScript and production build pass
+(6.85s, existing chunk-size warning). Coverage includes prepared image retention,
+conversation isolation, StrictMode, send/remove/clear ownership, pending image
+and document cancellation, discarded-owner cleanup, temporary unmount, and an
+actual OrchestratorChat remount followed by source-bearing send.
+
+Rebundled only the temporary unsigned Tauri candidate; embedded web assets match
+web/dist exactly. Entry `index-D9PgYfyh.js` SHA-256
+`5b3daae592cd67b1eecd1439e3747d5d3d2bacd0946f76689a54303e24bbe65b`.
+With the existing synthetic HOME and minimal PATH, imported the synthetic TS
+fixture using the native file picker, typed the exact unsent draft below, went
+to Settings, changed Chinese/light to German/dark and returned. AX and screenshot
+both show the filename, **12,000 partially extracted characters**, and unchanged
+`Synthetic unsent draft — keep this text unchanged.`. Removed the attachment,
+cleared text, repeated settings navigation: neither returned. App exited;
+profile now remains German/dark. No real account/model call or installed app
+replacement was used. This closes the reproduced settings-navigation defect,
+not the full locale/privacy/native-image matrix or broader release gates.
+
 ## Open defect: settings navigation drops prepared attachments — 2026-09-19
 
 On the current temporary candidate (backend `d21b525a`, web `838533f2`), imported

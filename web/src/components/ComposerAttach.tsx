@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { api } from "../api/client";
 import { INPUT_ACCEPT, INPUT_FORMATS, documentInputSupported, inputKind } from "../lib/inputFormats";
 import type { MessageAttachment } from "../types";
+import type { AttachmentDraft } from '../lib/composerDrafts';
 
 /**
  * In-composer attach UX (replaces the old AttachBar-above-input).
@@ -118,10 +119,11 @@ export interface UseComposerAttach {
 export function useComposerAttach(
   onChange: (items: Attachment[]) => void,
   compress = false,
-  { allowUrlExtraction = true }: { allowUrlExtraction?: boolean } = {},
+  { allowUrlExtraction = true, draft }: { allowUrlExtraction?: boolean; draft?: AttachmentDraft } = {},
 ): UseComposerAttach {
   const { t } = useTranslation();
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  // The owner remounts this hook when conversation/privacy changes.
+  const [attachments, setAttachments] = useState<Attachment[]>(() => draft?.items ?? []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
@@ -132,7 +134,7 @@ export function useComposerAttach(
   if (urlPolicy.current.allowed !== allowUrlExtraction) {
     urlPolicy.current = { allowed: allowUrlExtraction, revision: urlPolicy.current.revision + 1 };
   }
-  const currentItems = useRef<Attachment[]>([]);
+  const currentItems = useRef<Attachment[]>(attachments);
   const generation = useRef(0);
   const mounted = useRef(true);
   const changeCallback = useRef(onChange);
@@ -150,7 +152,7 @@ export function useComposerAttach(
     pending.current.delete(token);
     if (mounted.current) setBusy(pending.current.size > 0);
   }, []);
-  const valid = useCallback((epoch: number) => mounted.current && generation.current === epoch, []);
+  const valid = useCallback((epoch: number) => mounted.current && !draft?.discarded && generation.current === epoch, [draft]);
   const full = useCallback(() => currentItems.current.length
     + [...pending.current.values()].filter(Boolean).length >= MAX_ATTACHMENTS, []);
   useEffect(() => {
@@ -159,18 +161,25 @@ export function useComposerAttach(
       mounted.current = false;
       generation.current += 1;
       pending.current.clear();
-      for (const item of currentItems.current) if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      const retained = draft && !draft.discarded
+        ? currentItems.current.filter(item => item.ocr !== 'pending') : [];
+      for (const item of currentItems.current) {
+        if (!retained.includes(item) && item.previewUrl && !draft?.discarded) URL.revokeObjectURL(item.previewUrl);
+      }
+      if (draft && !draft.discarded) draft.items = retained;
+      currentItems.current = retained;
     };
-  }, []);
+  }, [draft]);
 
   const commit = useCallback(
     (next: Attachment[]) => {
-      if (!mounted.current) return;
+      if (!mounted.current || draft?.discarded) return;
       currentItems.current = next;
+      if (draft) draft.items = next;
       setAttachments(next);
       changeCallback.current(next);
     },
-    [],
+    [draft],
   );
 
   const isImage = (f: File) =>

@@ -24,6 +24,7 @@ import { useBackendStatus } from './hooks/useBackendStatus';
 import { useDispatchedSpawns } from './hooks/useDispatchedSpawns';
 import Sidebar from './components/Sidebar';
 import OrchestratorChat from './components/OrchestratorChat';
+import { discardComposerDraft } from './lib/composerDrafts';
 import SpawnDirectChat from './components/SpawnDirectChat';
 import SpawnsDashboard from './components/SpawnsDashboard';
 import SpawnStudio from './components/SpawnStudio';
@@ -682,6 +683,7 @@ export default function App() {
   // remaining non-archived thread; if none remain, mint a fresh session. The
   // persisted active-thread key is rewritten by the persistThreads effect.
   const handleDeleteThread = (id: string) => {
+    discardComposerDraft(id);
     const remaining = threads.filter((th) => th.id !== id);
     const wasActive = id === activeThreadId;
     deleteConversation(id).catch((err) => {
@@ -1197,7 +1199,7 @@ export default function App() {
               {!activeThread?.temporary && <TaskPanel key={`task:${activeThreadId}`} conversationId={activeThreadId}
                 onResume={task => { useArslanStore.getState().clearError(); wsSend({ type: 'resume_task', task_id: task.spec.id, expected_version: task.version }); }} />}
               <OrchestratorChat
-                key={`chat:${activeThreadId}`}
+                key={`chat:${activeThreadId}:${activeThread?.temporary === true}`}
                 chatHistory={orchestratorChatHistory}
                 setChatHistory={setChatHistoryForActiveThread}
                 onSendMessage={sendOrchestratorMessage}

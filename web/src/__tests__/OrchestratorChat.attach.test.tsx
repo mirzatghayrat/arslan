@@ -20,6 +20,27 @@ const history: Message[] = [
 ];
 
 describe('OrchestratorChat attach', () => {
+  it('restores prepared source and text after settings-style unmount, then sends them together', async () => {
+    const { api } = await import('../api/client');
+    vi.mocked(api.extractAttachmentFile).mockResolvedValue({ text: 'ready source', chars: 12, truncated: true });
+    const spy = vi.fn();
+    const props = { chatHistory: history, setChatHistory: vi.fn(), onSendMessage: spy,
+      spawns: [], currentStyle: 'quartz' as const, setCurrentStyle: vi.fn(), activeThread: null, conversationId: 'settings-attachment' };
+    const first = render(<OrchestratorChat {...props} />);
+    fireEvent.change(first.container.querySelector('input[type="file"]')!, { target: { files: [new File(['source'], 'draft.txt', { type: 'text/plain' })] } });
+    await screen.findByLabelText('ui.removeAttachment');
+    fireEvent.change(screen.getByPlaceholderText(/placeholder_chat/i), { target: { value: 'keep my draft' } });
+    first.unmount();
+    render(<OrchestratorChat {...props} />);
+    expect(screen.getByLabelText('ui.removeAttachment')).toBeInTheDocument();
+    const input = screen.getByPlaceholderText(/placeholder_chat/i);
+    expect(input).toHaveValue('keep my draft');
+    fireEvent.submit(input.closest('form')!);
+    expect(spy).toHaveBeenCalledWith('keep my draft', expect.objectContaining({
+      names: ['draft.txt'], context: '["draft.txt": attach.delivery_truncated]\nready source',
+    }));
+    expect(screen.queryByLabelText('ui.removeAttachment')).not.toBeInTheDocument();
+  });
 
   it.each([['excerpt', true, 'truncated'], ['', false, 'empty']] as const)(
     'sends extraction limitations (%s) with the attachment',

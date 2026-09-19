@@ -1,12 +1,13 @@
 # Remaining release gates — triage, not completion certification
 
-New open native defect (after `b2da78f1`): navigating from a prepared main-chat
-attachment into Settings and back retains text but loses the attachment.
-German/dark → Chinese/light reproduced this on the current temporary package.
-Source confirms component-local attachment lifetime versus session text drafts.
-W21 records exact reproduction and required privacy/object-URL/pending-work
-boundaries. Fix and native revalidation take precedence over further locale
-matrix sign-off; no production fix is claimed yet.
+Attachment settings-navigation defect (after `b2da78f1`) is now fixed in source
+and rechecked in the temporary native package: Chinese/light → German/dark
+retains both prepared source and exact text; removal survives another round trip.
+Drafts remain RAM-only and conversation-isolated, with deletion, privacy-mode,
+pending-result and preview-ownership guards. Frontend: 253 files / 1,968 passing,
+plus an additional late-document case in the separately passing 8-case draft
+suite; TypeScript/build pass. W21 records evidence and package identity. This
+does not close the full six-language/native-image/privacy matrix or release gates.
 
 Memory follow-up after `9a467e0c`: M06-06's task-source branch now executes
 automatic extraction, deletion of source conversation plus derived candidate,

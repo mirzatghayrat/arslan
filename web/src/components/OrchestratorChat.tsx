@@ -35,7 +35,8 @@ import PushToTalk from './PushToTalk';
 import ConversationToggle from './ConversationToggle';
 import { useConversationMode } from '../hooks/useConversationMode';
 import { preferredVoiceLocale } from '../lib/speech';
-import { useComposerAttach, AttachChips, AttachControl, SentAttachments, attachmentImages, attachmentDelivery, attachmentImageBudgetExceeded, type Attachment } from './ComposerAttach';
+import { useComposerAttach, AttachChips, AttachControl, SentAttachments, attachmentImages, attachmentDelivery, attachmentImageBudgetExceeded } from './ComposerAttach';
+import { composerDrafts, getAttachmentDraft, discardComposerDraft } from '../lib/composerDrafts';
 import InviteConfirmCard from './InviteConfirmCard';
 import ClarifyOptionsCard from './ClarifyOptionsCard';
 import MentionText from './MentionText';
@@ -57,7 +58,6 @@ function RunCancelledMarker() {
 }
 
 // Composer drafts by conversation — module scope so they outlive the component.
-const composerDrafts = new Map<string, string>();
 
 interface OrchestratorChatProps {
   chatHistory: Message[];
@@ -237,11 +237,14 @@ export default function OrchestratorChat({
     _setInputValue(v);
   }, [draftKey, temporary]);
   useEffect(() => {
-    if (temporary) composerDrafts.delete(draftKey);
-    return () => { if (temporary) composerDrafts.delete(draftKey); };
+    if (temporary) discardComposerDraft(draftKey);
+    return () => { if (temporary) discardComposerDraft(draftKey); };
   }, [draftKey, temporary]);
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const attach = useComposerAttach(setAttachments, false, { allowUrlExtraction: !temporary });
+  const attach = useComposerAttach(() => {}, false, {
+    allowUrlExtraction: !temporary,
+    draft: temporary ? undefined : getAttachmentDraft(draftKey),
+  });
+  const attachments = attach.attachments;
 
   // @-mention autocomplete for the chat composer — a dropdown of this conversation's roster
   // members that filters as you type `@…` and inserts the full `@Name ` on pick (so routing
