@@ -1,4 +1,5 @@
 import io
+import pytest
 
 from pypdf import PdfWriter
 from pypdf.generic import DictionaryObject, NameObject, DecodedStreamObject
@@ -35,6 +36,47 @@ async def test_same_page_unavailable_keeps_caption_and_reports_partial(monkeypat
     assert "[page 2]\nNative caption stays exact." in text
     assert "[additional image text not read: unavailable]" in text
     assert '"unread_pages": [2]' in text
+
+
+async def test_broken_image_inventory_does_not_discard_readable_native_text(monkeypatch):
+    from pypdf._page import VirtualListImages
+    def broken(*args):
+        raise ValueError("synthetic damaged image resource")
+    monkeypatch.setattr(VirtualListImages, "keys", broken)
+    monkeypatch.setattr(ingest.ocr_vision, "is_available", lambda: False)
+    data = pdf_with_pages(["Readable native source must survive."])
+    text, partial = await extract.extract_text(filename="damaged-image.pdf", data=data)
+    assert partial
+    assert "[page 1]\nReadable native source must survive." in text
+    assert "[additional image text not read: unavailable]" in text
+    assert '"unread_pages": [1]' in text
+    assert "synthetic damaged" not in text
+
+
+async def test_real_broken_form_resource_retains_native_text(monkeypatch):
+    from pypdf import PdfReader
+    from pypdf.generic import NumberObject
+    writer = PdfWriter()
+    page = writer.add_page(PdfReader(io.BytesIO(pdf_with_pages([
+        "Native source survives malformed optional resources."]))).pages[0])
+    broken = DecodedStreamObject()
+    broken.set_data(b"")
+    broken.update({NameObject("/Subtype"): NameObject("/Form"),
+                   NameObject("/Resources"): NumberObject(7)})
+    page["/Resources"][NameObject("/XObject")] = DictionaryObject({
+        NameObject("/Broken"): writer._add_object(broken)})
+    output = io.BytesIO()
+    writer.write(output)
+    data = output.getvalue()
+    parsed = PdfReader(io.BytesIO(data)).pages[0]
+    assert "Native source survives" in parsed.extract_text()
+    with pytest.raises(TypeError):
+        parsed.images.keys()
+    monkeypatch.setattr(ingest.ocr_vision, "is_available", lambda: False)
+    text, partial = await extract.extract_text(filename="broken-form.pdf", data=data)
+    assert partial
+    assert "Native source survives malformed optional resources." in text
+    assert "[additional image text not read: unavailable]" in text
 
 
 def mixed_pdf():

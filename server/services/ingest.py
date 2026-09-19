@@ -63,7 +63,13 @@ def _pdf_text_layer(data: bytes) -> PDFTextLayer:
             # Keys enumerate image resources (including forms/inline images)
             # without decoding each image to a PIL object. A text layer does
             # not prove the images on this page contain no additional text.
-            if page.images.keys():
+            try:
+                has_images = bool(page.images.keys())
+            except Exception:  # noqa: BLE001 — optional image inventory is not native text
+                # Unknown is not "no images": attempt the bounded rendered
+                # page path, retaining native text even if rendering/OCR fails.
+                has_images = True
+            if has_images:
                 image_text.append(i)
             continue
         content = page.get_contents()

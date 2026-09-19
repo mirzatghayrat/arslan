@@ -285,6 +285,29 @@ JUnit identity and isolation. The full-regression gap is now closed for this
 candidate; native visual and real selected-model acceptance remain open.
 # Real mixed-PDF local OCR checkpoint — after `39705007`
 
+## Damaged optional image resources — after `6d843260`
+
+Review found an error introduced by the same-page resource enumeration: if
+`page.images.keys()` raises, extraction discarded an already-readable native
+text layer. A failing test first reproduced that loss. The optional inventory
+now treats enumeration failure as unknown image content, not an empty image
+list: the page enters the bounded rendered OCR path and original text remains
+intact. Unavailable/failed OCR retains the existing explicit additional-image
+unread notice and partial flag. Native text parsing itself is not suppressed.
+
+A second test builds an actual PDF with a readable text stream and a malformed
+unused Form resource. It independently proves text extraction succeeds while
+image enumeration raises TypeError, then verifies Arslan preserves the text and
+reports partial extraction. The first broader rerun passed 81 cases in 9.23s;
+the final 18-case locator suite includes the additional real malformed-resource
+case and passes in 0.44s. Ruff/diff checks pass. No model/account is used.
+
+This small source hardening is not in the temporary candidate yet. The existing
+full run under `/tmp/arslan-same-page-regression.N9IZtY` began on the preceding
+`d3702cce` production code and remains live; do not count it as full coverage of
+this later fix. Collect that baseline, then refresh validation/package evidence
+for the current source before release. The remaining broad gates are unchanged.
+
 ## Same-page text-plus-image source extension — after `e4509ccf`
 
 ### Packaged follow-up on `d3702cce`

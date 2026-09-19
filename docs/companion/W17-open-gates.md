@@ -1,5 +1,11 @@
 # Remaining release gates — triage, not completion certification
 
+New source hardening after `6d843260`: damaged optional PDF image inventories
+no longer discard readable native text. Both injected enumeration failure and
+an actual malformed Form resource are covered; focused tests/lint pass. This
+fix is not yet packaged, and the ongoing `d3702cce` full regression must not be
+presented as its complete regression. W20 records the precise source distinction.
+
 New packaged extension `d3702cce`: same-page native text plus image resources
 now receives bounded local OCR while preserving original text and separately
 marking whole-page OCR/possible repetition. Real synthetic host OCR and 80
