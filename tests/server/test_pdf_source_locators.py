@@ -17,7 +17,7 @@ def mixed_pdf():
     # stubbed in contract tests so they do not depend on the host recognizer.
     content = DecodedStreamObject()
     content.set_data(b"0 0 0 rg 20 20 100 100 re f")
-    writer.pages[1][NameObject("/Contents")] = content
+    writer.pages[1][NameObject("/Contents")] = writer._add_object(content)
     output = io.BytesIO()
     writer.write(output)
     return output.getvalue()
@@ -27,6 +27,44 @@ def test_mixed_pdf_detects_content_without_treating_blank_pages_as_scans():
     layer = ingest._pdf_text_layer(mixed_pdf())
     assert layer.has_text
     assert layer.unread_pages == (1,)
+
+
+def test_mixed_fixture_really_renders_ink_not_just_parseable_operators():
+    import pypdfium2
+    pdf = pypdfium2.PdfDocument(mixed_pdf())
+    page = pdf[1]
+    bitmap = page.render(scale=1)
+    image = bitmap.to_pil().convert("RGB")
+    try:
+        assert image.getextrema() == ((0, 255), (0, 255), (0, 255))
+    finally:
+        image.close()
+        bitmap.close()
+        page.close()
+        pdf.close()
+
+
+def test_empty_content_stream_is_not_an_unread_scan():
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=100, height=100)
+    content = DecodedStreamObject()
+    content.set_data(b" \n ")
+    page[NameObject("/Contents")] = writer._add_object(content)
+    output = io.BytesIO()
+    writer.write(output)
+    assert ingest._pdf_text_layer(output.getvalue()).unread_pages == ()
+
+
+def test_mixed_pdf_recognizer_exception_retains_native_pages(monkeypatch):
+    monkeypatch.setattr(ingest.ocr_vision, "is_available", lambda: True)
+    def failed(*args, **kwargs):
+        raise RuntimeError("synthetic recognizer failure")
+    monkeypatch.setattr(ingest.ocr_fallback, "read_locally", failed)
+    data = mixed_pdf()
+    text, partial = ingest._mixed_pdf_text(data, ingest._pdf_text_layer(data), "en")
+    assert partial and "[page text not read: error]" in text
+    assert "[page 4]\nLast native source." in text
+    assert "synthetic recognizer failure" not in text
 
 
 async def test_mixed_pdf_ocr_only_missing_page_and_preserves_sources(monkeypatch):
@@ -100,7 +138,7 @@ def pdf_with_pages(texts):
                 NameObject("/Subtype"): NameObject("/Type1"), NameObject("/BaseFont"): NameObject("/Helvetica")})})})
         content = DecodedStreamObject()
         content.set_data(f"BT /F1 12 Tf 20 250 Td ({text}) Tj ET".encode("ascii"))
-        page[NameObject("/Contents")] = content
+        page[NameObject("/Contents")] = writer._add_object(content)
     output = io.BytesIO()
     writer.write(output)
     return output.getvalue()

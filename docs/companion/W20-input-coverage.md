@@ -283,6 +283,38 @@ The subsequent clean `3617083e` complete backend run passed 4,927 tests with
 14 documented skips (492.62s), including all new input cases. W17 records its
 JUnit identity and isolation. The full-regression gap is now closed for this
 candidate; native visual and real selected-model acceptance remain open.
+# Real mixed-PDF local OCR checkpoint — after `39705007`
+
+Added `scripts/mixed_pdf_ocr_smoke.py`: a wholly synthetic in-memory PDF has
+native text on pages 1 and 4, raster-only text on page 2, and blank page 3.
+It verifies the scan has no text layer before extraction. Real macOS OCR
+recovered the expected sentence and number, native text remained exact, page
+locators were 1/2/4 and the partial flag was false. No model was configured or
+called. The same fixture passed the actual authenticated multipart extract API
+of a newly frozen executable, with compression requested to verify source
+preservation. Its temporary process/profile were cleaned up.
+
+The first fixture attempt failed honestly with `no_text`: visual inspection
+showed a blank raster. The test PDF wrote a content stream directly instead of
+an indirect object. Correcting fixture serialization, not product behavior,
+made the page visibly readable and real OCR pass. Existing page-locator test
+fixtures were corrected too. A new pixel-extrema assertion ensures the mixed
+fixture really renders ink, preventing parseable-but-blank fixtures from
+silently validating raster/OCR paths. Empty content-stream and recognizer
+exception tests were also added. The revised combined selection passes
+**78 tests in 4.19 seconds**, plus lint/whitespace checks.
+
+Frozen output: `/tmp/arslan-candidate-build.BboGj4/dist-mixed-pdf`.
+Backend SHA-256:
+`50d6672fa9fb690a8e5e06c44711773ac2536d59c52127f5a6271b95596a0d24`.
+The native app has NOT yet been refreshed. The original complete Python run
+under `/tmp/arslan-mixed-pdf-regression.SVOpqO` remains live; these three new
+test-only cases are separately verified, not retroactively included in that
+run's future count. Full acceptance still needs current package/UI checks,
+broader language/scan quality cases and the other W20 gates. The PDF skill's
+visual-check requirement helped distinguish invalid test material from an
+OCR product failure; no final PDF artifact was authored or delivered.
+
 # Mixed text/drawing PDF source checkpoint — after `2879267c`
 
 Inspection confirmed a document-wide text threshold caused mixed PDFs to return
