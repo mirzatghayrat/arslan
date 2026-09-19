@@ -37,7 +37,7 @@ def probe():
         sys.path.remove(str(_PACKAGING))
 
 
-async def _real_install(tmp_path, monkeypatch) -> Path:
+async def _real_install(tmp_path, monkeypatch, *, activate=False) -> Path:
     """A database built the way a clean first boot builds one."""
     data_dir = tmp_path / "Arslan"
     data_dir.mkdir()
@@ -53,6 +53,9 @@ async def _real_install(tmp_path, monkeypatch) -> Path:
         await conn.run_sync(Base.metadata.create_all)
         await conn.run_sync(migration_runner.apply_pending)
         await conn.run_sync(crypto_boot.resolve_and_adopt_salt)
+        if activate:
+            from server.services.memory_activation import activate_sync
+            await conn.run_sync(activate_sync)
     await eng.dispose()
     return data_dir
 
@@ -65,6 +68,29 @@ def _run(probe_mod, data_dir: Path):
     finally:
         conn.close()
     return c
+
+
+@pytest.mark.parametrize("damage", [None, "missing_view", "wrong_object_type", "hidden_legacy_data"])
+async def test_empty_storage_checks_activated_views_and_underlying_data(probe, tmp_path, monkeypatch, damage):
+    data_dir = await _real_install(tmp_path, monkeypatch, activate=True)
+    with sqlite3.connect(data_dir / "arslan.db") as conn:
+        if damage in ("missing_view", "wrong_object_type"):
+            conn.execute("DROP VIEW user_facts")
+            if damage == "wrong_object_type":
+                conn.execute("CREATE TABLE user_facts (id INTEGER)")
+        if damage == "hidden_legacy_data":
+            conn.execute("UPDATE memory_store_state SET phase='maintenance' WHERE id=1")
+            conn.execute("INSERT INTO legacy_user_facts (content) VALUES ('synthetic hidden data')")
+            assert conn.execute("SELECT count(*) FROM user_facts").fetchone()[0] == 0
+        c = probe.Checks()
+        probe._check_empty_user_storage(conn, c)
+    if damage is None:
+        assert c.failures == []
+        assert len(c.passes) == 28
+    elif damage == "hidden_legacy_data":
+        assert any("legacy_user_facts has 1 rows" in failure for failure in c.failures)
+    else:
+        assert "user_facts view exists" in c.failures
 
 
 async def test_it_passes_on_a_real_clean_install(probe, tmp_path, monkeypatch):

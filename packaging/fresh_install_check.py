@@ -110,6 +110,19 @@ class Checks:
         return 1 if self.failures else 0
 
 
+def _check_empty_user_storage(conn, c: Checks) -> None:
+    objects = dict(conn.execute("SELECT name, type FROM sqlite_master WHERE type IN ('table','view')"))
+    for name in ("arslan_messages", "arslan_summaries", "conversation_events", "runs",
+                 "user_facts", "learnings", "legacy_user_facts", "legacy_learnings",
+                 "memory_entries", "memory_revisions", "memory_sources", "memory_legacy_map",
+                 "notes", "knowledge_chunks"):
+        kind = "view" if name in ("user_facts", "learnings") else "table"
+        if not c.ok(objects.get(name) == kind, f"{name} {kind} exists"):
+            continue
+        count = conn.execute(f"SELECT count(*) FROM {name}").fetchone()[0]  # noqa: S608
+        c.ok(count == 0, f"{name} contains no user data", f"{name} has {count} rows on a fresh install")
+
+
 def check_bundle_contents(app: pathlib.Path, c: Checks) -> None:
     """What ships inside the .app. Cheap, and independent of running it."""
     dbs = [p for p in app.rglob("*") if p.suffix in (".db", ".sqlite", ".sqlite3")]
@@ -310,24 +323,10 @@ def check_runtime(port: int, home: pathlib.Path, log: pathlib.Path, c: Checks) -
                  f"applied={sorted(applied)[-3:]}")
 
         # ---- everything a new user should NOT have --------------------
-        # Paired: the table must EXIST and be EMPTY. Counting rows in a table
-        # that was never created would raise, not report zero — but an app
-        # that created no tables at all would then fail here loudly rather
-        # than looking like a clean install.
-        for table, label in (
-            ("arslan_messages", "no conversations with the host"),
-            ("arslan_summaries", "no conversation summaries"),
-            ("conversation_events", "no conversation history"),
-            ("runs", "no dispatch history"),
-            ("user_facts", "no brain facts"),
-            ("learnings", "no brain insights"),
-            ("notes", "no brain notes"),
-            ("knowledge_chunks", "no brain material"),
-        ):
-            if not c.ok(table in tables, f"{table} table exists"):
-                continue
-            n = conn.execute(f"SELECT count(*) FROM {table}").fetchone()[0]  # noqa: S608
-            c.ok(n == 0, label, f"{table} has {n} rows on a fresh install")
+        # Activated memory uses legacy compatibility views. Check their exact
+        # object type AND the underlying stores, so an empty filtered view
+        # cannot hide shipped user data.
+        _check_empty_user_storage(conn, c)
 
         # ---- chat_messages is NOT expected to be empty ----------------
         # Each spawn's private chat opens with one greeting from that spawn,
