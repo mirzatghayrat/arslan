@@ -1,5 +1,13 @@
 # Remaining release gates — triage, not completion certification
 
+Native follow-up after `bbb335c0`: the refreshed temporary app opened example.com,
+then a confirmed temporary-mode change removed only the current conversation's
+tab. Its actual reader DELETE succeeded, five observed browser processes exited,
+and the temporary profile was removed. Restart restored only the unrelated
+ordinary tab and did not create a browser session. W19 records package/log
+identities. The previously pending native revalidation for this defect is now
+complete; broader browser/security/locale release gates remain open.
+
 New W19 source fix after `7d20d4f0`: converting a conversation to temporary now
 closes its pre-existing ordinary browser tabs and deletes their restore metadata,
 including when the dock is hidden. Other conversations' tabs are preserved.

@@ -1,5 +1,39 @@
 # W19 — isolated navigation and work dock
 
+## Packaged privacy transition and restart — after `bbb335c0`
+
+Refreshed the unsigned temporary app's web resources (no native/backend source
+change); bundled assets compare byte-for-byte with current web/dist. Entry
+`index-B7nurUzD.js` SHA-256:
+`e53a84647df7b2e10ffa3370722e4e99b2a91dfc4207e4f61f9e25e383c6b774`.
+Used synthetic HOME `/private/tmp/arslan-native-restore-ui-m1tgzvbv`, minimal PATH,
+German/dark, no configured model and the pre-existing isolated browser runtime.
+
+The dock initially restored one unrelated ordinary tab without navigating.
+Created a new browser tab bound to the current empty conversation
+`thread-1789825323509`, then visibly opened example.com. Actual session
+`e1ebf888-e57d-466d-bc9b-ac76653c879e` returned a frame. Confirmed owned Node and
+Chromium process IDs **66846, 66848, 66849, 66850, 66851** and profile root
+`/tmp/arslan-reader-9mo74qj8` before the transition.
+
+Through the actual conversation-settings dialog, enabled temporary mode and
+saved. The context PUT returned 200, the reader DELETE returned 204, and native
+AX/screenshot showed the Example Domain tab removed while the unrelated tab
+remained. All five observed browser processes were absent and the profile root
+was deleted. Quit also terminated app/backend 66774/66782. Restarted with the
+same synthetic HOME: only the unrelated blank ordinary browser tab returned;
+the removed tab did not, and no browser-session request was made on restart.
+Quit again; no owned app/backend/browser processes remain.
+
+Logs (no traceback): `dock-privacy.stderr`, SHA-256
+`c27d79137b274373dd76e9a1780916595946ff672d6a2f113a9f1c2c4dbed864`, and
+`dock-privacy-restart.stderr`, SHA-256
+`6a0bb23b4fcbf789b881eb3ca7c614185a46a469018a8658a63fdafaef9bdf8c`,
+under the synthetic HOME above. This closes the native package/process/restart
+verification gap for this defect. It does not certify authenticated interaction,
+independent broker security, all locales/window sizes or overall release readiness.
+No real account, model request, installed-app replacement or publication occurred.
+
 ## Same-conversation privacy transition — after `7d20d4f0`
 
 Reproduced a dock ownership defect with the production component: creating a
