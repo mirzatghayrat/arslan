@@ -39,13 +39,13 @@ The native app and sidecar were then quit normally. This is not real-model
 quality evidence or complete native six-language/layout acceptance.
 
 Temporary app: `/tmp/arslan-native-candidate.xIygc5/target/release/bundle/macos/Arslan.app`.
-Frozen build: `/tmp/arslan-candidate-build.BboGj4/dist-no-implicit-provider`.
+Frozen build (including offline-curation compatibility): `/tmp/arslan-candidate-build.BboGj4/dist-provider-fallback`.
 Source web assets match packaged assets exactly; bundle verification passed
 15 feature imports, assets and no database/secret/AGPL-rasterizer checks, 431 MiB.
 Identities (SHA-256):
 
 - Native executable (unchanged): `fa0d2c37c102e8d0d93125423b2e2b28ecd7e494d11b558d4da1303de2052d30`.
-- Frozen backend: `c77bf0cb6ae0a2a51a3a4c90736350fb9bea9077cf94271a539596189df0a909`.
+- Frozen backend: `ab674c374d5f5db7a844e8433e2c6a61fae31a20f5bb90f57fe9cc79b575bd16`.
 - Web entry: `ea51298c58046453cc0d707dd208ee5a6d9bb62aba1545a300b8b75172be3a81`.
 - Reader resource (unchanged): `94ed2feceefae5bf805bcf4da8186bb958366eb945cc08109ca4f30b0f3ec089`.
 
@@ -60,12 +60,30 @@ The optional curation try/fallback now includes sync/async adapter construction,
 preserving its existing validated safe-menu fallback with no model connection.
 Both construction-failure forms have new tests. The five original WebSocket
 creation tests were kept unchanged; creation, equipment and factory selection
-passed 59 tests in 8.12 seconds. This source follow-up is NOT yet in the
-temporary bundle identified above. A second full Python run is in progress at
-`/tmp/arslan-provider-fallback-regression.l8rIEP/full.xml`; no passing full-run
-claim is made yet. Next: collect that result, refresh the frozen backend and
-repeat packaged no-provider/manual-create checks. No installed app was
-replaced, signed or published.
+passed 59 tests in 8.12 seconds. The subsequent candidate refresh now includes
+this compatibility change. Both fresh frozen output and app-bundled executable
+passed six-language no-provider refusal AND manual-expert creation with
+deterministic localized introductions, validated safe equipment and REST readback.
+
+The second full Python run completed on `1499ee8b` production sources:
+**5,291 passed, 14 skipped, 20 warnings in 525.15 seconds**, exit 0.
+JUnit: `/tmp/arslan-provider-fallback-regression.l8rIEP/full.xml`, SHA-256
+`99771dbc716c82c2381086eb1939e49ebfd23c298656ff35a7e8d88acf3b0450`.
+The known aiosqlite teardown guard reported 67 closed-loop deliveries; this
+run does not claim that pre-existing cleanup issue is fixed. Frontend remains
+at its unchanged 1,930-passing baseline; native Rust remains unchanged.
+
+W21 now records actual six-language attachment-notice/native-menu switching,
+Chinese/dark plus five light-language layouts, French narrower-window scrolling,
+and fresh localized model-refusal responses. No external model HTTP requests
+appeared in that test application's fresh log. Owned native/sidecar processes
+33442/33456 exited normally. The profile is disposable and now French/light.
+New verified W21 gap: already-visible server error bodies keep the language
+in which they were emitted; only their heading and new responses change language.
+Next: structured localization for product-owned runtime errors, without
+rewriting user/model prose or arbitrary provider diagnostics. The full native
+locale/theme/keyboard matrix remains open. No installed app was replaced,
+signed or published.
 
 | Gate | Current evidence / gap | Evidence required to close it |
 | --- | --- | --- |
@@ -77,7 +95,7 @@ replaced, signed or published.
 | Six-language native UX and old-data compatibility (W16/W21) | Web/component matrices and actual six-language pending-recovery sheets/menus/notices exist. Cross-language rollback refresh is verified. Earlier disappearing-greeting finding is not causally closed. | Full six-locale narrow/wide and light/dark runtime checks, rapid switch/back/reload, other native menus/dialogs, old entry points/data, keyboard focus and restart behavior on the current bundle. |
 | Design/media workflows (W15) | Versioned style references and a restricted local-media adapter exist. Execution provisioning/review and real D01–D08 outcomes are not complete. | Editable/runnable output evidence, verified artifacts/cancellation, authorized pinned backend when available, human assessment of visual dimensions and honest unavailable-backend fallback. No unapproved weights/cloud costs. |
 | Memory and task quality (W01/W04/W05/W17) | Runtime evidence covers aspects of 25 memory scenarios, not all 60. `catalog.json` still labels real task inputs pending. | Remaining multi-turn bindings plus authorized real behavior evaluation; freeze real inputs/hashes and configuration; run all 30 families × 3 attempts without best-of-three selection; preserve missing/unsupported denominator and cost/latency accounting. |
-| Packaging and final human acceptance (W17) | Full regression baselines pass 5,267 Python and 77 native cases; current frontend passes 1,918 cases. Reader changes are packaged and verified through frozen APIs/native UI; five added driver safety tests pass. Recorded temporary-app checks remain bounded synthetic-profile evidence. | Keep package/regressions current; remaining native first boot/upgrade/recovery and configuration retention matrix; applicable signing/notarization and human installation/security/UX review. No installed-app replacement or public release under the current authorization. |
+| Packaging and final human acceptance (W17) | Full regression baselines pass 5,291 Python and 77 native cases; current frontend passes 1,930 cases. Reader and attachment changes plus the no-implicit-provider/offline-curation fix are packaged; frozen APIs/WebSockets and bounded native UI checks pass. Recorded temporary-app checks remain synthetic-profile evidence, not real-model acceptance. | Keep package/regressions current; remaining native first boot/upgrade/recovery and configuration retention matrix; applicable signing/notarization and human installation/security/UX review. No installed-app replacement or public release under the current authorization. |
 
 ## Next dependency order
 

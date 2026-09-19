@@ -185,6 +185,30 @@ def main():
                             break
                     else:
                         raise AssertionError("Unconfigured model did not fail locally")
+                # Manual creation is deterministic; optional equipment curation
+                # must fall back safely even though no provider can be built.
+                name = f"offline-fixture-{language}"
+                with connect(f"{ws_url}/ws/arslan/create-{language}?token={token}",
+                             proxy=None, open_timeout=5, close_timeout=5) as ws:
+                    ws.send(json.dumps({"type": "confirm_create", "draft": {
+                        "name": name, "domain": f"fixture.{language}", "capabilities": []}}))
+                    deadline = time.monotonic() + 15
+                    while time.monotonic() < deadline:
+                        frame = json.loads(ws.recv(timeout=max(0.1, deadline - time.monotonic())))
+                        assert frame.get("type") != "error", "Offline manual creation failed"
+                        if frame.get("type") == "spawn_created":
+                            assert frame["spawn_name"] == name
+                            assert [item["key"] for item in frame["equipment"]["toolsets"]] == ["web_search_scraping"]
+                            assert frame["equipment"]["skills"] == []
+                            prefix = {"en": f"I'm {name}.", "zh": f"我是 {name}。",
+                                      "ja": f"{name} です。", "es": f"Soy {name}.",
+                                      "de": f"Ich bin {name}.", "fr": f"Je suis {name}."}[language]
+                            assert frame["intro"].startswith(prefix)
+                            created = client.get(f"/api/v1/spawns/{frame['spawn_id']}")
+                            assert created.status_code == 200 and created.json()["name"] == name
+                            break
+                    else:
+                        raise AssertionError("Offline manual creation did not finish")
         finally:
             client.close()
             assert stop(process) == 0
@@ -209,6 +233,7 @@ def main():
                       "malformed_request_shapes_rejected": True,
                       "corrupt_office_compression_rejected": True,
                       "unconfigured_provider_refused_six_languages": True,
+                      "offline_manual_creation_six_languages": True,
                       "real_model": False, "installed_app": False}))
 
 

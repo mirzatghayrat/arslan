@@ -1,5 +1,36 @@
 # W21 — six-language consistency (in progress)
 
+## Native attachment-notice language pass — after `1499ee8b`
+
+The refreshed temporary app uses frozen backend
+`ab674c374d5f5db7a844e8433e2c6a61fae31a20f5bb90f57fe9cc79b575bd16`
+and the unchanged `dd150e9a` web assets. With only synthetic profile
+`/private/tmp/arslan-native-restore-ui-m1tgzvbv`, a deliberately invalid PNG
+was attached and sent with no provider configured. Its unavailable-image chip
+was observed in Chinese/dark, then English/Japanese/Spanish/German/French/light
+by switching language through the real settings UI. All six notice texts were
+present; the five light-language screenshots showed complete wrapping without
+overlap. New requests after each language switch returned the corresponding
+localized configuration refusal, with no external model HTTP request in the
+fresh app log. The native menu labels also followed each selected language.
+
+The French window was resized from an approximately 1,171×768 screenshot to
+986×758; message scrolling, the long error text, composer and attachment notice
+remained usable. This is one narrower layout, not the full native minimum-size,
+keyboard, every-locale × every-theme matrix. The app and backend were quit
+normally (owned PIDs 33442/33456 absent). The disposable profile now retains
+French/light; no personal app settings or formal installation was intentionally
+changed.
+
+New verified gap: the already-visible server error body is a rendered string
+from its original language. Switching language updates its heading and the
+attachment notice, but does not retranslate that error body until another
+request replaces it. This is product-owned error text, not model/user prose;
+it remains a W21 gap. Preserve the distinction when adding structured error
+localization: do not translate arbitrary provider diagnostics or historic user
+content. The language dropdown also did not visibly advance after a single
+Down key in this native test; keyboard acceptance is not claimed by this pass.
+
 ## Native menu implementation (2026-09-19, visual acceptance pending)
 
 Product-owned menu labels now have six-language copy. The menu retains Tauri
