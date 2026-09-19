@@ -1,6 +1,6 @@
 # Remaining release gates — triage, not completion certification
 
-Snapshot: `81949a01`, 2026-09-19. This index complements the chronological
+Snapshot: `7bd142c6`, 2026-09-19. This index complements the chronological
 `W17-release-audit.md`; it does not replace the approved v1.2 plan, task-package
 acceptance checklist or v1.3 browser/input/language amendment in `README.md`.
 An engineering regression passing does not make the candidate releasable.
@@ -15,19 +15,25 @@ An engineering regression passing does not make the candidate releasable.
 | Six-language native UX and old-data compatibility (W16/W21) | Web/component matrices exist; native menu/dialog changes remain unclicked at the locked-Mac checkpoint. Earlier disappearing-greeting finding is not causally closed. | Six locales, narrow/wide and light/dark runtime checks, rapid language switch/back/reload, native menus/dialogs, old entry points/data, keyboard focus and restart behavior on the current bundle. |
 | Design/media workflows (W15) | Versioned style references and a restricted local-media adapter exist. Execution provisioning/review and real D01–D08 outcomes are not complete. | Editable/runnable output evidence, verified artifacts/cancellation, authorized pinned backend when available, human assessment of visual dimensions and honest unavailable-backend fallback. No unapproved weights/cloud costs. |
 | Memory and task quality (W01/W04/W05/W17) | Runtime evidence covers aspects of 25 memory scenarios, not all 60. `catalog.json` still labels real task inputs pending. | Remaining multi-turn bindings plus authorized real behavior evaluation; freeze real inputs/hashes and configuration; run all 30 families × 3 attempts without best-of-three selection; preserve missing/unsupported denominator and cost/latency accounting. |
-| Packaging and final human acceptance (W17) | Temporary unsigned bundles and synthetic migration/recovery smoke exist. Latest native sources and standalone backend are newer than the full app. | Rebuild source-consistent app; full regressions; real native first boot/upgrade/recovery and configuration retention; applicable signing/notarization and human installation/security/UX review. No installed-app replacement or public release under the current authorization. |
+| Packaging and final human acceptance (W17) | Current-runtime temporary unsigned app passed bundle, compute, input/locale/restart and native-transport recovery checks. A live pending-recovery UI attempt did not reliably capture consent/cancellation and is not certified. | Full regressions; real native first boot/upgrade/recovery and configuration retention; applicable signing/notarization and human installation/security/UX review. No installed-app replacement or public release under the current authorization. |
 
 ## Next dependency order
 
-1. Finish the running full backend regression of `81949a01` before changing
-   Python runtime code; inspect failures instead of replacing the run. Report
-   `/tmp/arslan-shutdown-regression.2R4LPk/combined.xml` only after completion.
+1. The full `81949a01` regression finished with 5,197 passed, one old test-harness
+   failure and 14 skipped; its `combined.xml` is retained. `7bd142c6` corrects
+   that test without weakening production checks (61 focused cases passed).
+   The corrected full run passed 5,198 cases with 14 skips and 19 warnings in
+   601.28s; `corrected.xml` is retained beside the failed first report. Runtime
+   changes after this baseline need their own proportional verification.
 2. Resolve recovery key-source persistence **before** wiring a successful trial
    to normal restart. Existing bootstrap precedence and lock-and-box separation
    are constraints, not details to bypass. A selected backup key must work on a
    subsequent fresh launch without overwriting the original installation key or
    silently putting key material in the profile/backup. Any new storage/reference
    mechanism needs its own consent, rollback and tamper/error tests.
+   `W17-recovery-key-restart.md` records a candidate-only credential re-encryption
+   alternative that preserves the existing durable external key; it is a design
+   direction, not implemented behavior or blanket consent to rewrite secrets.
 3. Connect the trusted native recovery coordinator and UI. Include exclusivity
    against startup/update/another recovery, owned-child shutdown, explicit pending
    state after uncertainty, and retained original/candidate folders. Keep all

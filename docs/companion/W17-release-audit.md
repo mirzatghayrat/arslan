@@ -2136,3 +2136,41 @@ false, while retaining the migration, deletion-ledger and legacy identity
 checks. Production shutdown checks were not relaxed. Focused memory activation,
 shutdown services and packaged-entry tests passed 61 cases in 1.26s with one
 existing warning. A fresh full run is still required for the corrected suite.
+
+The subsequent full corrected run on `7bd142c6` passed: **5,198 passed,
+14 skipped, 19 warnings in 601.28s**, exit 0. Report:
+`/tmp/arslan-shutdown-regression.2R4LPk/corrected.xml`, SHA-256
+`658190a0904b47de1d263989b5ec103ff0470ad84963424d317fcc547e4e1e5e`.
+JUnit records 5,212 cases, zero failures and zero errors. The existing aiosqlite
+teardown guard reported 58 deliveries into closed event loops; this warning
+and the existing skip/warning categories are not claimed fixed. Production
+Python and test sources were unchanged during the run; only audit notes changed.
+
+### Current-source temporary app and bounded UI attempt (2026-09-19)
+
+The native shell rebuilt offline in 1m16s and was bundled with explicit
+`--no-sign` at the existing temporary app path. Rust sources match `7bd142c6`;
+the backend has the same runtime as `81949a01` (only a later docstring differs).
+Config, splash and locale resources match the source checkout. Shell SHA-256:
+`196933a770536b7625dcb912918c8b1128ede36e509fc3c401b798468bc88603`.
+Bundled backend SHA-256:
+`f6d80eca684e74b035c3b901ad373ae954b46da008bf2e92282f86f8dcadebaf`.
+
+The actual app's backend passed bundle verification (15 imports, resources,
+no prohibited rasterizer/database/secret, 431 MiB), isolated compute selftest
+(two durable artifacts), full frozen-sidecar smoke including six saved locales,
+input locators, authentication and fresh restart, and both native acknowledged
+stop → prepare → trial → rollback/finalize smoke chains. These are transport
+and backend checks, not proof that the recovery wizard exists or was clicked.
+
+Desktop access was available. A pending recovery fixture was generated under
+`/private/tmp/arslan-native-recovery-ui-0w454bsv` and only the temporary app was
+launched via LaunchServices on port 60411 with a synthetic key. The splash was
+observed; subsequent UI state changed during observation, and a Chinese app
+menu was seen. Filesystem inspection found rollback completed, with original
+directory inode 120313208 active and candidate inode 120314515 retained as
+`restored`; the normal backend served health successfully. However, the dialog
+and its exact confirmation/cancellation interaction were NOT reliably captured.
+Neither branch is certified as native click acceptance. The owned application
+and backend PIDs 91551/91708 were stopped and verified absent. No installed app,
+real profile, key, account, live model, signing identity or publication was used.
