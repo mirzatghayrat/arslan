@@ -1,5 +1,30 @@
 # W21 — six-language consistency (in progress)
 
+## Shared selection keyboard fix — after `e1f8bf81`
+
+The earlier native observation that Down did not visibly advance the language
+menu led to checking the shared Select's focus contract. A new component test
+activates the trigger without synthetic pointer-to-focus behavior: the panel
+opened, but focus stayed on the body, so trigger-bound arrow handling could not
+run. A second test proved Tab left the panel open after focus moved away. Both
+tests failed before the fix (21 existing tests passed).
+
+Opening now explicitly focuses the trigger with preventScroll; Tab dismisses
+without selecting or preventing normal tab traversal. Mouse option selection,
+Escape, disabled-state and existing keyboard behavior remain unchanged. This
+is a shared control change, not a language-specific workaround. The focused
+selection suite passes 23 cases; the full frontend passes **251 files / 1,946
+tests in 24.99 seconds**, TypeScript passes and production build passes in
+7.38 seconds (existing large-chunk warning). JUnit:
+`/tmp/arslan-select-keyboard-regression.xml`, SHA-256
+`e3ce7157230602b09cc944606e685b04b81edf7b33678a2e9736888ed62cccc1`.
+
+This is source/component evidence. The temporary native app still contains
+`6f0ae897` assets, so native pointer-then-arrow/Enter, Escape and Tab/Shift-Tab
+verification must follow a candidate refresh. The full accessibility and
+locale/theme/size matrix remains open. No backend or native source changed;
+the preceding 5,304-test backend result remains applicable.
+
 ## Packaged runtime-error acceptance — `6f0ae897`, 2026-09-19
 
 The source fix below is now in the unsigned temporary app. Complete Python

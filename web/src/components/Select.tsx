@@ -3,7 +3,7 @@
  *
  * Fully styled via semantic tokens (no raw hex / Tailwind color-scale classes).
  * Keyboard: Enter/Space/ArrowDown open; ArrowUp/ArrowDown move highlight;
- *           Enter confirms; Escape closes; click-outside closes.
+ *           Enter confirms; Escape/Tab close; click-outside closes.
  * ARIA: trigger aria-haspopup="listbox" + aria-expanded; panel role="listbox";
  *       options role="option" + aria-selected.
  */
@@ -54,6 +54,9 @@ export default function Select({
 
   const openPanel = useCallback(() => {
     if (disabled) return;
+    // Pointer activation does not consistently focus buttons in the native
+    // WebKit view. Keyboard navigation lives on this trigger, so own its focus.
+    triggerRef.current?.focus({ preventScroll: true });
     const idx = options.findIndex((o) => o.value === value);
     // Start highlight on the current value, or first non-disabled option
     const fallback = options.findIndex((o) => !o.disabled);
@@ -130,6 +133,10 @@ export default function Select({
         break;
       case "Escape":
         e.preventDefault();
+        closePanel();
+        break;
+      case "Tab":
+        // Dismiss without selecting; keep normal forward/backward tab order.
         closePanel();
         break;
       default:
