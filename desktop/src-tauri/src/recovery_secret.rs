@@ -19,7 +19,14 @@ pub(crate) struct DurableSecret {
 
 fn identity(path: &Path) -> Result<(u64, u64, i64, i64, i64, i64), SecretError> {
     let m = std::fs::symlink_metadata(path).map_err(|_| SecretError::Unavailable)?;
-    Ok((m.dev(), m.ino(), m.mtime(), m.mtime_nsec(), m.ctime(), m.ctime_nsec()))
+    Ok((
+        m.dev(),
+        m.ino(),
+        m.mtime(),
+        m.mtime_nsec(),
+        m.ctime(),
+        m.ctime_nsec(),
+    ))
 }
 
 impl DurableSecret {
@@ -45,19 +52,24 @@ impl DurableSecret {
             Some(raw) => std::path::PathBuf::from(raw),
         };
         if !path.is_absolute()
-            || path.components().any(|p| p == std::path::Component::ParentDir)
+            || path
+                .components()
+                .any(|p| p == std::path::Component::ParentDir)
             || path.to_string_lossy().contains(['$', '\0'])
         {
             return Err(SecretError::Unsafe);
         }
         let canonical = path.canonicalize().map_err(|_| SecretError::Unavailable)?;
         let default_path = home.join(".arslan/secret_key");
-        let default = default_path.canonicalize()
+        let default = default_path
+            .canonicalize()
             .map_err(|_| SecretError::Unavailable)?;
         if canonical != default {
             return Err(SecretError::Unsafe);
         }
-        let profile = profile.canonicalize().map_err(|_| SecretError::Unavailable)?;
+        let profile = profile
+            .canonicalize()
+            .map_err(|_| SecretError::Unavailable)?;
         if canonical.starts_with(profile) {
             return Err(SecretError::Unsafe);
         }
@@ -77,7 +89,13 @@ impl DurableSecret {
                 return Err(SecretError::Changed);
             }
         }
-        Ok(Self { secret, path, default_path, canonical, identity: before })
+        Ok(Self {
+            secret,
+            path,
+            default_path,
+            canonical,
+            identity: before,
+        })
     }
 
     pub(crate) fn secret(&self) -> &ExistingSecret {
@@ -85,8 +103,16 @@ impl DurableSecret {
     }
 
     pub(crate) fn recheck(&self) -> Result<(), SecretError> {
-        if self.path.canonicalize().map_err(|_| SecretError::Unavailable)? != self.canonical
-            || self.default_path.canonicalize().map_err(|_| SecretError::Unavailable)? != self.canonical
+        if self
+            .path
+            .canonicalize()
+            .map_err(|_| SecretError::Unavailable)?
+            != self.canonical
+            || self
+                .default_path
+                .canonicalize()
+                .map_err(|_| SecretError::Unavailable)?
+                != self.canonical
             || identity(&self.default_path)? != self.identity
             || read_existing(&self.default_path)?.expose() != self.secret.expose()
             || identity(&self.path)? != self.identity
@@ -222,22 +248,35 @@ mod tests {
         std::fs::write(&file, b"  synthetic-durable\n").unwrap();
         std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o400)).unwrap();
         for override_path in [None, Some("~/.arslan/secret_key"), file.to_str()] {
-            let proof = DurableSecret::load(&fixture.0, &profile, "dev", Some("synthetic-durable"), override_path)
-                .unwrap_or_else(|_| panic!("refused durable fixture"));
+            let proof = DurableSecret::load(
+                &fixture.0,
+                &profile,
+                "dev",
+                Some("synthetic-durable"),
+                override_path,
+            )
+            .unwrap_or_else(|_| panic!("refused durable fixture"));
             assert_eq!(proof.secret().expose(), "  synthetic-durable\n");
             assert_eq!(proof.recheck(), Ok(()));
         }
         assert_eq!(std::fs::metadata(&file).unwrap().mode() & 0o777, 0o400);
         for (mode, explicit, override_path) in [
-            ("prod", None, None), ("dev", Some("different"), None),
-            ("dev", None, Some("")), ("dev", None, Some("relative")),
+            ("prod", None, None),
+            ("dev", Some("different"), None),
+            ("dev", None, Some("")),
+            ("dev", None, Some("relative")),
             ("dev", None, Some("$HOME/.arslan/secret_key")),
         ] {
-            assert!(DurableSecret::load(&fixture.0, &profile, mode, explicit, override_path).is_err());
+            assert!(
+                DurableSecret::load(&fixture.0, &profile, mode, explicit, override_path).is_err()
+            );
         }
         let alternate = fixture.key(b"synthetic-durable");
-        assert!(DurableSecret::load(&fixture.0, &profile, "dev", None, alternate.to_str()).is_err());
-        let proof = DurableSecret::load(&fixture.0, &profile, "dev", None, None).unwrap_or_else(|_| panic!());
+        assert!(
+            DurableSecret::load(&fixture.0, &profile, "dev", None, alternate.to_str()).is_err()
+        );
+        let proof = DurableSecret::load(&fixture.0, &profile, "dev", None, None)
+            .unwrap_or_else(|_| panic!());
         std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600)).unwrap();
         assert!(proof.recheck().is_err());
     }
@@ -253,16 +292,22 @@ mod tests {
         assert!(DurableSecret::load(&fixture.0, &folder, "dev", None, None).is_err());
         let profile = fixture.0.join("profile");
         std::fs::create_dir(&profile).unwrap();
-        let proof = DurableSecret::load(&fixture.0, &profile, "dev", None, None).unwrap_or_else(|_| panic!());
+        let proof = DurableSecret::load(&fixture.0, &profile, "dev", None, None)
+            .unwrap_or_else(|_| panic!());
         let replacement = fixture.key(b"synthetic-durable");
         std::fs::rename(replacement, &file).unwrap();
         assert!(proof.recheck().is_err());
         std::fs::remove_file(&file).unwrap();
-        assert!(DurableSecret::load(&fixture.0, &profile, "dev", Some("synthetic-durable"), None).is_err());
+        assert!(
+            DurableSecret::load(&fixture.0, &profile, "dev", Some("synthetic-durable"), None)
+                .is_err()
+        );
         assert!(!file.exists());
         let alternate = fixture.key(b"synthetic-durable");
         symlink(&alternate, &file).unwrap();
-        assert!(DurableSecret::load(&fixture.0, &profile, "dev", None, alternate.to_str()).is_err());
+        assert!(
+            DurableSecret::load(&fixture.0, &profile, "dev", None, alternate.to_str()).is_err()
+        );
     }
 
     #[test]

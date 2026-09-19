@@ -36,10 +36,17 @@ pub fn selected() -> &'static str {
 pub fn text(locale: &str, key: &str) -> String {
     if key.starts_with("restore_") {
         static RECOVERY: std::sync::OnceLock<serde_json::Value> = std::sync::OnceLock::new();
-        let copy = RECOVERY.get_or_init(|| serde_json::from_str(include_str!("../recovery_messages.json"))
-            .expect("recovery dialog catalog must be valid JSON"));
-        return copy.get(locale).and_then(|row| row.get(key)).or_else(|| copy["en"].get(key))
-            .and_then(|value| value.as_str()).unwrap_or("Arslan").to_string();
+        let copy = RECOVERY.get_or_init(|| {
+            serde_json::from_str(include_str!("../recovery_messages.json"))
+                .expect("recovery dialog catalog must be valid JSON")
+        });
+        return copy
+            .get(locale)
+            .and_then(|row| row.get(key))
+            .or_else(|| copy["en"].get(key))
+            .and_then(|value| value.as_str())
+            .unwrap_or("Arslan")
+            .to_string();
     }
     static COPY: std::sync::OnceLock<serde_json::Value> = std::sync::OnceLock::new();
     let copy = COPY.get_or_init(|| {
@@ -75,7 +82,10 @@ pub fn boot_error_script(locale: &str, detail: &str) -> String {
 }
 
 pub fn refresh_boot_script(locale: &str) -> String {
-    format!("{} window.__arslanRefreshBootCopy && window.__arslanRefreshBootCopy();", boot_script(locale))
+    format!(
+        "{} window.__arslanRefreshBootCopy && window.__arslanRefreshBootCopy();",
+        boot_script(locale)
+    )
 }
 
 pub fn recovery_script(locale: &str, paused: bool) -> String {
@@ -92,7 +102,8 @@ mod tests {
     use super::*;
     #[test]
     fn recovery_ui_copy_covers_all_six_locales() {
-        let copy: serde_json::Value = serde_json::from_str(include_str!("../recovery_messages.json")).unwrap();
+        let copy: serde_json::Value =
+            serde_json::from_str(include_str!("../recovery_messages.json")).unwrap();
         let keys = copy["en"].as_object().unwrap();
         assert_eq!(keys.len(), 15);
         assert_eq!(copy.as_object().unwrap().len(), 6);
@@ -117,8 +128,12 @@ mod tests {
             assert_eq!(copy["locale"], locale);
             assert_eq!(copy["starting"], text(locale, "boot_starting"));
             assert_eq!(copy["slow"], text(locale, "boot_slow"));
-            assert_eq!(refresh_boot_script(locale), format!(
-                "{script} window.__arslanRefreshBootCopy && window.__arslanRefreshBootCopy();"));
+            assert_eq!(
+                refresh_boot_script(locale),
+                format!(
+                    "{script} window.__arslanRefreshBootCopy && window.__arslanRefreshBootCopy();"
+                )
+            );
             let detail = "\"\\\r\n\t); window.injected = true; //";
             let error = boot_error_script(locale, detail);
             let argument = error

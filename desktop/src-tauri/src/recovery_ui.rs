@@ -1,7 +1,10 @@
 //! Trusted native picker/dialog adapter; deliberately absent from invoke_handler.
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
-use std::sync::{atomic::{AtomicBool, Ordering}, Arc};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use tauri::{AppHandle, Manager};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
@@ -65,7 +68,9 @@ struct ExecutableStamp(u64, u64, u64, u32, u32, i64, i64, i64, i64);
 
 fn executable_stamp(path: &Path) -> Result<ExecutableStamp, ()> {
     if !path.is_absolute()
-        || path.components().any(|c| c == std::path::Component::ParentDir)
+        || path
+            .components()
+            .any(|c| c == std::path::Component::ParentDir)
     {
         return Err(());
     }
@@ -73,8 +78,17 @@ fn executable_stamp(path: &Path) -> Result<ExecutableStamp, ()> {
     if !m.is_file() || m.len() == 0 || m.mode() & 0o111 == 0 {
         return Err(());
     }
-    Ok(ExecutableStamp(m.dev(), m.ino(), m.len(), m.mode(), m.uid(),
-        m.mtime(), m.mtime_nsec(), m.ctime(), m.ctime_nsec()))
+    Ok(ExecutableStamp(
+        m.dev(),
+        m.ino(),
+        m.len(),
+        m.mode(),
+        m.uid(),
+        m.mtime(),
+        m.mtime_nsec(),
+        m.ctime(),
+        m.ctime_nsec(),
+    ))
 }
 
 struct RecoveryExecutable {
@@ -140,7 +154,8 @@ impl NativeSteps {
         crate::native_locale::text(self.locale, key)
     }
     fn dialog_window(&self) -> Option<tauri::WebviewWindow> {
-        self.app.get_webview_window(RECOVERY_LABEL)
+        self.app
+            .get_webview_window(RECOVERY_LABEL)
             .or_else(|| self.app.get_webview_window(crate::MAIN_LABEL))
     }
     fn show_maintenance(&self) -> Result<(), ()> {
@@ -148,50 +163,60 @@ impl NativeSteps {
         let locale = self.locale;
         let paused = self.paused.clone();
         let (tx, rx) = std::sync::mpsc::sync_channel(1);
-        self.app.run_on_main_thread(move || {
-            let result = (|| {
-                let main = app.get_webview_window(crate::MAIN_LABEL).ok_or(())?;
-                // Keep the old DOM (including unsent drafts), but do not let
-                // it appear usable after the service is stopped. No recovery
-                // window is granted an IPC capability.
-                main.set_enabled(false).map_err(|_| ())?;
-                let page_paused = paused.clone();
-                let window = tauri::WebviewWindowBuilder::new(
-                    &app, RECOVERY_LABEL,
-                    tauri::WebviewUrl::App("recovery.html".into()),
-                )
-                .title(crate::native_locale::text(locale, "restore_working"))
-                .initialization_script(crate::native_locale::recovery_script(locale, false))
-                .on_page_load(move |webview, payload| {
-                    if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
-                        let _ = webview.eval(&crate::native_locale::recovery_script(
-                            locale, page_paused.load(Ordering::SeqCst),
-                        ));
+        self.app
+            .run_on_main_thread(move || {
+                let result = (|| {
+                    let main = app.get_webview_window(crate::MAIN_LABEL).ok_or(())?;
+                    // Keep the old DOM (including unsent drafts), but do not let
+                    // it appear usable after the service is stopped. No recovery
+                    // window is granted an IPC capability.
+                    main.set_enabled(false).map_err(|_| ())?;
+                    let page_paused = paused.clone();
+                    let window = tauri::WebviewWindowBuilder::new(
+                        &app,
+                        RECOVERY_LABEL,
+                        tauri::WebviewUrl::App("recovery.html".into()),
+                    )
+                    .title(crate::native_locale::text(locale, "restore_working"))
+                    .initialization_script(crate::native_locale::recovery_script(locale, false))
+                    .on_page_load(move |webview, payload| {
+                        if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
+                            let _ = webview.eval(&crate::native_locale::recovery_script(
+                                locale,
+                                page_paused.load(Ordering::SeqCst),
+                            ));
+                        }
+                    })
+                    .inner_size(crate::WINDOW_W, crate::WINDOW_H)
+                    .min_inner_size(480.0, 360.0)
+                    .center()
+                    // Quit remains available in the native menu. Closing just this
+                    // window would strand a hidden, intentionally disabled main.
+                    .closable(false)
+                    .build()
+                    .map_err(|_| ())?;
+                    // If main-thread dispatch ran after the worker timed out,
+                    // show the paused state rather than stale progress. Publishing
+                    // the window before this load also lets show_paused find it.
+                    if paused.load(Ordering::SeqCst) {
+                        window
+                            .set_title(&crate::native_locale::text(locale, "restore_paused_title"))
+                            .map_err(|_| ())?;
+                        window
+                            .eval(&crate::native_locale::recovery_script(locale, true))
+                            .map_err(|_| ())?;
                     }
-                })
-                .inner_size(crate::WINDOW_W, crate::WINDOW_H)
-                .min_inner_size(480.0, 360.0)
-                .center()
-                // Quit remains available in the native menu. Closing just this
-                // window would strand a hidden, intentionally disabled main.
-                .closable(false)
-                .build().map_err(|_| ())?;
-                // If main-thread dispatch ran after the worker timed out,
-                // show the paused state rather than stale progress. Publishing
-                // the window before this load also lets show_paused find it.
-                if paused.load(Ordering::SeqCst) {
-                    window.set_title(&crate::native_locale::text(locale, "restore_paused_title")).map_err(|_| ())?;
-                    window.eval(&crate::native_locale::recovery_script(locale, true)).map_err(|_| ())?;
-                }
-                main.hide().map_err(|_| ())?;
-                window.set_focus().map_err(|_| ())?;
-                Ok(())
-            })();
-            let _ = tx.send(result);
-        }).map_err(|_| ())?;
+                    main.hide().map_err(|_| ())?;
+                    window.set_focus().map_err(|_| ())?;
+                    Ok(())
+                })();
+                let _ = tx.send(result);
+            })
+            .map_err(|_| ())?;
         // A timeout is an uncertain, fail-closed outcome, never permission to
         // continue stopping/switching or to re-enable the old workspace.
-        rx.recv_timeout(std::time::Duration::from_secs(10)).map_err(|_| ())?
+        rx.recv_timeout(std::time::Duration::from_secs(10))
+            .map_err(|_| ())?
     }
     fn show_paused(&self) {
         self.paused.store(true, Ordering::SeqCst);
@@ -231,9 +256,15 @@ impl Steps for NativeSteps {
         // visible refusal before consent or service shutdown, not a silent
         // worker return. This metadata snapshot is an availability check, not
         // code-signature verification or protection from hostile ancestors.
-        self.executable = Some(RecoveryExecutable::load(self.app.path().resolve(
-            "sidecar/arslan-server", tauri::path::BaseDirectory::Resource,
-        ).map_err(|_| ())?)?);
+        self.executable = Some(RecoveryExecutable::load(
+            self.app
+                .path()
+                .resolve(
+                    "sidecar/arslan-server",
+                    tauri::path::BaseDirectory::Resource,
+                )
+                .map_err(|_| ())?,
+        )?);
         // A failed/absent backend cannot be treated as acknowledged stopped.
         if self
             .app
@@ -423,7 +454,9 @@ pub(crate) fn begin(app: AppHandle) {
             steps.show_paused();
         }
         let message = match result {
-            Outcome::Refused if steps.executable().is_err() => Some("restore_component_unavailable"),
+            Outcome::Refused if steps.executable().is_err() => {
+                Some("restore_component_unavailable")
+            }
             Outcome::Refused => Some("restore_refused"),
             Outcome::Paused(_) => Some("restore_paused"),
             Outcome::Busy | Outcome::Cancelled | Outcome::Complete => None,
@@ -451,9 +484,12 @@ mod tests {
     #[test]
     fn recovery_component_requires_regular_nonempty_executable_and_stable_identity() {
         let base = std::env::temp_dir().join(format!(
-            "arslan-component-check-{}-{}", std::process::id(),
-            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
-                .unwrap().as_nanos(),
+            "arslan-component-check-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
         ));
         std::fs::create_dir(&base).unwrap();
         let path = base.join("sidecar");
@@ -469,7 +505,12 @@ mod tests {
         let link = base.join("link");
         std::os::unix::fs::symlink(&path, &link).unwrap();
         assert!(RecoveryExecutable::load(link).is_err());
-        assert!(RecoveryExecutable::load(base.join("../").join(base.file_name().unwrap()).join("sidecar")).is_err());
+        assert!(RecoveryExecutable::load(
+            base.join("../")
+                .join(base.file_name().unwrap())
+                .join("sidecar")
+        )
+        .is_err());
         let replacement = base.join("replacement");
         std::fs::write(&replacement, b"synthetic-never-executed").unwrap();
         std::fs::set_permissions(&replacement, std::fs::Permissions::from_mode(0o700)).unwrap();

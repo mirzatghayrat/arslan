@@ -24,8 +24,11 @@
 useDefault = true
 
 [allowlist]
-description = "Obviously-fake fixture credentials, each read and verified"
+description = "Verified exact fixture values and one plain-prose false positive"
 regexes = [
+  # W17 audit prose: "wrong/missing keys, missing/corrupt salts". Verified
+  # at d2550f0:1363 and reproduced from that sentence alone via stdin.
+  '''^missing/corrupt$''',
   # OpenAI-shaped fixtures in backend tests. Real keys are 48+ chars of
   # base62; these are short and self-describing.
   '''sk-abc123456''',

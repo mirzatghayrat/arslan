@@ -10,8 +10,10 @@ from server.orchestrator import arslan, memory, tool_loop
 from server.services import knowledge, task_context, task_service, personal_context as pc
 from server.services.memory_repository import repository
 from arslan.llm.adapter import LLMAdapter
-from tests.server.test_context_request_evidence import selected
+from tests.server.test_context_request_evidence import selected as _selected_fixture
 from server.services.task_repository import TaskError
+
+selected = _selected_fixture
 
 
 @pytest.mark.parametrize("delete_before_tool", [True, False])

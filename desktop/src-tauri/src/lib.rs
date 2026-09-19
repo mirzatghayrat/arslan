@@ -17,11 +17,11 @@ use std::process::{Child, Command, Stdio};
 
 pub mod endpoint;
 mod listen;
+mod maintenance;
 mod native_locale;
 #[cfg(target_os = "macos")]
 mod native_menu;
 mod proxy;
-mod maintenance;
 #[cfg(target_os = "macos")]
 #[allow(dead_code)]
 mod recovery_coordinator;
@@ -30,16 +30,16 @@ mod recovery_ui;
 // Internal preparation only; no IPC endpoint until trusted recovery UI is wired.
 #[cfg(target_os = "macos")]
 #[allow(dead_code)]
-mod recovery_secret;
-#[cfg(target_os = "macos")]
-#[allow(dead_code)]
 mod recovery_control;
 #[cfg(target_os = "macos")]
 #[allow(dead_code)]
-mod recovery_trial;
+mod recovery_secret;
 #[cfg(target_os = "macos")]
 #[allow(dead_code)]
 mod recovery_shutdown;
+#[cfg(target_os = "macos")]
+#[allow(dead_code)]
+mod recovery_trial;
 mod voice;
 use std::sync::Mutex;
 
@@ -93,7 +93,9 @@ struct NativeMaintenance {
 
 impl NativeMaintenance {
     fn complete(mut self) {
-        if let Some(permit) = self.permit.take() { permit.complete(); }
+        if let Some(permit) = self.permit.take() {
+            permit.complete();
+        }
     }
 }
 
@@ -104,10 +106,16 @@ impl Drop for NativeMaintenance {
     }
 }
 
-fn begin_maintenance(app: &tauri::AppHandle, operation: maintenance::Operation) -> Option<NativeMaintenance> {
+fn begin_maintenance(
+    app: &tauri::AppHandle,
+    operation: maintenance::Operation,
+) -> Option<NativeMaintenance> {
     let permit = app.state::<maintenance::Gate>().begin(operation)?;
     refresh_update_menu(app);
-    Some(NativeMaintenance { permit: Some(permit), app: app.clone() })
+    Some(NativeMaintenance {
+        permit: Some(permit),
+        app: app.clone(),
+    })
 }
 
 struct NormalChild {
@@ -125,7 +133,10 @@ struct StartupFailure {
 
 impl From<String> for StartupFailure {
     fn from(message: String) -> Self {
-        Self { message, recovery_pending: false }
+        Self {
+            message,
+            recovery_pending: false,
+        }
     }
 }
 
@@ -145,9 +156,14 @@ fn start_with_recovery<T>(
 ) -> Result<T, StartupFailure> {
     match start() {
         Err(failure) if failure.recovery_pending => {
-            let pending = |message| StartupFailure { message, recovery_pending: true };
+            let pending = |message| StartupFailure {
+                message,
+                recovery_pending: true,
+            };
             let operation = inspect().map_err(pending)?;
-            if !confirm(&operation) { return Err(failure); }
+            if !confirm(&operation) {
+                return Err(failure);
+            }
             rollback(&operation).map_err(pending)?;
             start() // One retry only; another failure does not repeat consent/actions.
         }
@@ -185,7 +201,8 @@ fn start_sidecar(app: &tauri::AppHandle) -> Result<(u16, NormalChild), StartupFa
              packaging/build_dmg.sh, which stages packaging/dist into \
              src-tauri/binaries/sidecar.",
             exe.display()
-        ).into());
+        )
+        .into());
     }
 
     let mut cmd = Command::new(&exe);
@@ -271,10 +288,9 @@ fn start_sidecar(app: &tauri::AppHandle) -> Result<(u16, NormalChild), StartupFa
                     continue;
                 }
                 if let Some(rest) = line.strip_prefix(PORT_LINE_PREFIX) {
-                    let parsed = rest
-                        .trim()
-                        .parse::<u16>()
-                        .map_err(|_| StartupFailure::from(format!("unparseable port line: {line:?}")));
+                    let parsed = rest.trim().parse::<u16>().map_err(|_| {
+                        StartupFailure::from(format!("unparseable port line: {line:?}"))
+                    });
                     let _ = tx.send(parsed);
                     announced = true;
                     continue;
@@ -287,15 +303,20 @@ fn start_sidecar(app: &tauri::AppHandle) -> Result<(u16, NormalChild), StartupFa
         if !announced {
             let _ = tx.send(Err(format!(
                 "sidecar exited without printing {PORT_LINE_PREFIX}<port>"
-            ).into()));
+            )
+            .into()));
         }
     });
 
     match rx.recv_timeout(STARTUP_TIMEOUT) {
-        Ok(Ok(port)) => Ok((port, NormalChild { process: child,
-            #[cfg(target_os = "macos")]
-            shutdown,
-        })),
+        Ok(Ok(port)) => Ok((
+            port,
+            NormalChild {
+                process: child,
+                #[cfg(target_os = "macos")]
+                shutdown,
+            },
+        )),
         Ok(Err(e)) => {
             let _ = child.kill();
             let _ = child.wait();
@@ -307,7 +328,8 @@ fn start_sidecar(app: &tauri::AppHandle) -> Result<(u16, NormalChild), StartupFa
             Err(format!(
                 "sidecar did not announce a port within {}s",
                 STARTUP_TIMEOUT.as_secs()
-            ).into())
+            )
+            .into())
         }
     }
 }
@@ -475,7 +497,9 @@ fn refresh_update_menu(app: &tauri::AppHandle) {
 /// download_and_install; a tampered artefact fails here, not after.
 #[tauri::command]
 async fn install_update(app: tauri::AppHandle) {
-    let Some(_maintenance) = begin_maintenance(&app, maintenance::Operation::Update) else { return; };
+    let Some(_maintenance) = begin_maintenance(&app, maintenance::Operation::Update) else {
+        return;
+    };
     let shared = app.state::<UpdateShared>();
     let Some(update) = shared.pending.lock().unwrap().take() else {
         return; // double-click race or stale pill — nothing staged
@@ -509,7 +533,9 @@ async fn install_update(app: tauri::AppHandle) {
 /// machine or an unreachable feed is a normal morning, not an error the user
 /// can act on. README's Status section discloses that silence.
 fn check_for_updates(app: tauri::AppHandle, interactive: bool) {
-    let Some(maintenance) = begin_maintenance(&app, maintenance::Operation::Update) else { return; };
+    let Some(maintenance) = begin_maintenance(&app, maintenance::Operation::Update) else {
+        return;
+    };
     tauri::async_runtime::spawn(async move {
         let _maintenance = maintenance;
         // Menu-triggered only: the pill shows a "checking" sweep so the click is
@@ -568,8 +594,14 @@ fn check_for_updates(app: tauri::AppHandle, interactive: bool) {
                     // corner pill on top would say the same thing twice.
                     app.state::<UpdateShared>().set(&app, "none", "", "");
                     app.dialog()
-                        .message(format!("{}\n\n{e}", native_locale::text(native_locale::selected(), "check_failed")))
-                        .title(native_locale::text(native_locale::selected(), "check_title"))
+                        .message(format!(
+                            "{}\n\n{e}",
+                            native_locale::text(native_locale::selected(), "check_failed")
+                        ))
+                        .title(native_locale::text(
+                            native_locale::selected(),
+                            "check_title",
+                        ))
                         .kind(MessageDialogKind::Warning)
                         .blocking_show();
                 }
@@ -668,7 +700,12 @@ fn boot(app: tauri::AppHandle, splash_since: std::time::Instant, maintenance: Na
         || start_sidecar(&app),
         || {
             let refused = || native_locale::text(native_locale::selected(), "recovery_unconfirmed");
-            let executable = app.path().resolve("sidecar/arslan-server", tauri::path::BaseDirectory::Resource)
+            let executable = app
+                .path()
+                .resolve(
+                    "sidecar/arslan-server",
+                    tauri::path::BaseDirectory::Resource,
+                )
                 .map_err(|_| refused())?;
             match recovery_control::run(&executable, &recovery_control::Request::Inspect) {
                 Ok(recovery_control::Outcome::PendingOperation(Some(operation))) => Ok(operation),
@@ -683,7 +720,8 @@ fn boot(app: tauri::AppHandle, splash_since: std::time::Instant, maintenance: Na
                 return false;
             };
             let locale = native_locale::selected();
-            app.dialog().message(native_locale::text(locale, "recovery_rollback_prompt"))
+            app.dialog()
+                .message(native_locale::text(locale, "recovery_rollback_prompt"))
                 .parent(&window)
                 .title(native_locale::text(locale, "recovery_title"))
                 .kind(MessageDialogKind::Warning)
@@ -695,13 +733,23 @@ fn boot(app: tauri::AppHandle, splash_since: std::time::Instant, maintenance: Na
         },
         |operation| {
             let refused = || native_locale::text(native_locale::selected(), "recovery_unconfirmed");
-            let executable = app.path().resolve("sidecar/arslan-server", tauri::path::BaseDirectory::Resource)
+            let executable = app
+                .path()
+                .resolve(
+                    "sidecar/arslan-server",
+                    tauri::path::BaseDirectory::Resource,
+                )
                 .map_err(|_| refused())?;
-            match recovery_control::run(&executable, &recovery_control::Request::RollbackBound { operation_id: operation }) {
+            match recovery_control::run(
+                &executable,
+                &recovery_control::Request::RollbackBound {
+                    operation_id: operation,
+                },
+            ) {
                 Ok(recovery_control::Outcome::RolledBack(true)) => {
                     refresh_boot_locale(&app);
                     Ok(())
-                },
+                }
                 _ => Err(refused()),
             }
         },
@@ -716,9 +764,11 @@ fn boot(app: tauri::AppHandle, splash_since: std::time::Instant, maintenance: Na
         Err(e) => {
             // Ordinary failed startup is terminal, not uncertain recovery.
             // Preserve update access so a broken installed version can be fixed.
-            if !e.recovery_pending { maintenance.complete(); }
+            if !e.recovery_pending {
+                maintenance.complete();
+            }
             return report_boot_failure(&app, &e.message);
-        },
+        }
     };
     refresh_boot_locale(&app);
     if let Err(e) = wait_for_health(port) {
@@ -762,7 +812,10 @@ fn refresh_boot_locale(app: &tauri::AppHandle) {
 fn report_boot_failure(app: &tauri::AppHandle, message: &str) {
     eprintln!("Arslan failed to start: {message}");
     if let Some(splash) = app.get_webview_window(SPLASH_LABEL) {
-        let _ = splash.eval(native_locale::boot_error_script(native_locale::selected(), message));
+        let _ = splash.eval(native_locale::boot_error_script(
+            native_locale::selected(),
+            message,
+        ));
     }
 }
 
@@ -1007,20 +1060,48 @@ mod tests {
     #[test]
     #[cfg(target_os = "macos")]
     fn recovery_is_never_offered_for_success_or_unrelated_errors() {
-        assert_eq!(start_with_recovery(|| Ok(17), || panic!("no inspect"), |_| panic!("no prompt"), |_| panic!("no rollback")).unwrap(), 17);
-        let failure = start_with_recovery::<()>(|| Err("ordinary failure".to_string().into()),
-            || panic!("no inspect"), |_| panic!("no prompt"), |_| panic!("no rollback")).unwrap_err();
+        assert_eq!(
+            start_with_recovery(
+                || Ok(17),
+                || panic!("no inspect"),
+                |_| panic!("no prompt"),
+                |_| panic!("no rollback")
+            )
+            .unwrap(),
+            17
+        );
+        let failure = start_with_recovery::<()>(
+            || Err("ordinary failure".to_string().into()),
+            || panic!("no inspect"),
+            |_| panic!("no prompt"),
+            |_| panic!("no rollback"),
+        )
+        .unwrap_err();
         assert!(!failure.recovery_pending);
-        assert!(startup_failure("ARSLAN_ERROR=data_profile_recovery_required extra", "en").is_none());
-        assert!(!startup_failure("ARSLAN_ERROR=data_profile_in_use", "en").unwrap().recovery_pending);
+        assert!(
+            startup_failure("ARSLAN_ERROR=data_profile_recovery_required extra", "en").is_none()
+        );
+        assert!(
+            !startup_failure("ARSLAN_ERROR=data_profile_in_use", "en")
+                .unwrap()
+                .recovery_pending
+        );
     }
 
     #[test]
     #[cfg(target_os = "macos")]
     fn cancelling_recovery_never_mutates_or_restarts() {
         let starts = std::cell::Cell::new(0);
-        let failure = start_with_recovery::<()>(|| { starts.set(starts.get() + 1); Err(pending_failure()) },
-            || Ok("selected".into()), |_| false, |_| panic!("cancel must not rollback")).unwrap_err();
+        let failure = start_with_recovery::<()>(
+            || {
+                starts.set(starts.get() + 1);
+                Err(pending_failure())
+            },
+            || Ok("selected".into()),
+            |_| false,
+            |_| panic!("cancel must not rollback"),
+        )
+        .unwrap_err();
         assert_eq!(starts.get(), 1);
         assert!(failure.recovery_pending);
     }
@@ -1030,17 +1111,40 @@ mod tests {
     fn confirmed_rollback_retries_once_and_unknown_outcome_never_retries() {
         let starts = std::cell::Cell::new(0);
         let actions = std::cell::Cell::new(0);
-        let result = start_with_recovery(|| {
-            starts.set(starts.get() + 1);
-            if starts.get() == 1 { Err(pending_failure()) } else { Ok(23) }
-        }, || Ok("selected".into()), |operation| { assert_eq!(operation, "selected"); true },
-        |operation| { assert_eq!(operation, "selected"); actions.set(actions.get() + 1); Ok(()) });
+        let result = start_with_recovery(
+            || {
+                starts.set(starts.get() + 1);
+                if starts.get() == 1 {
+                    Err(pending_failure())
+                } else {
+                    Ok(23)
+                }
+            },
+            || Ok("selected".into()),
+            |operation| {
+                assert_eq!(operation, "selected");
+                true
+            },
+            |operation| {
+                assert_eq!(operation, "selected");
+                actions.set(actions.get() + 1);
+                Ok(())
+            },
+        );
         assert_eq!(result.unwrap(), 23);
         assert_eq!(starts.get(), 2);
         assert_eq!(actions.get(), 1);
         starts.set(0);
-        let failure = start_with_recovery::<()>(|| { starts.set(starts.get() + 1); Err(pending_failure()) },
-            || Ok("selected".into()), |_| true, |_| Err("unconfirmed".to_string())).unwrap_err();
+        let failure = start_with_recovery::<()>(
+            || {
+                starts.set(starts.get() + 1);
+                Err(pending_failure())
+            },
+            || Ok("selected".into()),
+            |_| true,
+            |_| Err("unconfirmed".to_string()),
+        )
+        .unwrap_err();
         assert_eq!(starts.get(), 1);
         assert_eq!(failure.message, "unconfirmed");
         assert!(failure.recovery_pending);
@@ -1051,8 +1155,19 @@ mod tests {
     fn repeated_pending_status_does_not_repeat_confirmation_or_rollback() {
         let starts = std::cell::Cell::new(0);
         let actions = std::cell::Cell::new(0);
-        assert!(start_with_recovery::<()>(|| { starts.set(starts.get() + 1); Err(pending_failure()) },
-            || Ok("selected".into()), |_| true, |_| { actions.set(actions.get() + 1); Ok(()) }).is_err());
+        assert!(start_with_recovery::<()>(
+            || {
+                starts.set(starts.get() + 1);
+                Err(pending_failure())
+            },
+            || Ok("selected".into()),
+            |_| true,
+            |_| {
+                actions.set(actions.get() + 1);
+                Ok(())
+            }
+        )
+        .is_err());
         assert_eq!(starts.get(), 2);
         assert_eq!(actions.get(), 1);
     }
@@ -1060,8 +1175,12 @@ mod tests {
     #[test]
     #[cfg(target_os = "macos")]
     fn failed_inspection_never_prompts_or_mutates() {
-        let result = start_with_recovery::<()>(|| Err(pending_failure()),
-            || Err("cannot inspect".into()), |_| panic!("no confirmation"), |_| panic!("no rollback"));
+        let result = start_with_recovery::<()>(
+            || Err(pending_failure()),
+            || Err("cannot inspect".into()),
+            |_| panic!("no confirmation"),
+            |_| panic!("no rollback"),
+        );
         let failure = result.unwrap_err();
         assert_eq!(failure.message, "cannot inspect");
         assert!(failure.recovery_pending);
@@ -1071,14 +1190,20 @@ mod tests {
     #[cfg(target_os = "macos")]
     fn rollback_uses_the_snapshot_from_before_confirmation() {
         let current = std::cell::Cell::new("first");
-        let result = start_with_recovery::<()>(|| Err(pending_failure()),
+        let result = start_with_recovery::<()>(
+            || Err(pending_failure()),
             || Ok(current.get().into()),
-            |operation| { assert_eq!(operation, "first"); current.set("second"); true },
+            |operation| {
+                assert_eq!(operation, "first");
+                current.set("second");
+                true
+            },
             |operation| {
                 assert_eq!(operation, "first");
                 assert_ne!(operation, current.get());
                 Err("operation changed".into())
-            });
+            },
+        );
         let failure = result.unwrap_err();
         assert_eq!(failure.message, "operation changed");
         assert!(failure.recovery_pending);
@@ -1087,20 +1212,36 @@ mod tests {
     #[test]
     fn profile_startup_errors_use_only_known_codes_and_six_language_copy() {
         for locale in ["en", "zh", "ja", "es", "de", "fr"] {
-            assert_eq!(startup_error("ARSLAN_ERROR=data_profile_in_use", locale),
-                       Some(native_locale::text(locale, "profile_in_use")));
-            assert_eq!(startup_error("ARSLAN_ERROR=data_profile_unavailable", locale),
-                       Some(native_locale::text(locale, "profile_unavailable")));
+            assert_eq!(
+                startup_error("ARSLAN_ERROR=data_profile_in_use", locale),
+                Some(native_locale::text(locale, "profile_in_use"))
+            );
+            assert_eq!(
+                startup_error("ARSLAN_ERROR=data_profile_unavailable", locale),
+                Some(native_locale::text(locale, "profile_unavailable"))
+            );
             assert_ne!(native_locale::text(locale, "profile_in_use"), "Arslan");
-            assert_eq!(startup_error("ARSLAN_ERROR=data_profile_recovery_required", locale),
-                       Some(native_locale::text(locale, "profile_recovery_required")));
-            assert_ne!(native_locale::text(locale, "profile_recovery_required"), "Arslan");
-            for key in ["recovery_title", "recovery_rollback_prompt", "recovery_rollback",
-                        "recovery_keep_paused", "recovery_unconfirmed"] {
+            assert_eq!(
+                startup_error("ARSLAN_ERROR=data_profile_recovery_required", locale),
+                Some(native_locale::text(locale, "profile_recovery_required"))
+            );
+            assert_ne!(
+                native_locale::text(locale, "profile_recovery_required"),
+                "Arslan"
+            );
+            for key in [
+                "recovery_title",
+                "recovery_rollback_prompt",
+                "recovery_rollback",
+                "recovery_keep_paused",
+                "recovery_unconfirmed",
+            ] {
                 assert_ne!(native_locale::text(locale, key), "Arslan");
             }
-            assert_ne!(native_locale::text(locale, "recovery_rollback"),
-                       native_locale::text(locale, "recovery_keep_paused"));
+            assert_ne!(
+                native_locale::text(locale, "recovery_rollback"),
+                native_locale::text(locale, "recovery_keep_paused")
+            );
         }
         assert!(startup_error("ARSLAN_ERROR=private diagnostic", "en").is_none());
         assert!(startup_error("ARSLAN_ERROR=data_profile_in_use<script>", "en").is_none());

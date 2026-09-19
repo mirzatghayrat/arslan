@@ -104,7 +104,9 @@ mod tests {
         assert!(owned_rx.try_recv().is_err());
         published.store(true, Ordering::SeqCst);
         drop(admitted);
-        owned_rx.recv_timeout(std::time::Duration::from_secs(2)).unwrap();
+        owned_rx
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .unwrap();
         worker.join().unwrap();
     }
     #[test]

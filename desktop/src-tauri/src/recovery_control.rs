@@ -71,7 +71,11 @@ fn encode(request: &Request<'_>) -> Result<Vec<u8>, ControlError> {
             && !candidate.contains(['/', '\\', '\0'])
     }
     let value = match request {
-        Request::Rewrap { candidate, source, target } => {
+        Request::Rewrap {
+            candidate,
+            source,
+            target,
+        } => {
             if !valid_candidate(candidate) || target.recheck().is_err() {
                 return Err(ControlError::InvalidRequest);
             }
@@ -206,14 +210,21 @@ fn decode(bytes: &[u8], exit: Option<i32>, request: &Request<'_>) -> Result<Outc
         return Err(ControlError::OutcomeUnknown);
     }
     match request {
-        Request::Rewrap { candidate, target, .. } => {
+        Request::Rewrap {
+            candidate, target, ..
+        } => {
             let r: Rewrapped = success(bytes)?;
-            if !r.rewrapped || r.candidate != *candidate || r.credentials > 10_000
-                || r.secret_persisted || target.recheck().is_err()
+            if !r.rewrapped
+                || r.candidate != *candidate
+                || r.credentials > 10_000
+                || r.secret_persisted
+                || target.recheck().is_err()
             {
                 return Err(ControlError::OutcomeUnknown);
             }
-            Ok(Outcome::Rewrapped { credentials: r.credentials })
+            Ok(Outcome::Rewrapped {
+                credentials: r.credentials,
+            })
         }
         Request::Prepare { candidate, .. } => {
             let r: Prepared = success(bytes)?;
@@ -552,47 +563,88 @@ mod tests {
     #[test]
     fn rewrap_requires_durable_source_bounded_pipe_and_exact_candidate_reply() {
         use std::os::unix::fs::PermissionsExt;
-        let home = std::env::temp_dir().join(format!("arslan-rewrap-control-{}-{}",
-            std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let home = std::env::temp_dir().join(format!(
+            "arslan-rewrap-control-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
         let profile = home.join("profile");
         let file = home.join(".arslan/secret_key");
         std::fs::create_dir_all(&profile).unwrap();
         std::fs::create_dir_all(file.parent().unwrap()).unwrap();
         std::fs::write(&file, b"synthetic-target").unwrap();
         std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600)).unwrap();
-        let target = DurableSecret::load(&home, &profile, "dev", None, None).unwrap_or_else(|_| panic!());
+        let target =
+            DurableSecret::load(&home, &profile, "dev", None, None).unwrap_or_else(|_| panic!());
         let source = secret();
-        let request = Request::Rewrap { candidate: "restored", source: &source, target: &target };
+        let request = Request::Rewrap {
+            candidate: "restored",
+            source: &source,
+            target: &target,
+        };
         let encoded = encode(&request).unwrap();
-        assert_eq!(serde_json::from_slice::<serde_json::Value>(&encoded).unwrap(),
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&encoded).unwrap(),
             serde_json::json!({"action":"rewrap","candidate":"restored",
-                "source_secret":"synthetic-only","target_secret":"synthetic-target"}));
+                "source_secret":"synthetic-only","target_secret":"synthetic-target"})
+        );
         let value = serde_json::json!({"ok":true,"result":{"rewrapped":true,"candidate":"restored",
             "credentials":2,"secret_persisted":false}});
         let reply = serde_json::to_vec(&value).unwrap();
-        assert_eq!(decode(&reply, Some(0), &request), Ok(Outcome::Rewrapped { credentials: 2 }));
+        assert_eq!(
+            decode(&reply, Some(0), &request),
+            Ok(Outcome::Rewrapped { credentials: 2 })
+        );
         assert_eq!(execute(shell("IFS= read -r payload; printf '%s' '{\"ok\":true,\"result\":{\"rewrapped\":true,\"candidate\":\"restored\",\"credentials\":2,\"secret_persisted\":false}}'"),
             &request, Duration::from_secs(2)), Ok(Outcome::Rewrapped { credentials: 2 }));
         for (field, bad) in [
-            ("candidate", serde_json::json!("other")), ("credentials", serde_json::json!(10001)),
-            ("credentials", serde_json::json!(-1)), ("secret_persisted", serde_json::json!(true)),
-            ("rewrapped", serde_json::json!(false)), ("extra", serde_json::json!(null)),
+            ("candidate", serde_json::json!("other")),
+            ("credentials", serde_json::json!(10001)),
+            ("credentials", serde_json::json!(-1)),
+            ("secret_persisted", serde_json::json!(true)),
+            ("rewrapped", serde_json::json!(false)),
+            ("extra", serde_json::json!(null)),
         ] {
             let mut wrong = value.clone();
             wrong["result"][field] = bad;
-            assert_eq!(decode(&serde_json::to_vec(&wrong).unwrap(), Some(0), &request), Err(ControlError::OutcomeUnknown));
+            assert_eq!(
+                decode(&serde_json::to_vec(&wrong).unwrap(), Some(0), &request),
+                Err(ControlError::OutcomeUnknown)
+            );
         }
-        assert_eq!(encode(&Request::Rewrap { candidate: "../active", source: &source, target: &target }).err(),
-            Some(ControlError::InvalidRequest));
+        assert_eq!(
+            encode(&Request::Rewrap {
+                candidate: "../active",
+                source: &source,
+                target: &target
+            })
+            .err(),
+            Some(ControlError::InvalidRequest)
+        );
         std::fs::write(&file, b"changed-target").unwrap();
         assert_eq!(encode(&request).err(), Some(ControlError::InvalidRequest));
-        assert_eq!(decode(&reply, Some(0), &request), Err(ControlError::OutcomeUnknown));
+        assert_eq!(
+            decode(&reply, Some(0), &request),
+            Err(ControlError::OutcomeUnknown)
+        );
         let huge = "x".repeat(8192);
         std::fs::write(&file, huge.as_bytes()).unwrap();
-        let target = DurableSecret::load(&home, &profile, "dev", None, None).unwrap_or_else(|_| panic!());
-        let source = crate::recovery_secret::prepare(Some(&huge), Path::new("unused")).unwrap_or_else(|_| panic!());
-        assert_eq!(encode(&Request::Rewrap { candidate: "restored", source: &source, target: &target }).err(),
-            Some(ControlError::InvalidRequest));
+        let target =
+            DurableSecret::load(&home, &profile, "dev", None, None).unwrap_or_else(|_| panic!());
+        let source = crate::recovery_secret::prepare(Some(&huge), Path::new("unused"))
+            .unwrap_or_else(|_| panic!());
+        assert_eq!(
+            encode(&Request::Rewrap {
+                candidate: "restored",
+                source: &source,
+                target: &target
+            })
+            .err(),
+            Some(ControlError::InvalidRequest)
+        );
         std::fs::remove_dir_all(home).unwrap();
     }
 
@@ -698,8 +750,14 @@ mod tests {
         let synthetic = if std::env::var_os("ARSLAN_CONTROL_TEST_WRONG_KEY").is_some() {
             "wrong-key"
         } else if std::env::var_os("ARSLAN_CONTROL_TEST_TARGET_KEY").is_some() {
-            let proof = DurableSecret::load(&home, &home.join("Library/Application Support/Arslan"),
-                "dev", None, None).unwrap_or_else(|_| panic!("invalid durable fixture"));
+            let proof = DurableSecret::load(
+                &home,
+                &home.join("Library/Application Support/Arslan"),
+                "dev",
+                None,
+                None,
+            )
+            .unwrap_or_else(|_| panic!("invalid durable fixture"));
             assert_eq!(proof.secret().expose(), "frozen-smoke-target-only");
             "frozen-smoke-target-only"
         } else {
@@ -724,13 +782,25 @@ mod tests {
         }
         let archive = home.join("backup.zip");
         let durable = if action == "rewrap" {
-            let proof = DurableSecret::load(&home, &home.join("Library/Application Support/Arslan"),
-                "dev", None, None).unwrap_or_else(|_| panic!("invalid durable fixture"));
+            let proof = DurableSecret::load(
+                &home,
+                &home.join("Library/Application Support/Arslan"),
+                "dev",
+                None,
+                None,
+            )
+            .unwrap_or_else(|_| panic!("invalid durable fixture"));
             assert_eq!(proof.secret().expose(), "frozen-smoke-target-only");
             Some(proof)
-        } else { None };
+        } else {
+            None
+        };
         let request = match action.as_str() {
-            "rewrap" => Request::Rewrap { candidate: "restored", source: &key, target: durable.as_ref().unwrap() },
+            "rewrap" => Request::Rewrap {
+                candidate: "restored",
+                source: &key,
+                target: durable.as_ref().unwrap(),
+            },
             "prepare" => Request::Prepare {
                 archive: &archive,
                 candidate: "restored",

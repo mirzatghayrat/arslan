@@ -89,13 +89,26 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
             &role!(quit, "quit"),
         ],
     )?;
-    let restore = labelled(&mut labels, MenuItem::with_id(app, "restore-backup",
-        text(locale, "restore_title"), app.state::<crate::maintenance::Gate>().is_idle(), None::<&str>)?, "restore_title");
+    let restore = labelled(
+        &mut labels,
+        MenuItem::with_id(
+            app,
+            "restore-backup",
+            text(locale, "restore_title"),
+            app.state::<crate::maintenance::Gate>().is_idle(),
+            None::<&str>,
+        )?,
+        "restore_title",
+    );
     let file = Submenu::with_items(
         app,
         text(locale, "file"),
         true,
-        &[&restore, &PredefinedMenuItem::separator(app)?, &role!(close_window, "close")],
+        &[
+            &restore,
+            &PredefinedMenuItem::separator(app)?,
+            &role!(close_window, "close"),
+        ],
     )?;
     let edit = Submenu::with_items(
         app,

@@ -10,7 +10,10 @@ from server.db.models import ArslanMessage, ArslanSummary, MemorySuppression, Pr
 from server.orchestrator import arslan, memory, tool_loop
 from server.services import knowledge, memory_history, task_context, task_service
 from server.services.memory_repository import repository
-from tests.server.test_context_request_evidence import selected
+from tests.server.test_context_request_evidence import selected as _selected_fixture
+
+# Register the shared pytest fixture without an import shadowed by test args.
+selected = _selected_fixture
 
 
 @pytest.mark.parametrize("delete_during_request", [False, True])
