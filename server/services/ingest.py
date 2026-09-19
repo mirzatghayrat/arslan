@@ -33,6 +33,9 @@ def _strip_private(text: str) -> str:
 @dataclass(frozen=True)
 class PDFTextLayer:
     pages: tuple[str, ...]
+    # Zero-based pages with drawing content but no extractable text. Truly
+    # empty pages are not OCR candidates and must not become fake warnings.
+    unread_pages: tuple[int, ...] = ()
 
     @property
     def has_text(self) -> bool:
@@ -47,7 +50,72 @@ class PDFTextLayer:
 def _pdf_text_layer(data: bytes) -> PDFTextLayer:
     from pypdf import PdfReader
     reader = PdfReader(io.BytesIO(data))
-    return PDFTextLayer(tuple(page.extract_text() or "" for page in reader.pages))
+    texts = tuple(page.extract_text() or "" for page in reader.pages)
+    unread = []
+    for i, page in enumerate(reader.pages):
+        if texts[i].strip():
+            continue
+        content = page.get_contents()
+        if content is not None and content.get_data().strip():
+            unread.append(i)
+    return PDFTextLayer(texts, tuple(unread))
+
+
+def _mixed_pdf_text(data: bytes, layer: PDFTextLayer, ui_language: str | None,
+                    chosen_languages: str | None = None) -> tuple[str, bool]:
+    """Keep native text; locally read only drawing-only pages, under the cap.
+
+    No cloud call or duplicate text-page OCR. Explicit per-page provenance and
+    unresolved-page markers prevent a partially read PDF looking complete.
+    """
+    import json
+
+    pages = list(layer.pages)
+    unresolved = []
+    pdf = None
+    try:
+        if ocr_vision.is_available():
+            import pypdfium2 as pdfium
+            pdf = pdfium.PdfDocument(data)
+        for ordinal, index in enumerate(layer.unread_pages):
+            status = "page_limit" if ordinal >= VISION_PDF_MAX_PAGES else "unavailable"
+            if pdf is not None and ordinal < VISION_PDF_MAX_PAGES:
+                page = bitmap = None
+                try:
+                    page = pdf[index]
+                    bitmap = page.render(scale=2)
+                    image = bitmap.to_pil().convert("RGB")
+                    try:
+                        buffer = io.BytesIO()
+                        image.save(buffer, format="PNG")
+                        text, status = ocr_fallback.read_locally(
+                            buffer.getvalue(), ui_language=ui_language,
+                            chosen_languages=chosen_languages)
+                    finally:
+                        image.close()
+                    if status == ocr_vision.OK and text.strip():
+                        pages[index] = "[local OCR]\n" + text
+                        continue
+                except Exception:  # noqa: BLE001 — retain all other source pages
+                    status = "error"
+                finally:
+                    if bitmap is not None:
+                        bitmap.close()
+                    if page is not None:
+                        page.close()
+            unresolved.append(index + 1)
+            pages[index] = f"[page text not read: {status}]"
+    except Exception:  # noqa: BLE001 — rasterizer unavailable, preserve native text
+        unresolved = [i + 1 for i in layer.unread_pages]
+        for index in layer.unread_pages:
+            pages[index] = "[page text not read: unavailable]"
+    finally:
+        if pdf is not None:
+            pdf.close()
+    body = PDFTextLayer(tuple(pages)).located_text
+    if unresolved:
+        body += "\n" + json.dumps({"extraction_truncated": True, "unread_pages": unresolved})
+    return body, bool(unresolved)
 
 
 def _ocr_pdf(data: bytes) -> str:
@@ -336,6 +404,8 @@ def _extract_file(filename: str, data: bytes, *, ui_language: str | None = None,
         return data.decode("utf-8", errors="replace")
     if name.endswith(".pdf"):
         layer = _pdf_text_layer(data)
+        if layer.has_text and layer.unread_pages:
+            return _mixed_pdf_text(data, layer, ui_language, ocr_languages)[0]
         if not layer.has_text:
             if ocr_vision.is_available():
                 pages = _ocr_pdf_pages_locally(data, ui_language, ocr_languages)
@@ -468,7 +538,13 @@ async def ingest_file(spawn_id: int | None, filename: str, data: bytes, *,
         # would burn image tokens on something already available as text.
         layer = _pdf_text_layer(data)
         if layer.has_text:
-            return await ingest_text(spawn_id, filename, layer.located_text,
+            body = layer.located_text
+            if layer.unread_pages:
+                import asyncio
+                body, _ = await asyncio.to_thread(_mixed_pdf_text, data, layer,
+                    await ocr_fallback.current_ui_language(),
+                    await ocr_fallback.current_ocr_languages())
+            return await ingest_text(spawn_id, filename, body,
                                      collection_id=collection_id, compress=compress)
         # No text layer ⇒ a scan. Rasterise under the cap and let the model read
         # the pages, saying plainly when only part of the document was read.

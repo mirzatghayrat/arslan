@@ -283,3 +283,35 @@ The subsequent clean `3617083e` complete backend run passed 4,927 tests with
 14 documented skips (492.62s), including all new input cases. W17 records its
 JUnit identity and isolation. The full-regression gap is now closed for this
 candidate; native visual and real selected-model acceptance remain open.
+# Mixed text/drawing PDF source checkpoint — after `2879267c`
+
+Inspection confirmed a document-wide text threshold caused mixed PDFs to return
+only their text-layer pages, silently omitting drawing-only/scanned pages. The
+parser now records pages with nonempty content streams but no extracted text;
+truly empty pages remain blank. If the document has usable native text, only
+those missing pages are rasterized and locally recognized, under the existing
+page cap. Native text and original page numbers are preserved, recovered text
+is explicitly marked local OCR, and no cloud model is called for this path.
+
+Unavailable, failed, empty-result and over-budget pages receive explicit unread
+page markers. A structured unresolved-page list accompanies the source text;
+ephemeral extraction also returns its actual partial flag, so the existing
+localized partial-attachment notice can be displayed. Knowledge ingestion keeps
+the same source evidence. Blocking mixed-page OCR runs off the async event loop.
+Rasterizer page, bitmap, image and document resources are closed.
+
+The combined PDF/ingest/OCR/extract/API regression passed **75 tests in 8.11s**
+with one existing Starlette/httpx deprecation. Six new tests use a real mixed
+PDF and real rasterization with a stub recognizer to cover page selection,
+unchanged native text, locator order, blank-page omission, unavailable/no-text
+responses, page budget and knowledge ingestion without a model. Ruff and diff
+checks pass. Full Python regression is running with isolated HOME at
+`/tmp/arslan-mixed-pdf-regression.SVOpqO/full.xml` (not yet claimed passing).
+
+This is not real-scanned-document OCR quality or packaged acceptance. The
+current temporary app still predates this change. Next: collect the full run,
+exercise an actual raster-text mixed fixture with the host recognizer, refresh
+the package and verify partial/readback UI evidence. Pages containing BOTH a
+usable text layer and additional scanned content remain a separate fidelity
+case, not covered by the no-text-page detector. Full scan-only model/OCR policy
+is unchanged. No genuine documents, accounts, costs or installation changes.

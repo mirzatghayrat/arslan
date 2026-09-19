@@ -6,6 +6,89 @@ from pypdf.generic import DictionaryObject, NameObject, DecodedStreamObject
 from server.services import extract, ingest
 
 
+def mixed_pdf():
+    from pypdf import PdfReader
+    writer = PdfWriter()
+    reader = PdfReader(io.BytesIO(pdf_with_pages([
+        "Native source must stay exactly as written.", "", "", "Last native source."])))
+    for page in reader.pages:
+        writer.add_page(page)
+    # Real drawing-only page, no text operators. Rasterization is real; OCR is
+    # stubbed in contract tests so they do not depend on the host recognizer.
+    content = DecodedStreamObject()
+    content.set_data(b"0 0 0 rg 20 20 100 100 re f")
+    writer.pages[1][NameObject("/Contents")] = content
+    output = io.BytesIO()
+    writer.write(output)
+    return output.getvalue()
+
+
+def test_mixed_pdf_detects_content_without_treating_blank_pages_as_scans():
+    layer = ingest._pdf_text_layer(mixed_pdf())
+    assert layer.has_text
+    assert layer.unread_pages == (1,)
+
+
+async def test_mixed_pdf_ocr_only_missing_page_and_preserves_sources(monkeypatch):
+    calls = []
+    monkeypatch.setattr(ingest.ocr_vision, "is_available", lambda: True)
+    def recognize(png, **kwargs):
+        assert png.startswith(b"\x89PNG")
+        calls.append(kwargs)
+        return "Scanned source recovered.", ingest.ocr_vision.OK
+    monkeypatch.setattr(ingest.ocr_fallback, "read_locally", recognize)
+    text, truncated = await extract.extract_text(filename="mixed.pdf", data=mixed_pdf())
+    assert not truncated
+    assert len(calls) == 1
+    assert "[page 1]\nNative source must stay exactly as written." in text
+    assert "[page 2]\n[local OCR]\nScanned source recovered." in text
+    assert "[page 3]" not in text
+    assert "[page 4]\nLast native source." in text
+
+
+async def test_mixed_pdf_unavailable_is_explicit_partial_not_silent_success(monkeypatch):
+    monkeypatch.setattr(ingest.ocr_vision, "is_available", lambda: False)
+    text, truncated = await extract.extract_text(filename="mixed.pdf", data=mixed_pdf())
+    assert truncated
+    assert "[page 2]\n[page text not read: unavailable]" in text
+    assert '"unread_pages": [2]' in text
+    assert "Last native source." in text
+
+
+def test_mixed_pdf_no_text_status_does_not_promote_diagnostic_to_source(monkeypatch):
+    monkeypatch.setattr(ingest.ocr_vision, "is_available", lambda: True)
+    monkeypatch.setattr(ingest.ocr_fallback, "read_locally",
+                        lambda *a, **k: ("not source", ingest.ocr_vision.NO_TEXT))
+    data = mixed_pdf()
+    text, partial = ingest._mixed_pdf_text(data, ingest._pdf_text_layer(data), "en")
+    assert partial and "not source" not in text
+    assert "[page text not read: no_text]" in text
+
+
+def test_mixed_pdf_page_budget_retains_native_text_beyond_budget(monkeypatch):
+    monkeypatch.setattr(ingest, "VISION_PDF_MAX_PAGES", 0)
+    monkeypatch.setattr(ingest.ocr_vision, "is_available", lambda: False)
+    data = mixed_pdf()
+    text, partial = ingest._mixed_pdf_text(data, ingest._pdf_text_layer(data), "en")
+    assert partial and "page_limit" in text
+    assert "[page 4]\nLast native source." in text
+
+
+async def test_mixed_knowledge_pdf_preserves_unread_page_notice_without_model(monkeypatch):
+    captured = []
+    async def store(spawn_id, filename, text, **kwargs):
+        captured.append(text)
+        return 1
+    async def forbidden(*args):
+        raise AssertionError("Mixed text PDF must not start a model request")
+    monkeypatch.setattr(ingest, "ingest_text", store)
+    monkeypatch.setattr(ingest, "describe_image", forbidden)
+    monkeypatch.setattr(ingest.ocr_vision, "is_available", lambda: False)
+    assert await ingest.ingest_file(1, "mixed.pdf", mixed_pdf()) == 1
+    assert '"unread_pages": [2]' in captured[0]
+    assert "Native source must stay exactly as written." in captured[0]
+
+
 def pdf_with_pages(texts):
     writer = PdfWriter()
     for text in texts:

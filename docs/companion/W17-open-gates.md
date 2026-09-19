@@ -1,5 +1,13 @@
 # Remaining release gates — triage, not completion certification
 
+Newest source checkpoint after `2879267c`: mixed PDF extraction now preserves
+native text while locally recognizing drawing-only/no-text pages, with explicit
+unread page markers and a partial flag when recognition cannot complete. The
+75-test focused regression and lint pass; full Python is running under
+`/tmp/arslan-mixed-pdf-regression.SVOpqO`. This fix is not yet packaged or real-OCR
+quality accepted. W20 records scope and next checks; the candidate below still
+contains the preceding PDF implementation.
+
 Snapshot: packaged runtime-error language switching at `6f0ae897`, 2026-09-19. This index complements the chronological
 `W17-release-audit.md`; it does not replace the approved v1.2 plan, task-package
 acceptance checklist or v1.3 browser/input/language amendment in `README.md`.

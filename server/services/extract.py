@@ -40,6 +40,19 @@ async def extract_text(
             import json
             text = json.dumps(await asyncio.to_thread(video_metadata, filename or "file", data), ensure_ascii=False, indent=2)
             preserve_source = True
+        elif (filename or "").lower().endswith(".pdf"):
+            import asyncio
+            language = await ocr_fallback.current_ui_language()
+            languages = await ocr_fallback.current_ocr_languages()
+            layer = await asyncio.to_thread(ingest._pdf_text_layer, data)
+            if layer.has_text and layer.unread_pages:
+                text, source_truncated = await asyncio.to_thread(
+                    ingest._mixed_pdf_text, data, layer, language, languages)
+            else:
+                text = await asyncio.to_thread(ingest._extract_file,
+                    filename or "file.pdf", data, ui_language=language,
+                    ocr_languages=languages)
+            preserve_source = True
         else:
             text = ingest._extract_file(
                 filename or "file", data,
