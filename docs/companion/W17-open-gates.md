@@ -1,5 +1,13 @@
 # Remaining release gates — triage, not completion certification
 
+URL-input follow-up after `9cc7957e`: explicit numeric/IPv6/Unicode HTTP(S)
+addresses now reach the existing safe extraction endpoint instead of being
+silently ignored. Balanced URL punctuation is preserved and repeated candidates
+deduplicated. Real backend private-address refusal/service selection: 14 passed.
+Final frontend 2,000 passing, zero failures/errors; TypeScript/build pass.
+Native package refresh and numeric-address refusal UI check remain pending;
+this does not broaden network authority or certify all URL forms.
+
 Native follow-up after `4fab4926`: the refreshed temporary app shows localized
 German and Chinese URL errors for a reserved-domain fixture. Ordinary edits
 leave the extraction count unchanged; explicit re-paste starts one new attempt.

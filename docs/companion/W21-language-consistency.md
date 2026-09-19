@@ -1,5 +1,37 @@
 # W21 — six-language consistency (in progress)
 
+## Explicit URL recognition — after `9cc7957e`
+
+The prior native URL test showed numeric IP addresses were silently ignored by
+the frontend's TLD-letter regex. Explicit HTTP/HTTPS candidates are now validated
+with the platform URL parser, recognizing IPv4, IPv6 and internationalized host
+names. Bare domains, filenames, non-web schemes and incomplete/malformed URLs
+still do not auto-extract. Original candidate text is preserved when handed to
+the existing extraction API; no direct fetch or backend policy change is added.
+
+Trailing prose punctuation is removed without stripping the IPv6 closing bracket
+or balanced parentheses in URL paths. Bracket counting and suffix trimming are
+linear in candidate length; a long punctuation-tail case guards this path.
+Repeated candidates in one paste are deduplicated even on failure.
+New component tests assert private-address candidates reach the ordinary API and
+produce no attachment after a policy refusal, alongside Unicode/bracket/query
+preservation and malformed/non-web rejection. These frontend mocks are not
+claimed as SSRF enforcement evidence.
+
+Separately reran the actual backend private-address rejection endpoint test plus
+the extraction service suite: **14 passed**, one existing dependency warning,
+1.82s, with synthetic HOME and no live model. Native package refresh and
+numeric-address refusal UI verification remain pending; the temporary package
+still contains the preceding URL-error localization/retry implementation.
+
+Final frontend regression: **2,000 passed, zero failures/errors**, exit 0;
+TypeScript and build pass (3.21s, existing chunk warning). JUnit
+`/tmp/arslan-url-detection-full.xml`, SHA-256
+`13be46c0379cb815a0f25973d8847697f088a5d16df7586e30704f05c888450e`.
+An earlier full run failed the existing hardcoded-CJK guard because parser
+punctuation was written literally; equivalent Unicode character escapes fixed
+that syntax-only conflict without weakening the guard or changing locale copy.
+
 ## Native URL failure copy and retry — after `4fab4926`
 
 Refreshed the unsigned temporary app and verified bundled web assets match

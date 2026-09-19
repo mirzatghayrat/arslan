@@ -82,15 +82,41 @@ const ATTACH_ACCEPT = INPUT_ACCEPT;
 const MAX_ATTACHMENTS = 9;
 /** 30 MB/file, matching the Claude reference in the design doc. */
 const MAX_FILE_BYTES = INPUT_FORMATS.max_bytes;
-/** Explicit-scheme URLs with a TLD-like dot. Bare domains are intentionally NOT
+/** Explicit-scheme candidates. Bare domains are intentionally NOT
  *  auto-detected (too ambiguous with filenames/prose). */
-const URL_RE = /\bhttps?:\/\/[^\s<>"'`]+\.[a-z][^\s<>"'`]*/gi;
+const URL_RE = /\bhttps?:\/\/[^\s<>"'`]+/gi;
 /** Detection debounce so we extract a settled URL, not each keystroke. */
 const DETECT_DEBOUNCE_MS = 700;
 
 /** Pull settled URLs out of text, trimming trailing sentence punctuation. */
 function extractUrls(text: string): string[] {
-  return Array.from(text.matchAll(URL_RE)).map((m) => m[0].replace(/[.,;:!?)\]}]+$/, ""));
+  const urls = new Set<string>();
+  for (const match of text.matchAll(URL_RE)) {
+    const raw = match[0];
+    // Remove prose wrappers, but preserve balanced URL parentheses and the
+    // closing bracket of an IPv6 host. Validation here is syntax only; the
+    // extraction service remains the authority for SSRF/network policy.
+    const pairs: Record<string, string> = { ')': '(', ']': '[', '}': '{' };
+    const balance: Record<string, number> = { ')': 0, ']': 0, '}': 0 };
+    const closing: Record<string, string> = { '(': ')', '[': ']', '{': '}' };
+    for (const char of raw) {
+      if (pairs[char]) balance[char]++;
+      else if (closing[char]) balance[closing[char]]--;
+    }
+    let end = raw.length;
+    while (end > 0) {
+      const char = raw[end - 1];
+      if (/[.,;:!?\uFF0C\u3002\uFF1B\uFF1A\uFF01\uFF1F]/.test(char)) end--;
+      else if (pairs[char] && balance[char] > 0) { balance[char]--; end--; }
+      else break;
+    }
+    const candidate = raw.slice(0, end);
+    try {
+      const parsed = new URL(candidate);
+      if (['http:', 'https:'].includes(parsed.protocol) && parsed.hostname) urls.add(candidate);
+    } catch { /* Incomplete/invalid explicit URL, not a settled source yet. */ }
+  }
+  return [...urls];
 }
 
 export interface UseComposerAttach {
