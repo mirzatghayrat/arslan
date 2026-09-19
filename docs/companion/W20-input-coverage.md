@@ -287,6 +287,32 @@ candidate; native visual and real selected-model acceptance remain open.
 
 ## Same-page text-plus-image source extension — after `e4509ccf`
 
+### Packaged follow-up on `d3702cce`
+
+Both fresh frozen and app-bundled authenticated extract APIs now pass the real
+host-OCR smoke for separate-page and same-page text/image fixtures. Both forms
+also pass an explicitly unsupported-language case: the partial flag is true,
+page 2 is named as unresolved, original native text/caption survives and the
+unread scan sentence is not fabricated. The same-page check is newly added to
+the smoke driver rather than inferred from the separate-page result.
+
+Staging verification passed 15 feature imports and resource/no-secret/no-data/
+no-AGPL checks. The unsigned temporary app was rebuilt with current backend
+and unchanged web/native sources. Packaged web assets exactly match web/dist;
+app-bundled standard smoke passes fresh boot/restart, input locators, six-locale
+refusals/catalogs, offline expert creation and parent-pipe shutdown. Temporary
+smoke profiles/processes were cleaned up. No formal installation was touched.
+
+Frozen directory: `/tmp/arslan-candidate-build.BboGj4/dist-same-page-pdf`.
+Temporary app:
+`/tmp/arslan-native-candidate.xIygc5/target/release/bundle/macos/Arslan.app`.
+Backend SHA-256:
+`ae5c60c8941cc6d843256e652077be1f193e43c895c5cacc2c053e9dd596b411`.
+Web/native identities remain those in the preceding packaged checkpoint.
+Full regression under `/tmp/arslan-same-page-regression.N9IZtY` is still
+running, not yet claimed passing. This adds packaged API evidence, not native
+attachment UI or broad OCR-quality acceptance. No cloud model/account was used.
+
 The parser now records native-text pages that also contain image resources,
 using pypdf's resource enumeration (including inline/form image keys) without
 decoding every image into PIL. These pages join drawing-only pages in the same

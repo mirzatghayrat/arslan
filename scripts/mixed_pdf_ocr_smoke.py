@@ -115,6 +115,15 @@ def main() -> None:
                 assert '"unread_pages": [2]' in incomplete["text"]
                 assert "[page 4]\nFinal native source retained." in incomplete["text"]
                 assert "Scanned source recovered" not in incomplete["text"]
+                response = client.post("/api/v1/extract",
+                    files={"file": ("same-page.pdf", fixture(same_page=True), "application/pdf")}, timeout=30)
+                assert response.status_code == 200
+                incomplete = response.json()
+                assert incomplete["truncated"] is True
+                assert "[page 2]\nNative caption stays exact." in incomplete["text"]
+                assert "[additional image text not read: unsupported_language]" in incomplete["text"]
+                assert '"unread_pages": [2]' in incomplete["text"]
+                assert "Scanned source recovered" not in incomplete["text"]
             finally:
                 client.close()
                 assert stop(process) == 0
