@@ -287,6 +287,43 @@ candidate; native visual and real selected-model acceptance remain open.
 
 ## Damaged optional image resources — after `6d843260`
 
+### Candidate/native follow-up — `36070eaa`
+
+The preceding `d3702cce` full regression completed: **5,315 passed, 14 skipped,
+18 warnings in 510.83s**, exit 0. JUnit
+`/tmp/arslan-same-page-regression.N9IZtY/full.xml`, SHA-256
+`4b9234a61709e94ba7071dd7d0e38f63fae284ee07f2c43726026c369cbb426a`.
+The aiosqlite guard reported 45 closed-loop deliveries; this is not claimed
+fixed. A separate current-source full run is now live under
+`/tmp/arslan-pdf-hardening-regression.JvQWPZ/full.xml`; no product changes have
+been made since it started. Do not conflate the two source baselines.
+
+Current frozen backend `/tmp/arslan-candidate-build.BboGj4/dist-pdf-hardening`
+passed real mixed/same-page OCR and both unsupported-language partial API
+checks. Staging verification passed 15 imports and content guards. The unsigned
+temporary app now contains this backend (SHA-256
+`1b96d4514c2db678dee83bd64345cd5a83e74041f780829d55ecee5c012ad30e`),
+with unchanged web/native code and exactly matching production web assets.
+
+Native German/dark UI used only synthetic profile
+`/private/tmp/arslan-native-restore-ui-m1tgzvbv` and synthetic attachment
+`/tmp/arslan-native-fixtures/tmp/pdfs/same-page-synthetic.pdf`. Its four rendered
+pages were visually checked: native text, scan plus caption, blank, native text.
+Picker import returned 228 characters; sending preserved the filename and the
+local no-provider refusal. Setting only this disposable profile's OCR languages
+to `zz-ZZ` through its authenticated loopback API produced 226 characters plus
+the composer partial flag on reimport. Sending showed the full German warning
+that the source is only partially extracted and must not be treated as complete.
+The original empty OCR-language preference was restored and verified.
+
+The pre-send chip currently calls the partial result `gekürzt` (shortened),
+whereas the sent notice correctly describes partial extraction. Review that
+generic composer wording for unread-page cases; this is not six-language copy
+acceptance. The fresh native log contains no external model HTTP request or
+traceback. Native/sidecar PIDs 47649/47672 exited normally. No real document,
+genuine account, cloud model, formal installation replacement or publishing
+occurred. Broad scan quality and full native layout/language matrices remain.
+
 Review found an error introduced by the same-page resource enumeration: if
 `page.images.keys()` raises, extraction discarded an already-readable native
 text layer. A failing test first reproduced that loss. The optional inventory

@@ -1,10 +1,14 @@
 # Remaining release gates — triage, not completion certification
 
-New source hardening after `6d843260`: damaged optional PDF image inventories
+Current candidate `36070eaa`: damaged optional PDF image inventories
 no longer discard readable native text. Both injected enumeration failure and
 an actual malformed Form resource are covered; focused tests/lint pass. This
-fix is not yet packaged, and the ongoing `d3702cce` full regression must not be
-presented as its complete regression. W20 records the precise source distinction.
+fix is now packaged and has native German/dark success/partial attachment
+evidence using only synthetic data. The preceding `d3702cce` full run passed
+5,315 cases; current-source full regression is separately running under
+`/tmp/arslan-pdf-hardening-regression.JvQWPZ`. W20 records hashes and the source
+distinction. The pre-send partial chip's generic shortened wording still needs
+review; broad native/quality gates remain open.
 
 New packaged extension `d3702cce`: same-page native text plus image resources
 now receives bounded local OCR while preserving original text and separately
