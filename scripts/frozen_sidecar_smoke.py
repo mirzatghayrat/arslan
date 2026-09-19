@@ -34,13 +34,14 @@ def stop(process):
             process.stdout.close()
 
 
-def start(binary, home):
+def start(binary, home, *, secret="frozen-smoke-synthetic-only"):
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
     env = {"PATH": "/usr/bin:/bin", "HOME": str(home), "TMPDIR": str(home),
-           "ARSLAN_SECRET_KEY": "frozen-smoke-synthetic-only", "ARSLAN_SECRET_KEY_FILE": "",
            "ARSLAN_PORT": str(port), "ARSLAN_LIVE_LLM": "0"}
+    if secret is not None:
+        env.update(ARSLAN_SECRET_KEY=secret, ARSLAN_SECRET_KEY_FILE="")
     process = subprocess.Popen([str(binary)], cwd=home, env=env, stdin=subprocess.PIPE,
                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     client = httpx.Client(base_url=f"http://127.0.0.1:{port}", timeout=5, trust_env=False)

@@ -2201,3 +2201,41 @@ The primitive is not yet in packaged control transport, native coordination or
 HTTP/model IPC. Target durable-source validation, explicit consent and full
 desktop restart validation remain required. The preceding full-suite and frozen
 app evidence predates this new source module; neither is relabelled as current.
+
+### Durable default-key proof and native rewrap transport (2026-09-19)
+
+Added native `DurableSecret` proof for an existing private default external
+key, including selected/default path identity/content rechecks, matching explicit
+key validation and rejection of disabled/unsafe/missing/changed/inside-profile
+sources. Custom locations that exist only in launch environment are not proof
+of a future independent desktop launch; recovery refuses them until a durable
+configuration design exists. Ordinary startup support and key precedence remain
+unchanged. No key is created, overwritten or permission-repaired by this helper.
+
+Added the exact local `rewrap` control action and typed native request/reply.
+Both secrets travel through the bounded pipe; success requires the same candidate,
+bounded count, no persistence claim and a still-valid durable target proof.
+There is no web/model IPC or implicit user consent. XcodeBuildMCP session defaults
+were unconfigured; native tests used the project's offline Rust workflow.
+
+Final focused rewrap/preflight/activation/control suites passed **167 cases in
+46.45s**, one existing warning. Native tests passed **63 cases, one opt-in fixture
+ignored**, in 0.33s after 1.68s compilation. The opt-in fixture was then exercised
+explicitly in frozen smoke. Ruff and whitespace checks passed.
+
+The new frozen backend built in 28.70s at
+`/tmp/arslan-candidate-build.BboGj4/dist-rewrap/arslan-server/arslan-server`, SHA-256
+`2e2ddef0886247aaa41e6de0b249998e59a8239526f2604f039b218674a2c268`.
+Bundle verification passed 15 imports, web assets and prohibited rasterizer/
+database/secret checks (159 MiB before compute runtime staging). Native test
+executable SHA-256:
+`f30c1bf8ca4c67cd865fcd51d019ae12c31483933317f0ce01af9a40b8f5086d`.
+
+The new `frozen_rewrap_smoke` passed actual native prepare/rewrap/switch/trial/
+finalize, then two normal packaged-backend launches using only the default
+external key file, without secret or key-file environment overrides. Both
+settings reads successfully decrypted and masked the stored synthetic credential;
+original profile, archive and external key remained unchanged. The existing
+native-stop/prepare/trial/rollback frozen chain also passed. No full desktop app
+rebundle, native confirmation click, new full-suite regression, real key/account,
+installed-app replacement, paid model, signing or publication is claimed.

@@ -10,6 +10,7 @@ from server.activation_control_entry import decode_request, run
     {"action": "rollback"},
     {"action": "inspect"},
     {"action": "prepare", "archive": "/tmp/backup.zip", "candidate": "restored"},
+    {"action": "rewrap", "candidate": "restored", "source_secret": "source", "target_secret": "target"},
     {"action": "rollback", "operation_id": str(uuid4())},
     {"action": "switch", "candidate": "restored", "secret": "synthetic-only"},
     {"action": "finalize", "operation_id": str(uuid4()), "secret": "synthetic-only"},
@@ -31,6 +32,14 @@ def test_exact_action_requests(payload):
       for secret in (None, "", "  ", "a\0b", "x" * 8193)],
     {"action": "finalize", "operation_id": "invalid", "secret": "synthetic-only"},
     {"action": "finalize", "operation_id": str(uuid4())},
+    *[{"action": "rewrap", "candidate": "restored", "source_secret": bad, "target_secret": "target"}
+      for bad in (None, "", "a\0b", "x" * 8193)],
+    *[{"action": "rewrap", "candidate": "restored", "source_secret": "source", "target_secret": bad}
+      for bad in (None, "", "a\0b", "x" * 8193)],
+    {"action": "rewrap", "candidate": "../active", "source_secret": "source", "target_secret": "target"},
+    {"action": "rewrap", "candidate": "restored", "source_secret": "source"},
+    {"action": "rewrap", "candidate": "restored", "source_secret": "source", "target_secret": "target", "consent": True},
+    {"action": "rewrap", "candidate": "restored", "source_secret": "x" * 8192, "target_secret": "y" * 8192},
 ])
 def test_invalid_requests_cannot_choose_paths_or_extra_actions(payload):
     with pytest.raises((ValueError, TypeError)):

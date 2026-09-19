@@ -27,15 +27,17 @@ def decode_request(data: bytes) -> dict:
     if not isinstance(value, dict) or not isinstance(value.get("action"), str):
         raise ValueError("activation_control_request_invalid")
     fields = {"prepare": {"action", "archive", "candidate"},
+              "rewrap": {"action", "candidate", "source_secret", "target_secret"},
               "switch": {"action", "candidate", "secret"}, "rollback": {"action"}, "inspect": {"action"},
               "finalize": {"action", "operation_id", "secret"}}
     if value["action"] == "rollback" and "operation_id" in value:
         fields["rollback"] = {"action", "operation_id"}
     if value["action"] not in fields or set(value) != fields[value["action"]]:
         raise ValueError("activation_control_request_invalid")
-    if "secret" in value and (not isinstance(value["secret"], str) or not value["secret"].strip()
-                              or "\0" in value["secret"] or len(value["secret"].encode()) > 8192):
-        raise ValueError("activation_control_request_invalid")
+    for field in ("secret", "source_secret", "target_secret"):
+        if field in value and (not isinstance(value[field], str) or not value[field].strip()
+                               or "\0" in value[field] or len(value[field].encode()) > 8192):
+            raise ValueError("activation_control_request_invalid")
     if "candidate" in value:
         name = value["candidate"]
         if (not isinstance(name, str) or not name or name in {".", ".."}
@@ -67,6 +69,11 @@ def run(sanitize_env) -> int:
         if request["action"] == "prepare":
             result = profile_activation.prepare_from_archive(active, Path(request["archive"]),
                                                              active.parent / request["candidate"])
+        elif request["action"] == "rewrap":
+            from server.services.recovery_rewrap import rewrap_candidate
+            result = rewrap_candidate(active, active.parent / request["candidate"],
+                                      request["source_secret"], request["target_secret"])
+            result["candidate"] = request["candidate"]
         elif request["action"] == "switch":
             result = profile_activation.switch_for_trial(active, active.parent / request["candidate"], request["secret"])
         elif request["action"] == "rollback":

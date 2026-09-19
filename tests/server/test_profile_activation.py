@@ -669,6 +669,19 @@ def test_pipe_control_process_uses_fixed_profile_without_config_bootstrap(profil
     prepared = control({"action": "prepare", "archive": str(archive), "candidate": candidate.name})
     assert prepared == {"ok": True, "result": {
         "prepared": True, "candidate": candidate.name, "files": 1, "secret_included": False}}
+    from server.services.recovery_preflight import check
+    target = 'synthetic-control-target-only'
+    transformed = control({'action': 'rewrap', 'candidate': candidate.name,
+                           'source_secret': SECRET, 'target_secret': target})
+    assert transformed == {'ok': True, 'result': {'rewrapped': True, 'candidate': candidate.name,
+                                                'credentials': 1, 'secret_persisted': False}}
+    assert check(candidate / 'arslan.db', target)['status'] == 'compatible'
+    assert check(candidate / 'arslan.db', SECRET)['status'] == 'unreadable_credentials'
+    assert (active / 'arslan.db').read_bytes() == original
+    control({'action': 'rewrap', 'candidate': candidate.name, 'source_secret': SECRET,
+             'target_secret': target}, expected=1)
+    control({'action': 'rewrap', 'candidate': candidate.name, 'source_secret': target,
+             'target_secret': SECRET})
     result = control({"action": "switch", "candidate": candidate.name, "secret": SECRET})
     assert result["ok"] and result["result"]["status"] == "trial_pending"
     operation = result["result"]["operation_id"]

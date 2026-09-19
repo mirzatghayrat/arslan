@@ -6,6 +6,100 @@ use std::io::Read;
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::Path;
 
+// A typed proof of an existing external file, not approval to use/rewrite it.
+// Parent folders must be trusted. Future external configuration changes are not
+// preventable by this snapshot; the coordinator rechecks before every phase.
+pub(crate) struct DurableSecret {
+    secret: ExistingSecret,
+    path: std::path::PathBuf,
+    default_path: std::path::PathBuf,
+    canonical: std::path::PathBuf,
+    identity: (u64, u64, i64, i64, i64, i64),
+}
+
+fn identity(path: &Path) -> Result<(u64, u64, i64, i64, i64, i64), SecretError> {
+    let m = std::fs::symlink_metadata(path).map_err(|_| SecretError::Unavailable)?;
+    Ok((m.dev(), m.ino(), m.mtime(), m.mtime_nsec(), m.ctime(), m.ctime_nsec()))
+}
+
+impl DurableSecret {
+    /// Mirrors supported normal bootstrap sources without any repair/generation.
+    /// Recovery currently proves the default durable file only. Overrides must
+    /// resolve to that same file: an environment-only custom location does not
+    /// establish what a later independent Finder launch will read. Normal boot
+    /// and its custom-location support remain unchanged.
+    pub(crate) fn load(
+        home: &Path,
+        profile: &Path,
+        environment: &str,
+        explicit: Option<&str>,
+        file_override: Option<&str>,
+    ) -> Result<Self, SecretError> {
+        if environment != "dev" || !home.is_absolute() || !profile.is_absolute() {
+            return Err(SecretError::Unsafe);
+        }
+        let path = match file_override {
+            None => home.join(".arslan/secret_key"),
+            Some(raw) if raw.trim().is_empty() => return Err(SecretError::Unavailable),
+            Some(raw) if raw.starts_with("~/") => home.join(&raw[2..]),
+            Some(raw) => std::path::PathBuf::from(raw),
+        };
+        if !path.is_absolute()
+            || path.components().any(|p| p == std::path::Component::ParentDir)
+            || path.to_string_lossy().contains(['$', '\0'])
+        {
+            return Err(SecretError::Unsafe);
+        }
+        let canonical = path.canonicalize().map_err(|_| SecretError::Unavailable)?;
+        let default_path = home.join(".arslan/secret_key");
+        let default = default_path.canonicalize()
+            .map_err(|_| SecretError::Unavailable)?;
+        if canonical != default {
+            return Err(SecretError::Unsafe);
+        }
+        let profile = profile.canonicalize().map_err(|_| SecretError::Unavailable)?;
+        if canonical.starts_with(profile) {
+            return Err(SecretError::Unsafe);
+        }
+        let before = identity(&path)?;
+        let secret = read_existing(&path)?;
+        if read_existing(&default_path)?.expose() != secret.expose()
+            || identity(&default_path)? != before
+        {
+            return Err(SecretError::Changed);
+        }
+        if identity(&path)? != before {
+            return Err(SecretError::Changed);
+        }
+        if let Some(value) = explicit.filter(|value| !value.trim().is_empty()) {
+            let supplied = validate(value.to_owned())?;
+            if supplied.expose().trim() != secret.expose().trim() {
+                return Err(SecretError::Changed);
+            }
+        }
+        Ok(Self { secret, path, default_path, canonical, identity: before })
+    }
+
+    pub(crate) fn secret(&self) -> &ExistingSecret {
+        &self.secret
+    }
+
+    pub(crate) fn recheck(&self) -> Result<(), SecretError> {
+        if self.path.canonicalize().map_err(|_| SecretError::Unavailable)? != self.canonical
+            || self.default_path.canonicalize().map_err(|_| SecretError::Unavailable)? != self.canonical
+            || identity(&self.default_path)? != self.identity
+            || read_existing(&self.default_path)?.expose() != self.secret.expose()
+            || identity(&self.path)? != self.identity
+            || read_existing(&self.path)?.expose() != self.secret.expose()
+            || identity(&self.path)? != self.identity
+            || identity(&self.default_path)? != self.identity
+        {
+            return Err(SecretError::Changed);
+        }
+        Ok(())
+    }
+}
+
 const MAX_BYTES: u64 = 8192;
 
 // Deliberately no Debug/Display/Serialize: never include a key in diagnostics.
@@ -116,6 +210,59 @@ mod tests {
         fn drop(&mut self) {
             std::fs::remove_dir_all(&self.0).unwrap();
         }
+    }
+
+    #[test]
+    fn durable_default_survives_readonly_checks_and_matching_explicit_key() {
+        let fixture = Fixture::new();
+        let profile = fixture.0.join("profile");
+        std::fs::create_dir(&profile).unwrap();
+        std::fs::create_dir(fixture.0.join(".arslan")).unwrap();
+        let file = fixture.0.join(".arslan/secret_key");
+        std::fs::write(&file, b"  synthetic-durable\n").unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o400)).unwrap();
+        for override_path in [None, Some("~/.arslan/secret_key"), file.to_str()] {
+            let proof = DurableSecret::load(&fixture.0, &profile, "dev", Some("synthetic-durable"), override_path)
+                .unwrap_or_else(|_| panic!("refused durable fixture"));
+            assert_eq!(proof.secret().expose(), "  synthetic-durable\n");
+            assert_eq!(proof.recheck(), Ok(()));
+        }
+        assert_eq!(std::fs::metadata(&file).unwrap().mode() & 0o777, 0o400);
+        for (mode, explicit, override_path) in [
+            ("prod", None, None), ("dev", Some("different"), None),
+            ("dev", None, Some("")), ("dev", None, Some("relative")),
+            ("dev", None, Some("$HOME/.arslan/secret_key")),
+        ] {
+            assert!(DurableSecret::load(&fixture.0, &profile, mode, explicit, override_path).is_err());
+        }
+        let alternate = fixture.key(b"synthetic-durable");
+        assert!(DurableSecret::load(&fixture.0, &profile, "dev", None, alternate.to_str()).is_err());
+        let proof = DurableSecret::load(&fixture.0, &profile, "dev", None, None).unwrap_or_else(|_| panic!());
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600)).unwrap();
+        assert!(proof.recheck().is_err());
+    }
+
+    #[test]
+    fn durable_file_replacement_and_inside_profile_are_refused() {
+        let fixture = Fixture::new();
+        let folder = fixture.0.join(".arslan");
+        std::fs::create_dir(&folder).unwrap();
+        let file = folder.join("secret_key");
+        std::fs::write(&file, b"synthetic-durable").unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600)).unwrap();
+        assert!(DurableSecret::load(&fixture.0, &folder, "dev", None, None).is_err());
+        let profile = fixture.0.join("profile");
+        std::fs::create_dir(&profile).unwrap();
+        let proof = DurableSecret::load(&fixture.0, &profile, "dev", None, None).unwrap_or_else(|_| panic!());
+        let replacement = fixture.key(b"synthetic-durable");
+        std::fs::rename(replacement, &file).unwrap();
+        assert!(proof.recheck().is_err());
+        std::fs::remove_file(&file).unwrap();
+        assert!(DurableSecret::load(&fixture.0, &profile, "dev", Some("synthetic-durable"), None).is_err());
+        assert!(!file.exists());
+        let alternate = fixture.key(b"synthetic-durable");
+        symlink(&alternate, &file).unwrap();
+        assert!(DurableSecret::load(&fixture.0, &profile, "dev", None, alternate.to_str()).is_err());
     }
 
     #[test]

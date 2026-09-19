@@ -1,8 +1,9 @@
 # Recovery key continuity — implementation design, not acceptance
 
 Source review: `7bd142c6`, 2026-09-19. The candidate-only primitive described in
-the implementation checkpoint below now exists; durable-source resolution,
-native consent and coordinator integration do not. User-facing activation
+the implementation checkpoints below now exists; a native durable-source helper
+and local transport also exist, but native consent/coordinator integration does
+not. User-facing activation
 remains unavailable. There is no new key storage mechanism.
 
 ## Problem
@@ -70,8 +71,9 @@ Only a complete transaction and SQLite quick-check permit atomic replacement.
 File/profile identities are rechecked before replacement. A post-replace fsync
 failure remains uncertain, not an invitation to retry or activate automatically.
 
-No caller exposes this primitive through HTTP, model IPC, the packaged control
-protocol or menus yet. In particular, `secret_persisted: false` explicitly means
+No caller exposes this primitive through HTTP, model IPC or menus. The local
+packaged control protocol now exposes it only to its trusted coordinator. In
+particular, `secret_persisted: false` explicitly means
 the primitive did not save or establish the target secret; the coordinator must
 still prove that source independently and obtain explicit user consent.
 
@@ -89,3 +91,32 @@ default external `HOME/.arslan/secret_key`, without an explicit secret or key-fi
 override. Both decrypt the credential; subsequent switch/bound rollback retains
 the original database and archive byte-for-byte. This proves storage/key-path
 continuity, not full desktop restart, native consent or release acceptance.
+
+## Native durable-source and packaged transport checkpoint
+
+`DurableSecret` reads and snapshots the existing private default external file.
+It rejects production/unsupported environments, disabled/missing/unsafe files,
+explicit-key disagreement, a key inside the profile, and overrides that do not
+resolve to the same default file. Both selected and default paths are checked
+for links, identity, content and later changes. It never generates, chmods or
+rewrites a key. Matching explicit keys and `~/.arslan/secret_key` are supported.
+Custom environment-only locations remain valid for ordinary startup but are
+not accepted as proof of a later independent desktop launch's key source.
+Supporting those configurations in recovery still requires a durable native
+configuration design; no normal startup behavior was changed.
+
+The native `Rewrap` request requires this typed target proof, rechecks it before
+sending and again before accepting success, and passes both secrets only through
+the bounded pipe. Python validates exact fields and calls the candidate-only
+primitive. Native responses must bind the candidate name, credential count and
+`secret_persisted: false`; malformed or changed-source outcomes remain uncertain.
+This is transport and source evidence, not user approval. The future coordinator
+must derive inputs from actual launch configuration and recheck across phases.
+
+`scripts/frozen_rewrap_smoke.py` constructs only disposable synthetic fixtures,
+uses the real native test transport against a freshly frozen backend for
+prepare/rewrap/switch/trial/finalize, then runs the normal packaged backend twice
+with no secret or key-file environment override. The settings API successfully
+decrypts and masks the stored credential on both boots. The original profile,
+archive and durable external key remain unchanged. This goes beyond the earlier
+storage-only subprocess test but still is not native-window/consent acceptance.
