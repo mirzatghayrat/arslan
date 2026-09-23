@@ -1,5 +1,9 @@
 # Stage 2 synthetic input pack — revision 1
 
+The separate [public-source preparation record](../../docs/companion/stage-2-public-baseline.md)
+now covers pinned real inputs for R1/R3/R4; R2 is explicitly pending. It does not
+replace or retroactively change this synthetic pack.
+
 This is an offline boundary baseline, **not twelve completed agent tasks**.
 `stage2-inputs.json` fixes twelve scenario definitions, inputs/review criteria
 for eight research/document cases, and existing runtime bindings for four

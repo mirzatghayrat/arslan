@@ -88,3 +88,32 @@ def test_task_validator_records_provenance_failure_without_model_override():
     assert evaluate(check, "I verified all sources", [], trace)["status"] == "failed"
     with pytest.raises(ValueError, match="factual"):
         AcceptanceCheck(id="citations", description="Inspect", evaluator="model", rule={"kind": "research_evidence"})
+
+
+@pytest.mark.parametrize("bad_args", [None, [], "not-an-object", 7])
+def test_malformed_source_arguments_fail_closed_without_losing_valid_sources(bad_args):
+    value, trace = source()
+    malformed = {**trace[0], "args": bad_args}
+    assert not admitted_sources([malformed])
+    assert inspect_evidence(evidence(value.id), [malformed])["status"] == "failed"
+    assert value.id in admitted_sources([malformed, *trace])
+
+
+@pytest.mark.parametrize("bad_item", [None, [], "interrupted trace", 7])
+def test_non_object_trace_entry_does_not_crash_research_validation(bad_item):
+    value, trace = source()
+    assert not admitted_sources([bad_item])
+    assert inspect_evidence(evidence(value.id), [bad_item])["status"] == "failed"
+    assert value.id in admitted_sources([bad_item, *trace])
+
+
+@pytest.mark.parametrize("kind", ["research_sources", "research_evidence"])
+def test_task_acceptance_rejects_damaged_trace_without_crashing(kind):
+    value, trace = source()
+    check = AcceptanceCheck(id="sources", description="Require read evidence", evaluator="deterministic",
+                            rule={"kind": kind}, critical=True)
+    malformed = [{**trace[0], "args": None}, None]
+    result = evaluate(check, evidence(value.id).model_dump_json(), [], malformed)
+    assert result["status"] == "failed"
+    mixed = evaluate(check, evidence(value.id).model_dump_json(), [], [*malformed, *trace])
+    assert mixed["status"] == ("passed" if kind == "research_sources" else "not_run")

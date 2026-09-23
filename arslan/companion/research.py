@@ -35,8 +35,13 @@ def receipt(url: str, text: str, *, truncated: bool) -> SourceReceipt:
 def admitted_sources(trace: list[dict]) -> dict[str, tuple[SourceReceipt, str]]:
     sources = {}
     for item in trace:
+        if not isinstance(item, dict):
+            continue
         result = item.get("result") or {}
         if item.get("tool") != "web_extract" or not isinstance(result, dict) or result.get("ok") is not True:
+            continue
+        arguments = item.get("args")
+        if not isinstance(arguments, dict):
             continue
         text, metadata = result.get("text"), result.get("source")
         if not isinstance(text, str) or not text.strip() or not isinstance(metadata, dict):
@@ -45,7 +50,7 @@ def admitted_sources(trace: list[dict]) -> dict[str, tuple[SourceReceipt, str]]:
             value = SourceReceipt.model_validate(metadata)
         except ValidationError:
             continue
-        if (value.url != item.get("args", {}).get("url") or result.get("url") != value.url
+        if (value.url != arguments.get("url") or result.get("url") != value.url
                 or value.text_sha256 != hashlib.sha256(text.encode()).hexdigest()
                 or receipt(value.url, text, truncated=value.truncated).id != value.id):
             continue

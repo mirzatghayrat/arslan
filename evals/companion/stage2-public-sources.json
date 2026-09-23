@@ -1,0 +1,89 @@
+{
+  "revision": 1,
+  "collected_on": "2026-09-23",
+  "collector": "Codex via read-only GitHub API, not the Arslan runtime",
+  "scope": "Pinned retrieval manifest and short real excerpts, not a full offline page archive or live task result",
+  "sources": [
+    {
+      "id": "lightning-current",
+      "repository": "microsoft/agent-lightning",
+      "commit": "ff9457587fb6ec900e16e93be9ad2d77409afa08",
+      "commit_date": "2026-09-17T12:51:41Z",
+      "path": "README.md",
+      "sha256": "80652c19f70d5f6dc2770a34b3827f34c1b90fd79b05fbc6d84c5bf173635dc5",
+      "excerpt": "Agent Lightning was completely refactored in v1.0.",
+      "excerpt_line": 11,
+      "review_note": "Current architecture separates Trainer, API Gateway and Rollout Controller. Training infrastructure, not a ready-made user-facing trust guarantee."
+    },
+    {
+      "id": "lightning-legacy",
+      "repository": "microsoft/agent-lightning",
+      "commit": "6db3c73dc0af2e50fe80e56873a57c1703f1b2a7",
+      "commit_date": "2026-09-14T04:59:05Z",
+      "path": "README.md",
+      "sha256": "4a0d63864efa12a34abb6811c209d2b0681b9a1b67068150e999fb5620a25b24",
+      "excerpt": "Those events become structured spans that flow into the LightningStore",
+      "excerpt_line": 65,
+      "review_note": "Legacy v0.x branch material; its recent commit date does not make its architecture the current v1 architecture."
+    },
+    {
+      "id": "opensquilla-en",
+      "repository": "TokenRhythm/opensquilla",
+      "commit": "93c739c17998e9c5e8eb56b6399209946d67d483",
+      "commit_date": "2026-09-23T01:11:41Z",
+      "path": "README.md",
+      "sha256": "cb88a76115d9f15319d28fe621713f7a20a352c7d74cfaf520700afbce521aee",
+      "excerpt": "Classification runs on-device; your prompt never leaves the machine to make that decision.",
+      "excerpt_line": 697,
+      "review_note": "This locality statement concerns routing classification, not every subsequent provider/model request. Cost savings for Arslan remain unmeasured."
+    },
+    {
+      "id": "opensquilla-zh",
+      "repository": "TokenRhythm/opensquilla",
+      "commit": "93c739c17998e9c5e8eb56b6399209946d67d483",
+      "commit_date": "2026-09-23T01:11:41Z",
+      "path": "README.zh-Hans.md",
+      "sha256": "e2151eaa247caa096279fee25f4e762900ac8f5485aad27750478f956638da75",
+      "excerpt": "分类在本机上完成；为了做这个判断，你的提示词不会离开本机。",
+      "excerpt_line": 570,
+      "review_note": "Chinese statement has the same routing-decision scope; do not expand it into a claim that all inference is local."
+    },
+    {
+      "id": "serena-current",
+      "repository": "oraios/serena",
+      "commit": "dc97aba74a5fa339d5b3b1a824ccf311b7db04a3",
+      "commit_date": "2026-09-22T10:43:51Z",
+      "path": "README.md",
+      "sha256": "80f529a79a5e33686e0db325d74b6dc26217aa0e19ee86778b16a9c86c6a6e01",
+      "excerpt": "operating at the symbol level and exploiting relational structure.",
+      "excerpt_line": 18,
+      "review_note": "Semantic coding tools via MCP. README now distinguishes MIT SolidLSP from GPL-3.0-or-later Serena application; do not assume the whole application is MIT. Check license files before any adoption."
+    }
+  ],
+  "cases": [
+    {
+      "id": "S2-R1", "state": "source_manifest_ready_not_run",
+      "sources": ["lightning-current", "opensquilla-en", "serena-current"],
+      "prompt": "结合 Arslan 的阶段计划比较这三个项目：解决什么问题、引入成本和权限边界是什么、哪些结论还缺证据？给出直接来源。",
+      "review": ["Distinguish training, routing and semantic coding tools", "Label integration recommendations as inference", "No measured Arslan savings claim", "Do not treat all Serena components as MIT", "Source fact is not a verified performance/security guarantee"]
+    },
+    {
+      "id": "S2-R2", "state": "blocked_inputs_not_selected", "sources": [],
+      "prompt": "保留真实矛盾、日期和范围，不强行选择赢家。",
+      "review": ["Find a genuine same-scope conflict first", "Version differences and bilingual paraphrases are not automatically contradictions", "Keep this case in the denominator"]
+    },
+    {
+      "id": "S2-R3", "state": "source_manifest_ready_not_run",
+      "sources": ["lightning-legacy", "lightning-current"],
+      "prompt": "如果旧接入建议基于 LightningStore，应如何核对 v1.0 后是否仍适用？区分旧分支、当前分支、提交日期和发布日期。",
+      "review": ["Do not synthesize a prior user decision", "Identify version-specific architecture", "A branch commit date is not the product release date", "Do not claim tested migration compatibility"]
+    },
+    {
+      "id": "S2-R4", "state": "source_manifest_ready_not_run",
+      "sources": ["opensquilla-en", "opensquilla-zh"],
+      "prompt": "用中文说明两份 README 对本地运行的承诺边界，并保留中英文原文引用。",
+      "review": ["Scope locality to the routing classifier", "Do not equate local classification with local provider inference", "Answer in Chinese with attributable evidence"]
+    }
+  ],
+  "execution": {"arslan_model_calls": 0, "pilot_outcomes": "not_run", "live_model_configuration": "not_authorized"}
+}
