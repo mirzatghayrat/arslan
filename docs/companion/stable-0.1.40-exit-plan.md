@@ -42,7 +42,7 @@ not merely hidden in release notes while advertised in the application.
 
 | Gate | Finite acceptance | Current status |
 | --- | --- | --- |
-| R — useful task outcomes | All original R1–R4/D1–D4/M1–M4 IDs have frozen inputs, actual outputs, reviewed conclusions, sources/artifacts and recovery evidence against their original acceptance. Keep failures and corrections; no best-of-N substitution or dropped cases. | Open: beta.5 live pilot is partial, not 12/12; R2 public conflict unresolved, R3/R4 excerpt limitations and M4 live read-only boundary retained. |
+| R — useful task outcomes | All original R1–R4/D1–D4/M1–M4 IDs have frozen inputs, actual outputs, reviewed conclusions, sources/artifacts and recovery evidence against their original acceptance. Keep failures and corrections; no best-of-N substitution or dropped cases. | Open: stable D2/D4 core criteria passed with caveats; D1 failed on a blank-page completeness claim. Nine stable cases remain unrun. R2 public inputs and long-read path are prepared, not yet model-accepted. |
 | N — actual native core flows | On the candidate: identity/channel; conversation and restart; mixed attachment retention; source opening; artifact opening; project memory correction/deletion; cancellation and explicit resume; backup/restore UI. Verify narrow-window usability and localized safety/errors in supported locales; recheck changed surfaces rather than all historical screens. | Partial prior evidence: beta.6 icon switching, rounded corners and five pages at two sizes were tested. That is not the complete core-flow acceptance. |
 | U — upgrade and recoverability | Isolated fixtures representing stable 0.1.38, beta.3 and beta.6; backup before upgrade, supported upgrade with record/content checks, restart, restore with matching key, wrong/missing key and interrupted restore fail-closed. Exercise installer replacement and updater manifest/signature handling without changing production Latest or real data. | Partial: all three historical-source profile rehearsals passed on 2026-09-24; packaged/UI upgrade and recovery evidence still must be bound to the candidate. |
 | S — safety and regression | No unresolved data-loss, unauthorized action, privacy/key exposure, startup failure or broken advertised core path. Full CI and scoped safety regressions pass; dependency findings receive platform/reachability disposition rather than 'all clear' by count. | Open until final source; reuse prior results only where changes cannot invalidate them. |
@@ -86,7 +86,7 @@ authorization. 'More Codex quota' is not assumed to authorize a new API bill.
 A new independent 36-request / US$5 configured-primary-model budget was explicitly
 approved in this task on 2026-09-23. It covers only isolated synthetic inputs and
 public materials; stop paid calls if pricing cannot be reliably bounded. This
-new batch has not made a model call yet. Preserve a distinct durable ledger and
+new batch has used 3/36 calls, $0.30 reserved as of the document batch below. Preserve a distinct durable ledger and
 never reset either ledger to obtain extra attempts.
 
 The old beta.5 publishing instructions are obsolete. The user authorized ongoing
@@ -397,3 +397,38 @@ turn omitted the required conversation/message parameters. Ledger verified still
 for all three documents: **3 passed**, including persisted answer, guarded
 reservation and refusal to repeat. This was a harness failure, not a model
 outcome; no paid retry or refund occurred. Actual results follow separately.
+
+## Actual document batch and review — 2026-09-24
+
+Executed source `3ed71fde8fdfb38374189a13f76dfa43e2ef5361`, exact runner hash
+`219bdbeac6a37b148ab16657a42560b4d1e0bdda382a8a65ea3359f22a0dae5f`.
+The opt-in host test produced three persisted answers (**3 execution checks
+passed**, 10.99 s). This is not three quality passes or native UI acceptance.
+All requests and usage were durably recorded, with no retries or unknown usage.
+
+Source-grounded semantic review, kept separately from unmodified raw outputs:
+
+| Case | Actual result | Disposition |
+| --- | --- | --- |
+| D1 PDF | Required facts and page 1/3 references correct, but calls the blank page 2 missing and the document structurally incomplete. | **Failed**. Extracted-text absence does not prove physical-page absence. Repair source-completeness communication before acceptance. |
+| D2 Word | Correct paragraph 3 deadline change, paragraph 5 added action, unchanged owner/action, no invented calendar direction/duration. | Core criteria pass; unnecessary speculative zero-based-locator advice noted. Native file opening still open. |
+| D4 mixed inputs | Keeps Cedar/Mira and CSV provenance; unsupported input honestly rejected without invented content. | Core criteria pass; overbroad side remark about single-row statistics noted. Native mixed-attachment retention still open. |
+
+Canonical evidence directory now contains `S2-D1/D2/D4-preflight.json`, the
+actual document bytes under `document-inputs/`, their `*-result.json`, three
+request input/response/accounted triplets and `document-semantic-review-v1.json`
+with result hashes. This review is by the primary coding agent, not independent
+human/security acceptance. All 12 IDs remain in the denominator: two core passes
+with caveats, one failure, nine not yet run; R/N/U/S/P remain open.
+
+Current independent grant: **3/36 calls, $0.30 reserved**, conservative peak-rate
+usage estimate **$0.0035988** (not invoice); previous 32-call pilot unchanged.
+D1's frozen per-case 1-call cap is consumed. **Do not silently reset/reallocate
+it or rewrite its preflight to retry.** First repair/reproduce offline; any paid
+retest requires an additive reviewed input revision and explicit budget decision.
+
+Next bounded batch: reproduce PDF completeness loss through the real attachment
+entry point and add honest page-inventory metadata without claiming visual
+inspection. Keep original frozen baseline evidence. Then continue remaining
+registered cases within their unused case caps, followed by isolated native and
+packaged acceptance. No tag, new beta, Publish, real-data or installed-app change.
