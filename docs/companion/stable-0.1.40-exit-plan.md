@@ -121,3 +121,32 @@ No paid model request, native app launch, installation or user-data access.
 This is a source-level compatibility repair, not completion of gate U. Actual
 cross-version packaged upgrade/restore and localized native error experience
 remain required. No claim of stable readiness is made by these test counts.
+
+## Next-release inclusion — branded installer, 2026-09-24
+
+User-approved installer handoff received from the design task. Source commit
+`e1e51b229298e3301b19ba4cda621a4eb932d144` was cherry-picked as `cd41a75f`
+without resetting the compatibility work. Include it in the next planned
+release; **do not create a separate release for this change**.
+
+- Preserve the 720×440 Finder layout, native App/Applications items, orange
+  arrow and committed 1x/2x backgrounds. Default artwork is English only:
+  **Drag Arslan into Applications to install**. Do not add Chinese/bilingual
+  copy. macOS may localize its own Applications label.
+- `dmgbuild==1.6.7` is locked and macOS/build-only. The packaging workflow must
+  install the build extra; no new end-user runtime dependency is implied.
+- Gate P now explicitly includes running `packaging/verify_dmg_layout.py` on
+  the newly built real DMG before signing, plus opening that candidate DMG in
+  Finder to inspect the English text, Retina background and icon positions.
+- Preserve existing signing, notarization, stapling, Gatekeeper, fresh-install
+  and updater-signature checks. Run full same-source CI with this dependency
+  and packaging change included. Recheck two published DMG aliases for matching
+  digests if both names remain in the release.
+- Design-task evidence: a real preview made with the signed beta.6 App passed
+  layout verification and Finder inspection. This is handoff evidence, not
+  evidence that the next candidate has been built or notarized. Never upload
+  that temporary preview DMG as the next release artifact.
+
+Integration checkpoint: cherry-pick clean; local Ruff, shell syntax and
+whitespace checks passed. No full CI, native rebuild, tag or release was run
+for this handoff. Packaging reference: `packaging/dmg/README.md`.
