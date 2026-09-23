@@ -43,7 +43,7 @@ not merely hidden in release notes while advertised in the application.
 | Gate | Finite acceptance | Current status |
 | --- | --- | --- |
 | R — useful task outcomes | All original R1–R4/D1–D4/M1–M4 IDs have frozen inputs, actual outputs, reviewed conclusions, sources/artifacts and recovery evidence against their original acceptance. Keep failures and corrections; no best-of-N substitution or dropped cases. | Open: all twelve baselines attempted. D2/D4 core criteria passed with caveats, M1/M3 passed. D1/D3 retain failed baselines with offline repairs; M2 and R1–R4 retain factual-scope/delivery failures. M4 proves saved-output/process recovery and no repeated write, but its resumed final answer was blocked by the unchanged five-call harness cap. Eight cases are not fully accepted; no unrun baseline remains. |
-| N — actual native core flows | On the candidate: identity/channel; conversation and restart; mixed attachment retention; source opening; artifact opening; project memory correction/deletion; cancellation and explicit resume; backup/restore UI. Verify narrow-window usability and localized safety/errors in supported locales; recheck changed surfaces rather than all historical screens. | Partial prior evidence: beta.6 icon switching, rounded corners and five pages at two sizes were tested. That is not the complete core-flow acceptance. |
+| N — actual native core flows | On the candidate: identity/channel; conversation and restart; mixed attachment retention; source opening; artifact opening; project memory correction/deletion; cancellation and explicit resume; backup/restore UI. Verify narrow-window usability and localized safety/errors in supported locales; recheck changed surfaces rather than all historical screens. | Partial: isolated native development bundle from fcb5f2ac now verifies desktop identity, Chinese onboarding/menu, project create/edit/restart, valid attachment retention after unsupported-file rejection, project memory correction/history/pause and cancelling the restore picker. Full conversations, deletion, source/artifact opening, task recovery, actual restore, narrow-window/six-locale completion and final signed candidate remain unverified. |
 | U — upgrade and recoverability | Isolated fixtures representing stable 0.1.38, beta.3 and beta.6; backup before upgrade, supported upgrade with record/content checks, restart, restore with matching key, wrong/missing key and interrupted restore fail-closed. Exercise installer replacement and updater manifest/signature handling without changing production Latest or real data. | Partial: all three historical-source profile rehearsals passed on 2026-09-24; packaged/UI upgrade and recovery evidence still must be bound to the candidate. |
 | S — safety and regression | No unresolved data-loss, unauthorized action, privacy/key exposure, startup failure or broken advertised core path. Full CI and scoped safety regressions pass; dependency findings receive platform/reachability disposition rather than 'all clear' by count. | Open until final source; reuse prior results only where changes cannot invalidate them. |
 | P — release provenance | Release source integrated through review with current remote main; documented source/version identity, full same-SHA CI, signed/notarized/stapled package, Gatekeeper/fresh-install and asset/update-signature checks. Stable-channel update path explicitly reviewed before Latest/Publish. | Open; remote main observed at `d3e8081d0fc7a72072731edfaa0ea33acf095724`, not the beta.6 source. Do not silently merge or promote the existing beta artifact. |
@@ -1130,3 +1130,69 @@ exercise the finite gate-N core flows, without an installed-app replacement or
 configured paid provider. Additive live repair inputs/accounting can be prepared,
 but do not execute them pending the user's budget answer. All five gates remain
 open; no beta/tag/push/main merge/Publish.
+
+## First current-source native interaction batch — 2026-09-24
+
+Built source `fcb5f2acacd1f188f631fc384e99dfa7803f3a55`, before any changes in
+this batch. Existing locked dependencies, offline desktop npm install, production
+web build (existing chunk warning), PyInstaller 6.21.0/Python 3.11.15 sidecar,
+two Swift voice helpers, and locked/offline Tauri **debug** build. Sidecar selftest
+passed all 15 imports/web assets plus the no-AGPL/no-database/no-secret scans.
+The analysis TOC confirms 375 first-party Python modules came from this checkout,
+not the sibling checkout supplying the shared dependency environment.
+
+The local bundle is deliberately `Arslan-Acceptance.app`, identifier
+`com.arslan.acceptance.stable0140`, in
+`../stable-0140-native-evidence-20260924/`. It retains the source's
+`0.1.40-beta.6` version; it is **not another released beta**, a final RC, or a
+0.1.40 stable artifact. No Developer ID/notarization, no DMG and no standalone
+compute runtime staged. Native checks on this development variant must not be
+promoted to signed final-candidate/package acceptance.
+
+Launched the real native executable with the minimal environment and isolated
+`native-home-v1`; no provider was configured. CUA drove the actual macOS window,
+not the browser fixture. Observed:
+
+- Clean English onboarding, Chinese selection reflected in UI and native menu;
+  desktop version/channel summary and preview/manual-install/backup warning.
+- Created and edited synthetic project `Native acceptance Cedar`, entered its
+  associated conversation; the complete Chinese summary survived process restart.
+  Initial automation `typeText` omitted Chinese characters; replacing via paste
+  saved the intended text. This input-tool issue is not recorded as a product bug.
+- Selected frozen synthetic `notes.csv` through the native file picker. Selecting
+  `notes.unsupported` subsequently showed the unsupported-type error while the
+  CSV remained ready. This checks pre-send retention, not a completed mixed-file
+  model task, persistence of unsent attachments, or HTML drag/drop.
+- Added a project-only, local-only confirmed synthetic preference, corrected
+  green to blue, inspected both revisions, then paused it and observed the paused
+  state/enable action. No cloud permission was enabled. Deletion/model use is not
+  established by these UI actions.
+- Native File > Restore opened its localized ZIP picker and cancellation returned
+  to the usable settings screen. No backup archive was restored. Normal native
+  Quit returned exit code 0 after the second launch.
+
+The initial acceptance helper failed despite a working app: its loose loopback
+URL regex selected system proxy **7899**, not sidecar **64066**, then killed its
+test child on health timeout. Repair `d3f3f623f03ce06af8a9f167057588d5ebf32e9b`
+matches the exact Uvicorn listening line (including optional sidecar prefix).
+Five regression failures before repair; final scoped packaging/isolation group
+**72 passed** (1.81 s), Ruff/whitespace passed. Restart with the same fixture and
+unchanged bundle selected actual port **64517**, PID **36608**. The repair changes
+the probe only; it is not falsely claimed embedded in the earlier bundle.
+
+After normal quit, read-only checks confirm one active synthetic project, one
+paused project memory with revision history, database `quick_check=ok`, and zero
+provider configs/messages/runs/usage rows. Bundle binary hashes, source identities,
+fixture state and explicit unverified items are in `native-core-v1.json`, SHA-256
+`31bbec57e44b185f9a515782406502ba524b6bf844c01ae7893f223f3a7f9327`.
+The first source-path checker accidentally matched third-party `mcp/server`
+paths; corrected to first-party TOC module names before emitting the receipt.
+Raw local app logs contain disposable fixture credentials and remain private;
+do not attach or publish them. No real profile/key/chat was read or migrated.
+
+Gate N remains partial. Next unpaid batch can reuse this exact isolated bundle
+and profile for the remaining native core flows; do not let default launch/open
+discard its controlled HOME. Before new paid repair cases, still await the user's
+additional budget decision and freeze additive inputs/checkers/accounting.
+Canonical ledger remains **31/36, $3.10 reserved**, unchanged. No CI/tag/push,
+installed-app replacement, main merge, Publish or new paid call in this batch.
