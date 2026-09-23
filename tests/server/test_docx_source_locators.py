@@ -70,3 +70,40 @@ def test_real_word_package_reads_body_and_table():
     text, truncated = input_formats.read_structured("actual.docx", output.getvalue())
     assert text == "[word/document.xml#paragraph=1] 正文 body\n[word/document.xml#paragraph=2] 表格 table"
     assert not truncated
+
+
+@pytest.mark.parametrize("removed_tag", ["del", "moveFrom"])
+def test_revision_source_text_is_not_presented_as_current_body(removed_tag):
+    body = f'''<w:document xmlns:w="{input_formats.NS['w']}"><w:body>
+    <w:{removed_tag}><w:p><w:r><w:t>Old deadline Friday</w:t></w:r></w:p></w:{removed_tag}>
+    <w:p><w:{removed_tag}><w:r><w:t>Old inline deadline</w:t></w:r></w:{removed_tag}>
+    <w:ins><w:r><w:t>New deadline Monday</w:t></w:r></w:ins></w:p>
+    <w:moveTo><w:p><w:r><w:t>Current moved paragraph</w:t></w:r></w:p></w:moveTo>
+    </w:body></w:document>'''
+    text, truncated = input_formats.read_structured("revision.docx", document(body))
+    assert "Old deadline" not in text and "Old inline" not in text
+    assert "[word/document.xml#paragraph=2] New deadline Monday" in text
+    assert "[word/document.xml#paragraph=3] Current moved paragraph" in text
+    assert "tracked revisions" in text
+    assert "not a revision-history comparison" in text
+    assert not truncated
+
+
+async def test_revision_policy_matches_ephemeral_and_persistent_ingest():
+    body = BODY.replace("<w:t>First</w:t>", '<w:del><w:r><w:delText>Removed secret</w:delText></w:r></w:del>'
+                        '<w:moveFrom><w:txbxContent><w:p><w:r><w:t>Old textbox</w:t></w:r></w:p></w:txbxContent></w:moveFrom>'
+                        '<w:ins><w:r><w:t>Current</w:t></w:r></w:ins>')
+    data = document(body)
+    direct, _ = input_formats.read_structured("revision.docx", data)
+    ephemeral, truncated = await extract.extract_text(filename="revision.docx", data=data)
+    assert ephemeral == direct == ingest._extract_file("revision.docx", data)
+    assert "Removed secret" not in direct and "Old textbox" not in direct
+    assert "paragraph=4] Table cell" in direct
+    assert "Current" in direct and not truncated
+
+
+def test_revision_disclosure_cannot_be_silently_dropped_at_text_limit(monkeypatch):
+    body = BODY.replace("<w:t>First</w:t>", "<w:ins><w:r><w:t>New</w:t></w:r></w:ins>")
+    monkeypatch.setattr(input_formats, "MAX_TEXT", 60)
+    text, truncated = input_formats.read_structured("revision.docx", document(body))
+    assert text == "" and truncated

@@ -87,9 +87,26 @@ def read_structured(filename: str, data: bytes) -> tuple[str, bool]:
                 body = _xml(archive, name).find("w:body", NS)
                 if body is None:
                     raise InputError("inputs.invalid")
+                removed_tags = {f"{{{NS['w']}}}del", f"{{{NS['w']}}}moveFrom"}
+                revision_tags = removed_tags | {f"{{{NS['w']}}}ins", f"{{{NS['w']}}}moveTo"}
+                excluded = set()
+                pending = [body]
+                while pending:
+                    node = pending.pop()
+                    if node.tag in removed_tags:
+                        excluded.update(node.iter())
+                    else:
+                        pending.extend(node)
+                if any(node.tag in revision_tags for node in body.iter()):
+                    add(f"{name}#extraction", "Contains tracked revisions: deleted/move-source text excluded; "
+                        "inserted/move-target text included. Text extraction only, not a revision-history comparison.")
                 # Document order includes table-cell paragraphs. These are XML
                 # paragraph positions, not rendered pages or layout claims.
                 for index, paragraph in enumerate(body.iter(f"{{{NS['w']}}}p"), 1):
+                    if truncated:
+                        break
+                    if paragraph in excluded:
+                        continue
                     parts = []
 
                     def own_nodes(parent):
@@ -97,7 +114,7 @@ def read_structured(filename: str, data: bytes) -> tuple[str, bool]:
                         while pending:
                             child = pending.pop()
                             # Textbox paragraphs get their own locator below.
-                            if child.tag != f"{{{NS['w']}}}p":
+                            if child.tag != f"{{{NS['w']}}}p" and child.tag not in removed_tags:
                                 yield child
                                 pending.extend(reversed(child))
 

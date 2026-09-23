@@ -63,6 +63,10 @@ checker bindings before claiming execution.
 
 ## Batch B: baseline and focused fixes
 
+The [offline boundary baseline](stage-2-baseline.md) records the first
+reproduced document blocker, exact regression bindings and remaining pilot
+acceptance gaps. Passing these boundary tests is not pilot completion.
+
 Prepare isolated inputs and execute the permitted checks first. Record source
 revision, inputs, environment, result/artifact, elapsed time, usage (unknown is
 not zero), correction count and evidence. Human review checks claim support and
