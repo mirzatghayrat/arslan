@@ -22,8 +22,9 @@ NOT COVERED HERE, and deliberately named rather than quietly skipped:
 
   * HTML5 drag-and-drop really reaching the page. wry intercepts NSDragging, so
     this is a genuine packaged-only fact — but observing it needs a real window
-    with a real drag, and this script never launches the .app (it runs the
-    sidecar). tests/test_shell_window_config.py pins the source call that
+    with a real drag. This script launches the native executable but probes
+    its backend; it does not drive window interactions.
+    tests/test_shell_window_config.py pins the source call that
     disables the interception; that proves a line is in git, not that a drag
     arrives. UNVERIFIED at the artifact level.
 
@@ -38,7 +39,7 @@ NOT COVERED HERE, and deliberately named rather than quietly skipped:
     source pin in tests/test_shell_window_config.py is all there is.
 
 Both need a GUI session driving the packaged app. Worth doing; not doable from
-a script that only boots the server, and pretending otherwise would put two
+a script that only probes the backend, and pretending otherwise would put two
 green lines next to two unchecked claims.
 """
 from __future__ import annotations
@@ -195,16 +196,32 @@ def check_bundle_contents(app: pathlib.Path, c: Checks) -> None:
     # worse than no check, so this one is not shipped. See the module docstring.
 
 
-def boot(app: pathlib.Path, home: pathlib.Path) -> tuple[subprocess.Popen, int, pathlib.Path]:
-    """Launch the app against a clean HOME and wait for it to serve."""
-    env = dict(os.environ)
-    env["HOME"] = str(home)
+def _boot_environment(home: pathlib.Path) -> dict[str, str]:
+    """Do not carry real credentials or profile overrides into acceptance.
+
+    HOME alone is insufficient: an inherited SECRET_KEY_FILE can point outside
+    it, and an empty override suppresses the first-run key generation being
+    tested. Use a minimal environment, not an ever-growing secret denylist.
+    This controls subprocess inheritance, not an OS filesystem/network sandbox.
+    """
+    temp = home / "tmp"
+    temp.mkdir(parents=True, exist_ok=True)
+    env = {
+        "HOME": str(home),
+        "TMPDIR": str(temp),
+        "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+        "LANG": "en_US.UTF-8",
+    }
     # Deliberately POISONED: a real developer's shell exports this, and the
     # packaged app must ignore it. Leaving it out would make the check weaker
     # than reality.
     env["ARSLAN_DATA_DIR"] = "data"
-    for var in ("ARSLAN_SECRET_KEY", "ARSLAN_API_TOKEN", "ARSLAN_STATIC_DIR"):
-        env.pop(var, None)
+    return env
+
+
+def boot(app: pathlib.Path, home: pathlib.Path) -> tuple[subprocess.Popen, int, pathlib.Path]:
+    """Launch the app against a clean HOME and wait for it to serve."""
+    env = _boot_environment(home)
 
     cwd = home / "launched-from"
     cwd.mkdir(parents=True, exist_ok=True)
