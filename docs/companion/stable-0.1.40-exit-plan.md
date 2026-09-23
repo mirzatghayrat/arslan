@@ -42,7 +42,7 @@ not merely hidden in release notes while advertised in the application.
 
 | Gate | Finite acceptance | Current status |
 | --- | --- | --- |
-| R — useful task outcomes | All original R1–R4/D1–D4/M1–M4 IDs have frozen inputs, actual outputs, reviewed conclusions, sources/artifacts and recovery evidence against their original acceptance. Keep failures and corrections; no best-of-N substitution or dropped cases. | Open: D2/D4 core criteria passed with caveats, M1/M3 passed. D1/D3 retain failed baselines with offline repairs; M2 memory boundary passed but output not accepted. R2 real reads and saved artifact passed, but uncertainty/systematics attribution is not accepted. Four stable cases remain unrun (R1/R3/R4/M4). |
+| R — useful task outcomes | All original R1–R4/D1–D4/M1–M4 IDs have frozen inputs, actual outputs, reviewed conclusions, sources/artifacts and recovery evidence against their original acceptance. Keep failures and corrections; no best-of-N substitution or dropped cases. | Open: D2/D4 core criteria passed with caveats, M1/M3 passed. D1/D3 retain failed baselines with offline repairs; M2 output and R2 uncertainty attribution are not accepted. R4 saved output exists but has false absence claims and no final answer within its cap; harness/compaction qualification retained. Three stable cases remain unrun (R1/R3/M4). |
 | N — actual native core flows | On the candidate: identity/channel; conversation and restart; mixed attachment retention; source opening; artifact opening; project memory correction/deletion; cancellation and explicit resume; backup/restore UI. Verify narrow-window usability and localized safety/errors in supported locales; recheck changed surfaces rather than all historical screens. | Partial prior evidence: beta.6 icon switching, rounded corners and five pages at two sizes were tested. That is not the complete core-flow acceptance. |
 | U — upgrade and recoverability | Isolated fixtures representing stable 0.1.38, beta.3 and beta.6; backup before upgrade, supported upgrade with record/content checks, restart, restore with matching key, wrong/missing key and interrupted restore fail-closed. Exercise installer replacement and updater manifest/signature handling without changing production Latest or real data. | Partial: all three historical-source profile rehearsals passed on 2026-09-24; packaged/UI upgrade and recovery evidence still must be bound to the candidate. |
 | S — safety and regression | No unresolved data-loss, unauthorized action, privacy/key exposure, startup failure or broken advertised core path. Full CI and scoped safety regressions pass; dependency findings receive platform/reachability disposition rather than 'all clear' by count. | Open until final source; reuse prior results only where changes cannot invalidate them. |
@@ -86,7 +86,7 @@ authorization. 'More Codex quota' is not assumed to authorize a new API bill.
 A new independent 36-request / US$5 configured-primary-model budget was explicitly
 approved in this task on 2026-09-23. It covers only isolated synthetic inputs and
 public materials; stop paid calls if pricing cannot be reliably bounded. This
-new batch has used 16/36 calls, $1.60 reserved as of the public-conflict batch below. Preserve a distinct durable ledger and
+new batch has used 20/36 calls, $2.00 reserved as of the bilingual-research batch below. Preserve a distinct durable ledger and
 never reset either ledger to obtain extra attempts.
 
 The old beta.5 publishing instructions are obsolete. The user authorized ongoing
@@ -751,3 +751,66 @@ unaccepted (D1/D3/M2/R2), four are unrun (R1/R3/R4/M4). Next: remaining original
 cases, then additive repair reviews and a cumulative accounting decision within
 the authorized ceiling—no silent case-cap reset or output replacement. R/N/U/S/P
 remain open. No beta, tag, push, Publish, native installation or real-data change.
+
+## Actual bilingual research task R4 — 2026-09-24
+
+Executed source `7780a7311612bbcddc3bb9a7eb14764aa9e5af0a`. R4's original prompt
+and both same-commit OpenSquilla READMEs were frozen in a new exclusive preflight
+and additive runner plan. The supported 40,000-character read is requested for
+each long source; no scientific/project expected answer is supplied. R2's original
+records remain untouched and its consumed allocation is not reused. Changing the
+shared runner invalidates its old fingerprint for future execution, not history.
+
+Exact-runner offline checks **2 passed, 2 paid opt-in skipped** (2.25 s), Ruff
+passed. Both production preflight GETs matched pinned raw-body hashes. The official
+pricing page's browser fetch timed out; direct HTTPS retrieval succeeded and
+confirmed the same UTC-day reviewed rates/legacy alias. Existing system proxy
+delegation is disclosed. No credentials are printed or source writes authorized.
+
+Actual result: **1 execution check failed** (22.87 s), requests 17–20. Both pages
+were fetched successfully with no extractor truncation (33,376/18,871 characters),
+and their complete extracted text plus receipt hashes reached actual requests 18
+and 19. The model wrote a 7,918-byte comparison and read it back successfully.
+Afterward the 64,000-character loop-history bound removed the English source from
+request 20. The model requested it again; the harness refused the duplicate and
+the next model call was blocked before reservation/HTTP by R4's four-call ceiling.
+No final answer was persisted. No fifth call was charged and no retry was run.
+
+**Important qualification:** the harness banned *all* duplicate fetches, whereas
+the prompt only forbids retrying failed URLs. Reopening a successful source after
+context eviction can be legitimate. The restrictive guard and short fixed cap
+therefore affect this outcome; do not label it proof that production cannot finish
+the task. Correct that harness rule before any additive repair attempt, retaining
+the original trace and accounting. Investigate bounded source retention separately,
+without simply widening budgets or claiming a source is still in model context.
+
+The live test's final-answer assertion preceded artifact archival. The actual
+temporary workspace file and original manifest were therefore copied unchanged
+into the canonical evidence directory after failure. A separate production
+`artifact_store.read_owned` check reopened the real artifact and verified identical
+bytes and hash. This salvages evidence, **not the task's acceptance status**.
+
+**R4 remains not accepted.** Its locality distinction and bilingual classifier
+quotations are correct; the same-commit sandbox descriptions genuinely differ,
+so that discrepancy is not invented. However the report falsely claims that the
+Chinese README omits V1/V2 parallel reporting and the device/install-ID distinction:
+both are explicitly present in that source's lines 338–339 and 362–369. Both full
+texts were available when the report was written; later compaction does not excuse
+this factual failure. Different translated text lengths do not prove omissions.
+The conclusion also mandates the more conservative sandbox account without
+runtime/code evidence; keep the discrepancy unresolved instead. Excess length and
+overclaiming completeness from parser output are additional caveats.
+
+Evidence: `S2-R4-result.json`, `S2-R4-comparison.md`, `S2-R4-original.manifest.json`
+and separate `S2-R4-semantic-review-v1.json`. Result SHA-256
+`66d4521669066f83ba0fe83ac68af3e4035683d3dd6295c44eddbdf8c058da79`;
+artifact `02e3a850463558586f6d359358b42cbeb9713f7f5a04035e7457ac4f11bbff3f`.
+No model claim is substituted for these readback checks; native opening and
+independent acceptance remain untested.
+
+Ledger **20/36 requests, $2.00 reserved**, conservative peak-rate usage estimate
+**$0.0475377** (not invoice). Four core passes, five unaccepted (D1/D3/M2/R2/R4),
+three unrun (R1/R3/M4). No silent cap reset or paid repeat. Next bounded batch:
+correct the documented harness limitations for untouched cases, finish their
+baselines, then review additive repairs and cumulative accounting within the
+authorized ceiling. No beta/tag/push/Publish, installed-app or real-data change.
