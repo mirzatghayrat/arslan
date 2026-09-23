@@ -43,7 +43,7 @@ not merely hidden in release notes while advertised in the application.
 | Gate | Finite acceptance | Current status |
 | --- | --- | --- |
 | R — useful task outcomes | All original R1–R4/D1–D4/M1–M4 IDs have frozen inputs, actual outputs, reviewed conclusions, sources/artifacts and recovery evidence against their original acceptance. Keep failures and corrections; no best-of-N substitution or dropped cases. | Open: all twelve baselines attempted. D2/D4 core criteria passed with caveats, M1/M3 passed. D1/D3 retain failed baselines with offline repairs; M2 and R1–R4 retain factual-scope/delivery failures. M4 proves saved-output/process recovery and no repeated write, but its resumed final answer was blocked by the unchanged five-call harness cap. Eight cases are not fully accepted; no unrun baseline remains. |
-| N — actual native core flows | On the candidate: identity/channel; conversation and restart; mixed attachment retention; source opening; artifact opening; project memory correction/deletion; cancellation and explicit resume; backup/restore UI. Verify narrow-window usability and localized safety/errors in supported locales; recheck changed surfaces rather than all historical screens. | Partial: isolated native development bundle from fcb5f2ac now verifies desktop identity, Chinese onboarding/menu, project create/edit/restart, valid attachment retention after unsupported-file rejection, project memory correction/history/pause and cancelling the restore picker. Full conversations, deletion, source/artifact opening, task recovery, actual restore, narrow-window/six-locale completion and final signed candidate remain unverified. |
+| N — actual native core flows | On the candidate: identity/channel; conversation and restart; mixed attachment retention; source opening; artifact opening; project memory correction/deletion; cancellation and explicit resume; backup/restore UI. Verify narrow-window usability and localized safety/errors in supported locales; recheck changed surfaces rather than all historical screens. | Partial: isolated native development bundle from fcb5f2ac verifies identity, Chinese onboarding/menu, project create/edit/restart, mixed attachment rejection/retention, memory correction/history/pause, restore-picker cancellation, and now native restore/activation/relaunch with original project text and quarantined memory visibly verified. Backup was created through the source maintenance API, not a native export UI. Full conversations, deletion, source/artifact opening, task recovery, negative/interrupted native restore, narrow-window/six-locale completion and final signed candidate remain unverified. |
 | U — upgrade and recoverability | Isolated fixtures representing stable 0.1.38, beta.3 and beta.6; backup before upgrade, supported upgrade with record/content checks, restart, restore with matching key, wrong/missing key and interrupted restore fail-closed. Exercise installer replacement and updater manifest/signature handling without changing production Latest or real data. | Partial: all three historical-source profile rehearsals passed on 2026-09-24; packaged/UI upgrade and recovery evidence still must be bound to the candidate. |
 | S — safety and regression | No unresolved data-loss, unauthorized action, privacy/key exposure, startup failure or broken advertised core path. Full CI and scoped safety regressions pass; dependency findings receive platform/reachability disposition rather than 'all clear' by count. | Open until final source; reuse prior results only where changes cannot invalidate them. |
 | P — release provenance | Release source integrated through review with current remote main; documented source/version identity, full same-SHA CI, signed/notarized/stapled package, Gatekeeper/fresh-install and asset/update-signature checks. Stable-channel update path explicitly reviewed before Latest/Publish. | Open; remote main observed at `d3e8081d0fc7a72072731edfaa0ea33acf095724`, not the beta.6 source. Do not silently merge or promote the existing beta artifact. |
@@ -1196,3 +1196,58 @@ discard its controlled HOME. Before new paid repair cases, still await the user'
 additional budget decision and freeze additive inputs/checkers/accounting.
 Canonical ledger remains **31/36, $3.10 reserved**, unchanged. No CI/tag/push,
 installed-app replacement, main merge, Publish or new paid call in this batch.
+
+## Native restore and relaunch evidence — 2026-09-24
+
+Starting checkout `b070ee05`; reused unchanged development bundle source
+`fcb5f2acacd1f188f631fc384e99dfa7803f3a55`, helper `d3f3f623`. No rebuild,
+paid call, provider setup, CI, tag or installed-app replacement. XcodeBuildMCP
+session defaults have no Xcode project/scheme; this is the existing Tauri bundle,
+with CUA driving actual macOS dialogs. The original `native-home-v1` remained
+stopped and its database hash remained unchanged.
+
+Created a checksummed backup using `server.services.backup.create` on a stopped
+synthetic clone: 19 members / 1,059,002 uncompressed bytes, no external key or
+access token. **This is maintenance-API backup creation, not native export UI.**
+The original key is a disposable fixture key, not a configured provider key.
+Kept the backup and both rehearsal profiles under the existing private native
+evidence directory. Edited the cloned project through the native UI to introduce
+a distinct `RESTORE-V3-DELTA` marker before restoring the earlier backup.
+
+Actual native steps: File > Restore, ZIP selection, extensionless original-key
+selection, first stop/prepare confirmation, visible maintenance workspace,
+restricted trial, second activate/restart confirmation, automatic native relaunch.
+The new Chinese workspace served on port 49376 (previously 49234). Project list
+initially excluded the restored archived project; selecting its archived filter
+showed the original full Mira/Monday text without the temporary marker. Memory
+showed the corrected blue preference as **需复核 / 一个项目 / 仅本地**. Normal Quit
+removed both acceptance processes, leaving the separately installed running app
+alone. No cloud approval or background task was enabled.
+
+Stopped-fixture inspection confirms restored project archived, memory quarantined
+and local-only, zero provider/message/run/usage rows, database quick checks okay,
+all 18 non-database archive assets matching their hashes, activation completed
+record present, and the pre-restore profile retained with its delta. Receipt
+`../stable-0140-native-evidence-20260924/native-restore-v3.json`, SHA-256
+`038db89fc2d1cba76cd1f4f3477a8faa89acfa7442e959a6d763ea3f4a2542b7`.
+
+Retained the first v2 rehearsal and its automation failure rather than silently
+replacing it. Its restore and backend relaunch completed (two startup ports, no
+startup error, completed activation, intact previous profile). But the launcher
+returned when the old desktop exited; the terminal session then cleaned up the
+restarted descendants. A subsequent CUA `getApp` launched an acceptance instance
+with default HOME, whose startup was refused by the already-running real
+profile's cooperative lock. That refused window was quit; no personal database
+was opened or migrated. The initially suspected product lock failure is therefore
+**not established**. V3 keeps the launcher process group alive through native
+relaunch and observes the existing app handle, without a default-home relaunch.
+Future native recovery tests must keep this lifetime constraint as well as HOME
+isolation. Do not post raw logs; they contain disposable fixture tokens.
+
+This closes one positive native development-bundle restore path, not gates N/U.
+No encrypted provider records existed, so credential rewrap is not established;
+negative/interrupted native recovery, native backup export, installer/updater
+upgrade and signed final-candidate checks remain separate. Next unpaid batch:
+bounded negative/paused native recovery or remaining native interaction checks.
+Paid retests still require the unanswered additional authorization; the previous
+31/36 calls and $3.10 reservation are unchanged. No repeated budget reminder.
