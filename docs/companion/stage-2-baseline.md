@@ -11,6 +11,9 @@ These are synthetic parser/runtime regressions, not completed user tasks.
 All 12 pilot outcomes remain **not_run**. Their denominator stays 12; no
 completion percentage is inferred from the number of passing unit tests.
 The full live input pack and model configuration are not yet frozen.
+The [revision-1 synthetic pack](../../evals/companion/STAGE2.md) now freezes
+offline definitions and checker bindings for all twelve IDs. Its executed
+boundary checks remain separate from the live outcome column below.
 Existing regression fixtures are reusable boundary evidence, not substitutes
 for the pilot's public sources, human usefulness review or live model output.
 

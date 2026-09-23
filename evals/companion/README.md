@@ -1,5 +1,8 @@
 # Companion evaluation catalog
 
+The bounded [Stage 2 synthetic input pack](STAGE2.md) has a separate 12-case
+scope; it does not change this catalog, holdouts or the 90-attempt denominator.
+
 This is **not** the existing 30-test engineering acceptance suite and does not call a model or an external account. It defines 30 product-task families, each with three attempts, plus 60 multi-turn memory scenario specifications.
 
 The initial catalog deliberately says `real_inputs_pending`. Actual project inputs, immutable input hashes and authorization must be supplied before `real_frozen` is valid. Visible task families are not secret holdout inputs: development and holdout input sets must be independently sourced and frozen before tuning. Memory scenarios currently have `specification_pending_runtime_binding`; validating their JSON does not mean the memory policy passes them.
