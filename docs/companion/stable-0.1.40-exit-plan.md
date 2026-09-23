@@ -550,3 +550,26 @@ need an additive preflight and reviewed accounting decision preserving all six
 reservations. Eight untouched research/memory cases retain their allocations.
 Next batch should progress those cases; R/N/U/S/P remain open. No tag, push,
 Publish, installed application or real user-data change in this batch.
+
+## Project and confirmation memory preflight — 2026-09-24
+
+Starting source `e62e2799`, clean worktree. Added stable M1/M2 inputs and a real
+host runner reusing the historical case semantics, actual migration/activation,
+memory repository and scoped task context in fresh synthetic databases. Two
+same-name projects have distinct IDs; only A gets its confirmed orange rule.
+The blue global preference begins as extractor-proposed, then a user revision
+confirms green. Each before/after turn is persisted separately; review criteria
+are not supplied to the model. No external tools, secondary provider or real
+conversation input is offered. All calls route through the same durable ledger.
+
+Initial offline run caught a harness callback-shape error before any paid call;
+fixed by passing the task service's required event emitter, not the event list.
+Exact-runner/context-boundary checks then **3 passed, 2 paid tests skipped**
+(3.83 s). They inspect actual request payloads, not just scripted answer text:
+project rule absent from B, proposed blue absent, confirmed green present.
+These assertions do not grade live answer quality or native interaction.
+
+Ledger checked at 6/36, $0.60 reserved. Official pricing re-fetched on the same
+UTC date; conservative rates still match the stored same-day snapshot. M1/M2
+each retain their original two-call allowance. Freeze their additive preflights
+and runner fingerprints before live execution; no retries or budget reallocation.
