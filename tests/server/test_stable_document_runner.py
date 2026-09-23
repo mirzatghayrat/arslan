@@ -28,10 +28,18 @@ async def test_document_runner_offline(execution_db, monkeypatch, tmp_path, case
     adapter = LLMAdapter("openai", "deepseek-v4-flash", base_url="https://api.deepseek.com", report_provider="deepseek")
     adapter.chat = AsyncMock(return_value=SimpleNamespace(content="Synthetic runner smoke answer, not quality evidence.",
         tool_calls=[], usage={"prompt_tokens": 100, "completion_tokens": 20}))
+    if case_id == "S2-D3":
+        def tool(key, args):
+            return SimpleNamespace(content="", usage={"prompt_tokens": 100, "completion_tokens": 20},
+                tool_calls=[{"id": key, "type": "function", "function": {"name": key, "arguments": args}}])
+        adapter.chat.side_effect = [tool("write_file", {"path": "totals.csv",
+            "content": "currency,known_total\nUSD,12.00\nCNY,23.50\n"}),
+            tool("read_file", {"path": "totals.csv"}), adapter.chat.return_value]
     monkeypatch.setattr(runner, "primary_adapter", lambda *args: adapter)
     await runner.test_stable_document_host(case_id, execution_db, monkeypatch, tmp_path)
-    assert budget.status()["requests"] == 1
-    adapter.chat.assert_awaited_once()
+    expected_calls = 3 if case_id == "S2-D3" else 1
+    assert budget.status()["requests"] == expected_calls
+    assert adapter.chat.await_count == expected_calls
     record = json.loads((evidence / f"{case_id}-result.json").read_bytes())
     assert record["persisted_in_isolated_db"] and record["quality_status"] == "not_run"
     with pytest.raises(RuntimeError, match="no_automatic_case_repeat"):

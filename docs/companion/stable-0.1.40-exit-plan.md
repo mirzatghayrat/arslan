@@ -476,3 +476,23 @@ Original failed D1 result still hashes to
 `047a8d919c9cc0c769c4ff88f605a7ad787976eaaa7cd2c0dfc3f91ecd2fa55f`.
 Ledger reread confirms 3 requests / $0.30 reserved; working tree clean before
 this documentation-only evidence annotation.
+
+## CSV deliverable preflight — 2026-09-24
+
+Starting source `cb404551`, clean worktree. Added D3 to the stable document
+runner, without altering the frozen historical contract or earlier preflights.
+The input CSV passes through the production structured reader; the model gets
+the original task and permission to write/read only `totals.csv`, not expected
+totals or review notes. Real workspace executors run behind an additional exact
+path allowlist in a disposable directory. No arbitrary file read or shell tool
+is offered. The runner archives the actual output, parses it independently,
+checks successful tool readback and reopens its real artifact/manifest pair.
+Missing-value/refund explanations still require separate semantic review.
+
+Offline exact-runner and preflight checks: **13 passed** (4.00 s), using scripted
+provider replies only; Ruff passed. D3 uses three requests in the scripted happy
+path, within its already frozen four-request cap. Actual model behavior may
+differ and is not retried automatically. Canonical ledger verified 3/36 before
+execution. Official DeepSeek pricing fetched again on the same UTC day; reviewed
+peak rates still match the existing same-day pricing snapshot. Live results must
+be appended after execution; no claim of D3 acceptance from these unit checks.

@@ -1,5 +1,7 @@
 """Opt-in actual stable host calls. Passing asserts execution, NOT quality/UI."""
 import hashlib
+import csv
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -12,7 +14,7 @@ from evals.companion import stable_budget as budget
 from evals.companion.stable_documents import DOCUMENT_CASES, verified_preflight
 from evals.companion.stable_live import StableAdapter, persist
 from evals.companion.stable_primary import primary_adapter, pricing_snapshot
-from server.db.models import ArslanMessage
+from server.db.models import ArslanMessage, Setting
 from server.orchestrator import arslan, memory, tool_loop
 from server.services import ingest, knowledge, task_context
 
@@ -59,11 +61,45 @@ async def test_stable_document_host(case_id, execution_db, monkeypatch, tmp_path
     monkeypatch.setattr(arslan, "_team_roster", no_roster)
     monkeypatch.setattr(knowledge, "retrieve_scoped", no_knowledge)
 
+    tool_trace = []
+    workspace = tmp_path / "workspace"
+    if case_id == "S2-D3":
+        workspace.mkdir()
+        async with execution_db() as db:
+            db.add_all([Setting(key="workspace_dir", value=str(workspace)),
+                        Setting(key="default_read_enabled", value="false")])
+            await db.commit()
+
+        async def file_tools():
+            return [{"key": "write_file", "description": "Write the approved totals.csv in the isolated workspace."},
+                    {"key": "read_file", "description": "Read totals.csv to verify the saved output."}]
+
+        class RestrictedFile:
+            def __init__(self, key, delegate):
+                self.key, self.delegate = key, delegate
+
+            async def execute(self, args):
+                if args.get("path") != "totals.csv":
+                    result = {"ok": False, "error": "Outside the approved synthetic file"}
+                else:
+                    result = await self.delegate.execute(args)
+                tool_trace.append({"tool": self.key, "args": args, "result": result})
+                return result
+
+        from server.registry.file_tools import ReadFileExecutor, WriteFileExecutor
+        for delegate in (ReadFileExecutor(), WriteFileExecutor()):
+            monkeypatch.setitem(tool_loop.EXECUTORS, delegate.key, RestrictedFile(delegate.key, delegate))
+        monkeypatch.setattr(arslan, "_arslan_tools", file_tools)
+
+    async def confirm_write(tool, path):
+        return case_id == "S2-D3" and tool == "write_file" and path == "totals.csv"
+
     @task_context.scoped_turn
     async def turn(conversation_id, user_message):
         message_id = await memory.add_message(conversation_id, "user", user_message)
         task_context.source_message(message_id)
-        return await arslan._handle_answer(conversation_id, user_message, events.append)
+        return await arslan._handle_answer(conversation_id, user_message, events.append,
+                                          confirm_workspace_write=confirm_write)
 
     events = []
     result = await turn(case_id, ready["prompt"])
@@ -75,7 +111,31 @@ async def test_stable_document_host(case_id, execution_db, monkeypatch, tmp_path
         "persisted_in_isolated_db": persisted, "preflight_sha256": digest,
         "source_sha": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=budget.ROOT, text=True).strip(),
         "runner_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-        "quality_status": "not_run", "native_status": "not_run"})
+        "quality_status": "not_run", "native_status": "not_run", "tool_trace": tool_trace})
     assert isinstance(result, str) and result.strip()
     assert not any(event.get("type") == "error" for event in events)
     assert persisted
+    if case_id == "S2-D3":
+        from server.services import artifact_store
+        from tests.server.test_stage2_inputs import CASES
+        target = workspace / "totals.csv"
+        assert target.is_file() and not target.is_symlink()
+        data = target.read_bytes()
+        with (budget.EVIDENCE / "S2-D3-totals.csv").open("xb") as stream:
+            stream.write(data)
+        with target.open(newline="", encoding="utf-8") as stream:
+            rows = list(csv.DictReader(stream))
+        manifests = []
+        for path in artifact_store.root().glob("*.manifest.json"):
+            item = json.loads(path.read_bytes())
+            if item["title"] == "totals.csv":
+                metadata, stored = artifact_store.read_owned(item["run_id"], item["filename"])
+                manifests.append({"metadata": metadata, "bytes_match_workspace": stored == data})
+        checks = {"two_currency_rows": len(rows) == 2,
+                  "totals_match": {row.get("currency"): row.get("known_total") for row in rows} == CASES[case_id]["expected_totals"],
+                  "readback_tool_succeeded": any(item["tool"] == "read_file" and item["result"].get("ok") for item in tool_trace),
+                  "artifact_reopened": any(item["bytes_match_workspace"] for item in manifests)}
+        persist(budget.EVIDENCE / "S2-D3-artifact-review.json", {"rows": rows, "checks": checks,
+            "sha256": hashlib.sha256(data).hexdigest(), "manifests": manifests,
+            "semantic_review": "not_run", "native_open": "not_run"})
+        assert all(checks.values()), checks
