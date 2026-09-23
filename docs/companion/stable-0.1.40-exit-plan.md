@@ -1091,3 +1091,42 @@ native UI or package acceptance was performed in this batch. Next: freeze additi
 repair inputs/checkers and accounting; obtain explicit additional paid authority
 before the proposed repair sweep. Native and packaged gates remain open. No tag,
 push, main merge or Publish.
+
+## Native/package acceptance isolation prerequisite — 2026-09-24
+
+Starting source `949edb22`; repair source `4168bf89`. The preceding user-facing
+turn requested an additional independent repair budget; no answer has arrived.
+The recurring heartbeat's old "0 calls" checkpoint is historical, not fresh
+authorization. Canonical ledger was rechecked: **31/36, $3.10 reserved**. No new
+paid calls or credential/profile reads in this batch.
+
+Code inspection before native launch found that `fresh_install_check.boot`
+copied the entire parent environment and only cleared three overrides. Replacing
+HOME did not clear `ARSLAN_SECRET_KEY_FILE`: a nonempty inherited path could reach
+a key outside the fixture, while the test suite's empty override could disable
+the first-run key generation being checked. Other inherited runtime/profile
+overrides and provider credentials also remained in the launched environment.
+This was reproduced using synthetic sentinel values, not real credentials.
+
+The acceptance launcher now constructs a minimal environment with isolated HOME
+and TMPDIR, fixed system PATH and locale. It retains the deliberately poisoned
+relative `ARSLAN_DATA_DIR=data` to keep testing the packaged sanitizer. It does
+not change production key precedence or add an end-user startup restriction.
+This is environment hygiene, **not an OS filesystem/network sandbox**; native
+WebKit state and actual GUI behavior still need their own isolated verification.
+
+Red checks: **3 failed** (two real launcher-environment captures, one missing
+helper). Final scoped selection: **67 passed** (1.85 s), Ruff/whitespace passed.
+The real source-bootstrap child generates a new key inside disposable HOME,
+with network and synthetic foreign-key reads rejected by an audit hook. The
+native executable was replaced only in the launcher unit tests; no app bundle,
+native interaction, installation, Gatekeeper or complete fresh-install run is
+claimed. Corrected an outdated script comment that called its existing native
+executable launch a sidecar-only run; backend probes still do not prove drag/drop
+or window movement.
+
+Next unpaid batch: prepare a source-identified isolated native candidate and
+exercise the finite gate-N core flows, without an installed-app replacement or
+configured paid provider. Additive live repair inputs/accounting can be prepared,
+but do not execute them pending the user's budget answer. All five gates remain
+open; no beta/tag/push/main merge/Publish.
