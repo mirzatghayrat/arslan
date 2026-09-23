@@ -972,6 +972,11 @@ def _embeds_protocol(text: str) -> bool:
     a prose prefix like 'Let me search…{…}'). Covers OpenAI/DeepSeek ({"tool"} / {"tool_calls"} /
     {"function_call"}), Gemini ({"functionCall"}), and our escalate object. A finished answer is
     prose — it never surfaces one of these as the reply."""
+    # Detection is deliberately stricter than parsing for dispatch: malformed
+    # quotes or an interrupted object must not turn a proposed action into an
+    # answer. This only rejects text; it never repairs JSON or executes a call.
+    if re.search(r'\{\s*"(?:tool|tool_calls|function_call|functionCall|escalate)"\s*:', text or ""):
+        return True
     obj = first_json_object(text or "") or parse_json_object(text or "")
     if not isinstance(obj, dict):
         return False
