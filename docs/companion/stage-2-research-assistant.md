@@ -1,5 +1,11 @@
 # Stage 2 — daily research assistant, bounded delivery
 
+Update 2026-09-23: the user subsequently approved continuous work through a
+preview release and a 36-request / US$5 real-model pilot. See the
+[live evidence record](stage-2-live-baseline.md) for actual results and limits.
+The sections below preserve the original staged plan and its earlier status;
+they are not the current authorization or a claim of full acceptance.
+
 Approved direction: 2026-09-23. This follows the published beta.3 preview;
 it does not resume the complete v1.2 goal or authorize another release.
 

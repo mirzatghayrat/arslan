@@ -209,6 +209,11 @@ _WEB_TOOL_GUIDANCE = (
     "if access fails, label that source unread and seek a legitimate alternative. Do not attribute "
     "a body claim to a title/snippet. Keep factual claims, inferences and recommendations distinct.\n"
     "- Match each important claim to supporting passages, not merely a relevant-looking link. "
+    "When supplied material includes source URLs, include direct source links beside the comparison or claims, "
+    "even if you did not fetch them yourself; label them as supplied sources, not independently opened pages. "
+    "For documents, retain filename/version and paragraph/page locators. Do not infer a calendar interval "
+    "or direction of a deadline change from weekday names without concrete dates. Do not invent task owners, "
+    "status, reporting periods or project facts; mark illustrative wording and placeholders as examples. "
     "Compare the same product/version, population and date range. Explain conflicting evidence and "
     "unknowns. Retrieval time is not publication time, nor proof that a price or license is current. "
     "Reopen time-sensitive sources for a new latest/current request; do not treat old research as fresh.\n"
@@ -1210,6 +1215,15 @@ async def _handle_answer_body(
                     f"{'重合成更正' if outcome['corrected'] else '模板更正'}")
     except Exception as exc:  # noqa: BLE001 — interception is never fatal
         logger.warning("promise interception failed (fail-open, answer kept): %s", exc)
+    from arslan.companion.source_links import source_link_footer
+    from server.services.task_context import precise_text_request
+    footer = ""
+    if not precise_text_request(user_message):
+        footer = source_link_footer(user_message + "\n" + (attached_context or ""), result.get("tool_trace") or [],
+                                    language=await ocr_fallback.current_ui_language())
+    if full and footer:
+        full += footer
+        emit({"type": "stream_chunk", "content": footer})
     msg_id = await memory.add_message(conversation_id, "arslan", full)
     # S3-M3 Task 5 seam choice: the answer turn's usage rides the stream_end the body
     # ALREADY emits (one frame shape for dispatch + answer, no extra answer_usage frame).

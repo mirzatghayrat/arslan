@@ -1,5 +1,8 @@
 # Public-source preparation and citation-boundary repair — 2026-09-23
 
+Historical preparation record. Subsequent live execution is recorded separately
+in [the live baseline](stage-2-live-baseline.md); no earlier result is overwritten.
+
 Base: `8d279131`, separate from the frozen beta.4 release candidate.
 No package installation, third-party code adoption or paid model execution.
 

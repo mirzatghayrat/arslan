@@ -1,5 +1,8 @@
 # Stage 2 — offline boundary baseline, 2026-09-23
 
+Historical offline record. Subsequent authorization, live results and remaining
+limitations are recorded in [the live baseline](stage-2-live-baseline.md).
+
 Source baseline: `dd3f78371621f0cb34d78cdfa34c105555ae463d`.
 Work branch: `codex/research-stage2-2026-09-23`, isolated from the frozen
 beta.4 candidate. No paid model, user documents, installed application data,
