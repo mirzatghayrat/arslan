@@ -5,7 +5,7 @@ import json
 from evals.companion import stable_budget as budget
 from evals.companion.stable_live import persist
 
-CASES = ("S2-R2", "S2-R4")
+CASES = ("S2-R2", "S2-R3", "S2-R4")
 RUNNER = "tests/server/test_stable_research_live.py"
 
 
@@ -28,9 +28,12 @@ def plan(case):
             "把简短中文对照和直接来源链接实际写入 comparison.md，然后 read_file 重新打开核对。"
             "仅授权这个相对路径；不要只贴代码块，也不要重复读取失败的网址。" +
             ("\n这两份 README 较长，请使用 web_extract 的 max_chars=40000；若仍有截断须明确披露。"
-             if case == "S2-R4" else ""),
+             if case in {"S2-R3", "S2-R4"} else "") +
+            ("\n以下为已冻结的 Git 提交定位信息（不是发布日期或网页抓取时间）：\n" +
+             json.dumps(ready.get("source_metadata", []), ensure_ascii=False) if case == "S2-R3" else ""),
         "limits": f"Original {case} cap 4; same 36/$5 ledger, no automatic retry or reallocation",
         "transport": "Actual production public GET, raw bytes must match archives; configured proxy may delegate address pinning and is recorded",
+        "reread_policy": "Successful exact-hash reads may repeat within unchanged task/model budgets; failed URLs may not retry",
         "quality_status": "not_run", "native_status": "not_run"}
 
 
@@ -49,11 +52,11 @@ def verified(case):
 
 
 def freeze_public_inputs(case):
-    if case != "S2-R4":
-        raise ValueError("only_unrun_R4_public_inputs")
+    if case not in {"S2-R3", "S2-R4"} or budget.status()["by_case"][case]:
+        raise ValueError("only_unrun_public_inputs")
     manifest = json.loads((budget.ROOT / "evals/companion/stage2-public-sources.json").read_bytes())
     selected = next(item for item in manifest["cases"] if item["id"] == case)
-    inputs, urls = [], []
+    inputs, urls, source_metadata = [], [], []
     for identity in selected["sources"]:
         source = next(item for item in manifest["sources"] if item["id"] == identity)
         url = f"https://raw.githubusercontent.com/{source['repository']}/{source['commit']}/{source['path']}"
@@ -63,11 +66,36 @@ def freeze_public_inputs(case):
             raise RuntimeError("stable_public_input_changed")
         inputs.append({"path": str(path.relative_to(budget.EVIDENCE)), "sha256": source["sha256"]})
         urls.append(url)
+        source_metadata.append({"url": url, "commit": source["commit"], "commit_date": source["commit_date"]})
     persist(budget.EVIDENCE / f"{case}-preflight.json", {"case": case, "status": "ready",
         "contract_sha256": budget.contract()[1], "inputs": inputs, "urls": urls,
-        "prompt": selected["prompt"], "acceptance": next(item["acceptance"] for item in budget.contract()[0]["cases"]
+        "prompt": selected["prompt"], "source_metadata": source_metadata,
+        "acceptance": next(item["acceptance"] for item in budget.contract()[0]["cases"]
                                                         if item["id"] == case),
         "quality_status": "not_run", "native_status": "not_run"})
+
+
+class VerifiedPublicReads:
+    """Real refetches are allowed after success, never fabricated cached receipts."""
+    def __init__(self, hashes, get, delegated):
+        self.hashes, self.get, self.delegated = hashes, get, delegated
+        self.failed = set()
+        self.transport = []
+
+    async def __call__(self, url):
+        if url not in self.hashes or url in self.failed:
+            raise RuntimeError("stable_unapproved_or_failed_public_read")
+        self.failed.add(url)
+        response = await self.get(url)
+        digest = hashlib.sha256(response.content).hexdigest()
+        self.transport.append({"url": url, "sha256": digest, "bytes": len(response.content),
+            "status": response.status_code, "matches_frozen_input": digest == self.hashes[url],
+            "address_pinning_delegated_to_proxy": self.delegated(url)})
+        response.raise_for_status()
+        if digest != self.hashes[url]:
+            raise RuntimeError("stable_public_body_changed")
+        self.failed.remove(url)
+        return response
 
 
 if __name__ == "__main__":

@@ -35,7 +35,8 @@ async def test_stable_research_host(case, execution_db, monkeypatch, tmp_path):
     pricing = pricing_snapshot(budget.EVIDENCE / os.environ["ARSLAN_STABLE_PRICING"])
     production_tools = arslan._arslan_tools
     original_send, original_get = httpx.AsyncClient.send, net_pin.pinned_get
-    fetched, transport, trace, events = set(), [], [], []
+    trace, events = [], []
+    verified_get = research.VerifiedPublicReads(hashes, original_get, net_pin._pinning_disabled_by_proxy)
 
     async def restricted_send(client, request, **kwargs):
         model = request.method == "POST" and str(request.url) in {
@@ -47,19 +48,6 @@ async def test_stable_research_host(case, execution_db, monkeypatch, tmp_path):
         if not model and not public:
             raise RuntimeError("stable_unapproved_network_request")
         return await original_send(client, request, **kwargs)
-
-    async def verified_get(url):
-        if url not in hashes or url in fetched:
-            raise RuntimeError("stable_unapproved_or_repeated_public_read")
-        fetched.add(url)
-        response = await original_get(url)
-        digest = hashlib.sha256(response.content).hexdigest()
-        transport.append({"url": url, "sha256": digest, "bytes": len(response.content),
-                          "matches_frozen_input": digest == hashes[url],
-                          "address_pinning_delegated_to_proxy": net_pin._pinning_disabled_by_proxy(url)})
-        if digest != hashes[url]:
-            raise RuntimeError("stable_public_body_changed")
-        return response
 
     monkeypatch.setattr(httpx.AsyncClient, "send", restricted_send)
     monkeypatch.setattr(net_pin, "pinned_get", verified_get)
@@ -117,25 +105,36 @@ async def test_stable_research_host(case, execution_db, monkeypatch, tmp_path):
         "persisted_in_isolated_db": any(answer.content == result for answer in answers),
         "preflight_sha256": value["preflight_sha256"], "runner_plan": value,
         "source_sha": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=budget.ROOT, text=True).strip(),
-        "quality_status": "not_run", "native_status": "not_run", "tool_trace": trace, "transport": transport})
+        "quality_status": "not_run", "native_status": "not_run", "tool_trace": trace, "transport": verified_get.transport})
+    checks = archive_delivery(case, workspace, trace, urls)
     assert result and not any(event.get("type") == "error" for event in events)
     sources = admitted_sources(trace)
     assert {source.url for source, _ in sources.values()} == set(urls)
     assert all(not source.truncated for source, _ in sources.values())
-    target = workspace / "comparison.md"
-    assert target.is_file() and not target.is_symlink()
-    data = target.read_bytes()
-    with (budget.EVIDENCE / f"{case}-comparison.md").open("xb") as handle:
-        handle.write(data)
-    manifests = []
-    for path in artifact_store.root().glob("*.manifest.json"):
-        item = json.loads(path.read_bytes())
-        if item["title"] == "comparison.md":
-            metadata, stored = artifact_store.read_owned(item["run_id"], item["filename"])
-            manifests.append({"metadata": metadata, "bytes_match_workspace": stored == data})
-    checks = {"links_saved": all(url in data.decode() for url in urls),
-              "readback_succeeded": any(item["tool"] == "read_file" and item["result"].get("ok") for item in trace),
-              "artifact_reopened": any(item["bytes_match_workspace"] for item in manifests)}
-    persist(budget.EVIDENCE / f"{case}-artifact-review.json", {"sha256": hashlib.sha256(data).hexdigest(),
-        "checks": checks, "manifests": manifests, "semantic_review": "not_run", "native_open": "not_run"})
     assert all(checks.values()), checks
+
+
+def archive_delivery(case, workspace, trace, urls):
+    """Save partial deliverables before assertions; a saved file is not a pass."""
+    target = workspace / "comparison.md"
+    exists = target.is_file() and not target.is_symlink()
+    data = target.read_bytes() if exists else b""
+    if exists:
+        with (budget.EVIDENCE / f"{case}-comparison.md").open("xb") as handle:
+            handle.write(data)
+    manifests, errors = [], []
+    for path in artifact_store.root().glob("*.manifest.json"):
+        try:
+            item = json.loads(path.read_bytes())
+            if item["title"] == "comparison.md":
+                metadata, stored = artifact_store.read_owned(item["run_id"], item["filename"])
+                manifests.append({"metadata": metadata, "bytes_match_workspace": exists and stored == data})
+        except Exception as error:
+            errors.append(type(error).__name__)
+    checks = {"file_exists": exists, "links_saved": all(url.encode() in data for url in urls),
+              "readback_succeeded": any(item["tool"] == "read_file" and item["result"].get("ok") for item in trace),
+              "artifact_reopened": any(item["bytes_match_workspace"] for item in manifests), "no_archive_errors": not errors}
+    persist(budget.EVIDENCE / f"{case}-artifact-review.json", {"sha256": hashlib.sha256(data).hexdigest() if exists else None,
+        "checks": checks, "manifests": manifests, "archive_errors": errors,
+        "semantic_review": "not_run", "native_open": "not_run"})
+    return checks

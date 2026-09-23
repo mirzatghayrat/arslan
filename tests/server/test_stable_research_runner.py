@@ -15,7 +15,8 @@ from tests.server import test_stable_research_live as runner
 
 
 @pytest.mark.parametrize("case", research.CASES)
-async def test_research_runner_offline(execution_db, monkeypatch, tmp_path, case):
+@pytest.mark.parametrize("failed_final", [False, True])
+async def test_research_runner_offline(execution_db, monkeypatch, tmp_path, case, failed_final):
     evidence = tmp_path / "evidence"
     monkeypatch.setattr(budget, "EVIDENCE", evidence)
     monkeypatch.setenv("ARSLAN_STABLE_LIVE", "authorized-36-requests-usd5")
@@ -55,13 +56,22 @@ async def test_research_runner_offline(execution_db, monkeypatch, tmp_path, case
     adapter = LLMAdapter("openai", "deepseek-v4-flash", base_url="https://api.deepseek.com", report_provider="deepseek")
     adapter.chat = AsyncMock(side_effect=[reply([("web_extract", {"url": url, "max_chars": 40000}) for url in urls]),
         reply([("write_file", {"path": "comparison.md", "content": "# Synthetic comparison\n" + "\n".join(urls)})]),
-        reply([("read_file", {"path": "comparison.md"})]), reply(content="Synthetic execution fixture, not a quality pass.")])
+        reply([("read_file", {"path": "comparison.md"})]),
+        RuntimeError("synthetic_final_failure") if failed_final else reply(content="Synthetic execution fixture, not a quality pass.")])
     monkeypatch.setattr(runner, "primary_adapter", lambda *args: adapter)
-    await runner.test_stable_research_host(case, execution_db, monkeypatch, tmp_path)
+    if failed_final:
+        with pytest.raises(AssertionError):
+            await runner.test_stable_research_host(case, execution_db, monkeypatch, tmp_path)
+    else:
+        await runner.test_stable_research_host(case, execution_db, monkeypatch, tmp_path)
     assert budget.status()["by_case"][case] == adapter.chat.await_count == 4
     value = json.loads((evidence / f"{case}-result.json").read_bytes())
     assert len(value["transport"]) == 2 and all(item["matches_frozen_input"] for item in value["transport"])
-    assert value["persisted_in_isolated_db"]
+    assert value["persisted_in_isolated_db"] is not failed_final
+    assert (evidence / f"{case}-comparison.md").read_text().startswith("# Synthetic comparison")
+    assert all(json.loads((evidence / f"{case}-artifact-review.json").read_bytes())["checks"].values())
+    if failed_final:
+        assert value["answer"] is None and (evidence / "HALT").exists()
     with pytest.raises(RuntimeError, match="no_automatic_case_repeat"):
         await runner.test_stable_research_host(case, execution_db, monkeypatch, tmp_path)
     # A changed additive plan is refused without touching the original preflight.
