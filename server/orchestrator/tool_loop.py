@@ -1244,7 +1244,8 @@ async def run_native(
     # History and tool result turns are appended via
     # _record_tool_result (assistant turn + framed "TOOL RESULT for X" user turn), so tool
     # outputs re-enter context IDENTICALLY to the old loop.
-    convo: list[dict] = list(history) + [{"role": "user", "content": user_content}]
+    current_request = {"role": "user", "content": user_content}
+    convo: list[dict] = list(history) + [current_request]
     tool_trace: list[dict] = []
     # PB-3 (条件2): consecutive-failure counts per mcp_* tool key. These are LOCALS of this
     # run_native invocation — one invocation = one turn — so a new turn starts at zero by
@@ -1259,6 +1260,7 @@ async def run_native(
     # creating it any deeper (inside the step loop, or inside _dispatch_tool) would reset
     # it per tool call and the cap would never bind.
     fetch_budget: dict[str, int] = {}
+    unseen_start = len(convo)
 
     # Deterministic pre-search uses the same admission and progress boundaries.
     if force_tools and "web_search" in wired_keys and "web_search" in EXECUTORS:
@@ -1281,6 +1283,7 @@ async def run_native(
                 fetch_budget=fetch_budget, caller=caller)
             policy.observe("web_search", {"query": q}, result)
 
+    pending_feedback = len(convo) - unseen_start
     for step in range(request_ceiling):
         budget.check()
         if budget.model_requests >= budget.limits.model_requests:
@@ -1296,15 +1299,32 @@ async def run_native(
         sys_now = system if not forced else (
             system + ("\n\nRepeated actions made no progress. Explain what was verified and what is blocked. Text only."
                       if policy.stopped else "\n\nTool budget exhausted: report the verified results and remaining work. Text only."))
-        convo, compacted = bounded_history(convo)
+        # Deliver one new tool batch atomically before normal old-history
+        # eviction. Keep the 64k rolling target; apply extra protection only
+        # to batches <=96k, never permanently pin sources or widen task budgets.
+        # Existing opaque-provider pair retention is otherwise unchanged.
+        oversized_feedback = pending_feedback and len(json.dumps(
+            convo[-pending_feedback:], ensure_ascii=False, default=str)) > 96_000
+        convo, compacted = bounded_history(convo, preserve_tail=0 if oversized_feedback else pending_feedback)
+        pending_feedback = 0
+        if oversized_feedback:
+            sys_now += ("\nThe newest tool-result batch exceeded the bounded delivery window. Some newly fetched "
+                        "content may have been omitted before you saw it. Do not claim to have inspected omitted "
+                        "content; request smaller sequential reads or disclose the limitation within remaining budgets.")
         history_compacted = history_compacted or compacted
         if history_compacted:
             sys_now += ("\nEarlier conversation turns were compacted. Saved task progress and owned outputs "
                         "remain available through task_progress. Do not repeat completed effects.")
         # On the forced step pass tools=None so the model CANNOT call a tool and MUST produce
         # prose from the accumulated TOOL RESULTs — never an empty turn.
+        # Rolling evidence eviction must not erase this turn's task or its
+        # restrictions. Restore the exact request at user priority, not as a
+        # system instruction or an invented summary, only in this payload.
+        request_history = convo[:-1]
+        if not any(item is current_request for item in convo):
+            request_history = [current_request] + request_history
         resp = await _chat_retry(a, sys_now, convo[-1]["content"],
-                                 history=convo[:-1],
+                                 history=request_history,
                                  tools=(None if forced else schemas))
         tool_calls = list(getattr(resp, "tool_calls", None) or [])
 
@@ -1379,6 +1399,7 @@ async def run_native(
             # resp.content is narration — surface it as an ephemeral note ONLY, never final.
             if (resp.content or "").strip():
                 emit({"type": "note", "text": (resp.content or "").strip()[:400]})
+            pending_feedback = len(convo) - history_start
             continue
 
         # No tool calls (or forced) → resp.content should be the FINAL answer. GUARD: the model

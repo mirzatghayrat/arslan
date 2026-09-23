@@ -100,13 +100,19 @@ class ProgressPolicy:
         return self.stalled >= self.max_stalled
 
 
-def bounded_history(history: list[dict], *, max_chars: int = 64_000) -> tuple[list[dict], bool]:
+def bounded_history(history: list[dict], *, max_chars: int = 64_000,
+                    preserve_tail: int = 0) -> tuple[list[dict], bool]:
     """Drop only old complete turns, preserving native provider-content pairs.
 
     This is reference retention, not a semantic summarizer. Durable task progress
     remains separately recoverable. The most recent group is retained even when
     it exceeds this soft bound; truncating an opaque provider block is unsafe.
+    A caller may group a bounded batch of newly returned tool messages so each
+    reaches the model once. This is not permanent pinning; the next call must
+    explicitly request protection again. Native provider pairs remain intact.
     """
+    if type(preserve_tail) is not int or not 0 <= preserve_tail <= len(history):
+        raise ValueError("invalid history tail")
     groups: list[list[dict]] = []
     index = 0
     while index < len(history):
@@ -121,6 +127,13 @@ def bounded_history(history: list[dict], *, max_chars: int = 64_000) -> tuple[li
         else:
             groups.append([item])
             index += 1
+    if preserve_tail:
+        tail, count = [], 0
+        while groups and count < preserve_tail:
+            group = groups.pop()
+            tail.append(group)
+            count += len(group)
+        groups.append([item for group in reversed(tail) for item in group])
     total, kept = 0, []
     for group in reversed(groups):
         size = len(json.dumps(group, ensure_ascii=False, default=str))

@@ -28,6 +28,9 @@ async def test_research_runner_offline(execution_db, monkeypatch, tmp_path, case
                 "https://raw.githubusercontent.com/synthetic/repo/fixed/README.zh-Hans.md"]
     bodies = [b"<html><body><article><h1>Synthetic source</h1><p>Isolated fixture data for the first source. No actual scientific claims.</p></article></body></html>",
               b"<html><body><article><h1>Other synthetic source</h1><p>Isolated fixture data for the second source. No real scientific comparison.</p></article></body></html>"]
+    if case == "S2-R1":
+        urls.append("https://example.com/third-public-source")
+        bodies.append(b"<html><body><article><h1>Third synthetic source</h1><p>Third isolated fixture, not a live project.</p></article></body></html>")
     inputs = []
     for index, body in enumerate(bodies):
         path = evidence / f"source-{index}.html"
@@ -66,7 +69,7 @@ async def test_research_runner_offline(execution_db, monkeypatch, tmp_path, case
         await runner.test_stable_research_host(case, execution_db, monkeypatch, tmp_path)
     assert budget.status()["by_case"][case] == adapter.chat.await_count == 4
     value = json.loads((evidence / f"{case}-result.json").read_bytes())
-    assert len(value["transport"]) == 2 and all(item["matches_frozen_input"] for item in value["transport"])
+    assert len(value["transport"]) == len(urls) and all(item["matches_frozen_input"] for item in value["transport"])
     assert value["persisted_in_isolated_db"] is not failed_final
     assert (evidence / f"{case}-comparison.md").read_text().startswith("# Synthetic comparison")
     assert all(json.loads((evidence / f"{case}-artifact-review.json").read_bytes())["checks"].values())
