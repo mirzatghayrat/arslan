@@ -150,3 +150,14 @@ release; **do not create a separate release for this change**.
 Integration checkpoint: cherry-pick clean; local Ruff, shell syntax and
 whitespace checks passed. No full CI, native rebuild, tag or release was run
 for this handoff. Packaging reference: `packaging/dmg/README.md`.
+
+Follow-up offline selection, 2026-09-24, source `8e795bdd`: explicit synthetic
+secret, existing locked Python environment; release-workflow, packaging-entry
+and fresh-install salt-probe tests **71 passed** (2.26 s), with the existing
+Starlette/httpx deprecation warning. This is not a newly built DMG, a native
+install run or completion of gates N/U/P.
+
+The user additionally requested Jev/Laya efficiency research. Findings and a
+bounded, not-yet-started later experiment are recorded in
+`jev-laya-research-2026-09-24.md`. No new inference dependency, model download,
+cloud provider or release gate is introduced; stable acceptance stays first.
