@@ -432,3 +432,39 @@ entry point and add honest page-inventory metadata without claiming visual
 inspection. Keep original frozen baseline evidence. Then continue remaining
 registered cases within their unused case caps, followed by isolated native and
 packaged acceptance. No tag, new beta, Publish, real-data or installed-app change.
+
+## PDF attachment completeness repair — 2026-09-24
+
+Starting source `b4bd9fff`, clean worktree. An actual multipart upload to
+`POST /api/v1/extract` reproduced the absent page inventory; new offline
+regressions initially gave **4 failures, 1 pass**. The all-empty PDF already
+remained empty and was not promoted to readable content.
+
+The attachment service now prepends a bounded parser inventory: physical page
+count, one-based page numbers without native text, and explicit limits on what
+this means. No native text is **not** proof of a missing page, visual blankness,
+or document incompleteness. Scan/OCR partial-read notices are retained separately;
+this metadata never certifies that all content was read. Empty extraction stays
+empty, lists stop at 64 with count/omission metadata, the existing attachment
+character cap and partial flag remain in force, and compression cannot rewrite
+the PDF source. Page 1/3 source text and locators are byte-preserved after the
+inventory. No OCR/model/network permission was added.
+
+This repair is in the real ephemeral attachment path, not the frozen low-level
+`_extract_file` baseline helper. Historical helpers, input hashes, preflight,
+failed answer and checker are deliberately unchanged. A later D1 repair attempt
+must use the real attachment extraction result in an **additive** preflight;
+rerunning the old harness would still feed the old text-only baseline. Library
+ingestion is a distinct path and is not claimed repaired by this batch.
+
+Verification: real attachment/API, page locators, extraction and frozen-input
+selection **69 passed** (4.93 s); Ruff passed. These are source-level offline
+checks, not proof that the model now answers correctly or that native UI works.
+An optional single-test evidence run archives the actual repaired API response
+as `pdf-attachment-repair-v1.json` with input/source/test hashes; it never changes
+the baseline files. No paid calls in this batch; budget remains **3/36, $0.30
+reserved**. The original D1 failure and all five release gates remain open.
+
+Next: continue the unused fixed-case allocations (D3 and research/memory), and
+prepare the additive D1 retest/budget decision without resetting any ledger.
+Do not label the offline repair as a passed live case or cut another beta.

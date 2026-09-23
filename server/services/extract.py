@@ -9,6 +9,33 @@ from server.services import ingest
 from server.services.input_formats import kind, read_structured, video_metadata
 
 
+def _pdf_inventory(text: str, layer: ingest.PDFTextLayer) -> str:
+    """Keep physical-page existence distinct from extracted text availability.
+
+    This is parser metadata, never an OCR/visual claim or document quotation.
+    Empty extraction stays empty so metadata alone cannot masquerade as content.
+    A bounded list avoids unbounded prompt overhead on sparse, long documents.
+    """
+    if not text.strip():
+        return text
+    import json
+    no_text = [index for index, page in enumerate(layer.pages, 1) if not page.strip()]
+    metadata = {
+        "page_count": len(layer.pages),
+        "page_numbers": "one_based_physical_pages",
+        "pages_without_native_text": no_text[:64],
+        "pages_without_native_text_count": len(no_text),
+        "page_list_truncated": len(no_text) > 64,
+        "empty_text_is_not_missing_page": True,
+        "visual_layout_verified": False,
+        "note": "All physical pages exist in the parsed PDF. Missing native text is not proof of blankness, "
+                "a missing page, or an incomplete document. OCR results and unread-page notices below "
+                "are separate; this inventory does not certify that all page content was read.",
+    }
+    return ("[PDF extraction inventory; not document content]\n"
+            + json.dumps(metadata, ensure_ascii=False) + "\n\n" + text)
+
+
 async def extract_text(
     *, filename: str | None = None, data: bytes | None = None,
     url: str | None = None, compress: bool = False,
@@ -52,6 +79,7 @@ async def extract_text(
                 text = await asyncio.to_thread(ingest._extract_file,
                     filename or "file.pdf", data, ui_language=language,
                     ocr_languages=languages)
+            text = _pdf_inventory(text, layer)
             preserve_source = True
         else:
             text = ingest._extract_file(
