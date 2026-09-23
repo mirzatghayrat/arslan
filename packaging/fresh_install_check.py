@@ -62,7 +62,12 @@ import http.client
 import urllib.request
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
-PORT_RE = re.compile(r"http://127\.0\.0\.1:(\d+)")
+# The shell also logs its system proxy URL, often another 127.0.0.1 port.
+# Match the actual server's startup line, not the first loopback URL in logs.
+PORT_RE = re.compile(
+    r"^(?:\[sidecar\] )?INFO:\s+Uvicorn running on http://127\.0\.0\.1:(\d+) "
+    r"\(Press CTRL\+C to quit\)\s*$", re.MULTILINE,
+)
 BOOT_TIMEOUT = 120
 
 

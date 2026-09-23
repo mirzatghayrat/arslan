@@ -44,7 +44,10 @@ def test_boot_does_not_inherit_profile_or_execution_overrides(probe, tmp_path, m
 
     def spawn(argv, **kwargs):
         captured.update(kwargs)
-        kwargs["stdout"].write(b"http://127.0.0.1:54321\n")
+        kwargs["stdout"].write(
+            b"network: proxying through http://127.0.0.1:7899 (loopback exempt)\n"
+            b"INFO:     Uvicorn running on http://127.0.0.1:54321 (Press CTRL+C to quit)\n"
+        )
         kwargs["stdout"].flush()
         return SimpleNamespace(poll=lambda: None)
 
@@ -71,6 +74,18 @@ def test_boot_does_not_inherit_profile_or_execution_overrides(probe, tmp_path, m
     assert port == 54321
     assert all(os.environ[name] == value for name, value in poisoned.items())
     assert foreign.read_text(encoding="utf-8") == "synthetic-key-must-not-be-read"
+
+
+@pytest.mark.parametrize("line,expected", [
+    ("network: proxying through http://127.0.0.1:7899 (loopback exempt)", None),
+    ('INFO: GET http://127.0.0.1:1234/health', None),
+    ('ERROR: failed to open http://127.0.0.1:1234', None),
+    ('INFO:     Uvicorn running on http://127.0.0.1:64066 (Press CTRL+C to quit)', 64066),
+    ('[sidecar] INFO:     Uvicorn running on http://127.0.0.1:54321 (Press CTRL+C to quit)', 54321),
+])
+def test_probe_matches_listening_server_not_other_loopback_urls(probe, line, expected):
+    match = probe.PORT_RE.search(line)
+    assert (int(match.group(1)) if match else None) == expected
 
 
 def test_clean_child_generates_its_own_key_under_isolated_home(probe, tmp_path, monkeypatch):
