@@ -13,7 +13,7 @@ from evals.companion import stable_budget as budget
 from evals.companion.stable_live import StableAdapter, persist
 from evals.companion.stable_memory import CASES, verified
 from evals.companion.stable_primary import primary_adapter, pricing_snapshot
-from server.db.models import ArslanMessage, ConversationContext, Project
+from server.db.models import ArslanMessage, ArslanSummary, ConversationContext, Project
 from server.orchestrator import arslan, memory, tool_loop
 from server.services import knowledge, task_context
 from server.services.memory_activation import activate_sync
@@ -68,12 +68,49 @@ async def test_stable_memory_host(case_id, execution_db, monkeypatch, tmp_path):
         async with repository() as repo:
             entry = await repo.create(MemoryWrite(content=inputs["entry"],
                 scope=MemoryScope(kind="project", id="project-a"), use_policy="cloud_allowed"), MemoryActor(origin="user"))
-    else:
+    elif case_id == "S2-M2":
         async with repository() as repo:
             entry = await repo.create(MemoryWrite(content=inputs["entry"], scope=MemoryScope(kind="global"),
                 use_policy="cloud_allowed"), MemoryActor(origin="extractor", cloud_memory_allowed=True))
         assert entry["status"] == "proposed"
+    else:
+        conversation = inputs["turns"][0]["conversation"]
+        async with execution_db() as db:
+            db.add(ConversationContext(id=conversation, cloud_memory_allowed=True))
+            await db.commit()
+        original_id = await memory.add_message(conversation, "user", "Remember: " + inputs["entry"])
+        async with repository() as repo:
+            entry = await repo.create(MemoryWrite(content=inputs["entry"], scope=MemoryScope(kind="global"),
+                use_policy="cloud_allowed"), MemoryActor(origin="user", source_message_id=original_id,
+                                                       conversation_id=conversation))
+        async with execution_db() as db:
+            db.add(ArslanSummary(conversation_id=conversation, summary="Old summary: " + inputs["entry"],
+                                 up_to_message_id=original_id))
+            await db.commit()
     states = [entry]
+    deletion_evidence = None
+    if case_id == "S2-M3":
+        async with repository() as repo:
+            states.append(await repo.delete_entry(entry["id"], entry["version"], MemoryActor(origin="user")))
+        async with execution_db() as db:
+            removed = not (await db.scalars(select(ArslanSummary).where(
+                ArslanSummary.conversation_id == conversation))).all()
+            original = await db.get(ArslanMessage, original_id)
+            retained = original is not None and original.content == "Remember: " + inputs["entry"]
+        assert removed and retained
+        for item in inputs["history"]:
+            await memory.add_message(conversation, item["role"], item["content"])
+        monkeypatch.setattr(memory, "_token_budget", lambda: 1)
+        monkeypatch.setattr(memory, "_summary_token_cap", lambda: 200)
+        await memory.maybe_compact(conversation)
+        async with execution_db() as db:
+            summaries = (await db.scalars(select(ArslanSummary).where(
+                ArslanSummary.conversation_id == conversation))).all()
+        deletion_evidence = {"old_summary_removed": removed, "original_chat_retained": retained,
+                             "regenerated_summaries": [row.summary for row in summaries]}
+        persist(budget.EVIDENCE / "S2-M3-regeneration.json", deletion_evidence)
+        assert summaries and all("violet" not in row.summary.lower() for row in summaries)
+        monkeypatch.setattr(memory, "_token_budget", lambda: 2000)
 
     @task_context.scoped_turn
     async def turn(conversation_id, user_message, emit):
@@ -89,7 +126,8 @@ async def test_stable_memory_host(case_id, execution_db, monkeypatch, tmp_path):
                     scope=MemoryScope(kind="global"), use_policy="cloud_allowed"), MemoryActor(origin="user"))
             states.append(corrected)
         async with execution_db() as db:
-            db.add(ConversationContext(id=item["conversation"], project_id=item["project"], cloud_memory_allowed=True))
+            if await db.get(ConversationContext, item["conversation"]) is None:
+                db.add(ConversationContext(id=item["conversation"], project_id=item["project"], cloud_memory_allowed=True))
             await db.commit()
         events = []
         answer = await turn(item["conversation"], item["prompt"], events.append)
@@ -106,4 +144,4 @@ async def test_stable_memory_host(case_id, execution_db, monkeypatch, tmp_path):
         "memory_states": states, "preflight_sha256": digest,
         "source_sha": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=budget.ROOT, text=True).strip(),
         "runner_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-        "quality_status": "not_run", "native_status": "not_run"})
+        "quality_status": "not_run", "native_status": "not_run", "deletion_evidence": deletion_evidence})

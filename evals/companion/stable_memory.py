@@ -17,6 +17,12 @@ CASES = {
                    "prompt": "What confirmed report heading color do I prefer? State unknown if I have not confirmed one."},
                   {"conversation": "S2-M2-after", "project": None,
                    "prompt": "Prepare a one-line report style brief using my confirmed heading preference."}]},
+    "S2-M3": {"entry": "Use violet report headings as my permanent report preference.",
+        "history": [{"role": "user", "content": "Prepare an inventory report for this task."},
+                    {"role": "arslan", "content": "This task concerns an inventory report."},
+                    {"role": "user", "content": "Regenerate the working summary."}],
+        "turns": [{"conversation": "S2-M3-regenerated", "project": None,
+                   "prompt": "Prepare an inventory report heading. Only use current confirmed preferences; otherwise state that no color preference is available."}]},
 }
 RUNNER = "tests/server/test_stable_memory_live.py"
 

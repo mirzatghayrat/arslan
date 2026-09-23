@@ -33,13 +33,19 @@ async def test_exact_memory_runner_and_context_boundary(execution_db, monkeypatc
     if case_id == "S2-M1":
         assert inputs.CASES[case_id]["entry"] in payloads[0]
         assert inputs.CASES[case_id]["entry"] not in payloads[1]
-    else:
+    elif case_id == "S2-M2":
         assert inputs.CASES[case_id]["entry"] not in payloads[0]
         assert inputs.CASES[case_id]["entry"] not in payloads[1]
         assert inputs.CASES[case_id]["correction"] in payloads[1]
+    else:
+        assert all("violet" not in payload.lower() for payload in payloads)
     result = json.loads((budget.EVIDENCE / f"{case_id}-result.json").read_bytes())
     assert all(turn["persisted"] for turn in result["turns"])
     assert result["quality_status"] == result["native_status"] == "not_run"
+    if case_id == "S2-M3":
+        assert result["deletion_evidence"]["old_summary_removed"]
+        assert result["deletion_evidence"]["original_chat_retained"]
+        assert result["deletion_evidence"]["regenerated_summaries"]
     with pytest.raises(RuntimeError, match="no_automatic_case_repeat"):
         await runner.test_stable_memory_host(case_id, execution_db, monkeypatch, tmp_path)
 

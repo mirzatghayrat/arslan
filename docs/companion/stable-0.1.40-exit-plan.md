@@ -609,3 +609,21 @@ Next bounded batch: deletion/summary regeneration and interrupted-task evidence
 an explicit accounting/preflight revision after baseline gaps are known; never
 silently reset a case counter, alter old evidence or increase the authorized
 36-call/$5 global ceiling. No beta, tag, push, Publish or installed-app change.
+
+## Deletion and summary regeneration preflight — 2026-09-24
+
+Starting source `6c38dbd0`, clean worktree. Added M3's original synthetic violet
+preference, source message, old summary, deletion, real summary regeneration and
+follow-up heading request to the stable guarded runner. Original displayed
+chat must remain; eligible model context must not reuse the deleted preference.
+Summary calls also use the same case/global ledger. The existing summary cap
+may trigger one additional compression call, so the frozen M3 three-call ceiling
+covers at most two summary calls plus one answer, never automatic retries.
+
+Exact-runner/context tests: **4 passed, 3 paid opt-in skipped** (4.82 s), Ruff
+passed. Offline tests inspect both summarizer and answer payloads, retain the
+visible source message, and verify old-summary removal. This proves harness and
+context boundaries only, not real-model semantic quality or native deletion UI.
+Canonical budget remains 10/36, $1.00 reserved before execution. Official pricing
+fetched again on the same UTC day, matching the existing reviewed snapshot.
+Freeze M3's additive inputs/runner before spending; M1/M2 are not rerun.
