@@ -143,10 +143,33 @@ def head() -> str:
     return MIGRATIONS[-1][0]
 
 
+def assert_supported_schema(conn) -> None:
+    """Read-only fence before schema creation, migration or crypto boot.
+
+    An absent ledger is a supported legacy/fresh profile. An unknown migration
+    belongs to a newer or different application, not permission to mutate it.
+    Do not echo untrusted ledger values (or profile paths) into the error.
+    """
+    try:
+        inspector = sa.inspect(conn)
+        if "schema_version" not in inspector.get_table_names():
+            if "schema_version" in inspector.get_view_names():
+                raise RuntimeError("database_schema_unsupported")
+            return
+        known = {version for version, _ in MIGRATIONS}
+        rows = conn.execute(sa.text("SELECT version FROM schema_version LIMIT :limit"),
+                            {"limit": len(known) + 1}).scalars().all()
+        if len(rows) > len(known) or any(not isinstance(version, str) or version not in known for version in rows):
+            raise RuntimeError("database_schema_unsupported")
+    except sa.exc.SQLAlchemyError:
+        raise RuntimeError("database_schema_unsupported") from None
+
+
 def apply_pending(conn) -> list[str]:
     """Idempotent: apply every registered migration whose id isn't recorded, in
     order, recording each. Runs under the caller's transaction (matches boot's
     single ``begin()``)."""
+    assert_supported_schema(conn)
     applied = current_versions(conn)
     done: list[str] = []
     for vid, fn in MIGRATIONS:
@@ -199,6 +222,7 @@ def main(argv: list[str] | None = None) -> int:
     engine = create_engine(f"sqlite:///{db_path}")
     try:
         with engine.begin() as conn:
+            assert_supported_schema(conn)
             Base.metadata.create_all(conn)
             pending = [vid for vid, _ in MIGRATIONS if vid not in current_versions(conn)]
             print(f"db:      {db_path}")
