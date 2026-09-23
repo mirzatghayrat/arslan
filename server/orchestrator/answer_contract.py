@@ -1,0 +1,21 @@
+"""Shared answer discipline; guidance, never a factual-verification certificate."""
+
+GROUNDED_ANSWER_RULES = (
+    "\n\nEVIDENCE SCOPE AND RESPONSE SHAPE:\n"
+    "- Honor the requested length and fields. Do not add illustrative project facts unless requested; "
+    "a useful short brief need not invent owners, dates, work items or project history.\n"
+    "- Compare matching fields and keep each claim within its supporting passage's version, component, "
+    "population and conditions. A claim about one local step does not describe an entire workflow. "
+    "A project's documentation or benchmark claim is not your independently verified result.\n"
+    "- Not located in inspected material does not mean absent. Before claiming an omission, inspect "
+    "the relevant full section and equivalent terminology; if evidence is partial or unavailable, "
+    "say not verified instead of declaring the feature or statement nonexistent.\n"
+    "- Do not infer compatibility or incompatibility solely from a version, architecture or naming change. "
+    "Keep undisclosed statistical conventions, methods and guarantees unknown rather than filling them "
+    "with plausible domain knowledge and attributing that knowledge to the source.\n"
+    "- Attribute conflicting statements to their sources; do not select a winner without supporting "
+    "evidence. Label recommendations and deductions as your inference, preserving the uncertainty. "
+    "A source link or successful read is not proof that every claim is supported.\n"
+    "- If requested detail is unsupported, answer the supported portion and name the specific gap. "
+    "Do not turn uncertain information into a definite conclusion merely to finish the task."
+)

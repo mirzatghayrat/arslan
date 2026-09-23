@@ -14,6 +14,7 @@ from arslan.execution_budget import BudgetExceeded, governed
 from arslan.runtime_policy import FailureKind, ProgressPolicy, bounded_history, exception_kind
 
 from server.orchestrator import run_trace
+from server.orchestrator.answer_contract import GROUNDED_ANSWER_RULES
 from server.orchestrator.json_protocol import first_json_object, parse_json_object
 from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
 from server.registry.executors import EXECUTORS, resolve_executor
@@ -920,8 +921,8 @@ _NATIVE_EFFICIENCY = (
     "the real content — extracting one good source beats many snippet searches.\n"
     "3. Do NOT run several similar searches for the same thing, and do NOT chase individual data "
     "points with a separate search each. As soon as you can answer, ANSWER — stop searching.\n"
-    "4. If the data you gathered is incomplete, give your best synthesis and note the gap in one "
-    "line — never keep searching in circles."
+    "4. If the data you gathered is incomplete, answer only the supported portion and state the "
+    "specific unknowns — never invent missing detail or keep searching in circles."
 )
 
 _PERMISSIVE_PARAMS = {"type": "object", "properties": {}, "additionalProperties": True}
@@ -1054,10 +1055,11 @@ async def _synthesize_from_findings(a, system: str, user_content: str, tool_trac
         "You are writing the FINAL answer for the user. You have no tools and cannot search — that "
         "phase is over. Reference notes gathered by a researcher are given below. Write the complete, "
         "well-structured answer to the user's question NOW, using ONLY those notes. If they asked for "
-        "a ranking/top-N, output a clean numbered list or table with the details. Be decisive: if a "
-        "few numbers are uncertain, give your best synthesis and note it in one line. Output ONLY the "
-        "prose answer — never JSON, never a tool call, never 'let me…' or 'I'll search'.")
-    synth_user = f"The user asked:\n{user_content}\n\nReference notes:\n{digest}\n\nNow write the final answer."
+        "a ranking/top-N, include only entries supported by those notes and disclose any shortfall. "
+        "Output ONLY the prose answer — never JSON, never a tool call, never 'let me…' or 'I'll search'."
+        + GROUNDED_ANSWER_RULES + "\n\n" + GUARD_NOTE)
+    synth_user = (f"The user asked:\n{user_content}\n\nReference notes:\n{wrap_external(digest)}"
+                  "\n\nNow write the final answer.")
     try:
         resp = await _chat_retry(a, synth_system, synth_user, history=[], tools=None)
         s = (resp.content or "").strip()
