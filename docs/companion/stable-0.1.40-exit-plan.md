@@ -390,3 +390,10 @@ Offline loader/preflight/accounting checks: **42 passed, 3 opt-in live skipped**
 Ruff passed. No model call in preparation. The following live batch must append
 actual results and semantic review separately; native attachment/layout flows
 remain unverified. Existing historical runner and contract hashes are unchanged.
+
+The first opt-in invocation stopped before any request: the harness's decorated
+turn omitted the required conversation/message parameters. Ledger verified still
+0/36. Corrected the harness signature and added exact-runner offline smoke cases
+for all three documents: **3 passed**, including persisted answer, guarded
+reservation and refusal to repeat. This was a harness failure, not a model
+outcome; no paid retry or refund occurred. Actual results follow separately.

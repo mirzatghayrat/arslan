@@ -60,13 +60,13 @@ async def test_stable_document_host(case_id, execution_db, monkeypatch, tmp_path
     monkeypatch.setattr(knowledge, "retrieve_scoped", no_knowledge)
 
     @task_context.scoped_turn
-    async def turn():
-        message_id = await memory.add_message(case_id, "user", ready["prompt"])
+    async def turn(conversation_id, user_message):
+        message_id = await memory.add_message(conversation_id, "user", user_message)
         task_context.source_message(message_id)
-        return await arslan._handle_answer(case_id, ready["prompt"], events.append)
+        return await arslan._handle_answer(conversation_id, user_message, events.append)
 
     events = []
-    result = await turn()
+    result = await turn(case_id, ready["prompt"])
     async with execution_db() as db:
         answers = (await db.scalars(select(ArslanMessage).where(
             ArslanMessage.conversation_id == case_id, ArslanMessage.role == "arslan"))).all()
