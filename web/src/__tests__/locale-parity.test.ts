@@ -32,7 +32,7 @@ const LOCALES: Record<string, JsonObj> = { en, zh, ja, es, de, fr };
 const enKeys = collectKeys(en as JsonObj);
 
 describe("locale parity", () => {
-  it("en locale has 1520 keys (baseline guard)", () => {
+  it("en locale has 1532 keys (baseline guard)", () => {
     // 1318 → 1335: the first-run wizard redesign — the four-beat "how it
     // works" tour (title + typed line + 4×title/body), the catalog capability
     // caption, the test-before-save states (test & save / testing / ok /
@@ -254,7 +254,8 @@ describe("locale parity", () => {
     // Companion project navigation adds one key; its own messages are tested separately.
     // W16 adds the dedicated connections route while retaining legacy routes.
     // Attachment delivery preserves three extraction-limit notices (+3).
-    expect(enKeys).toHaveLength(1520);
+    // +12: read-only desktop identity and explicitly previewable summary.
+    expect(enKeys).toHaveLength(1532);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

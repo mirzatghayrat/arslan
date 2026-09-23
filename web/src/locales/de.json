@@ -1,4 +1,5 @@
 {
+  "appIdentity": {"title":"Diese Anwendung","loading":"Version wird gelesen…","browser":"Browser-Client · Desktop-Version nicht verfügbar","unknown":"Desktop-Version nicht verfügbar","stable":"Stabil","preview":"Vorschau","previewHint":"Vorschauversionen werden manuell installiert; automatische Updates folgen dem stabilen Kanal. Sichere vorher deine Daten und Schlüssel.","summary":"Versionsübersicht","privacy":"Enthält nur Client-Typ, Version und Kanal. Es wird nichts hochgeladen. Prüfe den Text vor dem Teilen.","copy":"Übersicht kopieren","copied":"Kopiert","copyFailed":"Kopieren fehlgeschlagen. Markiere und kopiere den Text oben."},
   "chart": {
     "loading": "Diagramm wird geladen…",
     "failed": "Das Diagramm konnte nicht geladen werden. Bitte die Seite neu laden."

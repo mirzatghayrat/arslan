@@ -5,6 +5,7 @@ the shell does, so nothing but a pin like this can protect them.
 """
 from __future__ import annotations
 
+import json
 import pathlib
 
 LIB = (pathlib.Path(__file__).resolve().parents[1]
@@ -29,3 +30,13 @@ def test_overlay_title_bar_still_has_a_drag_source():
     cap = (pathlib.Path(__file__).resolve().parents[1] / "desktop" / "src-tauri"
            / "capabilities" / "remote-ui-drag.json").read_text()
     assert "core:window:allow-start-dragging" in cap
+
+
+def test_version_read_is_the_only_core_app_permission():
+    cap = json.loads((pathlib.Path(__file__).resolve().parents[1] / "desktop" / "src-tauri"
+                      / "capabilities" / "remote-ui-drag.json").read_text())
+    assert {p for p in cap["permissions"] if p.startswith("core:app:")} == {
+        "core:app:allow-version",
+    }
+    assert cap["windows"] == ["main"]
+    assert cap["remote"]["urls"] == ["http://127.0.0.1:*"]

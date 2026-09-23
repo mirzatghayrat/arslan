@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import AppIdentityCard from './AppIdentityCard';
 import {
   Cpu, Search, Palette, KeyRound, Database, Bot, Sliders, Circle, ArrowLeft,
   type LucideIcon,
@@ -106,6 +107,7 @@ export default function SettingsShell({
           <img src="/arslan-mark.png" alt="" className="w-9 h-9 object-contain arslan-mark" draggable={false} />
           <span className="text-xl font-semibold">Arslan</span>
         </div>
+        <AppIdentityCard />
         <label className="sr-only" htmlFor="settings-search">{t('settings.searchPlaceholder')}</label>
         <div className="flex items-center gap-2 bg-surface border border-border rounded-lg px-3 py-2 mb-3 focus-within:border-primary/50">
           <Search className="w-3.5 h-3.5 text-subtle-foreground shrink-0" aria-hidden />

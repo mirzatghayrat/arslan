@@ -1,6 +1,6 @@
 # Generated capability inventory
 
-Desktop configuration version: `0.1.40-beta.3`.
+Desktop configuration version: `0.1.40-beta.4`.
 
 Regenerate with `uv run python -m scripts.capability_inventory`. This is static
 source evidence, not an installed-account probe or proof of model quality.
