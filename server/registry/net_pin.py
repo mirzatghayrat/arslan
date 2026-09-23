@@ -29,6 +29,8 @@ import trafilatura
 logger = logging.getLogger(__name__)
 
 _EXTRACT_CHAR_LIMIT = 12_000
+# Explicit larger reads remain bounded; ordinary reads/ingest keep the default.
+_MAX_EXTRACT_CHAR_LIMIT = 40_000
 # Fail fast on a slow page: the mini agent-loop has a small tool budget, so a page that hangs
 # should surrender quickly (leaving budget + wall-clock for synthesis) rather than consuming the
 # full loop timeout. 12s is generous for a real page while well under the loop's per-tool cap.
@@ -380,4 +382,3 @@ async def _fetch_text(url: str) -> str:
     resp.raise_for_status()
     extracted = trafilatura.extract(resp.text)
     return extracted or ""
-

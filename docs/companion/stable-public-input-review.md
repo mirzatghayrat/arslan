@@ -66,3 +66,15 @@ same one-shot path, not the provider's retrying stream fallback.
 This adapter has been tested only with local doubles. The isolated host runner
 and current primary/pricing preflight still must be connected before live work.
 No model key was loaded. The canonical grant remains **0/36, US$0.00 reserved**.
+
+## Follow-up: bounded read and transport repair
+
+The production reader now offers an explicit 40,000-character maximum while
+retaining its 12,000 default. A separate 8,000-character generic tool-feedback
+cut was also repaired for validated web receipts, with bounded serialization
+and honest partial status when delivery itself must shorten content. All seven
+archived sources fit this path in the opt-in offline replay, and their effective
+text/receipts are retained in `public-reader-preflight-v1/` with implementation
+hashes. This does not retroactively change the old partial live outputs or
+certify the new real-model comparison. See the stable exit-plan checkpoint for
+reproducer and regression results.

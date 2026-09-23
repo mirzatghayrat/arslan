@@ -194,6 +194,9 @@ class WebExtractExecutor:
     key = "web_extract"
 
     async def execute(self, args: dict) -> dict:
+        limit = args.get("max_chars", net_pin._EXTRACT_CHAR_LIMIT)
+        if type(limit) is not int or not 1 <= limit <= net_pin._MAX_EXTRACT_CHAR_LIMIT:
+            return {"ok": False, "error": "max_chars must be an integer from 1 to 40000"}
         url = (args.get("url") or "").strip()
         if not url.startswith(("http://", "https://")):
             return {"ok": False, "error": "missing or invalid 'url'"}
@@ -216,8 +219,9 @@ class WebExtractExecutor:
         if not text:
             return {"ok": False, "error": f"no extractable text{_STEER}"}
         from arslan.companion.research import receipt
-        extracted = text[:net_pin._EXTRACT_CHAR_LIMIT]
+        extracted = text[:limit]
         return {"ok": True, "url": url, "text": extracted,
+                "returned_chars": len(extracted), "total_chars": len(text),
                 "source": receipt(url, extracted, truncated=len(text) > len(extracted)).model_dump(mode="json")}
 
 

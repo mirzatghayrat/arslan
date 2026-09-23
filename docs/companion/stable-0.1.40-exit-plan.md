@@ -321,3 +321,49 @@ Verification: collector/adapter/stable-budget/original-budget selection **42
 passed** (0.23 s); Ruff and whitespace checks passed. Initial Ruff fixture-import
 diagnostics were fixed without altering the frozen historical runner. The source
 collection used seven fixed public GETs and the actual ledger still reads 0/36.
+
+## Bounded long-read repair — 2026-09-24
+
+Starting source `37ec8a8e`. A failing executor reproducer showed that requesting
+a larger read still returned only the initial 12,000 characters. The real
+`web_extract` now accepts optional integer `max_chars` in 1–40,000, with the
+unchanged 12,000 default. Invalid values fail before any fetch. The existing
+single-resolution/per-hop pinned network path, timeouts and fetch budgets are
+unchanged. Tool schema and host guidance expose the same bound and require
+honest partial-read disclosure; pages longer than the bound are not 'fully read'.
+
+A second reproducer found a distinct transport cut: `_record_tool_result`
+serialized all tools then sliced at 8,000 characters, losing the page's tail
+and source metadata even after a successful longer fetch. After correcting a
+test-double omission of required `usage`, that test failed on the missing tail.
+Validated built-in web reads now use a structured, bounded envelope preserving
+text plus receipt. Escape-heavy serialization is capped at 60,000 characters by
+shortening the text **before** hashing/logging; its effective receipt is partial,
+so the trace cannot claim delivery of discarded bytes. Unrelated/malformed tool
+results keep their old transport cap. External-data framing and marker-defanging
+remain in place; this is not a security-permission expansion.
+
+Verification (overlapping groups, not unique task counts):
+
+- Executor/schema/host loop/source and SSRF redirect/rebinding/pinned-fetch group:
+  **163 passed**. Default reads remain bounded; larger reads still reject private
+  destinations and bad limits. A scripted host adapter sees the source tail and
+  intact metadata, not just a direct-executor return value.
+- Framing/source-output/runtime-policy/task validation/frozen inputs/generated
+  capability inventory: **71 passed**. Inventory fingerprint refreshed for the
+  changed executor; no frozen live input or historical runner altered.
+- Final targeted long-read suite including forged closing-marker defense:
+  **18 passed**. Ruff and whitespace checks passed; existing Starlette warning
+  retained. No broad unrelated suite rerun or full same-SHA CI claim.
+- Actual archived bodies through the production parser, executor and prompt
+  envelope: **7 passed**; no source remains truncated at 40,000 for this frozen
+  set. Network transport was explicitly replaced with archived public bytes.
+  This is an offline preflight, **not live source fetching or real-model quality**.
+  Evidence plus implementation hashes: canonical evidence directory's
+  `public-reader-preflight-v1/`.
+
+The selected long-source delivery gap is closed at source level. Current grant
+still reads **0/36 / US$0.00 reserved**. Next bounded batch: wire isolated host
+execution to the stable adapter, freeze remaining case preflights, verify actual
+primary identity/current prices, then run and review cases without automatic
+paid retries. Keep R/N/U/S/P open until their actual evidence is complete.

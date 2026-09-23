@@ -252,8 +252,58 @@ def _mcp_degrade_hint(n: int) -> str:
             "(网页抓取用 web_extract,搜索用 web_search);不要再重试该 MCP 工具。")
 
 
+def _web_read_feedback(tool_key, args, result):
+    """Keep bounded read text AND its receipt intact across model transport.
+
+    Generic tool JSON still has its historical cap. Valid web receipts need a
+    larger, structured envelope; slicing their JSON hid both text and provenance.
+    Escape-heavy inputs are shortened before hashing/logging, with partial status.
+    """
+    if tool_key != "web_extract":
+        return None
+    from arslan.companion.research import admitted_sources, receipt
+    from server.registry.net_pin import _MAX_EXTRACT_CHAR_LIMIT
+    sources = admitted_sources([{"tool": tool_key, "args": args, "result": result}])
+    if not sources:
+        return None
+    source, original = next(iter(sources.values()))
+    total = result.get("total_chars")
+    total = total if type(total) is int and total >= len(original) else len(original)
+
+    def envelope(length):
+        text = original[:length]
+        partial = source.truncated or length < len(original)
+        delivered = receipt(source.url, text, truncated=partial).model_dump(mode="json")
+        delivered["retrieved_at"] = source.retrieved_at.isoformat()
+        value = {"ok": True, "url": source.url, "text": text, "source": delivered,
+                 "returned_chars": len(text), "total_chars": total}
+        if length < len(original):
+            value["delivery_truncated"] = True
+        return value, json.dumps(value, ensure_ascii=False)
+
+    high = min(len(original), _MAX_EXTRACT_CHAR_LIMIT)
+    prepared = envelope(high)
+    if len(prepared[1]) <= 60_000:
+        return prepared
+    low = 0
+    # Leave room for the untrusted frame inside bounded_history's 64k default.
+    while low < high:
+        mid = (low + high + 1) // 2
+        if len(envelope(mid)[1]) <= 60_000:
+            low = mid
+        else:
+            high = mid - 1
+    return envelope(low)
+
+
 def _record_tool_result(tool_key, args, result, emit, tool_trace, assistant_content, convo,
                         mcp_fail_counts: dict | None = None) -> dict:
+    web_feedback = _web_read_feedback(tool_key, args, result)
+    if web_feedback is not None:
+        result, raw_payload = web_feedback
+    else:
+        feedback = {k: v for k, v in result.items() if k != "artifact"}
+        raw_payload = json.dumps(feedback, ensure_ascii=False)[:8000]
     emit({"type": "tool_result", "tool": tool_key, "ok": bool(result.get("ok")),
           "summary": _summarize_result(result), "artifact": result.get("artifact"),
           "artifacts": result.get("artifacts") or []})
@@ -261,8 +311,6 @@ def _record_tool_result(tool_key, args, result, emit, tool_trace, assistant_cont
     run_trace.record(tool=tool_key, args=args, result=result,
                       ok=bool(result.get("ok")), error=result.get("error"), ms=None)
     convo.append({"role": "assistant", "content": assistant_content})
-    feedback = {k: v for k, v in result.items() if k != "artifact"}
-    raw_payload = json.dumps(feedback, ensure_ascii=False)[:8000]
     framed = raw_payload if result.get("external") is False else wrap_external(raw_payload)
     # PB-3 degrade hint. Placement is deliberate: `framed` ends with DELIM_CLOSE, so the
     # hint sits AFTER the wrap_external data frame — it is OUR trusted framing (like the
@@ -733,7 +781,10 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                    "properties": {"query": {"type": "string"}},
                    "required": ["query"]},
     "web_extract": {"type": "object",
-                    "properties": {"url": {"type": "string"}},
+                    "properties": {"url": {"type": "string"},
+                                   "max_chars": {"type": "integer", "minimum": 1, "maximum": 40_000,
+                                                 "default": 12_000,
+                                                 "description": "Maximum extracted characters. Request a larger bounded read only when needed; check source.truncated."}},
                     "required": ["url"]},
     "render_chart": {"type": "object",
                      "properties": {"type": {"type": "string"},
