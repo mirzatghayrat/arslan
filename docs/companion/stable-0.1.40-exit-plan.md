@@ -367,3 +367,26 @@ still reads **0/36 / US$0.00 reserved**. Next bounded batch: wire isolated host
 execution to the stable adapter, freeze remaining case preflights, verify actual
 primary identity/current prices, then run and review cases without automatic
 paid retries. Keep R/N/U/S/P open until their actual evidence is complete.
+
+## Document live-run preparation — 2026-09-24
+
+Starting source `076dc7ba`. The independent stable runner now connects the
+real answer/memory host path to the durable stable-budget adapter, using only a
+fresh fixture database. D1/D2/D4 preflights freeze actual generated PDF/Word/CSV
+bytes, production-reader output, prompt and the existing acceptance criteria.
+They do not supply the model with expected answers. Unsupported content is
+really rejected, and OCR is disabled so no secondary vision call can occur.
+Network egress is limited to the configured DeepSeek completion endpoint.
+The sole real-profile access is read-only primary configuration and required
+crypto material; no conversation/file inspection, startup or migration.
+
+Official pricing was fetched directly on 2026-09-23 UTC and reviewed: legacy
+`deepseek-v4-flash` is an alias served by V4.1-Flash, with peak cache-miss input
+$0.30/M and output $1.20/M. The runner preserves that alias disclosure and uses
+peak rates conservatively; usage estimates are not a provider invoice. Pricing
+snapshot is stored in the canonical evidence directory and expires by UTC day.
+
+Offline loader/preflight/accounting checks: **42 passed, 3 opt-in live skipped**;
+Ruff passed. No model call in preparation. The following live batch must append
+actual results and semantic review separately; native attachment/layout flows
+remain unverified. Existing historical runner and contract hashes are unchanged.
