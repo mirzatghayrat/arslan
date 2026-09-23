@@ -550,6 +550,19 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                                        assistant_content, convo,
                                        mcp_fail_counts=mcp_fail_counts)
 
+    # Missing model arguments are not a user's refusal. Validate their shape
+    # before requesting permission or performing any file I/O; path scope and
+    # symlinks remain the executor's independently enforced responsibility.
+    if tool_key in {"read_file", "write_file"} and (
+        not isinstance(args.get("path"), str) or not args["path"].strip()
+        or (tool_key == "write_file" and not isinstance(args.get("content"), str))
+    ):
+        result = {"ok": False, "code": "invalid_file_arguments",
+                  "error": "A non-empty string path is required; write_file also requires string content. "
+                           "No permission decision was requested and no file was accessed."}
+        return _record_tool_result(tool_key, args, result, emit, tool_trace,
+                                   assistant_content, convo, mcp_fail_counts=mcp_fail_counts)
+
     # T1 workspace writes (P1b): ONE grant per session, not per file. The unit
     # differs from run_command deliberately — a user approving "Arslan may write
     # in my workspace" is answering a question about a capability, not about a
@@ -765,6 +778,15 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
 # Minimal OpenAI-format parameter schemas per known tool key. The executor re-validates args,
 # so these can be loose; they exist only to nudge the model toward the right shape.
 _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
+    "read_file": {"type": "object", "properties": {
+        "path": {"type": "string", "minLength": 1,
+                 "description": "File path within the approved readable roots or workspace."}},
+        "required": ["path"], "additionalProperties": False},
+    "write_file": {"type": "object", "properties": {
+        "path": {"type": "string", "minLength": 1,
+                 "description": "Destination file path within the configured workspace."},
+        "content": {"type": "string", "description": "Complete UTF-8 text to write."}},
+        "required": ["path", "content"], "additionalProperties": False},
     "delegate_work": {"type": "object", "properties": {"jobs": {
         "type": "array", "minItems": 1, "maxItems": 4, "items": {
             "type": "object", "properties": {

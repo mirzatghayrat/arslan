@@ -25,6 +25,7 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.mark.parametrize("case_id", DOCUMENT_CASES)
 async def test_stable_document_host(case_id, execution_db, monkeypatch, tmp_path):
+    production_tools = arslan._arslan_tools
     monkeypatch.setenv("ARSLAN_DATA_DIR", str(tmp_path / "isolated-data"))
     monkeypatch.setattr(ingest.ocr_vision, "is_available", lambda: False)
     ready, digest = verified_preflight(case_id)
@@ -71,8 +72,9 @@ async def test_stable_document_host(case_id, execution_db, monkeypatch, tmp_path
             await db.commit()
 
         async def file_tools():
-            return [{"key": "write_file", "description": "Write the approved totals.csv in the isolated workspace."},
-                    {"key": "read_file", "description": "Read totals.csv to verify the saved output."}]
+            # Preserve actual product descriptions/argument hints; isolate by
+            # filtering the offered set, not replacing its interface contract.
+            return [tool for tool in await production_tools() if tool["key"] in {"write_file", "read_file"}]
 
         class RestrictedFile:
             def __init__(self, key, delegate):

@@ -42,7 +42,7 @@ not merely hidden in release notes while advertised in the application.
 
 | Gate | Finite acceptance | Current status |
 | --- | --- | --- |
-| R — useful task outcomes | All original R1–R4/D1–D4/M1–M4 IDs have frozen inputs, actual outputs, reviewed conclusions, sources/artifacts and recovery evidence against their original acceptance. Keep failures and corrections; no best-of-N substitution or dropped cases. | Open: stable D2/D4 core criteria passed with caveats; D1 failed on a blank-page completeness claim. Nine stable cases remain unrun. R2 public inputs and long-read path are prepared, not yet model-accepted. |
+| R — useful task outcomes | All original R1–R4/D1–D4/M1–M4 IDs have frozen inputs, actual outputs, reviewed conclusions, sources/artifacts and recovery evidence against their original acceptance. Keep failures and corrections; no best-of-N substitution or dropped cases. | Open: stable D2/D4 core criteria passed with caveats; D1 and D3 retain failed baselines and offline repairs, not paid retest passes. Eight stable cases remain unrun. R2 public inputs and long-read path are prepared, not yet model-accepted. |
 | N — actual native core flows | On the candidate: identity/channel; conversation and restart; mixed attachment retention; source opening; artifact opening; project memory correction/deletion; cancellation and explicit resume; backup/restore UI. Verify narrow-window usability and localized safety/errors in supported locales; recheck changed surfaces rather than all historical screens. | Partial prior evidence: beta.6 icon switching, rounded corners and five pages at two sizes were tested. That is not the complete core-flow acceptance. |
 | U — upgrade and recoverability | Isolated fixtures representing stable 0.1.38, beta.3 and beta.6; backup before upgrade, supported upgrade with record/content checks, restart, restore with matching key, wrong/missing key and interrupted restore fail-closed. Exercise installer replacement and updater manifest/signature handling without changing production Latest or real data. | Partial: all three historical-source profile rehearsals passed on 2026-09-24; packaged/UI upgrade and recovery evidence still must be bound to the candidate. |
 | S — safety and regression | No unresolved data-loss, unauthorized action, privacy/key exposure, startup failure or broken advertised core path. Full CI and scoped safety regressions pass; dependency findings receive platform/reachability disposition rather than 'all clear' by count. | Open until final source; reuse prior results only where changes cannot invalidate them. |
@@ -86,7 +86,7 @@ authorization. 'More Codex quota' is not assumed to authorize a new API bill.
 A new independent 36-request / US$5 configured-primary-model budget was explicitly
 approved in this task on 2026-09-23. It covers only isolated synthetic inputs and
 public materials; stop paid calls if pricing cannot be reliably bounded. This
-new batch has used 3/36 calls, $0.30 reserved as of the document batch below. Preserve a distinct durable ledger and
+new batch has used 6/36 calls, $0.60 reserved as of the CSV batch below. Preserve a distinct durable ledger and
 never reset either ledger to obtain extra attempts.
 
 The old beta.5 publishing instructions are obsolete. The user authorized ongoing
@@ -496,3 +496,57 @@ differ and is not retried automatically. Canonical ledger verified 3/36 before
 execution. Official DeepSeek pricing fetched again on the same UTC day; reviewed
 peak rates still match the existing same-day pricing snapshot. Live results must
 be appended after execution; no claim of D3 acceptance from these unit checks.
+
+## Actual CSV result and bounded repair — 2026-09-24
+
+Executed source `4e0c06c9df87e80388aec3475fc069353fe62748`. D3 used requests
+4–6 and **failed**: no `totals.csv` was created. The actual write call omitted
+`path`; the exact-path confirmation callback refused it, and a subsequent read
+also lacked its path. Final response honestly disclosed the failure, but a code
+block is not the required reopenable artifact. The answer computed known USD
+12.00/CNY 23.50 totals and retained the -1.00 refund, yet incorrectly inferred
+the actual USD total must be >=12.00 despite an unknown amount/sign. It called
+Pending row 3 without clarifying data-row versus physical-row numbering (CSV
+line 4 with header). D3 is not accepted on either delivery or factual review.
+
+Important causal qualification: the harness replaced production descriptions
+with abbreviated descriptions that omitted `args` hints. The actual submitted
+schemas had empty properties. Production descriptions did include `{path}` /
+`{path, content}`, so this is **not an unbiased full-production-description
+measurement**, nor proof the native app necessarily behaves identically. A
+separate reproducer using actual `_arslan_tools()` confirmed that production
+structured schemas were also missing these required fields. Keep the paid
+failure and qualification; do not relabel a revised harness as the original run.
+
+Seven offline reproducer failures preceded the repair. Changes now:
+
+- Read/write file schemas declare required typed path/content parameters.
+- Malformed read/write arguments fail with `invalid_file_arguments` before
+  confirmation or file I/O; never report missing parameters as a user decline.
+  Existing scope, secret/symlink checks and valid-write permission remain.
+- The stable runner filters actual production descriptions rather than
+  inventing shortened substitutes. Its fingerprint now differs from the frozen
+  D3 preflight, intentionally preventing an unreviewed repeat.
+- Source-grounding guidance explicitly forbids inferring numeric signs/bounds
+  from missing values and asks for clear header-inclusive row conventions.
+  This is general guidance, not a verified model-quality fix or a hard oracle.
+
+Post-repair exact runner/tool-loop/contract selection: **49 passed** (29.33 s).
+File executors, permission grants, workspace boundaries, native schemas, artifact
+storage and source-output selection: **107 passed** (5.11 s). Ruff/whitespace
+passed. Existing Starlette warning and one reported aiosqlite closed-loop
+delivery suppression retained; no test outcome affected. No broad CI claim.
+
+Raw preflight and result are unchanged; separate review:
+`S2-D3-semantic-review-v1.json`. Result SHA-256
+`1514bcf65269d803cb0f6cc601d9510ea61dfb444dc8ad06e1088f136495c204`.
+No artifact file/manifest is invented to fill the missing deliverable.
+
+Budget now **6/36 requests, $0.60 reserved**, conservative peak-rate usage
+estimate **$0.0078594**, not an invoice. D3 has 1/4 unused case calls, not enough
+for the tested three-step flow; D1 has none. Do not silently repurpose unused
+case caps, reset ledgers or automatically rerun failures. Future repair retests
+need an additive preflight and reviewed accounting decision preserving all six
+reservations. Eight untouched research/memory cases retain their allocations.
+Next batch should progress those cases; R/N/U/S/P remain open. No tag, push,
+Publish, installed application or real user-data change in this batch.
