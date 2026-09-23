@@ -42,7 +42,7 @@ not merely hidden in release notes while advertised in the application.
 
 | Gate | Finite acceptance | Current status |
 | --- | --- | --- |
-| R — useful task outcomes | All original R1–R4/D1–D4/M1–M4 IDs have frozen inputs, actual outputs, reviewed conclusions, sources/artifacts and recovery evidence against their original acceptance. Keep failures and corrections; no best-of-N substitution or dropped cases. | Open: stable D2/D4 core criteria passed with caveats; D1 and D3 retain failed baselines and offline repairs, not paid retest passes. Eight stable cases remain unrun. R2 public inputs and long-read path are prepared, not yet model-accepted. |
+| R — useful task outcomes | All original R1–R4/D1–D4/M1–M4 IDs have frozen inputs, actual outputs, reviewed conclusions, sources/artifacts and recovery evidence against their original acceptance. Keep failures and corrections; no best-of-N substitution or dropped cases. | Open: D2/D4 core criteria passed with caveats and M1 passed. D1/D3 retain failed baselines with offline repairs; M2 memory boundary passed but output not accepted. Six stable cases remain unrun. R2 public inputs and long-read path are prepared, not yet model-accepted. |
 | N — actual native core flows | On the candidate: identity/channel; conversation and restart; mixed attachment retention; source opening; artifact opening; project memory correction/deletion; cancellation and explicit resume; backup/restore UI. Verify narrow-window usability and localized safety/errors in supported locales; recheck changed surfaces rather than all historical screens. | Partial prior evidence: beta.6 icon switching, rounded corners and five pages at two sizes were tested. That is not the complete core-flow acceptance. |
 | U — upgrade and recoverability | Isolated fixtures representing stable 0.1.38, beta.3 and beta.6; backup before upgrade, supported upgrade with record/content checks, restart, restore with matching key, wrong/missing key and interrupted restore fail-closed. Exercise installer replacement and updater manifest/signature handling without changing production Latest or real data. | Partial: all three historical-source profile rehearsals passed on 2026-09-24; packaged/UI upgrade and recovery evidence still must be bound to the candidate. |
 | S — safety and regression | No unresolved data-loss, unauthorized action, privacy/key exposure, startup failure or broken advertised core path. Full CI and scoped safety regressions pass; dependency findings receive platform/reachability disposition rather than 'all clear' by count. | Open until final source; reuse prior results only where changes cannot invalidate them. |
@@ -86,7 +86,7 @@ authorization. 'More Codex quota' is not assumed to authorize a new API bill.
 A new independent 36-request / US$5 configured-primary-model budget was explicitly
 approved in this task on 2026-09-23. It covers only isolated synthetic inputs and
 public materials; stop paid calls if pricing cannot be reliably bounded. This
-new batch has used 6/36 calls, $0.60 reserved as of the CSV batch below. Preserve a distinct durable ledger and
+new batch has used 10/36 calls, $1.00 reserved as of the memory batch below. Preserve a distinct durable ledger and
 never reset either ledger to obtain extra attempts.
 
 The old beta.5 publishing instructions are obsolete. The user authorized ongoing
@@ -573,3 +573,39 @@ Ledger checked at 6/36, $0.60 reserved. Official pricing re-fetched on the same
 UTC date; conservative rates still match the stored same-day snapshot. M1/M2
 each retain their original two-call allowance. Freeze their additive preflights
 and runner fingerprints before live execution; no retries or budget reallocation.
+
+## Actual M1/M2 memory outcomes — 2026-09-24
+
+Executed source `b1c52182023a97804e753f7a11564101eee80f18`; two execution checks
+passed in 10.53 s, using exactly requests 7–10 (no retries). This is not two
+quality passes. All four answers and original memory revisions were persisted.
+
+- **M1 core criteria passed.** Project A uses the confirmed orange rule; distinct
+  same-name project B explicitly reports unknown without inheriting it. Actual
+  request 7 includes the rule and request 8 excludes it. No invented project
+  status or remembered fact was observed.
+- **M2 memory boundary passed, overall case not accepted.** Proposed blue stays
+  out of requests 9/10; confirmed green appears only after user revision, and
+  the before/after answers reflect this. However the requested one-line style
+  brief becomes multiple paragraphs with a made-up auth-refactor/certificate
+  example. The model labels it an example, so it is **not evidence of memory
+  leakage or fabricated remembered history**, but it does not meet the frozen
+  concise useful brief/no decorative project facts criterion. Its HTML green
+  span also does not prove actual native colored rendering.
+
+Separate semantic review with raw result hashes:
+`memory-M1-M2-review-v1.json` in the canonical evidence directory. This is the
+primary coding agent's review, not independent human/security acceptance.
+No prompt tweak or paid rerun was performed after seeing the outputs. M2's
+two-call allocation is consumed, and the original result remains immutable.
+
+Current grant: **10/36 requests, $1.00 reserved**, conservative peak-rate usage
+estimate **$0.0117474** (not invoice), old 32-call pilot separate. Three cases
+have core passes (D2/D4 with caveats, M1), three remain unaccepted (D1/D3/M2),
+and six have not run (R1–R4/M3/M4). Native flows and R/N/U/S/P remain open.
+
+Next bounded batch: deletion/summary regeneration and interrupted-task evidence
+(M3/M4), then remaining public-research cases. Consolidate repair retests under
+an explicit accounting/preflight revision after baseline gaps are known; never
+silently reset a case counter, alter old evidence or increase the authorized
+36-call/$5 global ceiling. No beta, tag, push, Publish or installed-app change.
