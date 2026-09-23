@@ -294,3 +294,30 @@ Verification: new stable-ledger plus historical guard selection **25 passed**
 Ruff and whitespace checks passed. The canonical stable ledger was initialized
 once and read back as **0 requests / US$0.00 reserved**. Next batch must reuse
 it, not initialize another, and finish complete-source preflights/runner wiring.
+
+## Public-input and guarded-adapter checkpoint — 2026-09-24
+
+Starting source `cffdaa8f`. Seven complete public source bodies archived with
+retrieval provenance; the five original README hashes all match. R2 now has an
+additive frozen preflight for the genuine Planck/SH0ES H0 discrepancy, explicitly
+preserving different methods/model assumptions, dates and uncertainties. It is
+not a full-paper/current-consensus claim or a passed task. Details and source
+links: `stable-public-input-review.md`. The original contract and ledger are
+unchanged; no synthetic case was relabelled as public evidence.
+
+The stable adapter now reserves before a single non-streaming request, records
+usage, and halts on ambiguous accounting/failure/interruption. All tests use
+doubles; no primary credential loaded or paid call made. Actual host-runner
+integration and current pricing verification remain required. Public extraction
+preflight exposed the existing 12,000-character cap truncating OpenSquilla and
+Serena; R1/R4 must get a supported bounded complete-read path before they can
+meet the frozen criteria. Do not change only the harness to hide this limitation.
+
+Next: close that narrow reader gap with security/source regressions, finish
+preflight/host wiring, then execute/review the fixed cases under the same ledger.
+Native/packaged gates remain separate; no beta, stable tag or Publish here.
+
+Verification: collector/adapter/stable-budget/original-budget selection **42
+passed** (0.23 s); Ruff and whitespace checks passed. Initial Ruff fixture-import
+diagnostics were fixed without altering the frozen historical runner. The source
+collection used seven fixed public GETs and the actual ledger still reads 0/36.

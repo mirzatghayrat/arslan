@@ -61,3 +61,10 @@ No public sources were fetched and no pricing/profile/credentials were read in
 this bookkeeping batch. R1/R3/R4 complete-source acquisition and R2 selection
 remain next. D/M fixtures reuse their frozen historical definitions; native
 attachment, memory and process-recovery interactions remain gate N/U work.
+
+Follow-up on 2026-09-24: complete public bodies are archived and R2's genuine
+public tension inputs are selected in the additive canonical preflight. See
+`docs/companion/stable-public-input-review.md`; the original contract/ledger is
+unchanged. `stable_live.StableAdapter` supplies the guarded one-shot request path,
+but host-runner integration and current pricing/primary preflight remain required.
+R1/R4 full-source reading still exceeds the production reader's initial cap.
