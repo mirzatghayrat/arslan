@@ -653,3 +653,51 @@ task outcomes: four core passes (D2/D4 with caveats, M1/M3), three unaccepted
 increase any other case's allowance. Next: bounded interrupted-task M4 or public
 research cases, then explicitly reviewed repair retests. R/N/U/S/P stay open;
 no tag, beta, push, Publish, installed-app or real user-data changes.
+
+## Abrupt process recovery rehearsal — 2026-09-24
+
+Executed source `8731023ef46960f2fdbe09bd45916e441c09ddb2` with the new
+`tests/server/test_stable_process_recovery.py` opt-in harness. Each scenario
+uses a fresh synthetic HOME/profile and two independent Python interpreters.
+The first commits a task/checkpoint and fsyncs a synthetic report, then exits
+via `os._exit(73)` without normal cleanup. The second opens that profile using
+production storage initialization and task repository code. Network connection,
+binding and DNS operations are denied by a child-process audit hook.
+
+Both actual subprocess scenarios passed (**2 passed, 1.55 s**):
+
+- **Completed write receipt:** saved artifact reference/checkpoint survive;
+  recovery changes the task to `waiting_user/process_interrupted`, creates no
+  extra attempt and requires explicit resume. Identical write intent is refused.
+- **Write persisted, receipt absent:** action becomes uncertain. Explicit resume
+  alone is refused until trusted read-back supplies matching file evidence;
+  empty evidence is refused. After reconciliation, identical write is refused.
+
+In both cases the file's bytes, inode and modification timestamp remain unchanged.
+Task budget identity persists, with synthetic request counters going 1→2 only
+after explicit resume; tool/token/artifact accounting also remains charged.
+The final state still requires acceptance review, not automatic success. The
+19 adjacent repository regressions passed (0.73 s), and Ruff passed. A pre-freeze
+run also passed both scenarios (1.49 s); it is not counted as additional coverage.
+
+Evidence under the canonical directory: `process-recovery-v1/completed.json`
+SHA-256 `aa7ad7e5cbfdfae739f50a52237e45320ed40116c2ac10bb5e08cc189ab859df`,
+and `process-recovery-v1/uncertain.json`
+SHA-256 `14c6c86066db9af773b0993b2da73f83c9e7a4441d36c60005d49b19ca67b12d`.
+Each records source and harness hashes, child exit codes and verification scope.
+
+**Boundary:** this exercises real process termination and repository durability,
+but the task, report, budget increments and trusted reconciliation are synthetic.
+It does not exercise a live model, the full task-service/host dispatch, native
+app lifecycle, user-facing recovery controls or signed package. Calling the
+repository recovery function directly does not certify the application's whole
+boot path. It is also not a power-loss durability test. **M4 remains unrun**;
+these checks supplement rather than replace its frozen task acceptance.
+
+Ledger independently rechecked: still **12/36, $1.20 reserved**, zero paid calls
+this batch; original case caps and failed outputs unchanged. No product-code
+change was necessary for these repository boundaries. Next bounded batch:
+freeze the actual M4 host/resume inputs and guarded runner, preserving this
+separate process evidence, or execute the already prepared public-source cases.
+Do not repeat these offline tests as a substitute for the five remaining real
+cases. R/N/U/S/P remain open; no release/tag/push or installed-app change.
