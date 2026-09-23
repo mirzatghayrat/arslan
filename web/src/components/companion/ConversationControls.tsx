@@ -5,8 +5,8 @@ import { companionApi, type ConversationContext, type Project } from "../../api/
 import CompanionDialog, { buttonClass, inputClass, primaryClass } from "./CompanionDialog";
 import { companionError } from "./errors";
 
-export default function ConversationControls({ conversationId, running, empty, onChanged }: {
-  conversationId: string; running: boolean; empty: boolean; onChanged: (context: ConversationContext) => void;
+export default function ConversationControls({ conversationId, running, empty, onChanged, compact = false }: {
+  conversationId: string; running: boolean; empty: boolean; onChanged: (context: ConversationContext) => void; compact?: boolean;
 }) {
   const { t } = useTranslation();
   const [context, setContext] = useState<ConversationContext | null>(null);
@@ -35,7 +35,7 @@ export default function ConversationControls({ conversationId, running, empty, o
     } catch (cause) { setError(companionError(cause)); }
     finally { setBusy(false); }
   }
-  return <div className="shrink-0 border-b border-border/60 px-5 py-2 text-xs">
+  return <div className={compact ? "min-w-0 text-xs" : "shrink-0 border-b border-border/60 px-5 py-2 text-xs"}>
     <div className="flex flex-wrap items-center gap-3"><button className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground disabled:opacity-50"
       disabled={!context} onClick={() => { setError(null); setDraft(context); }}><Settings2 size={14} />{t("companion.conversationSettings")}</button>
       {context?.project_id && <span className="text-primary">{projects.find(p => p.id === context.project_id)?.name ?? t("companion.project")}</span>}

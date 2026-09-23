@@ -100,7 +100,7 @@ export default function App() {
   const [currentChatStyle, setCurrentChatStyle] = useState<'quartz' | 'brutalist' | 'linear'>('linear');
 
   // Control Center Right Drawer Toggle state for redesigned grand layout frame
-  const [showControlPanel, setShowControlPanel] = useState<boolean>(true);
+  const [showControlPanel, setShowControlPanel] = useState<boolean>(false);
 
   // ── Orchestrator threads — declared early so activeThreadId is available for
   // the WS hook below (hooks must be called in a consistent order).
@@ -970,6 +970,10 @@ export default function App() {
               {!isThreadEmpty && (activeSection === 'arslan' || activeSection === 'spawn') && (
                 <button
                   id="toggle-control-panel"
+                  aria-label={t('ui.diagnostics')}
+                  title={t('ui.diagnostics')}
+                  aria-expanded={showControlPanel}
+                  aria-controls="conversation-diagnostics"
                   onClick={() => setShowControlPanel(!showControlPanel)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-[10.5px] font-mono transition-all uppercase ${
                     showControlPanel
@@ -991,8 +995,8 @@ export default function App() {
                   would mean dismantling the model that makes it safe. */}
               <span
                 data-testid="shell-indicator"
-                title={t(settings.orchestratorShellEnabled ? 'orchestrator.shell_on' : 'orchestrator.shell_off')}
-                aria-label={t(settings.orchestratorShellEnabled ? 'orchestrator.shell_on' : 'orchestrator.shell_off')}
+                title={t(settings.orchestratorShellEnabled ? (settings.shellConfirmPolicy === 'ask_risky' ? 'workspace.readOnlyAutomatic' : 'workspace.confirmCommands') : 'orchestrator.shell_off')}
+                aria-label={t(settings.orchestratorShellEnabled ? (settings.shellConfirmPolicy === 'ask_risky' ? 'workspace.readOnlyAutomatic' : 'workspace.confirmCommands') : 'orchestrator.shell_off')}
                 className={`flex items-center px-2 py-1.5 rounded-lg border ${
                   settings.orchestratorShellEnabled
                     ? 'border-primary/30 bg-primary/5 text-primary'
@@ -1193,11 +1197,13 @@ export default function App() {
 
             {activeSection === 'arslan' && (
               <div className="flex h-full min-h-0 flex-col">
-              <ConversationControls key={`context:${activeThreadId}`} conversationId={activeThreadId} running={arslanRunning} empty={orchestratorChatHistory.length === 0}
+              <div data-testid="conversation-context-bar" className="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-2 border-b border-border/50 px-4 py-2 lg:px-6">
+              <ConversationControls compact key={`context:${activeThreadId}`} conversationId={activeThreadId} running={arslanRunning} empty={orchestratorChatHistory.length === 0}
                 onChanged={context => setThreads(prev => prev.map(thread => thread.id === context.conversation_id && thread.temporary !== context.temporary
                   ? { ...thread, temporary: context.temporary, ...(context.temporary ? { title: t('companion.temporary') } : {}) } : thread))} />
-              {!activeThread?.temporary && <TaskPanel key={`task:${activeThreadId}`} conversationId={activeThreadId}
+              {!activeThread?.temporary && <TaskPanel compact key={`task:${activeThreadId}`} conversationId={activeThreadId}
                 onResume={task => { useArslanStore.getState().clearError(); wsSend({ type: 'resume_task', task_id: task.spec.id, expected_version: task.version }); }} />}
+              </div>
               <OrchestratorChat
                 key={`chat:${activeThreadId}:${activeThread?.temporary === true}`}
                 chatHistory={orchestratorChatHistory}
@@ -1315,7 +1321,7 @@ export default function App() {
           taskId={activeSection !== 'spawn' && dockTaskFrame?.conversation_id === activeThreadId ? dockTaskFrame.task_id : null}
           temporary={activeSection !== 'spawn' && Boolean(activeThread.temporary)} />
         {showControlPanel && !showBrowser && !isThreadEmpty && !activeThread.temporary && (activeSection === 'arslan' || activeSection === 'spawn') && (
-          <aside className="w-80 border-l border-border bg-sidebar flex flex-col justify-between h-full select-none relative z-20 animate-slide-in-right overflow-y-auto">
+          <aside id="conversation-diagnostics" aria-label={t('ui.diagnostics')} className="w-72 shrink-0 border-l border-border bg-sidebar flex flex-col justify-between h-full select-none absolute right-0 top-0 xl:relative z-40 shadow-xl xl:shadow-none animate-slide-in-right overflow-y-auto">
             {/* Top diagnostic state */}
             <div className="p-5 border-b border-border/50 space-y-4">
               <div className="flex items-center justify-between">
@@ -1325,6 +1331,7 @@ export default function App() {
                 </div>
                 <button
                   onClick={() => setShowControlPanel(false)}
+                  aria-label={t('common.close')}
                   className="text-subtle-foreground hover:text-foreground transition-colors"
                 >
                   <X className="w-4 h-4" />

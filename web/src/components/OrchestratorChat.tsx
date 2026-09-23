@@ -4,7 +4,7 @@ import type { ImagePayload } from "../lib/imagePayload";
 import {
   ArrowRight, Terminal,
   AlertTriangle, CheckCircle2, XOctagon,
-  Layers, CornerDownRight,
+  CornerDownRight,
   Cpu, X, Square,
   ThumbsUp, ThumbsDown, Wand2
 } from 'lucide-react';
@@ -447,10 +447,10 @@ export default function OrchestratorChat({
 
 
       {/* Simulator Interactive Control Strip & Spawns Docket Integrated */}
-      <div className="bg-surface/60 border-b border-border/80 px-6 py-2.5 flex flex-row items-center justify-between gap-4 select-none text-[11px] z-10">
+      {roster.some(member => spawns.some(spawn => spawn.id === String(member.spawnId))) && <div data-testid="conversation-experts-bar" className="bg-surface/60 border-b border-border/80 px-6 py-2.5 flex flex-row items-center justify-between gap-4 select-none text-[11px] z-10">
         <div className="flex items-center gap-2 shrink-0">
           <Terminal className="w-4 h-4 text-primary" />
-          <span className="text-muted-foreground font-mono font-bold uppercase tracking-wider">{t('orchestrator.sandbox_label')}</span>
+          <span className="text-muted-foreground">{t('workspace.experts')}</span>
         </div>
 
         <div className="flex items-center gap-3 flex-wrap">
@@ -525,7 +525,7 @@ export default function OrchestratorChat({
             });
           })()}
         </div>
-      </div>
+      </div>}
 
       {/* Global Integration Discovery & Repository Engine (Tool-Hub) has been successfully relocated to the Spawns Ledger screen directly above the Spawns list card grid. */}
 
@@ -1515,8 +1515,10 @@ export default function OrchestratorChat({
                 className="w-full bg-transparent text-xs text-foreground placeholder-subtle-foreground focus:outline-none font-sans px-1 py-1.5"
               />
               <div className="composer-row">
-                <AttachControl busy={attach.busy} onPickFiles={attach.addFiles} />
-                {micControl}
+                <div data-testid="composer-input-tools" className="flex items-center gap-2">
+                  <AttachControl busy={attach.busy} onPickFiles={attach.addFiles} />
+                  {micControl}
+                </div>
                 {/* Right-side action group: composer-row is space-between, so stop
                     must share a wrapper with send to sit NEXT to it (not centered). */}
                 <div className="flex items-center gap-1.5">
@@ -1551,8 +1553,11 @@ export default function OrchestratorChat({
             {attach.error && <div className="attach-error max-w-4xl mx-auto mt-1.5" role="alert">{attach.error}</div>}
           </form>
           {shellEnabled && (
-            <div className="max-w-4xl mx-auto mt-2 flex items-center justify-end">
-              <label className="shell-policy-pill" data-testid="shell-policy-pill">
+            <details className="max-w-4xl mx-auto mt-2 text-[11px] text-muted-foreground" data-testid="execution-options">
+              <summary className="cursor-pointer select-none py-1">
+                {t('workspace.executionOptions')} · {t(shellPolicy === 'ask_risky' ? 'workspace.readOnlyAutomatic' : 'workspace.confirmCommands')}
+              </summary>
+              <label className="shell-policy-pill mt-2" data-testid="shell-policy-pill">
                 <Terminal className="w-3 h-3 text-primary shrink-0" />
                 <span className="shell-policy-pill__label">{t('runcmd.pillLabel')}</span>
                 <select
@@ -1566,16 +1571,8 @@ export default function OrchestratorChat({
                   <option value="ask_risky">{t('settings.shellPolicyAskRisky')}</option>
                 </select>
               </label>
-            </div>
+            </details>
           )}
-          <div className="flex items-center justify-center gap-6 mt-2 text-[10px] text-subtle-foreground font-mono">
-            <span>{t('orchestrator.footer_hint')}</span>
-            <span>•</span>
-            <span className="flex items-center gap-1.5 font-sans">
-              <Layers className="w-3.5 h-3.5 text-subtle-foreground" />
-              {t('orchestrator.footer_sandboxed')}
-            </span>
-          </div>
         </footer>
       )}
     </div>

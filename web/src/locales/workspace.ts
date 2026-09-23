@@ -1,6 +1,9 @@
 export const workspaceMessages = {
   "en": {
     "navigation": "Main navigation",
+    "executionOptions": "Execution options",
+    "readOnlyAutomatic": "Read-only commands run automatically",
+    "confirmCommands": "Confirm every command",
     "conversations": "Conversations",
     "newConversation": "New conversation",
     "recentConversations": "Recent conversations",
@@ -27,6 +30,9 @@ export const workspaceMessages = {
   },
   "zh": {
     "navigation": "主导航",
+    "executionOptions": "执行选项",
+    "readOnlyAutomatic": "只读命令自动执行",
+    "confirmCommands": "每条命令均需确认",
     "conversations": "对话",
     "newConversation": "新建对话",
     "recentConversations": "最近对话",
@@ -53,6 +59,9 @@ export const workspaceMessages = {
   },
   "ja": {
     "navigation": "メインナビゲーション",
+    "executionOptions": "実行オプション",
+    "readOnlyAutomatic": "読み取り専用コマンドは自動実行",
+    "confirmCommands": "すべてのコマンドを確認",
     "conversations": "会話",
     "newConversation": "新しい会話",
     "recentConversations": "最近の会話",
@@ -79,6 +88,9 @@ export const workspaceMessages = {
   },
   "es": {
     "navigation": "Navegación principal",
+    "executionOptions": "Opciones de ejecución",
+    "readOnlyAutomatic": "Los comandos de solo lectura se ejecutan automáticamente",
+    "confirmCommands": "Confirmar cada comando",
     "conversations": "Conversaciones",
     "newConversation": "Nueva conversación",
     "recentConversations": "Conversaciones recientes",
@@ -105,6 +117,9 @@ export const workspaceMessages = {
   },
   "de": {
     "navigation": "Hauptnavigation",
+    "executionOptions": "Ausführungsoptionen",
+    "readOnlyAutomatic": "Lesende Befehle werden automatisch ausgeführt",
+    "confirmCommands": "Jeden Befehl bestätigen",
     "conversations": "Gespräche",
     "newConversation": "Neues Gespräch",
     "recentConversations": "Letzte Gespräche",
@@ -131,6 +146,9 @@ export const workspaceMessages = {
   },
   "fr": {
     "navigation": "Navigation principale",
+    "executionOptions": "Options d’exécution",
+    "readOnlyAutomatic": "Les commandes en lecture seule sont automatiques",
+    "confirmCommands": "Confirmer chaque commande",
     "conversations": "Conversations",
     "newConversation": "Nouvelle conversation",
     "recentConversations": "Conversations récentes",

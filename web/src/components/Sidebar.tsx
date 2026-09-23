@@ -79,9 +79,9 @@ export default function Sidebar(props: SidebarProps) {
         {t("sidebar.complete_chat")}</button>}
     </div>;
   }
-  return <aside className="relative z-40 flex h-full w-56 shrink-0 select-none flex-col border-r border-border bg-sidebar/95 lg:w-64">
+  return <aside className="relative z-40 flex h-full w-52 shrink-0 select-none flex-col border-r border-border bg-sidebar/95 lg:w-60">
     <div data-testid="window-chrome-strip" data-tauri-drag-region="deep" className="h-[41px] shrink-0" />
-    <div data-tauri-drag-region="deep" className="flex shrink-0 items-center gap-3 px-5 pb-5">
+    <div data-tauri-drag-region="deep" className="flex shrink-0 items-center gap-3 px-5 pb-3">
       <BrandMark alt="Arslan" className="h-9 w-9 object-contain" draggable={false} />
       <div><h1 className="text-sm font-semibold">Arslan</h1><p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{t("sidebar.brand_subtitle")}</p></div>
     </div>
@@ -99,7 +99,7 @@ export default function Sidebar(props: SidebarProps) {
         <button id="nav-btn-capabilities-deck" onClick={() => onChangeSection("capabilities")} className={navClass(activeSection === "capabilities" || activeSection === "ledger")}>
           <Boxes size={15} /><span>{t("sidebar.capabilities")}</span></button>
       </nav>
-      <section aria-label={t("workspace.recentConversations")} className="mt-4 flex min-h-0 flex-1 flex-col border-t border-border/50 pt-3">
+      <section aria-label={t("workspace.recentConversations")} className="mt-3 flex min-h-0 flex-1 flex-col border-t border-border/50 pt-2">
         <div className="mb-2 flex items-center justify-between px-3 text-xs text-muted-foreground">
           <span>{t("workspace.recentConversations")}</span>
           <button ref={anchorRef} title={t("sidebar.new_chat")} aria-label={t("sidebar.new_chat")} aria-expanded={picking} onClick={() => setPicking(value => !value)}><Plus size={14} /></button>

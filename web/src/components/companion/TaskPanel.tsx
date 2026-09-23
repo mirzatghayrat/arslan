@@ -14,8 +14,8 @@ export function taskReason(reason: string | null) {
   return taskErrorKey(reason ?? "") ?? "tasks.reviewIntro";
 }
 
-export default function TaskPanel({ conversationId, onResume }: {
-  conversationId: string; onResume: (task: TaskSummary) => void;
+export default function TaskPanel({ conversationId, onResume, compact = false }: {
+  conversationId: string; onResume: (task: TaskSummary) => void; compact?: boolean;
 }) {
   const { t, i18n } = useTranslation();
   const frame = useArslanStore(state => state.taskState);
@@ -121,7 +121,7 @@ export default function TaskPanel({ conversationId, onResume }: {
     }, 8000);
   }
   if (!latest && !relevantFrame) return null;
-  return <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border/50 px-5 py-2 text-xs">
+  return <div className={compact ? "flex min-w-0 items-center gap-3 text-xs" : "flex shrink-0 items-center justify-between gap-3 border-b border-border/50 px-5 py-2 text-xs"}>
     <button className="inline-flex min-w-0 items-center gap-2 text-muted-foreground hover:text-foreground"
       onClick={() => { setSelected(latest?.spec.id ?? relevantFrame?.task_id ?? null); setError(null); setOpen(true); }}>
       <ClipboardCheck size={14} /><span>{t("tasks.taskStatus")}</span><span className="truncate">{t(`tasks.${phase ?? relevantFrame?.phase ?? "queued"}`)}</span>

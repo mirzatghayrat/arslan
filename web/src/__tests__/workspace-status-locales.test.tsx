@@ -26,6 +26,13 @@ const labels = {
 afterEach(async () => { cleanup(); await i18n.changeLanguage("en"); });
 
 describe("actual sidebar service status in six languages", () => {
+  it.each(SUPPORTED_LANGUAGES)("has explicit execution posture labels in %s", async language => {
+    await i18n.changeLanguage(language);
+    for (const key of ["executionOptions", "readOnlyAutomatic", "confirmCommands"]) {
+      expect(String(i18n.t(`workspace.${key}`))).not.toBe(`workspace.${key}`);
+    }
+    expect(i18n.t('workspace.confirmCommands')).not.toBe(i18n.t('workspace.readOnlyAutomatic'));
+  });
   it.each(SUPPORTED_LANGUAGES)("renders all three states in %s", async language => {
     await i18n.changeLanguage(language);
     const view = render(<Sidebar {...props} />);

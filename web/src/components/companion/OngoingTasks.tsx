@@ -31,11 +31,11 @@ export default function OngoingTasks({ onOpen }: { onOpen: (task: TaskSummary) =
   }
   return <section aria-label={t("workspace.ongoing")} className="px-3 py-2">
     <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-      <span>{t("workspace.ongoing")}</span><button aria-label={t("companion.refresh")} onClick={() => setRefresh(value => value + 1)}><RefreshCw size={12} /></button>
+      <span>{t("workspace.ongoing")}{rows.length > 0 && <span className="ml-2 tabular-nums text-foreground">{rows.length}</span>}</span><button aria-label={t("companion.refresh")} onClick={() => setRefresh(value => value + 1)}><RefreshCw size={12} /></button>
     </div>
     {error && <p role="status" className="mt-2 text-xs text-muted-foreground">{t("workspace.taskListUnavailable")}</p>}
-    {rows.length > 0 && <div className="mt-2 max-h-36 space-y-1 overflow-y-auto">{rows.map(task => <button key={task.spec.id}
-      onClick={() => onOpen(task)} className="flex w-full items-start gap-2 rounded px-1 py-2 text-left text-xs hover:bg-primary/5">
+    {rows.length > 0 && <div className="mt-2 max-h-32 space-y-0.5 overflow-y-auto">{rows.map(task => <button key={task.spec.id}
+      title={task.spec.instruction} onClick={() => onOpen(task)} className="flex w-full items-start gap-2 rounded px-1 py-1.5 text-left text-xs hover:bg-primary/5">
       <ClipboardList size={14} className="mt-0.5 shrink-0 text-primary" /><span className="min-w-0"><span className="block truncate">{task.spec.instruction}</span>
         <span className="text-[10px] text-muted-foreground">{t(`tasks.${task.state.phase}`)}</span></span>
     </button>)}</div>}

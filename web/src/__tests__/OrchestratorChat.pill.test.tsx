@@ -37,5 +37,6 @@ describe('OrchestratorChat spawn pill shimmer', () => {
     const { container } = render(<OrchestratorChat {...base} />);
     expect(container.querySelector('.shiny-text')).toBeNull();
     expect(screen.getByText('Research Analyst')).toBeTruthy();
+    expect(screen.getByTestId('conversation-experts-bar')).toHaveTextContent('workspace.experts');
   });
 });

@@ -19,7 +19,7 @@ Existing conversation, expert, settings, voice and library paths remain protecte
 by relevant regressions; they are not removed to make this stage appear smaller.
 
 No new training, default model routing, authenticated browser writes, credential
-broker, general account automation, full video understanding or redesign enters
+broker, general account automation, full video understanding or wholesale redesign enters
 this release. Unsupported capabilities must be unavailable or accurately labelled,
 not merely hidden in release notes while advertised in the application.
 
@@ -89,9 +89,10 @@ public materials; stop paid calls if pricing cannot be reliably bounded. This
 new batch has not made a model call yet. Preserve a distinct durable ledger and
 never reset either ledger to obtain extra attempts.
 
-The old beta.5 publishing automation remains paused. No new publishing monitor,
-main merge, release creation or stable promotion is started by this planning
-checkpoint. Normal scoped implementation and offline verification continue.
+The old beta.5 publishing instructions are obsolete. The user authorized ongoing
+stable-stage work and notification when a releasable draft is ready on 2026-09-24;
+the existing heartbeat may be repurposed with this plan and current branch, never
+resumed with the old candidate. Main merge and Publish remain user-controlled.
 
 ## First compatibility batch — 2026-09-23/24
 
@@ -225,3 +226,43 @@ creation, so do not overwrite earlier evidence when rerunning.
 Remaining gate U work is packaged installer/updater and native recovery flow,
 including interrupted recovery on the candidate. R/N/P are not closed by this
 source-level batch. No new beta, stable tag, push or Publish was performed.
+
+## Bounded usability batch — 2026-09-24
+
+The user explicitly brought the crowded conversation UI into this stable stage.
+This is not a new feature milestone or a wholesale visual redesign: prioritize
+reading, task follow-up and discoverable controls while retaining safety status.
+The overall v1.2 direction remains; this release still ends at the five gates.
+
+- Diagnostics starts closed and is an overlay at narrower widths; its button
+  exposes expanded state and the rail has an accessible name/close action.
+- Project/memory and task status share one wrapping context row. Actual project
+  and task dialogs, review/cancel/resume behavior are retained.
+- Empty expert strips disappear; real invited experts remain available.
+- Attachment and microphone actions are grouped; stop/send remain in place.
+- Execution settings are collapsed by default, but the confirmation posture is
+  always readable. The header tooltip uses the actual policy instead of claiming
+  every command needs confirmation while read-only auto-run is enabled.
+- Sidebar spacing is reduced and waiting tasks retain their status and count.
+  No actual tasks, memories, permissions or navigation destinations are removed.
+
+Evidence: seven focused frontend suites **47 passed**, TypeScript and production
+build passed (existing large-chunk warning retained). The isolated real-App
+fixture in `web/acceptance` was inspected at 1280x720 and 900x600: reading area,
+pending task, combined toolbar, mic/attachment grouping and default-closed rail;
+execution options and diagnostics were opened. Fixture data is synthetic and
+cannot call a model or execute commands. This is browser-rendered layout evidence,
+not completion of native gate N or the twelve real task cases. The fixture is not
+a production build entry. No installed app, real profile or paid model was used.
+
+Final frontend regression after the policy-tooltip correction: **260 files,
+2039 tests passed**, TypeScript and production build passed. jsdom emitted its
+known canvas/navigation-not-implemented notices, not test failures. English
+900x600 was also visually checked; project/memory and task dialogs opened and
+closed correctly using only fixture data. This does not upgrade the evidence
+to native-app or model acceptance.
+
+Next bounded work: freeze remaining R inputs/checkers and the independent cost
+ledger; complete the outstanding task-outcome and native core-flow evidence,
+then freeze/integrate the release candidate for exact-source CI and packaging.
+Do not cut a beta just for this layout batch or add Jev before stable acceptance.
