@@ -148,10 +148,11 @@ ocr = [
     # wrapper is optional now.
     "pytesseract>=0.3",
 ]
-# Build-only: PyInstaller freezes the desktop sidecar (packaging/arslan-server.spec).
+# Build-only: PyInstaller freezes the sidecar; dmgbuild lays out the macOS installer.
 # Deliberately NOT in `dev`: every CI run would download it for nothing — only
 # the release job needs it.
 build = [
+    "dmgbuild==1.6.7 ; sys_platform == 'darwin'",
     "pyinstaller>=6.10",
     # BUILD-TIME ONLY, never imported at runtime. collect_submodules("mcp")
     # imports every mcp submodule, and mcp/cli/cli.py calls sys.exit(1) at
