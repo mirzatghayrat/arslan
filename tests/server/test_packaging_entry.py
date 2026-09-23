@@ -157,6 +157,66 @@ def test_packaged_entry_holds_profile_until_server_returns(entry, monkeypatch):
         pass
 
 
+@pytest.mark.parametrize("schema", [
+    "CREATE TABLE schema_version(version TEXT); INSERT INTO schema_version VALUES ('9999')",
+    "CREATE TABLE schema_version(unrecognized TEXT)",
+])
+def test_unsupported_schema_is_reported_before_port_or_server(entry, monkeypatch, capsys, schema):
+    import sqlite3
+    from server import config
+
+    database = pathlib.Path(config.settings.db_path)
+    with sqlite3.connect(database) as connection:
+        connection.executescript(schema)
+    original = database.read_bytes()
+    monkeypatch.setattr(entry, "_serve", lambda: pytest.fail("unsupported schema must not announce port"))
+    assert entry.main() == 1
+    assert capsys.readouterr().out == "ARSLAN_ERROR=database_schema_unsupported\n"
+    assert database.read_bytes() == original
+
+
+def test_schema_probe_does_not_create_a_missing_database(entry, tmp_path):
+    database = tmp_path / "new-profile" / "arslan.db"
+    entry._check_profile_schema(database)
+    assert not database.parent.exists()
+
+
+def test_schema_probe_failure_has_no_private_diagnostics(entry, monkeypatch, capsys):
+    def failed(_database):
+        raise OSError("private path or database contents")
+    monkeypatch.setattr(entry, "_check_profile_schema", failed)
+    monkeypatch.setattr(entry, "_serve", lambda: pytest.fail("failed probe must not serve"))
+    assert entry.main() == 1
+    assert capsys.readouterr().out == "ARSLAN_ERROR=data_profile_unavailable\n"
+
+
+def test_real_entry_reports_future_schema_before_key_bootstrap_or_port(tmp_path):
+    import sqlite3
+    import subprocess
+
+    # This is the actual entry script in a fresh process, not a frozen binary.
+    home = tmp_path / "isolated-home"
+    relative = ("Library/Application Support/Arslan" if sys.platform == "darwin"
+                else "AppData/Roaming/Arslan" if sys.platform == "win32" else ".local/share/Arslan")
+    profile = home / relative
+    profile.mkdir(parents=True)
+    database = profile / "arslan.db"
+    with sqlite3.connect(database) as connection:
+        connection.executescript("CREATE TABLE schema_version(version TEXT); "
+                                 "INSERT INTO schema_version VALUES ('9999')")
+    original = database.read_bytes()
+    result = subprocess.run([sys.executable, str(_ENTRY)], cwd=_ENTRY.parents[1],
+        env={"HOME": str(home), "USERPROFILE": str(home),
+             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+             "PYTHONPATH": str(_ENTRY.parents[1]), "PYTHONDONTWRITEBYTECODE": "1"},
+        text=True, capture_output=True, timeout=15)
+    assert result.returncode == 1
+    assert result.stdout == "ARSLAN_ERROR=database_schema_unsupported\n"
+    assert not (home / ".arslan").exists()
+    assert not (profile / "api_token").exists()
+    assert database.read_bytes() == original
+
+
 def test_busy_profile_never_announces_port_or_starts_server(entry, monkeypatch, capsys):
     from server import config
     from server.services.data_profile_lock import hold

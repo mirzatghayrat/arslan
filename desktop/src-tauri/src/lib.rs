@@ -177,6 +177,7 @@ fn startup_error(line: &str, locale: &str) -> Option<String> {
         "ARSLAN_ERROR=data_profile_in_use" => "profile_in_use",
         "ARSLAN_ERROR=data_profile_unavailable" => "profile_unavailable",
         "ARSLAN_ERROR=data_profile_recovery_required" => "profile_recovery_required",
+        "ARSLAN_ERROR=database_schema_unsupported" => "profile_schema_unsupported",
         _ => return None,
     };
     Some(native_locale::text(locale, key))
@@ -1217,6 +1218,14 @@ mod tests {
     #[test]
     fn profile_startup_errors_use_only_known_codes_and_six_language_copy() {
         for locale in ["en", "zh", "ja", "es", "de", "fr"] {
+            let unsupported = startup_failure("ARSLAN_ERROR=database_schema_unsupported", locale)
+                .expect("known schema refusal must have localized copy");
+            assert_eq!(
+                unsupported.message,
+                native_locale::text(locale, "profile_schema_unsupported")
+            );
+            assert!(!unsupported.recovery_pending); // No automatic restore or retry.
+            assert_ne!(unsupported.message, "Arslan");
             assert_eq!(
                 startup_error("ARSLAN_ERROR=data_profile_in_use", locale),
                 Some(native_locale::text(locale, "profile_in_use"))
@@ -1249,6 +1258,7 @@ mod tests {
             );
         }
         assert!(startup_error("ARSLAN_ERROR=private diagnostic", "en").is_none());
+        assert!(startup_error("ARSLAN_ERROR=database_schema_unsupported<script>", "en").is_none());
         assert!(startup_error("ARSLAN_ERROR=data_profile_in_use<script>", "en").is_none());
     }
 

@@ -44,7 +44,7 @@ not merely hidden in release notes while advertised in the application.
 | --- | --- | --- |
 | R — useful task outcomes | All original R1–R4/D1–D4/M1–M4 IDs have frozen inputs, actual outputs, reviewed conclusions, sources/artifacts and recovery evidence against their original acceptance. Keep failures and corrections; no best-of-N substitution or dropped cases. | Open: beta.5 live pilot is partial, not 12/12; R2 public conflict unresolved, R3/R4 excerpt limitations and M4 live read-only boundary retained. |
 | N — actual native core flows | On the candidate: identity/channel; conversation and restart; mixed attachment retention; source opening; artifact opening; project memory correction/deletion; cancellation and explicit resume; backup/restore UI. Verify narrow-window usability and localized safety/errors in supported locales; recheck changed surfaces rather than all historical screens. | Partial prior evidence: beta.6 icon switching, rounded corners and five pages at two sizes were tested. That is not the complete core-flow acceptance. |
-| U — upgrade and recoverability | Isolated fixtures representing stable 0.1.38, beta.3 and beta.6; backup before upgrade, supported upgrade with record/content checks, restart, restore with matching key, wrong/missing key and interrupted restore fail-closed. Exercise installer replacement and updater manifest/signature handling without changing production Latest or real data. | Open: substantial component tests exist; cross-version packaged evidence still must be bound to the candidate. |
+| U — upgrade and recoverability | Isolated fixtures representing stable 0.1.38, beta.3 and beta.6; backup before upgrade, supported upgrade with record/content checks, restart, restore with matching key, wrong/missing key and interrupted restore fail-closed. Exercise installer replacement and updater manifest/signature handling without changing production Latest or real data. | Partial: all three historical-source profile rehearsals passed on 2026-09-24; packaged/UI upgrade and recovery evidence still must be bound to the candidate. |
 | S — safety and regression | No unresolved data-loss, unauthorized action, privacy/key exposure, startup failure or broken advertised core path. Full CI and scoped safety regressions pass; dependency findings receive platform/reachability disposition rather than 'all clear' by count. | Open until final source; reuse prior results only where changes cannot invalidate them. |
 | P — release provenance | Release source integrated through review with current remote main; documented source/version identity, full same-SHA CI, signed/notarized/stapled package, Gatekeeper/fresh-install and asset/update-signature checks. Stable-channel update path explicitly reviewed before Latest/Publish. | Open; remote main observed at `d3e8081d0fc7a72072731edfaa0ea33acf095724`, not the beta.6 source. Do not silently merge or promote the existing beta artifact. |
 
@@ -161,3 +161,67 @@ The user additionally requested Jev/Laya efficiency research. Findings and a
 bounded, not-yet-started later experiment are recorded in
 `jev-laya-research-2026-09-24.md`. No new inference dependency, model download,
 cloud provider or release gate is introduced; stable acceptance stays first.
+
+## Cross-version source rehearsal and refusal UX — 2026-09-24
+
+User confirmed stable-first; the future optional Jev mode stays outside this
+release. No additional model calls, real profile access or installed app changes.
+
+New opt-in harness: `tests/server/test_stable_cross_version_profiles.py`.
+Historical code is extracted from local Git objects and run in fresh processes
+with disposable HOME, explicit synthetic credentials and a network-blocking
+audit hook. It creates fixtures with the historical models/migrations, not
+current-model fixtures relabelled as old profiles. Runtime dependencies are the
+current locked environment, not the historical signed bundles.
+
+| Source | Resolved source commit | Schema head | Observed |
+| --- | --- | --- | --- |
+| v0.1.38 | `1724d2afa95fd4dfff28d1151135e00ec15926d4` | 0046 | Upgrade to 0053, second boot, pre-upgrade backup recovery passed |
+| v0.1.40-beta.3 | `fe0624943534e63b38a9a440c6631000c0798eec` | 0053 | Same checks passed |
+| v0.1.40-beta.6 | `0beb89bd638d5846745b7546adeb128452a5a0c2` | 0053 | Same checks passed |
+
+Each checks synthetic chat, legacy fact content, decryptable provider credential,
+reopenable CSV and database integrity. Wrong/missing-key preflight refuses
+without changing the upgraded DB. Recovery uses the pre-upgrade archive plus
+matching secret and original source; it never boots the old app on the upgraded
+DB. Original fixture and archive hashes remain unchanged.
+
+Evidence directory beside the worktrees:
+`stable-0140-compat-evidence-20260924/source-identity-corrected/`.
+Three JSON records retain source/archive/harness hashes and boot results.
+The initial three-pass report used the v0.1.38 annotated tag object ID in its
+`source_commit` field. Archive contents were the released source, but that field
+was imprecise. Original reports remain intact; the corrected harness checks
+`tag^{commit}` against the pinned commit and reran all three. With the seven
+future-schema tests, **10 passed** in 6.81 s. No product failure was hidden.
+
+The rehearsal exposed a related UX gap by inspection: the storage guard could
+refuse after the sidecar had announced its port, leaving a generic desktop
+startup failure. Two new entry-point tests failed before repair. The packaged
+entry now checks the schema read-only while holding profile ownership and
+before announcing a port; a closed error code maps to six-language recovery
+guidance. It never triggers automatic restore/retry or echoes private details.
+The transactional storage guard remains in place as defense in depth.
+
+Verification on the changed source:
+
+- Packaging, future-schema, native-locale and release-workflow selection:
+  **87 passed**; Ruff and whitespace checks passed. Includes a fresh-process
+  run of the real entry script: unsupported schema emits only the known code,
+  leaves the DB unchanged and creates no secret or access token.
+- Rust library: **78 passed, 1 existing opt-in packaged-control test ignored**.
+  Initial local build lacked the CI resource placeholder directories; after
+  creating the same empty sidecar/listen directories as CI, tests passed.
+  These placeholders are not a built sidecar or releasable package.
+- Locked/offline Rust Clippy with warnings denied and rustfmt check passed.
+- Native error-code mapping and all six catalogs are tested; actual displayed
+  layout and user interaction remain native acceptance, not inferred from tests.
+
+Reproduce the cross-version group with `ARSLAN_STABLE_COMPAT=1`, an explicit
+synthetic `ARSLAN_SECRET_KEY`, and the existing development Python environment.
+An optional `ARSLAN_STABLE_COMPAT_EVIDENCE` directory uses exclusive output
+creation, so do not overwrite earlier evidence when rerunning.
+
+Remaining gate U work is packaged installer/updater and native recovery flow,
+including interrupted recovery on the candidate. R/N/P are not closed by this
+source-level batch. No new beta, stable tag, push or Publish was performed.

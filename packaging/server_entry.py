@@ -578,7 +578,32 @@ def main() -> int:
             code = str(exc) if isinstance(exc, ValueError) and str(exc) in known else "data_profile_unavailable"
             print(f"ARSLAN_ERROR={code}", flush=True)
             return 1
+        try:
+            _check_profile_schema(resolve_database())
+        except Exception as exc:
+            # Closed protocol, no database paths, schema contents or traceback.
+            code = ("database_schema_unsupported" if isinstance(exc, RuntimeError)
+                    and str(exc) == "database_schema_unsupported" else "data_profile_unavailable")
+            print(f"ARSLAN_ERROR={code}", flush=True)
+            return 1
         return _serve()
+
+
+def _check_profile_schema(database: pathlib.Path) -> None:
+    """Under profile ownership, before port announcement; fresh DBs stay absent."""
+    if not database.exists():
+        return
+    import sqlite3
+    from sqlalchemy import create_engine
+    from server.db.migrations.runner import assert_supported_schema
+
+    engine = create_engine("sqlite://", creator=lambda: sqlite3.connect(
+        f"{database.absolute().as_uri()}?mode=ro", uri=True))
+    try:
+        with engine.connect() as connection:
+            assert_supported_schema(connection)
+    finally:
+        engine.dispose()
 
 
 def _serve() -> int:
