@@ -881,3 +881,82 @@ two unrun (R1/M4), still allocated 5 calls each. Remaining global slots are not
 permission to reset exhausted case caps. Next: complete those untouched baselines,
 then explicitly review repair inputs/accounting and remaining native/packaged gates.
 No beta, tag, push, Publish, installed-app or real-data changes.
+
+## R1 first-delivery repair and actual comparison attempt — 2026-09-24
+
+Before spending, archived R1 bodies replayed through the real extractor/feedback
+envelope totalled 67,131 conversation characters with a minimal user message.
+The 64k rolling-history window discarded the first new source before any model
+had seen it. This is distinct from older-source eviction after a previous read.
+
+Repair source `cc5ec1f3e10acb1e9cd2a24528ef42e3de82ef6f` temporarily groups a fresh
+tool-feedback batch for its first delivery, only when the batch is at most 96k
+characters. The existing 64k rolling target resumes on subsequent requests; larger
+batches keep existing eviction and explicitly warn about potentially unseen
+content. Opaque native provider pairs retain their existing indivisibility.
+The exact current user request is restored at user priority if evidence eviction
+removed it, without promoting its text to a system instruction. Thus 96k is not
+a global request-size promise: the original user request, system/schema overhead
+and existing opaque-provider retention are separate. Task/request/cost limits do
+not change. The paid harness still enforces its 100,000-byte payload ceiling.
+
+Scoped fresh-batch/runtime/native/extractor checks initially **49 passed**;
+runner/live-opt-in/native/read checks **14 passed, 4 skipped** (5.16 s). After
+adding current-request retention, **26 passed** (14.77 s), including fresh batch,
+Gemini roundtrip, native loop and scripted research runners. Ruff passed. Three
+actual preflight GETs matched pinned hashes. Same-day official pricing again
+confirmed the peak input/output rates; configured proxy pinning delegation remains
+disclosed. Untouched R1 alone received an additive input/runner freeze, preserving
+all previous baseline evidence and caps.
+
+Actual R1 execution: **1 failed** (24.33 s), requests **25–26**. Request 26 was
+**79,810 bytes** and contained all three full raw READMEs, matching receipts, and
+the original task. This live evidence supports the first-delivery repair. It does
+not make R1 pass: no `comparison.md` was written, read back or registered as an
+owned artifact. The provider returned no native tool calls and instead emitted a
+textual `write_file` object. Unescaped quotes around `auth mode = "none"` made the
+object invalid JSON (offset 4436), so the old parse-dependent output guard missed
+it and it became the final answer. No write was secretly executed.
+
+The proposed content distinguished training, routing and semantic coding; marked
+benchmarks as self-reported; correctly separated Serena GPL application from MIT
+SolidLSP; and retained direct fixed-commit sources. However, it claimed Serena
+shell execution remains enabled while basic tools are disabled in Codex/Claude
+Code. The source's Basic Features section includes `execute_shell_command` in
+that typically disabled set: the exception is unsupported. Its offline-fit
+recommendation also fails to explicitly preserve the classifier-versus-provider
+inference boundary. It is much longer than the requested brief comparison. These
+are not exhaustive independent claim checks; R1 already fails delivery and scope.
+
+## Malformed protocol output guard — same batch, no paid retry
+
+Offline reproduction: **4 failed, 2 passed** (0.84 s). Correction source
+`3d53fe07` rejects a recognizable tool-protocol object prefix even if subsequent
+JSON is malformed or truncated. This is an output rejection only: it does not
+repair/execute textual calls, change dispatch parsing, or grant write permission.
+The existing bounded safe-synthesis path remains responsible for an honest final
+answer. Ordinary JSON and prose still pass the targeted regression.
+
+After correction, **24 passed** (11.25 s): malformed protocol, native loop,
+fresh-batch delivery and Gemini roundtrip; Ruff and whitespace checks passed.
+The exact archived request-26 response is now detected offline. This proves
+guard coverage, not successful file delivery or semantic correctness on a paid
+retest. Original R1 evidence is unchanged; no automatic model repeat occurred.
+
+Review: `S2-R1-semantic-review-v1.json` in the canonical evidence directory.
+Original result SHA-256
+`161caabd3a2856686cc6df1315d9a70497c60d721c56fdb6f2120a2f43c12167`;
+request-26 input
+`d39309d6fbe9678719b61b3b25a574295b7dc84ab80891bd1f7d76f10f15ded0`;
+response
+`7629d3104b0bf42c38a83c9f72a7d195ac643df2109b4f83215751b0fb48d26c`.
+
+Ledger **26/36 requests, $2.60 reserved**, conservative peak-rate usage estimate
+**$0.0748554** (not invoice), no HALT. Four core passes; seven unaccepted
+(D1/D3/M2/R1/R2/R3/R4); only M4 remains unrun. R1 consumed 2 of its original 5
+slots; this does not authorize a silent baseline overwrite or best-of-N rerun.
+Next bounded batch: M4's isolated real-model interruption/resume baseline, retaining
+the separate deterministic uncertain-write evidence. Then review additive repair
+attempts, remaining allowance, and native/packaged acceptance. R/N/U/S/P remain
+open. No release candidate, tag, push, beta, Publish, installed-app or real-data
+change was made.
