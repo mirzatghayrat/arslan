@@ -42,7 +42,7 @@ not merely hidden in release notes while advertised in the application.
 
 | Gate | Finite acceptance | Current status |
 | --- | --- | --- |
-| R — useful task outcomes | All original R1–R4/D1–D4/M1–M4 IDs have frozen inputs, actual outputs, reviewed conclusions, sources/artifacts and recovery evidence against their original acceptance. Keep failures and corrections; no best-of-N substitution or dropped cases. | Open: D2/D4 core criteria passed with caveats and M1 passed. D1/D3 retain failed baselines with offline repairs; M2 memory boundary passed but output not accepted. Six stable cases remain unrun. R2 public inputs and long-read path are prepared, not yet model-accepted. |
+| R — useful task outcomes | All original R1–R4/D1–D4/M1–M4 IDs have frozen inputs, actual outputs, reviewed conclusions, sources/artifacts and recovery evidence against their original acceptance. Keep failures and corrections; no best-of-N substitution or dropped cases. | Open: D2/D4 core criteria passed with caveats, M1/M3 passed. D1/D3 retain failed baselines with offline repairs; M2 memory boundary passed but output not accepted. Five stable cases remain unrun. R2 public inputs and long-read path are prepared, not yet model-accepted. |
 | N — actual native core flows | On the candidate: identity/channel; conversation and restart; mixed attachment retention; source opening; artifact opening; project memory correction/deletion; cancellation and explicit resume; backup/restore UI. Verify narrow-window usability and localized safety/errors in supported locales; recheck changed surfaces rather than all historical screens. | Partial prior evidence: beta.6 icon switching, rounded corners and five pages at two sizes were tested. That is not the complete core-flow acceptance. |
 | U — upgrade and recoverability | Isolated fixtures representing stable 0.1.38, beta.3 and beta.6; backup before upgrade, supported upgrade with record/content checks, restart, restore with matching key, wrong/missing key and interrupted restore fail-closed. Exercise installer replacement and updater manifest/signature handling without changing production Latest or real data. | Partial: all three historical-source profile rehearsals passed on 2026-09-24; packaged/UI upgrade and recovery evidence still must be bound to the candidate. |
 | S — safety and regression | No unresolved data-loss, unauthorized action, privacy/key exposure, startup failure or broken advertised core path. Full CI and scoped safety regressions pass; dependency findings receive platform/reachability disposition rather than 'all clear' by count. | Open until final source; reuse prior results only where changes cannot invalidate them. |
@@ -86,7 +86,7 @@ authorization. 'More Codex quota' is not assumed to authorize a new API bill.
 A new independent 36-request / US$5 configured-primary-model budget was explicitly
 approved in this task on 2026-09-23. It covers only isolated synthetic inputs and
 public materials; stop paid calls if pricing cannot be reliably bounded. This
-new batch has used 10/36 calls, $1.00 reserved as of the memory batch below. Preserve a distinct durable ledger and
+new batch has used 12/36 calls, $1.20 reserved as of the deletion batch below. Preserve a distinct durable ledger and
 never reset either ledger to obtain extra attempts.
 
 The old beta.5 publishing instructions are obsolete. The user authorized ongoing
@@ -627,3 +627,29 @@ context boundaries only, not real-model semantic quality or native deletion UI.
 Canonical budget remains 10/36, $1.00 reserved before execution. Official pricing
 fetched again on the same UTC day, matching the existing reviewed snapshot.
 Freeze M3's additive inputs/runner before spending; M1/M2 are not rerun.
+
+## Actual M3 deletion outcome — 2026-09-24
+
+Executed source `87ac31e2d09c89f10adb318739a46067cb9ecb74`; one execution
+check passed (5.11 s), requests 11–12 only. No extra compression or retry was
+needed. Actual request 11 contains only the retained inventory-report messages;
+both that summary and request 12 exclude the deleted preference and old summary.
+Original displayed-chat row remains in the isolated DB. The final answer says
+no color preference is available and supplies a neutral Inventory Report heading.
+Separate semantic review found no direct or paraphrased reuse of violet.
+**M3 core criteria passed**; native deletion UI remains untested. Extra summary/
+status/date text is a terseness caveat, not a deleted-memory reuse finding.
+
+Evidence: `S2-M3-regeneration.json`, per-turn/raw request records and
+`S2-M3-semantic-review-v1.json`. Raw result SHA-256
+`e22951e9f7712c0d702fa8fe8dcca7a3d20ccd2f7a5aeb9708203d466c701580`.
+The coding agent reviewed the outputs; this is not independent human/security
+acceptance or a claim of native visual presentation.
+
+Ledger now **12/36 requests, $1.20 reserved**, conservative peak-rate usage
+estimate **$0.0132183** (not invoice), with the old pilot untouched. Current
+task outcomes: four core passes (D2/D4 with caveats, M1/M3), three unaccepted
+(D1/D3/M2), five unrun (R1–R4/M4). Preserve M3's unused call; it does not silently
+increase any other case's allowance. Next: bounded interrupted-task M4 or public
+research cases, then explicitly reviewed repair retests. R/N/U/S/P stay open;
+no tag, beta, push, Publish, installed-app or real user-data changes.
