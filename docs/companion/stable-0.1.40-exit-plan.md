@@ -42,7 +42,7 @@ not merely hidden in release notes while advertised in the application.
 
 | Gate | Finite acceptance | Current status |
 | --- | --- | --- |
-| R — useful task outcomes | All original R1–R4/D1–D4/M1–M4 IDs have frozen inputs, actual outputs, reviewed conclusions, sources/artifacts and recovery evidence against their original acceptance. Keep failures and corrections; no best-of-N substitution or dropped cases. | Open: D2/D4 core criteria passed with caveats, M1/M3 passed. D1/D3 retain failed baselines with offline repairs; M2 memory boundary passed but output not accepted. Five stable cases remain unrun. R2 public inputs and long-read path are prepared, not yet model-accepted. |
+| R — useful task outcomes | All original R1–R4/D1–D4/M1–M4 IDs have frozen inputs, actual outputs, reviewed conclusions, sources/artifacts and recovery evidence against their original acceptance. Keep failures and corrections; no best-of-N substitution or dropped cases. | Open: D2/D4 core criteria passed with caveats, M1/M3 passed. D1/D3 retain failed baselines with offline repairs; M2 memory boundary passed but output not accepted. R2 real reads and saved artifact passed, but uncertainty/systematics attribution is not accepted. Four stable cases remain unrun (R1/R3/R4/M4). |
 | N — actual native core flows | On the candidate: identity/channel; conversation and restart; mixed attachment retention; source opening; artifact opening; project memory correction/deletion; cancellation and explicit resume; backup/restore UI. Verify narrow-window usability and localized safety/errors in supported locales; recheck changed surfaces rather than all historical screens. | Partial prior evidence: beta.6 icon switching, rounded corners and five pages at two sizes were tested. That is not the complete core-flow acceptance. |
 | U — upgrade and recoverability | Isolated fixtures representing stable 0.1.38, beta.3 and beta.6; backup before upgrade, supported upgrade with record/content checks, restart, restore with matching key, wrong/missing key and interrupted restore fail-closed. Exercise installer replacement and updater manifest/signature handling without changing production Latest or real data. | Partial: all three historical-source profile rehearsals passed on 2026-09-24; packaged/UI upgrade and recovery evidence still must be bound to the candidate. |
 | S — safety and regression | No unresolved data-loss, unauthorized action, privacy/key exposure, startup failure or broken advertised core path. Full CI and scoped safety regressions pass; dependency findings receive platform/reachability disposition rather than 'all clear' by count. | Open until final source; reuse prior results only where changes cannot invalidate them. |
@@ -86,7 +86,7 @@ authorization. 'More Codex quota' is not assumed to authorize a new API bill.
 A new independent 36-request / US$5 configured-primary-model budget was explicitly
 approved in this task on 2026-09-23. It covers only isolated synthetic inputs and
 public materials; stop paid calls if pricing cannot be reliably bounded. This
-new batch has used 12/36 calls, $1.20 reserved as of the deletion batch below. Preserve a distinct durable ledger and
+new batch has used 16/36 calls, $1.60 reserved as of the public-conflict batch below. Preserve a distinct durable ledger and
 never reset either ledger to obtain extra attempts.
 
 The old beta.5 publishing instructions are obsolete. The user authorized ongoing
@@ -701,3 +701,53 @@ freeze the actual M4 host/resume inputs and guarded runner, preserving this
 separate process evidence, or execute the already prepared public-source cases.
 Do not repeat these offline tests as a substitute for the five remaining real
 cases. R/N/U/S/P remain open; no release/tag/push or installed-app change.
+
+## Actual public-conflict task R2 — 2026-09-24
+
+Executed source `575861dbf84bc367c6ca0a883ed9d7577e4dc02a`. Added an exclusive
+`S2-R2-runner-plan-v1.json`, preserving the original public-input preflight,
+contract and four-request allocation. The additive prompt makes the existing
+save/reopen criterion explicit (`comparison.md`), supplies the frozen URLs and
+does not supply scientific expected answers. Only actual production web/read/write
+tools are offered, restricted to those URLs and that synthetic relative path.
+All source bytes must match their archived hashes. Model and tool results retain
+their actual raw records; no excerpts or scripted responses enter the live run.
+
+Exact-runner smoke check **1 passed, 1 paid opt-in skipped** (1.22 s), Ruff passed.
+Two no-model production fetches matched the archives before spending. Official
+[DeepSeek pricing](https://api-docs.deepseek.com/quick_start/pricing/) was reviewed
+again at 20:41 UTC, 2026-09-23; same-day stored peak rates and alias disclosure
+remain valid. The environment uses its existing HTTPS proxy: source-address
+pinning is delegated to it and recorded, not claimed independently verified.
+
+Actual run: **1 execution check passed** (14.37 s), requests 13–16, no retries.
+Both complete extracted abstract pages and receipt hashes are present in the
+next actual model request, with no extractor truncation. The actual Markdown
+file was written, read back and reopened via its owned artifact/manifest; direct
+source links remain present. This is neither native file opening nor a full-paper
+read. Raw source bytes exactly match both preflight hashes.
+
+**R2 is not quality-accepted yet.** The values, units, baseline/variant distinction,
+version dates and retrieval dates are correct; the answer preserves the two
+methods, attributes the 5-sigma discrepancy and does not choose a winner or claim
+current consensus. However, it labels SH0ES's uncertainty “1-sigma-like” although
+that interval convention is not explicit in the inspected abstract. It also
+infers different actual systematic-error treatment from differences in reporting
+detail. These are unsupported source attributions, not a claim that the full
+paper's statistical convention is necessarily wrong. Preserve the uncertainty
+as stated and leave undisclosed comparisons unknown. Excess length is a separate
+usability caveat. Execution success must not hide these factual-scope findings.
+
+Separate review: `S2-R2-semantic-review-v1.json`; original outputs unchanged.
+Result SHA-256 `35aff0e3e44d7952501d02f0039ab65ca52203230a74b19096907fa35582c088`;
+saved Markdown `9c107d0292b7f7e95446a153b853ce1d738aea083bb19bb83296068774a6dcbc`.
+The coding agent reviewed source support; no independent specialist sign-off is
+implied. No product prompt was tuned or paid attempt repeated after this output.
+
+Ledger now **16/36 requests, $1.60 reserved**, conservative peak-rate usage
+estimate **$0.0228231** (not invoice). R2 has consumed 4/4; old pilot remains
+separate. Four cases have core passes (D2/D4 with caveats, M1/M3), four remain
+unaccepted (D1/D3/M2/R2), four are unrun (R1/R3/R4/M4). Next: remaining original
+cases, then additive repair reviews and a cumulative accounting decision within
+the authorized ceiling—no silent case-cap reset or output replacement. R/N/U/S/P
+remain open. No beta, tag, push, Publish, native installation or real-data change.
