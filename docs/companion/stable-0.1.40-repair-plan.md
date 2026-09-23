@@ -22,6 +22,14 @@ D2/D4 core passes retain their caveats; M1/M3 core passes remain recorded.
 Recheck affected paths if later changes invalidate their evidence. Do not rerun
 unaffected expensive cases merely to increase a test count.
 
+Offline guidance checkpoint: source `2ed10c995fb2c443dbf6329e618a9718ffc884f4`
+implements the generic brevity/evidence-scope rules needed by M2 and R1–R4 in
+both host and synthesis prompts, removes conflicting forced-decisiveness language,
+and frames synthesis notes as untrusted material. Wiring and execution regressions
+pass; this does **not** resolve the semantic acceptance findings by itself. The
+table's source-quality requirements still require actual output review on the
+registered additive retests. No original outcome or input has been rewritten.
+
 ## Order and stop conditions
 
 1. Close the reproducible execution gaps with scoped offline regressions. For

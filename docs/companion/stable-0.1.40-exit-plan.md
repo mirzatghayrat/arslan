@@ -1060,3 +1060,34 @@ The next bounded batch is generic source-grounding/brevity repair and runner
 readiness; a new paid repair sweep requires an explicit accounting/authorization
 decision before execution. No baseline has been relabelled passed, no native or
 packaged acceptance is inferred, and no beta/tag/push/Publish occurred.
+
+## Shared evidence-scope guidance — 2026-09-24, no paid calls
+
+Implementation source `2ed10c995fb2c443dbf6329e618a9718ffc884f4` adds a shared
+answer contract to both the normal host prompt and tool-free synthesis. It
+distinguishes inspected source claims, inference and unknowns; requires matching
+version/component/condition scope; rejects unsupported absence, compatibility,
+statistical-convention and whole-workflow locality claims; and preserves requested
+brevity without unsolicited invented project details. No case-specific expected
+answer or evaluation oracle was inserted.
+
+The synthesis path previously urged a decisive conclusion even with incomplete
+evidence. That conflicting guidance is removed: it must answer the supported
+portion and state specific gaps. Its reference digest is now framed as untrusted
+external material. This is prompt guidance, not a new factual verifier or broader
+tool authority, and does not prove that a live model will obey it.
+
+Red/green wiring checks: **7 failed** before the change, covering six locale
+configurations of the actual host and the synthesis fallback. After repair,
+**51 passed** (16.32 s) across prompt wiring/cache, source links, file contracts,
+native loop and malformed protocol handling. An additional disjoint group of
+capability-inventory and exact synthetic memory-runner checks had **6 passed**
+(4.71 s). Ruff and whitespace checks passed. Scripted providers are not real-model
+quality evidence; none of the eight unaccepted baselines is promoted to passed.
+
+Canonical paid ledger remains **31/36**, **$3.10 reserved**, with conservative
+peak usage estimate **$0.0805866** (not invoice). No paid call, key/profile access,
+native UI or package acceptance was performed in this batch. Next: freeze additive
+repair inputs/checkers and accounting; obtain explicit additional paid authority
+before the proposed repair sweep. Native and packaged gates remain open. No tag,
+push, main merge or Publish.
