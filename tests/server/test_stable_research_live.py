@@ -1,4 +1,4 @@
-"""Opt-in R2 real host/tools; execution checks are not semantic acceptance."""
+"""Opt-in research real host/tools; execution is not semantic acceptance."""
 import hashlib
 import json
 import os
@@ -24,11 +24,11 @@ pytestmark = pytest.mark.skipif(os.environ.get("ARSLAN_STABLE_LIVE") != "authori
                               reason="independent stable paid-call grant requires explicit opt-in")
 
 
-async def test_stable_research_host(execution_db, monkeypatch, tmp_path):
-    case = research.CASE
-    value = research.verified()
+@pytest.mark.parametrize("case", research.CASES)
+async def test_stable_research_host(case, execution_db, monkeypatch, tmp_path):
     if (budget.EVIDENCE / f"{case}-result.json").exists() or budget.status()["by_case"][case]:
         raise RuntimeError("stable_no_automatic_case_repeat")
+    value = research.verified(case)
     ready = json.loads((budget.EVIDENCE / f"{case}-preflight.json").read_bytes())
     urls = ready["urls"]
     hashes = {url: item["sha256"] for url, item in zip(urls, ready["inputs"], strict=True)}
@@ -41,8 +41,8 @@ async def test_stable_research_host(execution_db, monkeypatch, tmp_path):
         model = request.method == "POST" and str(request.url) in {
             "https://api.deepseek.com/chat/completions", "https://api.deepseek.com/v1/chat/completions"}
         public = (request.method == "GET" and request.url.scheme == "https"
-                  and request.headers.get("host") == "arxiv.org"
-                  and request.url.path in {httpx.URL(url).path for url in urls}
+                  and (request.headers.get("host"), request.url.path) in {
+                      (httpx.URL(url).host, httpx.URL(url).path) for url in urls}
                   and not request.url.query and "authorization" not in request.headers)
         if not model and not public:
             raise RuntimeError("stable_unapproved_network_request")
