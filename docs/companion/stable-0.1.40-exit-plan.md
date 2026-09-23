@@ -42,7 +42,7 @@ not merely hidden in release notes while advertised in the application.
 
 | Gate | Finite acceptance | Current status |
 | --- | --- | --- |
-| R — useful task outcomes | All original R1–R4/D1–D4/M1–M4 IDs have frozen inputs, actual outputs, reviewed conclusions, sources/artifacts and recovery evidence against their original acceptance. Keep failures and corrections; no best-of-N substitution or dropped cases. | Open: D2/D4 core criteria passed with caveats, M1/M3 passed. D1/D3 retain failed baselines with offline repairs; M2 output and R2 uncertainty attribution are not accepted. R4 saved output exists but has false absence claims and no final answer within its cap; harness/compaction qualification retained. Three stable cases remain unrun (R1/R3/M4). |
+| R — useful task outcomes | All original R1–R4/D1–D4/M1–M4 IDs have frozen inputs, actual outputs, reviewed conclusions, sources/artifacts and recovery evidence against their original acceptance. Keep failures and corrections; no best-of-N substitution or dropped cases. | Open: D2/D4 core criteria passed with caveats, M1/M3 passed. D1/D3 retain failed baselines with offline repairs; M2 output and R2 uncertainty attribution are not accepted. R3 overstates incompatibility and exposed repaired plaintext extraction loss. R4 has false absence claims and no final answer within its cap; harness/compaction qualification retained. Two stable cases remain unrun (R1/M4). |
 | N — actual native core flows | On the candidate: identity/channel; conversation and restart; mixed attachment retention; source opening; artifact opening; project memory correction/deletion; cancellation and explicit resume; backup/restore UI. Verify narrow-window usability and localized safety/errors in supported locales; recheck changed surfaces rather than all historical screens. | Partial prior evidence: beta.6 icon switching, rounded corners and five pages at two sizes were tested. That is not the complete core-flow acceptance. |
 | U — upgrade and recoverability | Isolated fixtures representing stable 0.1.38, beta.3 and beta.6; backup before upgrade, supported upgrade with record/content checks, restart, restore with matching key, wrong/missing key and interrupted restore fail-closed. Exercise installer replacement and updater manifest/signature handling without changing production Latest or real data. | Partial: all three historical-source profile rehearsals passed on 2026-09-24; packaged/UI upgrade and recovery evidence still must be bound to the candidate. |
 | S — safety and regression | No unresolved data-loss, unauthorized action, privacy/key exposure, startup failure or broken advertised core path. Full CI and scoped safety regressions pass; dependency findings receive platform/reachability disposition rather than 'all clear' by count. | Open until final source; reuse prior results only where changes cannot invalidate them. |
@@ -86,7 +86,7 @@ authorization. 'More Codex quota' is not assumed to authorize a new API bill.
 A new independent 36-request / US$5 configured-primary-model budget was explicitly
 approved in this task on 2026-09-23. It covers only isolated synthetic inputs and
 public materials; stop paid calls if pricing cannot be reliably bounded. This
-new batch has used 20/36 calls, $2.00 reserved as of the bilingual-research batch below. Preserve a distinct durable ledger and
+new batch has used 24/36 calls, $2.40 reserved as of the version-research batch below. Preserve a distinct durable ledger and
 never reset either ledger to obtain extra attempts.
 
 The old beta.5 publishing instructions are obsolete. The user authorized ongoing
@@ -814,3 +814,70 @@ three unrun (R1/R3/M4). No silent cap reset or paid repeat. Next bounded batch:
 correct the documented harness limitations for untouched cases, finish their
 baselines, then review additive repairs and cumulative accounting within the
 authorized ceiling. No beta/tag/push/Publish, installed-app or real-data change.
+
+## Research harness correction and actual R3 — 2026-09-24
+
+Executed source `532fd2aa2288e0ee4dea4a245dff3e5894177870`. Corrected the two
+documented harness limitations before starting untouched R3: successful pinned
+sources can be genuinely refetched within unchanged model/task budgets; failed
+URLs and changed bodies still cannot retry. Every refetch verifies actual bytes,
+not a fabricated cached-read receipt. Partial files/manifests are now archived
+before execution assertions, even when the final response fails. These changes
+do not reclassify or rerun the earlier R2/R4 baselines.
+
+Offline correction checks **11 passed, 3 paid opt-in skipped** (3.38 s): successful
+refetch, no retry after transport/HTTP/hash failures, no unlisted URL access,
+and partial-artifact retention on final-model failure. R3 received the original
+hypothetical old-advice prompt and two full pinned README URLs, plus commit/date
+metadata already in the frozen manifest (no expected migration answer). The
+additional prompt-metadata check **2 passed** (1.28 s); Ruff passed. Both actual
+preflight GETs matched archived hashes. Direct official pricing retrieval again
+confirmed the same-day peak rates after browser fetching timed out.
+
+Actual run **1 execution check passed** (22.19 s), requests 21–24 only. Both real
+source reads reached request 22 with their complete extractor outputs and receipts;
+the report was written, read back and reopened as an owned artifact. Final answer
+persisted. This is not a semantic pass: **R3 remains not accepted**.
+
+- It correctly contrasts LightningStore/span/tracer with Trainer, API Gateway and
+  Rollout Controller, keeps the advice hypothetical, and separates supplied commit
+  dates, retrieval time, article dates and unknown release date.
+- It nevertheless asserts that v0.x and v1.0 are not interoperable. Two READMEs
+  and a refactor notice do not prove compatibility **or** incompatibility. The
+  frozen criterion requires this to remain unknown pending targeted checks.
+- It accurately notices damaged installation text. Investigation confirmed a
+  production reader defect: raw `text/plain` README was parsed as HTML, so the
+  literal `<this-repo>` placeholder swallowed following installation commands.
+  `truncated=false` described the later character cap, not a lossless parser.
+
+## Plaintext README repair, without paid retry — 2026-09-24
+
+Four offline reproducer failures (three existing HTML cases passed) preceded the
+fix. `_fetch_text` now preserves bodies declared `text/plain` or `text/markdown`,
+including literal placeholders and code; HTML/unspecified content retains article
+extraction. No URL-extension trust shortcut, fetch-permission change or limit
+increase was introduced. Executor character caps, untrusted framing and matching
+source receipts remain in place.
+
+Post-repair reader/bounds/framing/pinning/SSRF/executor/inventory selection:
+**84 passed** (1.02 s), Ruff and whitespace checks passed. Committed repair source
+`4112a294fe23bf5d53c9018b32d1d01a22bfcdf2`; **8 plaintext checks passed** (0.05 s),
+including the actual archived current README. Its original raw text and installation
+commands now reach the real tool-feedback envelope unchanged. That evidence uses
+archived bytes, not another live fetch/model or native UI acceptance.
+`plaintext-readme-repair-v1.json` SHA-256
+`f7cecfcfabf565291b2f2cd6b10f4c34839fd944e3790b6f87c44f9b22380dd8`.
+
+Separate R3 review: `S2-R3-semantic-review-v1.json`. Original result SHA-256
+`d7d564098fc7c3a255569e999846d8a1ff916ac03c7b6be7b8d7c994a1b6a0bc`;
+saved report `788b688608f31bc127aaf6a38af1c67ea936b3033b70aefd115863c834a55ce1`.
+No baseline output was rewritten and no paid repair attempt was made. A future
+attempt must distinguish this repaired raw-text delivery from the older parser
+evidence; earlier untruncated-extraction checks do not certify losslessness.
+
+Ledger **24/36 requests, $2.40 reserved**, conservative peak-rate usage estimate
+**$0.0629238** (not invoice). Four core passes; six unaccepted (D1/D3/M2/R2/R3/R4);
+two unrun (R1/M4), still allocated 5 calls each. Remaining global slots are not
+permission to reset exhausted case caps. Next: complete those untouched baselines,
+then explicitly review repair inputs/accounting and remaining native/packaged gates.
+No beta, tag, push, Publish, installed-app or real-data changes.
