@@ -9,6 +9,8 @@ fn main() {
     // tests/server/test_tauri_command_acl_lockstep.py.
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[
+            "get_app_icon",
+            "set_app_icon",
             "update_status",
             "install_update",
             "open_external",

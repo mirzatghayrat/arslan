@@ -102,12 +102,12 @@ export default function OcrLanguagePicker({ value, onChange }: Props) {
        most people set it once. `<details>` rather than a popover on purpose —
        it is a long multi-select list, so it needs to push layout rather than
        float over it, and it stays keyboard- and screen-reader-native for free. */
-    <details className="space-y-2 group" data-testid="ocr-languages">
-      <summary className="flex items-center justify-between cursor-pointer list-none">
-        <span className="block text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide">
+    <details className="space-y-2 group md:col-span-2" data-testid="ocr-languages">
+      <summary className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 cursor-pointer list-none">
+        <span className="block text-xs font-sans font-medium text-muted-foreground">
           {t('settings.ocrLanguagesLabel')}
         </span>
-        <span className="text-[10px] font-mono text-subtle-foreground">
+        <span className="text-xs font-sans leading-relaxed text-muted-foreground">
           {/* The count is the whole point of collapsing: you can tell what is
               set without opening it. */}
           {selected.length

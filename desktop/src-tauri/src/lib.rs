@@ -15,6 +15,7 @@
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, Command, Stdio};
 
+mod app_icon;
 pub mod endpoint;
 mod listen;
 mod maintenance;
@@ -859,6 +860,7 @@ fn open_main_window(app: &tauri::AppHandle, port: u16) {
         .disable_drag_drop_handler()
         .on_page_load(|win, payload| {
             if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
+                app_icon::restore(win.app_handle());
                 reveal(win.app_handle());
             }
         });
@@ -954,6 +956,8 @@ pub fn run() {
         .manage(listen::Listener::default())
         .manage(voice::Conversation::default())
         .invoke_handler(tauri::generate_handler![
+            app_icon::get_app_icon,
+            app_icon::set_app_icon,
             update_status,
             install_update,
             open_external,
@@ -1001,6 +1005,7 @@ pub fn run() {
             //     inline would exist without ever painting a frame.
             //
             // Hence the boot work moves to its own thread below.
+            app_icon::restore(app.handle());
             let splash_since = std::time::Instant::now();
             let maintenance = begin_maintenance(app.handle(), maintenance::Operation::Startup)
                 .expect("startup owns initial maintenance slot");

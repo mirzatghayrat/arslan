@@ -42,6 +42,8 @@ button:disabled {
 /* Map semantic CSS vars to Tailwind utilities (bg-surface, text-foreground, ...). */
 /* Must live here (not in an @import'd file) for Tailwind v4 to pick up @theme inline. */
 @theme inline {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans", "Microsoft YaHei", sans-serif;
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   --color-background: var(--background);
   --color-surface: var(--surface);
   --color-surface-raised: var(--surface-raised);
@@ -69,12 +71,10 @@ button:disabled {
   transition: background-color 0.18s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* Soften the Arslan mark in DARK MODE ONLY — scoped to the app's `.dark` class
-   (the theme's dark selector), NOT Tailwind's default `dark:` which keys off the
-   OS prefers-color-scheme media query. Light mode keeps the mark at full brightness. */
-.dark .arslan-mark {
-  filter: brightness(0.78);
-}
+/* Brand materials carry their own contrast. Only flat white silhouettes need
+   inversion on light surfaces; never dim the approved frosted colors. */
+.arslan-brand--monochrome { filter: invert(1); }
+.dark .arslan-brand--monochrome { filter: none; }
 
 /* ─── RunReplay panel ─────────────────────────────────────────────────────── */
 

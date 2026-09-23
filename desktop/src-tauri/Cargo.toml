@@ -17,7 +17,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 # macos-private-api pairs with macOSPrivateApi in tauri.conf.json — tauri-build
 # refuses to compile when the two disagree, which is how this line got here.
-tauri = { version = "2", features = ["macos-private-api"] }
+tauri = { version = "2", features = ["macos-private-api", "image-png"] }
 # generate_context! expands to code that names serde_json in the crate root, so
 # it must be a direct dependency even though none of our own code uses it.
 serde = { version = "1", features = ["derive"] }
@@ -36,3 +36,8 @@ opt-level = "s"
 lto = true
 codegen-units = 1
 strip = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSImage"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSData"] }

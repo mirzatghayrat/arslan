@@ -1,3 +1,4 @@
+import BrandMark from './BrandMark';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { ImagePayload } from "../lib/imagePayload";
 import {
@@ -536,15 +537,15 @@ export default function OrchestratorChat({
           {/* Scrollable Chat Area */}
           <div ref={scrollContainerRef} onScroll={handleScrollContainerScroll} className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
         {chatHistory.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center max-w-2xl mx-auto py-10 px-4 space-y-8 select-none">
-            {/* Greeting Header inspired by Claude's elegant style */}
+          <div className="min-h-full flex flex-col items-center justify-center text-center max-w-2xl mx-auto py-10 px-4 space-y-8 select-none">
+            {/* Shared product typography; wraps safely with long display names. */}
             <div className="space-y-3 animate-fade-in">
               <div className="flex items-center justify-center gap-3">
                 {/* Arslan mark */}
-                <img src="/arslan-mark.png" alt="Arslan" className="w-11 h-11 object-contain select-none arslan-mark" draggable={false} />
+                <BrandMark alt="Arslan" className="w-11 h-11 object-contain select-none" draggable={false} />
 
-                {/* Elegant serif-style greeting */}
-                <h1 className="text-3xl sm:text-4.5xl font-serif text-primary tracking-tight font-medium leading-none">
+                { /* Greeting */ }
+                <h1 className="min-w-0 break-words text-2xl sm:text-3xl font-sans text-foreground tracking-tight font-medium leading-tight">
                   {(() => {
                     const hr = new Date().getHours();
                     const period = hr < 12 ? 'morning' : hr < 18 ? 'afternoon' : 'evening';
@@ -700,7 +701,7 @@ export default function OrchestratorChat({
               const co = msg.clarifyOptions;
               return (
                 <div key={msg.id} className="flex gap-3 items-start py-2">
-                  <img src="/arslan-mark.png" alt="Arslan" className="w-7 h-7 object-contain select-none shrink-0 arslan-mark mt-0.5" draggable={false} />
+                  <BrandMark alt="Arslan" className="w-7 h-7 object-contain select-none shrink-0 mt-0.5" draggable={false} />
                   <ClarifyOptionsCard
                     question={co.question}
                     options={co.options}
@@ -748,7 +749,7 @@ export default function OrchestratorChat({
                 return (
                   <div key={msg.id} className="text-[12px] space-y-2">
                     <div className="flex items-center gap-2 select-none text-[11px]">
-                      <img src="/arslan-mark.png" alt="Arslan" className="w-5 h-5 object-contain select-none arslan-mark" draggable={false} />
+                      <BrandMark alt="Arslan" className="w-5 h-5 object-contain select-none" draggable={false} />
                       <span className="font-bold text-foreground">{msg.senderName}</span>
                       <span className="text-[9px] bg-surface-raised text-primary px-2 py-0.5 rounded font-mono uppercase">
                         {t('nav.arslan')}
@@ -769,7 +770,7 @@ export default function OrchestratorChat({
                 <div key={msg.id} className="flex gap-4">
                   <div className="flex flex-col items-center select-none">
                     <div className="relative">
-                      <img src="/arslan-mark.png" alt="Arslan" className="w-9 h-9 object-contain select-none arslan-mark" draggable={false} />
+                      <BrandMark alt="Arslan" className="w-9 h-9 object-contain select-none" draggable={false} />
                       <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-background bg-success" />
                     </div>
                   </div>
@@ -804,7 +805,7 @@ export default function OrchestratorChat({
                     <div className="flex flex-col items-center select-none">
                       <div className="relative">
                         {isArslan ? (
-                          <img src="/arslan-mark.png" alt="Arslan" className="w-9 h-9 object-contain select-none arslan-mark" draggable={false} />
+                          <BrandMark alt="Arslan" className="w-9 h-9 object-contain select-none" draggable={false} />
                         ) : (
                           <SpawnAvatar seed={msg.senderName} size={36} />
                         )}
@@ -1249,7 +1250,7 @@ export default function OrchestratorChat({
                   {/* Sender Metadata Row */}
                   <div className="flex items-center gap-2 select-none text-[11px]">
                     {isArslan
-                      ? <img src="/arslan-mark.png" alt="Arslan" className="w-5 h-5 object-contain select-none arslan-mark" draggable={false} />
+                      ? <BrandMark alt="Arslan" className="w-5 h-5 object-contain select-none" draggable={false} />
                       : isUser
                       ? <span className="text-subtle-foreground flex items-center justify-center"><SFSymbol nameOrEmoji={msg.senderAvatar} className="w-3.5 h-3.5" /></span>
                       : <SpawnAvatar seed={msg.senderName} size={18} />}
@@ -1418,7 +1419,7 @@ export default function OrchestratorChat({
         {/* LLM error banner: shown when the backend emits an error frame (e.g. LLM timeout, auth failure) */}
         {llmError && (
           <div className="flex gap-3 items-start py-2 select-none">
-            <img src="/arslan-mark.png" alt="Arslan" className="w-7 h-7 object-contain select-none shrink-0 arslan-mark mt-0.5" draggable={false} />
+            <BrandMark alt="Arslan" className="w-7 h-7 object-contain select-none shrink-0 mt-0.5" draggable={false} />
             <div className="flex items-start gap-2 px-3 py-2.5 bg-danger/10 border border-danger/30 rounded-2xl rounded-tl-none max-w-2xl">
               <AlertTriangle className="w-3.5 h-3.5 text-danger shrink-0 mt-0.5" />
               <div className="flex flex-col gap-1 min-w-0">
@@ -1442,7 +1443,7 @@ export default function OrchestratorChat({
             it, so the dots show through the blank gap. */}
         {(thinking || liveStreaming) && (
           <div className="flex gap-3 items-start py-2 select-none">
-            <img src="/arslan-mark.png" alt="Arslan" className="w-7 h-7 object-contain select-none shrink-0 arslan-mark" draggable={false} />
+            <BrandMark alt="Arslan" className="w-7 h-7 object-contain select-none shrink-0" draggable={false} />
             {/* LiveActivity carries its own motion (✳ pulse + per-step spinner) — the old
                 bouncing-dots trio beside it was redundant noise (user-flagged). */}
             <div className="px-3 py-2 bg-surface/80 border border-border-strong rounded-2xl rounded-tl-none">

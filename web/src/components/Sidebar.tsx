@@ -1,3 +1,4 @@
+import BrandMark from './BrandMark';
 import React, { useState } from "react";
 import type { Section } from "../lib/sections";
 import { MessageSquare, Settings2, Plus, ChevronDown, ChevronUp, Boxes, Network, Archive, FolderOpen, Plug, Activity } from "lucide-react";
@@ -81,8 +82,8 @@ export default function Sidebar(props: SidebarProps) {
   return <aside className="relative z-40 flex h-full w-56 shrink-0 select-none flex-col border-r border-border bg-sidebar/95 lg:w-64">
     <div data-testid="window-chrome-strip" data-tauri-drag-region="deep" className="h-[41px] shrink-0" />
     <div data-tauri-drag-region="deep" className="flex shrink-0 items-center gap-3 px-5 pb-5">
-      <img src="/arslan-mark.png" alt="Arslan" className="arslan-mark h-9 w-9 object-contain" draggable={false} />
-      <div><h1 className="text-sm font-semibold">Arslan</h1><p className="mt-0.5 text-[9px] text-subtle-foreground">{t("sidebar.brand_subtitle")}</p></div>
+      <BrandMark alt="Arslan" className="h-9 w-9 object-contain" draggable={false} />
+      <div><h1 className="text-sm font-semibold">Arslan</h1><p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{t("sidebar.brand_subtitle")}</p></div>
     </div>
     <div className="flex min-h-0 flex-1 flex-col px-2">
       <button id="btn-add-arslan-thread-primary" onClick={onAddThread} className={navClass(false)}>

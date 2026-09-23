@@ -112,23 +112,23 @@ export default function SpawnsDashboard({
                   <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-primary/5 to-transparent blur-xl pointer-events-none group-hover:opacity-100 opacity-60 transition-opacity"></div>
 
                   {/* Title Info Row */}
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center gap-3.5">
+                  <div className="flex flex-wrap items-start justify-between gap-2 mb-4">
+                    <div className="flex min-w-0 flex-1 items-center gap-3.5">
                       <SpawnAvatar seed={spawn.name} size={48} />
-                      <div>
+                      <div className="min-w-0">
                         <div className="flex items-center gap-1.5">
-                          <h3 className="text-xs font-bold text-foreground font-sans tracking-wide group-hover:text-primary transition-colors">
+                          <h3 className="text-xs break-words font-bold text-foreground font-sans tracking-wide group-hover:text-primary transition-colors">
                             {spawn.name}
                           </h3>
                         </div>
-                        <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-wider mt-0.5">
+                        <p className="text-[10px] break-words text-muted-foreground font-mono uppercase tracking-wider mt-0.5">
                           {spawn.domain}
                         </p>
                       </div>
                     </div>
 
                     {/* Status Badge */}
-                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold tracking-wider uppercase font-mono ${
+                    <span className={`inline-flex shrink-0 whitespace-nowrap items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase font-mono ${
                       spawn.status === 'working'
                         ? 'bg-success/20 text-success animate-pulse'
                         : spawn.status === 'escalated'

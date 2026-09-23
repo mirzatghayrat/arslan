@@ -480,6 +480,13 @@
     "sensitive": "Sensible"
   },
   "settings": {
+    "appIcon": "Icono de la aplicación",
+    "appIcon_frosted": "Ámbar esmerilado",
+    "appIcon_monochrome": "Blanco y negro",
+    "appIconDesktopHint": "Actualiza el icono del Dock y los avatares. Finder conserva el icono predeterminado.",
+    "appIconBrowserHint": "Actualiza los avatares y el icono de la pestaña del navegador.",
+    "appIconError": "No se pudo actualizar el icono. Se conserva la selección anterior; inténtalo de nuevo.",
+
     "backToWorkspace": "Volver al espacio de trabajo",
     "defaultModel": "Modelo predeterminado",
     "modelsPrivateHint": "Selecciona un modelo para editarlo. Las claves guardadas permanecen ocultas.",
@@ -614,7 +621,7 @@
     "testConnection": "Probar conexión",
     "reachableNoListNote": "Conectado, pero no se devolvió la lista de modelos: no significa que no funcione; el chat podría funcionar.",
     "sectionSearch": "Búsqueda",
-    "sectionAppearance": "Paleta de temas",
+    "sectionAppearance": "Apariencia e idioma",
     "sectionLlmConfig": "Configuración LLM",
     "labelOrchestratorShell": "Comandos de Arslan",
     "orchestratorShellDesc": "Permite a Arslan ejecutar comandos autorizados. Solo Arslan, con confirmación según el riesgo; desactivado por defecto.",

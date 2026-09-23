@@ -18,6 +18,7 @@ import { Palette } from 'lucide-react';
 import Select from '../Select';
 import { AppearanceSettings } from '../AppearanceSettings';
 import { LANGUAGE_OPTIONS, normalizeLanguage } from '../../lib/languages';
+import IconPicker from './IconPicker';
 import OcrLanguagePicker from './OcrLanguagePicker';
 import { useProfileStore } from '../../stores/profileStore';
 
@@ -42,10 +43,10 @@ export default function AppearanceSection({ language, onLanguageChange, ocrLangu
   const setDisplayName = useProfileStore((s) => s.setDisplayName);
 
   return (
-    <div className="bg-surface/60 border border-border rounded-2xl p-6 space-y-6">
+    <div className="bg-surface/60 border border-border rounded-2xl p-4 sm:p-6 space-y-6">
       <div className="flex items-center gap-2 pb-4 border-b border-border/50 select-none">
         <Palette className="w-4.5 h-4.5 text-primary" />
-        <h3 className="text-xs font-semibold font-mono uppercase tracking-widest text-foreground leading-none">{t('settings.sectionAppearance')}</h3>
+        <h3 className="text-xs font-semibold font-sans text-foreground leading-snug">{t('settings.sectionAppearance')}</h3>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -53,7 +54,7 @@ export default function AppearanceSection({ language, onLanguageChange, ocrLangu
         <div className="space-y-2">
           <label
             htmlFor="settings-display-name"
-            className="block text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide"
+            className="block text-[10.5px] font-sans font-medium text-muted-foreground"
           >
             {t('settings.labelDisplayName')}
           </label>
@@ -65,7 +66,7 @@ export default function AppearanceSection({ language, onLanguageChange, ocrLangu
             className="w-full bg-surface border border-border-strong focus:border-primary focus:ring-1 focus:ring-ring rounded-xl px-4 py-3 text-xs text-foreground placeholder-subtle-foreground focus:outline-none transition-all font-sans"
             placeholder={t('settings.displayNamePlaceholder')}
           />
-          <p className="text-[10px] text-subtle-foreground font-sans leading-relaxed">
+          <p className="text-xs text-muted-foreground font-sans leading-relaxed">
             {t('settings.displayNameHint')}
           </p>
         </div>
@@ -74,7 +75,7 @@ export default function AppearanceSection({ language, onLanguageChange, ocrLangu
         <div className="space-y-2">
           <label
             htmlFor="settings-language"
-            className="block text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide"
+            className="block text-[10.5px] font-sans font-medium text-muted-foreground"
           >
             {t('settings.labelLanguage')}
           </label>
@@ -85,7 +86,7 @@ export default function AppearanceSection({ language, onLanguageChange, ocrLangu
             options={LANGUAGE_OPTIONS.map((o) => ({ value: o.code, label: o.label }))}
             ariaLabel={t('settings.labelLanguage')}
           />
-          <p className="text-[10px] text-subtle-foreground font-sans leading-relaxed">
+          <p className="text-xs text-muted-foreground font-sans leading-relaxed">
             {t('settings.language_i18n_note')}
           </p>
         </div>
@@ -101,6 +102,7 @@ export default function AppearanceSection({ language, onLanguageChange, ocrLangu
         {/* Appearance — palette picker + mode toggle */}
         <div className="md:col-span-2">
           <AppearanceSettings />
+          <div className="mt-6"><IconPicker /></div>
         </div>
       </div>
     </div>

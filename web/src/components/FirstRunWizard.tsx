@@ -395,7 +395,7 @@ export default function FirstRunWizard({ llmProviders, onAdded, onClose, onLangu
 
           {step === STEP_HELLO && (
             <>
-              <h2 className="fr-h1 font-serif">{t("firstRun.title")}</h2>
+              <h2 className="fr-h1 font-sans">{t("firstRun.title")}</h2>
               <p className="fr-sub">{t("firstRun.welcomeBody")}</p>
               <label htmlFor="first-run-name" className="fr-label">
                 {t("firstRun.namePrompt")}

@@ -1,3 +1,4 @@
+import BrandMark from '../BrandMark';
 import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import AppIdentityCard from './AppIdentityCard';
@@ -101,10 +102,10 @@ export default function SettingsShell({
   };
 
   return (
-    <div className="flex flex-col md:flex-row flex-1">
+    <div className="flex min-w-0 flex-col md:flex-row flex-1">
       <aside data-testid="settings-sidebar" className="w-full md:w-52 lg:w-60 xl:w-64 md:shrink-0 bg-sidebar/60 border-b md:border-b-0 md:border-r border-border p-5 flex flex-col">
         <div className="flex items-center gap-3 mb-7 mt-2" data-tauri-drag-region="deep">
-          <img src="/arslan-mark.png" alt="" className="w-9 h-9 object-contain arslan-mark" draggable={false} />
+          <BrandMark alt="" className="w-9 h-9 object-contain" draggable={false} />
           <span className="text-xl font-semibold">Arslan</span>
         </div>
         <AppIdentityCard />
@@ -149,7 +150,7 @@ export default function SettingsShell({
         </button>}
       </aside>
 
-      <div data-testid="settings-content" className="w-full flex-1 min-w-0 space-y-6 p-6 lg:p-8 xl:px-10">
+      <div data-testid="settings-content" className="w-full flex-1 min-w-0 space-y-6 p-4 sm:p-6 lg:p-8 xl:px-10">
         {children[activeSection]}
       </div>
     </div>

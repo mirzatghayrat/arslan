@@ -6,6 +6,8 @@ import {bootstrapInjectedToken} from './lib/injectedToken';
 import {dismissBootVeil} from './lib/bootVeil';
 import './index.css';
 import './i18n';
+import { useIconStore } from './stores/iconStore';
+void useIconStore.getState().initialize();
 
 // Hydrate a packaged/desktop build's injected bearer token (window.__ARSLAN_TOKEN__)
 // into the auth store before first render. No-op in dev (global absent).

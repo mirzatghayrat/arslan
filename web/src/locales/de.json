@@ -480,6 +480,13 @@
     "sensitive": "Sensibel"
   },
   "settings": {
+    "appIcon": "App-Symbol",
+    "appIcon_frosted": "Mattes Bernstein",
+    "appIcon_monochrome": "Schwarzweiß",
+    "appIconDesktopHint": "Ändert das Dock-Symbol und die Avatare in der App. Finder behält das Standardsymbol.",
+    "appIconBrowserHint": "Ändert die Avatare in der App und das Browser-Tab-Symbol.",
+    "appIconError": "Das Symbol konnte nicht geändert werden. Die bisherige Auswahl bleibt erhalten. Bitte erneut versuchen.",
+
     "backToWorkspace": "Zurück zum Arbeitsbereich",
     "defaultModel": "Standardmodell",
     "modelsPrivateHint": "Modell zum Bearbeiten auswählen. Gespeicherte Schlüssel bleiben verborgen.",
@@ -614,7 +621,7 @@
     "testConnection": "Verbindung testen",
     "reachableNoListNote": "Verbunden, aber keine Modellliste erhalten — das bedeutet nicht, dass es unbrauchbar ist; der Chat funktioniert möglicherweise.",
     "sectionSearch": "Suche",
-    "sectionAppearance": "Farbpalette",
+    "sectionAppearance": "Darstellung & Sprache",
     "sectionLlmConfig": "LLM-Konfiguration",
     "labelOrchestratorShell": "Arslan-Befehlsausführung",
     "orchestratorShellDesc": "Arslan darf freigegebene Befehle ausführen. Nur Arslan, mit risikobasierter Bestätigung; standardmäßig aus.",

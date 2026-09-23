@@ -414,6 +414,13 @@
     "sensitive": "Sensitive"
   },
   "settings": {
+    "appIcon": "App icon",
+    "appIcon_frosted": "Frosted amber",
+    "appIcon_monochrome": "Black & white",
+    "appIconDesktopHint": "Updates the Dock icon and in-app avatars. Finder keeps the default icon.",
+    "appIconBrowserHint": "Updates in-app avatars and the browser tab icon.",
+    "appIconError": "Could not update the icon. Your previous choice is kept; please try again.",
+
     "backToWorkspace": "Back to workspace",
     "defaultModel": "Default model",
     "modelsPrivateHint": "Select a model to edit. Saved keys stay hidden.",
@@ -548,7 +555,7 @@
     "testConnection": "Test connection",
     "reachableNoListNote": "Connected, but no model list was returned — this doesn't mean it's unusable; chat may still work.",
     "sectionSearch": "Search",
-    "sectionAppearance": "Theme Palette",
+    "sectionAppearance": "Appearance & Language",
     "sectionLlmConfig": "LLM Configuration",
     "labelOrchestratorShell": "Orchestrator shell",
     "orchestratorShellDesc": "Let Arslan run whitelisted shell commands. Only Arslan · every command confirmed by risk · off by default.",

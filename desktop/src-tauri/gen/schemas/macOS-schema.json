@@ -177,6 +177,12 @@
       "description": "Permission identifier",
       "oneOf": [
         {
+          "description": "Enables the get_app_icon command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-app-icon",
+          "markdownDescription": "Enables the get_app_icon command without any pre-configured scope."
+        },
+        {
           "description": "Enables the install_update command without any pre-configured scope.",
           "type": "string",
           "const": "allow-install-update",
@@ -187,6 +193,12 @@
           "type": "string",
           "const": "allow-open-external",
           "markdownDescription": "Enables the open_external command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the set_app_icon command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-app-icon",
+          "markdownDescription": "Enables the set_app_icon command without any pre-configured scope."
         },
         {
           "description": "Enables the update_status command without any pre-configured scope.",
@@ -231,6 +243,12 @@
           "markdownDescription": "Enables the voice_unmute command without any pre-configured scope."
         },
         {
+          "description": "Denies the get_app_icon command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-app-icon",
+          "markdownDescription": "Denies the get_app_icon command without any pre-configured scope."
+        },
+        {
           "description": "Denies the install_update command without any pre-configured scope.",
           "type": "string",
           "const": "deny-install-update",
@@ -241,6 +259,12 @@
           "type": "string",
           "const": "deny-open-external",
           "markdownDescription": "Denies the open_external command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_app_icon command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-app-icon",
+          "markdownDescription": "Denies the set_app_icon command without any pre-configured scope."
         },
         {
           "description": "Denies the update_status command without any pre-configured scope.",

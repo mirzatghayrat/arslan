@@ -927,7 +927,7 @@ export default function App() {
               everywhere rather than only in chat. "deep" covers the labels
               inside; Tauri's drag script skips real controls on its own. */}
           <div data-tauri-drag-region="deep" data-testid="workspace-bar"
-            className="h-14 border-b border-border px-6 flex items-center justify-between bg-background/40 backdrop-blur-md z-30">
+            className="h-14 shrink-0 gap-3 border-b border-border px-4 lg:px-6 flex items-center justify-between bg-background/40 backdrop-blur-md z-30">
             {activeSection === 'settings' && <span className="absolute left-1/2 -translate-x-1/2 text-sm text-muted-foreground pointer-events-none">Arslan</span>}
             {/* The label is a CONVERSATION thing, so it appears only there.
                 The BAR itself stays on every section, and that is not tidiness:
@@ -942,7 +942,7 @@ export default function App() {
                   {/* The dot IS the "active session workspace" label — it was
                       three words of chrome saying what a green dot already says. */}
                   <span className="w-2 h-2 rounded-full bg-success shrink-0"></span>
-                  <span className="text-[11px] font-mono text-foreground font-bold truncate">
+                  <span className="text-xs font-sans text-foreground font-medium truncate">
                     {activeSection === 'arslan'
                       ? threadDisplayTitle(activeThread, t)
                       : (activeSpawn?.name || t('ui.directChat'))}
@@ -957,13 +957,13 @@ export default function App() {
                    So the strip stops being EMPTY instead: each section's own
                    title moves up into it, which is what made the space read as
                    dead in the first place. */
-                <span className={`text-[11px] font-mono text-foreground font-bold truncate ${activeSection === 'settings' ? 'invisible' : ''}`}>
+                <span className={`text-xs font-sans text-foreground font-medium truncate ${activeSection === 'settings' ? 'invisible' : ''}`}>
                   {t(`nav.${activeSection === 'ledger' ? 'capabilities' : activeSection}`)}
                 </span>
               )}
             </div>
 
-            <div className={`flex items-center gap-3 ${activeSection === 'settings' ? 'hidden' : ''}`}>
+            <div className={`flex shrink-0 items-center gap-3 ${activeSection === 'settings' ? 'hidden' : ''}`}>
 
 
               {/* Toggle Diagnostic Rail button — only where the rail can appear */}

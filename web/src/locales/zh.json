@@ -414,6 +414,13 @@
     "sensitive": "敏感"
   },
   "settings": {
+    "appIcon": "应用图标",
+    "appIcon_frosted": "暖橙磨砂",
+    "appIcon_monochrome": "纯粹黑白",
+    "appIconDesktopHint": "同步更新 Dock 图标与应用内头像。访达保留默认图标。",
+    "appIconBrowserHint": "同步更新应用内头像和浏览器标签页图标。",
+    "appIconError": "图标更新失败，已保留原来的选择，请重试。",
+
     "backToWorkspace": "返回工作台",
     "defaultModel": "默认模型",
     "modelsPrivateHint": "点击模型进行编辑，密钥始终隐藏。",
@@ -548,7 +555,7 @@
     "testConnection": "测试连接",
     "reachableNoListNote": "已连接但未提供模型列表——不代表不可用，聊天可能正常",
     "sectionSearch": "搜索",
-    "sectionAppearance": "主题配色",
+    "sectionAppearance": "外观与语言",
     "sectionLlmConfig": "LLM 配置",
     "labelOrchestratorShell": "编排器命令行",
     "orchestratorShellDesc": "允许 Arslan 运行白名单内的命令行。仅 Arslan · 每条命令按风险确认 · 默认关。",
