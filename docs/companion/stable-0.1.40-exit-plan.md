@@ -1025,3 +1025,38 @@ versus harness limits, repair source-grounding/protocol-delivery gaps offline, a
 freeze an additive retest/accounting plan before any further paid call. Native,
 upgrade/package and integration gates remain open; none can be inferred from this
 process check. No beta, tag, push, main merge or Publish.
+
+## Bounded native-call correction — 2026-09-24, no paid calls
+
+Starting source `457abd40`. The malformed-output detector stopped protocol
+leakage, but an offline reproducer showed a remaining delivery problem: even
+with native tools and request budget available, any textual tool request went
+straight to tool-free salvage. It could explain a failure but could not perform
+the requested save. Four new tests failed before correction (six existing
+protocol/ordinary-text checks passed), including both valid and malformed text
+and granted/declined write confirmation.
+
+Correction source `0615c644967f3a9c3962aea1eae6d645f3dd9208` retains the native loop
+for a bounded retry of *model output format*,
+not an automatic execution of textual JSON. The rejected object is omitted from
+the prompt instead of being echoed as an invocation example. A subsequent actual
+native call must still resolve the tool, pass argument checks and receive the
+existing permission confirmation. The same progress/no-progress and task budgets
+apply; no model/provider or authority is changed. Forced/no-tool paths retain the
+existing honest tool-free fallback.
+
+Verification: initial focused group **25 passed** (12.71 s); expanded final group
+**38 passed** (19.27 s), Ruff/whitespace checks passed. The groups overlap. Includes
+an exact research-host runner with scripted provider replies that corrects a
+malformed call and then really writes, reads back and reopens an owned artifact
+in an isolated fixture; denial prevents execution; a two-request budget cannot
+be extended by repeated malformed output. Existing native, fresh-batch and Gemini
+roundtrip checks remain green. No paid model was called; fixture ledgers do not
+alter the canonical 31/36 ledger.
+
+Repair planning is consolidated in `stable-0.1.40-repair-plan.md`, separating
+product defects from harness limits and preserving all original acceptance IDs.
+The next bounded batch is generic source-grounding/brevity repair and runner
+readiness; a new paid repair sweep requires an explicit accounting/authorization
+decision before execution. No baseline has been relabelled passed, no native or
+packaged acceptance is inferred, and no beta/tag/push/Publish occurred.
