@@ -42,7 +42,7 @@ not merely hidden in release notes while advertised in the application.
 
 | Gate | Finite acceptance | Current status |
 | --- | --- | --- |
-| R — useful task outcomes | All original R1–R4/D1–D4/M1–M4 IDs have frozen inputs, actual outputs, reviewed conclusions, sources/artifacts and recovery evidence against their original acceptance. Keep failures and corrections; no best-of-N substitution or dropped cases. | Open: D2/D4 core criteria passed with caveats, M1/M3 passed. D1/D3 retain failed baselines with offline repairs; M2 output and R2 uncertainty attribution are not accepted. R3 overstates incompatibility and exposed repaired plaintext extraction loss. R4 has false absence claims and no final answer within its cap; harness/compaction qualification retained. Two stable cases remain unrun (R1/M4). |
+| R — useful task outcomes | All original R1–R4/D1–D4/M1–M4 IDs have frozen inputs, actual outputs, reviewed conclusions, sources/artifacts and recovery evidence against their original acceptance. Keep failures and corrections; no best-of-N substitution or dropped cases. | Open: all twelve baselines attempted. D2/D4 core criteria passed with caveats, M1/M3 passed. D1/D3 retain failed baselines with offline repairs; M2 and R1–R4 retain factual-scope/delivery failures. M4 proves saved-output/process recovery and no repeated write, but its resumed final answer was blocked by the unchanged five-call harness cap. Eight cases are not fully accepted; no unrun baseline remains. |
 | N — actual native core flows | On the candidate: identity/channel; conversation and restart; mixed attachment retention; source opening; artifact opening; project memory correction/deletion; cancellation and explicit resume; backup/restore UI. Verify narrow-window usability and localized safety/errors in supported locales; recheck changed surfaces rather than all historical screens. | Partial prior evidence: beta.6 icon switching, rounded corners and five pages at two sizes were tested. That is not the complete core-flow acceptance. |
 | U — upgrade and recoverability | Isolated fixtures representing stable 0.1.38, beta.3 and beta.6; backup before upgrade, supported upgrade with record/content checks, restart, restore with matching key, wrong/missing key and interrupted restore fail-closed. Exercise installer replacement and updater manifest/signature handling without changing production Latest or real data. | Partial: all three historical-source profile rehearsals passed on 2026-09-24; packaged/UI upgrade and recovery evidence still must be bound to the candidate. |
 | S — safety and regression | No unresolved data-loss, unauthorized action, privacy/key exposure, startup failure or broken advertised core path. Full CI and scoped safety regressions pass; dependency findings receive platform/reachability disposition rather than 'all clear' by count. | Open until final source; reuse prior results only where changes cannot invalidate them. |
@@ -86,7 +86,7 @@ authorization. 'More Codex quota' is not assumed to authorize a new API bill.
 A new independent 36-request / US$5 configured-primary-model budget was explicitly
 approved in this task on 2026-09-23. It covers only isolated synthetic inputs and
 public materials; stop paid calls if pricing cannot be reliably bounded. This
-new batch has used 24/36 calls, $2.40 reserved as of the version-research batch below. Preserve a distinct durable ledger and
+new batch has used 31/36 calls, $3.10 reserved as of the M4 process batch below. Preserve a distinct durable ledger and
 never reset either ledger to obtain extra attempts.
 
 The old beta.5 publishing instructions are obsolete. The user authorized ongoing
@@ -960,3 +960,68 @@ the separate deterministic uncertain-write evidence. Then review additive repair
 attempts, remaining allowance, and native/packaged acceptance. R/N/U/S/P remain
 open. No release candidate, tag, push, beta, Publish, installed-app or real-data
 change was made.
+
+## Actual M4 host, process interruption and explicit resume — 2026-09-24
+
+Runner/source `ce63da570feacfc1e9bf929de7745fecc189c970`; unchanged five-call M4
+allocation and original 36/$5 ledger. An additive preflight freezes the original
+synthetic Cedar/Mira/Monday facts, an explicit three-line `brief.md` write/read
+deliverable, source/revision citation and no-rewrite-on-resume requirement. No
+expected answer is supplied beyond the source itself. Only read/write of this
+isolated path and owned `task_progress` are exposed. Resume grants no new writes;
+the production completed-action journal also remains active.
+
+The exact runner was first checked with two real child interpreters and a
+network-denying audit hook. Initial smoke failed because the fake adapter bypassed
+production request accounting; this was a harness omission, not lost accounting
+in production. Moving the double to HTTP transport retained the real provider,
+adapter and task checkpoint chain: **1 passed** (4.02 s). Scripted usage moved
+3→5 across processes, implicit and repeated resume were refused, and file/owned
+artifact remained unchanged. Ruff and whitespace checks passed. This smoke is
+not another live/model-quality result.
+
+The authorized actual run used requests **27–31** only, official same-day peak
+pricing rechecked before execution. The initial process (PID 27044) used four
+requests: inspect progress/missing file, write, read back, final answer. It saved
+a 174-byte, three-line brief with correct facts and source, preserved an owned
+artifact, checkpointed the actual host state, and exited **73** via `os._exit`.
+This is actual interpreter loss, not merely a caught exception or native-app test.
+
+The second process (PID 27130) initialized isolated storage and recovered exactly
+one task into `waiting_user/process_interrupted`. It made no model calls before
+explicit resume; attempt count stayed one and the saved budget was identical.
+Implicit `repo.start` was refused. Explicit `task_service.resume_turn` created
+attempt two with the same budget ID. Request 31 inspected `task_progress` and
+reopened `brief.md`; both succeeded, with no new write or changed bytes/inode/mtime.
+The original artifact independently reopened with an identical hash. Product
+request accounting moved **4→5**, with prior tokens/tools/artifact usage retained.
+
+**M4 is not fully accepted:** there was no resumed final answer. A sixth model
+request was refused **before reservation/HTTP** by the frozen five-call harness
+ceiling, producing `LLM_ERROR/stable_budget_exhausted` and final
+`failed/execution_failed`. No request 32 was made and no automatic retry occurred.
+The subprocess ended 1 at the final-state assertion, after preserving its result.
+This is a bounded-evaluation completion failure, not evidence of data loss,
+duplicate writes, reset accounting, or inability of production to resume under
+its different task budget. Do not silently widen the case after observing it.
+
+Evidence: canonical `M4-process-v1/` contains before-crash, recovered-no-resume
+and after-resume records, with source/runner hashes and distinct process IDs.
+`S2-M4-semantic-review-v1.json` preserves this qualification. Artifact hash:
+`7c62a9e35891d7cf50e08717837e956c22498b6a25f96681d1428bdfa4c8ba76`.
+After-resume record:
+`133f21892e13758368b8f24e8aeb69ec252bf3eb63212b8c2f38ed7165d748da`.
+The synthetic profile and files remain isolated beside the evidence; no real chat,
+installed application, user profile migration or external account was touched.
+Existing deterministic uncertain-write evidence is complementary, not live M4.
+
+All twelve baselines have now been attempted: **four core passes, eight not fully
+accepted**, with original failures retained. Ledger **31/36, $3.10 reserved**;
+conservative peak-rate usage estimate **$0.0805866**, not invoice. All calls are
+accounted; HALT absent. Original pilot's 32 calls remain separate. The five global
+slots remaining are not a reset of exhausted per-case caps or authorization for
+unregistered retries. Next finite batch: consolidate demonstrated product blockers
+versus harness limits, repair source-grounding/protocol-delivery gaps offline, and
+freeze an additive retest/accounting plan before any further paid call. Native,
+upgrade/package and integration gates remain open; none can be inferred from this
+process check. No beta, tag, push, main merge or Publish.
