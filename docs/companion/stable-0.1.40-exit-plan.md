@@ -266,3 +266,31 @@ Next bounded work: freeze remaining R inputs/checkers and the independent cost
 ledger; complete the outstanding task-outcome and native core-flow evidence,
 then freeze/integrate the release candidate for exact-source CI and packaging.
 Do not cut a beta just for this layout batch or add Jev before stable acceptance.
+
+## Stable live-input contract and budget checkpoint — 2026-09-24
+
+Starting source `7edc50e2`. New `evals/companion/stable-0140-acceptance.json`
+retains all twelve original IDs, pins prior input/generator/runner file hashes,
+and fixes per-case criteria and request ceilings summing to 36. This is a new
+authorization, not replacement of the old live pilot. R2 public inputs remain
+blocked; R1/R3/R4 require complete pinned-body acquisition/read evidence, not
+the prior excerpts. No case has been promoted to passed by this checkpoint.
+
+The separate canonical ledger is beside this worktree at
+`stable-0140-live-evidence-20260924/budget.jsonl`. Initialization is exclusive;
+reservations are locked, append-only, flushed and never refunded. The offline
+helper rejects missing/damaged ledgers, changed contracts or input hashes,
+unknown/stale/unbounded pricing, missing opt-in and per-case/global overruns.
+Same-day pricing and semantic preflight are explicit caller-reviewed evidence,
+not inferred from their presence in JSON. See `evals/companion/STABLE0140.md`.
+
+The stable live runner still needs wiring to this ledger and post-response
+usage/HALT checks before any paid execution. Historical live tests must not be
+pointed at a new output folder as a workaround. No model, profile/key access,
+native app or release operation was performed; new grant usage remains 0/36.
+
+Verification: new stable-ledger plus historical guard selection **25 passed**
+(0.18 s), including concurrent reservations and retained original pilot limits;
+Ruff and whitespace checks passed. The canonical stable ledger was initialized
+once and read back as **0 requests / US$0.00 reserved**. Next batch must reuse
+it, not initialize another, and finish complete-source preflights/runner wiring.
