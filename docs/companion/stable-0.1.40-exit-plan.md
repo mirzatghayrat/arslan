@@ -468,3 +468,11 @@ reserved**. The original D1 failure and all five release gates remain open.
 Next: continue the unused fixed-case allocations (D3 and research/memory), and
 prepare the additive D1 retest/budget decision without resetting any ledger.
 Do not label the offline repair as a passed live case or cut another beta.
+
+Evidence run completed on committed source `16576258`: **1 passed** (0.94 s),
+`pdf-attachment-repair-v1.json` SHA-256
+`7d22912ae508bed306307c6847afd61ddbfeafbb1d382f39f950b1d41f9bd2a4`.
+Original failed D1 result still hashes to
+`047a8d919c9cc0c769c4ff88f605a7ad787976eaaa7cd2c0dfc3f91ecd2fa55f`.
+Ledger reread confirms 3 requests / $0.30 reserved; working tree clean before
+this documentation-only evidence annotation.
