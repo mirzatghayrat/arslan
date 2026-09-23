@@ -16,7 +16,7 @@ from tests.server import test_stable_research_live as runner
 
 @pytest.mark.parametrize("case", research.CASES)
 @pytest.mark.parametrize("failed_final", [False, True])
-async def test_research_runner_offline(execution_db, monkeypatch, tmp_path, case, failed_final):
+async def test_research_runner_offline(execution_db, monkeypatch, tmp_path, case, failed_final, protocol_correction=False):
     evidence = tmp_path / "evidence"
     monkeypatch.setattr(budget, "EVIDENCE", evidence)
     monkeypatch.setenv("ARSLAN_STABLE_LIVE", "authorized-36-requests-usd5")
@@ -38,7 +38,7 @@ async def test_research_runner_offline(execution_db, monkeypatch, tmp_path, case
         inputs.append({"path": path.name, "sha256": hashlib.sha256(body).hexdigest()})
     (evidence / f"{case}-preflight.json").write_text(json.dumps({"case": case, "status": "ready",
         "contract_sha256": budget.contract()[1], "inputs": inputs, "urls": urls,
-        "prompt": "Compare the two synthetic sources", "public_same_scope_conflict_review": {"offline_fixture_only": True}}))
+        "prompt": "Compare the supplied synthetic sources", "public_same_scope_conflict_review": {"offline_fixture_only": True}}))
     research.freeze(case)
     (evidence / "pricing.json").write_text(json.dumps({
         "verified_on_utc": datetime.now(timezone.utc).date().isoformat(),
@@ -57,17 +57,20 @@ async def test_research_runner_offline(execution_db, monkeypatch, tmp_path, case
                         for index, (key, args) in enumerate(calls)])
 
     adapter = LLMAdapter("openai", "deepseek-v4-flash", base_url="https://api.deepseek.com", report_provider="deepseek")
-    adapter.chat = AsyncMock(side_effect=[reply([("web_extract", {"url": url, "max_chars": 40000}) for url in urls]),
+    replies = [reply([("web_extract", {"url": url, "max_chars": 40000}) for url in urls]),
         reply([("write_file", {"path": "comparison.md", "content": "# Synthetic comparison\n" + "\n".join(urls)})]),
         reply([("read_file", {"path": "comparison.md"})]),
-        RuntimeError("synthetic_final_failure") if failed_final else reply(content="Synthetic execution fixture, not a quality pass.")])
+        RuntimeError("synthetic_final_failure") if failed_final else reply(content="Synthetic execution fixture, not a quality pass.")]
+    if protocol_correction:
+        replies.insert(1, reply(content='{"tool":"write_file","args":{"content":"auth = "none""}}'))
+    adapter.chat = AsyncMock(side_effect=replies)
     monkeypatch.setattr(runner, "primary_adapter", lambda *args: adapter)
     if failed_final:
         with pytest.raises(AssertionError):
             await runner.test_stable_research_host(case, execution_db, monkeypatch, tmp_path)
     else:
         await runner.test_stable_research_host(case, execution_db, monkeypatch, tmp_path)
-    assert budget.status()["by_case"][case] == adapter.chat.await_count == 4
+    assert budget.status()["by_case"][case] == adapter.chat.await_count == 4 + int(protocol_correction)
     value = json.loads((evidence / f"{case}-result.json").read_bytes())
     assert len(value["transport"]) == len(urls) and all(item["matches_frozen_input"] for item in value["transport"])
     assert value["persisted_in_isolated_db"] is not failed_final
@@ -84,3 +87,7 @@ async def test_research_runner_offline(execution_db, monkeypatch, tmp_path, case
     path.write_text(json.dumps(changed))
     with pytest.raises(RuntimeError, match="runner_changed"):
         research.verified(case)
+
+
+async def test_r1_protocol_correction_reaches_real_file_and_owned_artifact(execution_db, monkeypatch, tmp_path):
+    await test_research_runner_offline(execution_db, monkeypatch, tmp_path, "S2-R1", False, protocol_correction=True)

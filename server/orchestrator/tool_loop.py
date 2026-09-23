@@ -1417,10 +1417,16 @@ async def run_native(
         final_text = "" if tool_calls else (resp.content or "").strip()
         claimed = _unverified_claim(final_text, tool_trace, wired_keys)
         deferred = _is_deferral_stub(final_text)
-        if not forced and (claimed or (deferred and wired_keys)):
+        protocol_text = _embeds_protocol(final_text)
+        if not forced and (claimed or ((deferred or protocol_text) and wired_keys)):
             policy.observe("answer_validation", {}, {"ok": False, "code": "unverified_answer"})
-            convo.extend([{"role": "assistant", "content": final_text}, {"role": "user", "content":
-                (f"The proposed answer lacks a successful {claimed} receipt. " if claimed else
+            # Never execute rescued JSON, nor echo a malformed invocation back
+            # as an example to imitate. Permit a new structured call only through
+            # the normal tool resolver, permission gate and existing budgets.
+            convo.extend([{"role": "assistant", "content":
+                "Non-executable tool-call text omitted." if protocol_text else final_text}, {"role": "user", "content":
+                ("The proposed answer was tool-call text, not a native tool request; it executed no action. " if protocol_text else
+                 f"The proposed answer lacks a successful {claimed} receipt. " if claimed else
                  "The proposed answer only promises future action. ") +
                 "Use an available native tool if needed, or give an honest answer stating the limitation. "
                 "Do not claim an action or artifact exists without evidence. Do not output tool-call JSON as text."}])
@@ -1436,7 +1442,7 @@ async def run_native(
         #   • tool_trace EMPTY      → a chat/meta turn (or a first-step narration stub). There are NO
         #     findings and NOTHING is unfinished, so the "还没做完，回复继续" research nudge would be a
         #     lie. Salvage a direct plain-text answer instead.
-        if (not final_text) or _embeds_protocol(final_text) or deferred or claimed:
+        if (not final_text) or protocol_text or deferred or claimed:
             from server.services import runtime_messages
             notice_locale = await runtime_messages.selected_locale()
             if tool_trace:
