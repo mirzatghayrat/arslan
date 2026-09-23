@@ -380,5 +380,10 @@ async def pinned_get(
 async def _fetch_text(url: str) -> str:
     resp = await pinned_get(url)
     resp.raise_for_status()
+    media_type = resp.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if media_type in {"text/plain", "text/markdown"}:
+        # Treat literal code/README placeholders as data, not HTML tags. The
+        # executor's character cap and untrusted-result framing still apply.
+        return resp.text
     extracted = trafilatura.extract(resp.text)
     return extracted or ""
