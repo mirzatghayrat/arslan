@@ -4,6 +4,13 @@ User direction, 2026-09-23: stop treating successive beta releases as the
 destination. Deliver a functionally complete, tested stage, then a stable
 release. This stage is **the daily research assistant**, not all of v1.2.
 
+User clarification, 2026-09-24: 0.1.40 is the first delivery checkpoint, not
+the overall destination or a reason to stop progressing toward v1.2. Remaining
+v1.2 capabilities should be mapped by functional dependency to independently
+usable, tested releases after this one. Do not bundle them back into 0.1.40 or
+interpret more version numbers/betas as delivered functionality. Exact later
+version assignments require that roadmap mapping, not invented completion dates.
+
 Baseline: published `v0.1.40-beta.6`, source
 `0beb89bd638d5846745b7546adeb128452a5a0c2`. Work branch:
 `codex/stable-0140-acceptance-2026-09-23`. Existing worktrees, release-note edits
@@ -52,6 +59,11 @@ Native recovery clarification (2026-09-24): post-trial **Keep paused**, refusal 
 rollback on the next launch, and explicit rollback on a subsequent launch now
 have real native development-bundle evidence below. This is not an injected
 crash during directory movement, wrong-key coverage, or final-package acceptance.
+
+Native memory clarification (2026-09-24): deletion cancellation, confirmed
+deletion and restart persistence now have real isolated development-bundle
+evidence below; remove that item from the outstanding development-UI checklist.
+Final-candidate revalidation and real-model non-reuse remain separate boundaries.
 
 Supported rollback means restoring the **pre-upgrade profile plus matching
 key and compatible app**. It does not mean an old binary may safely open a new
@@ -1397,3 +1409,48 @@ output is reviewed. All gates retain their previous status. Next finite unpaid
 batch should prioritize a distinct remaining native interaction (for example
 synthetic memory deletion and restart) rather than repeat the completed
 extraction or recovery paths. Keep controlled HOME and launcher lifetime rules.
+
+## Native memory deletion and restart — 2026-09-24
+
+Starting checkout `74d539c1`; same development bundle source
+`fcb5f2acacd1f188f631fc384e99dfa7803f3a55`. Desktop and sidecar hashes still match
+`native-core-v1.json`; no rebuild or installed-app replacement. Xcode session
+defaults were unset; this is the existing Tauri bundle, not an Xcode project or
+simulator run. Used controlled minimal HOME and CUA for all native interactions.
+Created only a new disposable `native-home-memory-delete-v6` clone of the stopped
+v1 synthetic fixture, registered expected outcomes before launch, and preserved
+the original fixture. No real provider/secret/chat data was accessed.
+
+Observed in the native Chinese UI on port 56312:
+
+1. The paused project-local blue-heading memory was visible. Delete opened a
+   confirmation identifying the content and explaining revision/index/derived
+   removal while original chat history and old backups may retain original text.
+2. Cancel retained the same paused memory. Opening the confirmation again and
+   explicitly deleting it produced the empty-memory state.
+3. Normal Quit exited successfully. Read-only stopped-DB checks found status
+   `deleted`, version 4, cleared normalized/dedup hashes, one remaining revision
+   with null body, no source/index rows, and two content-digest tombstones.
+4. Controlled restart on port 56510 still showed the empty list. The original
+   active Cedar project and full summary remained. Starting a project-bound
+   empty conversation retained Cedar in the project/memory dialog and did not
+   enable cloud-memory consent. No message was sent. Cancelled the dialog and
+   normally quit; stopped only the owned launchers after child exit.
+
+Before/after restart checks match project rows, deletion state/revision and
+tombstones exactly; database integrity is okay, provider/message/run/usage counts
+are all zero, and the original v1 database hash is unchanged. Private receipts:
+
+- `native-memory-delete-v6-deleted.json`:
+  `970399f107eaf1cd5d7079123a92afd3482ac2c8450837220d376c9129865fb1`
+- `native-memory-delete-v6-restarted.json`:
+  `90f23171645850560e8cb7aa881e103ca882a6c12664c76d97666ca1ae4b7a4f`
+
+All acceptance processes/launchers exited. Raw logs stay private. This closes
+the isolated native development-UI deletion/restart path, not final-package
+acceptance, actual model non-reuse, old-backup reimport, or removal of derived
+summaries that were not present in this fixture. R/N/U/S/P retain their other
+outstanding criteria. Paid ledger remains 31/36 with $3.10 reserved, no new
+authorization inferred or requested again. Next unpaid batch can address native
+source/artifact opening or narrow-window/localized core-flow checks; do not
+repeat the already covered deletion/recovery scenarios as new progress.
