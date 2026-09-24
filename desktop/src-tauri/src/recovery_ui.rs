@@ -488,7 +488,10 @@ pub(crate) fn begin_backup(app: AppHandle) {
                 crate::recovery_trial::token().map_err(|_| ())?
             );
             service_touched = true;
-            window.set_enabled(false).map_err(|_| ())?;
+            // Keep the native window enabled: disabling it while the consent
+            // sheet closes strands subsequent Cocoa alerts. The maintenance
+            // gate owns native actions and the stopped backend cannot accept
+            // workspace writes; the completion modal is the only next action.
             let _ = crate::listen::voice_stop(app.clone());
             let _ = crate::voice::voice_conversation_stop(app.clone());
             let child = app
