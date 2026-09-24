@@ -8,6 +8,22 @@ import pytest
 from server.services.input_formats import InputError, kind, read_structured, video_metadata
 
 
+def test_csv_record_locators_distinguish_header_blank_and_multiline_cells():
+    text, truncated = read_structured("records.csv", b'name,amount\n"quoted, label",-1\nmissing,\n"two\nlines",2\n')
+    assert not truncated
+    assert "CSV logical records: 4 (includes any header" in text
+    assert "Records containing empty fields: 1" in text
+    assert '[CSV record 1; lines 1-1] ["name", "amount"]' in text
+    assert '[CSV record 2; lines 2-2] ["quoted, label", "-1"]' in text
+    assert '[CSV record 3; lines 3-3] ["missing", ""]' in text
+    assert '[CSV record 4; lines 4-5] ["two\\nlines", "2"]' in text
+
+
+def test_csv_malformed_quotes_remain_raw_not_silently_repaired():
+    raw = 'name,value\n"unterminated,1'
+    assert read_structured("records.csv", raw.encode()) == (raw, False)
+
+
 def package(files):
     stream = io.BytesIO()
     with zipfile.ZipFile(stream, "w", zipfile.ZIP_DEFLATED) as archive:

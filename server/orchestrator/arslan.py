@@ -262,7 +262,9 @@ _NO_BACKGROUND_EXEC = (
 # counter-question restarts the confirm loop this PA round exists to kill.
 _CLARIFY_CHOICE_NUDGE = (
     "\n\n需要用户在几个方向里选择时,调用 ask_user_choice 工具(给出 2-4 个具体选项),"
-    "不要用纯文本反问。"
+    "仅在该工具实际可用时使用；不可用时用简短自然语言提出必要问题，不要输出工具调用标签。"
+    "用户只要求样式或格式简报时，按已确认偏好直接给出该简报；不要把它扩成完整报告，"
+    "也不要为完成该格式请求而追问无关主题、编造占位项目内容。"
 )
 
 # PA-4: no-repaste iron rule. Live incident (thread-1783523936187): the SAME deck

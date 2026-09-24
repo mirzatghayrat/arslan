@@ -1,6 +1,7 @@
 """Shared format declaration and bounded, non-executing text/OOXML readers."""
 from __future__ import annotations
 
+import csv
 import io
 import json
 from pathlib import Path
@@ -58,6 +59,28 @@ def read_structured(filename: str, data: bytes) -> tuple[str, bool]:
             raise InputError("inputs.encoding") from exc
         if "\x00" in text:
             raise InputError("inputs.encoding")
+        if Path(filename).suffix.lower() == ".csv" and len(text) <= MAX_TEXT:
+            # Logical CSV records are not physical lines (quoted cells may
+            # contain newlines). Supply locators/counts, not inferred headers,
+            # numerical totals or task-specific expected answers.
+            try:
+                reader = csv.reader(io.StringIO(text, newline=""), strict=True)
+                rows = []
+                empty = 0
+                previous_line = 0
+                for number, row in enumerate(reader, 1):
+                    empty += any(value == "" for value in row)
+                    rows.append(f"[CSV record {number}; lines {previous_line + 1}-{reader.line_num}] "
+                                + json.dumps(row, ensure_ascii=False))
+                    previous_line = reader.line_num
+                heading = (f"CSV logical records: {len(rows)} (includes any header; header meaning is not inferred). "
+                           f"Records containing empty fields: {empty}. Empty fields are unknown, not zero.\n")
+                rendered = heading + "\n".join(rows)
+                return rendered[:MAX_TEXT], len(rendered) > MAX_TEXT
+            except csv.Error:
+                # Preserve previously supported plain text rather than guess
+                # a dialect or silently repair malformed source material.
+                pass
         return text[:MAX_TEXT], len(text) > MAX_TEXT
     if category not in {"spreadsheet", "presentation", "word"}:
         raise InputError("inputs.unsupported")

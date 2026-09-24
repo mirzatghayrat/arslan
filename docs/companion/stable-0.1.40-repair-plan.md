@@ -1,5 +1,48 @@
 # Stable 0.1.40 — close the measured gaps
 
+## Four remaining cases — repair candidate after user continuation
+
+No additional paid calls in this batch. D3/M2/R1/R4 remain open until reviewed
+real outputs on the changed source, not merely these deterministic checks.
+
+- D3: CSV extraction now supplies logical-record numbers, physical-line ranges,
+  total logical records (including any header), and empty-field record count.
+  Every cell is retained as JSON text; no inferred header, arithmetic oracle or
+  currency-specific expected result enters production code. Multiline/quoted
+  cells and negatives are covered. Malformed CSV falls back to unchanged raw
+  text; bounded extraction still reports truncation. The frozen synthetic
+  input bytes and acceptance totals are unchanged. Checker revision 2 records
+  the former hash and reconstructs every cell before the same assertions;
+  original paid preflights/results/ledgers are untouched.
+- M2: clarification guidance is conditional on actual tool availability and
+  distinguishes a style brief from writing a whole report. No irrelevant topic
+  question or invented placeholder is required for a format-only request.
+  The earlier XML non-execution guard remains active.
+- R1/R4: successful web-evidence turns retain a bounded 96k rolling history
+  instead of dropping a <=96k fresh batch back to 64k immediately after a save.
+  Other turns remain 64k; this is not permanent source pinning. Native call JSON
+  is no longer replayed as assistant prose or duplicate large write bodies;
+  real arguments remain in traces/journals. Opaque provider-content pairs remain
+  unchanged. Compaction guidance no longer advertises unavailable task_progress.
+  A four-request offline fixture proves three 23k sources survive save/readback
+  with a 30k write payload, without re-fetch or textual-call imitation. This
+  may increase per-request context; actual cost/completion impact is unmeasured.
+
+Verification: 68 input/retention/grounding/cache/runtime-policy checks passed;
+39 host/native/Gemini/protocol checks passed; the 41 tool-loop checks also passed
+on the changed loop in the initial targeted batch. Ruff and diff checks passed.
+Initial CSV representation assertions and then the checker-hash fence failed
+as expected after representation changes; both failures are retained in task
+output. The updated checker verifies equivalent source cells, not weaker totals.
+No full CI or release gate closure is claimed.
+
+Proposed follow-up: one registered attempt each, R1 <=8, R4 <=7, D3 <=4,
+M2 <=3 = 22 requests, independently capped at US$3. User approval requested;
+not yet granted at this checkpoint. Previous new grant remains 30/36 requests,
+US$3 reserved, peak estimate US$0.1131012 (not invoice). Its unused six slots
+do not become a reset failed-case allocation. Freeze candidate, inputs and
+checkers before execution; no paid failure auto-retry or best-of-N selection.
+
 Latest additive sweep: [2026-09-24 actual outcomes](stable-0.1.40-retest-20260924.md).
 The new grant was approved and used 30/36 calls; D1/R2/R3/M4 core criteria now
 have retest evidence (R2 retains wording caveats). D3/M2/R1/R4 remain open.

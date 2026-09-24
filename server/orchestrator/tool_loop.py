@@ -1312,12 +1312,17 @@ async def run_native(
             system + ("\n\nRepeated actions made no progress. Explain what was verified and what is blocked. Text only."
                       if policy.stopped else "\n\nTool budget exhausted: report the verified results and remaining work. Text only."))
         # Deliver one new tool batch atomically before normal old-history
-        # eviction. Keep the 64k rolling target; apply extra protection only
+        # eviction. Keep a bounded 96k research window so a <=96k source batch
+        # can survive the following save/readback steps, not just one request.
+        # Other turns retain the 64k target. Apply extra protection only
         # to batches <=96k, never permanently pin sources or widen task budgets.
         # Existing opaque-provider pair retention is otherwise unchanged.
         oversized_feedback = pending_feedback and len(json.dumps(
             convo[-pending_feedback:], ensure_ascii=False, default=str)) > 96_000
-        convo, compacted = bounded_history(convo, preserve_tail=0 if oversized_feedback else pending_feedback)
+        has_web_evidence = any(item.get("tool") == "web_extract" and
+                               (item.get("result") or {}).get("ok") for item in tool_trace)
+        convo, compacted = bounded_history(convo, max_chars=96_000 if has_web_evidence else 64_000,
+                                           preserve_tail=0 if oversized_feedback else pending_feedback)
         pending_feedback = 0
         if oversized_feedback:
             sys_now += ("\nThe newest tool-result batch exceeded the bounded delivery window. Some newly fetched "
@@ -1325,8 +1330,11 @@ async def run_native(
                         "content; request smaller sequential reads or disclose the limitation within remaining budgets.")
         history_compacted = history_compacted or compacted
         if history_compacted:
-            sys_now += ("\nEarlier conversation turns were compacted. Saved task progress and owned outputs "
-                        "remain available through task_progress. Do not repeat completed effects.")
+            sys_now += "\nEarlier conversation turns were compacted. Do not repeat completed effects."
+            if "task_progress" in wired_keys:
+                sys_now += " Saved task progress and owned outputs remain available through task_progress."
+            else:
+                sys_now += " task_progress is not available in this turn; do not invent a call to it."
         # On the forced step pass tools=None so the model CANNOT call a tool and MUST produce
         # prose from the accumulated TOOL RESULTs — never an empty turn.
         # Rolling evidence eviction must not erase this turn's task or its
@@ -1408,6 +1416,16 @@ async def run_native(
                 convo.append({"role": "assistant", "content": [
                     {"type": "provider_content", **provider_content}]})
                 convo.append({"role": "user", "content": responses})
+            else:
+                # Calls already executed through the native channel. Repeating
+                # their JSON as assistant prose invites imitation and duplicates
+                # large write payloads, evicting the source evidence. Keep the
+                # real arguments in tool_trace/action journals, not a second
+                # prompt-level execution protocol. Opaque provider pairs above
+                # remain untouched.
+                for index in range(history_start, len(convo), 2):
+                    invocation = json.loads(convo[index]["content"])
+                    convo[index]["content"] = "Native tool invocation completed: " + invocation["tool"]
             # resp.content is narration — surface it as an ephemeral note ONLY, never final.
             if (resp.content or "").strip():
                 emit({"type": "note", "text": (resp.content or "").strip()[:400]})

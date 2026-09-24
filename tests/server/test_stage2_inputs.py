@@ -113,9 +113,13 @@ async def test_word_versions_keep_difference_locations():
 async def test_csv_preserves_missing_values_currency_and_reopenable_oracle(tmp_path):
     case = CASES["S2-D3"]
     text, truncated = await extract.extract_text(filename="costs.csv", data=case["csv"].encode())
-    assert text == case["csv"] and not truncated
+    assert not truncated
+    records = [json.loads(line.split("] ", 1)[1]) for line in text.splitlines() if line.startswith("[CSV record ")]
+    assert records == list(csv.reader(io.StringIO(case["csv"])))
+    assert "CSV logical records: 7" in text and "Records containing empty fields: 1" in text
     totals, missing = {}, []
-    for row_number, row in enumerate(csv.DictReader(io.StringIO(text)), 2):
+    for row_number, values in enumerate(records[1:], 2):
+        row = dict(zip(records[0], values, strict=True))
         if not row["amount"]:
             missing.append(row_number)
             continue
@@ -138,5 +142,7 @@ def test_unsupported_input_does_not_destroy_independent_valid_input():
     valid = read_structured(case["valid_filename"], case["valid_text"].encode())
     with pytest.raises(InputError, match="^inputs.unsupported$"):
         read_structured(case["unsupported_filename"], case["unsupported_text"].encode())
-    assert valid == (case["valid_text"], False)
+    records = [json.loads(line.split("] ", 1)[1]) for line in valid[0].splitlines() if line.startswith("[CSV record ")]
+    assert records == list(csv.reader(io.StringIO(case["valid_text"])))
+    assert not valid[1]
     assert read_structured(case["valid_filename"], case["valid_text"].encode()) == valid
