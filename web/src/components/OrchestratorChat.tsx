@@ -1,4 +1,5 @@
 import BrandMark from './BrandMark';
+import HostRunResultButton from './HostRunResultButton';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { ImagePayload } from "../lib/imagePayload";
 import {
@@ -858,6 +859,7 @@ export default function OrchestratorChat({
                       }
                       {msg.cancelled && <RunCancelledMarker />}
                       {msg.usage && <UsageChip usage={msg.usage} />}
+                      {isArslan && msg.id !== '__streaming__' && <HostRunResultButton runId={msg.runId} onOpen={setReplayRunId} />}
 
                       {/* Routed Indicator - specifically asked in prompt */}
                       {msg.routedTo && (
@@ -1089,6 +1091,7 @@ export default function OrchestratorChat({
                   }
                   {msg.cancelled && <RunCancelledMarker />}
                   {msg.usage && <UsageChip usage={msg.usage} />}
+                  {isArslan && msg.id !== '__streaming__' && <HostRunResultButton runId={msg.runId} onOpen={setReplayRunId} />}
 
                   {/* Routed branch block */}
                   {msg.routedTo && (
@@ -1276,6 +1279,7 @@ export default function OrchestratorChat({
                   <MessageBody text={msg.text} indent streaming={msg.id === '__streaming__'} hasMessageActions={isSpawn && !msg.isProposal && !!msg.spawnId} className="text-foreground font-sans leading-relaxed text-[12.5px] pl-5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
                   {msg.cancelled && <div className="pl-5"><RunCancelledMarker /></div>}
                   {msg.usage && <div className="pl-5"><UsageChip usage={msg.usage} /></div>}
+                  {isArslan && msg.id !== '__streaming__' && <HostRunResultButton runId={msg.runId} onOpen={setReplayRunId} />}
 
                   {/* Linear clean route badge */}
                   {msg.routedTo && (

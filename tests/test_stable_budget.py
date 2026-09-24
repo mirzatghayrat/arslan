@@ -10,6 +10,17 @@ from evals.companion import stable_budget as budget
 
 @pytest.fixture
 def isolated(tmp_path, monkeypatch):
+    # Unit accounting tests own a synthetic freeze. The historical live freeze
+    # must keep its old hashes even after later registered input/checker repairs;
+    # never rewrite that evidence just to run offline ledger tests.
+    manifest = json.loads(budget.CONTRACT.read_bytes())
+    frozen = tmp_path / "frozen-unit-input.txt"
+    frozen.write_text("Synthetic immutable unit fixture")
+    manifest["frozen_files"] = {frozen.name: hashlib.sha256(frozen.read_bytes()).hexdigest()}
+    contract = tmp_path / "unit-contract.json"
+    contract.write_text(json.dumps(manifest))
+    monkeypatch.setattr(budget, "ROOT", tmp_path)
+    monkeypatch.setattr(budget, "CONTRACT", contract)
     monkeypatch.setattr(budget, "EVIDENCE", tmp_path)
     monkeypatch.setenv("ARSLAN_STABLE_LIVE", "authorized-36-requests-usd5")
     path = budget.initialize()
@@ -41,12 +52,20 @@ def reserve(preflights, case="S2-R1", **kwargs):
 
 
 def test_contract_preserves_twelve_ids_and_original_inputs():
-    value, _ = budget.contract()
+    # Historical manifest shape, not a claim its source hashes match HEAD.
+    value = json.loads(budget.CONTRACT.read_bytes())
     assert [case["id"] for case in value["cases"]] == [f"S2-{group}{i}" for group in "RDM" for i in range(1, 5)]
     assert sum(case["max_requests"] for case in value["cases"]) == 36
     assert value["cases"][1]["status"] == "blocked_inputs"
     assert value["cases"][1]["input"] is None
     assert all(case["acceptance"] and case["preflight"] for case in value["cases"])
+
+
+def test_frozen_source_mutation_still_refuses(isolated):
+    path, _ = isolated
+    (path.parent / "frozen-unit-input.txt").write_text("Changed")
+    with pytest.raises(RuntimeError, match="stable_input_freeze_changed"):
+        budget.contract()
 
 
 def test_initialization_is_exclusive_and_zero_spend(isolated):

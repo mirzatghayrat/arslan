@@ -41,11 +41,13 @@ def abandoned_bound(row):
     directory = MASTER / f"round-{row['round']}"
     prefix = directory / f"request-{row['local_request']:02d}"
     receipt = json.loads(prefix.with_suffix(".abandoned.json").read_bytes())
-    expected = {"request": row["local_request"], "status": "cancelled_usage_unknown",
+    reason = json.loads((directory / "HALT").read_bytes()).get("reason")
+    status = {"CancelledError": "cancelled_usage_unknown", "BudgetExceeded": "budget_stop_usage_unknown"}.get(reason)
+    expected = {"request": row["local_request"], "status": status,
                 "charged_budget_usd": "0.10", "reservation_refunded": False,
                 "automatic_retry": False, "invoice": False,
                 "input_sha256": digest(prefix.with_suffix(".input.json"))}
-    if receipt != expected or json.loads((directory / "HALT").read_bytes()) != {"reason": "CancelledError"}:
+    if status is None or receipt != expected:
         raise RuntimeError("release_abandonment_invalid")
     if prefix.with_suffix(".response.json").exists() or prefix.with_suffix(".accounted.json").exists():
         raise RuntimeError("release_abandonment_has_response")
@@ -115,7 +117,8 @@ def configured():
         "CAPS": {"S2-R1": 12, "S2-R4": 12},
         "EXTRA_FILES": {"evals/companion/stable_release_retest.py", "tests/server/test_stable_release_live.py",
                         "tests/test_stable_release_grant.py", "server/orchestrator/research_review.py",
-                        "arslan/llm/request_policy.py", "arslan/llm/providers/openai_provider.py"}}
+                        "arslan/llm/request_policy.py", "arslan/llm/providers/openai_provider.py",
+                        "evals/companion/stable_live.py", "tests/test_stable_live.py"}}
     old = {key: getattr(four, key) for key in values}
     try:
         for key, value in values.items():
@@ -132,6 +135,7 @@ def bound():
         original = budget.reserve
 
         def reserve(*args, **kwargs):
+            execution_admitted()
             local = original(*args, **kwargs)
             reserve_global(number, local, args[0])
             return local
@@ -140,6 +144,18 @@ def bound():
             yield
         finally:
             budget.reserve = original
+
+
+def execution_admitted():
+    """Check task admission before reserving; never widen the product ceiling."""
+    from arslan.execution_budget import current
+    execution = current()
+    if execution is not None:
+        execution.check()
+        if execution.model_requests >= execution.limits.model_requests:
+            execution.stop("model_requests")
+        if execution.tokens >= execution.limits.tokens:
+            execution.stop("tokens")
 
 
 def freeze():

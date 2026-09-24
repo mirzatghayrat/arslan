@@ -1,5 +1,31 @@
 # Shared 60-request / US$6 release acceptance grant
 
+Latest: round 3 (`1fb1c55f`) failed R1 at the unchanged 128k product token
+ceiling, before delivery; R4 was blocked by HALT without a call. Eight local
+reservations (seven usage receipts plus one full-charge budget-stop disposition),
+20 cumulative reservations / US$2.00. Critiques included false-positive stylistic
+objections (faithful translation, selective examples); not every anchored model
+objection is factually valid. No R pass is claimed.
+
+Round-4 repair switches ONLY bounded official-DeepSeek critique to documented
+low thinking effort (same model/cap), with explicit no-stylistic-objection rules.
+Normal task mode and the 128k product budget are not increased. New-round
+admission checks task exhaustion before reserving an API slot. Previous slots
+are never refunded. R1/R4 inputs and actual factual acceptance stay unchanged.
+
+Native synthetic conversation exposed a missing result entry for main-assistant
+history messages: run ownership is persisted but only specialist messages had a
+RunReplay button. Added the same existing result viewer entry for a positive,
+persisted host run in all three styles; streaming/temporary messages are excluded.
+13 focused frontend tests and TypeScript pass. Native revalidation is pending.
+The fixture is not a generated model result; old native process exited normally.
+
+Offline legacy acceptance tests were still bound to a historical input/checker
+freeze and failed after already-recorded stage-2 repairs. Disposable unit-test
+contracts now bind current unit inputs; original paid manifests/ledgers remain
+unchanged. Source/input mutation rejection stays tested. This does not certify
+the historical baseline against today's source or alter live acceptance results.
+
 User explicitly approved: “批准：最多 60 次／US$6”. Old pilot and repair
 ledgers remain separate and immutable. This grant permits separately registered
 repair rounds, not automatic retry of failed paid requests. Canonical cumulative

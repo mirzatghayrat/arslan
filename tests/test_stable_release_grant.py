@@ -33,6 +33,16 @@ def test_global_sixty_call_limit_cannot_be_reset_by_new_round(tmp_path, monkeypa
         release.reserve_global(4, 1, "S2-R1")
 
 
+def test_task_admission_rejects_exhausted_tokens_without_reset():
+    from arslan.execution_budget import Budget, BudgetExceeded, scope
+    execution = Budget()
+    execution.tokens = execution.limits.tokens
+    with scope(execution), pytest.raises(BudgetExceeded, match="tokens"):
+        release.execution_admitted()
+    assert execution.tokens == execution.limits.tokens
+    assert execution.model_requests == 0
+
+
 def test_cancelled_request_keeps_full_charge_requires_original_bound(tmp_path, monkeypatch):
     import hashlib
     monkeypatch.setattr(release, "MASTER", tmp_path)

@@ -8,6 +8,8 @@ from evals.companion import stable_budget as budget, stable_repair_preparation a
 
 @pytest.fixture
 def prepared_inputs(tmp_path, monkeypatch):
+    from tests.stable_fixtures import current_unit_contract
+    current_unit_contract(tmp_path, monkeypatch)
     evidence = tmp_path / "original"
     evidence.mkdir()
     monkeypatch.setattr(budget, "EVIDENCE", evidence)

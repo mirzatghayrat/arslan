@@ -156,7 +156,8 @@ def test_critique_mode_is_local_vendor_scoped_and_never_changes_normal_calls():
     other = OpenAIProvider("deepseek-v4-flash", base_url="https://example.org")
     assert "thinking" not in provider._payload([], None, 0.7)
     with critique_request():
-        assert provider._payload([], None, 0.7)["thinking"] == {"type": "disabled"}
+        assert provider._payload([], None, 0.7)["thinking"] == {"type": "enabled"}
+        assert provider._payload([], None, 0.7)["reasoning_effort"] == "low"
         assert "thinking" not in provider._payload([], [{"type": "function"}], 0.7)
         assert "thinking" not in other._payload([], None, 0.7)
     assert "thinking" not in provider._payload([], None, 0.7)

@@ -11,6 +11,8 @@ from evals.companion.stable_primary import primary_adapter, pricing_snapshot
 
 @pytest.fixture
 def isolated(monkeypatch, tmp_path):
+    from tests.stable_fixtures import current_unit_contract
+    current_unit_contract(tmp_path, monkeypatch)
     monkeypatch.setattr(budget, "EVIDENCE", tmp_path)
     monkeypatch.setattr(documents.ingest.ocr_vision, "is_available", lambda: False)
     budget.initialize()

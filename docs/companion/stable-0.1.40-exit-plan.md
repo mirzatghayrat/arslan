@@ -1,10 +1,11 @@
 # 0.1.40 stable — finite acceptance and release plan
 
 Current: [60/$6 grant and registered repair rounds](stable-0.1.40-release-retest-20260924.md).
-Twelve calls reserved, US$1.20 retained; round-1 request 6 usage unknown after
+Twenty slots reserved, US$2.00 retained; round-1 request 6 usage unknown after
 harness cancellation, conservatively charged in full. R1/R4 are still open.
-Round 2 returned critiques but stopped on mixed invalid/valid quote admission;
-individual exact-pair admission repair is ready for separately frozen round 3.
+Round 3 hit the unchanged product token ceiling on repeated critique, with R4
+blocked before a call. Low-effort critique and native host result access repairs
+are ready for independently frozen round 4. See linked evidence for boundaries.
 Older "latest" checkpoints below are retained history, not current budget resets.
 
 Latest result: [two-case semantic review](stable-0.1.40-two-retest-20260924.md).

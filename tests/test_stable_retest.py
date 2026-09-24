@@ -10,6 +10,8 @@ from tests.test_stable_budget import pricing
 
 @pytest.fixture
 def isolated(tmp_path, monkeypatch):
+    from tests.stable_fixtures import current_unit_contract
+    monkeypatch.setattr(retest, "ORIGINAL_CONTRACT", current_unit_contract(tmp_path, monkeypatch))
     old = tmp_path / "original"
     monkeypatch.setattr(budget, "EVIDENCE", old)
     budget.initialize()
