@@ -87,8 +87,12 @@ def freeze():
                     raise RuntimeError("four_parent_input_changed")
                 target = EVIDENCE / item["path"]
                 target.parent.mkdir(parents=True, exist_ok=True)
-                with target.open("xb") as stream:
-                    stream.write(source.read_bytes())
+                if target.exists():
+                    if target.is_symlink() or digest(target) != item["sha256"]:
+                        raise RuntimeError("four_shared_input_changed")
+                else:
+                    with target.open("xb") as stream:
+                        stream.write(source.read_bytes())
             ready.update(contract_sha256=budget.contract()[1], runner_sha256=digest(budget.ROOT / RUNNERS[case]),
                          previous_preflight_sha256=digest(PARENT / f"{case}-preflight.json"))
             if case == "S2-D3":
