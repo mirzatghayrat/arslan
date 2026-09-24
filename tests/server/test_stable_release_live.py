@@ -7,6 +7,7 @@ pytestmark = pytest.mark.skipif(os.environ.get("ARSLAN_STABLE_RELEASE") != relea
 
 
 @pytest.mark.parametrize("case", ["S2-R1", "S2-R4"])
+@pytest.mark.timeout(600)
 async def test_research(case, execution_db, monkeypatch, tmp_path):
     from tests.server.test_stable_research_live import test_stable_research_host
     with release.bound():

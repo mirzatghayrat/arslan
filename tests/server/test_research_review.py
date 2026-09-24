@@ -107,3 +107,42 @@ async def test_native_loop_blocks_bad_draft_then_dispatches_only_revised_bytes(m
     assert any(e["result"].get("code") == "research_draft_review_required" for e in result["tool_trace"])
     assert len(adapter.calls) == 6
     assert adapter.calls[2]["tools"] is None and adapter.calls[4]["tools"] is None
+
+
+async def test_unavailable_review_stops_without_write_or_paid_retry(monkeypatch):
+    from server.orchestrator import tool_loop
+    from tests.server.test_native_loop import _NativeAdapter, _LLMResp, _tc
+    evidence = trace()
+    adapter = _NativeAdapter([
+        _LLMResp(tool_calls=[_tc("web_extract", entry["args"]) for entry in evidence]),
+        _LLMResp(tool_calls=[_tc("write_file", {"path": "report.md", "content": "draft"})]),
+        _LLMResp(content=""),
+    ])
+
+    async def resolve():
+        return [{"key": "web_extract", "description": "read"}, {"key": "write_file", "description": "write"}]
+
+    async def dispatch(name, args, assistant_content, **kwargs):
+        assert name == "web_extract", "unavailable review must not write"
+        result = next(e["result"] for e in evidence if e["args"] == args)
+        return tool_loop._record_tool_result(name, args, result, kwargs["emit"],
+            kwargs["tool_trace"], assistant_content, kwargs["convo"])
+
+    monkeypatch.setattr(tool_loop, "_dispatch_tool", dispatch)
+    result = await tool_loop.run_native(system="s", user_content="Compare and save.", history=[],
+        emit=lambda _: None, on_chunk=lambda _: None, resolve_tools=resolve, adapter_override=adapter)
+    assert result["stop_reason"] == "task_validation_failed"
+    assert len(adapter.calls) == 3
+
+
+def test_critique_mode_is_local_vendor_scoped_and_never_changes_normal_calls():
+    from arslan.llm.providers.openai_provider import OpenAIProvider
+    from arslan.llm.request_policy import critique_request
+    provider = OpenAIProvider("deepseek-v4-flash", base_url="https://api.deepseek.com")
+    other = OpenAIProvider("deepseek-v4-flash", base_url="https://example.org")
+    assert "thinking" not in provider._payload([], None, 0.7)
+    with critique_request():
+        assert provider._payload([], None, 0.7)["thinking"] == {"type": "disabled"}
+        assert "thinking" not in provider._payload([], [{"type": "function"}], 0.7)
+        assert "thinking" not in other._payload([], None, 0.7)
+    assert "thinking" not in provider._payload([], None, 0.7)

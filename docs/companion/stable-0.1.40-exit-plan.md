@@ -1,5 +1,11 @@
 # 0.1.40 stable — finite acceptance and release plan
 
+Current: [60/$6 grant and round-1 interruption](stable-0.1.40-release-retest-20260924.md).
+Six calls reserved, US$0.60 retained; request 6 usage unknown after harness
+cancellation, conservatively charged in full. R1/R4 are still open. A scoped
+review-mode/stop-condition/harness repair is ready for separately frozen round 2.
+Older "latest" checkpoints below are retained history, not current budget resets.
+
 Latest result: [two-case semantic review](stable-0.1.40-two-retest-20260924.md).
 Source 60e779ba, independently approved 12/$1.20, used 8 requests. Both deliver
 files and final answers; R1/R4 still contain unsupported saved-report claims.

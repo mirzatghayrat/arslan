@@ -31,3 +31,36 @@ def test_global_sixty_call_limit_cannot_be_reset_by_new_round(tmp_path, monkeypa
             stream.write('{}\n')
     with pytest.raises(RuntimeError, match="budget_exhausted"):
         release.reserve_global(4, 1, "S2-R1")
+
+
+def test_cancelled_request_keeps_full_charge_requires_original_bound(tmp_path, monkeypatch):
+    import hashlib
+    monkeypatch.setattr(release, "MASTER", tmp_path)
+    directory = tmp_path / "round-1"
+    directory.mkdir()
+    payload = {"model": "deepseek-v4-flash", "max_tokens": 8192, "messages": []}
+    original = directory / "request-06.input.json"
+    original.write_text(json.dumps({"payload": payload}))
+    receipt = {"request": 6, "status": "cancelled_usage_unknown", "charged_budget_usd": "0.10",
+        "reservation_refunded": False, "automatic_retry": False, "invoice": False,
+        "input_sha256": release.digest(original)}
+    disposition = directory / "request-06.abandoned.json"
+    disposition.write_text(json.dumps(receipt))
+    (directory / "HALT").write_text('{"reason":"CancelledError"}')
+    reservation = {"request": 6, "case": "S2-R1", "reserved_usd": "0.10",
+        "payload_sha256": hashlib.sha256(json.dumps(payload, ensure_ascii=False).encode()).hexdigest(),
+        "pricing": {"endpoint": "https://api.deepseek.com", "input_usd_per_million": "0.30",
+                    "output_usd_per_million": "1.20"}}
+    (directory / "budget.jsonl").write_text('{}\n' * 6 + json.dumps(reservation) + '\n')
+    row = {"round": 1, "local_request": 6, "case": "S2-R1"}
+    assert str(release.abandoned_bound(row)) == "0.10"
+    receipt["charged_budget_usd"] = "0.00"
+    disposition.write_text(json.dumps(receipt))
+    with pytest.raises(RuntimeError, match="abandonment_invalid"):
+        release.abandoned_bound(row)
+    receipt["charged_budget_usd"] = "0.10"
+    disposition.write_text(json.dumps(receipt))
+    payload["max_tokens"] = 1000000
+    original.write_text(json.dumps({"payload": payload}))
+    with pytest.raises(RuntimeError, match="abandonment_invalid"):
+        release.abandoned_bound(row)

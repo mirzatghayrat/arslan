@@ -9,6 +9,7 @@ from server.locale_codes import normalize
 
 MESSAGES = {
     "en": {
+        "research_review_unavailable": "The source review returned no usable result. The draft was not written, and no automatic retry will run. The task needs review before continuing.",
         "expert_unavailable": "This expert is no longer available. Choose another expert in Capabilities.",
         "image_refused": "The model you configured could not read the image. It may not support image input. Choose a model with image support, or describe the picture in words.",
         "proposal_handled": "This proposal has already been handled, or there is no pending proposal. Tell me what you would like to do next.",
@@ -20,6 +21,7 @@ MESSAGES = {
         "no_tools_correction": "Correction: I do not have the tools needed to produce that file or data. My earlier completion claim was not true: I produced no such result and delegated no task. Please use an expert with the required capabilities.",
     },
     "zh": {
+        "research_review_unavailable": "来源复核未返回可用结果，草稿尚未写入，也不会自动重试。任务需要检查后再继续。",
         "expert_unavailable": "这个专家已不可用。请在能力库中选择其他专家。",
         "image_refused": "当前模型无法读取这张图片，可能不支持图片输入。请选择支持图片的模型，或用文字描述图片。",
         "proposal_handled": "这个提案已经处理过了，或目前没有待处理的提案。直接告诉我接下来要做什么就好。",
@@ -31,6 +33,7 @@ MESSAGES = {
         "no_tools_correction": "更正:我没有配备相应工具,无法自己产出这个文件或数据。刚才那段“已完成/已交付”的说法并不属实——本回合没有真正做出任何东西,也没有把任务交给谁。需要真的做出来,请改用配备相应能力的分身。",
     },
     "ja": {
+        "research_review_unavailable": "出典の確認で有効な結果が得られませんでした。下書きは保存されず、自動再試行もしません。続行前に確認が必要です。",
         "expert_unavailable": "この専門家は利用できなくなりました。「機能」から別の専門家を選んでください。",
         "image_refused": "設定したモデルは画像を読み取れませんでした。画像入力に対応していない可能性があります。画像対応モデルを選ぶか、画像の内容を文章で説明してください。",
         "proposal_handled": "この提案はすでに処理済みか、現在保留中の提案はありません。次に行いたいことを教えてください。",
@@ -42,6 +45,7 @@ MESSAGES = {
         "no_tools_correction": "訂正：そのファイルやデータを作成するためのツールがありません。先ほどの完了という説明は事実ではなく、成果物の作成もタスクの委任も行っていません。必要な機能を備えた専門家をご利用ください。",
     },
     "es": {
+        "research_review_unavailable": "La revisión de fuentes no devolvió un resultado utilizable. El borrador no se guardó y no habrá un reintento automático. Revisa la tarea antes de continuar.",
         "expert_unavailable": "Este experto ya no está disponible. Elige otro en Capacidades.",
         "image_refused": "El modelo configurado no pudo leer la imagen. Es posible que no admita imágenes. Elige un modelo compatible o describe la imagen con palabras.",
         "proposal_handled": "Esta propuesta ya se ha gestionado o no hay ninguna pendiente. Dime qué quieres hacer a continuación.",
@@ -53,6 +57,7 @@ MESSAGES = {
         "no_tools_correction": "Corrección: no tengo las herramientas necesarias para producir ese archivo o esos datos. Mi afirmación anterior de haber terminado no era cierta: no he producido ese resultado ni delegado ninguna tarea. Usa un experto con las capacidades necesarias.",
     },
     "de": {
+        "research_review_unavailable": "Die Quellenprüfung lieferte kein verwertbares Ergebnis. Der Entwurf wurde nicht gespeichert; es erfolgt kein automatischer Neuversuch. Vor dem Fortsetzen muss die Aufgabe geprüft werden.",
         "expert_unavailable": "Dieser Experte ist nicht mehr verfügbar. Wähle unter Fähigkeiten einen anderen Experten.",
         "image_refused": "Das konfigurierte Modell konnte das Bild nicht lesen. Möglicherweise unterstützt es keine Bildeingaben. Wähle ein Modell mit Bildunterstützung oder beschreibe das Bild mit Worten.",
         "proposal_handled": "Dieser Vorschlag wurde bereits bearbeitet, oder es gibt keinen ausstehenden Vorschlag. Sag mir, was du als Nächstes tun möchtest.",
@@ -64,6 +69,7 @@ MESSAGES = {
         "no_tools_correction": "Korrektur: Mir fehlen die Werkzeuge, um diese Datei oder Daten zu erstellen. Meine vorherige Aussage, fertig zu sein, war nicht richtig: Ich habe dieses Ergebnis weder erstellt noch eine Aufgabe delegiert. Bitte nutze einen Experten mit den nötigen Fähigkeiten.",
     },
     "fr": {
+        "research_review_unavailable": "La vérification des sources n’a fourni aucun résultat exploitable. Le brouillon n’a pas été enregistré et aucun nouvel essai automatique ne sera effectué. La tâche doit être examinée avant de continuer.",
         "expert_unavailable": "Cet expert n’est plus disponible. Choisis-en un autre dans Capacités.",
         "image_refused": "Le modèle configuré n’a pas pu lire l’image. Il ne prend peut-être pas en charge les images. Choisis un modèle compatible ou décris l’image avec des mots.",
         "proposal_handled": "Cette proposition a déjà été traitée, ou aucune proposition n’est en attente. Dis-moi ce que tu souhaites faire ensuite.",

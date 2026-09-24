@@ -3,6 +3,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from decimal import Decimal
 import fcntl
+import hashlib
 import json
 import os
 
@@ -30,6 +31,43 @@ def initialize():
         os.fsync(stream.fileno())
 
 
+def abandoned_bound(row):
+    """A stopped round can retain a whole slot without inventing response usage.
+
+    Only a separately recorded cancellation disposition is accepted. Validate
+    the original pre-POST payload/rates; charge the FULL reservation forever.
+    This does not remove HALT, resume that round, or retry the interrupted call.
+    """
+    directory = MASTER / f"round-{row['round']}"
+    prefix = directory / f"request-{row['local_request']:02d}"
+    receipt = json.loads(prefix.with_suffix(".abandoned.json").read_bytes())
+    expected = {"request": row["local_request"], "status": "cancelled_usage_unknown",
+                "charged_budget_usd": "0.10", "reservation_refunded": False,
+                "automatic_retry": False, "invoice": False,
+                "input_sha256": digest(prefix.with_suffix(".input.json"))}
+    if receipt != expected or json.loads((directory / "HALT").read_bytes()) != {"reason": "CancelledError"}:
+        raise RuntimeError("release_abandonment_invalid")
+    if prefix.with_suffix(".response.json").exists() or prefix.with_suffix(".accounted.json").exists():
+        raise RuntimeError("release_abandonment_has_response")
+    rows = [json.loads(line) for line in (directory / "budget.jsonl").read_text().splitlines()]
+    reservation = rows[row["local_request"]]
+    original = json.loads(prefix.with_suffix(".input.json").read_bytes())
+    payload = json.dumps(original["payload"], ensure_ascii=False).encode()
+    price = reservation["pricing"]
+    if (reservation["request"] != row["local_request"] or reservation["case"] != row["case"]
+            or reservation["reserved_usd"] != "0.10" or len(payload) > 200_000
+            or hashlib.sha256(payload).hexdigest() != reservation["payload_sha256"]
+            or original["payload"].get("max_tokens") != 8192
+            or original["payload"].get("model") != "deepseek-v4-flash"
+            or price.get("endpoint") != "https://api.deepseek.com"
+            or price.get("input_usd_per_million") != "0.30"
+            or price.get("output_usd_per_million") != "1.20"):
+        raise RuntimeError("release_abandonment_bound_unverified")
+    # Same conservative ceiling admitted before POST, not a fabricated invoice:
+    # 200k input + 8192 output at the frozen peak rates < the retained $0.10.
+    return Decimal("0.10")
+
+
 def reserve_global(round_number, local_number, case):
     hashed = authority()
     with (MASTER / "budget.jsonl").open("r+") as stream:
@@ -46,7 +84,11 @@ def reserve_global(round_number, local_number, case):
                 raise RuntimeError("release_ledger_invalid")
             accounted = MASTER / f"round-{row['round']}" / f"request-{row['local_request']:02d}.accounted.json"
             if not accounted.is_file():
-                raise RuntimeError("release_prior_request_unaccounted")
+                try:
+                    abandoned_bound(row)
+                except (OSError, ValueError, KeyError, IndexError, TypeError) as error:
+                    raise RuntimeError("release_prior_request_unaccounted") from error
+                continue
             value = json.loads(accounted.read_bytes())
             estimate = Decimal(value.get("peak_rate_estimate_usd", "NaN"))
             if (value.get("request") != row["local_request"] or value.get("reserved_usd") != "0.10"
@@ -72,7 +114,8 @@ def configured():
         "ENV": "ARSLAN_STABLE_RELEASE", "OPT_IN": OPT_IN, "REQUESTS": 24, "USD": "3.00",
         "CAPS": {"S2-R1": 12, "S2-R4": 12},
         "EXTRA_FILES": {"evals/companion/stable_release_retest.py", "tests/server/test_stable_release_live.py",
-                        "tests/test_stable_release_grant.py", "server/orchestrator/research_review.py"}}
+                        "tests/test_stable_release_grant.py", "server/orchestrator/research_review.py",
+                        "arslan/llm/request_policy.py", "arslan/llm/providers/openai_provider.py"}}
     old = {key: getattr(four, key) for key in values}
     try:
         for key, value in values.items():
