@@ -2,14 +2,14 @@
 
 ## Controlling product-owner decision — 2026-09-24
 
-**Latest batch 7 status:** native backup creation/path display/restart and
-automatic archive checks passed, but restoring a backup from inside the active
-data directory pauses after that directory is renamed: the archive path recheck
-still points at its old location. Original profile was returned through the
-native recovery prompt; no data loss, candidate retained, all acceptance apps
-exited. N/U remain open, no PR/tag/release. See
-`stable-0.1.40-native-backup-20260924.md` for actual source identities, failed
-round trip, checksum receipt and narrow decision boundary. New paid calls: **0**.
+**Latest batch 7 status:** user authorized the narrow archive-path repair;
+`1f5ae8f8` preserves file identity after the confirmed directory switch. Native
+v15 completed internal-backup restore, isolated trial, second confirmation and
+automatic restart; 19 asset hashes, credentials/chat/integrity and zero usage
+rows verified. Original profile retained, acceptance apps exited. v14 failure
+remains recorded. See `stable-0.1.40-native-backup-20260924.md` for source
+identities, boundaries and receipts. New paid calls: **0**. Next: frozen 0.1.40
+candidate CI, then PR and user merge; final signed-package checks remain open.
 
 User-signed decision, not an agent reclassification: **11/12 core task cases
 passed; R4 FAILED and is accepted by the user as a known limitation for 0.1.40**.
@@ -56,6 +56,25 @@ Release sequence: finish scoped batches, freeze 0.1.40 candidate, push branch,
 require same-SHA backend/frontend/secrets/macos success, open PR and WAIT for
 user merge. Then require merged-main SHA CI before immutable v0.1.40 tag.
 Signed draft only; user alone publishes/promotes Latest. Automation stays paused.
+
+### Batch 8 — candidate freeze (before CI / PR)
+
+Implementation through `1f5ae8f8`; candidate changes set the desktop version and
+generated inventory to 0.1.40 and update release/evidence notes. Scoped backend
+regressions: 149 passed; inventory 2 passed. Rust 80 passed / one pre-existing
+opt-in fixture ignored, Clippy warnings denied; Ruff entire configured source
+scope passed. Frontend TypeScript and production build passed (existing chunk
+size warning). Historical branch scan: 265 commits / no gitleaks findings.
+These are not substitutes for the frozen candidate's four-job full CI.
+
+Remote main read on 2026-09-24 remains `d3e8081d0fc7a72072731edfaa0ea33acf095724`
+and is an ancestor of this branch; no merge performed. GitHub reports four open
+default-branch dependency alerts: AnyIO #28/#29/#30 fixed at 4.14.2, which this
+candidate's uv.lock already pins; glib #10 is 0.18.5 in the lock (fixed >=0.20).
+`cargo tree --target aarch64-apple-darwin -i glib` has no reachable dependency;
+glib remains a Linux GTK-chain issue, not a claim of all-platform remediation.
+No new dependency changes or paid model calls in this batch. Signing/installer
+verification and exact merged-main CI remain required after user merge.
 
 ### Batches 2–3 — default gate off and retained R4 failure
 
@@ -207,8 +226,8 @@ not merely hidden in release notes while advertised in the application.
 | Gate | Finite acceptance | Current status |
 | --- | --- | --- |
 | R — useful task outcomes | Original inputs/criteria and all failures retained. User-owned release exception, not a test pass. | 11/12 core passed with recorded caveats (D1–D4, M1–M4, R1–R3). R4 FAILED; product owner explicitly accepted it as a known limitation on 2026-09-24. Evidence and failure reasons above. No further paid retest. |
-| N — actual native core flows | On the candidate: identity/channel; conversation and restart; mixed attachment retention; source opening; artifact opening; project memory correction/deletion; cancellation and explicit resume; backup/restore UI. Verify narrow-window usability and localized safety/errors in supported locales; recheck changed surfaces rather than all historical screens. | Partial: isolated native development bundle from fcb5f2ac verifies identity, Chinese onboarding/menu, project create/edit/restart, mixed attachment rejection/retention, memory correction/history/pause, restore-picker cancellation, positive restore/activation/relaunch with quarantined memory, and checksum-mismatched archive refusal with original profile retained after explicit restart. Backup was created through the source maintenance API, not a native export UI. Full conversations, deletion, source/artifact opening, task recovery, wrong-key/interrupted native restore, narrow-window/six-locale completion and final signed candidate remain unverified. |
-| U — upgrade and recoverability | Isolated fixtures representing stable 0.1.38, beta.3 and beta.6; backup before upgrade, supported upgrade with record/content checks, restart, restore with matching key, wrong/missing key and interrupted restore fail-closed. Exercise installer replacement and updater manifest/signature handling without changing production Latest or real data. | Partial: all three historical-source profile rehearsals passed on 2026-09-24; packaged/UI upgrade and recovery evidence still must be bound to the candidate. |
+| N — actual native core flows | On the candidate: identity/channel; conversation and restart; mixed attachment retention; source opening; artifact opening; project memory correction/deletion; cancellation and explicit resume; backup/restore UI. Verify narrow-window usability and localized safety/errors in supported locales; recheck changed surfaces rather than all historical screens. | Development-bundle acceptance complete for the finite scope: v1/v3–v9 cover onboarding, project/memory/deletion, six locales/narrow window, corrupt/wrong-key/interrupted recovery; v12/v13 cover source/artifact and scripted loopback conversation/cancel/resume/restart (not live-model quality); v14/v15 add actual native backup and internal-backup restore. See native backup report and earlier receipts below. Final signed candidate identity and changed packaging still require P-stage checks. |
+| U — upgrade and recoverability | Isolated fixtures representing stable 0.1.38, beta.3 and beta.6; backup before upgrade, supported upgrade with record/content checks, restart, restore with matching key, wrong/missing key and interrupted restore fail-closed. Exercise installer replacement and updater manifest/signature handling without changing production Latest or real data. | Source rehearsals and isolated development-package upgrade/backup/restore passed: v14 upgraded 0.1.38 and generated checksummed pre-migration snapshots; both restored/opened with pinned 0.1.38 source and same synthetic key. v15 native restore completed. No in-place downgrade claim. Final signed installer/updater assets remain P-stage obligations, not inferred from development results. |
 | S — safety and regression | No unresolved data-loss, unauthorized action, privacy/key exposure, startup failure or broken advertised core path. Full CI and scoped safety regressions pass; dependency findings receive platform/reachability disposition rather than 'all clear' by count. | Open until final source; reuse prior results only where changes cannot invalidate them. |
 | P — release provenance | Release source integrated through review with current remote main; documented source/version identity, full same-SHA CI, signed/notarized/stapled package, Gatekeeper/fresh-install and asset/update-signature checks. Stable-channel update path explicitly reviewed before Latest/Publish. | Open; remote main observed at `d3e8081d0fc7a72072731edfaa0ea33acf095724`, not the beta.6 source. Do not silently merge or promote the existing beta artifact. |
 

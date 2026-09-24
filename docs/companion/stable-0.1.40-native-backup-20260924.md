@@ -1,5 +1,36 @@
 # Native backup closeout — 2026-09-24
 
+## Follow-up authorized by user and verified
+
+The user explicitly permitted the narrow path-tracking repair after the failed
+v14 run. Commit `1f5ae8f8` follows only the confirmed operation's retained
+original directory, preserving the original archive metadata identity and all
+confirmations. External archives are unchanged. Wrong operation IDs, replaced
+files (even identical bytes) and symlinks are rejected by the new Rust test.
+Full Rust suite: 80 passed, one existing opt-in frozen fixture ignored; Clippy
+passed with warnings denied. No additional paid model calls.
+
+Native v15 used a new isolated copy of the synthetic profile, the same backend
+`9f418a16`, and shell `1f5ae8f8`. The internal manual archive from v14 now passed
+the original two confirmations, isolated trial, finalization and automatic
+restart to the online Cedar workspace. Original data remained retained.
+Post-stop verification checked 19 assets against archive hashes, credential
+compatibility with the synthetic key, wrong-key read-only refusal, database
+integrity, preserved chat and zero usage rows. A SQLite backup snapshot included
+committed WAL; the initial raw preflight correctly refused leftover journals.
+The verifier's initial incorrect table name `usage_logs` was corrected to the
+actual `usage_ledger`; neither initial verifier error is counted as a pass.
+
+Receipt: `../stable-0140-native-9f418a16/native-restore-v15.json`, SHA256
+`64403b8fbd12637c6a1d5879f45803ada42555fd4b16e8fc463c7ab4e6d0e512`.
+All owned acceptance processes exited. Prior v8 native wrong-key refusal and
+v4/v5 corrupt/interrupted recovery evidence remain applicable: this change is
+after credential rewrap and does not weaken those checks. This is development
+bundle acceptance, not final Developer ID/notarized artifact acceptance.
+
+The historical blocker and failed outputs below remain intact. It is resolved
+by the authorized repair, not reclassified as a passing v14 run.
+
 ## Source and isolation
 
 Backend/web source `9f418a1600433602fef978a9f23e171ed0e083e2`; native shell
