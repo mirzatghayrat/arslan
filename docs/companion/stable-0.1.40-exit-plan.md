@@ -2,6 +2,15 @@
 
 ## Controlling product-owner decision — 2026-09-24
 
+**Latest batch 7 status:** native backup creation/path display/restart and
+automatic archive checks passed, but restoring a backup from inside the active
+data directory pauses after that directory is renamed: the archive path recheck
+still points at its old location. Original profile was returned through the
+native recovery prompt; no data loss, candidate retained, all acceptance apps
+exited. N/U remain open, no PR/tag/release. See
+`stable-0.1.40-native-backup-20260924.md` for actual source identities, failed
+round trip, checksum receipt and narrow decision boundary. New paid calls: **0**.
+
 User-signed decision, not an agent reclassification: **11/12 core task cases
 passed; R4 FAILED and is accepted by the user as a known limitation for 0.1.40**.
 Retain every caveat, original criterion and failed output. R4 is not passed or
