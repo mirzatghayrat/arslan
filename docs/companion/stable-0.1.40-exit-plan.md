@@ -43,7 +43,7 @@ not merely hidden in release notes while advertised in the application.
 | Gate | Finite acceptance | Current status |
 | --- | --- | --- |
 | R — useful task outcomes | All original R1–R4/D1–D4/M1–M4 IDs have frozen inputs, actual outputs, reviewed conclusions, sources/artifacts and recovery evidence against their original acceptance. Keep failures and corrections; no best-of-N substitution or dropped cases. | Open: all twelve baselines attempted. D2/D4 core criteria passed with caveats, M1/M3 passed. D1/D3 retain failed baselines with offline repairs; M2 and R1–R4 retain factual-scope/delivery failures. M4 proves saved-output/process recovery and no repeated write, but its resumed final answer was blocked by the unchanged five-call harness cap. Eight cases are not fully accepted; no unrun baseline remains. |
-| N — actual native core flows | On the candidate: identity/channel; conversation and restart; mixed attachment retention; source opening; artifact opening; project memory correction/deletion; cancellation and explicit resume; backup/restore UI. Verify narrow-window usability and localized safety/errors in supported locales; recheck changed surfaces rather than all historical screens. | Partial: isolated native development bundle from fcb5f2ac verifies identity, Chinese onboarding/menu, project create/edit/restart, mixed attachment rejection/retention, memory correction/history/pause, restore-picker cancellation, and now native restore/activation/relaunch with original project text and quarantined memory visibly verified. Backup was created through the source maintenance API, not a native export UI. Full conversations, deletion, source/artifact opening, task recovery, negative/interrupted native restore, narrow-window/six-locale completion and final signed candidate remain unverified. |
+| N — actual native core flows | On the candidate: identity/channel; conversation and restart; mixed attachment retention; source opening; artifact opening; project memory correction/deletion; cancellation and explicit resume; backup/restore UI. Verify narrow-window usability and localized safety/errors in supported locales; recheck changed surfaces rather than all historical screens. | Partial: isolated native development bundle from fcb5f2ac verifies identity, Chinese onboarding/menu, project create/edit/restart, mixed attachment rejection/retention, memory correction/history/pause, restore-picker cancellation, positive restore/activation/relaunch with quarantined memory, and checksum-mismatched archive refusal with original profile retained after explicit restart. Backup was created through the source maintenance API, not a native export UI. Full conversations, deletion, source/artifact opening, task recovery, wrong-key/interrupted native restore, narrow-window/six-locale completion and final signed candidate remain unverified. |
 | U — upgrade and recoverability | Isolated fixtures representing stable 0.1.38, beta.3 and beta.6; backup before upgrade, supported upgrade with record/content checks, restart, restore with matching key, wrong/missing key and interrupted restore fail-closed. Exercise installer replacement and updater manifest/signature handling without changing production Latest or real data. | Partial: all three historical-source profile rehearsals passed on 2026-09-24; packaged/UI upgrade and recovery evidence still must be bound to the candidate. |
 | S — safety and regression | No unresolved data-loss, unauthorized action, privacy/key exposure, startup failure or broken advertised core path. Full CI and scoped safety regressions pass; dependency findings receive platform/reachability disposition rather than 'all clear' by count. | Open until final source; reuse prior results only where changes cannot invalidate them. |
 | P — release provenance | Release source integrated through review with current remote main; documented source/version identity, full same-SHA CI, signed/notarized/stapled package, Gatekeeper/fresh-install and asset/update-signature checks. Stable-channel update path explicitly reviewed before Latest/Publish. | Open; remote main observed at `d3e8081d0fc7a72072731edfaa0ea33acf095724`, not the beta.6 source. Do not silently merge or promote the existing beta artifact. |
@@ -1251,3 +1251,47 @@ upgrade and signed final-candidate checks remain separate. Next unpaid batch:
 bounded negative/paused native recovery or remaining native interaction checks.
 Paid retests still require the unanswered additional authorization; the previous
 31/36 calls and $3.10 reservation are unchanged. No repeated budget reminder.
+
+## Native checksum-mismatch refusal — 2026-09-24
+
+Starting checkout `0a6b033b`, unchanged native bundle source `fcb5f2ac`, no build
+or paid call. New disposable `native-home-negative-v4` cloned the stopped v1
+fixture; no existing evidence/profile was overwritten. Registered the input and
+expected outcome before launch in `native-negative-v4-inputs.json`. Corrupted
+one non-database member of a copy of the known backup while leaving its manifest
+unchanged: ZIP CRC/integrity remains valid, but the recorded content checksum
+does not match. The original archive and disposable original key are retained.
+
+CUA drove the real native ZIP and key pickers and stop/prepare confirmation.
+The normal workspace was replaced by maintenance, then a Chinese **恢复已暂停**
+warning explaining uncertain completion, no automatic retry, preservation and
+explicit exit/reopen. No activation/success confirmation appeared. The recovery
+menu was disabled and the normal backend child was gone. No candidate directory,
+profile-switch journal, previous-profile directory or completed activation was
+created. This is the expected fail-closed outcome for this negative input, not
+an unexpected build/release failure.
+
+After normal Quit, explicitly relaunched with the same controlled HOME and a
+new log file (old log retained); the launcher stayed alive through the test.
+The workspace was usable on port 50099, versus 49958 before refusal. The original
+active Cedar project and full summary were visibly intact; the corrected blue
+memory still showed **已停用 / 仅本地**, not restored/quarantined or enabled.
+Normal Quit ended the acceptance processes; only then was its launcher stopped.
+No default-HOME launch or interaction with the installed app occurred.
+
+Stopped-fixture assertions compare project rows, memory rows and all revisions
+to v1 exactly, check both database integrity and zero provider/message/run/usage
+rows, verify 18 asset hashes, unchanged original-v1 DB hash, and absence of
+activation/staging records. Receipt `native-negative-v4.json` in the private
+native evidence directory has SHA-256
+`7cc1c1832368cb448bbb662c41dcf215e63a66106abb4cdc80b7e8d4631aa1bc`.
+Raw logs remain private. No unit test count is substituted for these observations.
+
+This verifies one actual corrupt-archive refusal/reopen path on the development
+bundle. It does not cover a wrong key, missing key, credential rewrap, choosing
+pause after a successful trial, rollback after an interrupted switch, all locales
+or the signed final package. Next unpaid batch can exercise that distinct
+post-trial pause/rollback path on another clone; do not repeat this negative case
+as new progress. N/U remain partial; all release gates remain open. Canonical
+paid consumption is unchanged at 31/36, $3.10 reserved; the previously asked
+additional-budget question remains unanswered. No tag, push, Publish or merge.
