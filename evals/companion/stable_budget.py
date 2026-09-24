@@ -22,7 +22,7 @@ def grant_limits(value):
     usd = value.get("max_usd", "5.00")
     payload = value.get("max_payload_bytes", 100_000)
     if (type(requests) is not int or not 1 <= requests <= 36
-            or usd not in {"3.00", "5.00"} or requests * Decimal("0.10") > Decimal(usd)
+            or usd not in {"1.20", "3.00", "5.00"} or requests * Decimal("0.10") > Decimal(usd)
             or type(payload) is not int or not 1 <= payload <= 200_000):
         raise RuntimeError("stable_grant_limits_invalid")
     return requests, usd, payload

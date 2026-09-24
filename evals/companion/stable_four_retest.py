@@ -11,6 +11,9 @@ PARENT = budget.ROOT.parent / "stable-0140-retest-evidence-20260924"
 EVIDENCE = budget.ROOT.parent / "stable-0140-four-retest-evidence-20260924"
 GRANT_ID = "arslan-stable-four-22-usd3-20260924"
 OPT_IN = "authorized-four-22-requests-usd3"
+ENV = "ARSLAN_STABLE_FOUR"
+REQUESTS, USD = 22, "3.00"
+EXTRA_FILES = set()
 CAPS = {"S2-R1": 8, "S2-R4": 7, "S2-D3": 4, "S2-M2": 3}
 RUNNERS = {case: "tests/server/test_stable_" + (
     "research" if case.startswith("S2-R") else "document" if case == "S2-D3" else "memory") + "_live.py"
@@ -19,8 +22,8 @@ RUNNERS = {case: "tests/server/test_stable_" + (
 
 def grant():
     value = json.loads((EVIDENCE / "authorization.json").read_bytes())
-    if (os.environ.get("ARSLAN_STABLE_FOUR") != OPT_IN or value.get("id") != GRANT_ID
-            or value.get("max_requests") != 22 or value.get("max_usd") != "3.00"
+    if (os.environ.get(ENV) != OPT_IN or value.get("id") != GRANT_ID
+            or value.get("max_requests") != REQUESTS or value.get("max_usd") != USD
             or value.get("explicit_user_approval") is not True or not value.get("user_reply")):
         raise RuntimeError("four_explicit_authorization_required")
     return value
@@ -38,7 +41,7 @@ def bound():
                 or value["parent_ledger_sha256"] != digest(PARENT / "budget.jsonl")
                 or value["parent_contract_sha256"] != digest(PARENT / "contract.json")
                 or value["grant_sha256"] != digest(EVIDENCE / "authorization.json")
-                or budget.grant_limits(value) != (22, "3.00", 200_000)
+                or budget.grant_limits(value) != (REQUESTS, USD, 200_000)
                 or {c["id"]: c["max_requests"] for c in value["cases"]} != CAPS):
             raise RuntimeError("four_frozen_identity_changed")
         grant()
@@ -46,7 +49,7 @@ def bound():
 
     def plan(case):
         value = old[3](case)
-        value["limits"] = f"Independent {GRANT_ID}; case cap {CAPS[case]}; total 22/$3; no automatic retry"
+        value["limits"] = f"Independent {GRANT_ID}; case cap {CAPS[case]}; total {REQUESTS}/${USD}; no automatic retry"
         return value
 
     try:
@@ -66,12 +69,12 @@ def bound():
 def freeze():
     grant()
     parent = json.loads((PARENT / "contract.json").read_bytes())
-    files = set(parent["frozen_files"]) | set(RUNNERS.values()) | {
+    files = set(parent["frozen_files"]) | set(RUNNERS.values()) | EXTRA_FILES | {
         "evals/companion/stable_four_retest.py", "tests/server/test_stable_four_live.py",
         "tests/test_stable_four_grant.py", "server/services/input_formats.py",
         "server/orchestrator/arslan.py", "server/orchestrator/tool_loop.py"}
     value = {**parent, "revision": 3, "authorization_id": GRANT_ID,
-             "max_requests": 22, "max_usd": "3.00", "max_payload_bytes": 200_000,
+             "max_requests": REQUESTS, "max_usd": USD, "max_payload_bytes": 200_000,
              "source_baseline": source_sha(), "parent_contract_sha256": digest(PARENT / "contract.json"),
              "parent_ledger_sha256": digest(PARENT / "budget.jsonl"),
              "grant_sha256": digest(EVIDENCE / "authorization.json"),
