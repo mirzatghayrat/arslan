@@ -17,7 +17,7 @@ from server.services.task_repository import TaskError
 
 
 def compact_saved_context(convo, source_feedback, draft):
-    """After a reviewed successful write, keep receipts + draft, not duplicate bodies.
+    """After a successful write, keep receipts + draft, not duplicate bodies.
 
     Only exact feedback objects registered by this loop may be replaced. Trace,
     source receipts, prior model inputs, opaque provider pairs and disk stay intact.

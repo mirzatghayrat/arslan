@@ -9,6 +9,7 @@ from server.activation_control_entry import decode_request, run
 @pytest.mark.parametrize("payload", [
     {"action": "rollback"},
     {"action": "inspect"},
+    {"action": "backup", "name": "manual-" + "a" * 64 + ".zip"},
     {"action": "prepare", "archive": "/tmp/backup.zip", "candidate": "restored"},
     {"action": "rewrap", "candidate": "restored", "source_secret": "source", "target_secret": "target"},
     {"action": "rollback", "operation_id": str(uuid4())},
@@ -21,6 +22,8 @@ def test_exact_action_requests(payload):
 
 @pytest.mark.parametrize("payload", [
     {}, [], {"action": []}, {"action": "serve"}, {"action": "rollback", "secret": "extra"},
+    *[{"action": "backup", "name": name} for name in ("../backup.zip", "/tmp/backup.zip", "manual-abc.zip", None)],
+    {"action": "backup", "name": "manual-" + "a" * 64 + ".zip", "path": "/tmp/untrusted"},
     {"action": "rollback", "active": "/elsewhere"},
     *[{"action": "prepare", "archive": archive, "candidate": "restored"}
       for archive in ("relative.zip", "/tmp/../backup.zip", "/tmp/a\0b", "/" + "x" * 4096, 4)],

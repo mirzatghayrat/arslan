@@ -14,6 +14,7 @@ fn main() {
             "update_status",
             "install_update",
             "open_external",
+            "create_backup",
             "voice_start",
             "voice_stop",
             "voice_conversation_start",

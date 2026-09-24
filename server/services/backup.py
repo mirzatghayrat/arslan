@@ -134,6 +134,8 @@ def create(data_dir: Path, destination: Path, *, db_path: Path | None = None,
         with destination.open("xb") as output, archive.open("rb") as source:
             os.chmod(destination, 0o600)
             shutil.copyfileobj(source, output)
+            output.flush()
+            os.fsync(output.fileno())
     return {"files": len(manifest["files"]), "bytes": total, "secret_included": False}
 
 

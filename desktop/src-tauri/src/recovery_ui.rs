@@ -437,6 +437,106 @@ impl Steps for NativeSteps {
     }
 }
 
+pub(crate) fn begin_backup(app: AppHandle) {
+    std::thread::spawn(move || {
+        let gate = app.state::<crate::maintenance::Gate>();
+        let Some(permit) = gate.begin(crate::maintenance::Operation::Recovery) else {
+            return;
+        };
+        crate::refresh_update_menu(&app);
+        let locale = crate::native_locale::selected();
+        let text = |key| crate::native_locale::text(locale, key);
+        let Some(window) = app.get_webview_window(crate::MAIN_LABEL) else {
+            permit.complete();
+            return;
+        };
+        let confirmed = app
+            .dialog()
+            .message(text("backup_confirm"))
+            .parent(&window)
+            .title(text("backup_title"))
+            .kind(MessageDialogKind::Warning)
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                text("backup_begin"),
+                text("not_now"),
+            ))
+            .blocking_show();
+        if !confirmed {
+            permit.complete();
+            crate::refresh_update_menu(&app);
+            return;
+        }
+        let mut service_touched = false;
+        let result = (|| -> Result<PathBuf, ()> {
+            let home = PathBuf::from(std::env::var_os("HOME").ok_or(())?);
+            if !home.is_absolute()
+                || std::env::var_os("ARSLAN_DATA_DIR").is_some()
+                || std::env::var_os("ARSLAN_DB_PATH").is_some()
+            {
+                return Err(());
+            }
+            let executable = RecoveryExecutable::load(
+                app.path()
+                    .resolve(
+                        "sidecar/arslan-server",
+                        tauri::path::BaseDirectory::Resource,
+                    )
+                    .map_err(|_| ())?,
+            )?;
+            let name = format!(
+                "manual-{}.zip",
+                crate::recovery_trial::token().map_err(|_| ())?
+            );
+            service_touched = true;
+            window.set_enabled(false).map_err(|_| ())?;
+            let _ = crate::listen::voice_stop(app.clone());
+            let _ = crate::voice::voice_conversation_stop(app.clone());
+            let child = app
+                .state::<crate::Sidecar>()
+                .0
+                .lock()
+                .map_err(|_| ())?
+                .take()
+                .ok_or(())?;
+            crate::recovery_shutdown::stop(child.process, child.shutdown).map_err(|_| ())?;
+            match recovery_control::run(executable.recheck()?, &Request::Backup { name: &name }) {
+                Ok(Reply::BackupCreated) => Ok(home
+                    .join("Library/Application Support/Arslan/backups")
+                    .join(name)),
+                _ => Err(()),
+            }
+        })();
+        match result {
+            Ok(path) => {
+                app.dialog()
+                    .message(format!("{}\n{}", text("backup_created"), path.display()))
+                    .parent(&window)
+                    .title(text("backup_title"))
+                    .buttons(MessageDialogButtons::OkCustom(text("restore_ack")))
+                    .blocking_show();
+                // New process owns fresh startup; never start another backend here.
+                app.restart();
+            }
+            Err(()) => {
+                if !service_touched {
+                    permit.complete();
+                }
+                app.dialog()
+                    .message(text(if service_touched {
+                        "backup_failed"
+                    } else {
+                        "backup_not_started"
+                    }))
+                    .parent(&window)
+                    .title(text("backup_title"))
+                    .kind(MessageDialogKind::Warning)
+                    .blocking_show();
+                crate::refresh_update_menu(&app);
+            }
+        }
+    });
+}
+
 pub(crate) fn begin(app: AppHandle) {
     std::thread::spawn(move || {
         let locale = crate::native_locale::selected();

@@ -582,8 +582,9 @@ def main() -> int:
             _check_profile_schema(resolve_database())
         except Exception as exc:
             # Closed protocol, no database paths, schema contents or traceback.
-            code = ("database_schema_unsupported" if isinstance(exc, RuntimeError)
-                    and str(exc) == "database_schema_unsupported" else "data_profile_unavailable")
+            code = (str(exc) if isinstance(exc, RuntimeError)
+                    and str(exc) in {"database_schema_unsupported", "database_upgrade_backup_failed"}
+                    else "data_profile_unavailable")
             print(f"ARSLAN_ERROR={code}", flush=True)
             return 1
         return _serve()
@@ -595,13 +596,14 @@ def _check_profile_schema(database: pathlib.Path) -> None:
         return
     import sqlite3
     from sqlalchemy import create_engine
-    from server.db.migrations.runner import assert_supported_schema
+    from server.db.migrations.runner import assert_supported_schema, prepare_upgrade_backup
 
     engine = create_engine("sqlite://", creator=lambda: sqlite3.connect(
         f"{database.absolute().as_uri()}?mode=ro", uri=True))
     try:
         with engine.connect() as connection:
             assert_supported_schema(connection)
+            prepare_upgrade_backup(connection)
     finally:
         engine.dispose()
 

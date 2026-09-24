@@ -177,6 +177,12 @@
       "description": "Permission identifier",
       "oneOf": [
         {
+          "description": "Enables the create_backup command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-create-backup",
+          "markdownDescription": "Enables the create_backup command without any pre-configured scope."
+        },
+        {
           "description": "Enables the get_app_icon command without any pre-configured scope.",
           "type": "string",
           "const": "allow-get-app-icon",
@@ -241,6 +247,12 @@
           "type": "string",
           "const": "allow-voice-unmute",
           "markdownDescription": "Enables the voice_unmute command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the create_backup command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-create-backup",
+          "markdownDescription": "Denies the create_backup command without any pre-configured scope."
         },
         {
           "description": "Denies the get_app_icon command without any pre-configured scope.",

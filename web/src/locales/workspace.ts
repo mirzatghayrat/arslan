@@ -1,5 +1,7 @@
 export const workspaceMessages = {
   "en": {
+    "createBackup": "Create backup",
+    "backupUnavailable": "Backup could not start. No automatic retry.",
     "navigation": "Main navigation",
     "executionOptions": "Execution options",
     "readOnlyAutomatic": "Read-only commands run automatically",
@@ -29,6 +31,8 @@ export const workspaceMessages = {
     "escalated": "Needs attention"
   },
   "zh": {
+    "createBackup": "创建备份",
+    "backupUnavailable": "无法启动备份。不会自动重试。",
     "navigation": "主导航",
     "executionOptions": "执行选项",
     "readOnlyAutomatic": "只读命令自动执行",
@@ -58,6 +62,8 @@ export const workspaceMessages = {
     "escalated": "需要关注"
   },
   "ja": {
+    "createBackup": "バックアップを作成",
+    "backupUnavailable": "バックアップを開始できません。自動再試行はしません。",
     "navigation": "メインナビゲーション",
     "executionOptions": "実行オプション",
     "readOnlyAutomatic": "読み取り専用コマンドは自動実行",
@@ -87,6 +93,8 @@ export const workspaceMessages = {
     "escalated": "確認が必要"
   },
   "es": {
+    "createBackup": "Crear copia de seguridad",
+    "backupUnavailable": "No se pudo iniciar la copia. Sin reintento automático.",
     "navigation": "Navegación principal",
     "executionOptions": "Opciones de ejecución",
     "readOnlyAutomatic": "Los comandos de solo lectura se ejecutan automáticamente",
@@ -116,6 +124,8 @@ export const workspaceMessages = {
     "escalated": "Requiere atención"
   },
   "de": {
+    "createBackup": "Sicherung erstellen",
+    "backupUnavailable": "Sicherung konnte nicht starten. Kein automatischer Neuversuch.",
     "navigation": "Hauptnavigation",
     "executionOptions": "Ausführungsoptionen",
     "readOnlyAutomatic": "Lesende Befehle werden automatisch ausgeführt",
@@ -145,6 +155,8 @@ export const workspaceMessages = {
     "escalated": "Aufmerksamkeit nötig"
   },
   "fr": {
+    "createBackup": "Créer une sauvegarde",
+    "backupUnavailable": "Impossible de lancer la sauvegarde. Aucun nouvel essai automatique.",
     "navigation": "Navigation principale",
     "executionOptions": "Options d’exécution",
     "readOnlyAutomatic": "Les commandes en lecture seule sont automatiques",

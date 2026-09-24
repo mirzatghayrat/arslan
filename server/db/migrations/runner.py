@@ -170,6 +170,7 @@ def apply_pending(conn) -> list[str]:
     order, recording each. Runs under the caller's transaction (matches boot's
     single ``begin()``)."""
     assert_supported_schema(conn)
+    prepare_upgrade_backup(conn)
     applied = current_versions(conn)
     done: list[str] = []
     for vid, fn in MIGRATIONS:
@@ -180,6 +181,30 @@ def apply_pending(conn) -> list[str]:
                      {"v": vid, "t": datetime.utcnow().isoformat()})
         done.append(vid)
     return done
+
+
+def prepare_upgrade_backup(conn) -> None:
+    """Called before create_all AND defensively by apply_pending. Read-only first.
+
+    Connection-scoped marker covers a single boot connection (fresh databases
+    must not become apparent upgrades after create_all). No provider/config read.
+    """
+    assert_supported_schema(conn)
+    tables = sa.inspect(conn).get_table_names()
+    applied = (set(conn.execute(sa.text("SELECT version FROM schema_version")).scalars())
+               if "schema_version" in tables else set())
+    marker = (frozenset(applied), head())
+    if conn.info.get("upgrade_backup_prepared") == marker:
+        return
+    pending = any(vid not in applied for vid, _ in MIGRATIONS)
+    if tables and pending and conn.dialect.name == "sqlite":
+        from pathlib import Path
+        from server.services import upgrade_backup
+        rows = conn.execute(sa.text("PRAGMA database_list")).all()
+        filename = next((row[2] for row in rows if row[1] == "main"), "")
+        if filename and Path(filename).is_file():
+            upgrade_backup.create(Path(filename), max(applied, default="legacy"), head())
+    conn.info["upgrade_backup_prepared"] = marker
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -223,6 +248,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         with engine.begin() as conn:
             assert_supported_schema(conn)
+            prepare_upgrade_backup(conn)
             Base.metadata.create_all(conn)
             pending = [vid for vid, _ in MIGRATIONS if vid not in current_versions(conn)]
             print(f"db:      {db_path}")

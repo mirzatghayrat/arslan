@@ -1,5 +1,12 @@
 {
   "en": {
+    "backup_not_started": "Backup was not started. Check storage permissions and restart manually if needed. No automatic retry.",
+    "profile_upgrade_backup_failed": "database_upgrade_backup_failed: Pre-upgrade backup failed; migration did not start. Free disk space and check permissions, then restart manually. Keep your data and encryption key.",
+    "backup_title": "Create backup",
+    "backup_confirm": "Stop tasks and save drafts first. Arslan will stop its service, create a private backup without the external key, show its location, then restart. Continue?",
+    "backup_created": "Backup created. Keep the external key separately. Location:",
+    "backup_failed": "Backup failed or could not be confirmed. Service remains stopped. Keep data and key; check space and permissions, then quit and reopen manually.",
+    "backup_begin": "Create backup and restart",
     "latest": "You're on the latest version.",
     "check_title": "Check for Updates…",
     "check_failed": "Could not reach the update feed. Please check your network connection.",
@@ -23,6 +30,13 @@
     "install_failed": "Could not copy Arslan into /Applications. Please drag it there in Finder."
   },
   "zh": {
+    "backup_not_started": "备份未开始。请检查存储权限，必要时手动重启。不会自动重试。",
+    "profile_upgrade_backup_failed": "database_upgrade_backup_failed：升级前备份失败，未开始迁移。请释放磁盘空间并检查权限，然后手动重启。保留数据和加密密钥。",
+    "backup_title": "创建备份",
+    "backup_confirm": "请先停止任务并保存草稿。Arslan 将停止服务，创建不含外部密钥的私密备份，显示位置后重启。是否继续？",
+    "backup_created": "备份已创建。请单独保管外部密钥。位置：",
+    "backup_failed": "备份失败或无法确认，服务保持停止。请保留数据和密钥，检查磁盘空间和权限，然后退出并手动重新打开。",
+    "backup_begin": "创建备份并重启",
     "latest": "已是最新版本。",
     "check_title": "检查更新…",
     "check_failed": "无法连接更新源，请检查网络连接。",
@@ -46,6 +60,13 @@
     "install_failed": "无法将 Arslan 复制到 /Applications。请在访达中手动将它拖入「应用程序」。"
   },
   "ja": {
+    "backup_not_started": "バックアップは開始されませんでした。保存先の権限を確認し、必要なら手動で再起動してください。自動再試行はしません。",
+    "profile_upgrade_backup_failed": "database_upgrade_backup_failed: 更新前のバックアップに失敗し、移行は開始していません。空き容量と権限を確認し、手動で再起動してください。データとキーを保持してください。",
+    "backup_title": "バックアップを作成",
+    "backup_confirm": "先にタスクを停止して下書きを保存してください。サービスを停止し、外部キーを含まない非公開バックアップを作成します。保存場所を表示後、再起動します。続けますか？",
+    "backup_created": "バックアップを作成しました。外部キーは別に保管してください。保存場所：",
+    "backup_failed": "バックアップに失敗したか確認できません。サービスは停止しています。データとキーを保持し、空き容量と権限を確認してから終了し、手動で開き直してください。",
+    "backup_begin": "作成して再起動",
     "latest": "最新バージョンを使用しています。",
     "check_title": "アップデートを確認…",
     "check_failed": "更新元に接続できませんでした。ネットワーク接続を確認してください。",
@@ -69,6 +90,13 @@
     "install_failed": "Arslan を /Applications にコピーできませんでした。Finder で「アプリケーション」にドラッグしてください。"
   },
   "es": {
+    "backup_not_started": "La copia no comenzó. Revisa permisos y reinicia manualmente si hace falta. Sin reintento automático.",
+    "profile_upgrade_backup_failed": "database_upgrade_backup_failed: Falló la copia previa; la migración no comenzó. Libera espacio y revisa permisos, luego reinicia manualmente. Conserva datos y clave.",
+    "backup_title": "Crear copia de seguridad",
+    "backup_confirm": "Detén tareas y guarda borradores. Arslan detendrá el servicio, creará una copia privada sin la clave externa, mostrará su ubicación y se reiniciará. ¿Continuar?",
+    "backup_created": "Copia creada. Guarda la clave externa por separado. Ubicación:",
+    "backup_failed": "Copia fallida o no confirmada. Servicio detenido. Conserva datos y clave, revisa espacio y permisos, cierra y abre manualmente.",
+    "backup_begin": "Crear copia y reiniciar",
     "latest": "Ya tienes la última versión.",
     "check_title": "Buscar actualizaciones…",
     "check_failed": "No se pudo conectar con la fuente de actualizaciones. Comprueba la conexión de red.",
@@ -92,6 +120,13 @@
     "install_failed": "No se pudo copiar Arslan a /Applications. Arrástralo allí con Finder."
   },
   "de": {
+    "backup_not_started": "Sicherung nicht gestartet. Rechte prüfen und bei Bedarf manuell neu starten. Kein automatischer Neuversuch.",
+    "profile_upgrade_backup_failed": "database_upgrade_backup_failed: Sicherung fehlgeschlagen; Migration nicht gestartet. Speicherplatz und Rechte prüfen, dann manuell neu starten. Daten und Schlüssel aufbewahren.",
+    "backup_title": "Sicherung erstellen",
+    "backup_confirm": "Aufgaben stoppen und Entwürfe speichern. Arslan stoppt den Dienst, sichert privat ohne externen Schlüssel, zeigt den Speicherort und startet neu. Fortfahren?",
+    "backup_created": "Sicherung erstellt. Externen Schlüssel separat aufbewahren. Speicherort:",
+    "backup_failed": "Sicherung fehlgeschlagen oder unbestätigt. Dienst bleibt gestoppt. Daten und Schlüssel aufbewahren, Speicherplatz und Rechte prüfen, beenden und manuell öffnen.",
+    "backup_begin": "Sichern und neu starten",
     "latest": "Du verwendest die neueste Version.",
     "check_title": "Nach Updates suchen…",
     "check_failed": "Die Update-Quelle ist nicht erreichbar. Bitte prüfe deine Netzwerkverbindung.",
@@ -115,6 +150,13 @@
     "install_failed": "Arslan konnte nicht nach /Applications kopiert werden. Bitte ziehe die App im Finder dorthin."
   },
   "fr": {
+    "backup_not_started": "Sauvegarde non démarrée. Vérifiez les autorisations et redémarrez manuellement si nécessaire. Aucun nouvel essai automatique.",
+    "profile_upgrade_backup_failed": "database_upgrade_backup_failed : Sauvegarde échouée ; migration non commencée. Vérifiez espace et autorisations, puis redémarrez manuellement. Conservez données et clé.",
+    "backup_title": "Créer une sauvegarde",
+    "backup_confirm": "Arrêtez les tâches et enregistrez les brouillons. Arslan arrêtera le service, créera une sauvegarde privée sans clé externe, affichera son emplacement puis redémarrera. Continuer ?",
+    "backup_created": "Sauvegarde créée. Conservez la clé externe séparément. Emplacement :",
+    "backup_failed": "Sauvegarde échouée ou non confirmée. Service arrêté. Conservez données et clé, vérifiez espace et autorisations, puis quittez et rouvrez manuellement.",
+    "backup_begin": "Sauvegarder et redémarrer",
     "latest": "Vous utilisez la dernière version.",
     "check_title": "Rechercher des mises à jour…",
     "check_failed": "Impossible de joindre la source des mises à jour. Vérifiez votre connexion réseau.",

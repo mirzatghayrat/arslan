@@ -60,6 +60,46 @@ test) fails at the forbidden reviewer call, as required. No real model calls.
 Known limitation wording is in `docs/releases/v0.1.40.md`; release HOLD remains.
 Next: pre-migration backup and native backup button, then isolated N/U evidence.
 
+### Batches 4–6 — implementation and offline evidence
+
+Base `9831ddd2`; new model calls remain **0**. Pre-upgrade backup runs before
+create_all and again defensively at apply_pending; packaged startup performs
+the check before port/secret bootstrap. Pending on-disk schemas only; current
+and fresh profiles do not back up. Checksummed existing backup service, private
+backups directory, schema-from/to plus 0.1.40 target and UTC timestamp names,
+space preflight, fsync and three-automatic-archive retention. Manual archives
+are never pruned. Same-process preflight reuse verifies archive digest.
+Failure maps to database_upgrade_backup_failed with six-language guidance and
+no path in the error. Byte-identical refusal and pre-port refusal tested.
+
+Historical source rehearsal: 0.1.38 profile generates exactly one automatic
+archive across two boots; restored into a new directory, the original 0.1.38
+source opens it with the same synthetic key. beta.3/beta.6 have no pending
+migrations and generate none. Removing the backup guard in a process-local
+mutation makes the failure-before-migration test red (DID NOT RAISE), as required.
+
+One Memory & Data settings button requests a native confirmation, stops only
+the owned service under the maintenance gate, calls the existing backup service
+through bounded local pipe transport, displays the new path, then restarts.
+No arbitrary destination from web IPC, no key export, no overwrite, no automatic
+failure retry, no change to restore flow. Maintenance subprocess test verifies
+busy-profile refusal, exclusive archive creation, unchanged DB and no secret or
+API-token bootstrap. Actual native clicks are still pending, not inferred.
+
+Six nav.arslan translations now say Main assistant / 主助手 and counterparts;
+no behavior change. Sources/history/context preservation remains enabled even
+when the review gate is off. The previously added externalLink.failed key from
+fe9c12b5 made the old locale-count baseline stale (1538 vs 1539); corrected that
+exact count while retaining all six-language key equality assertions.
+
+Offline evidence: 194 scoped Python tests passed; subsequent final backup,
+native-copy and historical-source group 77 passed (overlapping, not additive).
+Native Rust 79 passed / one pre-existing opt-in ignored; Clippy warnings denied
+and rustfmt passed. Frontend five relevant suites 35 passed; TypeScript and
+production build passed (existing large-chunk warning). No full final CI or
+signed package claim. Next: freeze this development source for isolated native
+upgrade/manual-backup/restore verification, reusing valid older evidence.
+
 Current: [60/$6 grant and registered repair rounds](stable-0.1.40-release-retest-20260924.md).
 Fifty-seven slots reserved, US$5.70 retained; unknown usage dispositions remain
 charged in full. Round 5 R1 core comparison/save/reopen passed with a documented

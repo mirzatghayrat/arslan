@@ -143,6 +143,14 @@ def test_released_profile_upgrade_restart_and_preupgrade_backup_recovery(tmp_pat
 
     shutil.copytree(profile, upgraded)
     boots = [run_child(ROOT, upgraded, home, "boot") for _ in range(2)]
+    automatic = list((upgraded / "backups").glob("upgrade-*.zip"))
+    if head == "0046":
+        assert len(automatic) == 1
+        auto_restored = tmp_path / "auto-restored"
+        backup.restore(automatic[0], auto_restored)
+        assert run_child(source, auto_restored, home, "boot") == created
+    else:
+        assert automatic == []
     assert boots[0] == boots[1] and boots[0]["head"] == "0053"
     assert check(upgraded / "arslan.db", SECRET)["status"] == "compatible"
     upgraded_digest = digest(upgraded / "arslan.db")

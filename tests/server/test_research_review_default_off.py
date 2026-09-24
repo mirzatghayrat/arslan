@@ -41,4 +41,5 @@ async def test_default_saves_multisource_report_without_review(monkeypatch, tmp_
     assert (tmp_path / "report.md").read_text() == content
     assert any(e["tool"] == "read_file" and e["result"]["text"] == content for e in result["tool_trace"])
     assert len(adapter.calls) == 4
+    assert "body_compacted_after_save" in str(adapter.calls[2])
     assert not any(e["result"].get("review") for e in result["tool_trace"])

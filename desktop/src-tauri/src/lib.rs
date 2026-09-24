@@ -178,6 +178,7 @@ fn startup_error(line: &str, locale: &str) -> Option<String> {
         "ARSLAN_ERROR=data_profile_unavailable" => "profile_unavailable",
         "ARSLAN_ERROR=data_profile_recovery_required" => "profile_recovery_required",
         "ARSLAN_ERROR=database_schema_unsupported" => "profile_schema_unsupported",
+        "ARSLAN_ERROR=database_upgrade_backup_failed" => "profile_upgrade_backup_failed",
         _ => return None,
     };
     Some(native_locale::text(locale, key))
@@ -947,6 +948,20 @@ fn reveal(app: &tauri::AppHandle) {
     }
 }
 
+#[tauri::command]
+fn create_backup(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        recovery_ui::begin_backup(app);
+        Ok(())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        Err("backup_platform_unavailable".into())
+    }
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -962,6 +977,7 @@ pub fn run() {
             update_status,
             install_update,
             open_external,
+            create_backup,
             listen::voice_start,
             listen::voice_stop,
             voice::voice_conversation_start,

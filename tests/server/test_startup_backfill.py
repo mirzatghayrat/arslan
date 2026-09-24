@@ -78,7 +78,7 @@ async def test_main_lifespan_calls_backfill(monkeypatch, tmp_path):
         async with main.lifespan(main.app):
             pytest.fail("must stop before serving")
 
-    assert callbacks == [runner.assert_supported_schema, Base.metadata.create_all, runner.apply_pending,
+    assert callbacks == [runner.assert_supported_schema, runner.prepare_upgrade_backup, Base.metadata.create_all, runner.apply_pending,
                          crypto_boot.resolve_and_adopt_salt,
                          crypto_boot.migrate_legacy_ciphertext, memory_activation.activate_sync]
     assert runner.MIGRATIONS[0][0] == "0006", (

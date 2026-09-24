@@ -26,7 +26,7 @@ def decode_request(data: bytes) -> dict:
     value = json.loads(data, object_pairs_hook=unique)
     if not isinstance(value, dict) or not isinstance(value.get("action"), str):
         raise ValueError("activation_control_request_invalid")
-    fields = {"prepare": {"action", "archive", "candidate"},
+    fields = {"backup": {"action", "name"}, "prepare": {"action", "archive", "candidate"},
               "rewrap": {"action", "candidate", "source_secret", "target_secret"},
               "switch": {"action", "candidate", "secret"}, "rollback": {"action"}, "inspect": {"action"},
               "finalize": {"action", "operation_id", "secret"}}
@@ -34,6 +34,10 @@ def decode_request(data: bytes) -> dict:
         fields["rollback"] = {"action", "operation_id"}
     if value["action"] not in fields or set(value) != fields[value["action"]]:
         raise ValueError("activation_control_request_invalid")
+    if value["action"] == "backup":
+        import re
+        if not isinstance(value["name"], str) or not re.fullmatch(r"manual-[a-f0-9]{64}\.zip", value["name"]):
+            raise ValueError("activation_control_request_invalid")
     for field in ("secret", "source_secret", "target_secret"):
         if field in value and (not isinstance(value[field], str) or not value[field].strip()
                                or "\0" in value[field] or len(value[field].encode()) > 8192):
@@ -66,7 +70,18 @@ def run(sanitize_env) -> int:
         from server.services import profile_activation
 
         active = resolve_data_dir()
-        if request["action"] == "prepare":
+        if request["action"] == "backup":
+            from server.services import backup
+            from server.services.data_profile_lock import hold
+            from server.services.upgrade_backup import check_space
+            with hold(active / "arslan.db"):
+                directory = active / "backups"
+                if directory.is_symlink():
+                    raise ValueError("unsafe_backup_directory")
+                check_space(active / "arslan.db")
+                directory.mkdir(mode=0o700, exist_ok=True)
+                result = backup.create(active, directory / request["name"])
+        elif request["action"] == "prepare":
             result = profile_activation.prepare_from_archive(active, Path(request["archive"]),
                                                              active.parent / request["candidate"])
         elif request["action"] == "rewrap":

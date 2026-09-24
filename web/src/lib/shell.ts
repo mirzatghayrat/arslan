@@ -17,6 +17,17 @@ export function shellAvailable(): boolean {
   return tauri() !== null;
 }
 
+export async function createBackup(): Promise<boolean> {
+  try {
+    const shell = tauri();
+    if (!shell) return false;
+    await shell.invoke("create_backup");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function openExternal(url: string): Promise<boolean> {
   try {
     const shell = tauri();

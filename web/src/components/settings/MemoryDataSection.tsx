@@ -22,6 +22,7 @@ import { Database } from 'lucide-react';
 import type { ProviderConfig } from '../../api/client.types';
 import EmbeddingSettings from '../EmbeddingSettings';
 import DeletionManifestExport from './DeletionManifestExport';
+import CreateBackupButton from './CreateBackupButton';
 
 export interface MemoryDataSectionProps {
   /** Multi-model provider configurations (for the embedding-provider picker). */
@@ -56,6 +57,7 @@ export default function MemoryDataSection({
       </div>
 
       <DeletionManifestExport />
+      <CreateBackupButton />
       <EmbeddingSettings
         providerConfigs={providerConfigs}
         embeddingConfigId={embeddingConfigId}

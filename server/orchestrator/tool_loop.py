@@ -1443,7 +1443,10 @@ async def run_native(
                 if not provider_content:
                     if name == "web_extract" and _web_read_feedback(name, args, result) is not None:
                         research_source_feedback.append((convo[-1], result))
-                    elif review is not None and review["status"] == "no_objection" and result.get("ok") is True:
+                    elif (name == "write_file" and result.get("ok") is True
+                          and len(research_source_feedback) >= 2
+                          and str(args.get("path", "")).lower().endswith((".md", ".txt"))
+                          and (review is None or review["status"] == "no_objection")):
                         history_compacted = research_review.compact_saved_context(
                             convo, research_source_feedback, args.get("content")) or history_compacted
                 if runtime:

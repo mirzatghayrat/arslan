@@ -10,6 +10,9 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 pub(crate) enum Request<'a> {
+    Backup {
+        name: &'a str,
+    },
     Rewrap {
         candidate: &'a str,
         source: &'a ExistingSecret,
@@ -36,6 +39,7 @@ pub(crate) enum Request<'a> {
 
 #[derive(Debug, PartialEq)]
 pub(crate) enum Outcome {
+    BackupCreated,
     Rewrapped { credentials: u64 },
     Prepared { files: u64 },
     TrialPending(String),
@@ -71,6 +75,16 @@ fn encode(request: &Request<'_>) -> Result<Vec<u8>, ControlError> {
             && !candidate.contains(['/', '\\', '\0'])
     }
     let value = match request {
+        Request::Backup { name } => {
+            let middle = name
+                .strip_prefix("manual-")
+                .and_then(|v| v.strip_suffix(".zip"));
+            if !matches!(middle, Some(v) if v.len() == 64 && v.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
+            {
+                return Err(ControlError::InvalidRequest);
+            }
+            serde_json::json!({"action":"backup", "name":name})
+        }
         Request::Rewrap {
             candidate,
             source,
@@ -160,6 +174,14 @@ struct Prepared {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct BackupCreated {
+    files: u64,
+    bytes: u64,
+    secret_included: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Rewrapped {
     rewrapped: bool,
     candidate: String,
@@ -210,6 +232,17 @@ fn decode(bytes: &[u8], exit: Option<i32>, request: &Request<'_>) -> Result<Outc
         return Err(ControlError::OutcomeUnknown);
     }
     match request {
+        Request::Backup { .. } => {
+            let r: BackupCreated = success(bytes)?;
+            if r.secret_included
+                || r.files == 0
+                || r.files > 10000
+                || r.bytes > 2 * 1024 * 1024 * 1024
+            {
+                return Err(ControlError::OutcomeUnknown);
+            }
+            Ok(Outcome::BackupCreated)
+        }
         Request::Rewrap {
             candidate, target, ..
         } => {
@@ -381,6 +414,34 @@ fn execute(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn backup_transport_accepts_only_generated_names_and_bounded_receipts() {
+        let name = format!("manual-{}.zip", "a".repeat(64));
+        let request = Request::Backup { name: &name };
+        assert!(encode(&request).is_ok());
+        for name in ["../backup.zip", "manual-short.zip", "/tmp/backup.zip"] {
+            assert_eq!(
+                encode(&Request::Backup { name }),
+                Err(ControlError::InvalidRequest)
+            );
+        }
+        assert_eq!(
+            decode(
+                br#"{"ok":true,"result":{"files":1,"bytes":4096,"secret_included":false}}"#,
+                Some(0),
+                &request
+            ),
+            Ok(Outcome::BackupCreated)
+        );
+        assert_eq!(
+            decode(
+                br#"{"ok":true,"result":{"files":1,"bytes":4096,"secret_included":true}}"#,
+                Some(0),
+                &request
+            ),
+            Err(ControlError::OutcomeUnknown)
+        );
+    }
     const ID: &str = "01234567-89ab-cdef-0123-456789abcdef";
     fn secret() -> ExistingSecret {
         crate::recovery_secret::prepare(Some("synthetic-only"), Path::new("unused"))
@@ -820,6 +881,9 @@ mod tests {
             _ => panic!("invalid fixture action"),
         };
         let message = match run(&binary, &request) {
+            Ok(Outcome::BackupCreated) => {
+                serde_json::json!({"ok":true,"result":{"backup_created":true}})
+            }
             Ok(Outcome::Rewrapped { credentials }) => serde_json::json!({"ok":true,
                 "result":{"rewrapped":true,"candidate":"restored","credentials":credentials,"secret_persisted":false}}),
             Ok(Outcome::Prepared { files }) => serde_json::json!({"ok":true,

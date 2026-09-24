@@ -181,6 +181,23 @@ def test_schema_probe_does_not_create_a_missing_database(entry, tmp_path):
     assert not database.parent.exists()
 
 
+def test_upgrade_backup_failure_precedes_port_and_leaves_database(entry, monkeypatch, capsys):
+    import sqlite3
+    from server import config
+    from server.services import backup
+    database = pathlib.Path(config.settings.db_path)
+    with sqlite3.connect(database) as connection:
+        connection.executescript("CREATE TABLE schema_version(version TEXT); INSERT INTO schema_version VALUES ('0046')")
+    original = database.read_bytes()
+    def fail(*args, **kwargs):
+        raise OSError("do not echo private path")
+    monkeypatch.setattr(backup, "create", fail)
+    monkeypatch.setattr(entry, "_serve", lambda: pytest.fail("must not start or announce port"))
+    assert entry.main() == 1
+    assert capsys.readouterr().out == "ARSLAN_ERROR=database_upgrade_backup_failed\n"
+    assert database.read_bytes() == original
+
+
 def test_schema_probe_failure_has_no_private_diagnostics(entry, monkeypatch, capsys):
     def failed(_database):
         raise OSError("private path or database contents")
