@@ -1,5 +1,23 @@
 # Shared 60-request / US$6 release acceptance grant
 
+Round 4 (`8d066969`) failed both cases without writing. Low-effort thinking
+still consumed all 8192 output tokens as reasoning, leaving no critique content.
+Six calls with usage receipts; cumulative 26 reserved slots / US$2.60. Do not
+repeat low/high thinking review. Round 5 restores the only observed working
+JSON mode (non-thinking), now with the round-4 factual-vs-stylistic distinction
+rules and pre-reservation task admission. Same inputs, caps and factual criteria.
+
+Native v11 on backend/web `8d066969`: persisted synthetic host conversation
+opens Run #1 through its new result button; work-panel preview displays exact
+CANARY-V10-ONLY Markdown with matching d43060cd…f60b6a9b hash. A source-link click
+had no observed destination tab/window: Markdown used target=_blank rather than
+the existing native external-link command. New repair routes external clicks
+through the existing HTTPS/maintenance gate and supplies six-locale failure
+notices; 14 link/result-entry tests, TypeScript and web build pass. Internal
+paths stay internal. No new browsing permission or gate bypass is introduced.
+Rebuilt native link verification is pending. Both native test processes exited
+normally; no real installation/profile was changed.
+
 Latest: round 3 (`1fb1c55f`) failed R1 at the unchanged 128k product token
 ceiling, before delivery; R4 was blocked by HALT without a call. Eight local
 reservations (seven usage receipts plus one full-charge budget-stop disposition),

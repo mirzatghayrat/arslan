@@ -17,11 +17,15 @@ export function shellAvailable(): boolean {
   return tauri() !== null;
 }
 
-export async function openExternal(url: string): Promise<void> {
+export async function openExternal(url: string): Promise<boolean> {
   try {
-    await tauri()?.invoke("open_external", { url });
+    const shell = tauri();
+    if (!shell) return false;
+    await shell.invoke("open_external", { url });
+    return true;
   } catch {
     // The shell refused (non-https) or could not spawn a browser. The caller
     // surfaces flow-level failures; a throwing doorway would just crash UI.
+    return false;
   }
 }

@@ -8,6 +8,7 @@ import React, { useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import MarkdownLink from './MarkdownLink';
 import { Copy, Check, Info, Lightbulb, AlertTriangle, AlertCircle, Flame } from 'lucide-react';
 
 // ─── GFM Alert parsing ────────────────────────────────────────────────────────
@@ -340,23 +341,7 @@ const components: import('react-markdown').Components = {
   },
 
   // Links
-  a: ({ href, children }) => (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      style={{
-        color: 'var(--color-primary)',
-        textDecoration: 'none',
-        borderBottom: '1px solid transparent',
-        transition: 'border-color 0.15s',
-      }}
-      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderBottomColor = 'var(--color-primary)'; }}
-      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderBottomColor = 'transparent'; }}
-    >
-      {children}
-    </a>
-  ),
+  a: ({ href, children }) => <MarkdownLink href={href}>{children}</MarkdownLink>,
 
   // Unordered lists
   ul: ({ children }) => (

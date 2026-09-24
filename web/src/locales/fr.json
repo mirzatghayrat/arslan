@@ -1,4 +1,5 @@
 {
+  "externalLink": {"failed": "Impossible d’ouvrir ce lien. Seuls les liens HTTPS sont autorisés dans le navigateur système."},
   "appIdentity": {"title":"Cette application","loading":"Lecture de la version…","browser":"Client web · version de bureau indisponible","unknown":"Version de bureau indisponible","stable":"Stable","preview":"Préversion","previewHint":"Les préversions s’installent manuellement ; les mises à jour automatiques suivent le canal stable. Sauvegardez vos données et vos clés avant l’installation.","summary":"Résumé de version","privacy":"Contient uniquement le type de client, la version et le canal. Rien n’est envoyé. Vérifiez le texte avant de le partager.","copy":"Copier le résumé","copied":"Copié","copyFailed":"Échec de la copie. Sélectionnez et copiez le texte ci-dessus."},
   "chart": {
     "loading": "Chargement du graphique…",

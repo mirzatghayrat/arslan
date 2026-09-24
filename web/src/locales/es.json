@@ -1,4 +1,5 @@
 {
+  "externalLink": {"failed": "No se pudo abrir el enlace. Solo se permiten enlaces HTTPS en el navegador del sistema."},
   "appIdentity": {"title":"Esta aplicación","loading":"Leyendo versión…","browser":"Cliente web · versión de escritorio no disponible","unknown":"Versión de escritorio no disponible","stable":"Estable","preview":"Preliminar","previewHint":"Las versiones preliminares se instalan manualmente; las actualizaciones automáticas siguen el canal estable. Haz una copia de tus datos y claves antes de instalarlas.","summary":"Resumen de versión","privacy":"Solo incluye el tipo de cliente, la versión y el canal. No se sube nada. Revisa el texto antes de compartirlo.","copy":"Copiar resumen","copied":"Copiado","copyFailed":"No se pudo copiar. Selecciona y copia el texto de arriba."},
   "chart": {
     "loading": "Cargando gráfico…",

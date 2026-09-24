@@ -1,4 +1,5 @@
 {
+  "externalLink": {"failed": "无法打开此链接。系统浏览器仅允许打开 HTTPS 链接。"},
   "appIdentity": {"title":"当前应用","loading":"正在读取版本…","browser":"浏览器客户端 · 无法读取桌面版本","unknown":"无法读取桌面版本","stable":"正式版","preview":"预览版","previewHint":"预览版需手动安装；自动更新跟随正式渠道。安装预览版前请备份数据和密钥。","summary":"版本摘要","privacy":"仅包含客户端类型、版本和渠道，不会上传任何内容。分享前请检查下方文本。","copy":"复制摘要","copied":"已复制","copyFailed":"复制失败，请选中上方文本手动复制。"},
   "chart": {"loading":"正在加载图表…","failed":"图表加载失败，请重新加载页面后重试。"},
   "browser": {"title":"公开网页预览","description":"每次使用独立的静态快照，不调用模型，不使用已登录账号。","limitations":"网页脚本已禁用，不支持点击、填表、上传或下载网站文件。公开 HTTPS 资源通过受限代理读取，部分页面可能不完整。这不是完整的浏览器代理。","close":"关闭","error":"预览失败或暂时无法读取，请检查 HTTPS 地址及网络后重试。","loading":"正在准备…","node_required":"此可选预览功能需要安装 Node.js 18 或更高版本。","macos_required":"此预览功能目前仅在 macOS 上验证。","setup_required":"尚未安装可选的浏览器运行环境。","setup_notice":"将固定版本的开源浏览器下载到 Arslan 数据目录，可能需要几分钟和数百 MB 空间，无需账号或付费 API。","setup":"下载浏览器运行环境","url":"公开 HTTPS 地址","open":"预览","stop":"停止","blocked":"已阻止或限制的连接：{{n}}","screenshot":"已保存的网页截图","cancelled":"已取消"},
