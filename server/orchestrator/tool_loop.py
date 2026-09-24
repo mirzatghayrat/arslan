@@ -26,6 +26,10 @@ if TYPE_CHECKING:
 
 TOOL_TIMEOUT_S = 20.0
 
+# Internal experiment only; excluded from the 0.1.40 default path by the
+# product owner's 2026-09-24 decision. No settings/UI toggle. Redesign in 0.1.41.
+RESEARCH_REVIEW_ENABLED = False
+
 # The T1 write tools, gated as a category (P1b). Kept as a set here — the tool
 # list in _arslan_tools decides what is OFFERED, this decides what is GATED, and
 # a tool that slips out of this set would be a silently ungated writer.
@@ -1400,7 +1404,7 @@ async def run_native(
                             "tool_trace": tool_trace}
                 from server.orchestrator import research_review
                 review_subject = (research_review.subject(name, args, tool_trace, request=user_content)
-                                  if name in wired_keys else None)
+                                  if RESEARCH_REVIEW_ENABLED and name in wired_keys else None)
                 review = None
                 if review_subject is not None:
                     emit({"type": "note", "text": "Research draft source review · uses the current task budget"})

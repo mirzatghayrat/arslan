@@ -1,5 +1,65 @@
 # 0.1.40 stable — finite acceptance and release plan
 
+## Controlling product-owner decision — 2026-09-24
+
+User-signed decision, not an agent reclassification: **11/12 core task cases
+passed; R4 FAILED and is accepted by the user as a known limitation for 0.1.40**.
+Retain every caveat, original criterion and failed output. R4 is not passed or
+renamed deferred. Earlier contradictory gate/status text below is historical.
+The pre-save `research_review` experiment is default OFF, retained for 0.1.41
+redesign as non-blocking advice (that redesign is outside this release).
+Required remaining additions: automatic pre-migration backup and one native
+settings backup button; terminology cleanup only. No other features.
+
+R4 evidence: `../stable-0140-four-retest-evidence-20260924/S2-R4-result.json`
+records the saved report wrongly asserting that the English README lacks a
+relevant local-running/data-boundary statement which its text actually includes.
+See `stable-0.1.40-four-retest-20260924.md` for the exact exclusion-list finding.
+`../stable-0140-release-evidence-20260924/round-11/S2-R4-result.json` separately
+records the later unavailable-critic/no-saved-report failure. Neither is removed.
+
+### Batch 1 — final spending freeze
+
+Inspected at source `38aaa2fd1f7d54196d17120cc07a04171c729d35`, clean start.
+All authorizations below are CLOSED by the user's decision; unused slots are
+not available. **New paid model calls from this decision: 0.** No more budget
+requests, model swaps or paid retries. Existing ledgers remain byte-for-byte.
+
+| Authorization ID | Limit requests / USD | Reserved requests / USD | Recorded peak-rate estimate USD |
+| --- | --- | --- | --- |
+| arslan-stable-0140-primary-20260923 | 36 / 5.00 | 31 / 3.10 | 0.0805866 |
+| arslan-stable-0140-repair-primary-20260924 | 36 / 5.00 | 30 / 3.00 | 0.1131012 |
+| arslan-stable-four-22-usd3-20260924 | 22 / 3.00 | 15 / 1.50 | 0.1026948 |
+| arslan-stable-two-12-usd120-20260924 | 12 / 1.20 | 8 / 0.80 | 0.0636471 |
+| arslan-stable-release-60-usd6-20260924 | 60 / 6.00 | 57 / 5.70 | 0.5320047 for 55 accounted calls; two unknown calls retain 0.20 |
+
+Total stable-stage reservations **141 calls / USD14.10**, accounted peak-rate
+estimate **USD0.8920344** plus **USD0.20 retained for unknown usage**. These are
+usage estimates/reservations, NOT confirmed billed amounts; invoices unavailable.
+Ledger paths respectively: sibling `stable-0140-live-evidence-20260924`,
+`stable-0140-retest-evidence-20260924`, `stable-0140-four-retest-evidence-20260924`,
+`stable-0140-two-retest-evidence-20260924`, `stable-0140-release-evidence-20260924`,
+each `budget.jsonl`. Release round-1 through round-11 are children of the last
+master and NOT counted again. Failed four-case freeze created no ledger/calls.
+The earlier beta pilot's 32 calls remain separate, not a stable grant or reset.
+
+Release sequence: finish scoped batches, freeze 0.1.40 candidate, push branch,
+require same-SHA backend/frontend/secrets/macos success, open PR and WAIT for
+user merge. Then require merged-main SHA CI before immutable v0.1.40 tag.
+Signed draft only; user alone publishes/promotes Latest. Automation stays paused.
+
+### Batches 2–3 — default gate off and retained R4 failure
+
+Based on `38aaa2fd`; internal default-off constant guards the entire source
+review invocation. No UI switch, no review-specific model parameters in the
+disabled path; normal read/context/source fixes retained. Sixteen offline tests
+pass: actual isolated report bytes written/read back with exactly four scripted
+writer calls, zero reviewer calls; existing enabled review assertions retained.
+Mutation (force the production default constant True before collecting that
+test) fails at the forbidden reviewer call, as required. No real model calls.
+Known limitation wording is in `docs/releases/v0.1.40.md`; release HOLD remains.
+Next: pre-migration backup and native backup button, then isolated N/U evidence.
+
 Current: [60/$6 grant and registered repair rounds](stable-0.1.40-release-retest-20260924.md).
 Fifty-seven slots reserved, US$5.70 retained; unknown usage dispositions remain
 charged in full. Round 5 R1 core comparison/save/reopen passed with a documented
@@ -97,7 +157,7 @@ not merely hidden in release notes while advertised in the application.
 
 | Gate | Finite acceptance | Current status |
 | --- | --- | --- |
-| R — useful task outcomes | All original R1–R4/D1–D4/M1–M4 IDs have frozen inputs, actual outputs, reviewed conclusions, sources/artifacts and recovery evidence against their original acceptance. Keep failures and corrections; no best-of-N substitution or dropped cases. | Open: eight-case additive sweep executed, not eight passes. D1/R2/R3/M4 core criteria passed with recorded caveats; D2/D4/M1/M3 prior core results retained. D3/M2/R1/R4 remain unaccepted. Offline repairs are not live-certified. |
+| R — useful task outcomes | Original inputs/criteria and all failures retained. User-owned release exception, not a test pass. | 11/12 core passed with recorded caveats (D1–D4, M1–M4, R1–R3). R4 FAILED; product owner explicitly accepted it as a known limitation on 2026-09-24. Evidence and failure reasons above. No further paid retest. |
 | N — actual native core flows | On the candidate: identity/channel; conversation and restart; mixed attachment retention; source opening; artifact opening; project memory correction/deletion; cancellation and explicit resume; backup/restore UI. Verify narrow-window usability and localized safety/errors in supported locales; recheck changed surfaces rather than all historical screens. | Partial: isolated native development bundle from fcb5f2ac verifies identity, Chinese onboarding/menu, project create/edit/restart, mixed attachment rejection/retention, memory correction/history/pause, restore-picker cancellation, positive restore/activation/relaunch with quarantined memory, and checksum-mismatched archive refusal with original profile retained after explicit restart. Backup was created through the source maintenance API, not a native export UI. Full conversations, deletion, source/artifact opening, task recovery, wrong-key/interrupted native restore, narrow-window/six-locale completion and final signed candidate remain unverified. |
 | U — upgrade and recoverability | Isolated fixtures representing stable 0.1.38, beta.3 and beta.6; backup before upgrade, supported upgrade with record/content checks, restart, restore with matching key, wrong/missing key and interrupted restore fail-closed. Exercise installer replacement and updater manifest/signature handling without changing production Latest or real data. | Partial: all three historical-source profile rehearsals passed on 2026-09-24; packaged/UI upgrade and recovery evidence still must be bound to the candidate. |
 | S — safety and regression | No unresolved data-loss, unauthorized action, privacy/key exposure, startup failure or broken advertised core path. Full CI and scoped safety regressions pass; dependency findings receive platform/reachability disposition rather than 'all clear' by count. | Open until final source; reuse prior results only where changes cannot invalidate them. |

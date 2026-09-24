@@ -102,6 +102,7 @@ async def test_no_silent_source_truncation_or_calls_on_oversized_input():
 
 async def test_native_loop_blocks_bad_draft_then_dispatches_only_revised_bytes(monkeypatch):
     from server.orchestrator import tool_loop
+    monkeypatch.setattr(tool_loop, "RESEARCH_REVIEW_ENABLED", True)
     from tests.server.test_native_loop import _NativeAdapter, _LLMResp, _tc
     evidence = trace()
     sid = evidence[0]["result"]["source"]["id"]
@@ -161,6 +162,7 @@ def test_compaction_cannot_touch_user_text_prior_inputs_or_oversized_drafts():
 
 async def test_unavailable_review_stops_without_write_or_paid_retry(monkeypatch):
     from server.orchestrator import tool_loop
+    monkeypatch.setattr(tool_loop, "RESEARCH_REVIEW_ENABLED", True)
     from tests.server.test_native_loop import _NativeAdapter, _LLMResp, _tc
     evidence = trace()
     adapter = _NativeAdapter([
