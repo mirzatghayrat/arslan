@@ -16,7 +16,7 @@ from server.orchestrator.untrusted import wrap_external
 from server.services.task_repository import TaskError
 
 
-def subject(name, args, trace):
+def subject(name, args, trace, *, request=None):
     if name != "write_file" or not isinstance(args, dict) or contains_credential_data(args):
         return None
     content = args.get("content")
@@ -27,9 +27,24 @@ def subject(name, args, trace):
     sources = admitted_sources(trace)
     if len(sources) < 2:
         return None
-    data = {"draft": content, "sources": [
-        {"id": key, "url": value.url, "truncated": value.truncated, "returned_chars": len(text), "text": text}
-        for key, (value, text) in sorted(sources.items())]}
+    evidence = []
+    for key, (value, text) in sorted(sources.items()):
+        source = {**value.model_dump(mode="json"), "returned_chars": len(text), "text": text}
+        # Preserve actual retrieval metadata seen by the writer. Do not invent
+        # a total for excerpts, or ask the critic to judge missing context.
+        for entry in reversed(trace):
+            result = entry.get("result") if isinstance(entry, dict) else None
+            if (isinstance(entry, dict) and entry.get("tool") == "web_extract" and isinstance(result, dict)
+                    and result.get("source") == value.model_dump(mode="json")
+                    and result.get("text") == text and result.get("ok") is True):
+                total = result.get("total_chars")
+                if type(total) is int and total >= len(text):
+                    source["total_chars"] = total
+                break
+        evidence.append(source)
+    data = {"draft": content, "sources": evidence}
+    if isinstance(request, str):
+        data["user_request"] = request
     raw = json.dumps(data, ensure_ascii=False)
     return hashlib.sha256(raw.encode()).hexdigest(), raw, sources
 
@@ -56,6 +71,17 @@ async def inspect(item, *, adapter, chat, cache):
             "or citing one example without claiming it is exhaustive is valid. Source URLs and metadata are "
             "evidence too. An objection must explain how a claim is materially false or unjustified, not "
             "merely ask for more detail or stylistic edits. Do not invent objections to fill the list. "
+            "Check the user's requested comparison and the ENTIRE draft before objecting: a qualifier "
+            "elsewhere can limit a summary. Document authority or translation precedence does not erase "
+            "a real difference between quoted statements and is not proof of runtime behavior. Preserve "
+            "attributed disagreements instead of demanding an unsupported winner. Placement labels "
+            "(header/body), harmless wording, and selective examples are not material factual objections. "
+            "Before returning each issue, look for counterevidence in both the draft and all sources; "
+            "omit the issue if that evidence already supports the claim. Do not flag a supported claim "
+            "merely to discuss another issue. Metadata is separate from source body text; do not invent "
+            "a body quote for a metadata concern. "
+            "A link to an unread document does not establish its contents: future verification needs "
+            "must remain unknown rather than assert that the linked page contains a specific answer. "
             "Copy a SHORT contiguous quote and the exact draft substring including punctuation/Markdown; "
             "do not combine different source spans or paraphrase either quote. Prioritize factual contradictions. "
             "Return ONLY JSON: {\"issues\":[{\"claim\":\"exact substring of draft\", "

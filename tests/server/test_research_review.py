@@ -76,6 +76,23 @@ def test_unrelated_writes_and_invalid_source_receipts_do_not_trigger():
     assert review.subject("write_file", {"path": "report.md", "content": "x"}, evidence) is None
 
 
+def test_review_preserves_request_and_actual_retrieval_metadata_without_inventing_totals():
+    evidence = trace()
+    evidence[0]["result"]["total_chars"] = len(evidence[0]["result"]["text"])
+    item = review.subject("write_file", {"path": "report.md", "content": "draft"},
+                          evidence, request="Compare both accounts without picking a winner.")
+    payload = json.loads(item[1])
+    assert payload["user_request"] == "Compare both accounts without picking a winner."
+    by_id = {source["id"]: source for source in payload["sources"]}
+    first = by_id[evidence[0]["result"]["source"]["id"]]
+    assert first["total_chars"] == first["returned_chars"]
+    assert first["retrieved_at"] == evidence[0]["result"]["source"]["retrieved_at"]
+    assert "total_chars" not in by_id[evidence[1]["result"]["source"]["id"]]
+    changed = review.subject("write_file", {"path": "report.md", "content": "draft"},
+                             evidence, request="A different task")
+    assert changed[0] != item[0]
+
+
 async def test_no_silent_source_truncation_or_calls_on_oversized_input():
     async def chat(*args, **kwargs):
         pytest.fail("oversized review must not call a model")

@@ -1387,7 +1387,8 @@ async def run_native(
                     return {"final": None, "escalation": None, "clarify": clarify,
                             "tool_trace": tool_trace}
                 from server.orchestrator import research_review
-                review_subject = research_review.subject(name, args, tool_trace) if name in wired_keys else None
+                review_subject = (research_review.subject(name, args, tool_trace, request=user_content)
+                                  if name in wired_keys else None)
                 review = None
                 if review_subject is not None:
                     emit({"type": "note", "text": "Research draft source review · uses the current task budget"})

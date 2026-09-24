@@ -1,12 +1,13 @@
 # 0.1.40 stable — finite acceptance and release plan
 
 Current: [60/$6 grant and registered repair rounds](stable-0.1.40-release-retest-20260924.md).
-Twenty-six slots reserved, US$2.60 retained; round-1 request 6 usage unknown after
-harness cancellation, conservatively charged in full. R1/R4 are still open.
-Round 4 low-thinking critique exhausted its output on reasoning without JSON.
-Registered round 5 restores non-thinking with the newer factual-contradiction
-rules. Native host result access is observed working; source-link routing repair
-is awaiting native verification. See linked evidence for boundaries.
+Thirty-nine slots reserved, US$3.90 retained; unknown usage dispositions remain
+charged in full. Round 5 R1 core comparison/save/reopen passed with a documented
+unread-document wording caveat. R4 still failed at the product token budget.
+Registered round 6 repairs critic context and false-positive guidance; only R4
+will rerun. Native history artifact access, actual HTTPS source opening and HTTP
+refusal are observed on the fe9c12b5 development bundle. No signed candidate,
+stable release, or blanket 12/12 factual certificate. See linked boundaries.
 Older "latest" checkpoints below are retained history, not current budget resets.
 
 Latest result: [two-case semantic review](stable-0.1.40-two-retest-20260924.md).

@@ -1,5 +1,43 @@
 # Shared 60-request / US$6 release acceptance grant
 
+## Current — round 5 and native source opening
+
+Round 5 on `fe9c12b5` ended: R1 execution passed; R4 failed at the unchanged
+128k product token budget after two blocking critiques and revised drafts.
+Thirteen responses have usage receipts. Cumulative **39/60 reservations,
+US$3.90 retained**, not invoiced spend. Original outputs remain unchanged.
+
+R1's saved report (SHA-256
+`ece496be09fecd034ec0e19b131301cfdb4ecfddefb7acf1af694f495cb167ca`)
+and final answer were read against the fixed source bodies. The comparison now
+correctly distinguishes training/runtime/coding tools, qualifies language-server
+dependencies, scoped telemetry and shell defaults, separates project benchmark
+claims from reproduction, and avoids a cross-task ranking. Core comparison and
+save/reopen criteria pass with a wording caveat: the unread PRIVACY.md's precise
+retention contents are not established by its README link. The report labels
+that document unread, but should say retention details need checking, not imply
+that particular details are certainly there. This is not blanket factual
+certification or evidence that the projects were installed/integrated.
+
+R4 remains unaccepted. Its reviewer lost retrieval totals/timestamps visible to
+the writer, and treated translation precedence as erasing an actual attributed
+textual disagreement. One objection was only about calling introductory text a
+header. These are reviewer faults, not grounds to force an invented resolution.
+Registered round-6 repair preserves the actual retrieval metadata and user
+request in the critic context, distinguishes material contradictions from
+placement/style issues, and requires checking counterevidence in the whole
+draft. No budget increase, model swap, weakened exact-quote admission, or
+automatic paid retry. Only R4 is scheduled for this registered retest; prior R1
+evidence is retained, not rerun to inflate pass counts.
+
+Native v12 on backend/web `fe9c12b5` (ad-hoc development bundle, unchanged Rust
+shell) now observes HTTPS source opening to the exact GitHub project URL in the
+system browser. The HTTP negative fixture displays a refusal and stays in the
+app. History Run #1 opens the existing read-only work panel with the exact
+CANARY-V10-ONLY artifact, hash `d43060cd…f60b6a9b`. Controlled HOME,
+synthetic fixture, no model configured, normal Quit/launcher exit 0. This closes
+these development-UI paths, not real generation or final signed-package gates.
+
 Round 4 (`8d066969`) failed both cases without writing. Low-effort thinking
 still consumed all 8192 output tokens as reasoning, leaving no critique content.
 Six calls with usage receipts; cumulative 26 reserved slots / US$2.60. Do not
