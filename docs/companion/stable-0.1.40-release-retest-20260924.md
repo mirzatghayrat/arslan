@@ -1,5 +1,25 @@
 # Shared 60-request / US$6 release acceptance grant
 
+Round-8 bounded diagnostic on `421d3303` returned a valid, material objection:
+the retained R4 draft attributed transport-layer source-IP visibility to both
+READMEs, although only the Chinese source says that; the English source only
+excludes raw MAC/IP from uploaded values. This was independently checked against
+both fixed bodies. One usage receipt, cumulative **47/60 / US$4.70 reserved**.
+It is NOT an R4 task completion. Low-thinking produced usable JSON within 8192
+output tokens on the shorter single-issue adjudication request.
+
+Registered round 9 runs only R4 end-to-end. The associated context repair removes
+duplicate full web bodies from the writer context ONLY AFTER a reviewed native
+write actually succeeds. It retains exact receipts, explicit body-compaction
+notices, and the submitted draft (not claimed as readback). The full original
+source trace and prior request records remain intact for later critique/reopen.
+No user-authored lookalike, failed write, unsupported source or opaque provider
+pair is rewritten. Drafts above 32k bytes skip this optimization. This reduces
+save/readback/final-answer duplication without increasing the 128k token ceiling.
+Focused offline tests verify transport/permission/trace boundaries, not factual
+quality. The initial assertion wrongly matched a retained short critique quote;
+it now checks removal of the complete body while preserving the critique.
+
 Round-7 single-review diagnostic (`f0038ebf`) used one accounted request:
 **46/60, US$4.60 reserved**. It still produced false objections, including
 that "V1 and V2" was less precise than "V1 and both V2 streams". Its test pass

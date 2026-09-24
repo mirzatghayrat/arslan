@@ -16,6 +16,36 @@ from server.orchestrator.untrusted import wrap_external
 from server.services.task_repository import TaskError
 
 
+def compact_saved_context(convo, source_feedback, draft):
+    """After a reviewed successful write, keep receipts + draft, not duplicate bodies.
+
+    Only exact feedback objects registered by this loop may be replaced. Trace,
+    source receipts, prior model inputs, opaque provider pairs and disk stay intact.
+    This is reference compaction, never a summary or factual certificate.
+    """
+    if not isinstance(draft, str) or len(draft.encode()) > 32_000:
+        return False
+    changed = False
+    for index, message in enumerate(convo):
+        for original, result in source_feedback:
+            if message is not original:
+                continue
+            metadata = {key: result[key] for key in ("url", "source", "returned_chars", "total_chars")
+                        if key in result}
+            metadata["body_compacted_after_save"] = True
+            convo[index] = {**message, "content": "PREVIOUS WEB READ RECEIPT:\n" +
+                wrap_external(json.dumps(metadata, ensure_ascii=False)) +
+                "\nThe body was read earlier and remains in the host trace, but is no longer in this "
+                "model context. Reopen the source if needed for new claims. This receipt is not factual verification."}
+            changed = True
+            break
+    if changed:
+        convo[-1] = {**convo[-1], "content": convo[-1]["content"] +
+            "\nDRAFT SUBMITTED TO THE SUCCESSFUL WRITE (not a readback or factual certificate):\n" +
+            wrap_external(draft) + "\nUse read_file to verify stored bytes when needed."}
+    return changed
+
+
 def subject(name, args, trace, *, request=None):
     if name != "write_file" or not isinstance(args, dict) or contains_credential_data(args):
         return None

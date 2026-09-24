@@ -1260,6 +1260,7 @@ async def run_native(
     convo: list[dict] = list(history) + [current_request]
     tool_trace: list[dict] = []
     research_review_cache: dict = {}
+    research_source_feedback: list = []
     # PB-3 (条件2): consecutive-failure counts per mcp_* tool key. These are LOCALS of this
     # run_native invocation — one invocation = one turn — so a new turn starts at zero by
     # construction; nothing persists or is shared. mcp_hint_logged bounds the observability
@@ -1424,6 +1425,12 @@ async def run_native(
                     mcp_hint_logged=mcp_hint_logged, conversation_id=conversation_id,
                     log_events=log_events, fetch_budget=fetch_budget, caller=caller)
                 policy.observe(name, args, result)
+                if not provider_content:
+                    if name == "web_extract" and _web_read_feedback(name, args, result) is not None:
+                        research_source_feedback.append((convo[-1], result))
+                    elif review is not None and review["status"] == "no_objection" and result.get("ok") is True:
+                        history_compacted = research_review.compact_saved_context(
+                            convo, research_source_feedback, args.get("content")) or history_compacted
                 if runtime:
                     runtime.progress = runtime.progress.model_copy(update={
                         "loop_fingerprints": tuple(sorted(policy.seen))[-256:]})

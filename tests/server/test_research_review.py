@@ -138,6 +138,25 @@ async def test_native_loop_blocks_bad_draft_then_dispatches_only_revised_bytes(m
     assert any(e["result"].get("code") == "research_draft_review_required" for e in result["tool_trace"])
     assert len(adapter.calls) == 6
     assert adapter.calls[2]["tools"] is None and adapter.calls[4]["tools"] is None
+    assert "Measured across 17 tasks" in json.dumps(adapter.calls[3]["history"])
+    assert "Repetitions not reported." not in json.dumps(adapter.calls[5]["history"])
+    assert "body_compacted_after_save" in json.dumps(adapter.calls[5]["history"])
+    assert "17 tasks; repetitions unknown." in adapter.calls[5]["user"]
+    assert result["tool_trace"][0]["result"]["text"] == evidence[0]["result"]["text"]
+
+
+def test_compaction_cannot_touch_user_text_prior_inputs_or_oversized_drafts():
+    source = {"role": "user", "content": "full source"}
+    lookalike = dict(source)
+    saved = {"role": "user", "content": "write succeeded"}
+    history = [lookalike, source, saved]
+    result = {"url": "https://example.org/", "source": {"id": "receipt"}, "text": "full source"}
+    assert not review.compact_saved_context(history, [(source, result)], "x" * 32001)
+    assert history[1] is source
+    assert review.compact_saved_context(history, [(source, result)], "draft")
+    assert source["content"] == lookalike["content"] == "full source"
+    assert history[0] is lookalike and history[1] is not source
+    assert result["text"] == "full source" and saved["content"] == "write succeeded"
 
 
 async def test_unavailable_review_stops_without_write_or_paid_retry(monkeypatch):
