@@ -81,7 +81,7 @@ def reserve_global(round_number, local_number, case):
             raise RuntimeError("release_budget_exhausted")
         for index, row in enumerate(rows[1:], 1):
             if (row.get("request") != index or row.get("reserved_usd") != "0.10"
-                    or type(row.get("round")) is not int or not 1 <= row["round"] <= 10
+                    or type(row.get("round")) is not int or not 1 <= row["round"] <= 11
                     or type(row.get("local_request")) is not int or not 1 <= row["local_request"] <= 24):
                 raise RuntimeError("release_ledger_invalid")
             accounted = MASTER / f"round-{row['round']}" / f"request-{row['local_request']:02d}.accounted.json"
@@ -109,12 +109,12 @@ def reserve_global(round_number, local_number, case):
 def configured():
     authority()
     number = int(os.environ["ARSLAN_RELEASE_ROUND"])
-    if not 1 <= number <= 10:
+    if not 1 <= number <= 11:
         raise RuntimeError("invalid_round")
     values = {"PARENT": budget.ROOT.parent / "stable-0140-two-retest-evidence-20260924",
         "EVIDENCE": MASTER / f"round-{number}", "GRANT_ID": f"release-60-usd6-round-{number}",
         "ENV": "ARSLAN_STABLE_RELEASE", "OPT_IN": OPT_IN, "REQUESTS": 24, "USD": "3.00",
-        "CAPS": {"S2-R1": 12, "S2-R4": 12},
+        "CAPS": {"S2-R1": 12, "S2-R4": 7 if number == 11 else 12}, "MAX_REVIEW_OUTPUT_TOKENS": 16384,
         "EXTRA_FILES": {"evals/companion/stable_release_retest.py", "tests/server/test_stable_release_live.py",
                         "tests/test_stable_release_grant.py", "server/orchestrator/research_review.py",
                         "arslan/llm/request_policy.py", "arslan/llm/providers/openai_provider.py",

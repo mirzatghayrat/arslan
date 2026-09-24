@@ -79,7 +79,7 @@ class StableAdapter:
                 if not all(type(usage.get(key)) is int and usage[key] >= 0
                            for key in ("prompt_tokens", "completion_tokens")):
                     raise RuntimeError("stable_usage_unknown")
-                if usage["prompt_tokens"] > 200_000 or usage["completion_tokens"] > 8192:
+                if usage["prompt_tokens"] > 200_000 or usage["completion_tokens"] > payload["max_tokens"]:
                     raise RuntimeError("stable_usage_bound_violation")
                 estimated = (usage["prompt_tokens"] * Decimal(str(self.pricing["input_usd_per_million"]))
                              + usage["completion_tokens"] * Decimal(str(self.pricing["output_usd_per_million"]))) / 1_000_000

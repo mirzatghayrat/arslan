@@ -14,6 +14,8 @@ def isolated(tmp_path, monkeypatch):
     # must keep its old hashes even after later registered input/checker repairs;
     # never rewrite that evidence just to run offline ledger tests.
     manifest = json.loads(budget.CONTRACT.read_bytes())
+    if getattr(monkeypatch, "extended_review_fixture", False):
+        manifest["max_review_output_tokens"] = 16384
     frozen = tmp_path / "frozen-unit-input.txt"
     frozen.write_text("Synthetic immutable unit fixture")
     manifest["frozen_files"] = {frozen.name: hashlib.sha256(frozen.read_bytes()).hexdigest()}
@@ -141,6 +143,33 @@ def test_payload_caps(isolated, payload):
     with pytest.raises(RuntimeError, match="payload_cap"):
         reserve(preflights, payload=payload)
     assert budget.status()["requests"] == 0
+
+
+def test_old_freeze_rejects_extended_review(isolated):
+    _, preflights = isolated
+    with pytest.raises(RuntimeError, match="payload_cap"):
+        reserve(preflights, payload={"model": "fixture-model", "max_tokens": 16384,
+            "thinking": {"type": "enabled"}, "reasoning_effort": "low"})
+    assert budget.status()["requests"] == 0
+
+
+@pytest.fixture
+def extended_review(monkeypatch):
+    monkeypatch.extended_review_fixture = True
+
+
+@pytest.mark.usefixtures("extended_review")
+def test_frozen_extended_review_is_bounded(isolated):
+    _, preflights = isolated
+    payload = {"model": "fixture-model", "max_tokens": 16384,
+        "thinking": {"type": "enabled"}, "reasoning_effort": "low"}
+    assert reserve(preflights, payload=payload) == 1
+    for change in ({"tools": [{}]}, {"reasoning_effort": "high"}, {"max_tokens": 16385}):
+        with pytest.raises(RuntimeError, match="payload_cap"):
+            reserve(preflights, payload={**payload, **change})
+    with pytest.raises(RuntimeError, match="price_exceeds"):
+        reserve(preflights, payload=payload, prices={**pricing(), "output_usd_per_million": "3"})
+    assert budget.status()["requests"] == 1
 
 
 def test_input_mutation_and_missing_conflict_review_refuse(isolated):

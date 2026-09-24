@@ -84,7 +84,7 @@ class OpenAIProvider(BaseLLMProvider):
         }
         if tools:
             payload["tools"] = tools
-        # Keep the configured model/endpoint and cap. Only this task-local,
+        # Keep the configured model/endpoint. Only this task-local,
         # tool-free adjudication uses documented low thinking effort. Never send
         # a vendor-specific option to arbitrary OpenAI-compatible endpoints.
         from arslan.llm.request_policy import bounded_critique
@@ -93,6 +93,7 @@ class OpenAIProvider(BaseLLMProvider):
                 and self.model in {"deepseek-flash", "deepseek-v4-flash", "deepseek-v4-pro"}):
             payload["thinking"] = {"type": "enabled"}
             payload["reasoning_effort"] = "low"
+            payload["max_tokens"] = 16384
         return payload
 
     async def chat(

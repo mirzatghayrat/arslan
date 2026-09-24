@@ -121,17 +121,24 @@ def reserve(case_id, payload, *, pricing, preflight_sha256):
             or pricing.get("source") != "https://api-docs.deepseek.com/quick_start/pricing/"
             or pricing.get("provider") != "deepseek" or pricing.get("endpoint") != "https://api.deepseek.com"):
         raise RuntimeError("stable_pricing_unverified")
+    review_cap = value.get("max_review_output_tokens", 8192)
+    requested_output = payload.get("max_tokens")
+    extended_review = (review_cap == 16384 and requested_output == 16384
+                       and payload.get("thinking") == {"type": "enabled"}
+                       and payload.get("reasoning_effort") == "low" and not payload.get("tools"))
+    if requested_output != 8192 and not extended_review:
+        raise RuntimeError("stable_payload_cap")
     try:
         rates = [Decimal(str(pricing[key])) for key in ("input_usd_per_million", "output_usd_per_million")]
         if not all(rate.is_finite() and rate > 0 for rate in rates):
             raise ValueError
-        ceiling = (200_000 * rates[0] + 8192 * rates[1]) / 1_000_000
+        ceiling = (200_000 * rates[0] + requested_output * rates[1]) / 1_000_000
         if ceiling > Decimal("0.10"):
             raise ValueError
     except (ValueError, ArithmeticError, KeyError) as error:
         raise RuntimeError("stable_price_exceeds_reservation_or_unknown") from error
     raw = json.dumps(payload, ensure_ascii=False).encode()
-    if len(raw) > payload_cap or payload.get("max_tokens") != 8192:
+    if len(raw) > payload_cap:
         raise RuntimeError("stable_payload_cap")
     # r+ deliberately refuses a missing ledger: no zero-spend reset on deletion.
     with (EVIDENCE / "budget.jsonl").open("r+", encoding="utf-8") as stream:

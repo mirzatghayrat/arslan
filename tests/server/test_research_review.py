@@ -191,9 +191,20 @@ def test_critique_mode_is_local_vendor_scoped_and_never_changes_normal_calls():
     provider = OpenAIProvider("deepseek-v4-flash", base_url="https://api.deepseek.com")
     other = OpenAIProvider("deepseek-v4-flash", base_url="https://example.org")
     assert "thinking" not in provider._payload([], None, 0.7)
+    assert provider._payload([], None, 0.7)["max_tokens"] == 8192
     with critique_request():
         assert provider._payload([], None, 0.7)["thinking"] == {"type": "enabled"}
         assert provider._payload([], None, 0.7)["reasoning_effort"] == "low"
+        assert provider._payload([], None, 0.7)["max_tokens"] == 16384
         assert "thinking" not in provider._payload([], [{"type": "function"}], 0.7)
         assert "thinking" not in other._payload([], None, 0.7)
     assert "thinking" not in provider._payload([], None, 0.7)
+
+
+def test_review_cannot_raise_an_existing_or_custom_task_ceiling():
+    from arslan.execution_budget import Budget, Limits
+    budget = Budget(Limits(output_tokens_per_request=4096))
+    assert budget.model_request(16384) == 4096
+    restored = Budget.from_snapshot(Budget(Limits(output_tokens_per_request=8192)).snapshot())
+    assert restored.model_request(16384) == 8192
+    assert Budget().model_request(16384) == 16384

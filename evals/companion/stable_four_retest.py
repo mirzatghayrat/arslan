@@ -14,6 +14,7 @@ OPT_IN = "authorized-four-22-requests-usd3"
 ENV = "ARSLAN_STABLE_FOUR"
 REQUESTS, USD = 22, "3.00"
 EXTRA_FILES = set()
+MAX_REVIEW_OUTPUT_TOKENS = 8192
 CAPS = {"S2-R1": 8, "S2-R4": 7, "S2-D3": 4, "S2-M2": 3}
 RUNNERS = {case: "tests/server/test_stable_" + (
     "research" if case.startswith("S2-R") else "document" if case == "S2-D3" else "memory") + "_live.py"
@@ -75,6 +76,7 @@ def freeze():
         "server/orchestrator/arslan.py", "server/orchestrator/tool_loop.py"}
     value = {**parent, "revision": 3, "authorization_id": GRANT_ID,
              "max_requests": REQUESTS, "max_usd": USD, "max_payload_bytes": 200_000,
+             "max_review_output_tokens": MAX_REVIEW_OUTPUT_TOKENS,
              "source_baseline": source_sha(), "parent_contract_sha256": digest(PARENT / "contract.json"),
              "parent_ledger_sha256": digest(PARENT / "budget.jsonl"),
              "grant_sha256": digest(EVIDENCE / "authorization.json"),

@@ -27,7 +27,9 @@ class Limits:
     tool_calls: int = 24
     tokens: int = 128_000
     wall_seconds: float = 600
-    output_tokens_per_request: int = 8192
+    # Providers still request 8192 by default. New task budgets permit a bounded
+    # 16k reasoning critique; persisted/custom lower ceilings remain authoritative.
+    output_tokens_per_request: int = 16384
     artifact_bytes: int = 100 * 1024 * 1024
 
     def __post_init__(self):

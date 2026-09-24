@@ -1,5 +1,33 @@
 # Shared 60-request / US$6 release acceptance grant
 
+## Current: round 10 stopped; bounded output repair for round 11
+
+Round 10 (`f04da9d8`) used three accounted requests; the critique again returned
+no content after spending 8192 output tokens on reasoning. No report was saved.
+Cumulative reservations are **53/60, US$5.30**, not invoiced spend. R4 remains
+open. Round 11 may use at most the seven remaining slots; old ledgers are intact.
+
+The new repair allows 16384 output tokens only for the registered official
+DeepSeek tool-free, low-thinking critique. Ordinary calls remain at 8192;
+existing/custom task limits still clamp requests. New task per-request ceilings
+allow this review, without changing the 128k whole-task limit. The frozen
+acceptance contract must explicitly admit the extended review. Its worst bound
+at the verified rates is US$0.0796608, below the retained US$0.10 reservation.
+Unregistered extended output, tools, other thinking modes and excessive prices
+are rejected before reservation. This is a truncation repair, not changed factual
+acceptance, a different model, or authorization for more than 60 calls/US$6.
+
+Native v13 used the `fe9c12b5` development bundle and a loopback scripted protocol
+fixture, NOT a real model. Actual macOS interactions verified send/reply, Stop,
+explicit Resume, and controlled-HOME restart. The cancelled run saved no late
+assistant response; resumed run saved one. Task attempt count became two and
+request count three (not reset). No tool actions occurred. Both conversations
+survived restart. The server may finish a cancelled remote request; this does
+not prove server-side computation cancellation. All owned processes exited.
+Fixture log SHA-256: `6c12bf07cf94017ae633924a6f4027a687de9a5815ef8dd4cd39270ed006e72e`.
+This is native interaction evidence only, not R4, final signed-package or native
+backup-export acceptance. Native backup export is still absent and remains open.
+
 Round 9 (`c5c04554`) stopped after three accounted calls: its new draft's
 critique again spent all 8192 output tokens on reasoning and returned no content.
 No write/readback occurred; the unavailable notice is honest, not task success.
