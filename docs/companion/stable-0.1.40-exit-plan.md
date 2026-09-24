@@ -1,5 +1,12 @@
 # 0.1.40 stable — finite acceptance and release plan
 
+Latest result: [two-case semantic review](stable-0.1.40-two-retest-20260924.md).
+Source 60e779ba, independently approved 12/$1.20, used 8 requests. Both deliver
+files and final answers; R1/R4 still contain unsupported saved-report claims.
+Prompt-only strengthening was insufficient. R is not closed, no tag or stable
+release authorized by these results. Stop repetitive paid reruns; next repair
+must address claim-to-evidence review without hidden calls or a silent model swap.
+
 Latest R-gate update: [four-case retest](stable-0.1.40-four-retest-20260924.md)
 on source `83f29f4ecc2da668ace50e6bbf989ae7d296d00f`, 15/22 new requests.
 D3/M2 core criteria passed (D3 wording caveat retained). R1/R4 now deliver

@@ -1,5 +1,11 @@
 # Stable 0.1.40 — close the measured gaps
 
+Newest: [two-case review](stable-0.1.40-two-retest-20260924.md), source 60e779ba,
+8/12 calls, US$0.80 reserved, US$0.0636471 peak estimate (not invoice). Both
+execution paths pass but R1/R4 remain semantically unaccepted. Do not repeat
+the same paid prompt-only experiment or silently change models. Earlier grant
+requests below are historical, not pending approvals for these completed calls.
+
 Latest: [four-case actual review](stable-0.1.40-four-retest-20260924.md).
 User approved 22/$3; 15 calls executed on 83f29f4e. D3/M2 core passed with
 recorded caveat; R1/R4 execution recovered but saved-report factual comparisons
