@@ -84,16 +84,15 @@ class OpenAIProvider(BaseLLMProvider):
         }
         if tools:
             payload["tools"] = tools
-        # Official DeepSeek defaults to high thinking effort. A bounded critique
-        # can exhaust the output limit entirely on reasoning and return no JSON.
-        # Keep the configured model/endpoint and cap; only this task-local,
-        # tool-free subrequest uses documented non-thinking mode. Never send
+        # Keep the configured model/endpoint and cap. Only this task-local,
+        # tool-free adjudication uses documented low thinking effort. Never send
         # a vendor-specific option to arbitrary OpenAI-compatible endpoints.
         from arslan.llm.request_policy import bounded_critique
         if (bounded_critique.get() and not tools
                 and self.base_url.rstrip("/") in {"https://api.deepseek.com", "https://api.deepseek.com/v1"}
                 and self.model in {"deepseek-flash", "deepseek-v4-flash", "deepseek-v4-pro"}):
-            payload["thinking"] = {"type": "disabled"}
+            payload["thinking"] = {"type": "enabled"}
+            payload["reasoning_effort"] = "low"
         return payload
 
     async def chat(

@@ -78,7 +78,8 @@ async def inspect(item, *, adapter, chat, cache):
             "Return ONLY JSON: {\"issues\":[{\"claim\":\"exact substring of draft\", "
             "\"source_id\":\"supplied source id\",\"quote\":\"exact supporting source substring\","
             "\"reason\":\"concise explanation of the mismatch, not instructions or a replacement report\"}]}. "
-            "Use an empty issues list if no concrete mismatch is found. Maximum 8 issues. "
+            "Use an empty issues list if no concrete mismatch is found. Return only the ONE strongest "
+            "material issue, if any; do not enumerate minor or hypothetical objections. "
             "This is a fallible critique, not proof of correctness.", wrap_external(raw), tools=None)
     except (BudgetExceeded, TaskError):
         raise

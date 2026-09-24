@@ -1,5 +1,16 @@
 # Shared 60-request / US$6 release acceptance grant
 
+Round-7 single-review diagnostic (`f0038ebf`) used one accounted request:
+**46/60, US$4.60 reserved**. It still produced false objections, including
+that "V1 and V2" was less precise than "V1 and both V2 streams". Its test pass
+means only single-call accounting, NOT acceptable adjudication. Do not run the
+whole task on that unchanged critic. Round 8 registers ONE diagnostic against
+the identical retained report, now with the shorter support-first instruction,
+only the strongest material issue and low thinking. This differs from round 4's
+long error-list instruction. Same 8192 output limit, original model, fixed input,
+same shared 60/$6 ledger. If it still cannot provide a useful adjudication,
+do not burn remaining calls repeating the same mode/prompt combination.
+
 Latest round 6 (`96889de4`): R4 again reached the unchanged token ceiling,
 six accounted calls, cumulative **45/60 / US$4.50 reserved**. Critique still
 objected to supported statements because a table excerpt did not repeat the

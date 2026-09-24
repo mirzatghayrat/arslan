@@ -26,7 +26,7 @@ async def test_registered_report_review(monkeypatch):
     from evals.companion.stable_retest import digest
     from server.orchestrator import research_review
     with release.bound():
-        assert os.environ["ARSLAN_RELEASE_ROUND"] == "7"
+        assert os.environ["ARSLAN_RELEASE_ROUND"] in {"7", "8"}
         assert budget.status()["requests"] == 0
         parent = release.MASTER / "round-6"
         response_file = parent / "request-06.response.json"
