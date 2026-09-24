@@ -1,5 +1,16 @@
 # Shared 60-request / US$6 release acceptance grant
 
+Latest round 6 (`96889de4`): R4 again reached the unchanged token ceiling,
+six accounted calls, cumulative **45/60 / US$4.50 reserved**. Critique still
+objected to supported statements because a table excerpt did not repeat the
+supporting sentence elsewhere in the supplied source. No R4 pass. Register
+round 7 as ONE standalone report critique of round-6's retained final draft,
+with exact parent hashes and the same original sources, not a task rerun or
+task completion. A shorter support-first adjudication instruction replaces the
+overlong error-seeking instruction. Exact anchoring, no-tools, uncertainty,
+unchanged configured model and all budgets remain. No end-to-end rerun until
+this bounded diagnostic result is examined. Original failures remain immutable.
+
 ## Current — round 5 and native source opening
 
 Round 5 on `fe9c12b5` ended: R1 execution passed; R4 failed at the unchanged
