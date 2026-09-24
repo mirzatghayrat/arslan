@@ -71,3 +71,34 @@ authorization would be held, not automatically used for retries. These ceilings
 must be reviewed against the frozen runners before requesting/executing them.
 
 This stage still targets stable 0.1.40, not completion of all v1.2 development.
+
+## Read-only repair inventory — 2026-09-24
+
+Source `b2b37ee0ea4a1a4de479337ade9d5ed8b3f0b4c8` adds an offline preparation
+command, not a paid runner or new budget. It validates the original contract,
+eight preflight identities and thirteen retained input entries against their
+recorded hashes, copies unchanged acceptance criteria, and snapshots existing
+runner hashes and the canonical ledger without writing to the old evidence tree.
+Five isolated checks cover immutable accounting, no authorization/reservation,
+exclusive output, original-tree refusal, and altered/escaping input identities;
+Ruff passes. These are harness integrity checks, not product-quality results.
+
+Private receipt:
+`../stable-0140-repair-preparation-20260924/inventory-v1.json`, SHA-256
+`5da133748651aa5de5353b020051322909afb7146226b6507004b6626d07ef9c`.
+Canonical ledger SHA-256 remains
+`20c988dcbcaf9977d268e6b1d880bbc8ba57d94aa1b41fa9593ef47b3049751a`:
+31 requests, $3.10 reserved. No credential reads or model/network calls occurred.
+All eight entries explicitly have `runner_ready: false`; authorization is null
+and execution is disabled. The proposed 34 calls remain unapproved planning.
+
+Two concrete dependencies must not be skipped: D1's historical document runner
+still obtains text through legacy `ingest._extract_file`, so an additive runner
+must consume the actual attachment extraction API response/page inventory;
+the research/recovery runners still bind the old contract, case caps and ledger.
+Changing an output directory would not establish independent authorization or
+correct accounting. Preserve those historical runners/results and implement a
+separately linked, reviewed retest path before freezing executable inputs and
+checkers. This receipt freezes only a preparation snapshot, **not** a release
+candidate or ready-to-run evaluation contract. The pending budget question is
+unchanged; do not repeat it or infer consent from another heartbeat.

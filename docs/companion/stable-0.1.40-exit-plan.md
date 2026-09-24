@@ -1351,3 +1351,26 @@ raw logs remain private. Paid consumption remains 31/36 and $3.10 reserved,
 with no new authorization inferred. No large suite rerun, CI/tag/push/merge or
 Publish. Next finite unpaid batch should address another remaining native path
 or prepare frozen additive retests, rather than repeat these recovery paths.
+
+## Offline additive-retest preparation — 2026-09-24
+
+Starting checkout `4416312f`; preparation implementation committed as
+`b2b37ee0ea4a1a4de479337ade9d5ed8b3f0b4c8` before generating the receipt.
+Validated eight failed-case preflights and thirteen retained input entries;
+captured unchanged criteria, original call usage, current runner hashes and
+explicit remaining adapter/review dependencies. See the repair plan's read-only
+inventory section. Private `stable-0140-repair-preparation-20260924/inventory-v1.json`
+has SHA-256 `5da133748651aa5de5353b020051322909afb7146226b6507004b6626d07ef9c`.
+
+This is preparation only: no new executable contract, authorization, model call,
+credential access, source fetch, native run or semantic acceptance. Five small
+offline integrity checks and Ruff passed; original evidence and budget remain
+unchanged at 31/36 and $3.10 reserved. All eight runners are explicitly not ready.
+D1 still needs an additive actual-attachment-API adapter rather than reuse of
+the legacy low-level input; research/recovery need independently linked
+accounting rather than reused old caps. Do not treat new directory names as a
+budget reset. The additional-budget question remains pending without a repeat
+prompt. N/U retain the previous partial native evidence, R/S/P remain open.
+Next bounded unpaid batch may close a remaining native core path or implement
+the additive offline runner/checker preparation, with no paid execution until
+explicit additional authority and per-call accounting are in place.
