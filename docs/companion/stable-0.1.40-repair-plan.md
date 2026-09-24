@@ -102,3 +102,34 @@ separately linked, reviewed retest path before freezing executable inputs and
 checkers. This receipt freezes only a preparation snapshot, **not** a release
 candidate or ready-to-run evaluation contract. The pending budget question is
 unchanged; do not repeat it or infer consent from another heartbeat.
+
+## D1 additive attachment adapter — 2026-09-24
+
+Source `feb8922dfd98fd4b846d3af0417b078e6018ace5` adds
+`stable_pdf_repair.prepare/save`. It reads the retained original PDF only after
+preflight/contract/path/content checks, requires an in-process isolated REST
+client and explicitly disabled native OCR, then posts the original 1,173 bytes
+to the actual `/api/v1/extract` endpoint. The historical document runner and
+failed model output remain unchanged. The request wording is unchanged; only
+the context now contains the actual API response, without a hand-inserted
+expected answer or page-specific oracle.
+
+The unmodified endpoint returned 698 characters, untruncated, with three physical
+pages, page 2 without native text, no visual-verification claim, and a body
+identical to the old extracted source text. Nine isolated adapter checks passed
+(including refusal of changed bytes, network clients, OCR-enabled scope and
+invalid/partial API responses); the canonical retained-input receipt check also
+passed. Ruff passed. The emitted private receipt is
+`../stable-0140-repair-preparation-20260924/d1-attachment-v1.json`, SHA-256
+`f20b571931eab0aa540c10259bd2e80d3a6cbd3ed1803e59c0f6b0058162a2a0`.
+It binds the implementation/checker hashes and original PDF/preflight/ledger.
+The old ledger hash is unchanged from the preceding inventory.
+
+This closes the **offline D1 input adapter** dependency, not D1 semantic
+acceptance: no model call, native interaction, paid runner, new grant or final
+candidate freeze. `runner_ready` remains false. Independently linked accounting,
+the executable host runner and reviewed real answer still remain. Other seven
+retest adapters/criteria are not claimed ready by this batch. Do not regenerate
+these receipts or repeat extraction checks as new progress. While the additional
+grant remains unanswered, prioritize another distinct native core interaction
+batch, such as synthetic memory deletion/restart, on a controlled-HOME clone.

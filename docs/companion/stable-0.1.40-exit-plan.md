@@ -1374,3 +1374,26 @@ prompt. N/U retain the previous partial native evidence, R/S/P remain open.
 Next bounded unpaid batch may close a remaining native core path or implement
 the additive offline runner/checker preparation, with no paid execution until
 explicit additional authority and per-call accounting are in place.
+
+## D1 real attachment context prepared offline — 2026-09-24
+
+Starting checkout `ea6889f4`; new preparation/checker source
+`feb8922dfd98fd4b846d3af0417b078e6018ace5`. The unchanged retained 1,173-byte PDF
+was posted through the real isolated attachment REST API, not the historical
+low-level helper. Its 698-character untruncated response now preserves the
+physical-page inventory alongside exactly the old body text. Original user
+request wording remains unchanged; expected answer facts were not added to the
+prompt. Nine focused offline adapter checks plus one canonical retained-input
+receipt check passed, with Ruff clean. No large suite was repeated.
+
+Private receipt `stable-0140-repair-preparation-20260924/d1-attachment-v1.json`:
+`f20b571931eab0aa540c10259bd2e80d3a6cbd3ed1803e59c0f6b0058162a2a0`.
+Old ledger still hashes to
+`20c988dcbcaf9977d268e6b1d880bbc8ba57d94aa1b41fa9593ef47b3049751a`;
+31 calls and $3.10 reserved are unchanged. No real credentials, external source
+fetch, paid call, native launch or release action occurred. This is only an
+input-adapter preparation receipt; D1 remains unaccepted until authorized actual
+output is reviewed. All gates retain their previous status. Next finite unpaid
+batch should prioritize a distinct remaining native interaction (for example
+synthetic memory deletion and restart) rather than repeat the completed
+extraction or recovery paths. Keep controlled HOME and launcher lifetime rules.
