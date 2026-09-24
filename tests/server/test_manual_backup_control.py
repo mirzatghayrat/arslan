@@ -25,7 +25,9 @@ def test_manual_backup_stopped_profile_exclusive_no_secret_bootstrap(tmp_path):
     def invoke():
         return subprocess.run([sys.executable, str(root / "packaging/server_entry.py"), "--activation-control"],
             cwd=root, env={"HOME": str(home), "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-                           "PYTHONPATH": str(root), "PYTHONDONTWRITEBYTECODE": "1"},
+                           "PYTHONPATH": str(root), "PYTHONDONTWRITEBYTECODE": "1",
+                           "ARSLAN_DATA_DIR": str(tmp_path / "must-not-use"),
+                           "ARSLAN_DB_PATH": str(tmp_path / "must-not-use" / "wrong.db")},
             input=json.dumps({"action": "backup", "name": name}) + "\n", text=True,
             capture_output=True, timeout=15)
     with hold(database):
@@ -42,3 +44,4 @@ def test_manual_backup_stopped_profile_exclusive_no_secret_bootstrap(tmp_path):
     assert database.read_bytes() == before
     assert not (home / ".arslan").exists()
     assert not (profile / "api_token").exists()
+    assert not (tmp_path / "must-not-use").exists()

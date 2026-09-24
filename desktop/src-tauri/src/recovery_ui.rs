@@ -469,10 +469,10 @@ pub(crate) fn begin_backup(app: AppHandle) {
         let mut service_touched = false;
         let result = (|| -> Result<PathBuf, ()> {
             let home = PathBuf::from(std::env::var_os("HOME").ok_or(())?);
-            if !home.is_absolute()
-                || std::env::var_os("ARSLAN_DATA_DIR").is_some()
-                || std::env::var_os("ARSLAN_DB_PATH").is_some()
-            {
+            // Both normal packaged startup and activation-control sanitize
+            // developer profile overrides. Their presence is not a different
+            // active profile and must not make this native action unavailable.
+            if !home.is_absolute() {
                 return Err(());
             }
             let executable = RecoveryExecutable::load(
