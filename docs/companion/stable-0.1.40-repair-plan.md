@@ -1,5 +1,11 @@
 # Stable 0.1.40 — close the measured gaps
 
+Current: [cumulative release retest](stable-0.1.40-release-retest-20260924.md).
+57/60 requests reserved, US$5.70 retained (not invoice). R1 core passes with
+caveat; R4 remains blocked after the separately frozen 16k critique experiment
+returned no content. Production cap increase reverted. No further paid retry
+registered; earlier budgets and pending-approval text below are historical.
+
 Newest: [two-case review](stable-0.1.40-two-retest-20260924.md), source 60e779ba,
 8/12 calls, US$0.80 reserved, US$0.0636471 peak estimate (not invoice). Both
 execution paths pass but R1/R4 remain semantically unaccepted. Do not repeat

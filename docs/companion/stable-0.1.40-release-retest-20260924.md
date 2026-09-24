@@ -1,5 +1,22 @@
 # Shared 60-request / US$6 release acceptance grant
 
+## Latest outcome: round 11 failed, no further paid rerun registered
+
+Source `198e6c44cd48120400f4628ee2d6c139993534e1`, four accounted requests.
+The critique consumed **16384 output/reasoning tokens with empty content**;
+no saved report/readback, R4 remains unaccepted. Shared ledger now has **57/60
+requests, US$5.70 retained reservations**, three unused slots. This is not an
+invoice. The higher output limit did not solve the problem and is reverted in
+production defaults/provider; the immutable round-11 source, freeze, responses
+and accounting remain intact. No retry or extra round is registered. Existing
+authorization covers the configured main model only, not an unapproved reviewer
+model. Do not spend the last slots repeating this mode or call the result a pass.
+
+Release is blocked by R4 and remaining native backup-export/final candidate
+package evidence. Native v13 results below remain valid within their stated
+scripted-protocol/development-bundle boundaries. No tag, Publish, merge, current
+installation replacement or stable Latest mutation occurred.
+
 ## Current: round 10 stopped; bounded output repair for round 11
 
 Round 10 (`f04da9d8`) used three accounted requests; the critique again returned

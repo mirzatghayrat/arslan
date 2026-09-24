@@ -93,7 +93,6 @@ class OpenAIProvider(BaseLLMProvider):
                 and self.model in {"deepseek-flash", "deepseek-v4-flash", "deepseek-v4-pro"}):
             payload["thinking"] = {"type": "enabled"}
             payload["reasoning_effort"] = "low"
-            payload["max_tokens"] = 16384
         return payload
 
     async def chat(

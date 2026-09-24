@@ -57,7 +57,7 @@ class BudgetSpec(Contract):
     tool_calls: PositiveInt = 24
     tokens: PositiveInt = 128_000
     wall_seconds: Annotated[float, Field(gt=0, allow_inf_nan=False)] = 600
-    output_tokens_per_request: PositiveInt = 16384
+    output_tokens_per_request: PositiveInt = 8192
     artifact_bytes: PositiveInt = 100 * 1024 * 1024
 
     def to_native(self) -> Limits:
