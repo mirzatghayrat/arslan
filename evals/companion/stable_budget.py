@@ -17,6 +17,17 @@ EVIDENCE = ROOT.parent / "stable-0140-live-evidence-20260924"
 CONTRACT = ROOT / "evals/companion/stable-0140-acceptance.json"
 
 
+def grant_limits(value):
+    requests = value.get("max_requests", 36)
+    usd = value.get("max_usd", "5.00")
+    payload = value.get("max_payload_bytes", 100_000)
+    if (type(requests) is not int or not 1 <= requests <= 36
+            or usd not in {"3.00", "5.00"} or requests * Decimal("0.10") > Decimal(usd)
+            or type(payload) is not int or not 1 <= payload <= 200_000):
+        raise RuntimeError("stable_grant_limits_invalid")
+    return requests, usd, payload
+
+
 def contract():
     raw = CONTRACT.read_bytes()
     value = json.loads(raw)
@@ -29,11 +40,12 @@ def contract():
 def initialize():
     """Exclusive creation; never truncate or silently create a second ledger."""
     value, digest = contract()
+    requests, usd, _ = grant_limits(value)
     EVIDENCE.mkdir(parents=True, exist_ok=True)
     path = EVIDENCE / "budget.jsonl"
     with path.open("x", encoding="utf-8") as stream:
         stream.write(json.dumps({"type": "authorization", "id": value["authorization_id"],
-            "contract_sha256": digest, "max_requests": 36, "max_usd": "5.00",
+            "contract_sha256": digest, "max_requests": requests, "max_usd": usd,
             "created_at": datetime.now(timezone.utc).isoformat()}) + "\n")
         stream.flush()
         os.fsync(stream.fileno())
@@ -41,13 +53,14 @@ def initialize():
 
 
 def _records(stream, value, digest):
+    requests, usd, _ = grant_limits(value)
     stream.seek(0)
     rows = [json.loads(line) for line in stream]
     if not rows or rows[0].get("type") != "authorization" or rows[0].get("id") != value["authorization_id"]:
         raise RuntimeError("stable_authorization_invalid")
     if rows[0].get("contract_sha256") != digest:
         raise RuntimeError("stable_contract_changed")
-    if rows[0].get("max_requests") != 36 or rows[0].get("max_usd") != "5.00":
+    if rows[0].get("max_requests") != requests or rows[0].get("max_usd") != usd:
         raise RuntimeError("stable_authorization_invalid")
     limits = {case["id"]: case["max_requests"] for case in value["cases"]}
     counts = dict.fromkeys(limits, 0)
@@ -57,7 +70,7 @@ def _records(stream, value, digest):
                 or row.get("case") not in limits):
             raise RuntimeError("stable_ledger_invalid")
         counts[row["case"]] += 1
-    if len(rows) - 1 > 36 or any(counts[key] > limits[key] for key in counts):
+    if len(rows) - 1 > requests or any(counts[key] > limits[key] for key in counts):
         raise RuntimeError("stable_ledger_over_budget")
     return rows, counts, limits
 
@@ -84,6 +97,7 @@ def reserve(case_id, payload, *, pricing, preflight_sha256):
         raise RuntimeError("stable_halted")
     value, digest = contract()
     case = next((case for case in value["cases"] if case["id"] == case_id), None)
+    requests, _, payload_cap = grant_limits(value)
     if case is None:
         raise RuntimeError("stable_case_inputs_unready")
     preflight = EVIDENCE / f"{case_id}-preflight.json"
@@ -117,7 +131,7 @@ def reserve(case_id, payload, *, pricing, preflight_sha256):
     except (ValueError, ArithmeticError, KeyError) as error:
         raise RuntimeError("stable_price_exceeds_reservation_or_unknown") from error
     raw = json.dumps(payload, ensure_ascii=False).encode()
-    if len(raw) > 100_000 or payload.get("max_tokens") != 8192:
+    if len(raw) > payload_cap or payload.get("max_tokens") != 8192:
         raise RuntimeError("stable_payload_cap")
     # r+ deliberately refuses a missing ledger: no zero-spend reset on deletion.
     with (EVIDENCE / "budget.jsonl").open("r+", encoding="utf-8") as stream:
@@ -125,7 +139,7 @@ def reserve(case_id, payload, *, pricing, preflight_sha256):
         rows, counts, limits = _records(stream, value, digest)
         if (EVIDENCE / "HALT").exists():
             raise RuntimeError("stable_halted")
-        if len(rows) - 1 >= 36 or counts[case_id] >= limits[case_id]:
+        if len(rows) - 1 >= requests or counts[case_id] >= limits[case_id]:
             raise RuntimeError("stable_budget_exhausted")
         number = len(rows)
         stream.seek(0, os.SEEK_END)
