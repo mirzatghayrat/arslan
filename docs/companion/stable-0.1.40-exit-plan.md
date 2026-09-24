@@ -6,6 +6,11 @@ core criteria passed with recorded caveats; D3/M2/R1/R4 remain unaccepted.
 Later offline fixes are not live-certified. Scheduled `arslan-2` is paused;
 no stable candidate, tag or Publish yet. Historical checkpoints below are retained.
 
+Latest native update: wrong-key restore refusal with an actual synthetic encrypted
+credential now has development-bundle evidence; original project/memory remained
+usable after restart. This closes that specific native negative case, not the
+final-package or broader N/U gates. See the v8 receipt below.
+
 User direction, 2026-09-23: stop treating successive beta releases as the
 destination. Deliver a functionally complete, tested stage, then a stable
 release. This stage is **the daily research assistant**, not all of v1.2.
@@ -55,7 +60,7 @@ not merely hidden in release notes while advertised in the application.
 
 | Gate | Finite acceptance | Current status |
 | --- | --- | --- |
-| R — useful task outcomes | All original R1–R4/D1–D4/M1–M4 IDs have frozen inputs, actual outputs, reviewed conclusions, sources/artifacts and recovery evidence against their original acceptance. Keep failures and corrections; no best-of-N substitution or dropped cases. | Open: all twelve baselines attempted. D2/D4 core criteria passed with caveats, M1/M3 passed. D1/D3 retain failed baselines with offline repairs; M2 and R1–R4 retain factual-scope/delivery failures. M4 proves saved-output/process recovery and no repeated write, but its resumed final answer was blocked by the unchanged five-call harness cap. Eight cases are not fully accepted; no unrun baseline remains. |
+| R — useful task outcomes | All original R1–R4/D1–D4/M1–M4 IDs have frozen inputs, actual outputs, reviewed conclusions, sources/artifacts and recovery evidence against their original acceptance. Keep failures and corrections; no best-of-N substitution or dropped cases. | Open: eight-case additive sweep executed, not eight passes. D1/R2/R3/M4 core criteria passed with recorded caveats; D2/D4/M1/M3 prior core results retained. D3/M2/R1/R4 remain unaccepted. Offline repairs are not live-certified. |
 | N — actual native core flows | On the candidate: identity/channel; conversation and restart; mixed attachment retention; source opening; artifact opening; project memory correction/deletion; cancellation and explicit resume; backup/restore UI. Verify narrow-window usability and localized safety/errors in supported locales; recheck changed surfaces rather than all historical screens. | Partial: isolated native development bundle from fcb5f2ac verifies identity, Chinese onboarding/menu, project create/edit/restart, mixed attachment rejection/retention, memory correction/history/pause, restore-picker cancellation, positive restore/activation/relaunch with quarantined memory, and checksum-mismatched archive refusal with original profile retained after explicit restart. Backup was created through the source maintenance API, not a native export UI. Full conversations, deletion, source/artifact opening, task recovery, wrong-key/interrupted native restore, narrow-window/six-locale completion and final signed candidate remain unverified. |
 | U — upgrade and recoverability | Isolated fixtures representing stable 0.1.38, beta.3 and beta.6; backup before upgrade, supported upgrade with record/content checks, restart, restore with matching key, wrong/missing key and interrupted restore fail-closed. Exercise installer replacement and updater manifest/signature handling without changing production Latest or real data. | Partial: all three historical-source profile rehearsals passed on 2026-09-24; packaged/UI upgrade and recovery evidence still must be bound to the candidate. |
 | S — safety and regression | No unresolved data-loss, unauthorized action, privacy/key exposure, startup failure or broken advertised core path. Full CI and scoped safety regressions pass; dependency findings receive platform/reachability disposition rather than 'all clear' by count. | Open until final source; reuse prior results only where changes cannot invalidate them. |
@@ -70,6 +75,40 @@ Native memory clarification (2026-09-24): deletion cancellation, confirmed
 deletion and restart persistence now have real isolated development-bundle
 evidence below; remove that item from the outstanding development-UI checklist.
 Final-candidate revalidation and real-model non-reuse remain separate boundaries.
+
+### Native wrong-key recovery — v7 qualification and v8 result
+
+Same unchanged development bundle, source
+`fcb5f2acacd1f188f631fc384e99dfa7803f3a55`; fixture helper checkout `c612db65`.
+No paid calls, real providers, private chats, installed-app replacement or Publish.
+
+- v7 used the earlier backup with no stored credentials. A different well-formed
+  key reached trial success because there was no ciphertext to validate. Kept
+  paused, never activated. Retain this experiment; it is not a wrong-key pass or
+  evidence of credential decryption bypass.
+- v8 added exactly one encrypted, unusable synthetic search credential to a
+  separate backup fixture. Offline preflight before native execution was
+  `compatible/checked=1/unreadable=0` with its fixture key and
+  `unreadable_credentials/checked=1/unreadable=1` with the wrong key.
+- Actual native ZIP/key pickers and stop/prepare confirmation led to a localized
+  paused warning, with **no activation confirmation**. Controlled-HOME restart
+  reopened the original Cedar project and paused blue local memory.
+- Read-only stopped checks confirm original fixture DB hash unchanged, active
+  project/memory/revision facts identical, no synthetic credential imported,
+  zero provider/message/run/usage rows, no activation or previous-profile record.
+  The retained candidate still requires the correct key; wrong-key unreadability
+  remains 1/1. Backup hash unchanged.
+- UX caveat: the warning is generic "restore paused", not a specific key-mismatch
+  explanation. Final signed-package repetition remains required.
+- Tooling caveat: an AX observation immediately after final Quit exposed a new
+  default-HOME acceptance process blocked by the existing profile lock. No
+  workspace loaded; this acceptance process and own launchers were terminated.
+  Future cleanup must inspect process exit through the launcher, not call AX on
+  a stopped app. This is not counted as a second successful restart.
+
+Private receipt `../stable-0140-native-evidence-20260924/native-wrong-key-v8.json`,
+SHA-256 `b6aed3e60662deaf41d4cd4d8c3914d6ee546482a6b37d1fed0ec9dcd30fac0a`.
+All test processes stopped; raw fixture logs remain private.
 
 Supported rollback means restoring the **pre-upgrade profile plus matching
 key and compatible app**. It does not mean an old binary may safely open a new
