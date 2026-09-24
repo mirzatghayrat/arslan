@@ -55,6 +55,20 @@ async def test_empty_critique_is_not_verification():
     assert result["status"] == "no_objection" and result["semantic_verified"] is False
 
 
+async def test_invalid_objection_cannot_hide_a_separate_anchored_objection():
+    item = draft()
+    sid = next(key for key, (_, text) in item[2].items() if "17" in text)
+    valid = {"claim": "No task count was given.", "source_id": sid,
+             "quote": "Measured across 17 tasks.", "reason": "Count is explicit."}
+    invalid = {**valid, "quote": "An invented quotation."}
+
+    async def chat(*args, **kwargs):
+        return SimpleNamespace(content=json.dumps({"issues": [invalid, valid]}))
+    result = await review.inspect(item, adapter=None, chat=chat, cache={})
+    assert result["status"] == "issues" and result["issues"] == [valid]
+    assert result["rejected_objections"] == 1 and result["semantic_verified"] is False
+
+
 def test_unrelated_writes_and_invalid_source_receipts_do_not_trigger():
     assert review.subject("write_file", {"path": "report.csv", "content": "a,b"}, trace()) is None
     evidence = trace()

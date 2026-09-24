@@ -1,9 +1,10 @@
 # 0.1.40 stable — finite acceptance and release plan
 
-Current: [60/$6 grant and round-1 interruption](stable-0.1.40-release-retest-20260924.md).
-Six calls reserved, US$0.60 retained; request 6 usage unknown after harness
-cancellation, conservatively charged in full. R1/R4 are still open. A scoped
-review-mode/stop-condition/harness repair is ready for separately frozen round 2.
+Current: [60/$6 grant and registered repair rounds](stable-0.1.40-release-retest-20260924.md).
+Twelve calls reserved, US$1.20 retained; round-1 request 6 usage unknown after
+harness cancellation, conservatively charged in full. R1/R4 are still open.
+Round 2 returned critiques but stopped on mixed invalid/valid quote admission;
+individual exact-pair admission repair is ready for separately frozen round 3.
 Older "latest" checkpoints below are retained history, not current budget resets.
 
 Latest result: [two-case semantic review](stable-0.1.40-two-retest-20260924.md).

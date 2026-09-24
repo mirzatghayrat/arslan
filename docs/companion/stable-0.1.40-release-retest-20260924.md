@@ -40,6 +40,17 @@ Provider specification checked 2026-09-24:
 https://api-docs.deepseek.com/guides/thinking_mode/
 https://api-docs.deepseek.com/quick_start/pricing/
 
+Round 2 actual result on `e747315b`: both cases stopped without writes, 3 calls
+each, all six response usages accounted. Cumulative 12 reservations / US$1.20.
+Non-thinking critiques returned usable JSON, but one inexact quotation caused
+the whole mixed list to be rejected, discarding separately anchored objections.
+Do not count this as task success. Raw drafts and critique responses are retained.
+Registered round-3 repair admits only individually exact claim/source pairs;
+mixed valid/invalid lists remain blocking objections, and a wholly rejected
+nonempty list remains unavailable, never a false empty-list pass. Criteria and
+public input bytes stay unchanged. Guidance distinguishes factual contradictions
+from harmless summary omissions/rounding; critique remains fallible.
+
 Offline: 14 focused review, mode-scope and master-ledger checks passed. They
 prove execution/accounting behavior, not R1/R4 factual quality. Round 2 must be
 frozen separately before calls; no final source CI/tag/release yet.
@@ -57,3 +68,7 @@ no bundled database/secrets). Fresh-install probe: 60 pass, 2 fail. The known
 development copy omits the standalone compute runtime; this host also has
 Tesseract on PATH, so the probe cannot establish packaged-only OCR. Preserve
 these failures; this is neither signed/notarized release evidence nor a P pass.
+After staging the locked standalone runtime and invoking the same probe with a
+clean PATH, all 65 checks passed, including sandbox denial/CSV/PNG and packaged
+OCR. This remains the `81b38b53` ad-hoc development bundle, not source e747315b
+or the final signed candidate. The earlier two failures remain above.
