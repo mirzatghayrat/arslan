@@ -1,5 +1,11 @@
 # 0.1.40 stable — finite acceptance and release plan
 
+Latest R-gate update: [eight-case additive retest](stable-0.1.40-retest-20260924.md)
+on source `470c713735f1661c54941da55975eb0bf881c605`, 30 new requests. D1/R2/R3/M4
+core criteria passed with recorded caveats; D3/M2/R1/R4 remain unaccepted.
+Later offline fixes are not live-certified. Scheduled `arslan-2` is paused;
+no stable candidate, tag or Publish yet. Historical checkpoints below are retained.
+
 User direction, 2026-09-23: stop treating successive beta releases as the
 destination. Deliver a functionally complete, tested stage, then a stable
 release. This stage is **the daily research assistant**, not all of v1.2.

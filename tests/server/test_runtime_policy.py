@@ -138,6 +138,30 @@ def test_progress_hashes_survive_reconstruction_without_storing_inputs():
     assert all(len(value) == 64 and "fixture" not in value for value in second.seen)
 
 
+def test_refetch_clock_alone_is_not_progress_and_receipt_is_preserved():
+    policy = ProgressPolicy(max_stalled=2)
+    first = {"ok": True, "text": "same", "source": {
+        "url": "https://example.com/source", "retrieved_at": "first", "truncated": False}}
+    assert policy.observe("web_extract", {}, first)
+    for timestamp in ("second", "third"):
+        result = {**first, "source": {**first["source"], "retrieved_at": timestamp}}
+        assert not policy.observe("web_extract", {}, result)
+        assert result["source"]["retrieved_at"] == timestamp
+    assert policy.stopped
+    assert first["source"]["retrieved_at"] == "first"
+    assert policy.observe("web_extract", {}, {**first, "text": "new evidence"})
+    assert not policy.stopped
+
+
+@pytest.mark.parametrize("field,value", [("url", "https://example.com/other"), ("truncated", True)])
+def test_refetch_scope_changes_remain_progress(field, value):
+    policy = ProgressPolicy()
+    result = {"ok": True, "text": "same", "source": {
+        "url": "https://example.com/source", "retrieved_at": "first", "truncated": False}}
+    assert policy.observe("web_extract", {}, result)
+    assert policy.observe("web_extract", {}, {**result, "source": {**result["source"], field: value}})
+
+
 def test_compaction_preserves_opaque_provider_and_response_pair():
     opaque = {"role": "assistant", "content": [{"type": "provider_content", "provider": "gemini",
               "parts": [{"functionCall": {"name": "read"}, "thoughtSignature": "opaque-fixture"}]}]}

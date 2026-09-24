@@ -87,7 +87,16 @@ class ProgressPolicy:
         if self.last_failure is not None:
             self.stalled += 1
             return False
-        encoded = json.dumps([tool, result], ensure_ascii=False,
+        evidence = result
+        if tool == "web_extract" and isinstance(result.get("source"), dict):
+            # Refetching identical evidence is not progress merely because the
+            # receipt has a newer clock value. Keep URL, text, scope and all
+            # other fields; do not mutate the actual provenance shown to users.
+            evidence = {**result, "source": {
+                key: value for key, value in result["source"].items()
+                if key != "retrieved_at"
+            }}
+        encoded = json.dumps([tool, evidence], ensure_ascii=False,
                              sort_keys=True, separators=(",", ":"), default=str)
         digest = hashlib.sha256(encoded.encode()).hexdigest()
         novel = digest not in self.seen

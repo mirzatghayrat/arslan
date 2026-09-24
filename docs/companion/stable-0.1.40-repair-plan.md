@@ -1,5 +1,11 @@
 # Stable 0.1.40 — close the measured gaps
 
+Latest additive sweep: [2026-09-24 actual outcomes](stable-0.1.40-retest-20260924.md).
+The new grant was approved and used 30/36 calls; D1/R2/R3/M4 core criteria now
+have retest evidence (R2 retains wording caveats). D3/M2/R1/R4 remain open.
+Historical budget/decision paragraphs below describe the pre-sweep checkpoint,
+not a still-unused grant or permission to retry.
+
 Checkpoint: 2026-09-24, after all twelve stable baselines. This is a finite
 repair/retest plan, not a new feature milestone or permission to rerun paid cases.
 The original contract, inputs, outputs and ledger remain immutable. The release

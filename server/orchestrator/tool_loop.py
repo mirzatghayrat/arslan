@@ -976,6 +976,11 @@ def _embeds_protocol(text: str) -> bool:
     # Detection is deliberately stricter than parsing for dispatch: malformed
     # quotes or an interrupted object must not turn a proposed action into an
     # answer. This only rejects text; it never repairs JSON or executes a call.
+    # Some providers render a proposed call as XML instead of native tool_calls.
+    # Treat that as the same protocol failure, including an unfinished opening
+    # tag. Never parse its arguments or grant the proposed action permission.
+    if re.search(r'<\s*/?\s*(?:tool_call|tool_calls|function_call)(?=[\s>/]|$)', text or "", re.I):
+        return True
     if re.search(r'\{\s*"(?:tool|tool_calls|function_call|functionCall|escalate)"\s*:', text or ""):
         return True
     obj = first_json_object(text or "") or parse_json_object(text or "")

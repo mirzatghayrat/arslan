@@ -247,6 +247,41 @@ async def test_non_protocol_json_is_preserved_as_user_content(monkeypatch):
     assert joined == out["final"] == '这是结论。{"note": "internal", "x": 1}'
 
 
+async def test_xml_call_is_not_executed_or_streamed_without_tools(monkeypatch):
+    adapter = _ScriptedAdapter([
+        'Brief. <tool_call name="ask_user_choice">{"question":"Subject?"}</tool_call>',
+        'Subject not provided; no project facts are available.',
+    ])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    chunks, events = [], []
+    result = await tool_loop.run_native(
+        system="S", user_content="A brief", history=[], emit=events.append,
+        on_chunk=chunks.append, resolve_tools=_tools())
+    assert result["final"] == 'Subject not provided; no project facts are available.'
+    assert "tool_call" not in "".join(chunks)
+    assert not any(event["type"] == "tool_call" for event in events)
+    assert len(adapter.calls) == 2
+    assert adapter.calls[-1]["tools"] is None
+
+
+async def test_repeated_xml_protocol_fails_closed_without_execution(monkeypatch):
+    adapter = _ScriptedAdapter(['<tool_call name="write_file">', '<TOOL_CALL'])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    chunks, events = [], []
+    result = await tool_loop.run_native(
+        system="S", user_content="A brief", history=[], emit=events.append,
+        on_chunk=chunks.append, resolve_tools=_tools())
+    assert result["final"] and not tool_loop._embeds_protocol(result["final"])
+    assert "tool_call" not in "".join(chunks).lower()
+    assert not any(event["type"] == "tool_call" for event in events)
+    assert len(adapter.calls) == 2
+
+
+def test_ordinary_markup_is_not_a_tool_protocol():
+    assert not tool_loop._embeds_protocol('<span style="color:green">Brief</span>')
+    assert not tool_loop._embeds_protocol('<tool_callback>ordinary data</tool_callback>')
+
+
 async def test_forced_step_protocol_json_salvaged_not_leaked(monkeypatch):
     # Root cause: on the forced (budget-exhausted) step the model may emit ANOTHER tool call
     # instead of prose (deepseek did exactly this after a web_extract timeout). The raw
