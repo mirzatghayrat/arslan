@@ -81,7 +81,7 @@ def reserve_global(round_number, local_number, case):
             raise RuntimeError("release_budget_exhausted")
         for index, row in enumerate(rows[1:], 1):
             if (row.get("request") != index or row.get("reserved_usd") != "0.10"
-                    or type(row.get("round")) is not int or not 1 <= row["round"] <= 9
+                    or type(row.get("round")) is not int or not 1 <= row["round"] <= 10
                     or type(row.get("local_request")) is not int or not 1 <= row["local_request"] <= 24):
                 raise RuntimeError("release_ledger_invalid")
             accounted = MASTER / f"round-{row['round']}" / f"request-{row['local_request']:02d}.accounted.json"
@@ -109,7 +109,7 @@ def reserve_global(round_number, local_number, case):
 def configured():
     authority()
     number = int(os.environ["ARSLAN_RELEASE_ROUND"])
-    if not 1 <= number <= 9:
+    if not 1 <= number <= 10:
         raise RuntimeError("invalid_round")
     values = {"PARENT": budget.ROOT.parent / "stable-0140-two-retest-evidence-20260924",
         "EVIDENCE": MASTER / f"round-{number}", "GRANT_ID": f"release-60-usd6-round-{number}",

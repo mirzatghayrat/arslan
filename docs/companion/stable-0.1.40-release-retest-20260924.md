@@ -1,5 +1,22 @@
 # Shared 60-request / US$6 release acceptance grant
 
+Round 9 (`c5c04554`) stopped after three accounted calls: its new draft's
+critique again spent all 8192 output tokens on reasoning and returned no content.
+No write/readback occurred; the unavailable notice is honest, not task success.
+Cumulative **50/60 / US$5.00 reserved**, ten slots remain. Inspection of this
+draft also found unnecessary full-document absence claims outside the question
+that remain unsupported; do not publish it or treat a warning as semantic pass.
+
+Registered round 10 is the final bounded full R4 attempt within this grant:
+scope the writer to the user's requested capability, up to six relevant rows
+unless comprehensive coverage was asked for, concise exact quotes, and no
+unsolicited whole-document absence inventory. Shared claims need evidence in
+both sources. Inputs/acceptance and 8192/128k limits are unchanged; round IDs
+now admit 10 but the cumulative 60/$6 ledger is NOT enlarged or reset. This is
+not a claim that prompt checks establish factual quality. If unsuccessful,
+preserve the result and report the unresolved model/reporting blocker rather
+than fabricate release readiness or continue identical paid attempts.
+
 Round-8 bounded diagnostic on `421d3303` returned a valid, material objection:
 the retained R4 draft attributed transport-layer source-IP visibility to both
 READMEs, although only the Chinese source says that; the English source only

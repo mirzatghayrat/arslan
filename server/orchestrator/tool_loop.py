@@ -1323,6 +1323,17 @@ async def run_native(
             convo[-pending_feedback:], ensure_ascii=False, default=str)) > 96_000
         has_web_evidence = any(item.get("tool") == "web_extract" and
                                (item.get("result") or {}).get("ok") for item in tool_trace)
+        if has_web_evidence:
+            sys_now += (
+                "\nResearch scope: deliver the smallest useful report answering the requested dimensions. "
+                "For a question about one capability, do not expand into an inventory of unrelated README "
+                "differences. Unless comprehensive coverage is requested, use at most six relevant comparison "
+                "rows and short source quotations, with a concise conclusion and explicit unknowns. "
+                "Do not add an exhaustive 'not mentioned' list that the user did not ask for. "
+                "Omission from one quoted sentence is not absence from a document. Each shared claim must "
+                "be supported by BOTH sources; otherwise attribute it only to the source that says it. "
+                "A shared commit URL does not date a translation's baseline or prove why texts differ. "
+                "Stay within the existing budget; extra detail is not a substitute for an accurate deliverable.")
         convo, compacted = bounded_history(convo, max_chars=96_000 if has_web_evidence else 64_000,
                                            preserve_tail=0 if oversized_feedback else pending_feedback)
         pending_feedback = 0
