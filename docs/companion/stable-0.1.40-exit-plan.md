@@ -48,6 +48,11 @@ not merely hidden in release notes while advertised in the application.
 | S — safety and regression | No unresolved data-loss, unauthorized action, privacy/key exposure, startup failure or broken advertised core path. Full CI and scoped safety regressions pass; dependency findings receive platform/reachability disposition rather than 'all clear' by count. | Open until final source; reuse prior results only where changes cannot invalidate them. |
 | P — release provenance | Release source integrated through review with current remote main; documented source/version identity, full same-SHA CI, signed/notarized/stapled package, Gatekeeper/fresh-install and asset/update-signature checks. Stable-channel update path explicitly reviewed before Latest/Publish. | Open; remote main observed at `d3e8081d0fc7a72072731edfaa0ea33acf095724`, not the beta.6 source. Do not silently merge or promote the existing beta artifact. |
 
+Native recovery clarification (2026-09-24): post-trial **Keep paused**, refusal of
+rollback on the next launch, and explicit rollback on a subsequent launch now
+have real native development-bundle evidence below. This is not an injected
+crash during directory movement, wrong-key coverage, or final-package acceptance.
+
 Supported rollback means restoring the **pre-upgrade profile plus matching
 key and compatible app**. It does not mean an old binary may safely open a new
 database. Test and document that supported recovery path. Already shipped old
@@ -1295,3 +1300,54 @@ post-trial pause/rollback path on another clone; do not repeat this negative cas
 as new progress. N/U remain partial; all release gates remain open. Canonical
 paid consumption is unchanged at 31/36, $3.10 reserved; the previously asked
 additional-budget question remains unanswered. No tag, push, Publish or merge.
+
+## Native post-trial pause and explicit rollback — 2026-09-24
+
+Starting checkout `aa413ee8`; unchanged isolated development bundle source
+`fcb5f2acacd1f188f631fc384e99dfa7803f3a55`. Created only the new synthetic
+`native-home-pause-v5` clone, registered known archive hash and expected outcome
+before launch. No provider/key from the real installation, model request,
+rebuild or installed-app mutation. The native launcher permits recovery dialogs
+before normal health, keeps its process group alive, and writes distinct logs
+for prepare/reopen-paused/reopen-rollback instead of overwriting prior attempts.
+
+Actual CUA-driven sequence:
+
+1. Native ZIP/key selectors and first stop/prepare confirmation; restricted
+   trial reported success, followed by the second activation consent dialog.
+2. Selected **保持暂停**, acknowledged the pause warning and normally quit.
+   The active path contained the quarantined restored candidate, the original
+   profile remained at its previous path, and the pending operation record
+   blocked normal startup. No completed activation was present.
+3. Explicit controlled-HOME restart showed **资料恢复尚未完成**, offering
+   **回退到原资料** or **保持暂停** before a normal workspace. Selected pause
+   again: the localized startup-refused page remained, with no workspace or
+   normal backend. Normally quit. The same operation, active directory identity
+   and candidate database digest were unchanged — no implicit rollback/activate.
+4. Another explicit controlled restart offered the same decision. Selected
+   **回退到原资料**; startup then reached the Chinese workspace on port 51145.
+   The active Cedar project/full original summary and blue **已停用 / 仅本地**
+   memory were visible. Normally quit, then stopped only the owned launcher.
+
+Stopped-profile checks establish original directory identity restored, original
+project/memory/revision facts exactly retained, both DB integrity checks okay,
+zero provider/message/run/usage rows, pending journal removed, and the quarantined
+candidate retained separately with the exact pre-rollback database hash. The
+original v1 fixture database is unchanged. Private evidence receipts:
+
+- `native-pause-v5-paused.json`:
+  `9e9bf62621f2f390015f2333f7fcd0ff9b990d92152c94c45ee4c6f0497ccfed`
+- `native-pause-v5-declined.json`:
+  `5889add9b59e5ad3761be77c170668f10635ecbef466979684ff23533ec6777f`
+- `native-pause-v5-rolled-back.json`:
+  `990310dec7c6b8df65304e3ad6530cab9572dd6e669302730ff04f3b43a608b9`
+
+This is a real declined-finalization/reopen/consented-rollback path, **not** a
+crash injected midway through directory movement or proof for every recovery
+failure. No encrypted provider records existed. Wrong/missing-key native paths,
+other native task flows, six-locale/narrow-window checks and final signed-package
+upgrade/recovery remain distinct work. All acceptance processes have exited;
+raw logs remain private. Paid consumption remains 31/36 and $3.10 reserved,
+with no new authorization inferred. No large suite rerun, CI/tag/push/merge or
+Publish. Next finite unpaid batch should address another remaining native path
+or prepare frozen additive retests, rather than repeat these recovery paths.
