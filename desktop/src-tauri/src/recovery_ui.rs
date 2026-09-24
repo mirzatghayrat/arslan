@@ -131,6 +131,31 @@ fn archive_stamp(path: &Path) -> Result<ArchiveStamp, ()> {
     ))
 }
 
+/// Follow only the rename performed by this confirmed recovery operation.
+/// Never fall back to the newly active directory's copy or an arbitrary match.
+fn archive_after_switch(
+    archive: &Path,
+    stamp: &ArchiveStamp,
+    profile: &Path,
+    operation: &str,
+) -> Result<PathBuf, ()> {
+    if !recovery_control::valid_id(operation) {
+        return Err(());
+    }
+    let relocated = match archive.strip_prefix(profile) {
+        Ok(relative) => profile
+            .parent()
+            .ok_or(())?
+            .join(format!(".arslan-previous-{operation}"))
+            .join(relative),
+        Err(_) => archive.to_path_buf(),
+    };
+    if archive_stamp(&relocated)? != *stamp {
+        return Err(());
+    }
+    Ok(relocated)
+}
+
 struct Selection {
     inputs: LaunchInputs,
     archive: PathBuf,
@@ -397,7 +422,16 @@ impl Steps for NativeSteps {
                 secret: s.target.secret(),
             },
         ) {
-            Ok(Reply::TrialPending(operation)) => Ok(operation),
+            Ok(Reply::TrialPending(operation)) => {
+                let s = self.selection.as_mut().ok_or(())?;
+                s.archive = archive_after_switch(
+                    &s.archive,
+                    &s.archive_stamp,
+                    &s.inputs.profile(),
+                    &operation,
+                )?;
+                Ok(operation)
+            }
             _ => Err(()),
         }
     }
@@ -583,6 +617,57 @@ pub(crate) fn begin(app: AppHandle) {
 mod tests {
     use super::*;
     use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn selected_backup_tracks_only_verified_original_after_profile_switch() {
+        let base = std::env::temp_dir().join(format!(
+            "arslan-backup-rename-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let profile = base.join("Arslan");
+        let operation = "01234567-89ab-cdef-0123-456789abcdef";
+        let previous = base.join(format!(".arslan-previous-{operation}"));
+        let archive = profile.join("backups/manual.zip");
+        std::fs::create_dir_all(archive.parent().unwrap()).unwrap();
+        std::fs::write(&archive, b"original-backup").unwrap();
+        let stamp = archive_stamp(&archive).unwrap();
+        let outside = base.join("external.zip");
+        std::fs::write(&outside, b"external-backup").unwrap();
+        let external_stamp = archive_stamp(&outside).unwrap();
+        std::fs::rename(&profile, &previous).unwrap();
+        std::fs::create_dir_all(archive.parent().unwrap()).unwrap();
+        // A new active copy must not be accepted, even with identical bytes.
+        std::fs::write(&archive, b"original-backup").unwrap();
+        let retained = previous.join("backups/manual.zip");
+        assert_eq!(
+            archive_after_switch(&archive, &stamp, &profile, operation),
+            Ok(retained.clone())
+        );
+        assert_eq!(
+            archive_after_switch(&outside, &external_stamp, &profile, operation),
+            Ok(outside)
+        );
+        assert!(archive_after_switch(&archive, &stamp, &profile, "../wrong").is_err());
+        assert!(archive_after_switch(
+            &archive,
+            &stamp,
+            &profile,
+            "11234567-89ab-cdef-0123-456789abcdef"
+        )
+        .is_err());
+        let replacement = previous.join("replacement.zip");
+        std::fs::write(&replacement, b"original-backup").unwrap();
+        std::fs::rename(replacement, &retained).unwrap();
+        assert!(archive_after_switch(&archive, &stamp, &profile, operation).is_err());
+        std::fs::remove_file(&retained).unwrap();
+        std::os::unix::fs::symlink(&archive, &retained).unwrap();
+        assert!(archive_after_switch(&archive, &stamp, &profile, operation).is_err());
+        std::fs::remove_dir_all(base).unwrap();
+    }
 
     #[test]
     fn recovery_component_requires_regular_nonempty_executable_and_stable_identity() {
