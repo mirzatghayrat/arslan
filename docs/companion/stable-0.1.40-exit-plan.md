@@ -1,6 +1,13 @@
 # 0.1.40 stable — finite acceptance and release plan
 
-Latest R-gate update: [eight-case additive retest](stable-0.1.40-retest-20260924.md)
+Latest R-gate update: [four-case retest](stable-0.1.40-four-retest-20260924.md)
+on source `83f29f4ecc2da668ace50e6bbf989ae7d296d00f`, 15/22 new requests.
+D3/M2 core criteria passed (D3 wording caveat retained). R1/R4 now deliver
+saved/reopened reports and final answers, but both still fail specific semantic
+claims. R remains open with two cases, not four execution failures. Later prompt
+repairs are not live-certified. No stable candidate or release yet.
+
+Previous R-gate update: [eight-case additive retest](stable-0.1.40-retest-20260924.md)
 on source `470c713735f1661c54941da55975eb0bf881c605`, 30 new requests. D1/R2/R3/M4
 core criteria passed with recorded caveats; D3/M2/R1/R4 remain unaccepted.
 Later offline fixes are not live-certified. Scheduled `arslan-2` is paused;
@@ -10,6 +17,18 @@ Latest native update: wrong-key restore refusal with an actual synthetic encrypt
 credential now has development-bundle evidence; original project/memory remained
 usable after restart. This closes that specific native negative case, not the
 final-package or broader N/U gates. See the v8 receipt below.
+
+Native layout v9 (same fcb5f2ac development bundle, not the current source):
+isolated `native-home-layout-v9` switched zh/en/ja/es/de/fr through the actual
+native window. AX observations show localized preview/manual-install/stable-update/
+backup notices and native menu labels in all six. Window resized to 1800x1200
+retina pixels (approximately 900x600 logical); Chinese and French workspace
+screenshots and German appearance screenshot retained usable key controls with
+wrapped long text. Lower settings scroll normally; this is not a full six-locale
+error-dialog or full-conversation acceptance. Local receipt `native-layout-v9.json`
+records executable hash and boundaries; screenshots were inspected in task tools,
+not separately archived. Clean native Quit, stopped PID absent, zero provider/
+message/run/usage rows. No model calls or real installation changes.
 
 User direction, 2026-09-23: stop treating successive beta releases as the
 destination. Deliver a functionally complete, tested stage, then a stable

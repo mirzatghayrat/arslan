@@ -1,5 +1,12 @@
 # Stable 0.1.40 — close the measured gaps
 
+Latest: [four-case actual review](stable-0.1.40-four-retest-20260924.md).
+User approved 22/$3; 15 calls executed on 83f29f4e. D3/M2 core passed with
+recorded caveat; R1/R4 execution recovered but saved-report factual comparisons
+remain unaccepted. A later shared guidance repair is offline only. Two-case
+12/$1.20 follow-up permission requested; no paid retry authorized by this text.
+Earlier proposal/status paragraphs below are historical checkpoints.
+
 ## Four remaining cases — repair candidate after user continuation
 
 No additional paid calls in this batch. D3/M2/R1/R4 remain open until reviewed
