@@ -513,8 +513,7 @@ pub(crate) fn begin_backup(app: AppHandle) {
             Ok(path) => {
                 app.dialog()
                     .message(format!("{}\n{}", text("backup_created"), path.display()))
-                    // The workspace is deliberately disabled while stopped.
-                    // A sheet attached to it cannot render reliably on macOS.
+                    .parent(&window)
                     .title(text("backup_title"))
                     .buttons(MessageDialogButtons::OkCustom(text("restore_ack")))
                     .blocking_show();
@@ -531,6 +530,7 @@ pub(crate) fn begin_backup(app: AppHandle) {
                     } else {
                         "backup_not_started"
                     }))
+                    .parent(&window)
                     .title(text("backup_title"))
                     .kind(MessageDialogKind::Warning)
                     .blocking_show();
