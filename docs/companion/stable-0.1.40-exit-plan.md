@@ -2,6 +2,23 @@
 
 ## Controlling product-owner decision — 2026-09-24
 
+**Candidate CI blocked; paused per user instruction.** Source
+`9697e4cbb9f00e41a75ba2b8f7805b8a136d6ea8`, run
+https://github.com/mirzatghayrat/arslan/actions/runs/35973558629:
+frontend, secrets and macos success; backend failed with 18 failures, 9 setup
+errors, 5547 passed and 120 skipped. One failure is the missing `macos` marker
+on the already platform-skipped manual-backup subprocess test. The other
+17 failures and nine setup errors are `stable_input_freeze_changed`:
+the historical acceptance contract's hashes disagree with current
+`stage2-inputs.freeze.json` and `test_stage2_inputs.py`. No live model calls.
+Do not rewrite historical contracts/ledgers or weaken freeze checks to green CI.
+Minimum next batch: add the platform-selection marker alongside the skip, and
+isolate offline runner fixtures from the immutable historical live contract
+while preserving the original frozen evidence and refusal tests; then run
+focused regressions and a new exact-SHA CI. No implementation of that batch,
+rerun, PR, tag, merge or release after this failure. This paragraph is a local
+checkpoint only, not a change to the tested candidate SHA.
+
 **Latest batch 7 status:** user authorized the narrow archive-path repair;
 `1f5ae8f8` preserves file identity after the confirmed directory switch. Native
 v15 completed internal-backup restore, isolated trial, second confirmation and
@@ -1664,3 +1681,28 @@ outstanding criteria. Paid ledger remains 31/36 with $3.10 reserved, no new
 authorization inferred or requested again. Next unpaid batch can address native
 source/artifact opening or narrow-window/localized core-flow checks; do not
 repeat the already covered deletion/recovery scenarios as new progress.
+
+## Takeover and CI repair — 2026-09-25 (Claude, user-authorized)
+
+The user stopped the Codex task and handed release completion to Claude, with
+authority to fix tests, push, fast-forward main and tag `v0.1.40`. No product
+code changed in this batch; no paid model call, profile/key access or
+`/Applications` change.
+
+- Freeze failures (17 failed + 9 errors) were caused by `87f07e50`, a documented
+  checker revision (CSV logical-record locators, `checker_revision` 2) that
+  changed two files pinned by the immutable historical contract. Offline runner
+  tests now use `offline_stable_contract` (tests/server/conftest.py): a per-test
+  copy with current-tree digests via `budget.CONTRACT`. The historical contract,
+  ledgers and evidence are byte-for-byte unchanged; `test_frozen_source_mutation_still_refuses`
+  still passes. Mutation: removing the fixture from one file restores 4 failures.
+- `test_manual_backup_control.py` gets the `macos` marker; the measured macOS
+  population moves 43 → 44 in both the guard and `ci.yml` (same commit). Local
+  `pytest -m macos` on macOS: 44 run, 0 skipped.
+- Local focused checks: affected runner/budget/marker/backup set 54 passed;
+  upgrade-backup/packaging/review-default-off/startup 64 passed; cross-version
+  rehearsal (0.1.38, beta.3, beta.6) 3 passed; Ruff clean. Full CI is the gate.
+- Reviewed `prepare_upgrade_backup`/`upgrade_backup.create`: backup only for an
+  existing DB with pending migrations; failure aborts before any migration;
+  retention touches only automatic archives. Known cosmetic defect for the next
+  release: the archive name hard-codes `to-0.1.40`.

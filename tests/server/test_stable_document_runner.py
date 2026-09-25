@@ -10,6 +10,10 @@ from arslan.llm.adapter import LLMAdapter
 from evals.companion import stable_budget as budget, stable_documents as documents
 from tests.server import test_stable_document_live as runner
 
+# Offline runner behaviour against a current-tree copy of the stable contract;
+# the historical contract itself is immutable (see conftest.offline_stable_contract).
+pytestmark = pytest.mark.usefixtures("offline_stable_contract")
+
 
 @pytest.mark.parametrize("case_id", documents.DOCUMENT_CASES)
 async def test_document_runner_offline(execution_db, monkeypatch, tmp_path, case_id):

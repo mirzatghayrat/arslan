@@ -13,6 +13,10 @@ from evals.companion import stable_budget as budget, stable_research as research
 from server.registry import net_pin
 from tests.server import test_stable_research_live as runner
 
+# Offline runner behaviour against a current-tree copy of the stable contract;
+# the historical contract itself is immutable (see conftest.offline_stable_contract).
+pytestmark = pytest.mark.usefixtures("offline_stable_contract")
+
 
 @pytest.mark.parametrize("case", research.CASES)
 @pytest.mark.parametrize("failed_final", [False, True])

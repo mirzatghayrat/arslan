@@ -11,6 +11,7 @@ import pytest
 from server.services.data_profile_lock import hold
 
 
+@pytest.mark.macos
 @pytest.mark.skipif(sys.platform != "darwin", reason="native macOS profile path")
 def test_manual_backup_stopped_profile_exclusive_no_secret_bootstrap(tmp_path):
     root = Path(__file__).resolve().parents[2]

@@ -11,6 +11,10 @@ from evals.companion import stable_pdf_repair as repair
 from server.services import ingest
 from tests.server import test_extract_api as api_tests
 
+# Offline runner behaviour against a current-tree copy of the stable contract;
+# the historical contract itself is immutable (see conftest.offline_stable_contract).
+pytestmark = pytest.mark.usefixtures("offline_stable_contract")
+
 client = api_tests.client
 
 
