@@ -36,7 +36,32 @@ defaults:
     shell: bash
 
 jobs:
+  verified-source:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Require successful CI for this exact source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # No signing or release artifacts from an unverified commit. Branch
+          # CI can satisfy this gate before tagging; a different SHA cannot.
+          for attempt in {1..60}; do
+            PASSED=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml \
+              --commit "$GITHUB_SHA" --limit 100 --json conclusion \
+              --jq 'any(.[]; .conclusion == "success")')
+            if [ "$PASSED" = true ]; then
+              exit 0
+            fi
+            sleep 20
+          done
+          echo "::error::No successful CI run for this exact commit; refusing release build"
+          exit 1
+
   build:
+    needs: verified-source
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -195,5 +220,9 @@ jobs:
           # update every installed copy will fetch — same "fail closed on the
           # executing side" rule the rest of this project follows.
           draft: true
+          # Preview tags must not become the stable channel's latest release.
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          make_latest: ${{ contains(github.ref_name, '-') && 'false' || 'legacy' }}
           files: dist/*
-          generate_release_notes: true
+          body_path: docs/releases/${{ github.ref_name }}.md
+          generate_release_notes: false

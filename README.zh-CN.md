@@ -47,7 +47,7 @@
 |---|---|
 | <img src="docs/assets/icons/users.svg" width="20"><br/>**一支由你亲手养成的人格团队** | Arslan 是前门；门后是你一手组建的专家分身阵容——为它们配上工具、`SKILL.md` 技能包和 MCP 服务器，再让两级进化循环随时间不断打磨它们。 |
 | <img src="docs/assets/icons/graduation-cap.svg" width="20"><br/>**带考试关卡的自我进化** | 分身的提示词会依据自己的运行历史自我修订——然后在留出的历史任务上与在任版本对打,盲评、左右位置互换。它必须**在至少 10 组留出对局中赢下 60% 以上**,并且**没有任何一个维度**(fabrication / identity / completion)**比在任版本更差**。通过 → 一份清晰可读的 diff 送进你的收件箱。**在你按下 Promote 之前,任何改动都不会生效。** |
-| <img src="docs/assets/icons/shield-check.svg" width="20"><br/>**默认安全，而不是一纸免责声明** | 生成的代码在内核强制的沙箱（macOS seatbelt）里断网运行。凭证注入代理让沙箱内的 git 能够访问网络，而原始令牌永远不会进入沙箱。在内核沙箱不可用的地方，它会**失效关闭（fail closed）**。 |
+| <img src="docs/assets/icons/shield-check.svg" width="20"><br/>**默认安全，而不是一纸免责声明** | 生成的代码在 macOS 内核沙箱里断网运行，沙箱不可用时失效关闭。指定网络命令仅支持受限的公开、无凭证传输。需要凭证的仓库或账号操作仍保持禁用，等待隔离代理和安全验收；不能视为已完成凭证注入能力。 |
 | <img src="docs/assets/icons/brain.svg" width="20"><br/>**可浏览、可修正的第二大脑** | 资料、心得、个人档案和 `[[wiki-link]]` 笔记——FTS5 + 向量嵌入的混合检索,还能以 Obsidian 风格的力导向图浏览。每条记录都带着它何时生效、被什么取代,图谱可以**按生效时刻筛选**——这是对现存条目的筛选,不是历史回放。 |
 | <img src="docs/assets/icons/badge-check.svg" width="20"><br/>**诚实是设计出来的** | 护栏会拦截“我已经做过了”这类凭空捏造,让 agent 的自我汇报始终与真实执行过的内容挂钩。**删除**永远不会自行生效——它会先落进收件箱,由你接受或驳回。主控 agent 的**覆盖**会立即生效,但它写的是一个指针而不是抹掉原文:原记录仍在,一键即可撤销。分身对共享记忆提出的任何改动同样要走收件箱。 |
 | <img src="docs/assets/icons/key-round.svg" width="20"><br/>**本地优先,自带密钥** | 你的机器、你的 API 密钥,中间**没有任何第三方服务器**。配置多家供应商后,你可以开启跨供应商路由(默认只用一个模型);评审(judge)与路由(router)角色始终锁定在你的主模型上,评估不会漂到更便宜的模型上。开箱即带 6 种语言的 i18n 和 6 套主题配色(明暗双版)。 |
@@ -95,7 +95,7 @@
 ## 安全态势
 
 <div align="center">
-  <img src="docs/assets/safety.jpg" alt="安全是内建的，不是免责声明——内核沙箱、凭证注入代理、本地优先 BYOK" width="100%">
+  <a href="docs/companion/W11-security-boundary.md">W11 — Security boundary / verification limits</a>
 </div>
 
 Arslan **默认安全**：

@@ -13,11 +13,13 @@
  */
 export const SECTIONS = [
   "arslan",
+  "projects",
   "spawn",
   "ledger",
   "capabilities",
   "brain",
   "diagnosis",
+  "connections",
   "settings",
 ] as const;
 

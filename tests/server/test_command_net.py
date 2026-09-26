@@ -32,12 +32,14 @@ async def test_refuses_push_to_other_branch(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_spins_proxy_and_confines_token(monkeypatch, tmp_path):
+async def test_spins_proxy_without_acquiring_host_credentials(monkeypatch, tmp_path):
     monkeypatch.setattr(command_net, "_workspace", lambda: tmp_path)
     monkeypatch.setattr(command_net, "_data_dir", lambda: tmp_path)
     monkeypatch.setattr(command_net, "_git_remotes", lambda ws: _aw({"origin": "https://github.com/me/r.git"}))
     monkeypatch.setattr(command_net, "_current_branch", lambda ws: _aw("main"))
-    monkeypatch.setattr(command_net, "_github_token", lambda: _aw("REALTOKEN"))
+    async def forbidden_helper(*args, **kwargs):
+        pytest.fail("Credential/helper acquisition must not run after metadata preflight")
+    monkeypatch.setattr(command_net, "_run_host", forbidden_helper)
 
     class _Proxy:
         port = 5555
@@ -60,8 +62,8 @@ async def test_spins_proxy_and_confines_token(monkeypatch, tmp_path):
 
     out = await command_net.run_network_command("git", ["push"])
     assert out["ok"] is True
-    # proxy seeded with the repo's remote host + the REAL token
-    assert seen["start"]["inject_token"] == "REALTOKEN"
+    # In-process proxy must never receive a host credential.
+    assert seen["start"]["inject_token"] is None
     assert "github.com" in seen["start"]["allow_hosts"]
     # run_command got proxy_port + workspace cwd + proxy env; the REAL token is NOT in the sandbox env
     assert seen["run"]["proxy_port"] == 5555

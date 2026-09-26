@@ -1,11 +1,8 @@
 /** M7-#4 — the SKILL.md heading contract is LITERAL and cross-layer.
  *
- * The backend gate (server/services/skill_suggest.py `_REQUIRED`,
- * arslan/spawn/skillpack.py `REQUIRED_SECTIONS`) accepts exactly
- * "## Trigger" and "## 决策规则" — in every UI language. Skill Forge once
- * showed an English "## Decision rules" skeleton, which walked users into a
- * body the gate rejects. Every locale surface that names the contract must
- * carry the literal tokens; translated glosses may accompany, never replace.
+ * The backend accepts "## Decision Rules" and legacy "## 决策规则".
+ * UI hints must name one supported literal token, not an arbitrary translation.
+ * Backend compatibility is covered by test_skill_heading_compatibility.py.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -29,19 +26,18 @@ describe("SKILL.md contract tokens (backend-literal in every locale)", () => {
   it.each([...LOCALES])("%s: forge bodyPlaceholder is the exact skeleton", (lang) => {
     const v = dig(locale(lang), ["forge", "fields", "bodyPlaceholder"]);
     expect(v).toContain("## Trigger");
-    expect(v).toContain("## 决策规则");
-    expect(v).not.toMatch(/## Decision rules/i);
+    expect(v).toContain(lang === "zh" ? "## 决策规则" : "## Decision Rules");
   });
 
   it.each([...LOCALES])("%s: forge bodyHint names both literal tokens", (lang) => {
     const v = dig(locale(lang), ["forge", "fields", "bodyHint"]);
     expect(v).toContain("## Trigger");
-    expect(v).toContain("## 决策规则");
+    expect(v).toContain(lang === "zh" ? "## 决策规则" : "## Decision Rules");
   });
 
   it.each([...LOCALES])("%s: capabilities skill_body_label names both tokens", (lang) => {
     const v = dig(locale(lang), ["capabilities", "skill_body_label"]);
     expect(v).toContain("## Trigger");
-    expect(v).toContain("## 决策规则");
+    expect(v).toContain(lang === "zh" ? "## 决策规则" : "## Decision Rules");
   });
 });

@@ -2,11 +2,11 @@
 from __future__ import annotations
 
 import os
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 from server import secret_bootstrap
+from server.profile_paths import default_data_dir, resolve_data_dir
 
 
 def _default_data_dir() -> Path:
@@ -25,15 +25,7 @@ def _default_data_dir() -> Path:
     Pure/side-effect-free: it only *computes* the path (no mkdir); the directory is
     created at boot in ``server.main`` like before.
     """
-    if sys.platform == "darwin":
-        base = Path.home() / "Library" / "Application Support"
-    elif sys.platform == "win32":
-        appdata = os.environ.get("APPDATA")
-        base = Path(appdata) if appdata else Path.home() / "AppData" / "Roaming"
-    else:
-        xdg = os.environ.get("XDG_DATA_HOME")
-        base = Path(xdg) if xdg else Path.home() / ".local" / "share"
-    return base / "Arslan"
+    return default_data_dir()
 
 
 def _resolve_data_dir() -> Path:
@@ -46,9 +38,7 @@ def _resolve_data_dir() -> Path:
     CWD-relative ``"data"`` default that could split the brain from the subsystems'
     files (skill_scripts / artifacts / sandbox_env / shell workspace).
     """
-    raw = os.environ.get("ARSLAN_DATA_DIR")
-    d = Path(raw) if raw else _default_data_dir()
-    return Path(os.path.expandvars(os.path.expanduser(str(d)))).resolve()
+    return resolve_data_dir()
 
 
 def data_dir() -> Path:

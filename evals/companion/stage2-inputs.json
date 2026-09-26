@@ -1,0 +1,98 @@
+{
+  "revision": 1,
+  "environment": "synthetic",
+  "paid_model_calls_authorized": 0,
+  "cases": [
+    {
+      "id": "S2-R1",
+      "prompt": "比较三个虚构产品的离线能力、来源导出、价格；未知项不要猜。",
+      "sources": [
+        {"url": "https://alpha.example/product", "text": "Synthetic Alpha facts dated 2026-09-01: offline reading supported; source export supported; price not disclosed."},
+        {"url": "https://beta.example/product", "text": "Synthetic Beta facts dated 2026-09-01: offline reading unsupported; source export supported; price 10 test credits/month."},
+        {"url": "https://gamma.example/product", "text": "Synthetic Gamma facts dated 2026-09-01: offline reading supported; source export not documented; price 12 test credits/month."}
+      ],
+      "review": "Three comparable rows, direct citations, Alpha price and Gamma export unknown. Fictional products, not real market facts."
+    },
+    {
+      "id": "S2-R2",
+      "prompt": "两份材料对相同版本有冲突，说明冲突和日期，不要擅自裁决。",
+      "sources": [
+        {"url": "https://alpha.example/manual", "text": "Synthetic manual dated 2026-09-02: version 2.0 exports CSV only."},
+        {"url": "https://alpha.example/changelog", "text": "Synthetic changelog dated 2026-09-02: version 2.0 exports CSV and JSON."}
+      ],
+      "review": "Explicit same-date same-version JSON conflict; CSV agreement; no unsupported winner."
+    },
+    {
+      "id": "S2-R3",
+      "prompt": "旧建议因为什么需要改变？区分材料日期与读取日期。",
+      "sources": [
+        {"url": "https://alpha.example/old-note", "text": "Synthetic recommendation dated 2026-08-01: use Alpha 1.0 because its export is free."},
+        {"url": "https://alpha.example/pricing", "text": "Synthetic official update dated 2026-09-03: Alpha 2.0 export requires a paid plan. Existing 1.0 licenses are not discussed."}
+      ],
+      "review": "New version invalidates a blanket free-export recommendation; old license terms remain unknown."
+    },
+    {
+      "id": "S2-R4",
+      "prompt": "用中文比较两份材料，保留原文引用，不能把备份当成同步。",
+      "sources": [
+        {"url": "https://alpha.example/en", "text": "Synthetic English manual: local backup is supported. Cloud synchronization is not supported."},
+        {"url": "https://alpha.example/zh", "text": "虚构中文说明：支持本地备份；不支持云端同步。"}
+      ],
+      "review": "Chinese answer, exact original-language evidence, backup distinguished from sync."
+    },
+    {
+      "id": "S2-D1",
+      "prompt": "概括文档并注明页码；不要声称验证了视觉布局。",
+      "pages": ["Synthetic project Cedar. Owner: Mira. Budget: 120 test credits.", "", "Delivery date: 2026-10-02. Required action: review the sources."],
+      "review": "Owner/budget page 1; deadline/action page 3, not page 2; no visual-verification claim."
+    },
+    {
+      "id": "S2-D2",
+      "prompt": "比较两个文档版本，列出变更与待办并定位原文。",
+      "before": ["Project Cedar", "Owner: Mira", "Deadline: Friday", "Action: review sources"],
+      "after": ["Project Cedar", "Owner: Mira", "Deadline: Monday", "Action: review sources", "Action: confirm export format"],
+      "review": "Deadline changed at paragraph 3; added action at paragraph 5; owner and original action unchanged."
+    },
+    {
+      "id": "S2-D3",
+      "prompt": "按币种汇总金额，报告缺失值；输出可再次读取的 CSV，不进行汇率换算。",
+      "csv": "item,currency,amount\n资料,USD,10.25\nResearch,USD,2.75\nPending,USD,\n设计,CNY,20.00\nRefund,USD,-1.00\n\"quoted, label\",CNY,3.50\n",
+      "expected_totals": {"USD": "12.00", "CNY": "23.50"},
+      "missing_amount_rows": [4],
+      "review": "Separate currencies; missing amount is unknown, not zero; negative refund preserved; valid reopenable CSV."
+    },
+    {
+      "id": "S2-D4",
+      "prompt": "一份可读输入和一份不支持的输入；保留可读资料并说明限制。",
+      "valid_filename": "notes.csv",
+      "valid_text": "project,owner\nCedar,Mira\n",
+      "unsupported_filename": "notes.unsupported",
+      "unsupported_text": "Do not pretend this unsupported file was read.",
+      "review": "Unsupported-input error, no invented extraction; valid input remains readable. Batch/UI retention still needs separate acceptance."
+    },
+    {
+      "id": "S2-M1",
+      "bindings": ["tests/server/test_memory_multiturn_runtime.py::test_project_identity_is_reloaded_for_each_task"],
+      "review": "Same-name projects have distinct rules; no cross-project prompt leakage. Scripted answer quality not graded."
+    },
+    {
+      "id": "S2-M2",
+      "bindings": ["tests/server/test_memory_multiturn_runtime.py::test_rejected_guess_stays_out_of_later_context_and_preserves_correction"],
+      "review": "Unconfirmed blue guess excluded; explicit green correction retained; both parameter variants required."
+    },
+    {
+      "id": "S2-M3",
+      "bindings": ["tests/server/test_memory_multiturn_runtime.py::test_summary_regeneration_excludes_deleted_memory_sources_from_later_task"],
+      "review": "Deleted violet preference absent from regenerated summary and later prompt; displayed chat is not silently erased."
+    },
+    {
+      "id": "S2-M4",
+      "bindings": [
+        "tests/server/test_task_repository.py::test_checkpoint_rebuilds_state_results_and_budget_across_sessions",
+        "tests/server/test_task_repository.py::test_cancel_is_idempotent_retains_completed_work_and_never_boot_resumes",
+        "tests/server/test_task_repository.py::test_uncertain_write_requires_readback_and_never_automatically_replays"
+      ],
+      "review": "Separate lifecycle boundary checks, not a full interrupted research run; explicit resume, retained usage and no repeated effects."
+    }
+  ]
+}

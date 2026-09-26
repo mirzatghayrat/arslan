@@ -2,11 +2,12 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import SavedCandidates from "../components/SavedCandidates";
 import * as discovery from "../api/discovery";
+import i18n from "../i18n";
 
 vi.mock("../api/discovery");
 
 describe("SavedCandidates", () => {
-  beforeEach(() => vi.resetAllMocks());
+  beforeEach(() => { vi.resetAllMocks(); void i18n.changeLanguage("en"); });
   it("lists candidates on mount and deletes", async () => {
     (discovery.listCandidates as any).mockResolvedValue([
       { id: 1, full_name: "o/r", html_url: "u", saved_at: null,

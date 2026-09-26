@@ -20,6 +20,62 @@ const history: Message[] = [
 ];
 
 describe('OrchestratorChat attach', () => {
+  it('restores prepared source and text after settings-style unmount, then sends them together', async () => {
+    const { api } = await import('../api/client');
+    vi.mocked(api.extractAttachmentFile).mockResolvedValue({ text: 'ready source', chars: 12, truncated: true });
+    const spy = vi.fn();
+    const props = { chatHistory: history, setChatHistory: vi.fn(), onSendMessage: spy,
+      spawns: [], currentStyle: 'quartz' as const, setCurrentStyle: vi.fn(), activeThread: null, conversationId: 'settings-attachment' };
+    const first = render(<OrchestratorChat {...props} />);
+    fireEvent.change(first.container.querySelector('input[type="file"]')!, { target: { files: [new File(['source'], 'draft.txt', { type: 'text/plain' })] } });
+    await screen.findByLabelText('ui.removeAttachment');
+    fireEvent.change(screen.getByPlaceholderText(/placeholder_chat/i), { target: { value: 'keep my draft' } });
+    first.unmount();
+    render(<OrchestratorChat {...props} />);
+    expect(screen.getByLabelText('ui.removeAttachment')).toBeInTheDocument();
+    const input = screen.getByPlaceholderText(/placeholder_chat/i);
+    expect(input).toHaveValue('keep my draft');
+    fireEvent.submit(input.closest('form')!);
+    expect(spy).toHaveBeenCalledWith('keep my draft', expect.objectContaining({
+      names: ['draft.txt'], context: '["draft.txt": attach.delivery_truncated]\nready source',
+    }));
+    expect(screen.queryByLabelText('ui.removeAttachment')).not.toBeInTheDocument();
+  });
+
+  it.each([['excerpt', true, 'truncated'], ['', false, 'empty']] as const)(
+    'sends extraction limitations (%s) with the attachment',
+    async (text, truncated, status) => {
+      const { api } = await import('../api/client');
+      vi.mocked(api.extractAttachmentUrl).mockResolvedValue({ text, chars: text.length, truncated });
+      const spy = vi.fn();
+      render(<OrchestratorChat chatHistory={history} setChatHistory={vi.fn()} onSendMessage={spy} spawns={[]} currentStyle="quartz" setCurrentStyle={vi.fn()} activeThread={null} />);
+      const input = screen.getByPlaceholderText(/placeholder_chat/i);
+      fireEvent.paste(input, { clipboardData: { files: [], getData: () => 'https://x.com' } });
+      await screen.findByLabelText('ui.removeAttachment');
+      fireEvent.change(input, { target: { value: 'summarise' } });
+      fireEvent.submit(input.closest('form')!);
+      expect(spy).toHaveBeenCalledWith('summarise', expect.objectContaining({
+        context: '["https://x.com": attach.delivery_' + status + ']\n' + text,
+        names: ['https://x.com'],
+        display: [expect.objectContaining({ extractionStatus: status })],
+      }));
+    },
+  );
+  it('sends sampled video frames with their source locators through the real image payload path', async () => {
+    const { api } = await import('../api/client');
+    const images = [{ name: 'clip.mp4#t=1.000s', source_locator: 'clip.mp4#t=1.000s', mime_type: 'image/png', data: 'cG5n' }];
+    vi.mocked(api.extractAttachmentFile).mockResolvedValue({ text: 'video metadata and locators', chars: 27, truncated: false, images, video_frame_status: 'sampled' });
+    const spy = vi.fn();
+    const { container } = render(<OrchestratorChat chatHistory={history} setChatHistory={vi.fn()} onSendMessage={spy}
+      spawns={[]} currentStyle="quartz" setCurrentStyle={vi.fn()} activeThread={null} />);
+    fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['clip'], 'clip.mp4', { type: 'video/mp4' })] } });
+    await screen.findByText(/inputs.videoSamples/);
+    const input = screen.getByPlaceholderText(/placeholder_chat/i);
+    fireEvent.change(input, { target: { value: 'describe the middle frame' } });
+    fireEvent.submit(input.closest('form')!);
+    expect(spy).toHaveBeenCalledWith('describe the middle frame', expect.objectContaining({ images, names: ['clip.mp4'] }));
+  });
+
   it('sends (text, { context, names }) when an attachment is present', async () => {
     const { api } = await import('../api/client');
     (api.extractAttachmentUrl as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -40,7 +96,7 @@ describe('OrchestratorChat attach', () => {
     // Paste a URL straight into the composer → auto-extract via the SSRF-hardened path (no button)
     const msgInput = screen.getByPlaceholderText(/placeholder_chat/i);
     fireEvent.paste(msgInput, { clipboardData: { files: [], getData: () => 'https://x.com' } });
-    await screen.findByLabelText('remove-attachment');
+    await screen.findByLabelText('ui.removeAttachment');
     fireEvent.change(msgInput, { target: { value: 'summarise' } });
     const form = msgInput.closest('form');
     if (form) fireEvent.submit(form);
@@ -99,7 +155,7 @@ describe('OrchestratorChat hero attach (empty state)', () => {
     render(<OrchestratorChat {...base} chatHistory={[]} onSendMessage={spy} />);
     const heroInput = screen.getByPlaceholderText(/placeholder_empty/i);
     fireEvent.paste(heroInput, { clipboardData: { files: [], getData: () => 'https://x.com' } });
-    await screen.findByLabelText('remove-attachment');
+    await screen.findByLabelText('ui.removeAttachment');
     fireEvent.change(heroInput, { target: { value: 'summarise' } });
     fireEvent.keyDown(heroInput, { key: 'Enter' });   // hero sends via Enter (no <form>)
     await waitFor(() => expect(spy).toHaveBeenCalledWith('summarise', {

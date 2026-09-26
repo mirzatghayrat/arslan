@@ -553,6 +553,7 @@ export function toUiRun(dto: RunDetailDto, t: TranslateFn): UiRun {
     steps: uiSteps,
     dimensions,
     scored: run.status === "scored",
+    noLearning: run.no_learning ?? false,
     model: run.model ?? undefined,
     provider: run.provider ?? undefined,
     tokensIn: run.tokens_in ?? undefined,

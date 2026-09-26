@@ -1,7 +1,9 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Plug, FolderOpen, X, Check, ExternalLink, Loader2 } from 'lucide-react';
 import { addMcpServer, connectMcpServer, exposeMcpServer, wireMcpTool } from '../api/mcp';
 import type { McpConnectorEnvVar, McpTool } from '../api/client.types';
+import { catalogText } from '../lib/catalogDisplay';
 
 /** Input to the apply chain: everything addMcpServer needs, PLUS the credential
  *  VALUES the user typed into this card's password fields (never sent over WS). */
@@ -27,7 +29,7 @@ export interface ApplyConnectMcpResult {
   safeCount?: number;
   restrictedCount?: number;
   /** False when NO tool was wired "safe" — connected but nothing is usable by a
-   *  spawn until a human reviews tiers in Settings → MCP. */
+   *  spawn until a human reviews tiers in Connections & permissions. */
   assignable?: boolean;
 }
 
@@ -39,11 +41,11 @@ export interface ApplyConnectMcpResult {
  *      `connectMcpServer`'s response — NEVER a blanket "safe". A write tool
  *      (suggested_tier === "orchestrator", e.g. delete_repo) must come out of chat
  *      still locked to "orchestrator" — chat can never grant a wider default than
- *      Settings → MCP would.
+ *      Connections & permissions would.
  *   2. Secrets (`add.env` values) flow ONLY into `addMcpServer`'s REST body. This
  *      function never touches a WS frame and never logs/echoes a value.
  *   3. Any failure returns the STOPPED stage + an actionable message naming where to
- *      finish in Settings → MCP — never a bare "failed".
+ *      finish in Connections & permissions — never a bare "failed".
  *   4. `assignable` is false whenever no tool was wired "safe", so the caller can
  *      show "connected but needs review" instead of implying it's ready to use.
  */
@@ -56,7 +58,7 @@ export async function applyConnectMcp(add: ConnectMcpAdd): Promise<ApplyConnectM
     return {
       ok: false,
       stage: 'add',
-      message: "Couldn't add the server — check the details, or add it in Settings → MCP.",
+      message: "Couldn't add the server — check the details, or add it in Connections & permissions.",
     };
   }
 
@@ -69,7 +71,7 @@ export async function applyConnectMcp(add: ConnectMcpAdd): Promise<ApplyConnectM
       stage: 'connect',
       serverId,
       message:
-        "Added but couldn't connect (check the token / that the command is installed) — retry in Settings → MCP.",
+        "Added but couldn't connect (check the token / that the command is installed) — retry in Connections & permissions.",
     };
   }
 
@@ -80,7 +82,7 @@ export async function applyConnectMcp(add: ConnectMcpAdd): Promise<ApplyConnectM
       ok: false,
       stage: 'expose',
       serverId,
-      message: "Connected but couldn't expose its tools — finish in Settings → MCP.",
+      message: "Connected but couldn't expose its tools — finish in Connections & permissions.",
     };
   }
 
@@ -99,7 +101,7 @@ export async function applyConnectMcp(add: ConnectMcpAdd): Promise<ApplyConnectM
       ok: false,
       stage: 'wire',
       serverId,
-      message: "Connected but couldn't finish wiring its tools — finish in Settings → MCP.",
+      message: "Connected but couldn't finish wiring its tools — finish in Connections & permissions.",
     };
   }
 
@@ -116,6 +118,7 @@ export async function applyConnectMcp(add: ConnectMcpAdd): Promise<ApplyConnectM
 export interface ConnectMcpCardProps {
   callId: string;
   label: string;
+  labelKey?: string;
   transport: string;
   command: string;
   /** Raw argv from the propose_connect_mcp frame — NEVER mutated in place. */
@@ -143,6 +146,7 @@ export interface ConnectMcpCardProps {
 export default function ConnectMcpCard({
   callId,
   label,
+  labelKey,
   transport,
   command,
   args,
@@ -154,6 +158,7 @@ export default function ConnectMcpCard({
   onApplied,
   onCancel,
 }: ConnectMcpCardProps) {
+  const { t } = useTranslation();
   const [envValues, setEnvValues] = useState<Record<string, string>>({});
   const [path, setPath] = useState('');
   const [busy, setBusy] = useState(false);
@@ -165,7 +170,7 @@ export default function ConnectMcpCard({
   async function handleConnect() {
     if (busy) return;
     if (pathMissing) {
-      setPathError('Enter a path first.');
+      setPathError('path_required');
       return;
     }
     setPathError(null);
@@ -191,12 +196,16 @@ export default function ConnectMcpCard({
     >
       <div className="flex items-center gap-2">
         <Plug className="w-4 h-4 text-primary" />
-        <h3 className="text-sm font-bold text-foreground">{label}</h3>
+        <h3 className="text-sm font-bold text-foreground">{catalogText(t, labelKey, label)}</h3>
       </div>
       <p className="text-[11px] text-subtle-foreground font-mono truncate">
         {transport === 'http' ? `http · ${url ?? ''}` : `${command} ${args.join(' ')}`}
       </p>
-      {prerequisites ? <p className="text-[11px] text-muted-foreground">{prerequisites}</p> : null}
+      {prerequisites ? <p className="text-[11px] text-muted-foreground">{
+        envKeys.length > 0 && prerequisites === `Needs: ${envKeys.map(e => e.name).join(', ')}`
+          ? `${t('connectionsUI.needsKey')}: ${envKeys.map(e => e.name).join(', ')}`
+          : prerequisites
+      }</p> : null}
 
       {envKeys.length > 0 && (
         <div className="space-y-3">
@@ -209,7 +218,7 @@ export default function ConnectMcpCard({
                 {e.name}
               </label>
               <p className="text-[11px] text-muted-foreground">
-                {e.description}
+                {catalogText(t, e.description_key, e.description)}
                 {e.get_it_url ? (
                   <>
                     {' '}
@@ -219,14 +228,14 @@ export default function ConnectMcpCard({
                       rel="noreferrer"
                       className="text-primary underline inline-flex items-center gap-0.5"
                     >
-                      Get one <ExternalLink className="w-3 h-3" />
+                      {t('connectionsUI.getKey')} <ExternalLink className="w-3 h-3" />
                     </a>
                   </>
                 ) : null}
               </p>
               {e.paid ? (
                 <span className="inline-block text-[9px] font-mono uppercase tracking-wide text-warning">
-                  Requires a paid account
+                  {t('connectionsUI.paid')}
                 </span>
               ) : null}
               {/* Secret-via-REST: this value is collected locally and only ever
@@ -251,7 +260,7 @@ export default function ConnectMcpCard({
             <FolderOpen className="w-3.5 h-3.5 text-subtle-foreground shrink-0" />
             <input
               type="text"
-              aria-label="local path"
+              aria-label={t('connectionsUI.localPath')}
               value={path}
               onChange={(e) => {
                 setPath(e.target.value);
@@ -261,7 +270,7 @@ export default function ConnectMcpCard({
               className="flex-1 bg-surface border border-border-strong focus:border-primary focus:outline-none rounded-md px-2 py-1 text-[10.5px] text-foreground font-mono placeholder-subtle-foreground"
             />
           </div>
-          {pathError ? <p className="text-[10.5px] text-danger">{pathError}</p> : null}
+          {pathError ? <p className="text-[10.5px] text-danger">{t('connectionsUI.pathFirst')}</p> : null}
         </div>
       )}
 
@@ -271,7 +280,7 @@ export default function ConnectMcpCard({
           className="flex items-start gap-2 bg-danger/10 border border-danger/30 rounded-lg px-3 py-2 text-[11px] text-danger"
         >
           <X className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-          <span>{result.message}</span>
+          <span>{result.stage ? t(`connectionsUI.failed_${result.stage}`) : t('connectionsUI.error')}</span>
         </div>
       )}
       {result && result.ok && (
@@ -279,8 +288,8 @@ export default function ConnectMcpCard({
           <Check className="w-3.5 h-3.5 shrink-0 mt-0.5" />
           <span>
             {result.assignable
-              ? `Connected — ${result.safeCount} ready, ${result.restrictedCount} restricted.`
-              : 'Connected but needs review in Settings → MCP before any spawn can use it.'}
+              ? t('connectionsUI.ready', { safe: result.safeCount, restricted: result.restrictedCount })
+              : t('connectionsUI.needsReview')}
           </span>
         </div>
       )}
@@ -294,7 +303,7 @@ export default function ConnectMcpCard({
           className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold font-sans uppercase rounded-lg bg-primary hover:bg-primary-hover text-primary-foreground transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plug className="w-3.5 h-3.5" />}
-          {busy ? 'Connecting…' : 'Connect'}
+          {t(busy ? 'connectionsUI.connecting' : 'connectionsUI.connect')}
         </button>
         <button
           type="button"
@@ -303,7 +312,7 @@ export default function ConnectMcpCard({
           data-testid="connect-mcp-cancel"
           className="px-4 py-2 text-xs font-bold font-sans uppercase rounded-lg bg-surface-raised hover:bg-surface text-muted-foreground hover:text-foreground transition-all disabled:opacity-50"
         >
-          Cancel
+          {t('common.cancel')}
         </button>
       </div>
     </div>

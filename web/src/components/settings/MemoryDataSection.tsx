@@ -11,7 +11,8 @@
  * (×6 locales). The below-minimum clamp (Math.max(1, …)) is preserved so the
  * retention behavior is unchanged by the extraction.
  *
- * Presentational: owns NO persistence. onChange callbacks are value-based so the
+ * Settings controls own NO persistence. The deletion-record child performs only
+ * an explicit authenticated export. onChange callbacks are value-based so the
  * host keeps the exact save path it had before extraction (Task 6 owns save).
  */
 
@@ -20,6 +21,8 @@ import { useTranslation } from 'react-i18next';
 import { Database } from 'lucide-react';
 import type { ProviderConfig } from '../../api/client.types';
 import EmbeddingSettings from '../EmbeddingSettings';
+import DeletionManifestExport from './DeletionManifestExport';
+import CreateBackupButton from './CreateBackupButton';
 
 export interface MemoryDataSectionProps {
   /** Multi-model provider configurations (for the embedding-provider picker). */
@@ -53,6 +56,8 @@ export default function MemoryDataSection({
         <h3 className="text-xs font-semibold font-mono uppercase tracking-widest text-foreground leading-none">{t('settings.navMemory')}</h3>
       </div>
 
+      <DeletionManifestExport />
+      <CreateBackupButton />
       <EmbeddingSettings
         providerConfigs={providerConfigs}
         embeddingConfigId={embeddingConfigId}

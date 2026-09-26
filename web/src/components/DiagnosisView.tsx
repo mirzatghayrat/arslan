@@ -84,7 +84,7 @@ export default function DiagnosisView({ onGoToChat }: { onGoToChat?: () => void 
               {tab === "diag" ? t("evolution.inbox.diag_tab") : t("evolution.inbox.tab")}
             </span>
             <span>/</span>
-            <span className="text-foreground">run #{evoRun}</span>
+            <span className="text-foreground">{t('ui.run', { id: evoRun })}</span>
           </div>
           <RunReplay runId={evoRun} onClose={() => setEvoRun(null)} />
         </>
@@ -111,7 +111,7 @@ export default function DiagnosisView({ onGoToChat }: { onGoToChat?: () => void 
           {sel != null && sel.runId === undefined && (
             <>
               <div data-testid="diag-breadcrumb" className="text-[11px] font-mono text-muted-foreground mb-3 flex items-center gap-1.5">
-                <span className="cursor-pointer hover:text-foreground" onClick={() => setSel(null)}>Diagnostics</span>
+                <span className="cursor-pointer hover:text-foreground" onClick={() => setSel(null)}>{t('ui.diagnostics')}</span>
                 <span>/</span>
                 <span className="text-foreground">{sel.name}</span>
               </div>
@@ -127,11 +127,11 @@ export default function DiagnosisView({ onGoToChat }: { onGoToChat?: () => void 
           {sel != null && sel.runId !== undefined && (
             <>
               <div data-testid="diag-breadcrumb" className="text-[11px] font-mono text-muted-foreground mb-3 flex items-center gap-1.5">
-                <span className="cursor-pointer hover:text-foreground" onClick={() => setSel(null)}>Diagnostics</span>
+                <span className="cursor-pointer hover:text-foreground" onClick={() => setSel(null)}>{t('ui.diagnostics')}</span>
                 <span>/</span>
                 <span className="cursor-pointer hover:text-foreground" onClick={() => setSel({ spawnId: sel.spawnId, name: sel.name })}>{sel.name}</span>
                 <span>/</span>
-                <span className="text-foreground">run #{sel.runId}</span>
+                <span className="text-foreground">{t('ui.run', { id: sel.runId })}</span>
               </div>
               <RunReplay
                 runId={sel.runId}

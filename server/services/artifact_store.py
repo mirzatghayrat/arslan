@@ -30,9 +30,11 @@ def safe_filename(run_id: int, filename: str) -> bool:
             and not filename.endswith(".manifest.json"))
 
 
-def store_bytes(run_id: int, title: str, data: bytes) -> dict:
+def store_bytes(run_id: int, title: str, data: bytes, *, logical_key: str | None = None) -> dict:
     if run_id <= 0 or len(data) > MAX_FILE_BYTES:
         raise ValueError("invalid artifact owner or oversized file")
+    if logical_key is not None and (not isinstance(logical_key, str) or re.fullmatch(r"[a-f0-9]{64}", logical_key) is None):
+        raise ValueError("invalid artifact logical identity")
     from arslan.execution_budget import current
     budget = current()
     if budget is not None:
@@ -44,8 +46,10 @@ def store_bytes(run_id: int, title: str, data: bytes) -> dict:
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / filename
     metadata = {
+        "id": f"artifact:{filename}",
         "kind": "file", "run_id": run_id, "filename": filename, "title": title[:240],
         "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest(),
+        "logical_key": logical_key or hashlib.sha256(("generated:" + title).encode()).hexdigest(),
         "media_type": mimetypes.guess_type(basename)[0] or "application/octet-stream",
         "url": f"/api/v1/runs/{run_id}/artifacts/{filename}",
     }
@@ -130,3 +134,44 @@ def list_artifacts(run_id: int) -> list[dict]:
         except (OSError, ValueError, TypeError):
             continue
     return out
+
+
+def read_owned(run_id: int, filename: str) -> tuple[dict, bytes]:
+    """Read a bounded manifest/file pair through one no-follow directory handle.
+
+    The caller must establish Run ownership; a filename alone is not authority.
+    Metadata is cross-checked against actual bytes, not accepted as a verdict.
+    """
+    if not safe_filename(run_id, filename):
+        raise ValueError("artifact_reference_invalid")
+    directory = os.open(root(), os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        def read(name, limit):
+            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+            with os.fdopen(fd, "rb") as stream:
+                info = os.fstat(stream.fileno())
+                if not stat.S_ISREG(info.st_mode) or info.st_size > limit:
+                    raise ValueError("artifact_not_regular_or_too_large")
+                value = stream.read(limit + 1)
+                if len(value) > limit:
+                    raise ValueError("artifact_too_large")
+                return value
+        metadata = json.loads(read(filename + ".manifest.json", 16_384))
+        if (not isinstance(metadata, dict) or type(metadata.get("run_id")) is not int or metadata.get("run_id") != run_id
+                or metadata.get("filename") != filename):
+            raise ValueError("artifact_manifest_mismatch")
+        if (type(metadata.get("bytes")) is not int or not isinstance(metadata.get("sha256"), str)
+                or re.fullmatch(r"[a-f0-9]{64}", metadata["sha256"]) is None
+                or not isinstance(metadata.get("title"), str) or len(metadata["title"]) > 240
+                or metadata.get("id", f"artifact:{filename}") != f"artifact:{filename}"
+                or metadata.get("url") != f"/api/v1/runs/{run_id}/artifacts/{filename}"):
+            raise ValueError("artifact_manifest_invalid")
+        logical = metadata.get("logical_key")
+        if logical is not None and (not isinstance(logical, str) or re.fullmatch(r"[a-f0-9]{64}", logical) is None):
+            raise ValueError("artifact_manifest_invalid")
+        data = read(filename, MAX_FILE_BYTES)
+        if metadata.get("bytes") != len(data) or metadata.get("sha256") != hashlib.sha256(data).hexdigest():
+            raise ValueError("artifact_integrity_mismatch")
+        return metadata, data
+    finally:
+        os.close(directory)

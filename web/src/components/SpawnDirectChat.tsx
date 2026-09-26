@@ -3,8 +3,10 @@ import {
   Send, Check
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { formatUiTime } from '../lib/localeFormatting';
+import { runtimeErrorText, runtimeErrorTranslations } from '../lib/runtimeErrorText';
 import MatrixSpinner from './MatrixSpinner';
-import { Message, MessageAttachment, Spawn } from '../types';
+import { Message, Spawn } from '../types';
 import { useCapabilityLabel } from '../stores/registryStore';
 import { useProfileStore } from '../stores/profileStore';
 import SFSymbol from './SFSymbol';
@@ -16,7 +18,7 @@ import { getIcon } from './iconMap';
 import { SandboxBackdrop } from './SandboxBackdrop';
 import { SpawnAvatar } from './SpawnAvatar';
 import { useWebSocket } from '../hooks/useWebSocket';
-import { useComposerAttach, AttachChips, AttachControl, SentAttachments, type Attachment } from './ComposerAttach';
+import { useComposerAttach, AttachChips, AttachControl, SentAttachments, attachmentImages, attachmentDelivery, type Attachment } from './ComposerAttach';
 
 interface SpawnDirectChatProps {
   spawn: Spawn;
@@ -47,7 +49,7 @@ export default function SpawnDirectChat({
   refineDeliverable,
   onFinalize,
 }: SpawnDirectChatProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const refineAttachName = t('spawn_chat.refine_attach_name');
   const capabilityLabel = useCapabilityLabel();
   const displayName = useProfileStore((s) => s.displayName);
@@ -216,13 +218,17 @@ export default function SpawnDirectChat({
       }
       case 'error': {
         setStreaming(false);
+        const translations = runtimeErrorTranslations(m.message_i18n);
         const errMsg: Message = {
           id: `err-${Date.now()}`,
           sender: 'spawn',
           senderName: spawn.name,
           senderAvatar: spawn.avatarEmoji,
           text: `⚠️ ${m.detail ?? m.message ?? 'An error occurred.'}`,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          ...(translations ? { errorTranslations: Object.fromEntries(
+            Object.entries(translations).map(([locale, text]) => [locale, `⚠️ ${text}`]),
+          ) } : {}),
+          timestamp: formatUiTime(Date.now(), i18n?.resolvedLanguage),
         };
         setMessages(prev => [...prev, errMsg]);
         break;
@@ -238,7 +244,7 @@ export default function SpawnDirectChat({
             name: m.spawn_name ?? t('spawn.knowledge_panel'),
             chunks: m.chunks,
           }),
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          timestamp: formatUiTime(Date.now(), i18n?.resolvedLanguage),
         }]);
         break;
       }
@@ -252,28 +258,31 @@ export default function SpawnDirectChat({
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputValue.trim() || streaming) return;
+    if (!inputValue.trim() || streaming || attach.busy) return;
+    if (attachmentImages(attachments).length) {
+      attach.setError(t("inputs.visualMainOnly"));
+      return;
+    }
     setStreaming(true);  // no dead air: pulse shows from SEND, not from stream_start
     setWorkStartedAt(Date.now());
 
     // Every attachment (incl. OCR-none images) echoes into the sent bubble as a
     // thumbnail/chip. previewUrl is a session-only object-URL — kept alive by clearing
     // with { revokeUrls: false } below so the rendered message can still show it.
-    const display: MessageAttachment[] = attachments.map((a) => ({ name: a.name, kind: a.kind, previewUrl: a.previewUrl }));
+    const { display, sources: textAttachments } = attachmentDelivery(attachments, t);
     const userMsg: Message = {
       id: `msg-direct-user-${Date.now()}`,
       sender: 'user',
       senderName: userSenderName,
       senderAvatar: '🦁',
       text: inputValue,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      timestamp: formatUiTime(Date.now(), i18n?.resolvedLanguage),
       ...(display.length ? { attachments: display } : {}),
     };
 
     // In refine mode, the deliverable being refined must reach the spawn reliably
     // via attached_context — independent of the (user-mutable) attachments array.
-    // Image chips carry OCR'd text when found; otherwise empty → no context.
-    const textAttachments = attachments.filter((a) => a.text);
+    // Extraction limitations remain in context even when no text was readable.
     const parts = textAttachments.map((a) => a.text);
     if (refineDeliverable && !parts.includes(refineDeliverable)) parts.unshift(refineDeliverable);
     const attached_context = parts.join('\n\n---\n\n');
@@ -379,6 +388,7 @@ export default function SpawnDirectChat({
         <div className="max-w-3xl mx-auto space-y-6">
           {messages.map((msg) => {
             const isUser = msg.sender === 'user';
+            const displayText = runtimeErrorText(msg.text, msg.errorTranslations, i18n?.resolvedLanguage);
 
             // Shared user bubble (all themes use right-aligned cool/neutral bubble)
             if (isUser) {
@@ -426,7 +436,7 @@ export default function SpawnDirectChat({
                       <span className="text-[9px] text-subtle-foreground font-mono">{msg.timestamp}</span>
                     </div>
                     <div className="text-xs text-foreground leading-relaxed font-sans">
-                      <MessageBody text={msg.text} streaming={msg.id === '__streaming__'} hasMessageActions={false} className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
+                      <MessageBody text={displayText} streaming={msg.id === '__streaming__'} hasMessageActions={false} className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
                     </div>
 
                     {/* Tool execution logs inside direct messages */}
@@ -436,7 +446,7 @@ export default function SpawnDirectChat({
                           <MatrixSpinner size={14} className="text-primary" />
                           <span className="flex items-center gap-1">
                             {getIcon(msg.toolActivity.toolName.toLowerCase().replace(/\s+/g, '-') || msg.toolActivity.emoji, 'w-3 h-3')}
-                            {msg.toolActivity.toolName} completed:
+                            {msg.toolActivity.toolName} {t('ui.completed')}
                           </span>
                         </div>
                         <p className="text-foreground text-[10.5px] whitespace-pre-line border-l-2 border-primary pl-3 py-1 bg-foreground/[0.01]">
@@ -469,7 +479,7 @@ export default function SpawnDirectChat({
                       <span className="text-[10px] font-bold font-mono tracking-widest uppercase">{msg.senderName}</span>
                       <span className="text-[9px] font-mono">{msg.timestamp}</span>
                     </div>
-                    <MessageBody text={msg.text} streaming={msg.id === '__streaming__'} hasMessageActions={false} className="text-xs text-foreground font-sans leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
+                    <MessageBody text={displayText} streaming={msg.id === '__streaming__'} hasMessageActions={false} className="text-xs text-foreground font-sans leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
 
                     {/* Tool Activities */}
                     {msg.toolActivity && (
@@ -511,12 +521,12 @@ export default function SpawnDirectChat({
                   <span className="text-subtle-foreground text-[10px]">{msg.timestamp}</span>
                 </div>
                 <div className="leading-relaxed">
-                  <MessageBody text={msg.text} streaming={msg.id === '__streaming__'} hasMessageActions={false} className="text-foreground [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
+                  <MessageBody text={displayText} streaming={msg.id === '__streaming__'} hasMessageActions={false} className="text-foreground [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
                 </div>
 
                 {msg.toolActivity && (
                   <div className="mt-3 border border-primary/40 p-2 text-[11px] bg-background">
-                    <div className="text-warning mb-1">STDOUT RESULT &gt; {msg.toolActivity.toolName}</div>
+                    <div className="text-warning mb-1">{t('ui.stdout')} &gt; {msg.toolActivity.toolName}</div>
                     <p className="text-foreground">{msg.toolActivity.outputSummary}</p>
                     {/* 🔒 SECURITY: artifactChart/artifactSvg are populated ONLY from the backend render_chart tool_result frame — never LLM text. */}
                     {msg.toolActivity?.artifactChart && (

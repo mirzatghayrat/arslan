@@ -54,7 +54,7 @@ export function EvolutionEligibilityPanel({ diag }: { diag: SpawnDiagnosis }) {
         <li>
           {last
             ? t("evolution.diag.chain_last_attempt", {
-                outcome: last.outcome ?? "in-flight",
+                outcome: last.outcome ?? t("ui.inFlight"),
                 reason: last.reason || "—",
               })
             : t("evolution.diag.chain_none")}

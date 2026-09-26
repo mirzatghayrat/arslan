@@ -40,17 +40,27 @@ describe("Sidebar ACTIVE SPAWNS lifecycle", () => {
     expect(screen.getByText("Mermer")).toBeDefined();
   });
 
-  it("leaves out a spawn this session never dispatched to", () => {
+  it("keeps user-opened expert chats visible independently of task dispatch", () => {
     render(<Sidebar {...baseProps} dispatchedSpawnIds={new Set([2])} />);
-    expect(screen.queryByText("小美")).toBeNull();
+    expect(screen.getByRole("region", { name: "workspace.recentConversations" })).toHaveTextContent("小美");
   });
 
-  it("shows nothing when the session has dispatched to nobody", () => {
-    // Not an error state: a fresh conversation has no spawns of its own yet,
-    // and an empty list is the truthful answer.
+  it("does not list idle unopened experts in a fresh conversation", () => {
     render(<Sidebar {...baseProps} dispatchedSpawnIds={new Set<number>()} />);
-    expect(screen.queryByText("小美")).toBeNull();
+    expect(screen.getByText("小美")).toBeInTheDocument();
     expect(screen.queryByText("Mermer")).toBeNull();
+  });
+
+  it("keeps other running expert work discoverable without a level score", () => {
+    render(<Sidebar {...baseProps} spawns={[{ ...spawns[1], status: "working" }]} dispatchedSpawnIds={new Set()} />);
+    expect(screen.getByText("Mermer")).toBeInTheDocument();
+    expect(screen.queryByText(/^L\./)).toBeNull();
+  });
+
+  it("does not infer user-opened chats from legacy task transcript existence", () => {
+    render(<Sidebar {...baseProps} expertChatIds={[]} dispatchedSpawnIds={new Set()} />);
+    expect(screen.getByRole("region", { name: "workspace.recentConversations" })).not.toHaveTextContent("小美");
+    expect(screen.getByText("小美")).toBeInTheDocument(); // retained under legacy work
   });
 });
 

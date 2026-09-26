@@ -193,7 +193,8 @@ class TestTheRealWriterReachesRouting:
         # The reason is persisted, not merely rendered once: a "failed" with no
         # cause is only marginally more useful than a green dot that lies.
         assert row.last_health_detail is not None
-        assert "额度上限" in row.last_health_detail
+        assert "usage limit" in row.last_health_detail
+        assert "account may still have a balance" in row.last_health_detail
 
 
 # ---------------------------------------------------------------------------

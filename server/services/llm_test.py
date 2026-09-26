@@ -49,17 +49,18 @@ async def test_connection(
         latency_ms = int((time.perf_counter() - t0) * 1000)
         return {"ok": True, "error": None, "latency_ms": latency_ms}
     except Exception as exc:  # noqa: BLE001
+        from server.services import runtime_messages, provider_error_messages
+        locale = await runtime_messages.selected_locale()
         # Order matters, most-specific first.
         #
-        # (1) With NO key configured, a 401/403 really does mean "this endpoint
-        # wants an API key" (P3's case: a keyless test against LiteLLM with auth
-        # on). This has to outrank the generic explanation below, which would
-        # otherwise tell someone to go replace a key that does not exist.
+        # (1) With NO key configured, explain the unauthenticated refusal and
+        # ask the user to check key requirements/permissions, without assuming
+        # every 403 proves a key is required or suggesting replacing no key.
         if (not api_key
                 and isinstance(exc, httpx.HTTPStatusError)
                 and exc.response.status_code in (401, 403)):
             status = exc.response.status_code
-            return {"ok": False, "error": f"该服务器要求 API key(HTTP {status})",
+            return {"ok": False, "error": provider_error_messages.render("key_required", locale, status=status),
                     "latency_ms": None}
 
         # (2) Otherwise give the SAME explanation the chat path gives (#67). The
@@ -73,7 +74,7 @@ async def test_connection(
         # is heavy and this module is pulled in eagerly by the settings API.
         from server.orchestrator import llm_errors
 
-        explained = llm_errors.explain(str(exc))
+        explained = llm_errors.explain(str(exc), locale=locale)
         if explained:
             return {"ok": False, "error": explained, "latency_ms": None}
-        return {"ok": False, "error": str(exc) or "connection failed", "latency_ms": None}
+        return {"ok": False, "error": str(exc) or provider_error_messages.render("connection_failed", locale), "latency_ms": None}

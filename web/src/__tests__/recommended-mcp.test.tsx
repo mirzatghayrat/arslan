@@ -1,3 +1,5 @@
+import i18n from "../i18n";
+beforeEach(() => { void i18n.changeLanguage("en"); });
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { McpConnector } from '../api/client.types';
@@ -8,7 +10,7 @@ import type { McpConnector } from '../api/client.types';
 // asserting the component renders exclusively from that mock's data is the runtime half of
 // that guard.
 
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
+
 
 const getMcpCatalog = vi.fn(async () => [] as McpConnector[]);
 vi.mock('../api/catalog', () => ({

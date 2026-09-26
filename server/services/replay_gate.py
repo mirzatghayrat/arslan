@@ -262,7 +262,7 @@ async def build_corpus(db, spawn_id: int, *, baseline_started_at=None, mint: boo
 
     q = select(Run).where(
         Run.spawn_id == spawn_id, Run.kind == "live", Run.epoch >= 1,
-        Run.status == "scored",
+        Run.status == "scored", Run.no_learning.is_(False),
     )
     if baseline_started_at is not None:
         q = q.where(Run.created_at >= baseline_started_at)

@@ -3,6 +3,16 @@ import { useTranslation } from "react-i18next";
 import { ApiError, api } from "../api/client";
 import type { EvolveRepeatRefusal } from "../api/client";
 import type { EvolveEstimate, KnowledgeSource } from "../api/client.types";
+import type { MemoryEntry } from "../api/companion";
+import CompanionDialog, { buttonClass } from "./companion/CompanionDialog";
+import { companionError } from "./companion/errors";
+import { INPUT_ACCEPT } from "../lib/inputFormats";
+
+type Preference = { content: string; entry?: MemoryEntry };
+function preferenceRows(response: { preferences: string[]; entries?: MemoryEntry[] }): Preference[] {
+  return response.entries?.length ? response.entries.filter(row => row.status === "active" && row.content).map(entry => ({ content: entry.content!, entry }))
+    : response.preferences.map(content => ({ content }));
+}
 
 interface Props {
   spawnId: number;
@@ -13,7 +23,8 @@ interface Props {
 export default function SpawnDetail({ spawnId, spawnName, onClose }: Props) {
   const { t } = useTranslation();
   const [sources, setSources] = useState<KnowledgeSource[]>([]);
-  const [prefs, setPrefs] = useState<string[]>([]);
+  const [prefs, setPrefs] = useState<Preference[]>([]);
+  const [deletingPref, setDeletingPref] = useState<Preference | null>(null);
   const [label, setLabel] = useState("");
   const [text, setText] = useState("");
   const [url, setUrl] = useState("");
@@ -36,20 +47,22 @@ export default function SpawnDetail({ spawnId, spawnName, onClose }: Props) {
   async function loadPrefs() {
     try {
       const res = await api.getPreferences(spawnId);
-      setPrefs(res.preferences);
+      setPrefs(preferenceRows(res));
     } catch (e) {
       setError(String(e));
     }
   }
 
-  async function removePref(fact: string) {
+  async function removePref(preference: Preference) {
     setBusy(true);
     setError(null);
     try {
-      const res = await api.deletePreference(spawnId, fact);
-      setPrefs(res.preferences);
+      const res = preference.entry ? await api.deletePreference(spawnId, preference.content,
+        { entry_id: preference.entry.id, expected_version: preference.entry.version }) : await api.deletePreference(spawnId, preference.content);
+      setPrefs(preferenceRows(res));
+      setDeletingPref(null);
     } catch (e) {
-      setError(String(e));
+      setError(preference.entry ? t(companionError(e)) : String(e));
     } finally {
       setBusy(false);
     }
@@ -164,7 +177,7 @@ export default function SpawnDetail({ spawnId, spawnName, onClose }: Props) {
     <div className="spawn-detail" data-testid="spawn-detail">
       <header className="spawn-detail__head">
         <span className="spawn-detail__title">{spawnName}</span>
-        <button className="spawn-detail__close" onClick={onClose} aria-label="close">✕</button>
+        <button className="spawn-detail__close" onClick={onClose} aria-label={t('common.close')}>✕</button>
       </header>
 
       {error && <div className="spawn-detail__error" role="alert">{error}</div>}
@@ -201,7 +214,7 @@ export default function SpawnDetail({ spawnId, spawnName, onClose }: Props) {
             <button disabled={busy} onClick={addText}>{t("spawn.add_text")}</button>
             <label className="kb-add__file">
               {t("spawn.upload_file")}
-              <input type="file" accept=".pdf,.docx,.txt,.md" style={{ display: "none" }}
+              <input type="file" accept={INPUT_ACCEPT} style={{ display: "none" }}
                      onChange={(e) => { const f = e.target.files?.[0]; if (f) addFile(f); }} />
             </label>
           </div>
@@ -215,15 +228,23 @@ export default function SpawnDetail({ spawnId, spawnName, onClose }: Props) {
         ) : (
           <ul className="pref-list">
             {prefs.map((p) => (
-              <li key={p} className="pref-list__row">
-                <span className="pref-list__text">{p}</span>
-                <button className="pref-list__del" disabled={busy} aria-label="delete"
-                        onClick={() => removePref(p)}>✕</button>
+              <li key={p.entry?.id ?? p.content} className="pref-list__row">
+                <span className="pref-list__text">{p.content}</span>
+                <button className="pref-list__del" disabled={busy} aria-label={t("companion.remove")}
+                        onClick={() => p.entry ? setDeletingPref(p) : void removePref(p)}>✕</button>
               </li>
             ))}
           </ul>
         )}
       </section>
+
+      {deletingPref && <CompanionDialog title={t("companion.deleteTitle")} onClose={() => setDeletingPref(null)} busy={busy}>
+        <p className="mb-3 whitespace-pre-wrap text-sm">{deletingPref.content}</p>
+        <p className="mb-5 text-sm text-muted-foreground">{t("companion.deleteHint")}</p>
+        {error && <p role="alert" className="mb-3 text-sm text-destructive">{error}</p>}
+        <div className="flex justify-end gap-2"><button className={buttonClass} disabled={busy} onClick={() => setDeletingPref(null)}>{t("companion.cancel")}</button>
+          <button className={`${buttonClass} text-destructive`} disabled={busy} onClick={() => void removePref(deletingPref)}>{t("companion.remove")}</button></div>
+      </CompanionDialog>}
 
       <section className="spawn-detail__section">
         <h4>{t("evolution.inbox.tab")}</h4>

@@ -1,0 +1,14 @@
+{
+  "revision": 1,
+  "scope": "synthetic input definitions, generators/checks and memory lifecycle bindings; not live pilot acceptance",
+  "checker_revision": 2,
+  "previous_checker_sha256": "1519d15c499b8b541153bd04cbc1ef4a6bf61e47066c117f5abf6d6158fa1d46",
+  "checker_change": "CSV extracted representation now has logical-record locators. Reconstruct and compare every cell with unchanged input before checking the same totals and missing rows. No live acceptance or source inputs changed; old paid evidence stays immutable.",
+  "sha256": {
+    "evals/companion/stage2-inputs.json": "4b7b44a802a0f8ebf67cda81852756ca5f703d7cada3841897728736e390fff3",
+    "tests/server/test_stage2_inputs.py": "9a2302ee03c64d5a80eb61ddf245a0fab7ee0eb980c5bb1182eec0ac49822f8e",
+    "tests/server/test_memory_multiturn_runtime.py": "93f0e45ef77a26b2d60cc03f0665a0760d47959084756ca303cfa3524f91d233",
+    "tests/server/test_task_repository.py": "c060a594bb826a2413fbbfccde730d79d5b0f1f5a36de245c7684044c7e3bdfa",
+    "web/src/__tests__/stage2-input-retention.test.tsx": "2773d7702febead228a771d83b4651f8c0d110e45a3587181d6e82a15a4ad574"
+  }
+}

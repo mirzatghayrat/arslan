@@ -1,0 +1,392 @@
+# Remaining release gates — triage, not completion certification
+
+W19 follow-up after `83cd3758`: reproduced and fixed discarded session ownership
+after a failed Stop, plus navigation racing pending closure. Four regression
+cases cover retry, navigation exclusion, unmount cleanup and late frames. Full
+frontend is **2,004 passing**, TypeScript/build pass. Native package refresh and
+actual UI revalidation are pending; this does not certify full browser interaction.
+
+## Latest packaged regression checkpoint — after `4f89b1c5`
+
+All four current app-bundled smoke processes exited 0: standard frozen
+startup/auth/input/six-language/restart, video stream selection, public browser
+reader lifecycle, and native recovery-control rewrap with two independent
+normal default-key boots. The recovery fixture preserves the original database,
+backup archive and external key; reader shutdown leaves zero owned children and
+removes its profiles. See W17-release-audit for exact package identity and scope.
+This closes the post-jusText-fix packaged regression check, not full native UI,
+runtime installation, authenticated browser interaction or real-model gates.
+
+The paragraphs below are chronological evidence history, not a list of current
+pending actions: later checkpoints supersede earlier pending refresh statements.
+
+Native follow-up after `84133673` recognizes IPv4/IPv6 loopback URLs and shows
+localized errors for real extraction 400s. The positive public-URL control then
+found missing packaged jusText stoplists: HTTP download succeeded but extraction
+crashed. Fixed package collection and added an actual HTML/stoplist resource
+probe; 51 packaging tests and bundle verification pass. Rebuilt/refreshed native
+candidate now extracts the same example.com page into a visible 112-character
+attachment. W21 records before/after logs and new executable identity. Public
+fetch uses the configured proxy (pinning delegated there), not a direct-network
+security certification. No model/account/publication used; app exited.
+
+URL-input follow-up after `9cc7957e`: explicit numeric/IPv6/Unicode HTTP(S)
+addresses now reach the existing safe extraction endpoint instead of being
+silently ignored. Balanced URL punctuation is preserved and repeated candidates
+deduplicated. Real backend private-address refusal/service selection: 14 passed.
+Final frontend 2,000 passing, zero failures/errors; TypeScript/build pass.
+Native package refresh and numeric-address refusal UI check remain pending;
+this does not broaden network authority or certify all URL forms.
+
+Native follow-up after `4fab4926`: the refreshed temporary app shows localized
+German and Chinese URL errors for a reserved-domain fixture. Ordinary edits
+leave the extraction count unchanged; explicit re-paste starts one new attempt.
+The exact user URL remains in the input. W21 records asset/log identities and
+the three real 400 responses. App exited cleanly, no model send. This closes the
+pending two-language native failure/retry check, not the full locale matrix or
+native transient-failure-to-success recovery.
+
+W21 follow-up after `92a29f1a`: URL attachment errors now use bounded six-language
+copy rather than raw transport details. Explicitly re-pasting a failed URL can
+retry, while ordinary text edits and successful/pending URLs stay deduplicated.
+Eight new real-i18n/retry tests and the 24-case focused selection pass; TypeScript
+and build pass; full frontend is 1,984 passing, zero failures/errors.
+Native package refresh/error-language acceptance for this change
+is pending; W21 records the narrow scope.
+
+Native follow-up after `bbb335c0`: the refreshed temporary app opened example.com,
+then a confirmed temporary-mode change removed only the current conversation's
+tab. Its actual reader DELETE succeeded, five observed browser processes exited,
+and the temporary profile was removed. Restart restored only the unrelated
+ordinary tab and did not create a browser session. W19 records package/log
+identities. The previously pending native revalidation for this defect is now
+complete; broader browser/security/locale release gates remain open.
+
+New W19 source fix after `7d20d4f0`: converting a conversation to temporary now
+closes its pre-existing ordinary browser tabs and deletes their restore metadata,
+including when the dock is hidden. Other conversations' tabs are preserved.
+The defect was reproduced before the fix; 18 focused tests cover metadata,
+actual reader unmount/close requests and late session creation. TypeScript/build
+pass; full frontend has 1,976 passing, zero failures/errors. Temporary native
+bundle refresh and actual browser-process revalidation
+for this path are still pending; no native completion is claimed for this fix.
+
+Follow-up after `96679e53`: native German/dark confirms a prepared image's
+thumbnail survives Settings navigation, and a successful temporary-mode change
+clears both text and image. Real dialog/composer integration tests additionally
+cover rejected settings saves (draft retained), confirmed privacy transitions,
+temporary navigation, and late/disabled URL extraction. Focused 33/33 and
+TypeScript pass; final full frontend is 1,972 passing, zero failures/errors.
+W21 records evidence. Full privacy/security and locale matrices
+remain open; the temporary test app was closed, with no model/account use.
+
+Attachment settings-navigation defect (after `b2da78f1`) is now fixed in source
+and rechecked in the temporary native package: Chinese/light → German/dark
+retains both prepared source and exact text; removal survives another round trip.
+Drafts remain RAM-only and conversation-isolated, with deletion, privacy-mode,
+pending-result and preview-ownership guards. Frontend: 253 files / 1,968 passing,
+plus an additional late-document case in the separately passing 8-case draft
+suite; TypeScript/build pass. W21 records evidence and package identity. This
+does not close the full six-language/native-image/privacy matrix or release gates.
+
+Memory follow-up after `9a467e0c`: M06-06's task-source branch now executes
+automatic extraction, deletion of source conversation plus derived candidate,
+old-summary re-extraction and a later host task. The focused binding passes;
+runtime evidence covers aspects of 31/60 scenarios. File/knowledge-source
+adapters and untracked paraphrases remain outside this coverage. The complete
+expanded 47-case runtime suite passed in 94.19s; its report hash is recorded in
+the binding matrix. This is not a real-model or full 60-scenario result.
+
+Memory follow-up after `1668a547`: M06-03 now exercises actual summary
+regeneration after deletion and a subsequent host turn. Displayed chat is
+retained, suppressed source text stays out of the summarizer, and later context
+uses only eligible new material. The new binding and 24 history/repository
+regressions pass; runtime evidence now covers aspects of 30/60 scenarios.
+This does not bind the separate external-source reingestion scenario M06-06.
+
+Memory follow-up after `a0c3dd4e`: M06-07 now follows an actual host-generated
+receipt through authenticated historical review, version change, deletion and
+a later host task. Deleted text is not reconstructed and later context excludes
+it. Runtime evidence covers aspects of 29/60 scenarios. This is not native UI
+acceptance or deletion of unrelated conversation history; see the binding matrix.
+
+Current production backend `d21b525a` full run completed: **5,336 passed,
+14 skipped, 19 warnings in 514.20s**, exit 0. W20 records report identity and
+teardown limitations. Later memory-only test additions are counted separately.
+Two new M04-08 bindings pass: a dismissed guess stays out of later context,
+the correction message remains stored, and stale dismissal preserves a newer
+confirmed rule. Memory runtime coverage now includes aspects of 28/60 scenarios.
+
+Memory follow-up after `a76b9dc5`: the expanded 42-case cross-task runtime suite
+passes, adding M04-03/06 stale-edit and conflicting-confirmation assertions in
+actual later host prompts and revision-specific receipts. Coverage now includes
+aspects of 27/60 catalog scenarios, not real-model or full scenario acceptance.
+See `memory-runtime-bindings.md` for report identity and exact exclusions.
+
+Latest package `d21b525a`: codec discovery now passes both frozen API and actual
+temporary-native attachment import with PATH strictly `/usr/bin:/bin`, without
+the earlier test-only codec-directory injection. Standard frozen/bundle checks
+pass; W20 records the new backend hash and exact native scope. Current full
+regression is live at `/tmp/arslan-media-discovery-full.jl0WQS/full.log` and is
+not yet counted as passed. No broad release gate is closed by this one check.
+
+Newest source change after `838533f2`: macOS optional codec discovery now
+checks standard local installation directories when desktop PATH is minimal.
+Probe, decoder and capability reporting use one resolver. 147 focused cases
+and a real source-process minimal-PATH extraction pass; W20 records evidence.
+The test-only sidecar PATH compensation was removed. Temporary package/native
+refresh and current-source full regression are pending; the 5,325-case result
+below applies to the preceding backend, not this new resolver.
+
+Current backend `970f38e5` full regression is complete: **5,325 passed,
+14 skipped, 20 warnings in 545.15s**, exit 0. W20 records the report hash and
+teardown guard caveat. This supersedes the running-status paragraphs below.
+
+Newest native finding after `c5d2d217`: German video capability text overflowed
+the composer and hid the filename. The shared chip now has independent,
+wrapping disclosure details and a preserved removal control. Full frontend
+1,960 cases, TypeScript/build, and actual German/dark 1171/931px native
+before/after checks pass. W21 records current web hashes. This closes that
+specific layout defect, not the full six-language acceptance matrix.
+
+Packaged follow-up for `970f38e5`: the temporary app now includes the video
+stream identity fix. Fresh frozen and app-bundled video API checks both reject
+audio-plus-cover-only input and decode three blue video frames rather than
+the red cover. Bundle selftest/resource checks and standard frozen smoke pass.
+Current-source full regression is live at
+`/tmp/arslan-video-stream-full.dcDrSD/full.log`; do not substitute the earlier
+5,317-case result for it. W20 records binary identity and limited scope.
+
+Newest source follow-up after `fb9fa2ae`: video probing requests attached-cover
+disposition, rejects cover-only inputs, and samples the exact absolute index
+of the first non-cover video stream. Source regression includes real MP4
+audio/cover/video fixtures; W20 records scope. This backend change is not yet
+in the temporary native bundle or the preceding full 5,317-case regression.
+Package refresh and current-source full regression remain required.
+
+Latest verification of `a5c62c2e`: temporary native web resources now include
+the partial-extraction wording. German/dark at 1171 × 768 visibly preserves
+the complete status; the synthetic 42,490-byte code fixture yields 12,000
+characters and `(teilweise extrahiert)`. Attachment removed without sending,
+then the temporary app and sidecar exited. W21 records the bundle identity.
+Current backend `36070eaa` full regression completed: **5,317 passed,
+14 skipped, 19 warnings, 537.59s**, exit 0. W20 records the report hash.
+These close the focused pending checks below, not the broader release gates.
+
+Newest web source checkpoint after `247a896b`: six-language composer notices
+now describe partial extraction rather than assuming truncation. Artifact
+previews distinguish partial extraction from the raw-text display cap. Full
+frontend passes 1,954 tests, TypeScript/build pass. Native candidate still has
+the previous wording; W21 records the pending resource refresh/layout check.
+
+Current candidate `36070eaa`: damaged optional PDF image inventories
+no longer discard readable native text. Both injected enumeration failure and
+an actual malformed Form resource are covered; focused tests/lint pass. This
+fix is now packaged and has native German/dark success/partial attachment
+evidence using only synthetic data. The preceding `d3702cce` full run passed
+5,315 cases; current-source full regression is separately running under
+`/tmp/arslan-pdf-hardening-regression.JvQWPZ`. W20 records hashes and the source
+distinction. The pre-send partial chip's generic shortened wording still needs
+review; broad native/quality gates remain open.
+
+New packaged extension `d3702cce`: same-page native text plus image resources
+now receives bounded local OCR while preserving original text and separately
+marking whole-page OCR/possible repetition. Real synthetic host OCR and 80
+focused tests pass. Full Python is running at
+`/tmp/arslan-same-page-regression.N9IZtY`. Fresh frozen and app-bundled APIs
+now pass real host OCR for both PDF forms, plus both unsupported-language
+partial paths. Bundle resource checks and standard smoke pass. See W20 for
+current backend identity and exact evidence; native attachment UI and broad
+quality gates remain open. Historical candidate paragraphs below are not the
+current binary identity.
+
+Newest packaged checkpoint after `2f1632c6`: mixed PDF extraction now preserves
+native text while locally recognizing drawing-only/no-text pages, with explicit
+unread page markers and a partial flag when recognition cannot complete. The
+78-test focused regression and lint pass. Full Python completed with 5,310
+passed, 14 skipped, 18 warnings in 508.50 seconds (three later-added cases
+were separately verified, not counted in that run). The updated temporary app
+passes standard API, reader and real local-OCR mixed-PDF checks, including an
+unsupported-language partial result. W20 records current hashes and exact
+scope. Synthetic English OCR is not broad scan-quality/native UI acceptance;
+same-page text-plus-scan recovery remains open. Formal installation is unchanged.
+
+Snapshot: packaged runtime-error language switching at `6f0ae897`, 2026-09-19. This index complements the chronological
+`W17-release-audit.md`; it does not replace the approved v1.2 plan, task-package
+acceptance checklist or v1.3 browser/input/language amendment in `README.md`.
+An engineering regression passing does not make the candidate releasable.
+
+Current checkpoint `6f0ae897`: W21's visible-error language-switch fix is now
+packaged and verified in the temporary native app. Full Python regression:
+5,304 passed / 14 skipped / 18 warnings, 514.36 seconds, exit 0. Frontend:
+1,944 passed, with TypeScript/build passing. Expanded frozen and app-bundled
+smokes verify complete six-language error catalogs and offline expert creation;
+the packaged browser reader smoke passes with owned-child/profile cleanup.
+One French main-chat error was observed changing to en/zh/ja/es/de through
+native settings without another message. User prose stayed unchanged. This
+closes that focused reproduction, not full W21 acceptance. See W21's newest
+section for report/hash identities and exact locale/theme coverage. The
+historical candidate section below records the preceding package, not current
+binary identities. No formal installation was replaced or published.
+
+Newer checkpoint `d8dcedcb`: shared Select now explicitly
+focuses its trigger on open and dismisses on Tab without committing. Two new
+tests first reproduced missing pointer focus and a stranded panel after Tab;
+all 1,946 frontend tests, TypeScript and production build pass after the fix.
+The temporary native candidate now includes this keyboard change; current web
+assets match exactly and app-bundled smoke passes. Actual language-control
+pointer-to-keyboard selection, pure-keyboard reopening/selection, Escape and
+Tab/Shift-Tab dismissal/focus traversal passed with synthetic data. See W21
+for exact scope and current web hash; the full native acceptance matrix remains
+open. Backend and native executable are unchanged from the prior candidate.
+
+## Previous candidate: attachment fidelity / no implicit provider
+
+Native validation of `dd150e9a` exposed a legacy configuration defect: absent
+`llm_provider` was treated as `openai`, and preset expansion supplied a model,
+despite the UI correctly reporting no configured connection. A synthetic
+restored key and generated attachment text reached the default endpoint and
+received 401; no genuine key, private content or successful model result was
+involved. This contradicts the initial assumption that missing saved model
+configuration alone kept that desktop test offline. The test was stopped.
+
+The legacy adapter now refuses absent/empty/whitespace provider selection before
+requesting the usable provider key for an adapter or constructing that adapter.
+The settings-display reader still performs its existing masked-secret read;
+this change does not claim to remove all in-process decryption. The refusal is localized in
+all six languages. Explicitly selected legacy/provider presets retain their
+existing defaults, and saved data is not migrated or discarded. Tests forbid
+adapter construction/key loading on the refusal path, including a restored-key
+fixture. The 63 focused factory/runtime tests and 38 catalog/smoke-driver tests
+passed; changed-file lint and whitespace checks passed.
+
+The rebuilt frozen candidate passed the standard API smoke plus actual
+WebSocket refusal in all six languages with a synthetic leftover key. Public
+reader smoke passed again: navigation/history/refresh, stale-frame refusal,
+unsupported input rejection and owned-child/profile cleanup. The latter uses
+the already installed temporary browser runtime, not a new runtime installation.
+
+Native Chinese/dark normal-width tests confirmed empty and failed-image sent
+notices and the local model-configuration error. The repaired application's
+fresh log has no external model HTTP requests, unlike the first attempt. W20
+records exact fixture/profile scope and the partial-source display check.
+The native app and sidecar were then quit normally. This is not real-model
+quality evidence or complete native six-language/layout acceptance.
+
+Temporary app: `/tmp/arslan-native-candidate.xIygc5/target/release/bundle/macos/Arslan.app`.
+Frozen build (including offline-curation compatibility): `/tmp/arslan-candidate-build.BboGj4/dist-provider-fallback`.
+Source web assets match packaged assets exactly; bundle verification passed
+15 feature imports, assets and no database/secret/AGPL-rasterizer checks, 431 MiB.
+Identities (SHA-256):
+
+- Native executable (unchanged): `fa0d2c37c102e8d0d93125423b2e2b28ecd7e494d11b558d4da1303de2052d30`.
+- Frozen backend: `ab674c374d5f5db7a844e8433e2c6a61fae31a20f5bb90f57fe9cc79b575bd16`.
+- Web entry: `ea51298c58046453cc0d707dd208ee5a6d9bb62aba1545a300b8b75172be3a81`.
+- Reader resource (unchanged): `94ed2feceefae5bf805bcf4da8186bb958366eb945cc08109ca4f30b0f3ec089`.
+
+Frontend baseline is 249 files / 1,930 tests from `dd150e9a`. The first full
+Python run (`/tmp/arslan-no-provider-regression.p5CfWX/full.xml`) finished with
+5 failed, 5,284 passed, 14 skipped in 508.97 seconds. All five failures were
+real manual-expert creation regressions: optional equipment curation caught
+request errors but did not catch adapter-construction errors. This must not
+be solved by restoring the implicit external-provider destination.
+
+The optional curation try/fallback now includes sync/async adapter construction,
+preserving its existing validated safe-menu fallback with no model connection.
+Both construction-failure forms have new tests. The five original WebSocket
+creation tests were kept unchanged; creation, equipment and factory selection
+passed 59 tests in 8.12 seconds. The subsequent candidate refresh now includes
+this compatibility change. Both fresh frozen output and app-bundled executable
+passed six-language no-provider refusal AND manual-expert creation with
+deterministic localized introductions, validated safe equipment and REST readback.
+
+The second full Python run completed on `1499ee8b` production sources:
+**5,291 passed, 14 skipped, 20 warnings in 525.15 seconds**, exit 0.
+JUnit: `/tmp/arslan-provider-fallback-regression.l8rIEP/full.xml`, SHA-256
+`99771dbc716c82c2381086eb1939e49ebfd23c298656ff35a7e8d88acf3b0450`.
+The known aiosqlite teardown guard reported 67 closed-loop deliveries; this
+run does not claim that pre-existing cleanup issue is fixed. Frontend remains
+at its unchanged 1,930-passing baseline; native Rust remains unchanged.
+
+W21 now records actual six-language attachment-notice/native-menu switching,
+Chinese/dark plus five light-language layouts, French narrower-window scrolling,
+and fresh localized model-refusal responses. No external model HTTP requests
+appeared in that test application's fresh log. Owned native/sidecar processes
+33442/33456 exited normally. The profile is disposable and now French/light.
+New verified W21 gap: already-visible server error bodies keep the language
+in which they were emitted; only their heading and new responses change language.
+Next: structured localization for product-owned runtime errors, without
+rewriting user/model prose or arbitrary provider diagnostics. The full native
+locale/theme/keyboard matrix remains open. No installed app was replaced,
+signed or published.
+
+| Gate | Current evidence / gap | Evidence required to close it |
+| --- | --- | --- |
+| Safe user-facing recovery (I01/I05, W17) | Native cancellation/activation/restart, pause/bound rollback and wrong-key checks pass with retained data/credentials. Six pending-recovery language sheets/notices and cross-language rollback are observed. Dedicated read-only maintenance presentation and native voice/link admission guards exist; Chinese prepare/keep-paused and missing-component refusal pass. Refusal preserves the running service and draft. | Remaining filesystem/timeout/error native branches; full six-language maintenance layout acceptance; custom durable key configuration. |
+| Isolated credentials and approvals (W11) | Approval storage/admission and command boundaries have synthetic evidence. ASC contracts still return `isolated_credential_broker_review_required`; no production credential transport. | Trusted broker identity and OS boundary evidence, approval UI, hostile file/process/port/debugger canaries, revocation races and independent security review before genuine secrets. |
+| Account workflow (W12/W13) | Preparation and host-only single-field execution exist; fixture transport is not real account support. | After W11: authorized target binding, real read-only account validation, approved test draft write and independent readback; screenshot/partial-write handling. Submission and publication remain separately disabled unless authorized. |
+| Interactive browser and dock (W19) | Public bounded navigation and dock have component/app/native evidence. Failed-capture link rebinding is fixed; the refreshed bundle passes actual reader APIs and a Chinese/dark native navigate/fail/recover/stop path with no owned children left. Authenticated interaction is not certified. | Finish the approved interaction/permission scope, ownership/cancellation and sensitive-action boundaries; runtime provisioning and remaining native browser/dock/artifact acceptance. Do not substitute static previews for interaction. |
+| Input fidelity (W20) | Shared format registry, bounded extraction, source locators and sampled video frames exist. Three frames are not full-motion understanding; transcription is disclosed unavailable. | Current packaged real-format/codec cases; supported preview/extraction/visual-understanding distinctions; model-visible inputs and output quality where authorized; explicit unavailable capabilities rather than fabricated results. |
+| Six-language native UX and old-data compatibility (W16/W21) | Web/component matrices and actual six-language pending-recovery sheets/menus/notices exist. Cross-language rollback refresh is verified. Earlier disappearing-greeting finding is not causally closed. | Full six-locale narrow/wide and light/dark runtime checks, rapid switch/back/reload, other native menus/dialogs, old entry points/data, keyboard focus and restart behavior on the current bundle. |
+| Design/media workflows (W15) | Versioned style references and a restricted local-media adapter exist. Execution provisioning/review and real D01–D08 outcomes are not complete. | Editable/runnable output evidence, verified artifacts/cancellation, authorized pinned backend when available, human assessment of visual dimensions and honest unavailable-backend fallback. No unapproved weights/cloud costs. |
+| Memory and task quality (W01/W04/W05/W17) | Runtime evidence covers aspects of 31 memory scenarios, not all 60. `catalog.json` still labels real task inputs pending. | Remaining multi-turn bindings plus authorized real behavior evaluation; freeze real inputs/hashes and configuration; run all 30 families × 3 attempts without best-of-three selection; preserve missing/unsupported denominator and cost/latency accounting. |
+| Packaging and final human acceptance (W17) | Latest full backend baseline is 5,336 passed / 14 skipped at `d21b525a`; subsequent packaging-entry scope passes 51 tests. Latest full frontend is 2,000 passing at `84133673`; native baseline remains 77 passed / one ignored. The `4f89b1c5` app-bundled backend passes standard, video, reader and recovery-rewrap smokes. These are separate source/scope records, not a new full-suite run or real-model acceptance. | Keep package/regressions current; remaining native first boot/upgrade/recovery and configuration retention matrix; applicable signing/notarization and human installation/security/UX review. No installed-app replacement or public release under the current authorization. |
+
+## Next dependency order
+
+1. The full `81949a01` regression finished with 5,197 passed, one old test-harness
+   failure and 14 skipped; its `combined.xml` is retained. `7bd142c6` corrects
+   that test without weakening production checks (61 focused cases passed).
+   The corrected full run passed 5,198 cases with 14 skips and 19 warnings in
+   601.28s; `corrected.xml` is retained beside the failed first report. Runtime
+   changes after this baseline need their own proportional verification. The
+   subsequent full Python run on `dfe02692` passed 5,248 cases with 14 skips and
+   20 warnings in 570.00s; see the retained `full.xml` in the release audit.
+   Current Python/test source at `ee20392a` passed 5,267 cases, 14 skips and
+   21 warnings in 621.39s. Current frontend/native selections are recorded above;
+   retained reports and the initial Node storage failure are in the release audit.
+2. Resolve recovery key-source persistence **before** wiring a successful trial
+   to normal restart. Existing bootstrap precedence and lock-and-box separation
+   are constraints, not details to bypass. A selected backup key must work on a
+   subsequent fresh launch without overwriting the original installation key or
+   silently putting key material in the profile/backup. Any new storage/reference
+   mechanism needs its own consent, rollback and tamper/error tests.
+   `W17-recovery-key-restart.md` records a candidate-only credential re-encryption
+   primitive, native durable default-file proof and bounded rewrap transport.
+   Real frozen-backend tests now cover two independent normal default-key boots
+   after native rewrap/trial/finalize. Consent/coordinator integration is now
+   implemented but native acceptance remains unfinished, as does durable recovery
+   configuration for custom key locations;
+   this is not native-window acceptance or blanket consent to rewrite secrets.
+3. Connect the trusted native recovery coordinator and UI. Include exclusivity
+   against startup/update/another recovery, owned-child shutdown, explicit pending
+   state after uncertainty, and retained original/candidate folders. Keep all
+   operations unavailable to web/model IPC.
+4. Rebuild and inspect the actual native UX when the desktop is available, while
+   continuing independent remaining runtime/input/memory/broker work. A locked
+   desktop blocks click evidence, not all engineering work.
+5. Request real inputs/accounts/cost authority only when the corresponding safe
+   implementation and review gates are ready. No synthetic success can replace
+   those approvals or measurements. Notify publication readiness only after the
+   full requirement-by-requirement audit, not after this triage table is green.
+
+## Source anchors
+
+- Approved external checklist: `Arslan-实施任务包与验收清单-v1.md`, especially
+  I01–I12 and W11–W17; repository amendment: `README.md`.
+- Native runtime and menu: `desktop/src-tauri/src/lib.rs`, `native_menu.rs`,
+  `recovery_control.rs`, `recovery_trial.rs`, `recovery_shutdown.rs`.
+- Key contract: `server/secret_bootstrap.py`; account gates:
+  `server/connectors/app_store_connect/contracts.py` and `client.py`.
+- Quality evidence: `evals/companion/README.md`, `catalog.json`,
+  `memory-runtime-bindings.md`; feature limitations: W11/W12-W13/W15/W19/W20/W21
+  checkpoint documents. Older sections are historical, not current blanket claims.
+
+Attachment-fidelity source follow-up (2026-09-19, after `3a5cab09`): W20 now
+records model-bound and sent-echo extraction-limit notices for both composers,
+with 249 frontend files / 1,930 tests passing, TypeScript and production build.
+The existing temporary native bundle has not yet been refreshed for this
+frontend-only change. No release gate or real-model acceptance is closed by it.
+
+W18's expanded 100-task improvement phase remains later; it is not a reason to
+postpone W19/W20/W21 or to rename current engineering tests as real task success.

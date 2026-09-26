@@ -1,3 +1,5 @@
+import i18n from "../i18n";
+beforeEach(() => { void i18n.changeLanguage("en"); });
 /**
  * The catalog's third kind of connector: needs OAuth, not supported yet.
  *
@@ -8,7 +10,7 @@
  * does (ruling ②), so the entry here is a TEST STUB, never a catalog addition.
  */
 import { render, screen, waitFor, cleanup } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const catalog = vi.fn();
 vi.mock("../api/catalog", () => ({

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { formatUiTime } from "../lib/localeFormatting";
 import { api } from "../api/client";
 import type { ConversationUsage, RecapDto } from "../api/client.types";
 import { fmtTok, fmtUsd } from "../lib/usageFormat";
@@ -36,10 +37,8 @@ function kindColor(kind: string): string {
   return kind === "skill" || kind === "evolution" ? "var(--warning)" : "var(--primary)";
 }
 
-function fmtTime(iso: string | null | undefined): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "" : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+function fmtTime(iso: string | null | undefined, language?: string): string {
+  return iso ? formatUiTime(iso, language) : "";
 }
 
 /**
@@ -49,7 +48,7 @@ function fmtTime(iso: string | null | undefined): string {
  * drill-down still lives in the standalone DiagnosisView (Diagnostics ↗ link).
  */
 export default function EvalDock({ conversationId, onOpenDiagnosis }: Props) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [recap, setRecap] = useState<RecapDto | null>(null);
   const [usage, setUsage] = useState<ConversationUsage | null>(null);
   const [open, setOpen] = useState(false);
@@ -153,7 +152,7 @@ export default function EvalDock({ conversationId, onOpenDiagnosis }: Props) {
                   <span className="recap-item__title">{it.summary ?? ""}</span>
                 </div>
               )}
-              <span className="recap-item__time">{fmtTime(it.created_at)}</span>
+              <span className="recap-item__time">{fmtTime(it.created_at, i18n?.resolvedLanguage)}</span>
             </li>
           ))}
         </ul>

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { formatUiTime } from "../lib/localeFormatting";
 import { api } from "../api/client";
 import type { RunListItem } from "../api/client.types";
 
@@ -18,11 +19,8 @@ function scoreDotColor(score: number | null): string {
   return "var(--success)";
 }
 
-function fmtTime(createdAt?: string | null): string {
-  if (!createdAt) return "—";
-  const d = new Date(createdAt);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+function fmtTime(createdAt?: string | null, language?: string): string {
+  return createdAt ? formatUiTime(createdAt, language) || "—" : "—";
 }
 
 function fmtMs(ms: number | null): string {
@@ -34,7 +32,7 @@ function fmtMs(ms: number | null): string {
  * L2-internal view swapped in place of DiagnosisCatalog when a spawn is selected.
  */
 export default function SpawnRunDetail({ spawnId, spawnName, onBack, onSelectRun }: Props) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [runs, setRuns] = useState<RunListItem[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -52,7 +50,7 @@ export default function SpawnRunDetail({ spawnId, spawnName, onBack, onSelectRun
     <div className="spawn-run-detail" data-testid="spawn-run-detail">
       <div className="spawn-run-detail__crumb">
         <button type="button" className="spawn-run-detail__back" onClick={onBack}>
-          ← Diagnostics
+          ← {t('ui.diagnostics')}
         </button>
         <span className="spawn-run-detail__name"> / {spawnName ?? "—"}</span>
       </div>
@@ -76,7 +74,7 @@ export default function SpawnRunDetail({ spawnId, spawnName, onBack, onSelectRun
                 style={{ background: scoreDotColor(r.overall_score) }}
                 aria-hidden="true"
               />
-              <span className="spawn-run-detail__time">{fmtTime(r.created_at)}</span>
+              <span className="spawn-run-detail__time">{fmtTime(r.created_at, i18n?.resolvedLanguage)}</span>
               <span className="spawn-run-detail__msg">{r.user_message}</span>
               <span className="spawn-run-detail__ms">{fmtMs(r.total_ms)}</span>
               <span className="spawn-run-detail__score">

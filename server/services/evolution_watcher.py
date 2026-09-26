@@ -194,7 +194,7 @@ async def _new_replayable_run_count(db, spawn_id: int, since) -> int:
     (all epoch>=1 live scored runs when `since` is None)."""
     q = select(Run).where(
         Run.spawn_id == spawn_id, Run.kind == "live", Run.epoch >= 1,
-        Run.status == "scored",
+        Run.status == "scored", Run.no_learning.is_(False),
     )
     if since is not None:
         q = q.where(Run.created_at > since)

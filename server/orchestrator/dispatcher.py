@@ -7,12 +7,15 @@ from collections.abc import Callable
 
 from sqlalchemy import select
 
+from arslan.execution_budget import governed
+
 from server.db import session as db_session
 from server.db.models import ChatMessage, MCPServer, Spawn
 from server.orchestrator import memory, spawn_loop
 from server.registry import service as registry_service
 from server.services import evolution_meter
 from server.services.llm_factory import build_adapter
+from server.services.task_context import scoped_worker
 
 logger = logging.getLogger(__name__)
 
@@ -300,7 +303,19 @@ async def build_spawn_system(spawn, *, retrieval_query: str, current_turn: int,
     from server.services import evolution_service
     from server.services import knowledge as _knowledge
 
-    facts = ambient["facts"] if ambient is not None else await memory.facts_text()
+    from server.services.memory_repository import is_active as memory_v2_active
+    unified_memory = await memory_v2_active()
+    if unified_memory:
+        from server.services import personal_context
+        # Replays must reauthorize current memory; cached prompt snapshots may
+        # contain entries that have since been deleted or lost permission.
+        with personal_context.for_worker(str(spawn.id)):
+            personal = await personal_context.assemble(retrieval_query)
+            facts = personal.text if personal else ""
+            if personal:
+                await personal_context.record(personal)
+    else:
+        facts = ambient["facts"] if ambient is not None else await memory.facts_text()
     base_prompt = system_prompt_override if system_prompt_override is not None else (spawn.system_prompt or "You are a helpful assistant.")
     system = base_prompt
     system += (
@@ -328,17 +343,17 @@ async def build_spawn_system(spawn, *, retrieval_query: str, current_turn: int,
     )
     if facts:
         system = f"{system}\n\n{facts}"
-    if spawn.memory_facts:
+    if not unified_memory and spawn.memory_facts:
         prefs = "\n- ".join(str(f) for f in spawn.memory_facts if str(f).strip())
         if prefs:
             system += f"\n\n[关于如何为这位用户工作,你已学到的偏好]\n- {prefs}"
     # Tier-1 evolution suffix — appended AFTER the base (override or persona) for EVERY arm,
     # so a replay candidate and baseline both carry it exactly as production does (spec §E3).
-    suffix = evolution_service.prompt_suffix(spawn.name)
+    suffix = "" if unified_memory else evolution_service.prompt_suffix(spawn.name)
     if suffix:
         system = f"{system}\n\n{suffix}"
     _kb_sources = None
-    if ambient is not None:
+    if ambient is not None and not unified_memory:
         # E3: inject the pre-captured KB snapshot (no retrieval, no usage write) so both arms
         # of a pair see byte-identical knowledge.
         system += ambient["kb_block"]
@@ -349,8 +364,10 @@ async def build_spawn_system(spawn, *, retrieval_query: str, current_turn: int,
             # count still accrues per material hit, the "最近用于" ref is filled by the
             # Arslan direct-chat path which does carry conversation_id. record_usage=False
             # in replay: retrieve identically but never touch brain_usage counters.
-            _kb = await _knowledge.retrieve_scoped(retrieval_query, spawn_id=spawn.id,
-                                                   used_ref=None, record_usage=not replay)
+            from server.services.personal_context import for_worker
+            with for_worker(str(spawn.id)):
+                _kb = await _knowledge.retrieve_scoped(retrieval_query, spawn_id=spawn.id,
+                                                       used_ref=None, record_usage=not replay)
             system += _knowledge.knowledge_block(_kb)
             _kb_sources = [src for src, _ in _kb] or None
         except Exception as exc:  # noqa: BLE001
@@ -443,11 +460,14 @@ async def _run_model(
     # where a tool-less spawn could fabricate "已生成PPT并交付" / "正在生成中,稍等" unchecked.
     adapter = _get_adapter()
     a = await adapter if hasattr(adapter, "__await__") else adapter
-    full = ""
-    async for piece in a.chat_stream(system, user_content, history=history):
-        full += piece
-        if on_chunk is not None:
-            on_chunk(piece)
+    async def no_tools():
+        return []
+    from server.orchestrator import tool_loop
+    out = await tool_loop.run_native(system=system, user_content=user_content, history=history,
+        emit=emit or (lambda event: None), on_chunk=on_chunk or (lambda text: None),
+        resolve_tools=no_tools, allow_escalation=False, adapter_override=a, stream_without_tools=True,
+        conversation_id=conversation_id, log_events=not replay)
+    full = out["final"] or ""
     full = await _apply_zero_tool_honesty(full, spawn.name, conversation_id, on_chunk,
                                           log_events=not replay)
     return full, None
@@ -554,6 +574,8 @@ def with_images(brief: str, images: list[dict] | None) -> str | list[dict]:
         return brief
     blocks: list[dict] = [{"type": "text", "text": brief}]
     for img in images:
+        if isinstance(img.get("source_locator"), str):
+            blocks.append({"type": "text", "text": "Image source locator (attachment data): " + img["source_locator"][:500]})
         blocks.append({
             "type": "image",
             "mime_type": img.get("mime_type") or "image/png",
@@ -562,6 +584,8 @@ def with_images(brief: str, images: list[dict] | None) -> str | list[dict]:
     return blocks
 
 
+@governed
+@scoped_worker
 async def dispatch(
     conversation_id: str,
     *,
@@ -611,7 +635,7 @@ async def dispatch(
     Design: current_turn and wired are computed once here and shared between the
     equipment block builder and the spawn_loop call, avoiding duplicate DB queries.
     Equipment is fetched first (cheap); wired is skipped entirely for unequipped
-    spawns (zero-tool path uses legacy chat_stream, byte-identical to pre-loop).
+    spawns (zero-tool streaming shares the same budget-governed runtime).
     """
     spawn = await _load_spawn(spawn_id)
     if spawn is None:

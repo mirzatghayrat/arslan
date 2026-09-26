@@ -21,6 +21,7 @@ import json
 import pathlib
 import re
 import subprocess
+import textwrap
 
 import pytest
 
@@ -67,7 +68,7 @@ def test_the_drift_check_accepts_only_a_matching_tag(tmp_path, case):
     input cannot reach this code.
     """
     version = json.loads(_CONF.read_text())["version"]
-    parts = version.split(".")
+    parts = version.split("-", 1)[0].split(".")
     bumped = ".".join(parts[:-1] + [str(int(parts[-1]) + 1)])
     tag, should_fail = {
         "match": (f"v{version}", False),
@@ -137,6 +138,33 @@ def test_releases_are_drafts_not_published_automatically():
     — the same fail-closed-on-the-executing-side rule as the rest of the repo.
     """
     assert re.search(r"^\s*draft:\s*true\s*$", _RELEASE.read_text(), re.M)
+
+
+def test_preview_tags_are_prereleases_and_not_stable_latest():
+    text = _RELEASE.read_text()
+    assert "prerelease: ${{ contains(github.ref_name, '-') }}" in text
+    assert "make_latest: ${{ contains(github.ref_name, '-') && 'false' || 'legacy' }}" in text
+    assert "body_path: docs/releases/${{ github.ref_name }}.md" in text
+    assert "generate_release_notes: false" in text
+
+
+@pytest.mark.parametrize("answer,returncode,passes", [("true", 0, True), ("false", 0, False), ("", 1, False)])
+def test_release_build_requires_successful_same_commit_ci(answer, returncode, passes):
+    text = _RELEASE.read_text()
+    gate = text.split("  verified-source:", 1)[1].split("\n  build:", 1)[0]
+    script = textwrap.dedent(gate.split("        run: |\n", 1)[1])
+    assert '--commit "$GITHUB_SHA"' in script
+    assert "--workflow ci.yml" in script
+    assert 'any(.[]; .conclusion == "success")' in script
+    assert "  build:\n    needs: verified-source" in text
+    # Execute the actual gate with controlled GitHub/sleep responses; never
+    # contact the network or wait in a unit test. Errors must fail closed.
+    stub = f"gh() {{ printf '%s' '{answer}'; return {returncode}; }}\nsleep() {{ :; }}\n"
+    result = subprocess.run(["bash", "-e", "-c", stub + script],
+                            env={"PATH": "/usr/bin:/bin", "GITHUB_SHA": "synthetic-sha",
+                                 "GITHUB_REPOSITORY": "synthetic/repository"},
+                            capture_output=True, text=True, timeout=5)
+    assert (result.returncode == 0) is passes
 
 
 # The updater public key that every shipped binary is built with. Changing it

@@ -13,6 +13,7 @@ unbounded read is a context bomb rather than a capability.
 from __future__ import annotations
 
 import os
+import hashlib
 
 import logging
 from pathlib import Path
@@ -232,11 +233,13 @@ class WriteFileExecutor:
         root, path, err = await _resolved(args, for_write=True)
         if err:
             return err
+        artifact = _snapshot_write(root, path, content)
         try:
             path.write_text(content, encoding="utf-8")
         except OSError as exc:
             return {"ok": False, "error": f"cannot write {_rel(path, root)}: {exc}"}
-        return {"ok": True, "path": _rel(path, root), "bytes": len(content.encode("utf-8"))}
+        return {"ok": True, "path": _rel(path, root), "bytes": len(content.encode("utf-8")),
+                **({"artifact": artifact} if artifact else {})}
 
 
 class EditFileExecutor:
@@ -271,8 +274,25 @@ class EditFileExecutor:
             return {"ok": False,
                     "error": f"'old' appears {hits} times in {_rel(path, root)}; "
                              "give a longer, unique snippet so the right one is edited"}
+        updated = text.replace(old, new, 1)
+        artifact = _snapshot_write(root, path, updated)
         try:
-            path.write_text(text.replace(old, new, 1), encoding="utf-8")
+            path.write_text(updated, encoding="utf-8")
         except OSError as exc:
             return {"ok": False, "error": f"cannot write {_rel(path, root)}: {exc}"}
-        return {"ok": True, "path": _rel(path, root)}
+        return {"ok": True, "path": _rel(path, root), **({"artifact": artifact} if artifact else {})}
+
+
+def _snapshot_write(root: Path, path: Path, content: str):
+    """Preserve this output before applying it; a failed snapshot prevents a write.
+
+    This is a deliverable snapshot, not proof of the workspace's later state.
+    Scope/path authorization has already run; the model cannot choose its Run.
+    """
+    from server.services import artifact_store, execution_context
+    run_id = execution_context.current_run_id()
+    if run_id is None:
+        return None  # Legacy direct executors without a recorded Run.
+    title = _rel(path, root)
+    key = hashlib.sha256(("workspace:" + str(root.resolve()) + "/" + title).encode()).hexdigest()
+    return artifact_store.store_bytes(run_id, title, content.encode("utf-8"), logical_key=key)

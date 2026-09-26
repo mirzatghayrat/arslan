@@ -15,6 +15,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import en from "../locales/en.json";
+import { uiMessages } from "../locales/ui";
 
 // The words ARE the deliverable here, so the real shipped English resolves through
 // the mock and a blank or deleted key throws instead of silently rendering nothing.
@@ -24,7 +25,7 @@ vi.mock("react-i18next", () => ({
       const hit = key.split(".").reduce<unknown>(
         (node, part) =>
           node && typeof node === "object" ? (node as Record<string, unknown>)[part] : undefined,
-        en as unknown,
+        { ...en, ui: uiMessages.en } as unknown,
       );
       if (typeof hit !== "string" || !hit.trim()) throw new Error(`missing locale string: ${key}`);
       return hit;

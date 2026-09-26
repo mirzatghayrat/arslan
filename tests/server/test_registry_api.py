@@ -13,11 +13,16 @@ async def test_registry_lists_catalog_with_assignable_flags(client):
     skills = {s["key"]: s for s in body["skills"]}
 
     assert toolsets["web_search_scraping"]["assignable"] is True
+    assert toolsets["web_search_scraping"]["name_key"] == "catalogUI.web_search_scraping.name"
+    assert toolsets["web_search_scraping"]["description_key"] == "catalogUI.web_search_scraping.description"
     assert toolsets["session_search"]["assignable"] is False        # no wired tool yet
     assert toolsets["session_search"]["tier"] == "safe"             # listed, transparent
     assert skills["claude-code"]["assignable"] is False             # orchestrator tier
     assert skills["claude-code"]["tier"] == "orchestrator"          # listed, transparent
     assert skills["baoyu-infographic"]["assignable"] is True
+    assert skills["baoyu-infographic"]["name"] == "baoyu-infographic"
+    assert skills["baoyu-infographic"]["name_key"] == "catalogUI.skills.baoyu-infographic.name"
+    assert skills["baoyu-infographic"]["description_key"] == "catalogUI.skills.baoyu-infographic.description"
     ws_tools = {t["key"]: t for t in toolsets["file_operations"]["tools"]}
     assert ws_tools["read_file"]["tier"] == "safe"
     assert ws_tools["write_file"]["tier"] == "orchestrator"
@@ -31,11 +36,13 @@ async def test_registry_badges_code_sandbox_when_unsandboxed(client, monkeypatch
     body = (await client.get("/api/v1/registry")).json()
     cs = {t["key"]: t for t in body["toolsets"]}["code_sandbox"]
     assert cs["degraded"] is True and cs["warning"]
+    assert cs["warning_code"] == "unsandboxed_python"
 
     monkeypatch.setattr(code_sandbox, "unsandboxed_active", lambda: False)
     body = (await client.get("/api/v1/registry")).json()
     cs = {t["key"]: t for t in body["toolsets"]}["code_sandbox"]
     assert cs["degraded"] is False and cs["warning"] is None
+    assert cs["warning_code"] is None
 
 
 @pytest.mark.asyncio
@@ -47,4 +54,4 @@ async def test_registry_is_idempotent(client):
     body1 = resp1.json()
     body2 = resp2.json()
     assert body1 == body2
-    assert len(body1["toolsets"]) == 10
+    assert len(body1["toolsets"]) == 12

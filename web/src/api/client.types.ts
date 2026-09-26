@@ -17,13 +17,15 @@ export interface Equipment {
 export interface RegistryTool { key: string; description: string; tier: string; status: string; }
 export interface RegistryToolset {
   key: string; name: string; description: string; tier: string; status: string;
+  name_key?: string | null; description_key?: string | null;
   assignable: boolean; tools: RegistryTool[];
   /** P0-1 决定①b: run-time degradation (e.g. run_python running UNSANDBOXED via the escape
    * valve). When true, the capability page badges the toolset with `warning`. */
-  degraded?: boolean; warning?: string | null;
+  degraded?: boolean; warning?: string | null; warning_code?: string | null;
 }
 export interface RegistrySkill {
   key: string; name: string; category: string; description: string;
+  name_key?: string | null; description_key?: string | null;
   tier: string; status: string; assignable: boolean;
   /** PC-4: honest sandbox-compatibility class — "full" | "partial" | "text". */
   compatibility?: "full" | "partial" | "text";
@@ -263,6 +265,7 @@ export interface AppSettings {
   llm_base_url: string;
   llm_api_key: string; // masked on read
   language: string;
+  first_run_seen?: boolean;
   search_provider: string;
   search_base_url: string;
   search_api_key: string; // masked on read
@@ -398,7 +401,7 @@ export type ServerMessage =
   | { type: "stream_chunk"; content: string }
   | { type: "stream_end"; message_id: number }
   | { type: "message"; message_id: number; content: string; role: string }
-  | { type: "error"; code: string; message: string; recoverable?: boolean }
+  | { type: "error"; code: string; message: string; recoverable?: boolean; message_i18n?: Record<string, string> }
   | { type: "ping"; ts: number };
 
 export interface UserFact {
@@ -523,13 +526,14 @@ export interface ArslanHistoryRow {
 
 // Server -> client frames on /ws/arslan
 export type ArslanServerMessage =
+  | import("./tasks").TaskFrame
   | { type: "history"; messages: ArslanHistoryRow[] }
   | { type: "proposal"; spawn_id: number; spawn_name: string | null }
   | { type: "routing"; spawn_id: number; spawn_name: string | null; announcement?: string | null }
   | { type: "auto_continue"; spawn_id: number; spawn_name?: string | null; remaining?: number }
   // run_id (S3-M1): present only on recorded (spawn) runs — the cancel target for
   // POST /runs/{id}/cancel. Omitted on unrecorded streams.
-  | { type: "stream_start"; source: "arslan" | "spawn"; spawn_id?: number | null; run_id?: number }
+  | { type: "stream_start"; source: "arslan" | "spawn"; spawn_id?: number | null; run_id?: number; temporary?: boolean }
   | { type: "stream_chunk"; content: string }
   // S3-M1: the server cancelled this run mid-flight. message_id is present when a
   // partial spawn_summary (已中断 marker) was persisted server-side.
@@ -545,6 +549,7 @@ export type ArslanServerMessage =
   | {
       type: "stream_end";
       message_id: number | null;
+      temporary?: boolean;
       run_id?: number;
       usage?: StreamUsage;
       artifact?: { kind: string; filename?: string; title?: string; bytes?: number;
@@ -561,6 +566,7 @@ export type ArslanServerMessage =
   // metadata only (never a value); requires_path/path_placeholder (Filesystem/Git) flag a
   // local path the card must collect in a PLAIN TEXT field and append to argv itself.
   | { type: "propose_connect_mcp"; call_id: string; key: string; label: string; transport: string;
+      label_key?: string;
       command: string; argv: string[]; url: string | null; env_keys: McpConnectorEnvVar[];
       prerequisites: string; requires_path: boolean; path_placeholder: string | null }
   // Honest, tier-aware result after a connect card completed — counts are ALWAYS
@@ -587,7 +593,7 @@ export type ArslanServerMessage =
   | { type: "escalation"; spawn_id: number; spawn_name: string | null; kind: string; need: string }
   | { type: "escalation_refused"; spawn_id: number; why: string }
   | { type: "escalation_resolved"; spawn_id: number; how: string; detail: string }
-  | { type: "error"; code: string; message: string; recoverable?: boolean }
+  | { type: "error"; code: string; message: string; recoverable?: boolean; message_i18n?: Record<string, string> }
   | { type: "verdict_recorded"; spawn_id: number; action: string }
   | { type: "deliverable_finalized"; spawn_id: number; message_id: number; content: string; refined_from: number | null; spawn_name?: string }
   | { type: "roster_update"; members: { spawn_id: number; spawn_name: string | null; joined_via: string; status: string }[] }
@@ -643,6 +649,7 @@ export interface RunEvaluationDto {
 }
 
 export interface RunDto {
+  no_learning?: boolean;
   id: number;
   conversation_id: string;
   spawn_id: number | null;
@@ -1116,6 +1123,7 @@ export interface McpTool {
 export interface McpConnectorEnvVar {
   name: string;
   description: string;
+  description_key?: string | null;
   get_it_url: string;
   paid: boolean;
 }
@@ -1132,6 +1140,8 @@ export interface McpConnector {
    *  only fail or a form collecting a key no service will issue. */
   auth: 'none' | 'static_key' | 'oauth';
   label: string;
+  label_key?: string | null;
+  description_key?: string | null;
   transport: string;
   command: string;
   args: string[];

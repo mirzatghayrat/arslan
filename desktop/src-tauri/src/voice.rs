@@ -162,6 +162,8 @@ pub fn voice_conversation_start(
     locale: String,
     silence_ms: u64,
 ) -> Result<(), String> {
+    let gate = app.state::<crate::maintenance::Gate>();
+    let _interactive = gate.interactive().ok_or_else(crate::maintenance_refusal)?;
     let state = app.state::<Conversation>();
     stop_inner(&app);
 
@@ -218,6 +220,8 @@ pub fn voice_mute(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub fn voice_unmute(app: AppHandle) -> Result<(), String> {
+    let gate = app.state::<crate::maintenance::Gate>();
+    let _interactive = gate.interactive().ok_or_else(crate::maintenance_refusal)?;
     with_stdin(&app, "unmute")
 }
 

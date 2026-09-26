@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Arslan は、音声入力を開始したときにマイクを使用します。</string>
+  <key>NSSpeechRecognitionUsageDescription</key>
+  <string>オンデバイス認識が利用できる場合、Arslan はこの Mac 上で音声をテキストに変換します。それ以外の場合、音声認識のために音声が Apple に送信されることがあります。</string>
+</dict>
+</plist>

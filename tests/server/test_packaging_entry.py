@@ -82,14 +82,258 @@ def test_compute_selftest_flag_never_starts_server(entry, monkeypatch):
     assert entry.main() == 7
 
 
+def test_offline_restore_dispatches_without_profile_boot(entry, monkeypatch):
+    from server.services import recovery_cli
+    arguments = ["--archive", "synthetic.zip", "--new-data-dir", "new", "--new-machine"]
+    monkeypatch.setattr(sys, "argv", ["arslan-server", "--restore-offline", *arguments])
+    monkeypatch.setattr(entry, "_sanitize_env", lambda: pytest.fail("must not boot"))
+    monkeypatch.setattr(entry, "_serve", lambda: pytest.fail("must not serve"))
+    def restore(argv):
+        assert argv == arguments
+        return 9
+    monkeypatch.setattr(recovery_cli, "main", restore)
+    assert entry.main() == 9
+
+
+def test_activation_trial_dispatches_only_to_restricted_entry(entry, monkeypatch):
+    from server import activation_trial_entry
+    monkeypatch.setattr(sys, "argv", ["arslan-server", "--activation-trial"])
+    monkeypatch.setattr(entry, "_serve", lambda: pytest.fail("must not serve normal app"))
+    def trial(sanitize):
+        assert sanitize is entry._sanitize_env
+        return 8
+    monkeypatch.setattr(activation_trial_entry, "run", trial)
+    assert entry.main() == 8
+
+
 @pytest.fixture
-def entry():
+def entry(tmp_path, monkeypatch):
+    from dataclasses import replace
+    from server import config, profile_paths
+    monkeypatch.setattr(config, "settings", replace(config.settings, db_path=str(tmp_path / "entry.db"), data_dir=tmp_path))
+    monkeypatch.setattr(profile_paths, "resolve_database", lambda: pathlib.Path(config.settings.db_path))
+    monkeypatch.setattr(sys, "argv", ["arslan-server"])
     return _load_entry()
+
+
+def test_activation_control_dispatch_does_not_start_normal_server(entry, monkeypatch):
+    from server import activation_control_entry
+    monkeypatch.setattr(sys, "argv", ["arslan-server", "--activation-control"])
+    monkeypatch.setattr(entry, "_serve", lambda: pytest.fail("must not serve"))
+    def control(sanitize):
+        assert sanitize is entry._sanitize_env
+        return 9
+    monkeypatch.setattr(activation_control_entry, "run", control)
+    assert entry.main() == 9
+
+
+@pytest.mark.parametrize("arguments", [
+    ["--typo"], ["restore-offline"], ["--new-machine", "--restore-offline"],
+    ["--selftest", "--restore-offline"], ["--compute-selftest", "--selftest"],
+    ["--selftest", "private-unrecognized-value"],
+    ["--activation-control", "--activation-trial"], ["--activation-control", "private-secret"],
+])
+def test_ambiguous_arguments_never_start_any_mode(entry, monkeypatch, capsys, arguments):
+    monkeypatch.setattr(sys, "argv", ["arslan-server", *arguments])
+    for name in ("_sanitize_env", "_serve", "selftest", "compute_selftest"):
+        monkeypatch.setattr(entry, name, lambda: pytest.fail("invalid arguments must not run"))
+    assert entry.main() == 2
+    assert capsys.readouterr().out == "ARSLAN_ERROR=invalid_arguments\n"
+
+
+def test_packaged_entry_holds_profile_until_server_returns(entry, monkeypatch):
+    from server import config
+    from server.services.data_profile_lock import hold
+
+    def serve():
+        with pytest.raises(ValueError, match="^data_profile_in_use$"):
+            with hold(pathlib.Path(config.settings.db_path)):
+                pytest.fail("running backend must own its profile")
+        return 0
+
+    monkeypatch.setattr(entry, "_serve", serve)
+    assert entry.main() == 0
+    with hold(pathlib.Path(config.settings.db_path)):
+        pass
+
+
+@pytest.mark.parametrize("schema", [
+    "CREATE TABLE schema_version(version TEXT); INSERT INTO schema_version VALUES ('9999')",
+    "CREATE TABLE schema_version(unrecognized TEXT)",
+])
+def test_unsupported_schema_is_reported_before_port_or_server(entry, monkeypatch, capsys, schema):
+    import sqlite3
+    from server import config
+
+    database = pathlib.Path(config.settings.db_path)
+    with sqlite3.connect(database) as connection:
+        connection.executescript(schema)
+    original = database.read_bytes()
+    monkeypatch.setattr(entry, "_serve", lambda: pytest.fail("unsupported schema must not announce port"))
+    assert entry.main() == 1
+    assert capsys.readouterr().out == "ARSLAN_ERROR=database_schema_unsupported\n"
+    assert database.read_bytes() == original
+
+
+def test_schema_probe_does_not_create_a_missing_database(entry, tmp_path):
+    database = tmp_path / "new-profile" / "arslan.db"
+    entry._check_profile_schema(database)
+    assert not database.parent.exists()
+
+
+def test_upgrade_backup_failure_precedes_port_and_leaves_database(entry, monkeypatch, capsys):
+    import sqlite3
+    from server import config
+    from server.services import backup
+    database = pathlib.Path(config.settings.db_path)
+    with sqlite3.connect(database) as connection:
+        connection.executescript("CREATE TABLE schema_version(version TEXT); INSERT INTO schema_version VALUES ('0046')")
+    original = database.read_bytes()
+    def fail(*args, **kwargs):
+        raise OSError("do not echo private path")
+    monkeypatch.setattr(backup, "create", fail)
+    monkeypatch.setattr(entry, "_serve", lambda: pytest.fail("must not start or announce port"))
+    assert entry.main() == 1
+    assert capsys.readouterr().out == "ARSLAN_ERROR=database_upgrade_backup_failed\n"
+    assert database.read_bytes() == original
+
+
+def test_schema_probe_failure_has_no_private_diagnostics(entry, monkeypatch, capsys):
+    def failed(_database):
+        raise OSError("private path or database contents")
+    monkeypatch.setattr(entry, "_check_profile_schema", failed)
+    monkeypatch.setattr(entry, "_serve", lambda: pytest.fail("failed probe must not serve"))
+    assert entry.main() == 1
+    assert capsys.readouterr().out == "ARSLAN_ERROR=data_profile_unavailable\n"
+
+
+def test_real_entry_reports_future_schema_before_key_bootstrap_or_port(tmp_path):
+    import sqlite3
+    import subprocess
+
+    # This is the actual entry script in a fresh process, not a frozen binary.
+    home = tmp_path / "isolated-home"
+    relative = ("Library/Application Support/Arslan" if sys.platform == "darwin"
+                else "AppData/Roaming/Arslan" if sys.platform == "win32" else ".local/share/Arslan")
+    profile = home / relative
+    profile.mkdir(parents=True)
+    database = profile / "arslan.db"
+    with sqlite3.connect(database) as connection:
+        connection.executescript("CREATE TABLE schema_version(version TEXT); "
+                                 "INSERT INTO schema_version VALUES ('9999')")
+    original = database.read_bytes()
+    result = subprocess.run([sys.executable, str(_ENTRY)], cwd=_ENTRY.parents[1],
+        env={"HOME": str(home), "USERPROFILE": str(home),
+             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+             "PYTHONPATH": str(_ENTRY.parents[1]), "PYTHONDONTWRITEBYTECODE": "1"},
+        text=True, capture_output=True, timeout=15)
+    assert result.returncode == 1
+    assert result.stdout == "ARSLAN_ERROR=database_schema_unsupported\n"
+    assert not (home / ".arslan").exists()
+    assert not (profile / "api_token").exists()
+    assert database.read_bytes() == original
+
+
+def test_busy_profile_never_announces_port_or_starts_server(entry, monkeypatch, capsys):
+    from server import config
+    from server.services.data_profile_lock import hold
+
+    monkeypatch.setattr(entry, "_serve", lambda: pytest.fail("busy profile must not serve"))
+    with hold(pathlib.Path(config.settings.db_path)):
+        assert entry.main() == 1
+    assert capsys.readouterr().out == "ARSLAN_ERROR=data_profile_in_use\n"
+
+
+def test_pending_activation_refuses_startup_before_recreating_profile(entry, monkeypatch, capsys, tmp_path):
+    from dataclasses import replace
+    from server import config
+    from server.services.data_profile_lock import activation_record_path
+
+    database = tmp_path / "temporarily-absent" / "arslan.db"
+    monkeypatch.setattr(config, "settings", replace(config.settings, db_path=str(database)))
+    monkeypatch.setenv("ARSLAN_DB_PATH", str(database))
+    record = activation_record_path(database)
+    record.write_text("pending record presence is enough to refuse boot")
+    monkeypatch.setattr(entry, "_serve", lambda: pytest.fail("pending activation must not serve"))
+    assert entry.main() == 1
+    assert capsys.readouterr().out == "ARSLAN_ERROR=data_profile_recovery_required\n"
+    assert not database.parent.exists()
+    assert record.read_text() == "pending record presence is enough to refuse boot"
+
+
+@pytest.mark.parametrize("error", [ValueError("private diagnostic"), OSError("private path"),
+                                  OSError("data_profile_recovery_required")])
+def test_profile_lock_failures_do_not_expose_untrusted_diagnostics(entry, monkeypatch, capsys, error):
+    from server.services import data_profile_lock
+
+    def refuse(database):
+        raise error
+
+    monkeypatch.setattr(data_profile_lock, "hold", refuse)
+    monkeypatch.setattr(entry, "_serve", lambda: pytest.fail("unavailable profile must not serve"))
+    assert entry.main() == 1
+    assert capsys.readouterr().out == "ARSLAN_ERROR=data_profile_unavailable\n"
+
+
+@pytest.mark.parametrize("reason", ["pending", "busy"])
+def test_refused_fresh_process_does_not_bootstrap_secret(tmp_path, reason):
+    from contextlib import nullcontext
+    import subprocess
+    from server.services.data_profile_lock import activation_record_path, hold
+
+    home = tmp_path / "home"
+    home.mkdir()
+    if sys.platform == "darwin":
+        database = home / "Library/Application Support/Arslan/arslan.db"
+    elif sys.platform == "win32":
+        pytest.skip("profile lock is POSIX-only")
+    else:
+        database = home / ".local/share/Arslan/arslan.db"
+    database.parent.parent.mkdir(parents=True)
+    record = activation_record_path(database)
+    if reason == "pending":
+        record.write_text("synthetic pending operation")
+    code = (
+        "import importlib.util,sys; "
+        f"s=importlib.util.spec_from_file_location('entry',{str(_ENTRY)!r}); "
+        "m=importlib.util.module_from_spec(s); s.loader.exec_module(m); "
+        "m._serve=lambda: (_ for _ in ()).throw(AssertionError('must not serve')); "
+        "assert 'server.config' not in sys.modules; "
+        "assert m.main()==1; assert 'server.config' not in sys.modules"
+    )
+    with hold(database) if reason == "busy" else nullcontext():
+        result = subprocess.run([sys.executable, "-c", code], cwd=_ENTRY.parents[1],
+                                env={"PATH": os.environ["PATH"], "HOME": str(home),
+                                     "ARSLAN_DB_PATH": str(database), "ARSLAN_DATA_DIR": str(database.parent)},
+                                capture_output=True, timeout=10)
+    assert result.returncode == 0, result.stderr.decode()
+    expected = "data_profile_in_use" if reason == "busy" else "data_profile_recovery_required"
+    assert result.stdout == f"ARSLAN_ERROR={expected}\n".encode()
+    assert not (home / ".arslan").exists()
+    assert not database.exists()
+    if reason == "pending":
+        assert not database.parent.exists()
+        assert record.read_text() == "synthetic pending operation"
 
 
 def test_the_entry_script_exists_where_the_pyinstaller_spec_expects_it():
     """Pre-assertion (class 0): everything below is vacuous if this path moved."""
     assert _ENTRY.is_file(), f"{_ENTRY} is missing — the .spec references it by path"
+
+
+def test_mcp_collection_excludes_only_the_optional_developer_cli():
+    import ast
+
+    tree = ast.parse(_ENTRY.with_name("arslan-server.spec").read_text())
+    call = next(node for node in ast.walk(tree) if isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name) and node.func.id == "collect_submodules"
+                and node.args and isinstance(node.args[0], ast.Constant) and node.args[0].value == "mcp")
+    predicate = next(keyword.value for keyword in call.keywords if keyword.arg == "filter")
+    include = eval(compile(ast.Expression(predicate), "<packaging MCP filter>", "eval"))
+    assert not include("mcp.cli")
+    assert not include("mcp.cli.cli")
+    for name in ("mcp", "mcp.client", "mcp.client.stdio", "mcp.client.auth", "mcp.server.fastmcp", "mcp.shared.auth"):
+        assert include(name), name
 
 
 def test_a_developer_data_dir_override_is_stripped(entry, monkeypatch, tmp_path):
@@ -143,9 +387,9 @@ def test_the_port_is_announced_before_the_blocking_server_call(entry, monkeypatc
 
     import uvicorn
 
-    monkeypatch.setattr(
-        uvicorn, "run", lambda *a, **kw: events.append("served") or captured.update(kw)
-    )
+    from types import SimpleNamespace
+    monkeypatch.setattr(uvicorn, "Server", lambda config: SimpleNamespace(
+        run=lambda: events.append("served") or captured.update(vars(config))))
     monkeypatch.setattr(
         "builtins.print",
         lambda *a, **kw: events.append(f"printed:{a[0]}|flush={kw.get('flush')}"),
@@ -171,7 +415,8 @@ def test_the_server_binds_loopback_only(entry, monkeypatch):
     captured: dict = {}
     import uvicorn
 
-    monkeypatch.setattr(uvicorn, "run", lambda *a, **kw: captured.update(kw))
+    from types import SimpleNamespace
+    monkeypatch.setattr(uvicorn, "Server", lambda config: SimpleNamespace(run=lambda: captured.update(vars(config))))
     monkeypatch.setattr("builtins.print", lambda *a, **kw: None)
     monkeypatch.setenv("ARSLAN_PORT", "54321")
 
@@ -214,7 +459,8 @@ def test_main_routes_through_the_port_chooser_rather_than_hardcoding_one(entry, 
     printed: list[str] = []
     import uvicorn
 
-    monkeypatch.setattr(uvicorn, "run", lambda *a, **kw: captured.update(kw))
+    from types import SimpleNamespace
+    monkeypatch.setattr(uvicorn, "Server", lambda config: SimpleNamespace(run=lambda: captured.update(vars(config))))
     monkeypatch.setattr("builtins.print", lambda *a, **kw: printed.append(a[0]))
 
     entry.main()
@@ -239,7 +485,8 @@ def test_an_explicit_port_env_var_wins_over_the_os_assigned_one(entry, monkeypat
     captured: dict = {}
     import uvicorn
 
-    monkeypatch.setattr(uvicorn, "run", lambda *a, **kw: captured.update(kw))
+    from types import SimpleNamespace
+    monkeypatch.setattr(uvicorn, "Server", lambda config: SimpleNamespace(run=lambda: captured.update(vars(config))))
     monkeypatch.setattr("builtins.print", lambda *a, **kw: None)
 
     entry.main()
@@ -285,6 +532,20 @@ def test_selftest_covers_the_module_that_a_bad_excludes_entry_broke(entry):
     assert "server.services.deck_pptx" in src
 
 
+def test_webpage_resource_probe_extracts_without_network(entry):
+    probe = dict((name, check) for name, check, _ in entry._lazy_resource_probes())["webpage extraction data"]
+    ok, detail = probe()
+    assert ok, detail
+
+
+def test_webpage_resource_probe_rejects_missing_stoplists(entry, monkeypatch):
+    import justext
+
+    monkeypatch.setattr(justext, "get_stoplists", lambda: frozenset())
+    probe = dict((name, check) for name, check, _ in entry._lazy_resource_probes())["webpage extraction data"]
+    assert probe()[0] is False
+
+
 def test_the_lifeline_fires_on_eof_and_only_on_eof(entry):
     """The sidecar must outlive normal input and die on EOF — both halves.
 
@@ -311,6 +572,43 @@ def test_the_lifeline_fires_on_eof_and_only_on_eof(entry):
     fired.clear()
     entry._watch_stdin(Broken(), on_eof=lambda: fired.append("exit"))
     assert fired == ["exit"]
+
+
+def test_exact_parent_shutdown_request_does_not_trigger_abrupt_eof(entry):
+    import io
+    events = []
+    entry._watch_stdin(io.StringIO("ARSLAN_SHUTDOWN\n"),
+                      on_eof=lambda: events.append("abrupt"), on_shutdown=lambda: events.append("graceful"))
+    assert events == ["graceful"]
+    for line in ("ARSLAN_SHUTDOWN extra\n", "ARSLAN_SHUTDOWN", "ARSLAN_SHUTDOWN\r\n"):
+        events.clear()
+        entry._watch_stdin(io.StringIO(line), on_eof=lambda: events.append("abrupt"),
+                          on_shutdown=lambda: events.append("graceful"))
+        assert events == ["abrupt"]
+
+
+@pytest.mark.parametrize("early,failed,complete,expected", [
+    (False, False, True, 0), (True, False, True, 1), (False, True, True, 1), (False, False, False, 1),
+])
+def test_requested_shutdown_requires_completed_lifespan(entry, monkeypatch, capsys, early, failed, complete, expected):
+    from types import SimpleNamespace
+    import uvicorn
+    from server.main import app
+    monkeypatch.setattr(app.state, "shutdown_complete", complete, raising=False)
+    monkeypatch.setenv("ARSLAN_PORT", "54321")
+    callback = []
+    monkeypatch.setattr(entry, "_die_when_the_shell_does", lambda on_shutdown: callback.append(on_shutdown))
+    server = SimpleNamespace(started=not early, should_exit=False,
+                             lifespan=SimpleNamespace(shutdown_failed=failed))
+    def run():
+        callback[0]()
+        server.started = True
+    server.run = run
+    monkeypatch.setattr(uvicorn, "Server", lambda config: server)
+    assert entry._serve() == expected
+    assert server.should_exit
+    output = capsys.readouterr().out
+    assert ("ARSLAN_STOPPED=1\n" in output) is (expected == 0)
 
 
 def test_the_lifeline_is_inert_outside_a_frozen_build(entry, monkeypatch):

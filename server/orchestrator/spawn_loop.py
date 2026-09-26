@@ -8,10 +8,8 @@ from server.orchestrator import tool_loop
 from server.orchestrator.tool_caller import ToolCaller
 from server.registry.service import wired_tools_for_spawn
 
-# Re-export so existing imports keep working.
-MAX_TOOL_CALLS = tool_loop.MAX_TOOL_CALLS
+# The historical spawn entry remains a thin compatibility adapter.
 TOOL_TIMEOUT_S = tool_loop.TOOL_TIMEOUT_S
-_PROTOCOL = tool_loop._PROTOCOL
 
 
 async def run(

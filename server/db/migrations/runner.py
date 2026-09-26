@@ -67,6 +67,13 @@ from .versions._0043_provider_test_verdict import upgrade_sync as _m0043
 from .versions._0044_provider_verdict_repair import upgrade_sync as _m0044
 from .versions._0045_run_execution_budget import upgrade_sync as _m0045
 from .versions._0046_recipes import upgrade_sync as _m0046
+from .versions._0047_companion_memory import upgrade_sync as _m0047
+from .versions._0048_memory_proposals_v2 import upgrade_sync as _m0048
+from .versions._0049_conversation_context import upgrade_sync as _m0049
+from .versions._0050_run_privacy import upgrade_sync as _m0050
+from .versions._0051_companion_tasks import upgrade_sync as _m0051
+from .versions._0052_task_workers import upgrade_sync as _m0052
+from .versions._0053_action_grants import upgrade_sync as _m0053
 
 # VERBATIM order from the old main.py boot chain — do NOT reorder/add/drop.
 MIGRATIONS: list[tuple[str, Callable]] = [
@@ -111,6 +118,13 @@ MIGRATIONS: list[tuple[str, Callable]] = [
     ("0044", _m0044),
     ("0045", _m0045),
     ("0046", _m0046),
+    ("0047", _m0047),
+    ("0048", _m0048),
+    ("0049", _m0049),
+    ("0050", _m0050),
+    ("0051", _m0051),
+    ("0052", _m0052),
+    ("0053", _m0053),
 ]
 
 
@@ -129,10 +143,34 @@ def head() -> str:
     return MIGRATIONS[-1][0]
 
 
+def assert_supported_schema(conn) -> None:
+    """Read-only fence before schema creation, migration or crypto boot.
+
+    An absent ledger is a supported legacy/fresh profile. An unknown migration
+    belongs to a newer or different application, not permission to mutate it.
+    Do not echo untrusted ledger values (or profile paths) into the error.
+    """
+    try:
+        inspector = sa.inspect(conn)
+        if "schema_version" not in inspector.get_table_names():
+            if "schema_version" in inspector.get_view_names():
+                raise RuntimeError("database_schema_unsupported")
+            return
+        known = {version for version, _ in MIGRATIONS}
+        rows = conn.execute(sa.text("SELECT version FROM schema_version LIMIT :limit"),
+                            {"limit": len(known) + 1}).scalars().all()
+        if len(rows) > len(known) or any(not isinstance(version, str) or version not in known for version in rows):
+            raise RuntimeError("database_schema_unsupported")
+    except sa.exc.SQLAlchemyError:
+        raise RuntimeError("database_schema_unsupported") from None
+
+
 def apply_pending(conn) -> list[str]:
     """Idempotent: apply every registered migration whose id isn't recorded, in
     order, recording each. Runs under the caller's transaction (matches boot's
     single ``begin()``)."""
+    assert_supported_schema(conn)
+    prepare_upgrade_backup(conn)
     applied = current_versions(conn)
     done: list[str] = []
     for vid, fn in MIGRATIONS:
@@ -143,6 +181,30 @@ def apply_pending(conn) -> list[str]:
                      {"v": vid, "t": datetime.utcnow().isoformat()})
         done.append(vid)
     return done
+
+
+def prepare_upgrade_backup(conn) -> None:
+    """Called before create_all AND defensively by apply_pending. Read-only first.
+
+    Connection-scoped marker covers a single boot connection (fresh databases
+    must not become apparent upgrades after create_all). No provider/config read.
+    """
+    assert_supported_schema(conn)
+    tables = sa.inspect(conn).get_table_names()
+    applied = (set(conn.execute(sa.text("SELECT version FROM schema_version")).scalars())
+               if "schema_version" in tables else set())
+    marker = (frozenset(applied), head())
+    if conn.info.get("upgrade_backup_prepared") == marker:
+        return
+    pending = any(vid not in applied for vid, _ in MIGRATIONS)
+    if tables and pending and conn.dialect.name == "sqlite":
+        from pathlib import Path
+        from server.services import upgrade_backup
+        rows = conn.execute(sa.text("PRAGMA database_list")).all()
+        filename = next((row[2] for row in rows if row[1] == "main"), "")
+        if filename and Path(filename).is_file():
+            upgrade_backup.create(Path(filename), max(applied, default="legacy"), head())
+    conn.info["upgrade_backup_prepared"] = marker
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -185,6 +247,8 @@ def main(argv: list[str] | None = None) -> int:
     engine = create_engine(f"sqlite:///{db_path}")
     try:
         with engine.begin() as conn:
+            assert_supported_schema(conn)
+            prepare_upgrade_backup(conn)
             Base.metadata.create_all(conn)
             pending = [vid for vid, _ in MIGRATIONS if vid not in current_versions(conn)]
             print(f"db:      {db_path}")

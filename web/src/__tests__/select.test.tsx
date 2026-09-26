@@ -228,6 +228,30 @@ describe("Select (custom themed dropdown)", () => {
 
   // ── Props passthrough ──────────────────────────────────────────────────────
 
+  it("supports arrow keys after a pointer activation that does not focus the button", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<Select value="tavily" onChange={onChange} options={OPTIONS} />);
+    // WebKit/macOS pointer activation need not focus buttons. fireEvent.click
+    // deliberately does not add user-event's synthetic browser focus behavior.
+    fireEvent.click(screen.getByRole("button"));
+    expect(screen.getByRole("button")).toHaveFocus();
+    await user.keyboard("{ArrowDown}{Enter}");
+    expect(onChange).toHaveBeenCalledExactlyOnceWith("serpapi");
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  });
+
+  it("Tab dismisses without committing and moves focus to the next control", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<><Select value="tavily" onChange={onChange} options={OPTIONS} /><button>Next</button></>);
+    screen.getByRole("button", { name: "Tavily" }).focus();
+    await user.keyboard("{Enter}{ArrowDown}{Tab}");
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Next" })).toHaveFocus();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it("passes id to the trigger button", () => {
     render(
       <Select value="tavily" onChange={vi.fn()} options={OPTIONS} id="my-select" />

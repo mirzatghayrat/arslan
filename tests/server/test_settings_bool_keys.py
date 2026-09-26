@@ -44,7 +44,7 @@ def test_the_two_definitions_of_every_bool_default_agree():
 
 
 @pytest.mark.parametrize("key", ["curation_enabled", "distill_on_session_end",
-                                 "mcp_server_enabled"])
+                                 "mcp_server_enabled", "first_run_seen"])
 async def test_bool_key_round_trips_through_the_api(client, key):
     """PUT then GET must return what was stored, not the schema default — in BOTH
     directions, since a one-directional test passes whenever the value happens to match
@@ -86,3 +86,11 @@ async def test_curation_stays_opt_in_this_round(client):
     historical backfill over every undistilled conversation ever recorded."""
     body = (await client.get("/api/v1/settings", headers=AUTH)).json()
     assert body["curation_enabled"] is False
+
+
+async def test_onboarding_seen_survives_a_new_database_session(client):
+    async with client.db_maker() as writer:
+        await settings_service.update_settings(writer, {"first_run_seen": True})
+    async with client.db_maker() as reader:
+        assert await settings_service.first_run_seen(reader) is True
+        assert (await settings_service.get_settings(reader))["first_run_seen"] is True

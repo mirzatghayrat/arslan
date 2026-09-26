@@ -368,6 +368,16 @@ describe("RunReplay", () => {
     });
   }
 
+  it("stops polling a private recorded run without claiming scoring is pending", async () => {
+    vi.mocked(api.getRun).mockResolvedValue({ ...recording,
+      run: { ...recording.run, no_learning: true } });
+    render(<RunReplay runId={7} onClose={() => {}} pollMs={10} />);
+    await screen.findByText("tasks.noAutomaticScore");
+    expect(screen.queryByText("replay.scoring")).toBeNull();
+    await new Promise(resolve => setTimeout(resolve, 60));
+    expect(api.getRun).toHaveBeenCalledTimes(1);
+  });
+
   // S3-M1 Task 7: a cancelled/interrupted run will never be scored — the eval
   // section must show the interrupted badge, not an eternal "评分中…". (i18n is
   // NOT mocked here, so t() falls back to the key text `working.stalled`.)

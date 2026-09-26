@@ -1,0 +1,264 @@
+"""Shared format declaration and bounded, non-executing text/OOXML readers."""
+from __future__ import annotations
+
+import csv
+import io
+import json
+from pathlib import Path
+import re
+import zipfile
+import zlib
+from xml.etree import ElementTree as ET
+
+from server.services.media_tools import find_media_tool
+
+_SERVER = Path(__file__).resolve().parent.parent
+_REGISTRY_PATH = _SERVER / "resources/input_formats.json"
+if not _REGISTRY_PATH.exists():
+    _REGISTRY_PATH = _SERVER.parent / "web/src/lib/input_formats.json"
+REGISTRY = json.loads(_REGISTRY_PATH.read_text())
+MAX_TEXT = 200_000
+NS = {"s": "http://schemas.openxmlformats.org/spreadsheetml/2006/main",
+      "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "a": "http://schemas.openxmlformats.org/drawingml/2006/main"}
+
+
+class InputError(ValueError):
+    """Message is a stable localization code, never parser output or file content."""
+
+
+def kind(filename: str) -> str | None:
+    extension = Path(filename).suffix.lower().lstrip(".")
+    return next((key for key, values in REGISTRY.items() if isinstance(values, list) and extension in values), None)
+
+
+def _xml(archive: zipfile.ZipFile, name: str) -> ET.Element:
+    try:
+        info = archive.getinfo(name)
+        if info.file_size > 8 * 1024 * 1024:
+            raise InputError("inputs.limit")
+        raw = archive.read(info).decode("utf-8-sig")
+        if "<!DOCTYPE" in raw.upper() or "<!ENTITY" in raw.upper():
+            raise InputError("inputs.invalid")
+        return ET.fromstring(raw)
+    except (KeyError, ET.ParseError, RuntimeError, UnicodeDecodeError) as exc:
+        raise InputError("inputs.invalid") from exc
+
+
+def read_structured(filename: str, data: bytes) -> tuple[str, bool]:
+    """Extract source-addressed values without opening links or evaluating formulas."""
+    if len(data) > REGISTRY["max_bytes"]:
+        raise InputError("inputs.limit")
+    category = kind(filename)
+    if Path(filename).suffix.lower() == ".docx":
+        category = "word"
+    if category == "text":
+        try:
+            text = data.decode("utf-8-sig")
+        except UnicodeDecodeError as exc:
+            raise InputError("inputs.encoding") from exc
+        if "\x00" in text:
+            raise InputError("inputs.encoding")
+        if Path(filename).suffix.lower() == ".csv" and len(text) <= MAX_TEXT:
+            # Logical CSV records are not physical lines (quoted cells may
+            # contain newlines). Supply locators/counts, not inferred headers,
+            # numerical totals or task-specific expected answers.
+            try:
+                reader = csv.reader(io.StringIO(text, newline=""), strict=True)
+                rows = []
+                empty = 0
+                previous_line = 0
+                for number, row in enumerate(reader, 1):
+                    empty += any(value == "" for value in row)
+                    rows.append(f"[CSV record {number}; lines {previous_line + 1}-{reader.line_num}] "
+                                + json.dumps(row, ensure_ascii=False))
+                    previous_line = reader.line_num
+                heading = (f"CSV logical records: {len(rows)} (includes any header; header meaning is not inferred). "
+                           f"Records containing empty fields: {empty}. Empty fields are unknown, not zero.\n")
+                rendered = heading + "\n".join(rows)
+                return rendered[:MAX_TEXT], len(rendered) > MAX_TEXT
+            except csv.Error:
+                # Preserve previously supported plain text rather than guess
+                # a dialect or silently repair malformed source material.
+                pass
+        return text[:MAX_TEXT], len(text) > MAX_TEXT
+    if category not in {"spreadsheet", "presentation", "word"}:
+        raise InputError("inputs.unsupported")
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(data))
+        with archive:
+            entries = archive.infolist()
+            if len(entries) > 3000 or sum(item.file_size for item in entries) > 64 * 1024 * 1024:
+                raise InputError("inputs.limit")
+            if len({item.filename for item in entries}) != len(entries) or any(item.flag_bits & 1 for item in entries):
+                raise InputError("inputs.invalid")
+            lines: list[str] = []
+            total = 0
+            truncated = False
+
+            def add(locator: str, value: str):
+                nonlocal total, truncated
+                line = f"[{locator}] {value}"
+                if total + len(line) + 1 > MAX_TEXT or len(lines) >= 50_000:
+                    truncated = True
+                    return
+                lines.append(line)
+                total += len(line) + 1
+
+            if category == "word":
+                name = "word/document.xml"
+                body = _xml(archive, name).find("w:body", NS)
+                if body is None:
+                    raise InputError("inputs.invalid")
+                removed_tags = {f"{{{NS['w']}}}del", f"{{{NS['w']}}}moveFrom"}
+                revision_tags = removed_tags | {f"{{{NS['w']}}}ins", f"{{{NS['w']}}}moveTo"}
+                excluded = set()
+                pending = [body]
+                while pending:
+                    node = pending.pop()
+                    if node.tag in removed_tags:
+                        excluded.update(node.iter())
+                    else:
+                        pending.extend(node)
+                if any(node.tag in revision_tags for node in body.iter()):
+                    add(f"{name}#extraction", "Contains tracked revisions: deleted/move-source text excluded; "
+                        "inserted/move-target text included. Text extraction only, not a revision-history comparison.")
+                # Document order includes table-cell paragraphs. These are XML
+                # paragraph positions, not rendered pages or layout claims.
+                for index, paragraph in enumerate(body.iter(f"{{{NS['w']}}}p"), 1):
+                    if truncated:
+                        break
+                    if paragraph in excluded:
+                        continue
+                    parts = []
+
+                    def own_nodes(parent):
+                        pending = list(reversed(parent))
+                        while pending:
+                            child = pending.pop()
+                            # Textbox paragraphs get their own locator below.
+                            if child.tag != f"{{{NS['w']}}}p" and child.tag not in removed_tags:
+                                yield child
+                                pending.extend(reversed(child))
+
+                    for node in own_nodes(paragraph):
+                        if node.tag == f"{{{NS['w']}}}t":
+                            parts.append(node.text or "")
+                        elif node.tag == f"{{{NS['w']}}}tab":
+                            parts.append("\t")
+                        elif node.tag in {f"{{{NS['w']}}}br", f"{{{NS['w']}}}cr"}:
+                            parts.append("\n")
+                    value = "".join(parts)
+                    if value.strip():
+                        add(f"{name}#paragraph={index}", value)
+                    if truncated:
+                        break
+            elif category == "spreadsheet":
+                strings: list[str] = []
+                if "xl/sharedStrings.xml" in archive.namelist():
+                    strings = ["".join(node.itertext()) for node in _xml(archive, "xl/sharedStrings.xml").findall("s:si", NS)]
+                sheets = sorted(name for name in archive.namelist() if re.fullmatch(r"xl/worksheets/sheet\d+\.xml", name))
+                if not sheets or len(sheets) > 100:
+                    raise InputError("inputs.limit" if sheets else "inputs.invalid")
+                for name in sheets:
+                    for cell in _xml(archive, name).findall(".//s:sheetData/s:row/s:c", NS):
+                        address = cell.get("r", "?")
+                        if not re.fullmatch(r"[A-Z]{1,3}[1-9]\d{0,6}", address):
+                            raise InputError("inputs.invalid")
+                        value = cell.findtext("s:v", "", NS)
+                        if cell.get("t") == "s":
+                            try:
+                                index = int(value)
+                                if index < 0:
+                                    raise ValueError
+                                value = strings[index]
+                            except (ValueError, IndexError) as exc:
+                                raise InputError("inputs.invalid") from exc
+                        elif cell.get("t") == "inlineStr":
+                            value = "".join(cell.find("s:is", NS).itertext()) if cell.find("s:is", NS) is not None else ""
+                        formula = cell.findtext("s:f", default=None, namespaces=NS)
+                        # Cached values may be stale. The model gets this distinction explicitly.
+                        if formula is not None:
+                            value = json.dumps({"formula": formula, "cached_value_unverified": value}, ensure_ascii=False)
+                        if value:
+                            add(f"{name}!{address}", value)
+                        if truncated:
+                            break
+                    if truncated:
+                        break
+            else:
+                slides = sorted((name for name in archive.namelist() if re.fullmatch(r"ppt/slides/slide\d+\.xml", name)), key=lambda name: int(re.search(r"(\d+)\.xml", name)[1]))
+                if not slides or len(slides) > 500:
+                    raise InputError("inputs.limit" if slides else "inputs.invalid")
+                for name in slides:
+                    for index, paragraph in enumerate(_xml(archive, name).findall(".//a:p", NS), 1):
+                        value = "".join(node.text or "" for node in paragraph.findall(".//a:t", NS))
+                        if value:
+                            add(f"{name}#paragraph={index}", value)
+                        if truncated:
+                            break
+                    if truncated:
+                        break
+            return "\n".join(lines), truncated
+    except (zipfile.BadZipFile, OSError, EOFError, zlib.error) as exc:
+        raise InputError("inputs.invalid") from exc
+
+
+def primary_video_stream(metadata: dict) -> dict:
+    """Choose one actual video stream, never an attached cover image.
+
+    Use the probe's absolute stream index in the decoder too: a video-relative
+    ordinal can silently select a different stream when audio/covers precede it.
+    """
+    streams = metadata.get("streams")
+    if not isinstance(streams, list) or any(not isinstance(s, dict) for s in streams):
+        raise InputError("inputs.invalid")
+    for stream in streams:
+        if stream.get("codec_type") != "video":
+            continue
+        disposition = stream.get("disposition", {})
+        if not isinstance(disposition, dict):
+            raise InputError("inputs.invalid")
+        if disposition.get("attached_pic", 0) != 0:
+            continue
+        index = stream.get("index")
+        if type(index) is not int or index < 0:
+            raise InputError("inputs.invalid")
+        return stream
+    raise InputError("inputs.invalid")
+
+
+def video_metadata(filename: str, data: bytes) -> dict:
+    """Optional local codec probe. No network protocols, model, or transcript."""
+    import os
+    import subprocess
+    import tempfile
+
+    executable = find_media_tool("ffprobe")
+    if not executable:
+        raise InputError("inputs.videoToolMissing")
+    if len(data) > REGISTRY["max_bytes"]:
+        raise InputError("inputs.limit")
+    with tempfile.TemporaryDirectory(prefix="arslan-media-") as folder:
+        source = Path(folder) / ("input" + Path(filename).suffix.lower())
+        source.write_bytes(data)
+        output = Path(folder) / "probe.json"
+        try:
+            with output.open("wb") as stream:
+                result = subprocess.run([executable, "-v", "error", "-protocol_whitelist", "file,pipe",
+                    "-format_whitelist", "mov,matroska,webm", "-show_entries",
+                    "format=duration,size,format_name:stream=index,codec_type,codec_name,width,height,duration,avg_frame_rate,sample_rate,channels:stream_disposition=attached_pic",
+                    "-of", "json", str(source)], stdout=stream, stderr=subprocess.DEVNULL,
+                    timeout=20, cwd=folder, env={"PATH": "/usr/bin:/bin", "HOME": folder, "TMPDIR": folder})
+            if result.returncode or os.path.getsize(output) > 1_000_000:
+                raise InputError("inputs.invalid")
+            metadata = json.loads(output.read_text())
+            if not isinstance(metadata, dict):
+                raise InputError("inputs.invalid")
+            if not isinstance(metadata.get("streams"), list) or len(metadata["streams"]) > 32:
+                raise InputError("inputs.limit")
+            primary_video_stream(metadata)
+            return {"metadata": metadata, "frames": "not_extracted", "transcript": "not_generated",
+                    "visual_understanding": "not_run", "editing": "not_run"}
+        except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError) as exc:
+            raise InputError("inputs.invalid") from exc

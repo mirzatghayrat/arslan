@@ -47,7 +47,7 @@
 |---|---|
 | <img src="docs/assets/icons/users.svg" width="20"><br/>**A persona team you grow** | Arslan is the front door; behind it you build a roster of specialist spawns — equip them with tools, `SKILL.md` skill packs, and MCP servers, then let a two-tier evolution loop refine them over time. |
 | <img src="docs/assets/icons/graduation-cap.svg" width="20"><br/>**Self-evolution with an exam gate** | A spawn's prompt revises itself from its own run history — then replays against the incumbent on held-out past tasks, judged blind with the positions swapped. It has to win **at least 60% of a minimum of 10 held-out pairs**, with **no dimension** (fabrication, identity, completion) **scoring worse** than the incumbent. Pass → a readable diff lands in your inbox. **Nothing takes effect until you press Promote.** |
-| <img src="docs/assets/icons/shield-check.svg" width="20"><br/>**Safe by default, not disclaimed** | Generated code runs network-denied under a kernel-enforced sandbox (macOS seatbelt). A credential-injecting proxy lets sandboxed git talk to the network while raw tokens never enter the sandbox. Where the kernel sandbox is unavailable, it **fails closed**. |
+| <img src="docs/assets/icons/shield-check.svg" width="20"><br/>**Safe by default, not disclaimed** | Generated code runs network-denied in a kernel-enforced macOS sandbox and fails closed when that sandbox is unavailable. Selected network commands use constrained public, unauthenticated transport. Credential-backed repository/account operations remain disabled pending an isolated broker and security acceptance; this is not a completed credential-injection capability. |
 | <img src="docs/assets/icons/brain.svg" width="20"><br/>**A second brain you can browse and correct** | Materials, learnings, a profile, and `[[wiki-link]]` notes — hybrid FTS5 + embedding retrieval, browsable as an Obsidian-style force-directed graph. Entries record when they took effect and what superseded them, and the graph can be **filtered by start time** — a filter over entries that still exist, not a replay of the past. |
 | <img src="docs/assets/icons/badge-check.svg" width="20"><br/>**Honest by design** | Guardrails intercept fabricated "I already did that" claims and keep the agent's self-reporting tied to what actually ran. A **delete** never applies on its own — it lands in an inbox you accept or dismiss. An **overwrite** by the host agent applies at once, but it writes a pointer rather than replacing text: the original entry stays and one click undoes it. Anything a spawn proposes against shared memory goes to the inbox too. |
 | <img src="docs/assets/icons/key-round.svg" width="20"><br/>**Local-first, bring your own key** | Your machine, your API keys, and **zero third-party servers** in the middle. Configure more than one provider and you can turn on routing across them (one model by default); the judge and router roles stay pinned to your primary, so evaluation never drifts to a cheaper model. Ships with 6-language i18n and 6 theme palettes (light + dark). |
@@ -94,6 +94,15 @@ Running from source or with Docker (contributors & self-hosters): see **[docs/QU
 
 ### Reading text in images and scanned PDFs
 
+Mixed PDFs with native-text pages and separate scanned pages retain the native
+text and original page numbers. Pages with drawing content but no text layer
+are read with local OCR, within the page budget; unread pages are identified and
+chat attachments are marked as partially read. Pages containing both native
+text and image resources also receive a bounded local OCR pass. Original text
+is retained separately from whole-page OCR, which may repeat some native text;
+Arslan does not guess which near-matching passages to delete. Local OCR
+availability and language support still depend on the host as described below.
+
 A model with vision reads your pictures directly. When the model you configured
 cannot — many cheaper models cannot — Arslan falls back to the operating
 system's own text recognition. What that gives you depends on the platform, so
@@ -128,7 +137,7 @@ Two honest caveats:
 ## Security posture
 
 <div align="center">
-  <img src="docs/assets/safety.jpg" alt="Safety is built in, not disclaimed — kernel sandbox, credential-injecting proxy, local-first BYOK" width="100%">
+  <a href="docs/companion/W11-security-boundary.md">W11 — Security boundary / verification limits</a>
 </div>
 
 Arslan is **safe by default**:

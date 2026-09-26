@@ -109,7 +109,7 @@ def _skill_key(full_name: str) -> str:
 
 async def create_skill(full_name: str, name: str, category: str, description: str, body: str) -> dict:
     if not skill_suggest.has_required_sections(body or ""):
-        raise ValueError("skill body must contain ## Trigger and ## 决策规则 sections")
+        raise ValueError("skill body must contain ## Trigger and ## Decision Rules sections")
     key = _skill_key(full_name)
     async with db_session.AsyncSessionLocal() as db:
         row = await db.get(SkillPack, key)

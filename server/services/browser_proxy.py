@@ -106,6 +106,6 @@ class PublicTunnel:
             for stream in (upstream, writer):
                 if stream is not None:
                     stream.close()
-                    with suppress(OSError, asyncio.CancelledError):
-                        await stream.wait_closed()
+                    with suppress(OSError, asyncio.CancelledError, TimeoutError):
+                        await asyncio.wait_for(stream.wait_closed(), 1)
             self.tasks.discard(task)

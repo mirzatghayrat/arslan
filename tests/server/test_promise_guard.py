@@ -161,8 +161,8 @@ async def test_correct_falls_back_to_template_when_resynthesis_also_promises(mon
     out = await promise_guard.correct(PROMISING, spawn_name="Deck Master")
     assert out is not None
     assert out["corrected"] is False
-    assert "更正" in out["correction"] and "Deck Master" in out["correction"]
-    assert "并不属实" in out["correction"]
+    assert "Correction" in out["correction"] and "Deck Master" in out["correction"]
+    assert "was not true" in out["correction"]
     assert len(adapter.chat_calls) == 1  # bounded: never more than one
 
 
@@ -177,7 +177,7 @@ async def test_correct_falls_back_to_template_on_llm_error(monkeypatch):
     out = await promise_guard.correct(PROMISING, spawn_name=None)
     assert out is not None
     assert out["corrected"] is False
-    assert "更正" in out["correction"]
+    assert "Correction" in out["correction"]
 
 
 @pytest.mark.asyncio

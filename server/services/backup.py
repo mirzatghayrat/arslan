@@ -7,6 +7,7 @@ SQLite's backup API additionally handles committed WAL content correctly.
 from __future__ import annotations
 
 import hashlib
+from contextlib import closing, nullcontext
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -15,6 +16,7 @@ import sqlite3
 import stat
 import tempfile
 import zipfile
+from typing import BinaryIO
 
 FORMAT = 1
 MAX_FILE = 512 * 1024 * 1024
@@ -28,9 +30,55 @@ def _digest(data: bytes) -> str:
 
 
 def _check_db(path: Path) -> None:
-    with sqlite3.connect(f"{path.as_uri()}?mode=ro", uri=True) as db:
+    # Only our closed, standalone snapshot/staging DBs reach this helper.
+    # A read-only WAL connection can itself leave WAL/SHM files behind. Avoid
+    # creating them, but never ignore an already present pending journal.
+    for suffix in ("-wal", "-shm", "-journal"):
+        journal = path.with_name(path.name + suffix)
+        if journal.exists() or journal.is_symlink():
+            raise ValueError("backup database has pending journals")
+    with closing(sqlite3.connect(f"{path.as_uri()}?mode=ro&immutable=1", uri=True)) as db:
         if db.execute("PRAGMA integrity_check").fetchone() != ("ok",):
             raise ValueError("database integrity check failed")
+
+
+def _restore_language_hint(staged: Path) -> None:
+    """Derive display-only metadata in our private, not-yet-installed stage.
+
+    Never copy an archive hint or import config/key bootstrap. Missing/legacy
+    language settings fall back to English; no other setting is materialized.
+    The stage is owned by this restore call and cannot contain this root member
+    from the archive. An output failure aborts before candidate installation.
+    """
+    from server.locale_codes import normalize
+
+    language = "en"
+    try:
+        with closing(sqlite3.connect(f"{(staged / 'arslan.db').as_uri()}?mode=ro&immutable=1", uri=True)) as db:
+            db.execute("PRAGMA trusted_schema=OFF")
+            db.execute("PRAGMA query_only=ON")
+            remaining = 100
+
+            def bounded_query():
+                nonlocal remaining
+                remaining -= 1
+                return remaining <= 0
+
+            db.set_progress_handler(bounded_query, 1000)
+            if db.execute("SELECT type FROM sqlite_master WHERE name='settings'").fetchone() == ("table",):
+                rows = db.execute("SELECT substr(value,1,65),length(value),typeof(value) "
+                                  "FROM settings WHERE key='language' LIMIT 2").fetchall()
+                if len(rows) == 1 and rows[0][2] == "text" and rows[0][1] <= 64:
+                    language = normalize(rows[0][0])
+    except sqlite3.Error:
+        # This cache is not schema validation or permission to activate a DB.
+        # Existing restore/preflight/trial checks remain independently required.
+        pass
+    with (staged / "ui_language").open("xb") as output:
+        os.chmod(staged / "ui_language", 0o600)
+        output.write((language + "\n").encode("ascii"))
+        output.flush()
+        os.fsync(output.fileno())
 
 
 def create(data_dir: Path, destination: Path, *, db_path: Path | None = None,
@@ -48,8 +96,8 @@ def create(data_dir: Path, destination: Path, *, db_path: Path | None = None,
     total = 0
     with tempfile.TemporaryDirectory(prefix="arslan-backup-") as tmp:
         snapshot = Path(tmp) / "arslan.db"
-        with sqlite3.connect(f"{source_db.as_uri()}?mode=ro", uri=True) as src:
-            with sqlite3.connect(snapshot) as dst:
+        with closing(sqlite3.connect(f"{source_db.as_uri()}?mode=ro", uri=True)) as src:
+            with closing(sqlite3.connect(snapshot)) as dst:
                 src.backup(dst)
         _check_db(snapshot)
         archive = Path(tmp) / "backup.zip"
@@ -86,11 +134,25 @@ def create(data_dir: Path, destination: Path, *, db_path: Path | None = None,
         with destination.open("xb") as output, archive.open("rb") as source:
             os.chmod(destination, 0o600)
             shutil.copyfileobj(source, output)
+            output.flush()
+            os.fsync(output.fileno())
     return {"files": len(manifest["files"]), "bytes": total, "secret_included": False}
 
 
-def restore(archive: Path, destination: Path) -> dict:
-    """Validate everything in staging and atomically install to an absent path."""
+def restore(archive: Path | BinaryIO, destination: Path, *, deletion_manifest: bytes | None = None,
+            current_db_path: Path | None = None) -> dict:
+    """App stopped: reconcile trusted current records, install only to a new path."""
+    from server.services.data_profile_lock import hold
+
+    # A trusted current installation path is supplied by the maintenance caller.
+    # Never terminate the owner or wait until a stale approval becomes usable.
+    with hold(current_db_path) if current_db_path is not None else nullcontext():
+        return _restore_stopped(archive, destination, deletion_manifest=deletion_manifest,
+                                current_db_path=current_db_path)
+
+
+def _restore_stopped(archive: Path | BinaryIO, destination: Path, *, deletion_manifest: bytes | None,
+                     current_db_path: Path | None) -> dict:
     destination = destination.absolute()
     if destination.exists() or destination.is_symlink():
         raise ValueError("restore requires a NEW directory; existing data is never overwritten")
@@ -129,9 +191,32 @@ def restore(archive: Path, destination: Path) -> dict:
                     os.chmod(target, 0o600)
                     handle.write(data)
         _check_db(staged / "arslan.db")
+        from sqlalchemy import create_engine
+        from server.services.memory_restore import mark_restored_sync
+        engine = create_engine(f"sqlite:///{staged / 'arslan.db'}")
+        try:
+            with engine.begin() as connection:
+                review = mark_restored_sync(connection)
+                reconciliation = {"applied": False, "reason": "no_deletion_manifest"}
+                selection = {"selected_source": "imported_manifest" if deletion_manifest is not None else "none"}
+                if current_db_path is not None:
+                    from server.services.memory_deletion_ledger import select_for_restore
+                    deletion_manifest, selection = select_for_restore(current_db_path, deletion_manifest)
+                if deletion_manifest is not None:
+                    from server.services.memory_deletion_manifest import reconcile_staged_sync
+                    reconciliation = reconcile_staged_sync(connection, deletion_manifest)
+        finally:
+            engine.dispose()
+        _check_db(staged / "arslan.db")
         # Destination must remain absent. Never merge into or replace live data.
+        _restore_language_hint(staged)
         if destination.exists() or destination.is_symlink():
             raise ValueError("restore destination appeared during validation")
-        os.rename(staged, destination)
+        from server.services.atomic_install import install_directory
+        install_directory(staged, destination)
     return {"files": len(expected), "secret_included": False,
-            "next_step": "Keep the app stopped; configure the original secret and restored data path before boot."}
+            "memory_review": review,
+            "deletion_reconciliation": reconciliation,
+            "deletion_record_selection": selection,
+            "next_step": "Keep the app stopped; configure the original secret and restored data path before boot. "
+                         "Review restored memories, projects and paused schedules before using them."}

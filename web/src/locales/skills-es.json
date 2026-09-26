@@ -1,0 +1,222 @@
+{
+  "skill-creator": {
+    "name": "Creación de habilidades",
+    "description": "Convierte un método reutilizable en un SKILL.md de alta calidad."
+  },
+  "writing-skills": {
+    "name": "Validación de habilidades",
+    "description": "Prueba la situación inicial, escribe la habilidad y corrige sus lagunas antes de aceptarla."
+  },
+  "brainstorming": {
+    "name": "Exploración de ideas",
+    "description": "Desarrolla una idea hasta el diseño, con una pregunta cada vez y aprobación antes de implementar."
+  },
+  "receiving-code-review": {
+    "name": "Evaluación de revisiones",
+    "description": "Verifica técnicamente los comentarios de revisión antes de aplicar cambios."
+  },
+  "resolving-merge-conflicts": {
+    "name": "Resolución de conflictos",
+    "description": "Investiga la intención de ambas partes, concilia los conflictos, verifica y completa la fusión o el rebase."
+  },
+  "domain-modeling": {
+    "name": "Modelado del dominio",
+    "description": "Mantén un glosario común en CONTEXT.md y decisiones de arquitectura breves."
+  },
+  "sector-overview": {
+    "name": "Panorama sectorial",
+    "description": "Investiga tamaño, crecimiento, estructura, cadenas de valor, motores, competencia y valoración del mercado."
+  },
+  "competitive-analysis": {
+    "name": "Análisis competitivo",
+    "description": "Compara indicadores, empresas, posicionamiento, ventajas e implicaciones estratégicas."
+  },
+  "comps-analysis": {
+    "name": "Análisis de comparables",
+    "description": "Selecciona empresas y múltiplos de valoración coherentes, señalando los valores atípicos."
+  },
+  "idea-generation": {
+    "name": "Ideas de inversión",
+    "description": "Filtra estilos y temas de inversión y prepara candidatos con argumentos y riesgos."
+  },
+  "deck-authoring": {
+    "name": "Narrativa de presentaciones",
+    "description": "Crea una presentación HTML con una idea por diapositiva; PPTX editable mediante render_deck si se solicita expresamente."
+  },
+  "internal-comms": {
+    "name": "Comunicación interna",
+    "description": "Redacta actualizaciones, boletines, preguntas frecuentes e informes de estado o incidentes con los formatos de la empresa."
+  },
+  "brand-guidelines": {
+    "name": "Directrices de marca",
+    "description": "Aplica colores y tipografía coherentes, con la marca de Anthropic como referencia."
+  },
+  "frontend-design": {
+    "name": "Diseño visual de interfaces",
+    "description": "Diseña paletas, tipografía y composición distintivas con decisiones creativas justificadas."
+  },
+  "theme-factory": {
+    "name": "Creación de temas",
+    "description": "Aplica temas de color y fuentes predefinidos o crea uno nuevo."
+  },
+  "canvas-design": {
+    "name": "Arte visual estático",
+    "description": "Crea conceptos originales de carteles o arte con aproximadamente un 90 % visual y un 10 % de texto."
+  },
+  "algorithmic-art": {
+    "name": "Arte algorítmico",
+    "description": "Crea arte generativo en p5.js con aleatoriedad reproducible mediante semillas."
+  },
+  "claude-code": {
+    "name": "Claude Code",
+    "description": "Delega programación a la herramienta de línea de comandos Claude Code."
+  },
+  "codex": {
+    "name": "OpenAI Codex",
+    "description": "Delega programación a la herramienta de línea de comandos OpenAI Codex."
+  },
+  "opencode": {
+    "name": "OpenCode",
+    "description": "Delega programación a la herramienta de línea de comandos OpenCode."
+  },
+  "architecture-diagram": {
+    "name": "Diagramas de arquitectura",
+    "description": "Crea diagramas de arquitectura SVG en HTML."
+  },
+  "ascii-art": {
+    "name": "Arte ASCII",
+    "description": "Crea ilustraciones con caracteres ASCII."
+  },
+  "baoyu-infographic": {
+    "name": "Infografías",
+    "description": "Diseña infografías con 21 composiciones y 21 estilos."
+  },
+  "claude-design": {
+    "name": "Diseño HTML independiente",
+    "description": "Crea piezas HTML puntuales, como páginas de destino y presentaciones."
+  },
+  "design-md": {
+    "name": "Especificaciones de diseño",
+    "description": "Redacta y valida especificaciones de tokens de diseño en DESIGN.md."
+  },
+  "designed-html-report": {
+    "name": "Informes HTML diseñados",
+    "description": "Crea informes, resúmenes o propuestas extensos en un único HTML con sistema de diseño, no en Markdown simple."
+  },
+  "excalidraw": {
+    "name": "Diagramas Excalidraw",
+    "description": "Crea diagramas de aspecto manual en JSON de Excalidraw."
+  },
+  "humanizer": {
+    "name": "Escritura natural",
+    "description": "Elimina expresiones artificiales repetitivas y desarrolla una voz natural."
+  },
+  "p5js": {
+    "name": "Bocetos p5.js",
+    "description": "Crea bocetos visuales con p5.js."
+  },
+  "pretext": {
+    "name": "Demostraciones tipográficas",
+    "description": "Crea demostraciones HTML de composición de texto sin DOM y tipografía cinética."
+  },
+  "sketch": {
+    "name": "Maquetas rápidas de interfaz",
+    "description": "Explora dos o tres variantes desechables de maquetas HTML."
+  },
+  "songwriting-and-ai-music": {
+    "name": "Canciones y prompts musicales",
+    "description": "Escribe canciones y prepara prompts para Suno."
+  },
+  "github-auth": {
+    "name": "Autenticación de GitHub",
+    "description": "Configura la autenticación de GitHub; implica credenciales."
+  },
+  "github-code-review": {
+    "name": "Revisión de código en GitHub",
+    "description": "Revisa diferencias de solicitudes de incorporación; publicar comentarios requiere herramientas privilegiadas de Arslan."
+  },
+  "github-issues": {
+    "name": "Incidencias de GitHub",
+    "description": "Crea y clasifica incidencias; escribe en el repositorio."
+  },
+  "github-pr-workflow": {
+    "name": "Solicitudes de GitHub",
+    "description": "Gestiona el ciclo de las solicitudes de incorporación; modifica el estado del repositorio."
+  },
+  "github-repo-management": {
+    "name": "Repositorios de GitHub",
+    "description": "Clona, bifurca y gestiona versiones; modifica el estado del repositorio."
+  },
+  "youtube-content": {
+    "name": "Resúmenes de YouTube",
+    "description": "Convierte transcripciones de YouTube en resúmenes e hilos."
+  },
+  "arxiv": {
+    "name": "Investigación en arXiv",
+    "description": "Busca artículos de investigación en arXiv."
+  },
+  "blogwatcher": {
+    "name": "Seguimiento de blogs y fuentes",
+    "description": "Supervisa blogs y fuentes RSS."
+  },
+  "llm-wiki": {
+    "name": "Base de conocimiento enlazada",
+    "description": "Construye y consulta una base de conocimiento Markdown interconectada."
+  },
+  "research-paper-writing": {
+    "name": "Redacción científica",
+    "description": "Redacta artículos de aprendizaje automático para NeurIPS, ICML y otros encuentros."
+  },
+  "verification-before-completion": {
+    "name": "Verificación de finalización",
+    "description": "Ejecuta comprobaciones y lee los resultados antes de declarar que algo está terminado, corregido o aprobado."
+  },
+  "finishing-a-development-branch": {
+    "name": "Cierre de rama de desarrollo",
+    "description": "Verifica las pruebas y elige fusionar, abrir una solicitud, conservar o descartar; ejecuta la decisión y limpia el árbol de trabajo."
+  },
+  "mcp-builder": {
+    "name": "Diseño de servidores MCP",
+    "description": "Diseña herramientas MCP, nombres, mensajes de error y evaluaciones."
+  },
+  "webapp-testing": {
+    "name": "Pruebas de aplicaciones web",
+    "description": "Usa Playwright para inspeccionar antes de actuar y espera inactividad de red cuando corresponda."
+  },
+  "codebase-audit": {
+    "name": "Auditoría de código",
+    "description": "Inspecciona el código y clasifica riesgos; solo lectura y planificación."
+  },
+  "node-inspect-debugger": {
+    "name": "Depuración de Node.js",
+    "description": "Depura Node.js mediante CDP; se conecta a procesos y ejecuta código."
+  },
+  "plan": {
+    "name": "Planificación",
+    "description": "Redacta un plan Markdown sin ejecutarlo."
+  },
+  "python-debugpy": {
+    "name": "Depuración de Python",
+    "description": "Depura Python con debugpy; se conecta a procesos y ejecuta código."
+  },
+  "requesting-code-review": {
+    "name": "Solicitud de revisión de código",
+    "description": "Prepara un contexto claro del trabajo y prioriza las acciones según su gravedad."
+  },
+  "simplify-code": {
+    "name": "Simplificación de código",
+    "description": "Usa tres agentes para limpiar código; modifica archivos fuente."
+  },
+  "spike": {
+    "name": "Prototipos exploratorios",
+    "description": "Ejecuta experimentos desechables para resolver dudas técnicas."
+  },
+  "systematic-debugging": {
+    "name": "Depuración sistemática",
+    "description": "Analiza las causas raíz en cuatro fases; solo análisis."
+  },
+  "test-driven-development": {
+    "name": "Desarrollo guiado por pruebas",
+    "description": "Desarrolla mediante pruebas; ejecuta pruebas y escribe código."
+  }
+}

@@ -21,6 +21,7 @@ import AdvancedSection from './settings/AdvancedSection';
 import type { SettingsSectionId } from './settings/sectionRegistry';
 import { useDebouncedSettingsSave } from '../hooks/useDebouncedSettingsSave';
 import AutomationSection from './settings/AutomationSection';
+import { normalizeLanguage } from '../lib/languages';
 
 interface SettingsScreenProps {
   settings: AppSettings;
@@ -44,6 +45,14 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
   const { t, i18n } = useTranslation();
   const [localSettings, setLocalSettings] = useState<AppSettings>({ ...settings });
   const [activeSection, setActiveSection] = useState<SettingsSectionId>(initialSection ?? 'models');
+  // A failed save rolls localSettings back. Keep the visible language aligned
+  // with that rollback rather than caching an unsaved language until reload.
+  useEffect(() => {
+    const language = normalizeLanguage(localSettings.language);
+    if (i18n?.language && normalizeLanguage(i18n.language) !== language) {
+      void i18n.changeLanguage(language);
+    }
+  }, [localSettings.language, i18n]);
   // The crypto diagnosis. Starts null and STAYS null on failure: a notice is only
   // shown when the backend actually said something is wrong. Guessing while the
   // request is in flight would put a data-loss warning on every cold start.
@@ -160,9 +169,11 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
       <AppearanceSection
         language={localSettings.language}
         onLanguageChange={(code) => {
-          // i18n switches immediately; the PERSIST is debounced through the hook.
+          // Language must persist before a quick Back navigation unmounts this
+          // screen and cancels its debounce timer. Only this non-secret patch
+          // is flushed; unblurred keys remain excluded by the save hook.
           i18n.changeLanguage(code);
-          saveField({ language: code });
+          flushField({ language: code });
         }}
         ocrLanguages={localSettings.ocrLanguages ?? ''}
         onOcrLanguagesChange={(next) => saveField({ ocrLanguages: next })}
@@ -211,6 +222,8 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
 
     // Advanced — telemetry + orchestrator shell + confirm policy + spawn mode.
     advanced: (
+      <div className="space-y-4">
+      {onOpenDiagnostics && <button className="rounded-lg border border-border px-4 py-2 text-sm text-primary" onClick={onOpenDiagnostics}>{t('nav.diagnosis')}</button>}
       <AdvancedSection
         telemetry={localSettings.telemetry}
         onTelemetryChange={(v) => saveField({ telemetry: v })}
@@ -237,6 +250,7 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         spawnMode={localSettings.spawnMode}
         onSpawnModeChange={(v) => saveField({ spawnMode: v })}
       />
+      </div>
     ),
   };
 

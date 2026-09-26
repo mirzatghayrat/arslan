@@ -30,14 +30,22 @@ ROOT = os.path.dirname(PACKAGING)
 
 hiddenimports = []
 datas = []
+datas += [(os.path.join(ROOT, "server", "resources", "artifact_inspector.py"), "server/resources")]
+datas += [(os.path.join(ROOT, "server", "resources", "browser_reader.cjs"), "server/resources")]
+datas += [(os.path.join(ROOT, "server", "resources", "browser_reader_policy.cjs"), "server/resources")]
+datas += [(os.path.join(ROOT, "web", "src", "lib", "input_formats.json"), "server/resources")]
 binaries = []
 
 # `server` is NOT in the built wheel (pyproject's hatch wheel target packages
 # only `arslan`), so it is importable purely because ROOT is on the path.
 # pathex=[ROOT] below is what makes that true inside the frozen app too —
 # without it the sidecar dies at `import server.main`.
-for pkg in ("server", "arslan", "mcp"):
+for pkg in ("server", "arslan"):
     hiddenimports += collect_submodules(pkg)
+# The SDK's optional developer CLI exits the interpreter when its CLI extra is
+# absent. The application uses MCP clients/FastMCP, never that command entry.
+# Filter before subpackage traversal, not after importing the optional CLI.
+hiddenimports += collect_submodules("mcp", filter=lambda name: name != "mcp.cli" and not name.startswith("mcp.cli."))
 
 # uvicorn resolves its WebSocket implementation LAZILY BY NAME, so nothing
 # above imports `websockets` and PyInstaller cannot see it. Its absence is
@@ -102,6 +110,9 @@ for pkg in (
     "certifi",
     "anyio",
     "trafilatura",
+    # Trafilatura's fallback imports jusText code, but its stoplists are data.
+    # Without them real webpages fail after a successful HTTP response.
+    "justext",
     "pypdf",
     "docx",
     "pptx",
@@ -145,6 +156,7 @@ a = Analysis(  # noqa: F821 — injected by PyInstaller
     # assumed: an earlier revision of this spec excluded it and did exactly that.
     # tkinter/matplotlib are dead weight PyInstaller otherwise drags in.
     excludes=[
+        "mcp.cli",
         "fitz",
         "pymupdf",
         "pytesseract",

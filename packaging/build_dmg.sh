@@ -12,7 +12,7 @@
 #   3. verify the bundle      (imports, no AGPL, no db, no secrets)
 #   4. stage into Tauri's resources slot, DEREFERENCED, + sign every Mach-O
 #   5. tauri build            (produces Arslan.app)
-#   6. hdiutil                (wrap into a compressed .dmg)
+#   6. dmgbuild               (branded, Retina drag-to-install .dmg)
 #   7. sign -> notarize -> staple -> spctl
 #
 # UNSIGNED BY DEFAULT. Set APPLE_SIGNING_IDENTITY to a
@@ -267,16 +267,14 @@ fi
 # --------------------------------------------------------------------------
 step "[6/7] wrapping into a .dmg"
 # --------------------------------------------------------------------------
-# hdiutil rather than Tauri's own dmg bundler, which drives Finder over
-# AppleScript and fails in a non-interactive session.
-STAGING="$(mktemp -d)"
-cp -R "$APP_PATH" "$STAGING/"
-ln -s /Applications "$STAGING/Applications"
+# dmgbuild writes Finder metadata directly; no logged-in Finder session or
+# AppleScript permissions are needed on the CI runner. Artwork ships at 1x/2x.
 DMG="$BUNDLE/dmg/${APP}_${VERSION}_${ARCH}.dmg"
 mkdir -p "$(dirname "$DMG")"
 rm -f "$DMG"
-hdiutil create -volname "$APP" -srcfolder "$STAGING" -ov -format UDZO "$DMG" >/dev/null
-rm -rf "$STAGING"
+"$ROOT/.venv/bin/python" -m dmgbuild -s "$HERE/dmg/settings.py" \
+  -D "app=$APP_PATH" -D "background=$HERE/dmg/background.png" "$APP" "$DMG"
+"$ROOT/.venv/bin/python" "$HERE/verify_dmg_layout.py" "$DMG"
 
 # --------------------------------------------------------------------------
 step "[7/7] signing / notarizing the .dmg"

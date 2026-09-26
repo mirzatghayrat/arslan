@@ -1,21 +1,33 @@
+from arslan.models import LLMResponse
 from server.orchestrator import tool_loop
-
-
-class _Resp:
-    def __init__(self, content): self.content = content
+from server.orchestrator.json_protocol import parse_json_object
 
 
 class _ScriptedAdapter:
-    """Returns queued responses; records the systems/users it saw."""
+    """Native scripted fixture; historical JSON literals are test data, not a transport."""
     def __init__(self, replies):
         self._replies = list(replies)
         self.calls = []
     async def chat_stream(self, system, user, history=None):
         self.calls.append({"system": system, "user": user, "history": history})
         yield self._replies.pop(0)
+    async def chat(self, system, user, history=None, tools=None):
+        self.calls.append({"system": system, "user": user, "history": history, "tools": tools})
+        text = self._replies.pop(0)
+        if isinstance(text, LLMResponse):
+            return text
+        parsed = parse_json_object(text) or {}
+        key = parsed.get("tool")
+        arguments = parsed.get("args", {})
+        if isinstance(parsed.get("escalate"), dict):
+            key, arguments = "escalate", parsed["escalate"]
+        if key:
+            return LLMResponse(usage={}, content="", tool_calls=[{"id": str(len(self.calls)),
+                "type": "function", "function": {"name": key, "arguments": arguments}}])
+        return LLMResponse(usage={}, content=text)
 
 
-class _StreamAdapter:
+class _StreamAdapter(_ScriptedAdapter):
     """chat_stream yields the response in small pieces."""
     def __init__(self, replies, piece_size=3):
         self._replies = list(replies)
@@ -37,7 +49,7 @@ async def test_plain_final_answer(monkeypatch):
     adapter = _ScriptedAdapter(["just an answer"])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
     chunks = []
-    out = await tool_loop.run(system="S", user_content="hi", history=[],
+    out = await tool_loop.run_native(system="S", user_content="hi", history=[],
                               emit=lambda e: None, on_chunk=chunks.append,
                               resolve_tools=_tools())
     assert out["final"] == "just an answer"
@@ -54,7 +66,7 @@ async def test_tool_call_executes_and_feeds_back(monkeypatch):
     monkeypatch.setitem(executors.EXECUTORS, "web_search", _Stub())
     events = []
     chunks = []
-    out = await tool_loop.run(system="S", user_content="search x", history=[],
+    out = await tool_loop.run_native(system="S", user_content="search x", history=[],
                               emit=events.append, on_chunk=chunks.append,
                               resolve_tools=_tools("web_search"))
     assert out["final"] == "final after tool"
@@ -69,7 +81,7 @@ async def test_tool_call_executes_and_feeds_back(monkeypatch):
 async def test_unavailable_tool_refused(monkeypatch):
     adapter = _ScriptedAdapter(['{"tool": "danger", "args": {}}', "fell back to answer"])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
-    out = await tool_loop.run(system="S", user_content="go", history=[],
+    out = await tool_loop.run_native(system="S", user_content="go", history=[],
                               emit=lambda e: None, on_chunk=lambda c: None,
                               resolve_tools=_tools("web_search"))
     assert out["final"] == "fell back to answer"
@@ -79,7 +91,7 @@ async def test_unavailable_tool_refused(monkeypatch):
 async def test_escalation_disabled_continues(monkeypatch):
     adapter = _ScriptedAdapter(['{"escalate": {"kind": "data", "need": "X", "context": "Y"}}', "answered anyway"])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
-    out = await tool_loop.run(system="S", user_content="go", history=[],
+    out = await tool_loop.run_native(system="S", user_content="go", history=[],
                               emit=lambda e: None, on_chunk=lambda c: None,
                               resolve_tools=_tools("web_search"), allow_escalation=False)
     assert out["escalation"] is None
@@ -89,7 +101,7 @@ async def test_escalation_disabled_continues(monkeypatch):
 async def test_escalation_enabled_returns(monkeypatch):
     adapter = _ScriptedAdapter(['{"escalate": {"kind": "capability", "need": "N", "context": "C"}}'])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
-    out = await tool_loop.run(system="S", user_content="go", history=[],
+    out = await tool_loop.run_native(system="S", user_content="go", history=[],
                               emit=lambda e: None, on_chunk=lambda c: None,
                               resolve_tools=_tools("web_search"), allow_escalation=True)
     assert out["final"] is None
@@ -108,7 +120,7 @@ async def test_budget_exhaustion_forces_final(monkeypatch):
         async def execute(self, args): return {"ok": True, "results": []}
     monkeypatch.setitem(executors.EXECUTORS, "web_search", _Stub())
     chunks = []
-    out = await tool_loop.run(system="S", user_content="go", history=[],
+    out = await tool_loop.run_native(system="S", user_content="go", history=[],
                               emit=lambda e: None, on_chunk=chunks.append,
                               resolve_tools=_tools("web_search"), max_tool_calls=1)
     assert out["final"] == "forced final answer"
@@ -121,7 +133,7 @@ async def test_final_answer_streams(monkeypatch):
     adapter = _StreamAdapter(["hello world answer"])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
     chunks = []
-    out = await tool_loop.run(system="S", user_content="hi", history=[],
+    out = await tool_loop.run_native(system="S", user_content="hi", history=[],
                               emit=lambda e: None, on_chunk=chunks.append,
                               resolve_tools=_tools())
     assert out["final"] == "hello world answer"
@@ -137,7 +149,7 @@ async def test_tool_json_is_buffered_silently(monkeypatch):
         async def execute(self, args): return {"ok": True, "results": []}
     monkeypatch.setitem(executors.EXECUTORS, "web_search", _Stub())
     chunks = []
-    out = await tool_loop.run(system="S", user_content="search", history=[],
+    out = await tool_loop.run_native(system="S", user_content="search", history=[],
                               emit=lambda e: None, on_chunk=chunks.append,
                               resolve_tools=_tools("web_search"))
     assert "".join(chunks) == "streamed final"   # only the final prose streamed
@@ -149,7 +161,7 @@ async def test_leading_whitespace_then_prose_streams(monkeypatch):
     adapter = _StreamAdapter(["   actual answer"])  # leading spaces before first real char
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
     chunks = []
-    out = await tool_loop.run(system="S", user_content="hi", history=[],
+    out = await tool_loop.run_native(system="S", user_content="hi", history=[],
                               emit=lambda e: None, on_chunk=chunks.append,
                               resolve_tools=_tools())
     assert out["final"] == "actual answer"
@@ -162,12 +174,11 @@ async def test_brace_prefix_non_json_emits_once(monkeypatch):
     adapter = _ScriptedAdapter(["{this is prose, not json}... here is your answer"])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
     chunks = []
-    out = await tool_loop.run(system="S", user_content="hi", history=[],
+    out = await tool_loop.run_native(system="S", user_content="hi", history=[],
                               emit=lambda e: None, on_chunk=chunks.append,
                               resolve_tools=_tools())
     assert out["final"] == "{this is prose, not json}... here is your answer"
-    assert len(chunks) == 1
-    assert chunks[0] == out["final"]
+    assert "".join(chunks) == out["final"]
 
 
 async def test_prose_preamble_then_tool_json_no_leak(monkeypatch):
@@ -184,22 +195,22 @@ async def test_prose_preamble_then_tool_json_no_leak(monkeypatch):
     monkeypatch.setitem(executors.EXECUTORS, "web_search", _Stub())
 
     events, chunks = [], []
-    out = await tool_loop.run(system="S", user_content="news?", history=[],
+    out = await tool_loop.run_native(system="S", user_content="news?", history=[],
                               emit=events.append, on_chunk=chunks.append,
                               resolve_tools=_tools("web_search"))
     joined = "".join(chunks)
     assert '"tool"' not in joined and "{" not in joined     # raw JSON never leaked
-    assert "好的我去搜一下" in joined                          # prose preamble may show (fine)
+    assert "好的我去搜一下" not in joined  # narration is never persisted as the answer
     assert any(e["type"] == "tool_call" for e in events)     # tool still fired
     assert out["final"] == "real answer"
 
 
-async def test_multiple_tool_calls_dispatch_first_no_leak(monkeypatch):
-    # Model emits prose + TWO tool JSONs (asked about two things). The FIRST must fire and NO
-    # raw JSON may reach on_chunk — the bug where 'prose{a}{b}' parsed as one blob → None → leak.
+async def test_multiple_native_tool_calls_dispatch_without_narration_leak(monkeypatch):
     from server.registry import executors
     adapter = _StreamAdapter([
-        '好，我直接搜一下。{"tool": "web_search", "args": {"q": "a"}}{"tool": "web_search", "args": {"q": "b"}}',
+        LLMResponse(usage={}, content="好，我直接搜一下。", tool_calls=[{
+            "id": query, "type": "function", "function": {
+                "name": "web_search", "arguments": {"q": query}}} for query in ("a", "b")]),
         "combined answer",
     ])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
@@ -212,29 +223,63 @@ async def test_multiple_tool_calls_dispatch_first_no_leak(monkeypatch):
     monkeypatch.setitem(executors.EXECUTORS, "web_search", _Stub())
 
     chunks, events = [], []
-    out = await tool_loop.run(system="S", user_content="x", history=[],
+    out = await tool_loop.run_native(system="S", user_content="x", history=[],
                               emit=events.append, on_chunk=chunks.append,
                               resolve_tools=_tools("web_search"))
     joined = "".join(chunks)
     assert '"tool"' not in joined and "{" not in joined   # no JSON leaked
-    assert "好，我直接搜一下。" in joined                    # prose preamble shown
+    assert "好，我直接搜一下。" not in joined
     assert any(e["type"] == "tool_call" for e in events)  # first tool fired
-    assert calls[0]["q"] == "a"                            # the FIRST tool
+    assert calls == [{"q": "a"}, {"q": "b"}]
     assert out["final"] == "combined answer"
 
 
-async def test_non_tool_json_blob_final_not_leaked(monkeypatch):
-    # A final answer that ends in a non-tool JSON blob must show the prose, drop the blob.
+async def test_non_protocol_json_is_preserved_as_user_content(monkeypatch):
+    # Arbitrary JSON is legitimate output, not an instruction channel to strip.
     adapter = _ScriptedAdapter(['这是结论。{"note": "internal", "x": 1}'])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
     chunks = []
-    out = await tool_loop.run(system="S", user_content="x", history=[],
+    out = await tool_loop.run_native(system="S", user_content="x", history=[],
                               emit=lambda e: None, on_chunk=chunks.append,
                               resolve_tools=_tools())
     joined = "".join(chunks)
     assert "这是结论。" in joined
-    assert "{" not in joined and "note" not in joined     # JSON blob dropped from display
-    assert out["final"] == "这是结论。"                     # and from the persisted final
+    assert joined == out["final"] == '这是结论。{"note": "internal", "x": 1}'
+
+
+async def test_xml_call_is_not_executed_or_streamed_without_tools(monkeypatch):
+    adapter = _ScriptedAdapter([
+        'Brief. <tool_call name="ask_user_choice">{"question":"Subject?"}</tool_call>',
+        'Subject not provided; no project facts are available.',
+    ])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    chunks, events = [], []
+    result = await tool_loop.run_native(
+        system="S", user_content="A brief", history=[], emit=events.append,
+        on_chunk=chunks.append, resolve_tools=_tools())
+    assert result["final"] == 'Subject not provided; no project facts are available.'
+    assert "tool_call" not in "".join(chunks)
+    assert not any(event["type"] == "tool_call" for event in events)
+    assert len(adapter.calls) == 2
+    assert adapter.calls[-1]["tools"] is None
+
+
+async def test_repeated_xml_protocol_fails_closed_without_execution(monkeypatch):
+    adapter = _ScriptedAdapter(['<tool_call name="write_file">', '<TOOL_CALL'])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    chunks, events = [], []
+    result = await tool_loop.run_native(
+        system="S", user_content="A brief", history=[], emit=events.append,
+        on_chunk=chunks.append, resolve_tools=_tools())
+    assert result["final"] and not tool_loop._embeds_protocol(result["final"])
+    assert "tool_call" not in "".join(chunks).lower()
+    assert not any(event["type"] == "tool_call" for event in events)
+    assert len(adapter.calls) == 2
+
+
+def test_ordinary_markup_is_not_a_tool_protocol():
+    assert not tool_loop._embeds_protocol('<span style="color:green">Brief</span>')
+    assert not tool_loop._embeds_protocol('<tool_callback>ordinary data</tool_callback>')
 
 
 async def test_forced_step_protocol_json_salvaged_not_leaked(monkeypatch):
@@ -251,10 +296,10 @@ async def test_forced_step_protocol_json_salvaged_not_leaked(monkeypatch):
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
 
     class _Stub:
-        async def execute(self, args): return {"ok": True, "results": []}
+        async def execute(self, args): return {"ok": True, "results": [{"title": "Answer is 42"}]}
     monkeypatch.setitem(executors.EXECUTORS, "web_search", _Stub())
     chunks = []
-    out = await tool_loop.run(system="S", user_content="go", history=[],
+    out = await tool_loop.run_native(system="S", user_content="go", history=[],
                               emit=lambda e: None, on_chunk=chunks.append,
                               resolve_tools=_tools("web_search", "web_extract"),
                               max_tool_calls=1)
@@ -271,7 +316,7 @@ async def test_forced_step_salvage_still_json_falls_back(monkeypatch):
     ])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
     chunks = []
-    out = await tool_loop.run(system="S", user_content="go", history=[],
+    out = await tool_loop.run_native(system="S", user_content="go", history=[],
                               emit=lambda e: None, on_chunk=chunks.append,
                               resolve_tools=_tools("web_extract"), max_tool_calls=0)
     assert out["final"] and not out["final"].lstrip().startswith("{")
@@ -308,7 +353,7 @@ async def test_artifact_flows_to_frame_not_to_llm(monkeypatch):
     monkeypatch.setitem(executors.EXECUTORS, "render_chart", _Chart())
 
     events = []
-    out = await tool_loop.run(system="S", user_content="chart it", history=[],
+    out = await tool_loop.run_native(system="S", user_content="chart it", history=[],
                               emit=events.append, on_chunk=lambda c: None,
                               resolve_tools=_tools("render_chart"))
     tr = [e for e in events if e["type"] == "tool_result"][0]
@@ -332,7 +377,7 @@ async def test_reactive_retry_on_hallucinated_search(monkeypatch):
         async def execute(self, args): return {"ok": True, "results": [{"title": "t"}]}
     monkeypatch.setitem(executors.EXECUTORS, "web_search", _W())
     events = []
-    out = await tool_loop.run(system="S", user_content="tsla price", history=[],
+    out = await tool_loop.run_native(system="S", user_content="tsla price", history=[],
                               emit=events.append, on_chunk=lambda c: None,
                               resolve_tools=_tools("web_search"))
     assert any(e["type"] == "tool_call" and e["tool"] == "web_search" for e in events)
@@ -356,7 +401,7 @@ async def test_reactive_retry_on_hallucinated_chart_after_real_search(monkeypatc
     monkeypatch.setitem(executors.EXECUTORS, "web_search", _W())
     monkeypatch.setitem(executors.EXECUTORS, "render_chart", _C())
     events = []
-    out = await tool_loop.run(system="S", user_content="chart tsla", history=[],
+    out = await tool_loop.run_native(system="S", user_content="chart tsla", history=[],
                               emit=events.append, on_chunk=lambda c: None,
                               resolve_tools=_tools("web_search", "render_chart"))
     assert any(e["type"] == "tool_call" and e["tool"] == "render_chart" for e in events)
@@ -366,19 +411,20 @@ async def test_reactive_retry_on_hallucinated_chart_after_real_search(monkeypatc
 async def test_no_retry_when_honest_final(monkeypatch):
     adapter = _ScriptedAdapter(["Here's a joke: …"])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
-    out = await tool_loop.run(system="S", user_content="tell a joke", history=[],
+    out = await tool_loop.run_native(system="S", user_content="tell a joke", history=[],
                               emit=lambda e: None, on_chunk=lambda c: None,
                               resolve_tools=_tools("web_search"))
     assert out["final"] == "Here's a joke: …"
 
 
-async def test_retry_at_most_once_per_tool(monkeypatch):
-    adapter = _ScriptedAdapter(["我搜索了…", "我又搜索了…"])
+async def test_unverified_claim_repair_is_bounded_and_never_accepts_the_lie(monkeypatch):
+    adapter = _ScriptedAdapter(["我搜索了…"] * 6)
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
-    out = await tool_loop.run(system="S", user_content="x", history=[],
+    out = await tool_loop.run_native(system="S", user_content="x", history=[],
                               emit=lambda e: None, on_chunk=lambda c: None,
                               resolve_tools=_tools("web_search"))
-    assert out["final"] == "我又搜索了…"   # retried once, then accepted (no infinite loop)
+    assert "我搜索了" not in out["final"]
+    assert out["stop_reason"] == "task_no_progress" and len(adapter.calls) == 6
 
 
 async def test_forward_promise_retry_triggers_action(monkeypatch):
@@ -398,33 +444,31 @@ async def test_forward_promise_retry_triggers_action(monkeypatch):
                     "artifact": {"kind": "svg", "content": "<svg/>"}}
     monkeypatch.setitem(executors.EXECUTORS, "render_chart", _C())
     events = []
-    out = await tool_loop.run(system="S", user_content="今天的热门 GitHub 项目画个图", history=[],
+    out = await tool_loop.run_native(system="S", user_content="今天的热门 GitHub 项目画个图", history=[],
                               emit=events.append, on_chunk=lambda c: None,
                               resolve_tools=_tools("render_chart"))
     assert any(e["type"] == "tool_call" and e["tool"] == "render_chart" for e in events)
     assert out["final"] == "图表如下，已完成。"
 
 
-async def test_forward_promise_skipped_when_no_tools_wired(monkeypatch):
-    # A promise with NO tool wired (pure-chat spawn) must NOT be nagged — returned as the final.
-    adapter = _ScriptedAdapter(["我这就为您搜索一下最新消息。"])
+async def test_forward_promise_without_tools_gets_an_honest_plain_answer(monkeypatch):
+    adapter = _ScriptedAdapter(["我这就为您搜索一下最新消息。", "这里没有可用的实时搜索工具。"])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
-    out = await tool_loop.run(system="S", user_content="x", history=[],
+    out = await tool_loop.run_native(system="S", user_content="x", history=[],
                               emit=lambda e: None, on_chunk=lambda c: None,
                               resolve_tools=_tools())                    # no tools
-    assert out["final"] == "我这就为您搜索一下最新消息。"
-    assert len(adapter.calls) == 1                                       # no re-prompt
+    assert out["final"] == "这里没有可用的实时搜索工具。"
+    assert len(adapter.calls) == 2
 
 
-async def test_forward_promise_retry_at_most_twice(monkeypatch):
-    # Three promises in a row → re-prompted at most twice, then the third is accepted (no loop).
-    adapter = _ScriptedAdapter(["马上为您搜索…", "这就去查询数据…", "现在让我抓取数据…"])
+async def test_forward_promise_repair_is_bounded(monkeypatch):
+    adapter = _ScriptedAdapter(["马上为您搜索…"] * 6)
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
-    out = await tool_loop.run(system="S", user_content="x", history=[],
+    out = await tool_loop.run_native(system="S", user_content="x", history=[],
                               emit=lambda e: None, on_chunk=lambda c: None,
                               resolve_tools=_tools("web_search"))
-    assert out["final"] == "现在让我抓取数据…"
-    assert len(adapter.calls) == 3                                       # exactly two retries
+    assert "马上为您搜索" not in out["final"]
+    assert out["stop_reason"] == "task_no_progress" and len(adapter.calls) == 6
 
 
 def test_promises_action_matches_real_world_phrasings():
@@ -460,7 +504,7 @@ async def test_forward_promise_no_false_positive_on_complete_answer(monkeypatch)
     # the regex is anchored on first-person/imperative intent, not any mention of searching.
     adapter = _ScriptedAdapter(["分析完成。接下来你可以根据需要自行搜索更多细节。"])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
-    out = await tool_loop.run(system="S", user_content="x", history=[],
+    out = await tool_loop.run_native(system="S", user_content="x", history=[],
                               emit=lambda e: None, on_chunk=lambda c: None,
                               resolve_tools=_tools("web_search"))
     assert out["final"] == "分析完成。接下来你可以根据需要自行搜索更多细节。"
@@ -482,7 +526,7 @@ async def test_force_tools_runs_web_search_first(monkeypatch):
             return {"ok": True, "results": [{"t": "x"}]}
     monkeypatch.setitem(executors.EXECUTORS, "web_search", _W())
     events = []
-    out = await tool_loop.run(system="S", user_content="chart tsla", history=[],
+    out = await tool_loop.run_native(system="S", user_content="chart tsla", history=[],
                               emit=events.append, on_chunk=lambda c: None,
                               resolve_tools=_tools("web_search", "render_chart"),
                               force_tools=True)
@@ -506,7 +550,7 @@ async def test_force_tools_off_does_not_classify(monkeypatch):
     monkeypatch.setattr(tool_intent, "classify", fake_classify)
     adapter = _ScriptedAdapter(["plain answer"])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
-    out = await tool_loop.run(system="S", user_content="hi", history=[],
+    out = await tool_loop.run_native(system="S", user_content="hi", history=[],
                               emit=lambda e: None, on_chunk=lambda c: None,
                               resolve_tools=_tools("web_search"))   # force_tools defaults False
     assert called["n"] == 0
@@ -521,7 +565,7 @@ async def test_force_tools_skips_when_intent_says_no(monkeypatch):
     adapter = _ScriptedAdapter(["just chatting"])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
     events = []
-    out = await tool_loop.run(system="S", user_content="hello", history=[],
+    out = await tool_loop.run_native(system="S", user_content="hello", history=[],
                               emit=events.append, on_chunk=lambda c: None,
                               resolve_tools=_tools("web_search"), force_tools=True)
     assert not any(e["type"] == "tool_call" for e in events)
@@ -537,7 +581,7 @@ async def test_external_tool_result_still_wrapped(monkeypatch):
         async def execute(self, args):
             return {"ok": True, "results": [{"title": "t"}]}   # no 'external' key → defaults to wrapped
     monkeypatch.setitem(executors.EXECUTORS, "web_search", _Web())
-    await tool_loop.run(system="S", user_content="go", history=[],
+    await tool_loop.run_native(system="S", user_content="go", history=[],
                         emit=lambda e: None, on_chunk=lambda c: None,
                         resolve_tools=_tools("web_search"))
     assert "EXTERNAL_WEB_CONTENT" in adapter.calls[1]["user"]   # external content still framed
@@ -557,7 +601,7 @@ async def test_tool_loop_executes_mcp_tool_via_resolve(monkeypatch):
     monkeypatch.setattr(tool_loop, "resolve_executor", fake_resolve)
 
     events = []
-    out = await tool_loop.run(system="S", user_content="read it", history=[],
+    out = await tool_loop.run_native(system="S", user_content="read it", history=[],
                               emit=events.append, on_chunk=lambda c: None,
                               resolve_tools=_tools("mcp_9__read_file"))
     assert any(e["type"] == "tool_result" and e["tool"] == "mcp_9__read_file" and e["ok"] for e in events)
@@ -570,7 +614,7 @@ async def test_tool_loop_unresolvable_tool_errors(monkeypatch):
     async def fake_resolve(key): return None
     monkeypatch.setattr(tool_loop, "resolve_executor", fake_resolve)
     events = []
-    out = await tool_loop.run(system="S", user_content="x", history=[],
+    out = await tool_loop.run_native(system="S", user_content="x", history=[],
                               emit=events.append, on_chunk=lambda c: None,
                               resolve_tools=_tools("ghost_tool"))
     assert any(e["type"] == "tool_result" and e["tool"] == "ghost_tool" and e["ok"] is False for e in events)
@@ -609,7 +653,7 @@ async def test_reactive_retry_on_markdown_mermaid_chart(monkeypatch):
                     "artifact": {"kind": "svg", "content": "<svg/>"}}
     monkeypatch.setitem(executors.EXECUTORS, "render_chart", _C())
     events = []
-    out = await tool_loop.run(system="S", user_content="bar chart of EV maker share", history=[],
+    out = await tool_loop.run_native(system="S", user_content="bar chart of EV maker share", history=[],
                               emit=events.append, on_chunk=lambda c: None,
                               resolve_tools=_tools("render_chart"))
     assert any(e["type"] == "tool_call" and e["tool"] == "render_chart" for e in events)
@@ -631,7 +675,7 @@ async def test_reactive_retry_on_chart_fence(monkeypatch):
                     "artifact": {"kind": "svg", "content": "<svg/>"}}
     monkeypatch.setitem(executors.EXECUTORS, "render_chart", _C())
     events = []
-    out = await tool_loop.run(system="S", user_content="pie of share", history=[],
+    out = await tool_loop.run_native(system="S", user_content="pie of share", history=[],
                               emit=events.append, on_chunk=lambda c: None,
                               resolve_tools=_tools("render_chart"))
     assert any(e["type"] == "tool_call" and e["tool"] == "render_chart" for e in events)
@@ -643,7 +687,7 @@ async def test_no_retry_on_mermaid_flowchart(monkeypatch):
     adapter = _ScriptedAdapter(["Here is the flow:\n```mermaid\ngraph TD\n  A-->B\n```"])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
     events = []
-    out = await tool_loop.run(system="S", user_content="draw the flow", history=[],
+    out = await tool_loop.run_native(system="S", user_content="draw the flow", history=[],
                               emit=events.append, on_chunk=lambda c: None,
                               resolve_tools=_tools("render_chart"))
     assert not any(e["type"] == "tool_call" for e in events)
@@ -655,7 +699,7 @@ async def test_no_chart_fence_retry_when_render_chart_not_wired(monkeypatch):
     adapter = _ScriptedAdapter(["```mermaid\nxychart-beta\n  bar [1,2]\n```"])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
     events = []
-    out = await tool_loop.run(system="S", user_content="chart it", history=[],
+    out = await tool_loop.run_native(system="S", user_content="chart it", history=[],
                               emit=events.append, on_chunk=lambda c: None,
                               resolve_tools=_tools("web_search"))
     assert not any(e["type"] == "tool_call" for e in events)

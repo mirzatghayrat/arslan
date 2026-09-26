@@ -1,5 +1,7 @@
+import BrandMark from '../BrandMark';
 import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import AppIdentityCard from './AppIdentityCard';
 import {
   Cpu, Search, Palette, KeyRound, Database, Bot, Sliders, Circle, ArrowLeft,
   type LucideIcon,
@@ -84,7 +86,7 @@ export default function SettingsShell({
         onClick={() => onSectionChange(s.id)}
         className={[
           'relative flex items-center gap-3 rounded-lg px-3 py-3 text-left shrink-0',
-          'whitespace-nowrap transition-colors select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
+          'whitespace-nowrap md:whitespace-normal transition-colors select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
           active
             ? 'bg-primary/10 text-primary border border-transparent'
             : 'text-muted-foreground hover:text-foreground hover:bg-surface/60 border border-transparent',
@@ -92,7 +94,7 @@ export default function SettingsShell({
       >
         {active && <span aria-hidden className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full bg-primary" />}
         <Icon className="w-4 h-4 shrink-0" />
-        <span className="flex flex-col leading-tight">
+        <span className="flex min-w-0 flex-col leading-tight md:break-words">
           <span className="text-sm font-medium font-sans">{t(s.labelKey)}</span>
         </span>
       </button>
@@ -100,12 +102,13 @@ export default function SettingsShell({
   };
 
   return (
-    <div className="flex flex-col md:flex-row flex-1">
+    <div className="flex min-w-0 flex-col md:flex-row flex-1">
       <aside data-testid="settings-sidebar" className="w-full md:w-52 lg:w-60 xl:w-64 md:shrink-0 bg-sidebar/60 border-b md:border-b-0 md:border-r border-border p-5 flex flex-col">
         <div className="flex items-center gap-3 mb-7 mt-2" data-tauri-drag-region="deep">
-          <img src="/arslan-mark.png" alt="" className="w-9 h-9 object-contain arslan-mark" draggable={false} />
+          <BrandMark alt="" className="w-9 h-9 object-contain" draggable={false} />
           <span className="text-xl font-semibold">Arslan</span>
         </div>
+        <AppIdentityCard />
         <label className="sr-only" htmlFor="settings-search">{t('settings.searchPlaceholder')}</label>
         <div className="flex items-center gap-2 bg-surface border border-border rounded-lg px-3 py-2 mb-3 focus-within:border-primary/50">
           <Search className="w-3.5 h-3.5 text-subtle-foreground shrink-0" aria-hidden />
@@ -147,7 +150,7 @@ export default function SettingsShell({
         </button>}
       </aside>
 
-      <div data-testid="settings-content" className="w-full flex-1 min-w-0 space-y-6 p-6 lg:p-8 xl:px-10">
+      <div data-testid="settings-content" className="w-full flex-1 min-w-0 space-y-6 p-4 sm:p-6 lg:p-8 xl:px-10">
         {children[activeSection]}
       </div>
     </div>

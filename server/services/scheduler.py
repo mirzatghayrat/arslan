@@ -389,7 +389,9 @@ async def _dispatch_recorded(recorder, cid: str, spawn_id: int, prompt: str) -> 
     error / user cancel via run_registry — Task-2 review I3)."""
     from server.orchestrator.arslan import _usage_frame  # local: keep import light
 
-    emit = recorder.tee(run_registry.make_emit(cid))
+    from server.services.task_service import current as current_task
+    runtime = current_task()
+    emit = recorder.tee(runtime.capture if runtime else run_registry.make_emit(cid))
     emit({"type": "stream_start", "source": "spawn", "spawn_id": spawn_id,
           "run_id": recorder.run_id})
     # Per-run scoping mirrors arslan._dispatch_spawn: one fresh usage bucket + tool
@@ -482,11 +484,23 @@ async def run_arslan_turn(conversation_id: str, prompt: str) -> None:
     # import here would cycle.
     from server.orchestrator import arslan as arslan_mod
 
-    emit = run_registry.make_emit(conversation_id)
+    from server.services.task_service import current as current_task
+    runtime = current_task()
+    emit = runtime.capture if runtime else run_registry.make_emit(conversation_id)
     await arslan_mod._handle_answer(conversation_id, prompt, emit)
 
 
 async def _fire(task: ScheduledTask) -> None:
+    from server.services import task_context
+    cid = task.conversation_id or f"scheduled-{task.id}"
+    async def body(sink):
+        return await _fire_body(task)
+    return await task_context.execute_entry(cid, task.prompt, run_registry.make_emit(cid), body,
+        driver={"kind": "expert", "id": task.spawn_id} if task.target != "arslan" and task.spawn_id else None,
+        headless=True)
+
+
+async def _fire_body(task: ScheduledTask) -> None:
     """One scheduled fire. Deliberately NOT arslan._dispatch_spawn — its roster-join /
     routing-announcement side effects are wrong for a headless fire; the plan pins
     RunRecorder + dispatcher.dispatch directly.
@@ -526,6 +540,13 @@ async def _fire(task: ScheduledTask) -> None:
         # value would have turned "your worker is gone" into a silent success.
         if target == "arslan":
             await run_arslan_turn(cid, prompt)
+            from server.services.task_service import current as current_task
+            runtime = current_task()
+            if runtime and (runtime.saw_error or runtime.pause_reason or runtime.cancelled):
+                await record_outcome(task_id, False, row_id=row_id,
+                    reason=runtime.pause_reason or ("cancelled by user" if runtime.cancelled else "execution failed"),
+                    count_failure=not runtime.cancelled)
+                return
             await record_outcome(task_id, True, row_id=row_id, run_id=None)
             await recap_service.log_event(
                 cid, "scheduled_fire", {"task_id": task_id, "run_id": None},
@@ -571,6 +592,9 @@ async def _fire(task: ScheduledTask) -> None:
         finally:
             run_registry.unregister(recorder.run_id, cid)
     except Exception as exc:  # noqa: BLE001 — a failed fire is an error outcome, not a crash
+        from server.services.task_service import current as current_task
+        if current_task():
+            current_task().saw_error = True
         logger.warning("scheduled task %s fire failed: %s", task_id, exc)
         await record_outcome(task_id, False, row_id=row_id, run_id=run_id,
                              reason=str(exc))

@@ -44,9 +44,12 @@ export interface MessageAttachment {
   name: string;
   kind?: 'doc' | 'image';
   previewUrl?: string;
+  extractionStatus?: 'truncated' | 'empty' | 'image_unavailable';
 }
 
 export interface Message {
+  /** Session-only translations on a product-owned runtime error, never model prose. */
+  errorTranslations?: Record<string, string>;
   id: string;
   sender: 'user' | 'arslan' | 'spawn';
   senderName: string;
@@ -148,6 +151,7 @@ export interface UiRunDimension {
 }
 
 export interface UiRun {
+  noLearning?: boolean;
   artifacts?: import('./api/client.types').StoredArtifact[];
   id: number;
   spawnName: string | null;

@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { runtimeErrorTranslations, type RuntimeErrorTranslations } from "../lib/runtimeErrorText";
 import { createSpeaker } from "../lib/speech";
 import type { ArslanServerMessage, ArslanThreadItem, SuggestDraft, ToolStep, OverlapInfo, RosterMember, StaffingCandidate, SpawnUpdateChanges, SpawnUpdateCurrent } from "../api/client.types";
 import type { MessageAttachment } from "../types";
@@ -14,6 +15,7 @@ interface ArslanState {
   suggestion: SuggestDraft | null;
   spawnNames: Record<number, string>;
   error: string | null;
+  errorTranslations: RuntimeErrorTranslations | null;
   lastMessageId: number;
   pending: boolean;
   suggestionTaskBrief: string | null;
@@ -49,6 +51,7 @@ interface ArslanState {
     callId: string;
     key: string;
     label: string;
+    labelKey?: string;
     transport: string;
     command: string;
     argv: string[];
@@ -80,6 +83,8 @@ interface ArslanState {
   // stream_start's run_id — both host and spawn runs). The stop button POSTs
   // /runs/{activeRunId}/cancel. Cleared on stream_end/error/run_cancelled.
   activeRunId: number | null;
+  taskState: import("../api/tasks").TaskFrame | null;
+  taskSequences: Record<string, number>;
   // The Web Speech speaker owes the engine at least one utterance end. Conversation
   // mode mutes the microphone while this is true.
   speaking: boolean;
@@ -177,6 +182,7 @@ function initialData() {
     suggestion: null as SuggestDraft | null,
     spawnNames: {} as Record<number, string>,
     error: null as string | null,
+    errorTranslations: null as RuntimeErrorTranslations | null,
     lastMessageId: 0,
     pending: false,
     suggestionTaskBrief: null as string | null,
@@ -210,6 +216,8 @@ function initialData() {
     lastFrameAt: null as number | null,
     stalled: false,
     activeRunId: null as number | null,
+    taskState: null as import("../api/tasks").TaskFrame | null,
+    taskSequences: {} as Record<string, number>,
     speaking: false,
   };
 }
@@ -284,7 +292,7 @@ function makeActions(set: SetState, get: GetState) {
     clearPendingSchedule: () => set({ pendingSchedule: null }),
     clearPendingConnectMcp: () => set({ pendingConnectMcp: null }),
     clearPendingStaffing: () => set({ pendingStaffing: null }),
-    clearError: () => set({ error: null }),
+    clearError: () => set({ error: null, errorTranslations: null }),
 
     // Clear all conversation state so the incoming `history` frame for the new
     // conversation_id repopulates from scratch with no stale carry-over.
@@ -362,6 +370,10 @@ function makeActions(set: SetState, get: GetState) {
         };
       };
       switch (frame.type) {
+        case "task_state":
+          if ((state.taskSequences[frame.task_id] ?? -1) >= frame.sequence) break;
+          set({ taskState: frame, taskSequences: { ...state.taskSequences, [frame.task_id]: frame.sequence } });
+          break;
         case "history": {
           const items: ArslanThreadItem[] = frame.messages.map(rowToItem);
           const lastId = items.reduce((max, it) => (it.id > max ? it.id : max), 0);
@@ -424,7 +436,7 @@ function makeActions(set: SetState, get: GetState) {
           });
           break;
         case "stream_start":
-          _voiceStart();
+          if (frame.temporary) _voiceStop(); else _voiceStart();
           set({
             pending: false,
             streaming: true,
@@ -486,7 +498,7 @@ function makeActions(set: SetState, get: GetState) {
             spawnId: state.streamSpawnId,
             spawnName: state.streamSpawnName,
             spawnMessageId: meta?.assistant_message_id ?? null,
-            runId: frame.run_id ?? meta?.run_id ?? state.activeRunId ?? null,
+            runId: frame.temporary ? null : frame.run_id ?? meta?.run_id ?? state.activeRunId ?? null,
             taskBrief: meta?.task_brief ?? null,
             toolSteps: state.activitySteps.length > 0 ? state.activitySteps : undefined,
             ...(isProposal ? { isProposal: true } : {}),
@@ -845,6 +857,7 @@ function makeActions(set: SetState, get: GetState) {
               callId: frame.call_id,
               key: frame.key,
               label: frame.label,
+              ...(frame.label_key ? { labelKey: frame.label_key } : {}),
               transport: frame.transport,
               command: frame.command,
               argv: frame.argv,
@@ -926,6 +939,7 @@ function makeActions(set: SetState, get: GetState) {
         case "error":
           set({
             error: frame.message,
+            errorTranslations: runtimeErrorTranslations(frame.message_i18n),
             pending: false,
             streaming: false,
             streamingText: "",

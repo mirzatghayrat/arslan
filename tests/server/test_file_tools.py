@@ -132,6 +132,29 @@ async def test_search_requires_a_query(ws):
 
 
 # ── write_file (T1) ────────────────────────────────────────────────────────
+async def test_recorded_writes_keep_owned_snapshots_before_applying(ws, monkeypatch, tmp_path):
+    from server.services import artifact_store, execution_context
+    monkeypatch.setattr(artifact_store, "root", lambda: tmp_path / "artifacts")
+    with execution_context.bind_run(77):
+        initial = await file_tools.WriteFileExecutor().execute({"path": "result.txt", "content": "first"})
+        revised = await file_tools.EditFileExecutor().execute({"path": "result.txt", "old": "first", "new": "second"})
+    assert (ws / "result.txt").read_text() == "second"
+    before, after = initial["artifact"], revised["artifact"]
+    assert before["id"] != after["id"] and before["logical_key"] == after["logical_key"]
+    assert artifact_store.read_owned(77, before["filename"])[1] == b"first"
+    assert artifact_store.read_owned(77, after["filename"])[1] == b"second"
+
+
+async def test_snapshot_budget_failure_prevents_workspace_mutation(ws, monkeypatch, tmp_path):
+    from arslan.execution_budget import Budget, BudgetExceeded, Limits, scope
+    from server.services import artifact_store, execution_context
+    monkeypatch.setattr(artifact_store, "root", lambda: tmp_path / "artifacts")
+    original = (ws / "notes.md").read_text()
+    with execution_context.bind_run(77), scope(Budget(Limits(artifact_bytes=1))):
+        with pytest.raises(BudgetExceeded):
+            await file_tools.WriteFileExecutor().execute({"path": "notes.md", "content": "too large"})
+    assert (ws / "notes.md").read_text() == original
+
 async def test_write_creates_and_reports_bytes(ws):
     out = await file_tools.WriteFileExecutor().execute({"path": "sub/new.txt", "content": "abc"})
     assert out["ok"] is True and out["bytes"] == 3

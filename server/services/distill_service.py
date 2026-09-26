@@ -89,6 +89,9 @@ async def distill_meta_upflow(spawn, new_facts: list[str],
     """
     if not new_facts:
         return None
+    from server.services.memory_repository import is_active
+    if await is_active():
+        return None  # No implicit widening from an expert/project into global memory.
     try:
         from server.orchestrator import memory
         # Active-only existing profile for the prompt ONLY (blind-free generation:
@@ -136,6 +139,7 @@ class DistillOutcome:
     # already_distilled|no_spawn|nothing_to_distill|llm_failed|write_failed|exception
     reason: str | None = None
     spawn_id: int | None = None
+    proposed: int = 0
 
     #: reasons that mean "we tried and it broke" (vs. a benign skip)
     #: "we tried and it broke" — each of these must produce a visible event.
@@ -248,6 +252,9 @@ async def _distill_one(
 async def _distill_one_inner(
     conversation_id: str, spawn_id: int, *, propose_only: bool = False
 ) -> DistillOutcome:
+    from server.services.memory_repository import is_active
+    if await is_active():
+        return await _distill_v2(spawn_id, conversation_id=conversation_id)
     async with db_session.AsyncSessionLocal() as db:
         already = (await db.execute(select(DistilledSession).where(
             DistilledSession.conversation_id == conversation_id,
@@ -430,6 +437,9 @@ async def distill_from_signals(
 async def _distill_from_signals_inner(
     spawn_id: int, signals: str, conversation_id: str | None
 ) -> DistillOutcome:
+    from server.services.memory_repository import is_active
+    if await is_active():
+        return await _distill_v2(spawn_id, signals=signals, conversation_id=conversation_id)
     outcome: DistillOutcome
     try:
         async with db_session.AsyncSessionLocal() as db:
@@ -459,3 +469,50 @@ async def _distill_from_signals_inner(
             {"spawn_id": spawn_id, "reason": outcome.reason},
             f"蒸馏失败({outcome.reason})· 分身 {spawn_id}")
     return outcome
+
+
+async def _distill_v2(spawn_id: int, *, signals: str | None = None,
+                      conversation_id: str | None = None) -> DistillOutcome:
+    """Distillation produces individual proposals, never replaces an expert array."""
+    from dataclasses import replace
+    from arslan.companion.memory import MemoryError, MemoryScope, MemoryWrite
+    from server.services.memory_repository import repository
+    from server.services.personal_context import current
+    ctx = current()
+    if ctx is None or ctx.no_learning or ctx.temporary:
+        return DistillOutcome(ok=False, reason="learning_disabled", spawn_id=spawn_id)
+    # The judgment provider can differ from the answer provider. Do not infer
+    # that it is local from the main task's model_is_local flag.
+    if not ctx.cloud_memory_allowed:
+        return DistillOutcome(ok=False, reason="cloud_memory_permission_required", spawn_id=spawn_id)
+    if ctx.expert_id != str(spawn_id):
+        return DistillOutcome(ok=False, reason="memory_scope_denied", spawn_id=spawn_id)
+    if signals is None:
+        if not conversation_id or conversation_id != ctx.conversation_id:
+            return DistillOutcome(ok=False, reason="memory_scope_denied", spawn_id=spawn_id)
+        async with db_session.AsyncSessionLocal() as db:
+            messages = (await db.execute(select(ArslanMessage).where(
+                ArslanMessage.conversation_id == conversation_id,
+                (ArslanMessage.role == "user") | ((ArslanMessage.role == "spawn_summary") &
+                                                (ArslanMessage.spawn_id == spawn_id)),
+            ).order_by(ArslanMessage.id))).scalars().all()
+        signals = "\n".join(f"{message.role}: {message.content}" for message in messages)
+    if not signals.strip():
+        return DistillOutcome(ok=False, reason="nothing_to_distill", spawn_id=spawn_id)
+    facts = await distill_facts([], signals)
+    if facts is None:
+        return DistillOutcome(ok=False, reason="llm_failed", spawn_id=spawn_id)
+    proposed = 0
+    actor = replace(ctx.actor("extractor"), expert_id=str(spawn_id))
+    for fact in facts:
+        try:
+            async with repository() as repo:
+                result = await repo.create(MemoryWrite(content=fact,
+                    scope=MemoryScope(kind="expert", id=str(spawn_id))), actor)
+                proposed += int(result["status"] == "proposed" and not result.get("deduplicated"))
+        except MemoryError as exc:
+            if exc.code not in {"credentials_not_memory", "memory_source_deleted", "memory_previously_deleted"}:
+                return DistillOutcome(ok=False, reason="write_failed", spawn_id=spawn_id, proposed=proposed)
+    # Do not report "learned" or archive a source merely because a proposal exists.
+    return DistillOutcome(ok=False, reason="confirmation_required" if proposed else "nothing_to_distill",
+                          spawn_id=spawn_id, proposed=proposed)

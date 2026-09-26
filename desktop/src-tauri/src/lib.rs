@@ -15,9 +15,32 @@
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, Command, Stdio};
 
+mod app_icon;
 pub mod endpoint;
 mod listen;
+mod maintenance;
+mod native_locale;
+#[cfg(target_os = "macos")]
+mod native_menu;
 mod proxy;
+#[cfg(target_os = "macos")]
+#[allow(dead_code)]
+mod recovery_coordinator;
+#[cfg(target_os = "macos")]
+mod recovery_ui;
+// Internal preparation only; no IPC endpoint until trusted recovery UI is wired.
+#[cfg(target_os = "macos")]
+#[allow(dead_code)]
+mod recovery_control;
+#[cfg(target_os = "macos")]
+#[allow(dead_code)]
+mod recovery_secret;
+#[cfg(target_os = "macos")]
+#[allow(dead_code)]
+mod recovery_shutdown;
+#[cfg(target_os = "macos")]
+#[allow(dead_code)]
+mod recovery_trial;
 mod voice;
 use std::sync::Mutex;
 
@@ -58,18 +81,115 @@ const SPLASH_FADE_OUT: std::time::Duration = std::time::Duration::from_millis(40
 /// end, and the boot veil means a page still rendering looks like the splash.
 const REVEAL_DEADLINE: std::time::Duration = std::time::Duration::from_secs(15);
 
-/// Holds the sidecar so it can be killed on exit. `Mutex<Option<Child>>`
+/// Holds the sidecar so it can be killed on exit. `Mutex<Option<NormalChild>>`
 /// rather than a bare Child: `take()` on shutdown means a second exit event
 /// cannot try to kill an already-reaped process.
 #[derive(Default)]
-struct Sidecar(Mutex<Option<Child>>);
+struct Sidecar(Mutex<Option<NormalChild>>);
+
+struct NativeMaintenance {
+    permit: Option<maintenance::Permit>,
+    app: tauri::AppHandle,
+}
+
+impl NativeMaintenance {
+    fn complete(mut self) {
+        if let Some(permit) = self.permit.take() {
+            permit.complete();
+        }
+    }
+}
+
+impl Drop for NativeMaintenance {
+    fn drop(&mut self) {
+        drop(self.permit.take());
+        refresh_update_menu(&self.app);
+    }
+}
+
+fn begin_maintenance(
+    app: &tauri::AppHandle,
+    operation: maintenance::Operation,
+) -> Option<NativeMaintenance> {
+    let permit = app.state::<maintenance::Gate>().begin(operation)?;
+    refresh_update_menu(app);
+    Some(NativeMaintenance {
+        permit: Some(permit),
+        app: app.clone(),
+    })
+}
+
+struct NormalChild {
+    process: Child,
+    #[cfg(target_os = "macos")]
+    #[allow(dead_code)]
+    shutdown: std::sync::Arc<recovery_shutdown::Receipt>,
+}
+
+#[derive(Debug)]
+struct StartupFailure {
+    message: String,
+    recovery_pending: bool,
+}
+
+impl From<String> for StartupFailure {
+    fn from(message: String) -> Self {
+        Self {
+            message,
+            recovery_pending: false,
+        }
+    }
+}
+
+fn startup_failure(line: &str, locale: &str) -> Option<StartupFailure> {
+    startup_error(line, locale).map(|message| StartupFailure {
+        message,
+        recovery_pending: line == "ARSLAN_ERROR=data_profile_recovery_required",
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn start_with_recovery<T>(
+    mut start: impl FnMut() -> Result<T, StartupFailure>,
+    inspect: impl FnOnce() -> Result<String, String>,
+    confirm: impl FnOnce(&str) -> bool,
+    rollback: impl FnOnce(&str) -> Result<(), String>,
+) -> Result<T, StartupFailure> {
+    match start() {
+        Err(failure) if failure.recovery_pending => {
+            let pending = |message| StartupFailure {
+                message,
+                recovery_pending: true,
+            };
+            let operation = inspect().map_err(pending)?;
+            if !confirm(&operation) {
+                return Err(failure);
+            }
+            rollback(&operation).map_err(pending)?;
+            start() // One retry only; another failure does not repeat consent/actions.
+        }
+        result => result,
+    }
+}
+
+fn startup_error(line: &str, locale: &str) -> Option<String> {
+    let key = match line {
+        "ARSLAN_ERROR=data_profile_in_use" => "profile_in_use",
+        "ARSLAN_ERROR=data_profile_unavailable" => "profile_unavailable",
+        "ARSLAN_ERROR=data_profile_recovery_required" => "profile_recovery_required",
+        "ARSLAN_ERROR=database_schema_unsupported" => "profile_schema_unsupported",
+        "ARSLAN_ERROR=database_upgrade_backup_failed" => "profile_upgrade_backup_failed",
+        _ => return None,
+    };
+    Some(native_locale::text(locale, key))
+}
 
 /// Start the sidecar and block until it announces its port.
 ///
 /// Blocking is deliberate. Doing this asynchronously would let the window
 /// appear before there is anything to show and require a second code path for
 /// "port arrived late"; the splash screen already covers the wait.
-fn start_sidecar(app: &tauri::AppHandle) -> Result<(u16, Child), String> {
+fn start_sidecar(app: &tauri::AppHandle) -> Result<(u16, NormalChild), StartupFailure> {
     let exe = app
         .path()
         .resolve(
@@ -84,7 +204,8 @@ fn start_sidecar(app: &tauri::AppHandle) -> Result<(u16, Child), String> {
              packaging/build_dmg.sh, which stages packaging/dist into \
              src-tauri/binaries/sidecar.",
             exe.display()
-        ));
+        )
+        .into());
     }
 
     let mut cmd = Command::new(&exe);
@@ -148,17 +269,31 @@ fn start_sidecar(app: &tauri::AppHandle) -> Result<(u16, Child), String> {
     // there, so every request produced a "--- Logging error --- BrokenPipeError"
     // traceback in the packaged app. Draining to EOF also gives us the
     // sidecar's own output in Console.app, where it can be read after a crash.
-    let (tx, rx) = std::sync::mpsc::channel::<Result<u16, String>>();
+    let (tx, rx) = std::sync::mpsc::channel::<Result<u16, StartupFailure>>();
+    #[cfg(target_os = "macos")]
+    let shutdown = std::sync::Arc::new(recovery_shutdown::Receipt::default());
+    #[cfg(target_os = "macos")]
+    let shutdown_reader = shutdown.clone();
     std::thread::spawn(move || {
         let mut announced = false;
         for line in BufReader::new(stdout).lines() {
-            let Ok(line) = line else { break };
+            let Ok(line) = line else {
+                #[cfg(target_os = "macos")]
+                shutdown_reader.failed();
+                break;
+            };
+            #[cfg(target_os = "macos")]
+            shutdown_reader.observe(&line);
             if !announced {
+                if let Some(message) = startup_failure(&line, native_locale::selected()) {
+                    let _ = tx.send(Err(message));
+                    announced = true;
+                    continue;
+                }
                 if let Some(rest) = line.strip_prefix(PORT_LINE_PREFIX) {
-                    let parsed = rest
-                        .trim()
-                        .parse::<u16>()
-                        .map_err(|_| format!("unparseable port line: {line:?}"));
+                    let parsed = rest.trim().parse::<u16>().map_err(|_| {
+                        StartupFailure::from(format!("unparseable port line: {line:?}"))
+                    });
                     let _ = tx.send(parsed);
                     announced = true;
                     continue;
@@ -166,25 +301,38 @@ fn start_sidecar(app: &tauri::AppHandle) -> Result<(u16, Child), String> {
             }
             eprintln!("[sidecar] {line}");
         }
+        #[cfg(target_os = "macos")]
+        shutdown_reader.closed();
         if !announced {
             let _ = tx.send(Err(format!(
                 "sidecar exited without printing {PORT_LINE_PREFIX}<port>"
-            )));
+            )
+            .into()));
         }
     });
 
     match rx.recv_timeout(STARTUP_TIMEOUT) {
-        Ok(Ok(port)) => Ok((port, child)),
+        Ok(Ok(port)) => Ok((
+            port,
+            NormalChild {
+                process: child,
+                #[cfg(target_os = "macos")]
+                shutdown,
+            },
+        )),
         Ok(Err(e)) => {
             let _ = child.kill();
+            let _ = child.wait();
             Err(e)
         }
         Err(_) => {
             let _ = child.kill();
+            let _ = child.wait();
             Err(format!(
                 "sidecar did not announce a port within {}s",
                 STARTUP_TIMEOUT.as_secs()
-            ))
+            )
+            .into())
         }
     }
 }
@@ -318,7 +466,9 @@ fn https_only(url: &str) -> Result<(), String> {
 /// Open a URL in the user's default browser. macOS-only by the same argument as
 /// the rest of this file: darwin-aarch64 is the one platform this shell ships on.
 #[tauri::command]
-fn open_external(url: String) -> Result<(), String> {
+fn open_external(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    let gate = app.state::<maintenance::Gate>();
+    let _interactive = gate.interactive().ok_or_else(maintenance_refusal)?;
     https_only(&url)?;
     std::process::Command::new("open")
         .arg(&url)
@@ -327,10 +477,22 @@ fn open_external(url: String) -> Result<(), String> {
         .map_err(|e| format!("could not open the browser: {e}"))
 }
 
+fn maintenance_refusal() -> String {
+    native_locale::text(native_locale::selected(), "restore_controls_paused")
+}
+
 /// Poll target for the SPA's corner pill (web/src/components/UpdatePill.tsx).
 #[tauri::command]
-fn update_status(shared: tauri::State<'_, UpdateShared>) -> UpdateStatus {
+fn update_status(app: tauri::AppHandle, shared: tauri::State<'_, UpdateShared>) -> UpdateStatus {
+    refresh_update_menu(&app);
     shared.status.lock().unwrap().clone()
+}
+
+fn refresh_update_menu(app: &tauri::AppHandle) {
+    #[cfg(target_os = "macos")]
+    native_menu::refresh(app);
+    #[cfg(not(target_os = "macos"))]
+    let _ = app;
 }
 
 /// The user clicked Install on the pill: download, verify, install, restart.
@@ -338,6 +500,9 @@ fn update_status(shared: tauri::State<'_, UpdateShared>) -> UpdateStatus {
 /// download_and_install; a tampered artefact fails here, not after.
 #[tauri::command]
 async fn install_update(app: tauri::AppHandle) {
+    let Some(_maintenance) = begin_maintenance(&app, maintenance::Operation::Update) else {
+        return;
+    };
     let shared = app.state::<UpdateShared>();
     let Some(update) = shared.pending.lock().unwrap().take() else {
         return; // double-click race or stale pill — nothing staged
@@ -371,7 +536,11 @@ async fn install_update(app: tauri::AppHandle) {
 /// machine or an unreachable feed is a normal morning, not an error the user
 /// can act on. README's Status section discloses that silence.
 fn check_for_updates(app: tauri::AppHandle, interactive: bool) {
+    let Some(maintenance) = begin_maintenance(&app, maintenance::Operation::Update) else {
+        return;
+    };
     tauri::async_runtime::spawn(async move {
+        let _maintenance = maintenance;
         // Menu-triggered only: the pill shows a "checking" sweep so the click is
         // visibly alive. The startup check stays byte-for-byte silent — its
         // whole failure model (offline is a normal morning) depends on that.
@@ -413,7 +582,7 @@ fn check_for_updates(app: tauri::AppHandle, interactive: bool) {
                     // A stuck progress indicator is worse than none.
                     app.state::<UpdateShared>().set(&app, "none", "", "");
                     app.dialog()
-                        .message("You're on the latest version. / 已是最新版。")
+                        .message(native_locale::text(native_locale::selected(), "latest"))
                         .title("Arslan")
                         .kind(MessageDialogKind::Info)
                         .blocking_show();
@@ -429,10 +598,13 @@ fn check_for_updates(app: tauri::AppHandle, interactive: bool) {
                     app.state::<UpdateShared>().set(&app, "none", "", "");
                     app.dialog()
                         .message(format!(
-                            "Could not reach the update feed — are you online?\n\
-                             无法连接更新源,请检查网络。\n\n{e}"
+                            "{}\n\n{e}",
+                            native_locale::text(native_locale::selected(), "check_failed")
                         ))
-                        .title("Check for Updates")
+                        .title(native_locale::text(
+                            native_locale::selected(),
+                            "check_title",
+                        ))
                         .kind(MessageDialogKind::Warning)
                         .blocking_show();
                 }
@@ -468,20 +640,15 @@ fn offer_install_to_applications(app: &tauri::App, exe: &std::path::Path) {
     let Some(bundle) = app_bundle_root(exe) else {
         return;
     };
+    let locale = native_locale::selected();
     let yes = app
         .dialog()
-        .message(
-            "Arslan is running straight from its disk image. Ejecting the \
-             image would break the running app, and automatic updates cannot \
-             work here.\n\nArslan 正在从安装镜像(DMG)中直接运行:镜像被推出后 \
-             app 会失灵,自动更新也无法工作。\n\nInstall to the Applications \
-             folder and relaunch? / 安装到「应用程序」并重新打开?",
-        )
-        .title("Install Arslan / 安装 Arslan")
+        .message(native_locale::text(locale, "install_prompt"))
+        .title(native_locale::text(locale, "install_title"))
         .kind(MessageDialogKind::Info)
         .buttons(MessageDialogButtons::OkCancelCustom(
-            "Install / 安装".into(),
-            "Not now / 暂不".into(),
+            native_locale::text(locale, "install"),
+            native_locale::text(locale, "not_now"),
         ))
         .blocking_show();
     if !yes {
@@ -504,12 +671,8 @@ fn offer_install_to_applications(app: &tauri::App, exe: &std::path::Path) {
         .unwrap_or(false);
     if !copied {
         app.dialog()
-            .message(
-                "Could not copy Arslan into /Applications. Please drag it \
-                 there in Finder instead.\n\n自动安装失败,请在访达中手动把 \
-                 Arslan 拖进「应用程序」。",
-            )
-            .title("Install failed / 安装失败")
+            .message(native_locale::text(locale, "install_failed"))
+            .title(native_locale::text(locale, "install_failed_title"))
             .kind(MessageDialogKind::Error)
             .blocking_show();
         return;
@@ -534,15 +697,85 @@ const MAIN_LABEL: &str = "main";
 /// first launch — the sidecar announces its port only after migrations finish,
 /// and health comes after that — and on the setup thread either one would
 /// freeze the launch screen rather than play under it.
-fn boot(app: tauri::AppHandle, splash_since: std::time::Instant) {
-    let port = match start_sidecar(&app) {
+fn boot(app: tauri::AppHandle, splash_since: std::time::Instant, maintenance: NativeMaintenance) {
+    #[cfg(target_os = "macos")]
+    let started = start_with_recovery(
+        || start_sidecar(&app),
+        || {
+            let refused = || native_locale::text(native_locale::selected(), "recovery_unconfirmed");
+            let executable = app
+                .path()
+                .resolve(
+                    "sidecar/arslan-server",
+                    tauri::path::BaseDirectory::Resource,
+                )
+                .map_err(|_| refused())?;
+            match recovery_control::run(&executable, &recovery_control::Request::Inspect) {
+                Ok(recovery_control::Outcome::PendingOperation(Some(operation))) => Ok(operation),
+                _ => Err(refused()),
+            }
+        },
+        |_operation| {
+            // Keep trusted recovery consent attached to this startup window.
+            // An unparented macOS rfd dialog uses a separate system process.
+            // A closed/missing splash is not implicit permission to roll back.
+            let Some(window) = app.get_webview_window(SPLASH_LABEL) else {
+                return false;
+            };
+            let locale = native_locale::selected();
+            app.dialog()
+                .message(native_locale::text(locale, "recovery_rollback_prompt"))
+                .parent(&window)
+                .title(native_locale::text(locale, "recovery_title"))
+                .kind(MessageDialogKind::Warning)
+                .buttons(MessageDialogButtons::OkCancelCustom(
+                    native_locale::text(locale, "recovery_rollback"),
+                    native_locale::text(locale, "recovery_keep_paused"),
+                ))
+                .blocking_show()
+        },
+        |operation| {
+            let refused = || native_locale::text(native_locale::selected(), "recovery_unconfirmed");
+            let executable = app
+                .path()
+                .resolve(
+                    "sidecar/arslan-server",
+                    tauri::path::BaseDirectory::Resource,
+                )
+                .map_err(|_| refused())?;
+            match recovery_control::run(
+                &executable,
+                &recovery_control::Request::RollbackBound {
+                    operation_id: operation,
+                },
+            ) {
+                Ok(recovery_control::Outcome::RolledBack(true)) => {
+                    refresh_boot_locale(&app);
+                    Ok(())
+                }
+                _ => Err(refused()),
+            }
+        },
+    );
+    #[cfg(not(target_os = "macos"))]
+    let started = start_sidecar(&app);
+    let port = match started {
         Ok((port, child)) => {
             app.state::<Sidecar>().0.lock().unwrap().replace(child);
             port
         }
-        Err(e) => return report_boot_failure(&app, &e),
+        Err(e) => {
+            // Ordinary failed startup is terminal, not uncertain recovery.
+            // Preserve update access so a broken installed version can be fixed.
+            if !e.recovery_pending {
+                maintenance.complete();
+            }
+            return report_boot_failure(&app, &e.message);
+        }
     };
+    refresh_boot_locale(&app);
     if let Err(e) = wait_for_health(port) {
+        maintenance.complete();
         return report_boot_failure(&app, &e);
     }
 
@@ -564,28 +797,27 @@ fn boot(app: tauri::AppHandle, splash_since: std::time::Instant) {
 
     // Windows have to be built on the main thread on macOS.
     let handle = app.clone();
-    let _ = app.run_on_main_thread(move || open_main_window(&handle, port));
+    let _ = app.run_on_main_thread(move || {
+        maintenance.complete();
+        open_main_window(&handle, port);
+    });
 }
 
-/// Report a failed start on the window that is already in front of the user.
-///
-/// This path used to be `?` out of `setup`, which panicked before any window
-/// had been built: the app died having shown nothing at all, and the user had
-/// no way to tell a crash from a slow launch. The launch screen is on screen
-/// by the time anything here can fail, so it carries the message.
+/// Refresh display-only startup copy after profile rollback or cache repair.
+fn refresh_boot_locale(app: &tauri::AppHandle) {
+    if let Some(splash) = app.get_webview_window(SPLASH_LABEL) {
+        let _ = splash.eval(native_locale::refresh_boot_script(native_locale::selected()));
+    }
+}
+
+/// Report a failed start on the already-visible launch screen, not a panic
+/// before a window exists or a silent disappearance.
 fn report_boot_failure(app: &tauri::AppHandle, message: &str) {
     eprintln!("Arslan failed to start: {message}");
     if let Some(splash) = app.get_webview_window(SPLASH_LABEL) {
-        // These strings are ours, not user input, but they are being pasted
-        // into a JS string literal — quote them rather than trusting that no
-        // future error message will ever contain a quote or a backslash.
-        let escaped = message
-            .replace('\\', "\\\\")
-            .replace('"', "\\\"")
-            .replace('\n', "\\n");
-        let _ = splash.eval(format!(
-            "window.__arslanBootError && window.__arslanBootError(\
-             \"Arslan could not start.\\n\\n{escaped}\")"
+        let _ = splash.eval(native_locale::boot_error_script(
+            native_locale::selected(),
+            message,
         ));
     }
 }
@@ -630,6 +862,7 @@ fn open_main_window(app: &tauri::AppHandle, port: u16) {
         .disable_drag_drop_handler()
         .on_page_load(|win, payload| {
             if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
+                app_icon::restore(win.app_handle());
                 reveal(win.app_handle());
             }
         });
@@ -715,18 +948,36 @@ fn reveal(app: &tauri::AppHandle) {
     }
 }
 
+#[tauri::command]
+fn create_backup(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        recovery_ui::begin_backup(app);
+        Ok(())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        Err("backup_platform_unavailable".into())
+    }
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .manage(Sidecar::default())
+        .manage(maintenance::Gate::default())
         .manage(UpdateShared::default())
         .manage(listen::Listener::default())
         .manage(voice::Conversation::default())
         .invoke_handler(tauri::generate_handler![
+            app_icon::get_app_icon,
+            app_icon::set_app_icon,
             update_status,
             install_update,
             open_external,
+            create_backup,
             listen::voice_start,
             listen::voice_stop,
             voice::voice_conversation_start,
@@ -735,8 +986,18 @@ pub fn run() {
             voice::voice_unmute
         ])
         .on_menu_event(|app, event| {
+            refresh_update_menu(app);
             if event.id() == "check-for-updates" {
                 check_for_updates(app.clone(), true);
+            }
+            #[cfg(target_os = "macos")]
+            if event.id() == "restore-backup" {
+                recovery_ui::begin(app.clone());
+            }
+        })
+        .on_window_event(|window, event| {
+            if matches!(event, tauri::WindowEvent::Focused(true)) {
+                refresh_update_menu(window.app_handle());
             }
         })
         .setup(|app| {
@@ -761,9 +1022,13 @@ pub fn run() {
             //     inline would exist without ever painting a frame.
             //
             // Hence the boot work moves to its own thread below.
+            app_icon::restore(app.handle());
             let splash_since = std::time::Instant::now();
+            let maintenance = begin_maintenance(app.handle(), maintenance::Operation::Startup)
+                .expect("startup owns initial maintenance slot");
             WebviewWindowBuilder::new(app, SPLASH_LABEL, WebviewUrl::App("index.html".into()))
                 .title("Arslan")
+                .initialization_script(native_locale::boot_script(native_locale::selected()))
                 .inner_size(WINDOW_W, WINDOW_H)
                 .resizable(false)
                 .decorations(false)
@@ -779,27 +1044,15 @@ pub fn run() {
             // window, so nothing here depended on the old ordering.
             //
             // "Check for Updates…" lives in the app submenu, right under About
-            // — the place macOS users actually look. Built from the default
-            // menu so Edit/copy-paste etc. all survive.
+            // — the place macOS users actually look. Native predefined roles
+            // preserve Edit/copy-paste and their system keyboard shortcuts.
             #[cfg(target_os = "macos")]
             {
-                use tauri::menu::{Menu, MenuItem};
-                let menu = Menu::default(app.handle())?;
-                if let Some(tauri::menu::MenuItemKind::Submenu(app_menu)) = menu.items()?.first() {
-                    let check = MenuItem::with_id(
-                        app,
-                        "check-for-updates",
-                        "Check for Updates…",
-                        true,
-                        None::<&str>,
-                    )?;
-                    app_menu.insert(&check, 1)?;
-                }
-                app.set_menu(menu)?;
+                native_menu::install(app.handle())?;
             }
 
             let handle = app.handle().clone();
-            std::thread::spawn(move || boot(handle, splash_since));
+            std::thread::spawn(move || boot(handle, splash_since, maintenance));
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -810,8 +1063,8 @@ pub fn run() {
             // holding the database lock.
             if matches!(event, RunEvent::Exit | RunEvent::ExitRequested { .. }) {
                 if let Some(mut child) = app.state::<Sidecar>().0.lock().unwrap().take() {
-                    let _ = child.kill();
-                    let _ = child.wait();
+                    let _ = child.process.kill();
+                    let _ = child.process.wait();
                 }
             }
         });
@@ -820,6 +1073,210 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "macos")]
+    fn pending_failure() -> StartupFailure {
+        startup_failure("ARSLAN_ERROR=data_profile_recovery_required", "en").unwrap()
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn recovery_is_never_offered_for_success_or_unrelated_errors() {
+        assert_eq!(
+            start_with_recovery(
+                || Ok(17),
+                || panic!("no inspect"),
+                |_| panic!("no prompt"),
+                |_| panic!("no rollback")
+            )
+            .unwrap(),
+            17
+        );
+        let failure = start_with_recovery::<()>(
+            || Err("ordinary failure".to_string().into()),
+            || panic!("no inspect"),
+            |_| panic!("no prompt"),
+            |_| panic!("no rollback"),
+        )
+        .unwrap_err();
+        assert!(!failure.recovery_pending);
+        assert!(
+            startup_failure("ARSLAN_ERROR=data_profile_recovery_required extra", "en").is_none()
+        );
+        assert!(
+            !startup_failure("ARSLAN_ERROR=data_profile_in_use", "en")
+                .unwrap()
+                .recovery_pending
+        );
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn cancelling_recovery_never_mutates_or_restarts() {
+        let starts = std::cell::Cell::new(0);
+        let failure = start_with_recovery::<()>(
+            || {
+                starts.set(starts.get() + 1);
+                Err(pending_failure())
+            },
+            || Ok("selected".into()),
+            |_| false,
+            |_| panic!("cancel must not rollback"),
+        )
+        .unwrap_err();
+        assert_eq!(starts.get(), 1);
+        assert!(failure.recovery_pending);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn confirmed_rollback_retries_once_and_unknown_outcome_never_retries() {
+        let starts = std::cell::Cell::new(0);
+        let actions = std::cell::Cell::new(0);
+        let result = start_with_recovery(
+            || {
+                starts.set(starts.get() + 1);
+                if starts.get() == 1 {
+                    Err(pending_failure())
+                } else {
+                    Ok(23)
+                }
+            },
+            || Ok("selected".into()),
+            |operation| {
+                assert_eq!(operation, "selected");
+                true
+            },
+            |operation| {
+                assert_eq!(operation, "selected");
+                actions.set(actions.get() + 1);
+                Ok(())
+            },
+        );
+        assert_eq!(result.unwrap(), 23);
+        assert_eq!(starts.get(), 2);
+        assert_eq!(actions.get(), 1);
+        starts.set(0);
+        let failure = start_with_recovery::<()>(
+            || {
+                starts.set(starts.get() + 1);
+                Err(pending_failure())
+            },
+            || Ok("selected".into()),
+            |_| true,
+            |_| Err("unconfirmed".to_string()),
+        )
+        .unwrap_err();
+        assert_eq!(starts.get(), 1);
+        assert_eq!(failure.message, "unconfirmed");
+        assert!(failure.recovery_pending);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn repeated_pending_status_does_not_repeat_confirmation_or_rollback() {
+        let starts = std::cell::Cell::new(0);
+        let actions = std::cell::Cell::new(0);
+        assert!(start_with_recovery::<()>(
+            || {
+                starts.set(starts.get() + 1);
+                Err(pending_failure())
+            },
+            || Ok("selected".into()),
+            |_| true,
+            |_| {
+                actions.set(actions.get() + 1);
+                Ok(())
+            }
+        )
+        .is_err());
+        assert_eq!(starts.get(), 2);
+        assert_eq!(actions.get(), 1);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn failed_inspection_never_prompts_or_mutates() {
+        let result = start_with_recovery::<()>(
+            || Err(pending_failure()),
+            || Err("cannot inspect".into()),
+            |_| panic!("no confirmation"),
+            |_| panic!("no rollback"),
+        );
+        let failure = result.unwrap_err();
+        assert_eq!(failure.message, "cannot inspect");
+        assert!(failure.recovery_pending);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn rollback_uses_the_snapshot_from_before_confirmation() {
+        let current = std::cell::Cell::new("first");
+        let result = start_with_recovery::<()>(
+            || Err(pending_failure()),
+            || Ok(current.get().into()),
+            |operation| {
+                assert_eq!(operation, "first");
+                current.set("second");
+                true
+            },
+            |operation| {
+                assert_eq!(operation, "first");
+                assert_ne!(operation, current.get());
+                Err("operation changed".into())
+            },
+        );
+        let failure = result.unwrap_err();
+        assert_eq!(failure.message, "operation changed");
+        assert!(failure.recovery_pending);
+    }
+
+    #[test]
+    fn profile_startup_errors_use_only_known_codes_and_six_language_copy() {
+        for locale in ["en", "zh", "ja", "es", "de", "fr"] {
+            let unsupported = startup_failure("ARSLAN_ERROR=database_schema_unsupported", locale)
+                .expect("known schema refusal must have localized copy");
+            assert_eq!(
+                unsupported.message,
+                native_locale::text(locale, "profile_schema_unsupported")
+            );
+            assert!(!unsupported.recovery_pending); // No automatic restore or retry.
+            assert_ne!(unsupported.message, "Arslan");
+            assert_eq!(
+                startup_error("ARSLAN_ERROR=data_profile_in_use", locale),
+                Some(native_locale::text(locale, "profile_in_use"))
+            );
+            assert_eq!(
+                startup_error("ARSLAN_ERROR=data_profile_unavailable", locale),
+                Some(native_locale::text(locale, "profile_unavailable"))
+            );
+            assert_ne!(native_locale::text(locale, "profile_in_use"), "Arslan");
+            assert_eq!(
+                startup_error("ARSLAN_ERROR=data_profile_recovery_required", locale),
+                Some(native_locale::text(locale, "profile_recovery_required"))
+            );
+            assert_ne!(
+                native_locale::text(locale, "profile_recovery_required"),
+                "Arslan"
+            );
+            for key in [
+                "recovery_title",
+                "recovery_rollback_prompt",
+                "recovery_rollback",
+                "recovery_keep_paused",
+                "recovery_unconfirmed",
+            ] {
+                assert_ne!(native_locale::text(locale, key), "Arslan");
+            }
+            assert_ne!(
+                native_locale::text(locale, "recovery_rollback"),
+                native_locale::text(locale, "recovery_keep_paused")
+            );
+        }
+        assert!(startup_error("ARSLAN_ERROR=private diagnostic", "en").is_none());
+        assert!(startup_error("ARSLAN_ERROR=database_schema_unsupported<script>", "en").is_none());
+        assert!(startup_error("ARSLAN_ERROR=data_profile_in_use<script>", "en").is_none());
+    }
 
     /// 🔴 These were the first tests CI ever ran for this crate: the module
     /// below predates the `cargo test` step and sat here unexecuted — a test

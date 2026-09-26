@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 # Plain (non-secret) keys returned verbatim.
 _PLAIN_KEYS = (
-    "curation_backfill_from","llm_provider", "llm_model", "llm_base_url", "language", "search_provider", "search_base_url",
+    "curation_backfill_from","llm_provider", "llm_model", "llm_base_url", "language", "first_run_seen", "search_provider", "search_base_url",
                "llm_strategy", "distill_on_session_end", "orchestrator_shell_enabled",
                "shell_confirm_policy", "synthesis_config_id", "embedding_config_id",
                # Per-task model slots (spec ②). Registered here AND on both
@@ -144,6 +144,10 @@ async def update_settings(session: AsyncSession, data: dict[str, str]) -> None:
         await _clear_raw(session, CURATION_BACKFILL_FROM_KEY)
 
     await session.commit()
+    if "language" in data and data["language"] is not None:
+        from server.services import native_locale
+
+        await native_locale.sync(session)
 
 
 async def get_settings(session: AsyncSession) -> dict[str, str]:
@@ -490,7 +494,13 @@ _INT_ACCESSORS = {
 #: here — a key that is writable but not readable reports the schema default forever
 #: (see the comment in get_settings). `evolution_auto` is deliberately absent: it is a
 #: bool in the service but a STRING ("on"/"off") on the wire, so it keeps its own line.
+async def first_run_seen(session: AsyncSession) -> bool:
+    """Whether onboarding was dismissed or completed. Default False."""
+    return _truthy(await _get_raw(session, "first_run_seen"))
+
+
 _BOOL_ACCESSORS = {
+    "first_run_seen": first_run_seen,
     "distill_on_session_end": distill_enabled,
     "curation_enabled": curation_enabled,
     "mcp_server_enabled": mcp_server_enabled,

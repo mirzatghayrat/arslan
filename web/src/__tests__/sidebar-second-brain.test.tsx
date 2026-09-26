@@ -55,7 +55,7 @@ describe("Sidebar · Second Brain", () => {
     const { container } = render(<Sidebar {...baseProps()} />);
     const btn = container.querySelector("#nav-btn-brain-deck");
     expect(btn).not.toBeNull();
-    expect(screen.getByText("nav.secondBrain")).toBeTruthy();
+    expect(screen.getByText("companion.memory")).toBeTruthy();
   });
 
   it("calls onChangeSection('brain') when clicked", () => {

@@ -127,7 +127,7 @@ export default function DiagnosisCatalog({ onSelectSpawn, narrow, onGoToChat }: 
 
   return (
     <div className="diag-catalog" data-testid="diagnosis-catalog">
-      <div className="diag-catalog__range" role="tablist" aria-label="range">
+      <div className="diag-catalog__range" role="tablist" aria-label={t('ui.range')}>
         {RANGES.map((r) => (
           <button
             key={r.key}
@@ -166,7 +166,7 @@ export default function DiagnosisCatalog({ onSelectSpawn, narrow, onGoToChat }: 
           </div>
         </div>
         <div className="diag-card">
-          <div className="diag-card__label">tokens</div>
+          <div className="diag-card__label">{t('usage.col.tokens')}</div>
           <div className="diag-card__value">{fleet ? fmtTokens(fleet.tokens_sum) : "—"}</div>
         </div>
       </div>
@@ -273,7 +273,7 @@ export default function DiagnosisCatalog({ onSelectSpawn, narrow, onGoToChat }: 
               <th>{t("diag.error_rate")}</th>
               <th>P95</th>
               <th>{t("diag.pass_rate")}</th>
-              <th>tokens</th>
+              <th>{t('usage.col.tokens')}</th>
               <th>{t("diag.trend")}</th>
             </tr>
           </thead>

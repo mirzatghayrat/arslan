@@ -78,6 +78,59 @@ async def test_extract_file_upload(client, monkeypatch):
     assert r.json()["text"] == "hello attachment"
 
 
+@pytest.mark.parametrize("extension, member", [
+    ("pptx", "ppt/slides/slide1.xml"),
+    ("xlsx", "xl/worksheets/sheet1.xml"),
+    ("docx", "word/document.xml"),
+])
+async def test_corrupt_office_compression_returns_localizable_400(client, extension, member):
+    import io
+    import struct
+    import zipfile
+
+    stream = io.BytesIO()
+    with zipfile.ZipFile(stream, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(member, "<document/>")
+    data = bytearray(stream.getvalue())
+    name_size, extra_size = struct.unpack_from("<HH", data, 26)
+    data[30 + name_size + extra_size] = 7
+    result = await client.post("/api/v1/extract", files={
+        "file": (f"damaged.{extension}", bytes(data), "application/octet-stream"),
+    })
+    assert result.status_code == 400
+    assert result.json() == {"detail": {"code": "inputs.invalid"}}
+
+
+async def test_input_matrix_and_code_extraction(client):
+    matrix = await client.get("/api/v1/input-formats")
+    assert matrix.status_code == 200
+    assert "xlsx" in matrix.json()["spreadsheet"]
+    assert matrix.json()["video_visual_understanding"] is False
+    result = await client.post("/api/v1/extract", files={"file": ("sample.ts", b"const a = 1;", "text/plain")})
+    assert result.status_code == 200
+    assert result.json()["text"] == "const a = 1;"
+    assert result.json()["input_kind"] == "text"
+
+
+async def test_video_upload_returns_frame_payload_without_compression_model(client, monkeypatch):
+    from server.services import video_input
+    response = {"text": "metadata", "chars": 8, "truncated": False, "input_kind": "video",
+                "images": [{"name": "clip.mp4#t=0s", "mime_type": "image/png", "data": "cG5n"}],
+                "video_frame_status": "sampled", "video_transcription": False}
+    monkeypatch.setattr(video_input, "extract_video", lambda name, data: response)
+    async def forbidden(**kwargs):
+        pytest.fail("video locators must not be compressed or sent to a model during upload")
+    monkeypatch.setattr(eapi.extract, "extract_text", forbidden)
+    result = await client.post("/api/v1/extract", files={"file": ("clip.mp4", b"synthetic", "video/mp4")}, data={"compress": "true"})
+    assert result.status_code == 200 and result.json() == response
+
+
+async def test_invalid_extended_input_has_structured_error(client):
+    result = await client.post("/api/v1/extract", files={"file": ("sample.xlsx", b"bad", "application/octet-stream")})
+    assert result.status_code == 400
+    assert result.json()["detail"] == {"code": "inputs.invalid"}
+
+
 # These tests skip themselves from INSIDE the body (no decorator to hang a mark
 # on), so the selection marker is added here explicitly. It does not replace the
 # in-body skip — that skip is why they pass off macOS; the marker is how a macOS
@@ -162,6 +215,38 @@ async def test_extract_image_upload_no_text_200(client, monkeypatch):
 async def test_extract_missing_body_400(client):
     r = await client.post("/api/v1/extract", json={})
     assert r.status_code == 400
+
+
+@pytest.mark.parametrize("body", [[], None, 42, "https://example.com", {"url": 7}, {"url": ["https://example.com"]}, {"url": {"target": "https://example.com"}}])
+async def test_extract_rejects_wrong_json_shape_before_extraction(client, monkeypatch, body):
+    import json
+
+    async def forbidden(**kwargs):
+        pytest.fail("invalid request must not reach extraction or network access")
+
+    monkeypatch.setattr(eapi.extract, "extract_text", forbidden)
+    result = await client.post("/api/v1/extract", content=json.dumps(body),
+                               headers={"content-type": "application/json"})
+    assert result.status_code == 400
+    assert result.json() == {"detail": {"code": "inputs.invalid"}}
+
+
+async def test_extract_rejects_plain_form_field_named_file(client, monkeypatch):
+    async def forbidden(**kwargs):
+        pytest.fail("plain form text must not reach extraction")
+
+    monkeypatch.setattr(eapi.extract, "extract_text", forbidden)
+    result = await client.post("/api/v1/extract", files={"file": (None, "not an uploaded file")})
+    assert result.status_code == 400
+    assert result.json() == {"detail": {"code": "inputs.invalid"}}
+
+
+@pytest.mark.parametrize("payload", [b'{"url":', b'\xff'])
+async def test_extract_invalid_json_has_stable_error(client, payload):
+    result = await client.post("/api/v1/extract", content=payload,
+                               headers={"content-type": "application/json"})
+    assert result.status_code == 400
+    assert result.json() == {"detail": {"code": "inputs.invalid"}}
 
 
 async def test_extract_file_missing_field_400(client):

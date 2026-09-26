@@ -17,6 +17,7 @@ from pathlib import Path
 from server import config
 from server.db.session import AsyncSessionLocal
 from server.registry.memory_executors import RecallExecutor, RememberExecutor
+from server.registry.task_tools import DelegateWorkExecutor, TaskProgressExecutor
 # Module-qualified on purpose. `from net_pin import net_pin._fetch_text` binds the name HERE at
 # import time, so a test patching net_pin._fetch_text would never reach this caller —
 # the seam has to stay at the definition site. _BlockedHost is the exception: it is
@@ -193,6 +194,9 @@ class WebExtractExecutor:
     key = "web_extract"
 
     async def execute(self, args: dict) -> dict:
+        limit = args.get("max_chars", net_pin._EXTRACT_CHAR_LIMIT)
+        if type(limit) is not int or not 1 <= limit <= net_pin._MAX_EXTRACT_CHAR_LIMIT:
+            return {"ok": False, "error": "max_chars must be an integer from 1 to 40000"}
         url = (args.get("url") or "").strip()
         if not url.startswith(("http://", "https://")):
             return {"ok": False, "error": "missing or invalid 'url'"}
@@ -214,7 +218,11 @@ class WebExtractExecutor:
             return {"ok": False, "error": f"fetch failed: {category}{_STEER}"}
         if not text:
             return {"ok": False, "error": f"no extractable text{_STEER}"}
-        return {"ok": True, "url": url, "text": text[:net_pin._EXTRACT_CHAR_LIMIT]}
+        from arslan.companion.research import receipt
+        extracted = text[:limit]
+        return {"ok": True, "url": url, "text": extracted,
+                "returned_chars": len(extracted), "total_chars": len(text),
+                "source": receipt(url, extracted, truncated=len(text) > len(extracted)).model_dump(mode="json")}
 
 
 class ListMyCapabilitiesExecutor:
@@ -624,8 +632,8 @@ class RunCommandExecutor:
         if not verdict["ok"]:
             return {"ok": False, "error": verdict["reason"]}
         if command_policy.is_network_command(command, argv):
-            # Network git/gh: run through the host allowlist + credential-injecting proxy so the
-            # real token never enters the sandbox (see command_net). Local commands stay fully offline.
+            # Network git/gh: allowlisted unauthenticated proxy; automatic host
+            # credential access is disabled (see command_net). Local commands stay offline.
             from server.services import command_net
             result = await command_net.run_network_command(command, argv)
         else:
@@ -735,7 +743,7 @@ from server.registry.file_tools import (  # noqa: E402 — registry assembly
 EXECUTORS = {e.key: e for e in (
     WebSearchExecutor(), WebExtractExecutor(), ChartExecutor(), CreateSkillExecutor(),
     DeckExecutor(), RunPythonExecutor(), RunCommandExecutor(), ListMyCapabilitiesExecutor(),
-    ReadSkillExecutor(), RecallExecutor(), RememberExecutor(),
+    ReadSkillExecutor(), RecallExecutor(), RememberExecutor(), TaskProgressExecutor(), DelegateWorkExecutor(),
     # Workspace file tools (P1). Registered here; whether Arslan is OFFERED them
     # depends on a configured workspace — see _arslan_tools.
     ReadFileExecutor(), ListDirExecutor(), SearchFilesExecutor(),

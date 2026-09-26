@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from sqlalchemy import select
 
-from server.db.models import RunStep
+from server.db.models import Run, RunStep
 from server.orchestrator import dispatcher
 from server.services import evolution_meter
 from server.services import trace_evidence
@@ -76,6 +76,9 @@ async def is_replayable(db, run_id: int) -> bool:
     """True iff every tool_call in the original run used a replay-safe builtin. A run that
     invoked an MCP / side-effecting tool is NOT hermetically replayable → excluded from the
     corpus (the exclusion count/ratio is surfaced on the promotion card, spec §E3/#11)."""
+    run = await db.get(Run, run_id)
+    if run is not None and run.no_learning:
+        return False
     steps = (await db.execute(
         select(RunStep).where(RunStep.run_id == run_id, RunStep.kind == "tool_call")
     )).scalars().all()

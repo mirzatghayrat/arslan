@@ -108,7 +108,7 @@ def _point_static_dir_into_the_bundle() -> None:
         )
 
 
-def _die_when_the_shell_does() -> None:
+def _die_when_the_shell_does(on_shutdown=None) -> None:
     """Exit as soon as our parent's end of stdin closes.
 
     The Tauri shell also kills us on its exit events, but that only covers
@@ -146,20 +146,26 @@ def _die_when_the_shell_does() -> None:
         return
 
     threading.Thread(
-        target=_watch_stdin, args=(sys.stdin,), daemon=True, name="parent-watchdog"
+        target=_watch_stdin, args=(sys.stdin,), kwargs={"on_shutdown": on_shutdown},
+        daemon=True, name="parent-watchdog"
     ).start()
 
 
-def _watch_stdin(stream, on_eof=None) -> None:
+def _watch_stdin(stream, on_eof=None, on_shutdown=None) -> None:
     """Block until `stream` hits EOF, then exit the process.
 
+    A trusted parent may send ARSLAN_SHUTDOWN before EOF to request normal
+    lifespan cleanup. Its callback owns a bounded failure watchdog; ordinary
+    EOF/broken-pipe handling remains immediate parent-death cleanup.
     Split out of the thread body so it can be tested with a fake stream and an
     injected on_eof — otherwise the only way to exercise it would be to let it
     call os._exit and take the test runner with it.
     """
     try:
-        while stream.readline():
-            pass  # The shell sends nothing; any input is simply ignored.
+        while line := stream.readline():
+            if line == "ARSLAN_SHUTDOWN\n" and on_shutdown is not None:
+                on_shutdown()
+                return  # The callback arms its own bounded-exit watchdog.
     except Exception:  # noqa: BLE001 — a broken pipe means the same thing
         pass
     print("shell closed our stdin — exiting", file=sys.stderr, flush=True)
@@ -265,7 +271,24 @@ def _lazy_resource_probes():
         with httpx.Client(timeout=1.0) as client:
             return client is not None, "constructed with a TLS context"
 
+    def webpage_extraction_data():
+        import justext
+        import trafilatura
+
+        languages = justext.get_stoplists()
+        if not languages or not all(justext.get_stoplist(language) for language in languages):
+            return False, "missing or empty jusText stoplists"
+        # Short pages exercise the fallback that import-only checks miss.
+        text = trafilatura.extract(
+            '<html><body><h1>Example Domain</h1><p>This domain is for use in '
+            'illustrative examples in documents. You may use this domain in '
+            'literature without prior coordination or asking for permission.</p></body></html>'
+        )
+        return bool(text and "illustrative examples" in text), f"{len(languages)} stoplists; local HTML extraction"
+
     return [
+        ("webpage extraction data", webpage_extraction_data,
+         "jusText stoplists are missing, so URL attachments fail after download"),
         ("certifi CA bundle", certifi_ca,
          "the CA file is missing, so every outbound HTTPS call would fail with "
          "[Errno 2] long after a healthy boot"),
@@ -521,13 +544,71 @@ print("COMPUTE_CANARY_OK")
 
 
 def main() -> int:
-    if "--compute-selftest" in sys.argv[1:]:
+    arguments = sys.argv[1:]
+    if arguments[:1] == ["--restore-offline"]:
+        from server.services.recovery_cli import main as restore_offline
+        return restore_offline(arguments[1:])
+    if arguments == ["--activation-trial"]:
+        from server.activation_trial_entry import run as trial
+        return trial(_sanitize_env)
+    if arguments == ["--activation-control"]:
+        from server.activation_control_entry import run as control
+        return control(_sanitize_env)
+    if arguments == ["--compute-selftest"]:
         return compute_selftest()
-    if "--selftest" in sys.argv[1:]:
+    if arguments == ["--selftest"]:
         return selftest()
+    if arguments:
+        print("ARSLAN_ERROR=invalid_arguments", flush=True)
+        return 2
 
     _sanitize_env()
 
+    from server.profile_paths import resolve_database
+    from server.services.data_profile_lock import hold
+    from contextlib import ExitStack
+
+    # Keep ownership for the entire server run, not merely SQLite startup.
+    # A second packaged backend or an offline restore must not use this profile.
+    with ExitStack() as stack:
+        try:
+            stack.enter_context(hold(resolve_database()))
+        except (ValueError, OSError) as exc:
+            known = {"data_profile_in_use", "data_profile_recovery_required"}
+            code = str(exc) if isinstance(exc, ValueError) and str(exc) in known else "data_profile_unavailable"
+            print(f"ARSLAN_ERROR={code}", flush=True)
+            return 1
+        try:
+            _check_profile_schema(resolve_database())
+        except Exception as exc:
+            # Closed protocol, no database paths, schema contents or traceback.
+            code = (str(exc) if isinstance(exc, RuntimeError)
+                    and str(exc) in {"database_schema_unsupported", "database_upgrade_backup_failed"}
+                    else "data_profile_unavailable")
+            print(f"ARSLAN_ERROR={code}", flush=True)
+            return 1
+        return _serve()
+
+
+def _check_profile_schema(database: pathlib.Path) -> None:
+    """Under profile ownership, before port announcement; fresh DBs stay absent."""
+    if not database.exists():
+        return
+    import sqlite3
+    from sqlalchemy import create_engine
+    from server.db.migrations.runner import assert_supported_schema, prepare_upgrade_backup
+
+    engine = create_engine("sqlite://", creator=lambda: sqlite3.connect(
+        f"{database.absolute().as_uri()}?mode=ro", uri=True))
+    try:
+        with engine.connect() as connection:
+            assert_supported_schema(connection)
+            prepare_upgrade_backup(connection)
+    finally:
+        engine.dispose()
+
+
+def _serve() -> int:
     port = int(os.environ.get("ARSLAN_PORT") or choose_port())
 
     # Announce BEFORE uvicorn.run(), which blocks. flush because stdout is a
@@ -535,23 +616,50 @@ def main() -> int:
     # buffer to fill and the app would appear to hang on a blank window.
     print(f"{PORT_LINE_PREFIX}{port}", flush=True)
 
-    _die_when_the_shell_does()
-
     import uvicorn
+    import threading
 
     # 127.0.0.1, never 0.0.0.0: the API is unauthenticated to anything that
     # already has the token, and binding the wildcard would put a desktop
     # app's whole brain on the local network. server/main.py:85 warns about
     # exactly this combination.
-    uvicorn.run(
+    server = uvicorn.Server(uvicorn.Config(
         "server.main:app",
         host="127.0.0.1",
         port=port,
         log_level="info",
         # No reloader, no extra workers: one process, killed by the shell.
         workers=1,
-    )
-    return 0
+    ))
+    requested = threading.Event()
+    early = threading.Event()
+    watchdog = None
+
+    def shutdown():
+        nonlocal watchdog
+        if not server.started:
+            early.set()
+        requested.set()
+        server.should_exit = True
+        watchdog = threading.Timer(10, lambda: os._exit(1))
+        watchdog.daemon = True
+        watchdog.start()
+
+    _die_when_the_shell_does(on_shutdown=shutdown)
+    try:
+        server.run()
+        if requested.is_set():
+            from server.main import app
+            complete = (not early.is_set() and server.started
+                        and not server.lifespan.shutdown_failed
+                        and getattr(app.state, "shutdown_complete", False))
+            if complete:
+                print("ARSLAN_STOPPED=1", flush=True)
+            return 0 if complete else 1
+        return 0
+    finally:
+        if watchdog is not None:
+            watchdog.cancel()
 
 
 if __name__ == "__main__":

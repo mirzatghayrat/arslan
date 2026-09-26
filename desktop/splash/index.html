@@ -1,4 +1,5 @@
 <!doctype html>
+<html lang="en">
 <meta charset="utf-8" />
 <title>Arslan</title>
 <!--
@@ -17,23 +18,20 @@
 
   EVERY COLOUR HERE IS #17150F ON PURPOSE. The clip fades in from it and back
   to it (verified per-frame: frame 0 and frame 95 are exactly #17150F), this
-  page's background is it, and web/index.html's boot veil is it. That single
+  page's visible frame background is it, and web/index.html's boot veil is it. That single
   shared colour is what makes the hand-off invisible: the splash can be swapped
   for the real window at any moment without a flash, whatever theme the user
   has, because the splash cannot read the SPA's theme across origins.
 -->
 <style>
-  :root { --arslan-boot-bg: #17150F; }
-  /* The WINDOW is transparent (lib.rs passes .transparent(true)) and the body
-     is the visible frame: rounded to match what macOS gives the decorated main
-     window, so the splash and the app read as the same object. 10px is a
-     matched value, not a read one — macOS exposes no API for its radius. */
-  html { background: transparent; }
+  :root { --arslan-boot-bg: #17150F; --splash-radius: 16px; }
+  /* Keep BOTH root backgrounds transparent. A body background propagates to
+     the root canvas in WebKit, leaving opaque square corners even when the
+     body/video has border-radius. Paint only inside the isolated frame. */
+  html, body { background: transparent; }
   html, body { margin: 0; height: 100%; overflow: hidden; }
   body {
     position: relative;
-    background: var(--arslan-boot-bg);
-    border-radius: 10px;
     /* Not `color-scheme: light dark`: this window must be this colour in both
        OS appearances, because it is matched against a fixed video frame. */
     color-scheme: dark;
@@ -42,12 +40,23 @@
     -webkit-user-select: none; user-select: none;
     cursor: default;
   }
+  #frame {
+    position: absolute; inset: 0;
+    background: var(--arslan-boot-bg);
+    border-radius: var(--splash-radius);
+    overflow: hidden;
+    clip-path: inset(0 round var(--splash-radius));
+    -webkit-mask-image: -webkit-radial-gradient(white, black);
+    isolation: isolate;
+  }
   #clip {
     /* absolute, not fixed: fixed-position boxes ignore the body's overflow
        clip, and an unclipped video would paint square corners over the frame */
     position: absolute; inset: 0;
     width: 100%; height: 100%;
     object-fit: cover;
+    border-radius: var(--splash-radius);
+    clip-path: inset(0 round var(--splash-radius));
     /* Kept in lockstep with FADE_OUT in desktop/src-tauri/src/lib.rs, which
        waits this long after asking for the fade before swapping windows. */
     transition: opacity 400ms ease-out;
@@ -85,18 +94,31 @@
   .shown { opacity: .85 !important; }
 </style>
 
+<div id="frame">
 <div id="fallback">
-  <div class="row"><span class="dot"></span><span>Starting Arslan…</span></div>
+  <div class="row"><span class="dot"></span><span id="starting">Starting Arslan…</span></div>
 </div>
 <video id="clip" muted playsinline autoplay preload="auto" data-clip="arslan-splash.mp4"></video>
-<div id="slow">First launch sets up your database — this can take a moment.</div>
+<div id="slow">Arslan is preparing your workspace. The first launch may take a little longer.</div>
 <div id="failed"></div>
+</div>
 
 <script>
   (function () {
     var clip = document.getElementById('clip');
     var slow = document.getElementById('slow');
     var failed = document.getElementById('failed');
+    // Native startup injects display-only JSON before this bundled page runs.
+    // Use textContent: translated copy never becomes markup or a capability.
+    window.__arslanRefreshBootCopy = function () {
+      var copy = window.__ARSLAN_BOOT_COPY__;
+      if (copy && typeof copy === 'object') {
+        document.documentElement.lang = String(copy.locale || 'en');
+        document.getElementById('starting').textContent = String(copy.starting || document.getElementById('starting').textContent);
+        slow.textContent = String(copy.slow || slow.textContent);
+      }
+    };
+    window.__arslanRefreshBootCopy();
 
     // Two different failures hide behind "the clip did not play", and they were
     // measured to be different: served over http, WebKit reached readyState 4
@@ -156,7 +178,7 @@
       .catch(function () { abandonVideo('fetch-failed'); });
 
     // Only after a delay, so a normal fast start never shows it.
-    setTimeout(function () { slow.classList.add('shown'); }, 5000);
+    var slowTimer = setTimeout(function () { slow.classList.add('shown'); }, 5000);
 
     // Called from Rust (WebviewWindow::eval) once the sidecar is healthy and
     // the minimum on-screen time has elapsed. Fading the clip rather than
@@ -165,6 +187,7 @@
     // cut at, say, 2.0s would swap away from a fully bright frame and put the
     // white flash right back.
     window.__arslanFadeOut = function () {
+      clearTimeout(slowTimer);
       slow.classList.remove('shown');
       clip.classList.add('gone');
       // The fix this file exists for: the fallback sits under the clip the
@@ -177,6 +200,9 @@
     // the user saw nothing at all; this window is already on screen, so it is
     // the honest place to say so.
     window.__arslanBootError = function (message) {
+      clearTimeout(slowTimer);
+      slow.classList.remove('shown');
+      slow.hidden = true;
       abandonVideo();
       document.getElementById('fallback').style.display = 'none';
       failed.textContent = String(message);

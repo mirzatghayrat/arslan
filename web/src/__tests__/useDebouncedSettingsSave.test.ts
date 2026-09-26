@@ -24,6 +24,7 @@ vi.mock("../api/client", () => ({
 
 import { useDebouncedSettingsSave } from "../hooks/useDebouncedSettingsSave";
 import type { AppSettings } from "../types";
+import { useSettingsStore } from "../stores/settingsStore";
 
 const base: AppSettings = {
   searchProvider: "tavily",
@@ -73,9 +74,56 @@ describe("useDebouncedSettingsSave", () => {
     vi.useFakeTimers();
     mockUpdateSettings.mockClear();
     mockUpdateSettings.mockResolvedValue({});
+    useSettingsStore.setState({ settings: {
+      llm_provider: "", llm_model: "", llm_base_url: "", llm_api_key: "",
+      language: "zh", search_provider: "", search_base_url: "", search_api_key: "",
+      github_token: "", voice_input_locale: "",
+    } });
   });
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it("updates shared consumers from only the saved response fields, never unrelated response values", async () => {
+    mockUpdateSettings.mockResolvedValue({ language: "ja", voice_input_locale: "fr-FR", github_token: "stale-mask" });
+    const { result } = setupHook();
+    await act(async () => result.current.flushField({ language: "ja" }));
+    expect(useSettingsStore.getState().settings).toMatchObject({ language: "ja", voice_input_locale: "", github_token: "" });
+  });
+
+  it("keeps shared settings unchanged when saving fails", async () => {
+    mockUpdateSettings.mockRejectedValue(new Error("offline"));
+    const { result } = setupHook();
+    await act(async () => result.current.flushField({ language: "ja" }));
+    expect(useSettingsStore.getState().settings?.language).toBe("zh");
+  });
+
+  it("keeps a late obsolete response out of shared settings", async () => {
+    let resolveOld!: (value: unknown) => void;
+    mockUpdateSettings.mockReturnValueOnce(new Promise((resolve) => { resolveOld = resolve; }));
+    mockUpdateSettings.mockResolvedValueOnce({ language: "de" });
+    const { result } = setupHook();
+    act(() => result.current.flushField({ language: "ja" }));
+    await act(async () => result.current.flushField({ language: "de" }));
+    await act(async () => resolveOld({ language: "ja" }));
+    expect(useSettingsStore.getState().settings?.language).toBe("de");
+  });
+
+  it("uses the backend's masked value instead of copying an edited secret into the shared store", async () => {
+    mockUpdateSettings.mockResolvedValue({ github_token: "sy...only" });
+    const { result } = setupHook();
+    act(() => result.current.editKeyField("githubToken", "synthetic-secret-only"));
+    await act(async () => result.current.flushField({ githubToken: "synthetic-secret-only" }));
+    expect(useSettingsStore.getState().settings?.github_token).toBe("sy...only");
+  });
+
+  it("flushes a language choice immediately without carrying an unblurred secret", async () => {
+    const { result, onPersisted } = setupHook();
+    act(() => result.current.editKeyField("githubToken", "synthetic-unblurred-secret"));
+    await act(async () => result.current.flushField({ language: "de" }));
+    expect(mockUpdateSettings).toHaveBeenCalledTimes(1);
+    expect(mockUpdateSettings).toHaveBeenCalledWith({ language: "de" });
+    expect(onPersisted).toHaveBeenCalledWith({ language: "de" });
   });
 
   it("collapses rapid non-key changes into exactly ONE debounced PUT with the merged body", async () => {

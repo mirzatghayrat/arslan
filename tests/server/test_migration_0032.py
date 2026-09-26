@@ -173,6 +173,8 @@ def test_fresh_and_migrated_schemas_match_exactly(tmp_path):
             upgrade_sync as _m0034,
         )
         _m0034(conn)
+        from server.db.migrations.versions._0048_memory_proposals_v2 import upgrade_sync as _m0048
+        _m0048(conn)
     with mig_engine.connect() as conn:
         migrated_cols = {
             table: {r[1] for r in conn.exec_driver_sql(f"PRAGMA table_info({table})")}

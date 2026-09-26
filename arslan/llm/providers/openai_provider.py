@@ -8,6 +8,8 @@ from typing import Any
 import httpx
 
 from arslan.llm.providers import errors as provider_errors
+from arslan.llm import request_evidence
+from arslan.llm.locality import loopback_endpoint
 
 from arslan.llm.providers.base import BaseLLMProvider
 from arslan.models import LLMResponse
@@ -82,6 +84,15 @@ class OpenAIProvider(BaseLLMProvider):
         }
         if tools:
             payload["tools"] = tools
+        # Keep the configured model/endpoint. Only this task-local,
+        # tool-free adjudication uses documented low thinking effort. Never send
+        # a vendor-specific option to arbitrary OpenAI-compatible endpoints.
+        from arslan.llm.request_policy import bounded_critique
+        if (bounded_critique.get() and not tools
+                and self.base_url.rstrip("/") in {"https://api.deepseek.com", "https://api.deepseek.com/v1"}
+                and self.model in {"deepseek-flash", "deepseek-v4-flash", "deepseek-v4-pro"}):
+            payload["thinking"] = {"type": "enabled"}
+            payload["reasoning_effort"] = "low"
         return payload
 
     async def chat(
@@ -94,12 +105,15 @@ class OpenAIProvider(BaseLLMProvider):
         payload = self._payload(messages, tools, temperature)
         from arslan.execution_budget import model_request
         payload["max_tokens"] = model_request(payload["max_tokens"])
+        from arslan.execution_checkpoint import save
+        await save("before_model")
+        evidence = await request_evidence.begin(payload)
 
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(trust_env=not loopback_endpoint(self.base_url), follow_redirects=False) as client:
             response = await client.post(
                 f"{self.base_url}/chat/completions",
                 json=payload,
@@ -114,6 +128,7 @@ class OpenAIProvider(BaseLLMProvider):
                 raise httpx.HTTPStatusError(
                     provider_errors.with_body(_exc),
                     request=_exc.request, response=_exc.response) from None
+            await request_evidence.acknowledge(evidence)
             data = response.json()
 
         return self._parse_response(data)
@@ -182,7 +197,10 @@ class OpenAIProvider(BaseLLMProvider):
         self._last_stream_usage = None  # reset per attempt — no stale carry-over
         from arslan.execution_budget import model_request
         payload = {**payload, "max_tokens": model_request(payload["max_tokens"])}
-        async with httpx.AsyncClient() as client:
+        from arslan.execution_checkpoint import save
+        await save("before_model")
+        evidence = await request_evidence.begin(payload)
+        async with httpx.AsyncClient(trust_env=not loopback_endpoint(self.base_url), follow_redirects=False) as client:
             async with client.stream(
                 "POST",
                 f"{self.base_url}/chat/completions",
@@ -198,6 +216,7 @@ class OpenAIProvider(BaseLLMProvider):
                     raise httpx.HTTPStatusError(
                         provider_errors.with_body(_exc),
                         request=_exc.request, response=_exc.response) from None
+                await request_evidence.acknowledge(evidence)
                 async for raw_line in response.aiter_lines():
                     line = raw_line.lstrip()
                     if not line or not line.startswith("data:"):

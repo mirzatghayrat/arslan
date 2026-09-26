@@ -17,6 +17,7 @@ from typing import Any
 import httpx
 
 from arslan.llm.providers import errors as provider_errors
+from arslan.llm import request_evidence
 
 from arslan.llm.providers.base import BaseLLMProvider
 from arslan.models import LLMResponse
@@ -129,6 +130,9 @@ class GeminiProvider(BaseLLMProvider):
         from arslan.execution_budget import model_request
         payload = self._payload(messages, temperature, tools)
         payload["generationConfig"]["maxOutputTokens"] = model_request(8192)
+        from arslan.execution_checkpoint import save
+        await save("before_model")
+        evidence = await request_evidence.begin(payload)
         async with self._client() as client:
             response = await client.post(
                 url, json=payload,
@@ -142,6 +146,7 @@ class GeminiProvider(BaseLLMProvider):
                 raise httpx.HTTPStatusError(
                     provider_errors.with_body(_exc),
                     request=_exc.request, response=_exc.response) from None
+            await request_evidence.acknowledge(evidence)
             data = response.json()
         return self._parse_response(data)
 
@@ -176,6 +181,9 @@ class GeminiProvider(BaseLLMProvider):
         from arslan.execution_budget import model_request
         payload = self._payload(messages, temperature)
         payload["generationConfig"]["maxOutputTokens"] = model_request(8192)
+        from arslan.execution_checkpoint import save
+        await save("before_model")
+        evidence = await request_evidence.begin(payload)
         async with self._client() as client:
             async with client.stream(
                 "POST", url, json=payload,
@@ -189,6 +197,7 @@ class GeminiProvider(BaseLLMProvider):
                     raise httpx.HTTPStatusError(
                         provider_errors.with_body(_exc),
                         request=_exc.request, response=_exc.response) from None
+                await request_evidence.acknowledge(evidence)
                 async for raw_line in response.aiter_lines():
                     line = raw_line.strip()
                     if not line.startswith("data:"):

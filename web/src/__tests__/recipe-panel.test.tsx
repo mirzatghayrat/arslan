@@ -64,7 +64,8 @@ describe("recipe editor and execution controls", () => {
     render(<RecipePanel spawns={[]} />);
     fireEvent.click(await screen.findByText("Review and resume"));
     expect(recipeApi.resume).not.toHaveBeenCalled();
-    expect(screen.getByRole("dialog")).toHaveTextContent("may repeat external effects");
+    expect(screen.getByRole("dialog")).toHaveTextContent("possible external effects");
+    expect(screen.getByRole("dialog")).toHaveTextContent("Saved task budgets and approval limits remain in force");
     fireEvent.click(screen.getByText("Confirm retry of unfinished steps"));
     await waitFor(() => expect(recipeApi.resume).toHaveBeenCalledWith(4, [], true));
     fireEvent.click(screen.getAllByText("Details and files")[0]);

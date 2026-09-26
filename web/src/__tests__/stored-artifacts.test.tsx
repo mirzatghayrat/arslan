@@ -33,7 +33,7 @@ describe('stored artifacts', () => {
   it('uses owner and filename, never the supplied URL; reports a failed download', async () => {
     downloadRunArtifact.mockRejectedValue(new Error('offline'));
     render(<ArtifactDownloads files={[file]} />);
-    fireEvent.click(screen.getByRole('button'));
+    fireEvent.click(screen.getByRole('button', { name: /result.csv/ }));
     await waitFor(() => expect(downloadRunArtifact).toHaveBeenCalledWith(42, file.filename));
     expect(await screen.findByRole('alert')).toHaveTextContent('files.downloadFailed');
   });

@@ -70,6 +70,17 @@ async def generate_title(
 
     Returns a cleaned string — never raises.
     """
+    if conversation_id:
+        from server.services.memory_repository import is_active
+        try:
+            if await is_active():
+                # The reply may contain local-only memory. Derive the title on
+                # device instead of sending a second prompt to a different slot.
+                from server.services.task_context import is_temporary
+                return "Temporary conversation" if await is_temporary(conversation_id) else _fallback(first_message)
+        except Exception:
+            # A privacy check failing is not permission to transmit its content.
+            return _fallback(first_message)
     # Build user prompt
     user_parts = [first_message]
     if first_reply:

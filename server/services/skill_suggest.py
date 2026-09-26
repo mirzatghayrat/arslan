@@ -4,18 +4,15 @@ from __future__ import annotations
 
 import logging
 
+from arslan.spawn.skillpack import REQUIRED_SECTIONS, has_body_section
 from server.orchestrator.json_protocol import parse_json_object
 from server.services.llm_factory import build_adapter
 from server.services.prompts.skill_suggest import SKILL_SUGGEST_SYSTEM
 
 logger = logging.getLogger(__name__)
 
-_REQUIRED = ("## Trigger", "## 决策规则")
-
-
 def has_required_sections(body: str) -> bool:
-    b = body or ""
-    return all(sec in b for sec in _REQUIRED)
+    return all(has_body_section(body or "", title) for title in REQUIRED_SECTIONS)
 
 
 async def generate_skill(repo_meta: dict, readme: str) -> dict | None:

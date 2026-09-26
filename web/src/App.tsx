@@ -24,6 +24,7 @@ import { useBackendStatus } from './hooks/useBackendStatus';
 import { useDispatchedSpawns } from './hooks/useDispatchedSpawns';
 import Sidebar from './components/Sidebar';
 import OrchestratorChat from './components/OrchestratorChat';
+import { discardComposerDraft } from './lib/composerDrafts';
 import SpawnDirectChat from './components/SpawnDirectChat';
 import SpawnsDashboard from './components/SpawnsDashboard';
 import SpawnStudio from './components/SpawnStudio';
@@ -46,24 +47,36 @@ import ConnectMcpCard from './components/ConnectMcpCard';
 import RailMcpList, { type McpServerInfo } from './components/RailMcpList';
 import SpawnRailKnowledge from './components/SpawnRailKnowledge';
 import EvalDock from './components/EvalDock';
-import BrainSection from './components/brain/BrainSection';
+import MemorySection from './components/companion/MemorySection';
+import ProjectsSection from './components/companion/ProjectsSection';
+import ConversationControls from './components/companion/ConversationControls';
+import TaskPanel from './components/companion/TaskPanel';
+import { companionApi, type Project } from './api/companion';
 import DiagnosisView from './components/DiagnosisView';
 import FirstRunWizard from './components/FirstRunWizard';
 import UpdatePill from './components/UpdatePill';
-import BrowserPanel from './components/BrowserPanel';
-import { getFirstRunSeen, setFirstRunSeen, firstRunShouldShow } from './lib/firstRun';
+import WorkDock from './components/WorkDock';
+import ConnectionsSection from './components/companion/ConnectionsSection';
+import type { SettingsSectionId } from './components/settings/sectionRegistry';
+import type { McpPrefill } from './components/ToolHubDiscover';
+import { restoreExpertChats, saveExpertChats } from './lib/expertChats';
+import { getFirstRunSeen, setFirstRunSeen, firstRunShouldShow, restoreFirstRunSeen } from './lib/firstRun';
 import { threadNavAction } from './lib/threadNav';
 import type { ImagePayload } from './lib/imagePayload';
 import { useDismissable } from './hooks/useDismissable';
 import DiscardChangesBar from './components/DiscardChangesBar';
 import { createSpawnDirty } from './lib/dirty';
+import { threadDisplayTitle } from './lib/threadTitles';
+import { formatUiTime } from './lib/localeFormatting';
 
 interface ArslanThread {
   id: string;
   title: string;
+  defaultTitle?: boolean;
   history: Message[];
   memberSpawnIds?: string[];
   archived?: boolean;
+  temporary?: boolean;
 }
 
 export default function App() {
@@ -77,13 +90,17 @@ export default function App() {
 // Navigation Section: 'arslan' | 'spawn' | 'ledger' | 'capabilities' | 'brain' | 'diagnosis' | 'settings'
   const [activeSection, setActiveSection] = useState<Section>('arslan');
   const [showBrowser, setShowBrowser] = useState(false);
+  const [settingsInitialSection, setSettingsInitialSection] = useState<SettingsSectionId | undefined>();
+  const [connectionPrefill, setConnectionPrefill] = useState<McpPrefill | undefined>();
+  const [expertChatIds, setExpertChatIds] = useState(restoreExpertChats);
+  useEffect(() => { saveExpertChats(expertChatIds); }, [expertChatIds]);
   const [panelView, setPanelView] = useState<'default' | 'editor'>('default');
 
   // Custom states for style variations (specifically asked in prompt)
   const [currentChatStyle, setCurrentChatStyle] = useState<'quartz' | 'brutalist' | 'linear'>('linear');
 
   // Control Center Right Drawer Toggle state for redesigned grand layout frame
-  const [showControlPanel, setShowControlPanel] = useState<boolean>(true);
+  const [showControlPanel, setShowControlPanel] = useState<boolean>(false);
 
   // ── Orchestrator threads — declared early so activeThreadId is available for
   // the WS hook below (hooks must be called in a consistent order).
@@ -184,7 +201,9 @@ export default function App() {
   // ── Stage B: Orchestrator chat live WS ─────────────────────────────────────
   // The store holds all thread items; we derive UI messages from it.
   const arslanItems = useArslanStore((s) => s.items);
+  const dockTaskFrame = useArslanStore((s) => s.taskState);
   const arslanStreaming = useArslanStore((s) => s.streaming);
+  const arslanRunning = useArslanStore((s) => s.thinking || s.streaming || s.pending || s.activeRunId != null);
   const arslanStreamingText = useArslanStore((s) => s.streamingText);
   // Live roster from backend roster_update frames
   const roster = useArslanStore((s) => s.roster);
@@ -296,6 +315,7 @@ export default function App() {
       history: liveOrchestratorHistory,
     };
     if (
+      !threads.find((thread) => thread.id === activeThreadId)?.temporary &&
       !titledThreadIds.current.has(activeThreadId) &&
       shouldAutoTitle(syntheticThread)
     ) {
@@ -310,7 +330,7 @@ export default function App() {
         (msg, reply) => api.generateTitle(msg, reply, capturedThreadId),
         (tid, title) => {
           setThreads((prev) =>
-            prev.map((t) => (t.id === tid ? { ...t, title } : t)),
+            prev.map((t) => (t.id === tid ? { ...t, title, defaultTitle: undefined } : t)),
           );
         },
       );
@@ -386,6 +406,7 @@ export default function App() {
   // Spawns Ledger: initialized empty; populated on mount from live spawn store (Stage B)
   const [spawns, setSpawns] = useState<Spawn[]>([]);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const [settingsReady, setSettingsReady] = useState(false);
 
   // Push voice-output preference + language HINT into the arslan store so the
   // reply stream can be spoken (V1). The hint is what the user said they speak
@@ -422,7 +443,11 @@ export default function App() {
     });
 
     // Load settings from backend; merge into UI state, preserving UI-only fields
-    api.getSettings().then((backendSettings) => {
+    api.getSettings().then(async (backendSettings) => {
+      setFirstRunSeenState(await restoreFirstRunSeen(
+        backendSettings.first_run_seen,
+        () => api.updateSettings({ first_run_seen: true }),
+      ));
       const mapped = toUiSettings(backendSettings);
       setSettings((prev) => ({ ...prev, ...mapped }));
       // Apply the saved UI language on load — reconciles any legacy label value
@@ -432,7 +457,7 @@ export default function App() {
       useSettingsStore.getState().setSettings(backendSettings);
     }).catch(() => {
       // backend unavailable — keep DEFAULT_SETTINGS
-    });
+    }).finally(() => setSettingsReady(true));
 
     // Load LLM provider catalog
     api.listProviders().then(setLlmProviders).catch(() => {});
@@ -572,12 +597,11 @@ export default function App() {
   );
 
   // Handle addition of a brand new Orchestrator thread context
-  const handleAddArslanThread = () => {
-    const threadId = `thread-${Date.now()}`;
-    const nextThreadNumber = threads.filter(t => !t.title.includes('New Session')).length + 1;
+  const handleAddArslanThread = (threadId = `thread-${crypto.randomUUID()}`) => {
     const newThread: ArslanThread = {
       id: threadId,
-      title: `Orchestration thread #${nextThreadNumber}`,
+      title: 'New Session',
+      defaultTitle: true,
       memberSpawnIds: [],
       history: []
     };
@@ -589,10 +613,18 @@ export default function App() {
     // Clear the store so the new conversation starts with empty history (the
     // backend will send an empty `history` frame for the new conversation_id).
     useArslanStore.getState().resetForNewConversation();
-    setThreads(prev => [...prev, newThread]);
+    setThreads(prev => [...prev.filter(thread => !(thread.id === activeThreadId && thread.temporary)), newThread]);
     setActiveThreadId(threadId);
     setActiveSection('arslan');
     setPanelView('default');
+  };
+
+  const handleStartProject = async (project: Project) => {
+    const conversationId = `thread-${crypto.randomUUID()}`;
+    await companionApi.saveContext({ conversation_id: conversationId, version: 0, project_id: null,
+      no_memory: false, no_learning: false, temporary: false, cloud_memory_allowed: false, allow_sensitive: false },
+    { project_id: project.id });
+    handleAddArslanThread(conversationId);
   };
 
   // ── Conversation row overflow actions (Distill / Archive / Delete) ──────────
@@ -630,6 +662,7 @@ export default function App() {
         const fresh: ArslanThread = {
           id: `thread-${Date.now()}`,
           title: 'New Session',
+      defaultTitle: true,
           memberSpawnIds: [],
           history: [],
         };
@@ -650,6 +683,7 @@ export default function App() {
   // remaining non-archived thread; if none remain, mint a fresh session. The
   // persisted active-thread key is rewritten by the persistThreads effect.
   const handleDeleteThread = (id: string) => {
+    discardComposerDraft(id);
     const remaining = threads.filter((th) => th.id !== id);
     const wasActive = id === activeThreadId;
     deleteConversation(id).catch((err) => {
@@ -667,6 +701,7 @@ export default function App() {
         const fresh: ArslanThread = {
           id: `thread-${Date.now()}`,
           title: 'New Session',
+      defaultTitle: true,
           memberSpawnIds: [],
           history: [],
         };
@@ -694,7 +729,7 @@ export default function App() {
 
           // Rename thread if empty/default title when receiving first message from user
           let updatedTitle = t.title;
-          if (t.title === 'New Session' || t.title.startsWith('Orchestration thread')) {
+          if (!t.temporary && (t.title === 'New Session' || t.title.startsWith('Orchestration thread'))) {
             const userMsg = newHistory.find(m => m.sender === 'user');
             if (userMsg) {
               const cleaned = userMsg.text.replace(/[#*`_]/g, '').trim();
@@ -702,7 +737,7 @@ export default function App() {
             }
           }
 
-          return { ...t, history: newHistory, title: updatedTitle };
+          return { ...t, history: newHistory, title: updatedTitle, defaultTitle: updatedTitle === t.title ? t.defaultTitle : undefined };
         }
         return t;
       });
@@ -740,7 +775,7 @@ export default function App() {
       senderName: 'Arslan',
       senderAvatar: '🦁',
       text: `⚡ **New Agent Synthesized Successfully:** Active slot allocated to **${newSpawn.name}** [${newSpawn.domain}]. Default standard equipment tools mapped to spawn scope. Custom configurations are editable inside the Spawns Ledger.`,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      timestamp: formatUiTime(Date.now(), i18n?.resolvedLanguage)
     };
 
     setThreads(prevThreads => prevThreads.map(t => {
@@ -814,6 +849,25 @@ export default function App() {
   const currentCaps = getContextCapabilities();
   // All orchestrator threads now use the live WS; history comes from the store.
   const isThreadEmpty = activeSection === 'arslan' && orchestratorChatHistory.length === 0;
+  function selectConversation(id: string) {
+    const nav = threadNavAction(activeThreadId, id);
+    if (nav.endPrevious) wsSend({ type: 'session_ended', conversation_id: activeThreadId });
+    if (nav.resetStore) useArslanStore.getState().resetForNewConversation();
+    if (nav.endPrevious) setThreads(prev => prev.filter(thread => !(thread.id === activeThreadId && thread.temporary)));
+    setActiveThreadId(id); setActiveSection('arslan'); setPanelView('default');
+  }
+  function openConnections(prefill?: McpPrefill) {
+    setConnectionPrefill(prefill); setActiveSection('connections'); setPanelView('default');
+  }
+  function openExpertChat(id: string) {
+    setExpertChatIds(old => [id, ...old.filter(value => value !== id)]);
+    setActiveSpawnChatId(id); setActiveSection('spawn'); setPanelView('default');
+  }
+  const experts = <SpawnsDashboard embedded spawns={spawns} selectedSpawnId={selectedSpawnId}
+    setSelectedSpawnId={setSelectedSpawnId} onEditEquipment={handleEditSpawnEquipment}
+    onCreateSpawnClick={() => setStudio({ mode: 'create' })}
+    onOpenDirectChat={openExpertChat}
+    setSpawns={setSpawns} setThreads={setThreads} activeThreadId={activeThreadId} backendStatus={backendStatus} />;
 
   return (
     <div className="flex w-screen h-screen bg-background text-foreground overflow-hidden font-sans antialiased">
@@ -824,40 +878,28 @@ export default function App() {
       {activeSection !== 'settings' && <Sidebar
         threads={threads}
         activeThreadId={activeThreadId}
-        onSelectThread={(id) => {
-          // The reset below is only safe when a `history` frame is guaranteed to
-          // follow, and one only follows when the socket URL changes — i.e. when
-          // the id actually changes. Re-selecting the ACTIVE thread (what you do
-          // coming back from another view) changes nothing, so wiping the store
-          // left the chat blank until a real switch reconnected it. Decision and
-          // tests live in lib/threadNav.ts.
-          const nav = threadNavAction(activeThreadId, id);
-          // Signal the OLD conversation ended (backend may background-distill prefs).
-          // wsSend targets the still-current /ws/arslan/${activeThreadId} connection.
-          if (nav.endPrevious) wsSend({ type: 'session_ended', conversation_id: activeThreadId });
-          // Reset store first so stale items from the previous conversation are
-          // cleared before the new conversation_id's WS connects and sends its
-          // `history` frame.
-          if (nav.resetStore) useArslanStore.getState().resetForNewConversation();
-          setActiveThreadId(id);
-          setActiveSection('arslan');
-          setPanelView('default');
+        onSelectThread={selectConversation}
+        onOpenTask={task => {
+          setThreads(old => old.some(thread => thread.id === task.conversation_id)
+            ? old.map(thread => thread.id === task.conversation_id ? { ...thread, archived: false } : thread)
+            : [...old, { id: task.conversation_id, title: task.spec.instruction.slice(0, 80), history: [] }]);
+          selectConversation(task.conversation_id);
         }}
-        onAddThread={handleAddArslanThread}
+        onAddThread={() => handleAddArslanThread()}
         spawns={spawns}
+        expertChatIds={expertChatIds}
         activeSpawnChatId={activeSpawnChatId}
-        onSelectSpawnChat={(id) => {
-          setActiveSpawnChatId(id);
-          setActiveSection('spawn');
-          setPanelView('default');
-        }}
+        onSelectSpawnChat={openExpertChat}
         activeSection={activeSection}
         onChangeSection={(section) => {
+          if (section === 'settings') setSettingsInitialSection(undefined);
+          if (section === 'connections') setConnectionPrefill(undefined);
           setActiveSection(section);
           setPanelView('default');
         }}
         onCompleteChat={async (id) => {
           await api.completeChat(Number(id));
+          setExpertChatIds(old => old.filter(value => value !== id));
           // Refetch spawn list so hasActiveChat reflects the completed state
           const freshSpawns = await api.listSpawns();
           setSpawns(freshSpawns.map(toUiSpawn));
@@ -885,7 +927,7 @@ export default function App() {
               everywhere rather than only in chat. "deep" covers the labels
               inside; Tauri's drag script skips real controls on its own. */}
           <div data-tauri-drag-region="deep" data-testid="workspace-bar"
-            className="h-14 border-b border-border px-6 flex items-center justify-between bg-background/40 backdrop-blur-md z-30">
+            className="h-14 shrink-0 gap-3 border-b border-border px-4 lg:px-6 flex items-center justify-between bg-background/40 backdrop-blur-md z-30">
             {activeSection === 'settings' && <span className="absolute left-1/2 -translate-x-1/2 text-sm text-muted-foreground pointer-events-none">Arslan</span>}
             {/* The label is a CONVERSATION thing, so it appears only there.
                 The BAR itself stays on every section, and that is not tidiness:
@@ -900,10 +942,10 @@ export default function App() {
                   {/* The dot IS the "active session workspace" label — it was
                       three words of chrome saying what a green dot already says. */}
                   <span className="w-2 h-2 rounded-full bg-success shrink-0"></span>
-                  <span className="text-[11px] font-mono text-foreground font-bold truncate">
+                  <span className="text-xs font-sans text-foreground font-medium truncate">
                     {activeSection === 'arslan'
-                      ? activeThread.title
-                      : (activeSpawn?.name || 'Direct Chat')}
+                      ? threadDisplayTitle(activeThread, t)
+                      : (activeSpawn?.name || t('ui.directChat'))}
                   </span>
                 </>
               ) : (
@@ -915,19 +957,23 @@ export default function App() {
                    So the strip stops being EMPTY instead: each section's own
                    title moves up into it, which is what made the space read as
                    dead in the first place. */
-                <span className={`text-[11px] font-mono text-foreground font-bold truncate ${activeSection === 'settings' ? 'invisible' : ''}`}>
-                  {t(`nav.${activeSection}`)}
+                <span className={`text-xs font-sans text-foreground font-medium truncate ${activeSection === 'settings' ? 'invisible' : ''}`}>
+                  {t(`nav.${activeSection === 'ledger' ? 'capabilities' : activeSection}`)}
                 </span>
               )}
             </div>
 
-            <div className={`flex items-center gap-3 ${activeSection === 'settings' ? 'hidden' : ''}`}>
+            <div className={`flex shrink-0 items-center gap-3 ${activeSection === 'settings' ? 'hidden' : ''}`}>
 
 
               {/* Toggle Diagnostic Rail button — only where the rail can appear */}
               {!isThreadEmpty && (activeSection === 'arslan' || activeSection === 'spawn') && (
                 <button
                   id="toggle-control-panel"
+                  aria-label={t('ui.diagnostics')}
+                  title={t('ui.diagnostics')}
+                  aria-expanded={showControlPanel}
+                  aria-controls="conversation-diagnostics"
                   onClick={() => setShowControlPanel(!showControlPanel)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-[10.5px] font-mono transition-all uppercase ${
                     showControlPanel
@@ -949,8 +995,8 @@ export default function App() {
                   would mean dismantling the model that makes it safe. */}
               <span
                 data-testid="shell-indicator"
-                title={t(settings.orchestratorShellEnabled ? 'orchestrator.shell_on' : 'orchestrator.shell_off')}
-                aria-label={t(settings.orchestratorShellEnabled ? 'orchestrator.shell_on' : 'orchestrator.shell_off')}
+                title={t(settings.orchestratorShellEnabled ? (settings.shellConfirmPolicy === 'ask_risky' ? 'workspace.readOnlyAutomatic' : 'workspace.confirmCommands') : 'orchestrator.shell_off')}
+                aria-label={t(settings.orchestratorShellEnabled ? (settings.shellConfirmPolicy === 'ask_risky' ? 'workspace.readOnlyAutomatic' : 'workspace.confirmCommands') : 'orchestrator.shell_off')}
                 className={`flex items-center px-2 py-1.5 rounded-lg border ${
                   settings.orchestratorShellEnabled
                     ? 'border-primary/30 bg-primary/5 text-primary'
@@ -964,8 +1010,8 @@ export default function App() {
               <button
                 data-testid="browser-indicator"
                 onClick={() => setShowBrowser(true)}
-                title={t('browser.title')}
-                aria-label={t('browser.title')}
+                title={t('dock.title')}
+                aria-label={t('dock.title')}
                 className="flex items-center px-2 py-1.5 rounded-lg border border-border text-muted-foreground hover:text-primary hover:border-primary"
               >
                 <Globe className="w-3.5 h-3.5" />
@@ -1121,6 +1167,7 @@ export default function App() {
                 <ConnectMcpCard
                   callId={pendingConnectMcp.callId}
                   label={pendingConnectMcp.label}
+                  labelKey={pendingConnectMcp.labelKey}
                   transport={pendingConnectMcp.transport}
                   command={pendingConnectMcp.command}
                   args={pendingConnectMcp.argv}
@@ -1149,7 +1196,16 @@ export default function App() {
             )}
 
             {activeSection === 'arslan' && (
+              <div className="flex h-full min-h-0 flex-col">
+              <div data-testid="conversation-context-bar" className="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-2 border-b border-border/50 px-4 py-2 lg:px-6">
+              <ConversationControls compact key={`context:${activeThreadId}`} conversationId={activeThreadId} running={arslanRunning} empty={orchestratorChatHistory.length === 0}
+                onChanged={context => setThreads(prev => prev.map(thread => thread.id === context.conversation_id && thread.temporary !== context.temporary
+                  ? { ...thread, temporary: context.temporary, ...(context.temporary ? { title: t('companion.temporary') } : {}) } : thread))} />
+              {!activeThread?.temporary && <TaskPanel compact key={`task:${activeThreadId}`} conversationId={activeThreadId}
+                onResume={task => { useArslanStore.getState().clearError(); wsSend({ type: 'resume_task', task_id: task.spec.id, expected_version: task.version }); }} />}
+              </div>
               <OrchestratorChat
+                key={`chat:${activeThreadId}:${activeThread?.temporary === true}`}
                 chatHistory={orchestratorChatHistory}
                 setChatHistory={setChatHistoryForActiveThread}
                 onSendMessage={sendOrchestratorMessage}
@@ -1199,6 +1255,7 @@ export default function App() {
                 shellPolicy={settings.shellConfirmPolicy}
                 onShellPolicyChange={handleShellPolicyChange}
               />
+              </div>
             )}
 
             {activeSection === 'spawn' && activeSpawn && (
@@ -1215,42 +1272,32 @@ export default function App() {
               />
             )}
 
-            {activeSection === 'ledger' && panelView === 'default' && (
-              <SpawnsDashboard
-                spawns={spawns}
-                selectedSpawnId={selectedSpawnId}
-                setSelectedSpawnId={setSelectedSpawnId}
-                onEditEquipment={handleEditSpawnEquipment}
-                onCreateSpawnClick={() => setStudio({ mode: 'create' })}
-                onOpenDirectChat={(spawnId) => {
-                  setActiveSpawnChatId(spawnId);
-                  setActiveSection('spawn');
-                  setPanelView('default');
-                }}
-                setSpawns={setSpawns}
-                setThreads={setThreads}
-                activeThreadId={activeThreadId}
-                backendStatus={backendStatus}
-              />
-            )}
-
-            {activeSection === 'capabilities' && (
+            {(activeSection === 'capabilities' || activeSection === 'ledger') && (
               // The primary config is the one that answers; falling back to the
               // first is for the window before a primary is assigned, not a
               // guess about which one runs.
               <Capabilities
+                experts={experts}
+                initialTab={activeSection === 'ledger' ? 'experts' : undefined}
+                onOpenConnections={openConnections}
                 provider={
                   (providerConfigs.find((c) => c.is_primary) ?? providerConfigs[0])?.provider
                 }
               />
             )}
 
-            {activeSection === 'brain' && <BrainSection />}
+            {activeSection === 'projects' && <ProjectsSection onStart={handleStartProject} />}
+            {activeSection === 'brain' && <MemorySection legacy={!restoredInit.mintedFresh} />}
+            {activeSection === 'connections' && <ConnectionsSection prefill={connectionPrefill}
+              provider={(providerConfigs.find(config => config.is_primary) ?? providerConfigs[0])?.provider} onOpenSettings={section => {
+              setSettingsInitialSection(section); setActiveSection('settings');
+            }} />}
 
             {activeSection === 'diagnosis' && <DiagnosisView onGoToChat={() => setActiveSection('arslan')} />}
 
             {activeSection === 'settings' && (
               <SettingsScreen
+                initialSection={settingsInitialSection}
                 settings={settings}
                 setSettings={setSettings}
                 llmProviders={llmProviders}
@@ -1269,8 +1316,12 @@ export default function App() {
         {/* Diagnostics rail is a CONVERSATION panel — only show it on the orchestrator
             chat + spawn direct chat. On Settings/Ledger/Capabilities it has no relevant
             context (and would leak the chat-only "Spawns Pipeline"), so hide it. */}
-        {showControlPanel && !isThreadEmpty && (activeSection === 'arslan' || activeSection === 'spawn') && (
-          <aside className="w-80 border-l border-border bg-sidebar flex flex-col justify-between h-full select-none relative z-20 animate-slide-in-right overflow-y-auto">
+        <WorkDock open={showBrowser} onOpen={() => setShowBrowser(true)} onClose={() => setShowBrowser(false)}
+          conversationId={activeSection === 'spawn' && activeSpawn ? `spawn-${activeSpawn.id}` : activeThreadId}
+          taskId={activeSection !== 'spawn' && dockTaskFrame?.conversation_id === activeThreadId ? dockTaskFrame.task_id : null}
+          temporary={activeSection !== 'spawn' && Boolean(activeThread.temporary)} />
+        {showControlPanel && !showBrowser && !isThreadEmpty && !activeThread.temporary && (activeSection === 'arslan' || activeSection === 'spawn') && (
+          <aside id="conversation-diagnostics" aria-label={t('ui.diagnostics')} className="w-72 shrink-0 border-l border-border bg-sidebar flex flex-col justify-between h-full select-none absolute right-0 top-0 xl:relative z-40 shadow-xl xl:shadow-none animate-slide-in-right overflow-y-auto">
             {/* Top diagnostic state */}
             <div className="p-5 border-b border-border/50 space-y-4">
               <div className="flex items-center justify-between">
@@ -1280,6 +1331,7 @@ export default function App() {
                 </div>
                 <button
                   onClick={() => setShowControlPanel(false)}
+                  aria-label={t('common.close')}
                   className="text-subtle-foreground hover:text-foreground transition-colors"
                 >
                   <X className="w-4 h-4" />
@@ -1484,16 +1536,22 @@ export default function App() {
       {/* First-run onboarding — shown once when no provider/model is configured.
           The bare NoModelHint remains the inline nudge for later visits. */}
       {firstRunShouldShow({
-        ready: providerConfigsReady,
+        ready: providerConfigsReady && settingsReady,
         hasProvider: providerConfigs.length > 0,
         seen: firstRunSeen,
       }) && (
         <FirstRunWizard
           llmProviders={llmProviders}
+          onLanguageChange={(language) => {
+            setSettings((prev) => ({ ...prev, language }));
+            const store = useSettingsStore.getState();
+            if (store.settings) store.setSettings({ ...store.settings, language });
+          }}
           onAdded={(cfg) => setProviderConfigs((prev) => [...prev, cfg])}
           onClose={() => {
             setFirstRunSeen();
             setFirstRunSeenState(true);
+            api.updateSettings({ first_run_seen: true }).catch(() => {});
           }}
         />
       )}
@@ -1538,7 +1596,7 @@ export default function App() {
                     type="text"
                     required
                     value={newSpawnName}
-                    placeholder="e.g., CrimsonWriter"
+                    placeholder={t('ui.expertNameExample')}
                     onChange={(e) => setNewSpawnName(e.target.value)}
                     className="w-full bg-background border border-border-strong focus:border-primary/60 focus:ring-1 focus:ring-ring/20 rounded-xl px-3.5 py-2.5 text-xs text-foreground placeholder-subtle-foreground focus:outline-none transition-all font-sans"
                   />
@@ -1547,7 +1605,7 @@ export default function App() {
                   <label className="block text-[10px] font-mono text-muted-foreground uppercase tracking-wider">{t('modal.avatar_emoji')}</label>
                   <div className="flex items-center gap-3 bg-background border border-border-strong rounded-xl px-3.5 py-2">
                     <SpawnAvatar seed={newSpawnName || 'new spawn'} size={36} />
-                    <span className="text-[10px] text-subtle-foreground font-mono">Auto-generated from name</span>
+                    <span className="text-[10px] text-subtle-foreground font-mono">{t('ui.autoName')}</span>
                   </div>
                 </div>
               </div>
@@ -1749,7 +1807,6 @@ export default function App() {
         </div>
       )}
 
-      <BrowserPanel open={showBrowser} onClose={() => setShowBrowser(false)} />
       {/* Transient toast (distill confirmation / failure). */}
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] animate-fade-in">

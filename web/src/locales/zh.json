@@ -1,22 +1,26 @@
 {
+  "externalLink": {"failed": "无法打开此链接。系统浏览器仅允许打开 HTTPS 链接。"},
+  "appIdentity": {"title":"当前应用","loading":"正在读取版本…","browser":"浏览器客户端 · 无法读取桌面版本","unknown":"无法读取桌面版本","stable":"正式版","preview":"预览版","previewHint":"预览版需手动安装；自动更新跟随正式渠道。安装预览版前请备份数据和密钥。","summary":"版本摘要","privacy":"仅包含客户端类型、版本和渠道，不会上传任何内容。分享前请检查下方文本。","copy":"复制摘要","copied":"已复制","copyFailed":"复制失败，请选中上方文本手动复制。"},
   "chart": {"loading":"正在加载图表…","failed":"图表加载失败，请重新加载页面后重试。"},
   "browser": {"title":"公开网页预览","description":"每次使用独立的静态快照，不调用模型，不使用已登录账号。","limitations":"网页脚本已禁用，不支持点击、填表、上传或下载网站文件。公开 HTTPS 资源通过受限代理读取，部分页面可能不完整。这不是完整的浏览器代理。","close":"关闭","error":"预览失败或暂时无法读取，请检查 HTTPS 地址及网络后重试。","loading":"正在准备…","node_required":"此可选预览功能需要安装 Node.js 18 或更高版本。","macos_required":"此预览功能目前仅在 macOS 上验证。","setup_required":"尚未安装可选的浏览器运行环境。","setup_notice":"将固定版本的开源浏览器下载到 Arslan 数据目录，可能需要几分钟和数百 MB 空间，无需账号或付费 API。","setup":"下载浏览器运行环境","url":"公开 HTTPS 地址","open":"预览","stop":"停止","blocked":"已阻止或限制的连接：{{n}}","screenshot":"已保存的网页截图","cancelled":"已取消"},
-  "recipes": {"title":"任务流程","description":"把步骤保存为可复用版本，设置依赖、并行上限和人工确认点。每次工具调用仍受原有权限约束。","loading":"正在加载任务流程…","operation_failed":"操作失败。请检查连接、所选分身和步骤依赖后重试。","refresh":"刷新","saved":"选择已保存的版本","new":"新建流程","name":"流程名称","parallel":"并行步骤数","empty":"添加步骤，指定分身，并说明它要完成的任务。","step_name":"步骤 {{n}}","step_label":"步骤 {{n}} 名称","assignee":"指定分身","remove":"移除","task":"步骤 {{n}} 任务","task_hint":"说明这一步应交付什么结果。","depends":"等待以下步骤完成","approval_gate":"执行这一步前先征求我的确认","add_step":"添加步骤","save_version":"保存为新版本","input":"本次任务输入","run_notice":"执行所选的已保存版本，使用已配置的模型及现有工具权限。未保存的修改不会执行，模型服务可能产生费用。","run_saved":"执行已保存版本","history":"执行记录","no_runs":"还没有流程执行记录。","output":"已保存的结果","trace":"详情与文件","approve":"确认执行此步骤","stop":"停止","review_resume":"检查后继续","retry_warning":"已完成步骤会复用，未完成步骤将重新执行，可能重复外部操作。请先检查步骤详情再确认。继续执行会启用新的运行预算。","cancel":"取消","confirm_retry":"确认重试未完成步骤","status_pending":"待执行","status_queued":"排队中","status_running":"执行中","status_completed":"已完成","status_failed":"失败","status_interrupted":"已中断","status_waiting_approval":"等待确认"},
-  "files": { "download": "下载文件", "downloadFailed": "下载失败，请检查连接后重试。", "unscored": "执行已结束；主助手任务不进行自动裁判评分。" },
+  "recipes": {"title":"任务流程","description":"把步骤保存为可复用版本，设置依赖、并行上限和人工确认点。每次工具调用仍受原有权限约束。","loading":"正在加载任务流程…","operation_failed":"操作失败。请检查连接、所选分身和步骤依赖后重试。","refresh":"刷新","saved":"选择已保存的版本","new":"新建流程","name":"流程名称","parallel":"并行步骤数","empty":"添加步骤，指定分身，并说明它要完成的任务。","step_name":"步骤 {{n}}","step_label":"步骤 {{n}} 名称","assignee":"指定分身","remove":"移除","task":"步骤 {{n}} 任务","task_hint":"说明这一步应交付什么结果。","depends":"等待以下步骤完成","approval_gate":"执行这一步前先征求我的确认","add_step":"添加步骤","save_version":"保存为新版本","input":"本次任务输入","run_notice":"执行所选的已保存版本，使用已配置的模型及现有工具权限。未保存的修改不会执行，模型服务可能产生费用。","run_saved":"执行已保存版本","history":"执行记录","no_runs":"还没有流程执行记录。","output":"已保存的结果","trace":"详情与文件","approve":"确认执行此步骤","stop":"停止","review_resume":"检查后继续","retry_warning":"已完成的步骤会复用。请先核对未完成步骤及可能的外部影响，再确认继续。已保存任务的预算与授权限制保持有效。","cancel":"取消","confirm_retry":"确认重试未完成步骤","status_pending":"待执行","status_queued":"排队中","status_running":"执行中","status_completed":"已完成","status_failed":"失败","status_interrupted":"已中断","status_waiting_approval":"等待确认"},
+  "files": { "download": "下载文件", "downloadFailed": "下载失败，请检查连接后重试。", "unscored": "执行已结束；本次运行不自动评分。" },
   "app": {
     "name": "Arslan",
     "tagline": "打造你专属的 AI 分身"
   },
   "nav": {
+    "connections": "连接与权限",
+    "projects": "项目",
     "dashboard": "仪表盘",
     "spawns": "分身",
     "settings": "设置",
     "secondBrain": "第二大脑",
-    "arslan": "编排器",
+    "arslan": "主助手",
     "spawn": "分身",
     "ledger": "分身账本",
     "capabilities": "能力库",
-    "brain": "第二大脑",
+    "brain": "记忆",
     "diagnosis": "诊断台"
   },
   "brain": {
@@ -382,6 +386,7 @@
     "n_results": "{{count}} 条结果",
     "n_chars": "读取 {{count}} 字符",
     "deck_done": "已生成 PPTX · {{slides}} 页",
+    "deck_slides": "{{slides}} 页",
     "chart_done": "已生成图表",
     "search_q": "搜索 「{{q}}」",
     "search_fail_rate": "搜索被限流 —— 稍等再试",
@@ -410,6 +415,13 @@
     "sensitive": "敏感"
   },
   "settings": {
+    "appIcon": "应用图标",
+    "appIcon_frosted": "暖橙磨砂",
+    "appIcon_monochrome": "纯粹黑白",
+    "appIconDesktopHint": "同步更新 Dock 图标与应用内头像。访达保留默认图标。",
+    "appIconBrowserHint": "同步更新应用内头像和浏览器标签页图标。",
+    "appIconError": "图标更新失败，已保留原来的选择，请重试。",
+
     "backToWorkspace": "返回工作台",
     "defaultModel": "默认模型",
     "modelsPrivateHint": "点击模型进行编辑，密钥始终隐藏。",
@@ -544,7 +556,7 @@
     "testConnection": "测试连接",
     "reachableNoListNote": "已连接但未提供模型列表——不代表不可用，聊天可能正常",
     "sectionSearch": "搜索",
-    "sectionAppearance": "主题配色",
+    "sectionAppearance": "外观与语言",
     "sectionLlmConfig": "LLM 配置",
     "labelOrchestratorShell": "编排器命令行",
     "orchestratorShellDesc": "允许 Arslan 运行白名单内的命令行。仅 Arslan · 每条命令按风险确认 · 默认关。",
@@ -752,7 +764,7 @@
     "brand_subtitle": "一变多",
     "capabilities": "能力库",
     "complete_chat": "完结",
-    "complete_confirm": "完结会把这次对话蒸馏成长期偏好后归档收起；重开仍记得。继续？",
+    "complete_confirm": "完结会将这次对话总结到长期记忆并归档。继续？",
     "new_chat": "新会话",
     "thread_menu": "对话操作",
     "distill": "蒸馏",
@@ -773,9 +785,9 @@
     "greeting_afternoon": "下午好",
     "greeting_evening": "晚上好",
     "greeting_named": "{{greeting}},{{name}}",
-    "sandbox_label": "交互式分身沙盒：",
-    "placeholder_empty": "描述任务、粘贴文档或发送链接——我来编排合适的分身。",
-    "placeholder_chat": "让 Arslan 为你的分身编排任务...",
+    "sandbox_label": "对话工作区",
+    "placeholder_empty": "描述任务、粘贴文档或发送链接——我来协调合适的专家与工具。",
+    "placeholder_chat": "描述任务，让 Arslan 协调专家完成…",
     "presets_label": "快速开始",
     "preset_code_audit": "AI 研究",
     "preset_financial": "市场分析",
@@ -1015,7 +1027,7 @@
       "mcp": {
         "title": "建议启动命令（可检查修改）",
         "add": "添加为 MCP 服务器",
-        "added": "已加入 MCP 面板（锁定）——请在 MCP 标签页连接。"
+        "added": "MCP 服务器已添加并锁定，请在“连接与权限”中审核和连接。"
       },
       "note": {
         "title": "参考笔记（可检查修改）",
@@ -1029,10 +1041,10 @@
       "manifest": {
         "title": "作者自带配置",
         "add": "添加此服务器",
-        "added": "已添加——去 MCPS 里连接它",
+        "added": "已添加服务器，请在“连接与权限”中连接。",
         "import_skill": "导入技能",
         "imported": "技能已导入",
-        "expose_hint": "作者建议为该服务器开启「Allow for spawns」(MCPS 页)——由你决定。",
+        "expose_hint": "作者建议在“连接与权限”中允许专家使用。这只是建议，不代表授权。",
         "error": "插件清单无效"
       },
       "overview_label": "这是什么"
@@ -1194,12 +1206,15 @@
     "close": "关闭"
   },
   "attach": {
+    "delivery_truncated": "此资料仅提取了部分内容，请勿视为完整资料。",
+    "delivery_empty": "未从此资料中提取到可读文本。",
+    "delivery_image_unavailable": "此图片未能完成处理，未发送给模型。",
     "add": "添加文件或图片",
     "url": "添加网页链接",
     "url_placeholder": "粘贴网址 (https://…)",
     "read": "读取",
     "chars": "{{n}}字",
-    "truncated": "(截断)",
+    "truncated": "（仅部分提取）",
     "image_no_parse": "图片(暂不解析)",
     "image_ocr_wait": "识别中…",
     "image_ocr_ok": "已识别文字",

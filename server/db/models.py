@@ -17,11 +17,9 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.orm import DeclarativeBase, relationship
+from sqlalchemy.orm import relationship
 
-
-class Base(DeclarativeBase):
-    """Declarative base for all ORM models."""
+from server.db.base import Base
 
 
 class RecipeVersion(Base):
@@ -394,6 +392,9 @@ class Run(Base):
     total_ms = Column(Integer, nullable=True)
     task_tokens = Column(Integer, nullable=False, default=0)   # router+dispatch+tools (NOT judge)
     execution_budget = Column(JSON, nullable=True)
+    # Immutable per-attempt privacy ceiling. Background judges/replay must not
+    # recover authority from a detached context or a later settings change.
+    no_learning = Column(Boolean, nullable=False, default=False, server_default="0")
     status = Column(String(20), nullable=False, default="recording")
     # "recording" | "recorded" | "scored" | "score_failed" | "replayed" | "cancelled" | "interrupted"
     overall_score = Column(Float, nullable=True)   # /10
@@ -632,7 +633,10 @@ class MemoryProposal(Base):
     kind = Column(String(30), nullable=False, default="supersede_suspect")
     table_name = Column(String(20), nullable=False)     # "user_facts"|"learnings"|"notes"|"spawns" (P2 Tier2 kinds)
     new_id = Column(Integer, nullable=True)   # NULL for Tier2 kinds with no replacing row (0033)
-    old_id = Column(Integer, nullable=False)
+    old_id = Column(Integer, nullable=True)  # v2 proposals may introduce a new entry.
+    target_entry_id = Column(String(36), nullable=True, index=True)
+    target_version = Column(Integer, nullable=True)
+    candidate = Column(JSON, nullable=True)
     reason = Column(Text, nullable=False, default="")
     status = Column(String(20), nullable=False, default="pending", index=True)
     provenance = Column(JSON, nullable=True)
@@ -830,3 +834,17 @@ class SshAudit(Base):
     ok = Column(Boolean, nullable=False, default=False)
     error = Column(Text, nullable=True)
     conversation_id = Column(String(50), nullable=True)
+
+
+# Keep Base and legacy classes import-compatible while registering the new tables.
+from server.db.companion_models import (  # noqa: E402,F401
+    ContextReceiptRecord, ConversationContext, MemoryDeletion, MemoryEntry, MemoryLegacyMap, MemoryMigrationReport,
+    MemoryRevision, MemorySource, MemoryStoreState, MemorySuppression, Project,
+)
+from server.db.task_models import (  # noqa: E402,F401
+    CompanionTask, TaskAction, TaskAttempt, TaskCheckpoint, TaskEvent, TaskRevision,
+)
+from server.db.worker_models import (  # noqa: E402,F401
+    ProfessionalMethod, ProfessionalMethodVersion, TaskWorker,
+)
+from server.db.permission_models import ActionGrantRecord, CompanionConnection  # noqa: E402,F401

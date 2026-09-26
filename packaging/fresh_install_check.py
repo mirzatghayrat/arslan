@@ -22,8 +22,9 @@ NOT COVERED HERE, and deliberately named rather than quietly skipped:
 
   * HTML5 drag-and-drop really reaching the page. wry intercepts NSDragging, so
     this is a genuine packaged-only fact — but observing it needs a real window
-    with a real drag, and this script never launches the .app (it runs the
-    sidecar). tests/test_shell_window_config.py pins the source call that
+    with a real drag. This script launches the native executable but probes
+    its backend; it does not drive window interactions.
+    tests/test_shell_window_config.py pins the source call that
     disables the interception; that proves a line is in git, not that a drag
     arrives. UNVERIFIED at the artifact level.
 
@@ -38,7 +39,7 @@ NOT COVERED HERE, and deliberately named rather than quietly skipped:
     source pin in tests/test_shell_window_config.py is all there is.
 
 Both need a GUI session driving the packaged app. Worth doing; not doable from
-a script that only boots the server, and pretending otherwise would put two
+a script that only probes the backend, and pretending otherwise would put two
 green lines next to two unchecked claims.
 """
 from __future__ import annotations
@@ -61,7 +62,12 @@ import http.client
 import urllib.request
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
-PORT_RE = re.compile(r"http://127\.0\.0\.1:(\d+)")
+# The shell also logs its system proxy URL, often another 127.0.0.1 port.
+# Match the actual server's startup line, not the first loopback URL in logs.
+PORT_RE = re.compile(
+    r"^(?:\[sidecar\] )?INFO:\s+Uvicorn running on http://127\.0\.0\.1:(\d+) "
+    r"\(Press CTRL\+C to quit\)\s*$", re.MULTILINE,
+)
 BOOT_TIMEOUT = 120
 
 
@@ -108,6 +114,19 @@ class Checks:
             print(f"  FAIL  {f}", file=sys.stderr)
         print(f"\n{len(self.passes)} passed, {len(self.failures)} failed")
         return 1 if self.failures else 0
+
+
+def _check_empty_user_storage(conn, c: Checks) -> None:
+    objects = dict(conn.execute("SELECT name, type FROM sqlite_master WHERE type IN ('table','view')"))
+    for name in ("arslan_messages", "arslan_summaries", "conversation_events", "runs",
+                 "user_facts", "learnings", "legacy_user_facts", "legacy_learnings",
+                 "memory_entries", "memory_revisions", "memory_sources", "memory_legacy_map",
+                 "notes", "knowledge_chunks"):
+        kind = "view" if name in ("user_facts", "learnings") else "table"
+        if not c.ok(objects.get(name) == kind, f"{name} {kind} exists"):
+            continue
+        count = conn.execute(f"SELECT count(*) FROM {name}").fetchone()[0]  # noqa: S608
+        c.ok(count == 0, f"{name} contains no user data", f"{name} has {count} rows on a fresh install")
 
 
 def check_bundle_contents(app: pathlib.Path, c: Checks) -> None:
@@ -182,16 +201,32 @@ def check_bundle_contents(app: pathlib.Path, c: Checks) -> None:
     # worse than no check, so this one is not shipped. See the module docstring.
 
 
-def boot(app: pathlib.Path, home: pathlib.Path) -> tuple[subprocess.Popen, int, pathlib.Path]:
-    """Launch the app against a clean HOME and wait for it to serve."""
-    env = dict(os.environ)
-    env["HOME"] = str(home)
+def _boot_environment(home: pathlib.Path) -> dict[str, str]:
+    """Do not carry real credentials or profile overrides into acceptance.
+
+    HOME alone is insufficient: an inherited SECRET_KEY_FILE can point outside
+    it, and an empty override suppresses the first-run key generation being
+    tested. Use a minimal environment, not an ever-growing secret denylist.
+    This controls subprocess inheritance, not an OS filesystem/network sandbox.
+    """
+    temp = home / "tmp"
+    temp.mkdir(parents=True, exist_ok=True)
+    env = {
+        "HOME": str(home),
+        "TMPDIR": str(temp),
+        "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+        "LANG": "en_US.UTF-8",
+    }
     # Deliberately POISONED: a real developer's shell exports this, and the
     # packaged app must ignore it. Leaving it out would make the check weaker
     # than reality.
     env["ARSLAN_DATA_DIR"] = "data"
-    for var in ("ARSLAN_SECRET_KEY", "ARSLAN_API_TOKEN", "ARSLAN_STATIC_DIR"):
-        env.pop(var, None)
+    return env
+
+
+def boot(app: pathlib.Path, home: pathlib.Path) -> tuple[subprocess.Popen, int, pathlib.Path]:
+    """Launch the app against a clean HOME and wait for it to serve."""
+    env = _boot_environment(home)
 
     cwd = home / "launched-from"
     cwd.mkdir(parents=True, exist_ok=True)
@@ -310,24 +345,10 @@ def check_runtime(port: int, home: pathlib.Path, log: pathlib.Path, c: Checks) -
                  f"applied={sorted(applied)[-3:]}")
 
         # ---- everything a new user should NOT have --------------------
-        # Paired: the table must EXIST and be EMPTY. Counting rows in a table
-        # that was never created would raise, not report zero — but an app
-        # that created no tables at all would then fail here loudly rather
-        # than looking like a clean install.
-        for table, label in (
-            ("arslan_messages", "no conversations with the host"),
-            ("arslan_summaries", "no conversation summaries"),
-            ("conversation_events", "no conversation history"),
-            ("runs", "no dispatch history"),
-            ("user_facts", "no brain facts"),
-            ("learnings", "no brain insights"),
-            ("notes", "no brain notes"),
-            ("knowledge_chunks", "no brain material"),
-        ):
-            if not c.ok(table in tables, f"{table} table exists"):
-                continue
-            n = conn.execute(f"SELECT count(*) FROM {table}").fetchone()[0]  # noqa: S608
-            c.ok(n == 0, label, f"{table} has {n} rows on a fresh install")
+        # Activated memory uses legacy compatibility views. Check their exact
+        # object type AND the underlying stores, so an empty filtered view
+        # cannot hide shipped user data.
+        _check_empty_user_storage(conn, c)
 
         # ---- chat_messages is NOT expected to be empty ----------------
         # Each spawn's private chat opens with one greeting from that spawn,

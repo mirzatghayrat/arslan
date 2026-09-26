@@ -1,4 +1,5 @@
 import { useAuthStore } from "../stores/authStore";
+import { fetchUpdateStatus } from "../lib/updater";
 import type { CryptoHealth } from "../lib/cryptoHealth";
 import type {
   AccessTokenInfo,
@@ -417,8 +418,14 @@ export const api = {
   listOcrLanguages: () =>
     request<{ available: string[]; max_selectable: number; platform_supported: boolean }>(
       "/settings/ocr-languages"),
-  updateSettings: (body: Partial<AppSettings>) =>
-    request<AppSettings>("/settings", { method: "PUT", body: JSON.stringify(body) }),
+  updateSettings: async (body: Partial<AppSettings>) => {
+    const saved = await request<AppSettings>("/settings", { method: "PUT", body: JSON.stringify(body) });
+    // This existing read-only native command also refreshes menu display copy.
+    // Only after persistence: the shell reads the backend's bounded locale hint.
+    // No new IPC authority, no language payload, and no dependency on shell success.
+    if (body.language !== undefined) void fetchUpdateStatus();
+    return saved;
+  },
   getRegistry: () => request<RegistryCatalog>("/registry"),
   /** PC-5 on-demand skill health probe (bounded storage + script-runnability check on the
    * server; never executes skill code). Mirrors checkMcpHealth. */
@@ -545,11 +552,11 @@ export const api = {
       { method: "DELETE" },
     ),
   getPreferences: (spawnId: number) =>
-    request<{ preferences: string[] }>(`/spawns/${spawnId}/preferences`),
-  deletePreference: (spawnId: number, fact: string) =>
-    request<{ preferences: string[] }>(`/spawns/${spawnId}/preferences`, {
+    request<{ preferences: string[]; entries?: import("./companion").MemoryEntry[] }>(`/spawns/${spawnId}/preferences`),
+  deletePreference: (spawnId: number, fact: string, identity?: { entry_id: string; expected_version: number }) =>
+    request<{ preferences: string[]; entries?: import("./companion").MemoryEntry[] }>(`/spawns/${spawnId}/preferences`, {
       method: "DELETE",
-      body: JSON.stringify({ fact }),
+      body: JSON.stringify({ fact, ...identity }),
     }),
   // S2 evolution (spec §E7). The old sync propose was replaced by a background job:
   // GET the estimate, POST to enqueue (202), then review the resulting proposal in the inbox.
@@ -641,7 +648,7 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ url, compress }),
     }),
-  extractAttachmentFile: async (file: File, compress = false): Promise<{ text: string; chars: number; truncated: boolean }> => {
+  extractAttachmentFile: async (file: File, compress = false): Promise<{ text: string; chars: number; truncated: boolean; images?: import('../lib/imagePayload').ImagePayload[]; video_frame_status?: string }> => {
     const token = useAuthStore.getState().token;
     const form = new FormData();
     form.append("file", file);
@@ -649,8 +656,12 @@ export const api = {
     const headers: Record<string, string> = {};
     if (token) headers.Authorization = `Bearer ${token}`;
     const resp = await fetch(`${BASE}/extract`, { method: "POST", body: form, headers });
-    if (!resp.ok) { let detail = `HTTP ${resp.status}`; try { detail = (await resp.json()).detail ?? detail; } catch { /* keep */ } throw new ApiError(detail, resp.status); }
-    return (await resp.json()) as { text: string; chars: number; truncated: boolean };
+    if (!resp.ok) {
+      let detail: unknown = `HTTP ${resp.status}`;
+      try { detail = (await resp.json()).detail ?? detail; } catch { /* keep */ }
+      throw new ApiError(typeof detail === "string" ? detail : `HTTP ${resp.status}`, resp.status, detail);
+    }
+    return await resp.json();
   },
   // ── Second Brain: shared knowledge collections (layer A) ──────────────────────
   listCollections: () => request<CollectionOut[]>("/collections"),

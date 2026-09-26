@@ -1,22 +1,26 @@
 {
+  "externalLink": {"failed": "Could not open this link. Only HTTPS links can open in the system browser."},
+  "appIdentity": {"title":"This app","loading":"Reading version…","browser":"Browser client · desktop version unavailable","unknown":"Desktop version unavailable","stable":"Stable","preview":"Preview","previewHint":"Preview releases require manual installation; automatic updates follow the stable channel. Back up your data and keys before installing a preview.","summary":"Version summary","privacy":"Only the client type, version and channel are included. Nothing is uploaded. Review the text before sharing.","copy":"Copy summary","copied":"Copied","copyFailed":"Copy failed. Select and copy the text above."},
   "chart": {"loading":"Loading chart…","failed":"Chart could not load. Reload the page to retry."},
   "browser": {"title":"Public webpage preview","description":"A fresh, private static snapshot. No model calls or signed-in accounts.","limitations":"Page scripts are disabled. No clicking, forms, uploads or downloads from websites. Public HTTPS resources go through a restricted proxy; some pages may appear incomplete. This is not a full browser agent.","close":"Close","error":"Preview failed or could not be loaded. Check the HTTPS address and connection, then retry.","loading":"Preparing…","node_required":"Install Node.js 18+ to enable this optional preview.","macos_required":"This preview is currently verified only on macOS.","setup_required":"The optional browser runtime is not installed.","setup_notice":"Downloads a pinned open-source browser into Arslan's data folder. This can take a few minutes and several hundred MB. No account or paid API is needed.","setup":"Download browser runtime","url":"Public HTTPS address","open":"Preview","stop":"Stop","blocked":"Blocked or limited connections: {{n}}","screenshot":"Saved webpage screenshot","cancelled":"Cancelled"},
-  "recipes": {"title":"Task recipes","description":"Reusable, versioned steps with dependencies, bounded parallel execution and explicit approval. Existing tool permissions still apply.","loading":"Loading recipes…","operation_failed":"The operation failed. Check the connection, selected specialists and step dependencies, then retry.","refresh":"Refresh","saved":"Choose a saved version","new":"New recipe","name":"Recipe name","parallel":"Parallel steps","empty":"Add a step, assign a specialist, and describe its task.","step_name":"Step {{n}}","step_label":"Step {{n}} name","assignee":"Assign specialist","remove":"Remove","task":"Step {{n}} task","task_hint":"Describe the result this step should deliver.","depends":"Wait for these steps","approval_gate":"Ask for my approval before this step","add_step":"Add step","save_version":"Save new version","input":"Input for this run","run_notice":"Runs the selected saved version, using your configured model and normal tool permissions. Unsaved edits are not executed. Provider charges may apply.","run_saved":"Run saved version","history":"Execution history","no_runs":"No recipe executions yet.","output":"Saved output","trace":"Details and files","approve":"Approve this step","stop":"Stop","review_resume":"Review and resume","retry_warning":"Completed steps will be reused. Unfinished steps will run again and may repeat external effects. Review their details before confirming. This starts a new execution budget.","cancel":"Cancel","confirm_retry":"Confirm retry of unfinished steps","status_pending":"Pending","status_queued":"Queued","status_running":"Running","status_completed":"Completed","status_failed":"Failed","status_interrupted":"Interrupted","status_waiting_approval":"Waiting for approval"},
-  "files": { "download": "Download file", "downloadFailed": "Download failed. Check your connection and try again.", "unscored": "Execution finished; host tasks are not automatically judge-scored." },
+  "recipes": {"title":"Task recipes","description":"Reusable, versioned steps with dependencies, bounded parallel execution and explicit approval. Existing tool permissions still apply.","loading":"Loading recipes…","operation_failed":"The operation failed. Check the connection, selected specialists and step dependencies, then retry.","refresh":"Refresh","saved":"Choose a saved version","new":"New recipe","name":"Recipe name","parallel":"Parallel steps","empty":"Add a step, assign a specialist, and describe its task.","step_name":"Step {{n}}","step_label":"Step {{n}} name","assignee":"Assign specialist","remove":"Remove","task":"Step {{n}} task","task_hint":"Describe the result this step should deliver.","depends":"Wait for these steps","approval_gate":"Ask for my approval before this step","add_step":"Add step","save_version":"Save new version","input":"Input for this run","run_notice":"Runs the selected saved version, using your configured model and normal tool permissions. Unsaved edits are not executed. Provider charges may apply.","run_saved":"Run saved version","history":"Execution history","no_runs":"No recipe executions yet.","output":"Saved output","trace":"Details and files","approve":"Approve this step","stop":"Stop","review_resume":"Review and resume","retry_warning":"Completed steps will be reused. Review unfinished steps and possible external effects before confirming. Saved task budgets and approval limits remain in force.","cancel":"Cancel","confirm_retry":"Confirm retry of unfinished steps","status_pending":"Pending","status_queued":"Queued","status_running":"Running","status_completed":"Completed","status_failed":"Failed","status_interrupted":"Interrupted","status_waiting_approval":"Waiting for approval"},
+  "files": { "download": "Download file", "downloadFailed": "Download failed. Check your connection and try again.", "unscored": "Execution finished; this run is not automatically judge-scored." },
   "app": {
     "name": "Arslan",
     "tagline": "Build your own AI spawns"
   },
   "nav": {
+    "connections": "Connections & permissions",
+    "projects": "Projects",
     "dashboard": "Dashboard",
     "spawns": "Spawns",
     "settings": "Settings",
     "secondBrain": "Second Brain",
-    "arslan": "Orchestrator",
+    "arslan": "Main assistant",
     "spawn": "Spawn",
     "ledger": "Spawns Ledger",
     "capabilities": "Capabilities",
-    "brain": "Second Brain",
+    "brain": "Memory",
     "diagnosis": "Diagnostics"
   },
   "brain": {
@@ -382,6 +386,7 @@
     "n_results": "{{count}} results",
     "n_chars": "{{count}} characters read",
     "deck_done": "PPTX generated · {{slides}} slides",
+    "deck_slides": "{{slides}} slides",
     "chart_done": "Chart generated",
     "search_q": "Searching “{{q}}”",
     "search_fail_rate": "Search is rate-limited — waiting before trying again",
@@ -410,6 +415,13 @@
     "sensitive": "Sensitive"
   },
   "settings": {
+    "appIcon": "App icon",
+    "appIcon_frosted": "Frosted amber",
+    "appIcon_monochrome": "Black & white",
+    "appIconDesktopHint": "Updates the Dock icon and in-app avatars. Finder keeps the default icon.",
+    "appIconBrowserHint": "Updates in-app avatars and the browser tab icon.",
+    "appIconError": "Could not update the icon. Your previous choice is kept; please try again.",
+
     "backToWorkspace": "Back to workspace",
     "defaultModel": "Default model",
     "modelsPrivateHint": "Select a model to edit. Saved keys stay hidden.",
@@ -544,7 +556,7 @@
     "testConnection": "Test connection",
     "reachableNoListNote": "Connected, but no model list was returned — this doesn't mean it's unusable; chat may still work.",
     "sectionSearch": "Search",
-    "sectionAppearance": "Theme Palette",
+    "sectionAppearance": "Appearance & Language",
     "sectionLlmConfig": "LLM Configuration",
     "labelOrchestratorShell": "Orchestrator shell",
     "orchestratorShellDesc": "Let Arslan run whitelisted shell commands. Only Arslan · every command confirmed by risk · off by default.",
@@ -752,7 +764,7 @@
     "brand_subtitle": "One Becomes Many",
     "capabilities": "Capabilities",
     "complete_chat": "Complete",
-    "complete_confirm": "Completing this chat will distill the conversation into long-term memory and archive it. The spawn will still remember everything next time. Continue?",
+    "complete_confirm": "Completing this chat will summarize it into long-term memory and archive it. Continue?",
     "new_chat": "New chat",
     "thread_menu": "Conversation actions",
     "distill": "Distill",
@@ -773,9 +785,9 @@
     "greeting_afternoon": "Good afternoon",
     "greeting_evening": "Good evening",
     "greeting_named": "{{greeting}}, {{name}}",
-    "sandbox_label": "Interactive Spawner Sandbox:",
-    "placeholder_empty": "Describe a task, paste a doc, or drop a link — I'll orchestrate the right spawns.",
-    "placeholder_chat": "Ask Arslan to orchestrate a task for your spawns...",
+    "sandbox_label": "Conversation workspace",
+    "placeholder_empty": "Describe a task, paste a document, or share a link — I'll coordinate the right experts and tools.",
+    "placeholder_chat": "Describe a task; Arslan will coordinate the experts…",
     "presets_label": "Quick starts",
     "preset_code_audit": "AI Research",
     "preset_financial": "Market Analysis",
@@ -1015,7 +1027,7 @@
       "mcp": {
         "title": "Suggested launch command (review & edit)",
         "add": "Add as MCP server",
-        "added": "Added to the MCP panel (locked) — connect it in the MCPS tab."
+        "added": "MCP server added and locked. Review and connect it in Connections & permissions."
       },
       "note": {
         "title": "Reference note (review & edit)",
@@ -1029,10 +1041,10 @@
       "manifest": {
         "title": "Author-shipped config",
         "add": "Add this server",
-        "added": "Server added — connect it in MCPS",
+        "added": "Server added — connect it in Connections & permissions.",
         "import_skill": "Import skill",
         "imported": "Skill imported",
-        "expose_hint": "The author suggests enabling “Allow for spawns” for this server (MCPS tab) — your call.",
+        "expose_hint": "The author suggests enabling access for experts in Connections & permissions. This is a suggestion, not authorization.",
         "error": "Plugin manifest invalid"
       },
       "overview_label": "What this is"
@@ -1063,7 +1075,7 @@
       "missing": "Missing files",
       "orphaned": "Orphaned files"
     },
-    "skill_body_label": "SKILL.md body (must contain ## Trigger and ## 决策规则)",
+    "skill_body_label": "SKILL.md body (must contain ## Trigger and ## Decision Rules)",
     "import": {
       "subtitle": "Standard SKILL.md files, imported verbatim — license-gated.",
       "repo_placeholder": "owner/repo",
@@ -1097,8 +1109,8 @@
       "description": "Description",
       "descriptionHint": "one-line description",
       "body": "SKILL.md body",
-      "bodyHint": "Needs frontmatter + ## Trigger + ## 决策规则 (decision rules — the heading itself is the literal contract). Max 15 KB.",
-      "bodyPlaceholder": "---\nname: My Method\n---\n\n## Trigger\n\n## 决策规则\n- …"
+      "bodyHint": "Needs frontmatter, ## Trigger, and ## Decision Rules sections. Max 15 KB.",
+      "bodyPlaceholder": "---\nname: My Method\n---\n\n## Trigger\n\n## Decision Rules\n- …"
     },
     "list": {
       "title": "Candidates ({{count}})",
@@ -1194,12 +1206,15 @@
     "close": "Close"
   },
   "attach": {
+    "delivery_truncated": "Only part of this source was extracted; do not treat it as complete.",
+    "delivery_empty": "No readable text was extracted from this source.",
+    "delivery_image_unavailable": "This image could not be prepared and was not sent to the model.",
     "add": "Attach files or photos",
     "url": "Attach a web link",
     "url_placeholder": "Paste a URL (https://…)",
     "read": "Read",
     "chars": "{{n}} chars",
-    "truncated": " (truncated)",
+    "truncated": " (partially extracted)",
     "image_no_parse": "image (preview only)",
     "image_ocr_wait": "reading text…",
     "image_ocr_ok": "text captured",

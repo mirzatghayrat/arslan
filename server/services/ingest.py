@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import logging
 import re
+from dataclasses import dataclass
 
 from sqlalchemy import text as sa_text
 
@@ -12,6 +13,7 @@ from arslan.core.chunking import chunk_text
 from server.db import session as db_session
 from server.db.models import KnowledgeChunk
 from server.services import ocr_fallback, ocr_vision
+from server.services.input_formats import REGISTRY as INPUT_FORMATS
 from server.services.llm_factory import build_adapter
 from server.services.prompts.kb_compress import COMPRESS_SYSTEM
 
@@ -19,19 +21,126 @@ logger = logging.getLogger(__name__)
 
 _PRIVATE_RE = re.compile(r"<private>.*?</private>", re.DOTALL | re.IGNORECASE)
 _OCR_MIN_CHARS = 20
-# .bmp is here because the pickers offer it and PIL decodes it; leaving it
-# out made a listed file type answer 400 (tests/server/test_accepted_file_types_agree.py).
-_IMAGE_EXT_RE = re.compile(r"\.(png|jpe?g|webp|gif|bmp)$", re.IGNORECASE)
+# Recognize the same declared image formats as both pickers. Recognition is not
+# a promise that every host/model has a decoder; OCR/vision failures stay explicit.
+_IMAGE_EXT_RE = re.compile(r"\.(" + "|".join(re.escape(ext) for ext in INPUT_FORMATS["image"]) + r")$", re.IGNORECASE)
 
 
 def _strip_private(text: str) -> str:
     return _PRIVATE_RE.sub("", text or "")
 
 
-def _pdf_text_layer(data: bytes) -> str:
+@dataclass(frozen=True)
+class PDFTextLayer:
+    pages: tuple[str, ...]
+    # Zero-based pages with drawing content but no extractable text. Truly
+    # empty pages are not OCR candidates and must not become fake warnings.
+    unread_pages: tuple[int, ...] = ()
+    image_text_pages: tuple[int, ...] = ()
+
+    @property
+    def ocr_pages(self) -> tuple[int, ...]:
+        return tuple(sorted(set(self.unread_pages + self.image_text_pages)))
+
+    @property
+    def has_text(self) -> bool:
+        # Neither locators nor empty-page separators count as source text.
+        return sum(len(page.strip()) for page in self.pages) >= _OCR_MIN_CHARS
+
+    @property
+    def located_text(self) -> str:
+        return "\n\n".join(f"[page {index}]\n{page}" for index, page in enumerate(self.pages, 1) if page.strip())
+
+
+def _pdf_text_layer(data: bytes) -> PDFTextLayer:
     from pypdf import PdfReader
     reader = PdfReader(io.BytesIO(data))
-    return "\n".join((page.extract_text() or "") for page in reader.pages)
+    texts = tuple(page.extract_text() or "" for page in reader.pages)
+    unread = []
+    image_text = []
+    for i, page in enumerate(reader.pages):
+        if texts[i].strip():
+            # Keys enumerate image resources (including forms/inline images)
+            # without decoding each image to a PIL object. A text layer does
+            # not prove the images on this page contain no additional text.
+            try:
+                has_images = bool(page.images.keys())
+            except Exception:  # noqa: BLE001 — optional image inventory is not native text
+                # Unknown is not "no images": attempt the bounded rendered
+                # page path, retaining native text even if rendering/OCR fails.
+                has_images = True
+            if has_images:
+                image_text.append(i)
+            continue
+        content = page.get_contents()
+        if content is not None and content.get_data().strip():
+            unread.append(i)
+    return PDFTextLayer(texts, tuple(unread), tuple(image_text))
+
+
+def _mixed_pdf_text(data: bytes, layer: PDFTextLayer, ui_language: str | None,
+                    chosen_languages: str | None = None) -> tuple[str, bool]:
+    """Keep native text; locally read scan/image-bearing pages under the cap.
+
+    No cloud call. Whole-page OCR can repeat native text; retain both sources
+    explicitly rather than risk deleting distinct near-matching content.
+    Explicit per-page provenance and
+    unresolved-page markers prevent a partially read PDF looking complete.
+    """
+    import json
+
+    pages = list(layer.pages)
+    unresolved = []
+    pdf = None
+    try:
+        if ocr_vision.is_available():
+            import pypdfium2 as pdfium
+            pdf = pdfium.PdfDocument(data)
+        for ordinal, index in enumerate(layer.ocr_pages):
+            status = "page_limit" if ordinal >= VISION_PDF_MAX_PAGES else "unavailable"
+            if pdf is not None and ordinal < VISION_PDF_MAX_PAGES:
+                page = bitmap = None
+                try:
+                    page = pdf[index]
+                    bitmap = page.render(scale=2)
+                    image = bitmap.to_pil().convert("RGB")
+                    try:
+                        buffer = io.BytesIO()
+                        image.save(buffer, format="PNG")
+                        text, status = ocr_fallback.read_locally(
+                            buffer.getvalue(), ui_language=ui_language,
+                            chosen_languages=chosen_languages)
+                    finally:
+                        image.close()
+                    if status == ocr_vision.OK and text.strip():
+                        original = layer.pages[index]
+                        if original.strip():
+                            pages[index] = original + "\n[local OCR of whole page; may repeat native text]\n" + text
+                        else:
+                            pages[index] = "[local OCR]\n" + text
+                        continue
+                except Exception:  # noqa: BLE001 — retain all other source pages
+                    status = "error"
+                finally:
+                    if bitmap is not None:
+                        bitmap.close()
+                    if page is not None:
+                        page.close()
+            unresolved.append(index + 1)
+            label = "additional image text not read" if layer.pages[index].strip() else "page text not read"
+            pages[index] = (layer.pages[index] + f"\n[{label}: {status}]").strip()
+    except Exception:  # noqa: BLE001 — rasterizer unavailable, preserve native text
+        unresolved = [i + 1 for i in layer.ocr_pages]
+        for index in layer.ocr_pages:
+            label = "additional image text not read" if layer.pages[index].strip() else "page text not read"
+            pages[index] = (layer.pages[index] + f"\n[{label}: unavailable]").strip()
+    finally:
+        if pdf is not None:
+            pdf.close()
+    body = PDFTextLayer(tuple(pages)).located_text
+    if unresolved:
+        body += "\n" + json.dumps({"extraction_truncated": True, "unread_pages": unresolved})
+    return body, bool(unresolved)
 
 
 def _ocr_pdf(data: bytes) -> str:
@@ -72,7 +181,7 @@ def _ocr_pdf(data: bytes) -> str:
                     out.append(pytesseract.image_to_string(img))
         finally:
             doc.close()
-        return "\n".join(out)
+        return PDFTextLayer(tuple(out)).located_text
     except Exception as exc:  # noqa: BLE001 — OCR is best-effort
         logger.warning("OCR failed: %s", exc)
         return ""
@@ -209,24 +318,69 @@ def _ocr_pdf_pages_locally(data: bytes, ui_language: str | None,
     return read if found_any else []
 
 
+IMAGE_MAX_INPUT_BYTES = 30 * 1024 * 1024
+IMAGE_MAX_PIXELS = 40_000_000
+IMAGE_MAX_EDGE = 1568
+IMAGE_MAX_PAYLOAD_BYTES = 12 * 1024 * 1024
+_FIRST_FRAME_NOTE = "[Image input: only the first frame/page was read.]"
+
+
+def _vision_png(data: bytes) -> tuple[bytes, bool]:
+    """Decode actual bytes, not the filename/MIME claim, into bounded PNG.
+
+    Missing host codecs (notably HEIC) fail before adapter construction. This
+    does not change the model-refusal-only OCR fallback. Byte and pixel limits
+    bound input allocation; they are not a process sandbox or a CPU deadline.
+    """
+    from PIL import Image, ImageOps
+
+    if not data or len(data) > IMAGE_MAX_INPUT_BYTES:
+        raise ValueError("image input byte limit exceeded or empty input")
+    with Image.open(io.BytesIO(data)) as original:
+        if original.width * original.height > IMAGE_MAX_PIXELS:
+            raise ValueError("image input pixel limit exceeded")
+        # Probe only the second frame, rather than enumerating an entire TIFF.
+        try:
+            original.seek(1)
+            multiple = True
+        except EOFError:
+            multiple = False
+        original.seek(0)
+        with ImageOps.exif_transpose(original) as oriented:
+            oriented.thumbnail((IMAGE_MAX_EDGE, IMAGE_MAX_EDGE), Image.Resampling.LANCZOS)
+            with oriented.convert("RGBA") as normalized:
+                # Do not forward location/EXIF or other source metadata.
+                normalized.info.clear()
+                buf = io.BytesIO()
+                normalized.save(buf, format="PNG")
+    png = buf.getvalue()
+    if len(png) > IMAGE_MAX_PAYLOAD_BYTES:
+        raise ValueError("image output byte limit exceeded")
+    return png, multiple
+
+
 async def describe_image(data: bytes, mime_type: str) -> str:
     """Ask the configured model to describe an image. Raises on failure — the
     caller turns that into "stored nothing", which the UI reports honestly."""
+    import asyncio
     import base64
 
     from server.services.llm_factory import build_adapter
 
+    # The MIME hint remains accepted for callers, but never labels raw bytes.
+    png, multiple = await asyncio.to_thread(_vision_png, data)
     adapter = await build_adapter(role="converse")
     blocks = [
-        {"type": "text", "text": "Describe this image for a knowledge base."},
-        {"type": "image", "mime_type": mime_type or "image/png",
-         "data": base64.b64encode(data).decode()},
+        {"type": "text", "text": "Describe this image for a knowledge base."
+         + (" Only the first frame/page is supplied; do not describe unseen frames/pages." if multiple else "")},
+        {"type": "image", "mime_type": "image/png",
+         "data": base64.b64encode(png).decode()},
     ]
     resp = await adapter.chat(system=_DESCRIBE_SYSTEM, user=blocks)
     text = (resp.content or "").strip()
     if not text:
         raise RuntimeError("the model returned no description")
-    return text
+    return f"{_FIRST_FRAME_NOTE}\n{text}" if multiple else text
 
 
 # DEBT PAID (OCR fallback round). The vision round left this note here: "the
@@ -261,11 +415,23 @@ def _extract_file(filename: str, data: bytes, *, ui_language: str | None = None,
     # reader here, it is the only one. Running it is therefore not the "both
     # tiers at once" that decision ①A forbids.
     name = (filename or "").lower()
+    from server.services.input_formats import kind, read_structured, video_metadata
+    category = kind(filename)
+    if category in {"text", "spreadsheet", "presentation"} and not name.endswith((".txt", ".md")):
+        text, truncated = read_structured(filename, data)
+        if truncated:
+            text += '\n{"extraction_truncated": true}'
+        return text
+    if category == "video":
+        import json
+        return json.dumps(video_metadata(filename, data), ensure_ascii=False, indent=2)
     if name.endswith(".txt") or name.endswith(".md"):
         return data.decode("utf-8", errors="replace")
     if name.endswith(".pdf"):
-        text = _pdf_text_layer(data)
-        if len(text.strip()) < _OCR_MIN_CHARS:
+        layer = _pdf_text_layer(data)
+        if layer.has_text and layer.ocr_pages:
+            return _mixed_pdf_text(data, layer, ui_language, ocr_languages)[0]
+        if not layer.has_text:
             if ocr_vision.is_available():
                 pages = _ocr_pdf_pages_locally(data, ui_language, ocr_languages)
                 if pages:
@@ -279,11 +445,10 @@ def _extract_file(filename: str, data: bytes, *, ui_language: str | None = None,
                 ocr = ""
             if ocr.strip():
                 return ocr
-        return text
+        return layer.located_text
     if name.endswith(".docx"):
-        import docx  # python-docx
-        document = docx.Document(io.BytesIO(data))
-        return "\n".join(p.text for p in document.paragraphs)
+        text, truncated = read_structured(filename, data)
+        return text + ('\n{"extraction_truncated": true}' if truncated else "")
     if name.endswith((".html", ".htm")):
         import lxml.html  # available in the venv
         try:
@@ -396,9 +561,15 @@ async def ingest_file(spawn_id: int | None, filename: str, data: bytes, *,
     if filename.lower().endswith(".pdf"):
         # A PDF with a text layer is read for free by pypdf — rasterising it
         # would burn image tokens on something already available as text.
-        text = _pdf_text_layer(data)
-        if len(text.strip()) >= _OCR_MIN_CHARS:
-            return await ingest_text(spawn_id, filename, text,
+        layer = _pdf_text_layer(data)
+        if layer.has_text:
+            body = layer.located_text
+            if layer.ocr_pages:
+                import asyncio
+                body, _ = await asyncio.to_thread(_mixed_pdf_text, data, layer,
+                    await ocr_fallback.current_ui_language(),
+                    await ocr_fallback.current_ocr_languages())
+            return await ingest_text(spawn_id, filename, body,
                                      collection_id=collection_id, compress=compress)
         # No text layer ⇒ a scan. Rasterise under the cap and let the model read
         # the pages, saying plainly when only part of the document was read.

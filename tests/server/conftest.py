@@ -85,6 +85,36 @@ async def execution_db(monkeypatch, tmp_path):
     await engine.dispose()
 
 
+@pytest.fixture
+def offline_stable_contract(monkeypatch, tmp_path_factory):
+    """Offline stable-runner tests exercise runner behaviour, not the historical freeze.
+
+    `evals/companion/stable-0140-acceptance.json` pins the hashes its paid runs were
+    authorized against, and it is never rewritten. A later, documented checker
+    revision (87f07e50: CSV logical-record locators, checker_revision 2) changed two
+    pinned files, so every offline runner test hit `stable_input_freeze_changed`
+    before reaching the behaviour it tests. This points `budget.CONTRACT` at a
+    per-test copy whose `frozen_files` digests are taken from the current tree.
+    The historical contract, ledgers and evidence are untouched, and refusal after
+    a mutation still holds: a test that changes an input AFTER this copy is made
+    still gets `stable_input_freeze_changed` (see tests/test_stable_budget.py).
+    """
+    import hashlib
+    import json
+
+    from evals.companion import stable_budget as budget
+
+    value = json.loads(budget.CONTRACT.read_bytes())
+    value["frozen_files"] = {
+        relative: hashlib.sha256((budget.ROOT / relative).read_bytes()).hexdigest()
+        for relative in value["frozen_files"]
+    }
+    path = tmp_path_factory.mktemp("offline-stable-contract") / "stable-0140-acceptance.json"
+    path.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+    monkeypatch.setattr(budget, "CONTRACT", path)
+    return path
+
+
 # The aiosqlite teardown guard is installed at import time rather than in a
 # fixture: the race it addresses happens BETWEEN tests, when no fixture is
 # active. It counts what it catches; see the terminal summary hook below.

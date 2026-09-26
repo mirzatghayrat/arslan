@@ -56,16 +56,18 @@ _MESSAGE = (
 )
 
 
-def explain(raw_error: str, *, had_images: bool = False) -> str | None:
+def explain(raw_error: str, *, had_images: bool = False, locale=None) -> str | None:
     """Actionable text, or None to leave the original error alone.
 
     None is the common case and the safe one: only a refusal that is clearly
     ABOUT the image, on a turn that actually CARRIED one, is converted."""
     if not had_images or not raw_error:
         return None
+    from server.services.runtime_messages import render
+    message = _MESSAGE if locale is None else render("image_refused", locale)
     if _REFUSAL.search(raw_error):
-        return _MESSAGE
+        return message
     # Both halves, never one: see the comment on the two patterns.
     if _IMAGE_FIELD.search(raw_error) and _SCHEMA_REJECTION.search(raw_error):
-        return _MESSAGE
+        return message
     return None

@@ -25,7 +25,7 @@ def test_openrouter_key_limit_is_named_as_a_key_cap():
     assert out is not None
     # says WHICH limit (the key's, not the account's) and what to do
     assert "key" in out.lower()
-    assert "openrouter.ai" in out               # where to go
+    assert "服务商后台" in out                  # where to review the limit
     # and does not just re-dump the JSON at the user
     assert "limit_source" not in out
     assert len(out) < 400
@@ -62,7 +62,7 @@ def test_unrecognised_errors_pass_through_untouched():
     "Connection refused" USED to be one of these examples and was moved out on
     2026-08-24, not because the guarantee weakened but because that string
     stopped being unrecognised: transport failures are now a named class, and
-    "the request never left" is a real diagnosis rather than an invented one.
+    connection trouble can be explained without claiming delivery status.
     The examples below are still genuinely unclassified.
     """
     for raw in ("some novel provider failure",
@@ -136,19 +136,21 @@ def test_a_region_block_and_a_key_cap_do_not_collapse_into_one_message():
     assert llm_errors.explain(REGION_403) != llm_errors.explain(KEY_LIMIT_403)
 
 
-def test_a_transport_failure_says_it_never_reached_the_provider():
+def test_a_transport_failure_preserves_uncertain_processing_status():
     out = llm_errors.explain(TLS_FAILURE)
     assert out is not None
     assert "没能连上" in out
     # The whole point: this must not read as a key fault. That misreading cost
     # a real debugging session — three rounds spent testing a healthy key.
-    assert "key 的问题" in out or "不是 key" in out
+    assert "不能确定是 API key 的问题" in out
+    assert "不能确定服务商是否已处理请求" in out
+    assert "根本没送出去" not in out
 
 
 def test_a_transport_failure_is_not_mistaken_for_auth_when_it_mentions_401():
     # A proxy error page can carry a stray status number. Transport is checked
     # first precisely so a number inside an unrelated body cannot outrank the
-    # fact that nothing was ever sent.
+    # connection failure (whose processing status may be unknown).
     raw = "ConnectError: proxy returned 401 while establishing tunnel to api.openai.com:443"
     out = llm_errors.explain(raw)
     assert out is not None and "没能连上" in out

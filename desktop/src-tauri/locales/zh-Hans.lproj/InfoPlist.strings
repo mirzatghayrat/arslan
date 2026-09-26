@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Arslan 会在你启动语音输入时使用麦克风。</string>
+  <key>NSSpeechRecognitionUsageDescription</key>
+  <string>支持本机识别时，Arslan 会在这台 Mac 上将语音转为文字；否则，音频可能会发送给 Apple 进行语音识别。</string>
+</dict>
+</plist>

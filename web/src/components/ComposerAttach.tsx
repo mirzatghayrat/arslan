@@ -1,9 +1,11 @@
-import { useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { fileToImagePayload, type ImagePayload } from "../lib/imagePayload";
 import { Plus, X, Loader2, FileText } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { api } from "../api/client";
+import { INPUT_ACCEPT, INPUT_FORMATS, documentInputSupported, inputKind } from "../lib/inputFormats";
 import type { MessageAttachment } from "../types";
+import type { AttachmentDraft } from '../lib/composerDrafts';
 
 /**
  * In-composer attach UX (replaces the old AttachBar-above-input).
@@ -41,24 +43,80 @@ export interface Attachment {
   /** The downscaled base64 the model actually receives. Present ⇒ this image
    *  rides the turn as a real image block, not as OCR'd text. */
   image?: ImagePayload;
+  images?: ImagePayload[];
+  videoFrameStatus?: string;
+  inputKind?: string;
+}
+
+export function attachmentImages(items: Attachment[]): ImagePayload[] {
+  return items.flatMap(item => [...(item.image ? [item.image] : []), ...(item.images ?? [])]);
+}
+
+/** Preserve extraction limits in both the model context and the sent-message echo. */
+export function attachmentDelivery(items: Attachment[], t: (key: string) => string) {
+  const display: MessageAttachment[] = [];
+  const sources: { name: string; text: string }[] = [];
+  for (const item of items) {
+    const hasImages = attachmentImages([item]).length > 0;
+    const status: MessageAttachment['extractionStatus'] = item.truncated ? 'truncated'
+      : item.kind === 'image' && !hasImages && !item.text.trim() ? 'image_unavailable'
+      : !hasImages && !item.text.trim() ? 'empty' : undefined;
+    display.push({ name: item.name, kind: item.kind, previewUrl: item.previewUrl,
+      ...(status ? { extractionStatus: status } : {}) });
+    const text = status
+      ? `[${JSON.stringify(item.name)}: ${t(`attach.delivery_${status}`)}]\n${item.text}`
+      : item.text;
+    if (text) sources.push({ name: item.name, text });
+  }
+  return { display, sources };
+}
+
+export function attachmentImageBudgetExceeded(items: Attachment[]): boolean {
+  const images = attachmentImages(items);
+  return images.length > 9 || images.reduce((sum, item) => sum + item.data.length, 0) > 12 * 1024 * 1024;
 }
 
 /** Accept list for the native picker: existing doc types + images. */
-const ATTACH_ACCEPT = ".pdf,.docx,.txt,.md,.html,.htm,image/*";
-const DOC_EXT = /\.(pdf|docx|txt|md|html?)$/i;
+const ATTACH_ACCEPT = INPUT_ACCEPT;
 /** Per-message budget, borrowed from Kimi/DeepSeek (surface caps on reject). */
 const MAX_ATTACHMENTS = 9;
 /** 30 MB/file, matching the Claude reference in the design doc. */
-const MAX_FILE_BYTES = 30 * 1024 * 1024;
-/** Explicit-scheme URLs with a TLD-like dot. Bare domains are intentionally NOT
+const MAX_FILE_BYTES = INPUT_FORMATS.max_bytes;
+/** Explicit-scheme candidates. Bare domains are intentionally NOT
  *  auto-detected (too ambiguous with filenames/prose). */
-const URL_RE = /\bhttps?:\/\/[^\s<>"'`]+\.[a-z][^\s<>"'`]*/gi;
+const URL_RE = /\bhttps?:\/\/[^\s<>"'`]+/gi;
 /** Detection debounce so we extract a settled URL, not each keystroke. */
 const DETECT_DEBOUNCE_MS = 700;
 
 /** Pull settled URLs out of text, trimming trailing sentence punctuation. */
 function extractUrls(text: string): string[] {
-  return Array.from(text.matchAll(URL_RE)).map((m) => m[0].replace(/[.,;:!?)\]}]+$/, ""));
+  const urls = new Set<string>();
+  for (const match of text.matchAll(URL_RE)) {
+    const raw = match[0];
+    // Remove prose wrappers, but preserve balanced URL parentheses and the
+    // closing bracket of an IPv6 host. Validation here is syntax only; the
+    // extraction service remains the authority for SSRF/network policy.
+    const pairs: Record<string, string> = { ')': '(', ']': '[', '}': '{' };
+    const balance: Record<string, number> = { ')': 0, ']': 0, '}': 0 };
+    const closing: Record<string, string> = { '(': ')', '[': ']', '{': '}' };
+    for (const char of raw) {
+      if (pairs[char]) balance[char]++;
+      else if (closing[char]) balance[closing[char]]--;
+    }
+    let end = raw.length;
+    while (end > 0) {
+      const char = raw[end - 1];
+      if (/[.,;:!?\uFF0C\u3002\uFF1B\uFF1A\uFF01\uFF1F]/.test(char)) end--;
+      else if (pairs[char] && balance[char] > 0) { balance[char]--; end--; }
+      else break;
+    }
+    const candidate = raw.slice(0, end);
+    try {
+      const parsed = new URL(candidate);
+      if (['http:', 'https:'].includes(parsed.protocol) && parsed.hostname) urls.add(candidate);
+    } catch { /* Incomplete/invalid explicit URL, not a settled source yet. */ }
+  }
+  return [...urls];
 }
 
 export interface UseComposerAttach {
@@ -87,35 +145,82 @@ export interface UseComposerAttach {
 export function useComposerAttach(
   onChange: (items: Attachment[]) => void,
   compress = false,
+  { allowUrlExtraction = true, draft }: { allowUrlExtraction?: boolean; draft?: AttachmentDraft } = {},
 ): UseComposerAttach {
   const { t } = useTranslation();
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  // The owner remounts this hook when conversation/privacy changes.
+  const [attachments, setAttachments] = useState<Attachment[]>(() => draft?.items ?? []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const dragDepth = useRef(0);
   // URLs already handled (extracted or in flight), so re-scans don't re-extract.
   const handledUrls = useRef<Set<string>>(new Set());
+  const failedUrls = useRef<Set<string>>(new Set());
+  const urlPolicy = useRef({ allowed: allowUrlExtraction, revision: 0 });
+  if (urlPolicy.current.allowed !== allowUrlExtraction) {
+    urlPolicy.current = { allowed: allowUrlExtraction, revision: urlPolicy.current.revision + 1 };
+  }
+  const currentItems = useRef<Attachment[]>(attachments);
+  const generation = useRef(0);
+  const mounted = useRef(true);
+  const changeCallback = useRef(onChange);
+  changeCallback.current = onChange;
+  // True reserves an invisible document/URL slot; image placeholders already
+  // occupy their slot. Tokens also keep busy correct across overlapping batches.
+  const pending = useRef(new Map<object, boolean>());
+  const start = useCallback((reserve: boolean) => {
+    const token = {};
+    pending.current.set(token, reserve);
+    setBusy(true);
+    return token;
+  }, []);
+  const finish = useCallback((token: object) => {
+    pending.current.delete(token);
+    if (mounted.current) setBusy(pending.current.size > 0);
+  }, []);
+  const valid = useCallback((epoch: number) => mounted.current && !draft?.discarded && generation.current === epoch, [draft]);
+  const full = useCallback(() => currentItems.current.length
+    + [...pending.current.values()].filter(Boolean).length >= MAX_ATTACHMENTS, []);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      generation.current += 1;
+      pending.current.clear();
+      const retained = draft && !draft.discarded
+        ? currentItems.current.filter(item => item.ocr !== 'pending') : [];
+      for (const item of currentItems.current) {
+        if (!retained.includes(item) && item.previewUrl && !draft?.discarded) URL.revokeObjectURL(item.previewUrl);
+      }
+      if (draft && !draft.discarded) draft.items = retained;
+      currentItems.current = retained;
+    };
+  }, [draft]);
 
   const commit = useCallback(
     (next: Attachment[]) => {
+      if (!mounted.current || draft?.discarded) return;
+      currentItems.current = next;
+      if (draft) draft.items = next;
       setAttachments(next);
-      onChange(next);
+      changeCallback.current(next);
     },
-    [onChange],
+    [draft],
   );
 
   const isImage = (f: File) =>
-    f.type.startsWith("image/") || /\.(png|jpe?g|webp|gif)$/i.test(f.name);
+    !/\.svg$/i.test(f.name) && (f.type.startsWith("image/") || inputKind(f.name) === "image");
 
   const addFiles = useCallback(
     async (files: FileList | File[]) => {
       const list = Array.from(files);
       if (list.length === 0) return;
       setError(null);
-      let current = attachments;
+      const epoch = generation.current;
       for (const file of list) {
-        if (current.length >= MAX_ATTACHMENTS) {
+        if (!valid(epoch)) return;
+        if (full()) {
           setError(t("attach.too_many", { max: MAX_ATTACHMENTS }));
           break;
         }
@@ -139,9 +244,8 @@ export function useComposerAttach(
             previewUrl: URL.createObjectURL(file),
             ocr: "pending" as const,
           };
-          current = [...current, chip];
-          commit(current);
-          setBusy(true);
+          commit([...currentItems.current, chip]);
+          const token = start(false);
           let done: Attachment;
           try {
             done = { ...chip, image: await fileToImagePayload(file), ocr: undefined };
@@ -150,71 +254,87 @@ export function useComposerAttach(
             // rather than sending a frame that would kill the socket.
             done = { ...chip, ocr: "none" as const };
           } finally {
-            setBusy(false);
+            finish(token);
           }
-          current = current.map((a) => (a === chip ? done : a));
-          commit(current);
+          if (!valid(epoch)) return;
+          if (currentItems.current.includes(chip)) {
+            commit(currentItems.current.map((a) => (a === chip ? done : a)));
+          }
           continue;
         }
-        if (!DOC_EXT.test(file.name)) {
+        if (!documentInputSupported(file.name)) {
           setError(t("attach.unsupported", { name: file.name }));
           continue;
         }
-        setBusy(true);
+        const token = start(true);
         try {
           const r = await api.extractAttachmentFile(file, compress);
+          if (!valid(epoch)) return;
+          pending.current.set(token, false);
           const next = [
-            ...current,
-            { name: file.name, text: r.text, chars: r.chars, truncated: r.truncated, kind: "doc" as const },
+            ...currentItems.current,
+            { name: file.name, text: r.text, chars: r.chars, truncated: r.truncated, kind: "doc" as const, inputKind: inputKind(file.name), images: r.images, videoFrameStatus: r.video_frame_status },
           ];
-          current = next;
           commit(next);
         } catch (e) {
-          setError(String((e as Error).message ?? e));
+          if (!valid(epoch)) return;
+          const detail = e && typeof e === "object" && "detail" in e ? e.detail : null;
+          const code = detail && typeof detail === "object" && "code" in detail ? String(detail.code) : "";
+          setError(t(["inputs.limit", "inputs.invalid", "inputs.encoding", "inputs.unsupported", "inputs.videoToolMissing"].includes(code) ? code : "inputs.failed"));
         } finally {
-          setBusy(false);
+          finish(token);
         }
       }
     },
-    [attachments, commit, compress, t],
+    [commit, compress, t, start, finish, valid, full],
   );
 
   /** Extract one or more detected URLs into source chips (sequential; deduped; capped). */
   const addUrls = useCallback(
     async (urls: string[]) => {
-      let current = attachments;
+      const epoch = generation.current;
+      const policyRevision = urlPolicy.current.revision;
+      const allowed = () => valid(epoch) && urlPolicy.current.allowed
+        && urlPolicy.current.revision === policyRevision;
       for (const raw of urls) {
+        if (!allowed()) return;
         const u = raw.trim();
-        if (!u || current.some((a) => a.name === u)) continue;
-        if (current.length >= MAX_ATTACHMENTS) {
+        if (!u || currentItems.current.some((a) => a.name === u)) continue;
+        if (full()) {
           setError(t("attach.too_many", { max: MAX_ATTACHMENTS }));
           break;
         }
-        setBusy(true);
+        const token = start(true);
         setError(null);
         try {
           // 🔒 SSRF-hardened backend path — do NOT replace with a direct fetch.
           const r = await api.extractAttachmentUrl(u, compress);
+          if (!allowed()) return;
+          pending.current.set(token, false);
           const next = [
-            ...current,
+            ...currentItems.current,
             { name: u, text: r.text, chars: r.chars, truncated: r.truncated, kind: "doc" as const },
           ];
-          current = next;
           commit(next);
-        } catch (e) {
-          setError(String((e as Error).message ?? e));
+        } catch {
+          if (!allowed()) return;
+          failedUrls.current.add(u);
+          // Transport errors can include upstream English, URLs or internal
+          // addresses. Keep the user-facing message localized and bounded.
+          setError(t("inputs.urlFailed"));
         } finally {
-          setBusy(false);
+          finish(token);
         }
       }
     },
-    [attachments, commit, compress, t],
+    [commit, compress, t, start, finish, valid, full],
   );
 
   // scanRef always points at a closure over the LATEST attachments/addUrls, so the
   // debounced timer never fires against stale state (useEventCallback pattern).
   const scanRef = useRef<(text: string) => void>(() => {});
   scanRef.current = (text: string) => {
+    if (!allowUrlExtraction) return;
     const fresh = extractUrls(text).filter(
       (u) => !handledUrls.current.has(u) && !attachments.some((a) => a.name === u),
     );
@@ -224,6 +344,7 @@ export function useComposerAttach(
   };
 
   const detectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (detectTimer.current) clearTimeout(detectTimer.current); }, []);
   const onInputChange = useCallback((text: string) => {
     if (detectTimer.current) clearTimeout(detectTimer.current);
     detectTimer.current = setTimeout(() => scanRef.current(text), DETECT_DEBOUNCE_MS);
@@ -231,26 +352,30 @@ export function useComposerAttach(
 
   const removeAt = useCallback(
     (i: number) => {
-      const target = attachments[i];
+      const target = currentItems.current[i];
       if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl);
-      commit(attachments.filter((_, idx) => idx !== i));
+      commit(currentItems.current.filter((_, idx) => idx !== i));
     },
-    [attachments, commit],
+    [commit],
   );
 
   const clear = useCallback((opts?: { revokeUrls?: boolean }) => {
+    generation.current += 1;
+    pending.current.clear();
+    if (detectTimer.current) clearTimeout(detectTimer.current);
     // On SEND the caller passes { revokeUrls: false }: the sent user bubble renders image
     // thumbnails straight from these object-URLs, so they must stay alive. They are never
     // revoked afterwards — an accepted small session-only leak (object-URLs die on reload,
     // and revoking on thread switch would blank thumbnails of still-mounted messages).
     if (opts?.revokeUrls !== false) {
-      for (const a of attachments) if (a.previewUrl) URL.revokeObjectURL(a.previewUrl);
+      for (const a of currentItems.current) if (a.previewUrl) URL.revokeObjectURL(a.previewUrl);
     }
     handledUrls.current.clear();
-    setAttachments([]);
+    failedUrls.current.clear();
+    commit([]);
+    setBusy(false);
     setError(null);
-    onChange([]);
-  }, [attachments, onChange]);
+  }, [commit]);
 
   const dndHandlers = {
     onDragOver: (e: React.DragEvent) => {
@@ -283,7 +408,13 @@ export function useComposerAttach(
       return;
     }
     // Pasted text: auto-extract any URL(s) immediately (the text still lands in the box).
+    if (!allowUrlExtraction) return;
     const text = e.clipboardData?.getData("text") ?? "";
+    // Only an explicit re-paste retries a failed URL. Ordinary text edits keep
+    // deduplication, and pending/successful URLs are never started twice.
+    for (const u of extractUrls(text)) {
+      if (failedUrls.current.delete(u)) handledUrls.current.delete(u);
+    }
     const fresh = extractUrls(text).filter(
       (u) => !handledUrls.current.has(u) && !attachments.some((a) => a.name === u),
     );
@@ -315,7 +446,8 @@ export function AttachChips({
           ) : (
             <FileText className="w-3 h-3 shrink-0" />
           )}
-          <span className="attach-chip__name">{a.name}</span>
+          <span className="attach-chip__details">
+          <span className="attach-chip__name" title={a.name}>{a.name}</span>
           <span className="attach-chip__meta">
             {a.kind === "image"
               ? a.image
@@ -326,11 +458,17 @@ export function AttachChips({
                 : a.ocr === "pending"
                   ? `· ${t("attach.image_ocr_wait")}`
                   : `· ${t("attach.image_unsendable")}`
-              : `· ${t("attach.chars", { n: a.chars })}${a.truncated ? t("attach.truncated") : ""}`}
+              : `· ${t("attach.chars", { n: a.chars })}${a.truncated ? t("attach.truncated") : ""}${a.inputKind === "video" ? ` · ${a.images?.length ? t("inputs.videoSamples", { count: a.images.length }) : t("inputs.videoMetadataOnly")}` : a.inputKind === "spreadsheet" ? ` · ${t("inputs.cachedValues")}` : a.inputKind === "presentation" ? ` · ${t("inputs.slideTextOnly")}` : ""}`}
+          </span>
+          {a.inputKind === "video" && !a.images?.length && a.videoFrameStatus && (
+            <span className="attach-chip__meta">
+              {a.videoFrameStatus === "tool_missing" ? t("inputs.videoToolMissing") : t("inputs.videoSamplingFailed")}
+            </span>
+          )}
           </span>
           <button
             type="button"
-            aria-label="remove-attachment"
+            aria-label={t('ui.removeAttachment')}
             onClick={() => onRemove(i)}
           >
             <X className="w-3 h-3" />
@@ -347,16 +485,20 @@ export function AttachChips({
  *  back to a compact file chip. No broken-image icons, no empty block: renders nothing
  *  when there are no attachments. */
 export function SentAttachments({ attachments }: { attachments?: MessageAttachment[] }) {
+  const { t } = useTranslation();
   if (!attachments || attachments.length === 0) return null;
   return (
     <div className="sent-attachments">
       {attachments.map((a, i) =>
-        a.kind === "image" && a.previewUrl ? (
+        a.kind === "image" && a.previewUrl && !a.extractionStatus ? (
           <img key={`${a.name}-${i}`} src={a.previewUrl} alt={a.name} className="sent-attachment__img" />
         ) : (
           <span key={`${a.name}-${i}`} className="sent-attachment__chip" title={a.name}>
             <FileText className="w-3 h-3 shrink-0" />
-            <span className="sent-attachment__name">{a.name}</span>
+            <span className="sent-attachment__details">
+              <span className="sent-attachment__name">{a.name}</span>
+              {a.extractionStatus && <span className="sent-attachment__status">{t(`attach.delivery_${a.extractionStatus}`)}</span>}
+            </span>
           </span>
         ),
       )}

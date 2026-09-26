@@ -10,6 +10,7 @@ import { SpawnAvatar } from './SpawnAvatar';
 import type { BackendStatus } from '../hooks/useBackendStatus';
 import EmptyState, { EmptyStateAction } from "./EmptyState";
 import RecipePanel from "./RecipePanel";
+import ProfessionalMethods from "./companion/ProfessionalMethods";
 
 interface SpawnsDashboardProps {
   spawns: Spawn[];
@@ -23,6 +24,7 @@ interface SpawnsDashboardProps {
   setThreads?: React.Dispatch<React.SetStateAction<any[]>>;
   activeThreadId?: string;
   backendStatus?: BackendStatus;
+  embedded?: boolean;
 }
 
 export default function SpawnsDashboard({
@@ -36,32 +38,33 @@ export default function SpawnsDashboard({
   setThreads,
   activeThreadId,
   backendStatus,
+  embedded = false,
 }: SpawnsDashboardProps) {
   const { t } = useTranslation();
   const capabilityLabel = useCapabilityLabel();
   const [detailSpawnId, setDetailSpawnId] = useState<string | null>(null);
   const [showRecipes, setShowRecipes] = useState(false);
+  const [showMethods, setShowMethods] = useState(false);
   return (
-    <div className="flex-1 overflow-y-auto bg-background p-8 select-none relative">
+    <div className={`flex-1 overflow-y-auto bg-background ${embedded ? "p-0" : "p-8"} select-none relative`}>
       {/* Decorative Top Lights */}
       <div className="absolute top-0 right-1/4 w-[35rem] h-[35rem] bg-primary/[0.02] blur-[120px] rounded-full pointer-events-none"></div>
 
       {/* Header bar */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
+      <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4 mb-8">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold text-foreground tracking-tight font-sans">{t('ledger.title')}</h1>
-            <span className="text-[10px] bg-primary/10 text-primary font-mono font-semibold px-2 py-0.5 rounded-full uppercase">
-              {spawns.length} Spawns
-            </span>
+            <h1 className="text-xl font-bold text-foreground tracking-tight font-sans">{t('workspace.experts')}</h1>
           </div>
           <p className="text-xs text-subtle-foreground font-sans mt-1">
-            {t('ledger.subtitle')}
+            {t('workspace.expertsHint')}
           </p>
         </div>
 
         {/* Buttons right: Spawn Creator & Card Style Variator */}
         <div className="flex items-center gap-3 shrink-0 flex-wrap">
+          <button className="px-3 py-1.5 border border-border rounded-lg text-sm hover:border-primary"
+            onClick={() => setShowMethods(value => !value)} aria-expanded={showMethods}>{t("methods.title")}</button>
           <button className="px-3 py-1.5 border border-border rounded-lg text-sm hover:border-primary"
             onClick={() => setShowRecipes(v => !v)} aria-expanded={showRecipes}>{t("recipes.title")}</button>
           {/* Create spawn handler */}
@@ -70,13 +73,14 @@ export default function SpawnsDashboard({
             onClick={onCreateSpawnClick}
             className="px-3 py-1.5 bg-primary hover:bg-primary-hover text-primary-foreground text-xs font-bold font-sans uppercase rounded-lg transition-all flex items-center gap-1 shadow-lg shadow-[var(--color-primary)]/15"
           >
-            <span>+</span> {t('ledger.synthesize_spawn')}
+            <Plus size={14} />{t('workspace.createExpert')}
           </button>
         </div>
       </div>
 
       {/* Spawns Grid Render */}
       {showRecipes && <RecipePanel spawns={spawns} />}
+      {showMethods && <ProfessionalMethods />}
       {spawns.length === 0 ? (
         backendStatus === 'offline' ? (
           <EmptyState icon={WifiOff} tone="danger" testId="empty-spawn-ledger-offline"
@@ -98,7 +102,6 @@ export default function SpawnsDashboard({
       ) : (
         <div className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
           {spawns.map(spawn => {
-            const spawnLevel = Math.max(1, Math.floor(spawn.totalTasks / 10) + 1);
             return (
                 <div
                   key={spawn.id}
@@ -109,23 +112,23 @@ export default function SpawnsDashboard({
                   <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-primary/5 to-transparent blur-xl pointer-events-none group-hover:opacity-100 opacity-60 transition-opacity"></div>
 
                   {/* Title Info Row */}
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center gap-3.5">
+                  <div className="flex flex-wrap items-start justify-between gap-2 mb-4">
+                    <div className="flex min-w-0 flex-1 items-center gap-3.5">
                       <SpawnAvatar seed={spawn.name} size={48} />
-                      <div>
+                      <div className="min-w-0">
                         <div className="flex items-center gap-1.5">
-                          <h3 className="text-xs font-bold text-foreground font-sans tracking-wide group-hover:text-primary transition-colors">
+                          <h3 className="text-xs break-words font-bold text-foreground font-sans tracking-wide group-hover:text-primary transition-colors">
                             {spawn.name}
                           </h3>
                         </div>
-                        <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-wider mt-0.5">
+                        <p className="text-[10px] break-words text-muted-foreground font-mono uppercase tracking-wider mt-0.5">
                           {spawn.domain}
                         </p>
                       </div>
                     </div>
 
                     {/* Status Badge */}
-                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold tracking-wider uppercase font-mono ${
+                    <span className={`inline-flex shrink-0 whitespace-nowrap items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase font-mono ${
                       spawn.status === 'working'
                         ? 'bg-success/20 text-success animate-pulse'
                         : spawn.status === 'escalated'
@@ -139,7 +142,7 @@ export default function SpawnsDashboard({
                           ? 'bg-danger'
                           : 'bg-info'
                       }`} />
-                      {spawn.status}
+                      {t(`workspace.${spawn.status}`)}
                     </span>
                   </div>
 
@@ -172,7 +175,7 @@ export default function SpawnsDashboard({
                       ))}
                       {spawn.tools.length + spawn.skills.length > 4 && (
                         <span className="text-[10px] text-subtle-foreground font-mono px-1">
-                          +{spawn.tools.length + spawn.skills.length - 4} more
+                          {t('workspace.moreItems', { count: spawn.tools.length + spawn.skills.length - 4 })}
                         </span>
                       )}
                     </div>

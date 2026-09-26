@@ -60,6 +60,25 @@ async def test_curate_validates_and_drops_bad_keys(seeded, monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("async_failure", [False, True])
+async def test_curate_adapter_unavailable_retains_safe_fallback(seeded, monkeypatch, async_failure):
+    from server.services import equipment_service
+
+    def unavailable():
+        raise ValueError("No provider selected")
+
+    async def unavailable_async():
+        raise ValueError("No provider selected")
+
+    monkeypatch.setattr(equipment_service, "_get_adapter",
+                        unavailable_async if async_failure else unavailable)
+    eq = await equipment_service.curate("synthetic offline specialist")
+    assert eq["toolsets"] == ["web_search_scraping"]
+    assert eq["skills"] == []
+    assert eq["mcps"] == []
+
+
+@pytest.mark.asyncio
 async def test_curate_llm_failure_falls_back_to_core(seeded, monkeypatch):
     from server.services import equipment_service
 

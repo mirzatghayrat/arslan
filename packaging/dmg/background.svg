@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="440" viewBox="0 0 720 440">
+<defs>
+ <linearGradient id="silver" x2=".8" y2="1"><stop stop-color="#f6f5f2"/><stop offset=".5" stop-color="#e6e8eb"/><stop offset="1" stop-color="#d9dce1"/></linearGradient>
+ <radialGradient id="warm"><stop stop-color="#ffd5a2" stop-opacity=".48"/><stop offset="1" stop-color="#ffd5a2" stop-opacity="0"/></radialGradient>
+ <linearGradient id="line"><stop stop-color="#ce8e45"/><stop offset="1" stop-color="#eea548"/></linearGradient>
+</defs>
+<path fill="url(#silver)" d="M0 0H720V440H0Z"/>
+<ellipse cx="110" cy="100" rx="340" ry="320" fill="url(#warm)"/>
+<path d="M40 1H680" stroke="#fff" stroke-opacity=".8"/>
+<g font-family="Helvetica Neue,Arial,sans-serif" text-anchor="middle">
+ <text x="360" y="73" font-size="32" font-weight="600" fill="#292e36" letter-spacing="-.8">Arslan</text>
+ <text x="360" y="105" font-size="14" fill="#626973" letter-spacing=".3">Your personal agent.</text>
+</g>
+<path d="M325 227H393M383 217L394 227L383 237" fill="none" stroke="url(#line)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M184 321H536" stroke="#a5aab2" stroke-opacity=".32"/>
+<g text-anchor="middle" font-family="Helvetica Neue,Arial,sans-serif">
+ <text x="360" y="374" font-size="16" font-weight="500" fill="#3e454f">Drag Arslan into Applications to install</text>
+</g>
+</svg>

@@ -522,7 +522,7 @@ export default function RepoDossier({ result, onMcpAdded }: {
                   <span className="text-[11.5px] font-bold text-foreground">{s.name ?? s.path}</span>
                   {s.scripts.length > 0 && (
                     <span className="text-[9px] font-mono bg-primary/10 text-primary px-1.5 py-0.5 rounded">
-                      {s.scripts.length} script{s.scripts.length > 1 ? 's' : ''}
+                      {t('capabilities.import.scripts_n', { n: s.scripts.length })}
                     </span>
                   )}
                 </div>
@@ -626,21 +626,21 @@ export default function RepoDossier({ result, onMcpAdded }: {
                     type="text"
                     value={note.name}
                     onChange={(e) => setNote((prev) => prev && ({ ...prev, name: e.target.value }))}
-                    placeholder="name"
+                    placeholder={t('connectionsUI.skillName')}
                     className={`sm:col-span-1 ${inputCls}`}
                   />
                   <input
                     type="text"
                     value={note.category}
                     onChange={(e) => setNote((prev) => prev && ({ ...prev, category: e.target.value }))}
-                    placeholder="category"
+                    placeholder={t('connectionsUI.category')}
                     className={`sm:col-span-1 ${inputCls}`}
                   />
                   <input
                     type="text"
                     value={note.description}
                     onChange={(e) => setNote((prev) => prev && ({ ...prev, description: e.target.value }))}
-                    placeholder="description"
+                    placeholder={t('connectionsUI.description')}
                     className={`sm:col-span-1 ${inputCls}`}
                   />
                 </div>

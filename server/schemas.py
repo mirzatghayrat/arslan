@@ -18,6 +18,7 @@ class SettingsIn(BaseModel):
     llm_base_url: str | None = None
     llm_api_key: str | None = None
     language: str | None = None
+    first_run_seen: bool | None = None
     search_provider: str | None = None
     search_api_key: str | None = None
     #: Base URL of a self-hosted SearXNG instance. Plain, not secret: it is a
@@ -80,6 +81,7 @@ class SettingsOut(BaseModel):
     llm_base_url: str = ""
     llm_api_key: str = ""  # masked
     language: str = "en"
+    first_run_seen: bool = False
     # 🔴 The KEYLESS fallback, and it must stay equal to the registry's own default.
     # It said "tavily" while the registry defaulted to DuckDuckGo, and the Settings
     # screen PUTs a FULL body built from what it was shown — so a fresh install that
@@ -323,10 +325,14 @@ class FactIn(BaseModel):
 class FactUpdate(BaseModel):
     content: str | None = None
     sensitive: bool | None = None
+    expected_version: int | None = None
 
 
 class FactOut(BaseModel):
     id: int
+    entry_id: str | None = None
+    version: int | None = None
+    status: str | None = None
     content: str
     source: str
     sensitive: bool
@@ -348,6 +354,8 @@ class ToolsetOut(BaseModel):
     key: str
     name: str
     description: str
+    name_key: str | None = None
+    description_key: str | None = None
     tier: str
     status: str
     assignable: bool
@@ -356,6 +364,7 @@ class ToolsetOut(BaseModel):
     # escape valve). Lets the capability page badge the toolset. Default False = normal.
     degraded: bool = False
     warning: str | None = None
+    warning_code: str | None = None
 
 
 class SkillPackOut(BaseModel):
@@ -363,6 +372,8 @@ class SkillPackOut(BaseModel):
     name: str
     category: str
     description: str
+    name_key: str | None = None
+    description_key: str | None = None
     tier: str
     status: str
     assignable: bool
@@ -496,6 +507,7 @@ class RunEvaluationOut(BaseModel):
 
 
 class RunOut(BaseModel):
+    no_learning: bool = False
     execution_budget: dict | None = None
     id: int
     conversation_id: str
@@ -982,10 +994,13 @@ class SkillCandidateOut(BaseModel):
 
 class PreferencesOut(BaseModel):
     preferences: list[str] = []
+    entries: list[dict] = []
 
 
 class PreferenceDeleteIn(BaseModel):
     fact: str
+    entry_id: str | None = None
+    expected_version: int | None = None
 
 
 # --- S3-M3 cost visibility (Task 5) ----------------------------------------

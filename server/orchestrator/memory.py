@@ -12,6 +12,7 @@ from arslan.context_budget import clip as clip_context, estimate_tokens
 from server.db import session as db_session
 from server.db.models import ArslanMessage, ArslanSummary, UserFact
 from server.services.llm_factory import build_adapter
+from server.services.memory_history import eligible_messages
 
 logger = logging.getLogger(__name__)
 
@@ -74,8 +75,7 @@ async def assemble_working_context(conversation_id: str) -> dict:
         summ = await _latest_summary(db, conversation_id)
         cutoff = summ.up_to_message_id if summ else 0
         rows = await db.execute(
-            select(ArslanMessage)
-            .where(ArslanMessage.conversation_id == conversation_id)
+            eligible_messages(conversation_id)
             .where(ArslanMessage.id > cutoff)
             .order_by(ArslanMessage.id)
         )
@@ -101,15 +101,22 @@ async def assemble_working_context(conversation_id: str) -> dict:
     summary = clip_context(original_summary, max(1, budget // 2))
     remaining = budget - estimate_tokens(summary)
     bounded = []
-    for message in reversed(history):
+    used_ids = []
+    for source, message in reversed(list(zip(msgs, history))):
         content = clip_context(message["content"], remaining)
         if content:
             bounded.append({**message, "content": content})
+            used_ids.append(source.id)
             remaining -= estimate_tokens(content)
         if remaining <= 0 or content != message["content"]:
             break
     bounded.reverse()
     truncated = summary != original_summary or bounded != history
+    from server.services import task_service
+    runtime = task_service.current()
+    if runtime is not None:
+        runtime.register_history(conversation_id, used_ids,
+                                 [(summ.id, summ.updated_at)] if summ and summary else [])
     return {"summary": summary, "history": bounded, "truncated": truncated,
             "budget_mode": "estimated_text_tokens"}
 
@@ -118,13 +125,15 @@ async def maybe_compact(conversation_id: str) -> None:
     """If the post-cutoff working text exceeds the char budget, fold older messages
     into a rolling summary. On any failure, leave the thread un-compacted (never drop)."""
     try:
+        from sqlalchemy import insert, literal
+        from server.services import memory_snapshot_guard
         # NOTE: read-then-write is not serialized; safe for v1's single sequential user.
         async with db_session.AsyncSessionLocal() as db:
+            snapshot_token = await memory_snapshot_guard.capture(db)
             summ = await _latest_summary(db, conversation_id)
             cutoff = summ.up_to_message_id if summ else 0
             rows = await db.execute(
-                select(ArslanMessage)
-                .where(ArslanMessage.conversation_id == conversation_id)
+                eligible_messages(conversation_id)
                 .where(ArslanMessage.id > cutoff)
                 .order_by(ArslanMessage.id)
             )
@@ -150,22 +159,23 @@ async def maybe_compact(conversation_id: str) -> None:
         from server.services import usage_ledger
 
         async with usage_ledger.scope("memory", conversation_id):
+            if not await memory_snapshot_guard.is_current(snapshot_token):
+                return
             new_summary = await _summarize(adapter, f"{prior}\n{body}".strip())
 
             # Bound the rolling summary itself (C1): if it exceeds the cap, compress it
             # once more, then hard-truncate as a guaranteed floor so context can't grow.
             if estimate_tokens(new_summary) > _summary_token_cap():
+                if not await memory_snapshot_guard.is_current(snapshot_token):
+                    return
                 new_summary = await _summarize(adapter, new_summary)
                 new_summary = clip_context(new_summary, _summary_token_cap())
 
         async with db_session.AsyncSessionLocal() as db:
-            db.add(
-                ArslanSummary(
-                    conversation_id=conversation_id,
-                    summary=new_summary,
-                    up_to_message_id=new_cutoff,
-                )
-            )
+            await db.execute(insert(ArslanSummary).from_select(
+                ["conversation_id", "summary", "up_to_message_id"],
+                select(literal(conversation_id), literal(new_summary), literal(new_cutoff))
+                .where(memory_snapshot_guard.unchanged(snapshot_token))))
             await db.commit()
     except Exception:  # noqa: BLE001 - degrade gracefully, keep full thread
         logger.warning("compaction failed for %s; keeping full thread", conversation_id, exc_info=True)
@@ -232,6 +242,10 @@ async def save_facts(facts: list[dict], *, provenance: dict) -> list[UserFact]:
     """
     if not provenance:
         raise ValueError("save_facts: provenance is mandatory (programmer guard)")
+    from server.services.memory_repository import is_active
+    if await is_active():
+        from server.services import memory_compat
+        return await memory_compat.save_facts(facts)
     created: list[UserFact] = []
     if not facts:
         return created
@@ -338,6 +352,10 @@ async def list_facts(*, include_superseded: bool = False,
     forget. Marking is a toggle — marking again clears the flag and the fact comes
     back — so the row is left alone; nothing about the mark is destructive.
     """
+    from server.services.memory_repository import is_active
+    if await is_active():
+        from server.services import memory_compat
+        return await memory_compat.list_facts(include_superseded=include_superseded, include_stale=include_stale)
     async with db_session.AsyncSessionLocal() as db:
         stmt = select(UserFact).order_by(UserFact.id)
         if not include_superseded:
@@ -361,6 +379,10 @@ async def add_manual_fact(content: str, sensitive: bool = False) -> UserFact:
     duplicate. Fail-open: any exception in the dedup check is swallowed and
     falls through to a normal insert — a user's fact must always get saved.
     """
+    from server.services.memory_repository import is_active
+    if await is_active():
+        from server.services import memory_compat
+        return await memory_compat.add_manual_fact(content, sensitive)
     text = content.strip()
     if not text:
         raise ValueError("Fact content cannot be empty")
@@ -400,7 +422,8 @@ async def add_manual_fact(content: str, sensitive: bool = False) -> UserFact:
         return row
 
 
-async def update_fact(fact_id: int, content: str | None = None, sensitive: bool | None = None) -> UserFact | None:
+async def update_fact(fact_id: int, content: str | None = None, sensitive: bool | None = None,
+                      *, expected_version: int | None = None) -> UserFact | None:
     """Edit a fact's content/sensitivity. Returns None if not found.
 
     An edit merges `edited_by_user_at` into the row's provenance dict (rather than
@@ -408,6 +431,10 @@ async def update_fact(fact_id: int, content: str | None = None, sensitive: bool 
     distinguishable from a still-pristine auto fact, without losing its original
     source_kind/spawn_id/conversation_id.
     """
+    from server.services.memory_repository import is_active
+    if await is_active():
+        from server.services import memory_compat
+        return await memory_compat.update_fact(fact_id, content, sensitive, expected_version=expected_version)
     async with db_session.AsyncSessionLocal() as db:
         row = await db.get(UserFact, fact_id)
         if row is None:
@@ -425,8 +452,12 @@ async def update_fact(fact_id: int, content: str | None = None, sensitive: bool 
         return row
 
 
-async def delete_fact(fact_id: int) -> bool:
+async def delete_fact(fact_id: int, *, expected_version: int | None = None) -> bool:
     """Delete a fact. Returns True if a row was removed."""
+    from server.services.memory_repository import is_active
+    if await is_active():
+        from server.services import memory_compat
+        return await memory_compat.delete_fact(fact_id, expected_version=expected_version)
     async with db_session.AsyncSessionLocal() as db:
         row = await db.get(UserFact, fact_id)
         if row is None:
@@ -447,6 +478,16 @@ async def facts_text(*, include_sensitive: bool = False,
     spawn dispatch / sandbox 草稿 / replay ambient 走安全默认,零改动即正确。
     忘传 flag 的泄漏方向永远是"少给",不是"私密进 spawn prompt"。
     """
+    from server.services.memory_repository import is_active
+    if await is_active():
+        from dataclasses import replace
+        from server.services.personal_context import assemble, current
+        context = current()
+        if context is None:
+            return ""
+        result = await assemble(context=replace(context, allow_sensitive=context.allow_sensitive and include_sensitive),
+                                limit_tokens=limit_tokens)
+        return result.text if result else ""
     facts = await list_facts()
     if not include_sensitive:
         # NULL⇒sensitive:隐私过滤 fail-closed——只有显式 False 放行

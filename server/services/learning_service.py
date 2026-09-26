@@ -44,6 +44,25 @@ async def _write(content: str, label: str, source_kind: str, source_ref: dict,
     content = (content or "").strip()
     if not content:
         return 0
+    from server.services.memory_repository import is_active, repository
+    if await is_active():
+        from arslan.companion.memory import MemoryError, MemoryScope, MemoryWrite
+        from server.services.personal_context import current
+        ctx = current()
+        if ctx is None or ctx.no_learning or ctx.temporary:
+            return 0
+        # A legacy spawn_id argument is not authority to write for another expert.
+        if spawn_id is not None and str(spawn_id) != ctx.expert_id:
+            return 0
+        scope = MemoryScope(kind="expert", id=ctx.expert_id) if ctx.expert_id else (
+            MemoryScope(kind="project", id=ctx.project_id) if ctx.project_id else MemoryScope(kind="global"))
+        try:
+            async with repository() as repo:
+                value = await repo.create(MemoryWrite(content=content, kind="experience", scope=scope),
+                                          ctx.actor("extractor"))
+                return await repo.compatibility_id(await repo.get(value["id"])) or 0
+        except MemoryError:
+            return 0
     try:
         async with db_session.AsyncSessionLocal() as db:
             # Scanner #5 (brain-P1 Task 3, BLOCKER #2): active-only — a superseded
@@ -118,6 +137,14 @@ async def _distill_one(signal_text: str, label: str, source_kind: str,
                        source_ref: dict, spawn_id: int | None) -> int:
     if not (signal_text or "").strip():
         return 0
+    from server.services.memory_repository import is_active
+    if await is_active():
+        from server.services.personal_context import current
+        ctx = current()
+        if ctx is None or ctx.no_learning or ctx.temporary or not ctx.cloud_memory_allowed:
+            return 0
+        if spawn_id is not None and str(spawn_id) != ctx.expert_id:
+            return 0
     try:
         adapter = _get_adapter()
         a = await adapter if hasattr(adapter, "__await__") else adapter

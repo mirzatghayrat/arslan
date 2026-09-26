@@ -179,7 +179,7 @@ async def test_a_pdf_with_a_text_layer_never_reaches_the_model(maker, monkeypatc
 
     monkeypatch.setattr(ingest, "describe_image", _describe)
     monkeypatch.setattr(ingest, "_pdf_text_layer",
-                        lambda data: "A real text layer with plenty of words in it.")
+                        lambda data: ingest.PDFTextLayer(("A real text layer with plenty of words in it.",)))
     # A REAL pdf, not a stub blob: with a fake one, removing the text-layer
     # shortcut makes rasterisation RAISE, describe_image is never reached, and
     # the assertion passes for entirely the wrong reason. A mutation caught

@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from contextlib import nullcontext
+from dataclasses import replace
 
 from arslan.llm import usage_sink
 from arslan.execution_budget import governed
@@ -56,7 +58,11 @@ async def execute(conversation_id: str, user_message: str, emit: Callable[[dict]
 
     async def run() -> str | None:
         nonlocal error
-        with usage_sink.collecting(), run_trace.collecting(), execution_context.bind_run(recorder.run_id):
+        from server.services import personal_context
+        ctx = personal_context.current()
+        memory_scope = personal_context.bind(replace(ctx, run_id=f"run:{recorder.run_id}",
+            source_run_id=recorder.run_id)) if ctx else nullcontext()
+        with memory_scope, usage_sink.collecting(), run_trace.collecting(), execution_context.bind_run(recorder.run_id):
             tee({"type": "stream_start", "source": "arslan", "run_id": recorder.run_id})
             try:
                 output = await body(capture)

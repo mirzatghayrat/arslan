@@ -15,6 +15,7 @@ import CapabilityFilter from "./CapabilityFilter";
 import { filterItems, matchedChildren } from "../lib/capabilitySearch";
 import EquipPopover from "./EquipPopover";
 import EmptyState, { EmptyStateAction } from "./EmptyState";
+import { catalogText } from "../lib/catalogDisplay";
 
 type AvailChip = "usable" | "unimplemented" | "orchestrator" | "all";
 type AvailClass = Exclude<AvailChip, "all">;
@@ -99,7 +100,10 @@ function ToolsView({ toolsets }: { toolsets: RegistryToolset[] }) {
   // Text narrows WITHIN the availability chip, the same way the category chips
   // do on the skills side — two filters that fought each other would make the
   // result depend on which one you touched last.
-  const shown = filterItems(inChip, query);
+  const shown = filterItems(inChip.map(item => ({ ...item,
+    name: catalogText(t, item.name_key, item.name),
+    description: catalogText(t, item.description_key, item.description),
+  })), query);
 
   return (
     <div>
@@ -145,6 +149,8 @@ function ToolCard({ ts, matchedTools = [] }: {
 }) {
   const { t } = useTranslation();
   const avail = classify(ts);
+  const warning = ts.warning_code === "unsandboxed_python"
+    ? t("ui.unsandboxedPython") : ts.warning;
   return (
     <div
       className={`bg-surface/40 border border-border/60 rounded-xl p-4 ${
@@ -159,7 +165,7 @@ function ToolCard({ ts, matchedTools = [] }: {
           // so the user always sees when run_python is running UNSANDBOXED.
           <span
             data-testid={`toolset-degraded-${ts.key}`}
-            title={ts.warning ?? t("capabilities.catalog.degraded")}
+            title={warning ?? t("capabilities.catalog.degraded")}
             className="flex items-center gap-1 text-[9px] font-mono uppercase px-1.5 py-0.5 rounded bg-danger/15 text-danger"
           >
             <span className="w-1.5 h-1.5 rounded-full bg-danger" />
@@ -179,8 +185,8 @@ function ToolCard({ ts, matchedTools = [] }: {
           {t("capabilities.filter.matched_tools", { tools: matchedTools.join(", ") })}
         </p>
       )}
-      {ts.degraded && ts.warning && (
-        <p className="text-[10px] text-danger font-mono mt-1">{ts.warning}</p>
+      {ts.degraded && warning && (
+        <p className="text-[10px] text-danger font-mono mt-1">{warning}</p>
       )}
       {avail === "unimplemented" && (
         <p className="text-[10px] text-muted-foreground font-mono mt-1">
@@ -204,7 +210,10 @@ function SkillsView({ skills }: { skills: RegistrySkill[] }) {
   // Category chips filter WITHIN the active availability set; text narrows
   // inside that again, so the three controls compose instead of competing.
   const inChip = chip === "all" ? skills : groups[chip];
-  const pool = filterItems(inChip, query);
+  const pool = filterItems(inChip.map(item => ({ ...item,
+    name: catalogText(t, item.name_key, item.name),
+    description: catalogText(t, item.description_key, item.description),
+  })), query);
   const byCategory = new Map<string, RegistrySkill[]>();
   for (const s of pool) {
     const cat = s.category ?? "";
@@ -235,7 +244,7 @@ function SkillsView({ skills }: { skills: RegistrySkill[] }) {
         <FilterChips
           chips={[
             { id: "all", label: t("capabilities.chips.all"), count: pool.length },
-            ...categories.map((cat) => ({ id: cat, label: cat || "—", count: byCategory.get(cat)!.length })),
+            ...categories.map((cat) => ({ id: cat, label: cat ? catalogText(t, `catalogUI.skillCategories.${cat}`, cat) : "—", count: byCategory.get(cat)!.length })),
           ]}
           active={activeCat}
           onSelect={setCatChip}
@@ -253,7 +262,7 @@ function SkillsView({ skills }: { skills: RegistrySkill[] }) {
       )}
       {visibleCategories.map((cat) => (
         <div key={cat}>
-          <div className={subHeader}>{cat} ({byCategory.get(cat)!.length})</div>
+          <div className={subHeader}>{catalogText(t, `catalogUI.skillCategories.${cat}`, cat)} ({byCategory.get(cat)!.length})</div>
           <div className="space-y-2">
             {byCategory.get(cat)!.map((s) => (
               <SkillRow key={s.key} s={s} />
@@ -360,7 +369,7 @@ function SkillHealthPanel({ health }: { health: SkillHealth }) {
     >
       {!health.sandbox_available && (
         <p data-testid="skill-health-sandbox-warning" className="text-warning font-mono">
-          {t("capabilities.skill_health.sandbox_unavailable")} (backend={health.sandbox_backend})
+          {t("capabilities.skill_health.sandbox_unavailable")} ({t('ui.backend')}={health.sandbox_backend})
         </p>
       )}
       {health.error && <p className="text-danger font-mono">{health.error}</p>}
@@ -430,6 +439,7 @@ function CompatBadge({ compatibility }: { compatibility?: "full" | "partial" | "
 }
 
 function Badge({ tier, status, assignable }: { tier: string; status: string; assignable?: boolean }) {
+  const { t } = useTranslation();
   const ok = assignable === true;
   // safe + registered but NOT assignable = catalogued-only (no body / no wired tool yet) —
   // honest label so it never reads as an equippable capability.
@@ -440,7 +450,7 @@ function Badge({ tier, status, assignable }: { tier: string; status: string; ass
         ok ? "bg-success/15 text-success" : "bg-surface-raised text-subtle-foreground"
       }`}
     >
-      {ok ? "assignable" : catalogOnly ? "catalog" : `${tier}/${status}`}
+      {t(ok ? "ui.assignable" : catalogOnly ? "ui.catalogOnly" : tier === "orchestrator" ? "capabilities.chips.arslan_only" : "capabilities.chips.unimplemented")}
     </span>
   );
 }

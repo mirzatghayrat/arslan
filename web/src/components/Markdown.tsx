@@ -5,8 +5,10 @@
  * Streaming-safe: partial/incomplete markdown degrades gracefully.
  */
 import React, { useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import MarkdownLink from './MarkdownLink';
 import { Copy, Check, Info, Lightbulb, AlertTriangle, AlertCircle, Flame } from 'lucide-react';
 
 // ─── GFM Alert parsing ────────────────────────────────────────────────────────
@@ -97,6 +99,7 @@ function stripAlertPrefix(children: React.ReactNode): React.ReactNode {
 // ─── Copy button for code blocks ──────────────────────────────────────────────
 
 function CopyButton({ code }: { code: string }) {
+  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(() => {
@@ -109,7 +112,7 @@ function CopyButton({ code }: { code: string }) {
   return (
     <button
       onClick={handleCopy}
-      title="Copy code"
+      title={t('ui.copyCode')}
       style={{
         position: 'absolute',
         top: '8px',
@@ -130,12 +133,17 @@ function CopyButton({ code }: { code: string }) {
       }}
     >
       {copied ? <Check size={11} /> : <Copy size={11} />}
-      {copied ? 'Copied' : 'Copy'}
+      {t(copied ? 'ui.copied' : 'ui.copy')}
     </button>
   );
 }
 
 // ─── Markdown component overrides ─────────────────────────────────────────────
+
+function UiText({ id }: { id: string }) {
+  const { t } = useTranslation();
+  return <>{t(id)}</>;
+}
 
 const components: import('react-markdown').Components = {
   // Headings
@@ -310,7 +318,7 @@ const components: import('react-markdown').Components = {
               {lang}
             </span>
           ) : (
-            <span style={{ fontSize: '10px', color: 'var(--color-subtle-foreground)' }}>code</span>
+            <span style={{ fontSize: '10px', color: 'var(--color-subtle-foreground)' }}><UiText id="ui.code" /></span>
           )}
           <CopyButton code={rawCode} />
         </div>
@@ -333,23 +341,7 @@ const components: import('react-markdown').Components = {
   },
 
   // Links
-  a: ({ href, children }) => (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      style={{
-        color: 'var(--color-primary)',
-        textDecoration: 'none',
-        borderBottom: '1px solid transparent',
-        transition: 'border-color 0.15s',
-      }}
-      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderBottomColor = 'var(--color-primary)'; }}
-      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderBottomColor = 'transparent'; }}
-    >
-      {children}
-    </a>
-  ),
+  a: ({ href, children }) => <MarkdownLink href={href}>{children}</MarkdownLink>,
 
   // Unordered lists
   ul: ({ children }) => (
@@ -436,7 +428,7 @@ const components: import('react-markdown').Components = {
   blockquote: ({ children }) => {
     const alertType = detectAlertType(children);
     if (alertType && ALERT_TYPES[alertType]) {
-      const { Icon, label, bgClass, borderClass, titleClass } = ALERT_TYPES[alertType];
+      const { Icon, bgClass, borderClass, titleClass } = ALERT_TYPES[alertType];
       const stripped = stripAlertPrefix(children);
       return (
         <div className={`${bgClass} ${borderClass}`} style={{
@@ -454,7 +446,7 @@ const components: import('react-markdown').Components = {
           }}>
             <Icon size={14} className={titleClass} style={{ flexShrink: 0 }} />
             <span className={titleClass} style={{ fontWeight: 700, fontSize: '11px', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-              {label}
+              <UiText id={`ui.alert_${alertType.toLowerCase()}`} />
             </span>
           </div>
           <div style={{ color: 'var(--color-muted-foreground)', lineHeight: 1.6, fontSize: '0.95em' }}>

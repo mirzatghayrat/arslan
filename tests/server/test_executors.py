@@ -59,6 +59,11 @@ async def test_web_extract_truncates(monkeypatch):
     out = await executors.EXECUTORS["web_extract"].execute({"url": "https://x"})
     assert out["ok"] is True
     assert len(out["text"]) <= net_pin._EXTRACT_CHAR_LIMIT + 20
+    assert out["source"]["truncated"] is True
+    assert out["source"]["trust"] == "untrusted_web"
+    assert out["source"]["license"] == "unknown_reference_only"
+    from arslan.companion.research import admitted_sources
+    assert admitted_sources([{"tool": "web_extract", "args": {"url": "https://x"}, "result": out}])
 
 
 # ---------------------------------------------------------------------------

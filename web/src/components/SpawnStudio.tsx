@@ -11,6 +11,7 @@ import {
 import { api } from "../api/client";
 import type { RegistryCatalog, SpawnDetail, SeedRef, SuggestDraft } from "../api/client.types";
 import { SpawnAvatar } from "./SpawnAvatar";
+import { catalogText } from "../lib/catalogDisplay";
 
 interface Props {
   mode: "edit" | "create";
@@ -160,20 +161,20 @@ export default function SpawnStudio({ mode, spawnId, onClose, onSaved }: Props) 
   const panels = useMemo(() => {
     const skills: PanelItem[] = (cat?.skills ?? []).map((s) => ({
       key: s.key,
-      name: s.name ?? s.key,
-      description: s.description,
+      name: catalogText(t, s.name_key, s.name ?? s.key),
+      description: catalogText(t, s.description_key, s.description),
       tier: s.tier,
       assignable: s.assignable === true,
     }));
     const toolsets = cat?.toolsets ?? [];
     const tools: PanelItem[] = toolsets
       .filter((ts) => !ts.key.startsWith("mcp_"))
-      .map((ts) => ({ key: ts.key, name: ts.name ?? ts.key, description: ts.description, tier: ts.tier, assignable: ts.assignable === true }));
+      .map((ts) => ({ key: ts.key, name: catalogText(t, ts.name_key, ts.name ?? ts.key), description: catalogText(t, ts.description_key, ts.description), tier: ts.tier, assignable: ts.assignable === true }));
     const mcps: PanelItem[] = toolsets
       .filter((ts) => ts.key.startsWith("mcp_"))
-      .map((ts) => ({ key: ts.key, name: ts.name ?? ts.key, description: ts.description, tier: ts.tier, assignable: ts.assignable === true }));
+      .map((ts) => ({ key: ts.key, name: catalogText(t, ts.name_key, ts.name ?? ts.key), description: catalogText(t, ts.description_key, ts.description), tier: ts.tier, assignable: ts.assignable === true }));
     return { skills, tools, mcps };
-  }, [cat]);
+  }, [cat, t]);
 
   function toggleSkill(key: string, assignable: boolean) {
     if (!assignable) return;

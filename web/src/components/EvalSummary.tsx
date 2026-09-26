@@ -86,7 +86,7 @@ export default function EvalSummary({ onClose, spawnId, conversationId, inline =
       {!inline && (
         <header className="eval-summary__head">
           <span className="eval-summary__title">{t("diag.eval_summary")}</span>
-          <button className="eval-summary__close" onClick={onClose} aria-label="close">✕</button>
+          <button className="eval-summary__close" onClick={onClose} aria-label={t('common.close')}>✕</button>
         </header>
       )}
 
@@ -96,7 +96,7 @@ export default function EvalSummary({ onClose, spawnId, conversationId, inline =
           overlay and inline (EvalDock) modes, so it lives above the KPIs
           rather than inside the overlay-only header. */}
       {conversationId != null && (
-        <div className="eval-summary__scope" role="tablist" aria-label="scope">
+        <div className="eval-summary__scope" role="tablist" aria-label={t('ui.scope')}>
           <button
             type="button"
             role="tab"

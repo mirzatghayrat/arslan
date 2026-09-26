@@ -53,7 +53,7 @@ export default function SavedCandidates({ onPrefillMcp }: { onPrefillMcp?: (d: M
     try {
       const result = await generateSkill(fullName);
       if (!result.skill) {
-        setSkillNotice(`Couldn't distill a skill from ${result.repo.full_name}.`);
+        setSkillNotice(t('connectionsUI.distillFailed', { repo: result.repo.full_name }));
         return;
       }
       setSkillDraft({ full_name: result.repo.full_name, ...result.skill });
@@ -77,7 +77,7 @@ export default function SavedCandidates({ onPrefillMcp }: { onPrefillMcp?: (d: M
         description: skillDraft.description,
         body: skillDraft.body,
       });
-      setSkillNotice('Added to Skills library (safe) — equip it from a spawn\'s skill menu.');
+      setSkillNotice(t('connectionsUI.skillAdded'));
       setSkillDraft(null);
     } catch (e) {
       setSkillError(String(e instanceof Error ? e.message : e));
@@ -123,7 +123,7 @@ export default function SavedCandidates({ onPrefillMcp }: { onPrefillMcp?: (d: M
       transport: s.transport ?? 'stdio',
       url: s.url ?? undefined,
     });
-    setCatalogNotice(`Prefilled MCP add form from ${cand.full_name} — review & connect it in the MCPs tab.`);
+    setCatalogNotice(t('connectionsUI.prefilled', { repo: cand.full_name }));
   };
 
   // Trust tier → semantic token classes.
@@ -138,7 +138,7 @@ export default function SavedCandidates({ onPrefillMcp }: { onPrefillMcp?: (d: M
     <div className="space-y-3 select-text">
       <div className="flex items-center justify-between">
         <span className="text-[9.5px] font-mono text-subtle-foreground uppercase tracking-widest block">
-          Saved Candidates ({candidates.length})
+          {t('connectionsUI.savedHeader', { count: candidates.length })}
         </span>
         <button
           type="button"
@@ -146,7 +146,7 @@ export default function SavedCandidates({ onPrefillMcp }: { onPrefillMcp?: (d: M
           className="px-3 py-1.5 bg-surface hover:bg-foreground/[0.04] border border-border hover:border-border-strong text-muted-foreground hover:text-foreground text-[10px] font-mono uppercase rounded-lg transition-all flex items-center gap-1"
         >
           <RefreshCcw className="w-3 h-3" />
-          <span>Refresh list</span>
+          <span>{t('connectionsUI.refreshList')}</span>
         </button>
       </div>
 
@@ -185,13 +185,13 @@ export default function SavedCandidates({ onPrefillMcp }: { onPrefillMcp?: (d: M
         <div className="bg-background border border-warning/40 rounded-xl p-5 space-y-3">
           <div className="flex items-center justify-between gap-2">
             <span className="text-[9.5px] font-mono text-subtle-foreground uppercase tracking-widest block">
-              Distilled skill from <span className="text-foreground font-bold">{skillDraft.full_name}</span> (review &amp; edit)
+              {t('connectionsUI.draftFrom', { repo: skillDraft.full_name })}
             </span>
             <button
               type="button"
               onClick={() => { setSkillDraft(null); setSkillError(null); setSkillNotice(null); }}
               className="p-1 text-subtle-foreground hover:text-foreground transition-colors"
-              aria-label="Cancel"
+              aria-label={t('common.cancel')}
             >
               <X className="w-4 h-4" />
             </button>
@@ -202,21 +202,21 @@ export default function SavedCandidates({ onPrefillMcp }: { onPrefillMcp?: (d: M
               type="text"
               value={skillDraft.name}
               onChange={(e) => setSkillDraft(prev => prev && ({ ...prev, name: e.target.value }))}
-              placeholder="Skill name"
+              placeholder={t('connectionsUI.skillName')} aria-label={t('connectionsUI.skillName')}
               className="sm:col-span-1 w-full bg-surface border border-border-strong focus:border-primary focus:outline-none rounded-lg px-3 py-2 text-[11px] text-foreground font-sans placeholder-subtle-foreground"
             />
             <input
               type="text"
               value={skillDraft.category}
               onChange={(e) => setSkillDraft(prev => prev && ({ ...prev, category: e.target.value }))}
-              placeholder="category"
+              placeholder={t('connectionsUI.category')} aria-label={t('connectionsUI.category')}
               className="sm:col-span-1 w-full bg-surface border border-border-strong focus:border-primary focus:outline-none rounded-lg px-3 py-2 text-[11px] text-foreground font-mono placeholder-subtle-foreground"
             />
             <input
               type="text"
               value={skillDraft.description}
               onChange={(e) => setSkillDraft(prev => prev && ({ ...prev, description: e.target.value }))}
-              placeholder="one-line description"
+              placeholder={t('connectionsUI.description')} aria-label={t('connectionsUI.description')}
               className="sm:col-span-1 w-full bg-surface border border-border-strong focus:border-primary focus:outline-none rounded-lg px-3 py-2 text-[11px] text-foreground font-sans placeholder-subtle-foreground"
             />
           </div>
@@ -226,6 +226,7 @@ export default function SavedCandidates({ onPrefillMcp }: { onPrefillMcp?: (d: M
               {t('capabilities.skill_body_label')}
             </span>
             <textarea
+              aria-label={t('capabilities.skill_body_label')}
               value={skillDraft.body}
               onChange={(e) => setSkillDraft(prev => prev && ({ ...prev, body: e.target.value }))}
               rows={12}
@@ -242,14 +243,14 @@ export default function SavedCandidates({ onPrefillMcp }: { onPrefillMcp?: (d: M
               className="px-4 py-2 bg-warning hover:opacity-90 text-background text-[11px] font-bold font-mono uppercase rounded-lg flex items-center gap-1.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
             >
               {skillCreating ? <RefreshCcw className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
-              <span>Create skill</span>
+              <span>{t('connectionsUI.createSkill')}</span>
             </button>
             <button
               type="button"
               onClick={() => { setSkillDraft(null); setSkillError(null); setSkillNotice(null); }}
               className="px-4 py-2 bg-surface hover:bg-foreground/[0.04] border border-border hover:border-border-strong text-muted-foreground hover:text-foreground text-[11px] font-mono uppercase rounded-lg transition-all shrink-0"
             >
-              Cancel
+              {t('common.cancel')}
             </button>
             {skillError && (
               <span className="text-[11px] text-danger font-sans inline-flex items-center gap-1.5">
@@ -263,7 +264,7 @@ export default function SavedCandidates({ onPrefillMcp }: { onPrefillMcp?: (d: M
 
       {candidates.length === 0 ? (
         <div className="text-center py-4 bg-background border border-dashed border-border rounded-xl">
-          <span className="text-[10px] text-subtle-foreground font-mono">No saved candidates yet — search and save repos to build a catalog.</span>
+          <span className="text-[10px] text-subtle-foreground font-mono">{t('connectionsUI.savedEmpty')}</span>
         </div>
       ) : (
         <div className="space-y-2">
@@ -288,10 +289,10 @@ export default function SavedCandidates({ onPrefillMcp }: { onPrefillMcp?: (d: M
                     </a>
                     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold font-mono uppercase tracking-wider border ${trustBadgeCls(cand.snapshot.trust.tier)}`}>
                       <Shield className="w-2.5 h-2.5" />
-                      {cand.snapshot.trust.tier}
+                      {t(`connectionsUI.trust_${cand.snapshot.trust.tier}`)}
                     </span>
                     <span className={`text-[9.5px] font-mono font-bold ${isMcp ? 'text-success' : 'text-subtle-foreground'}`}>
-                      {isMcp ? 'MCP ✓' : 'not MCP'}
+                      {isMcp ? 'MCP ✓' : t('connectionsUI.notMcp')}
                     </span>
                   </div>
                 </div>
@@ -303,7 +304,7 @@ export default function SavedCandidates({ onPrefillMcp }: { onPrefillMcp?: (d: M
                     className="px-3 py-1.5 bg-surface hover:bg-foreground/[0.04] border border-border hover:border-border-strong text-muted-foreground hover:text-foreground text-[10px] font-mono uppercase rounded-lg transition-all flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {busy ? <RefreshCcw className="w-3 h-3 animate-spin" /> : <RefreshCcw className="w-3 h-3" />}
-                    <span>Refresh</span>
+                    <span>{t('recipes.refresh')}</span>
                   </button>
                   {isMcp && (
                     <button
@@ -313,7 +314,7 @@ export default function SavedCandidates({ onPrefillMcp }: { onPrefillMcp?: (d: M
                       className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary text-[10px] font-mono uppercase rounded-lg transition-all flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <Plus className="w-3 h-3" />
-                      <span>Add as MCP server</span>
+                      <span>{t('capabilities.dossier.mcp.add')}</span>
                     </button>
                   )}
                   <button
@@ -325,7 +326,7 @@ export default function SavedCandidates({ onPrefillMcp }: { onPrefillMcp?: (d: M
                     {skillBusyRef === cand.full_name
                       ? <RefreshCcw className="w-3 h-3 animate-spin" />
                       : <BookOpen className="w-3 h-3" />}
-                    <span>Add as Skill</span>
+                    <span>{t('connectionsUI.addSkill')}</span>
                   </button>
                   <button
                     type="button"
@@ -334,7 +335,7 @@ export default function SavedCandidates({ onPrefillMcp }: { onPrefillMcp?: (d: M
                     className="px-3 py-1.5 bg-danger/10 hover:bg-danger/20 border border-danger/30 text-danger text-[10px] font-mono uppercase rounded-lg transition-all flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <X className="w-3 h-3" />
-                    <span>Delete</span>
+                    <span>{t('sidebar.delete')}</span>
                   </button>
                 </div>
               </div>

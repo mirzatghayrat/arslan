@@ -101,6 +101,12 @@ async def get_preferences(spawn_id: int, session: AsyncSession = Depends(get_ses
     spawn = await session.get(Spawn, spawn_id)
     if spawn is None:
         raise HTTPException(status_code=404, detail="spawn not found")
+    from server.services.memory_repository import is_active, MemoryRepository
+    if await is_active(session):
+        from arslan.companion.memory import MemoryScope
+        entries = await MemoryRepository(session).list_entries(scope=MemoryScope(kind="expert", id=str(spawn_id)))
+        return PreferencesOut(preferences=[row["content"] for row in entries
+                                          if row["status"] == "active" and row["content"]], entries=entries)
     return PreferencesOut(preferences=list(spawn.memory_facts or []))
 
 
@@ -110,6 +116,24 @@ async def delete_preference(spawn_id: int, body: PreferenceDeleteIn,
     spawn = await session.get(Spawn, spawn_id)
     if spawn is None:
         raise HTTPException(status_code=404, detail="spawn not found")
+    from server.services.memory_repository import is_active, MemoryRepository
+    if await is_active(session):
+        from arslan.companion.memory import MemoryActor, MemoryError
+        if body.entry_id is None or body.expected_version is None:
+            raise HTTPException(428, detail="memory_identity_and_version_required")
+        repo = MemoryRepository(session)
+        try:
+            entry = await repo.get(body.entry_id)
+            if entry.scope_kind != "expert" or entry.scope_id != str(spawn_id):
+                raise HTTPException(403, detail="memory_scope_denied")
+            await repo.delete_entry(entry.id, body.expected_version, MemoryActor(origin="user"))
+            await session.commit()
+            from server.services.memory_deletion_ledger import sync
+            await sync(session)
+        except MemoryError as exc:
+            await session.rollback()
+            raise HTTPException(409 if exc.code == "memory_version_conflict" else 404, detail=exc.code) from exc
+        return await get_preferences(spawn_id, session)
     spawn.memory_facts = [f for f in (spawn.memory_facts or []) if f != body.fact]
     await session.commit()
     return PreferencesOut(preferences=list(spawn.memory_facts))

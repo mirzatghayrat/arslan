@@ -42,6 +42,8 @@ interface FirstRunWizardProps {
   onAdded: (config: ProviderConfig) => void;
   /** Called after the wizard closes (finish or dismiss) so the parent hides it. */
   onClose: () => void;
+  /** Keep the host's settings aligned even when the wizard is dismissed mid-save. */
+  onLanguageChange?: (language: string) => void;
 }
 
 const TOTAL_STEPS = 4;
@@ -56,7 +58,7 @@ const OUTRO_COUNT = 3;
 /** Matches the .fr-outro.leaving CSS fade — finish() fires when it completes. */
 const OUTRO_FADE_MS = 480;
 
-export default function FirstRunWizard({ llmProviders, onAdded, onClose }: FirstRunWizardProps) {
+export default function FirstRunWizard({ llmProviders, onAdded, onClose, onLanguageChange }: FirstRunWizardProps) {
   const { t, i18n } = useTranslation();
   const [step, setStep] = useState(STEP_LANG);
   const [bgMissing, setBgMissing] = useState(false);
@@ -69,6 +71,7 @@ export default function FirstRunWizard({ llmProviders, onAdded, onClose }: First
   const pickLanguage = (code: string) => {
     setLanguage(code);
     i18n.changeLanguage(code);
+    onLanguageChange?.(code);
     // Best-effort persist to backend settings so the choice survives a reload.
     api.updateSettings({ language: code }).catch(() => {});
   };
@@ -337,7 +340,7 @@ export default function FirstRunWizard({ llmProviders, onAdded, onClose }: First
                     {llmProviders.map((p) => (
                       <option key={p.key} value={p.key}>
                         {p.label}
-                        {p.native ? " (Native)" : ""}
+                        {p.native ? ` (${t('ui.native')})` : ""}
                       </option>
                     ))}
                   </select>
@@ -392,7 +395,7 @@ export default function FirstRunWizard({ llmProviders, onAdded, onClose }: First
 
           {step === STEP_HELLO && (
             <>
-              <h2 className="fr-h1 font-serif">{t("firstRun.title")}</h2>
+              <h2 className="fr-h1 font-sans">{t("firstRun.title")}</h2>
               <p className="fr-sub">{t("firstRun.welcomeBody")}</p>
               <label htmlFor="first-run-name" className="fr-label">
                 {t("firstRun.namePrompt")}

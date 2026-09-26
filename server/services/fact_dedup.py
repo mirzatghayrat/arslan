@@ -162,6 +162,9 @@ async def dedup_merge_facts() -> int:
     row that is itself a supersede-pointer TARGET (would dangle the pointer) —
     such a row survives as a coexisting duplicate instead. Returns rows deleted.
     Best-effort."""
+    from server.services.memory_repository import is_active
+    if await is_active():
+        return 0  # Unified dedup proposes conflicts; never bulk-deletes history.
     try:
         async with db_session.AsyncSessionLocal() as db:
             rows = list((await db.execute(
@@ -194,6 +197,9 @@ async def dedup_facts() -> int:
     deletes a row that is itself a supersede-pointer TARGET (would dangle the
     pointer) — such a row survives even if it norm-duplicates an earlier row.
     Returns number deleted. Best-effort: any failure logs and returns 0."""
+    from server.services.memory_repository import is_active
+    if await is_active():
+        return 0
     try:
         async with db_session.AsyncSessionLocal() as db:
             rows = (await db.execute(sa_text(

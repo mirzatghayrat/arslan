@@ -8,6 +8,7 @@ import type { BrainBranch, BrainLeaf } from "../../api/client";
 import { feedFile, feedTextOrUrl, NothingIngestedError } from "../../lib/feed";
 import BrainIndexHealth from "./BrainIndexHealth";
 import { hueVar } from "./hues";
+import { INPUT_ACCEPT } from "../../lib/inputFormats";
 
 // small per-type icon before each tree category (tinted with the type's hue)
 const KIND_ICON: Record<string, typeof Boxes> = {
@@ -294,7 +295,7 @@ export default function BrainNav({ branches, litId, onHover, onPick, onChanged, 
           {t("feed.image_goes_to_model")}
         </p>
         <input ref={fileRef} type="file" multiple className="hidden"
-          accept=".pdf,.docx,.txt,.md,.html,.htm,.png,.jpg,.jpeg,.gif,.webp,.bmp"
+          accept={INPUT_ACCEPT}
           onChange={(e) => { void pickFiles(e.target.files); e.target.value = ""; }} />
       </div>
 

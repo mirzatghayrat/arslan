@@ -5,9 +5,8 @@ Style: test_confirm_guards — monkeypatched adapters/services, no LLM, no live 
 1. The routing announcement restates the need and @-mentions each involved spawn,
    grounded in the REAL roster (never invented names); a clearly-implied second stage
    (e.g. 生成PPT → the deck spawn) is mentioned as 可能接力.
-2. A dispatch round ending with a 【阶段性发现】digest auto-re-dispatches the same
-   spawn (bounded by MAX_AUTO_CONTINUES, threaded — no module-global state); the bare
-   no-evidence fallback never re-dispatches.
+2. Historical findings labels remain readable, but no model-authored text can
+   launch another execution. Structured runtime policy owns continuation.
 """
 from types import SimpleNamespace
 
@@ -131,6 +130,10 @@ def _wire_dispatch(monkeypatch, outputs):
     """Stub every _dispatch_spawn dependency; returns the list of dispatch calls.
     `outputs[i]` is the full_output of the i-th dispatch (last one repeats)."""
     calls = []
+    from server.services import task_context
+    async def inactive():
+        return False
+    monkeypatch.setattr(task_context, "is_active", inactive)
 
     async def _name(spawn_id):
         return "Researcher"
@@ -160,37 +163,29 @@ def _wire_dispatch(monkeypatch, outputs):
     return calls
 
 
-async def test_digest_round_triggers_exactly_one_recontinue(monkeypatch):
-    """Round 1 ends with a digest → ONE automatic re-dispatch (same spawn, same
-    direction); round 2 is clean → stop. The digest message is emitted first."""
+async def test_digest_round_does_not_authorize_another_execution(monkeypatch):
     calls = _wire_dispatch(monkeypatch, [_DIGEST_TAIL, _CLEAN])
     events = []
     await arslan._dispatch_spawn("conv", 7, "调研OKX", events.append, user_message="调研OKX")
 
-    assert calls == ["调研OKX", "调研OKX"]                     # exactly one re-dispatch
+    assert calls == ["调研OKX"]
     types = [e["type"] for e in events]
-    assert types.count("auto_continue") == 1
-    assert types.count("stream_end") == 2                      # digest round + clean round
-    # the digest round's message reached the user BEFORE the continuation started
-    assert types.index("stream_end") < types.index("auto_continue")
-    # the continuation re-emits routing (UI pulse continues) but no second announcement
+    assert types.count("auto_continue") == 0
+    assert types.count("stream_end") == 1
     routing_frames = [e for e in events if e["type"] == "routing"]
-    assert len(routing_frames) == 2
+    assert len(routing_frames) == 1
     assert "announcement" in routing_frames[0]
-    assert "announcement" not in routing_frames[1]
 
 
-async def test_auto_continue_caps_at_two_and_keeps_final_digest(monkeypatch):
-    """Every round ends with a digest → 1 + MAX_AUTO_CONTINUES dispatches total; the
-    final digest message (with its now-honest 回复'继续' tail) is preserved."""
+async def test_repeated_digest_cannot_create_a_recursive_loop(monkeypatch):
     calls = _wire_dispatch(monkeypatch, [_DIGEST_TAIL])       # digest forever
     events = []
     await arslan._dispatch_spawn("conv", 7, "调研OKX", events.append, user_message="调研OKX")
 
-    assert len(calls) == 1 + arslan.MAX_AUTO_CONTINUES == 3
+    assert len(calls) == 1
     types = [e["type"] for e in events]
-    assert types.count("auto_continue") == arslan.MAX_AUTO_CONTINUES
-    assert types.count("stream_end") == 3
+    assert types.count("auto_continue") == 0
+    assert types.count("stream_end") == 1
     # the last round's stream_end is the final frame — its digest message stands as-is
     assert types[-1] == "stream_end"
 

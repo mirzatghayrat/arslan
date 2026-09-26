@@ -225,7 +225,7 @@ export default function SearchToolsSection({
             onChange={(e) => onGithubTokenChange(e.target.value)}
             onBlur={(e) => onGithubTokenBlur?.(e.target.value)}
             className="w-full bg-surface border border-border-strong focus:border-primary focus:ring-1 focus:ring-ring rounded-xl px-4 py-3 text-xs text-foreground placeholder-subtle-foreground focus:outline-none pr-12 transition-all font-mono"
-            placeholder="ghp_… (optional)"
+            placeholder={t('ui.githubToken')}
           />
           <button
             id="toggle-show-github-token"
@@ -237,7 +237,7 @@ export default function SearchToolsSection({
           </button>
         </div>
         <p className="text-[10px] text-subtle-foreground font-sans leading-relaxed">
-          Used by the Tool-Hub to evaluate GitHub repos. Without a token, GitHub rate-limits anonymous requests.
+          {t('ui.githubHint')}
         </p>
       </div>
     </div>

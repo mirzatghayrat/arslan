@@ -8,7 +8,6 @@ from fastapi import Depends, FastAPI, WebSocket
 
 from server.api import health, settings as settings_api
 from server.auth import require_auth
-from server.db.models import Base
 from server.db.session import engine
 
 logger = logging.getLogger(__name__)
@@ -108,6 +107,7 @@ def _log_data_location(cfg, *, log: logging.Logger = logger) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Create tables and run boot migrations/backfills on startup."""
+    app.state.shutdown_complete = False
     import os
     from pathlib import Path
 
@@ -131,24 +131,19 @@ async def lifespan(app: FastAPI):
 
     _log_data_location(settings)
 
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        from server.db.migrations import runner as migration_runner
-        await conn.run_sync(migration_runner.apply_pending)
-        # Install the PBKDF2 salt BEFORE anything can decrypt. Ordered after the
-        # migration chain because 0039 is what adopts a pre-existing on-disk salt
-        # into the database, and inside the same transaction so a boot that fails
-        # here leaves no half-written salt row behind. crypto refuses to derive
-        # without this, so a silent misordering surfaces as a loud error rather
-        # than as keys derived from a guessed salt.
-        from server.services import crypto_boot
-        await conn.run_sync(crypto_boot.resolve_and_adopt_salt)
-        # Group A migration: values the CURRENT inputs can already open (legacy
-        # unsalted ciphertext) are re-encrypted under the primary key now. Not gated —
-        # d6d8afa8 shipped read-time fallback WITHOUT a rewrite, which is why the
-        # legacy key could never be retired. Same transaction, so a verification
-        # failure rolls the whole thing back rather than leaving a row we broke.
-        await conn.run_sync(crypto_boot.migrate_legacy_ciphertext)
+    from server.services.storage_boot import initialize
+    await initialize(engine)
+
+    from server.services import native_locale
+
+    async with AsyncSessionLocal() as native_locale_session:
+        await native_locale.sync(native_locale_session)
+
+    # Repair a crash between a committed deletion and its independent file
+    # mirror, before requests/background work. Never overwrite a newer ledger.
+    from server.services import memory_deletion_ledger
+    async with AsyncSessionLocal() as ledger_session:
+        await memory_deletion_ledger.sync(ledger_session)
 
     from server.registry.seeder import seed_registry
 
@@ -200,6 +195,8 @@ async def lifespan(app: FastAPI):
         from server.services import run_reaper
 
         await run_reaper.mark_interrupted_runs()
+        from server.services import task_service
+        await task_service.recover_interrupted()
         await run_reaper.reap_stuck_runs()
         from server.services import recipes
         await recipes.mark_interrupted()
@@ -285,11 +282,19 @@ async def lifespan(app: FastAPI):
     else:  # defensive: app built without the mount
         yield
 
+    await _shutdown_services(app)
+
+
+async def _shutdown_services(app: FastAPI) -> None:
+    """A recovery stop is confirmed only after every tracked cleanup succeeds."""
+    app.state.shutdown_complete = False
+    cleanup_complete = True
     try:
         from server.services import evolution_watcher as _evo_watcher
 
         await _evo_watcher.stop()
     except Exception as exc:  # noqa: BLE001 — watcher stop must never block shutdown
+        cleanup_complete = False
         logger.warning("evolution watcher stop failed (non-fatal): %s", exc)
 
     try:
@@ -297,6 +302,7 @@ async def lifespan(app: FastAPI):
 
         await _scheduler.stop()
     except Exception as exc:  # noqa: BLE001 — scheduler stop must never block shutdown
+        cleanup_complete = False
         logger.warning("scheduler stop failed (non-fatal): %s", exc)
 
     try:
@@ -304,12 +310,15 @@ async def lifespan(app: FastAPI):
 
         await _curation.stop()
     except Exception as exc:  # noqa: BLE001 — curation stop must never block shutdown
+        cleanup_complete = False
         logger.warning("curation loop stop failed (non-fatal): %s", exc)
 
     from server.api import browser as _browser_api
     await _browser_api.shutdown()
     from server.mcp.session import manager as _mcp_manager
     await _mcp_manager.aclose_all()
+    await engine.dispose()
+    app.state.shutdown_complete = cleanup_complete
 
 
 def create_app() -> FastAPI:
@@ -444,6 +453,12 @@ def create_app() -> FastAPI:
     from server.api import brain as brain_api
 
     app.include_router(brain_api.router, prefix="/api/v1")
+    from server.api import companion as companion_api
+    app.include_router(companion_api.router, prefix="/api/v1")
+    from server.api import tasks as tasks_api
+    app.include_router(tasks_api.router, prefix="/api/v1")
+    from server.api import professional_methods as professional_methods_api
+    app.include_router(professional_methods_api.router, prefix="/api/v1")
 
     from server.api import notes as notes_api
 

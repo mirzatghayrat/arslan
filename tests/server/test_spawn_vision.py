@@ -148,5 +148,5 @@ async def test_a_refusal_reaches_the_user_as_actionable_copy(spawn_db, monkeypat
     errors = [e for e in events if e.get("type") == "error"]
     assert errors, "no error surfaced at all"
     msg = errors[-1]["message"]
-    assert "vision support" in msg, f"raw provider error leaked: {msg[:120]}"
+    assert "image support" in msg, f"raw provider error leaked: {msg[:120]}"
     assert "Error code: 400" not in msg
