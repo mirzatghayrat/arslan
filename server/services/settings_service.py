@@ -26,7 +26,8 @@ _PLAIN_KEYS = (
                # a settings field that looked saveable and was not.
                "compaction_config_id", "title_config_id",
                "router_config_id", "vision_config_id",
-               "evolution_auto", "mcp_server_enabled", "curation_enabled", "research_review_enabled", "ocr_languages",
+               "evolution_auto", "mcp_server_enabled", "curation_enabled", "research_review_enabled", "keep_awake_enabled",
+               "desktop_notifications_enabled", "ocr_languages",
                "workspace_dir", "heartbeat_enabled", "heartbeat_checklist",
                "heartbeat_interval_s", "lan_discovery_enabled", "ssh_enabled", "default_read_enabled",
                "voice_output_enabled", "voice_input_locale", "voice_mode", "voice_endpoint_silence_ms")
@@ -225,6 +226,22 @@ async def curation_enabled(session: AsyncSession) -> bool:
     """
     raw = await _get_raw(session, "curation_enabled")
     return raw is not None and str(raw).strip().lower() == "true"
+
+
+async def keep_awake_enabled(session: AsyncSession) -> bool:
+    """Whether the desktop shell holds a sleep assertion while work is in flight.
+    Default ON (user ruling 2026-09-26): a task started before walking away
+    should finish. Only an explicit 'false' turns it off. Never fights lid-close
+    or battery sleep; that is the system's call."""
+    raw = await _get_raw(session, "keep_awake_enabled")
+    return raw is None or str(raw).strip().lower() != "false"
+
+
+async def desktop_notifications_enabled(session: AsyncSession) -> bool:
+    """Whether the desktop shell posts native notifications while its window is
+    hidden. Default ON; only an explicit 'false' turns it off."""
+    raw = await _get_raw(session, "desktop_notifications_enabled")
+    return raw is None or str(raw).strip().lower() != "false"
 
 
 async def research_review_enabled(session: AsyncSession) -> bool:
@@ -513,6 +530,8 @@ _BOOL_ACCESSORS = {
     "distill_on_session_end": distill_enabled,
     "curation_enabled": curation_enabled,
     "research_review_enabled": research_review_enabled,
+    "keep_awake_enabled": keep_awake_enabled,
+    "desktop_notifications_enabled": desktop_notifications_enabled,
     "mcp_server_enabled": mcp_server_enabled,
 }
 

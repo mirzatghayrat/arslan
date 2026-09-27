@@ -302,6 +302,7 @@ async def record_outcome(task_id: int, ok: bool, *, row_id: int,
         if task is None:
             logger.warning("record_outcome for unknown scheduled task %s", task_id)
             return
+        desktop_cid = task.conversation_id or f"scheduled-{task.id}"
         row = await db.get(ScheduledTaskRun, row_id)
         if row is None or row.task_id != task_id:
             logger.warning("record_outcome: row %s missing or not of task %s",
@@ -330,7 +331,11 @@ async def record_outcome(task_id: int, ok: bool, *, row_id: int,
                 task.next_due_at = None
                 notify = (task.conversation_id or f"scheduled-{task.id}", task.name)
         await db.commit()
+    from server.services import desktop_status
+    desktop_status.push("scheduled_finished", conversation_id=desktop_cid, task_id=task_id,
+                        outcome="ok" if ok else ("error" if count_failure else "cancelled"))
     if notify is not None:
+        desktop_status.push("scheduled_paused", conversation_id=desktop_cid, task_id=task_id)
         await _notify_pause(notify[0], notify[1], reason or "", task_id=task_id)
 
 
@@ -493,11 +498,14 @@ async def run_arslan_turn(conversation_id: str, prompt: str) -> None:
 async def _fire(task: ScheduledTask) -> None:
     from server.services import task_context
     cid = task.conversation_id or f"scheduled-{task.id}"
+    from server.services import desktop_status
+
     async def body(sink):
         return await _fire_body(task)
-    return await task_context.execute_entry(cid, task.prompt, run_registry.make_emit(cid), body,
-        driver={"kind": "expert", "id": task.spawn_id} if task.target != "arslan" and task.spawn_id else None,
-        headless=True)
+    with desktop_status.working(cid):   # keeps the Mac awake while the fire runs (0.1.41)
+        return await task_context.execute_entry(cid, task.prompt, run_registry.make_emit(cid), body,
+            driver={"kind": "expert", "id": task.spawn_id} if task.target != "arslan" and task.spawn_id else None,
+            headless=True)
 
 
 async def _fire_body(task: ScheduledTask) -> None:

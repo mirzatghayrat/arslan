@@ -425,6 +425,8 @@ def create_app() -> FastAPI:
     from server.api import runs as runs_api
 
     app.include_router(runs_api.router, prefix="/api/v1")
+    from server.api import desktop as desktop_api
+    app.include_router(desktop_api.router, prefix="/api/v1")
     from server.api import recipes as recipes_api
     app.include_router(recipes_api.router, prefix="/api/v1")
     from server.api import browser as browser_api
