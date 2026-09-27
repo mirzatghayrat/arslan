@@ -12,6 +12,17 @@ from server.db.session import engine
 
 logger = logging.getLogger(__name__)
 
+
+class _QuietDesktopStatusPolls(logging.Filter):
+    """The resident desktop shell polls /api/v1/desktop/status every 2 s (0.1.41).
+    Logging each poll would bury every other request line; nothing else is muted."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "/api/v1/desktop/status" not in record.getMessage()
+
+
+logging.getLogger("uvicorn.access").addFilter(_QuietDesktopStatusPolls())
+
 # Undecryptable-key canary message (module-level so tests can pin the guidance).
 # The last sentence points at the most common real-world cause since first-run
 # secret auto-generation landed: switching between an explicit ARSLAN_SECRET_KEY

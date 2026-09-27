@@ -112,3 +112,15 @@ def test_an_auto_approved_command_never_notifies(app_client, monkeypatch):  # no
         frames = _collect_until(ws, "stream_end")
     assert not any(f.get("type") == "propose_run_command" for f in frames)
     assert "approval_needed" not in [e["kind"] for e in desktop_status.snapshot()["events"]]
+
+
+def test_status_polls_are_not_access_logged_but_other_requests_are():
+    import logging
+    import server.main  # noqa: F401 — installs the filter
+    access = logging.getLogger("uvicorn.access")
+
+    def record(path):
+        return logging.LogRecord("uvicorn.access", logging.INFO, __file__, 1,
+                                 '%s - "%s %s HTTP/1.1" %d', ("127.0.0.1:1", "GET", path, 200), None)
+    assert not all(f.filter(record("/api/v1/desktop/status?after=3")) for f in access.filters)
+    assert all(f.filter(record("/api/v1/runs")) for f in access.filters)
