@@ -558,7 +558,7 @@
     "sectionSearch": "搜索",
     "sectionAppearance": "外观与语言",
     "sectionLlmConfig": "LLM 配置",
-    "labelOrchestratorShell": "编排器命令行",
+    "labelOrchestratorShell": "Arslan 命令执行",
     "orchestratorShellDesc": "允许 Arslan 运行白名单内的命令行。仅 Arslan · 每条命令按风险确认 · 默认关。",
     "labelShellConfirmPolicy": "确认策略",
     "shellPolicyAskAll": "每条命令都确认",
@@ -753,7 +753,7 @@
     "more": "更多"
   },
   "sidebar": {
-    "new_session": "新建编排会话",
+    "new_session": "新对话",
     "spawns_ledger": "分身账本",
     "active_chats": "活跃对话",
     "chats_count": "{{count}} 个对话",
@@ -943,7 +943,7 @@
     "ledger_synthesize_cta": "合成新自定义专家",
     "ledger_close": "关闭账本",
     "workspace_label": "活跃会话工作区：",
-    "workspace_orchestrator": "编排线程：{{title}}",
+    "workspace_orchestrator": "对话：{{title}}",
     "workspace_specialist": "专家流：{{name}}",
     "workspace_ledger": "分身账本仪表盘",
     "workspace_settings": "系统诊断配置",
@@ -974,7 +974,7 @@
       "empty": "还没有注册任何能力",
       "equip_hint": "从分身的菜单中装配这些能力。",
       "unimplemented_note": "未实装——仅目录占位,不可装备。",
-      "orchestrator_note": "出于安全仅主脑可用,不能装备给分身。",
+      "orchestrator_note": "出于安全，仅 Arslan 本身可用，不能交给专家使用。",
       "degraded": "裸跑·无沙箱",
       "empty_desc": "能力就是分身能用的工具和技能。用本页的面板从仓库导入技能，或注册一个 MCP 服务器。",
       "filtered_empty": "没有符合当前筛选的项",
@@ -1264,7 +1264,7 @@
   },
   "firstRun": {
     "title": "欢迎使用 Arslan",
-    "welcomeBody": "一生多——在同一段对话里指挥一支 AI 专家团队。",
+    "welcomeBody": "住在你 Mac 上的个人助手：了解你的项目，在你设定的边界内做事。",
     "skip": "跳过",
     "back": "上一步",
     "next": "下一步",
@@ -1274,7 +1274,7 @@
     "howTitle": "Arslan 如何工作",
     "howTyped": "一生多。",
     "how1Title": "委托",
-    "how1Body": "你只和一个编排者对话,它会为任务组建专家智能体。",
+    "how1Body": "你只和 Arslan 对话；任务需要时，它会请专家参与。",
     "how2Title": "记住",
     "how2Body": "你分享的信息保存在本地,需要时才被唤起。",
     "how3Title": "进化",
@@ -1534,7 +1534,7 @@
     "empty_action": "去对话"
   },
   "replay": {
-    "title": "编排回放",
+    "title": "运行回放",
     "total_ms": "总耗时",
     "model": "模型",
     "score": "评分",
