@@ -15,6 +15,7 @@ from server.auth import is_ws_token_valid
 from server.db import session as db_session
 from server.db.models import ArslanMessage
 from server.orchestrator import arslan, dispatcher, memory
+from server.services import desktop_status
 from server.services import (
     distill_service,
     ingest,
@@ -195,9 +196,16 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 queue.task_done()
 
     async def run_with_live_frames(coro: Coroutine[Any, Any, object]) -> None:
+        outcome = "error"
         try:
-            await coro
+            with desktop_status.working(conversation_id):
+                await coro
+            outcome = "ok"
+        except asyncio.CancelledError:
+            outcome = "cancelled"
+            raise
         finally:
+            desktop_status.push("turn_finished", conversation_id=conversation_id, outcome=outcome)
             # Flush: every frame the coroutine emitted is on the socket (or
             # swallowed by a dead drainer) before the caller's next direct
             # ws.send_json — same ordering guarantee the old sentinel gave.
@@ -211,12 +219,20 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         from server.services.task_repository import TaskError
         from arslan.companion.memory import MemoryError
         from arslan.execution_budget import BudgetExceeded
+        outcome = "error"
         try:
-            await coro
+            with desktop_status.working(conversation_id):
+                await coro
+            outcome = "ok"
         except (TaskError, MemoryError, BudgetExceeded) as exc:
+            outcome = "needs_review"
             code = exc.code if isinstance(exc, (TaskError, MemoryError)) else "task_budget_exhausted"
             await ws.send_json(protocol.error("TASK_REVIEW_REQUIRED", code, recoverable=True))
+        except asyncio.CancelledError:
+            outcome = "cancelled"
+            raise
         finally:
+            desktop_status.push("turn_finished", conversation_id=conversation_id, outcome=outcome)
             await queue.join()
 
     async def run_spawn(spawn_id: int, task_brief: str, **kw) -> None:
@@ -267,24 +283,25 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         # a reattaching socket must not replay a dead interactive card.
         await ws.send_json(protocol.propose_workspace_write(
             call_id, str(ws_root), action, path))
-        decision = False
-        try:
-            while True:
-                try:
-                    data = await asyncio.wait_for(ws.receive_json(), timeout=300)
-                except TimeoutError:
-                    break
-                t = data.get("type")
-                if t in ("ping", "pong"):
-                    continue
-                if (t in ("confirm_workspace_write", "cancel_workspace_write")
-                        and data.get("call_id") == call_id):
-                    decision = t == "confirm_workspace_write"
-                    break
-                await ws.send_json(protocol.error(
-                    "BUSY", "An action is awaiting your confirmation.", recoverable=True))
-        except WebSocketDisconnect:
-            raise
+        with desktop_status.awaiting_approval(conversation_id):
+            decision = False
+            try:
+                while True:
+                    try:
+                        data = await asyncio.wait_for(ws.receive_json(), timeout=300)
+                    except TimeoutError:
+                        break
+                    t = data.get("type")
+                    if t in ("ping", "pong"):
+                        continue
+                    if (t in ("confirm_workspace_write", "cancel_workspace_write")
+                            and data.get("call_id") == call_id):
+                        decision = t == "confirm_workspace_write"
+                        break
+                    await ws.send_json(protocol.error(
+                        "BUSY", "An action is awaiting your confirmation.", recoverable=True))
+            except WebSocketDisconnect:
+                raise
         if decision:
             workspace_write_granted["yes"] = True     # session-wide, per the ruling
         return decision
@@ -298,24 +315,25 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         call_id = uuid.uuid4().hex
         # Private and un-journaled, for the same reasons as the other two cards.
         await ws.send_json(protocol.propose_schedule(call_id, name, when))
-        decision = False
-        try:
-            while True:
-                try:
-                    data = await asyncio.wait_for(ws.receive_json(), timeout=300)
-                except TimeoutError:
-                    break
-                t = data.get("type")
-                if t in ("ping", "pong"):
-                    continue
-                if (t in ("confirm_schedule", "cancel_schedule")
-                        and data.get("call_id") == call_id):
-                    decision = t == "confirm_schedule"
-                    break
-                await ws.send_json(protocol.error(
-                    "BUSY", "An action is awaiting your confirmation.", recoverable=True))
-        except WebSocketDisconnect:
-            raise
+        with desktop_status.awaiting_approval(conversation_id):
+            decision = False
+            try:
+                while True:
+                    try:
+                        data = await asyncio.wait_for(ws.receive_json(), timeout=300)
+                    except TimeoutError:
+                        break
+                    t = data.get("type")
+                    if t in ("ping", "pong"):
+                        continue
+                    if (t in ("confirm_schedule", "cancel_schedule")
+                            and data.get("call_id") == call_id):
+                        decision = t == "confirm_schedule"
+                        break
+                    await ws.send_json(protocol.error(
+                        "BUSY", "An action is awaiting your confirmation.", recoverable=True))
+            except WebSocketDisconnect:
+                raise
         if decision:
             schedule_granted["yes"] = True
         return decision
@@ -358,30 +376,31 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         # receiver. We loop until THIS call_id is answered; any other frame arriving
         # mid-confirmation gets a recoverable BUSY notice (ping/pong ignored). On the
         # matching confirm/cancel we return, and the outer loop resumes receiving.
-        decision = {"approved": False}
-        try:
-            while True:
-                try:
-                    data = await asyncio.wait_for(ws.receive_json(), timeout=300)
-                except TimeoutError:
-                    decision = {"approved": False}
-                    break
-                t = data.get("type")
-                if t in ("ping", "pong"):
-                    continue
-                if (t in ("confirm_run_command", "cancel_run_command")
-                        and data.get("call_id") == call_id):
-                    decision = {"approved": t == "confirm_run_command",
-                                "remember": bool(data.get("remember"))}
-                    break
-                # Any other frame (including a confirm for an unknown/stale call_id) is
-                # not actionable while we are paused — tell the client, keep waiting.
-                await ws.send_json(protocol.error(
-                    "BUSY", "An action is awaiting your confirmation.", recoverable=True))
-        except WebSocketDisconnect:
-            # Client vanished mid-confirmation: decline and re-raise so the outer
-            # handler's disconnect path runs (clean socket teardown).
-            raise
+        with desktop_status.awaiting_approval(conversation_id):
+            decision = {"approved": False}
+            try:
+                while True:
+                    try:
+                        data = await asyncio.wait_for(ws.receive_json(), timeout=300)
+                    except TimeoutError:
+                        decision = {"approved": False}
+                        break
+                    t = data.get("type")
+                    if t in ("ping", "pong"):
+                        continue
+                    if (t in ("confirm_run_command", "cancel_run_command")
+                            and data.get("call_id") == call_id):
+                        decision = {"approved": t == "confirm_run_command",
+                                    "remember": bool(data.get("remember"))}
+                        break
+                    # Any other frame (including a confirm for an unknown/stale call_id) is
+                    # not actionable while we are paused — tell the client, keep waiting.
+                    await ws.send_json(protocol.error(
+                        "BUSY", "An action is awaiting your confirmation.", recoverable=True))
+            except WebSocketDisconnect:
+                # Client vanished mid-confirmation: decline and re-raise so the outer
+                # handler's disconnect path runs (clean socket teardown).
+                raise
         # Never permanently auto-approve a HIGH-risk (e.g. network) command, even if
         # the user checked "remember" — those always require a fresh card.
         if may_remember(remote_host, risk=risk, remember=bool(decision.get("remember"))):

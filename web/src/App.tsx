@@ -68,6 +68,8 @@ import DiscardChangesBar from './components/DiscardChangesBar';
 import { createSpawnDirty } from './lib/dirty';
 import { threadDisplayTitle } from './lib/threadTitles';
 import { formatUiTime } from './lib/localeFormatting';
+import { subscribeOpenConversation } from './lib/shell';
+import { conversationToOpen } from './lib/openConversation';
 
 interface ArslanThread {
   id: string;
@@ -131,6 +133,15 @@ export default function App() {
   // list is scoped by that (decision (a)), not by whether a direct chat
   // was ever opened.
   const { dispatchedSpawnIds } = useDispatchedSpawns(activeThreadId);
+
+  // A clicked desktop notification asks for its conversation (0.1.41). Refs keep
+  // the one subscription pointed at the current thread list and handler.
+  const openFromNotification = useRef<(id: string) => void>(() => {});
+  openFromNotification.current = (id: string) => {
+    const target = conversationToOpen(id, threads);
+    if (target) selectConversation(target);
+  };
+  useEffect(() => subscribeOpenConversation(id => openFromNotification.current(id)), []);
 
   // Lightweight transient toast (no toast component exists yet) — used for the
   // distill result confirmation. Auto-clears after a few seconds.

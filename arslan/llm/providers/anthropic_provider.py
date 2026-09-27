@@ -80,6 +80,10 @@ class AnthropicProvider(BaseLLMProvider):
     def provider_name(self) -> str:
         return "anthropic"
 
+    def supports_bounded_critique(self) -> bool:
+        # Extended thinking is opt-in on this API and this provider never sends it.
+        return True
+
     def _client(self) -> httpx.AsyncClient:
         if self._transport is not None:
             return httpx.AsyncClient(transport=self._transport)
@@ -194,6 +198,11 @@ class AnthropicProvider(BaseLLMProvider):
         }
         if system:
             payload["system"] = system
+        from arslan.llm.request_policy import (
+            CRITIQUE_MAX_OUTPUT_TOKENS, CRITIQUE_TEMPERATURE, bounded_critique)
+        if bounded_critique.get() and not tools:
+            payload["temperature"] = CRITIQUE_TEMPERATURE
+            payload["max_tokens"] = CRITIQUE_MAX_OUTPUT_TOKENS
         # Order matters for the cache, not just for readability: Anthropic renders
         # tools -> system -> messages, and the breakpoint sits at the system
         # prefix, so anything unstable in `tools` invalidates everything after it.

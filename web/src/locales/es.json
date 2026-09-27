@@ -693,6 +693,15 @@
     "labelCuration": "Ordenación en segundo plano",
     "curationDesc": "Mientras estás inactivo, Arslan relee lo que ha aprendido y propone enlaces y correcciones. Las propuestas llegan a la bandeja del segundo cerebro para que las aceptes o descartes; no escribe nada por su cuenta.",
     "curationSpendNote": "Este no tiene un límite de despachos propio: solo lo limita la frecuencia con la que estás inactivo.",
+    "labelResearchReview": "Revisión de fuentes de informes guardados",
+    "researchReviewDesc": "Cuando Arslan guarda un informe que cita varias fuentes web, el modelo relee las fuentes y señala afirmaciones que una fuente podría contradecir, como «el documento A no menciona X» cuando sí lo hace. El informe siempre se guarda; las notas aparecen al abrirlo. Es la opinión del modelo, no una verificación de hechos.",
+    "researchReviewSpendNote": "Cada guardado que cumple las condiciones envía una solicitud adicional con el informe y sus fuentes a tu modelo, usando tu clave. Por ahora solo se admiten conexiones oficiales de DeepSeek y Anthropic; con otros modelos se omite.",
+    "navDesktop": "Escritorio",
+    "desktopLede": "Cerrar la ventana ya no cierra Arslan: sigue en la barra de menús, las tareas y tareas programadas siguen ejecutándose y las acciones que necesitan tu confirmación esperan en la ventana (se rechazan a los 5 minutos). Sal con ⌘Q o con «Salir de Arslan» en la barra de menús.",
+    "labelKeepAwake": "Mantener el Mac despierto mientras trabaja",
+    "keepAwakeDesc": "Mientras se ejecuta una tarea o tarea programada, el Mac no entra en reposo por sí solo. La pantalla puede apagarse; cerrar la tapa o la batería baja sí lo ponen en reposo.",
+    "labelDesktopNotifications": "Notificaciones",
+    "desktopNotificationsDesc": "Con la ventana cerrada o en segundo plano, macOS te avisa cuando termina una tarea, una acción necesita tu confirmación o falla una tarea programada. Las notificaciones nunca muestran el texto de los mensajes.",
     "automationElsewhere": "Las tareas programadas y el uso de tokens están en Diagnósticos, donde está su historial.",
     "automationOpenDiagnostics": "Abrir Diagnósticos",
     "searchPlaceholder": "Buscar ajustes…",
@@ -1040,7 +1049,7 @@
       "empty": "Aún no hay capacidades registradas",
       "equip_hint": "Añádelos desde el menú de un experto.",
       "unimplemented_note": "No implementado — solo marcador de catálogo, no se puede equipar.",
-      "orchestrator_note": "Por seguridad, solo Arslan (el orquestador) puede usarlos; no se pueden equipar a los spawns.",
+      "orchestrator_note": "Por seguridad, solo el propio Arslan puede usarlos; no se pueden asignar a los expertos.",
       "degraded": "SIN SANDBOX",
       "empty_desc": "Las capacidades son las herramientas y habilidades que un spawn puede usar. Importa habilidades de un repositorio o registra un servidor MCP con los paneles de esta página.",
       "filtered_empty": "Nada coincide con este filtro",
@@ -1330,7 +1339,7 @@
   },
   "firstRun": {
     "title": "Bienvenido a Arslan",
-    "welcomeBody": "Uno se convierte en muchos: coordina un equipo de especialistas de IA desde una sola conversación.",
+    "welcomeBody": "Tu agente personal en este Mac: conoce tus proyectos y trabaja dentro de los límites que tú fijas.",
     "skip": "Omitir",
     "back": "Atrás",
     "next": "Siguiente",
@@ -1340,7 +1349,7 @@
     "howTitle": "Cómo funciona Arslan",
     "howTyped": "Uno se convierte en muchos.",
     "how1Title": "Delega",
-    "how1Body": "Hablas con un solo orquestador; él organiza agentes especialistas para el trabajo.",
+    "how1Body": "Hablas solo con Arslan; cuando una tarea lo necesita, recurre a expertos.",
     "how2Title": "Recuerda",
     "how2Body": "Lo que compartes se guarda en local y se recuerda cuando importa.",
     "how3Title": "Evoluciona",
@@ -1751,5 +1760,14 @@
     "conversationStart": "Iniciar conversación",
     "conversationStop": "Dejar de escuchar",
     "speaking": "hablando…"
+  },
+  "artifactReview": {
+    "title": "Revisión de fuentes",
+    "disclaimer": "Opinión del modelo sobre lo que las fuentes contienen o no. Puede equivocarse y no es una verificación de hechos; abre la fuente para comprobarlo.",
+    "noObjection": "Revisión terminada; no se encontró nada que comprobar.",
+    "unavailable": "La revisión no se completó.",
+    "draft": "Informe:",
+    "source": "Fuente:",
+    "openSource": "Abrir fuente"
   }
 }

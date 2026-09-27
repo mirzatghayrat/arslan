@@ -244,6 +244,13 @@ export interface AppSettings {
    *  keeps existing AppSettings literals valid. Default off — it spends, and
    *  until this round it had NO UI at all, only a server field. */
   curationEnabled?: boolean;
+  /** Advisory source review of saved multi-source reports (0.1.41). Default
+   *  off: one extra model request per qualifying save. Never blocks saving. */
+  researchReviewEnabled?: boolean;
+  /** Resident shell (0.1.41): hold a sleep assertion while work is in flight. Default on. */
+  keepAwakeEnabled?: boolean;
+  /** Resident shell (0.1.41): native notifications while the window is hidden. Default on. */
+  desktopNotificationsEnabled?: boolean;
   /** optional on purpose: keeps existing AppSettings literals valid */
   evolutionAuto?: boolean;
   /** Cap on PROJECTED replay dispatches. null/undefined = no cap (the default). */

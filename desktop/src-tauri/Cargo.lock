@@ -60,6 +60,7 @@ dependencies = [
 name = "arslan-desktop"
 version = "0.1.0"
 dependencies = [
+ "block2",
  "libc",
  "objc2",
  "objc2-app-kit",

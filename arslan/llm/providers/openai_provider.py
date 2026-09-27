@@ -84,16 +84,27 @@ class OpenAIProvider(BaseLLMProvider):
         }
         if tools:
             payload["tools"] = tools
-        # Keep the configured model/endpoint. Only this task-local,
-        # tool-free adjudication uses documented low thinking effort. Never send
-        # a vendor-specific option to arbitrary OpenAI-compatible endpoints.
-        from arslan.llm.request_policy import bounded_critique
-        if (bounded_critique.get() and not tools
-                and self.base_url.rstrip("/") in {"https://api.deepseek.com", "https://api.deepseek.com/v1"}
-                and self.model in {"deepseek-flash", "deepseek-v4-flash", "deepseek-v4-pro"}):
-            payload["thinking"] = {"type": "enabled"}
-            payload["reasoning_effort"] = "low"
+        # Keep the configured model/endpoint. Only this task-local, tool-free
+        # critique changes shape: thinking explicitly OFF on official DeepSeek
+        # (the only endpoint where that switch is known), deterministic, short.
+        # Never send a vendor-specific option to arbitrary compatible endpoints.
+        from arslan.llm.request_policy import (
+            CRITIQUE_MAX_OUTPUT_TOKENS, CRITIQUE_TEMPERATURE, bounded_critique)
+        if bounded_critique.get() and not tools:
+            payload["temperature"] = CRITIQUE_TEMPERATURE
+            payload["max_tokens"] = min(self.max_tokens, CRITIQUE_MAX_OUTPUT_TOKENS)
+            if self._official_deepseek():
+                payload["thinking"] = {"type": "disabled"}
         return payload
+
+    def _official_deepseek(self) -> bool:
+        return (self.base_url.rstrip("/") in {"https://api.deepseek.com", "https://api.deepseek.com/v1"}
+                and self.model in {"deepseek-flash", "deepseek-v4-flash", "deepseek-v4-pro"})
+
+    def supports_bounded_critique(self) -> bool:
+        # Other OpenAI-compatible models may reason by default (o-series,
+        # *-reasoner, hybrid thinking models) with no portable way to turn it off.
+        return self._official_deepseek()
 
     async def chat(
         self,

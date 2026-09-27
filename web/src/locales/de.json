@@ -693,6 +693,15 @@
     "labelCuration": "Aufräumen im Hintergrund",
     "curationDesc": "Während du untätig bist, liest Arslan Gelerntes erneut und schlägt Verknüpfungen und Korrekturen vor. Vorschläge landen im Posteingang des zweiten Gehirns — geschrieben wird nichts von allein.",
     "curationSpendNote": "Dieses hat kein eigenes Dispatch-Limit — begrenzt wird es nur davon, wie oft du untätig bist.",
+    "labelResearchReview": "Quellenprüfung gespeicherter Berichte",
+    "researchReviewDesc": "Nachdem Arslan einen Bericht mit mehreren Webquellen gespeichert hat, liest das Modell die Quellen erneut und markiert Aussagen, denen eine Quelle widersprechen könnte – etwa „Dokument A erwähnt X nicht“, obwohl es das tut. Der Bericht wird immer gespeichert; die Hinweise erscheinen beim Öffnen. Modellmeinung, keine Faktenprüfung.",
+    "researchReviewSpendNote": "Jede passende Speicherung sendet mit deinem Schlüssel eine zusätzliche Anfrage mit dem Bericht und seinen Quellen an dein Modell. Derzeit werden nur offizielle DeepSeek- und Anthropic-Verbindungen unterstützt; andere Modelle werden übersprungen.",
+    "navDesktop": "Desktop",
+    "desktopLede": "Das Schließen des Fensters beendet Arslan nicht mehr: Es bleibt in der Menüleiste, Aufgaben und geplante Aufgaben laufen weiter, und Aktionen, die dich brauchen, warten im Fenster (nach 5 Minuten werden sie abgelehnt). Beenden mit ⌘Q oder „Arslan beenden“ in der Menüleiste.",
+    "labelKeepAwake": "Mac während der Arbeit wach halten",
+    "keepAwakeDesc": "Solange eine Aufgabe oder geplante Aufgabe läuft, geht der Mac nicht von selbst in den Ruhezustand. Der Bildschirm kann trotzdem ausgehen; Deckel zu oder schwacher Akku versetzen ihn weiterhin in den Ruhezustand.",
+    "labelDesktopNotifications": "Mitteilungen",
+    "desktopNotificationsDesc": "Ist das Fenster geschlossen oder im Hintergrund, meldet macOS, wenn eine Aufgabe fertig ist, eine Aktion deine Bestätigung braucht oder eine geplante Aufgabe fehlschlägt. Mitteilungen zeigen nie Nachrichtentext.",
     "automationElsewhere": "Geplante Aufgaben und Token-Verbrauch liegen in der Diagnose, wo auch ihr Verlauf ist.",
     "automationOpenDiagnostics": "Diagnose öffnen",
     "searchPlaceholder": "Einstellungen suchen…",
@@ -1040,7 +1049,7 @@
       "empty": "Noch keine Fähigkeiten registriert",
       "equip_hint": "Über das Menü eines Experten hinzufügen.",
       "unimplemented_note": "Nicht implementiert — nur Katalog-Platzhalter, nicht ausrüstbar.",
-      "orchestrator_note": "Aus Sicherheitsgründen nur für Arslan (den Orchestrator) nutzbar — nicht an Spawns ausrüstbar.",
+      "orchestrator_note": "Aus Sicherheitsgründen nur von Arslan selbst nutzbar – nicht an Experten vergebbar.",
       "degraded": "OHNE SANDBOX",
       "empty_desc": "Fähigkeiten sind die Werkzeuge und Skills, die ein Spawn nutzen kann. Importiere Skills aus einem Repository oder registriere einen MCP-Server über die Panels auf dieser Seite.",
       "filtered_empty": "Nichts entspricht diesem Filter",
@@ -1330,7 +1339,7 @@
   },
   "firstRun": {
     "title": "Willkommen bei Arslan",
-    "welcomeBody": "Aus einem werden viele – orchestriere ein Team von KI-Spezialisten aus einer einzigen Unterhaltung.",
+    "welcomeBody": "Dein persönlicher Agent auf diesem Mac: Er kennt deine Projekte und arbeitet innerhalb der Grenzen, die du setzt.",
     "skip": "Überspringen",
     "back": "Zurück",
     "next": "Weiter",
@@ -1340,7 +1349,7 @@
     "howTitle": "So funktioniert Arslan",
     "howTyped": "Aus einem werden viele.",
     "how1Title": "Delegieren",
-    "how1Body": "Du sprichst mit einem Orchestrator; er stellt Spezialisten-Agenten für die Arbeit auf.",
+    "how1Body": "Du sprichst nur mit Arslan; wenn eine Aufgabe es braucht, holt Arslan Experten dazu.",
     "how2Title": "Erinnern",
     "how2Body": "Was du teilst, wird lokal gespeichert und bei Bedarf wieder abgerufen.",
     "how3Title": "Weiterentwickeln",
@@ -1751,5 +1760,14 @@
     "conversationStart": "Gespräch starten",
     "conversationStop": "Zuhören beenden",
     "speaking": "spricht…"
+  },
+  "artifactReview": {
+    "title": "Quellenprüfung",
+    "disclaimer": "Modellmeinung zu Aussagen darüber, was die Quellen enthalten oder nicht. Sie kann falsch sein und ist keine Faktenprüfung; öffne die Quelle zum Prüfen.",
+    "noObjection": "Prüfung abgeschlossen; nichts zu prüfen gefunden.",
+    "unavailable": "Prüfung nicht abgeschlossen.",
+    "draft": "Bericht:",
+    "source": "Quelle:",
+    "openSource": "Quelle öffnen"
   }
 }

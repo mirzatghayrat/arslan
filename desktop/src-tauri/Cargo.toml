@@ -17,7 +17,9 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 # macos-private-api pairs with macOSPrivateApi in tauri.conf.json — tauri-build
 # refuses to compile when the two disagree, which is how this line got here.
-tauri = { version = "2", features = ["macos-private-api", "image-png"] }
+# tray-icon: the menu-bar item that keeps Arslan reachable after its window
+# closes (0.1.41). Already in Cargo.lock as tauri's own optional dependency.
+tauri = { version = "2", features = ["macos-private-api", "image-png", "tray-icon"] }
 # generate_context! expands to code that names serde_json in the crate root, so
 # it must be a direct dependency even though none of our own code uses it.
 serde = { version = "1", features = ["derive"] }
@@ -39,5 +41,7 @@ strip = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
+# Completion-handler blocks for UserNotifications (0.1.41); already in Cargo.lock.
+block2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSImage"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSData"] }

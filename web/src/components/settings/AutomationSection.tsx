@@ -28,6 +28,8 @@ export default function AutomationSection({
   onEvolutionMaxDispatchesChange,
   curationEnabled,
   onCurationEnabledChange,
+  researchReviewEnabled = false,
+  onResearchReviewEnabledChange,
   heartbeatEnabled,
   onHeartbeatEnabledChange,
   heartbeatChecklist,
@@ -40,6 +42,8 @@ export default function AutomationSection({
   onEvolutionMaxDispatchesChange?: (v: number | null) => void;
   curationEnabled: boolean;
   onCurationEnabledChange?: (v: boolean) => void;
+  researchReviewEnabled?: boolean;
+  onResearchReviewEnabledChange?: (v: boolean) => void;
   heartbeatEnabled: boolean;
   onHeartbeatEnabledChange?: (v: boolean) => void;
   heartbeatChecklist: string;
@@ -144,6 +148,36 @@ export default function AutomationSection({
             type="checkbox"
             checked={curationEnabled}
             onChange={(e) => onCurationEnabledChange?.(e.target.checked)}
+            className="w-4 h-4 mt-1 shrink-0 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer"
+          />
+        </div>
+
+        <div className="h-[1px] bg-border/40" />
+
+        {/* ── source review of saved reports (0.1.41) ──────────────────────
+            Advice only, after the report is saved; it never blocks a save.
+            Off by default: one extra model request per qualifying save, and
+            its false-positive rate is still being measured. */}
+        <div className="flex items-start justify-between gap-4" data-testid="settings-research-review">
+          <div>
+            <h4 className="text-xs font-bold text-foreground font-sans">
+              {t('settings.labelResearchReview')}
+            </h4>
+            <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">
+              {t('settings.researchReviewDesc')}
+            </p>
+            <p className="mt-1 flex items-start gap-1.5 text-[11px] text-warning font-sans max-w-xl"
+               data-testid="research-review-spend-note">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-[1px]" aria-hidden />
+              <span>{t('settings.researchReviewSpendNote')}</span>
+            </p>
+          </div>
+          <input
+            id="settings-research-review-toggle"
+            data-testid="research-review-toggle"
+            type="checkbox"
+            checked={researchReviewEnabled}
+            onChange={(e) => onResearchReviewEnabledChange?.(e.target.checked)}
             className="w-4 h-4 mt-1 shrink-0 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer"
           />
         </div>

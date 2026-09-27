@@ -558,7 +558,7 @@
     "sectionSearch": "搜索",
     "sectionAppearance": "外观与语言",
     "sectionLlmConfig": "LLM 配置",
-    "labelOrchestratorShell": "编排器命令行",
+    "labelOrchestratorShell": "Arslan 命令执行",
     "orchestratorShellDesc": "允许 Arslan 运行白名单内的命令行。仅 Arslan · 每条命令按风险确认 · 默认关。",
     "labelShellConfirmPolicy": "确认策略",
     "shellPolicyAskAll": "每条命令都确认",
@@ -627,6 +627,15 @@
     "labelCuration": "后台整理",
     "curationDesc": "在你空闲的时候，Arslan 会重读它学到的东西，提出关联和更正。提案会进第二大脑的收件箱等你接受或忽略 —— 它不会自己往里写。",
     "curationSpendNote": "这一项没有自己的派发上限 —— 约束它的只有你空闲的频率。",
+    "labelResearchReview": "已保存报告的来源复核",
+    "researchReviewDesc": "Arslan 保存引用了多个网页来源的报告后，模型会重读来源，标出可能与来源矛盾的说法，比如“A 文档没提到 X”但其实提到了。报告总会照常保存，打开时能看到提示。这是模型意见，不是事实核查。",
+    "researchReviewSpendNote": "每次符合条件的保存，都会用你的 key 多向模型发一次请求，内容是报告和它的来源。目前只支持官方 DeepSeek 和 Anthropic 连接，其他模型会跳过。",
+    "navDesktop": "桌面",
+    "desktopLede": "关窗不再退出 Arslan：它会留在菜单栏，任务和定时任务照常运行；需要你确认的动作仍在窗口里等你（5 分钟没回应会被拒绝）。要彻底退出，请用 ⌘Q 或菜单栏的「退出 Arslan」。",
+    "labelKeepAwake": "工作时防止 Mac 睡眠",
+    "keepAwakeDesc": "有任务或定时任务在运行时，Mac 不会自己进入睡眠。屏幕照样可以熄灭；合盖或电量低时仍会睡眠。",
+    "labelDesktopNotifications": "系统通知",
+    "desktopNotificationsDesc": "窗口关着或在后台时，任务完成、有动作需要你确认、定时任务失败，macOS 会通知你。通知里不会显示消息内容。",
     "automationElsewhere": "定时任务和用量在「诊断台」，它们的历史记录在那里。",
     "automationOpenDiagnostics": "打开诊断台",
     "searchPlaceholder": "搜索设置…",
@@ -753,7 +762,7 @@
     "more": "更多"
   },
   "sidebar": {
-    "new_session": "新建编排会话",
+    "new_session": "新对话",
     "spawns_ledger": "分身账本",
     "active_chats": "活跃对话",
     "chats_count": "{{count}} 个对话",
@@ -943,7 +952,7 @@
     "ledger_synthesize_cta": "合成新自定义专家",
     "ledger_close": "关闭账本",
     "workspace_label": "活跃会话工作区：",
-    "workspace_orchestrator": "编排线程：{{title}}",
+    "workspace_orchestrator": "对话：{{title}}",
     "workspace_specialist": "专家流：{{name}}",
     "workspace_ledger": "分身账本仪表盘",
     "workspace_settings": "系统诊断配置",
@@ -974,7 +983,7 @@
       "empty": "还没有注册任何能力",
       "equip_hint": "从分身的菜单中装配这些能力。",
       "unimplemented_note": "未实装——仅目录占位,不可装备。",
-      "orchestrator_note": "出于安全仅主脑可用,不能装备给分身。",
+      "orchestrator_note": "出于安全，仅 Arslan 本身可用，不能交给专家使用。",
       "degraded": "裸跑·无沙箱",
       "empty_desc": "能力就是分身能用的工具和技能。用本页的面板从仓库导入技能，或注册一个 MCP 服务器。",
       "filtered_empty": "没有符合当前筛选的项",
@@ -1264,7 +1273,7 @@
   },
   "firstRun": {
     "title": "欢迎使用 Arslan",
-    "welcomeBody": "一生多——在同一段对话里指挥一支 AI 专家团队。",
+    "welcomeBody": "住在你 Mac 上的个人助手：了解你的项目，在你设定的边界内做事。",
     "skip": "跳过",
     "back": "上一步",
     "next": "下一步",
@@ -1274,7 +1283,7 @@
     "howTitle": "Arslan 如何工作",
     "howTyped": "一生多。",
     "how1Title": "委托",
-    "how1Body": "你只和一个编排者对话,它会为任务组建专家智能体。",
+    "how1Body": "你只和 Arslan 对话；任务需要时，它会请专家参与。",
     "how2Title": "记住",
     "how2Body": "你分享的信息保存在本地,需要时才被唤起。",
     "how3Title": "进化",
@@ -1534,7 +1543,7 @@
     "empty_action": "去对话"
   },
   "replay": {
-    "title": "编排回放",
+    "title": "运行回放",
     "total_ms": "总耗时",
     "model": "模型",
     "score": "评分",
@@ -1685,5 +1694,14 @@
     "conversationStart": "开始对话",
     "conversationStop": "停止聆听",
     "speaking": "朗读中…"
+  },
+  "artifactReview": {
+    "title": "来源复核",
+    "disclaimer": "这是模型对“来源有没有写某件事”这类说法的意见，可能有误，不是事实核查。请打开来源核对。",
+    "noObjection": "复核已完成，未发现需要核对的地方。",
+    "unavailable": "复核未完成。",
+    "draft": "报告原句：",
+    "source": "来源原文：",
+    "openSource": "打开来源"
   }
 }

@@ -28,6 +28,7 @@ mod proxy;
 mod recovery_coordinator;
 #[cfg(target_os = "macos")]
 mod recovery_ui;
+mod resident;
 // Internal preparation only; no IPC endpoint until trusted recovery UI is wired.
 #[cfg(target_os = "macos")]
 #[allow(dead_code)]
@@ -800,6 +801,7 @@ fn boot(app: tauri::AppHandle, splash_since: std::time::Instant, maintenance: Na
     let _ = app.run_on_main_thread(move || {
         maintenance.complete();
         open_main_window(&handle, port);
+        resident::start(handle.clone(), port);
     });
 }
 
@@ -990,6 +992,13 @@ pub fn run() {
             if event.id() == "check-for-updates" {
                 check_for_updates(app.clone(), true);
             }
+            if event.id() == resident::MENU_OPEN {
+                resident::show_main(app);
+            }
+            if event.id() == resident::MENU_QUIT {
+                // An explicit quit: the RunEvent handler below stops the backend.
+                app.exit(0);
+            }
             #[cfg(target_os = "macos")]
             if event.id() == "restore-backup" {
                 recovery_ui::begin(app.clone());
@@ -998,6 +1007,14 @@ pub fn run() {
         .on_window_event(|window, event| {
             if matches!(event, tauri::WindowEvent::Focused(true)) {
                 refresh_update_menu(window.app_handle());
+            }
+            // Resident mode (0.1.41): closing the main window hides it; the
+            // backend keeps working and the menu bar keeps it reachable.
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if resident::close_action(window.label()) == resident::CloseAction::Hide {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
             }
         })
         .setup(|app| {
@@ -1050,6 +1067,8 @@ pub fn run() {
             {
                 native_menu::install(app.handle())?;
             }
+            resident::install_tray(app.handle())?;
+            resident::notify::install(app.handle());
 
             let handle = app.handle().clone();
             std::thread::spawn(move || boot(handle, splash_since, maintenance));
@@ -1058,9 +1077,17 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("failed to build the Arslan shell")
         .run(|app, event| {
+            // Dock click while the window is hidden (resident mode) brings it back.
+            #[cfg(target_os = "macos")]
+            if let RunEvent::Reopen { .. } = event {
+                resident::show_main(app);
+            }
             // Both events matter: Exit covers quit-from-menu, ExitRequested
             // covers the last window closing. Missing either leaves an orphan
-            // holding the database lock.
+            // holding the database lock. Since 0.1.41 the main window hides
+            // instead of closing, so "last window closing" only happens when
+            // no main window exists (a failed boot); every explicit quit still
+            // arrives here and still stops the backend.
             if matches!(event, RunEvent::Exit | RunEvent::ExitRequested { .. }) {
                 if let Some(mut child) = app.state::<Sidecar>().0.lock().unwrap().take() {
                     let _ = child.process.kill();
