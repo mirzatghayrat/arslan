@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { api } from "../api/client";
 import type { StoredArtifact } from "../api/client.types";
 import ArtifactDownloads from "./ArtifactDownloads";
+import ArtifactReviewNotes from "./ArtifactReviewNotes";
 import { INPUT_FORMATS } from "../lib/inputFormats";
 
 export default function ArtifactPreview({ file, visible = true }: { file: StoredArtifact; visible?: boolean }) {
@@ -48,6 +49,7 @@ export default function ArtifactPreview({ file, visible = true }: { file: Stored
   return <div className="h-full space-y-4 overflow-y-auto p-4">
     <h3 className="break-words text-sm font-medium">{file.title}</h3>
     <p className="text-xs text-muted-foreground">{t("dock.fileLimits")}</p>
+    <ArtifactReviewNotes file={file} />
     {error && <p role="alert" className="text-sm text-destructive">{t("dock.previewUnavailable")}</p>}
     {!kind && !error && <p role="status">{t("browser.loading")}</p>}
     {kind === "image" && url && <img src={url} alt={file.title} className="max-w-full" onError={() => setError(true)} />}

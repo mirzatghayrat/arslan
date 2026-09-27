@@ -60,6 +60,10 @@ class LLMAdapter:
         self.api_key = api_key
         self._provider = self._create_provider(provider_name, model, api_key, base_url)
 
+    def supports_bounded_critique(self) -> bool:
+        provider = getattr(self, "_provider", None)
+        return bool(provider is not None and provider.supports_bounded_critique())
+
     @property
     def report_provider(self) -> str:
         # Fallback for __new__-constructed doubles (tests) that bypass __init__.

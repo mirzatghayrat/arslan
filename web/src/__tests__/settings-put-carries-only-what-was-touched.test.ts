@@ -125,6 +125,7 @@ describe("every settings field the UI can edit is mappable", () => {
       router_config_id: { routerConfigId: "1" },
       vision_config_id: { visionConfigId: "1" },
       curation_enabled: { curationEnabled: true },
+      research_review_enabled: { researchReviewEnabled: true },
       evolution_auto: { evolutionAuto: true },
       evolution_max_dispatches: { evolutionMaxDispatches: 5 },
       ocr_languages: { ocrLanguages: "eng" },

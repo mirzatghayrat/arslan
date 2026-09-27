@@ -627,6 +627,9 @@
     "labelCuration": "Background tidying",
     "curationDesc": "While you are idle, Arslan re-reads what it has learned and proposes links and corrections. Proposals land in the second brain's inbox for you to accept or dismiss — nothing is written on its own.",
     "curationSpendNote": "This one has no dispatch cap of its own — it is bounded only by how often you are idle.",
+    "labelResearchReview": "Source review of saved reports",
+    "researchReviewDesc": "After Arslan saves a report that cites several web sources, the model rereads the sources and flags claims a source may contradict, such as “document A doesn’t mention X” when it does. The report is always saved; the notes appear when you open it. Model advice, not a fact check.",
+    "researchReviewSpendNote": "Each qualifying save sends one extra request with the report and its sources to your model, on your key. For now only official DeepSeek and Anthropic connections are supported; other models are skipped.",
     "automationElsewhere": "Scheduled tasks and token usage live in Diagnostics, where their history is.",
     "automationOpenDiagnostics": "Open Diagnostics",
     "searchPlaceholder": "Search settings…",
@@ -1685,5 +1688,14 @@
     "conversationStart": "Start conversation",
     "conversationStop": "Stop listening",
     "speaking": "speaking…"
+  },
+  "artifactReview": {
+    "title": "Source review",
+    "disclaimer": "Model advice about claims of what the sources contain or lack. It may be wrong and is not a fact check; open the source to check.",
+    "noObjection": "Review finished; nothing to check was found.",
+    "unavailable": "Review not completed.",
+    "draft": "Report:",
+    "source": "Source:",
+    "openSource": "Open source"
   }
 }

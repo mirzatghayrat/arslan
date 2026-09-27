@@ -26,7 +26,7 @@ _PLAIN_KEYS = (
                # a settings field that looked saveable and was not.
                "compaction_config_id", "title_config_id",
                "router_config_id", "vision_config_id",
-               "evolution_auto", "mcp_server_enabled", "curation_enabled", "ocr_languages",
+               "evolution_auto", "mcp_server_enabled", "curation_enabled", "research_review_enabled", "ocr_languages",
                "workspace_dir", "heartbeat_enabled", "heartbeat_checklist",
                "heartbeat_interval_s", "lan_discovery_enabled", "ssh_enabled", "default_read_enabled",
                "voice_output_enabled", "voice_input_locale", "voice_mode", "voice_endpoint_silence_ms")
@@ -224,6 +224,15 @@ async def curation_enabled(session: AsyncSession) -> bool:
     switch would violate that consent and spend money doing it.
     """
     raw = await _get_raw(session, "curation_enabled")
+    return raw is not None and str(raw).strip().lower() == "true"
+
+
+async def research_review_enabled(session: AsyncSession) -> bool:
+    """Whether a saved multi-source research report gets an advisory source
+    review after saving. Default OFF (user ruling 2026-09-26): it spends one
+    extra model request on the user's key per qualifying save, and its false-
+    positive rate is being calibrated. Never a gate on saving."""
+    raw = await _get_raw(session, "research_review_enabled")
     return raw is not None and str(raw).strip().lower() == "true"
 
 
@@ -503,6 +512,7 @@ _BOOL_ACCESSORS = {
     "first_run_seen": first_run_seen,
     "distill_on_session_end": distill_enabled,
     "curation_enabled": curation_enabled,
+    "research_review_enabled": research_review_enabled,
     "mcp_server_enabled": mcp_server_enabled,
 }
 

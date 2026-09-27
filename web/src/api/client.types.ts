@@ -204,6 +204,22 @@ export interface StoredArtifact {
   url: string;
 }
 
+/** Advisory source-review note stored beside one artifact snapshot (0.1.41). */
+export interface ArtifactReviewIssue {
+  claim: string;
+  quote: string;
+  reason: string;
+  source_id: string;
+  source_url: string;
+}
+
+export interface ArtifactReview {
+  status: "none" | "issues" | "no_objection" | "unavailable";
+  code?: string;
+  issues?: ArtifactReviewIssue[];
+  artifact_sha256?: string;
+}
+
 export interface EscalationInfo {
   spawnId: number;
   spawnName: string | null;
@@ -295,6 +311,7 @@ export interface AppSettings {
   /** Sleep-time curation sweep. Wire type is a real bool here (unlike
    *  evolution_auto's "on"/"off" string), matching SettingsOut.curation_enabled. */
   curation_enabled?: boolean;
+  research_review_enabled?: boolean;
   /** S4.2-a: whether the background evolution watcher may run. Wire type is the STRING
    * "on"/"off", not a bool. Default "off" — it spends the user's API credits and there
    * is no working cap (the pre-run estimate is a known over-estimate). */

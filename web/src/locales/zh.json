@@ -627,6 +627,9 @@
     "labelCuration": "后台整理",
     "curationDesc": "在你空闲的时候，Arslan 会重读它学到的东西，提出关联和更正。提案会进第二大脑的收件箱等你接受或忽略 —— 它不会自己往里写。",
     "curationSpendNote": "这一项没有自己的派发上限 —— 约束它的只有你空闲的频率。",
+    "labelResearchReview": "已保存报告的来源复核",
+    "researchReviewDesc": "Arslan 保存引用了多个网页来源的报告后，模型会重读来源，标出可能与来源矛盾的说法，比如“A 文档没提到 X”但其实提到了。报告总会照常保存，打开时能看到提示。这是模型意见，不是事实核查。",
+    "researchReviewSpendNote": "每次符合条件的保存，都会用你的 key 多向模型发一次请求，内容是报告和它的来源。目前只支持官方 DeepSeek 和 Anthropic 连接，其他模型会跳过。",
     "automationElsewhere": "定时任务和用量在「诊断台」，它们的历史记录在那里。",
     "automationOpenDiagnostics": "打开诊断台",
     "searchPlaceholder": "搜索设置…",
@@ -1685,5 +1688,14 @@
     "conversationStart": "开始对话",
     "conversationStop": "停止聆听",
     "speaking": "朗读中…"
+  },
+  "artifactReview": {
+    "title": "来源复核",
+    "disclaimer": "这是模型对“来源有没有写某件事”这类说法的意见，可能有误，不是事实核查。请打开来源核对。",
+    "noObjection": "复核已完成，未发现需要核对的地方。",
+    "unavailable": "复核未完成。",
+    "draft": "报告原句：",
+    "source": "来源原文：",
+    "openSource": "打开来源"
   }
 }

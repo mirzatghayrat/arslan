@@ -693,6 +693,9 @@
     "labelCuration": "Rangement en arrière-plan",
     "curationDesc": "Pendant que vous êtes inactif, Arslan relit ce qu'il a appris et propose des liens et des corrections. Les propositions arrivent dans la boîte du second cerveau ; rien n'est écrit tout seul.",
     "curationSpendNote": "Celui-ci n'a pas de plafond d'envois propre : il n'est limité que par la fréquence de vos périodes d'inactivité.",
+    "labelResearchReview": "Vérification des sources des rapports enregistrés",
+    "researchReviewDesc": "Après qu’Arslan a enregistré un rapport citant plusieurs sources web, le modèle relit les sources et signale les affirmations qu’une source pourrait contredire, par exemple « le document A ne mentionne pas X » alors qu’il le fait. Le rapport est toujours enregistré ; les remarques apparaissent à l’ouverture. Avis du modèle, pas une vérification des faits.",
+    "researchReviewSpendNote": "Chaque enregistrement concerné envoie une requête supplémentaire avec le rapport et ses sources à votre modèle, avec votre clé. Pour l’instant, seules les connexions officielles DeepSeek et Anthropic sont prises en charge ; les autres modèles sont ignorés.",
     "automationElsewhere": "Les tâches planifiées et l'utilisation des tokens sont dans Diagnostics, là où se trouve leur historique.",
     "automationOpenDiagnostics": "Ouvrir Diagnostics",
     "searchPlaceholder": "Rechercher des paramètres…",
@@ -1751,5 +1754,14 @@
     "conversationStart": "Démarrer la conversation",
     "conversationStop": "Arrêter l'écoute",
     "speaking": "lecture…"
+  },
+  "artifactReview": {
+    "title": "Vérification des sources",
+    "disclaimer": "Avis du modèle sur ce que les sources contiennent ou non. Il peut se tromper et ce n’est pas une vérification des faits ; ouvrez la source pour vérifier.",
+    "noObjection": "Vérification terminée ; rien à vérifier.",
+    "unavailable": "Vérification non terminée.",
+    "draft": "Rapport :",
+    "source": "Source :",
+    "openSource": "Ouvrir la source"
   }
 }

@@ -118,6 +118,7 @@ export const FIELD_HOMES: Record<string, SettingsSectionId> = {
   'evolution.auto': 'automation',
   'evolution.max_dispatches': 'automation',
   'curation.enabled': 'automation',
+  'research_review.enabled': 'automation',
   //: Replaces the two placeholder nav entries.
   'automation.diagnostics_link': 'automation',
 

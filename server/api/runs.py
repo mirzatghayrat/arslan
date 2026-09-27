@@ -453,6 +453,21 @@ async def download_run_artifact(run_id: int, filename: str) -> FileResponse:
                                  "Content-Security-Policy": "sandbox"})
 
 
+@router.get("/runs/{run_id}/artifacts/{filename}/review")
+async def get_artifact_review(run_id: int, filename: str) -> dict:
+    """The advisory source-review note stored for this exact artifact snapshot.
+
+    {"status": "none"} when the report was never reviewed (review off, not a
+    multi-source report, or an older version). A note is model advice, never a
+    fact check; the UI labels it so.
+    """
+    from server.services import artifact_store
+
+    if not artifact_store.safe_filename(run_id, filename):
+        raise HTTPException(status_code=400, detail="invalid artifact filename")
+    return artifact_store.read_review(run_id, filename) or {"status": "none"}
+
+
 @router.get("/runs/{run_id}", response_model=RunDetailOut)
 async def get_run(run_id: int, db: AsyncSession = Depends(get_session)) -> RunDetailOut:
     from server.services import artifact_store

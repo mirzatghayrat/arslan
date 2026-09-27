@@ -693,6 +693,9 @@
     "labelCuration": "Aufräumen im Hintergrund",
     "curationDesc": "Während du untätig bist, liest Arslan Gelerntes erneut und schlägt Verknüpfungen und Korrekturen vor. Vorschläge landen im Posteingang des zweiten Gehirns — geschrieben wird nichts von allein.",
     "curationSpendNote": "Dieses hat kein eigenes Dispatch-Limit — begrenzt wird es nur davon, wie oft du untätig bist.",
+    "labelResearchReview": "Quellenprüfung gespeicherter Berichte",
+    "researchReviewDesc": "Nachdem Arslan einen Bericht mit mehreren Webquellen gespeichert hat, liest das Modell die Quellen erneut und markiert Aussagen, denen eine Quelle widersprechen könnte – etwa „Dokument A erwähnt X nicht“, obwohl es das tut. Der Bericht wird immer gespeichert; die Hinweise erscheinen beim Öffnen. Modellmeinung, keine Faktenprüfung.",
+    "researchReviewSpendNote": "Jede passende Speicherung sendet mit deinem Schlüssel eine zusätzliche Anfrage mit dem Bericht und seinen Quellen an dein Modell. Derzeit werden nur offizielle DeepSeek- und Anthropic-Verbindungen unterstützt; andere Modelle werden übersprungen.",
     "automationElsewhere": "Geplante Aufgaben und Token-Verbrauch liegen in der Diagnose, wo auch ihr Verlauf ist.",
     "automationOpenDiagnostics": "Diagnose öffnen",
     "searchPlaceholder": "Einstellungen suchen…",
@@ -1751,5 +1754,14 @@
     "conversationStart": "Gespräch starten",
     "conversationStop": "Zuhören beenden",
     "speaking": "spricht…"
+  },
+  "artifactReview": {
+    "title": "Quellenprüfung",
+    "disclaimer": "Modellmeinung zu Aussagen darüber, was die Quellen enthalten oder nicht. Sie kann falsch sein und ist keine Faktenprüfung; öffne die Quelle zum Prüfen.",
+    "noObjection": "Prüfung abgeschlossen; nichts zu prüfen gefunden.",
+    "unavailable": "Prüfung nicht abgeschlossen.",
+    "draft": "Bericht:",
+    "source": "Quelle:",
+    "openSource": "Quelle öffnen"
   }
 }

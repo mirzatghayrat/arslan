@@ -175,3 +175,77 @@ def read_owned(run_id: int, filename: str) -> tuple[dict, bytes]:
         return metadata, data
     finally:
         os.close(directory)
+
+
+# --- Source-review notes bound to one immutable artifact snapshot (0.1.41) ---
+# Kept in a sibling directory, never next to the artifact: the download route
+# serves any `run_{id}_*` name in root(), so a note there would become a
+# downloadable "artifact" and could collide with a user file named *.review.json.
+MAX_REVIEW_BYTES = 64 * 1024
+
+
+def _review_path(run_id: int, filename: str) -> Path:
+    if not safe_filename(run_id, filename):
+        raise ValueError("invalid artifact filename")
+    return root() / "_reviews" / (filename + ".json")
+
+
+def _manifest(run_id: int, filename: str) -> dict | None:
+    for item in list_artifacts(run_id):
+        if item.get("filename") == filename:
+            return item
+    return None
+
+
+def write_review(artifact: dict, note: dict) -> bool:
+    """Store one review note for an existing artifact snapshot, exactly once.
+
+    The note is bound to the snapshot's sha256; artifacts are immutable, so a
+    later rewrite of the same workspace file is a NEW artifact without this note.
+    Returns False (never raises) when the artifact is unknown or already reviewed.
+    """
+    run_id, filename = artifact.get("run_id"), artifact.get("filename")
+    if type(run_id) is not int or not isinstance(filename, str):
+        return False
+    manifest = _manifest(run_id, filename)
+    if manifest is None or manifest.get("sha256") != artifact.get("sha256"):
+        return False
+    body = json.dumps({**note, "run_id": run_id, "filename": filename,
+                       "artifact_sha256": manifest["sha256"]}, ensure_ascii=False).encode()
+    if len(body) > MAX_REVIEW_BYTES:
+        return False
+    path = _review_path(run_id, filename)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.parent.is_symlink():
+        return False
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    except FileExistsError:
+        return False
+    with os.fdopen(fd, "wb") as stream:
+        stream.write(body)
+        stream.flush()
+        os.fsync(stream.fileno())
+    return True
+
+
+def read_review(run_id: int, filename: str) -> dict | None:
+    """The stored note for this exact snapshot, or None. A note whose recorded
+    hash no longer matches the artifact manifest is treated as absent."""
+    try:
+        path = _review_path(run_id, filename)
+    except ValueError:
+        return None
+    if path.parent.is_symlink() or path.is_symlink() or not path.is_file():
+        return None
+    manifest = _manifest(run_id, filename)
+    try:
+        if path.stat().st_size > MAX_REVIEW_BYTES or manifest is None:
+            return None
+        note = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if (not isinstance(note, dict) or note.get("run_id") != run_id or note.get("filename") != filename
+            or note.get("artifact_sha256") != manifest.get("sha256")):
+        return None
+    return note
