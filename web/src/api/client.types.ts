@@ -312,6 +312,8 @@ export interface AppSettings {
    *  evolution_auto's "on"/"off" string), matching SettingsOut.curation_enabled. */
   curation_enabled?: boolean;
   research_review_enabled?: boolean;
+  keep_awake_enabled?: boolean;
+  desktop_notifications_enabled?: boolean;
   /** S4.2-a: whether the background evolution watcher may run. Wire type is the STRING
    * "on"/"off", not a bool. Default "off" — it spends the user's API credits and there
    * is no working cap (the pre-run estimate is a known over-estimate). */

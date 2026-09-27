@@ -3,7 +3,7 @@ import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import AppIdentityCard from './AppIdentityCard';
 import {
-  Cpu, Search, Palette, KeyRound, Database, Bot, Sliders, Circle, ArrowLeft,
+  Cpu, Search, Palette, KeyRound, Database, Bot, Sliders, Monitor, Circle, ArrowLeft,
   type LucideIcon,
 } from 'lucide-react';
 import {
@@ -15,7 +15,7 @@ import {
 
 /** Explicit icon map (avoids a heavy `import * as Icons` namespace import). */
 const ICONS: Record<string, LucideIcon> = {
-  Cpu, Search, Palette, KeyRound, Database, Bot, Sliders,
+  Cpu, Search, Palette, KeyRound, Database, Bot, Sliders, Monitor,
 };
 
 interface SettingsShellProps {

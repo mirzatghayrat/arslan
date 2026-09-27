@@ -18,7 +18,7 @@
 export type SettingsSectionId =
   | 'models' | 'modelroles' | 'search'        // Connection
   | 'appearance' | 'memory'                   // Personal
-  | 'automation' | 'access' | 'advanced';     // System
+  | 'automation' | 'desktop' | 'access' | 'advanced';     // System
 
 export type SettingsGroupId = 'connection' | 'personal' | 'system';
 
@@ -56,6 +56,9 @@ export const SETTINGS_SECTIONS: SettingsSectionMeta[] = [
   // turns on the second one without ever seeing the first one's warning.
   { id: 'automation', group: 'system',     labelKey: 'settings.navAutomation', icon: 'Bot',
     hintKey: 'settings.navAutomationHint' },
+  // Resident behaviour while the window is closed (0.1.41). Not in automation:
+  // both switches are ON by default and neither spends anything.
+  { id: 'desktop',    group: 'system',     labelKey: 'settings.navDesktop',    icon: 'Monitor' },
   { id: 'access',     group: 'system',     labelKey: 'settings.navAccess',     icon: 'KeyRound' },
   { id: 'advanced',   group: 'system',     labelKey: 'settings.navAdvanced',   icon: 'Sliders' },
 ];
@@ -119,6 +122,10 @@ export const FIELD_HOMES: Record<string, SettingsSectionId> = {
   'evolution.max_dispatches': 'automation',
   'curation.enabled': 'automation',
   'research_review.enabled': 'automation',
+
+  // ── desktop (0.1.41: the window hides, Arslan stays in the menu bar) ──────
+  'desktop.keep_awake': 'desktop',
+  'desktop.notifications': 'desktop',
   //: Replaces the two placeholder nav entries.
   'automation.diagnostics_link': 'automation',
 

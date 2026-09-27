@@ -40,3 +40,19 @@ export async function openExternal(url: string): Promise<boolean> {
     return false;
   }
 }
+
+/** The desktop shell asks to open a conversation after its notification was
+ * clicked (0.1.41 resident mode). Returns an unsubscribe; a no-op in a plain
+ * browser. Only a known conversation is opened — the id is data, not a route. */
+export function subscribeOpenConversation(cb: (conversationId: string) => void): () => void {
+  if (!shellAvailable()) return () => {};
+  let dead = false;
+  let unlisten: (() => void) | null = null;
+  import("@tauri-apps/api/event")
+    .then(({ listen }) => listen<string>("open-conversation", (event) => {
+      if (typeof event.payload === "string" && event.payload) cb(event.payload);
+    }))
+    .then((un) => { if (dead) un(); else unlisten = un; })
+    .catch(() => { /* capability missing: the window still opens, it just stays where it was */ });
+  return () => { dead = true; unlisten?.(); };
+}

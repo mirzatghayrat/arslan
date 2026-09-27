@@ -21,6 +21,7 @@ import AdvancedSection from './settings/AdvancedSection';
 import type { SettingsSectionId } from './settings/sectionRegistry';
 import { useDebouncedSettingsSave } from '../hooks/useDebouncedSettingsSave';
 import AutomationSection from './settings/AutomationSection';
+import DesktopSection from './settings/DesktopSection';
 import { normalizeLanguage } from '../lib/languages';
 
 interface SettingsScreenProps {
@@ -219,6 +220,16 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         heartbeatChecklist={localSettings.heartbeatChecklist ?? ''}
         onHeartbeatChecklistChange={(v) => saveField({ heartbeatChecklist: v })}
         onOpenDiagnostics={onOpenDiagnostics}
+      />
+    ),
+
+    // Desktop — resident behaviour while the window is closed (0.1.41).
+    desktop: (
+      <DesktopSection
+        keepAwakeEnabled={localSettings.keepAwakeEnabled ?? true}
+        onKeepAwakeChange={(v) => saveField({ keepAwakeEnabled: v })}
+        notificationsEnabled={localSettings.desktopNotificationsEnabled ?? true}
+        onNotificationsChange={(v) => saveField({ desktopNotificationsEnabled: v })}
       />
     ),
 
