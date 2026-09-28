@@ -1082,6 +1082,53 @@ async def _handle_answer(
                                   has_images=bool(images))
 
 
+BACKGROUND_SYSTEM = (
+    "\n\nYou are now doing a piece of work in the BACKGROUND. The user started it and is free to talk "
+    "about other things; they are not watching this run. Work through it with your tools until the "
+    "completion criteria are met. Do not ask chatty questions: if something essential is missing and "
+    "cannot be found, stop and say exactly what is missing. End with a concise result for the user: "
+    "what was done, where any output is, and anything that remains undone.")
+
+
+async def _background_tools() -> list[dict]:
+    """The host toolset minus anything that only makes sense inside a live turn."""
+    return [tool for tool in await _arslan_tools()
+            if tool["key"] not in {"ask_user_choice", "start_background_work", "background_status",
+                                   "stop_background_work"}]
+
+
+async def background_body(conversation_id: str, goal: str, emit: EventSink, confirmations) -> str:
+    """One background job's execution: the answer machinery without the chat stream."""
+    ctx = await memory.assemble_working_context(conversation_id)
+    from server.services import personal_context
+    if personal_context.current() is not None:
+        personal = await personal_context.assemble(goal)
+        facts = personal.text
+        await personal_context.record(personal)
+    else:
+        facts = await memory.facts_text(include_sensitive=True)
+    kb_block = ""
+    try:
+        from server.services import knowledge as _knowledge
+        _kb = await _knowledge.retrieve_scoped(goal, spawn_id=None, used_ref=conversation_id)
+        kb_block = _knowledge.knowledge_block(_kb)
+    except Exception as exc:  # noqa: BLE001 — retrieval is never fatal
+        logger.warning("background kb retrieve failed (non-fatal): %s", exc)
+    system = _build_answer_system(extra_system=BACKGROUND_SYSTEM, roster=await _team_roster(), facts=facts,
+                                  summary=ctx["summary"], kb_block=kb_block)
+    run_trace.record_prompt(system_prompt=system, injected_kb=kb_block or None)
+    pieces: list[str] = []
+    result = await tool_loop.run_native(
+        system=system, user_content=goal, history=ctx["history"], emit=emit, on_chunk=pieces.append,
+        resolve_tools=_background_tools, allow_escalation=False,
+        confirm_command=confirmations.command, confirm_workspace_write=confirmations.workspace_write,
+        confirm_schedule=confirmations.schedule, conversation_id=conversation_id,
+        caller=ToolCaller(actor="host", spawn_id=None, conversation_id=conversation_id),
+    )
+    final = result.get("final") if isinstance(result, dict) else None
+    return final if isinstance(final, str) and final.strip() else "".join(pieces)
+
+
 async def _handle_answer_body(
     conversation_id: str, user_message: str, emit: EventSink, *, extra_system: str = "",
     attached_context: str | None = None, images: list[dict] | None = None,
@@ -1843,6 +1890,23 @@ async def _arslan_tools() -> list[dict]:
                                  "genuinely cannot proceed without their choice. args: {question, "
                                  "options: [{label, hint?}] (2-4 options)}. The user answers with "
                                  "one click — NEVER ask a multiple-choice question in plain text."})
+    # 0.1.42 background work: offered to a host TURN only. Inside a job these are
+    # absent, so a job can never start (or stop) another job.
+    from server.services import background_jobs
+    if current_task() is not None and not background_jobs.inside_job() and "start_background_work" in EXECUTORS:
+        tools.append({"key": "start_background_work", "description":
+            "Start doing a piece of WORK in the background so the conversation stays free. Use it when the "
+            "request needs tools, files, several steps or more than a minute (research then write, organize "
+            "files, draft a document, compare sources…). Do NOT do such work inline in this turn. Give the "
+            "goal in the user's words plus 2-5 completion criteria; prefer checkable ones (kind file_saved "
+            "with the file name, sources_read with a minimum, mentions with a phrase). Then reply in ONE "
+            "short sentence: you started, and what done will look like. The result is posted to this "
+            "conversation when the job ends. Not for simple questions you can answer now."})
+        tools.append({"key": "background_status", "description":
+            "Read the real state of this conversation's background jobs (running, step, outcome). Use it "
+            "when the user asks how the work is going; never guess progress."})
+        tools.append({"key": "stop_background_work", "description":
+            "Stop one running background job of this conversation by job_id when the user asks to stop it."})
     if "list_my_capabilities" in EXECUTORS:
         tools.append({"key": "list_my_capabilities",
                       "description": "List your OWN usable capabilities (built-in tools + installed "

@@ -788,6 +788,21 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                  "description": "Destination file path within the configured workspace."},
         "content": {"type": "string", "description": "Complete UTF-8 text to write."}},
         "required": ["path", "content"], "additionalProperties": False},
+    "start_background_work": {"type": "object", "properties": {
+        "goal": {"type": "string", "minLength": 1, "maxLength": 4000,
+                 "description": "The work to do, in the user's words."},
+        "criteria": {"type": "array", "minItems": 1, "maxItems": 5, "items": {
+            "type": "object", "properties": {
+                "description": {"type": "string", "minLength": 1, "maxLength": 300},
+                "kind": {"type": "string", "enum": ["file_saved", "sources_read", "mentions", "judgement"]},
+                "target": {"type": "string", "maxLength": 240,
+                           "description": "file name for file_saved; phrase for mentions"},
+                "minimum": {"type": "integer", "minimum": 1, "maximum": 20}},
+            "required": ["description"], "additionalProperties": False}}},
+        "required": ["goal", "criteria"], "additionalProperties": False},
+    "background_status": {"type": "object", "properties": {}, "additionalProperties": False},
+    "stop_background_work": {"type": "object", "properties": {"job_id": {"type": "string", "minLength": 1}},
+                             "required": ["job_id"], "additionalProperties": False},
     "delegate_work": {"type": "object", "properties": {"jobs": {
         "type": "array", "minItems": 1, "maxItems": 4, "items": {
             "type": "object", "properties": {

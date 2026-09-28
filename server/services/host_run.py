@@ -19,7 +19,8 @@ from server.services import execution_context, run_recorder, run_registry
 @governed
 async def execute(conversation_id: str, user_message: str, emit: Callable[[dict], None],
                   body: Callable[[Callable[[dict], None]], Awaitable[str | None]],
-                  *, has_images: bool = False, kind: str = "host", name: str = "Arslan") -> str | None:
+                  *, has_images: bool = False, kind: str = "host", name: str = "Arslan",
+                  announce: bool = True) -> str | None:
     recorder = await run_recorder.RunRecorder.start(
         conversation_id=conversation_id, spawn_id=None, spawn_name=name,
         user_message=user_message, kind=kind, has_images=has_images,
@@ -63,7 +64,8 @@ async def execute(conversation_id: str, user_message: str, emit: Callable[[dict]
         memory_scope = personal_context.bind(replace(ctx, run_id=f"run:{recorder.run_id}",
             source_run_id=recorder.run_id)) if ctx else nullcontext()
         with memory_scope, usage_sink.collecting(), run_trace.collecting(), execution_context.bind_run(recorder.run_id):
-            tee({"type": "stream_start", "source": "arslan", "run_id": recorder.run_id})
+            if announce:  # background jobs (0.1.42) show a card, never a typing bubble
+                tee({"type": "stream_start", "source": "arslan", "run_id": recorder.run_id})
             try:
                 output = await body(capture)
                 await finalize(output or "".join(chunks))

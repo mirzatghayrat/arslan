@@ -375,7 +375,8 @@ def checked_driver(driver: dict | None) -> dict:
     return dict(driver)
 
 
-async def run_turn(function, conversation_id: str, user_message: str, emit, *args, _driver=None, **kwargs):
+async def run_turn(function, conversation_id: str, user_message: str, emit, *args, _driver=None,
+                   _acceptance: list[dict] | None = None, **kwargs):
     if current() is not None:
         return await function(conversation_id, user_message, emit, *args, **kwargs)
     ctx = personal_context.current()
@@ -396,7 +397,7 @@ async def run_turn(function, conversation_id: str, user_message: str, emit, *arg
         # which claims nothing about correctness. The old human-review fallback
         # left every chat message "waiting for your review" forever. Work that
         # needs real acceptance runs as a background job with its own criteria.
-        "acceptance": [ANSWER_DELIVERED],
+        "acceptance": _acceptance or [ANSWER_DELIVERED],
     })
     async with repository() as repo:
         created = await repo.create(spec, conversation_id, budget_snapshot=budget.snapshot(), privacy={

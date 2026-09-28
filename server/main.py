@@ -470,6 +470,8 @@ def create_app() -> FastAPI:
     app.include_router(companion_api.router, prefix="/api/v1")
     from server.api import tasks as tasks_api
     app.include_router(tasks_api.router, prefix="/api/v1")
+    from server.api import background_jobs as background_jobs_api
+    app.include_router(background_jobs_api.router, prefix="/api/v1")
     from server.api import professional_methods as professional_methods_api
     app.include_router(professional_methods_api.router, prefix="/api/v1")
 
