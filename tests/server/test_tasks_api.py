@@ -92,3 +92,24 @@ async def test_global_ongoing_list_excludes_terminal_tasks(api):
     await api.post("/api/v1/tasks/api-task/cancel", json={"expected_version": initial["version"]})
     assert (await api.get("/api/v1/tasks?active_only=true")).json() == []
     assert len((await api.get("/api/v1/tasks")).json()) == 1
+
+
+async def test_list_can_be_limited_to_background_jobs_and_reports_the_driver(api):
+    """0.1.42: the sidebar lists only background jobs, not every chat turn."""
+    async def make(task_id, driver):
+        spec = TaskSpec.model_validate({
+            "id": task_id, "scope": {"kind": "task", "owner_id": "local", "task_id": task_id},
+            "instruction": "Do it", "locale": "en",
+            "acceptance": [{"id": "review", "description": "Review", "evaluator": "human"}]})
+        async with repository() as repo:
+            await repo.create(spec, "c", privacy={"driver": driver} if driver else {})
+
+    await make("chat-turn", {"kind": "host"})
+    await make("job", {"kind": "background"})
+    await make("legacy", None)                       # rows written before drivers were recorded
+    everything = (await api.get("/api/v1/tasks")).json()
+    assert {row["spec"]["id"]: row["driver"] for row in everything} == {
+        "chat-turn": "host", "job": "background", "legacy": "host"}
+    jobs = (await api.get("/api/v1/tasks?driver=background")).json()
+    assert [row["spec"]["id"] for row in jobs] == ["job"]
+    assert (await api.get("/api/v1/tasks?driver=anything")).status_code == 422

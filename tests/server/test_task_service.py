@@ -91,8 +91,12 @@ async def test_real_provider_admission_is_durable_before_http_and_charges_usage(
         task = (await db.execute(select(CompanionTask))).scalar_one()
         attempt = (await db.execute(select(TaskAttempt))).scalar_one()
         recorded = (await db.execute(select(Run))).scalar_one()
-        assert task.phase == "waiting_user"  # A string is not proof that the requested work is correct.
-        assert task.pause_reason == "acceptance_review_required"
+        # 0.1.42: a conversational turn completes because an answer was DELIVERED —
+        # the only check is the deterministic "answer-delivered" one, which claims
+        # nothing about correctness. Work that needs real acceptance is a background job.
+        assert task.phase == "succeeded" and task.pause_reason is None
+        assert [(r["check_id"], r["evaluator"], r["status"]) for r in task.results] == [
+            ("answer-delivered", "deterministic", "passed")]
         assert task.budget["used"]["tokens"] == 5 and task.budget["used"]["model_requests"] == 1
         assert attempt.run_ids == [recorded.id]
         assert not task_service.active(task.id)

@@ -77,7 +77,8 @@ async def test_failed_worker_does_not_cancel_independent_branch(execution_db, mo
     assert {row["status"] for row in result["workers"]} == {"failed", "completed"}
     assert next(row for row in result["workers"] if row["status"] == "completed")["result"]["result"] == "good result"
     async with repository() as repo:
-        assert (await repo.get("worker-task")).pause_reason == "acceptance_review_required"
+        # 0.1.42: the batch returned no answer text, so "answer-delivered" fails — never a success.
+        assert (await repo.get("worker-task")).pause_reason == "task_validation_failed"
 
 
 async def test_duplicate_job_reuses_owned_result_without_another_model_request(execution_db, monkeypatch):
@@ -172,7 +173,8 @@ async def test_worker_no_progress_stays_local_to_its_branch(execution_db, monkey
     assert {row["status"] for row in result["workers"]} == {"partial", "completed"}
     assert result["evidence"] == [{"kind": "opened_source", "url": "https://fixture.invalid"}]
     async with repository() as repo:
-        assert (await repo.get("worker-task")).pause_reason == "acceptance_review_required"
+        # 0.1.42: the batch returned no answer text, so "answer-delivered" fails — never a success.
+        assert (await repo.get("worker-task")).pause_reason == "task_validation_failed"
 
 
 async def test_partial_worker_restarts_only_after_explicit_task_resume(execution_db, monkeypatch):

@@ -109,7 +109,8 @@ class TaskRepository:
         return {"version": row.version, "conversation_id": row.conversation_id,
                 "spec": spec.model_dump(mode="json"), "state": state.model_dump(mode="json"),
                 "budget": row.budget, "pause_reason": row.pause_reason,
-                "cancel_requested": row.cancel_requested}
+                "cancel_requested": row.cancel_requested,
+                "driver": ((row.privacy or {}).get("driver") or {"kind": "host"}).get("kind", "host")}
 
     async def create(self, spec: TaskSpec, conversation_id: str, *, owner_id="local",
                      budget_snapshot: dict | None = None, privacy: dict | None = None) -> dict:
