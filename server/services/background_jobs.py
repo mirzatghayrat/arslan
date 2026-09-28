@@ -226,7 +226,7 @@ async def _report(job: Job, text: str) -> None:
     try:
         body = text.strip()
         if body:   # a stopped or empty job is shown by its card alone, never by a filler message
-            message_id = await memory.add_message(job.conversation_id, "arslan", body)
+            message_id = await memory.add_message(job.conversation_id, "arslan", body, job_outcome=job.outcome)
             run_registry.make_emit(job.conversation_id)(protocol.message(message_id, body, "arslan") | {
                 "job_id": job.job_id, "outcome": job.outcome})
     except Exception as exc:  # noqa: BLE001
@@ -235,6 +235,36 @@ async def _report(job: Job, text: str) -> None:
                         outcome={"done": "ok", "stopped": "cancelled"}.get(job.outcome, "needs_review"))
     run_registry.make_emit(job.conversation_id)({"type": "job_spoken", "job_id": job.job_id,
                                                  "outcome": job.outcome, "goal": job.goal[:200]})
+
+
+async def report_interrupted() -> int:
+    """Boot pass, after `task_service.recover_interrupted`: jobs never survive a
+    restart (they live in this process). Each one the restart cut short is
+    closed as cancelled and its conversation is told, once, in plain words —
+    a job that silently vanished would look like it was still coming."""
+    from sqlalchemy import select
+    from server.db import session as db_session
+    from server.db.models import CompanionTask
+    from server.orchestrator import memory
+    from server.services import runtime_messages
+    from server.services.task_repository import repository
+    async with db_session.AsyncSessionLocal() as db:
+        rows = (await db.execute(select(CompanionTask).where(
+            CompanionTask.phase == "waiting_user", CompanionTask.pause_reason == "process_interrupted"))).scalars().all()
+        targets = [(row.id, row.owner_id, row.conversation_id) for row in rows
+                   if ((row.privacy or {}).get("driver") or {}).get("kind") == "background"]
+    if not targets:
+        return 0
+    locale = await runtime_messages.selected_locale()
+    for task_id, owner_id, conversation_id in targets:
+        async with repository() as repo:
+            row = await repo.get(task_id, owner_id=owner_id)
+            goal = (await repo.spec(row)).instruction[:200]
+            await repo.cancel(task_id, owner_id=owner_id)
+        await memory.add_message(conversation_id, "arslan",
+                                 runtime_messages.render("job_interrupted", locale, goal=goal),
+                                 job_outcome="interrupted")
+    return len(targets)
 
 
 def _reset_for_tests() -> None:

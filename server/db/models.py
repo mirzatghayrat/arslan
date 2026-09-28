@@ -141,6 +141,8 @@ class ArslanMessage(Base):
     spawn_id = Column(Integer, ForeignKey("spawns.id"), nullable=True)
     run_id = Column(Integer, ForeignKey("runs.id", ondelete="SET NULL"), nullable=True)
     timestamp = Column(DateTime, default=datetime.utcnow)
+    # 0.1.42: set on a background job's result message — done|partial|blocked|stopped.
+    job_outcome = Column(String(20), nullable=True)
 
 
 class ArslanSummary(Base):

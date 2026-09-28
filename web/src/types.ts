@@ -63,7 +63,7 @@ export interface Message {
   jobId?: string;
   /** 0.1.42: this Arslan message is the result of that background job. */
   resultOfJob?: string;
-  jobOutcome?: 'done' | 'partial' | 'blocked' | 'stopped' | null;
+  jobOutcome?: 'done' | 'partial' | 'blocked' | 'stopped' | 'interrupted' | null;
   /** True when this spawn deliverable is a pending proposal needing direction confirmation. */
   isProposal?: boolean;
   /** Set after verdict_recorded ack: 'accept' | 'discard' | 'redo' */

@@ -208,6 +208,8 @@ async def lifespan(app: FastAPI):
         await run_reaper.mark_interrupted_runs()
         from server.services import task_service
         await task_service.recover_interrupted()
+        from server.services import background_jobs
+        await background_jobs.report_interrupted()
         await run_reaper.reap_stuck_runs()
         from server.services import recipes
         await recipes.mark_interrupted()

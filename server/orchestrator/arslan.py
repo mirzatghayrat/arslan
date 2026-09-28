@@ -1254,7 +1254,12 @@ async def _handle_answer_body(
     # Fail-open: guard errors never break the answer turn.
     try:
         check_spawn = bool(intercept_spawn_name) and not turn_delegated
-        check_generic = not result.get("tool_trace")
+        # 0.1.42: while a background job of this conversation is really running,
+        # "it's being worked on in the background" is true, and the generic
+        # correction ("nothing is running in the background") would be the lie.
+        from server.services import background_jobs
+        job_running = any(job.phase != "finished" for job in background_jobs.jobs_for(conversation_id))
+        check_generic = not result.get("tool_trace") and not job_running
         if full and (check_spawn or check_generic):
             outcome = await promise_guard.correct(
                 full, spawn_name=intercept_spawn_name if check_spawn else None,

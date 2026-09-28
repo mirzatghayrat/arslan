@@ -367,6 +367,7 @@ function makeActions(set: SetState, get: GetState) {
         content: string;
         spawn_id?: number | null;
         run_id?: number | null;
+        job_outcome?: JobOutcome | null;
       }): ArslanThreadItem => {
         if (row.role === "spawn_summary") {
           // Resolve the spawn name ONLY from an explicit spawn_id. History rows
@@ -393,6 +394,8 @@ function makeActions(set: SetState, get: GetState) {
           role: row.role === "arslan" ? "arslan" : "user",
           content: row.content,
           runId: row.run_id ?? undefined,
+          // 0.1.42: a background job's result keeps its label across reloads.
+          ...(row.job_outcome ? { jobId: `message-${row.message_id}`, jobOutcome: row.job_outcome } : {}),
         };
       };
       switch (frame.type) {

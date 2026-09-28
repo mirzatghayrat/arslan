@@ -105,6 +105,8 @@ async def _history(conversation_id: str) -> list[dict]:
             # S3-M2: run linkage (set at finalize) so RunReplay entry points
             # survive a reload. Key always emitted; None when unlinked.
             "run_id": m.run_id,
+            # 0.1.42: a background job's result keeps its checked outcome.
+            "job_outcome": m.job_outcome,
         }
         for m in msgs
     ]

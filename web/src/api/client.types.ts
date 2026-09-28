@@ -489,7 +489,7 @@ export interface ClarifyOption {
 
 /** A renderable item in the unified Arslan thread. */
 /** 0.1.42 background job, as the `job_update` frame describes it. */
-export type JobOutcome = "done" | "partial" | "blocked" | "stopped";
+export type JobOutcome = "done" | "partial" | "blocked" | "stopped" | "interrupted";
 export interface JobCriterion { id: string; description: string; status: string }
 export interface JobCard {
   jobId: string;
@@ -560,6 +560,8 @@ export interface ArslanHistoryRow {
   /** S3-M2: run linkage (ArslanMessage.run_id, set at finalize) — restores the
    *  RunReplay entry point after a reload. Always emitted; null when unlinked. */
   run_id?: number | null;
+  /** 0.1.42: set on a background job's result — its checked outcome. */
+  job_outcome?: JobOutcome | null;
 }
 
 // Server -> client frames on /ws/arslan

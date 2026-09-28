@@ -6,6 +6,7 @@ import { backgroundJobsApi } from "../api/tasks";
 import { toUiMessages } from "../api/adapters";
 import JobCard, { JobResultLabel } from "../components/JobCard";
 import BackgroundJobs from "../components/companion/BackgroundJobs";
+import { jobMessages } from "../locales/jobs";
 import { initialArslanState, useArslanStore } from "../stores/arslanStore";
 
 vi.mock("react-i18next", () => ({
@@ -46,6 +47,16 @@ describe("store", () => {
     const [msg] = toUiMessages(useArslanStore.getState().items);
     expect(msg.resultOfJob).toBe("job-1");
     expect(msg.jobOutcome).toBe("partial");
+  });
+
+  it("keeps a result's label across a reload, including an interrupted job", () => {
+    useArslanStore.getState().handleFrame({ type: "history", messages: [
+      { message_id: 1, role: "arslan", content: "Report ready", spawn_id: null, job_outcome: "done" },
+      { message_id: 2, role: "arslan", content: "Interrupted", spawn_id: null, job_outcome: "interrupted" },
+      { message_id: 3, role: "arslan", content: "plain answer", spawn_id: null, job_outcome: null }] });
+    const msgs = toUiMessages(useArslanStore.getState().items);
+    expect(msgs.map(m => [Boolean(m.resultOfJob), m.jobOutcome ?? null])).toEqual([
+      [true, "done"], [true, "interrupted"], [false, null]]);
   });
 
   it("raises a notice when a job finishes and when a job's card asks", () => {
@@ -189,5 +200,17 @@ describe("spoken notices", () => {
     const speak = await chat("conversation");   // available but not switched on
     act(() => useArslanStore.getState().handleFrame({ type: "job_spoken", job_id: "j", outcome: "done", goal: "Tidy" }));
     expect(speak).not.toHaveBeenCalled();
+  });
+});
+
+describe("jobs copy", () => {
+  it("has the same keys in all six languages, every outcome and check word included", () => {
+    const flat = (o: object, p = ""): string[] => Object.entries(o).flatMap(([k, v]) =>
+      typeof v === "object" ? flat(v, `${p}${k}.`) : [`${p}${k}`]);
+    const keys = flat(jobMessages.en).sort();
+    expect(Object.keys(jobMessages).sort()).toEqual(["de", "en", "es", "fr", "ja", "zh"]);
+    for (const messages of Object.values(jobMessages)) expect(flat(messages).sort()).toEqual(keys);
+    for (const outcome of ["done", "partial", "blocked", "stopped", "interrupted"]) expect(keys).toContain(`outcome.${outcome}`);
+    for (const check of ["passed", "failed", "unverified", "not_run", "not_applicable", "pending"]) expect(keys).toContain(`check.${check}`);
   });
 });

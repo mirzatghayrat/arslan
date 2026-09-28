@@ -14,6 +14,19 @@ export function taskReason(reason: string | null) {
   return taskErrorKey(reason ?? "") ?? "tasks.reviewIntro";
 }
 
+// 0.1.42: what the conversation header tracks.
+// - A background job has its own live card and stop button; its task frames
+//   never reach the chat, so a chip here would go stale.
+// - Before 0.1.42 every chat answer was recorded as a task waiting for a human
+//   review that nobody was asked for. Those rows are left untouched (accepting
+//   them now would write a review that never happened); they are just not work.
+export function shownInHeader(row: TaskSummary): boolean {
+  if (row.driver === "background") return false;
+  const checks = row.spec.acceptance;
+  const legacyChatTurn = (row.driver ?? "host") === "host" && checks.length === 1 && checks[0].id === "user-review";
+  return !legacyChatTurn;
+}
+
 export default function TaskPanel({ conversationId, onResume, compact = false }: {
   conversationId: string; onResume: (task: TaskSummary) => void; compact?: boolean;
 }) {
@@ -46,9 +59,7 @@ export default function TaskPanel({ conversationId, onResume, compact = false }:
     const timer = setTimeout(() => {
       tasksApi.list(conversationId).then(all => {
         if (!alive) return;
-        // 0.1.42: a background job has its own live card and stop button; its
-        // task frames never reach the chat, so a chip here would go stale.
-        const next = all.filter(row => row.driver !== "background");
+        const next = all.filter(shownInHeader);
         setRows(old => {
           const merged = next.map(row => {
             const cached = old.find(item => item.spec.id === row.spec.id);
@@ -110,7 +121,7 @@ export default function TaskPanel({ conversationId, onResume, compact = false }:
     setBusy(true); setError(null);
     try {
       const all = await tasksApi.list(conversationId, rows.length);
-      const next = all.filter(row => row.driver !== "background");
+      const next = all.filter(shownInHeader);
       if (mounted.current) { setRows(old => [...old, ...next.filter(row => !old.some(item => item.spec.id === row.spec.id))]); setMore(all.length === 20); }
     } catch { if (mounted.current) setError("brain.read_failed"); }
     finally { if (mounted.current) setBusy(false); }

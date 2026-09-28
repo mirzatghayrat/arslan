@@ -16,6 +16,7 @@ from server.db.models import ArslanMessage, CompanionTask
 from server.orchestrator import tool_loop
 from server.registry.task_tools import StartBackgroundWorkExecutor
 from server.services import (approvals, background_jobs, desktop_status, personal_context as pc, run_registry,
+                             runtime_messages,
                              task_context, task_service)
 
 CID = "conv-bg"
@@ -397,3 +398,49 @@ def test_old_finished_jobs_are_forgotten_but_running_ones_never(monkeypatch):
     background_jobs._jobs["live"] = live
     background_jobs._forget_old_finished()
     assert set(background_jobs._jobs) == {"done-3", "live"}   # room left for the job about to start
+
+
+async def test_a_restart_closes_interrupted_jobs_and_says_so_once(execution_db, monkeypatch):
+    from server.services.task_repository import repository
+    from tests.server.test_task_repository import spec
+    monkeypatch.setattr(runtime_messages, "selected_locale", AsyncMock(return_value="en"))
+    async with repository() as repo:
+        for identity, driver in (("job-cut", "background"), ("turn-cut", "host")):
+            created = await repo.create(spec(identity, instruction=f"Goal of {identity}"), CID,
+                                        privacy={"driver": {"kind": driver}})
+            await repo.start(identity, created["version"])
+    async with repository() as repo:
+        assert await repo.recover_interrupted() == 2          # what a restart finds
+    assert await background_jobs.report_interrupted() == 1
+    async with execution_db() as db:
+        messages = (await db.scalars(select(ArslanMessage))).all()
+        job = await db.get(CompanionTask, "job-cut")
+        turn = await db.get(CompanionTask, "turn-cut")
+    assert [(m.job_outcome, "Goal of job-cut" in m.content, "interrupted" in m.content) for m in messages] == [
+        ("interrupted", True, True)]
+    assert job.phase == "cancelled"
+    assert (turn.phase, turn.pause_reason) == ("waiting_user", "process_interrupted"), "a chat turn keeps its own recovery"
+    assert await background_jobs.report_interrupted() == 0   # said once
+
+
+async def test_a_result_keeps_its_outcome_in_history(execution_db, active, frames, monkeypatch):
+    from server.ws.arslan import _history
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: JobAdapter())
+    job = await background_jobs.start(CID, "Tidy my notes into a report", _criteria())
+    await _wait(lambda: job.phase == "finished")
+    await _wait(lambda: any(f.get("type") == "job_spoken" for f in frames))
+    rows = await _history(CID)
+    assert [r["job_outcome"] for r in rows if r["role"] == "arslan"] == [job.outcome]
+
+
+def test_migration_0055_adds_the_outcome_column_once(tmp_path):
+    import sqlalchemy as sa
+    from server.db.migrations.versions._0055_message_job_outcome import upgrade_sync
+    engine = sa.create_engine(f"sqlite:///{tmp_path / 'm.db'}")
+    with engine.begin() as connection:
+        connection.execute(sa.text("CREATE TABLE arslan_messages (id INTEGER PRIMARY KEY, content TEXT)"))
+        connection.execute(sa.text("INSERT INTO arslan_messages (content) VALUES ('kept')"))
+        upgrade_sync(connection)
+        upgrade_sync(connection)   # idempotent
+        rows = connection.execute(sa.text("SELECT content, job_outcome FROM arslan_messages")).all()
+    assert rows == [("kept", None)]

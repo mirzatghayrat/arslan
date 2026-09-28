@@ -18,6 +18,7 @@ MESSAGES = {
         "correction": "Correction: I did not delegate any task, and nothing is running in the background. The answer above was my own response.",
         "named_correction": "Correction: my claim about assigning this to {name} was not true. I did not delegate any task this turn; the answer above was my own response. To involve {name}, mention them explicitly.",
         "no_tools_correction": "Correction: I do not have the tools needed to produce that file or data. My earlier completion claim was not true: I produced no such result and delegated no task. Please use an expert with the required capabilities.",
+        "job_interrupted": "Background work was interrupted when Arslan restarted, before it finished: {goal}. Nothing more was done. Ask me to start it again if you still want it.",
     },
     "zh": {
         "expert_unavailable": "这个专家已不可用。请在能力库中选择其他专家。",
@@ -28,7 +29,8 @@ MESSAGES = {
         "chat_miss": "抱歉,我刚没接住你的意思——能再说一次或换个说法吗?",
         "correction": "更正:本回合我没有派发任何任务,也没有任何东西正在后台运行——上面的内容是我自己作答的。",
         "named_correction": "更正:我刚才说交给 {name} 处理并不属实——本回合我没有派发任何任务,上面的内容是我自己作答的。需要真的交给 {name},直接点名它即可。",
-        "no_tools_correction": "更正:我没有配备相应工具,无法自己产出这个文件或数据。刚才那段“已完成/已交付”的说法并不属实——本回合没有真正做出任何东西,也没有把任务交给谁。需要真的做出来,请改用配备相应能力的分身。",
+        "no_tools_correction": "更正:我没有配备相应工具,无法自己产出这个文件或数据。刚才那段“已完成/已交付”的说法并不属实——本回合没有真正做出任何东西,也没有把任务交给谁。需要真的做出来,请改用配备相应能力的专家。",
+        "job_interrupted": "后台作业在 Arslan 重启时中断，没有做完：{goal}。之后没有再继续。如果还需要，跟我说一声，我重新开始。",
     },
     "ja": {
         "expert_unavailable": "この専門家は利用できなくなりました。「機能」から別の専門家を選んでください。",
@@ -40,6 +42,7 @@ MESSAGES = {
         "correction": "訂正：タスクを委任しておらず、バックグラウンドで動作している処理もありません。上記は私自身が回答した内容です。",
         "named_correction": "訂正：{name} に依頼したという説明は事実ではありません。今回はタスクを委任しておらず、上記は私自身の回答です。{name} に依頼する場合は、明示的に指定してください。",
         "no_tools_correction": "訂正：そのファイルやデータを作成するためのツールがありません。先ほどの完了という説明は事実ではなく、成果物の作成もタスクの委任も行っていません。必要な機能を備えた専門家をご利用ください。",
+        "job_interrupted": "Arslan の再起動でバックグラウンド作業が完了前に中断されました：{goal}。その後は何も行っていません。必要なら、もう一度始めるよう伝えてください。",
     },
     "es": {
         "expert_unavailable": "Este experto ya no está disponible. Elige otro en Capacidades.",
@@ -51,6 +54,7 @@ MESSAGES = {
         "correction": "Corrección: no he delegado ninguna tarea y no hay nada ejecutándose en segundo plano. La respuesta anterior era mía.",
         "named_correction": "Corrección: no era cierto que hubiera asignado esto a {name}. No he delegado ninguna tarea en este turno; la respuesta anterior era mía. Para involucrar a {name}, menciónalo explícitamente.",
         "no_tools_correction": "Corrección: no tengo las herramientas necesarias para producir ese archivo o esos datos. Mi afirmación anterior de haber terminado no era cierta: no he producido ese resultado ni delegado ninguna tarea. Usa un experto con las capacidades necesarias.",
+        "job_interrupted": "El trabajo en segundo plano se interrumpió al reiniciarse Arslan, antes de terminar: {goal}. No se hizo nada más. Pídeme que lo empiece de nuevo si todavía lo necesitas.",
     },
     "de": {
         "expert_unavailable": "Dieser Experte ist nicht mehr verfügbar. Wähle unter Fähigkeiten einen anderen Experten.",
@@ -62,6 +66,7 @@ MESSAGES = {
         "correction": "Korrektur: Ich habe keine Aufgabe delegiert, und es läuft nichts im Hintergrund. Die obige Antwort stammt von mir selbst.",
         "named_correction": "Korrektur: Meine Aussage, dies an {name} übergeben zu haben, war nicht richtig. Ich habe in dieser Runde keine Aufgabe delegiert; die obige Antwort stammt von mir selbst. Wenn {name} mitwirken soll, erwähne den Namen ausdrücklich.",
         "no_tools_correction": "Korrektur: Mir fehlen die Werkzeuge, um diese Datei oder Daten zu erstellen. Meine vorherige Aussage, fertig zu sein, war nicht richtig: Ich habe dieses Ergebnis weder erstellt noch eine Aufgabe delegiert. Bitte nutze einen Experten mit den nötigen Fähigkeiten.",
+        "job_interrupted": "Die Hintergrundarbeit wurde beim Neustart von Arslan unterbrochen, bevor sie fertig war: {goal}. Seitdem ist nichts weiter passiert. Sag mir, wenn ich neu anfangen soll.",
     },
     "fr": {
         "expert_unavailable": "Cet expert n’est plus disponible. Choisis-en un autre dans Capacités.",
@@ -73,6 +78,7 @@ MESSAGES = {
         "correction": "Correction : je n’ai délégué aucune tâche et rien ne s’exécute en arrière-plan. La réponse ci-dessus était la mienne.",
         "named_correction": "Correction : mon affirmation selon laquelle j’avais confié cela à {name} était fausse. Je n’ai délégué aucune tâche pendant ce tour ; la réponse ci-dessus était la mienne. Pour faire intervenir {name}, mentionne explicitement son nom.",
         "no_tools_correction": "Correction : je ne dispose pas des outils nécessaires pour produire ce fichier ou ces données. Mon affirmation précédente d’avoir terminé était fausse : je n’ai produit aucun résultat de ce type ni délégué de tâche. Utilise un expert doté des capacités nécessaires.",
+        "job_interrupted": "Le travail en arrière-plan a été interrompu au redémarrage d’Arslan, avant la fin : {goal}. Rien d’autre n’a été fait. Demandez-moi de le relancer si vous en avez encore besoin.",
     },
 }
 
