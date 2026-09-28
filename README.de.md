@@ -1,6 +1,6 @@
 <div align="center">
 
-<a href="https://mirzatghayrat.github.io/arslan/">
+<a href="https://aralem.dev/arslan/">
   <img src="docs/assets/banner.jpg" alt="Arslan — aus einem werden viele: ein local-first KI-Orchestrator für macOS" width="100%">
 </a>
 
@@ -21,7 +21,7 @@
 
 <br/>
 
-<a href="https://github.com/mirzatghayrat/arslan/releases/latest/download/Arslan-macos-arm64.dmg"><img src="docs/assets/btn/de-download.png" alt="Für macOS laden" height="28"></a>&nbsp;&nbsp;<a href="https://mirzatghayrat.github.io/arslan/"><img src="docs/assets/btn/de-website.png" alt="Website" height="28"></a>&nbsp;&nbsp;<a href="docs/QUICKSTART.md"><img src="docs/assets/btn/de-quickstart.png" alt="Quickstart" height="28"></a>&nbsp;&nbsp;<a href="docs/ARCHITECTURE.md"><img src="docs/assets/btn/de-architecture.png" alt="Architektur" height="28"></a>&nbsp;&nbsp;<a href="SECURITY.md"><img src="docs/assets/btn/de-security.png" alt="Security" height="28"></a>&nbsp;&nbsp;<a href="CONTRIBUTING.md"><img src="docs/assets/btn/de-contributing.png" alt="Mitmachen" height="28"></a>
+<a href="https://github.com/mirzatghayrat/arslan/releases/latest/download/Arslan-macos-arm64.dmg"><img src="docs/assets/btn/de-download.png" alt="Für macOS laden" height="28"></a>&nbsp;&nbsp;<a href="https://aralem.dev/arslan/"><img src="docs/assets/btn/de-website.png" alt="Website" height="28"></a>&nbsp;&nbsp;<a href="docs/QUICKSTART.md"><img src="docs/assets/btn/de-quickstart.png" alt="Quickstart" height="28"></a>&nbsp;&nbsp;<a href="docs/ARCHITECTURE.md"><img src="docs/assets/btn/de-architecture.png" alt="Architektur" height="28"></a>&nbsp;&nbsp;<a href="SECURITY.md"><img src="docs/assets/btn/de-security.png" alt="Security" height="28"></a>&nbsp;&nbsp;<a href="CONTRIBUTING.md"><img src="docs/assets/btn/de-contributing.png" alt="Mitmachen" height="28"></a>
 
 <a href="README.md"><img src="docs/assets/btn/lang-en.png" alt="English" height="22"></a>&nbsp;<a href="README.zh-CN.md"><img src="docs/assets/btn/lang-zh.png" alt="简体中文" height="22"></a>&nbsp;<img src="docs/assets/btn/lang-de-on.png" alt="Deutsch" height="22">&nbsp;<a href="README.ja.md"><img src="docs/assets/btn/lang-ja.png" alt="日本語" height="22"></a>&nbsp;<a href="README.es.md"><img src="docs/assets/btn/lang-es.png" alt="Español" height="22"></a>&nbsp;<a href="README.tr.md"><img src="docs/assets/btn/lang-tr.png" alt="Türkçe" height="22"></a>
 
@@ -37,7 +37,7 @@
 
 <p align="center"><em>Du fragst einmal. Der Host-Agent wählt den passenden Spawn, zerlegt den Job, führt generierten Code in einer Kernel-Sandbox aus und antwortet — alles in einem einzigen Thread.</em></p>
 
-<p align="center"><a href="docs/assets/arslan-clay-60s.mp4"><b>▶ Den 60-Sekunden-Film ansehen</b></a> — derselbe Knetanimations-Film, aus dem die <a href="https://mirzatghayrat.github.io/arslan/">Projektseite</a> geschnitten ist. <br><sub>Die Screens oben sind der ausgelieferte Client, unretuschiert.</sub></p>
+<p align="center"><a href="docs/assets/arslan-clay-60s.mp4"><b>▶ Den 60-Sekunden-Film ansehen</b></a> — derselbe Knetanimations-Film, aus dem die <a href="https://aralem.dev/arslan/">Projektseite</a> geschnitten ist. <br><sub>Die Screens oben sind der ausgelieferte Client, unretuschiert.</sub></p>
 
 **Arslan ist ein local-first Personal-AI-Orchestrator.** Er läuft auf deinem eigenen Rechner, mit deinen eigenen LLM-Keys, mit einer **standardmäßig sicheren Kernel-Sandbox**, **Ehrlichkeits-Guardrails** und einem **sichtbaren Second Brain**, das du durchstöbern und bearbeiten kannst.
 

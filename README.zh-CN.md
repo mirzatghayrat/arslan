@@ -1,6 +1,6 @@
 <div align="center">
 
-<a href="https://mirzatghayrat.github.io/arslan/">
+<a href="https://aralem.dev/arslan/">
   <img src="docs/assets/banner.jpg" alt="Arslan——一生多：本地优先的个人 AI 编排器（macOS）" width="100%">
 </a>
 
@@ -21,7 +21,7 @@
 
 <br/>
 
-<a href="https://github.com/mirzatghayrat/arslan/releases/latest/download/Arslan-macos-arm64.dmg"><img src="docs/assets/btn/zh-download.png" alt="下载 macOS 版" height="28"></a>&nbsp;&nbsp;<a href="https://mirzatghayrat.github.io/arslan/"><img src="docs/assets/btn/zh-website.png" alt="官网" height="28"></a>&nbsp;&nbsp;<a href="docs/QUICKSTART.md"><img src="docs/assets/btn/zh-quickstart.png" alt="快速上手" height="28"></a>&nbsp;&nbsp;<a href="docs/ARCHITECTURE.md"><img src="docs/assets/btn/zh-architecture.png" alt="架构" height="28"></a>&nbsp;&nbsp;<a href="SECURITY.md"><img src="docs/assets/btn/zh-security.png" alt="安全" height="28"></a>&nbsp;&nbsp;<a href="CONTRIBUTING.md"><img src="docs/assets/btn/zh-contributing.png" alt="参与贡献" height="28"></a>
+<a href="https://github.com/mirzatghayrat/arslan/releases/latest/download/Arslan-macos-arm64.dmg"><img src="docs/assets/btn/zh-download.png" alt="下载 macOS 版" height="28"></a>&nbsp;&nbsp;<a href="https://aralem.dev/arslan/"><img src="docs/assets/btn/zh-website.png" alt="官网" height="28"></a>&nbsp;&nbsp;<a href="docs/QUICKSTART.md"><img src="docs/assets/btn/zh-quickstart.png" alt="快速上手" height="28"></a>&nbsp;&nbsp;<a href="docs/ARCHITECTURE.md"><img src="docs/assets/btn/zh-architecture.png" alt="架构" height="28"></a>&nbsp;&nbsp;<a href="SECURITY.md"><img src="docs/assets/btn/zh-security.png" alt="安全" height="28"></a>&nbsp;&nbsp;<a href="CONTRIBUTING.md"><img src="docs/assets/btn/zh-contributing.png" alt="参与贡献" height="28"></a>
 
 <a href="README.md"><img src="docs/assets/btn/lang-en.png" alt="English" height="22"></a>&nbsp;<img src="docs/assets/btn/lang-zh-on.png" alt="简体中文" height="22">&nbsp;<a href="README.de.md"><img src="docs/assets/btn/lang-de.png" alt="Deutsch" height="22"></a>&nbsp;<a href="README.ja.md"><img src="docs/assets/btn/lang-ja.png" alt="日本語" height="22"></a>&nbsp;<a href="README.es.md"><img src="docs/assets/btn/lang-es.png" alt="Español" height="22"></a>&nbsp;<a href="README.tr.md"><img src="docs/assets/btn/lang-tr.png" alt="Türkçe" height="22"></a>
 
@@ -37,7 +37,7 @@
 
 <p align="center"><em>你只问一次。主控 agent 挑选合适的分身、拆分任务、在内核沙箱里运行生成的代码，然后给出答案——全程都在同一个线程里。</em></p>
 
-<p align="center"><a href="docs/assets/arslan-clay-60s.mp4"><b>▶ 观看 60 秒短片</b></a>——与<a href="https://mirzatghayrat.github.io/arslan/">官网</a>同源的黏土动画短片。<br><sub>上面的界面截图来自已发布的客户端，未经修饰。</sub></p>
+<p align="center"><a href="docs/assets/arslan-clay-60s.mp4"><b>▶ 观看 60 秒短片</b></a>——与<a href="https://aralem.dev/arslan/">官网</a>同源的黏土动画短片。<br><sub>上面的界面截图来自已发布的客户端，未经修饰。</sub></p>
 
 **Arslan 是一个本地优先（local-first）的个人 AI 编排器。**它跑在你自己的机器上、用你自己的 LLM 密钥，自带**默认安全的内核沙箱**、**诚实护栏**，以及一个可浏览、可编辑的**可见第二大脑**。
 

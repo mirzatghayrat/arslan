@@ -1,6 +1,6 @@
 <div align="center">
 
-<a href="https://mirzatghayrat.github.io/arslan/">
+<a href="https://aralem.dev/arslan/">
   <img src="docs/assets/banner.jpg" alt="Arslan — birden çok olur: macOS için yerel öncelikli bir yapay zekâ orkestratörü" width="100%">
 </a>
 
@@ -21,7 +21,7 @@
 
 <br/>
 
-<a href="https://github.com/mirzatghayrat/arslan/releases/latest/download/Arslan-macos-arm64.dmg"><img src="docs/assets/btn/tr-download.png" alt="macOS için indir" height="28"></a>&nbsp;&nbsp;<a href="https://mirzatghayrat.github.io/arslan/"><img src="docs/assets/btn/tr-website.png" alt="Web Sitesi" height="28"></a>&nbsp;&nbsp;<a href="docs/QUICKSTART.md"><img src="docs/assets/btn/tr-quickstart.png" alt="Hızlı Başlangıç" height="28"></a>&nbsp;&nbsp;<a href="docs/ARCHITECTURE.md"><img src="docs/assets/btn/tr-architecture.png" alt="Mimari" height="28"></a>&nbsp;&nbsp;<a href="SECURITY.md"><img src="docs/assets/btn/tr-security.png" alt="Güvenlik" height="28"></a>&nbsp;&nbsp;<a href="CONTRIBUTING.md"><img src="docs/assets/btn/tr-contributing.png" alt="Katkıda Bulunma" height="28"></a>
+<a href="https://github.com/mirzatghayrat/arslan/releases/latest/download/Arslan-macos-arm64.dmg"><img src="docs/assets/btn/tr-download.png" alt="macOS için indir" height="28"></a>&nbsp;&nbsp;<a href="https://aralem.dev/arslan/"><img src="docs/assets/btn/tr-website.png" alt="Web Sitesi" height="28"></a>&nbsp;&nbsp;<a href="docs/QUICKSTART.md"><img src="docs/assets/btn/tr-quickstart.png" alt="Hızlı Başlangıç" height="28"></a>&nbsp;&nbsp;<a href="docs/ARCHITECTURE.md"><img src="docs/assets/btn/tr-architecture.png" alt="Mimari" height="28"></a>&nbsp;&nbsp;<a href="SECURITY.md"><img src="docs/assets/btn/tr-security.png" alt="Güvenlik" height="28"></a>&nbsp;&nbsp;<a href="CONTRIBUTING.md"><img src="docs/assets/btn/tr-contributing.png" alt="Katkıda Bulunma" height="28"></a>
 
 <a href="README.md"><img src="docs/assets/btn/lang-en.png" alt="English" height="22"></a>&nbsp;<a href="README.zh-CN.md"><img src="docs/assets/btn/lang-zh.png" alt="简体中文" height="22"></a>&nbsp;<a href="README.de.md"><img src="docs/assets/btn/lang-de.png" alt="Deutsch" height="22"></a>&nbsp;<a href="README.ja.md"><img src="docs/assets/btn/lang-ja.png" alt="日本語" height="22"></a>&nbsp;<a href="README.es.md"><img src="docs/assets/btn/lang-es.png" alt="Español" height="22"></a>&nbsp;<img src="docs/assets/btn/lang-tr-on.png" alt="Türkçe" height="22">
 
@@ -37,7 +37,7 @@
 
 <p align="center"><em>Bir kez sorarsın. Ana ajan (host agent) spawn'ı seçer, işi böler, üretilen kodu bir çekirdek sandbox'ında çalıştırır ve yanıtlar — hepsi tek bir thread'de.</em></p>
 
-<p align="center"><a href="docs/assets/arslan-clay-60s.mp4"><b>▶ 60 saniyelik filmi izleyin</b></a> — <a href="https://mirzatghayrat.github.io/arslan/">proje sitesinin</a> kesildiği kil animasyon filminin ta kendisi. <br><sub>Yukarıdaki ekranlar yayınlanan istemcinin kendisi, rötuşsuz.</sub></p>
+<p align="center"><a href="docs/assets/arslan-clay-60s.mp4"><b>▶ 60 saniyelik filmi izleyin</b></a> — <a href="https://aralem.dev/arslan/">proje sitesinin</a> kesildiği kil animasyon filminin ta kendisi. <br><sub>Yukarıdaki ekranlar yayınlanan istemcinin kendisi, rötuşsuz.</sub></p>
 
 **Arslan, yerel öncelikli (local-first) kişisel bir yapay zeka orkestratörüdür.** Kendi makinende, kendi LLM anahtarlarınla çalışır; **varsayılan olarak güvenli bir çekirdek sandbox'ı**, **dürüstlük korkulukları** ve göz atıp düzenleyebileceğin **görünür bir ikinci beyin** ile birlikte gelir.
 

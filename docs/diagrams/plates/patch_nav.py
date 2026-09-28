@@ -14,7 +14,7 @@ import sys
 
 NAV_LINKS = [
     ("download", "https://github.com/mirzatghayrat/arslan/releases/latest/download/Arslan-macos-arm64.dmg"),
-    ("website", "https://mirzatghayrat.github.io/arslan/"),
+    ("website", "https://aralem.dev/arslan/"),
     ("quickstart", "docs/QUICKSTART.md"),
     ("architecture", "docs/ARCHITECTURE.md"),
     ("security", "SECURITY.md"),

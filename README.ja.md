@@ -1,6 +1,6 @@
 <div align="center">
 
-<a href="https://mirzatghayrat.github.io/arslan/">
+<a href="https://aralem.dev/arslan/">
   <img src="docs/assets/banner.jpg" alt="Arslan — 一つが多になる：macOS 向けのローカルファースト AI オーケストレーター" width="100%">
 </a>
 
@@ -21,7 +21,7 @@
 
 <br/>
 
-<a href="https://github.com/mirzatghayrat/arslan/releases/latest/download/Arslan-macos-arm64.dmg"><img src="docs/assets/btn/ja-download.png" alt="macOS 版をダウンロード" height="28"></a>&nbsp;&nbsp;<a href="https://mirzatghayrat.github.io/arslan/"><img src="docs/assets/btn/ja-website.png" alt="ウェブサイト" height="28"></a>&nbsp;&nbsp;<a href="docs/QUICKSTART.md"><img src="docs/assets/btn/ja-quickstart.png" alt="クイックスタート" height="28"></a>&nbsp;&nbsp;<a href="docs/ARCHITECTURE.md"><img src="docs/assets/btn/ja-architecture.png" alt="アーキテクチャ" height="28"></a>&nbsp;&nbsp;<a href="SECURITY.md"><img src="docs/assets/btn/ja-security.png" alt="セキュリティ" height="28"></a>&nbsp;&nbsp;<a href="CONTRIBUTING.md"><img src="docs/assets/btn/ja-contributing.png" alt="貢献" height="28"></a>
+<a href="https://github.com/mirzatghayrat/arslan/releases/latest/download/Arslan-macos-arm64.dmg"><img src="docs/assets/btn/ja-download.png" alt="macOS 版をダウンロード" height="28"></a>&nbsp;&nbsp;<a href="https://aralem.dev/arslan/"><img src="docs/assets/btn/ja-website.png" alt="ウェブサイト" height="28"></a>&nbsp;&nbsp;<a href="docs/QUICKSTART.md"><img src="docs/assets/btn/ja-quickstart.png" alt="クイックスタート" height="28"></a>&nbsp;&nbsp;<a href="docs/ARCHITECTURE.md"><img src="docs/assets/btn/ja-architecture.png" alt="アーキテクチャ" height="28"></a>&nbsp;&nbsp;<a href="SECURITY.md"><img src="docs/assets/btn/ja-security.png" alt="セキュリティ" height="28"></a>&nbsp;&nbsp;<a href="CONTRIBUTING.md"><img src="docs/assets/btn/ja-contributing.png" alt="貢献" height="28"></a>
 
 <a href="README.md"><img src="docs/assets/btn/lang-en.png" alt="English" height="22"></a>&nbsp;<a href="README.zh-CN.md"><img src="docs/assets/btn/lang-zh.png" alt="简体中文" height="22"></a>&nbsp;<a href="README.de.md"><img src="docs/assets/btn/lang-de.png" alt="Deutsch" height="22"></a>&nbsp;<img src="docs/assets/btn/lang-ja-on.png" alt="日本語" height="22">&nbsp;<a href="README.es.md"><img src="docs/assets/btn/lang-es.png" alt="Español" height="22"></a>&nbsp;<a href="README.tr.md"><img src="docs/assets/btn/lang-tr.png" alt="Türkçe" height="22"></a>
 
@@ -37,7 +37,7 @@
 
 <p align="center"><em>尋ねるのは一度だけ。ホストエージェントがスポーンを選び、ジョブを分割し、生成されたコードをカーネルサンドボックスで実行して回答します — すべてが、ひとつのスレッドの中で完結します。</em></p>
 
-<p align="center"><a href="docs/assets/arslan-clay-60s.mp4"><b>▶ 60 秒の映像を見る</b></a> — <a href="https://mirzatghayrat.github.io/arslan/">プロジェクトサイト</a>と同じクレイアニメーションの映像です。<br><sub>上の画面は出荷版クライアントそのもので、加工していません。</sub></p>
+<p align="center"><a href="docs/assets/arslan-clay-60s.mp4"><b>▶ 60 秒の映像を見る</b></a> — <a href="https://aralem.dev/arslan/">プロジェクトサイト</a>と同じクレイアニメーションの映像です。<br><sub>上の画面は出荷版クライアントそのもので、加工していません。</sub></p>
 
 **Arslan は、ローカルファーストのパーソナル AI オーケストレーターです。** あなた自身のマシン上で、あなた自身の LLM キーを使って動作し、**セーフ・バイ・デフォルトのカーネルサンドボックス**、**正直さを守るガードレール**、そして自由に閲覧・編集できる**可視化されたセカンドブレイン**を備えています。
 
