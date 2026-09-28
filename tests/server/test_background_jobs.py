@@ -444,3 +444,17 @@ def test_migration_0055_adds_the_outcome_column_once(tmp_path):
         upgrade_sync(connection)   # idempotent
         rows = connection.execute(sa.text("SELECT content, job_outcome FROM arslan_messages")).all()
     assert rows == [("kept", None)]
+
+
+async def test_a_reconnecting_tab_never_replays_a_job_run_as_the_chat_turn(execution_db, active, monkeypatch):
+    """Found in the UI: after a reload during a job, the job's journal was replayed
+    (run_in_progress, stream_start…) and the chat showed itself busy, with a stop
+    button aimed at the job's run."""
+    gate = asyncio.Event()
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: JobAdapter(gate))
+    job = await background_jobs.start(CID, "long work", _criteria())
+    await _wait(lambda: job.phase == "running" and run_registry.active_for(CID))
+    assert run_registry.journal_snapshots(CID) == []
+    assert background_jobs.stop(CID, job.job_id)                  # still cancellable
+    await _wait(lambda: job.phase == "finished")
+    assert run_registry._no_replay == set()                        # forgotten with the run

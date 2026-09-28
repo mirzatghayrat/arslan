@@ -29,12 +29,19 @@ _tasks: dict[int, asyncio.Task] = {}
 _by_conversation: dict[str, set[int]] = {}
 _sinks: dict[str, set[Callable[[dict], None]]] = {}  # conversation -> live emit sinks
 _recorders: dict[int, Any] = {}  # run_id -> RunRecorder (journal access for reattach)
+# 0.1.42: runs that are not the conversation's own turn (background jobs). They
+# stay cancellable and recorded, but a reconnecting tab must not replay them as
+# if the chat itself were busy — the job's card is its only face.
+_no_replay: set[int] = set()
 
 
 def register(
-    run_id: int, conversation_id: str, task: asyncio.Task, *, recorder: Any | None = None
+    run_id: int, conversation_id: str, task: asyncio.Task, *, recorder: Any | None = None,
+    replay: bool = True,
 ) -> None:
     _tasks[run_id] = task
+    if not replay:
+        _no_replay.add(run_id)
     _by_conversation.setdefault(conversation_id, set()).add(run_id)
     if recorder is not None:
         _recorders[run_id] = recorder
@@ -43,6 +50,7 @@ def register(
 def unregister(run_id: int, conversation_id: str) -> None:
     _tasks.pop(run_id, None)
     _recorders.pop(run_id, None)
+    _no_replay.discard(run_id)
     runs = _by_conversation.get(conversation_id)
     if runs is not None:
         runs.discard(run_id)
@@ -111,7 +119,7 @@ def journal_snapshots(conversation_id: str) -> list[tuple[int, list[dict]]]:
     out: list[tuple[int, list[dict]]] = []
     for run_id in active_for(conversation_id):
         recorder = _recorders.get(run_id)
-        if recorder is None:
+        if recorder is None or run_id in _no_replay:
             continue
         # Skip finalized runs: a finalized run's output is already in history
         # (its summary message persisted). During an auto-continue chain the

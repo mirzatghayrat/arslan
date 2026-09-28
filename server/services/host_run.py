@@ -80,7 +80,8 @@ async def execute(conversation_id: str, user_message: str, emit: Callable[[dict]
                 raise
 
     task = asyncio.create_task(run())
-    run_registry.register(recorder.run_id, conversation_id, task, recorder=recorder)
+    # A background job (announce=False) is not the chat's turn: never replayed on reconnect.
+    run_registry.register(recorder.run_id, conversation_id, task, recorder=recorder, replay=announce)
     try:
         return await task
     except asyncio.CancelledError:
