@@ -26,6 +26,10 @@ useDefault = true
 [allowlist]
 description = "Verified exact fixture values and one plain-prose false positive"
 regexes = [
+  # 0.1.42 test fixture: `job_id="job-api", conversation_id="main"` in
+  # tests/server/test_background_jobs.py. The generic rule reads "api" as a key
+  # name and the next argument name as its value; verified at d90cdc80.
+  '''^conversation_id=$''',
   # W17 audit prose: "wrong/missing keys, missing/corrupt salts". Verified
   # at d2550f0:1363 and reproduced from that sentence alone via stdin.
   '''^missing/corrupt$''',

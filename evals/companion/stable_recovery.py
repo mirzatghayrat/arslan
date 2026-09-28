@@ -175,7 +175,9 @@ async def run_phase(phase, profile, evidence, adapter):
     assert final["budget"]["used"]["model_requests"] > before["budget"]["used"]["model_requests"]
     # 0.1.42: a conversational turn completes on a delivered answer (deterministic
     # "answer-delivered"), not on a human review that never comes.
-    assert final["attempts"] == 2 and final["phase"] == "succeeded"
+    assert final["attempts"] == 2 and final["phase"] == "succeeded", json.dumps(
+        {key: final.get(key) for key in ("attempts", "phase", "pause_reason", "results", "validation")},
+        default=str)[:4000]
     assert final["pause_reason"] is None
     assert sum(a["tool"] == "write_file" and a["status"] == "succeeded" for a in final["actions"]) == 1
     assert not any(t["tool"] == "write_file" for t in trace)
