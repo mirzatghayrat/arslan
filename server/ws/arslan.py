@@ -465,10 +465,12 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             except Exception:  # noqa: BLE001 — client gone mid-replay; receive loop sees it
                 break
 
-        # 0.1.42: background jobs outlive sockets — show this tab their current
-        # cards and any confirmation still waiting for an answer.
+        # 0.1.42: background jobs outlive sockets — show this tab the cards of
+        # jobs still running and any confirmation still waiting for an answer.
+        # A finished job is already in the history as its labelled result.
         for job in background_jobs.jobs_for(conversation_id):
-            await ws.send_json(job.frame())
+            if job.phase != "finished":
+                await ws.send_json(job.frame())
         for card in approvals.pending_cards(conversation_id):
             await ws.send_json(card)
 

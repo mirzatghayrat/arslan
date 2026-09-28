@@ -57,10 +57,31 @@ describe("store", () => {
     expect(useArslanStore.getState().jobNotice).toMatchObject({ kind: "finished", outcome: "done", seq: 2 });
   });
 
-  it("a foreground card raises no job notice", () => {
-    useArslanStore.getState().handleFrame({ type: "propose_schedule", call_id: "k", name: "n", when: "w" });
+  it("drops a successful job-tool step from the trail but keeps a failed one", () => {
+    const h = useArslanStore.getState().handleFrame;
+    h({ type: "tool_call", tool: "start_background_work", args_summary: "" });
+    h({ type: "tool_result", tool: "start_background_work", ok: true, summary: "ok" });
+    expect(useArslanStore.getState().activitySteps).toEqual([]);
+    h({ type: "tool_call", tool: "start_background_work", args_summary: "" });
+    h({ type: "tool_result", tool: "start_background_work", ok: false, summary: "queue full" });
+    expect(useArslanStore.getState().activitySteps).toMatchObject([{ tool: "start_background_work", status: "error" }]);
+    h({ type: "tool_call", tool: "read_file", args_summary: "" });
+    h({ type: "tool_result", tool: "read_file", ok: true, summary: "ok" });
+    expect(useArslanStore.getState().activitySteps.map(s => s.tool)).toEqual(["start_background_work", "read_file"]);
+  });
+
+  it.each([
+    ["propose_schedule", { name: "n", when: "w" }, "pendingSchedule"],
+    ["propose_run_command", { pretty: "ls" }, "pendingCommand"],
+    ["propose_workspace_write", { workspace: "/w", action: "write", path: "a" }, "pendingWorkspaceWrite"],
+  ] as const)("%s: only a background card raises a job notice", (type, fields, slot) => {
+    const h = useArslanStore.getState().handleFrame;
+    h({ type, call_id: "fg", ...fields } as never);
     expect(useArslanStore.getState().jobNotice).toBeNull();
-    expect(useArslanStore.getState().pendingSchedule?.background).toBe(false);
+    expect((useArslanStore.getState()[slot] as { background?: boolean }).background).toBe(false);
+    h({ type, call_id: "bg", background: true, ...fields } as never);
+    expect(useArslanStore.getState().jobNotice).toMatchObject({ kind: "needs_approval" });
+    expect((useArslanStore.getState()[slot] as { background?: boolean }).background).toBe(true);
   });
 });
 
@@ -153,6 +174,15 @@ describe("spoken notices", () => {
     expect(speak).toHaveBeenCalledTimes(2);
     expect(speak.mock.calls[1][0]).toBe("jobs.spokenApproval");
     expect(useArslanStore.getState().pendingSchedule).not.toBeNull();   // still waiting on a click
+  });
+
+  it("says each notice once, even when the conversation toggle changes afterwards", async () => {
+    const speak = await chat("conversation");
+    fireEvent.click(screen.getByTestId("conversation-toggle"));
+    act(() => useArslanStore.getState().handleFrame({ type: "job_spoken", job_id: "j", outcome: "done", goal: "Tidy" }));
+    fireEvent.click(screen.getByTestId("conversation-toggle"));   // off
+    fireEvent.click(screen.getByTestId("conversation-toggle"));   // on again
+    expect(speak).toHaveBeenCalledTimes(1);
   });
 
   it("stays silent when voice conversation is off", async () => {

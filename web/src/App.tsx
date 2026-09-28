@@ -945,6 +945,15 @@ export default function App() {
                       ? threadDisplayTitle(activeThread, t)
                       : (activeSpawn?.name || t('ui.directChat'))}
                   </span>
+                  {/* 0.1.42: one header row — title · project (opens project and
+                      memory settings) · a status chip only for work that needs a look. */}
+                  {activeSection === 'arslan' && <div data-testid="conversation-context-bar" className="flex min-w-0 items-center gap-3 pl-2">
+                    <ConversationControls compact key={`context:${activeThreadId}`} conversationId={activeThreadId} running={arslanRunning} empty={orchestratorChatHistory.length === 0}
+                      onChanged={context => setThreads(prev => prev.map(thread => thread.id === context.conversation_id && thread.temporary !== context.temporary
+                        ? { ...thread, temporary: context.temporary, ...(context.temporary ? { title: t('companion.temporary') } : {}) } : thread))} />
+                    {!activeThread?.temporary && <TaskPanel compact key={`task:${activeThreadId}`} conversationId={activeThreadId}
+                      onResume={task => { useArslanStore.getState().clearError(); wsSend({ type: 'resume_task', task_id: task.spec.id, expected_version: task.version }); }} />}
+                  </div>}
                 </>
               ) : (
                 /* 🔴 The bar itself must stay on EVERY section — it carries
@@ -1198,13 +1207,6 @@ export default function App() {
 
             {activeSection === 'arslan' && (
               <div className="flex h-full min-h-0 flex-col">
-              <div data-testid="conversation-context-bar" className="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-2 border-b border-border/50 px-4 py-2 lg:px-6">
-              <ConversationControls compact key={`context:${activeThreadId}`} conversationId={activeThreadId} running={arslanRunning} empty={orchestratorChatHistory.length === 0}
-                onChanged={context => setThreads(prev => prev.map(thread => thread.id === context.conversation_id && thread.temporary !== context.temporary
-                  ? { ...thread, temporary: context.temporary, ...(context.temporary ? { title: t('companion.temporary') } : {}) } : thread))} />
-              {!activeThread?.temporary && <TaskPanel compact key={`task:${activeThreadId}`} conversationId={activeThreadId}
-                onResume={task => { useArslanStore.getState().clearError(); wsSend({ type: 'resume_task', task_id: task.spec.id, expected_version: task.version }); }} />}
-              </div>
               <OrchestratorChat
                 key={`chat:${activeThreadId}:${activeThread?.temporary === true}`}
                 chatHistory={orchestratorChatHistory}

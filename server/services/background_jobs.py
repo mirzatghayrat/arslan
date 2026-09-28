@@ -113,12 +113,24 @@ async def start(conversation_id: str, goal: str, criteria: list[dict]) -> Job:
         raise ValueError("background_goal_required")
     job = Job(job_id=f"job-{uuid.uuid4()}", conversation_id=conversation_id, goal=goal,
               acceptance=criteria_to_acceptance(criteria))
+    _forget_old_finished()
     _jobs[job.job_id] = job
     # A clean context: the job must not inherit the starting turn's task,
     # budget, memory lease or save authority.
     job.task = asyncio.get_running_loop().create_task(_run(job), context=contextvars.Context())
     _emit(job)
     return job
+
+
+KEEP_FINISHED = 50
+
+
+def _forget_old_finished() -> None:
+    """Finished jobs stay answerable by `background_status` for a while; the
+    record of what they did is their task row and result message, not this map."""
+    finished = [job_id for job_id, job in _jobs.items() if job.phase == "finished"]
+    for job_id in finished[:max(0, len(finished) - KEEP_FINISHED + 1)]:
+        del _jobs[job_id]
 
 
 def stop(conversation_id: str, job_id: str) -> bool:

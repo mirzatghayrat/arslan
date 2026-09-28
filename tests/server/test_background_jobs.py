@@ -367,3 +367,33 @@ def test_the_jobs_endpoint_lists_running_work_and_stops_it_by_id(app_client):  #
     assert job.task.cancelled() or job.task.done()
     job.phase = "finished"
     assert app_client.post("/api/v1/background-jobs/job-api/stop").status_code == 409
+
+
+def test_a_reconnecting_tab_gets_running_job_cards_but_not_finished_ones(app_client):  # noqa: F811
+    for job_id, phase in (("job-live", "running"), ("job-done", "finished")):
+        job = background_jobs.Job(job_id=job_id, conversation_id="main", goal=job_id, acceptance=[])
+        job.phase = phase
+        background_jobs._jobs[job_id] = job
+    frame = {"type": "propose_schedule", "call_id": "marker", "name": "n", "when": "w"}
+    waiting = app_client.portal.start_task_soon(approvals.ask, "main", frame)
+    with app_client.websocket_connect("/ws/arslan/main") as ws:
+        seen = []
+        while not seen or seen[-1].get("call_id") != "marker":
+            seen.append(ws.receive_json())
+        jobs = [f["job_id"] for f in seen if f.get("type") == "job_update"]
+        assert jobs == ["job-live"], "a finished job is in the history as its result; its card is not re-sent"
+        ws.send_json({"type": "cancel_schedule", "call_id": "marker"})
+    assert waiting.result(timeout=5) is False
+
+
+def test_old_finished_jobs_are_forgotten_but_running_ones_never(monkeypatch):
+    monkeypatch.setattr(background_jobs, "KEEP_FINISHED", 2)
+    for i in range(4):
+        job = background_jobs.Job(job_id=f"done-{i}", conversation_id=CID, goal="g", acceptance=[])
+        job.phase = "finished"
+        background_jobs._jobs[job.job_id] = job
+    live = background_jobs.Job(job_id="live", conversation_id=CID, goal="g", acceptance=[])
+    live.phase = "running"
+    background_jobs._jobs["live"] = live
+    background_jobs._forget_old_finished()
+    assert set(background_jobs._jobs) == {"done-3", "live"}   # room left for the job about to start

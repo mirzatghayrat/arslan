@@ -187,6 +187,8 @@ function _approvalNotice(state: { jobs: Record<string, JobCard>; jobNotice: { se
                         kind: "needs_approval" as const, outcome: null, goal: running.length === 1 ? running[0].goal : "" } };
 }
 
+const JOB_TOOLS = new Set(["start_background_work", "background_status", "stop_background_work"]);
+
 function initialData() {
   return {
     items: [] as ArslanThreadItem[],
@@ -664,7 +666,11 @@ function makeActions(set: SetState, get: GetState) {
               break;
             }
           }
-          set({ activitySteps: steps, thinking: true });
+          // 0.1.42: a successful start/status/stop of background work is shown by
+          // the job card itself; only a failure stays in the tool trail.
+          const shown = JOB_TOOLS.has(frame.tool)
+            ? steps.filter((step) => !(step.tool === frame.tool && step.status === "ok")) : steps;
+          set({ activitySteps: shown, thinking: true });
           break;
         }
         case "suggest_create":

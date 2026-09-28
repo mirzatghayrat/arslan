@@ -7,6 +7,8 @@ export interface TaskFrame {
   sequence: number; phase: TaskPhase; version: number; pause_reason: string | null;
 }
 export interface TaskSummary {
+  /** Who drives the task: host (a chat turn), expert, recipe, or background (0.1.42 job). */
+  driver?: string;
   version: number; conversation_id: string; pause_reason: string | null; cancel_requested: boolean;
   spec: { id: string; revision: number; instruction: string; locale: string;
     acceptance: { id: string; description: string; evaluator: "human" | "model" | "deterministic" }[] };

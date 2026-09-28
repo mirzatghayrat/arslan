@@ -52,6 +52,26 @@ class _SmokeAdapter:
                             {"method": "research", "objective": "核对合成资料的事实", "context": "合成资料：两份说明均已提供。"},
                             {"method": "product-design", "objective": "核对合成界面的可读性", "context": "合成设计说明：正文与按钮需清晰。"},
                         ]}}}])
+        if os.environ.get("ARSLAN_SMOKE_BACKGROUND") == "1" and self._role != "router":
+            # 0.1.42 UI harness: "UI_BG_JOB" starts a background job; the job
+            # itself takes ARSLAN_SMOKE_JOB_SECONDS so its live card can be seen.
+            if "work in the BACKGROUND" in system:
+                import asyncio
+                await asyncio.sleep(float(os.environ.get("ARSLAN_SMOKE_JOB_SECONDS", "8")))
+                return LLMResponse(content="整理完成：已把合成笔记归成三节（结论、依据、待办）。UI_BG_DONE",
+                                   tool_calls=[], usage={})
+            started = any("start_background_work" in str(turn) for turn in history or [])
+            if ("UI_BG_JOB" in str(user) and not started and tools and
+                    any(item.get("function", {}).get("name") == "start_background_work" for item in tools)):
+                return LLMResponse(content="", usage={}, tool_calls=[{
+                    "id": "synthetic-background", "type": "function", "function": {
+                        "name": "start_background_work", "arguments": {
+                            "goal": "把合成笔记整理成一份三节报告",
+                            "criteria": [{"kind": "mentions", "target": "UI_BG_DONE",
+                                          "description": "报告写明已完成"}]}}}])
+            if started:
+                return LLMResponse(content="好，我在后台整理，完成标准在卡片上。你可以接着聊别的。",
+                                   tool_calls=[], usage={})
         content = ROUTER_JSON if self._role == "router" else SMOKE_REPLY
         return LLMResponse(content=content, tool_calls=[], usage={})
 

@@ -41,6 +41,14 @@ describe("task controls", () => {
     render(<TaskPanel compact conversationId="conversation" onResume={vi.fn()} />);
     expect(await screen.findByRole("button", { name: /tasks.taskStatus/ })).toHaveTextContent("tasks.waiting_user");
   });
+  it("leaves a background job to its own card, even while it runs", async () => {
+    const job: TaskDetail = { ...task, driver: "background", pause_reason: null, state: { ...task.state, phase: "running" } };
+    vi.mocked(tasksApi.list).mockResolvedValue([job]);
+    render(<TaskPanel compact conversationId="conversation" onResume={vi.fn()} />);
+    await waitFor(() => expect(tasksApi.list).toHaveBeenCalled());
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 150)); });
+    expect(screen.queryByRole("button", { name: /tasks.taskStatus/ })).toBeNull();
+  });
   it.each([
     ["task_memory_changed", "tasks.memoryChanged"],
     ["task_memory_check_failed", "tasks.memoryCheckFailed"],

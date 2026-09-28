@@ -44,8 +44,11 @@ export default function TaskPanel({ conversationId, onResume, compact = false }:
   useEffect(() => {
     let alive = true;
     const timer = setTimeout(() => {
-      tasksApi.list(conversationId).then(next => {
+      tasksApi.list(conversationId).then(all => {
         if (!alive) return;
+        // 0.1.42: a background job has its own live card and stop button; its
+        // task frames never reach the chat, so a chip here would go stale.
+        const next = all.filter(row => row.driver !== "background");
         setRows(old => {
           const merged = next.map(row => {
             const cached = old.find(item => item.spec.id === row.spec.id);
@@ -53,7 +56,7 @@ export default function TaskPanel({ conversationId, onResume, compact = false }:
           });
           return open ? [...merged, ...old.filter(row => !next.some(item => item.spec.id === row.spec.id))] : merged;
         });
-        setMore(next.length === 20);
+        setMore(all.length === 20);
         setSelected(value => value ?? next[0]?.spec.id ?? null);
       }).catch(() => { if (alive) setError("brain.read_failed"); });
     }, 100);
@@ -106,8 +109,9 @@ export default function TaskPanel({ conversationId, onResume, compact = false }:
   async function loadMore() {
     setBusy(true); setError(null);
     try {
-      const next = await tasksApi.list(conversationId, rows.length);
-      if (mounted.current) { setRows(old => [...old, ...next.filter(row => !old.some(item => item.spec.id === row.spec.id))]); setMore(next.length === 20); }
+      const all = await tasksApi.list(conversationId, rows.length);
+      const next = all.filter(row => row.driver !== "background");
+      if (mounted.current) { setRows(old => [...old, ...next.filter(row => !old.some(item => item.spec.id === row.spec.id))]); setMore(all.length === 20); }
     } catch { if (mounted.current) setError("brain.read_failed"); }
     finally { if (mounted.current) setBusy(false); }
   }
