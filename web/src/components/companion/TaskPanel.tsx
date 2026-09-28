@@ -14,6 +14,19 @@ export function taskReason(reason: string | null) {
   return taskErrorKey(reason ?? "") ?? "tasks.reviewIntro";
 }
 
+// 0.1.42: what the conversation header tracks.
+// - A background job has its own live card and stop button; its task frames
+//   never reach the chat, so a chip here would go stale.
+// - Before 0.1.42 every chat answer was recorded as a task waiting for a human
+//   review that nobody was asked for. Those rows are left untouched (accepting
+//   them now would write a review that never happened); they are just not work.
+export function shownInHeader(row: TaskSummary): boolean {
+  if (row.driver === "background") return false;
+  const checks = row.spec.acceptance;
+  const legacyChatTurn = (row.driver ?? "host") === "host" && checks.length === 1 && checks[0].id === "user-review";
+  return !legacyChatTurn;
+}
+
 export default function TaskPanel({ conversationId, onResume, compact = false }: {
   conversationId: string; onResume: (task: TaskSummary) => void; compact?: boolean;
 }) {
@@ -44,8 +57,9 @@ export default function TaskPanel({ conversationId, onResume, compact = false }:
   useEffect(() => {
     let alive = true;
     const timer = setTimeout(() => {
-      tasksApi.list(conversationId).then(next => {
+      tasksApi.list(conversationId).then(all => {
         if (!alive) return;
+        const next = all.filter(shownInHeader);
         setRows(old => {
           const merged = next.map(row => {
             const cached = old.find(item => item.spec.id === row.spec.id);
@@ -53,7 +67,7 @@ export default function TaskPanel({ conversationId, onResume, compact = false }:
           });
           return open ? [...merged, ...old.filter(row => !next.some(item => item.spec.id === row.spec.id))] : merged;
         });
-        setMore(next.length === 20);
+        setMore(all.length === 20);
         setSelected(value => value ?? next[0]?.spec.id ?? null);
       }).catch(() => { if (alive) setError("brain.read_failed"); });
     }, 100);
@@ -106,8 +120,9 @@ export default function TaskPanel({ conversationId, onResume, compact = false }:
   async function loadMore() {
     setBusy(true); setError(null);
     try {
-      const next = await tasksApi.list(conversationId, rows.length);
-      if (mounted.current) { setRows(old => [...old, ...next.filter(row => !old.some(item => item.spec.id === row.spec.id))]); setMore(next.length === 20); }
+      const all = await tasksApi.list(conversationId, rows.length);
+      const next = all.filter(shownInHeader);
+      if (mounted.current) { setRows(old => [...old, ...next.filter(row => !old.some(item => item.spec.id === row.spec.id))]); setMore(all.length === 20); }
     } catch { if (mounted.current) setError("brain.read_failed"); }
     finally { if (mounted.current) setBusy(false); }
   }
@@ -121,6 +136,9 @@ export default function TaskPanel({ conversationId, onResume, compact = false }:
     }, 8000);
   }
   if (!latest && !relevantFrame) return null;
+  // 0.1.42: in the chat's header row the chip is for work that needs a look.
+  // An answered question ends "succeeded"; showing that on every chat was noise.
+  if (compact && !open && (phase === "succeeded" || phase === "cancelled")) return null;
   return <div className={compact ? "flex min-w-0 items-center gap-3 text-xs" : "flex shrink-0 items-center justify-between gap-3 border-b border-border/50 px-5 py-2 text-xs"}>
     <button className="inline-flex min-w-0 items-center gap-2 text-muted-foreground hover:text-foreground"
       onClick={() => { setSelected(latest?.spec.id ?? relevantFrame?.task_id ?? null); setError(null); setOpen(true); }}>

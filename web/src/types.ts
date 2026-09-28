@@ -59,6 +59,11 @@ export interface Message {
   /** Attachments sent with this user message (session-only display echo; see MessageAttachment). */
   attachments?: MessageAttachment[];
   spawnId?: string;
+  /** 0.1.42: this entry is the live card of a background job (render the card, not a bubble). */
+  jobId?: string;
+  /** 0.1.42: this Arslan message is the result of that background job. */
+  resultOfJob?: string;
+  jobOutcome?: 'done' | 'partial' | 'blocked' | 'stopped' | 'interrupted' | null;
   /** True when this spawn deliverable is a pending proposal needing direction confirmation. */
   isProposal?: boolean;
   /** Set after verdict_recorded ack: 'accept' | 'discard' | 'redo' */

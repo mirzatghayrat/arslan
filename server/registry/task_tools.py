@@ -31,3 +31,53 @@ class DelegateWorkExecutor:
             return {"ok": False, "error_code": "invalid_worker_arguments"}
         except TaskError as exc:
             return {"ok": False, "error_code": exc.code}
+
+
+def _conversation_id() -> str | None:
+    from server.services import personal_context
+    ctx = personal_context.current()
+    return ctx.conversation_id if ctx is not None else None
+
+
+class StartBackgroundWorkExecutor:
+    """0.1.42: hand a piece of work to a background job; the turn ends at once."""
+    key = "start_background_work"
+
+    async def execute(self, args: dict) -> dict:
+        from server.services import background_jobs
+        conversation_id = _conversation_id()
+        if conversation_id is None or background_jobs.inside_job():
+            return {"ok": False, "error_code": "background_unavailable"}
+        goal, criteria = (args or {}).get("goal"), (args or {}).get("criteria") or []
+        if not isinstance(goal, str) or not goal.strip() or not isinstance(criteria, list):
+            return {"ok": False, "error_code": "invalid_background_arguments"}
+        waiting = background_jobs.active_count() >= background_jobs.MAX_CONCURRENT
+        job = await background_jobs.start(conversation_id, goal,
+                                          [c for c in criteria if isinstance(c, dict)])
+        return {"ok": True, "external": False, "job_id": job.job_id, "queued": waiting,
+                "criteria": [c["description"] for c in job.acceptance if c["id"] != "answer-delivered"],
+                "note": "The job runs after this turn. Reply in one sentence; do not do the work here."}
+
+
+class BackgroundStatusExecutor:
+    key = "background_status"
+
+    async def execute(self, args: dict) -> dict:
+        from server.services import background_jobs
+        conversation_id = _conversation_id()
+        if conversation_id is None:
+            return {"ok": False, "error_code": "background_unavailable"}
+        return {"ok": True, "external": False, "jobs": [
+            {k: v for k, v in job.frame().items() if k not in {"type", "conversation_id"}}
+            for job in background_jobs.jobs_for(conversation_id)]}
+
+
+class StopBackgroundWorkExecutor:
+    key = "stop_background_work"
+
+    async def execute(self, args: dict) -> dict:
+        from server.services import background_jobs
+        conversation_id, job_id = _conversation_id(), (args or {}).get("job_id")
+        if conversation_id is None or not isinstance(job_id, str):
+            return {"ok": False, "error_code": "invalid_background_arguments"}
+        return {"ok": background_jobs.stop(conversation_id, job_id), "external": False}

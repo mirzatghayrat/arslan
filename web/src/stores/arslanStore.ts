@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { runtimeErrorTranslations, type RuntimeErrorTranslations } from "../lib/runtimeErrorText";
 import { createSpeaker } from "../lib/speech";
-import type { ArslanServerMessage, ArslanThreadItem, SuggestDraft, ToolStep, OverlapInfo, RosterMember, StaffingCandidate, SpawnUpdateChanges, SpawnUpdateCurrent } from "../api/client.types";
+import type { ArslanServerMessage, ArslanThreadItem, JobCard, JobOutcome, SuggestDraft, ToolStep, OverlapInfo, RosterMember, StaffingCandidate, SpawnUpdateChanges, SpawnUpdateCurrent } from "../api/client.types";
 import type { MessageAttachment } from "../types";
 
 interface ArslanState {
@@ -37,12 +37,18 @@ interface ArslanState {
   pendingInvite: { spawnId: number; reason: string } | null;
   // Pending shell command: set when a `propose_run_command` frame arrives; cleared
   // once the user confirms (sends confirm_run_command) or cancels.
-  pendingCommand: { callId: string; pretty: string; reason: string; remoteHost: string; fingerprints: string[] } | null;
+  pendingCommand: { callId: string; pretty: string; reason: string; remoteHost: string; fingerprints: string[]; background?: boolean } | null;
+  // 0.1.42 background jobs in this conversation, keyed by job id. Each has a
+  // `kind: "job"` item in `items` marking where its live card sits.
+  jobs: Record<string, JobCard>;
+  // The latest job that finished or began waiting on a card — the chat view turns
+  // it into one spoken line while voice conversation is on. `seq` makes repeats distinct.
+  jobNotice: { seq: number; jobId: string; kind: "finished" | "needs_approval"; outcome: JobOutcome | null; goal: string } | null;
   // P3c: Arslan asks to enrol a machine. The card WRITES NOTHING over the socket —
   // its button calls the REST endpoint, which is what makes enrolment a human act.
   pendingEnrollNode: { callId: string; name: string; host: string; user: string; fingerprints: string[] } | null;
-  pendingWorkspaceWrite: { callId: string; workspace: string; action: string; path: string } | null;
-  pendingSchedule: { callId: string; name: string; when: string } | null;
+  pendingWorkspaceWrite: { callId: string; workspace: string; action: string; path: string; background?: boolean } | null;
+  pendingSchedule: { callId: string; name: string; when: string; background?: boolean } | null;
   // NEXT BUILD (conversation-driven MCP, Task 5): set when a `propose_connect_mcp`
   // frame arrives. env_keys carries credential NAMES + metadata only — the card
   // collects VALUES locally and sends them only over REST (addMcpServer). Cleared
@@ -108,6 +114,9 @@ interface ArslanState {
   clearPendingInvite: () => void;
   clearPendingCommand: () => void;
   setVoice: (v: { enabled: boolean; lang: string }) => void;
+  /** Say one line aloud (a background job finished, or is waiting on a card).
+   *  Never interrupts a reply being read; the line is dropped instead. */
+  speakLine: (text: string, lang: string) => void;
   clearPendingEnrollNode: () => void;
   clearPendingWorkspaceWrite: () => void;
   clearPendingSchedule: () => void;
@@ -170,6 +179,16 @@ function _voiceEnd() { _speaker?.end(); }
 function _voiceStop() { _speaker?.cancel(); _speaker = null; }
 
 
+// A background job's card is waiting: which job is not in the frame, so the
+// notice names the running one when there is exactly one.
+function _approvalNotice(state: { jobs: Record<string, JobCard>; jobNotice: { seq: number } | null }) {
+  const running = Object.values(state.jobs).filter((j) => j.phase !== "finished");
+  return { jobNotice: { seq: (state.jobNotice?.seq ?? 0) + 1, jobId: running.length === 1 ? running[0].jobId : "",
+                        kind: "needs_approval" as const, outcome: null, goal: running.length === 1 ? running[0].goal : "" } };
+}
+
+const JOB_TOOLS = new Set(["start_background_work", "background_status", "stop_background_work"]);
+
 function initialData() {
   return {
     items: [] as ArslanThreadItem[],
@@ -192,10 +211,12 @@ function initialData() {
     pendingProposalSpawnId: null as number | null,
     roster: [] as RosterMember[],
     pendingInvite: null as { spawnId: number; reason: string } | null,
-    pendingCommand: null as { callId: string; pretty: string; reason: string; remoteHost: string; fingerprints: string[] } | null,
+    pendingCommand: null as { callId: string; pretty: string; reason: string; remoteHost: string; fingerprints: string[]; background?: boolean } | null,
+    jobs: {} as Record<string, JobCard>,
+    jobNotice: null as { seq: number; jobId: string; kind: "finished" | "needs_approval"; outcome: JobOutcome | null; goal: string } | null,
     pendingEnrollNode: null as { callId: string; name: string; host: string; user: string; fingerprints: string[] } | null,
-    pendingWorkspaceWrite: null as { callId: string; workspace: string; action: string; path: string } | null,
-    pendingSchedule: null as { callId: string; name: string; when: string } | null,
+    pendingWorkspaceWrite: null as { callId: string; workspace: string; action: string; path: string; background?: boolean } | null,
+    pendingSchedule: null as { callId: string; name: string; when: string; background?: boolean } | null,
     pendingConnectMcp: null as {
       callId: string;
       key: string;
@@ -287,6 +308,11 @@ function makeActions(set: SetState, get: GetState) {
       _voiceLang = lang;
       if (!enabled) _voiceStop();     // turning it off mid-reply stops at once
     },
+    speakLine: (text, lang) => {
+      if (!text || get().speaking || get().streaming) return;
+      const speaker = createSpeaker(lang, { onActive: (a) => useArslanStore.setState({ speaking: a }) });
+      void speaker.feed(text).then(() => speaker.end());
+    },
     clearPendingEnrollNode: () => set({ pendingEnrollNode: null }),
     clearPendingWorkspaceWrite: () => set({ pendingWorkspaceWrite: null }),
     clearPendingSchedule: () => set({ pendingSchedule: null }),
@@ -341,6 +367,7 @@ function makeActions(set: SetState, get: GetState) {
         content: string;
         spawn_id?: number | null;
         run_id?: number | null;
+        job_outcome?: JobOutcome | null;
       }): ArslanThreadItem => {
         if (row.role === "spawn_summary") {
           // Resolve the spawn name ONLY from an explicit spawn_id. History rows
@@ -367,6 +394,8 @@ function makeActions(set: SetState, get: GetState) {
           role: row.role === "arslan" ? "arslan" : "user",
           content: row.content,
           runId: row.run_id ?? undefined,
+          // 0.1.42: a background job's result keeps its label across reloads.
+          ...(row.job_outcome ? { jobId: `message-${row.message_id}`, jobOutcome: row.job_outcome } : {}),
         };
       };
       switch (frame.type) {
@@ -377,16 +406,37 @@ function makeActions(set: SetState, get: GetState) {
         case "history": {
           const items: ArslanThreadItem[] = frame.messages.map(rowToItem);
           const lastId = items.reduce((max, it) => (it.id > max ? it.id : max), 0);
+          // A reconnect replays history; the live job cards are not in it.
+          items.push(...state.items.filter((it) => it.kind === "job"));
           set({ items, lastMessageId: lastId, activitySteps: [], activeRunId: null });
           break;
         }
         case "message": {
+          const item = rowToItem(frame);
+          if (frame.job_id) { item.jobId = frame.job_id; item.jobOutcome = frame.outcome ?? null; }
           set({
-            items: [...state.items, rowToItem(frame)],
+            items: [...state.items, item],
             lastMessageId: Math.max(state.lastMessageId, frame.message_id),
           });
           break;
         }
+        case "job_update": {
+          const card: JobCard = {
+            jobId: frame.job_id, goal: frame.goal, phase: frame.phase, step: frame.step,
+            outcome: frame.outcome, detail: frame.detail, criteria: frame.criteria,
+          };
+          const known = state.items.some((it) => it.kind === "job" && it.jobId === frame.job_id);
+          set({
+            jobs: { ...state.jobs, [frame.job_id]: card },
+            items: known ? state.items
+              : [...state.items, { id: nextClientId(), kind: "job", role: "arslan", content: "", jobId: frame.job_id }],
+          });
+          break;
+        }
+        case "job_spoken":
+          set({ jobNotice: { seq: (state.jobNotice?.seq ?? 0) + 1, jobId: frame.job_id,
+                             kind: "finished", outcome: frame.outcome, goal: frame.goal } });
+          break;
         case "proposal":
           // Mark the spawn's next deliverable as a proposal. Cleared in stream_end.
           set({ pendingProposalSpawnId: frame.spawn_id });
@@ -619,7 +669,11 @@ function makeActions(set: SetState, get: GetState) {
               break;
             }
           }
-          set({ activitySteps: steps, thinking: true });
+          // 0.1.42: a successful start/status/stop of background work is shown by
+          // the job card itself; only a failure stays in the tool trail.
+          const shown = JOB_TOOLS.has(frame.tool)
+            ? steps.filter((step) => !(step.tool === frame.tool && step.status === "ok")) : steps;
+          set({ activitySteps: shown, thinking: true });
           break;
         }
         case "suggest_create":
@@ -832,7 +886,9 @@ function makeActions(set: SetState, get: GetState) {
                                   // Present only for P3b: this command runs on ANOTHER
                                   // machine, and the card has to lead with that.
                                   remoteHost: frame.remote_host || "",
-                                  fingerprints: frame.fingerprints || [] } });
+                                  fingerprints: frame.fingerprints || [],
+                                  background: frame.background === true },
+               ...(frame.background ? _approvalNotice(state) : {}) });
           break;
         case "propose_enroll_node":
           set({ pendingEnrollNode: { callId: frame.call_id, name: frame.name,
@@ -841,12 +897,14 @@ function makeActions(set: SetState, get: GetState) {
           break;
         case "propose_schedule":
           set({ pendingSchedule: { callId: frame.call_id, name: frame.name,
-                                   when: frame.when } });
+                                   when: frame.when, background: frame.background === true },
+               ...(frame.background ? _approvalNotice(state) : {}) });
           break;
         case "propose_workspace_write":
           set({ pendingWorkspaceWrite: {
             callId: frame.call_id, workspace: frame.workspace,
-            action: frame.action, path: frame.path } });
+            action: frame.action, path: frame.path, background: frame.background === true },
+               ...(frame.background ? _approvalNotice(state) : {}) });
           break;
         case "propose_connect_mcp":
           // NEXT BUILD (conversation-driven MCP, Task 5): env_keys carries credential

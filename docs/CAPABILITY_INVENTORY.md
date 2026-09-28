@@ -1,6 +1,6 @@
 # Generated capability inventory
 
-Desktop configuration version: `0.1.41`.
+Desktop configuration version: `0.1.42`.
 
 Regenerate with `uv run python -m scripts.capability_inventory`. This is static
 source evidence, not an installed-account probe or proof of model quality.
@@ -42,6 +42,7 @@ enrolment executor deliberately refuses execution; the UI owns enrolment.
 
 | Tool | Source |
 | --- | --- |
+| `background_status` | [server/registry/task_tools.py](../server/registry/task_tools.py) |
 | `cancel_task` | [server/registry/schedule_tools.py](../server/registry/schedule_tools.py) |
 | `edit_file` | [server/registry/file_tools.py](../server/registry/file_tools.py) |
 | `enroll_node` | [server/registry/ssh_tools.py](../server/registry/ssh_tools.py) |
@@ -54,6 +55,8 @@ enrolment executor deliberately refuses execution; the UI owns enrolment.
 | `schedule_task` | [server/registry/schedule_tools.py](../server/registry/schedule_tools.py) |
 | `ssh_probe` | [server/registry/ssh_tools.py](../server/registry/ssh_tools.py) |
 | `ssh_run` | [server/registry/ssh_tools.py](../server/registry/ssh_tools.py) |
+| `start_background_work` | [server/registry/task_tools.py](../server/registry/task_tools.py) |
+| `stop_background_work` | [server/registry/task_tools.py](../server/registry/task_tools.py) |
 
 ## Provider native-tool transport
 
@@ -90,13 +93,13 @@ trust decisions; see THIRD_PARTY_NOTICES.md and docs/RELIABILITY.md.
 
 | Source | SHA-256 |
 | --- | --- |
-| `server/registry/executors.py` | `b6d5240b5e5509223dc2a0a0db40713da97ea4bc6fbaf95488d46da7554be3c7` |
+| `server/registry/executors.py` | `89a33e6ff94bd807590aa77d4ad258824a007fc803a1422470793976e4e1714b` |
 | `server/registry/file_tools.py` | `00c265fc87ceb39d3fb13908cc28120763ad833d1989896d7f4008b81aa4e5b4` |
 | `server/registry/lan_tools.py` | `34778593e80f8276d545f4ab569803a208a290d5fe4e8d52402f7a876b6f63b1` |
 | `server/registry/memory_executors.py` | `5e53443ee8c03360cfe52c5e68f3e4a8196563377a2b7da6e60ea6e7b4f87587` |
 | `server/registry/schedule_tools.py` | `13a8698f7e824c1da64cb513b6ebf92de4ab618f75103445e9b12e984ca09a6d` |
 | `server/registry/seed_catalog.py` | `c7c0a177ba194fb96b0a05eb3d1bbc5aba56a57b7f581aa3d5dfd37198e7ecd6` |
 | `server/registry/ssh_tools.py` | `a31f56ef47fb8559e0595ab7e0365a3582f3e5b417071bee9b4c072cebd9ce5a` |
-| `server/registry/task_tools.py` | `37cbaefd1e96ee91360179890562a6ef98c54ce5d51c192f9e184ad63390a6f9` |
+| `server/registry/task_tools.py` | `2704f466610532134da5c639370eedb21bd5d08d51b679fe0190aaa32da6c447` |
 | `server/resources/browser_runtime/package-lock.json` | `6b772b55920dfd4e4aa81b55e6721d7ffb80dc0ea59579d86906fb1f6a9b8de1` |
 | `server/services/capability_fitness.py` | `5251e4b3644d359fab91b8f3bf4d9ec6cea8dce3ebe6695217755deda959202a` |

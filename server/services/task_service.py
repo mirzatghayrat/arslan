@@ -356,12 +356,16 @@ async def _launch(value, emit, body, *, progress=None, context=None):
             _active.pop(task_id, None)
 
 
+ANSWER_DELIVERED = {"id": "answer-delivered", "description": "An answer was delivered",
+                    "evaluator": "deterministic", "rule": {"kind": "text", "minimum": 1}}
+
+
 def checked_driver(driver: dict | None) -> dict:
     driver = {"kind": "host"} if driver is None else driver
     if not isinstance(driver, dict):
         raise TaskError("task_invalid_driver")
-    if driver == {"kind": "host"}:
-        return driver
+    if driver in ({"kind": "host"}, {"kind": "background"}):
+        return dict(driver)
     if (driver.get("kind") not in {"expert", "recipe"} or
             type(driver.get("id")) is not int or driver["id"] < 1 or
             set(driver) - {"kind", "id", "version_id"}):
@@ -371,7 +375,8 @@ def checked_driver(driver: dict | None) -> dict:
     return dict(driver)
 
 
-async def run_turn(function, conversation_id: str, user_message: str, emit, *args, _driver=None, **kwargs):
+async def run_turn(function, conversation_id: str, user_message: str, emit, *args, _driver=None,
+                   _acceptance: list[dict] | None = None, **kwargs):
     if current() is not None:
         return await function(conversation_id, user_message, emit, *args, **kwargs)
     ctx = personal_context.current()
@@ -387,10 +392,12 @@ async def run_turn(function, conversation_id: str, user_message: str, emit, *arg
                                     "project_id": ctx.project_id, "task_id": ctx.task_id},
         "instruction": user_message, "locale": locale, "memory_mode": "disabled" if ctx.no_memory else "normal",
         "budget": asdict(budget.limits),
-        # No model-authored success claim can satisfy this check. W10 adds
-        # task-specific deterministic validators before relaxing this fallback.
-        "acceptance": [{"id": "user-review", "description": "Review the delivered result against the request",
-                        "evaluator": "human"}],
+        # 0.1.42: a conversational turn is not a hand-off. It completes when an
+        # answer was actually delivered (deterministic: non-empty output) —
+        # which claims nothing about correctness. The old human-review fallback
+        # left every chat message "waiting for your review" forever. Work that
+        # needs real acceptance runs as a background job with its own criteria.
+        "acceptance": _acceptance or [ANSWER_DELIVERED],
     })
     async with repository() as repo:
         created = await repo.create(spec, conversation_id, budget_snapshot=budget.snapshot(), privacy={

@@ -21,7 +21,6 @@ import type { ArslanServerMessage, ProviderOption, ProviderConfig } from './api/
 import { listProviderConfigs, testProviderConfig, setPrimaryProviderConfig, distillConversation, deleteConversation } from './api/client';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useBackendStatus } from './hooks/useBackendStatus';
-import { useDispatchedSpawns } from './hooks/useDispatchedSpawns';
 import Sidebar from './components/Sidebar';
 import OrchestratorChat from './components/OrchestratorChat';
 import { discardComposerDraft } from './lib/composerDrafts';
@@ -132,7 +131,6 @@ export default function App() {
   // Which spawns THIS conversation has dispatched to — the Active Spawns
   // list is scoped by that (decision (a)), not by whether a direct chat
   // was ever opened.
-  const { dispatchedSpawnIds } = useDispatchedSpawns(activeThreadId);
 
   // A clicked desktop notification asks for its conversation (0.1.41). Refs keep
   // the one subscription pointed at the current thread list and handler.
@@ -386,15 +384,6 @@ export default function App() {
       ...(attached?.images?.length ? { images: attached.images } : {}),
     });
   }, [wsSend]);
-
-  // Composer policy pill: flip the shell confirm posture at task start (Claude-Code-style).
-  // Optimistic local update + a best-effort PUT reusing the Settings write path.
-  const handleShellPolicyChange = useCallback((policy: 'ask_all' | 'ask_risky') => {
-    setSettings((prev) => ({ ...prev, shellConfirmPolicy: policy }));
-    api.updateSettings({ shell_confirm_policy: policy }).catch(() => {
-      /* best-effort — the pill already reflects the intended posture */
-    });
-  }, []);
 
   // Best-effort: flush a session_ended for the active thread if the page is closed/hidden
   // without an explicit thread switch, so the last conversation still gets its background
@@ -890,11 +879,10 @@ export default function App() {
         threads={threads}
         activeThreadId={activeThreadId}
         onSelectThread={selectConversation}
-        onOpenTask={task => {
-          setThreads(old => old.some(thread => thread.id === task.conversation_id)
-            ? old.map(thread => thread.id === task.conversation_id ? { ...thread, archived: false } : thread)
-            : [...old, { id: task.conversation_id, title: task.spec.instruction.slice(0, 80), history: [] }]);
-          selectConversation(task.conversation_id);
+        onOpenConversation={conversationId => {
+          setThreads(old => old.map(thread => thread.id === conversationId ? { ...thread, archived: false } : thread));
+          selectConversation(conversationId);
+          setActiveSection('arslan');
         }}
         onAddThread={() => handleAddArslanThread()}
         spawns={spawns}
@@ -920,7 +908,6 @@ export default function App() {
         onUnarchiveThread={handleUnarchiveThread}
         onDeleteThread={handleDeleteThread}
         backendStatus={backendStatus}
-              dispatchedSpawnIds={dispatchedSpawnIds}
       />}
 
       {/* Main Workspace Frame container with glass window feel */}
@@ -958,6 +945,15 @@ export default function App() {
                       ? threadDisplayTitle(activeThread, t)
                       : (activeSpawn?.name || t('ui.directChat'))}
                   </span>
+                  {/* 0.1.42: one header row — title · project (opens project and
+                      memory settings) · a status chip only for work that needs a look. */}
+                  {activeSection === 'arslan' && <div data-testid="conversation-context-bar" className="flex min-w-0 items-center gap-3 pl-2">
+                    <ConversationControls compact key={`context:${activeThreadId}`} conversationId={activeThreadId} running={arslanRunning} empty={orchestratorChatHistory.length === 0}
+                      onChanged={context => setThreads(prev => prev.map(thread => thread.id === context.conversation_id && thread.temporary !== context.temporary
+                        ? { ...thread, temporary: context.temporary, ...(context.temporary ? { title: t('companion.temporary') } : {}) } : thread))} />
+                    {!activeThread?.temporary && <TaskPanel compact key={`task:${activeThreadId}`} conversationId={activeThreadId}
+                      onResume={task => { useArslanStore.getState().clearError(); wsSend({ type: 'resume_task', task_id: task.spec.id, expected_version: task.version }); }} />}
+                  </div>}
                 </>
               ) : (
                 /* 🔴 The bar itself must stay on EVERY section — it carries
@@ -1111,6 +1107,7 @@ export default function App() {
                   reason={pendingCommand.reason}
                   remoteHost={pendingCommand.remoteHost}
                   fingerprints={pendingCommand.fingerprints}
+                  background={pendingCommand.background}
                   onConfirm={(callId, remember) => {
                     wsSend({ type: 'confirm_run_command', call_id: callId, remember });
                     clearPendingCommand();
@@ -1138,6 +1135,7 @@ export default function App() {
 
             {activeSection === 'arslan' && pendingWorkspaceWrite && (
               <div className="suggest-create-card-overlay">
+                {pendingWorkspaceWrite.background && <p className="mb-1 text-[11px] text-muted-foreground">{t('jobs.askingBadge')}</p>}
                 <WorkspaceWriteCard
                   callId={pendingWorkspaceWrite.callId}
                   workspace={pendingWorkspaceWrite.workspace}
@@ -1157,6 +1155,7 @@ export default function App() {
 
             {activeSection === 'arslan' && pendingSchedule && (
               <div className="suggest-create-card-overlay">
+                {pendingSchedule.background && <p className="mb-1 text-[11px] text-muted-foreground">{t('jobs.askingBadge')}</p>}
                 <ScheduleGrantCard
                   callId={pendingSchedule.callId}
                   name={pendingSchedule.name}
@@ -1208,13 +1207,6 @@ export default function App() {
 
             {activeSection === 'arslan' && (
               <div className="flex h-full min-h-0 flex-col">
-              <div data-testid="conversation-context-bar" className="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-2 border-b border-border/50 px-4 py-2 lg:px-6">
-              <ConversationControls compact key={`context:${activeThreadId}`} conversationId={activeThreadId} running={arslanRunning} empty={orchestratorChatHistory.length === 0}
-                onChanged={context => setThreads(prev => prev.map(thread => thread.id === context.conversation_id && thread.temporary !== context.temporary
-                  ? { ...thread, temporary: context.temporary, ...(context.temporary ? { title: t('companion.temporary') } : {}) } : thread))} />
-              {!activeThread?.temporary && <TaskPanel compact key={`task:${activeThreadId}`} conversationId={activeThreadId}
-                onResume={task => { useArslanStore.getState().clearError(); wsSend({ type: 'resume_task', task_id: task.spec.id, expected_version: task.version }); }} />}
-              </div>
               <OrchestratorChat
                 key={`chat:${activeThreadId}:${activeThread?.temporary === true}`}
                 chatHistory={orchestratorChatHistory}
@@ -1264,7 +1256,6 @@ export default function App() {
                 }}
                 shellEnabled={settings.orchestratorShellEnabled}
                 shellPolicy={settings.shellConfirmPolicy}
-                onShellPolicyChange={handleShellPolicyChange}
               />
               </div>
             )}

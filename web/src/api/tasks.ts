@@ -7,6 +7,8 @@ export interface TaskFrame {
   sequence: number; phase: TaskPhase; version: number; pause_reason: string | null;
 }
 export interface TaskSummary {
+  /** Who drives the task: host (a chat turn), expert, recipe, or background (0.1.42 job). */
+  driver?: string;
   version: number; conversation_id: string; pause_reason: string | null; cancel_requested: boolean;
   spec: { id: string; revision: number; instruction: string; locale: string;
     acceptance: { id: string; description: string; evaluator: "human" | "model" | "deterministic" }[] };
@@ -44,4 +46,11 @@ export const tasksApi = {
   reconcile: (taskId: string, action: TaskAction, applied: boolean, note: string) => request<TaskSummary>(
     `/tasks/${encodeURIComponent(taskId)}/actions/${encodeURIComponent(action.id)}/reconcile`,
     json({ expected_version: action.version, applied, note })),
+};
+
+// 0.1.42 background jobs (in-memory, beside their task records).
+export const backgroundJobsApi = {
+  list: (conversationId?: string) => request<{ active: number; jobs: (import("./client.types").ArslanServerMessage & { type: "job_update" })[] }>(
+    conversationId ? `/background-jobs?conversation_id=${encodeURIComponent(conversationId)}` : "/background-jobs"),
+  stop: (jobId: string) => request<{ ok: boolean }>(`/background-jobs/${encodeURIComponent(jobId)}/stop`, { method: "POST" }),
 };

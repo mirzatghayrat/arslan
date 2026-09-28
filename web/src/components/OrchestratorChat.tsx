@@ -10,6 +10,7 @@ import {
   ThumbsUp, ThumbsDown, Wand2
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import JobCard, { JobResultLabel } from './JobCard';
 import { formatUiTime } from '../lib/localeFormatting';
 import { getIcon } from './iconMap';
 import { Message, MessageAttachment, Spawn } from '../types';
@@ -103,7 +104,6 @@ interface OrchestratorChatProps {
   /** Current shell confirmation posture, shown + flippable in the composer pill. */
   shellPolicy?: 'ask_all' | 'ask_risky';
   /** Called when the user flips the confirmation posture from the composer pill. */
-  onShellPolicyChange?: (policy: 'ask_all' | 'ask_risky') => void;
 }
 
 export default function OrchestratorChat({
@@ -129,7 +129,6 @@ export default function OrchestratorChat({
   onDismissInvite,
   shellEnabled = false,
   shellPolicy = 'ask_all',
-  onShellPolicyChange,
 }: OrchestratorChatProps) {
   const { t, i18n } = useTranslation();
   const settings = useSettingsStore((s) => s.settings);
@@ -155,6 +154,21 @@ export default function OrchestratorChat({
     // restart, and the first one looks like it did nothing.
     onEnded: () => setConversationOn(false),
   });
+  // 0.1.42: with voice conversation on, a background job that finishes (or
+  // stops to ask for a confirmation) gets ONE spoken line. The confirmation
+  // itself is still a click in the window — speech never approves anything.
+  const jobNotice = useArslanStore((s) => s.jobNotice);
+  const speakLine = useArslanStore((s) => s.speakLine);
+  const spokenSeq = React.useRef(jobNotice?.seq ?? 0);
+  React.useEffect(() => {
+    if (!jobNotice || jobNotice.seq <= spokenSeq.current) return;
+    spokenSeq.current = jobNotice.seq;
+    if (!(voiceMode === 'conversation' && conversationOn)) return;
+    const goal = jobNotice.goal.length > 60 ? `${jobNotice.goal.slice(0, 60)}…` : jobNotice.goal;
+    speakLine(jobNotice.kind === 'needs_approval'
+      ? t('jobs.spokenApproval')
+      : t('jobs.spokenFinished', { goal, outcome: t(`jobs.outcome.${jobNotice.outcome ?? 'partial'}`) }), voiceLocale);
+  }, [jobNotice, voiceMode, conversationOn, speakLine, t, voiceLocale]);
   const micControl = voiceMode === 'push_to_talk' ? (
     <PushToTalk
       locale={voiceLocale}
@@ -668,29 +682,17 @@ export default function OrchestratorChat({
             const isArslan = msg.sender === 'arslan';
             const isSpawn = msg.sender === 'spawn';
 
-            // Roster notice: render for all themes as a subtle centered line
+            // 0.1.42: a background job's live card sits where the job was started.
+            if (msg.jobId) return <JobCard key={msg.id} jobId={msg.jobId} />;
+
+            // Roster notice (0.1.42): experts are not a standing cast in the chat.
+            // One quiet line says who was asked to help; leaving says nothing.
             if (msg.rosterAction) {
-              const name = msg.rosterSpawnName ?? '';
-              // "recruited" (delegation cell 6): Arslan already answered the task doer-first;
-              // accepting the invite enrolls the spawn into THIS session's roster (rosters are
-              // session-ephemeral) so the user can @ it directly.
-              // 'left' is matched explicitly; unknown future actions fall back to the
-              // neutral joined label — an unknown action must never render as a LEAVE.
-              const label = msg.rosterAction === 'left'
-                ? t('chat.roster_left', { name })
-                : msg.rosterAction === 'recruited'
-                  ? t('chat.roster_recruited', { name })
-                  : msg.rosterAction === 'joined_no_pending'
-                    ? t('chat.roster_joined_no_pending', { name })
-                    : t('chat.roster_joined', { name });
+              if (msg.rosterAction === 'left') return null;
               return (
-                <div key={msg.id} className="flex items-center gap-3 py-1 select-none">
-                  <div className="flex-1 h-px bg-border/60" />
-                  <span className="text-[10px] text-subtle-foreground font-mono whitespace-nowrap">
-                    {msg.rosterAction === 'left' ? '✕' : '🔗'} {label}
-                  </span>
-                  <div className="flex-1 h-px bg-border/60" />
-                </div>
+                <p key={msg.id} className="py-0.5 text-center text-[10px] text-subtle-foreground select-none">
+                  {t('chat.expert_involved', { name: msg.rosterSpawnName ?? '' })}
+                </p>
               );
             }
 
@@ -858,6 +860,7 @@ export default function OrchestratorChat({
                         : <MessageBody text={msg.text} streaming={msg.id === '__streaming__'} hasMessageActions={isSpawn && !msg.isProposal && !!msg.spawnId} className="text-[12.5px] leading-relaxed font-sans [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
                       }
                       {msg.cancelled && <RunCancelledMarker />}
+{msg.resultOfJob && <JobResultLabel outcome={msg.jobOutcome} />}
                       {msg.usage && <UsageChip usage={msg.usage} />}
                       {isArslan && msg.id !== '__streaming__' && <HostRunResultButton runId={msg.runId} onOpen={setReplayRunId} />}
 
@@ -1027,15 +1030,7 @@ export default function OrchestratorChat({
                             <Wand2 className="w-3.5 h-3.5" />
                             <span>{t('orchestrator.refine')}</span>
                           </button>
-                          {msg.sender === "spawn" && msg.runId != null && (
-                            <button
-                              type="button"
-                              className="msg__replay-btn"
-                              onClick={() => setReplayRunId(msg.runId ?? null)}
-                            >
-                              {t("replay.view_replay")}
-                            </button>
-                          )}
+                          {msg.sender === "spawn" && <HostRunResultButton runId={msg.runId} onOpen={setReplayRunId} />}
                         </div>
                       );
                     })()}
@@ -1090,6 +1085,7 @@ export default function OrchestratorChat({
                     : <MessageBody text={msg.text} streaming={msg.id === '__streaming__'} hasMessageActions={isSpawn && !msg.isProposal && !!msg.spawnId} className="text-muted-foreground font-sans leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
                   }
                   {msg.cancelled && <RunCancelledMarker />}
+{msg.resultOfJob && <JobResultLabel outcome={msg.jobOutcome} />}
                   {msg.usage && <UsageChip usage={msg.usage} />}
                   {isArslan && msg.id !== '__streaming__' && <HostRunResultButton runId={msg.runId} onOpen={setReplayRunId} />}
 
@@ -1209,15 +1205,7 @@ export default function OrchestratorChat({
                           <Wand2 className="w-3.5 h-3.5" />
                           <span>{t('orchestrator.refine')}</span>
                         </button>
-                        {msg.sender === "spawn" && msg.runId != null && (
-                          <button
-                            type="button"
-                            className="msg__replay-btn"
-                            onClick={() => setReplayRunId(msg.runId ?? null)}
-                          >
-                            {t("replay.view_replay")}
-                          </button>
-                        )}
+                        {msg.sender === "spawn" && <HostRunResultButton runId={msg.runId} onOpen={setReplayRunId} />}
                       </div>
                     );
                   })()}
@@ -1278,6 +1266,7 @@ export default function OrchestratorChat({
                   {/* Body Content */}
                   <MessageBody text={msg.text} indent streaming={msg.id === '__streaming__'} hasMessageActions={isSpawn && !msg.isProposal && !!msg.spawnId} className="text-foreground font-sans leading-relaxed text-[12.5px] pl-5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
                   {msg.cancelled && <div className="pl-5"><RunCancelledMarker /></div>}
+                  {msg.resultOfJob && <div className="pl-5"><JobResultLabel outcome={msg.jobOutcome} /></div>}
                   {msg.usage && <div className="pl-5"><UsageChip usage={msg.usage} /></div>}
                   {isArslan && msg.id !== '__streaming__' && <HostRunResultButton runId={msg.runId} onOpen={setReplayRunId} />}
 
@@ -1401,15 +1390,7 @@ export default function OrchestratorChat({
                           <Wand2 className="w-3.5 h-3.5" />
                           <span>{t('orchestrator.refine')}</span>
                         </button>
-                        {msg.sender === "spawn" && msg.runId != null && (
-                          <button
-                            type="button"
-                            className="msg__replay-btn"
-                            onClick={() => setReplayRunId(msg.runId ?? null)}
-                          >
-                            {t("replay.view_replay")}
-                          </button>
-                        )}
+                        {msg.sender === "spawn" && <HostRunResultButton runId={msg.runId} onOpen={setReplayRunId} />}
                       </div>
                     );
                   })()}
@@ -1556,26 +1537,13 @@ export default function OrchestratorChat({
             </div>
             {attach.error && <div className="attach-error max-w-4xl mx-auto mt-1.5" role="alert">{attach.error}</div>}
           </form>
-          {shellEnabled && (
-            <details className="max-w-4xl mx-auto mt-2 text-[11px] text-muted-foreground" data-testid="execution-options">
-              <summary className="cursor-pointer select-none py-1">
-                {t('workspace.executionOptions')} · {t(shellPolicy === 'ask_risky' ? 'workspace.readOnlyAutomatic' : 'workspace.confirmCommands')}
-              </summary>
-              <label className="shell-policy-pill mt-2" data-testid="shell-policy-pill">
-                <Terminal className="w-3 h-3 text-primary shrink-0" />
-                <span className="shell-policy-pill__label">{t('runcmd.pillLabel')}</span>
-                <select
-                  aria-label={t('settings.labelShellConfirmPolicy')}
-                  data-testid="shell-policy-select"
-                  value={shellPolicy}
-                  onChange={(e) => onShellPolicyChange?.(e.target.value as 'ask_all' | 'ask_risky')}
-                  className="shell-policy-pill__select"
-                >
-                  <option value="ask_all">{t('settings.shellPolicyAskAll')}</option>
-                  <option value="ask_risky">{t('settings.shellPolicyAskRisky')}</option>
-                </select>
-              </label>
-            </details>
+          {/* 0.1.42: the command-confirmation control lives in Settings → Advanced.
+              Only the non-default posture (read-only commands run without asking)
+              stays visible here, as one line — it changes what happens without a card. */}
+          {shellEnabled && shellPolicy === 'ask_risky' && (
+            <p className="max-w-4xl mx-auto mt-1.5 text-[11px] text-muted-foreground" data-testid="execution-options">
+              {t('workspace.readOnlyAutomatic')}
+            </p>
           )}
         </footer>
       )}

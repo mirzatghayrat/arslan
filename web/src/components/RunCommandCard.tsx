@@ -10,6 +10,9 @@ interface Props {
   remoteHost?: string;
   /** That machine's host key fingerprints, for the user to compare. */
   fingerprints?: string[];
+  /** 0.1.42: a background job is asking. The backend never honours "remember"
+   *  for a job, so the checkbox is not offered — same reasoning as remote. */
+  background?: boolean;
   onConfirm: (callId: string, remember: boolean) => void;
   onCancel: (callId: string) => void;
 }
@@ -25,13 +28,14 @@ interface Props {
  * refuses to honour it for a remote command, and offering a checkbox that does
  * nothing would be a lie told in a safety dialog.
  */
-export default function RunCommandCard({ callId, pretty, reason, remoteHost, fingerprints,
+export default function RunCommandCard({ callId, pretty, reason, remoteHost, fingerprints, background,
                                          onConfirm, onCancel }: Props) {
   const { t } = useTranslation();
   const [remember, setRemember] = useState(false);
   const isRemote = Boolean(remoteHost);
   return (
     <div className={isRemote ? "runcmd-card runcmd-card--remote" : "runcmd-card"} data-testid="runcmd-card">
+      {background ? <div className="runcmd-card__reason" data-testid="runcmd-background">{t("jobs.askingBadge")}</div> : null}
       <div className="runcmd-card__label">
         {isRemote ? t("runcmd.remoteLabel", { host: remoteHost }) : t("runcmd.label")}
       </div>
@@ -50,7 +54,7 @@ export default function RunCommandCard({ callId, pretty, reason, remoteHost, fin
         </div>
       ) : null}
       {reason ? <div className="runcmd-card__reason">{reason}</div> : null}
-      {isRemote ? null : (
+      {isRemote || background ? null : (
       <label className="runcmd-card__remember">
         <input
           type="checkbox"
@@ -66,7 +70,7 @@ export default function RunCommandCard({ callId, pretty, reason, remoteHost, fin
           type="button"
           className="runcmd-card__btn runcmd-card__btn--primary"
           data-testid="runcmd-run"
-          onClick={() => onConfirm(callId, remember)}
+          onClick={() => onConfirm(callId, remember && !background)}
         >
           {isRemote ? t("runcmd.runRemote") : t("runcmd.run")}
         </button>

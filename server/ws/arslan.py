@@ -15,7 +15,7 @@ from server.auth import is_ws_token_valid
 from server.db import session as db_session
 from server.db.models import ArslanMessage
 from server.orchestrator import arslan, dispatcher, memory
-from server.services import desktop_status
+from server.services import approvals, background_jobs, desktop_status
 from server.services import (
     distill_service,
     ingest,
@@ -105,6 +105,8 @@ async def _history(conversation_id: str) -> list[dict]:
             # S3-M2: run linkage (set at finalize) so RunReplay entry points
             # survive a reload. Key always emitted; None when unlinked.
             "run_id": m.run_id,
+            # 0.1.42: a background job's result keeps its checked outcome.
+            "job_outcome": m.job_outcome,
         }
         for m in msgs
     ]
@@ -298,6 +300,8 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                             and data.get("call_id") == call_id):
                         decision = t == "confirm_workspace_write"
                         break
+                    if approvals.answer(data):   # a background job's card, not this one
+                        continue
                     await ws.send_json(protocol.error(
                         "BUSY", "An action is awaiting your confirmation.", recoverable=True))
             except WebSocketDisconnect:
@@ -330,6 +334,8 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                             and data.get("call_id") == call_id):
                         decision = t == "confirm_schedule"
                         break
+                    if approvals.answer(data):   # a background job's card, not this one
+                        continue
                     await ws.send_json(protocol.error(
                         "BUSY", "An action is awaiting your confirmation.", recoverable=True))
             except WebSocketDisconnect:
@@ -395,6 +401,8 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                         break
                     # Any other frame (including a confirm for an unknown/stale call_id) is
                     # not actionable while we are paused — tell the client, keep waiting.
+                    if approvals.answer(data):   # a background job's card, not this one
+                        continue
                     await ws.send_json(protocol.error(
                         "BUSY", "An action is awaiting your confirmation.", recoverable=True))
             except WebSocketDisconnect:
@@ -459,6 +467,15 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             except Exception:  # noqa: BLE001 — client gone mid-replay; receive loop sees it
                 break
 
+        # 0.1.42: background jobs outlive sockets — show this tab the cards of
+        # jobs still running and any confirmation still waiting for an answer.
+        # A finished job is already in the history as its labelled result.
+        for job in background_jobs.jobs_for(conversation_id):
+            if job.phase != "finished":
+                await ws.send_json(job.frame())
+        for card in approvals.pending_cards(conversation_id):
+            await ws.send_json(card)
+
         drainer = asyncio.create_task(_drain())
 
         while True:
@@ -466,6 +483,8 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             msg_type = data.get("type")
 
             if msg_type in ("ping", "pong"):
+                continue
+            if msg_type in approvals.ANSWERS and approvals.answer(data):
                 continue
 
             from server.services import task_context, temporary_turn

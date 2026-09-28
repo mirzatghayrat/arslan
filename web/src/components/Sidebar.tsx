@@ -7,8 +7,7 @@ import type { Spawn } from "../types";
 import { SpawnAvatar } from "./SpawnAvatar";
 import ThreadRowMenu from "./ThreadRowMenu";
 import type { BackendStatus } from "../hooks/useBackendStatus";
-import type { TaskSummary } from "../api/tasks";
-import OngoingTasks from "./companion/OngoingTasks";
+import BackgroundJobs from "./companion/BackgroundJobs";
 import EmptyState from "./EmptyState";
 import { useDismissable } from "../hooks/useDismissable";
 import { threadDisplayTitle } from "../lib/threadTitles";
@@ -21,14 +20,14 @@ interface SidebarProps {
   onCompleteChat: (id: string) => void;
   onDistillThread: (id: string) => void; onArchiveThread: (id: string) => void;
   onUnarchiveThread: (id: string) => void; onDeleteThread: (id: string) => void;
-  backendStatus: BackendStatus; dispatchedSpawnIds: Set<number>;
-  onOpenTask?: (task: TaskSummary) => void;
+  backendStatus: BackendStatus;
+  onOpenConversation?: (conversationId: string) => void;
   expertChatIds?: string[];
 }
 export default function Sidebar(props: SidebarProps) {
   const { threads, activeThreadId, onSelectThread, onAddThread, spawns, activeSpawnChatId, onSelectSpawnChat,
     activeSection, onChangeSection, onCompleteChat, onDistillThread, onArchiveThread, onUnarchiveThread,
-    onDeleteThread, backendStatus, dispatchedSpawnIds, onOpenTask, expertChatIds } = props;
+    onDeleteThread, backendStatus, onOpenConversation, expertChatIds } = props;
   const { t } = useTranslation();
   const [archivedOpen, setArchivedOpen] = useState(false);
   const [picking, setPicking] = useState(false);
@@ -38,11 +37,6 @@ export default function Sidebar(props: SidebarProps) {
   // User-opened expert chats are peers of normal conversations. Temporary task
   // workers are not added here; their existing task-owned panel remains the home.
   const directChats = expertChatIds ? expertChatIds.flatMap(id => spawns.filter(spawn => spawn.id === id)) : spawns.filter(spawn => spawn.hasActiveChat);
-  const directIds = new Set(directChats.map(spawn => spawn.id));
-  // Keep legacy work discoverable during migration, including work in another
-  // conversation. Do not mistake "once dispatched" for "currently running".
-  const legacyWork = spawns.filter(spawn => !directIds.has(spawn.id) &&
-    (spawn.hasActiveChat || spawn.status === "working" || dispatchedSpawnIds.has(Number(spawn.id))));
   const navClass = (active: boolean) => `w-full flex items-center gap-2.5 rounded-lg border-l-2 px-3 py-2 text-left text-xs transition-colors ${active
     ? "border-primary bg-primary/10 text-foreground" : "border-transparent text-muted-foreground hover:bg-foreground/[0.03] hover:text-foreground"}`;
   const rowClass = (active: boolean) => `relative w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-left cursor-pointer group border-l-2 border-transparent ${active
@@ -83,7 +77,7 @@ export default function Sidebar(props: SidebarProps) {
     <div data-testid="window-chrome-strip" data-tauri-drag-region="deep" className="h-[41px] shrink-0" />
     <div data-tauri-drag-region="deep" className="flex shrink-0 items-center gap-3 px-5 pb-3">
       <BrandMark alt="Arslan" className="h-9 w-9 object-contain" draggable={false} />
-      <div><h1 className="text-sm font-semibold">Arslan</h1><p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{t("sidebar.brand_subtitle")}</p></div>
+      <h1 className="text-sm font-semibold">Arslan</h1>
     </div>
     <div className="flex min-h-0 flex-1 flex-col px-2">
       <button id="btn-add-arslan-thread-primary" onClick={onAddThread} className={navClass(false)}>
@@ -123,11 +117,8 @@ export default function Sidebar(props: SidebarProps) {
           </div>}
         </div>
       </section>
-      {onOpenTask && <div className="shrink-0 border-t border-border/50"><OngoingTasks onOpen={onOpenTask} /></div>}
-      {legacyWork.length > 0 && <details className="mb-2 shrink-0 border-t border-border/50 pt-2">
-        <summary className="cursor-pointer px-3 text-xs text-muted-foreground">{t("workspace.legacyWork")} ({legacyWork.length})</summary>
-        <div className="mt-2 max-h-32 overflow-y-auto">{legacyWork.map(spawn => renderExpert(spawn, false))}</div>
-      </details>}
+      {/* 0.1.42: only real background work shows here; experts live in the capability library. */}
+      {onOpenConversation && <div className="shrink-0 border-t border-border/50 empty:hidden"><BackgroundJobs onOpen={onOpenConversation} /></div>}
     </div>
     <footer className="shrink-0 space-y-1 border-t border-border/60 p-3">
       <button id="nav-btn-connections-footer" onClick={() => onChangeSection("connections")} className={navClass(activeSection === "connections")}>

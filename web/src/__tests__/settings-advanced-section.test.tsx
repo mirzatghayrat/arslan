@@ -18,6 +18,10 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
+vi.mock("../components/BrowserPanel", () => ({
+  default: ({ open }: { open: boolean }) => (open ? <div data-testid="browser-panel-open" /> : null),
+}));
+
 import AdvancedSection from "../components/settings/AdvancedSection";
 
 type Props = React.ComponentProps<typeof AdvancedSection>;
@@ -130,5 +134,16 @@ describe("AdvancedSection", () => {
     expect(props.onVoiceEndpointSilenceChange).toHaveBeenLastCalledWith(300);
     fireEvent.change(input, { target: { value: "1500" } });
     expect(props.onVoiceEndpointSilenceChange).toHaveBeenLastCalledWith(1500);
+  });
+});
+
+// 0.1.42: the work panel's footer link is gone; browser setup (the only
+// caller of POST /browser/setup) and static preview live here now.
+describe("AdvancedSection · browser setup home", () => {
+  it("opens the browser setup and static preview panel", () => {
+    setup();
+    expect(screen.queryByTestId("browser-panel-open")).toBeNull();
+    fireEvent.click(screen.getByTestId("settings-browser-setup"));
+    expect(screen.getByTestId("browser-panel-open")).toBeInTheDocument();
   });
 });

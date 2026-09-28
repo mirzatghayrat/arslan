@@ -488,9 +488,28 @@ export interface ClarifyOption {
 }
 
 /** A renderable item in the unified Arslan thread. */
+/** 0.1.42 background job, as the `job_update` frame describes it. */
+export type JobOutcome = "done" | "partial" | "blocked" | "stopped" | "interrupted";
+export interface JobCriterion { id: string; description: string; status: string }
+export interface JobCard {
+  jobId: string;
+  goal: string;
+  phase: "queued" | "running" | "finished";
+  step: string;
+  outcome: JobOutcome | null;
+  detail: string;
+  criteria: JobCriterion[];
+}
+
 export interface ArslanThreadItem {
   id: number;
-  kind: "message" | "fact" | "system" | "escalation";
+  kind: "message" | "fact" | "system" | "escalation" | "job";
+  /** kind === "job": the background job whose live card sits at this point in the
+   *  thread; the card's state lives in the store's `jobs` map. On a message, the
+   *  job this result came from. */
+  jobId?: string;
+  /** A job's result message: the outcome the server checked it against. */
+  jobOutcome?: JobOutcome | null;
   role: "user" | "arslan" | "spawn";
   content: string;
   spawnId?: number | null;
@@ -541,6 +560,8 @@ export interface ArslanHistoryRow {
   /** S3-M2: run linkage (ArslanMessage.run_id, set at finalize) — restores the
    *  RunReplay entry point after a reload. Always emitted; null when unlinked. */
   run_id?: number | null;
+  /** 0.1.42: set on a background job's result — its checked outcome. */
+  job_outcome?: JobOutcome | null;
 }
 
 // Server -> client frames on /ws/arslan
@@ -576,10 +597,10 @@ export type ArslanServerMessage =
     }
   | { type: "suggest_create"; draft: SuggestDraft; task_brief?: string | null; overlaps?: OverlapInfo | null }
   | { type: "propose_invite"; spawn_id: number; reason: string }
-  | { type: "propose_run_command"; call_id: string; command?: string; argv?: string[]; pretty: string; reason?: string; remote_host?: string; fingerprints?: string[] }
+  | { type: "propose_run_command"; call_id: string; command?: string; argv?: string[]; pretty: string; reason?: string; remote_host?: string; fingerprints?: string[]; background?: boolean }
   | { type: "propose_enroll_node"; call_id: string; name: string; host: string; user: string; fingerprints: string[] }
-  | { type: "propose_workspace_write"; call_id: string; workspace: string; action: string; path: string }
-  | { type: "propose_schedule"; call_id: string; name: string; when: string }
+  | { type: "propose_workspace_write"; call_id: string; workspace: string; action: string; path: string; background?: boolean }
+  | { type: "propose_schedule"; call_id: string; name: string; when: string; background?: boolean }
   // NEXT BUILD (conversation-driven MCP, Task 3/5): Arslan proposes connecting a preset
   // MCP server. Emitting this frame connects NOTHING — env_keys carries credential NAMES +
   // metadata only (never a value); requires_path/path_placeholder (Filesystem/Git) flag a
@@ -594,7 +615,11 @@ export type ArslanServerMessage =
       restricted_count: number; assignable: boolean }
   | { type: "spawn_meta"; arslan_message_id: number; spawn_id: number; assistant_message_id: number; task_brief: string; run_id?: number }
   | { type: "fact_saved"; content: string; sensitive: boolean }
-  | { type: "message"; message_id: number; content: string; role: string }
+  | { type: "message"; message_id: number; content: string; role: string; job_id?: string; outcome?: JobOutcome | null }
+  | { type: "job_update"; job_id: string; conversation_id: string; goal: string;
+      phase: "queued" | "running" | "finished"; step: string; outcome: JobOutcome | null;
+      detail: string; criteria: JobCriterion[] }
+  | { type: "job_spoken"; job_id: string; outcome: JobOutcome | null; goal: string }
   | { type: "spawn_created"; spawn_id: number; spawn_name: string; equipment?: Equipment; intro?: string | null }
   | { type: "tool_call"; tool: string; args_summary: string }
   | {

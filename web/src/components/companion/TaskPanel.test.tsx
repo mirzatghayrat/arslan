@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { tasksApi, type TaskDetail } from "../../api/tasks";
 import { taskMessages } from "../../locales/tasks";
 import { initialArslanState, useArslanStore } from "../../stores/arslanStore";
-import TaskPanel from "./TaskPanel";
+import TaskPanel, { shownInHeader } from "./TaskPanel";
 import { validationMessages } from "../../locales/validation";
 
 vi.mock("react-i18next", () => ({
@@ -29,6 +29,33 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("task controls", () => {
+  it("in the chat header, shows only work that needs a look, never an answered question", async () => {
+    const answered: TaskDetail = { ...task, pause_reason: null, state: { ...task.state, phase: "succeeded" } };
+    vi.mocked(tasksApi.list).mockResolvedValue([answered]);
+    const view = render(<TaskPanel compact conversationId="conversation" onResume={vi.fn()} />);
+    await waitFor(() => expect(tasksApi.list).toHaveBeenCalled());
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 150)); });
+    expect(screen.queryByRole("button", { name: /tasks.taskStatus/ })).toBeNull();
+    view.unmount();
+    vi.mocked(tasksApi.list).mockResolvedValue([task]);   // waiting on the user: shown
+    render(<TaskPanel compact conversationId="conversation" onResume={vi.fn()} />);
+    expect(await screen.findByRole("button", { name: /tasks.taskStatus/ })).toHaveTextContent("tasks.waiting_user");
+  });
+  it("does not treat a pre-0.1.42 chat answer (only a user-review check) as work", () => {
+    const legacy = { ...task, spec: { ...task.spec, acceptance: [{ id: "user-review", description: "Review", evaluator: "human" as const }] } };
+    expect(shownInHeader(legacy)).toBe(false);
+    expect(shownInHeader({ ...legacy, driver: "recipe" })).toBe(true);
+    expect(shownInHeader(task)).toBe(true);            // a real review check stays visible
+    expect(shownInHeader({ ...task, driver: "background" })).toBe(false);
+  });
+  it("leaves a background job to its own card, even while it runs", async () => {
+    const job: TaskDetail = { ...task, driver: "background", pause_reason: null, state: { ...task.state, phase: "running" } };
+    vi.mocked(tasksApi.list).mockResolvedValue([job]);
+    render(<TaskPanel compact conversationId="conversation" onResume={vi.fn()} />);
+    await waitFor(() => expect(tasksApi.list).toHaveBeenCalled());
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 150)); });
+    expect(screen.queryByRole("button", { name: /tasks.taskStatus/ })).toBeNull();
+  });
   it.each([
     ["task_memory_changed", "tasks.memoryChanged"],
     ["task_memory_check_failed", "tasks.memoryCheckFailed"],

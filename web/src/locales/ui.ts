@@ -1,5 +1,7 @@
 export const uiMessages = {
   "en": {
+    "open": "Open",
+    "moreActions": "More actions",
     "unsandboxedPython": "run_python is running without a sandbox (ARSLAN_ALLOW_UNSANDBOXED_PY=1): code has full host permissions and no isolation.",
     "expertNameExample": "e.g., CrimsonWriter",
     "autoName": "Auto-generated from name",
@@ -50,6 +52,8 @@ export const uiMessages = {
     "viewSandbox": "View {{name}} sandbox"
   },
   "zh": {
+    "open": "打开",
+    "moreActions": "更多操作",
     "unsandboxedPython": "run_python 正在无沙箱运行（ARSLAN_ALLOW_UNSANDBOXED_PY=1）：代码拥有完整主机权限，没有隔离保护。",
     "expertNameExample": "例如：文案专家",
     "autoName": "根据名称自动生成",
@@ -100,6 +104,8 @@ export const uiMessages = {
     "viewSandbox": "查看 {{name}} 的沙盒"
   },
   "ja": {
+    "open": "開く",
+    "moreActions": "その他の操作",
     "unsandboxedPython": "run_python はサンドボックスなしで実行されています（ARSLAN_ALLOW_UNSANDBOXED_PY=1）。コードはホストの全権限を持ち、隔離されません。",
     "expertNameExample": "例：文章のエキスパート",
     "autoName": "名前から自動生成",
@@ -150,6 +156,8 @@ export const uiMessages = {
     "viewSandbox": "{{name}} のサンドボックスを表示"
   },
   "es": {
+    "open": "Abrir",
+    "moreActions": "Más acciones",
     "unsandboxedPython": "run_python se ejecuta sin entorno aislado (ARSLAN_ALLOW_UNSANDBOXED_PY=1): el código tiene todos los permisos del equipo y no está aislado.",
     "expertNameExample": "p. ej., Redactor",
     "autoName": "Generado a partir del nombre",
@@ -200,6 +208,8 @@ export const uiMessages = {
     "viewSandbox": "Ver entorno aislado de {{name}}"
   },
   "de": {
+    "open": "Öffnen",
+    "moreActions": "Weitere Aktionen",
     "unsandboxedPython": "run_python läuft ohne Sandbox (ARSLAN_ALLOW_UNSANDBOXED_PY=1): Der Code hat volle Host-Berechtigungen und ist nicht isoliert.",
     "expertNameExample": "z. B. Textexperte",
     "autoName": "Aus dem Namen erzeugt",
@@ -250,6 +260,8 @@ export const uiMessages = {
     "viewSandbox": "Isolierten Bereich von {{name}} anzeigen"
   },
   "fr": {
+    "open": "Ouvrir",
+    "moreActions": "Plus d’actions",
     "unsandboxedPython": "run_python s’exécute sans bac à sable (ARSLAN_ALLOW_UNSANDBOXED_PY=1) : le code dispose de tous les droits sur l’hôte, sans isolation.",
     "expertNameExample": "ex. Expert rédaction",
     "autoName": "Généré à partir du nom",

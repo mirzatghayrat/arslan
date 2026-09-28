@@ -316,6 +316,40 @@ async def test_tier2_generic_answer_promise_is_intercepted(maker, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_generic_tier_stays_quiet_while_a_background_job_really_runs(maker, monkeypatch):
+    """0.1.42: with a job of this conversation running, "it's being done in the
+    background" is true; the correction ("nothing is running") would be the lie.
+    A finished job does not count — the guard is back once nothing runs."""
+    from server.orchestrator import arslan, router, tool_loop
+    from server.services import background_jobs
+
+    async def _fake_route(conv, msg):
+        return router.RouterResult(action="answer")
+
+    monkeypatch.setattr(arslan.router, "route", _fake_route)
+    background_jobs._reset_for_tests()
+    job = background_jobs.Job(job_id="job-live", conversation_id="main", goal="deck", acceptance=[])
+    job.phase = "running"
+    background_jobs._jobs[job.job_id] = job
+    try:
+        adapter = _SeqAdapter([PROMISING_LONG, HONEST_FIX])
+        monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+        events = []
+        await arslan.handle_user_message("main", "进度怎么样", events.append)
+        streamed = "".join(e.get("content", "") for e in events if e["type"] == "stream_chunk")
+        assert HONEST_FIX not in streamed
+        job.phase = "finished"
+        adapter = _SeqAdapter([PROMISING_LONG, HONEST_FIX])
+        monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+        events = []
+        await arslan.handle_user_message("main", "帮我做个东西", events.append)
+        streamed = "".join(e.get("content", "") for e in events if e["type"] == "stream_chunk")
+        assert HONEST_FIX in streamed
+    finally:
+        background_jobs._reset_for_tests()
+
+
+@pytest.mark.asyncio
 async def test_negative_tool_using_answer_never_triggers(maker, monkeypatch):
     """Acceptance #1 false-positive guard — GENERIC tier only (PA-1 narrowed this): on a
     plain answer turn (no spawn inferred, so the spawn tier is inactive) that actually

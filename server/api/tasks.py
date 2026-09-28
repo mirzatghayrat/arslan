@@ -47,8 +47,13 @@ async def revise_task(task_id: str, body: Revision, repo=Depends(task_repository
 
 @router.get("/tasks")
 async def list_tasks(conversation_id: str | None = None, limit: int = Query(20, ge=1, le=100),
-                     offset: int = Query(0, ge=0), active_only: bool = False, repo=Depends(task_repository)):
+                     offset: int = Query(0, ge=0), active_only: bool = False,
+                     driver: str | None = Query(None, pattern="^(host|expert|recipe|background)$"),
+                     repo=Depends(task_repository)):
     query = select(CompanionTask).where(CompanionTask.owner_id == "local")
+    if driver is not None:
+        # Every task records its driver (checked_driver defaults to host).
+        query = query.where(CompanionTask.privacy["driver"]["kind"].as_string() == driver)
     if conversation_id is not None:
         query = query.where(CompanionTask.conversation_id == conversation_id)
     if active_only:

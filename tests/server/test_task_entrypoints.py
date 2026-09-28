@@ -104,7 +104,7 @@ async def test_active_recipe_approval_resume_preserves_task_and_spent_budget(exe
     async with repository() as repo:
         row = await repo.get(task_id)
         assert row.budget["used"]["tool_calls"] == 3
-        assert row.pause_reason == "acceptance_review_required"
+        assert row.pause_reason is None and row.phase == "succeeded"  # 0.1.42: delivered, not review-pending
 
 
 async def test_scheduled_pause_is_not_recorded_as_success(execution_db, active_context, monkeypatch):

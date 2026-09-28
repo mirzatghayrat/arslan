@@ -4,15 +4,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import Sidebar from "../components/Sidebar";
 import i18n, { SUPPORTED_LANGUAGES } from "../i18n";
 
-vi.mock("../components/companion/OngoingTasks", () => ({ default: () => null }));
-
 const noop = () => {};
 const props: ComponentProps<typeof Sidebar> = {
   threads: [], activeThreadId: "", onSelectThread: noop, onAddThread: noop,
   spawns: [], activeSpawnChatId: "", onSelectSpawnChat: noop,
   activeSection: "arslan", onChangeSection: noop, onCompleteChat: noop,
   onDistillThread: noop, onArchiveThread: noop, onUnarchiveThread: noop,
-  onDeleteThread: noop, backendStatus: "online", dispatchedSpawnIds: new Set(),
+  onDeleteThread: noop, backendStatus: "online",
 };
 const labels = {
   en: ["Online", "Offline", "Connecting"],
@@ -43,12 +41,20 @@ describe("actual sidebar service status in six languages", () => {
     expect(screen.getByText(labels[language][2])).toBeVisible();
   });
 
-  it.each(SUPPORTED_LANGUAGES)("uses expert vocabulary in both %s composers", async language => {
+  // 0.1.42: the composer invites doing work, and no longer describes Arslan
+  // as a coordinator of experts (they live in the capability library).
+  it.each(SUPPORTED_LANGUAGES)("both %s composers address Arslan without team vocabulary", async language => {
     await i18n.changeLanguage(language);
     for (const key of ["orchestrator.placeholder_empty", "orchestrator.placeholder_chat"]) {
       const value = String(i18n.t(key));
-      expect(value).not.toMatch(/spawns?|分身|スポーン/i);
-      expect(value).toMatch(/experts?|expertos|Experten|专家|エキスパート/i);
+      expect(value).not.toMatch(/spawns?|分身|スポーン|coordinat|协调|調整|coordin|koordin/i);
+      expect(value).toContain("Arslan");
     }
+  });
+
+  it.each(SUPPORTED_LANGUAGES)("never says 分身 anywhere in %s", async language => {
+    await i18n.changeLanguage(language);
+    const all = JSON.stringify(i18n.getResourceBundle(language, "translation"));
+    expect(all).not.toContain("分身");
   });
 });

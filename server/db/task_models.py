@@ -15,8 +15,10 @@ class CompanionTask(Base):
         CheckConstraint("version > 0 AND spec_revision > 0 AND sequence >= 0", name="ck_task_versions"),
         CheckConstraint("phase IN ('queued','running','waiting_user','verifying','succeeded','failed','cancelled')",
                         name="ck_task_phase"),
+        # One foreground turn per conversation; background jobs (0.1.42) run beside it.
         Index("uq_companion_active_conversation", "owner_id", "conversation_id", unique=True,
-              sqlite_where=text("phase IN ('running','verifying')")),
+              sqlite_where=text("phase IN ('running','verifying') AND "
+                                "COALESCE(json_extract(privacy, '$.driver.kind'), 'host') != 'background'")),
     )
     id = Column(String(200), primary_key=True)
     owner_id = Column(String(100), nullable=False, default="local", index=True)

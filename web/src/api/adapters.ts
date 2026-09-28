@@ -285,6 +285,12 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
     const id = String(item.id);
     const timestamp = "";
 
+    // 0.1.42: a background job's live card. Its state lives in the store's
+    // `jobs` map; the chat looks it up by id so updates never rebuild the thread.
+    if (item.kind === "job") {
+      return { id, sender: "arslan", senderName: "Arslan", senderAvatar: "🦁", text: "", timestamp, jobId: item.jobId };
+    }
+
     if (item.kind === "escalation" && item.escalation) {
       const esc = item.escalation;
       // Map EscalationInfo.status → UI Escalation.status
@@ -478,6 +484,9 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
       cancelled: item.cancelled ?? undefined,
       // S3-M3: answer-turn usage from the stream_end frame → bubble usage chip.
       usage: item.usage,
+      // 0.1.42: this is a background job's result, checked against its criteria.
+      resultOfJob: item.jobId,
+      jobOutcome: item.jobOutcome ?? undefined,
     };
   });
 }

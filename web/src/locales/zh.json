@@ -3,22 +3,22 @@
   "appIdentity": {"title":"当前应用","loading":"正在读取版本…","browser":"浏览器客户端 · 无法读取桌面版本","unknown":"无法读取桌面版本","stable":"正式版","preview":"预览版","previewHint":"预览版需手动安装；自动更新跟随正式渠道。安装预览版前请备份数据和密钥。","summary":"版本摘要","privacy":"仅包含客户端类型、版本和渠道，不会上传任何内容。分享前请检查下方文本。","copy":"复制摘要","copied":"已复制","copyFailed":"复制失败，请选中上方文本手动复制。"},
   "chart": {"loading":"正在加载图表…","failed":"图表加载失败，请重新加载页面后重试。"},
   "browser": {"title":"公开网页预览","description":"每次使用独立的静态快照，不调用模型，不使用已登录账号。","limitations":"网页脚本已禁用，不支持点击、填表、上传或下载网站文件。公开 HTTPS 资源通过受限代理读取，部分页面可能不完整。这不是完整的浏览器代理。","close":"关闭","error":"预览失败或暂时无法读取，请检查 HTTPS 地址及网络后重试。","loading":"正在准备…","node_required":"此可选预览功能需要安装 Node.js 18 或更高版本。","macos_required":"此预览功能目前仅在 macOS 上验证。","setup_required":"尚未安装可选的浏览器运行环境。","setup_notice":"将固定版本的开源浏览器下载到 Arslan 数据目录，可能需要几分钟和数百 MB 空间，无需账号或付费 API。","setup":"下载浏览器运行环境","url":"公开 HTTPS 地址","open":"预览","stop":"停止","blocked":"已阻止或限制的连接：{{n}}","screenshot":"已保存的网页截图","cancelled":"已取消"},
-  "recipes": {"title":"任务流程","description":"把步骤保存为可复用版本，设置依赖、并行上限和人工确认点。每次工具调用仍受原有权限约束。","loading":"正在加载任务流程…","operation_failed":"操作失败。请检查连接、所选分身和步骤依赖后重试。","refresh":"刷新","saved":"选择已保存的版本","new":"新建流程","name":"流程名称","parallel":"并行步骤数","empty":"添加步骤，指定分身，并说明它要完成的任务。","step_name":"步骤 {{n}}","step_label":"步骤 {{n}} 名称","assignee":"指定分身","remove":"移除","task":"步骤 {{n}} 任务","task_hint":"说明这一步应交付什么结果。","depends":"等待以下步骤完成","approval_gate":"执行这一步前先征求我的确认","add_step":"添加步骤","save_version":"保存为新版本","input":"本次任务输入","run_notice":"执行所选的已保存版本，使用已配置的模型及现有工具权限。未保存的修改不会执行，模型服务可能产生费用。","run_saved":"执行已保存版本","history":"执行记录","no_runs":"还没有流程执行记录。","output":"已保存的结果","trace":"详情与文件","approve":"确认执行此步骤","stop":"停止","review_resume":"检查后继续","retry_warning":"已完成的步骤会复用。请先核对未完成步骤及可能的外部影响，再确认继续。已保存任务的预算与授权限制保持有效。","cancel":"取消","confirm_retry":"确认重试未完成步骤","status_pending":"待执行","status_queued":"排队中","status_running":"执行中","status_completed":"已完成","status_failed":"失败","status_interrupted":"已中断","status_waiting_approval":"等待确认"},
+  "recipes": {"title":"任务流程","description":"把步骤保存为可复用版本，设置依赖、并行上限和人工确认点。每次工具调用仍受原有权限约束。","loading":"正在加载任务流程…","operation_failed":"操作失败。请检查连接、所选专家和步骤依赖后重试。","refresh":"刷新","saved":"选择已保存的版本","new":"新建流程","name":"流程名称","parallel":"并行步骤数","empty":"添加步骤，指定专家，并说明它要完成的任务。","step_name":"步骤 {{n}}","step_label":"步骤 {{n}} 名称","assignee":"指定专家","remove":"移除","task":"步骤 {{n}} 任务","task_hint":"说明这一步应交付什么结果。","depends":"等待以下步骤完成","approval_gate":"执行这一步前先征求我的确认","add_step":"添加步骤","save_version":"保存为新版本","input":"本次任务输入","run_notice":"执行所选的已保存版本，使用已配置的模型及现有工具权限。未保存的修改不会执行，模型服务可能产生费用。","run_saved":"执行已保存版本","history":"执行记录","no_runs":"还没有流程执行记录。","output":"已保存的结果","trace":"详情与文件","approve":"确认执行此步骤","stop":"停止","review_resume":"检查后继续","retry_warning":"已完成的步骤会复用。请先核对未完成步骤及可能的外部影响，再确认继续。已保存任务的预算与授权限制保持有效。","cancel":"取消","confirm_retry":"确认重试未完成步骤","status_pending":"待执行","status_queued":"排队中","status_running":"执行中","status_completed":"已完成","status_failed":"失败","status_interrupted":"已中断","status_waiting_approval":"等待确认"},
   "files": { "download": "下载文件", "downloadFailed": "下载失败，请检查连接后重试。", "unscored": "执行已结束；本次运行不自动评分。" },
   "app": {
     "name": "Arslan",
-    "tagline": "打造你专属的 AI 分身"
+    "tagline": "打造你专属的 AI 专家"
   },
   "nav": {
     "connections": "连接与权限",
     "projects": "项目",
     "dashboard": "仪表盘",
-    "spawns": "分身",
+    "spawns": "专家",
     "settings": "设置",
     "secondBrain": "第二大脑",
     "arslan": "主助手",
-    "spawn": "分身",
-    "ledger": "分身账本",
+    "spawn": "专家",
+    "ledger": "专家账本",
     "capabilities": "能力库",
     "brain": "记忆",
     "diagnosis": "诊断台"
@@ -94,7 +94,7 @@
     "close_detail": "关闭详情",
     "used_n_dot": " · 用过 {{n}}",
     "last_used_for": " · 最近用于 {{ref}}",
-    "superseded_by_line": "已被 #{{id}} 取代 — 不再注入给分身",
+    "superseded_by_line": "已被 #{{id}} 取代 — 不再注入给专家",
     "undoing": "撤销中…",
     "undo_supersede": "撤销取代",
     "sensitive_note": "已标记为敏感。这是一个显示提示,不是隔离 —— 内容照常返回给读取它的界面。",
@@ -134,7 +134,7 @@
       "communication": "沟通偏好",
       "interest": "领域兴趣",
       "task": "任务需求",
-      "spawn_wish": "想建的分身",
+      "spawn_wish": "想建的专家",
       "other": "其他"
     },
     "fed_unreadable": "已投喂 {{n}} 个 · {{reasons}}",
@@ -144,32 +144,32 @@
     "search_ranking_hybrid": "词面 + 语义匹配",
     "search_truncated": "还有更多命中未显示。",
     "search_hint_local": "正在过滤已加载的内容 —— 按回车搜索全部记忆",
-    "search_hint_pipeline": "已搜索全部记忆，走的是分身读记忆的同一条路",
+    "search_hint_pipeline": "已搜索全部记忆，走的是专家读记忆的同一条路",
     "kind_material": "材料",
     "kind_learning": "心得",
     "kind_profile": "画像",
     "kind_note": "笔记",
     "kind_self": "你",
     "prov_fed": "投喂",
-    "prov_spawn": "分身",
+    "prov_spawn": "专家",
     "prov_handwritten": "手写",
     "graph_empty_title": "你的第二大脑还是空的",
     "graph_empty_body": "用左侧面板投喂一个链接、一个文件或一条笔记，它学到的东西会在这里长成一张可以走的图。"
   },
   "dashboard": {
-    "title": "你的分身",
-    "create": "创建新分身",
-    "stat_spawns": "分身",
+    "title": "你的专家",
+    "create": "创建新专家",
+    "stat_spawns": "专家",
     "stat_conversations": "对话",
     "stat_rules": "活跃规则",
     "status_active": "活跃",
     "status_idle": "空闲",
     "open": "打开对话",
     "delete": "删除",
-    "confirm_delete": "确定删除这个分身吗？此操作无法撤销。"
+    "confirm_delete": "确定删除这个专家吗？此操作无法撤销。"
   },
   "build": {
-    "title": "创建新分身",
+    "title": "创建新专家",
     "step": "第 {{current}} 步，共 {{total}} 步",
     "node_domain": "领域",
     "node_capabilities": "能力",
@@ -178,10 +178,10 @@
     "node_spawn_name": "名称",
     "next": "下一步",
     "back": "返回",
-    "finish": "创建分身",
+    "finish": "创建专家",
     "placeholder": "输入你的回答……",
     "multi_hint": "选择一个或多个，然后继续。",
-    "creating": "正在创建你的分身……",
+    "creating": "正在创建你的专家……",
     "reconnecting": "正在重新连接……"
   },
   "chat": {
@@ -193,10 +193,11 @@
     "edit": "编辑",
     "save_edit": "保存",
     "cancel_edit": "取消",
-    "info": "分身信息",
+    "info": "专家信息",
     "stats": "统计",
     "reconnecting": "正在重新连接……",
     "thinking": "思考中……",
+    "expert_involved": "请了 {{name}} 参与",
     "roster_joined": "{{name}} 加入了对话",
     "roster_left": "{{name}} 离开了对话",
     "roster_recruited": "{{name}} 已加入本次会话 · 直接 @ TA 交办",
@@ -211,7 +212,7 @@
     "routed_to": "已转给 {{name}}",
     "reconnecting": "正在重新连接…",
     "remember_note": "我会记住你…",
-    "spawn_created": "已创建分身 {{name}}",
+    "spawn_created": "已创建专家 {{name}}",
     "thinking_arslan": "Arslan 正在思考…",
     "thinking_spawn": "{{name}} 正在处理…"
   },
@@ -242,7 +243,7 @@
     "dismiss": "忽略"
   },
   "create_card": {
-    "heading": "要为此创建一个 {{name}} 分身吗？",
+    "heading": "要为此创建一个 {{name}} 专家吗？",
     "reason": "原因",
     "domain": "领域",
     "capabilities": "能力",
@@ -255,7 +256,7 @@
     "create_new": "仍然新建",
     "refine_placeholder": "优化此草稿……",
     "differ_placeholder": "在 {{axis}} 上与 {{name}} 有何不同？",
-    "title": "新建分身",
+    "title": "新建专家",
     "name": "名称",
     "role": "角色",
     "tone": "风格",
@@ -302,8 +303,8 @@
     "create_skill": "创建技能"
   },
   "spawn_studio": {
-    "untitled": "未命名分身",
-    "new_spawn": "新分身",
+    "untitled": "未命名专家",
+    "new_spawn": "新专家",
     "badge_edit": "配置",
     "badge_create": "创建",
     "close": "关闭",
@@ -311,7 +312,7 @@
     "mission": "职责 / 任务",
     "composed_from": "由这些种子人设组成",
     "scope_label": "职责 / 任务",
-    "scope_placeholder": "描述这个分身要做什么…",
+    "scope_placeholder": "描述这个专家要做什么…",
     "name_label": "名称",
     "domain_label": "领域",
     "role_label": "角色 / 人设",
@@ -332,7 +333,7 @@
     "creating": "创建中…",
     "created": "已创建",
     "delete": "删除",
-    "delete_confirm": "确认删除该分身？",
+    "delete_confirm": "确认删除该专家？",
     "delete_yes": "删除",
     "builtin": "内置 · 不可删除"
   },
@@ -357,7 +358,7 @@
     "cancel": "取消",
     "toolsets": "工具集",
     "skills": "技能",
-    "locked": "仅限 Arslan — 无法分配给分身",
+    "locked": "仅限 Arslan — 无法分配给专家",
     "temporary": "临时授权（由 Arslan 管理）",
     "temp_badge": "临时",
     "more": "还有 {{count}} 个",
@@ -469,9 +470,9 @@
     "labelTelemetry": "诊断遥测",
     "telemetryDesc": "收集本地使用数据以改善性能（需主动开启）",
     "distill_on_session_end": "会话结束时蒸馏偏好",
-    "distill_hint": "会话结束时从你的反馈学习每个分身的偏好",
+    "distill_hint": "会话结束时从你的反馈学习每个专家的偏好",
     "labelSpawnMode": "生成合成模式",
-    "spawnModeDesc": "选择如何创建子代理。自动：即时派发，不做检查。交互：每次创建新分身前实时征求你的许可。",
+    "spawnModeDesc": "选择如何创建子代理。自动：即时派发，不做检查。交互：每次创建新专家前实时征求你的许可。",
     "spawnModeAuto": "自主合成",
     "spawnModeInteractive": "交互沙箱授权",
     "spawnModeStrict": "严格静态锁定",
@@ -589,7 +590,7 @@
       "requiredHint": "此服务器的 API 与实时连接需要令牌。请粘贴为该实例签发的令牌。"
     },
     "labelEvolutionAuto": "自动进化(后台)",
-    "evolutionAutoDesc": "让 Arslan 在后台用重放的历史运行自行改进分身的提示词。",
+    "evolutionAutoDesc": "让 Arslan 在后台用重放的历史运行自行改进专家的提示词。",
     "evolutionAutoSpendWarning": "这会消耗你的 API 额度。目前没有生效的上限——可设的上限计的是重放派发次数,不是 token。在你设定之前,请在 LLM 服务商的账单页设置硬性消费上限。",
     "evolutionAutoSpendWarningCapped": "这会消耗你的 API 额度。预计超过 {{cap}} 次重放派发的尝试会被拒绝。它限的是派发次数不是 token——每次派发的花费差异很大,所以仍请在服务商账单页保留硬性消费上限。",
     "labelEvolutionMaxDispatches": "每次尝试的重放派发上限",
@@ -763,10 +764,10 @@
   },
   "sidebar": {
     "new_session": "新对话",
-    "spawns_ledger": "分身账本",
+    "spawns_ledger": "专家账本",
     "active_chats": "活跃对话",
     "chats_count": "{{count}} 个对话",
-    "active_spawns": "活跃分身",
+    "active_spawns": "活跃专家",
     "live_count": "{{count}} 在线",
     "system_settings": "系统设置",
     "daemon_core": "守护核心",
@@ -783,10 +784,10 @@
     "delete_confirm_body": "删除会移除这个对话的内容（消息、事件）。诊断与路由审计历史按设计保留。此操作不可撤销。",
     "delete_confirm_ok": "删除",
     "archived_section": "已归档",
-    "distilled_toast": "已蒸馏 {{count}} 个分身的对话",
+    "distilled_toast": "已蒸馏 {{count}} 个专家的对话",
     "distilled_none": "没有可蒸馏的内容",
     "distill_failed": "蒸馏失败",
-    "no_spawns": "还没有分身",
+    "no_spawns": "还没有专家",
     "no_spawns_desc": "创建之后会出现在这里。"
   },
   "orchestrator": {
@@ -795,8 +796,8 @@
     "greeting_evening": "晚上好",
     "greeting_named": "{{greeting}},{{name}}",
     "sandbox_label": "对话工作区",
-    "placeholder_empty": "描述任务、粘贴文档或发送链接——我来协调合适的专家与工具。",
-    "placeholder_chat": "描述任务，让 Arslan 协调专家完成…",
+    "placeholder_empty": "给 Arslan 发消息、贴文档或链接，或直接说要它做什么。",
+    "placeholder_chat": "给 Arslan 发消息，或直接说要它做什么",
     "presets_label": "快速开始",
     "preset_code_audit": "AI 研究",
     "preset_financial": "市场分析",
@@ -806,7 +807,7 @@
     "footer_sandboxed": "核心主机在本地沙盒客户端环路中运行",
     "close_panel": "关闭面板",
     "coming_soon_badge": "即将推出",
-    "sandbox_coming_soon_desc": "每个分身的沙盒调度和草稿审核尚未接入后端框架。实现调度协议后，此面板将显示真实分身输出。",
+    "sandbox_coming_soon_desc": "每个专家的沙盒调度和草稿审核尚未接入后端框架。实现调度协议后，此面板将显示真实专家输出。",
     "sandbox_confirm_merge": "确认并合并",
     "sandbox_discard": "弃稿",
     "sandbox_discard_confirm": "弃掉这版草稿?不会合并回主框。",
@@ -837,7 +838,7 @@
     "no_model_hint": "尚未配置模型 — 请在设置中添加 LLM 以开始使用。",
     "open_settings": "打开设置",
     "refined_badge": "定稿",
-    "update_title": "更新分身:{{name}}",
+    "update_title": "更新专家:{{name}}",
     "update_confirm": "确认修改",
     "update_dismiss": "取消",
     "update_persona_role": "人设",
@@ -850,14 +851,14 @@
     "browser_soon": "内置浏览器——目前还没有接任何东西"
   },
   "ledger": {
-    "title": "活跃分身账本",
+    "title": "活跃专家账本",
     "subtitle": "由 Arslan 核心主机合成的持久微智能体。查看状态、运行指标并配置工具。",
     "style_glass": "玻璃发光",
-    "synthesize_spawn": "合成分身",
-    "empty_no_spawns": "还没有分身",
-    "empty_no_spawns_desc": "分身是 Arslan 派活的专家。你可以自己建一个，或者在对话里描述任务、让 Arslan 提议一个。",
+    "synthesize_spawn": "合成专家",
+    "empty_no_spawns": "还没有专家",
+    "empty_no_spawns_desc": "专家是 Arslan 派活的专家。你可以自己建一个，或者在对话里描述任务、让 Arslan 提议一个。",
     "empty_backend_offline": "后端未连接",
-    "empty_backend_offline_desc": "无法加载分身列表——后端不可达。启动后端后列表将自动刷新。",
+    "empty_backend_offline_desc": "无法加载专家列表——后端不可达。启动后端后列表将自动刷新。",
     "equipped_systems": "已装备系统",
     "items_count": "{{count}} 项",
     "jobs_compiled": "{{count}} 个任务",
@@ -870,7 +871,7 @@
     "tool_hub_search_placeholder": "粘贴 GitHub 仓库，评估其是否可作为 MCP 服务器…",
     "tool_hub_evaluate": "评估规范",
     "tool_hub_presets_label": "推荐 MCP 服务器",
-    "back_to_ledger": "返回活跃分身账本",
+    "back_to_ledger": "返回活跃专家账本",
     "active_slot": "活跃插槽",
     "equip_tools": "配备工具库",
     "equip_skills": "配备认知技能",
@@ -881,14 +882,14 @@
     "restrictive": "受限",
     "security_policy_title": "守护程序安全策略限制范围",
     "security_policy_desc": "在自托管客户端凭证下，Tier-3 高级工具（🔒）受标准安全沙盒限制。主机目录集成仅限于本地虚拟目录，以防止来自远程节点的恶意根执行命令。",
-    "spawn_not_found": "未找到分身。",
+    "spawn_not_found": "未找到专家。",
     "go_back": "返回",
-    "exit": "断开分身连接",
+    "exit": "断开专家连接",
     "connectedExit": "已连接 — 退出",
-    "pullIn": "邀请分身加入对话",
+    "pullIn": "邀请专家加入对话",
     "pullIntoChat": "+ 拉入对话",
-    "kickConfirm": "从对话中移除此分身？",
-    "empty_no_spawns_action": "创建分身"
+    "kickConfirm": "从对话中移除此专家？",
+    "empty_no_spawns_action": "创建专家"
   },
   "spawn_chat": {
     "direct_channel_suffix": "直连频道",
@@ -906,7 +907,7 @@
     "slots_loaded": "已加载 {{count}} 个插槽",
     "dialogue_capabilities": "对话沙盒能力",
     "thread_bound": "线程绑定",
-    "spawn_bound": "分身绑定",
+    "spawn_bound": "专家绑定",
     "global_pool": "全局池",
     "active_scope": "活跃对话范围",
     "mcp_servers": "已注册沙盒 MCP 服务器",
@@ -916,9 +917,9 @@
     "dialogue_tools_empty": "对话范围内无链接工具。",
     "dialogue_skills": "对话技能",
     "dialogue_skills_empty": "对话范围内无链接技能。",
-    "spawns_pipeline": "分身管道",
+    "spawns_pipeline": "专家管道",
     "no_specialists": "此线程组中未邀请专家",
-    "invite_spawns": "邀请分身",
+    "invite_spawns": "邀请专家",
     "verify_diagnostics": "验证管道诊断",
     "level_progress": "等级进度",
     "mcp_none": "未连接 MCP",
@@ -926,26 +927,26 @@
     "mcp_health_ok": "上次体检正常",
     "mcp_health_failing": "上次体检失败",
     "mcp_health_unknown": "尚未体检",
-    "roster_count": "本会话分身",
+    "roster_count": "本会话专家",
     "eval_label": "评估",
     "eval_runs": "{{count}} 次运行",
     "eval_avg": "均分"
   },
   "modal": {
-    "create_spawn_title": "合成新专家分身",
-    "spawn_identifier": "分身标识符",
+    "create_spawn_title": "合成新专家",
+    "spawn_identifier": "专家标识符",
     "avatar_emoji": "头像 Emoji",
     "assigned_domain": "指定领域",
     "domain_scope": "领域范围 / 任务描述",
     "domain_placeholder": "例：SEO 文案、金融估值",
-    "description_placeholder": "在此提供定义分身核心用途的简要指令...",
-    "default_capabilities_note": "初始化时默认自动映射🔧网络搜索和📘信息图设计标准能力。自定义设置可在分身详情页中编辑。",
+    "description_placeholder": "在此提供定义专家核心用途的简要指令...",
+    "default_capabilities_note": "初始化时默认自动映射🔧网络搜索和📘信息图设计标准能力。自定义设置可在专家详情页中编辑。",
     "confirm_synthesis": "确认合成",
-    "ledger_modal_title": "分身管道账本",
+    "ledger_modal_title": "专家管道账本",
     "ledger_modal_subtitle": "招募并将专家接入活跃群组对话。",
     "ledger_active_chat": "活跃对话：",
-    "ledger_search_placeholder": "按领域专长、标识符名称或能力描述搜索分身注册表...",
-    "ledger_coming_soon_warning": "邀请/踢出尚未接入后端——即将推出。分身列表为真实数据。",
+    "ledger_search_placeholder": "按领域专长、标识符名称或能力描述搜索专家注册表...",
+    "ledger_coming_soon_warning": "邀请/踢出尚未接入后端——即将推出。专家列表为真实数据。",
     "ledger_no_results": "未找到匹配的专家原型。",
     "ledger_pull_into_chat": "拉入对话",
     "ledger_listed": "已加入",
@@ -954,7 +955,7 @@
     "workspace_label": "活跃会话工作区：",
     "workspace_orchestrator": "对话：{{title}}",
     "workspace_specialist": "专家流：{{name}}",
-    "workspace_ledger": "分身账本仪表盘",
+    "workspace_ledger": "专家账本仪表盘",
     "workspace_settings": "系统诊断配置",
     "workspace_capabilities": "能力库",
     "workspace_brain": "第二大脑"
@@ -981,11 +982,11 @@
     "catalog": {
       "loading": "正在加载注册表…",
       "empty": "还没有注册任何能力",
-      "equip_hint": "从分身的菜单中装配这些能力。",
+      "equip_hint": "从专家的菜单中装配这些能力。",
       "unimplemented_note": "未实装——仅目录占位,不可装备。",
       "orchestrator_note": "出于安全，仅 Arslan 本身可用，不能交给专家使用。",
       "degraded": "裸跑·无沙箱",
-      "empty_desc": "能力就是分身能用的工具和技能。用本页的面板从仓库导入技能，或注册一个 MCP 服务器。",
+      "empty_desc": "能力就是专家能用的工具和技能。用本页的面板从仓库导入技能，或注册一个 MCP 服务器。",
       "filtered_empty": "没有符合当前筛选的项",
       "filtered_clear": "显示全部"
     },
@@ -1041,8 +1042,8 @@
       "note": {
         "title": "参考笔记（可检查修改）",
         "fallback": "LLM 蒸馏不可用——已改用评估摘要。",
-        "pick_spawn": "选择分身…",
-        "ingest": "喂给分身知识库",
+        "pick_spawn": "选择专家…",
+        "ingest": "喂给专家知识库",
         "ingest_ok": "已存入 {{name}} 的知识库。",
         "create_skill": "注册为技能",
         "create_ok": "已加入技能库（safe）。"
@@ -1059,9 +1060,9 @@
       "overview_label": "这是什么"
     },
     "equip": {
-      "action": "装备给分身…",
-      "loading": "加载分身…",
-      "empty": "还没有分身。",
+      "action": "装备给专家…",
+      "loading": "加载专家…",
+      "empty": "还没有专家。",
       "error": "装备失败——已回滚。"
     },
     "compat": {
@@ -1105,7 +1106,7 @@
     }
   },
   "forge": {
-    "intro": "把你自己的方法打包成技能。候选先观察，再对着某个分身的真实评分回放过闸，然后由你晋升上线——你就是让它上线的那道闸。这些自撰技能会加入技能库。",
+    "intro": "把你自己的方法打包成技能。候选先观察，再对着某个专家的真实评分回放过闸，然后由你晋升上线——你就是让它上线的那道闸。这些自撰技能会加入技能库。",
     "create": {
       "title": "创建技能",
       "submit": "锻造候选",
@@ -1134,9 +1135,9 @@
       "liveLabel": "在线技能"
     },
     "eval": {
-      "target": "评估目标分身…",
+      "target": "评估目标专家…",
       "button": "评估",
-      "pickTarget": "请选择一个要评估的目标分身。",
+      "pickTarget": "请选择一个要评估的目标专家。",
       "passed": "过闸：{{reason}}",
       "failed": "未过闸：{{reason}}"
     },
@@ -1160,8 +1161,8 @@
       "retire": "退役",
       "retireConfirm": "退役 — 全部解绑",
       "cancel": "取消",
-      "retireHint": "已标记待审 — 退役会从所有分身解绑并使其不可装备",
-      "retired": "已退役 \"{{key}}\" — 从 {{count}} 个分身解绑。"
+      "retireHint": "已标记待审 — 退役会从所有专家解绑并使其不可装备",
+      "retired": "已退役 \"{{key}}\" — 从 {{count}} 个专家解绑。"
     },
     "modes": {
       "title": "两种入口",
@@ -1236,7 +1237,7 @@
     "image_unsendable": "无法处理,未发送"
   },
   "working": {
-    "summon": "正在召唤分身…",
+    "summon": "正在召唤专家…",
     "context": "组装上下文与技能…",
     "tools": "调度工具中…",
     "compose": "整理结论中…",
@@ -1401,13 +1402,13 @@
       "outcome_skipped_budget": "第 #{{id}} 次尝试在花钱之前就被拒绝了:{{reason}}",
       "outcome_skipped_structural": "第 #{{id}} 次尝试还无法被评估:{{reason}}",
       "watch_lost": "第 #{{id}} 次尝试仍在运行,本面板已停止跟踪。重新打开可查看。",
-      "empty_desc": "进化会用一个分身自己被评分的 run 重写它的提示词，然后把重写结果停在这里等你接受或拒绝。任何改动都不会绕过你生效。"
+      "empty_desc": "进化会用一个专家自己被评分的 run 重写它的提示词，然后把重写结果停在这里等你接受或拒绝。任何改动都不会绕过你生效。"
     },
     "diag": {
       "title": "为什么还没有提案",
-      "pick_spawn": "在上方选择一个分身，查看其进化资格。",
+      "pick_spawn": "在上方选择一个专家，查看其进化资格。",
       "verdict_in_flight_hung": "有一次尝试（#{{attempt_id}}）已运行 {{age_min}} 分钟且从未结束——运行器可能卡住了。",
-      "verdict_drought_no_runs": "还没有已评分的运行——该分身需要真实使用后才能进化。",
+      "verdict_drought_no_runs": "还没有已评分的运行——该专家需要真实使用后才能进化。",
       "verdict_drought_non_replayable": "{{non_replayable}}/{{total_scored}} 次已评分运行无法密闭重放，仅剩 {{replayable}} 次（< {{min}}）。",
       "verdict_drought_too_few": "目前只有 {{total_scored}} 次已评分运行（需要 {{min}} 次）。",
       "verdict_baseline_flooring": "已声明的基线将语料限制为 {{scored_ge_baseline}} 次运行（< {{min}}）。",
@@ -1454,7 +1455,7 @@
     "delete_confirm": "删除此任务及其运行历史？",
     "col": {
       "name": "名称",
-      "spawn": "分身",
+      "spawn": "专家",
       "cadence": "节奏",
       "last": "上次结果",
       "next": "下次运行",
@@ -1485,8 +1486,8 @@
       "edit_title": "编辑定时任务",
       "name": "名称",
       "prompt": "提示词",
-      "spawn": "分身",
-      "spawn_placeholder": "选择分身…",
+      "spawn": "专家",
+      "spawn_placeholder": "选择专家…",
       "kind_interval": "固定间隔",
       "kind_cron": "Cron",
       "interval": "运行间隔",
@@ -1497,17 +1498,17 @@
       "conversation_placeholder": "留空 = 专用会话",
       "submit_create": "创建",
       "submit_save": "保存",
-      "required": "名称、提示词和分身必填"
+      "required": "名称、提示词和专家必填"
     },
     "err": {
       "task_not_found": "定时任务 {{task_id}} 不存在",
-      "spawn_not_found": "分身 {{spawn_id}} 不存在",
+      "spawn_not_found": "专家 {{spawn_id}} 不存在",
       "interval_too_small": "间隔至少 {{min_seconds}} 秒",
       "cron_required": "cron 表达式不能为空",
       "enabled_limit_reached": "已启用的定时任务已达上限 {{max_enabled}} 个，请先暂停或删除",
-      "spawn_id_required": "必须选择一个分身"
+      "spawn_id_required": "必须选择一个专家"
     },
-    "empty_desc": "定时任务会按间隔或 cron 表达式自动派发分身 —— 比如每天一份摘要、每小时一次检查。"
+    "empty_desc": "定时任务会按间隔或 cron 表达式自动派发专家 —— 比如每天一份摘要、每小时一次检查。"
   },
   "diag": {
     "range_1h": "近1h",
@@ -1520,7 +1521,7 @@
     "inspect": "查 →",
     "loading": "加载中…",
     "health": "健康度",
-    "spawn": "分身",
+    "spawn": "专家",
     "trend": "趋势",
     "run_stat_line": "{{count}} run · 达标 {{pass}}% · P95 {{p95}}",
     "range_24h": "24h",
@@ -1533,13 +1534,13 @@
     "clear_all_btn": "清除所有调试详情",
     "chart_trend": "评分趋势",
     "chart_dims": "四维平均",
-    "chart_pass": "分身达标率",
-    "vitals_empty": "暂无运行数据(仅分身派发时记录)",
+    "chart_pass": "专家达标率",
+    "vitals_empty": "暂无运行数据(仅专家派发时记录)",
     "times_n": "{{n}} 次",
     "cell_tooltip": "{{count}} 次 · {{errors}} 错",
     "overall_performance": "整体表现",
     "empty_title": "还没有记录到任何 run",
-    "empty_body": "每次派发分身都会记录一条 run。在对话里发一个任务，这一页就会有内容 —— 评分、错误率、异常全都来自真实的 run。",
+    "empty_body": "每次派发专家都会记录一条 run。在对话里发一个任务，这一页就会有内容 —— 评分、错误率、异常全都来自真实的 run。",
     "empty_action": "去对话"
   },
   "replay": {
@@ -1552,7 +1553,7 @@
     "how_it_went": "做得怎么样",
     "scoring": "评分中…",
     "radar_title": "本次 vs 舰队(雷达)",
-    "recent_scores": "该分身近期评分",
+    "recent_scores": "该专家近期评分",
     "sys_prompt_details": "实际系统提示 / 注入的知识",
     "sys_prompt": "系统提示",
     "injected": "注入知识",
@@ -1650,12 +1651,12 @@
     }
   },
   "diagnosis": {
-    "a_spawn": "分身"
+    "a_spawn": "专家"
   },
   "recap": {
     "distill": {
-      "manual": "手动蒸馏 {{distilled}} 个分身",
-      "manual_with_failures": "手动蒸馏 {{distilled}} 个分身（失败 {{failed}} 个）"
+      "manual": "手动蒸馏 {{distilled}} 个专家",
+      "manual_with_failures": "手动蒸馏 {{distilled}} 个专家（失败 {{failed}} 个）"
     }
   },
   "wswrite": {
