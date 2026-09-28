@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 
 from evals.companion import stable_budget as budget
 from evals.companion.stable_live import persist
@@ -174,11 +175,13 @@ async def run_phase(phase, profile, evidence, adapter):
     assert final["budget"]["id"] == before["budget"]["id"]
     assert final["budget"]["used"]["model_requests"] > before["budget"]["used"]["model_requests"]
     # 0.1.42: a conversational turn completes on a delivered answer (deterministic
-    # "answer-delivered"), not on a human review that never comes.
-    assert final["attempts"] == 2 and final["phase"] == "succeeded", json.dumps(
-        {key: final.get(key) for key in ("attempts", "phase", "pause_reason", "results", "validation")},
-        default=str)[:4000]
-    assert final["pause_reason"] is None
+    # "answer-delivered"), not on a human review that never comes — provided the
+    # file it saved could be checked. The artifact parser runs only inside
+    # Seatbelt; without it (Linux CI) the check is not run and the turn honestly
+    # waits with `task_checks_not_run` instead of claiming success.
+    expected = ("succeeded", None) if sys.platform == "darwin" else ("waiting_user", "task_checks_not_run")
+    assert final["attempts"] == 2 and (final["phase"], final["pause_reason"]) == expected, json.dumps(
+        {key: final.get(key) for key in ("attempts", "phase", "pause_reason")}, default=str)
     assert sum(a["tool"] == "write_file" and a["status"] == "succeeded" for a in final["actions"]) == 1
     assert not any(t["tool"] == "write_file" for t in trace)
     await engine.dispose()
