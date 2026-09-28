@@ -3,7 +3,6 @@ import { File, Globe, Plus, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { OPEN_ARTIFACT, restoreDock, saveDock, validArtifact, type DockTab } from "../lib/workDock";
 import BrowserReader from "./BrowserReader";
-import BrowserPanel from "./BrowserPanel";
 import ArtifactPreview from "./ArtifactPreview";
 
 export default function WorkDock({ open, onOpen, onClose, conversationId, taskId, temporary }: {
@@ -15,7 +14,6 @@ export default function WorkDock({ open, onOpen, onClose, conversationId, taskId
   const [selected, setSelected] = useState(initial.current.tabs[0]?.id ?? "");
   const [width, setWidth] = useState(initial.current.width);
   const [narrow, setNarrow] = useState(() => window.innerWidth < 768);
-  const [legacy, setLegacy] = useState(false);
   const [limit, setLimit] = useState(false);
   const previousConversation = useRef(conversationId);
   const panel = useRef<HTMLElement>(null);
@@ -82,7 +80,7 @@ export default function WorkDock({ open, onOpen, onClose, conversationId, taskId
     style={{ width: narrow ? "100%" : width, maxWidth: narrow ? "none" : "55vw" }}
     className={`${narrow ? "fixed inset-0 z-[100]" : "relative z-20"} flex h-full min-w-0 shrink-0 flex-col border-l border-border bg-background`}
     onKeyDown={event => {
-      if (!narrow || legacy) return;
+      if (!narrow) return;
       if (event.key === "Escape") { event.stopPropagation(); onClose(); }
       if (event.key === "Tab") {
         const elements = Array.from(panel.current?.querySelectorAll<HTMLElement>(
@@ -124,7 +122,5 @@ export default function WorkDock({ open, onOpen, onClose, conversationId, taskId
           onTitle={title => setTabs(old => old.map(item => item.id === tab.id && item.kind === "browser" ? { ...item, title } : item))} /></div>
       </div> : <ArtifactPreview file={tab.file} visible={tab.id === selected} />}
     </div>)}
-    <footer className="shrink-0 border-t border-border p-2"><button className="text-xs text-muted-foreground underline" onClick={() => setLegacy(true)}>{t("dock.staticPreview")}</button></footer>
-    <BrowserPanel open={legacy} onClose={() => setLegacy(false)} />
   </aside>;
 }

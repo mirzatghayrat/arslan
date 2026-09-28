@@ -121,6 +121,9 @@ export default function TaskPanel({ conversationId, onResume, compact = false }:
     }, 8000);
   }
   if (!latest && !relevantFrame) return null;
+  // 0.1.42: in the chat's header row the chip is for work that needs a look.
+  // An answered question ends "succeeded"; showing that on every chat was noise.
+  if (compact && !open && (phase === "succeeded" || phase === "cancelled")) return null;
   return <div className={compact ? "flex min-w-0 items-center gap-3 text-xs" : "flex shrink-0 items-center justify-between gap-3 border-b border-border/50 px-5 py-2 text-xs"}>
     <button className="inline-flex min-w-0 items-center gap-2 text-muted-foreground hover:text-foreground"
       onClick={() => { setSelected(latest?.spec.id ?? relevantFrame?.task_id ?? null); setError(null); setOpen(true); }}>

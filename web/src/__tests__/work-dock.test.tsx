@@ -87,4 +87,10 @@ describe("work dock", () => {
       }
     }
   });
+
+  it("has no footer link; browser setup lives in Settings → Advanced (0.1.42)", () => {
+    render(<WorkDock open onOpen={() => {}} onClose={() => {}} conversationId="conversation" taskId={null} temporary={false} />);
+    expect(screen.queryByText(dockMessages.en.staticPreview)).toBeNull();
+    expect(screen.queryByText("dock.staticPreview")).toBeNull();
+  });
 });

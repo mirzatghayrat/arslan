@@ -45,3 +45,10 @@ export const tasksApi = {
     `/tasks/${encodeURIComponent(taskId)}/actions/${encodeURIComponent(action.id)}/reconcile`,
     json({ expected_version: action.version, applied, note })),
 };
+
+// 0.1.42 background jobs (in-memory, beside their task records).
+export const backgroundJobsApi = {
+  list: (conversationId?: string) => request<{ active: number; jobs: (import("./client.types").ArslanServerMessage & { type: "job_update" })[] }>(
+    conversationId ? `/background-jobs?conversation_id=${encodeURIComponent(conversationId)}` : "/background-jobs"),
+  stop: (jobId: string) => request<{ ok: boolean }>(`/background-jobs/${encodeURIComponent(jobId)}/stop`, { method: "POST" }),
+};

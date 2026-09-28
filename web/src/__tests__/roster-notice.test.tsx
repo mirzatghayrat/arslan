@@ -30,6 +30,7 @@ window.HTMLElement.prototype.scrollIntoView = vi.fn();
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string, opts?: Record<string, string>) => {
+      if (key === "chat.expert_involved") return `asked ${opts?.name ?? ""}`;
       if (key === "chat.roster_joined") return `${opts?.name ?? ""} joined`;
       if (key === "chat.roster_left") return `${opts?.name ?? ""} left`;
       if (key === "chat.roster_recruited") return `${opts?.name ?? ""} recruited-notice`;
@@ -162,7 +163,7 @@ describe("toUiMessages roster notice", () => {
 // ---------------------------------------------------------------------------
 // 5. Component smoke — roster notice renders without message bubbles
 // ---------------------------------------------------------------------------
-describe("OrchestratorChat roster notice rendering", () => {
+describe("OrchestratorChat roster notice rendering (0.1.42: one quiet line)", () => {
   const joinedMsg = {
     id: "notice-1",
     sender: "arslan" as const,
@@ -174,7 +175,7 @@ describe("OrchestratorChat roster notice rendering", () => {
     rosterSpawnName: "数据研析",
   };
 
-  it("renders a notice line containing the spawn name and 'joined'", () => {
+  it("says only who was asked to help, with no @-hand-off invitation", () => {
     render(
       <OrchestratorChat
         chatHistory={[joinedMsg]}
@@ -185,17 +186,15 @@ describe("OrchestratorChat roster notice rendering", () => {
         activeThread={null}
       />
     );
-    // The notice line should contain the spawn name + "joined"
-    expect(screen.getByText(/数据研析 joined/)).toBeTruthy();
-    // Must NOT render an avatar bubble (the notice is just a divider line)
+    expect(screen.getByText("asked 数据研析")).toBeTruthy();
+    expect(screen.queryByText(/joined|@/)).toBeNull();
     expect(screen.queryByText("Arslan Orchestrator")).toBeNull();
   });
 
-  it("renders a 'left' notice for rosterAction='left'", () => {
-    const leftMsg = { ...joinedMsg, id: "notice-2", rosterAction: "left" };
+  it("says nothing when an expert leaves", () => {
     render(
       <OrchestratorChat
-        chatHistory={[leftMsg]}
+        chatHistory={[{ ...joinedMsg, id: "notice-2", rosterAction: "left" }]}
         setChatHistory={() => {}}
         spawns={[]}
         currentStyle="quartz"
@@ -203,14 +202,13 @@ describe("OrchestratorChat roster notice rendering", () => {
         activeThread={null}
       />
     );
-    expect(screen.getByText(/数据研析 left/)).toBeTruthy();
+    expect(screen.queryByText(/数据研析/)).toBeNull();
   });
 
-  it("renders a recruited notice through chat.roster_recruited (cell 6 enroll)", () => {
-    const recruitedMsg = { ...joinedMsg, id: "notice-3", rosterAction: "recruited" };
+  it("renders a recruited expert as the same quiet line", () => {
     render(
       <OrchestratorChat
-        chatHistory={[recruitedMsg]}
+        chatHistory={[{ ...joinedMsg, id: "notice-3", rosterAction: "recruited" }]}
         setChatHistory={() => {}}
         spawns={[]}
         currentStyle="quartz"
@@ -218,7 +216,8 @@ describe("OrchestratorChat roster notice rendering", () => {
         activeThread={null}
       />
     );
-    expect(screen.getByText(/数据研析 recruited-notice/)).toBeTruthy();
+    expect(screen.getByText("asked 数据研析")).toBeTruthy();
+    expect(screen.queryByText(/recruited-notice/)).toBeNull();
   });
 });
 
@@ -264,7 +263,7 @@ describe("OrchestratorChat joined_no_pending + unknown-action fallback", () => {
     rosterSpawnName: "数据研析",
   };
 
-  it("renders the honest no-pending notice", () => {
+  it("renders joined_no_pending as the quiet line", () => {
     render(
       <OrchestratorChat
         chatHistory={[{ ...base, rosterAction: "joined_no_pending" }]}
@@ -275,10 +274,10 @@ describe("OrchestratorChat joined_no_pending + unknown-action fallback", () => {
         activeThread={null}
       />
     );
-    expect(screen.getByText(/数据研析 joined-no-pending-notice/)).toBeTruthy();
+    expect(screen.getByText("asked 数据研析")).toBeTruthy();
   });
 
-  it("renders an UNKNOWN roster action as a neutral joined-style line, never as left", () => {
+  it("renders an UNKNOWN roster action as the quiet line, never hidden like a leave", () => {
     render(
       <OrchestratorChat
         chatHistory={[{ ...base, id: "notice-np-2", rosterAction: "future_action" }]}
@@ -289,8 +288,7 @@ describe("OrchestratorChat joined_no_pending + unknown-action fallback", () => {
         activeThread={null}
       />
     );
-    expect(screen.getByText(/数据研析 joined/)).toBeTruthy();
-    expect(screen.queryByText(/数据研析 left/)).toBeNull();
+    expect(screen.getByText("asked 数据研析")).toBeTruthy();
   });
 });
 
@@ -362,6 +360,6 @@ describe("card accept renders a single roster line", () => {
       />
     );
     expect(screen.getAllByText(/数据研析/)).toHaveLength(1);
-    expect(screen.getByText(/joined-no-pending-notice/)).toBeTruthy();
+    expect(screen.getByText("asked 数据研析")).toBeTruthy();
   });
 });

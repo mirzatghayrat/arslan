@@ -25,6 +25,7 @@ import Select from '../Select';
 import McpTokenControl from './McpTokenControl';
 import SshIdentityPanel from './SshIdentityPanel';
 import SshNodesPanel from './SshNodesPanel';
+import BrowserPanel from '../BrowserPanel';
 import type { VoiceMode } from '../../types';
 
 export type ShellConfirmPolicy = 'ask_all' | 'ask_risky';
@@ -365,7 +366,25 @@ export default function AdvancedSection({
           />
         </div>
 
+        {/* 0.1.42: moved here from the work panel's footer — this is the one
+            place that sets up the browser runtime and runs a static preview. */}
+        <div className="h-[1px] bg-border/40"></div>
+        <BrowserSetupRow />
+
       </div>
+    </div>
+  );
+}
+
+function BrowserSetupRow() {
+  const { t } = useTranslation();
+  const [open, setOpen] = React.useState(false);
+  return (
+    <div className="flex items-center justify-between">
+      <h4 className="text-xs font-bold text-foreground font-sans">{t('dock.staticPreview')}</h4>
+      <button type="button" data-testid="settings-browser-setup" onClick={() => setOpen(true)}
+        className="rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-foreground/5">{t('ui.open')}</button>
+      <BrowserPanel open={open} onClose={() => setOpen(false)} />
     </div>
   );
 }

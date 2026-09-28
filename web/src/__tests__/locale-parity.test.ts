@@ -33,7 +33,7 @@ const enKeys = collectKeys(en as JsonObj);
 
 describe("locale parity", () => {
   // 1539 → 1555 (0.1.41): +7 artifactReview, +3 research-review setting, +6 Desktop section.
-  it("en locale has 1555 keys (baseline guard)", () => {
+  it("en locale has 1556 keys (baseline guard)", () => {
     // 1318 → 1335: the first-run wizard redesign — the four-beat "how it
     // works" tour (title + typed line + 4×title/body), the catalog capability
     // caption, the test-before-save states (test & save / testing / ok /
@@ -258,7 +258,8 @@ describe("locale parity", () => {
     // +12: read-only desktop identity and explicitly previewable summary.
     // +6: bundled app icon choices and persistence feedback.
     // +1: externalLink.failed added by fe9c12b5 (native HTTPS refusal).
-    expect(enKeys).toHaveLength(1555);
+    // +1: chat.expert_involved (0.1.42 quiet "asked X to help" line replaces the roster notices).
+    expect(enKeys).toHaveLength(1556);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

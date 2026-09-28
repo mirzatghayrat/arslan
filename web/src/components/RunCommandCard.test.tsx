@@ -87,4 +87,15 @@ describe("RunCommandCard", () => {
     expect(screen.queryByTestId("runcmd-fingerprints")).toBeNull();
     expect(screen.getByTestId("runcmd-remember")).toBeInTheDocument();
   });
+
+  test("a background job's card says so and never offers remember", () => {
+    const onConfirm = vi.fn();
+    render(
+      <RunCommandCard callId="bg1" pretty="ls" reason="" background onConfirm={onConfirm} onCancel={vi.fn()} />,
+    );
+    expect(screen.getByTestId("runcmd-background")).toBeInTheDocument();
+    expect(screen.queryByTestId("runcmd-remember")).toBeNull();
+    fireEvent.click(screen.getByTestId("runcmd-run"));
+    expect(onConfirm).toHaveBeenCalledWith("bg1", false);
+  });
 });

@@ -15,8 +15,6 @@ const baseProps = {
   onChangeSection: () => {}, onCompleteChat: vi.fn(),
   onDistillThread: vi.fn(), onArchiveThread: vi.fn(), onUnarchiveThread: vi.fn(), onDeleteThread: vi.fn(),
   backendStatus: "online" as const,
-  // decision (a): the list is scoped by dispatch; tests supply the set
-  dispatchedSpawnIds: new Set<number>([1, 2]),
 } as any;
 
 describe("Sidebar a11y (M7-#5)", () => {
@@ -27,40 +25,29 @@ describe("Sidebar a11y (M7-#5)", () => {
   });
 });
 
-describe("Sidebar ACTIVE SPAWNS lifecycle", () => {
-  // The rule CHANGED (decision (a)): the list is scoped to the spawns THIS
-  // conversation dispatched to, not to the ones with a direct chat open. The
-  // old assertion pinned the old rule and is replaced rather than relaxed —
-  // both halves below, because either alone is satisfied by a list that shows
-  // everything or nothing.
-  it("lists a spawn this session dispatched to, even with no direct chat", () => {
-    render(<Sidebar {...baseProps} dispatchedSpawnIds={new Set([2])} />);
-    // Mermer has hasActiveChat: false, and is still listed — it is part of THIS
-    // session's work, which is the question the list now answers.
-    expect(screen.getByText("Mermer")).toBeDefined();
-  });
-
-  it("keeps user-opened expert chats visible independently of task dispatch", () => {
-    render(<Sidebar {...baseProps} dispatchedSpawnIds={new Set([2])} />);
+describe("Sidebar experts (0.1.42: experts live in the capability library)", () => {
+  // The rule CHANGED again: the sidebar no longer carries "other expert work".
+  // Only a chat the user opened with an expert is a conversation row; an expert
+  // that is merely working or was dispatched is not listed here at all.
+  it("keeps user-opened expert chats as conversation rows", () => {
+    render(<Sidebar {...baseProps} />);
     expect(screen.getByRole("region", { name: "workspace.recentConversations" })).toHaveTextContent("小美");
   });
 
-  it("does not list idle unopened experts in a fresh conversation", () => {
-    render(<Sidebar {...baseProps} dispatchedSpawnIds={new Set<number>()} />);
-    expect(screen.getByText("小美")).toBeInTheDocument();
+  it("does not list a working expert the user never opened", () => {
+    render(<Sidebar {...baseProps} spawns={[{ ...spawns[1], status: "working" }]} />);
     expect(screen.queryByText("Mermer")).toBeNull();
-  });
-
-  it("keeps other running expert work discoverable without a level score", () => {
-    render(<Sidebar {...baseProps} spawns={[{ ...spawns[1], status: "working" }]} dispatchedSpawnIds={new Set()} />);
-    expect(screen.getByText("Mermer")).toBeInTheDocument();
-    expect(screen.queryByText(/^L\./)).toBeNull();
+    expect(screen.queryByText(/workspace\.legacyWork/)).toBeNull();
   });
 
   it("does not infer user-opened chats from legacy task transcript existence", () => {
-    render(<Sidebar {...baseProps} expertChatIds={[]} dispatchedSpawnIds={new Set()} />);
-    expect(screen.getByRole("region", { name: "workspace.recentConversations" })).not.toHaveTextContent("小美");
-    expect(screen.getByText("小美")).toBeInTheDocument(); // retained under legacy work
+    render(<Sidebar {...baseProps} expertChatIds={[]} />);
+    expect(screen.queryByText("小美")).toBeNull();
+  });
+
+  it("has no brand subtitle under the name", () => {
+    render(<Sidebar {...baseProps} />);
+    expect(screen.queryByText("sidebar.brand_subtitle")).toBeNull();
   });
 });
 

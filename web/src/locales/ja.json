@@ -263,6 +263,7 @@
     "stats": "統計",
     "reconnecting": "再接続しています…",
     "thinking": "考えています…",
+    "expert_involved": "{{name}} に協力を依頼しました",
     "roster_joined": "{{name}} が会話に参加しました",
     "roster_left": "{{name}} が会話を退出しました",
     "roster_recruited": "{{name}} が本セッションに参加 · タスクは @ で直接依頼できます",
@@ -655,7 +656,7 @@
       "requiredHint": "このサーバーは API とライブ接続にトークンを必要とします。このインスタンス用に発行されたトークンを貼り付けてください。"
     },
     "labelEvolutionAuto": "自動進化(バックグラウンド)",
-    "evolutionAutoDesc": "過去の実行を再生して、Arslan がバックグラウンドで分身のプロンプトを自ら改善します。",
+    "evolutionAutoDesc": "過去の実行を再生して、Arslan がバックグラウンドでエキスパートのプロンプトを自ら改善します。",
     "evolutionAutoSpendWarning": "API クレジットを消費します。現在、有効な上限はありません——設定できる上限はリプレイ実行の回数であり、トークンではありません。設定するまでは、LLM プロバイダーの請求画面で上限額を設定してください。",
     "evolutionAutoSpendWarningCapped": "API クレジットを消費します。{{cap}} 回を超えると見込まれる試行は拒否されます。制限されるのは実行回数でトークンではなく、1 回あたりの費用は大きく変動します。プロバイダー側の上限額も維持してください。",
     "labelEvolutionMaxDispatches": "1 回の試行あたりの最大リプレイ実行数",
@@ -861,8 +862,8 @@
     "greeting_evening": "こんばんは",
     "greeting_named": "{{greeting}}、{{name}}さん",
     "sandbox_label": "会話ワークスペース",
-    "placeholder_empty": "タスクを説明するか、文書やリンクを共有してください。適切なエキスパートとツールを組み合わせます。",
-    "placeholder_chat": "タスクを入力してください。Arslan がエキスパートを調整します…",
+    "placeholder_empty": "Arslan にメッセージ、文書やリンクを送るか、してほしいことをそのまま伝えてください。",
+    "placeholder_chat": "Arslan にメッセージを送るか、してほしいことをそのまま伝えてください",
     "presets_label": "クイックスタート",
     "preset_code_audit": "AI リサーチ",
     "preset_financial": "市場分析",
@@ -1125,9 +1126,9 @@
       "overview_label": "これは何か"
     },
     "equip": {
-      "action": "分身に装備…",
-      "loading": "分身を読み込み中…",
-      "empty": "分身はまだいません。",
+      "action": "エキスパートに装備…",
+      "loading": "エキスパートを読み込み中…",
+      "empty": "エキスパートはまだいません。",
       "error": "装備に失敗しました——変更を元に戻しました。"
     },
     "compat": {
