@@ -109,13 +109,30 @@ describe("card", () => {
   });
 
   it("shows the checked outcome and no stop button once finished", () => {
-    useArslanStore.getState().handleFrame(update({ phase: "finished", outcome: "blocked", detail: "missing input",
+    useArslanStore.getState().handleFrame(update({ phase: "finished", outcome: "blocked", detail: "task_validation_failed",
       criteria: [{ id: "c1", description: "Saved as notes.md", status: "failed" }] }));
     render(<JobCard jobId="job-1" />);
     expect(screen.getByText("jobs.outcome.blocked")).toBeInTheDocument();
-    expect(screen.getByText("missing input")).toBeInTheDocument();
+    expect(screen.getByTestId("job-detail")).toHaveTextContent("jobs.detail.task_validation_failed");
     expect(screen.getByText(/jobs.check.failed/)).toBeInTheDocument();
     expect(screen.queryByText("jobs.stop")).toBeNull();
+  });
+
+  it("names the limit a job ran out of, in words, never the raw code", () => {
+    useArslanStore.getState().handleFrame(update({ phase: "finished", outcome: "out_of_budget",
+      detail: "task_budget_exhausted", budget: { reason: "tool_calls", used: 120, limit: 120 },
+      criteria: [{ id: "c1", description: "Saved as notes.md", status: "not_reached" }] }));
+    render(<JobCard jobId="job-1" />);
+    expect(screen.getByText("jobs.outcome.out_of_budget")).toBeInTheDocument();
+    expect(screen.getByTestId("job-detail").textContent).toMatch(/^jobs\.budgetStop:jobs\.budgetWhat\.tool_calls.*\|120\|120$/);
+    expect(screen.queryByText("task_budget_exhausted")).toBeNull();
+    expect(screen.getByText(/jobs.check.not_reached/)).toBeInTheDocument();
+  });
+
+  it("maps other stop reasons to words through the detail table", () => {
+    useArslanStore.getState().handleFrame(update({ phase: "finished", outcome: "blocked", detail: "task_no_progress" }));
+    render(<JobCard jobId="job-1" />);
+    expect(screen.getByTestId("job-detail")).toHaveTextContent("jobs.detail.task_no_progress");
   });
 
   it("says when stopping failed instead of pretending", async () => {
@@ -210,7 +227,9 @@ describe("jobs copy", () => {
     const keys = flat(jobMessages.en).sort();
     expect(Object.keys(jobMessages).sort()).toEqual(["de", "en", "es", "fr", "ja", "zh"]);
     for (const messages of Object.values(jobMessages)) expect(flat(messages).sort()).toEqual(keys);
-    for (const outcome of ["done", "partial", "blocked", "stopped", "interrupted"]) expect(keys).toContain(`outcome.${outcome}`);
-    for (const check of ["passed", "failed", "unverified", "not_run", "not_applicable", "pending"]) expect(keys).toContain(`check.${check}`);
+    for (const outcome of ["done", "partial", "blocked", "stopped", "interrupted", "out_of_budget"]) expect(keys).toContain(`outcome.${outcome}`);
+    for (const check of ["passed", "failed", "unverified", "not_run", "not_applicable", "pending", "not_reached"]) expect(keys).toContain(`check.${check}`);
+    for (const what of ["model_requests", "tool_calls", "tokens", "wall_seconds", "artifact_bytes"]) expect(keys).toContain(`budgetWhat.${what}`);
+    for (const tier of ["lean", "standard", "ample"]) expect(keys).toContain(`budgetTier.${tier}`);
   });
 });

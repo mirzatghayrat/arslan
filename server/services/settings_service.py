@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 _PLAIN_KEYS = (
     "curation_backfill_from","llm_provider", "llm_model", "llm_base_url", "language", "first_run_seen", "search_provider", "search_base_url",
                "llm_strategy", "distill_on_session_end", "orchestrator_shell_enabled",
-               "shell_confirm_policy", "synthesis_config_id", "embedding_config_id",
+               "shell_confirm_policy", "background_job_budget", "synthesis_config_id", "embedding_config_id",
                # Per-task model slots (spec ②). Registered here AND on both
                # pydantic schemas — being on only one is how github_token became
                # a settings field that looked saveable and was not.
@@ -344,6 +344,14 @@ async def shell_confirm_policy(session: AsyncSession) -> str:
     MEDIUM/HIGH. Any unrecognized value falls back to the safe 'ask_all'."""
     raw = await _get_raw(session, "shell_confirm_policy")
     return "ask_risky" if str(raw).strip().lower() == "ask_risky" else "ask_all"
+
+
+async def background_job_budget(session: AsyncSession) -> str:
+    """Budget tier for one background job (0.1.43): lean | standard | ample.
+    Anything else is the default tier."""
+    from arslan.execution_budget import DEFAULT_JOB_TIER, JOB_TIERS
+    raw = str(await _get_raw(session, "background_job_budget") or "").strip().lower()
+    return raw if raw in JOB_TIERS else DEFAULT_JOB_TIER
 
 
 async def evolution_auto(session: AsyncSession) -> bool:

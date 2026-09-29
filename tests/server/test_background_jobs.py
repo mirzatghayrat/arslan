@@ -458,3 +458,127 @@ async def test_a_reconnecting_tab_never_replays_a_job_run_as_the_chat_turn(execu
     assert background_jobs.stop(CID, job.job_id)                  # still cancellable
     await _wait(lambda: job.phase == "finished")
     assert run_registry._no_replay == set()                        # forgotten with the run
+
+
+# ── 0.1.43: a job's own budget ─────────────────────────────────────────────
+
+
+def test_job_tiers_are_larger_than_a_turn_and_unknown_falls_back_to_standard():
+    from arslan.execution_budget import Limits, job_limits
+    turn, standard = Limits(), job_limits("standard")
+    assert (standard.model_requests, standard.tool_calls, standard.tokens, standard.wall_seconds) == (
+        120, 80, 600_000, 1800)
+    assert standard.tool_calls > turn.tool_calls and standard.tokens > turn.tokens
+    assert job_limits("lean").tool_calls < standard.tool_calls < job_limits("ample").tool_calls
+    assert job_limits("bogus") == standard
+
+
+async def test_a_job_runs_on_the_tier_the_setting_names(execution_db, active, monkeypatch):
+    from server.db.models import Setting
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: JobAdapter())
+    # The task records the HARD limit (1.5x the tier); the tier is the soft wrap-up point.
+    for tier, tool_calls in ((None, 120), ("lean", 60), ("nonsense", 120)):
+        if tier is not None:
+            async with execution_db() as db:
+                row = await db.get(Setting, "background_job_budget")
+                if row is None:
+                    db.add(Setting(key="background_job_budget", value=tier))
+                else:
+                    row.value = tier
+                await db.commit()
+        job = await background_jobs.start(CID, f"Tidy {tier}", _criteria())
+        await _wait(lambda: job.phase == "finished")
+        async with execution_db() as db:
+            task = await db.get(CompanionTask, job.job_id)
+        assert task.budget["limits"]["tool_calls"] == tool_calls, tier
+
+
+class ResearchAdapter:
+    """A job that keeps researching until told to wrap up (distinct queries, so
+    the no-progress guard never fires). `obedient=False` ignores wrap-up."""
+
+    def __init__(self, obedient=True):
+        self.obedient, self.n, self.wrap_up_tools = obedient, 0, None
+
+    async def chat(self, system, user, history=None, tools=None, temperature=0.7):
+        if "BACKGROUND" not in str(system):
+            return LLMResponse(content="ok", tool_calls=[], usage={})
+        if "Work budget nearly used" in str(system):
+            self.wrap_up_tools = [t["function"]["name"] for t in tools or []]
+            if self.obedient:
+                return LLMResponse(content=f"Report from what I found: {PHRASE}", tool_calls=[], usage={})
+        self.n += 1
+        return LLMResponse(content=None, usage={}, tool_calls=[{"id": f"c{self.n}", "function": {
+            "name": "recall", "arguments": {"query": f"notes {self.n}"}}}])
+
+
+async def test_reaching_the_tier_wraps_up_and_delivers_instead_of_stopping(execution_db, active, frames,
+                                                                           monkeypatch):
+    from arslan import execution_budget
+    monkeypatch.setitem(execution_budget.JOB_TIERS, "standard",
+                        dict(model_requests=50, tool_calls=3, tokens=600_000, wall_seconds=60))
+    adapter = ResearchAdapter()
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    job = await background_jobs.start(CID, "Research everything", _criteria())
+    await _wait(lambda: job.phase == "finished", seconds=10)
+    assert "recall" not in (adapter.wrap_up_tools or []), "research tools are withdrawn while wrapping up"
+    assert job.outcome == "done" and job.budget_stop is None
+    await _wait(lambda: any(f.get("type") == "message" for f in frames))
+    assert PHRASE in next(f for f in frames if f.get("type") == "message")["content"]
+
+
+async def test_a_job_that_will_not_wrap_up_is_stopped_by_the_hard_limit_and_says_so(execution_db, active,
+                                                                                     frames, monkeypatch):
+    from arslan import execution_budget
+    monkeypatch.setitem(execution_budget.JOB_TIERS, "standard",
+                        dict(model_requests=4, tool_calls=2, tokens=600_000, wall_seconds=60))
+    monkeypatch.setattr(runtime_messages, "selected_locale", AsyncMock(return_value="en"))
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: ResearchAdapter(obedient=False))
+    job = await background_jobs.start(CID, "Research everything", _criteria())
+    await _wait(lambda: job.phase == "finished", seconds=10)
+    assert job.outcome == "out_of_budget"
+    assert job.budget_stop["reason"] == "model_requests" and job.budget_stop["limit"] == 6   # 1.5 x 4
+    card = job.frame()
+    assert card["budget"]["reason"] == "model_requests"
+    assert {c["status"] for c in card["criteria"]} == {"not_reached"}, "never 'not checked yet' on a finished job"
+    await _wait(lambda: any(f.get("type") == "message" for f in frames))
+    message = next(f for f in frames if f.get("type") == "message")
+    assert message["outcome"] == "out_of_budget" and message["job_id"] == job.job_id
+    assert "model requests (6/6)" in message["content"] and "Settings → Advanced" in message["content"]
+    async with execution_db() as db:
+        row = (await db.scalars(select(ArslanMessage))).one()
+    assert row.job_outcome == "out_of_budget"
+
+
+def test_outcome_names_a_budget_stop_apart_from_being_stuck():
+    assert background_jobs.outcome_of("waiting_user", {}, "task_budget_exhausted") == "out_of_budget"
+    assert background_jobs.outcome_of("waiting_user", {}, "task_validation_failed") == "blocked"
+
+
+def test_the_wrap_up_point_survives_a_snapshot_and_a_turn_never_has_one():
+    from arslan.execution_budget import Budget, job_budget
+    job = job_budget("standard")
+    restored = Budget.from_snapshot(job.snapshot())
+    assert restored.soft == job.soft and restored.limits == job.limits
+    assert restored.limits.tool_calls == 120 and restored.soft.tool_calls == 80
+    restored.tool_calls = 80
+    assert restored.soft_reached()
+    turn = Budget()
+    assert "soft_limits" not in turn.snapshot()           # chat turns: unchanged snapshot shape
+    turn.tool_calls = turn.limits.tool_calls
+    assert not Budget.from_snapshot(turn.snapshot()).soft_reached()
+
+
+def test_settings_page_numbers_match_the_tiers():
+    """The settings page states each tier's limits; they must be the real ones."""
+    import re
+    from pathlib import Path
+    from arslan.execution_budget import JOB_TIERS
+    source = (Path(__file__).resolve().parents[2] / "web/src/components/settings/AdvancedSection.tsx").read_text()
+    for tier, limits in JOB_TIERS.items():
+        row = re.search(rf"{tier}: \{{ requests: (\d+), tools: (\d+), tokens: '([^']+)', minutes: (\d+) \}}", source)
+        assert row, tier
+        requests, tools, tokens, minutes = row.groups()
+        tokens_n = float(tokens[:-1]) * (1_000 if tokens.endswith("k") else 1_000_000)
+        assert (int(requests), int(tools), int(tokens_n), int(minutes) * 60) == (
+            limits["model_requests"], limits["tool_calls"], limits["tokens"], limits["wall_seconds"]), tier

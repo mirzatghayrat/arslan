@@ -118,6 +118,7 @@ describe("every settings field the UI can edit is mappable", () => {
       distill_on_session_end: { distillOnSessionEnd: true },
       orchestrator_shell_enabled: { orchestratorShellEnabled: false },
       shell_confirm_policy: { shellConfirmPolicy: "ask_all" },
+      background_job_budget: { backgroundJobBudget: "lean" },
       embedding_config_id: { embeddingConfigId: "1" },
       synthesis_config_id: { synthesisConfigId: "1" },
       compaction_config_id: { compactionConfigId: "1" },

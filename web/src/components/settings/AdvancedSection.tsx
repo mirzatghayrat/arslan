@@ -29,6 +29,14 @@ import BrowserPanel from '../BrowserPanel';
 import type { VoiceMode } from '../../types';
 
 export type ShellConfirmPolicy = 'ask_all' | 'ask_risky';
+export type BackgroundJobBudget = 'lean' | 'standard' | 'ample';
+// Mirrors arslan/execution_budget.JOB_TIERS (the soft limits). A backend test
+// pins the same numbers, so the two cannot drift silently.
+export const JOB_TIER_NUMBERS: Record<BackgroundJobBudget, { requests: number; tools: number; tokens: string; minutes: number }> = {
+  lean: { requests: 60, tools: 40, tokens: '300k', minutes: 15 },
+  standard: { requests: 120, tools: 80, tokens: '600k', minutes: 30 },
+  ample: { requests: 240, tools: 160, tokens: '1.2M', minutes: 60 },
+};
 export type SpawnMode = 'auto' | 'interactive' | 'strict';
 
 export interface AdvancedSectionProps {
@@ -41,6 +49,9 @@ export interface AdvancedSectionProps {
   /** Confirm policy for shell commands (only meaningful when shell is enabled). */
   shellConfirmPolicy: ShellConfirmPolicy;
   onShellConfirmPolicyChange: (value: ShellConfirmPolicy) => void;
+  /** 0.1.43: where a background job wraps up. Optional so older hosts still render. */
+  backgroundJobBudget?: BackgroundJobBudget;
+  onBackgroundJobBudgetChange?: (value: BackgroundJobBudget) => void;
   /** Directory the file tools may work in. Empty = unset = tools not offered. */
   workspaceDir: string;
   onWorkspaceDirChange: (value: string) => void;
@@ -79,6 +90,8 @@ export default function AdvancedSection({
   onOrchestratorShellChange,
   shellConfirmPolicy,
   onShellConfirmPolicyChange,
+  backgroundJobBudget = 'standard',
+  onBackgroundJobBudgetChange,
   workspaceDir,
   onWorkspaceDirChange,
   lanDiscoveryEnabled,
@@ -365,6 +378,27 @@ export default function AdvancedSection({
             ariaLabel={t('settings.labelSpawnMode')}
           />
         </div>
+
+        {/* 0.1.43: where a background job stops gathering and writes up its result. */}
+        {onBackgroundJobBudgetChange && <>
+        <div className="h-[1px] bg-border/40"></div>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h4 className="text-xs font-bold text-foreground font-sans">{t('jobs.budgetLabel')}</h4>
+            <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl" data-testid="job-budget-desc">
+              {t('jobs.budgetDesc', JOB_TIER_NUMBERS[backgroundJobBudget])}
+            </p>
+          </div>
+          <Select
+            id="settings-background-job-budget"
+            value={backgroundJobBudget}
+            onChange={(v) => onBackgroundJobBudgetChange(v as BackgroundJobBudget)}
+            options={(['lean', 'standard', 'ample'] as const).map(value => ({ value, label: t(`jobs.budgetTier.${value}`) }))}
+            className="w-40"
+            ariaLabel={t('jobs.budgetLabel')}
+          />
+        </div>
+        </>}
 
         {/* 0.1.42: moved here from the work panel's footer — this is the one
             place that sets up the browser runtime and runs a static preview. */}

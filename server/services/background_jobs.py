@@ -42,8 +42,11 @@ class Job:
     acceptance: list[dict]
     phase: str = "queued"             # queued | running | finished
     step: str | None = None
-    outcome: str | None = None        # done | partial | blocked | stopped
+    outcome: str | None = None        # done | partial | blocked | stopped | out_of_budget
     detail: str | None = None
+    # 0.1.43: which limit ended the job, e.g. {"reason": "tool_calls", "used": 80, "limit": 80}.
+    budget_stop: dict | None = None
+    tool_calls_seen: int = 0
     results: dict = field(default_factory=dict)   # check_id -> status
     started_at: float = field(default_factory=time.time)
     task: asyncio.Task | None = field(default=None, repr=False)
@@ -51,9 +54,10 @@ class Job:
     def frame(self) -> dict:
         return {"type": "job_update", "job_id": self.job_id, "conversation_id": self.conversation_id,
                 "goal": self.goal, "phase": self.phase, "step": self.step, "outcome": self.outcome,
-                "detail": self.detail,
+                "detail": self.detail, "budget": self.budget_stop,
+                # A finished job never shows "not checked yet": a check it never reached says so.
                 "criteria": [{"id": c["id"], "description": c["description"],
-                              "status": self.results.get(c["id"], "pending")}
+                              "status": self.results.get(c["id"], "not_reached" if self.phase == "finished" else "pending")}
                              for c in self.acceptance if c["id"] != "answer-delivered"]}
 
 
@@ -93,6 +97,8 @@ def outcome_of(phase: str, results: dict, reason: str | None) -> str:
         return "done"
     if phase == "cancelled":
         return "stopped"
+    if reason == "task_budget_exhausted":
+        return "out_of_budget"
     user_checks = {k: v for k, v in results.items() if k != "answer-delivered"}
     if any(v == "passed" for v in user_checks.values()) and results.get("answer-delivered") == "passed":
         return "partial"
@@ -152,6 +158,8 @@ def _job_sink(job: Job, downstream):
             # Never typed into the chat while the user talks, and never mistaken
             # for the conversation's own turn state: the job_update card says it.
             return
+        if kind == "tool_call":
+            job.tool_calls_seen += 1
         if kind in {"tool_call", "tool_result"} and event.get("tool"):
             if job.step != event["tool"]:
                 job.step = event["tool"]
@@ -187,8 +195,13 @@ async def _run(job: Job) -> None:
 
 async def _execute(job: Job) -> tuple[str, str, str | None]:
     from server.orchestrator import arslan
-    from server.services import approvals, host_run, personal_context, task_context, task_service
+    from arslan.execution_budget import job_budget
+    from server.db import session as db_session
+    from server.services import (approvals, host_run, personal_context, settings_service, task_context,
+                                 task_service)
     from server.services.task_repository import repository
+    async with db_session.AsyncSessionLocal() as db:
+        tier = await settings_service.background_job_budget(db)
     ctx = await task_context.load(job.conversation_id, user_message=job.goal)
     ctx = replace(ctx, task_id=job.job_id, run_id=f"job-{job.job_id}", explicit_save_digest=None,
                   explicit_save_ref=None, allow_global_save=False)
@@ -204,7 +217,7 @@ async def _execute(job: Job) -> tuple[str, str, str | None]:
         try:
             output = await task_service.run_turn(function, job.conversation_id, job.goal,
                                                  _job_sink(job, downstream), _driver={"kind": "background"},
-                                                 _acceptance=job.acceptance)
+                                                 _acceptance=job.acceptance, _budget=job_budget(tier))
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 — the task row records the failure; read it below
@@ -215,6 +228,20 @@ async def _execute(job: Job) -> tuple[str, str, str | None]:
         row = await repo.get(job.job_id)
         for result in row.results or ():
             job.results[result.get("check_id")] = result.get("status")
+        budget = row.budget or {}
+        reason = budget.get("stop_reason")
+        if not reason and row.pause_reason == "task_budget_exhausted":
+            reason = "wall_seconds"   # asyncio.timeout ends the turn without recording a stop reason
+        if reason:
+            # A stop reason means that limit was reached; the last saved checkpoint
+            # can lag the final count, so never show less than the limit.
+            limit = (budget.get("limits") or {}).get(reason)
+            used = (budget.get("used") or {}).get(reason) or 0
+            if isinstance(limit, (int, float)):
+                used = max(used, limit)
+                if reason == "wall_seconds":
+                    used, limit = round(used), round(limit)
+            job.budget_stop = {"reason": reason, "used": used, "limit": limit, "tier": tier}
         text = output if isinstance(output, str) else (output or {}).get("final") if isinstance(output, dict) else ""
         return text or "", row.phase, row.pause_reason
 
@@ -225,6 +252,8 @@ async def _report(job: Job, text: str) -> None:
     from server.ws import protocol
     try:
         body = text.strip()
+        if not body and job.outcome == "out_of_budget":
+            body = await _budget_note(job)
         if body:   # a stopped or empty job is shown by its card alone, never by a filler message
             message_id = await memory.add_message(job.conversation_id, "arslan", body, job_outcome=job.outcome)
             run_registry.make_emit(job.conversation_id)(protocol.message(message_id, body, "arslan") | {
@@ -235,6 +264,18 @@ async def _report(job: Job, text: str) -> None:
                         outcome={"done": "ok", "stopped": "cancelled"}.get(job.outcome, "needs_review"))
     run_registry.make_emit(job.conversation_id)({"type": "job_spoken", "job_id": job.job_id,
                                                  "outcome": job.outcome, "goal": job.goal[:200]})
+
+
+async def _budget_note(job: Job) -> str:
+    """Plain words for a job the budget ended. Counts only — no tool output is
+    quoted, so nothing a web page said reaches the conversation this way."""
+    from server.services import runtime_messages
+    locale = await runtime_messages.selected_locale()
+    stop = job.budget_stop or {}
+    what = runtime_messages.render(f"budget_{stop.get('reason', 'tokens')}", locale)
+    return runtime_messages.render("job_out_of_budget", locale, goal=job.goal[:200], what=what,
+                                   used=stop.get("used", "?"), limit=stop.get("limit", "?"),
+                                   steps=job.tool_calls_seen)
 
 
 async def report_interrupted() -> int:

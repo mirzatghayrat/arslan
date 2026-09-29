@@ -45,7 +45,12 @@ export default function JobCard({ jobId }: { jobId: string }) {
       </li>)}</ul>
     </div>}
     {!finished && job.step && <p className="mt-2 text-muted-foreground">{t("jobs.now", { step: job.step })}</p>}
-    {finished && job.detail && <p className="mt-2 text-muted-foreground">{job.detail}</p>}
+    {finished && (job.budget || job.detail) && <p data-testid="job-detail" className="mt-2 text-muted-foreground">
+      {job.budget
+        ? t("jobs.budgetStop", { what: t(`jobs.budgetWhat.${job.budget.reason}`, { defaultValue: job.budget.reason }),
+                                 used: job.budget.used ?? "?", limit: job.budget.limit ?? "?" })
+        : t(`jobs.detail.${job.detail}`, { defaultValue: t("jobs.detailGeneric", { code: job.detail }) })}
+    </p>}
     {!finished && <div className="mt-2 flex items-center gap-2">
       <button type="button" onClick={() => void stop()} disabled={stopping}
         className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] hover:bg-foreground/5 disabled:opacity-50">

@@ -147,3 +147,16 @@ describe("AdvancedSection · browser setup home", () => {
     expect(screen.getByTestId("browser-panel-open")).toBeInTheDocument();
   });
 });
+
+describe("AdvancedSection · background job budget (0.1.43)", () => {
+  it("offers three tiers, states the chosen tier's limits, and saves the pick", async () => {
+    const onBackgroundJobBudgetChange = vi.fn();
+    setup({ backgroundJobBudget: "standard", onBackgroundJobBudgetChange });
+    expect(screen.getByText("jobs.budgetLabel")).toBeInTheDocument();
+    expect(screen.getByTestId("job-budget-desc")).toHaveTextContent("jobs.budgetDesc");
+    const select = document.getElementById("settings-background-job-budget")!;
+    await userEvent.click(select);
+    await userEvent.click(await screen.findByText("jobs.budgetTier.ample"));
+    expect(onBackgroundJobBudgetChange).toHaveBeenCalledWith("ample");
+  });
+});

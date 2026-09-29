@@ -46,6 +46,7 @@ class SettingsIn(BaseModel):
     brain_usage_event_max_rows: int | None = None
     orchestrator_shell_enabled: str | None = None
     shell_confirm_policy: str | None = None
+    background_job_budget: str | None = None
     run_debug_retention_days: int | None = None
     evolution_auto: str | None = None
     # 🔴 These two were in _PLAIN_KEYS (so update_settings would store them) but on
@@ -112,6 +113,7 @@ class SettingsOut(BaseModel):
     brain_usage_event_max_rows: int = 200_000
     orchestrator_shell_enabled: str = ""
     shell_confirm_policy: str = ""
+    background_job_budget: str = "standard"
     run_debug_retention_days: int = 30
     evolution_auto: str = "off"
     synthesis_config_id: str = ""

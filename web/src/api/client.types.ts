@@ -290,6 +290,7 @@ export interface AppSettings {
   distill_on_session_end?: boolean;
   orchestrator_shell_enabled?: string; // "true" | "false"
   shell_confirm_policy?: string; // "ask_all" | "ask_risky"
+  background_job_budget?: string; // "lean" | "standard" | "ample" (0.1.43)
   workspace_dir?: string;   // "" = unset = file tools not offered
   heartbeat_enabled?: string;     // "true" | "false"
   heartbeat_checklist?: string;
@@ -489,7 +490,9 @@ export interface ClarifyOption {
 
 /** A renderable item in the unified Arslan thread. */
 /** 0.1.42 background job, as the `job_update` frame describes it. */
-export type JobOutcome = "done" | "partial" | "blocked" | "stopped" | "interrupted";
+export type JobOutcome = "done" | "partial" | "blocked" | "stopped" | "interrupted" | "out_of_budget";
+/** 0.1.43: which limit ended a job, when one did. */
+export interface JobBudgetStop { reason: string; used: number | null; limit: number | null; tier?: string }
 export interface JobCriterion { id: string; description: string; status: string }
 export interface JobCard {
   jobId: string;
@@ -498,6 +501,7 @@ export interface JobCard {
   step: string;
   outcome: JobOutcome | null;
   detail: string;
+  budget?: JobBudgetStop | null;
   criteria: JobCriterion[];
 }
 
@@ -618,7 +622,7 @@ export type ArslanServerMessage =
   | { type: "message"; message_id: number; content: string; role: string; job_id?: string; outcome?: JobOutcome | null }
   | { type: "job_update"; job_id: string; conversation_id: string; goal: string;
       phase: "queued" | "running" | "finished"; step: string; outcome: JobOutcome | null;
-      detail: string; criteria: JobCriterion[] }
+      detail: string; budget?: JobBudgetStop | null; criteria: JobCriterion[] }
   | { type: "job_spoken"; job_id: string; outcome: JobOutcome | null; goal: string }
   | { type: "spawn_created"; spawn_id: number; spawn_name: string; equipment?: Equipment; intro?: string | null }
   | { type: "tool_call"; tool: string; args_summary: string }

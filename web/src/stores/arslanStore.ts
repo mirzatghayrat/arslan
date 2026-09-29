@@ -423,7 +423,7 @@ function makeActions(set: SetState, get: GetState) {
         case "job_update": {
           const card: JobCard = {
             jobId: frame.job_id, goal: frame.goal, phase: frame.phase, step: frame.step,
-            outcome: frame.outcome, detail: frame.detail, criteria: frame.criteria,
+            outcome: frame.outcome, detail: frame.detail, budget: frame.budget ?? null, criteria: frame.criteria,
           };
           const known = state.items.some((it) => it.kind === "job" && it.jobId === frame.job_id);
           set({

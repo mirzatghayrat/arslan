@@ -1232,6 +1232,10 @@ async def _reveal_streamed(text: str, on_chunk: Callable[[str], None]) -> None:
             await asyncio.sleep(delay)
 
 
+# Tools a job may still use while wrapping up: saving the deliverable.
+WRAP_UP_TOOLS = frozenset({"write_file", "edit_file"})
+
+
 @governed
 async def run_native(
     *,
@@ -1381,6 +1385,15 @@ async def run_native(
         sys_now = system if not forced else (
             system + ("\n\nRepeated actions made no progress. Explain what was verified and what is blocked. Text only."
                       if policy.stopped else "\n\nTool budget exhausted: report the verified results and remaining work. Text only."))
+        # 0.1.43 completion first (background jobs only — only they carry a soft
+        # limit): past the soft limit, stop gathering and FINISH. Research tools
+        # are withdrawn; saving the deliverable stays possible. Not a failure:
+        # the completion checks decide the outcome as usual.
+        wrap_up = not forced and budget.soft_reached()
+        if wrap_up:
+            sys_now += ("\n\nWork budget nearly used: stop researching now. Using only what you already have, "
+                        "produce the complete deliverable the user asked for (save it if a file was asked for), "
+                        "clearly marking anything you could not verify. Then give the final answer.")
         # Deliver one new tool batch atomically before normal old-history
         # eviction. Keep a bounded 96k research window so a <=96k source batch
         # can survive the following save/readback steps, not just one request.
@@ -1426,7 +1439,8 @@ async def run_native(
             request_history = [current_request] + request_history
         resp = await _chat_retry(a, sys_now, convo[-1]["content"],
                                  history=request_history,
-                                 tools=(None if forced else schemas))
+                                 tools=(None if forced else [t for t in schemas if t["function"]["name"] in WRAP_UP_TOOLS]
+                                        or None if wrap_up else schemas))
         tool_calls = list(getattr(resp, "tool_calls", None) or [])
 
         if not forced and tool_calls:
@@ -1448,6 +1462,11 @@ async def run_native(
                 if policy.stopped:
                     _record_tool_result(name, {}, {"ok": False, "external": False,
                         "code": "task_no_progress", "error": "Execution paused after repeated work without progress."},
+                        emit, tool_trace, json.dumps({"tool": name, "args": {}}), convo)
+                    continue
+                if wrap_up and name not in WRAP_UP_TOOLS:
+                    _record_tool_result(name, {}, {"ok": False, "external": False, "code": "wrap_up",
+                        "error": "Wrapping up: no more research. Write the deliverable from what you have."},
                         emit, tool_trace, json.dumps({"tool": name, "args": {}}), convo)
                     continue
                 # PA-3 terminal tool: a VALID ask_user_choice call ends the turn — the

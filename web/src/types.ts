@@ -63,7 +63,7 @@ export interface Message {
   jobId?: string;
   /** 0.1.42: this Arslan message is the result of that background job. */
   resultOfJob?: string;
-  jobOutcome?: 'done' | 'partial' | 'blocked' | 'stopped' | 'interrupted' | null;
+  jobOutcome?: 'done' | 'partial' | 'blocked' | 'stopped' | 'interrupted' | 'out_of_budget' | null;
   /** True when this spawn deliverable is a pending proposal needing direction confirmation. */
   isProposal?: boolean;
   /** Set after verdict_recorded ack: 'accept' | 'discard' | 'redo' */
@@ -215,6 +215,8 @@ export interface AppSettings {
   orchestratorShellEnabled: boolean;
   /** Confirmation posture for shell commands. */
   shellConfirmPolicy: 'ask_all' | 'ask_risky';
+  /** Budget tier for one background job (0.1.43). The tier is where a job wraps up. */
+  backgroundJobBudget: 'lean' | 'standard' | 'ample';
   /** Directory Arslan's file tools may work in. Empty = unset = tools not offered. */
   workspaceDir: string;
   /** Periodic checklist turn. Default OFF; an empty checklist means no task. */

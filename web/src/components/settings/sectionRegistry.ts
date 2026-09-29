@@ -137,6 +137,7 @@ export const FIELD_HOMES: Record<string, SettingsSectionId> = {
   'advanced.telemetry': 'advanced',
   'advanced.orchestrator_shell': 'advanced',
   'advanced.shell_confirm_policy': 'advanced',
+  'advanced.background_job_budget': 'advanced',
   'advanced.spawn_mode': 'advanced',
 };
 
