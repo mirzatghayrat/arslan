@@ -167,7 +167,8 @@ export interface ScheduledTaskRunDto {
 export interface ScheduledTaskCreateBody {
   name: string;
   prompt: string;
-  spawn_id: number;
+  /** 0.1.44: omitted = Arslan runs it. */
+  spawn_id?: number | null;
   schedule_kind: "interval" | "cron";
   interval_s?: number | null;
   cron?: string | null;

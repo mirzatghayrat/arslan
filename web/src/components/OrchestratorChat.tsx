@@ -11,6 +11,8 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import JobCard, { JobResultLabel } from './JobCard';
+
+const EXPERT_BAR = false;
 import { formatUiTime } from '../lib/localeFormatting';
 import { getIcon } from './iconMap';
 import { Message, MessageAttachment, Spawn } from '../types';
@@ -462,7 +464,8 @@ export default function OrchestratorChat({
 
 
       {/* Simulator Interactive Control Strip & Spawns Docket Integrated */}
-      {roster.some(member => spawns.some(spawn => spawn.id === String(member.spawnId))) && <div data-testid="conversation-experts-bar" className="bg-surface/60 border-b border-border/80 px-6 py-2.5 flex flex-row items-center justify-between gap-4 select-none text-[11px] z-10">
+      {/* 0.1.44 one Arslan: no standing expert bar. Kept behind EXPERT_BAR for step two's deletion. */}
+      {EXPERT_BAR && roster.some(member => spawns.some(spawn => spawn.id === String(member.spawnId))) && <div data-testid="conversation-experts-bar" className="bg-surface/60 border-b border-border/80 px-6 py-2.5 flex flex-row items-center justify-between gap-4 select-none text-[11px] z-10">
         <div className="flex items-center gap-2 shrink-0">
           <Terminal className="w-4 h-4 text-primary" />
           <span className="text-muted-foreground">{t('workspace.experts')}</span>

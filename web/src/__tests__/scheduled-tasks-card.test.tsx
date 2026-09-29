@@ -163,9 +163,8 @@ describe("ScheduledTasksCard — create form", () => {
     render(<ScheduledTasksCard />);
     await screen.findByText("Morning research");
     fireEvent.click(screen.getByTestId("sched-new"));
-    // spawn select defaults to the first spawn once the list loads
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "spawn" }).textContent).toContain("Researcher"));
+    // 0.1.44 one Arslan: no expert to choose — Arslan runs scheduled tasks.
+    expect(screen.queryByRole("button", { name: "spawn" })).toBeNull();
     fireEvent.change(screen.getByTestId("sched-form-name"), { target: { value: "My task" } });
     fireEvent.change(screen.getByTestId("sched-form-prompt"), { target: { value: "do things" } });
   }
@@ -188,7 +187,6 @@ describe("ScheduledTasksCard — create form", () => {
     await waitFor(() => expect(api.createScheduledTask).toHaveBeenCalledWith({
       name: "My task",
       prompt: "do things",
-      spawn_id: 7,
       schedule_kind: "interval",
       interval_s: 1800,
       cron: null,

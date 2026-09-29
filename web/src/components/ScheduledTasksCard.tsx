@@ -156,7 +156,7 @@ function TaskForm({
   const submit = async () => {
     const nm = name.trim();
     const pr = prompt.trim();
-    if (!nm || !pr || !spawnId) {
+    if (!nm || !pr) {
       setFormError(t("scheduled.form.required"));
       return;
     }
@@ -167,7 +167,7 @@ function TaskForm({
     const body: ScheduledTaskCreateBody = {
       name: nm,
       prompt: pr,
-      spawn_id: Number(spawnId),
+      // 0.1.44 one Arslan: Arslan runs scheduled tasks; no expert is chosen.
       schedule_kind: kind,
       interval_s: kind === "interval" ? Number(intervalS) : null,
       cron: kind === "cron" ? cron.trim() : null,
@@ -226,17 +226,6 @@ function TaskForm({
           onChange={(e) => setPrompt(e.target.value)}
         />
       </label>
-
-      <div className="sched-form__row">
-        <span className="sched-form__label">{t("scheduled.form.spawn")}</span>
-        <Select
-          ariaLabel="spawn"
-          value={spawnId}
-          onChange={setSpawnId}
-          options={spawns.map((s) => ({ value: String(s.id), label: s.name }))}
-          placeholder={t("scheduled.form.spawn_placeholder")}
-        />
-      </div>
 
       <div className="sched-form__row">
         <span className="sched-form__label">{t("scheduled.col.cadence")}</span>

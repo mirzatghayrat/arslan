@@ -25,18 +25,14 @@ function setStore(running: boolean) {
   } as never);
 }
 
-describe('OrchestratorChat spawn pill shimmer', () => {
-  it('applies shiny-text to a running spawn pill label (pendingRoute matches)', () => {
-    setStore(true);
+// 0.1.44 one Arslan: no standing expert bar, even when an older conversation still
+// has a roster member (or one is "running").
+describe('OrchestratorChat expert bar is gone', () => {
+  it.each([true, false])('renders no expert bar or pill (running=%s)', (running) => {
+    setStore(running);
     const { container } = render(<OrchestratorChat {...base} />);
-    expect(container.querySelector('.shiny-text')?.textContent).toBe('Research Analyst');
-  });
-
-  it('no shimmer when idle — pill still renders, just without shiny-text', () => {
-    setStore(false);
-    const { container } = render(<OrchestratorChat {...base} />);
+    expect(screen.queryByTestId('conversation-experts-bar')).toBeNull();
+    expect(screen.queryByText('Research Analyst')).toBeNull();
     expect(container.querySelector('.shiny-text')).toBeNull();
-    expect(screen.getByText('Research Analyst')).toBeTruthy();
-    expect(screen.getByTestId('conversation-experts-bar')).toHaveTextContent('workspace.experts');
   });
 });

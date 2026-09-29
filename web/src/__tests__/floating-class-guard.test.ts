@@ -23,7 +23,7 @@ const SWEPT = [
   // record rather than something that was forgotten.
   { file: "components/brain/NoteEditor.tsx",    portal: false, why: "pinned inside its own textarea wrap; never reaches a scroll edge" },
   { file: "components/OrchestratorChat.tsx",    portal: false, why: "opens upward out of the composer; clipping is latent, not observed" },
-  { file: "components/Sidebar.tsx",             portal: false, why: "in normal flow — it pushes the list down, it does not float" },
+  // 0.1.44: the Sidebar expert picker (its only floating element) is gone.
 ];
 
 describe("floating-element class sweep", () => {
