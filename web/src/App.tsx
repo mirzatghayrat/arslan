@@ -50,6 +50,7 @@ import MemorySection from './components/companion/MemorySection';
 import ProjectsSection from './components/companion/ProjectsSection';
 import ConversationControls from './components/companion/ConversationControls';
 import TaskPanel from './components/companion/TaskPanel';
+import LegacyExperts from './components/companion/LegacyExperts';
 import { companionApi, type Project } from './api/companion';
 import DiagnosisView from './components/DiagnosisView';
 import FirstRunWizard from './components/FirstRunWizard';
@@ -863,11 +864,8 @@ export default function App() {
     setExpertChatIds(old => [id, ...old.filter(value => value !== id)]);
     setActiveSpawnChatId(id); setActiveSection('spawn'); setPanelView('default');
   }
-  const experts = <SpawnsDashboard embedded spawns={spawns} selectedSpawnId={selectedSpawnId}
-    setSelectedSpawnId={setSelectedSpawnId} onEditEquipment={handleEditSpawnEquipment}
-    onCreateSpawnClick={() => setStudio({ mode: 'create' })}
-    onOpenDirectChat={openExpertChat}
-    setSpawns={setSpawns} setThreads={setThreads} activeThreadId={activeThreadId} backendStatus={backendStatus} />;
+  // 0.1.44 one Arslan: the experts tab only offers turning former experts into skills.
+  const experts = spawns.length > 0 ? <LegacyExperts /> : null;
 
   return (
     <div className="flex w-screen h-screen bg-background text-foreground overflow-hidden font-sans antialiased">

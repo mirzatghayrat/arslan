@@ -1101,7 +1101,7 @@ class _ScheduledTaskFieldsIn(BaseModel):
 class ScheduledTaskCreateIn(_ScheduledTaskFieldsIn):
     name: str
     prompt: str
-    spawn_id: int
+    spawn_id: int | None = None       # 0.1.44: omitted = Arslan runs it (the default)
     schedule_kind: Literal["interval", "cron"]
     interval_s: int | None = None     # interval kind; >= scheduler.MIN_INTERVAL_S
     cron: str | None = None           # cron kind; 5-field expression

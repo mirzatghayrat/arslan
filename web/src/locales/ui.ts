@@ -1,5 +1,6 @@
 export const uiMessages = {
   "en": {
+    "needsYourCheck": "Needs your check",
     "open": "Open",
     "moreActions": "More actions",
     "unsandboxedPython": "run_python is running without a sandbox (ARSLAN_ALLOW_UNSANDBOXED_PY=1): code has full host permissions and no isolation.",
@@ -52,6 +53,7 @@ export const uiMessages = {
     "viewSandbox": "View {{name}} sandbox"
   },
   "zh": {
+    "needsYourCheck": "需要你看一下",
     "open": "打开",
     "moreActions": "更多操作",
     "unsandboxedPython": "run_python 正在无沙箱运行（ARSLAN_ALLOW_UNSANDBOXED_PY=1）：代码拥有完整主机权限，没有隔离保护。",
@@ -104,6 +106,7 @@ export const uiMessages = {
     "viewSandbox": "查看 {{name}} 的沙盒"
   },
   "ja": {
+    "needsYourCheck": "確認が必要です",
     "open": "開く",
     "moreActions": "その他の操作",
     "unsandboxedPython": "run_python はサンドボックスなしで実行されています（ARSLAN_ALLOW_UNSANDBOXED_PY=1）。コードはホストの全権限を持ち、隔離されません。",
@@ -156,6 +159,7 @@ export const uiMessages = {
     "viewSandbox": "{{name}} のサンドボックスを表示"
   },
   "es": {
+    "needsYourCheck": "Necesita tu revisión",
     "open": "Abrir",
     "moreActions": "Más acciones",
     "unsandboxedPython": "run_python se ejecuta sin entorno aislado (ARSLAN_ALLOW_UNSANDBOXED_PY=1): el código tiene todos los permisos del equipo y no está aislado.",
@@ -208,6 +212,7 @@ export const uiMessages = {
     "viewSandbox": "Ver entorno aislado de {{name}}"
   },
   "de": {
+    "needsYourCheck": "Bitte prüfen",
     "open": "Öffnen",
     "moreActions": "Weitere Aktionen",
     "unsandboxedPython": "run_python läuft ohne Sandbox (ARSLAN_ALLOW_UNSANDBOXED_PY=1): Der Code hat volle Host-Berechtigungen und ist nicht isoliert.",
@@ -260,6 +265,7 @@ export const uiMessages = {
     "viewSandbox": "Isolierten Bereich von {{name}} anzeigen"
   },
   "fr": {
+    "needsYourCheck": "À vérifier",
     "open": "Ouvrir",
     "moreActions": "Plus d’actions",
     "unsandboxedPython": "run_python s’exécute sans bac à sable (ARSLAN_ALLOW_UNSANDBOXED_PY=1) : le code dispose de tous les droits sur l’hôte, sans isolation.",

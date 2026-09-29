@@ -151,11 +151,13 @@ async def list_scheduled_tasks() -> list[ScheduledTaskOut]:
 @router.post("/scheduled-tasks", response_model=ScheduledTaskOut, status_code=201)
 async def create_scheduled_task(body: ScheduledTaskCreateIn) -> ScheduledTaskOut:
     async with db_session.AsyncSessionLocal() as db:
-        spawn = await _require_spawn(db, body.spawn_id)
+        # 0.1.44 one Arslan: a task without an expert is run by Arslan itself.
+        spawn = await _require_spawn(db, body.spawn_id) if body.spawn_id is not None else None
         _validate_schedule(body.schedule_kind, body.interval_s, body.cron)
         await _check_enabled_quota(db)
         task = ScheduledTask(
             name=body.name, prompt=body.prompt, spawn_id=body.spawn_id,
+            target="spawn" if spawn is not None else "arslan",
             conversation_id=body.conversation_id, schedule_kind=body.schedule_kind,
             interval_s=body.interval_s, cron=body.cron,
             enabled=True, consecutive_failures=0)
@@ -163,7 +165,7 @@ async def create_scheduled_task(body: ScheduledTaskCreateIn) -> ScheduledTaskOut
         db.add(task)
         await db.commit()
         await db.refresh(task)
-        return _task_out(task, spawn_name=spawn.name, last_outcome=None)
+        return _task_out(task, spawn_name=spawn.name if spawn else None, last_outcome=None)
 
 
 @router.put("/scheduled-tasks/{task_id}", response_model=ScheduledTaskOut)

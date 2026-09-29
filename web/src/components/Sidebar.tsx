@@ -8,8 +8,6 @@ import { SpawnAvatar } from "./SpawnAvatar";
 import ThreadRowMenu from "./ThreadRowMenu";
 import type { BackendStatus } from "../hooks/useBackendStatus";
 import BackgroundJobs from "./companion/BackgroundJobs";
-import EmptyState from "./EmptyState";
-import { useDismissable } from "../hooks/useDismissable";
 import { threadDisplayTitle } from "../lib/threadTitles";
 
 interface ArslanThread { id: string; title: string; archived?: boolean; temporary?: boolean; defaultTitle?: boolean }
@@ -30,13 +28,10 @@ export default function Sidebar(props: SidebarProps) {
     onDeleteThread, backendStatus, onOpenConversation, expertChatIds } = props;
   const { t } = useTranslation();
   const [archivedOpen, setArchivedOpen] = useState(false);
-  const [picking, setPicking] = useState(false);
-  const { anchorRef, floatingRef } = useDismissable<HTMLButtonElement, HTMLDivElement>(picking, () => setPicking(false));
   const activeThreads = threads.filter(thread => !thread.archived);
   const archivedThreads = threads.filter(thread => thread.archived);
-  // User-opened expert chats are peers of normal conversations. Temporary task
-  // workers are not added here; their existing task-owned panel remains the home.
-  const directChats = expertChatIds ? expertChatIds.flatMap(id => spawns.filter(spawn => spawn.id === id)) : spawns.filter(spawn => spawn.hasActiveChat);
+  // 0.1.44 one Arslan: the sidebar lists conversations only; former experts are
+  // turned into skills from Capabilities.
   const navClass = (active: boolean) => `w-full flex items-center gap-2.5 rounded-lg border-l-2 px-3 py-2 text-left text-xs transition-colors ${active
     ? "border-primary bg-primary/10 text-foreground" : "border-transparent text-muted-foreground hover:bg-foreground/[0.03] hover:text-foreground"}`;
   const rowClass = (active: boolean) => `relative w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-left cursor-pointer group border-l-2 border-transparent ${active
@@ -96,17 +91,10 @@ export default function Sidebar(props: SidebarProps) {
       <section aria-label={t("workspace.recentConversations")} className="mt-3 flex min-h-0 flex-1 flex-col border-t border-border/50 pt-2">
         <div className="mb-2 flex items-center justify-between px-3 text-xs text-muted-foreground">
           <span>{t("workspace.recentConversations")}</span>
-          <button ref={anchorRef} title={t("sidebar.new_chat")} aria-label={t("sidebar.new_chat")} aria-expanded={picking} onClick={() => setPicking(value => !value)}><Plus size={14} /></button>
+          <button title={t("workspace.newConversation")} aria-label={t("sidebar.new_chat")} onClick={onAddThread}><Plus size={14} /></button>
         </div>
-        {picking && <div ref={floatingRef} className="mb-2 max-h-32 overflow-y-auto rounded-lg border border-border p-1">
-          {spawns.map(spawn => <button key={spawn.id} onClick={() => { setPicking(false); openExpert(spawn.id); }}
-            className="block w-full truncate rounded px-3 py-2 text-left text-xs hover:bg-primary/5">{spawn.name}</button>)}
-          {!spawns.length && <EmptyState size="inline" testId="empty-sidebar-spawns"
-            title={t('sidebar.no_spawns')} body={t('sidebar.no_spawns_desc')} />}
-        </div>}
         <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
           {activeThreads.map(thread => renderThread(thread, false))}
-          {directChats.map(spawn => renderExpert(spawn, true))}
           {archivedThreads.length > 0 && <div className="mt-2 border-t border-border/40 pt-2">
             <button id="btn-toggle-archived-threads" onClick={() => setArchivedOpen(value => !value)} aria-expanded={archivedOpen}
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted-foreground">

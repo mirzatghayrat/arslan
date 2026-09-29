@@ -87,7 +87,7 @@ export default function Capabilities({ provider, experts, initialTab, onOpenConn
           active={tab === "forge" ? "skills" : tab === "saved" ? "discover" : tab === "mcps" ? "tools" : tab}
           onChange={(id) => setTab(id as CapTab)}
           tabs={[
-            ...(experts ? [{ id: "experts", label: t("workspace.experts") }] : []),
+            ...(experts ? [{ id: "experts", label: t("workspace.legacyExperts") }] : []),
             { id: "skills", label: t("workspace.skillsWorkflows") },
             { id: "tools", label: t("capabilities.tabs.tools") },
             { id: "discover", label: t("capabilities.tabs.discover") },

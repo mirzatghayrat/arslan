@@ -29,9 +29,17 @@ describe("Sidebar experts (0.1.42: experts live in the capability library)", () 
   // The rule CHANGED again: the sidebar no longer carries "other expert work".
   // Only a chat the user opened with an expert is a conversation row; an expert
   // that is merely working or was dispatched is not listed here at all.
-  it("keeps user-opened expert chats as conversation rows", () => {
+  it("lists conversations only — even a user-opened expert chat is not a row (0.1.44)", () => {
     render(<Sidebar {...baseProps} />);
-    expect(screen.getByRole("region", { name: "workspace.recentConversations" })).toHaveTextContent("小美");
+    expect(screen.getByRole("region", { name: "workspace.recentConversations" })).not.toHaveTextContent("小美");
+  });
+
+  it("its + starts a new conversation instead of opening an expert picker", () => {
+    const onAddThread = vi.fn();
+    render(<Sidebar {...baseProps} onAddThread={onAddThread} />);
+    fireEvent.click(screen.getByLabelText("sidebar.new_chat"));
+    expect(onAddThread).toHaveBeenCalledOnce();
+    expect(screen.queryByText("Mermer")).toBeNull();
   });
 
   it("does not list a working expert the user never opened", () => {

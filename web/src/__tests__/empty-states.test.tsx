@@ -64,11 +64,7 @@ const SITES: Site[] = [
     needsBody: true, needsAction: false,
     why: "the feed field IS the left panel the copy points at",
   },
-  {
-    testId: "empty-sidebar-spawns", file: "components/Sidebar.tsx", panel: "Sidebar spawn list",
-    needsBody: true, needsAction: false,
-    why: "a nav list; creating happens elsewhere and the list is not the place to say so twice",
-  },
+  // 0.1.44: the sidebar expert picker (empty-sidebar-spawns) is gone with the experts.
   // Tier B, listed because the FILTER case must never inherit the empty-catalog
   // advice: telling someone to import their first skill when they merely picked
   // a chip is wrong, and it was wrong — both cases shared one key before this.
@@ -162,6 +158,7 @@ describe("gate item ② — Tier A empty states", () => {
     // English that nothing could translate.
     const src = readFileSync(resolve(SRC, "components/Sidebar.tsx"), "utf8");
     expect(src).not.toContain(">No spawns yet<");
-    expect(block("components/Sidebar.tsx", "empty-sidebar-spawns")).toContain("t('sidebar.no_spawns')");
+    // 0.1.44: the expert picker that held this empty state is gone entirely.
+    expect(src).not.toContain("empty-sidebar-spawns");
   });
 });

@@ -1,5 +1,12 @@
 export const workspaceMessages = {
   "en": {
+    "legacyExperts": "Former experts",
+    "legacyExpertsHint": "Arslan now does the work itself. Turn a former expert into a skill to keep its method: Arslan reads it whenever the work matches. Nothing is deleted.",
+    "convertAll": "Convert all ({{count}})",
+    "toSkill": "Turn into skill",
+    "converted": "Skill saved",
+    "convertFailed": "Could not convert (the expert may have no method to keep).",
+    "legacyExpertsNone": "No former experts.",
     "createBackup": "Create backup",
     "backupUnavailable": "Backup could not start. No automatic retry.",
     "navigation": "Main navigation",
@@ -31,6 +38,13 @@ export const workspaceMessages = {
     "escalated": "Needs attention"
   },
   "zh": {
+    "legacyExperts": "旧专家转换",
+    "legacyExpertsHint": "现在由 Arslan 自己干活。把旧专家转成技能就能留下它的做法：遇到相关的活，Arslan 会自己读取。不会删除任何东西。",
+    "convertAll": "全部转换（{{count}}）",
+    "toSkill": "转成技能",
+    "converted": "已存为技能",
+    "convertFailed": "没能转换（这个专家可能没有可保留的做法）。",
+    "legacyExpertsNone": "没有旧专家。",
     "createBackup": "创建备份",
     "backupUnavailable": "无法启动备份。不会自动重试。",
     "navigation": "主导航",
@@ -62,6 +76,13 @@ export const workspaceMessages = {
     "escalated": "需要关注"
   },
   "ja": {
+    "legacyExperts": "旧エキスパートの変換",
+    "legacyExpertsHint": "今後は Arslan 自身が作業します。旧エキスパートをスキルに変換すると、その手法を残せます。関連する作業では Arslan が自分で読み込みます。何も削除されません。",
+    "convertAll": "すべて変換（{{count}}）",
+    "toSkill": "スキルに変換",
+    "converted": "スキルとして保存済み",
+    "convertFailed": "変換できませんでした（残す手法がない可能性があります）。",
+    "legacyExpertsNone": "旧エキスパートはありません。",
     "createBackup": "バックアップを作成",
     "backupUnavailable": "バックアップを開始できません。自動再試行はしません。",
     "navigation": "メインナビゲーション",
@@ -93,6 +114,13 @@ export const workspaceMessages = {
     "escalated": "確認が必要"
   },
   "es": {
+    "legacyExperts": "Expertos anteriores",
+    "legacyExpertsHint": "Ahora Arslan hace el trabajo. Convierte un experto anterior en habilidad para conservar su método: Arslan la leerá cuando el trabajo encaje. No se borra nada.",
+    "convertAll": "Convertir todos ({{count}})",
+    "toSkill": "Convertir en habilidad",
+    "converted": "Habilidad guardada",
+    "convertFailed": "No se pudo convertir (puede que no tenga un método que conservar).",
+    "legacyExpertsNone": "No hay expertos anteriores.",
     "createBackup": "Crear copia de seguridad",
     "backupUnavailable": "No se pudo iniciar la copia. Sin reintento automático.",
     "navigation": "Navegación principal",
@@ -124,6 +152,13 @@ export const workspaceMessages = {
     "escalated": "Requiere atención"
   },
   "de": {
+    "legacyExperts": "Frühere Experten",
+    "legacyExpertsHint": "Arslan erledigt die Arbeit jetzt selbst. Wandle einen früheren Experten in eine Fähigkeit um, um seine Methode zu behalten: Arslan liest sie, wenn die Arbeit passt. Nichts wird gelöscht.",
+    "convertAll": "Alle umwandeln ({{count}})",
+    "toSkill": "In Fähigkeit umwandeln",
+    "converted": "Fähigkeit gespeichert",
+    "convertFailed": "Konnte nicht umgewandelt werden (evtl. keine Methode vorhanden).",
+    "legacyExpertsNone": "Keine früheren Experten.",
     "createBackup": "Sicherung erstellen",
     "backupUnavailable": "Sicherung konnte nicht starten. Kein automatischer Neuversuch.",
     "navigation": "Hauptnavigation",
@@ -155,6 +190,13 @@ export const workspaceMessages = {
     "escalated": "Aufmerksamkeit nötig"
   },
   "fr": {
+    "legacyExperts": "Anciens experts",
+    "legacyExpertsHint": "Arslan fait désormais le travail lui-même. Convertissez un ancien expert en compétence pour garder sa méthode : Arslan la lit quand le travail s’y prête. Rien n’est supprimé.",
+    "convertAll": "Tout convertir ({{count}})",
+    "toSkill": "Convertir en compétence",
+    "converted": "Compétence enregistrée",
+    "convertFailed": "Conversion impossible (aucune méthode à conserver).",
+    "legacyExpertsNone": "Aucun ancien expert.",
     "createBackup": "Créer une sauvegarde",
     "backupUnavailable": "Impossible de lancer la sauvegarde. Aucun nouvel essai automatique.",
     "navigation": "Navigation principale",

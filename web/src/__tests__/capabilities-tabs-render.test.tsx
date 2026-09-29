@@ -86,11 +86,11 @@ beforeEach(() => {
 });
 
 describe("Capabilities page structure and legacy feature reachability", () => {
-  it("renders four primary tabs when the expert workspace is supplied", () => {
+  it("renders four primary tabs when former experts exist (0.1.44: the tab converts them)", () => {
     render(<Capabilities experts={<div>Expert workspace</div>} />);
     const tabs = screen.getAllByRole("tab");
     expect(tabs.map((el) => el.textContent)).toEqual([
-      "workspace.experts",
+      "workspace.legacyExperts",
       "workspace.skillsWorkflows",
       "capabilities.tabs.tools",
       "capabilities.tabs.discover",
