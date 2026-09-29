@@ -71,6 +71,9 @@ export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "th
     // both default OFF / most-cautious when absent.
     orchestratorShellEnabled: backend.orchestrator_shell_enabled === "true",
     shellConfirmPolicy: backend.shell_confirm_policy === "ask_risky" ? "ask_risky" : "ask_all",
+    // 0.1.43: budget tier for one background job; unknown → the server's default.
+    backgroundJobBudget: backend.background_job_budget === "lean" || backend.background_job_budget === "ample"
+      ? backend.background_job_budget : "standard",
     // Workspace for the file tools (P1). Empty = unset = tools not offered.
     workspaceDir: backend.workspace_dir ?? "",
     // Heartbeat: default OFF, and an empty checklist means no task at all.
@@ -129,6 +132,7 @@ const SETTINGS_WIRE: Record<string, { key: keyof BackendAppSettings; to?: (v: un
   distillOnSessionEnd: { key: "distill_on_session_end" },
   orchestratorShellEnabled: { key: "orchestrator_shell_enabled", to: (v) => (v ? "true" : "false") },
   shellConfirmPolicy: { key: "shell_confirm_policy" },
+  backgroundJobBudget: { key: "background_job_budget" },
   workspaceDir: { key: "workspace_dir", to: (v) => (v as string) ?? "" },
   heartbeatEnabled: { key: "heartbeat_enabled", to: (v) => (v ? "true" : "false") },
   heartbeatChecklist: { key: "heartbeat_checklist", to: (v) => (v as string) ?? "" },

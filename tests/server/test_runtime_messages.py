@@ -18,7 +18,8 @@ def test_runtime_notice_catalog_has_complete_locales_and_placeholders():
         for key, text in messages.items():
             assert text.strip()
             fields = {field for _, field, _, _ in Formatter().parse(text) if field}
-            allowed = {"named_correction": {"name"}, "job_interrupted": {"goal"}}   # 0.1.42
+            allowed = {"named_correction": {"name"}, "job_interrupted": {"goal"},   # 0.1.42
+                       "job_out_of_budget": {"goal", "what", "used", "limit", "steps"}}   # 0.1.43
             assert fields == allowed.get(key, set())
             if locale != "en":
                 assert text != copy.MESSAGES["en"][key]

@@ -376,13 +376,13 @@ def checked_driver(driver: dict | None) -> dict:
 
 
 async def run_turn(function, conversation_id: str, user_message: str, emit, *args, _driver=None,
-                   _acceptance: list[dict] | None = None, **kwargs):
+                   _acceptance: list[dict] | None = None, _budget: Budget | None = None, **kwargs):
     if current() is not None:
         return await function(conversation_id, user_message, emit, *args, **kwargs)
     ctx = personal_context.current()
     if ctx is None or ctx.temporary:
         return await function(conversation_id, user_message, emit, *args, **kwargs)
-    budget = current_budget() or Budget()
+    budget = current_budget() or _budget or Budget()
     async with db_session.AsyncSessionLocal() as db:
         locale = await db.scalar(select(Setting.value).where(Setting.key == "language")) or "en"
     from server.services.runtime_messages import normalize

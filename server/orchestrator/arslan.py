@@ -1879,8 +1879,9 @@ async def _arslan_tools() -> list[dict]:
     from server.services.task_service import current as current_task
     if current_task() is not None and "task_progress" in EXECUTORS:
         tools.append({"key": "task_progress", "description":
-                      "Read this task's saved progress and owned prior outputs after interruption or context compaction. "
-                      "Optional run_id selects one prior execution. This never authorizes repeating a write."})
+                      "Read THIS turn's own saved progress and owned prior outputs after interruption or context "
+                      "compaction. Optional run_id selects one prior execution. This never authorizes repeating a "
+                      "write. Not for background work: for that, use background_status."})
     if current_task() is not None and "delegate_work" in EXECUTORS:
         tools.append({"key": "delegate_work", "description":
             "Use only for independent subtasks or isolated review that materially helps the current request. "
@@ -1908,8 +1909,10 @@ async def _arslan_tools() -> list[dict]:
             "short sentence: you started, and what done will look like. The result is posted to this "
             "conversation when the job ends. Not for simple questions you can answer now."})
         tools.append({"key": "background_status", "description":
-            "Read the real state of this conversation's background jobs (running, step, outcome). Use it "
-            "when the user asks how the work is going; never guess progress."})
+            "Read the real state of this conversation's background jobs (running, step, outcome, which "
+            "budget limit ended it). Call it FIRST whenever the user asks about work you started — "
+            "\"how is it going\", \"进度怎么样\", \"is it done\", \"why did it stop\" — and answer from it; "
+            "never guess progress, and never use task_progress for this."})
         tools.append({"key": "stop_background_work", "description":
             "Stop one running background job of this conversation by job_id when the user asks to stop it."})
     if "list_my_capabilities" in EXECUTORS:

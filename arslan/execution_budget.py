@@ -48,9 +48,39 @@ def configured_limits() -> Limits:
     return Limits(**values)
 
 
+# 0.1.43: background jobs get their own, larger budget. A job is work the user
+# handed off (research, drafting, organizing); the per-turn Limits above are sized
+# for one chat answer and cut such work off halfway (seen in 0.1.42 field use).
+JOB_TIERS = {
+    "lean": dict(model_requests=60, tool_calls=40, tokens=300_000, wall_seconds=900),
+    "standard": dict(model_requests=120, tool_calls=80, tokens=600_000, wall_seconds=1800),
+    "ample": dict(model_requests=240, tool_calls=160, tokens=1_200_000, wall_seconds=3600),
+}
+DEFAULT_JOB_TIER = "standard"
+# Completion first: the tier is a SOFT limit. Reaching it switches the job to
+# wrap-up (write the deliverable from what it has); the hard limit, 1.5x, only
+# stops a job that cannot stop itself.
+HARD_OVER_SOFT = 1.5
+
+
+def job_limits(tier: str) -> Limits:
+    """Soft limits for one background job. Unknown tiers fall back to the default."""
+    return Limits(**JOB_TIERS.get(tier, JOB_TIERS[DEFAULT_JOB_TIER]))
+
+
+def job_budget(tier: str) -> "Budget":
+    soft = job_limits(tier)
+    hard = Limits(model_requests=math.ceil(soft.model_requests * HARD_OVER_SOFT),
+                  tool_calls=math.ceil(soft.tool_calls * HARD_OVER_SOFT),
+                  tokens=math.ceil(soft.tokens * HARD_OVER_SOFT),
+                  wall_seconds=soft.wall_seconds * HARD_OVER_SOFT)
+    return Budget(hard, soft=soft)
+
+
 class Budget:
-    def __init__(self, limits: Limits | None = None):
+    def __init__(self, limits: Limits | None = None, *, soft: Limits | None = None):
         self.limits = limits or configured_limits()
+        self.soft = soft
         self.id = uuid.uuid4().hex
         self.started = time.monotonic()
         self.model_requests = 0
@@ -80,7 +110,13 @@ class Budget:
         ceiling = Limits(**saved)
         if limits is not None:
             ceiling = Limits(**{key: min(value, getattr(limits, key)) for key, value in saved.items()})
-        budget = cls(ceiling)
+        soft_saved = snapshot.get("soft_limits")
+        soft = None
+        if soft_saved is not None:   # background jobs (0.1.43): the wrap-up point survives a restore
+            if not isinstance(soft_saved, dict) or set(soft_saved) != set(asdict(Limits())):
+                raise ValueError("invalid execution budget soft limits")
+            soft = Limits(**soft_saved)
+        budget = cls(ceiling, soft=soft)
         identity = snapshot.get("id")
         if not isinstance(identity, str) or not identity or len(identity) > 200:
             raise ValueError("invalid execution budget identity")
@@ -100,6 +136,13 @@ class Budget:
             raise ValueError("invalid execution budget stop reason")
         budget.stop_reason = reason
         return budget
+
+    def soft_reached(self) -> bool:
+        """True once a soft limit (background jobs only) is met: time to wrap up."""
+        soft = self.soft
+        return soft is not None and (
+            self.model_requests >= soft.model_requests or self.tool_calls >= soft.tool_calls
+            or self.tokens >= soft.tokens or time.monotonic() - self.started >= soft.wall_seconds)
 
     def remaining_seconds(self) -> float:
         return max(0.0, self.limits.wall_seconds - (time.monotonic() - self.started))
@@ -143,7 +186,8 @@ class Budget:
                          "tokens": self.tokens, "artifact_bytes": self.artifact_bytes,
                          "wall_seconds": round(time.monotonic() - self.started, 3)},
                 "stop_reason": self.stop_reason,
-                "token_limit_mode": "post_response_admission", "monetary_limit": False}
+                "token_limit_mode": "post_response_admission", "monetary_limit": False,
+                **({"soft_limits": asdict(self.soft)} if self.soft is not None else {})}
 
 
 _current: ContextVar[Budget | None] = ContextVar("execution_budget", default=None)

@@ -244,6 +244,8 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         onOrchestratorShellChange={(v) => saveField({ orchestratorShellEnabled: v })}
         shellConfirmPolicy={localSettings.shellConfirmPolicy}
         onShellConfirmPolicyChange={(v) => saveField({ shellConfirmPolicy: v })}
+        backgroundJobBudget={localSettings.backgroundJobBudget ?? 'standard'}
+        onBackgroundJobBudgetChange={(v) => saveField({ backgroundJobBudget: v })}
         workspaceDir={localSettings.workspaceDir ?? ''}
         onWorkspaceDirChange={(v) => saveField({ workspaceDir: v })}
         lanDiscoveryEnabled={localSettings.lanDiscoveryEnabled ?? false}

@@ -68,7 +68,7 @@ const defaultSettings: AppSettings = {
   llmStrategy: "single",
   distillOnSessionEnd: true,
   orchestratorShellEnabled: false,
-  shellConfirmPolicy: "ask_all", workspaceDir: "", heartbeatEnabled: false, heartbeatChecklist: "", lanDiscoveryEnabled: false, sshEnabled: false, defaultReadEnabled: true, voiceOutputEnabled: false, voiceInputLocale: "", voiceMode: "push_to_talk", voiceEndpointSilenceMs: 900,
+  shellConfirmPolicy: "ask_all", backgroundJobBudget: "standard", workspaceDir: "", heartbeatEnabled: false, heartbeatChecklist: "", lanDiscoveryEnabled: false, sshEnabled: false, defaultReadEnabled: true, voiceOutputEnabled: false, voiceInputLocale: "", voiceMode: "push_to_talk", voiceEndpointSilenceMs: 900,
   mcpServerEnabled: false,
 };
 
