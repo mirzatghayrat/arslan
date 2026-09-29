@@ -751,7 +751,15 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                 return await asyncio.wait_for(executor.execute(admitted_args), timeout=timeout)
             runtime = current_task()
             result = await runtime.execute_tool(tool_key, args, execute) if runtime else await execute(args)
-        except (BudgetExceeded, TaskError):
+        except TaskError as exc:
+            if exc.code not in {"task_reconciliation_required", "task_action_already_completed"}:
+                raise
+            # 0.1.44: refuse the repeat, never the turn. The model is told why.
+            result = {"ok": False, "external": False, "code": exc.code, "error": (
+                "This exact action already ran and its outcome is unknown. Do not repeat it; tell the user "
+                "to check whether it happened." if exc.code == "task_reconciliation_required" else
+                "This exact action already succeeded in this task. Do not repeat it.")}
+        except BudgetExceeded:
             raise
         except TimeoutError:
             result = {"ok": False, "error": f"tool '{tool_key}' timed out"}

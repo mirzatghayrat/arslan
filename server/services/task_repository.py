@@ -444,7 +444,11 @@ class TaskRepository:
             raise TaskError("task_action_invalid_status")
         # A tool's error return cannot prove that an external write did not
         # happen. Failed writes remain uncertain until a separate read-back.
-        if status == "failed" and action.effect != "read":
+        # 0.1.44: one exception — our own local tools report a clean refusal
+        # (validation, path outside the workspace…) as ok:false before touching
+        # anything; only an exception midway can leave a local write half-done.
+        if status == "failed" and action.effect != "read" and not (
+                action.effect == "local_write" and error_code == "tool_failed"):
             status = "uncertain"
         action.status, action.version, action.updated_at = status, action.version + 1, datetime.utcnow()
         action.evidence = [item.model_dump(mode="json") for item in evidence]

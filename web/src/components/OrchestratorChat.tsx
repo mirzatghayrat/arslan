@@ -1402,25 +1402,34 @@ export default function OrchestratorChat({
           })
         )}
         {/* LLM error banner: shown when the backend emits an error frame (e.g. LLM timeout, auth failure) */}
-        {llmError && (
-          <div className="flex gap-3 items-start py-2 select-none">
+        {llmError && (() => {
+          // 0.1.44: a task-status code (a check to make, a budget used up…) is not a
+          // model failure; it gets its own neutral title instead of "Model error".
+          const taskKey = taskErrorKey(llmError);
+          // Literal class strings: Tailwind cannot see names spliced at runtime.
+          const c = taskKey
+            ? { box: 'bg-warning/10 border-warning/30', icon: 'text-warning', title: 'text-warning', body: 'text-warning/80', close: 'hover:bg-warning/20 text-warning/60 hover:text-warning' }
+            : { box: 'bg-danger/10 border-danger/30', icon: 'text-danger', title: 'text-danger', body: 'text-danger/80 font-mono', close: 'hover:bg-danger/20 text-danger/60 hover:text-danger' };
+          return (
+          <div className="flex gap-3 items-start py-2 select-none" data-testid="chat-error" data-kind={taskKey ? 'task' : 'model'}>
             <BrandMark alt="Arslan" className="w-7 h-7 object-contain select-none shrink-0 mt-0.5" draggable={false} />
-            <div className="flex items-start gap-2 px-3 py-2.5 bg-danger/10 border border-danger/30 rounded-2xl rounded-tl-none max-w-2xl">
-              <AlertTriangle className="w-3.5 h-3.5 text-danger shrink-0 mt-0.5" />
+            <div className={`flex items-start gap-2 px-3 py-2.5 border ${c.box} rounded-2xl rounded-tl-none max-w-2xl`}>
+              <AlertTriangle className={`w-3.5 h-3.5 ${c.icon} shrink-0 mt-0.5`} />
               <div className="flex flex-col gap-1 min-w-0">
-                <span className="text-[11px] text-danger font-semibold">{t('ui.modelError')}</span>
-                <span className="text-[11px] text-danger/80 font-mono break-words">{taskErrorKey(llmError) ? t(taskErrorKey(llmError)!) : runtimeErrorText(llmError, llmErrorTranslations, i18n?.resolvedLanguage)}</span>
+                <span className={`text-[11px] ${c.title} font-semibold`}>{t(taskKey ? 'ui.needsYourCheck' : 'ui.modelError')}</span>
+                <span className={`text-[11px] ${c.body} break-words`}>{taskKey ? t(taskKey) : runtimeErrorText(llmError, llmErrorTranslations, i18n?.resolvedLanguage)}</span>
               </div>
               <button
                 onClick={clearLlmError}
-                className="ml-auto shrink-0 p-0.5 rounded hover:bg-danger/20 text-danger/60 hover:text-danger transition-colors"
+                className={`ml-auto shrink-0 p-0.5 rounded ${c.close} transition-colors`}
                 aria-label={t('errors.dismiss')}
               >
                 <X className="w-3 h-3" />
               </button>
             </div>
           </div>
-        )}
+          );
+        })()}
         {/* Thinking indicator: shown from send until first real content chunk.
             We no longer gate on !streaming because stream_start begins streaming
             with empty text (slow models like Gemini 2.5 Pro have a long delay

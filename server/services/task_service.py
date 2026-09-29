@@ -36,7 +36,47 @@ _READ_TOOLS = frozenset({
     "web_search", "web_extract", "read_skill", "recall", "read_file", "list_dir",
     "search_files", "list_my_tasks", "list_nodes", "list_my_capabilities", "render_chart", "task_progress", "delegate_work",
 })
-_LOCAL_WRITE_TOOLS = frozenset({"write_file", "edit_file", "run_python", "render_deck", "remember", "create_skill"})
+_LOCAL_WRITE_TOOLS = frozenset({"write_file", "edit_file", "run_python", "render_deck", "remember", "create_skill",
+                                "start_background_work", "stop_background_work"})
+_READ_TOOLS = _READ_TOOLS | {"background_status"}
+
+
+async def effect_of(tool_key: str, arguments: dict) -> str:
+    """What one call can change, from what the tool really is (0.1.44).
+
+    Anything not known to be a read stays external_write — the conservative
+    default. Two families used to fall into that default although we already
+    know better: a run_command the command policy grades LOW (read-only, local),
+    and an MCP tool its server's grading marks "safe" (the hand-graded table,
+    then the verb heuristic — e.g. Playwright's browser_take_screenshot). A
+    failed screenshot was being treated as a possibly-applied external write.
+    """
+    if tool_key in ACCOUNT_ACTION_EFFECTS:
+        return ACCOUNT_ACTION_EFFECTS[tool_key]
+    if tool_key in _READ_TOOLS:
+        return "read"
+    if tool_key in _LOCAL_WRITE_TOOLS:
+        return "local_write"
+    if tool_key == "run_command":   # local only; remote execution is ssh_run (always external)
+        from server.services import command_policy
+        argv = arguments.get("argv") if isinstance(arguments.get("argv"), list) else []
+        if command_policy.classify(str(arguments.get("command") or "").strip(), argv) == "LOW":
+            return "read"
+        return "external_write"
+    if tool_key.startswith("mcp_") and "__" in tool_key:
+        try:
+            server_id = int(tool_key.split("__", 1)[0].removeprefix("mcp_"))
+        except ValueError:
+            return "external_write"
+        from server.db.models import MCPServer, Tool
+        from server.mcp.discovery import suggested_tier_for
+        async with db_session.AsyncSessionLocal() as db:
+            tool = await db.get(Tool, tool_key)          # long names are hashed in the key
+            srv = await db.get(MCPServer, server_id)
+        name = (tool.external_name if tool is not None else None) or tool_key.split("__", 1)[1]
+        if srv is not None and suggested_tier_for(srv, name) == "safe":
+            return "read"
+    return "external_write"
 
 
 def current() -> TaskRuntime | None:
@@ -144,8 +184,6 @@ class TaskRuntime:
         task = asyncio.current_task()
         if not retain_stopped and task is not None and task.cancelling():
             return  # The root finally retains charged counters during cancellation.
-        if reason == "before_model" and self.reconciliation_required:
-            raise TaskError("task_reconciliation_required")
         if reason == "before_model":
             await self.check_memory()
         budget = current_budget()
@@ -182,13 +220,15 @@ class TaskRuntime:
         })
 
     async def execute_tool(self, tool_key: str, arguments: dict, execute: Callable[[dict], Awaitable[dict]]) -> dict:
-        if self.reconciliation_required:
-            raise TaskError("task_reconciliation_required")
+        # 0.1.44 completion first: an action whose outcome is unknown no longer
+        # stops the whole turn. Repeating THAT exact action is still refused (the
+        # journal's intent hash, see prepare_action); everything else goes on, and
+        # the task ends asking the user to check that one action.
         # Private JSON snapshot before the first yield: preparation, admission,
         # and the actual executor must all see the same intent.
         arguments = json.loads(encoded_action(tool_key, arguments))["arguments"]
         await self.check_memory()
-        effect = ACCOUNT_ACTION_EFFECTS.get(tool_key) or ("read" if tool_key in _READ_TOOLS else "local_write" if tool_key in _LOCAL_WRITE_TOOLS else "external_write")
+        effect = await effect_of(tool_key, arguments)
         async with self.lock:
             async with repository() as repo:
                 action = await repo.prepare_action(self.task_id, self.attempt_id, tool_key=tool_key,
@@ -209,7 +249,7 @@ class TaskRuntime:
                 async with repository() as repo:
                     await repo.action_finished(self.task_id, self.attempt_id, action["id"],
                                                status="failed", error_code="tool_exception")
-            self.reconciliation_required = effect != "read"
+            self.reconciliation_required = self.reconciliation_required or effect != "read"
             raise
         succeeded = isinstance(result, dict) and bool(result.get("ok"))
         refs = []
@@ -232,7 +272,8 @@ class TaskRuntime:
                 await repo.action_finished(self.task_id, self.attempt_id, action["id"],
                     status="succeeded" if succeeded else "failed", evidence=tuple(refs),
                     error_code=None if succeeded else "tool_failed")
-            self.reconciliation_required = not succeeded and effect != "read"
+            # Sticky: a later success elsewhere does not settle an earlier unknown outcome.
+            self.reconciliation_required = self.reconciliation_required or (not succeeded and effect != "read")
             updates = {
                 "pending_actions": tuple(item for item in self.progress.pending_actions if item != action["id"]),
                 "artifacts": tuple({(ref.id, ref.locator): ref for ref in (*self.progress.artifacts, *refs)}.values()),
