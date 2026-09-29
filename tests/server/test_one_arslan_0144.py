@@ -112,3 +112,17 @@ async def test_converting_a_missing_or_empty_expert_says_why(execution_db):
         await db.commit()
     assert (await expert_conversion.convert(99))["code"] == "expert_not_found"
     assert (await expert_conversion.convert(7)) == {"ok": False, "code": "expert_prompt_too_short"}   # no method to keep
+
+
+@pytest.mark.asyncio
+async def test_arslan_is_offered_read_skill_only_when_skills_exist(execution_db):
+    from server.db.models import SkillPack
+    keys = lambda tools: [t["key"] for t in tools]  # noqa: E731
+    assert "read_skill" not in keys(await arslan._arslan_tools())
+    async with execution_db() as db:
+        db.add(SkillPack(key="weekly-report", name="Weekly report", category="method", description="How I write my weekly report",
+                         tier="safe", status="registered", body="# Weekly\n\n## Trigger\nWeekly report.\n\n## Method\n" + "x" * 80))
+        await db.commit()
+    tools = await arslan._arslan_tools()
+    offered = next(t for t in tools if t["key"] == "read_skill")
+    assert "weekly-report — Weekly report" in offered["description"]
