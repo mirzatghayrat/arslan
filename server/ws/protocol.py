@@ -242,6 +242,14 @@ def propose_run_command(call_id: str, command: str, argv: list[str], reason: str
     return frame
 
 
+def propose_action(call_id: str, kind: str, target: str, detail: str) -> dict[str, Any]:
+    """0.1.45: a background job asks before it acts — kind is browser_site (first
+    click/typing on a website), mac_shortcut (run a Shortcut) or mac_script (run an
+    AppleScript, shown in full). Answered by confirm_action / cancel_action."""
+    return {"type": "propose_action", "call_id": call_id, "kind": kind, "target": target[:300],
+            "detail": detail[:4000]}
+
+
 def propose_schedule(call_id: str, name: str, when: str) -> dict[str, Any]:
     """Arslan asks to create a recurring task — once per session (裁决①).
     Emitting this schedules NOTHING; only `confirm_schedule {call_id}` does.

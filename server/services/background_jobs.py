@@ -186,6 +186,8 @@ async def _run(job: Job) -> None:
                        getattr(exc, "code", ""))
     finally:
         _inside_job.reset(token)
+        from server.registry import hands_tools
+        hands_tools.forget_job(job.job_id)      # approvals never outlive their job
         job.phase = "finished"
         job.outcome = outcome_of(phase, job.results, reason)
         job.detail = reason
