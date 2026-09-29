@@ -54,6 +54,16 @@ _TEST_CRYPTO_SALT = bytes(range(16))
 
 
 @pytest.fixture(autouse=True)
+def _legacy_expert_path(request, monkeypatch):
+    """0.1.44: experts are off in the product. The legacy expert tests keep
+    exercising that code until step two deletes it; tests of the one-Arslan
+    behaviour opt out with @pytest.mark.one_arslan."""
+    if request.node.get_closest_marker("one_arslan") is None:
+        from server.orchestrator import arslan
+        monkeypatch.setattr(arslan, "EXPERTS_ENABLED", True)
+
+
+@pytest.fixture(autouse=True)
 def _testclient_models_loopback(monkeypatch):
     """In-process clients model a local dev connection unless a test specifies a peer.
 

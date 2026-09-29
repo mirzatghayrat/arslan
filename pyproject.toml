@@ -211,6 +211,7 @@ timeout = 120
 markers = [
     "macos: only meaningful on macOS (native frameworks — Vision, seatbelt). Arslan ships a macOS dmg, so these are the tests closest to what users run, and CI has never executed one.",
     "linux_only: only meaningful off macOS (asserts the fail-closed path a macOS host does not take).",
+    "one_arslan: tests of the product default (0.1.44) with the legacy expert path switched off.",
 ]
 
 [tool.ruff]

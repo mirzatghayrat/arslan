@@ -495,6 +495,13 @@ async def run_arslan_turn(conversation_id: str, prompt: str) -> None:
     await arslan_mod._handle_answer(conversation_id, prompt, emit)
 
 
+def _target(task: ScheduledTask) -> str:
+    """Who runs a fire. 0.1.44: with experts off, always Arslan (migration 0056
+    also rewrote stored rows; this covers any row written by an older build)."""
+    from server.orchestrator import arslan as arslan_mod
+    return (task.target or "spawn") if arslan_mod.EXPERTS_ENABLED else "arslan"
+
+
 async def _fire(task: ScheduledTask) -> None:
     from server.services import task_context
     cid = task.conversation_id or f"scheduled-{task.id}"
@@ -504,7 +511,7 @@ async def _fire(task: ScheduledTask) -> None:
         return await _fire_body(task)
     with desktop_status.working(cid):   # keeps the Mac awake while the fire runs (0.1.41)
         return await task_context.execute_entry(cid, task.prompt, run_registry.make_emit(cid), body,
-            driver={"kind": "expert", "id": task.spawn_id} if task.target != "arslan" and task.spawn_id else None,
+            driver={"kind": "expert", "id": task.spawn_id} if _target(task) != "arslan" and task.spawn_id else None,
             headless=True)
 
 
@@ -524,7 +531,7 @@ async def _fire_body(task: ScheduledTask) -> None:
     count."""
     task_id, name = task.id, task.name
     spawn_id, prompt = task.spawn_id, task.prompt
-    target = task.target or "spawn"
+    target = _target(task)
     cid = task.conversation_id or f"scheduled-{task_id}"
     now = datetime.utcnow()
     async with db_session.AsyncSessionLocal() as db:

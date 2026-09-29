@@ -488,6 +488,13 @@ def persisted_user_text(user_message: str, images: list[dict] | None) -> str:
     return f"{user_message}\n{names}" if user_message else names
 
 
+# 0.1.44 one Arslan: experts are no longer a runtime path. Arslan does the work
+# itself (background jobs for multi-step work); expert definitions live on only as
+# skills converted from them. Step two deletes the expert code; until then the
+# legacy tests exercise it with this switch on.
+EXPERTS_ENABLED = False
+
+
 @governed
 @scoped_turn
 async def handle_user_message(
@@ -516,6 +523,11 @@ async def handle_user_message(
                                  images=images, confirm_command=confirm_command,
                                  confirm_workspace_write=confirm_workspace_write, confirm_schedule=confirm_schedule)
         return
+
+    if not EXPERTS_ENABLED:
+        # Any expert phase an earlier version parked here (invite, member pick,
+        # proposal, gather) is dropped; the router's expert actions become answers.
+        await phase_service.clear(conversation_id)
 
     # 1a. Typed consent accepts a parked invite (deterministic, PA-6): a pending
     # inline invite + a short confirm ("好"/"ok"/…) IS the user accepting the card
@@ -664,6 +676,9 @@ async def handle_user_message(
         await memory.maybe_compact(conversation_id)
         return
 
+    if not EXPERTS_ENABLED and result.action in {"route", "suggest_create", "suggest_update"}:
+        result.action, result.spawn_id = "answer", None
+
     # 3b. Explicit @-mention override. The LLM router frequently defaults capability/meta
     # questions ("@Deck Master 你能给我干嘛") to `answer`, which makes Arslan reply AS the spawn
     # under its OWN identity. When the user explicitly @-named a real spawn, force the named
@@ -671,7 +686,7 @@ async def handle_user_message(
     # invite (both handled by _handle_route, which sees _user_named_spawn=True and skips doer-
     # first). Deliberately narrow: only rescues the `answer` default (never touches route /
     # suggest_* / clarify) and only on explicit @mentions; gather/proposing already returned above.
-    if not gathering and result.action == "answer":
+    if EXPERTS_ENABLED and not gathering and result.action == "answer":
         _named_id = await _resolve_at_mentioned_spawn(user_message)
         if _named_id is not None:
             result.action = "route"
@@ -1859,6 +1874,21 @@ def _arslan_fetch_executor():
     return EXECUTORS["web_search"]
 
 
+async def _skill_index(limit: int = 40) -> str:
+    """One line per registered skill: key — name: what it is for."""
+    from sqlalchemy import select
+    from server.db import session as db_session
+    from server.db.models import SkillPack
+    try:
+        async with db_session.AsyncSessionLocal() as db:
+            rows = (await db.execute(select(SkillPack).where(SkillPack.status == "registered")
+                                     .order_by(SkillPack.key).limit(limit))).scalars().all()
+    except Exception:  # noqa: BLE001 — a missing index must never break a turn
+        return ""
+    return "\n".join(f"- {r.key} — {r.name}: {' '.join((r.description or '').split())[:100]}"
+                     for r in rows if (r.body or "").strip())
+
+
 async def _arslan_tools() -> list[dict]:
     """Arslan's host-level safe toolset: web + chart + second-brain recall/remember
     (no spawn wiring)."""
@@ -1915,6 +1945,15 @@ async def _arslan_tools() -> list[dict]:
             "never guess progress, and never use task_progress for this."})
         tools.append({"key": "stop_background_work", "description":
             "Stop one running background job of this conversation by job_id when the user asks to stop it."})
+    # 0.1.44 one Arslan: skills are methods Arslan applies itself (experts are
+    # converted into them). Offered only when some exist; the index is in the
+    # description so the model knows when a method applies.
+    if "read_skill" in EXECUTORS:
+        index = await _skill_index()
+        if index:
+            tools.append({"key": "read_skill", "description":
+                "Read one of the user's saved methods (skills) before doing work it covers, then follow it. "
+                "args: {key, section?}. Available:\n" + index})
     if "list_my_capabilities" in EXECUTORS:
         tools.append({"key": "list_my_capabilities",
                       "description": "List your OWN usable capabilities (built-in tools + installed "

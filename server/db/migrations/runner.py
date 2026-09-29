@@ -76,6 +76,7 @@ from .versions._0052_task_workers import upgrade_sync as _m0052
 from .versions._0053_action_grants import upgrade_sync as _m0053
 from .versions._0054_background_jobs_index import upgrade_sync as _m0054
 from .versions._0055_message_job_outcome import upgrade_sync as _m0055
+from .versions._0056_scheduled_tasks_run_as_arslan import upgrade_sync as _m0056
 
 # VERBATIM order from the old main.py boot chain — do NOT reorder/add/drop.
 MIGRATIONS: list[tuple[str, Callable]] = [
@@ -129,6 +130,7 @@ MIGRATIONS: list[tuple[str, Callable]] = [
     ("0053", _m0053),
     ("0054", _m0054),
     ("0055", _m0055),
+    ("0056", _m0056),
 ]
 
 
