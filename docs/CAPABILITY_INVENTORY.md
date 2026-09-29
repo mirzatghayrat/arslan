@@ -1,6 +1,6 @@
 # Generated capability inventory
 
-Desktop configuration version: `0.1.44`.
+Desktop configuration version: `0.1.45`.
 
 Regenerate with `uv run python -m scripts.capability_inventory`. This is static
 source evidence, not an installed-account probe or proof of model quality.
@@ -43,6 +43,13 @@ enrolment executor deliberately refuses execution; the UI owns enrolment.
 | Tool | Source |
 | --- | --- |
 | `background_status` | [server/registry/task_tools.py](../server/registry/task_tools.py) |
+| `browser_back` | [server/registry/hands_tools.py](../server/registry/hands_tools.py) |
+| `browser_click` | [server/registry/hands_tools.py](../server/registry/hands_tools.py) |
+| `browser_look` | [server/registry/hands_tools.py](../server/registry/hands_tools.py) |
+| `browser_open` | [server/registry/hands_tools.py](../server/registry/hands_tools.py) |
+| `browser_press` | [server/registry/hands_tools.py](../server/registry/hands_tools.py) |
+| `browser_select` | [server/registry/hands_tools.py](../server/registry/hands_tools.py) |
+| `browser_type` | [server/registry/hands_tools.py](../server/registry/hands_tools.py) |
 | `cancel_task` | [server/registry/schedule_tools.py](../server/registry/schedule_tools.py) |
 | `edit_file` | [server/registry/file_tools.py](../server/registry/file_tools.py) |
 | `enroll_node` | [server/registry/ssh_tools.py](../server/registry/ssh_tools.py) |
@@ -50,6 +57,9 @@ enrolment executor deliberately refuses execution; the UI owns enrolment.
 | `list_my_capabilities` | [server/registry/executors.py](../server/registry/executors.py) |
 | `list_my_tasks` | [server/registry/schedule_tools.py](../server/registry/schedule_tools.py) |
 | `list_nodes` | [server/registry/ssh_tools.py](../server/registry/ssh_tools.py) |
+| `mac_applescript` | [server/registry/hands_tools.py](../server/registry/hands_tools.py) |
+| `mac_list_shortcuts` | [server/registry/hands_tools.py](../server/registry/hands_tools.py) |
+| `mac_run_shortcut` | [server/registry/hands_tools.py](../server/registry/hands_tools.py) |
 | `run_command` | [server/registry/executors.py](../server/registry/executors.py) |
 | `scan_local_network` | [server/registry/lan_tools.py](../server/registry/lan_tools.py) |
 | `schedule_task` | [server/registry/schedule_tools.py](../server/registry/schedule_tools.py) |
@@ -93,8 +103,9 @@ trust decisions; see THIRD_PARTY_NOTICES.md and docs/RELIABILITY.md.
 
 | Source | SHA-256 |
 | --- | --- |
-| `server/registry/executors.py` | `89a33e6ff94bd807590aa77d4ad258824a007fc803a1422470793976e4e1714b` |
+| `server/registry/executors.py` | `9a4e63d08f6a2cb0f677446fe1b04a3b5c55a8394a3580635631fe1794a47f16` |
 | `server/registry/file_tools.py` | `00c265fc87ceb39d3fb13908cc28120763ad833d1989896d7f4008b81aa4e5b4` |
+| `server/registry/hands_tools.py` | `8d8c5b56f767304c0f234bfd79f23351eaee350f5157ede5806fa929722a47e9` |
 | `server/registry/lan_tools.py` | `34778593e80f8276d545f4ab569803a208a290d5fe4e8d52402f7a876b6f63b1` |
 | `server/registry/memory_executors.py` | `5e53443ee8c03360cfe52c5e68f3e4a8196563377a2b7da6e60ea6e7b4f87587` |
 | `server/registry/schedule_tools.py` | `13a8698f7e824c1da64cb513b6ebf92de4ab618f75103445e9b12e984ca09a6d` |

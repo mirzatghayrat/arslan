@@ -103,31 +103,42 @@ class _BrowserTool:
 
 
 class BrowserOpenExecutor(_BrowserTool):
-    key, action = "browser_open", "open"
+    key = "browser_open"
+    action = "open"
 
 
 class BrowserLookExecutor(_BrowserTool):
-    key, action = "browser_look", "look"
+    key = "browser_look"
+    action = "look"
 
 
 class BrowserBackExecutor(_BrowserTool):
-    key, action = "browser_back", "back"
+    key = "browser_back"
+    action = "back"
 
 
 class BrowserClickExecutor(_BrowserTool):
-    key, action, acts = "browser_click", "click", True
+    key = "browser_click"
+    action = "click"
+    acts = True
 
 
 class BrowserTypeExecutor(_BrowserTool):
-    key, action, acts = "browser_type", "type", True
+    key = "browser_type"
+    action = "type"
+    acts = True
 
 
 class BrowserSelectExecutor(_BrowserTool):
-    key, action, acts = "browser_select", "select", True
+    key = "browser_select"
+    action = "select"
+    acts = True
 
 
 class BrowserPressExecutor(_BrowserTool):
-    key, action, acts = "browser_press", "press", True
+    key = "browser_press"
+    action = "press"
+    acts = True
 
 
 # ── Mac automation ───────────────────────────────────────────────────────────
