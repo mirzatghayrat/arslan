@@ -171,3 +171,5 @@ async def shutdown():
         task.cancel()
     await asyncio.gather(*tasks, return_exceptions=True)
     await browser_reader.shutdown()
+    from server.services import agent_browser
+    await agent_browser.shutdown()        # 0.1.45: Arslan's own browser window

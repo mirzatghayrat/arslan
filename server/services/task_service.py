@@ -38,7 +38,8 @@ _READ_TOOLS = frozenset({
 })
 _LOCAL_WRITE_TOOLS = frozenset({"write_file", "edit_file", "run_python", "render_deck", "remember", "create_skill",
                                 "start_background_work", "stop_background_work"})
-_READ_TOOLS = _READ_TOOLS | {"background_status"}
+_READ_TOOLS = _READ_TOOLS | {"background_status", "browser_open", "browser_look", "browser_back",
+                             "mac_list_shortcuts"}   # 0.1.45: looking never changes anything
 
 
 async def effect_of(tool_key: str, arguments: dict) -> str:

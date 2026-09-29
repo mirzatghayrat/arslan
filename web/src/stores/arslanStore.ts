@@ -49,6 +49,8 @@ interface ArslanState {
   pendingEnrollNode: { callId: string; name: string; host: string; user: string; fingerprints: string[] } | null;
   pendingWorkspaceWrite: { callId: string; workspace: string; action: string; path: string; background?: boolean } | null;
   pendingSchedule: { callId: string; name: string; when: string; background?: boolean } | null;
+  // 0.1.45: a background job asks before it acts in the browser or on the Mac.
+  pendingAction: { callId: string; kind: "browser_site" | "mac_shortcut" | "mac_script"; target: string; detail: string } | null;
   // NEXT BUILD (conversation-driven MCP, Task 5): set when a `propose_connect_mcp`
   // frame arrives. env_keys carries credential NAMES + metadata only — the card
   // collects VALUES locally and sends them only over REST (addMcpServer). Cleared
@@ -120,6 +122,7 @@ interface ArslanState {
   clearPendingEnrollNode: () => void;
   clearPendingWorkspaceWrite: () => void;
   clearPendingSchedule: () => void;
+  clearPendingAction: () => void;
   clearPendingConnectMcp: () => void;
   clearPendingStaffing: () => void;
   clearError: () => void;
@@ -217,6 +220,7 @@ function initialData() {
     pendingEnrollNode: null as { callId: string; name: string; host: string; user: string; fingerprints: string[] } | null,
     pendingWorkspaceWrite: null as { callId: string; workspace: string; action: string; path: string; background?: boolean } | null,
     pendingSchedule: null as { callId: string; name: string; when: string; background?: boolean } | null,
+    pendingAction: null as { callId: string; kind: "browser_site" | "mac_shortcut" | "mac_script"; target: string; detail: string } | null,
     pendingConnectMcp: null as {
       callId: string;
       key: string;
@@ -316,6 +320,7 @@ function makeActions(set: SetState, get: GetState) {
     clearPendingEnrollNode: () => set({ pendingEnrollNode: null }),
     clearPendingWorkspaceWrite: () => set({ pendingWorkspaceWrite: null }),
     clearPendingSchedule: () => set({ pendingSchedule: null }),
+    clearPendingAction: () => set({ pendingAction: null }),
     clearPendingConnectMcp: () => set({ pendingConnectMcp: null }),
     clearPendingStaffing: () => set({ pendingStaffing: null }),
     clearError: () => set({ error: null, errorTranslations: null }),
@@ -899,6 +904,10 @@ function makeActions(set: SetState, get: GetState) {
           set({ pendingSchedule: { callId: frame.call_id, name: frame.name,
                                    when: frame.when, background: frame.background === true },
                ...(frame.background ? _approvalNotice(state) : {}) });
+          break;
+        case "propose_action":
+          set({ pendingAction: { callId: frame.call_id, kind: frame.kind, target: frame.target, detail: frame.detail },
+                ..._approvalNotice(state) });
           break;
         case "propose_workspace_write":
           set({ pendingWorkspaceWrite: {

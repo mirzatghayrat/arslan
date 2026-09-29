@@ -51,6 +51,7 @@ import ProjectsSection from './components/companion/ProjectsSection';
 import ConversationControls from './components/companion/ConversationControls';
 import TaskPanel from './components/companion/TaskPanel';
 import LegacyExperts from './components/companion/LegacyExperts';
+import ActionApprovalCard from './components/ActionApprovalCard';
 import { companionApi, type Project } from './api/companion';
 import DiagnosisView from './components/DiagnosisView';
 import FirstRunWizard from './components/FirstRunWizard';
@@ -239,6 +240,8 @@ export default function App() {
   const pendingWorkspaceWrite = useArslanStore((s) => s.pendingWorkspaceWrite);
   const clearPendingWorkspaceWrite = useArslanStore((s) => s.clearPendingWorkspaceWrite);
   const pendingSchedule = useArslanStore((s) => s.pendingSchedule);
+  const pendingAction = useArslanStore((s) => s.pendingAction);
+  const clearPendingAction = useArslanStore((s) => s.clearPendingAction);
   const clearPendingSchedule = useArslanStore((s) => s.clearPendingSchedule);
   // propose_connect_mcp state — in-chat MCP connect card (security-load-bearing:
   // secrets never leave this card except over REST; see ConnectMcpCard.tsx)
@@ -1148,6 +1151,14 @@ export default function App() {
                     clearPendingWorkspaceWrite();
                   }}
                 />
+              </div>
+            )}
+
+            {activeSection === 'arslan' && pendingAction && (
+              <div className="suggest-create-card-overlay">
+                <ActionApprovalCard kind={pendingAction.kind} target={pendingAction.target} detail={pendingAction.detail}
+                  onConfirm={() => { wsSend({ type: 'confirm_action', call_id: pendingAction.callId }); clearPendingAction(); }}
+                  onCancel={() => { wsSend({ type: 'cancel_action', call_id: pendingAction.callId }); clearPendingAction(); }} />
               </div>
             )}
 

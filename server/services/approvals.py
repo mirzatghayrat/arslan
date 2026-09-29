@@ -25,6 +25,7 @@ ANSWERS = {
     "confirm_workspace_write": True, "cancel_workspace_write": False,
     "confirm_schedule": True, "cancel_schedule": False,
     "confirm_run_command": True, "cancel_run_command": False,
+    "confirm_action": True, "cancel_action": False,   # 0.1.45 browser / Mac actions
 }
 
 
