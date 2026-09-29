@@ -1937,7 +1937,9 @@ async def _arslan_tools() -> list[dict]:
             "goal in the user's words plus 2-5 completion criteria; prefer checkable ones (kind file_saved "
             "with the file name, sources_read with a minimum, mentions with a phrase). Then reply in ONE "
             "short sentence: you started, and what done will look like. The result is posted to this "
-            "conversation when the job ends. Not for simple questions you can answer now."})
+            "conversation when the job ends. Not for simple questions you can answer now. Acting in the "
+            "browser (clicking, typing, submitting) or on the Mac (Shortcuts, AppleScript) also happens in "
+            "background work, where the user is asked before the first action."})
         tools.append({"key": "background_status", "description":
             "Read the real state of this conversation's background jobs (running, step, outcome, which "
             "budget limit ended it). Call it FIRST whenever the user asks about work you started — "

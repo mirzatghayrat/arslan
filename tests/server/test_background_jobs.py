@@ -582,3 +582,15 @@ def test_settings_page_numbers_match_the_tiers():
         tokens_n = float(tokens[:-1]) * (1_000 if tokens.endswith("k") else 1_000_000)
         assert (int(requests), int(tools), int(tokens_n), int(minutes) * 60) == (
             limits["model_requests"], limits["tool_calls"], limits["tokens"], limits["wall_seconds"]), tier
+
+
+async def test_a_jobs_approvals_end_with_it(execution_db, active, monkeypatch):
+    """0.1.45: an 'allowed on github.com' from one job is never reused by the next."""
+    from server.registry import hands_tools
+    forgotten = []
+    monkeypatch.setattr(hands_tools, "forget_job", forgotten.append)
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: JobAdapter())
+    job = await background_jobs.start(CID, "Tidy my notes", _criteria())
+    await _wait(lambda: job.phase == "finished")
+    assert forgotten == [job.job_id]
+

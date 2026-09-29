@@ -46,7 +46,7 @@ async def _ask_once(grant: str, kind: str, target: str, detail: str) -> bool:
     if grant in granted:
         return True
     ok = await approvals.ask(conversation_id, protocol.propose_action(uuid.uuid4().hex, kind, target, detail))
-    if ok and kind != "mac_script":            # scripts are asked for every time
+    if ok:                                     # a script's grant key is unique: asked every time
         granted.add(grant)
     return ok
 
