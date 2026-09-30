@@ -5,7 +5,6 @@ import asyncio
 import json
 import logging
 import re as _re
-import uuid
 from collections.abc import Callable
 from datetime import datetime
 
@@ -524,288 +523,21 @@ async def handle_user_message(
                                  confirm_workspace_write=confirm_workspace_write, confirm_schedule=confirm_schedule)
         return
 
-    if not EXPERTS_ENABLED:
-        # Any expert phase an earlier version parked here (invite, member pick,
-        # proposal, gather) is dropped; the router's expert actions become answers.
-        await phase_service.clear(conversation_id)
-
-    # 1a. Typed consent accepts a parked invite (deterministic, PA-6): a pending
-    # inline invite + a short confirm ("好"/"ok"/…) IS the user accepting the card
-    # in words — it must dispatch the parked brief exactly like clicking Accept.
-    # Without this, the router reads a post-card "好" as answer-thanks and the
-    # parked delegation silently dies (real-machine gap found in the PA-6 run).
-    pending_invite = await phase_service.get_pending_invite(conversation_id)
-    if pending_invite is not None:
-        if confirm_lexicon.is_short_confirm(user_message):
-            await phase_service.clear(conversation_id)
-            # Recruiting invite (delegation cell 6): Arslan already answered doer-first, so
-            # a typed accept ONLY enrolls the spawn — it must NOT re-dispatch the answered
-            # task (Bug 1 fix). An ordinary (UNanswered) park still dispatches (S0-2).
-            if pending_invite.get("answered"):
-                await _accept_recruit(conversation_id, pending_invite["spawn_id"], emit)
-                await memory.maybe_compact(conversation_id)
-                return
-            from server.services import recap_service
-            await recap_service.log_event(
-                conversation_id, "delegation_advance",
-                {"trigger": "invite_text_confirm", "spawn_id": pending_invite.get("spawn_id")},
-                "文字确认接受邀请 → 派发停放任务")
-            await dispatch_routed(
-                conversation_id, pending_invite["spawn_id"],
-                pending_invite.get("task_brief") or "",
-                bool(pending_invite.get("needs_proposal")), emit,
-                user_message=pending_invite.get("user_message") or user_message,
-                # Arslan already spoke its brief before the card — don't repeat it.
-                announce=not bool(pending_invite.get("announced")),
-            )
-            await memory.maybe_compact(conversation_id)
-            return
-        # Bug B (stale parked-invite mis-fire): a parked invite is honored ONLY as the
-        # IMMEDIATE next user action. This turn is NOT that bare confirm — the user
-        # ignored the chip and moved on (the frontend already implicitly dismissed the
-        # chip UI on send via dismissAllPending, but sent no dismiss_invite). Clear the
-        # stale invite here so a LATER bare 「好」 (e.g. agreeing with something else N
-        # turns on) can't deterministically mis-dispatch the aged task. Then fall
-        # through to normal routing/answer for this turn.
-        await phase_service.clear(conversation_id)
-
-    # 1a2. A parked member-picker choice (delegation cell 5): the user's pick — the chosen
-    # member's name, sent back by the ask_user_choice card — dispatches the parked task to
-    # that member with its original brief. Like the parked invite, it is honored ONLY as the
-    # immediate next action: any non-matching message clears the stale choice and falls
-    # through to normal routing.
-    pending_choice = await phase_service.get_pending_choice(conversation_id)
-    if pending_choice is not None:
-        chosen = _match_choice(user_message, pending_choice.get("candidates") or [])
-        await phase_service.clear(conversation_id)
-        if chosen is not None:
-            await dispatch_routed(
-                conversation_id, chosen["spawn_id"],
-                pending_choice.get("task_brief") or "",
-                bool(pending_choice.get("needs_proposal")), emit,
-                user_message=pending_choice.get("user_message") or user_message,
-            )
-            await memory.maybe_compact(conversation_id)
-            return
-
-    # 1b. if a proposal is pending, classify the reply before routing
-    pending = await phase_service.get_pending(conversation_id)
-    if pending and pending["phase"] == "proposing":
-        # _classify_followup calls the LLM — guard it so an LLM error surfaces as
-        # an in-chat error frame instead of crashing the WebSocket.
-        try:
-            kind = await _classify_followup(user_message, pending["direction"])
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("_classify_followup raised (surfacing as error): %s", exc)
-            emit(await llm_errors.error_frame(exc))
-            return
-        if kind == "confirm":
-            await confirm_and_execute(conversation_id, pending["spawn_id"], emit)
-            await memory.maybe_compact(conversation_id)
-            return
-        if kind == "refine":
-            # task_brief stays the base direction; instruction carries the user's refinement.
-            await _dispatch_spawn(
-                conversation_id,
-                pending["spawn_id"],
-                pending["direction"],
-                emit,
-                mode="propose",
-                prior_output=None,
-                instruction=user_message,
-                user_message=user_message,
-            )
-            await memory.maybe_compact(conversation_id)
-            return
-        # kind == "new" → clear the stale pending phase and fall through to normal routing
-        await phase_service.clear(conversation_id, pending["spawn_id"])
-
-    # 1c. gather phases (B3/B4): while Arslan is gathering an under-specified create
-    # request — whether via the legacy `clarifying` flag or the slot-based `gathering`
-    # phase — the follow-up answer must keep clarifying (Arslan's voice). It must NOT be
-    # routed/dispatched to an existing spawn (routing leaks "请以X的身份" identity-bleed
-    # into the answer layer). We still route() below, but if the router wants to route
-    # to an existing spawn we OVERRIDE it to the clarify path. A ready staffing need (the
-    # user finally gave enough) clears the phase and proposes; answer/clarify proceed
-    # normally. Proposing takes precedence (handled above and returns), so the proposing
-    # and gather phases are never both live here.
-    gathering = _is_gather_phase(pending)
-
-    # 2. route (one decision call; also returns new_facts).  Guard it so an LLM
-    # error (e.g. timeout, auth failure) surfaces as a recoverable in-chat error
-    # frame instead of propagating out of run_with_live_frames and closing the WS.
-    try:
-        t0 = datetime.utcnow()
-        result = await router.route(conversation_id, user_message)
-        route_ms = int((datetime.utcnow() - t0).total_seconds() * 1000)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("router.route raised (surfacing as error): %s", exc)
-        emit(await llm_errors.error_frame(exc))
-        return
-
-    # 3. persist + announce extracted facts (transparency note)
-    if result.new_facts:
-        created = await memory.save_facts(
-            result.new_facts,
-            provenance={"source_kind": "router", "conversation_id": conversation_id},
-        )
-        for fact in created:
-            emit({"type": "memory_proposed" if getattr(fact, "status", "active") != "active" else "fact_saved",
-                  "content": fact.content, "sensitive": fact.sensitive,
-                  "entry_id": getattr(fact, "entry_id", None)})
-        if created:
-            from server.services import recap_service
-            _fsummary = " · ".join(
-                (getattr(f, "label", None) or f.content or "")[:24] for f in created[:3]
-            )
-            await recap_service.log_event(conversation_id, "memory", None, _fsummary)
-
-    # B3/B4: while in a gather phase (clarifying or gathering a create), suppress
-    # routing to an existing spawn — keep clarifying in Arslan's voice instead of
-    # leaking spawn identity. Invariant: the gather phase persists ONLY while the
-    # router keeps producing an insufficient create-downgrade; clear it on every
-    # other terminal outcome. Here the user wants a DIFFERENT spawn — divert THIS
-    # turn (no bleed), but clear so the next route dispatches normally.
-    if gathering and result.action == "route":
-        await phase_service.clear(conversation_id)
-        await _handle_answer(conversation_id, user_message, emit,
-                             extra_system=_CLARIFY_ADDENDUM,
-                             attached_context=attached_context, images=images,
-                             confirm_command=confirm_command, confirm_workspace_write=confirm_workspace_write,
-                             confirm_schedule=confirm_schedule)
-        await memory.maybe_compact(conversation_id)
-        return
-
-    if not EXPERTS_ENABLED and result.action in {"route", "suggest_create", "suggest_update"}:
-        result.action, result.spawn_id = "answer", None
-
-    # 3b. Explicit @-mention override. The LLM router frequently defaults capability/meta
-    # questions ("@Deck Master 你能给我干嘛") to `answer`, which makes Arslan reply AS the spawn
-    # under its OWN identity. When the user explicitly @-named a real spawn, force the named
-    # route so the SPAWN answers in its own identity — dispatch if a member, else a speak-first
-    # invite (both handled by _handle_route, which sees _user_named_spawn=True and skips doer-
-    # first). Deliberately narrow: only rescues the `answer` default (never touches route /
-    # suggest_* / clarify) and only on explicit @mentions; gather/proposing already returned above.
-    if EXPERTS_ENABLED and not gathering and result.action == "answer":
-        _named_id = await _resolve_at_mentioned_spawn(user_message)
-        if _named_id is not None:
-            result.action = "route"
-            result.spawn_id = _named_id
-            if not result.task_brief:
-                result.task_brief = user_message
-
-    # 4. handle the action
-    if result.action == "route" and result.spawn_id is not None:
-        await _handle_route(conversation_id, result, emit, user_message=user_message,
-                            route_ms=route_ms, attached_context=attached_context, images=images,
-                            confirm_command=confirm_command, confirm_workspace_write=confirm_workspace_write,
-                             confirm_schedule=confirm_schedule)
-    elif result.action == "suggest_update" and result.spawn_id is not None:
-        # P2: conversational spawn editing. Draft a validated change-set and emit the
-        # confirm card; NOTHING is applied until the user's confirm_update. If drafting
-        # yields no actionable change, fall back to a plain answer (Arslan explains).
-        from server.orchestrator import update_drafter
-        drafted = await update_drafter.draft_update(
-            result.spawn_id, result.task_brief or user_message)
-        if drafted is None:
-            await _handle_answer(
-                conversation_id, user_message, emit,
-                extra_system=("The user asked to modify one of the agents, but the request "
-                              "did not map to an editable change (persona/tone/capabilities/"
-                              "equipment). Briefly say what CAN be changed and ask exactly "
-                              "what they want adjusted. Answer in the user's language."),
-                attached_context=attached_context, images=images, confirm_command=confirm_command, confirm_workspace_write=confirm_workspace_write,
-                             confirm_schedule=confirm_schedule)
-        else:
-            emit(protocol.suggest_update(**drafted))
-        await memory.maybe_compact(conversation_id)
-    elif result.action == "suggest_create":
-        # Staffing spine ①–③: the router signalled a (possibly-recurring)
-        # capability need. Run extract→accumulate→gate over the staffing slots.
-        # ② accumulate: load slots carried across the gather phase, extract from
-        # this turn, and merge (a filled slot is never overwritten with null).
-        slots = await phase_service.get_gathered_slots(conversation_id)
-        history_text = await _gather_history_text(conversation_id, user_message)
-        slots = staffing_gather.merge_slots(
-            slots, await staffing_gather.extract_slots(history_text)
-        )
-        # ③ gate: ONE readiness gate (the slot gate; subsumes the old draft gate).
-        if not staffing_gather.is_ready(slots):
-            # Not enough yet — pin the gathering phase (carrying accumulated slots)
-            # and clarify in Arslan's own voice, asking for exactly what's missing
-            # (incl. the recurrence question when `recurrence` is still null).
-            await phase_service.set_gathering(conversation_id, slots)
-            await _handle_answer(
-                conversation_id, user_message, emit,
-                extra_system=_gather_clarify_addendum(staffing_gather.missing_slots(slots)),
-                attached_context=attached_context, images=images,
-                confirm_command=confirm_command, confirm_workspace_write=confirm_workspace_write,
-                             confirm_schedule=confirm_schedule,
-            )
-            await memory.maybe_compact(conversation_id)
-            return
-        # Ready: the user gave enough — clear the gather phase and hand to B4's
-        # match-and-propose with the gathered slots (routing/proposing resumes).
-        await phase_service.clear(conversation_id)
-        await _staffing_match_and_propose(
-            conversation_id, user_message, slots, result, emit,
-            attached_context=attached_context, images=images,
-            confirm_command=confirm_command, confirm_workspace_write=confirm_workspace_write,
-                             confirm_schedule=confirm_schedule,
-        )
-    elif result.action == "suggest_connect_mcp":
-        # NEXT BUILD (conversation-driven MCP, Task 3): the router named a connector
-        # ("connect my GitHub"). Deterministic — no LLM: find_connector is an exact
-        # key/label match against the static catalog, so either the confirm card or
-        # the honest redirect below needs no generation. Returned argv and credential
-        # metadata are copies; display hints never change connection arguments.
-        from server.mcp import catalog
-        conn = catalog.find_connector(result.connector_query or "")
-        if conn is None:
-            # Honest redirect, not a wall — arbitrary/unlisted connectors are v2.
-            # Deterministic canned text (no LLM call needed): same stream_start /
-            # stream_chunk / persist / stream_end idiom used elsewhere in this file
-            # for a direct Arslan reply that bypasses the answer-generation LLM call
-            # (mirrors the CELL_EXPLICIT_NONMEMBER brief announcement above).
-            text = (
-                f"I don't have a preset for “{result.connector_query or 'that'}” yet — "
-                "you can add it manually in Settings → MCP servers."
-            )
-            emit({"type": "stream_start", "source": "arslan"})
-            emit({"type": "stream_chunk", "content": text})
-            msg_id = await memory.add_message(conversation_id, "arslan", text)
-            emit({"type": "stream_end", "message_id": msg_id})
-        else:
-            prereq = ("Needs: " + ", ".join(e["name"] for e in conn["env"])) if conn["env"] else ""
-            emit(protocol.propose_connect_mcp(
-                call_id=str(uuid.uuid4()), key=conn["key"], label=conn["label"],
-                label_key=conn.get("label_key"),
-                transport=conn["transport"], command=conn["command"], argv=conn["args"],
-                url=conn.get("url"), env_keys=conn["env"], prerequisites=prereq,
-                requires_path=conn["requires_path"], path_placeholder=conn.get("path_placeholder")))
-    elif result.action == "clarify":
-        # Router no longer sees create-intent — release any gather phase.
-        if gathering:
-            await phase_service.clear(conversation_id)
-        await _handle_answer(conversation_id, user_message, emit, extra_system=_CLARIFY_ADDENDUM,
-                             attached_context=attached_context, images=images,
-                             confirm_command=confirm_command, confirm_workspace_write=confirm_workspace_write,
-                             confirm_schedule=confirm_schedule)
-    else:  # answer (incl. fallback)
-        # Router no longer sees create-intent — release any gather phase.
-        if gathering:
-            await phase_service.clear(conversation_id)
-        # PA-4: a bare short-confirm the router classifies as plain `answer` never
-        # reaches the PA-2 advance machinery (that only runs on route) — log the
-        # cheap repeated_confirmation counter here so the loop stays visible even
-        # on answer-path turns (which have no run_eval today).
-        if confirm_lexicon.is_short_confirm(user_message):
-            await _log_repeated_confirmation(conversation_id, {"at": "answer"})
-        await _handle_answer(conversation_id, user_message, emit, attached_context=attached_context, images=images,
-                             confirm_command=confirm_command, confirm_workspace_write=confirm_workspace_write,
-                             confirm_schedule=confirm_schedule)
-
-    # 5. compact the working thread if it grew too long
+    # 0.1.48: one Arslan, one loop. Every message goes straight to the agent and its
+    # tools; nothing decides beforehand what kind of message it is. The pre-turn router
+    # this replaces was the expert-era dispatcher: an extra model call per message that
+    # could answer in the agent's place. "Add today's to-dos to Reminders" came back as
+    # a canned "no preset for that connector" and never reached a tool.
+    await phase_service.clear(conversation_id)       # expert-era parked state, if any
+    await _handle_answer(conversation_id, user_message, emit, attached_context=attached_context,
+                         images=images, confirm_command=confirm_command,
+                         confirm_workspace_write=confirm_workspace_write, confirm_schedule=confirm_schedule)
+    # Durable facts, noticed after the answer (the router used to do this before it).
+    # Not in a temporary conversation or one where memory or learning is switched off.
+    if active_context is None or not (active_context.temporary or active_context.no_memory
+                                      or active_context.no_learning):
+        from server.services import turn_facts
+        await turn_facts.capture(conversation_id, user_message, emit)
     await memory.maybe_compact(conversation_id)
 
 
@@ -1990,6 +1722,12 @@ async def _arslan_tools() -> list[dict]:
             tools.append({"key": "read_skill", "description":
                 "Read one of the user's saved methods (skills) before doing work it covers, then follow it. "
                 "args: {key, section?}. Available:\n" + index})
+    if not in_job:
+        tools.append({"key": "suggest_connector", "description":
+            "Offer to connect one of the built-in connectors (GitHub, Notion, …) when the user wants a "
+            "service connected. Shows the user a confirm card; nothing connects until they confirm, and "
+            "any key is typed on the card, never here. args: {name}. If there is no such connector, the "
+            "result lists what exists: then do the task another way instead of stopping."})
     if "list_my_capabilities" in EXECUTORS:
         tools.append({"key": "list_my_capabilities",
                       "description": "List your OWN usable capabilities (built-in tools + installed "

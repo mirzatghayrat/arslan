@@ -674,6 +674,34 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
     # not dangerous, but this is the highest-consequence surface in the feature
     # and a card that appears while the user is asleep is a card they meet out of
     # context.
+    # 0.1.48: offering a connector is a tool the agent calls, not a pre-turn router
+    # verdict. Like enroll_node it only paints a card: the user connects (and types
+    # any key) on the card, over REST. With no live socket there is nobody to offer
+    # it to. An unknown name returns the real list, so the agent can say so honestly
+    # and look for another way (a skill, the terminal, a Shortcut) instead of stopping.
+    if tool_key == "suggest_connector":
+        from server.mcp import catalog as _catalog
+        from server.ws import protocol as _protocol
+        conn = _catalog.find_connector(str(args.get("name") or ""))
+        if confirm_command is None:
+            result = {"ok": False, "error": "a connector has to be offered to the user directly; "
+                                            "there is nobody on this channel"}
+        elif conn is None:
+            result = {"ok": False, "error": "no built-in connector by that name",
+                      "available": [c["label"] for c in _catalog.list_connectors()],
+                      "note": "Not a dead end: a skill, the terminal, a Shortcut or AppleScript may do it."}
+        else:
+            prereq = ("Needs: " + ", ".join(e["name"] for e in conn["env"])) if conn["env"] else ""
+            emit(_protocol.propose_connect_mcp(
+                call_id=uuid.uuid4().hex, key=conn["key"], label=conn["label"],
+                label_key=conn.get("label_key"), transport=conn["transport"], command=conn["command"],
+                argv=conn["args"], url=conn.get("url"), env_keys=conn["env"], prerequisites=prereq,
+                requires_path=conn["requires_path"], path_placeholder=conn.get("path_placeholder")))
+            result = {"ok": True, "proposed": True,
+                      "summary": f"offered to connect {conn['label']}; nothing is connected until the user confirms"}
+        return _record_tool_result(tool_key, args, result, emit, tool_trace,
+                                    assistant_content, convo, mcp_fail_counts=mcp_fail_counts)
+
     if tool_key == "enroll_node":
         if confirm_command is None:
             result = {"ok": False,
@@ -887,6 +915,10 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                      "target_id": {"type": "integer"},
                  },
                  "required": ["kind", "action", "content"]},
+    "suggest_connector": {"type": "object",
+                          "properties": {"name": {"type": "string",
+                                                  "description": "The service, e.g. GitHub, Notion."}},
+                          "required": ["name"]},
     "ask_user_choice": {
         "type": "object",
         "properties": {

@@ -4,7 +4,6 @@ env_keys carries credential NAMES + metadata ONLY (never values) — the fronten
 password field is where a value is ever entered. A known connector emits the confirm
 card; an unknown one gets an honest redirect to Settings, never a wall.
 """
-import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -78,68 +77,54 @@ async def maker(tmp_path, monkeypatch):
     return m
 
 
-@pytest.mark.asyncio
-async def test_suggest_connect_mcp_known_connector_emits_propose_card(maker, monkeypatch):
-    """Router action dispatch: a NAMED, catalogued connector emits propose_connect_mcp
-    (mirrors how test_suggest_create_equipped.py drives handle_user_message with a
-    fake RouterResult + a captured emit)."""
-    from server.orchestrator import arslan, router
+# 0.1.48: the card is offered by the agent calling `suggest_connector`, not by a
+# pre-turn router verdict.
 
-    async def _fake_route(conv, msg):
-        return router.RouterResult(action="suggest_connect_mcp", connector_query="github")
+async def _turn(monkeypatch, name, *, live=True):
+    from server.orchestrator import arslan, tool_loop
+    from server.services import turn_facts
+    from tests.server.test_arslan_loop import _LLMResp, _NativeAdapter, _tc
 
-    monkeypatch.setattr(arslan.router, "route", _fake_route)
+    async def _no_facts(conv, msg):
+        return []
 
+    async def _confirm(*a, **k):
+        return True
+
+    monkeypatch.setattr(turn_facts, "extract", _no_facts)
+    seen = []
+
+    class _Adapter(_NativeAdapter):
+        async def chat(self, system, user, history=None, tools=None, temperature=0.7):
+            seen.append(user)
+            return await super().chat(system, user, history, tools, temperature)
+
+    adapter = _Adapter([_LLMResp(tool_calls=[_tc("suggest_connector", {"name": name})]),
+                        _LLMResp(content="done")])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
     events = []
-    await arslan.handle_user_message("main", "connect my github", lambda ev: events.append(ev))
-
-    card = next(e for e in events if e["type"] == "propose_connect_mcp")
-    assert card["key"] == "github"
-    assert card["transport"] == "stdio"
-    assert card["env_keys"][0]["name"] == "GITHUB_PERSONAL_ACCESS_TOKEN"
-    assert "value" not in {k for e in card["env_keys"] for k in e}
-    assert "GITHUB_PERSONAL_ACCESS_TOKEN" in card["prerequisites"]
-    assert card["requires_path"] is False
+    await arslan.handle_user_message("c1", f"connect my {name}", events.append,
+                                     confirm_command=_confirm if live else None)
+    return events, seen
 
 
-@pytest.mark.asyncio
-async def test_suggest_connect_mcp_filesystem_card_carries_requires_path(maker, monkeypatch):
-    """The card-build branch reads requires_path/path_placeholder off the catalog
-    connector (Filesystem needs a local path, no credential) — regression guard for
-    the requires_path wiring added alongside the ConnectMcpCard apply chain."""
-    from server.orchestrator import arslan, router
+async def test_a_known_connector_paints_the_card_and_connects_nothing(maker, monkeypatch):
+    events, _ = await _turn(monkeypatch, "GitHub")
+    [card] = [e for e in events if e["type"] == "propose_connect_mcp"]
+    assert card["key"] == "github" and card["env_keys"][0]["name"] == "GITHUB_PERSONAL_ACCESS_TOKEN"
+    assert all("value" not in e for e in card["env_keys"])
 
-    async def _fake_route(conv, msg):
-        return router.RouterResult(action="suggest_connect_mcp", connector_query="filesystem")
 
-    monkeypatch.setattr(arslan.router, "route", _fake_route)
-
-    events = []
-    await arslan.handle_user_message("main", "connect my filesystem", lambda ev: events.append(ev))
-
-    card = next(e for e in events if e["type"] == "propose_connect_mcp")
-    assert card["key"] == "filesystem"
+async def test_filesystem_card_asks_for_a_path(maker, monkeypatch):
+    events, _ = await _turn(monkeypatch, "Filesystem")
+    [card] = [e for e in events if e["type"] == "propose_connect_mcp"]
     assert card["requires_path"] is True
-    assert card["path_placeholder"] == "/absolute/path/to/expose"
 
 
-@pytest.mark.asyncio
-async def test_suggest_connect_mcp_unknown_connector_is_honest_redirect_not_a_card(
-    maker, monkeypatch
-):
-    """No preset for the query → a plain text answer pointing at Settings, NOT a wall
-    and NOT a propose_connect_mcp frame (arbitrary connectors are v2)."""
-    from server.orchestrator import arslan, router
-
-    async def _fake_route(conv, msg):
-        return router.RouterResult(action="suggest_connect_mcp", connector_query="zzz-nope")
-
-    monkeypatch.setattr(arslan.router, "route", _fake_route)
-
-    events = []
-    await arslan.handle_user_message("main", "connect my zzz-nope", lambda ev: events.append(ev))
-
-    assert not any(e["type"] == "propose_connect_mcp" for e in events)
-    text = "".join(e.get("content", "") for e in events if e.get("type") == "stream_chunk")
-    assert "zzz-nope" in text
-    assert "Settings" in text
+async def test_an_unknown_connector_tells_the_agent_what_exists_instead_of_a_canned_reply(maker, monkeypatch):
+    events, seen = await _turn(monkeypatch, "Apple Reminders")
+    assert not [e for e in events if e["type"] == "propose_connect_mcp"]
+    tool_result = str(seen[-1])
+    assert "no built-in connector" in tool_result and "GitHub" in tool_result   # the real list
+    text = "".join(e.get("content", "") for e in events if e["type"] == "stream_chunk")
+    assert "don't have a preset" not in text and text == "done"

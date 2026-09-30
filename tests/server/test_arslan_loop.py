@@ -84,12 +84,13 @@ class _NativeAdapter:
 
 @pytest.mark.asyncio
 async def test_answer_path_streams_and_persists(maker, monkeypatch):
-    from server.orchestrator import arslan, router
+    from server.orchestrator import arslan
+    from server.services import turn_facts
 
-    async def _fake_route(conv, msg):
-        return router.RouterResult(action="answer", new_facts=[{"content": "likes brevity"}])
+    async def _facts(conv, msg):
+        return [{"content": "likes brevity", "sensitive": False}]
 
-    monkeypatch.setattr(arslan.router, "route", _fake_route)
+    monkeypatch.setattr(turn_facts, "extract", _facts)
 
     captured = {}
 
