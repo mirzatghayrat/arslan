@@ -3617,3 +3617,14 @@ button:disabled {
 .brain-inbox__danger-btn { color: var(--danger); font-weight: 600; }
 .brain-nav__inbox-toggle { padding: 4px 8px; font-size: 11px; }
 .brain-nav__inbox-toggle .is-open { color: var(--primary); font-weight: 600; }
+
+/* Settings: the right pane slides in a few pixels when the section changes
+   (0.1.46). Only the pane moves — never the page or the nav. */
+@keyframes settings-pane-in {
+  from { opacity: 0; transform: translateX(10px); }
+  to { opacity: 1; transform: none; }
+}
+.settings-pane-in { animation: settings-pane-in 160ms ease-out both; }
+@media (prefers-reduced-motion: reduce) {
+  .settings-pane-in { animation: none; }
+}
