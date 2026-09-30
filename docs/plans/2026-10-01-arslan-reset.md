@@ -70,3 +70,18 @@ promptfoo、inspect_ai）。Arslan 部分全部对照代码核实。
 - 换：Arslan 变成「Mac 驾驶舱 + Hermes 引擎」，能力一步到位，我们专注 Mac 体验、收件箱、语音、安全默认值；代价是一次大迁移，以及跟随上游节奏。
 - 不换：按上面 P0–P4 在现有内核上解锁，风险小、节奏可控。
 - 我的建议：**先按 P0/P1 做 0.1.48**（这些不管换不换都要做），同时用一个下午做对比验证：同一批 5 件真实任务（提醒事项、LinkedIn 岗位清单存文件、查财报出表格、盯一个需要登录的页面、整理下载文件夹）分别给 Arslan 0.1.48 和 Hermes 跑，看谁完成得好，再决定。
+
+## 附：内核候选（2026-10-01 GitHub 实查；许可证回源核）
+
+| 项目 | ★ | 许可 | 语言 | 定位 | 对 Arslan |
+| --- | --- | --- | --- | --- | --- |
+| NousResearch/hermes-agent | 25.0 万 | MIT | Python | 通用个人 agent：终端/浏览器/电脑操控/记忆/技能/定时/MCP/审批 | 与后端同语言，能力面最全，最接近目标 |
+| deepseek-ai/deepseek-harness | 24.1 万 | MIT | TS | 微内核，一切皆插件（2026-08 开源，开发者预览） | 架构干净但尚在预览；需 Node 旁路进程 |
+| sst/opencode | 21.1 万 | MIT | TS | 编码 agent | 偏编码 |
+| openclaw/openclaw | 39.1 万 | MIT | TS | 多渠道个人助理网关，内核用 Pi | 重在消息渠道；曾有默认值安全问题（见记忆） |
+| badlogic/pi-mono | 11.1 万 | MIT | TS | 极简内核：4 个工具 + 扩展 SDK，可嵌入 | 小而可控，能力要自己补 |
+| openai/codex | 12.7 万 | Apache-2.0 | Rust | 编码 agent，可接 OpenAI 兼容模型 | 强在编码，个人事务弱 |
+| block/goose | 5.5 万 | Apache-2.0 | Rust | 通用 agent，MCP 原生，有桌面端 | 通用但生态较小 |
+| anthropics/claude-code | 14.9 万 | 保留所有权利 | — | 不开源，仓库只有插件/示例，仅 Claude 模型 | **排除** |
+
+对比验证入围：Hermes、DeepSeek Harness、Pi、goose（Codex 作编码基线）。同一 5 件真实任务、同一模型（DeepSeek），比完成度、步数、花费、出错时是否如实报告。
