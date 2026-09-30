@@ -70,7 +70,7 @@ import { createSpawnDirty } from './lib/dirty';
 import { threadDisplayTitle } from './lib/threadTitles';
 import { formatUiTime } from './lib/localeFormatting';
 import { subscribeOpenConversation } from './lib/shell';
-import { conversationToOpen, INBOX_TARGET } from './lib/openConversation';
+import { notificationTarget } from './lib/openConversation';
 import ProactiveInbox from './components/proactive/ProactiveInbox';
 import { useProactiveSummary } from './hooks/useProactiveSummary';
 
@@ -142,9 +142,9 @@ export default function App() {
   // the one subscription pointed at the current thread list and handler.
   const openFromNotification = useRef<(id: string) => void>(() => {});
   openFromNotification.current = (id: string) => {
-    if (id === INBOX_TARGET) { setActiveSection('inbox'); setPanelView('default'); return; }
-    const target = conversationToOpen(id, threads);
-    if (target) selectConversation(target);
+    const target = notificationTarget(id, threads);
+    if (target?.kind === 'inbox') { setActiveSection('inbox'); setPanelView('default'); }
+    else if (target) selectConversation(target.id);
   };
   useEffect(() => subscribeOpenConversation(id => openFromNotification.current(id)), []);
 
