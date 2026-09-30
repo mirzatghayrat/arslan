@@ -1,0 +1,32 @@
+{
+  "title": [
+    "title.brief",
+    "title.folder_change",
+    "title.job_followup",
+    "title.scheduled_problem",
+    "title.web_change"
+  ],
+  "evidence": [
+    "brief.open",
+    "brief.running",
+    "brief.schedules",
+    "folder.file",
+    "folder.new",
+    "job.goal",
+    "job.reason.execution_failed",
+    "job.reason.other",
+    "job.reason.process_interrupted",
+    "job.reason.task_budget_exhausted",
+    "job.reason.task_checks_not_run",
+    "job.reason.task_execution_failed",
+    "job.reason.task_input_required",
+    "job.reason.task_no_progress",
+    "job.reason.task_reconciliation_required",
+    "job.reason.task_validation_failed",
+    "sched.run",
+    "sched.state",
+    "web.added",
+    "web.changed",
+    "web.removed"
+  ]
+}

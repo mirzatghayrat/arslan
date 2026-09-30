@@ -201,7 +201,7 @@ async def test_watch_refusals_say_why(client, body, code):
 
 async def test_scan_now_runs_even_when_off_and_reports_counts(client, monkeypatch):
     async def detector(ctx):
-        return [det.Found(Candidate(kind="web_change", fingerprint="scan:1", source_key="watch:9", title_key="t",
+        return [det.Found(Candidate(kind="web_change", fingerprint="scan:1", source_key="watch:9", title_key="title.web_change",
                                     evidence=(Evidence("web.changed"),), goal="g"))]
 
     for name in det.DETECTORS:

@@ -45,7 +45,9 @@
     "notify_scheduled_failed_title": "Scheduled task failed",
     "notify_scheduled_failed_body": "“{name}” did not finish. Open Arslan for details.",
     "notify_scheduled_paused_title": "Scheduled task paused",
-    "notify_scheduled_paused_body": "“{name}” failed several times in a row and was paused."
+    "notify_scheduled_paused_body": "“{name}” failed several times in a row and was paused.",
+    "notify_proactive_title": "Arslan noticed something",
+    "notify_proactive_body": "Open your inbox to see what it is and decide."
   },
   "zh": {
     "backup_not_started": "备份未开始。请检查存储权限，必要时手动重启。不会自动重试。",
@@ -93,7 +95,9 @@
     "notify_scheduled_failed_title": "定时任务失败",
     "notify_scheduled_failed_body": "「{name}」没有完成，打开 Arslan 查看详情。",
     "notify_scheduled_paused_title": "定时任务已暂停",
-    "notify_scheduled_paused_body": "「{name}」连续失败多次，已自动暂停。"
+    "notify_scheduled_paused_body": "「{name}」连续失败多次，已自动暂停。",
+    "notify_proactive_title": "Arslan 发现了一件事",
+    "notify_proactive_body": "打开收件箱查看详情，由你决定怎么处理。"
   },
   "ja": {
     "backup_not_started": "バックアップは開始されませんでした。保存先の権限を確認し、必要なら手動で再起動してください。自動再試行はしません。",
@@ -141,7 +145,9 @@
     "notify_scheduled_failed_title": "スケジュールタスク失敗",
     "notify_scheduled_failed_body": "「{name}」は完了しませんでした。詳細は Arslan で確認してください。",
     "notify_scheduled_paused_title": "スケジュールタスクを一時停止",
-    "notify_scheduled_paused_body": "「{name}」が続けて失敗したため一時停止しました。"
+    "notify_scheduled_paused_body": "「{name}」が続けて失敗したため一時停止しました。",
+    "notify_proactive_title": "Arslan が気になることを見つけました",
+    "notify_proactive_body": "受信箱を開いて内容を確認し、どうするか決めてください。"
   },
   "es": {
     "backup_not_started": "La copia no comenzó. Revisa permisos y reinicia manualmente si hace falta. Sin reintento automático.",
@@ -189,7 +195,9 @@
     "notify_scheduled_failed_title": "Falló una tarea programada",
     "notify_scheduled_failed_body": "«{name}» no terminó. Abre Arslan para ver los detalles.",
     "notify_scheduled_paused_title": "Tarea programada en pausa",
-    "notify_scheduled_paused_body": "«{name}» falló varias veces seguidas y se pausó."
+    "notify_scheduled_paused_body": "«{name}» falló varias veces seguidas y se pausó.",
+    "notify_proactive_title": "Arslan ha notado algo",
+    "notify_proactive_body": "Abre tu bandeja para ver qué es y decidir."
   },
   "de": {
     "backup_not_started": "Sicherung nicht gestartet. Rechte prüfen und bei Bedarf manuell neu starten. Kein automatischer Neuversuch.",
@@ -237,7 +245,9 @@
     "notify_scheduled_failed_title": "Geplante Aufgabe fehlgeschlagen",
     "notify_scheduled_failed_body": "„{name}“ wurde nicht abgeschlossen. Details in Arslan.",
     "notify_scheduled_paused_title": "Geplante Aufgabe pausiert",
-    "notify_scheduled_paused_body": "„{name}“ ist mehrmals hintereinander fehlgeschlagen und wurde pausiert."
+    "notify_scheduled_paused_body": "„{name}“ ist mehrmals hintereinander fehlgeschlagen und wurde pausiert.",
+    "notify_proactive_title": "Arslan ist etwas aufgefallen",
+    "notify_proactive_body": "Öffne deinen Posteingang, sieh nach und entscheide."
   },
   "fr": {
     "backup_not_started": "Sauvegarde non démarrée. Vérifiez les autorisations et redémarrez manuellement si nécessaire. Aucun nouvel essai automatique.",
@@ -285,6 +295,8 @@
     "notify_scheduled_failed_title": "Échec d’une tâche planifiée",
     "notify_scheduled_failed_body": "« {name} » n’a pas abouti. Détails dans Arslan.",
     "notify_scheduled_paused_title": "Tâche planifiée en pause",
-    "notify_scheduled_paused_body": "« {name} » a échoué plusieurs fois de suite et a été mise en pause."
+    "notify_scheduled_paused_body": "« {name} » a échoué plusieurs fois de suite et a été mise en pause.",
+    "notify_proactive_title": "Arslan a remarqué quelque chose",
+    "notify_proactive_body": "Ouvre ta boîte pour voir de quoi il s’agit et décider."
   }
 }

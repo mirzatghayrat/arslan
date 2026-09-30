@@ -23,7 +23,7 @@ from pathlib import Path
 
 from sqlalchemy import select
 
-from arslan.proactive_policy import Candidate, Evidence, ProactiveConfig, cooldown_over
+from arslan.proactive_policy import JOB_REASONS, Candidate, Evidence, ProactiveConfig, cooldown_over
 from server.db import session as db_session
 from server.db.models import (CompanionTask, ProactiveWatch, ScheduledTask, ScheduledTaskRun, TaskRevision)
 from server.services import background_jobs, runtime_messages
@@ -32,9 +32,7 @@ from server.services import background_jobs, runtime_messages
 LOOKBACK = timedelta(days=7)
 #: A job that just ended has already told the user; wait before raising a follow-up.
 SETTLE = timedelta(minutes=10)
-STOPPED_REASONS = {"task_budget_exhausted", "task_validation_failed", "task_checks_not_run",
-                   "task_reconciliation_required", "process_interrupted", "task_input_required",
-                   "task_no_progress", "execution_failed", "task_execution_failed"}
+STOPPED_REASONS = set(JOB_REASONS) - {"other"}
 MAX_QUOTES = 4
 MAX_QUOTE_CHARS = 200
 MAX_PAGE_CHARS = 40_000

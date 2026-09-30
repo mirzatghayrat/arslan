@@ -126,6 +126,9 @@ pub fn notification(locale: &str, event: &Event) -> Option<(String, String)> {
         ("scheduled_finished", Some("ok")) => "notify_scheduled_done",
         ("scheduled_finished", Some("error")) => "notify_scheduled_failed",
         ("scheduled_paused", _) => "notify_scheduled_paused",
+        // 0.1.47: Arslan noticed something. Fixed words only, even on the lock screen:
+        // what it noticed is in the inbox, never in the banner.
+        ("proactive", _) => "notify_proactive",
         _ => return None,
     };
     let name = event.task_name.as_deref().unwrap_or("");
@@ -146,11 +149,14 @@ pub fn parse_response(raw: &str) -> Option<Status> {
 
 /// A notification's identifier carries the conversation to open on click.
 pub fn notification_id(event: &Event) -> String {
-    format!(
-        "arslan|{}|{}",
-        event.id,
+    // A proactive notice has no conversation; clicking it opens the inbox. "@inbox"
+    // cannot collide with a real conversation id (those are `thread-<uuid>`).
+    let target = if event.kind == "proactive" {
+        "@inbox"
+    } else {
         event.conversation_id.as_deref().unwrap_or("")
-    )
+    };
+    format!("arslan|{}|{}", event.id, target)
 }
 
 pub fn conversation_from_id(identifier: &str) -> Option<String> {
@@ -666,6 +672,8 @@ mod tests {
             "notify_scheduled_failed_body",
             "notify_scheduled_paused_title",
             "notify_scheduled_paused_body",
+            "notify_proactive_title",
+            "notify_proactive_body",
         ];
         for locale in ["en", "zh", "ja", "es", "de", "fr"] {
             for key in keys {
@@ -727,5 +735,32 @@ mod tests {
         assert_eq!(conversation_from_id("other|12|c1"), None);
         assert_eq!(conversation_from_id("arslan|x|c1"), None);
         assert_eq!(conversation_from_id("arslan|12|"), None);
+    }
+
+    #[test]
+    fn a_proactive_notice_says_only_fixed_words_and_opens_the_inbox() {
+        // Even if an event ever carried a name or a conversation, none of it shows.
+        let noticed = Event {
+            task_name: Some("Quarterly taxes".into()),
+            ..event(9, "proactive", Some("ok"))
+        };
+        for locale in ["en", "zh", "ja", "es", "de", "fr"] {
+            let (title, body) = notification(locale, &noticed).unwrap();
+            assert!(!title.is_empty() && !body.is_empty());
+            assert!(!title.contains("Quarterly") && !body.contains("Quarterly"));
+            assert!(!body.contains("{name}"));
+        }
+        assert_eq!(
+            conversation_from_id(&notification_id(&noticed)).as_deref(),
+            Some("@inbox")
+        );
+        let with_conversation = Event {
+            conversation_id: Some("thread-secret".into()),
+            ..noticed
+        };
+        assert_eq!(
+            conversation_from_id(&notification_id(&with_conversation)).as_deref(),
+            Some("@inbox")
+        );
     }
 }

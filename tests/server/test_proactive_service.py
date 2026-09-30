@@ -14,6 +14,7 @@ from server.services import background_jobs, desktop_status, proactive_detectors
 from server.services.proactive_service import ProactiveError
 
 NOON = datetime(2026, 9, 30, 12, 0, 0)        # local == UTC in these tests; outside quiet hours
+PAGE = "\n".join(f"Line {n} of the pricing page" for n in range(40))
 
 
 def cand(n=1, *, kind="web_change", goal="Look at what changed", evidence=None, **over):
@@ -553,3 +554,53 @@ async def test_stop_before_the_first_scan_never_scans(execution_db, monkeypatch)
     svc.start(interval=10, first_delay=30)
     await svc.stop()
     assert runs == []
+
+
+# ── everything together, on real detector output ─────────────────────────────
+
+async def test_every_detector_and_the_brief_produce_items_the_gate_and_the_catalog_accept(execution_db, tmp_path):
+    """No stubbed detectors: a stopped job, a failing schedule, a page that changed and a
+    folder that got a file all travel scan -> gate -> inbox. A key the catalog did not know
+    would be rejected here as `unknown_key`."""
+    from server.db.models import CompanionTask, ProactiveWatch, TaskRevision
+    from tests.server.test_proactive_detectors import add_schedule
+
+    workspace = tmp_path / "work"
+    (workspace / "inbox").mkdir(parents=True)
+    async with execution_db() as db:
+        db.add(Setting(key="workspace_dir", value=str(workspace)))
+        old = NOON - timedelta(hours=2)
+        db.add(CompanionTask(id="job-e2e", owner_id="local", conversation_id="c-e2e", phase="waiting_user",
+                             attempt_id="a", budget={}, privacy={"driver": {"kind": "background"}},
+                             pause_reason="task_budget_exhausted", updated_at=old, created_at=old))
+        db.add(TaskRevision(task_id="job-e2e", revision=1, spec={"instruction": "Compare two phones", "acceptance": []}))
+        await add_schedule(db, "Weekly digest", failures=3, paused="3 failures in a row")
+        db.add(ProactiveWatch(id=1, kind="web", target="https://example.com/p", label="Pricing", interval_s=1800,
+                              enabled=True, created_at=NOON - timedelta(days=2),
+                              snapshot={"text": PAGE},
+                              last_checked_at=NOON - timedelta(hours=3)))
+        db.add(ProactiveWatch(id=2, kind="folder", target=str(workspace / "inbox"), label="Inbox", interval_s=1800,
+                              enabled=True, created_at=NOON - timedelta(days=2), snapshot={"names": []},
+                              last_checked_at=NOON - timedelta(hours=3)))
+        await db.commit()
+    (workspace / "inbox" / "invoice.pdf").write_text("x")
+    page = PAGE.replace("Line 3 of the pricing page", "Line three was rewritten by the vendor").replace(
+        "Line 7 of the pricing page", "Line seven was rewritten by the vendor")
+
+    async def fetch(url):
+        return page
+
+    await svc.save_config({"brief_enabled": True, "brief_time": "08:30"})
+    result = await svc.scan_once(now_utc=NOON, now_local=NOON, fetch=fetch)
+    items = await rows(execution_db)
+    assert result["rejected"] == {}, result["rejected"]
+    assert sorted(i.kind for i in items) == ["brief", "folder_change", "job_followup", "scheduled_problem", "web_change"]
+    assert {i.kind for i in items if i.goal} == {"folder_change", "job_followup", "scheduled_problem", "web_change"}
+    brief = next(i for i in items if i.kind == "brief")
+    open_line = next(e for e in brief.evidence if e["key"] == "brief.open")
+    assert open_line["params"]["count"] == 4          # the brief counts what this same pass just found
+    job = next(i for i in items if i.kind == "job_followup")
+    assert job.conversation_id == "c-e2e" and "Compare two phones" in job.goal
+    # The same scan again finds nothing new: items dedupe, baselines moved only after storing.
+    again = await svc.scan_once(now_utc=NOON + timedelta(minutes=10), now_local=NOON + timedelta(minutes=10), fetch=fetch)
+    assert again["created"] == [] and len(await rows(execution_db)) == 5

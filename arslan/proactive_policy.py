@@ -34,6 +34,19 @@ KINDS = ("job_followup", "scheduled_problem", "web_change", "folder_change", "br
 #: already notified when the job or the run ended.
 NOTIFYING_KINDS = frozenset({"web_change", "folder_change", "brief"})
 PRIORITIES = ("high", "normal", "low")
+#: Why a background job stopped short, as detectors name it ("other" = none of these).
+JOB_REASONS = ("task_budget_exhausted", "task_validation_failed", "task_checks_not_run",
+               "task_reconciliation_required", "process_interrupted", "task_input_required",
+               "task_no_progress", "execution_failed", "task_execution_failed", "other")
+#: Every sentence the inbox can show is a KEY the UI translates. These two sets are the
+#: catalog: `gate` refuses a candidate that uses a key outside them, so an item whose text
+#: the UI cannot render never reaches the inbox (it would show the raw key), and
+#: web/src/locales/proactive-keys.json (checked by test) ties the catalog to the six languages.
+TITLE_KEYS = frozenset(f"title.{kind}" for kind in KINDS)
+EVIDENCE_KEYS = frozenset({
+    "job.goal", *(f"job.reason.{reason}" for reason in JOB_REASONS),
+    "sched.state", "sched.run", "web.changed", "web.added", "web.removed", "folder.new", "folder.file",
+    "brief.open", "brief.running", "brief.schedules"})
 #: Days an open item stays worth showing; afterwards it expires (never deleted by expiry).
 FRESH_DAYS = {"job_followup": 7, "scheduled_problem": 14, "web_change": 14, "folder_change": 14, "brief": 2}
 MAX_GOAL_CHARS = 1500
@@ -109,6 +122,8 @@ def gate(candidate: Candidate, *, existing: set[str], muted: set[str]) -> Verdic
         return Verdict(False, "no_evidence")
     if candidate.priority not in PRIORITIES:
         return Verdict(False, "bad_priority")
+    if candidate.title_key not in TITLE_KEYS or any(e.key not in EVIDENCE_KEYS for e in candidate.evidence):
+        return Verdict(False, "unknown_key")
     if candidate.kind != "brief" and not candidate.goal.strip():
         return Verdict(False, "no_goal")
     if len(candidate.goal) > MAX_GOAL_CHARS:

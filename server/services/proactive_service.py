@@ -217,14 +217,20 @@ async def scan_once(*, now_utc: datetime | None = None, now_local: datetime | No
             found.extend(await detectors.DETECTORS[name](ctx))
         except Exception as exc:  # noqa: BLE001 — isolated on purpose
             logger.warning("proactive detector %s failed: %s %s", name, type(exc).__name__, exc)
+    result = await ingest(found, now_utc=now_utc, now_local=now_local, config=config)
+    # The brief is built AFTER this pass's findings are stored, so "what is open today"
+    # includes what was just noticed instead of trailing it by one pass.
     if policy.brief_due(now_local, config, await _last_brief_day()):
         try:
             brief = await build_brief(now_utc, now_local, locale)
             if brief is not None:
-                found.append(brief)
+                extra = await ingest([brief], now_utc=now_utc, now_local=now_local, config=config)
+                result["created"] += extra["created"]
+                result["notified"] += extra["notified"]
+                for reason, count in extra["rejected"].items():
+                    result["rejected"][reason] = result["rejected"].get(reason, 0) + count
         except Exception as exc:  # noqa: BLE001
             logger.warning("proactive brief failed: %s", type(exc).__name__)
-    result = await ingest(found, now_utc=now_utc, now_local=now_local, config=config)
     if config.diagnosis_daily_usd > 0 and result["created"]:
         from server.services import proactive_diagnosis
         for item_id in result["created"][:2]:

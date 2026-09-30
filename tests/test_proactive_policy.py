@@ -32,6 +32,8 @@ def test_a_complete_candidate_passes():
     ({"priority": "urgent!!"}, "bad_priority"),
     ({"goal": "  "}, "no_goal"),
     ({"goal": "x" * 1501}, "goal_too_long"),
+    ({"title_key": "title.made_up"}, "unknown_key"),                            # the UI could not say it
+    ({"evidence": (Evidence("web.changed"), Evidence("web.secretly"))}, "unknown_key"),
 ])
 def test_the_gate_refuses_and_names_the_rule(change, reason):
     verdict = gated(candidate(**change))
@@ -138,3 +140,20 @@ def test_config_defaults_spend_nothing_and_reject_bad_input():
                 {"notify_daily_cap": -1}, {"surprise": 1}):
         with pytest.raises(ValueError):
             ProactiveConfig(**bad)
+
+
+def test_the_key_catalog_covers_every_kind_and_every_job_reason():
+    assert policy.TITLE_KEYS == {f"title.{kind}" for kind in policy.KINDS}
+    assert {f"job.reason.{r}" for r in policy.JOB_REASONS} <= policy.EVIDENCE_KEYS
+    assert "other" in policy.JOB_REASONS          # the detector falls back to it for a reason it does not know
+
+
+def test_the_frontend_key_copy_is_not_stale():
+    """web/src/locales/proactive-keys.json is what the frontend test checks the six
+    languages against; if the catalog changed and it did not, that test guards nothing."""
+    import json
+
+    from scripts import proactive_keys
+
+    assert json.loads(proactive_keys.PATH.read_text(encoding="utf-8")) == proactive_keys.catalog(), (
+        "catalog changed: run `.venv/bin/python -m scripts.proactive_keys` and add the words in web/src/locales/proactive.ts")
