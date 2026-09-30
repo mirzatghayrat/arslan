@@ -85,7 +85,9 @@ describe('composer privacy transition', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(view.container.querySelector('textarea')).toHaveValue('');
     expect(screen.queryByLabelText('ui.removeAttachment')).not.toBeInTheDocument();
-    expect(URL.revokeObjectURL).toHaveBeenCalledTimes(1);
+    // The discard runs in OrchestratorChat's `temporary` effect, a commit AFTER the dialog closes;
+    // under a loaded CI runner the dialog can be gone before that effect has run.
+    await waitFor(() => expect(URL.revokeObjectURL).toHaveBeenCalledTimes(1));
   });
 
   it('drops regular text/image drafts on confirmed temporary mode and never restores temporary drafts after navigation', async () => {
@@ -101,7 +103,7 @@ describe('composer privacy transition', () => {
     await enableTemporary();
     expect(view.container.querySelector('textarea')).toHaveValue('');
     expect(screen.queryByLabelText('ui.removeAttachment')).not.toBeInTheDocument();
-    expect(oldOwner.discarded).toBe(true);
+    await waitFor(() => expect(oldOwner.discarded).toBe(true));   // same effect, same timing as above
     expect(oldOwner.items).toEqual([]);
     expect(composerDrafts.has(id)).toBe(false);
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:private-preview');
