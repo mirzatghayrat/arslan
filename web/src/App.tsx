@@ -1313,7 +1313,8 @@ export default function App() {
 
             {activeSection === 'projects' && <ProjectsSection onStart={handleStartProject} />}
             {activeSection === 'inbox' && <ProactiveInbox onOpenConversation={openInboxConversation}
-              onOpenSettings={() => { setSettingsInitialSection('proactive'); setActiveSection('settings'); }} />}
+              onOpenSettings={() => { setSettingsInitialSection('proactive'); setActiveSection('settings'); }}
+              onOpenModelSettings={() => { setSettingsInitialSection('models'); setActiveSection('settings'); }} />}
             {activeSection === 'brain' && <MemorySection legacy={!restoredInit.mintedFresh} />}
             {activeSection === 'connections' && <ConnectionsSection prefill={connectionPrefill}
               provider={(providerConfigs.find(config => config.is_primary) ?? providerConfigs[0])?.provider} onOpenSettings={section => {

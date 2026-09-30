@@ -23,7 +23,8 @@ from sqlalchemy.exc import IntegrityError
 from arslan import proactive_policy as policy
 from arslan.proactive_policy import Candidate, ProactiveConfig
 from server.db import session as db_session
-from server.db.models import ProactiveItem, ProactiveMute, ProactiveSpend, ProactiveWatch, ScheduledTask, Setting
+from server.db.models import (ProactiveItem, ProactiveMute, ProactiveSpend, ProactiveWatch, ProviderConfig, ScheduledTask,
+                              Setting)
 from server.services import desktop_status, proactive_detectors as detectors, runtime_messages, settings_service
 
 logger = logging.getLogger(__name__)
@@ -308,6 +309,17 @@ async def mark_seen(ids: list[int]) -> None:
         await db.commit()
 
 
+async def model_configured() -> bool:
+    """Would a job find a model? The same first decision `llm_factory.build_adapter` makes (a
+    provider config, or the older single-provider setting), without reading any key. A job
+    started without one fails at once, and the item it came from would already be gone from
+    the inbox."""
+    async with db_session.AsyncSessionLocal() as db:
+        if await db.scalar(select(func.count()).select_from(ProviderConfig)):
+            return True
+        return bool((await settings_service._get_raw(db, "llm_provider") or "").strip())
+
+
 async def accept(item_id: int, conversation_id: str | None = None) -> dict:
     """The one place a proposal becomes work: a background job, with the goal and
     completion criteria the item carries. Its confirmations (writes, commands,
@@ -324,6 +336,9 @@ async def accept(item_id: int, conversation_id: str | None = None) -> dict:
         if not conversation_id or len(conversation_id) > 50:
             raise ProactiveError("invalid_conversation")
         goal, criteria = item.goal, list(item.criteria or [])
+    if not await model_configured():
+        raise ProactiveError("no_model")         # nothing claimed: the item stays in the inbox
+    async with db_session.AsyncSessionLocal() as db:
         # Claim first, in one conditional UPDATE, so two clicks (or two windows)
         # cannot both start a job: only the statement that still finds the item
         # open changes a row.

@@ -241,7 +241,13 @@ async def test_a_switched_off_source_is_not_even_consulted(execution_db, monkeyp
 
 @pytest.fixture
 def started(monkeypatch):
+    """A job runner that records what it was asked, on a profile that has a model."""
     calls = []
+
+    async def configured():
+        return True
+
+    monkeypatch.setattr(svc, "model_configured", configured)
 
     async def start(conversation_id, goal, criteria):
         calls.append((conversation_id, goal, criteria))
@@ -291,7 +297,11 @@ async def test_if_the_job_cannot_start_the_item_comes_back(execution_db, monkeyp
     async def start(*args):
         raise RuntimeError("no provider")
 
+    async def configured():
+        return True
+
     monkeypatch.setattr(background_jobs, "start", start)
+    monkeypatch.setattr(svc, "model_configured", configured)
     item_id = await one_item(execution_db)
     with pytest.raises(RuntimeError):
         await svc.accept(item_id, "c")
@@ -322,6 +332,41 @@ async def test_with_no_origin_and_no_choice_there_is_nowhere_to_report(execution
     with pytest.raises(ProactiveError) as err:
         await svc.accept(item_id)
     assert err.value.code == "invalid_conversation" and started == []
+
+
+async def test_with_no_model_nothing_is_claimed_and_no_job_starts(execution_db, monkeypatch):
+    starts = []
+
+    async def start(*args):
+        starts.append(args)
+
+    monkeypatch.setattr(background_jobs, "start", start)
+    item_id = await one_item(execution_db)
+    with pytest.raises(ProactiveError) as err:
+        await svc.accept(item_id, "c")
+    [item] = await rows(execution_db)
+    assert err.value.code == "no_model" and starts == []
+    assert (item.status, item.acted_at, item.conversation_id) == ("new", None, None)
+
+
+async def test_model_configured_asks_what_the_job_would_ask(execution_db):
+    """Same first decision as llm_factory.build_adapter: a provider config, or the older
+    single-provider setting. A blank setting is not a selection."""
+    from server.db.models import ProviderConfig
+    assert await svc.model_configured() is False
+    async with execution_db() as db:
+        db.add(Setting(key="llm_provider", value="  "))
+        await db.commit()
+    assert await svc.model_configured() is False
+    async with execution_db() as db:
+        (await db.get(Setting, "llm_provider")).value = "deepseek"
+        await db.commit()
+    assert await svc.model_configured() is True
+    async with execution_db() as db:
+        await db.delete(await db.get(Setting, "llm_provider"))
+        db.add(ProviderConfig(label="x", provider="openai", model="gpt-5.6-luna", api_key="encrypted", is_primary=True))
+        await db.commit()
+    assert await svc.model_configured() is True
 
 
 async def test_a_brief_is_read_not_run(execution_db, started):

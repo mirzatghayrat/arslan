@@ -36,3 +36,18 @@ export function proactiveErrorText(t: TFunction, scope: "item" | "settings", err
   const key = `${scoped}.${code}`;
   return (t(key, { defaultValue: "" }) as string) || (t(`${scoped}.generic`) as string);
 }
+
+/** One sentence and the outside text that goes with it. Consecutive lines that say the same
+ * thing ("Added", "Added") are shown once with all their quotes, so a card lists what changed
+ * instead of repeating the label before every line. */
+export interface EvidenceGroup { key: string; text: string; quotes: string[] }
+
+export function groupEvidence(lines: EvidenceLine[]): EvidenceGroup[] {
+  const groups: EvidenceGroup[] = [];
+  for (const line of lines) {
+    const last = groups[groups.length - 1];
+    if (last && last.text === line.text) { if (line.quote) last.quotes.push(line.quote); continue; }
+    groups.push({ key: line.key, text: line.text, quotes: line.quote ? [line.quote] : [] });
+  }
+  return groups;
+}

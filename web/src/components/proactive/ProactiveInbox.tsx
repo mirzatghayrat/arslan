@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BellOff, CalendarClock, Check, Clock, FolderOpen, Globe, Inbox, ListChecks, MessageSquare, RefreshCw, Settings2, Sun, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { ApiError } from "../../api/client";
 import { proactiveApi, type MuteChoice, type ProactiveItem, type ProactiveKind, type ProactiveScope } from "../../api/proactive";
 import { formatUiDateTime } from "../../lib/localeFormatting";
-import { evidenceLines, proactiveErrorText, titleOf } from "../../lib/proactive";
+import { evidenceLines, groupEvidence, proactiveErrorText, titleOf } from "../../lib/proactive";
 import { buttonClass, primaryClass } from "../companion/CompanionDialog";
+import { useDismissable } from "../../hooks/useDismissable";
 import EmptyState from "../EmptyState";
 
 const ICONS: Record<ProactiveKind, typeof Globe> = {
@@ -20,11 +22,16 @@ const SEEN_AFTER_MS = 1500;
 const ACTIONABLE = new Set(["new", "seen", "snoozed"]);
 const menuItem = "block w-full rounded px-3 py-1.5 text-left text-xs hover:bg-foreground/5";
 
-function Menu({ label, icon, children }: { label: string; icon: React.ReactNode; children: React.ReactNode }) {
-  return <details className="relative">
-    <summary className={`${buttonClass} cursor-pointer list-none`}>{icon}{label}</summary>
-    <div className="absolute left-0 z-20 mt-1 min-w-44 rounded-lg border border-border bg-background p-1 shadow-lg">{children}</div>
-  </details>;
+/** A small drop-down. Closes on a choice, an outside click or Escape (the shared useDismissable),
+ * which a native <details> does not do: it stayed open over the next card. */
+function Menu({ label, icon, children }: { label: string; icon: React.ReactNode; children: (close: () => void) => React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const close = useCallback(() => setOpen(false), []);
+  const { anchorRef, floatingRef } = useDismissable<HTMLButtonElement, HTMLDivElement>(open, close);
+  return <div className="relative">
+    <button ref={anchorRef} type="button" className={buttonClass} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)}>{icon}{label}</button>
+    {open && <div ref={floatingRef} role="menu" className="absolute left-0 z-20 mt-1 min-w-44 rounded-lg border border-border bg-background p-1 shadow-lg">{children(close)}</div>}
+  </div>;
 }
 
 function Card({ item, busy, language, onDo, onSnooze, onDismiss, onOpenConversation }: {
@@ -33,7 +40,7 @@ function Card({ item, busy, language, onDo, onSnooze, onDismiss, onOpenConversat
 }) {
   const { t } = useTranslation();
   const Icon = ICONS[item.kind] ?? Inbox;
-  const lines = evidenceLines(t, language, item.evidence);
+  const groups = groupEvidence(evidenceLines(t, language, item.evidence));
   const actionable = ACTIONABLE.has(item.status);
   const readOnly = item.kind === "brief";
   const when = formatUiDateTime(item.created_at, language);
@@ -49,9 +56,9 @@ function Card({ item, busy, language, onDo, onSnooze, onDismiss, onOpenConversat
       {item.priority === "high" && item.status !== "accepted" && <span className="shrink-0 rounded-full bg-warning/15 px-2 py-0.5 text-[11px] text-warning">{t("proactive.item.needsLook")}</span>}
     </div>
     <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
-      {lines.map((line, index) => <li key={`${line.key}-${index}`}>
-        <span>{line.text}</span>
-        {line.quote && <blockquote title={t("proactive.item.quoted")} className="mt-1 whitespace-pre-wrap break-words border-l-2 border-border pl-3 text-xs italic">“{line.quote}”</blockquote>}
+      {groups.map((group, index) => <li key={`${group.key}-${index}`}>
+        <span>{group.text}</span>
+        {group.quotes.map((quote, n) => <blockquote key={n} title={t("proactive.item.quoted")} className="mt-1 whitespace-pre-wrap break-words border-l-2 border-border pl-3 text-xs italic">“{quote}”</blockquote>)}
       </li>)}
     </ul>
     {item.diagnosis && <div data-testid="proactive-diagnosis" className="mt-3 rounded-lg bg-background/60 p-3 text-xs">
@@ -64,17 +71,16 @@ function Card({ item, busy, language, onDo, onSnooze, onDismiss, onOpenConversat
       {readOnly
         ? <button className={primaryClass} disabled={busy} onClick={() => onDismiss()}><Check size={14} />{t("proactive.item.gotIt")}</button>
         : <button className={primaryClass} disabled={busy} onClick={onDo}>{busy ? t("proactive.item.starting") : t("proactive.item.doIt")}</button>}
-      <Menu label={t("proactive.item.snooze")} icon={<Clock size={14} />}>
-        <button className={menuItem} disabled={busy} onClick={() => onSnooze(1)}>{t("proactive.item.snooze1")}</button>
-        <button className={menuItem} disabled={busy} onClick={() => onSnooze(3)}>{t("proactive.item.snooze3")}</button>
-        <button className={menuItem} disabled={busy} onClick={() => onSnooze(7)}>{t("proactive.item.snooze7")}</button>
-      </Menu>
-      {!readOnly && <Menu label={t("proactive.item.notUseful")} icon={<X size={14} />}>
-        <button className={menuItem} disabled={busy} onClick={() => onDismiss()}>{t("proactive.item.dismissOnly")}</button>
+      <Menu label={t("proactive.item.snooze")} icon={<Clock size={14} />}>{(close) => <>
+        {([1, 3, 7] as const).map((days) => <button key={days} role="menuitem" className={menuItem} disabled={busy}
+          onClick={() => { close(); onSnooze(days); }}>{t(`proactive.item.snooze${days}`)}</button>)}
+      </>}</Menu>
+      {!readOnly && <Menu label={t("proactive.item.notUseful")} icon={<X size={14} />}>{(close) => <>
+        <button role="menuitem" className={menuItem} disabled={busy} onClick={() => { close(); onDismiss(); }}>{t("proactive.item.dismissOnly")}</button>
         {/* A one-off job has no recurring source to silence; pages, folders and schedules do. */}
-        {item.kind !== "job_followup" && <button className={menuItem} disabled={busy} onClick={() => onDismiss("source")}>{t("proactive.item.stopSource")}</button>}
-        <button className={menuItem} disabled={busy} onClick={() => onDismiss("kind")}>{t("proactive.item.stopKind")}</button>
-      </Menu>}
+        {item.kind !== "job_followup" && <button role="menuitem" className={menuItem} disabled={busy} onClick={() => { close(); onDismiss("source"); }}>{t("proactive.item.stopSource")}</button>}
+        <button role="menuitem" className={menuItem} disabled={busy} onClick={() => { close(); onDismiss("kind"); }}>{t("proactive.item.stopKind")}</button>
+      </>}</Menu>}
       {item.status === "snoozed" && item.snooze_until && <span className="text-[11px] text-muted-foreground">{t("proactive.item.snoozedUntil", { date: formatUiDateTime(item.snooze_until, language) })}</span>}
     </div> : <p className="mt-4 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
       <span>{t(item.status === "accepted" ? "proactive.item.started" : item.status === "expired" ? "proactive.item.expired" : "proactive.item.dismissed")}</span>
@@ -83,8 +89,10 @@ function Card({ item, busy, language, onDo, onSnooze, onDismiss, onOpenConversat
   </article>;
 }
 
-export default function ProactiveInbox({ onOpenSettings, onOpenConversation }: {
+export default function ProactiveInbox({ onOpenSettings, onOpenModelSettings, onOpenConversation }: {
   onOpenSettings: () => void;
+  /** Where "add a model first" sends the user. */
+  onOpenModelSettings?: () => void;
   /** `created` is true when the app must first make a conversation with this id for the job to report into. */
   onOpenConversation: (conversationId: string, created: boolean) => void;
 }) {
@@ -94,7 +102,7 @@ export default function ProactiveInbox({ onOpenSettings, onOpenConversation }: {
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
-  const [notice, setNotice] = useState<{ kind: "error" | "info"; text: string } | null>(null);
+  const [notice, setNotice] = useState<{ kind: "error" | "info"; text: string; needsModel?: boolean } | null>(null);
   const [checking, setChecking] = useState(false);
   const alive = useRef(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
@@ -125,7 +133,7 @@ export default function ProactiveInbox({ onOpenSettings, onOpenConversation }: {
     setBusyId(item.id); setNotice(null);
     try { await operation(); await load(scope, true); }
     catch (cause) {
-      setNotice({ kind: "error", text: proactiveErrorText(t, "item", cause) });
+      setNotice({ kind: "error", text: proactiveErrorText(t, "item", cause), needsModel: cause instanceof ApiError && cause.message === "no_model" });
       await load(scope, true);        // whatever went wrong, show what is true now
     } finally { if (alive.current) setBusyId(null); }
   }
@@ -159,7 +167,8 @@ export default function ProactiveInbox({ onOpenSettings, onOpenConversation }: {
         {TABS.map((tab) => <button key={tab.scope} role="tab" aria-selected={scope === tab.scope} onClick={() => setScope(tab.scope)}
           className={`-mb-px border-b-2 px-3 py-2 text-sm ${scope === tab.scope ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>{t(tab.label)}</button>)}
       </div>
-      {notice && <p role={notice.kind === "error" ? "alert" : "status"} className={`text-sm ${notice.kind === "error" ? "text-destructive" : "text-muted-foreground"}`}>{notice.text}</p>}
+      {notice && <p role={notice.kind === "error" ? "alert" : "status"} className={`text-sm ${notice.kind === "error" ? "text-destructive" : "text-muted-foreground"}`}>{notice.text}
+        {notice.needsModel && onOpenModelSettings && <button className="ml-2 underline" onClick={onOpenModelSettings}>{t("proactive.item.errors.openModels")}</button>}</p>}
       {failed && <p role="alert" className="text-sm text-destructive">{t("proactive.page.loadFailed")} <button className="underline" onClick={() => void load(scope)}>{t("proactive.page.retry")}</button></p>}
       {loading && !failed && <p role="status" className="text-sm text-muted-foreground">{t("companion.loading")}</p>}
       {!loading && !failed && items.length === 0 && <EmptyState icon={scope === "open" ? Inbox : BellOff} title={t("proactive.page.emptyTitle")} body={emptyBody}

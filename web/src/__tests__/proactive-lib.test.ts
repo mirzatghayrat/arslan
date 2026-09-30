@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import i18n from "../i18n";
 import { ApiError } from "../api/client";
-import { evidenceLines, evidencePath, proactiveErrorText, titleOf } from "../lib/proactive";
+import { evidenceLines, evidencePath, groupEvidence, proactiveErrorText, titleOf } from "../lib/proactive";
 
 const t = i18n.getFixedT("en");
 afterEach(() => { void i18n.changeLanguage("en"); });
@@ -57,7 +57,7 @@ describe("evidence", () => {
       { key: "brief.running", params: { count: 4 } },
       { key: "folder.new", params: { label: "Inbox", count: 2 } },
       { key: "sched.run", params: { at: "2026-09-30T09:15:00" }, quote: "timeout" }]);
-    expect(lines.map((l) => l.text).slice(0, 3)).toEqual(["1 item open in this inbox.", "4 jobs running in the background.", "2 new files in “Inbox”."]);
+    expect(lines.map((l) => l.text).slice(0, 3)).toEqual(["1 item open in this inbox.", "4 jobs running in the background.", "Files that appeared since the last check:"]);
     for (const line of lines) { expect(line.text).not.toMatch(/\{\{|proactive\./); }
     expect(lines[3].text).toMatch(/^A failed run, /);
   });
@@ -80,5 +80,35 @@ describe("errors", () => {
 
   it("scopes codes: a settings code is not an item code", () => {
     expect(proactiveErrorText(t, "item", new ApiError("invalid_url", 422))).toBe("Something went wrong.");
+  });
+});
+
+describe("grouping", () => {
+  it("says a repeated label once, with every quote under it, and keeps different labels apart", () => {
+    const lines = evidenceLines(t, "en", [
+      { key: "web.changed", params: { added: 2, removed: 1, url: "https://example.com/r" } },
+      { key: "web.added", params: {}, quote: "v2.12.0" }, { key: "web.added", params: {}, quote: "Security fix" },
+      { key: "web.removed", params: {}, quote: "v2.11.1" }]);
+    expect(groupEvidence(lines)).toEqual([
+      { key: "web.changed", text: "+2 / −1 lines · https://example.com/r", quotes: [] },
+      { key: "web.added", text: "Added", quotes: ["v2.12.0", "Security fix"] },
+      { key: "web.removed", text: "Removed", quotes: ["v2.11.1"] }]);
+  });
+
+  it("folds new file names under the folder line in every language", () => {
+    for (const language of ["en", "zh", "ja", "es", "de", "fr"]) {
+      const lines = evidenceLines(i18n.getFixedT(language), language, [
+        { key: "folder.new", params: { label: "Inbox", count: 2 } },
+        { key: "folder.file", params: {}, quote: "a.pdf" }, { key: "folder.file", params: {}, quote: "b.pdf" }]);
+      const groups = groupEvidence(lines);
+      expect(groups, language).toHaveLength(1);
+      expect(groups[0].quotes).toEqual(["a.pdf", "b.pdf"]);
+    }
+  });
+
+  it("never merges lines that are apart, even with the same words", () => {
+    const lines = evidenceLines(t, "en", [
+      { key: "web.added", params: {}, quote: "a" }, { key: "web.removed", params: {}, quote: "b" }, { key: "web.added", params: {}, quote: "c" }]);
+    expect(groupEvidence(lines).map((g) => g.quotes)).toEqual([["a"], ["b"], ["c"]]);
   });
 });

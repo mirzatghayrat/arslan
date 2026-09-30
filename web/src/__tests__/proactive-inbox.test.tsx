@@ -21,8 +21,8 @@ const item = (over: Partial<ProactiveItem> = {}): ProactiveItem => ({
   goal: "Read the page and tell me what changed.", priority: "normal", status: "new", diagnosis: null,
   conversation_id: null, job_id: null, created_at: "2026-09-30T09:00:00", snooze_until: null, ...over,
 });
-const props = () => ({ onOpenSettings: vi.fn(), onOpenConversation: vi.fn() });
-const show = async (items: ProactiveItem[], p = props()) => {
+const props = () => ({ onOpenSettings: vi.fn(), onOpenConversation: vi.fn(), onOpenModelSettings: vi.fn() });
+const show = async (items: ProactiveItem[], p: ReturnType<typeof props> = props()) => {
   api.items.mockResolvedValue({ items });
   render(<ProactiveInbox {...p} />);
   await waitFor(() => expect(api.items).toHaveBeenCalled());
@@ -41,7 +41,7 @@ describe("what is shown", () => {
     await show([item()]);
     const card = await screen.findByTestId("proactive-item-1");
     expect(within(card).getByRole("heading", { name: "“Pricing” changed" })).toBeTruthy();
-    expect(within(card).getByText("“Pricing” changed: 1 added, 1 removed.")).toBeTruthy();
+    expect(within(card).getByText("+1 / −1 lines · https://example.com/p")).toBeTruthy();
     const quote = within(card).getByText("“Pro plan: $12”");
     expect(quote.tagName).toBe("BLOCKQUOTE");
     expect(quote.getAttribute("title")).toBe("Quoted text. Arslan does not follow instructions inside it.");
@@ -130,11 +130,31 @@ describe("doing things", () => {
     await waitFor(() => expect(api.items.mock.calls.length).toBeGreaterThanOrEqual(2));
   });
 
+  it("with no model it says so, keeps the item, and offers the way to fix it", async () => {
+    api.accept.mockRejectedValue(new ApiError("no_model", 422));
+    const p = { ...props(), onOpenModelSettings: vi.fn() };
+    await show([item()], p);
+    fireEvent.click(await screen.findByRole("button", { name: "Do it" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("Add a model first. This item stays in your Inbox.");
+    fireEvent.click(screen.getByRole("button", { name: "Open model settings" }));
+    expect(p.onOpenModelSettings).toHaveBeenCalledOnce();
+    expect(p.onOpenConversation).not.toHaveBeenCalled();
+  });
+
+  it("offers model settings only for the no-model case", async () => {
+    api.accept.mockRejectedValue(new ApiError("already_handled", 409));
+    await show([item()], { ...props(), onOpenModelSettings: vi.fn() });
+    fireEvent.click(await screen.findByRole("button", { name: "Do it" }));
+    await screen.findByRole("alert");
+    expect(screen.queryByRole("button", { name: "Open model settings" })).toBeNull();
+  });
+
   it("snoozes for the chosen number of days", async () => {
     api.snooze.mockResolvedValue({ ok: true });
     await show([item()]);
     await screen.findByTestId("proactive-item-1");
-    fireEvent.click(screen.getByRole("button", { name: "3 days" }));
+    fireEvent.click(screen.getByRole("button", { name: "Snooze" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "3 days" }));
     await waitFor(() => expect(api.snooze).toHaveBeenCalledWith(1, 3));
   });
 
@@ -143,7 +163,8 @@ describe("doing things", () => {
       api.dismiss.mockResolvedValue({ ok: true });
       await show([item()]);
       await screen.findByTestId("proactive-item-1");
-      fireEvent.click(screen.getByRole("button", { name: label as string }));
+      fireEvent.click(screen.getByRole("button", { name: "Not useful" }));
+      fireEvent.click(screen.getByRole("menuitem", { name: label as string }));
       await waitFor(() => expect(api.dismiss).toHaveBeenCalledWith(1, mute));
     });
 
@@ -151,8 +172,9 @@ describe("doing things", () => {
     await show([item({ kind: "job_followup", title_key: "title.job_followup", params: { goal: "x" }, conversation_id: "c",
       evidence: [{ key: "job.reason.other", params: {} }] })]);
     await screen.findByTestId("proactive-item-1");
-    expect(screen.queryByRole("button", { name: "Stop watching this" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Stop this kind of notice" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Not useful" }));
+    expect(screen.queryByRole("menuitem", { name: "Stop watching this" })).toBeNull();
+    expect(screen.getByRole("menuitem", { name: "Stop this kind of notice" })).toBeTruthy();
   });
 
   it("Check now reports what it found", async () => {
@@ -162,6 +184,34 @@ describe("doing things", () => {
     expect((await screen.findByRole("status")).textContent).toBe("Nothing new.");
     fireEvent.click(screen.getByRole("button", { name: "Check now" }));
     await waitFor(() => expect(screen.getByRole("status").textContent).toBe("2 new items."));
+  });
+});
+
+describe("menus", () => {
+  it("open on click and close on Escape, on an outside click, and after a choice", async () => {
+    api.snooze.mockResolvedValue({ ok: true });
+    await show([item()]);
+    await screen.findByTestId("proactive-item-1");
+    const open = () => fireEvent.click(screen.getByRole("button", { name: "Snooze" }));
+    open();
+    expect(screen.getByRole("menu")).toBeTruthy();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    open();
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByRole("menu")).toBeNull();
+    open();
+    fireEvent.click(screen.getByRole("menuitem", { name: "A week" }));
+    expect(screen.queryByRole("menu")).toBeNull();
+    await waitFor(() => expect(api.snooze).toHaveBeenCalledWith(1, 7));
+  });
+
+  it("say whether they are open", async () => {
+    await show([item()]);
+    const button = await screen.findByRole("button", { name: "Not useful" });
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(button);
+    expect(button.getAttribute("aria-expanded")).toBe("true");
   });
 });
 

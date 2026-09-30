@@ -99,6 +99,7 @@ async def test_accept_starts_a_job_then_conflicts_then_404s(client, monkeypatch)
         return SimpleNamespace(job_id="job-7")
 
     monkeypatch.setattr(background_jobs, "start", start)
+    monkeypatch.setattr(svc, "model_configured", _yes)
     await make_item()
     item_id = await first_id(client)
     r = await client.post(f"/api/v1/proactive/items/{item_id}/accept", json={"conversation_id": "conv-1"})
@@ -107,6 +108,14 @@ async def test_accept_starts_a_job_then_conflicts_then_404s(client, monkeypatch)
     assert again.status_code == 409 and again.json()["detail"] == {"code": "already_handled"}
     assert (await client.post("/api/v1/proactive/items/999/accept", json={})).status_code == 404
     assert started == [("conv-1", "Look at it")]
+
+
+async def test_accept_with_no_model_says_so_and_keeps_the_item(client):
+    await make_item()
+    item_id = await first_id(client)
+    r = await client.post(f"/api/v1/proactive/items/{item_id}/accept", json={"conversation_id": "c"})
+    assert r.status_code == 422 and r.json()["detail"] == {"code": "no_model"}
+    assert (await client.get("/api/v1/proactive/items")).json()["items"][0]["status"] == "new"
 
 
 async def test_accept_without_anywhere_to_report_is_a_422_not_a_crash(client, monkeypatch):
@@ -133,6 +142,7 @@ async def test_the_goal_cannot_be_chosen_by_the_caller(client, monkeypatch):
         return SimpleNamespace(job_id="j")
 
     monkeypatch.setattr(background_jobs, "start", start)
+    monkeypatch.setattr(svc, "model_configured", _yes)
     await make_item(goal="Stored goal")
     await client.post(f"/api/v1/proactive/items/{await first_id(client)}/accept", json={"conversation_id": "c"})
     assert started == ["Stored goal"]
@@ -211,3 +221,7 @@ async def test_scan_now_runs_even_when_off_and_reports_counts(client, monkeypatc
 
 async def _none():
     return []
+
+
+async def _yes():
+    return True

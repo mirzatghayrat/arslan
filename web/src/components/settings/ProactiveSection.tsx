@@ -95,16 +95,21 @@ export default function ProactiveSection() {
         {divider}
         <Toggle id="proactive-toggle-notify" label={t('proactive.settings.notify')} desc={t('proactive.settings.notifyDesc')}
           checked={config.notify} onChange={(v) => void save({ notify: v })} />
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-3 text-xs" aria-disabled={!config.notify}>
+        <div className="space-y-3 text-xs" aria-disabled={!config.notify}>
           <select aria-label={t('proactive.settings.notify')} data-testid="proactive-notify-cap" className={field} disabled={!config.notify} value={config.notify_daily_cap}
             onChange={(e) => void save({ notify_daily_cap: Number(e.target.value) })}>{caps.map((n) => <option key={n} value={n}>{t('proactive.settings.notifyCap', { n })}</option>)}</select>
-          <span className="text-muted-foreground">{t('proactive.settings.quiet')}</span>
-          <label className="flex items-center gap-2">{t('proactive.settings.from')}
-            <input type="time" data-testid="proactive-quiet-start" className={field} value={config.quiet_start} onChange={(e) => e.target.value && void save({ quiet_start: e.target.value })} /></label>
-          <label className="flex items-center gap-2">{t('proactive.settings.to')}
-            <input type="time" data-testid="proactive-quiet-end" className={field} value={config.quiet_end} onChange={(e) => e.target.value && void save({ quiet_end: e.target.value })} /></label>
+          {/* One unit that wraps as a whole: "Quiet hours  From [..]  To [..]" never splits mid-range. */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <span className="font-bold text-foreground">{t('proactive.settings.quiet')}</span>
+            <span className="flex items-center gap-2 whitespace-nowrap">
+              <label className="flex items-center gap-2">{t('proactive.settings.from')}
+                <input type="time" data-testid="proactive-quiet-start" className={field} value={config.quiet_start} onChange={(e) => e.target.value && void save({ quiet_start: e.target.value })} /></label>
+              <label className="flex items-center gap-2">{t('proactive.settings.to')}
+                <input type="time" data-testid="proactive-quiet-end" className={field} value={config.quiet_end} onChange={(e) => e.target.value && void save({ quiet_end: e.target.value })} /></label>
+            </span>
+          </div>
+          <p className="text-[11px] text-muted-foreground max-w-xl">{t('proactive.settings.quietDesc')}</p>
         </div>
-        <p className="-mt-3 text-[11px] text-muted-foreground max-w-xl">{t('proactive.settings.quietDesc')}</p>
         {divider}
         <Toggle id="proactive-toggle-brief" label={t('proactive.settings.brief')} desc={t('proactive.settings.briefDesc')}
           checked={config.brief_enabled} onChange={(v) => void save({ brief_enabled: v })} />
@@ -115,6 +120,8 @@ export default function ProactiveSection() {
         <div data-testid="proactive-watches" className="space-y-3">
           <div><h4 className="text-xs font-bold text-foreground font-sans">{t('proactive.settings.watchesTitle')}</h4>
             <p className="text-[11px] text-muted-foreground mt-0.5 max-w-xl">{t('proactive.settings.watchesDesc')}</p></div>
+          {watches.length > 0 && !(config.enabled && config.watches) && <p data-testid="proactive-watches-off" role="status"
+            className="text-[11px] text-warning max-w-xl">{t('proactive.settings.watchesOff')}</p>}
           {watches.length === 0 && <p className="text-xs text-muted-foreground">{t('proactive.settings.noWatches')}</p>}
           <ul className="space-y-2">{watches.map((w) => <li key={w.id} data-testid={`proactive-watch-${w.id}`} className="rounded-lg border border-border p-3 text-xs">
             <div className="flex items-start gap-3"><div className="min-w-0 flex-1">

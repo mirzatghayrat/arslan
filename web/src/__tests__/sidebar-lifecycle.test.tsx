@@ -18,10 +18,18 @@ const baseProps = {
 } as any;
 
 describe("Sidebar a11y (M7-#5)", () => {
-  it("the icon-only new-chat button carries an accessible name", () => {
+  it("has exactly one way to start a conversation, and it says so in words", () => {
+    // 0.1.47: the list header's icon-only "+" duplicated the labelled button at the top.
     render(<Sidebar {...baseProps} />);
-    // t() echoes keys in tests; icon-only buttons must not be blank to a reader.
-    expect(screen.getByLabelText("sidebar.new_chat")).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "workspace.newConversation" })).toHaveLength(1);
+    expect(screen.queryByLabelText("sidebar.new_chat")).toBeNull();
+  });
+
+  it("has no Conversations entry: the conversation rows are the way back", () => {
+    // It only switched to the last open conversation, which the highlighted row already does.
+    render(<Sidebar {...baseProps} />);
+    expect(document.getElementById("nav-btn-conversations-deck")).toBeNull();
+    expect(screen.queryByText("workspace.conversations")).toBeNull();
   });
 });
 
@@ -34,10 +42,10 @@ describe("Sidebar experts (0.1.42: experts live in the capability library)", () 
     expect(screen.getByRole("region", { name: "workspace.recentConversations" })).not.toHaveTextContent("小美");
   });
 
-  it("its + starts a new conversation instead of opening an expert picker", () => {
+  it("New conversation starts a conversation instead of opening an expert picker", () => {
     const onAddThread = vi.fn();
     render(<Sidebar {...baseProps} onAddThread={onAddThread} />);
-    fireEvent.click(screen.getByLabelText("sidebar.new_chat"));
+    fireEvent.click(screen.getByRole("button", { name: "workspace.newConversation" }));
     expect(onAddThread).toHaveBeenCalledOnce();
     expect(screen.queryByText("Mermer")).toBeNull();
   });

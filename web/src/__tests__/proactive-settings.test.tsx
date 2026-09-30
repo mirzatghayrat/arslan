@@ -116,6 +116,22 @@ describe("watches", () => {
     expect(api.updateWatch.mock.calls).toEqual([[4, { enabled: false }], [4, { notify: false }], [4, { interval_s: 86400 }]]);
   });
 
+  it("warns when watches exist but checking them is switched off", async () => {
+    api.config.mockResolvedValue({ ...CONFIG, watches: false });
+    await ready();
+    expect(screen.getByTestId("proactive-watches-off").textContent).toBe("Checking watches is switched off above, so none of these are being checked.");
+  });
+
+  it("warns too when the whole feature is off, and not when all is on", async () => {
+    api.config.mockResolvedValue({ ...CONFIG, enabled: false });
+    await ready();
+    expect(screen.getByTestId("proactive-watches-off")).toBeTruthy();
+    cleanup();
+    api.config.mockResolvedValue(CONFIG);
+    await ready();
+    expect(screen.queryByTestId("proactive-watches-off")).toBeNull();
+  });
+
   it("shows when a page could not be read", async () => {
     api.watches.mockResolvedValue({ watches: [{ ...WATCH, last_error: "HTTP 404" }] });
     await ready();
