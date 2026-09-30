@@ -91,6 +91,27 @@ def criteria_to_acceptance(criteria: list[dict]) -> list[dict]:
     return checks
 
 
+def criteria_from_acceptance(acceptance: list[dict]) -> list[dict]:
+    """The inverse of criteria_to_acceptance: a finished job's checks back into the
+    criteria a follow-up job is started with, so continuing keeps the same standard.
+    `answer-delivered` is dropped (every job gets it again)."""
+    out = []
+    for check in acceptance or []:
+        if not isinstance(check, dict) or check.get("id") == "answer-delivered":
+            continue
+        entry = {"description": str(check.get("description") or "")[:300], "kind": "judgement"}
+        rule = check.get("rule") or {}
+        if rule.get("kind") == "artifact" and rule.get("target"):
+            entry.update(kind="file_saved", target=rule["target"])
+        elif rule.get("kind") == "research_sources":
+            entry.update(kind="sources_read", minimum=rule.get("minimum", 1))
+        elif rule.get("kind") == "text" and rule.get("contains"):
+            entry.update(kind="mentions", target=rule["contains"][0])
+        if entry["description"]:
+            out.append(entry)
+    return out[:MAX_CRITERIA]
+
+
 def outcome_of(phase: str, results: dict, reason: str | None) -> str:
     """The one word the user sees. Only a task the validator marked succeeded is done."""
     if phase == "succeeded":

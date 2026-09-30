@@ -850,3 +850,82 @@ from server.db.worker_models import (  # noqa: E402,F401
     ProfessionalMethod, ProfessionalMethodVersion, TaskWorker,
 )
 from server.db.permission_models import ActionGrantRecord, CompanionConnection  # noqa: E402,F401
+
+
+# ── 0.1.47 proactivity ─────────────────────────────────────────────────────────
+# Arslan notices (deterministic detectors), proposes with evidence, and the user
+# decides. Nothing here acts: an accepted item becomes a background job whose own
+# confirmations still apply. All four tables are bounded (see proactive_service.prune).
+
+
+class ProactiveItem(Base):
+    """One thing Arslan noticed, with the evidence for it. Text is stored as keys +
+    params so the UI renders it in the user's language; only `goal` (what a
+    background job will be asked to do) is stored as text, in the language the user
+    had when it was raised."""
+
+    __tablename__ = "proactive_items"
+
+    id = Column(Integer, primary_key=True)
+    kind = Column(String(24), nullable=False)        # job_followup|scheduled_problem|web_change|folder_change|brief
+    fingerprint = Column(String(200), nullable=False, unique=True)   # dedupe: same evidence, same item
+    source_key = Column(String(120), nullable=False, index=True)     # job:<id> | sched:<id> | watch:<id> | brief
+    title_key = Column(String(60), nullable=False)
+    params = Column(JSON, nullable=False, default=dict)
+    evidence = Column(JSON, nullable=False, default=list)            # [{key, params, quote?}] — never empty
+    goal = Column(Text, nullable=False, default="")
+    criteria = Column(JSON, nullable=False, default=list)
+    priority = Column(String(8), nullable=False, default="normal")   # high|normal|low
+    status = Column(String(12), nullable=False, default="new")       # new|seen|accepted|snoozed|dismissed|expired
+    diagnosis = Column(JSON, nullable=True)                          # {cause, next_step, model, usd}
+    conversation_id = Column(String(50), nullable=True)
+    job_id = Column(String(80), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    seen_at = Column(DateTime, nullable=True)
+    acted_at = Column(DateTime, nullable=True)
+    snooze_until = Column(DateTime, nullable=True)
+    notified_at = Column(DateTime, nullable=True)
+
+
+class ProactiveWatch(Base):
+    """Something the user asked Arslan to keep an eye on: a public web page or a
+    folder inside the workspace. Checked by code; the model is never involved."""
+
+    __tablename__ = "proactive_watches"
+
+    id = Column(Integer, primary_key=True)
+    kind = Column(String(8), nullable=False)                         # web|folder
+    target = Column(String(2000), nullable=False)
+    label = Column(String(120), nullable=False)
+    enabled = Column(Boolean, nullable=False, default=True)
+    interval_s = Column(Integer, nullable=False, default=21600)
+    notify = Column(Boolean, nullable=False, default=True)
+    last_checked_at = Column(DateTime, nullable=True)
+    last_changed_at = Column(DateTime, nullable=True)
+    last_item_at = Column(DateTime, nullable=True)                   # cooldown: one item per day per watch
+    last_hash = Column(String(64), nullable=True)
+    snapshot = Column(JSON, nullable=True)                           # web: {"text"}; folder: {"names"}
+    last_error = Column(String(200), nullable=True)
+    consecutive_errors = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class ProactiveMute(Base):
+    """'Not useful': a source (job:/sched:/watch:) or a whole kind (kind:<kind>)."""
+
+    __tablename__ = "proactive_mutes"
+
+    key = Column(String(120), primary_key=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class ProactiveSpend(Base):
+    """What proactive diagnosis cost today (local date). Micro-dollars, so sums of
+    small calls stay exact."""
+
+    __tablename__ = "proactive_spend"
+
+    day = Column(String(10), primary_key=True)
+    micro_usd = Column(Integer, nullable=False, default=0)
+    calls = Column(Integer, nullable=False, default=0)
+
