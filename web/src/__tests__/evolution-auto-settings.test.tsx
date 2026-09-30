@@ -28,6 +28,9 @@ vi.mock("react-i18next", () => ({
 // ── api mock ───────────────────────────────────────────────────────────────────
 const mockUpdateSettings = vi.fn(async (b: Record<string, unknown>) => b);
 const mockGenerateMcpToken = vi.fn(async () => ({ token: "MCP-TOKEN-XYZ" }));
+// The proactivity cause-guess limit (0.1.47) sits in Automation and loads its own config; this
+// file is about another control, so it is stubbed rather than given a backend.
+vi.mock("../components/settings/ProactiveDiagnosisCap", () => ({ default: () => null }));
 vi.mock("../api/client", () => ({
   api: {
     updateSettings: (b: Record<string, unknown>) => mockUpdateSettings(b),

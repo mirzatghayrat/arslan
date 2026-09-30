@@ -1,6 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, ArrowUpRight, Bot } from 'lucide-react';
+import ProactiveDiagnosisCap from './ProactiveDiagnosisCap';
 
 /**
  * Automation — everything that runs on its own and calls the model provider.
@@ -221,6 +222,11 @@ export default function AutomationSection({
             />
           )}
         </div>
+
+        <div className="h-[1px] bg-border/40" />
+
+        {/* ── proactivity's cause guesses (0.1.47): capped per day, off by default ─ */}
+        <ProactiveDiagnosisCap />
 
         <div className="h-[1px] bg-border/40" />
 

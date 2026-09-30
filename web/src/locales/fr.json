@@ -76,6 +76,7 @@
     "tagline": "Créez vos propres spawns d'IA"
   },
   "nav": {
+    "inbox": "Boîte de réception",
     "connections": "Connexions et droits",
     "projects": "Projets",
     "dashboard": "Tableau de bord",
@@ -698,6 +699,7 @@
     "researchReviewDesc": "Après qu’Arslan a enregistré un rapport citant plusieurs sources web, le modèle relit les sources et signale les affirmations qu’une source pourrait contredire, par exemple « le document A ne mentionne pas X » alors qu’il le fait. Le rapport est toujours enregistré ; les remarques apparaissent à l’ouverture. Avis du modèle, pas une vérification des faits.",
     "researchReviewSpendNote": "Chaque enregistrement concerné envoie une requête supplémentaire avec le rapport et ses sources à votre modèle, avec votre clé. Pour l’instant, seules les connexions officielles DeepSeek et Anthropic sont prises en charge ; les autres modèles sont ignorés.",
     "navDesktop": "Bureau",
+    "navProactive": "Proactivité",
     "desktopLede": "Fermer la fenêtre ne quitte plus Arslan : il reste dans la barre des menus, les tâches et tâches planifiées continuent, et les actions qui vous attendent restent dans la fenêtre (refusées au bout de 5 minutes). Quittez avec ⌘Q ou « Quitter Arslan » dans la barre des menus.",
     "labelKeepAwake": "Garder le Mac éveillé pendant le travail",
     "keepAwakeDesc": "Tant qu’une tâche ou tâche planifiée tourne, le Mac ne se met pas en veille de lui-même. L’écran peut s’éteindre ; fermer le capot ou une batterie faible le mettent quand même en veille.",

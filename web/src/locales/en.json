@@ -10,6 +10,7 @@
     "tagline": "Build your own AI spawns"
   },
   "nav": {
+    "inbox": "Inbox",
     "connections": "Connections & permissions",
     "projects": "Projects",
     "dashboard": "Dashboard",
@@ -632,6 +633,7 @@
     "researchReviewDesc": "After Arslan saves a report that cites several web sources, the model rereads the sources and flags claims a source may contradict, such as “document A doesn’t mention X” when it does. The report is always saved; the notes appear when you open it. Model advice, not a fact check.",
     "researchReviewSpendNote": "Each qualifying save sends one extra request with the report and its sources to your model, on your key. For now only official DeepSeek and Anthropic connections are supported; other models are skipped.",
     "navDesktop": "Desktop",
+    "navProactive": "Proactivity",
     "desktopLede": "Closing the window no longer quits Arslan: it stays in the menu bar, tasks and scheduled tasks keep running, and actions that need you still wait in the window (they are declined after 5 minutes). Quit with ⌘Q or “Quit Arslan” in the menu bar.",
     "labelKeepAwake": "Keep the Mac awake while working",
     "keepAwakeDesc": "While a task or scheduled task is running, the Mac does not go to sleep on its own. The display can still sleep; closing the lid or low battery still puts it to sleep.",

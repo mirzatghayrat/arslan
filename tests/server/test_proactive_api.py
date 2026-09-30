@@ -53,14 +53,11 @@ async def first_id(client, scope="open"):
 
 # ── auth ─────────────────────────────────────────────────────────────────────
 
-def test_every_route_is_behind_the_token_checked_against_the_router_itself():
-    """Derived from the router, so a route added later is covered without anyone remembering."""
-    assert proactive_api.router.routes, "router is empty"
-    from server.auth import require_auth
-    assert any(d.dependency is require_auth for d in proactive_api.router.dependencies)
-
-
 async def test_no_token_no_access_on_any_route(client):
+    """Behavioural, and derived from the router so a route added later is covered without anyone
+    remembering. (Not an identity check on `require_auth`: other tests reload the auth module, so
+    the function this file sees can legitimately differ from the one the router captured.)"""
+    assert proactive_api.router.routes, "router is empty"
     anonymous = AsyncClient(transport=client._transport, base_url="http://test")
     async with anonymous:
         for route in proactive_api.router.routes:

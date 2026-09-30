@@ -5,3 +5,7 @@ export function conversationToOpen(id: string, threads: { id: string; archived?:
   const thread = threads.find(t => t.id === id);
   return thread && !thread.archived ? thread.id : null;
 }
+
+/** What the desktop shell sends when a proactive notice is clicked: not a conversation, the
+ *  Inbox. It cannot collide with a real id (those are `thread-<uuid>`). */
+export const INBOX_TARGET = "@inbox";

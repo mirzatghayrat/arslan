@@ -6,7 +6,9 @@
  * section, a change callback, and a `children` map of section id → ReactNode.
  *
  * What changed, and what these tests still have to guarantee:
- *  - nine sections in three groups, no placeholders
+ *  - ten sections in three groups, no placeholders
+ *    (nine until `proactive` was added in 0.1.47 — what Arslan looks out for; free to
+ *     run, so not in automation, while its one spending control is)
  *    (eight until `desktop` was added in 0.1.41 — resident-mode switches that are
  *     on by default and spend nothing, so they could not honestly live in automation)
  *    (seven until `modelroles` was added — the per-task model slots shipped on
@@ -45,7 +47,7 @@ const CHILDREN: Partial<Record<SettingsSectionId, React.ReactNode>> = {
 };
 
 const IDS: SettingsSectionId[] = [
-  "models", "modelroles", "search", "appearance", "memory", "automation", "desktop", "access", "advanced",
+  "models", "modelroles", "search", "appearance", "memory", "automation", "proactive", "desktop", "access", "advanced",
 ];
 
 const shell = (active: SettingsSectionId, onChange = vi.fn()) =>
@@ -71,7 +73,7 @@ describe("SettingsShell", () => {
     await userEvent.click(screen.getByTestId("settings-back"));
     expect(onBack).toHaveBeenCalledOnce();
   });
-  it("exposes nine sections in nav order, with no placeholders", () => {
+  it("exposes ten sections in nav order, with no placeholders", () => {
     expect(SETTINGS_SECTIONS.map((s) => s.id)).toEqual(IDS);
     // Discriminating: renaming a placeholder rather than deleting it would keep
     // the count at seven only if something real were dropped to make room.

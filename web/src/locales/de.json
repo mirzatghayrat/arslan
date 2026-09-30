@@ -76,6 +76,7 @@
     "tagline": "Erstelle deine eigenen KI-Spawns"
   },
   "nav": {
+    "inbox": "Posteingang",
     "connections": "Verbindungen & Rechte",
     "projects": "Projekte",
     "dashboard": "Übersicht",
@@ -698,6 +699,7 @@
     "researchReviewDesc": "Nachdem Arslan einen Bericht mit mehreren Webquellen gespeichert hat, liest das Modell die Quellen erneut und markiert Aussagen, denen eine Quelle widersprechen könnte – etwa „Dokument A erwähnt X nicht“, obwohl es das tut. Der Bericht wird immer gespeichert; die Hinweise erscheinen beim Öffnen. Modellmeinung, keine Faktenprüfung.",
     "researchReviewSpendNote": "Jede passende Speicherung sendet mit deinem Schlüssel eine zusätzliche Anfrage mit dem Bericht und seinen Quellen an dein Modell. Derzeit werden nur offizielle DeepSeek- und Anthropic-Verbindungen unterstützt; andere Modelle werden übersprungen.",
     "navDesktop": "Desktop",
+    "navProactive": "Proaktivität",
     "desktopLede": "Das Schließen des Fensters beendet Arslan nicht mehr: Es bleibt in der Menüleiste, Aufgaben und geplante Aufgaben laufen weiter, und Aktionen, die dich brauchen, warten im Fenster (nach 5 Minuten werden sie abgelehnt). Beenden mit ⌘Q oder „Arslan beenden“ in der Menüleiste.",
     "labelKeepAwake": "Mac während der Arbeit wach halten",
     "keepAwakeDesc": "Solange eine Aufgabe oder geplante Aufgabe läuft, geht der Mac nicht von selbst in den Ruhezustand. Der Bildschirm kann trotzdem ausgehen; Deckel zu oder schwacher Akku versetzen ihn weiterhin in den Ruhezustand.",
