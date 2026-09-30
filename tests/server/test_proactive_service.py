@@ -520,12 +520,14 @@ async def test_intervals_are_bounded(execution_db, interval):
     assert err.value.code == "invalid_interval"
 
 
-async def test_a_folder_watch_needs_a_workspace_and_stays_inside_it(execution_db, tmp_path):
+async def test_a_folder_watch_stays_inside_the_workspace(execution_db, tmp_path):
     inbox = tmp_path / "work" / "inbox"
     inbox.mkdir(parents=True)
+    # 0.1.48: with nothing chosen the workspace is Arslan's own folder, so a folder
+    # elsewhere is outside it (not "no workspace").
     with pytest.raises(ProactiveError) as err:
         await svc.add_watch("folder", str(inbox))
-    assert err.value.code == "workspace_required"
+    assert err.value.code == "outside_workspace"
     async with execution_db() as db:
         db.add(Setting(key="workspace_dir", value=str(tmp_path / "work")))
         await db.commit()

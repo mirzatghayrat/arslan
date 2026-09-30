@@ -304,24 +304,46 @@ async def heartbeat_interval_s(session: AsyncSession) -> int:
         return DEFAULT_INTERVAL_S
 
 
-async def workspace_dir(session: AsyncSession):
-    """The directory Arslan's file tools may work in, or None when unset.
+def default_workspace():
+    """Arslan's own folder: ~/Arslan (0.1.48). Tests point it elsewhere through
+    ARSLAN_DEFAULT_WORKSPACE so a test run never touches the user's home."""
+    import os
+    from pathlib import Path
 
-    Default UNSET (opt-in, zero default by user ruling 2026-08-20): with no
-    workspace the file tools are not registered at all — not registered and
-    erroring, which would advertise a capability that cannot work. A stored
-    path that no longer resolves to a directory reads as unset for the same
-    reason."""
+    override = os.environ.get("ARSLAN_DEFAULT_WORKSPACE", "").strip()
+    return Path(override).expanduser() if override else Path.home() / "Arslan"
+
+
+async def workspace_dir(session: AsyncSession):
+    """The directory Arslan's file tools may work in.
+
+    0.1.48: there is always one. With nothing chosen it is Arslan's own folder
+    (`default_workspace()`, created on first use), so writing a report or a list is
+    something Arslan can simply do. Before this, the default was "none", the write
+    tools were not registered at all, and a job that had found 34 postings could not
+    save them. A chosen folder that no longer exists reads as unset (None), as before:
+    Arslan must not quietly write somewhere else than the user picked."""
     from pathlib import Path
 
     raw = await _get_raw(session, "workspace_dir")
     if raw is None or not str(raw).strip():
-        return None
+        path = default_workspace()
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            return path.resolve()
+        except OSError:
+            return None
     try:
         path = Path(str(raw).strip()).expanduser().resolve()
     except (OSError, RuntimeError):
         return None
     return path if path.is_dir() else None
+
+
+async def workspace_is_default(session: AsyncSession) -> bool:
+    """True when Arslan is working in its own folder rather than one the user chose."""
+    raw = await _get_raw(session, "workspace_dir")
+    return raw is None or not str(raw).strip()
 
 
 async def shell_enabled(session: AsyncSession) -> bool:

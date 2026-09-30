@@ -56,3 +56,9 @@ def sample_requirements(sample_domain, sample_persona) -> SpawnRequirements:
         runtime=RuntimeSpec(platform="web", trigger="user"),
         research_results={"trends": ["skincare", "makeup"]},
     )
+
+
+@pytest.fixture(autouse=True)
+def _default_workspace_in_tmp(tmp_path_factory, monkeypatch):
+    """0.1.48: Arslan's default folder is ~/Arslan; no test may create or write it."""
+    monkeypatch.setenv("ARSLAN_DEFAULT_WORKSPACE", str(tmp_path_factory.mktemp("arslan-home") / "Arslan"))

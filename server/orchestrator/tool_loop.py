@@ -492,6 +492,17 @@ async def _check_fetch_budget(tool_key: str, *, conversation_id: str | None,
     return None
 
 
+async def _writing_in_own_folder() -> bool:
+    """Unknown means ask: if the setting cannot be read, treat the folder as the user's."""
+    from server.db import session as db_session
+    from server.services import settings_service
+    try:
+        async with db_session.AsyncSessionLocal() as db:
+            return await settings_service.workspace_is_default(db)
+    except Exception:  # noqa: BLE001
+        return False
+
+
 async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, emit,
                          tool_timeout_s, tool_trace, convo, confirm_command=None,
                         confirm_workspace_write=None,
@@ -569,7 +580,10 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
     # in my workspace" is answering a question about a capability, not about a
     # filename, and asking again per file would train them to click through.
     # The remembering lives on the WS connection; here we only ask.
-    if tool_key in _WORKSPACE_WRITE_TOOLS:
+    # 0.1.48: Arslan's own folder (~/Arslan, the default) is its desk: writing there
+    # does not ask. A folder the user chose still asks once per session, because that
+    # folder holds the user's own files.
+    if tool_key in _WORKSPACE_WRITE_TOOLS and not await _writing_in_own_folder():
         if confirm_workspace_write is None:
             result = {"ok": False,
                       "error": "writing to the workspace needs your permission, which "
