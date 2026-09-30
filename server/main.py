@@ -286,6 +286,16 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # noqa: BLE001 — curation start must never block boot
         logger.warning("curation loop start failed (non-fatal): %s", exc)
 
+    # 0.1.47 proactivity: a fourth supervised loop (10 min pass, first pass after 60 s).
+    # Detectors are deterministic and free; it only stores inbox items, and never
+    # acts. Best-effort start.
+    try:
+        from server.services import proactive_service
+
+        proactive_service.start()
+    except Exception as exc:  # noqa: BLE001 — proactivity start must never block boot
+        logger.warning("proactive loop start failed (non-fatal): %s", exc)
+
     # Drive the inbound MCP server's streamable-http session manager for the app's
     # lifetime (Nail 1: a mounted sub-app's lifespan is NOT auto-run by Starlette).
     mcp_server = getattr(app.state, "mcp_server", None)
@@ -325,6 +335,14 @@ async def _shutdown_services(app: FastAPI) -> None:
     except Exception as exc:  # noqa: BLE001 — curation stop must never block shutdown
         cleanup_complete = False
         logger.warning("curation loop stop failed (non-fatal): %s", exc)
+
+    try:
+        from server.services import proactive_service as _proactive
+
+        await _proactive.stop()
+    except Exception as exc:  # noqa: BLE001 — proactive stop must never block shutdown
+        cleanup_complete = False
+        logger.warning("proactive loop stop failed (non-fatal): %s", exc)
 
     from server.api import browser as _browser_api
     await _browser_api.shutdown()
@@ -474,6 +492,8 @@ def create_app() -> FastAPI:
     app.include_router(tasks_api.router, prefix="/api/v1")
     from server.api import background_jobs as background_jobs_api
     app.include_router(background_jobs_api.router, prefix="/api/v1")
+    from server.api import proactive as proactive_api
+    app.include_router(proactive_api.router, prefix="/api/v1")
     from server.api import expert_conversion as expert_conversion_api
     app.include_router(expert_conversion_api.router, prefix="/api/v1")
     from server.api import professional_methods as professional_methods_api

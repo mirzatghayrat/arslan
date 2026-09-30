@@ -302,19 +302,21 @@ async def mark_seen(ids: list[int]) -> None:
         await db.commit()
 
 
-async def accept(item_id: int, conversation_id: str) -> dict:
+async def accept(item_id: int, conversation_id: str | None = None) -> dict:
     """The one place a proposal becomes work: a background job, with the goal and
     completion criteria the item carries. Its confirmations (writes, commands,
-    browser/Mac actions) are the job's own and are asked as usual."""
+    browser/Mac actions) are the job's own and are asked as usual. The job reports
+    into `conversation_id`, or into the item's own conversation when it has one."""
     from server.services import background_jobs
-    if not conversation_id or len(conversation_id) > 50:
-        raise ProactiveError("invalid_conversation")
     async with db_session.AsyncSessionLocal() as db:
         item = await _get(db, item_id)
         if item.kind == "brief" or not (item.goal or "").strip():
             raise ProactiveError("nothing_to_do")
         if item.status not in ACTIONABLE:
             raise ProactiveError("already_handled")
+        conversation_id = conversation_id or item.conversation_id
+        if not conversation_id or len(conversation_id) > 50:
+            raise ProactiveError("invalid_conversation")
         goal, criteria = item.goal, list(item.criteria or [])
         # Claim first, in one conditional UPDATE, so two clicks (or two windows)
         # cannot both start a job: only the statement that still finds the item

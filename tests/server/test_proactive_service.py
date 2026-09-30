@@ -306,6 +306,23 @@ async def test_accept_needs_a_real_conversation(execution_db, started, conversat
     assert err.value.code == "invalid_conversation" and started == []
 
 
+async def test_a_follow_up_reports_into_the_conversation_it_came_from(execution_db, started):
+    item_id = await one_item(execution_db, kind="job_followup", conversation_id="origin-conv")
+    assert (await svc.accept(item_id))["conversation_id"] == "origin-conv" and started[0][0] == "origin-conv"
+
+
+async def test_a_chosen_conversation_wins_over_the_origin(execution_db, started):
+    item_id = await one_item(execution_db, kind="job_followup", conversation_id="origin-conv")
+    assert (await svc.accept(item_id, "other"))["conversation_id"] == "other"
+
+
+async def test_with_no_origin_and_no_choice_there_is_nowhere_to_report(execution_db, started):
+    item_id = await one_item(execution_db)
+    with pytest.raises(ProactiveError) as err:
+        await svc.accept(item_id)
+    assert err.value.code == "invalid_conversation" and started == []
+
+
 async def test_a_brief_is_read_not_run(execution_db, started):
     await ingest(found(cand(1, kind="brief", goal="")), ProactiveConfig(notify=False))
     with pytest.raises(ProactiveError) as err:
