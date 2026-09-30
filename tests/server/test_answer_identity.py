@@ -27,13 +27,13 @@ async def maker(tmp_path, monkeypatch):
     return m
 
 
-def test_arslan_system_locks_identity():
-    """Fix B: the answer system prompt asserts Arslan's identity and forbids adopting a
-    teammate/spawn persona from earlier turns."""
+def test_arslan_system_is_one_agent_with_no_team():
+    """0.1.48: one Arslan. The identity prompt names Arslan and never mentions a team,
+    specialists or spawns (it used to describe coordinating 'a team of specialist spawns')."""
     s = arslan._ARSLAN_SYSTEM.lower()
-    assert "arslan" in s
-    assert "spawn" in s or "teammate" in s
-    assert ("never adopt" in s) or ("not any of your spawns" in s) or ("always speak as arslan" in s)
+    assert "arslan" in s and "user's language" in s
+    stable = arslan._ANSWER_STABLE_PREFIX.lower()
+    assert not any(word in stable for word in ("spawn", "specialist", "teammate", "your team", "分身"))
 
 
 @pytest.mark.asyncio

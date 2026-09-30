@@ -564,9 +564,11 @@ async def test_pa1_spawn_promise_exempt_when_turn_actually_delegated(maker, monk
 
 
 def test_a3_iron_rule_constant():
+    # 0.1.48: background work exists now (0.1.42); the rule is that nothing is described as
+    # running unless a tool call started it.
     from server.orchestrator import arslan
-    assert "没有后台执行" in arslan._NO_BACKGROUND_EXEC
-    assert "如实说明" in arslan._NO_BACKGROUND_EXEC
+    assert "start_background_work" in arslan._NO_BACKGROUND_EXEC
+    assert "Never describe something as in progress" in arslan._NO_BACKGROUND_EXEC
 
 
 # ---------------------------------------------------------------------------
