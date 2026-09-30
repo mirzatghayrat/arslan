@@ -150,3 +150,11 @@ async def forget(db, rule: str) -> None:
     rules = await always_allowed(db) - {rule}
     await settings_service._set_raw(db, ALWAYS_ALLOW_KEY, json.dumps(sorted(rules)))
     await db.commit()
+
+
+def describe(rule: str) -> str:
+    """What a remembered rule lets through, in the words the card used when it asked."""
+    for key, _, why in _ASK:
+        if key == rule:
+            return why
+    return rule.split(":", 1)[1] if rule.startswith("hermes:") else rule

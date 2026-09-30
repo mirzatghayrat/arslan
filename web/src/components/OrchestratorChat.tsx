@@ -156,6 +156,13 @@ export default function OrchestratorChat({
     // restart, and the first one looks like it did nothing.
     onEnded: () => setConversationOn(false),
   });
+  // 0.1.48: replies are spoken while a voice conversation is running, and only
+  // then — the separate "read replies aloud" switch is gone. Talking to it is
+  // the request to be talked back to; typing is not.
+  const setVoice = useArslanStore((s) => s.setVoice);
+  React.useEffect(() => {
+    setVoice({ enabled: voiceMode === 'conversation' && conversationOn, lang: voiceLocale });
+  }, [voiceMode, conversationOn, voiceLocale, setVoice]);
   // 0.1.42: with voice conversation on, a background job that finishes (or
   // stops to ask for a confirmation) gets ONE spoken line. The confirmation
   // itself is still a click in the window — speech never approves anything.

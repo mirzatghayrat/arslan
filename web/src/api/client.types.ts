@@ -299,7 +299,6 @@ export interface AppSettings {
   lan_discovery_enabled?: string; // "true" | "false"
   ssh_enabled?: string; // "true" | "false"
   default_read_enabled?: string; // "true" | "false" (default-ON: absent = on)
-  voice_output_enabled?: string; // "true" | "false" (default-OFF)
   voice_input_locale?: string;   // BCP-47, "" = follow the UI language
   voice_mode?: string;            // "off" | "push_to_talk" | "conversation" (default push_to_talk)
   voice_endpoint_silence_ms?: string; // integer ms as a string (default "900")
@@ -311,17 +310,11 @@ export interface AppSettings {
   router_config_id?: string;
   vision_config_id?: string;
   /** Sleep-time curation sweep. Wire type is a real bool here (unlike
-   *  evolution_auto's "on"/"off" string), matching SettingsOut.curation_enabled. */
+   *  an "on"/"off" string), matching SettingsOut.curation_enabled. */
   curation_enabled?: boolean;
   research_review_enabled?: boolean;
   keep_awake_enabled?: boolean;
   desktop_notifications_enabled?: boolean;
-  /** S4.2-a: whether the background evolution watcher may run. Wire type is the STRING
-   * "on"/"off", not a bool. Default "off" — it spends the user's API credits and there
-   * is no working cap (the pre-run estimate is a known over-estimate). */
-  evolution_auto?: string;
-  /** Cap on PROJECTED replay dispatches, not tokens. null = no cap (default). */
-  evolution_max_dispatches?: number | null;
   /** Comma-separated BCP-47 tags for image text recognition. Empty = follow
    *  the interface language plus English. */
   ocr_languages?: string;

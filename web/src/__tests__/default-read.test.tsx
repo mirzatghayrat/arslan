@@ -22,11 +22,9 @@ function props(over: Partial<Props> = {}): Props {
     lanDiscoveryEnabled: false, onLanDiscoveryChange: vi.fn(),
     sshEnabled: false, onSshChange: vi.fn(),
     defaultReadEnabled: true, onDefaultReadChange: vi.fn(),
-    voiceOutputEnabled: false, onVoiceOutputChange: vi.fn(),
     voiceInputLocale: "", onVoiceInputLocaleChange: vi.fn(),
     voiceMode: "push_to_talk", onVoiceModeChange: vi.fn(),
     voiceEndpointSilenceMs: 900, onVoiceEndpointSilenceChange: vi.fn(),
-    spawnMode: "auto", onSpawnModeChange: vi.fn(),
     ...over,
   };
 }

@@ -208,10 +208,6 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
     // own docstring for why they had to stop being scattered.
     automation: (
       <AutomationSection
-        evolutionAuto={localSettings.evolutionAuto ?? false}
-        onEvolutionAutoChange={(v) => saveField({ evolutionAuto: v })}
-        evolutionMaxDispatches={localSettings.evolutionMaxDispatches ?? null}
-        onEvolutionMaxDispatchesChange={(v) => saveField({ evolutionMaxDispatches: v })}
         curationEnabled={localSettings.curationEnabled ?? false}
         onCurationEnabledChange={(v) => saveField({ curationEnabled: v })}
         researchReviewEnabled={localSettings.researchReviewEnabled ?? false}
@@ -243,7 +239,7 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
       <AdvancedSection
         telemetry={localSettings.telemetry}
         onTelemetryChange={(v) => saveField({ telemetry: v })}
-        orchestratorShellEnabled={localSettings.orchestratorShellEnabled ?? false}
+        orchestratorShellEnabled={localSettings.orchestratorShellEnabled ?? true}
         onOrchestratorShellChange={(v) => saveField({ orchestratorShellEnabled: v })}
         shellConfirmPolicy={localSettings.shellConfirmPolicy}
         onShellConfirmPolicyChange={(v) => saveField({ shellConfirmPolicy: v })}
@@ -255,8 +251,6 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         onLanDiscoveryChange={(v) => saveField({ lanDiscoveryEnabled: v })}
         defaultReadEnabled={localSettings.defaultReadEnabled ?? true}
         onDefaultReadChange={(v) => saveField({ defaultReadEnabled: v })}
-        voiceOutputEnabled={localSettings.voiceOutputEnabled ?? false}
-        onVoiceOutputChange={(v) => saveField({ voiceOutputEnabled: v })}
         voiceInputLocale={localSettings.voiceInputLocale ?? ''}
         onVoiceInputLocaleChange={(v) => saveField({ voiceInputLocale: v })}
         voiceMode={localSettings.voiceMode ?? 'push_to_talk'}
@@ -265,8 +259,6 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         onVoiceEndpointSilenceChange={(v) => saveField({ voiceEndpointSilenceMs: v })}
         sshEnabled={localSettings.sshEnabled ?? false}
         onSshChange={(v) => saveField({ sshEnabled: v })}
-        spawnMode={localSettings.spawnMode}
-        onSpawnModeChange={(v) => saveField({ spawnMode: v })}
       />
       </div>
     ),

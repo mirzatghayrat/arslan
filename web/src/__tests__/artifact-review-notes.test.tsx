@@ -82,7 +82,7 @@ describe("ArtifactReviewNotes", () => {
 describe("research review setting", () => {
   it("is off by default, carries its spend note, and reports changes", () => {
     const onChange = vi.fn();
-    render(<AutomationSection evolutionAuto={false} evolutionMaxDispatches={null} curationEnabled={false}
+    render(<AutomationSection curationEnabled={false}
       heartbeatEnabled={false} heartbeatChecklist="" onResearchReviewEnabledChange={onChange} />);
     const toggle = screen.getByTestId("research-review-toggle") as HTMLInputElement;
     expect(toggle.checked).toBe(false);

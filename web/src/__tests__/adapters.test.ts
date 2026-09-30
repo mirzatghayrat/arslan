@@ -115,11 +115,10 @@ describe("toBackendSettings", () => {
     language: "en",
     theme: "dark",
     telemetry: false,
-    spawnMode: "auto",
     llmStrategy: "single",
     distillOnSessionEnd: true,
     orchestratorShellEnabled: false,
-    shellConfirmPolicy: "ask_all", backgroundJobBudget: "standard", workspaceDir: "", heartbeatEnabled: false, heartbeatChecklist: "", lanDiscoveryEnabled: false, sshEnabled: false, defaultReadEnabled: true, voiceOutputEnabled: false, voiceInputLocale: "", voiceMode: "push_to_talk", voiceEndpointSilenceMs: 900,
+    shellConfirmPolicy: "ask_all", backgroundJobBudget: "standard", workspaceDir: "", heartbeatEnabled: false, heartbeatChecklist: "", lanDiscoveryEnabled: false, sshEnabled: false, defaultReadEnabled: true, voiceInputLocale: "", voiceMode: "push_to_talk", voiceEndpointSilenceMs: 900,
     mcpServerEnabled: false,
   };
 
@@ -377,5 +376,20 @@ describe("toUiMessages", () => {
     expect(msgs[0].sender).toBe("user");
     expect(msgs[1].sender).toBe("arslan");
     expect(msgs[2].sender).toBe("spawn");
+  });
+});
+
+describe("terminal settings follow the backend's defaults (0.1.48)", () => {
+  // The backend treats an unset switch as ON and an unset policy as ask_risky
+  // (settings_service.shell_enabled / shell_confirm_policy). Reading `=== "true"`
+  // here showed a fresh install's terminal as OFF while it was working.
+  const read = (enabled: string, policy: string) =>
+    toUiSettings({ orchestrator_shell_enabled: enabled, shell_confirm_policy: policy } as unknown as BackendAppSettings);
+  it("unset is on and asks only for risky commands", () => {
+    expect(read("", "")).toMatchObject({ orchestratorShellEnabled: true, shellConfirmPolicy: "ask_risky" });
+  });
+  it("only an explicit choice turns it off or asks for everything", () => {
+    expect(read("false", "ask_all")).toMatchObject({ orchestratorShellEnabled: false, shellConfirmPolicy: "ask_all" });
+    expect(read("true", "ask_risky")).toMatchObject({ orchestratorShellEnabled: true, shellConfirmPolicy: "ask_risky" });
   });
 });

@@ -39,14 +39,11 @@ function setup(overrides: Partial<Props> = {}) {
     sshEnabled: false,
     onSshChange: vi.fn(),
     defaultReadEnabled: true, onDefaultReadChange: vi.fn(),
-    voiceOutputEnabled: false, onVoiceOutputChange: vi.fn(),
     voiceInputLocale: "", onVoiceInputLocaleChange: vi.fn(),
     voiceMode: "push_to_talk", onVoiceModeChange: vi.fn(),
     voiceEndpointSilenceMs: 900, onVoiceEndpointSilenceChange: vi.fn(),
     shellConfirmPolicy: "ask_all",
     onShellConfirmPolicyChange: vi.fn(),
-    spawnMode: "auto",
-    onSpawnModeChange: vi.fn(),
     ...overrides,
   };
   render(<AdvancedSection {...props} />);
@@ -58,11 +55,12 @@ describe("AdvancedSection", () => {
     vi.clearAllMocks();
   });
 
-  it("renders the telemetry toggle, shell toggle, and spawn-mode Select", () => {
+  it("renders the telemetry and terminal toggles; spawn mode and read-aloud are gone (0.1.48)", () => {
     setup();
     expect(document.getElementById("settings-telemetry-toggle")).not.toBeNull();
     expect(document.getElementById("settings-shell-toggle")).not.toBeNull();
-    expect(document.getElementById("settings-spawn-mode")).not.toBeNull();
+    expect(document.getElementById("settings-spawn-mode")).toBeNull();
+    expect(screen.queryByTestId("voice-output-toggle")).toBeNull();
   });
 
   it("shows the confirm-policy Select only when the shell is enabled", () => {
@@ -95,28 +93,6 @@ describe("AdvancedSection", () => {
     expect(risky).toBeTruthy();
     await user.click(risky as HTMLElement);
     expect(props.onShellConfirmPolicyChange).toHaveBeenCalledWith("ask_risky");
-  });
-
-  it("spawn-mode uses the NEW i18n keys (no hardcoded English)", () => {
-    setup({ spawnMode: "auto" });
-    // The desc + the selected-option label render via i18n keys.
-    expect(screen.getByText("settings.spawnModeDesc")).toBeInTheDocument();
-    expect(screen.getByText("settings.spawnModeAuto")).toBeInTheDocument();
-    // The old hardcoded English literals must be gone.
-    expect(screen.queryByText("Autonomous Synthesis")).toBeNull();
-    expect(screen.queryByText(/Choose how sub-agents are created/)).toBeNull();
-  });
-
-  it("fires onSpawnModeChange when a mode option is picked", async () => {
-    const user = userEvent.setup();
-    const props = setup({ spawnMode: "auto" });
-    await user.click(document.getElementById("settings-spawn-mode") as HTMLButtonElement);
-    const interactive = screen
-      .getAllByRole("option")
-      .find((o) => /spawnModeInteractive/.test(o.textContent ?? ""));
-    expect(interactive).toBeTruthy();
-    await user.click(interactive as HTMLElement);
-    expect(props.onSpawnModeChange).toHaveBeenCalledWith("interactive");
   });
 
   it("offers the three voice modes and reports the pick", () => {

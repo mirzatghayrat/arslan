@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next';
 import { DEFAULT_SETTINGS } from './data';
 import { Message, MessageAttachment, AppSettings } from './types';
 import { useArslanStore } from './stores/arslanStore';
-import { preferredVoiceLocale } from './lib/speech';
 import { runLaunchTests } from './lib/launchTest';
 import { useSettingsStore } from './stores/settingsStore';
 import { useRegistryStore, useCapabilityLabel } from './stores/registryStore';
@@ -190,7 +189,6 @@ export default function App() {
   const arslanStreaming = useArslanStore((s) => s.streaming);
   const arslanRunning = useArslanStore((s) => s.thinking || s.streaming || s.pending || s.activeRunId != null);
   const arslanStreamingText = useArslanStore((s) => s.streamingText);
-  const setVoice = useArslanStore((s) => s.setVoice);
   // propose_run_command state — per-command confirmation card
   const pendingCommand = useArslanStore((s) => s.pendingCommand);
   const pendingEnrollNode = useArslanStore((s) => s.pendingEnrollNode);
@@ -318,18 +316,6 @@ export default function App() {
 
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [settingsReady, setSettingsReady] = useState(false);
-
-  // Push voice-output preference + language HINT into the arslan store so the
-  // reply stream can be spoken (V1). The hint is what the user said they speak
-  // (else the interface language); each sentence's own script overrides it
-  // (V1b). Kept here because App owns settings; the store holds only the
-  // device singleton.
-  useEffect(() => {
-    setVoice({
-      enabled: settings.voiceOutputEnabled ?? false,
-      lang: preferredVoiceLocale(settings.voiceInputLocale, settings.language),
-    });
-  }, [settings.voiceOutputEnabled, settings.voiceInputLocale, settings.language, setVoice]);
 
   // Stage B: provider/search-provider catalogs for Settings dropdowns (live from backend)
   const [llmProviders, setLlmProviders] = useState<ProviderOption[]>([]);

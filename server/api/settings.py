@@ -172,6 +172,23 @@ async def delete_ssh_identity(db: AsyncSession = Depends(get_session)) -> dict:
     return {"public_key": "", "enabled": await settings_service.ssh_enabled(db)}
 
 
+@router.get("/settings/terminal-rules", response_model=dict)
+async def terminal_rules(db: AsyncSession = Depends(get_session)) -> dict:
+    """The kinds of command the user said not to ask about again (0.1.48)."""
+    from server.services import terminal_policy
+    rules = sorted(await terminal_policy.always_allowed(db))
+    return {"rules": [{"rule": r, "description": terminal_policy.describe(r)} for r in rules]}
+
+
+@router.delete("/settings/terminal-rules", response_model=dict)
+async def forget_terminal_rule(rule: str, db: AsyncSession = Depends(get_session)) -> dict:
+    """Ask again for this kind of command. A query parameter, not a path segment:
+    Hermes rule names contain spaces and slashes."""
+    from server.services import terminal_policy
+    await terminal_policy.forget(db, rule)
+    return await terminal_rules(db)
+
+
 @router.get("/settings/providers", response_model=list[ProviderOption])
 async def list_providers() -> list[ProviderOption]:
     """Available LLM providers for the Settings dropdown (Tier-0 presets + native)."""

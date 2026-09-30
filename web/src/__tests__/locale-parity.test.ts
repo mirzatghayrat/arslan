@@ -37,7 +37,8 @@ describe("locale parity", () => {
   // locales/proactive.ts and is guarded by proactive-locales.test.ts.
   // 1558 → 1552 (0.1.48): +nav.activity; −7 nav keys for pages that no longer exist
   // (connections, dashboard, spawns, secondBrain, spawn, ledger, diagnosis).
-  it("en locale has 1552 keys (baseline guard)", () => {
+  // 1552 → 1541 (0.1.48): +3 terminal-rules strings; −7 read-aloud and spawn-mode, −7 auto-evolution.
+  it("en locale has 1541 keys (baseline guard)", () => {
     // 1318 → 1335: the first-run wizard redesign — the four-beat "how it
     // works" tour (title + typed line + 4×title/body), the catalog capability
     // caption, the test-before-save states (test & save / testing / ok /
@@ -263,7 +264,7 @@ describe("locale parity", () => {
     // +6: bundled app icon choices and persistence feedback.
     // +1: externalLink.failed added by fe9c12b5 (native HTTPS refusal).
     // +1: chat.expert_involved (0.1.42 quiet "asked X to help" line replaces the roster notices).
-    expect(enKeys).toHaveLength(1552);
+    expect(enKeys).toHaveLength(1541);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {
