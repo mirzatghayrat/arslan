@@ -163,7 +163,7 @@ describe("the cause-guess limit", () => {
     const select = await screen.findByTestId("proactive-diagnosis-limit") as HTMLSelectElement;
     await waitFor(() => expect(select.disabled).toBe(false));
     expect(select.value).toBe("0");
-    expect(within(select).getByRole("option", { name: "Off" })).toBeTruthy();
+    expect([...select.options].map((o) => o.text)).toEqual(["Off", "$0.25", "$0.50", "$1.00", "$2.00", "$5.00"]);
     expect(screen.getByTestId("proactive-diagnosis-spend-note").textContent).toMatch(/never for a model whose price Arslan does not know/);
     fireEvent.change(select, { target: { value: "0.5" } });
     await waitFor(() => expect(api.saveConfig).toHaveBeenCalledWith({ diagnosis_daily_usd: 0.5 }));

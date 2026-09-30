@@ -45,7 +45,7 @@ export default function ProactiveDiagnosisCap() {
         {t('proactive.settings.diagnosisLimit')}
         <select data-testid="proactive-diagnosis-limit" disabled={limit === null} value={limit ?? 0} onChange={(e) => void choose(Number(e.target.value))}
           className="rounded-lg border border-border bg-background px-2 py-1 text-xs text-foreground">
-          {options.map((value) => <option key={value} value={value}>{value === 0 ? t('proactive.settings.diagnosisOff') : `$${value}`}</option>)}
+          {options.map((value) => <option key={value} value={value}>{value === 0 ? t('proactive.settings.diagnosisOff') : `$${value.toFixed(2)}`}</option>)}
         </select>
       </label>
     </div>
