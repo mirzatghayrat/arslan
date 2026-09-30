@@ -13,6 +13,7 @@
  */
 export const SECTIONS = [
   "arslan",
+  "inbox",
   "projects",
   "spawn",
   "ledger",

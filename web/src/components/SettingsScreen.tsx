@@ -22,6 +22,7 @@ import type { SettingsSectionId } from './settings/sectionRegistry';
 import { useDebouncedSettingsSave } from '../hooks/useDebouncedSettingsSave';
 import AutomationSection from './settings/AutomationSection';
 import DesktopSection from './settings/DesktopSection';
+import ProactiveSection from './settings/ProactiveSection';
 import { normalizeLanguage } from '../lib/languages';
 
 interface SettingsScreenProps {
@@ -222,6 +223,9 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         onOpenDiagnostics={onOpenDiagnostics}
       />
     ),
+
+    // Proactivity — what Arslan looks out for and how it tells you (0.1.47).
+    proactive: <ProactiveSection />,
 
     // Desktop — resident behaviour while the window is closed (0.1.41).
     desktop: (

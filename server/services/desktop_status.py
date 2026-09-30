@@ -20,7 +20,7 @@ from collections import deque
 from contextlib import contextmanager
 from typing import Iterator
 
-KINDS = frozenset({"turn_finished", "approval_needed", "scheduled_finished", "scheduled_paused"})
+KINDS = frozenset({"turn_finished", "approval_needed", "scheduled_finished", "scheduled_paused", "proactive"})
 OUTCOMES = frozenset({"ok", "error", "needs_review", "cancelled"})
 MAX_EVENTS = 100
 

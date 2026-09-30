@@ -76,6 +76,7 @@
     "tagline": "Crea tus propios spawns de IA"
   },
   "nav": {
+    "inbox": "Bandeja",
     "connections": "Conexiones y permisos",
     "projects": "Proyectos",
     "dashboard": "Panel",
@@ -698,6 +699,7 @@
     "researchReviewDesc": "Cuando Arslan guarda un informe que cita varias fuentes web, el modelo relee las fuentes y señala afirmaciones que una fuente podría contradecir, como «el documento A no menciona X» cuando sí lo hace. El informe siempre se guarda; las notas aparecen al abrirlo. Es la opinión del modelo, no una verificación de hechos.",
     "researchReviewSpendNote": "Cada guardado que cumple las condiciones envía una solicitud adicional con el informe y sus fuentes a tu modelo, usando tu clave. Por ahora solo se admiten conexiones oficiales de DeepSeek y Anthropic; con otros modelos se omite.",
     "navDesktop": "Escritorio",
+    "navProactive": "Proactividad",
     "desktopLede": "Cerrar la ventana ya no cierra Arslan: sigue en la barra de menús, las tareas y tareas programadas siguen ejecutándose y las acciones que necesitan tu confirmación esperan en la ventana (se rechazan a los 5 minutos). Sal con ⌘Q o con «Salir de Arslan» en la barra de menús.",
     "labelKeepAwake": "Mantener el Mac despierto mientras trabaja",
     "keepAwakeDesc": "Mientras se ejecuta una tarea o tarea programada, el Mac no entra en reposo por sí solo. La pantalla puede apagarse; cerrar la tapa o la batería baja sí lo ponen en reposo.",

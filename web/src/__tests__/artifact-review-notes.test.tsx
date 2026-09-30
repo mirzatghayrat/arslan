@@ -2,6 +2,9 @@ import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/re
 import { describe, it, expect, vi, afterEach } from "vitest";
 
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+// The proactivity cause-guess limit (0.1.47) sits in Automation and loads its own config; this
+// file is about another control, so it is stubbed rather than given a backend.
+vi.mock("../components/settings/ProactiveDiagnosisCap", () => ({ default: () => null }));
 vi.mock("../api/client", () => ({ api: { getArtifactReview: vi.fn() } }));
 
 import { api } from "../api/client";

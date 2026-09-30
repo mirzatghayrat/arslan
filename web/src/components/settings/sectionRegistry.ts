@@ -18,7 +18,7 @@
 export type SettingsSectionId =
   | 'models' | 'modelroles' | 'search'        // Connection
   | 'appearance' | 'memory'                   // Personal
-  | 'automation' | 'desktop' | 'access' | 'advanced';     // System
+  | 'automation' | 'proactive' | 'desktop' | 'access' | 'advanced';     // System
 
 export type SettingsGroupId = 'connection' | 'personal' | 'system';
 
@@ -56,6 +56,9 @@ export const SETTINGS_SECTIONS: SettingsSectionMeta[] = [
   // turns on the second one without ever seeing the first one's warning.
   { id: 'automation', group: 'system',     labelKey: 'settings.navAutomation', icon: 'Bot',
     hintKey: 'settings.navAutomationHint' },
+  // What Arslan looks out for and how it tells you (0.1.47). Free to run, so it is
+  // not in automation; its one spending control (the cause-guess limit) IS, below.
+  { id: 'proactive',  group: 'system',     labelKey: 'settings.navProactive',  icon: 'BellRing' },
   // Resident behaviour while the window is closed (0.1.41). Not in automation:
   // both switches are ON by default and neither spends anything.
   { id: 'desktop',    group: 'system',     labelKey: 'settings.navDesktop',    icon: 'Monitor' },
@@ -122,6 +125,17 @@ export const FIELD_HOMES: Record<string, SettingsSectionId> = {
   'evolution.max_dispatches': 'automation',
   'curation.enabled': 'automation',
   'research_review.enabled': 'automation',
+
+  // ── proactive (0.1.47: Arslan looks out for things and leaves them in the Inbox) ──
+  'proactive.enabled': 'proactive',
+  'proactive.sources': 'proactive',
+  'proactive.notify': 'proactive',
+  'proactive.quiet_hours': 'proactive',
+  'proactive.brief': 'proactive',
+  'proactive.watches': 'proactive',
+  'proactive.muted': 'proactive',
+  //: The one proactivity control that spends money, so it sits with the other spenders.
+  'proactive.diagnosis_cap': 'automation',
 
   // ── desktop (0.1.41: the window hides, Arslan stays in the menu bar) ──────
   'desktop.keep_awake': 'desktop',

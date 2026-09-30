@@ -1,7 +1,7 @@
 import BrandMark from './BrandMark';
 import React, { useState } from "react";
 import type { Section } from "../lib/sections";
-import { MessageSquare, Settings2, Plus, ChevronDown, ChevronUp, Boxes, Network, Archive, FolderOpen, Plug, Activity } from "lucide-react";
+import { MessageSquare, Settings2, Plus, ChevronDown, ChevronUp, Boxes, Network, Archive, FolderOpen, Plug, Activity, Inbox } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { Spawn } from "../types";
 import { SpawnAvatar } from "./SpawnAvatar";
@@ -21,11 +21,13 @@ interface SidebarProps {
   backendStatus: BackendStatus;
   onOpenConversation?: (conversationId: string) => void;
   expertChatIds?: string[];
+  /** Inbox badge: items not yet looked at, and how many of those need a look. */
+  inboxUnread?: number; inboxHigh?: number;
 }
 export default function Sidebar(props: SidebarProps) {
   const { threads, activeThreadId, onSelectThread, onAddThread, spawns, activeSpawnChatId, onSelectSpawnChat,
     activeSection, onChangeSection, onCompleteChat, onDistillThread, onArchiveThread, onUnarchiveThread,
-    onDeleteThread, backendStatus, onOpenConversation, expertChatIds } = props;
+    onDeleteThread, backendStatus, onOpenConversation, expertChatIds, inboxUnread = 0, inboxHigh = 0 } = props;
   const { t } = useTranslation();
   const [archivedOpen, setArchivedOpen] = useState(false);
   const activeThreads = threads.filter(thread => !thread.archived);
@@ -79,8 +81,10 @@ export default function Sidebar(props: SidebarProps) {
         <Plus size={15} /><span>{t("workspace.newConversation")}</span>
       </button>
       <nav aria-label={t("workspace.navigation")} className="mt-2 shrink-0 space-y-1">
-        <button id="nav-btn-conversations-deck" onClick={() => onChangeSection("arslan")} className={navClass(activeSection === "arslan" || activeSection === "spawn")}>
-          <MessageSquare size={15} /><span>{t("workspace.conversations")}</span></button>
+        <button id="nav-btn-inbox-deck" onClick={() => onChangeSection("inbox")} className={navClass(activeSection === "inbox")}>
+          <Inbox size={15} /><span className="flex-1">{t("nav.inbox")}</span>
+          {inboxUnread > 0 && <span data-testid="inbox-badge" aria-label={`${inboxUnread}`}
+            className={`min-w-[18px] rounded-full px-1.5 text-center text-[10px] leading-[18px] tabular-nums ${inboxHigh > 0 ? "bg-warning text-background" : "bg-primary text-primary-foreground"}`}>{inboxUnread > 99 ? "99+" : inboxUnread}</span>}</button>
         <button id="nav-btn-projects-deck" onClick={() => onChangeSection("projects")} className={navClass(activeSection === "projects")}>
           <FolderOpen size={15} /><span>{t("companion.projects")}</span></button>
         <button id="nav-btn-brain-deck" onClick={() => onChangeSection("brain")} className={navClass(activeSection === "brain")}>
@@ -89,10 +93,10 @@ export default function Sidebar(props: SidebarProps) {
           <Boxes size={15} /><span>{t("sidebar.capabilities")}</span></button>
       </nav>
       <section aria-label={t("workspace.recentConversations")} className="mt-3 flex min-h-0 flex-1 flex-col border-t border-border/50 pt-2">
-        <div className="mb-2 flex items-center justify-between px-3 text-xs text-muted-foreground">
-          <span>{t("workspace.recentConversations")}</span>
-          <button title={t("workspace.newConversation")} aria-label={t("sidebar.new_chat")} onClick={onAddThread}><Plus size={14} /></button>
-        </div>
+        {/* 0.1.47: no "Conversations" nav entry and no second "+" here. The rows below ARE the way
+            back to a conversation (the open one is highlighted), and "New conversation" at the top
+            is the one way to start one. */}
+        <div className="mb-2 px-3 text-xs text-muted-foreground">{t("workspace.recentConversations")}</div>
         <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
           {activeThreads.map(thread => renderThread(thread, false))}
           {archivedThreads.length > 0 && <div className="mt-2 border-t border-border/40 pt-2">

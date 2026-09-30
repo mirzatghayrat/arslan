@@ -70,7 +70,9 @@ import { createSpawnDirty } from './lib/dirty';
 import { threadDisplayTitle } from './lib/threadTitles';
 import { formatUiTime } from './lib/localeFormatting';
 import { subscribeOpenConversation } from './lib/shell';
-import { conversationToOpen } from './lib/openConversation';
+import { notificationTarget } from './lib/openConversation';
+import ProactiveInbox from './components/proactive/ProactiveInbox';
+import { useProactiveSummary } from './hooks/useProactiveSummary';
 
 interface ArslanThread {
   id: string;
@@ -89,6 +91,8 @@ export default function App() {
   const loadRegistry = useRegistryStore((s) => s.loadRegistry);
   // Backend reachability — polled every 10s, drives honest offline states
   const backendStatus = useBackendStatus();
+  // 0.1.47: the Inbox badge (unread proactive items), polled while the window is visible.
+  const proactive = useProactiveSummary();
 
 // Navigation Section: 'arslan' | 'spawn' | 'ledger' | 'capabilities' | 'brain' | 'diagnosis' | 'settings'
   const [activeSection, setActiveSection] = useState<Section>('arslan');
@@ -138,8 +142,9 @@ export default function App() {
   // the one subscription pointed at the current thread list and handler.
   const openFromNotification = useRef<(id: string) => void>(() => {});
   openFromNotification.current = (id: string) => {
-    const target = conversationToOpen(id, threads);
-    if (target) selectConversation(target);
+    const target = notificationTarget(id, threads);
+    if (target?.kind === 'inbox') { setActiveSection('inbox'); setPanelView('default'); }
+    else if (target) selectConversation(target.id);
   };
   useEffect(() => subscribeOpenConversation(id => openFromNotification.current(id)), []);
 
@@ -860,6 +865,13 @@ export default function App() {
     if (nav.endPrevious) setThreads(prev => prev.filter(thread => !(thread.id === activeThreadId && thread.temporary)));
     setActiveThreadId(id); setActiveSection('arslan'); setPanelView('default');
   }
+  // A proactive item was accepted: the job reports into `conversationId`. A conversation the app does
+  // not have yet (or no longer has) is created first, so its job card has somewhere to appear.
+  function openInboxConversation(conversationId: string, created: boolean) {
+    if (created || !threads.some(thread => thread.id === conversationId)) { handleAddArslanThread(conversationId); return; }
+    setThreads(old => old.map(thread => thread.id === conversationId ? { ...thread, archived: false } : thread));
+    selectConversation(conversationId);
+  }
   function openConnections(prefill?: McpPrefill) {
     setConnectionPrefill(prefill); setActiveSection('connections'); setPanelView('default');
   }
@@ -886,6 +898,8 @@ export default function App() {
           setActiveSection('arslan');
         }}
         onAddThread={() => handleAddArslanThread()}
+        inboxUnread={proactive.unread}
+        inboxHigh={proactive.high}
         spawns={spawns}
         expertChatIds={expertChatIds}
         activeSpawnChatId={activeSpawnChatId}
@@ -1298,6 +1312,9 @@ export default function App() {
             )}
 
             {activeSection === 'projects' && <ProjectsSection onStart={handleStartProject} />}
+            {activeSection === 'inbox' && <ProactiveInbox onOpenConversation={openInboxConversation}
+              onOpenSettings={() => { setSettingsInitialSection('proactive'); setActiveSection('settings'); }}
+              onOpenModelSettings={() => { setSettingsInitialSection('models'); setActiveSection('settings'); }} />}
             {activeSection === 'brain' && <MemorySection legacy={!restoredInit.mintedFresh} />}
             {activeSection === 'connections' && <ConnectionsSection prefill={connectionPrefill}
               provider={(providerConfigs.find(config => config.is_primary) ?? providerConfigs[0])?.provider} onOpenSettings={section => {
