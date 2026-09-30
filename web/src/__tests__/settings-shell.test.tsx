@@ -166,3 +166,47 @@ describe("settings search", () => {
     expect(screen.getByTestId("child-models")).toBeInTheDocument();
   });
 });
+
+
+// 0.1.46 layout: the window never scrolls as a whole. The left nav is compact and
+// stays put; only the right pane scrolls. jsdom has no layout, so this pins the
+// structure that makes it so: exactly one scroll container, and the nav is not
+// inside it (before, one outer scroller carried the nav away with the content).
+describe("SettingsShell layout", () => {
+  const scrollers = (root: Element) => [root, ...Array.from(root.querySelectorAll("*"))]
+    .filter((el) => /(^|\s)overflow-y-auto(\s|$)/.test(el.getAttribute("class") ?? ""));
+
+  it("has one scrolling region — the content pane — and the nav is outside it", () => {
+    const { container } = shell("models");
+    const content = screen.getByTestId("settings-content");
+    const sidebar = screen.getByTestId("settings-sidebar");
+    expect(content.className).toMatch(/overflow-y-auto/);
+    expect(content.contains(sidebar)).toBe(false);
+    // the desktop nav itself scrolls only as a fallback on a very short window
+    expect(sidebar.className).toMatch(/md:overflow-y-auto/);
+    expect(scrollers(container).filter((el) => el !== sidebar)).toEqual([content]);
+  });
+
+  it("fills the window instead of growing past it", () => {
+    const { container } = shell("models");
+    expect((container.firstElementChild as HTMLElement).className).toMatch(/min-h-0/);
+    expect((container.firstElementChild as HTMLElement).className).not.toMatch(/\bmin-h-screen\b/);
+  });
+
+  it("restarts the slide-in on the content when the section changes", () => {
+    const { rerender } = shell("models");
+    const first = screen.getByTestId("child-models").parentElement!;
+    expect(first.className).toMatch(/settings-pane-in/);
+    rerender(<SettingsShell activeSection="search" onSectionChange={vi.fn()}>{CHILDREN}</SettingsShell>);
+    const second = screen.getByTestId("child-search").parentElement!;
+    expect(second).not.toBe(first);          // a new element: the animation plays again
+  });
+
+  it("uses small type so every entry fits on one screen", () => {
+    shell("models");
+    for (const id of IDS) {
+      const label = screen.getByTestId(`settings-nav-${id}`).querySelector("span > span")!;
+      expect(label.className).toMatch(/text-\[12\.5px\]/);
+    }
+  });
+});

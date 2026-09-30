@@ -448,6 +448,12 @@ async def trigger_spawn(spawn_id: int) -> int | None:
     then enqueue. Returns the attempt_id if one was started, else None."""
     if spawn_id in _running_spawns:
         return None
+    # 0.1.44 one Arslan: experts are not a runtime path, so rewriting an expert's
+    # prompt in the background would spend on something nothing reads. A user
+    # who had this switched on must not keep paying for it.
+    from server.orchestrator import arslan
+    if not arslan.EXPERTS_ENABLED:
+        return None
     async with db_session.AsyncSessionLocal() as db:
         if not await settings_service.evolution_auto(db):
             return None

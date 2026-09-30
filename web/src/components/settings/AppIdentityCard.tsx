@@ -24,7 +24,7 @@ export default function AppIdentityCard() {
 
   return (
     <section data-testid="app-identity" aria-label={t('appIdentity.title')}
-      className="mb-4 rounded-lg border border-border px-3 py-2 text-xs break-words">
+      className="rounded-md border border-border/70 px-2.5 py-1.5 text-[10.5px] leading-snug break-words">
       <div className="font-medium">{t('appIdentity.title')}</div>
       <p className="mt-1 text-muted-foreground" aria-live="polite">
         {!identity ? t('appIdentity.loading') : identity.client === 'browser'

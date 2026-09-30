@@ -270,7 +270,7 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-background select-none relative">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background select-none relative">
       {/* Header bar */}
       <div className="sr-only">
         {/* Was a hardcoded English string naming the Diagnostics screen — wrong
@@ -287,7 +287,7 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
 
       {/* Backend-down honest banner — shown when health check fails */}
       {backendStatus === 'offline' && (
-        <div className="max-w-6xl mb-6 flex items-start gap-3 bg-danger/30 border border-danger/50 rounded-xl px-5 py-4">
+        <div className="mx-4 mt-3 shrink-0 max-w-6xl flex items-start gap-3 bg-danger/30 border border-danger/50 rounded-xl px-5 py-3">
           <WifiOff className="w-4 h-4 text-danger shrink-0 mt-0.5" />
           <div>
             <p className="text-xs font-bold text-danger font-mono uppercase tracking-wide">
@@ -300,14 +300,14 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         </div>
       )}
 
-      <div className="min-h-full flex flex-col">
+      <div className="flex min-h-0 flex-1 flex-col">
         <SettingsShell activeSection={activeSection} onSectionChange={setActiveSection} onBack={onBack}>
           {sections}
         </SettingsShell>
 
         {/* Footer status bar — the global auto-save indicator (no Save button:
             settings persist instantly per field). */}
-        <div className="flex select-none items-center gap-1.5 p-3 border-t border-border/60 text-[10.5px] font-sans text-subtle-foreground">
+        <div className="flex shrink-0 select-none items-center gap-1.5 px-3 py-2 border-t border-border/60 text-[10.5px] font-sans text-subtle-foreground">
           {saveStatus === 'error' ? (
             <>
               <AlertCircle className="w-4 h-4 text-danger" />
