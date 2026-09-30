@@ -20,9 +20,14 @@ async def maker(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_shell_disabled_by_default(maker):
+async def test_shell_on_by_default_and_off_only_when_switched_off(maker):
+    # 0.1.48: the terminal is on unless the user switches it off.
     from server.services import settings_service
 
+    async with maker() as s:
+        assert await settings_service.shell_enabled(s) is True
+    async with maker() as s:
+        await settings_service.update_settings(s, {"orchestrator_shell_enabled": "false"})
     async with maker() as s:
         assert await settings_service.shell_enabled(s) is False
 
@@ -38,18 +43,23 @@ async def test_shell_enabled_when_true(maker):
 
 
 @pytest.mark.asyncio
-async def test_confirm_policy_defaults_ask_all(maker):
+async def test_confirm_policy_defaults_to_asking_only_for_risky(maker):
+    # 0.1.48: harmless commands run; the rest show a card.
     from server.services import settings_service
 
     async with maker() as s:
-        assert await settings_service.shell_confirm_policy(s) == "ask_all"
+        assert await settings_service.shell_confirm_policy(s) == "ask_risky"
 
 
 @pytest.mark.asyncio
-async def test_confirm_policy_ask_risky_persists(maker):
+async def test_asking_for_everything_is_an_explicit_choice_that_persists(maker):
     from server.services import settings_service
 
     async with maker() as s:
-        await settings_service.update_settings(s, {"shell_confirm_policy": "ask_risky"})
+        await settings_service.update_settings(s, {"shell_confirm_policy": "ask_all"})
+    async with maker() as s:
+        assert await settings_service.shell_confirm_policy(s) == "ask_all"
+    async with maker() as s:
+        await settings_service.update_settings(s, {"shell_confirm_policy": "garbage"})
     async with maker() as s:
         assert await settings_service.shell_confirm_policy(s) == "ask_risky"

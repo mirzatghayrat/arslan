@@ -22,7 +22,10 @@ async def maker(tmp_path, monkeypatch):
 @pytest.mark.asyncio
 async def test_run_command_absent_when_shell_off(maker):
     from server.orchestrator import arslan
+    from server.services import settings_service
 
+    async with maker() as s:
+        await settings_service.update_settings(s, {"orchestrator_shell_enabled": "false"})
     tools = await arslan._arslan_tools()
     assert not any(t["key"] == "run_command" for t in tools)
 

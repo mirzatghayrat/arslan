@@ -492,6 +492,17 @@ async def _check_fetch_budget(tool_key: str, *, conversation_id: str | None,
     return None
 
 
+async def _asks_for_everything() -> bool:
+    """The user chose 'ask for every command'. Unknown counts as yes (then nothing runs unasked)."""
+    from server.db import session as db_session
+    from server.services import settings_service
+    try:
+        async with db_session.AsyncSessionLocal() as db:
+            return await settings_service.shell_confirm_policy(db) == "ask_all"
+    except Exception:  # noqa: BLE001
+        return True
+
+
 async def _writing_in_own_folder() -> bool:
     """Unknown means ask: if the setting cannot be read, treat the folder as the user's."""
     from server.db import session as db_session
@@ -619,16 +630,28 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                                         mcp_fail_counts=mcp_fail_counts)
 
     if tool_key == "run_command":
-        command = str(args.get("command") or "")
-        argv = args.get("argv") if isinstance(args.get("argv"), list) else []
-        if confirm_command is None:
+        # 0.1.48: one shell string; a forbidden command is refused here, before any
+        # card, so nobody is ever asked to approve wiping the disk.
+        from server.services import terminal_policy
+        command = terminal_policy.as_shell(args.get("command"), args.get("argv"))
+        argv = []
+        verdict = terminal_policy.assess(command)
+        if verdict.level == "forbid":
+            result = {"ok": False, "error": f"Arslan never runs this: {verdict.reason}",
+                      "note": "Tell the user what you wanted to do and let them run it themselves."}
+            return _record_tool_result(tool_key, args, result, emit, tool_trace,
+                                        assistant_content, convo,
+                                        mcp_fail_counts=mcp_fail_counts)
+        if confirm_command is None and verdict.level == "run" and not await _asks_for_everything():
+            pass                      # a harmless command needs nobody to approve it
+        elif confirm_command is None:
             result = {"ok": False,
                       "error": "run_command requires user confirmation, which is not "
                                "available in this context"}
             return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                         assistant_content, convo,
                                         mcp_fail_counts=mcp_fail_counts)
-        approved = await confirm_command(command, argv)
+        approved = True if confirm_command is None else await confirm_command(command, argv)
         if not approved:
             result = {"ok": False, "error": "user declined this command"}
             return _record_tool_result(tool_key, args, result, emit, tool_trace,
@@ -904,8 +927,11 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                     "properties": {"title": {"type": "string"},
                                    "slides": {"type": "array"}}},
     "run_command": {"type": "object",
-                    "properties": {"command": {"type": "string"},
-                                   "argv": {"type": "array"}},
+                    "properties": {"command": {"type": "string",
+                                               "description": "The full shell command line, e.g. "
+                                                              "\"ls -la ~/Downloads | head -20\"."},
+                                   "timeout_s": {"type": "integer", "minimum": 5, "maximum": 600,
+                                                 "description": "Stop after this many seconds (default 120)."}},
                     "required": ["command"]},
     "create_skill": {"type": "object",
                      "properties": {"key": {"type": "string"},

@@ -347,10 +347,11 @@ async def workspace_is_default(session: AsyncSession) -> bool:
 
 
 async def shell_enabled(session: AsyncSession) -> bool:
-    """Whether the orchestrator-only run_command tool is exposed to Arslan.
-    Default OFF (opt-in): only an explicit 'true' enables it."""
+    """Whether Arslan has its terminal (run_command). 0.1.48: ON unless switched off —
+    without it every skill that is a command-line tool is dead text. What it may run
+    is terminal_policy's job, not this switch's."""
     raw = await _get_raw(session, "orchestrator_shell_enabled")
-    return str(raw).strip().lower() == "true" if raw is not None else False
+    return str(raw).strip().lower() != "false" if raw is not None else True
 
 
 async def mcp_server_enabled(session: AsyncSession) -> bool:
@@ -361,11 +362,10 @@ async def mcp_server_enabled(session: AsyncSession) -> bool:
 
 
 async def shell_confirm_policy(session: AsyncSession) -> str:
-    """Confirmation posture for run_command: 'ask_all' (default) confirms every
-    command; 'ask_risky' auto-runs LOW-risk (read-only) commands and confirms
-    MEDIUM/HIGH. Any unrecognized value falls back to the safe 'ask_all'."""
+    """'ask_risky' (0.1.48 default): harmless commands run, the rest show a card.
+    'ask_all': every command shows a card (only an explicit choice gives this)."""
     raw = await _get_raw(session, "shell_confirm_policy")
-    return "ask_risky" if str(raw).strip().lower() == "ask_risky" else "ask_all"
+    return "ask_all" if str(raw).strip().lower() == "ask_all" else "ask_risky"
 
 
 async def background_job_budget(session: AsyncSession) -> str:

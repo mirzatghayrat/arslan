@@ -621,40 +621,32 @@ class RunPythonExecutor:
 
 
 class RunCommandExecutor:
-    """Orchestrator-only whitelisted shell (spec). Arslan-tier — spawns can never
-    reach this (tier gate + host-only exposure). Validates against command_policy
-    then runs in the seatbelt command sandbox. Confirmation is enforced UPSTREAM in
-    tool_loop (this executor assumes the user already approved)."""
+    """Arslan's terminal (0.1.48): one shell command in the user's folder.
+
+    Whether it may run is decided upstream (terminal_policy + the confirmation card in
+    tool_loop); this re-checks the hard floor as defence in depth, then runs it. Output
+    is attacker-influenceable text, so results are not marked external:False and the
+    loop wraps them as untrusted, like web pages."""
 
     key = "run_command"
 
     async def execute(self, args: dict) -> dict:
-        from server.services import command_policy, command_sandbox
-        command = (args.get("command") or "").strip()
-        argv = args.get("argv")
-        if argv is None:
-            argv = []
-        verdict = command_policy.validate(command, argv)
-        if not verdict["ok"]:
-            return {"ok": False, "error": verdict["reason"]}
-        if command_policy.is_network_command(command, argv):
-            # Network git/gh: allowlisted unauthenticated proxy; automatic host
-            # credential access is disabled (see command_net). Local commands stay offline.
-            from server.services import command_net
-            result = await command_net.run_network_command(command, argv)
-        else:
-            result = await command_sandbox.run_command(command, argv)
-        pretty = " ".join([command, *argv])
-        # SECURITY: command stdout/stderr can carry attacker-influenced text, so we do
-        # NOT mark results external:False — tool_loop wraps them (wrap_external) and the
-        # LLM treats them as untrusted, consistent with the web tools (spec §组件2).
-        if not result.get("ok"):
-            return {"ok": False,
-                    "error": result.get("error") or "command failed",
-                    **{k: result[k] for k in ("stdout", "stderr", "exit_code") if k in result}}
-        return {"ok": True,
-                "summary": f"已执行 `{pretty}`:exit 0,stdout {len(result.get('stdout') or '')} 字",
-                **result}
+        from server.db import session as db_session
+        from server.services import settings_service, terminal_exec, terminal_policy
+        command = terminal_policy.as_shell(args.get("command"), args.get("argv"))
+        verdict = terminal_policy.assess(command)
+        if verdict.level == "forbid":
+            return {"ok": False, "error": f"Arslan never runs this: {verdict.reason}"}
+        async with db_session.AsyncSessionLocal() as db:
+            cwd = await settings_service.workspace_dir(db)
+        if cwd is None:
+            return {"ok": False, "error": "the chosen workspace folder no longer exists"}
+        result = await terminal_exec.run(command, cwd=cwd,
+                                         timeout_s=terminal_exec.timeout_of(args.get("timeout_s")))
+        head = command if len(command) <= 80 else command[:77] + "…"
+        result["summary"] = (f"`{head}` → exit {result['exit_code']}" if not result.get("error", "").startswith("stopped")
+                             else f"`{head}` → {result['error']}")
+        return result
 
 
 class ReadSkillExecutor:

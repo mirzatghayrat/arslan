@@ -249,6 +249,24 @@ async def test_job_commands_never_reuse_session_grants_and_remote_always_asks(mo
     assert asked == ["propose_run_command"]
 
 
+async def test_a_job_honours_the_users_standing_answer_but_never_adds_one(monkeypatch):
+    """0.1.48: "don't ask again" given in a conversation holds for jobs too; a job has
+    no "remember" of its own (it cannot add a standing answer)."""
+    from server.services import settings_service, terminal_policy
+    monkeypatch.setattr(settings_service, "shell_confirm_policy", AsyncMock(return_value="ask_risky"))
+    asked = []
+
+    async def ask(cid, frame):
+        asked.append(frame.get("reason"))
+        return False
+    monkeypatch.setattr(approvals, "ask", ask)
+    monkeypatch.setattr(terminal_policy, "always_allowed", AsyncMock(return_value={"install"}))
+    confirm = approvals.JobConfirmations(CID)
+    assert await confirm.command("brew install remindctl", []) is True      # standing answer
+    assert await confirm.command("rm old.txt", []) is False                  # not covered: asks
+    assert asked == ["deletes files"]
+
+
 def test_migration_0054_lets_jobs_run_beside_a_turn_but_never_two_turns(tmp_path):
     """Upgrade a database carrying the 0053 index, then exercise the new one."""
     import sqlite3

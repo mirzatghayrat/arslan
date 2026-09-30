@@ -39,26 +39,26 @@ _HEARTBEAT_INTERVAL_S = 30
 def effective_risk(remote_host: str | None, command: str, argv: list) -> str:
     """The grade a confirmation is decided on.
 
-    Remote is HIGH unconditionally (P3b 裁决③). The local classifier answers a
-    question about a binary on THIS machine — `git` at the other end of an ssh
-    connection is a different program on a different filesystem, and possibly a
-    different `git`. Grading it by our own whitelist would be inferring safety
-    from the wrong evidence."""
-    from server.services import command_policy
-    return "HIGH" if remote_host else command_policy.classify(command, argv)
+    Remote is HIGH unconditionally (P3b 裁决③): the local rules describe this machine,
+    and `git` at the other end of an ssh connection is a different program. Local
+    (0.1.48): terminal_policy — run → LOW, ask → MEDIUM, forbid → HIGH."""
+    from server.services import terminal_policy
+    if remote_host:
+        return "HIGH"
+    return terminal_policy.risk_grade(terminal_policy.as_shell(command, argv))
 
 
 def may_skip_card(remote_host: str | None, *, in_session_allow: bool,
-                  policy: str, risk: str) -> bool:
+                  policy: str, risk: str, always_allowed: bool = False) -> bool:
     """Whether a confirmation may be answered without showing a card.
 
-    Both shortcuts — the session allow-list and ask_risky's LOW exemption — are
-    local-only. A remote command always gets a card, because the thing the user
-    is being asked about (which machine) is not carried by the command text that
-    the shortcuts key on."""
-    if remote_host:
+    Every shortcut is local-only: a remote command always gets a card, because the
+    thing being asked (which machine) is not in the command text the shortcuts key
+    on. HIGH (forbidden) never skips. "Always allowed" is the user's standing
+    answer for a rule, and holds even under ask_all."""
+    if remote_host or risk == "HIGH":
         return False
-    if in_session_allow:
+    if in_session_allow or always_allowed:
         return True
     return policy == "ask_risky" and risk == "LOW"
 
@@ -353,15 +353,18 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         # risk grade describes a binary on THIS machine, and `git` over there is
         # not the same program (P3b 裁决③). Remote is HIGH, always, and HIGH is
         # already the grade this function refuses to remember.
+        from server.services import terminal_policy
         sig = _cmd_sig(command, argv)
         risk = effective_risk(remote_host, command, argv)
-        policy = ""
+        verdict = terminal_policy.assess(terminal_policy.as_shell(command, argv))
+        policy, standing = "", False
         if not remote_host:
-            # Confirmation policy: 'ask_risky' auto-runs LOW-risk (read-only) commands.
+            # 'ask_risky' (the 0.1.48 default) runs harmless commands without a card.
             async with db_session.AsyncSessionLocal() as db:
                 policy = await settings_service.shell_confirm_policy(db)
+                standing = verdict.rule in await terminal_policy.always_allowed(db)
         if may_skip_card(remote_host, in_session_allow=sig in session_cmd_allow,
-                         policy=policy, risk=risk):
+                         policy=policy, risk=risk, always_allowed=standing):
             return True
         call_id = uuid.uuid4().hex
         # Private card, sent directly to THIS socket — deliberately NOT emit():
@@ -372,9 +375,10 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         # card rides raw ws.send_json, never a recorder tee, so a reattaching
         # socket cannot replay a dead interactive card.
         await ws.send_json(
-            protocol.propose_run_command(call_id, command, argv, reason=f"risk: {risk}",
+            protocol.propose_run_command(call_id, command, argv, reason=verdict.reason or f"risk: {risk}",
                                          remote_host=remote_host,
-                                         fingerprints=list(fingerprints or []))
+                                         fingerprints=list(fingerprints or []),
+                                         rule=None if remote_host else verdict.rule)
         )
         # Own ws.receive HERE, only while this one command is pending. The plain-message
         # orchestration coro that led here is blocked awaiting this call, so the outer
@@ -412,7 +416,13 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         # Never permanently auto-approve a HIGH-risk (e.g. network) command, even if
         # the user checked "remember" — those always require a fresh card.
         if may_remember(remote_host, risk=risk, remember=bool(decision.get("remember"))):
+            # 0.1.48: "don't ask again" is a standing answer for this KIND of command
+            # (its rule), kept across sessions and listed in Settings, where it can be
+            # withdrawn. A forbidden rule can never be remembered (HIGH never gets here).
             session_cmd_allow.add(sig)
+            if verdict.rule:
+                async with db_session.AsyncSessionLocal() as db:
+                    await terminal_policy.allow_always(db, verdict.rule)
         return bool(decision.get("approved"))
 
     async def _spawn_names() -> list[str]:
