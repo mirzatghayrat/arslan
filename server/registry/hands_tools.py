@@ -89,10 +89,10 @@ class _BrowserTool:
                 return {"ok": False, "external": False, "code": "declined",
                         "error": "The user did not allow acting on this website. Do not retry; report it."}
         try:
-            text = await agent_browser.run(self.action, args)
+            text = await _run_setting_up_once(self.action, args)
         except agent_browser.BrowserUnavailable as exc:
             return {"ok": False, "external": False, "code": "browser_unavailable",
-                    "error": f"The Arslan browser is not ready ({exc}). The user can set it up in Settings → Advanced."}
+                    "error": _unavailable_message(str(exc))}
         except ValueError as exc:
             return {"ok": False, "external": False, "error": str(exc)}
         except Exception as exc:  # noqa: BLE001
@@ -100,6 +100,32 @@ class _BrowserTool:
         # Page content is untrusted external text: framed as such by the tool loop.
         return {"ok": True, "external": True, "text": text,
                 "summary": f"{self.action} · {agent_browser.current_url() or ''}"[:200]}
+
+
+async def _run_setting_up_once(action: str, args: dict) -> str:
+    """0.1.48: the first time Arslan needs its browser, it sets it up itself (a pinned,
+    lockfile-exact download, ~1–2 minutes) instead of telling the user to go to Advanced
+    and click. Only the "not set up yet" case is handled; a missing Node is reported."""
+    from server.services import agent_browser, managed_browser
+    try:
+        return await agent_browser.run(action, args)
+    except agent_browser.BrowserUnavailable as exc:
+        if "setup_required" not in str(exc):
+            raise
+    try:
+        await managed_browser.setup()
+    except Exception as exc:  # noqa: BLE001
+        raise agent_browser.BrowserUnavailable(f"setup_failed: {str(exc)[:300]}") from exc
+    return await agent_browser.run(action, args)
+
+
+def _unavailable_message(reason: str) -> str:
+    if "node_required" in reason:
+        return ("Arslan's browser needs Node.js on this Mac, and it is not installed. Tell the user; "
+                "meanwhile read pages with web_extract.")
+    if "macos_required" in reason:
+        return "Arslan's browser only runs on macOS. Read pages with web_extract instead."
+    return f"Arslan's browser could not start ({reason}). Read pages with web_extract instead, and tell the user."
 
 
 class BrowserOpenExecutor(_BrowserTool):
