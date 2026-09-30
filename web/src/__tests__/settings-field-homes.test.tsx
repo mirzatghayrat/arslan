@@ -68,7 +68,7 @@ describe("settings section registry", () => {
     expect(ids).not.toContain("scheduled");
     expect(ids).not.toContain("usage");
     // …and the pointer they existed to provide survives.
-    expect(FIELD_HOMES["automation.diagnostics_link"]).toBe("automation");
+    expect(FIELD_HOMES["automation.activity_link"]).toBe("automation");
   });
 
   it("every nav label and group label resolves to a real string", () => {
@@ -142,15 +142,15 @@ describe("no control was lost in the redesign", () => {
     }
   });
 
-  it("the Diagnostics link is actually WIRED, not just accepted as a prop", () => {
+  it("the Activity link is actually WIRED, not just accepted as a prop", () => {
     // Found by looking at the running app, not by any of the 1150 tests: the
     // button is conditional on `onOpenDiagnostics`, App.tsx never passed it, so
     // the replacement for the two deleted nav entries silently did not exist.
     // A prop that nobody passes is indistinguishable from a feature nobody built.
     const app = read("App.tsx");
-    expect(app).toMatch(/<SettingsScreen[\s\S]*?onOpenDiagnostics=/);
+    expect(app).toMatch(/<SettingsScreen[\s\S]*?onOpenActivity=/);
     expect(read("components/settings/AutomationSection.tsx"))
-      .toMatch(/automation-open-diagnostics/);
+      .toMatch(/automation-open-activity/);
   });
 
   it("the page subtitle does not name sections that no longer exist", () => {

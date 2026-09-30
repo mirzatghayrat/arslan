@@ -15,12 +15,9 @@ export const SECTIONS = [
   "arslan",
   "inbox",
   "projects",
-  "spawn",
-  "ledger",
   "capabilities",
   "brain",
-  "diagnosis",
-  "connections",
+  "activity",
   "settings",
 ] as const;
 

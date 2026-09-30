@@ -8,8 +8,7 @@ vi.mock("../components/companion/BackgroundJobs", () => ({ default: () => null }
 afterEach(cleanup);
 
 const props = (over: Partial<React.ComponentProps<typeof Sidebar>> = {}): React.ComponentProps<typeof Sidebar> => ({
-  threads: [], activeThreadId: "", onSelectThread: vi.fn(), onAddThread: vi.fn(), spawns: [], activeSpawnChatId: "",
-  onSelectSpawnChat: vi.fn(), activeSection: "arslan", onChangeSection: vi.fn(), onCompleteChat: vi.fn(),
+  threads: [], activeThreadId: "", onSelectThread: vi.fn(), onAddThread: vi.fn(), activeSection: "arslan", onChangeSection: vi.fn(),
   onDistillThread: vi.fn(), onArchiveThread: vi.fn(), onUnarchiveThread: vi.fn(), onDeleteThread: vi.fn(),
   backendStatus: "online", ...over,
 });

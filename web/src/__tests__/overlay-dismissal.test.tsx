@@ -33,8 +33,6 @@ beforeEach(() => vi.clearAllMocks());
 
 const OVERLAYS = [
   { file: "components/MessageBody.tsx",     outsideCloses: true,  why: "read-only HTML preview — nothing to lose" },
-  { file: "components/SpawnStudio.tsx",     outsideCloses: false, why: "holds an in-progress spawn edit (ruling ③A removed it)" },
-  { file: "components/GapFillModal.tsx",    outsideCloses: false, why: "holds form input and drafts awaiting consent" },
   { file: "components/FirstRunWizard.tsx",  outsideCloses: false, why: "closing it skips setup" },
   { file: "components/brain/NoteEditor.tsx",     outsideCloses: false, why: "holds unsaved note text" },
   { file: "components/brain/BrainEntryDetail.tsx", outsideCloses: false, why: "sits over the graph — every graph interaction is an outside click" },
@@ -42,12 +40,9 @@ const OVERLAYS = [
 
 /** Everything given Escape this round, and what kind of thing it is. */
 const ESCAPE_WIRED = [
-  ["components/SpawnStudio.tsx",            "editor — confirms when dirty"],
-  ["components/GapFillModal.tsx",           "editor — confirms when dirty"],
   ["components/brain/NoteEditor.tsx",       "editor — confirms when dirty"],
   ["components/MessageBody.tsx",            "read-only viewer"],
   ["components/brain/BrainEntryDetail.tsx", "read-only rail"],
-  ["App.tsx",                               "ledger modal + create modal + the five proposal cards"],
 ] as const;
 
 describe("the classification is recorded, not implied", () => {
@@ -59,15 +54,6 @@ describe("the classification is recorded, not implied", () => {
       expect(backdropCloses).toBe(o.outsideCloses);
     });
   }
-
-  it("SpawnStudio no longer closes on a background click", () => {
-    // The single most important assertion in this file: this is the one that
-    // was already losing work, not a gap being filled.
-    const src = read("components/SpawnStudio.tsx");
-    const dialogOpen = src.slice(src.indexOf('data-testid="spawn-studio"') - 400,
-                                 src.indexOf('data-testid="spawn-studio"') + 200);
-    expect(dialogOpen).not.toMatch(/onClick=\{onClose\}/);
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -83,14 +69,9 @@ describe("everything classified got its Escape", () => {
 });
 
 describe("every editor confirms rather than discarding", () => {
-  // The three editors each compute dirty against a DIFFERENT baseline, because
-  // that is what they actually have: SpawnStudio diffs equipment sets against a
-  // load-time snapshot, NoteEditor diffs against the loaded note, GapFillModal
-  // has no baseline at all (empty is clean) and additionally counts drafts and
-  // in-flight work. Asserting a shared `isDirty` would have been asserting a
-  // fiction.
-  for (const f of ["components/SpawnStudio.tsx", "components/GapFillModal.tsx",
-                   "components/brain/NoteEditor.tsx"]) {
+  // A list, not one file: the next editor added belongs here. (The two expert
+  // editors that used to sit beside NoteEditor were removed in 0.1.48.)
+  for (const f of ["components/brain/NoteEditor.tsx"]) {
     it(`${f} routes closing through a dirty check`, () => {
       const src = read(f);
       expect(src).toContain("DiscardChangesBar");
@@ -102,28 +83,10 @@ describe("every editor confirms rather than discarding", () => {
 
 describe("Escape in an editor", () => {
   it("asks before discarding when the editor is dirty", () => {
-    const src = read("components/SpawnStudio.tsx");
+    const src = read("components/brain/NoteEditor.tsx");
     expect(src).toContain("DiscardChangesBar");
     // The guard, not just the component: closing must go through the dirty check.
-    expect(src).toMatch(/dirty \? setConfirmingClose\(true\) : onClose\(\)/);
-  });
-
-  it("computes dirty from what the mode ACTUALLY edits", () => {
-    // Discriminating, and it caught a real error: the first version compared
-    // name/description/domain against `detail`. SpawnDetail has no
-    // `description`, and in EDIT mode those three are never populated from the
-    // loaded spawn — they belong to CREATE. Edit mode edits the equipment sets.
-    const src = read("components/SpawnStudio.tsx");
-    expect(src).toContain("baselineEquip");
-    expect(src).not.toMatch(/detail\.description/);
-  });
-
-  it("snapshots the baseline into new Sets", () => {
-    // Sharing the Set objects would move the baseline with every edit, so
-    // `dirty` would be permanently false — a confirm dialog that never fires
-    // looks exactly like a working one.
-    const src = read("components/SpawnStudio.tsx");
-    expect(src).toMatch(/setBaselineEquip\(\{ toolsets: new Set\(ts0\), skills: new Set\(sk0\) \}\)/);
+    expect(src).toMatch(/noteDirty \? setConfirmingClose\(true\) : onClose\(\)/);
   });
 });
 

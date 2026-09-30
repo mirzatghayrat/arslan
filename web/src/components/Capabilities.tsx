@@ -27,8 +27,8 @@ type McpChip = "all" | "recommended" | "registered";
  *  will have an effect. Passed in rather than fetched here: App already holds
  *  the configs, and a second fetch would give this page its own opinion of which
  *  provider is primary. */
-export default function Capabilities({ provider, experts, initialTab, onOpenConnections }: {
-  provider?: string | null; experts?: ReactNode; initialTab?: CapTab; onOpenConnections?: (prefill?: McpPrefill) => void;
+export default function Capabilities({ provider, experts, initialTab }: {
+  provider?: string | null; experts?: ReactNode; initialTab?: CapTab;
 } = {}) {
   const { t } = useTranslation();
   const [tab, setTab] = useState<CapTab>(initialTab ?? (experts ? "experts" : "discover"));
@@ -84,12 +84,14 @@ export default function Capabilities({ provider, experts, initialTab, onOpenConn
         ) : null}
 
         <CapabilityTabs
-          active={tab === "forge" ? "skills" : tab === "saved" ? "discover" : tab === "mcps" ? "tools" : tab}
+          active={tab === "forge" ? "skills" : tab === "saved" ? "discover" : tab}
           onChange={(id) => setTab(id as CapTab)}
           tabs={[
             ...(experts ? [{ id: "experts", label: t("workspace.legacyExperts") }] : []),
             { id: "skills", label: t("workspace.skillsWorkflows") },
             { id: "tools", label: t("capabilities.tabs.tools") },
+            // 0.1.48: connections (MCP servers) live here; the separate Connections page is gone.
+            { id: "mcps", label: t("workspace.connections") },
             { id: "discover", label: t("capabilities.tabs.discover") },
           ]}
         />
@@ -106,7 +108,7 @@ export default function Capabilities({ provider, experts, initialTab, onOpenConn
 
         {tab === "tools" && <><div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-4 text-sm">
           <p className="text-muted-foreground">{t("workspace.toolsConnectionsHint")}</p>
-          <button className="text-primary underline" onClick={() => onOpenConnections ? onOpenConnections() : setTab("mcps")}>{t("workspace.connections")}</button>
+          <button className="text-primary underline" onClick={() => setTab("mcps")}>{t("workspace.connections")}</button>
         </div><CapabilityCatalog kind="tools" /></>}
 
         {(tab === "skills" || tab === "forge") && <div className="mb-5 flex justify-end">
@@ -162,7 +164,7 @@ export default function Capabilities({ provider, experts, initialTab, onOpenConn
         )}
 
         {tab === "saved" && (
-          <SavedCandidates onPrefillMcp={(p) => { if (onOpenConnections) onOpenConnections(p); else { prefillMcp(p); setTab("mcps"); } }} />
+          <SavedCandidates onPrefillMcp={(p) => { prefillMcp(p); setTab("mcps"); }} />
         )}
       </div>
     </div>

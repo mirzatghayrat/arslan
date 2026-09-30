@@ -1,6 +1,21 @@
 {
-  "externalLink": {"failed": "Der Link konnte nicht geöffnet werden. Im Systembrowser sind nur HTTPS-Links erlaubt."},
-  "appIdentity": {"title":"Diese Anwendung","loading":"Version wird gelesen…","browser":"Browser-Client · Desktop-Version nicht verfügbar","unknown":"Desktop-Version nicht verfügbar","stable":"Stabil","preview":"Vorschau","previewHint":"Vorschauversionen werden manuell installiert; automatische Updates folgen dem stabilen Kanal. Sichere vorher deine Daten und Schlüssel.","summary":"Versionsübersicht","privacy":"Enthält nur Client-Typ, Version und Kanal. Es wird nichts hochgeladen. Prüfe den Text vor dem Teilen.","copy":"Übersicht kopieren","copied":"Kopiert","copyFailed":"Kopieren fehlgeschlagen. Markiere und kopiere den Text oben."},
+  "externalLink": {
+    "failed": "Der Link konnte nicht geöffnet werden. Im Systembrowser sind nur HTTPS-Links erlaubt."
+  },
+  "appIdentity": {
+    "title": "Diese Anwendung",
+    "loading": "Version wird gelesen…",
+    "browser": "Browser-Client · Desktop-Version nicht verfügbar",
+    "unknown": "Desktop-Version nicht verfügbar",
+    "stable": "Stabil",
+    "preview": "Vorschau",
+    "previewHint": "Vorschauversionen werden manuell installiert; automatische Updates folgen dem stabilen Kanal. Sichere vorher deine Daten und Schlüssel.",
+    "summary": "Versionsübersicht",
+    "privacy": "Enthält nur Client-Typ, Version und Kanal. Es wird nichts hochgeladen. Prüfe den Text vor dem Teilen.",
+    "copy": "Übersicht kopieren",
+    "copied": "Kopiert",
+    "copyFailed": "Kopieren fehlgeschlagen. Markiere und kopiere den Text oben."
+  },
   "chart": {
     "loading": "Diagramm wird geladen…",
     "failed": "Das Diagramm konnte nicht geladen werden. Bitte die Seite neu laden."
@@ -77,18 +92,12 @@
   },
   "nav": {
     "inbox": "Posteingang",
-    "connections": "Verbindungen & Rechte",
     "projects": "Projekte",
-    "dashboard": "Übersicht",
-    "spawns": "Experten",
     "settings": "Einstellungen",
-    "secondBrain": "Gedächtnis",
     "arslan": "Hauptassistent",
-    "spawn": "Agent",
-    "ledger": "Agenten-Register",
     "capabilities": "Fähigkeiten",
     "brain": "Gedächtnis",
-    "diagnosis": "Diagnose"
+    "activity": "Aktivität"
   },
   "brain": {
     "strip_details": "Umfang und Grenzen",
@@ -489,7 +498,6 @@
     "appIconDesktopHint": "Ändert das Dock-Symbol und die Avatare in der App. Finder behält das Standardsymbol.",
     "appIconBrowserHint": "Ändert die Avatare in der App und das Browser-Tab-Symbol.",
     "appIconError": "Das Symbol konnte nicht geändert werden. Die bisherige Auswahl bleibt erhalten. Bitte erneut versuchen.",
-
     "backToWorkspace": "Zurück zum Arbeitsbereich",
     "defaultModel": "Standardmodell",
     "modelsPrivateHint": "Modell zum Bearbeiten auswählen. Gespeicherte Schlüssel bleiben verborgen.",
@@ -705,8 +713,8 @@
     "keepAwakeDesc": "Solange eine Aufgabe oder geplante Aufgabe läuft, geht der Mac nicht von selbst in den Ruhezustand. Der Bildschirm kann trotzdem ausgehen; Deckel zu oder schwacher Akku versetzen ihn weiterhin in den Ruhezustand.",
     "labelDesktopNotifications": "Mitteilungen",
     "desktopNotificationsDesc": "Ist das Fenster geschlossen oder im Hintergrund, meldet macOS, wenn eine Aufgabe fertig ist, eine Aktion deine Bestätigung braucht oder eine geplante Aufgabe fehlschlägt. Mitteilungen zeigen nie Nachrichtentext.",
-    "automationElsewhere": "Geplante Aufgaben und Token-Verbrauch liegen in der Diagnose, wo auch ihr Verlauf ist.",
-    "automationOpenDiagnostics": "Diagnose öffnen",
+    "automationElsewhere": "Geplante Aufgaben, Token-Verbrauch und jeder frühere Lauf liegen unter Aktivität.",
+    "automationOpenActivity": "Aktivität öffnen",
     "searchPlaceholder": "Einstellungen suchen…",
     "searchNoHits": "Kein Bereich passt",
     "modeSystem": "System",

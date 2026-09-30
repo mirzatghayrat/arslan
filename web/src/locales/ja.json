@@ -1,6 +1,21 @@
 {
-  "externalLink": {"failed": "リンクを開けませんでした。システムブラウザで開けるのは HTTPS リンクのみです。"},
-  "appIdentity": {"title":"現在のアプリ","loading":"バージョンを確認中…","browser":"ブラウザー版 · デスクトップ版のバージョンは取得できません","unknown":"デスクトップ版のバージョンを取得できません","stable":"安定版","preview":"プレビュー版","previewHint":"プレビュー版は手動でインストールします。自動更新は安定版のみが対象です。インストール前にデータと鍵をバックアップしてください。","summary":"バージョン情報","privacy":"クライアントの種類、バージョン、チャンネルのみを含みます。アップロードはしません。共有前に内容を確認してください。","copy":"情報をコピー","copied":"コピーしました","copyFailed":"コピーできませんでした。上のテキストを選択してコピーしてください。"},
+  "externalLink": {
+    "failed": "リンクを開けませんでした。システムブラウザで開けるのは HTTPS リンクのみです。"
+  },
+  "appIdentity": {
+    "title": "現在のアプリ",
+    "loading": "バージョンを確認中…",
+    "browser": "ブラウザー版 · デスクトップ版のバージョンは取得できません",
+    "unknown": "デスクトップ版のバージョンを取得できません",
+    "stable": "安定版",
+    "preview": "プレビュー版",
+    "previewHint": "プレビュー版は手動でインストールします。自動更新は安定版のみが対象です。インストール前にデータと鍵をバックアップしてください。",
+    "summary": "バージョン情報",
+    "privacy": "クライアントの種類、バージョン、チャンネルのみを含みます。アップロードはしません。共有前に内容を確認してください。",
+    "copy": "情報をコピー",
+    "copied": "コピーしました",
+    "copyFailed": "コピーできませんでした。上のテキストを選択してコピーしてください。"
+  },
   "chart": {
     "loading": "グラフを読み込み中…",
     "failed": "グラフを読み込めません。ページを再読み込みしてください。"
@@ -77,18 +92,12 @@
   },
   "nav": {
     "inbox": "受信箱",
-    "connections": "接続と権限",
     "projects": "プロジェクト",
-    "dashboard": "ダッシュボード",
-    "spawns": "スポーン",
     "settings": "設定",
-    "secondBrain": "記憶",
     "arslan": "メインアシスタント",
-    "spawn": "エージェント",
-    "ledger": "エージェント台帳",
     "capabilities": "ケイパビリティ",
     "brain": "記憶",
-    "diagnosis": "診断"
+    "activity": "アクティビティ"
   },
   "brain": {
     "strip_details": "記録範囲と制限",
@@ -489,7 +498,6 @@
     "appIconDesktopHint": "Dock アイコンとアプリ内のアバターに反映します。Finder は標準アイコンのままです。",
     "appIconBrowserHint": "アプリ内のアバターとブラウザーのタブアイコンに反映します。",
     "appIconError": "アイコンを更新できませんでした。前の選択を保持しました。もう一度お試しください。",
-
     "backToWorkspace": "ワークスペースに戻る",
     "defaultModel": "既定のモデル",
     "modelsPrivateHint": "モデルを選択して編集します。保存済みキーは表示されません。",
@@ -705,8 +713,8 @@
     "keepAwakeDesc": "タスクやスケジュールタスクの実行中は、Mac が自動でスリープしません。画面はスリープできます。蓋を閉じたときやバッテリー残量が少ないときはスリープします。",
     "labelDesktopNotifications": "通知",
     "desktopNotificationsDesc": "ウィンドウが閉じているか背面にあるとき、タスクの完了、確認が必要な操作、スケジュールタスクの失敗を macOS が通知します。通知にメッセージ本文は表示されません。",
-    "automationElsewhere": "定期タスクとトークン使用量は「診断」にあります。履歴がそこにあるためです。",
-    "automationOpenDiagnostics": "診断を開く",
+    "automationElsewhere": "定期タスク、トークン使用量、過去の実行はすべて「アクティビティ」にあります。",
+    "automationOpenActivity": "アクティビティを開く",
     "searchPlaceholder": "設定を検索…",
     "searchNoHits": "一致するセクションはありません",
     "modeSystem": "システム",

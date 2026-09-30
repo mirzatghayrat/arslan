@@ -1,6 +1,21 @@
 {
-  "externalLink": {"failed": "No se pudo abrir el enlace. Solo se permiten enlaces HTTPS en el navegador del sistema."},
-  "appIdentity": {"title":"Esta aplicación","loading":"Leyendo versión…","browser":"Cliente web · versión de escritorio no disponible","unknown":"Versión de escritorio no disponible","stable":"Estable","preview":"Preliminar","previewHint":"Las versiones preliminares se instalan manualmente; las actualizaciones automáticas siguen el canal estable. Haz una copia de tus datos y claves antes de instalarlas.","summary":"Resumen de versión","privacy":"Solo incluye el tipo de cliente, la versión y el canal. No se sube nada. Revisa el texto antes de compartirlo.","copy":"Copiar resumen","copied":"Copiado","copyFailed":"No se pudo copiar. Selecciona y copia el texto de arriba."},
+  "externalLink": {
+    "failed": "No se pudo abrir el enlace. Solo se permiten enlaces HTTPS en el navegador del sistema."
+  },
+  "appIdentity": {
+    "title": "Esta aplicación",
+    "loading": "Leyendo versión…",
+    "browser": "Cliente web · versión de escritorio no disponible",
+    "unknown": "Versión de escritorio no disponible",
+    "stable": "Estable",
+    "preview": "Preliminar",
+    "previewHint": "Las versiones preliminares se instalan manualmente; las actualizaciones automáticas siguen el canal estable. Haz una copia de tus datos y claves antes de instalarlas.",
+    "summary": "Resumen de versión",
+    "privacy": "Solo incluye el tipo de cliente, la versión y el canal. No se sube nada. Revisa el texto antes de compartirlo.",
+    "copy": "Copiar resumen",
+    "copied": "Copiado",
+    "copyFailed": "No se pudo copiar. Selecciona y copia el texto de arriba."
+  },
   "chart": {
     "loading": "Cargando gráfico…",
     "failed": "No se pudo cargar el gráfico. Vuelve a cargar la página."
@@ -77,18 +92,12 @@
   },
   "nav": {
     "inbox": "Bandeja",
-    "connections": "Conexiones y permisos",
     "projects": "Proyectos",
-    "dashboard": "Panel",
-    "spawns": "Expertos",
     "settings": "Ajustes",
-    "secondBrain": "Memoria",
     "arslan": "Asistente principal",
-    "spawn": "Agente",
-    "ledger": "Registro de agentes",
     "capabilities": "Capacidades",
     "brain": "Memoria",
-    "diagnosis": "Diagnóstico"
+    "activity": "Actividad"
   },
   "brain": {
     "strip_details": "Cobertura y límites",
@@ -489,7 +498,6 @@
     "appIconDesktopHint": "Actualiza el icono del Dock y los avatares. Finder conserva el icono predeterminado.",
     "appIconBrowserHint": "Actualiza los avatares y el icono de la pestaña del navegador.",
     "appIconError": "No se pudo actualizar el icono. Se conserva la selección anterior; inténtalo de nuevo.",
-
     "backToWorkspace": "Volver al espacio de trabajo",
     "defaultModel": "Modelo predeterminado",
     "modelsPrivateHint": "Selecciona un modelo para editarlo. Las claves guardadas permanecen ocultas.",
@@ -705,8 +713,8 @@
     "keepAwakeDesc": "Mientras se ejecuta una tarea o tarea programada, el Mac no entra en reposo por sí solo. La pantalla puede apagarse; cerrar la tapa o la batería baja sí lo ponen en reposo.",
     "labelDesktopNotifications": "Notificaciones",
     "desktopNotificationsDesc": "Con la ventana cerrada o en segundo plano, macOS te avisa cuando termina una tarea, una acción necesita tu confirmación o falla una tarea programada. Las notificaciones nunca muestran el texto de los mensajes.",
-    "automationElsewhere": "Las tareas programadas y el uso de tokens están en Diagnósticos, donde está su historial.",
-    "automationOpenDiagnostics": "Abrir Diagnósticos",
+    "automationElsewhere": "Las tareas programadas, el uso de tokens y cada ejecución pasada están en Actividad.",
+    "automationOpenActivity": "Abrir Actividad",
     "searchPlaceholder": "Buscar ajustes…",
     "searchNoHits": "Ninguna sección coincide",
     "modeSystem": "Sistema",

@@ -1,6 +1,21 @@
 {
-  "externalLink": {"failed": "Impossible d’ouvrir ce lien. Seuls les liens HTTPS sont autorisés dans le navigateur système."},
-  "appIdentity": {"title":"Cette application","loading":"Lecture de la version…","browser":"Client web · version de bureau indisponible","unknown":"Version de bureau indisponible","stable":"Stable","preview":"Préversion","previewHint":"Les préversions s’installent manuellement ; les mises à jour automatiques suivent le canal stable. Sauvegardez vos données et vos clés avant l’installation.","summary":"Résumé de version","privacy":"Contient uniquement le type de client, la version et le canal. Rien n’est envoyé. Vérifiez le texte avant de le partager.","copy":"Copier le résumé","copied":"Copié","copyFailed":"Échec de la copie. Sélectionnez et copiez le texte ci-dessus."},
+  "externalLink": {
+    "failed": "Impossible d’ouvrir ce lien. Seuls les liens HTTPS sont autorisés dans le navigateur système."
+  },
+  "appIdentity": {
+    "title": "Cette application",
+    "loading": "Lecture de la version…",
+    "browser": "Client web · version de bureau indisponible",
+    "unknown": "Version de bureau indisponible",
+    "stable": "Stable",
+    "preview": "Préversion",
+    "previewHint": "Les préversions s’installent manuellement ; les mises à jour automatiques suivent le canal stable. Sauvegardez vos données et vos clés avant l’installation.",
+    "summary": "Résumé de version",
+    "privacy": "Contient uniquement le type de client, la version et le canal. Rien n’est envoyé. Vérifiez le texte avant de le partager.",
+    "copy": "Copier le résumé",
+    "copied": "Copié",
+    "copyFailed": "Échec de la copie. Sélectionnez et copiez le texte ci-dessus."
+  },
   "chart": {
     "loading": "Chargement du graphique…",
     "failed": "Impossible de charger le graphique. Rechargez la page."
@@ -77,18 +92,12 @@
   },
   "nav": {
     "inbox": "Boîte de réception",
-    "connections": "Connexions et droits",
     "projects": "Projets",
-    "dashboard": "Tableau de bord",
-    "spawns": "Experts",
     "settings": "Paramètres",
-    "secondBrain": "Mémoire",
     "arslan": "Assistant principal",
-    "spawn": "Agent",
-    "ledger": "Registre des agents",
     "capabilities": "Capacités",
     "brain": "Mémoire",
-    "diagnosis": "Diagnostic"
+    "activity": "Activité"
   },
   "brain": {
     "strip_details": "Couverture et limites",
@@ -489,7 +498,6 @@
     "appIconDesktopHint": "Modifie l’icône du Dock et les avatars. Le Finder conserve l’icône par défaut.",
     "appIconBrowserHint": "Modifie les avatars et l’icône de l’onglet du navigateur.",
     "appIconError": "Impossible de modifier l’icône. Le choix précédent est conservé. Réessayez.",
-
     "backToWorkspace": "Retour à l’espace de travail",
     "defaultModel": "Modèle par défaut",
     "modelsPrivateHint": "Sélectionnez un modèle à modifier. Les clés enregistrées restent masquées.",
@@ -705,8 +713,8 @@
     "keepAwakeDesc": "Tant qu’une tâche ou tâche planifiée tourne, le Mac ne se met pas en veille de lui-même. L’écran peut s’éteindre ; fermer le capot ou une batterie faible le mettent quand même en veille.",
     "labelDesktopNotifications": "Notifications",
     "desktopNotificationsDesc": "Fenêtre fermée ou en arrière-plan, macOS vous prévient quand une tâche se termine, qu’une action attend votre confirmation ou qu’une tâche planifiée échoue. Les notifications n’affichent jamais le texte des messages.",
-    "automationElsewhere": "Les tâches planifiées et l'utilisation des tokens sont dans Diagnostics, là où se trouve leur historique.",
-    "automationOpenDiagnostics": "Ouvrir Diagnostics",
+    "automationElsewhere": "Les tâches planifiées, l'utilisation des tokens et chaque exécution passée sont dans Activité.",
+    "automationOpenActivity": "Ouvrir Activité",
     "searchPlaceholder": "Rechercher des paramètres…",
     "searchNoHits": "Aucune section ne correspond",
     "modeSystem": "Système",

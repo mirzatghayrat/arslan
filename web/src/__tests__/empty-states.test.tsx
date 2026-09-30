@@ -35,24 +35,9 @@ type Site = {
 
 const SITES: Site[] = [
   {
-    testId: "empty-spawn-ledger", file: "components/SpawnsDashboard.tsx", panel: "Spawn ledger",
-    needsBody: true, needsAction: true,
-    why: "the empty box owns the whole screen area; the header button is easy to miss",
-  },
-  {
     testId: "empty-scheduled", file: "components/ScheduledTasksCard.tsx", panel: "Scheduled tasks",
     needsBody: true, needsAction: true,
     why: "the creator is local (setForm) and the header button sits outside the block",
-  },
-  {
-    testId: "empty-diagnosis", file: "components/DiagnosisCatalog.tsx", panel: "Diagnostics catalog",
-    needsBody: true, needsAction: true,
-    why: "the next step is on ANOTHER screen — runs only exist once a spawn is dispatched",
-  },
-  {
-    testId: "empty-evolution-inbox", file: "components/EvolutionInbox.tsx", panel: "Evolution inbox",
-    needsBody: true, needsAction: false,
-    why: "the spawn selector this points at is directly above it",
   },
   {
     testId: "empty-capabilities", file: "components/CapabilityCatalog.tsx", panel: "Capability catalog",

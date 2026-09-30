@@ -494,6 +494,8 @@ def create_app() -> FastAPI:
     app.include_router(background_jobs_api.router, prefix="/api/v1")
     from server.api import proactive as proactive_api
     app.include_router(proactive_api.router, prefix="/api/v1")
+    from server.api import workspace as workspace_api
+    app.include_router(workspace_api.router, prefix="/api/v1")
     from server.api import expert_conversion as expert_conversion_api
     app.include_router(expert_conversion_api.router, prefix="/api/v1")
     from server.api import professional_methods as professional_methods_api

@@ -35,7 +35,7 @@ export default function AutomationSection({
   onHeartbeatEnabledChange,
   heartbeatChecklist,
   onHeartbeatChecklistChange,
-  onOpenDiagnostics,
+  onOpenActivity,
 }: {
   evolutionAuto: boolean;
   onEvolutionAutoChange?: (v: boolean) => void;
@@ -49,7 +49,7 @@ export default function AutomationSection({
   onHeartbeatEnabledChange?: (v: boolean) => void;
   heartbeatChecklist: string;
   onHeartbeatChecklistChange?: (v: string) => void;
-  onOpenDiagnostics?: () => void;
+  onOpenActivity?: () => void;
 }) {
   const { t } = useTranslation();
 
@@ -235,14 +235,14 @@ export default function AutomationSection({
           <p className="text-[11px] text-muted-foreground font-sans max-w-xl">
             {t('settings.automationElsewhere')}
           </p>
-          {onOpenDiagnostics && (
+          {onOpenActivity && (
             <button
               type="button"
-              data-testid="automation-open-diagnostics"
-              onClick={onOpenDiagnostics}
+              data-testid="automation-open-activity"
+              onClick={onOpenActivity}
               className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-mono text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] border border-border transition-colors whitespace-nowrap"
             >
-              {t('settings.automationOpenDiagnostics')}
+              {t('settings.automationOpenActivity')}
               <ArrowUpRight className="w-3 h-3" aria-hidden />
             </button>
           )}

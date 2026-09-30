@@ -141,7 +141,7 @@ export const FIELD_HOMES: Record<string, SettingsSectionId> = {
   'desktop.keep_awake': 'desktop',
   'desktop.notifications': 'desktop',
   //: Replaces the two placeholder nav entries.
-  'automation.diagnostics_link': 'automation',
+  'automation.activity_link': 'automation',
 
   // ── access & security ─────────────────────────────────────────────────────
   'access.api_token': 'access',

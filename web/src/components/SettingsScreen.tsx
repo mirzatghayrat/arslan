@@ -39,11 +39,11 @@ interface SettingsScreenProps {
   initialSection?: SettingsSectionId;
   /** Automation points at Diagnostics for scheduled tasks and usage — the two
    *  placeholder nav entries it replaced did the same, but as dead tabs. */
-  onOpenDiagnostics?: () => void;
+  onOpenActivity?: () => void;
   onBack?: () => void;
 }
 
-export default function SettingsScreen({ settings, setSettings, llmProviders, searchProviders, backendStatus, providerConfigs = [], onProviderConfigsChange, initialSection, onOpenDiagnostics, onBack }: SettingsScreenProps) {
+export default function SettingsScreen({ settings, setSettings, llmProviders, searchProviders, backendStatus, providerConfigs = [], onProviderConfigsChange, initialSection, onOpenActivity, onBack }: SettingsScreenProps) {
   const { t, i18n } = useTranslation();
   const [localSettings, setLocalSettings] = useState<AppSettings>({ ...settings });
   const [activeSection, setActiveSection] = useState<SettingsSectionId>(initialSection ?? 'models');
@@ -220,7 +220,7 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         onHeartbeatEnabledChange={(v) => saveField({ heartbeatEnabled: v })}
         heartbeatChecklist={localSettings.heartbeatChecklist ?? ''}
         onHeartbeatChecklistChange={(v) => saveField({ heartbeatChecklist: v })}
-        onOpenDiagnostics={onOpenDiagnostics}
+        onOpenActivity={onOpenActivity}
       />
     ),
 
@@ -240,7 +240,6 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
     // Advanced — telemetry + orchestrator shell + confirm policy + spawn mode.
     advanced: (
       <div className="space-y-4">
-      {onOpenDiagnostics && <button className="rounded-lg border border-border px-4 py-2 text-sm text-primary" onClick={onOpenDiagnostics}>{t('nav.diagnosis')}</button>}
       <AdvancedSection
         telemetry={localSettings.telemetry}
         onTelemetryChange={(v) => saveField({ telemetry: v })}
