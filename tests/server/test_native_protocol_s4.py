@@ -143,12 +143,13 @@ async def test_invalid_trajectory_degrades_to_legacy_for_the_rest_of_the_turn():
         async def chat(self, system, user, history=None, tools=None):
             calls.append("legacy")
             return "ok"
+    from server.orchestrator.model_call import TurnRecovery
     request = {"role": "user", "content": "t"}
     broken = [request, tj.assistant("", [{"id": "a", "name": "n", "arguments": {}, "arguments_raw": "{}"}])]
-    state = {}
+    state = TurnRecovery()
     assert await tool_loop._model_call(Native(), "S", broken, request, tools=None, schemas=[],
-                                       forced=False, protocol=state) == "ok"
-    assert state["legacy"] and "invalid trajectory" in state["reason"]
+                                       forced=False, state=state) == "ok"
+    assert state.legacy and "invalid trajectory" in state.reason
     await tool_loop._model_call(Native(), "S", [request], request, tools=None, schemas=[],
-                                forced=False, protocol=state)
+                                forced=False, state=state)
     assert calls == ["legacy", "legacy"]   # sticky: a valid history later stays legacy this turn

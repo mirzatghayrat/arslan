@@ -175,9 +175,12 @@ class OpenAIProvider(BaseLLMProvider):
         tools: list[dict[str, Any]] | None = None,
         temperature: float = 0.7,
         tool_choice: str | None = None,
+        max_tokens: int | None = None,
     ) -> LLMResponse:
         """POST to {base_url}/chat/completions and return a normalised LLMResponse."""
         payload = self._payload(messages, tools, temperature, tool_choice)
+        if max_tokens:
+            payload["max_tokens"] = max_tokens
         from arslan.execution_budget import model_request
         payload["max_tokens"] = model_request(payload["max_tokens"])
         from arslan.execution_checkpoint import save
@@ -193,7 +196,9 @@ class OpenAIProvider(BaseLLMProvider):
                 f"{self.base_url}/chat/completions",
                 json=payload,
                 headers=headers,
-                timeout=60.0,
+                # A thinking model may legitimately take minutes before the
+                # first byte of a non-streamed reply (0.1.49: larger budgets).
+                timeout=httpx.Timeout(300.0, connect=15.0),
             )
             try:
                 response.raise_for_status()

@@ -363,33 +363,136 @@ def _render_request(convo: list[dict], current_request: dict) -> list[dict]:
     return trajectory.to_legacy(messages)
 
 
+CONTINUE_PROMPT = ("Your previous reply was cut off by the output limit. Continue exactly where it "
+                   "stopped, without repeating anything already written and without any preamble.")
+TRUNCATED_CALL_ERROR = (
+    "The output limit was reached while writing this call's arguments; nothing was executed. "
+    "Split the work: write the first part with write_file, then append each further part with "
+    "edit_file (replace the file's current last line with that line plus the next part), "
+    "or shorten the payload.")
+
+
 async def _model_call(a, system: str, convo: list[dict], current_request: dict, *,
-                      tools, schemas, forced: bool, protocol: dict):
-    """The one model call of a run_native step.
+                      tools, schemas, forced: bool, state):
+    """The one model call of a run_native step, with recovery (0.1.49 S6).
 
     Native adapters (OpenAI-compatible, ARSLAN_TOOL_PROTOCOL not "legacy") get
-    the trajectory in their own tool protocol. A forced step keeps the SAME
-    tools (cache prefix; tool messages stay well-formed) with tool_choice
-    "none" instead of dropping them. Everything else — test doubles,
-    Anthropic, Gemini, rollback — gets the legacy rendering, unchanged.
-    `protocol` is per-turn state: once it degrades to legacy it stays there."""
-    native = getattr(a, "native_trajectory", None)
-    if not protocol.get("legacy") and callable(native) and native():
-        messages = convo if any(item is current_request for item in convo) else [current_request, *convo]
+    the trajectory in their own tool protocol; a forced step keeps the SAME
+    tools with tool_choice "none". Everything else (test doubles, Anthropic,
+    Gemini, rollback) gets the legacy rendering, unchanged.
+
+    Recovery (server/orchestrator/model_call.py): classified transport retries;
+    a protocol rejection switches this turn to the legacy rendering; a context
+    overflow compacts once; a finish_reason "length" cut is re-sent with the
+    endpoint's ceiling, then a cut answer is continued. A cut tool call is
+    returned as is: run_native never executes it. `state` is per turn."""
+    from server.orchestrator import model_call as mc
+
+    def build_messages():
+        return convo if any(item is current_request for item in convo) else [current_request, *convo]
+
+    messages = build_messages()
+    native = False
+    use_native = getattr(a, "native_trajectory", None)
+    if not state.legacy and callable(use_native) and use_native():
         try:
             trajectory.validate(messages)
+            native = True
         except trajectory.TrajectoryError as exc:
-            # Never send a malformed native history; the legacy rendering of
-            # the same trajectory is always well-formed. Sticky for this turn.
-            protocol["legacy"] = True
-            protocol["reason"] = f"invalid trajectory: {exc}"
+            # Never send a malformed native history; the legacy rendering of the
+            # same trajectory is always well-formed. Sticky for this turn.
+            state.legacy, state.reason = True, f"invalid trajectory: {exc}"
             logger.warning("native tool protocol degraded to legacy: %s", exc)
+
+    async def request(extra=None, max_tokens=None):
+        sent = messages + list(extra or [])
+        kwargs = {"max_tokens": max_tokens} if max_tokens else {}
+        if native:
+            return await a.chat_trajectory(system, sent, tools=schemas if forced else tools,
+                                           tool_choice="none" if forced else None, **kwargs)
+        # One legacy entry point (_render_request) for every request of the step.
+        rendered = _render_request(convo, current_request) + trajectory.to_legacy(list(extra or []))
+        return await a.chat(system, rendered[-1]["content"], history=rendered[:-1], tools=tools, **kwargs)
+
+    remaining = _remaining_seconds()
+    try:
+        resp = await mc.call_with_recovery(request, state, remaining_s=remaining)
+    except mc.ModelCallError as exc:
+        if exc.kind == "protocol" and native and not state.exhausted:
+            native = False
+            state.legacy, state.reason = True, f"endpoint rejected native history: {exc.excerpt[:200]}"
+            state.note("switched to the legacy tool protocol")
+            logger.warning("native tool protocol degraded to legacy: %s", exc.excerpt[:200])
+        elif exc.kind == "context" and not state.context_retry_used and not state.exhausted:
+            state.context_retry_used = True
+            convo[:], _ = bounded_history(convo, max_chars=max(8_000, _rendered_size(convo) // 2),
+                                          size_of=_rendered_size)
+            messages = build_messages()
+            state.note("compacted context")
         else:
-            return await _with_retry(lambda: a.chat_trajectory(
-                system, messages, tools=schemas if forced else tools,
-                tool_choice="none" if forced else None))
-    rendered = _render_request(convo, current_request)
-    return await _chat_retry(a, system, rendered[-1]["content"], history=rendered[:-1], tools=tools)
+            raise
+        resp = await mc.call_with_recovery(request, state, remaining_s=remaining)
+    return await _recover_truncation(a, resp, request, state, remaining)
+
+
+def _remaining_seconds():
+    from arslan.execution_budget import current
+    budget = current()
+    return budget.remaining_seconds if budget is not None else None
+
+
+def _output_clamped() -> bool:
+    from arslan.execution_budget import current
+    budget = current()
+    return bool(budget is not None and budget.last_output_clamped)
+
+
+def _replaced(resp, **fields):
+    if hasattr(resp, "model_copy"):
+        return resp.model_copy(update=fields)
+    import copy
+    clone = copy.copy(resp)
+    for key, value in fields.items():
+        setattr(clone, key, value)
+    return clone
+
+
+async def _recover_truncation(a, resp, request, state, remaining):
+    """finish_reason == "length": raise to the endpoint's ceiling once, then
+    continue a cut answer. A cut caused by the work budget is not raised (that
+    would spin: raise -> clamp -> cut). Per-turn caps live on `state`."""
+    from server.orchestrator import model_call as mc
+    if getattr(resp, "finish_reason", None) != "length" or _output_clamped():
+        return resp
+    provider = getattr(a, "_provider", None)
+    ceiling, current_max = getattr(provider, "output_ceiling", None), getattr(provider, "max_tokens", None)
+    raise_to = ceiling if isinstance(ceiling, int) and isinstance(current_max, int) and ceiling > current_max else None
+    if raise_to and state.output_raises < 2 and not state.exhausted:
+        state.output_raises += 1
+        state.note(f"raised output limit to {raise_to}")
+        resp = await mc.call_with_recovery(lambda: request(max_tokens=raise_to), state, remaining_s=remaining)
+        if getattr(resp, "finish_reason", None) != "length" or _output_clamped():
+            return resp
+    text = resp.content or ""
+    if getattr(resp, "tool_calls", None) or not text.strip():
+        return resp     # cut tool call (never executed) or reasoning-only cut: caller handles
+    last = resp
+    while state.continuations < 2 and not state.exhausted:
+        state.continuations += 1
+        state.note("continued a cut-off answer")
+        # Reasoning belongs to one reply's own text; joined text has none.
+        extra = [trajectory.assistant(text, continuation=getattr(last, "continuation", None)
+                                      if last is resp else None),
+                 {"role": "user", "content": CONTINUE_PROMPT}]
+        last = await mc.call_with_recovery(lambda: request(extra=extra, max_tokens=raise_to),
+                                           state, remaining_s=remaining)
+        text += last.content or ""
+        if getattr(last, "finish_reason", None) != "length" or getattr(last, "tool_calls", None) \
+                or _output_clamped():
+            break
+    # The joined text is no single reply's output: no continuation state.
+    return _replaced(resp, content=text, finish_reason=getattr(last, "finish_reason", None),
+                     tool_calls=[], continuation=None)
 
 
 def _rendered_size(messages: list[dict]) -> int:
@@ -1518,7 +1621,8 @@ async def run_native(
     # it per tool call and the cap would never bind.
     fetch_budget: dict[str, int] = {}
     call_ids: set[str] = set()
-    protocol_state: dict = {}
+    from server.orchestrator.model_call import TurnRecovery
+    turn_state = TurnRecovery()
     unseen_start = len(convo)
 
     # Deterministic pre-search uses the same admission and progress boundaries.
@@ -1549,15 +1653,21 @@ async def run_native(
             if runtime:
                 runtime.pause_reason = "task_budget_exhausted"
             budget.stop("model_requests")
-        forced = (policy.stopped or budget.tool_calls >= budget.limits.tool_calls or
+        # Three batches of tool calls cut off by the output limit (none of which
+        # ran): stop asking for tools and get an answer (0.1.49 S6 breaker).
+        truncation_stop = turn_state.truncated_calls >= 3
+        forced = (policy.stopped or truncation_stop or budget.tool_calls >= budget.limits.tool_calls or
                   (max_tool_calls is not None and step >= max_tool_calls))
         if forced:
-            stop_reason = "task_no_progress" if policy.stopped else "task_budget_exhausted"
+            stop_reason = "task_no_progress" if policy.stopped or truncation_stop else "task_budget_exhausted"
             if runtime:
                 runtime.pause_reason = stop_reason
         sys_now = system if not forced else (
             system + ("\n\nRepeated actions made no progress. Explain what was verified and what is blocked. Text only."
-                      if policy.stopped else "\n\nTool budget exhausted: report the verified results and remaining work. Text only."))
+                      if policy.stopped else
+                      "\n\nYour tool calls kept exceeding the output limit and none of them ran. Report briefly what "
+                      "was verified and what remains. Text only." if truncation_stop else
+                      "\n\nTool budget exhausted: report the verified results and remaining work. Text only."))
         # 0.1.43 completion first (background jobs only — only they carry a soft
         # limit): past the soft limit, stop gathering and FINISH. Research tools
         # are withdrawn; saving the deliverable stays possible. Not a failure:
@@ -1610,7 +1720,9 @@ async def run_native(
         resp = await _model_call(a, sys_now, convo, current_request,
                                  tools=(None if forced else [t for t in schemas if t["function"]["name"] in WRAP_UP_TOOLS]
                                         or None if wrap_up else schemas),
-                                 schemas=schemas, forced=forced, protocol=protocol_state)
+                                 schemas=schemas, forced=forced, state=turn_state)
+        # A context-overflow recovery compacted convo in place (S6).
+        history_compacted = history_compacted or turn_state.context_retry_used
         tool_calls = list(getattr(resp, "tool_calls", None) or [])
 
         if not forced and tool_calls:
@@ -1625,6 +1737,11 @@ async def run_native(
                               if provider_content else getattr(resp, "continuation", None)),
                 finish=getattr(resp, "finish_reason", None)))
             marks: list[tuple[int, str]] = []
+            # A reply cut by the output limit may carry incomplete arguments in
+            # ANY of its calls: execute none of them (0.1.49 S6).
+            cut_off = getattr(resp, "finish_reason", None) == "length"
+            if cut_off:
+                turn_state.truncated_calls += 1
             for call, neutral_call in zip(tool_calls, calls):
                 marks.append((len(convo), neutral_call["id"]))
                 fn = call.get("function") or {}
@@ -1632,6 +1749,11 @@ async def run_native(
                 args = fn.get("arguments")
                 if not isinstance(args, dict):
                     args = {}
+                if cut_off:
+                    result = _record_tool_result(name, {}, {"ok": False, "external": False, "code": "output_truncated",
+                        "error": TRUNCATED_CALL_ERROR}, emit, tool_trace, json.dumps({"tool": name, "args": {}}), convo)
+                    policy.observe(name, {}, result)
+                    continue
                 if name == "escalate" and allow_escalation:
                     return {"final": None, "tool_trace": tool_trace,
                             "escalation": {"kind": str(args.get("kind") or "data"),

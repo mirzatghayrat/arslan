@@ -90,10 +90,13 @@ class LLMAdapter:
         history: list[dict[str, Any]] | None = None,
         tools: list[dict[str, Any]] | None = None,
         temperature: float = 0.7,
+        max_tokens: int | None = None,
     ) -> LLMResponse:
-        """Build messages and delegate to the underlying provider."""
+        """Build messages and delegate to the underlying provider. `max_tokens`
+        (OpenAI-compatible only) raises this one request after a length cut."""
         messages = self._provider.build_messages(system, user, history)
-        resp = await self._provider.chat(messages, tools=tools, temperature=temperature)
+        extra = {"max_tokens": max_tokens} if max_tokens else {}
+        resp = await self._provider.chat(messages, tools=tools, temperature=temperature, **extra)
         return await self._account(resp, system, user)
 
     def native_trajectory(self) -> bool:
@@ -111,12 +114,14 @@ class LLMAdapter:
         tools: list[dict[str, Any]] | None = None,
         tool_choice: str | None = None,
         temperature: float = 0.7,
+        max_tokens: int | None = None,
     ) -> LLMResponse:
         """Send the neutral in-turn trajectory (arslan/llm/trajectory.py) in the
         provider's native tool protocol. Only for native_trajectory() adapters."""
         wire = self._provider.build_trajectory_messages(system, messages)
+        extra = {"max_tokens": max_tokens} if max_tokens else {}
         resp = await self._provider.chat(wire, tools=tools, temperature=temperature,
-                                         tool_choice=tool_choice)
+                                         tool_choice=tool_choice, **extra)
         last = messages[-1].get("content") if messages else ""
         return await self._account(resp, system, last if isinstance(last, (str, list)) else "")
 
