@@ -14,7 +14,7 @@ Messages:
       call = {"id", "name", "arguments": dict|None, "arguments_raw": str,
               "provider_id"?: str}
   {"role": "tool", "tool_call_id", "name", "content", "_synthetic"?: bool,
-   "_legacy_call"?: str, "_legacy_suffix"?: str}
+   "_legacy_call"?: str, "_legacy_raw"?: bool, "_legacy_suffix"?: str}
 
 Keys starting with "_" are local bookkeeping and never reach a wire payload.
 Pure functions only: no I/O, no provider imports.
@@ -125,7 +125,33 @@ def groups(messages: list[dict]) -> list[list[dict]]:
     return out
 
 
+OMITTED_RESULT = ("[Result omitted before delivery: this tool-result batch exceeded the context window. "
+                  "Nothing here was seen. Re-request it in smaller parts if it is still needed.]")
+
+
+def shrink_group(group: list[dict], max_chars: int, size_of) -> list[dict]:
+    """Fit an oversized call group without breaking pairing: replace the oldest
+    results' content with an explicit omission notice (never drop a record —
+    an unanswered call is a protocol error, and silence would read as "seen")."""
+    if not is_call_group_start(group[0]) or size_of(group) <= max_chars:
+        return group
+    out = list(group)
+    for index in range(1, len(out)):
+        out[index] = {key: value for key, value in out[index].items()
+                      if key not in ("_legacy_raw", "_legacy_suffix")}
+        out[index]["content"] = OMITTED_RESULT
+        if size_of(out) <= max_chars:
+            break
+    return out
+
+
 def _legacy_result(message: dict) -> str:
+    # _legacy_raw: the record's content already replaced the whole old user turn
+    # (research_review receipts). _legacy_suffix: text the old format appended
+    # after the trailer (research_review draft); native rendering drops it
+    # because the draft already travels in the call's own arguments.
+    if message.get("_legacy_raw"):
+        return message["content"] + message.get("_legacy_suffix", "")
     return (f"TOOL RESULT for {message['name']}:\n{message['content']}{LEGACY_TRAILER}"
             + message.get("_legacy_suffix", ""))
 
@@ -137,7 +163,10 @@ def to_legacy(messages: list[dict]) -> list[dict]:
     turn plus a user "TOOL RESULT for X" turn; host-run (synthetic) calls keep
     their original JSON invocation text; a Gemini call message with its
     continuation becomes the provider_content + function_response pair. Model
-    narration beside tool calls was never part of the prompt and is not now."""
+    narration beside tool calls was never part of the prompt and is not now.
+    (The old loop replaced the call JSON with "invocation completed" because
+    repeating it as prose invited imitation and duplicated large write payloads;
+    the native protocol carries arguments in tool_calls instead.)"""
     out: list[dict] = []
     for group in groups(messages):
         head = group[0]

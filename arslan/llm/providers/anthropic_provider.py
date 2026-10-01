@@ -13,7 +13,8 @@ some time (only ``run_native`` is reachable). The disclosure outlived its reason
 which is worse than no disclosure: it reads as a considered trade-off rather than
 a gap, so nobody rechecks it.
 
-Tool RESULTS still go back as neutral text (``tool_loop._record_tool_result``),
+Tool RESULTS still go back as neutral text (``trajectory.to_legacy`` renders the
+in-turn trajectory for this provider),
 so no ``tool_use`` block ever re-enters the wire history and Anthropic's
 tool_use/tool_result pairing constraint never activates. That is what keeps this
 cheap — do not start echoing native blocks back without pricing the round-trip.

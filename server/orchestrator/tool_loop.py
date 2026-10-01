@@ -11,6 +11,7 @@ from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
 from arslan.execution_budget import BudgetExceeded, governed
+from arslan.llm import trajectory
 from arslan.runtime_policy import FailureKind, ProgressPolicy, bounded_history, exception_kind
 
 from server.orchestrator import run_trace
@@ -311,7 +312,6 @@ def _record_tool_result(tool_key, args, result, emit, tool_trace, assistant_cont
     tool_trace.append({"tool": tool_key, "args": args, "result": result})
     run_trace.record(tool=tool_key, args=args, result=result,
                       ok=bool(result.get("ok")), error=result.get("error"), ms=None)
-    convo.append({"role": "assistant", "content": assistant_content})
     framed = raw_payload if result.get("external") is False else wrap_external(raw_payload)
     # PB-3 degrade hint. Placement is deliberate: `framed` ends with DELIM_CLOSE, so the
     # hint sits AFTER the wrap_external data frame — it is OUR trusted framing (like the
@@ -325,10 +325,44 @@ def _record_tool_result(tool_key, args, result, emit, tool_trace, assistant_cont
             n = mcp_fail_counts[tool_key] = mcp_fail_counts.get(tool_key, 0) + 1
             if n >= _MCP_FAIL_HINT_AT:
                 hint = "\n" + _mcp_degrade_hint(n)
-    convo.append({"role": "user",
-                  "content": f"TOOL RESULT for {tool_key}:\n{framed}{hint}"
-                             "\nUse this to continue: call another tool, escalate, or give your final answer."})
+    # 0.1.49: one neutral tool record (arslan/llm/trajectory.py). It starts as a
+    # host-run result carrying its invocation text; run_native claims it for the
+    # model's tool call (_claim_results). Rendering per provider happens at
+    # request time; trajectory.to_legacy reproduces the old "TOOL RESULT for X"
+    # user turn byte for byte.
+    convo.append(trajectory.tool_result(None, tool_key, f"{framed}{hint}",
+                                        synthetic=True, legacy_call=assistant_content))
     return result
+
+
+def _claim_results(convo: list[dict], marks: list[tuple[int, str]]) -> None:
+    """Bind each call's result record to the model's tool call id.
+
+    marks: (len(convo) before the call was handled, call id), in order. Every
+    handled call appends exactly one record, and nothing moves inside a batch,
+    so a call owns the record at its mark when exactly one message follows it."""
+    for index, (mark, call_id) in enumerate(marks):
+        end = marks[index + 1][0] if index + 1 < len(marks) else len(convo)
+        if end != mark + 1:
+            continue
+        record = convo[mark]
+        if record.get("role") == "tool" and record.get("_synthetic"):
+            record.pop("_synthetic", None)
+            record.pop("_legacy_call", None)
+            record["tool_call_id"] = call_id
+
+
+def _render_request(convo: list[dict], current_request: dict) -> list[dict]:
+    """The model input for this step. Rolling eviction must not erase this
+    turn's task: restore the exact request at user priority (not a summary,
+    not a system instruction) in this payload only."""
+    messages = convo if any(item is current_request for item in convo) else [current_request, *convo]
+    return trajectory.to_legacy(messages)
+
+
+def _rendered_size(messages: list[dict]) -> int:
+    """Context size of what is actually sent, not of local bookkeeping."""
+    return len(json.dumps(trajectory.to_legacy(messages), ensure_ascii=False, default=str))
 
 
 async def _log_degrade_hint(conversation_id, tool_key, count) -> None:
@@ -524,8 +558,8 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                          log_events: bool = True,
                          fetch_budget: dict | None = None,
                          caller: ToolCaller | None = None) -> dict:
-    """Execute one tool (gated), emit its frames, record the trace, and append the
-    assistant turn + framed tool result into convo. Returns the raw result dict.
+    """Execute one tool (gated), emit its frames, record the trace, and append one
+    framed tool-result record into convo. Returns the raw result dict.
 
     run_command is special: it requires per-command user confirmation via the injected
     confirm_command(command, argv) -> bool callback. No callback → refuse (safety default)."""
@@ -1425,9 +1459,10 @@ async def run_native(
     # content is untrusted DATA, not instructions) — same guard the old loop carried.
     system = system + _NATIVE_EFFICIENCY + "\n\n" + GUARD_NOTE
 
-    # History and tool result turns are appended via
-    # _record_tool_result (assistant turn + framed "TOOL RESULT for X" user turn), so tool
-    # outputs re-enter context IDENTICALLY to the old loop.
+    # convo is the neutral in-turn trajectory (arslan/llm/trajectory.py): one
+    # assistant message per model reply that called tools, one tool record per
+    # handled call. It is rendered per request (_render_request); compaction
+    # evicts whole call groups.
     current_request = {"role": "user", "content": user_content}
     convo: list[dict] = list(history) + [current_request]
     tool_trace: list[dict] = []
@@ -1447,6 +1482,7 @@ async def run_native(
     # creating it any deeper (inside the step loop, or inside _dispatch_tool) would reset
     # it per tool call and the cap would never bind.
     fetch_budget: dict[str, int] = {}
+    call_ids: set[str] = set()
     unseen_start = len(convo)
 
     # Deterministic pre-search uses the same admission and progress boundaries.
@@ -1501,8 +1537,7 @@ async def run_native(
         # Other turns retain the 64k target. Apply extra protection only
         # to batches <=96k, never permanently pin sources or widen task budgets.
         # Existing opaque-provider pair retention is otherwise unchanged.
-        oversized_feedback = pending_feedback and len(json.dumps(
-            convo[-pending_feedback:], ensure_ascii=False, default=str)) > 96_000
+        oversized_feedback = pending_feedback and _rendered_size(convo[-pending_feedback:]) > 96_000
         has_web_evidence = any(item.get("tool") == "web_extract" and
                                (item.get("result") or {}).get("ok") for item in tool_trace)
         if has_web_evidence:
@@ -1517,7 +1552,8 @@ async def run_native(
                 "A shared commit URL does not date a translation's baseline or prove why texts differ. "
                 "Stay within the existing budget; extra detail is not a substitute for an accurate deliverable.")
         convo, compacted = bounded_history(convo, max_chars=96_000 if has_web_evidence else 64_000,
-                                           preserve_tail=0 if oversized_feedback else pending_feedback)
+                                           preserve_tail=0 if oversized_feedback else pending_feedback,
+                                           size_of=_rendered_size)
         pending_feedback = 0
         if oversized_feedback:
             sys_now += ("\nThe newest tool-result batch exceeded the bounded delivery window. Some newly fetched "
@@ -1535,11 +1571,9 @@ async def run_native(
         # Rolling evidence eviction must not erase this turn's task or its
         # restrictions. Restore the exact request at user priority, not as a
         # system instruction or an invented summary, only in this payload.
-        request_history = convo[:-1]
-        if not any(item is current_request for item in convo):
-            request_history = [current_request] + request_history
-        resp = await _chat_retry(a, sys_now, convo[-1]["content"],
-                                 history=request_history,
+        rendered = _render_request(convo, current_request)
+        resp = await _chat_retry(a, sys_now, rendered[-1]["content"],
+                                 history=rendered[:-1],
                                  tools=(None if forced else [t for t in schemas if t["function"]["name"] in WRAP_UP_TOOLS]
                                         or None if wrap_up else schemas))
         tool_calls = list(getattr(resp, "tool_calls", None) or [])
@@ -1547,7 +1581,17 @@ async def run_native(
         if not forced and tool_calls:
             provider_content = getattr(resp, "provider_content", None)
             history_start = len(convo)
-            for call in tool_calls:
+            calls = trajectory.unique_ids(
+                [trajectory.call_from_response(call, f"call_{step}_{index}")
+                 for index, call in enumerate(tool_calls)], call_ids, step)
+            convo.append(trajectory.assistant(
+                resp.content, calls,
+                continuation=({"protocol": "gemini", "provider_content": provider_content}
+                              if provider_content else getattr(resp, "continuation", None)),
+                finish=getattr(resp, "finish_reason", None)))
+            marks: list[tuple[int, str]] = []
+            for call, neutral_call in zip(tool_calls, calls):
+                marks.append((len(convo), neutral_call["id"]))
                 fn = call.get("function") or {}
                 name = str(fn.get("name") or "")
                 args = fn.get("arguments")
@@ -1614,34 +1658,10 @@ async def run_native(
                     runtime.progress = runtime.progress.model_copy(update={
                         "loop_fingerprints": tuple(sorted(policy.seen))[-256:]})
                     await runtime.checkpoint("loop_progress")
-            if provider_content:
-                # Native Gemini needs the original model parts (including opaque
-                # signatures) followed by functionResponse parts, not a textified
-                # call transcript. Keep the same already-framed tool feedback.
-                added = convo[history_start:]
-                responses = []
-                for index in range(0, len(added), 2):
-                    invocation = json.loads(added[index]["content"])
-                    response = {"type": "function_response", "name": invocation["tool"],
-                                "response": {"result": added[index + 1]["content"]}}
-                    call_index = index // 2
-                    if call_index < len(tool_calls) and tool_calls[call_index].get("provider_id"):
-                        response["id"] = tool_calls[call_index]["provider_id"]
-                    responses.append(response)
-                del convo[history_start:]
-                convo.append({"role": "assistant", "content": [
-                    {"type": "provider_content", **provider_content}]})
-                convo.append({"role": "user", "content": responses})
-            else:
-                # Calls already executed through the native channel. Repeating
-                # their JSON as assistant prose invites imitation and duplicates
-                # large write payloads, evicting the source evidence. Keep the
-                # real arguments in tool_trace/action journals, not a second
-                # prompt-level execution protocol. Opaque provider pairs above
-                # remain untouched.
-                for index in range(history_start, len(convo), 2):
-                    invocation = json.loads(convo[index]["content"])
-                    convo[index]["content"] = "Native tool invocation completed: " + invocation["tool"]
+            # Each handled call appended one record; bind them to the call ids. The
+            # Gemini provider pair and the old "invocation completed" text are now
+            # renderings of this trajectory (trajectory.to_legacy), not rewrites.
+            _claim_results(convo, marks)
             # resp.content is narration — surface it as an ephemeral note ONLY, never final.
             if (resp.content or "").strip():
                 emit({"type": "note", "text": (resp.content or "").strip()[:400]})
@@ -1664,8 +1684,9 @@ async def run_native(
             # Never execute rescued JSON, nor echo a malformed invocation back
             # as an example to imitate. Permit a new structured call only through
             # the normal tool resolver, permission gate and existing budgets.
-            convo.extend([{"role": "assistant", "content":
-                "Non-executable tool-call text omitted." if protocol_text else final_text}, {"role": "user", "content":
+            convo.extend([trajectory.assistant(
+                "Non-executable tool-call text omitted." if protocol_text else final_text,
+                continuation=getattr(resp, "continuation", None)), {"role": "user", "content":
                 ("The proposed answer was tool-call text, not a native tool request; it executed no action. " if protocol_text else
                  f"The proposed answer lacks a successful {claimed} receipt. " if claimed else
                  "The proposed answer only promises future action. ") +
@@ -1705,7 +1726,12 @@ async def run_native(
                     acceptance_runtime.progress = acceptance_runtime.progress.model_copy(update={
                         "validation_repairs": (*prior_repairs, repair_fingerprint)})
                     await acceptance_runtime.checkpoint("validation_repair")
-                    convo.extend([{"role": "assistant", "content": final_text}, {"role": "user", "content":
+                    # The reply's continuation belongs to its own text only; a
+                    # synthesized/salvaged answer came from another request.
+                    own = final_text == (resp.content or "").strip()
+                    convo.extend([trajectory.assistant(
+                        final_text, continuation=getattr(resp, "continuation", None) if own else None),
+                                  {"role": "user", "content":
                         "Deterministic validation failed: " + "; ".join(validation_failures)[:3000] +
                         ". Repair only within the existing task scope, permissions and remaining budget. "
                         "Do not repeat successful or uncertain external writes. If repair is unavailable, "

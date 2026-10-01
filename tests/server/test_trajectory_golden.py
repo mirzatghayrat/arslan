@@ -45,7 +45,9 @@ def _tc(name, args, cid="c1", provider_id=None):
 
 async def _resolve():
     return [{"key": "web_search", "description": "search the web"},
-            {"key": "read_file", "description": "read a file"}]
+            {"key": "read_file", "description": "read a file"},
+            {"key": "web_extract", "description": "read a page"},
+            {"key": "write_file", "description": "write a file"}]
 
 
 class _Search:
@@ -61,6 +63,20 @@ class _Search:
 class _SameSearch:
     async def execute(self, args):
         return {"ok": True, "summary": "1 result", "results": [{"title": "same"}]}
+
+
+class _Extract:
+    async def execute(self, args):
+        from arslan.companion.research import receipt
+        text = f"Body of {args['url']} with figures 12 and 34."
+        source = receipt(args["url"], text, truncated=False).model_dump(mode="json")
+        source["retrieved_at"] = "2026-10-01T00:00:00+00:00"
+        return {"ok": True, "url": args["url"], "text": text, "source": source}
+
+
+class _Write:
+    async def execute(self, args):
+        return {"ok": True, "path": args["path"], "bytes": len(args["content"])}
 
 
 SCENARIOS = {
@@ -86,6 +102,12 @@ SCENARIOS = {
         _Resp(None, [_tc("web_search", {"query": "follow up"})]),
         _Resp("answer")], history=[{"role": "user", "content": "earlier question"},
                                    {"role": "assistant", "content": "earlier answer"}]),
+    "research_compaction_after_save": dict(replies=[
+        _Resp(None, [_tc("web_extract", {"url": "https://example.test/a"}, "c1"),
+                     _tc("web_extract", {"url": "https://example.test/b"}, "c2")]),
+        _Resp(None, [_tc("write_file", {"path": "report.md", "content": "# Report\nA=12, B=34"}, "c3")]),
+        _Resp("Saved report.md.")],
+        executors={"web_extract": _Extract, "write_file": _Write}, own_folder=True),
     "gemini_provider_pairs": dict(replies=[
         _Resp("narration", [_tc("web_search", {"query": "g"}, "gemini_0", provider_id="fc-1")],
               provider_content={"provider": "gemini", "parts": [
@@ -101,6 +123,12 @@ async def _run(name, monkeypatch):
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
     from server.registry import executors
     monkeypatch.setitem(executors.EXECUTORS, "web_search", spec.get("search", _Search)())
+    for key, executor in spec.get("executors", {}).items():
+        monkeypatch.setitem(executors.EXECUTORS, key, executor())
+    if spec.get("own_folder"):
+        async def own():
+            return True
+        monkeypatch.setattr(tool_loop, "_writing_in_own_folder", own)
     result = await tool_loop.run_native(
         system="SYS", user_content=f"task for {name}", history=spec.get("history", []),
         emit=lambda e: None, on_chunk=lambda c: None, resolve_tools=_resolve,
