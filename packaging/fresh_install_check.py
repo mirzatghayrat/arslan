@@ -83,16 +83,6 @@ def _latest_schema_version() -> str:
     return head()
 
 
-def _factory_spawn_names() -> set[str]:
-    """Likewise: the expected spawns come from DEFAULT_SPAWNS, not a count.
-
-    A literal 6 would go stale the moment a seventh ships, and would then be
-    wrong in the direction that reads as "the seeder is broken".
-    """
-    sys.path.insert(0, str(REPO))
-    from server.services.default_spawns import DEFAULT_SPAWNS
-
-    return {s["name"] for s in DEFAULT_SPAWNS}
 
 
 class Checks:
@@ -350,33 +340,18 @@ def check_runtime(port: int, home: pathlib.Path, log: pathlib.Path, c: Checks) -
         # cannot hide shipped user data.
         _check_empty_user_storage(conn, c)
 
-        # ---- chat_messages is NOT expected to be empty ----------------
-        # Each spawn's private chat opens with one greeting from that spawn,
-        # written when the spawn is created. This check originally asserted
-        # zero rows here and failed on a correct build — the spec had it
-        # wrong, and measuring the real thing is what corrected it.
-        #
-        # Asserting the SHAPE rather than skipping the table: exactly one
-        # assistant message per spawn, no user messages. That still catches a
-        # bundle shipping somebody's conversation, and would also catch a
-        # seeder that greeted twice or greeted from the wrong role.
+        # ---- chat_messages: empty ----------------------------------------
+        # Until 0.1.48 every install seeded six example experts, each with a
+        # one-line greeting here. One Arslan seeds none, so this table holds
+        # nothing — which also still catches a bundle shipping someone's chats.
         if c.ok("chat_messages" in tables, "chat_messages table exists"):
-            rows = conn.execute(
-                "SELECT role, count(*), count(DISTINCT spawn_id) FROM chat_messages GROUP BY role"
-            ).fetchall()
-            n_spawns = len(_factory_spawn_names())
-            c.ok(
-                rows == [("assistant", n_spawns, n_spawns)],
-                "chat holds exactly one greeting per spawn and nothing else",
-                f"got {rows}, expected [('assistant', {n_spawns}, {n_spawns})]",
-            )
+            rows = conn.execute("SELECT role, count(*) FROM chat_messages GROUP BY role").fetchall()
+            c.ok(rows == [], "chat holds no messages (no experts are seeded)", f"got {rows}")
 
-        # ---- and what it SHOULD have ----------------------------------
+        # ---- no example experts (0.1.48) --------------------------------
         if c.ok("spawns" in tables, "spawns table exists"):
-            got = {r[0] for r in conn.execute("SELECT name FROM spawns")}
-            want_spawns = _factory_spawn_names()
-            c.ok(got == want_spawns, "exactly the factory spawns were seeded",
-                 f"missing={sorted(want_spawns - got)} extra={sorted(got - want_spawns)}")
+            got = sorted(r[0] for r in conn.execute("SELECT name FROM spawns"))
+            c.ok(got == [], "no example experts were seeded", f"found {got}")
     finally:
         conn.close()
 
