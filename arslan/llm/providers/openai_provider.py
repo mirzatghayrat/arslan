@@ -28,6 +28,12 @@ class OpenAIProvider(BaseLLMProvider):
     #: answers, far below any modern model's ceiling.
     DEFAULT_MAX_TOKENS = 8192
 
+    #: Assistant-message fields some compatible endpoints require back verbatim
+    #: (DeepSeek/Kimi/GLM: reasoning_content; OpenRouter: reasoning,
+    #: reasoning_details). Allow-list: only what the endpoint itself sent is ever
+    #: echoed, so a strict endpoint never receives a field it did not produce.
+    CONTINUATION_FIELDS = ("reasoning_content", "reasoning", "reasoning_details")
+
     def __init__(self, model: str, api_key: str = "", base_url: str = "",
                  max_tokens: int | None = None) -> None:
         effective_base_url = base_url or self.DEFAULT_BASE_URL
@@ -273,6 +279,10 @@ class OpenAIProvider(BaseLLMProvider):
         for tc in raw_tool_calls:
             function = tc.get("function", {})
             arguments = function.get("arguments", "{}")
+            # The server's exact text: echoed back unchanged in native history,
+            # and the only evidence of what a truncated call actually contained.
+            arguments_raw = (arguments if isinstance(arguments, str)
+                             else json.dumps(arguments, ensure_ascii=False))
             # arguments may be a JSON string — try to parse it
             if isinstance(arguments, str):
                 try:
@@ -287,14 +297,21 @@ class OpenAIProvider(BaseLLMProvider):
                         "name": function.get("name", ""),
                         "arguments": arguments,
                     },
+                    "arguments_raw": arguments_raw,
                 }
             )
 
         usage: dict[str, Any] = data.get("usage", {})
+        fields = {k: message[k] for k in self.CONTINUATION_FIELDS
+                  if message.get(k) is not None}
+        finish = choice.get("finish_reason")
 
         return LLMResponse(
             role=message.get("role", "assistant"),
             content=content,
             tool_calls=tool_calls,
             usage=usage,
+            finish_reason=str(finish).lower() if finish else None,
+            continuation=({"protocol": "openai", "endpoint": self.endpoint_fingerprint(),
+                           "fields": fields} if fields else None),
         )

@@ -233,14 +233,29 @@ class GeminiProvider(BaseLLMProvider):
             calls.append({"id": function.get("id") or f"gemini_{index}", "type": "function",
                           "provider_id": function.get("id"),
                           "function": {"name": function.get("name", ""),
-                                       "arguments": function.get("args") or {}}})
+                                       "arguments": function.get("args") or {}},
+                          "arguments_raw": json.dumps(function.get("args") or {}, ensure_ascii=False)})
+        finish = (candidates[0].get("finishReason") if candidates else None)
+        if finish == "MAX_TOKENS":
+            finish_reason = "length"
+        elif finish in _GEMINI_FILTERED:
+            finish_reason = "content_filter"
+        elif finish == "STOP" or (finish is None and calls):
+            # Gemini reports STOP for a turn that ends in function calls.
+            finish_reason = "tool_calls" if calls else "stop"
+        else:
+            finish_reason = str(finish).lower() if finish else None
         return LLMResponse(
             role="assistant",
             content=text or None,
             tool_calls=calls,
             provider_content={"provider": "gemini", "parts": parts} if calls else None,
             usage=data.get("usageMetadata", {}) or {},
+            finish_reason=finish_reason,
         )
+
+
+_GEMINI_FILTERED = {"SAFETY", "RECITATION", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII"}
 
 
 def _first_text(obj: dict[str, Any]) -> str:

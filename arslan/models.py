@@ -90,6 +90,16 @@ class LLMResponse(BaseModel):
     # display them or flatten them into prompt text; return verbatim to that provider.
     provider_content: dict[str, Any] | None = None
     usage: dict[str, Any]
+    # Why generation stopped, normalised across providers: "stop", "length",
+    # "tool_calls", "content_filter" (other provider values pass through
+    # lower-cased). "length" means the output cap cut the response: any tool
+    # call in it may carry incomplete arguments and must not be executed.
+    finish_reason: str | None = None
+    # Opaque continuation state an OpenAI-compatible endpoint requires back
+    # verbatim on later requests (DeepSeek: reasoning_content, mandatory when
+    # tools are present). {"protocol", "endpoint", "fields"}; only ever sent
+    # back to the endpoint+model whose fingerprint it carries.
+    continuation: dict[str, Any] | None = None
 
 
 class EvolutionRule(BaseModel):

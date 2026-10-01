@@ -33,10 +33,28 @@ DeepSeek 协议事实（官方文档）：
 - 思考默认开、默认强度 high；`{"thinking":{"type":"disabled"}}` 关，`reasoning_effort` 取 low/high/max。
 - v4-flash / v4-pro：上下文 1M，**最大输出 384K**；支持 tool calls、chat prefix completion。
 
-**未亲证、需付费探针确认（第 7 节 S10）**：跨用户轮的旧 assistant 消息（我们持久化的是纯文本、没有思考）带 tools 时会不会 400。
-- 文档字面说「所有后续请求」都要。
-- 但 0.1.48 起多轮聊天一直带 tools、带纯文本旧轮，没有出过 400。
-- 推测校验只针对带 `tool_calls` 的 assistant 消息或最后一条 user 之后的消息。设计按「本轮内全部回传、旧轮保持纯文本」走，另配自动降级兜底（4.4）。
+**S10 契约探针实测（2026-10-01，deepseek-v4-flash，经计量代理，合计 $0.0020 峰值价）**
+
+脚本 `scripts/kernel_bench/contract_probe.py`，原始结果在本机 bench 目录。
+
+| 情形 | 结果 |
+| --- | --- |
+| 本轮两步工具循环，回传 `reasoning_content` | 200 |
+| 本轮 tool_calls 消息**去掉**思考（首步有 242 字符思考），带 tools | **200**（文档说会 400，实测不拦） |
+| 同上，思考置为空串 | 200 |
+| 同上，不带 tools | 200 |
+| 旧用户轮：纯文本 assistant、无思考，带 tools | 200 |
+| 旧用户轮：assistant tool_calls + tool 结果、无思考，带 tools | 200 |
+| 强制步：同一份 tools + `tool_choice:"none"` | 200，无 tool_calls，正常作答 |
+| 思考开、`max_tokens=64`、长文 | `finish_reason:"length"`，思考 184 字符 + 正文 71 字符（**上限同时覆盖思考与正文**） |
+| 思考关、`max_tokens=64`、长文 | `length`，正文 311 字符被截 |
+| 思考关、`max_tokens=64`、`write_file` 长内容 | `length`，tool_call 存在，`arguments` 是**半截 JSON**（149 字符，未闭合），id/name 完整 |
+| 简单任务首步 | 思考 0 字符（flash 会对简单步骤跳过思考） |
+
+结论：
+1. **今天的 400 风险不存在**：DeepSeek 目前不强制回传思考。原生协议在兼容性上可以放心上。降级口（4.4）保留为防将来收紧的保险，但不再是主路径。
+2. **D1 的收益必须靠测量证明**。上位计划写「Arslan 只是因为历史不原生才没撞 400」，这是错的：根本不会 400。回传思考与原生配对是否让模型少走弯路，是质量问题而不是兼容问题，以第 8 节配对对照为准。
+3. 截断形状与 5.2 的假设一致：半截参数以「解析失败的字符串 + finish_reason=length」出现。今天的代码会把它换成 `{}` 执行（F5）。思考也计入上限，所以 5.1 的放宽是必要的。
 
 ## 2. 目标与不做的事
 
@@ -191,7 +209,7 @@ wrap_up 仍按今天传子集（是否改「遮蔽不删除」归 P2，需要测
 | S7 | OpenAI SSE 收齐（tool_call 增量合并、思考增量、保活忽略）+ 90 秒空闲看门狗 | medium |
 | S8 | 工具错误变成模型输入：参数非合法 JSON 时只做 `json.loads(raw, strict=False)` 这一种安全修复（允许字符串里的裸换行），否则不执行并回报解析位置；按 schema 校验必填字段与顶层类型（错误里写期望类型）；未知工具回报最接近的 5 个可用名；`ProgressPolicy` 判为重复时，在 tool 消息的受信框架里写「此结果与之前第 N 次相同，再重复 M 次将停止」 | medium |
 | S9 | 长输出落盘：`_record_tool_result` 超过 8000 字符时，完整结果写 `~/Arslan/.arslan/outputs/<turn>/<call_id>.txt`（0600 权限，7 天清理；该目录加入 `read_file` 的只读根，用户另选工作文件夹时也能读），上下文放头 6000 + 尾 1500 + 路径；`terminal_exec.clip` 同样落盘；`read_file` 增加 `offset`/`limit`（按行） | medium |
-| S10 | **付费契约探针（需你批准，预计 < $0.01）**：deepseek-v4-flash 发 5 个极小请求：<br>(a) 两步工具循环带思考回传；<br>(b) 旧轮纯文本 assistant + tools，看是否 400（第 1 节未亲证项）；<br>(c) 去掉本轮思考，确认 400 的错误体（给 4.4 的判据取真样本）；<br>(d) 强制步 `tool_choice:"none"`；<br>(e) `max_tokens=64` 分别截在思考/正文/工具参数，取真实 `finish_reason` 与响应形状。<br>结果写进本文档 | medium |
+| S10 | ✅ **已做（用户批准，实付 $0.0020 峰值价）**，结果见第 1 节。原计划：deepseek-v4-flash 发 5 个极小请求：<br>(a) 两步工具循环带思考回传；<br>(b) 旧轮纯文本 assistant + tools，看是否 400（第 1 节未亲证项）；<br>(c) 去掉本轮思考，确认 400 的错误体（给 4.4 的判据取真样本）；<br>(d) 强制步 `tool_choice:"none"`；<br>(e) `max_tokens=64` 分别截在思考/正文/工具参数，取真实 `finish_reason` 与响应形状。<br>结果写进本文档 | medium |
 
 S3 和 S6 标 extra 的原因：
 - S3 改 1700 行的核心循环。不变量（配对、续接、压缩分组、所有提前结束分支）分散在十几个分支里，漏一个就是线上 400 或重复副作用。
@@ -268,7 +286,6 @@ S3 和 S6 标 extra 的原因：
 
 ## 10. 尚无证据、未声称已验
 
-- 第 1 节「跨轮旧消息不带思考是否 400」：只有间接证据（0.1.48 多轮聊天未见 400），未直接测。
+- 探针只覆盖 deepseek-v4-flash；v4-pro 未测。DeepSeek 将来是否开始强制回传思考未知（降级口兜底）。
 - 「原生协议会显著降低输出 token 与用时」：书中实验与 DeepSeek 文档支持这个方向，**Arslan 上尚无测量**，以第 8 节付费对照为准。
-- DeepSeek 截断时 `finish_reason` 与半截 tool_call 的真实形状：未见真样本，S10 (e) 取样。
 - 0.1 的缓存命中权重：按 DeepSeek 价格推算，其他厂商未核价。

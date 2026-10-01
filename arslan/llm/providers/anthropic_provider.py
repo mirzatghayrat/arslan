@@ -330,12 +330,19 @@ class AnthropicProvider(BaseLLMProvider):
         # arguments is a dict on both paths.
         tool_calls = [
             {"id": b.get("id", ""), "type": "function",
-             "function": {"name": b.get("name", ""), "arguments": b.get("input") or {}}}
+             "function": {"name": b.get("name", ""), "arguments": b.get("input") or {}},
+             "arguments_raw": json.dumps(b.get("input") or {}, ensure_ascii=False)}
             for b in blocks if b.get("type") == "tool_use"
         ]
+        stop = data.get("stop_reason")
         return LLMResponse(
             role=data.get("role", "assistant"),
             content=text or None,
             tool_calls=tool_calls,
             usage=data.get("usage", {}) or {},
+            finish_reason=_ANTHROPIC_FINISH.get(stop, str(stop).lower()) if stop else None,
         )
+
+
+_ANTHROPIC_FINISH = {"end_turn": "stop", "stop_sequence": "stop", "max_tokens": "length",
+                     "tool_use": "tool_calls", "refusal": "content_filter"}
