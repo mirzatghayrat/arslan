@@ -51,7 +51,7 @@ def tool_failure(result: dict) -> FailureKind | None:
         return FailureKind.UNCERTAIN
     if code in {"credentials_not_tool_data", "permission_denied", "grant_revoked", "tool_unavailable"}:
         return FailureKind.DENIED
-    if code in {"invalid_arguments", "missing_input", "connection_required"}:
+    if code in {"invalid_arguments", "invalid_arguments_json", "missing_input", "connection_required"}:
         return FailureKind.INPUT_REQUIRED
     if code in {"timeout", "rate_limit", "temporarily_unavailable"}:
         return FailureKind.RETRYABLE

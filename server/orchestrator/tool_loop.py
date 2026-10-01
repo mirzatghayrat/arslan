@@ -363,6 +363,57 @@ def _render_request(convo: list[dict], current_request: dict) -> list[dict]:
     return trajectory.to_legacy(messages)
 
 
+def _parse_arguments(raw: str | None) -> tuple[dict | None, str | None]:
+    """(arguments, problem) for a call whose arguments did not parse upstream.
+
+    One repair only: strict=False, which accepts raw control characters (e.g.
+    newlines) inside strings, a common slip in long write payloads. Anything
+    else is reported back to the model, never guessed at (0.1.49 S8)."""
+    text = (raw or "").strip()
+    if not text:
+        return {}, None                      # a no-argument call
+    try:
+        value = json.loads(text, strict=False)
+    except json.JSONDecodeError as exc:
+        return None, f"{exc.msg} at character {exc.pos}"
+    if not isinstance(value, dict):
+        return None, f"expected a JSON object, got {type(value).__name__}"
+    return value, None
+
+
+_JSON_TYPES = {"string": (str,), "integer": (int,), "number": (int, float), "boolean": (bool,),
+               "array": (list,), "object": (dict,)}
+
+
+def _schema_problem(args: dict, schema: dict | None) -> str | None:
+    """Missing required fields and wrong top-level types, stated so the model
+    can fix the call; None when the schema says nothing checkable."""
+    if not isinstance(schema, dict):
+        return None
+    props = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
+    problems = []
+    for name in schema.get("required") or []:
+        if name not in args:
+            kind = (props.get(name) or {}).get("type")
+            problems.append(f"missing required '{name}'" + (f" ({kind})" if isinstance(kind, str) else ""))
+    for name, value in args.items():
+        kind = (props.get(name) or {}).get("type")
+        kinds = [kind] if isinstance(kind, str) else kind if isinstance(kind, list) else []
+        accepted = tuple(t for k in kinds for t in _JSON_TYPES.get(k, ()))
+        if not accepted or value is None and "null" in kinds:
+            continue
+        if isinstance(value, bool) and bool not in accepted or not isinstance(value, accepted):
+            problems.append(f"'{name}' must be {' or '.join(kinds)}")
+    return "; ".join(problems) or None
+
+
+def _progress_note(policy) -> str:
+    """Trusted host note appended to a result that made no progress, so the
+    model sees the loop detector before it stops the turn."""
+    return (f"\n[Host note: no new progress — {policy.stalled} of {policy.max_stalled} steps without "
+            "progress before this turn stops. Change approach, or answer with what you have.]")
+
+
 CONTINUE_PROMPT = ("Your previous reply was cut off by the output limit. Continue exactly where it "
                    "stopped, without repeating anything already written and without any preamble.")
 TRUNCATED_CALL_ERROR = (
@@ -968,8 +1019,12 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
     live = {t["key"] for t in await resolve_tools()}
     executor = (await resolve_executor(tool_key)) if tool_key in live else None
     if executor is None:
-        result = {"ok": False,
-                  "error": f"tool '{tool_key}' is not available to you; you may escalate a need instead"}
+        import difflib
+        near = difflib.get_close_matches(tool_key, sorted(live), n=5, cutoff=0.3) or sorted(live)[:5]
+        result = {"ok": False, "external": False, "code": "tool_unavailable",
+                  "error": f"tool '{tool_key}' is not available to you"
+                           + (f"; available tools include: {', '.join(near)}" if near else "")
+                           + "; you may escalate a need instead"}
     else:
         # Caller identity (brain-P2 Task 1): set ONLY around the executor call so a
         # memory-write executor can read who is calling (host vs. spawn) and fail-closed
@@ -1593,6 +1648,7 @@ async def run_native(
         return {"final": "".join(pieces), "escalation": None, "tool_trace": [],
                 "stop_reason": None, "history_compacted": compacted}
     schemas = _native_tool_schemas(wired, allow_escalation=allow_escalation)
+    params_by_key = {t["key"]: _tool_params(t) for t in wired}
     # _NATIVE_EFFICIENCY = research discipline; GUARD_NOTE = injection defense (wrapped tool/web
     # content is untrusted DATA, not instructions) — same guard the old loop carried.
     system = system + _NATIVE_EFFICIENCY + "\n\n" + GUARD_NOTE
@@ -1747,12 +1803,32 @@ async def run_native(
                 fn = call.get("function") or {}
                 name = str(fn.get("name") or "")
                 args = fn.get("arguments")
+                bad_json = None
+                if not isinstance(args, dict) and not cut_off:
+                    args, bad_json = _parse_arguments(neutral_call["arguments_raw"])
                 if not isinstance(args, dict):
                     args = {}
                 if cut_off:
                     result = _record_tool_result(name, {}, {"ok": False, "external": False, "code": "output_truncated",
                         "error": TRUNCATED_CALL_ERROR}, emit, tool_trace, json.dumps({"tool": name, "args": {}}), convo)
                     policy.observe(name, {}, result)
+                    continue
+                if bad_json is not None:
+                    result = _record_tool_result(name, {}, {"ok": False, "external": False,
+                        "code": "invalid_arguments_json",
+                        "error": f"The arguments for {name} were not valid JSON ({bad_json}); nothing was "
+                                 "executed. Send the call again with a JSON object."},
+                        emit, tool_trace, json.dumps({"tool": name, "args": {}}), convo)
+                    policy.observe(name, {}, result)
+                    continue
+                schema_problem = _schema_problem(args, params_by_key.get(name)) if name in params_by_key else None
+                if schema_problem:
+                    result = _record_tool_result(name, args, {"ok": False, "external": False,
+                        "code": "invalid_arguments",
+                        "error": f"Invalid arguments for {name}: {schema_problem}. Nothing was executed; "
+                                 "send the call again with corrected arguments."},
+                        emit, tool_trace, json.dumps({"tool": name, "args": args}, ensure_ascii=False), convo)
+                    policy.observe(name, args, result)
                     continue
                 if name == "escalate" and allow_escalation:
                     return {"final": None, "tool_trace": tool_trace,
@@ -1795,7 +1871,9 @@ async def run_native(
                     confirm_schedule=confirm_schedule, mcp_fail_counts=mcp_fail_counts,
                     mcp_hint_logged=mcp_hint_logged, conversation_id=conversation_id,
                     log_events=log_events, fetch_budget=fetch_budget, caller=caller)
-                policy.observe(name, args, result)
+                if not policy.observe(name, args, result) and policy.stalled >= 2 and convo \
+                        and convo[-1].get("role") == "tool":
+                    convo[-1]["content"] += _progress_note(policy)
                 if name in wired_keys and _saved_research_report(name, args, result):
                     if review_enabled is None:
                         review_enabled = await _research_review_enabled()

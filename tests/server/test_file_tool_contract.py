@@ -38,7 +38,9 @@ async def test_invalid_file_args_are_not_reported_as_user_decline(monkeypatch, k
 
     result = await tool_loop.run_native(system="S", user_content="synthetic", history=[],
         emit=lambda _: None, on_chunk=lambda _: None, resolve_tools=tools, confirm_workspace_write=confirm)
-    assert result["tool_trace"][0]["result"]["code"] == "invalid_file_arguments"
+    # 0.1.49 S8: the schema check may catch it first ("invalid_arguments", with
+    # the missing/typed field named); the file tool's own check catches the rest.
+    assert result["tool_trace"][0]["result"]["code"] in {"invalid_file_arguments", "invalid_arguments"}
     confirm.assert_not_called()
     executor.execute.assert_not_called()
 
