@@ -23,10 +23,11 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
-from scripts.kernel_bench import check_t3, check_t5
+from scripts.kernel_bench import check_t1, check_t2, check_t3, check_t4, check_t5, check_t6
 
 HERE = Path(__file__).resolve().parent
 ROOT = Path(os.environ.get("BENCH_ROOT", "/tmp/arslan-kernel-bench")).resolve()
@@ -36,7 +37,22 @@ ARSLAN_API = os.environ.get("ARSLAN_API", "http://127.0.0.1:8762/api/v1")
 HERMES = os.environ.get("HERMES_BIN", str(Path.home() / ".local/bin/hermes"))
 BASE_PATH = "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin"
 TIMEOUT = 15 * 60
-CHECKS = {"T3": lambda run, reply: check_t3.check(run), "T5": lambda run, reply: check_t5.check(run, reply)}
+CHECKS = {
+    "T1": lambda run, reply, ctx: check_t1.check(ctx["list"], reply),
+    "T2": lambda run, reply, ctx: check_t2.check(run, reply),
+    "T3": lambda run, reply, ctx: check_t3.check(run),
+    "T4": lambda run, reply, ctx: check_t4.check(reply, ctx["site"].log(), mode="change",
+                                                 initial=ctx["initial"], change=ctx.get("change")),
+    "T4x": lambda run, reply, ctx: check_t4.check(reply, ctx["site"].log(), mode="expired",
+                                                  initial=ctx["initial"]),
+    "T5": lambda run, reply, ctx: check_t5.check(run, reply),
+}
+# Recorded without running (no spend): capabilities an entrant does not have.
+# Arslan's browser is isolated by design (throwaway profile, public-internet
+# proxy, no loopback: server/services/managed_browser.py), so it cannot use a
+# page the user logged into; it has no phone/messaging channel.
+UNSUPPORTED = {"arslan": {"T4", "T4x", "T6"}}
+T4_CHANGE_AFTER_S = 60
 
 
 def sandbox_profile() -> str:
@@ -119,14 +135,55 @@ def usage(label: str) -> dict:
             "cache_hit_tokens": sum(r["hit"] for r in mine), "cache_miss_tokens": sum(r["miss"] for r in mine)}
 
 
-def run_one(task: str, who: str, n: int, prompts: dict, sb: str) -> dict:
+def _t4_setup(task: str, who: str, ctx: dict, manual_login: bool) -> None:
+    """Start the local site and have the human log in, in this entrant's own
+    browser. The password goes to this terminal only, never into the run folder."""
+    if not manual_login:
+        raise SystemExit("T4 needs a person to log in once per entrant: rerun with --manual-login")
+    site = check_t4_site().start()
+    ctx.update(site=site, initial=list(site.items))
+    print(f"\n[T4] Log in as {who} at {site.url}  user={site.username}  password={site.password}", flush=True)
+    input("[T4] Press Enter once you are logged in in that entrant's browser... ")
+    if not any(a["ok"] and a["phase"] == "human" for a in site.log()["login_attempts"]):
+        raise SystemExit("[T4] no successful human login recorded on the test site")
+    if task == "T4x":
+        site.expire_sessions()
+    site.set_phase("agent")
+    if task == "T4":
+        def change():
+            ctx["change"] = site.change()
+        ctx["timer"] = threading.Timer(T4_CHANGE_AFTER_S, change)
+        ctx["timer"].start()
+
+
+def check_t4_site():
+    from scripts.kernel_bench.site_t4 import Site
+    return Site()
+
+
+def run_one(task: str, who: str, n: int, prompts: dict, sb: str, manual_login: bool = False) -> dict:
     label = f"{who}-{task}-r{n}"
     run = ROOT / "runs" / label
     shutil.rmtree(run, ignore_errors=True)
     run.mkdir(parents=True)
+    if task in UNSUPPORTED.get(who, set()):
+        record = {"run": label, "task": task, "entrant": who, "repeat": n, "model": MODEL, "rc": None,
+                  "wall_s": 0, "prompt": None, "usage": usage(label), "passed": False,
+                  "check": check_t6.unsupported(who) if task == "T6" else
+                  {"score": 0, "unsupported": True, "note": f"{who} cannot use a page the user logged into"}}
+        with open(ROOT / "results.jsonl", "a") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        return record
+    if task == "T6":
+        raise SystemExit(f"T6 for {who}: the gateway launch (fake Telegram base_url) is not verified yet")
+    ctx: dict = {}
     if task == "T5":
         subprocess.run([sys.executable, str(HERE / "fixture_t5.py"), str(run)], check=True, capture_output=True)
-    prompt = prompts[task].format(dir=run)
+    if task == "T1":
+        ctx["list"] = f"对比测试-{label}"
+    if task in ("T4", "T4x"):
+        _t4_setup(task, who, ctx, manual_login)
+    prompt = prompts[task].format(dir=run, list=ctx.get("list", ""), url=ctx["site"].url if "site" in ctx else "")
     cmd, e = command(who, label, run, prompt, sb)
     started = time.time()
     with open(f"{run}.stdout", "w") as out, open(f"{run}.stderr", "w") as err:
@@ -134,10 +191,17 @@ def run_one(task: str, who: str, n: int, prompts: dict, sb: str) -> dict:
             rc = subprocess.run(cmd, cwd=run, env=e, stdout=out, stderr=err, timeout=TIMEOUT).returncode
         except subprocess.TimeoutExpired:
             rc = "timeout"
+    if "timer" in ctx:
+        ctx["timer"].cancel()
     reply = reply_text(who, run)
+    try:
+        verdict = CHECKS[task](str(run), reply, ctx)
+    finally:
+        if "site" in ctx:
+            ctx["site"].stop()
     record = {"run": label, "task": task, "entrant": who, "repeat": n, "model": MODEL, "rc": rc,
               "wall_s": round(time.time() - started), "prompt": prompt,
-              "check": CHECKS[task](str(run), reply), "usage": usage(label),
+              "check": verdict, "usage": usage(label),
               "artifacts": {"stdout": f"{run}.stdout", "stderr": f"{run}.stderr", "folder": str(run)},
               "reply_tail": reply[-1500:]}
     record["passed"] = record["check"].get("score") == 3
@@ -152,6 +216,7 @@ def main() -> None:
     ap.add_argument("--tasks", required=True)
     ap.add_argument("--entrants", required=True)
     ap.add_argument("--repeats", type=int, default=1)
+    ap.add_argument("--manual-login", action="store_true", help="T4: a person logs in once per entrant")
     args = ap.parse_args()
     (ROOT / "tmp").mkdir(parents=True, exist_ok=True)
     prompts = json.loads((HERE / "prompts.json").read_text())
@@ -159,7 +224,7 @@ def main() -> None:
     for n in range(1, args.repeats + 1):            # interleave entrants within each repeat
         for task in args.tasks.split(","):
             for who in args.entrants.split(","):
-                rec = run_one(task, who, n, prompts, sb)
+                rec = run_one(task, who, n, prompts, sb, args.manual_login)
                 print(json.dumps({k: rec[k] for k in ("run", "passed", "rc")} | {"score": rec["check"].get("score"),
                       "usd_peak": rec["usage"]["usd_peak"], "span_s": rec["usage"]["span_s"]}), flush=True)
 
