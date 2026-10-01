@@ -157,6 +157,12 @@ async def test_native_loop_passes_explicit_confirmation_callbacks(tool_name, cal
     adapter = Adapter()
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
     monkeypatch.setitem(tool_loop.EXECUTORS, tool_name, Executor())
+
+    async def _no():
+        return False
+    # 0.1.48: writing in Arslan's own folder asks nothing; pin "a folder the user
+    # chose" so this test's precondition does not depend on an earlier test's DB.
+    monkeypatch.setattr(tool_loop, "_writing_in_own_folder", _no)
     await tool_loop.run_native(system="Fixture", user_content="Fixture", history=[],
                                emit=lambda e: None, on_chunk=lambda c: None, resolve_tools=resolve,
                                **{callback_name: approve})
