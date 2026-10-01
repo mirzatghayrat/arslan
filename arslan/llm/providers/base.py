@@ -25,6 +25,11 @@ class BaseLLMProvider(ABC):
         self.api_key = api_key
         self.base_url = base_url
 
+    def supports_native_trajectory(self) -> bool:
+        """Whether build_trajectory_messages renders the neutral in-turn
+        trajectory natively. Others get trajectory.to_legacy (adapter)."""
+        return False
+
     def endpoint_fingerprint(self) -> str:
         """Identity of endpoint+model for opaque continuation state: state from
         one endpoint/model is never replayed to another."""

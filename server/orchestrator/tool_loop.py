@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import os
 import re
 import uuid
@@ -21,6 +22,8 @@ from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
 from server.registry.executors import EXECUTORS, resolve_executor
 from server.services import replay_safety
 from server.services.llm_factory import build_adapter
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from server.orchestrator.tool_caller import ToolCaller
@@ -358,6 +361,35 @@ def _render_request(convo: list[dict], current_request: dict) -> list[dict]:
     not a system instruction) in this payload only."""
     messages = convo if any(item is current_request for item in convo) else [current_request, *convo]
     return trajectory.to_legacy(messages)
+
+
+async def _model_call(a, system: str, convo: list[dict], current_request: dict, *,
+                      tools, schemas, forced: bool, protocol: dict):
+    """The one model call of a run_native step.
+
+    Native adapters (OpenAI-compatible, ARSLAN_TOOL_PROTOCOL not "legacy") get
+    the trajectory in their own tool protocol. A forced step keeps the SAME
+    tools (cache prefix; tool messages stay well-formed) with tool_choice
+    "none" instead of dropping them. Everything else — test doubles,
+    Anthropic, Gemini, rollback — gets the legacy rendering, unchanged.
+    `protocol` is per-turn state: once it degrades to legacy it stays there."""
+    native = getattr(a, "native_trajectory", None)
+    if not protocol.get("legacy") and callable(native) and native():
+        messages = convo if any(item is current_request for item in convo) else [current_request, *convo]
+        try:
+            trajectory.validate(messages)
+        except trajectory.TrajectoryError as exc:
+            # Never send a malformed native history; the legacy rendering of
+            # the same trajectory is always well-formed. Sticky for this turn.
+            protocol["legacy"] = True
+            protocol["reason"] = f"invalid trajectory: {exc}"
+            logger.warning("native tool protocol degraded to legacy: %s", exc)
+        else:
+            return await _with_retry(lambda: a.chat_trajectory(
+                system, messages, tools=schemas if forced else tools,
+                tool_choice="none" if forced else None))
+    rendered = _render_request(convo, current_request)
+    return await _chat_retry(a, system, rendered[-1]["content"], history=rendered[:-1], tools=tools)
 
 
 def _rendered_size(messages: list[dict]) -> int:
@@ -1288,12 +1320,15 @@ async def _review_saved_report(adapter, args: dict, result: dict, tool_trace: li
 
 async def _chat_retry(a, system: str, user: str, *, history=None, tools=None):
     """One bounded retry for known transient transport failures, never for denial."""
+    return await _with_retry(lambda: a.chat(system, user, history=history, tools=tools))
+
+
+async def _with_retry(request):
     last: Exception | None = None
     from arslan.execution_budget import BudgetExceeded
     for attempt in range(2):
         try:
-            return await asyncio.wait_for(
-                a.chat(system, user, history=history, tools=tools), timeout=_CHAT_TIMEOUT_S)
+            return await asyncio.wait_for(request(), timeout=_CHAT_TIMEOUT_S)
         except BudgetExceeded:
             from server.services.task_service import current as current_task
             if current_task():
@@ -1483,6 +1518,7 @@ async def run_native(
     # it per tool call and the cap would never bind.
     fetch_budget: dict[str, int] = {}
     call_ids: set[str] = set()
+    protocol_state: dict = {}
     unseen_start = len(convo)
 
     # Deterministic pre-search uses the same admission and progress boundaries.
@@ -1571,11 +1607,10 @@ async def run_native(
         # Rolling evidence eviction must not erase this turn's task or its
         # restrictions. Restore the exact request at user priority, not as a
         # system instruction or an invented summary, only in this payload.
-        rendered = _render_request(convo, current_request)
-        resp = await _chat_retry(a, sys_now, rendered[-1]["content"],
-                                 history=rendered[:-1],
+        resp = await _model_call(a, sys_now, convo, current_request,
                                  tools=(None if forced else [t for t in schemas if t["function"]["name"] in WRAP_UP_TOOLS]
-                                        or None if wrap_up else schemas))
+                                        or None if wrap_up else schemas),
+                                 schemas=schemas, forced=forced, protocol=protocol_state)
         tool_calls = list(getattr(resp, "tool_calls", None) or [])
 
         if not forced and tool_calls:

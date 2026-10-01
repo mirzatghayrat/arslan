@@ -1,6 +1,7 @@
 """Unified LLMAdapter — thin facade over any provider."""
 from __future__ import annotations
 
+import os
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -86,6 +87,33 @@ class LLMAdapter:
         """Build messages and delegate to the underlying provider."""
         messages = self._provider.build_messages(system, user, history)
         resp = await self._provider.chat(messages, tools=tools, temperature=temperature)
+        return await self._account(resp, system, user)
+
+    def native_trajectory(self) -> bool:
+        """Whether run_native should send the neutral trajectory natively
+        (0.1.49). ARSLAN_TOOL_PROTOCOL=legacy is the rollback switch."""
+        if os.environ.get("ARSLAN_TOOL_PROTOCOL", "native").strip().lower() == "legacy":
+            return False
+        provider = getattr(self, "_provider", None)
+        return bool(provider is not None and provider.supports_native_trajectory())
+
+    async def chat_trajectory(
+        self,
+        system: str,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | None = None,
+        temperature: float = 0.7,
+    ) -> LLMResponse:
+        """Send the neutral in-turn trajectory (arslan/llm/trajectory.py) in the
+        provider's native tool protocol. Only for native_trajectory() adapters."""
+        wire = self._provider.build_trajectory_messages(system, messages)
+        resp = await self._provider.chat(wire, tools=tools, temperature=temperature,
+                                         tool_choice=tool_choice)
+        last = messages[-1].get("content") if messages else ""
+        return await self._account(resp, system, last if isinstance(last, (str, list)) else "")
+
+    async def _account(self, resp: LLMResponse, system: str, user: Any) -> LLMResponse:
         u = resp.usage or {}
         # None-aware on purpose (NOT `or` chains — review S2): a REAL 0 is falsy
         # and would launder to None, flipping the bucket to estimated.

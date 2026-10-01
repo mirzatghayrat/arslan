@@ -35,10 +35,57 @@ class OpenAIProvider(BaseLLMProvider):
     CONTINUATION_FIELDS = ("reasoning_content", "reasoning", "reasoning_details")
 
     def __init__(self, model: str, api_key: str = "", base_url: str = "",
-                 max_tokens: int | None = None) -> None:
+                 max_tokens: int | None = None,
+                 transport: httpx.BaseTransport | None = None) -> None:
         effective_base_url = base_url or self.DEFAULT_BASE_URL
         super().__init__(model=model, api_key=api_key, base_url=effective_base_url)
         self.max_tokens = max_tokens or self.DEFAULT_MAX_TOKENS
+        self._transport = transport
+
+    def _client(self) -> httpx.AsyncClient:
+        kwargs: dict[str, Any] = {"trust_env": not loopback_endpoint(self.base_url),
+                                  "follow_redirects": False}
+        if self._transport is not None:
+            kwargs["transport"] = self._transport
+        return httpx.AsyncClient(**kwargs)
+
+    def supports_native_trajectory(self) -> bool:
+        # The OpenAI chat-completions tool protocol is the compatible baseline.
+        return True
+
+    def build_trajectory_messages(self, system: Any, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Neutral trajectory (arslan/llm/trajectory.py) -> native wire messages.
+
+        assistant: tool_calls with the server's exact argument text, plus the
+        continuation fields it sent (reasoning_content ...) only when they came
+        from this endpoint+model. tool: role "tool" bound by tool_call_id. A
+        host-run result was never requested by the model, so it is not dressed
+        up as a model call (no fabricated assistant turn): it is user context.
+        Local bookkeeping keys ("_"-prefixed) never leave this function."""
+        out: list[dict[str, Any]] = [{"role": "system", "content": system}]
+        endpoint = self.endpoint_fingerprint()
+        for m in messages:
+            role = m.get("role")
+            if role == "assistant":
+                msg: dict[str, Any] = {"role": "assistant", "content": m.get("content") or ""}
+                calls = m.get("tool_calls") or []
+                if calls:
+                    msg["tool_calls"] = [{"id": c["id"], "type": "function",
+                                          "function": {"name": c["name"], "arguments": c["arguments_raw"]}}
+                                         for c in calls]
+                cont = m.get("_continuation") or {}
+                if cont.get("protocol") == "openai" and cont.get("endpoint") == endpoint:
+                    msg.update({k: v for k, v in (cont.get("fields") or {}).items()
+                                if k in self.CONTINUATION_FIELDS})
+                out.append(msg)
+            elif role == "tool" and m.get("_synthetic"):
+                out.append({"role": "user", "content":
+                            f"Automatic pre-search (not requested by you) — RESULT for {m['name']}:\n{m['content']}"})
+            elif role == "tool":
+                out.append({"role": "tool", "tool_call_id": m["tool_call_id"], "content": m["content"]})
+            else:
+                out.append({k: v for k, v in m.items() if not k.startswith("_")})
+        return out
 
     # ------------------------------------------------------------------
     # BaseLLMProvider interface
@@ -76,6 +123,7 @@ class OpenAIProvider(BaseLLMProvider):
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None,
         temperature: float,
+        tool_choice: str | None = None,
     ) -> dict[str, Any]:
         """The ONE place this provider's body is built. chat() and chat_stream()
         both go through here so an image can never survive one path and be lost
@@ -90,6 +138,8 @@ class OpenAIProvider(BaseLLMProvider):
         }
         if tools:
             payload["tools"] = tools
+            if tool_choice:
+                payload["tool_choice"] = tool_choice
         # Keep the configured model/endpoint. Only this task-local, tool-free
         # critique changes shape: thinking explicitly OFF on official DeepSeek
         # (the only endpoint where that switch is known), deterministic, short.
@@ -117,9 +167,10 @@ class OpenAIProvider(BaseLLMProvider):
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
         temperature: float = 0.7,
+        tool_choice: str | None = None,
     ) -> LLMResponse:
         """POST to {base_url}/chat/completions and return a normalised LLMResponse."""
-        payload = self._payload(messages, tools, temperature)
+        payload = self._payload(messages, tools, temperature, tool_choice)
         from arslan.execution_budget import model_request
         payload["max_tokens"] = model_request(payload["max_tokens"])
         from arslan.execution_checkpoint import save
@@ -130,7 +181,7 @@ class OpenAIProvider(BaseLLMProvider):
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
 
-        async with httpx.AsyncClient(trust_env=not loopback_endpoint(self.base_url), follow_redirects=False) as client:
+        async with self._client() as client:
             response = await client.post(
                 f"{self.base_url}/chat/completions",
                 json=payload,
@@ -217,7 +268,7 @@ class OpenAIProvider(BaseLLMProvider):
         from arslan.execution_checkpoint import save
         await save("before_model")
         evidence = await request_evidence.begin(payload)
-        async with httpx.AsyncClient(trust_env=not loopback_endpoint(self.base_url), follow_redirects=False) as client:
+        async with self._client() as client:
             async with client.stream(
                 "POST",
                 f"{self.base_url}/chat/completions",
