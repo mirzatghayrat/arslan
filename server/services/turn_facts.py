@@ -37,7 +37,7 @@ _SYSTEM = (
 )
 
 
-async def _adapter():
+async def _get_adapter():
     from server.services.llm_factory import build_adapter, build_slot_adapter
     slotted = await build_slot_adapter("router_config_id")
     return slotted if slotted is not None else await build_adapter(role="router")
@@ -65,7 +65,7 @@ async def extract(conversation_id: str, user_message: str) -> list[dict[str, Any
         + f"\n\n{known}\n\nUser's latest message:\n{user_message}"
     )
     async with usage_ledger.scope("memory_facts", conversation_id):
-        response = await (await _adapter()).chat(system=build_cached_system(_SYSTEM, ""), user=prompt)
+        response = await (await _get_adapter()).chat(system=build_cached_system(_SYSTEM, ""), user=prompt)
     return parse(response.content)
 
 

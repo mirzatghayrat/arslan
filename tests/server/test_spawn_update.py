@@ -128,29 +128,5 @@ async def test_drafter_no_valid_changes_returns_none(seeded, monkeypatch):
 
 # ── router: suggest_update guards mirror route ────────────────────────────────
 
-async def test_router_accepts_suggest_update_with_real_spawn(maker, monkeypatch):
-    from server.orchestrator import router
-    sid = await _mk_spawn(maker)
-
-    class _A:
-        async def chat(self, system, user, **kw):
-            return _Resp(f'{{"action": "suggest_update", "spawn_id": {sid},'
-                         f' "task_brief": "语气改正式", "reason": "edit"}}')
-
-    monkeypatch.setattr(router, "_get_adapter", lambda: _A())
-    r = await router.route("conv-u", "把小测语气改正式")
-    assert r.action == "suggest_update" and r.spawn_id == sid
 
 
-async def test_router_downgrades_suggest_update_without_spawn(maker, monkeypatch):
-    from server.orchestrator import router
-    await _mk_spawn(maker)
-
-    class _A:
-        async def chat(self, system, user, **kw):
-            return _Resp('{"action": "suggest_update", "spawn_id": 4242,'
-                         ' "task_brief": "x", "reason": "hallucinated"}')
-
-    monkeypatch.setattr(router, "_get_adapter", lambda: _A())
-    r = await router.route("conv-u2", "改一下")
-    assert r.action == "answer"

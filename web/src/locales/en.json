@@ -170,7 +170,7 @@
     "close_detail": "Close details",
     "used_n_dot": " · used {{n}}",
     "last_used_for": " · last used for {{ref}}",
-    "superseded_by_line": "Superseded by #{{id}} — no longer injected into spawns",
+    "superseded_by_line": "Superseded by #{{id}} — no longer used",
     "undoing": "Undoing…",
     "undo_supersede": "Undo supersede",
     "sensitive_note": "Marked sensitive. This is a display hint, not isolation — the content is still returned to any view that reads it.",
@@ -545,7 +545,7 @@
     "labelTelemetry": "Diagnostic telemetry",
     "telemetryDesc": "Collect local usage data to improve performance (opt-in)",
     "distill_on_session_end": "Distill preferences at session end",
-    "distill_hint": "Learn per-spawn preferences from your feedback when a conversation ends",
+    "distill_hint": "When a conversation ends, learn your preferences from your feedback",
     "retentionLabel": "Run debug detail retention (days)",
     "retentionHint": "After this many days, a run's actual system prompt / injected knowledge / full tool inputs and raw returns are cleared automatically (scores and timings are unaffected).",
     "headerLore": "Manage your connections, preferences, and permissions.",
@@ -1047,11 +1047,11 @@
     "catalog": {
       "loading": "Loading registry…",
       "empty": "No capabilities registered yet",
-      "equip_hint": "Equip these from a spawn's menu.",
+      "equip_hint": "Arslan can use these directly.",
       "unimplemented_note": "Not implemented — catalog placeholder only, cannot be equipped.",
       "orchestrator_note": "For safety, only Arslan itself can use these; they cannot be given to experts.",
       "degraded": "UNSANDBOXED",
-      "empty_desc": "Capabilities are the tools and skills a spawn can use. Import skills from a repo, or register an MCP server, using the panels on this page.",
+      "empty_desc": "Capabilities are the tools and skills Arslan can use. Import skills from a repo, or register an MCP server, using the panels on this page.",
       "filtered_empty": "Nothing matches this filter",
       "filtered_clear": "Show all"
     },
@@ -1563,7 +1563,7 @@
       "conversation_placeholder": "Empty = dedicated conversation",
       "submit_create": "Create",
       "submit_save": "Save",
-      "required": "Name, prompt and spawn are required"
+      "required": "Name and prompt are required"
     },
     "err": {
       "task_not_found": "Scheduled task {{task_id}} does not exist",
@@ -1573,7 +1573,7 @@
       "enabled_limit_reached": "You already have {{max_enabled}} scheduled tasks enabled — pause or delete one first",
       "spawn_id_required": "A spawn must be chosen"
     },
-    "empty_desc": "A scheduled task dispatches a spawn on its own, on an interval or a cron expression — a daily digest, an hourly check."
+    "empty_desc": "A scheduled task has Arslan do something on its own, on an interval or a cron expression — a daily digest, an hourly check."
   },
   "diag": {
     "range_1h": "Last 1h",

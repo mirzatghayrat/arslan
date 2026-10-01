@@ -23,7 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
-from server.db.models import ArslanMessage, Base, ConversationEvent, Run, Spawn
+from server.db.models import ArslanMessage, Base, ConversationEvent, Spawn
 from server.orchestrator import promise_guard
 
 
@@ -232,74 +232,15 @@ PROMISING_LONG = PROMISING + "这份 PPT 会覆盖注册、身份认证、法币
                              "每一节都配有操作截图位与要点说明,整体控制在二十页以内,风格沿用你上次喜欢的深色模板。"
 
 
-@pytest.mark.asyncio
-async def test_regression_doer_first_divert_promise_is_intercepted(maker, monkeypatch):
-    """THE incident, replayed: route→spawn 6, user did NOT name the spawn → doer-first
-    diverts to self-answer → answer promises a handoff → interceptor appends an honest
-    correction (persisted), logs promise_intercept, and still dispatches NOTHING."""
-    from server.orchestrator import arslan, router, tool_loop
-
-    async def _fake_route(conv, msg):
-        return router.RouterResult(action="route", spawn_id=6, task_brief="做 OKX 新手指南 PPT")
-
-    monkeypatch.setattr(arslan.router, "route", _fake_route)
-    adapter = _SeqAdapter([PROMISING_LONG, HONEST_FIX])
-    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
-    # background growth tasks would fire real LLM calls — not under test here
-    monkeypatch.setattr(arslan, "_fire_dual_track", lambda *a, **k: None)
-
-    dispatched = []
-
-    async def _no_dispatch(*a, **k):
-        dispatched.append(a)
-
-    monkeypatch.setattr(arslan, "_dispatch_spawn", _no_dispatch)
-
-    events = []
-    await arslan.handle_user_message("main", "帮我做一份 OKX 新手指南的 PPT", events.append)
-
-    # 1. never dispatched (structurally true for the divert branch — pinned here)
-    assert dispatched == []
-    async with db_session.AsyncSessionLocal() as s:
-        runs = (await s.execute(select(Run))).scalars().all()
-        evs = (await s.execute(select(ConversationEvent))).scalars().all()
-        msgs = (await s.execute(
-            select(ArslanMessage).order_by(ArslanMessage.id))).scalars().all()
-    assert len(runs) == 1 and runs[0].kind == "host" and runs[0].spawn_id is None
-
-    # 2. the correction was emitted live AND persisted (history stays honest)
-    streamed = "".join(e.get("content", "") for e in events if e["type"] == "stream_chunk")
-    assert HONEST_FIX in streamed
-    arslan_msgs = [m for m in msgs if m.role == "arslan"]
-    assert arslan_msgs and HONEST_FIX in arslan_msgs[-1].content
-    assert PROMISING_LONG in arslan_msgs[-1].content  # streamed text is kept, correction appended
-
-    # 3. audit event (acceptance #1): promise_intercept row with tier/pattern/corrected
-    hits = [e for e in evs if e.kind == "promise_intercept"]
-    assert len(hits) == 1
-    assert hits[0].ref["tier"] == "doer_first"
-    assert hits[0].ref["corrected"] is True
-    assert hits[0].ref["pattern"]
-    assert "空头支票拦截" in hits[0].summary
-
-    # 4. the re-synthesis prompt carried the literal truth statement
-    resynth = adapter.chat_calls[-1]
-    assert "本回合没有交办任何任务" in (resynth["system"] + resynth["user"])
-
-    # A3: the answer's system prompt carries the iron rule
-    assert "没有后台执行" in adapter.chat_calls[0]["system"]
 
 
 @pytest.mark.asyncio
 async def test_tier2_generic_answer_promise_is_intercepted(maker, monkeypatch):
     """Plain answer turn (no spawn inferred): generic PROMISE_RE still triggers, audit
     event says tier=answer, and the correction prompt has no spawn name requirement."""
-    from server.orchestrator import arslan, router, tool_loop
+    from server.orchestrator import arslan, tool_loop
 
-    async def _fake_route(conv, msg):
-        return router.RouterResult(action="answer")
 
-    monkeypatch.setattr(arslan.router, "route", _fake_route)
     adapter = _SeqAdapter([PROMISING_LONG, HONEST_FIX])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
 
@@ -320,13 +261,10 @@ async def test_generic_tier_stays_quiet_while_a_background_job_really_runs(maker
     """0.1.42: with a job of this conversation running, "it's being done in the
     background" is true; the correction ("nothing is running") would be the lie.
     A finished job does not count — the guard is back once nothing runs."""
-    from server.orchestrator import arslan, router, tool_loop
+    from server.orchestrator import arslan, tool_loop
     from server.services import background_jobs
 
-    async def _fake_route(conv, msg):
-        return router.RouterResult(action="answer")
 
-    monkeypatch.setattr(arslan.router, "route", _fake_route)
     background_jobs._reset_for_tests()
     job = background_jobs.Job(job_id="job-live", conversation_id="main", goal="deck", acceptance=[])
     job.phase = "running"
@@ -356,14 +294,11 @@ async def test_negative_tool_using_answer_never_triggers(maker, monkeypatch):
     CALLED a tool, generic promising language ('正在…' narrating real work) must NOT
     trigger the interceptor. Spawn-delegation claims are NOT exempted by tool use — see
     the PA-1 corpus tests below."""
-    from server.orchestrator import arslan, router, tool_loop
+    from server.orchestrator import arslan, tool_loop
     from server.registry import executors
     from arslan.models import LLMResponse
 
-    async def _fake_route(conv, msg):
-        return router.RouterResult(action="answer")
 
-    monkeypatch.setattr(arslan.router, "route", _fake_route)
 
     class _ToolThenPromise:
         def __init__(self):
@@ -404,12 +339,9 @@ async def test_negative_tool_using_answer_never_triggers(maker, monkeypatch):
 async def test_interceptor_failure_is_fail_open(maker, monkeypatch):
     """Interceptor errors must never break the answer turn: the promising answer is
     still persisted and stream_end still fires."""
-    from server.orchestrator import arslan, router, tool_loop
+    from server.orchestrator import arslan, tool_loop
 
-    async def _fake_route(conv, msg):
-        return router.RouterResult(action="answer")
 
-    monkeypatch.setattr(arslan.router, "route", _fake_route)
     adapter = _SeqAdapter([PROMISING_LONG])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
 
@@ -477,60 +409,6 @@ def _tool_then_claim_adapter(claim: str):
     return _ToolThenClaim()
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "msg_id,spawn_id,spawn_name,claim", PA1_CORPUS, ids=[c[0] for c in PA1_CORPUS])
-async def test_pa1_corpus_spawn_promise_intercepted_despite_tool_use(
-        maker, monkeypatch, msg_id, spawn_id, spawn_name, claim):
-    """PA-1 验收③: the incident turn replayed — doer-first divert, web_search WAS called
-    (tool_trace non-empty), final text claims the handoff. The guard must STILL intercept:
-    correction appended (streamed + persisted) and promise_intercept event logged."""
-    from server.orchestrator import arslan, router, tool_loop
-    from server.registry import executors
-
-    async def _fake_route(conv, msg):
-        return router.RouterResult(action="route", spawn_id=spawn_id,
-                                   task_brief="半导体行业 PPT")
-
-    monkeypatch.setattr(arslan.router, "route", _fake_route)
-    monkeypatch.setattr(arslan, "_fire_dual_track", lambda *a, **k: None)
-    adapter = _tool_then_claim_adapter(claim)
-    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
-
-    class _Stub:
-        async def execute(self, args):
-            return {"ok": True, "results": [{"title": "t", "url": "u"}]}
-
-    monkeypatch.setitem(executors.EXECUTORS, "web_search", _Stub())
-
-    dispatched = []
-
-    async def _no_dispatch(*a, **k):
-        dispatched.append(a)
-
-    monkeypatch.setattr(arslan, "_dispatch_spawn", _no_dispatch)
-
-    events = []
-    # user never names the spawn → doer-first divert (the incident shape)
-    await arslan.handle_user_message("main", "帮我做一份半导体行业的PPT", events.append)
-
-    # the turn really used a tool AND really never delegated
-    assert dispatched == []
-    assert len(adapter.chat_calls) == 3  # tool step + claim + correction re-synthesis
-    # …yet the spawn-handoff claim IS intercepted: correction streamed + persisted
-    streamed = "".join(e.get("content", "") for e in events if e["type"] == "stream_chunk")
-    assert HONEST_FIX in streamed
-    async with db_session.AsyncSessionLocal() as s:
-        evs = (await s.execute(select(ConversationEvent))).scalars().all()
-        msgs = (await s.execute(
-            select(ArslanMessage).order_by(ArslanMessage.id))).scalars().all()
-    arslan_msgs = [m for m in msgs if m.role == "arslan"]
-    assert arslan_msgs and HONEST_FIX in arslan_msgs[-1].content
-    assert claim in arslan_msgs[-1].content  # claim kept, correction appended
-    hits = [e for e in evs if e.kind == "promise_intercept"]
-    assert len(hits) == 1
-    assert hits[0].ref["tier"] == "doer_first"
-    assert hits[0].ref["pattern"] and spawn_name in hits[0].ref["pattern"]
 
 
 @pytest.mark.asyncio
@@ -586,12 +464,9 @@ def test_pa4_no_repaste_rule_constant():
 async def test_pa4_answer_system_prompt_carries_no_repaste_rule(maker, monkeypatch):
     """PA-4: the converse system prompt must carry the no-repaste rule — the live
     incident re-pasted the SAME outline verbatim 3x across consecutive answer turns."""
-    from server.orchestrator import arslan, router, tool_loop
+    from server.orchestrator import arslan, tool_loop
 
-    async def _fake_route(conv, msg):
-        return router.RouterResult(action="answer")
 
-    monkeypatch.setattr(arslan.router, "route", _fake_route)
     honest_long = "这是一段普通的、不含任何承诺语言、也不重贴旧内容的长回答,用来验证系统提示词。" * 5
     adapter = _SeqAdapter([honest_long])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)

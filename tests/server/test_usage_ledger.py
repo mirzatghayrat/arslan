@@ -12,7 +12,6 @@ Contract under test:
     judge's own scope() must open a FRESH bucket (stealing nothing, seeing nothing),
     so the dispatch Run's usage is neither diminished nor is the judge row inflated.
 """
-import asyncio
 
 import pytest
 from sqlalchemy import select
@@ -21,9 +20,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from arslan.llm import usage_sink
 from arslan.models import LLMResponse
 from server.db import session as db_session
-from server.db.models import Base, Run, Spawn, UsageLedger
+from server.db.models import Base, Run, UsageLedger
 from server.services import run_recorder, usage_ledger
-from tests.server.conftest import build_ws_client
 
 
 @pytest.fixture
@@ -228,18 +226,6 @@ async def test_answer_path_writes_host_run_without_duplicate_ledger(memdb, monke
 # Capture point: router (route())
 # ---------------------------------------------------------------------------
 
-async def test_router_decision_writes_router_row(memdb, monkeypatch):
-    from server.orchestrator import router
-    adapter = _ReportingAdapter(content='{"action": "answer", "reason": "smalltalk"}',
-                                tokens_in=30, tokens_out=12)
-    monkeypatch.setattr(router, "_get_adapter", lambda: adapter)
-    result = await router.route("c-rt", "hello")
-    assert result.action == "answer"
-    rows = await _rows(memdb)
-    assert len(rows) == 1
-    r = rows[0]
-    assert (r.scope, r.conversation_id) == ("router", "c-rt")
-    assert (r.tokens_in, r.tokens_out, r.tokens_total) == (30, 12, 42)
 
 
 # ---------------------------------------------------------------------------
@@ -277,76 +263,6 @@ async def test_judge_score_writes_judge_row(memdb, monkeypatch):
     assert (r.tokens_in, r.tokens_out, r.tokens_total) == (70, 25, 95)
 
 
-async def test_judge_scope_does_not_diminish_dispatch_run_usage(memdb, monkeypatch):
-    """NESTING DANGER regression: schedule_scoring creates the judge task from INSIDE
-    _dispatch_spawn's usage_sink.collecting() region, so the task INHERITS the active
-    bucket via its context copy. The judge's usage_ledger.scope() must open a FRESH
-    bucket: the dispatch Run keeps its full usage (not diminished), and the judge
-    ledger row carries ONLY the judge's own tokens (not run + judge)."""
-    from server.orchestrator import arslan, dispatcher
-    from server.services import roster_service, run_eval_service
-    from server.orchestrator import memory as _memory
-
-    async with memdb() as db:
-        s = Spawn(name="Mermer", domain_category="research", system_prompt="You research.")
-        db.add(s)
-        await db.commit()
-        await db.refresh(s)
-        spawn_id = s.id
-
-    judge_tasks: list[asyncio.Task] = []
-    # Mirror run_recorder._default_schedule: create_task INSIDE the caller's context
-    # (i.e. inside the dispatch collecting scope) — the inheritance under test.
-    monkeypatch.setattr(
-        run_recorder, "schedule_scoring",
-        lambda rid: judge_tasks.append(asyncio.create_task(run_eval_service.score(rid))))
-
-    async def fake_build_adapter(role):
-        return _ReportingAdapter(content=_JUDGE_JSON, tokens_in=7, tokens_out=3)
-    monkeypatch.setattr(run_eval_service, "build_adapter", fake_build_adapter)
-
-    async def fake_dispatch(conversation_id, *, spawn_id, task_brief, on_chunk=None,
-                            on_event=None, prior_output=None, instruction=None,
-                            allow_escalation=True, mode="execute", attached_context=None, images=None,
-                            run_id=None):
-        usage_sink.report_detail(tokens_in=120, tokens_out=80,
-                                 model="claude-x", provider="anthropic")
-        usage_sink.report(200)
-        sid = await _memory.add_message(conversation_id, "spawn_summary", "delivered",
-                                        display_content="delivered", spawn_id=spawn_id)
-        return {"full_output": "delivered", "spawn_name": "Mermer",
-                "summary_message_id": sid, "assistant_message_id": 1, "escalation": None}
-    monkeypatch.setattr(dispatcher, "dispatch", fake_dispatch)
-
-    await roster_service.join("c-n", spawn_id, via="invited")
-    events: list[dict] = []
-    await arslan.dispatch_routed("c-n", spawn_id, "do it", False, events.append)
-    assert judge_tasks, "judge task was never scheduled"
-    await asyncio.gather(*judge_tasks)
-
-    async with memdb() as db:
-        run = (await db.execute(select(Run))).scalars().one()
-    # Dispatch Run keeps its FULL usage — nothing stolen by the judge scope.
-    assert run.task_tokens == 200
-    assert (run.tokens_in, run.tokens_out) == (120, 80)
-    assert run.status == "scored"
-    # S3-M3 Task 5: the run's stream_end frame carries the SAME usage finalize read
-    # (built inside the collecting scope). "claude-x" has no price → usd present, None.
-    ends = [e for e in events if e["type"] == "stream_end"]
-    assert len(ends) == 1
-    # Exact comparison kept deliberately: it also pins "no field appears by accident",
-    # so an intentional addition is a lockstep edit here. `models` is the new one — the
-    # frame now says WHICH model answered, and the judge scope must not add itself to
-    # that list either.
-    assert ends[0]["usage"] == {"tokens_in": 120, "tokens_out": 80, "tokens_total": 200,
-                                "estimated": False, "usd": None,
-                                "models": [{"model": "claude-x", "provider": "anthropic"}]}
-    judge_rows = [r for r in await _rows(memdb) if r.scope == "judge"]
-    assert len(judge_rows) == 1
-    # Judge row = judge's own tokens ONLY (a leaked inherited bucket would show 127/83).
-    assert (judge_rows[0].tokens_in, judge_rows[0].tokens_out) == (7, 3)
-    assert judge_rows[0].tokens_total == 10
-    assert judge_rows[0].run_id == run.id
 
 
 # ---------------------------------------------------------------------------
@@ -396,45 +312,3 @@ async def test_titler_writes_titler_row(memdb, monkeypatch):
 # Capture point: direct spawn chat (ws/chat.py)
 # ---------------------------------------------------------------------------
 
-def test_direct_chat_writes_direct_chat_row(tmp_path, monkeypatch, portal):
-    import server.ws.chat as chat_module
-    from server.orchestrator import dispatcher, spawn_loop
-
-    async def _seed(maker):
-        async with maker() as s:
-            s.add(Spawn(name="beauty-guru", domain_category="content",
-                        system_prompt="You are a beauty expert."))
-            await s.commit()
-
-    async def _fake_build_spawn_system(spawn, *, retrieval_query, current_turn,
-                                       attached_context=None, system_prompt_override=None):
-        return spawn.system_prompt or "helper", []
-    monkeypatch.setattr(dispatcher, "build_spawn_system", _fake_build_spawn_system)
-    monkeypatch.setattr(chat_module, "build_spawn_system", _fake_build_spawn_system,
-                        raising=False)
-
-    async def _fake_run(*, spawn_id, system, user_content, history, current_turn,
-                        emit, on_chunk, allow_escalation):
-        usage_sink.report_detail(tokens_in=88, tokens_out=33,
-                                 model="claude-x", provider="anthropic")
-        usage_sink.report(121)
-        on_chunk("reply")
-        return {"final": "reply", "escalation": None, "tool_trace": []}
-    monkeypatch.setattr(spawn_loop, "run", _fake_run)
-
-    client = build_ws_client(portal, tmp_path, monkeypatch, _seed, db_name="chat.db")
-    with client.websocket_connect("/ws/chat/1") as ws:
-        assert ws.receive_json()["type"] == "history"
-        ws.send_json({"type": "user_message", "content": "hi"})
-        frame = ws.receive_json()
-        while frame["type"] != "stream_end":
-            frame = ws.receive_json()
-
-    async def _read():
-        async with client.db_maker() as db:
-            return list((await db.execute(select(UsageLedger))).scalars().all())
-    rows = client.portal.call(_read)
-    assert len(rows) == 1
-    r = rows[0]
-    assert (r.scope, r.conversation_id) == ("direct_chat", "spawn-1")
-    assert (r.tokens_in, r.tokens_out, r.tokens_total) == (88, 33, 121)

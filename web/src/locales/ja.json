@@ -170,7 +170,7 @@
     "close_detail": "詳細を閉じる",
     "used_n_dot": " · 使用 {{n}}回",
     "last_used_for": " · 最近の使用先 {{ref}}",
-    "superseded_by_line": "#{{id}} に置き換え — スポーンへは注入されません",
+    "superseded_by_line": "#{{id}} に置き換えられました——今は使われません",
     "undoing": "取り消し中…",
     "undo_supersede": "置き換えを取り消す",
     "sensitive_note": "機微マークは表示上のヒントであり隔離ではありません。",
@@ -545,7 +545,7 @@
     "labelTelemetry": "診断データ",
     "telemetryDesc": "性能改善のためローカルの利用データを収集します（任意）",
     "distill_on_session_end": "会話終了時に好みを要約",
-    "distill_hint": "会話終了時にフィードバックからエキスパートごとの好みを学びます",
+    "distill_hint": "会話が終わったとき、フィードバックからあなたの好みを学びます",
     "retentionLabel": "実行デバッグ詳細の保持日数",
     "retentionHint": "この日数を超えた run は、実際のシステムプロンプト / 注入された知識 / ツールの完全な入力と生の応答が自動的に消去されます（スコアと所要時間には影響しません）。",
     "headerLore": "接続、利用設定、権限を管理します。",
@@ -1047,11 +1047,11 @@
     "catalog": {
       "loading": "一覧を読み込み中…",
       "empty": "登録された能力がまだありません",
-      "equip_hint": "エキスパートのメニューから追加できます。",
+      "equip_hint": "Arslan はこれらを直接使えます。",
       "unimplemented_note": "未実装——カタログ上の項目のみで、装備できません。",
       "orchestrator_note": "安全のため Arslan 本体専用です。専門家には渡せません。",
       "degraded": "サンドボックス無効",
-      "empty_desc": "能力とは、スポーンが使えるツールとスキルのことです。このページのパネルからリポジトリのスキルをインポートするか、MCP サーバーを登録してください。",
+      "empty_desc": "機能とは Arslan が使えるツールとスキルです。このページのパネルからリポジトリのスキルを取り込むか、MCP サーバーを登録してください。",
       "filtered_empty": "このフィルターに一致するものはありません",
       "filtered_clear": "すべて表示"
     },
@@ -1563,7 +1563,7 @@
       "conversation_placeholder": "空欄 = 専用の会話",
       "submit_create": "作成",
       "submit_save": "保存",
-      "required": "名前・プロンプト・スポーンは必須です"
+      "required": "名前と指示は必須です"
     },
     "err": {
       "task_not_found": "定期タスク {{task_id}} は存在しません",
@@ -1573,7 +1573,7 @@
       "enabled_limit_reached": "有効な定期タスクが上限 {{max_enabled}} 件に達しています。まず一時停止か削除をしてください",
       "spawn_id_required": "スポーンを選択してください"
     },
-    "empty_desc": "定期タスクは、間隔または cron 式に従ってスポーンを自動的に派遣します（毎日のダイジェスト、毎時のチェックなど）。"
+    "empty_desc": "定期タスクは、間隔や cron 式に従って Arslan に自動で作業させます——毎日のまとめ、毎時のチェックなど。"
   },
   "diag": {
     "range_1h": "直近1時間",

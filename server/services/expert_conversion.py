@@ -32,7 +32,11 @@ def skill_body(spawn: Spawn) -> str:
 
 async def list_experts() -> list[dict]:
     async with db_session.AsyncSessionLocal() as db:
-        spawns = (await db.execute(select(Spawn).order_by(Spawn.id))).scalars().all()
+        # Only experts the user made. The built-in examples were seeded on every install
+        # until 0.1.48; listing them as "former experts" would show people experts they
+        # never had.
+        spawns = (await db.execute(
+            select(Spawn).where(Spawn.is_default.is_(False)).order_by(Spawn.id))).scalars().all()
         keys = set((await db.execute(select(SkillPack.key))).scalars().all())
     return [{"id": s.id, "name": s.name, "domain": s.domain_category,
              "skill_key": skill_key(s), "converted": skill_key(s) in keys} for s in spawns]

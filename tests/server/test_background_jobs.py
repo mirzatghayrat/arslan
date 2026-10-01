@@ -328,7 +328,6 @@ def test_the_conversation_answers_while_a_job_is_still_working(app_client, monke
     try:
         with app_client.websocket_connect("/ws/arslan/main") as ws:
             ws.receive_json()
-            ws.receive_json()
             ws.send_json({"type": "user_message", "content": "please tidy my notes"})
             first = _collect_until(ws, "stream_end", max_frames=400)
             assert any(f.get("type") == "job_update" for f in first), [(f.get("type"), f.get("tool")) for f in first]
@@ -355,7 +354,6 @@ def test_the_conversation_answers_while_a_job_is_still_working(app_client, monke
 def test_a_background_card_is_answered_over_the_socket_and_resent_on_reconnect(app_client):  # noqa: F811
     frame = {"type": "propose_schedule", "call_id": "bg-card", "name": "Weekly digest", "when": "weekly"}
     with app_client.websocket_connect("/ws/arslan/main") as ws:
-        ws.receive_json()
         ws.receive_json()
         waiting = app_client.portal.start_task_soon(approvals.ask, "main", frame)
         # broadcast at once, marked as a job's card (the UI hides "remember" for it)

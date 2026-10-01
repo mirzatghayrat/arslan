@@ -85,32 +85,30 @@ async def test_save_facts_stores_provenance_and_valid_from(maker):
 
 
 # ---------------------------------------------------------------------------
-# router path: the REAL call-site (arslan.py:554), exercised end-to-end
+# after-answer path (0.1.48): turn_facts is the REAL call-site that replaced the router's
 # ---------------------------------------------------------------------------
 
-async def test_router_path_writes_provenance(maker, monkeypatch):
-    """arslan.handle_user_message -> router.route returning new_facts -> the REAL
-    memory.save_facts(..., provenance={"source_kind": "router", ...}) call-site
-    at arslan.py:554 (not a stand-in / not calling save_facts directly)."""
-    from server.orchestrator import arslan, router, tool_loop
+async def test_after_answer_facts_write_conversation_provenance(maker, monkeypatch):
+    """arslan.handle_user_message -> answer -> turn_facts.capture -> the REAL
+    memory.save_facts(..., provenance={"source_kind": "conversation", ...}) call-site.
+    Only the model's extraction is stubbed."""
+    from server.orchestrator import arslan, tool_loop
+    from server.services import turn_facts
 
-    async def _fake_route(conv, msg):
-        return router.RouterResult(
-            action="answer",
-            new_facts=[{"content": "偏好中文沟通", "sensitive": False}],
-        )
+    async def _fake_extract(conv, msg):
+        return [{"content": "偏好中文沟通", "sensitive": False}]
 
-    monkeypatch.setattr(arslan.router, "route", _fake_route)
+    monkeypatch.setattr(turn_facts, "extract", _fake_extract)
     adapter = MockAdapter(stream_chunks=["ok"], chat_content="ok")
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
 
     events: list = []
-    await arslan.handle_user_message("conv-router", "你好", events.append)
+    await arslan.handle_user_message("conv-facts", "你好", events.append)
 
     async with maker() as db:
         rows = (await db.execute(select(UserFact))).scalars().all()
     assert len(rows) == 1
-    assert rows[0].provenance == {"source_kind": "router", "conversation_id": "conv-router"}
+    assert rows[0].provenance == {"source_kind": "conversation", "conversation_id": "conv-facts"}
     assert rows[0].valid_from is not None
 
 

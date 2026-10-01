@@ -2,7 +2,7 @@ from sqlalchemy import select
 
 from arslan.models import LLMResponse
 from server.db.models import ContextReceiptRecord, Run
-from server.orchestrator import arslan, router, tool_loop
+from server.orchestrator import arslan, tool_loop
 from server.services import task_context
 from server.services.memory_activation import activate_sync
 from server.services.memory_migration import migrate_legacy_sync
@@ -17,10 +17,7 @@ async def test_precise_output_uses_one_actual_model_call_and_no_memory(execution
         async def chat(self, system, user, **kwargs):
             calls.append((system, user, kwargs))
             return LLMResponse(content="YES", usage={}, tool_calls=[])
-    async def no_routing(*args, **kwargs):
-        raise AssertionError("A precise answer must not make a router call")
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: Adapter())
-    monkeypatch.setattr(router, "route", no_routing)
     events = []
     await arslan.handle_user_message("exact-output-conversation", "Reply only YES", events.append)
     assert len(calls) == 1

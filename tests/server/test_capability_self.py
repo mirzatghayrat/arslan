@@ -1,6 +1,6 @@
 import inspect
 
-from server.orchestrator import arslan, router
+from server.orchestrator import arslan
 
 
 def test_arslan_prompt_says_how_it_really_works():
@@ -14,11 +14,6 @@ def test_arslan_prompt_says_how_it_really_works():
     assert "PPT/PDF" not in txt and "分身" not in txt
 
 
-def test_router_system_biases_to_answer():
-    s = router._SYSTEM
-    assert "web_search" in s
-    # doer-first cue present
-    assert ("DEFAULT" in s) or ("默认" in s) or ("itself" in s)
 
 
 def test_handle_answer_assembles_capability_self():

@@ -14,18 +14,13 @@ from server import security
 from server.auth import is_ws_token_valid
 from server.db import session as db_session
 from server.db.models import ArslanMessage
-from server.orchestrator import arslan, dispatcher, memory
+from server.orchestrator import arslan
 from server.services import approvals, background_jobs, desktop_status
 from server.services import (
     distill_service,
-    ingest,
     mcp_service,
-    phase_service,
-    roster_service,
     run_registry,
     settings_service,
-    spawn_service,
-    storage_intent,
     turn_journal,
 )
 from server.ws import protocol
@@ -110,31 +105,6 @@ async def _history(conversation_id: str) -> list[dict]:
         }
         for m in msgs
     ]
-
-
-async def _create_from_draft(draft: dict, differentiation: str | None = None):
-    """Thin alias kept for backward-compat test imports.
-
-    The real implementation lives in spawn_service.create_from_draft so that
-    the REST create path (api/create.py) shares the same code without cyclic
-    imports between ws/ and api/.
-    """
-    return await spawn_service.create_from_draft(draft, differentiation)
-
-
-async def _last_spawn_output(spawn_id: int) -> str | None:
-    """Reconstruct prior_output for a refinement: the spawn's latest assistant message."""
-    from server.db.models import ChatMessage
-
-    async with db_session.AsyncSessionLocal() as db:
-        row = await db.execute(
-            select(ChatMessage.content)
-            .where(ChatMessage.spawn_id == spawn_id, ChatMessage.role == "assistant")
-            .order_by(ChatMessage.id.desc())
-            .limit(1)
-        )
-        val = row.scalar_one_or_none()
-    return val
 
 
 async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
@@ -237,11 +207,6 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             desktop_status.push("turn_finished", conversation_id=conversation_id, outcome=outcome)
             await queue.join()
 
-    async def run_spawn(spawn_id: int, task_brief: str, **kw) -> None:
-        await run_with_live_frames(
-            arslan.dispatch_spawn(conversation_id, spawn_id, task_brief, emit, **kw)
-        )
-
     async def run_connect_mcp_followup(server_id: int) -> None:
         """Task 3: after a connect card completes, report the honest tier split —
         counts are ALWAYS recomputed from the DB here, never trusted from the client."""
@@ -249,18 +214,6 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             counts = await mcp_service.tier_counts(server_id)
             emit(protocol.mcp_connect_followup(server_id=server_id, **counts))
         await run_with_live_frames(_followup())
-
-    async def run_routed(spawn_id: int, task_brief: str, needs_proposal: bool, **kw) -> None:
-        """Dispatch via the shared propose-vs-execute path (same first response a
-        roster-member route gives). Used when accepting an inline invite."""
-        await run_with_live_frames(
-            arslan.dispatch_routed(conversation_id, spawn_id, task_brief, needs_proposal, emit, **kw)
-        )
-
-    # Connection-level state for in-chat attach + storage intent (Task 4).
-    recent_material = ""
-    recent_names: list[str] = []
-    awaiting_store: tuple[str, list[str]] | None = None
 
     # Per-connection run_command confirmation state (Task 6).
     import uuid
@@ -425,28 +378,8 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                     await terminal_policy.allow_always(db, verdict.rule)
         return bool(decision.get("approved"))
 
-    async def _spawn_names() -> list[str]:
-        roster = await roster_service.list_roster(conversation_id)
-        return [m.get("spawn_name") for m in roster if m.get("spawn_name")]
-
-    async def _store_into(target_name: str, material: str, names: list[str]) -> bool:
-        roster = await roster_service.list_roster(conversation_id)
-        match = next((m for m in roster if m.get("spawn_name") == target_name), None)
-        if match is None:
-            return False
-        try:
-            n = await ingest.ingest_text(
-                int(match["spawn_id"]), names[0] if names else "附件", material
-            )
-        except Exception as exc:  # noqa: BLE001
-            await ws.send_json(protocol.error("INGEST_ERROR", str(exc), recoverable=True))
-            return True  # handled (do not fall through to routing)
-        await ws.send_json(protocol.attachment_stored(target_name, n))
-        return True
-
     try:
         await ws.send_json({"type": "history", "messages": await _history(conversation_id)})
-        await ws.send_json(protocol.roster_update(await roster_service.list_roster(conversation_id)))
 
         # Reattach (S3-M2): snapshot the run journals + attach the sink in ONE
         # SYNCHRONOUS block — no await may sit between the two lines. A frame
@@ -513,7 +446,7 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                     await ws.send_json({"type": "session_ended_ack", "conversation_id": conversation_id})
                 elif msg_type != "resume":
                     await ws.send_json(protocol.error("TEMPORARY_ACTION_UNAVAILABLE",
-                        "Temporary conversations do not create experts, save memories, or perform external actions."))
+                        "Temporary conversations do not save memories or perform external actions."))
                 continue
 
             if msg_type == "resume":
@@ -540,35 +473,6 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                     await ws.send_json(protocol.error("TASK_REVIEW_REQUIRED", code, recoverable=True))
                 continue
 
-            if msg_type == "confirm_create":
-                draft = data.get("draft") or {}
-                task_brief = data.get("task_brief") or ""
-                differentiation = data.get("differentiation") or None
-                # Create-time dedup: a stale/edited draft may collide with an
-                # existing spawn even if the suggest_create card showed none.
-                # differentiation intentionally bypasses dedup; create_spawn_unique handles the name.
-                if not differentiation:
-                    overlap = spawn_service.find_overlap(draft, await spawn_service.load_all_spawns())
-                    if overlap is not None:
-                        await ws.send_json(
-                            protocol.suggest_create(draft, task_brief=task_brief, overlaps=overlap)
-                        )
-                        continue
-                spawn_id, spawn_name, equipment, intro = await _create_from_draft(draft, differentiation)
-                # HX-6/P2: advisory persona-vs-equipment delivery lint (fail-open, never blocks).
-                from server.services import persona_lint
-                capability_warnings = await persona_lint.lint_spawn(spawn_id)
-                await ws.send_json(protocol.spawn_created(spawn_id, spawn_name,
-                                                          equipment=equipment, intro=intro,
-                                                          capability_warnings=capability_warnings))
-                newly_joined = await roster_service.join(conversation_id, spawn_id, via="created")
-                if newly_joined:
-                    await ws.send_json(protocol.roster_event("joined", spawn_id, spawn_name))
-                await ws.send_json(protocol.roster_update(await roster_service.list_roster(conversation_id)))
-                if task_brief.strip():
-                    await run_spawn(spawn_id, task_brief)
-                continue
-
             if msg_type == "confirm_connect_mcp":
                 raw_id = data.get("server_id")
                 try:
@@ -577,229 +481,6 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                     await ws.send_json(protocol.error("INVALID_INPUT", "server_id required"))
                     continue
                 await run_connect_mcp_followup(sid)
-                continue
-
-            if msg_type == "confirm_update":
-                # P2 apply path (the ONLY one): persona/tone/capabilities via
-                # apply_conversational_update (regenerates system_prompt), equipment via
-                # replace_user_equipment — every key re-validated at the Layer-2 choke.
-                from server.registry import service as registry_service
-                from server.registry.service import NotAssignableError
-                raw_id = data.get("spawn_id")
-                try:
-                    spawn_id = int(raw_id)
-                except (TypeError, ValueError):
-                    await ws.send_json(protocol.error("INVALID_INPUT", "spawn_id required"))
-                    continue
-                changes = data.get("changes") or {}
-                eq = await registry_service.equipment_for_spawn(spawn_id)
-                _user_managed = lambda items: [  # noqa: E731
-                    i["key"] for i in items
-                    if i.get("grant") == "permanent" and i.get("granted_by") in ("create", "user")
-                ]
-                ts = _user_managed(eq["toolsets"])
-                sk = _user_managed(eq["skills"])
-                ts = [k for k in ts if k not in set(changes.get("remove_toolsets") or [])]
-                sk = [k for k in sk if k not in set(changes.get("remove_skills") or [])]
-                ts += [k for k in (changes.get("add_toolsets") or []) if k not in ts]
-                sk += [k for k in (changes.get("add_skills") or []) if k not in sk]
-                try:
-                    async with db_session.AsyncSessionLocal() as db:
-                        spawn = await spawn_service.apply_conversational_update(db, spawn_id, changes)
-                        if spawn is None:
-                            await ws.send_json(protocol.error("INVALID_INPUT", "unknown spawn"))
-                            continue
-                        await registry_service.replace_user_equipment(db, spawn_id, ts, sk)
-                except NotAssignableError as exc:
-                    await ws.send_json(protocol.error("NOT_ASSIGNABLE", str(exc), recoverable=True))
-                    continue
-                fresh = await registry_service.equipment_for_spawn(spawn_id)
-                await ws.send_json(protocol.spawn_updated(spawn_id, spawn.name,
-                                                          applied=changes, equipment=fresh))
-                continue
-
-            if msg_type == "route_to":
-                raw_id = data.get("spawn_id")
-                try:
-                    spawn_id = int(raw_id)
-                except (TypeError, ValueError):
-                    await ws.send_json(protocol.error("INVALID_INPUT", "spawn_id required"))
-                    continue
-                task_brief = data.get("task_brief") or ""
-                await run_spawn(spawn_id, task_brief)
-                continue
-
-            if msg_type == "confirm_direction":
-                raw_id = data.get("spawn_id")
-                try:
-                    spawn_id = int(raw_id)
-                except (TypeError, ValueError):
-                    await ws.send_json(protocol.error("INVALID_INPUT", "spawn_id required"))
-                    continue
-                await run_with_live_frames(arslan.confirm_and_execute(conversation_id, spawn_id, emit))
-                continue
-
-            if msg_type == "redo":
-                raw_id = data.get("spawn_id")
-                try:
-                    spawn_id = int(raw_id)
-                except (TypeError, ValueError):
-                    await ws.send_json(protocol.error("INVALID_INPUT", "spawn_id required"))
-                    continue
-                task_brief = data.get("task_brief") or ""
-                await run_spawn(spawn_id, task_brief)
-                continue
-
-            if msg_type == "refine":
-                raw_id = data.get("spawn_id")
-                try:
-                    spawn_id = int(raw_id)
-                except (TypeError, ValueError):
-                    await ws.send_json(protocol.error("INVALID_INPUT", "spawn_id required"))
-                    continue
-                task_brief = data.get("task_brief") or ""
-                instruction = data.get("instruction") or ""
-                prior = await _last_spawn_output(spawn_id)
-                await run_spawn(spawn_id, task_brief, prior_output=prior, instruction=instruction)
-                continue
-
-            if msg_type == "accept_deliverable":
-                raw_id = data.get("spawn_id")
-                try:
-                    spawn_id = int(raw_id)
-                except (TypeError, ValueError):
-                    await ws.send_json(protocol.error("INVALID_INPUT", "spawn_id required"))
-                    continue
-                raw_mid = data.get("message_id")
-                try:
-                    message_id = int(raw_mid) if raw_mid is not None else None
-                except (TypeError, ValueError):
-                    message_id = None
-                await run_with_live_frames(
-                    arslan.record_deliverable_verdict(conversation_id, spawn_id, "accept", message_id, emit)
-                )
-                continue
-
-            if msg_type == "discard":
-                raw_id = data.get("spawn_id")
-                try:
-                    spawn_id = int(raw_id)
-                except (TypeError, ValueError):
-                    await ws.send_json(protocol.error("INVALID_INPUT", "spawn_id required"))
-                    continue
-                raw_mid = data.get("message_id")
-                try:
-                    message_id = int(raw_mid) if raw_mid is not None else None
-                except (TypeError, ValueError):
-                    message_id = None
-                await run_with_live_frames(
-                    arslan.record_deliverable_verdict(conversation_id, spawn_id, "discard", message_id, emit)
-                )
-                continue
-
-            if msg_type == "finalize_refinement":
-                raw_id = data.get("spawn_id")
-                try:
-                    spawn_id = int(raw_id)
-                except (TypeError, ValueError):
-                    await ws.send_json(protocol.error("INVALID_INPUT", "spawn_id required"))
-                    continue
-                raw_mid = data.get("message_id")
-                try:
-                    original_message_id = int(raw_mid) if raw_mid is not None else None
-                except (TypeError, ValueError):
-                    original_message_id = None
-                content = (data.get("content") or "").strip()
-                if not content:
-                    await ws.send_json(protocol.error("INVALID_INPUT", "content required"))
-                    continue
-                await run_with_live_frames(
-                    arslan.finalize_refinement(conversation_id, spawn_id, original_message_id, content, emit)
-                )
-                continue
-
-            if msg_type == "roster_invite":
-                raw_id = data.get("spawn_id")
-                try:
-                    spawn_id = int(raw_id)
-                except (TypeError, ValueError):
-                    await ws.send_json(protocol.error("INVALID_INPUT", "spawn_id required"))
-                    continue
-                # A pending inline invite (`inviting` phase) means the user just Accepted
-                # an Arslan-proposed invite. Dispatch via the SHARED propose-vs-execute path
-                # (`dispatch_routed`), re-making the same decision a roster-member route would
-                # have — propose-mode when the parked `needs_proposal` is set, else execute.
-                # The join notice + response stream come from `_dispatch_spawn` underneath.
-                # A manual invite from the Ledger has no pending phase → just join.
-                pending_invite = await phase_service.get_pending_invite(conversation_id)
-                if pending_invite is not None and pending_invite.get("spawn_id") == spawn_id:
-                    await phase_service.clear(conversation_id)
-                    # Recruiting invite (delegation cell 6): Arslan already answered the
-                    # task doer-first, so Accept ONLY enrolls the spawn + posts the recruit
-                    # note — it must NOT re-dispatch the answered task (Bug 1 fix). An
-                    # ordinary (UNanswered) park still dispatches below (S0-2 not regressed).
-                    if pending_invite.get("answered"):
-                        await run_with_live_frames(
-                            arslan._accept_recruit(conversation_id, spawn_id, emit)
-                        )
-                        continue
-                    await run_routed(
-                        spawn_id,
-                        pending_invite.get("task_brief") or "",
-                        bool(pending_invite.get("needs_proposal")),
-                        user_message=pending_invite.get("user_message") or "",
-                        # Arslan already spoke its brief before the card — don't repeat it.
-                        announce=not bool(pending_invite.get("announced")),
-                    )
-                    continue
-                newly_joined = await roster_service.join(conversation_id, spawn_id, via="invited")
-                spawn_name = await dispatcher.get_spawn_name(spawn_id)
-                from_card = (data.get("origin") or "") == "invite_card"
-                # The honest notice below already says "joined", so a plain joined event
-                # alongside it would render two stacked roster lines for the same event.
-                if newly_joined and not from_card:
-                    await ws.send_json(protocol.roster_event("joined", spawn_id, spawn_name))
-                if from_card:
-                    # BUG2 death line: an invite/staffing CARD promised a consequence, but
-                    # the park is gone (cleared by a later message, clobbered by a phase
-                    # write, or parked for another spawn). Never silent — say what actually
-                    # happened (enrolled only) and what to do (@ it to hand off). Emitted
-                    # regardless of membership novelty: a stale card over an existing
-                    # member still needs the explanation. Ledger pulls send no origin and
-                    # keep the plain joined event.
-                    await ws.send_json(
-                        protocol.roster_event("joined_no_pending", spawn_id, spawn_name))
-                await ws.send_json(protocol.roster_update(await roster_service.list_roster(conversation_id)))
-                continue
-
-            if msg_type == "dismiss_invite":
-                # The user Dismissed an Arslan-proposed inline invite card. Clear the
-                # parked `inviting` phase so no dispatch happens; Arslan can answer
-                # directly on the next turn.
-                await phase_service.clear(conversation_id)
-                continue
-
-            if msg_type == "roster_kick":
-                raw_id = data.get("spawn_id")
-                try:
-                    spawn_id = int(raw_id)
-                except (TypeError, ValueError):
-                    await ws.send_json(protocol.error("INVALID_INPUT", "spawn_id required"))
-                    continue
-                # Resolve name before kicking so we can name the notice.
-                kick_spawn_name = await dispatcher.get_spawn_name(spawn_id)
-                was_removed = await roster_service.kick(conversation_id, spawn_id)
-                if was_removed:
-                    await ws.send_json(protocol.roster_event("left", spawn_id, kick_spawn_name))
-                await ws.send_json(protocol.roster_update(await roster_service.list_roster(conversation_id)))
-                continue
-
-            if msg_type == "roster_reset":
-                # A fresh app session resumed this conversation: the roster is session
-                # context, so clear it (the conversation's message history persists; spawn
-                # personas live in the Ledger). The user re-pulls whoever they want this session.
-                await roster_service.clear(conversation_id)
-                await ws.send_json(protocol.roster_update(await roster_service.list_roster(conversation_id)))
                 continue
 
             if msg_type == "session_ended":
@@ -824,28 +505,7 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                             asyncio.create_task(distill_service.distill_session(str(old_cid)))
                     except Exception as exc:  # noqa: BLE001
                         logger.warning("session_ended distill trigger failed (non-fatal): %s", exc)
-                    # Roster is session-ephemeral: end of session clears membership (after the
-                    # distill above captures anything worth keeping). Resuming later starts empty.
-                    try:
-                        await roster_service.clear(str(old_cid))
-                    except Exception as exc:  # noqa: BLE001
-                        logger.warning("session_ended roster clear failed (non-fatal): %s", exc)
                 await ws.send_json({"type": "session_ended_ack", "conversation_id": old_cid})
-                continue
-
-            if msg_type == "refine_draft":
-                description = data.get("description") or ""
-                previous = data.get("previous_draft") or {}
-                from server.services import spawn_drafter
-
-                draft = await spawn_drafter.draft_from_text(description, previous=previous)
-                await ws.send_json(
-                    protocol.suggest_create(
-                        draft,
-                        task_brief=draft.get("task_brief"),
-                        overlaps=draft.get("overlaps"),
-                    )
-                )
                 continue
 
             if msg_type != "user_message":
@@ -858,52 +518,6 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             # is nothing to store and nothing to fetch back.
             images = data.get("images") or []
             attached = (data.get("attached_context") or "").strip()
-            if attached:
-                recent_material = attached
-                recent_names = data.get("attached_names") or ["附件"]
-
-            # Reflow: a prior turn asked "记给哪个分身?" — resolve the target now.
-            if awaiting_store is not None:
-                material, names = awaiting_store
-                try:
-                    intent = await storage_intent.classify(content, names, await _spawn_names())
-                except Exception:  # noqa: BLE001
-                    intent = None
-                if (intent is not None and intent.store and intent.target
-                        and await _store_into(intent.target, material, names)):
-                    awaiting_store = None
-                    recent_material = ""
-                    recent_names = []
-                    continue
-                awaiting_store = None   # give up after one try → fall through to normal handling
-                recent_material = ""
-                recent_names = []
-
-            # Fresh storage intent (only when material is held)
-            elif recent_material:
-                try:
-                    intent = await storage_intent.classify(content, recent_names, await _spawn_names())
-                except Exception:  # noqa: BLE001
-                    intent = None
-                if intent is not None and intent.store:
-                    if intent.target and await _store_into(intent.target, recent_material, recent_names):
-                        recent_material = ""
-                        recent_names = []
-                        continue
-                    # store intent but no resolvable target → ask which spawn (conversational)
-                    awaiting_store = (recent_material, recent_names)
-                    names = await _spawn_names()
-                    question = (
-                        f"这份材料记给哪个分身?在线的有:{', '.join(names) or '(暂无在线分身)'}"
-                    )
-                    # Sent directly via ws.send_json: this question is a private
-                    # prompt to the tab that dropped the attachment — deliberately
-                    # NOT emit(), which would fan it out to every attached tab.
-                    await ws.send_json(protocol.stream_start_src("arslan"))
-                    await ws.send_json(protocol.stream_chunk(question))
-                    msg_id = await memory.add_message(conversation_id, "arslan", question)
-                    await ws.send_json(protocol.stream_end(msg_id))
-                    continue
 
             await run_with_confirm_frames(
                 arslan.handle_user_message(conversation_id, content, emit,

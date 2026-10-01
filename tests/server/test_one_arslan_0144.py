@@ -4,7 +4,7 @@ parked in a conversation cannot fire."""
 import pytest
 
 import server.db.session as db_session
-from server.orchestrator import arslan, router, tool_loop
+from server.orchestrator import arslan, tool_loop
 from server.services import phase_service
 from tests.server.test_promise_guard import _SeqAdapter, maker  # noqa: F401
 
@@ -18,7 +18,7 @@ def no_dispatch(monkeypatch):
     async def refuse(*args, **kwargs):
         dispatched.append(args)
         raise AssertionError("an expert was dispatched")
-    for name in ("_dispatch_spawn", "dispatch_routed", "confirm_and_execute"):
+    for name in ("_dispatch_spawn",):  # 0.1.48: the other entry points were deleted
         monkeypatch.setattr(arslan, name, refuse)
     return dispatched
 
@@ -28,11 +28,8 @@ def test_the_product_default_is_off():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("action", ["route", "suggest_create", "suggest_update"])
-async def test_expert_actions_become_arslan_answering(maker, no_dispatch, monkeypatch, action):  # noqa: F811
-    async def fake_route(conv, msg):
-        return router.RouterResult(action=action, spawn_id=6, task_brief="make a deck")
-    monkeypatch.setattr(arslan.router, "route", fake_route)
+async def test_naming_an_expert_still_gets_arslan_answering(maker, no_dispatch, monkeypatch):  # noqa: F811
+    # 0.1.48: there is no router left to suggest a route; the @-name is just text.
     adapter = _SeqAdapter(["Here is the outline I made myself."])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
     events = []
@@ -48,9 +45,6 @@ async def test_expert_actions_become_arslan_answering(maker, no_dispatch, monkey
 async def test_a_parked_invite_from_an_earlier_version_cannot_fire(maker, no_dispatch, monkeypatch):  # noqa: F811
     await phase_service.set_inviting("main", 6, task_brief="make a deck", user_message="make a deck")
 
-    async def fake_route(conv, msg):
-        return router.RouterResult(action="answer")
-    monkeypatch.setattr(arslan.router, "route", fake_route)
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _SeqAdapter(["Sure."]))
     await arslan.handle_user_message("main", "好", lambda e: None)   # a bare confirm used to accept it
     assert no_dispatch == []
@@ -151,3 +145,22 @@ async def test_background_evolution_never_spends_while_experts_are_off(execution
     assert await evolution_watcher.trigger_spawn(6) is None and started == []
     monkeypatch.setattr(arslan, "EXPERTS_ENABLED", True)          # the legacy path still works when on
     assert await evolution_watcher.trigger_spawn(6) == 1 and started == [6]
+
+
+@pytest.mark.asyncio
+async def test_former_experts_lists_only_experts_the_user_made(execution_db):
+    """0.1.48: the built-in examples were seeded on every install; they are not 'former experts'."""
+    from server.db.models import Spawn
+    from server.services import expert_conversion
+    async with execution_db() as db:
+        db.add(Spawn(id=1, name="Seeded example", domain_category="research", system_prompt="x", is_default=True))
+        db.add(Spawn(id=2, name="My own", domain_category="writing", system_prompt="y", is_default=False))
+        await db.commit()
+    assert [e["name"] for e in await expert_conversion.list_experts()] == ["My own"]
+
+
+def test_startup_no_longer_seeds_the_example_experts():
+    import inspect
+    from server import main
+    # Behaviour would need the whole lifespan; the call site is the whole contract here.
+    assert "seed_default_spawns()" not in inspect.getsource(main.lifespan)

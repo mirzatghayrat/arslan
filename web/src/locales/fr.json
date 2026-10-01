@@ -170,7 +170,7 @@
     "close_detail": "Fermer les détails",
     "used_n_dot": " · utilisé {{n}}",
     "last_used_for": " · dernier usage : {{ref}}",
-    "superseded_by_line": "Remplacé par #{{id}} — plus injecté",
+    "superseded_by_line": "Remplacé par #{{id}} — n’est plus utilisé",
     "undoing": "Annulation…",
     "undo_supersede": "Annuler le remplacement",
     "sensitive_note": "Marqué sensible — indication visuelle, pas une isolation.",
@@ -545,7 +545,7 @@
     "labelTelemetry": "Télémétrie de diagnostic",
     "telemetryDesc": "Collecter des données d’utilisation locales pour améliorer les performances (facultatif)",
     "distill_on_session_end": "Résumer les préférences en fin de session",
-    "distill_hint": "Apprendre les préférences de chaque expert à partir de vos retours à la fin d’une conversation",
+    "distill_hint": "À la fin d’une conversation, apprend tes préférences à partir de tes retours",
     "retentionLabel": "Jours de conservation des détails de débogage d'exécution",
     "retentionHint": "Passé ce nombre de jours, l'invite système réelle / les connaissances injectées / les entrées complètes des outils et les réponses brutes d'une exécution sont effacées automatiquement (les scores et les durées ne sont pas affectés).",
     "headerLore": "Gérez vos connexions, préférences et autorisations.",
@@ -1047,11 +1047,11 @@
     "catalog": {
       "loading": "Chargement du registre…",
       "empty": "Aucune capacité enregistrée pour l'instant",
-      "equip_hint": "Ajoutez-les depuis le menu d’un expert.",
+      "equip_hint": "Arslan peut les utiliser directement.",
       "unimplemented_note": "Non implémenté — simple entrée de catalogue, ne peut pas être équipé.",
       "orchestrator_note": "Par sécurité, réservés à Arslan lui-même — non attribuables aux experts.",
       "degraded": "SANS SANDBOX",
-      "empty_desc": "Les capacités sont les outils et compétences qu'un spawn peut utiliser. Importez des compétences depuis un dépôt, ou enregistrez un serveur MCP, via les panneaux de cette page.",
+      "empty_desc": "Les capacités sont les outils et compétences qu’Arslan peut utiliser. Importe des compétences depuis un dépôt ou enregistre un serveur MCP avec les panneaux de cette page.",
       "filtered_empty": "Rien ne correspond à ce filtre",
       "filtered_clear": "Tout afficher"
     },
@@ -1563,7 +1563,7 @@
       "conversation_placeholder": "Vide = conversation dédiée",
       "submit_create": "Créer",
       "submit_save": "Enregistrer",
-      "required": "Nom, prompt et spawn sont requis"
+      "required": "Le nom et l’instruction sont obligatoires"
     },
     "err": {
       "task_not_found": "La tâche planifiée {{task_id}} n'existe pas",
@@ -1573,7 +1573,7 @@
       "enabled_limit_reached": "Vous avez déjà {{max_enabled}} tâches planifiées actives — mettez-en une en pause ou supprimez-la",
       "spawn_id_required": "Un spawn doit être choisi"
     },
-    "empty_desc": "Une tâche planifiée envoie un spawn toute seule, selon un intervalle ou une expression cron : un résumé quotidien, une vérification horaire."
+    "empty_desc": "Une tâche planifiée fait faire quelque chose à Arslan tout seul, à intervalle régulier ou selon une expression cron : un résumé quotidien, une vérification toutes les heures."
   },
   "diag": {
     "range_1h": "Dernière 1h",

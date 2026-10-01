@@ -11,8 +11,6 @@ stubbed adapters, TestClient websocket.
 """
 import pytest
 
-import server.orchestrator.arslan as arslan_mod
-import server.orchestrator.router as router_mod
 import server.orchestrator.tool_loop as tool_loop_mod
 import server.registry.executors as executors_mod
 from tests.server.conftest import build_ws_client
@@ -119,12 +117,8 @@ def _enable_shell(app_client, policy: str | None = None) -> None:
 
 
 def _stub_answer_route(monkeypatch) -> None:
-    """Force the router to 'answer' so handle_user_message reaches _handle_answer
-    (which wires confirm_command into tool_loop). Avoids a real router LLM call."""
-    async def _fake_route(conversation_id, user_message):  # noqa: ANN001
-        return router_mod.RouterResult(action="answer", reason="test")
-
-    monkeypatch.setattr(arslan_mod.router, "route", _fake_route)
+    """0.1.48: every message goes straight to _handle_answer (no router), so there is
+    nothing to stub. Kept so the call sites still read as the precondition they state."""
 
 
 def _stub_tool_loop_adapter(monkeypatch, command: str, argv: list[str]) -> None:
@@ -167,7 +161,6 @@ def test_confirm_run_command_executes(app_client, monkeypatch):
 
     with app_client.websocket_connect("/ws/arslan/main") as ws:
         ws.receive_json()  # history
-        ws.receive_json()  # on-connect roster_update
         ws.send_json({"type": "user_message", "content": "check the repo"})
 
         frames = _collect_until(ws, "propose_run_command")
@@ -198,7 +191,6 @@ def test_cancel_run_command_declines(app_client, monkeypatch):
 
     with app_client.websocket_connect("/ws/arslan/main") as ws:
         ws.receive_json()  # history
-        ws.receive_json()  # on-connect roster_update
         ws.send_json({"type": "user_message", "content": "check the repo"})
 
         frames = _collect_until(ws, "propose_run_command")
@@ -223,7 +215,6 @@ def test_ask_risky_auto_runs_low_no_card(app_client, monkeypatch):
 
     with app_client.websocket_connect("/ws/arslan/main") as ws:
         ws.receive_json()  # history
-        ws.receive_json()  # on-connect roster_update
         ws.send_json({"type": "user_message", "content": "check the repo"})
 
         after = _collect_until(ws, "stream_end")
@@ -243,7 +234,6 @@ def test_ask_risky_still_cards_medium(app_client, monkeypatch):
 
     with app_client.websocket_connect("/ws/arslan/main") as ws:
         ws.receive_json()  # history
-        ws.receive_json()  # on-connect roster_update
         ws.send_json({"type": "user_message", "content": "commit please"})
 
         frames = _collect_until(ws, "propose_run_command")
@@ -263,7 +253,6 @@ def test_remember_auto_approves_same_shape(app_client, monkeypatch):
 
     with app_client.websocket_connect("/ws/arslan/main") as ws:
         ws.receive_json()  # history
-        ws.receive_json()  # on-connect roster_update
 
         # Turn 1: git status, confirm with remember=true.
         _stub_tool_loop_adapter(monkeypatch, "git", ["status"])
@@ -297,7 +286,6 @@ def test_remember_low_does_not_auto_approve_high(app_client, monkeypatch):
 
     with app_client.websocket_connect("/ws/arslan/main") as ws:
         ws.receive_json()  # history
-        ws.receive_json()  # on-connect roster_update
 
         # Turn 1: git status (LOW), confirm with remember=true.
         _stub_tool_loop_adapter(monkeypatch, "git", ["status"])
@@ -345,7 +333,6 @@ def test_confirm_card_private_to_originating_socket(app_client, monkeypatch):
          app_client.websocket_connect("/ws/arslan/main") as ws2:
         for ws in (ws1, ws2):
             assert ws.receive_json()["type"] == "history"
-            assert ws.receive_json()["type"] == "roster_update"
 
         ws1.send_json({"type": "user_message", "content": "check the repo"})
 
@@ -377,7 +364,6 @@ def test_dont_ask_again_holds_in_a_new_session_for_that_kind_of_command(app_clie
     fake_exec = _stub_run_command_executor(monkeypatch)
     with app_client.websocket_connect("/ws/arslan/main") as ws:
         ws.receive_json()
-        ws.receive_json()
         ws.send_json({"type": "user_message", "content": "delete old.txt"})
         card = _collect_until(ws, "propose_run_command")[-1]
         assert card["rule"] == "delete" and card["reason"] == "deletes files"
@@ -385,7 +371,6 @@ def test_dont_ask_again_holds_in_a_new_session_for_that_kind_of_command(app_clie
         _collect_until(ws, "stream_end")
     _stub_tool_loop_adapter(monkeypatch, "rm", ["other.txt"])
     with app_client.websocket_connect("/ws/arslan/main") as ws:     # a new session
-        ws.receive_json()
         ws.receive_json()
         ws.send_json({"type": "user_message", "content": "delete other.txt"})
         types = [f["type"] for f in _collect_until(ws, "stream_end")]
@@ -399,7 +384,6 @@ def test_the_floor_is_refused_without_ever_showing_a_card(app_client, monkeypatc
     _stub_tool_loop_adapter(monkeypatch, "sudo", ["rm", "-rf", "/tmp/x"])
     fake_exec = _stub_run_command_executor(monkeypatch)
     with app_client.websocket_connect("/ws/arslan/main") as ws:
-        ws.receive_json()
         ws.receive_json()
         ws.send_json({"type": "user_message", "content": "clean up"})
         frames = _collect_until(ws, "stream_end")

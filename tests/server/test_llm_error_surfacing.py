@@ -46,60 +46,12 @@ def _collect():
 # 1. router.route() raises → error frame emitted, no exception propagated
 # ---------------------------------------------------------------------------
 
-@pytest.mark.asyncio
-async def test_router_raise_emits_error_frame_not_exception(db, monkeypatch):
-    """If router.route() raises (e.g. LLM timeout), handle_user_message must
-    emit an error frame and return normally — NOT propagate the exception."""
-    from server.orchestrator import arslan, router
-
-    async def _boom(conv, msg):
-        raise TimeoutError("Gemini did not respond within 300 s")
-
-    monkeypatch.setattr(router, "route", _boom)
-    # stub phase_service so there's no pending proposal to classify
-    import server.services.phase_service as ps
-    monkeypatch.setattr(ps, "get_pending", lambda cid: _async_none())
-
-    events, emit = _collect()
-    # Must NOT raise
-    await arslan.handle_user_message("test-conv", "hello", emit)
-
-    error_frames = [e for e in events if e.get("type") == "error"]
-    assert error_frames, f"Expected an error frame but got: {events}"
-    assert error_frames[0]["code"] == "LLM_ERROR"
-    assert "Gemini" in error_frames[0]["message"] or "300" in error_frames[0]["message"]
-    assert error_frames[0].get("recoverable") is True
 
 
 # ---------------------------------------------------------------------------
 # 2. _classify_followup raises → error frame emitted, no exception propagated
 # ---------------------------------------------------------------------------
 
-@pytest.mark.asyncio
-async def test_classify_followup_raise_emits_error_frame(db, monkeypatch):
-    """If _classify_followup raises while a proposal is pending, the error must
-    be emitted as an error frame — the WebSocket must stay open."""
-    from server.orchestrator import arslan
-    import server.services.phase_service as ps
-
-    # Simulate a pending proposal
-    async def _fake_pending(cid):
-        return {"phase": "proposing", "spawn_id": 7, "direction": "do some marketing"}
-
-    monkeypatch.setattr(ps, "get_pending", _fake_pending)
-
-    async def _boom(user_msg, direction):
-        raise ConnectionError("LLM API unreachable")
-
-    monkeypatch.setattr(arslan, "_classify_followup", _boom)
-
-    events, emit = _collect()
-    await arslan.handle_user_message("test-conv", "sounds good", emit)
-
-    error_frames = [e for e in events if e.get("type") == "error"]
-    assert error_frames, f"Expected an error frame but got: {events}"
-    assert error_frames[0]["code"] == "LLM_ERROR"
-    assert error_frames[0].get("recoverable") is True
 
 
 # ---------------------------------------------------------------------------
@@ -111,13 +63,10 @@ async def test_classify_followup_raise_emits_error_frame(db, monkeypatch):
 async def test_handle_answer_llm_error_emits_error_frame(db, monkeypatch):
     """If the LLM raises during streaming in _handle_answer, an error frame
     must be emitted and the function must return normally."""
-    from server.orchestrator import arslan, router
+    from server.orchestrator import arslan
     import server.services.phase_service as ps
 
-    async def _fake_route(conv, msg):
-        return router.RouterResult(action="answer")
 
-    monkeypatch.setattr(router, "route", _fake_route)
     monkeypatch.setattr(ps, "get_pending", lambda cid: _async_none())
 
     from server.orchestrator import tool_loop
@@ -142,13 +91,10 @@ async def test_handle_answer_llm_error_emits_error_frame(db, monkeypatch):
 @pytest.mark.asyncio
 async def test_normal_answer_still_works_after_error_guard(db, monkeypatch):
     """Ensure the error guard doesn't break the normal answer path."""
-    from server.orchestrator import arslan, router
+    from server.orchestrator import arslan
     import server.services.phase_service as ps
 
-    async def _fake_route(conv, msg):
-        return router.RouterResult(action="answer")
 
-    monkeypatch.setattr(router, "route", _fake_route)
     monkeypatch.setattr(ps, "get_pending", lambda cid: _async_none())
 
     from server.orchestrator import tool_loop

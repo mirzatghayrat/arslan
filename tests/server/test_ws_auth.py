@@ -1,7 +1,7 @@
-"""WebSocket handshake token enforcement — integration coverage for all 3 endpoints.
+"""WebSocket handshake token enforcement — integration coverage.
 
-The three inline WS routes in ``main.py`` (``/ws/chat``, ``/ws/arslan``,
-``/ws/sandbox``) delegate to the handlers in ``server/ws/*.py``, each of which
+The WS route in ``main.py`` (``/ws/arslan``; 0.1.48 removed the expert
+``/ws/chat`` and ``/ws/sandbox``) delegates to ``server/ws/arslan.py``, which
 validates the ``?token=`` query param via ``is_ws_token_valid`` *before*
 accepting the socket. ``test_auth.py`` already unit-tests the helper; these tests
 prove the wiring end to end:
@@ -27,9 +27,7 @@ from tests.server.conftest import build_ws_client
 # (path, human name) for each of the three token-guarded WS endpoints. The
 # arslan channel is the highest-risk one (drives spawn dispatch / roster edits).
 WS_ENDPOINTS = [
-    ("/ws/chat/1", "chat"),
     ("/ws/arslan/main", "arslan"),
-    ("/ws/sandbox/1", "sandbox"),
 ]
 
 

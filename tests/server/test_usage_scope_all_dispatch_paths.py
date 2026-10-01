@@ -11,14 +11,12 @@ This ALSO fixes the audited turn-cumulative double-count: each Run reads its own
 bucket instead of a turn-wide one shared across auto-continue re-dispatches.
 """
 import pytest
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from arslan.llm import usage_sink
 from server.db import session as db_session
-from server.db.models import Base, Run, Spawn
-from server.orchestrator import arslan, dispatcher, router
-from server.services import roster_service, run_recorder
+from server.db.models import Base, Spawn
+from server.services import run_recorder
 
 
 @pytest.fixture
@@ -70,67 +68,5 @@ def _reporting_dispatch(usage_by_call):
     return fake_dispatch, state
 
 
-async def test_non_typed_dispatch_captures_model_and_tokens(memdb, monkeypatch):
-    """A dispatch entered via a NON-typed WS action (here `dispatch_routed`, the shared path
-    used by route_to / redo / refine / roster_invite accept) must record a real model +
-    provider + non-zero tokens on its finalized Run. On the pre-fix code this Run comes back
-    model=None / task_tokens=0 because no usage_sink scope is active outside handle_user_message.
-    """
-    spawn_id = await _seed_spawn(memdb)
-    fake_dispatch, _ = _reporting_dispatch([(120, 80, 200, "delivered")])
-    monkeypatch.setattr(dispatcher, "dispatch", fake_dispatch)
-    await roster_service.join("c1", spawn_id, via="invited")
-
-    events = []
-    # Enter via dispatch_routed directly — no surrounding handle_user_message /
-    # usage_sink.collecting() scope, exactly like the WS route_to/redo/refine handlers.
-    await arslan.dispatch_routed("c1", spawn_id, "do it", False, events.append)
-
-    async with memdb() as db:
-        run = (await db.execute(select(Run))).scalars().one()
-
-    assert run.model == "claude-x"
-    assert run.provider == "anthropic"
-    assert run.task_tokens == 200
-    assert run.tokens_in == 120
-    assert run.tokens_out == 80
-    assert run.tokens_estimated is False
 
 
-async def test_explicit_continuation_runs_do_not_double_count(memdb, monkeypatch):
-    """Each explicit dispatch owns its usage; findings text cannot trigger another Run."""
-    spawn_id = await _seed_spawn(memdb)
-
-    async def fake_route(conversation_id, user_message):
-        return router.RouterResult(action="route", spawn_id=spawn_id,
-                                   task_brief="do it", new_facts=[])
-    monkeypatch.setattr(router, "route", fake_route)
-
-    fake_dispatch, state = _reporting_dispatch([
-        (100, 50, 150, "round 1\n\n【阶段性发现】progress made"),
-        (30, 20, 50, "round 2 final answer"),
-    ])
-    monkeypatch.setattr(dispatcher, "dispatch", fake_dispatch)
-    await roster_service.join("c1", spawn_id, via="invited")
-
-    events = []
-    # Typed path (the ONE path that historically had a scope) — names Mermer so the
-    # doer-first divert is skipped and the route dispatches directly.
-    await arslan.handle_user_message("c1", "让Mermer查一下", events.append)
-    assert state["i"] == 1
-    await arslan.handle_user_message("c1", "让Mermer继续核对", events.append)
-    assert state["i"] == 2
-
-    async with memdb() as db:
-        runs = (await db.execute(select(Run).order_by(Run.id))).scalars().all()
-
-    assert len(runs) == 2
-    # Run 1: its own usage.
-    assert runs[0].task_tokens == 150
-    assert runs[0].tokens_in == 100
-    assert runs[0].tokens_out == 50
-    # Run 2: ONLY its own usage — not 200 / 130 / 70 (cumulative bleed).
-    assert runs[1].task_tokens == 50
-    assert runs[1].tokens_in == 30
-    assert runs[1].tokens_out == 20
-    assert runs[0].model == "claude-x" and runs[1].model == "claude-x"

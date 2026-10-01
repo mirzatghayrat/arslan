@@ -170,7 +170,7 @@
     "close_detail": "Details schließen",
     "used_n_dot": " · {{n}}× genutzt",
     "last_used_for": " · zuletzt für {{ref}}",
-    "superseded_by_line": "Ersetzt durch #{{id}} — wird nicht mehr injiziert",
+    "superseded_by_line": "Ersetzt durch #{{id}} – wird nicht mehr verwendet",
     "undoing": "Widerrufen…",
     "undo_supersede": "Ersetzung widerrufen",
     "sensitive_note": "Als sensibel markiert — nur ein Hinweis, keine Isolation.",
@@ -545,7 +545,7 @@
     "labelTelemetry": "Diagnosetelemetrie",
     "telemetryDesc": "Lokale Nutzungsdaten zur Leistungsverbesserung sammeln (freiwillig)",
     "distill_on_session_end": "Vorlieben am Sitzungsende zusammenfassen",
-    "distill_hint": "Am Gesprächsende aus deinem Feedback die Vorlieben pro Experte lernen",
+    "distill_hint": "Lernt am Ende einer Unterhaltung deine Vorlieben aus deinem Feedback",
     "retentionLabel": "Aufbewahrungstage für Ausführungs-Debugdetails",
     "retentionHint": "Nach dieser Anzahl von Tagen werden der tatsächliche System-Prompt / eingespeistes Wissen / vollständige Tool-Eingaben und Rohantworten einer Ausführung automatisch gelöscht (Bewertungen und Zeiten bleiben unberührt).",
     "headerLore": "Verbindungen, Einstellungen und Berechtigungen verwalten.",
@@ -1047,11 +1047,11 @@
     "catalog": {
       "loading": "Verzeichnis wird geladen…",
       "empty": "Noch keine Fähigkeiten registriert",
-      "equip_hint": "Über das Menü eines Experten hinzufügen.",
+      "equip_hint": "Arslan kann diese direkt nutzen.",
       "unimplemented_note": "Nicht implementiert — nur Katalog-Platzhalter, nicht ausrüstbar.",
       "orchestrator_note": "Aus Sicherheitsgründen nur von Arslan selbst nutzbar – nicht an Experten vergebbar.",
       "degraded": "OHNE SANDBOX",
-      "empty_desc": "Fähigkeiten sind die Werkzeuge und Skills, die ein Spawn nutzen kann. Importiere Skills aus einem Repository oder registriere einen MCP-Server über die Panels auf dieser Seite.",
+      "empty_desc": "Fähigkeiten sind die Werkzeuge und Skills, die Arslan nutzen kann. Importiere Skills aus einem Repository oder registriere einen MCP-Server über die Bereiche auf dieser Seite.",
       "filtered_empty": "Nichts entspricht diesem Filter",
       "filtered_clear": "Alle anzeigen"
     },
@@ -1563,7 +1563,7 @@
       "conversation_placeholder": "Leer = eigene Konversation",
       "submit_create": "Erstellen",
       "submit_save": "Speichern",
-      "required": "Name, Prompt und Spawn sind erforderlich"
+      "required": "Name und Anweisung sind erforderlich"
     },
     "err": {
       "task_not_found": "Geplante Aufgabe {{task_id}} existiert nicht",
@@ -1573,7 +1573,7 @@
       "enabled_limit_reached": "Es sind bereits {{max_enabled}} geplante Aufgaben aktiv — pausiere oder lösche zuerst eine",
       "spawn_id_required": "Es muss ein Spawn gewählt werden"
     },
-    "empty_desc": "Eine geplante Aufgabe weist selbstständig einen Spawn zu — in einem Intervall oder per Cron-Ausdruck: eine tägliche Zusammenfassung, eine stündliche Prüfung."
+    "empty_desc": "Eine geplante Aufgabe lässt Arslan selbstständig etwas tun, in einem Intervall oder nach einem Cron-Ausdruck – eine tägliche Übersicht, eine stündliche Prüfung."
   },
   "diag": {
     "range_1h": "Letzte 1h",

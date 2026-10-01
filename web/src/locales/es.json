@@ -170,7 +170,7 @@
     "close_detail": "Cerrar detalles",
     "used_n_dot": " · usado {{n}}",
     "last_used_for": " · último uso en {{ref}}",
-    "superseded_by_line": "Reemplazado por #{{id}} — ya no se inyecta",
+    "superseded_by_line": "Sustituido por #{{id}}: ya no se usa",
     "undoing": "Deshaciendo…",
     "undo_supersede": "Deshacer reemplazo",
     "sensitive_note": "Marcado sensible — es un aviso visual, no aislamiento.",
@@ -545,7 +545,7 @@
     "labelTelemetry": "Telemetría de diagnóstico",
     "telemetryDesc": "Recopila datos de uso locales para mejorar el rendimiento (opcional)",
     "distill_on_session_end": "Resumir preferencias al terminar la sesión",
-    "distill_hint": "Aprende las preferencias de cada experto a partir de tus comentarios al terminar una conversación",
+    "distill_hint": "Al terminar una conversación, aprende tus preferencias a partir de tus comentarios",
     "retentionLabel": "Días de retención del detalle de depuración de ejecuciones",
     "retentionHint": "Tras estos días, el prompt de sistema real / conocimiento inyectado / entradas completas de herramientas y respuestas en bruto de una ejecución se borran automáticamente (las puntuaciones y los tiempos no se ven afectados).",
     "headerLore": "Gestiona conexiones, preferencias y permisos.",
@@ -1047,11 +1047,11 @@
     "catalog": {
       "loading": "Cargando registro…",
       "empty": "Aún no hay capacidades registradas",
-      "equip_hint": "Añádelos desde el menú de un experto.",
+      "equip_hint": "Arslan puede usarlos directamente.",
       "unimplemented_note": "No implementado — solo marcador de catálogo, no se puede equipar.",
       "orchestrator_note": "Por seguridad, solo el propio Arslan puede usarlos; no se pueden asignar a los expertos.",
       "degraded": "SIN SANDBOX",
-      "empty_desc": "Las capacidades son las herramientas y habilidades que un spawn puede usar. Importa habilidades de un repositorio o registra un servidor MCP con los paneles de esta página.",
+      "empty_desc": "Las capacidades son las herramientas y habilidades que Arslan puede usar. Importa habilidades desde un repositorio o registra un servidor MCP con los paneles de esta página.",
       "filtered_empty": "Nada coincide con este filtro",
       "filtered_clear": "Mostrar todo"
     },
@@ -1563,7 +1563,7 @@
       "conversation_placeholder": "Vacío = conversación dedicada",
       "submit_create": "Crear",
       "submit_save": "Guardar",
-      "required": "Nombre, prompt y spawn son obligatorios"
+      "required": "El nombre y la instrucción son obligatorios"
     },
     "err": {
       "task_not_found": "La tarea programada {{task_id}} no existe",
@@ -1573,7 +1573,7 @@
       "enabled_limit_reached": "Ya tienes {{max_enabled}} tareas programadas activas: pausa o elimina una primero",
       "spawn_id_required": "Debes elegir un spawn"
     },
-    "empty_desc": "Una tarea programada despacha un spawn por su cuenta, según un intervalo o una expresión cron: un resumen diario, una comprobación cada hora."
+    "empty_desc": "Una tarea programada hace que Arslan haga algo por su cuenta, en un intervalo o con una expresión cron: un resumen diario, una comprobación cada hora."
   },
   "diag": {
     "range_1h": "Última 1h",

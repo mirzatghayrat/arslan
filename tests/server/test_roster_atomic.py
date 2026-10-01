@@ -58,62 +58,10 @@ def staged_client(tmp_path, monkeypatch, portal):
 # (A) WS path: invite ONE with several spawns present → roster has exactly [X].
 # ---------------------------------------------------------------------------
 
-def test_invite_one_joins_exactly_one(staged_client):
-    """With 4 spawns in the system, inviting ONE yields a roster_update containing
-    exactly that one spawn — no cascade, no duplicates."""
-    with staged_client.websocket_connect("/ws/arslan/main") as ws:
-        ws.receive_json()  # history
-        ws.receive_json()  # on-connect roster_update (empty)
-        ws.send_json({"type": "roster_invite", "spawn_id": 5})
-        ev = ws.receive_json()
-        assert ev["type"] == "roster_event"
-        assert ev["action"] == "joined"
-        assert ev["spawn_id"] == 5
-        upd = ws.receive_json()
-        assert upd["type"] == "roster_update"
-        ids = [m["spawn_id"] for m in upd["members"]]
-        assert ids == [5], f"expected exactly [5], got {ids} (cascade?)"
-        assert len(ids) == len(set(ids)), f"duplicate members: {ids}"
 
 
-def test_invite_two_sequential_no_cascade(staged_client):
-    """Inviting two spawns one after another adds exactly those two, in join order,
-    with no extra members and no duplicates."""
-    with staged_client.websocket_connect("/ws/arslan/main") as ws:
-        ws.receive_json()  # history
-        ws.receive_json()  # on-connect roster_update (empty)
-
-        ws.send_json({"type": "roster_invite", "spawn_id": 6})
-        ws.receive_json()  # roster_event joined
-        upd1 = ws.receive_json()
-        assert [m["spawn_id"] for m in upd1["members"]] == [6]
-
-        ws.send_json({"type": "roster_invite", "spawn_id": 4})
-        ws.receive_json()  # roster_event joined
-        upd2 = ws.receive_json()
-        ids = [m["spawn_id"] for m in upd2["members"]]
-        assert ids == [6, 4], f"expected join-order [6, 4], got {ids}"
-        assert len(ids) == len(set(ids))
 
 
-def test_reinvite_same_spawn_no_duplicate(staged_client):
-    """Re-inviting an already-present spawn (with other spawns available) does NOT
-    duplicate it and does NOT pull anyone else in."""
-    with staged_client.websocket_connect("/ws/arslan/main") as ws:
-        ws.receive_json()  # history
-        ws.receive_json()  # on-connect roster_update (empty)
-
-        ws.send_json({"type": "roster_invite", "spawn_id": 7})
-        ws.receive_json()  # roster_event joined
-        ws.receive_json()  # roster_update
-
-        # Re-invite same spawn → idempotent: only a roster_update, no new event.
-        ws.send_json({"type": "roster_invite", "spawn_id": 7})
-        frame = ws.receive_json()
-        assert frame["type"] == "roster_update"
-        ids = [m["spawn_id"] for m in frame["members"]]
-        assert ids == [7], f"expected [7] after idempotent re-invite, got {ids}"
-        assert len(ids) == len(set(ids))
 
 
 # ---------------------------------------------------------------------------

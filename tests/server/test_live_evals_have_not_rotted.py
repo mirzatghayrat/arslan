@@ -24,14 +24,12 @@ created.
 from __future__ import annotations
 
 import ast
-import dataclasses
 import importlib
 import inspect
 import pathlib
 
 import pytest
 
-from server.orchestrator import router
 from server.orchestrator.escalation import classify
 
 TESTS = pathlib.Path(__file__).parent
@@ -39,21 +37,11 @@ TESTS = pathlib.Path(__file__).parent
 
 def test_the_evals_are_still_gated_the_way_this_file_assumes():
     """⓪ If the gate changed, every assertion below is about the wrong thing."""
-    for name in ("test_clarify_eval.py", "test_escalation_eval.py"):
+    for name in ("test_escalation_eval.py",):  # 0.1.48: the router (and its clarify eval) is gone
         src = (TESTS / name).read_text()
         assert "ARSLAN_LIVE_LLM" in src, f"{name} no longer gates on ARSLAN_LIVE_LLM"
 
 
-def test_clarify_eval_can_still_call_what_it_calls():
-    """`router.route(conversation_id, user_message)` awaited, returning `.action`."""
-    assert inspect.iscoroutinefunction(router.route)
-    params = list(inspect.signature(router.route).parameters)
-    # The eval calls it positionally: router.route("eval", msg)
-    assert params[:2] == ["conversation_id", "user_message"], params
-
-    assert dataclasses.is_dataclass(router.RouterResult)
-    fields = {f.name for f in dataclasses.fields(router.RouterResult)}
-    assert "action" in fields, f"RouterResult lost `action`; the eval reads it. fields={fields}"
 
 
 def test_escalation_eval_can_still_call_what_it_calls():
@@ -92,7 +80,7 @@ def test_escalation_eval_can_still_call_what_it_calls():
 
 @pytest.mark.parametrize(
     "name,expected_cases",
-    [("test_clarify_eval.py", 6), ("test_escalation_eval.py", 6)],
+    [("test_escalation_eval.py", 6)],
 )
 def test_the_eval_corpora_did_not_quietly_empty(name: str, expected_cases: int):
     """A parametrised eval with an emptied corpus collects zero tests and looks fine.

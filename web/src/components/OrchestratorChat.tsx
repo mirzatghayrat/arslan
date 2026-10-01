@@ -104,7 +104,7 @@ export default function OrchestratorChat({
   onSelectModel,
   conversationId,
   shellEnabled = false,
-  shellPolicy = 'ask_all',
+  shellPolicy = 'ask_risky',
 }: OrchestratorChatProps) {
   const { t, i18n } = useTranslation();
   const settings = useSettingsStore((s) => s.settings);
@@ -1176,12 +1176,12 @@ export default function OrchestratorChat({
             </div>
             {attach.error && <div className="attach-error max-w-4xl mx-auto mt-1.5" role="alert">{attach.error}</div>}
           </form>
-          {/* 0.1.42: the command-confirmation control lives in Settings → Advanced.
-              Only the non-default posture (read-only commands run without asking)
-              stays visible here, as one line — it changes what happens without a card. */}
-          {shellEnabled && shellPolicy === 'ask_risky' && (
+          {/* The command-confirmation control lives in Settings → Advanced. Only the
+              non-default posture shows here, as one line. 0.1.48 flipped the default to
+              "ask only for risky commands", so the line now appears for "ask for every one". */}
+          {shellEnabled && shellPolicy === 'ask_all' && (
             <p className="max-w-4xl mx-auto mt-1.5 text-[11px] text-muted-foreground" data-testid="execution-options">
-              {t('workspace.readOnlyAutomatic')}
+              {t('workspace.confirmCommands')}
             </p>
           )}
         </footer>

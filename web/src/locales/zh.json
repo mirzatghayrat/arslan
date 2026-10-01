@@ -170,7 +170,7 @@
     "close_detail": "关闭详情",
     "used_n_dot": " · 用过 {{n}}",
     "last_used_for": " · 最近用于 {{ref}}",
-    "superseded_by_line": "已被 #{{id}} 取代 — 不再注入给专家",
+    "superseded_by_line": "已被 #{{id}} 取代——不再使用",
     "undoing": "撤销中…",
     "undo_supersede": "撤销取代",
     "sensitive_note": "已标记为敏感。这是一个显示提示,不是隔离 —— 内容照常返回给读取它的界面。",
@@ -545,7 +545,7 @@
     "labelTelemetry": "诊断遥测",
     "telemetryDesc": "收集本地使用数据以改善性能（需主动开启）",
     "distill_on_session_end": "会话结束时蒸馏偏好",
-    "distill_hint": "会话结束时从你的反馈学习每个专家的偏好",
+    "distill_hint": "对话结束时，从你的反馈里学习你的偏好",
     "retentionLabel": "运行调试详情保留天数",
     "retentionHint": "超过此天数的 run，实际系统提示 / 注入知识 / 工具完整入参与原始返回会被自动清除（分数与耗时不受影响）。",
     "headerLore": "管理连接、使用偏好与权限。",
@@ -1047,11 +1047,11 @@
     "catalog": {
       "loading": "正在加载注册表…",
       "empty": "还没有注册任何能力",
-      "equip_hint": "从专家的菜单中装配这些能力。",
+      "equip_hint": "Arslan 可以直接使用这些。",
       "unimplemented_note": "未实装——仅目录占位,不可装备。",
       "orchestrator_note": "出于安全，仅 Arslan 本身可用，不能交给专家使用。",
       "degraded": "裸跑·无沙箱",
-      "empty_desc": "能力就是专家能用的工具和技能。用本页的面板从仓库导入技能，或注册一个 MCP 服务器。",
+      "empty_desc": "能力是 Arslan 可以使用的工具和技能。用本页的面板从仓库导入技能，或登记一个 MCP 服务器。",
       "filtered_empty": "没有符合当前筛选的项",
       "filtered_clear": "显示全部"
     },
@@ -1563,7 +1563,7 @@
       "conversation_placeholder": "留空 = 专用会话",
       "submit_create": "创建",
       "submit_save": "保存",
-      "required": "名称、提示词和专家必填"
+      "required": "名称和指令都要填"
     },
     "err": {
       "task_not_found": "定时任务 {{task_id}} 不存在",
@@ -1573,7 +1573,7 @@
       "enabled_limit_reached": "已启用的定时任务已达上限 {{max_enabled}} 个，请先暂停或删除",
       "spawn_id_required": "必须选择一个专家"
     },
-    "empty_desc": "定时任务会按间隔或 cron 表达式自动派发专家 —— 比如每天一份摘要、每小时一次检查。"
+    "empty_desc": "定时任务让 Arslan 按间隔或 cron 表达式自己去做一件事——比如每日摘要、每小时检查。"
   },
   "diag": {
     "range_1h": "近1h",
