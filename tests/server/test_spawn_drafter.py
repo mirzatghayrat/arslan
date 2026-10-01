@@ -31,7 +31,7 @@ def _isolate_context(monkeypatch):
     async def _facts(**kwargs):
         return ""
 
-    monkeypatch.setattr(spawn_drafter._router, "_spawn_registry", _registry)
+    monkeypatch.setattr(spawn_drafter, "_spawn_registry", _registry)
     monkeypatch.setattr(spawn_drafter.memory, "facts_text", _facts)
 
 

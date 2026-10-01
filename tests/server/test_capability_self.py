@@ -1,21 +1,19 @@
 import inspect
 
-from server.orchestrator import arslan, router
+from server.orchestrator import arslan
 
 
-def test_arslan_prompt_has_capability_self_block():
-    assert "_CAPABILITY_SELF" in dir(arslan)
+def test_arslan_prompt_says_how_it_really_works():
+    """0.1.48: the self-description matches the real toolset — the terminal is the
+    general hand, deliverables are files in Arslan's folder, act now, try another route
+    — and it no longer claims Arslan cannot make files."""
     txt = arslan._CAPABILITY_SELF
-    assert "web_search" in txt
-    assert "GitHub" in txt or "github" in txt
-    assert "诚实红线" in txt  # never-claim-can't guard present
+    for must in ("run_command", "~/Arslan", "start_background_work", "list_my_capabilities",
+                 "never claim a tool you don't have", "Never type passwords"):
+        assert must in txt, must
+    assert "PPT/PDF" not in txt and "分身" not in txt
 
 
-def test_router_system_biases_to_answer():
-    s = router._SYSTEM
-    assert "web_search" in s
-    # doer-first cue present
-    assert ("DEFAULT" in s) or ("默认" in s) or ("itself" in s)
 
 
 def test_handle_answer_assembles_capability_self():

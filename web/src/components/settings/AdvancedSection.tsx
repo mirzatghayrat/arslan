@@ -3,14 +3,8 @@
  *
  * Self-contained card lifted verbatim out of SettingsScreen's `advanced` slot.
  * Per spec B1 this section groups: the diagnostic-telemetry toggle, the
- * orchestrator-shell toggle + its confirm-policy Select (shown only when the
- * shell is enabled), and the spawn synthesis-mode Select.
- *
- * Copy fix (spec B3): the spawn-mode desc paragraph and its three option labels
- * were hardcoded English inline; they now come from the i18n keys
- * settings.spawnModeDesc / spawnModeAuto / spawnModeInteractive / spawnModeStrict
- * (×6 locales). The option VALUES ('auto'/'interactive'/'strict') and the
- * settings.labelSpawnMode label are unchanged.
+ * terminal toggle + its ask policy + the commands the user said never to ask
+ * about again, workspace, voice input, LAN/SSH reach, background-job budget.
  *
  * Presentational: owns NO persistence. onChange callbacks are value-based so the
  * host keeps the exact save path it had before extraction (Task 6 owns save).
@@ -25,6 +19,7 @@ import Select from '../Select';
 import McpTokenControl from './McpTokenControl';
 import SshIdentityPanel from './SshIdentityPanel';
 import SshNodesPanel from './SshNodesPanel';
+import TerminalRulesPanel from './TerminalRulesPanel';
 import BrowserPanel from '../BrowserPanel';
 import type { VoiceMode } from '../../types';
 
@@ -37,13 +32,12 @@ export const JOB_TIER_NUMBERS: Record<BackgroundJobBudget, { requests: number; t
   standard: { requests: 120, tools: 80, tokens: '600k', minutes: 30 },
   ample: { requests: 240, tools: 160, tokens: '1.2M', minutes: 60 },
 };
-export type SpawnMode = 'auto' | 'interactive' | 'strict';
 
 export interface AdvancedSectionProps {
   /** Diagnostic-telemetry opt-in. */
   telemetry: boolean;
   onTelemetryChange: (value: boolean) => void;
-  /** Whether Arslan may run whitelisted shell commands. */
+  /** Whether Arslan may use the terminal (0.1.48: on by default). */
   orchestratorShellEnabled: boolean;
   onOrchestratorShellChange: (value: boolean) => void;
   /** Confirm policy for shell commands (only meaningful when shell is enabled). */
@@ -60,8 +54,6 @@ export interface AdvancedSectionProps {
   onLanDiscoveryChange: (value: boolean) => void;
   defaultReadEnabled: boolean;
   onDefaultReadChange: (value: boolean) => void;
-  voiceOutputEnabled: boolean;
-  onVoiceOutputChange: (value: boolean) => void;
   voiceInputLocale: string;
   onVoiceInputLocaleChange: (value: string) => void;
   /** How the microphone is used: not at all, held, or always listening. */
@@ -73,15 +65,10 @@ export interface AdvancedSectionProps {
   /** May Arslan log into another machine over SSH? Default OFF, separately. */
   sshEnabled: boolean;
   onSshChange: (value: boolean) => void;
-  /** How sub-agents are created. */
-  spawnMode: SpawnMode;
-  onSpawnModeChange: (value: SpawnMode) => void;
 }
 
 // Moved out of here, deliberately, and the moves are the point of the redesign:
 //   mcpServerEnabled  → AccessTokenSettings (beside the token that guards it)
-//   evolutionAuto     → AutomationSection   (beside the other things that spend)
-//   evolutionMaxDispatches → AutomationSection (beside what it caps)
 
 export default function AdvancedSection({
   telemetry,
@@ -98,8 +85,6 @@ export default function AdvancedSection({
   onLanDiscoveryChange,
   defaultReadEnabled,
   onDefaultReadChange,
-  voiceOutputEnabled,
-  onVoiceOutputChange,
   voiceInputLocale,
   onVoiceInputLocaleChange,
   voiceMode,
@@ -108,8 +93,6 @@ export default function AdvancedSection({
   onVoiceEndpointSilenceChange,
   sshEnabled,
   onSshChange,
-  spawnMode,
-  onSpawnModeChange,
 }: AdvancedSectionProps) {
   const { t } = useTranslation();
 
@@ -138,8 +121,7 @@ export default function AdvancedSection({
           />
         </div>
 
-        {/* Workspace for the file tools (P1). Empty by design: with no directory
-            picked the tools are not offered at all. */}
+        {/* Where Arslan saves its work. Empty = Arslan's own folder (~/Arslan). */}
         <div className="space-y-1.5">
           <label htmlFor="workspace-dir" className="text-[11px] font-mono text-muted-foreground">
             {t('settings.labelWorkspaceDir')}
@@ -177,27 +159,6 @@ export default function AdvancedSection({
             type="checkbox"
             checked={defaultReadEnabled}
             onChange={(e) => onDefaultReadChange(e.target.checked)}
-            className="w-4 h-4 mt-1 shrink-0 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer"
-          />
-        </div>
-
-        {/* Voice output (V1). Reads replies aloud via the webview's speech
-            synthesizer — off by default, since a talking machine is a choice. */}
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h4 className="text-xs font-bold text-foreground font-sans">
-              {t('settings.labelVoiceOutput')}
-            </h4>
-            <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">
-              {t('settings.voiceOutputDesc')}
-            </p>
-          </div>
-          <input
-            id="settings-voice-output"
-            data-testid="voice-output-toggle"
-            type="checkbox"
-            checked={voiceOutputEnabled}
-            onChange={(e) => onVoiceOutputChange(e.target.checked)}
             className="w-4 h-4 mt-1 shrink-0 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer"
           />
         </div>
@@ -317,7 +278,7 @@ export default function AdvancedSection({
         {/* Separation divider */}
         <div className="h-[1px] bg-border/40"></div>
 
-        {/* Orchestrator shell — Arslan may run whitelisted commands (default off) */}
+        {/* Terminal (0.1.48): on by default; the policy decides what asks first. */}
         <div className="flex items-center justify-between">
           <div>
             <h4 className="text-xs font-bold text-foreground font-sans">{t('settings.labelOrchestratorShell')}</h4>
@@ -334,7 +295,6 @@ export default function AdvancedSection({
           />
         </div>
 
-        {/* Confirm-policy select — only meaningful when shell is enabled */}
         {orchestratorShellEnabled && (
           <div className="flex items-center justify-between pl-4 border-l-2 border-primary/20">
             <div>
@@ -353,31 +313,10 @@ export default function AdvancedSection({
             />
           </div>
         )}
+        {orchestratorShellEnabled && <TerminalRulesPanel />}
 
         {/* Separation divider */}
         <div className="h-[1px] bg-border/40"></div>
-
-        {/* Spawns synthesis modes */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h4 className="text-xs font-bold text-foreground font-sans">{t('settings.labelSpawnMode')}</h4>
-            <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">
-              {t('settings.spawnModeDesc')}
-            </p>
-          </div>
-          <Select
-            id="settings-spawn-mode"
-            value={spawnMode}
-            onChange={(v) => onSpawnModeChange(v as SpawnMode)}
-            options={[
-              { value: 'auto', label: t('settings.spawnModeAuto') },
-              { value: 'interactive', label: t('settings.spawnModeInteractive') },
-              { value: 'strict', label: t('settings.spawnModeStrict') },
-            ]}
-            className="w-40"
-            ariaLabel={t('settings.labelSpawnMode')}
-          />
-        </div>
 
         {/* 0.1.43: where a background job stops gathering and writes up its result. */}
         {onBackgroundJobBudgetChange && <>

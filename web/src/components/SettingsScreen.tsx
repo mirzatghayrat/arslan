@@ -39,11 +39,11 @@ interface SettingsScreenProps {
   initialSection?: SettingsSectionId;
   /** Automation points at Diagnostics for scheduled tasks and usage — the two
    *  placeholder nav entries it replaced did the same, but as dead tabs. */
-  onOpenDiagnostics?: () => void;
+  onOpenActivity?: () => void;
   onBack?: () => void;
 }
 
-export default function SettingsScreen({ settings, setSettings, llmProviders, searchProviders, backendStatus, providerConfigs = [], onProviderConfigsChange, initialSection, onOpenDiagnostics, onBack }: SettingsScreenProps) {
+export default function SettingsScreen({ settings, setSettings, llmProviders, searchProviders, backendStatus, providerConfigs = [], onProviderConfigsChange, initialSection, onOpenActivity, onBack }: SettingsScreenProps) {
   const { t, i18n } = useTranslation();
   const [localSettings, setLocalSettings] = useState<AppSettings>({ ...settings });
   const [activeSection, setActiveSection] = useState<SettingsSectionId>(initialSection ?? 'models');
@@ -208,10 +208,6 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
     // own docstring for why they had to stop being scattered.
     automation: (
       <AutomationSection
-        evolutionAuto={localSettings.evolutionAuto ?? false}
-        onEvolutionAutoChange={(v) => saveField({ evolutionAuto: v })}
-        evolutionMaxDispatches={localSettings.evolutionMaxDispatches ?? null}
-        onEvolutionMaxDispatchesChange={(v) => saveField({ evolutionMaxDispatches: v })}
         curationEnabled={localSettings.curationEnabled ?? false}
         onCurationEnabledChange={(v) => saveField({ curationEnabled: v })}
         researchReviewEnabled={localSettings.researchReviewEnabled ?? false}
@@ -220,7 +216,7 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         onHeartbeatEnabledChange={(v) => saveField({ heartbeatEnabled: v })}
         heartbeatChecklist={localSettings.heartbeatChecklist ?? ''}
         onHeartbeatChecklistChange={(v) => saveField({ heartbeatChecklist: v })}
-        onOpenDiagnostics={onOpenDiagnostics}
+        onOpenActivity={onOpenActivity}
       />
     ),
 
@@ -240,11 +236,10 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
     // Advanced — telemetry + orchestrator shell + confirm policy + spawn mode.
     advanced: (
       <div className="space-y-4">
-      {onOpenDiagnostics && <button className="rounded-lg border border-border px-4 py-2 text-sm text-primary" onClick={onOpenDiagnostics}>{t('nav.diagnosis')}</button>}
       <AdvancedSection
         telemetry={localSettings.telemetry}
         onTelemetryChange={(v) => saveField({ telemetry: v })}
-        orchestratorShellEnabled={localSettings.orchestratorShellEnabled ?? false}
+        orchestratorShellEnabled={localSettings.orchestratorShellEnabled ?? true}
         onOrchestratorShellChange={(v) => saveField({ orchestratorShellEnabled: v })}
         shellConfirmPolicy={localSettings.shellConfirmPolicy}
         onShellConfirmPolicyChange={(v) => saveField({ shellConfirmPolicy: v })}
@@ -256,8 +251,6 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         onLanDiscoveryChange={(v) => saveField({ lanDiscoveryEnabled: v })}
         defaultReadEnabled={localSettings.defaultReadEnabled ?? true}
         onDefaultReadChange={(v) => saveField({ defaultReadEnabled: v })}
-        voiceOutputEnabled={localSettings.voiceOutputEnabled ?? false}
-        onVoiceOutputChange={(v) => saveField({ voiceOutputEnabled: v })}
         voiceInputLocale={localSettings.voiceInputLocale ?? ''}
         onVoiceInputLocaleChange={(v) => saveField({ voiceInputLocale: v })}
         voiceMode={localSettings.voiceMode ?? 'push_to_talk'}
@@ -266,8 +259,6 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         onVoiceEndpointSilenceChange={(v) => saveField({ voiceEndpointSilenceMs: v })}
         sshEnabled={localSettings.sshEnabled ?? false}
         onSshChange={(v) => saveField({ sshEnabled: v })}
-        spawnMode={localSettings.spawnMode}
-        onSpawnModeChange={(v) => saveField({ spawnMode: v })}
       />
       </div>
     ),

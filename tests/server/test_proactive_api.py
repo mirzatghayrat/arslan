@@ -197,7 +197,7 @@ async def test_watch_lifecycle(client):
     ({"kind": "web", "target": "http://example.com/"}, "invalid_url"),
     ({"kind": "web", "target": "https://example.com/", "interval_s": 10}, "invalid_interval"),
     ({"kind": "rss", "target": "https://example.com/"}, "invalid_kind"),
-    ({"kind": "folder", "target": "/tmp"}, "workspace_required"),
+    ({"kind": "folder", "target": "/tmp"}, "outside_workspace"),   # 0.1.48: there is always a workspace
 ])
 async def test_watch_refusals_say_why(client, body, code):
     r = await client.post("/api/v1/proactive/watches", json=body)

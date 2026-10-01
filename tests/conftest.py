@@ -56,3 +56,16 @@ def sample_requirements(sample_domain, sample_persona) -> SpawnRequirements:
         runtime=RuntimeSpec(platform="web", trigger="user"),
         research_results={"trends": ["skincare", "makeup"]},
     )
+
+
+@pytest.fixture(autouse=True)
+def _default_workspace_in_tmp(tmp_path_factory):
+    """0.1.48: Arslan's default folder is ~/Arslan; no test may create or write it.
+
+    Its own MonkeyPatch, not the shared `monkeypatch` fixture: requesting that here
+    (a root-level autouse fixture) would set it up before tests/server/conftest's
+    `_restore_config_after_test` and so tear it down after it — and that teardown
+    relies on running after monkeypatch has restored the test's patches."""
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("ARSLAN_DEFAULT_WORKSPACE", str(tmp_path_factory.mktemp("arslan-home") / "Arslan"))
+        yield

@@ -54,8 +54,6 @@ describe("what IS touched still travels correctly", () => {
   });
 
   it("carries the booleans in the shapes the backend expects", () => {
-    expect(toBackendSettingsPatch({ evolutionAuto: true })).toEqual({ evolution_auto: "on" });
-    expect(toBackendSettingsPatch({ evolutionAuto: false })).toEqual({ evolution_auto: "off" });
     expect(toBackendSettingsPatch({ orchestratorShellEnabled: true })).toEqual({
       orchestrator_shell_enabled: "true",
     });

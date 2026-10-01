@@ -68,7 +68,7 @@ describe("settings section registry", () => {
     expect(ids).not.toContain("scheduled");
     expect(ids).not.toContain("usage");
     // …and the pointer they existed to provide survives.
-    expect(FIELD_HOMES["automation.diagnostics_link"]).toBe("automation");
+    expect(FIELD_HOMES["automation.activity_link"]).toBe("automation");
   });
 
   it("every nav label and group label resolves to a real string", () => {
@@ -89,7 +89,7 @@ describe("settings section registry", () => {
   it("everything that can spend money is in one section", () => {
     // The reason `automation` exists. Split across sections is how someone
     // turns on the second spend control without seeing the first one's warning.
-    const spenders = ["evolution.auto", "evolution.max_dispatches", "curation.enabled"];
+    const spenders = ["curation.enabled", "research_review.enabled", "proactive.diagnosis_cap"];
     for (const f of spenders) {
       expect(FIELD_HOMES[f], `${f} is not in automation`).toBe("automation");
     }
@@ -127,30 +127,27 @@ describe("no control was lost in the redesign", () => {
         workspaceDir="" onWorkspaceDirChange={() => {}}
         lanDiscoveryEnabled={false} onLanDiscoveryChange={() => {}}
         defaultReadEnabled={true} onDefaultReadChange={() => {}}
-        voiceOutputEnabled={false} onVoiceOutputChange={() => {}}
         voiceInputLocale="" onVoiceInputLocaleChange={() => {}}
         voiceMode="push_to_talk" onVoiceModeChange={() => {}}
         voiceEndpointSilenceMs={900} onVoiceEndpointSilenceChange={() => {}}
         sshEnabled={false} onSshChange={() => {}}
-        spawnMode="auto" onSpawnModeChange={() => {}}
       />,
     );
-    for (const kept of ["settings.labelTelemetry", "settings.labelOrchestratorShell",
-                        "settings.labelSpawnMode"]) {
+    for (const kept of ["settings.labelTelemetry", "settings.labelOrchestratorShell"]) {
       expect(screen.getByRole("heading", { name: kept }),
              `Advanced no longer shows ${kept}`).toBeTruthy();
     }
   });
 
-  it("the Diagnostics link is actually WIRED, not just accepted as a prop", () => {
+  it("the Activity link is actually WIRED, not just accepted as a prop", () => {
     // Found by looking at the running app, not by any of the 1150 tests: the
     // button is conditional on `onOpenDiagnostics`, App.tsx never passed it, so
     // the replacement for the two deleted nav entries silently did not exist.
     // A prop that nobody passes is indistinguishable from a feature nobody built.
     const app = read("App.tsx");
-    expect(app).toMatch(/<SettingsScreen[\s\S]*?onOpenDiagnostics=/);
+    expect(app).toMatch(/<SettingsScreen[\s\S]*?onOpenActivity=/);
     expect(read("components/settings/AutomationSection.tsx"))
-      .toMatch(/automation-open-diagnostics/);
+      .toMatch(/automation-open-activity/);
   });
 
   it("the page subtitle does not name sections that no longer exist", () => {

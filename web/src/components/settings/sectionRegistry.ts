@@ -121,8 +121,6 @@ export const FIELD_HOMES: Record<string, SettingsSectionId> = {
   'memory.embedding_model': 'memory',
 
   // ── automation (new section; everything that spends lives here) ───────────
-  'evolution.auto': 'automation',
-  'evolution.max_dispatches': 'automation',
   'curation.enabled': 'automation',
   'research_review.enabled': 'automation',
 
@@ -141,7 +139,7 @@ export const FIELD_HOMES: Record<string, SettingsSectionId> = {
   'desktop.keep_awake': 'desktop',
   'desktop.notifications': 'desktop',
   //: Replaces the two placeholder nav entries.
-  'automation.diagnostics_link': 'automation',
+  'automation.activity_link': 'automation',
 
   // ── access & security ─────────────────────────────────────────────────────
   'access.api_token': 'access',
@@ -152,7 +150,7 @@ export const FIELD_HOMES: Record<string, SettingsSectionId> = {
   'advanced.orchestrator_shell': 'advanced',
   'advanced.shell_confirm_policy': 'advanced',
   'advanced.background_job_budget': 'advanced',
-  'advanced.spawn_mode': 'advanced',
+  'advanced.terminal_rules': 'advanced',
 };
 
 /** Sections in nav order, grouped. */

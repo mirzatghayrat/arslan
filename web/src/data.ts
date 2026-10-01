@@ -16,20 +16,17 @@ export const DEFAULT_SETTINGS: AppSettings = {
   lanDiscoveryEnabled: false,  // default OFF
   sshEnabled: false,           // default OFF — the highest-risk surface here
   defaultReadEnabled: true,    // default ON — reads of Desktop/Documents/Downloads
-  voiceOutputEnabled: false,   // default OFF — read replies aloud (opt-in)
   voiceInputLocale: "",        // "" = follow the interface language
   voiceMode: 'push_to_talk',   // always-on listening is a choice, not a default
   voiceEndpointSilenceMs: 900, // measured default; see the V2 spec §3.1
   language: 'en',
   theme: 'dark',
   telemetry: false,
-  spawnMode: 'interactive',
   llmStrategy: 'single',
   distillOnSessionEnd: true,
-  orchestratorShellEnabled: false,
-  shellConfirmPolicy: 'ask_all',
+  orchestratorShellEnabled: true,
+  shellConfirmPolicy: 'ask_risky',
   backgroundJobBudget: 'standard',
   runDebugRetentionDays: 30,
-  evolutionAuto: false,
   mcpServerEnabled: false
 };

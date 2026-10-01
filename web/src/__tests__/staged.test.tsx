@@ -1,10 +1,9 @@
 /**
  * staged.test.tsx — TDD for Task 8 (staged orchestration frontend)
- * Tests: proposal confirm button + deliverable verdict bar in OrchestratorChat.
+ * The store still acknowledges the legacy verdict frames; the chat no longer offers the actions.
  */
 
 import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import OrchestratorChat from "../components/OrchestratorChat";
 import { useArslanStore, initialArslanState } from "../stores/arslanStore";
@@ -22,85 +21,26 @@ const baseProps = {
   activeThread: { memberSpawnIds: [] },
 };
 
-describe("staged orchestration UI", () => {
-  it("renders a confirm button on a proposal message and fires onConfirmDirection", async () => {
-    const onConfirm = vi.fn();
-    render(
-      <OrchestratorChat
-        {...baseProps}
-        chatHistory={[
-          {
-            id: "p1",
-            sender: "spawn",
-            senderName: "领英智囊",
-            senderAvatar: "sparkles",
-            text: "proposed direction…",
-            timestamp: "",
-            isProposal: true,
-            spawnId: "4",
-          } as any,
-        ]}
-        onConfirmDirection={onConfirm}
-      />,
-    );
-
-    // The button label is the i18n key (mock returns the key)
-    const btn = screen.getByRole("button", { name: /orchestrator\.confirm_direction/i });
-    await userEvent.click(btn);
-    // spawnId is "4" (string) — should be converted to number 4
-    expect(onConfirm).toHaveBeenCalledWith(4);
-  });
-
-  it("renders a verdict bar on a normal spawn deliverable and fires onDeliverableVerdict on accept", async () => {
-    const onVerdict = vi.fn();
-    render(
-      <OrchestratorChat
-        {...baseProps}
-        chatHistory={[
-          {
-            id: "d1",
-            sender: "spawn",
-            senderName: "领英智囊",
-            senderAvatar: "sparkles",
-            text: "here is my deliverable",
-            timestamp: "",
-            spawnId: "7",
-          } as any,
-        ]}
-        onDeliverableVerdict={onVerdict}
-      />,
-    );
-
-    // 👍 is now an icon button with a title (no text label).
-    const acceptBtn = screen.getByTitle("orchestrator.verdict_like");
-    await userEvent.click(acceptBtn);
-    expect(onVerdict).toHaveBeenCalledWith("accept", 7, undefined);
-  });
-
-  it("fires onDeliverableVerdict with 'discard' when discard is clicked", async () => {
-    const onVerdict = vi.fn();
-    render(
-      <OrchestratorChat
-        {...baseProps}
-        chatHistory={[
-          {
-            id: "d2",
-            sender: "spawn",
-            senderName: "测试",
-            senderAvatar: "cpu",
-            text: "deliverable text",
-            timestamp: "",
-            spawnId: "3",
-          } as any,
-        ]}
-        onDeliverableVerdict={onVerdict}
-      />,
-    );
-
-    // 👎 is now an icon button with a title (no text label).
-    const discardBtn = screen.getByTitle("orchestrator.verdict_dislike");
-    await userEvent.click(discardBtn);
-    expect(onVerdict).toHaveBeenCalledWith("discard", 3, undefined);
+describe("an old expert message (0.1.48: the expert actions are gone)", () => {
+  it("keeps copy but offers no confirm-direction, verdict or refine button", () => {
+    for (const isProposal of [true, false]) {
+      const { unmount } = render(
+        <OrchestratorChat
+          {...baseProps}
+          chatHistory={[{
+            id: "p1", sender: "spawn", senderName: "Expert", senderAvatar: "sparkles",
+            text: "an old deliverable", timestamp: "", isProposal, spawnId: "4",
+          } as any]}
+        />,
+      );
+      expect(screen.getByText("an old deliverable")).toBeInTheDocument();
+      // Each of these sent a WS message the server no longer handles.
+      expect(screen.queryByRole("button", { name: /orchestrator\.confirm_direction/ })).toBeNull();
+      expect(screen.queryByTitle("orchestrator.verdict_like")).toBeNull();
+      expect(screen.queryByTitle("orchestrator.verdict_dislike")).toBeNull();
+      expect(screen.queryByTitle("orchestrator.refine")).toBeNull();
+      unmount();
+    }
   });
 });
 

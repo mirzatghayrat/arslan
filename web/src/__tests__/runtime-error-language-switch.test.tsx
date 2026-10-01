@@ -1,7 +1,6 @@
 import { act, render, screen } from '@testing-library/react';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import OrchestratorChat from '../components/OrchestratorChat';
-import SpawnDirectChat from '../components/SpawnDirectChat';
 import { initialArslanState, useArslanStore } from '../stores/arslanStore';
 import type { Message } from '../types';
 
@@ -21,7 +20,6 @@ const frame = { type: 'error', code: 'LLM_ERROR', message: translations.zh, mess
 const history: Message[] = [{ id: 'm', sender: 'arslan', senderName: 'Arslan', senderAvatar: 'A', text: 'User and model prose stays exact', timestamp: '10:00' }];
 const base = { chatHistory: history, setChatHistory: vi.fn(), spawns: [], currentStyle: 'quartz' as const,
   setCurrentStyle: vi.fn(), activeThread: null };
-const spawn = { id: '7', name: 'Fixture', avatarEmoji: 'A', domain: 'test', description: 'test', status: 'idle' as const, tools: [], skills: [], totalTasks: 0 };
 
 beforeAll(() => { Element.prototype.scrollIntoView = vi.fn(); });
 beforeEach(() => { locale.language = 'zh'; useArslanStore.setState(initialArslanState(), true); });
@@ -41,21 +39,5 @@ describe('already-visible runtime errors follow language changes', () => {
     rerender(<OrchestratorChat {...base} />);
     expect(screen.getByText('Raw diagnostic 123')).toBeInTheDocument();
     expect(screen.queryByText(translations.ja)).not.toBeInTheDocument();
-  });
-
-  it.each(['quartz', 'linear', 'brutalist'] as const)('updates direct-chat error bubbles in %s without changing history prose', currentStyle => {
-    const { rerender } = render(<SpawnDirectChat spawn={spawn} currentStyle={currentStyle} />);
-    act(() => frameCallback({ type: 'history', messages: [{ message_id: 1, role: 'assistant', content: 'Original model prose' }] }));
-    act(() => frameCallback(frame));
-    for (const [language, text] of Object.entries(translations)) {
-      locale.language = language;
-      rerender(<SpawnDirectChat spawn={spawn} currentStyle={currentStyle} />);
-      expect(screen.getByText('⚠️ ' + text)).toBeInTheDocument();
-      expect(screen.getByText('Original model prose')).toBeInTheDocument();
-    }
-    act(() => frameCallback({ type: 'error', code: 'LLM_ERROR', message: 'Exact raw diagnostic' }));
-    locale.language = 'zh';
-    rerender(<SpawnDirectChat spawn={spawn} currentStyle={currentStyle} />);
-    expect(screen.getByText('⚠️ Exact raw diagnostic')).toBeInTheDocument();
   });
 });

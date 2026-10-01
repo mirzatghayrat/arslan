@@ -2,13 +2,11 @@
 endpoint, and the full route→dispatch regression (acceptance criteria 2, 3, 4-B)."""
 from __future__ import annotations
 
-import pytest
 import pytest_asyncio
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
-from server.db.models import ArslanMessage, Base, Spawn
+from server.db.models import Base, Spawn
 from server.services.html_artifact import sniff_html_doc, store_html_artifact
 
 
@@ -153,85 +151,8 @@ async def maker(tmp_path, monkeypatch):
     return m
 
 
-@pytest.mark.asyncio
-async def test_route_flow_packages_html_as_artifact(maker, monkeypatch, tmp_path):
-    monkeypatch.setenv("ARSLAN_DATA_DIR", str(tmp_path))
-    from server.orchestrator import arslan, dispatcher, router, tool_loop
-    from tests.server.conftest import MockAdapter
-
-    html = _full_doc(body_chars=4000, title="OKX 介绍")
-    spawn_reply = "Here is your presentation:\n\n" + html
-    adapter = MockAdapter(chat_content=spawn_reply, stream_chunks=[spawn_reply])
-    monkeypatch.setattr(dispatcher, "_get_adapter", lambda: adapter)
-    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
-
-    async def _route(conv, msg):
-        return router.RouterResult(action="route", spawn_id=6, task_brief="make the deck")
-
-    monkeypatch.setattr(arslan.router, "route", _route)
-
-    from server.services import roster_service
-    await roster_service.join("main", 6, via="invited")
-
-    events = []
-    await arslan.handle_user_message("main", "have deck-master make the deck",
-                                     lambda e: events.append(e))
-
-    # display_content is the SUMMARY, not the raw HTML wall.
-    async with db_session.AsyncSessionLocal() as s:
-        ams = (await s.execute(select(ArslanMessage))).scalars().all()
-    summary_row = next(a for a in ams if a.role == "spawn_summary")
-    assert "已生成 HTML 文档" in summary_row.display_content
-    assert "OKX 介绍" in summary_row.display_content
-    assert "/artifacts/run_" in summary_row.display_content  # download link
-    assert "<style>" not in summary_row.display_content
-    assert "Here is your presentation:" in summary_row.display_content  # preamble kept
-    # memory 1-liner mechanism unchanged
-    assert summary_row.content.startswith("[deck-master]")
-
-    # the full HTML is on disk, byte-identical (acceptance #3)
-    run_id = next(e["run_id"] for e in events if e.get("type") == "spawn_meta")
-    files = list((tmp_path / "artifacts").glob(f"run_{run_id}_*.html"))
-    assert len(files) == 1
-    assert files[0].read_text(encoding="utf-8") == html
-
-    # the emitted stream_end frame carries the artifact for live rendering
-    end = next(e for e in events if e.get("type") == "stream_end" and e.get("artifact"))
-    art = end["artifact"]
-    assert art["kind"] == "html"
-    assert art["title"] == "OKX 介绍"
-    assert art["complete"] is True
-    assert art["content"] == html
-    assert art["filename"] == files[0].name
 
 
-@pytest.mark.asyncio
-async def test_route_flow_leaves_plain_text_untouched(maker, monkeypatch, tmp_path):
-    monkeypatch.setenv("ARSLAN_DATA_DIR", str(tmp_path))
-    from server.orchestrator import arslan, dispatcher, router, tool_loop
-    from tests.server.conftest import MockAdapter
-
-    adapter = MockAdapter(chat_content="Post 1. Post 2.", stream_chunks=["Post 1. Post 2."])
-    monkeypatch.setattr(dispatcher, "_get_adapter", lambda: adapter)
-    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
-
-    async def _route(conv, msg):
-        return router.RouterResult(action="route", spawn_id=6, task_brief="posts")
-
-    monkeypatch.setattr(arslan.router, "route", _route)
-    from server.services import roster_service
-    await roster_service.join("main", 6, via="invited")
-
-    events = []
-    await arslan.handle_user_message("main", "have deck-master make posts",
-                                     lambda e: events.append(e))
-
-    async with db_session.AsyncSessionLocal() as s:
-        ams = (await s.execute(select(ArslanMessage))).scalars().all()
-    summary_row = next(a for a in ams if a.role == "spawn_summary")
-    assert summary_row.display_content == "Post 1. Post 2."  # unchanged behavior
-    end = next(e for e in events if e.get("type") == "stream_end")
-    assert "artifact" not in end
 
 
 # ---------------------------------------------------------------------------

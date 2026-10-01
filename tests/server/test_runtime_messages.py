@@ -6,7 +6,7 @@ import pytest
 
 from arslan.models import LLMResponse
 from server.db.models import Setting
-from server.orchestrator import arslan, promise_guard, tool_loop
+from server.orchestrator import tool_loop
 from server.services import runtime_messages as copy, task_service
 
 
@@ -27,30 +27,6 @@ def test_runtime_notice_catalog_has_complete_locales_and_placeholders():
                 assert text != copy.MESSAGES["en"][key]
 
 
-@pytest.mark.parametrize("locale", list(copy.MESSAGES))
-async def test_saved_ui_language_controls_stale_proposal_and_corrections(execution_db, monkeypatch, locale):
-    async with execution_db() as db:
-        db.add(Setting(key="language", value=locale))
-        await db.commit()
-    from server.services import phase_service
-    async def no_pending(*args): return None
-    async def never(*args, **kwargs): raise AssertionError("No stale proposal may dispatch")
-    def unavailable(): raise RuntimeError("Synthetic adapter unavailable")
-    monkeypatch.setattr(phase_service, "get_pending", no_pending)
-    monkeypatch.setattr(arslan, "_dispatch_spawn", never)
-    monkeypatch.setattr(tool_loop, "_get_adapter", unavailable)
-    frames = []
-    await arslan.confirm_and_execute("synthetic", 7, frames.append)
-    assert frames == [{"type": "message", "message_id": None, "role": "arslan",
-                       "content": copy.render("proposal_handled", locale)},
-                      {"type": "stream_end", "message_id": None}]
-    for name in [None, "Synthetic Expert"]:
-        result = await promise_guard.correct("正在生成中,稍等", spawn_name=name)
-        assert result["corrected"] is False
-        assert result["correction"] == copy.render("named_correction" if name else "correction", locale, name=name)
-    result = await promise_guard.correct_zero_tool("PPT 已生成并交付，共 7 页。")
-    assert result["corrected"] is False
-    assert result["correction"] == copy.render("no_tools_correction", locale)
 
 
 @pytest.mark.parametrize("locale", list(copy.MESSAGES))
@@ -70,28 +46,6 @@ async def test_real_native_empty_answer_uses_saved_ui_language(execution_db, loc
     assert "".join(chunks) == result["final"]
 
 
-@pytest.mark.parametrize("locale", list(copy.MESSAGES))
-async def test_synthesis_floor_keeps_findings_and_continuation_semantics(execution_db, monkeypatch, locale):
-    async with execution_db() as db:
-        db.add(Setting(key="language", value=locale))
-        await db.commit()
-    class EmptyAdapter:
-        async def chat(self, *args, **kwargs):
-            return LLMResponse(content="", tool_calls=[], usage={})
-    from server.services import llm_factory
-    async def no_synthesis(): return None
-    monkeypatch.setattr(llm_factory, "build_synthesis_adapter", no_synthesis)
-    trace = [{"tool": "web_search", "args": {"query": "fixture"},
-              "result": {"ok": True, "results": [{"title": "User-authored source remains unchanged"}]}}]
-    result = await tool_loop._synthesize_from_findings(EmptyAdapter(), "Synthetic", "hello 你好", trace)
-    assert copy.render("findings_header", locale) in result
-    assert "User-authored source remains unchanged" in result
-    assert copy.render("round_incomplete", locale) in result
-    assert not arslan._looks_like_refusal(result)
-    assert arslan._has_findings_digest(result)
-    assert arslan._looks_like_refusal(copy.render("round_incomplete", locale))
-    assert copy.render("findings_header", locale) in tool_loop._fallback_with_digest(
-        [{"type": "text", "text": "Image question"}], trace, locale=locale)
 
 
 async def test_locale_is_task_bound_and_does_not_read_secret_settings(monkeypatch):

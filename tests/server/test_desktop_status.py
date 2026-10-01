@@ -77,7 +77,7 @@ async def test_scheduler_reports_finish_and_pause(memdb):  # noqa: F811
 def test_a_sent_confirmation_card_counts_as_awaiting_and_the_turn_reports_done(app_client, monkeypatch):  # noqa: F811
     _enable_shell(app_client)
     _stub_answer_route(monkeypatch)
-    _stub_tool_loop_adapter(monkeypatch, "git", ["status"])
+    _stub_tool_loop_adapter(monkeypatch, "rm", ["old.txt"])      # 0.1.48: deleting shows a card
     _stub_run_command_executor(monkeypatch)
     with app_client.websocket_connect("/ws/arslan/main") as ws:
         ws.receive_json()

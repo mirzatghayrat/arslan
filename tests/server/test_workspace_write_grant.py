@@ -12,6 +12,15 @@ import pytest
 from server.orchestrator import tool_loop
 
 
+@pytest.fixture(autouse=True)
+def _a_folder_the_user_chose(monkeypatch):
+    """These pin the gate for a folder the USER chose (0.1.48: Arslan's own default
+    folder does not ask; see the tests at the end)."""
+    async def _no():
+        return False
+    monkeypatch.setattr(tool_loop, "_writing_in_own_folder", _no)
+
+
 async def _resolve():
     return [{"key": "write_file", "description": "write"},
             {"key": "edit_file", "description": "edit"},
@@ -106,3 +115,36 @@ async def test_run_command_gate_is_untouched(monkeypatch):
         confirm_command=None, confirm_workspace_write=_allow_write)
     assert r["ok"] is False                 # still refused: no command callback
     assert log == []
+
+
+# ── 0.1.48: Arslan's own folder is its desk ──────────────────────────────────
+
+@pytest.mark.parametrize("key,args", [
+    ("write_file", {"path": "a.txt", "content": "x"}),
+    ("edit_file", {"path": "a.txt", "old": "a", "new": "b"}),
+])
+async def test_in_its_own_folder_arslan_writes_without_asking(monkeypatch, key, args):
+    log, asked = [], []
+    monkeypatch.setitem(tool_loop.EXECUTORS, key, _Stub(log))
+
+    async def _yes():
+        return True
+
+    async def _ask(action, path):
+        asked.append(path)
+        return False
+
+    monkeypatch.setattr(tool_loop, "_writing_in_own_folder", _yes)
+    r = await _dispatch(key, args, grant=_ask)
+    assert r["ok"] is True and log and asked == []
+    r = await _dispatch(key, args, grant=None)        # even on a channel with nobody to ask
+    assert r["ok"] is True
+
+
+async def test_unknown_folder_state_is_treated_as_the_users_folder(monkeypatch):
+    """If the setting cannot be read, ask rather than write unasked."""
+    import server.db.session as db_session
+
+    monkeypatch.undo()
+    monkeypatch.setattr(db_session, "AsyncSessionLocal", lambda: (_ for _ in ()).throw(RuntimeError("no db")))
+    assert await tool_loop._writing_in_own_folder() is False

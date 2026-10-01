@@ -208,7 +208,6 @@ export interface AppSettings {
   language: string;
   theme: 'dark' | 'light';
   telemetry: boolean;
-  spawnMode: 'auto' | 'interactive' | 'strict';
   llmStrategy: 'single' | 'cost' | 'balanced' | 'performance';
   distillOnSessionEnd: boolean;
   /** Orchestrator (Arslan) may run whitelisted shell commands. Off by default. */
@@ -226,7 +225,6 @@ export interface AppSettings {
   lanDiscoveryEnabled: boolean;
   sshEnabled: boolean;
   defaultReadEnabled: boolean;
-  voiceOutputEnabled: boolean;
   voiceInputLocale: string;
   /** How the microphone is used: not at all, held, or always listening. */
   voiceMode: VoiceMode;
@@ -247,7 +245,7 @@ export interface AppSettings {
   /** S4.1-C: whether the inbound MCP server (exposing Arslan's read-only tools
    *  to external MCP clients like Claude Code/Codex) is enabled. Default off. */
   mcpServerEnabled: boolean;
-  /** Sleep-time curation sweep. Optional on purpose, like evolutionAuto: it
+  /** Sleep-time curation sweep. Optional on purpose: it
    *  keeps existing AppSettings literals valid. Default off — it spends, and
    *  until this round it had NO UI at all, only a server field. */
   curationEnabled?: boolean;
@@ -258,10 +256,6 @@ export interface AppSettings {
   keepAwakeEnabled?: boolean;
   /** Resident shell (0.1.41): native notifications while the window is hidden. Default on. */
   desktopNotificationsEnabled?: boolean;
-  /** optional on purpose: keeps existing AppSettings literals valid */
-  evolutionAuto?: boolean;
-  /** Cap on PROJECTED replay dispatches. null/undefined = no cap (the default). */
-  evolutionMaxDispatches?: number | null;
   /** Comma-separated BCP-47 tags for image text recognition. Empty/unset means
    *  "follow the interface language, plus English". Deliberately a SHORT list:
    *  recognition degrades as the request widens and CJK is lost first. */

@@ -121,45 +121,8 @@ def _drain_roster_after_created(ws) -> None:
     assert f.get("type") == "roster_update"
 
 
-def test_confirm_create_ppt_persona_without_deck_carries_warnings(app_client):
-    draft = {
-        "name": "slide-smith",
-        "domain": "content-creator.presentations",
-        "capabilities": ["presentations"],
-        "persona_role": "a designer who delivers polished PowerPoint decks",
-        "persona_tone": "crisp",
-        # explicitly-empty equipment: the drafter curated and chose nothing
-        "tools": [], "skills": [], "mcps": [],
-    }
-    with app_client.websocket_connect("/ws/arslan/main") as ws:
-        ws.receive_json()  # history
-        ws.receive_json()  # on-connect roster_update
-        ws.send_json({"type": "confirm_create", "draft": draft})
-        created = ws.receive_json()
-        assert created["type"] == "spawn_created"
-        warnings = created.get("capability_warnings")
-        assert warnings, "spawn_created must carry capability_warnings for a PPT persona with no render_deck"
-        assert any("render_deck" in w for w in warnings)
-        _drain_roster_after_created(ws)
 
 
-def test_confirm_create_plain_persona_has_no_warnings(app_client):
-    draft = {
-        "name": "translator",
-        "domain": "personal-assistant.translator",
-        "capabilities": ["qa-interaction"],
-        "persona_role": "translator",
-        "persona_tone": "precise",
-        "tools": [], "skills": [], "mcps": [],
-    }
-    with app_client.websocket_connect("/ws/arslan/main") as ws:
-        ws.receive_json()  # history
-        ws.receive_json()  # on-connect roster_update
-        ws.send_json({"type": "confirm_create", "draft": draft})
-        created = ws.receive_json()
-        assert created["type"] == "spawn_created"
-        assert created.get("capability_warnings") == []
-        _drain_roster_after_created(ws)
 
 
 # ── flow: suggest_update proposal carries capability_warnings ─────────────────

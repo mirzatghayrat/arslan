@@ -170,17 +170,24 @@ async def _tools(tmp_path, monkeypatch, *, rows):
     return keys
 
 
-async def test_default_ship_config_a_novice_can_read(tmp_path, monkeypatch):
-    # NOTHING set — the out-of-box state. default_read defaults ON, so the read
-    # trio is present with no workspace. This is the feature, as a test.
+async def test_default_ship_config_a_novice_can_read_and_write_in_arslans_folder(tmp_path, monkeypatch):
+    # NOTHING set — the out-of-box state. 0.1.48: reads span the green ring (default
+    # on) and Arslan has its own folder to write in, so readers AND writers are offered.
     keys = await _tools(tmp_path, monkeypatch, rows={})
     assert T0 <= keys
-    assert not T1 & keys
+    assert T1 <= keys
 
 
-async def test_the_switch_off_reverts_to_p1(tmp_path, monkeypatch):
+async def test_the_switch_off_narrows_reads_to_arslans_own_folder(tmp_path, monkeypatch):
+    # With default-read off the tools stay (the workspace drives them) but the read
+    # roots shrink to the workspace alone.
+    from pathlib import Path
+
+    from server.registry.file_tools import read_roots
     keys = await _tools(tmp_path, monkeypatch, rows={"default_read_enabled": "false"})
-    assert not (T0 | T1) & keys        # no reads, no writers — exactly P1
+    assert (T0 | T1) <= keys
+    ws = Path(tmp_path)
+    assert [p.resolve() for p in read_roots(ws, default_read=False)] == [ws.resolve()]
 
 
 async def test_a_workspace_alone_still_offers_everything_even_with_read_off(tmp_path, monkeypatch):

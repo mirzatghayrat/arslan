@@ -55,9 +55,9 @@ export function clampEndpointSilenceMs(raw: string | number | undefined): number
  *
  * UI-only fields with no backend counterpart are kept at their current UI value
  * and therefore should NOT be overwritten on fetch; callers must merge:
- *   theme, telemetry, spawnMode
+ *   theme, telemetry
  */
-export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "theme" | "telemetry" | "spawnMode"> {
+export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "theme" | "telemetry"> {
   return {
     searchProvider: backend.search_provider ?? "",
   searchBaseUrl: backend.search_base_url ?? "",
@@ -69,8 +69,9 @@ export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "th
     distillOnSessionEnd: backend.distill_on_session_end ?? true,
     // Backend stores these as strings ("true"/"false", "ask_all"/"ask_risky"),
     // both default OFF / most-cautious when absent.
-    orchestratorShellEnabled: backend.orchestrator_shell_enabled === "true",
-    shellConfirmPolicy: backend.shell_confirm_policy === "ask_risky" ? "ask_risky" : "ask_all",
+    // Mirrors settings_service.shell_enabled / shell_confirm_policy: unset means ON and ask_risky (0.1.48).
+    orchestratorShellEnabled: backend.orchestrator_shell_enabled !== "false",
+    shellConfirmPolicy: backend.shell_confirm_policy === "ask_all" ? "ask_all" : "ask_risky",
     // 0.1.43: budget tier for one background job; unknown → the server's default.
     backgroundJobBudget: backend.background_job_budget === "lean" || backend.background_job_budget === "ample"
       ? backend.background_job_budget : "standard",
@@ -85,7 +86,6 @@ export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "th
     // matching the backend accessor. Only an explicit "false" turns reading off.
     defaultReadEnabled: backend.default_read_enabled !== "false",
     // Voice output — default OFF (opt-in; not everyone wants their machine talking).
-    voiceOutputEnabled: backend.voice_output_enabled === "true",
     // Empty means "follow the interface language" — resolved at the call site,
     // not stored, so changing the UI language moves it too.
     voiceInputLocale: backend.voice_input_locale ?? "",
@@ -102,8 +102,6 @@ export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "th
     researchReviewEnabled: backend.research_review_enabled ?? false,
     keepAwakeEnabled: backend.keep_awake_enabled ?? true,
     desktopNotificationsEnabled: backend.desktop_notifications_enabled ?? true,
-    evolutionAuto: backend.evolution_auto === "on",
-    evolutionMaxDispatches: backend.evolution_max_dispatches ?? null,
     ocrLanguages: backend.ocr_languages ?? '',
     runDebugRetentionDays: backend.run_debug_retention_days ?? 30,
     mcpServerEnabled: backend.mcp_server_enabled ?? false,
@@ -139,7 +137,6 @@ const SETTINGS_WIRE: Record<string, { key: keyof BackendAppSettings; to?: (v: un
   lanDiscoveryEnabled: { key: "lan_discovery_enabled", to: (v) => (v ? "true" : "false") },
   sshEnabled: { key: "ssh_enabled", to: (v) => (v ? "true" : "false") },
   defaultReadEnabled: { key: "default_read_enabled", to: (v) => (v ? "true" : "false") },
-  voiceOutputEnabled: { key: "voice_output_enabled", to: (v) => (v ? "true" : "false") },
   voiceInputLocale: { key: "voice_input_locale", to: (v) => String(v) },
   voiceMode: { key: "voice_mode", to: (v) => String(v) },
   voiceEndpointSilenceMs: { key: "voice_endpoint_silence_ms", to: (v) => String(v) },
@@ -153,8 +150,6 @@ const SETTINGS_WIRE: Record<string, { key: keyof BackendAppSettings; to?: (v: un
   researchReviewEnabled: { key: "research_review_enabled", to: (v) => (v as boolean) ?? false },
   keepAwakeEnabled: { key: "keep_awake_enabled", to: (v) => (v as boolean) ?? true },
   desktopNotificationsEnabled: { key: "desktop_notifications_enabled", to: (v) => (v as boolean) ?? true },
-  evolutionAuto: { key: "evolution_auto", to: (v) => (v ? "on" : "off") },
-  evolutionMaxDispatches: { key: "evolution_max_dispatches", to: (v) => (v as number) ?? null },
   ocrLanguages: { key: "ocr_languages", to: (v) => (v as string) ?? "" },
   runDebugRetentionDays: { key: "run_debug_retention_days", to: (v) => (v as number) ?? 30 },
   mcpServerEnabled: { key: "mcp_server_enabled" },

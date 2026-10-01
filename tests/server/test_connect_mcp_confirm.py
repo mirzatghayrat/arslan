@@ -127,7 +127,6 @@ def app_client(tmp_path, monkeypatch, portal):
 def test_confirm_connect_mcp_emits_db_authoritative_followup(app_client):
     with app_client.websocket_connect("/ws/arslan/main") as ws:
         ws.receive_json()  # history
-        ws.receive_json()  # on-connect roster_update
         ws.send_json({"type": "confirm_connect_mcp", "server_id": 9})
         followup = ws.receive_json()
         assert followup["type"] == "mcp_connect_followup"
@@ -142,7 +141,6 @@ def test_confirm_connect_mcp_counts_are_from_db_not_client(app_client):
     """The client sending a bogus/absent tool_count must not influence the result —
     the follow-up is recomputed from the DB every time (honesty requirement)."""
     with app_client.websocket_connect("/ws/arslan/main") as ws:
-        ws.receive_json()
         ws.receive_json()
         ws.send_json({"type": "confirm_connect_mcp", "server_id": 9, "tool_count": 999})
         followup = ws.receive_json()

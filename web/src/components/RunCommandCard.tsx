@@ -20,7 +20,8 @@ interface Props {
 /**
  * Per-command confirmation card for a backend `propose_run_command` frame.
  * Shows the FULL command verbatim; the user must click Run for it to execute.
- * "Remember this session" auto-approves same-shape commands for the rest of the chat.
+ * "Don't ask again" (0.1.48) remembers the KIND of command — the rule the backend
+ * matched — until the user takes it back in Settings › Advanced.
  *
  * When `remoteHost` is set the card changes shape rather than adding a footnote:
  * the machine goes first, the fingerprint is shown so a person can compare it

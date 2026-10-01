@@ -1,6 +1,6 @@
 # Generated capability inventory
 
-Desktop configuration version: `0.1.47`.
+Desktop configuration version: `0.1.48`.
 
 Regenerate with `uv run python -m scripts.capability_inventory`. This is static
 source evidence, not an installed-account probe or proof of model quality.
@@ -103,9 +103,9 @@ trust decisions; see THIRD_PARTY_NOTICES.md and docs/RELIABILITY.md.
 
 | Source | SHA-256 |
 | --- | --- |
-| `server/registry/executors.py` | `9a4e63d08f6a2cb0f677446fe1b04a3b5c55a8394a3580635631fe1794a47f16` |
+| `server/registry/executors.py` | `f49ab9d9544efd48ff9acad1b2bf02e2d6b3442d9cc28df939c4c6d1e23b0e04` |
 | `server/registry/file_tools.py` | `00c265fc87ceb39d3fb13908cc28120763ad833d1989896d7f4008b81aa4e5b4` |
-| `server/registry/hands_tools.py` | `8d8c5b56f767304c0f234bfd79f23351eaee350f5157ede5806fa929722a47e9` |
+| `server/registry/hands_tools.py` | `5c57f4647c0cfdfd79ae6aa5bf603542e927ef6a06bcfa4e942e9a006725f18f` |
 | `server/registry/lan_tools.py` | `34778593e80f8276d545f4ab569803a208a290d5fe4e8d52402f7a876b6f63b1` |
 | `server/registry/memory_executors.py` | `5e53443ee8c03360cfe52c5e68f3e4a8196563377a2b7da6e60ea6e7b4f87587` |
 | `server/registry/schedule_tools.py` | `13a8698f7e824c1da64cb513b6ebf92de4ab618f75103445e9b12e984ca09a6d` |

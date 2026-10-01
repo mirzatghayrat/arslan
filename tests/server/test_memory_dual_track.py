@@ -74,7 +74,7 @@ async def _seed_spawn(maker, spawn_id: int, name: str) -> None:
 # ---------------------------------------------------------------------------
 
 async def test_weak_model_tier0_forms_memory_without_agentic_tools(maker, monkeypatch):
-    from server.orchestrator import arslan, router, tool_loop
+    from server.orchestrator import arslan, tool_loop
     from server.registry import executors as executors_module
     from tests.server.conftest import MockAdapter
 
@@ -99,13 +99,12 @@ async def test_weak_model_tier0_forms_memory_without_agentic_tools(maker, monkey
     # emits a tool_calls list (MockAdapter's default) still gets this write,
     # because save_facts is called directly off router.route()'s new_facts, not
     # via any tool call.
-    async def _fake_route(conv, msg):
-        return router.RouterResult(
-            action="answer",
-            new_facts=[{"content": "weak-model 场景:用户偏好简体中文", "sensitive": False}],
-        )
+    from server.services import turn_facts
 
-    monkeypatch.setattr(arslan.router, "route", _fake_route)
+    async def _facts(conv, msg):
+        return [{"content": "weak-model 场景:用户偏好简体中文", "sensitive": False}]
+
+    monkeypatch.setattr(turn_facts, "extract", _facts)
     adapter = MockAdapter(stream_chunks=["ok"], chat_content="ok")  # tool_calls=[] by default
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
 
@@ -117,7 +116,7 @@ async def test_weak_model_tier0_forms_memory_without_agentic_tools(maker, monkey
     async with maker() as db:
         fact_rows = (await db.execute(select(UserFact))).scalars().all()
     assert len(fact_rows) == 1
-    assert fact_rows[0].provenance["source_kind"] == "router"   # Tier0, not agentic
+    assert fact_rows[0].provenance["source_kind"] == "conversation"   # Tier0, not agentic
     assert "actor" not in fact_rows[0].provenance                # agentic-only key absent
 
     # Distill Tier0 write (learning_service.distill_from_event), also exercised via

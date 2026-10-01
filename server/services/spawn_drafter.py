@@ -6,12 +6,31 @@ import logging
 from typing import Any
 
 from server.orchestrator import memory
-from server.orchestrator import router as _router  # used only for _spawn_registry
 from server.orchestrator.json_protocol import parse_json_object
+from sqlalchemy import select
+
+from server.db import session as db_session
+from server.db.models import Spawn
 from server.services import equipment_service, persona_seed_service, spawn_service
 from server.services.llm_factory import build_adapter
 
 logger = logging.getLogger(__name__)
+
+
+async def _spawn_registry() -> str:
+    """The existing experts, one line each (moved here from the deleted router in 0.1.48)."""
+    async with db_session.AsyncSessionLocal() as db:
+        spawns = (await db.execute(select(Spawn).order_by(Spawn.id))).scalars().all()
+    if not spawns:
+        return "(no spawns yet)"
+    lines = []
+    for s in spawns:
+        domain = s.domain_category + (f".{s.domain_subcategory}" if s.domain_subcategory else "")
+        lines.append(
+            f"- id={s.id} name={s.name} domain={domain} "
+            f"role={s.persona_role or ''} caps={','.join(s.capabilities or [])}"
+        )
+    return "\n".join(lines)
 
 _SYSTEM = (
     "You design AI specialist 'spawns' from a natural-language description. "
@@ -38,7 +57,7 @@ def _parse(content: str) -> dict[str, Any]:
 async def draft_from_text(description: str, *, previous: dict[str, Any] | None = None) -> dict[str, Any]:
     """Return a draft dict {name, domain, capabilities, persona_role, persona_tone, reason}.
     When `previous` is given, this is a refinement: revise that draft per the description."""
-    registry = await _router._spawn_registry()
+    registry = await _spawn_registry()
     facts = await memory.facts_text(include_sensitive=True)
     parts = [f"Existing spawns:\n{registry}"]
     if facts:

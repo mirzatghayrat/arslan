@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { api } from "../api/client";
 import type { UsageSummary } from "../api/client.types";
 import { fmtTok, fmtUsd } from "../lib/usageFormat";
-import { Sparkline } from "./DiagnosisCatalog";
+import { Sparkline } from "./Sparkline";
 
 type RangeKey = "24h" | "7d" | "30d";
 const RANGES: RangeKey[] = ["24h", "7d", "30d"];
@@ -12,7 +12,7 @@ const RANGES: RangeKey[] = ["24h", "7d", "30d"];
  * S3-M3 Diagnostics 用量卡 — fleet-wide cost visibility (GET /usage/summary).
  * provider×model×scope table + daily-tokens sparkline + the honest 未计入
  * footnote (call sites that don't feed the ledger yet). Visibility only, no
- * budgets. Follows the DiagnosisCatalog visual idiom (range tabs + diag-table).
+ * budgets. Follows the diag-table visual idiom (range tabs + diag-table).
  *
  * Honesty rules mirrored from the backend: ≈ marks rows whose tokens include
  * estimates; usd == null renders "—", never $0 (unknown ≠ free).

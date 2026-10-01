@@ -139,7 +139,7 @@ def test_ws_origin_prod_fail_closed(monkeypatch):
 # --- WS handshake integration: a foreign Origin is refused before accept ------
 
 
-@pytest.mark.parametrize("path", ["/ws/arslan/main", "/ws/chat/1", "/ws/sandbox/1"])
+@pytest.mark.parametrize("path", ["/ws/arslan/main"])
 def test_ws_foreign_origin_handshake_rejected(monkeypatch, path):
     # The Origin guard runs BEFORE ws.accept()/any DB work, so a cross-site open
     # closes the handshake with 4403 without touching the database.

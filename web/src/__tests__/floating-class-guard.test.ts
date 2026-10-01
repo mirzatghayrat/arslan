@@ -22,7 +22,6 @@ const SWEPT = [
   // Dismissal only — each with a reason, so 'no portal' is a judgement on the
   // record rather than something that was forgotten.
   { file: "components/brain/NoteEditor.tsx",    portal: false, why: "pinned inside its own textarea wrap; never reaches a scroll edge" },
-  { file: "components/OrchestratorChat.tsx",    portal: false, why: "opens upward out of the composer; clipping is latent, not observed" },
   // 0.1.44: the Sidebar expert picker (its only floating element) is gone.
 ];
 

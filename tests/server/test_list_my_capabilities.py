@@ -48,7 +48,7 @@ async def test_builtin_is_derived_from_the_live_host_tool_list(maker):
     keys = {b["key"] for b in out["builtin"]}
     # recall/remember are host tools TODAY — the hand-copied list had lost them.
     assert {"web_search", "web_extract", "render_chart", "recall", "remember"} <= keys
-    assert "run_command" not in keys                     # shell defaults off
+    assert "run_command" in keys                         # 0.1.48: the terminal is on by default
     assert not any(k.startswith("mcp_") for k in keys)   # mcp rides in its own section
 
 

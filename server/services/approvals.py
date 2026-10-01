@@ -110,17 +110,23 @@ class JobConfirmations:
                       fingerprints: list | None = None) -> bool:
         from server.db import session as db_session
         from server.services import settings_service
+        from server.services import terminal_policy
         from server.ws.arslan import effective_risk, may_skip_card
         risk = effective_risk(remote_host, command, argv)
-        policy = ""
+        verdict = terminal_policy.assess(terminal_policy.as_shell(command, argv))
+        policy, standing = "", False
         if not remote_host:
             async with db_session.AsyncSessionLocal() as db:
                 policy = await settings_service.shell_confirm_policy(db)
-        if may_skip_card(remote_host, in_session_allow=False, policy=policy, risk=risk):
+                standing = verdict.rule in await terminal_policy.always_allowed(db)
+        # A job never ADDS a standing answer (no "remember" here), but it honours
+        # the ones the user gave in a conversation.
+        if may_skip_card(remote_host, in_session_allow=False, policy=policy, risk=risk,
+                         always_allowed=standing):
             return True
         return await ask(self.conversation_id, protocol.propose_run_command(
-            uuid.uuid4().hex, command, argv, reason=f"risk: {risk}", remote_host=remote_host,
-            fingerprints=list(fingerprints or [])))
+            uuid.uuid4().hex, command, argv, reason=verdict.reason or f"risk: {risk}",
+            remote_host=remote_host, fingerprints=list(fingerprints or [])))
 
 
 def _reset_for_tests() -> None:

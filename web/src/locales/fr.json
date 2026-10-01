@@ -1,6 +1,21 @@
 {
-  "externalLink": {"failed": "Impossible d’ouvrir ce lien. Seuls les liens HTTPS sont autorisés dans le navigateur système."},
-  "appIdentity": {"title":"Cette application","loading":"Lecture de la version…","browser":"Client web · version de bureau indisponible","unknown":"Version de bureau indisponible","stable":"Stable","preview":"Préversion","previewHint":"Les préversions s’installent manuellement ; les mises à jour automatiques suivent le canal stable. Sauvegardez vos données et vos clés avant l’installation.","summary":"Résumé de version","privacy":"Contient uniquement le type de client, la version et le canal. Rien n’est envoyé. Vérifiez le texte avant de le partager.","copy":"Copier le résumé","copied":"Copié","copyFailed":"Échec de la copie. Sélectionnez et copiez le texte ci-dessus."},
+  "externalLink": {
+    "failed": "Impossible d’ouvrir ce lien. Seuls les liens HTTPS sont autorisés dans le navigateur système."
+  },
+  "appIdentity": {
+    "title": "Cette application",
+    "loading": "Lecture de la version…",
+    "browser": "Client web · version de bureau indisponible",
+    "unknown": "Version de bureau indisponible",
+    "stable": "Stable",
+    "preview": "Préversion",
+    "previewHint": "Les préversions s’installent manuellement ; les mises à jour automatiques suivent le canal stable. Sauvegardez vos données et vos clés avant l’installation.",
+    "summary": "Résumé de version",
+    "privacy": "Contient uniquement le type de client, la version et le canal. Rien n’est envoyé. Vérifiez le texte avant de le partager.",
+    "copy": "Copier le résumé",
+    "copied": "Copié",
+    "copyFailed": "Échec de la copie. Sélectionnez et copiez le texte ci-dessus."
+  },
   "chart": {
     "loading": "Chargement du graphique…",
     "failed": "Impossible de charger le graphique. Rechargez la page."
@@ -77,18 +92,12 @@
   },
   "nav": {
     "inbox": "Boîte de réception",
-    "connections": "Connexions et droits",
     "projects": "Projets",
-    "dashboard": "Tableau de bord",
-    "spawns": "Experts",
     "settings": "Paramètres",
-    "secondBrain": "Mémoire",
     "arslan": "Assistant principal",
-    "spawn": "Agent",
-    "ledger": "Registre des agents",
     "capabilities": "Capacités",
     "brain": "Mémoire",
-    "diagnosis": "Diagnostic"
+    "activity": "Activité"
   },
   "brain": {
     "strip_details": "Couverture et limites",
@@ -161,7 +170,7 @@
     "close_detail": "Fermer les détails",
     "used_n_dot": " · utilisé {{n}}",
     "last_used_for": " · dernier usage : {{ref}}",
-    "superseded_by_line": "Remplacé par #{{id}} — plus injecté",
+    "superseded_by_line": "Remplacé par #{{id}} — n’est plus utilisé",
     "undoing": "Annulation…",
     "undo_supersede": "Annuler le remplacement",
     "sensitive_note": "Marqué sensible — indication visuelle, pas une isolation.",
@@ -489,7 +498,6 @@
     "appIconDesktopHint": "Modifie l’icône du Dock et les avatars. Le Finder conserve l’icône par défaut.",
     "appIconBrowserHint": "Modifie les avatars et l’icône de l’onglet du navigateur.",
     "appIconError": "Impossible de modifier l’icône. Le choix précédent est conservé. Réessayez.",
-
     "backToWorkspace": "Retour à l’espace de travail",
     "defaultModel": "Modèle par défaut",
     "modelsPrivateHint": "Sélectionnez un modèle à modifier. Les clés enregistrées restent masquées.",
@@ -537,12 +545,7 @@
     "labelTelemetry": "Télémétrie de diagnostic",
     "telemetryDesc": "Collecter des données d’utilisation locales pour améliorer les performances (facultatif)",
     "distill_on_session_end": "Résumer les préférences en fin de session",
-    "distill_hint": "Apprendre les préférences de chaque expert à partir de vos retours à la fin d’une conversation",
-    "labelSpawnMode": "Mode de création d’experts",
-    "spawnModeDesc": "Choisissez comment les sous-agents sont créés. Auto : délégation instantanée sans vérification. Interactif : demande l'approbation de l'utilisateur à la volée avant de lancer de nouveaux sous-agents.",
-    "spawnModeAuto": "Synthèse autonome",
-    "spawnModeInteractive": "Authentification bac à sable interactive",
-    "spawnModeStrict": "Verrouillage statique strict",
+    "distill_hint": "À la fin d’une conversation, apprend tes préférences à partir de tes retours",
     "retentionLabel": "Jours de conservation des détails de débogage d'exécution",
     "retentionHint": "Passé ce nombre de jours, l'invite système réelle / les connaissances injectées / les entrées complètes des outils et les réponses brutes d'une exécution sont effacées automatiquement (les scores et les durées ne sont pas affectés).",
     "headerLore": "Gérez vos connexions, préférences et autorisations.",
@@ -626,11 +629,11 @@
     "sectionSearch": "Recherche",
     "sectionAppearance": "Apparence et langue",
     "sectionLlmConfig": "Configuration LLM",
-    "labelOrchestratorShell": "Exécution de commandes Arslan",
-    "orchestratorShellDesc": "Autorise Arslan à exécuter les commandes autorisées. Arslan uniquement, avec confirmation selon le risque ; désactivé par défaut.",
-    "labelShellConfirmPolicy": "Politique de confirmation",
-    "shellPolicyAskAll": "Confirmer chaque commande",
-    "shellPolicyAskRisky": "Confirmer les commandes à risque uniquement (lecture seule automatique)",
+    "labelOrchestratorShell": "Terminal",
+    "orchestratorShellDesc": "Arslan utilise le terminal pour faire les choses : lire, convertir, compiler, lancer des scripts. Tout ce qui envoie, publie, supprime, installe ou pilote une autre app demande d’abord. Lire les mots de passe du trousseau, sudo et supprimer des dossiers système n’est jamais permis.",
+    "labelShellConfirmPolicy": "Quand demander",
+    "shellPolicyAskAll": "Demander avant chaque commande",
+    "shellPolicyAskRisky": "Demander seulement pour les commandes risquées",
     "labelMcpServer": "Serveur MCP (entrant)",
     "mcpServerDesc": "Permet aux clients MCP externes (Claude Code, Codex) d'appeler des outils en lecture seule. Désactivé par défaut ; nécessite un jeton MCP généré. Localhost uniquement.",
     "mcpToken": {
@@ -656,13 +659,6 @@
       "save": "Enregistrer",
       "requiredHint": "Ce serveur exige un jeton pour les connexions API et en direct. Collez le jeton émis pour cette instance."
     },
-    "labelEvolutionAuto": "Auto-évolution (en arrière-plan)",
-    "evolutionAutoDesc": "Laisse Arslan améliorer seul le prompt d'un spawn, en arrière-plan, en rejouant d'anciennes exécutions.",
-    "evolutionAutoSpendWarning": "Cela consomme vos crédits API. Aucun plafond n'est actif aujourd'hui : la limite que vous pouvez fixer compte les relectures, pas les tokens. En attendant, fixez une limite stricte dans le tableau de bord de facturation de votre fournisseur.",
-    "evolutionAutoSpendWarningCapped": "Cela consomme vos crédits API. Les tentatives projetant plus de {{cap}} relectures sont refusées. Cela borne les relectures, pas les tokens — le coût par relecture varie beaucoup, gardez donc aussi une limite chez votre fournisseur.",
-    "labelEvolutionMaxDispatches": "Relectures maximales par tentative",
-    "evolutionMaxDispatchesDesc": "Refuse une tentative dont les relectures projetées dépassent cette valeur. Compte les relectures, pas les tokens : le coût par relecture varie trop pour servir de plafond. Laissez vide pour aucune limite.",
-    "evolutionMaxDispatchesUnset": "aucune limite",
     "embeddingError": "Échec : {{error}}",
     "embeddingStatusNotDownloaded": "Non téléchargé",
     "embeddingStatusDownloading": "Téléchargement…",
@@ -705,8 +701,8 @@
     "keepAwakeDesc": "Tant qu’une tâche ou tâche planifiée tourne, le Mac ne se met pas en veille de lui-même. L’écran peut s’éteindre ; fermer le capot ou une batterie faible le mettent quand même en veille.",
     "labelDesktopNotifications": "Notifications",
     "desktopNotificationsDesc": "Fenêtre fermée ou en arrière-plan, macOS vous prévient quand une tâche se termine, qu’une action attend votre confirmation ou qu’une tâche planifiée échoue. Les notifications n’affichent jamais le texte des messages.",
-    "automationElsewhere": "Les tâches planifiées et l'utilisation des tokens sont dans Diagnostics, là où se trouve leur historique.",
-    "automationOpenDiagnostics": "Ouvrir Diagnostics",
+    "automationElsewhere": "Les tâches planifiées, l'utilisation des tokens et chaque exécution passée sont dans Activité.",
+    "automationOpenActivity": "Ouvrir Activité",
     "searchPlaceholder": "Rechercher des paramètres…",
     "searchNoHits": "Aucune section ne correspond",
     "modeSystem": "Système",
@@ -744,8 +740,8 @@
     "slotPurposeSynthesis": "Transforme les éléments réunis par les outils en réponse finale.",
     "slotLabelVision": "Images",
     "slotPurposeVision": "Lit les images que vous joignez. Ne s'applique qu'aux tours qui contiennent réellement une image — les autres ne sont pas touchés.",
-    "slotLabelRouter": "Routage des requêtes",
-    "slotPurposeRouter": "Décide comment une requête entrante est traitée, avant qu'aucune réponse ne soit écrite.",
+    "slotLabelRouter": "Retenir des faits",
+    "slotPurposeRouter": "Après chaque réponse, relève les faits sur toi qui méritent d’être retenus. Un petit modèle bon marché suffit.",
     "slotFallbackPinnedPrimary": "Non défini : utilise toujours votre configuration principale ({model}).",
     "slotFallbackFollowsPrimary": "Non défini : suit votre modèle principal ({model}).",
     "slotFallbackRouted": "Non défini : attribué par votre stratégie de routage.",
@@ -753,8 +749,8 @@
     "slotFallbackNoConfigs": "Aucun modèle configuré pour l'instant.",
     "modelRolesEmbeddingPointer": "Le modèle d'embedding se règle dans « Mémoire et données ».",
     "labelWorkspaceDir": "Dossier de l'espace de travail",
-    "workspaceDirPlaceholder": "ex. /Users/vous/Documents/Arslan Workspace",
-    "workspaceDirHint": "Le seul dossier qu'Arslan peut lire et — avec votre accord — écrire. Laissé vide, les outils de fichiers ne sont pas proposés. Les fichiers ressemblant à des identifiants (.env, clés, certificats) ne sont jamais lus.",
+    "workspaceDirPlaceholder": "~/Arslan",
+    "workspaceDirHint": "Où Arslan enregistre ce qu’il produit. Laisse vide pour utiliser son propre dossier (~/Arslan), où il écrit sans demander. Un dossier que tu choisis demande une fois par conversation avant la première écriture. Les fichiers d’identifiants (.env, clés, certificats) ne sont jamais lus.",
     "labelHeartbeat": "Liste de contrôle périodique",
     "heartbeatDesc": "Une liste que vous écrivez ; Arslan la relit toutes les quelques heures et vous prévient si quelque chose demande une action. Il peut seulement regarder et rapporter — une exécution en arrière-plan ne peut ni écrire de fichiers ni lancer de commandes.",
     "heartbeatSpendNote": "Chaque vérification consomme des tokens sur votre clé. Désactivé par défaut ; une liste vide ne lance rien.",
@@ -779,8 +775,6 @@
     "sshNodeRevokeHint": "L'oublier ici empêche Arslan de l'atteindre, mais ne supprime pas la ligne de clé collée sur cette machine — effacez-la là-bas.",
     "labelDefaultRead": "Lire mes fichiers par défaut",
     "defaultReadDesc": "Autorise Arslan à lire votre Bureau, vos Documents et vos Téléchargements pour vous aider à retrouver et résumer. Il ne modifie ni ne supprime jamais rien sans vous demander à chaque fois. Désactivez pour limiter la lecture à un dossier de travail choisi.",
-    "labelVoiceOutput": "Lire les réponses à voix haute",
-    "voiceOutputDesc": "Lit les réponses d'Arslan à voix haute avec la voix intégrée de votre Mac. Désactivé par défaut.",
     "statusOk": "Fonctionne",
     "statusFailed": "Ne fonctionne pas",
     "statusUntested": "Non testé",
@@ -798,7 +792,10 @@
     "voiceModePushToTalk": "Maintenir pour parler",
     "voiceModeConversation": "Conversation",
     "labelVoiceEndpointSilence": "Fin de phrase (ms)",
-    "voiceEndpointSilenceDesc": "Durée de la pause avant l'envoi de ce que vous avez dit. 900 ms correspondent à une respiration normale ; moins vous coupe, plus paraît lent."
+    "voiceEndpointSilenceDesc": "Durée de la pause avant l'envoi de ce que vous avez dit. 900 ms correspondent à une respiration normale ; moins vous coupe, plus paraît lent.",
+    "terminalRulesTitle": "Ne plus demander pour",
+    "terminalRulesEmpty": "Rien pour l’instant. Coche « ne plus demander » sur une carte de commande pour ajouter ce type ici.",
+    "terminalRulesForget": "Redemander"
   },
   "errors": {
     "load_failed": "Échec du chargement des données.",
@@ -1050,11 +1047,11 @@
     "catalog": {
       "loading": "Chargement du registre…",
       "empty": "Aucune capacité enregistrée pour l'instant",
-      "equip_hint": "Ajoutez-les depuis le menu d’un expert.",
+      "equip_hint": "Arslan peut les utiliser directement.",
       "unimplemented_note": "Non implémenté — simple entrée de catalogue, ne peut pas être équipé.",
       "orchestrator_note": "Par sécurité, réservés à Arslan lui-même — non attribuables aux experts.",
       "degraded": "SANS SANDBOX",
-      "empty_desc": "Les capacités sont les outils et compétences qu'un spawn peut utiliser. Importez des compétences depuis un dépôt, ou enregistrez un serveur MCP, via les panneaux de cette page.",
+      "empty_desc": "Les capacités sont les outils et compétences qu’Arslan peut utiliser. Importe des compétences depuis un dépôt ou enregistre un serveur MCP avec les panneaux de cette page.",
       "filtered_empty": "Rien ne correspond à ce filtre",
       "filtered_clear": "Tout afficher"
     },
@@ -1326,7 +1323,7 @@
   },
   "runcmd": {
     "label": "Exécuter cette commande ?",
-    "remember": "Ne plus demander pendant cette session",
+    "remember": "Ne plus demander pour ce type de commande (annulable dans Réglages › Avancé)",
     "run": "Exécuter",
     "cancel": "Annuler",
     "pillLabel": "Commande",
@@ -1566,7 +1563,7 @@
       "conversation_placeholder": "Vide = conversation dédiée",
       "submit_create": "Créer",
       "submit_save": "Enregistrer",
-      "required": "Nom, prompt et spawn sont requis"
+      "required": "Le nom et l’instruction sont obligatoires"
     },
     "err": {
       "task_not_found": "La tâche planifiée {{task_id}} n'existe pas",
@@ -1576,7 +1573,7 @@
       "enabled_limit_reached": "Vous avez déjà {{max_enabled}} tâches planifiées actives — mettez-en une en pause ou supprimez-la",
       "spawn_id_required": "Un spawn doit être choisi"
     },
-    "empty_desc": "Une tâche planifiée envoie un spawn toute seule, selon un intervalle ou une expression cron : un résumé quotidien, une vérification horaire."
+    "empty_desc": "Une tâche planifiée fait faire quelque chose à Arslan tout seul, à intervalle régulier ou selon une expression cron : un résumé quotidien, une vérification toutes les heures."
   },
   "diag": {
     "range_1h": "Dernière 1h",

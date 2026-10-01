@@ -7,8 +7,7 @@ import i18n, { SUPPORTED_LANGUAGES } from "../i18n";
 const noop = () => {};
 const props: ComponentProps<typeof Sidebar> = {
   threads: [], activeThreadId: "", onSelectThread: noop, onAddThread: noop,
-  spawns: [], activeSpawnChatId: "", onSelectSpawnChat: noop,
-  activeSection: "arslan", onChangeSection: noop, onCompleteChat: noop,
+  activeSection: "arslan", onChangeSection: noop,
   onDistillThread: noop, onArchiveThread: noop, onUnarchiveThread: noop,
   onDeleteThread: noop, backendStatus: "online",
 };

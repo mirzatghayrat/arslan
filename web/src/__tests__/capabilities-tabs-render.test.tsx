@@ -86,13 +86,14 @@ beforeEach(() => {
 });
 
 describe("Capabilities page structure and legacy feature reachability", () => {
-  it("renders four primary tabs when former experts exist (0.1.44: the tab converts them)", () => {
+  it("renders five primary tabs when former experts exist (0.1.48: Connections joined as a tab)", () => {
     render(<Capabilities experts={<div>Expert workspace</div>} />);
     const tabs = screen.getAllByRole("tab");
     expect(tabs.map((el) => el.textContent)).toEqual([
       "workspace.legacyExperts",
       "workspace.skillsWorkflows",
       "capabilities.tabs.tools",
+      "workspace.connections",
       "capabilities.tabs.discover",
     ]);
     expect(screen.getByText("Expert workspace")).toBeInTheDocument();
@@ -180,11 +181,10 @@ describe("Capabilities page structure and legacy feature reachability", () => {
     expect(scrollContainer).not.toBeNull();
   });
 
-  it("the current app connection entry uses the dedicated permissions page", () => {
-    const open = vi.fn();
-    render(<Capabilities onOpenConnections={open} />);
+  it("connections are a tab here (0.1.48: no separate Connections page)", () => {
+    render(<Capabilities />);
     fireEvent.click(screen.getByRole("tab", { name: "capabilities.tabs.tools" }));
     fireEvent.click(screen.getByRole("button", { name: "workspace.connections" }));
-    expect(open).toHaveBeenCalledOnce();
+    expect(screen.getByRole("tab", { name: "workspace.connections" }).getAttribute("aria-selected")).toBe("true");
   });
 });

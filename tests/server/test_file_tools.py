@@ -207,11 +207,11 @@ async def test_edit_requires_a_nonempty_old(ws):
 
 
 # ── no workspace configured ────────────────────────────────────────────────
-async def test_reads_refuse_when_nothing_is_readable(tmp_path, monkeypatch):
-    # default_read OFF and no workspace ⇒ the read surface is genuinely empty.
-    # (With default_read ON — the shipped default — reads span the green ring and
-    #  this refusal does NOT happen; that is the whole point of the feature and is
-    #  asserted in test_read_roots.py / the registration gate test.)
+async def test_with_reading_off_only_arslans_own_folder_is_readable(tmp_path, monkeypatch):
+    # 0.1.48: there is always a workspace (Arslan's own folder by default), so the read
+    # surface is never empty. With default_read OFF it is exactly that folder.
+    import os
+    from pathlib import Path
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'empty.db'}")
     m = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with engine.begin() as conn:
@@ -220,8 +220,13 @@ async def test_reads_refuse_when_nothing_is_readable(tmp_path, monkeypatch):
     async with m() as sess:
         sess.add(Setting(key="default_read_enabled", value="false"))
         await sess.commit()
-    out = await file_tools.ReadFileExecutor().execute({"path": "~/Desktop/x.md"})
-    assert out["ok"] is False and "nothing is readable" in out["error"]
+    own = Path(os.environ["ARSLAN_DEFAULT_WORKSPACE"])
+    own.mkdir(parents=True, exist_ok=True)
+    (own / "notes.md").write_text("hello")
+    inside = await file_tools.ReadFileExecutor().execute({"path": str(own / "notes.md")})
+    assert inside["ok"] is True and "hello" in str(inside)
+    outside = await file_tools.ReadFileExecutor().execute({"path": "~/Desktop/x.md"})
+    assert outside["ok"] is False
     await engine.dispose()
 
 

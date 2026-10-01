@@ -39,17 +39,15 @@ def _events(collector):
 
 @pytest.mark.asyncio
 async def test_memory_event_logged_on_facts(maker, monkeypatch):
-    """A route decision carrying new_facts must, after save_facts persists them,
-    log a `memory` growth event for this conversation."""
-    from server.orchestrator import arslan, router, tool_loop
+    """Facts noted after the answer must, once save_facts persists them,
+    log a `memory` growth event for this conversation (0.1.48: turn_facts, not the router)."""
+    from server.orchestrator import arslan, tool_loop
+    from server.services import turn_facts
 
-    async def _fake_route(conv, msg):
-        return router.RouterResult(
-            action="answer",
-            new_facts=[{"content": "领域兴趣: 半导体", "sensitive": False}],
-        )
+    async def _fake_extract(conv, msg):
+        return [{"content": "领域兴趣: 半导体", "sensitive": False}]
 
-    monkeypatch.setattr(arslan.router, "route", _fake_route)
+    monkeypatch.setattr(turn_facts, "extract", _fake_extract)
     adapter = MockAdapter(stream_chunks=["ok"], chat_content="ok")
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
 
@@ -72,12 +70,9 @@ async def test_memory_event_logged_on_facts(maker, monkeypatch):
 @pytest.mark.asyncio
 async def test_no_memory_event_without_facts(maker, monkeypatch):
     """No new_facts → no memory event (guards against over-logging every turn)."""
-    from server.orchestrator import arslan, router, tool_loop
+    from server.orchestrator import arslan, tool_loop
 
-    async def _fake_route(conv, msg):
-        return router.RouterResult(action="answer")
 
-    monkeypatch.setattr(arslan.router, "route", _fake_route)
     adapter = MockAdapter(stream_chunks=["ok"], chat_content="ok")
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
 

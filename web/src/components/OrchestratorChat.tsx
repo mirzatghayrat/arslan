@@ -3,16 +3,14 @@ import HostRunResultButton from './HostRunResultButton';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { ImagePayload } from "../lib/imagePayload";
 import {
-  ArrowRight, Terminal,
+  ArrowRight,
   AlertTriangle, CheckCircle2, XOctagon,
   CornerDownRight,
   Cpu, X, Square,
-  ThumbsUp, ThumbsDown, Wand2
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import JobCard, { JobResultLabel } from './JobCard';
 
-const EXPERT_BAR = false;
 import { formatUiTime } from '../lib/localeFormatting';
 import { getIcon } from './iconMap';
 import { Message, MessageAttachment, Spawn } from '../types';
@@ -24,7 +22,6 @@ import SFSymbol from './SFSymbol';
 import { SpawnAvatar } from './SpawnAvatar';
 import MessageBody, { HtmlDocCard } from './MessageBody';
 import CopyButton from './CopyButton';
-import WorkingPulse from './WorkingPulse';
 import LiveActivity from './LiveActivity';
 import ToolActivityCard from './ToolActivityCard';
 import { useArslanStore } from '../stores/arslanStore';
@@ -33,7 +30,6 @@ import { runtimeErrorText } from '../lib/runtimeErrorText';
 import { api } from '../api/client';
 import { useSettingsStore } from '../stores/settingsStore';
 import { clampEndpointSilenceMs } from '../api/adapters';
-import SandboxPanel from './SandboxPanel';
 import NoModelHint from './NoModelHint';
 import RunReplay from './RunReplay';
 import PushToTalk from './PushToTalk';
@@ -42,13 +38,9 @@ import { useConversationMode } from '../hooks/useConversationMode';
 import { preferredVoiceLocale } from '../lib/speech';
 import { useComposerAttach, AttachChips, AttachControl, SentAttachments, attachmentImages, attachmentDelivery, attachmentImageBudgetExceeded } from './ComposerAttach';
 import { composerDrafts, getAttachmentDraft, discardComposerDraft } from '../lib/composerDrafts';
-import InviteConfirmCard from './InviteConfirmCard';
 import ClarifyOptionsCard from './ClarifyOptionsCard';
 import MentionText from './MentionText';
 import UsageChip from './UsageChip';
-import { resolveSpawnName } from '../api/resolveSpawnName';
-import { activeMention, filterRoster, insertMention } from '../lib/mentions';
-import { useDismissable } from "../hooks/useDismissable";
 
 /** S3-M1: muted "interrupted" line under a bubble whose run was cancelled
  *  mid-stream — same look as the stall indicator (⏸ + working.stalled, which
@@ -75,12 +67,6 @@ interface OrchestratorChatProps {
   currentStyle: 'quartz' | 'brutalist' | 'linear';
   setCurrentStyle: (style: 'quartz' | 'brutalist' | 'linear') => void;
   activeThread: any;
-  /** Called when the user confirms a proposed direction. spawnId is the numeric backend id. */
-  onConfirmDirection?: (spawnId: number) => void;
-  /** Called when the user submits a verdict on a spawn deliverable. */
-  onDeliverableVerdict?: (action: string, spawnId: number, messageId?: number, taskBrief?: string | null) => void;
-  /** Called when the user clicks 精修 (Refine) on a spawn deliverable. */
-  onRefine?: (spawnId: number, messageId: number | undefined, content: string, spawnName: string) => void;
   /** True when at least one ProviderConfig exists. When false, a hint to configure a model is shown. */
   hasModel?: boolean;
   /** Navigate to the Settings screen. Used by the no-model hint. */
@@ -93,14 +79,8 @@ interface OrchestratorChatProps {
   providerTestingIds?: Set<number>;
   /** Make the picked model the primary one. */
   onSelectModel?: (id: number) => void;
-  /** The active conversation id — consumed by SandboxPanel (later task). */
+  /** The active conversation id. */
   conversationId?: string;
-  /** Pending inline roster invite (from a backend `propose_invite` frame). */
-  pendingInvite?: { spawnId: number; reason: string } | null;
-  /** Accept the pending invite → join + dispatch the parked task. */
-  onAcceptInvite?: (spawnId: number) => void;
-  /** Dismiss the pending invite → clear it (no dispatch). */
-  onDismissInvite?: () => void;
   /** True when the orchestrator-shell capability is enabled (drives the policy pill). */
   shellEnabled?: boolean;
   /** Current shell confirmation posture, shown + flippable in the composer pill. */
@@ -116,9 +96,6 @@ export default function OrchestratorChat({
   currentStyle,
   setCurrentStyle,
   activeThread,
-  onConfirmDirection,
-  onDeliverableVerdict,
-  onRefine,
   hasModel = true,
   onOpenSettings,
   providerConfigs,
@@ -126,11 +103,8 @@ export default function OrchestratorChat({
   providerTestingIds,
   onSelectModel,
   conversationId,
-  pendingInvite,
-  onAcceptInvite,
-  onDismissInvite,
   shellEnabled = false,
-  shellPolicy = 'ask_all',
+  shellPolicy = 'ask_risky',
 }: OrchestratorChatProps) {
   const { t, i18n } = useTranslation();
   const settings = useSettingsStore((s) => s.settings);
@@ -156,6 +130,13 @@ export default function OrchestratorChat({
     // restart, and the first one looks like it did nothing.
     onEnded: () => setConversationOn(false),
   });
+  // 0.1.48: replies are spoken while a voice conversation is running, and only
+  // then — the separate "read replies aloud" switch is gone. Talking to it is
+  // the request to be talked back to; typing is not.
+  const setVoice = useArslanStore((s) => s.setVoice);
+  React.useEffect(() => {
+    setVoice({ enabled: voiceMode === 'conversation' && conversationOn, lang: voiceLocale });
+  }, [voiceMode, conversationOn, voiceLocale, setVoice]);
   // 0.1.42: with voice conversation on, a background job that finishes (or
   // stops to ask for a confirmation) gets ONE spoken line. The confirmation
   // itself is still a click in the window — speech never approves anything.
@@ -190,12 +171,7 @@ export default function OrchestratorChat({
   const capabilityLabel = useCapabilityLabel();
   // Client-side user display name for the greeting + own-message sender label.
   const displayName = useProfileStore((s) => s.displayName);
-  // Live roster from store — used to determine which spawns are in this conversation
-  const roster = useArslanStore((s) => s.roster);
-  // Per-spawn "running a turn now" signal for the pill shimmer: pendingRoute is set on the
-  // routing frame and cleared on stream_end; streamSpawnId covers the token-streaming window.
   const pendingRoute = useArslanStore((s) => s.pendingRoute);
-  const streamSpawnId = useArslanStore((s) => s.streamSpawnId);
   // Known spawn names (ledger prop + names learned from frames) — grounds the
   // @-mention chips in routing announcements; unknown @text stays plain.
   const spawnNameMap = useArslanStore((s) => s.spawnNames);
@@ -207,7 +183,6 @@ export default function OrchestratorChat({
   const liveSteps = useArslanStore((s) => (s as any).activitySteps as import('../api/client.types').ToolStep[]);
   const liveStreaming = useArslanStore((s) => (s as any).streaming as boolean);
   const workStartedAt = useArslanStore((s) => (s as any).workStartedAt as number | null);
-  const streaming = useArslanStore((s) => s.streaming);
   // HX-4/A1: stall watchdog — while a turn is active (runtime-frame flags only,
   // never message text), tick checkStall() so a turn whose frames stop arriving
   // for >90s renders a static 「已中断」 instead of an infinite pulse. Any new
@@ -264,95 +239,7 @@ export default function OrchestratorChat({
   });
   const attachments = attach.attachments;
 
-  // @-mention autocomplete for the chat composer — a dropdown of this conversation's roster
-  // members that filters as you type `@…` and inserts the full `@Name ` on pick (so routing
-  // gets an exact name). Chat composer only (empty-state hero intentionally excluded).
-  const chatInputRef = useRef<HTMLInputElement>(null);
-  const [mention, setMention] = useState<{ query: string; index: number } | null>(null);
-
-  // Class fix (floating-element sweep). Dismissal only:
-  //  · it closed via the input's `onBlur`, so it stayed open for any click that
-  //    did not move focus — most of the page;
-  //  · Escape was bound to the input's own onKeyDown, i.e. only while the input
-  //    held focus.
-  // No portal: this one is anchored `bottom-full` to the composer and opens
-  // UPWARD into the message region, so it is not clipped in a normal window.
-  // The inventory flagged it as LATENT (a very short window could cut its top),
-  // which is a real but unobserved case — registered rather than churned.
-  const { anchorRef: mentionAnchorRef, floatingRef: mentionPanelRef } =
-    useDismissable<HTMLDivElement, HTMLDivElement>(Boolean(mention), () => setMention(null));  const mentionCands = React.useMemo(
-    () => (mention ? filterRoster(roster, mention.query).slice(0, 8) : []),
-    [mention, roster],
-  );
-  const syncMention = (value: string, caret: number | null) => {
-    const tok = caret == null ? null : activeMention(value, caret);
-    setMention(tok ? { query: tok.query, index: 0 } : null);
-  };
-  const pickMention = (name: string) => {
-    const el = chatInputRef.current;
-    const caret = el?.selectionStart ?? inputValue.length;
-    const tok = activeMention(inputValue, caret);
-    if (!tok) return;
-    const next = insertMention(inputValue, tok, caret, name);
-    setInputValue(next.value);
-    attach.onInputChange(next.value);
-    setMention(null);
-    requestAnimationFrame(() => { el?.focus(); el?.setSelectionRange(next.caret, next.caret); });
-  };
-  const onMentionKeyDown = (e: React.KeyboardEvent) => {
-    if (!mention || mentionCands.length === 0) return;
-    if (e.key === 'ArrowDown') { e.preventDefault(); setMention((m) => m && { ...m, index: (m.index + 1) % mentionCands.length }); }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); setMention((m) => m && { ...m, index: (m.index - 1 + mentionCands.length) % mentionCands.length }); }
-    else if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); pickMention(mentionCands[mention.index]?.spawnName ?? ''); }
-    else if (e.key === 'Escape') { e.preventDefault(); setMention(null); }
-  };
-  // Optimistic verdicts: filled immediately on click, before the backend verdict_recorded
-  // frame round-trips (which sets msg.verdict via the store). Keyed by messageId.
-  // KNOWN LIMITATION: verdict_recorded carries no messageId, so the store marks the spawn's
-  // MOST-RECENT deliverable. On a spawn with multiple un-voted deliverables, voting an older
-  // one fills it optimistically here while the real verdict lands on the newest — they can
-  // disagree (no rollback by design). The common single-deliverable case is exact. A proper
-  // fix needs the backend to echo the messageId on verdict_recorded.
-  const [optimisticVerdicts, setOptimisticVerdicts] = useState<Record<number, 'accept' | 'discard'>>({});
-  const castVerdict = (action: 'accept' | 'discard', spawnId: number, messageId?: number) => {
-    if (messageId != null) setOptimisticVerdicts((p) => ({ ...p, [messageId]: action }));
-    onDeliverableVerdict?.(action, spawnId, messageId);
-  };
   const [replayRunId, setReplayRunId] = useState<number | null>(null);
-
-  // Open sandbox sessions: { spawnId, sessionId, seed? }. Multiple stay alive at once
-  // (each SandboxPanel keeps its own socket); the 45% pane shows the active one, the
-  // rest are mounted-but-hidden. seed = a deliverable to tune (refine entry).
-  type OpenSandbox = { spawnId: string; sessionId: string; seed: string | null };
-  const [openSandboxes, setOpenSandboxes] = useState<OpenSandbox[]>([]);
-  const [activeSandboxSpawnId, setActiveSandboxSpawnId] = useState<string | null>(null);
-
-  const openSandbox = (spawnId: string, seed: string | null = null) => {
-    setOpenSandboxes((prev) =>
-      prev.some((s) => s.spawnId === spawnId)
-        ? prev.map((s) => (s.spawnId === spawnId && seed ? { ...s, seed } : s))
-        : [...prev, { spawnId, sessionId: `sbx-${spawnId}-${prev.length}-${performance.now()}`, seed }]
-    );
-    setActiveSandboxSpawnId(spawnId);
-  };
-  const closeSandbox = (spawnId: string) => {
-    const remaining = openSandboxes.filter((s) => s.spawnId !== spawnId);
-    setOpenSandboxes(remaining);
-    // If the closed pane was active, promote another open sandbox (if any) so the user
-    // never lands on an empty-but-non-full layout.
-    setActiveSandboxSpawnId((cur) => (cur === spawnId ? (remaining[0]?.spawnId ?? null) : cur));
-  };
-  const splitSpawnId = activeSandboxSpawnId;  // back-compat alias for the layout width logic
-
-  // Global Integration Discovery & Repository Engine — no MCP backend yet; tool-hub disabled
-  const [showSandboxSearch, setShowSandboxSearch] = useState(true);
-  const [integrationQuery, setIntegrationQuery] = useState('');
-  const isEvaluating = false; // evaluation backend not yet available
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [mcpRegistry] = useState<{name: string, url: string, description: string, tags: string[]}[]>([]); // no real MCP servers yet
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [skillRegistry] = useState<{name: string, repo: string, capabilities: string[]}[]>([]);
-  const evaluationResult = null;
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
@@ -463,95 +350,8 @@ export default function OrchestratorChat({
 
 
 
-      {/* Simulator Interactive Control Strip & Spawns Docket Integrated */}
-      {/* 0.1.44 one Arslan: no standing expert bar. Kept behind EXPERT_BAR for step two's deletion. */}
-      {EXPERT_BAR && roster.some(member => spawns.some(spawn => spawn.id === String(member.spawnId))) && <div data-testid="conversation-experts-bar" className="bg-surface/60 border-b border-border/80 px-6 py-2.5 flex flex-row items-center justify-between gap-4 select-none text-[11px] z-10">
-        <div className="flex items-center gap-2 shrink-0">
-          <Terminal className="w-4 h-4 text-primary" />
-          <span className="text-muted-foreground">{t('workspace.experts')}</span>
-        </div>
-
-        <div className="flex items-center gap-3 flex-wrap">
-          {(() => {
-            // Derive member spawns from the live store roster
-            const rosterIds = new Set(roster.map((m) => String(m.spawnId)));
-            const memberSpawns = spawns.filter((s) => rosterIds.has(s.id));
-            // Show only roster members; no fallback to mock names
-            const activeDisplayList = memberSpawns;
-
-            return activeDisplayList.map(spawn => {
-              const isSplitActive = activeSandboxSpawnId === spawn.id;
-              const isOpen = openSandboxes.some((s) => s.spawnId === spawn.id);
-              // spawn.id is a string; pendingRoute.spawnId / streamSpawnId are numbers → coerce.
-              // HX-4/A1: shimmer stops when the turn is stalled — no animation may
-              // outlive the runtime frames that justify it.
-              const running = !stalled && ((pendingRoute?.spawnId != null && String(pendingRoute.spawnId) === spawn.id)
-                || (streamSpawnId != null && String(streamSpawnId) === spawn.id));
-
-              // Indicator: spawns with an open sandbox get a solid primary dot (the
-              // active one pulses); spawns with no sandbox get a quiet green idle dot.
-              const statusIndicator = isOpen ? (
-                <span className="relative flex h-2 w-2 mr-1">
-                  {isSplitActive && (
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-60"></span>
-                  )}
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
-                </span>
-              ) : (
-                <span className="relative flex h-1.5 w-1.5 mr-1">
-                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-success/80"></span>
-                </span>
-              );
-
-              return (
-                <button
-                  key={spawn.id}
-                  onClick={() => {
-                    // 🔴 Toggling the chip SWITCHES PANES; it does not close.
-                    // It used to call closeSandbox, which removes the session
-                    // from `openSandboxes` and unmounts the panel — taking the
-                    // whole conversation with it. That contradicted this file's
-                    // own design a few lines up ("all open sessions stay
-                    // mounted, only the active one is visible"), which is the
-                    // entire reason SandboxPanel has a `hidden` prop.
-                    //
-                    // A sandbox is closed by an explicit decision — Confirm &
-                    // Merge, Discard, or ✕ — because those are the two moments
-                    // the user means "I am done with this". Going back to read
-                    // the main thread is not one of them.
-                    if (activeSandboxSpawnId === spawn.id) {
-                      setActiveSandboxSpawnId(null);      // back to the main thread
-                    } else {
-                      openSandbox(spawn.id);              // resumes if already open
-                    }
-                  }}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all text-xs font-semibold select-none cursor-pointer ${
-                    isSplitActive
-                      ? 'border-primary bg-primary/10 text-primary'
-                      : isOpen
-                      ? 'border-primary/40 bg-primary/5 text-foreground hover:border-primary/60'
-                      : 'border-border bg-surface/40 hover:border-border-strong text-muted-foreground hover:text-foreground'
-                  }`}
-                  title={
-                    t(isOpen ? (isSplitActive ? 'ui.closeSandbox' : 'ui.viewSandbox') : 'ui.openSandbox', { name: spawn.name })
-                  }
-                >
-                  {statusIndicator}
-                  <span className={running ? 'shiny-text' : undefined}>{spawn.name}</span>
-                </button>
-              );
-            });
-          })()}
-        </div>
-      </div>}
-
-      {/* Global Integration Discovery & Repository Engine (Tool-Hub) has been successfully relocated to the Spawns Ledger screen directly above the Spawns list card grid. */}
-
-      {/* Main Container: Split-screen dual workframes if splitSpawnId is assigned */}
       <div className="flex-1 flex overflow-hidden relative">
-        <div className={`flex-1 flex flex-col h-full overflow-hidden transition-all duration-300 relative ${
-          splitSpawnId ? 'w-[55%] border-r border-border' : 'w-full'
-        }`}>
+        <div className="flex-1 flex flex-col h-full overflow-hidden transition-all duration-300 relative w-full">
           {/* Scrollable Chat Area */}
           <div ref={scrollContainerRef} onScroll={handleScrollContainerScroll} className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
         {chatHistory.length === 0 ? (
@@ -584,7 +384,6 @@ export default function OrchestratorChat({
             <div
               className={`relative w-full max-w-xl bg-surface border rounded-2xl p-4 flex flex-col space-y-3 focus-within:border-primary/60 focus-within:ring-1 focus-within:ring-ring/30 shadow-2xl transition-all ${attach.dragActive ? 'border-primary border-dashed' : 'border-border-strong'}`}
               {...attach.dndHandlers}
-              ref={mentionAnchorRef}
             >
               <AttachChips attachments={attachments} onRemove={attach.removeAt} />
               <textarea
@@ -984,59 +783,13 @@ export default function OrchestratorChat({
                       </div>
                     )}
 
-                    {/* Staged orchestration: proposal confirm button (quartz) */}
-                    {isSpawn && msg.isProposal && msg.spawnId && (
-                      <button
-                        onClick={() => onConfirmDirection?.(Number(msg.spawnId))}
-                        className="flex items-center gap-2 px-4 py-2 bg-primary/10 hover:bg-primary/20 border border-primary/40 hover:border-primary/70 text-primary text-[11px] font-mono font-bold uppercase tracking-wider rounded-lg transition-all select-none"
-                      >
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>{t('orchestrator.confirm_direction')}</span>
-                      </button>
+                    {/* 0.1.48: an old expert message keeps copy + its run; the expert actions went with the experts. */}
+                    {isSpawn && !msg.isProposal && msg.spawnId && (
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <CopyButton text={msg.text} className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-primary text-[11px] rounded-md hover:bg-primary/10 transition-all select-none" />
+                        <HostRunResultButton runId={msg.runId} onOpen={setReplayRunId} />
+                      </div>
                     )}
-
-                    {/* Staged orchestration: deliverable verdict bar (quartz) */}
-                    {isSpawn && !msg.isProposal && msg.spawnId && (() => {
-                      const verdict = msg.verdict ?? (msg.messageId != null ? optimisticVerdicts[msg.messageId] : undefined);
-                      if (verdict) {
-                        return (
-                          <div data-testid="verdict-voted" data-verdict={verdict}
-                            className="flex flex-wrap items-center gap-2 px-2 py-1">
-                            <ThumbsUp className={`w-3.5 h-3.5 ${verdict === 'accept' ? 'text-success fill-current' : 'text-subtle-foreground opacity-30'}`} />
-                            <ThumbsDown className={`w-3.5 h-3.5 ${verdict === 'discard' ? 'text-danger fill-current' : 'text-subtle-foreground opacity-30'}`} />
-                            <CopyButton text={msg.text} className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-primary text-[11px] rounded-md hover:bg-primary/10 transition-all select-none" />
-                            <button title={t('orchestrator.refine')}
-                              onClick={() => openSandbox(String(msg.spawnId), msg.text)}
-                              className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-primary text-[11px] font-mono uppercase tracking-wider rounded-md hover:bg-primary/10 transition-all select-none">
-                              <Wand2 className="w-3.5 h-3.5" />
-                              <span>{t('orchestrator.refine')}</span>
-                            </button>
-                          </div>
-                        );
-                      }
-                      return (
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <button title={t('orchestrator.verdict_like')}
-                            onClick={() => castVerdict('accept', Number(msg.spawnId), msg.messageId)}
-                            className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-success text-[11px] rounded-md hover:bg-success/10 transition-all select-none">
-                            <ThumbsUp className="w-3.5 h-3.5" />
-                          </button>
-                          <button title={t('orchestrator.verdict_dislike')}
-                            onClick={() => castVerdict('discard', Number(msg.spawnId), msg.messageId)}
-                            className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-danger text-[11px] rounded-md hover:bg-danger/10 transition-all select-none">
-                            <ThumbsDown className="w-3.5 h-3.5" />
-                          </button>
-                          <CopyButton text={msg.text} className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-primary text-[11px] rounded-md hover:bg-primary/10 transition-all select-none" />
-                          <button title={t('orchestrator.refine')}
-                            onClick={() => openSandbox(String(msg.spawnId), msg.text)}
-                            className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-primary text-[11px] font-mono uppercase tracking-wider rounded-md hover:bg-primary/10 transition-all select-none">
-                            <Wand2 className="w-3.5 h-3.5" />
-                            <span>{t('orchestrator.refine')}</span>
-                          </button>
-                          {msg.sender === "spawn" && <HostRunResultButton runId={msg.runId} onOpen={setReplayRunId} />}
-                        </div>
-                      );
-                    })()}
                   </div>
 
                   {/* Timestamp for user bubble (right-aligned, no avatar needed — position conveys identity) */}
@@ -1157,61 +910,13 @@ export default function OrchestratorChat({
                     </div>
                   )}
 
-                  {/* Staged orchestration: proposal confirm button (brutalist) */}
-                  {isSpawn && msg.isProposal && msg.spawnId && (
-                    <div className="mt-4">
-                      <button
-                        onClick={() => onConfirmDirection?.(Number(msg.spawnId))}
-                        className="flex items-center gap-2 px-4 py-2 border-2 border-primary bg-primary/10 hover:bg-primary/20 text-primary text-[11px] font-mono font-bold uppercase tracking-wider transition-all select-none shadow-[2px_2px_0px_black]"
-                      >
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>{t('orchestrator.confirm_direction')}</span>
-                      </button>
+                  {/* 0.1.48: an old expert message keeps copy + its run; the expert actions went with the experts. */}
+                  {isSpawn && !msg.isProposal && msg.spawnId && (
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <CopyButton text={msg.text} className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-primary text-[11px] rounded-md hover:bg-primary/10 transition-all select-none" />
+                      <HostRunResultButton runId={msg.runId} onOpen={setReplayRunId} />
                     </div>
                   )}
-
-                  {/* Staged orchestration: deliverable verdict bar (brutalist) */}
-                  {isSpawn && !msg.isProposal && msg.spawnId && (() => {
-                    const verdict = msg.verdict ?? (msg.messageId != null ? optimisticVerdicts[msg.messageId] : undefined);
-                    if (verdict) {
-                      return (
-                        <div data-testid="verdict-voted" data-verdict={verdict}
-                          className="mt-4 flex flex-wrap items-center gap-2 px-2 py-1">
-                          <ThumbsUp className={`w-3.5 h-3.5 ${verdict === 'accept' ? 'text-success fill-current' : 'text-subtle-foreground opacity-30'}`} />
-                          <ThumbsDown className={`w-3.5 h-3.5 ${verdict === 'discard' ? 'text-danger fill-current' : 'text-subtle-foreground opacity-30'}`} />
-                          <CopyButton text={msg.text} className="flex items-center gap-1 px-2 py-1 border-2 border-border bg-background hover:border-primary text-subtle-foreground hover:text-primary text-[11px] transition-all select-none" />
-                          <button title={t('orchestrator.refine')}
-                            onClick={() => openSandbox(String(msg.spawnId), msg.text)}
-                            className="flex items-center gap-1 px-2 py-1 border-2 border-border bg-background hover:border-primary text-subtle-foreground hover:text-primary text-[11px] font-mono uppercase tracking-wider transition-all select-none">
-                            <Wand2 className="w-3.5 h-3.5" />
-                            <span>{t('orchestrator.refine')}</span>
-                          </button>
-                        </div>
-                      );
-                    }
-                    return (
-                      <div className="mt-4 flex items-center gap-2 flex-wrap">
-                        <button title={t('orchestrator.verdict_like')}
-                          onClick={() => castVerdict('accept', Number(msg.spawnId), msg.messageId)}
-                          className="flex items-center gap-1 px-2 py-1 border-2 border-border bg-background hover:border-success text-subtle-foreground hover:text-success text-[11px] transition-all select-none">
-                          <ThumbsUp className="w-3.5 h-3.5" />
-                        </button>
-                        <button title={t('orchestrator.verdict_dislike')}
-                          onClick={() => castVerdict('discard', Number(msg.spawnId), msg.messageId)}
-                          className="flex items-center gap-1 px-2 py-1 border-2 border-border bg-background hover:border-danger text-subtle-foreground hover:text-danger text-[11px] transition-all select-none">
-                          <ThumbsDown className="w-3.5 h-3.5" />
-                        </button>
-                        <CopyButton text={msg.text} className="flex items-center gap-1 px-2 py-1 border-2 border-border bg-background hover:border-primary text-subtle-foreground hover:text-primary text-[11px] transition-all select-none" />
-                        <button title={t('orchestrator.refine')}
-                          onClick={() => openSandbox(String(msg.spawnId), msg.text)}
-                          className="flex items-center gap-1 px-2 py-1 border-2 border-border bg-background hover:border-primary text-subtle-foreground hover:text-primary text-[11px] font-mono uppercase tracking-wider transition-all select-none">
-                          <Wand2 className="w-3.5 h-3.5" />
-                          <span>{t('orchestrator.refine')}</span>
-                        </button>
-                        {msg.sender === "spawn" && <HostRunResultButton runId={msg.runId} onOpen={setReplayRunId} />}
-                      </div>
-                    );
-                  })()}
                 </div>
               );
             }
@@ -1342,61 +1047,13 @@ export default function OrchestratorChat({
                     </div>
                   )}
 
-                  {/* Staged orchestration: proposal confirm button */}
-                  {isSpawn && msg.isProposal && msg.spawnId && (
-                    <div className="pl-5 pt-2">
-                      <button
-                        onClick={() => onConfirmDirection?.(Number(msg.spawnId))}
-                        className="flex items-center gap-2 px-4 py-2 bg-primary/10 hover:bg-primary/20 border border-primary/40 hover:border-primary/70 text-primary text-[11px] font-mono font-bold uppercase tracking-wider rounded-lg transition-all select-none"
-                      >
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>{t('orchestrator.confirm_direction')}</span>
-                      </button>
+                  {/* 0.1.48: an old expert message keeps copy + its run; the expert actions went with the experts. */}
+                  {isSpawn && !msg.isProposal && msg.spawnId && (
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <CopyButton text={msg.text} className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-primary text-[11px] rounded-md hover:bg-primary/10 transition-all select-none" />
+                      <HostRunResultButton runId={msg.runId} onOpen={setReplayRunId} />
                     </div>
                   )}
-
-                  {/* Staged orchestration: deliverable verdict bar */}
-                  {isSpawn && !msg.isProposal && msg.spawnId && (() => {
-                    const verdict = msg.verdict ?? (msg.messageId != null ? optimisticVerdicts[msg.messageId] : undefined);
-                    if (verdict) {
-                      return (
-                        <div data-testid="verdict-voted" data-verdict={verdict}
-                          className="pl-5 pt-2 flex flex-wrap items-center gap-2 px-2 py-1">
-                          <ThumbsUp className={`w-3.5 h-3.5 ${verdict === 'accept' ? 'text-success fill-current' : 'text-subtle-foreground opacity-30'}`} />
-                          <ThumbsDown className={`w-3.5 h-3.5 ${verdict === 'discard' ? 'text-danger fill-current' : 'text-subtle-foreground opacity-30'}`} />
-                          <CopyButton text={msg.text} className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-primary text-[11px] rounded-md hover:bg-primary/10 transition-all select-none" />
-                          <button title={t('orchestrator.refine')}
-                            onClick={() => openSandbox(String(msg.spawnId), msg.text)}
-                            className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-primary text-[11px] font-mono uppercase tracking-wider rounded-md hover:bg-primary/10 transition-all select-none">
-                            <Wand2 className="w-3.5 h-3.5" />
-                            <span>{t('orchestrator.refine')}</span>
-                          </button>
-                        </div>
-                      );
-                    }
-                    return (
-                      <div className="pl-5 pt-2 flex flex-wrap items-center gap-1.5">
-                        <button title={t('orchestrator.verdict_like')}
-                          onClick={() => castVerdict('accept', Number(msg.spawnId), msg.messageId)}
-                          className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-success text-[11px] rounded-md hover:bg-success/10 transition-all select-none">
-                          <ThumbsUp className="w-3.5 h-3.5" />
-                        </button>
-                        <button title={t('orchestrator.verdict_dislike')}
-                          onClick={() => castVerdict('discard', Number(msg.spawnId), msg.messageId)}
-                          className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-danger text-[11px] rounded-md hover:bg-danger/10 transition-all select-none">
-                          <ThumbsDown className="w-3.5 h-3.5" />
-                        </button>
-                        <CopyButton text={msg.text} className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-primary text-[11px] rounded-md hover:bg-primary/10 transition-all select-none" />
-                        <button title={t('orchestrator.refine')}
-                          onClick={() => openSandbox(String(msg.spawnId), msg.text)}
-                          className="flex items-center gap-1 px-2 py-1 text-subtle-foreground hover:text-primary text-[11px] font-mono uppercase tracking-wider rounded-md hover:bg-primary/10 transition-all select-none">
-                          <Wand2 className="w-3.5 h-3.5" />
-                          <span>{t('orchestrator.refine')}</span>
-                        </button>
-                        {msg.sender === "spawn" && <HostRunResultButton runId={msg.runId} onOpen={setReplayRunId} />}
-                      </div>
-                    );
-                  })()}
                 </div>
               );
             }
@@ -1457,19 +1114,6 @@ export default function OrchestratorChat({
           </div>
         )}
 
-        {/* Inline roster-invite card: rendered as the last item in the chat flow when
-            Arslan proposes pulling a not-yet-in-roster spawn in. Accept → join + dispatch
-            the parked task; Dismiss → clear. Not an overlay — it reads inline below the
-            last message. */}
-        {pendingInvite && (
-          <InviteConfirmCard
-            spawnId={pendingInvite.spawnId}
-            spawnName={resolveSpawnName(spawns, pendingInvite.spawnId)}
-            reason={pendingInvite.reason}
-            onConfirm={(spawnId) => onAcceptInvite?.(spawnId)}
-            onCancel={() => onDismissInvite?.()}
-          />
-        )}
       </div>
 
       {/* Input Message Form Panel */}
@@ -1480,33 +1124,16 @@ export default function OrchestratorChat({
               className={`composer-box${attach.dragActive ? ' composer-box--drop' : ''}`}
               {...attach.dndHandlers}
             >
-              {mention && mentionCands.length > 0 && (
-                <div ref={mentionPanelRef} data-testid="mention-dropdown"
-                  className="absolute bottom-full left-0 mb-1 w-64 max-h-56 overflow-auto bg-surface border border-border-strong rounded-xl shadow-2xl z-30 py-1">
-                  {mentionCands.map((m, i) => (
-                    <button key={m.spawnId} type="button"
-                      onMouseDown={(e) => { e.preventDefault(); pickMention(m.spawnName ?? ''); }}
-                      onMouseEnter={() => setMention((s) => s && { ...s, index: i })}
-                      className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-left text-[13px] ${i === mention.index ? 'bg-primary/10 text-foreground' : 'text-muted-foreground hover:bg-foreground/[0.04]'}`}>
-                      <SpawnAvatar seed={m.spawnName ?? ''} size={20} />
-                      <span className="flex-1 truncate">{m.spawnName}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
               <AttachChips attachments={attachments} onRemove={attach.removeAt} />
               <input
                 id="chat-message-input"
-                ref={chatInputRef}
                 type="text"
                 autoComplete="off"
                 autoCorrect="off"
                 autoCapitalize="off"
                 spellCheck={false}
                 value={inputValue}
-                onChange={(e) => { setInputValue(e.target.value); attach.onInputChange(e.target.value); syncMention(e.target.value, e.target.selectionStart); }}
-                onKeyDown={onMentionKeyDown}
-                onBlur={() => setMention(null)}
+                onChange={(e) => { setInputValue(e.target.value); attach.onInputChange(e.target.value); }}
                 onPaste={attach.onPaste}
                 placeholder={t('orchestrator.placeholder_chat')}
                 className="w-full bg-transparent text-xs text-foreground placeholder-subtle-foreground focus:outline-none font-sans px-1 py-1.5"
@@ -1549,47 +1176,18 @@ export default function OrchestratorChat({
             </div>
             {attach.error && <div className="attach-error max-w-4xl mx-auto mt-1.5" role="alert">{attach.error}</div>}
           </form>
-          {/* 0.1.42: the command-confirmation control lives in Settings → Advanced.
-              Only the non-default posture (read-only commands run without asking)
-              stays visible here, as one line — it changes what happens without a card. */}
-          {shellEnabled && shellPolicy === 'ask_risky' && (
+          {/* The command-confirmation control lives in Settings → Advanced. Only the
+              non-default posture shows here, as one line. 0.1.48 flipped the default to
+              "ask only for risky commands", so the line now appears for "ask for every one". */}
+          {shellEnabled && shellPolicy === 'ask_all' && (
             <p className="max-w-4xl mx-auto mt-1.5 text-[11px] text-muted-foreground" data-testid="execution-options">
-              {t('workspace.readOnlyAutomatic')}
+              {t('workspace.confirmCommands')}
             </p>
           )}
         </footer>
       )}
     </div>
 
-    {/* Right Pane: Isolated Co-Pilot Private Sandboxes (副对话框). All open sessions stay
-        mounted (sockets alive); only the active one is visible, the rest are hidden. */}
-    {openSandboxes.map((open) => {
-      const spawn = spawns.find((s) => s.id === open.spawnId);
-      if (!spawn) return null;
-      return (
-        <SandboxPanel
-          key={open.sessionId}
-          spawn={spawn}
-          sessionId={open.sessionId}
-          seed={open.seed}
-          conversationId={conversationId ?? 'main'}
-          hidden={open.spawnId !== activeSandboxSpawnId}
-          onClose={() => closeSandbox(spawn.id)}
-          onMerged={(payload) => {
-            // The card lives in the MAIN thread store — reuse the existing
-            // deliverable_finalized + verdict_recorded handlers to append it live.
-            const store = useArslanStore.getState();
-            store.handleFrame({
-              type: 'deliverable_finalized', spawn_id: payload.spawn_id,
-              message_id: payload.message_id, content: payload.content,
-              refined_from: null, spawn_name: payload.spawn_name,
-            } as never);
-            store.handleFrame({ type: 'verdict_recorded', spawn_id: payload.spawn_id, action: 'accept' } as never);
-            closeSandbox(spawn.id);
-          }}
-        />
-      );
-    })}
   </div>
 
   {replayRunId != null && (

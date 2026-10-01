@@ -104,12 +104,9 @@ async def test_ask_user_choice_registered_in_arslan_toolset(maker):
 
 @pytest.mark.asyncio
 async def test_clarify_call_emits_frame_persists_message_and_ends_turn(maker, monkeypatch):
-    from server.orchestrator import arslan, router, tool_loop
+    from server.orchestrator import arslan, tool_loop
 
-    async def _fake_route(conv, msg):
-        return router.RouterResult(action="answer")
 
-    monkeypatch.setattr(arslan.router, "route", _fake_route)
     five = [{"label": f"方向{i}", "hint": f"提示{i}"} for i in range(1, 6)]
     adapter = _ClarifyAdapter(five)
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
@@ -148,12 +145,9 @@ async def test_clarify_call_emits_frame_persists_message_and_ends_turn(maker, mo
 
 @pytest.mark.asyncio
 async def test_too_few_options_is_recoverable_tool_error_no_frame(maker, monkeypatch):
-    from server.orchestrator import arslan, router, tool_loop
+    from server.orchestrator import arslan, tool_loop
 
-    async def _fake_route(conv, msg):
-        return router.RouterResult(action="answer")
 
-    monkeypatch.setattr(arslan.router, "route", _fake_route)
     adapter = _ClarifyAdapter([{"label": "只有一个"}])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
 

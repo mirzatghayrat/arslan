@@ -5,7 +5,6 @@ import { skillCatalogMessages, skillCategoryMessages } from "../locales/skillCat
 import { useCapabilityLabel, useRegistryStore } from "../stores/registryStore";
 import { api } from "../api/client";
 import CapabilityCatalog from "../components/CapabilityCatalog";
-import RegistryPicker from "../components/RegistryPicker";
 
 vi.mock("../api/client", () => ({ api: { getRegistry: vi.fn(), listSpawns: vi.fn(async () => []) } }));
 beforeEach(() => {
@@ -38,16 +37,6 @@ it.each(SUPPORTED_LANGUAGES)("renders and searches every builtin in %s without c
   expect(screen.queryByText(copy["skill-creator"].name)).not.toBeInTheDocument();
   fireEvent.change(search, { target: { value: "domain-modeling" } });
   expect(screen.getByText(copy["domain-modeling"].name)).toBeInTheDocument();
-});
-
-it.each(SUPPORTED_LANGUAGES)("picker uses %s text but passes the stable skill key", async language => {
-  await i18n.changeLanguage(language);
-  const picked = vi.fn();
-  render(<RegistryPicker kind="skill" selected={["skill-creator"]} onPick={picked} onClose={vi.fn()} />);
-  expect(await screen.findByText(skillCatalogMessages[language]["domain-modeling"].name)).toBeInTheDocument();
-  expect(screen.getByTestId("pick-skill-skill-creator")).toBeDisabled();
-  fireEvent.click(screen.getByTestId("pick-skill-domain-modeling"));
-  expect(picked).toHaveBeenCalledWith("skill", "domain-modeling");
 });
 
 function EquippedLabel() {

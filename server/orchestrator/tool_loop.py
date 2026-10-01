@@ -492,6 +492,28 @@ async def _check_fetch_budget(tool_key: str, *, conversation_id: str | None,
     return None
 
 
+async def _asks_for_everything() -> bool:
+    """The user chose 'ask for every command'. Unknown counts as yes (then nothing runs unasked)."""
+    from server.db import session as db_session
+    from server.services import settings_service
+    try:
+        async with db_session.AsyncSessionLocal() as db:
+            return await settings_service.shell_confirm_policy(db) == "ask_all"
+    except Exception:  # noqa: BLE001
+        return True
+
+
+async def _writing_in_own_folder() -> bool:
+    """Unknown means ask: if the setting cannot be read, treat the folder as the user's."""
+    from server.db import session as db_session
+    from server.services import settings_service
+    try:
+        async with db_session.AsyncSessionLocal() as db:
+            return await settings_service.workspace_is_default(db)
+    except Exception:  # noqa: BLE001
+        return False
+
+
 async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, emit,
                          tool_timeout_s, tool_trace, convo, confirm_command=None,
                         confirm_workspace_write=None,
@@ -569,7 +591,10 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
     # in my workspace" is answering a question about a capability, not about a
     # filename, and asking again per file would train them to click through.
     # The remembering lives on the WS connection; here we only ask.
-    if tool_key in _WORKSPACE_WRITE_TOOLS:
+    # 0.1.48: Arslan's own folder (~/Arslan, the default) is its desk: writing there
+    # does not ask. A folder the user chose still asks once per session, because that
+    # folder holds the user's own files.
+    if tool_key in _WORKSPACE_WRITE_TOOLS and not await _writing_in_own_folder():
         if confirm_workspace_write is None:
             result = {"ok": False,
                       "error": "writing to the workspace needs your permission, which "
@@ -605,16 +630,28 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                                         mcp_fail_counts=mcp_fail_counts)
 
     if tool_key == "run_command":
-        command = str(args.get("command") or "")
-        argv = args.get("argv") if isinstance(args.get("argv"), list) else []
-        if confirm_command is None:
+        # 0.1.48: one shell string; a forbidden command is refused here, before any
+        # card, so nobody is ever asked to approve wiping the disk.
+        from server.services import terminal_policy
+        command = terminal_policy.as_shell(args.get("command"), args.get("argv"))
+        argv = []
+        verdict = terminal_policy.assess(command)
+        if verdict.level == "forbid":
+            result = {"ok": False, "error": f"Arslan never runs this: {verdict.reason}",
+                      "note": "Tell the user what you wanted to do and let them run it themselves."}
+            return _record_tool_result(tool_key, args, result, emit, tool_trace,
+                                        assistant_content, convo,
+                                        mcp_fail_counts=mcp_fail_counts)
+        if confirm_command is None and verdict.level == "run" and not await _asks_for_everything():
+            pass                      # a harmless command needs nobody to approve it
+        elif confirm_command is None:
             result = {"ok": False,
                       "error": "run_command requires user confirmation, which is not "
                                "available in this context"}
             return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                         assistant_content, convo,
                                         mcp_fail_counts=mcp_fail_counts)
-        approved = await confirm_command(command, argv)
+        approved = True if confirm_command is None else await confirm_command(command, argv)
         if not approved:
             result = {"ok": False, "error": "user declined this command"}
             return _record_tool_result(tool_key, args, result, emit, tool_trace,
@@ -674,6 +711,34 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
     # not dangerous, but this is the highest-consequence surface in the feature
     # and a card that appears while the user is asleep is a card they meet out of
     # context.
+    # 0.1.48: offering a connector is a tool the agent calls, not a pre-turn router
+    # verdict. Like enroll_node it only paints a card: the user connects (and types
+    # any key) on the card, over REST. With no live socket there is nobody to offer
+    # it to. An unknown name returns the real list, so the agent can say so honestly
+    # and look for another way (a skill, the terminal, a Shortcut) instead of stopping.
+    if tool_key == "suggest_connector":
+        from server.mcp import catalog as _catalog
+        from server.ws import protocol as _protocol
+        conn = _catalog.find_connector(str(args.get("name") or ""))
+        if confirm_command is None:
+            result = {"ok": False, "error": "a connector has to be offered to the user directly; "
+                                            "there is nobody on this channel"}
+        elif conn is None:
+            result = {"ok": False, "error": "no built-in connector by that name",
+                      "available": [c["label"] for c in _catalog.list_connectors()],
+                      "note": "Not a dead end: a skill, the terminal, a Shortcut or AppleScript may do it."}
+        else:
+            prereq = ("Needs: " + ", ".join(e["name"] for e in conn["env"])) if conn["env"] else ""
+            emit(_protocol.propose_connect_mcp(
+                call_id=uuid.uuid4().hex, key=conn["key"], label=conn["label"],
+                label_key=conn.get("label_key"), transport=conn["transport"], command=conn["command"],
+                argv=conn["args"], url=conn.get("url"), env_keys=conn["env"], prerequisites=prereq,
+                requires_path=conn["requires_path"], path_placeholder=conn.get("path_placeholder")))
+            result = {"ok": True, "proposed": True,
+                      "summary": f"offered to connect {conn['label']}; nothing is connected until the user confirms"}
+        return _record_tool_result(tool_key, args, result, emit, tool_trace,
+                                    assistant_content, convo, mcp_fail_counts=mcp_fail_counts)
+
     if tool_key == "enroll_node":
         if confirm_command is None:
             result = {"ok": False,
@@ -862,8 +927,11 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                     "properties": {"title": {"type": "string"},
                                    "slides": {"type": "array"}}},
     "run_command": {"type": "object",
-                    "properties": {"command": {"type": "string"},
-                                   "argv": {"type": "array"}},
+                    "properties": {"command": {"type": "string",
+                                               "description": "The full shell command line, e.g. "
+                                                              "\"ls -la ~/Downloads | head -20\"."},
+                                   "timeout_s": {"type": "integer", "minimum": 5, "maximum": 600,
+                                                 "description": "Stop after this many seconds (default 120)."}},
                     "required": ["command"]},
     "create_skill": {"type": "object",
                      "properties": {"key": {"type": "string"},
@@ -887,6 +955,10 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                      "target_id": {"type": "integer"},
                  },
                  "required": ["kind", "action", "content"]},
+    "suggest_connector": {"type": "object",
+                          "properties": {"name": {"type": "string",
+                                                  "description": "The service, e.g. GitHub, Notion."}},
+                          "required": ["name"]},
     "ask_user_choice": {
         "type": "object",
         "properties": {

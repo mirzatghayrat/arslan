@@ -30,15 +30,15 @@ describe('composer execution posture', () => {
     expect(screen.queryByTestId('execution-options')).not.toBeInTheDocument();
   });
 
-  it('shows nothing under the default, where every command asks', () => {
-    chat({ shellEnabled: true, shellPolicy: 'ask_all' });
+  it('shows nothing under the default (0.1.48: ask only for risky commands)', () => {
+    chat({ shellEnabled: true, shellPolicy: 'ask_risky' });
     expect(screen.queryByTestId('execution-options')).not.toBeInTheDocument();
     expect(screen.queryByTestId('shell-policy-select')).not.toBeInTheDocument();
   });
 
-  it('keeps automatic read-only execution visible as one line, with no control in the composer', () => {
-    chat({ shellEnabled: true, shellPolicy: 'ask_risky' });
-    expect(screen.getByTestId('execution-options')).toHaveTextContent('workspace.readOnlyAutomatic');
+  it('says "every command asks" as one line when the user chose that, with no control in the composer', () => {
+    chat({ shellEnabled: true, shellPolicy: 'ask_all' });
+    expect(screen.getByTestId('execution-options')).toHaveTextContent('workspace.confirmCommands');
     expect(screen.queryByTestId('shell-policy-select')).not.toBeInTheDocument();
     expect(screen.queryByTestId('conversation-experts-bar')).not.toBeInTheDocument();
     expect(screen.getByTestId('composer-input-tools').querySelectorAll('button').length).toBeGreaterThanOrEqual(2);

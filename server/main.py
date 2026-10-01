@@ -160,9 +160,8 @@ async def lifespan(app: FastAPI):
 
     await seed_registry()
 
-    from server.services.default_spawns import seed_default_spawns
-
-    await seed_default_spawns()
+    # 0.1.48: the built-in example experts are no longer seeded — one Arslan does the work.
+    # Their prompts stay in server/services/default_spawns.py as material for skills.
 
     # PB-4 opt-in boot health sweep: probe every registered MCP server once (sequential,
     # 10s bound each). Default OFF; no background timers. Fail-open — never blocks boot.
@@ -494,6 +493,8 @@ def create_app() -> FastAPI:
     app.include_router(background_jobs_api.router, prefix="/api/v1")
     from server.api import proactive as proactive_api
     app.include_router(proactive_api.router, prefix="/api/v1")
+    from server.api import workspace as workspace_api
+    app.include_router(workspace_api.router, prefix="/api/v1")
     from server.api import expert_conversion as expert_conversion_api
     app.include_router(expert_conversion_api.router, prefix="/api/v1")
     from server.api import professional_methods as professional_methods_api
@@ -539,23 +540,11 @@ def create_app() -> FastAPI:
     async def _authcheck() -> dict[str, bool]:
         return {"ok": True}
 
-    from server.ws.chat import chat_endpoint
-
-    @app.websocket("/ws/chat/{spawn_id}")
-    async def _ws_chat(websocket: WebSocket, spawn_id: int):  # noqa: ANN202
-        await chat_endpoint(websocket, spawn_id)
-
     from server.ws.arslan import arslan_endpoint
 
     @app.websocket("/ws/arslan/{conversation_id}")
     async def _ws_arslan(websocket: WebSocket, conversation_id: str):  # noqa: ANN202
         await arslan_endpoint(websocket, conversation_id)
-
-    from server.ws.sandbox import sandbox_endpoint
-
-    @app.websocket("/ws/sandbox/{spawn_id}")
-    async def _ws_sandbox(websocket: WebSocket, spawn_id: int):  # noqa: ANN202
-        await sandbox_endpoint(websocket, spawn_id)
 
     import os
     from pathlib import Path

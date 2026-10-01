@@ -3,7 +3,7 @@ import httpx
 import pytest
 
 from server.db.models import Setting
-from server.orchestrator import arslan, dispatcher, llm_errors, vision_errors
+from server.orchestrator import llm_errors, vision_errors
 from server.services import llm_test, provider_error_messages as errors, runtime_messages as copy
 
 
@@ -45,27 +45,6 @@ async def test_saved_language_preserves_error_categories_and_unknowns(execution_
     assert vision_errors.explain("429 rate limit", had_images=True, locale=locale) is None
 
 
-@pytest.mark.parametrize("locale", list(copy.MESSAGES))
-async def test_missing_expert_errors_keep_action_boundaries(execution_db, monkeypatch, locale):
-    async with execution_db() as db:
-        db.add(Setting(key="language", value=locale))
-        await db.commit()
-    async def missing(*args): return None
-    async def forbidden(*args, **kwargs): raise AssertionError("Unavailable expert must not write or execute")
-    monkeypatch.setattr(dispatcher, "get_spawn_name", missing)
-    monkeypatch.setattr(arslan.memory, "add_message", forbidden)
-    monkeypatch.setattr(arslan.run_recorder.RunRecorder, "start", forbidden)
-    calls = [
-        lambda emit: arslan._dispatch_spawn("fixture", 99, "Task", emit),
-        lambda emit: arslan.record_deliverable_verdict("fixture", 99, "accept", None, emit),
-        lambda emit: arslan.finalize_refinement("fixture", 99, None, "User text", emit),
-        lambda emit: arslan.confirm_sandbox_merge("fixture", 99, "User text", "Summary", 0, emit),
-    ]
-    for index, call in enumerate(calls):
-        frames = []
-        await call(frames.append)
-        assert frames == [{"type": "error", "code": "SPAWN_NOT_FOUND" if index == 0 else "INVALID_INPUT",
-            "message": copy.render("expert_unavailable", locale), "recoverable": True}]
 
 
 @pytest.mark.parametrize("locale", list(copy.MESSAGES))

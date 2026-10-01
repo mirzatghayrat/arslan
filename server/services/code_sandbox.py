@@ -346,7 +346,7 @@ async def run_python(code: str, *, timeout_s: float = TIMEOUT_S,
 
     # Fail closed: if no real isolation backend is available (non-darwin until bubblewrap
     # lands, or a broken seatbelt), REFUSE — unless the deliberate, visible escape valve is
-    # set. This aligns run_python with run_command (command_sandbox refuses on no-wrapper).
+    # set. This aligns run_python with run_command (the shell refused too, when it was sandboxed).
     backend = _select_backend()
     if not backend.available():
         if not _unsandboxed_valve_open():

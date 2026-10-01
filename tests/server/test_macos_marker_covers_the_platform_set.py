@@ -50,16 +50,13 @@ EXPECTED_FILES: dict[str, int] = {
     # This is an appended boundary case, not a new full Linux measurement.
     "server/test_task_validation.py": 1,
     "server/test_ocr_vision.py": 5,
-    "server/test_command_sandbox_net.py": 3,
-    # Added 2026-09-15: actual command filesystem read/write/symlink denial.
-    "server/test_command_sandbox.py": 1,
     "server/test_skill_script_failclosed.py": 3,
     "server/test_ocr_fallback.py": 3,
     "server/test_skill_import.py": 1,
     "server/test_chat_image_fallback.py": 1,
     "server/test_extract_api.py": 1,
     # 2026-08-21, P3b: the ssh transport's two kernel facts. Same platform
-    # boundary as test_command_sandbox_net.py — they drive /usr/bin/sandbox-exec
+    # boundary as the (0.1.48-deleted) command sandbox tests — they drive /usr/bin/sandbox-exec
     # directly, which exists on macOS and nowhere else. One asserts the profile
     # we ship is accepted, one asserts a per-host profile is REJECTED (the
     # measurement the design rests on), one asserts the port confinement
@@ -70,7 +67,7 @@ EXPECTED_FILES: dict[str, int] = {
 #: That step re-derives this number from the junit XML, so changing one without
 #: the other turns a green local run into a red CI run, or worse, hides drift
 #: from the guard meant to catch it. Both, same commit, or neither.
-EXPECTED_TOTAL = 44  # +1 2026-09-25: test_manual_backup_control.py (see EXPECTED_FILES)
+EXPECTED_TOTAL = 40  # −4 0.1.48: the unused command sandbox and its tests were deleted
 # The external-file test has six attack cases under one marked function.
 PARAMETERIZED_EXTRA_CASES = 5
 

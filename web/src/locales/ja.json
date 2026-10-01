@@ -1,6 +1,21 @@
 {
-  "externalLink": {"failed": "リンクを開けませんでした。システムブラウザで開けるのは HTTPS リンクのみです。"},
-  "appIdentity": {"title":"現在のアプリ","loading":"バージョンを確認中…","browser":"ブラウザー版 · デスクトップ版のバージョンは取得できません","unknown":"デスクトップ版のバージョンを取得できません","stable":"安定版","preview":"プレビュー版","previewHint":"プレビュー版は手動でインストールします。自動更新は安定版のみが対象です。インストール前にデータと鍵をバックアップしてください。","summary":"バージョン情報","privacy":"クライアントの種類、バージョン、チャンネルのみを含みます。アップロードはしません。共有前に内容を確認してください。","copy":"情報をコピー","copied":"コピーしました","copyFailed":"コピーできませんでした。上のテキストを選択してコピーしてください。"},
+  "externalLink": {
+    "failed": "リンクを開けませんでした。システムブラウザで開けるのは HTTPS リンクのみです。"
+  },
+  "appIdentity": {
+    "title": "現在のアプリ",
+    "loading": "バージョンを確認中…",
+    "browser": "ブラウザー版 · デスクトップ版のバージョンは取得できません",
+    "unknown": "デスクトップ版のバージョンを取得できません",
+    "stable": "安定版",
+    "preview": "プレビュー版",
+    "previewHint": "プレビュー版は手動でインストールします。自動更新は安定版のみが対象です。インストール前にデータと鍵をバックアップしてください。",
+    "summary": "バージョン情報",
+    "privacy": "クライアントの種類、バージョン、チャンネルのみを含みます。アップロードはしません。共有前に内容を確認してください。",
+    "copy": "情報をコピー",
+    "copied": "コピーしました",
+    "copyFailed": "コピーできませんでした。上のテキストを選択してコピーしてください。"
+  },
   "chart": {
     "loading": "グラフを読み込み中…",
     "failed": "グラフを読み込めません。ページを再読み込みしてください。"
@@ -77,18 +92,12 @@
   },
   "nav": {
     "inbox": "受信箱",
-    "connections": "接続と権限",
     "projects": "プロジェクト",
-    "dashboard": "ダッシュボード",
-    "spawns": "スポーン",
     "settings": "設定",
-    "secondBrain": "記憶",
     "arslan": "メインアシスタント",
-    "spawn": "エージェント",
-    "ledger": "エージェント台帳",
     "capabilities": "ケイパビリティ",
     "brain": "記憶",
-    "diagnosis": "診断"
+    "activity": "アクティビティ"
   },
   "brain": {
     "strip_details": "記録範囲と制限",
@@ -161,7 +170,7 @@
     "close_detail": "詳細を閉じる",
     "used_n_dot": " · 使用 {{n}}回",
     "last_used_for": " · 最近の使用先 {{ref}}",
-    "superseded_by_line": "#{{id}} に置き換え — スポーンへは注入されません",
+    "superseded_by_line": "#{{id}} に置き換えられました——今は使われません",
     "undoing": "取り消し中…",
     "undo_supersede": "置き換えを取り消す",
     "sensitive_note": "機微マークは表示上のヒントであり隔離ではありません。",
@@ -489,7 +498,6 @@
     "appIconDesktopHint": "Dock アイコンとアプリ内のアバターに反映します。Finder は標準アイコンのままです。",
     "appIconBrowserHint": "アプリ内のアバターとブラウザーのタブアイコンに反映します。",
     "appIconError": "アイコンを更新できませんでした。前の選択を保持しました。もう一度お試しください。",
-
     "backToWorkspace": "ワークスペースに戻る",
     "defaultModel": "既定のモデル",
     "modelsPrivateHint": "モデルを選択して編集します。保存済みキーは表示されません。",
@@ -537,12 +545,7 @@
     "labelTelemetry": "診断データ",
     "telemetryDesc": "性能改善のためローカルの利用データを収集します（任意）",
     "distill_on_session_end": "会話終了時に好みを要約",
-    "distill_hint": "会話終了時にフィードバックからエキスパートごとの好みを学びます",
-    "labelSpawnMode": "エキスパート作成モード",
-    "spawnModeDesc": "サブエージェントの作成方法を選びます。自動：チェックなしで即座に委任。対話：新しいスポーンを起動する前に、その都度ユーザーの承認を求めます。",
-    "spawnModeAuto": "自律合成",
-    "spawnModeInteractive": "対話型サンドボックス認証",
-    "spawnModeStrict": "厳格な静的ロック",
+    "distill_hint": "会話が終わったとき、フィードバックからあなたの好みを学びます",
     "retentionLabel": "実行デバッグ詳細の保持日数",
     "retentionHint": "この日数を超えた run は、実際のシステムプロンプト / 注入された知識 / ツールの完全な入力と生の応答が自動的に消去されます（スコアと所要時間には影響しません）。",
     "headerLore": "接続、利用設定、権限を管理します。",
@@ -626,11 +629,11 @@
     "sectionSearch": "検索",
     "sectionAppearance": "外観と言語",
     "sectionLlmConfig": "LLM 設定",
-    "labelOrchestratorShell": "Arslan のコマンド実行",
-    "orchestratorShellDesc": "許可リスト内のコマンドを Arslan が実行できます。リスクに応じて確認が必要で、初期設定はオフです。",
-    "labelShellConfirmPolicy": "確認ポリシー",
-    "shellPolicyAskAll": "すべてのコマンドを確認",
-    "shellPolicyAskRisky": "リスクのあるコマンドのみ確認（読み取り専用は自動実行）",
+    "labelOrchestratorShell": "ターミナル",
+    "orchestratorShellDesc": "Arslan はターミナルで作業します：読み取り、変換、ビルド、スクリプト実行。送信・投稿・削除・インストール・他アプリの操作は必ず先に確認します。キーチェーンのパスワード読み取り、sudo、システムフォルダの削除は常に禁止です。",
+    "labelShellConfirmPolicy": "確認のタイミング",
+    "shellPolicyAskAll": "すべてのコマンドで確認",
+    "shellPolicyAskRisky": "リスクのあるコマンドだけ確認",
     "labelMcpServer": "MCPサーバー（受信）",
     "mcpServerDesc": "外部の MCP クライアント（Claude Code、Codex）から読み取り専用ツールを呼び出せるようにします。デフォルトはオフ。MCP トークンの生成が必要です。ローカルホスト限定。",
     "mcpToken": {
@@ -656,13 +659,6 @@
       "save": "保存",
       "requiredHint": "このサーバーは API とライブ接続にトークンを必要とします。このインスタンス用に発行されたトークンを貼り付けてください。"
     },
-    "labelEvolutionAuto": "自動進化(バックグラウンド)",
-    "evolutionAutoDesc": "過去の実行を再生して、Arslan がバックグラウンドでエキスパートのプロンプトを自ら改善します。",
-    "evolutionAutoSpendWarning": "API クレジットを消費します。現在、有効な上限はありません——設定できる上限はリプレイ実行の回数であり、トークンではありません。設定するまでは、LLM プロバイダーの請求画面で上限額を設定してください。",
-    "evolutionAutoSpendWarningCapped": "API クレジットを消費します。{{cap}} 回を超えると見込まれる試行は拒否されます。制限されるのは実行回数でトークンではなく、1 回あたりの費用は大きく変動します。プロバイダー側の上限額も維持してください。",
-    "labelEvolutionMaxDispatches": "1 回の試行あたりの最大リプレイ実行数",
-    "evolutionMaxDispatchesDesc": "見込みリプレイ実行数がこれを超える試行を拒否します。トークンではなく実行回数で数えます——1 回あたりの費用は変動が大きすぎて上限に向きません。空欄 = 上限なし。",
-    "evolutionMaxDispatchesUnset": "上限なし",
     "embeddingError": "失敗:{{error}}",
     "embeddingStatusNotDownloaded": "未ダウンロード",
     "embeddingStatusDownloading": "ダウンロード中…",
@@ -705,8 +701,8 @@
     "keepAwakeDesc": "タスクやスケジュールタスクの実行中は、Mac が自動でスリープしません。画面はスリープできます。蓋を閉じたときやバッテリー残量が少ないときはスリープします。",
     "labelDesktopNotifications": "通知",
     "desktopNotificationsDesc": "ウィンドウが閉じているか背面にあるとき、タスクの完了、確認が必要な操作、スケジュールタスクの失敗を macOS が通知します。通知にメッセージ本文は表示されません。",
-    "automationElsewhere": "定期タスクとトークン使用量は「診断」にあります。履歴がそこにあるためです。",
-    "automationOpenDiagnostics": "診断を開く",
+    "automationElsewhere": "定期タスク、トークン使用量、過去の実行はすべて「アクティビティ」にあります。",
+    "automationOpenActivity": "アクティビティを開く",
     "searchPlaceholder": "設定を検索…",
     "searchNoHits": "一致するセクションはありません",
     "modeSystem": "システム",
@@ -744,8 +740,8 @@
     "slotPurposeSynthesis": "ツールが集めた材料を、仕上がった回答にまとめます。",
     "slotLabelVision": "画像",
     "slotPurposeVision": "添付した画像を読み取ります。実際に画像を含むターンにのみ適用され、それ以外のターンには影響しません。",
-    "slotLabelRouter": "リクエストのルーティング",
-    "slotPurposeRouter": "回答を書き始める前に、受け取ったリクエストの扱い方を決めます。",
+    "slotLabelRouter": "事実の記憶",
+    "slotPurposeRouter": "回答のたびに、覚えておく価値のあるあなたについての事実を拾います。小さく安いモデルで十分です。",
     "slotFallbackPinnedPrimary": "未設定：常にメイン設定（{model}）を使います。",
     "slotFallbackFollowsPrimary": "未設定：メインモデル（{model}）に従います。",
     "slotFallbackRouted": "未設定：ルーティング戦略が割り当てます。",
@@ -753,8 +749,8 @@
     "slotFallbackNoConfigs": "モデルがまだ設定されていません。",
     "modelRolesEmbeddingPointer": "埋め込みモデルは「メモリとデータ」で設定します。",
     "labelWorkspaceDir": "ワークスペースディレクトリ",
-    "workspaceDirPlaceholder": "例: /Users/you/Documents/Arslan Workspace",
-    "workspaceDirHint": "Arslan が読み取り、許可があれば書き込みできる唯一のディレクトリ。空のままならファイルツールは提供されません。認証情報らしきファイル(.env、鍵、証明書)は決して読みません。",
+    "workspaceDirPlaceholder": "~/Arslan",
+    "workspaceDirHint": "Arslan が作ったものを保存する場所。空欄なら Arslan 専用のフォルダ（~/Arslan）を使い、そこでは確認なしで書き込みます。自分で選んだフォルダでは会話ごとに最初の書き込み前に一度確認します。認証情報ファイル（.env、鍵、証明書）は読みません。",
     "labelHeartbeat": "定期チェックリスト",
     "heartbeatDesc": "あなたが書いたリストを Arslan が数時間ごとに読み返し、対応が必要なものがあれば知らせます。確認と報告のみ——バックグラウンド実行ではファイルの書き込みもコマンドの実行もできません。",
     "heartbeatSpendNote": "チェックのたびにあなたのキーのトークンを消費します。既定はオフ。リストが空なら実行されません。",
@@ -779,8 +775,6 @@
     "sshNodeRevokeHint": "ここで削除すると Arslan は接続しなくなりますが、そのマシンに貼った鍵の行までは消せません。あちらで削除してください。",
     "labelDefaultRead": "既定でファイルを読む",
     "defaultReadDesc": "デスクトップ・書類・ダウンロードを Arslan が読み、検索や要約を手伝います。変更や削除は毎回確認なしには行いません。オフにすると、指定したワークスペースのみ読みます。",
-    "labelVoiceOutput": "返信を読み上げる",
-    "voiceOutputDesc": "Arslan の返信を、Mac 内蔵の音声で読み上げます。既定はオフ。",
     "statusOk": "使用可能",
     "statusFailed": "使用不可",
     "statusUntested": "未テスト",
@@ -798,7 +792,10 @@
     "voiceModePushToTalk": "押して話す",
     "voiceModeConversation": "会話",
     "labelVoiceEndpointSilence": "文の区切り(ミリ秒)",
-    "voiceEndpointSilenceDesc": "どれだけ間を置いたら送信するか。900 ミリ秒は普通の息継ぎ程度。短いと途中で切れ、長いと反応が鈍く感じます。"
+    "voiceEndpointSilenceDesc": "どれだけ間を置いたら送信するか。900 ミリ秒は普通の息継ぎ程度。短いと途中で切れ、長いと反応が鈍く感じます。",
+    "terminalRulesTitle": "今後確認しない",
+    "terminalRulesEmpty": "まだありません。コマンドカードで「今後確認しない」にチェックすると、その種類のコマンドがここに表示されます。",
+    "terminalRulesForget": "再び確認する"
   },
   "errors": {
     "load_failed": "データの読み込みに失敗しました。",
@@ -1050,11 +1047,11 @@
     "catalog": {
       "loading": "一覧を読み込み中…",
       "empty": "登録された能力がまだありません",
-      "equip_hint": "エキスパートのメニューから追加できます。",
+      "equip_hint": "Arslan はこれらを直接使えます。",
       "unimplemented_note": "未実装——カタログ上の項目のみで、装備できません。",
       "orchestrator_note": "安全のため Arslan 本体専用です。専門家には渡せません。",
       "degraded": "サンドボックス無効",
-      "empty_desc": "能力とは、スポーンが使えるツールとスキルのことです。このページのパネルからリポジトリのスキルをインポートするか、MCP サーバーを登録してください。",
+      "empty_desc": "機能とは Arslan が使えるツールとスキルです。このページのパネルからリポジトリのスキルを取り込むか、MCP サーバーを登録してください。",
       "filtered_empty": "このフィルターに一致するものはありません",
       "filtered_clear": "すべて表示"
     },
@@ -1326,7 +1323,7 @@
   },
   "runcmd": {
     "label": "このコマンドを実行しますか？",
-    "remember": "このセッションでは再確認しない",
+    "remember": "この種類のコマンドは今後確認しない（設定 › 詳細 で元に戻せます）",
     "run": "実行",
     "cancel": "キャンセル",
     "pillLabel": "コマンド",
@@ -1566,7 +1563,7 @@
       "conversation_placeholder": "空欄 = 専用の会話",
       "submit_create": "作成",
       "submit_save": "保存",
-      "required": "名前・プロンプト・スポーンは必須です"
+      "required": "名前と指示は必須です"
     },
     "err": {
       "task_not_found": "定期タスク {{task_id}} は存在しません",
@@ -1576,7 +1573,7 @@
       "enabled_limit_reached": "有効な定期タスクが上限 {{max_enabled}} 件に達しています。まず一時停止か削除をしてください",
       "spawn_id_required": "スポーンを選択してください"
     },
-    "empty_desc": "定期タスクは、間隔または cron 式に従ってスポーンを自動的に派遣します（毎日のダイジェスト、毎時のチェックなど）。"
+    "empty_desc": "定期タスクは、間隔や cron 式に従って Arslan に自動で作業させます——毎日のまとめ、毎時のチェックなど。"
   },
   "diag": {
     "range_1h": "直近1時間",

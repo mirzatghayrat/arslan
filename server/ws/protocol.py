@@ -224,18 +224,20 @@ def propose_staffing(candidates: list[dict], create_draft: dict) -> dict[str, An
 
 def propose_run_command(call_id: str, command: str, argv: list[str], reason: str = "",
                         remote_host: str | None = None,
-                        fingerprints: list[str] | None = None) -> dict[str, Any]:
-    """Arslan proposes running ONE whitelisted command. Emitting this frame runs
-    NOTHING — the frontend renders a confirm card showing the full command; only the
-    user's `confirm_run_command {call_id}` lets it execute (or `cancel_run_command`).
+                        fingerprints: list[str] | None = None,
+                        rule: str | None = None) -> dict[str, Any]:
+    """Arslan proposes running ONE command. Emitting this frame runs NOTHING — the
+    frontend renders a confirm card showing the full command; only the user's
+    `confirm_run_command {call_id}` lets it execute (or `cancel_run_command`).
 
+    `reason` says why it asks (0.1.48: the terminal rule, e.g. "sends email"); `rule`
+    is what "don't ask again" would remember, so the card can name it.
     `remote_host` non-empty means the command runs on ANOTHER machine (P3b), and the
-    card must say so: the difference between "this runs here" and "this runs on the
-    machine in the other room" is the whole decision the user is being asked to make.
-    `fingerprints` are that machine's host keys, shown so a person can compare them
-    against the machine itself."""
+    card must say so. `fingerprints` are that machine's host keys."""
     frame = {"type": "propose_run_command", "call_id": call_id, "command": command,
              "argv": argv, "pretty": " ".join([command, *argv]), "reason": reason}
+    if rule:
+        frame["rule"] = rule
     if remote_host:
         frame["remote_host"] = remote_host
         frame["fingerprints"] = list(fingerprints or [])

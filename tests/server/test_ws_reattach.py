@@ -14,15 +14,12 @@ primitives (queues/events) are loop-bound, and the registry fan-out crossing
 event loops is exactly the cross-loop hazard this suite already battles for
 sqlite (hence NullPool on the engine, per test_run_command_confirm_flow.py).
 """
-import asyncio
-import threading
 
 import pytest
 
 import server.orchestrator.arslan as arslan_mod
 import server.ws.arslan as ws_arslan_mod
 from server.db.models import Spawn
-from server.orchestrator import memory
 from server.services import run_registry, turn_journal
 from tests.server.conftest import build_ws_client
 
@@ -76,62 +73,6 @@ def _stub_fake_handle(monkeypatch, chunk: str = "Hello") -> None:
 # (a) reattach: journal replay + live continuation
 # --------------------------------------------------------------------------- #
 
-def test_reattach_replays_journal_and_resumes_live(app_client, monkeypatch):
-    """An in-flight run (gated mock dispatcher, started OUTSIDE any socket via the
-    registry fan-out emit) must greet a connecting socket with run_in_progress +
-    the journaled frames so far (stream_start carrying run_id, the streamed
-    chunk), and after the gate opens the SAME socket receives the live tail
-    (spawn_meta, stream_end) while idle in its receive loop."""
-    conv = "reattach-conv"
-    started = threading.Event()
-    gate: dict = {}
-
-    async def slow_dispatch(conversation_id, **kwargs):  # noqa: ANN001
-        gate["release"] = release = asyncio.Event()  # created ON the app loop
-        kwargs["on_chunk"]("partial ")
-        started.set()
-        await release.wait()
-        mid = await memory.add_message(conversation_id, "spawn_summary", "done", spawn_id=7)
-        return {"summary_message_id": mid, "assistant_message_id": mid,
-                "full_output": "partial done"}
-
-    async def _no_announcement(*a, **k):  # noqa: ANN001
-        return None
-
-    monkeypatch.setattr(arslan_mod.dispatcher, "dispatch", slow_dispatch)
-    monkeypatch.setattr(arslan_mod, "_route_announcement", _no_announcement)
-
-    async def _drive():
-        await arslan_mod.dispatch_spawn(conv, 7, "test brief",
-                                        run_registry.make_emit(conv), user_message="u")
-
-    fut = app_client.portal.start_task_soon(_drive)
-    assert started.wait(5), "gated dispatch never started"
-
-    with app_client.websocket_connect(f"/ws/arslan/{conv}") as ws:
-        assert ws.receive_json()["type"] == "history"
-        assert ws.receive_json()["type"] == "roster_update"
-
-        rip = ws.receive_json()
-        assert rip["type"] == "run_in_progress", f"expected run_in_progress, got {rip}"
-        run_id = rip["run_id"]
-        assert isinstance(run_id, int)
-
-        # Journal replay: stream_start must carry the run_id (cancel handle),
-        # and the already-streamed chunk must be replayed.
-        replay = _collect_until(ws, "stream_chunk", max_frames=20)
-        starts = [f for f in replay if f["type"] == "stream_start"]
-        assert starts and starts[0].get("run_id") == run_id, f"replay: {replay}"
-        assert replay[-1] == {"type": "stream_chunk", "content": "partial "}
-
-        # Open the gate ON THE APP LOOP; the live tail must reach this socket
-        # even though it sits idle in its receive loop (resident drain).
-        app_client.portal.call(gate["release"].set)
-        tail = _collect_until(ws, "stream_end", max_frames=20)
-        assert any(f["type"] == "spawn_meta" for f in tail), f"tail: {tail}"
-        assert tail[-1]["type"] == "stream_end"
-
-    fut.result(timeout=10)
 
 
 # --------------------------------------------------------------------------- #
@@ -142,7 +83,6 @@ def test_no_active_run_no_run_in_progress(app_client, monkeypatch):
     _stub_fake_handle(monkeypatch)
     with app_client.websocket_connect("/ws/arslan/idle-conv") as ws:
         assert ws.receive_json()["type"] == "history"
-        assert ws.receive_json()["type"] == "roster_update"
         # Force the next frame: with no in-flight run, the connect sequence must
         # NOT have queued a run_in_progress — the first frame after roster_update
         # is this turn's stream_start.
@@ -165,7 +105,6 @@ def test_two_tabs_both_receive_broadcast(app_client, monkeypatch):
          app_client.websocket_connect(f"/ws/arslan/{conv}") as ws2:
         for ws in (ws1, ws2):
             assert ws.receive_json()["type"] == "history"
-            assert ws.receive_json()["type"] == "roster_update"
 
         ws1.send_json({"type": "user_message", "content": "hi"})
 
@@ -224,7 +163,6 @@ def test_reattach_replays_in_flight_answer_turn(app_client):
 
     with app_client.websocket_connect(f"/ws/arslan/{conv}") as ws:
         assert ws.receive_json()["type"] == "history"
-        assert ws.receive_json()["type"] == "roster_update"
         replay = [ws.receive_json() for _ in range(3)]
         assert replay[0]["type"] == "stream_start"          # the missing preamble
         assert replay[1] == {"type": "stream_chunk", "content": "searching "}
@@ -235,69 +173,62 @@ def test_no_active_turn_no_replay(app_client, monkeypatch):
     _stub_fake_handle(monkeypatch)
     with app_client.websocket_connect("/ws/arslan/turn-idle-conv") as ws:
         assert ws.receive_json()["type"] == "history"
-        assert ws.receive_json()["type"] == "roster_update"
         ws.send_json({"type": "user_message", "content": "hi"})
         nxt = ws.receive_json()
         assert nxt["type"] == "stream_start", f"unexpected pre-turn frame: {nxt}"
 
 
 # --------------------------------------------------------------------------- #
-# (e) session_ended must not distill / roster-clear under a live turn or run
+# (e) session_ended must not distill under a live turn or run
 # --------------------------------------------------------------------------- #
 
 def test_session_ended_skips_distill_and_clear_while_turn_active(app_client, monkeypatch):
     """Switching threads fires session_ended for the conversation the user LEFT —
-    which may still be mid-turn. Distilling a half-written session and yanking
-    the roster from under a live run is the hazard; both must be skipped, and
-    the ack must still arrive."""
+    which may still be mid-turn. Distilling a half-written session is the
+    hazard; it must be skipped, and the ack must still arrive."""
     conv = "busy-conv"
-    calls = {"distill": 0, "clear": 0}
+    calls = {"distill": 0}
 
     async def spy_distill(cid):  # noqa: ANN001
         calls["distill"] += 1
-
-    async def spy_clear(cid):  # noqa: ANN001
-        calls["clear"] += 1
 
     async def enabled(_s):  # noqa: ANN001
         return True
 
     monkeypatch.setattr(ws_arslan_mod.distill_service, "distill_session", spy_distill)
-    monkeypatch.setattr(ws_arslan_mod.roster_service, "clear", spy_clear)
     monkeypatch.setattr(ws_arslan_mod.settings_service, "distill_enabled", enabled)
 
     app_client.portal.call(lambda: turn_journal.begin(conv))
 
     with app_client.websocket_connect("/ws/arslan/other-conv") as ws:
         assert ws.receive_json()["type"] == "history"
-        assert ws.receive_json()["type"] == "roster_update"
         ws.send_json({"type": "session_ended", "conversation_id": conv})
         ack = ws.receive_json()
         assert ack["type"] == "session_ended_ack" and ack["conversation_id"] == conv
-    assert calls == {"distill": 0, "clear": 0}
+    assert calls == {"distill": 0}
 
 
 def test_session_ended_distills_when_idle(app_client, monkeypatch):
     """Control: without a live turn/run the existing behaviour stands."""
     conv = "idle-ended-conv"
-    calls = {"distill": 0, "clear": 0}
+    calls = {"distill": 0}
 
     async def spy_distill(cid):  # noqa: ANN001
         calls["distill"] += 1
-
-    async def spy_clear(cid):  # noqa: ANN001
-        calls["clear"] += 1
 
     async def enabled(_s):  # noqa: ANN001
         return True
 
     monkeypatch.setattr(ws_arslan_mod.distill_service, "distill_session", spy_distill)
-    monkeypatch.setattr(ws_arslan_mod.roster_service, "clear", spy_clear)
     monkeypatch.setattr(ws_arslan_mod.settings_service, "distill_enabled", enabled)
 
     with app_client.websocket_connect("/ws/arslan/other-conv-2") as ws:
         assert ws.receive_json()["type"] == "history"
-        assert ws.receive_json()["type"] == "roster_update"
         ws.send_json({"type": "session_ended", "conversation_id": conv})
         assert ws.receive_json()["type"] == "session_ended_ack"
-    assert calls["clear"] == 1                              # distill is a create_task; clear is awaited inline
+    # distill is a create_task on the server loop: give it a moment to run.
+    import time
+    deadline = time.monotonic() + 5
+    while calls["distill"] == 0 and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert calls["distill"] == 1

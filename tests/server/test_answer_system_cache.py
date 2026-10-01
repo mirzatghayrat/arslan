@@ -71,7 +71,8 @@ def test_all_dynamic_content_present_and_date_line_last():
              summary="prior chat", kb_block="\n\nKB block here")
     full = str(s)
     # Everything the pre-reorder prompt carried is still present, just relocated.
-    assert "Deck Master" in full and "Your team" in full
+    # 0.1.48: no expert roster in the prompt any more (one Arslan).
+    assert "Deck Master" not in full and "Your team" not in full
     assert "uses xhs" in full
     assert "prior chat" in full
     assert "KB block here" in full

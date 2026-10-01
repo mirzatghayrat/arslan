@@ -7,7 +7,6 @@ import type {
   ScheduledTaskCreateBody,
   ScheduledTaskDto,
   ScheduledTaskRunDto,
-  SpawnSummary,
 } from "../api/client.types";
 import Select from "./Select";
 import EmptyState, { EmptyStateAction } from "./EmptyState";
@@ -121,29 +120,14 @@ function TaskForm({
   onCancel: () => void;
 }) {
   const { t } = useTranslation();
-  const [spawns, setSpawns] = useState<SpawnSummary[]>([]);
   const [name, setName] = useState(editing?.name ?? "");
   const [prompt, setPrompt] = useState(editing?.prompt ?? "");
-  const [spawnId, setSpawnId] = useState(editing?.spawn_id != null ? String(editing.spawn_id) : "");
   const [kind, setKind] = useState<"interval" | "cron">(editing?.schedule_kind === "cron" ? "cron" : "interval");
   const [intervalS, setIntervalS] = useState(editing?.interval_s != null ? String(editing.interval_s) : "3600");
   const [cron, setCron] = useState(editing?.cron ?? "");
   const [conversationId, setConversationId] = useState(editing?.conversation_id ?? "");
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    api.listSpawns()
-      .then((s) => { if (!cancelled) setSpawns(s); })
-      .catch(() => { /* the select just stays empty */ });
-    return () => { cancelled = true; };
-  }, []);
-
-  // Default to the first spawn once the list loads (create mode).
-  useEffect(() => {
-    if (!spawnId && spawns.length > 0) setSpawnId(String(spawns[0].id));
-  }, [spawns, spawnId]);
 
   // Keep a non-preset interval (possible via API/edit) selectable.
   const intervalOptions = useMemo(() => {
@@ -436,7 +420,6 @@ export default function ScheduledTasksCard({ onOpenRun }: Props) {
           <thead>
             <tr>
               <th>{t("scheduled.col.name")}</th>
-              <th>{t("scheduled.col.spawn")}</th>
               <th>{t("scheduled.col.cadence")}</th>
               <th>{t("scheduled.col.last")}</th>
               <th>{t("scheduled.col.next")}</th>
@@ -461,7 +444,6 @@ export default function ScheduledTasksCard({ onOpenRun }: Props) {
                       <span className="diag-table__spawn">{task.name}</span>
                     </button>
                   </td>
-                  <td>{task.spawn_name ?? "—"}</td>
                   <td>
                     {task.schedule_kind === "cron" ? (
                       <>
@@ -550,7 +532,7 @@ export default function ScheduledTasksCard({ onOpenRun }: Props) {
 
                 {expanded === task.id && (
                   <tr>
-                    <td colSpan={6}>
+                    <td colSpan={5}>
                       <div className="sched-history" data-testid="sched-history">
                         {(runs[task.id] ?? []).length === 0 ? (
                           <span className="sched-table__hint">{t("scheduled.history.empty")}</span>

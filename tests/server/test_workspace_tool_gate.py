@@ -68,16 +68,45 @@ async def keys_with_workspace(tmp_path, monkeypatch):
     await engine.dispose()
 
 
-async def test_no_workspace_read_off_offers_no_file_tools(keys_no_ws_read_off):
-    assert not (T0 | T1) & keys_no_ws_read_off
-    assert "web_search" in keys_no_ws_read_off             # unrelated tools unaffected
+async def test_nothing_chosen_means_arslans_own_folder_with_readers_and_writers(keys_no_ws_read_off):
+    """0.1.48: with no folder chosen, Arslan works in its own (~/Arslan; a temp dir in
+    tests). It can read and write there, even with default-read off."""
+    assert (T0 | T1) <= keys_no_ws_read_off
+    assert "web_search" in keys_no_ws_read_off
 
 
-async def test_no_workspace_read_on_offers_the_read_trio_but_no_writers(keys_no_ws_read_on):
-    # The whole feature: a novice with no workspace can still read (green ring),
-    # but cannot write until they configure one.
-    assert T0 <= keys_no_ws_read_on
-    assert not T1 & keys_no_ws_read_on
+async def test_the_default_folder_is_created_where_the_env_says_never_in_the_real_home(tmp_path, monkeypatch):
+    import os
+
+    from server.services import settings_service
+    engine = await _wire(tmp_path, monkeypatch, workspace=None)
+    async with db_session.AsyncSessionLocal() as db:
+        ws = await settings_service.workspace_dir(db)
+        assert await settings_service.workspace_is_default(db) is True
+    assert ws is not None and ws.is_dir()
+    assert str(ws) == str(settings_service.default_workspace().resolve())
+    assert os.environ["ARSLAN_DEFAULT_WORKSPACE"] in str(ws)
+    await engine.dispose()
+
+
+async def test_a_blank_setting_means_nothing_chosen(tmp_path, monkeypatch):
+    from server.services import settings_service
+    engine = await _wire(tmp_path, monkeypatch, workspace="   ")
+    async with db_session.AsyncSessionLocal() as db:
+        assert await settings_service.workspace_is_default(db) is True
+        assert await settings_service.workspace_dir(db) == settings_service.default_workspace().resolve()
+    await engine.dispose()
+
+
+async def test_a_chosen_folder_is_not_the_default(tmp_path, monkeypatch):
+    from server.services import settings_service
+    ws = tmp_path / "mine"
+    ws.mkdir()
+    engine = await _wire(tmp_path, monkeypatch, workspace=str(ws))
+    async with db_session.AsyncSessionLocal() as db:
+        assert await settings_service.workspace_dir(db) == ws.resolve()
+        assert await settings_service.workspace_is_default(db) is False
+    await engine.dispose()
 
 
 async def test_a_workspace_pointing_nowhere_reads_as_unset(tmp_path, monkeypatch):
