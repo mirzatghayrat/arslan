@@ -56,6 +56,14 @@ class OpenAIProvider(BaseLLMProvider):
             kwargs["transport"] = self._transport
         return httpx.AsyncClient(**kwargs)
 
+    def streams_tool_calls(self) -> bool:
+        """Endpoints whose streamed tool calls are known to be complete. Others
+        (older local servers often send partial tool-call deltas) stay
+        non-streaming (0.1.49 S7)."""
+        base = self.base_url.rstrip("/")
+        return (base in {"https://api.deepseek.com", "https://api.deepseek.com/v1", "https://api.openai.com/v1"}
+                or "openrouter.ai" in base)
+
     def supports_native_trajectory(self) -> bool:
         # The OpenAI chat-completions tool protocol is the compatible baseline.
         return True
@@ -176,8 +184,14 @@ class OpenAIProvider(BaseLLMProvider):
         temperature: float = 0.7,
         tool_choice: str | None = None,
         max_tokens: int | None = None,
+        stream: bool = False,
     ) -> LLMResponse:
-        """POST to {base_url}/chat/completions and return a normalised LLMResponse."""
+        """POST to {base_url}/chat/completions and return a normalised LLMResponse.
+
+        stream=True (native trajectory on streams_tool_calls() endpoints) reads
+        the reply as SSE under an idle watchdog and assembles it; the caller
+        still gets one complete response. A server that answers with plain JSON
+        anyway is parsed as before."""
         payload = self._payload(messages, tools, temperature, tool_choice)
         if max_tokens:
             payload["max_tokens"] = max_tokens
@@ -191,6 +205,8 @@ class OpenAIProvider(BaseLLMProvider):
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
 
+        if stream:
+            return await self._chat_streamed(payload, headers, evidence)
         async with self._client() as client:
             response = await client.post(
                 f"{self.base_url}/chat/completions",
@@ -211,6 +227,30 @@ class OpenAIProvider(BaseLLMProvider):
             await request_evidence.acknowledge(evidence)
             data = response.json()
 
+        return self._parse_response(data)
+
+    async def _chat_streamed(self, payload: dict[str, Any], headers: dict[str, str], evidence) -> LLMResponse:
+        from arslan.llm import stream_assembly
+        body = {**payload, "stream": True, "stream_options": {"include_usage": True}}
+        async with self._client() as client:
+            # The idle watchdog governs reads; httpx's own read timeout only
+            # backs it up (keep-alive comments keep the socket busy anyway).
+            async with client.stream("POST", f"{self.base_url}/chat/completions", json=body, headers=headers,
+                                     timeout=httpx.Timeout(connect=15.0, read=stream_assembly.IDLE_S * 2,
+                                                           write=60.0, pool=15.0)) as response:
+                if response.status_code >= 400:
+                    await response.aread()
+                try:
+                    response.raise_for_status()
+                except httpx.HTTPStatusError as _exc:
+                    raise httpx.HTTPStatusError(
+                        provider_errors.with_body(_exc),
+                        request=_exc.request, response=_exc.response) from None
+                await request_evidence.acknowledge(evidence)
+                if "text/event-stream" not in response.headers.get("content-type", ""):
+                    await response.aread()
+                    return self._parse_response(response.json())
+                data = await stream_assembly.assemble(response)
         return self._parse_response(data)
 
     async def chat_stream(

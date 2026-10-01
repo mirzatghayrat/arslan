@@ -120,6 +120,8 @@ class LLMAdapter:
         provider's native tool protocol. Only for native_trajectory() adapters."""
         wire = self._provider.build_trajectory_messages(system, messages)
         extra = {"max_tokens": max_tokens} if max_tokens else {}
+        if getattr(self._provider, "streams_tool_calls", lambda: False)():
+            extra["stream"] = True   # idle watchdog instead of a total timeout (0.1.49 S7)
         resp = await self._provider.chat(wire, tools=tools, temperature=temperature,
                                          tool_choice=tool_choice, **extra)
         last = messages[-1].get("content") if messages else ""

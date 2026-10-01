@@ -28,7 +28,10 @@ MAX_SERVER_RETRIES = 4        # 429 / 5xx / connection: 1, 2, 4, 8 s (+0-50% jit
 MAX_STALL_RETRIES = 1         # our own timeout: a long generation would likely time out again, billed
 MAX_RETRY_AFTER_S = 60.0
 TURN_RECOVERY_LIMIT = 8       # every recovery in one turn, all kinds together
-CALL_TIMEOUT_S = 300.0        # non-streaming main call (S7 replaces it with an idle watchdog)
+# Outer bound per attempt (always also capped by the work budget). A stalled
+# stream is caught much sooner by the idle watchdog (stream_assembly.IDLE_S);
+# a non-streamed reply is bounded by httpx's 300 s first-byte timeout.
+CALL_TIMEOUT_S = 600.0
 
 _BALANCE = re.compile(r"insufficient[_ ](balance|quota|credits|funds)|payment required", re.I)
 _CONTEXT = re.compile(r"context[_ ]length|maximum context|context window|too many tokens|"
