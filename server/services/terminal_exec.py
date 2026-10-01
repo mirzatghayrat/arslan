@@ -59,10 +59,21 @@ async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S) ->
         except ProcessLookupError:
             pass
         out, err = await proc.communicate()
-    stdout, cut_out = clip(out.decode("utf-8", errors="replace"))
-    stderr, cut_err = clip(err.decode("utf-8", errors="replace"))
+    full_out = out.decode("utf-8", errors="replace")
+    full_err = err.decode("utf-8", errors="replace")
+    stdout, cut_out = clip(full_out)
+    stderr, cut_err = clip(full_err)
     result = {"ok": proc.returncode == 0 and not timed_out, "exit_code": proc.returncode,
               "stdout": stdout, "stderr": stderr, "cwd": str(cwd)}
+    if cut_out or cut_err:
+        # 0.1.49 S9: the middle is not gone, it is on disk.
+        from server.services import tool_outputs
+        try:
+            saved = tool_outputs.save(f"$ {command}\n--- stdout ---\n{full_out}\n--- stderr ---\n{full_err}",
+                                      label="command")
+            result["full_output_path"] = str(saved)
+        except OSError:
+            pass
     if timed_out:
         result["error"] = f"stopped after {timeout_s} s"
     elif proc.returncode != 0:

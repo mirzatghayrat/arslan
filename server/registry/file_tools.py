@@ -103,6 +103,9 @@ class ReadFileExecutor:
 
     async def execute(self, args: dict) -> dict:
         roots, ws = await _read_ctx()
+        # Saved long tool outputs (0.1.49 S9) are always readable, never listable.
+        from server.services import tool_outputs
+        roots = [*roots, tool_outputs.outputs_dir()]
         try:
             path = resolve_for_read(args.get("path", ""), roots, base=ws)
         except (PathEscape, SecretFile) as exc:
@@ -113,6 +116,19 @@ class ReadFileExecutor:
             text = path.read_text(encoding="utf-8", errors="replace")
         except OSError as exc:
             return {"ok": False, "error": f"cannot read {_home_rel(path)}: {exc}"}
+        offset, limit = args.get("offset"), args.get("limit")
+        if offset is not None or limit is not None:
+            if (offset is not None and (type(offset) is not int or offset < 0)) or \
+                    (limit is not None and (type(limit) is not int or limit < 1)):
+                return {"ok": False, "error": "offset must be an integer >= 0 and limit an integer >= 1"}
+            lines = text.splitlines(keepends=True)
+            start = offset or 0
+            end = len(lines) if limit is None else start + limit
+            page = "".join(lines[start:end])
+            truncated = len(page) > MAX_READ_CHARS
+            return {"ok": True, "path": _home_rel(path), "content": page[:MAX_READ_CHARS],
+                    "offset": start, "lines_returned": len(lines[start:end]), "total_lines": len(lines),
+                    "truncated": truncated or end < len(lines)}
         truncated = len(text) > MAX_READ_CHARS
         return {"ok": True, "path": _home_rel(path),
                 "content": text[:MAX_READ_CHARS], "truncated": truncated}

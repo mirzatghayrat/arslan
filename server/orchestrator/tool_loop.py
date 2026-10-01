@@ -308,7 +308,16 @@ def _record_tool_result(tool_key, args, result, emit, tool_trace, assistant_cont
         result, raw_payload = web_feedback
     else:
         feedback = {k: v for k, v in result.items() if k != "artifact"}
-        raw_payload = json.dumps(feedback, ensure_ascii=False)[:8000]
+        raw_payload = json.dumps(feedback, ensure_ascii=False)
+        if len(raw_payload) > 8000:
+            # 0.1.49 S9: never a silent cut. Keep head and tail in context and
+            # the full result on disk where read_file can page through it.
+            from server.services import tool_outputs
+            try:
+                saved = tool_outputs.save(raw_payload, label=tool_key)
+            except OSError:
+                saved = None
+            raw_payload = tool_outputs.excerpt(raw_payload, saved)
     emit({"type": "tool_result", "tool": tool_key, "ok": bool(result.get("ok")),
           "summary": _summarize_result(result), "artifact": result.get("artifact"),
           "artifacts": result.get("artifacts") or []})
@@ -1078,7 +1087,10 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
 _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
     "read_file": {"type": "object", "properties": {
         "path": {"type": "string", "minLength": 1,
-                 "description": "File path within the approved readable roots or workspace."}},
+                 "description": "File path within the approved readable roots or workspace."},
+        "offset": {"type": "integer", "minimum": 0,
+                   "description": "Lines to skip from the start (for paging a long file)."},
+        "limit": {"type": "integer", "minimum": 1, "description": "Maximum lines to return."}},
         "required": ["path"], "additionalProperties": False},
     "write_file": {"type": "object", "properties": {
         "path": {"type": "string", "minLength": 1,
