@@ -37,11 +37,16 @@ def timeout_of(value) -> int:
     return max(5, min(seconds, MAX_TIMEOUT_S))
 
 
+def _shell() -> str:
+    """zsh, the macOS login shell, wherever it exists; /bin/sh elsewhere (CI runs on Linux)."""
+    return "/bin/zsh" if os.path.exists("/bin/zsh") else "/bin/sh"
+
+
 async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S) -> dict:
     env = child_environment({}, {"PATH": merged_path(), "TERM": "dumb", "NO_COLOR": "1",
                                  "HOMEBREW_NO_AUTO_UPDATE": "1"})
     proc = await asyncio.create_subprocess_exec(
-        "/bin/zsh", "-c", command, cwd=str(cwd), env=env,
+        _shell(), "-c", command, cwd=str(cwd), env=env,
         stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         start_new_session=True)          # its own process group, so a timeout can stop children too
     timed_out = False

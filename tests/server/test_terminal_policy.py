@@ -105,3 +105,9 @@ def test_skip_card_rules():
     assert may_skip_card(None, in_session_allow=False, policy="ask_all", risk="MEDIUM", always_allowed=True)
     assert not may_skip_card(None, in_session_allow=True, policy="ask_risky", risk="HIGH", always_allowed=True)
     assert not may_skip_card("box", in_session_allow=True, policy="ask_risky", risk="LOW", always_allowed=True)
+
+
+def test_argv_without_a_command_is_not_a_command():
+    # It used to join to `'' status` and run; an empty command must reach the floor.
+    assert tp.as_shell("", ["status"]) == ""
+    assert tp.assess(tp.as_shell(None, ["status"])).level == "forbid"

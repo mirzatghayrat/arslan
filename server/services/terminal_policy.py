@@ -91,6 +91,8 @@ class Assessment:
 def as_shell(command: str, argv=None) -> str:
     """One shell string from either form the tool accepts ({command} or legacy {command, argv})."""
     command = str(command or "").strip()
+    if not command:
+        return ""          # argv alone is not a command; joining would run `'' <argv>`
     if isinstance(argv, list) and argv:
         command = shlex.join([command, *[str(a) for a in argv]])
     return command
