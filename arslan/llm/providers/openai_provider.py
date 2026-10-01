@@ -25,7 +25,9 @@ class OpenAIProvider(BaseLLMProvider):
     #: ceiling when the body is silent — 65536 for Claude — and refuses a key
     #: that could still afford 64381. Saying what we intend to use costs nothing
     #: and lets a nearly-spent budget keep working. Generous enough for long
-    #: answers, far below any modern model's ceiling.
+    #: answers, far below any modern model's ceiling. 0.1.49: the opening
+    #: budget is now per endpoint (output_budget.py); this stays the floor
+    #: for unknown endpoints and aggregators that reserve credit.
     DEFAULT_MAX_TOKENS = 8192
 
     #: Assistant-message fields some compatible endpoints require back verbatim
@@ -39,7 +41,12 @@ class OpenAIProvider(BaseLLMProvider):
                  transport: httpx.BaseTransport | None = None) -> None:
         effective_base_url = base_url or self.DEFAULT_BASE_URL
         super().__init__(model=model, api_key=api_key, base_url=effective_base_url)
-        self.max_tokens = max_tokens or self.DEFAULT_MAX_TOKENS
+        # 0.1.49 S5: per-endpoint opening budget and truncation ceiling
+        # (arslan/llm/output_budget.py); an explicit max_tokens still wins.
+        from arslan.llm.output_budget import for_endpoint
+        budget = for_endpoint(effective_base_url, model)
+        self.max_tokens = max_tokens or budget.initial
+        self.output_ceiling = max(self.max_tokens, budget.ceiling)
         self._transport = transport
 
     def _client(self) -> httpx.AsyncClient:

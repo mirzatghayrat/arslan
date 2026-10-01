@@ -120,4 +120,8 @@ def test_review_cannot_raise_an_existing_or_custom_task_ceiling():
     assert budget.model_request(16384) == 4096
     restored = Budget.from_snapshot(Budget(Limits(output_tokens_per_request=8192)).snapshot())
     assert restored.model_request(16384) == 8192
-    assert Budget().model_request(16384) == 8192
+    # 0.1.49 S5: the default per-request ceiling is a runaway guard (131072), so
+    # the opt-in review's 16384 request is no longer silently clamped to 8192;
+    # it still cannot exceed the guard.
+    assert Budget().model_request(16384) == 16384
+    assert Budget(Limits(tokens=10_000_000)).model_request(1_000_000) == 131_072

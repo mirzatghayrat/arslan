@@ -27,7 +27,10 @@ class Limits:
     tool_calls: int = 24
     tokens: int = 128_000
     wall_seconds: float = 600
-    output_tokens_per_request: int = 8192
+    # Runaway guard only (0.1.49 S5): the per-endpoint opening budget lives in
+    # arslan/llm/output_budget.py; a flat 8192 here silently truncated thinking
+    # models' work (kernel sample T5).
+    output_tokens_per_request: int = 131_072
     artifact_bytes: int = 100 * 1024 * 1024
 
     def __post_init__(self):
@@ -78,6 +81,10 @@ def job_budget(tier: str) -> "Budget":
 
 
 class Budget:
+    # True when the last model_request granted fewer output tokens than were
+    # asked for: a "length" cut then means "budget", not "raise the limit".
+    last_output_clamped = False
+
     def __init__(self, limits: Limits | None = None, *, soft: Limits | None = None):
         self.limits = limits or configured_limits()
         self.soft = soft
@@ -165,8 +172,10 @@ class Budget:
         if self.tokens >= self.limits.tokens:
             self.stop("tokens")
         self.model_requests += 1
-        return min(requested_output, self.limits.output_tokens_per_request,
-                   max(1, self.limits.tokens - self.tokens))
+        granted = min(requested_output, self.limits.output_tokens_per_request,
+                      max(1, self.limits.tokens - self.tokens))
+        self.last_output_clamped = granted < requested_output
+        return granted
 
     def tool(self):
         self.check()

@@ -49,6 +49,7 @@ class LLMAdapter:
         api_key: str = "",
         base_url: str = "",
         report_provider: str | None = None,
+        max_tokens: int | None = None,
     ) -> None:
         self.provider_name = provider_name
         # Usage-attribution identity (S3-M3): Tier-0 presets (deepseek/qwen/ollama/…)
@@ -60,6 +61,12 @@ class LLMAdapter:
         self.model = model
         self.api_key = api_key
         self._provider = self._create_provider(provider_name, model, api_key, base_url)
+        if max_tokens is not None:
+            # Explicit opening output budget (e.g. a cost-capped eval whose
+            # approved spend math assumes it); overrides output_budget.py.
+            if not isinstance(self._provider, OpenAIProvider):
+                raise ValueError("max_tokens override is only supported for OpenAI-compatible providers")
+            self._provider.max_tokens = max_tokens
 
     def supports_bounded_critique(self) -> bool:
         provider = getattr(self, "_provider", None)
@@ -132,7 +139,8 @@ class LLMAdapter:
             total = tin + tout
         if total is None:
             total = usage_sink.estimate_tokens(system, user, resp.content)
-        usage_sink.report(total)
+        from arslan.llm.usage_weight import charged_tokens
+        usage_sink.report(total, charged=charged_tokens(u))
         usage_sink.report_detail(
             tokens_in=tin,
             tokens_out=tout,

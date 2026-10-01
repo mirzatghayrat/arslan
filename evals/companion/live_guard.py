@@ -53,8 +53,10 @@ def primary_adapter(profile: Path, secret_file: Path) -> LLMAdapter:
     }:
         raise RuntimeError("primary_changed_reverify_pricing")
     key = keyring(secret_file.read_text().strip(), base64.b64decode(salt[0], validate=True)).decrypt(encrypted.encode()).decode()
+    # The approved pilot's spend reservation assumes max_tokens == 8192 (guard
+    # fails closed otherwise); 0.1.49 raised the product default, so pin it here.
     return LLMAdapter("openai", model, api_key=key, base_url=(base_url or "https://api.deepseek.com").rstrip("/"),
-                      report_provider="deepseek")
+                      report_provider="deepseek", max_tokens=8192)
 
 
 class GuardedAdapter:
