@@ -519,7 +519,7 @@ class ResearchAdapter:
     async def chat(self, system, user, history=None, tools=None, temperature=0.7):
         if "BACKGROUND" not in str(system):
             return LLMResponse(content="ok", tool_calls=[], usage={})
-        if "Work budget nearly used" in str(system):
+        if "Work budget nearly used" in str(user):           # 0.1.50: in <agent_status>
             self.wrap_up_tools = [t["function"]["name"] for t in tools or []]
             if self.obedient:
                 return LLMResponse(content=f"Report from what I found: {PHRASE}", tool_calls=[], usage={})

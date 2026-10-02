@@ -29,7 +29,7 @@ async def test_a_turn_past_its_soft_point_delivers_instead_of_aborting(monkeypat
 
     class Adapter:
         async def chat(self, system, user, history=None, tools=None, **kw):
-            systems.append((system, tools))
+            systems.append((user, tools))       # 0.1.50: step notes ride in the last message
             if tools and any(t["function"]["name"] == "fixture_read" for t in tools):
                 i = next(calls)
                 return LLMResponse(usage={}, content="", tool_calls=[

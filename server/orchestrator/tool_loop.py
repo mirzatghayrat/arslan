@@ -369,12 +369,19 @@ def _claim_results(convo: list[dict], marks: list[tuple[int, str]]) -> None:
             record["tool_call_id"] = call_id
 
 
-def _render_request(convo: list[dict], current_request: dict) -> list[dict]:
+def _render_request(convo: list[dict], current_request: dict, status: str = "") -> list[dict]:
     """The model input for this step. Rolling eviction must not erase this
     turn's task: restore the exact request at user priority (not a summary,
-    not a system instruction) in this payload only."""
+    not a system instruction) in this payload only. The step's <agent_status>
+    rides at the end of the last message (agent_status.attach), never stored."""
+    from server.orchestrator import agent_status
     messages = convo if any(item is current_request for item in convo) else [current_request, *convo]
-    return trajectory.to_legacy(messages)
+    rendered = trajectory.to_legacy(messages)
+    # Last means last: after the legacy trailer too. A Gemini function-response
+    # turn (list content) carries it inside the newest result instead.
+    if status and rendered and isinstance(rendered[-1].get("content"), str):
+        return agent_status.attach(rendered, status)
+    return trajectory.to_legacy(agent_status.attach(messages, status))
 
 
 def _parse_arguments(raw: str | None) -> tuple[dict | None, str | None]:
@@ -438,7 +445,7 @@ TRUNCATED_CALL_ERROR = (
 
 
 async def _model_call(a, system: str, convo: list[dict], current_request: dict, *,
-                      tools, schemas, forced: bool, state):
+                      tools, schemas, forced: bool, state, status: str = ""):
     """The one model call of a run_native step, with recovery (0.1.49 S6).
 
     Native adapters (OpenAI-compatible, ARSLAN_TOOL_PROTOCOL not "legacy") get
@@ -450,7 +457,12 @@ async def _model_call(a, system: str, convo: list[dict], current_request: dict, 
     a protocol rejection switches this turn to the legacy rendering; a context
     overflow compacts once; a finish_reason "length" cut is re-sent with the
     endpoint's ceiling, then a cut answer is continued. A cut tool call is
-    returned as is: run_native never executes it. `state` is per turn."""
+    returned as is: run_native never executes it. `state` is per turn.
+
+    `status` (0.1.50 S1) is appended to the last message of the step's base
+    messages in both renderings; continuation turns follow it, so a
+    continuation request shares the original request's exact prefix."""
+    from server.orchestrator import agent_status
     from server.orchestrator import model_call as mc
 
     def build_messages():
@@ -470,13 +482,13 @@ async def _model_call(a, system: str, convo: list[dict], current_request: dict, 
             logger.warning("native tool protocol degraded to legacy: %s", exc)
 
     async def request(extra=None, max_tokens=None):
-        sent = messages + list(extra or [])
+        sent = agent_status.attach(messages, status) + list(extra or [])
         kwargs = {"max_tokens": max_tokens} if max_tokens else {}
         if native:
             return await a.chat_trajectory(system, sent, tools=schemas if forced else tools,
                                            tool_choice="none" if forced else None, **kwargs)
         # One legacy entry point (_render_request) for every request of the step.
-        rendered = _render_request(convo, current_request) + trajectory.to_legacy(list(extra or []))
+        rendered = _render_request(convo, current_request, status) + trajectory.to_legacy(list(extra or []))
         return await a.chat(system, rendered[-1]["content"], history=rendered[:-1], tools=tools, **kwargs)
 
     remaining = _remaining_seconds()
@@ -735,6 +747,21 @@ async def _asks_for_everything() -> bool:
             return await settings_service.shell_confirm_policy(db) == "ask_all"
     except Exception:  # noqa: BLE001
         return True
+
+
+async def _status_workspace(wired_keys) -> tuple:
+    """(workspace root, is Arslan's own folder) for the status block; (None,
+    False) when no writer is wired or the setting cannot be read."""
+    if not wired_keys & {"write_file", "edit_file", "run_command"}:
+        return None, False
+    from server.db import session as db_session
+    from server.services import settings_service
+    try:
+        async with db_session.AsyncSessionLocal() as db:
+            return (await settings_service.workspace_dir(db),
+                    await settings_service.workspace_is_default(db))
+    except Exception:  # noqa: BLE001
+        return None, False
 
 
 async def _writing_in_own_folder() -> bool:
@@ -1704,10 +1731,13 @@ async def run_native(
     # it per tool call and the cap would never bind.
     fetch_budget: dict[str, int] = {}
     call_ids: set[str] = set()
+    from server.orchestrator import agent_status
     from server.orchestrator.model_call import TurnRecovery
     from server.orchestrator.turn_plan import Plan
     turn_state = TurnRecovery()
     plan = Plan()
+    turn_started = agent_status.now()
+    ws_root, own_folder = await _status_workspace(wired_keys)
     unseen_start = len(convo)
 
     # Deterministic pre-search uses the same admission and progress boundaries.
@@ -1747,21 +1777,24 @@ async def run_native(
             stop_reason = "task_no_progress" if policy.stopped or truncation_stop else "task_budget_exhausted"
             if runtime:
                 runtime.pause_reason = stop_reason
-        sys_now = system if not forced else (
-            system + ("\n\nRepeated actions made no progress. Explain what was verified and what is blocked. Text only."
-                      if policy.stopped else
-                      "\n\nYour tool calls kept exceeding the output limit and none of them ran. Report briefly what "
-                      "was verified and what remains. Text only." if truncation_stop else
-                      "\n\nTool budget exhausted: report the verified results and remaining work. Text only."))
+        # 0.1.50 S1: the system prompt stays byte-identical for the whole turn
+        # (prefix cache); this step's notes go to the <agent_status> block.
+        notes: list[str] = []
+        if forced:
+            notes.append("Repeated actions made no progress. Explain what was verified and what is blocked. Text only."
+                         if policy.stopped else
+                         "Your tool calls kept exceeding the output limit and none of them ran. Report briefly what "
+                         "was verified and what remains. Text only." if truncation_stop else
+                         "Tool budget exhausted: report the verified results and remaining work. Text only.")
         # 0.1.43 completion first (background jobs only — only they carry a soft
         # limit): past the soft limit, stop gathering and FINISH. Research tools
         # are withdrawn; saving the deliverable stays possible. Not a failure:
         # the completion checks decide the outcome as usual.
         wrap_up = not forced and budget.soft_reached()
         if wrap_up:
-            sys_now += ("\n\nWork budget nearly used: stop researching now. Using only what you already have, "
-                        "produce the complete deliverable the user asked for (save it if a file was asked for), "
-                        "clearly marking anything you could not verify. Then give the final answer.")
+            notes.append("Work budget nearly used: stop researching now. Using only what you already have, "
+                         "produce the complete deliverable the user asked for (save it if a file was asked for), "
+                         "clearly marking anything you could not verify. Then give the final answer.")
         # Deliver one new tool batch atomically before normal old-history
         # eviction. Keep a bounded 96k research window so a <=96k source batch
         # can survive the following save/readback steps, not just one request.
@@ -1772,8 +1805,8 @@ async def run_native(
         has_web_evidence = any(item.get("tool") == "web_extract" and
                                (item.get("result") or {}).get("ok") for item in tool_trace)
         if has_web_evidence:
-            sys_now += (
-                "\nResearch scope: deliver the smallest useful report answering the requested dimensions. "
+            notes.append(
+                "Research scope: deliver the smallest useful report answering the requested dimensions. "
                 "For a question about one capability, do not expand into an inventory of unrelated README "
                 "differences. Unless comprehensive coverage is requested, use at most six relevant comparison "
                 "rows and short source quotations, with a concise conclusion and explicit unknowns. "
@@ -1787,25 +1820,34 @@ async def run_native(
                                            size_of=_rendered_size)
         pending_feedback = 0
         if oversized_feedback:
-            sys_now += ("\nThe newest tool-result batch exceeded the bounded delivery window. Some newly fetched "
-                        "content may have been omitted before you saw it. Do not claim to have inspected omitted "
-                        "content; request smaller sequential reads or disclose the limitation within remaining budgets.")
+            notes.append("The newest tool-result batch exceeded the bounded delivery window. Some newly fetched "
+                         "content may have been omitted before you saw it. Do not claim to have inspected omitted "
+                         "content; request smaller sequential reads or disclose the limitation within remaining budgets.")
         history_compacted = history_compacted or compacted
         if history_compacted:
-            sys_now += "\nEarlier conversation turns were compacted. Do not repeat completed effects."
-            if "task_progress" in wired_keys:
-                sys_now += " Saved task progress and owned outputs remain available through task_progress."
-            else:
-                sys_now += " task_progress is not available in this turn; do not invent a call to it."
+            notes.append("Earlier conversation turns were compacted. Do not repeat completed effects." + (
+                " Saved task progress and owned outputs remain available through task_progress."
+                if "task_progress" in wired_keys else
+                " task_progress is not available in this turn; do not invent a call to it."))
         # On the forced step pass tools=None so the model CANNOT call a tool and MUST produce
         # prose from the accumulated TOOL RESULTs — never an empty turn.
         # Rolling evidence eviction must not erase this turn's task or its
         # restrictions. Restore the exact request at user priority, not as a
         # system instruction or an invented summary, only in this payload.
-        resp = await _model_call(a, sys_now, convo, current_request,
-                                 tools=(None if forced else [t for t in schemas if t["function"]["name"] in WRAP_UP_TOOLS]
-                                        or None if wrap_up else schemas),
-                                 schemas=schemas, forced=forced, state=turn_state)
+        step_tools = (None if forced else [t for t in schemas if t["function"]["name"] in WRAP_UP_TOOLS]
+                      or None if wrap_up else schemas)
+        offered = {t["function"]["name"] for t in step_tools or []}
+        # Nothing done, planned or noted yet (a plain chat turn, or step 0): no
+        # block — the request goes out as the user wrote it. Step 0's write
+        # facts live in the tool descriptions (S5); the block starts with work.
+        status = "" if not (tool_trace or notes or plan.items) else agent_status.render(
+            workspace=agent_status.home_relative(ws_root) if ws_root is not None else None,
+            writers=[k for k in ("write_file", "edit_file", "run_command") if k in offered],
+            own_folder=own_folder, saved=agent_status.owned_outputs(tool_trace, ws_root, turn_started),
+            plan=plan.render(), tool_calls=budget.tool_calls, model_calls=budget.model_requests,
+            wrap_up_at=budget.soft.tool_calls if budget.soft is not None else None, notes=notes)
+        resp = await _model_call(a, system, convo, current_request, tools=step_tools,
+                                 schemas=schemas, forced=forced, state=turn_state, status=status)
         # A context-overflow recovery compacted convo in place (S6).
         history_compacted = history_compacted or turn_state.context_retry_used
         tool_calls = list(getattr(resp, "tool_calls", None) or [])
@@ -1945,8 +1987,9 @@ async def run_native(
             # renderings of this trajectory (trajectory.to_legacy), not rewrites.
             _claim_results(convo, marks)
             # resp.content is narration — surface it as an ephemeral note ONLY, never final.
-            if (resp.content or "").strip():
-                emit({"type": "note", "text": (resp.content or "").strip()[:400]})
+            narration = agent_status.strip_echo((resp.content or "").strip())
+            if narration:
+                emit({"type": "note", "text": narration[:400]})
             pending_feedback = len(convo) - history_start
             continue
 
@@ -1957,7 +2000,7 @@ async def run_native(
         # tool-call. Native content separation alone does not prevent malformed output.
         # Even a provider ignoring tools=None still marks narration with tool_calls.
         # Never turn that narration into a final answer on a forced synthesis step.
-        final_text = "" if tool_calls else (resp.content or "").strip()
+        final_text = "" if tool_calls else agent_status.strip_echo((resp.content or "").strip())
         claimed = _unverified_claim(final_text, tool_trace, wired_keys)
         deferred = _is_deferral_stub(final_text)
         protocol_text = _embeds_protocol(final_text)

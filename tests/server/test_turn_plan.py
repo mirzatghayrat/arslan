@@ -87,6 +87,8 @@ async def test_an_unwired_plan_tool_is_not_handled_by_the_host(monkeypatch):
 
 
 async def test_host_turns_and_background_jobs_get_the_tool_but_workers_do_not(monkeypatch, tmp_path):
+    from tests.server.test_workspace_tool_gate import _wire
+    engine = await _wire(tmp_path, monkeypatch, workspace=None)
     from server.orchestrator import arslan
     from server.services import task_service, task_workers
     assert "update_plan" not in task_workers.READ_TOOLS       # workers' fixed subset
@@ -94,3 +96,4 @@ async def test_host_turns_and_background_jobs_get_the_tool_but_workers_do_not(mo
     assert "update_plan" in keys
     assert "update_plan" in {t["key"] for t in await arslan._background_tools()}
     assert await task_service.effect_of("update_plan", {}) == "read"
+    await engine.dispose()

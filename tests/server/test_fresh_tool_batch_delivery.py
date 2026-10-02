@@ -48,10 +48,11 @@ async def test_actual_loop_delivers_or_explicitly_discloses_large_fresh_batch(mo
     assert "Read three sources" in payloads[1][1]
     if complete:
         assert all(text in payloads[1][1] for text in texts.values())
-        assert "omitted before you saw it" not in payloads[1][0]
+        assert "omitted before you saw it" not in payloads[1][1]   # 0.1.50: notes ride in <agent_status>
     else:
         assert not all(text in payloads[1][1] for text in texts.values())
-        assert "omitted before you saw it" in payloads[1][0]
+        assert "omitted before you saw it" in payloads[1][1]
+        assert "omitted before you saw it" not in payloads[1][0]   # never the system prompt
 
 
 async def test_research_sources_survive_save_readback_without_call_json_imitation(monkeypatch):

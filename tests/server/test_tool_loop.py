@@ -125,8 +125,12 @@ async def test_budget_exhaustion_forces_final(monkeypatch):
                               resolve_tools=_tools("web_search"), max_tool_calls=1)
     assert out["final"] == "forced final answer"
     assert "".join(chunks) == "forced final answer"
-    # the forced step's system prompt must carry the budget-exhausted instruction
-    assert "Tool budget exhausted" in adapter.calls[-1]["system"]
+    # 0.1.50 S1: the forced step's instruction rides at the END of the last
+    # message (<agent_status>); the system prompt is byte-identical every step.
+    assert "Tool budget exhausted" in adapter.calls[-1]["user"]
+    assert adapter.calls[-1]["user"].rstrip().endswith("</agent_status>")
+    assert len({c["system"] for c in adapter.calls}) == 1        # byte-identical every step
+    assert "Tool budget exhausted" not in adapter.calls[-1]["system"]
 
 
 async def test_final_answer_streams(monkeypatch):

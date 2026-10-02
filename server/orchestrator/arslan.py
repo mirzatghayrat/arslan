@@ -863,7 +863,8 @@ async def _arslan_tools() -> list[dict]:
                   "description": "Keep a short checklist for a task with several parts or a target "
                                  "count (\"find 10 …\", \"compare 3 …\"). args: {items: [{text, status: "
                                  "pending|in_progress|done}]} — send the WHOLE list each time and keep "
-                                 "counts in the text (\"collect jobs 6/10\"). Update it as parts finish. "
+                                 "counts in the text (\"collect jobs 6/10\"). Update it as parts finish; "
+                                 "the current plan is shown back to you at the end of every step. "
                                  "Skip it for one-step requests."})
     # PA-3: structured clarification — a TERMINAL tool (no executor; the tool loop ends
     # the turn and _handle_answer emits the clarify_options card). Registered here so

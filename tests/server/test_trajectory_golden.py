@@ -117,8 +117,17 @@ SCENARIOS = {
 }
 
 
+def _pin_workspace(monkeypatch):
+    """The status block names the workspace; pin it so the golden does not
+    depend on this machine's settings DB (0.1.50 S1)."""
+    async def fixed(_wired):
+        return Path.home() / "Arslan", True
+    monkeypatch.setattr(tool_loop, "_status_workspace", fixed)
+
+
 async def _run(name, monkeypatch):
     spec = SCENARIOS[name]
+    _pin_workspace(monkeypatch)
     adapter = _Recorder(spec["replies"])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
     from server.registry import executors
@@ -145,6 +154,7 @@ async def _presearch(monkeypatch):
     async def classify(*_a, **_k):
         return _Intent()
     monkeypatch.setattr(tool_intent, "classify", classify)
+    _pin_workspace(monkeypatch)
     adapter = _Recorder([_Resp(None, [_tc("web_search", {"query": "then"})]), _Resp("after presearch")])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
     from server.registry import executors

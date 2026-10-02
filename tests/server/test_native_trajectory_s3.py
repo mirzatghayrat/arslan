@@ -19,11 +19,11 @@ async def test_trajectory_is_valid_at_every_model_request(monkeypatch, name):
     seen = []
     real = tool_loop._render_request
 
-    def spy(convo, current_request):
+    def spy(convo, current_request, status=""):
         snapshot = [dict(m) for m in convo]
         tj.validate(snapshot)
         seen.append(snapshot)
-        return real(convo, current_request)
+        return real(convo, current_request, status)
     monkeypatch.setattr(tool_loop, "_render_request", spy)
     await golden._run(name, monkeypatch)
     assert seen
@@ -41,9 +41,9 @@ async def test_presearch_stays_host_run_and_model_calls_are_bound(monkeypatch):
     seen = []
     real = tool_loop._render_request
 
-    def spy(convo, current_request):
+    def spy(convo, current_request, status=""):
         seen.append([dict(m) for m in convo])
-        return real(convo, current_request)
+        return real(convo, current_request, status)
     monkeypatch.setattr(tool_loop, "_render_request", spy)
     await golden._presearch(monkeypatch)
     first, second = seen
@@ -58,9 +58,9 @@ async def test_continuation_and_finish_are_kept_on_the_assistant_message(monkeyp
     seen = []
     real = tool_loop._render_request
 
-    def spy(convo, current_request):
+    def spy(convo, current_request, status=""):
         seen.append([dict(m) for m in convo])
-        return real(convo, current_request)
+        return real(convo, current_request, status)
     monkeypatch.setattr(tool_loop, "_render_request", spy)
     cont = {"protocol": "openai", "endpoint": "fp", "fields": {"reasoning_content": "  why\n"}}
     reply = golden._Resp(None, [golden._tc("web_search", {"query": "q"}, ""), golden._tc("web_search", {"query": "r"}, "")])
@@ -131,9 +131,9 @@ async def _repair_assistant(monkeypatch, replies):
     seen = []
     real = tool_loop._render_request
 
-    def spy(convo, current_request):
+    def spy(convo, current_request, status=""):
         seen.append([dict(m) for m in convo])
-        return real(convo, current_request)
+        return real(convo, current_request, status)
     monkeypatch.setattr(tool_loop, "_render_request", spy)
 
     class Adapter:

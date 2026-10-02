@@ -49,7 +49,7 @@ async def test_repeated_identical_work_stops_without_language_markers(monkeypatc
         async def chat(self, system, user, **kwargs):
             current().model_request(100)
             if kwargs["tools"] is None:
-                assert "no progress" in system
+                assert "no progress" in user and "no progress" not in system   # 0.1.50: <agent_status>
                 return LLMResponse(usage={}, content="One source verified; remaining coverage is blocked.")
             return LLMResponse(usage={}, content="", tool_calls=[call(1)])
     class Executor:
