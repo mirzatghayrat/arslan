@@ -509,7 +509,7 @@ async def _fire(task: ScheduledTask) -> None:
 
     async def body(sink):
         return await _fire_body(task)
-    with desktop_status.working(cid):   # keeps the Mac awake while the fire runs (0.1.41)
+    with desktop_status.working(cid, title=task.name, kind="scheduled"):   # keeps the Mac awake while the fire runs (0.1.41)
         return await task_context.execute_entry(cid, task.prompt, run_registry.make_emit(cid), body,
             driver={"kind": "expert", "id": task.spawn_id} if _target(task) != "arslan" and task.spawn_id else None,
             headless=True)
