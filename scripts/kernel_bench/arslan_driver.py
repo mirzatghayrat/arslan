@@ -18,7 +18,15 @@ import time
 import uuid
 from dataclasses import dataclass, field
 
+import os
+
 TERMINAL_TASK_PHASES = {"completed", "failed", "cancelled", "waiting_user"}
+# Outside the bench sandbox (BENCH_SANDBOX=none: Arslan's browser cannot start
+# inside sandbox-exec — seatbelt does not nest), nothing in the kernel keeps a
+# command off the real disk, so the stand-in person declines every card that asks
+# (deleting, installing, sending, acting in pages). Commands Arslan runs without a
+# card (reads, scripts, downloads into the task folder) and page reads still run.
+DECLINE_CARDS = os.environ.get("BENCH_DECLINE_CARDS") == "1"
 IDLE_AFTER_TURN_S = 20      # quiet period after the answer before we call it done
 RUN_TIMEOUT_S = 15 * 60
 
@@ -58,6 +66,8 @@ class TurnTracker:
                 self.jobs_open.add(job)
         elif t == "propose_run_command":
             self.approvals += 1
+            if DECLINE_CARDS:
+                return {"type": "cancel_run_command", "call_id": frame["call_id"]}
             return {"type": "confirm_run_command", "call_id": frame["call_id"], "remember": False}
         elif t == "propose_workspace_write":
             self.approvals += 1
@@ -65,7 +75,7 @@ class TurnTracker:
             return {"type": "confirm_workspace_write" if ok else "cancel_workspace_write", "call_id": frame["call_id"]}
         elif t == "propose_action":
             self.approvals += 1
-            return {"type": "confirm_action", "call_id": frame["call_id"]}
+            return {"type": "cancel_action" if DECLINE_CARDS else "confirm_action", "call_id": frame["call_id"]}
         elif t in ("propose_schedule", "propose_connect_mcp", "propose_enroll_node"):
             self.approvals += 1
             return {"type": "cancel_schedule" if t == "propose_schedule" else "cancel_action", "call_id": frame["call_id"]}

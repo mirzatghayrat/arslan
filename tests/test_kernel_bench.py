@@ -195,3 +195,15 @@ def test_t3_whole_billion_roundings_pass_but_near_misses_do_not(tmp_path):
     assert check_t3.check(str(tmp_path))["correct_of_6"] == 6
     (tmp_path / "t.md").write_text("FY2023 $385B FY2024 $393B FY2025 $418B sec.gov\n")   # each ~0.45% off
     assert check_t3.check(str(tmp_path))["correct_of_6"] == 0
+
+
+def test_outside_the_sandbox_the_driver_declines_every_card(monkeypatch):
+    from scripts.kernel_bench import arslan_driver
+    monkeypatch.setattr(arslan_driver, "DECLINE_CARDS", True)
+    t = TurnTracker("/r")
+    assert t.on_frame({"type": "propose_run_command", "call_id": "c1"}, 1.0) == {
+        "type": "cancel_run_command", "call_id": "c1"}
+    assert t.on_frame({"type": "propose_action", "call_id": "c2"}, 2.0) == {
+        "type": "cancel_action", "call_id": "c2"}
+    monkeypatch.setattr(arslan_driver, "DECLINE_CARDS", False)
+    assert t.on_frame({"type": "propose_run_command", "call_id": "c3"}, 3.0)["type"] == "confirm_run_command"
