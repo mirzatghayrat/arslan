@@ -337,6 +337,11 @@ def _record_tool_result(tool_key, args, result, emit, tool_trace, assistant_cont
             n = mcp_fail_counts[tool_key] = mcp_fail_counts.get(tool_key, 0) + 1
             if n >= _MCP_FAIL_HINT_AT:
                 hint = "\n" + _mcp_degrade_hint(n)
+    # 0.1.50: a concrete alternative at the moment of failure (recovery_hints).
+    from server.orchestrator.recovery_hints import hint_for
+    recovery = hint_for(tool_key, result)
+    if recovery:
+        hint += f"\n[Host hint: {recovery}]"
     # 0.1.49: one neutral tool record (arslan/llm/trajectory.py). It starts as a
     # host-run result carrying its invocation text; run_native claims it for the
     # model's tool call (_claim_results). Rendering per provider happens at
