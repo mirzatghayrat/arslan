@@ -1947,6 +1947,17 @@ async def run_native(
         claimed = _unverified_claim(final_text, tool_trace, wired_keys)
         deferred = _is_deferral_stub(final_text)
         protocol_text = _embeds_protocol(final_text)
+        # 0.1.50: an answer that denies a capability this turn had (bench: "no file
+        # write ability" with write_file offered) gets one correction.
+        from server.orchestrator import capability_truth
+        denied = (None if forced or turn_state.capability_bounced or claimed or deferred or protocol_text
+                  else capability_truth.denied_capability(final_text, wired_keys, tool_trace))
+        if denied:
+            turn_state.capability_bounced = True
+            policy.observe("answer_validation", {}, {"ok": False, "code": "denied_capability"})
+            convo.extend([trajectory.assistant(final_text, continuation=getattr(resp, "continuation", None)),
+                          {"role": "user", "content": capability_truth.correction(denied, wired_keys)}])
+            continue
         if not forced and (claimed or ((deferred or protocol_text) and wired_keys)):
             policy.observe("answer_validation", {}, {"ok": False, "code": "unverified_answer"})
             # Never execute rescued JSON, nor echo a malformed invocation back
