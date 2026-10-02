@@ -50,3 +50,25 @@ Per run: native T3 3/0/0, legacy T3 2/2/2; native T5 3/3/3, legacy T5 3/3/3.
 2. T3 native failure modes: (a) "data not present" when it is — a tool-result attention/grounding
    issue; (b) declining to save a partial table and falsely claiming it cannot write. Candidate
    levers: P2 status bar (owned outputs, write ability stated each step) and tool descriptions.
+
+## T3 rerun with search fixed (`918f445a`) — 2026-10-02
+
+Approved $0.60; spent **$0.237** (one live verification search $0.0014 + six runs $0.2355).
+Both arms used DeepSeek native search through the automatic order (13 searches, all 200; the
+verification call returned 5 results in 2.7 s). No upstream errors.
+
+| arm | Pass^3 | per run | mean $ | mean model time | mean calls |
+| --- | --- | --- | --- | --- | --- |
+| native | **3/3** | 3 / 3 / 3 | 0.046 | 64 s | 9.7 |
+| legacy | 1/3 | 2 / 2 / 3 | 0.033 | 46 s | 9.0 |
+
+All six runs saved a file with all six numbers correct. The two legacy misses are the same as
+before: no data source noted although the task asks for it.
+
+Reading: with search working, the native protocol is the reliable arm on T3 (Pass^3), at ~40% more
+cost and time than legacy on this task; on T5 native was both reliable and cheaper. The earlier T3
+native failures (overlooking data, skipping the save) did not recur once sources were available —
+consistent with them being a symptom of starved research, not of the protocol; not proven.
+
+Open: DeepSeek reports `web_search_requests` per native search; whether that is billed beyond
+tokens is not stated on its pricing page (the proxy prices tokens only).
