@@ -186,7 +186,7 @@ async def test_prose_preamble_then_tool_json_no_leak(monkeypatch):
     # may show, but the raw JSON must NEVER reach on_chunk (structural separation), and the tool
     # must still fire (parse_json_object rescues the embedded object).
     from server.registry import executors
-    adapter = _StreamAdapter(['好的我去搜一下{"tool": "web_search", "args": {"q": "x"}}', "real answer"])
+    adapter = _StreamAdapter(['好的我去搜一下{"tool": "web_search", "args": {"query": "x"}}', "real answer"])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
 
     class _Stub:
@@ -210,7 +210,7 @@ async def test_multiple_native_tool_calls_dispatch_without_narration_leak(monkey
     adapter = _StreamAdapter([
         LLMResponse(usage={}, content="好，我直接搜一下。", tool_calls=[{
             "id": query, "type": "function", "function": {
-                "name": "web_search", "arguments": {"q": query}}} for query in ("a", "b")]),
+                "name": "web_search", "arguments": {"query": query}}} for query in ("a", "b")]),
         "combined answer",
     ])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
@@ -230,7 +230,7 @@ async def test_multiple_native_tool_calls_dispatch_without_narration_leak(monkey
     assert '"tool"' not in joined and "{" not in joined   # no JSON leaked
     assert "好，我直接搜一下。" not in joined
     assert any(e["type"] == "tool_call" for e in events)  # first tool fired
-    assert calls == [{"q": "a"}, {"q": "b"}]
+    assert calls == [{"query": "a"}, {"query": "b"}]   # web_search's schema field (0.1.49 S8 validates it)
     assert out["final"] == "combined answer"
 
 

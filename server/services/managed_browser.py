@@ -108,7 +108,10 @@ async def setup() -> dict:
         for name in ("package.json", "package-lock.json"):
             shutil.copyfile(manifests() / name, root / name)
         with tempfile.TemporaryDirectory(prefix="arslan-browser-setup-") as temp:
-            env = {"PATH": spawn_env.merged_path(), "HOME": temp,
+            # TMPDIR too: Playwright's download stages in os.tmpdir(), which falls
+            # back to /tmp when unset — refused wherever /tmp is not writable
+            # (seen in the 0.1.49 bench sandbox: EPERM mkdtemp /tmp/playwright-download-*).
+            env = {"PATH": spawn_env.merged_path(), "HOME": temp, "TMPDIR": temp,
                    "PLAYWRIGHT_BROWSERS_PATH": str(root / "browsers"),
                    "npm_config_userconfig": str(Path(temp) / ".npmrc"),
                    "npm_config_cache": str(root / "npm-cache")}

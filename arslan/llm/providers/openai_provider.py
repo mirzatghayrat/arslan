@@ -25,14 +25,82 @@ class OpenAIProvider(BaseLLMProvider):
     #: ceiling when the body is silent — 65536 for Claude — and refuses a key
     #: that could still afford 64381. Saying what we intend to use costs nothing
     #: and lets a nearly-spent budget keep working. Generous enough for long
-    #: answers, far below any modern model's ceiling.
+    #: answers, far below any modern model's ceiling. 0.1.49: the opening
+    #: budget is now per endpoint (output_budget.py); this stays the floor
+    #: for unknown endpoints and aggregators that reserve credit.
     DEFAULT_MAX_TOKENS = 8192
 
+    #: Assistant-message fields some compatible endpoints require back verbatim
+    #: (DeepSeek/Kimi/GLM: reasoning_content; OpenRouter: reasoning,
+    #: reasoning_details). Allow-list: only what the endpoint itself sent is ever
+    #: echoed, so a strict endpoint never receives a field it did not produce.
+    CONTINUATION_FIELDS = ("reasoning_content", "reasoning", "reasoning_details")
+
     def __init__(self, model: str, api_key: str = "", base_url: str = "",
-                 max_tokens: int | None = None) -> None:
+                 max_tokens: int | None = None,
+                 transport: httpx.BaseTransport | None = None) -> None:
         effective_base_url = base_url or self.DEFAULT_BASE_URL
         super().__init__(model=model, api_key=api_key, base_url=effective_base_url)
-        self.max_tokens = max_tokens or self.DEFAULT_MAX_TOKENS
+        # 0.1.49 S5: per-endpoint opening budget and truncation ceiling
+        # (arslan/llm/output_budget.py); an explicit max_tokens still wins.
+        from arslan.llm.output_budget import for_endpoint
+        budget = for_endpoint(effective_base_url, model)
+        self.max_tokens = max_tokens or budget.initial
+        self.output_ceiling = max(self.max_tokens, budget.ceiling)
+        self._transport = transport
+
+    def _client(self) -> httpx.AsyncClient:
+        kwargs: dict[str, Any] = {"trust_env": not loopback_endpoint(self.base_url),
+                                  "follow_redirects": False}
+        if self._transport is not None:
+            kwargs["transport"] = self._transport
+        return httpx.AsyncClient(**kwargs)
+
+    def streams_tool_calls(self) -> bool:
+        """Endpoints whose streamed tool calls are known to be complete. Others
+        (older local servers often send partial tool-call deltas) stay
+        non-streaming (0.1.49 S7)."""
+        base = self.base_url.rstrip("/")
+        return (base in {"https://api.deepseek.com", "https://api.deepseek.com/v1", "https://api.openai.com/v1"}
+                or "openrouter.ai" in base)
+
+    def supports_native_trajectory(self) -> bool:
+        # The OpenAI chat-completions tool protocol is the compatible baseline.
+        return True
+
+    def build_trajectory_messages(self, system: Any, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Neutral trajectory (arslan/llm/trajectory.py) -> native wire messages.
+
+        assistant: tool_calls with the server's exact argument text, plus the
+        continuation fields it sent (reasoning_content ...) only when they came
+        from this endpoint+model. tool: role "tool" bound by tool_call_id. A
+        host-run result was never requested by the model, so it is not dressed
+        up as a model call (no fabricated assistant turn): it is user context.
+        Local bookkeeping keys ("_"-prefixed) never leave this function."""
+        out: list[dict[str, Any]] = [{"role": "system", "content": system}]
+        endpoint = self.endpoint_fingerprint()
+        for m in messages:
+            role = m.get("role")
+            if role == "assistant":
+                msg: dict[str, Any] = {"role": "assistant", "content": m.get("content") or ""}
+                calls = m.get("tool_calls") or []
+                if calls:
+                    msg["tool_calls"] = [{"id": c["id"], "type": "function",
+                                          "function": {"name": c["name"], "arguments": c["arguments_raw"]}}
+                                         for c in calls]
+                cont = m.get("_continuation") or {}
+                if cont.get("protocol") == "openai" and cont.get("endpoint") == endpoint:
+                    msg.update({k: v for k, v in (cont.get("fields") or {}).items()
+                                if k in self.CONTINUATION_FIELDS})
+                out.append(msg)
+            elif role == "tool" and m.get("_synthetic"):
+                out.append({"role": "user", "content":
+                            f"Automatic pre-search (not requested by you) — RESULT for {m['name']}:\n{m['content']}"})
+            elif role == "tool":
+                out.append({"role": "tool", "tool_call_id": m["tool_call_id"], "content": m["content"]})
+            else:
+                out.append({k: v for k, v in m.items() if not k.startswith("_")})
+        return out
 
     # ------------------------------------------------------------------
     # BaseLLMProvider interface
@@ -70,6 +138,7 @@ class OpenAIProvider(BaseLLMProvider):
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None,
         temperature: float,
+        tool_choice: str | None = None,
     ) -> dict[str, Any]:
         """The ONE place this provider's body is built. chat() and chat_stream()
         both go through here so an image can never survive one path and be lost
@@ -84,6 +153,8 @@ class OpenAIProvider(BaseLLMProvider):
         }
         if tools:
             payload["tools"] = tools
+            if tool_choice:
+                payload["tool_choice"] = tool_choice
         # Keep the configured model/endpoint. Only this task-local, tool-free
         # critique changes shape: thinking explicitly OFF on official DeepSeek
         # (the only endpoint where that switch is known), deterministic, short.
@@ -111,9 +182,19 @@ class OpenAIProvider(BaseLLMProvider):
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
         temperature: float = 0.7,
+        tool_choice: str | None = None,
+        max_tokens: int | None = None,
+        stream: bool = False,
     ) -> LLMResponse:
-        """POST to {base_url}/chat/completions and return a normalised LLMResponse."""
-        payload = self._payload(messages, tools, temperature)
+        """POST to {base_url}/chat/completions and return a normalised LLMResponse.
+
+        stream=True (native trajectory on streams_tool_calls() endpoints) reads
+        the reply as SSE under an idle watchdog and assembles it; the caller
+        still gets one complete response. A server that answers with plain JSON
+        anyway is parsed as before."""
+        payload = self._payload(messages, tools, temperature, tool_choice)
+        if max_tokens:
+            payload["max_tokens"] = max_tokens
         from arslan.execution_budget import model_request
         payload["max_tokens"] = model_request(payload["max_tokens"])
         from arslan.execution_checkpoint import save
@@ -124,12 +205,16 @@ class OpenAIProvider(BaseLLMProvider):
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
 
-        async with httpx.AsyncClient(trust_env=not loopback_endpoint(self.base_url), follow_redirects=False) as client:
+        if stream:
+            return await self._chat_streamed(payload, headers, evidence)
+        async with self._client() as client:
             response = await client.post(
                 f"{self.base_url}/chat/completions",
                 json=payload,
                 headers=headers,
-                timeout=60.0,
+                # A thinking model may legitimately take minutes before the
+                # first byte of a non-streamed reply (0.1.49: larger budgets).
+                timeout=httpx.Timeout(300.0, connect=15.0),
             )
             try:
                 response.raise_for_status()
@@ -142,6 +227,30 @@ class OpenAIProvider(BaseLLMProvider):
             await request_evidence.acknowledge(evidence)
             data = response.json()
 
+        return self._parse_response(data)
+
+    async def _chat_streamed(self, payload: dict[str, Any], headers: dict[str, str], evidence) -> LLMResponse:
+        from arslan.llm import stream_assembly
+        body = {**payload, "stream": True, "stream_options": {"include_usage": True}}
+        async with self._client() as client:
+            # The idle watchdog governs reads; httpx's own read timeout only
+            # backs it up (keep-alive comments keep the socket busy anyway).
+            async with client.stream("POST", f"{self.base_url}/chat/completions", json=body, headers=headers,
+                                     timeout=httpx.Timeout(connect=15.0, read=stream_assembly.IDLE_S * 2,
+                                                           write=60.0, pool=15.0)) as response:
+                if response.status_code >= 400:
+                    await response.aread()
+                try:
+                    response.raise_for_status()
+                except httpx.HTTPStatusError as _exc:
+                    raise httpx.HTTPStatusError(
+                        provider_errors.with_body(_exc),
+                        request=_exc.request, response=_exc.response) from None
+                await request_evidence.acknowledge(evidence)
+                if "text/event-stream" not in response.headers.get("content-type", ""):
+                    await response.aread()
+                    return self._parse_response(response.json())
+                data = await stream_assembly.assemble(response)
         return self._parse_response(data)
 
     async def chat_stream(
@@ -211,7 +320,7 @@ class OpenAIProvider(BaseLLMProvider):
         from arslan.execution_checkpoint import save
         await save("before_model")
         evidence = await request_evidence.begin(payload)
-        async with httpx.AsyncClient(trust_env=not loopback_endpoint(self.base_url), follow_redirects=False) as client:
+        async with self._client() as client:
             async with client.stream(
                 "POST",
                 f"{self.base_url}/chat/completions",
@@ -273,6 +382,10 @@ class OpenAIProvider(BaseLLMProvider):
         for tc in raw_tool_calls:
             function = tc.get("function", {})
             arguments = function.get("arguments", "{}")
+            # The server's exact text: echoed back unchanged in native history,
+            # and the only evidence of what a truncated call actually contained.
+            arguments_raw = (arguments if isinstance(arguments, str)
+                             else json.dumps(arguments, ensure_ascii=False))
             # arguments may be a JSON string — try to parse it
             if isinstance(arguments, str):
                 try:
@@ -287,14 +400,21 @@ class OpenAIProvider(BaseLLMProvider):
                         "name": function.get("name", ""),
                         "arguments": arguments,
                     },
+                    "arguments_raw": arguments_raw,
                 }
             )
 
         usage: dict[str, Any] = data.get("usage", {})
+        fields = {k: message[k] for k in self.CONTINUATION_FIELDS
+                  if message.get(k) is not None}
+        finish = choice.get("finish_reason")
 
         return LLMResponse(
             role=message.get("role", "assistant"),
             content=content,
             tool_calls=tool_calls,
             usage=usage,
+            finish_reason=str(finish).lower() if finish else None,
+            continuation=({"protocol": "openai", "endpoint": self.endpoint_fingerprint(),
+                           "fields": fields} if fields else None),
         )

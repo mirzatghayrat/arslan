@@ -14,11 +14,14 @@ _detail: ContextVar[dict[tuple[str | None, str | None], dict] | None] = ContextV
 )
 
 
-def report(tokens: int) -> None:
-    """Add a token count to the active bucket (no-op when none is active)."""
+def report(tokens: int, *, charged: int | None = None) -> None:
+    """Add a token count to the active bucket (no-op when none is active).
+
+    `charged` is what the execution budget is debited (0.1.49 S5: cached input
+    weighted, arslan/llm/usage_weight.py); the bucket keeps the raw count."""
     bucket = _sink.get()
     from arslan.execution_budget import charge_tokens
-    charge_tokens(tokens)
+    charge_tokens(tokens if charged is None else charged)
     if bucket is not None:
         bucket.append(int(tokens))
 

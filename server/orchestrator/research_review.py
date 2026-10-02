@@ -39,16 +39,24 @@ def compact_saved_context(convo, source_feedback, draft):
             metadata = {key: result[key] for key in ("url", "source", "returned_chars", "total_chars")
                         if key in result}
             metadata["body_compacted_after_save"] = True
-            convo[index] = {**message, "content": "PREVIOUS WEB READ RECEIPT:\n" +
+            # A tool record keeps its call binding; the receipt replaces the whole
+            # old-format turn (header included), hence _legacy_raw.
+            extra = {"_legacy_raw": True} if message.get("role") == "tool" else {}
+            convo[index] = {**message, **extra, "content": "PREVIOUS WEB READ RECEIPT:\n" +
                 wrap_external(json.dumps(metadata, ensure_ascii=False)) +
                 "\nThe body was read earlier and remains in the host trace, but is no longer in this "
                 "model context. Reopen the source if needed for new claims. This receipt is not factual verification."}
             changed = True
             break
     if changed:
-        convo[-1] = {**convo[-1], "content": convo[-1]["content"] +
-            "\nDRAFT SUBMITTED TO THE SUCCESSFUL WRITE (not a readback or factual certificate):\n" +
-            wrap_external(draft) + "\nUse read_file to verify stored bytes when needed."}
+        note = ("\nDRAFT SUBMITTED TO THE SUCCESSFUL WRITE (not a readback or factual certificate):\n" +
+                wrap_external(draft) + "\nUse read_file to verify stored bytes when needed.")
+        if convo[-1].get("role") == "tool":
+            # Old format appended this after the result trailer; a native call
+            # already carries the draft in its arguments (trajectory._legacy_result).
+            convo[-1] = {**convo[-1], "_legacy_suffix": convo[-1].get("_legacy_suffix", "") + note}
+        else:
+            convo[-1] = {**convo[-1], "content": convo[-1]["content"] + note}
     return changed
 
 

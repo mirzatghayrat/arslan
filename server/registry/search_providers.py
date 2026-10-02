@@ -30,6 +30,13 @@ from server.registry import net_pin
 _TIMEOUT = 15.0
 
 
+class SearchBlocked(RuntimeError):
+    """The provider refused the query (anti-bot challenge, block page). Distinct
+    from "no results": the model must be told search was blocked, not that the
+    web had nothing (0.1.49: DuckDuckGo's HTML endpoint began answering 202 with
+    a human-verification page that parsed as zero results)."""
+
+
 class SearchProvider(ABC):
     name: str = ""
     #: Does this provider need an API key? Defaults to True so a provider that forgets
@@ -124,7 +131,19 @@ class DuckDuckGoHtmlProvider(SearchProvider):
         resp = await net_pin.pinned_request("POST", self._URL, data={"q": query},
                                             headers={"User-Agent": self._UA})
         resp.raise_for_status()
+        if self.is_challenge(resp.status_code, resp.text):
+            raise SearchBlocked("DuckDuckGo answered with a human-verification challenge; "
+                                "no results were retrieved")
         return self.parse(resp.text, num_results)
+
+    _CHALLENGE = re.compile(r"bots use DuckDuckGo too|anomaly-modal|complete the following challenge"
+                            r"|confirm this search was made by a human", re.I)
+
+    @classmethod
+    def is_challenge(cls, status: int, body: str) -> bool:
+        """A challenge page has no result markup and says so; 202 is how the
+        endpoint answers when it withholds results."""
+        return (status == 202 or bool(cls._CHALLENGE.search(body or ""))) and not cls._RESULT.search(body or "")
 
     @classmethod
     def parse(cls, body: str, num_results: int = 5) -> list[dict]:
@@ -155,6 +174,94 @@ class DuckDuckGoHtmlProvider(SearchProvider):
                 "snippet": cls._text(snippets[i]) if i < len(snippets) else "",
             })
         return out
+
+
+class DeepSeekNativeProvider(SearchProvider):
+    """DeepSeek's own server-side web search, with the user's DeepSeek chat key.
+
+    The same design mainstream agents ship: Claude Code and Codex search through
+    their model provider, and DeepSeek's own harness mounts exactly this call
+    (web_search_20250305 on the Anthropic-compatible Messages endpoint). No extra
+    sign-up, and the query goes to the party the conversation already goes to.
+    Cost: one short model turn per search (deepseek-v4-flash), charged to the
+    same account and counted against the work budget like any model call.
+
+    Results come only from the structured web_search_tool_result blocks — never
+    from the model's prose. A response without such a block fails loudly.
+    """
+
+    name = "deepseek"
+    requires_key = False          # it uses the chat key, which the caller supplies
+    MODEL = "deepseek-v4-flash"
+    MAX_USES = 3
+    MAX_TOKENS = 2048
+
+    def __init__(self, base_url: str = "", api_key: str = "", **_: object) -> None:
+        self.base_url = (base_url or "").rstrip("/")
+        self._api_key = api_key
+
+    async def search(self, query: str, num_results: int = 5) -> list[dict]:
+        # The request itself is a model call on the chat endpoint, so it lives in
+        # the model layer (arslan/llm/deepseek_search.py), not on net_pin.
+        from arslan.execution_budget import model_request
+        from arslan.llm.deepseek_search import native_search
+        payload = await native_search(self.base_url, self._api_key, query, model=self.MODEL,
+                                      max_uses=self.MAX_USES, max_tokens=model_request(self.MAX_TOKENS))
+        _account_usage(payload.get("usage") or {})
+        return self.parse(payload, num_results)
+
+    @staticmethod
+    def parse(payload: dict, num_results: int = 5) -> list[dict]:
+        blocks = payload.get("content") or []
+        found = [b for b in blocks if isinstance(b, dict) and b.get("type") == "web_search_tool_result"]
+        if not found:
+            raise ValueError("DeepSeek returned no web_search_tool_result block")
+        snippets: dict[str, list[str]] = {}
+        for b in blocks:
+            for c in (b.get("citations") or []) if isinstance(b, dict) else []:
+                if c.get("url") and c.get("cited_text"):
+                    snippets.setdefault(c["url"], []).append(c["cited_text"])
+        out, seen = [], set()
+        for block in found:
+            items = block.get("content")
+            if isinstance(items, dict):       # an error object, e.g. {"type": "web_search_tool_result_error"}
+                raise ValueError(f"DeepSeek web search failed: {items.get('error_code') or items.get('type')}")
+            for item in items or []:
+                url = item.get("url") or ""
+                if item.get("type") != "web_search_result" or not url.startswith(("http://", "https://")) \
+                        or url in seen:
+                    continue
+                seen.add(url)
+                row = {"title": item.get("title") or "", "url": url,
+                       "snippet": " … ".join(snippets.get(url, []))[:600]}
+                if item.get("page_age"):
+                    row["published"] = item["page_age"]
+                out.append(row)
+        return out[:num_results]
+
+
+def _account_usage(usage: dict) -> None:
+    """A native search is a model call: report it like one (budget + usage)."""
+    from arslan.llm import usage_sink
+    from arslan.llm.usage_weight import charged_tokens
+    tin, tout = usage.get("input_tokens"), usage.get("output_tokens")
+    if isinstance(tin, int) and isinstance(tout, int):
+        usage_sink.report(tin + tout, charged=charged_tokens(usage))
+        usage_sink.report_detail(tokens_in=tin, tokens_out=tout,
+                                 model=DeepSeekNativeProvider.MODEL, provider="deepseek")
+
+
+def deepseek_native_base(chat_base_url: str, model: str) -> str | None:
+    """The Anthropic-compatible base for DeepSeek native search, derived from the
+    chat endpoint the user configured, when that chat model is a DeepSeek
+    official model; otherwise None (the provider does not apply)."""
+    from arslan.llm.output_budget import DEEPSEEK_MODELS
+    if model not in DEEPSEEK_MODELS or not chat_base_url:
+        return None
+    base = chat_base_url.rstrip("/")
+    if base.endswith("/v1"):
+        base = base[:-3]
+    return f"{base}/anthropic/v1"
 
 
 class SearXNGProvider(SearchProvider):
@@ -243,5 +350,6 @@ def list_providers() -> list[str]:
 
 # net_pin carries every outbound request in this file. It was imported as a placeholder
 # for a while, which meant the module said it was hardened and the code was not.
-__all__ = ["SearchProvider", "TavilyProvider", "DuckDuckGoHtmlProvider",
-           "SearXNGProvider", "get_provider", "list_providers", "net_pin"]
+__all__ = ["SearchProvider", "TavilyProvider", "DuckDuckGoHtmlProvider", "DeepSeekNativeProvider",
+           "SearXNGProvider", "SearchBlocked", "deepseek_native_base", "get_provider",
+           "list_providers", "net_pin"]

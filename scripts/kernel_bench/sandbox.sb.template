@@ -1,0 +1,15 @@
+(version 1)
+(allow default)
+(deny file-write*)
+(allow file-write*
+  (subpath "{ROOT}")
+  (subpath "/private/var/folders")
+  (subpath "/dev"))
+(deny file-read*
+  (literal "{HOME}/.hermes/config.yaml")
+  (literal "{HOME}/.hermes/.env")
+  (literal "{HOME}/.hermes/auth.json")
+  (subpath "{HOME}/.openclaw")
+  (subpath "{HOME}/.ssh")
+  (subpath "{HOME}/Library/Keychains")
+  (subpath "{HOME}/Library/Application Support/Arslan"))

@@ -82,10 +82,12 @@ async def test_many_tools_in_one_model_reply_cannot_bypass_shared_limit(monkeypa
     monkeypatch.setattr(tool_loop, "_get_adapter", Adapter)
     monkeypatch.setitem(executors.EXECUTORS, "run_python", Executor())
     with budget.scope(budget.Budget(budget.Limits(tool_calls=2))):
-        with pytest.raises(budget.BudgetExceeded, match="tool_calls"):
-            await tool_loop.run_native(system="test", user_content="test", history=[],
-                                       emit=lambda e: None, on_chunk=lambda c: None, resolve_tools=resolve)
+        # 0.1.49 completion first: the third call is recorded as not run (no
+        # bypass) and the turn ends with a delivered answer, not an exception.
+        result = await tool_loop.run_native(system="test", user_content="test", history=[],
+                                            emit=lambda e: None, on_chunk=lambda c: None, resolve_tools=resolve)
     assert len(calls) == 2
+    assert result["tool_trace"][2]["result"]["code"] == "task_budget_exhausted"
 
 
 def test_token_threshold_is_honestly_post_response():

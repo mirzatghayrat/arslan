@@ -1,6 +1,7 @@
 """Base abstract provider interface for all LLM backends."""
 from __future__ import annotations
 
+import hashlib
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from typing import Any
@@ -23,6 +24,17 @@ class BaseLLMProvider(ABC):
         self.model = model
         self.api_key = api_key
         self.base_url = base_url
+
+    def supports_native_trajectory(self) -> bool:
+        """Whether build_trajectory_messages renders the neutral in-turn
+        trajectory natively. Others get trajectory.to_legacy (adapter)."""
+        return False
+
+    def endpoint_fingerprint(self) -> str:
+        """Identity of endpoint+model for opaque continuation state: state from
+        one endpoint/model is never replayed to another."""
+        raw = f"{(self.base_url or '').rstrip('/')}\n{self.model}"
+        return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
     def supports_bounded_critique(self) -> bool:
         """Whether a tool-free critique request can be sent with hidden reasoning

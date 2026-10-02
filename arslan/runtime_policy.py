@@ -51,7 +51,7 @@ def tool_failure(result: dict) -> FailureKind | None:
         return FailureKind.UNCERTAIN
     if code in {"credentials_not_tool_data", "permission_denied", "grant_revoked", "tool_unavailable"}:
         return FailureKind.DENIED
-    if code in {"invalid_arguments", "missing_input", "connection_required"}:
+    if code in {"invalid_arguments", "invalid_arguments_json", "missing_input", "connection_required"}:
         return FailureKind.INPUT_REQUIRED
     if code in {"timeout", "rate_limit", "temporarily_unavailable"}:
         return FailureKind.RETRYABLE
@@ -110,7 +110,7 @@ class ProgressPolicy:
 
 
 def bounded_history(history: list[dict], *, max_chars: int = 64_000,
-                    preserve_tail: int = 0) -> tuple[list[dict], bool]:
+                    preserve_tail: int = 0, size_of=None) -> tuple[list[dict], bool]:
     """Drop only old complete turns, preserving native provider-content pairs.
 
     This is reference retention, not a semantic summarizer. Durable task progress
@@ -119,7 +119,12 @@ def bounded_history(history: list[dict], *, max_chars: int = 64_000,
     A caller may group a bounded batch of newly returned tool messages so each
     reaches the model once. This is not permanent pinning; the next call must
     explicitly request protection again. Native provider pairs remain intact.
+
+    0.1.49: a neutral tool-call group (assistant tool_calls + its tool records,
+    arslan/llm/trajectory.py) is one unit too; `size_of` measures a group as it
+    will be sent (the caller's rendering), defaulting to its JSON length.
     """
+    from arslan.llm import trajectory
     if type(preserve_tail) is not int or not 0 <= preserve_tail <= len(history):
         raise ValueError("invalid history tail")
     groups: list[list[dict]] = []
@@ -133,6 +138,10 @@ def bounded_history(history: list[dict], *, max_chars: int = 64_000,
         if is_provider and index + 1 < len(history):
             groups.append(history[index:index + 2])
             index += 2
+        elif trajectory.is_call_group_start(item):
+            group = trajectory.groups(history[index:])[0]
+            groups.append(group)
+            index += len(group)
         else:
             groups.append([item])
             index += 1
@@ -143,12 +152,23 @@ def bounded_history(history: list[dict], *, max_chars: int = 64_000,
             tail.append(group)
             count += len(group)
         groups.append([item for group in reversed(tail) for item in group])
-    total, kept = 0, []
+
+    def measure(group):
+        return size_of(group) if size_of else len(json.dumps(group, ensure_ascii=False, default=str))
+
+    total, kept, shrunk = 0, [], False
     for group in reversed(groups):
-        size = len(json.dumps(group, ensure_ascii=False, default=str))
+        if not kept and not preserve_tail:
+            # The newest unit is always kept. An unprotected neutral call group
+            # that alone exceeds the bound sheds its oldest results' bodies
+            # (explicit notice, pairing intact). A protected tail is delivered whole.
+            fitted = trajectory.shrink_group(group, max_chars, measure)
+            shrunk = fitted is not group
+            group = fitted
+        size = measure(group)
         if kept and total + size > max_chars:
             break
         kept.append(group)
         total += size
     result = [item for group in reversed(kept) for item in group]
-    return result, len(result) != len(history)
+    return result, shrunk or len(result) != len(history)

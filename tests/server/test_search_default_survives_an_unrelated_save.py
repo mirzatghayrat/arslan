@@ -119,8 +119,13 @@ async def test_a_fresh_install_that_changes_the_language_still_searches(client):
     finally:
         executors._read_search_config = original
 
-    assert type(after.provider).__name__ == "DuckDuckGoHtmlProvider", (
+    # 0.1.49: the untouched default resolves to the AUTOMATIC order (the chat
+    # provider's own search, then the keyless scrape), never to a provider that
+    # needs a key nobody entered.
+    assert after.provider is executors.AUTO_SEARCH and after.reason is None, (
         f"after a fresh install echoed back {shown!r}, search resolved to "
         f"{type(after.provider).__name__ if after.provider else None} "
         f"(reason={after.reason!r}) — keyless search is broken by an unrelated save"
     )
+    providers = await executors._auto_search_providers()
+    assert type(providers[-1]).__name__ == "DuckDuckGoHtmlProvider"   # keyless last resort

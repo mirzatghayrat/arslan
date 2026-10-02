@@ -105,7 +105,7 @@ async def error_frame(exc: Exception, *, code="LLM_ERROR", had_images=False) -> 
     from server.services import provider_error_messages as provider, runtime_messages
     from server.orchestrator import vision_errors
 
-    raw = str(exc)
+    raw = str(exc) or type(exc).__name__   # a bare TimeoutError() has no text
     messages = None
     if isinstance(exc, provider.ModelNotConfiguredError):
         messages = {locale: provider.render("not_configured", locale) for locale in provider.MESSAGES}
@@ -115,6 +115,12 @@ async def error_frame(exc: Exception, *, code="LLM_ERROR", had_images=False) -> 
         category = classify(raw)
         if category:
             messages = {locale: provider.render(category, locale) for locale in provider.MESSAGES}
+    attempts = getattr(exc, "attempts", 1)
+    if messages and isinstance(attempts, int) and attempts > 1:
+        # The friendly sentence must not hide that Arslan already retried.
+        messages = {locale: text + " " + runtime_messages.render(
+            "model_retried", locale, attempts=attempts, seconds=round(getattr(exc, "waited_s", 0) or 0))
+            for locale, text in messages.items()}
     frame = {"type": "error", "code": code, "message": raw, "recoverable": True}
     if messages:
         frame["message"] = messages[await runtime_messages.selected_locale()]

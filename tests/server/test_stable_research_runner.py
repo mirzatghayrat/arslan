@@ -60,7 +60,8 @@ async def test_research_runner_offline(execution_db, monkeypatch, tmp_path, case
             tool_calls=[{"id": str(index) + key, "type": "function", "function": {"name": key, "arguments": args}}
                         for index, (key, args) in enumerate(calls)])
 
-    adapter = LLMAdapter("openai", "deepseek-v4-flash", base_url="https://api.deepseek.com", report_provider="deepseek")
+    adapter = LLMAdapter("openai", "deepseek-v4-flash", base_url="https://api.deepseek.com", report_provider="deepseek",
+                         max_tokens=8192)  # mirrors primary_adapter's pinned pilot budget
     replies = [reply([("web_extract", {"url": url, "max_chars": 40000}) for url in urls]),
         reply([("write_file", {"path": "comparison.md", "content": "# Synthetic comparison\n" + "\n".join(urls)})]),
         reply([("read_file", {"path": "comparison.md"})]),

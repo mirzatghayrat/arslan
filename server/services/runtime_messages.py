@@ -9,6 +9,7 @@ from server.locale_codes import normalize
 
 MESSAGES = {
     "en": {
+        "model_retried": "(Arslan tried {attempts} times over {seconds}s before stopping.)",
         "expert_unavailable": "This expert is no longer available. Choose another expert in Capabilities.",
         "image_refused": "The model you configured could not read the image. It may not support image input. Choose a model with image support, or describe the picture in words.",
         "proposal_handled": "This proposal has already been handled, or there is no pending proposal. Tell me what you would like to do next.",
@@ -32,6 +33,7 @@ MESSAGES = {
         "budget_artifact_bytes": "file storage",
     },
     "zh": {
+        "model_retried": "(Arslan 已尝试 {attempts} 次、历时 {seconds} 秒后停止。)",
         "expert_unavailable": "这个专家已不可用。请在能力库中选择其他专家。",
         "image_refused": "当前模型无法读取这张图片，可能不支持图片输入。请选择支持图片的模型，或用文字描述图片。",
         "proposal_handled": "这个提案已经处理过了，或目前没有待处理的提案。直接告诉我接下来要做什么就好。",
@@ -55,6 +57,7 @@ MESSAGES = {
         "budget_artifact_bytes": "文件存储",
     },
     "ja": {
+        "model_retried": "(Arslan は {seconds} 秒間に {attempts} 回試してから停止しました。)",
         "expert_unavailable": "この専門家は利用できなくなりました。「機能」から別の専門家を選んでください。",
         "image_refused": "設定したモデルは画像を読み取れませんでした。画像入力に対応していない可能性があります。画像対応モデルを選ぶか、画像の内容を文章で説明してください。",
         "proposal_handled": "この提案はすでに処理済みか、現在保留中の提案はありません。次に行いたいことを教えてください。",
@@ -78,6 +81,7 @@ MESSAGES = {
         "budget_artifact_bytes": "ファイル保存容量",
     },
     "es": {
+        "model_retried": "(Arslan lo intentó {attempts} veces durante {seconds} s antes de detenerse.)",
         "expert_unavailable": "Este experto ya no está disponible. Elige otro en Capacidades.",
         "image_refused": "El modelo configurado no pudo leer la imagen. Es posible que no admita imágenes. Elige un modelo compatible o describe la imagen con palabras.",
         "proposal_handled": "Esta propuesta ya se ha gestionado o no hay ninguna pendiente. Dime qué quieres hacer a continuación.",
@@ -101,6 +105,7 @@ MESSAGES = {
         "budget_artifact_bytes": "almacenamiento de archivos",
     },
     "de": {
+        "model_retried": "(Arslan hat es {attempts}-mal über {seconds} s versucht und dann aufgehört.)",
         "expert_unavailable": "Dieser Experte ist nicht mehr verfügbar. Wähle unter Fähigkeiten einen anderen Experten.",
         "image_refused": "Das konfigurierte Modell konnte das Bild nicht lesen. Möglicherweise unterstützt es keine Bildeingaben. Wähle ein Modell mit Bildunterstützung oder beschreibe das Bild mit Worten.",
         "proposal_handled": "Dieser Vorschlag wurde bereits bearbeitet, oder es gibt keinen ausstehenden Vorschlag. Sag mir, was du als Nächstes tun möchtest.",
@@ -124,6 +129,7 @@ MESSAGES = {
         "budget_artifact_bytes": "Dateispeicher",
     },
     "fr": {
+        "model_retried": "(Arslan a essayé {attempts} fois pendant {seconds} s avant de s'arrêter.)",
         "expert_unavailable": "Cet expert n’est plus disponible. Choisis-en un autre dans Capacités.",
         "image_refused": "Le modèle configuré n’a pas pu lire l’image. Il ne prend peut-être pas en charge les images. Choisis un modèle compatible ou décris l’image avec des mots.",
         "proposal_handled": "Cette proposition a déjà été traitée, ou aucune proposition n’est en attente. Dis-moi ce que tu souhaites faire ensuite.",

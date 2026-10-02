@@ -198,7 +198,10 @@ def test_critique_payloads_disable_thinking_and_stay_short():
     deepseek = OpenAIProvider("deepseek-v4-flash", base_url="https://api.deepseek.com")
     other = OpenAIProvider("some-reasoner", base_url="https://example.org")
     normal = deepseek._payload([], None, 0.7)
-    assert "thinking" not in normal and normal["temperature"] == 0.7 and normal["max_tokens"] == 8192
+    assert "thinking" not in normal and normal["temperature"] == 0.7
+    # 0.1.49 S5: official DeepSeek declares 32768 (thinking spends the same cap);
+    # the critique below must still be short and thinking-free.
+    assert normal["max_tokens"] == 32_768
     with critique_request():
         critique = deepseek._payload([], None, 0.7)
         assert critique["thinking"] == {"type": "disabled"} and "reasoning_effort" not in critique

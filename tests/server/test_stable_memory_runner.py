@@ -27,7 +27,8 @@ async def test_exact_memory_runner_and_context_boundary(execution_db, monkeypatc
         "model": "deepseek-v4-flash", "endpoint": "https://api.deepseek.com",
         "source": "https://api-docs.deepseek.com/quick_start/pricing/",
         "input_usd_per_million": "0.30", "output_usd_per_million": "1.20"}))
-    adapter = LLMAdapter("openai", "deepseek-v4-flash", base_url="https://api.deepseek.com", report_provider="deepseek")
+    adapter = LLMAdapter("openai", "deepseek-v4-flash", base_url="https://api.deepseek.com", report_provider="deepseek",
+                         max_tokens=8192)  # mirrors primary_adapter's pinned pilot budget
     adapter.chat = AsyncMock(return_value=SimpleNamespace(content="Synthetic smoke answer, not model-quality evidence.",
         tool_calls=[], usage={"prompt_tokens": 100, "completion_tokens": 20}))
     monkeypatch.setattr(runner, "primary_adapter", lambda *args: adapter)

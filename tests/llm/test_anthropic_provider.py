@@ -187,7 +187,7 @@ async def test_tools_are_serialized_and_the_cached_system_prefix_survives():
     It used to assert tools were NOT serialized, and its stated reason was that
     "the OpenAI-protocol convo is incompatible with Anthropic's strict
     tool_use/tool_result block pairing". That reason was wrong: tool RESULTS go
-    back as neutral text (tool_loop._record_tool_result), so no tool_use block
+    back as neutral text (trajectory.to_legacy), so no tool_use block
     ever re-enters the wire history and the pairing constraint never activates.
     The belief, not the API, was what kept tools off this wire.
 

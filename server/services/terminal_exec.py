@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import os
 import signal
+import tempfile
 from pathlib import Path
 
 from server.mcp.spawn_env import child_environment, merged_path
@@ -43,8 +44,13 @@ def _shell() -> str:
 
 
 async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S) -> dict:
+    # zsh writes here-document temp files under $TMPPREFIX (default /tmp/zsh),
+    # ignoring TMPDIR: where /tmp is not writable every `python3 - <<'PY'` save
+    # failed (0.1.49 bench). Keep both inside the process temp dir.
+    tmp = tempfile.gettempdir()
     env = child_environment({}, {"PATH": merged_path(), "TERM": "dumb", "NO_COLOR": "1",
-                                 "HOMEBREW_NO_AUTO_UPDATE": "1"})
+                                 "HOMEBREW_NO_AUTO_UPDATE": "1", "TMPDIR": tmp,
+                                 "TMPPREFIX": os.path.join(tmp, "zsh")})
     proc = await asyncio.create_subprocess_exec(
         _shell(), "-c", command, cwd=str(cwd), env=env,
         stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
@@ -59,10 +65,21 @@ async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S) ->
         except ProcessLookupError:
             pass
         out, err = await proc.communicate()
-    stdout, cut_out = clip(out.decode("utf-8", errors="replace"))
-    stderr, cut_err = clip(err.decode("utf-8", errors="replace"))
+    full_out = out.decode("utf-8", errors="replace")
+    full_err = err.decode("utf-8", errors="replace")
+    stdout, cut_out = clip(full_out)
+    stderr, cut_err = clip(full_err)
     result = {"ok": proc.returncode == 0 and not timed_out, "exit_code": proc.returncode,
               "stdout": stdout, "stderr": stderr, "cwd": str(cwd)}
+    if cut_out or cut_err:
+        # 0.1.49 S9: the middle is not gone, it is on disk.
+        from server.services import tool_outputs
+        try:
+            saved = tool_outputs.save(f"$ {command}\n--- stdout ---\n{full_out}\n--- stderr ---\n{full_err}",
+                                      label="command")
+            result["full_output_path"] = str(saved)
+        except OSError:
+            pass
     if timed_out:
         result["error"] = f"stopped after {timeout_s} s"
     elif proc.returncode != 0:

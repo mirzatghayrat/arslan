@@ -36,11 +36,23 @@ async def test_vision_catalog_requires_actual_image_input(monkeypatch):
     assert visual["message_i18n"] == {lang: runtime_messages.render("image_refused", lang) for lang in provider.MESSAGES}
 
 
-@pytest.mark.parametrize("raw", ["Novel provider diagnostic", provider.render("not_configured", "zh"), ""])
+@pytest.mark.parametrize("raw", ["Novel provider diagnostic", provider.render("not_configured", "zh")])
 async def test_unknown_prose_is_not_reinterpreted_or_translated(monkeypatch, raw):
     lookup = AsyncMock(side_effect=AssertionError("Unknown text needs no locale lookup"))
     monkeypatch.setattr(runtime_messages, "selected_locale", lookup)
     assert await llm_errors.error_frame(ValueError(raw)) == {
         "type": "error", "code": "LLM_ERROR", "message": raw, "recoverable": True,
+    }
+    lookup.assert_not_called()
+
+
+async def test_an_error_without_text_is_named_not_blank(monkeypatch):
+    """0.1.49: a bare exception (TimeoutError() from a timeout) has no text; the
+    kernel sample showed users an empty LLM_ERROR. Name the exception instead —
+    still no translation, no locale lookup, no reinterpretation."""
+    lookup = AsyncMock(side_effect=AssertionError("Unknown text needs no locale lookup"))
+    monkeypatch.setattr(runtime_messages, "selected_locale", lookup)
+    assert await llm_errors.error_frame(ValueError("")) == {
+        "type": "error", "code": "LLM_ERROR", "message": "ValueError", "recoverable": True,
     }
     lookup.assert_not_called()
