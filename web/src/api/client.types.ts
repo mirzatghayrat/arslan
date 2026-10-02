@@ -340,6 +340,7 @@ export interface AppSettings {
   desktop_notifications_enabled?: boolean;
   island_enabled?: boolean;
   terminal_sandbox_enabled?: boolean;
+  memory_in_conversations?: boolean;
   /** Comma-separated BCP-47 tags for image text recognition. Empty = follow
    *  the interface language plus English. */
   ocr_languages?: string;

@@ -12,7 +12,8 @@ function ReviewProposal({ proposal, scopeLabel, onClose, onSaved }: {
 }) {
   const { t } = useTranslation();
   const [ack, setAck] = useState(false);
-  const [cloud, setCloud] = useState(false);
+  // 0.1.52 (D1): a normal memory is usable with the chosen model by default.
+  const [cloud, setCloud] = useState((proposal.candidate?.sensitivity ?? proposal.entry.sensitivity) === "normal");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const sensitive = (proposal.candidate?.sensitivity ?? proposal.entry.sensitivity) !== "normal";
@@ -79,14 +80,17 @@ export default function MemoryList() {
   const [filter, setFilter] = useState("all");
   const [showPending, setShowPending] = useState(false);
   const [dialog, setDialog] = useState<Dialog | null>(null);
+  const [noticed, setNoticed] = useState(0);
   const generation = useRef(0);
   const offsets = useRef({ entries: 0, proposals: 0 });
   const reload = useCallback(async () => {
     const request = ++generation.current;
     setLoading(true); setError(null);
     try {
-      const [memories, projectRows, pending] = await Promise.all([companionApi.memories(), companionApi.projects(), companionApi.proposals()]);
+      const [memories, projectRows, pending, earlier] = await Promise.all([companionApi.memories(), companionApi.projects(),
+        companionApi.proposals(), companionApi.noticedEarlier().catch(() => ({ count: 0 }))]);
       if (request === generation.current) {
+        setNoticed(earlier.count);
         setEntries(memories); setProjects(projectRows); setProposals(pending);
         setMoreEntries(memories.length === 100); setMoreProposals(pending.length === 100);
         offsets.current = { entries: memories.length, proposals: pending.length };
@@ -145,6 +149,16 @@ export default function MemoryList() {
         <button className={buttonClass} aria-pressed={showPending} onClick={() => setShowPending(value => !value)}>{t("companion.pending")} <span className="rounded-full bg-primary/10 px-2 text-primary">{proposals.length}</span></button>
         <button className={buttonClass} aria-label={t("companion.refresh")} disabled={loading || busy} onClick={() => void reload()}><RefreshCw size={16} /></button>
       </div>
+      {noticed > 0 && <div data-testid="noticed-earlier" className="flex flex-wrap items-center gap-2 rounded-xl border border-primary/20 bg-primary/5 p-3 text-sm">
+        <span className="flex-1">{t("companion.noticedEarlier", { count: noticed })}</span>
+        <button className={primaryClass} disabled={busy} onClick={async () => {
+          setBusy(true);
+          try { await companionApi.acceptNoticedEarlier(); setNoticed(0); await reload(); }
+          catch { setError("brain.read_failed"); }
+          finally { setBusy(false); }
+        }}>{t("companion.useAll")}</button>
+        <button className={buttonClass} onClick={() => setShowPending(true)}>{t("companion.reviewEach")}</button>
+      </div>}
       {error && <p role="alert" className="rounded-lg border border-destructive/30 p-3 text-sm text-destructive">{t(error)}</p>}
       {loading && <p role="status" className="text-sm text-muted-foreground">{t("companion.loading")}</p>}
       {showPending && <div className="space-y-2 rounded-xl border border-primary/20 bg-primary/5 p-4">

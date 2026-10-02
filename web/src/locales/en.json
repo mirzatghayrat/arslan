@@ -494,6 +494,8 @@
     "sensitive": "Sensitive"
   },
   "settings": {
+    "labelMemoryInConversations": "Remember me and use it in conversations",
+    "memoryInConversationsDesc": "Arslan remembers what you tell it about yourself and how you work, and uses it with the model you chose, cloud models included. Sensitive things (health, money, where you live) still wait for your OK, and a conversation can turn memory off.",
     "labelTerminalSandbox": "Run commands in a sandbox",
     "terminalSandboxDesc": "Commands can read files and use the network but write only inside the working folder, temp and cache folders, and cannot read your SSH keys, keychain or Arslan's data. Running one outside the sandbox always takes your click.",
     "appIcon": "App icon",

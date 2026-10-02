@@ -41,7 +41,8 @@ describe("locale parity", () => {
 // 1541 → 1543 (0.1.50): +2 plan activity strings (activity.plan, activity.plan_done).
 // 1543 → 1545 (0.1.51): +2 Desktop settings strings for the notch island (settings.labelIsland, settings.islandDesc).
 // 1545 → 1553 (0.1.51 P3): +6 sandbox card strings (runcmd.sandbox*, runcmd.runOutside), +2 Advanced settings (settings.labelTerminalSandbox, settings.terminalSandboxDesc).
-  it("en locale has 1553 keys (baseline guard)", () => {
+// 1553 → 1555 (0.1.52 S1): +2 Memory settings strings (settings.labelMemoryInConversations, settings.memoryInConversationsDesc).
+  it("en locale has 1555 keys (baseline guard)", () => {
     // 1318 → 1335: the first-run wizard redesign — the four-beat "how it
     // works" tour (title + typed line + 4×title/body), the catalog capability
     // caption, the test-before-save states (test & save / testing / ok /
@@ -267,7 +268,7 @@ describe("locale parity", () => {
     // +6: bundled app icon choices and persistence feedback.
     // +1: externalLink.failed added by fe9c12b5 (native HTTPS refusal).
     // +1: chat.expert_involved (0.1.42 quiet "asked X to help" line replaces the roster notices).
-    expect(enKeys).toHaveLength(1553);
+    expect(enKeys).toHaveLength(1555);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

@@ -494,6 +494,8 @@
     "sensitive": "Sensible"
   },
   "settings": {
+    "labelMemoryInConversations": "Recordarme y usarlo en las conversaciones",
+    "memoryInConversationsDesc": "Arslan recuerda lo que le cuentas sobre ti y tu forma de trabajar, y lo usa con el modelo que elegiste, incluidos los de la nube. Lo sensible (salud, dinero, dónde vives) sigue esperando tu visto bueno, y cada conversación puede desactivar la memoria.",
     "labelTerminalSandbox": "Ejecutar los comandos en un entorno aislado",
     "terminalSandboxDesc": "Los comandos pueden leer archivos y usar la red, pero solo escriben en la carpeta de trabajo, las carpetas temporales y de caché, y no pueden leer tus claves SSH, el llavero ni los datos de Arslan. Ejecutar uno fuera del entorno aislado siempre requiere tu clic.",
     "appIcon": "Icono de la aplicación",

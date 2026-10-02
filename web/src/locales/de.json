@@ -494,6 +494,8 @@
     "sensitive": "Sensibel"
   },
   "settings": {
+    "labelMemoryInConversations": "Mich merken und in Unterhaltungen nutzen",
+    "memoryInConversationsDesc": "Arslan merkt sich, was du über dich und deine Arbeitsweise erzählst, und nutzt es mit dem gewählten Modell, auch in der Cloud. Sensibles (Gesundheit, Geld, Wohnort) wartet weiter auf dein OK, und jede Unterhaltung kann das Gedächtnis ausschalten.",
     "labelTerminalSandbox": "Befehle in einer Sandbox ausführen",
     "terminalSandboxDesc": "Befehle können Dateien lesen und das Netzwerk nutzen, schreiben aber nur in den Arbeitsordner, temporäre und Cache-Ordner und können deine SSH-Schlüssel, den Schlüsselbund und Arslans Daten nicht lesen. Einen Befehl außerhalb der Sandbox auszuführen braucht immer deinen Klick.",
     "appIcon": "App-Symbol",
