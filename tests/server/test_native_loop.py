@@ -106,7 +106,8 @@ async def test_budget_exhaustion_forces_text_answer(monkeypatch):
     assert r["final"] == "final from budget"
     # the forced step must be called with tools=None (model cannot call a tool → must answer)
     assert adapter.calls[-1]["tools"] is None
-    assert "Tool budget exhausted" in adapter.calls[-1]["system"]
+    assert "Tool budget exhausted" in adapter.calls[-1]["user"]      # 0.1.50: in <agent_status>
+    assert "Tool budget exhausted" not in adapter.calls[-1]["system"]
 
 
 @pytest.mark.asyncio

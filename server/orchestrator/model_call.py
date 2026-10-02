@@ -51,6 +51,7 @@ class TurnRecovery:
     output_raises: int = 0
     continuations: int = 0
     truncated_calls: int = 0
+    capability_bounced: bool = False   # 0.1.50: one capability-truth correction per turn
 
     @property
     def exhausted(self) -> bool:

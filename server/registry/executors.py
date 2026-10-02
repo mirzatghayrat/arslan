@@ -280,8 +280,11 @@ class WebExtractExecutor:
         # would then get the poisoned one. The fetch path resolves-and-pins each hop and
         # raises _BlockedHost, which is caught below and reported distinctly.
         # A page that won't fetch/parse must not send the model into a retry spiral on the same
-        # URL — steer it back to the web_search result snippets it already has (or to answering).
-        _STEER = " — do not retry this URL; use your web_search result snippets or answer with what you have"
+        # URL — steer it to other sources. 0.1.50: no longer "or answer with what you have",
+        # which the kernel bench showed being taken as permission to stop after 3 failures.
+        _STEER = (" — do not retry this URL; try another source from your web_search results (their "
+                  "snippets count too) or browser_open for script-rendered pages; answer with what you have "
+                  "only when sources are exhausted, and say what is missing")
         try:
             text = await net_pin._fetch_text(url)
         except _BlockedHost:
@@ -710,7 +713,8 @@ class RunCommandExecutor:
         if cwd is None:
             return {"ok": False, "error": "the chosen workspace folder no longer exists"}
         result = await terminal_exec.run(command, cwd=cwd,
-                                         timeout_s=terminal_exec.timeout_of(args.get("timeout_s")))
+                                         timeout_s=terminal_exec.timeout_of(args.get("timeout_s")),
+                                         offline=terminal_exec.OFFLINE.get())
         head = command if len(command) <= 80 else command[:77] + "…"
         result["summary"] = (f"`{head}` → exit {result['exit_code']}" if not result.get("error", "").startswith("stopped")
                              else f"`{head}` → {result['error']}")

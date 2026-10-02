@@ -465,6 +465,8 @@
     "deck_done": "PPTX généré · {{slides}} diapositives",
     "deck_slides": "{{slides}} diapositives",
     "chart_done": "Graphique créé",
+    "plan": "Mise à jour du plan",
+    "plan_done": "Plan : {{done}}/{{total}} terminé",
     "search_q": "Recherche de « {{q}} »",
     "search_fail_rate": "La recherche est limitée en débit — pause avant un nouvel essai",
     "search_fail_quota": "Le quota du fournisseur de recherche est épuisé",

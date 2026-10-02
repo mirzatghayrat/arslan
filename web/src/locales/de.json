@@ -465,6 +465,8 @@
     "deck_done": "PPTX erstellt · {{slides}} Folien",
     "deck_slides": "{{slides}} Folien",
     "chart_done": "Diagramm erstellt",
+    "plan": "Plan wird aktualisiert",
+    "plan_done": "Plan: {{done}}/{{total}} erledigt",
     "search_q": "Suche nach „{{q}}“",
     "search_fail_rate": "Die Suche ist ratenbegrenzt — kurze Pause vor dem nächsten Versuch",
     "search_fail_quota": "Das Kontingent des Suchanbieters ist aufgebraucht",

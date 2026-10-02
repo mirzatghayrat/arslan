@@ -115,6 +115,8 @@ export function humanizeStep(
       return s.status === 'error' ? t('activity.chart_fail') : t('activity.chart');
     case 'run_python':
       return s.status === 'error' ? t('activity.code_fail') : t('activity.code');
+    case 'update_plan':
+      return t('activity.plan');
     default:
       // Unknown tool: keep the tool name + short summary rather than inventing a verb.
       return `${s.tool} ${s.status === 'running' ? (s.argsSummary ?? '') : (s.resultSummary ?? '')}`.slice(0, 60);
@@ -136,6 +138,8 @@ export function humanizeOutcome(
     return t('activity.deck_done', { slides: s.slides });
   }
   if (s.tool === 'render_chart') return t('activity.chart_done');
+  const plan = s.tool === 'update_plan' ? raw.match(/^(\d+)\/(\d+) done$/) : null;
+  if (plan) return t('activity.plan_done', { done: Number(plan[1]), total: Number(plan[2]) });
   const nResults = raw.match(/^(\d+) results$/);
   if (nResults) return t('activity.n_results', { count: Number(nResults[1]) });
   const nChars = raw.match(/^(\d+) chars extracted$/);

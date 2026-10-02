@@ -34,7 +34,7 @@ function run(argv) {
 def read_list(name: str) -> list[dict] | None:
     """Reminders in the list, or None if the list does not exist."""
     out = subprocess.run(["osascript", "-l", "JavaScript", "-e", _JXA, name],
-                         capture_output=True, text=True, timeout=60, check=True).stdout.strip()
+                         capture_output=True, text=True, timeout=240, check=True).stdout.strip()   # Reminders can take minutes to answer JXA
     return json.loads(out)
 
 

@@ -1070,6 +1070,26 @@ class UsageDailyPointOut(BaseModel):
     tokens_total: int
 
 
+class UsageRunsOut(BaseModel):
+    """What Arslan's work did in the range (answers, background jobs, scheduled runs)."""
+    total: int = 0
+    done: int = 0
+    failed: int = 0
+    stopped: int = 0
+    running: int = 0
+    p50_ms: int | None = None
+    p95_ms: int | None = None
+
+
+class UsageBinOut(BaseModel):
+    """One time slice of the range: work started in it, how it ended, how long it took."""
+    start_ts: int                 # epoch seconds (UTC), slice start
+    runs: int = 0
+    failed: int = 0
+    tokens_total: int = 0
+    durations: list[int] = []     # finished runs per DURATION_BANDS entry
+
+
 class UsageSummaryOut(BaseModel):
     range: str
     rows: list[UsageSummaryRowOut] = []
@@ -1077,6 +1097,15 @@ class UsageSummaryOut(BaseModel):
     # Call sites that do NOT feed the ledger yet (spec §S3-D 未计入清单) — the
     # summary never pretends to be complete.
     not_covered: list[str] = []
+    # 0.1.50 Activity dashboard. Totals follow the same honesty rules as rows:
+    # usd_total is None when nothing in the range could be priced.
+    tokens_total: int = 0
+    usd_total: float | None = None
+    estimated_any: bool = False
+    runs: UsageRunsOut = UsageRunsOut()
+    bin_seconds: int = 0
+    duration_bands: list[str] = []
+    bins: list[UsageBinOut] = []
 
 
 # --- S3-M4 scheduled tasks (Task 3) -----------------------------------------

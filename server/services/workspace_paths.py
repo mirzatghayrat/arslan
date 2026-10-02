@@ -14,8 +14,10 @@ Rules, each one load-bearing:
   2. Containment via `is_relative_to`, never `str.startswith`: a sibling named
      `/ws-evil` must not pass a `/ws` root.
   3. Writes are judged by the resolved PARENT (the file itself may not exist
-     yet), and a missing parent is refused rather than guessed at — a path
-     whose realpath is unknowable cannot be proven inside.
+     yet). A missing parent is refused by default; with `make_parents` the
+     check moves to the DEEPEST EXISTING ancestor, and every missing component
+     below it must be a plain name (no `..`) — components that do not exist yet
+     cannot be symlinks, so that ancestor's realpath decides containment.
   4. Secret-looking names are refused even inside the workspace, with a
      DISTINCT exception: an escape is a mistake, a secret is a policy, and the
      user deserves to be told which.
@@ -47,11 +49,14 @@ def is_secret_name(name: str) -> bool:
     return any(fnmatch.fnmatch(n, pat) for pat in _SECRET_GLOBS)
 
 
-def resolve_in_workspace(user_path, ws_root: Path | None, *, for_write: bool = False) -> Path:
+def resolve_in_workspace(user_path, ws_root: Path | None, *, for_write: bool = False,
+                         make_parents: bool = False) -> Path:
     """Absolute, symlink-resolved path inside `ws_root`, or raise.
 
     `for_write=True` judges by the parent directory so a not-yet-existing file
-    is allowed; the parent must itself exist and resolve inside.
+    is allowed; the parent must itself exist and resolve inside — unless
+    `make_parents`, where missing folders are allowed (the caller creates them)
+    and the deepest existing ancestor must resolve inside (rule 3).
     """
     if ws_root is None:
         raise PathEscape("no workspace is configured")
@@ -63,12 +68,18 @@ def resolve_in_workspace(user_path, ws_root: Path | None, *, for_write: bool = F
     candidate = raw if raw.is_absolute() else (root / raw)
 
     if for_write:
-        parent = candidate.parent.resolve()
+        probe, missing = candidate.parent, []
+        while make_parents and not probe.exists() and not probe.is_symlink():
+            if probe.name in ("", "..") or probe == probe.parent:
+                raise PathEscape(f"path is outside the workspace: {user_path}")
+            missing.append(probe.name)
+            probe = probe.parent
+        parent = probe.resolve()
         if not parent.is_dir():
             raise PathEscape(f"parent directory does not exist: {candidate.parent}")
         if not _contained(parent, root):
             raise PathEscape(f"path is outside the workspace: {user_path}")
-        resolved = parent / candidate.name
+        resolved = parent.joinpath(*reversed(missing), candidate.name)
     else:
         resolved = candidate.resolve()
         if not _contained(resolved, root):

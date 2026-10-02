@@ -465,6 +465,8 @@
     "deck_done": "PPTX generado · {{slides}} diapositivas",
     "deck_slides": "{{slides}} diapositivas",
     "chart_done": "Gráfico generado",
+    "plan": "Actualizando el plan",
+    "plan_done": "Plan: {{done}}/{{total}} hecho",
     "search_q": "Buscando «{{q}}»",
     "search_fail_rate": "La búsqueda está limitada por frecuencia: esperando antes de reintentar",
     "search_fail_quota": "Se agotó la cuota del proveedor de búsqueda",

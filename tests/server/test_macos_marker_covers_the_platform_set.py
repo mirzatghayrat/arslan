@@ -35,6 +35,10 @@ TESTS = pathlib.Path(__file__).parents[1]
 #: The measured set, 2026-08-06. Files, not test names: names churn, the
 #: platform boundary does not.
 EXPECTED_FILES: dict[str, int] = {
+    # 2026-10-02 (0.1.50): run_command's offline mode is /usr/bin/sandbox-exec
+    # with deny network*; the two kernel facts (blocked connect, file write still
+    # works) exist only on macOS. Appended boundary case.
+    "server/test_terminal_offline.py": 2,
     # 2026-09-19: actual loopback restricted trial at the macOS packaged path.
     "server/test_profile_activation.py": 1,
     # 2026-09-25: native manual-backup maintenance subprocess at the macOS
@@ -67,7 +71,8 @@ EXPECTED_FILES: dict[str, int] = {
 #: That step re-derives this number from the junit XML, so changing one without
 #: the other turns a green local run into a red CI run, or worse, hides drift
 #: from the guard meant to catch it. Both, same commit, or neither.
-EXPECTED_TOTAL = 40  # −4 0.1.48: the unused command sandbox and its tests were deleted
+EXPECTED_TOTAL = 42  # +2 0.1.50: run_command offline mode (seatbelt deny network*);
+#                     −4 0.1.48: the unused command sandbox and its tests were deleted
 # The external-file test has six attack cases under one marked function.
 PARAMETERIZED_EXTRA_CASES = 5
 
@@ -199,3 +204,13 @@ def test_the_marked_population_matches_the_measurement():
         f"  actual:   {actual}"
     )
     assert sum(actual.values()) + PARAMETERIZED_EXTRA_CASES == EXPECTED_TOTAL
+
+
+def test_the_ci_workflow_expects_the_same_count():
+    """The mirror was a comment, and comments do not fail: 0.1.50 raised
+    EXPECTED_TOTAL to 42 here while ci.yml still asserted 40, and the macOS job
+    went red on a correct test run. Now the two numbers are checked together."""
+    workflow = (TESTS.parent / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    found = re.findall(r"^\s*EXPECTED = (\d+)\s*$", workflow, re.M)
+    assert found == [str(EXPECTED_TOTAL)], (
+        f"ci.yml asserts {found} macOS cases, this file expects {EXPECTED_TOTAL}: change both together")

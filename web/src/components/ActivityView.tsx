@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { api } from "../api/client";
 import type { RunListItem } from "../api/client.types";
 import { formatUiDateTime } from "../lib/localeFormatting";
+import { fmtMs } from "../lib/usageFormat";
 import RunReplay from "./RunReplay";
 import UsageCard from "./UsageCard";
 import ScheduledTasksCard from "./ScheduledTasksCard";
@@ -13,10 +14,10 @@ import ScheduledTasksCard from "./ScheduledTasksCard";
  * Replaces Diagnostics. That page was built around experts — a catalog of
  * spawns, per-spawn scores, an evolution inbox — and with experts gone the
  * only parts still describing anything real were usage and scheduled tasks.
- * What a user of a single agent asks is "what did it just do?", so the page
- * leads with recent work: every answer and background job is a recorded run,
- * and opening one shows its step-by-step trace (the same RunReplay the chat
- * links to).
+ * Order (0.1.50, user ruling): usage first — the at-a-glance picture of what the
+ * work did and cost — then scheduled tasks, then recent work. Every answer and
+ * background job is a recorded run; opening one shows its step-by-step trace
+ * (the same RunReplay the chat links to).
  */
 export default function ActivityView() {
   const { t, i18n } = useTranslation();
@@ -52,8 +53,13 @@ export default function ActivityView() {
       : s === "cancelled" ? t("activityPage.cancelled")
       : t("activityPage.done");
 
+  const dot = (s: string) => s === "failed" ? "bg-danger" : s === "recording" ? "bg-primary animate-pulse"
+    : s === "cancelled" || s === "interrupted" ? "bg-subtle-foreground" : "bg-success";
+
   return (
-    <div className="flex-1 h-full overflow-auto p-6 space-y-6" data-testid="activity-view">
+    <div className="flex-1 h-full overflow-auto p-6 space-y-8" data-testid="activity-view">
+      <UsageCard />
+      <ScheduledTasksCard onOpenRun={(runId) => setOpen(runId)} />
       <section>
         <h2 className="text-sm font-medium text-foreground">{t("activityPage.recent")}</h2>
         <p className="text-xs text-muted-foreground mt-0.5 mb-3">{t("activityPage.recentHint")}</p>
@@ -71,8 +77,13 @@ export default function ActivityView() {
                   onClick={() => setOpen(r.id)}
                   className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-surface/70"
                 >
+                  <span aria-hidden className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot(r.status)}`} />
                   <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">{r.user_message || "—"}</span>
-                  <span className={`shrink-0 text-[11px] ${r.status === "failed" ? "text-destructive" : "text-muted-foreground"}`}>
+                  {r.total_ms != null && r.status !== "recording" && (
+                    <span className="shrink-0 font-mono text-[11px] tabular-nums text-subtle-foreground"
+                      title={t("activityPage.duration", { v: fmtMs(r.total_ms) })}>{fmtMs(r.total_ms)}</span>
+                  )}
+                  <span className={`shrink-0 w-16 text-right text-[11px] ${r.status === "failed" ? "text-destructive" : "text-muted-foreground"}`}>
                     {statusLabel(r.status)}
                   </span>
                   <span className="shrink-0 w-32 text-right text-[11px] text-subtle-foreground font-mono">
@@ -84,8 +95,6 @@ export default function ActivityView() {
           </ul>
         )}
       </section>
-      <UsageCard />
-      <ScheduledTasksCard onOpenRun={(runId) => setOpen(runId)} />
     </div>
   );
 }

@@ -29,3 +29,13 @@ export function fmtUsd(usd: number): string {
   if (usd >= 0.01) return `$${usd.toFixed(2)}`;
   return `$${trimZeros(usd.toFixed(4))}`;
 }
+
+/** Duration: "0.8s", "41s", "2m 57s", "1h 3m". */
+export function fmtMs(ms: number): string {
+  if (ms < 1000) return `${trimZeros((ms / 1000).toFixed(1))}s`;
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return s % 60 ? `${m}m ${s % 60}s` : `${m}m`;
+  return m % 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${Math.floor(m / 60)}h`;
+}

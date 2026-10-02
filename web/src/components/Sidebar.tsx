@@ -91,15 +91,18 @@ export default function Sidebar(props: SidebarProps) {
       {onOpenConversation && <div className="shrink-0 border-t border-border/50 empty:hidden"><BackgroundJobs onOpen={onOpenConversation} /></div>}
     </div>
     <footer className="shrink-0 space-y-1 border-t border-border/60 p-3">
-      <button id="nav-btn-activity-footer" onClick={() => onChangeSection("activity")} className={navClass(activeSection === "activity")}>
-        <Activity size={15} /><span>{t("nav.activity")}</span></button>
       <button id="nav-btn-settings-footer" onClick={() => onChangeSection("settings")} className={navClass(activeSection === "settings")}>
         <Settings2 size={15} /><span>{t("nav.settings")}</span></button>
-      <div className="flex items-center justify-between px-3 pt-2 text-[10px] text-muted-foreground">
-        <span>{t("workspace.service")}</span><span className={backendStatus === "online" ? "text-success" : backendStatus === "offline" ? "text-danger" : ""}>
-          {t(backendStatus === "checking" ? "common.connecting" : backendStatus === "online" ? "common.online" : "common.offline")}
-        </span>
-      </div>
+      {/* 0.1.50 (user ruling): Activity takes the old "Local service · Online" slot. A
+          permanent "Online" said nothing; the connection only shows when it is NOT fine. */}
+      <button id="nav-btn-activity-footer" onClick={() => onChangeSection("activity")} className={navClass(activeSection === "activity")}>
+        <Activity size={15} /><span className="flex-1">{t("nav.activity")}</span>
+        {backendStatus !== "online" && <span data-testid="backend-status"
+          className={`flex items-center gap-1 text-[10px] ${backendStatus === "offline" ? "text-danger" : "text-warning"}`}>
+          <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${backendStatus === "offline" ? "bg-danger" : "bg-warning animate-pulse"}`} />
+          {t(backendStatus === "offline" ? "common.offline" : "common.connecting")}
+        </span>}
+      </button>
     </footer>
   </aside>;
 }

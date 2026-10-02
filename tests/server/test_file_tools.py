@@ -161,6 +161,20 @@ async def test_write_creates_and_reports_bytes(ws):
     assert (ws / "sub" / "new.txt").read_text() == "abc"
 
 
+async def test_write_creates_missing_folders(ws):
+    out = await file_tools.WriteFileExecutor().execute(
+        {"path": "reports/2026/jobs.md", "content": "| a |"})
+    assert out["ok"] is True and out["path"] == "reports/2026/jobs.md"
+    assert (ws / "reports" / "2026" / "jobs.md").read_text() == "| a |"
+
+
+async def test_write_refused_outside_creates_no_folders(ws, tmp_path):
+    out = await file_tools.WriteFileExecutor().execute(
+        {"path": str(tmp_path / "made" / "x.txt"), "content": "x"})
+    assert out["ok"] is False
+    assert not (tmp_path / "made").exists()       # nothing created on a refusal
+
+
 async def test_write_outside_workspace_refused(ws, tmp_path):
     target = tmp_path / "escaped.txt"
     out = await file_tools.WriteFileExecutor().execute({"path": str(target), "content": "x"})
