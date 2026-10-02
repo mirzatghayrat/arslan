@@ -55,6 +55,9 @@ CHECKS = {
 # page the user logged into; it has no phone/messaging channel.
 UNSUPPORTED = {"arslan": {"T4", "T4x", "T6"}, "arslan-legacy": {"T4", "T4x", "T6"}}
 T4_CHANGE_AFTER_S = 60
+# T1's Reminders list is named after the run label; labels repeat across rounds, and a
+# list left over from an earlier round would be read as this run's (BENCH_ROUND keeps them apart).
+ROUND = os.environ.get("BENCH_ROUND", "")
 
 
 def sandbox_profile() -> str:
@@ -183,7 +186,7 @@ def run_one(task: str, who: str, n: int, prompts: dict, sb: str, manual_login: b
     if task == "T5":
         subprocess.run([sys.executable, str(HERE / "fixture_t5.py"), str(run)], check=True, capture_output=True)
     if task == "T1":
-        ctx["list"] = f"对比测试-{label}"
+        ctx["list"] = f"对比测试-{label}" + (f"-{ROUND}" if ROUND else "")
     if task in ("T4", "T4x"):
         _t4_setup(task, who, ctx, manual_login)
     prompt = prompts[task].format(dir=run, list=ctx.get("list", ""), url=ctx["site"].url if "site" in ctx else "")

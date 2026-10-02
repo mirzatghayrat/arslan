@@ -207,3 +207,25 @@ def test_outside_the_sandbox_the_driver_declines_every_card(monkeypatch):
         "type": "cancel_action", "call_id": "c2"}
     monkeypatch.setattr(arslan_driver, "DECLINE_CARDS", False)
     assert t.on_frame({"type": "propose_run_command", "call_id": "c3"}, 3.0)["type"] == "confirm_run_command"
+
+
+def test_sandboxed_rounds_answer_cards_like_a_user_and_never_let_commands_out(monkeypatch):
+    """0.1.51 P3: inside Arslan's sandbox, deleting/installing are approved; leaving the
+    sandbox, outward actions and other apps are declined — Reminders only for T1."""
+    from scripts.kernel_bench import arslan_driver
+    monkeypatch.setattr(arslan_driver, "DECLINE_CARDS", False)
+    monkeypatch.setattr(arslan_driver, "CARDS", "sandboxed")
+    t = TurnTracker("/b/runs/arslan-T5-r1")
+
+    def ans(frame):
+        return t.on_frame({"type": "propose_run_command", "call_id": "c", **frame}, 1.0)["type"]
+    assert ans({"rule": "delete"}) == "confirm_run_command"
+    assert ans({}) == "confirm_run_command"
+    assert ans({"rule": "delete", "sandbox": "retry"}) == "cancel_run_command"
+    assert ans({"sandbox": "outside"}) == "cancel_run_command"
+    assert ans({"rule": "send-mail"}) == "cancel_run_command"
+    assert ans({"rule": "apple-events"}) == "cancel_run_command"
+    assert (t.sandbox_cards, t.declined, t.approvals) == (2, 4, 6)
+    t1 = TurnTracker("/b/runs/arslan-T1-r2")
+    assert t1.on_frame({"type": "propose_run_command", "call_id": "c", "rule": "apple-events"}, 1.0)["type"] == \
+        "confirm_run_command"
