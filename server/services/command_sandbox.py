@@ -12,6 +12,12 @@ paths come last, so they stay closed even inside a writable folder. It matches
 real paths, so every path is resolved first, and JSON-quoted (valid SBPL) so a
 folder name cannot inject rules.
 
+A Unix socket is reached with connect(), which the file rule does not cover
+(measured 2026-10-03: a sandboxed python3 connected to a 0600 socket inside a
+protected folder). So every protected path is also closed to network-outbound,
+which for a path means exactly that: connecting to a socket under it. 0.1.53's
+Arslan Hands listens in such a folder.
+
 Leaving the sandbox is always a click (see tool_loop): the model asks up front,
 or a stopped command is offered a re-run, or the user ticks "for the rest of this
 conversation" — that last one is held here, in memory only, never saved.
@@ -57,10 +63,13 @@ def default_writable(workspace: Path) -> list[Path]:
 def default_protected() -> list[Path]:
     """Never readable or writable from a command, whatever else is allowed."""
     from server import config
+    from server.services import hands_client
     home = Path.home()
     paths = [home / ".ssh", home / "Library" / "Keychains", config.data_dir(),
              home / "Library" / "Application Support" / "Arslan", home / ".arslan",
-             home / ".arslan-updater.key", home / "arslan-signing-backup"]
+             home / ".arslan-updater.key", home / "arslan-signing-backup",
+             # 0.1.53: Arslan Hands' socket, token and state (it holds Accessibility).
+             hands_client.folder()]
     out: list[Path] = []
     for p in paths:
         r = _real(p)
@@ -76,7 +85,8 @@ def _rule(path: Path) -> str:
 
 def profile(writable: list[Path], protected: list[Path], *, offline: bool = False) -> str:
     """The SBPL text. Order matters: deny all writes, re-allow the writable
-    folders, then close the protected paths (last rule wins)."""
+    folders, then close the protected paths (last rule wins) — to files and to
+    sockets alike."""
     lines = ["(version 1)", "(allow default)"]
     if offline:
         lines.append("(deny network*)")
@@ -84,7 +94,9 @@ def profile(writable: list[Path], protected: list[Path], *, offline: bool = Fals
     if writable:
         lines.append("(allow file-write* " + " ".join(_rule(_real(p)) for p in writable) + ")")
     if protected:
-        lines.append("(deny file-read* file-write* " + " ".join(_rule(_real(p)) for p in protected) + ")")
+        closed = " ".join(_rule(_real(p)) for p in protected)
+        lines.append("(deny file-read* file-write* " + closed + ")")
+        lines.append("(deny network-outbound " + closed + ")")   # sockets under them
     return "\n".join(lines) + "\n"
 
 
