@@ -465,6 +465,8 @@
     "deck_done": "PPTX を生成しました · {{slides}} 枚",
     "deck_slides": "{{slides}} 枚",
     "chart_done": "グラフを作成しました",
+    "plan": "計画を更新",
+    "plan_done": "計画 {{done}}/{{total}} 完了",
     "search_q": "「{{q}}」を検索中",
     "search_fail_rate": "検索がレート制限中です — 少し待って再試行します",
     "search_fail_quota": "検索サービスの利用枠を使い切りました",

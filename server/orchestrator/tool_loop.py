@@ -1089,6 +1089,8 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
 
 # Minimal OpenAI-format parameter schemas per known tool key. The executor re-validates args,
 # so these can be loose; they exist only to nudge the model toward the right shape.
+from server.orchestrator.turn_plan import PARAMS as _PLAN_PARAMS  # noqa: E402
+
 _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
     "read_file": {"type": "object", "properties": {
         "path": {"type": "string", "minLength": 1,
@@ -1201,6 +1203,7 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                           "properties": {"name": {"type": "string",
                                                   "description": "The service, e.g. GitHub, Notion."}},
                           "required": ["name"]},
+    "update_plan": _PLAN_PARAMS,
     "ask_user_choice": {
         "type": "object",
         "properties": {
@@ -1702,7 +1705,9 @@ async def run_native(
     fetch_budget: dict[str, int] = {}
     call_ids: set[str] = set()
     from server.orchestrator.model_call import TurnRecovery
+    from server.orchestrator.turn_plan import Plan
     turn_state = TurnRecovery()
+    plan = Plan()
     unseen_start = len(convo)
 
     # Deterministic pre-search uses the same admission and progress boundaries.
@@ -1861,6 +1866,14 @@ async def run_native(
                                            "context": str(args.get("context") or "").strip()}}
                 # A neutral trace record, not a prompt-level execution protocol.
                 assistant_content = json.dumps({"tool": name, "args": args}, ensure_ascii=False)
+                # 0.1.50 S2: the plan is host bookkeeping — no executor, no tool
+                # budget, no progress signal; allowed during wrap-up too.
+                if name == "update_plan" and "update_plan" in wired_keys:
+                    emit({"type": "tool_call", "tool": name,
+                          "args_summary": json.dumps(args, ensure_ascii=False)[:200]})
+                    _record_tool_result(name, args, plan.update(args), emit, tool_trace,
+                                        assistant_content, convo)
+                    continue
                 if policy.stopped:
                     _record_tool_result(name, {}, {"ok": False, "external": False,
                         "code": "task_no_progress", "error": "Execution paused after repeated work without progress."},

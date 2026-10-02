@@ -858,6 +858,13 @@ async def _arslan_tools() -> list[dict]:
             "Assign up to four small jobs using research, apple-growth or product-design methods; at most two run together. "
             "Provide minimal context and an explicit read-only tool subset. Workers cannot delegate, change memory or write files. "
             "Results remain unverified; synthesize and validate them in the host. Do not use for simple questions."})
+    # 0.1.50 S2: the run's checklist — host bookkeeping (turn_plan), no executor.
+    tools.append({"key": "update_plan",
+                  "description": "Keep a short checklist for a task with several parts or a target "
+                                 "count (\"find 10 …\", \"compare 3 …\"). args: {items: [{text, status: "
+                                 "pending|in_progress|done}]} — send the WHOLE list each time and keep "
+                                 "counts in the text (\"collect jobs 6/10\"). Update it as parts finish. "
+                                 "Skip it for one-step requests."})
     # PA-3: structured clarification — a TERMINAL tool (no executor; the tool loop ends
     # the turn and _handle_answer emits the clarify_options card). Registered here so
     # Arslan's answer path can offer real choice buttons instead of a text counter-question.

@@ -465,6 +465,8 @@
     "deck_done": "PPTX generated · {{slides}} slides",
     "deck_slides": "{{slides}} slides",
     "chart_done": "Chart generated",
+    "plan": "Updating the plan",
+    "plan_done": "Plan: {{done}}/{{total}} done",
     "search_q": "Searching “{{q}}”",
     "search_fail_rate": "Search is rate-limited — waiting before trying again",
     "search_fail_quota": "The search provider's quota is used up",
