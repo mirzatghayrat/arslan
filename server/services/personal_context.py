@@ -42,8 +42,15 @@ class TaskMemoryContext:
     temporary: bool = False
     # Unknown provider locality is treated as cloud, never assumed local.
     model_is_local: bool = False
+    # The conversation's OWN "allow cloud memory" switch. Sensitive entries need
+    # it together with allow_sensitive: two explicit permissions (M07-07).
     cloud_memory_allowed: bool = False
     allow_sensitive: bool = False
+    # 0.1.52 (D1): "Remember me and use it in conversations" — a cloud model may
+    # use NORMAL entries without the per-conversation switch. Never sensitive ones.
+    cloud_memory_default: bool = False
+    # 0.1.52 (D1): normal noticed facts take effect at once (see MemoryActor).
+    auto_activate_noticed: bool = False
     source_message_id: int | None = None
     source_run_id: int | None = None
     # Transient current-task text, never stored in a ContextReceipt.
@@ -53,6 +60,11 @@ class TaskMemoryContext:
     allow_global_save: bool = False
     lease: ContextLease | None = None
 
+    @property
+    def cloud_memory_effective(self) -> bool:
+        """May a cloud model see normal memory in this task at all?"""
+        return self.cloud_memory_allowed or self.cloud_memory_default
+
     def actor(self, origin="extractor") -> MemoryActor:
         return MemoryActor(
             origin=origin, owner_id=self.owner_id, task_id=self.task_id,
@@ -60,7 +72,8 @@ class TaskMemoryContext:
             explicit_save_ref=self.explicit_save_ref if origin == "host" else None,
             explicit_save_digest=self.explicit_save_digest if origin == "host" else None,
             allow_global_save=self.allow_global_save if origin == "host" else False,
-            cloud_memory_allowed=self.cloud_memory_allowed,
+            cloud_memory_allowed=self.cloud_memory_effective,
+            auto_activate_noticed=self.auto_activate_noticed if origin == "extractor" else False,
             no_learning=self.no_learning, temporary=self.temporary,
             source_message_id=self.source_message_id,
             source_run_id=self.source_run_id,
@@ -264,7 +277,7 @@ async def assemble(query: str = "", *, context: TaskMemoryContext | None = None,
                              memory_mode=mode)
     if mode != "normal" or limit_tokens <= 0:
         return PersonalContext("", receipt)
-    if not ctx.model_is_local and not ctx.cloud_memory_allowed:
+    if not ctx.model_is_local and not ctx.cloud_memory_effective:
         return PersonalContext("", receipt.model_copy(update={"filter_reasons": ("permission",)}))
     now = datetime.utcnow()
     effective_query = query or ctx.query
@@ -289,7 +302,10 @@ async def _eligible_statement(db, ctx, now):
     for kind, identity in (("domain", ctx.domain_id), ("expert", ctx.expert_id)):
         if identity:
             scopes.append(and_(MemoryEntry.scope_kind == kind, MemoryEntry.scope_id == identity))
-    allowed_sensitivity = ("normal", "sensitive") if ctx.allow_sensitive else ("normal",)
+    # Sensitive needs allow_sensitive AND, for a cloud model, the conversation's own
+    # cloud switch — the 0.1.52 default (cloud_memory_default) covers normal entries only.
+    sensitive_ok = ctx.allow_sensitive and (ctx.model_is_local or ctx.cloud_memory_allowed)
+    allowed_sensitivity = ("normal", "sensitive") if sensitive_ok else ("normal",)
     statement = select(MemoryEntry, MemoryRevision).join(
         MemoryRevision, and_(MemoryRevision.id == MemoryEntry.current_revision_id,
                              MemoryRevision.entry_id == MemoryEntry.id,

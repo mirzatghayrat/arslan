@@ -57,11 +57,15 @@ def parse(content: str | None) -> list[dict[str, Any]]:
 
 
 async def extract(conversation_id: str, user_message: str) -> list[dict[str, Any]]:
+    """0.1.52: reads ONLY the user's own messages (and the facts already known).
+    Arslan's replies and the rolling summary can carry web pages, files and tool
+    output; since a noticed fact now takes effect at once (D1), it must come from
+    the user's words — by construction, not by a filter on the output."""
     ctx = await memory.assemble_working_context(conversation_id)
     known = await memory.facts_text(include_sensitive=True)
+    own = [m["content"] for m in ctx["history"] if m.get("role") == "user"]
     prompt = (
-        f"Conversation summary:\n{ctx['summary'] or '(none)'}\n\nRecent turns:\n"
-        + "\n".join(f"{m['role']}: {m['content']}" for m in ctx["history"])
+        "The user's recent messages:\n" + ("\n".join(f"- {c}" for c in own[-8:]) or "(none)")
         + f"\n\n{known}\n\nUser's latest message:\n{user_message}"
     )
     async with usage_ledger.scope("memory_facts", conversation_id):

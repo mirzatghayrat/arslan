@@ -64,6 +64,10 @@ class MemoryActor:
     explicit_save_digest: str | None = None
     allow_global_save: bool = False
     cloud_memory_allowed: bool = False
+    # 0.1.52 (D1): a normal fact noticed after a turn takes effect at once,
+    # visible and undoable. Set only by the trusted task context, for origin
+    # "extractor"; the extractor reads only the user's own messages.
+    auto_activate_noticed: bool = False
     no_learning: bool = False
     temporary: bool = False
     source_message_id: int | None = None
@@ -116,14 +120,21 @@ def decide_write(write: MemoryWrite, actor: MemoryActor) -> WriteDecision:
     # Require a user review rather than letting an inferred reference ride along.
     if write.style_reference and (actor.origin != "user" or write.style_reference.interpretation != "confirmed"):
         user_confirmation = False
+    auto_noticed = (not user_confirmation and actor.origin == "extractor" and actor.auto_activate_noticed
+                    and sensitive == "normal" and not write.style_reference)
+    if user_confirmation:
+        use_policy = write.use_policy if (actor.origin == "user" or actor.cloud_memory_allowed) else "local_only"
+        kind = "user_form" if actor.origin == "user" else "explicit_user_request"
+    elif auto_noticed:
+        use_policy = "cloud_allowed" if actor.cloud_memory_allowed else "local_only"
+        kind = "auto_noticed"
+    else:
+        use_policy, kind = "local_only", None
     return WriteDecision(
-        status="active" if user_confirmation else "proposed",
+        status="active" if (user_confirmation or auto_noticed) else "proposed",
         sensitivity=sensitive,
-        use_policy=write.use_policy if (
-            user_confirmation and (actor.origin == "user" or actor.cloud_memory_allowed)
-        ) else "local_only",
-        confirmation_kind=("user_form" if actor.origin == "user" else "explicit_user_request")
-        if user_confirmation else None,
+        use_policy=use_policy,
+        confirmation_kind=kind,
     )
 
 
