@@ -58,18 +58,25 @@ def _clip(text, limit: int) -> str | None:
 
 
 def push(kind: str, *, conversation_id: str | None = None, outcome: str | None = None,
-         task_id: int | None = None, title: str | None = None, summary: str | None = None) -> dict:
-    """`title`/`summary` reach the island feed only, never the status endpoint."""
+         task_id: int | None = None, title: str | None = None, summary: str | None = None,
+         work: str | None = None) -> dict:
+    """`title`/`summary`/`work` reach the island feed only, never the status
+    endpoint. `work` says which kind of run finished (KINDS_OF_WORK) where the
+    event kind alone cannot: a chat turn and a background job both end in
+    turn_finished, and the island treats them differently."""
     if kind not in KINDS:
         raise ValueError(f"unknown desktop event kind: {kind}")
     if outcome is not None and outcome not in OUTCOMES:
         raise ValueError(f"unknown desktop event outcome: {outcome}")
+    if work is not None and work not in KINDS_OF_WORK:
+        raise ValueError(f"unknown kind of work: {work}")
     with _lock:
         event = {"id": next(_event_ids), "kind": kind, "conversation_id": conversation_id,
                  "outcome": outcome, "task_id": task_id, "at": int(time.time())}
         _events.append(event)
-        if title or summary:
-            _details[event["id"]] = {"title": _clip(title, TITLE_CHARS), "summary": _clip(summary, SUMMARY_CHARS)}
+        if title or summary or work:
+            _details[event["id"]] = {"title": _clip(title, TITLE_CHARS), "summary": _clip(summary, SUMMARY_CHARS),
+                                     "work": work}
         oldest = _events[0]["id"]
         for stale in [i for i in _details if i < oldest]:
             del _details[stale]
@@ -172,7 +179,7 @@ def island_feed(after: int = 0) -> dict:
         active = sorted(({**a, "step": dict(a["step"]) if a["step"] else None,
                           "plan": dict(a["plan"]) if a["plan"] else None} for a in _activity.values()),
                         key=lambda a: a["started_at"])
-        events = [{**e, **_details.get(e["id"], {"title": None, "summary": None})}
+        events = [{**e, **_details.get(e["id"], {"title": None, "summary": None, "work": None})}
                   for e in _events if e["id"] > after]
         cursor = _events[-1]["id"] if _events else 0
         return {"cursor": cursor, "awaiting": len(_awaiting),

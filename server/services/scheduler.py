@@ -333,7 +333,7 @@ async def record_outcome(task_id: int, ok: bool, *, row_id: int,
         await db.commit()
     from server.services import desktop_status
     desktop_status.push("scheduled_finished", conversation_id=desktop_cid, task_id=task_id,
-                        outcome="ok" if ok else ("error" if count_failure else "cancelled"))
+                        outcome="ok" if ok else ("error" if count_failure else "cancelled"), work="scheduled")
     if notify is not None:
         desktop_status.push("scheduled_paused", conversation_id=desktop_cid, task_id=task_id)
         await _notify_pause(notify[0], notify[1], reason or "", task_id=task_id)

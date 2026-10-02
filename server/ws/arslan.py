@@ -177,7 +177,7 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             outcome = "cancelled"
             raise
         finally:
-            desktop_status.push("turn_finished", conversation_id=conversation_id, outcome=outcome)
+            desktop_status.push("turn_finished", conversation_id=conversation_id, outcome=outcome, work="turn")
             # Flush: every frame the coroutine emitted is on the socket (or
             # swallowed by a dead drainer) before the caller's next direct
             # ws.send_json — same ordering guarantee the old sentinel gave.
@@ -204,7 +204,8 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             outcome = "cancelled"
             raise
         finally:
-            desktop_status.push("turn_finished", conversation_id=conversation_id, outcome=outcome, title=title)
+            desktop_status.push("turn_finished", conversation_id=conversation_id, outcome=outcome, title=title,
+                                work="turn")
             await queue.join()
 
     async def run_connect_mcp_followup(server_id: int) -> None:

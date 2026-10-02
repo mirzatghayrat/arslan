@@ -127,6 +127,7 @@ describe("every settings field the UI can edit is mappable", () => {
       research_review_enabled: { researchReviewEnabled: true },
       keep_awake_enabled: { keepAwakeEnabled: false },
       desktop_notifications_enabled: { desktopNotificationsEnabled: false },
+      island_enabled: { islandEnabled: false },
       evolution_auto: { evolutionAuto: true },
       evolution_max_dispatches: { evolutionMaxDispatches: 5 },
       ocr_languages: { ocrLanguages: "eng" },

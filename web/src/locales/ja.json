@@ -703,6 +703,8 @@
     "keepAwakeDesc": "タスクやスケジュールタスクの実行中は、Mac が自動でスリープしません。画面はスリープできます。蓋を閉じたときやバッテリー残量が少ないときはスリープします。",
     "labelDesktopNotifications": "通知",
     "desktopNotificationsDesc": "ウィンドウが閉じているか背面にあるとき、タスクの完了、確認が必要な操作、スケジュールタスクの失敗を macOS が通知します。通知にメッセージ本文は表示されません。",
+    "labelIsland": "ノッチに Arslan を表示",
+    "islandDesc": "画面上部の小さな Arslan が、作業中の内容、あなたの対応が必要なとき、タスクが終わったときを知らせます。ポインタを乗せると詳細が見られます。スクリーンショット、画面収録、画面共有には映りません。",
     "automationElsewhere": "定期タスク、トークン使用量、過去の実行はすべて「アクティビティ」にあります。",
     "automationOpenActivity": "アクティビティを開く",
     "searchPlaceholder": "設定を検索…",

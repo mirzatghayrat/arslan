@@ -230,6 +230,8 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         onKeepAwakeChange={(v) => saveField({ keepAwakeEnabled: v })}
         notificationsEnabled={localSettings.desktopNotificationsEnabled ?? true}
         onNotificationsChange={(v) => saveField({ desktopNotificationsEnabled: v })}
+        islandEnabled={localSettings.islandEnabled ?? true}
+        onIslandChange={(v) => saveField({ islandEnabled: v })}
       />
     ),
 

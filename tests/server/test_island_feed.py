@@ -63,6 +63,16 @@ def test_titles_and_summaries_reach_the_island_but_never_the_status_endpoint():
     assert set(status) == {"id", "kind", "conversation_id", "outcome", "task_id", "at"}
 
 
+def test_finished_events_say_which_kind_of_run_ended():
+    desktop_status.push("turn_finished", conversation_id="c1", outcome="ok", work="job")
+    desktop_status.push("turn_finished", conversation_id="c2", outcome="ok")
+    first, second = desktop_status.island_feed()["events"]
+    assert first["work"] == "job" and second["work"] is None
+    assert "work" not in desktop_status.snapshot()["events"][0]
+    with pytest.raises(ValueError):
+        desktop_status.push("turn_finished", outcome="ok", work="chatter")
+
+
 def test_details_leave_with_their_events():
     for i in range(desktop_status.MAX_EVENTS + 5):
         desktop_status.push("turn_finished", outcome="ok", title=f"t{i}")

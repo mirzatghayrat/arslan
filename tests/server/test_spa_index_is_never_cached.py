@@ -46,6 +46,8 @@ async def client(tmp_path, monkeypatch):
     # of this file for exactly that reason. favicon.svg goes through the fallback,
     # like every real root asset in the built tree.
     (static / "favicon.svg").write_text("<svg/>")
+    (static / "island.html").write_text(
+        '<!doctype html><title>Arslan Island</title><script src="/assets/island-CAFEBABE.js"></script>')
 
     monkeypatch.setenv("ARSLAN_API_TOKEN", "")
     monkeypatch.setenv("ARSLAN_STATIC_DIR", str(static))
@@ -83,6 +85,15 @@ class TestTheEntryPointIsNeverCached:
     async def test_index_html_by_name_says_no_store(self, client):
         resp = await client.get("/index.html")
 
+        assert _no_store(resp), resp.headers.get("cache-control")
+
+    async def test_the_island_page_says_no_store(self, client):
+        # The notch window (0.1.51) loads its own entry page; it names hashed
+        # bundles exactly as index.html does, so an upgrade would otherwise keep
+        # showing the previous island.
+        resp = await client.get("/island.html")
+
+        assert resp.status_code == 200 and "Arslan Island" in resp.text
         assert _no_store(resp), resp.headers.get("cache-control")
 
 

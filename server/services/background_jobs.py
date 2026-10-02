@@ -285,7 +285,7 @@ async def _report(job: Job, text: str) -> None:
         logger.warning("background job %s result not posted: %s", job.job_id, type(exc).__name__)
     desktop_status.push("turn_finished", conversation_id=job.conversation_id,
                         outcome={"done": "ok", "stopped": "cancelled"}.get(job.outcome, "needs_review"),
-                        title=job.goal, summary=body or None)
+                        title=job.goal, summary=body or None, work="job")
     run_registry.make_emit(job.conversation_id)({"type": "job_spoken", "job_id": job.job_id,
                                                  "outcome": job.outcome, "goal": job.goal[:200]})
 

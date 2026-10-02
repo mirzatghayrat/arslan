@@ -562,6 +562,10 @@ def create_app() -> FastAPI:
 
         index_file = static_dir / "index.html"
         static_root = static_dir.resolve()
+        # Entry pages: the app, and the island's own page (0.1.51) that the
+        # shell's notch window loads. Both name hashed bundles, so neither may
+        # be cached — the same stale-frontend bug as below, in a second window.
+        entry_pages = {index_file.resolve(), (static_dir / "island.html").resolve()}
 
         # 🔴 The entry point must never be cached, and this was found on a real
         # upgrade rather than here. Installing over an existing copy left the UI
@@ -587,7 +591,7 @@ def create_app() -> FastAPI:
                 if candidate.is_file() and candidate.is_relative_to(static_root):
                     # index.html can also be requested by name, and it is still an
                     # entry point when it is.
-                    if candidate == index_file.resolve():
+                    if candidate in entry_pages:
                         return FileResponse(str(candidate), headers=_INDEX_HEADERS)
                     # Everything else here is a hashed build artefact: leave it
                     # cacheable. Blanket no-store would re-fetch a 2.5 MB bundle on

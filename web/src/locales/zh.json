@@ -703,6 +703,8 @@
     "keepAwakeDesc": "有任务或定时任务在运行时，Mac 不会自己进入睡眠。屏幕照样可以熄灭；合盖或电量低时仍会睡眠。",
     "labelDesktopNotifications": "系统通知",
     "desktopNotificationsDesc": "窗口关着或在后台时，任务完成、有动作需要你确认、定时任务失败，macOS 会通知你。通知里不会显示消息内容。",
+    "labelIsland": "在刘海里显示 Arslan",
+    "islandDesc": "屏幕顶部的小 Arslan 会显示它正在做什么、什么时候需要你、任务什么时候做完。把鼠标移上去看详情。截图、录屏和屏幕共享里都不会出现它。",
     "automationElsewhere": "定时任务、用量和每次运行的记录都在「活动」里。",
     "automationOpenActivity": "打开活动",
     "searchPlaceholder": "搜索设置…",

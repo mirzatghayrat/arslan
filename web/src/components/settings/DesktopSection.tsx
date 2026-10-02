@@ -14,11 +14,15 @@ export default function DesktopSection({
   onKeepAwakeChange,
   notificationsEnabled,
   onNotificationsChange,
+  islandEnabled = true,
+  onIslandChange,
 }: {
   keepAwakeEnabled: boolean;
   onKeepAwakeChange?: (v: boolean) => void;
   notificationsEnabled: boolean;
   onNotificationsChange?: (v: boolean) => void;
+  islandEnabled?: boolean;
+  onIslandChange?: (v: boolean) => void;
 }) {
   const { t } = useTranslation();
   const row = (id: string, label: string, desc: string, checked: boolean, onChange?: (v: boolean) => void) => (
@@ -47,6 +51,9 @@ export default function DesktopSection({
         <div className="h-[1px] bg-border/40" />
         {row('settings-desktop-notifications-toggle', 'settings.labelDesktopNotifications',
           'settings.desktopNotificationsDesc', notificationsEnabled, onNotificationsChange)}
+        <div className="h-[1px] bg-border/40" />
+        {row('settings-island-toggle', 'settings.labelIsland', 'settings.islandDesc',
+          islandEnabled, onIslandChange)}
       </div>
     </div>
   );
