@@ -40,3 +40,18 @@ reruns only). Arslan T1/T3/T5 ran without a working browser in all rounds (not n
 2. Alternative-route persistence (T1) and self-capability claims ("cannot write"), via P2
    status bar + tool descriptions.
 3. Re-run T1 + T2 only to verify.
+
+## T2 verification after the fixes (Arslan only, 2026-10-02)
+
+Two rounds. Fixes in between: chat-turn completion first (`6653831a`), zsh here-document temp
+files (`08509f69`); browser pre-installed, browser-enabled sandbox. Spent $0.35 + $0.39.
+
+| round | before TMPPREFIX fix | after both fixes |
+| --- | --- | --- |
+| r1 | 0 — job saved nothing (`python3 - <<'PY'` blocked: zsh heredoc temp in /tmp) | **3** |
+| r2 | 3 | 1 — file saved, only 6 jobs found, said so |
+| r3 | (cap) | 0 — claimed "no filesystem write capability" (false), gave up after 3 searches |
+
+No more empty-reply aborts (budget) and no more failed saves (heredoc): both fixes hold. What
+remains on T2 is behaviour, not plumbing: research yield (finding 10 real job links) and the
+false "I cannot write" belief — both P2 work, together with T1's alternative-route gap.
