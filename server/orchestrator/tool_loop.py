@@ -1333,6 +1333,12 @@ def _embeds_protocol(text: str) -> bool:
     # tag. Never parse its arguments or grant the proposed action permission.
     if re.search(r'<\s*/?\s*(?:tool_call|tool_calls|function_call)(?=[\s>/]|$)', text or "", re.I):
         return True
+    # DeepSeek's own chat-template tokens leaking into content instead of
+    # native tool_calls (seen in the 0.1.49 bench: "<｜｜DSML｜｜tool_calls>",
+    # and V3's "<｜tool▁calls▁begin｜>"). Same failure, same refusal to execute.
+    if re.search(r'[｜|]\s*DSML\s*[｜|]|<\s*[｜|]+\s*(?:DSML\s*[｜|]+\s*)?/?\s*(?:tool[▁_ ]?calls?|invoke)',
+                 text or "", re.I):
+        return True
     if re.search(r'\{\s*"(?:tool|tool_calls|function_call|functionCall|escalate)"\s*:', text or ""):
         return True
     obj = first_json_object(text or "") or parse_json_object(text or "")

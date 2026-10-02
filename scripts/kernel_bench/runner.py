@@ -34,6 +34,8 @@ ROOT = Path(os.environ.get("BENCH_ROOT", "/tmp/arslan-kernel-bench")).resolve()
 PROXY = os.environ.get("BENCH_PROXY", "http://127.0.0.1:8900/c")
 MODEL = os.environ.get("BENCH_MODEL", "deepseek-v4-pro")
 ARSLAN_API = os.environ.get("ARSLAN_API", "http://127.0.0.1:8762/api/v1")
+# Paired attribution: a second Arslan instance started with ARSLAN_TOOL_PROTOCOL=legacy.
+ARSLAN_LEGACY_API = os.environ.get("ARSLAN_LEGACY_API", "http://127.0.0.1:8763/api/v1")
 HERMES = os.environ.get("HERMES_BIN", str(Path.home() / ".local/bin/hermes"))
 BASE_PATH = "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin"
 TIMEOUT = 15 * 60
@@ -51,7 +53,7 @@ CHECKS = {
 # Arslan's browser is isolated by design (throwaway profile, public-internet
 # proxy, no loopback: server/services/managed_browser.py), so it cannot use a
 # page the user logged into; it has no phone/messaging channel.
-UNSUPPORTED = {"arslan": {"T4", "T4x", "T6"}}
+UNSUPPORTED = {"arslan": {"T4", "T4x", "T6"}, "arslan-legacy": {"T4", "T4x", "T6"}}
 T4_CHANGE_AFTER_S = 60
 
 
@@ -97,10 +99,11 @@ def command(who: str, label: str, run: Path, prompt: str, sb: str) -> tuple[list
         (home / ".openclaw/openclaw.json").write_text(json.dumps(cfg, indent=1))
         return jail + [str(ROOT / "pkgs/openclaw/node_modules/.bin/openclaw"), "agent", "--local", "-m", prompt,
                        "--json", "--timeout", str(TIMEOUT - 30)], env({"HOME": str(home)}, node=True)
-    if who == "arslan":
+    if who in ("arslan", "arslan-legacy"):
         pf = Path(f"{run}.prompt")
         pf.write_text(prompt)
-        return [sys.executable, "-m", "scripts.kernel_bench.arslan_driver", ARSLAN_API, str(run), str(pf),
+        api = ARSLAN_API if who == "arslan" else ARSLAN_LEGACY_API
+        return [sys.executable, "-m", "scripts.kernel_bench.arslan_driver", api, str(run), str(pf),
                 f"{PROXY}/{label}", MODEL], dict(os.environ)
     raise SystemExit(f"unknown entrant {who}")
 
@@ -108,7 +111,7 @@ def command(who: str, label: str, run: Path, prompt: str, sb: str) -> tuple[list
 def reply_text(who: str, run: Path) -> str:
     out = Path(f"{run}.stdout")
     text = out.read_text(encoding="utf-8", errors="ignore") if out.exists() else ""
-    if who == "arslan":
+    if who in ("arslan", "arslan-legacy"):
         try:
             return json.loads(text.strip().splitlines()[-1]).get("final", "")
         except Exception:
