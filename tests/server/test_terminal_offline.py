@@ -52,7 +52,7 @@ async def test_the_executor_runs_offline_when_the_loop_says_so(tmp_path, monkeyp
     engine = await _wire(tmp_path, monkeypatch, workspace=str(ws))
     seen = []
 
-    async def fake_run(command, *, cwd, timeout_s, offline=False):
+    async def fake_run(command, *, cwd, timeout_s, offline=False, sandbox=False):
         seen.append(offline)
         return {"ok": True, "exit_code": 0, "stdout": "", "stderr": "", "cwd": str(cwd)}
     monkeypatch.setattr(terminal_exec, "run", fake_run)

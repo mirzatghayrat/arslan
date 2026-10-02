@@ -339,6 +339,7 @@ export interface AppSettings {
   keep_awake_enabled?: boolean;
   desktop_notifications_enabled?: boolean;
   island_enabled?: boolean;
+  terminal_sandbox_enabled?: boolean;
   /** Comma-separated BCP-47 tags for image text recognition. Empty = follow
    *  the interface language plus English. */
   ocr_languages?: string;
@@ -619,7 +620,7 @@ export type ArslanServerMessage =
     }
   | { type: "suggest_create"; draft: SuggestDraft; task_brief?: string | null; overlaps?: OverlapInfo | null }
   | { type: "propose_invite"; spawn_id: number; reason: string }
-  | { type: "propose_run_command"; call_id: string; command?: string; argv?: string[]; pretty: string; reason?: string; remote_host?: string; fingerprints?: string[]; background?: boolean }
+  | { type: "propose_run_command"; call_id: string; command?: string; argv?: string[]; pretty: string; reason?: string; remote_host?: string; fingerprints?: string[]; background?: boolean; sandbox?: "outside" | "retry"; why?: string }
   | { type: "propose_enroll_node"; call_id: string; name: string; host: string; user: string; fingerprints: string[] }
   | { type: "propose_workspace_write"; call_id: string; workspace: string; action: string; path: string; background?: boolean }
   | { type: "propose_schedule"; call_id: string; name: string; when: string; background?: boolean }

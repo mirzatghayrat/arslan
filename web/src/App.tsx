@@ -690,6 +690,8 @@ export default function App() {
                   remoteHost={pendingCommand.remoteHost}
                   fingerprints={pendingCommand.fingerprints}
                   background={pendingCommand.background}
+                  sandbox={pendingCommand.sandbox}
+                  why={pendingCommand.why}
                   onConfirm={(callId, remember) => {
                     wsSend({ type: 'confirm_run_command', call_id: callId, remember });
                     clearPendingCommand();

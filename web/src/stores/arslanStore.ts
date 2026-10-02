@@ -37,7 +37,7 @@ interface ArslanState {
   pendingInvite: { spawnId: number; reason: string } | null;
   // Pending shell command: set when a `propose_run_command` frame arrives; cleared
   // once the user confirms (sends confirm_run_command) or cancels.
-  pendingCommand: { callId: string; pretty: string; reason: string; remoteHost: string; fingerprints: string[]; background?: boolean } | null;
+  pendingCommand: { callId: string; pretty: string; reason: string; remoteHost: string; fingerprints: string[]; background?: boolean; sandbox?: "outside" | "retry"; why?: string } | null;
   // 0.1.42 background jobs in this conversation, keyed by job id. Each has a
   // `kind: "job"` item in `items` marking where its live card sits.
   jobs: Record<string, JobCard>;
@@ -214,7 +214,7 @@ function initialData() {
     pendingProposalSpawnId: null as number | null,
     roster: [] as RosterMember[],
     pendingInvite: null as { spawnId: number; reason: string } | null,
-    pendingCommand: null as { callId: string; pretty: string; reason: string; remoteHost: string; fingerprints: string[]; background?: boolean } | null,
+    pendingCommand: null as { callId: string; pretty: string; reason: string; remoteHost: string; fingerprints: string[]; background?: boolean; sandbox?: "outside" | "retry"; why?: string } | null,
     jobs: {} as Record<string, JobCard>,
     jobNotice: null as { seq: number; jobId: string; kind: "finished" | "needs_approval"; outcome: JobOutcome | null; goal: string } | null,
     pendingEnrollNode: null as { callId: string; name: string; host: string; user: string; fingerprints: string[] } | null,
@@ -892,7 +892,10 @@ function makeActions(set: SetState, get: GetState) {
                                   // machine, and the card has to lead with that.
                                   remoteHost: frame.remote_host || "",
                                   fingerprints: frame.fingerprints || [],
-                                  background: frame.background === true },
+                                  background: frame.background === true,
+                                  // 0.1.51 P3: the card is about leaving the sandbox.
+                                  ...(frame.sandbox === "outside" || frame.sandbox === "retry"
+                                    ? { sandbox: frame.sandbox, why: frame.why || "" } : {}) },
                ...(frame.background ? _approvalNotice(state) : {}) });
           break;
         case "propose_enroll_node":

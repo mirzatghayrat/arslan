@@ -21,6 +21,20 @@ describe("propose_run_command frame", () => {
     expect(pc.reason).toBe("r");
   });
 
+  it("keeps the sandbox question and Arslan's reason (0.1.51 P3); ignores an unknown one", () => {
+    const st = useArslanStore.getState();
+    st.handleFrame({ type: "propose_run_command", call_id: "s1", pretty: "mv a ~/b",
+                     sandbox: "outside", why: "move it to Pictures" } as any);
+    let pc = (useArslanStore.getState() as any).pendingCommand;
+    expect([pc.sandbox, pc.why]).toEqual(["outside", "move it to Pictures"]);
+    st.handleFrame({ type: "propose_run_command", call_id: "s2", pretty: "mv a ~/b", sandbox: "retry" } as any);
+    pc = (useArslanStore.getState() as any).pendingCommand;
+    expect([pc.sandbox, pc.why]).toEqual(["retry", ""]);
+    st.handleFrame({ type: "propose_run_command", call_id: "s3", pretty: "ls", sandbox: "sideways" } as any);
+    pc = (useArslanStore.getState() as any).pendingCommand;
+    expect(pc.sandbox).toBeUndefined();
+  });
+
   it("missing reason stored as empty string", () => {
     useArslanStore.getState().handleFrame({
       type: "propose_run_command",

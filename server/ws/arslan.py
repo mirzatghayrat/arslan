@@ -298,9 +298,42 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             schedule_granted["yes"] = True
         return decision
 
+    async def _sandbox_card(command: str, argv: list, sandbox: str, why: str, verdict) -> bool:
+        from server.services import command_sandbox
+        call_id = uuid.uuid4().hex
+        # Private and un-journaled, like the run_command card below.
+        await ws.send_json(protocol.propose_run_command(
+            call_id, command, argv, reason=verdict.reason if verdict.level == "ask" else "",
+            sandbox=sandbox, why=why))
+        with desktop_status.awaiting_approval(conversation_id):
+            decision = {"approved": False}
+            while True:
+                try:
+                    data = await asyncio.wait_for(ws.receive_json(), timeout=300)
+                except TimeoutError:
+                    break
+                t = data.get("type")
+                if t in ("ping", "pong"):
+                    continue
+                if t in ("confirm_run_command", "cancel_run_command") and data.get("call_id") == call_id:
+                    decision = {"approved": t == "confirm_run_command", "remember": bool(data.get("remember"))}
+                    break
+                if approvals.answer(data):   # a background job's card, not this one
+                    continue
+                await ws.send_json(protocol.error(
+                    "BUSY", "An action is awaiting your confirmation.", recoverable=True))
+        if decision["approved"] and decision.get("remember"):
+            command_sandbox.grant(conversation_id)    # this conversation only, never saved
+        return bool(decision["approved"])
+
     async def confirm_command(command: str, argv: list, *,
                               remote_host: str | None = None,
-                              fingerprints: list | None = None) -> bool:
+                              fingerprints: list | None = None,
+                              sandbox: str | None = None, why: str = "") -> bool:
+        """`sandbox` (0.1.51 P3): "outside" — the model asks to run this command
+        outside the workspace sandbox; "retry" — the sandbox stopped it and it would
+        run again outside, from the start. Either always shows a card; its checkbox
+        means "for the rest of this conversation" (memory only), never a saved rule."""
         from server.services import settings_service
         # A remote command takes NONE of the shortcuts below. Not the session
         # allow-list, not ask_risky, not "remember this one" — because the local
@@ -311,6 +344,11 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         sig = _cmd_sig(command, argv)
         risk = effective_risk(remote_host, command, argv)
         verdict = terminal_policy.assess(terminal_policy.as_shell(command, argv))
+        if sandbox in ("outside", "retry"):
+            from server.services import command_sandbox
+            if command_sandbox.granted(conversation_id):
+                return True
+            return await _sandbox_card(command, argv, sandbox, why, verdict)
         policy, standing = "", False
         if not remote_host:
             # 'ask_risky' (the 0.1.48 default) runs harmless commands without a card.

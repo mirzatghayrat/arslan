@@ -710,11 +710,15 @@ class RunCommandExecutor:
             return {"ok": False, "error": f"Arslan never runs this: {verdict.reason}"}
         async with db_session.AsyncSessionLocal() as db:
             cwd = await settings_service.workspace_dir(db)
+            sandboxed = await settings_service.terminal_sandbox_enabled(db)
         if cwd is None:
             return {"ok": False, "error": "the chosen workspace folder no longer exists"}
+        # 0.1.51 P3: inside the workspace sandbox unless the user turned it off or
+        # the loop says they clicked to let THIS command out (never the model's args).
         result = await terminal_exec.run(command, cwd=cwd,
                                          timeout_s=terminal_exec.timeout_of(args.get("timeout_s")),
-                                         offline=terminal_exec.OFFLINE.get())
+                                         offline=terminal_exec.OFFLINE.get(),
+                                         sandbox=sandboxed and not terminal_exec.OUTSIDE_SANDBOX.get())
         head = command if len(command) <= 80 else command[:77] + "…"
         result["summary"] = (f"`{head}` → exit {result['exit_code']}" if not result.get("error", "").startswith("stopped")
                              else f"`{head}` → {result['error']}")

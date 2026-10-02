@@ -5,7 +5,8 @@ included, which a Finder-launched app does not inherit) and only the ambient
 basics in its environment: provider keys and Arslan's own secret never reach a
 command. Whether a command may run at all is decided before this, by
 terminal_policy and the confirmation card; this only runs it, bounded in time
-and output.
+and output — since 0.1.51 inside the workspace sandbox (command_sandbox) unless
+the user clicked to let it out.
 """
 from __future__ import annotations
 
@@ -22,6 +23,10 @@ from server.mcp.spawn_env import child_environment, merged_path
 # commands still run — processing files already fetched is how a deliverable gets
 # made — but without network, so wrap-up cannot become more research.
 OFFLINE: contextvars.ContextVar[bool] = contextvars.ContextVar("terminal_offline", default=False)
+
+# 0.1.51 P3: set by the tool loop (never by the model), and only after the user
+# clicked: this command runs outside the workspace sandbox.
+OUTSIDE_SANDBOX: contextvars.ContextVar[bool] = contextvars.ContextVar("terminal_outside_sandbox", default=False)
 
 DEFAULT_TIMEOUT_S = 120
 MAX_TIMEOUT_S = 600
@@ -57,7 +62,10 @@ def offline_wrapper() -> list[str] | None:
 
 
 async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
-              offline: bool = False) -> dict:
+              offline: bool = False, sandbox: bool = False) -> dict:
+    """`sandbox`: run inside the workspace sandbox. Where seatbelt is missing or
+    cannot start, the command runs as before and the result says
+    sandbox="unavailable" (offline mode still refuses without isolation)."""
     # zsh writes here-document temp files under $TMPPREFIX (default /tmp/zsh),
     # ignoring TMPDIR: where /tmp is not writable every `python3 - <<'PY'` save
     # failed (0.1.49 bench). Keep both inside the process temp dir.
@@ -65,8 +73,13 @@ async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
     env = child_environment({}, {"PATH": merged_path(), "TERM": "dumb", "NO_COLOR": "1",
                                  "HOMEBREW_NO_AUTO_UPDATE": "1", "TMPDIR": tmp,
                                  "TMPPREFIX": os.path.join(tmp, "zsh")})
+    from server.services import command_sandbox
     prefix: list[str] = []
-    if offline:
+    mode = "off"
+    if sandbox:
+        prefix = command_sandbox.wrapper(cwd, offline=offline) or []
+        mode = "workspace" if prefix else "unavailable"
+    if offline and not prefix:
         prefix = offline_wrapper() or []
         if not prefix:
             return {"ok": False, "exit_code": None, "stdout": "", "stderr": "", "cwd": str(cwd),
@@ -91,7 +104,7 @@ async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
     stdout, cut_out = clip(full_out)
     stderr, cut_err = clip(full_err)
     result = {"ok": proc.returncode == 0 and not timed_out, "exit_code": proc.returncode,
-              "stdout": stdout, "stderr": stderr, "cwd": str(cwd)}
+              "stdout": stdout, "stderr": stderr, "cwd": str(cwd), "sandbox": mode}
     if offline:
         result["offline"] = True        # a network error here is the wrap-up rule, not the site
     if cut_out or cut_err:
@@ -109,4 +122,9 @@ async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
         result["error"] = f"exit code {proc.returncode}"
     if cut_out or cut_err:
         result["truncated"] = True
+    if command_sandbox.stopped_by_sandbox(result):
+        result["sandbox_denied"] = True
+        result["note"] = command_sandbox.note(cwd)
+    elif mode == "unavailable":
+        result["sandbox_note"] = "ran without the sandbox: it is not available on this system"
     return result

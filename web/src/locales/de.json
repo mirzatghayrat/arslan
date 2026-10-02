@@ -494,6 +494,8 @@
     "sensitive": "Sensibel"
   },
   "settings": {
+    "labelTerminalSandbox": "Befehle in einer Sandbox ausführen",
+    "terminalSandboxDesc": "Befehle können Dateien lesen und das Netzwerk nutzen, schreiben aber nur in den Arbeitsordner, temporäre und Cache-Ordner und können deine SSH-Schlüssel, den Schlüsselbund und Arslans Daten nicht lesen. Einen Befehl außerhalb der Sandbox auszuführen braucht immer deinen Klick.",
     "appIcon": "App-Symbol",
     "appIcon_frosted": "Mattes Bernstein",
     "appIcon_monochrome": "Schwarzweiß",
@@ -1326,6 +1328,12 @@
     "run_label": "Lauf"
   },
   "runcmd": {
+    "sandboxOutsideLabel": "Diesen Befehl außerhalb der Sandbox ausführen?",
+    "sandboxOutsideNote": "Befehle schreiben normalerweise nur in Arslans Arbeitsordner. Dieser muss Dateien an anderer Stelle auf deinem Mac ändern.",
+    "sandboxRetryLabel": "Die Sandbox hat diesen Befehl gestoppt",
+    "sandboxRetryNote": "Er wollte außerhalb des Arbeitsordners schreiben oder eine geschützte Datei lesen. Außerhalb der Sandbox startet er noch einmal von vorn.",
+    "sandboxRemember": "Befehle außerhalb der Sandbox für den Rest dieser Unterhaltung erlauben",
+    "runOutside": "Außerhalb der Sandbox ausführen",
     "label": "Diesen Befehl ausführen?",
     "remember": "Bei dieser Art Befehl nicht mehr fragen (rückgängig unter Einstellungen › Erweitert)",
     "run": "Ausführen",

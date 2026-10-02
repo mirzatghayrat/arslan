@@ -225,7 +225,8 @@ def propose_staffing(candidates: list[dict], create_draft: dict) -> dict[str, An
 def propose_run_command(call_id: str, command: str, argv: list[str], reason: str = "",
                         remote_host: str | None = None,
                         fingerprints: list[str] | None = None,
-                        rule: str | None = None) -> dict[str, Any]:
+                        rule: str | None = None,
+                        sandbox: str | None = None, why: str = "") -> dict[str, Any]:
     """Arslan proposes running ONE command. Emitting this frame runs NOTHING — the
     frontend renders a confirm card showing the full command; only the user's
     `confirm_run_command {call_id}` lets it execute (or `cancel_run_command`).
@@ -233,9 +234,15 @@ def propose_run_command(call_id: str, command: str, argv: list[str], reason: str
     `reason` says why it asks (0.1.48: the terminal rule, e.g. "sends email"); `rule`
     is what "don't ask again" would remember, so the card can name it.
     `remote_host` non-empty means the command runs on ANOTHER machine (P3b), and the
-    card must say so. `fingerprints` are that machine's host keys."""
+    card must say so. `fingerprints` are that machine's host keys.
+    `sandbox` (0.1.51 P3) is "outside" (the model asks to leave the workspace sandbox,
+    `why` is its reason) or "retry" (the sandbox stopped it; running again starts over)."""
     frame = {"type": "propose_run_command", "call_id": call_id, "command": command,
              "argv": argv, "pretty": " ".join([command, *argv]), "reason": reason}
+    if sandbox in ("outside", "retry"):
+        frame["sandbox"] = sandbox
+        if why:
+            frame["why"] = why[:300]
     if rule:
         frame["rule"] = rule
     if remote_host:

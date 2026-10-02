@@ -494,6 +494,8 @@
     "sensitive": "機密"
   },
   "settings": {
+    "labelTerminalSandbox": "コマンドをサンドボックスで実行",
+    "terminalSandboxDesc": "コマンドはファイルの読み取りとネットワークは使えますが、書き込めるのは作業フォルダ・一時フォルダ・キャッシュだけで、SSH 鍵、キーチェーン、Arslan のデータは読めません。サンドボックスの外での実行には毎回あなたのクリックが必要です。",
     "appIcon": "アプリアイコン",
     "appIcon_frosted": "アンバーガラス",
     "appIcon_monochrome": "モノクロ",
@@ -1326,6 +1328,12 @@
     "run_label": "実行"
   },
   "runcmd": {
+    "sandboxOutsideLabel": "このコマンドをサンドボックスの外で実行しますか？",
+    "sandboxOutsideNote": "コマンドは通常 Arslan の作業フォルダにしか書き込めません。このコマンドは Mac の別の場所のファイルを変更する必要があります。",
+    "sandboxRetryLabel": "サンドボックスがこのコマンドを止めました",
+    "sandboxRetryNote": "作業フォルダの外に書き込むか、保護されたファイルを読もうとしました。サンドボックスの外で実行すると最初からやり直します。",
+    "sandboxRemember": "この会話の間はサンドボックスの外での実行を許可する",
+    "runOutside": "サンドボックスの外で実行",
     "label": "このコマンドを実行しますか？",
     "remember": "この種類のコマンドは今後確認しない（設定 › 詳細 で元に戻せます）",
     "run": "実行",
