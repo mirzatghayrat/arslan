@@ -1384,10 +1384,14 @@ def _embeds_protocol(text: str) -> bool:
                 or obj.get("functionCall") or isinstance(obj.get("escalate"), dict))
 
 
-def _clean_findings(tool_trace: list, *, limit: int = 4000) -> str:
+def _clean_findings(tool_trace: list, *, limit: int = 8000) -> str:
     """Human-readable findings for the synthesis step — plain facts, NOT tool-call logs. Feeding
     the model 'web_search(q): {json}' makes it imitate and emit more tool-calls; clean prose gives
-    it nothing to imitate, so it just writes the answer."""
+    it nothing to imitate, so it just writes the answer.
+
+    Links stay with their facts (0.1.50 S6): a bench answer built from these notes listed ten
+    jobs with "link: not provided" because the URLs were dropped here — and the link was the
+    field the user asked for."""
     lines: list[str] = []
     for step in tool_trace:
         res = step.get("result") or {}
@@ -1399,10 +1403,14 @@ def _clean_findings(tool_trace: list, *, limit: int = 4000) -> str:
                     continue
                 title = str(r.get("title") or "").strip()
                 snip = str(r.get("snippet") or r.get("content") or r.get("text") or "").strip()
+                url = str(r.get("url") or r.get("link") or "").strip()
                 if title or snip:
-                    lines.append(f"- {title}: {snip}".strip(" -:"))
+                    head = f"{title} <{url}>" if url else title
+                    lines.append(f"- {head}: {snip}".strip(" -:"))
         elif res.get("text"):                              # web_extract
-            lines.append(str(res["text"])[:700].strip())
+            url = str(res.get("url") or (step.get("args") or {}).get("url") or "").strip()
+            body = str(res["text"])[:700].strip()
+            lines.append(f"[{url}] {body}" if url else body)
         elif res.get("summary"):
             lines.append(str(res["summary"]).strip())
         else:
@@ -1455,6 +1463,7 @@ async def _synthesize_from_findings(a, system: str, user_content: str, tool_trac
         "phase is over. Reference notes gathered by a researcher are given below. Write the complete, "
         "well-structured answer to the user's question NOW, using ONLY those notes. If they asked for "
         "a ranking/top-N, include only entries supported by those notes and disclose any shortfall. "
+        "Keep each item's link from the notes next to it (the <…> or […] address); never invent one. "
         "Output ONLY the prose answer — never JSON, never a tool call, never 'let me…' or 'I'll search'."
         + GROUNDED_ANSWER_RULES + "\n\n" + GUARD_NOTE)
     synth_user = (f"The user asked:\n{user_content}\n\nReference notes:\n{wrap_external(digest)}"
@@ -1762,6 +1771,15 @@ async def run_native(
             policy.observe("web_search", {"query": q}, result)
 
     pending_feedback = len(convo) - unseen_start
+    # 0.1.50 completion first after a stop (S6 bench, T2): repeated failure or a
+    # spent fetch allowance ends RESEARCH, not the deliverable. The run enters
+    # finish mode once (sticky): up to two steps that offer only the save tools,
+    # then text only. Without save tools a no-progress stop forces an answer at
+    # once, as before; a spent fetch allowance then changes nothing.
+    finish_reason: str | None = None
+    finish_from = 0
+    finish_steps = 0
+    can_save = bool(WRAP_UP_TOOLS & wired_keys)
     for step in range(request_ceiling):
         budget.check()
         if budget.model_requests >= budget.limits.model_requests:
@@ -1771,27 +1789,50 @@ async def run_native(
         # Three batches of tool calls cut off by the output limit (none of which
         # ran): stop asking for tools and get an answer (0.1.49 S6 breaker).
         truncation_stop = turn_state.truncated_calls >= 3
-        forced = (policy.stopped or truncation_stop or budget.tool_calls >= budget.limits.tool_calls or
-                  (max_tool_calls is not None and step >= max_tool_calls))
-        if forced:
-            stop_reason = "task_no_progress" if policy.stopped or truncation_stop else "task_budget_exhausted"
+        if finish_reason is None and not truncation_stop:
+            if policy.stopped:
+                finish_reason, finish_from = "no_progress", len(tool_trace)
+            elif fetch_budget.get("fetches", 0) >= LIVE_FETCH_BUDGET:
+                finish_reason, finish_from = "fetch_budget", len(tool_trace)
+        saved = any(item.get("tool") in WRAP_UP_TOOLS and (item.get("result") or {}).get("ok") is True
+                    for item in tool_trace[finish_from:]) if finish_reason else False
+        finishing = finish_reason is not None and can_save and finish_steps < 2 and not saved
+        finish_done = finish_reason is not None and not finishing and (can_save or finish_reason == "no_progress")
+        forced = (finish_done or (policy.stopped and not finishing) or truncation_stop
+                  or budget.tool_calls >= budget.limits.tool_calls
+                  or (max_tool_calls is not None and step >= max_tool_calls))
+        no_progress = policy.stopped or finish_reason == "no_progress"
+        if forced or (finishing and no_progress):
+            stop_reason = "task_no_progress" if no_progress or truncation_stop else "task_budget_exhausted"
             if runtime:
                 runtime.pause_reason = stop_reason
         # 0.1.50 S1: the system prompt stays byte-identical for the whole turn
         # (prefix cache); this step's notes go to the <agent_status> block.
         notes: list[str] = []
         if forced:
-            notes.append("Repeated actions made no progress. Explain what was verified and what is blocked. Text only."
-                         if policy.stopped else
+            notes.append("The deliverable is saved. Give the final answer now: where it is, what is verified and "
+                         "what is missing. Text only." if saved else
+                         "Repeated actions made no progress. Explain what was verified and what is blocked. Text only."
+                         if no_progress else
                          "Your tool calls kept exceeding the output limit and none of them ran. Report briefly what "
                          "was verified and what remains. Text only." if truncation_stop else
+                         "The web reading allowance for this run is used up: report the verified results and "
+                         "remaining work. Text only." if finish_reason == "fetch_budget" else
                          "Tool budget exhausted: report the verified results and remaining work. Text only.")
-        # 0.1.43 completion first (background jobs only — only they carry a soft
-        # limit): past the soft limit, stop gathering and FINISH. Research tools
-        # are withdrawn; saving the deliverable stays possible. Not a failure:
-        # the completion checks decide the outcome as usual.
-        wrap_up = not forced and budget.soft_reached()
-        if wrap_up:
+        # 0.1.43 completion first: past the soft limit (or, 0.1.50, in finish mode),
+        # stop gathering and FINISH. Research tools are withdrawn; saving the
+        # deliverable stays possible. Not a failure: the completion checks decide
+        # the outcome as usual.
+        wrap_up = not forced and (finishing or budget.soft_reached())
+        if finishing:
+            finish_steps += 1
+            notes.append(("Repeated actions made no progress, so research has stopped."
+                          if finish_reason == "no_progress" else
+                          "The web reading allowance for this run is used up, so research has stopped.")
+                         + " Using only what you already have, save the deliverable now if one was asked for "
+                           "(write_file), marking anything missing or unverified; then give the final answer: "
+                           "what was done, what is blocked.")
+        elif wrap_up:
             notes.append("Work budget nearly used: stop researching now. Using only what you already have, "
                          "produce the complete deliverable the user asked for (save it if a file was asked for), "
                          "clearly marking anything you could not verify. Then give the final answer.")
@@ -1916,7 +1957,7 @@ async def run_native(
                     _record_tool_result(name, args, plan.update(args), emit, tool_trace,
                                         assistant_content, convo)
                     continue
-                if policy.stopped:
+                if policy.stopped and not (finishing and name in WRAP_UP_TOOLS):
                     _record_tool_result(name, {}, {"ok": False, "external": False,
                         "code": "task_no_progress", "error": "Execution paused after repeated work without progress."},
                         emit, tool_trace, json.dumps({"tool": name, "args": {}}), convo)
