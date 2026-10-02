@@ -30,7 +30,8 @@ from server.registry.task_tools import (
 # caught by identity, never substituted.
 from server.registry import net_pin
 from server.registry.net_pin import _BlockedHost
-from server.registry.search_providers import get_provider
+from server.registry.search_providers import (DeepSeekNativeProvider, DuckDuckGoHtmlProvider, SearchBlocked,
+                                              deepseek_native_base, get_provider)
 from server.services import chart_echarts, settings_service
 
 logger = logging.getLogger(__name__)
@@ -78,6 +79,13 @@ class ResolvedProvider(NamedTuple):
     reason: str | None      # None | "no-key" | "key-undecryptable" | "unknown-provider"
 
 
+#: Settings values meaning "no deliberate choice": search picks the provider
+#: (the stored default is "duckduckgo", which used to be the only keyless one).
+_AUTO_SEARCH = {"", "duckduckgo"}
+#: _search_provider's answer for that case: "use the automatic order".
+AUTO_SEARCH = object()
+
+
 async def _read_search_config() -> SearchConfig:
     """Settings' view of search. Split out so tests can stub it without a database."""
     async with AsyncSessionLocal() as db:
@@ -100,6 +108,8 @@ async def _search_provider() -> ResolvedProvider:
     is then ITS answer to give.
     """
     cfg = await _read_search_config()
+    if (cfg.name or "").strip().lower() in _AUTO_SEARCH:
+        return ResolvedProvider(AUTO_SEARCH, None)
     try:
         provider = get_provider(cfg.name, api_key=cfg.key, base_url=cfg.base_url)
     except ValueError:
@@ -154,6 +164,33 @@ async def _search_with_one_retry(provider, query: str, num_results: int):
         return await provider.search(query, num_results=num_results)
 
 
+
+
+async def _auto_search_providers() -> list:
+    """Automatic search order, as mainstream agents do it (0.1.49): the chat
+    model provider's own search first (DeepSeek native, same key and party as
+    the conversation), the best-effort DuckDuckGo scrape last. A deliberate
+    choice in Settings (Tavily, SearXNG) never reaches this path."""
+    providers = []
+    try:
+        from server.services.llm_factory import primary_chat_endpoint
+        endpoint = await primary_chat_endpoint()
+    except Exception:  # noqa: BLE001 — no chat config yet: fall through to the scrape
+        endpoint = None
+    if endpoint:
+        base, model, key = endpoint
+        native = deepseek_native_base(base, model)
+        if native:
+            providers.append(DeepSeekNativeProvider(base_url=native, api_key=key))
+    providers.append(DuckDuckGoHtmlProvider())
+    return providers
+
+
+_SEARCH_ADVICE = ("Web search needs a working provider: choose Tavily (free key) or a self-hosted "
+                  "SearXNG in Settings, or use a DeepSeek model whose built-in search Arslan uses "
+                  "automatically.")
+
+
 class WebSearchExecutor:
     key = "web_search"
 
@@ -166,6 +203,8 @@ class WebSearchExecutor:
         except (TypeError, ValueError):
             return {"ok": False, "error": "invalid 'num_results'"}
         resolved = await _search_provider()
+        if resolved.provider is AUTO_SEARCH:
+            return await self._auto(query, num_results)
         if resolved.provider is None:
             return {"ok": False, "error": _SEARCH_UNAVAILABLE[resolved.reason]}
         provider = resolved.provider
@@ -179,6 +218,35 @@ class WebSearchExecutor:
             logger.warning("web_search failed via %s: %s", name, exc, exc_info=True)
             return {"ok": False, "error": f"search failed: {category}",
                     "provider": name}
+        return self._found(provider, results)
+
+    async def _auto(self, query: str, num_results: int) -> dict:
+        """Try the automatic order; a blocked or failed provider is reported, not
+        mistaken for "nothing found", and the next one is tried."""
+        failures = []
+        for provider in await _auto_search_providers():
+            name = getattr(provider, "name", "unknown")
+            try:
+                results = await _search_with_one_retry(provider, query, num_results)
+            except SearchBlocked as exc:
+                failures.append(f"{name}: blocked ({exc})")
+                continue
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("web_search failed via %s: %s", name, exc, exc_info=True)
+                failures.append(f"{name}: {net_pin.categorize(exc)}")
+                continue
+            found = self._found(provider, results)
+            if failures:
+                found["fallback_from"] = failures
+            return found
+        blocked = all(": blocked" in f for f in failures)
+        return {"ok": False, "code": "search_blocked" if blocked else "search_failed",
+                "error": ("web search is unavailable right now — " + "; ".join(failures) +
+                          ". This is not 'no results': nothing was searched. " + _SEARCH_ADVICE),
+                "provider": "auto"}
+
+    @staticmethod
+    def _found(provider, results: list) -> dict:
         # Provenance travels with the results. The model sees this too: "these came
         # from a best-effort scraper that may be throttled" is something it can act on,
         # and a degraded answer nobody can distinguish from a good one is the silence

@@ -70,6 +70,21 @@ async def build_adapter(role: str | None = None) -> LLMAdapter:
                       base_url=base_url, report_provider=chosen["provider"])
 
 
+async def primary_chat_endpoint() -> tuple[str, str, str] | None:
+    """(base_url, model, key) of the PRIMARY chat config after preset expansion,
+    or None when none is configured. For capabilities the chat provider itself
+    offers (0.1.49: DeepSeek native web search), which go to the same endpoint
+    with the same key as chat."""
+    async with db_session.AsyncSessionLocal() as db:
+        configs = await provider_config_service.list_for_routing(db)
+        primary = next((c for c in configs if c["is_primary"]), configs[0] if configs else None)
+        if primary is None:
+            return None
+        key = await provider_config_service.get_decrypted_key(db, primary["id"])
+    _, model, base_url = expand_preset(primary["provider"], primary["model"], primary["base_url"] or "")
+    return (base_url or "", model or "", key or "") if key else None
+
+
 #: The per-task model slots. Each is a settings key holding a provider_config id.
 #:
 #: Registry, not four hand-written functions: the shape below is identical for every
