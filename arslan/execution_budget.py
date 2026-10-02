@@ -13,7 +13,7 @@ import time
 import uuid
 from contextlib import contextmanager
 from contextvars import ContextVar, copy_context
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from functools import wraps
 
 
@@ -71,6 +71,14 @@ def job_limits(tier: str) -> Limits:
     return Limits(**JOB_TIERS.get(tier, JOB_TIERS[DEFAULT_JOB_TIER]))
 
 
+def _hard_over(soft: Limits) -> Limits:
+    """The runaway stop for a soft wrap-up point (completion first)."""
+    return replace(soft, model_requests=math.ceil(soft.model_requests * HARD_OVER_SOFT),
+                   tool_calls=math.ceil(soft.tool_calls * HARD_OVER_SOFT),
+                   tokens=math.ceil(soft.tokens * HARD_OVER_SOFT),
+                   wall_seconds=soft.wall_seconds * HARD_OVER_SOFT)
+
+
 def job_budget(tier: str) -> "Budget":
     soft = job_limits(tier)
     hard = Limits(model_requests=math.ceil(soft.model_requests * HARD_OVER_SOFT),
@@ -78,6 +86,15 @@ def job_budget(tier: str) -> "Budget":
                   tokens=math.ceil(soft.tokens * HARD_OVER_SOFT),
                   wall_seconds=soft.wall_seconds * HARD_OVER_SOFT)
     return Budget(hard, soft=soft)
+
+
+def turn_budget() -> "Budget":
+    """A conversational turn, completion first (0.1.49): the configured limits are
+    the point where the turn stops researching and delivers from what it has;
+    1.5x stops only a turn that cannot stop itself. A turn with only a hard limit
+    aborted with an empty reply once it ran out (kernel bench T2, twice)."""
+    soft = configured_limits()
+    return Budget(_hard_over(soft), soft=soft)
 
 
 class Budget:
@@ -145,7 +162,8 @@ class Budget:
         return budget
 
     def soft_reached(self) -> bool:
-        """True once a soft limit (background jobs only) is met: time to wrap up."""
+        """True once a soft limit (background jobs and conversational turns) is met:
+        time to wrap up."""
         soft = self.soft
         return soft is not None and (
             self.model_requests >= soft.model_requests or self.tool_calls >= soft.tool_calls
@@ -209,7 +227,7 @@ def current() -> Budget | None:
 @contextmanager
 def scope(budget: Budget | None = None):
     """Explicit scope. Nested execution should reuse current() rather than reset it."""
-    token = _current.set(budget or Budget())
+    token = _current.set(budget or turn_budget())
     try:
         yield _current.get()
     finally:

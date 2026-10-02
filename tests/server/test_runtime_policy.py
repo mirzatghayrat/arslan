@@ -83,11 +83,15 @@ async def test_multiple_calls_cannot_exceed_shared_tool_budget_and_are_serial(mo
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: Adapter())
     monkeypatch.setitem(tool_loop.EXECUTORS, "fixture_read", Executor())
     with scope(Budget(Limits(tool_calls=2))) as budget:
-        with pytest.raises(BudgetExceeded, match="tool_calls"):
-            await tool_loop.run_native(system="s", user_content="Read", history=[],
-                resolve_tools=tools, emit=lambda event: None, on_chunk=lambda text: None)
+        # 0.1.49 completion first: crossing the hard tool budget inside a batch no
+        # longer aborts the turn with an empty reply; the rest of the batch is
+        # recorded as not run and the turn delivers what it gathered.
+        result = await tool_loop.run_native(system="s", user_content="Read", history=[],
+            resolve_tools=tools, emit=lambda event: None, on_chunk=lambda text: None)
         assert budget.tool_calls == 2
     assert executed == [0, 1]
+    assert [t["result"].get("code") for t in result["tool_trace"][2:4]] == ["task_budget_exhausted"] * 2
+    assert result["final"] and result["stop_reason"] == "task_budget_exhausted"
 
 
 @pytest.mark.parametrize("error,retries", [(TimeoutError(), 2), (ValueError("bad input"), 1),

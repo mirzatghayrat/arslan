@@ -1881,6 +1881,16 @@ async def run_native(
                         runtime.pause_reason = "task_input_required"
                     return {"final": None, "escalation": None, "clarify": clarify,
                             "tool_trace": tool_trace}
+                if budget.tool_calls >= budget.limits.tool_calls:
+                    # The batch crossed the hard tool budget: record the rest as
+                    # not run and let the next step (forced) deliver what was
+                    # gathered, instead of aborting the turn with an empty reply.
+                    result = _record_tool_result(name, {}, {"ok": False, "external": False,
+                        "code": "task_budget_exhausted",
+                        "error": "The tool budget for this turn is used up: this call did not run. "
+                                 "Answer with what you already have."},
+                        emit, tool_trace, json.dumps({"tool": name, "args": {}}), convo)
+                    continue
                 result = await _dispatch_tool(
                     name, args, assistant_content, resolve_tools=resolve_tools, emit=emit,
                     tool_timeout_s=tool_timeout_s, tool_trace=tool_trace, convo=convo,

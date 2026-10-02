@@ -18,7 +18,7 @@ from sqlalchemy import select
 from arslan import execution_checkpoint
 from arslan.companion.action_policy import ACCOUNT_ACTION_EFFECTS
 from arslan.companion.contracts import ResourceRef, TaskSpec
-from arslan.execution_budget import Budget, BudgetExceeded, current as current_budget, scope
+from arslan.execution_budget import Budget, BudgetExceeded, current as current_budget, scope, turn_budget
 from server.db import session as db_session
 from server.db.models import ArslanMessage, Run, Setting, TaskAttempt
 from server.services import personal_context
@@ -424,7 +424,7 @@ async def run_turn(function, conversation_id: str, user_message: str, emit, *arg
     ctx = personal_context.current()
     if ctx is None or ctx.temporary:
         return await function(conversation_id, user_message, emit, *args, **kwargs)
-    budget = current_budget() or _budget or Budget()
+    budget = current_budget() or _budget or turn_budget()
     async with db_session.AsyncSessionLocal() as db:
         locale = await db.scalar(select(Setting.value).where(Setting.key == "language")) or "en"
     from server.services.runtime_messages import normalize
