@@ -18,7 +18,7 @@ Honesty rules (shared with /conversations/{id}/usage via item_usd):
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
@@ -28,7 +28,9 @@ from server.auth import require_auth
 from server.db import session as db_session
 from server.db.models import Run, UsageLedger
 from server.schemas import (
+    UsageBinOut,
     UsageDailyPointOut,
+    UsageRunsOut,
     UsageSummaryOut,
     UsageSummaryRowOut,
 )
@@ -59,6 +61,67 @@ NOT_COVERED = [
 ]
 
 _WINDOWS = {"24h": timedelta(hours=24), "7d": timedelta(days=7), "30d": timedelta(days=30)}
+# Activity dashboard slices: 24 hours, 28 quarter-days, 30 days.
+_BIN = {"24h": timedelta(hours=1), "7d": timedelta(hours=6), "30d": timedelta(days=1)}
+# Upper bounds (ms) of the duration bands; the last band is open-ended.
+DURATION_BANDS = ((10_000, "<10s"), (30_000, "10–30s"), (60_000, "30s–1m"), (180_000, "1–3m"),
+                  (600_000, "3–10m"), (None, ">10m"))
+_RUN_KINDS = ("live", "host", "scheduled")
+_DONE = {"completed", "recorded", "scored"}
+_STOPPED = {"cancelled", "interrupted"}
+
+
+def _band(ms: int) -> int:
+    return next(i for i, (upper, _) in enumerate(DURATION_BANDS) if upper is None or ms < upper)
+
+
+def _percentile(sorted_ms: list[int], q: float) -> int | None:
+    """Nearest-rank percentile: the smallest value with at least q of the data at or below it."""
+    if not sorted_ms:
+        return None
+    rank = max(1, -(-len(sorted_ms) * q // 1))      # ceil(n*q)
+    return sorted_ms[int(rank) - 1]
+
+
+def run_activity(runs: list[tuple], items: list[tuple], since: datetime, now: datetime,
+                 rng: str) -> tuple[UsageRunsOut, list[UsageBinOut]]:
+    """Totals and per-slice series from (status, total_ms, created_at) run rows and
+    usage items (…, tokens_total, ts). Pure, so the shapes are tested without a DB."""
+    step = _BIN[rng]
+    count = max(1, int((now - since) / step))
+    start = now - step * count
+    # Stored times are naive UTC; the epoch makes the browser's local-time labels exact.
+    bins = [UsageBinOut(start_ts=int((start + step * i).replace(tzinfo=timezone.utc).timestamp()),
+                        durations=[0] * len(DURATION_BANDS)) for i in range(count)]
+
+    def slot(ts: datetime | None) -> int | None:
+        if ts is None or ts < start:
+            return None
+        return min(count - 1, int((ts - start) / step))
+
+    totals = UsageRunsOut()
+    finished: list[int] = []
+    for status, total_ms, created in runs:
+        totals.total += 1
+        kind = ("running" if status == "recording" else "failed" if status == "failed"
+                else "stopped" if status in _STOPPED else "done")
+        setattr(totals, kind, getattr(totals, kind) + 1)
+        index = slot(created)
+        if index is not None:
+            bins[index].runs += 1
+            bins[index].failed += kind == "failed"
+        if kind in ("done", "failed") and isinstance(total_ms, int) and total_ms >= 0:
+            finished.append(total_ms)
+            if index is not None:
+                bins[index].durations[_band(total_ms)] += 1
+    finished.sort()
+    totals.p50_ms, totals.p95_ms = _percentile(finished, 0.5), _percentile(finished, 0.95)
+    for item in items:
+        index = slot(item[-1])
+        if index is not None:
+            bins[index].tokens_total += item[-2]
+    return totals, bins
+
 
 
 def item_usd(model: str | None, tokens_in: int | None, tokens_out: int | None,
@@ -117,7 +180,14 @@ async def fetch_usage_items(
 async def usage_summary(
     rng: str = Query("7d", alias="range", pattern="^(24h|7d|30d)$"),
 ) -> UsageSummaryOut:
-    items = await fetch_usage_items(since=datetime.utcnow() - _WINDOWS[rng], include_replay=True)
+    now = datetime.utcnow()
+    since = now - _WINDOWS[rng]
+    items = await fetch_usage_items(since=since, include_replay=True)
+    async with db_session.AsyncSessionLocal() as db:
+        run_rows = (await db.execute(
+            select(Run.status, Run.total_ms, Run.created_at)
+            .where(Run.kind.in_(_RUN_KINDS), Run.created_at >= since))).all()
+    runs, bins = run_activity([tuple(r) for r in run_rows], items, since, now, rng)
 
     groups: dict[tuple, dict] = {}
     daily: dict[str, int] = {}
@@ -139,4 +209,11 @@ async def usage_summary(
             groups.items(), key=lambda kv: kv[1]["tokens_total"], reverse=True)
     ]
     series = [UsageDailyPointOut(date=d, tokens_total=t) for d, t in sorted(daily.items())]
-    return UsageSummaryOut(range=rng, rows=rows, daily=series, not_covered=NOT_COVERED)
+    priced = [r.usd for r in rows if r.usd is not None]
+    return UsageSummaryOut(
+        range=rng, rows=rows, daily=series, not_covered=NOT_COVERED,
+        tokens_total=sum(r.tokens_total for r in rows),
+        usd_total=round(sum(priced), 6) if priced else None,
+        estimated_any=any(r.estimated_any for r in rows),
+        runs=runs, bin_seconds=int(_BIN[rng].total_seconds()),
+        duration_bands=[label for _, label in DURATION_BANDS], bins=bins)

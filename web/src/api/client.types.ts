@@ -125,6 +125,29 @@ export interface UsageSummary {
   rows: UsageSummaryRow[];
   daily: UsageDailyPoint[];
   not_covered: string[];
+  /** 0.1.50 Activity dashboard (absent from older backends). */
+  tokens_total?: number;
+  usd_total?: number | null;
+  estimated_any?: boolean;
+  runs?: UsageRuns;
+  bin_seconds?: number;
+  duration_bands?: string[];
+  bins?: UsageBin[];
+}
+
+/** What the work in the range did: answers, background jobs, scheduled runs. */
+export interface UsageRuns {
+  total: number; done: number; failed: number; stopped: number; running: number;
+  p50_ms: number | null; p95_ms: number | null;
+}
+
+/** One time slice: work started in it, how it ended, how long finished work took. */
+export interface UsageBin {
+  start_ts: number;          // epoch seconds
+  runs: number;
+  failed: number;
+  tokens_total: number;
+  durations: number[];       // finished runs per duration band
 }
 
 /** One row of GET /scheduled-tasks (S3-M4). Mirrors ScheduledTaskOut. */
