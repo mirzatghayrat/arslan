@@ -27,7 +27,7 @@ _PLAIN_KEYS = (
                "compaction_config_id", "title_config_id",
                "router_config_id", "vision_config_id",
                "evolution_auto", "mcp_server_enabled", "curation_enabled", "research_review_enabled", "keep_awake_enabled",
-               "desktop_notifications_enabled", "ocr_languages",
+               "desktop_notifications_enabled", "island_enabled", "ocr_languages",
                "workspace_dir", "heartbeat_enabled", "heartbeat_checklist",
                "heartbeat_interval_s", "lan_discovery_enabled", "ssh_enabled", "default_read_enabled",
                "voice_output_enabled", "voice_input_locale", "voice_mode", "voice_endpoint_silence_ms")
@@ -234,6 +234,13 @@ async def keep_awake_enabled(session: AsyncSession) -> bool:
     should finish. Only an explicit 'false' turns it off. Never fights lid-close
     or battery sleep; that is the system's call."""
     raw = await _get_raw(session, "keep_awake_enabled")
+    return raw is None or str(raw).strip().lower() != "false"
+
+
+async def island_enabled(session: AsyncSession) -> bool:
+    """Whether Arslan shows in the notch (the island, 0.1.51). Default ON; only an
+    explicit 'false' turns it off. It spends nothing and only shows what is on."""
+    raw = await _get_raw(session, "island_enabled")
     return raw is None or str(raw).strip().lower() != "false"
 
 
@@ -562,6 +569,7 @@ _BOOL_ACCESSORS = {
     "research_review_enabled": research_review_enabled,
     "keep_awake_enabled": keep_awake_enabled,
     "desktop_notifications_enabled": desktop_notifications_enabled,
+    "island_enabled": island_enabled,
     "mcp_server_enabled": mcp_server_enabled,
 }
 

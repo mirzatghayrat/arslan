@@ -333,7 +333,7 @@ async def record_outcome(task_id: int, ok: bool, *, row_id: int,
         await db.commit()
     from server.services import desktop_status
     desktop_status.push("scheduled_finished", conversation_id=desktop_cid, task_id=task_id,
-                        outcome="ok" if ok else ("error" if count_failure else "cancelled"))
+                        outcome="ok" if ok else ("error" if count_failure else "cancelled"), work="scheduled")
     if notify is not None:
         desktop_status.push("scheduled_paused", conversation_id=desktop_cid, task_id=task_id)
         await _notify_pause(notify[0], notify[1], reason or "", task_id=task_id)
@@ -509,7 +509,7 @@ async def _fire(task: ScheduledTask) -> None:
 
     async def body(sink):
         return await _fire_body(task)
-    with desktop_status.working(cid):   # keeps the Mac awake while the fire runs (0.1.41)
+    with desktop_status.working(cid, title=task.name, kind="scheduled"):   # keeps the Mac awake while the fire runs (0.1.41)
         return await task_context.execute_entry(cid, task.prompt, run_registry.make_emit(cid), body,
             driver={"kind": "expert", "id": task.spawn_id} if _target(task) != "arslan" and task.spawn_id else None,
             headless=True)

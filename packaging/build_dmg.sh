@@ -126,6 +126,11 @@ step "[1/7] building the web UI"
   echo "ERROR: web build produced no assets — the app window would be blank" >&2
   exit 1
 }
+# The notch island's own page (0.1.51); without it the island window loads the app.
+[ -f "$ROOT/web/dist/island.html" ] || {
+  echo "ERROR: web build produced no island.html — check web/vite.config.ts build inputs" >&2
+  exit 1
+}
 
 # --------------------------------------------------------------------------
 step "[2/7] freezing the backend sidecar"

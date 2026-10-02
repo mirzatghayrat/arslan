@@ -43,5 +43,7 @@ strip = true
 objc2 = "0.6"
 # Completion-handler blocks for UserNotifications (0.1.41); already in Cargo.lock.
 block2 = "0.6"
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSImage"] }
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSData"] }
+# NSWindow/NSScreen/NSEvent: the notch island (0.1.51) — window level, Spaces,
+# sharing type, notch measurements and the pointer position. Same locked crates.
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSImage", "NSResponder", "NSWindow", "NSScreen", "NSEvent", "objc2-core-foundation"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSData", "NSArray", "NSGeometry", "objc2-core-foundation"] }

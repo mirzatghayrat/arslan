@@ -703,6 +703,8 @@
     "keepAwakeDesc": "Mientras se ejecuta una tarea o tarea programada, el Mac no entra en reposo por sí solo. La pantalla puede apagarse; cerrar la tapa o la batería baja sí lo ponen en reposo.",
     "labelDesktopNotifications": "Notificaciones",
     "desktopNotificationsDesc": "Con la ventana cerrada o en segundo plano, macOS te avisa cuando termina una tarea, una acción necesita tu confirmación o falla una tarea programada. Las notificaciones nunca muestran el texto de los mensajes.",
+    "labelIsland": "Mostrar Arslan en el notch",
+    "islandDesc": "Un pequeño Arslan en la parte superior de la pantalla muestra en qué está trabajando, cuándo te necesita y cuándo termina una tarea. Pasa el puntero por encima para ver más. Nunca aparece en capturas, grabaciones ni al compartir pantalla.",
     "automationElsewhere": "Las tareas programadas, el uso de tokens y cada ejecución pasada están en Actividad.",
     "automationOpenActivity": "Abrir Actividad",
     "searchPlaceholder": "Buscar ajustes…",

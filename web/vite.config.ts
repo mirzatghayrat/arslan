@@ -15,6 +15,16 @@ export default defineConfig(() => {
         '@': path.resolve(__dirname, '.'),
       },
     },
+    build: {
+      // Two pages: the app, and the island (0.1.51) — its own small entry so
+      // the notch window loads none of the app bundle or its global CSS.
+      rollupOptions: {
+        input: {
+          index: path.resolve(__dirname, 'index.html'),
+          island: path.resolve(__dirname, 'island.html'),
+        },
+      },
+    },
     server: {
       // Bind IPv4 explicitly: on this Node, host "localhost" resolves to ::1 only,
       // and an IPv4 browser/probe then gets connection-refused on 127.0.0.1:5173.

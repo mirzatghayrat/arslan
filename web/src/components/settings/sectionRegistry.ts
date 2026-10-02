@@ -138,6 +138,7 @@ export const FIELD_HOMES: Record<string, SettingsSectionId> = {
   // ── desktop (0.1.41: the window hides, Arslan stays in the menu bar) ──────
   'desktop.keep_awake': 'desktop',
   'desktop.notifications': 'desktop',
+  'desktop.island': 'desktop',
   //: Replaces the two placeholder nav entries.
   'automation.activity_link': 'automation',
 
