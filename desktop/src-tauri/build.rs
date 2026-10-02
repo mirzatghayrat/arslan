@@ -21,6 +21,8 @@ fn main() {
             "voice_conversation_stop",
             "voice_mute",
             "voice_unmute",
+            "island_shape",
+            "island_open_conversation",
         ]),
     ))
     .expect("failed to run tauri-build");

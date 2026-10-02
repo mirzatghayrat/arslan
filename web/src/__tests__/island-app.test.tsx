@@ -106,3 +106,14 @@ describe('island helpers', () => {
     expect(stepText('en', 'mcp_github_search', 'x')).toBe('Use mcp github search');
   });
 });
+
+describe('island geometry from the shell', () => {
+  it('accepts a notch with a width, or a flat bar without one; rejects junk', async () => {
+    const { isGeometry } = await import('../island/islandShell');
+    expect(isGeometry({ notch: true, notchWidth: 188, barHeight: 32 })).toBe(true);
+    expect(isGeometry({ notch: false, notchWidth: 0, barHeight: 24 })).toBe(true);
+    expect(isGeometry({ notch: true, notchWidth: 0, barHeight: 32 })).toBe(false);
+    expect(isGeometry({ notch: false, notchWidth: 0, barHeight: 0 })).toBe(false);
+    expect(isGeometry(null)).toBe(false);
+  });
+});

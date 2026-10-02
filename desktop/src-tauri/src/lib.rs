@@ -17,6 +17,7 @@ use std::process::{Child, Command, Stdio};
 
 mod app_icon;
 pub mod endpoint;
+mod island;
 mod listen;
 mod maintenance;
 mod native_locale;
@@ -699,6 +700,23 @@ const MAIN_LABEL: &str = "main";
 /// and health comes after that — and on the setup thread either one would
 /// freeze the launch screen rather than play under it.
 fn boot(app: tauri::AppHandle, splash_since: std::time::Instant, maintenance: NativeMaintenance) {
+    // Debug builds only: run the shell from a checkout against a dev backend
+    // that is already running (`ARSLAN_DEV_BACKEND_PORT=8741`), skipping the
+    // bundled sidecar a checkout does not have. Compiled out of release builds.
+    #[cfg(debug_assertions)]
+    if let Some(port) = std::env::var("ARSLAN_DEV_BACKEND_PORT")
+        .ok()
+        .and_then(|p| p.parse::<u16>().ok())
+    {
+        let handle = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            maintenance.complete();
+            open_main_window(&handle, port);
+            resident::start(handle.clone(), port);
+            island::open(&handle, port);
+        });
+        return;
+    }
     #[cfg(target_os = "macos")]
     let started = start_with_recovery(
         || start_sidecar(&app),
@@ -802,6 +820,7 @@ fn boot(app: tauri::AppHandle, splash_since: std::time::Instant, maintenance: Na
         maintenance.complete();
         open_main_window(&handle, port);
         resident::start(handle.clone(), port);
+        island::open(&handle, port);
     });
 }
 
@@ -973,6 +992,7 @@ pub fn run() {
         .manage(UpdateShared::default())
         .manage(listen::Listener::default())
         .manage(voice::Conversation::default())
+        .manage(island::State::default())
         .invoke_handler(tauri::generate_handler![
             app_icon::get_app_icon,
             app_icon::set_app_icon,
@@ -985,7 +1005,9 @@ pub fn run() {
             voice::voice_conversation_start,
             voice::voice_conversation_stop,
             voice::voice_mute,
-            voice::voice_unmute
+            voice::voice_unmute,
+            island::island_shape,
+            island::island_open_conversation
         ])
         .on_menu_event(|app, event| {
             refresh_update_menu(app);
@@ -1007,6 +1029,9 @@ pub fn run() {
         .on_window_event(|window, event| {
             if matches!(event, tauri::WindowEvent::Focused(true)) {
                 refresh_update_menu(window.app_handle());
+            }
+            if let (MAIN_LABEL, tauri::WindowEvent::Focused(focused)) = (window.label(), event) {
+                island::main_focus(window.app_handle(), *focused);
             }
             // Resident mode (0.1.41): closing the main window hides it; the
             // backend keeps working and the menu bar keeps it reachable.

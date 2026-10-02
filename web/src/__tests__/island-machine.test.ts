@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Activity, Feed, FeedEvent } from '../island/feed';
 import {
-  applyFeed, countdown, dismiss, hitRect, hoverEnter, hoverLeave, initialState, mood, open, setMainFocused,
+  applyFeed, bodyTop, countdown, dismiss, hitRect, hoverEnter, hoverLeave, initialState, mood, open, setMainFocused,
   setPresence, shape, tick, COMPACT_TO_EXPAND_MS, FINISHED_MS, IDLE_COLLAPSE_MS, LEAVE_COLLAPSE_MS,
   PEEK_TO_EXPAND_MS, STEP_HISTORY, type IslandState,
 } from '../island/islandMachine';
@@ -155,6 +155,13 @@ describe('island behaviour', () => {
     expect([s.view, s.current?.title]).toEqual(['finished', 'Find 10 jobs']);
   });
 
+  it('hover in and out are idempotent (the shell and the page may both report them)', () => {
+    const s = hoverEnter(started(), 1000);
+    expect(hoverEnter(s, 1400)).toBe(s);                 // a second "enter" does not restart the 650 ms
+    const left = hoverLeave(s, 2000);
+    expect(hoverLeave(left, 2500)).toBe(left);
+  });
+
   it('a click opens whatever matters most', () => {
     expect(open(started(), 0).view).toBe('empty');
     expect(open(applyFeed(started(), feed({ cursor: 10, active: [act()] }), 0), 0).view).toBe('overview');
@@ -194,7 +201,17 @@ describe('island geometry', () => {
   it('hides exactly behind the notch and grows out of it', () => {
     expect(shape(at('hidden'), notch)).toEqual({ w: 186, h: 33, r: 12 });
     expect(shape(at('compact'), notch).w).toBe(186 + 120);
-    expect(shape(at('expanded', 'overview'), notch)).toEqual({ w: 640, h: 210, r: 30 });
+    expect(shape(at('expanded', 'overview'), notch)).toEqual({ w: 640, h: 210 + 3, r: 30 });
+  });
+
+  it('starts the cards below a tall notch and grows the panel by the same amount', () => {
+    const tall = { notch: true, notchWidth: 220, barHeight: 39 };
+    expect(bodyTop(tall)).toBe(45);
+    expect(shape(at('expanded', 'empty'), tall).h).toBe(150 + 9);
+    expect(bodyTop(notch)).toBe(39);                     // 33 pt notch: still clear of it
+    expect(bodyTop({ notch: true, notchWidth: 186, barHeight: 24 })).toBe(36);
+    expect(bodyTop(flat)).toBe(36);                      // no notch to clear
+    expect(shape(at('expanded', 'empty'), flat).h).toBe(150);
   });
 
   it('takes the pointer over the shape plus its ears, centred in the window', () => {

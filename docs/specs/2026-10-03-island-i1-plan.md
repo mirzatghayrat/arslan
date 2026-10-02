@@ -63,3 +63,31 @@ Rust: pure geometry and hit-test functions; the command/permission lockstep test
 targets (never full arguments), feed shape, status endpoint still contentless. Web: machine transitions,
 feed → view mapping, mascot glyph tween, views. Each mutation-checked. Then a real run of the debug shell
 against a dev backend.
+
+## 5. As built (2026-10-03) — where the build differs from the plan above
+
+- **Its own page, not an SPA route.** `web/island.html` is a second Vite entry (about 30 KB of script, no app
+  bundle, no global CSS), loaded as `/island.html`. The server treats it as an entry page (never cached, like
+  `index.html`), and `packaging/build_dmg.sh` refuses a build without it: the SPA fallback would otherwise load
+  the whole app into the notch window.
+- **Hover comes from the shell.** The island window is never key (`focusable(false)`), so it gets no reliable
+  hover events of its own. The 30 Hz pointer poll that toggles click-through also emits `island-pointer
+  {inside}`, and the page uses that for enter/leave; DOM hover is used only in a plain browser (dev).
+- **Leaving closes a panel you opened by hovering** after 1.2 s, instead of waiting 60 s: an open panel blocks
+  clicks on whatever is under it. The 60 s idle close (countdown in the last 10 s) applies to a "stopped" notice;
+  "needs you" stays until it is answered or closed; "finished" shows 5.2 s, never closes under the pointer and
+  stays at least 2 s after the pointer leaves.
+- **A result waits only while other work is still running** under the pointer; when the last run finishes
+  while you watch the overview, its result replaces the overview at once.
+- **Chat turns you are looking at do not pop up.** The shell emits `island-main-focus`; finished events carry
+  `work` (turn/job/scheduled) in the island feed only, so a background job still shows while the window is focused.
+- **Plan is structured.** `note_plan(items)` keeps the checklist (60 characters an item) with done/total, and
+  the overview shows it as chips; the overview's step lines are the last three distinct steps.
+- **The panel clears the notch.** Cards start at `max(36, notch height + 6)` and the panel grows by the
+  difference (found on a 14" MacBook Pro at 1800 × 1169, where the notch is 39 pt and hid the card's top edge).
+  When hidden, the shape is exactly the notch, without the concave ears.
+- **Debug only:** `ARSLAN_ISLAND_SHAREABLE=1` leaves the window capturable so it can be screenshotted while
+  developing; compiled out of release builds with `ARSLAN_DEV_BACKEND_PORT`.
+- **Not yet verified:** click-through on a real screen (the hit test is unit-tested; the toggle itself was not
+  clicked through), and showing over another app's full-screen window. A regular `NSWindow` from a background
+  app may not join another app's full-screen Space; if not, the non-activating `NSPanel` planned for I2 is the fix.

@@ -1,0 +1,18 @@
+{
+  "identifier": "island-ui",
+  "description": "The notch island (0.1.51): a second window, label `island`, loading the sidecar-served island.html from the same 127.0.0.1 origin as the app. It may report the rectangle it draws (island_shape, so the rest of the window clicks through), ask to bring the main window forward on a conversation (island_open_conversation), and listen for the shell's island-geometry / island-presence / island-pointer / island-main-focus events. Nothing else: no updater, voice, backup, icon or external-link commands, and none of these two are granted to the main window.",
+  "remote": {
+    "urls": [
+      "http://127.0.0.1:*"
+    ]
+  },
+  "windows": [
+    "island"
+  ],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "allow-island-shape",
+    "allow-island-open-conversation"
+  ]
+}

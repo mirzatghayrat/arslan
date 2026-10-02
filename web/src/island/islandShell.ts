@@ -21,8 +21,13 @@ export const inShell = () => tauri() !== null;
 /** The geometry the shell measured when it built the window; a notched default in a browser. */
 export function initialGeometry(): ScreenGeometry {
   const g = window.__ARSLAN_ISLAND_GEOMETRY__;
-  if (g && typeof g.notch === 'boolean' && g.notchWidth > 0 && g.barHeight > 0) return g;
+  if (isGeometry(g)) return g;
   return { notch: true, notchWidth: 200, barHeight: 32 };
+}
+
+export function isGeometry(g: unknown): g is ScreenGeometry {
+  const v = g as ScreenGeometry | null | undefined;
+  return !!v && typeof v.notch === 'boolean' && v.barHeight > 0 && (!v.notch || v.notchWidth > 0);
 }
 
 /** Tell the shell which rectangle takes the pointer; everywhere else clicks through. */

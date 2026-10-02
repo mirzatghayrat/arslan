@@ -2,11 +2,11 @@ import { useEffect, useReducer, useRef, useState, type CSSProperties, type React
 import { fetchFeed, type Activity, type Feed } from './feed';
 import IslandMascot from './IslandMascot';
 import {
-  applyFeed, countdown, dismiss, focused, hitRect, hoverEnter, hoverLeave, initialState, interact, isSearchTool, mood, open,
+  applyFeed, bodyTop, countdown, dismiss, focused, hitRect, hoverEnter, hoverLeave, initialState, interact, isSearchTool, mood, open,
   setFocus, setMainFocused, setPresence, shape, tick, waitingActivity,
   type IslandState, type Mood, type StepLine,
 } from './islandMachine';
-import { initialGeometry, inShell, listenShell, openConversation, reportShape } from './islandShell';
+import { initialGeometry, inShell, isGeometry, listenShell, openConversation, reportShape } from './islandShell';
 import { pickLang, stepText, t, type Lang } from '../locales/island';
 
 type Action =
@@ -84,16 +84,17 @@ export default function IslandApp() {
   }, []);
 
   useEffect(() => {
-    const offGeo = listenShell<typeof geo>('island-geometry', (g) => {
-      if (g && typeof g.notch === 'boolean') setGeo(g);
-    });
+    const offGeo = listenShell<typeof geo>('island-geometry', (g) => { if (isGeometry(g)) setGeo(g); });
+    // In the shell the window is never key, so the page gets no reliable hover
+    // of its own: the shell's pointer poll says when the pointer arrives and leaves.
+    const offPointer = listenShell<{ inside: boolean }>('island-pointer', (p) => dispatch({ type: p?.inside ? 'enter' : 'leave' }));
     const offAway = listenShell<{ away: boolean }>('island-presence', (p) => dispatch({ type: 'presence', away: !!p?.away }));
     const offFocus = listenShell<{ focused: boolean }>('island-main-focus', (p) => dispatch({ type: 'mainFocus', focused: !!p?.focused }));
     const onStorage = (e: StorageEvent) => { if (e.key === LANG_KEY) setLang(readLang()); };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') dispatch({ type: 'dismiss' }); };
     window.addEventListener('storage', onStorage);
     window.addEventListener('keydown', onKey);
-    return () => { offGeo(); offAway(); offFocus(); window.removeEventListener('storage', onStorage); window.removeEventListener('keydown', onKey); };
+    return () => { offGeo(); offPointer(); offAway(); offFocus(); window.removeEventListener('storage', onStorage); window.removeEventListener('keydown', onKey); };
   }, []);
 
   // Tell the shell where the island is, so everything else clicks through.
@@ -111,14 +112,18 @@ export default function IslandApp() {
 
   if (!s.enabled) return null;
   const m = mood(s);
-  const style = { '--w': `${sh.w}px`, '--h': `${sh.h}px`, '--r': `${sh.r}px`, '--cd': cd } as CSSProperties;
+  const domHover = !inShell();   // a plain browser (dev) has real hover events
+  const style = {
+    '--w': `${sh.w}px`, '--h': `${sh.h}px`, '--r': `${sh.r}px`, '--cd': cd, '--body-top': `${bodyTop(geo)}px`,
+  } as CSSProperties;
 
   return (
     <>
       {!inShell() && <DevBackdrop />}
       <div className={`island${geo.notch ? '' : ' flat'}${closing ? ' closing' : ''}`} data-mode={s.mode} style={style}
         role="region" aria-label={t(lang, 'region')}
-        onMouseEnter={() => dispatch({ type: 'enter' })} onMouseLeave={() => dispatch({ type: 'leave' })}
+        onMouseEnter={domHover ? () => dispatch({ type: 'enter' }) : undefined}
+        onMouseLeave={domHover ? () => dispatch({ type: 'leave' }) : undefined}
         onMouseMove={() => dispatch({ type: 'move' })}>
         <button type="button" className="slot-left" onClick={() => dispatch({ type: 'open' })} aria-label={t(lang, 'openArslan')}>
           <IslandMascot mood={m} size={geo.notch ? 22 : 16} small paused={s.mode === 'hidden' && geo.notch} />
@@ -126,7 +131,9 @@ export default function IslandApp() {
         <div className="slot-right">{s.mode === 'compact' && <CompactRight s={s} clock={clock} />}</div>
         <div className="expanded" aria-hidden={s.mode !== 'expanded'}>
           <div className="ihead">
-            <span className="count">{s.active.length ? t(lang, 'running', { n: s.active.length }) : t(lang, 'idle')}</span>
+            <span className="count">
+              {(s.view === 'overview' || s.view === 'empty') && (s.active.length ? t(lang, 'running', { n: s.active.length }) : t(lang, 'idle'))}
+            </span>
             <button type="button" className="x" onClick={() => dispatch({ type: 'dismiss' })} aria-label={t(lang, 'close')}>
               <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
             </button>

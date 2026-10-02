@@ -173,11 +173,13 @@ export function settle(s: IslandState, now: number): IslandState {
 }
 
 export function hoverEnter(s: IslandState, now: number): IslandState {
+  if (s.hovering) return s;
   const next = { ...s, hovering: true, hoverSince: now, lastInteract: now };
   return s.mode === 'hidden' && s.enabled ? { ...next, mode: 'peek' } : next;
 }
 
 export function hoverLeave(s: IslandState, now: number): IslandState {
+  if (!s.hovering) return s;
   const next = { ...s, hovering: false, leftAt: now };
   // Reading a result and moving away leaves it on screen a little longer.
   if (s.current?.kind === 'finished') next.shownAt = Math.max(s.shownAt, now - FINISHED_MS + 2000);
@@ -277,9 +279,21 @@ export interface Shape { w: number; h: number; r: number }
 export const VIEW_H: Record<View, number> = { overview: 210, empty: 150, needsYou: 190, finished: 176, stopped: 186 };
 export const EXPANDED_W = 640;
 export const EAR = 14;
+/** Where the panel's cards start; VIEW_H assumes this. */
+export const BODY_TOP = 36;
+const BELOW_NOTCH = 6;
+
+/**
+ * The cards start below the notch: on a display whose notch is taller than
+ * the default header (e.g. 39 pt at "More Space"), the notch hid the top of
+ * the card (seen on a real MacBook, 0.1.51). The panel grows by the same amount.
+ */
+export function bodyTop(g: ScreenGeometry): number {
+  return g.notch ? Math.max(BODY_TOP, Math.ceil(g.barHeight) + BELOW_NOTCH) : BODY_TOP;
+}
 
 export function shape(s: IslandState, g: ScreenGeometry): Shape {
-  if (s.mode === 'expanded') return { w: EXPANDED_W, h: VIEW_H[s.view], r: 30 };
+  if (s.mode === 'expanded') return { w: EXPANDED_W, h: VIEW_H[s.view] + bodyTop(g) - BODY_TOP, r: 30 };
   if (!g.notch) {
     if (s.mode === 'compact') return { w: 240, h: 26, r: 13 };
     if (s.mode === 'peek') return { w: 140, h: 26, r: 13 };
