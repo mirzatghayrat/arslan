@@ -767,6 +767,38 @@ async def _status_workspace(wired_keys) -> tuple:
         return None, False
 
 
+async def _link_check_note(name: str, args: dict, result: dict, tool_trace: list,
+                           hints: dict[str, int]) -> str | None:
+    """Host link check for a saved text file in a turn that researched; at most
+    MAX_HINTS_PER_FILE per file, so a stubborn table cannot loop the turn."""
+    from server.orchestrator import link_check
+    path = str(result.get("path") or args.get("path") or "")
+    if not link_check.applies(path) or hints.get(path, 0) >= link_check.MAX_HINTS_PER_FILE:
+        return None
+    seen = link_check.evidence(tool_trace)
+    if not seen:
+        return None
+    content = args.get("content") if name == "write_file" else await _read_saved(path)
+    found = link_check.review(content, seen) if isinstance(content, str) else None
+    if not found:
+        return None
+    hints[path] = hints.get(path, 0) + 1
+    return link_check.hint(path, found)
+
+
+async def _read_saved(rel: str) -> str | None:
+    """The file an edit_file just changed, read back inside the workspace boundary."""
+    from server.db import session as db_session
+    from server.services import settings_service
+    from server.services.workspace_paths import resolve_in_workspace
+    try:
+        async with db_session.AsyncSessionLocal() as db:
+            root = await settings_service.workspace_dir(db)
+        return resolve_in_workspace(rel, root).read_text(encoding="utf-8", errors="replace")[:200_000]
+    except Exception:  # noqa: BLE001 — a check that cannot read simply does not run
+        return None
+
+
 async def _writing_in_own_folder() -> bool:
     """Unknown means ask: if the setting cannot be read, treat the folder as the user's."""
     from server.db import session as db_session
@@ -1634,8 +1666,55 @@ FINISH_TOOLS = WRAP_UP_TOOLS | {"run_command"}
 
 
 @governed
-async def run_native(
+async def run_native(**kwargs) -> dict:
+    """One answer turn: `_run_native` below, plus completion first at the hard stop
+    (0.1.50, S6 bench T2 r2). A chat turn that reaches its hard work limit after
+    doing real work ends with a closing message the host writes — what was saved,
+    where, how many pages were read, how to continue — instead of an error that
+    hides a deliverable already on disk. No model call: the limit is reached.
+    Background jobs and delegated workers still raise; their machinery records
+    the stop itself."""
+    facts: dict = {}
+    try:
+        return await _run_native(**kwargs, _facts=facts)
+    except BudgetExceeded:
+        from server.services import background_jobs
+        trace = facts.get("tool_trace") or []
+        host_turn = kwargs.get("caller") is None and kwargs.get("progress_lane") is None
+        if not host_turn or background_jobs.inside_job() \
+                or not any((t.get("result") or {}).get("ok") for t in trace):
+            raise                       # workers and jobs record the stop themselves
+        text = await _budget_closing(trace, facts.get("ws_root"), facts.get("started", 0.0))
+        from server.services.task_service import current as current_task
+        task = current_task()
+        if task is not None:
+            task.pause_reason = "task_budget_exhausted"
+        await _reveal_streamed(text, kwargs["on_chunk"])
+        return {"final": text, "escalation": None, "tool_trace": trace,
+                "stop_reason": "task_budget_exhausted", "history_compacted": False}
+
+
+async def _budget_closing(trace: list, ws_root, started: float) -> str:
+    from arslan.execution_budget import current
+    from server.orchestrator import agent_status
+    from server.services import runtime_messages
+    locale = await runtime_messages.selected_locale()
+    budget = current()
+    reason = runtime_messages.render(f"limit_{budget.stop_reason}", locale) \
+        if budget is not None and budget.stop_reason else "?"
+    pages = sum(1 for t in trace if t.get("tool") in ("web_extract", "browser_open")
+                and (t.get("result") or {}).get("ok"))
+    saved = agent_status.owned_outputs(trace, ws_root, started)
+    if not saved:
+        return runtime_messages.render("budget_closing_unsaved", locale, reason=reason, sources=pages)
+    where = f" ({agent_status.home_relative(ws_root)})" if ws_root is not None else ""
+    return runtime_messages.render("budget_closing_saved", locale, reason=reason, sources=pages,
+                                   files=", ".join(saved) + where)
+
+
+async def _run_native(
     *,
+    _facts: dict | None = None,
     system: str,
     user_content: str,
     history: list[dict],
@@ -1729,6 +1808,8 @@ async def run_native(
     current_request = {"role": "user", "content": user_content}
     convo: list[dict] = list(history) + [current_request]
     tool_trace: list[dict] = []
+    if _facts is not None:
+        _facts["tool_trace"] = tool_trace
     research_review_cache: dict = {}
     review_enabled: bool | None = None  # read lazily, once, at the first saved report
     research_source_feedback: list = []
@@ -1753,6 +1834,8 @@ async def run_native(
     plan = Plan()
     turn_started = agent_status.now()
     ws_root, own_folder = await _status_workspace(wired_keys)
+    if _facts is not None:
+        _facts.update(ws_root=ws_root, started=turn_started)
     unseen_start = len(convo)
 
     # Deterministic pre-search uses the same admission and progress boundaries.
@@ -1789,6 +1872,7 @@ async def run_native(
     # keeps the provider's prompt cache: a narrowed one re-sent ~28k tokens uncached
     # in the S6 bench); after its first refused research call, the list narrows.
     wrap_refused = 0
+    link_hints: dict[str, int] = {}
     offline_note = _OFFLINE_NOTE if "run_command" in wired_keys else ""
     can_save = bool(WRAP_UP_TOOLS & wired_keys)
     for step in range(request_ceiling):
@@ -2024,6 +2108,12 @@ async def run_native(
                 if not policy.observe(name, args, result) and policy.stalled >= 2 and convo \
                         and convo[-1].get("role") == "tool":
                     convo[-1]["content"] += _progress_note(policy)
+                # 0.1.50: a saved table of links gets the host link check (link_check).
+                if name in WRAP_UP_TOOLS and result.get("ok") is True and convo \
+                        and convo[-1].get("role") == "tool":
+                    note = await _link_check_note(name, args, result, tool_trace, link_hints)
+                    if note:
+                        convo[-1]["content"] += note
                 if name in wired_keys and _saved_research_report(name, args, result):
                     if review_enabled is None:
                         review_enabled = await _research_review_enabled()
