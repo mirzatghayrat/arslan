@@ -206,3 +206,28 @@ async def test_every_offered_writer_is_gated(keys_with_workspace):
     offered_writers = T1 & keys_with_workspace
     assert offered_writers <= _WORKSPACE_WRITE_TOOLS
     assert _WORKSPACE_WRITE_TOOLS == T1
+
+
+async def _write_file_text(tmp_path, monkeypatch, workspace):
+    engine = await _wire(tmp_path, monkeypatch, workspace=workspace)
+    from server.orchestrator.arslan import _arslan_tools
+    text = next(t["description"] for t in await _arslan_tools() if t["key"] == "write_file")
+    await engine.dispose()
+    return text
+
+
+async def test_write_file_says_no_permission_in_arslans_own_folder(tmp_path, monkeypatch):
+    """0.1.50 S5: own folder needs no grant (tool_loop._writing_in_own_folder), so the
+    description must not promise a permission prompt — "you will be asked" made the
+    model hedge or claim it could not save."""
+    text = await _write_file_text(tmp_path, monkeypatch, None)
+    assert "needs no permission" in text and "asked for write permission" not in text
+    assert "folders" in text
+
+
+async def test_write_file_says_ask_once_in_a_chosen_folder(tmp_path, monkeypatch):
+    ws = tmp_path / "mine"
+    ws.mkdir()
+    text = await _write_file_text(tmp_path, monkeypatch, str(ws))
+    assert "asked for write permission once per session" in text
+    assert "needs no permission" not in text

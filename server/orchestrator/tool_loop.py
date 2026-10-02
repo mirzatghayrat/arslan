@@ -1099,7 +1099,8 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
         "required": ["path"], "additionalProperties": False},
     "write_file": {"type": "object", "properties": {
         "path": {"type": "string", "minLength": 1,
-                 "description": "Destination file path within the configured workspace."},
+                 "description": "Destination file path within the configured workspace; "
+                                "missing folders are created."},
         "content": {"type": "string", "description": "Complete UTF-8 text to write."}},
         "required": ["path", "content"], "additionalProperties": False},
     # 0.1.45 hands

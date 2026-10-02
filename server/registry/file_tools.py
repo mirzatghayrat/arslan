@@ -77,7 +77,8 @@ def _refusal(exc: Exception) -> dict:
     return {"ok": False, "error": str(exc)}
 
 
-async def _resolved(args: dict, *, for_write: bool = False, key: str = "path",
+async def _resolved(args: dict, *, for_write: bool = False, make_parents: bool = False,
+                    key: str = "path",
                     default: str = ".") -> tuple[Path | None, Path | None, dict | None]:
     """(root, path, error) — the shared prologue every tool needs."""
     root = await _workspace_root()
@@ -85,7 +86,8 @@ async def _resolved(args: dict, *, for_write: bool = False, key: str = "path",
         return None, None, {"ok": False,
                             "error": "no workspace is configured — set one in Settings first"}
     try:
-        return root, resolve_in_workspace(args.get(key, default), root, for_write=for_write), None
+        return root, resolve_in_workspace(args.get(key, default), root, for_write=for_write,
+                                          make_parents=make_parents), None
     except (PathEscape, SecretFile) as exc:
         return root, None, _refusal(exc)
 
@@ -239,16 +241,22 @@ class SearchFilesExecutor:
 
 
 class WriteFileExecutor:
-    """Write (create or overwrite) a workspace file."""
+    """Write (create or overwrite) a workspace file, creating missing folders —
+    what every mainstream agent's write tool does; refusing them sent models off
+    to `mkdir` through the terminal or, worse, to tell the user it cannot save."""
     key = "write_file"
 
     async def execute(self, args: dict) -> dict:
         content = args.get("content")
         if not isinstance(content, str):
             return {"ok": False, "error": "content must be a string"}
-        root, path, err = await _resolved(args, for_write=True)
+        root, path, err = await _resolved(args, for_write=True, make_parents=True)
         if err:
             return err
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            return {"ok": False, "error": f"cannot create folder {_rel(path.parent, root)}: {exc}"}
         artifact = _snapshot_write(root, path, content)
         try:
             path.write_text(content, encoding="utf-8")

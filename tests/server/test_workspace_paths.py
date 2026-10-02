@@ -101,6 +101,41 @@ def test_write_into_missing_parent_refused(ws):
         resolve_in_workspace("nope/deeper/new.txt", ws, for_write=True)
 
 
+def test_make_parents_allows_missing_folders_inside(ws):
+    """0.1.50 S5: write_file creates folders, like every mainstream agent's write
+    tool. The deepest EXISTING ancestor decides containment."""
+    out = resolve_in_workspace("nope/deeper/new.txt", ws, for_write=True, make_parents=True)
+    assert out == ws / "nope" / "deeper" / "new.txt"
+
+
+def test_make_parents_still_refuses_outside(ws, tmp_path):
+    with pytest.raises(PathEscape):
+        resolve_in_workspace(str(tmp_path / "fresh" / "x.txt"), ws, for_write=True,
+                             make_parents=True)
+
+
+def test_make_parents_through_escaping_symlink_refused(ws, tmp_path):
+    """The existing ancestor is a link out of the workspace: its realpath decides."""
+    outside_dir = tmp_path / "elsewhere"
+    outside_dir.mkdir()
+    (ws / "escape").symlink_to(outside_dir)
+    with pytest.raises(PathEscape):
+        resolve_in_workspace("escape/new/x.txt", ws, for_write=True, make_parents=True)
+
+
+def test_make_parents_refuses_dotdot_in_the_missing_part(ws):
+    """`nope` does not exist, so `nope/..` cannot be resolved by the OS — the
+    missing part must be plain names, or the path climbs out unseen."""
+    with pytest.raises(PathEscape):
+        resolve_in_workspace("nope/../../outside/x.txt", ws, for_write=True, make_parents=True)
+
+
+def test_make_parents_refuses_a_dangling_symlink(ws, tmp_path):
+    (ws / "dangle").symlink_to(tmp_path / "gone")
+    with pytest.raises(PathEscape):
+        resolve_in_workspace("dangle/x/y.txt", ws, for_write=True, make_parents=True)
+
+
 def test_empty_path_refused(ws):
     for bad in ("", "   ", None):
         with pytest.raises(PathEscape):
