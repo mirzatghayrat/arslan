@@ -713,7 +713,8 @@ class RunCommandExecutor:
         if cwd is None:
             return {"ok": False, "error": "the chosen workspace folder no longer exists"}
         result = await terminal_exec.run(command, cwd=cwd,
-                                         timeout_s=terminal_exec.timeout_of(args.get("timeout_s")))
+                                         timeout_s=terminal_exec.timeout_of(args.get("timeout_s")),
+                                         offline=terminal_exec.OFFLINE.get())
         head = command if len(command) <= 80 else command[:77] + "…"
         result["summary"] = (f"`{head}` → exit {result['exit_code']}" if not result.get("error", "").startswith("stopped")
                              else f"`{head}` → {result['error']}")

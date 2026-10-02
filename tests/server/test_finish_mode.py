@@ -57,7 +57,8 @@ async def _run(monkeypatch, replies, *, search, writers=True, fetch_cap=None):
 async def test_a_no_progress_stop_still_lets_the_table_be_saved(monkeypatch):
     replies = [_search(i) for i in range(4)] + [_write(), golden._Resp("Saved jobs.csv; 4 sites blocked.")]
     result, calls = await _run(monkeypatch, replies, search=_Blocked())
-    assert calls[4]["tools"] == ["write_file"]                 # finish mode: save tools only
+    # finish mode keeps the full list while the model complies (prompt cache)
+    assert {"web_search", "write_file"} <= set(calls[4]["tools"])
     assert "research has stopped" in calls[4]["user"]
     assert calls[5]["tools"] is None and "The deliverable is saved" in calls[5]["user"]
     write = [r for r in result["tool_trace"] if r["tool"] == "write_file"]
@@ -74,10 +75,12 @@ async def test_without_save_tools_a_stop_answers_at_once(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_finish_mode_lasts_two_steps_at_most(monkeypatch):
-    replies = [_search(i) for i in range(4)] + [_search(10), _search(11), golden._Resp("Here is what I have.")]
+async def test_finish_mode_lasts_three_steps_and_narrows_after_a_refused_research_call(monkeypatch):
+    replies = [_search(i) for i in range(4)] + [_search(10), _search(11), _search(12),
+                                                golden._Resp("Here is what I have.")]
     result, calls = await _run(monkeypatch, replies, search=_Blocked())
-    assert [c["tools"] for c in calls[4:7]] == [["write_file"], ["write_file"], None]
+    assert "web_search" in calls[4]["tools"]                    # full list first
+    assert [c["tools"] for c in calls[5:8]] == [["write_file"], ["write_file"], None]
     assert result["final"] == "Here is what I have."
 
 
@@ -86,7 +89,7 @@ async def test_a_spent_fetch_allowance_moves_to_saving(monkeypatch):
     replies = [_search(0), _search(1), _write(), golden._Resp("Saved jobs.csv.")]
     result, calls = await _run(monkeypatch, replies, search=_Fresh(), fetch_cap=2)
     assert {"web_search", "write_file"} <= set(calls[1]["tools"])
-    assert calls[2]["tools"] == ["write_file"] and "reading allowance" in calls[2]["user"]
+    assert "write_file" in calls[2]["tools"] and "reading allowance" in calls[2]["user"]
     assert calls[3]["tools"] is None
     assert result["final"] == "Saved jobs.csv."
 
@@ -107,3 +110,79 @@ def test_findings_keep_their_links():
     findings = tool_loop._clean_findings(trace)
     assert "PM at Acme <https://jobs.example/acme>: Shanghai, posted 1 Oct" in findings
     assert "[https://jobs.example/beta] Beta Corp" in findings
+
+
+class _Spy:
+    """run_command stand-in that records whether the host ran it offline."""
+    def __init__(self):
+        self.offline = []
+
+    async def execute(self, args):
+        from server.services import terminal_exec
+        self.offline.append(terminal_exec.OFFLINE.get())
+        return {"ok": True, "external": False, "summary": "processed"}
+
+
+@pytest.mark.asyncio
+async def test_wrapping_up_may_process_files_but_only_offline(monkeypatch):
+    """S6 rerun r1: 50 jobs sat in a downloaded file, but wrap-up allowed only write
+    tools. Now run_command is allowed while finishing — under the no-network wrapper."""
+    spy = _Spy()
+    adapter = golden._Recorder([_search(i) for i in range(4)] + [
+        golden._Resp(None, [golden._tc("run_command", {"command": "python3 filter.py > jobs.csv"}, "r1")]),
+        _write(), golden._Resp("Saved jobs.csv.")])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    golden._pin_workspace(monkeypatch)
+
+    async def own():
+        return True
+    monkeypatch.setattr(tool_loop, "_writing_in_own_folder", own)
+
+    async def allow(*_a, **_k):
+        return True
+    from server.registry import executors
+    monkeypatch.setitem(executors.EXECUTORS, "web_search", _Blocked())
+    monkeypatch.setitem(executors.EXECUTORS, "write_file", golden._Write())
+    monkeypatch.setitem(executors.EXECUTORS, "run_command", spy)
+
+    async def resolve():
+        return [{"key": k, "description": k} for k in ("web_search", "write_file", "run_command")]
+    result = await tool_loop.run_native(system="S", user_content="find jobs, save a table", history=[],
+                                        emit=lambda e: None, on_chunk=lambda c: None, resolve_tools=resolve,
+                                        confirm_command=allow)
+    assert spy.offline == [True]
+    assert "runs without network now" in adapter.calls[4]["user"]
+    assert result["final"] == "Saved jobs.csv."
+
+
+@pytest.mark.asyncio
+async def test_outside_wrap_up_commands_keep_the_network(monkeypatch):
+    spy = _Spy()
+    adapter = golden._Recorder([
+        golden._Resp(None, [golden._tc("run_command", {"command": "ls"}, "r1")]), golden._Resp("done")])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    golden._pin_workspace(monkeypatch)
+
+    async def allow(*_a, **_k):
+        return True
+    from server.registry import executors
+    monkeypatch.setitem(executors.EXECUTORS, "run_command", spy)
+
+    async def resolve():
+        return [{"key": "run_command", "description": "shell"}]
+    await tool_loop.run_native(system="S", user_content="list files", history=[], emit=lambda e: None,
+                               on_chunk=lambda c: None, resolve_tools=resolve, confirm_command=allow)
+    assert spy.offline == [False]
+
+
+@pytest.mark.asyncio
+async def test_soft_wrap_up_narrows_after_one_refused_research_call(monkeypatch):
+    from arslan.execution_budget import Budget, Limits, scope
+    replies = [_search(0), _search(1), _search(2), _write(), golden._Resp("Saved jobs.csv.")]
+    with scope(Budget(Limits(tool_calls=10), soft=Limits(tool_calls=2))):
+        result, calls = await _run(monkeypatch, replies, search=_Fresh())
+    assert "web_search" in calls[2]["tools"] and "Work budget nearly used" in calls[2]["user"]
+    refused = [r for r in result["tool_trace"] if r["result"].get("code") == "wrap_up"]
+    assert len(refused) == 1                                       # the third search did not run
+    assert calls[3]["tools"] == ["write_file"]                     # narrowed after the refusal
+    assert result["final"] == "Saved jobs.csv."

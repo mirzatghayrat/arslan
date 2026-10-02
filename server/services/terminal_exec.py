@@ -10,12 +10,18 @@ and output.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import os
 import signal
 import tempfile
 from pathlib import Path
 
 from server.mcp.spawn_env import child_environment, merged_path
+
+# 0.1.50: set by the tool loop (never by the model) while a run is wrapping up:
+# commands still run — processing files already fetched is how a deliverable gets
+# made — but without network, so wrap-up cannot become more research.
+OFFLINE: contextvars.ContextVar[bool] = contextvars.ContextVar("terminal_offline", default=False)
 
 DEFAULT_TIMEOUT_S = 120
 MAX_TIMEOUT_S = 600
@@ -43,7 +49,15 @@ def _shell() -> str:
     return "/bin/zsh" if os.path.exists("/bin/zsh") else "/bin/sh"
 
 
-async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S) -> dict:
+def offline_wrapper() -> list[str] | None:
+    """Kernel-enforced no-network wrapper (macOS seatbelt, deny network*), or None
+    where there is none — offline mode then refuses rather than runs unisolated."""
+    from server.services.code_sandbox import _seatbelt_wrapper
+    return _seatbelt_wrapper()
+
+
+async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
+              offline: bool = False) -> dict:
     # zsh writes here-document temp files under $TMPPREFIX (default /tmp/zsh),
     # ignoring TMPDIR: where /tmp is not writable every `python3 - <<'PY'` save
     # failed (0.1.49 bench). Keep both inside the process temp dir.
@@ -51,8 +65,15 @@ async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S) ->
     env = child_environment({}, {"PATH": merged_path(), "TERM": "dumb", "NO_COLOR": "1",
                                  "HOMEBREW_NO_AUTO_UPDATE": "1", "TMPDIR": tmp,
                                  "TMPPREFIX": os.path.join(tmp, "zsh")})
+    prefix: list[str] = []
+    if offline:
+        prefix = offline_wrapper() or []
+        if not prefix:
+            return {"ok": False, "exit_code": None, "stdout": "", "stderr": "", "cwd": str(cwd),
+                    "error": "wrapping up: commands run without network now, and this system cannot "
+                             "isolate the network — save the deliverable with write_file instead"}
     proc = await asyncio.create_subprocess_exec(
-        _shell(), "-c", command, cwd=str(cwd), env=env,
+        *prefix, _shell(), "-c", command, cwd=str(cwd), env=env,
         stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         start_new_session=True)          # its own process group, so a timeout can stop children too
     timed_out = False
@@ -71,6 +92,8 @@ async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S) ->
     stderr, cut_err = clip(full_err)
     result = {"ok": proc.returncode == 0 and not timed_out, "exit_code": proc.returncode,
               "stdout": stdout, "stderr": stderr, "cwd": str(cwd)}
+    if offline:
+        result["offline"] = True        # a network error here is the wrap-up rule, not the site
     if cut_out or cut_err:
         # 0.1.49 S9: the middle is not gone, it is on disk.
         from server.services import tool_outputs

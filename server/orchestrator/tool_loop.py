@@ -435,6 +435,9 @@ def _progress_note(policy) -> str:
             "progress before this turn stops. Change approach, or answer with what you have.]")
 
 
+_OFFLINE_NOTE = (" Files you already fetched can still be processed with run_command (it runs without "
+                 "network now).")
+
 CONTINUE_PROMPT = ("Your previous reply was cut off by the output limit. Continue exactly where it "
                    "stopped, without repeating anything already written and without any preamble.")
 TRUNCATED_CALL_ERROR = (
@@ -1625,6 +1628,9 @@ async def _reveal_streamed(text: str, on_chunk: Callable[[str], None]) -> None:
 
 # Tools a job may still use while wrapping up: saving the deliverable.
 WRAP_UP_TOOLS = frozenset({"write_file", "edit_file"})
+# What a wrapping-up run may still call (0.1.50): the save tools, plus run_command
+# to process files it already fetched — run without network (terminal_exec.OFFLINE).
+FINISH_TOOLS = WRAP_UP_TOOLS | {"run_command"}
 
 
 @governed
@@ -1779,6 +1785,11 @@ async def run_native(
     finish_reason: str | None = None
     finish_from = 0
     finish_steps = 0
+    # Wrap-up keeps the FULL tool list while the model complies (an unchanged list
+    # keeps the provider's prompt cache: a narrowed one re-sent ~28k tokens uncached
+    # in the S6 bench); after its first refused research call, the list narrows.
+    wrap_refused = 0
+    offline_note = _OFFLINE_NOTE if "run_command" in wired_keys else ""
     can_save = bool(WRAP_UP_TOOLS & wired_keys)
     for step in range(request_ceiling):
         budget.check()
@@ -1796,7 +1807,7 @@ async def run_native(
                 finish_reason, finish_from = "fetch_budget", len(tool_trace)
         saved = any(item.get("tool") in WRAP_UP_TOOLS and (item.get("result") or {}).get("ok") is True
                     for item in tool_trace[finish_from:]) if finish_reason else False
-        finishing = finish_reason is not None and can_save and finish_steps < 2 and not saved
+        finishing = finish_reason is not None and can_save and finish_steps < 3 and not saved
         finish_done = finish_reason is not None and not finishing and (can_save or finish_reason == "no_progress")
         forced = (finish_done or (policy.stopped and not finishing) or truncation_stop
                   or budget.tool_calls >= budget.limits.tool_calls
@@ -1831,11 +1842,11 @@ async def run_native(
                           "The web reading allowance for this run is used up, so research has stopped.")
                          + " Using only what you already have, save the deliverable now if one was asked for "
                            "(write_file), marking anything missing or unverified; then give the final answer: "
-                           "what was done, what is blocked.")
+                           "what was done, what is blocked." + offline_note)
         elif wrap_up:
             notes.append("Work budget nearly used: stop researching now. Using only what you already have, "
                          "produce the complete deliverable the user asked for (save it if a file was asked for), "
-                         "clearly marking anything you could not verify. Then give the final answer.")
+                         "clearly marking anything you could not verify. Then give the final answer." + offline_note)
         # Deliver one new tool batch atomically before normal old-history
         # eviction. Keep a bounded 96k research window so a <=96k source batch
         # can survive the following save/readback steps, not just one request.
@@ -1875,8 +1886,8 @@ async def run_native(
         # Rolling evidence eviction must not erase this turn's task or its
         # restrictions. Restore the exact request at user priority, not as a
         # system instruction or an invented summary, only in this payload.
-        step_tools = (None if forced else [t for t in schemas if t["function"]["name"] in WRAP_UP_TOOLS]
-                      or None if wrap_up else schemas)
+        step_tools = (None if forced else [t for t in schemas if t["function"]["name"] in FINISH_TOOLS]
+                      or None if wrap_up and wrap_refused else schemas)
         offered = {t["function"]["name"] for t in step_tools or []}
         # Nothing done, planned or noted yet (a plain chat turn, or step 0): no
         # block — the request goes out as the user wrote it. Step 0's write
@@ -1957,14 +1968,17 @@ async def run_native(
                     _record_tool_result(name, args, plan.update(args), emit, tool_trace,
                                         assistant_content, convo)
                     continue
-                if policy.stopped and not (finishing and name in WRAP_UP_TOOLS):
+                if policy.stopped and not (finishing and name in FINISH_TOOLS):
+                    wrap_refused += bool(wrap_up)
                     _record_tool_result(name, {}, {"ok": False, "external": False,
                         "code": "task_no_progress", "error": "Execution paused after repeated work without progress."},
                         emit, tool_trace, json.dumps({"tool": name, "args": {}}), convo)
                     continue
-                if wrap_up and name not in WRAP_UP_TOOLS:
+                if wrap_up and name not in FINISH_TOOLS:
+                    wrap_refused += 1
                     _record_tool_result(name, {}, {"ok": False, "external": False, "code": "wrap_up",
-                        "error": "Wrapping up: no more research. Write the deliverable from what you have."},
+                        "error": "Wrapping up: no more research. Write the deliverable from what you have."
+                                 + offline_note},
                         emit, tool_trace, json.dumps({"tool": name, "args": {}}), convo)
                     continue
                 # PA-3 terminal tool: a VALID ask_user_choice call ends the turn — the
@@ -1993,14 +2007,20 @@ async def run_native(
                                  "Answer with what you already have."},
                         emit, tool_trace, json.dumps({"tool": name, "args": {}}), convo)
                     continue
-                result = await _dispatch_tool(
-                    name, args, assistant_content, resolve_tools=resolve_tools, emit=emit,
-                    tool_timeout_s=tool_timeout_s, tool_trace=tool_trace, convo=convo,
-                    confirm_command=confirm_command,
-                    confirm_workspace_write=confirm_workspace_write,
-                    confirm_schedule=confirm_schedule, mcp_fail_counts=mcp_fail_counts,
-                    mcp_hint_logged=mcp_hint_logged, conversation_id=conversation_id,
-                    log_events=log_events, fetch_budget=fetch_budget, caller=caller)
+                from server.services import terminal_exec
+                offline = terminal_exec.OFFLINE.set(True) if wrap_up and name == "run_command" else None
+                try:
+                    result = await _dispatch_tool(
+                        name, args, assistant_content, resolve_tools=resolve_tools, emit=emit,
+                        tool_timeout_s=tool_timeout_s, tool_trace=tool_trace, convo=convo,
+                        confirm_command=confirm_command,
+                        confirm_workspace_write=confirm_workspace_write,
+                        confirm_schedule=confirm_schedule, mcp_fail_counts=mcp_fail_counts,
+                        mcp_hint_logged=mcp_hint_logged, conversation_id=conversation_id,
+                        log_events=log_events, fetch_budget=fetch_budget, caller=caller)
+                finally:
+                    if offline is not None:
+                        terminal_exec.OFFLINE.reset(offline)
                 if not policy.observe(name, args, result) and policy.stalled >= 2 and convo \
                         and convo[-1].get("role") == "tool":
                     convo[-1]["content"] += _progress_note(policy)

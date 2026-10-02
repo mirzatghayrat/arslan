@@ -537,7 +537,9 @@ async def test_reaching_the_tier_wraps_up_and_delivers_instead_of_stopping(execu
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
     job = await background_jobs.start(CID, "Research everything", _criteria())
     await _wait(lambda: job.phase == "finished", seconds=10)
-    assert "recall" not in (adapter.wrap_up_tools or []), "research tools are withdrawn while wrapping up"
+    # 0.1.50: the list stays the same while the model complies (prompt cache); a
+    # research call would be refused and narrow it (test_finish_mode).
+    assert "recall" in (adapter.wrap_up_tools or []), "an obedient wrap-up keeps the cached tool list"
     assert job.outcome == "done" and job.budget_stop is None
     await _wait(lambda: any(f.get("type") == "message" for f in frames))
     assert PHRASE in next(f for f in frames if f.get("type") == "message")["content"]
