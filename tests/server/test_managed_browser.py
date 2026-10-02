@@ -113,3 +113,30 @@ def test_browser_manifest_exact_and_integrity_locked():
     assert manifest["dependencies"] == {"@playwright/mcp": browser.VERSION}
     assert all(item.get("integrity", "").startswith("sha512-")
                for path, item in lock["packages"].items() if path)
+
+
+async def test_setup_stages_downloads_in_its_own_temp_dir(monkeypatch, tmp_path):
+    """0.1.49 bench: with TMPDIR unset, Playwright staged its download in /tmp and
+    a restricted environment refused it (EPERM mkdtemp /tmp/playwright-download-*)."""
+    root, manifests = tmp_path / "runtime", tmp_path / "manifests"
+    manifests.mkdir()
+    for name in ("package.json", "package-lock.json"):
+        (manifests / name).write_text("{}")
+    states = iter([{"ready": False, "reason": "setup_required"}, {"ready": True, "reason": None}])
+    monkeypatch.setattr(browser, "status", lambda: next(states))
+    monkeypatch.setattr(browser, "runtime_root", lambda: root)
+    monkeypatch.setattr(browser, "manifests", lambda: manifests)
+    monkeypatch.setattr(browser.spawn_env, "resolve_command", lambda name: "/fake/" + name)
+    exe = root / "browsers" / "shell"
+    monkeypatch.setattr(browser, "_browser_executable", lambda r: exe)
+    seen = []
+
+    async def command(args, *, cwd, env, timeout):
+        seen.append(dict(env))
+        assert Path(env["TMPDIR"]).is_dir() and env["TMPDIR"] == env["HOME"]
+        exe.parent.mkdir(parents=True, exist_ok=True)
+        exe.write_text("")
+        return ""
+    monkeypatch.setattr(browser, "_command", command)
+    assert (await browser.setup())["ready"] is True
+    assert len(seen) == 2 and all("TMPDIR" in env for env in seen)
