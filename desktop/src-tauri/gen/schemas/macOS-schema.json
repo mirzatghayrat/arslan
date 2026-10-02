@@ -195,6 +195,18 @@
           "markdownDescription": "Enables the install_update command without any pre-configured scope."
         },
         {
+          "description": "Enables the island_open_conversation command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-island-open-conversation",
+          "markdownDescription": "Enables the island_open_conversation command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the island_shape command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-island-shape",
+          "markdownDescription": "Enables the island_shape command without any pre-configured scope."
+        },
+        {
           "description": "Enables the open_external command without any pre-configured scope.",
           "type": "string",
           "const": "allow-open-external",
@@ -265,6 +277,18 @@
           "type": "string",
           "const": "deny-install-update",
           "markdownDescription": "Denies the install_update command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the island_open_conversation command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-island-open-conversation",
+          "markdownDescription": "Denies the island_open_conversation command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the island_shape command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-island-shape",
+          "markdownDescription": "Denies the island_shape command without any pre-configured scope."
         },
         {
           "description": "Denies the open_external command without any pre-configured scope.",

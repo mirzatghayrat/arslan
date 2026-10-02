@@ -177,13 +177,13 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             outcome = "cancelled"
             raise
         finally:
-            desktop_status.push("turn_finished", conversation_id=conversation_id, outcome=outcome)
+            desktop_status.push("turn_finished", conversation_id=conversation_id, outcome=outcome, work="turn")
             # Flush: every frame the coroutine emitted is on the socket (or
             # swallowed by a dead drainer) before the caller's next direct
             # ws.send_json — same ordering guarantee the old sentinel gave.
             await queue.join()
 
-    async def run_with_confirm_frames(coro: Coroutine[Any, Any, object]) -> None:
+    async def run_with_confirm_frames(coro: Coroutine[Any, Any, object], title: str | None = None) -> None:
         """Run a plain-message orchestration. run_command pauses mid-loop via the
         injected `confirm_command`, which OWNS ws.receive itself (see below) only
         while a command is pending — so there is never a blocked receiver to cancel,
@@ -193,7 +193,7 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         from arslan.execution_budget import BudgetExceeded
         outcome = "error"
         try:
-            with desktop_status.working(conversation_id):
+            with desktop_status.working(conversation_id, title=title):
                 await coro
             outcome = "ok"
         except (TaskError, MemoryError, BudgetExceeded) as exc:
@@ -204,7 +204,8 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             outcome = "cancelled"
             raise
         finally:
-            desktop_status.push("turn_finished", conversation_id=conversation_id, outcome=outcome)
+            desktop_status.push("turn_finished", conversation_id=conversation_id, outcome=outcome, title=title,
+                                work="turn")
             await queue.join()
 
     async def run_connect_mcp_followup(server_id: int) -> None:
@@ -478,7 +479,7 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                             conversation_id, data.get("content", ""), emit,
                             attached_context=data.get("attached_context") or None,
                             images=data.get("images") or None,
-                        ))
+                        ), title=data.get("content") or None)
                 elif msg_type == "session_ended":
                     temporary_turn.clear(conversation_id)
                     await ws.send_json({"type": "session_ended_ack", "conversation_id": conversation_id})
@@ -563,7 +564,8 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                                            images=images or None,
                                            confirm_command=confirm_command,
                                            confirm_workspace_write=confirm_workspace_write,
-                                           confirm_schedule=confirm_schedule)
+                                           confirm_schedule=confirm_schedule),
+                title=content or None,
             )
     except WebSocketDisconnect:
         return

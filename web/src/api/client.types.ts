@@ -338,6 +338,7 @@ export interface AppSettings {
   research_review_enabled?: boolean;
   keep_awake_enabled?: boolean;
   desktop_notifications_enabled?: boolean;
+  island_enabled?: boolean;
   terminal_sandbox_enabled?: boolean;
   /** Comma-separated BCP-47 tags for image text recognition. Empty = follow
    *  the interface language plus English. */

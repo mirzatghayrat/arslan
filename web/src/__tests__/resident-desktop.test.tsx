@@ -27,6 +27,18 @@ describe("Desktop settings (0.1.41 resident mode)", () => {
     expect(screen.getByText("settings.desktopLede")).toBeInTheDocument();
   });
 
+  it("has the notch switch, on unless turned off, and reports changes (0.1.51)", () => {
+    const island = vi.fn();
+    const { rerender } = render(<DesktopSection keepAwakeEnabled notificationsEnabled onIslandChange={island} />);
+    const toggle = screen.getByTestId("settings-island-toggle") as HTMLInputElement;
+    expect(toggle.checked).toBe(true);
+    fireEvent.click(toggle);
+    expect(island).toHaveBeenCalledWith(false);
+    rerender(<DesktopSection keepAwakeEnabled notificationsEnabled islandEnabled={false} onIslandChange={island} />);
+    expect((screen.getByTestId("settings-island-toggle") as HTMLInputElement).checked).toBe(false);
+    expect(FIELD_HOMES["desktop.island"]).toBe("desktop");
+  });
+
   it("lives in its own section, not under the spend-only Automation copy", () => {
     expect(FIELD_HOMES["desktop.keep_awake"]).toBe("desktop");
     expect(FIELD_HOMES["desktop.notifications"]).toBe("desktop");

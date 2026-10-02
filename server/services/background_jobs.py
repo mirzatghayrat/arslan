@@ -236,7 +236,7 @@ async def _execute(job: Job) -> tuple[str, str, str | None]:
             return await arslan.background_body(conversation_id, instruction, _job_sink(job, sink), confirmations)
         return await host_run.execute(conversation_id, instruction, emit, body, announce=False)
 
-    with personal_context.bind(ctx), desktop_status.working(job.conversation_id):
+    with personal_context.bind(ctx), desktop_status.working(job.conversation_id, title=job.goal, kind="job"):
         try:
             output = await task_service.run_turn(function, job.conversation_id, job.goal,
                                                  _job_sink(job, downstream), _driver={"kind": "background"},
@@ -273,8 +273,8 @@ async def _report(job: Job, text: str) -> None:
     """Post the result, tell the shell, offer voice mode one line. Best-effort."""
     from server.orchestrator import memory
     from server.ws import protocol
+    body = text.strip()
     try:
-        body = text.strip()
         if not body and job.outcome == "out_of_budget":
             body = await _budget_note(job)
         if body:   # a stopped or empty job is shown by its card alone, never by a filler message
@@ -284,7 +284,8 @@ async def _report(job: Job, text: str) -> None:
     except Exception as exc:  # noqa: BLE001
         logger.warning("background job %s result not posted: %s", job.job_id, type(exc).__name__)
     desktop_status.push("turn_finished", conversation_id=job.conversation_id,
-                        outcome={"done": "ok", "stopped": "cancelled"}.get(job.outcome, "needs_review"))
+                        outcome={"done": "ok", "stopped": "cancelled"}.get(job.outcome, "needs_review"),
+                        title=job.goal, summary=body or None, work="job")
     run_registry.make_emit(job.conversation_id)({"type": "job_spoken", "job_id": job.job_id,
                                                  "outcome": job.outcome, "goal": job.goal[:200]})
 

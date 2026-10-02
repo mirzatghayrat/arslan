@@ -214,9 +214,15 @@ mod tests {
     struct Fixture(std::path::PathBuf);
     impl Fixture {
         fn new() -> Self {
+            // The counter, not the clock, keeps parallel tests apart: macOS
+            // reports time in microseconds, so two fixtures made in the same
+            // microsecond got the same name and create_dir failed (flaky
+            // AlreadyExists, seen 0.1.51).
+            static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
             let path = std::env::temp_dir().join(format!(
-                "arslan-secret-fixture-{}-{}",
+                "arslan-secret-fixture-{}-{}-{}",
                 std::process::id(),
+                NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
                 std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()

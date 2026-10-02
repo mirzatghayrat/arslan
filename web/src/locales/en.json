@@ -705,6 +705,8 @@
     "keepAwakeDesc": "While a task or scheduled task is running, the Mac does not go to sleep on its own. The display can still sleep; closing the lid or low battery still puts it to sleep.",
     "labelDesktopNotifications": "Notifications",
     "desktopNotificationsDesc": "When the window is closed or in the background, macOS notifies you when a task finishes, an action needs your confirmation, or a scheduled task fails. Notifications never show message text.",
+    "labelIsland": "Show Arslan in the notch",
+    "islandDesc": "A small Arslan at the top of the screen shows what it is working on, when something needs you, and when a task is done. Hover to see more. It never appears in screenshots, recordings or screen sharing.",
     "automationElsewhere": "Scheduled tasks, token usage and every past run live in Activity.",
     "automationOpenActivity": "Open Activity",
     "searchPlaceholder": "Search settings…",

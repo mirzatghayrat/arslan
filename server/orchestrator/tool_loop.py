@@ -871,6 +871,8 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                 emit, tool_trace, json.dumps({"tool": tool_key, "args": {}}), convo)
     emit({"type": "tool_call", "tool": tool_key,
           "args_summary": json.dumps(args, ensure_ascii=False)[:200]})
+    from server.services import desktop_status
+    desktop_status.note_step(tool_key, args)   # the island's "now doing" line (0.1.51)
 
     # FU-2 (live runs only — see _check_fetch_budget for why eval is out of scope).
     # `fetch_budget` is the per-run dict the caller threads through; absent it, no cap
@@ -2110,8 +2112,11 @@ async def _run_native(
                 if name == "update_plan" and "update_plan" in wired_keys:
                     emit({"type": "tool_call", "tool": name,
                           "args_summary": json.dumps(args, ensure_ascii=False)[:200]})
-                    _record_tool_result(name, args, plan.update(args), emit, tool_trace,
-                                        assistant_content, convo)
+                    outcome = plan.update(args)
+                    _record_tool_result(name, args, outcome, emit, tool_trace, assistant_content, convo)
+                    if outcome.get("ok"):
+                        from server.services import desktop_status
+                        desktop_status.note_plan(plan.items)
                     continue
                 if policy.stopped and not (finishing and name in FINISH_TOOLS):
                     wrap_refused += bool(wrap_up)

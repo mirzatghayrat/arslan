@@ -61,10 +61,17 @@ to ask. A stopped result carries `sandbox_denied: true` and a note that names th
 ## Rest of P3
 
 - **Data vs instructions** (P3 item 2): web pages, files and tool output are already wrapped as untrusted data
-  (`wrap_external`, `GUARD_NOTE`). Open question for the user: should `remember` in a turn that has read external
-  content become a proposal (accepted in the proposal box) instead of a direct write? Recommended: yes for facts,
-  no for notes, because the book's warning (persistent memory amplifies an injection) applies to facts that
-  steer later turns. Not built until decided.
+  (`wrap_external`, `GUARD_NOTE`). The question raised was whether `remember` after reading external content
+  should become a proposal. **Checked against the code (2026-10-03): it already is, and more strictly.** The v2
+  memory store is activated at every boot (`storage_boot.initialize` → `memory_activation.activate_sync`), and
+  its `decide_write` (`arslan/companion/memory.py:108-120`) saves a host (model) write directly only when the
+  user's own message is literally "remember X" and the saved text is exactly X
+  (`task_context.explicit_save_digest`, digest-bound). Everything the model decides to remember on its own
+  (facts, preferences and learnings alike), whatever it read, becomes a proposal the user accepts. A paraphrase,
+  or text taken from a web page, does not match the digest. Covered by
+  `tests/server/test_memory_tools_v2.py::test_host_inference_is_proposed_and_not_recalled` and
+  `::test_explicit_save_is_bound_to_exact_user_content`. No change. (The legacy path in `RememberExecutor` runs
+  only while the v2 store is inactive, which ends before the first request.)
 - **Irreversible outward actions** (item 3): already preview → click → run. Exact repeats are refused by the task
   journal (`task_action_already_completed` / `task_reconciliation_required`), and tool calls are never retried
   automatically. No change.

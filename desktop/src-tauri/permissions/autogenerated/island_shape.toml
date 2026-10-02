@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-island-shape"
+description = "Enables the island_shape command without any pre-configured scope."
+commands.allow = ["island_shape"]
+
+[[permission]]
+identifier = "deny-island-shape"
+description = "Denies the island_shape command without any pre-configured scope."
+commands.deny = ["island_shape"]

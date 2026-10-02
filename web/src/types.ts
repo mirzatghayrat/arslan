@@ -256,6 +256,7 @@ export interface AppSettings {
   keepAwakeEnabled?: boolean;
   /** Resident shell (0.1.41): native notifications while the window is hidden. Default on. */
   desktopNotificationsEnabled?: boolean;
+  islandEnabled?: boolean;
   terminalSandboxEnabled?: boolean;
   /** Comma-separated BCP-47 tags for image text recognition. Empty/unset means
    *  "follow the interface language, plus English". Deliberately a SHORT list:

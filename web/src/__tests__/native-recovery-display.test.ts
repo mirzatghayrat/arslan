@@ -36,11 +36,26 @@ it("renders working and paused recovery text in all six languages without interp
 
 it("does not grant the recovery display native IPC permissions", () => {
   const directory = resolve(root, "src-tauri/capabilities");
+  const granted = new Set<string>();
   for (const file of readdirSync(directory).filter(name => name.endsWith(".json"))) {
     const capability = JSON.parse(readFileSync(resolve(directory, file), "utf8"));
     // Explicit window-only grants prevent accidental wildcard/local-webview
     // access from turning the display surface into a second command client.
-    expect(capability.windows).toEqual(["main"]);
+    // Each capability names exactly one window: the app (main) or, since
+    // 0.1.51, the notch island (island) — never the recovery or splash window.
+    expect(capability.windows).toHaveLength(1);
+    expect(["main", "island"]).toContain(capability.windows[0]);
     expect(capability.webviews ?? []).toEqual([]);
+    granted.add(capability.windows[0]);
   }
+  expect(granted.has("recovery")).toBe(false);
+  expect(granted.has("splash")).toBe(false);
+});
+
+it("gives the notch island only its own two commands and event listening", () => {
+  const island = JSON.parse(readFileSync(resolve(root, "src-tauri/capabilities/island-ui.json"), "utf8"));
+  expect(island.windows).toEqual(["island"]);
+  expect([...island.permissions].sort()).toEqual([
+    "allow-island-open-conversation", "allow-island-shape", "core:event:allow-listen", "core:event:allow-unlisten",
+  ]);
 });
