@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import os
 import signal
+import tempfile
 from pathlib import Path
 
 from server.mcp.spawn_env import child_environment, merged_path
@@ -43,8 +44,13 @@ def _shell() -> str:
 
 
 async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S) -> dict:
+    # zsh writes here-document temp files under $TMPPREFIX (default /tmp/zsh),
+    # ignoring TMPDIR: where /tmp is not writable every `python3 - <<'PY'` save
+    # failed (0.1.49 bench). Keep both inside the process temp dir.
+    tmp = tempfile.gettempdir()
     env = child_environment({}, {"PATH": merged_path(), "TERM": "dumb", "NO_COLOR": "1",
-                                 "HOMEBREW_NO_AUTO_UPDATE": "1"})
+                                 "HOMEBREW_NO_AUTO_UPDATE": "1", "TMPDIR": tmp,
+                                 "TMPPREFIX": os.path.join(tmp, "zsh")})
     proc = await asyncio.create_subprocess_exec(
         _shell(), "-c", command, cwd=str(cwd), env=env,
         stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
