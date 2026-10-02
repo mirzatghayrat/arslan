@@ -204,3 +204,13 @@ def test_the_marked_population_matches_the_measurement():
         f"  actual:   {actual}"
     )
     assert sum(actual.values()) + PARAMETERIZED_EXTRA_CASES == EXPECTED_TOTAL
+
+
+def test_the_ci_workflow_expects_the_same_count():
+    """The mirror was a comment, and comments do not fail: 0.1.50 raised
+    EXPECTED_TOTAL to 42 here while ci.yml still asserted 40, and the macOS job
+    went red on a correct test run. Now the two numbers are checked together."""
+    workflow = (TESTS.parent / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    found = re.findall(r"^\s*EXPECTED = (\d+)\s*$", workflow, re.M)
+    assert found == [str(EXPECTED_TOTAL)], (
+        f"ci.yml asserts {found} macOS cases, this file expects {EXPECTED_TOTAL}: change both together")
