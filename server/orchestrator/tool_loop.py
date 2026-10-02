@@ -38,7 +38,8 @@ _WORKSPACE_WRITE_TOOLS = frozenset({"write_file", "edit_file"})
 
 
 ResolveTools = Callable[[], Awaitable[list[dict]]]
-ConfirmCommand = Callable[[str, list], Awaitable[bool]]
+# (command, argv, *, remote_host=, fingerprints=, sandbox=, why=) -> approved
+ConfirmCommand = Callable[..., Awaitable[bool]]
 
 
 def _get_adapter():
@@ -810,6 +811,17 @@ async def _writing_in_own_folder() -> bool:
         return False
 
 
+async def _sandbox_enabled() -> bool:
+    """Settings → Advanced → "Run commands in a sandbox" (0.1.51 P3), default on."""
+    from server.db import session as db_session
+    from server.services import settings_service
+    try:
+        async with db_session.AsyncSessionLocal() as db:
+            return await settings_service.terminal_sandbox_enabled(db)
+    except Exception:  # noqa: BLE001 — unreadable means the default: sandboxed
+        return True
+
+
 async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, emit,
                          tool_timeout_s, tool_trace, convo, confirm_command=None,
                         confirm_workspace_write=None,
@@ -824,7 +836,9 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
     framed tool-result record into convo. Returns the raw result dict.
 
     run_command is special: it requires per-command user confirmation via the injected
-    confirm_command(command, argv) -> bool callback. No callback → refuse (safety default)."""
+    confirm_command(command, argv) -> bool callback. No callback → refuse (safety default).
+    Since 0.1.51 it also runs inside the workspace sandbox; leaving it is a click
+    (confirm_command(..., sandbox="outside"|"retry")), never the model's say-so."""
     from arslan.execution_budget import BudgetExceeded, current
     budget = current()
     if budget is not None:
@@ -925,10 +939,12 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                                         assistant_content, convo,
                                         mcp_fail_counts=mcp_fail_counts)
 
+    run_outside = False          # 0.1.51 P3: this command leaves the sandbox (a click said so)
+    sandbox_on = False
     if tool_key == "run_command":
         # 0.1.48: one shell string; a forbidden command is refused here, before any
         # card, so nobody is ever asked to approve wiping the disk.
-        from server.services import terminal_policy
+        from server.services import command_sandbox, terminal_policy
         command = terminal_policy.as_shell(args.get("command"), args.get("argv"))
         argv = []
         verdict = terminal_policy.assess(command)
@@ -938,21 +954,42 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
             return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                         assistant_content, convo,
                                         mcp_fail_counts=mcp_fail_counts)
-        if confirm_command is None and verdict.level == "run" and not await _asks_for_everything():
-            pass                      # a harmless command needs nobody to approve it
-        elif confirm_command is None:
-            result = {"ok": False,
-                      "error": "run_command requires user confirmation, which is not "
-                               "available in this context"}
-            return _record_tool_result(tool_key, args, result, emit, tool_trace,
-                                        assistant_content, convo,
-                                        mcp_fail_counts=mcp_fail_counts)
-        approved = True if confirm_command is None else await confirm_command(command, argv)
-        if not approved:
-            result = {"ok": False, "error": "user declined this command"}
-            return _record_tool_result(tool_key, args, result, emit, tool_trace,
-                                        assistant_content, convo,
-                                        mcp_fail_counts=mcp_fail_counts)
+        sandbox_on = await _sandbox_enabled()
+        wants_out = sandbox_on and args.get("outside_sandbox") is True
+        run_outside = sandbox_on and command_sandbox.granted(conversation_id)
+        if wants_out and not run_outside:
+            # Asked up front: always a card, even for a command that would just run,
+            # and one card covers the command's own reason too.
+            if confirm_command is None:
+                result = {"ok": False, "error": "running a command outside the sandbox needs the user's "
+                                                "click, which is not available here",
+                          "note": "Run it without outside_sandbox, or tell the user what you needed."}
+                return _record_tool_result(tool_key, args, result, emit, tool_trace,
+                                            assistant_content, convo,
+                                            mcp_fail_counts=mcp_fail_counts)
+            why = str(args.get("why") or "").strip()[:300]
+            if not await confirm_command(command, argv, sandbox="outside", why=why):
+                result = {"ok": False, "error": "user declined running this command outside the sandbox"}
+                return _record_tool_result(tool_key, args, result, emit, tool_trace,
+                                            assistant_content, convo,
+                                            mcp_fail_counts=mcp_fail_counts)
+            run_outside = True
+        else:
+            if confirm_command is None and verdict.level == "run" and not await _asks_for_everything():
+                pass                      # a harmless command needs nobody to approve it
+            elif confirm_command is None:
+                result = {"ok": False,
+                          "error": "run_command requires user confirmation, which is not "
+                                   "available in this context"}
+                return _record_tool_result(tool_key, args, result, emit, tool_trace,
+                                            assistant_content, convo,
+                                            mcp_fail_counts=mcp_fail_counts)
+            approved = True if confirm_command is None else await confirm_command(command, argv)
+            if not approved:
+                result = {"ok": False, "error": "user declined this command"}
+                return _record_tool_result(tool_key, args, result, emit, tool_trace,
+                                            assistant_content, convo,
+                                            mcp_fail_counts=mcp_fail_counts)
 
     # Reaching another machine (P3b). Every call asks, with no session memory and
     # no ask_risky exemption — see ssh_tools for why remote is graded HIGH even
@@ -1115,7 +1152,24 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                 timeout = budget.remaining_seconds() if tool_key == "delegate_work" and budget else tool_timeout_s
                 return await asyncio.wait_for(executor.execute(admitted_args), timeout=timeout)
             runtime = current_task()
-            result = await runtime.execute_tool(tool_key, args, execute) if runtime else await execute(args)
+
+            async def run_once(outside: bool) -> dict:
+                from server.services import terminal_exec
+                token = terminal_exec.OUTSIDE_SANDBOX.set(outside)
+                try:
+                    return await runtime.execute_tool(tool_key, args, execute) if runtime else await execute(args)
+                finally:
+                    terminal_exec.OUTSIDE_SANDBOX.reset(token)
+            result = await run_once(run_outside)
+            if (tool_key == "run_command" and sandbox_on and not run_outside and confirm_command is not None
+                    and isinstance(result, dict) and result.get("sandbox_denied")):
+                # Stopped by the sandbox: offer ONE re-run outside it, from the start.
+                if await confirm_command(command, argv, sandbox="retry"):
+                    result = await run_once(True)
+                    if isinstance(result, dict):
+                        result["ran_outside_sandbox"] = True
+            elif tool_key == "run_command" and run_outside and isinstance(result, dict):
+                result["ran_outside_sandbox"] = True
         except TaskError as exc:
             if exc.code not in {"task_reconciliation_required", "task_action_already_completed"}:
                 raise
@@ -1237,7 +1291,14 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                                                "description": "The full shell command line, e.g. "
                                                               "\"ls -la ~/Downloads | head -20\"."},
                                    "timeout_s": {"type": "integer", "minimum": 5, "maximum": 600,
-                                                 "description": "Stop after this many seconds (default 120)."}},
+                                                 "description": "Stop after this many seconds (default 120)."},
+                                   "outside_sandbox": {"type": "boolean",
+                                                       "description": "Only when the command must write outside "
+                                                                      "the working folder (moving the user's files, "
+                                                                      "installing software). The user is asked."},
+                                   "why": {"type": "string", "maxLength": 300,
+                                           "description": "With outside_sandbox: one short sentence the user "
+                                                          "reads on the card."}},
                     "required": ["command"]},
     "create_skill": {"type": "object",
                      "properties": {"key": {"type": "string"},

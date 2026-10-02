@@ -240,11 +240,11 @@ jobs:
         run: |
           .venv/bin/python - <<'PY'
           import sys, xml.etree.ElementTree as ET
-          # 42 real macOS cases (0.1.50: +2 run_command offline mode; 0.1.48: −4 with the unused command sandbox):
+          # 48 real macOS cases (0.1.51: +6 run_command workspace sandbox; 0.1.50: +2 run_command offline mode; 0.1.48: −4 with the unused command sandbox):
           # includes restricted recovery trial, file-denial attacks, durable export, and the fixed isolated
           # artifact parser (2026-09-15). MIRRORS EXPECTED_TOTAL in
           # tests/server/test_macos_marker_covers_the_platform_set.py — a test there now fails if they differ.
-          EXPECTED = 42
+          EXPECTED = 48
           suite = ET.parse("macos-results.xml").getroot().find("testsuite")
           total = int(suite.get("tests", 0))
           skipped = int(suite.get("skipped", 0))

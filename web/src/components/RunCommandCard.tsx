@@ -13,6 +13,11 @@ interface Props {
   /** 0.1.42: a background job is asking. The backend never honours "remember"
    *  for a job, so the checkbox is not offered — same reasoning as remote. */
   background?: boolean;
+  /** 0.1.51 P3: "outside" — Arslan asks to run this outside the sandbox; "retry" —
+   *  the sandbox stopped it and it would run again outside, from the start. */
+  sandbox?: "outside" | "retry";
+  /** With "outside": Arslan's one-line reason. */
+  why?: string;
   onConfirm: (callId: string, remember: boolean) => void;
   onCancel: (callId: string) => void;
 }
@@ -28,18 +33,29 @@ interface Props {
  * against the machine itself, and "remember this session" is GONE — the backend
  * refuses to honour it for a remote command, and offering a checkbox that does
  * nothing would be a lie told in a safety dialog.
+ *
+ * When `sandbox` is set (0.1.51 P3) the question is about leaving the sandbox, so the
+ * card says that first, and its checkbox means "for the rest of this conversation"
+ * (the backend keeps it in memory only), not "don't ask again for this kind".
  */
 export default function RunCommandCard({ callId, pretty, reason, remoteHost, fingerprints, background,
-                                         onConfirm, onCancel }: Props) {
+                                         sandbox, why, onConfirm, onCancel }: Props) {
   const { t } = useTranslation();
   const [remember, setRemember] = useState(false);
   const isRemote = Boolean(remoteHost);
+  const label = isRemote ? t("runcmd.remoteLabel", { host: remoteHost })
+    : sandbox === "outside" ? t("runcmd.sandboxOutsideLabel")
+    : sandbox === "retry" ? t("runcmd.sandboxRetryLabel")
+    : t("runcmd.label");
   return (
     <div className={isRemote ? "runcmd-card runcmd-card--remote" : "runcmd-card"} data-testid="runcmd-card">
       {background ? <div className="runcmd-card__reason" data-testid="runcmd-background">{t("jobs.askingBadge")}</div> : null}
-      <div className="runcmd-card__label">
-        {isRemote ? t("runcmd.remoteLabel", { host: remoteHost }) : t("runcmd.label")}
-      </div>
+      <div className="runcmd-card__label">{label}</div>
+      {sandbox ? (
+        <div className="runcmd-card__remote-note" data-testid="runcmd-sandbox-note">
+          {t(sandbox === "outside" ? "runcmd.sandboxOutsideNote" : "runcmd.sandboxRetryNote")}
+        </div>
+      ) : null}
       {isRemote ? (
         <div className="runcmd-card__remote-note" data-testid="runcmd-remote-note">
           {t("runcmd.remoteWarning")}
@@ -54,6 +70,7 @@ export default function RunCommandCard({ callId, pretty, reason, remoteHost, fin
           ))}
         </div>
       ) : null}
+      {sandbox === "outside" && why ? <div className="runcmd-card__reason" data-testid="runcmd-why">{why}</div> : null}
       {reason ? <div className="runcmd-card__reason">{reason}</div> : null}
       {isRemote || background ? null : (
       <label className="runcmd-card__remember">
@@ -63,7 +80,7 @@ export default function RunCommandCard({ callId, pretty, reason, remoteHost, fin
           checked={remember}
           onChange={(e) => setRemember(e.target.checked)}
         />
-        {t("runcmd.remember")}
+        {t(sandbox ? "runcmd.sandboxRemember" : "runcmd.remember")}
       </label>
       )}
       <div className="runcmd-card__actions">
@@ -73,7 +90,7 @@ export default function RunCommandCard({ callId, pretty, reason, remoteHost, fin
           data-testid="runcmd-run"
           onClick={() => onConfirm(callId, remember && !background)}
         >
-          {isRemote ? t("runcmd.runRemote") : t("runcmd.run")}
+          {isRemote ? t("runcmd.runRemote") : sandbox ? t("runcmd.runOutside") : t("runcmd.run")}
         </button>
         <button
           type="button"

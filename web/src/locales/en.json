@@ -494,6 +494,8 @@
     "sensitive": "Sensitive"
   },
   "settings": {
+    "labelTerminalSandbox": "Run commands in a sandbox",
+    "terminalSandboxDesc": "Commands can read files and use the network but write only inside the working folder, temp and cache folders, and cannot read your SSH keys, keychain or Arslan's data. Running one outside the sandbox always takes your click.",
     "appIcon": "App icon",
     "appIcon_frosted": "Frosted amber",
     "appIcon_monochrome": "Black & white",
@@ -1324,6 +1326,12 @@
     "run_label": "Run"
   },
   "runcmd": {
+    "sandboxOutsideLabel": "Run this outside the sandbox?",
+    "sandboxOutsideNote": "Commands normally write only inside Arslan's working folder. This one needs to change files elsewhere on your Mac.",
+    "sandboxRetryLabel": "The sandbox stopped this command",
+    "sandboxRetryNote": "It tried to write outside the working folder or read a protected file. Running it outside the sandbox starts it again from the beginning.",
+    "sandboxRemember": "Allow commands outside the sandbox for the rest of this conversation",
+    "runOutside": "Run outside the sandbox",
     "label": "Run this command?",
     "remember": "Don't ask again for this kind of command (undo in Settings › Advanced)",
     "run": "Run",

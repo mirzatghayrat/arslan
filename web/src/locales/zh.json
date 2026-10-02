@@ -494,6 +494,8 @@
     "sensitive": "敏感"
   },
   "settings": {
+    "labelTerminalSandbox": "命令在沙盒里运行",
+    "terminalSandboxDesc": "命令可以读文件、上网，但只能写工作文件夹、临时和缓存文件夹，读不到你的 SSH 密钥、钥匙串和 Arslan 的数据。要在沙盒外运行，每次都得你点。",
     "appIcon": "应用图标",
     "appIcon_frosted": "暖橙磨砂",
     "appIcon_monochrome": "纯粹黑白",
@@ -1324,6 +1326,12 @@
     "run_label": "运行"
   },
   "runcmd": {
+    "sandboxOutsideLabel": "在沙盒外运行这条命令？",
+    "sandboxOutsideNote": "命令平时只能写 Arslan 的工作文件夹。这条需要改动 Mac 上别处的文件。",
+    "sandboxRetryLabel": "沙盒拦下了这条命令",
+    "sandboxRetryNote": "它想写工作文件夹以外的地方，或读受保护的文件。在沙盒外运行会从头再跑一遍。",
+    "sandboxRemember": "这次对话里，命令都可以在沙盒外运行",
+    "runOutside": "在沙盒外运行",
     "label": "运行这条命令?",
     "remember": "以后这类命令不再询问（可在 设置 › 高级 里恢复）",
     "run": "运行",

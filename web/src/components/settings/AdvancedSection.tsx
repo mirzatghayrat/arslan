@@ -43,6 +43,9 @@ export interface AdvancedSectionProps {
   /** Confirm policy for shell commands (only meaningful when shell is enabled). */
   shellConfirmPolicy: ShellConfirmPolicy;
   onShellConfirmPolicyChange: (value: ShellConfirmPolicy) => void;
+  /** 0.1.51 P3: commands run in the workspace sandbox (on by default). Optional so older hosts still render. */
+  terminalSandboxEnabled?: boolean;
+  onTerminalSandboxChange?: (value: boolean) => void;
   /** 0.1.43: where a background job wraps up. Optional so older hosts still render. */
   backgroundJobBudget?: BackgroundJobBudget;
   onBackgroundJobBudgetChange?: (value: BackgroundJobBudget) => void;
@@ -77,6 +80,8 @@ export default function AdvancedSection({
   onOrchestratorShellChange,
   shellConfirmPolicy,
   onShellConfirmPolicyChange,
+  terminalSandboxEnabled = true,
+  onTerminalSandboxChange,
   backgroundJobBudget = 'standard',
   onBackgroundJobBudgetChange,
   workspaceDir,
@@ -310,6 +315,24 @@ export default function AdvancedSection({
               ]}
               className="w-56"
               ariaLabel={t('settings.labelShellConfirmPolicy')}
+            />
+          </div>
+        )}
+        {orchestratorShellEnabled && (
+          <div className="flex items-start justify-between gap-4 pl-4 border-l-2 border-primary/20">
+            <div>
+              <h4 className="text-xs font-bold text-foreground font-sans">{t('settings.labelTerminalSandbox')}</h4>
+              <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">
+                {t('settings.terminalSandboxDesc')}
+              </p>
+            </div>
+            <input
+              id="settings-terminal-sandbox-toggle"
+              data-testid="settings-terminal-sandbox-toggle"
+              type="checkbox"
+              checked={terminalSandboxEnabled}
+              onChange={(e) => onTerminalSandboxChange?.(e.target.checked)}
+              className="w-4 h-4 mt-1 shrink-0 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer"
             />
           </div>
         )}

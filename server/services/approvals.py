@@ -107,13 +107,22 @@ class JobConfirmations:
         return await ask(self.conversation_id, protocol.propose_schedule(uuid.uuid4().hex, name, when))
 
     async def command(self, command: str, argv: list, *, remote_host: str | None = None,
-                      fingerprints: list | None = None) -> bool:
+                      fingerprints: list | None = None, sandbox: str | None = None, why: str = "") -> bool:
         from server.db import session as db_session
         from server.services import settings_service
         from server.services import terminal_policy
         from server.ws.arslan import effective_risk, may_skip_card
         risk = effective_risk(remote_host, command, argv)
         verdict = terminal_policy.assess(terminal_policy.as_shell(command, argv))
+        if sandbox in ("outside", "retry"):
+            # 0.1.51 P3: leaving the sandbox is always a card; a job's card offers no
+            # "rest of the conversation" (jobs never add standing answers).
+            from server.services import command_sandbox
+            if command_sandbox.granted(self.conversation_id):
+                return True
+            return await ask(self.conversation_id, protocol.propose_run_command(
+                uuid.uuid4().hex, command, argv, reason=verdict.reason if verdict.level == "ask" else "",
+                sandbox=sandbox, why=why))
         policy, standing = "", False
         if not remote_host:
             async with db_session.AsyncSessionLocal() as db:

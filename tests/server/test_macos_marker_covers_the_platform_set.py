@@ -35,6 +35,12 @@ TESTS = pathlib.Path(__file__).parents[1]
 #: The measured set, 2026-08-06. Files, not test names: names churn, the
 #: platform boundary does not.
 EXPECTED_FILES: dict[str, int] = {
+    # 2026-10-03 (0.1.51 P3): run_command's workspace sandbox — what the kernel
+    # refuses (writes outside, a protected folder inside a writable one, the
+    # keychain folder and ~/.ssh), what it keeps (temp, offline writes), and a
+    # nested sandbox-exec seen as a stop. Seatbelt is macOS-only. Appended
+    # boundary case.
+    "server/test_command_sandbox.py": 6,
     # 2026-10-02 (0.1.50): run_command's offline mode is /usr/bin/sandbox-exec
     # with deny network*; the two kernel facts (blocked connect, file write still
     # works) exist only on macOS. Appended boundary case.
@@ -71,7 +77,7 @@ EXPECTED_FILES: dict[str, int] = {
 #: That step re-derives this number from the junit XML, so changing one without
 #: the other turns a green local run into a red CI run, or worse, hides drift
 #: from the guard meant to catch it. Both, same commit, or neither.
-EXPECTED_TOTAL = 42  # +2 0.1.50: run_command offline mode (seatbelt deny network*);
+EXPECTED_TOTAL = 48  # +6 0.1.51 P3: run_command workspace sandbox; +2 0.1.50: run_command offline mode (seatbelt deny network*);
 #                     −4 0.1.48: the unused command sandbox and its tests were deleted
 # The external-file test has six attack cases under one marked function.
 PARAMETERIZED_EXTRA_CASES = 5

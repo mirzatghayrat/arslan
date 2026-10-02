@@ -42,6 +42,7 @@ class SettingsIn(BaseModel):
     # Desktop shell while its window is hidden (0.1.41). Default ON.
     keep_awake_enabled: bool | None = None
     desktop_notifications_enabled: bool | None = None
+    terminal_sandbox_enabled: bool | None = None
     brain_usage_event_retention_days: int | None = None
     brain_usage_event_max_rows: int | None = None
     orchestrator_shell_enabled: str | None = None
@@ -109,6 +110,7 @@ class SettingsOut(BaseModel):
     research_review_enabled: bool = False
     keep_awake_enabled: bool = True
     desktop_notifications_enabled: bool = True
+    terminal_sandbox_enabled: bool = True
     brain_usage_event_retention_days: int = 30
     brain_usage_event_max_rows: int = 200_000
     orchestrator_shell_enabled: str = ""

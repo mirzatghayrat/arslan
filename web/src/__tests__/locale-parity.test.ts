@@ -39,7 +39,8 @@ describe("locale parity", () => {
   // (connections, dashboard, spawns, secondBrain, spawn, ledger, diagnosis).
   // 1552 → 1541 (0.1.48): +3 terminal-rules strings; −7 read-aloud and spawn-mode, −7 auto-evolution.
 // 1541 → 1543 (0.1.50): +2 plan activity strings (activity.plan, activity.plan_done).
-  it("en locale has 1543 keys (baseline guard)", () => {
+// 1543 → 1551 (0.1.51 P3): +6 sandbox card strings (runcmd.sandbox*, runcmd.runOutside), +2 Advanced settings (settings.labelTerminalSandbox, settings.terminalSandboxDesc).
+  it("en locale has 1551 keys (baseline guard)", () => {
     // 1318 → 1335: the first-run wizard redesign — the four-beat "how it
     // works" tour (title + typed line + 4×title/body), the catalog capability
     // caption, the test-before-save states (test & save / testing / ok /
@@ -265,7 +266,7 @@ describe("locale parity", () => {
     // +6: bundled app icon choices and persistence feedback.
     // +1: externalLink.failed added by fe9c12b5 (native HTTPS refusal).
     // +1: chat.expert_involved (0.1.42 quiet "asked X to help" line replaces the roster notices).
-    expect(enKeys).toHaveLength(1543);
+    expect(enKeys).toHaveLength(1551);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

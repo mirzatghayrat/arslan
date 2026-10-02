@@ -27,7 +27,7 @@ _PLAIN_KEYS = (
                "compaction_config_id", "title_config_id",
                "router_config_id", "vision_config_id",
                "evolution_auto", "mcp_server_enabled", "curation_enabled", "research_review_enabled", "keep_awake_enabled",
-               "desktop_notifications_enabled", "ocr_languages",
+               "desktop_notifications_enabled", "terminal_sandbox_enabled", "ocr_languages",
                "workspace_dir", "heartbeat_enabled", "heartbeat_checklist",
                "heartbeat_interval_s", "lan_discovery_enabled", "ssh_enabled", "default_read_enabled",
                "voice_output_enabled", "voice_input_locale", "voice_mode", "voice_endpoint_silence_ms")
@@ -241,6 +241,13 @@ async def desktop_notifications_enabled(session: AsyncSession) -> bool:
     """Whether the desktop shell posts native notifications while its window is
     hidden. Default ON; only an explicit 'false' turns it off."""
     raw = await _get_raw(session, "desktop_notifications_enabled")
+    return raw is None or str(raw).strip().lower() != "false"
+
+
+async def terminal_sandbox_enabled(session: AsyncSession) -> bool:
+    """Whether run_command runs inside the workspace sandbox (0.1.51 P3). Default
+    ON; only an explicit 'false' turns it off (back to the 0.1.50 behaviour)."""
+    raw = await _get_raw(session, "terminal_sandbox_enabled")
     return raw is None or str(raw).strip().lower() != "false"
 
 
@@ -562,6 +569,7 @@ _BOOL_ACCESSORS = {
     "research_review_enabled": research_review_enabled,
     "keep_awake_enabled": keep_awake_enabled,
     "desktop_notifications_enabled": desktop_notifications_enabled,
+    "terminal_sandbox_enabled": terminal_sandbox_enabled,
     "mcp_server_enabled": mcp_server_enabled,
 }
 

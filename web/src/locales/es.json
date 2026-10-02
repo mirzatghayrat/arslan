@@ -494,6 +494,8 @@
     "sensitive": "Sensible"
   },
   "settings": {
+    "labelTerminalSandbox": "Ejecutar los comandos en un entorno aislado",
+    "terminalSandboxDesc": "Los comandos pueden leer archivos y usar la red, pero solo escriben en la carpeta de trabajo, las carpetas temporales y de caché, y no pueden leer tus claves SSH, el llavero ni los datos de Arslan. Ejecutar uno fuera del entorno aislado siempre requiere tu clic.",
     "appIcon": "Icono de la aplicación",
     "appIcon_frosted": "Ámbar esmerilado",
     "appIcon_monochrome": "Blanco y negro",
@@ -1324,6 +1326,12 @@
     "run_label": "Ejecución"
   },
   "runcmd": {
+    "sandboxOutsideLabel": "¿Ejecutar esto fuera del entorno aislado?",
+    "sandboxOutsideNote": "Los comandos normalmente solo escriben dentro de la carpeta de trabajo de Arslan. Este necesita cambiar archivos en otro lugar de tu Mac.",
+    "sandboxRetryLabel": "El entorno aislado detuvo este comando",
+    "sandboxRetryNote": "Intentó escribir fuera de la carpeta de trabajo o leer un archivo protegido. Ejecutarlo fuera del entorno aislado lo vuelve a empezar desde el principio.",
+    "sandboxRemember": "Permitir comandos fuera del entorno aislado durante el resto de esta conversación",
+    "runOutside": "Ejecutar fuera del entorno aislado",
     "label": "¿Ejecutar este comando?",
     "remember": "No volver a preguntar por este tipo de comando (se deshace en Ajustes › Avanzado)",
     "run": "Ejecutar",

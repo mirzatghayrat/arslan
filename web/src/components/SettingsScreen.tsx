@@ -243,6 +243,8 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         onOrchestratorShellChange={(v) => saveField({ orchestratorShellEnabled: v })}
         shellConfirmPolicy={localSettings.shellConfirmPolicy}
         onShellConfirmPolicyChange={(v) => saveField({ shellConfirmPolicy: v })}
+        terminalSandboxEnabled={localSettings.terminalSandboxEnabled ?? true}
+        onTerminalSandboxChange={(v) => saveField({ terminalSandboxEnabled: v })}
         backgroundJobBudget={localSettings.backgroundJobBudget ?? 'standard'}
         onBackgroundJobBudgetChange={(v) => saveField({ backgroundJobBudget: v })}
         workspaceDir={localSettings.workspaceDir ?? ''}
