@@ -18,6 +18,7 @@ public final class ConversationLinks {
     let backend: BackendReads
     var links: [String: (channel: ControlChannel, mapper: FrameMapper)] = [:]
     var executed: Set<String> = []                     // client_msg_ids already run (§5.3: once)
+    public var status: StatusReporter?                 // a phone saying hello gets the status at once
 
     public init(channels: ConversationChannels, mailbox: Mailbox, backend: BackendReads = NoBackend()) {
         (self.channels, self.mailbox, self.backend) = (channels, mailbox, backend)
@@ -93,8 +94,10 @@ public final class ConversationLinks {
                 _ = try await mailbox.send(type: "file.offer", body: file, to: received.from, asset: data)
             case "hello":
                 _ = try await mailbox.send(type: "hello", body: ["app_version": "mac", "protocol_version": Wire.version,
-                                                                "capabilities": ["chat", "approvals", "jobs", "history", "files"]],
+                                                                "capabilities": ["chat", "approvals", "jobs", "history", "files",
+                                                                                 "status"]],
                                            to: received.from)
+                await status?.send(to: received.from)
             case "error":
                 return                                 // never answer an error with an error
             default:

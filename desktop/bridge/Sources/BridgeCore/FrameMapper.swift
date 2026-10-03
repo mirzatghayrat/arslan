@@ -80,7 +80,7 @@ public final class FrameMapper {
             if frame["by"] as? String == "mac" { body["detail"] = "answered_on_mac" }
             return [("approval.result", body)]
         case "job_update":
-            return [("job.event", jobEvent(frame))]
+            return [("job.event", Self.jobEvent(frame, conversationID: conversationID))]
         default:
             return []
         }
@@ -113,7 +113,8 @@ public final class FrameMapper {
                         "text": String(text.prefix(200)), "final": false])
     }
 
-    func jobEvent(_ f: [String: Any]) -> [String: Any] {
+    /// A backend job_update frame → a `job.event` body (also the entries of `status.snapshot` jobs).
+    static func jobEvent(_ f: [String: Any], conversationID: String) -> [String: Any] {
         let outcome = f["outcome"] as? String
         let state: String
         switch (f["phase"] as? String, outcome) {

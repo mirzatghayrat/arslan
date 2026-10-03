@@ -111,10 +111,14 @@
           "jobs": [
             {
               "id": "job-1",
+              "conversation_id": "c1",
+              "state": "running",
               "title": "Tidy downloads",
               "current_step": "Sorting",
               "completed": 1,
-              "total": 3
+              "total": 3,
+              "plan": [],
+              "files": []
             }
           ],
           "waiting_approvals": 0,

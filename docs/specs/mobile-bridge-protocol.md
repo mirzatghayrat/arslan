@@ -199,7 +199,7 @@ never the content. A lock-screen alert shows generic text unless the user turned
 | `pair.reject` | Mac → phone | `reason` |
 | `hello` | both | `app_version`, `protocol_version`, `capabilities[]` |
 | `ack` | both | `ids[]` (lowercase envelope ids) |
-| `status.snapshot` | Mac → phone | `presence` (online/sleeping/offline), `mascot`, `device_name`, `last_seen`, `jobs[]` (`id`, `title`, `current_step`, `completed`, `total`), `waiting_approvals`, `high_risk_mac_only` |
+| `status.snapshot` | Mac → phone | `presence` (online/sleeping/offline), `mascot`, `device_name`, `last_seen`, `jobs[]` (each a `job.event` body: the jobs still running), `waiting_approvals`, `high_risk_mac_only` |
 | `conversations.list` / `conversations.result` | phone → Mac / Mac → phone | `limit?` (1–100, default 20) / `conversations[]` (`id`, `title`, `updated_at`), most recent first |
 | `chat.history` / `chat.history.result` | phone → Mac / Mac → phone | `conversation_id`, `limit` / `conversation_id`, `messages[]` (`id`, `role`, `text`, `ts`, `attachments[]`) |
 | `chat.send` | phone → Mac | `conversation_id?` (absent = the pocket conversation), `text`, `attachments[]`, `client_msg_id` (UUID) |
@@ -218,7 +218,14 @@ Settled here (open in the proposal):
   answers `expired`.
 - **Deny** carries `auth: "none"`; approving always needs Face ID; voice never approves.
 - `status.snapshot` is built by the Mac from the island feed (`/api/v1/island/feed`); the phone never
-  calls the Mac's HTTP API.
+  calls the Mac's HTTP API. The Mac sends it when the phone says `hello`, when what the phone shows
+  changes (mascot, cards waiting, which jobs and their state: at most every 2 s; a job's step or
+  progress: at most every 15 s), and otherwise as a heartbeat every 60 s. The phone treats a Mac whose
+  `last_seen` is more than 90 s old as offline. `mascot` follows the island: a card waiting →
+  `approval`; work in flight → `searching` (web search, page reading, recall, browser) or `working`;
+  else what finished in the last minute → `done`, or `stopped` when it failed or a schedule paused;
+  else `idle`. The Mac sends `presence: online` only (it cannot speak while asleep or off; `sleeping`
+  is reserved), and `high_risk_mac_only: false` until that switch exists.
 - `mascot` values: idle, working, searching, approval, question, done, stopped, away (the island's
   states).
 - Progress (`job.event` running, `chat.event` progress) is coalesced to at most one per job every

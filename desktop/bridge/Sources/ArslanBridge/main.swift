@@ -100,10 +100,11 @@ let ephemeral = arguments.contains("--ephemeral")
 let control = WebSocketControl(port: port, token: token)
 let store: EnvelopeStore = ephemeral ? MemoryStore() : CloudKitStore(containerID: containerID)
 let secrets: SecretStore = ephemeral ? MemorySecrets() : KeychainSecrets()
+let macName = config["mac_name"] as? String ?? Host.current().localizedName ?? "Mac"
 let runtime: BridgeRuntime
 do {
     runtime = try BridgeRuntime(identities: IdentityStore(secrets: secrets), store: store, control: control,
-                                macName: config["mac_name"] as? String ?? Host.current().localizedName ?? "Mac",
+                                macName: macName,
                                 containerID: containerID, version: bundleVersion())
 } catch {
     FileHandle.standardError.write(Data("ArslanBridge: identity unavailable: \(error)\n".utf8))
@@ -111,8 +112,11 @@ do {
 }
 control.onConnect = { try? await runtime.hello() }
 control.onFrame = { frame in try? await runtime.handleControl(frame) }
+let backend = LocalBackend(port: port, token: token)
 let links = ConversationLinks(channels: WebSocketChannels(port: port, token: token), mailbox: runtime.mailbox,
-                              backend: LocalBackend(port: port, token: token))
+                              backend: backend)
+let status = StatusReporter(backend: backend, mailbox: runtime.mailbox, deviceName: macName)
+links.status = status
 Task { await control.run() }
 Task {
     if let cloud = store as? CloudKitStore { try? await cloud.ensureZone() }
@@ -125,6 +129,12 @@ Task {
     while true {                                   // held progress lines, at most one per 2 s per conversation
         await links.flush()
         try? await Task.sleep(nanoseconds: 1_000_000_000)
+    }
+}
+Task {
+    while true {                                   // status.snapshot: on change, or a heartbeat every 60 s
+        await status.tick()
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
     }
 }
 // stdin closing means Arslan quit.

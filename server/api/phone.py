@@ -2,13 +2,14 @@
 phones, a new pairing code, accepting or declining a request, revoking a phone. Behind the
 API token like every setting; accepting is the user's click in Arslan's window.
 
-And what the Bridge reads for a paired phone (§5.3): the conversation list, a conversation's
-history, and the files Arslan made — a run's artifacts, immutable snapshots with their size and
+And what the Bridge reads for a paired phone (§5.3): the status the phone's home screen shows
+(the island's state), the conversation list, a conversation's history, and the files Arslan made — a run's artifacts, immutable snapshots with their size and
 SHA-256, so the reference the phone holds always matches the bytes it later fetches."""
 from __future__ import annotations
 
 import base64
 import re
+import time
 from datetime import UTC, datetime
 from pathlib import PurePosixPath
 
@@ -20,13 +21,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from server.auth import require_auth
 from server.db.models import ArslanMessage, Run
 from server.db.session import get_session
-from server.services import artifact_store
+from server.services import artifact_store, background_jobs, desktop_status
 from server.services.phone_bridge import BridgeUnavailable, hub
 
 router = APIRouter(dependencies=[Depends(require_auth)])
 
 #: A file travels to the phone inside one CloudKit record (protocol §4.6).
 PHONE_FILE_MAX = 20 * 1024 * 1024
+#: The island's search tools (`SEARCH_TOOLS` in web/src/island/islandMachine.ts, plus any
+#: browser_* tool). A test reads that file, so the two cannot drift apart.
+SEARCH_TOOLS = frozenset({"web_search", "web_extract", "recall"})
+#: How long a finished or stopped piece of work stays on the phone's mascot.
+RESULT_SECONDS = 60
 
 
 def _iso(moment: datetime | str | None) -> str:
@@ -50,6 +56,30 @@ def file_reference(item: dict) -> dict | None:
     return {"id": filename, "name": PurePosixPath(item.get("title") or filename).name or filename,
             "size": size, "mime_type": item.get("media_type") or "application/octet-stream",
             "sha256": item["sha256"]}
+
+
+def phone_mascot(feed: dict, now: float) -> str:
+    """The island's mood in the phone's words (§5.3 `mascot`), in the island's order: a card
+    waiting, then work in flight (searching or working, by the newest run's latest step), then
+    what finished in the last minute (done, or stopped when it failed or a schedule paused;
+    nothing when you cancelled it), else idle."""
+    if feed.get("awaiting"):
+        return "approval"
+    if feed.get("active"):
+        newest = max(feed["active"], key=lambda a: a.get("started_at") or 0)
+        tool = (newest.get("step") or {}).get("tool") or ""
+        return "searching" if tool in SEARCH_TOOLS or tool.startswith("browser_") else "working"
+    for event in reversed(feed.get("events") or []):
+        if now - (event.get("at") or 0) > RESULT_SECONDS:
+            break
+        if event.get("kind") == "scheduled_paused":
+            return "stopped"
+        if event.get("kind") in ("turn_finished", "scheduled_finished"):
+            outcome = event.get("outcome")
+            if outcome == "ok":
+                return "done"
+            return "stopped" if outcome in ("error", "needs_review") else "idle"
+    return "idle"
 
 
 def run_files(run_id: int | None) -> list[dict]:
@@ -143,3 +173,16 @@ async def phone_file(file_id: str, db: AsyncSession = Depends(get_session)):
     if reference is None:
         raise HTTPException(413, "too_large")
     return {"file": reference, "data": base64.b64encode(data).decode()}
+
+
+@router.get("/phone/status")
+async def phone_snapshot():
+    """`status.snapshot` (§5.3) without what only the Bridge knows (its device name, the time):
+    the island's state as the mascot, the jobs still running (as job_update frames, which the
+    Bridge maps to job.event bodies like every other job update) and the cards waiting.
+    Presence is "online" because this answered; the phone marks a Mac silent for 90 s offline.
+    `high_risk_mac_only` stays false until that switch exists (§6.1)."""
+    feed = desktop_status.island_feed()
+    return {"presence": "online", "mascot": phone_mascot(feed, time.time()),
+            "jobs": [job.frame() for job in background_jobs.active()],
+            "waiting_approvals": feed["awaiting"], "high_risk_mac_only": False}
