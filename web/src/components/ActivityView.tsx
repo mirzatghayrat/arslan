@@ -7,6 +7,7 @@ import { fmtMs } from "../lib/usageFormat";
 import RunReplay from "./RunReplay";
 import UsageCard from "./UsageCard";
 import ScheduledTasksCard from "./ScheduledTasksCard";
+import HandsTraceCard from "./HandsTraceCard";
 
 /**
  * Activity (0.1.48): what Arslan did, and what it cost.
@@ -60,6 +61,7 @@ export default function ActivityView() {
     <div className="flex-1 h-full overflow-auto p-6 space-y-8" data-testid="activity-view">
       <UsageCard />
       <ScheduledTasksCard onOpenRun={(runId) => setOpen(runId)} />
+      <HandsTraceCard />
       <section>
         <h2 className="text-sm font-medium text-foreground">{t("activityPage.recent")}</h2>
         <p className="text-xs text-muted-foreground mt-0.5 mb-3">{t("activityPage.recentHint")}</p>
