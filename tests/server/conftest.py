@@ -186,15 +186,18 @@ def _install_crypto_salt():
 
 
 def _restore_config(monkeypatch, real_data_dir=real_data_dir_guard.REAL_DATA_DIR) -> list[str]:
-    """Put the env back, heal config drift, and return the config paths that were
-    left inside ``real_data_dir``. A function so a test can drive it directly."""
+    """Put the env back, heal config drift, and describe what the test had left
+    unsafe: pinned env keys it changed outside monkeypatch, and config paths inside
+    ``real_data_dir``. A function so a test can drive it directly."""
     monkeypatch.undo()
+    problems = [f"os.environ[{key!r}] changed and not restored"
+                for key in real_data_dir_guard.restore_pin()]
     import server.config as _cfg
 
-    leaked = [str(path) for path in _paths(_cfg.settings)
-              if real_data_dir_guard.inside(path, real_data_dir)]
+    problems += [f"server.config path {path}" for path in _paths(_cfg.settings)
+                 if real_data_dir_guard.inside(path, real_data_dir)]
     _heal_config_drift()
-    return leaked
+    return problems
 
 
 @pytest.fixture(autouse=True)
@@ -213,15 +216,19 @@ def _restore_config_after_test(monkeypatch):
     drifted from the env on any guarded field, it is reloaded back to the ambient
     baseline — a cheap no-op when there is no drift (most tests).
 
-    A test that leaves config pointing into the user's real data dir is also FAILED,
-    after the heal: the next test to touch ``settings.spawns_dir`` would write there.
+    A test that removes the suite's pinned data dir from ``os.environ``, or leaves
+    config pointing into the user's real data dir, is also FAILED after the repair:
+    the next test to write under ``config.data_dir()`` or ``settings.spawns_dir`` would
+    write into the user's data (tests/real_data_dir_guard.py).
     """
     yield
-    leaked = _restore_config(monkeypatch)
-    if leaked:
+    problems = _restore_config(monkeypatch)
+    if problems:
         pytest.fail(
-            "this test left server.config pointing into the real Arslan data dir "
-            f"({', '.join(leaked)}); restore the env BEFORE reloading config",
+            "this test left the real Arslan data dir reachable (repaired now): "
+            + "; ".join(problems)
+            + ". Restore the env BEFORE reloading config; a test that calls code which "
+            "edits os.environ itself must restore it in its own fixture.",
             pytrace=False,
         )
 
@@ -250,6 +257,9 @@ async def client(tmp_path):
     import os
 
     os.environ["ARSLAN_TEST_ROUTES"] = "1"
+    # Put back afterwards: it is one of the suite's pinned data-dir keys
+    # (tests/real_data_dir_guard.py), and set here outside monkeypatch.
+    previous_spawns_dir = os.environ.get("ARSLAN_SPAWNS_DIR")
     os.environ["ARSLAN_SPAWNS_DIR"] = str(tmp_path / "spawns")
     import server.config as _config
     import importlib as _il
@@ -288,6 +298,10 @@ async def client(tmp_path):
         yield ac
     monkeypatch_session()
     await engine.dispose()
+    if previous_spawns_dir is None:
+        os.environ.pop("ARSLAN_SPAWNS_DIR", None)
+    else:
+        os.environ["ARSLAN_SPAWNS_DIR"] = previous_spawns_dir
 
 
 # ---------------------------------------------------------------------------

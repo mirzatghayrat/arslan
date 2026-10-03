@@ -16,7 +16,11 @@ already existed. The chain:
      ``<settings.spawns_dir>/<name>/.evolution`` wherever the stale config pointed.
 
 The first case is that chain. The second is the other way in: a plain ``pytest`` with
-``ARSLAN_DATA_DIR`` unset resolves the platform dir from the very first import.
+``ARSLAN_DATA_DIR`` unset resolves the platform dir from the very first import. The
+third was found by the first full run with these guards: ``packaging/server_entry.
+_sanitize_env`` pops ``ARSLAN_DATA_DIR`` from the real ``os.environ``, so after any
+test_packaging_entry test every later test resolved the user's dir — a 100 KB
+``tool_outputs/…-command-….txt`` from test_run_command_executor landed there, on main.
 
 Each case runs a child pytest with HOME pointed at a temp dir, so the platform data
 dir it can resolve is a throwaway — this test cannot touch the real one either.
@@ -60,6 +64,12 @@ def _child_pytest(home: Path, args: list[str], data_dir_env: str | None = "data"
             None,
             id="ARSLAN_DATA_DIR-unset",
         ),
+        pytest.param(
+            ["tests/server/test_packaging_entry.py::test_an_explicit_secret_key_is_left_alone",
+             "tests/server/test_run_command_executor.py::test_long_output_keeps_the_head_and_the_tail"],
+            "data",
+            id="entry-strips-env-then-output-spills",
+        ),
     ],
 )
 def test_nothing_lands_under_the_platform_data_dir(tmp_path, args, data_dir_env):
@@ -72,18 +82,23 @@ def test_nothing_lands_under_the_platform_data_dir(tmp_path, args, data_dir_env)
     assert proc.returncode == 0, proc.stdout[-4000:] + proc.stderr[-2000:]
 
 
-def test_the_session_guard_fails_a_run_that_writes_there(tmp_path):
+@pytest.mark.parametrize(("body", "expected"), [
+    pytest.param("(real_data_dir_guard.REAL_DATA_DIR / 'leak').mkdir(parents=True)",
+                 "created 2 entries in the real Arslan data dir", id="writes-there"),
+    pytest.param("os.environ.pop('ARSLAN_DATA_DIR')",
+                 "changed ['ARSLAN_DATA_DIR'] in os.environ", id="strips-the-pin"),
+])
+def test_the_guards_fail_a_run_that_reaches_the_real_dir(tmp_path, body, expected):
     """A guard that never fires looks exactly like one that works: run a child whose one
-    test writes into the platform data dir (under a temp HOME) and expect the run to
-    fail, naming what was created."""
+    test reaches the platform data dir (under a temp HOME) and expect the run to fail,
+    saying what happened."""
     home = tmp_path / "home"
     home.mkdir()
     leaky = tmp_path / "leaky" / "test_leaky.py"
     leaky.parent.mkdir()
     leaky.write_text(
-        "from tests import real_data_dir_guard\n\n\n"
-        "def test_writes_into_the_real_data_dir():\n"
-        "    (real_data_dir_guard.REAL_DATA_DIR / 'leak').mkdir(parents=True)\n"
+        "import os\n\nfrom tests import real_data_dir_guard\n\n\n"
+        f"def test_reaches_the_real_data_dir():\n    {body}\n"
     )
 
     # The root conftest loaded as a plugin: the leaky file lives outside tests/.
@@ -91,5 +106,4 @@ def test_the_session_guard_fails_a_run_that_writes_there(tmp_path):
 
     assert proc.returncode != 0, proc.stdout[-4000:]
     assert "1 passed, 1 error" in proc.stdout, proc.stdout[-4000:]
-    assert "created 2 entries in the real Arslan data dir" in proc.stdout, proc.stdout[-4000:]
-    assert "/leak" in proc.stdout
+    assert expected in proc.stdout, proc.stdout[-4000:]

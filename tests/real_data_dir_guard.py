@@ -6,10 +6,12 @@ On a developer Mac that dir is where the packaged app keeps the user's brain:
 ``does_not_exist_probe/spawns/{S,S2}/.evolution`` (2026-10-03), which is what made
 ``test_default_data_dir_import_has_no_filesystem_side_effect`` fail.
 
-Three layers, wired from tests/conftest.py and tests/server/conftest.py:
+Layers, wired from tests/conftest.py and tests/server/conftest.py:
 
 * :func:`pin_suite_data_dir` — the suite's ambient data dir is a throwaway temp dir,
   whatever env pytest was started with.
+* :func:`restore_pin` — after every test, a pinned key that test changed outside
+  ``monkeypatch`` is put back and the test fails, so the pin cannot be lost silently.
 * :func:`inside` — tests/server/conftest.py fails the test whose teardown leaves
   ``server.config`` pointing into the real dir, so the culprit is named.
 * :func:`snapshot` / :func:`created` — the session fails if the real dir gained an
@@ -43,6 +45,10 @@ _APP_SIDECARS = frozenset({"arslan.db-wal", "arslan.db-shm", "arslan.db-journal"
 _WATCHED_TREES = ("spawns",)
 
 
+PINNED_KEYS = ("ARSLAN_DATA_DIR", "ARSLAN_DB_PATH", "ARSLAN_SPAWNS_DIR")
+_pinned: dict[str, str | None] = {}
+
+
 def pin_suite_data_dir() -> Path:
     """Point ``ARSLAN_DATA_DIR`` at a fresh temp dir and return it.
 
@@ -55,7 +61,26 @@ def pin_suite_data_dir() -> Path:
     os.environ["ARSLAN_DATA_DIR"] = str(path)
     for key in ("ARSLAN_DB_PATH", "ARSLAN_SPAWNS_DIR"):
         os.environ.pop(key, None)
+    _pinned.update({key: os.environ.get(key) for key in PINNED_KEYS})
     return path
+
+
+def restore_pin() -> list[str]:
+    """Put back any pinned key a test changed and did not restore; return their names.
+
+    The pin only holds if nothing takes it away: ``packaging/server_entry._sanitize_env``
+    pops ``ARSLAN_DATA_DIR`` from the real ``os.environ`` (correct in the packaged app),
+    and on 2026-10-03 one test calling it sent every later test in the run — on main
+    too — to the user's real dir: a 100 KB ``tool_outputs/…-command-….txt`` from
+    test_run_command_executor and a rewritten ``ui_language`` landed there.
+    """
+    changed = [key for key, value in _pinned.items() if os.environ.get(key) != value]
+    for key in changed:
+        if _pinned[key] is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = _pinned[key]
+    return changed
 
 
 def inside(path: str | Path, root: Path = REAL_DATA_DIR) -> bool:

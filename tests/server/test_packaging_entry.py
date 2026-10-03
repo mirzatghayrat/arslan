@@ -108,12 +108,29 @@ def test_activation_trial_dispatches_only_to_restricted_entry(entry, monkeypatch
 
 @pytest.fixture
 def entry(tmp_path, monkeypatch):
+    """The entry module, loaded against a temp profile.
+
+    ``_sanitize_env`` edits the real ``os.environ``: it pops ARSLAN_DATA_DIR so the
+    platform default applies, which is right in the packaged app. Here that default
+    must not be the user's real dir, during the test or after it — so HOME is a temp
+    dir for the test, and the environment is put back afterwards (monkeypatch only
+    restores what it set itself). Before 2026-10-03 one call stripped the suite's data
+    dir for every later test in the run, which then wrote into the user's real
+    ``tool_outputs/`` and ``ui_language``.
+    """
     from dataclasses import replace
     from server import config, profile_paths
     monkeypatch.setattr(config, "settings", replace(config.settings, db_path=str(tmp_path / "entry.db"), data_dir=tmp_path))
     monkeypatch.setattr(profile_paths, "resolve_database", lambda: pathlib.Path(config.settings.db_path))
     monkeypatch.setattr(sys, "argv", ["arslan-server"])
-    return _load_entry()
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    for key in ("XDG_DATA_HOME", "APPDATA"):
+        monkeypatch.delenv(key, raising=False)
+    saved = dict(os.environ)
+    yield _load_entry()
+    for key in set(os.environ) - set(saved):
+        del os.environ[key]
+    os.environ.update(saved)
 
 
 def test_activation_control_dispatch_does_not_start_normal_server(entry, monkeypatch):

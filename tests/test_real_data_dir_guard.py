@@ -6,6 +6,10 @@ the cases it must ignore.
 """
 from __future__ import annotations
 
+import os
+
+import pytest
+
 from tests import real_data_dir_guard as guard
 
 
@@ -83,3 +87,24 @@ def test_the_suite_runs_on_a_throwaway_data_dir():
     ambient = config.data_dir()
     assert ambient.name.startswith(guard.SUITE_DATA_DIR_PREFIX)
     assert not guard.inside(ambient, guard.REAL_DATA_DIR)
+
+
+@pytest.mark.parametrize("key", guard.PINNED_KEYS)
+def test_a_pinned_key_changed_outside_monkeypatch_is_put_back(key):
+    """What packaging/server_entry._sanitize_env does to the real os.environ: pop the
+    data dir. Popping a pinned-absent key is a no-op, so those get set instead."""
+    before = os.environ.get(key)
+    if before is None:
+        os.environ[key] = "/somewhere/else"
+    else:
+        del os.environ[key]
+    try:
+        assert guard.restore_pin() == [key]
+        assert os.environ.get(key) == before
+        assert guard.restore_pin() == []
+    finally:
+        if os.environ.get(key) != before:  # only if restore_pin failed
+            if before is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = before

@@ -86,9 +86,28 @@ def test_restore_reports_config_left_inside_the_real_data_dir(tmp_path):
     try:
         mp.setenv("ARSLAN_DATA_DIR", str(real / "does_not_exist_probe"))
         importlib.reload(config)
-        leaked = _restore_config(mp, real_data_dir=real.resolve())
-        assert len(leaked) == 3 and all("does_not_exist_probe" in path for path in leaked)
+        problems = _restore_config(mp, real_data_dir=real.resolve())
+        assert len(problems) == 3 and all("does_not_exist_probe" in p for p in problems)
         assert _paths(config) == ambient  # healed as well as reported
         assert not real.exists()
     finally:
+        mp.undo()
+
+
+def test_restore_reports_and_repairs_a_stripped_data_dir(tmp_path):
+    """packaging/server_entry._sanitize_env pops ARSLAN_DATA_DIR from the real
+    os.environ — outside monkeypatch, so undo() cannot bring it back."""
+    import server.config as config
+
+    ambient = _paths(config)
+    pinned = os.environ["ARSLAN_DATA_DIR"]
+    mp = pytest.MonkeyPatch()
+    try:
+        del os.environ["ARSLAN_DATA_DIR"]
+        problems = _restore_config(mp, real_data_dir=(tmp_path / "Arslan").resolve())
+        assert problems == ["os.environ['ARSLAN_DATA_DIR'] changed and not restored"]
+        assert os.environ["ARSLAN_DATA_DIR"] == pinned
+        assert _paths(config) == ambient
+    finally:
+        os.environ["ARSLAN_DATA_DIR"] = pinned
         mp.undo()

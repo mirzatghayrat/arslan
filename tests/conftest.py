@@ -95,6 +95,20 @@ def _no_judge_model_calls():
         yield
 
 
+@pytest.fixture(autouse=True)
+def _data_dir_pin_survives():
+    """Repair, then fail, a test that changed the pinned data-dir env and kept it.
+
+    Server tests are repaired earlier, before config is healed, by
+    tests/server/conftest.py's `_restore_config_after_test`; this covers the rest."""
+    yield
+    changed = real_data_dir_guard.restore_pin()
+    if changed:
+        pytest.fail(f"this test changed {changed} in os.environ and did not restore it "
+                    "(repaired now); later tests would resolve the real data dir",
+                    pytrace=False)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _real_data_dir_untouched():
     """Fail the run if the user's real data dir gained an entry while it ran.
