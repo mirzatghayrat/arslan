@@ -650,7 +650,12 @@ export type ArslanServerMessage =
   | { type: "spawn_meta"; arslan_message_id: number; spawn_id: number; assistant_message_id: number; task_brief: string; run_id?: number }
   | { type: "fact_saved"; content: string; sensitive: boolean }
   | { type: "lesson_learned"; lesson: { id: number; text: string; status: string } }
-  | { type: "message"; message_id: number; content: string; role: string; job_id?: string; outcome?: JobOutcome | null }
+  // source "phone": the paired iPhone's message, shown live in a window open on its conversation.
+  | { type: "message"; message_id: number; content: string; role: string; job_id?: string; outcome?: JobOutcome | null;
+      source?: string | null }
+  // A card shown in more than one place (a background job's, or a turn the iPhone started)
+  // was decided — by this window, another, or the phone — or expired: close this copy.
+  | { type: "card_resolved"; call_id: string; outcome: "approved" | "declined" | "expired"; by?: "phone" | "mac" }
   | { type: "job_update"; job_id: string; conversation_id: string; goal: string;
       phase: "queued" | "running" | "finished"; step: string; outcome: JobOutcome | null;
       detail: string; budget?: JobBudgetStop | null; criteria: JobCriterion[] }

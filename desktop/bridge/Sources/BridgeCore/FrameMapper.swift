@@ -15,7 +15,8 @@ public final class FrameMapper {
     var messageID = UUID().uuidString.lowercased()
     var lastProgress: Date?
     var heldProgress: String?
-    public private(set) var cards: [String: CardKind] = [:]
+    public private(set) var cards: [String: CardKind] = [:]   // open until the Mac says how it ended
+    var answered: Set<String> = []                             // the phone answers a card once
 
     public init(conversationID: String) { self.conversationID = conversationID }
 
@@ -65,6 +66,15 @@ public final class FrameMapper {
             return card(.schedule, "Schedule “\(frame["name"] as? String ?? "")”", frame["when"] as? String ?? "", "schedule")
         case "propose_action":
             return card(.action, frame["kind"] as? String ?? "action", frame["target"] as? String ?? "", "other_app")
+        case "card_resolved":
+            // The Mac decided the card — the phone's own answer, a click in a Mac window (first
+            // answer wins), or the 5-minute timeout. This is the phone's business receipt (§5.3).
+            guard let id = frame["call_id"] as? String, cards.removeValue(forKey: id) != nil else { return [] }
+            answered.remove(id)
+            let outcome = ["approved": "done", "declined": "denied"][frame["outcome"] as? String ?? ""] ?? "expired"
+            var body: [String: Any] = ["approval_id": id, "outcome": outcome]
+            if frame["by"] as? String == "mac" { body["detail"] = "answered_on_mac" }
+            return [("approval.result", body)]
         case "job_update":
             return [("job.event", jobEvent(frame))]
         default:
@@ -111,11 +121,13 @@ public final class FrameMapper {
         case "chat.send":
             return [["type": "user_message", "content": body["text"] as? String ?? "", "source": "phone"]]
         case "approval.answer":
-            guard let id = body["approval_id"] as? String, let kind = cards.removeValue(forKey: id) else {
+            guard let id = body["approval_id"] as? String, let kind = cards[id], answered.insert(id).inserted else {
                 throw BridgeError.code("approval_expired")
             }
             let approve = body["decision"] as? String == "approve" && body["auth"] as? String == "faceid"
-            var frame: [String: Any] = ["type": "\(approve ? "confirm" : "cancel")_\(kind.rawValue)", "call_id": id]
+            // Marked, so the Mac can tell the other windows the phone answered it.
+            var frame: [String: Any] = ["type": "\(approve ? "confirm" : "cancel")_\(kind.rawValue)", "call_id": id,
+                                        "source": "phone"]
             if approve && kind == .runCommand { frame["remember"] = false }    // a phone never grants "always"
             return [frame]
         default:

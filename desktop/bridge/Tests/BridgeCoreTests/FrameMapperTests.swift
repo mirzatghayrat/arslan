@@ -47,6 +47,35 @@ final class FrameMapperTests: XCTestCase {
         }
     }
 
+    func testHowTheMacDecidedACardReachesThePhoneOnce() throws {
+        let m = FrameMapper(conversationID: "c1")
+        for id in ["p", "m", "x", "d"] { _ = m.phoneMessages(for: ["type": "propose_schedule", "call_id": id, "name": "n", "when": "w"]) }
+        let answer = try m.backendFrames(for: "approval.answer", body: ["approval_id": "p", "decision": "approve", "auth": "faceid"])
+        XCTAssertEqual(answer.first?["source"] as? String, "phone")
+        XCTAssertEqual(m.cards["p"], .schedule, "still open until the Mac says how it ended")
+
+        func result(_ frame: [String: Any]) -> [String: String]? {
+            let out = m.phoneMessages(for: frame)
+            guard out.count == 1, out[0].type == "approval.result" else { return out.isEmpty ? nil : [:] }
+            return out[0].body.mapValues { "\($0)" }
+        }
+        XCTAssertEqual(result(["type": "card_resolved", "call_id": "p", "outcome": "approved", "by": "phone"]),
+                       ["approval_id": "p", "outcome": "done"])
+        XCTAssertEqual(result(["type": "card_resolved", "call_id": "m", "outcome": "approved", "by": "mac"]),
+                       ["approval_id": "m", "outcome": "done", "detail": "answered_on_mac"])
+        XCTAssertEqual(result(["type": "card_resolved", "call_id": "d", "outcome": "declined", "by": "mac"]),
+                       ["approval_id": "d", "outcome": "denied", "detail": "answered_on_mac"])
+        XCTAssertEqual(result(["type": "card_resolved", "call_id": "x", "outcome": "expired"]),
+                       ["approval_id": "x", "outcome": "expired"])
+        XCTAssertTrue(Wire.shouldNotify(type: "approval.result", body: ["approval_id": "x", "outcome": "expired"]))
+        XCTAssertNil(result(["type": "card_resolved", "call_id": "p", "outcome": "approved"]), "once")
+        XCTAssertNil(result(["type": "card_resolved", "call_id": "never-shown", "outcome": "approved"]))
+        XCTAssertTrue(m.cards.isEmpty)
+        XCTAssertThrowsError(try m.backendFrames(for: "approval.answer", body: ["approval_id": "m", "decision": "deny", "auth": "none"])) {
+            XCTAssertEqual(($0 as? BridgeError)?.code, "approval_expired")      // the Mac already answered it
+        }
+    }
+
     func testOutsideTheSandboxSaysSoAndOnlyFaceIDApproves() throws {
         let m = FrameMapper(conversationID: "c1")
         let req = m.phoneMessages(for: ["type": "propose_run_command", "call_id": "k2", "pretty": "brew install jq",

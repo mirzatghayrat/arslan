@@ -254,7 +254,16 @@ the existing `confirm_*` / `cancel_*` frames. Its private keys live in its own K
   `FrameMapper` (BridgeCore). The pocket conversation (no `conversation_id`) is one fixed conversation
   the Bridge creates on first use.
 - The one backend change for messages: a `user_message` frame may carry `source: "phone"`; the message
-  is stored and shown with "from iPhone".
+  is stored and shown with "from iPhone". It is also sent at once, as a `message` frame with
+  `source: "phone"`, to every Mac window open on that conversation (the Bridge ignores it).
+- Cards of a turn the phone started go to every socket on the conversation: the Bridge's (→
+  `approval.request`) and each Mac window's. The first answer from either side decides; the backend
+  then broadcasts `card_resolved {call_id, outcome: approved|declined|expired, by?: phone|mac}`, which
+  closes the window copies and becomes the phone's `approval.result` (approved → `done`, declined →
+  `denied`, expired → `expired`; `detail: "answered_on_mac"` when a Mac window answered). The phone's
+  `confirm_*` / `cancel_*` frames carry `source: "phone"`; a phone answer to a card the Mac already
+  decided is dropped quietly (the phone has its `approval.result`). Background-job cards end with the
+  same `card_resolved`. A window's own turn keeps its cards private to that window, as before.
 - Keys: the Bridge's identity keys and the paired phones' public keys live in the Bridge's own Keychain
   items; the backend never holds them.
 

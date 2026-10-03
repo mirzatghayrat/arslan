@@ -923,6 +923,18 @@ function makeActions(set: SetState, get: GetState) {
           set({ pendingAction: { callId: frame.call_id, kind: frame.kind, target: frame.target, detail: frame.detail },
                 ..._approvalNotice(state) });
           break;
+        case "card_resolved": {
+          // Whoever answered first (another window, the phone) decided; a copy still
+          // open here closes. Only the card with this call_id — never a newer one.
+          const id = frame.call_id;
+          set({
+            ...(state.pendingCommand?.callId === id ? { pendingCommand: null } : {}),
+            ...(state.pendingWorkspaceWrite?.callId === id ? { pendingWorkspaceWrite: null } : {}),
+            ...(state.pendingSchedule?.callId === id ? { pendingSchedule: null } : {}),
+            ...(state.pendingAction?.callId === id ? { pendingAction: null } : {}),
+          });
+          break;
+        }
         case "propose_workspace_write":
           set({ pendingWorkspaceWrite: {
             callId: frame.call_id, workspace: frame.workspace,
