@@ -9,7 +9,8 @@
 //   ArslanBridge --selftest   checks the CryptoKit primitives the protocol uses, prints JSON
 //   ArslanBridge --cloudkit-probe   one live round trip in the private zone (needs the
 //                                   signed app, the schema deployed, an iCloud account)
-//   ArslanBridge              waits until its stdin closes (Arslan quit), then exits
+//   ArslanBridge              run mode: reads {"port","token","mac_name"} from stdin, connects to
+//                             /ws/bridge and the private CloudKit zone, exits when stdin closes
 //
 // The real Bridge will read the backend token from stdin (never env or a file).
 import BridgeCore
@@ -69,6 +70,44 @@ if arguments.contains("--cloudkit-probe") {
         exit(2)
     }
 }
-// Lifecycle: Arslan holds our stdin open; when Arslan quits, stdin closes and so do we.
-while let _ = readLine(strippingNewline: true) {}
-exit(0)
+// Run mode. Arslan starts us with one JSON line on stdin — {"port": …, "token": "…", "mac_name": "…"} —
+// and holds stdin open; when Arslan quits, stdin closes and so do we. The token never goes through
+// the environment or a file (protocol §6).
+let containerID = "iCloud.dev.aralem.arslan"
+guard let line = readLine(strippingNewline: true),
+      let config = (try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? [String: Any],
+      let port = config["port"] as? Int, let token = config["token"] as? String else {
+    FileHandle.standardError.write(Data("ArslanBridge: expected a config line on stdin\n".utf8))
+    while let _ = readLine(strippingNewline: true) {}
+    exit(0)
+}
+// --ephemeral (development): keys and envelopes in memory only — no Keychain, no iCloud.
+let ephemeral = arguments.contains("--ephemeral")
+let control = WebSocketControl(port: port, token: token)
+let store: EnvelopeStore = ephemeral ? MemoryStore() : CloudKitStore(containerID: containerID)
+let secrets: SecretStore = ephemeral ? MemorySecrets() : KeychainSecrets()
+let runtime: BridgeRuntime
+do {
+    runtime = try BridgeRuntime(identities: IdentityStore(secrets: secrets), store: store, control: control,
+                                macName: config["mac_name"] as? String ?? Host.current().localizedName ?? "Mac",
+                                containerID: containerID, version: bundleVersion())
+} catch {
+    FileHandle.standardError.write(Data("ArslanBridge: identity unavailable: \(error)\n".utf8))
+    exit(1)
+}
+control.onConnect = { try? await runtime.hello() }
+control.onFrame = { frame in try? await runtime.handleControl(frame) }
+Task { await control.run() }
+Task {
+    if let cloud = store as? CloudKitStore { try? await cloud.ensureZone() }
+    while true {                                   // §2: every 10 s for now; slower when no phone is active comes with M1 tuning
+        _ = try? await runtime.poll()
+        try? await Task.sleep(nanoseconds: 10_000_000_000)
+    }
+}
+// stdin closing means Arslan quit.
+Thread.detachNewThread {
+    while let _ = readLine(strippingNewline: true) {}
+    exit(0)
+}
+dispatchMain()

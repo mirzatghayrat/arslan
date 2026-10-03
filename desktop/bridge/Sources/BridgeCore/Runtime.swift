@@ -77,7 +77,7 @@ public final class BridgeRuntime {
         case "device.revoke":
             guard let id = frame["device_id"] as? String else { return }
             if mailbox.isPaired(id) {          // tell the phone first, while its key still opens our message
-                try? await mailbox.send(type: "device.revoked", body: ["reason": "removed_on_mac"], to: id, now: now)
+                _ = try? await mailbox.send(type: "device.revoked", body: ["reason": "removed_on_mac"], to: id, now: now)
             }
             try identities.revoke(id)
             mailbox.remove(peer: id)
