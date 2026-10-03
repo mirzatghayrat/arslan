@@ -1,0 +1,36 @@
+{
+  "contract": "arslan-bridge-v1",
+  "name": "mac-message",
+  "note": "iOS proposal vector, unchanged; a final reply sets notify",
+  "sender": {
+    "deviceID": "mac-vector",
+    "signingKey": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8=",
+    "exchangeKey": "YGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn8=",
+    "storageKey": "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqo="
+  },
+  "recipient": {
+    "deviceID": "iphone-vector",
+    "signingKey": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+    "exchangeKey": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8=",
+    "storageKey": "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqo="
+  },
+  "ephemeral_private": "oKGio6SlpqeoqaqrrK2ur7CxsrO0tba3uLm6u7y9vr8=",
+  "nonce": "AAECAwQFBgcICQoL",
+  "psk": "",
+  "plaintext": "eyJib2R5Ijp7ImNvbnZlcnNhdGlvbl9pZCI6InBvY2tldCIsImZpbmFsIjp0cnVlLCJraW5kIjoibWVzc2FnZSIsIm1lc3NhZ2VfaWQiOiJyZXBseS0xIiwidGV4dCI6IlZlY3RvciByZXBseSJ9LCJmcm9tIjoibWFjLXZlY3RvciIsImlkIjoiQUFBQUFBQUEtQUFBQS00QUFBLThBQUEtQUFBQUFBQUFBQUFBIiwic2VxIjo0MiwidG8iOiJpcGhvbmUtdmVjdG9yIiwidHMiOiIyMDI2LTEwLTAzVDAwOjAwOjAwWiIsInR5cGUiOiJjaGF0LmV2ZW50IiwidiI6MX0=",
+  "header_bytes": "AAAAEGFyc2xhbi1icmlkZ2UvdjEAAAABMQAAACRhYWFhYWFhYS1hYWFhLTRhYWEtOGFhYS1hYWFhYWFhYWFhYWEAAAAKbWFjLXZlY3RvcgAAAA1pcGhvbmUtdmVjdG9yAAAAAjQyAAAAA21zZwAAACxZRnB5WFNwSzMrNnhvcDRYN2RZaHdiZFpQdWpOdkVTc2JFcTI0dmdGMGp3PQAAAAAAAAAAAAAAAAAAAAEx",
+  "packet": {
+    "header": {
+      "v": 1,
+      "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+      "from": "mac-vector",
+      "to": "iphone-vector",
+      "seq": 42,
+      "kind": "msg",
+      "ephemeral": "YFpyXSpK3+6xop4X7dYhwbdZPujNvESsbEq24vgF0jw=",
+      "notify": true
+    },
+    "sealed": "AAECAwQFBgcICQoLwC23cglezUrrnzLmZboaHunndWSXxZgV/ab9Zz9ypQVlU2Dg7N9YRWVWc5VA9vnuDWbBjSYOB54hXZnygZUWmwWgqJzLxWf0CcSn+b1mmJSD5rfHla1rAKbrfkX3PIuRgSGMRctz/6hYhYjp/FD6vMSmi8EqYVzMVLnVOSghNTSPQmS9BTrdsVVV+THCbhntzyhf+GvIOcbtAla6qYZPn8WbO9lk5P3OjWyrSktrR7JfIyWXJgRdqigmy4HZwj9VXA6+U0RG15nUAhR4E9oBil20QJAzpKCKn5MS9kXprKbge2lmGkZcPG8SWgFWpCmm9Bt2FYwGBe8sw13HygCvUDxgvJwjn/7R6XNi3s6LVXs6UyLy",
+    "signature": "xVEgadUOA4jHyBe3xEZtHrGlnQMlE7gSYkN317meOv0/zz1gBseTjfy2kSdkzssMRXJgJSaICNgrro3JgZ89DA=="
+  }
+}

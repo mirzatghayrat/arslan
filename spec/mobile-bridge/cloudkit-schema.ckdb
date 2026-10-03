@@ -1,0 +1,17 @@
+DEFINE SCHEMA
+
+    RECORD TYPE Envelope (
+        "___createTime"  TIMESTAMP SORTABLE,
+        "___recordID"    REFERENCE QUERYABLE,
+        "to"             STRING QUERYABLE,
+        "from"           STRING,
+        "seq"            INT64,
+        "kind"           STRING,
+        "notify"         INT64 QUERYABLE,
+        "sealed"         BYTES,
+        "asset"          ASSET,
+        "createdAt"      TIMESTAMP QUERYABLE SORTABLE,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );

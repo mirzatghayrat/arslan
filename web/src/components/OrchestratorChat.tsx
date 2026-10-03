@@ -797,6 +797,7 @@ export default function OrchestratorChat({
                   {/* Timestamp for user bubble (right-aligned, no avatar needed — position conveys identity) */}
                   {isUser && (
                     <div className="flex flex-col items-end select-none mt-1">
+                      {msg.fromPhone && <span data-testid="from-phone" className="text-[9px] text-subtle-foreground">{t('chat.fromPhone')}</span>}
                       <span className="text-[9px] text-subtle-foreground font-mono font-semibold">{msg.timestamp}</span>
                     </div>
                   )}
@@ -812,6 +813,7 @@ export default function OrchestratorChat({
                     <div className="max-w-[68%] border border-[rgba(255,255,255,0.08)] bg-[rgba(120,140,170,0.10)] p-3 font-mono text-[12px] text-foreground text-left" style={{ borderRadius: '12px 12px 4px 12px' }}>
                       <SentAttachments attachments={msg.attachments} />
                       <p className="whitespace-pre-line leading-relaxed">{msg.text}</p>
+                      {msg.fromPhone && <div data-testid="from-phone" className="text-[9px] text-subtle-foreground mt-1 text-right">{t('chat.fromPhone')}</div>}
                       <div className="text-[9px] text-subtle-foreground mt-2 text-right">{msg.timestamp}</div>
                     </div>
                   </div>

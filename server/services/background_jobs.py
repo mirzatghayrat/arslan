@@ -134,6 +134,11 @@ def active_count() -> int:
     return sum(job.phase != "finished" for job in _jobs.values())
 
 
+def active() -> list[Job]:
+    """Jobs not finished yet, oldest first."""
+    return sorted((job for job in _jobs.values() if job.phase != "finished"), key=lambda job: job.started_at)
+
+
 async def start(conversation_id: str, goal: str, criteria: list[dict]) -> Job:
     goal = " ".join(goal.split())[:4000]
     if not goal:

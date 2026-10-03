@@ -1,0 +1,21 @@
+{
+  "contract": "arslan-bridge-v1",
+  "name": "seq-changed",
+  "base": "phone-message",
+  "note": "the sequence number is signed",
+  "packet": {
+    "header": {
+      "v": 1,
+      "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+      "from": "iphone-vector",
+      "to": "mac-vector",
+      "seq": 43,
+      "kind": "msg",
+      "ephemeral": "YFpyXSpK3+6xop4X7dYhwbdZPujNvESsbEq24vgF0jw=",
+      "notify": false
+    },
+    "sealed": "AAECAwQFBgcICQoLQ2oEW9RzzpbhXdJRQVGwOdGIegM/1J4e51GEs+PkEIOEFrd3hf4V1zzhTvHfEY7ymlGhUnsHeaWE4p5sWcAJWGWnRfKLmmZLOE2gg0FRZNqjwS+a5LQe/KnGHJJcHDZ0yk3IXR9iTCTdy3lb+e2E6mY8BD2kr8KoA97WF4LUg4UYRJHPkbdZYhmelMuYsZWqAn4dUxWu5NLykb/CIBv4hMRRxNftD3VJ7LBGij/J+ty3kU7n9oXyWQOlnBT4n1msEzE45p4JOpVVjmdiWOvPohX9I4qcSXmAM5dzpgXjvWyAnwJ/4p5eEl4v0BDRCJyaGlWo/OfuFBEabkE6JZSG49Hq9MeeTphP40KC5fw=",
+    "signature": "CmIGC7Ip1F9Aa0g/T+0dAo2az045bWiRn4qod+8g/YIM/NXm8aPdYLSM1/QUG8X99h+wqmTlVlVosSP1QB3OAA=="
+  },
+  "expect_error": "bad_signature"
+}

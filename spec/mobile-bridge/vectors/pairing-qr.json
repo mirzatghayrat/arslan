@@ -1,0 +1,60 @@
+{
+  "contract": "arslan-bridge-v1",
+  "container_id": "iCloud.vector.arslan",
+  "cases": [
+    {
+      "name": "valid",
+      "uri": "arslan://pair?payload=eyJjb250YWluZXJfaWQiOiJpQ2xvdWQudmVjdG9yLmFyc2xhbiIsImRldmljZV9uYW1lIjoiVmVjdG9yIE1hYyIsImV4Y2hhbmdlX3B1YmxpY19rZXkiOiJaMTNWZE8xM2lURUxQUzUyZ2ZONUMwWnNkenNWSWY3UE5sZDVXRGNlcFM4PSIsImV4cGlyZXNfYXQiOiIyMDI2LTEwLTAzVDAwOjEwOjAwWiIsImlzc3VlZF9hdCI6IjIwMjYtMTAtMDNUMDA6MDA6MDBaIiwibWFjX2RldmljZV9pZCI6Im1hYy12ZWN0b3IiLCJwYWlyaW5nX2lkIjoiY2NjY2NjY2MtY2NjYy00Y2NjLThjY2MtY2NjY2NjY2NjY2NjIiwicGFpcmluZ19rZXkiOiIwOVBUMDlQVDA5UFQwOVBUMDlQVDA5UFQwOVBUMDlQVDA5UFQwOVBUMDlNPSIsInNpZ25pbmdfcHVibGljX2tleSI6IkpVTzVML0VKVlJGSGF0eURhZHR0M0pNMlphRVplTjJoUUU3aEJteXBWWjA9IiwidiI6MSwiem9uZSI6IkFyc2xhbkJyaWRnZSJ9",
+      "now": 1790985660,
+      "expect_error": null
+    },
+    {
+      "name": "expired",
+      "uri": "arslan://pair?payload=eyJjb250YWluZXJfaWQiOiJpQ2xvdWQudmVjdG9yLmFyc2xhbiIsImRldmljZV9uYW1lIjoiVmVjdG9yIE1hYyIsImV4Y2hhbmdlX3B1YmxpY19rZXkiOiJaMTNWZE8xM2lURUxQUzUyZ2ZONUMwWnNkenNWSWY3UE5sZDVXRGNlcFM4PSIsImV4cGlyZXNfYXQiOiIyMDI2LTEwLTAzVDAwOjEwOjAwWiIsImlzc3VlZF9hdCI6IjIwMjYtMTAtMDNUMDA6MDA6MDBaIiwibWFjX2RldmljZV9pZCI6Im1hYy12ZWN0b3IiLCJwYWlyaW5nX2lkIjoiY2NjY2NjY2MtY2NjYy00Y2NjLThjY2MtY2NjY2NjY2NjY2NjIiwicGFpcmluZ19rZXkiOiIwOVBUMDlQVDA5UFQwOVBUMDlQVDA5UFQwOVBUMDlQVDA5UFQwOVBUMDlNPSIsInNpZ25pbmdfcHVibGljX2tleSI6IkpVTzVML0VKVlJGSGF0eURhZHR0M0pNMlphRVplTjJoUUU3aEJteXBWWjA9IiwidiI6MSwiem9uZSI6IkFyc2xhbkJyaWRnZSJ9",
+      "now": 1790986200,
+      "expect_error": "pairing_expired"
+    },
+    {
+      "name": "validity-over-600s",
+      "uri": "arslan://pair?payload=eyJjb250YWluZXJfaWQiOiJpQ2xvdWQudmVjdG9yLmFyc2xhbiIsImRldmljZV9uYW1lIjoiVmVjdG9yIE1hYyIsImV4Y2hhbmdlX3B1YmxpY19rZXkiOiJaMTNWZE8xM2lURUxQUzUyZ2ZONUMwWnNkenNWSWY3UE5sZDVXRGNlcFM4PSIsImV4cGlyZXNfYXQiOiIyMDI2LTEwLTAzVDAwOjEwOjAxWiIsImlzc3VlZF9hdCI6IjIwMjYtMTAtMDNUMDA6MDA6MDBaIiwibWFjX2RldmljZV9pZCI6Im1hYy12ZWN0b3IiLCJwYWlyaW5nX2lkIjoiY2NjY2NjY2MtY2NjYy00Y2NjLThjY2MtY2NjY2NjY2NjY2NjIiwicGFpcmluZ19rZXkiOiIwOVBUMDlQVDA5UFQwOVBUMDlQVDA5UFQwOVBUMDlQVDA5UFQwOVBUMDlNPSIsInNpZ25pbmdfcHVibGljX2tleSI6IkpVTzVML0VKVlJGSGF0eURhZHR0M0pNMlphRVplTjJoUUU3aEJteXBWWjA9IiwidiI6MSwiem9uZSI6IkFyc2xhbkJyaWRnZSJ9",
+      "now": 1790985660,
+      "expect_error": "pairing_invalid"
+    },
+    {
+      "name": "issued-in-the-future",
+      "uri": "arslan://pair?payload=eyJjb250YWluZXJfaWQiOiJpQ2xvdWQudmVjdG9yLmFyc2xhbiIsImRldmljZV9uYW1lIjoiVmVjdG9yIE1hYyIsImV4Y2hhbmdlX3B1YmxpY19rZXkiOiJaMTNWZE8xM2lURUxQUzUyZ2ZONUMwWnNkenNWSWY3UE5sZDVXRGNlcFM4PSIsImV4cGlyZXNfYXQiOiIyMDI2LTEwLTAzVDAwOjA1OjAwWiIsImlzc3VlZF9hdCI6IjIwMjYtMTAtMDNUMDA6MDE6MzFaIiwibWFjX2RldmljZV9pZCI6Im1hYy12ZWN0b3IiLCJwYWlyaW5nX2lkIjoiY2NjY2NjY2MtY2NjYy00Y2NjLThjY2MtY2NjY2NjY2NjY2NjIiwicGFpcmluZ19rZXkiOiIwOVBUMDlQVDA5UFQwOVBUMDlQVDA5UFQwOVBUMDlQVDA5UFQwOVBUMDlNPSIsInNpZ25pbmdfcHVibGljX2tleSI6IkpVTzVML0VKVlJGSGF0eURhZHR0M0pNMlphRVplTjJoUUU3aEJteXBWWjA9IiwidiI6MSwiem9uZSI6IkFyc2xhbkJyaWRnZSJ9",
+      "now": 1790985660,
+      "expect_error": "pairing_invalid"
+    },
+    {
+      "name": "wrong-container",
+      "uri": "arslan://pair?payload=eyJjb250YWluZXJfaWQiOiJpQ2xvdWQub3RoZXIuYXJzbGFuIiwiZGV2aWNlX25hbWUiOiJWZWN0b3IgTWFjIiwiZXhjaGFuZ2VfcHVibGljX2tleSI6IloxM1ZkTzEzaVRFTFBTNTJnZk41QzBac2R6c1ZJZjdQTmxkNVdEY2VwUzg9IiwiZXhwaXJlc19hdCI6IjIwMjYtMTAtMDNUMDA6MTA6MDBaIiwiaXNzdWVkX2F0IjoiMjAyNi0xMC0wM1QwMDowMDowMFoiLCJtYWNfZGV2aWNlX2lkIjoibWFjLXZlY3RvciIsInBhaXJpbmdfaWQiOiJjY2NjY2NjYy1jY2NjLTRjY2MtOGNjYy1jY2NjY2NjY2NjY2MiLCJwYWlyaW5nX2tleSI6IjA5UFQwOVBUMDlQVDA5UFQwOVBUMDlQVDA5UFQwOVBUMDlQVDA5UFQwOU09Iiwic2lnbmluZ19wdWJsaWNfa2V5IjoiSlVPNUwvRUpWUkZIYXR5RGFkdHQzSk0yWmFFWmVOMmhRRTdoQm15cFZaMD0iLCJ2IjoxLCJ6b25lIjoiQXJzbGFuQnJpZGdlIn0",
+      "now": 1790985660,
+      "expect_error": "wrong_container"
+    },
+    {
+      "name": "wrong-zone",
+      "uri": "arslan://pair?payload=eyJjb250YWluZXJfaWQiOiJpQ2xvdWQudmVjdG9yLmFyc2xhbiIsImRldmljZV9uYW1lIjoiVmVjdG9yIE1hYyIsImV4Y2hhbmdlX3B1YmxpY19rZXkiOiJaMTNWZE8xM2lURUxQUzUyZ2ZONUMwWnNkenNWSWY3UE5sZDVXRGNlcFM4PSIsImV4cGlyZXNfYXQiOiIyMDI2LTEwLTAzVDAwOjEwOjAwWiIsImlzc3VlZF9hdCI6IjIwMjYtMTAtMDNUMDA6MDA6MDBaIiwibWFjX2RldmljZV9pZCI6Im1hYy12ZWN0b3IiLCJwYWlyaW5nX2lkIjoiY2NjY2NjY2MtY2NjYy00Y2NjLThjY2MtY2NjY2NjY2NjY2NjIiwicGFpcmluZ19rZXkiOiIwOVBUMDlQVDA5UFQwOVBUMDlQVDA5UFQwOVBUMDlQVDA5UFQwOVBUMDlNPSIsInNpZ25pbmdfcHVibGljX2tleSI6IkpVTzVML0VKVlJGSGF0eURhZHR0M0pNMlphRVplTjJoUUU3aEJteXBWWjA9IiwidiI6MSwiem9uZSI6Ik90aGVyIn0",
+      "now": 1790985660,
+      "expect_error": "malformed"
+    },
+    {
+      "name": "short-key",
+      "uri": "arslan://pair?payload=eyJjb250YWluZXJfaWQiOiJpQ2xvdWQudmVjdG9yLmFyc2xhbiIsImRldmljZV9uYW1lIjoiVmVjdG9yIE1hYyIsImV4Y2hhbmdlX3B1YmxpY19rZXkiOiJaMTNWZE8xM2lURUxQUzUyZ2ZONUMwWnNkenNWSWY3UE5sZDVXRGNlcFM4PSIsImV4cGlyZXNfYXQiOiIyMDI2LTEwLTAzVDAwOjEwOjAwWiIsImlzc3VlZF9hdCI6IjIwMjYtMTAtMDNUMDA6MDA6MDBaIiwibWFjX2RldmljZV9pZCI6Im1hYy12ZWN0b3IiLCJwYWlyaW5nX2lkIjoiY2NjY2NjY2MtY2NjYy00Y2NjLThjY2MtY2NjY2NjY2NjY2NjIiwicGFpcmluZ19rZXkiOiJBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE9PSIsInNpZ25pbmdfcHVibGljX2tleSI6IkpVTzVML0VKVlJGSGF0eURhZHR0M0pNMlphRVplTjJoUUU3aEJteXBWWjA9IiwidiI6MSwiem9uZSI6IkFyc2xhbkJyaWRnZSJ9",
+      "now": 1790985660,
+      "expect_error": "malformed"
+    },
+    {
+      "name": "version-2",
+      "uri": "arslan://pair?payload=eyJjb250YWluZXJfaWQiOiJpQ2xvdWQudmVjdG9yLmFyc2xhbiIsImRldmljZV9uYW1lIjoiVmVjdG9yIE1hYyIsImV4Y2hhbmdlX3B1YmxpY19rZXkiOiJaMTNWZE8xM2lURUxQUzUyZ2ZONUMwWnNkenNWSWY3UE5sZDVXRGNlcFM4PSIsImV4cGlyZXNfYXQiOiIyMDI2LTEwLTAzVDAwOjEwOjAwWiIsImlzc3VlZF9hdCI6IjIwMjYtMTAtMDNUMDA6MDA6MDBaIiwibWFjX2RldmljZV9pZCI6Im1hYy12ZWN0b3IiLCJwYWlyaW5nX2lkIjoiY2NjY2NjY2MtY2NjYy00Y2NjLThjY2MtY2NjY2NjY2NjY2NjIiwicGFpcmluZ19rZXkiOiIwOVBUMDlQVDA5UFQwOVBUMDlQVDA5UFQwOVBUMDlQVDA5UFQwOVBUMDlNPSIsInNpZ25pbmdfcHVibGljX2tleSI6IkpVTzVML0VKVlJGSGF0eURhZHR0M0pNMlphRVplTjJoUUU3aEJteXBWWjA9IiwidiI6Miwiem9uZSI6IkFyc2xhbkJyaWRnZSJ9",
+      "now": 1790985660,
+      "expect_error": "unsupported_version"
+    },
+    {
+      "name": "two-payloads",
+      "uri": "arslan://pair?payload=x&payload=y",
+      "now": 1790985660,
+      "expect_error": "malformed"
+    }
+  ]
+}

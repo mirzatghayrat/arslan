@@ -28,7 +28,7 @@ _PLAIN_KEYS = (
                "router_config_id", "vision_config_id",
                "evolution_auto", "mcp_server_enabled", "curation_enabled", "research_review_enabled", "keep_awake_enabled",
                "desktop_notifications_enabled", "island_enabled", "terminal_sandbox_enabled",
-               "memory_in_conversations", "learned_practices_take_effect", "ocr_languages",
+               "memory_in_conversations", "learned_practices_take_effect", "phone_bridge_enabled", "ocr_languages",
                "workspace_dir", "heartbeat_enabled", "heartbeat_checklist",
                "heartbeat_interval_s", "lan_discovery_enabled", "ssh_enabled", "default_read_enabled",
                "voice_output_enabled", "voice_input_locale", "voice_mode", "voice_endpoint_silence_ms")
@@ -268,6 +268,14 @@ async def learned_practices_take_effect(session: AsyncSession) -> bool:
     for the user's OK. Only an explicit 'false' turns it off."""
     raw = await _get_raw(session, "learned_practices_take_effect")
     return raw is None or str(raw).strip().lower() != "false"
+
+
+async def phone_bridge_enabled(session: AsyncSession) -> bool:
+    """"Use Arslan from your iPhone" (mobile bridge §6.1). Default OFF: the Arslan Bridge
+    polls iCloud every few seconds, which nobody without an iPhone should pay for. Only an
+    explicit 'true' turns it on; the desktop shell starts or stops the Bridge from this."""
+    raw = await _get_raw(session, "phone_bridge_enabled")
+    return raw is not None and str(raw).strip().lower() == "true"
 
 
 async def terminal_sandbox_enabled(session: AsyncSession) -> bool:
@@ -599,6 +607,7 @@ _BOOL_ACCESSORS = {
     "terminal_sandbox_enabled": terminal_sandbox_enabled,
     "memory_in_conversations": memory_in_conversations,
     "learned_practices_take_effect": learned_practices_take_effect,
+    "phone_bridge_enabled": phone_bridge_enabled,
     "mcp_server_enabled": mcp_server_enabled,
 }
 

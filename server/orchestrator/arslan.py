@@ -391,13 +391,19 @@ async def handle_user_message(
     attached_context: str | None = None,
     images: list[dict] | None = None,
     confirm_command=None, confirm_workspace_write=None, confirm_schedule=None,
+    source: str | None = None,
 ) -> None:
-    """Process one user turn end-to-end, emitting event dicts for the transport layer."""
+    """Process one user turn end-to-end, emitting event dicts for the transport layer.
+    `source` is "phone" for a message the Arslan Bridge forwarded from a paired iPhone."""
     # 1. persist the user turn — the PLACEHOLDER form when images rode along
     #    (decision ③A); base64 in a Text column would bloat the DB and backups
     #    while still not surviving as an image.
-    source_message_id = await memory.add_message(
-        conversation_id, "user", persisted_user_text(user_message, images))
+    stored_text = persisted_user_text(user_message, images)
+    source_message_id = await memory.add_message(conversation_id, "user", stored_text, source=source)
+    if source == "phone":
+        # A Mac window open on this conversation did not type it — show it there live,
+        # labelled "from iPhone". Raw emit, never journaled: it is in the history now.
+        emit(protocol.message(source_message_id, stored_text, "user") | {"source": "phone"})
     from server.services.task_context import source_message
     source_message(source_message_id)
     from server.services import personal_context, task_context

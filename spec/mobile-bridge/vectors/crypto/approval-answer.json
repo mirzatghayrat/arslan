@@ -1,0 +1,36 @@
+{
+  "contract": "arslan-bridge-v1",
+  "name": "approval-answer",
+  "note": "",
+  "sender": {
+    "deviceID": "iphone-vector",
+    "signingKey": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+    "exchangeKey": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8=",
+    "storageKey": "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqo="
+  },
+  "recipient": {
+    "deviceID": "mac-vector",
+    "signingKey": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8=",
+    "exchangeKey": "YGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn8=",
+    "storageKey": "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqo="
+  },
+  "ephemeral_private": "oKGio6SlpqeoqaqrrK2ur7CxsrO0tba3uLm6u7y9vr8=",
+  "nonce": "AAECAwQFBgcICQoL",
+  "psk": "",
+  "plaintext": "eyJib2R5Ijp7ImFwcHJvdmFsX2lkIjoiYXBwci0xIiwiYXV0aCI6ImZhY2VpZCIsImRlY2lzaW9uIjoiYXBwcm92ZSIsInRzIjoiMjAyNi0xMC0wM1QwMDowMDowMFoifSwiZnJvbSI6ImlwaG9uZS12ZWN0b3IiLCJpZCI6IkFBQUFBQUFBLUFBQUEtNEFBQS04QUFBLUFBQUFBQUFBQUFBQSIsInNlcSI6NDQsInRvIjoibWFjLXZlY3RvciIsInRzIjoiMjAyNi0xMC0wM1QwMDowMDowMFoiLCJ0eXBlIjoiYXBwcm92YWwuYW5zd2VyIiwidiI6MX0=",
+  "header_bytes": "AAAAEGFyc2xhbi1icmlkZ2UvdjEAAAABMQAAACRhYWFhYWFhYS1hYWFhLTRhYWEtOGFhYS1hYWFhYWFhYWFhYWEAAAANaXBob25lLXZlY3RvcgAAAAptYWMtdmVjdG9yAAAAAjQ0AAAAA21zZwAAACxZRnB5WFNwSzMrNnhvcDRYN2RZaHdiZFpQdWpOdkVTc2JFcTI0dmdGMGp3PQAAAAAAAAAAAAAAAAAAAAEw",
+  "packet": {
+    "header": {
+      "v": 1,
+      "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+      "from": "iphone-vector",
+      "to": "mac-vector",
+      "seq": 44,
+      "kind": "msg",
+      "ephemeral": "YFpyXSpK3+6xop4X7dYhwbdZPujNvESsbEq24vgF0jw=",
+      "notify": false
+    },
+    "sealed": "AAECAwQFBgcICQoLQ2oEW9RzzpbhXdJVRUK8J92BSx4o1J5n2w3WoqK8V8HSKK9wioNGkXi6D9b0N+6c+neGHFA2UojH9OYMep1BaEiTDZLl+lB6WDXA8zMhENW+03bPr5QM9rGgScsYQx52xQSbTgh+VSSaxTJN4+2HrXFoCC64r97vAoraENSB0+Z1J7nq8sw6DhmelMv0xJXGAhJkU3nbiNLy/cbCIBuUhMRRxLSAbEdt3NM9nCfHq82pkU7xqcizABrixUL6jBitRyAosMtZKolFzDlxUuTNoXP7PoGcVHODV/1hsBen/izV5xpxoZpXEFR7i16cAZOdQ0O/sK/uThFWfQbnDQCEpZ8Y/ZcotFXFEwPf",
+    "signature": "cxmuCbagYnasictndDlqu7HLVemL2ZxxW28iZ0YeMxRSYf2H1bPKfJhrZDgPUXq9xcq/8dCA4+fi3KnWS04WAQ=="
+  }
+}

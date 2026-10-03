@@ -47,7 +47,7 @@ const CHILDREN: Partial<Record<SettingsSectionId, React.ReactNode>> = {
 };
 
 const IDS: SettingsSectionId[] = [
-  "models", "modelroles", "search", "appearance", "memory", "automation", "proactive", "desktop", "access", "advanced",
+  "models", "modelroles", "search", "appearance", "memory", "automation", "proactive", "desktop", "phone", "access", "advanced",
 ];
 
 const shell = (active: SettingsSectionId, onChange = vi.fn()) =>
@@ -73,7 +73,7 @@ describe("SettingsShell", () => {
     await userEvent.click(screen.getByTestId("settings-back"));
     expect(onBack).toHaveBeenCalledOnce();
   });
-  it("exposes ten sections in nav order, with no placeholders", () => {
+  it("exposes eleven sections in nav order, with no placeholders", () => {
     expect(SETTINGS_SECTIONS.map((s) => s.id)).toEqual(IDS);
     // Discriminating: renaming a placeholder rather than deleting it would keep
     // the count at seven only if something real were dropped to make room.
