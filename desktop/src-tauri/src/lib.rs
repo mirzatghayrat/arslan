@@ -1017,6 +1017,9 @@ pub fn run() {
             if event.id() == resident::MENU_OPEN {
                 resident::show_main(app);
             }
+            if event.id() == resident::MENU_STOP_HANDS {
+                resident::stop_hands();
+            }
             if event.id() == resident::MENU_QUIT {
                 // An explicit quit: the RunEvent handler below stops the backend.
                 app.exit(0);
