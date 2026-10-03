@@ -13,7 +13,9 @@ describe("from iPhone", () => {
       { message_id: 3, role: "user", content: "x", spawn_id: null, source: "admin" },
       { message_id: 4, role: "arslan", content: "ok", spawn_id: null, source: "phone" },
     ] } as never);
-    const messages = toUiMessages(useArslanStore.getState().items);
+    const items = useArslanStore.getState().items;
+    expect(items.map((i) => !!i.fromPhone)).toEqual([true, false, false, false]);   // never on Arslan's own replies
+    const messages = toUiMessages(items);
     expect(messages.map((m) => !!m.fromPhone)).toEqual([true, false, false, false]);
   });
 });
