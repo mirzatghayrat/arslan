@@ -19,10 +19,15 @@ from server.db.models import Base
 from server.db.session import get_session
 from server.registry.seeder import seed_registry_with
 from server.services import evolution_estimate, evolution_watcher
+from tests import real_data_dir_guard
 from tests.server.portal_teardown import shared_portal
 
 if TYPE_CHECKING:
     from fastapi.testclient import TestClient
+
+
+def _paths(settings) -> tuple:
+    return settings.data_dir, settings.db_path, settings.spawns_dir
 
 
 def _heal_config_drift() -> bool:
@@ -42,6 +47,10 @@ def _heal_config_drift() -> bool:
         # config with ARSLAN_API_TOKEN set and monkeypatch restores only the
         # env, not the module, so the token leaked into every later test.
         or (_cfg.settings.api_token or "") != (os.environ.get("ARSLAN_API_TOKEN", "") or "")
+        # 2026-10-03: a stale data_dir/spawns_dir is how a later test's dispatch
+        # mkdir'd spawns/S/.evolution inside the platform data dir. Compared against
+        # what config itself would build from the env now, so there is one derivation.
+        or _paths(_cfg.settings) != _paths(_cfg.load_settings())
     )
     if drifted:
         importlib.reload(_cfg)
@@ -176,21 +185,52 @@ def _install_crypto_salt():
     yield
 
 
+def _restore_config(monkeypatch, real_data_dir=real_data_dir_guard.REAL_DATA_DIR) -> list[str]:
+    """Put the env back, heal config drift, and describe what the test had left
+    unsafe: pinned env keys it changed outside monkeypatch, and config paths inside
+    ``real_data_dir``. A function so a test can drive it directly."""
+    monkeypatch.undo()
+    problems = [f"os.environ[{key!r}] changed and not restored"
+                for key in real_data_dir_guard.restore_pin()]
+    import server.config as _cfg
+
+    problems += [f"server.config path {path}" for path in _paths(_cfg.settings)
+                 if real_data_dir_guard.inside(path, real_data_dir)]
+    _heal_config_drift()
+    return problems
+
+
 @pytest.fixture(autouse=True)
-def _restore_config_after_test():
+def _restore_config_after_test(monkeypatch):
     """Guard against cross-test ``server.config`` pollution.
 
     Several tests reload ``server.config`` with a mutated environment (e.g. an *unset*
     ``ARSLAN_SECRET_KEY`` for the middleware-security suite, or a SET
     ``ARSLAN_API_TOKEN`` for the usage-API suite) and never reload it back.
 
-    As an autouse teardown, this runs *after* ``monkeypatch`` has restored the ambient
-    environment; if the live config has drifted from that environment on any guarded
-    field, it reloads config back to the ambient baseline. It is a cheap no-op when
-    there is no drift (the overwhelming majority of tests).
+    The env is restored HERE (``monkeypatch.undo()``) before the drift check, not left
+    to monkeypatch's own teardown: which of the two finalizes first depends on which
+    fixture happens to instantiate ``monkeypatch`` first, and test_data_dir's own
+    restore got exactly that wrong (2026-10-03). Every fixture set up after this one has
+    finalized by now, so undoing early takes nothing from them. If the live config has
+    drifted from the env on any guarded field, it is reloaded back to the ambient
+    baseline — a cheap no-op when there is no drift (most tests).
+
+    A test that removes the suite's pinned data dir from ``os.environ``, or leaves
+    config pointing into the user's real data dir, is also FAILED after the repair:
+    the next test to write under ``config.data_dir()`` or ``settings.spawns_dir`` would
+    write into the user's data (tests/real_data_dir_guard.py).
     """
     yield
-    _heal_config_drift()
+    problems = _restore_config(monkeypatch)
+    if problems:
+        pytest.fail(
+            "this test left the real Arslan data dir reachable (repaired now): "
+            + "; ".join(problems)
+            + ". Restore the env BEFORE reloading config; a test that calls code which "
+            "edits os.environ itself must restore it in its own fixture.",
+            pytrace=False,
+        )
 
 
 def _patch_session_global(maker):
@@ -217,6 +257,9 @@ async def client(tmp_path):
     import os
 
     os.environ["ARSLAN_TEST_ROUTES"] = "1"
+    # Put back afterwards: it is one of the suite's pinned data-dir keys
+    # (tests/real_data_dir_guard.py), and set here outside monkeypatch.
+    previous_spawns_dir = os.environ.get("ARSLAN_SPAWNS_DIR")
     os.environ["ARSLAN_SPAWNS_DIR"] = str(tmp_path / "spawns")
     import server.config as _config
     import importlib as _il
@@ -255,6 +298,10 @@ async def client(tmp_path):
         yield ac
     monkeypatch_session()
     await engine.dispose()
+    if previous_spawns_dir is None:
+        os.environ.pop("ARSLAN_SPAWNS_DIR", None)
+    else:
+        os.environ["ARSLAN_SPAWNS_DIR"] = previous_spawns_dir
 
 
 # ---------------------------------------------------------------------------

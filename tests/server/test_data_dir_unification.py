@@ -29,9 +29,11 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
-def _reload_config_to_baseline():
-    """Restore ``server.config`` to the ambient env after each test (see test_data_dir)."""
+def _reload_config_to_baseline(monkeypatch):
+    """Restore ``server.config`` to the ambient env after each test — env first,
+    then the reload (see test_data_dir for why the order cannot be left to pytest)."""
     yield
+    monkeypatch.undo()
     import server.config as config
 
     importlib.reload(config)
