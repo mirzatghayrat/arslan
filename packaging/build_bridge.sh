@@ -13,7 +13,8 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
 sed "s/__VERSION__/$VERSION/g" "$SRC/Info.plist" > "$APP/Contents/Info.plist"
 plutil -lint "$APP/Contents/Info.plist" >/dev/null
-swiftc -O -target "$(uname -m)-apple-macos11.0" -o "$APP/Contents/MacOS/ArslanBridge" "$SRC/main.swift"
+swift build -c release --package-path "$SRC" --product ArslanBridge
+cp "$(swift build -c release --package-path "$SRC" --show-bin-path)/ArslanBridge" "$APP/Contents/MacOS/ArslanBridge"
 test -x "$APP/Contents/MacOS/ArslanBridge" || { echo "ERROR: the Bridge did not build" >&2; exit 1; }
 if [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
   codesign --force --sign "$APPLE_SIGNING_IDENTITY" --timestamp --options runtime \
