@@ -1,0 +1,62 @@
+{
+ "case": "set_value",
+ "order": 10,
+ "op": "set_value",
+ "args": {
+  "ref": "@sfixture0:e1",
+  "value": "Weekend plan"
+ },
+ "argv": [
+  "set-value",
+  "--",
+  "@sfixture0:e1",
+  "Weekend plan"
+ ],
+ "expect": {
+  "ok": true,
+  "reads": {
+   "/data/action": "string"
+  }
+ },
+ "exit": 0,
+ "envelope": {
+  "version": "2.4",
+  "ok": true,
+  "command": "set-value",
+  "data": {
+   "action": "set-value",
+   "details": {
+    "application_commit": "not_verified",
+    "auto_wait": {
+     "lease_contention_count": 0,
+     "lease_hold_ms": 5,
+     "read_only_preflight_attempts": 1,
+     "read_only_resolve_attempts": 1
+    },
+    "verification_scope": "element_value"
+   },
+   "disposition": {
+    "delivery": "delivered_verified",
+    "retry": "unsafe"
+   },
+   "post_state": {
+    "enabled": true,
+    "hidden": false,
+    "offscreen": false,
+    "role": "textfield",
+    "states": [
+     "focused"
+    ],
+    "value": "Weekend plan"
+   },
+   "steps": [
+    {
+     "label": "AXValue",
+     "mechanism": "semantic_api",
+     "outcome": "succeeded",
+     "verified": true
+    }
+   ]
+  }
+ }
+}

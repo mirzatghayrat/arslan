@@ -1,0 +1,29 @@
+{
+  "_comment": "Arslan Hands app policy (0.1.53). ONE list, read by the helper (compiled in) and by the backend (Settings shows it). A bundle id ending in '.*' matches that prefix. Names match case-insensitively. Spec: docs/specs/2026-10-03-0153-hands-agent-desktop.md section 2.4.",
+  "denied": [
+    {"label": "Keychain Access", "bundle_ids": ["com.apple.keychainaccess"], "names": ["Keychain Access"]},
+    {"label": "Passwords", "bundle_ids": ["com.apple.Passwords"], "names": ["Passwords"]},
+    {"label": "1Password", "bundle_ids": ["com.1password.*", "com.agilebits.*"], "names": ["1Password", "1Password 7", "1Password 8"]},
+    {"label": "Bitwarden", "bundle_ids": ["com.bitwarden.*"], "names": ["Bitwarden"]},
+    {"label": "Dashlane", "bundle_ids": ["com.dashlane.*"], "names": ["Dashlane"]},
+    {"label": "LastPass", "bundle_ids": ["com.lastpass.*"], "names": ["LastPass"]},
+    {"label": "KeePassXC", "bundle_ids": ["org.keepassxc.*"], "names": ["KeePassXC"]},
+    {"label": "Enpass", "bundle_ids": ["in.sinew.*"], "names": ["Enpass"]},
+    {"label": "Proton Pass", "bundle_ids": ["me.proton.pass.*"], "names": ["Proton Pass"]},
+    {"label": "System Settings", "bundle_ids": ["com.apple.systempreferences", "com.apple.settings.*"], "names": ["System Settings", "System Preferences"]},
+    {"label": "macOS security prompts", "bundle_ids": ["com.apple.SecurityAgent", "com.apple.coreautha", "com.apple.LocalAuthentication.UIAgent", "com.apple.UserNotificationCenter"], "names": ["SecurityAgent", "coreautha", "UserNotificationCenter"]},
+    {"label": "Notification Center", "bundle_ids": ["com.apple.notificationcenterui"], "names": ["Notification Center", "NotificationCenter"]},
+    {"label": "Arslan", "bundle_ids": ["com.arslan.desktop", "com.arslan.desktop.*"], "names": ["Arslan", "Arslan Hands"]}
+  ],
+  "look_only": [
+    {"label": "Web browsers", "bundle_ids": ["com.apple.Safari", "com.apple.SafariTechnologyPreview", "com.google.Chrome", "com.google.Chrome.*", "org.chromium.Chromium", "com.microsoft.edgemac", "com.microsoft.edgemac.*", "org.mozilla.firefox", "org.mozilla.*", "company.thebrowser.Browser", "com.brave.Browser", "com.brave.Browser.*", "com.operasoftware.Opera", "com.vivaldi.Vivaldi"], "names": ["Safari", "Google Chrome", "Chromium", "Microsoft Edge", "Firefox", "Arc", "Brave Browser", "Opera", "Vivaldi"]}
+  ],
+  "click_only": [
+    {"label": "Terminals and code editors", "bundle_ids": ["com.apple.Terminal", "com.googlecode.iterm2", "dev.warp.Warp-Stable", "dev.warp.*", "com.mitchellh.ghostty", "net.kovidgoyal.kitty", "org.alacritty", "com.github.wez.wezterm", "com.apple.ScriptEditor2", "com.microsoft.VSCode", "com.microsoft.VSCodeInsiders", "com.todesktop.230313mzl4w4u92", "com.apple.dt.Xcode", "com.jetbrains.*", "dev.zed.Zed"], "names": ["Terminal", "iTerm2", "iTerm", "Warp", "Ghostty", "kitty", "Alacritty", "WezTerm", "Script Editor", "Visual Studio Code", "Code", "Cursor", "Xcode", "Zed"]}
+  ],
+  "sends_on_return": {
+    "label": "Messaging and mail apps (Return sends)",
+    "bundle_ids": ["com.apple.MobileSMS", "com.apple.mail", "com.tinyspeck.slackmacgap", "com.hnc.Discord", "ru.keepcoder.Telegram", "org.telegram.desktop", "net.whatsapp.WhatsApp", "desktop.WhatsApp", "com.tencent.xinWeChat", "com.tencent.qq", "com.electron.lark", "com.bytedance.lark.*", "com.alibaba.DingTalkMac", "com.microsoft.teams2", "com.microsoft.teams", "com.microsoft.Outlook", "com.readdle.smartemail-Mac"],
+    "names": ["Messages", "Mail", "Slack", "Discord", "Telegram", "WhatsApp", "WeChat", "微信", "QQ", "Lark", "Feishu", "飞书", "DingTalk", "钉钉", "Microsoft Teams", "Microsoft Outlook", "Spark"]
+  }
+}

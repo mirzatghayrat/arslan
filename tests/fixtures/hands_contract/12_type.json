@@ -1,0 +1,66 @@
+{
+ "case": "type",
+ "order": 12,
+ "op": "type",
+ "args": {
+  "ref": "@sfixture0:e1",
+  "text": "Groceries"
+ },
+ "argv": [
+  "type",
+  "--",
+  "@sfixture0:e1",
+  "Groceries"
+ ],
+ "expect": {
+  "ok": true,
+  "also": [
+   "POLICY_DENIED"
+  ],
+  "reads": {
+   "/data/action": "string"
+  },
+  "note": "may be refused when the field is not focused (see err_type_refused_headless); Arslan then sets the value instead"
+ },
+ "exit": 0,
+ "envelope": {
+  "version": "2.4",
+  "ok": true,
+  "command": "type",
+  "data": {
+   "action": "type",
+   "details": {
+    "application_commit": "not_verified",
+    "auto_wait": {
+     "lease_contention_count": 0,
+     "lease_hold_ms": 7,
+     "read_only_preflight_attempts": 1,
+     "read_only_resolve_attempts": 1
+    },
+    "verification_scope": "element_value"
+   },
+   "disposition": {
+    "delivery": "delivered_verified",
+    "retry": "unsafe"
+   },
+   "post_state": {
+    "enabled": true,
+    "hidden": false,
+    "offscreen": false,
+    "role": "textfield",
+    "states": [
+     "focused"
+    ],
+    "value": "--headedGroceries"
+   },
+   "steps": [
+    {
+     "label": "AXSelectedText",
+     "mechanism": "semantic_api",
+     "outcome": "succeeded",
+     "verified": false
+    }
+   ]
+  }
+ }
+}

@@ -1,0 +1,35 @@
+{
+ "case": "err_window_not_found",
+ "order": 22,
+ "op": "snapshot",
+ "args": {
+  "app": "Hands Fixture"
+ },
+ "argv": [
+  "snapshot",
+  "--app=Hands Fixture",
+  "--compact",
+  "--skeleton"
+ ],
+ "expect": {
+  "ok": false,
+  "code": "WINDOW_NOT_FOUND",
+  "hint": "open_app",
+  "run": "after_closing_the_window"
+ },
+ "exit": 1,
+ "envelope": {
+  "version": "2.4",
+  "ok": false,
+  "command": "snapshot",
+  "error": {
+   "code": "WINDOW_NOT_FOUND",
+   "message": "Application 'Hands Fixture' is running but has no matching window",
+   "suggestion": "Wait for the app to present a window, or run 'list-windows --app'.",
+   "disposition": {
+    "delivery": "unknown",
+    "retry": "unknown"
+   }
+  }
+ }
+}

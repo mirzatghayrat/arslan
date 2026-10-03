@@ -1,0 +1,35 @@
+{
+ "case": "err_ambiguous_target",
+ "order": 23,
+ "op": "click",
+ "args": {
+  "ref": "@sfixture0:e3"
+ },
+ "argv": [
+  "click",
+  "--",
+  "@sfixture0:e3"
+ ],
+ "expect": {
+  "ok": false,
+  "code": "AMBIGUOUS_TARGET",
+  "hint": "look_closer",
+  "run": "not_reproducible",
+  "note": "shape from agent-desktop 0.9.4's error envelope (crates/core/src/error_code.rs), not recorded: the fixture cannot make two live elements match one saved ref"
+ },
+ "exit": 1,
+ "envelope": {
+  "version": "2.4",
+  "ok": false,
+  "command": "click",
+  "error": {
+   "code": "AMBIGUOUS_TARGET",
+   "message": "Multiple live elements match the saved target",
+   "suggestion": "Re-run a snapshot to refresh refs, then retry with a more specific ref",
+   "disposition": {
+    "delivery": "not_delivered",
+    "retry": "safe"
+   }
+  }
+ }
+}

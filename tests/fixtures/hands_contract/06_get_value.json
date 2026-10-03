@@ -1,0 +1,33 @@
+{
+ "case": "get_value",
+ "order": 6,
+ "op": "get",
+ "args": {
+  "ref": "@sfixture0:e1",
+  "property": "value"
+ },
+ "argv": [
+  "get",
+  "--property=value",
+  "--",
+  "@sfixture0:e1"
+ ],
+ "expect": {
+  "ok": true,
+  "reads": {
+   "/data/property": "string",
+   "/data/value": "any"
+  }
+ },
+ "exit": 0,
+ "envelope": {
+  "version": "2.4",
+  "ok": true,
+  "command": "get",
+  "data": {
+   "property": "value",
+   "ref": "@sfixture0:e1",
+   "value": ""
+  }
+ }
+}

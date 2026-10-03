@@ -1,0 +1,36 @@
+{
+ "case": "wait",
+ "order": 9,
+ "op": "wait",
+ "args": {
+  "app": "Hands Fixture",
+  "text": "saved:",
+  "timeout_ms": 3000
+ },
+ "argv": [
+  "wait",
+  "--app=Hands Fixture",
+  "--text=saved:",
+  "--timeout=3000"
+ ],
+ "expect": {
+  "ok": true,
+  "reads": {
+   "/data/found": "boolean"
+  }
+ },
+ "exit": 0,
+ "envelope": {
+  "version": "2.4",
+  "ok": true,
+  "command": "wait",
+  "data": {
+   "elapsed_ms": 153,
+   "found": true,
+   "ref": null,
+   "role": "statictext",
+   "snapshot_id": "s12bwo8634inwv",
+   "text": "saved:"
+  }
+ }
+}

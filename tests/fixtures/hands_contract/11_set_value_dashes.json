@@ -1,0 +1,63 @@
+{
+ "case": "set_value_dashes",
+ "order": 11,
+ "op": "set_value",
+ "args": {
+  "ref": "@sfixture0:e1",
+  "value": "--headed"
+ },
+ "argv": [
+  "set-value",
+  "--",
+  "@sfixture0:e1",
+  "--headed"
+ ],
+ "expect": {
+  "ok": true,
+  "reads": {
+   "/data/action": "string"
+  },
+  "note": "a value that looks like a flag is set literally"
+ },
+ "exit": 0,
+ "envelope": {
+  "version": "2.4",
+  "ok": true,
+  "command": "set-value",
+  "data": {
+   "action": "set-value",
+   "details": {
+    "application_commit": "not_verified",
+    "auto_wait": {
+     "lease_contention_count": 0,
+     "lease_hold_ms": 8,
+     "read_only_preflight_attempts": 1,
+     "read_only_resolve_attempts": 1
+    },
+    "verification_scope": "element_value"
+   },
+   "disposition": {
+    "delivery": "delivered_verified",
+    "retry": "unsafe"
+   },
+   "post_state": {
+    "enabled": true,
+    "hidden": false,
+    "offscreen": false,
+    "role": "textfield",
+    "states": [
+     "focused"
+    ],
+    "value": "--headed"
+   },
+   "steps": [
+    {
+     "label": "AXValue",
+     "mechanism": "semantic_api",
+     "outcome": "succeeded",
+     "verified": true
+    }
+   ]
+  }
+ }
+}

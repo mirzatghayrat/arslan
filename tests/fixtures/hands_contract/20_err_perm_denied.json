@@ -1,0 +1,35 @@
+{
+ "case": "err_perm_denied",
+ "order": 20,
+ "op": "snapshot",
+ "args": {
+  "app": "Hands Fixture"
+ },
+ "argv": [
+  "snapshot",
+  "--app=Hands Fixture",
+  "--compact",
+  "--skeleton"
+ ],
+ "expect": {
+  "ok": false,
+  "code": "PERM_DENIED",
+  "hint": "allow_hands",
+  "run": "without_accessibility"
+ },
+ "exit": 1,
+ "envelope": {
+  "version": "2.4",
+  "ok": false,
+  "command": "snapshot",
+  "error": {
+   "code": "PERM_DENIED",
+   "message": "Accessibility permission not granted",
+   "suggestion": "Open System Settings > Privacy & Security > Accessibility and add the app that launches agent-desktop, such as Terminal, iTerm, or Codex. If macOS lists the built binary separately, add that binary too.",
+   "disposition": {
+    "delivery": "not_delivered",
+    "retry": "safe"
+   }
+  }
+ }
+}
