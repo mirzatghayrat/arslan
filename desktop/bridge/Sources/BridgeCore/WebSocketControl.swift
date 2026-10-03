@@ -11,9 +11,10 @@ public final class WebSocketControl: NSObject, ControlChannel {
     public var onFrame: (([String: Any]) async -> Void)?
     public var onConnect: (() async -> Void)?
 
-    public init(port: Int, token: String) {
+    /// `path` is /ws/bridge for the control channel, /ws/arslan/<id> for a conversation.
+    public init(port: Int, token: String, path: String = "/ws/bridge") {
         var parts = URLComponents()
-        (parts.scheme, parts.host, parts.port, parts.path) = ("ws", "127.0.0.1", port, "/ws/bridge")
+        (parts.scheme, parts.host, parts.port, parts.path) = ("ws", "127.0.0.1", port, path)
         parts.queryItems = [URLQueryItem(name: "token", value: token)]
         url = parts.url!
         origin = "http://127.0.0.1:\(port)"

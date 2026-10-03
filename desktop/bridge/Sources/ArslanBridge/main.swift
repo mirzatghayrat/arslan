@@ -111,12 +111,19 @@ do {
 }
 control.onConnect = { try? await runtime.hello() }
 control.onFrame = { frame in try? await runtime.handleControl(frame) }
+let links = ConversationLinks(channels: WebSocketChannels(port: port, token: token), mailbox: runtime.mailbox)
 Task { await control.run() }
 Task {
     if let cloud = store as? CloudKitStore { try? await cloud.ensureZone() }
     while true {                                   // §2: every 10 s for now; slower when no phone is active comes with M1 tuning
-        _ = try? await runtime.poll()
+        for received in (try? await runtime.poll()) ?? [] { await links.handle(received) }
         try? await Task.sleep(nanoseconds: 10_000_000_000)
+    }
+}
+Task {
+    while true {                                   // held progress lines, at most one per 2 s per conversation
+        await links.flush()
+        try? await Task.sleep(nanoseconds: 1_000_000_000)
     }
 }
 // stdin closing means Arslan quit.

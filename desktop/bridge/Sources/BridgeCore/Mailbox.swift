@@ -46,7 +46,7 @@ public final class Mailbox {
     let signing: Curve25519.Signing.PrivateKey
     let exchange: Curve25519.KeyAgreement.PrivateKey
     let store: EnvelopeStore
-    var peers: [String: Peer] = [:]
+    public internal(set) var peers: [String: Peer] = [:]
     var windows: [String: ReplayWindow] = [:]
     var processed: Set<String> = []                 // envelope ids already acted on
     var sentAwaitingAck: [String: EnvelopeRecord] = [:]
