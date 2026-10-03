@@ -241,6 +241,23 @@ token (handed over on stdin, never in the environment or a file) and same-origin
 `/ws/arslan/{conversation_id}` per active conversation; cards become `approval.request`, answers become
 the existing `confirm_*` / `cancel_*` frames. Its private keys live in its own Keychain items.
 
+### 6.1 Mac-side wiring (proposed; built in the next steps)
+
+- The Bridge has no window (LSUIElement). Pairing prompts and the Settings › iPhone page live in Arslan's
+  own window, so the user sees them where everything else is.
+- Control channel: the Bridge opens `/ws/bridge?token=…` (same origin, same token rules as `/ws/arslan`).
+  The backend relays: "new pairing code" → QR shown in Settings; a pending `pair.request` → a card
+  "iPhone 'x' wants to connect" that only a click in Arslan's window can accept (never voice, never the
+  phone); device list, revoke, last seen; the two switches (keep awake while a phone is connected,
+  high-risk only on the Mac).
+- Conversation channel: one `/ws/arslan/{conversation_id}` per active conversation, mapped by
+  `FrameMapper` (BridgeCore). The pocket conversation (no `conversation_id`) is one fixed conversation
+  the Bridge creates on first use.
+- The one backend change for messages: a `user_message` frame may carry `source: "phone"`; the message
+  is stored and shown with "from iPhone".
+- Keys: the Bridge's identity keys and the paired phones' public keys live in the Bridge's own Keychain
+  items; the backend never holds them.
+
 ## 7. Versioning
 
 `v` changes only for an incompatible wire change. New optional body fields and new types are
