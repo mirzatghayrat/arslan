@@ -115,7 +115,7 @@ def _node_line(node: dict) -> str:
     name = node.get("name")
     if name:
         parts.append(f"“{str(name)[:120]}”")
-    states = [s for s in node.get("states") or [] if s not in ("focused",)]
+    states = [str(s) for s in node.get("states") or []]      # "focused" included: it says where typing goes
     if node.get("value") not in (None, "") and "secure" not in states:
         value = str(node["value"]).replace("\n", "⏎")
         parts.append(f"= {value[:200]}{'…' if len(value) > 200 else ''}")
@@ -126,6 +126,10 @@ def _node_line(node: dict) -> str:
     if node.get("children_count") and not node.get("children"):
         parts.append(f"… {node['children_count']} inside: look with ref to open")
     return " ".join(parts)
+
+
+LONG_RUN = 15
+SHOW_OF_RUN = 10
 
 
 def render_tree(tree: dict, limit: int = 12_000) -> str:
@@ -142,8 +146,18 @@ def render_tree(tree: dict, limit: int = 12_000) -> str:
             return False
         lines.append(line)
         size += len(line) + 1
-        for child in node.get("children") or []:
-            if isinstance(child, dict) and not walk(child, depth + 1):
+        children = [c for c in node.get("children") or [] if isinstance(c, dict)]
+        roles = [c.get("role") for c in children]
+        for i, child in enumerate(children):
+            # A long run of one kind (Notes' list: 100+ rows) would eat the whole
+            # outline before the editor and toolbar; show the first few.
+            if roles.count(child.get("role")) > LONG_RUN and roles[:i].count(child.get("role")) >= SHOW_OF_RUN:
+                if roles[:i].count(child.get("role")) == SHOW_OF_RUN:
+                    more = roles.count(child.get("role")) - SHOW_OF_RUN
+                    where = f" [{node['ref_id']}]" if node.get("ref_id") else ""
+                    lines.append("  " * (depth + 1) + f"… {more} more {child.get('role')} (look with ref{where} to see them)")
+                continue
+            if not walk(child, depth + 1):
                 return False
         return True
 

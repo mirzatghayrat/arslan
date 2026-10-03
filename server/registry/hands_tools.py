@@ -362,7 +362,7 @@ async def _window_id(app: str, title: str, job_id: str | None) -> str | None:
     if not result.ok or not isinstance(result.data, list):
         return None
     wanted = title.strip().lower()
-    for window in result.data[:12]:
+    for window in result.data[:30]:
         if not isinstance(window, dict) or not window.get("id"):
             continue
         name = str(window.get("title") or "")
@@ -409,7 +409,8 @@ class DesktopAppsExecutor:
         notes = {"look_only": " (look only: act on web pages with Arslan's browser)",
                  "click_only": " (click and scroll only)"}
         lines = [f"- {a.get('name')} — {a.get('bundle_id')}{notes.get(a.get('tier'), '')}"
-                 for a in (result.data or {}).get("apps") or []]
+                 for a in (result.data or {}).get("apps") or []
+                 if a.get("bundle_id")]    # helper processes (agent-desktop itself, measured) have none
         text = "Running apps Arslan may use:\n" + "\n".join(lines) if lines else "No apps Arslan may use are running."
         return {"ok": True, "external": False, "text": text, "summary": f"{len(lines)} apps"}
 

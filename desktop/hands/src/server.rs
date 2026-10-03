@@ -526,6 +526,7 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
     let front_before = if acts(op) { frontmost_pid() } else { None };
     let (exit, envelope) = run_envelope(ctx, &argv, deadline(op, args))?;
     let focus_restored = front_back(front_before, app.pid);
+    let front_after = if acts(op) { frontmost_pid() } else { None };
     Ok(json!({
         "ok": true,
         "app": app_json(&app),
@@ -535,6 +536,10 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
         "exit": exit,
         "envelope": envelope,
         "focus_restored": focus_restored,
+        // What was in front just before and just after this action (pids), so a
+        // check can tell an app Hands acted on taking the focus from the user
+        // switching apps between actions.
+        "front": {"before": front_before, "after": front_after},
     }))
 }
 

@@ -949,7 +949,8 @@ async def _arslan_tools() -> list[dict]:
         tools += [
             {"key": "desktop_apps", "description": "List the Mac apps that are running and that Arslan may "
              "use (name and bundle id). Web pages: use browser_* instead; native apps (Notes, Finder, Mail, "
-             "Pages, Slack…): desktop_*."},
+             "Pages, Slack…): desktop_*. To rename, move or copy files use run_command (mv/cp), not Finder "
+             "(in the background Finder ignores keys, and clicking a file opens it)."},
             {"key": "desktop_look", "description": "Read an app's front window as an outline of elements with "
              "refs like [@s1a2b3c4:e7] (accessibility tree; nothing is clicked, no screenshot). args: {app, "
              "ref? (open one part of the outline), text?/role? (find elements), window? (a window title), "

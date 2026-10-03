@@ -76,6 +76,15 @@ def test_the_outline_shows_refs_and_hides_password_values():
     leaky = {"role": "window", "children": [{"role": "textfield", "name": "PIN", "value": "4321",
                                               "states": ["secure"], "ref_id": "@sx1y2z3:e1"}]}
     assert "4321" not in hands_contract.render_tree(leaky)
+    many = {"role": "window", "children": [
+        {"role": "table", "ref_id": "@sx1y2z3:e1",
+         "children": [{"role": "row", "name": f"note {i}", "ref_id": f"@sx1y2z3:e{i + 10}"} for i in range(120)]},
+        {"role": "textfield", "states": ["focused"], "ref_id": "@sx1y2z3:e500"}]}
+    outline = hands_contract.render_tree(many)
+    assert outline.count("row “note") == 10 and "… 110 more row (look with ref [@sx1y2z3:e1]" in outline
+    assert "@sx1y2z3:e500" in outline, "what comes after a long list is still shown"
+    focused = {"role": "textfield", "states": ["focused"], "ref_id": "@sx1y2z3:e9"}
+    assert "(focused)" in hands_contract.render_tree(focused), "the model can see where typing goes"
     short = hands_contract.render_tree(data["tree"], limit=120)
     assert short.endswith("look again with a ref to open a part)")
 
@@ -216,6 +225,13 @@ async def test_looking_asks_once_per_app_per_conversation(hands, asks, in_turn):
     found = await look.execute({"app": "Notes", "text": "Save"})
     assert found["ok"] and "button “Save”" in found["text"]
     assert hands.ops("snapshot", "find") == ["snapshot", "snapshot", "find"]
+
+
+async def test_the_app_list_leaves_out_helper_processes_without_a_bundle_id(hands, in_turn):
+    """Measured: agent-desktop's own list-apps run shows up as a running app (no bundle id)."""
+    hands.apps = hands.apps + [{"name": "agent-desktop", "bundle_id": None, "pid": 9}]
+    text = (await hands_tools.DesktopAppsExecutor().execute({}))["text"]
+    assert "agent-desktop" not in text and "Notes" in text
 
 
 async def test_a_never_list_app_is_named_as_such_not_as_missing(hands, asks, in_turn):

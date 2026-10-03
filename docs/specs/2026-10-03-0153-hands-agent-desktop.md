@@ -283,3 +283,13 @@ These change the design above; each was measured on the user's Mac (macOS 26.6).
 12. **Test hygiene.** Running AX-calling test binaries with responsibility disclaimed adds them to the
     Accessibility list (and one was switched on by mistake). Tests now build such binaries only in temporary paths
     that are deleted afterwards, and the user is told which entries to remove.
+13. **Real-Mac acceptance (B4.1), measured on the user's Mac with the user typing in another window.** Notes passes
+    in full: New Note by cmd+n, the empty body found as the focused text field, title and text set, the note read
+    back — and across 10 actions Hands never had to give the front back (no focus taken). **Finder renaming in the
+    background is not possible with agent-desktop 0.9.4 headless**, measured three ways: a click on a file row is
+    `AXOpen` (it fails, and where it works it would open the file, not select it); keys posted to a background
+    Finder (cmd+a, Return) do nothing; `set-value` on the row's name field changes its accessibility value but
+    Finder never commits it (the file keeps its name). Headed mode would work but takes focus, which §3 rules out.
+    So the Finder half of the acceptance is changed: the file is **seen** in its window (column view: the rows sit
+    under a `list` below the skeleton, opened with `desktop_look {ref}`), and the model is told to rename, move or
+    copy files with `run_command` (mv/cp), which is the better tool for files anyway.

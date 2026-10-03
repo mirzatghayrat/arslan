@@ -9,7 +9,7 @@ script answers "Allow" to (and records). It checks what tests cannot:
   2. refusals: a password field; a never-list app; acting outside a job
   3. a risky button ("Delete") asks every time
   4. Notes: a new note with a title, made in the background
-  5. Finder: a file in a work folder renamed, in the background
+  5. Finder: a file in a work folder is seen in its window (renaming it there is not possible headless)
   6. Stop: a Hands call in flight ends within 1 second
   7. the P3 sandbox: a sandboxed command can neither reach Hands' socket nor read its token
   8. agent-desktop (next to Hands.app), run on its own, holds no Accessibility
@@ -44,6 +44,7 @@ os.environ["ARSLAN_DATA_DIR"] = _DATA            # trace and settings stay out o
 REF = re.compile(r"\[(@s[a-z0-9]+:e\d+)\]")
 results: list[tuple[str, bool, str]] = []
 cards: list[dict] = []
+fronts: list[tuple] = []          # (op, app, {before, after}, focus_restored) for every action
 
 
 def record(name: str, ok: bool, detail: str = "") -> bool:
@@ -64,6 +65,24 @@ def refs_on(text: str, needle: str) -> list[str]:
     return [m.group(1) for line in text.splitlines() if needle in line for m in [REF.search(line)] if m]
 
 
+async def find_in(look, app: str, window: str, seen: dict, needle: str, role: str = "") -> str | None:
+    """The ref of the first line with `needle` (and `role`), opening folded lists the way the model
+    would: a list's rows (Finder's column view) sit below the skeleton, so look with the list's ref."""
+    def hit(text: str) -> str | None:
+        return next((m.group(1) for line in text.splitlines()
+                     if needle in line and line.strip().startswith(role) for m in [REF.search(line)] if m), None)
+
+    text = seen.get("text", "")
+    if found := hit(text):
+        return found
+    for line in text.splitlines():
+        if "inside: look with ref" in line and line.strip().split(" ")[0] in ("list", "outline", "table"):
+            ref = REF.search(line)
+            if ref and (found := hit((await look.execute({"app": app, "window": window, "ref": ref.group(1)})).get("text", ""))):
+                return found
+    return None
+
+
 async def main() -> int:
     from server.registry import hands_tools as tools
     from server.services import approvals, background_jobs, hands_client, hands_service
@@ -73,6 +92,15 @@ async def main() -> int:
     if sys.platform != "darwin" or not hands_client.available():
         print("macOS and ARSLAN_HANDS_APP pointing at Arslan Hands.app are required", file=sys.stderr)
         return 2
+
+    real_call = hands_client.call
+
+    async def recording_call(op, args=None, **kw):
+        reply = await real_call(op, args, **kw)
+        if op in ("click", "type", "set_value", "select", "press", "scroll") and isinstance(reply, dict):
+            fronts.append((op, (args or {}).get("app"), reply.get("front") or {}, reply.get("focus_restored")))
+        return reply
+    hands_client.call = recording_call
 
     async def allow(conversation_id, frame):
         cards.append({"kind": frame.get("kind"), "target": frame.get("target")})
@@ -109,6 +137,9 @@ async def main() -> int:
         background_jobs._inside_job.reset(token)
         tools.forget_job("smoke-job")
 
+    taken = [f for f in fronts if f[2].get("before") != f[2].get("after")]
+    record("no action left another app in front (checked by Hands around each action)", not taken and bool(fronts),
+           f"{len(fronts)} actions; {sum(1 for f in fronts if f[3])} times the front was given back; taken: {taken[:3]}")
     await sandbox_check(terminal_exec, hands_client)
     inner_binary_check(hands_client)
 
@@ -146,7 +177,7 @@ async def fixture_checks(look, click, typ, front) -> None:
         for _ in range(2):
             await click.execute({"app": "Hands Fixture", "element": "Tidy", "ref": delete})
         record("a Delete button asks every time", sum(c["kind"] == "desktop_risky" for c in cards) - before == 2)
-        record("the front app never changed (fixture)", front_app() == front, front_app())
+        print(f"  info  front app after the fixture step: {front_app()} (was {front})")
     finally:
         subprocess.run(["pkill", "-x", "HandsFixture"], capture_output=True)
 
@@ -155,20 +186,29 @@ async def notes_check(look, typ, press, front) -> None:
     stamp = time.strftime("%Y-%m-%d %H:%M:%S")
     subprocess.run(["open", "-g", "-a", "Notes"], check=False)
     time.sleep(2)
+    windows = subprocess.run(["osascript", "-e", 'tell application "System Events" to tell process "Notes" '
+                              'to count windows'], capture_output=True, text=True).stdout.strip()
+    if windows in ("", "0"):
+        record("Notes: a Notes window is open on this desktop (precondition)", False,
+               "open a Notes window on this desktop and run again")
+        return
     made = await press.execute({"app": "Notes", "keys": "cmd+n"})
     if not record("Notes: New Note through the menu shortcut", made.get("ok") is True, str(made.get("error", ""))[:300]):
         return
+    # The outline of the focused window (a whole-window find times out on Notes'
+    # main window, measured); the new note's body is the focused, empty text field.
     found: dict = {}
-    for _ in range(3):                  # Notes' tree is big; on a busy Mac a look can time out
+    for _ in range(3):
         time.sleep(1)
-        found = await look.execute({"app": "Notes", "role": "textfield"})
+        found = await look.execute({"app": "Notes"})
         if found.get("ok"):
             break
-    fields = REF.findall(found.get("text", ""))
+    lines = found.get("text", "").splitlines()
+    fields = [line for line in lines if line.strip().startswith("textfield")]
     body = None
-    for line in found.get("text", "").splitlines():
+    for line in fields:
         m = REF.search(line)
-        if m and "=" not in line:                          # the new, empty note body
+        if m and "focused" in line and "=" not in line:
             body = m.group(1)
     if not record("Notes: the new note's body is found", body is not None,
                   f"{len(fields)} text fields; {found.get('error', '')}"[:300]):
@@ -176,10 +216,11 @@ async def notes_check(look, typ, press, front) -> None:
     note = f"Arslan Hands smoke {stamp}\nMade in the background, without taking focus."
     typed = await typ.execute({"app": "Notes", "element": "note body", "ref": body, "text": note})
     record("Notes: the note gets its title and text", typed.get("ok") is True, str(typed.get("error", ""))[:300])
-    check = await look.execute({"app": "Notes", "text": f"Arslan Hands smoke {stamp}"})
-    record("Notes: the note is there (observed)", f"Arslan Hands smoke {stamp}" in check.get("text", ""),
-           check.get("text", "")[:200])
-    record("the front app never changed (Notes)", front_app() == front, front_app())
+    check = await look.execute({"app": "Notes"})
+    record("Notes: the note is there (observed)",
+           any(line.strip().startswith("textfield") and f"Arslan Hands smoke {stamp}" in line
+               for line in check.get("text", "").splitlines()), check.get("error", "")[:200])
+    print(f"  info  front app after the Notes step: {front_app()} (was {front})")
 
 
 async def finder_check(look, click, typ, press, front) -> None:
@@ -187,28 +228,28 @@ async def finder_check(look, click, typ, press, front) -> None:
     (folder / "draft.txt").write_text("hello")
     subprocess.run(["open", "-g", str(folder)], check=False)
     time.sleep(2)
-    seen = await look.execute({"app": "Finder", "window": folder.name, "text": "draft.txt"})
-    item = (REF.findall(seen.get("text", "")) or [None])[0]
+    seen = await look.execute({"app": "Finder", "window": folder.name})     # its outline (a find can time out)
+    item = await find_in(look, "Finder", folder.name, seen, "draft.txt")
     if not record("Finder: the file is seen in its window", item is not None, seen.get("error", seen.get("text", ""))[:300]):
+        close_finder_window(folder.name)
         (folder / "draft.txt").unlink(missing_ok=True)
         folder.rmdir()
         return
-    await click.execute({"app": "Finder", "element": "draft.txt", "ref": item})
-    await press.execute({"app": "Finder", "keys": "return"})              # rename mode
-    time.sleep(0.5)
-    editing = await look.execute({"app": "Finder", "window": folder.name, "role": "textfield"})
-    field = (REF.findall(editing.get("text", "")) or [None])[0]
-    if not record("Finder: rename field opened", field is not None, editing.get("text", "")[:300]):
-        return
-    await typ.execute({"app": "Finder", "element": "file name", "ref": field, "text": "renamed by Arslan.txt",
-                       "submit": True})
-    time.sleep(1)
-    record("Finder: the file was renamed on disk", (folder / "renamed by Arslan.txt").exists(),
-           str(sorted(p.name for p in folder.iterdir())))
-    record("the front app never changed (Finder)", front_app() == front, front_app())
+    # Renaming through Finder is not something Hands can do in the background (spec §7, measured): a click
+    # on a file row is AXOpen, keys posted to a background Finder are ignored, and setting the name field's
+    # value changes the accessibility value without committing. The model is told to use run_command (mv).
+    print("  info  Finder rename in the background: not possible headless (spec §7) — the model uses mv")
+    print(f"  info  front app after the Finder step: {front_app()} (was {front})")
+    close_finder_window(folder.name)
     for item in folder.iterdir():
         item.unlink()
     folder.rmdir()
+
+
+def close_finder_window(name: str) -> None:
+    """Teardown only: close the Finder window this script opened."""
+    subprocess.run(["osascript", "-e", f'tell application "Finder" to close (every Finder window whose name is "{name}")'],
+                   capture_output=True)
 
 
 async def stop_check(look, hands_client, hands_service) -> None:
