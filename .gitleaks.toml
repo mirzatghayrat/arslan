@@ -42,4 +42,13 @@ regexes = [
   # the value, which no real key does.
   '''tvly-secret-123''',
   '''tvly-secret-12345678''',
+  # Mobile bridge test vectors (spec/mobile-bridge/vectors, make_vectors.py): the two
+  # test identities' private keys are the sequential bytes 0x00..0x1f, 0x20..0x3f,
+  # 0x40..0x5f, 0x60..0x7f (verified by decoding each), and A6EHv… is the Ed25519
+  # PUBLIC key of 0x00..0x1f (verified with the reference). Never usable on a device.
+  '''AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=''',
+  '''ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8=''',
+  '''QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8=''',
+  '''YGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn8=''',
+  '''A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=''',
 ]

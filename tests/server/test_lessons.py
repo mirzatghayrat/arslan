@@ -60,6 +60,13 @@ def test_a_failure_then_a_different_route_that_worked_is_a_detour():
     assert found["quirk"] is True and "-1743" in found["failed"]["error"]
 
 
+def test_reminders_refusing_apple_events_is_a_quirk_of_this_mac():
+    trace = [call("run_command", False, command="osascript r.scpt",
+                  result={"error": "exit code 1", "stderr": "Reminders got an error: A privilege violation occurred. (-10004)"}),
+             call("run_command", True, command="swift r.swift")]
+    assert lessons.detours(trace)[0]["quirk"] is True
+
+
 def test_web_routes_count_and_a_plain_error_is_not_a_quirk():
     trace = [call("web_extract", False, url="https://a.example/x", result={"error": "HTTP 403"}),
              call("browser_open", True, url="https://a.example/x")]
@@ -363,3 +370,24 @@ async def test_the_setting_defaults_on(client):
     assert (await client.get("/api/v1/settings")).json()["learned_practices_take_effect"] is True
     r = await client.put("/api/v1/settings", json={"learned_practices_take_effect": False})
     assert r.status_code == 200 and (await client.get("/api/v1/settings")).json()["learned_practices_take_effect"] is False
+
+
+async def test_after_turn_work_runs_detached_from_the_finished_turn():
+    """The turn's attempt is closed when this runs; a model call through its checkpoint
+    is refused (task_attempt_stale). The work keeps the turn's memory permissions."""
+    import asyncio
+
+    from arslan import execution_checkpoint
+    seen = {}
+
+    async def refuse(reason):
+        raise RuntimeError("task_attempt_stale")
+
+    async def work():
+        await execution_checkpoint.save("before_model")      # must not reach `refuse`
+        seen["ctx"] = pc.current()
+    context = ctx()
+    with pc.bind(context), execution_checkpoint.bind(refuse):
+        lessons.later(work())
+        await asyncio.gather(*list(lessons._background))
+    assert seen["ctx"] is context
