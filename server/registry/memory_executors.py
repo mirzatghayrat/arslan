@@ -462,3 +462,47 @@ class RememberExecutor:
                    kind, table, old_id, row.id)
         return {"ok": True, "proposed": True, "proposal_id": row.id,
                "message": "已提议,待你在记忆里确认(REST accept)"}
+
+
+class ConversationSearchExecutor:
+    """Find the user's own earlier words in past conversations (0.1.52 S3).
+
+    Original snippets with when and where, never summaries. Past messages include
+    Arslan's replies, which can carry web or file text, so results are NOT marked
+    external:False — the loop wraps them as untrusted data. Follows the same memory
+    permissions as the memory block: off in a temporary or "no memory" conversation,
+    and off for a cloud model when the user turned memory off for conversations."""
+
+    key = "conversation_search"
+
+    async def execute(self, args: dict) -> dict:
+        from datetime import datetime
+
+        from server.services import conversation_search, personal_context
+        ctx = personal_context.current()
+        if ctx is not None and (ctx.no_memory or ctx.temporary):
+            return {"ok": False, "external": False, "error": "memory is off for this conversation"}
+        if ctx is not None and not ctx.model_is_local and not ctx.cloud_memory_effective:
+            return {"ok": False, "external": False,
+                    "error": "using past conversations is turned off (Settings › Memory)"}
+        query = " ".join(str(args.get("query") or "").split())
+        if not query:
+            return {"ok": False, "external": False, "error": "missing 'query'"}
+
+        def day(value, end=False):
+            if not value:
+                return None
+            try:
+                d = datetime.fromisoformat(str(value)[:10])
+            except ValueError:
+                return None
+            return d.replace(hour=23, minute=59, second=59) if end else d
+        try:
+            limit = int(args.get("limit") or 8)
+        except (TypeError, ValueError):
+            limit = 8
+        results = await conversation_search.search(
+            query, since=day(args.get("since")), until=day(args.get("until"), end=True), limit=limit,
+            exclude_conversation=ctx.conversation_id if ctx else None)
+        return {"ok": True, "query": query, "count": len(results), "results": results,
+                "note": "Original words from earlier conversations; link opens the conversation in Arslan."}

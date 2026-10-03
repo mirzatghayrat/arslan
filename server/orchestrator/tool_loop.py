@@ -1305,6 +1305,13 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                                            "description": "With outside_sandbox: one short sentence the user "
                                                           "reads on the card."}},
                     "required": ["command"]},
+    "conversation_search": {"type": "object",
+                            "properties": {"query": {"type": "string", "minLength": 1, "maxLength": 200,
+                                                     "description": "Words to find, e.g. \"周报\" or \"landlord\"."},
+                                           "since": {"type": "string", "description": "YYYY-MM-DD, optional."},
+                                           "until": {"type": "string", "description": "YYYY-MM-DD, optional."},
+                                           "limit": {"type": "integer", "minimum": 1, "maximum": 20}},
+                            "required": ["query"], "additionalProperties": False},
     "create_skill": {"type": "object",
                      "properties": {"key": {"type": "string"},
                                     "name": {"type": "string"},

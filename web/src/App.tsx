@@ -47,7 +47,7 @@ import { threadNavAction } from './lib/threadNav';
 import type { ImagePayload } from './lib/imagePayload';
 import { threadDisplayTitle } from './lib/threadTitles';
 import { subscribeOpenConversation } from './lib/shell';
-import { notificationTarget } from './lib/openConversation';
+import { notificationTarget, OPEN_CONVERSATION_EVENT } from './lib/openConversation';
 import ProactiveInbox from './components/proactive/ProactiveInbox';
 import { useProactiveSummary } from './hooks/useProactiveSummary';
 import ContextPanel from './components/panel/ContextPanel';
@@ -123,6 +123,16 @@ export default function App() {
     else if (target) selectConversation(target.id);
   };
   useEffect(() => subscribeOpenConversation(id => openFromNotification.current(id)), []);
+  // 0.1.52 S3: a link to an earlier conversation in a reply (conversation_search) — same
+  // rule as a notification: only a conversation the user has and has not archived.
+  useEffect(() => {
+    const onLink = (event: Event) => {
+      const id = (event as CustomEvent<string>).detail;
+      if (typeof id === 'string' && id) openFromNotification.current(id);
+    };
+    window.addEventListener(OPEN_CONVERSATION_EVENT, onLink);
+    return () => window.removeEventListener(OPEN_CONVERSATION_EVENT, onLink);
+  }, []);
 
   // Lightweight transient toast (no toast component exists yet) — used for the
   // distill result confirmation. Auto-clears after a few seconds.
