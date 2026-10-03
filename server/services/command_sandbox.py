@@ -46,12 +46,30 @@ def _real(path: Path | str) -> Path:
     return Path(os.path.realpath(os.path.expanduser(str(path))))
 
 
+_CS_DARWIN_USER_TEMP_DIR = 65537      # <unistd.h>; Python's os.confstr has no name for it
+
+
+def _darwin_user_dir() -> Path | None:
+    """macOS's own per-user folder (/var/folders/../, holding T and C). Xcode tools
+    write their caches there whatever $TMPDIR says; when $TMPDIR points elsewhere
+    (a terminal launch, the bench) `swift` printed cache errors inside the sandbox."""
+    try:
+        temp = os.confstr(_CS_DARWIN_USER_TEMP_DIR)
+    except (ValueError, OSError):
+        return None
+    return _real(temp).parent if temp else None
+
+
 def temp_roots() -> list[Path]:
     """The per-user temp folder (the parent of $TMPDIR's T, which also holds the
-    user cache C) plus the shared ones."""
+    user cache C), macOS's own per-user folder if different, plus the shared ones."""
     tmp = _real(tempfile.gettempdir())
     user = tmp.parent if tmp.name == "T" else tmp
-    return [user, _real("/private/tmp"), _real("/private/var/tmp")]
+    roots = [user]
+    darwin = _darwin_user_dir()
+    if darwin is not None and darwin not in roots:
+        roots.append(darwin)
+    return [*roots, _real("/private/tmp"), _real("/private/var/tmp")]
 
 
 def default_writable(workspace: Path) -> list[Path]:
