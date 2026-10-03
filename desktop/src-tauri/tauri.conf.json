@@ -28,6 +28,7 @@
     "resources": {
       "binaries/sidecar": "sidecar",
       "binaries/listen": "listen",
+      "binaries/hands": "hands",
       "locales/en.lproj": "en.lproj",
       "locales/zh-Hans.lproj": "zh-Hans.lproj",
       "locales/ja.lproj": "ja.lproj",

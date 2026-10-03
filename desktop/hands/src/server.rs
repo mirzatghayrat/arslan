@@ -244,7 +244,7 @@ fn handle(state: &State, mut stream: UnixStream) {
                         map.insert("op".into(), Value::String(req.op.clone()));
                     }
                     if req.op == "quit" {
-                        let _ = writeln!(stream, "{out}");
+                        let _ = stream.write_all(format!("{out}\n").as_bytes()); // one write: one line
                         shutdown(state);
                     }
                     out
@@ -252,7 +252,7 @@ fn handle(state: &State, mut stream: UnixStream) {
             },
         }
     };
-    let _ = writeln!(stream, "{reply}");
+    let _ = stream.write_all(format!("{reply}\n").as_bytes());
 }
 
 fn deadline(op: &str, args: &Value) -> Duration {

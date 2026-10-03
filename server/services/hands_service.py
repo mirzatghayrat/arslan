@@ -93,7 +93,11 @@ def policy() -> dict:
     return json.loads(_policy_path().read_text())
 
 
+_TEAM_PREFIX = re.compile(r"^[A-Z0-9]{10}\.(?=.)")
+
+
 def _matches(group: dict, bundle_id: str, name: str) -> bool:
+    bundle_id = _TEAM_PREFIX.sub("", bundle_id)     # e.g. 2BUA8C4S2C.com.1password.browser-helper
     for pattern in group.get("bundle_ids", []):
         if pattern.endswith(".*"):
             prefix = pattern[:-2].lower()

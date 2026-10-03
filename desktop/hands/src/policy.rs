@@ -58,8 +58,27 @@ fn bundle_matches(pattern: &str, bundle_id: &str) -> bool {
     }
 }
 
+/// Some apps report their bundle id with a Team ID prefix
+/// (`2BUA8C4S2C.com.1password.browser-helper`, seen on a real Mac): match the
+/// id without it, so the prefix cannot hide an app from the lists.
+fn without_team_prefix(bundle_id: &str) -> &str {
+    match bundle_id.split_once('.') {
+        Some((team, rest))
+            if team.len() == 10
+                && team
+                    .bytes()
+                    .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
+                && !rest.is_empty() =>
+        {
+            rest
+        }
+        _ => bundle_id,
+    }
+}
+
 fn in_group(group: &Group, bundle_id: &str, name: &str) -> bool {
     let name = name.trim();
+    let bundle_id = without_team_prefix(bundle_id);
     (!bundle_id.is_empty()
         && group
             .bundle_ids
@@ -72,6 +91,7 @@ fn in_group(group: &Group, bundle_id: &str, name: &str) -> bool {
 /// (names or bundle ids), sent by the backend with each request.
 pub fn tier(bundle_id: &str, name: &str, extra_denied: &[String]) -> Tier {
     let p = policy();
+    let bundle_id = without_team_prefix(bundle_id);
     let extra = extra_denied.iter().any(|e| {
         let e = e.trim();
         !e.is_empty() && (e.eq_ignore_ascii_case(name.trim()) || bundle_matches(e, bundle_id))
@@ -140,6 +160,20 @@ mod tests {
         ] {
             assert_eq!(tier(bundle, name, &[]), Tier::Denied, "{bundle}");
         }
+        // A Team ID prefix does not hide an app (seen: 1Password's browser helper).
+        assert_eq!(
+            tier(
+                "2BUA8C4S2C.com.1password.browser-helper",
+                "1Password Browser Helper",
+                &[]
+            ),
+            Tier::Denied
+        );
+        assert_eq!(
+            tier("2BUA8C4S2C.com.apple.Safari", "x", &[]),
+            Tier::LookOnly
+        );
+        assert_eq!(tier("com.notateam.app", "x", &[]), Tier::Full);
         // A renamed copy is still caught by its bundle id, and a missing bundle id by its name.
         assert_eq!(tier("com.1password.1password", "Vault", &[]), Tier::Denied);
         assert_eq!(tier("", "keychain access", &[]), Tier::Denied);

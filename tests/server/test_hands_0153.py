@@ -106,6 +106,8 @@ def test_risky_keys_and_return_where_it_sends():
     assert not hands_service.risky_keys("return", bundle_id="com.apple.Notes", app="Notes")
     assert hands_service.risky_text("see you\n", bundle_id="com.tinyspeck.slackmacgap", app="Slack")
     assert not hands_service.risky_text("see you\n", bundle_id="com.apple.Notes", app="Notes")
+    # A Team ID prefix (seen on a real Mac) does not hide an app from the lists.
+    assert hands_service.sends_on_return("ABCDE12345.com.tinyspeck.slackmacgap", "x")
 
 
 def test_settings_file_is_private_and_the_never_list_deduplicated(tmp_path):
