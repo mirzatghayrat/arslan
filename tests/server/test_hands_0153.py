@@ -218,6 +218,17 @@ async def test_looking_asks_once_per_app_per_conversation(hands, asks, in_turn):
     assert hands.ops("snapshot", "find") == ["snapshot", "snapshot", "find"]
 
 
+async def test_a_never_list_app_is_named_as_such_not_as_missing(hands, asks, in_turn):
+    seen, _ = asks
+    for name in ("System Settings", "com.apple.keychainaccess", "1Password"):
+        result = await hands_tools.DesktopLookExecutor().execute({"app": name})
+        assert result["code"] == "app_denied", name
+    hands_service.update_settings(never=["Bear"])
+    assert (await hands_tools.DesktopLookExecutor().execute({"app": "bear"}))["code"] == "app_denied"
+    assert (await hands_tools.DesktopLookExecutor().execute({"app": "Nonesuch"}))["code"] == "app_not_running"
+    assert seen == [] and hands.ops("snapshot", "find") == []
+
+
 async def test_a_declined_look_reads_nothing(hands, asks, in_turn):
     _, answer = asks
     answer["value"] = False
@@ -316,6 +327,27 @@ async def test_without_accessibility_hands_asks_macos_once_and_says_where_the_sw
     await look.execute({"app": "Notes"})
     assert first["code"] == "PERM_DENIED" and "Privacy & Security → Accessibility" in first["error"]
     assert hands.ops("request_permission") == ["request_permission"]
+
+
+async def test_a_read_that_times_out_is_tried_once_more_an_action_never(hands, asks, in_turn, monkeypatch):
+    timeouts = {"left": 1}
+    real = hands.call
+
+    async def flaky(op, args=None, **kw):
+        if op == "snapshot" and timeouts["left"]:
+            timeouts["left"] -= 1
+            hands.calls.append((op, dict(args or {})))
+            return {"ok": True, "envelope": _case("err_timeout")["envelope"] | {"command": "snapshot"}}
+        return await real(op, args, **kw)
+    monkeypatch.setattr(hands_client, "call", flaky)
+    assert (await hands_tools.DesktopLookExecutor().execute({"app": "Notes"}))["ok"]
+    assert hands.ops("snapshot") == ["snapshot", "snapshot"]
+
+
+async def test_a_timed_out_action_is_not_repeated(hands, asks, in_job):
+    hands.fail_with = _case("err_timeout")["envelope"] | {"command": "click"}
+    result = await hands_tools.DesktopClickExecutor().execute({"app": "Notes", "element": "Save", "ref": "@sfixture0:e3"})
+    assert result["code"] == "TIMEOUT" and hands.ops("click") == ["click"]
 
 
 async def test_stale_refs_say_look_again(hands, asks, in_job):

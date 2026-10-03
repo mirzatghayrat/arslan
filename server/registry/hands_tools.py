@@ -283,6 +283,12 @@ async def _job_session(job_id: str) -> str | None:
     return session if isinstance(session, str) else None
 
 
+# Reads that may be repeated once on a TIMEOUT: measured on a busy Mac (simulator,
+# many windows), agent-desktop's window inventory and big trees (Notes) time out
+# intermittently and succeed on the next try. Actions are never repeated.
+_RETRY_READS = {"snapshot", "find", "list_windows", "get", "describe"}
+
+
 async def _hands(op: str, args: dict, *, job_id: str | None = None, timeout: float = 60.0):
     """One Hands request with the user's never-list (and the job's session)."""
     from server.services import hands_client, hands_contract, hands_service
@@ -297,6 +303,11 @@ async def _hands(op: str, args: dict, *, job_id: str | None = None, timeout: flo
         return hands_contract.Result(ok=False, code="hands_unavailable", refused=True,
                                      message=f"Arslan Hands is not available ({exc}). Tell the user.")
     result = hands_contract.parse(reply)
+    if result.code == "TIMEOUT" and op in _RETRY_READS:
+        try:
+            result = hands_contract.parse(await hands_client.call(op, args, timeout=timeout))
+        except hands_client.HandsUnavailable:
+            pass
     if result.code == "PERM_DENIED" and hands_service.permission_prompt_once():
         try:                     # D3: macOS shows its own prompt for Arslan Hands, once
             await hands_client.call("request_permission", {}, timeout=10)
@@ -334,6 +345,10 @@ async def _resolve_app(name: str, job_id: str | None):
     for app in (result.data or {}).get("apps") or []:
         if wanted in (str(app.get("name", "")).lower(), str(app.get("bundle_id", "")).lower()):
             return app, None
+    # Hands leaves never-list apps out of the list; say so instead of "not running".
+    from server.services import hands_service
+    if hands_service.never_touched(name):
+        return None, hands_contract.Result(ok=False, code="app_denied", refused=True)
     return None, hands_contract.Result(ok=False, code="app_not_running", refused=True)
 
 

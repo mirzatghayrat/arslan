@@ -108,6 +108,14 @@ def _matches(group: dict, bundle_id: str, name: str) -> bool:
     return any(n.lower() == name.strip().lower() for n in group.get("names", []))
 
 
+def never_touched(app: str) -> bool:
+    """A name or bundle id on the built-in never-list or the user's own."""
+    app = app.strip()
+    if any(app.lower() == n.lower() for n in settings()["never"]):
+        return True
+    return any(_matches(g, app, app) for g in policy()["denied"])
+
+
 def sends_on_return(bundle_id: str, name: str) -> bool:
     return _matches(policy()["sends_on_return"], bundle_id, name)
 
