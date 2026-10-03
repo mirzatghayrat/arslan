@@ -18,7 +18,7 @@
 export type SettingsSectionId =
   | 'models' | 'modelroles' | 'search'        // Connection
   | 'appearance' | 'memory'                   // Personal
-  | 'automation' | 'proactive' | 'desktop' | 'access' | 'advanced';     // System
+  | 'automation' | 'proactive' | 'desktop' | 'phone' | 'access' | 'advanced';     // System
 
 export type SettingsGroupId = 'connection' | 'personal' | 'system';
 
@@ -62,6 +62,8 @@ export const SETTINGS_SECTIONS: SettingsSectionMeta[] = [
   // Resident behaviour while the window is closed (0.1.41). Not in automation:
   // both switches are ON by default and neither spends anything.
   { id: 'desktop',    group: 'system',     labelKey: 'settings.navDesktop',    icon: 'Monitor' },
+  // The iPhone companion (mobile bridge §6.1): pairing and paired phones.
+  { id: 'phone',      group: 'system',     labelKey: 'settings.navPhone',      icon: 'Smartphone' },
   { id: 'access',     group: 'system',     labelKey: 'settings.navAccess',     icon: 'KeyRound' },
   { id: 'advanced',   group: 'system',     labelKey: 'settings.navAdvanced',   icon: 'Sliders' },
 ];
@@ -143,6 +145,11 @@ export const FIELD_HOMES: Record<string, SettingsSectionId> = {
   'desktop.island': 'desktop',
   //: Replaces the two placeholder nav entries.
   'automation.activity_link': 'automation',
+
+  // ── iPhone (mobile bridge §6.1: pairing code, requests, paired phones) ────
+  'phone.pairing': 'phone',
+  'phone.requests': 'phone',
+  'phone.devices': 'phone',
 
   // ── access & security ─────────────────────────────────────────────────────
   'access.api_token': 'access',

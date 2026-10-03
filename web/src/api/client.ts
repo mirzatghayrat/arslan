@@ -1,7 +1,7 @@
 import { useAuthStore } from "../stores/authStore";
 import { fetchUpdateStatus } from "../lib/updater";
 import type { CryptoHealth } from "../lib/cryptoHealth";
-import type {
+import type { PhoneCode, PhoneStatus,
   ArtifactReview,
   AccessTokenInfo,
   AnomalyDto,
@@ -390,6 +390,14 @@ export const api = {
   deleteSshIdentity: () =>
     request<{ public_key: string; enabled: boolean }>("/settings/ssh-identity", { method: "DELETE" }),
   /** Machines the user has enrolled for SSH (P3c). */
+  phoneStatus: () => request<PhoneStatus>("/phone"),
+  phoneNewCode: () => request<PhoneCode>("/phone/pairing", { method: "POST" }),
+  /** Accepting a phone is this click in Arslan's window — nothing else can. */
+  phoneDecide: (requestId: string, accept: boolean) =>
+    request<{ accepted: boolean }>(`/phone/requests/${encodeURIComponent(requestId)}`, {
+      method: "POST", body: JSON.stringify({ accept }) }),
+  phoneRevoke: (deviceId: string) =>
+    request<{ revoked: boolean }>(`/phone/devices/${encodeURIComponent(deviceId)}`, { method: "DELETE" }),
   listSshNodes: () =>
     request<{ nodes: SshNode[]; enabled: boolean }>("/ssh-nodes"),
   /** Enrol a machine. `fingerprints` is what the user was shown — the server
