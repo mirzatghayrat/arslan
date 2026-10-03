@@ -15,7 +15,31 @@ final class FrameMapperTests: XCTestCase {
         XCTAssertEqual(out[0].type, "chat.event")
         XCTAssertEqual(out[0].body["text"] as? String, "Three flights")
         XCTAssertEqual(out[0].body["final"] as? Bool, true)
+        XCTAssertEqual(out[0].body["message_id"] as? String, "7", "the stored message's id, as chat.history has it")
         XCTAssertTrue(Wire.shouldNotify(type: out[0].type, body: out[0].body))
+    }
+
+    func testCardsShowOneOfThePhonesSixRisks() {
+        func risk(_ frame: [String: Any]) -> String? {
+            FrameMapper(conversationID: "c").phoneMessages(for: frame.merging(["call_id": "k"]) { a, _ in a }).first?.body["risk"] as? String
+        }
+        XCTAssertEqual(risk(["type": "propose_run_command", "pretty": "rm -rf old/", "reason": "recursive delete"]), "delete")
+        XCTAssertEqual(risk(["type": "propose_run_command", "pretty": "brew install jq"]), "install")
+        XCTAssertEqual(risk(["type": "propose_run_command", "pretty": "git push origin main"]), "publish")
+        XCTAssertEqual(risk(["type": "propose_run_command", "pretty": "curl https://example.com"]), "send")
+        XCTAssertEqual(risk(["type": "propose_run_command", "pretty": "git status", "remote_host": "box"]), "send")
+        XCTAssertEqual(risk(["type": "propose_run_command", "pretty": "python3 tidy.py", "reason": "risk: MEDIUM"]), "write")
+        XCTAssertEqual(risk(["type": "propose_run_command", "pretty": "ls", "sandbox": "retry"]), "install")
+        XCTAssertEqual(risk(["type": "propose_run_command", "pretty": "format disk", "reason": "removes everything"]), "write",
+                       "whole words only: 'removes' is not 'remove'")
+        XCTAssertEqual(risk(["type": "propose_workspace_write", "path": "a.md"]), "write")
+        XCTAssertEqual(risk(["type": "propose_schedule", "name": "n", "when": "w"]), "write")
+        XCTAssertEqual(risk(["type": "propose_action", "kind": "browser_site", "target": "x.com"]), "send")
+        XCTAssertEqual(risk(["type": "propose_action", "kind": "mac_script", "target": "Finder"]), "write")
+        let six: Set = ["write", "send", "delete", "install", "payment", "publish"]
+        for line in ["rm a", "pip install x", "git push", "ssh box", "echo hi", ""] {
+            XCTAssertTrue(six.contains(FrameMapper.commandRisk(line, outside: false, remote: false)))
+        }
     }
 
     func testProgressIsCoalescedToOneEveryTwoSecondsNewestWins() {
@@ -80,7 +104,8 @@ final class FrameMapperTests: XCTestCase {
         let m = FrameMapper(conversationID: "c1")
         let req = m.phoneMessages(for: ["type": "propose_run_command", "call_id": "k2", "pretty": "brew install jq",
                                         "sandbox": "outside"])
-        XCTAssertEqual(req.first?.body["risk"] as? String, "outside_sandbox")
+        XCTAssertEqual(req.first?.body["risk"] as? String, "install")
+        XCTAssertEqual(req.first?.body["action"] as? String, "Run a command outside the sandbox")
         let frames = try m.backendFrames(for: "approval.answer", body: ["approval_id": "k2", "decision": "approve",
                                                                         "auth": "voice", "ts": "t"])
         XCTAssertEqual(frames.first?["type"] as? String, "cancel_run_command", "anything but Face ID is a no")

@@ -111,7 +111,8 @@ do {
 }
 control.onConnect = { try? await runtime.hello() }
 control.onFrame = { frame in try? await runtime.handleControl(frame) }
-let links = ConversationLinks(channels: WebSocketChannels(port: port, token: token), mailbox: runtime.mailbox)
+let links = ConversationLinks(channels: WebSocketChannels(port: port, token: token), mailbox: runtime.mailbox,
+                              backend: LocalBackend(port: port, token: token))
 Task { await control.run() }
 Task {
     if let cloud = store as? CloudKitStore { try? await cloud.ensureZone() }

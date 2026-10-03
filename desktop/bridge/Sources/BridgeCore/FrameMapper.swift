@@ -42,6 +42,8 @@ public final class FrameMapper {
             return []
         case "stream_end":
             heldProgress = nil
+            // The stored message's id, so the phone can merge this answer with `chat.history`.
+            if let stored = frame["message_id"] as? Int { messageID = String(stored) }
             return [("chat.event", ["conversation_id": conversationID, "kind": "message", "message_id": messageID,
                                     "text": reply, "final": true])]
         case "error":
@@ -57,15 +59,17 @@ public final class FrameMapper {
             return [progress(text)]
         case "propose_run_command":
             let outside = ["outside", "retry"].contains(frame["sandbox"] as? String ?? "")
-            return card(.runCommand, outside ? "Run a command outside the sandbox" : "Run a command",
-                        frame["pretty"] as? String ?? frame["command"] as? String ?? "",
-                        outside ? "outside_sandbox" : (frame["reason"] as? String ?? "command"))
+            let line = frame["pretty"] as? String ?? frame["command"] as? String ?? ""
+            let words = [line, frame["reason"] as? String ?? "", frame["rule"] as? String ?? ""].joined(separator: " ")
+            return card(.runCommand, outside ? "Run a command outside the sandbox" : "Run a command", line,
+                        Self.commandRisk(words, outside: outside, remote: frame["remote_host"] as? String != nil))
         case "propose_workspace_write":
             return card(.workspaceWrite, frame["action"] as? String ?? "Write a file", frame["path"] as? String ?? "", "write")
         case "propose_schedule":
-            return card(.schedule, "Schedule “\(frame["name"] as? String ?? "")”", frame["when"] as? String ?? "", "schedule")
+            return card(.schedule, "Schedule “\(frame["name"] as? String ?? "")”", frame["when"] as? String ?? "", "write")
         case "propose_action":
-            return card(.action, frame["kind"] as? String ?? "action", frame["target"] as? String ?? "", "other_app")
+            let kind = frame["kind"] as? String ?? "action"
+            return card(.action, kind, frame["target"] as? String ?? "", kind == "browser_site" ? "send" : "write")
         case "card_resolved":
             // The Mac decided the card — the phone's own answer, a click in a Mac window (first
             // answer wins), or the 5-minute timeout. This is the phone's business receipt (§5.3).
@@ -80,6 +84,20 @@ public final class FrameMapper {
         default:
             return []
         }
+    }
+
+    /// The phone's card shows one of six risks (write, send, delete, install, payment, publish):
+    /// how the card looks, never the decision, which stays on the Mac.
+    static func commandRisk(_ text: String, outside: Bool, remote: Bool) -> String {
+        if outside { return "install" }                   // it would run outside the sandbox
+        let words = Set(text.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init))
+        if !words.isDisjoint(with: ["rm", "rmdir", "delete", "remove", "trash", "unlink", "shred"]) { return "delete" }
+        if !words.isDisjoint(with: ["install", "uninstall", "brew", "pip", "pip3", "npm", "gem", "cargo"]) { return "install" }
+        if !words.isDisjoint(with: ["push", "publish", "deploy", "release", "upload"]) { return "publish" }
+        if remote || !words.isDisjoint(with: ["send", "mail", "curl", "wget", "ssh", "scp", "rsync", "http", "https"]) {
+            return "send"
+        }
+        return "write"
     }
 
     /// A held progress line, once its 2 seconds have passed.

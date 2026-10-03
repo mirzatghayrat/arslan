@@ -200,12 +200,12 @@ never the content. A lock-screen alert shows generic text unless the user turned
 | `hello` | both | `app_version`, `protocol_version`, `capabilities[]` |
 | `ack` | both | `ids[]` (lowercase envelope ids) |
 | `status.snapshot` | Mac → phone | `presence` (online/sleeping/offline), `mascot`, `device_name`, `last_seen`, `jobs[]` (`id`, `title`, `current_step`, `completed`, `total`), `waiting_approvals`, `high_risk_mac_only` |
-| `conversations.list` / `.result` | phone → Mac / Mac → phone | `limit?` / `conversations[]` (`id`, `title`, `updated_at`) |
+| `conversations.list` / `conversations.result` | phone → Mac / Mac → phone | `limit?` (1–100, default 20) / `conversations[]` (`id`, `title`, `updated_at`), most recent first |
 | `chat.history` / `chat.history.result` | phone → Mac / Mac → phone | `conversation_id`, `limit` / `conversation_id`, `messages[]` (`id`, `role`, `text`, `ts`, `attachments[]`) |
 | `chat.send` | phone → Mac | `conversation_id?` (absent = the pocket conversation), `text`, `attachments[]`, `client_msg_id` (UUID) |
 | `chat.event` | Mac → phone | `conversation_id`, `kind` (message/progress/error), `message_id`, `text`, `final`, `job_id?` |
 | `job.event` | Mac → phone | `id`, `conversation_id`, `state` (running/done/partial/stuck/stopped), `title`, `current_step`, `completed`, `total`, `plan[]`, `summary?`, `files[]` |
-| `approval.request` | Mac → phone | `approval_id`, `action`, `target`, `risk`, `task_id`, `task_title`, `expires_at` |
+| `approval.request` | Mac → phone | `approval_id`, `action`, `target`, `risk` (write/send/delete/install/payment/publish), `task_id`, `task_title`, `expires_at` |
 | `approval.answer` | phone → Mac | `approval_id`, `decision` (approve/deny), `auth` (`faceid` for approve, `none` for deny), `ts` |
 | `approval.result` | Mac → phone | `approval_id`, `outcome` (done/denied/expired/failed), `detail?` |
 | `file.offer` / `file.get` | Mac → phone / phone → Mac | `id`, `name`, `size`, `mime_type`, `sha256` (hex of the plaintext) / `file_id` |
@@ -224,12 +224,24 @@ Settled here (open in the proposal):
 - Progress (`job.event` running, `chat.event` progress) is coalesced to at most one per job every
   2 s, newest wins; terminal states are sent at once.
 - `chat.send` is executed once per `client_msg_id`; a retry gets the same result.
+- `risk` is one of six values and only decides how the phone's card looks; the decision stays on the
+  Mac. A command card maps its words (delete → `delete`, install/brew/pip/npm and anything outside the
+  sandbox → `install`, push/publish/deploy/upload → `publish`, curl/ssh/mail or another machine →
+  `send`, else `write`); writes and schedules are `write`; a website action is `send`.
+- History ids are the Mac's stored message ids, and the final `chat.event` of a turn uses the same id,
+  so the phone can merge the two. Arslan's replies list their run's files as `attachments`.
+- Files are a run's artifacts (immutable snapshots, so a reference never goes stale; id =
+  the artifact's filename). When a turn ends, the Mac offers its files as `file.offer` without an
+  asset; `file.get` answers with a new `file.offer` carrying the encrypted asset (§4.6), sent only
+  when the bytes match the reference. Files over 20 MiB are never offered (`too_large`); a file that is
+  gone or changed answers `file_unavailable`.
 
 ### 5.4 Error codes
 
 `malformed`, `unsupported_version`, `unknown_type`, `not_for_me`, `bad_signature`, `decrypt_failed`,
 `header_mismatch`, `asset_mismatch`, `too_large`, `pairing_invalid`, `pairing_expired`,
-`wrong_container`, `not_paired`, `revoked`, `approval_expired`, `rate_limited`, `mac_busy`. Codes in
+`wrong_container`, `not_paired`, `revoked`, `approval_expired`, `rate_limited`, `mac_busy`,
+`file_unavailable`. A receiver never answers an `error` with an `error`. Codes in
 §4.7 are receiver-side drops and are not sent back (no oracle); the others may travel in `error`.
 
 ## 6. Mac side (summary; plan in the design doc §6)

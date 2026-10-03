@@ -63,10 +63,11 @@ public final class Mailbox {
     public func remove(peer deviceID: String) { peers[deviceID] = nil; windows[deviceID] = nil }
 
     /// Seal a message to a paired peer and put it in the store. The record is kept until the
-    /// peer's `ack`; a retry re-sends this exact record (§4.5).
+    /// peer's `ack`; a retry re-sends this exact record (§4.5). `asset` (a `file.offer`'s bytes)
+    /// travels encrypted in the record's asset, bound to the header by its hash (§4.6).
     @discardableResult
     public func send(type: String, body: [String: Any], to peerID: String, id: String = UUID().uuidString.lowercased(),
-                     now: Date = Date()) async throws -> EnvelopeRecord {
+                     now: Date = Date(), asset: Data? = nil) async throws -> EnvelopeRecord {
         guard let peer = peers[peerID] else { throw BridgeError.code("not_paired") }
         let seq = nextSeq
         nextSeq += 1
@@ -75,14 +76,14 @@ public final class Mailbox {
         let plaintext = try JSONSerialization.data(withJSONObject: envelope, options: [.sortedKeys])
         let notify = Wire.shouldNotify(type: type, body: body)
         let header = Header(id: id, from: deviceID, to: peerID, seq: seq, kind: Wire.kind(of: type), ephemeral: "", notify: notify)
-        let sealed = try Seal.seal(plaintext: plaintext, type: type, header: header, senderSigning: signing,
-                                   recipientExchange: peer.exchange).packet
+        let (sealed, sealedAsset) = try Seal.seal(plaintext: plaintext, type: type, header: header, senderSigning: signing,
+                                                  recipientExchange: peer.exchange, asset: asset)
         let json: [String: Any] = ["header": Mailbox.headerJSON(sealed.header), "sealed": sealed.sealed.base64EncodedString(),
                                    "signature": sealed.signature.base64EncodedString()]
         let data = try JSONSerialization.data(withJSONObject: json)
         guard data.count <= Wire.maxSealedBytes else { throw BridgeError.code("too_large") }
         let record = EnvelopeRecord(id: id, to: peerID, from: deviceID, seq: seq, kind: sealed.header.kind,
-                                    notify: notify, sealed: data, createdAt: now)
+                                    notify: notify, sealed: data, asset: sealedAsset, createdAt: now)
         try await store.save(record)
         if type != "ack" { sentAwaitingAck[record.id] = record }   // an ack is not acknowledged
         return record
