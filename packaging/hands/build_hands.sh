@@ -66,8 +66,14 @@ AD_SHA="$(shasum -a 256 "$AD_BIN" | cut -d' ' -f1)"
 echo "    agent-desktop $COMMIT sha256 $AD_SHA"
 
 # ── 2. the helper ───────────────────────────────────────────────────────────
+# HANDS_DEV_UNVERIFIED_PEER=1: development only (see desktop/hands/Cargo.toml).
+FEATURES=()
+if [ "${HANDS_DEV_UNVERIFIED_PEER:-}" = "1" ]; then
+  echo "    DEVELOPMENT BUILD: peer check off — never ship this" >&2
+  FEATURES=(--features dev-unverified-peer)
+fi
 "$CARGO" build --release --locked --manifest-path "$ROOT/desktop/hands/Cargo.toml" \
-  --target-dir "$WORK/hands-target"
+  --target-dir "$WORK/hands-target" ${FEATURES[@]+"${FEATURES[@]}"}
 HANDS_BIN="$WORK/hands-target/release/arslan-hands"
 
 # ── 3. the bundle ───────────────────────────────────────────────────────────
@@ -111,16 +117,27 @@ plutil -lint "$APP/Contents/Info.plist" >/dev/null
 # agent-desktop first; its signed sha256 is recorded in Resources BEFORE the
 # bundle is signed, so the bundle's seal covers the record.
 if [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
-  SIGN=(--sign "$APPLE_SIGNING_IDENTITY" --timestamp --options runtime)
+  # HANDS_SIGN_TIMESTAMP=none: local development builds only (no notarization).
+  SIGN=(--sign "$APPLE_SIGNING_IDENTITY" "--timestamp${HANDS_SIGN_TIMESTAMP:+=$HANDS_SIGN_TIMESTAMP}" --options runtime)
 else
   echo "    (no APPLE_SIGNING_IDENTITY: ad-hoc signing, development only — no peer check)"
   SIGN=(--sign -)
 fi
-codesign --force "${SIGN[@]}" --identifier com.arslan.desktop.hands.agent-desktop \
-  "$APP/Contents/MacOS/agent-desktop"
+# Apple's timestamp server occasionally does not answer ("A timestamp was
+# expected but was not found", seen locally): try a signature three times.
+sign() {
+  local attempt
+  for attempt in 1 2 3; do
+    codesign --force "${SIGN[@]}" "$@" && return 0
+    echo "    codesign failed (attempt $attempt), retrying" >&2
+    sleep 5
+  done
+  return 1
+}
+sign --identifier com.arslan.desktop.hands.agent-desktop "$APP/Contents/MacOS/agent-desktop"
 SIGNED_SHA="$(shasum -a 256 "$APP/Contents/MacOS/agent-desktop" | cut -d' ' -f1)"
 echo "$SIGNED_SHA  agent-desktop, signed (built $AD_SHA from $REPOSITORY @ $COMMIT)" \
   > "$APP/Contents/Resources/agent-desktop.sha256"
-codesign --force "${SIGN[@]}" "$APP"
+sign "$APP"
 codesign --verify --strict --deep "$APP"
 echo "    built $APP"

@@ -231,6 +231,35 @@ pub fn peer_allowed(fd: RawFd, team: &str) -> bool {
     unsafe { SecCodeCheckValidity(guest.0, 0, req.0) == 0 }
 }
 
+#[link(name = "AppKit", kind = "framework")]
+extern "C" {}
+
+#[link(name = "objc")]
+extern "C" {
+    fn objc_getClass(name: *const c_char) -> *mut c_void;
+    fn sel_registerName(name: *const c_char) -> *mut c_void;
+    fn objc_msgSend();
+}
+
+/// Run as a real (Dock-less) Cocoa app on the main thread: NSApplication,
+/// accessory policy, its run loop. Without this, LaunchServices never sees the
+/// app finish launching and reports it "not responding" (seen on a real Mac:
+/// Finder refused to open it, and it never appeared in the Accessibility list).
+pub fn run_app_loop() -> ! {
+    type Msg0 = unsafe extern "C" fn(*mut c_void, *mut c_void) -> *mut c_void;
+    type MsgPolicy = unsafe extern "C" fn(*mut c_void, *mut c_void, isize) -> i8;
+    unsafe {
+        let send0: Msg0 = std::mem::transmute(objc_msgSend as *const ());
+        let send_policy: MsgPolicy = std::mem::transmute(objc_msgSend as *const ());
+        let class = objc_getClass(c"NSApplication".as_ptr());
+        let app = send0(class, sel_registerName(c"sharedApplication".as_ptr()));
+        // NSApplicationActivationPolicyAccessory: no Dock icon, never takes focus by itself.
+        send_policy(app, sel_registerName(c"setActivationPolicy:".as_ptr()), 1);
+        send0(app, sel_registerName(c"run".as_ptr()));
+    }
+    std::process::exit(0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

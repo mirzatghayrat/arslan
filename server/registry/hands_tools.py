@@ -352,6 +352,18 @@ async def _resolve_app(name: str, job_id: str | None):
     return None, hands_contract.Result(ok=False, code="app_not_running", refused=True)
 
 
+async def _window_id(app: str, title: str, job_id: str | None) -> str | None:
+    """The id of the app's window whose title contains `title` (list_windows)."""
+    result = await _hands("list_windows", {"app": app}, job_id=job_id)
+    if not result.ok or not isinstance(result.data, list):
+        return None
+    wanted = title.strip().lower()
+    for window in result.data:
+        if isinstance(window, dict) and wanted in str(window.get("title") or "").lower():
+            return str(window.get("id")) if window.get("id") else None
+    return None
+
+
 def _app_arg(args: dict) -> str | None:
     app = str((args or {}).get("app") or "").strip()
     return app if app and len(app) <= 120 else None
@@ -405,6 +417,13 @@ class DesktopLookExecutor:
                         "error": f"The user did not allow looking at {app['name']}. Do not retry; ask them."}
             hands_service.allow_look(conversation_id, bundle)
         call = {"app": app["name"]}
+        if isinstance(args.get("window"), str) and args["window"].strip():
+            window = await _window_id(app["name"], args["window"], job_id)
+            if window is None:
+                return {"ok": False, "external": False, "code": "window_not_found",
+                        "error": f"{app['name']} has no window titled like “{args['window'][:80]}” on this "
+                                 "screen. Look without `window` to see its front window."}
+            call["window_id"] = window
         if isinstance(args.get("wait_for_text"), str) and args["wait_for_text"].strip():
             waited = await _hands("wait", {**call, "text": args["wait_for_text"][:200], "timeout_ms": 10_000},
                                   job_id=job_id)

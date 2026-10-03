@@ -177,6 +177,10 @@ step "[4c/7] building Arslan Hands"
 # from our fork at the pinned commit, offline from vendored sources; the bundle
 # is signed inside-out by the script (same identity, hardened runtime) BEFORE
 # tauri build seals it into Arslan.app/Contents/Resources/hands.
+if [ "${HANDS_DEV_UNVERIFIED_PEER:-}" = "1" ]; then
+  echo "ERROR: HANDS_DEV_UNVERIFIED_PEER is a development switch; a DMG never carries it" >&2
+  exit 1
+fi
 rm -rf "$TAURI/binaries/hands"
 mkdir -p "$TAURI/binaries/hands"
 "$HERE/hands/build_hands.sh" "$TAURI/binaries/hands"

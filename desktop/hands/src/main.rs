@@ -17,8 +17,13 @@ fn main() {
         eprintln!("arslan-hands: cannot locate itself");
         std::process::exit(1);
     };
-    #[cfg(target_os = "macos")]
+    #[cfg(all(target_os = "macos", not(feature = "dev-unverified-peer")))]
     let team = arslan_hands::macos::own_team();
+    #[cfg(all(target_os = "macos", feature = "dev-unverified-peer"))]
+    let team = {
+        eprintln!("arslan-hands: DEVELOPMENT BUILD — the peer check is off");
+        None
+    };
     #[cfg(not(target_os = "macos"))]
     let team = None;
     let config = server::Config {
@@ -28,13 +33,29 @@ fn main() {
         idle: Duration::from_secs(15 * 60),
         team,
     };
-    if let Err(error) = server::run(config) {
+    let bound = match server::bind(&config) {
+        Ok(bound) => bound,
+        Err(error) => {
+            eprintln!("arslan-hands: {error}");
+            // A second launch while one runs is normal (LaunchServices may start it twice).
+            std::process::exit(if error.contains("already running") {
+                0
+            } else {
+                1
+            });
+        }
+    };
+    // The socket is served off the main thread; on macOS the main thread runs the
+    // Cocoa app that LaunchServices and the Accessibility list expect.
+    let serving = std::thread::spawn(move || server::serve(config, bound));
+    #[cfg(target_os = "macos")]
+    {
+        let _ = serving;
+        arslan_hands::macos::run_app_loop();
+    }
+    #[cfg(not(target_os = "macos"))]
+    if let Ok(Err(error)) = serving.join() {
         eprintln!("arslan-hands: {error}");
-        // A second launch while one runs is normal (LaunchServices may start it twice).
-        std::process::exit(if error.contains("already running") {
-            0
-        } else {
-            1
-        });
+        std::process::exit(1);
     }
 }

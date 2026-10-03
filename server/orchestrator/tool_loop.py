@@ -1251,7 +1251,8 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
         "ref": {"type": "string", "maxLength": 200, "description": "open this part of the last outline"},
         "text": {"type": "string", "maxLength": 200, "description": "find elements containing this text"},
         "role": {"type": "string", "maxLength": 40, "description": "find elements of this role (button, textfield…)"},
-        "wait_for_text": {"type": "string", "maxLength": 200, "description": "wait up to 10 s for this text first"}},
+        "wait_for_text": {"type": "string", "maxLength": 200, "description": "wait up to 10 s for this text first"},
+        "window": {"type": "string", "maxLength": 200, "description": "look at the window whose title contains this"}},
         "required": ["app"], "additionalProperties": False},
     "desktop_click": {"type": "object", "properties": {
         "app": {"type": "string", "minLength": 1, "maxLength": 120},

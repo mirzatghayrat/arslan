@@ -229,6 +229,22 @@ async def test_a_never_list_app_is_named_as_such_not_as_missing(hands, asks, in_
     assert seen == [] and hands.ops("snapshot", "find") == []
 
 
+async def test_a_window_is_picked_by_its_title(hands, asks, in_turn, monkeypatch):
+    real = hands.call
+
+    async def with_windows(op, args=None, **kw):
+        if op == "list_windows":
+            hands.calls.append((op, dict(args or {})))
+            return {"ok": True, "envelope": {"version": "2.4", "ok": True, "command": "list-windows", "data": [
+                {"id": "w-1", "title": "Downloads"}, {"id": "w-2", "title": "Hands smoke 2026"}]}}
+        return await real(op, args, **kw)
+    monkeypatch.setattr(hands_client, "call", with_windows)
+    assert (await hands_tools.DesktopLookExecutor().execute({"app": "Notes", "window": "hands smoke"}))["ok"]
+    assert [a.get("window_id") for op, a in hands.calls if op == "snapshot"] == ["w-2"]
+    missing = await hands_tools.DesktopLookExecutor().execute({"app": "Notes", "window": "Nope"})
+    assert missing["code"] == "window_not_found"
+
+
 async def test_a_declined_look_reads_nothing(hands, asks, in_turn):
     _, answer = asks
     answer["value"] = False

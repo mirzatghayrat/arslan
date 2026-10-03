@@ -152,7 +152,8 @@ pub fn bind(config: &Config) -> Result<(UnixListener, fs::File, String), String>
     Ok((listener, lock, token))
 }
 
-fn serve(
+/// Serve on what `bind` prepared (the macOS app runs this off the main thread).
+pub fn serve(
     config: Config,
     (listener, lock, token): (UnixListener, fs::File, String),
 ) -> Result<(), String> {

@@ -149,6 +149,7 @@ pub fn build(op: &str, args: &Value, session: Option<&str>) -> Result<Vec<String
         }
         "snapshot" => {
             opts.push(format!("--app={}", app_name(args)?));
+            window_arg(args, &mut opts)?;
             opts.push("--compact".into());
             match str_arg(args, "root") {
                 Some(_) => opts.push(format!("--root={}", ref_arg(&root_as_ref(args))?)),
@@ -161,6 +162,7 @@ pub fn build(op: &str, args: &Value, session: Option<&str>) -> Result<Vec<String
         }
         "find" => {
             opts.push(format!("--app={}", app_name(args)?));
+            window_arg(args, &mut opts)?;
             let mut any = false;
             for key in ["role", "name", "text"] {
                 if let Some(v) = str_arg(args, key) {
@@ -283,6 +285,23 @@ pub fn build(op: &str, args: &Value, session: Option<&str>) -> Result<Vec<String
     Ok(argv)
 }
 
+/// `window_id` from list-windows (`w-1234`): look at that window of the app.
+fn window_arg(args: &Value, opts: &mut Vec<String>) -> Result<(), Refusal> {
+    if let Some(id) = str_arg(args, "window_id") {
+        let ok = id
+            .strip_prefix("w-")
+            .is_some_and(|n| (1..=12).contains(&n.len()) && n.bytes().all(|b| b.is_ascii_digit()));
+        if !ok {
+            return Err(refuse(
+                "bad_request",
+                "`window_id` comes from list_windows, like w-1234",
+            ));
+        }
+        opts.push(format!("--window-id={id}"));
+    }
+    Ok(())
+}
+
 fn root_as_ref(args: &Value) -> Value {
     serde_json::json!({ "ref": args.get("root").cloned().unwrap_or(Value::Null) })
 }
@@ -374,6 +393,34 @@ mod tests {
                 .code,
             "bad_ref"
         );
+    }
+
+    #[test]
+    fn a_window_is_named_by_its_list_windows_id_only() {
+        let argv = build(
+            "snapshot",
+            &json!({"app": "Finder", "window_id": "w-60185"}),
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            argv,
+            [
+                "snapshot",
+                "--app=Finder",
+                "--window-id=w-60185",
+                "--compact",
+                "--skeleton"
+            ]
+        );
+        for bad in ["60185", "w-", "w-12a", "--headed", "w-1234567890123"] {
+            let r = build(
+                "find",
+                &json!({"app": "Finder", "text": "x", "window_id": bad}),
+                None,
+            );
+            assert_eq!(r.unwrap_err().code, "bad_request", "{bad}");
+        }
     }
 
     #[test]
