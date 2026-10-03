@@ -61,6 +61,8 @@ export interface Message {
   spawnId?: string;
   /** 0.1.42: this entry is the live card of a background job (render the card, not a bubble). */
   jobId?: string;
+  /** 0.1.52 S5: a practice learned in this turn (render one quiet line with undo). */
+  learned?: { id: number; status: string };
   /** 0.1.42: this Arslan message is the result of that background job. */
   resultOfJob?: string;
   jobOutcome?: 'done' | 'partial' | 'blocked' | 'stopped' | 'interrupted' | 'out_of_budget' | null;
@@ -258,6 +260,9 @@ export interface AppSettings {
   desktopNotificationsEnabled?: boolean;
   islandEnabled?: boolean;
   terminalSandboxEnabled?: boolean;
+  memoryInConversations?: boolean;
+  /** 0.1.52 S5: a learned practice is used at once (D2 tiers); off = every one waits for your OK. */
+  learnedPracticesTakeEffect?: boolean;
   /** Comma-separated BCP-47 tags for image text recognition. Empty/unset means
    *  "follow the interface language, plus English". Deliberately a SHORT list:
    *  recognition degrades as the request widens and CJK is lost first. */

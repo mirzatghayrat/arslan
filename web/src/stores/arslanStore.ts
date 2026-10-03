@@ -716,6 +716,15 @@ function makeActions(set: SetState, get: GetState) {
           }
           break;
         }
+        case "lesson_learned":
+          set({
+            items: [
+              ...state.items,
+              { id: nextClientId(), kind: "lesson", role: "arslan", content: frame.lesson.text,
+                lesson: { id: frame.lesson.id, status: frame.lesson.status } },
+            ],
+          });
+          break;
         case "fact_saved":
           set({
             items: [

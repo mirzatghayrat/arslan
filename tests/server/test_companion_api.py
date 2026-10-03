@@ -4,6 +4,8 @@ from fastapi import FastAPI
 
 from server import auth
 from server.api.companion import router
+from arslan.companion.memory import MemoryActor, MemoryScope, MemoryWrite
+from server.services.memory_repository import repository
 
 
 @pytest.fixture
@@ -314,3 +316,43 @@ async def test_receipt_cannot_resolve_unowned_or_missing_revision_text(api, exec
         value = (await api.get(f"{base}/{receipt}/memories/{entry['id']}")).json()
         assert value["status"] == "unavailable" and value["content"] is None
         assert "private body" not in str(value)
+
+
+async def test_the_conversation_says_when_memory_is_on_by_default_and_cannot_be_told_otherwise(api, execution_db):
+    """0.1.52 (D1): memory_by_default mirrors the global setting, read-only."""
+    from server.db.models import Setting
+    base = "/api/v1/conversations/default-memory/context"
+    assert (await api.get(base)).json()["memory_by_default"] is True
+    refused = await api.put(base, json={"expected_version": 0, "memory_by_default": False})
+    assert refused.status_code == 422
+    saved = await api.put(base, json={"expected_version": 0, "no_learning": True})
+    assert saved.status_code == 200 and saved.json()["memory_by_default"] is True
+    async with execution_db() as db:
+        db.add(Setting(key="memory_in_conversations", value="false"))
+        await db.commit()
+    assert (await api.get(base)).json()["memory_by_default"] is False
+
+
+async def test_facts_noticed_earlier_wait_for_the_users_choice_then_use_all(api, execution_db):
+    """0.1.52 D1 migration: pre-0.1.52 noticed facts are listed, unchanged until "Use all";
+    sensitive ones and the user's own proposals are not part of it."""
+    from server.services.memory_migration import migrate_legacy_sync
+    async with execution_db.kw["bind"].begin() as db:
+        await db.run_sync(migrate_legacy_sync)
+    async with repository() as repo:
+        noticed = await repo.create(MemoryWrite(content="Prefers tables over prose", scope=MemoryScope(kind="global")),
+                                    MemoryActor(origin="extractor"))                       # 0.1.51: a proposal
+        await repo.create(MemoryWrite(content="Salary is 50k", scope=MemoryScope(kind="global")),
+                          MemoryActor(origin="extractor"))                                 # sensitive: excluded
+        await repo.create(MemoryWrite(content="Host inferred thing", scope=MemoryScope(kind="global")),
+                          MemoryActor(origin="host"))                                      # not the extractor
+    assert noticed["status"] == "proposed"
+    assert (await api.get("/api/v1/memory/noticed-earlier")).json() == {"count": 1}
+    async with repository() as repo:
+        assert (await repo.get(noticed["id"])).status == "proposed"                         # listing changed nothing
+    done = await api.post("/api/v1/memory/noticed-earlier/accept")
+    assert done.status_code == 200 and done.json() == {"accepted": 1}
+    async with repository() as repo:
+        entry = await repo.get(noticed["id"])
+        assert entry.status == "active" and entry.use_policy == "cloud_allowed"
+    assert (await api.get("/api/v1/memory/noticed-earlier")).json() == {"count": 0}

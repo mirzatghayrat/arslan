@@ -23,7 +23,9 @@ from pathlib import PurePosixPath
 from typing import Iterator
 from urllib.parse import urlsplit
 
-KINDS = frozenset({"turn_finished", "approval_needed", "scheduled_finished", "scheduled_paused", "proactive"})
+# lesson_learned (0.1.52 S5): quiet — the island counts it ("+1 practice"); no notification.
+KINDS = frozenset({"turn_finished", "approval_needed", "scheduled_finished", "scheduled_paused", "proactive",
+                   "lesson_learned"})
 OUTCOMES = frozenset({"ok", "error", "needs_review", "cancelled"})
 MAX_EVENTS = 100
 

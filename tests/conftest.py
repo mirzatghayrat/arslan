@@ -69,3 +69,17 @@ def _default_workspace_in_tmp(tmp_path_factory):
     with pytest.MonkeyPatch.context() as mp:
         mp.setenv("ARSLAN_DEFAULT_WORKSPACE", str(tmp_path_factory.mktemp("arslan-home") / "Arslan"))
         yield
+
+
+@pytest.fixture(autouse=True)
+def _no_judge_model_calls():
+    """0.1.52: shadow judgments fire at every confirmation card. In tests the judge
+    model is never reached (no network, no spend); a test of the judgment layer
+    patches `_adapter` itself. Its own MonkeyPatch, for the reason given above."""
+    from server.services import judgment
+
+    async def disabled():
+        raise RuntimeError("judge model disabled in tests")
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(judgment, "_adapter", disabled)
+        yield

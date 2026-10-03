@@ -242,3 +242,44 @@ argv builder, peer check) + contract fixtures. S3 backend client/service/tools/p
 Settings, Activity, island; shell tray item. S5 packaging: pin, build script, cargo-deny, notices, fresh-install
 checks, CI. S6 smoke + contract check on this Mac (the user clicks Allow once — D3). Version 0.1.53 last, after
 0.1.52's state is known.
+
+## 7. Amendments — measured while building (2026-10-03)
+
+These change the design above; each was measured on the user's Mac (macOS 26.6).
+
+1. **agent-desktop is not inside the bundle** (changes §2.1). With it in `Arslan Hands.app/Contents/MacOS`, running it
+   on its own with responsibility disclaimed reported Accessibility **granted**: macOS lent it the bundle's grant, so
+   any process (a sandboxed command included) could have driven apps past the token, the peer check and every card.
+   It now sits beside the bundle (`hands/agent-desktop`): run on its own → **denied** (measured); run by Hands → it
+   inherits Hands' grant as Hands' child. Being a plain file it could be swapped, and a swapped binary run by Hands
+   would inherit the grant, so Hands checks its sha256 against `Contents/Resources/agent-desktop.sha256` (inside the
+   sealed bundle) before every run; a signed Hands without that record refuses to start.
+2. **Hands is a real Cocoa app.** Without an `NSApplication` run loop LaunchServices never saw it check in: Finder
+   called it "not responding" and it never appeared in the Accessibility list. It now runs `NSApplication`
+   (accessory policy, no Dock icon) on the main thread and serves the socket on another; check-in 0.6 s.
+3. **D3 needs a properly signed Hands.** An ad-hoc build could be listed and switched on and still not be trusted.
+   Signed (Developer ID in releases; a personal Apple Development certificate for development), macOS showed its
+   prompt by itself and the grant applied at once. Development switches, refused for a DMG:
+   `HANDS_SIGN_TIMESTAMP=none` and `HANDS_DEV_UNVERIFIED_PEER=1` (a cargo feature that turns the peer check off so a
+   personally signed Hands can serve an unsigned dev backend). `build_dmg.sh` refuses the latter and the
+   fresh-install acceptance requires `peer_check == "verified"`.
+4. **Twelve commands, not eleven**: `select` (pop-ups, lists) joins the contract.
+5. **`desktop_type` sets the value.** Headless `type` needs a focused field (POLICY_DENIED otherwise, measured) and
+   Hands never takes focus, so the tool uses `set-value` (append = read, then set) and falls back to `type`.
+6. **Focus guard.** Notes brings itself forward on New Note (measured). Around every action Hands notes the front
+   app; if the app acted on took the front, Hands gives it back.
+7. **Window titles come from accessibility.** Without Screen Recording the window list carries no real titles
+   (agent-desktop fills in the app's name: every Finder window was "Finder"), so `desktop_look {window}` reads each
+   window's title with a one-level look. A look at an app with several windows and none named uses the focused one.
+8. **Only the current Space.** agent-desktop sees on-screen windows of the current desktop only: apps on another
+   Space or behind a full-screen app are "not open". Said in the tool's advice; a known limit.
+9. **A busy Mac times out** (a simulator, many windows): Notes' tree and the global window inventory timed out
+   intermittently and succeeded on the next try, so reads are repeated once on TIMEOUT; actions never are.
+10. **Team-ID-prefixed bundle ids** (`2BUA8C4S2C.com.1password.browser-helper`, seen live) are matched without the
+    prefix, so the prefix cannot hide an app from the lists.
+11. **Peer check, measured** with a Developer ID-signed Hands: `arslan-server` signed by the team + token → accepted;
+    wrong token → `bad_token`; same team, other identifier → `peer_not_allowed`; unsigned `python3` holding the
+    right token → `peer_not_allowed`.
+12. **Test hygiene.** Running AX-calling test binaries with responsibility disclaimed adds them to the
+    Accessibility list (and one was switched on by mistake). Tests now build such binaries only in temporary paths
+    that are deleted afterwards, and the user is told which entries to remove.

@@ -261,6 +261,13 @@
     "reconnecting": "正在重新连接……"
   },
   "chat": {
+    "learned": "学到了：{{text}}",
+    "wantsToLearn": "Arslan 想记住一个做法：{{text}}",
+    "learnedUndo": "撤销",
+    "learnedKeep": "记住",
+    "learnedSkip": "不用",
+    "learnedUndone": "已撤销",
+    "learnedKept": "已记住",
     "title": "与 {{name}} 对话",
     "placeholder": "输入消息……",
     "send": "发送",
@@ -494,6 +501,10 @@
     "sensitive": "敏感"
   },
   "settings": {
+    "labelMemoryInConversations": "记住我，并用在对话里",
+    "memoryInConversationsDesc": "Arslan 会记住你说过的关于你自己、你的工作方式的事，并在对话里用上，包括发给你选的云端模型。健康、钱、住址这类敏感内容仍要你确认；单个对话也可以关掉记忆。",
+    "labelLearnedPractices": "学到的做法直接生效",
+    "learnedPracticesDesc": "你纠正 Arslan，或者它在这台 Mac 上绕过了失败的路，它会记下这个做法，下次直接用。每一条都能在 Brain 里看到、撤销。读过网页或文件之后学到的，要等你确认。关掉后，每一条都等你确认。",
     "labelTerminalSandbox": "命令在沙盒里运行",
     "terminalSandboxDesc": "命令可以读文件、上网，但只能写工作文件夹、临时和缓存文件夹，读不到你的 SSH 密钥、钥匙串和 Arslan 的数据。要在沙盒外运行，每次都得你点。",
     "appIcon": "应用图标",

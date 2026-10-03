@@ -173,6 +173,10 @@ TOOLSETS: list[dict] = [
             ("remember", "Write to the second brain: append a fact/learning/note/preference, "
              "supersede an outdated one, or mark stale. Destructive edits/deletes are "
              "proposed for the user to confirm, not executed.", "safe", "wired"),
+            ("conversation_search", "Search earlier conversations and return original snippets "
+             "with date and an in-app link (0.1.52).", "safe", "wired"),
+            ("memory_note", "Edit the always-in-view memory by entry id: \"About you\" and Arslan's "
+             "notes about this Mac and setup (0.1.52).", "safe", "wired"),
         ],
     },
     {

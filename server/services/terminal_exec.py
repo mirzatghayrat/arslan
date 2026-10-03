@@ -41,6 +41,26 @@ def clip(text: str, limit: int = MAX_OUTPUT_CHARS) -> tuple[str, bool]:
     return text[:half] + f"\n… [{len(text) - limit} characters omitted] …\n" + text[-half:], True
 
 
+def fold_repeats(text: str, min_run: int = 3) -> str:
+    """0.1.52 S2 (borrowed from mu, which measured -51% characters on test logs): a run
+    of identical consecutive lines shows once, with how many more there were. Only what
+    the model sees; the full output, when long, still goes to disk untouched."""
+    lines = text.split("\n")
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        j = i
+        while j + 1 < len(lines) and lines[j + 1] == lines[i]:
+            j += 1
+        run = j - i + 1
+        if run >= min_run and lines[i].strip():
+            out.extend([lines[i], f"… (the line above repeated {run - 1} more times)"])
+        else:
+            out.extend(lines[i:j + 1])
+        i = j + 1
+    return "\n".join(out)
+
+
 def timeout_of(value) -> int:
     try:
         seconds = int(value)
@@ -101,8 +121,8 @@ async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
         out, err = await proc.communicate()
     full_out = out.decode("utf-8", errors="replace")
     full_err = err.decode("utf-8", errors="replace")
-    stdout, cut_out = clip(full_out)
-    stderr, cut_err = clip(full_err)
+    stdout, cut_out = clip(fold_repeats(full_out))
+    stderr, cut_err = clip(fold_repeats(full_err))
     result = {"ok": proc.returncode == 0 and not timed_out, "exit_code": proc.returncode,
               "stdout": stdout, "stderr": stderr, "cwd": str(cwd), "sandbox": mode}
     if offline:

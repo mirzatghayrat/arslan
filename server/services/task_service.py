@@ -446,6 +446,7 @@ async def run_turn(function, conversation_id: str, user_message: str, emit, *arg
         created = await repo.create(spec, conversation_id, budget_snapshot=budget.snapshot(), privacy={
             "no_learning": ctx.no_learning,
             "cloud_memory_allowed": ctx.cloud_memory_allowed and not ctx.model_is_local,
+            "cloud_memory_default": ctx.cloud_memory_default and not ctx.model_is_local,
             "allow_sensitive": ctx.allow_sensitive,
             "requires_local_model": ctx.model_is_local,
             "driver": checked_driver(_driver),
@@ -483,6 +484,8 @@ async def prepare_resume(task_id, expected_version, conversation_id, ctx, *, ins
         value = await repo.start(task_id, expected_version, explicit_resume=True)
     ctx = replace(ctx, task_id=task_id, no_learning=ctx.no_learning or ceiling.get("no_learning", True),
                   cloud_memory_allowed=ctx.cloud_memory_allowed and ceiling.get("cloud_memory_allowed", False),
+                  # A task never gains on resume what it did not have when created (old tasks: no key = no).
+                  cloud_memory_default=ctx.cloud_memory_default and ceiling.get("cloud_memory_default", False),
                   allow_sensitive=ctx.allow_sensitive and ceiling.get("allow_sensitive", False),
                   explicit_save_digest=None, explicit_save_ref=None, allow_global_save=False)
     progress = Progress.model_validate(saved["progress"]) if saved else Progress()

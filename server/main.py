@@ -196,6 +196,13 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # noqa: BLE001 — retention sweep must never block boot
         logger.warning("run debug retention sweep failed (non-fatal): %s", exc)
 
+    # 0.1.52 S2: keep the judgment ledger bounded (90 days, 20k rows). Best-effort.
+    try:
+        from server.services import judgment
+        await judgment.prune()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("judgment ledger prune failed (non-fatal): %s", exc)
+
     # E1 reaper: re-enqueue judge scoring for runs stuck in 'recorded'/'score_failed'
     # for >10 minutes (process died around the fire-and-forget scoring task). The judge
     # must see every live run or the evolution corpus silently starves. Best-effort.
@@ -457,6 +464,10 @@ def create_app() -> FastAPI:
     app.include_router(runs_api.router, prefix="/api/v1")
     from server.api import desktop as desktop_api
     app.include_router(desktop_api.router, prefix="/api/v1")
+    from server.api import judgments as judgments_api
+    app.include_router(judgments_api.router, prefix="/api/v1")
+    from server.api import lessons as lessons_api
+    app.include_router(lessons_api.router, prefix="/api/v1")
     from server.api import recipes as recipes_api
     app.include_router(recipes_api.router, prefix="/api/v1")
     from server.api import browser as browser_api

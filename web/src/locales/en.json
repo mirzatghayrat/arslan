@@ -261,6 +261,13 @@
     "reconnecting": "Reconnecting..."
   },
   "chat": {
+    "learned": "Learned: {{text}}",
+    "wantsToLearn": "Arslan wants to remember a practice: {{text}}",
+    "learnedUndo": "Undo",
+    "learnedKeep": "Remember",
+    "learnedSkip": "No thanks",
+    "learnedUndone": "Undone",
+    "learnedKept": "Remembered",
     "title": "Chat with {{name}}",
     "placeholder": "Type a message...",
     "send": "Send",
@@ -494,6 +501,10 @@
     "sensitive": "Sensitive"
   },
   "settings": {
+    "labelMemoryInConversations": "Remember me and use it in conversations",
+    "memoryInConversationsDesc": "Arslan remembers what you tell it about yourself and how you work, and uses it with the model you chose, cloud models included. Sensitive things (health, money, where you live) still wait for your OK, and a conversation can turn memory off.",
+    "labelLearnedPractices": "Learned practices take effect",
+    "learnedPracticesDesc": "When you correct Arslan, or it finds a way around something that failed on this Mac, it remembers the practice and uses it next time. You can see and undo each one in Brain. A practice learned after reading web pages or files waits for your OK. Off: every practice waits.",
     "labelTerminalSandbox": "Run commands in a sandbox",
     "terminalSandboxDesc": "Commands can read files and use the network but write only inside the working folder, temp and cache folders, and cannot read your SSH keys, keychain or Arslan's data. Running one outside the sandbox always takes your click.",
     "appIcon": "App icon",

@@ -18,6 +18,8 @@ export interface MemoryWrite {
   sensitive_acknowledged?: boolean;
   topic?: string | null;
   style_reference?: StyleReference | null;
+  /** 0.1.52: membership of the always-in-view sets (global preference / experience only). */
+  core?: "about_you" | "notes" | null;
   valid_from?: string | null;
   review_at?: string | null;
   expires_at?: string | null;
@@ -62,6 +64,8 @@ export interface ConversationContext {
   temporary: boolean;
   cloud_memory_allowed: boolean;
   allow_sensitive: boolean;
+  /** 0.1.52: read-only — normal memory is used in every conversation (Settings › Memory). */
+  memory_by_default?: boolean;
 }
 export interface MemoryProposal {
   id: number;
@@ -117,6 +121,9 @@ export const companionApi = {
     { method: "DELETE" }),
   history: (entryId: string) => request<MemoryRevision[]>(`/memory/entries/${encodeURIComponent(entryId)}/history`),
   proposals: (offset = 0) => request<MemoryProposal[]>(`/memory/proposals?limit=100&offset=${offset}`),
+  /** 0.1.52: facts noticed before memory took effect at once, waiting for the user's choice. */
+  noticedEarlier: () => request<{ count: number }>(`/memory/noticed-earlier`),
+  acceptNoticedEarlier: () => request<{ accepted: number }>(`/memory/noticed-earlier/accept`, { method: "POST" }),
   resolveProposal: (id: number, accept: boolean, sensitive: boolean, cloud: boolean) => request(
     `/memory/proposals/${id}/resolve`, json("POST", { accept, sensitive_acknowledged: sensitive,
       use_policy: cloud ? "cloud_allowed" : "local_only" })),
@@ -127,7 +134,9 @@ export const companionApi = {
   contextMemory: (conversationId: string, receiptId: string, entryId: string) => request<ContextMemoryReview>(
     `/conversations/${encodeURIComponent(conversationId)}/context/receipts/${encodeURIComponent(receiptId)}/memories/${encodeURIComponent(entryId)}`),
   saveContext: (context: ConversationContext, changes: Partial<ConversationContext>) => {
-    const { conversation_id, version, ...settings } = { ...context, ...changes };
+    // memory_by_default is read-only (a global setting); the server refuses unknown fields.
+    const { conversation_id, version, memory_by_default: _readOnly, ...settings } = { ...context, ...changes };
+    void _readOnly;
     return request<ConversationContext>(`/conversations/${encodeURIComponent(conversation_id)}/context`,
       json("PUT", { ...settings, expected_version: version }));
   },

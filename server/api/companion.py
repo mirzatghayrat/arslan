@@ -150,11 +150,19 @@ class ConversationSettings(Contract):
     allow_sensitive: bool = False
 
 
-def _conversation(row, conversation_id):
+def _conversation(row, conversation_id, memory_by_default: bool = False):
     return {"conversation_id": conversation_id, "version": row.version if row else 0,
             "project_id": row.project_id if row else None,
             **{key: bool(getattr(row, key, False)) for key in (
-                "no_memory", "no_learning", "temporary", "cloud_memory_allowed", "allow_sensitive")}}
+                "no_memory", "no_learning", "temporary", "cloud_memory_allowed", "allow_sensitive")},
+            # 0.1.52 (D1): read-only — "Remember me and use it in conversations" is on, so
+            # normal memory is used here without the per-conversation cloud switch.
+            "memory_by_default": memory_by_default}
+
+
+async def _memory_by_default(db) -> bool:
+    from server.services import settings_service
+    return await settings_service.memory_in_conversations(db)
 
 
 @router.get("/conversations/{conversation_id}/context")
@@ -162,7 +170,7 @@ async def conversation_context(conversation_id: str, repo=Depends(_repository, s
     row = await repo.db.get(ConversationContext, conversation_id)
     if row and row.owner_id != USER.owner_id:
         raise HTTPException(404, detail={"code": "conversation_not_found"})
-    return _conversation(row, conversation_id)
+    return _conversation(row, conversation_id, await _memory_by_default(repo.db))
 
 
 @router.get("/conversations/{conversation_id}/context/receipts")
@@ -284,7 +292,7 @@ async def update_conversation_context(conversation_id: str, body: ConversationSe
         await repo.db.refresh(row)
     else:
         row = await repo.db.get(ConversationContext, conversation_id)
-    return _conversation(row, conversation_id)
+    return _conversation(row, conversation_id, await _memory_by_default(repo.db))
 
 
 @router.get("/memory/entries")
@@ -372,6 +380,39 @@ async def memory_proposals(limit: int = Query(200, ge=1, le=500),
     return [{"id": proposal.id, "target_id": entry.id, "target_version": proposal.target_version,
              "candidate": proposal.candidate, "entry": await repo.present(entry),
              "reason": proposal.reason} for proposal, entry in rows]
+
+
+def _noticed_earlier():
+    """Pending proposals for NORMAL facts the extractor noticed before 0.1.52, when
+    every noticed fact waited for review. Listed once for the user (D1 migration);
+    nothing changes until they choose — never a faked human review (0.1.42 rule)."""
+    from sqlalchemy import exists
+    from server.db.companion_models import MemorySource
+    return select(MemoryProposal, MemoryEntry).join(
+        MemoryEntry, MemoryEntry.id == MemoryProposal.target_entry_id,
+    ).where(MemoryProposal.kind == "memory_v2", MemoryProposal.status == "pending",
+            MemoryEntry.owner_id == USER.owner_id,
+            MemoryEntry.status == "proposed", MemoryEntry.sensitivity == "normal",
+            exists().where(MemorySource.entry_id == MemoryEntry.id, MemorySource.source_kind == "extractor"))
+
+
+@router.get("/memory/noticed-earlier")
+async def noticed_earlier(repo=Depends(_repository, scope="function")):
+    rows = (await repo.db.execute(_noticed_earlier().limit(500))).all()
+    return {"count": len(rows)}
+
+
+@router.post("/memory/noticed-earlier/accept")
+async def accept_noticed_earlier(repo=Depends(_repository, scope="function")):
+    """The user's "Use all": each is accepted as the user, usable with the chosen model."""
+    accepted = 0
+    for proposal, _entry in (await repo.db.execute(_noticed_earlier().limit(500))).all():
+        try:
+            await repo.resolve_proposal(proposal.id, accept=True, actor=USER, use_policy="cloud_allowed")
+            accepted += 1
+        except MemoryError:
+            continue        # changed or removed meanwhile: left as it is
+    return {"accepted": accepted}
 
 
 class ProposalDecision(Contract):
