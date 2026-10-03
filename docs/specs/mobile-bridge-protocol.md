@@ -44,6 +44,13 @@ Record type `Envelope`, record name = the envelope id as a lowercase UUID:
 `to`, `from`, `seq`, `kind` and `notify` duplicate signed header fields so CloudKit can index them;
 receivers trust only the signed header inside `sealed`.
 
+Schema (once per container, by the account owner): the profile pins the container to the
+**Production** environment, where record types cannot be created on first write. Create the
+`Envelope` type with the fields above in CloudKit Console → Development (or import
+`spec/mobile-bridge/cloudkit-schema.ckdb` with `xcrun cktool import-schema`), add the indexes
+(`recordName` Queryable; `to`, `notify` Queryable; `createdAt` Queryable + Sortable), then
+**Deploy Schema Changes** to Production. The zone itself is created by the Bridge at run time.
+
 Subscriptions:
 - Mac: zone subscription, silent push; on wake, fetch changes by change token. Fallback poll of zone
   changes every 10 s while a phone is active, else every 60 s (initial values; tune after M1).

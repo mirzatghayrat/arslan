@@ -1,0 +1,164 @@
+// Inbox and outbox over an envelope store (docs/specs/mobile-bridge-protocol.md §2, §4.5, §4.8, §5.3).
+// The store is CloudKit in the app (CloudKitStore) and in-memory in tests; everything here is
+// independent of it: verification, replay window, duplicates, acks, deleting on ack.
+import CryptoKit
+import Foundation
+
+/// One CloudKit `Envelope` record. Only the fields CloudKit indexes are in clear text; the
+/// receiver trusts the signed header inside `sealed`, never these.
+public struct EnvelopeRecord: Equatable {
+    public var id: String, to: String, from: String, seq: Int64, kind: String, notify: Bool
+    public var sealed: Data, asset: Data?, createdAt: Date
+
+    public init(id: String, to: String, from: String, seq: Int64, kind: String, notify: Bool,
+                sealed: Data, asset: Data? = nil, createdAt: Date = Date()) {
+        (self.id, self.to, self.from, self.seq, self.kind, self.notify) = (id.lowercased(), to, from, seq, kind, notify)
+        (self.sealed, self.asset, self.createdAt) = (sealed, asset, createdAt)
+    }
+}
+
+public protocol EnvelopeStore {
+    func save(_ record: EnvelopeRecord) async throws
+    /// New records since `token`, and the token to continue from.
+    func changes(since token: Data?) async throws -> (records: [EnvelopeRecord], token: Data?)
+    func delete(ids: [String]) async throws
+}
+
+public struct Peer {
+    public let deviceID: String
+    public let signing: Curve25519.Signing.PublicKey
+    public let exchange: Curve25519.KeyAgreement.PublicKey
+    public init(deviceID: String, signing: Curve25519.Signing.PublicKey, exchange: Curve25519.KeyAgreement.PublicKey) {
+        (self.deviceID, self.signing, self.exchange) = (deviceID, signing, exchange)
+    }
+}
+
+public struct Received {
+    public let from: String
+    public let type: String
+    public let envelope: [String: Any]
+    public let asset: Data?
+}
+
+/// This device's side of the conversation with its paired peers.
+public final class Mailbox {
+    public let deviceID: String
+    let signing: Curve25519.Signing.PrivateKey
+    let exchange: Curve25519.KeyAgreement.PrivateKey
+    let store: EnvelopeStore
+    var peers: [String: Peer] = [:]
+    var windows: [String: ReplayWindow] = [:]
+    var processed: Set<String> = []                 // envelope ids already acted on
+    var sentAwaitingAck: [String: EnvelopeRecord] = [:]
+    var nextSeq: Int64
+    var token: Data?
+
+    public init(deviceID: String, signing: Curve25519.Signing.PrivateKey, exchange: Curve25519.KeyAgreement.PrivateKey,
+                store: EnvelopeStore, nextSeq: Int64 = 1) {
+        (self.deviceID, self.signing, self.exchange, self.store, self.nextSeq) = (deviceID, signing, exchange, store, nextSeq)
+    }
+
+    public func add(peer: Peer) { peers[peer.deviceID] = peer }
+    public func remove(peer deviceID: String) { peers[deviceID] = nil; windows[deviceID] = nil }
+
+    /// Seal a message to a paired peer and put it in the store. The record is kept until the
+    /// peer's `ack`; a retry re-sends this exact record (§4.5).
+    @discardableResult
+    public func send(type: String, body: [String: Any], to peerID: String, id: String = UUID().uuidString.lowercased(),
+                     now: Date = Date()) async throws -> EnvelopeRecord {
+        guard let peer = peers[peerID] else { throw BridgeError.code("not_paired") }
+        let seq = nextSeq
+        nextSeq += 1
+        let envelope: [String: Any] = ["v": Wire.version, "id": id, "seq": seq, "ts": ISO8601DateFormatter().string(from: now),
+                                       "from": deviceID, "to": peerID, "type": type, "body": body]
+        let plaintext = try JSONSerialization.data(withJSONObject: envelope, options: [.sortedKeys])
+        let notify = Wire.shouldNotify(type: type, body: body)
+        let header = Header(id: id, from: deviceID, to: peerID, seq: seq, kind: Wire.kind(of: type), ephemeral: "", notify: notify)
+        let sealed = try Seal.seal(plaintext: plaintext, type: type, header: header, senderSigning: signing,
+                                   recipientExchange: peer.exchange).packet
+        let json: [String: Any] = ["header": Mailbox.headerJSON(sealed.header), "sealed": sealed.sealed.base64EncodedString(),
+                                   "signature": sealed.signature.base64EncodedString()]
+        let data = try JSONSerialization.data(withJSONObject: json)
+        guard data.count <= Wire.maxSealedBytes else { throw BridgeError.code("too_large") }
+        let record = EnvelopeRecord(id: id, to: peerID, from: deviceID, seq: seq, kind: sealed.header.kind,
+                                    notify: notify, sealed: data, createdAt: now)
+        try await store.save(record)
+        if type != "ack" { sentAwaitingAck[record.id] = record }   // an ack is not acknowledged
+        return record
+    }
+
+    /// Fetch, verify and open what arrived; ack it; drop what the peer acknowledged.
+    /// Returns the messages to act on (never a duplicate, never one that failed checks).
+    public func receive() async throws -> [Received] {
+        let (records, next) = try await store.changes(since: token)
+        var out: [Received] = []
+        var acks: [String: [String]] = [:]
+        for record in records where record.to == deviceID {
+            guard let peer = peers[record.from],
+                  let json = (try? JSONSerialization.jsonObject(with: record.sealed)) as? [String: Any],
+                  let packet = try? Packet(json: json),
+                  let opened = try? Seal.open(packet, recipientID: deviceID, recipientExchange: exchange,
+                                              senderSigning: peer.signing, asset: record.asset) else { continue }
+            let id = packet.header.id.lowercased()
+            let type = opened.envelope["type"] as? String ?? ""
+            if processed.contains(id) {                    // a duplicate: ack again, act never
+                if type != "ack" { acks[record.from, default: []].append(id) }
+                continue
+            }
+            var window = windows[record.from] ?? ReplayWindow()
+            guard window.accept(packet.header.seq) else { continue }
+            windows[record.from] = window
+            processed.insert(id)
+            if type == "ack" {
+                let ids = (opened.envelope["body"] as? [String: Any])?["ids"] as? [String] ?? []
+                let mine = ids.map { $0.lowercased() }.filter { sentAwaitingAck[$0] != nil }
+                if !mine.isEmpty {
+                    try await store.delete(ids: mine)
+                    mine.forEach { sentAwaitingAck[$0] = nil }
+                }
+                continue
+            }
+            acks[record.from, default: []].append(id)
+            out.append(Received(from: record.from, type: type, envelope: opened.envelope, asset: opened.asset))
+        }
+        token = next
+        for (peer, ids) in acks { try await send(type: "ack", body: ["ids": ids], to: peer) }
+        return out
+    }
+
+    /// Records still waiting for an ack (to re-send, unchanged, with backoff).
+    public var unacknowledged: [EnvelopeRecord] { Array(sentAwaitingAck.values) }
+
+    static func headerJSON(_ h: Header) -> [String: Any] {
+        var out: [String: Any] = ["v": h.v, "id": h.id, "from": h.from, "to": h.to, "seq": h.seq, "kind": h.kind,
+                                  "ephemeral": h.ephemeral, "notify": h.notify]
+        if let p = h.pairingID { out["pairing_id"] = p }
+        if let a = h.assetHash { out["asset_hash"] = a }
+        if let s = h.signingKey { out["signing_key"] = s }
+        return out
+    }
+}
+
+/// In-memory store: tests, and a stand-in until CloudKit is configured.
+public final class MemoryStore: EnvelopeStore {
+    public private(set) var records: [String: EnvelopeRecord] = [:]
+    private var log: [String] = []                   // record ids in arrival order
+
+    public init() {}
+
+    /// Like CloudKit's change feed, a re-saved record shows up again as a change.
+    public func save(_ record: EnvelopeRecord) async throws {
+        log.append(record.id)
+        records[record.id] = record
+    }
+
+    public func changes(since token: Data?) async throws -> (records: [EnvelopeRecord], token: Data?) {
+        let start = token.flatMap { Int(String(decoding: $0, as: UTF8.self)) } ?? 0
+        var seen = Set<String>()
+        let fresh = log[min(start, log.count)...].reversed().filter { seen.insert($0).inserted }.reversed()
+            .compactMap { records[$0] }
+        return (fresh, Data(String(log.count).utf8))
+    }
+
+    public func delete(ids: [String]) async throws { ids.forEach { records[$0] = nil } }
+}

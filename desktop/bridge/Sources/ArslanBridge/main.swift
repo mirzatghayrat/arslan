@@ -7,9 +7,12 @@
 //
 //   ArslanBridge --version    prints the version and protocol, exits 0
 //   ArslanBridge --selftest   checks the CryptoKit primitives the protocol uses, prints JSON
+//   ArslanBridge --cloudkit-probe   one live round trip in the private zone (needs the
+//                                   signed app, the schema deployed, an iCloud account)
 //   ArslanBridge              waits until its stdin closes (Arslan quit), then exits
 //
 // The real Bridge will read the backend token from stdin (never env or a file).
+import BridgeCore
 import CryptoKit
 import Foundation
 
@@ -47,6 +50,24 @@ if arguments.contains("--selftest") {
     let ok = selftest()
     print("{\"bridge_selftest\": \"\(ok ? "passed" : "failed")\", \"protocol\": \(protocolVersion), \"version\": \"\(bundleVersion())\"}")
     exit(ok ? 0 : 1)
+}
+if arguments.contains("--cloudkit-probe") {
+    // Zone, one record to ourselves, read it back through the change feed, delete it.
+    let store = CloudKitStore(containerID: "iCloud.dev.aralem.arslan")
+    let id = UUID().uuidString.lowercased()
+    do {
+        try await store.ensureZone()
+        let start = try await store.changes(since: nil).token
+        try await store.save(EnvelopeRecord(id: id, to: "probe", from: "probe", seq: 1, kind: "control",
+                                            notify: false, sealed: Data("probe".utf8)))
+        let seen = try await store.changes(since: start).records.contains { $0.id == id }
+        try await store.delete(ids: [id])
+        print("{\"cloudkit_probe\": \"\(seen ? "passed" : "not_seen")\"}")
+        exit(seen ? 0 : 1)
+    } catch {
+        print("{\"cloudkit_probe\": \"failed\", \"error\": \"\(String(describing: error).prefix(300))\"}")
+        exit(2)
+    }
 }
 // Lifecycle: Arslan holds our stdin open; when Arslan quits, stdin closes and so do we.
 while let _ = readLine(strippingNewline: true) {}
