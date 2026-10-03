@@ -1,0 +1,38 @@
+{
+  "contract": "arslan-bridge-v1",
+  "name": "pair-request",
+  "note": "iOS proposal vector, unchanged; the pairing key is the HKDF salt",
+  "sender": {
+    "deviceID": "iphone-vector",
+    "signingKey": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+    "exchangeKey": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8=",
+    "storageKey": "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqo="
+  },
+  "recipient": {
+    "deviceID": "mac-vector",
+    "signingKey": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8=",
+    "exchangeKey": "YGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn8=",
+    "storageKey": "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqo="
+  },
+  "ephemeral_private": "oKGio6SlpqeoqaqrrK2ur7CxsrO0tba3uLm6u7y9vr8=",
+  "nonce": "AAECAwQFBgcICQoL",
+  "psk": "09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09M=",
+  "plaintext": "eyJib2R5Ijp7ImRldmljZV9uYW1lIjoiVmVjdG9yIGlQaG9uZSIsImV4Y2hhbmdlX3B1YmxpY19rZXkiOiJOWUJ5MWpaWWdOR3U2akthMzVFaE9EaFI3U0dpamp0MTZXWFEwczBXWWxRPSIsInNpZ25pbmdfcHVibGljX2tleSI6IkE2RUh2L1BPRUw0ZGNOMFk1MHZBbVdmazFqQ2JwUTFmSGR5R1pCSlZNYmc9In0sImZyb20iOiJpcGhvbmUtdmVjdG9yIiwiaWQiOiJBQUFBQUFBQS1BQUFBLTRBQUEtOEFBQS1BQUFBQUFBQUFBQUEiLCJzZXEiOjQyLCJ0byI6Im1hYy12ZWN0b3IiLCJ0cyI6IjIwMjYtMTAtMDNUMDA6MDA6MDBaIiwidHlwZSI6InBhaXIucmVxdWVzdCIsInYiOjF9",
+  "header_bytes": "AAAAEGFyc2xhbi1icmlkZ2UvdjEAAAABMQAAACRhYWFhYWFhYS1hYWFhLTRhYWEtOGFhYS1hYWFhYWFhYWFhYWEAAAANaXBob25lLXZlY3RvcgAAAAptYWMtdmVjdG9yAAAAAjQyAAAAB2NvbnRyb2wAAAAsWUZweVhTcEszKzZ4b3A0WDdkWWh3YmRaUHVqTnZFU3NiRXEyNHZnRjBqdz0AAAAkY2NjY2NjY2MtY2NjYy00Y2NjLThjY2MtY2NjY2NjY2NjY2NjAAAAAAAAACxBNkVIdi9QT0VMNGRjTjBZNTB2QW1XZmsxakNicFExZkhkeUdaQkpWTWJnPQAAAAEw",
+  "packet": {
+    "header": {
+      "v": 1,
+      "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+      "from": "iphone-vector",
+      "to": "mac-vector",
+      "seq": 42,
+      "kind": "control",
+      "ephemeral": "YFpyXSpK3+6xop4X7dYhwbdZPujNvESsbEq24vgF0jw=",
+      "notify": false,
+      "pairing_id": "CCCCCCCC-CCCC-4CCC-8CCC-CCCCCCCCCCCC",
+      "signing_key": "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg="
+    },
+    "sealed": "AAECAwQFBgcICQoLO44BSO4Jsfz5n8e6Nw8J42/oW2txzJOTr9emJTqXVYUSeP00C8/KrURjq75BFsELHYBKIq2Nb+8sD/xkIdT40kUpdBkwspHe5f0Ui/S5yN1Ut4g9QVyAJirPQ10ANWl2NwUKxvQulYki6rdniFNQe5VVj1Q7Kc+T5IWzZqheQi7ei1QyvbS2/rLBe0Z7DbZH4WrCmtS2oaifFclpFGaEny8WPVhaSD7lK13A8VzNS4/YVH9R8Q3j5/aQTBSvPcEpHkVA0GneJ9IauHAcJA/K2LM7SMebflFSZzYZpU2Dt+0yZvjAQ27DF/R3UI68IHjnDz3ymdmEiQiw1DMpxGcb7siuefoeegfr+0Qw7wym32V+D9iHyW1ApP9bIrkFTv4M/wb8M7lnPIg9qADrtrNN7S6D8LT6SAPMxhl6fID5VAUoYfQsnzjQW/E1Rar3EYc2uvPDNHBiSg==",
+    "signature": "FiGt5sIQ+y/rwe8l2PUShwiXSnD11wAbtivMoRMf4I8jHI/JcC3rZ5XoERtEd3ZBW71vlUfo68yTsybY/Q49Dg=="
+  }
+}

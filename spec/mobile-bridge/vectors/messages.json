@@ -1,0 +1,500 @@
+{
+  "contract": "arslan-bridge-v1",
+  "examples": [
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "iphone-vector",
+        "to": "mac-vector",
+        "type": "pair.request",
+        "body": {
+          "device_name": "Vector iPhone",
+          "signing_public_key": "…",
+          "exchange_public_key": "…"
+        }
+      },
+      "kind": "control",
+      "notify": false
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "mac-vector",
+        "to": "iphone-vector",
+        "type": "pair.accept",
+        "body": {
+          "phone_device_id": "iphone-vector",
+          "mac_device_id": "mac-vector",
+          "device_name": "Vector Mac",
+          "signing_public_key": "…",
+          "exchange_public_key": "…"
+        }
+      },
+      "kind": "control",
+      "notify": false
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "mac-vector",
+        "to": "iphone-vector",
+        "type": "pair.reject",
+        "body": {
+          "reason": "declined_on_mac"
+        }
+      },
+      "kind": "control",
+      "notify": false
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "iphone-vector",
+        "to": "mac-vector",
+        "type": "hello",
+        "body": {
+          "app_version": "0.1.0",
+          "protocol_version": 1,
+          "capabilities": [
+            "cloudkit",
+            "files"
+          ]
+        }
+      },
+      "kind": "control",
+      "notify": false
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "mac-vector",
+        "to": "iphone-vector",
+        "type": "ack",
+        "body": {
+          "ids": [
+            "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+          ]
+        }
+      },
+      "kind": "ack",
+      "notify": false
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "mac-vector",
+        "to": "iphone-vector",
+        "type": "status.snapshot",
+        "body": {
+          "presence": "online",
+          "mascot": "working",
+          "device_name": "Vector Mac",
+          "last_seen": "2026-10-03T00:00:00Z",
+          "jobs": [
+            {
+              "id": "job-1",
+              "title": "Tidy downloads",
+              "current_step": "Sorting",
+              "completed": 1,
+              "total": 3
+            }
+          ],
+          "waiting_approvals": 0,
+          "high_risk_mac_only": false
+        }
+      },
+      "kind": "msg",
+      "notify": false
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "iphone-vector",
+        "to": "mac-vector",
+        "type": "conversations.list",
+        "body": {
+          "limit": 20
+        }
+      },
+      "kind": "msg",
+      "notify": false
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "mac-vector",
+        "to": "iphone-vector",
+        "type": "conversations.result",
+        "body": {
+          "conversations": [
+            {
+              "id": "c1",
+              "title": "Trip",
+              "updated_at": "2026-10-03T00:00:00Z"
+            }
+          ]
+        }
+      },
+      "kind": "msg",
+      "notify": false
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "iphone-vector",
+        "to": "mac-vector",
+        "type": "chat.history",
+        "body": {
+          "conversation_id": "c1",
+          "limit": 50
+        }
+      },
+      "kind": "msg",
+      "notify": false
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "mac-vector",
+        "to": "iphone-vector",
+        "type": "chat.history.result",
+        "body": {
+          "conversation_id": "c1",
+          "messages": [
+            {
+              "id": "m1",
+              "role": "user",
+              "text": "Hi",
+              "ts": "2026-10-03T00:00:00Z",
+              "attachments": []
+            }
+          ]
+        }
+      },
+      "kind": "msg",
+      "notify": false
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "iphone-vector",
+        "to": "mac-vector",
+        "type": "chat.send",
+        "body": {
+          "text": "Find flights",
+          "attachments": [],
+          "client_msg_id": "BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB"
+        }
+      },
+      "kind": "msg",
+      "notify": false
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "mac-vector",
+        "to": "iphone-vector",
+        "type": "chat.event",
+        "body": {
+          "conversation_id": "pocket",
+          "kind": "progress",
+          "message_id": "reply-1",
+          "text": "Searching flights",
+          "final": false
+        }
+      },
+      "kind": "msg",
+      "notify": false
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "mac-vector",
+        "to": "iphone-vector",
+        "type": "chat.event",
+        "body": {
+          "conversation_id": "pocket",
+          "kind": "message",
+          "message_id": "reply-1",
+          "text": "Three options…",
+          "final": true
+        }
+      },
+      "kind": "msg",
+      "notify": true
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "mac-vector",
+        "to": "iphone-vector",
+        "type": "chat.event",
+        "body": {
+          "conversation_id": "pocket",
+          "kind": "error",
+          "message_id": "reply-1",
+          "text": "The model is unreachable",
+          "final": true
+        }
+      },
+      "kind": "msg",
+      "notify": true
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "mac-vector",
+        "to": "iphone-vector",
+        "type": "job.event",
+        "body": {
+          "id": "job-1",
+          "conversation_id": "pocket",
+          "state": "running",
+          "title": "Tidy",
+          "current_step": "Sorting",
+          "completed": 1,
+          "total": 3,
+          "plan": [],
+          "files": []
+        }
+      },
+      "kind": "msg",
+      "notify": false
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "mac-vector",
+        "to": "iphone-vector",
+        "type": "job.event",
+        "body": {
+          "id": "job-1",
+          "conversation_id": "pocket",
+          "state": "partial",
+          "title": "Tidy",
+          "current_step": "",
+          "completed": 2,
+          "total": 3,
+          "plan": [],
+          "summary": "2 of 3",
+          "files": []
+        }
+      },
+      "kind": "msg",
+      "notify": true
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "mac-vector",
+        "to": "iphone-vector",
+        "type": "approval.request",
+        "body": {
+          "approval_id": "appr-1",
+          "action": "Delete 3 files",
+          "target": "~/Arslan/old",
+          "risk": "delete",
+          "task_id": "task-1",
+          "task_title": "Tidy",
+          "expires_at": "2026-10-03T00:05:00Z"
+        }
+      },
+      "kind": "msg",
+      "notify": true
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "iphone-vector",
+        "to": "mac-vector",
+        "type": "approval.answer",
+        "body": {
+          "approval_id": "appr-1",
+          "decision": "approve",
+          "auth": "faceid",
+          "ts": "2026-10-03T00:00:00Z"
+        }
+      },
+      "kind": "msg",
+      "notify": false
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "iphone-vector",
+        "to": "mac-vector",
+        "type": "approval.answer",
+        "body": {
+          "approval_id": "appr-1",
+          "decision": "deny",
+          "auth": "none",
+          "ts": "2026-10-03T00:00:00Z"
+        }
+      },
+      "kind": "msg",
+      "notify": false
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "mac-vector",
+        "to": "iphone-vector",
+        "type": "approval.result",
+        "body": {
+          "approval_id": "appr-1",
+          "outcome": "done"
+        }
+      },
+      "kind": "msg",
+      "notify": false
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "mac-vector",
+        "to": "iphone-vector",
+        "type": "approval.result",
+        "body": {
+          "approval_id": "appr-1",
+          "outcome": "expired",
+          "detail": "The card timed out on the Mac"
+        }
+      },
+      "kind": "msg",
+      "notify": true
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "mac-vector",
+        "to": "iphone-vector",
+        "type": "file.offer",
+        "body": {
+          "id": "f1",
+          "name": "jobs.csv",
+          "size": 2048,
+          "mime_type": "text/csv",
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      },
+      "kind": "msg",
+      "notify": false
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "iphone-vector",
+        "to": "mac-vector",
+        "type": "file.get",
+        "body": {
+          "file_id": "f1"
+        }
+      },
+      "kind": "msg",
+      "notify": false
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "mac-vector",
+        "to": "iphone-vector",
+        "type": "device.revoked",
+        "body": {
+          "reason": "removed_on_mac"
+        }
+      },
+      "kind": "control",
+      "notify": true
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "mac-vector",
+        "to": "iphone-vector",
+        "type": "error",
+        "body": {
+          "code": "approval_expired",
+          "message": "That card expired",
+          "related_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        }
+      },
+      "kind": "msg",
+      "notify": true
+    }
+  ]
+}

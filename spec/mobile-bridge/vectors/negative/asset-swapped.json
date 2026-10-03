@@ -1,0 +1,23 @@
+{
+  "contract": "arslan-bridge-v1",
+  "name": "asset-swapped",
+  "base": "file-asset",
+  "note": "the encrypted file does not match the hash in the header",
+  "packet": {
+    "header": {
+      "v": 1,
+      "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+      "from": "mac-vector",
+      "to": "iphone-vector",
+      "seq": 42,
+      "kind": "msg",
+      "ephemeral": "YFpyXSpK3+6xop4X7dYhwbdZPujNvESsbEq24vgF0jw=",
+      "notify": false,
+      "asset_hash": "jUHE+BWWLibiLGLvBzIVQEyBqxYGZknftfnb2xxCO6A="
+    },
+    "sealed": "AAECAwQFBgcICQoLwC23cglezUrrnzjtKfZdGv/ldWKKhqEV9eHlaW1wrwNleDa1vtwTESZONNdAq/znQC3ExmRIS8VuVd670IYUjVLg/t/azmC3QoOL+Lh2l4DTueXKj7k4Fb2oa0PsK5ialhXREYguvrhI2cyzshGzqNH5zpZzewXeWLyDIzpzYHGBAXb1QTGJ8gkV2kDiFz2Y61AUmwarC4KjJjXBt4lz8qbQCPdIh4atoUyJJnxPBuoSImLKJlcNuj4m/q+6uVx9bSf8fGAq4NGDNzpLHM5iv2+7O/NA1dP98+NjmjSb2rryMjwnAkxYVGEcDBoN7m7tvlF6E4hfXe850lzBygCvUm14t8MvkZ7IeOBiIG9DIjk8655H3dV027I3QdsQrLzp9hWR/Z1m83jxv27Vkxv1FEJ+atxg3CPLqYueUq/iiz4bsPWj",
+    "signature": "oaKbUGWfmXU5Kf1U3M/mxLuqbyvEzyrL+iJmEcfVzU/x5KJYzlVikSj6er9O8qTTq86I87fVRZOXJwOJ4cnoAQ=="
+  },
+  "expect_error": "asset_mismatch",
+  "asset": "DA0ODxAREhMUFRYXvpUtx9/zZD0JtaCK8MDZO7/DGOMG4vi9W+PZjljFyE15+5ChBxUsYUKJE5s5XO/Bc3sflAA="
+}
