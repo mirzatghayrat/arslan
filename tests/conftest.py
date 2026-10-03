@@ -10,6 +10,8 @@ import os
 # opt back in by pointing ARSLAN_SECRET_KEY_FILE at a tmp path.
 os.environ["ARSLAN_SECRET_KEY_FILE"] = ""
 
+import shutil
+
 import pytest
 
 from arslan.models import (
@@ -19,6 +21,14 @@ from arslan.models import (
     SpawnRequirements,
     ToolSpec,
 )
+from tests import real_data_dir_guard
+
+# No test may write into the user's real data dir (tests/real_data_dir_guard.py).
+# Pinned here for the same reason as the secret file above: before any server.*
+# import builds the settings singleton. The snapshot is taken now too, so writes
+# made while test modules are collected are caught as well.
+_SUITE_DATA_DIR = real_data_dir_guard.pin_suite_data_dir()
+_REAL_DATA_DIR_AT_START = real_data_dir_guard.snapshot()
 
 
 @pytest.fixture
@@ -83,3 +93,24 @@ def _no_judge_model_calls():
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(judgment, "_adapter", disabled)
         yield
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _real_data_dir_untouched():
+    """Fail the run if the user's real data dir gained an entry while it ran.
+
+    Reports and never deletes: what is there is the user's, and a false positive (the
+    running app creating a new top-level folder mid-run) must not cost them data."""
+    yield
+    shutil.rmtree(_SUITE_DATA_DIR, ignore_errors=True)
+    leaked = real_data_dir_guard.created(_REAL_DATA_DIR_AT_START, real_data_dir_guard.snapshot())
+    if leaked:
+        root = real_data_dir_guard.REAL_DATA_DIR
+        pytest.fail(
+            f"this test run created {len(leaked)} entr{'y' if len(leaked) == 1 else 'ies'} "
+            f"in the real Arslan data dir {root}:\n"
+            + "\n".join(f"  {root / rel}" for rel in leaked)
+            + "\nA test resolved the platform data dir instead of a temp one. Run with "
+            "HOME pointed at a temp dir to reproduce safely. Nothing was removed.",
+            pytrace=False,
+        )
