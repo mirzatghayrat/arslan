@@ -23,19 +23,20 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
-def _reload_config_to_baseline():
+def _reload_config_to_baseline(monkeypatch):
     """Restore ``server.config`` to the ambient env after each test.
 
     These tests mutate ARSLAN_DATA_DIR / sys.platform and reload the config
-    module (which recomputes the ``settings`` singleton). ``monkeypatch`` restores
-    the ambient env + platform when the test body returns; because this autouse
-    fixture is set up first it finalizes LAST — i.e. after monkeypatch has already
-    undone its patches — so the reload here rebuilds config from the clean
-    baseline. Without it the platform-defaulted ``data_dir`` (possibly a foreign
-    OS path) would pollute later tests that read ``settings.data_dir`` (crypto
-    salt, token bootstrap).
+    module (which recomputes the ``settings`` singleton). The env + platform are
+    restored HERE, before the reload, and not left to monkeypatch's own teardown:
+    an autouse fixture in tests/server/conftest.py instantiates ``monkeypatch``
+    before this one, so monkeypatch finalizes AFTER it. Relying on that order
+    (as this fixture used to) rebuilt the "baseline" from the test's own env and
+    left ``settings`` on the platform dir; test_dispatcher_override then mkdir'd
+    ``spawns/S/.evolution`` under ``~/Library/Application Support/Arslan``.
     """
     yield
+    monkeypatch.undo()
     import server.config as config
 
     importlib.reload(config)
@@ -144,16 +145,21 @@ def test_boot_logs_resolved_absolute_db_path(monkeypatch, caplog, tmp_path):
     assert str((target / "arslan.db").resolve()) in line
 
 
-def test_default_data_dir_import_has_no_filesystem_side_effect(monkeypatch):
+def test_default_data_dir_import_has_no_filesystem_side_effect(monkeypatch, tmp_path):
     """Reloading config must NOT create the platform dir (surprising import I/O
-    that would litter ~/Library during tests); the app creates it at boot."""
-    config = _reload(monkeypatch, platform="darwin")
-    # The resolved dir may or may not already exist on this machine, but the act of
-    # reloading config must not itself have created a brand-new tree. We assert the
-    # weaker, portable invariant: data_dir resolution is pure (no mkdir happened as
-    # part of load_settings) by checking a fresh unique path stays absent.
-    monkeypatch.setenv("ARSLAN_DATA_DIR", str(Path(config.settings.data_dir) / "does_not_exist_probe"))
-    import server.config as cfg
+    that would litter ~/Library during tests); the app creates it at boot.
 
-    reloaded = importlib.reload(cfg)
-    assert not Path(reloaded.settings.data_dir).exists()
+    HOME is a temp dir, so the platform default is a path that cannot exist yet and
+    the check is exact for both branches. This used to probe
+    ``<real platform dir>/does_not_exist_probe`` — the user's own data dir as the
+    fixture — and failed on 2026-10-03 because another test's leak had created it."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    config = _reload(monkeypatch, platform="darwin")
+    expected = (tmp_path / "Library" / "Application Support" / "Arslan").resolve()
+    assert config.settings.data_dir == expected  # the unset branch, under the temp HOME
+    assert not expected.exists()
+
+    probe = tmp_path / "set_but_absent"
+    config = _reload(monkeypatch, platform="darwin", ARSLAN_DATA_DIR=str(probe))
+    assert config.settings.data_dir == probe.resolve()
+    assert list(tmp_path.iterdir()) == []

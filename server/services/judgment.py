@@ -9,9 +9,10 @@ point earns its way from `shadow` (record only) to `active` on data, and a
 different judge (a local model) can be compared offline against the same rows
 (scripts/judgment_replay.py).
 
-Never in the way: a 2 s timeout, any error, or the daily token cap means "no
+Never in the way: a timeout (2 s for a card someone may be waiting on, 15 s for
+the decisions made after the answer), any error, or the daily token cap means "no
 answer" (None) and the caller falls back — approvals ask as they do today,
-memory skips. The question and the state go to the same model provider the
+memory skips. Thinking is off where the endpoint allows it (critique_request). The question and the state go to the same model provider the
 user already chose, with the same privacy.
 """
 from __future__ import annotations
@@ -28,7 +29,10 @@ from server.db import session as db_session
 
 logger = logging.getLogger(__name__)
 
-TIMEOUT_S = 2.0
+TIMEOUT_S = 2.0                    # a decision someone may be waiting on (a card)
+# Decisions made after the answer (memory, lessons) wait on nobody; 2 s there meant a
+# thinking model almost never answered and nothing was ever learned (0.1.52 acceptance).
+AFTER_TURN_TIMEOUT_S = 15.0
 DAILY_TOKEN_CAP = 200_000          # ~$0.05/day at DeepSeek flash prices; above it, no judging
 KEEP_DAYS = 90
 KEEP_ROWS = 20_000
@@ -48,6 +52,7 @@ class DecisionPoint:
     fields: tuple[str, ...]          # the only state keys sent; anything else is dropped
     mode: str                        # off | shadow | active
     threshold: float = 0.9
+    after_turn: bool = False         # runs after the answer: the longer timeout applies
 
 
 REGISTRY: dict[str, DecisionPoint] = {p.name: p for p in (
@@ -61,21 +66,21 @@ REGISTRY: dict[str, DecisionPoint] = {p.name: p for p in (
     DecisionPoint("memory.worth",
                   "Is this worth remembering for future conversations with this user (a stable preference, "
                   "a fix that will matter again, a quirk of this machine), rather than a one-off?",
-                  ("kind", "candidate", "evidence"), "active", 0.7),
+                  ("kind", "candidate", "evidence"), "active", 0.7, after_turn=True),
     DecisionPoint("memory.merge",
                   "Does the candidate say the same thing as the existing entry (a duplicate or a more precise "
                   "version of it)?",
-                  ("candidate", "existing"), "active", 0.8),
+                  ("candidate", "existing"), "active", 0.8, after_turn=True),
     DecisionPoint("memory.conflict",
                   "Does the candidate advise the opposite of the existing entry for the same situation?",
-                  ("candidate", "existing"), "active", 0.8),
+                  ("candidate", "existing"), "active", 0.8, after_turn=True),
     DecisionPoint("memory.applied",
                   "Did the assistant act on this lesson in the steps shown?",
-                  ("lesson", "steps"), "active", 0.7),
+                  ("lesson", "steps"), "active", 0.7, after_turn=True),
     # Registered, off (C2.3): gets a shadow trial on the bench later.
     DecisionPoint("turn.completion",
                   "Was the user's request actually completed, with the result verified, in the steps shown?",
-                  ("request", "steps", "answer"), "off"),
+                  ("request", "steps", "answer"), "off", after_turn=True),
 )}
 
 
@@ -158,9 +163,14 @@ async def judge(point_name: str, state: dict, *, ref: str | None = None,
             adapter = await _adapter()
             model = getattr(adapter, "model", None)
             user = f"Question: {point.question}\n\nFacts (JSON):\n{json.dumps(small, ensure_ascii=False)}"
-            async with usage_ledger.scope("judgment", conversation_id):
-                response = await asyncio.wait_for(adapter.chat(system=build_cached_system(_SYSTEM, ""), user=user),
-                                                  timeout=TIMEOUT_S)
+            from arslan.llm.request_policy import critique_request
+            # A short structured judgment: thinking off where the endpoint allows it
+            # (official DeepSeek), temperature 0, bounded output — as research review.
+            with critique_request():
+                async with usage_ledger.scope("judgment", conversation_id):
+                    response = await asyncio.wait_for(
+                        adapter.chat(system=build_cached_system(_SYSTEM, ""), user=user),
+                        timeout=AFTER_TURN_TIMEOUT_S if point.after_turn else TIMEOUT_S)
             parsed = parse(response.content)
             if parsed is None:
                 error = "unparsable"

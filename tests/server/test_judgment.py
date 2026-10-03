@@ -61,9 +61,32 @@ async def test_an_unusable_answer_is_no_answer(execution_db, judge_with, content
 
 async def test_a_slow_judge_times_out_and_the_caller_falls_back(execution_db, judge_with, monkeypatch):
     monkeypatch.setattr(judgment, "TIMEOUT_S", 0.05)
+    monkeypatch.setattr(judgment, "AFTER_TURN_TIMEOUT_S", 0.05)
     judge_with(_Adapter(delay=0.5))
     assert await judgment.judge("memory.worth", {"candidate": "x"}) is None
     assert (await _rows(execution_db))[0].error == "timeout"
+
+
+async def test_decisions_after_the_answer_may_take_longer_than_a_card(execution_db, judge_with, monkeypatch):
+    monkeypatch.setattr(judgment, "TIMEOUT_S", 0.05)
+    monkeypatch.setattr(judgment, "AFTER_TURN_TIMEOUT_S", 2.0)
+    judge_with(_Adapter(delay=0.2))
+    assert await judgment.judge("tool.approval", {"command": "rm a"}) is None          # a card: short
+    for point in ("memory.worth", "memory.merge", "memory.conflict", "memory.applied"):
+        assert await judgment.judge(point, {"candidate": "x", "lesson": "y"}) is not None, point
+
+
+async def test_the_judge_asks_with_thinking_off(execution_db, judge_with):
+    from arslan.llm import request_policy
+    seen = []
+
+    class Recording(_Adapter):
+        async def chat(self, *, system, user):
+            seen.append(request_policy.bounded_critique.get())
+            return await super().chat(system=system, user=user)
+    judge_with(Recording())
+    await judgment.judge("memory.worth", {"candidate": "x"})
+    assert seen == [True] and request_policy.bounded_critique.get() is False
 
 
 async def test_the_daily_cap_stops_judging(execution_db, judge_with):

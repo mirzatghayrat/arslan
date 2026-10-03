@@ -38,9 +38,11 @@ _SYSTEM = (
     'and nothing else: {"new_facts": [{"content": "<one fact>", "sensitive": <bool>}], '
     '"practices": [{"situation": "<when it applies>", "advice": "<what to do>", "avoid": <bool>}]} — '
     "both usually empty lists. Mark sensitive=true for health, money, relationships, identity "
-    "numbers, exact location. A practice is the user's latest message correcting HOW the assistant "
-    "should do a kind of task next time (\"don't use X for this, use Y\"); avoid=true when the advice "
-    "is what not to do. Not a preference about the user, not a one-off instruction for this task. "
+    "numbers, exact location. How the user wants answers to look (length, tone, language, format, "
+    "conclusion first) is a FACT about the user, never a practice. A practice is the user's latest "
+    "message correcting HOW the assistant should carry out a kind of work next time — which tool, "
+    "method or steps (\"for reminders don't use AppleScript, use EventKit\"); avoid=true when the "
+    "advice is what not to do. Not a one-off instruction for this task. "
     "Write each fact and practice in the same language as the user's own messages "
     "(事实条目必须使用用户消息所用的语言书写); never translate it."
 )

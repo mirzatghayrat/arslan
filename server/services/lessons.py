@@ -53,7 +53,7 @@ _NOT_A_ROUTE = {"update_plan", "memory_note", "remember", "recall", "conversatio
 _QUIRK = re.compile(
     r"operation not permitted|not permitted|not authori[sz]ed|permission denied|command not found|"
     r"no such file or directory|not allowed|assistive access|-1743|-1728|errAEEventNotPermitted|"
-    r"xcrun: error|is not installed|not installed", re.I)
+    r"xcrun: error|is not installed|not installed|privilege violation|-10004", re.I)
 
 _DETOUR_SYSTEM = (
     "You turn one detour in an assistant's work into a short practice for next time. You get what failed "
@@ -119,7 +119,11 @@ def _brief(item: dict) -> str:
 
 
 def _error(result: dict) -> str:
-    return " ".join(str(result.get("error") or result.get("stderr") or result.get("code") or "").split())[:300]
+    """What went wrong, from the error AND stderr: a command's error is often just
+    "exit code 1" while the reason ("privilege violation (-10004)") is in stderr."""
+    parts = [str(result.get(k) or "") for k in ("error", "stderr")]
+    text = " ".join(p for p in parts if p) or str(result.get("code") or "")
+    return " ".join(text.split())[-300:]
 
 
 def detours(trace: list[dict]) -> list[dict]:
@@ -367,11 +371,18 @@ _background: set[asyncio.Task] = set()
 
 
 def later(coro) -> None:
-    """Run off the reply path; keep a reference so the task is not collected."""
+    """Run off the reply path, detached from the finished turn: its own budget and no
+    turn checkpoint (the turn's attempt is closed, and a model call through it is
+    refused as `task_attempt_stale` — found by the 0.1.52 acceptance run), but the
+    turn's memory permissions. Keeps a reference so the task is not collected."""
+    from server.services import personal_context, task_service
     try:
-        task = asyncio.get_running_loop().create_task(coro)
+        loop = asyncio.get_running_loop()
     except RuntimeError:
         coro.close()
         return
+    context = task_service.detached_context()
+    context.run(personal_context._current.set, personal_context.current())
+    task = loop.create_task(coro, context=context)
     _background.add(task)
     task.add_done_callback(_background.discard)
