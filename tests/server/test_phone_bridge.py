@@ -117,3 +117,13 @@ def test_the_control_socket_requires_the_token(tmp_path, monkeypatch, portal):
         ws.send_json({"type": "bridge.hello", "device_id": "mac-ws", "version": "t", "protocol": 1})
         ws.send_json({"type": "devices", "items": []})
     assert phone_bridge.hub.connected is False                    # detached on close
+
+
+async def test_the_bridge_runs_only_when_the_user_turns_it_on(client):
+    assert (await client.get("/api/v1/settings")).json()["phone_bridge_enabled"] is False
+    assert (await client.get("/api/v1/desktop/status")).json()["phone_bridge"] is False
+    r = await client.put("/api/v1/settings", json={"phone_bridge_enabled": True})
+    assert r.status_code == 200
+    assert (await client.get("/api/v1/desktop/status")).json()["phone_bridge"] is True
+    await client.put("/api/v1/settings", json={"phone_bridge_enabled": False})
+    assert (await client.get("/api/v1/desktop/status")).json()["phone_bridge"] is False

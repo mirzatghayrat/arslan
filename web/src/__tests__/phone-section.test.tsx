@@ -20,7 +20,13 @@ const online = (over: Partial<PhoneStatus> = {}): PhoneStatus => ({
 describe("Settings › iPhone", () => {
   it("says so when the Bridge is not running and offers no code", async () => {
     vi.spyOn(api, "phoneStatus").mockResolvedValue({ connected: false, bridge: {}, devices: [], pending: [], code: null });
-    render(<PhoneSection pollMs={60_000} />);
+    const onChange = vi.fn();
+    const { rerender } = render(<PhoneSection pollMs={60_000} enabled={false} onEnabledChange={onChange} />);
+    await waitFor(() => expect(api.phoneStatus).toHaveBeenCalled());
+    expect(screen.queryByTestId("phone-offline")).toBeNull();          // off: nothing to wait for
+    fireEvent.click(screen.getByTestId("settings-phone-enabled"));
+    expect(onChange).toHaveBeenCalledWith(true);
+    rerender(<PhoneSection pollMs={60_000} enabled onEnabledChange={onChange} />);
     expect(await screen.findByTestId("phone-offline")).toBeInTheDocument();
     expect(screen.queryByText("settings.phoneAdd")).toBeNull();
   });
@@ -59,5 +65,6 @@ describe("Settings › iPhone", () => {
   it("has a home in the settings registry", () => {
     expect(SETTINGS_SECTIONS.find((s) => s.id === "phone")?.group).toBe("system");
     expect(FIELD_HOMES["phone.devices"]).toBe("phone");
+    expect(FIELD_HOMES["phone.enabled"]).toBe("phone");
   });
 });

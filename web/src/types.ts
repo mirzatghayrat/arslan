@@ -265,6 +265,8 @@ export interface AppSettings {
   memoryInConversations?: boolean;
   /** 0.1.52 S5: a learned practice is used at once (D2 tiers); off = every one waits for your OK. */
   learnedPracticesTakeEffect?: boolean;
+  /** Mobile bridge: the shell runs the Arslan Bridge while this is on (default off). */
+  phoneBridgeEnabled?: boolean;
   /** Comma-separated BCP-47 tags for image text recognition. Empty/unset means
    *  "follow the interface language, plus English". Deliberately a SHORT list:
    *  recognition degrades as the request widens and CJK is lost first. */

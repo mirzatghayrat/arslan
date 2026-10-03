@@ -147,6 +147,7 @@ export const FIELD_HOMES: Record<string, SettingsSectionId> = {
   'automation.activity_link': 'automation',
 
   // ── iPhone (mobile bridge §6.1: pairing code, requests, paired phones) ────
+  'phone.enabled': 'phone',
   'phone.pairing': 'phone',
   'phone.requests': 'phone',
   'phone.devices': 'phone',

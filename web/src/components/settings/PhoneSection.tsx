@@ -14,7 +14,12 @@ import type { PhoneCode, PhoneStatus } from "../../api/client.types";
 
 const EMPTY: PhoneStatus = { connected: false, bridge: {}, devices: [], pending: [], code: null };
 
-export default function PhoneSection({ pollMs = 3000 }: { pollMs?: number }) {
+export default function PhoneSection({ pollMs = 3000, enabled = false, onEnabledChange }: {
+  pollMs?: number;
+  /** "Use Arslan from your iPhone": the desktop shell runs the Bridge only while this is on. */
+  enabled?: boolean;
+  onEnabledChange?: (value: boolean) => void;
+}) {
   const { t } = useTranslation();
   const [status, setStatus] = useState<PhoneStatus>(EMPTY);
   const [code, setCode] = useState<PhoneCode | null>(null);
@@ -43,7 +48,17 @@ export default function PhoneSection({ pollMs = 3000 }: { pollMs?: number }) {
       </div>
       <p className="text-[11px] text-muted-foreground max-w-xl">{t("settings.phoneIntro")}</p>
 
-      {!status.connected && <p data-testid="phone-offline" className="text-xs text-muted-foreground">{t("settings.phoneBridgeOffline")}</p>}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h4 className="text-xs font-bold text-foreground">{t("settings.phoneEnable")}</h4>
+          <p className="text-[11px] text-muted-foreground mt-0.5 max-w-xl">{t("settings.phoneEnableDesc")}</p>
+        </div>
+        <input id="settings-phone-enabled" data-testid="settings-phone-enabled" type="checkbox" checked={enabled}
+          onChange={(e) => onEnabledChange?.(e.target.checked)}
+          className="w-4 h-4 mt-1 shrink-0 text-primary bg-background border-border rounded focus:ring-0 cursor-pointer" />
+      </div>
+
+      {enabled && !status.connected && <p data-testid="phone-offline" className="text-xs text-muted-foreground">{t("settings.phoneBridgeOffline")}</p>}
 
       {status.connected && <div className="space-y-3">
         <button type="button" className="rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-foreground/5 disabled:opacity-50"

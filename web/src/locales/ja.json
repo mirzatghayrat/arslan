@@ -504,6 +504,8 @@
   "settings": {
     "labelMemoryInConversations": "記憶して会話で使う",
     "memoryInConversationsDesc": "Arslan はあなた自身や仕事の進め方について聞いたことを覚え、選んだモデル（クラウドのモデルを含む）で使います。健康・お金・住所などの機微な内容は引き続きあなたの確認が必要で、会話ごとに記憶をオフにもできます。",
+    "phoneEnable": "iPhone から Arslan を使う",
+    "phoneEnableDesc": "Arslan が開いている間、この Mac で iPhone との接続を動かします。オンの間は数秒ごとに iCloud を確認します。",
     "navPhone": "iPhone",
     "phoneIntro": "iPhone から Arslan と話せます。メッセージはあなた自身の iCloud を通り、エンドツーエンドで暗号化されます。Apple に見えるのは暗号化されたデータだけです。",
     "phoneBridgeOffline": "iPhone との接続は動いていません。",

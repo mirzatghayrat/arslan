@@ -504,6 +504,8 @@
   "settings": {
     "labelMemoryInConversations": "Remember me and use it in conversations",
     "memoryInConversationsDesc": "Arslan remembers what you tell it about yourself and how you work, and uses it with the model you chose, cloud models included. Sensitive things (health, money, where you live) still wait for your OK, and a conversation can turn memory off.",
+    "phoneEnable": "Use Arslan from your iPhone",
+    "phoneEnableDesc": "Runs the iPhone connection on this Mac while Arslan is open. While on, it checks your iCloud every few seconds.",
     "navPhone": "iPhone",
     "phoneIntro": "Talk to Arslan from your iPhone. Messages go through your own iCloud, end-to-end encrypted: Apple sees only scrambled data.",
     "phoneBridgeOffline": "The iPhone connection isn't running.",

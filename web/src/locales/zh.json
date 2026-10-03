@@ -504,6 +504,8 @@
   "settings": {
     "labelMemoryInConversations": "记住我，并用在对话里",
     "memoryInConversationsDesc": "Arslan 会记住你说过的关于你自己、你的工作方式的事，并在对话里用上，包括发给你选的云端模型。健康、钱、住址这类敏感内容仍要你确认；单个对话也可以关掉记忆。",
+    "phoneEnable": "在 iPhone 上使用 Arslan",
+    "phoneEnableDesc": "Arslan 打开时，在这台 Mac 上运行 iPhone 连接。开着时它每隔几秒查看一次你的 iCloud。",
     "navPhone": "iPhone",
     "phoneIntro": "在 iPhone 上和 Arslan 说话。消息经过你自己的 iCloud，端到端加密：苹果只能看到加密后的数据。",
     "phoneBridgeOffline": "iPhone 连接没有在运行。",

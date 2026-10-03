@@ -241,7 +241,8 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
     ),
 
     // iPhone — the companion: pairing and paired phones (mobile bridge §6.1).
-    phone: <PhoneSection />,
+    phone: <PhoneSection enabled={localSettings.phoneBridgeEnabled ?? false}
+      onEnabledChange={(v) => saveField({ phoneBridgeEnabled: v })} />,
 
     // Advanced — telemetry + orchestrator shell + confirm policy + spawn mode.
     advanced: (

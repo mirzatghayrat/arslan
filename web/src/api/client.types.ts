@@ -342,6 +342,7 @@ export interface AppSettings {
   terminal_sandbox_enabled?: boolean;
   memory_in_conversations?: boolean;
   learned_practices_take_effect?: boolean;
+  phone_bridge_enabled?: boolean;
   /** Comma-separated BCP-47 tags for image text recognition. Empty = follow
    *  the interface language plus English. */
   ocr_languages?: string;
