@@ -120,6 +120,47 @@ def assess(command: str) -> Assessment:
     return Assessment("run")
 
 
+# 0.1.52: inside the workspace sandbox a plain script can only write to the working
+# folder, temp and caches, so "it runs a python -c / heredoc script" alone no longer
+# protects anything — the card goes. Not when the script reaches OUT (the sandbox
+# leaves the network open, unlike Codex's), starts other programs, drives other apps,
+# or hides what it does: those keep the card, and any other ask-rule keeps it too.
+_SCRIPT_RULES = frozenset({"hermes:script execution via -e/-c flag", "hermes:script execution via heredoc"})
+_SCRIPT_REACH = re.compile("|".join((
+    # Python modules that reach out, spawn programs or hide code (a URL inside data is fine)
+    r"\b(?:requests|urllib\d?|httpx|aiohttp|http\.client|socket|smtplib|ftplib|paramiko|telnetlib|webbrowser"
+    r"|subprocess|pty|ctypes|multiprocessing|importlib|base64|codecs|marshal|pickle)\b",
+    # calls that run other programs or evaluate code
+    r"\b(?:os\.(?:system|popen|exec\w*|spawn\w*)|popen\d?|__import__|eval|exec|compile|system|fetch)\s*\(",
+    # other apps
+    r"\b(?:osascript|applescript|nsapplescript|appscript|scriptingbridge)\b|\bshortcuts\s+run\b",
+    # node, perl, ruby
+    r"require\(\s*['\"](?:https?|http2|net|dgram|tls|child_process)['\"]|\b(?:XMLHttpRequest|WebSocket)\b",
+    r"\bqx\b|\bopen3\b|\bLWP\b|IO::Socket|Net::\w+|`",
+)), re.I)
+
+
+def runs_freely_in_sandbox(command: str) -> bool:
+    """True when the only reason to ask is "runs a script", and the script does nothing
+    the workspace sandbox cannot contain. The caller checks the sandbox is on for this
+    command and the user did not choose "ask for every command"."""
+    verdict = assess(command)
+    if verdict.level != "ask" or verdict.rule not in _SCRIPT_RULES:
+        return False
+    text = str(command or "")
+    normalized = hermes._normalize_command_for_detection(text)
+    if _SCRIPT_REACH.search(text) or _SCRIPT_REACH.search(normalized):
+        return False
+    for _key, pattern, _why in _ASK_C:                     # Arslan's own ask rules, anywhere
+        if pattern.search(text) or pattern.search(normalized):
+            return False
+    lowered = hermes._lower_preserving_flags(text)
+    for pattern_re, description in hermes.DANGEROUS_PATTERNS_COMPILED:
+        if f"hermes:{description}" not in _SCRIPT_RULES and pattern_re.search(lowered):
+            return False
+    return all(f"hermes:{d}" in _SCRIPT_RULES for d, _ in hermes._execution_flag_findings(normalized))
+
+
 def risk_grade(command: str) -> str:
     """The LOW/MEDIUM/HIGH grade the confirmation layer speaks (run/ask/forbid)."""
     return {"run": "LOW", "ask": "MEDIUM", "forbid": "HIGH"}[assess(command).level]

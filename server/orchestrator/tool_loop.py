@@ -976,6 +976,9 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                                             assistant_content, convo,
                                             mcp_fail_counts=mcp_fail_counts)
             run_outside = True
+        elif (sandbox_on and not run_outside and terminal_policy.runs_freely_in_sandbox(command)
+              and not await _asks_for_everything()):
+            pass                          # 0.1.52: a plain script inside the sandbox needs no card
         else:
             if confirm_command is None and verdict.level == "run" and not await _asks_for_everything():
                 pass                      # a harmless command needs nobody to approve it
