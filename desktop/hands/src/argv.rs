@@ -151,9 +151,14 @@ pub fn build(op: &str, args: &Value, session: Option<&str>) -> Result<Vec<String
             opts.push(format!("--app={}", app_name(args)?));
             window_arg(args, &mut opts)?;
             opts.push("--compact".into());
-            match str_arg(args, "root") {
-                Some(_) => opts.push(format!("--root={}", ref_arg(&root_as_ref(args))?)),
-                None => opts.push("--skeleton".into()),
+            let depth = args.get("max_depth").and_then(Value::as_u64);
+            if depth.is_some_and(|d| !(1..=10).contains(&d)) {
+                return Err(refuse("bad_request", "`max_depth` is 1 to 10"));
+            }
+            match (str_arg(args, "root"), depth) {
+                (Some(_), _) => opts.push(format!("--root={}", ref_arg(&root_as_ref(args))?)),
+                (None, Some(d)) => opts.push(format!("--max-depth={d}")),
+                (None, None) => opts.push("--skeleton".into()),
             }
             if args.get("interactive_only").and_then(Value::as_bool) == Some(true) {
                 opts.push("-i".into());
@@ -421,6 +426,38 @@ mod tests {
             );
             assert_eq!(r.unwrap_err().code, "bad_request", "{bad}");
         }
+    }
+
+    #[test]
+    fn a_shallow_look_replaces_the_skeleton() {
+        let argv = build(
+            "snapshot",
+            &json!({"app": "Finder", "window_id": "w-7", "max_depth": 1}),
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            argv,
+            [
+                "snapshot",
+                "--app=Finder",
+                "--window-id=w-7",
+                "--compact",
+                "--max-depth=1"
+            ]
+        );
+        assert_eq!(
+            build("snapshot", &json!({"app": "Finder", "max_depth": 0}), None)
+                .unwrap_err()
+                .code,
+            "bad_request"
+        );
+        assert_eq!(
+            build("snapshot", &json!({"app": "Finder", "max_depth": 99}), None)
+                .unwrap_err()
+                .code,
+            "bad_request"
+        );
     }
 
     #[test]

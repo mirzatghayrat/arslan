@@ -3,6 +3,7 @@
 //! docs/specs/2026-10-03-0153-hands-agent-desktop.md.
 
 pub mod argv;
+pub mod integrity;
 #[cfg(target_os = "macos")]
 pub mod macos;
 pub mod paths;

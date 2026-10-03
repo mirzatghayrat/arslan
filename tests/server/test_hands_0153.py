@@ -240,9 +240,53 @@ async def test_a_window_is_picked_by_its_title(hands, asks, in_turn, monkeypatch
         return await real(op, args, **kw)
     monkeypatch.setattr(hands_client, "call", with_windows)
     assert (await hands_tools.DesktopLookExecutor().execute({"app": "Notes", "window": "hands smoke"}))["ok"]
-    assert [a.get("window_id") for op, a in hands.calls if op == "snapshot"] == ["w-2"]
+    full = [a for op, a in hands.calls if op == "snapshot" and "max_depth" not in a]
+    assert [a.get("window_id") for a in full] == ["w-2"]
     missing = await hands_tools.DesktopLookExecutor().execute({"app": "Notes", "window": "Nope"})
     assert missing["code"] == "window_not_found"
+
+
+async def test_without_screen_recording_a_window_title_is_read_from_its_element(hands, asks, in_turn, monkeypatch):
+    """Without Screen Recording the window list carries no real titles (agent-desktop
+    fills in the app's name, or nothing; measured); a one-level look at each window
+    reads its accessibility title instead."""
+    real = hands.call
+
+    async def untitled(op, args=None, **kw):
+        args = dict(args or {})
+        if op == "list_windows":
+            hands.calls.append((op, args))
+            return {"ok": True, "envelope": {"version": "2.4", "ok": True, "command": "list-windows", "data": [
+                {"id": "w-1", "title": "Finder"}, {"id": "w-2", "title": ""}]}}
+        if op == "snapshot" and args.get("max_depth") == 1:
+            hands.calls.append((op, args))
+            name = {"w-1": "Downloads", "w-2": "Hands smoke abc"}[args["window_id"]]
+            return {"ok": True, "envelope": {"version": "2.4", "ok": True, "command": "snapshot",
+                                             "data": {"tree": {"role": "window", "name": name}}}}
+        return await real(op, args, **kw)
+    monkeypatch.setattr(hands_client, "call", untitled)
+    assert (await hands_tools.DesktopLookExecutor().execute({"app": "Notes", "window": "hands smoke"}))["ok"]
+    full = [a for op, a in hands.calls if op == "snapshot" and "max_depth" not in a]
+    assert [a.get("window_id") for a in full] == ["w-2"]
+
+
+async def test_several_windows_and_none_named_looks_at_the_focused_one(hands, asks, in_turn, monkeypatch):
+    real = hands.call
+
+    async def several(op, args=None, **kw):
+        args = dict(args or {})
+        if op == "list_windows":
+            hands.calls.append((op, args))
+            return {"ok": True, "envelope": {"version": "2.4", "ok": True, "command": "list-windows", "data": [
+                {"id": "w-1", "title": "Notes", "is_focused": False}, {"id": "w-2", "title": "Notes", "is_focused": True}]}}
+        if op == "snapshot" and not args.get("window_id"):
+            hands.calls.append((op, args))
+            return {"ok": True, "envelope": {"version": "2.4", "ok": False, "command": "snapshot", "error": {
+                "code": "AMBIGUOUS_TARGET", "message": "More than one window matches the target"}}}
+        return await real(op, args, **kw)
+    monkeypatch.setattr(hands_client, "call", several)
+    assert (await hands_tools.DesktopLookExecutor().execute({"app": "Notes"}))["ok"]
+    assert [a.get("window_id") for op, a in hands.calls if op == "snapshot"] == [None, "w-2"]
 
 
 async def test_a_declined_look_reads_nothing(hands, asks, in_turn):

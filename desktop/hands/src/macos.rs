@@ -241,12 +241,52 @@ extern "C" {
     fn objc_msgSend();
 }
 
+type Msg0 = unsafe extern "C" fn(*mut c_void, *mut c_void) -> *mut c_void;
+
+fn class(name: &CStr) -> *mut c_void {
+    unsafe { objc_getClass(name.as_ptr()) }
+}
+
+fn sel(name: &CStr) -> *mut c_void {
+    unsafe { sel_registerName(name.as_ptr()) }
+}
+
+/// The pid of the app in front (NSWorkspace.frontmostApplication), if any.
+pub fn frontmost_pid() -> Option<i32> {
+    type MsgPid = unsafe extern "C" fn(*mut c_void, *mut c_void) -> i32;
+    unsafe {
+        let send0: Msg0 = std::mem::transmute(objc_msgSend as *const ());
+        let send_pid: MsgPid = std::mem::transmute(objc_msgSend as *const ());
+        let workspace = send0(class(c"NSWorkspace"), sel(c"sharedWorkspace"));
+        let front = send0(workspace, sel(c"frontmostApplication"));
+        (!front.is_null()).then(|| send_pid(front, sel(c"processIdentifier")))
+    }
+}
+
+/// Put `pid`'s app back in front (NSRunningApplication activate). Used when an
+/// app Hands acted on brought itself forward: Hands never takes the focus, and
+/// a user typing elsewhere must keep typing there.
+pub fn give_front_back(pid: i32) -> bool {
+    type MsgWithPid = unsafe extern "C" fn(*mut c_void, *mut c_void, i32) -> *mut c_void;
+    type MsgActivate = unsafe extern "C" fn(*mut c_void, *mut c_void, usize) -> i8;
+    unsafe {
+        let send_with_pid: MsgWithPid = std::mem::transmute(objc_msgSend as *const ());
+        let send_activate: MsgActivate = std::mem::transmute(objc_msgSend as *const ());
+        let app = send_with_pid(
+            class(c"NSRunningApplication"),
+            sel(c"runningApplicationWithProcessIdentifier:"),
+            pid,
+        );
+        // NSApplicationActivateAllWindows = 1 << 0 is not wanted: just bring it back.
+        !app.is_null() && send_activate(app, sel(c"activateWithOptions:"), 0) != 0
+    }
+}
+
 /// Run as a real (Dock-less) Cocoa app on the main thread: NSApplication,
 /// accessory policy, its run loop. Without this, LaunchServices never sees the
 /// app finish launching and reports it "not responding" (seen on a real Mac:
 /// Finder refused to open it, and it never appeared in the Accessibility list).
 pub fn run_app_loop() -> ! {
-    type Msg0 = unsafe extern "C" fn(*mut c_void, *mut c_void) -> *mut c_void;
     type MsgPolicy = unsafe extern "C" fn(*mut c_void, *mut c_void, isize) -> i8;
     unsafe {
         let send0: Msg0 = std::mem::transmute(objc_msgSend as *const ());

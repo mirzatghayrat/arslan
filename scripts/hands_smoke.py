@@ -12,7 +12,7 @@ script answers "Allow" to (and records). It checks what tests cannot:
   5. Finder: a file in a work folder renamed, in the background
   6. Stop: a Hands call in flight ends within 1 second
   7. the P3 sandbox: a sandboxed command can neither reach Hands' socket nor read its token
-  8. agent-desktop inside Hands.app, run on its own, holds no Accessibility
+  8. agent-desktop (next to Hands.app), run on its own, holds no Accessibility
 
 Needs: macOS; Accessibility allowed for "Arslan Hands" (D3: the user clicks Allow
 once — the script asks macOS to show the prompt if it is missing); Xcode command
@@ -158,8 +158,12 @@ async def notes_check(look, typ, press, front) -> None:
     made = await press.execute({"app": "Notes", "keys": "cmd+n"})
     if not record("Notes: New Note through the menu shortcut", made.get("ok") is True, str(made.get("error", ""))[:300]):
         return
-    time.sleep(1)
-    found = await look.execute({"app": "Notes", "role": "textfield"})
+    found: dict = {}
+    for _ in range(3):                  # Notes' tree is big; on a busy Mac a look can time out
+        time.sleep(1)
+        found = await look.execute({"app": "Notes", "role": "textfield"})
+        if found.get("ok"):
+            break
     fields = REF.findall(found.get("text", ""))
     body = None
     for line in found.get("text", "").splitlines():
@@ -186,6 +190,8 @@ async def finder_check(look, click, typ, press, front) -> None:
     seen = await look.execute({"app": "Finder", "window": folder.name, "text": "draft.txt"})
     item = (REF.findall(seen.get("text", "")) or [None])[0]
     if not record("Finder: the file is seen in its window", item is not None, seen.get("error", seen.get("text", ""))[:300]):
+        (folder / "draft.txt").unlink(missing_ok=True)
+        folder.rmdir()
         return
     await click.execute({"app": "Finder", "element": "draft.txt", "ref": item})
     await press.execute({"app": "Finder", "keys": "return"})              # rename mode
@@ -200,6 +206,9 @@ async def finder_check(look, click, typ, press, front) -> None:
     record("Finder: the file was renamed on disk", (folder / "renamed by Arslan.txt").exists(),
            str(sorted(p.name for p in folder.iterdir())))
     record("the front app never changed (Finder)", front_app() == front, front_app())
+    for item in folder.iterdir():
+        item.unlink()
+    folder.rmdir()
 
 
 async def stop_check(look, hands_client, hands_service) -> None:
@@ -227,7 +236,7 @@ async def sandbox_check(terminal_exec, hands_client) -> None:
 
 
 def inner_binary_check(hands_client) -> None:
-    inner = hands_client.app_path() / "Contents" / "MacOS" / "agent-desktop"
+    inner = hands_client.app_path().parent / "agent-desktop"
     work = Path(tempfile.mkdtemp(prefix="hands-smoke-disclaim-"))
     subprocess.run(["clang", "-o", str(work / "disclaim"), str(ROOT / "scripts/hands_fixture/disclaim.c")], check=True)
     env = {"HOME": str(work), "PATH": "/usr/bin:/bin", "AGENT_DESKTOP_HOME": str(work / "ad")}
@@ -237,9 +246,8 @@ def inner_binary_check(hands_client) -> None:
         state = json.loads(out.stdout)["data"]["accessibility"]["state"]
     except (ValueError, KeyError, TypeError):
         state = f"unreadable: {out.stdout[:120]}"
-    record("agent-desktop inside Hands.app, run on its own, holds no Accessibility", state == "denied",
-           f"state {state} — if granted, macOS lends it the bundle's grant and agent-desktop must not be "
-           "launchable on its own")
+    record("agent-desktop, run on its own, holds no Accessibility", state == "denied",
+           f"state {state} — if granted, macOS lends it a grant and anything could drive apps with it")
 
 
 if __name__ == "__main__":

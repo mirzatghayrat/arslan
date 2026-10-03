@@ -185,6 +185,7 @@ rm -rf "$TAURI/binaries/hands"
 mkdir -p "$TAURI/binaries/hands"
 "$HERE/hands/build_hands.sh" "$TAURI/binaries/hands"
 test -x "$TAURI/binaries/hands/Arslan Hands.app/Contents/MacOS/arslan-hands" \
+  && test -x "$TAURI/binaries/hands/agent-desktop" \
   || { echo "ERROR: Arslan Hands did not build" >&2; exit 1; }
 
 if [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then

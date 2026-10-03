@@ -70,6 +70,11 @@ fn refmap(home: &Path, session: Option<&str>) {
 }
 
 fn start(name: &str) -> Hands {
+    start_pinned(name, |_| None)
+}
+
+/// `pin` gets the fake agent-desktop's path and returns the sha256 to require.
+fn start_pinned(name: &str, pin: impl FnOnce(&Path) -> Option<String>) -> Hands {
     // Short: macOS socket paths are capped at 103 bytes.
     let dir = PathBuf::from("/tmp").join(format!("hh-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -85,9 +90,11 @@ fn start(name: &str) -> Hands {
         std::fs::copy(e.path(), bin.join("cases").join(e.file_name())).unwrap();
     }
     let folder = dir.join("f");
+    let pinned = pin(&fake);
     let config = arslan_hands::server::Config {
         folder: folder.clone(),
         agent_desktop: fake,
+        agent_desktop_sha256: pinned,
         home: dir.clone(),
         idle: Duration::from_secs(3600),
         team: None,
@@ -172,6 +179,7 @@ fn the_folder_socket_and_token_are_private() {
     let second = arslan_hands::server::bind(&arslan_hands::server::Config {
         folder: hands.folder(),
         agent_desktop: PathBuf::from("/nonexistent"),
+        agent_desktop_sha256: None,
         home: hands.dir.clone(),
         idle: Duration::from_secs(1),
         team: None,
@@ -396,4 +404,34 @@ fn values_reach_agent_desktop_as_values() {
         .find(|c| c[0] == "set-value")
         .unwrap();
     assert_eq!(call, ["set-value", "--", "@sfixture0:e1", "--headed"]);
+}
+
+#[test]
+fn a_swapped_agent_desktop_is_never_run() {
+    let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    // Pinned to the real fake: it runs.
+    let good = start_pinned("pin-ok", |bin| {
+        Some(arslan_hands::integrity::sha256_file(bin).unwrap())
+    });
+    let ok = good.ask(
+        "click",
+        json!({"app": "Hands Fixture", "ref": "@sfixture0:e3"}),
+    );
+    assert_eq!(ok["ok"], true, "{ok}");
+    drop(good);
+    // Pinned to a different build (what a swapped file looks like): nothing runs.
+    let swapped = start_pinned("pin-bad", |_| Some("0".repeat(64)));
+    let refused = swapped.ask(
+        "click",
+        json!({"app": "Hands Fixture", "ref": "@sfixture0:e3"}),
+    );
+    assert_eq!(code(&refused), "helper_failed", "{refused}");
+    assert!(refused["refused"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("not the build"));
+    assert!(
+        swapped.calls().is_empty(),
+        "the swapped binary never started"
+    );
 }

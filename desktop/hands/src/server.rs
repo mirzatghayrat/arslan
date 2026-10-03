@@ -41,6 +41,8 @@ pub struct Config {
     /// Hands' folder (0700): socket, token, lock, agent-desktop state.
     pub folder: PathBuf,
     pub agent_desktop: PathBuf,
+    /// Its recorded sha256 (Resources/agent-desktop.sha256); checked before every run.
+    pub agent_desktop_sha256: Option<String>,
     pub home: PathBuf,
     pub idle: Duration,
     /// Hands' own Team ID; Some = only `arslan-server` signed by it may connect.
@@ -159,6 +161,12 @@ pub fn serve(
 ) -> Result<(), String> {
     let state = Arc::new(State {
         runner: Runner {
+            pinned: config.agent_desktop_sha256.as_deref().map(|sha| {
+                Arc::new(crate::integrity::Pinned::new(
+                    config.agent_desktop.clone(),
+                    sha,
+                ))
+            }),
             binary: config.agent_desktop.clone(),
             state_root: config.folder.join(paths::AGENT_DESKTOP_HOME),
             home: config.home.clone(),
@@ -515,7 +523,9 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
         map.insert("app".into(), Value::String(app.name.clone()));
     }
     let argv = argv::build(op, &call, session.as_deref())?;
+    let front_before = if acts(op) { frontmost_pid() } else { None };
     let (exit, envelope) = run_envelope(ctx, &argv, deadline(op, args))?;
+    let focus_restored = front_back(front_before, app.pid);
     Ok(json!({
         "ok": true,
         "app": app_json(&app),
@@ -524,7 +534,47 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
         "target": target.map(|t| json!({"role": t.role, "name": t.name, "actions": t.actions})),
         "exit": exit,
         "envelope": envelope,
+        "focus_restored": focus_restored,
     }))
+}
+
+fn acts(op: &str) -> bool {
+    matches!(
+        op,
+        "click" | "type" | "set_value" | "select" | "press" | "scroll"
+    )
+}
+
+/// Some apps bring themselves forward when acted on (Notes on New Note, seen on
+/// a real Mac). Hands never takes the focus: if the app in front changed TO the
+/// app acted on, give the front back to the app that had it.
+fn front_back(before: Option<i32>, acted_on: i64) -> bool {
+    match (before, frontmost_pid()) {
+        (Some(before), Some(now)) if now != before && i64::from(now) == acted_on => {
+            restore_front(before)
+        }
+        _ => false,
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn frontmost_pid() -> Option<i32> {
+    crate::macos::frontmost_pid()
+}
+
+#[cfg(not(target_os = "macos"))]
+fn frontmost_pid() -> Option<i32> {
+    None
+}
+
+#[cfg(target_os = "macos")]
+fn restore_front(pid: i32) -> bool {
+    crate::macos::give_front_back(pid)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn restore_front(_pid: i32) -> bool {
+    false
 }
 
 fn app_json(app: &App) -> Value {
@@ -639,6 +689,7 @@ fn status(state: &State) -> Value {
         "peer_check": if state.team.is_some() { "verified" } else { "off" },
         "team": state.team,
         "agent_desktop": state.runner.binary.exists(),
+        "agent_desktop_pinned": state.runner.pinned.as_ref().map(|p| p.check().is_ok()),
     })
 }
 

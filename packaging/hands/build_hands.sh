@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Build "Arslan Hands.app" into OUT_DIR (0.1.53; spec §1–2).
+# Build "Arslan Hands.app" and, NEXT TO it, agent-desktop into OUT_DIR
+# (0.1.53; spec §1–2):  OUT_DIR/Arslan Hands.app  +  OUT_DIR/agent-desktop
 #
 #   packaging/hands/build_hands.sh OUT_DIR
 #
@@ -9,10 +10,15 @@
 #    not the pin is refused. HANDS_AGENT_DESKTOP_SRC=<checkout> reuses a local
 #    clone (same check).
 # 2. Our helper, desktop/hands (`--locked`).
-# 3. The bundle: Contents/MacOS/{arslan-hands,agent-desktop}, Info.plist with
-#    its own bundle id (com.arslan.desktop.hands — macOS lists and grants
-#    Accessibility to THIS app, never to Arslan.app), the icon, the Apache-2.0
-#    notice, and agent-desktop's sha256.
+# 3. The bundle: Contents/MacOS/arslan-hands, Info.plist with its own bundle
+#    id (com.arslan.desktop.hands — macOS lists and grants Accessibility to THIS
+#    app, never to Arslan.app), the icon, the Apache-2.0 notice, and
+#    agent-desktop's sha256. agent-desktop itself is NOT inside the bundle:
+#    measured on a real Mac, a binary in Contents/MacOS run on its own (its
+#    responsibility disclaimed) got the bundle's Accessibility grant — anything
+#    could have used it. Beside the bundle it gets the grant only as Hands'
+#    child, and Hands checks its sha256 (recorded inside the sealed bundle)
+#    before every run.
 # 4. Signing, inside out: agent-desktop with its own identifier (so macOS never
 #    takes it for the app), then the bundle; hardened runtime, timestamp, no
 #    entitlements. APPLE_SIGNING_IDENTITY unset → ad-hoc (development only: the
@@ -83,7 +89,8 @@ APP="$OUT/Arslan Hands.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$HANDS_BIN" "$APP/Contents/MacOS/arslan-hands"
-cp "$AD_BIN" "$APP/Contents/MacOS/agent-desktop"
+rm -f "$OUT/agent-desktop"
+cp "$AD_BIN" "$OUT/agent-desktop"
 cp "$ROOT/desktop/src-tauri/icons/icon.icns" "$APP/Contents/Resources/AppIcon.icns"
 cp "$SRC/LICENSE" "$APP/Contents/Resources/LICENSE-agent-desktop"
 cat > "$APP/Contents/Resources/NOTICE" <<NOTICE
@@ -134,10 +141,11 @@ sign() {
   done
   return 1
 }
-sign --identifier com.arslan.desktop.hands.agent-desktop "$APP/Contents/MacOS/agent-desktop"
-SIGNED_SHA="$(shasum -a 256 "$APP/Contents/MacOS/agent-desktop" | cut -d' ' -f1)"
+sign --identifier com.arslan.desktop.hands.agent-desktop "$OUT/agent-desktop"
+SIGNED_SHA="$(shasum -a 256 "$OUT/agent-desktop" | cut -d' ' -f1)"
 echo "$SIGNED_SHA  agent-desktop, signed (built $AD_SHA from $REPOSITORY @ $COMMIT)" \
   > "$APP/Contents/Resources/agent-desktop.sha256"
 sign "$APP"
 codesign --verify --strict --deep "$APP"
-echo "    built $APP"
+codesign --verify --strict "$OUT/agent-desktop"
+echo "    built $APP and $OUT/agent-desktop"

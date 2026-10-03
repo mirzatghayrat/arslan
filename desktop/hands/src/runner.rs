@@ -32,6 +32,9 @@ pub fn generation() -> u64 {
 #[derive(Debug, Clone)]
 pub struct Runner {
     pub binary: PathBuf,
+    /// The sha256 agent-desktop must have (recorded inside Hands' signed bundle);
+    /// None only for development and tests.
+    pub pinned: Option<std::sync::Arc<crate::integrity::Pinned>>,
     /// agent-desktop's state root (`AGENT_DESKTOP_HOME`), inside Hands' folder.
     pub state_root: PathBuf,
     pub home: PathBuf,
@@ -60,6 +63,9 @@ impl Runner {
         deadline: Duration,
         generation: u64,
     ) -> Result<Output, String> {
+        if let Some(pinned) = &self.pinned {
+            pinned.check()?;
+        }
         let mut child = Command::new(&self.binary)
             .args(argv)
             .env_clear()

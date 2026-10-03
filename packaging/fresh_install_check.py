@@ -217,7 +217,9 @@ def check_hands_bundle(app: pathlib.Path, c: Checks) -> None:
     c.ok(info.get("CFBundleIdentifier") == "com.arslan.desktop.hands", "Arslan Hands has its own bundle id",
          str(info.get("CFBundleIdentifier")))
     c.ok(info.get("LSUIElement") is True, "Arslan Hands has no Dock icon")
-    helper, inner = hands / "Contents/MacOS/arslan-hands", hands / "Contents/MacOS/agent-desktop"
+    helper, inner = hands / "Contents/MacOS/arslan-hands", hands.parent / "agent-desktop"
+    c.ok(not (hands / "Contents/MacOS/agent-desktop").exists(),
+         "agent-desktop is NOT inside Arslan Hands.app (there it would borrow the app's grant)")
     c.ok(helper.is_file() and os.access(helper, os.X_OK) and inner.is_file() and os.access(inner, os.X_OK),
          "the helper and agent-desktop are executable")
     verify = subprocess.run(["codesign", "--verify", "--strict", "--deep", str(hands)], capture_output=True, text=True)

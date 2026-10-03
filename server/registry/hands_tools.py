@@ -353,15 +353,43 @@ async def _resolve_app(name: str, job_id: str | None):
 
 
 async def _window_id(app: str, title: str, job_id: str | None) -> str | None:
-    """The id of the app's window whose title contains `title` (list_windows)."""
+    """The id of the app's window whose title contains `title`. Without Screen
+    Recording (which Hands never asks for) the window list has no real titles —
+    agent-desktop fills in the app's name (measured: every Finder window
+    "Finder") — so a title that does not match is read from the window's own
+    accessibility element: a one-level look at that window."""
     result = await _hands("list_windows", {"app": app}, job_id=job_id)
     if not result.ok or not isinstance(result.data, list):
         return None
     wanted = title.strip().lower()
-    for window in result.data:
-        if isinstance(window, dict) and wanted in str(window.get("title") or "").lower():
-            return str(window.get("id")) if window.get("id") else None
+    for window in result.data[:12]:
+        if not isinstance(window, dict) or not window.get("id"):
+            continue
+        name = str(window.get("title") or "")
+        if wanted not in name.lower():
+            shallow = await _hands("snapshot", {"app": app, "window_id": window["id"], "max_depth": 1},
+                                   job_id=job_id)
+            data = shallow.data if shallow.ok and isinstance(shallow.data, dict) else {}
+            name = str((data.get("tree") or {}).get("name") or (data.get("window") or {}).get("title") or "")
+        if wanted in name.lower():
+            return str(window["id"])
     return None
+
+
+async def _look_one_window(op: str, args: dict, job_id: str | None):
+    """A look; when the app has several windows and none was named, agent-desktop
+    refuses (AMBIGUOUS_TARGET, seen with Notes) — look at its focused window
+    instead (or its first)."""
+    result = await _hands(op, args, job_id=job_id)
+    if result.code != "AMBIGUOUS_TARGET" or args.get("window_id"):
+        return result
+    windows = await _hands("list_windows", {"app": args["app"]}, job_id=job_id)
+    listed = [w for w in (windows.data if windows.ok and isinstance(windows.data, list) else [])
+              if isinstance(w, dict) and w.get("id")]
+    if not listed:
+        return result
+    chosen = next((w for w in listed if w.get("is_focused")), listed[0])
+    return await _hands(op, {**args, "window_id": str(chosen["id"])}, job_id=job_id)
 
 
 def _app_arg(args: dict) -> str | None:
@@ -431,7 +459,7 @@ class DesktopLookExecutor:
                 return _failed(waited, app=app["name"])
         if args.get("text") or args.get("role"):
             find = {k: str(args[k])[:200] for k in ("text", "role") if args.get(k)}
-            result = await _hands("find", {**call, **find}, job_id=job_id)
+            result = await _look_one_window("find", {**call, **find}, job_id)
             if not result.ok:
                 _trace("look", app, result.code or "error", started)
                 return _failed(result, app=app["name"])
@@ -440,7 +468,7 @@ class DesktopLookExecutor:
             snap = dict(call)
             if args.get("ref"):
                 snap["root"] = str(args["ref"])[:200]
-            result = await _hands("snapshot", snap, job_id=job_id)
+            result = await _look_one_window("snapshot", snap, job_id)
             if not result.ok:
                 _trace("look", app, result.code or "error", started)
                 return _failed(result, app=app["name"])
