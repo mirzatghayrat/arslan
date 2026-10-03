@@ -1,0 +1,69 @@
+{
+ "case": "err_type_refused_headless",
+ "order": 24,
+ "op": "type",
+ "args": {
+  "ref": "@sfixture0:e1",
+  "text": "Groceries"
+ },
+ "argv": [
+  "type",
+  "--",
+  "@sfixture0:e1",
+  "Groceries"
+ ],
+ "expect": {
+  "ok": false,
+  "code": "POLICY_DENIED",
+  "hint": "use_set_value",
+  "run": "not_reproducible",
+  "note": "recorded 2026-10-03 with the fixture never activated: headless typing needs a focused field and Hands never takes focus; whether it is refused depends on the desktop, so the live check skips it"
+ },
+ "exit": 1,
+ "envelope": {
+  "version": "2.4",
+  "ok": false,
+  "command": "type",
+  "error": {
+   "code": "POLICY_DENIED",
+   "message": "Target is not actionable: supported_action (semantic action is unavailable and focus fallback is denied)",
+   "suggestion": "Waiting will not help: this element cannot satisfy the action as targeted. Target an element that advertises the action (check available_actions in a fresh snapshot) or adjust the interaction policy (e.g. pass --headed).",
+   "recovery": {
+    "strategy": "request_explicit_policy_then_retry_original",
+    "retryable": true,
+    "requires_fresh_snapshot": false
+   },
+   "details": {
+    "actionable": false,
+    "checks": [
+     {
+      "check": "visible",
+      "status": "pass"
+     },
+     {
+      "check": "enabled",
+      "status": "pass"
+     },
+     {
+      "check": "editable",
+      "status": "pass"
+     },
+     {
+      "check": "supported_action",
+      "reason": "semantic action is unavailable and focus fallback is denied",
+      "status": "fail"
+     },
+     {
+      "check": "policy",
+      "status": "pass"
+     }
+    ],
+    "observed_bounds_hash": 13597241561287893047
+   },
+   "disposition": {
+    "delivery": "not_delivered",
+    "retry": "safe"
+   }
+  }
+ }
+}

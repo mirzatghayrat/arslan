@@ -1,0 +1,37 @@
+{
+ "case": "get_states",
+ "order": 7,
+ "op": "get",
+ "args": {
+  "ref": "@sfixture0:e2",
+  "property": "states"
+ },
+ "argv": [
+  "get",
+  "--property=states",
+  "--",
+  "@sfixture0:e2"
+ ],
+ "expect": {
+  "ok": true,
+  "reads": {
+   "/data/value": "array"
+  },
+  "contains": {
+   "/data/value": "secure"
+  }
+ },
+ "exit": 0,
+ "envelope": {
+  "version": "2.4",
+  "ok": true,
+  "command": "get",
+  "data": {
+   "property": "states",
+   "ref": "@sfixture0:e2",
+   "value": [
+    "secure"
+   ]
+  }
+ }
+}

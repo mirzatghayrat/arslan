@@ -45,9 +45,12 @@ def test_rule_order_denies_writes_reopens_folders_and_closes_protected_last(tmp_
     lines = text.splitlines()
     assert lines[:3] == ["(version 1)", "(allow default)", '(deny file-write* (subpath "/"))']
     assert lines[3].startswith("(allow file-write* ") and json.dumps(str(ws.resolve())) in lines[3]
-    assert lines[-1].startswith("(deny file-read* file-write* ") and json.dumps(str(secret.resolve())) in lines[-1]
-    assert "network" not in text
+    assert lines[-2].startswith("(deny file-read* file-write* ") and json.dumps(str(secret.resolve())) in lines[-2]
+    # The protected paths are closed to sockets too; TCP and everything else stay open.
+    assert lines[-1] == lines[-2].replace("(deny file-read* file-write* ", "(deny network-outbound ", 1)
+    assert [line for line in lines if "network" in line] == [lines[-1]]
     assert "(deny network*)" in command_sandbox.profile([ws], [secret], offline=True)
+    assert "network" not in command_sandbox.profile([ws], [])
 
 
 def test_folder_names_cannot_inject_rules(tmp_path):
@@ -99,6 +102,18 @@ def test_default_writable_and_protected_cover_the_plan(tmp_path):
         assert command_sandbox._real(p) in protected
     from server import config
     assert command_sandbox._real(config.data_dir()) in protected
+    from server.services import hands_client
+    assert command_sandbox._real(hands_client.folder()) in protected
+
+
+def test_hands_folder_comes_from_the_account_not_from_home(monkeypatch, tmp_path):
+    """Hands derives its folder from getpwuid; so must Arslan, or a redirected
+    $HOME would protect one folder while Hands listens in another."""
+    from server.services import hands_client
+    before = hands_client.folder()
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert hands_client.folder() == before
+    assert before.parts[-3:] == ("Library", "Application Support", "Arslan Hands")
 
 
 @pytest.mark.parametrize("result,stopped", [
@@ -238,3 +253,50 @@ async def test_a_tool_that_brings_its_own_sandbox_is_seen_as_stopped(tmp_path):
     out = await terminal_exec.run("/usr/bin/sandbox-exec -p '(version 1)(allow default)' /usr/bin/true",
                                   cwd=ws, sandbox=True)
     assert out["ok"] is False and out["sandbox_denied"] is True
+
+
+@pytest.mark.macos
+@macos
+async def test_a_socket_in_a_protected_folder_cannot_be_reached(monkeypatch):
+    """Measured 2026-10-03: the file rule alone lets connect() through; the
+    network-outbound rule is what closes Arslan Hands' socket to commands."""
+    import os
+    import tempfile
+    import threading
+    short = Path(tempfile.mkdtemp(prefix="ahs", dir="/tmp")).resolve()   # AF_UNIX paths are short
+    ws = short / "ws"
+    ws.mkdir()
+    folder = short / "hands"
+    folder.mkdir(mode=0o700)
+    path = folder / "s.sock"
+    srv = socket.socket(socket.AF_UNIX)
+    srv.bind(str(path))
+    os.chmod(path, 0o600)
+    srv.listen(4)
+
+    def serve():
+        while True:
+            try:
+                conn, _ = srv.accept()
+            except OSError:
+                return
+            conn.sendall(b"hello")
+            conn.close()
+    threading.Thread(target=serve, daemon=True).start()
+    probe = (f"python3 -c \"import socket; s=socket.socket(socket.AF_UNIX); s.connect('{path}'); "
+             f"print('GOT', s.recv(5))\"")
+    try:
+        monkeypatch.setattr(command_sandbox, "default_protected", lambda: [folder])
+        out = await terminal_exec.run(probe, cwd=ws, sandbox=True)
+        assert out["ok"] is False and "GOT" not in out["stdout"] and out["sandbox_denied"] is True, out
+        token = await terminal_exec.run(f"cat '{folder}/s.sock'", cwd=ws, sandbox=True)
+        assert token["ok"] is False
+        monkeypatch.setattr(command_sandbox, "default_protected", lambda: [])
+        control = await terminal_exec.run(probe, cwd=ws, sandbox=True)
+        assert control["ok"] is True and "GOT b'hello'" in control["stdout"], "the probe itself works"
+    finally:
+        srv.close()
+        path.unlink(missing_ok=True)
+        folder.rmdir()
+        ws.rmdir()
+        short.rmdir()

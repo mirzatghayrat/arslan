@@ -22,6 +22,7 @@ import type { SettingsSectionId } from './settings/sectionRegistry';
 import { useDebouncedSettingsSave } from '../hooks/useDebouncedSettingsSave';
 import AutomationSection from './settings/AutomationSection';
 import DesktopSection from './settings/DesktopSection';
+import HandsSection from './settings/HandsSection';
 import ProactiveSection from './settings/ProactiveSection';
 import { normalizeLanguage } from '../lib/languages';
 
@@ -228,15 +229,19 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
     proactive: <ProactiveSection />,
 
     // Desktop — resident behaviour while the window is closed (0.1.41).
+    // 0.1.53: Arslan Hands (Mac apps) sits under it, with its own endpoint.
     desktop: (
-      <DesktopSection
-        keepAwakeEnabled={localSettings.keepAwakeEnabled ?? true}
-        onKeepAwakeChange={(v) => saveField({ keepAwakeEnabled: v })}
-        notificationsEnabled={localSettings.desktopNotificationsEnabled ?? true}
-        onNotificationsChange={(v) => saveField({ desktopNotificationsEnabled: v })}
-        islandEnabled={localSettings.islandEnabled ?? true}
-        onIslandChange={(v) => saveField({ islandEnabled: v })}
-      />
+      <div className="space-y-6">
+        <DesktopSection
+          keepAwakeEnabled={localSettings.keepAwakeEnabled ?? true}
+          onKeepAwakeChange={(v) => saveField({ keepAwakeEnabled: v })}
+          notificationsEnabled={localSettings.desktopNotificationsEnabled ?? true}
+          onNotificationsChange={(v) => saveField({ desktopNotificationsEnabled: v })}
+          islandEnabled={localSettings.islandEnabled ?? true}
+          onIslandChange={(v) => saveField({ islandEnabled: v })}
+        />
+        <HandsSection />
+      </div>
     ),
 
     // Advanced — telemetry + orchestrator shell + confirm policy + spawn mode.

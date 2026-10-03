@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { runtimeErrorTranslations, type RuntimeErrorTranslations } from "../lib/runtimeErrorText";
 import { createSpeaker } from "../lib/speech";
-import type { ArslanServerMessage, ArslanThreadItem, JobCard, JobOutcome, SuggestDraft, ToolStep, OverlapInfo, RosterMember, StaffingCandidate, SpawnUpdateChanges, SpawnUpdateCurrent } from "../api/client.types";
+import type { ActionKind, ArslanServerMessage, ArslanThreadItem, JobCard, JobOutcome, SuggestDraft, ToolStep, OverlapInfo, RosterMember, StaffingCandidate, SpawnUpdateChanges, SpawnUpdateCurrent } from "../api/client.types";
 import type { MessageAttachment } from "../types";
 
 interface ArslanState {
@@ -50,7 +50,7 @@ interface ArslanState {
   pendingWorkspaceWrite: { callId: string; workspace: string; action: string; path: string; background?: boolean } | null;
   pendingSchedule: { callId: string; name: string; when: string; background?: boolean } | null;
   // 0.1.45: a background job asks before it acts in the browser or on the Mac.
-  pendingAction: { callId: string; kind: "browser_site" | "mac_shortcut" | "mac_script"; target: string; detail: string } | null;
+  pendingAction: { callId: string; kind: ActionKind; target: string; detail: string } | null;
   // NEXT BUILD (conversation-driven MCP, Task 5): set when a `propose_connect_mcp`
   // frame arrives. env_keys carries credential NAMES + metadata only — the card
   // collects VALUES locally and sends them only over REST (addMcpServer). Cleared
@@ -220,7 +220,7 @@ function initialData() {
     pendingEnrollNode: null as { callId: string; name: string; host: string; user: string; fingerprints: string[] } | null,
     pendingWorkspaceWrite: null as { callId: string; workspace: string; action: string; path: string; background?: boolean } | null,
     pendingSchedule: null as { callId: string; name: string; when: string; background?: boolean } | null,
-    pendingAction: null as { callId: string; kind: "browser_site" | "mac_shortcut" | "mac_script"; target: string; detail: string } | null,
+    pendingAction: null as { callId: string; kind: ActionKind; target: string; detail: string } | null,
     pendingConnectMcp: null as {
       callId: string;
       key: string;

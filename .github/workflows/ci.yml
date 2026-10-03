@@ -102,6 +102,42 @@ jobs:
         # fail-closed path works. Measured: it is 1 of exactly 1 Linux-only test.
         run: .venv/bin/pytest tests/ -q -rfEs
 
+      # ── 0.1.53 Arslan Hands: the contract and the supply chain, on Linux ────
+      # The helper's Rust tests read the same fixtures pytest just read
+      # (tests/fixtures/hands_contract): the command line built for each request,
+      # the never-list, refs bound to their app, password fields, Stop. They run
+      # on Linux by design — no Accessibility involved — inside this required job.
+      - name: Hands helper tests (contract, server)
+        run: cargo test --locked --manifest-path desktop/hands/Cargo.toml
+
+      - name: Hands — read the agent-desktop pin
+        id: pin
+        run: |
+          set -euo pipefail
+          grep -E '^(REPOSITORY|COMMIT)=' packaging/hands/agent-desktop.pin \
+            | sed -e 's/^REPOSITORY=/repository=/' -e 's/^COMMIT=/commit=/' >> "$GITHUB_OUTPUT"
+
+      - name: Hands — check out agent-desktop at the pin
+        uses: actions/checkout@v4
+        with:
+          repository: mirzatghayrat/agent-desktop
+          ref: ${{ steps.pin.outputs.commit }}
+          path: third_party/agent-desktop
+          fetch-depth: 1
+
+      - name: Hands — the checkout is exactly the pin
+        run: test "$(git -C third_party/agent-desktop rev-parse HEAD)" = "${{ steps.pin.outputs.commit }}"
+
+      - name: Hands — cargo-deny on agent-desktop (licenses, bans, sources, advisories)
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          manifest-path: third_party/agent-desktop/Cargo.toml
+
+      - name: Hands — cargo-deny on the helper
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          manifest-path: desktop/hands/Cargo.toml
+
   # ---------------------------------------------------------------------------
   # The platform Arslan actually ships on.
   # ---------------------------------------------------------------------------
@@ -148,16 +184,24 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
-          workspaces: desktop/src-tauri
+          workspaces: |
+            desktop/src-tauri
+            desktop/hands
       - name: Rust format
-        run: cargo fmt --check --manifest-path desktop/src-tauri/Cargo.toml
+        run: |
+          cargo fmt --check --manifest-path desktop/src-tauri/Cargo.toml
+          cargo fmt --check --manifest-path desktop/hands/Cargo.toml
+      - name: Hands helper on macOS (the peer-check and Accessibility code paths)
+        run: |
+          cargo clippy --locked --manifest-path desktop/hands/Cargo.toml --all-targets -- -D warnings
+          cargo test --locked --manifest-path desktop/hands/Cargo.toml
       - name: Rust tests
         # 🔴 The crate had tests BEFORE it had a test step — the DMG-detection
         # module sat here unexecuted, and a test that never runs looks exactly
         # like a test that passes. (PR #23 claimed "the crate has no tests yet";
         # that was wrong, and this step is the correction.)
         run: |
-          mkdir -p desktop/src-tauri/binaries/sidecar desktop/src-tauri/binaries/listen
+          mkdir -p desktop/src-tauri/binaries/sidecar desktop/src-tauri/binaries/listen desktop/src-tauri/binaries/hands
           cargo test --manifest-path desktop/src-tauri/Cargo.toml
 
       - name: Rust clippy
@@ -166,7 +210,7 @@ jobs:
         # build. An empty directory satisfies the existence check — clippy
         # compiles the shell, it does not bundle it.
         run: |
-          mkdir -p desktop/src-tauri/binaries/sidecar desktop/src-tauri/binaries/listen
+          mkdir -p desktop/src-tauri/binaries/sidecar desktop/src-tauri/binaries/listen desktop/src-tauri/binaries/hands
           cargo clippy --manifest-path desktop/src-tauri/Cargo.toml --all-targets -- -D warnings
 
       - name: Install uv
@@ -244,7 +288,7 @@ jobs:
           # includes restricted recovery trial, file-denial attacks, durable export, and the fixed isolated
           # artifact parser (2026-09-15). MIRRORS EXPECTED_TOTAL in
           # tests/server/test_macos_marker_covers_the_platform_set.py — a test there now fails if they differ.
-          EXPECTED = 48
+          EXPECTED = 49
           suite = ET.parse("macos-results.xml").getroot().find("testsuite")
           total = int(suite.get("tests", 0))
           skipped = int(suite.get("skipped", 0))

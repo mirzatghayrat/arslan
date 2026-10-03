@@ -1,0 +1,45 @@
+{
+ "case": "list_windows",
+ "order": 2,
+ "op": "list_windows",
+ "args": {
+  "app": "Hands Fixture"
+ },
+ "argv": [
+  "list-windows",
+  "--app=Hands Fixture"
+ ],
+ "expect": {
+  "ok": true,
+  "reads": {
+   "/data": "array",
+   "/data/0/title": "string",
+   "/data/0/app_name": "string"
+  }
+ },
+ "exit": 0,
+ "envelope": {
+  "version": "2.4",
+  "ok": true,
+  "command": "list-windows",
+  "data": [
+   {
+    "accessible": true,
+    "app_name": "Hands Fixture",
+    "bounds": {
+     "height": 412.0,
+     "width": 420.0,
+     "x": 200.0,
+     "y": 557.0
+    },
+    "id": "w-85125",
+    "is_focused": false,
+    "minimized": false,
+    "pid": 98829,
+    "process_instance": "macos-proc-v1:1790986630:771228",
+    "title": "Hands Fixture",
+    "visible": true
+   }
+  ]
+ }
+}

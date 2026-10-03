@@ -1,0 +1,42 @@
+{
+ "case": "err_stale_ref",
+ "order": 21,
+ "op": "click",
+ "args": {
+  "ref": "@sfixture0:e3"
+ },
+ "argv": [
+  "click",
+  "--",
+  "@sfixture0:e3"
+ ],
+ "expect": {
+  "ok": false,
+  "code": "STALE_REF",
+  "hint": "look_again",
+  "run": "after_relaunch"
+ },
+ "exit": 1,
+ "envelope": {
+  "version": "2.4",
+  "ok": false,
+  "command": "click",
+  "error": {
+   "code": "STALE_REF",
+   "message": "Saved target belongs to a process instance that is no longer running not found in current RefMap",
+   "suggestion": "Re-run a snapshot to obtain fresh refs, then retry with the new ref (CLI: snapshot [--skeleton]; FFI: ad_snapshot then ad_execute_by_ref with the returned snapshot_id)",
+   "recovery": {
+    "strategy": "refresh_snapshot_then_retry_original",
+    "retryable": true,
+    "requires_fresh_snapshot": true
+   },
+   "details": {
+    "process_state": "exited"
+   },
+   "disposition": {
+    "delivery": "not_delivered",
+    "retry": "safe"
+   }
+  }
+ }
+}

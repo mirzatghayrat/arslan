@@ -1,0 +1,116 @@
+{
+ "case": "snapshot_root",
+ "order": 4,
+ "op": "snapshot",
+ "args": {
+  "app": "Hands Fixture",
+  "root": "@sfixture0:e6"
+ },
+ "argv": [
+  "snapshot",
+  "--app=Hands Fixture",
+  "--compact",
+  "--root=@sfixture0:e6"
+ ],
+ "expect": {
+  "ok": true,
+  "reads": {
+   "/data/snapshot_id": "string",
+   "/data/tree": "object"
+  }
+ },
+ "exit": 0,
+ "envelope": {
+  "version": "2.4",
+  "ok": true,
+  "command": "snapshot",
+  "data": {
+   "app": "Hands Fixture",
+   "complete": true,
+   "ref_count": 17,
+   "snapshot_id": "sfixture0",
+   "tree": {
+    "available_actions": [
+     "Scroll",
+     "SetFocus"
+    ],
+    "children": [
+     {
+      "available_actions": [
+       "RightClick",
+       "SetFocus"
+      ],
+      "ref_id": "@sfixture0:e18",
+      "role": "textfield",
+      "states": [
+       "readonly"
+      ],
+      "value": "Row 1\nRow 2\nRow 3\nRow 4\nRow 5\nRow 6\nRow 7\nRow 8\nRow 9\nRow 10\nRow 11\nRow 12\nRow 13\nRow 14\nRow 15\nRow 16\nRow 17\nRow 18\nRow 19\nRow 20\nRow 21\nRow 22\nRow 23\nRow 24\nRow 25\nRow 26\nRow 27\nRow 28\nRow 29\nRow 30\nRow 31\nRow 32\nRow 33\nRow 34\nRow 35\nRow 36\nRow 37\nRow 38\nRow 39\nRow 40\nRow 41\nRow 42\nRow 43\nRow 44\nRow 45\nRow 46\nRow 47\nRow 48\nRow 49\nRow 50\nRow 51\nRow 52\nRow 53\nRow 54\nRow 55\nRow 56\nRow 57\nRow 58\nRow 59\nRow 60\nRow 61\nRow 62\nRow 63\nRow 64\nRow 65\nRow 66\nRow 67\nRow 68\nRow 69\nRow 70\nRow 71\nRow 72\nRow 73\nRow 74\nRow 75\nRow 76\nRow 77\nRow 78\nRow 79\nRow 80"
+     },
+     {
+      "available_actions": [
+       "SetValue"
+      ],
+      "children": [
+       {
+        "available_actions": [
+         "SetValue"
+        ],
+        "ref_id": "@sfixture0:e20",
+        "role": "handle",
+        "value": "0"
+       },
+       {
+        "available_actions": [
+         "Click"
+        ],
+        "ref_id": "@sfixture0:e21",
+        "role": "button",
+        "states": [
+         "offscreen"
+        ]
+       },
+       {
+        "available_actions": [
+         "Click"
+        ],
+        "ref_id": "@sfixture0:e22",
+        "role": "button",
+        "states": [
+         "offscreen"
+        ]
+       },
+       {
+        "available_actions": [
+         "Click"
+        ],
+        "ref_id": "@sfixture0:e23",
+        "role": "button"
+       },
+       {
+        "available_actions": [
+         "Click"
+        ],
+        "ref_id": "@sfixture0:e24",
+        "role": "button"
+       }
+      ],
+      "ref_id": "@sfixture0:e19",
+      "role": "scrollbar",
+      "states": [
+       "hidden"
+      ],
+      "value": "0"
+     }
+    ],
+    "name": "Rows",
+    "ref_id": "@sfixture0:e17",
+    "role": "scrollarea"
+   },
+   "window": {
+    "id": "w-85125",
+    "title": "Hands Fixture"
+   }
+  }
+ }
+}

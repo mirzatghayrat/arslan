@@ -1,0 +1,34 @@
+{
+ "case": "err_app_not_found",
+ "order": 18,
+ "op": "snapshot",
+ "args": {
+  "app": "No Such App Here"
+ },
+ "argv": [
+  "snapshot",
+  "--app=No Such App Here",
+  "--compact",
+  "--skeleton"
+ ],
+ "expect": {
+  "ok": false,
+  "code": "APP_NOT_FOUND",
+  "hint": "open_app"
+ },
+ "exit": 1,
+ "envelope": {
+  "version": "2.4",
+  "ok": false,
+  "command": "snapshot",
+  "error": {
+   "code": "APP_NOT_FOUND",
+   "message": "No running application matches 'No Such App Here'",
+   "suggestion": "Run 'list-apps' to see running applications, or launch the app first.",
+   "disposition": {
+    "delivery": "unknown",
+    "retry": "unknown"
+   }
+  }
+ }
+}

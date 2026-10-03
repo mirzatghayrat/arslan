@@ -1,0 +1,47 @@
+{
+ "case": "err_timeout",
+ "order": 16,
+ "op": "wait",
+ "args": {
+  "app": "Hands Fixture",
+  "text": "no such words",
+  "timeout_ms": 500
+ },
+ "argv": [
+  "wait",
+  "--app=Hands Fixture",
+  "--text=no such words",
+  "--timeout=500"
+ ],
+ "expect": {
+  "ok": false,
+  "code": "TIMEOUT",
+  "hint": "look_again"
+ },
+ "exit": 1,
+ "envelope": {
+  "version": "2.4",
+  "ok": false,
+  "command": "wait",
+  "error": {
+   "code": "TIMEOUT",
+   "message": "Text (13 chars) did not match within 500ms",
+   "suggestion": "The target application may be busy or unresponsive",
+   "details": {
+    "expected_count": null,
+    "kind": "wait_timeout",
+    "last_error": {
+     "code": "TIMEOUT",
+     "message": "Operation exceeded its deadline"
+    },
+    "predicate": "text",
+    "text_chars": 13,
+    "timeout_ms": 500
+   },
+   "disposition": {
+    "delivery": "unknown",
+    "retry": "unknown"
+   }
+  }
+ }
+}

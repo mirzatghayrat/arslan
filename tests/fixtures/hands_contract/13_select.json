@@ -1,0 +1,50 @@
+{
+ "case": "select",
+ "order": 13,
+ "op": "select",
+ "args": {
+  "ref": "@sfixture0:e5",
+  "value": "Blue"
+ },
+ "argv": [
+  "select",
+  "--",
+  "@sfixture0:e5",
+  "Blue"
+ ],
+ "expect": {
+  "ok": true,
+  "reads": {
+   "/data/action": "string"
+  }
+ },
+ "exit": 0,
+ "envelope": {
+  "version": "2.4",
+  "ok": true,
+  "command": "select",
+  "data": {
+   "action": "select",
+   "details": {
+    "auto_wait": {
+     "lease_contention_count": 0,
+     "lease_hold_ms": 461,
+     "read_only_preflight_attempts": 1,
+     "read_only_resolve_attempts": 1
+    }
+   },
+   "disposition": {
+    "delivery": "delivered_verified",
+    "retry": "unsafe"
+   },
+   "steps": [
+    {
+     "label": "Select",
+     "mechanism": "semantic_api",
+     "outcome": "succeeded",
+     "verified": true
+    }
+   ]
+  }
+ }
+}

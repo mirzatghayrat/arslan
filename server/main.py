@@ -472,6 +472,8 @@ def create_app() -> FastAPI:
     app.include_router(recipes_api.router, prefix="/api/v1")
     from server.api import browser as browser_api
     app.include_router(browser_api.router, prefix="/api/v1")
+    from server.api import hands as hands_api  # 0.1.53 Arslan Hands (Mac apps)
+    app.include_router(hands_api.router, prefix="/api/v1")
 
     from server.api import conversations as conversations_api
 

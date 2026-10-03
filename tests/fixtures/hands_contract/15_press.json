@@ -1,0 +1,34 @@
+{
+ "case": "press",
+ "order": 15,
+ "op": "press",
+ "args": {
+  "app": "Hands Fixture",
+  "keys": "tab"
+ },
+ "argv": [
+  "press",
+  "--app=Hands Fixture",
+  "--",
+  "tab"
+ ],
+ "expect": {
+  "ok": true,
+  "reads": {
+   "/data/action": "string"
+  }
+ },
+ "exit": 0,
+ "envelope": {
+  "version": "2.4",
+  "ok": true,
+  "command": "press",
+  "data": {
+   "action": "press_key",
+   "disposition": {
+    "delivery": "delivered_unverified",
+    "retry": "unsafe"
+   }
+  }
+ }
+}

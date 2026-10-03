@@ -72,3 +72,13 @@ export async function fetchFeed(after: number | null, signal?: AbortSignal): Pro
   if (!res.ok) throw new Error(`island feed ${res.status}`);
   return (await res.json()) as Feed;
 }
+
+/** Stop every Arslan Hands action now (0.1.53): kills the command in flight and
+ * makes the jobs running now refuse further Hands calls. */
+export async function stopHands(): Promise<boolean> {
+  const headers: Record<string, string> = {};
+  const t = token();
+  if (t) headers.Authorization = `Bearer ${t}`;
+  const res = await fetch('/api/v1/hands/stop', { method: 'POST', headers, cache: 'no-store' });
+  return res.ok;
+}

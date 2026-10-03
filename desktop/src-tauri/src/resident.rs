@@ -12,6 +12,7 @@
 
 use serde::Deserialize;
 use std::io::{Read, Write};
+use std::sync::atomic::{AtomicU16, Ordering};
 use std::time::Duration;
 use tauri::Manager;
 
@@ -21,6 +22,8 @@ pub const TRAY_ID: &str = "arslan";
 pub const MENU_OPEN: &str = "tray-open";
 pub const MENU_QUIT: &str = "tray-quit";
 pub const MENU_STATUS: &str = "tray-status";
+/// 0.1.53: stop every Arslan Hands action (the island has the same button).
+pub const MENU_STOP_HANDS: &str = "tray-stop-hands";
 /// Emitted to the main webview when a notification is clicked.
 pub const OPEN_CONVERSATION_EVENT: &str = "open-conversation";
 const POLL_EVERY: Duration = Duration::from_secs(2);
@@ -170,6 +173,39 @@ pub fn conversation_from_id(identifier: &str) -> Option<String> {
 
 // ── runtime ──────────────────────────────────────────────────────────────────
 
+/// The backend's port, once it is up (for the menu's Stop).
+static BACKEND_PORT: AtomicU16 = AtomicU16::new(0);
+
+/// The request the menu's "Stop Arslan's hands" sends: the same authenticated
+/// endpoint as the island's Stop button.
+pub fn stop_hands_request(port: u16, token: Option<&str>) -> String {
+    let auth = token
+        .map(|t| format!("Authorization: Bearer {t}\r\n"))
+        .unwrap_or_default();
+    format!(
+        "POST /api/v1/hands/stop HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n{auth}Content-Length: 0\r\nConnection: close\r\n\r\n"
+    )
+}
+
+/// "Stop Arslan's hands": every Hands action stops now. Off the main thread.
+pub fn stop_hands() {
+    let port = BACKEND_PORT.load(Ordering::SeqCst);
+    if port == 0 {
+        return;
+    }
+    std::thread::spawn(move || {
+        let token = crate::read_api_token();
+        let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+        if let Ok(mut stream) = std::net::TcpStream::connect_timeout(&addr, Duration::from_secs(1))
+        {
+            let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+            let _ = stream.write_all(stop_hands_request(port, token.as_deref()).as_bytes());
+            let mut reply = String::new();
+            let _ = stream.read_to_string(&mut reply);
+        }
+    });
+}
+
 fn fetch_status(port: u16, token: Option<&str>, after: u64) -> Option<Status> {
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
     let mut stream = std::net::TcpStream::connect_timeout(&addr, Duration::from_secs(1)).ok()?;
@@ -215,6 +251,13 @@ pub fn install_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
         true,
         None::<&str>,
     )?;
+    let stop_hands = MenuItem::with_id(
+        app,
+        MENU_STOP_HANDS,
+        native_locale::text(locale, "tray_stop_hands"),
+        true,
+        None::<&str>,
+    )?;
     let quit = MenuItem::with_id(
         app,
         MENU_QUIT,
@@ -226,6 +269,7 @@ pub fn install_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
         .item(&status)
         .item(&PredefinedMenuItem::separator(app)?)
         .item(&open)
+        .item(&stop_hands)
         .item(&quit)
         .build()?;
     tauri::tray::TrayIconBuilder::with_id(TRAY_ID)
@@ -243,6 +287,7 @@ pub fn install_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
 
 /// Poll the backend for as long as the app lives. Started once the backend is up.
 pub fn start(app: tauri::AppHandle, port: u16) {
+    BACKEND_PORT.store(port, Ordering::SeqCst);
     std::thread::spawn(move || {
         let token = crate::read_api_token();
         let mut cursor: Option<u64> = None;
@@ -650,6 +695,15 @@ mod tests {
     }
 
     #[test]
+    fn the_menu_stop_posts_to_the_hands_endpoint_with_the_token() {
+        let request = stop_hands_request(8741, Some("tok"));
+        assert!(request.starts_with("POST /api/v1/hands/stop HTTP/1.1\r\n"));
+        assert!(request.contains("Authorization: Bearer tok\r\n"));
+        assert!(request.contains("Content-Length: 0\r\n") && request.ends_with("\r\n\r\n"));
+        assert!(!stop_hands_request(8741, None).contains("Authorization"));
+    }
+
+    #[test]
     fn every_notification_and_tray_key_exists_in_all_six_locales() {
         let catalog: serde_json::Value =
             serde_json::from_str(include_str!("../native_messages.json")).unwrap();
@@ -659,6 +713,7 @@ mod tests {
             "tray_awaiting",
             "tray_keeping_awake",
             "tray_open",
+            "tray_stop_hands",
             "tray_quit",
             "notify_done_title",
             "notify_done_body",
