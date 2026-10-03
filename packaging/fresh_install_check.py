@@ -192,6 +192,7 @@ def check_bundle_contents(app: pathlib.Path, c: Checks) -> None:
 
 
 BRIDGE_ID = "com.arslan.desktop.bridge"
+BRIDGE_CONTAINER = "iCloud.dev.aralem.arslan"   # docs/specs/mobile-bridge-protocol.md §2
 
 
 def _codesign_info(path: pathlib.Path) -> dict[str, str]:
@@ -202,10 +203,11 @@ def _codesign_info(path: pathlib.Path) -> dict[str, str]:
         key, sep, value = line.partition("=")
         if sep:
             info.setdefault(key.strip(), value.strip())
-    if "flags" not in info:
-        for line in out.stderr.splitlines():
-            if "flags=" in line:
-                info["flags"] = line.split("flags=", 1)[1]
+    for line in out.stderr.splitlines():
+        # "CodeDirectory v=20500 size=… flags=0x10000(runtime) …" — not the later
+        # "Executable Segment flags=0x1" line.
+        if line.startswith("CodeDirectory ") and "flags=" in line:
+            info["flags"] = line.split("flags=", 1)[1].split()[0]
     return info if out.returncode == 0 else {}
 
 
@@ -246,10 +248,23 @@ def check_bridge(app: pathlib.Path, c: Checks) -> None:
     c.ok(bool(nested.get("TeamIdentifier")) and nested.get("TeamIdentifier") == outer.get("TeamIdentifier"),
          "Arslan Bridge is signed by the app's team", f"{nested.get('TeamIdentifier')} vs {outer.get('TeamIdentifier')}")
     c.ok("runtime" in nested.get("flags", ""), "Arslan Bridge has hardened runtime", str(nested.get("flags")))
-    # Step 3 adds iCloud + Push with a provisioning profile. Tauri re-signs nested apps,
-    # so what survives is printed here and becomes an assertion with the profile.
-    ents = subprocess.run(["codesign", "-d", "--entitlements", ":-", str(bridge)], capture_output=True, text=True)
-    print(f"  NOTE  Arslan Bridge entitlements as shipped: {ents.stdout.strip()[:300] or '(none)'}")
+    # iCloud + Push need the embedded Developer ID profile and the matching entitlements
+    # on the SHIPPED signature. Tauri re-signs nested apps after build_bridge.sh signed
+    # this one, so this is checked on what actually shipped, not on what we signed.
+    ents = subprocess.run(["codesign", "-d", "--entitlements", ":-", str(bridge)], capture_output=True)
+    try:
+        shipped = plistlib.loads(ents.stdout) if ents.stdout.strip() else {}
+    except Exception:  # noqa: BLE001 — an unreadable blob is reported, not raised
+        shipped = {}
+    if (bridge / "Contents/embedded.provisionprofile").is_file():
+        team = nested.get("TeamIdentifier", "")
+        c.ok(shipped.get("com.apple.application-identifier") == f"{team}.{BRIDGE_ID}"
+             and BRIDGE_CONTAINER in (shipped.get("com.apple.developer.icloud-container-identifiers") or [])
+             and "CloudKit" in (shipped.get("com.apple.developer.icloud-services") or [])
+             and shipped.get("com.apple.developer.aps-environment") == "production",
+             "Arslan Bridge ships with its iCloud (CloudKit) and Push entitlements", str(shipped)[:400])
+    else:
+        print("  NOTE  Arslan Bridge has no provisioning profile; iCloud entitlements not expected")
 
 
 def _boot_environment(home: pathlib.Path) -> dict[str, str]:

@@ -24,7 +24,7 @@ The Mac must be on, online and awake; messages wait in iCloud otherwise.
 
 ## 2. CloudKit layout
 
-Container: `iCloud.com.mirzat.arslan` (created by the user in the Apple Developer portal; both
+Container: `iCloud.dev.aralem.arslan` (created by the user in the Apple Developer portal; both
 apps list the same identifier in their entitlements; a QR code names it and the phone refuses any
 other). Private database, custom zone `ArslanBridge`.
 
