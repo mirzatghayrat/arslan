@@ -90,7 +90,7 @@ def first_reminder_route(step_lines: list[str]) -> str:
 
 def lessons() -> dict:
     before = {item["id"] for item in get("/lessons")}
-    l1 = f"验收-0152-{ROUND}-r1"
+    l1 = f"验收-0152-{ROUND}-r1"          # cleanup_t1.py knows this prefix
     r1 = turn(f"arslan-T1-accept-{ROUND}-r1", "先试试用 AppleScript（osascript）。" + T1.format(list=l1))
     learned = wait_for(lambda: [x for x in get("/lessons") if x["id"] not in before], 120)
     l2 = f"验收-0152-{ROUND}-r2"
