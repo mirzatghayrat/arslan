@@ -11,6 +11,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     LargeBinary,
     String,
@@ -701,6 +702,32 @@ class BrainUsageEvent(Base):
     ref_key = Column(String(300), nullable=False)
     used_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
     used_ref = Column(String(100), nullable=True)
+
+
+class Judgment(Base):
+    """0.1.52 S2: one small decision the judge model was asked about (judgment.py).
+    `state` is the minimal, named-fields question input (never page text);
+    `outcome` is filled in later with what really happened."""
+
+    __tablename__ = "judgments"
+    __table_args__ = (Index("ix_judgments_point_created", "point", "created_at"),
+                      Index("ix_judgments_ref", "ref"))
+
+    id = Column(Integer, primary_key=True)
+    point = Column(String(40), nullable=False)
+    mode = Column(String(10), nullable=False)            # shadow | active
+    state = Column(JSON, nullable=False)
+    state_hash = Column(String(64), nullable=False)
+    verdict = Column(Boolean, nullable=True)            # None: no answer (timeout/error/cap)
+    probability = Column(Float, nullable=True)
+    latency_ms = Column(Integer, nullable=True)
+    model = Column(String(80), nullable=True)
+    error = Column(String(40), nullable=True)
+    ref = Column(String(80), nullable=True)              # e.g. the card's call_id
+    conversation_id = Column(String(50), nullable=True)
+    outcome = Column(String(20), nullable=True)          # approved | declined | timeout | followed | ...
+    outcome_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
 class UsageLedger(Base):

@@ -120,9 +120,9 @@ class JobConfirmations:
             from server.services import command_sandbox
             if command_sandbox.granted(self.conversation_id):
                 return True
-            return await ask(self.conversation_id, protocol.propose_run_command(
+            return await self._ask_with_shadow(protocol.propose_run_command(
                 uuid.uuid4().hex, command, argv, reason=verdict.reason if verdict.level == "ask" else "",
-                sandbox=sandbox, why=why))
+                sandbox=sandbox, why=why), command, verdict, sandboxed=False)
         policy, standing = "", False
         if not remote_host:
             async with db_session.AsyncSessionLocal() as db:
@@ -133,9 +133,22 @@ class JobConfirmations:
         if may_skip_card(remote_host, in_session_allow=False, policy=policy, risk=risk,
                          always_allowed=standing):
             return True
-        return await ask(self.conversation_id, protocol.propose_run_command(
+        frame = protocol.propose_run_command(
             uuid.uuid4().hex, command, argv, reason=verdict.reason or f"risk: {risk}",
-            remote_host=remote_host, fingerprints=list(fingerprints or [])))
+            remote_host=remote_host, fingerprints=list(fingerprints or []))
+        if remote_host:
+            return await ask(self.conversation_id, frame)
+        return await self._ask_with_shadow(frame, command, verdict)
+
+    async def _ask_with_shadow(self, frame: dict, command: str, verdict, *, sandboxed: bool | None = None) -> bool:
+        """0.1.52 S2: the card as before, plus a shadow judgment recorded with the real answer."""
+        from server.services import judgment
+        judgment.shadow("tool.approval", judgment.approval_state(command, rule=verdict.rule, reason=verdict.reason,
+                                                                 sandboxed=sandboxed),
+                        ref=frame["call_id"], conversation_id=self.conversation_id)
+        approved = await ask(self.conversation_id, frame)
+        judgment.record_outcome_later(frame["call_id"], "approved" if approved else "declined", point="tool.approval")
+        return approved
 
 
 def _reset_for_tests() -> None:
