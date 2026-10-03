@@ -59,6 +59,7 @@ public final class Mailbox {
     }
 
     public func add(peer: Peer) { peers[peer.deviceID] = peer }
+    public func isPaired(_ deviceID: String) -> Bool { peers[deviceID] != nil }
     public func remove(peer deviceID: String) { peers[deviceID] = nil; windows[deviceID] = nil }
 
     /// Seal a message to a paired peer and put it in the store. The record is kept until the
@@ -91,6 +92,12 @@ public final class Mailbox {
     /// Returns the messages to act on (never a duplicate, never one that failed checks).
     public func receive() async throws -> [Received] {
         let (records, next) = try await store.changes(since: token)
+        token = next
+        return try await process(records)
+    }
+
+    /// The same, for records fetched by the caller (the runtime splits pairing traffic off first).
+    public func process(_ records: [EnvelopeRecord]) async throws -> [Received] {
         var out: [Received] = []
         var acks: [String: [String]] = [:]
         for record in records where record.to == deviceID {
@@ -121,7 +128,6 @@ public final class Mailbox {
             acks[record.from, default: []].append(id)
             out.append(Received(from: record.from, type: type, envelope: opened.envelope, asset: opened.asset))
         }
-        token = next
         for (peer, ids) in acks { try await send(type: "ack", body: ["ids": ids], to: peer) }
         return out
     }
