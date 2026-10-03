@@ -36,7 +36,10 @@
       "locales/fr.lproj": "fr.lproj"
     },
     "macOS": {
-      "minimumSystemVersion": "11.0"
+      "minimumSystemVersion": "11.0",
+      "files": {
+        "Helpers/ArslanBridge.app": "binaries/bridge/ArslanBridge.app"
+      }
     }
   },
   "plugins": {

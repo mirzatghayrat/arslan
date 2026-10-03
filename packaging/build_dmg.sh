@@ -170,6 +170,16 @@ swiftc -O -o "$TAURI/binaries/listen/arslan-voice" "$HERE/listen/arslan-voice.sw
 test -x "$TAURI/binaries/listen/arslan-voice" \
   || { echo "ERROR: the conversation helper did not build" >&2; exit 1; }
 
+step "[4c/7] building Arslan Bridge (the iPhone companion helper)"
+# --------------------------------------------------------------------------
+# A nested app with its own bundle id, copied by tauri.conf.json bundle.macOS.files
+# into Contents/Helpers BEFORE tauri build, so it is in the .app and in the updater
+# archive alike. build_bridge.sh signs it (hardened runtime, timestamp) when a
+# signing identity is present; fresh_install_check.py checks what actually shipped.
+"$HERE/build_bridge.sh" "$TAURI/binaries/bridge" "$VERSION"
+test -x "$TAURI/binaries/bridge/ArslanBridge.app/Contents/MacOS/ArslanBridge" \
+  || { echo "ERROR: Arslan Bridge did not build" >&2; exit 1; }
+
 if [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
   step "    signing the sidecar's Mach-O files"
   # BEFORE tauri build: `tauri build` signs the .app, sealing resources into
