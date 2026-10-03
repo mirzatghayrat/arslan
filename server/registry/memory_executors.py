@@ -464,6 +464,20 @@ class RememberExecutor:
                "message": "已提议,待你在记忆里确认(REST accept)"}
 
 
+class MemoryNoteExecutor:
+    """Edit the always-in-view sets — "About you" and Arslan's notes about this Mac
+    and setup — by entry id (0.1.52 S4). Host only; needs the unified memory store."""
+
+    key = "memory_note"
+
+    async def execute(self, args: dict) -> dict:
+        from server.services.memory_repository import is_active
+        from server.services.memory_tools_v2 import note
+        if not await is_active():
+            return {"ok": False, "code": "memory_store_unavailable"}
+        return await note(args, current_caller())
+
+
 class ConversationSearchExecutor:
     """Find the user's own earlier words in past conversations (0.1.52 S3).
 

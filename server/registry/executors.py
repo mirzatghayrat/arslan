@@ -16,7 +16,12 @@ from pathlib import Path
 
 from server import config
 from server.db.session import AsyncSessionLocal
-from server.registry.memory_executors import ConversationSearchExecutor, RecallExecutor, RememberExecutor
+from server.registry.memory_executors import (
+    ConversationSearchExecutor,
+    MemoryNoteExecutor,
+    RecallExecutor,
+    RememberExecutor,
+)
 from server.registry.hands_tools import (
     BrowserBackExecutor, BrowserClickExecutor, BrowserLookExecutor, BrowserOpenExecutor, BrowserPressExecutor,
     BrowserSelectExecutor, BrowserTypeExecutor, MacAppleScriptExecutor, MacListShortcutsExecutor,
@@ -817,7 +822,7 @@ from server.registry.file_tools import (  # noqa: E402 — registry assembly
 EXECUTORS = {e.key: e for e in (
     WebSearchExecutor(), WebExtractExecutor(), ChartExecutor(), CreateSkillExecutor(),
     DeckExecutor(), RunPythonExecutor(), RunCommandExecutor(), ListMyCapabilitiesExecutor(),
-    ReadSkillExecutor(), RecallExecutor(), RememberExecutor(), ConversationSearchExecutor(),
+    ReadSkillExecutor(), RecallExecutor(), RememberExecutor(), ConversationSearchExecutor(), MemoryNoteExecutor(),
     TaskProgressExecutor(), DelegateWorkExecutor(),
     StartBackgroundWorkExecutor(), BackgroundStatusExecutor(), StopBackgroundWorkExecutor(),
     # 0.1.45 hands: Arslan's browser and Mac automation (acting only inside background jobs).

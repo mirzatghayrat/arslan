@@ -341,6 +341,7 @@ export interface AppSettings {
   island_enabled?: boolean;
   terminal_sandbox_enabled?: boolean;
   memory_in_conversations?: boolean;
+  learned_practices_take_effect?: boolean;
   /** Comma-separated BCP-47 tags for image text recognition. Empty = follow
    *  the interface language plus English. */
   ocr_languages?: string;
@@ -527,7 +528,7 @@ export interface JobCard {
 
 export interface ArslanThreadItem {
   id: number;
-  kind: "message" | "fact" | "system" | "escalation" | "job";
+  kind: "message" | "fact" | "system" | "escalation" | "job" | "lesson";
   /** kind === "job": the background job whose live card sits at this point in the
    *  thread; the card's state lives in the store's `jobs` map. On a message, the
    *  job this result came from. */
@@ -539,6 +540,8 @@ export interface ArslanThreadItem {
   spawnId?: number | null;
   spawnName?: string | null;
   sensitive?: boolean; // kind === "fact"
+  /** kind === "lesson" (0.1.52 S5): the practice just learned. */
+  lesson?: { id: number; status: string };
   spawnMessageId?: number | null; // chat_messages assistant id, for feedback/redo/refine
   runId?: number | null; // trace+eval replay id, from spawn_meta
   taskBrief?: string | null; // the task this spawn turn ran, for redo/refine
@@ -641,6 +644,7 @@ export type ArslanServerMessage =
       restricted_count: number; assignable: boolean }
   | { type: "spawn_meta"; arslan_message_id: number; spawn_id: number; assistant_message_id: number; task_brief: string; run_id?: number }
   | { type: "fact_saved"; content: string; sensitive: boolean }
+  | { type: "lesson_learned"; lesson: { id: number; text: string; status: string } }
   | { type: "message"; message_id: number; content: string; role: string; job_id?: string; outcome?: JobOutcome | null }
   | { type: "job_update"; job_id: string; conversation_id: string; goal: string;
       phase: "queued" | "running" | "finished"; step: string; outcome: JobOutcome | null;

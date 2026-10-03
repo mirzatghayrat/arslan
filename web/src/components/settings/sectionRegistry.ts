@@ -116,6 +116,7 @@ export const FIELD_HOMES: Record<string, SettingsSectionId> = {
 
   // ── memory ────────────────────────────────────────────────────────────────
   'memory.in_conversations': 'memory',
+  'memory.learned_practices': 'memory',
   'memory.distill_on_session_end': 'memory',
   'memory.retention_days': 'memory',
   'memory.run_debug_retention_days': 'memory',

@@ -66,6 +66,9 @@ REGISTRY: dict[str, DecisionPoint] = {p.name: p for p in (
                   "Does the candidate say the same thing as the existing entry (a duplicate or a more precise "
                   "version of it)?",
                   ("candidate", "existing"), "active", 0.8),
+    DecisionPoint("memory.conflict",
+                  "Does the candidate advise the opposite of the existing entry for the same situation?",
+                  ("candidate", "existing"), "active", 0.8),
     DecisionPoint("memory.applied",
                   "Did the assistant act on this lesson in the steps shown?",
                   ("lesson", "steps"), "active", 0.7),

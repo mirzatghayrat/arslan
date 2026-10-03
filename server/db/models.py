@@ -704,6 +704,36 @@ class BrainUsageEvent(Base):
     used_ref = Column(String(100), nullable=True)
 
 
+class Lesson(Base):
+    """0.1.52 S5: a practice Arslan learned (lessons.py). Never a permission: commands
+    still go through terminal_policy and the sandbox. Counters feed the P4b curator."""
+
+    __tablename__ = "lessons"
+    __table_args__ = (
+        CheckConstraint("polarity IN ('do', 'avoid')", name="ck_lesson_polarity"),
+        CheckConstraint("source IN ('user_correction', 'detour', 'machine_quirk')", name="ck_lesson_source"),
+        CheckConstraint("status IN ('active', 'proposed', 'stale', 'archived')", name="ck_lesson_status"),
+        Index("ix_lessons_status", "status"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    owner_id = Column(String(100), nullable=False, default="local")
+    situation = Column(String(300), nullable=False)
+    advice = Column(String(400), nullable=False)
+    polarity = Column(String(10), nullable=False)
+    source = Column(String(20), nullable=False)
+    evidence = Column(JSON, nullable=True)
+    status = Column(String(10), nullable=False)
+    pinned = Column(Boolean, nullable=False, default=False)
+    recalled = Column(Integer, nullable=False, default=0)
+    followed = Column(Integer, nullable=False, default=0)
+    succeeded = Column(Integer, nullable=False, default=0)
+    failed = Column(Integer, nullable=False, default=0)
+    last_used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
 class Judgment(Base):
     """0.1.52 S2: one small decision the judge model was asked about (judgment.py).
     `state` is the minimal, named-fields question input (never page text);

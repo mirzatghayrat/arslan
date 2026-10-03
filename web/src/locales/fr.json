@@ -261,6 +261,13 @@
     "reconnecting": "Reconnexion..."
   },
   "chat": {
+    "learned": "Appris : {{text}}",
+    "wantsToLearn": "Arslan veut retenir une pratique : {{text}}",
+    "learnedUndo": "Annuler",
+    "learnedKeep": "Retenir",
+    "learnedSkip": "Non merci",
+    "learnedUndone": "Annulé",
+    "learnedKept": "Retenu",
     "title": "Discuter avec {{name}}",
     "placeholder": "Saisissez un message...",
     "send": "Envoyer",
@@ -496,6 +503,8 @@
   "settings": {
     "labelMemoryInConversations": "Se souvenir de moi et l’utiliser dans les conversations",
     "memoryInConversationsDesc": "Arslan retient ce que vous lui dites de vous et de votre façon de travailler, et l’utilise avec le modèle choisi, y compris dans le cloud. Le sensible (santé, argent, adresse) attend toujours votre accord, et chaque conversation peut couper la mémoire.",
+    "labelLearnedPractices": "Les pratiques apprises s’appliquent",
+    "learnedPracticesDesc": "Quand vous corrigez Arslan, ou qu’il trouve comment contourner un échec sur ce Mac, il retient la pratique et l’utilise la fois suivante. Vous pouvez voir et annuler chacune dans Brain. Une pratique apprise après lecture de pages web ou de fichiers attend votre accord. Désactivé : toutes attendent.",
     "labelTerminalSandbox": "Exécuter les commandes dans un bac à sable",
     "terminalSandboxDesc": "Les commandes peuvent lire des fichiers et utiliser le réseau, mais n’écrivent que dans le dossier de travail, les dossiers temporaires et de cache, et ne peuvent lire ni vos clés SSH, ni le trousseau, ni les données d’Arslan. En exécuter une hors du bac à sable demande toujours votre clic.",
     "appIcon": "Icône de l’application",

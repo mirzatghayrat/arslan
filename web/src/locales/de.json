@@ -261,6 +261,13 @@
     "reconnecting": "Verbindung wird wiederhergestellt …"
   },
   "chat": {
+    "learned": "Gelernt: {{text}}",
+    "wantsToLearn": "Arslan möchte sich eine Vorgehensweise merken: {{text}}",
+    "learnedUndo": "Rückgängig",
+    "learnedKeep": "Merken",
+    "learnedSkip": "Nein danke",
+    "learnedUndone": "Rückgängig gemacht",
+    "learnedKept": "Gemerkt",
     "title": "Mit {{name}} chatten",
     "placeholder": "Nachricht eingeben …",
     "send": "Senden",
@@ -496,6 +503,8 @@
   "settings": {
     "labelMemoryInConversations": "Mich merken und in Unterhaltungen nutzen",
     "memoryInConversationsDesc": "Arslan merkt sich, was du über dich und deine Arbeitsweise erzählst, und nutzt es mit dem gewählten Modell, auch in der Cloud. Sensibles (Gesundheit, Geld, Wohnort) wartet weiter auf dein OK, und jede Unterhaltung kann das Gedächtnis ausschalten.",
+    "labelLearnedPractices": "Gelernte Vorgehensweisen gelten sofort",
+    "learnedPracticesDesc": "Wenn du Arslan korrigierst oder es einen Weg um etwas findet, das auf diesem Mac fehlschlug, merkt es sich die Vorgehensweise und nutzt sie beim nächsten Mal. In Brain kannst du jede ansehen und rückgängig machen. Was nach dem Lesen von Webseiten oder Dateien gelernt wurde, wartet auf dein OK. Aus: alle warten.",
     "labelTerminalSandbox": "Befehle in einer Sandbox ausführen",
     "terminalSandboxDesc": "Befehle können Dateien lesen und das Netzwerk nutzen, schreiben aber nur in den Arbeitsordner, temporäre und Cache-Ordner und können deine SSH-Schlüssel, den Schlüsselbund und Arslans Daten nicht lesen. Einen Befehl außerhalb der Sandbox auszuführen braucht immer deinen Klick.",
     "appIcon": "App-Symbol",

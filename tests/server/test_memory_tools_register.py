@@ -67,7 +67,7 @@ def test_second_brain_toolset_key_avoids_literal_memory():
 
     second_brain = next(ts for ts in TOOLSETS if ts["key"] == "second_brain")
     tool_keys = {t[0] for t in second_brain["tools"]}
-    assert tool_keys == {"recall", "remember"}
+    assert tool_keys == {"recall", "remember", "conversation_search", "memory_note"}
     assert "memory" not in tool_keys
     assert second_brain["tier"] == "safe"
     assert second_brain["status"] == "wired"
@@ -87,7 +87,7 @@ async def test_second_brain_toolset_seeds_idempotently(maker):
         assert ts is not None and ts.status == "wired" and ts.tier == "safe"
         tools = (await s.execute(
             select(Tool).where(Tool.toolset_key == "second_brain"))).scalars().all()
-    assert {t.key for t in tools} == {"recall", "remember"}
+    assert {t.key for t in tools} == {"recall", "remember", "conversation_search", "memory_note"}
     assert all(t.tier == "safe" and t.status == "wired" for t in tools)
 
 
@@ -114,7 +114,7 @@ async def test_arslan_host_tools_include_recall_and_remember(monkeypatch):
 
     tools = await arslan._arslan_tools()
     keys = {t["key"] for t in tools}
-    assert {"recall", "remember"} <= keys
+    assert {"recall", "remember", "conversation_search", "memory_note"} <= keys
 
 
 def test_native_param_schemas_cover_recall_and_remember():

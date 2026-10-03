@@ -67,6 +67,46 @@ describe("memory controls", () => {
     await waitFor(() => expect(accept).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(screen.queryByTestId("noticed-earlier")).toBeNull());
   });
+  it("shows the always-in-view sets and pins or unpins by changing only the mark (0.1.52 S4)", async () => {
+    const base = { kind: "preference", status: "active", version: 3, scope: { kind: "global", id: null }, topic: null,
+      sensitivity: "normal", use_policy: "cloud_allowed", sources: [], updated_at: "2026-10-03T00:00:00Z",
+      valid_from: null, review_at: null, expires_at: null };
+    vi.spyOn(companionApi, "memories").mockResolvedValue([
+      { ...base, id: "a", content: "Answers in Chinese", core: "about_you" },
+      { ...base, id: "n", content: "Homebrew at /opt/homebrew", kind: "experience", core: "notes" },
+      { ...base, id: "p", content: "Likes orange layouts", core: null },
+      { ...base, id: "proj", content: "Tabs in this repo", scope: { kind: "project", id: "x" } },
+      { ...base, id: "old", content: "Paused note", kind: "experience", status: "paused", core: "notes" },
+    ] as unknown as MemoryEntry[]);
+    vi.spyOn(companionApi, "proposals").mockResolvedValue([]);
+    vi.spyOn(companionApi, "projects").mockResolvedValue([]);
+    vi.spyOn(companionApi, "noticedEarlier").mockResolvedValue({ count: 0 });
+    const edit = vi.spyOn(companionApi, "editMemory").mockResolvedValue({} as MemoryEntry);
+    render(<MemoryList />);
+    expect(await screen.findByTestId("in-view-about_you")).toHaveTextContent("Answers in Chinese");
+    expect(screen.getByTestId("in-view-notes")).toHaveTextContent("/opt/homebrew");
+    expect(screen.getByTestId("in-view")).not.toHaveTextContent("orange");
+    expect(screen.getByTestId("in-view")).not.toHaveTextContent("Paused note");
+    // a project-scoped preference can never join a set; the unpinned global one can
+    expect(screen.getAllByText("companion.keepInView")).toHaveLength(1);
+    fireEvent.click(screen.getByText("companion.keepInView"));
+    await waitFor(() => expect(edit).toHaveBeenCalledTimes(1));
+    const [entry, body, scope] = edit.mock.calls[0];
+    expect(entry.id).toBe("p");
+    expect(body).toEqual({ content: "Likes orange layouts", kind: "preference", scope: { kind: "global", id: null },
+      sensitivity: "normal", use_policy: "cloud_allowed", topic: null, valid_from: null, review_at: null,
+      expires_at: null, core: "about_you" });
+    expect(scope).toBe(false);
+    fireEvent.click(screen.getAllByLabelText("companion.takeOutOfView")[0]);
+    await waitFor(() => expect(edit).toHaveBeenCalledTimes(2));
+    expect(edit.mock.calls[1][0].id).toBe("a");
+    expect(edit.mock.calls[1][1].core).toBeNull();
+    // the same choice from the entry itself in the list
+    fireEvent.click(screen.getAllByText("companion.takeOutOfView")[1]);
+    await waitFor(() => expect(edit).toHaveBeenCalledTimes(3));
+    expect(edit.mock.calls[2][0].id).toBe("n");
+    expect(edit.mock.calls[2][1].core).toBeNull();
+  });
   it("a normal proposal defaults to usable with your model; a sensitive one does not (0.1.52)", async () => {
     const entry = { id: "e1", content: "Prefers tables", kind: "preference", status: "proposed", version: 1,
       scope: { kind: "global", id: null }, sensitivity: "normal", use_policy: "local_only", sources: [], updated_at: "2026-09-14T00:00:00Z" };

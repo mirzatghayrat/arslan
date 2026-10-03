@@ -35,6 +35,13 @@ def _iso(value):
     return value.isoformat() + "Z" if value else None
 
 
+def _structured(write: MemoryWrite) -> dict:
+    value = {"topic": write.topic, "style_reference": reference_data(write.style_reference)}
+    if write.core:
+        value["core"] = write.core
+    return value
+
+
 async def is_active(db=None) -> bool:
     if db is None:
         async with db_session.AsyncSessionLocal() as own:
@@ -186,7 +193,9 @@ class MemoryRepository:
                 previous = await self.db.get(MemoryRevision, duplicate.current_revision_id)
                 if (previous.structured_value or {}).get("style_reference") != reference_data(write.style_reference):
                     raise MemoryError("style_reference_conflict")
-            if decision.status == "active" and duplicate.status != "active":
+            previous = await self.db.get(MemoryRevision, duplicate.current_revision_id)
+            core_changed = "core" in write.model_fields_set and (previous.structured_value or {}).get("core") != write.core
+            if (decision.status == "active" and duplicate.status != "active") or core_changed:
                 return await self.revise(duplicate.id, duplicate.version, write, actor)
             return await self.present(duplicate, deduplicated=True)
         status = decision.status
@@ -215,7 +224,7 @@ class MemoryRepository:
         await self.db.flush()
         self.db.add(MemoryRevision(
             id=revision_id, entry_id=entry_id, version=1, content=write.content.strip(),
-            structured_value={"topic": write.topic, "style_reference": reference_data(write.style_reference)}, previous_version=None, change_reason="created",
+            structured_value=_structured(write), previous_version=None, change_reason="created",
         ))
         await self.db.flush()
         await self._source(entry, revision_id, actor)
@@ -252,6 +261,12 @@ class MemoryRepository:
                 if write.kind != "style_rule" or write.scope.kind != "project":
                     raise MemoryError("style_reference_project_required")
                 write = MemoryWrite.model_validate({**write.model_dump(), "style_reference": reference})
+        if "core" not in write.model_fields_set and (previous.structured_value or {}).get("core"):
+            try:
+                write = MemoryWrite.model_validate({**write.model_dump(exclude_unset=True),
+                                                    "core": previous.structured_value["core"]})
+            except ValueError:
+                pass  # a kind or scope change leaves the always-in-view set
         decision = decide_write(write, actor)
         await self._scope_exists(write.scope, actor)
         digest = await self._not_suppressed(write, actor)
@@ -281,7 +296,7 @@ class MemoryRepository:
             raise MemoryError("memory_version_conflict")
         self.db.add(MemoryRevision(
             id=revision_id, entry_id=entry_id, version=version, content=write.content.strip(),
-            structured_value={"topic": write.topic, "style_reference": reference_data(write.style_reference)}, previous_version=expected_version, change_reason="user_confirmed",
+            structured_value=_structured(write), previous_version=expected_version, change_reason="user_confirmed",
         ))
         await self.db.flush()
         await self._source(entry, revision_id, actor)
@@ -314,6 +329,7 @@ class MemoryRepository:
                         "sensitivity": entry.sensitivity if entry.sensitivity != "secret" else "unknown",
                         "topic": (revision.structured_value or {}).get("topic"),
                         "style_reference": (revision.structured_value or {}).get("style_reference"),
+                        "core": (revision.structured_value or {}).get("core"),
                         "valid_from": _iso(entry.valid_from), "review_at": _iso(entry.review_at),
                         "expires_at": _iso(entry.expires_at)}
             data.update(sensitive_acknowledged=sensitive_acknowledged, use_policy=use_policy)
@@ -379,6 +395,7 @@ class MemoryRepository:
             "content": revision.content if revision and entry.status != "deleted" else None,
             "topic": (revision.structured_value or {}).get("topic") if revision else None,
             "style_reference": (revision.structured_value or {}).get("style_reference") if revision and entry.status != "deleted" else None,
+            "core": (revision.structured_value or {}).get("core") if revision and entry.status != "deleted" else None,
             "sensitivity": entry.sensitivity, "use_policy": entry.use_policy,
             "confirmation_kind": entry.confirmation_kind, "confirmed_at": _iso(entry.confirmed_at),
             "valid_from": _iso(entry.valid_from), "review_at": _iso(entry.review_at),

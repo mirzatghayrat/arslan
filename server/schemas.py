@@ -45,6 +45,7 @@ class SettingsIn(BaseModel):
     island_enabled: bool | None = None
     terminal_sandbox_enabled: bool | None = None
     memory_in_conversations: bool | None = None
+    learned_practices_take_effect: bool | None = None
     brain_usage_event_retention_days: int | None = None
     brain_usage_event_max_rows: int | None = None
     orchestrator_shell_enabled: str | None = None
@@ -115,6 +116,7 @@ class SettingsOut(BaseModel):
     island_enabled: bool = True
     terminal_sandbox_enabled: bool = True
     memory_in_conversations: bool = True
+    learned_practices_take_effect: bool = True
     brain_usage_event_retention_days: int = 30
     brain_usage_event_max_rows: int = 200_000
     orchestrator_shell_enabled: str = ""

@@ -175,6 +175,8 @@ TOOLSETS: list[dict] = [
              "proposed for the user to confirm, not executed.", "safe", "wired"),
             ("conversation_search", "Search earlier conversations and return original snippets "
              "with date and an in-app link (0.1.52).", "safe", "wired"),
+            ("memory_note", "Edit the always-in-view memory by entry id: \"About you\" and Arslan's "
+             "notes about this Mac and setup (0.1.52).", "safe", "wired"),
         ],
     },
     {

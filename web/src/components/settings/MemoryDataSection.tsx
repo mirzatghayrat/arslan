@@ -39,6 +39,9 @@ export interface MemoryDataSectionProps {
   /** 0.1.52 (D1): "Remember me and use it in conversations" (on by default). Optional so older hosts still render. */
   memoryInConversations?: boolean;
   onMemoryInConversationsChange?: (value: boolean) => void;
+  /** 0.1.52 S5: "Learned practices take effect" (on by default). */
+  learnedPracticesTakeEffect?: boolean;
+  onLearnedPracticesChange?: (value: boolean) => void;
 }
 
 export default function MemoryDataSection({
@@ -51,6 +54,8 @@ export default function MemoryDataSection({
   onRetentionDaysChange,
   memoryInConversations = true,
   onMemoryInConversationsChange,
+  learnedPracticesTakeEffect = true,
+  onLearnedPracticesChange,
 }: MemoryDataSectionProps) {
   const { t } = useTranslation();
 
@@ -68,6 +73,16 @@ export default function MemoryDataSection({
         </div>
         <input id="settings-memory-in-conversations" data-testid="settings-memory-in-conversations" type="checkbox"
           checked={memoryInConversations} onChange={(e) => onMemoryInConversationsChange?.(e.target.checked)}
+          className="w-4 h-4 mt-1 shrink-0 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer" />
+      </div>
+
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h4 className="text-xs font-bold text-foreground font-sans">{t('settings.labelLearnedPractices')}</h4>
+          <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">{t('settings.learnedPracticesDesc')}</p>
+        </div>
+        <input id="settings-learned-practices" data-testid="settings-learned-practices" type="checkbox"
+          checked={learnedPracticesTakeEffect} onChange={(e) => onLearnedPracticesChange?.(e.target.checked)}
           className="w-4 h-4 mt-1 shrink-0 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer" />
       </div>
 

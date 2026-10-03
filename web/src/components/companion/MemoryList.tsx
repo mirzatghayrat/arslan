@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { History, LockKeyhole, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { History, LockKeyhole, Pencil, Pin, PinOff, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { companionApi, type MemoryEntry, type MemoryProposal, type MemoryRevision, type Project } from "../../api/companion";
+import { companionApi, type MemoryEntry, type MemoryProposal, type MemoryRevision, type MemoryWrite, type Project } from "../../api/companion";
+import { lessonsApi, type Lesson } from "../../api/lessons";
 import CompanionDialog, { buttonClass, inputClass, primaryClass } from "./CompanionDialog";
 import MemoryEditor from "./MemoryEditor";
 import StyleReferenceView from "./StyleReferenceView";
@@ -65,6 +66,56 @@ function MemoryHistory({ entry, onClose }: { entry: MemoryEntry; onClose: () => 
   </CompanionDialog>;
 }
 
+/** 0.1.52 S4: the always-in-view sets, mirrored from server/services/personal_context.py. */
+const CORE_SETS = [
+  { key: "about_you", kind: "preference", limit: 1500, label: "companion.aboutYouSet" },
+  { key: "notes", kind: "experience", limit: 2500, label: "companion.notesSet" },
+] as const;
+const coreSetFor = (entry: MemoryEntry) => entry.scope.kind === "global"
+  ? CORE_SETS.find(set => set.kind === entry.kind) : undefined;
+/** Same entry, with only its always-in-view membership changed. */
+export function withCore(entry: MemoryEntry, core: MemoryWrite["core"]): MemoryWrite {
+  return { content: entry.content ?? "", kind: entry.kind, scope: entry.scope,
+    sensitivity: entry.sensitivity === "secret" ? "unknown" : entry.sensitivity,
+    use_policy: entry.use_policy === "never" ? "local_only" : entry.use_policy,
+    topic: entry.topic ?? null, valid_from: entry.valid_from, review_at: entry.review_at,
+    expires_at: entry.expires_at, core };
+}
+
+/** 0.1.52 S5: what Arslan learned from your corrections and its own detours. */
+function LearnedPractices({ lessons, busy, change }: {
+  lessons: Lesson[]; busy: boolean; change: (operation: () => Promise<unknown>) => Promise<void>;
+}) {
+  const { t } = useTranslation();
+  const [showRetired, setShowRetired] = useState(false);
+  const current = lessons.filter(lesson => lesson.status !== "archived");
+  const retired = lessons.filter(lesson => lesson.status === "archived");
+  const source = { user_correction: "companion.sourceUser", detour: "companion.sourceDetour", machine_quirk: "companion.sourceQuirk" } as const;
+  const row = (lesson: Lesson) => <li key={lesson.id} data-testid={`practice-${lesson.id}`} className="rounded-lg bg-foreground/5 px-3 py-2 text-sm">
+    <p className="break-words">{lesson.text}</p>
+    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+      <span>{t(source[lesson.source])}</span>
+      {lesson.status === "proposed" && <span className="text-primary">{t("companion.practiceWaiting")}</span>}
+      <span>{t("companion.practiceCounts", { recalled: lesson.recalled, followed: lesson.followed, succeeded: lesson.succeeded, failed: lesson.failed })}</span>
+      <span className="ml-auto flex flex-wrap gap-3">
+        {lesson.status === "proposed" && <button className="underline underline-offset-2 hover:text-foreground" disabled={busy} onClick={() => void change(() => lessonsApi.setStatus(lesson.id, "active"))}>{t("companion.practiceUse")}</button>}
+        {lesson.status === "archived"
+          ? <button className="underline underline-offset-2 hover:text-foreground" disabled={busy} onClick={() => void change(() => lessonsApi.setStatus(lesson.id, "active"))}>{t("companion.practiceRestore")}</button>
+          : <button className="underline underline-offset-2 hover:text-foreground" disabled={busy} onClick={() => void change(() => lessonsApi.setStatus(lesson.id, "archived"))}>{t("companion.practiceRetire")}</button>}
+        <button className="underline underline-offset-2 hover:text-foreground" disabled={busy} onClick={() => void change(() => lessonsApi.pin(lesson.id, !lesson.pinned))}>{t(lesson.pinned ? "companion.practiceUnpin" : "companion.practicePin")}</button>
+        <button className="text-destructive underline underline-offset-2" disabled={busy} onClick={() => void change(() => lessonsApi.remove(lesson.id))}>{t("companion.remove")}</button>
+      </span>
+    </div>
+  </li>;
+  return <div data-testid="learned-practices" className="space-y-3 rounded-xl border border-border p-4">
+    <div><h2 className="text-sm font-semibold">{t("companion.practices")}</h2><p className="mt-1 text-xs text-muted-foreground">{t("companion.practicesHint")}</p></div>
+    <ul className="space-y-1">{current.map(row)}</ul>
+    {retired.length > 0 && <button className="text-xs text-muted-foreground underline underline-offset-2" aria-expanded={showRetired}
+      onClick={() => setShowRetired(value => !value)}>{t("companion.practiceRetired", { count: retired.length })}</button>}
+    {showRetired && <ul className="space-y-1 opacity-70">{retired.map(row)}</ul>}
+  </div>;
+}
+
 type Dialog = { kind: "edit"; entry?: MemoryEntry } | { kind: "delete" | "history" | "source"; entry: MemoryEntry } | { kind: "proposal"; proposal: MemoryProposal };
 export default function MemoryList() {
   const { t, i18n } = useTranslation();
@@ -81,16 +132,17 @@ export default function MemoryList() {
   const [showPending, setShowPending] = useState(false);
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [noticed, setNoticed] = useState(0);
+  const [practices, setPractices] = useState<Lesson[]>([]);
   const generation = useRef(0);
   const offsets = useRef({ entries: 0, proposals: 0 });
   const reload = useCallback(async () => {
     const request = ++generation.current;
     setLoading(true); setError(null);
     try {
-      const [memories, projectRows, pending, earlier] = await Promise.all([companionApi.memories(), companionApi.projects(),
-        companionApi.proposals(), companionApi.noticedEarlier().catch(() => ({ count: 0 }))]);
+      const [memories, projectRows, pending, earlier, learned] = await Promise.all([companionApi.memories(), companionApi.projects(),
+        companionApi.proposals(), companionApi.noticedEarlier().catch(() => ({ count: 0 })), lessonsApi.list().catch(() => [] as Lesson[])]);
       if (request === generation.current) {
-        setNoticed(earlier.count);
+        setNoticed(earlier.count); setPractices(learned);
         setEntries(memories); setProjects(projectRows); setProposals(pending);
         setMoreEntries(memories.length === 100); setMoreProposals(pending.length === 100);
         offsets.current = { entries: memories.length, proposals: pending.length };
@@ -159,6 +211,24 @@ export default function MemoryList() {
         }}>{t("companion.useAll")}</button>
         <button className={buttonClass} onClick={() => setShowPending(true)}>{t("companion.reviewEach")}</button>
       </div>}
+      {entries.some(entry => entry.core && entry.status === "active") && <div data-testid="in-view" className="space-y-3 rounded-xl border border-border p-4">
+        <div><h2 className="text-sm font-semibold">{t("companion.inView")}</h2><p className="mt-1 text-xs text-muted-foreground">{t("companion.inViewHint")}</p></div>
+        {CORE_SETS.map(set => {
+          const rows = entries.filter(entry => entry.core === set.key && entry.status === "active");
+          if (!rows.length) return null;
+          const used = rows.reduce((sum, entry) => sum + (entry.content ?? "").replace(/\s+/g, " ").trim().length, 0);
+          return <div key={set.key} data-testid={`in-view-${set.key}`}>
+            <div className="mb-1 flex justify-between text-xs text-muted-foreground"><span>{t(set.label)}</span>
+              <span>{t("companion.inViewChars", { used, limit: set.limit })}</span></div>
+            <ul className="space-y-1">{rows.map(entry => <li key={entry.id} className="flex items-start gap-2 rounded-lg bg-foreground/5 px-3 py-2 text-sm">
+              <span className="min-w-0 flex-1 break-words">{entry.content}</span>
+              <button className="shrink-0 text-muted-foreground hover:text-foreground" aria-label={t("companion.takeOutOfView")} title={t("companion.takeOutOfView")} disabled={busy || loading}
+                onClick={() => void change(() => companionApi.editMemory(entry, withCore(entry, null), false))}><PinOff size={14} /></button>
+            </li>)}</ul>
+          </div>;
+        })}
+      </div>}
+      {practices.length > 0 && <LearnedPractices lessons={practices} busy={busy || loading} change={change} />}
       {error && <p role="alert" className="rounded-lg border border-destructive/30 p-3 text-sm text-destructive">{t(error)}</p>}
       {loading && <p role="status" className="text-sm text-muted-foreground">{t("companion.loading")}</p>}
       {showPending && <div className="space-y-2 rounded-xl border border-primary/20 bg-primary/5 p-4">
@@ -182,6 +252,9 @@ export default function MemoryList() {
           </div>
           <div className="mt-3 flex flex-wrap justify-end gap-2">
             <button className={buttonClass} disabled={busy || loading} onClick={() => setDialog({ kind: "history", entry })}><History size={14} />{t("companion.history")}</button>
+            {coreSetFor(entry) && entry.status === "active" && entry.content && <button className={buttonClass} disabled={busy || loading}
+              onClick={() => void change(() => companionApi.editMemory(entry, withCore(entry, entry.core ? null : coreSetFor(entry)!.key), false))}>
+              {entry.core ? <PinOff size={14} /> : <Pin size={14} />}{t(entry.core ? "companion.takeOutOfView" : "companion.keepInView")}</button>}
             <button className={buttonClass} disabled={busy || loading || entry.sensitivity === "secret"} onClick={() => setDialog({ kind: "edit", entry })}><Pencil size={14} />{t("companion.edit")}</button>
             {(entry.status === "active" || entry.status === "paused") && <button className={buttonClass} disabled={busy || loading}
               onClick={() => void change(() => companionApi.setMemoryStatus(entry, entry.status === "active" ? "paused" : "active"))}>{t(entry.status === "active" ? "companion.pause" : "companion.resume")}</button>}

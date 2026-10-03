@@ -203,6 +203,8 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         onRetentionDaysChange={(v) => saveField({ runDebugRetentionDays: v })}
         memoryInConversations={localSettings.memoryInConversations ?? true}
         onMemoryInConversationsChange={(v) => saveField({ memoryInConversations: v })}
+        learnedPracticesTakeEffect={localSettings.learnedPracticesTakeEffect ?? true}
+        onLearnedPracticesChange={(v) => saveField({ learnedPracticesTakeEffect: v })}
       />
     ),
 

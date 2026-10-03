@@ -61,6 +61,16 @@ async def test_a_hard_stop_after_saving_ends_with_what_was_saved(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_a_real_chat_turn_gets_the_closing_message_too(monkeypatch):
+    """The chat path passes ToolCaller(actor="host") (arslan.py); 0.1.50 checked for no
+    caller at all, so a real chat turn never reached the closing message."""
+    from server.orchestrator.tool_caller import ToolCaller
+    result, _ = await _run(monkeypatch, [_write(), _search(1)],
+                           caller=ToolCaller(actor="host", spawn_id=None, conversation_id="c"))
+    assert result["stop_reason"] == "task_budget_exhausted" and result["final"]
+
+
+@pytest.mark.asyncio
 async def test_a_hard_stop_with_only_reading_says_nothing_was_saved(monkeypatch):
     result, _ = await _run(monkeypatch, [_search(0), _search(1)])
     assert "Nothing was saved yet" in result["final"]

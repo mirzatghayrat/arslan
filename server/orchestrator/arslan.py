@@ -846,9 +846,15 @@ async def _arslan_tools() -> list[dict]:
                                "words and your replies — as original snippets with date and a link. "
                                "args: {query, since?, until? (YYYY-MM-DD), limit?}. Use it when the user "
                                "refers to something from before (\"what did I say about…\", \"last week we…\").",
+        "memory_note": "Edit the two memory sets that are always in view, by entry id. set \"about_you\": "
+                       "lasting facts and preferences about the user; set \"notes\": what you learned about this "
+                       "Mac and setup (paths, tools, quirks). args: {action: add|replace|remove, set, id?, text?}. "
+                       "Keep entries short. Changes apply from the next turn; a full set returns its entries so "
+                       "you can replace or remove one.",
     }
     tools = [{"key": k, "description": desc[k]}
-             for k in ("web_search", "web_extract", "render_chart", "recall", "remember", "conversation_search")
+             for k in ("web_search", "web_extract", "render_chart", "recall", "remember", "conversation_search",
+                       "memory_note")
              if k in EXECUTORS]
     from server.services.task_service import current as current_task
     if current_task() is not None and "task_progress" in EXECUTORS:

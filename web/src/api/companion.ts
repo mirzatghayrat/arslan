@@ -18,6 +18,8 @@ export interface MemoryWrite {
   sensitive_acknowledged?: boolean;
   topic?: string | null;
   style_reference?: StyleReference | null;
+  /** 0.1.52: membership of the always-in-view sets (global preference / experience only). */
+  core?: "about_you" | "notes" | null;
   valid_from?: string | null;
   review_at?: string | null;
   expires_at?: string | null;
