@@ -129,6 +129,8 @@ describe("every settings field the UI can edit is mappable", () => {
       desktop_notifications_enabled: { desktopNotificationsEnabled: false },
       island_enabled: { islandEnabled: false },
       terminal_sandbox_enabled: { terminalSandboxEnabled: false },
+      memory_in_conversations: { memoryInConversations: false },
+      learned_practices_take_effect: { learnedPracticesTakeEffect: false },
       evolution_auto: { evolutionAuto: true },
       evolution_max_dispatches: { evolutionMaxDispatches: 5 },
       ocr_languages: { ocrLanguages: "eng" },

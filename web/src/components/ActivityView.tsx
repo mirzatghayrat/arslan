@@ -7,6 +7,7 @@ import { fmtMs } from "../lib/usageFormat";
 import RunReplay from "./RunReplay";
 import UsageCard from "./UsageCard";
 import ScheduledTasksCard from "./ScheduledTasksCard";
+import JudgmentsCard from "./JudgmentsCard";
 
 /**
  * Activity (0.1.48): what Arslan did, and what it cost.
@@ -95,6 +96,7 @@ export default function ActivityView() {
           </ul>
         )}
       </section>
+      <JudgmentsCard />
     </div>
   );
 }

@@ -18,3 +18,18 @@ export function notificationTarget(id: string, threads: { id: string; archived?:
   const target = conversationToOpen(id, threads);
   return target ? { kind: "conversation", id: target } : null;
 }
+
+
+/** 0.1.52 S3: an in-app link to an earlier conversation, as conversation_search returns it. */
+export const CONVERSATION_LINK_PREFIX = "#conversation=";
+export const OPEN_CONVERSATION_EVENT = "arslan-open-conversation";
+
+export function conversationFromLink(href: string | undefined): string | null {
+  if (!href || !href.startsWith(CONVERSATION_LINK_PREFIX)) return null;
+  try {
+    const id = decodeURIComponent(href.slice(CONVERSATION_LINK_PREFIX.length)).trim();
+    return id && id.length <= 100 ? id : null;
+  } catch {
+    return null;
+  }
+}

@@ -64,3 +64,18 @@ async def test_the_executor_runs_offline_when_the_loop_says_so(tmp_path, monkeyp
         terminal_exec.OFFLINE.reset(token)
     assert seen == [False, True]
     await engine.dispose()
+
+
+def test_repeated_lines_fold_for_the_model_and_nothing_else_changes():
+    """0.1.52 S2: runs of 3+ identical lines show once with a count; shorter runs,
+    blank lines and different lines stay as they are."""
+    text = "start\n" + "warning: x\n" * 50 + "a\na\nend\n\n\n\n"
+    folded = terminal_exec.fold_repeats(text)
+    assert folded.count("warning: x") == 1 and "repeated 49 more times" in folded
+    assert "a\na\nend" in folded and folded.endswith("\n\n\n\n")
+    assert terminal_exec.fold_repeats("one\ntwo\nthree") == "one\ntwo\nthree"
+
+
+async def test_the_model_sees_folded_output(tmp_path):
+    out = await terminal_exec.run("for i in $(seq 1 40); do echo same line; done; echo done", cwd=tmp_path)
+    assert out["stdout"].count("same line") == 1 and "repeated 39 more times" in out["stdout"]

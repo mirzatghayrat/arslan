@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, cleanup } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { companionMessages } from "../../locales/companion";
-import { companionApi, type ConversationContext, type MemoryEntry, type Project } from "../../api/companion";
+import { companionApi, type ConversationContext, type MemoryEntry, type MemoryProposal, type Project } from "../../api/companion";
 import { api } from "../../api/client";
 import { persistThreads, ACTIVE_THREAD_KEY, THREADS_KEY, restoreThreads } from "../../lib/sessionPersistence";
 import { useArslanStore, initialArslanState } from "../../stores/arslanStore";
@@ -54,6 +54,77 @@ describe("memory controls", () => {
     expect(await screen.findByText("Older memory")).toBeVisible();
     expect(memories.mock.calls).toEqual([[], [100], [100]]);
     expect(screen.queryByText("companion.loadMore")).not.toBeInTheDocument();
+  });
+  it("lists facts noticed earlier once; nothing changes until Use all (0.1.52)", async () => {
+    vi.spyOn(companionApi, "memories").mockResolvedValue([]);
+    vi.spyOn(companionApi, "proposals").mockResolvedValue([]);
+    vi.spyOn(companionApi, "noticedEarlier").mockResolvedValueOnce({ count: 2 }).mockResolvedValue({ count: 0 });
+    const accept = vi.spyOn(companionApi, "acceptNoticedEarlier").mockResolvedValue({ accepted: 2 });
+    render(<MemoryList />);
+    expect(await screen.findByTestId("noticed-earlier")).toHaveTextContent("companion.noticedEarlier");
+    expect(accept).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText("companion.useAll"));
+    await waitFor(() => expect(accept).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByTestId("noticed-earlier")).toBeNull());
+  });
+  it("shows the always-in-view sets and pins or unpins by changing only the mark (0.1.52 S4)", async () => {
+    const base = { kind: "preference", status: "active", version: 3, scope: { kind: "global", id: null }, topic: null,
+      sensitivity: "normal", use_policy: "cloud_allowed", sources: [], updated_at: "2026-10-03T00:00:00Z",
+      valid_from: null, review_at: null, expires_at: null };
+    vi.spyOn(companionApi, "memories").mockResolvedValue([
+      { ...base, id: "a", content: "Answers in Chinese", core: "about_you" },
+      { ...base, id: "n", content: "Homebrew at /opt/homebrew", kind: "experience", core: "notes" },
+      { ...base, id: "p", content: "Likes orange layouts", core: null },
+      { ...base, id: "proj", content: "Tabs in this repo", scope: { kind: "project", id: "x" } },
+      { ...base, id: "old", content: "Paused note", kind: "experience", status: "paused", core: "notes" },
+    ] as unknown as MemoryEntry[]);
+    vi.spyOn(companionApi, "proposals").mockResolvedValue([]);
+    vi.spyOn(companionApi, "projects").mockResolvedValue([]);
+    vi.spyOn(companionApi, "noticedEarlier").mockResolvedValue({ count: 0 });
+    const edit = vi.spyOn(companionApi, "editMemory").mockResolvedValue({} as MemoryEntry);
+    render(<MemoryList />);
+    expect(await screen.findByTestId("in-view-about_you")).toHaveTextContent("Answers in Chinese");
+    expect(screen.getByTestId("in-view-notes")).toHaveTextContent("/opt/homebrew");
+    expect(screen.getByTestId("in-view")).not.toHaveTextContent("orange");
+    expect(screen.getByTestId("in-view")).not.toHaveTextContent("Paused note");
+    // a project-scoped preference can never join a set; the unpinned global one can
+    expect(screen.getAllByText("companion.keepInView")).toHaveLength(1);
+    fireEvent.click(screen.getByText("companion.keepInView"));
+    await waitFor(() => expect(edit).toHaveBeenCalledTimes(1));
+    const [entry, body, scope] = edit.mock.calls[0];
+    expect(entry.id).toBe("p");
+    expect(body).toEqual({ content: "Likes orange layouts", kind: "preference", scope: { kind: "global", id: null },
+      sensitivity: "normal", use_policy: "cloud_allowed", topic: null, valid_from: null, review_at: null,
+      expires_at: null, core: "about_you" });
+    expect(scope).toBe(false);
+    fireEvent.click(screen.getAllByLabelText("companion.takeOutOfView")[0]);
+    await waitFor(() => expect(edit).toHaveBeenCalledTimes(2));
+    expect(edit.mock.calls[1][0].id).toBe("a");
+    expect(edit.mock.calls[1][1].core).toBeNull();
+    // the same choice from the entry itself in the list
+    fireEvent.click(screen.getAllByText("companion.takeOutOfView")[1]);
+    await waitFor(() => expect(edit).toHaveBeenCalledTimes(3));
+    expect(edit.mock.calls[2][0].id).toBe("n");
+    expect(edit.mock.calls[2][1].core).toBeNull();
+  });
+  it("a normal proposal defaults to usable with your model; a sensitive one does not (0.1.52)", async () => {
+    const entry = { id: "e1", content: "Prefers tables", kind: "preference", status: "proposed", version: 1,
+      scope: { kind: "global", id: null }, sensitivity: "normal", use_policy: "local_only", sources: [], updated_at: "2026-09-14T00:00:00Z" };
+    vi.spyOn(companionApi, "memories").mockResolvedValue([]);
+    vi.spyOn(companionApi, "noticedEarlier").mockResolvedValue({ count: 0 });
+    vi.spyOn(companionApi, "proposals").mockResolvedValue([
+      { id: 1, target_id: "e1", target_version: 1, candidate: null, entry, reason: "" },
+      { id: 2, target_id: "e2", target_version: 1, candidate: null, entry: { ...entry, id: "e2", content: "Salary detail", sensitivity: "sensitive" }, reason: "" },
+    ] as unknown as MemoryProposal[]);
+    render(<MemoryList />);
+    fireEvent.click(await screen.findByText("companion.pending"));
+    fireEvent.click(await screen.findByText("Prefers tables"));
+    expect((screen.getByLabelText("companion.cloud") as HTMLInputElement).checked).toBe(true);
+    cleanup();
+    render(<MemoryList />);
+    fireEvent.click(await screen.findByText("companion.pending"));
+    fireEvent.click(await screen.findByText("Salary detail"));
+    expect((screen.getByLabelText("companion.cloud") as HTMLInputElement).checked).toBe(false);
   });
   it("renders withheld legacy credential content without crashing or offering edit", async () => {
     vi.spyOn(companionApi, "memories").mockResolvedValue([{ id: "restricted", content: null, kind: "preference", status: "quarantined",
@@ -154,6 +225,28 @@ describe("temporary conversation", () => {
     fireEvent.click(screen.getByText("companion.save"));
     await waitFor(() => expect(changed).toHaveBeenLastCalledWith(next));
     expect(save.mock.calls[0][1]).toMatchObject({ temporary: true, no_memory: true, no_learning: true, cloud_memory_allowed: false, allow_sensitive: false });
+  });
+  it("with memory on by default, hides the cloud switch and one tick allows sensitive memory (0.1.52)", async () => {
+    const onByDefault = { ...context, memory_by_default: true };
+    vi.spyOn(companionApi, "context").mockResolvedValue(onByDefault);
+    const save = vi.spyOn(companionApi, "saveContext").mockImplementation(async (_c, changes) => ({ ...onByDefault, ...changes, version: 1 }));
+    render(<ConversationControls conversationId="new" empty running={false} onChanged={() => {}} />);
+    await waitFor(() => expect(screen.getByText("companion.conversationSettings")).not.toBeDisabled());
+    fireEvent.click(screen.getByText("companion.conversationSettings"));
+    expect(screen.queryByLabelText("companion.conversationCloud")).toBeNull();
+    expect(screen.queryByLabelText("companion.allowSensitive")).toBeNull();
+    expect(screen.getByTestId("memory-by-default-note")).toHaveTextContent("companion.memoryByDefaultNote");
+    fireEvent.click(screen.getByTestId("allow-sensitive-cloud"));
+    fireEvent.click(screen.getByText("companion.save"));
+    await waitFor(() => expect(save).toHaveBeenCalled());
+    expect(save.mock.calls[0][1]).toMatchObject({ allow_sensitive: true, cloud_memory_allowed: true });
+  });
+  it("never sends the read-only default back to the server", async () => {
+    const put = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ ...context, version: 1 }), { status: 200 }));
+    await companionApi.saveContext({ ...context, memory_by_default: true }, { no_learning: true });
+    const body = JSON.parse(String((put.mock.calls[0][1] as RequestInit).body));
+    expect(body).not.toHaveProperty("memory_by_default");
+    expect(body).toMatchObject({ no_learning: true, expected_version: 0 });
   });
   it("does not offer temporary mode for an existing transcript", async () => {
     vi.spyOn(companionApi, "context").mockResolvedValue(context);

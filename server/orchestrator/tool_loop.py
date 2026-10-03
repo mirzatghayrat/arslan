@@ -326,6 +326,9 @@ def _record_tool_result(tool_key, args, result, emit, tool_trace, assistant_cont
     run_trace.record(tool=tool_key, args=args, result=result,
                       ok=bool(result.get("ok")), error=result.get("error"), ms=None)
     framed = raw_payload if result.get("external") is False else wrap_external(raw_payload)
+    from server.orchestrator import untrusted as _untrusted
+    if result.get("ok") and _untrusted.counts_as_external(tool_key, args):
+        _untrusted.mark_external()           # 0.1.52: this turn read outside content
     # PB-3 degrade hint. Placement is deliberate: `framed` ends with DELIM_CLOSE, so the
     # hint sits AFTER the wrap_external data frame — it is OUR trusted framing (like the
     # "TOOL RESULT for X" header and the "Use this to continue" trailer), never inside
@@ -976,6 +979,9 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                                             assistant_content, convo,
                                             mcp_fail_counts=mcp_fail_counts)
             run_outside = True
+        elif (sandbox_on and not run_outside and terminal_policy.runs_freely_in_sandbox(command)
+              and not await _asks_for_everything()):
+            pass                          # 0.1.52: a plain script inside the sandbox needs no card
         else:
             if confirm_command is None and verdict.level == "run" and not await _asks_for_everything():
                 pass                      # a harmless command needs nobody to approve it
@@ -1302,6 +1308,20 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                                            "description": "With outside_sandbox: one short sentence the user "
                                                           "reads on the card."}},
                     "required": ["command"]},
+    "conversation_search": {"type": "object",
+                            "properties": {"query": {"type": "string", "minLength": 1, "maxLength": 200,
+                                                     "description": "Words to find, e.g. \"周报\" or \"landlord\"."},
+                                           "since": {"type": "string", "description": "YYYY-MM-DD, optional."},
+                                           "until": {"type": "string", "description": "YYYY-MM-DD, optional."},
+                                           "limit": {"type": "integer", "minimum": 1, "maximum": 20}},
+                            "required": ["query"], "additionalProperties": False},
+    "memory_note": {"type": "object",
+                    "properties": {"action": {"type": "string", "enum": ["add", "replace", "remove"]},
+                                   "set": {"type": "string", "enum": ["about_you", "notes"]},
+                                   "id": {"type": "string", "description": "Entry id, for replace or remove."},
+                                   "text": {"type": "string", "maxLength": 600,
+                                            "description": "The entry, for add or replace. One short line."}},
+                    "required": ["action", "set"], "additionalProperties": False},
     "create_skill": {"type": "object",
                      "properties": {"key": {"type": "string"},
                                     "name": {"type": "string"},
@@ -1728,6 +1748,12 @@ WRAP_UP_TOOLS = frozenset({"write_file", "edit_file"})
 FINISH_TOOLS = WRAP_UP_TOOLS | {"run_command"}
 
 
+def _host_turn(caller, progress_lane) -> bool:
+    """Arslan's own turn (a chat turn or a background job), not a delegated worker.
+    The chat path and jobs pass ToolCaller(actor="host"); tests and older paths pass none."""
+    return progress_lane is None and (caller is None or getattr(caller, "actor", None) == "host")
+
+
 @governed
 async def run_native(**kwargs) -> dict:
     """One answer turn: `_run_native` below, plus completion first at the hard stop
@@ -1738,12 +1764,20 @@ async def run_native(**kwargs) -> dict:
     Background jobs and delegated workers still raise; their machinery records
     the stop itself."""
     facts: dict = {}
+    from server.orchestrator import untrusted as _untrusted
+    seen = _untrusted.track_turn()
     try:
-        return await _run_native(**kwargs, _facts=facts)
+        result = await _run_native(**kwargs, _facts=facts)
+        if isinstance(result, dict):
+            result["external_seen"] = _untrusted.external_seen()
+            _learn_after(kwargs, facts, result)
+        return result
     except BudgetExceeded:
         from server.services import background_jobs
         trace = facts.get("tool_trace") or []
-        host_turn = kwargs.get("caller") is None and kwargs.get("progress_lane") is None
+        # 0.1.52: the chat path passes ToolCaller(actor="host"); checking for no caller
+        # at all left this closing message unreachable from a real chat turn.
+        host_turn = _host_turn(kwargs.get("caller"), kwargs.get("progress_lane"))
         if not host_turn or background_jobs.inside_job() \
                 or not any((t.get("result") or {}).get("ok") for t in trace):
             raise                       # workers and jobs record the stop themselves
@@ -1754,7 +1788,24 @@ async def run_native(**kwargs) -> dict:
             task.pause_reason = "task_budget_exhausted"
         await _reveal_streamed(text, kwargs["on_chunk"])
         return {"final": text, "escalation": None, "tool_trace": trace,
-                "stop_reason": "task_budget_exhausted", "history_compacted": False}
+                "stop_reason": "task_budget_exhausted", "history_compacted": False,
+                "external_seen": _untrusted.external_seen()}
+    finally:
+        _untrusted.end_turn(seen)
+
+
+def _learn_after(kwargs: dict, facts: dict, result: dict) -> None:
+    """0.1.52 S5: after a host turn, off the reply path — counters for the lessons this
+    turn recalled, then any detour worth keeping (lessons.after_turn)."""
+    if not _host_turn(kwargs.get("caller"), kwargs.get("progress_lane")):
+        return
+    from server.services import lessons, personal_context
+    ctx = personal_context.current()
+    lessons.later(lessons.after_turn(
+        conversation_id=kwargs.get("conversation_id"), user_request=(ctx.query if ctx else "") or "",
+        trace=list(facts.get("tool_trace") or []), external_seen=bool(result.get("external_seen")),
+        recalled=list(facts.get("recalled_lessons") or []),
+        ok=bool(result.get("final")) and not result.get("stop_reason"), emit=kwargs.get("emit")))
 
 
 async def _budget_closing(trace: list, ws_root, started: float) -> str:
@@ -1873,6 +1924,16 @@ async def _run_native(
     tool_trace: list[dict] = []
     if _facts is not None:
         _facts["tool_trace"] = tool_trace
+    # 0.1.52 S5: practices learned before that match this request ride in the status
+    # block (never the system prompt). Host turns only; recall applies memory's permissions.
+    lesson_notes: list[str] = []
+    if _host_turn(caller, progress_lane):
+        from server.services import lessons, personal_context
+        ctx_now = personal_context.current()
+        recalled = await lessons.recall((ctx_now.query if ctx_now else "") or user_content)
+        lesson_notes = lessons.status_lines(recalled)
+        if _facts is not None:
+            _facts["recalled_lessons"] = recalled
     research_review_cache: dict = {}
     review_enabled: bool | None = None  # read lazily, once, at the first saved report
     research_source_feedback: list = []
@@ -2039,12 +2100,12 @@ async def _run_native(
         # Nothing done, planned or noted yet (a plain chat turn, or step 0): no
         # block — the request goes out as the user wrote it. Step 0's write
         # facts live in the tool descriptions (S5); the block starts with work.
-        status = "" if not (tool_trace or notes or plan.items) else agent_status.render(
+        status = "" if not (tool_trace or notes or plan.items or lesson_notes) else agent_status.render(
             workspace=agent_status.home_relative(ws_root) if ws_root is not None else None,
             writers=[k for k in ("write_file", "edit_file", "run_command") if k in offered],
             own_folder=own_folder, saved=agent_status.owned_outputs(tool_trace, ws_root, turn_started),
             plan=plan.render(), tool_calls=budget.tool_calls, model_calls=budget.model_requests,
-            wrap_up_at=budget.soft.tool_calls if budget.soft is not None else None, notes=notes)
+            wrap_up_at=budget.soft.tool_calls if budget.soft is not None else None, notes=lesson_notes + notes)
         resp = await _model_call(a, system, convo, current_request, tools=step_tools,
                                  schemas=schemas, forced=forced, state=turn_state, status=status)
         # A context-overflow recovery compacted convo in place (S6).

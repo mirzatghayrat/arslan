@@ -261,6 +261,13 @@
     "reconnecting": "Reconectando..."
   },
   "chat": {
+    "learned": "Aprendido: {{text}}",
+    "wantsToLearn": "Arslan quiere recordar una práctica: {{text}}",
+    "learnedUndo": "Deshacer",
+    "learnedKeep": "Recordar",
+    "learnedSkip": "No, gracias",
+    "learnedUndone": "Deshecho",
+    "learnedKept": "Recordado",
     "title": "Chatear con {{name}}",
     "placeholder": "Escribe un mensaje...",
     "send": "Enviar",
@@ -494,6 +501,10 @@
     "sensitive": "Sensible"
   },
   "settings": {
+    "labelMemoryInConversations": "Recordarme y usarlo en las conversaciones",
+    "memoryInConversationsDesc": "Arslan recuerda lo que le cuentas sobre ti y tu forma de trabajar, y lo usa con el modelo que elegiste, incluidos los de la nube. Lo sensible (salud, dinero, dónde vives) sigue esperando tu visto bueno, y cada conversación puede desactivar la memoria.",
+    "labelLearnedPractices": "Las prácticas aprendidas se aplican",
+    "learnedPracticesDesc": "Cuando corriges a Arslan, o encuentra cómo rodear algo que falló en este Mac, recuerda la práctica y la usa la próxima vez. Puedes ver y deshacer cada una en Brain. Una práctica aprendida después de leer páginas web o archivos espera tu visto bueno. Desactivado: todas esperan.",
     "labelTerminalSandbox": "Ejecutar los comandos en un entorno aislado",
     "terminalSandboxDesc": "Los comandos pueden leer archivos y usar la red, pero solo escriben en la carpeta de trabajo, las carpetas temporales y de caché, y no pueden leer tus claves SSH, el llavero ni los datos de Arslan. Ejecutar uno fuera del entorno aislado siempre requiere tu clic.",
     "appIcon": "Icono de la aplicación",

@@ -201,6 +201,10 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         onDistillChange={(v) => saveField({ distillOnSessionEnd: v })}
         retentionDays={localSettings.runDebugRetentionDays ?? 30}
         onRetentionDaysChange={(v) => saveField({ runDebugRetentionDays: v })}
+        memoryInConversations={localSettings.memoryInConversations ?? true}
+        onMemoryInConversationsChange={(v) => saveField({ memoryInConversations: v })}
+        learnedPracticesTakeEffect={localSettings.learnedPracticesTakeEffect ?? true}
+        onLearnedPracticesChange={(v) => saveField({ learnedPracticesTakeEffect: v })}
       />
     ),
 

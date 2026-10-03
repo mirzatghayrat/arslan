@@ -47,6 +47,8 @@ export interface IslandState {
   leftAt: number;
   lastInteract: number;
   focusId: number | null;
+  /** 0.1.52 S5: practices learned since you last closed or opened from the island ("+1 practice"). */
+  learned: number;
 }
 
 export const PEEK_TO_EXPAND_MS = 650;
@@ -68,7 +70,7 @@ export function initialState(): IslandState {
     enabled: true, mode: 'hidden', view: 'empty', cursor: null, active: [], steps: {},
     awaiting: 0, awaitingConversations: [], needsYouSeen: 0, queue: [], current: null, shownAt: 0,
     away: false, mainFocused: false, hovering: false, hoverSince: 0, leftAt: -Infinity,
-    lastInteract: 0, focusId: null,
+    lastInteract: 0, focusId: null, learned: 0,
   };
 }
 
@@ -115,9 +117,11 @@ export function applyFeed(s: IslandState, feed: Feed, now: number): IslandState 
   }
   let queue = s.queue;
   let current = s.current;
+  let learned = s.learned;
   if (s.cursor !== null) {   // the first poll adopts the cursor: no replay of history
     for (const e of feed.events) {
       if (e.id <= s.cursor) continue;
+      if (e.kind === 'lesson_learned') { learned += 1; continue; }   // quiet: counted, never a card
       const alert = alertFor(e, s.active, s.mainFocused);
       if (!alert) continue;
       if (alert.reason === 'paused' && current && current.taskId === alert.taskId && current.kind === 'stopped') {
@@ -130,7 +134,7 @@ export function applyFeed(s: IslandState, feed: Feed, now: number): IslandState 
   const active = feed.active;
   const focusId = active.some((a) => a.id === s.focusId) ? s.focusId : (active.length ? active[active.length - 1].id : null);
   const next: IslandState = {
-    ...s, enabled: true, cursor: feed.cursor, active, steps: trackSteps(s.steps, active), queue, current, focusId,
+    ...s, enabled: true, cursor: feed.cursor, active, steps: trackSteps(s.steps, active), queue, current, focusId, learned,
     awaiting: feed.awaiting, awaitingConversations: feed.awaiting_conversations,
     needsYouSeen: feed.awaiting === 0 ? 0 : Math.min(s.needsYouSeen, feed.awaiting),
   };
@@ -194,12 +198,12 @@ export function interact(s: IslandState, now: number): IslandState {
 export function open(s: IslandState, now: number): IslandState {
   if (!s.enabled) return s;
   const view: View = needsYou(s) ? 'needsYou' : s.current ? s.current.kind : (s.active.length ? 'overview' : 'empty');
-  return { ...show(s, 'expanded', view, now), lastInteract: now };
+  return { ...show(s, 'expanded', view, now), lastInteract: now, learned: 0 };
 }
 
 /** Close: the result goes away, a waiting card stays waiting (in the chat) but stops holding the panel. */
 export function dismiss(s: IslandState, now: number): IslandState {
-  let next: IslandState = { ...s, hovering: false, leftAt: -Infinity };
+  let next: IslandState = { ...s, hovering: false, leftAt: -Infinity, learned: 0 };
   if (s.view === 'needsYou') next.needsYouSeen = s.awaiting;
   else if (s.current) next.current = null;
   next = settle({ ...next, mode: next.mode === 'peek' ? 'hidden' : next.mode }, now);

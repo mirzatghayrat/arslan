@@ -339,7 +339,8 @@ async def test_deleted_task_source_cannot_recreate_derived_memory_from_old_summa
 
     created = await extract_turn(source_conversation, "Source suggests purple inventory headings.",
                                  lambda event: None, content)
-    assert len(created) == 1 and created[0].status == "proposed"
+    # 0.1.52 (D1): a normal noticed fact takes effect at once; deletion must still win below.
+    assert len(created) == 1 and created[0].status == "active"
     async with repository() as repo:
         entry = (await repo.list_entries())[0]
         assert entry["sources"] and entry["sources"][0]["kind"] == "extractor"

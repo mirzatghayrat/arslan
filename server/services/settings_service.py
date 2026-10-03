@@ -27,7 +27,8 @@ _PLAIN_KEYS = (
                "compaction_config_id", "title_config_id",
                "router_config_id", "vision_config_id",
                "evolution_auto", "mcp_server_enabled", "curation_enabled", "research_review_enabled", "keep_awake_enabled",
-               "desktop_notifications_enabled", "island_enabled", "terminal_sandbox_enabled", "ocr_languages",
+               "desktop_notifications_enabled", "island_enabled", "terminal_sandbox_enabled",
+               "memory_in_conversations", "learned_practices_take_effect", "ocr_languages",
                "workspace_dir", "heartbeat_enabled", "heartbeat_checklist",
                "heartbeat_interval_s", "lan_discovery_enabled", "ssh_enabled", "default_read_enabled",
                "voice_output_enabled", "voice_input_locale", "voice_mode", "voice_endpoint_silence_ms")
@@ -248,6 +249,24 @@ async def desktop_notifications_enabled(session: AsyncSession) -> bool:
     """Whether the desktop shell posts native notifications while its window is
     hidden. Default ON; only an explicit 'false' turns it off."""
     raw = await _get_raw(session, "desktop_notifications_enabled")
+    return raw is None or str(raw).strip().lower() != "false"
+
+
+async def memory_in_conversations(session: AsyncSession) -> bool:
+    """"Remember me and use it in conversations" (0.1.52 P4a, user decision D1).
+    Default ON: what Arslan remembers reaches the chosen model, cloud models
+    included; sensitive entries still need the per-conversation allowance. Only
+    an explicit 'false' turns it off (back to the 0.1.51 behaviour)."""
+    raw = await _get_raw(session, "memory_in_conversations")
+    return raw is None or str(raw).strip().lower() != "false"
+
+
+async def learned_practices_take_effect(session: AsyncSession) -> bool:
+    """"Learned practices take effect" (0.1.52 S5, D2). Default ON: a practice from
+    the user's own correction, or from a detour in a turn that read nothing from
+    outside, is used at once (visible, undoable). Off: every learned practice waits
+    for the user's OK. Only an explicit 'false' turns it off."""
+    raw = await _get_raw(session, "learned_practices_take_effect")
     return raw is None or str(raw).strip().lower() != "false"
 
 
@@ -578,6 +597,8 @@ _BOOL_ACCESSORS = {
     "desktop_notifications_enabled": desktop_notifications_enabled,
     "island_enabled": island_enabled,
     "terminal_sandbox_enabled": terminal_sandbox_enabled,
+    "memory_in_conversations": memory_in_conversations,
+    "learned_practices_take_effect": learned_practices_take_effect,
     "mcp_server_enabled": mcp_server_enabled,
 }
 

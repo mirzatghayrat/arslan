@@ -104,6 +104,8 @@ export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "th
     desktopNotificationsEnabled: backend.desktop_notifications_enabled ?? true,
     islandEnabled: backend.island_enabled ?? true,
     terminalSandboxEnabled: backend.terminal_sandbox_enabled ?? true,
+    memoryInConversations: backend.memory_in_conversations ?? true,
+    learnedPracticesTakeEffect: backend.learned_practices_take_effect ?? true,
     ocrLanguages: backend.ocr_languages ?? '',
     runDebugRetentionDays: backend.run_debug_retention_days ?? 30,
     mcpServerEnabled: backend.mcp_server_enabled ?? false,
@@ -154,6 +156,8 @@ const SETTINGS_WIRE: Record<string, { key: keyof BackendAppSettings; to?: (v: un
   desktopNotificationsEnabled: { key: "desktop_notifications_enabled", to: (v) => (v as boolean) ?? true },
   islandEnabled: { key: "island_enabled", to: (v) => (v as boolean) ?? true },
   terminalSandboxEnabled: { key: "terminal_sandbox_enabled", to: (v) => (v as boolean) ?? true },
+  memoryInConversations: { key: "memory_in_conversations", to: (v) => (v as boolean) ?? true },
+  learnedPracticesTakeEffect: { key: "learned_practices_take_effect", to: (v) => (v as boolean) ?? true },
   ocrLanguages: { key: "ocr_languages", to: (v) => (v as string) ?? "" },
   runDebugRetentionDays: { key: "run_debug_retention_days", to: (v) => (v as number) ?? 30 },
   mcpServerEnabled: { key: "mcp_server_enabled" },
@@ -390,6 +394,11 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
         timestamp,
         spawnIntro,
       };
+    }
+
+    if (item.kind === "lesson" && item.lesson) {
+      return { id, sender: "arslan", senderName: "Arslan", senderAvatar: "🦁", text: item.content, timestamp,
+        learned: item.lesson };
     }
 
     if (item.kind === "fact") {

@@ -259,3 +259,34 @@ async def test_recovery_tool_finds_saved_output_without_chat_history_and_rejects
         return "continued"
     monkeypatch.setattr(arslan, "_handle_answer", answer)
     assert await task_service.resume_turn("live-task", version, "live", lambda event: None) == "continued"
+
+
+@pytest.mark.parametrize("created_with", [False, True])
+async def test_resume_never_gains_the_memory_default_it_did_not_have(execution_db, monkeypatch, created_with):
+    """0.1.52 (D1): the "remember me" default is part of a task's privacy ceiling,
+    like the conversation's own switches — turning it on later does not regrant it."""
+    from server.services import llm_factory
+
+    async def cloud(db):
+        return False
+    monkeypatch.setattr(llm_factory, "memory_models_are_local", cloud)
+
+    async def function(conversation, message, emit):
+        current_budget().tool()
+        await execution_checkpoint.save("progress")
+        raise Crash()
+    with pytest.raises(Crash):
+        await run(function, cloud_memory_default=created_with)
+    await task_service.recover_interrupted()
+    async with repository() as repo:
+        row = await repo.get("live-task")
+        version = row.version
+        assert row.privacy.get("cloud_memory_default") is created_with
+    seen = []
+
+    async def answer(conversation, message, emit, **kwargs):
+        seen.append(pc.current().cloud_memory_default)
+        return "continued"
+    monkeypatch.setattr(arslan, "_handle_answer", answer)
+    assert await task_service.resume_turn("live-task", version, "live", lambda event: None) == "continued"
+    assert seen == [created_with]          # the setting is on now (default); only the ceiling decides

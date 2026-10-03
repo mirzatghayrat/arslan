@@ -43,8 +43,11 @@ def precise_text_request(message: str) -> bool:
 async def load(conversation_id: str, *, user_message="", retrieval_query: str | None = None) -> pc.TaskMemoryContext:
     async with db_session.AsyncSessionLocal() as db:
         row = await db.get(ConversationContext, conversation_id)
+        from server.services import settings_service
         from server.services.llm_factory import memory_models_are_local
         model_is_local = await memory_models_are_local(db)
+        # 0.1.52 (D1): "Remember me and use it in conversations", default on.
+        remember = await settings_service.memory_in_conversations(db)
         if not model_is_local and not (row and row.temporary):
             from sqlalchemy import text
             local_history = await db.scalar(text("""
@@ -68,6 +71,10 @@ async def load(conversation_id: str, *, user_message="", retrieval_query: str | 
         no_learning=bool(row.no_learning) if row else False,
         temporary=bool(row.temporary) if row else False,
         cloud_memory_allowed=bool(row.cloud_memory_allowed) if row else False,
+        # On: a cloud model may use NORMAL entries in every conversation; the
+        # per-conversation switches (no memory, temporary, sensitive) keep their meaning.
+        cloud_memory_default=remember and not (row and row.temporary),
+        auto_activate_noticed=remember,
         allow_sensitive=bool(row.allow_sensitive) if row else False,
         explicit_save_digest=digest, explicit_save_ref=f"turn:{identity}" if digest else None,
         allow_global_save=bool(digest) and not (row and row.project_id),

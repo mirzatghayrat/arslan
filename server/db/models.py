@@ -11,6 +11,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     LargeBinary,
     String,
@@ -701,6 +702,62 @@ class BrainUsageEvent(Base):
     ref_key = Column(String(300), nullable=False)
     used_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
     used_ref = Column(String(100), nullable=True)
+
+
+class Lesson(Base):
+    """0.1.52 S5: a practice Arslan learned (lessons.py). Never a permission: commands
+    still go through terminal_policy and the sandbox. Counters feed the P4b curator."""
+
+    __tablename__ = "lessons"
+    __table_args__ = (
+        CheckConstraint("polarity IN ('do', 'avoid')", name="ck_lesson_polarity"),
+        CheckConstraint("source IN ('user_correction', 'detour', 'machine_quirk')", name="ck_lesson_source"),
+        CheckConstraint("status IN ('active', 'proposed', 'stale', 'archived')", name="ck_lesson_status"),
+        Index("ix_lessons_status", "status"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    owner_id = Column(String(100), nullable=False, default="local")
+    situation = Column(String(300), nullable=False)
+    advice = Column(String(400), nullable=False)
+    polarity = Column(String(10), nullable=False)
+    source = Column(String(20), nullable=False)
+    evidence = Column(JSON, nullable=True)
+    status = Column(String(10), nullable=False)
+    pinned = Column(Boolean, nullable=False, default=False)
+    recalled = Column(Integer, nullable=False, default=0)
+    followed = Column(Integer, nullable=False, default=0)
+    succeeded = Column(Integer, nullable=False, default=0)
+    failed = Column(Integer, nullable=False, default=0)
+    last_used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class Judgment(Base):
+    """0.1.52 S2: one small decision the judge model was asked about (judgment.py).
+    `state` is the minimal, named-fields question input (never page text);
+    `outcome` is filled in later with what really happened."""
+
+    __tablename__ = "judgments"
+    __table_args__ = (Index("ix_judgments_point_created", "point", "created_at"),
+                      Index("ix_judgments_ref", "ref"))
+
+    id = Column(Integer, primary_key=True)
+    point = Column(String(40), nullable=False)
+    mode = Column(String(10), nullable=False)            # shadow | active
+    state = Column(JSON, nullable=False)
+    state_hash = Column(String(64), nullable=False)
+    verdict = Column(Boolean, nullable=True)            # None: no answer (timeout/error/cap)
+    probability = Column(Float, nullable=True)
+    latency_ms = Column(Integer, nullable=True)
+    model = Column(String(80), nullable=True)
+    error = Column(String(40), nullable=True)
+    ref = Column(String(80), nullable=True)              # e.g. the card's call_id
+    conversation_id = Column(String(50), nullable=True)
+    outcome = Column(String(20), nullable=True)          # approved | declined | timeout | followed | ...
+    outcome_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
 class UsageLedger(Base):

@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import JobCard, { JobResultLabel } from './JobCard';
+import LearnedLine from "./LearnedLine";
 
 import { formatUiTime } from '../lib/localeFormatting';
 import { getIcon } from './iconMap';
@@ -486,6 +487,7 @@ export default function OrchestratorChat({
 
             // 0.1.42: a background job's live card sits where the job was started.
             if (msg.jobId) return <JobCard key={msg.id} jobId={msg.jobId} />;
+            if (msg.learned) return <LearnedLine key={msg.id} id={msg.learned.id} text={msg.text} status={msg.learned.status} />;
 
             // Roster notice (0.1.42): experts are not a standing cast in the chat.
             // One quiet line says who was asked to help; leaving says nothing.

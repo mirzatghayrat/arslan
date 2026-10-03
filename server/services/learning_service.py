@@ -141,7 +141,7 @@ async def _distill_one(signal_text: str, label: str, source_kind: str,
     if await is_active():
         from server.services.personal_context import current
         ctx = current()
-        if ctx is None or ctx.no_learning or ctx.temporary or not ctx.cloud_memory_allowed:
+        if ctx is None or ctx.no_learning or ctx.temporary or not ctx.cloud_memory_effective:
             return 0
         if spawn_id is not None and str(spawn_id) != ctx.expert_id:
             return 0

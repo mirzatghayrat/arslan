@@ -224,6 +224,9 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
     # T1 workspace-write grant (P1b): ONE per connection, not per file — the
     # user ruling is "first use asks, the rest of the session does not".
     workspace_write_granted = {"yes": False}
+    # 0.1.52 S2: the user's latest message on this socket — the judge's tool.approval
+    # question needs the user's own words, whether or not a memory context is bound.
+    latest_request = {"text": ""}
 
     async def confirm_workspace_write(action: str, path: str) -> bool:
         from server.services import settings_service
@@ -301,6 +304,11 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
     async def _sandbox_card(command: str, argv: list, sandbox: str, why: str, verdict) -> bool:
         from server.services import command_sandbox
         call_id = uuid.uuid4().hex
+        from server.services import judgment
+        judgment.shadow("tool.approval", judgment.approval_state(command, rule=verdict.rule, reason=verdict.reason,
+                                                                 sandboxed=False,
+                                                                 user_request=latest_request["text"]),
+                        ref=call_id, conversation_id=conversation_id)
         # Private and un-journaled, like the run_command card below.
         await ws.send_json(protocol.propose_run_command(
             call_id, command, argv, reason=verdict.reason if verdict.level == "ask" else "",
@@ -324,6 +332,8 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                     "BUSY", "An action is awaiting your confirmation.", recoverable=True))
         if decision["approved"] and decision.get("remember"):
             command_sandbox.grant(conversation_id)    # this conversation only, never saved
+        judgment.record_outcome_later(call_id, "approved" if decision["approved"] else "declined",
+                                      point="tool.approval")
         return bool(decision["approved"])
 
     async def confirm_command(command: str, argv: list, *,
@@ -359,6 +369,14 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                          policy=policy, risk=risk, always_allowed=standing):
             return True
         call_id = uuid.uuid4().hex
+        # 0.1.52 S2: shadow judgment — what the judge would say about this card, recorded
+        # with the user's real answer below; it changes nothing (task book C2.1).
+        from server.services import judgment
+        if not remote_host:
+            judgment.shadow("tool.approval", judgment.approval_state(
+                terminal_policy.as_shell(command, argv), rule=verdict.rule, reason=verdict.reason,
+                user_request=latest_request["text"]),
+                ref=call_id, conversation_id=conversation_id)
         # Private card, sent directly to THIS socket — deliberately NOT emit():
         # only this connection's receive-router below can answer this call_id,
         # so fanning the card out would paint an unanswerable card on every
@@ -405,6 +423,9 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 # Client vanished mid-confirmation: decline and re-raise so the outer
                 # handler's disconnect path runs (clean socket teardown).
                 raise
+        if not remote_host:
+            judgment.record_outcome_later(call_id, "approved" if decision.get("approved") else "declined",
+                                          point="tool.approval")
         # Never permanently auto-approve a HIGH-risk (e.g. network) command, even if
         # the user checked "remember" — those always require a fresh card.
         if may_remember(remote_host, risk=risk, remember=bool(decision.get("remember"))):
@@ -472,6 +493,7 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             from server.services import task_context, temporary_turn
             if await task_context.is_temporary(conversation_id):
                 if msg_type == "user_message":
+                    latest_request["text"] = str(data.get("content") or "")
                     with_context = await task_context.load(conversation_id)
                     from server.services.personal_context import bind
                     with bind(with_context):
@@ -552,6 +574,7 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 continue
 
             content = data.get("content", "")
+            latest_request["text"] = str(content or "")
             # Images ride in the frame itself (base64), not through /extract:
             # decision ③A means they are needed for exactly one turn, so there
             # is nothing to store and nothing to fetch back.

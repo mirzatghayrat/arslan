@@ -55,9 +55,23 @@ export default function ConversationControls({ conversationId, running, empty, o
           onChange={e => setDraft(row => row && ({ ...row, project_id: e.target.value || null }))}>
           <option value="">{t("companion.noProject")}</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
         </select></label>
-        {([ ["no_memory", "noMemory"], ["no_learning", "noLearning"], ["cloud_memory_allowed", "conversationCloud"], ["allow_sensitive", "allowSensitive"] ] as const).map(([field, key]) => <label key={field} className="flex items-start gap-2">
+        {(draft.memory_by_default
+          ? [["no_memory", "noMemory"], ["no_learning", "noLearning"]] as const
+          : [["no_memory", "noMemory"], ["no_learning", "noLearning"], ["cloud_memory_allowed", "conversationCloud"], ["allow_sensitive", "allowSensitive"]] as const
+        ).map(([field, key]) => <label key={field} className="flex items-start gap-2">
           <input type="checkbox" checked={draft[field]} disabled={busy || running || draft.temporary} onChange={e => setDraft(row => row && ({ ...row, [field]: e.target.checked }))} />{t(`companion.${key}`)}
         </label>)}
+        {draft.memory_by_default && <>
+          {/* 0.1.52 (D1): normal memory is on for every conversation. Sensitive memory still
+              needs this conversation's own two permissions, given here by one explicit tick. */}
+          <p data-testid="memory-by-default-note" className="text-xs leading-relaxed text-muted-foreground">{t("companion.memoryByDefaultNote")}</p>
+          <label className="flex items-start gap-2">
+            <input type="checkbox" data-testid="allow-sensitive-cloud" checked={draft.allow_sensitive && draft.cloud_memory_allowed}
+              disabled={busy || running || draft.temporary}
+              onChange={e => setDraft(row => row && ({ ...row, allow_sensitive: e.target.checked, cloud_memory_allowed: e.target.checked }))} />
+            {t("companion.allowSensitiveHere")}
+          </label>
+        </>}
         <label className="flex items-start gap-2"><input type="checkbox" checked={draft.temporary} disabled={busy || running || !empty || context?.temporary}
           onChange={e => setDraft(row => row && ({ ...row, temporary: e.target.checked }))} />{t("companion.temporary")}</label>
         <p className="text-xs leading-relaxed text-muted-foreground">{t("companion.temporaryHint")}</p>

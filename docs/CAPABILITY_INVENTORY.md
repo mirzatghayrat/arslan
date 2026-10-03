@@ -32,6 +32,8 @@ credentials, proves external availability, nor guarantees live task success.
 | deck | `render_deck` | safe | wired | [server/registry/executors.py](../server/registry/executors.py) |
 | second_brain | `recall` | safe | wired | [server/registry/memory_executors.py](../server/registry/memory_executors.py) |
 | second_brain | `remember` | safe | wired | [server/registry/memory_executors.py](../server/registry/memory_executors.py) |
+| second_brain | `conversation_search` | safe | wired | [server/registry/memory_executors.py](../server/registry/memory_executors.py) |
+| second_brain | `memory_note` | safe | wired | [server/registry/memory_executors.py](../server/registry/memory_executors.py) |
 | skill_authoring | `create_skill` | safe | wired | [server/registry/executors.py](../server/registry/executors.py) |
 
 ## Additional assembled executors
@@ -103,13 +105,13 @@ trust decisions; see THIRD_PARTY_NOTICES.md and docs/RELIABILITY.md.
 
 | Source | SHA-256 |
 | --- | --- |
-| `server/registry/executors.py` | `c886f8c0faa7a19a4173eb4d9362baa32fda6b6555e17d83fa16a06cc5c78de2` |
+| `server/registry/executors.py` | `ecf093ab2da192febe972f4865857c300c5cbc0f94251fd796f6ed50fdfdb8b2` |
 | `server/registry/file_tools.py` | `a41416c5c239370a8ef992b5406e066e51dc1101ffdf83683a8d8b4f7b2390fd` |
 | `server/registry/hands_tools.py` | `5c57f4647c0cfdfd79ae6aa5bf603542e927ef6a06bcfa4e942e9a006725f18f` |
 | `server/registry/lan_tools.py` | `34778593e80f8276d545f4ab569803a208a290d5fe4e8d52402f7a876b6f63b1` |
-| `server/registry/memory_executors.py` | `5e53443ee8c03360cfe52c5e68f3e4a8196563377a2b7da6e60ea6e7b4f87587` |
+| `server/registry/memory_executors.py` | `9327d8aa27832c8793957dab38f74fe8682385f45a7ee4874d38765dc02bfdb3` |
 | `server/registry/schedule_tools.py` | `13a8698f7e824c1da64cb513b6ebf92de4ab618f75103445e9b12e984ca09a6d` |
-| `server/registry/seed_catalog.py` | `c7c0a177ba194fb96b0a05eb3d1bbc5aba56a57b7f581aa3d5dfd37198e7ecd6` |
+| `server/registry/seed_catalog.py` | `12132e54d9e76aa1e10a437ed99bfc2c03257a485602874089b3e2f31a504b6e` |
 | `server/registry/ssh_tools.py` | `a31f56ef47fb8559e0595ab7e0365a3582f3e5b417071bee9b4c072cebd9ce5a` |
 | `server/registry/task_tools.py` | `2704f466610532134da5c639370eedb21bd5d08d51b679fe0190aaa32da6c447` |
 | `server/resources/browser_runtime/package-lock.json` | `6b772b55920dfd4e4aa81b55e6721d7ffb80dc0ea59579d86906fb1f6a9b8de1` |
