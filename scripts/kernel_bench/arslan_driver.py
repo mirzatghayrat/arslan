@@ -27,6 +27,14 @@ TERMINAL_TASK_PHASES = {"completed", "failed", "cancelled", "waiting_user"}
 # (deleting, installing, sending, acting in pages). Commands Arslan runs without a
 # card (reads, scripts, downloads into the task folder) and page reads still run.
 DECLINE_CARDS = os.environ.get("BENCH_DECLINE_CARDS") == "1"
+# 0.1.51 P3 rounds (BENCH_CARDS=sandboxed): Arslan's own sandbox now keeps commands
+# inside the task folder, temp and caches, so the stand-in answers cards as a user
+# would: deleting and installing INSIDE the sandbox are approved; a card that would
+# let a command OUT of the sandbox is declined (this is the real disk), and so is
+# anything outward or that drives other apps — Apple Events bypass the file sandbox
+# (Finder does the work) — except Reminders for T1, which is the task itself.
+CARDS = os.environ.get("BENCH_CARDS", "")
+APPROVE_IN_SANDBOX = {"", "delete", "install"}
 IDLE_AFTER_TURN_S = 20      # quiet period after the answer before we call it done
 RUN_TIMEOUT_S = 15 * 60
 
@@ -38,6 +46,8 @@ class TurnTracker:
     jobs_open: set = field(default_factory=set)
     final_text: list = field(default_factory=list)
     approvals: int = 0
+    sandbox_cards: int = 0
+    declined: int = 0
     last_activity: float = 0.0
     end_reason: str = ""
 
@@ -66,9 +76,10 @@ class TurnTracker:
                 self.jobs_open.add(job)
         elif t == "propose_run_command":
             self.approvals += 1
-            if DECLINE_CARDS:
-                return {"type": "cancel_run_command", "call_id": frame["call_id"]}
-            return {"type": "confirm_run_command", "call_id": frame["call_id"], "remember": False}
+            if self._approve_command(frame):
+                return {"type": "confirm_run_command", "call_id": frame["call_id"], "remember": False}
+            self.declined += 1
+            return {"type": "cancel_run_command", "call_id": frame["call_id"]}
         elif t == "propose_workspace_write":
             self.approvals += 1
             ok = self.inside(frame.get("path", ""))
@@ -80,6 +91,17 @@ class TurnTracker:
             self.approvals += 1
             return {"type": "cancel_schedule" if t == "propose_schedule" else "cancel_action", "call_id": frame["call_id"]}
         return None
+
+    def _approve_command(self, frame: dict) -> bool:
+        if DECLINE_CARDS:
+            return False
+        if CARDS != "sandboxed":
+            return True
+        if frame.get("sandbox"):
+            self.sandbox_cards += 1
+            return False
+        rule = frame.get("rule") or ""
+        return rule in APPROVE_IN_SANDBOX or (rule == "apple-events" and "-T1-" in self.run_dir)
 
     def finished(self, now: float, started: float) -> bool:
         if now - started >= RUN_TIMEOUT_S:
@@ -111,6 +133,7 @@ async def run(api: str, run_dir: str, prompt: str, transcript: str) -> dict:
                 if reply:
                     await ws.send(json.dumps(reply))
     return {"secs": round(time.monotonic() - started), "approvals": tracker.approvals,
+            "sandbox_cards": tracker.sandbox_cards, "declined": tracker.declined,
             "end": tracker.end_reason, "final": "".join(tracker.final_text)[-4000:]}
 
 
