@@ -51,6 +51,13 @@ enrolment executor deliberately refuses execution; the UI owns enrolment.
 | `browser_select` | [server/registry/hands_tools.py](../server/registry/hands_tools.py) |
 | `browser_type` | [server/registry/hands_tools.py](../server/registry/hands_tools.py) |
 | `cancel_task` | [server/registry/schedule_tools.py](../server/registry/schedule_tools.py) |
+| `desktop_apps` | [server/registry/hands_tools.py](../server/registry/hands_tools.py) |
+| `desktop_click` | [server/registry/hands_tools.py](../server/registry/hands_tools.py) |
+| `desktop_look` | [server/registry/hands_tools.py](../server/registry/hands_tools.py) |
+| `desktop_press` | [server/registry/hands_tools.py](../server/registry/hands_tools.py) |
+| `desktop_scroll` | [server/registry/hands_tools.py](../server/registry/hands_tools.py) |
+| `desktop_select` | [server/registry/hands_tools.py](../server/registry/hands_tools.py) |
+| `desktop_type` | [server/registry/hands_tools.py](../server/registry/hands_tools.py) |
 | `edit_file` | [server/registry/file_tools.py](../server/registry/file_tools.py) |
 | `enroll_node` | [server/registry/ssh_tools.py](../server/registry/ssh_tools.py) |
 | `list_dir` | [server/registry/file_tools.py](../server/registry/file_tools.py) |
@@ -103,9 +110,9 @@ trust decisions; see THIRD_PARTY_NOTICES.md and docs/RELIABILITY.md.
 
 | Source | SHA-256 |
 | --- | --- |
-| `server/registry/executors.py` | `c886f8c0faa7a19a4173eb4d9362baa32fda6b6555e17d83fa16a06cc5c78de2` |
+| `server/registry/executors.py` | `004d5630cb2dff7f2b9444254ef0f89a38e63eb654c6da32e06286037abc0ec8` |
 | `server/registry/file_tools.py` | `a41416c5c239370a8ef992b5406e066e51dc1101ffdf83683a8d8b4f7b2390fd` |
-| `server/registry/hands_tools.py` | `5c57f4647c0cfdfd79ae6aa5bf603542e927ef6a06bcfa4e942e9a006725f18f` |
+| `server/registry/hands_tools.py` | `b593e4ddaee543e027596a444ea476cc9e1d2f72cd95fa350c9c01f262b73753` |
 | `server/registry/lan_tools.py` | `34778593e80f8276d545f4ab569803a208a290d5fe4e8d52402f7a876b6f63b1` |
 | `server/registry/memory_executors.py` | `5e53443ee8c03360cfe52c5e68f3e4a8196563377a2b7da6e60ea6e7b4f87587` |
 | `server/registry/schedule_tools.py` | `13a8698f7e824c1da64cb513b6ebf92de4ab618f75103445e9b12e984ca09a6d` |

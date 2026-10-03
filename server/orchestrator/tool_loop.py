@@ -1244,6 +1244,45 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                          "additionalProperties": False},
     "mac_applescript": {"type": "object", "properties": {"script": {"type": "string", "maxLength": 4000}},
                         "required": ["script"], "additionalProperties": False},
+    # 0.1.53 Mac apps through Arslan Hands
+    "desktop_apps": {"type": "object", "properties": {}, "additionalProperties": False},
+    "desktop_look": {"type": "object", "properties": {
+        "app": {"type": "string", "minLength": 1, "maxLength": 120, "description": "app name or bundle id"},
+        "ref": {"type": "string", "maxLength": 200, "description": "open this part of the last outline"},
+        "text": {"type": "string", "maxLength": 200, "description": "find elements containing this text"},
+        "role": {"type": "string", "maxLength": 40, "description": "find elements of this role (button, textfield…)"},
+        "wait_for_text": {"type": "string", "maxLength": 200, "description": "wait up to 10 s for this text first"}},
+        "required": ["app"], "additionalProperties": False},
+    "desktop_click": {"type": "object", "properties": {
+        "app": {"type": "string", "minLength": 1, "maxLength": 120},
+        "element": {"type": "string", "maxLength": 300, "description": "what the element is, in words"},
+        "ref": {"type": "string", "maxLength": 200, "description": "the ref from your latest desktop_look"}},
+        "required": ["app", "element", "ref"], "additionalProperties": False},
+    "desktop_type": {"type": "object", "properties": {
+        "app": {"type": "string", "minLength": 1, "maxLength": 120},
+        "element": {"type": "string", "maxLength": 300, "description": "what the field is, in words"},
+        "ref": {"type": "string", "maxLength": 200},
+        "text": {"type": "string", "maxLength": 20000},
+        "mode": {"type": "string", "enum": ["replace", "append"]},
+        "submit": {"type": "boolean"}},
+        "required": ["app", "element", "ref", "text"], "additionalProperties": False},
+    "desktop_select": {"type": "object", "properties": {
+        "app": {"type": "string", "minLength": 1, "maxLength": 120},
+        "element": {"type": "string", "maxLength": 300},
+        "ref": {"type": "string", "maxLength": 200},
+        "value": {"type": "string", "minLength": 1, "maxLength": 200}},
+        "required": ["app", "element", "ref", "value"], "additionalProperties": False},
+    "desktop_scroll": {"type": "object", "properties": {
+        "app": {"type": "string", "minLength": 1, "maxLength": 120},
+        "element": {"type": "string", "maxLength": 300},
+        "ref": {"type": "string", "maxLength": 200},
+        "direction": {"type": "string", "enum": ["up", "down", "left", "right"]},
+        "amount": {"type": "integer", "minimum": 1, "maximum": 20}},
+        "required": ["app", "element", "ref"], "additionalProperties": False},
+    "desktop_press": {"type": "object", "properties": {
+        "app": {"type": "string", "minLength": 1, "maxLength": 120},
+        "keys": {"type": "string", "minLength": 1, "maxLength": 40, "description": "return, escape, tab, cmd+n…"}},
+        "required": ["app", "keys"], "additionalProperties": False},
     "start_background_work": {"type": "object", "properties": {
         "goal": {"type": "string", "minLength": 1, "maxLength": 4000,
                  "description": "The work to do, in the user's words."},

@@ -19,8 +19,9 @@ from server.db.session import AsyncSessionLocal
 from server.registry.memory_executors import RecallExecutor, RememberExecutor
 from server.registry.hands_tools import (
     BrowserBackExecutor, BrowserClickExecutor, BrowserLookExecutor, BrowserOpenExecutor, BrowserPressExecutor,
-    BrowserSelectExecutor, BrowserTypeExecutor, MacAppleScriptExecutor, MacListShortcutsExecutor,
-    MacRunShortcutExecutor)
+    BrowserSelectExecutor, BrowserTypeExecutor, DesktopAppsExecutor, DesktopClickExecutor, DesktopLookExecutor,
+    DesktopPressExecutor, DesktopScrollExecutor, DesktopSelectExecutor, DesktopTypeExecutor,
+    MacAppleScriptExecutor, MacListShortcutsExecutor, MacRunShortcutExecutor)
 from server.registry.task_tools import (
     BackgroundStatusExecutor, DelegateWorkExecutor, StartBackgroundWorkExecutor,
     StopBackgroundWorkExecutor, TaskProgressExecutor)
@@ -823,6 +824,10 @@ EXECUTORS = {e.key: e for e in (
     BrowserOpenExecutor(), BrowserLookExecutor(), BrowserBackExecutor(), BrowserClickExecutor(),
     BrowserTypeExecutor(), BrowserSelectExecutor(), BrowserPressExecutor(),
     MacListShortcutsExecutor(), MacRunShortcutExecutor(), MacAppleScriptExecutor(),
+    # 0.1.53 Mac apps through Arslan Hands: looking asks once per app per
+    # conversation; acting only inside background jobs, asked once per app per job.
+    DesktopAppsExecutor(), DesktopLookExecutor(), DesktopClickExecutor(), DesktopTypeExecutor(),
+    DesktopSelectExecutor(), DesktopScrollExecutor(), DesktopPressExecutor(),
     # Workspace file tools (P1). Registered here; whether Arslan is OFFERED them
     # depends on a configured workspace — see _arslan_tools.
     ReadFileExecutor(), ListDirExecutor(), SearchFilesExecutor(),

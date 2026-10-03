@@ -123,6 +123,9 @@ def step_target(tool: str, args: dict) -> str | None:
         return _clip(args.get("query") or args.get("q"), TARGET_CHARS)
     if tool == "run_command":
         return _clip(args.get("command"), TARGET_CHARS)
+    if tool.startswith("desktop_"):           # 0.1.53 Hands: the app and the element, never typed text
+        thing = args.get("element") or args.get("keys") or ""
+        return _clip(" · ".join(str(x) for x in (args.get("app"), thing) if x), TARGET_CHARS)
     return None
 
 
