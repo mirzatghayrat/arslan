@@ -54,19 +54,33 @@ if arguments.contains("--selftest") {
 }
 if arguments.contains("--cloudkit-probe") {
     // Zone, one record to ourselves, read it back through the change feed, delete it.
+    // One JSON line per step, so each result can be read on its own.
     let store = CloudKitStore(containerID: "iCloud.dev.aralem.arslan")
     let id = UUID().uuidString.lowercased()
+    var step = "1_zone"
+    func report(_ step: String, _ result: String, _ extra: String = "") {
+        print("{\"step\": \"\(step)\", \"result\": \"\(result)\"\(extra)}")
+    }
     do {
         try await store.ensureZone()
+        report(step, "ok", ", \"zone\": \"ArslanBridge\"")
         let start = try await store.changes(since: nil).token
+        step = "2_write"
         try await store.save(EnvelopeRecord(id: id, to: "probe", from: "probe", seq: 1, kind: "control",
                                             notify: false, sealed: Data("probe".utf8)))
-        let seen = try await store.changes(since: start).records.contains { $0.id == id }
+        report(step, "ok", ", \"record\": \"\(id)\", \"bytes\": 5")
+        step = "3_read_back"
+        let seen = try await store.changes(since: start).records.first { $0.id == id }
+        report(step, seen != nil && seen?.sealed == Data("probe".utf8) ? "ok" : "not_seen")
+        step = "4_delete"
         try await store.delete(ids: [id])
-        print("{\"cloudkit_probe\": \"\(seen ? "passed" : "not_seen")\"}")
-        exit(seen ? 0 : 1)
+        report(step, "ok")
+        step = "5_confirm_deleted"
+        let still = try await store.exists(id: id)
+        report(step, still ? "STILL_THERE" : "ok", ", \"record\": \"\(id)\"")
+        exit(seen != nil && !still ? 0 : 1)
     } catch {
-        print("{\"cloudkit_probe\": \"failed\", \"error\": \"\(String(describing: error).prefix(300))\"}")
+        report(step, "failed", ", \"error\": \"\(String(describing: error).prefix(300).replacingOccurrences(of: "\"", with: "'"))\"")
         exit(2)
     }
 }

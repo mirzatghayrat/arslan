@@ -103,6 +103,26 @@ public final class CloudKitStore: EnvelopeStore {
         }
     }
 
+    /// Whether a record with this id exists in the zone (a direct fetch, not the change feed).
+    public func exists(id: String) async throws -> Bool {
+        try await withCheckedThrowingContinuation { (done: CheckedContinuation<Bool, Error>) in
+            let op = CKFetchRecordsOperation(recordIDs: [CKRecord.ID(recordName: id, zoneID: zoneID)])
+            op.fetchRecordsCompletionBlock = { records, error in
+                if let ck = error as? CKError, ck.code == .partialFailure,
+                   let inner = ck.partialErrorsByItemID?.values.first as? CKError, inner.code == .unknownItem {
+                    done.resume(returning: false)
+                } else if let ck = error as? CKError, ck.code == .unknownItem {
+                    done.resume(returning: false)
+                } else if let error {
+                    done.resume(throwing: error)
+                } else {
+                    done.resume(returning: !(records ?? [:]).isEmpty)
+                }
+            }
+            run(op)
+        }
+    }
+
     static func envelope(from record: CKRecord) -> EnvelopeRecord? {
         guard record.recordType == recordType, let to = record["to"] as? String, let from = record["from"] as? String,
               let seq = (record["seq"] as? NSNumber)?.int64Value, let kind = record["kind"] as? String,
