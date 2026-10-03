@@ -114,3 +114,27 @@ final class VectorTests: XCTestCase {
         }
     }
 }
+
+final class PairingVectorTests: XCTestCase {
+    func testEveryPairingQRCase() throws {
+        let url = VectorTests.vectors.appendingPathComponent("pairing-qr.json")
+        let table = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        let container = try XCTUnwrap(table["container_id"] as? String)
+        let cases = try XCTUnwrap(table["cases"] as? [[String: Any]])
+        XCTAssertGreaterThanOrEqual(cases.count, 9)
+        for c in cases {
+            let name = c["name"] as? String ?? "?"
+            let now = Date(timeIntervalSince1970: try XCTUnwrap(c["now"] as? Double))
+            let uri = try XCTUnwrap(c["uri"] as? String)
+            if let expected = c["expect_error"] as? String {
+                XCTAssertThrowsError(try PairingCode.decode(uri, now: now, containerID: container), name) {
+                    XCTAssertEqual(($0 as? BridgeError)?.code, expected, name)
+                }
+            } else {
+                let code = try PairingCode.decode(uri, now: now, containerID: container)
+                XCTAssertEqual(code.pairingKey.count, 32, name)
+                XCTAssertEqual(code.containerID, container, name)
+            }
+        }
+    }
+}
