@@ -102,9 +102,16 @@ async def _history(conversation_id: str) -> list[dict]:
             "run_id": m.run_id,
             # 0.1.42: a background job's result keeps its checked outcome.
             "job_outcome": m.job_outcome,
+            # Mobile bridge: "phone" when a paired iPhone sent it (shown "from iPhone").
+            "source": m.source,
         }
         for m in msgs
     ]
+
+
+def message_source(frame: dict) -> str | None:
+    """Only the one known source is kept; anything else is the window (NULL)."""
+    return "phone" if frame.get("source") == "phone" else None
 
 
 async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
@@ -501,6 +508,7 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                             conversation_id, data.get("content", ""), emit,
                             attached_context=data.get("attached_context") or None,
                             images=data.get("images") or None,
+                            source=message_source(data),
                         ), title=data.get("content") or None)
                 elif msg_type == "session_ended":
                     temporary_turn.clear(conversation_id)
@@ -585,6 +593,7 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 arslan.handle_user_message(conversation_id, content, emit,
                                            attached_context=attached or None,
                                            images=images or None,
+                                           source=message_source(data),
                                            confirm_command=confirm_command,
                                            confirm_workspace_write=confirm_workspace_write,
                                            confirm_schedule=confirm_schedule),

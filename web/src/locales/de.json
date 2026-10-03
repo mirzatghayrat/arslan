@@ -261,6 +261,7 @@
     "reconnecting": "Verbindung wird wiederhergestellt …"
   },
   "chat": {
+    "fromPhone": "vom iPhone",
     "learned": "Gelernt: {{text}}",
     "wantsToLearn": "Arslan möchte sich eine Vorgehensweise merken: {{text}}",
     "learnedUndo": "Rückgängig",

@@ -261,6 +261,7 @@
     "reconnecting": "再接続しています…"
   },
   "chat": {
+    "fromPhone": "iPhone から",
     "learned": "学びました：{{text}}",
     "wantsToLearn": "Arslan がやり方を覚えたいと言っています：{{text}}",
     "learnedUndo": "取り消す",

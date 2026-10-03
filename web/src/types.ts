@@ -58,6 +58,8 @@ export interface Message {
   timestamp: string;
   /** Attachments sent with this user message (session-only display echo; see MessageAttachment). */
   attachments?: MessageAttachment[];
+  /** Sent from a paired iPhone through the Arslan Bridge (shown "from iPhone"). */
+  fromPhone?: boolean;
   spawnId?: string;
   /** 0.1.42: this entry is the live card of a background job (render the card, not a bubble). */
   jobId?: string;

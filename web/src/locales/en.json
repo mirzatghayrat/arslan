@@ -261,6 +261,7 @@
     "reconnecting": "Reconnecting..."
   },
   "chat": {
+    "fromPhone": "from iPhone",
     "learned": "Learned: {{text}}",
     "wantsToLearn": "Arslan wants to remember a practice: {{text}}",
     "learnedUndo": "Undo",

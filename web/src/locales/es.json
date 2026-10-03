@@ -261,6 +261,7 @@
     "reconnecting": "Reconectando..."
   },
   "chat": {
+    "fromPhone": "desde el iPhone",
     "learned": "Aprendido: {{text}}",
     "wantsToLearn": "Arslan quiere recordar una práctica: {{text}}",
     "learnedUndo": "Deshacer",

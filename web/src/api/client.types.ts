@@ -540,6 +540,8 @@ export interface ArslanThreadItem {
   spawnId?: number | null;
   spawnName?: string | null;
   sensitive?: boolean; // kind === "fact"
+  /** A user message forwarded from a paired iPhone (history row source "phone"). */
+  fromPhone?: boolean;
   /** kind === "lesson" (0.1.52 S5): the practice just learned. */
   lesson?: { id: number; status: string };
   spawnMessageId?: number | null; // chat_messages assistant id, for feedback/redo/refine
@@ -589,6 +591,8 @@ export interface ArslanHistoryRow {
   run_id?: number | null;
   /** 0.1.42: set on a background job's result — its checked outcome. */
   job_outcome?: JobOutcome | null;
+  /** Mobile bridge: "phone" when a paired iPhone sent it; null/absent = the window. */
+  source?: string | null;
 }
 
 // Server -> client frames on /ws/arslan

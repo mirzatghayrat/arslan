@@ -261,6 +261,7 @@
     "reconnecting": "正在重新连接……"
   },
   "chat": {
+    "fromPhone": "来自 iPhone",
     "learned": "学到了：{{text}}",
     "wantsToLearn": "Arslan 想记住一个做法：{{text}}",
     "learnedUndo": "撤销",

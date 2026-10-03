@@ -423,6 +423,7 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
         timestamp,
         // Session-only attachment echo (image thumbnails / doc chips in the sent bubble).
         attachments: item.attachments,
+        ...(item.fromPhone ? { fromPhone: true } : {}),
       };
     }
 
