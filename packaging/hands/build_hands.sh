@@ -62,6 +62,13 @@ if [ -n "$(git -C "$SRC" status --porcelain --untracked-files=no)" ]; then
   echo "ERROR: agent-desktop checkout has local changes" >&2
   exit 1
 fi
+# A vendored file that git ignores is on THIS disk but not in a clean fetch, so a
+# local build passes where the release build fails (measured: the fork's `.vim/`
+# rule dropped two files cargo checksums; only a clean fetch showed it).
+if [ -n "$(git -C "$SRC" status --porcelain --ignored -- vendor | grep '^!!' || true)" ]; then
+  echo "ERROR: agent-desktop's vendor/ holds files git ignores; a clean fetch would not have them" >&2
+  exit 1
+fi
 [ -d "$SRC/vendor" ] && grep -q 'replace-with = "vendored-sources"' "$SRC/.cargo/config.toml" \
   || { echo "ERROR: the pinned agent-desktop has no vendored sources" >&2; exit 1; }
 

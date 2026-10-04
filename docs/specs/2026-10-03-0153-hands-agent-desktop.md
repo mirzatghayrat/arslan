@@ -293,3 +293,15 @@ These change the design above; each was measured on the user's Mac (macOS 26.6).
     So the Finder half of the acceptance is changed: the file is **seen** in its window (column view: the rows sit
     under a `list` below the skeleton, opened with `desktop_look {ref}`), and the model is told to rename, move or
     copy files with `run_command` (mv/cp), which is the better tool for files anyway.
+14. **The first release build from a clean fetch failed (run 37223227745), and only there.** The fork's
+    `.gitignore` has a `.vim/` rule, so the vendoring commit `ccd72ee0` lacked memchr's and aho-corasick's
+    `.vim/coc-settings.json`, which their `.cargo-checksum.json` list: `cargo build --offline` from a clean
+    checkout stops at "failed to calculate checksum". Every local build used a checkout that still had the
+    ignored files on disk, and CI only ran cargo-deny on the pin (it builds nothing), so nothing before the
+    release run saw it. Reproduced locally from a clean clone (same error, exit 101). Fixed in the fork as
+    `2c2f505e` (fast-forward on `arslan/0.9.4`): both files added, `.gitignore` ends with `!vendor/**`,
+    ARSLAN-FORK.md says to check `git status --ignored -- vendor` before committing a re-vendor; a clean clone
+    of it builds offline with an empty CARGO_HOME (37 s). The pin moved to it. Guards so this cannot hide
+    again: CI checks every vendored file of the pinned commit against its checksums
+    (`scripts/verify_vendored_checksums.py`: on `ccd72ee0` it names exactly those two files, on `2c2f505e`
+    nothing), and `build_hands.sh` refuses a local checkout whose `vendor/` holds files git ignores.
