@@ -96,8 +96,13 @@ public final class CloudKitStore: EnvelopeStore {
         try await withCheckedThrowingContinuation { (done: CheckedContinuation<Void, Error>) in
             let op = CKModifyRecordsOperation(recordsToSave: nil,
                                               recordIDsToDelete: ids.map { CKRecord.ID(recordName: $0, zoneID: zoneID) })
+            op.isAtomic = false                 // one record already gone must not fail the others
             op.modifyRecordsCompletionBlock = { _, _, error in
-                if let error { done.resume(throwing: error) } else { done.resume() }
+                // A record that no longer exists is as good as deleted.
+                if let ck = error as? CKError, ck.code == .partialFailure,
+                   ck.partialErrorsByItemID?.values.allSatisfy({ ($0 as? CKError)?.code == .unknownItem }) == true {
+                    done.resume()
+                } else if let error { done.resume(throwing: error) } else { done.resume() }
             }
             run(op)
         }

@@ -120,6 +120,7 @@ public final class ConversationLinks {
             _ = try? await mailbox.send(type: "error", body: ["code": error.code, "message": Self.message(error.code),
                                                              "related_id": related], to: received.from)
         } catch {
+            BridgeLog.error("handling \(received.type)", error)
             let related = (received.envelope["id"] as? String)?.lowercased() ?? ""
             _ = try? await mailbox.send(type: "error", body: ["code": "mac_busy", "message": Self.message("mac_busy"),
                                                              "related_id": related], to: received.from)

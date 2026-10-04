@@ -111,4 +111,36 @@ final class MailboxMemoryTests: XCTestCase {
         do { try await mac.send(type: "ack", body: ["ids": []], to: "iphone-1"); XCTFail("offline") } catch {}
         XCTAssertEqual(memory.memory?.nextSeq, 1_900_000_000_001, "the number used is gone for good")
     }
+
+    final class FlakyDeletes: EnvelopeStore {
+        let inner = MemoryStore()
+        var failDeletes = 0
+        func save(_ record: EnvelopeRecord) async throws { try await inner.save(record) }
+        func changes(since token: Data?) async throws -> (records: [EnvelopeRecord], token: Data?) { try await inner.changes(since: token) }
+        func delete(ids: [String]) async throws {
+            if failDeletes > 0 { failDeletes -= 1; throw URLError(.networkConnectionLost) }
+            try await inner.delete(ids: ids)
+        }
+    }
+
+    func testAFailedDeleteNeverStopsReadingAndIsRetriedEvenAfterARestart() async throws {
+        let store = FlakyDeletes(), memory = InMemoryMemoryStore()
+        let phone = Mailbox(deviceID: "iphone-1", signing: phoneSigning, exchange: phoneExchange, store: store)
+        phone.add(peer: Peer(deviceID: "mac-1", signing: macSigning.publicKey, exchange: macExchange.publicKey))
+        let before = Mailbox(deviceID: "mac-1", signing: macSigning, exchange: macExchange, store: store, memoryStore: memory)
+        before.add(peer: Peer(deviceID: "iphone-1", signing: phoneSigning.publicKey, exchange: phoneExchange.publicKey))
+        let reply = try await before.send(type: "chat.event", body: ["kind": "message"], to: "iphone-1")
+        _ = try await phone.receive()                                       // the phone acks it
+        try await phone.send(type: "chat.send", body: ["text": "next", "attachments": [], "client_msg_id": "c9"], to: "mac-1")
+        store.failDeletes = 1
+        let heard = try await before.receive()                               // the delete fails here
+        XCTAssertEqual(heard.map(\.type), ["chat.send"], "the same batch is still read")
+        XCTAssertNotNil(store.inner.records[reply.id])
+        XCTAssertEqual(memory.memory?.toDelete, [reply.id], "queued, and remembered")
+        let after = Mailbox(deviceID: "mac-1", signing: macSigning, exchange: macExchange, store: store, memoryStore: memory)
+        after.add(peer: Peer(deviceID: "iphone-1", signing: phoneSigning.publicKey, exchange: phoneExchange.publicKey))
+        try await after.deleteAcknowledged()                                // a restart, then the next round
+        XCTAssertNil(store.inner.records[reply.id])
+        XCTAssertEqual(memory.memory?.toDelete, [])
+    }
 }

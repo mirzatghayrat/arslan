@@ -109,6 +109,8 @@ public final class BridgeRuntime {
         let received = try await mailbox.process(forMailbox)
         mailbox.token = next          // only once this batch is acted on and remembered
         try mailbox.remember()
+        do { try await mailbox.deleteAcknowledged() }
+        catch { BridgeLog.error("deleting acknowledged records", error) }   // retried next round
         return received
     }
 }

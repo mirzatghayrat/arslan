@@ -49,6 +49,7 @@ public struct MailboxMemory: Codable, Equatable {
     public var windows: [String: ReplayWindow] = [:]
     public var processed: [String] = []          // oldest first, capped
     public var awaitingAck: [String] = []        // oldest first, capped
+    public var toDelete: [String] = []           // acked records not yet deleted (a delete that failed is retried)
     public var token: Data?
     public init() {}
     static let cap = 4096
@@ -91,6 +92,7 @@ public final class Mailbox {
     var processedOrder: [String] = []
     var sentAwaitingAck: [String: EnvelopeRecord] = [:]
     var awaitingFromBefore: Set<String> = []        // our records sent before a restart, not yet acked
+    public private(set) var toDelete: Set<String> = []   // acked, waiting for CloudKit to delete them
     var nextSeq: Int64
     public var token: Data?
     let memoryStore: MailboxMemoryStore?
@@ -109,6 +111,7 @@ public final class Mailbox {
         processedOrder = memory.processed
         processed = Set(memory.processed)
         awaitingFromBefore = Set(memory.awaitingAck)
+        toDelete = Set(memory.toDelete)
         token = memory.token
     }
 
@@ -124,6 +127,7 @@ public final class Mailbox {
         }
         memory.processed = processedOrder
         memory.awaitingAck = Array((awaitingFromBefore.union(sentAwaitingAck.keys)).sorted().suffix(MailboxMemory.cap))
+        memory.toDelete = Array(toDelete.sorted().suffix(MailboxMemory.cap))
         memory.token = token
         try memoryStore.save(memory)
     }
@@ -168,7 +172,9 @@ public final class Mailbox {
     public func receive() async throws -> [Received] {
         let (records, next) = try await store.changes(since: token)
         token = next
-        return try await process(records)
+        let received = try await process(records)
+        do { try await deleteAcknowledged() } catch { BridgeLog.error("deleting acknowledged records", error) }
+        return received
     }
 
     /// The same, for records fetched by the caller (the runtime splits pairing traffic off first).
@@ -194,11 +200,10 @@ public final class Mailbox {
             processedOrder.append(id)
             if type == "ack" {
                 let ids = (opened.envelope["body"] as? [String: Any])?["ids"] as? [String] ?? []
+                // Deleting is CloudKit work that can fail; it must never stop this batch from being
+                // read. The acked ids are queued (and remembered) and deleted by `deleteAcknowledged`.
                 let mine = ids.map { $0.lowercased() }.filter { sentAwaitingAck[$0] != nil || awaitingFromBefore.contains($0) }
-                if !mine.isEmpty {
-                    try await store.delete(ids: mine)
-                    mine.forEach { sentAwaitingAck[$0] = nil; awaitingFromBefore.remove($0) }
-                }
+                mine.forEach { sentAwaitingAck[$0] = nil; awaitingFromBefore.remove($0); toDelete.insert($0) }
                 continue
             }
             acks[record.from, default: []].append(id)
@@ -207,6 +212,15 @@ public final class Mailbox {
         try remember()
         for (peer, ids) in acks { try await send(type: "ack", body: ["ids": ids], to: peer) }
         return out
+    }
+
+    /// Delete the records the phone acknowledged. A failure keeps them queued for the next round.
+    public func deleteAcknowledged() async throws {
+        guard !toDelete.isEmpty else { return }
+        let batch = Array(toDelete.sorted().prefix(100))
+        try await store.delete(ids: batch)
+        batch.forEach { toDelete.remove($0) }
+        try remember()
     }
 
     /// Records still waiting for an ack (to re-send, unchanged, with backoff).

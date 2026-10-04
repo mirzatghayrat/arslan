@@ -120,9 +120,12 @@ let status = StatusReporter(backend: backend, mailbox: runtime.mailbox, deviceNa
 links.status = status
 Task { await control.run() }
 Task {
-    if let cloud = store as? CloudKitStore { try? await cloud.ensureZone() }
+    if let cloud = store as? CloudKitStore {
+        do { try await cloud.ensureZone() } catch { BridgeLog.error("creating the CloudKit zone", error) }
+    }
     while true {                                   // §2: every 10 s for now; slower when no phone is active comes with M1 tuning
-        for received in (try? await runtime.poll()) ?? [] { await links.handle(received) }
+        do { for received in try await runtime.poll() { await links.handle(received) } }
+        catch { BridgeLog.error("reading the store", error) }
         try? await Task.sleep(nanoseconds: 10_000_000_000)
     }
 }
