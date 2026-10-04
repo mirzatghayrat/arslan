@@ -508,6 +508,8 @@
     "phoneEnableDesc": "Hält die iPhone-Verbindung auf diesem Mac, solange Arslan offen ist. Solange es an ist, schaut es alle paar Sekunden in deine iCloud.",
     "navPhone": "iPhone",
     "phoneIntro": "Sprich vom iPhone aus mit Arslan. Nachrichten laufen über deine eigene iCloud, Ende-zu-Ende-verschlüsselt: Apple sieht nur verschlüsselte Daten.",
+    "phoneComingSoon": "iPhone-App kommt bald",
+    "phoneComingSoonDesc": "Arslan für das iPhone ist auf dem Weg in den App Store. Sobald sie da ist, scanne hier den Kopplungscode, um vom Telefon aus mit Arslan auf diesem Mac zu sprechen, ihm Aufgaben zu geben und seine Aktionen freizugeben.",
     "phoneBridgeOffline": "Die iPhone-Verbindung läuft nicht.",
     "phoneAdd": "iPhone hinzufügen",
     "phoneScan": "Scanne das mit der Arslan-App auf deinem iPhone. Der Code gilt einmal, 10 Minuten lang.",

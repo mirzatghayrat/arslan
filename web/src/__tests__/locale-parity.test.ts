@@ -49,7 +49,8 @@ describe("locale parity", () => {
 // 1578 → 1580 (Bridge): +2 Settings › iPhone switch strings (settings.phoneEnable, settings.phoneEnableDesc).
 // 1580 → 1589 (phone v2): sidebar.remote, sidebar.fromPhone, sidebar.glyph.{waiting,remote,working,progress,done,failed,scheduled}.
 // 1589 → 1590 (device e2e): sidebar.glyph.unfinished — a task that ended without getting it done.
-  it("en locale has 1590 keys (baseline guard)", () => {
+// 1590 → 1592 (0.1.53): settings.phoneComingSoon(+Desc) — the iPhone app teaser.
+  it("en locale has 1592 keys (baseline guard)", () => {
     // 1318 → 1335: the first-run wizard redesign — the four-beat "how it
     // works" tour (title + typed line + 4×title/body), the catalog capability
     // caption, the test-before-save states (test & save / testing / ok /
@@ -275,7 +276,7 @@ describe("locale parity", () => {
     // +6: bundled app icon choices and persistence feedback.
     // +1: externalLink.failed added by fe9c12b5 (native HTTPS refusal).
     // +1: chat.expert_involved (0.1.42 quiet "asked X to help" line replaces the roster notices).
-    expect(enKeys).toHaveLength(1590);
+    expect(enKeys).toHaveLength(1592);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

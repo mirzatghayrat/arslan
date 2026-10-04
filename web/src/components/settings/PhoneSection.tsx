@@ -47,6 +47,12 @@ export default function PhoneSection({ pollMs = 3000, enabled = false, onEnabled
         <h3 className="text-xs font-semibold font-mono uppercase tracking-widest text-foreground leading-none">{t("settings.navPhone")}</h3>
       </div>
       <p className="text-[11px] text-muted-foreground max-w-xl">{t("settings.phoneIntro")}</p>
+      {/* 0.1.53: the iPhone app is not on the App Store yet; shown as a teaser (user, 2026-10-05). The
+          switch stays usable. Remove this when the app is out (its pairing QR becomes a link then). */}
+      <div data-testid="phone-coming-soon" className="flex items-start gap-2 rounded-xl border border-primary/30 bg-primary/5 p-3 max-w-xl">
+        <span className="shrink-0 rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground">{t("settings.phoneComingSoon")}</span>
+        <p className="text-[11px] text-muted-foreground">{t("settings.phoneComingSoonDesc")}</p>
+      </div>
 
       <div className="flex items-start justify-between gap-4">
         <div>

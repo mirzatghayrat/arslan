@@ -508,6 +508,8 @@
     "phoneEnableDesc": "Arslan 打开时，在这台 Mac 上运行 iPhone 连接。开着时它每隔几秒查看一次你的 iCloud。",
     "navPhone": "iPhone",
     "phoneIntro": "在 iPhone 上和 Arslan 说话。消息经过你自己的 iCloud，端到端加密：苹果只能看到加密后的数据。",
+    "phoneComingSoon": "iPhone 版即将上架",
+    "phoneComingSoonDesc": "Arslan 的 iPhone 版正在准备上架 App Store。上架后，用它扫这里的配对码，就能在手机上和这台 Mac 上的 Arslan 对话、交代任务、批准它的操作。",
     "phoneBridgeOffline": "iPhone 连接没有在运行。",
     "phoneAdd": "添加 iPhone",
     "phoneScan": "用 iPhone 上的 Arslan 扫这个码。只能用一次，10 分钟内有效。",

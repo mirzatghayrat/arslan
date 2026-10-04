@@ -508,6 +508,8 @@
     "phoneEnableDesc": "Arslan が開いている間、この Mac で iPhone との接続を動かします。オンの間は数秒ごとに iCloud を確認します。",
     "navPhone": "iPhone",
     "phoneIntro": "iPhone から Arslan と話せます。メッセージはあなた自身の iCloud を通り、エンドツーエンドで暗号化されます。Apple に見えるのは暗号化されたデータだけです。",
+    "phoneComingSoon": "iPhone 版 近日公開",
+    "phoneComingSoonDesc": "Arslan の iPhone 版は App Store への公開を準備中です。公開後、ここに表示されるペアリングコードを読み取れば、この Mac の Arslan と話したり、タスクを任せたり、操作を承認したりできます。",
     "phoneBridgeOffline": "iPhone との接続は動いていません。",
     "phoneAdd": "iPhone を追加",
     "phoneScan": "iPhone の Arslan でこのコードを読み取ってください。1 回だけ、10 分間有効です。",

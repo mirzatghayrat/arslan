@@ -18,6 +18,18 @@ const online = (over: Partial<PhoneStatus> = {}): PhoneStatus => ({
   connected: true, bridge: { device_id: "mac-1" }, devices: [], pending: [], code: null, ...over });
 
 describe("Settings › iPhone", () => {
+  it("tells everyone the iPhone app is coming, switch on or off, and the switch still works", async () => {
+    vi.spyOn(api, "phoneStatus").mockResolvedValue({ connected: false, bridge: {}, devices: [], pending: [], code: null });
+    const onChange = vi.fn();
+    const { rerender } = render(<PhoneSection pollMs={60_000} enabled={false} onEnabledChange={onChange} />);
+    expect(screen.getByTestId("phone-coming-soon")).toHaveTextContent("settings.phoneComingSoon");
+    fireEvent.click(screen.getByTestId("settings-phone-enabled"));
+    expect(onChange).toHaveBeenCalledWith(true);
+    rerender(<PhoneSection pollMs={60_000} enabled onEnabledChange={onChange} />);
+    expect(screen.getByTestId("phone-coming-soon")).toBeInTheDocument();
+    await waitFor(() => expect(api.phoneStatus).toHaveBeenCalled());
+  });
+
   it("says so when the Bridge is not running and offers no code", async () => {
     vi.spyOn(api, "phoneStatus").mockResolvedValue({ connected: false, bridge: {}, devices: [], pending: [], code: null });
     const onChange = vi.fn();
