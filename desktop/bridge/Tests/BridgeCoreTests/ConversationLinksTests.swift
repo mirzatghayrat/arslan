@@ -5,9 +5,13 @@ import XCTest
 
 final class FakeChannel: ControlChannel {
     var sent: [[String: Any]] = []
+    var failures = 0                                   // the next N sends fail (socket not up yet)
     let onFrame: ([String: Any]) async -> Void
     init(onFrame: @escaping ([String: Any]) async -> Void) { self.onFrame = onFrame }
-    func send(_ frame: [String: Any]) async throws { sent.append(frame) }
+    func send(_ frame: [String: Any]) async throws {
+        if failures > 0 { failures -= 1; throw BridgeError.code("mac_busy") }
+        sent.append(frame)
+    }
 }
 
 final class FakeChannels: ConversationChannels {
@@ -168,5 +172,21 @@ final class ConversationLinksTests: XCTestCase {
         for received in try await mac.receive() { await links.handle(received) }
         let got = try await phone.receive()
         XCTAssertTrue(got.filter { $0.type != "ack" }.isEmpty)
+    }
+
+    func testAMessageThatDidNotGoThroughRunsOnThePhonesRetry() async throws {
+        let (_, mac, phone, channels, links) = setUpPair()
+        let pocket = channels.open(conversationID: "pocket") { _ in } as! FakeChannel
+        pocket.failures = 1
+        let message: [String: Any] = ["text": "在干嘛", "attachments": [], "client_msg_id": "c1"]
+        try await phone.send(type: "chat.send", body: message, to: "mac-1")
+        for received in try await mac.receive() { await links.handle(received) }
+        XCTAssertTrue(pocket.sent.isEmpty)
+        let heard = try await phone.receive()
+        XCTAssertEqual(heard.filter { $0.type == "error" }.count, 1, "the phone hears it failed")
+        try await phone.send(type: "chat.send", body: message, to: "mac-1")          // the phone's retry
+        try await phone.send(type: "chat.send", body: message, to: "mac-1")          // and a duplicate after it
+        for received in try await mac.receive() { await links.handle(received) }
+        XCTAssertEqual(pocket.sent.compactMap { $0["content"] as? String }, ["在干嘛"], "once, on the retry")
     }
 }

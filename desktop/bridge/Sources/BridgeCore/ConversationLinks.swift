@@ -61,9 +61,11 @@ public final class ConversationLinks {
             switch received.type {
             case "chat.send":
                 let clientID = body["client_msg_id"] as? String ?? ""
-                guard executed.insert(clientID).inserted || clientID.isEmpty else { return }
+                guard clientID.isEmpty || !executed.contains(clientID) else { return }
                 let link = link(body["conversation_id"] as? String ?? Self.pocket)
                 for frame in try link.mapper.backendFrames(for: "chat.send", body: body) { try await link.channel.send(frame) }
+                // Only once it reached Arslan: a message that failed to go through runs on the phone's retry.
+                if !clientID.isEmpty { executed.insert(clientID) }
             case "approval.answer":
                 let id = body["approval_id"] as? String ?? ""
                 guard let link = links.values.first(where: { $0.mapper.cards[id] != nil }) else {
@@ -137,7 +139,7 @@ public final class WebSocketChannels: ConversationChannels {
         let socket = WebSocketControl(port: port, token: token, path: path)
         socket.onFrame = onFrame
         open[conversationID] = socket
-        Task { await socket.run() }
+        socket.start()
         return socket
     }
 }

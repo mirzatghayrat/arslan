@@ -21,20 +21,34 @@ public final class WebSocketControl: NSObject, ControlChannel {
     }
 
     public func send(_ frame: [String: Any]) async throws {
-        guard let task else { throw BridgeError.code("mac_busy") }
+        guard let task else { throw BridgeError.code("mac_busy") }    // between reconnects
         let text = String(decoding: try JSONSerialization.data(withJSONObject: frame), as: UTF8.self)
-        try await task.send(.string(text))
+        try await task.send(.string(text))     // before the handshake completes, URLSession holds it
+    }
+
+    /// Create the socket now, so a frame sent right after opening has somewhere to go, and keep it
+    /// up from a background task (see `run`).
+    public func start() {
+        let first = connect()
+        Task { await self.run(startingWith: first) }
+    }
+
+    func connect() -> URLSessionWebSocketTask {
+        var request = URLRequest(url: url)
+        request.setValue(origin, forHTTPHeaderField: "Origin")
+        let task = session.webSocketTask(with: request)
+        self.task = task
+        task.resume()
+        return task
     }
 
     /// Connect, read until the socket fails, reconnect after 1, 2, 4 … 30 s. Never returns.
-    public func run() async {
+    public func run(startingWith first: URLSessionWebSocketTask? = nil) async {
         var delay: UInt64 = 1
+        var next = first
         while true {
-            var request = URLRequest(url: url)
-            request.setValue(origin, forHTTPHeaderField: "Origin")
-            let task = session.webSocketTask(with: request)
-            self.task = task
-            task.resume()
+            let task = next ?? connect()
+            next = nil
             do {
                 await onConnect?()
                 while true {
