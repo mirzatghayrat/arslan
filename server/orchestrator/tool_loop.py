@@ -806,6 +806,16 @@ async def _read_saved(rel: str) -> str | None:
         return None
 
 
+def _declined(refused: str, subject: str) -> str:
+    """What a "no" from a card tells the model. A card nobody answered before it expired is not
+    a refusal: the model must not tell the user they said no (seen 2026-10-04 on a phone task)."""
+    from server.services import approvals
+    if approvals.LAST_OUTCOME.get() == "expired":
+        return (f"nobody answered the approval card for {subject} before it expired; the user did not "
+                "decline it. Say it expired unanswered and that it can be asked again.")
+    return refused
+
+
 async def _writing_in_own_folder() -> bool:
     """Unknown means ask: if the setting cannot be read, treat the folder as the user's."""
     from server.db import session as db_session
@@ -925,7 +935,7 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                                         mcp_fail_counts=mcp_fail_counts)
         granted = await confirm_workspace_write(tool_key, str(args.get("path") or ""))
         if not granted:
-            result = {"ok": False, "error": "user declined workspace write access"}
+            result = {"ok": False, "error": _declined("user declined workspace write access", "writing to the workspace")}
             return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                         assistant_content, convo,
                                         mcp_fail_counts=mcp_fail_counts)
@@ -945,7 +955,7 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
         granted = await confirm_schedule(str(args.get("name") or ""),
                                          str(args.get("when") or ""))
         if not granted:
-            result = {"ok": False, "error": "user declined to schedule this task"}
+            result = {"ok": False, "error": _declined("user declined to schedule this task", "scheduling this task")}
             return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                         assistant_content, convo,
                                         mcp_fail_counts=mcp_fail_counts)
@@ -980,7 +990,7 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                                             mcp_fail_counts=mcp_fail_counts)
             why = str(args.get("why") or "").strip()[:300]
             if not await confirm_command(command, argv, sandbox="outside", why=why):
-                result = {"ok": False, "error": "user declined running this command outside the sandbox"}
+                result = {"ok": False, "error": _declined("user declined running this command outside the sandbox", "running this command outside the sandbox")}
                 return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                             assistant_content, convo,
                                             mcp_fail_counts=mcp_fail_counts)
@@ -1000,7 +1010,7 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                                             mcp_fail_counts=mcp_fail_counts)
             approved = True if confirm_command is None else await confirm_command(command, argv)
             if not approved:
-                result = {"ok": False, "error": "user declined this command"}
+                result = {"ok": False, "error": _declined("user declined this command", "this command")}
                 return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                             assistant_content, convo,
                                             mcp_fail_counts=mcp_fail_counts)
@@ -1043,7 +1053,7 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
             # Un-stage: a declined command must not leave an approved host key
             # sitting where the next call would silently consume it.
             ssh_exec.take(prep["host"])
-            result = {"ok": False, "error": "user declined this remote command"}
+            result = {"ok": False, "error": _declined("user declined this remote command", "this remote command")}
             return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                         assistant_content, convo,
                                         mcp_fail_counts=mcp_fail_counts)

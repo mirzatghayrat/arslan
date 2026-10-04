@@ -123,10 +123,10 @@ Task {
     if let cloud = store as? CloudKitStore {
         do { try await cloud.ensureZone() } catch { BridgeLog.error("creating the CloudKit zone", error) }
     }
-    while true {                                   // §2: every 10 s for now; slower when no phone is active comes with M1 tuning
+    while true {                                   // §2: every 2 s while the phone app is open, else 10 s
         do { for received in try await runtime.poll() { await links.handle(received) } }
         catch { BridgeLog.error("reading the store", error) }
-        try? await Task.sleep(nanoseconds: 10_000_000_000)
+        try? await Task.sleep(nanoseconds: UInt64(PollPace.interval(lastHeard: runtime.mailbox.lastHeard) * 1_000_000_000))
     }
 }
 Task {

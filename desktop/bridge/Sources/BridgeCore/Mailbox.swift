@@ -189,6 +189,7 @@ public final class Mailbox {
                                               senderSigning: peer.signing, asset: record.asset) else { continue }
             let id = packet.header.id.lowercased()
             let type = opened.envelope["type"] as? String ?? ""
+            lastHeard = Date()
             if processed.contains(id) {                    // a duplicate: ack again, act never
                 if type != "ack" { acks[record.from, default: []].append(id) }
                 continue
@@ -222,6 +223,10 @@ public final class Mailbox {
         batch.forEach { toDelete.remove($0) }
         try remember()
     }
+
+    /// When a paired phone last wrote anything, acks included. While its app is open it acks
+    /// every heartbeat, so this stays recent exactly as long as someone is looking (`PollPace`).
+    public private(set) var lastHeard: Date?
 
     /// Records still waiting for an ack (to re-send, unchanged, with backoff).
     public var unacknowledged: [EnvelopeRecord] { Array(sentAwaitingAck.values) }
@@ -258,4 +263,15 @@ public final class MemoryStore: EnvelopeStore {
     }
 
     public func delete(ids: [String]) async throws { ids.forEach { records[$0] = nil } }
+}
+
+/// How often the Bridge reads the store: every 2 s while the phone wrote in the last two minutes
+/// (its app is open: it acks each 60-s heartbeat), else every 10 s. Measured 2026-10-04: at a flat
+/// 10 s a phone message waited up to 10 s before the Mac even saw it.
+public enum PollPace {
+    public static let active: TimeInterval = 2, idle: TimeInterval = 10, window: TimeInterval = 120
+    public static func interval(lastHeard: Date?, now: Date = Date()) -> TimeInterval {
+        guard let lastHeard, now.timeIntervalSince(lastHeard) < window else { return idle }
+        return active
+    }
 }

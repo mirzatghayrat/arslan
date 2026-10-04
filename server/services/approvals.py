@@ -20,12 +20,16 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 
 from server.services import desktop_status, run_registry
 from server.ws import protocol
 
 TIMEOUT_S = 300
+#: How the last card this task waited on ended: "approved", "declined", or "expired" (nobody
+#: answered in time). A tool result must not tell the model the user said no when nobody did.
+LAST_OUTCOME: ContextVar[str | None] = ContextVar("approvals_last_outcome", default=None)
 ANSWERS = {
     "confirm_workspace_write": True, "cancel_workspace_write": False,
     "confirm_schedule": True, "cancel_schedule": False,
@@ -74,6 +78,7 @@ async def ask(conversation_id: str, frame: dict) -> bool:
     """Broadcast one card and wait for its answer. False on timeout or refusal."""
     # Marked so the card can say it is a background job asking, and hide the
     # "remember" option this path never honours.
+    LAST_OUTCOME.set(None)
     pending = open_card(conversation_id, frame | {"background": True})
     try:
         with desktop_status.awaiting_approval(conversation_id):
@@ -82,6 +87,8 @@ async def ask(conversation_id: str, frame: dict) -> bool:
         pass
     finally:
         decision = close_card(pending)
+    # close_card answers "by" nobody exactly when the card expired.
+    LAST_OUTCOME.set("approved" if decision["approved"] else "expired" if decision["by"] is None else "declined")
     return bool(decision["approved"])
 
 

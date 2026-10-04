@@ -68,6 +68,7 @@ public final class ConversationLinks {
     /// One message from a paired phone.
     public func handle(_ received: Received) async {
         let body = received.envelope["body"] as? [String: Any] ?? [:]
+        if received.type != "error" { BridgeLog.notice("phone: \(received.type)") }
         do {
             switch received.type {
             case "chat.send":
@@ -141,6 +142,7 @@ public final class ConversationLinks {
                 throw BridgeError.code("unknown_type")
             }
         } catch let error as BridgeError {
+            BridgeLog.notice("phone: \(received.type) refused: \(error.code)")
             let related = (received.envelope["id"] as? String)?.lowercased() ?? ""
             _ = try? await mailbox.send(type: "error", body: ["code": error.code, "message": Self.message(error.code),
                                                              "related_id": related], to: received.from)

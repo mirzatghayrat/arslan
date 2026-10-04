@@ -45,13 +45,15 @@ public final class CloudKitStore: EnvelopeStore {
             assetFile = url
         }
         defer { assetFile.map { try? FileManager.default.removeItem(at: $0) } }
-        try await withCheckedThrowingContinuation { (done: CheckedContinuation<Void, Error>) in
-            let op = CKModifyRecordsOperation(recordsToSave: [ck], recordIDsToDelete: nil)
-            op.savePolicy = .allKeys          // a retry re-saves the same record unchanged (§4.5)
-            op.modifyRecordsCompletionBlock = { _, _, error in
-                if let error { done.resume(throwing: error) } else { done.resume() }
+        try await Transient.retrying {
+            try await withCheckedThrowingContinuation { (done: CheckedContinuation<Void, Error>) in
+                let op = CKModifyRecordsOperation(recordsToSave: [ck], recordIDsToDelete: nil)
+                op.savePolicy = .allKeys          // a retry re-saves the same record unchanged (§4.5)
+                op.modifyRecordsCompletionBlock = { _, _, error in
+                    if let error { done.resume(throwing: error) } else { done.resume() }
+                }
+                run(op)
             }
-            run(op)
         }
     }
 
@@ -63,7 +65,7 @@ public final class CloudKitStore: EnvelopeStore {
             let previous = try current.flatMap {
                 try NSKeyedUnarchiver.unarchivedObject(ofClass: CKServerChangeToken.self, from: $0)
             }
-            let page: (records: [EnvelopeRecord], token: CKServerChangeToken?, more: Bool) =
+            let page: (records: [EnvelopeRecord], token: CKServerChangeToken?, more: Bool) = try await Transient.retrying {
                 try await withCheckedThrowingContinuation { done in
                     let config = CKFetchRecordZoneChangesOperation.ZoneConfiguration()
                     config.previousServerChangeToken = previous
@@ -82,6 +84,7 @@ public final class CloudKitStore: EnvelopeStore {
                     }
                     run(op)
                 }
+            }
             records += page.records
             more = page.more
             if let next = page.token {
@@ -93,6 +96,10 @@ public final class CloudKitStore: EnvelopeStore {
 
     public func delete(ids: [String]) async throws {
         guard !ids.isEmpty else { return }
+        try await Transient.retrying { try await deleteOnce(ids) }
+    }
+
+    private func deleteOnce(_ ids: [String]) async throws {
         try await withCheckedThrowingContinuation { (done: CheckedContinuation<Void, Error>) in
             let op = CKModifyRecordsOperation(recordsToSave: nil,
                                               recordIDsToDelete: ids.map { CKRecord.ID(recordName: $0, zoneID: zoneID) })
