@@ -134,6 +134,8 @@ final class FrameMapperTests: XCTestCase {
             let body = m.phoneMessages(for: f).first?.body
             XCTAssertEqual(body?["completed"] as? Int, 1)
             XCTAssertEqual(body?["total"] as? Int, 2)
+            let checks = body?["criteria"] as? [[String: String]]
+            XCTAssertEqual(checks, [["text": "a", "status": "passed"], ["text": "b", "status": "failed"]])
             return body?["state"] as? String
         }
         XCTAssertEqual(state("running", nil), "running")
@@ -141,6 +143,8 @@ final class FrameMapperTests: XCTestCase {
         XCTAssertEqual(state("finished", "blocked"), "stuck")
         XCTAssertEqual(state("finished", "out_of_budget"), "partial")
         XCTAssertEqual(state("finished", "interrupted"), "stopped")
+        let bare = m.phoneMessages(for: ["type": "job_update", "job_id": "j", "conversation_id": "c1", "goal": "Tidy", "phase": "running"]).first?.body
+        XCTAssertNil(bare?["criteria"])
         let send = try m.backendFrames(for: "chat.send", body: ["text": "hi", "attachments": [], "client_msg_id": "c"])
         XCTAssertEqual(send.first?["source"] as? String, "phone")
         XCTAssertEqual(send.first?["type"] as? String, "user_message")

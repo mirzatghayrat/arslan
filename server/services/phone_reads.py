@@ -241,9 +241,11 @@ async def describe(db: AsyncSession, ids: list[str]) -> dict[str, dict]:
         item = {"kind": kind, "state": state, "origin": "phone" if (first is not None and first.source == "phone") else "mac",
                 "preview": one_line(last.display_content or last.content) if last is not None else "", "files": files}
         if running_job is not None:
+            # The job's own checks, as its job.event counts them ("answer-delivered" is every job's).
+            checks = [c["id"] for c in running_job.acceptance if c["id"] != "answer-delivered"]
             item["job"] = {"id": running_job.job_id, "step": running_job.step or "",
-                           "done": sum(1 for status in running_job.results.values() if status == "passed"),
-                           "total": max(0, len(running_job.acceptance) - 1)}
+                           "done": sum(1 for check in checks if running_job.results.get(check) == "passed"),
+                           "total": len(checks)}
         out[cid] = item
     return out
 

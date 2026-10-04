@@ -298,7 +298,7 @@ BODY_FIELDS: dict[str, tuple[str, ...]] = {
     "chat.send": ("conversation_id?", "text", "attachments", "client_msg_id"),
     "chat.event": ("conversation_id", "kind", "message_id", "text", "final", "job_id?", "run_id?"),
     "job.event": ("id", "conversation_id", "state", "title", "current_step", "completed", "total", "plan",
-                  "summary?", "files", "run_id?", "origin?"),
+                  "summary?", "files", "run_id?", "origin?", "criteria?"),
     "approval.request": ("approval_id", "action", "target", "risk", "task_id", "task_title", "expires_at"),
     "approval.answer": ("approval_id", "decision", "auth", "ts"),
     "approval.result": ("approval_id", "outcome", "detail?"),

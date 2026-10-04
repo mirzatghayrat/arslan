@@ -204,7 +204,7 @@ never the content. A lock-screen alert shows generic text unless the user turned
 | `chat.history` / `chat.history.result` | phone → Mac / Mac → phone | `conversation_id`, `limit` / `conversation_id`, `messages[]` (`id`, `role`, `text`, `ts`, `attachments[]`, `run_id?`) |
 | `chat.send` | phone → Mac | `conversation_id?` (absent = the pocket conversation), `text`, `attachments[]`, `client_msg_id` (UUID) |
 | `chat.event` | Mac → phone | `conversation_id`, `kind` (message/progress/error), `message_id`, `text`, `final`, `job_id?`, `run_id?` |
-| `job.event` | Mac → phone | `id`, `conversation_id`, `state` (running/done/partial/stuck/stopped), `title`, `current_step`, `completed`, `total`, `plan[]`, `summary?`, `files[]`, `run_id?`, `origin?` |
+| `job.event` | Mac → phone | `id`, `conversation_id`, `state` (running/done/partial/stuck/stopped), `title`, `current_step`, `completed`, `total`, `plan[]`, `summary?`, `files[]`, `run_id?`, `origin?`, `criteria[]?` |
 | `approval.request` | Mac → phone | `approval_id`, `action`, `target`, `risk` (write/send/delete/install/payment/publish), `task_id`, `task_title`, `expires_at` |
 | `approval.answer` | phone → Mac | `approval_id`, `decision` (approve/deny), `auth` (`faceid` for approve, `none` for deny), `ts` |
 | `approval.result` | Mac → phone | `approval_id`, `outcome` (done/denied/expired/failed), `detail?` |
@@ -258,6 +258,8 @@ For "I'm out, the Mac is at home": glance, review fast, hand over a whole task.
   and `job` `{id, step, done, total}` while a background job runs in it.
 - **`run_id`** on a reply (`chat.event` final, `chat.history.result` message, `job.event`): the run whose
   steps `run.get` returns.
+- **`job.event.criteria[]`**: each acceptance check as `{text, status}`, `status` pending/passed/failed/
+  not_reached (a finished job never says pending); `completed` counts the passed ones, `total` all of them.
 - **`run.result.steps[]`**: the newest 40 (`total` says how many): `kind` command/edit/write/web/search/
   read/plan/other, `tool`, `ok`, `ms`, `target`, `summary`, `running?`, and by kind:
   `terminal {command, exit, lines[]}` (the last ≤ 60 lines, colour codes removed); `diff {path, added,

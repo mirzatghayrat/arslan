@@ -471,7 +471,21 @@
           "plan": [],
           "files": [],
           "run_id": 87,
-          "origin": "phone"
+          "origin": "phone",
+          "criteria": [
+            {
+              "text": "One row per invoice",
+              "status": "passed"
+            },
+            {
+              "text": "Totals by month",
+              "status": "pending"
+            },
+            {
+              "text": "Saved as a CSV",
+              "status": "failed"
+            }
+          ]
         }
       },
       "kind": "msg",

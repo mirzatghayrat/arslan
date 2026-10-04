@@ -144,6 +144,10 @@ public final class FrameMapper {
         if state != "running", let detail = f["detail"] as? String, !detail.isEmpty { body["summary"] = detail }
         if let run = f["run_id"] as? Int { body["run_id"] = run }
         if let origin = f["origin"] as? String { body["origin"] = origin }
+        // Each check with its own outcome, for the phone's checklist (pending/passed/failed/not_reached).
+        if !criteria.isEmpty {
+            body["criteria"] = criteria.map { ["text": $0["description"] as? String ?? "", "status": $0["status"] as? String ?? "pending"] }
+        }
         return body
     }
 

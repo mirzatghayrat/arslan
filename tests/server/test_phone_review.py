@@ -160,15 +160,17 @@ async def test_each_conversation_says_its_kind_state_and_origin(client, artifact
             db.add(ArslanMessage(id=i, conversation_id=cid, role=role, source=source, content=text, run_id=run_id, job_outcome=outcome))
         await db.commit()
     artifact_store.store_bytes(9, "行程.md", b"# trip")
-    background_jobs._jobs["j"] = Job("j", "busy", "跑测试", [{"id": "answer-delivered", "description": "x"}, {"id": "c1", "description": "y"}],
-                                     phase="running", step="run_command npm test", results={"c1": "passed"})
+    # "answer-delivered" passing is not one of the job's own checks: 1 of 2, as its job.event says.
+    background_jobs._jobs["j"] = Job("j", "busy", "跑测试", [{"id": "answer-delivered", "description": "x"}, {"id": "c1", "description": "y"},
+                                                          {"id": "c2", "description": "z"}],
+                                     phase="running", step="run_command npm test", results={"answer-delivered": "passed", "c1": "passed"})
     with desktop_status.awaiting_approval("ask"):
         rows = {c["id"]: c for c in (await client.get("/api/v1/phone/conversations?limit=50")).json()["conversations"]}
     assert (rows["pocket"]["kind"], rows["pocket"]["title"], rows["pocket"]["origin"]) == ("remote", "Remote", "phone")
     assert (rows["task-ab"]["kind"], rows["task-ab"]["state"], rows["task-ab"]["origin"]) == ("task", "done", "phone")
     assert rows["scheduled-3"]["kind"] == "scheduled"
     assert (rows["trip"]["kind"], rows["trip"]["files"], rows["trip"]["preview"]) == ("chat", 1, "行程排好了，见附件")
-    assert rows["busy"]["state"] == "working" and rows["busy"]["job"] == {"id": "j", "step": "run_command npm test", "done": 1, "total": 1}
+    assert rows["busy"]["state"] == "working" and rows["busy"]["job"] == {"id": "j", "step": "run_command npm test", "done": 1, "total": 2}
     assert rows["ask"]["state"] == "waiting"
 
 
