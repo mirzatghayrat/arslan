@@ -28,14 +28,14 @@ public final class BridgeRuntime {
     let pairing: PairingHost
     let control: ControlChannel
     let version: String
-    var token: Data?
     var pending: [String: PairRequest] = [:]          // request_id → request, until the user decides
 
     public init(identities: IdentityStore, store: EnvelopeStore, control: ControlChannel, macName: String,
-                containerID: String, version: String) throws {
+                containerID: String, version: String, memory: ((String) throws -> MailboxMemoryStore)? = nil) throws {
         identity = try identities.identity()
         (self.identities, self.store, self.control, self.version) = (identities, store, control, version)
-        mailbox = Mailbox(deviceID: identity.deviceID, signing: identity.signing, exchange: identity.exchange, store: store)
+        mailbox = Mailbox(deviceID: identity.deviceID, signing: identity.signing, exchange: identity.exchange, store: store,
+                          memoryStore: try memory?(identity.deviceID))
         for phone in try identities.phones() { if let peer = phone.peer { mailbox.add(peer: peer) } }
         pairing = PairingHost(macID: identity.deviceID, macName: macName, containerID: containerID,
                               signing: identity.signing, exchange: identity.exchange)
@@ -89,8 +89,7 @@ public final class BridgeRuntime {
 
     /// One look at the store. Returns the paired phones' messages to act on.
     public func poll(now: Date = Date()) async throws -> [Received] {
-        let (records, next) = try await store.changes(since: token)
-        token = next
+        let (records, next) = try await store.changes(since: mailbox.token)
         var forMailbox: [EnvelopeRecord] = []
         for record in records where record.to == identity.deviceID {
             guard !mailbox.isPaired(record.from), record.kind == "control" else {
@@ -107,6 +106,9 @@ public final class BridgeRuntime {
                                         "phone_name": request.phoneName])
             }
         }
-        return try await mailbox.process(forMailbox)
+        let received = try await mailbox.process(forMailbox)
+        mailbox.token = next          // only once this batch is acted on and remembered
+        try mailbox.remember()
+        return received
     }
 }

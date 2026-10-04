@@ -40,6 +40,45 @@ public struct Received {
     public let asset: Data?
 }
 
+/// What the Bridge must remember across restarts (§4.5, §4.8): its sequence counter, each phone's
+/// replay window and the envelopes already acted on, its place in the change feed, and which of its
+/// own records still wait for an ack (so a late ack still deletes them). Without it, a restarted
+/// Bridge sent seq 1, 2, 3 … again and the phone dropped every message as a replay.
+public struct MailboxMemory: Codable, Equatable {
+    public var nextSeq: Int64 = 1
+    public var windows: [String: ReplayWindow] = [:]
+    public var processed: [String] = []          // oldest first, capped
+    public var awaitingAck: [String] = []        // oldest first, capped
+    public var token: Data?
+    public init() {}
+    static let cap = 4096
+}
+
+public protocol MailboxMemoryStore: AnyObject {
+    func load() -> MailboxMemory?
+    func save(_ memory: MailboxMemory) throws
+}
+
+/// One small JSON file in the Bridge's Application Support folder (nothing secret in it).
+public final class FileMemoryStore: MailboxMemoryStore {
+    let url: URL
+    public init(deviceID: String, directory: URL? = nil) throws {
+        let base = try directory ?? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
+                                                            appropriateFor: nil, create: true).appendingPathComponent("ArslanBridge")
+        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        url = base.appendingPathComponent("mailbox-\(deviceID).json")
+    }
+    public func load() -> MailboxMemory? { (try? Data(contentsOf: url)).flatMap { try? JSONDecoder().decode(MailboxMemory.self, from: $0) } }
+    public func save(_ memory: MailboxMemory) throws { try JSONEncoder().encode(memory).write(to: url, options: [.atomic]) }
+}
+
+public final class InMemoryMemoryStore: MailboxMemoryStore {
+    public var memory: MailboxMemory?
+    public init() {}
+    public func load() -> MailboxMemory? { memory }
+    public func save(_ memory: MailboxMemory) throws { self.memory = memory }
+}
+
 /// This device's side of the conversation with its paired peers.
 public final class Mailbox {
     public let deviceID: String
@@ -49,13 +88,44 @@ public final class Mailbox {
     public internal(set) var peers: [String: Peer] = [:]
     var windows: [String: ReplayWindow] = [:]
     var processed: Set<String> = []                 // envelope ids already acted on
+    var processedOrder: [String] = []
     var sentAwaitingAck: [String: EnvelopeRecord] = [:]
+    var awaitingFromBefore: Set<String> = []        // our records sent before a restart, not yet acked
     var nextSeq: Int64
-    var token: Data?
+    public var token: Data?
+    let memoryStore: MailboxMemoryStore?
 
+    /// With a `memoryStore`, the counter, windows, processed ids and change token survive a restart,
+    /// and the counter never starts below the current time in milliseconds — so even a lost file
+    /// cannot make it repeat a number the phone has seen.
     public init(deviceID: String, signing: Curve25519.Signing.PrivateKey, exchange: Curve25519.KeyAgreement.PrivateKey,
-                store: EnvelopeStore, nextSeq: Int64 = 1) {
-        (self.deviceID, self.signing, self.exchange, self.store, self.nextSeq) = (deviceID, signing, exchange, store, nextSeq)
+                store: EnvelopeStore, nextSeq: Int64 = 1, memoryStore: MailboxMemoryStore? = nil, now: Date = Date()) {
+        (self.deviceID, self.signing, self.exchange, self.store, self.nextSeq, self.memoryStore) =
+            (deviceID, signing, exchange, store, nextSeq, memoryStore)
+        guard let memoryStore else { return }
+        let memory = memoryStore.load() ?? MailboxMemory()
+        self.nextSeq = max(memory.nextSeq, Int64(now.timeIntervalSince1970 * 1000))
+        windows = memory.windows
+        processedOrder = memory.processed
+        processed = Set(memory.processed)
+        awaitingFromBefore = Set(memory.awaitingAck)
+        token = memory.token
+    }
+
+    /// Write what must survive a restart (before any CloudKit write that depends on it).
+    public func remember() throws {
+        guard let memoryStore else { return }
+        var memory = MailboxMemory()
+        memory.nextSeq = nextSeq
+        memory.windows = windows
+        if processedOrder.count > MailboxMemory.cap {
+            processedOrder.removeFirst(processedOrder.count - MailboxMemory.cap)
+            processed = Set(processedOrder)
+        }
+        memory.processed = processedOrder
+        memory.awaitingAck = Array((awaitingFromBefore.union(sentAwaitingAck.keys)).sorted().suffix(MailboxMemory.cap))
+        memory.token = token
+        try memoryStore.save(memory)
     }
 
     public func add(peer: Peer) { peers[peer.deviceID] = peer }
@@ -71,6 +141,7 @@ public final class Mailbox {
         guard let peer = peers[peerID] else { throw BridgeError.code("not_paired") }
         let seq = nextSeq
         nextSeq += 1
+        try remember()                      // §4.5: the counter is durable before the record exists
         let envelope: [String: Any] = ["v": Wire.version, "id": id, "seq": seq, "ts": ISO8601DateFormatter().string(from: now),
                                        "from": deviceID, "to": peerID, "type": type, "body": body]
         let plaintext = try JSONSerialization.data(withJSONObject: envelope, options: [.sortedKeys])
@@ -85,7 +156,10 @@ public final class Mailbox {
         let record = EnvelopeRecord(id: id, to: peerID, from: deviceID, seq: seq, kind: sealed.header.kind,
                                     notify: notify, sealed: data, asset: sealedAsset, createdAt: now)
         try await store.save(record)
-        if type != "ack" { sentAwaitingAck[record.id] = record }   // an ack is not acknowledged
+        if type != "ack" {                                  // an ack is not acknowledged
+            sentAwaitingAck[record.id] = record
+            try remember()                                  // so a restart still deletes it on its ack
+        }
         return record
     }
 
@@ -117,18 +191,20 @@ public final class Mailbox {
             guard window.accept(packet.header.seq) else { continue }
             windows[record.from] = window
             processed.insert(id)
+            processedOrder.append(id)
             if type == "ack" {
                 let ids = (opened.envelope["body"] as? [String: Any])?["ids"] as? [String] ?? []
-                let mine = ids.map { $0.lowercased() }.filter { sentAwaitingAck[$0] != nil }
+                let mine = ids.map { $0.lowercased() }.filter { sentAwaitingAck[$0] != nil || awaitingFromBefore.contains($0) }
                 if !mine.isEmpty {
                     try await store.delete(ids: mine)
-                    mine.forEach { sentAwaitingAck[$0] = nil }
+                    mine.forEach { sentAwaitingAck[$0] = nil; awaitingFromBefore.remove($0) }
                 }
                 continue
             }
             acks[record.from, default: []].append(id)
             out.append(Received(from: record.from, type: type, envelope: opened.envelope, asset: opened.asset))
         }
+        try remember()
         for (peer, ids) in acks { try await send(type: "ack", body: ["ids": ids], to: peer) }
         return out
     }

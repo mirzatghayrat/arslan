@@ -175,7 +175,7 @@ public enum Seal {
 
 /// §4.8: per sender, the last `size` sequence numbers; repeats and anything at or below
 /// `highest - size` are dropped; out-of-order arrival inside the window is fine.
-public struct ReplayWindow {
+public struct ReplayWindow: Codable, Equatable {
     public let size: Int64
     private var seen: Set<Int64> = []
     private var highest: Int64 = 0

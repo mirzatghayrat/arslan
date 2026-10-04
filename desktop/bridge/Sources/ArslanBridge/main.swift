@@ -105,7 +105,8 @@ let runtime: BridgeRuntime
 do {
     runtime = try BridgeRuntime(identities: IdentityStore(secrets: secrets), store: store, control: control,
                                 macName: macName,
-                                containerID: containerID, version: bundleVersion())
+                                containerID: containerID, version: bundleVersion(),
+                                memory: ephemeral ? nil : { try FileMemoryStore(deviceID: $0) })
 } catch {
     FileHandle.standardError.write(Data("ArslanBridge: identity unavailable: \(error)\n".utf8))
     exit(1)
