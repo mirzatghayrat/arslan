@@ -612,3 +612,63 @@ async def test_a_jobs_approvals_end_with_it(execution_db, active, monkeypatch):
     await _wait(lambda: job.phase == "finished")
     assert forgotten == [job.job_id]
 
+
+
+# ------------------------------------------------------------------ "done" means it got done (2026-10-04)
+
+phases: list[str] = []
+
+
+def _judge_says(monkeypatch, answer, p, seen):
+    from server.services import judgment
+    phases.clear()
+
+    async def judge(point, state, **kwargs):
+        seen.append((point, state))
+        phases.extend(j.phase for j in background_jobs.jobs_for(CID))
+        return None if answer is None else judgment.Verdict(answer, p, 1)
+    monkeypatch.setattr(judgment, "judge", judge)
+
+
+async def test_an_answer_saying_it_could_not_do_it_is_not_done(execution_db, active, frames, monkeypatch):
+    seen = []
+    _judge_says(monkeypatch, False, 0.08, seen)
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: JobAdapter(text="复制没做成：批准卡过期了，没有人回应。"))
+    job = await background_jobs.start(CID, "把 a.txt 复制到下载文件夹", [])
+    await _wait(lambda: job.phase == "finished")
+    assert (job.outcome, job.detail) == ("blocked", "goal_not_reached")
+    assert seen == [("job.accomplished", {"goal": "把 a.txt 复制到下载文件夹", "answer": "复制没做成：批准卡过期了，没有人回应。"})]
+    updates = [f for f in frames if f["type"] == "job_update" and f["job_id"] == job.job_id]
+    assert all(u.get("outcome") != "done" for u in updates), "never shown done on the way"
+    assert phases == ["running"], "still running while judged: no reader sees a finished 'done' meanwhile"
+    async with execution_db() as db:
+        (message,) = (await db.scalars(select(ArslanMessage).where(ArslanMessage.conversation_id == CID))).all()
+    assert message.job_outcome == "blocked", "the conversation still says so after a restart"
+
+
+@pytest.mark.parametrize("p", [0.08, 0.99])
+async def test_a_decisive_no_counts_whichever_way_the_judge_reads_p(execution_db, active, monkeypatch, p):
+    # The device run (2026-10-05): the judge said {"answer": false, "p": 0.99} for an expired copy.
+    _judge_says(monkeypatch, False, p, [])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: JobAdapter(text="The approval card expired unanswered; nothing ran."))
+    job = await background_jobs.start(CID, "create ~/Downloads/x.txt", [])
+    await _wait(lambda: job.phase == "finished")
+    assert (job.outcome, job.detail) == ("blocked", "goal_not_reached")
+
+
+@pytest.mark.parametrize("answer, p", [(True, 0.9), (True, 0.2), (False, 0.6), (False, 0.4), (None, None)])
+async def test_a_done_job_stays_done_unless_the_judge_is_sure_it_is_not(execution_db, active, monkeypatch, answer, p):
+    _judge_says(monkeypatch, answer, p, [])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: JobAdapter(text="Copied it."))
+    job = await background_jobs.start(CID, "copy a.txt", [])
+    await _wait(lambda: job.phase == "finished")
+    assert job.outcome == "done"
+
+
+async def test_a_job_with_its_own_checks_is_not_asked_again(execution_db, active, monkeypatch):
+    seen = []
+    _judge_says(monkeypatch, False, 0.01, seen)
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: JobAdapter())
+    job = await background_jobs.start(CID, "Tidy my notes into a report", _criteria())
+    await _wait(lambda: job.phase == "finished")
+    assert job.outcome == "done" and seen == []

@@ -33,6 +33,8 @@ async def get_desktop_status(after: int = Query(0, ge=0),
         event["task_name"] = names.get(event.get("task_id"), "") if event.get("task_id") else ""
     snapshot["keep_awake"] = await settings_service.keep_awake_enabled(db)
     snapshot["notifications"] = await settings_service.desktop_notifications_enabled(db)
+    # Mobile bridge §6.1: the shell starts the Arslan Bridge only while this is on.
+    snapshot["phone_bridge"] = await settings_service.phone_bridge_enabled(db)
     return snapshot
 
 

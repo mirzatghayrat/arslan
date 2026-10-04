@@ -1,0 +1,21 @@
+{
+  "contract": "arslan-bridge-v1",
+  "name": "kind-disagrees",
+  "base": "phone-message",
+  "note": "a hello (control) sent under kind msg: the clear-text kind must match the real type",
+  "packet": {
+    "header": {
+      "v": 1,
+      "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+      "from": "iphone-vector",
+      "to": "mac-vector",
+      "seq": 42,
+      "kind": "msg",
+      "ephemeral": "YFpyXSpK3+6xop4X7dYhwbdZPujNvESsbEq24vgF0jw=",
+      "notify": false
+    },
+    "sealed": "AAECAwQFBgcICQoLQ2oEW9RzzpbhXdJVRW+lNM6efRgi1J5nilOX/r+vWc+TKKplgMgQ2mqyCcC/aZft9DGTDVYxVITGuoNYfp9Cc0iLSor4pQgrHH2NrCEpBJH/izSR+e1Ko+jkFoMKX2Y93AqDCjtQeUfhphp8psOoiR0zWQyNgYH1b+nyWbf6sOZ1J7nq8sw6Ynrz9/m8gfa9dw1wMEz1h6mR0ebgTCywpvF/97SAbEB7j8slmiPZv5T3g1nj9/3gHVa3lgylzmCjSXYv64EeOoNVknEsDqbfvgW9LIGdGVbqx1qp00vALAaMvKQtdzk=",
+    "signature": "OyXUiU/KK2YXylrPSCjgVzOUDa7486QF5xawDTU/VEl3w79ccpKZd+e9ReVWJPNzvbFqHxJCLoruxX/6E4moBg=="
+  },
+  "expect_error": "header_mismatch"
+}

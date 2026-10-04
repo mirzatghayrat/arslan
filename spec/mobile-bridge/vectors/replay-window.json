@@ -1,0 +1,55 @@
+{
+  "contract": "arslan-bridge-v1",
+  "window": 1024,
+  "note": "one sender; in arrival order",
+  "steps": [
+    {
+      "seq": 5,
+      "accept": true
+    },
+    {
+      "seq": 3,
+      "accept": true
+    },
+    {
+      "seq": 5,
+      "accept": false
+    },
+    {
+      "seq": 1030,
+      "accept": true
+    },
+    {
+      "seq": 6,
+      "accept": false
+    },
+    {
+      "seq": 7,
+      "accept": true
+    },
+    {
+      "seq": 1029,
+      "accept": true
+    },
+    {
+      "seq": 1028,
+      "accept": true
+    },
+    {
+      "seq": 2000,
+      "accept": true
+    },
+    {
+      "seq": 976,
+      "accept": false
+    },
+    {
+      "seq": 977,
+      "accept": true
+    },
+    {
+      "seq": 1500,
+      "accept": true
+    }
+  ]
+}

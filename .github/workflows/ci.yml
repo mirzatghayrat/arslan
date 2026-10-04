@@ -172,6 +172,16 @@ jobs:
             swiftc -typecheck "$f"
           done
 
+      - name: Arslan Bridge builds and self-tests
+        # The iPhone companion helper (desktop/bridge). Unsigned here; the release
+        # build signs and notarizes it, and fresh_install_check checks what shipped.
+        # Built into binaries/ so tauri.conf.json's macOS.files path exists for the
+        # Rust steps below.
+        run: |
+          packaging/build_bridge.sh desktop/src-tauri/binaries/bridge 0.0.0-ci
+          # The shared protocol vectors from the Mac side (the iOS CI runs the same files).
+          swift test --package-path desktop/bridge
+
       # ── Rust: the desktop shell, checked at last ─────────────────────────────
       # lib.rs owns the window, the updater, and the sidecar lifecycle — the
       # exact layer every packaged-only defect has lived in — and until this

@@ -261,6 +261,7 @@
     "reconnecting": "Reconnexion..."
   },
   "chat": {
+    "fromPhone": "depuis l’iPhone",
     "learned": "Appris : {{text}}",
     "wantsToLearn": "Arslan veut retenir une pratique : {{text}}",
     "learnedUndo": "Annuler",
@@ -503,6 +504,23 @@
   "settings": {
     "labelMemoryInConversations": "Se souvenir de moi et l’utiliser dans les conversations",
     "memoryInConversationsDesc": "Arslan retient ce que vous lui dites de vous et de votre façon de travailler, et l’utilise avec le modèle choisi, y compris dans le cloud. Le sensible (santé, argent, adresse) attend toujours votre accord, et chaque conversation peut couper la mémoire.",
+    "phoneEnable": "Utiliser Arslan depuis l’iPhone",
+    "phoneEnableDesc": "Fait tourner la connexion avec l’iPhone sur ce Mac tant qu’Arslan est ouvert. Tant que c’est activé, elle consulte votre iCloud toutes les quelques secondes.",
+    "navPhone": "iPhone",
+    "phoneIntro": "Parlez à Arslan depuis votre iPhone. Les messages passent par votre propre iCloud, chiffrés de bout en bout : Apple ne voit que des données chiffrées.",
+    "phoneComingSoon": "App iPhone bientôt disponible",
+    "phoneComingSoonDesc": "Arslan pour iPhone arrive bientôt sur l’App Store. Une fois disponible, scannez ici le code d’association pour parler à Arslan sur ce Mac, lui confier des tâches et approuver ses actions depuis votre téléphone.",
+    "phoneBridgeOffline": "La connexion avec l’iPhone n’est pas active.",
+    "phoneAdd": "Ajouter un iPhone",
+    "phoneScan": "Scannez ce code avec l’app Arslan sur votre iPhone. Il sert une fois, pendant 10 minutes.",
+    "phoneRequest": "« {{name}} » veut se connecter",
+    "phoneAccept": "Autoriser",
+    "phoneDecline": "Refuser",
+    "phoneDevices": "iPhone jumelés",
+    "phoneNone": "Aucun iPhone jumelé pour l’instant.",
+    "phoneRemove": "Retirer",
+    "phonePairedAt": "Jumelé {{when}}",
+    "phoneError": "Ça n’a pas marché. Réessayez.",
     "labelLearnedPractices": "Les pratiques apprises s’appliquent",
     "learnedPracticesDesc": "Quand vous corrigez Arslan, ou qu’il trouve comment contourner un échec sur ce Mac, il retient la pratique et l’utilise la fois suivante. Vous pouvez voir et annuler chacune dans Brain. Une pratique apprise après lecture de pages web ou de fichiers attend votre accord. Désactivé : toutes attendent.",
     "labelTerminalSandbox": "Exécuter les commandes dans un bac à sable",
@@ -870,7 +888,19 @@
     "distilled_none": "Rien à distiller",
     "distill_failed": "Échec du résumé en mémoire",
     "no_spawns": "Aucun spawn pour l'instant",
-    "no_spawns_desc": "Ils apparaîtront ici dès que vous en créerez un."
+    "no_spawns_desc": "Ils apparaîtront ici dès que vous en créerez un.",
+    "remote": "Remote",
+    "fromPhone": "Lancé depuis l’iPhone",
+    "glyph": {
+      "waiting": "Attend ton accord",
+      "remote": "Remote · ton iPhone",
+      "working": "En cours",
+      "progress": "En cours : {{done}} sur {{total}}",
+      "done": "Terminé",
+      "unfinished": "Pas abouti",
+      "failed": "Arrêté sur un problème",
+      "scheduled": "Planifié"
+    }
   },
   "orchestrator": {
     "greeting_morning": "Bonjour",

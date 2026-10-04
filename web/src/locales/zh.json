@@ -261,6 +261,7 @@
     "reconnecting": "正在重新连接……"
   },
   "chat": {
+    "fromPhone": "来自 iPhone",
     "learned": "学到了：{{text}}",
     "wantsToLearn": "Arslan 想记住一个做法：{{text}}",
     "learnedUndo": "撤销",
@@ -503,6 +504,23 @@
   "settings": {
     "labelMemoryInConversations": "记住我，并用在对话里",
     "memoryInConversationsDesc": "Arslan 会记住你说过的关于你自己、你的工作方式的事，并在对话里用上，包括发给你选的云端模型。健康、钱、住址这类敏感内容仍要你确认；单个对话也可以关掉记忆。",
+    "phoneEnable": "在 iPhone 上使用 Arslan",
+    "phoneEnableDesc": "Arslan 打开时，在这台 Mac 上运行 iPhone 连接。开着时它每隔几秒查看一次你的 iCloud。",
+    "navPhone": "iPhone",
+    "phoneIntro": "在 iPhone 上和 Arslan 说话。消息经过你自己的 iCloud，端到端加密：苹果只能看到加密后的数据。",
+    "phoneComingSoon": "iPhone 版即将上架",
+    "phoneComingSoonDesc": "Arslan 的 iPhone 版正在准备上架 App Store。上架后，用它扫这里的配对码，就能在手机上和这台 Mac 上的 Arslan 对话、交代任务、批准它的操作。",
+    "phoneBridgeOffline": "iPhone 连接没有在运行。",
+    "phoneAdd": "添加 iPhone",
+    "phoneScan": "用 iPhone 上的 Arslan 扫这个码。只能用一次，10 分钟内有效。",
+    "phoneRequest": "“{{name}}”想连接",
+    "phoneAccept": "允许",
+    "phoneDecline": "拒绝",
+    "phoneDevices": "已配对的 iPhone",
+    "phoneNone": "还没有配对 iPhone。",
+    "phoneRemove": "移除",
+    "phonePairedAt": "配对于 {{when}}",
+    "phoneError": "没成功，请再试一次。",
     "labelLearnedPractices": "学到的做法直接生效",
     "learnedPracticesDesc": "你纠正 Arslan，或者它在这台 Mac 上绕过了失败的路，它会记下这个做法，下次直接用。每一条都能在 Brain 里看到、撤销。读过网页或文件之后学到的，要等你确认。关掉后，每一条都等你确认。",
     "labelTerminalSandbox": "命令在沙盒里运行",
@@ -870,7 +888,19 @@
     "distilled_none": "没有可蒸馏的内容",
     "distill_failed": "蒸馏失败",
     "no_spawns": "还没有专家",
-    "no_spawns_desc": "创建之后会出现在这里。"
+    "no_spawns_desc": "创建之后会出现在这里。",
+    "remote": "Remote",
+    "fromPhone": "由 iPhone 发起",
+    "glyph": {
+      "waiting": "等你批准",
+      "remote": "Remote · 你的 iPhone",
+      "working": "进行中",
+      "progress": "进行中：{{done}} / {{total}}",
+      "done": "已完成",
+      "unfinished": "没做成",
+      "failed": "出了问题停下了",
+      "scheduled": "定时任务"
+    }
   },
   "orchestrator": {
     "greeting_morning": "早上好",

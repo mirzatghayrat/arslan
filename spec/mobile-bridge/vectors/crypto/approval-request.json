@@ -1,0 +1,36 @@
+{
+  "contract": "arslan-bridge-v1",
+  "name": "approval-request",
+  "note": "notify 1",
+  "sender": {
+    "deviceID": "mac-vector",
+    "signingKey": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8=",
+    "exchangeKey": "YGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn8=",
+    "storageKey": "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqo="
+  },
+  "recipient": {
+    "deviceID": "iphone-vector",
+    "signingKey": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+    "exchangeKey": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8=",
+    "storageKey": "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqo="
+  },
+  "ephemeral_private": "oKGio6SlpqeoqaqrrK2ur7CxsrO0tba3uLm6u7y9vr8=",
+  "nonce": "AAECAwQFBgcICQoL",
+  "psk": "",
+  "plaintext": "eyJib2R5Ijp7ImFjdGlvbiI6IkRlbGV0ZSAzIGZpbGVzIiwiYXBwcm92YWxfaWQiOiJhcHByLTEiLCJleHBpcmVzX2F0IjoiMjAyNi0xMC0wM1QwMDowNTowMFoiLCJyaXNrIjoiZGVsZXRlIiwidGFyZ2V0Ijoifi9BcnNsYW4vb2xkIiwidGFza19pZCI6InRhc2stMSIsInRhc2tfdGl0bGUiOiJUaWR5IGRvd25sb2FkcyJ9LCJmcm9tIjoibWFjLXZlY3RvciIsImlkIjoiQUFBQUFBQUEtQUFBQS00QUFBLThBQUEtQUFBQUFBQUFBQUFBIiwic2VxIjozLCJ0byI6ImlwaG9uZS12ZWN0b3IiLCJ0cyI6IjIwMjYtMTAtMDNUMDA6MDA6MDBaIiwidHlwZSI6ImFwcHJvdmFsLnJlcXVlc3QiLCJ2IjoxfQ==",
+  "header_bytes": "AAAAEGFyc2xhbi1icmlkZ2UvdjEAAAABMQAAACRhYWFhYWFhYS1hYWFhLTRhYWEtOGFhYS1hYWFhYWFhYWFhYWEAAAAKbWFjLXZlY3RvcgAAAA1pcGhvbmUtdmVjdG9yAAAAATMAAAADbXNnAAAALFlGcHlYU3BLMys2eG9wNFg3ZFlod2JkWlB1ak52RVNzYkVxMjR2Z0Ywanc9AAAAAAAAAAAAAAAAAAAAATE=",
+  "packet": {
+    "header": {
+      "v": 1,
+      "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+      "from": "mac-vector",
+      "to": "iphone-vector",
+      "seq": 3,
+      "kind": "msg",
+      "ephemeral": "YFpyXSpK3+6xop4X7dYhwbdZPujNvESsbEq24vgF0jw=",
+      "notify": true
+    },
+    "sealed": "AAECAwQFBgcICQoLwC23cglezUrrnzDqf6UQAri8I0mdx6II/KT0ZSl0qgtzBW7ur8lBWWtMMMNr7eipG2bLlDgYCJUhHN7kioQYjEL/1ZDalC63XJHKpvR1kpvBsJOb3LpqF7D5OnqtZIvZygSCBIU+6e1GhYzgp16l5IeynsszYVzMR/f3Zi0oNy7PXyr1BX+b5w4E0y/qS3qWrB0TykGkScn1YWOa99VRqu3CFv0Hn57bpUmTK25FEvARPyGCdxwUtCZizYGW2iceQQeyEFcOwojYBFkmE59H3BS0O/NA1dP98+MPmjSbubvkABgXDU4tJwwTOTRulQ3Fj3hUPKwzCaZ41VbCyha+Cjwu4sMng8WOPb48aHIGE2p4vtxVy8cw8rIhQZ1Z7u/m/QfapMJX7Set6TudgQeNQExmL9gnuQX58+q0TJYn7RvAKybAGebQ3Fof+1rQT0mFcrrBCi41T3Lk0E578rRg/pw=",
+    "signature": "bHLmPvOZIwdV6huXJUMxzt5Rj/VRbJlmNiJcesfEWBu31PmQVvp0hLQHHraV7tN0tNmq0/wRz15rFGEHBezwCQ=="
+  }
+}

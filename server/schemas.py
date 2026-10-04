@@ -46,6 +46,7 @@ class SettingsIn(BaseModel):
     terminal_sandbox_enabled: bool | None = None
     memory_in_conversations: bool | None = None
     learned_practices_take_effect: bool | None = None
+    phone_bridge_enabled: bool | None = None
     brain_usage_event_retention_days: int | None = None
     brain_usage_event_max_rows: int | None = None
     orchestrator_shell_enabled: str | None = None
@@ -117,6 +118,7 @@ class SettingsOut(BaseModel):
     terminal_sandbox_enabled: bool = True
     memory_in_conversations: bool = True
     learned_practices_take_effect: bool = True
+    phone_bridge_enabled: bool = False
     brain_usage_event_retention_days: int = 30
     brain_usage_event_max_rows: int = 200_000
     orchestrator_shell_enabled: str = ""
@@ -1054,6 +1056,18 @@ class ConversationListItem(BaseModel):
     message_count: int
     #: ISO timestamp of the most recent message, for most-recent-first ordering.
     last_at: str | None = None
+    #: What it is, for the sidebar's and the phone's glyphs: remote | chat | task | scheduled.
+    kind: str = "chat"
+    #: idle | working | waiting | done | failed.
+    state: str = "idle"
+    #: "phone" when the paired iPhone started it (mobile bridge): the Remote trace.
+    origin: str = "mac"
+    #: The last message, one line.
+    preview: str = ""
+    #: Files its runs made.
+    files: int = 0
+    #: The job still running in it: {"id", "step", "done", "total"}.
+    job: dict | None = None
 
 
 class ConversationUsageOut(BaseModel):

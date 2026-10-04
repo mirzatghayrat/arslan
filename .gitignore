@@ -58,3 +58,6 @@ desktop/src-tauri/target/
 desktop/hands/target/
 desktop/src-tauri/binaries/
 desktop/node_modules/
+
+# Swift package build output (desktop/bridge)
+desktop/bridge/.build/

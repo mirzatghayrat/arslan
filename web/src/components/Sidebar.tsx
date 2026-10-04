@@ -7,6 +7,9 @@ import ThreadRowMenu from "./ThreadRowMenu";
 import type { BackendStatus } from "../hooks/useBackendStatus";
 import BackgroundJobs from "./companion/BackgroundJobs";
 import { threadDisplayTitle } from "../lib/threadTitles";
+import ConversationGlyph from "./ConversationGlyph";
+import { remoteFirst, type ConversationMeta } from "../lib/conversationMeta";
+import { Smartphone } from "lucide-react";
 
 interface ArslanThread { id: string; title: string; archived?: boolean; temporary?: boolean; defaultTitle?: boolean }
 interface SidebarProps {
@@ -18,14 +21,16 @@ interface SidebarProps {
   onOpenConversation?: (conversationId: string) => void;
   /** Inbox badge: items not yet looked at, and how many of those need a look. */
   inboxUnread?: number; inboxHigh?: number;
+  /** Each conversation's kind and state (GET /conversations), for the glyphs and the Remote trace. */
+  meta?: Record<string, ConversationMeta>;
 }
 export default function Sidebar(props: SidebarProps) {
   const { threads, activeThreadId, onSelectThread, onAddThread,
     activeSection, onChangeSection, onDistillThread, onArchiveThread, onUnarchiveThread,
-    onDeleteThread, backendStatus, onOpenConversation, inboxUnread = 0, inboxHigh = 0 } = props;
+    onDeleteThread, backendStatus, onOpenConversation, inboxUnread = 0, inboxHigh = 0, meta = {} } = props;
   const { t } = useTranslation();
   const [archivedOpen, setArchivedOpen] = useState(false);
-  const activeThreads = threads.filter(thread => !thread.archived);
+  const activeThreads = remoteFirst(threads.filter(thread => !thread.archived), meta);
   const archivedThreads = threads.filter(thread => thread.archived);
   // 0.1.44 one Arslan: the sidebar lists conversations only; former experts are
   // turned into skills from Capabilities.
@@ -42,8 +47,10 @@ export default function Sidebar(props: SidebarProps) {
         if (event.target !== event.currentTarget) return;
         if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openThread(thread.id); }
       }} className={rowClass(active)}>
-      {active && marker}<MessageSquare size={14} className="shrink-0" />
-      <span className="min-w-0 flex-1 truncate">{threadDisplayTitle(thread, t)}</span>
+      {active && marker}<ConversationGlyph meta={meta[thread.id]} />
+      <span className={`min-w-0 flex-1 truncate ${meta[thread.id]?.kind === "remote" ? "font-semibold" : ""}`}>{threadDisplayTitle(thread, t, meta[thread.id]?.kind)}</span>
+      {meta[thread.id]?.origin === "phone" && meta[thread.id]?.kind !== "remote" &&
+        <Smartphone size={11} className="shrink-0 text-subtle-foreground" role="img" aria-label={t("sidebar.fromPhone")} />}
       {!thread.temporary && <ThreadRowMenu threadId={thread.id} archived={archived}
         onDistill={onDistillThread} onArchive={onArchiveThread} onUnarchive={onUnarchiveThread} onDelete={onDeleteThread} />}
     </div>;

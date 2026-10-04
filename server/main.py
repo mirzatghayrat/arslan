@@ -468,6 +468,8 @@ def create_app() -> FastAPI:
     app.include_router(judgments_api.router, prefix="/api/v1")
     from server.api import lessons as lessons_api
     app.include_router(lessons_api.router, prefix="/api/v1")
+    from server.api import phone as phone_api
+    app.include_router(phone_api.router, prefix="/api/v1")
     from server.api import recipes as recipes_api
     app.include_router(recipes_api.router, prefix="/api/v1")
     from server.api import browser as browser_api
@@ -558,6 +560,12 @@ def create_app() -> FastAPI:
     @app.websocket("/ws/arslan/{conversation_id}")
     async def _ws_arslan(websocket: WebSocket, conversation_id: str):  # noqa: ANN202
         await arslan_endpoint(websocket, conversation_id)
+
+    from server.ws.bridge import bridge_endpoint
+
+    @app.websocket("/ws/bridge")
+    async def _ws_bridge(websocket: WebSocket):  # noqa: ANN202
+        await bridge_endpoint(websocket)
 
     import os
     from pathlib import Path

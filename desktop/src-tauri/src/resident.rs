@@ -78,6 +78,9 @@ pub struct Status {
     pub keep_awake: bool,
     #[serde(default)]
     pub notifications: bool,
+    /// Settings › iPhone switch: run the Arslan Bridge. Missing means OFF.
+    #[serde(default)]
+    pub phone_bridge: bool,
 }
 
 /// Hold a sleep assertion only while work is actually in flight and the user
@@ -293,6 +296,7 @@ pub fn start(app: tauri::AppHandle, port: u16) {
         let mut cursor: Option<u64> = None;
         let mut failures = 0u32;
         let mut sleep = power::Assertion::default();
+        let mut bridge = crate::bridge::Supervisor::for_this_app();
         loop {
             match fetch_status(port, token.as_deref(), cursor.unwrap_or(0)) {
                 Some(status) => {
@@ -320,6 +324,9 @@ pub fn start(app: tauri::AppHandle, port: u16) {
                     // before a backend restart, is never replayed.
                     cursor = Some(status.cursor);
                     sleep.hold(want_sleep_assertion(&status));
+                    // Mobile bridge §6.1: one Bridge while the switch is on (an
+                    // unreachable backend leaves it as it is).
+                    bridge.tick(status.phone_bridge, port, token.as_deref());
                     if let Some(item) = app.try_state::<TrayStatus>() {
                         let _ = item.0.set_text(status_line(locale, &status, sleep.held()));
                     }

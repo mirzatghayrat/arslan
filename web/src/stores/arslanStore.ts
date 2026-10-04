@@ -373,6 +373,7 @@ function makeActions(set: SetState, get: GetState) {
         spawn_id?: number | null;
         run_id?: number | null;
         job_outcome?: JobOutcome | null;
+        source?: string | null;
       }): ArslanThreadItem => {
         if (row.role === "spawn_summary") {
           // Resolve the spawn name ONLY from an explicit spawn_id. History rows
@@ -401,6 +402,7 @@ function makeActions(set: SetState, get: GetState) {
           runId: row.run_id ?? undefined,
           // 0.1.42: a background job's result keeps its label across reloads.
           ...(row.job_outcome ? { jobId: `message-${row.message_id}`, jobOutcome: row.job_outcome } : {}),
+          ...(row.role === "user" && row.source === "phone" ? { fromPhone: true } : {}),
         };
       };
       switch (frame.type) {
@@ -921,6 +923,18 @@ function makeActions(set: SetState, get: GetState) {
           set({ pendingAction: { callId: frame.call_id, kind: frame.kind, target: frame.target, detail: frame.detail },
                 ..._approvalNotice(state) });
           break;
+        case "card_resolved": {
+          // Whoever answered first (another window, the phone) decided; a copy still
+          // open here closes. Only the card with this call_id — never a newer one.
+          const id = frame.call_id;
+          set({
+            ...(state.pendingCommand?.callId === id ? { pendingCommand: null } : {}),
+            ...(state.pendingWorkspaceWrite?.callId === id ? { pendingWorkspaceWrite: null } : {}),
+            ...(state.pendingSchedule?.callId === id ? { pendingSchedule: null } : {}),
+            ...(state.pendingAction?.callId === id ? { pendingAction: null } : {}),
+          });
+          break;
+        }
         case "propose_workspace_write":
           set({ pendingWorkspaceWrite: {
             callId: frame.call_id, workspace: frame.workspace,

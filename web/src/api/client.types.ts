@@ -342,6 +342,7 @@ export interface AppSettings {
   terminal_sandbox_enabled?: boolean;
   memory_in_conversations?: boolean;
   learned_practices_take_effect?: boolean;
+  phone_bridge_enabled?: boolean;
   /** Comma-separated BCP-47 tags for image text recognition. Empty = follow
    *  the interface language plus English. */
   ocr_languages?: string;
@@ -540,6 +541,8 @@ export interface ArslanThreadItem {
   spawnId?: number | null;
   spawnName?: string | null;
   sensitive?: boolean; // kind === "fact"
+  /** A user message forwarded from a paired iPhone (history row source "phone"). */
+  fromPhone?: boolean;
   /** kind === "lesson" (0.1.52 S5): the practice just learned. */
   lesson?: { id: number; status: string };
   spawnMessageId?: number | null; // chat_messages assistant id, for feedback/redo/refine
@@ -589,6 +592,8 @@ export interface ArslanHistoryRow {
   run_id?: number | null;
   /** 0.1.42: set on a background job's result — its checked outcome. */
   job_outcome?: JobOutcome | null;
+  /** Mobile bridge: "phone" when a paired iPhone sent it; null/absent = the window. */
+  source?: string | null;
 }
 
 // Server -> client frames on /ws/arslan
@@ -645,7 +650,12 @@ export type ArslanServerMessage =
   | { type: "spawn_meta"; arslan_message_id: number; spawn_id: number; assistant_message_id: number; task_brief: string; run_id?: number }
   | { type: "fact_saved"; content: string; sensitive: boolean }
   | { type: "lesson_learned"; lesson: { id: number; text: string; status: string } }
-  | { type: "message"; message_id: number; content: string; role: string; job_id?: string; outcome?: JobOutcome | null }
+  // source "phone": the paired iPhone's message, shown live in a window open on its conversation.
+  | { type: "message"; message_id: number; content: string; role: string; job_id?: string; outcome?: JobOutcome | null;
+      source?: string | null }
+  // A card shown in more than one place (a background job's, or a turn the iPhone started)
+  // was decided — by this window, another, or the phone — or expired: close this copy.
+  | { type: "card_resolved"; call_id: string; outcome: "approved" | "declined" | "expired"; by?: "phone" | "mac" }
   | { type: "job_update"; job_id: string; conversation_id: string; goal: string;
       phase: "queued" | "running" | "finished"; step: string; outcome: JobOutcome | null;
       detail: string; budget?: JobBudgetStop | null; criteria: JobCriterion[] }
@@ -1257,6 +1267,18 @@ export interface NoteSuggestDto {
 
 /** A machine enrolled for SSH (P3c). Nothing here is secret: a host key is
  *  public, and the key Arslan signs with never leaves the backend. */
+/** Settings › iPhone (docs/specs/mobile-bridge-protocol.md §6.1). */
+export interface PhoneDevice { device_id: string; name: string; paired_at?: string | null; last_seen?: string | null }
+export interface PhoneRequest { request_id: string; pairing_id?: string; phone_id?: string; phone_name?: string }
+export interface PhoneCode { uri: string; qr_png: string; expires_at: string }
+export interface PhoneStatus {
+  connected: boolean;
+  bridge: { device_id?: string; version?: string; protocol?: number };
+  devices: PhoneDevice[];
+  pending: PhoneRequest[];
+  code: PhoneCode | null;
+}
+
 export interface SshNode {
   id: number;
   name: string;
