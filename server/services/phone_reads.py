@@ -233,7 +233,9 @@ async def describe(db: AsyncSession, ids: list[str]) -> dict[str, dict]:
             state = "working"
         else:
             outcome = (latest_job.outcome if latest_job and latest_job.phase == "finished" else None) or outcomes.get(cid)
-            state = {"done": "done", "partial": "done", "blocked": "failed", "out_of_budget": "failed",
+            # Done only when it got done; not getting there (partly, stuck, out of budget, or saying
+            # so itself) reads "unfinished" (the phone's yellow 没做成), a stop reads "failed".
+            state = {"done": "done", "partial": "unfinished", "blocked": "unfinished", "out_of_budget": "unfinished",
                      "stopped": "failed"}.get(outcome or "", "idle")
         first = messages.get(first_user.get(cid))
         last = messages.get(last_ids.get(cid))

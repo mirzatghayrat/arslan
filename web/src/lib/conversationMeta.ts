@@ -4,7 +4,7 @@
 import type { ServerConversation } from "./sessionPersistence";
 
 export type ConversationKind = "remote" | "chat" | "task" | "scheduled";
-export type ConversationState = "idle" | "working" | "waiting" | "done" | "failed";
+export type ConversationState = "idle" | "working" | "waiting" | "done" | "unfinished" | "failed";
 export interface ConversationJob { id: string; step: string; done: number; total: number }
 export interface ConversationMeta {
   kind: ConversationKind;
@@ -16,7 +16,7 @@ export interface ConversationMeta {
 
 export const REMOTE_ID = "pocket";
 const KINDS: ConversationKind[] = ["remote", "chat", "task", "scheduled"];
-const STATES: ConversationState[] = ["idle", "working", "waiting", "done", "failed"];
+const STATES: ConversationState[] = ["idle", "working", "waiting", "done", "unfinished", "failed"];
 
 export function metaFrom(rows: ServerConversation[]): Record<string, ConversationMeta> {
   const out: Record<string, ConversationMeta> = {};

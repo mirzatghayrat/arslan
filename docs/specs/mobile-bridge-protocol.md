@@ -253,7 +253,9 @@ For "I'm out, the Mac is at home": glance, review fast, hand over a whole task.
 - **`status.snapshot.activity`**: today on the Mac — `hours[24]` (per local hour `[chat turns, tasks,
   approvals]`), `done` (runs finished cleanly), `files` (files made), `waiting` (cards open).
 - **`conversations.result` items**: `kind` remote/chat/task/scheduled (the pocket conversation is
-  `remote` and is titled **Remote** on both sides), `state` idle/working/waiting/done/failed, `origin`
+  `remote` and is titled **Remote** on both sides), `state` idle/working/waiting/done/unfinished/failed
+  (`unfinished`: the job ended without getting it done — partly, stuck, out of budget, or by its own
+  account; `failed`: stopped), `origin`
   phone/mac (who started it — the Remote trace), `preview` (last message, one line), `files` (count),
   and `job` `{id, step, done, total}` while a background job runs in it.
 - **`run_id`** on a reply (`chat.event` final, `chat.history.result` message, `job.event`): the run whose

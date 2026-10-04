@@ -25,6 +25,7 @@ describe("conversation glyphs", () => {
     [meta({ kind: "chat", state: "waiting" }), "sidebar.glyph.waiting"],
     [meta({ kind: "remote", state: "waiting" }), "sidebar.glyph.waiting"],
     [meta({ kind: "task", state: "done" }), "sidebar.glyph.done"],
+    [meta({ kind: "task", state: "unfinished" }), "sidebar.glyph.unfinished"],
     [meta({ kind: "task", state: "failed" }), "sidebar.glyph.failed"],
     [meta({ kind: "scheduled" }), "sidebar.glyph.scheduled"],
   ])("%o reads as %s", (m, label) => {
@@ -53,10 +54,12 @@ describe("the server's conversation list, as sidebar data", () => {
       { conversation_id: "task-1", title: "t", message_count: 1, kind: "task", state: "working", origin: "phone",
         job: { id: "j", step: "run_command npm test", done: 0, total: 2 } },
       { conversation_id: "odd", title: "o", message_count: 1, kind: "weird", state: "exploded", origin: "?" },
+      { conversation_id: "task-2", title: "t2", message_count: 2, kind: "task", state: "unfinished" },
     ]);
     expect(got.pocket.kind).toBe("remote");
     expect(got["task-1"]).toMatchObject({ kind: "task", state: "working", origin: "phone" });
     expect(got.odd).toMatchObject({ kind: "chat", state: "idle", origin: "mac" });
+    expect(got["task-2"].state).toBe("unfinished");
   });
 
   it("puts Remote first and leaves the rest in order", () => {

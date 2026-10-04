@@ -895,6 +895,7 @@
       "working": "進行中",
       "progress": "進行中：{{done}} / {{total}}",
       "done": "完了",
+      "unfinished": "未達成",
       "failed": "問題で停止",
       "scheduled": "スケジュール"
     }

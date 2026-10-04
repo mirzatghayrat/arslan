@@ -156,6 +156,9 @@ async def test_each_conversation_says_its_kind_state_and_origin(client, artifact
             ("trip", "arslan", None, "行程排好了，见附件", 9, None),
             ("busy", "user", None, "跑测试", None, None),
             ("ask", "user", None, "删重复文件", None, None),
+            ("task-no", "user", "phone", "复制文件", None, None),
+            ("task-no", "arslan", None, "没做成", None, "blocked"),
+            ("task-part", "arslan", None, "做了一半", None, "partial"),
         ], start=1):
             db.add(ArslanMessage(id=i, conversation_id=cid, role=role, source=source, content=text, run_id=run_id, job_outcome=outcome))
         await db.commit()
@@ -172,6 +175,21 @@ async def test_each_conversation_says_its_kind_state_and_origin(client, artifact
     assert (rows["trip"]["kind"], rows["trip"]["files"], rows["trip"]["preview"]) == ("chat", 1, "行程排好了，见附件")
     assert rows["busy"]["state"] == "working" and rows["busy"]["job"] == {"id": "j", "step": "run_command npm test", "done": 1, "total": 2}
     assert rows["ask"]["state"] == "waiting"
+    # Done only when it got done: partly or stuck is "unfinished" (the phone's yellow 没做成).
+    assert (rows["task-no"]["state"], rows["task-part"]["state"]) == ("unfinished", "unfinished")
+
+
+async def test_a_stopped_job_reads_failed_not_unfinished(client):
+    async with client.db_maker() as db:
+        db.add(ArslanMessage(conversation_id="task-stop", role="user", source="phone", content="等 150 秒"))
+        await db.commit()
+    background_jobs._jobs["s"] = Job("s", "task-stop", "等 150 秒", [{"id": "answer-delivered", "description": "x"}],
+                                     phase="finished", outcome="stopped")
+    try:
+        rows = {c["id"]: c for c in (await client.get("/api/v1/phone/conversations?limit=50")).json()["conversations"]}
+    finally:
+        background_jobs._jobs.pop("s", None)
+    assert rows["task-stop"]["state"] == "failed"
 
 
 # ------------------------------------------------------------------ today's activity

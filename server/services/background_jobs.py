@@ -221,11 +221,29 @@ async def _run(job: Job) -> None:
         _inside_job.reset(token)
         from server.registry import hands_tools
         hands_tools.forget_job(job.job_id)      # approvals never outlive their job
+        outcome = outcome_of(phase, job.results, reason)
+        # Judged before the job reads as finished, so nothing shows "done" in between.
+        if outcome == "done" and await _goal_not_reached(job, final_text):
+            outcome, reason = "blocked", "goal_not_reached"
         job.phase = "finished"
-        job.outcome = outcome_of(phase, job.results, reason)
+        job.outcome = outcome
         job.detail = reason
         _emit(job)
         await _report(job, final_text)
+
+
+async def _goal_not_reached(job: Job, text: str) -> bool:
+    """A job with no checks of its own is "done" as soon as it answers, also when the answer says
+    it could not do it (seen 2026-10-04: "复制没做成" under a green check). The judge reads the goal
+    and the answer; only a confident "no" changes the word, and no answer leaves it as it was.
+    A job with its own checks was judged by them already."""
+    if any(check.get("id") != "answer-delivered" for check in job.acceptance) or not text.strip():
+        return False
+    from server.services import judgment
+    verdict = await judgment.judge("job.accomplished", {"goal": job.goal, "answer": text},
+                                   ref=job.job_id, conversation_id=job.conversation_id)
+    threshold = judgment.REGISTRY["job.accomplished"].threshold
+    return verdict is not None and not verdict.answer and verdict.probability <= 1 - threshold
 
 
 async def _execute(job: Job) -> tuple[str, str, str | None]:

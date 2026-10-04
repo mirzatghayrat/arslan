@@ -895,6 +895,7 @@
       "working": "En cours",
       "progress": "En cours : {{done}} sur {{total}}",
       "done": "Terminé",
+      "unfinished": "Pas abouti",
       "failed": "Arrêté sur un problème",
       "scheduled": "Planifié"
     }

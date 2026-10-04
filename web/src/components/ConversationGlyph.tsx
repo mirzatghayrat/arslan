@@ -4,7 +4,8 @@ import type { ConversationMeta } from "../lib/conversationMeta";
 
 /** One glyph per conversation: what it is and how it stands, the same language as the iPhone's
  *  task list — a progress ring while a task runs, amber "!" when it waits for you, green check when
- *  done, red cross when it failed, a clock for scheduled work, a signal tower for Remote. */
+ *  done, a yellow broken ring with a dash when it ended without getting it done, red cross when it
+ *  stopped, a clock for scheduled work, a signal tower for Remote. */
 export default function ConversationGlyph({ meta, size = 15 }: { meta?: ConversationMeta; size?: number }) {
   const { t } = useTranslation();
   const label = (key: string) => t(`sidebar.glyph.${key}`);
@@ -27,6 +28,14 @@ export default function ConversationGlyph({ meta, size = 15 }: { meta?: Conversa
       <circle cx="8" cy="8" r={r} fill="none" strokeWidth="2.2" className="stroke-foreground/15" />
       <circle cx="8" cy="8" r={r} fill="none" strokeWidth="2.2" strokeLinecap="round" className="stroke-primary"
         strokeDasharray={`${(c * fraction).toFixed(1)} ${c.toFixed(1)}`} transform="rotate(-90 8 8)" />
+    </svg>;
+  }
+  if (meta.state === "unfinished") {
+    const r = 6, c = 2 * Math.PI * r;
+    return <svg role="img" aria-label={label("unfinished")} width={size} height={size} viewBox="0 0 16 16" className="shrink-0">
+      <circle cx="8" cy="8" r={r} fill="none" strokeWidth="2.2" strokeLinecap="round" className="stroke-unfinished"
+        strokeDasharray={`${(c * 0.75).toFixed(1)} ${c.toFixed(1)}`} transform="rotate(-90 8 8)" />
+      <path d="M5.6 8h4.8" fill="none" strokeWidth="2.2" strokeLinecap="round" className="stroke-unfinished" />
     </svg>;
   }
   if (meta.state === "done") return <Check size={size} strokeWidth={2.4} className="shrink-0 text-success" role="img" aria-label={label("done")} />;

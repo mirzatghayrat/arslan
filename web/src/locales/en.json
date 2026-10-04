@@ -895,6 +895,7 @@
       "working": "In progress",
       "progress": "In progress: {{done}} of {{total}}",
       "done": "Done",
+      "unfinished": "Not done",
       "failed": "Stopped with a problem",
       "scheduled": "Scheduled"
     }

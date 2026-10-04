@@ -895,6 +895,7 @@
       "working": "进行中",
       "progress": "进行中：{{done}} / {{total}}",
       "done": "已完成",
+      "unfinished": "没做成",
       "failed": "出了问题停下了",
       "scheduled": "定时任务"
     }
