@@ -646,7 +646,17 @@ async def test_an_answer_saying_it_could_not_do_it_is_not_done(execution_db, act
     assert message.job_outcome == "blocked", "the conversation still says so after a restart"
 
 
-@pytest.mark.parametrize("answer, p", [(True, 0.9), (False, 0.6), (None, None)])
+@pytest.mark.parametrize("p", [0.08, 0.99])
+async def test_a_decisive_no_counts_whichever_way_the_judge_reads_p(execution_db, active, monkeypatch, p):
+    # The device run (2026-10-05): the judge said {"answer": false, "p": 0.99} for an expired copy.
+    _judge_says(monkeypatch, False, p, [])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: JobAdapter(text="The approval card expired unanswered; nothing ran."))
+    job = await background_jobs.start(CID, "create ~/Downloads/x.txt", [])
+    await _wait(lambda: job.phase == "finished")
+    assert (job.outcome, job.detail) == ("blocked", "goal_not_reached")
+
+
+@pytest.mark.parametrize("answer, p", [(True, 0.9), (True, 0.2), (False, 0.6), (False, 0.4), (None, None)])
 async def test_a_done_job_stays_done_unless_the_judge_is_sure_it_is_not(execution_db, active, monkeypatch, answer, p):
     _judge_says(monkeypatch, answer, p, [])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: JobAdapter(text="Copied it."))

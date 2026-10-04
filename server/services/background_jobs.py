@@ -242,8 +242,13 @@ async def _goal_not_reached(job: Job, text: str) -> bool:
     from server.services import judgment
     verdict = await judgment.judge("job.accomplished", {"goal": job.goal, "answer": text},
                                    ref=job.job_id, conversation_id=job.conversation_id)
+    if verdict is None or verdict.answer:
+        return False
+    # The judge is asked for p = P(yes), but the same model also answers "false, 0.99" meaning
+    # "sure it is no" (the ledger has both; the device run of 2026-10-05 was the latter and left a
+    # failed copy "done"). A "no" counts when it is decisive either way; near 0.5 it is unsure.
     threshold = judgment.REGISTRY["job.accomplished"].threshold
-    return verdict is not None and not verdict.answer and verdict.probability <= 1 - threshold
+    return verdict.probability <= 1 - threshold or verdict.probability >= threshold
 
 
 async def _execute(job: Job) -> tuple[str, str, str | None]:
