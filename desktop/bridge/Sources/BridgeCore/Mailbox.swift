@@ -1,6 +1,7 @@
 // Inbox and outbox over an envelope store (docs/specs/mobile-bridge-protocol.md §2, §4.5, §4.8, §5.3).
 // The store is CloudKit in the app (CloudKitStore) and in-memory in tests; everything here is
-// independent of it: verification, replay window, duplicates, acks, deleting on ack.
+// independent of it: verification, replay window, duplicates, acks, deleting on ack, and the
+// clean-up that keeps the user's iCloud from filling with old envelopes.
 import CryptoKit
 import Foundation
 
@@ -22,6 +23,8 @@ public protocol EnvelopeStore {
     /// New records since `token`, and the token to continue from.
     func changes(since token: Data?) async throws -> (records: [EnvelopeRecord], token: Data?)
     func delete(ids: [String]) async throws
+    /// Every record in the zone and when it was made, nothing else (the daily clean-up, §2).
+    func ages() async throws -> [(id: String, createdAt: Date)]
 }
 
 public struct Peer {
@@ -191,7 +194,7 @@ public final class Mailbox {
             let type = opened.envelope["type"] as? String ?? ""
             lastHeard = Date()
             if processed.contains(id) {                    // a duplicate: ack again, act never
-                if type != "ack" { acks[record.from, default: []].append(id) }
+                if type != "ack" { acks[record.from, default: []].append(id) } else { toDelete.insert(record.id) }
                 continue
             }
             var window = windows[record.from] ?? ReplayWindow()
@@ -205,6 +208,10 @@ public final class Mailbox {
                 // read. The acked ids are queued (and remembered) and deleted by `deleteAcknowledged`.
                 let mine = ids.map { $0.lowercased() }.filter { sentAwaitingAck[$0] != nil || awaitingFromBefore.contains($0) }
                 mine.forEach { sentAwaitingAck[$0] = nil; awaitingFromBefore.remove($0); toDelete.insert($0) }
+                // No one acknowledges an ack, so its reader is the only one who knows it is done
+                // with: it deletes it (§2). Before 2026-10-05 nobody did, and the phone's acks (one
+                // per status heartbeat, 1,440 a day) stayed in the user's iCloud for good.
+                toDelete.insert(record.id)
                 continue
             }
             acks[record.from, default: []].append(id)
@@ -222,6 +229,34 @@ public final class Mailbox {
         try await store.delete(ids: batch)
         batch.forEach { toDelete.remove($0) }
         try remember()
+    }
+
+    /// Take back a record the peer no longer needs: a `status.snapshot` that a newer one replaces
+    /// (§5.3). It stops waiting for an ack and goes with the next deletions; one already
+    /// acknowledged is left alone.
+    public func withdraw(_ id: String) throws {
+        guard sentAwaitingAck.removeValue(forKey: id.lowercased()) != nil else { return }
+        toDelete.insert(id.lowercased())
+        try remember()
+    }
+
+    /// How long an envelope may stay in the store (§2): long enough for a phone left closed over
+    /// a holiday, short enough that nothing piles up.
+    public static let retention: TimeInterval = 7 * 24 * 3600
+
+    /// §2: delete every envelope older than `retention`, whoever wrote it and whoever it was for.
+    /// This catches what acks never clear: records for a phone that was removed or never came
+    /// back, and acks written by a phone that does not delete the ones it reads.
+    @discardableResult
+    public func sweep(now: Date = Date()) async throws -> (deleted: Int, kept: Int) {
+        let all = try await store.ages()
+        let old = all.filter { now.timeIntervalSince($0.createdAt) > Self.retention }.map(\.id)
+        for start in stride(from: 0, to: old.count, by: 200) {      // CloudKit takes at most 400 per request
+            try await store.delete(ids: Array(old[start..<min(start + 200, old.count)]))
+        }
+        old.forEach { sentAwaitingAck[$0] = nil; awaitingFromBefore.remove($0); toDelete.remove($0) }
+        if !old.isEmpty { try remember() }
+        return (old.count, all.count - old.count)
     }
 
     /// When a paired phone last wrote anything, acks included. While its app is open it acks
@@ -263,6 +298,8 @@ public final class MemoryStore: EnvelopeStore {
     }
 
     public func delete(ids: [String]) async throws { ids.forEach { records[$0] = nil } }
+
+    public func ages() async throws -> [(id: String, createdAt: Date)] { records.values.map { ($0.id, $0.createdAt) } }
 }
 
 /// How often the Bridge reads the store: every 2 s while the phone wrote in the last two minutes

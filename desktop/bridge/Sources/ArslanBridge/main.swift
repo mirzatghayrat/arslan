@@ -141,6 +141,16 @@ Task {
         try? await Task.sleep(nanoseconds: 2_000_000_000)
     }
 }
+Task {                                             // §2: envelopes older than 7 days, once a day
+    try? await Task.sleep(nanoseconds: 600 * 1_000_000_000)   // first let the polls read what waited meanwhile
+    while true {
+        do {
+            let swept = try await runtime.mailbox.sweep()       // logged every time: how full the zone stays
+            BridgeLog.notice("clean-up: deleted \(swept.deleted) envelopes older than 7 days, \(swept.kept) left")
+        } catch { BridgeLog.error("deleting envelopes older than 7 days", error) }
+        try? await Task.sleep(nanoseconds: 24 * 3600 * 1_000_000_000)
+    }
+}
 // stdin closing means Arslan quit.
 Thread.detachNewThread {
     while let _ = readLine(strippingNewline: true) {}

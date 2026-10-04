@@ -59,7 +59,10 @@ Subscriptions:
   if the user allowed it, rewrites the alert).
 
 Clean-up: the receiver sends `ack` after processing; the sender deletes the original record on a
-valid `ack`. An `ack` is not acknowledged. The Mac deletes envelopes older than 7 days once a day.
+valid `ack`. An `ack` is not acknowledged, so the device that reads it deletes it. A new
+`status.snapshot` replaces the one the phone has not acknowledged yet: the Mac deletes the older
+record. The Mac deletes envelopes older than 7 days once a day (ten minutes after it starts, then
+every 24 hours), whoever wrote them.
 
 ## 3. Pairing
 
