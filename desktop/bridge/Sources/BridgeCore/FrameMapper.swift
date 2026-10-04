@@ -45,8 +45,19 @@ public final class FrameMapper {
             heldProgress = nil
             // The stored message's id, so the phone can merge this answer with `chat.history`.
             if let stored = frame["message_id"] as? Int { messageID = String(stored) }
-            return [("chat.event", ["conversation_id": conversationID, "kind": "message", "message_id": messageID,
-                                    "text": reply, "final": true])]
+            var event: [String: Any] = ["conversation_id": conversationID, "kind": "message", "message_id": messageID,
+                                        "text": reply, "final": true]
+            if let run = frame["run_id"] as? Int { event["run_id"] = run }    // what the reply did, for review
+            return [("chat.event", event)]
+        case "message":
+            // A background task's result (its turn streams nothing). The phone's own words come back
+            // here too — it already has those.
+            guard frame["role"] as? String == "arslan", let id = frame["message_id"] as? Int else { return [] }
+            var event: [String: Any] = ["conversation_id": conversationID, "kind": "message", "message_id": String(id),
+                                        "text": frame["content"] as? String ?? "", "final": true]
+            if let job = frame["job_id"] as? String { event["job_id"] = job }
+            if let run = frame["run_id"] as? Int { event["run_id"] = run }
+            return [("chat.event", event)]
         case "error":
             return [("chat.event", ["conversation_id": conversationID, "kind": "error", "message_id": messageID,
                                     "text": frame["message"] as? String ?? "", "final": true])]
@@ -131,6 +142,8 @@ public final class FrameMapper {
                                    "completed": criteria.filter { $0["status"] as? String == "passed" }.count, "total": criteria.count,
                                    "plan": [], "files": []]
         if state != "running", let detail = f["detail"] as? String, !detail.isEmpty { body["summary"] = detail }
+        if let run = f["run_id"] as? Int { body["run_id"] = run }
+        if let origin = f["origin"] as? String { body["origin"] = origin }
         return body
     }
 

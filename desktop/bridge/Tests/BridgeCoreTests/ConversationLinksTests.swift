@@ -28,9 +28,15 @@ final class FakeChannels: ConversationChannels {
 final class FakeBackend: BackendReads {
     var answers: [String: Result<[String: Any], BridgeError>] = [:]
     var asked: [String] = []
+    var posted: [(String, [String: Any])] = []
     func json(_ path: String) async throws -> [String: Any] {
         asked.append(path)
         guard let answer = answers[path] else { throw BridgeError.code("mac_busy") }
+        return try answer.get()
+    }
+    func post(_ path: String, body: [String: Any]) async throws -> [String: Any] {
+        posted.append((path, body))
+        guard let answer = answers["POST " + path] else { throw BridgeError.code("mac_busy") }
         return try answer.get()
     }
 }
@@ -215,5 +221,73 @@ final class ConversationLinksTests: XCTestCase {
         for received in try await mac.receive() { await links.handle(received) }
         let error = try await phone.receive().first { $0.type == "error" }
         XCTAssertEqual((error?.envelope["body"] as? [String: Any])?["related_id"] as? String, sent.id)
+    }
+
+    func testARunCanBeReviewedFromThePhone() async throws {
+        let backend = FakeBackend()
+        let run: [String: Any] = ["run_id": 87, "state": "done", "total": 1,
+                                  "steps": [["kind": "command", "tool": "run_command", "ok": true, "ms": 4200,
+                                             "terminal": ["command": "npm test", "exit": 0, "lines": ["✓ 42 passed"]]]]]
+        backend.answers["/api/v1/phone/runs/87"] = .success(run)
+        let (_, mac, phone, _, links) = setUpPair(backend: backend)
+        try await phone.send(type: "run.get", body: ["run_id": 87], to: "mac-1")
+        try await phone.send(type: "run.get", body: ["run_id": "87"], to: "mac-1")          // not a number
+        for received in try await mac.receive() { await links.handle(received) }
+        let got = try await phone.receive()
+        XCTAssertEqual(got.map(\.type), ["run.result", "error"])
+        XCTAssertEqual((body(got[0])["steps"] as? [[String: Any]])?.first?["kind"] as? String, "command")
+        XCTAssertEqual(body(got[1])["code"] as? String, "malformed")
+        XCTAssertFalse(Wire.shouldNotify(type: "run.result", body: body(got[0])), "a review never rings")
+    }
+
+    func testATaskFromThePhoneStartsOnceAndItsProgressComesBack() async throws {
+        let backend = FakeBackend()
+        backend.answers["POST /api/v1/phone/tasks"] = .success(["conversation_id": "task-ab12", "job_id": "job-1"])
+        let (_, mac, phone, channels, links) = setUpPair(backend: backend)
+        let task: [String: Any] = ["goal": "把发票整理成表", "criteria": ["每张一行"], "client_task_id": "t1"]
+        try await phone.send(type: "task.start", body: task, to: "mac-1")
+        try await phone.send(type: "task.start", body: task, to: "mac-1")                   // the phone's retry
+        for received in try await mac.receive() { await links.handle(received) }
+        let got = try await phone.receive().filter { $0.type == "task.started" }
+        XCTAssertEqual(got.count, 2, "each request answered")
+        XCTAssertTrue(got.allSatisfy { body($0)["conversation_id"] as? String == "task-ab12" && body($0)["client_task_id"] as? String == "t1" })
+        XCTAssertEqual(backend.posted.count, 1, "but only one task started")
+        XCTAssertEqual(backend.posted[0].1["criteria"] as? [String], ["每张一行"])
+        let conversation = try XCTUnwrap(channels.opened["task-ab12"], "linked, so its job events reach the phone")
+        await conversation.onFrame(["type": "job_update", "job_id": "job-1", "conversation_id": "task-ab12", "goal": "把发票整理成表",
+                                    "phase": "running", "step": "read_file 发票-08.pdf", "run_id": 91, "origin": "phone", "criteria": []])
+        let job = try await phone.receive().first { $0.type == "job.event" }
+        XCTAssertEqual(body(try XCTUnwrap(job))["run_id"] as? Int, 91)
+        XCTAssertEqual(body(try XCTUnwrap(job))["origin"] as? String, "phone")
+    }
+
+    func testStoppingATaskListensToItsConversationFirst() async throws {
+        let backend = FakeBackend()
+        backend.answers["POST /api/v1/phone/tasks/job-9/stop"] = .success(["job_id": "job-9", "stopped": true])
+        let (_, mac, phone, channels, links) = setUpPair(backend: backend)
+        try await phone.send(type: "task.stop", body: ["job_id": "job-9", "conversation_id": "task-xy"], to: "mac-1")
+        try await phone.send(type: "task.stop", body: ["job_id": "job-404"], to: "mac-1")
+        for received in try await mac.receive() { await links.handle(received) }
+        XCTAssertNotNil(channels.opened["task-xy"])
+        XCTAssertEqual(backend.posted.map(\.0), ["/api/v1/phone/tasks/job-9/stop", "/api/v1/phone/tasks/job-404/stop"])
+        let errors = try await phone.receive().filter { $0.type == "error" }
+        XCTAssertEqual(errors.count, 1, "the one the Mac could not stop")
+    }
+
+    func testLookingAtAConversationsHistoryBringsItsUpdatesLive() async throws {
+        let backend = FakeBackend()
+        backend.answers["/api/v1/phone/conversations/c-7/history?limit=50"] = .success(["conversation_id": "c-7", "messages": []])
+        let (_, mac, phone, channels, links) = setUpPair(backend: backend)
+        try await phone.send(type: "chat.history", body: ["conversation_id": "c-7", "limit": 50], to: "mac-1")
+        for received in try await mac.receive() { await links.handle(received) }
+        let opened = try XCTUnwrap(channels.opened["c-7"])
+        await opened.onFrame(["type": "message", "message_id": 12, "content": "整理好了", "role": "arslan", "job_id": "job-1", "run_id": 91])
+        await opened.onFrame(["type": "message", "message_id": 13, "content": "mine", "role": "user", "source": "phone"])
+        let events = try await phone.receive().filter { $0.type == "chat.event" }.map(body)
+        XCTAssertEqual(events.count, 1, "a task's result, not the phone's own words")
+        XCTAssertEqual(events[0]["text"] as? String, "整理好了")
+        XCTAssertEqual(events[0]["job_id"] as? String, "job-1")
+        XCTAssertEqual(events[0]["run_id"] as? Int, 91)
+        XCTAssertTrue(Wire.shouldNotify(type: "chat.event", body: events[0]), "a finished task rings")
     }
 }

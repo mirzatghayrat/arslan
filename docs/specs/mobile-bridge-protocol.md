@@ -200,15 +200,18 @@ never the content. A lock-screen alert shows generic text unless the user turned
 | `hello` | both | `app_version`, `protocol_version`, `capabilities[]` |
 | `ack` | both | `ids[]` (lowercase envelope ids) |
 | `status.snapshot` | Mac → phone | `presence` (online/sleeping/offline), `mascot`, `device_name`, `last_seen`, `jobs[]` (each a `job.event` body: the jobs still running), `waiting_approvals`, `high_risk_mac_only` |
-| `conversations.list` / `conversations.result` | phone → Mac / Mac → phone | `limit?` (1–100, default 20) / `conversations[]` (`id`, `title`, `updated_at`), most recent first |
-| `chat.history` / `chat.history.result` | phone → Mac / Mac → phone | `conversation_id`, `limit` / `conversation_id`, `messages[]` (`id`, `role`, `text`, `ts`, `attachments[]`) |
+| `conversations.list` / `conversations.result` | phone → Mac / Mac → phone | `limit?` (1–100, default 20) / `conversations[]` (`id`, `title`, `updated_at`; optional `kind`, `state`, `origin`, `preview`, `files`, `job`), most recent first |
+| `chat.history` / `chat.history.result` | phone → Mac / Mac → phone | `conversation_id`, `limit` / `conversation_id`, `messages[]` (`id`, `role`, `text`, `ts`, `attachments[]`, `run_id?`) |
 | `chat.send` | phone → Mac | `conversation_id?` (absent = the pocket conversation), `text`, `attachments[]`, `client_msg_id` (UUID) |
-| `chat.event` | Mac → phone | `conversation_id`, `kind` (message/progress/error), `message_id`, `text`, `final`, `job_id?` |
-| `job.event` | Mac → phone | `id`, `conversation_id`, `state` (running/done/partial/stuck/stopped), `title`, `current_step`, `completed`, `total`, `plan[]`, `summary?`, `files[]` |
+| `chat.event` | Mac → phone | `conversation_id`, `kind` (message/progress/error), `message_id`, `text`, `final`, `job_id?`, `run_id?` |
+| `job.event` | Mac → phone | `id`, `conversation_id`, `state` (running/done/partial/stuck/stopped), `title`, `current_step`, `completed`, `total`, `plan[]`, `summary?`, `files[]`, `run_id?`, `origin?` |
 | `approval.request` | Mac → phone | `approval_id`, `action`, `target`, `risk` (write/send/delete/install/payment/publish), `task_id`, `task_title`, `expires_at` |
 | `approval.answer` | phone → Mac | `approval_id`, `decision` (approve/deny), `auth` (`faceid` for approve, `none` for deny), `ts` |
 | `approval.result` | Mac → phone | `approval_id`, `outcome` (done/denied/expired/failed), `detail?` |
 | `file.offer` / `file.get` | Mac → phone / phone → Mac | `id`, `name`, `size`, `mime_type`, `sha256` (hex of the plaintext) / `file_id` |
+| `run.get` / `run.result` | phone → Mac / Mac → phone | `run_id` / `run_id`, `conversation_id`, `title`, `state` (working/done/failed/stopped), `started_at`, `duration_ms`, `total`, `steps[]`, `files[]` (§5.5) |
+| `task.start` / `task.started` | phone → Mac / Mac → phone | `goal`, `criteria[]?` (≤ 3), `client_task_id` (UUID) / `conversation_id`, `job_id`, `client_task_id` |
+| `task.stop` | phone → Mac | `job_id`, `conversation_id?` |
 | `device.revoked` | Mac → phone | `reason` |
 | `error` | both | `code`, `message`, `related_id?` (the request it answers) |
 
@@ -242,6 +245,34 @@ Settled here (open in the proposal):
   asset; `file.get` answers with a new `file.offer` carrying the encrypted asset (§4.6), sent only
   when the bytes match the reference. Files over 20 MiB are never offered (`too_large`); a file that is
   gone or changed answers `file_unavailable`.
+
+### 5.5 Review and tasks (added 2026-10-04; optional fields, new types — additive within v1)
+
+For "I'm out, the Mac is at home": glance, review fast, hand over a whole task.
+
+- **`status.snapshot.activity`**: today on the Mac — `hours[24]` (per local hour `[chat turns, tasks,
+  approvals]`), `done` (runs finished cleanly), `files` (files made), `waiting` (cards open).
+- **`conversations.result` items**: `kind` remote/chat/task/scheduled (the pocket conversation is
+  `remote` and is titled **Remote** on both sides), `state` idle/working/waiting/done/failed, `origin`
+  phone/mac (who started it — the Remote trace), `preview` (last message, one line), `files` (count),
+  and `job` `{id, step, done, total}` while a background job runs in it.
+- **`run_id`** on a reply (`chat.event` final, `chat.history.result` message, `job.event`): the run whose
+  steps `run.get` returns.
+- **`run.result.steps[]`**: the newest 40 (`total` says how many): `kind` command/edit/write/web/search/
+  read/plan/other, `tool`, `ok`, `ms`, `target`, `summary`, `running?`, and by kind:
+  `terminal {command, exit, lines[]}` (the last ≤ 60 lines, colour codes removed); `diff {path, added,
+  removed, new_file, lines[[op, old_no, new_no, text]]}` with `op` `" "`/`"-"`/`"+"`/`"fold"` (a fold's
+  text is the number of unchanged lines hidden; two lines of context around each change; ≤ 160 rows;
+  line numbers are within the edited snippet); `file_id` for a new file (fetch with `file.get`).
+  The Mac records this review data when each tool finishes, bounded (a few KB per step).
+- **`task.start`**: the Mac gives the task its own conversation (`task-…`), stores the goal as the
+  phone's message, and runs a background job with the criteria as its acceptance checks; replies
+  `task.started`. A retry with the same `client_task_id` gets the same answer and starts nothing new.
+  Progress then arrives as `job.event`, the result as a final `chat.event` with `job_id`.
+- **`task.stop`** cancels a running job; the phone sees it end as `job.event` `stopped` (pass
+  `conversation_id` so the Mac is listening to that conversation).
+- When the phone asks for a conversation's history, the Mac starts forwarding that conversation's live
+  events (progress, results, background-job cards) too.
 
 ### 5.4 Error codes
 

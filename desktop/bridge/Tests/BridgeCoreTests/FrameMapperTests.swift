@@ -16,6 +16,8 @@ final class FrameMapperTests: XCTestCase {
         XCTAssertEqual(out[0].body["text"] as? String, "Three flights")
         XCTAssertEqual(out[0].body["final"] as? Bool, true)
         XCTAssertEqual(out[0].body["message_id"] as? String, "7", "the stored message's id, as chat.history has it")
+        let withRun = m.phoneMessages(for: ["type": "stream_end", "message_id": 8, "run_id": 87])
+        XCTAssertEqual(withRun.first?.body["run_id"] as? Int, 87, "what the reply did, for review")
         XCTAssertTrue(Wire.shouldNotify(type: out[0].type, body: out[0].body))
     }
 

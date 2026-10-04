@@ -1056,6 +1056,18 @@ class ConversationListItem(BaseModel):
     message_count: int
     #: ISO timestamp of the most recent message, for most-recent-first ordering.
     last_at: str | None = None
+    #: What it is, for the sidebar's and the phone's glyphs: remote | chat | task | scheduled.
+    kind: str = "chat"
+    #: idle | working | waiting | done | failed.
+    state: str = "idle"
+    #: "phone" when the paired iPhone started it (mobile bridge): the Remote trace.
+    origin: str = "mac"
+    #: The last message, one line.
+    preview: str = ""
+    #: Files its runs made.
+    files: int = 0
+    #: The job still running in it: {"id", "step", "done", "total"}.
+    job: dict | None = None
 
 
 class ConversationUsageOut(BaseModel):

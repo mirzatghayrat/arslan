@@ -47,6 +47,8 @@ class Job:
     # 0.1.43: which limit ended the job, e.g. {"reason": "tool_calls", "used": 80, "limit": 80}.
     budget_stop: dict | None = None
     tool_calls_seen: int = 0
+    run_id: int | None = None         # its recorded run: the phone reviews the steps by it
+    origin: str = "mac"               # "phone": started from the paired iPhone
     results: dict = field(default_factory=dict)   # check_id -> status
     started_at: float = field(default_factory=time.time)
     task: asyncio.Task | None = field(default=None, repr=False)
@@ -54,7 +56,7 @@ class Job:
     def frame(self) -> dict:
         return {"type": "job_update", "job_id": self.job_id, "conversation_id": self.conversation_id,
                 "goal": self.goal, "phase": self.phase, "step": self.step, "outcome": self.outcome,
-                "detail": self.detail, "budget": self.budget_stop,
+                "detail": self.detail, "budget": self.budget_stop, "run_id": self.run_id, "origin": self.origin,
                 # A finished job never shows "not checked yet": a check it never reached says so.
                 "criteria": [{"id": c["id"], "description": c["description"],
                               "status": self.results.get(c["id"], "not_reached" if self.phase == "finished" else "pending")}
@@ -139,12 +141,12 @@ def active() -> list[Job]:
     return sorted((job for job in _jobs.values() if job.phase != "finished"), key=lambda job: job.started_at)
 
 
-async def start(conversation_id: str, goal: str, criteria: list[dict]) -> Job:
+async def start(conversation_id: str, goal: str, criteria: list[dict], *, origin: str = "mac") -> Job:
     goal = " ".join(goal.split())[:4000]
     if not goal:
         raise ValueError("background_goal_required")
     job = Job(job_id=f"job-{uuid.uuid4()}", conversation_id=conversation_id, goal=goal,
-              acceptance=criteria_to_acceptance(criteria))
+              acceptance=criteria_to_acceptance(criteria), origin="phone" if origin == "phone" else "mac")
     _forget_old_finished()
     _jobs[job.job_id] = job
     # A clean context: the job must not inherit the starting turn's task,
@@ -184,11 +186,16 @@ def _job_sink(job: Job, downstream):
             # Never typed into the chat while the user talks, and never mistaken
             # for the conversation's own turn state: the job_update card says it.
             return
+        if job.run_id is None:
+            from server.services import execution_context
+            job.run_id = execution_context.current_run_id()
         if kind == "tool_call":
             job.tool_calls_seen += 1
-        if kind in {"tool_call", "tool_result"} and event.get("tool"):
-            if job.step != event["tool"]:
-                job.step = event["tool"]
+        if kind == "tool_call" and event.get("tool"):
+            # "run_command npm test", not just "run_command": the phone shows this line.
+            step = " ".join(part for part in (event["tool"], event.get("target")) if part)
+            if job.step != step:
+                job.step = step
                 _emit(job)
         downstream(event)
     return sink
@@ -285,7 +292,7 @@ async def _report(job: Job, text: str) -> None:
         if body:   # a stopped or empty job is shown by its card alone, never by a filler message
             message_id = await memory.add_message(job.conversation_id, "arslan", body, job_outcome=job.outcome)
             run_registry.make_emit(job.conversation_id)(protocol.message(message_id, body, "arslan") | {
-                "job_id": job.job_id, "outcome": job.outcome})
+                "job_id": job.job_id, "outcome": job.outcome, "run_id": job.run_id})
     except Exception as exc:  # noqa: BLE001
         logger.warning("background job %s result not posted: %s", job.job_id, type(exc).__name__)
     desktop_status.push("turn_finished", conversation_id=job.conversation_id,

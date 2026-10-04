@@ -18,6 +18,7 @@ public final class ConversationLinks {
     let backend: BackendReads
     var links: [String: (channel: ControlChannel, mapper: FrameMapper)] = [:]
     var executed: Set<String> = []                     // client_msg_ids already run (§5.3: once)
+    var startedTasks: [String: [String: Any]] = [:]    // client_task_id → task.started (a retry gets the same)
     public var status: StatusReporter?                 // a phone saying hello gets the status at once
 
     public init(channels: ConversationChannels, mailbox: Mailbox, backend: BackendReads = NoBackend()) {
@@ -90,7 +91,31 @@ public final class ConversationLinks {
                 let id = body["conversation_id"] as? String ?? Self.pocket
                 let limit = min(max(body["limit"] as? Int ?? 50, 1), 200)
                 let result = try await backend.json("/api/v1/phone/conversations/\(id.pathSegment)/history?limit=\(limit)")
+                _ = link(id)               // the phone is looking at it: its progress, cards and results come live
                 _ = try await mailbox.send(type: "chat.history.result", body: result, to: received.from)
+            case "run.get":
+                guard let run = body["run_id"] as? Int else { throw BridgeError.code("malformed") }
+                let result = try await backend.json("/api/v1/phone/runs/\(run)")
+                _ = try await mailbox.send(type: "run.result", body: result, to: received.from)
+            case "task.start":
+                let clientID = body["client_task_id"] as? String ?? ""
+                if let done = startedTasks[clientID] {           // the phone retried: same answer, no second task
+                    _ = try await mailbox.send(type: "task.started", body: done, to: received.from)
+                    break
+                }
+                let started = try await backend.post("/api/v1/phone/tasks", body: [
+                    "goal": body["goal"] as? String ?? "", "criteria": body["criteria"] as? [String] ?? []])
+                guard let conversation = started["conversation_id"] as? String, let job = started["job_id"] as? String else {
+                    throw BridgeError.code("mac_busy")
+                }
+                _ = link(conversation)    // its progress and result reach the phone
+                let reply: [String: Any] = ["conversation_id": conversation, "job_id": job, "client_task_id": clientID]
+                if !clientID.isEmpty { startedTasks[clientID] = reply }
+                _ = try await mailbox.send(type: "task.started", body: reply, to: received.from)
+            case "task.stop":
+                guard let job = body["job_id"] as? String, !job.isEmpty else { throw BridgeError.code("malformed") }
+                if let conversation = body["conversation_id"] as? String { _ = link(conversation) }   // to hear it stop
+                _ = try await backend.post("/api/v1/phone/tasks/\(job.pathSegment)/stop", body: [:])
             case "file.get":
                 guard let id = body["file_id"] as? String, !id.isEmpty else { throw BridgeError.code("malformed") }
                 let got = try await backend.json("/api/v1/phone/files/\(id.pathSegment)")
@@ -107,7 +132,7 @@ public final class ConversationLinks {
             case "hello":
                 _ = try await mailbox.send(type: "hello", body: ["app_version": "mac", "protocol_version": Wire.version,
                                                                 "capabilities": ["chat", "approvals", "jobs", "history", "files",
-                                                                                 "status"]],
+                                                                                 "status", "review", "tasks"]],
                                            to: received.from)
                 await status?.send(to: received.from)
             case "error":
@@ -132,6 +157,7 @@ public final class ConversationLinks {
         case "approval_expired": return "That card is no longer open on the Mac."
         case "unknown_type": return "This Mac does not do that yet."
         case "file_unavailable": return "That file is no longer on the Mac."
+        case "malformed": return "The Mac could not read that request."
         case "too_large": return "That file is too large to send to the phone."
         default: return "The Mac could not do that right now."
         }

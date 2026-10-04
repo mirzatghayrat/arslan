@@ -122,7 +122,134 @@
             }
           ],
           "waiting_approvals": 0,
-          "high_risk_mac_only": false
+          "high_risk_mac_only": false,
+          "activity": {
+            "hours": [
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                2,
+                1,
+                0
+              ],
+              [
+                1,
+                0,
+                1
+              ],
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0
+              ]
+            ],
+            "done": 3,
+            "files": 2,
+            "waiting": 0
+          }
         }
       },
       "kind": "msg",
@@ -159,6 +286,22 @@
               "id": "c1",
               "title": "Trip",
               "updated_at": "2026-10-03T00:00:00Z"
+            },
+            {
+              "id": "task-ab12",
+              "title": "Q3 report",
+              "updated_at": "2026-10-03T00:00:00Z",
+              "kind": "task",
+              "state": "working",
+              "origin": "phone",
+              "preview": "Running make_report.py",
+              "files": 1,
+              "job": {
+                "id": "job-1",
+                "step": "run_command python make_report.py",
+                "done": 1,
+                "total": 3
+              }
             }
           ]
         }
@@ -276,6 +419,28 @@
         "to": "iphone-vector",
         "type": "chat.event",
         "body": {
+          "conversation_id": "task-ab12",
+          "kind": "message",
+          "message_id": "412",
+          "text": "The report is ready.",
+          "final": true,
+          "job_id": "job-1",
+          "run_id": 87
+        }
+      },
+      "kind": "msg",
+      "notify": true
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "mac-vector",
+        "to": "iphone-vector",
+        "type": "chat.event",
+        "body": {
           "conversation_id": "pocket",
           "kind": "error",
           "message_id": "reply-1",
@@ -304,7 +469,9 @@
           "completed": 1,
           "total": 3,
           "plan": [],
-          "files": []
+          "files": [],
+          "run_id": 87,
+          "origin": "phone"
         }
       },
       "kind": "msg",
@@ -461,6 +628,195 @@
         "type": "file.get",
         "body": {
           "file_id": "f1"
+        }
+      },
+      "kind": "msg",
+      "notify": false
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "iphone-vector",
+        "to": "mac-vector",
+        "type": "run.get",
+        "body": {
+          "run_id": 87
+        }
+      },
+      "kind": "msg",
+      "notify": false
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "mac-vector",
+        "to": "iphone-vector",
+        "type": "run.result",
+        "body": {
+          "run_id": 87,
+          "conversation_id": "task-ab12",
+          "title": "Make a one-page Q3 report",
+          "state": "done",
+          "started_at": "2026-10-03T00:00:00Z",
+          "duration_ms": 138000,
+          "total": 3,
+          "steps": [
+            {
+              "kind": "command",
+              "tool": "run_command",
+              "ok": true,
+              "ms": 4200,
+              "target": "python make_report.py",
+              "summary": "exit 0",
+              "terminal": {
+                "command": "python make_report.py",
+                "exit": 0,
+                "lines": [
+                  "Loaded 1,204 rows",
+                  "PDF written: report.pdf"
+                ]
+              }
+            },
+            {
+              "kind": "edit",
+              "tool": "edit_file",
+              "ok": true,
+              "ms": 12,
+              "target": "make_report.py",
+              "summary": "ok",
+              "diff": {
+                "path": "make_report.py",
+                "added": 1,
+                "removed": 1,
+                "new_file": false,
+                "lines": [
+                  [
+                    " ",
+                    11,
+                    11,
+                    "def load(path):"
+                  ],
+                  [
+                    "-",
+                    12,
+                    null,
+                    "    df = pd.read_csv(path)"
+                  ],
+                  [
+                    "+",
+                    null,
+                    12,
+                    "    df = pd.read_csv(path, parse_dates=[\"date\"])"
+                  ],
+                  [
+                    "fold",
+                    null,
+                    null,
+                    "24"
+                  ]
+                ]
+              }
+            },
+            {
+              "kind": "write",
+              "tool": "write_file",
+              "ok": true,
+              "ms": 8,
+              "target": "report.md",
+              "summary": "ok",
+              "file_id": "run_87_0123456789abcdef_report.md",
+              "diff": {
+                "path": "report.md",
+                "added": 2,
+                "removed": 0,
+                "new_file": true,
+                "lines": [
+                  [
+                    "+",
+                    null,
+                    1,
+                    "# Q3"
+                  ],
+                  [
+                    "+",
+                    null,
+                    2,
+                    "Revenue ¥4.2M"
+                  ]
+                ]
+              }
+            }
+          ],
+          "files": [
+            {
+              "id": "run_87_0123456789abcdef_report.md",
+              "name": "report.md",
+              "size": 22,
+              "mime_type": "text/markdown",
+              "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+            }
+          ]
+        }
+      },
+      "kind": "msg",
+      "notify": false
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "iphone-vector",
+        "to": "mac-vector",
+        "type": "task.start",
+        "body": {
+          "goal": "Turn the invoices in Downloads into one table by month",
+          "criteria": [
+            "One row per invoice"
+          ],
+          "client_task_id": "CCCCCCCC-CCCC-4CCC-8CCC-CCCCCCCCCCCC"
+        }
+      },
+      "kind": "msg",
+      "notify": false
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "mac-vector",
+        "to": "iphone-vector",
+        "type": "task.started",
+        "body": {
+          "conversation_id": "task-ab12",
+          "job_id": "job-1",
+          "client_task_id": "CCCCCCCC-CCCC-4CCC-8CCC-CCCCCCCCCCCC"
+        }
+      },
+      "kind": "msg",
+      "notify": false
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "iphone-vector",
+        "to": "mac-vector",
+        "type": "task.stop",
+        "body": {
+          "job_id": "job-1",
+          "conversation_id": "task-ab12"
         }
       },
       "kind": "msg",
