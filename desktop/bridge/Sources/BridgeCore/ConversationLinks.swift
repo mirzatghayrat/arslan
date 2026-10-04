@@ -28,12 +28,22 @@ public final class ConversationLinks {
         if let existing = links[conversationID] { return existing }
         let mapper = FrameMapper(conversationID: conversationID)
         let channel = channels.open(conversationID: conversationID) { [weak self] frame in
+            // A card names its conversation on the phone; looked up once, at the first card.
+            if (frame["type"] as? String)?.hasPrefix("propose_") == true, mapper.title == nil {
+                mapper.title = await self?.title(of: conversationID)
+            }
             await self?.deliver(mapper.phoneMessages(for: frame))
             // A finished turn offers the files it made (references only; the bytes come on file.get).
             if frame["type"] as? String == "stream_end", let run = frame["run_id"] as? Int { await self?.offerFiles(ofRun: run) }
         }
         links[conversationID] = (channel, mapper)
         return (channel, mapper)
+    }
+
+    func title(of conversationID: String) async -> String? {
+        let list = (try? await backend.json("/api/v1/phone/conversations?limit=100"))?["conversations"] as? [[String: Any]] ?? []
+        let title = list.first { $0["id"] as? String == conversationID }?["title"] as? String
+        return (title?.isEmpty == false) ? title : nil
     }
 
     func offerFiles(ofRun run: Int) async {
@@ -110,8 +120,9 @@ public final class ConversationLinks {
             _ = try? await mailbox.send(type: "error", body: ["code": error.code, "message": Self.message(error.code),
                                                              "related_id": related], to: received.from)
         } catch {
-            _ = try? await mailbox.send(type: "error", body: ["code": "mac_busy", "message": Self.message("mac_busy")],
-                                        to: received.from)
+            let related = (received.envelope["id"] as? String)?.lowercased() ?? ""
+            _ = try? await mailbox.send(type: "error", body: ["code": "mac_busy", "message": Self.message("mac_busy"),
+                                                             "related_id": related], to: received.from)
         }
     }
 

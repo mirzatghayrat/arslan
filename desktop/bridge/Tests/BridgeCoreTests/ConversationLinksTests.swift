@@ -6,10 +6,11 @@ import XCTest
 final class FakeChannel: ControlChannel {
     var sent: [[String: Any]] = []
     var failures = 0                                   // the next N sends fail (socket not up yet)
+    var failure: Error = BridgeError.code("mac_busy")
     let onFrame: ([String: Any]) async -> Void
     init(onFrame: @escaping ([String: Any]) async -> Void) { self.onFrame = onFrame }
     func send(_ frame: [String: Any]) async throws {
-        if failures > 0 { failures -= 1; throw BridgeError.code("mac_busy") }
+        if failures > 0 { failures -= 1; throw failure }
         sent.append(frame)
     }
 }
@@ -188,5 +189,31 @@ final class ConversationLinksTests: XCTestCase {
         try await phone.send(type: "chat.send", body: message, to: "mac-1")          // and a duplicate after it
         for received in try await mac.receive() { await links.handle(received) }
         XCTAssertEqual(pocket.sent.compactMap { $0["content"] as? String }, ["在干嘛"], "once, on the retry")
+    }
+
+    func testACardCarriesItsConversationsTitle() async throws {
+        let backend = FakeBackend()
+        backend.answers["/api/v1/phone/conversations?limit=100"] = .success(["conversations": [["id": "c-42", "title": "Trip to Kashgar", "updated_at": "t"]]])
+        let (_, mac, phone, channels, links) = setUpPair(backend: backend)
+        try await phone.send(type: "chat.send", body: ["conversation_id": "c-42", "text": "plan", "attachments": [], "client_msg_id": "c1"], to: "mac-1")
+        try await phone.send(type: "chat.send", body: ["text": "hi", "attachments": [], "client_msg_id": "c2"], to: "mac-1")
+        for received in try await mac.receive() { await links.handle(received) }
+        await channels.opened["c-42"]?.onFrame(["type": "propose_schedule", "call_id": "s1", "name": "Daily", "when": "9:00"])
+        await channels.opened["c-42"]?.onFrame(["type": "propose_schedule", "call_id": "s2", "name": "Weekly", "when": "Mon"])
+        await channels.opened["pocket"]?.onFrame(["type": "propose_schedule", "call_id": "s3", "name": "Daily", "when": "9:00"])
+        let cards = try await phone.receive().filter { $0.type == "approval.request" }.map { $0.envelope["body"] as? [String: Any] ?? [:] }
+        XCTAssertEqual(cards.map { $0["task_title"] as? String }, ["Trip to Kashgar", "Trip to Kashgar", "Arslan"])
+        XCTAssertEqual(backend.asked.filter { $0.contains("conversations?") }.count, 2, "once per conversation")
+    }
+
+    func testABusyAnswerSaysWhichRequestItAnswers() async throws {
+        let (_, mac, phone, channels, links) = setUpPair()
+        let pocket = channels.open(conversationID: "pocket") { _ in } as! FakeChannel
+        pocket.failures = 1
+        pocket.failure = URLError(.networkConnectionLost)       // a socket that dropped, not a Bridge error
+        let sent = try await phone.send(type: "chat.send", body: ["text": "在干嘛", "attachments": [], "client_msg_id": "c1"], to: "mac-1")
+        for received in try await mac.receive() { await links.handle(received) }
+        let error = try await phone.receive().first { $0.type == "error" }
+        XCTAssertEqual((error?.envelope["body"] as? [String: Any])?["related_id"] as? String, sent.id)
     }
 }

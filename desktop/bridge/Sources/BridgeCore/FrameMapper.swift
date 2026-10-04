@@ -16,6 +16,7 @@ public final class FrameMapper {
     var lastProgress: Date?
     var heldProgress: String?
     public private(set) var cards: [String: CardKind] = [:]   // open until the Mac says how it ended
+    public var title: String?                                  // the conversation's title, for cards
     var answered: Set<String> = []                             // the phone answers a card once
 
     public init(conversationID: String) { self.conversationID = conversationID }
@@ -29,7 +30,7 @@ public final class FrameMapper {
             guard let id = frame["call_id"] as? String else { return [] }
             cards[id] = kind
             return [("approval.request", ["approval_id": id, "action": action, "target": String(target.prefix(300)),
-                                          "risk": risk, "task_id": conversationID, "task_title": "",
+                                          "risk": risk, "task_id": conversationID, "task_title": title ?? "Arslan",
                                           "expires_at": iso.string(from: now.addingTimeInterval(Self.cardTimeout))])]
         }
         switch frame["type"] as? String {
