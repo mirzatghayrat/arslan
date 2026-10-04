@@ -886,7 +886,18 @@
     "distilled_none": "没有可蒸馏的内容",
     "distill_failed": "蒸馏失败",
     "no_spawns": "还没有专家",
-    "no_spawns_desc": "创建之后会出现在这里。"
+    "no_spawns_desc": "创建之后会出现在这里。",
+    "remote": "Remote",
+    "fromPhone": "由 iPhone 发起",
+    "glyph": {
+      "waiting": "等你批准",
+      "remote": "Remote · 你的 iPhone",
+      "working": "进行中",
+      "progress": "进行中：{{done}} / {{total}}",
+      "done": "已完成",
+      "failed": "出了问题停下了",
+      "scheduled": "定时任务"
+    }
   },
   "orchestrator": {
     "greeting_morning": "早上好",

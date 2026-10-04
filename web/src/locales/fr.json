@@ -886,7 +886,18 @@
     "distilled_none": "Rien à distiller",
     "distill_failed": "Échec du résumé en mémoire",
     "no_spawns": "Aucun spawn pour l'instant",
-    "no_spawns_desc": "Ils apparaîtront ici dès que vous en créerez un."
+    "no_spawns_desc": "Ils apparaîtront ici dès que vous en créerez un.",
+    "remote": "Remote",
+    "fromPhone": "Lancé depuis l’iPhone",
+    "glyph": {
+      "waiting": "Attend ton accord",
+      "remote": "Remote · ton iPhone",
+      "working": "En cours",
+      "progress": "En cours : {{done}} sur {{total}}",
+      "done": "Terminé",
+      "failed": "Arrêté sur un problème",
+      "scheduled": "Planifié"
+    }
   },
   "orchestrator": {
     "greeting_morning": "Bonjour",

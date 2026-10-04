@@ -47,7 +47,8 @@ describe("locale parity", () => {
 // 1564 → 1577 (Bridge): +13 Settings › iPhone strings (settings.navPhone, settings.phone*).
 // 1577 → 1578 (Bridge): +1 chat.fromPhone ("from iPhone" under a message a paired iPhone sent).
 // 1578 → 1580 (Bridge): +2 Settings › iPhone switch strings (settings.phoneEnable, settings.phoneEnableDesc).
-  it("en locale has 1580 keys (baseline guard)", () => {
+// 1580 → 1589 (phone v2): sidebar.remote, sidebar.fromPhone, sidebar.glyph.{waiting,remote,working,progress,done,failed,scheduled}.
+  it("en locale has 1589 keys (baseline guard)", () => {
     // 1318 → 1335: the first-run wizard redesign — the four-beat "how it
     // works" tour (title + typed line + 4×title/body), the catalog capability
     // caption, the test-before-save states (test & save / testing / ok /
@@ -273,7 +274,7 @@ describe("locale parity", () => {
     // +6: bundled app icon choices and persistence feedback.
     // +1: externalLink.failed added by fe9c12b5 (native HTTPS refusal).
     // +1: chat.expert_involved (0.1.42 quiet "asked X to help" line replaces the roster notices).
-    expect(enKeys).toHaveLength(1580);
+    expect(enKeys).toHaveLength(1589);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

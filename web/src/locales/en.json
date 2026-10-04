@@ -886,7 +886,18 @@
     "distilled_none": "Nothing to distill",
     "distill_failed": "Distill failed",
     "no_spawns": "No spawns yet",
-    "no_spawns_desc": "They appear here once you create one."
+    "no_spawns_desc": "They appear here once you create one.",
+    "remote": "Remote",
+    "fromPhone": "Started from iPhone",
+    "glyph": {
+      "waiting": "Waiting for your approval",
+      "remote": "Remote · your iPhone",
+      "working": "In progress",
+      "progress": "In progress: {{done}} of {{total}}",
+      "done": "Done",
+      "failed": "Stopped with a problem",
+      "scheduled": "Scheduled"
+    }
   },
   "orchestrator": {
     "greeting_morning": "Good morning",

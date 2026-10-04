@@ -886,7 +886,18 @@
     "distilled_none": "Nichts zu destillieren",
     "distill_failed": "Zusammenfassung fehlgeschlagen",
     "no_spawns": "Noch keine Spawns",
-    "no_spawns_desc": "Sie erscheinen hier, sobald du einen erstellst."
+    "no_spawns_desc": "Sie erscheinen hier, sobald du einen erstellst.",
+    "remote": "Remote",
+    "fromPhone": "Vom iPhone gestartet",
+    "glyph": {
+      "waiting": "Wartet auf deine Freigabe",
+      "remote": "Remote · dein iPhone",
+      "working": "Läuft",
+      "progress": "Läuft: {{done}} von {{total}}",
+      "done": "Fertig",
+      "failed": "Mit Problem angehalten",
+      "scheduled": "Geplant"
+    }
   },
   "orchestrator": {
     "greeting_morning": "Guten Morgen",

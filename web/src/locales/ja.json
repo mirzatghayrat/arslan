@@ -886,7 +886,18 @@
     "distilled_none": "蒸留できる内容がありません",
     "distill_failed": "記憶への要約に失敗しました",
     "no_spawns": "スポーンがまだありません",
-    "no_spawns_desc": "作成するとここに表示されます。"
+    "no_spawns_desc": "作成するとここに表示されます。",
+    "remote": "Remote",
+    "fromPhone": "iPhone から開始",
+    "glyph": {
+      "waiting": "承認待ち",
+      "remote": "Remote · あなたの iPhone",
+      "working": "進行中",
+      "progress": "進行中：{{done}} / {{total}}",
+      "done": "完了",
+      "failed": "問題で停止",
+      "scheduled": "スケジュール"
+    }
   },
   "orchestrator": {
     "greeting_morning": "おはようございます",
