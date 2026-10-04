@@ -102,9 +102,16 @@ async def _history(conversation_id: str) -> list[dict]:
             "run_id": m.run_id,
             # 0.1.42: a background job's result keeps its checked outcome.
             "job_outcome": m.job_outcome,
+            # Mobile bridge: "phone" when a paired iPhone sent it (shown "from iPhone").
+            "source": m.source,
         }
         for m in msgs
     ]
+
+
+def message_source(frame: dict) -> str | None:
+    """Only the one known source is kept; anything else is the window (NULL)."""
+    return "phone" if frame.get("source") == "phone" else None
 
 
 async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
@@ -227,6 +234,96 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
     # 0.1.52 S2: the user's latest message on this socket — the judge's tool.approval
     # question needs the user's own words, whether or not a memory context is bound.
     latest_request = {"text": ""}
+    # Mobile bridge: whether the turn running on this socket was started by the iPhone
+    # (only the Arslan Bridge's socket ever sends source "phone").
+    phone_turn = {"on": False}
+    # A frame read while a shared card was being decided elsewhere, kept for the next reader.
+    pushback: list[dict] = []
+
+    async def _receive() -> dict:
+        return pushback.pop(0) if pushback else await ws.receive_json()
+
+    async def _ask(frame: dict) -> dict:
+        """Show one card and wait for its answer: {"approved", "remember"}.
+
+        A window's own turn: the card is private to THIS socket — deliberately NOT
+        emit(): only this connection's receive-router below can answer the call_id,
+        so fanning it out would paint an unanswerable card on every other tab. It is
+        also deliberately un-journaled (raw ws.send_json, never a recorder tee), so a
+        reattaching socket cannot replay a dead interactive card.
+
+        A turn the iPhone started: see `_ask_everywhere`."""
+        if phone_turn["on"]:
+            return await _ask_everywhere(frame)
+        kind, call_id = frame["type"].removeprefix("propose_"), frame["call_id"]
+        await ws.send_json(frame)
+        # Own ws.receive HERE, only while this one card is pending. The orchestration
+        # coro that led here is blocked awaiting this call, so the outer
+        # `while True: ws.receive_json()` loop is not receiving — there is exactly one
+        # receiver. We loop until THIS call_id is answered; any other frame arriving
+        # mid-confirmation gets a recoverable BUSY notice (ping/pong ignored). On the
+        # matching confirm/cancel we return, and the outer loop resumes receiving. A
+        # client vanishing mid-confirmation raises WebSocketDisconnect out of here, so
+        # the outer handler's disconnect path runs (clean socket teardown).
+        with desktop_status.awaiting_approval(conversation_id):
+            while True:
+                try:
+                    data = await asyncio.wait_for(_receive(), timeout=300)
+                except TimeoutError:
+                    return {"approved": False, "remember": False}
+                t = data.get("type")
+                if t in ("ping", "pong"):
+                    continue
+                if t in (f"confirm_{kind}", f"cancel_{kind}") and data.get("call_id") == call_id:
+                    return {"approved": t == f"confirm_{kind}", "remember": bool(data.get("remember"))}
+                # Any other frame (including a confirm for an unknown/stale call_id) is
+                # not actionable while we are paused — tell the client, keep waiting.
+                if approvals.answer(data):   # a background job's card, not this one
+                    continue
+                await ws.send_json(protocol.error(
+                    "BUSY", "An action is awaiting your confirmation.", recoverable=True))
+
+    async def _ask_everywhere(frame: dict) -> dict:
+        """A turn the iPhone started shows its cards everywhere: on the phone (through
+        this socket, the Bridge's) and in every Mac window open on the conversation.
+        The first answer from any of them decides — a window's reply reaches the
+        registry through its own receive loop, the phone's through this one — and
+        `card_resolved` closes the copies nobody answered (approvals.open_card /
+        close_card). Like every foreground card it is never journaled."""
+        loop = asyncio.get_running_loop()
+        pending = approvals.open_card(conversation_id, frame)
+        deadline = loop.time() + approvals.TIMEOUT_S
+        receiving: asyncio.Future | None = None
+        try:
+            with desktop_status.awaiting_approval(conversation_id):
+                while not pending.future.done() and loop.time() < deadline:
+                    if receiving is None:
+                        receiving = asyncio.ensure_future(_receive())
+                    await asyncio.wait({receiving, pending.future}, timeout=deadline - loop.time(),
+                                       return_when=asyncio.FIRST_COMPLETED)
+                    if not receiving.done():
+                        continue
+                    data = receiving.result()        # a disconnect raises here
+                    receiving = None
+                    t = data.get("type")
+                    if t in ("ping", "pong"):
+                        continue
+                    if t in approvals.ANSWERS:
+                        approvals.answer(data)       # this card's answer, or a late second one
+                        continue
+                    if pending.future.done():
+                        pushback.append(data)        # decided meanwhile: the next reader gets it
+                        continue
+                    await ws.send_json(protocol.error(
+                        "BUSY", "An action is awaiting your confirmation.", recoverable=True))
+        finally:
+            if receiving is not None and not receiving.done():
+                receiving.cancel()
+                await asyncio.wait({receiving})
+                if not receiving.cancelled() and receiving.exception() is None:
+                    pushback.append(receiving.result())
+            decision = approvals.close_card(pending)
+        return {"approved": bool(decision["approved"]), "remember": bool(decision["remember"])}
 
     async def confirm_workspace_write(action: str, path: str) -> bool:
         from server.services import settings_service
@@ -236,33 +333,8 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             ws_root = await settings_service.workspace_dir(db)
         if ws_root is None:
             return False                     # nothing to grant access to
-        call_id = uuid.uuid4().hex
-        # Private card to THIS socket and deliberately un-journaled, for the same
-        # reasons as the run_command card: only this connection can answer it, and
-        # a reattaching socket must not replay a dead interactive card.
-        await ws.send_json(protocol.propose_workspace_write(
-            call_id, str(ws_root), action, path))
-        with desktop_status.awaiting_approval(conversation_id):
-            decision = False
-            try:
-                while True:
-                    try:
-                        data = await asyncio.wait_for(ws.receive_json(), timeout=300)
-                    except TimeoutError:
-                        break
-                    t = data.get("type")
-                    if t in ("ping", "pong"):
-                        continue
-                    if (t in ("confirm_workspace_write", "cancel_workspace_write")
-                            and data.get("call_id") == call_id):
-                        decision = t == "confirm_workspace_write"
-                        break
-                    if approvals.answer(data):   # a background job's card, not this one
-                        continue
-                    await ws.send_json(protocol.error(
-                        "BUSY", "An action is awaiting your confirmation.", recoverable=True))
-            except WebSocketDisconnect:
-                raise
+        decision = (await _ask(protocol.propose_workspace_write(
+            uuid.uuid4().hex, str(ws_root), action, path)))["approved"]
         if decision:
             workspace_write_granted["yes"] = True     # session-wide, per the ruling
         return decision
@@ -273,30 +345,7 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
     async def confirm_schedule(name: str, when: str) -> bool:
         if schedule_granted["yes"]:
             return True
-        call_id = uuid.uuid4().hex
-        # Private and un-journaled, for the same reasons as the other two cards.
-        await ws.send_json(protocol.propose_schedule(call_id, name, when))
-        with desktop_status.awaiting_approval(conversation_id):
-            decision = False
-            try:
-                while True:
-                    try:
-                        data = await asyncio.wait_for(ws.receive_json(), timeout=300)
-                    except TimeoutError:
-                        break
-                    t = data.get("type")
-                    if t in ("ping", "pong"):
-                        continue
-                    if (t in ("confirm_schedule", "cancel_schedule")
-                            and data.get("call_id") == call_id):
-                        decision = t == "confirm_schedule"
-                        break
-                    if approvals.answer(data):   # a background job's card, not this one
-                        continue
-                    await ws.send_json(protocol.error(
-                        "BUSY", "An action is awaiting your confirmation.", recoverable=True))
-            except WebSocketDisconnect:
-                raise
+        decision = (await _ask(protocol.propose_schedule(uuid.uuid4().hex, name, when)))["approved"]
         if decision:
             schedule_granted["yes"] = True
         return decision
@@ -309,27 +358,9 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                                                                  sandboxed=False,
                                                                  user_request=latest_request["text"]),
                         ref=call_id, conversation_id=conversation_id)
-        # Private and un-journaled, like the run_command card below.
-        await ws.send_json(protocol.propose_run_command(
+        decision = await _ask(protocol.propose_run_command(
             call_id, command, argv, reason=verdict.reason if verdict.level == "ask" else "",
             sandbox=sandbox, why=why))
-        with desktop_status.awaiting_approval(conversation_id):
-            decision = {"approved": False}
-            while True:
-                try:
-                    data = await asyncio.wait_for(ws.receive_json(), timeout=300)
-                except TimeoutError:
-                    break
-                t = data.get("type")
-                if t in ("ping", "pong"):
-                    continue
-                if t in ("confirm_run_command", "cancel_run_command") and data.get("call_id") == call_id:
-                    decision = {"approved": t == "confirm_run_command", "remember": bool(data.get("remember"))}
-                    break
-                if approvals.answer(data):   # a background job's card, not this one
-                    continue
-                await ws.send_json(protocol.error(
-                    "BUSY", "An action is awaiting your confirmation.", recoverable=True))
         if decision["approved"] and decision.get("remember"):
             command_sandbox.grant(conversation_id)    # this conversation only, never saved
         judgment.record_outcome_later(call_id, "approved" if decision["approved"] else "declined",
@@ -377,52 +408,13 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 terminal_policy.as_shell(command, argv), rule=verdict.rule, reason=verdict.reason,
                 user_request=latest_request["text"]),
                 ref=call_id, conversation_id=conversation_id)
-        # Private card, sent directly to THIS socket — deliberately NOT emit():
-        # only this connection's receive-router below can answer this call_id,
-        # so fanning the card out would paint an unanswerable card on every
-        # other tab (same deliberate private-send pattern as the storage-intent
-        # question further down). It is also deliberately un-journaled — the
-        # card rides raw ws.send_json, never a recorder tee, so a reattaching
-        # socket cannot replay a dead interactive card.
-        await ws.send_json(
+        # The card (private to this socket, or everywhere for a phone turn): see `_ask`.
+        decision = await _ask(
             protocol.propose_run_command(call_id, command, argv, reason=verdict.reason or f"risk: {risk}",
                                          remote_host=remote_host,
                                          fingerprints=list(fingerprints or []),
                                          rule=None if remote_host else verdict.rule)
         )
-        # Own ws.receive HERE, only while this one command is pending. The plain-message
-        # orchestration coro that led here is blocked awaiting this call, so the outer
-        # `while True: ws.receive_json()` loop is not receiving — there is exactly one
-        # receiver. We loop until THIS call_id is answered; any other frame arriving
-        # mid-confirmation gets a recoverable BUSY notice (ping/pong ignored). On the
-        # matching confirm/cancel we return, and the outer loop resumes receiving.
-        with desktop_status.awaiting_approval(conversation_id):
-            decision = {"approved": False}
-            try:
-                while True:
-                    try:
-                        data = await asyncio.wait_for(ws.receive_json(), timeout=300)
-                    except TimeoutError:
-                        decision = {"approved": False}
-                        break
-                    t = data.get("type")
-                    if t in ("ping", "pong"):
-                        continue
-                    if (t in ("confirm_run_command", "cancel_run_command")
-                            and data.get("call_id") == call_id):
-                        decision = {"approved": t == "confirm_run_command",
-                                    "remember": bool(data.get("remember"))}
-                        break
-                    # Any other frame (including a confirm for an unknown/stale call_id) is
-                    # not actionable while we are paused — tell the client, keep waiting.
-                    if approvals.answer(data):   # a background job's card, not this one
-                        continue
-                    await ws.send_json(protocol.error(
-                        "BUSY", "An action is awaiting your confirmation.", recoverable=True))
-            except WebSocketDisconnect:
-                # Client vanished mid-confirmation: decline and re-raise so the outer
-                # handler's disconnect path runs (clean socket teardown).
-                raise
         if not remote_host:
             judgment.record_outcome_later(call_id, "approved" if decision.get("approved") else "declined",
                                           point="tool.approval")
@@ -482,18 +474,21 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         drainer = asyncio.create_task(_drain())
 
         while True:
-            data = await ws.receive_json()
+            data = await _receive()
             msg_type = data.get("type")
 
             if msg_type in ("ping", "pong"):
                 continue
             if msg_type in approvals.ANSWERS and approvals.answer(data):
                 continue
+            if msg_type in approvals.ANSWERS and data.get("source") == "phone":
+                continue    # the phone answered a card the Mac had already decided; it got card_resolved
 
             from server.services import task_context, temporary_turn
             if await task_context.is_temporary(conversation_id):
                 if msg_type == "user_message":
                     latest_request["text"] = str(data.get("content") or "")
+                    phone_turn["on"] = message_source(data) == "phone"
                     with_context = await task_context.load(conversation_id)
                     from server.services.personal_context import bind
                     with bind(with_context):
@@ -501,6 +496,7 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                             conversation_id, data.get("content", ""), emit,
                             attached_context=data.get("attached_context") or None,
                             images=data.get("images") or None,
+                            source=message_source(data),
                         ), title=data.get("content") or None)
                 elif msg_type == "session_ended":
                     temporary_turn.clear(conversation_id)
@@ -525,6 +521,7 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 if not isinstance(task_id, str) or not isinstance(version, int) or isinstance(version, bool) or version < 1:
                     await ws.send_json(protocol.error("INVALID_TASK_RESUME", "invalid_task_resume", recoverable=True))
                     continue
+                phone_turn["on"] = False
                 try:
                     await run_with_confirm_frames(task_service.resume_turn(
                         task_id, version, conversation_id, emit, confirm_command=confirm_command,
@@ -575,6 +572,7 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
 
             content = data.get("content", "")
             latest_request["text"] = str(content or "")
+            phone_turn["on"] = message_source(data) == "phone"
             # Images ride in the frame itself (base64), not through /extract:
             # decision ③A means they are needed for exactly one turn, so there
             # is nothing to store and nothing to fetch back.
@@ -585,6 +583,7 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 arslan.handle_user_message(conversation_id, content, emit,
                                            attached_context=attached or None,
                                            images=images or None,
+                                           source=message_source(data),
                                            confirm_command=confirm_command,
                                            confirm_workspace_write=confirm_workspace_write,
                                            confirm_schedule=confirm_schedule),

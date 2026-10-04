@@ -259,6 +259,16 @@ def propose_action(call_id: str, kind: str, target: str, detail: str) -> dict[st
             "detail": detail[:4000]}
 
 
+def card_resolved(call_id: str, outcome: str, by: str | None = None) -> dict[str, Any]:
+    """A card shown in more than one place was decided — every window and the
+    phone close their copy. outcome: approved / declined / expired (timed out,
+    or the turn that asked ended); by: "phone" or "mac" when someone answered."""
+    frame: dict[str, Any] = {"type": "card_resolved", "call_id": call_id, "outcome": outcome}
+    if by:
+        frame["by"] = by
+    return frame
+
+
 def propose_schedule(call_id: str, name: str, when: str) -> dict[str, Any]:
     """Arslan asks to create a recurring task — once per session (裁决①).
     Emitting this schedules NOTHING; only `confirm_schedule {call_id}` does.

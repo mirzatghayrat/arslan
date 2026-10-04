@@ -46,6 +46,7 @@ import { getFirstRunSeen, setFirstRunSeen, firstRunShouldShow, restoreFirstRunSe
 import { threadNavAction } from './lib/threadNav';
 import type { ImagePayload } from './lib/imagePayload';
 import { threadDisplayTitle } from './lib/threadTitles';
+import { useConversationIndex } from './hooks/useConversationIndex';
 import { subscribeOpenConversation } from './lib/shell';
 import { notificationTarget, OPEN_CONVERSATION_EVENT } from './lib/openConversation';
 import ProactiveInbox from './components/proactive/ProactiveInbox';
@@ -186,6 +187,18 @@ export default function App() {
     })();
     return () => { cancelled = true; };
   }, []);
+
+  // The server's conversation list kept fresh: glyphs for each conversation, and conversations
+  // started elsewhere (a task handed over from the iPhone) appear without a restart.
+  const conversationIndex = useConversationIndex();
+  useEffect(() => {
+    const rows = conversationIndex.rows;
+    if (!rows.length) return;
+    setThreads(prev => {
+      const known = new Set(prev.map(thread => thread.id));
+      return rows.some(row => !known.has(row.conversation_id)) ? mergeServerConversations(prev, rows) as typeof prev : prev;
+    });
+  }, [conversationIndex.rows]);
 
   // Persist threads + active id whenever either changes (history is dropped).
   useEffect(() => {
@@ -596,6 +609,7 @@ export default function App() {
         onUnarchiveThread={handleUnarchiveThread}
         onDeleteThread={handleDeleteThread}
         backendStatus={backendStatus}
+        meta={conversationIndex.meta}
       />}
 
       {/* Main Workspace Frame container with glass window feel */}
@@ -629,7 +643,7 @@ export default function App() {
                       three words of chrome saying what a green dot already says. */}
                   <span className="w-2 h-2 rounded-full bg-success shrink-0"></span>
                   <span className="text-xs font-sans text-foreground font-medium truncate">
-                    {threadDisplayTitle(activeThread, t)}
+                    {threadDisplayTitle(activeThread, t, conversationIndex.meta[activeThreadId]?.kind)}
                   </span>
                   {/* 0.1.42: one header row — title · project (opens project and
                       memory settings) · a status chip only for work that needs a look. */}

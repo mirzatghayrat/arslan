@@ -61,6 +61,7 @@ button:disabled {
   --color-success: var(--success);
   --color-danger: var(--danger);
   --color-warning: var(--warning);
+  --color-unfinished: var(--unfinished);
   --color-info: var(--info);
 }
 

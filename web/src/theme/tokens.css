@@ -10,7 +10,7 @@
   --border: #E2E8F0; --border-strong: #CBD5E1; --ring: rgba(229,125,27,0.28);
   --primary: #D9741A; --primary-hover: #C2640C; --primary-foreground: #FFFFFF;
   --hub: #B45309;
-  --success: #059669; --danger: #DC2626; --warning: #B45309; --info: #2563EB;
+  --success: #059669; --danger: #DC2626; --warning: #B45309; --info: #2563EB; --unfinished: #A16207;
   /* Second-brain hue palette — a curated categorical set, warm-led to harmonize with
      Arslan's orange, cool anchors for contrast, muted-vibrant for a premium feel.
      palette-INDEPENDENT (on :root/.dark arms → cascades to every data-palette).
@@ -27,7 +27,7 @@
   --border: #1E2330; --border-strong: #23293E; --ring: rgba(255,142,36,0.20);
   --primary: #D9741A; --primary-hover: #C2640C; --primary-foreground: #FFFFFF;
   --hub: #FFC773;
-  --success: #10B981; --danger: #EF4444; --warning: #F59E0B; --info: #3B82F6;
+  --success: #10B981; --danger: #EF4444; --warning: #F59E0B; --info: #3B82F6; --unfinished: #EAB308;
   /* Second-brain hue palette — dark set (luminous, not neon, for contrast on charcoal). */
   --hue-1:#45E67A; --hue-2:#A8E84A; --hue-3:#E6E84A; --hue-4:#FBAE4E; --hue-5:#3FE8D2;
   --hue-6:#4FC2F5; --hue-7:#5B84FF; --hue-8:#9E6BFF; --hue-9:#D65BEF; --hue-10:#FF5FA6;
@@ -40,7 +40,7 @@
   --border:#E7E5E4; --border-strong:#D6D3D1; --ring:rgba(194,65,12,0.28);
   --primary:#C2410C; --primary-hover:#9A3412; --primary-foreground:#FFF7ED;
   --hub:#9A3412;
-  --success:#059669; --danger:#DC2626; --warning:#B45309; --info:#2563EB;
+  --success:#059669; --danger:#DC2626; --warning:#B45309; --info:#2563EB; --unfinished: #A16207;
 }
 .dark[data-palette="ember"] {
   --background:#0C0A09; --surface:#1C1917; --surface-raised:#262220; --sidebar:#141110;
@@ -48,7 +48,7 @@
   --border:#292524; --border-strong:#353029; --ring:rgba(249,115,22,0.25);
   --primary:#F97316; --primary-hover:#FB923C; --primary-foreground:#3A1404;
   --hub:#FDBA74;
-  --success:#10B981; --danger:#EF4444; --warning:#F59E0B; --info:#3B82F6;
+  --success:#10B981; --danger:#EF4444; --warning:#F59E0B; --info:#3B82F6; --unfinished: #EAB308;
 }
 /* TERMINAL */
 [data-palette="terminal"] {
@@ -57,7 +57,7 @@
   --border:#DCEAE2; --border-strong:#C5DACD; --ring:rgba(21,128,61,0.28);
   --primary:#15803D; --primary-hover:#166534; --primary-foreground:#F0FDF4;
   --hub:#166534;
-  --success:#059669; --danger:#DC2626; --warning:#B45309; --info:#2563EB;
+  --success:#059669; --danger:#DC2626; --warning:#B45309; --info:#2563EB; --unfinished: #A16207;
 }
 .dark[data-palette="terminal"] {
   --background:#0A0F0D; --surface:#14201B; --surface-raised:#1B2C24; --sidebar:#0E1714;
@@ -65,7 +65,7 @@
   --border:#1E2A24; --border-strong:#24332B; --ring:rgba(34,197,94,0.25);
   --primary:#22C55E; --primary-hover:#4ADE80; --primary-foreground:#05330F;
   --hub:#86EFAC;
-  --success:#10B981; --danger:#EF4444; --warning:#F59E0B; --info:#3B82F6;
+  --success:#10B981; --danger:#EF4444; --warning:#F59E0B; --info:#3B82F6; --unfinished: #EAB308;
 }
 /* NEBULA */
 [data-palette="nebula"] {
@@ -74,7 +74,7 @@
   --border:#E7E3F2; --border-strong:#D6CFEA; --ring:rgba(109,40,217,0.28);
   --primary:#6D28D9; --primary-hover:#5B21B6; --primary-foreground:#F5F3FF;
   --hub:#5B21B6;
-  --success:#059669; --danger:#DC2626; --warning:#B45309; --info:#2563EB;
+  --success:#059669; --danger:#DC2626; --warning:#B45309; --info:#2563EB; --unfinished: #A16207;
 }
 .dark[data-palette="nebula"] {
   --background:#0B0A12; --surface:#17131F; --surface-raised:#211B2E; --sidebar:#130F1C;
@@ -82,7 +82,7 @@
   --border:#241F33; --border-strong:#2C2640; --ring:rgba(139,92,246,0.25);
   --primary:#8B5CF6; --primary-hover:#A78BFA; --primary-foreground:#1E1340;
   --hub:#C4B5FD;
-  --success:#10B981; --danger:#EF4444; --warning:#F59E0B; --info:#3B82F6;
+  --success:#10B981; --danger:#EF4444; --warning:#F59E0B; --info:#3B82F6; --unfinished: #EAB308;
 }
 /* SLATE */
 [data-palette="slate"] {
@@ -91,7 +91,7 @@
   --border:#E2E8F0; --border-strong:#CBD5E1; --ring:rgba(29,78,216,0.28);
   --primary:#1D4ED8; --primary-hover:#1E40AF; --primary-foreground:#EFF6FF;
   --hub:#1E40AF;
-  --success:#059669; --danger:#DC2626; --warning:#B45309; --info:#2563EB;
+  --success:#059669; --danger:#DC2626; --warning:#B45309; --info:#2563EB; --unfinished: #A16207;
 }
 .dark[data-palette="slate"] {
   --background:#0B0D10; --surface:#161A20; --surface-raised:#1F242C; --sidebar:#12161C;
@@ -99,7 +99,7 @@
   --border:#20262E; --border-strong:#28303A; --ring:rgba(59,130,246,0.25);
   --primary:#3B82F6; --primary-hover:#60A5FA; --primary-foreground:#0A2540;
   --hub:#93C5FD;
-  --success:#10B981; --danger:#EF4444; --warning:#F59E0B; --info:#3B82F6;
+  --success:#10B981; --danger:#EF4444; --warning:#F59E0B; --info:#3B82F6; --unfinished: #EAB308;
 }
 /* GLACIER */
 [data-palette="glacier"] {
@@ -108,7 +108,7 @@
   --border:#D6EAE7; --border-strong:#BFDDD9; --ring:rgba(14,116,144,0.28);
   --primary:#0E7490; --primary-hover:#155E75; --primary-foreground:#ECFEFF;
   --hub:#0C5A72;
-  --success:#059669; --danger:#DC2626; --warning:#B45309; --info:#2563EB;
+  --success:#059669; --danger:#DC2626; --warning:#B45309; --info:#2563EB; --unfinished: #A16207;
 }
 .dark[data-palette="glacier"] {
   --background:#08110F; --surface:#102019; --surface-raised:#172C23; --sidebar:#0E1A17;
@@ -116,5 +116,5 @@
   --border:#163A38; --border-strong:#1C4644; --ring:rgba(6,182,212,0.25);
   --primary:#06B6D4; --primary-hover:#22D3EE; --primary-foreground:#04303A;
   --hub:#7DD3FC;
-  --success:#10B981; --danger:#EF4444; --warning:#F59E0B; --info:#3B82F6;
+  --success:#10B981; --danger:#EF4444; --warning:#F59E0B; --info:#3B82F6; --unfinished: #EAB308;
 }

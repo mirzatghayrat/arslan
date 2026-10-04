@@ -1,0 +1,36 @@
+{
+  "contract": "arslan-bridge-v1",
+  "name": "ack",
+  "note": "kind ack, notify 0",
+  "sender": {
+    "deviceID": "mac-vector",
+    "signingKey": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8=",
+    "exchangeKey": "YGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn8=",
+    "storageKey": "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqo="
+  },
+  "recipient": {
+    "deviceID": "iphone-vector",
+    "signingKey": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+    "exchangeKey": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8=",
+    "storageKey": "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqo="
+  },
+  "ephemeral_private": "oKGio6SlpqeoqaqrrK2ur7CxsrO0tba3uLm6u7y9vr8=",
+  "nonce": "AAECAwQFBgcICQoL",
+  "psk": "",
+  "plaintext": "eyJib2R5Ijp7ImlkcyI6WyJhYWFhYWFhYS1hYWFhLTRhYWEtOGFhYS1hYWFhYWFhYWFhYWEiXX0sImZyb20iOiJtYWMtdmVjdG9yIiwiaWQiOiJERERERERERC1ERERELTREREQtOERERC1EREREREREREREREQiLCJzZXEiOjIsInRvIjoiaXBob25lLXZlY3RvciIsInRzIjoiMjAyNi0xMC0wM1QwMDowMDowMFoiLCJ0eXBlIjoiYWNrIiwidiI6MX0=",
+  "header_bytes": "AAAAEGFyc2xhbi1icmlkZ2UvdjEAAAABMQAAACRkZGRkZGRkZC1kZGRkLTRkZGQtOGRkZC1kZGRkZGRkZGRkZGQAAAAKbWFjLXZlY3RvcgAAAA1pcGhvbmUtdmVjdG9yAAAAATIAAAADYWNrAAAALFlGcHlYU3BLMys2eG9wNFg3ZFlod2JkWlB1ak52RVNzYkVxMjR2Z0Ywanc9AAAAAAAAAAAAAAAAAAAAATA=",
+  "packet": {
+    "header": {
+      "v": 1,
+      "id": "DDDDDDDD-DDDD-4DDD-8DDD-DDDDDDDDDDDD",
+      "from": "mac-vector",
+      "to": "iphone-vector",
+      "seq": 2,
+      "kind": "ack",
+      "ephemeral": "YFpyXSpK3+6xop4X7dYhwbdZPujNvESsbEq24vgF0jw=",
+      "notify": false
+    },
+    "sealed": "AAECAwQFBgcICQoLwC23cglezUrrnzjteO5FN7jnYGyZyqYd+KmmJC5861phRiPh9thQSilbMM5V5e3qQCXLhSlIeNkvEprznZlTxAXh65KDwHH2Gs6KsvVmy9LTueXvqMQeZs6NTg3LDO3vjkOtYvsxtcxupNXBwTbD1KKEveoDByLMFfrFcS9mbHLMEjL+BWmb+h8f1x7mAi7J7R0dywilWp+qYS3Zto486KmHSrUVlui//BfaOzAaVcRffGKSfU4Muj4m3o2Q2jEeWkTrDFyzmFid7ZydGdDcpZzl0cZE",
+    "signature": "Vov33OqXv7N81z0iwVXn1Np0EmVxBozgGolahaQ/R/o150FXwIw9+CdatnviGp/52hcYoqWdaOrfy9eCHPsjAA=="
+  }
+}

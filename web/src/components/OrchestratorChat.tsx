@@ -7,6 +7,7 @@ import {
   AlertTriangle, CheckCircle2, XOctagon,
   CornerDownRight,
   Cpu, X, Square,
+  RadioTower,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import JobCard, { JobResultLabel } from './JobCard';
@@ -797,6 +798,7 @@ export default function OrchestratorChat({
                   {/* Timestamp for user bubble (right-aligned, no avatar needed — position conveys identity) */}
                   {isUser && (
                     <div className="flex flex-col items-end select-none mt-1">
+                      {msg.fromPhone && <RemoteChip label={t('chat.fromPhone')} />}
                       <span className="text-[9px] text-subtle-foreground font-mono font-semibold">{msg.timestamp}</span>
                     </div>
                   )}
@@ -812,6 +814,7 @@ export default function OrchestratorChat({
                     <div className="max-w-[68%] border border-[rgba(255,255,255,0.08)] bg-[rgba(120,140,170,0.10)] p-3 font-mono text-[12px] text-foreground text-left" style={{ borderRadius: '12px 12px 4px 12px' }}>
                       <SentAttachments attachments={msg.attachments} />
                       <p className="whitespace-pre-line leading-relaxed">{msg.text}</p>
+                      {msg.fromPhone && <div className="mt-1.5 flex justify-end"><RemoteChip label={t('chat.fromPhone')} /></div>}
                       <div className="text-[9px] text-subtle-foreground mt-2 text-right">{msg.timestamp}</div>
                     </div>
                   </div>
@@ -940,6 +943,7 @@ export default function OrchestratorChat({
                         <SentAttachments attachments={msg.attachments} />
                         <span className="whitespace-pre-line">{msg.text}</span>
                       </div>
+                      {msg.fromPhone && <div className="mt-1 flex justify-end"><RemoteChip label={t('chat.fromPhone')} /></div>}
                       <div className="text-[9px] text-subtle-foreground font-mono mt-1 text-right select-none">{msg.timestamp}</div>
                     </div>
                   </div>
@@ -1201,4 +1205,14 @@ export default function OrchestratorChat({
   )}
 </div>
 );
+}
+
+/** The Remote trace on a message the paired iPhone sent: visible, not a 9px footnote. */
+function RemoteChip({ label }: { label: string }) {
+  const { t } = useTranslation();
+  return (
+    <span data-testid="from-phone" className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+      <RadioTower size={11} aria-hidden />{t('sidebar.remote')} · {label}
+    </span>
+  );
 }

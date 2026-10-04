@@ -261,6 +261,7 @@
     "reconnecting": "再接続しています…"
   },
   "chat": {
+    "fromPhone": "iPhone から",
     "learned": "学びました：{{text}}",
     "wantsToLearn": "Arslan がやり方を覚えたいと言っています：{{text}}",
     "learnedUndo": "取り消す",
@@ -503,6 +504,23 @@
   "settings": {
     "labelMemoryInConversations": "記憶して会話で使う",
     "memoryInConversationsDesc": "Arslan はあなた自身や仕事の進め方について聞いたことを覚え、選んだモデル（クラウドのモデルを含む）で使います。健康・お金・住所などの機微な内容は引き続きあなたの確認が必要で、会話ごとに記憶をオフにもできます。",
+    "phoneEnable": "iPhone から Arslan を使う",
+    "phoneEnableDesc": "Arslan が開いている間、この Mac で iPhone との接続を動かします。オンの間は数秒ごとに iCloud を確認します。",
+    "navPhone": "iPhone",
+    "phoneIntro": "iPhone から Arslan と話せます。メッセージはあなた自身の iCloud を通り、エンドツーエンドで暗号化されます。Apple に見えるのは暗号化されたデータだけです。",
+    "phoneComingSoon": "iPhone 版 近日公開",
+    "phoneComingSoonDesc": "Arslan の iPhone 版は App Store への公開を準備中です。公開後、ここに表示されるペアリングコードを読み取れば、この Mac の Arslan と話したり、タスクを任せたり、操作を承認したりできます。",
+    "phoneBridgeOffline": "iPhone との接続は動いていません。",
+    "phoneAdd": "iPhone を追加",
+    "phoneScan": "iPhone の Arslan でこのコードを読み取ってください。1 回だけ、10 分間有効です。",
+    "phoneRequest": "「{{name}}」が接続を求めています",
+    "phoneAccept": "許可",
+    "phoneDecline": "拒否",
+    "phoneDevices": "ペアリング済みの iPhone",
+    "phoneNone": "まだ iPhone はペアリングされていません。",
+    "phoneRemove": "削除",
+    "phonePairedAt": "{{when}} にペアリング",
+    "phoneError": "うまくいきませんでした。もう一度お試しください。",
     "labelLearnedPractices": "学んだやり方をすぐ使う",
     "learnedPracticesDesc": "あなたが Arslan を訂正したり、この Mac で失敗した方法の回り道を見つけたりすると、そのやり方を覚えて次から使います。Brain でひとつずつ確認・取り消しできます。Web ページやファイルを読んだあとに学んだものは確認を待ちます。オフにすると、すべて確認を待ちます。",
     "labelTerminalSandbox": "コマンドをサンドボックスで実行",
@@ -870,7 +888,19 @@
     "distilled_none": "蒸留できる内容がありません",
     "distill_failed": "記憶への要約に失敗しました",
     "no_spawns": "スポーンがまだありません",
-    "no_spawns_desc": "作成するとここに表示されます。"
+    "no_spawns_desc": "作成するとここに表示されます。",
+    "remote": "Remote",
+    "fromPhone": "iPhone から開始",
+    "glyph": {
+      "waiting": "承認待ち",
+      "remote": "Remote · あなたの iPhone",
+      "working": "進行中",
+      "progress": "進行中：{{done}} / {{total}}",
+      "done": "完了",
+      "unfinished": "未達成",
+      "failed": "問題で停止",
+      "scheduled": "スケジュール"
+    }
   },
   "orchestrator": {
     "greeting_morning": "おはようございます",

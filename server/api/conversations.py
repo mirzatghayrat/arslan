@@ -90,6 +90,15 @@ async def list_conversations(
     # Most recently active first. `last_at` can be None on rows predating the
     # default, so those sort last rather than blowing up the comparison.
     out.sort(key=lambda c: (c.last_at is not None, c.last_at or ""), reverse=True)
+    # What each one is and how it stands — the sidebar's glyphs, the phone's task list — and the
+    # phone's own conversation named Remote rather than after its first message.
+    from server.services import phone_reads
+    extra = await phone_reads.describe(db, [c.conversation_id for c in out])
+    for item in out:
+        for key, value in extra.get(item.conversation_id, {}).items():
+            setattr(item, key, value)
+        if item.conversation_id == phone_reads.REMOTE_ID:
+            item.title = phone_reads.REMOTE_TITLE
     return out
 
 

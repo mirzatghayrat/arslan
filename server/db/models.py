@@ -144,6 +144,8 @@ class ArslanMessage(Base):
     timestamp = Column(DateTime, default=datetime.utcnow)
     # 0.1.42: set on a background job's result message — done|partial|blocked|stopped.
     job_outcome = Column(String(20), nullable=True)
+    # Mobile bridge: "phone" for a user message forwarded from a paired iPhone; NULL = the window.
+    source = Column(String(20), nullable=True)
 
 
 class ArslanSummary(Base):

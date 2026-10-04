@@ -16,6 +16,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, Command, Stdio};
 
 mod app_icon;
+mod bridge;
 pub mod endpoint;
 mod island;
 mod listen;

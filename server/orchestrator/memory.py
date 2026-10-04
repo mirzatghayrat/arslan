@@ -41,6 +41,7 @@ async def add_message(
     display_content: str | None = None,
     spawn_id: int | None = None,
     job_outcome: str | None = None,
+    source: str | None = None,
 ) -> int:
     """Append an arslan_messages row; return its id."""
     async with db_session.AsyncSessionLocal() as db:
@@ -51,6 +52,7 @@ async def add_message(
             display_content=display_content,
             spawn_id=spawn_id,
             job_outcome=job_outcome,
+            source=source,
         )
         db.add(row)
         await db.commit()

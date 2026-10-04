@@ -22,6 +22,7 @@ import type { SettingsSectionId } from './settings/sectionRegistry';
 import { useDebouncedSettingsSave } from '../hooks/useDebouncedSettingsSave';
 import AutomationSection from './settings/AutomationSection';
 import DesktopSection from './settings/DesktopSection';
+import PhoneSection from './settings/PhoneSection';
 import ProactiveSection from './settings/ProactiveSection';
 import { normalizeLanguage } from '../lib/languages';
 
@@ -238,6 +239,10 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         onIslandChange={(v) => saveField({ islandEnabled: v })}
       />
     ),
+
+    // iPhone — the companion: pairing and paired phones (mobile bridge §6.1).
+    phone: <PhoneSection enabled={localSettings.phoneBridgeEnabled ?? false}
+      onEnabledChange={(v) => saveField({ phoneBridgeEnabled: v })} />,
 
     // Advanced — telemetry + orchestrator shell + confirm policy + spawn mode.
     advanced: (

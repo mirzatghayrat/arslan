@@ -119,6 +119,14 @@ async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
         except ProcessLookupError:
             pass
         out, err = await proc.communicate()
+    except asyncio.CancelledError:
+        # The job or turn was stopped (from the phone or the window): the command stops with it,
+        # children included, instead of running on where nobody sees it.
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        raise
     full_out = out.decode("utf-8", errors="replace")
     full_err = err.decode("utf-8", errors="replace")
     stdout, cut_out = clip(fold_repeats(full_out))

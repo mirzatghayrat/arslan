@@ -215,11 +215,12 @@ class RunRecorder:
                 pending_tool = (ts, ev, idx)
             elif t == "tool_result" and pending_tool is not None:
                 call_ts, call_ev, call_idx = pending_tool
-                add("tool_call",
-                    {"tool": ev.get("tool"), "ok": bool(ev.get("ok"))},
-                    {"args_summary": call_ev.get("args_summary", ""),
-                     "summary": ev.get("summary", "")},
-                    call_ts, ts, call_idx)
+                detail = {"args_summary": call_ev.get("args_summary", ""), "summary": ev.get("summary", "")}
+                if call_ev.get("target"):
+                    detail["target"] = call_ev["target"]
+                if ev.get("review"):
+                    detail["review"] = ev["review"]        # the phone's quick review (tool_review)
+                add("tool_call", {"tool": ev.get("tool"), "ok": bool(ev.get("ok"))}, detail, call_ts, ts, call_idx)
                 pending_tool = None
             elif t == "escalation":
                 pending_esc = (ts, ev, idx)

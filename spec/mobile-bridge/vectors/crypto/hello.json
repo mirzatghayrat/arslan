@@ -1,0 +1,36 @@
+{
+  "contract": "arslan-bridge-v1",
+  "name": "hello",
+  "note": "",
+  "sender": {
+    "deviceID": "iphone-vector",
+    "signingKey": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+    "exchangeKey": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8=",
+    "storageKey": "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqo="
+  },
+  "recipient": {
+    "deviceID": "mac-vector",
+    "signingKey": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8=",
+    "exchangeKey": "YGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn8=",
+    "storageKey": "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqo="
+  },
+  "ephemeral_private": "oKGio6SlpqeoqaqrrK2ur7CxsrO0tba3uLm6u7y9vr8=",
+  "nonce": "AAECAwQFBgcICQoL",
+  "psk": "",
+  "plaintext": "eyJib2R5Ijp7ImFwcF92ZXJzaW9uIjoiMC4xLjAiLCJjYXBhYmlsaXRpZXMiOlsiY2xvdWRraXQiLCJmaWxlcyJdLCJwcm90b2NvbF92ZXJzaW9uIjoxfSwiZnJvbSI6ImlwaG9uZS12ZWN0b3IiLCJpZCI6IkFBQUFBQUFBLUFBQUEtNEFBQS04QUFBLUFBQUFBQUFBQUFBQSIsInNlcSI6NDMsInRvIjoibWFjLXZlY3RvciIsInRzIjoiMjAyNi0xMC0wM1QwMDowMDowMFoiLCJ0eXBlIjoiaGVsbG8iLCJ2IjoxfQ==",
+  "header_bytes": "AAAAEGFyc2xhbi1icmlkZ2UvdjEAAAABMQAAACRhYWFhYWFhYS1hYWFhLTRhYWEtOGFhYS1hYWFhYWFhYWFhYWEAAAANaXBob25lLXZlY3RvcgAAAAptYWMtdmVjdG9yAAAAAjQzAAAAB2NvbnRyb2wAAAAsWUZweVhTcEszKzZ4b3A0WDdkWWh3YmRaUHVqTnZFU3NiRXEyNHZnRjBqdz0AAAAAAAAAAAAAAAAAAAABMA==",
+  "packet": {
+    "header": {
+      "v": 1,
+      "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+      "from": "iphone-vector",
+      "to": "mac-vector",
+      "seq": 43,
+      "kind": "control",
+      "ephemeral": "YFpyXSpK3+6xop4X7dYhwbdZPujNvESsbEq24vgF0jw=",
+      "notify": false
+    },
+    "sealed": "AAECAwQFBgcICQoLQ2oEW9RzzpbhXdJVRW+lNM6efRgi1J5nilOX/r+vWc+TKKplgMgQ2mqyCcC/aZeSu3+MCl0uUpOL+v5IcoFUaQW4RJK5qkt9FWyNrVxlQ4r8ijSRvvoNu6eyH4NHHmZumkHJQBV/XSvWgjhJ5PDL5H53CW/24u2Mb+nyNbf63OZ1J7mGh8w6YnXnlMuY3ZXGAn4dU3nb5NLy/aWvQymwtKcqsaWAbEBnj8slxXKIpM+j0AC8tov8Dxj0hAy3zAqzU3lqotxLK+1Hyi5wUvPNon3pIpnYHTnWRZ1h9FC/6zOS6QIl4tAWH5AjbfAGIZpPQxZxgZE+ICs=",
+    "signature": "3dY/r32D1BWqnaXTH05QjjR40aWmmCQdmzzEy8t1WcrAe7PR7qJpou+GD1TlOxNnyQMwcQ77LoTg+PZgmAHEDg=="
+  }
+}

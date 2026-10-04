@@ -77,6 +77,12 @@ REGISTRY: dict[str, DecisionPoint] = {p.name: p for p in (
     DecisionPoint("memory.applied",
                   "Did the assistant act on this lesson in the steps shown?",
                   ("lesson", "steps"), "active", 0.7, after_turn=True),
+    # Active (2026-10-04, user: a task that did not get done must not show a green check). Asked
+    # only when a job with no checks of its own ended "done" because it answered at all.
+    DecisionPoint("job.accomplished",
+                  "Does the assistant's final answer say the task's goal was achieved, rather than that it "
+                  "was blocked, refused, expired, is waiting on the user, or was only partly done?",
+                  ("goal", "answer"), "active", 0.7, after_turn=True),
     # Registered, off (C2.3): gets a shadow trial on the bench later.
     DecisionPoint("turn.completion",
                   "Was the user's request actually completed, with the result verified, in the steps shown?",

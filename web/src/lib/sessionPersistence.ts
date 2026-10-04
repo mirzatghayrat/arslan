@@ -173,6 +173,13 @@ export interface ServerConversation {
   title: string;
   message_count: number;
   last_at?: string | null;
+  /** Mobile bridge / sidebar glyphs (see lib/conversationMeta). */
+  kind?: string;
+  state?: string;
+  origin?: string;
+  preview?: string;
+  files?: number;
+  job?: { id: string; step: string; done: number; total: number } | null;
 }
 
 /**

@@ -1,0 +1,21 @@
+{
+  "contract": "arslan-bridge-v1",
+  "name": "notify-flipped",
+  "base": "mac-message",
+  "note": "the clear-text notify bit is signed",
+  "packet": {
+    "header": {
+      "v": 1,
+      "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+      "from": "mac-vector",
+      "to": "iphone-vector",
+      "seq": 42,
+      "kind": "msg",
+      "ephemeral": "YFpyXSpK3+6xop4X7dYhwbdZPujNvESsbEq24vgF0jw=",
+      "notify": false
+    },
+    "sealed": "AAECAwQFBgcICQoLwC23cglezUrrnzLmZboaHunndWSXxZgV/ab9Zz9ypQVlU2Dg7N9YRWVWc5VA9vnuDWbBjSYOB54hXZnygZUWmwWgqJzLxWf0CcSn+b1mmJSD5rfHla1rAKbrfkX3PIuRgSGMRctz/6hYhYjp/FD6vMSmi8EqYVzMVLnVOSghNTSPQmS9BTrdsVVV+THCbhntzyhf+GvIOcbtAla6qYZPn8WbO9lk5P3OjWyrSktrR7JfIyWXJgRdqigmy4HZwj9VXA6+U0RG15nUAhR4E9oBil20QJAzpKCKn5MS9kXprKbge2lmGkZcPG8SWgFWpCmm9Bt2FYwGBe8sw13HygCvUDxgvJwjn/7R6XNi3s6LVXs6UyLy",
+    "signature": "xVEgadUOA4jHyBe3xEZtHrGlnQMlE7gSYkN317meOv0/zz1gBseTjfy2kSdkzssMRXJgJSaICNgrro3JgZ89DA=="
+  },
+  "expect_error": "bad_signature"
+}
