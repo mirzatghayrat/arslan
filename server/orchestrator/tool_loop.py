@@ -811,8 +811,9 @@ def _declined(refused: str, subject: str) -> str:
     a refusal: the model must not tell the user they said no (seen 2026-10-04 on a phone task)."""
     from server.services import approvals
     if approvals.LAST_OUTCOME.get() == "expired":
-        return (f"nobody answered the approval card for {subject} before it expired; the user did not "
-                "decline it. Say it expired unanswered and that it can be asked again.")
+        return (f"nobody answered the approval card for {subject} before it expired: the user did not "
+                "decline it, they are away. Do not ask for it again in this task. Finish now: say the card "
+                "expired unanswered, what is left undone, and that they can run the task again.")
     return refused
 
 

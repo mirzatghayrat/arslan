@@ -40,6 +40,38 @@ async def test_a_card_nobody_answered_is_not_reported_as_a_refusal(monkeypatch):
     assert approvals.LAST_OUTCOME.get() == "expired"
     text = tool_loop._declined("user declined this command", "this command")
     assert text.startswith("nobody answered") and "did not decline" in text
+    # Told it may ask again, the model asked again within two seconds (device, 2026-10-05).
+    assert "Do not ask for it again" in text and "can be asked again" not in text
+
+
+async def test_after_one_unanswered_card_a_job_opens_no_more(monkeypatch):
+    opened = []
+
+    async def ask(conversation_id, frame):
+        opened.append(frame["call_id"])
+        approvals.LAST_OUTCOME.set("expired")
+        return False
+    monkeypatch.setattr(approvals, "ask", ask)
+    job = approvals.JobConfirmations("c7")
+    assert await job.command("touch ~/Downloads/a", [], sandbox="retry") is False
+    assert await job.command("touch ~/Downloads/a", [], sandbox="outside", why="again") is False
+    assert await job.schedule("daily", "08:00") is False
+    assert len(opened) == 1, "the person is away: one card, not one per retry"
+    assert approvals.LAST_OUTCOME.get() == "expired", "and the retries read as expired, not refused"
+
+
+async def test_a_refused_card_does_not_close_the_job_to_later_cards(monkeypatch):
+    opened = []
+
+    async def ask(conversation_id, frame):
+        opened.append(frame["call_id"])
+        approvals.LAST_OUTCOME.set("declined")
+        return False
+    monkeypatch.setattr(approvals, "ask", ask)
+    job = approvals.JobConfirmations("c8")
+    await job.command("touch ~/Downloads/a", [], sandbox="retry")
+    await job.command("touch ~/Downloads/b", [], sandbox="retry")
+    assert len(opened) == 2, "a person who answered is there: a different request may still ask"
 
 
 async def test_a_real_refusal_keeps_its_words(monkeypatch):

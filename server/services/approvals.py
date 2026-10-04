@@ -125,6 +125,19 @@ class JobConfirmations:
     def __init__(self, conversation_id: str):
         self.conversation_id = conversation_id
         self._write_granted = False
+        self._unanswered = False
+
+    async def _card(self, frame: dict) -> bool:
+        """One card. Once one went unanswered the person is away: no further card opens in this
+        job (each would wait five more minutes for nobody, and a model told "expired" asked again
+        within two seconds — seen on the device 2026-10-05); the rest read as expired at once."""
+        if self._unanswered:
+            LAST_OUTCOME.set("expired")
+            return False
+        approved = await ask(self.conversation_id, frame)
+        if LAST_OUTCOME.get() == "expired":
+            self._unanswered = True
+        return approved
 
     async def workspace_write(self, action: str, path: str) -> bool:
         from server.db import session as db_session
@@ -135,13 +148,13 @@ class JobConfirmations:
             root = await settings_service.workspace_dir(db)
         if root is None:
             return False
-        granted = await ask(self.conversation_id, protocol.propose_workspace_write(
+        granted = await self._card(protocol.propose_workspace_write(
             uuid.uuid4().hex, str(root), action, path))
         self._write_granted = granted
         return granted
 
     async def schedule(self, name: str, when: str) -> bool:
-        return await ask(self.conversation_id, protocol.propose_schedule(uuid.uuid4().hex, name, when))
+        return await self._card(protocol.propose_schedule(uuid.uuid4().hex, name, when))
 
     async def command(self, command: str, argv: list, *, remote_host: str | None = None,
                       fingerprints: list | None = None, sandbox: str | None = None, why: str = "") -> bool:
@@ -174,7 +187,7 @@ class JobConfirmations:
             uuid.uuid4().hex, command, argv, reason=verdict.reason or f"risk: {risk}",
             remote_host=remote_host, fingerprints=list(fingerprints or []))
         if remote_host:
-            return await ask(self.conversation_id, frame)
+            return await self._card(frame)
         return await self._ask_with_shadow(frame, command, verdict)
 
     async def _ask_with_shadow(self, frame: dict, command: str, verdict, *, sandboxed: bool | None = None) -> bool:
@@ -183,7 +196,7 @@ class JobConfirmations:
         judgment.shadow("tool.approval", judgment.approval_state(command, rule=verdict.rule, reason=verdict.reason,
                                                                  sandboxed=sandboxed),
                         ref=frame["call_id"], conversation_id=self.conversation_id)
-        approved = await ask(self.conversation_id, frame)
+        approved = await self._card(frame)
         judgment.record_outcome_later(frame["call_id"], "approved" if approved else "declined", point="tool.approval")
         return approved
 
