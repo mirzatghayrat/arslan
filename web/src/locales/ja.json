@@ -890,6 +890,7 @@
     "no_spawns": "スポーンがまだありません",
     "no_spawns_desc": "作成するとここに表示されます。",
     "remote": "Remote",
+    "remoteGroup": "Remote · iPhone",
     "fromPhone": "iPhone から開始",
     "glyph": {
       "waiting": "承認待ち",

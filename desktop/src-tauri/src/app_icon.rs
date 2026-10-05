@@ -4,8 +4,9 @@ use tauri::Manager;
 #[derive(Clone, Copy, Default, serde::Serialize, serde::Deserialize, PartialEq, Debug)]
 #[serde(rename_all = "lowercase")]
 pub enum IconStyle {
-    #[default]
     Frosted,
+    /// The default since 0.1.53 (the user's call): black and white, like the iPhone app.
+    #[default]
     Monochrome,
 }
 
@@ -104,5 +105,10 @@ mod tests {
         }
         assert!(serde_json::from_str::<IconStyle>("\"/tmp/arbitrary.png\"").is_err());
         assert!(serde_json::from_str::<IconStyle>("\"unknown\"").is_err());
+    }
+
+    #[test]
+    fn without_a_saved_choice_the_icon_is_black_and_white() {
+        assert_eq!(IconStyle::default(), IconStyle::Monochrome);
     }
 }
