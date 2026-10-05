@@ -13,6 +13,10 @@ public final class StatusReporter {
     let deviceName: String
     var lastSent: Date?
     var lastHeadline = "", lastDetail = ""
+    /// Each phone's snapshot it has not acknowledged yet. The next one replaces it (§5.3): a phone
+    /// left closed for a day used to come back to 1,440 heartbeats, every one fetched, opened and
+    /// acknowledged on its own, when only the last says anything.
+    var unread: [String: String] = [:]
 
     public init(backend: BackendReads, mailbox: Mailbox, deviceName: String) {
         (self.backend, self.mailbox, self.deviceName) = (backend, mailbox, deviceName)
@@ -25,15 +29,18 @@ public final class StatusReporter {
         guard Self.shouldSend(headline: headline, detail: detail, lastHeadline: lastHeadline,
                               lastDetail: lastDetail, lastSent: lastSent, now: now) else { return }
         (lastSent, lastHeadline, lastDetail) = (now, headline, detail)
-        for peer in mailbox.peers.keys.sorted() {
-            _ = try? await mailbox.send(type: "status.snapshot", body: body, to: peer, now: now)
-        }
+        for peer in mailbox.peers.keys.sorted() { await post(body, to: peer, now: now) }
     }
 
     /// At once, to one phone (it just said hello).
     public func send(to peer: String, now: Date = Date()) async {
         guard let body = try? await snapshot(now: now) else { return }
-        _ = try? await mailbox.send(type: "status.snapshot", body: body, to: peer, now: now)
+        await post(body, to: peer, now: now)
+    }
+
+    func post(_ body: [String: Any], to peer: String, now: Date) async {
+        guard let record = try? await mailbox.send(type: "status.snapshot", body: body, to: peer, now: now) else { return }
+        if let older = unread.updateValue(record.id, forKey: peer) { try? mailbox.withdraw(older) }
     }
 
     func snapshot(now: Date) async throws -> [String: Any] {

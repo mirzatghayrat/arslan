@@ -115,6 +115,43 @@ public final class CloudKitStore: EnvelopeStore {
         }
     }
 
+    /// The whole zone from the start of the change feed, ids and dates only (`desiredKeys`: no
+    /// sealed bytes, no assets). Its own walk, so the polling token is untouched.
+    public func ages() async throws -> [(id: String, createdAt: Date)] {
+        var out: [(id: String, createdAt: Date)] = []
+        var token: CKServerChangeToken?
+        var more = true
+        while more {
+            let page: (ages: [(id: String, createdAt: Date)], token: CKServerChangeToken?, more: Bool) = try await Transient.retrying {
+                try await withCheckedThrowingContinuation { done in
+                    let config = CKFetchRecordZoneChangesOperation.ZoneConfiguration()
+                    config.previousServerChangeToken = token
+                    config.desiredKeys = ["createdAt"]
+                    let op = CKFetchRecordZoneChangesOperation(recordZoneIDs: [zoneID], configurationsByRecordZoneID: [zoneID: config])
+                    var got: [(id: String, createdAt: Date)] = []
+                    var newToken: CKServerChangeToken?
+                    var moreComing = false
+                    op.recordChangedBlock = { record in
+                        guard record.recordType == Self.recordType else { return }
+                        // The server's clock first: a device's clock can be wrong by days.
+                        got.append((record.recordID.recordName, record.creationDate ?? (record["createdAt"] as? Date) ?? Date()))
+                    }
+                    op.recordZoneFetchCompletionBlock = { _, token, _, isMore, error in
+                        if error == nil { newToken = token; moreComing = isMore }
+                    }
+                    op.fetchRecordZoneChangesCompletionBlock = { error in
+                        if let error { done.resume(throwing: error) } else { done.resume(returning: (got, newToken, moreComing)) }
+                    }
+                    run(op)
+                }
+            }
+            out += page.ages
+            more = page.more && page.token != nil
+            token = page.token
+        }
+        return out
+    }
+
     /// Whether a record with this id exists in the zone (a direct fetch, not the change feed).
     public func exists(id: String) async throws -> Bool {
         try await withCheckedThrowingContinuation { (done: CheckedContinuation<Bool, Error>) in
