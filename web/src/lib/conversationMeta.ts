@@ -34,11 +34,6 @@ export function metaFrom(rows: ServerConversation[]): Record<string, Conversatio
   return out;
 }
 
-/** The phone's side of the sidebar: Remote itself and whatever was started from the iPhone. */
-export function phoneSide<T extends { id: string }>(thread: T, meta: Record<string, ConversationMeta>): boolean {
-  return thread.id === REMOTE_ID || meta[thread.id]?.kind === "remote" || meta[thread.id]?.origin === "phone";
-}
-
 /** Remote first, then the rest in the order given. */
 export function remoteFirst<T extends { id: string }>(threads: T[], meta: Record<string, ConversationMeta>): T[] {
   const isRemote = (t: T) => t.id === REMOTE_ID || meta[t.id]?.kind === "remote";

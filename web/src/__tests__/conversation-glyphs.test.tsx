@@ -86,39 +86,16 @@ describe("the sidebar with conversation data", () => {
             "chat-1": meta({}) },
   } as any;
 
-  beforeEach(() => localStorage.clear());
-
   it("pins Remote first, under its own name, and marks what the phone started", () => {
     render(<Sidebar {...props} />);
     const list = screen.getByRole("region", { name: "workspace.recentConversations" });
     const rows = within(list).getAllByRole("button").filter(b => b.id.startsWith("active-thread-btn-"));
-    expect(rows.map(r => r.id)).toEqual(["active-thread-btn-pocket", "active-thread-btn-task-1", "active-thread-btn-chat-1"]);
+    expect(rows.map(r => r.id)).toEqual(["active-thread-btn-pocket", "active-thread-btn-chat-1", "active-thread-btn-task-1"]);
     expect(within(rows[0]).getByText("sidebar.remote")).toBeTruthy();
     expect(within(rows[0]).queryByLabelText("sidebar.fromPhone")).toBeNull();      // Remote IS the phone
-    expect(within(rows[1]).getByLabelText("sidebar.fromPhone")).toBeTruthy();
-    expect(within(rows[1]).getByRole("img", { name: "sidebar.glyph.progress:1/2" })).toBeTruthy();
-    expect(within(rows[2]).queryByLabelText("sidebar.fromPhone")).toBeNull();
-  });
-
-  it("keeps Remote and what the phone started in their own group, which folds away and stays folded", () => {
-    const { unmount } = render(<Sidebar {...props} />);
-    const group = screen.getByTestId("remote-group");
-    const inGroup = () => within(group).queryAllByRole("button").filter(b => b.id.startsWith("active-thread-btn-")).map(b => b.id);
-    expect(inGroup()).toEqual(["active-thread-btn-pocket", "active-thread-btn-task-1"]);
-    expect(within(group).queryByText("护照材料")).toBeNull();                       // an Arslan chat stays outside
-    const toggle = within(group).getByRole("button", { name: /sidebar.remoteGroup \(2\)/ });
-    expect(toggle.getAttribute("aria-expanded")).toBe("true");
-    act(() => toggle.click());
-    expect(inGroup()).toEqual([]);
-    expect(screen.getByText("护照材料")).toBeTruthy();
-    unmount();
-    render(<Sidebar {...props} />);
-    expect(screen.getByRole("button", { name: /sidebar.remoteGroup/ }).getAttribute("aria-expanded")).toBe("false");
-  });
-
-  it("shows no group when nothing came from the phone", () => {
-    render(<Sidebar {...props} threads={[{ id: "chat-1", title: "护照材料" }]} meta={{ "chat-1": meta({}) }} />);
-    expect(screen.queryByTestId("remote-group")).toBeNull();
+    expect(within(rows[2]).getByLabelText("sidebar.fromPhone")).toBeTruthy();
+    expect(within(rows[2]).getByRole("img", { name: "sidebar.glyph.progress:1/2" })).toBeTruthy();
+    expect(within(rows[1]).queryByLabelText("sidebar.fromPhone")).toBeNull();
   });
 });
 

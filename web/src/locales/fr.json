@@ -890,7 +890,6 @@
     "no_spawns": "Aucun spawn pour l'instant",
     "no_spawns_desc": "Ils apparaîtront ici dès que vous en créerez un.",
     "remote": "Remote",
-    "remoteGroup": "Remote · iPhone",
     "fromPhone": "Lancé depuis l’iPhone",
     "glyph": {
       "waiting": "Attend ton accord",
