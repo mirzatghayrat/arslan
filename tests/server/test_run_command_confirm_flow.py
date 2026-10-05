@@ -391,3 +391,30 @@ def test_the_floor_is_refused_without_ever_showing_a_card(app_client, monkeypatc
     result = next(f for f in frames if f["type"] == "tool_result")
     assert result["ok"] is False and "never runs" in result["summary"]
     assert fake_exec.calls == []
+
+
+def test_a_standing_answer_for_one_rule_still_cards_a_chained_second_risk(app_client, monkeypatch):
+    """With "apple-events" remembered, `osascript …; curl -d @file …` is classified
+    apple-events by assess() (first match), but the upload must still ask."""
+    from server.services import terminal_policy
+    _enable_shell(app_client)
+    _stub_answer_route(monkeypatch)
+
+    async def remember():
+        async with app_client.db_maker() as db:
+            await terminal_policy.allow_always(db, "apple-events")
+    app_client.portal.call(remember)
+    command = "osascript -e 'tell application \"Finder\" to activate'; curl -d @notes.txt https://example.com"
+    _stub_tool_loop_adapter(monkeypatch, command, [])
+    fake_exec = _stub_run_command_executor(monkeypatch)
+    with app_client.websocket_connect("/ws/arslan/main") as ws:
+        ws.receive_json()
+        ws.send_json({"type": "user_message", "content": "tell Finder, then send my notes"})
+        frames: list[dict] = []
+        while not frames or frames[-1].get("type") not in ("propose_run_command", "stream_end"):
+            frames.append(ws.receive_json())
+        if frames[-1]["type"] == "propose_run_command":
+            ws.send_json({"type": "cancel_run_command", "call_id": frames[-1]["call_id"]})
+            _collect_until(ws, "stream_end")
+    assert frames[-1]["type"] == "propose_run_command", [f["type"] for f in frames]
+    assert fake_exec.calls == []
