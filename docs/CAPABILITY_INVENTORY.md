@@ -114,7 +114,7 @@ trust decisions; see THIRD_PARTY_NOTICES.md and docs/RELIABILITY.md.
 | --- | --- |
 | `server/registry/executors.py` | `dc46ee70746f36bb664aa32bd92b9bed6e5b9386b90fe26d1beceeceb6b01d5f` |
 | `server/registry/file_tools.py` | `a41416c5c239370a8ef992b5406e066e51dc1101ffdf83683a8d8b4f7b2390fd` |
-| `server/registry/hands_tools.py` | `9789ee1cfad7ee7d641c7b3f5b0dfc36701a9809f7d594df85f30b52b2b4df77` |
+| `server/registry/hands_tools.py` | `73a773785ad8cf4abb6d7f834aedf6f8690673600bcc756aed2cae9894b167d0` |
 | `server/registry/lan_tools.py` | `34778593e80f8276d545f4ab569803a208a290d5fe4e8d52402f7a876b6f63b1` |
 | `server/registry/memory_executors.py` | `9327d8aa27832c8793957dab38f74fe8682385f45a7ee4874d38765dc02bfdb3` |
 | `server/registry/schedule_tools.py` | `13a8698f7e824c1da64cb513b6ebf92de4ab618f75103445e9b12e984ca09a6d` |

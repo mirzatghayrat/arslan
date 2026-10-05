@@ -1174,7 +1174,11 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
             from server.services.task_service import current as current_task
             from server.services.task_repository import TaskError
             async def execute(admitted_args):
-                timeout = budget.remaining_seconds() if tool_key == "delegate_work" and budget else tool_timeout_s
+                # A tool that waits for the user's card or a slow app declares its own limit
+                # (`timeout_s`): the default cut a Notes look mid-card on a real Mac (0.1.53).
+                own = getattr(executor, "timeout_s", None)
+                timeout = (budget.remaining_seconds() if tool_key == "delegate_work" and budget
+                           else max(tool_timeout_s, float(own)) if isinstance(own, (int, float)) else tool_timeout_s)
                 return await asyncio.wait_for(executor.execute(admitted_args), timeout=timeout)
             runtime = current_task()
 

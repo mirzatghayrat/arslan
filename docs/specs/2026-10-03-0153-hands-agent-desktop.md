@@ -317,3 +317,13 @@ These change the design above; each was measured on the user's Mac (macOS 26.6).
     switch to AppleScript, and tells the user to remove the entry and ask again; the settings line for "not
     allowed" says the same in six languages. A user who never ran a development build cannot hit this; a Developer
     ID re-sign keeps the team, so the requirement still matches across releases.
+16. **The tool loop's 20 s limit cut tools that wait for the user (real Mac, 2026-10-05).** With Accessibility
+    fixed, `desktop_apps` worked, but `desktop_look` on Notes died twice with "tool 'desktop_look' timed out" while
+    its card was still open: the card wait (up to `approvals.TIMEOUT_S`, 300 s) and the Hands call (60 s, a read
+    tried twice) ran inside the tool loop's `TOOL_TIMEOUT_S` (20 s). The same held for every tool that asks
+    inside its executor — AppleScript, Shortcuts, the browser (whose first use also installs it, 1–2 min) — so an
+    unanswered AppleScript card expired after 20 s and the model asked again, which is the "it kept asking" the
+    user saw. The direct smoke script called executors without the tool loop and never met the limit. Now a tool
+    may declare `timeout_s`; the loop uses the larger of the two. The asking tools declare their cards plus their
+    work (`hands_tools.CARD_S`, kept equal to `approvals.TIMEOUT_S` by a test). A call cut off this way also left no
+    trace row; with the longer limit that happens only on Stop.

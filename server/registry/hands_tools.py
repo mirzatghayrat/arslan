@@ -43,6 +43,14 @@ def _not_in_job() -> dict:
                      "Call start_background_work with this goal; looking at pages is fine here."}
 
 
+# The tool loop stops a tool after TOOL_TIMEOUT_S (20 s) unless the tool declares `timeout_s`.
+# These tools wait for the user's card (approvals.TIMEOUT_S each) and for slow apps, so 20 s cut
+# them off mid-card. Measured on the user's Mac, 2026-10-05: a Notes look died twice while its
+# card was open; an unanswered AppleScript card expired after 20 s and the model asked again.
+CARD_S = 300                       # approvals.TIMEOUT_S; a test keeps the two equal
+RUN_S = 120                        # _run's default; a Hands call is 60 s, a read is tried twice
+
+
 async def _ask_once(grant: str, kind: str, target: str, detail: str) -> bool:
     """True if already granted for this job, else ask the user (card + notification)."""
     from server.services import approvals
@@ -90,6 +98,7 @@ def _origin(url: str | None) -> str | None:
 class _BrowserTool:
     action = ""
     acts = False
+    timeout_s = CARD_S + 2 * RUN_S     # one card; the first use sets the browser up (1–2 min)
 
     async def execute(self, args: dict) -> dict:
         from server.services import agent_browser
@@ -208,6 +217,7 @@ async def _run(argv: list[str], *, timeout: float = 120) -> dict:
 
 class MacListShortcutsExecutor:
     key = "mac_list_shortcuts"
+    timeout_s = 40
 
     async def execute(self, args: dict) -> dict:
         return await _run(["/usr/bin/shortcuts", "list"], timeout=30)
@@ -215,6 +225,7 @@ class MacListShortcutsExecutor:
 
 class MacRunShortcutExecutor:
     key = "mac_run_shortcut"
+    timeout_s = CARD_S + RUN_S + 30
 
     async def execute(self, args: dict) -> dict:
         name = str((args or {}).get("name") or "").strip()
@@ -239,6 +250,7 @@ class MacRunShortcutExecutor:
 
 class MacAppleScriptExecutor:
     key = "mac_applescript"
+    timeout_s = CARD_S + RUN_S + 30
 
     async def execute(self, args: dict) -> dict:
         script = str((args or {}).get("script") or "")
@@ -399,6 +411,7 @@ def _app_arg(args: dict) -> str | None:
 
 class DesktopAppsExecutor:
     key = "desktop_apps"
+    timeout_s = RUN_S + 30
 
     async def execute(self, args: dict) -> dict:
         if not desktop_available():
@@ -417,6 +430,7 @@ class DesktopAppsExecutor:
 
 class DesktopLookExecutor:
     key = "desktop_look"
+    timeout_s = CARD_S + 2 * RUN_S        # one card; window lookup + the look, tried twice
 
     async def execute(self, args: dict) -> dict:
         from server.services import approvals, hands_contract, hands_service
@@ -485,6 +499,7 @@ class DesktopLookExecutor:
 
 class _DesktopAct:
     op = ""
+    timeout_s = 2 * CARD_S + 2 * RUN_S    # the app card and a risky-action card; describe, act, Return
 
     def _risky(self, args: dict, target: dict, app: dict) -> str | None:
         """Why this action asks every time, or None."""
