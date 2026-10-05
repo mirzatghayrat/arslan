@@ -71,6 +71,7 @@ Arslan 现在能通过一个小助手 **Arslan Hands** 读取并使用你 Mac �
 | **Hands：先问，不擅自** | 通过 Arslan Hands 操作 Mac app、Arslan 自己的浏览器、你的快捷指令、AppleScript。从不在密码框里打字，也从不碰钥匙串访问、密码管理器、系统设置、macOS 安全提示、通知中心和它自己。 |
 | **你的 Mac，装进口袋** | Arslan for iPhone（即将上架 App Store）通过**你自己的私有 iCloud** 与 Mac 通信，端到端加密。同一张批准卡同时出现在两端，谁先点算谁的；无人回应的卡 300 秒后自动拒绝。 |
 | **本地优先，自带 key** | 记忆存在你 Mac 上的 SQLite 里；模型服务商只看到你发出的那几轮，用的是你的 key。**Arslan 不运营任何服务器。** 纠正它一次，它就记住这个做法——还能撤销。 |
+| <img src="docs/assets/icons/shield-check.svg" width="16"> **凭据始终归你** | Arslan 从不获取或注入你的账号凭据。需要凭据的连接器（如 App Store Connect）仍保持禁用，直到隔离的凭据代理通过安全验收——见 [W11](docs/companion/W11-security-boundary.md)。你批准在沙箱外运行的命令，以你自己的权限执行。 |
 
 ## 一轮对话，从头到尾
 

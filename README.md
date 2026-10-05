@@ -72,6 +72,7 @@ Arslan can now read and use the apps on your Mac — Notes, Mail, Pages and the 
 | **Hands, asked not assumed** | Mac apps through Arslan Hands, Arslan's own browser, your Shortcuts, AppleScript. It never types into a password field, and never touches Keychain Access, password managers, System Settings, macOS security prompts, Notification Center or itself. |
 | **Your Mac in your pocket** | Arslan for iPhone (coming to the App Store) talks to your Mac through **your own private iCloud**, end-to-end encrypted. The same approval card shows on both; the first answer wins, and an unanswered card is declined after 300 s. |
 | **Local-first, bring your own key** | Memory lives in SQLite on your Mac; your model provider sees only the turns you send, on your key. **Arslan runs no servers.** Correct it once and it remembers the practice — with Undo. |
+| <img src="docs/assets/icons/shield-check.svg" width="16"> **Credentials stay yours** | Arslan never fetches or injects your account credentials. Authenticated connectors (App Store Connect and the like) remain disabled until an isolated credential broker passes security review — see [W11](docs/companion/W11-security-boundary.md). A command you approve outside the sandbox runs with your own permissions. |
 
 ## One turn, end to end
 

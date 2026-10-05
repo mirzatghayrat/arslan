@@ -71,6 +71,7 @@ Arslan artık küçük bir yardımcı olan **Arslan Hands** ile Mac'indeki uygul
 | **Eller — varsayılmaz, sorulur** | Arslan Hands ile Mac uygulamaları, Arslan'ın kendi tarayıcısı, Kestirmelerin, AppleScript. Asla bir parola alanına yazmaz; Anahtar Zinciri Erişimi'ne, parola yöneticilerine, Sistem Ayarları'na, macOS güvenlik istemlerine, Bildirim Merkezi'ne ve kendisine asla dokunmaz. |
 | **Mac'in cebinde** | iPhone için Arslan (yakında App Store'da) Mac'inle **kendi özel iCloud'un** üzerinden, uçtan uca şifreli konuşur. Aynı onay kartı ikisinde de görünür; ilk cevap geçerlidir ve yanıtsız kalan bir kart 300 saniye sonra reddedilir. |
 | **Önce yerel, kendi anahtarınla** | Bellek Mac'indeki SQLite'ta durur; model sağlayıcın yalnızca gönderdiğin turları, senin anahtarınla görür. **Arslan hiçbir sunucu çalıştırmaz.** Bir kez düzelt, o yöntemi hatırlar — Geri Al ile. |
+| <img src="docs/assets/icons/shield-check.svg" width="16"> **Kimlik bilgileri senin kalır** | Arslan hesap kimlik bilgilerini asla almaz ya da enjekte etmez. Kimlik doğrulamalı bağlayıcılar (App Store Connect gibi), yalıtılmış bir kimlik bilgisi aracısı güvenlik incelemesinden geçene kadar devre dışıdır — bkz. [W11](docs/companion/W11-security-boundary.md). Sandbox dışında çalıştırmayı onayladığın bir komut kendi yetkilerinle çalışır. |
 
 ## Bir tur, baştan sona
 
