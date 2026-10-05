@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arslan Privacy Policy</title>
+<meta name="description" content="How Arslan for iPhone and Arslan for Mac handle your data: no servers, no data collected.">
+<link rel="canonical" href="https://aralem.dev/arslan/privacy/">
+<link rel="icon" type="image/svg+xml" href="../assets/site/favicon.svg">
+<meta name="color-scheme" content="light dark">
+<style>
+:root{--bg:#F6EBD6;--fg:#2A1E10;--muted:#6B5A44;--rule:rgba(42,30,16,.16);--link:#9A4A12}
+@media (prefers-color-scheme:dark){:root{--bg:#231710;--fg:#F6EBD6;--muted:#C9B79B;--rule:rgba(246,235,214,.18);--link:#F3C34A}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:17px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;-webkit-text-size-adjust:100%}
+main{max-width:44rem;margin:0 auto;padding:28px 20px 72px}
+nav{display:flex;gap:18px;flex-wrap:wrap;font-size:15px;margin-bottom:28px}
+a{color:var(--link);text-underline-offset:2px;overflow-wrap:anywhere}
+a:focus-visible{outline:3px solid var(--link);outline-offset:2px;border-radius:4px}
+h1{font-size:clamp(26px,6vw,34px);line-height:1.2;margin:0 0 6px}
+h2{font-size:22px;margin:44px 0 6px;padding-top:28px;border-top:1px solid var(--rule)}
+h3{font-size:18px;margin:28px 0 4px}
+p,ul{margin:10px 0}
+ul{padding-left:1.3em}
+li{margin:6px 0}
+.updated{color:var(--muted);font-size:15px;margin:0}
+section[lang="zh-Hans"]{line-height:1.8}
+footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--rule);font-size:15px;color:var(--muted);display:flex;gap:18px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<main>
+<nav aria-label="Page"><a href="../">← Arslan</a><a href="#en">English</a><a href="#zh" lang="zh-Hans">中文</a></nav>
+<h1>Arslan Privacy Policy / Arslan 隐私政策</h1>
+<p class="updated">Last updated: 2026-10-05</p>
+<section id="en" lang="en"><h2>English</h2>
+<p><strong>In short: Arslan has no servers, and we collect no data.</strong> Your iPhone talks only to your own Mac, through your own iCloud, end-to-end encrypted.</p>
+<p>This policy covers <strong>Arslan for iPhone</strong> (the App Store app) and how it works with <strong>Arslan for Mac</strong> (free and open source, from aralem.dev).</p>
+<h3>What we collect</h3>
+<p>Nothing. The iPhone app has no analytics, no tracking, no advertising and no account. We, the developer, never receive your messages, files, tasks or any information about how you use the app.</p>
+<h3>How your messages travel</h3>
+<p>When you send a message, a task or an approval from your iPhone, it is encrypted on your iPhone and saved as a record in <strong>your own iCloud private database</strong> (Apple CloudKit), under your Apple ID. Arslan for Mac, signed in to the same Apple ID, reads and decrypts it. Replies travel back the same way. Each record is deleted from your iCloud once the other device confirms it has received it. The encryption keys are created when you pair your devices and stay in the keychains of your iPhone and your Mac, so neither Apple nor we can read the contents. Apple stores the encrypted records for you under Apple's privacy policy.</p>
+<h3>AI processing happens on your Mac</h3>
+<p>Arslan for Mac runs the AI agent on your Mac. To answer you, it sends your requests to the AI model service <strong>you</strong> chose in its settings, with <strong>your own</strong> API key. That service processes them under its own terms and privacy policy. The iPhone app never contacts an AI service itself. Before your first message the app explains this and asks for your agreement; nothing is sent before you agree, and you can withdraw your agreement any time in the app's Settings › Privacy.</p>
+<h3>Permissions and on-device features</h3>
+<ul><li><strong>Camera</strong>: only to scan the pairing code shown on your Mac. Images are not stored or sent.</li><li><strong>Microphone and speech recognition</strong>: to turn your voice into the text of a message, in the app's language. Recognition runs on your iPhone; audio is not stored or sent.</li><li><strong>Face ID or Touch ID</strong>: to confirm an approval. iOS handles it; the app only learns whether it succeeded.</li><li><strong>Notifications</strong>: to tell you when your Mac needs an approval or has finished a task. Notification previews are decrypted on your iPhone, and you can turn previews off in the app's settings.</li></ul>
+<h3>What stays on your iPhone</h3>
+<p>The pairing keys (in the iOS keychain), an encrypted local record of recent messages and tasks so the app can show them when you are offline, and your settings. Unpairing removes the pairing keys and the local record. If you delete the app without unpairing first, iOS may keep the pairing keys in the keychain; removing the phone on your Mac ends that pairing for good.</p>
+<h3>Sharing with others</h3>
+<p>We do not share any data with anyone. The AI model service is one you choose and contract with yourself, on your Mac; your Mac sends it your requests under that service's terms.</p>
+<h3>Keeping and deleting data</h3>
+<p>Records in your iCloud are deleted once they have been delivered, and Arslan for Mac deletes anything left over after 7 days (for example, messages for a phone that stayed switched off). You can remove a paired phone at any time on your Mac (Settings › iPhone) or on your iPhone (Settings › Unpair). You can also delete the app's data from your iCloud in iOS Settings › your name › iCloud.</p>
+<h3>Children</h3>
+<p>Arslan is not directed to children.</p>
+<h3>Changes</h3>
+<p>If this policy changes, we will update this page and the date above.</p>
+<h3>Contact</h3>
+<p><a href="mailto:support@aralem.dev">support@aralem.dev</a></p>
+</section>
+<section id="zh" lang="zh-Hans"><h2>中文</h2>
+<p><strong>简单说：Arslan 没有服务器，我们不收集任何数据。</strong> 你的 iPhone 只和你自己的 Mac 通信，经由你自己的 iCloud，端到端加密。</p>
+<p>本政策适用于 <strong>Arslan iPhone 版</strong>（App Store 上的 App），以及它与 <strong>Arslan Mac 版</strong>（免费开源，从 aralem.dev 下载）配合使用的方式。</p>
+<h3>我们收集什么</h3>
+<p>什么都不收集。iPhone 版没有统计分析、没有跟踪、没有广告，也没有账号。开发者不会收到你的消息、文件、任务，也不会收到任何关于你如何使用这个 App 的信息。</p>
+<h3>消息怎么传</h3>
+<p>你在 iPhone 上发出的消息、任务或批准，会先在 iPhone 上加密，再作为一条记录存进<strong>你自己的 iCloud 私有数据库</strong>（Apple CloudKit），归属于你的 Apple ID。登录同一个 Apple ID 的 Arslan Mac 版读取并解密这条记录。回复按同样的路径传回来。每条记录在对方设备确认收到后，就会从你的 iCloud 里删除。加密密钥在你配对两台设备时生成，只保存在你的 iPhone 和 Mac 的钥匙串里，所以苹果和我们都读不到内容。苹果依照其隐私政策替你保存这些加密后的记录。</p>
+<h3>AI 处理发生在你的 Mac 上</h3>
+<p>AI 智能体运行在你的 Mac 上。为了回答你，Arslan Mac 版会把你的请求发给<strong>你自己</strong>在设置里选择的 AI 模型服务，使用<strong>你自己</strong>的 API key。该服务依照它自己的条款和隐私政策处理这些请求。iPhone 版本身从不连接任何 AI 服务。在你发出第一条消息之前，App 会说明这一点并征求你的同意；你同意之前什么都不会发出，之后也可以随时在 App 的“设置 › 隐私”里撤回同意。</p>
+<h3>权限与本机功能</h3>
+<ul><li><strong>相机</strong>：只用来扫描 Mac 上显示的配对码。图像不保存，也不发送。</li><li><strong>麦克风与语音识别</strong>：把你说的话转成消息文字，识别语言跟随 App 的语言。识别在 iPhone 本机完成；音频不保存，也不发送。</li><li><strong>面容 ID 或触控 ID</strong>：用来确认批准。由 iOS 处理，App 只知道验证是否通过。</li><li><strong>通知</strong>：在 Mac 需要你批准、或任务做完时提醒你。通知预览在 iPhone 上解密，你可以在 App 设置里关闭预览。</li></ul>
+<h3>留在 iPhone 上的数据</h3>
+<p>配对密钥（保存在 iOS 钥匙串里）、一份加密的近期消息和任务记录（方便离线时显示），以及你的设置。解除配对会移除配对密钥和本机记录。如果没有先解除配对就删除 App，iOS 可能仍在钥匙串里保留配对密钥；在 Mac 上移除这台手机，就能彻底结束这次配对。</p>
+<h3>与他人共享</h3>
+<p>我们不与任何人共享任何数据。AI 模型服务由你自己在 Mac 上选择并签约；你的 Mac 依照该服务的条款把请求发给它。</p>
+<h3>保留与删除</h3>
+<p>你 iCloud 里的记录在送达后即被删除；没能送达的（比如发给一台一直关机的手机），Arslan Mac 版会在 7 天后删除。你可以随时在 Mac 上（设置 › iPhone）或 iPhone 上（设置 › 解除配对）移除已配对的手机，也可以在 iOS 的 设置 › 你的名字 › iCloud 里删除这个 App 在 iCloud 中的数据。</p>
+<h3>儿童</h3>
+<p>Arslan 不面向儿童。</p>
+<h3>变更</h3>
+<p>如果本政策有变化，我们会更新本页和上方的日期。</p>
+<h3>联系我们</h3>
+<p><a href="mailto:support@aralem.dev">support@aralem.dev</a></p>
+</section>
+<footer><a href="../">aralem.dev/arslan</a><a href="../privacy/">Privacy</a><a href="../support/">Support</a></footer>
+</main>
+</body>
+</html>

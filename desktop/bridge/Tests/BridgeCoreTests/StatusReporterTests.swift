@@ -63,6 +63,23 @@ final class StatusReporterTests: XCTestCase {
         XCTAssertEqual(sent, [true, false, true, false, true, false, true, false, true, true])
     }
 
+    func testANewSnapshotReplacesTheOneThePhoneHasNotRead() async throws {
+        let (mac, phone, backend, reporter) = pair()
+        let store = try XCTUnwrap(mac.store as? MemoryStore)
+        backend.answers["/api/v1/phone/status"] = .success(status())
+        for minute in 0..<5 { await reporter.tick(now: t0 + Double(minute) * 60) }    // five heartbeats, phone closed
+        try await mac.deleteAcknowledged()
+        let waiting = store.records.values.filter { $0.from == "mac-1" }
+        XCTAssertEqual(waiting.count, 1, "a phone away for a day finds one snapshot, not 1,440")
+        let got = try await phone.receive()
+        XCTAssertEqual(got.map(\.type), ["status.snapshot"])
+        XCTAssertEqual((got[0].envelope["body"] as? [String: Any])?["last_seen"] as? String,
+                       ISO8601DateFormatter().string(from: t0 + 240), "the newest one")
+        _ = try await mac.receive()                                // the phone's ack
+        XCTAssertTrue(mac.unacknowledged.isEmpty, "nothing left waiting")
+        XCTAssertTrue(store.records.isEmpty, "and nothing left in the store")
+    }
+
     func testNoPhoneNoReading() async {
         let store = MemoryStore()
         let lonely = Mailbox(deviceID: "mac-1", signing: .init(), exchange: .init(), store: store)

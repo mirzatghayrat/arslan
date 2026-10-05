@@ -102,6 +102,7 @@ final class MailboxMemoryTests: XCTestCase {
             func save(_ record: EnvelopeRecord) async throws { throw URLError(.notConnectedToInternet) }
             func changes(since token: Data?) async throws -> (records: [EnvelopeRecord], token: Data?) { ([], nil) }
             func delete(ids: [String]) async throws {}
+            func ages() async throws -> [(id: String, createdAt: Date)] { [] }
         }
         let memory = InMemoryMemoryStore()
         var saved = MailboxMemory(); saved.nextSeq = 1_900_000_000_000
@@ -121,6 +122,7 @@ final class MailboxMemoryTests: XCTestCase {
             if failDeletes > 0 { failDeletes -= 1; throw URLError(.networkConnectionLost) }
             try await inner.delete(ids: ids)
         }
+        func ages() async throws -> [(id: String, createdAt: Date)] { try await inner.ages() }
     }
 
     func testAFailedDeleteNeverStopsReadingAndIsRetriedEvenAfterARestart() async throws {
@@ -136,11 +138,13 @@ final class MailboxMemoryTests: XCTestCase {
         let heard = try await before.receive()                               // the delete fails here
         XCTAssertEqual(heard.map(\.type), ["chat.send"], "the same batch is still read")
         XCTAssertNotNil(store.inner.records[reply.id])
-        XCTAssertEqual(memory.memory?.toDelete, [reply.id], "queued, and remembered")
+        let phonesAck = try XCTUnwrap(store.inner.records.values.first { $0.from == "iphone-1" && $0.kind == "ack" })
+        XCTAssertEqual(Set(memory.memory?.toDelete ?? []), [reply.id, phonesAck.id], "queued, and remembered: the reply and the ack that cleared it")
         let after = Mailbox(deviceID: "mac-1", signing: macSigning, exchange: macExchange, store: store, memoryStore: memory)
         after.add(peer: Peer(deviceID: "iphone-1", signing: phoneSigning.publicKey, exchange: phoneExchange.publicKey))
         try await after.deleteAcknowledged()                                // a restart, then the next round
         XCTAssertNil(store.inner.records[reply.id])
+        XCTAssertNil(store.inner.records[phonesAck.id])
         XCTAssertEqual(memory.memory?.toDelete, [])
     }
 }
