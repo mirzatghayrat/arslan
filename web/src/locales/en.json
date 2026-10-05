@@ -890,6 +890,7 @@
     "no_spawns": "No spawns yet",
     "no_spawns_desc": "They appear here once you create one.",
     "remote": "Remote",
+    "remoteGroup": "Remote · iPhone",
     "fromPhone": "Started from iPhone",
     "glyph": {
       "waiting": "Waiting for your approval",

@@ -30,18 +30,21 @@ const head = `<path fill="#fff" d="${face}"/><path fill="#999" d="M310 496L307 2
 writeFileSync(join(out, 'monochrome.svg'), svg(`<rect x="109" y="88" width="1031" height="1032" rx="210" fill="#000"/>${head}`));
 writeFileSync(join(out, 'mark-monochrome.svg'), svg(`<g transform="translate(-130 -170) scale(1.21)">${head}</g>`));
 render(readFileSync(join(out, 'monochrome.svg')), join(out, 'monochrome.png'));
+// The app's own icon (bundle, favicon) is black and white since 0.1.53 (the user's call); frosted
+// stays a choice in Settings › Appearance, applied at run time by desktop/src-tauri/src/app_icon.rs.
+const bundle = join(out, 'monochrome.png');
 for (const [size, name] of [[32, '32x32.png'], [64, '64x64.png'], [128, '128x128.png'], [256, '128x128@2x.png'], [512, 'icon.png']]) {
-  execFileSync('magick', [join(out, 'frosted.png'), '-resize', `${size}x${size}`, join(icons, name)]);
+  execFileSync('magick', [bundle, '-resize', `${size}x${size}`, join(icons, name)]);
 }
-execFileSync('magick', [join(out, 'frosted.png'), '-resize', '1024x1024', join(root, 'desktop/appicon-source.png')]);
+execFileSync('magick', [bundle, '-resize', '1024x1024', join(root, 'desktop/appicon-source.png')]);
 execFileSync('magick', [join(out, 'mark-frosted.png'), '-resize', '256x256', join(root, 'web/public/arslan-mark.png')]);
-execFileSync('magick', [join(out, 'frosted.png'), '-resize', '32x32', join(root, 'web/public/favicon-32.png')]);
-execFileSync('magick', [join(out, 'frosted.png'), '-resize', '180x180', join(root, 'web/public/apple-touch-icon.png')]);
-execFileSync('magick', [join(out, 'frosted.png'), '-define', 'icon:auto-resize=256,128,64,48,32,16', join(icons, 'icon.ico')]);
+execFileSync('magick', [bundle, '-resize', '32x32', join(root, 'web/public/favicon-32.png')]);
+execFileSync('magick', [bundle, '-resize', '180x180', join(root, 'web/public/apple-touch-icon.png')]);
+execFileSync('magick', [bundle, '-define', 'icon:auto-resize=256,128,64,48,32,16', join(icons, 'icon.ico')]);
 if (process.platform === 'darwin') {
   const set = join(tmp, 'Arslan.iconset'); mkdirSync(set);
   for (const n of [16, 32, 128, 256, 512]) for (const scale of [1, 2]) {
-    execFileSync('magick', [join(out, 'frosted.png'), '-resize', `${n * scale}x${n * scale}`, join(set, `icon_${n}x${n}${scale === 2 ? '@2x' : ''}.png`)]);
+    execFileSync('magick', [bundle, '-resize', `${n * scale}x${n * scale}`, join(set, `icon_${n}x${n}${scale === 2 ? '@2x' : ''}.png`)]);
   }
   execFileSync('iconutil', ['-c', 'icns', set, '-o', join(icons, 'icon.icns')]);
 }

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { invoke } from '@tauri-apps/api/core';
 import { shellAvailable } from '../lib/shell';
-import { useIconStore } from '../stores/iconStore';
+import { useIconStore, storedIconStyle } from '../stores/iconStore';
 import IconPicker from '../components/settings/IconPicker';
 import BrandMark from '../components/BrandMark';
 
@@ -15,6 +15,15 @@ beforeEach(() => {
   useIconStore.setState({ style: 'frosted', pending: false, error: false });
 });
 describe('icon preference', () => {
+  it('is black and white until the user picks frosted', async () => {
+    expect(storedIconStyle()).toBe('monochrome');
+    localStorage.setItem('arslan_icon_style', 'frosted');
+    expect(storedIconStyle()).toBe('frosted');
+    vi.mocked(shellAvailable).mockReturnValue(true);
+    vi.mocked(invoke).mockResolvedValueOnce('something else');
+    await useIconStore.getState().initialize();
+    expect(useIconStore.getState().style).toBe('monochrome');
+  });
   it('updates all marks and persists the browser choice', async () => {
     render(<><IconPicker /><BrandMark /></>);
     fireEvent.click(screen.getByRole('radio', { name: 'settings.appIcon_monochrome' }));
