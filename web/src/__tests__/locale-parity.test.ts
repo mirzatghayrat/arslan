@@ -276,8 +276,7 @@ describe("locale parity", () => {
     // +6: bundled app icon choices and persistence feedback.
     // +1: externalLink.failed added by fe9c12b5 (native HTTPS refusal).
     // +1: chat.expert_involved (0.1.42 quiet "asked X to help" line replaces the roster notices).
-    // +1: sidebar.remoteGroup (0.1.53: Remote and what the phone started fold into their own group)
-    expect(enKeys).toHaveLength(1593);
+    expect(enKeys).toHaveLength(1592);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {
