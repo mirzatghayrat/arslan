@@ -48,7 +48,10 @@ jobs:
         run: |
           # No signing or release artifacts from an unverified commit. Branch
           # CI can satisfy this gate before tagging; a different SHA cannot.
-          for attempt in {1..60}; do
+          # Up to 45 min: the backend job alone takes ~21 min (measured twice,
+          # 2026-10-03/04), and a 20-min wait gave up 23 s before CI passed
+          # (run 37225460664) when the build was started right after a push.
+          for attempt in {1..135}; do
             PASSED=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml \
               --commit "$GITHUB_SHA" --limit 100 --json conclusion \
               --jq 'any(.[]; .conclusion == "success")')

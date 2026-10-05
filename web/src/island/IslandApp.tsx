@@ -1,5 +1,5 @@
 import { useEffect, useReducer, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { fetchFeed, type Activity, type Feed } from './feed';
+import { fetchFeed, stopHands, type Activity, type Feed } from './feed';
 import IslandMascot from './IslandMascot';
 import {
   applyFeed, bodyTop, countdown, dismiss, focused, hitRect, hoverEnter, hoverLeave, initialState, interact, isSearchTool, mood, open,
@@ -248,6 +248,7 @@ function View({ s, m, lang, dispatch }: { s: IslandState; m: Mood; lang: Lang; d
           <Who color={STATE_COLOR[m] ?? STATE_COLOR.working} title={titleOf(lang, a.title, a.kind)} label={t(lang, a.kind)} />
           {a.plan && a.plan.items.length > 0 && <Plan items={a.plan.items} />}
           <Ticker steps={s.steps[a.id] ?? []} lang={lang} />
+          {usingHands(s.active) && <StopHands lang={lang} />}
         </Card>
         {others.length > 0 && (
           <div className="card side">
@@ -268,6 +269,24 @@ function View({ s, m, lang, dispatch }: { s: IslandState; m: Mood; lang: Lang; d
       <div className="ititle">{t(lang, 'emptyTitle')}</div>
       <div className="btns"><button type="button" className="btn primary" onClick={() => openConversation(null)}>{t(lang, 'openArslan')}</button></div>
     </Card>
+  );
+}
+
+/** Arslan Hands is working in a Mac app right now (0.1.53). */
+export function usingHands(active: { step: { tool: string } | null }[]): boolean {
+  return active.some((a) => a.step?.tool?.startsWith('desktop_') === true);
+}
+
+/** One click stops every Hands action (the menu bar has the same). */
+function StopHands({ lang }: { lang: Lang }) {
+  const [done, setDone] = useState(false);
+  return (
+    <div className="btns">
+      <button type="button" className="btn" data-testid="island-stop-hands" disabled={done}
+        onClick={(e) => { e.stopPropagation(); stopHands().then((ok) => setDone(ok)).catch(() => {}); }}>
+        {t(lang, done ? 'stoppedHands' : 'stopHands')}
+      </button>
+    </div>
   );
 }
 

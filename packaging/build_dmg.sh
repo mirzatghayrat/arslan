@@ -170,7 +170,25 @@ swiftc -O -o "$TAURI/binaries/listen/arslan-voice" "$HERE/listen/arslan-voice.sw
 test -x "$TAURI/binaries/listen/arslan-voice" \
   || { echo "ERROR: the conversation helper did not build" >&2; exit 1; }
 
-step "[4c/7] building Arslan Bridge (the iPhone companion helper)"
+step "[4c/7] building Arslan Hands"
+# --------------------------------------------------------------------------
+# 0.1.53: the helper app that alone holds Accessibility (spec
+# docs/specs/2026-10-03-0153-hands-agent-desktop.md). agent-desktop is built
+# from our fork at the pinned commit, offline from vendored sources; the bundle
+# is signed inside-out by the script (same identity, hardened runtime) BEFORE
+# tauri build seals it into Arslan.app/Contents/Resources/hands.
+if [ "${HANDS_DEV_UNVERIFIED_PEER:-}" = "1" ]; then
+  echo "ERROR: HANDS_DEV_UNVERIFIED_PEER is a development switch; a DMG never carries it" >&2
+  exit 1
+fi
+rm -rf "$TAURI/binaries/hands"
+mkdir -p "$TAURI/binaries/hands"
+"$HERE/hands/build_hands.sh" "$TAURI/binaries/hands"
+test -x "$TAURI/binaries/hands/Arslan Hands.app/Contents/MacOS/arslan-hands" \
+  && test -x "$TAURI/binaries/hands/agent-desktop" \
+  || { echo "ERROR: Arslan Hands did not build" >&2; exit 1; }
+
+step "[4d/7] building Arslan Bridge (the iPhone companion helper)"
 # --------------------------------------------------------------------------
 # A nested app with its own bundle id, copied by tauri.conf.json bundle.macOS.files
 # into Contents/Helpers BEFORE tauri build, so it is in the .app and in the updater

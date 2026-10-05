@@ -1,0 +1,38 @@
+{
+ "case": "err_snapshot_not_found",
+ "order": 17,
+ "op": "click",
+ "args": {
+  "ref": "@sdoesnotexist1:e1"
+ },
+ "argv": [
+  "click",
+  "--",
+  "@sdoesnotexist1:e1"
+ ],
+ "expect": {
+  "ok": false,
+  "code": "SNAPSHOT_NOT_FOUND",
+  "hint": "look_again"
+ },
+ "exit": 1,
+ "envelope": {
+  "version": "2.4",
+  "ok": false,
+  "command": "click",
+  "error": {
+   "code": "SNAPSHOT_NOT_FOUND",
+   "message": "Snapshot 'sdoesnotexist1' not found",
+   "suggestion": "Re-run a snapshot and retry with the returned snapshot_id (CLI: snapshot, then pass --snapshot <id>; FFI: ad_snapshot then supply snapshot_id to ad_execute_by_ref)",
+   "recovery": {
+    "strategy": "refresh_snapshot_then_retry_original",
+    "retryable": true,
+    "requires_fresh_snapshot": true
+   },
+   "disposition": {
+    "delivery": "not_delivered",
+    "retry": "safe"
+   }
+  }
+ }
+}

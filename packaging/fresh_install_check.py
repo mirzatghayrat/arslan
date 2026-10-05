@@ -49,6 +49,7 @@ import io
 import json
 import os
 import pathlib
+import plistlib
 import re
 import shutil
 import sqlite3
@@ -58,6 +59,7 @@ import tempfile
 import time
 import urllib.error
 import base64
+import hashlib
 import http.client
 import urllib.request
 
@@ -176,6 +178,8 @@ def check_bundle_contents(app: pathlib.Path, c: Checks) -> None:
             except (OSError, subprocess.TimeoutExpired) as exc:
                 c.ok(False, "frozen service sandbox denies host access and preserves CSV/PNG artifacts", str(exc))
 
+    check_hands_bundle(app, c)
+
     # NO ASSERTION ON THE WINDOW-DRAGGING GRANT, and the reason is measured
     # rather than assumed. The obvious artifact-level check is to look for
     # "core:window:allow-start-dragging" in Contents/MacOS/Arslan. Measured on
@@ -265,6 +269,67 @@ def check_bridge(app: pathlib.Path, c: Checks) -> None:
              "Arslan Bridge ships with its iCloud (CloudKit) and Push entitlements", str(shipped)[:400])
     else:
         print("  NOTE  Arslan Bridge has no provisioning profile; iCloud entitlements not expected")
+
+
+def check_hands_bundle(app: pathlib.Path, c: Checks) -> None:
+    """0.1.53 Arslan Hands: the helper that alone holds Accessibility. Its own
+    bundle id (macOS grants the permission to IT, never to Arslan.app), the same
+    Team ID as the app (its peer check trusts only arslan-server signed by its
+    own team), and agent-desktop signed under its own identifier with the
+    recorded sha256."""
+    hands = app / "Contents/Resources/hands/Arslan Hands.app"
+    if not c.ok((hands / "Contents/Info.plist").is_file(), "Arslan Hands ships inside the app", str(hands)):
+        return
+    with (hands / "Contents/Info.plist").open("rb") as f:
+        info = plistlib.load(f)
+    c.ok(info.get("CFBundleIdentifier") == "com.arslan.desktop.hands", "Arslan Hands has its own bundle id",
+         str(info.get("CFBundleIdentifier")))
+    c.ok(info.get("LSUIElement") is True, "Arslan Hands has no Dock icon")
+    helper, inner = hands / "Contents/MacOS/arslan-hands", hands.parent / "agent-desktop"
+    c.ok(not (hands / "Contents/MacOS/agent-desktop").exists(),
+         "agent-desktop is NOT inside Arslan Hands.app (there it would borrow the app's grant)")
+    c.ok(helper.is_file() and os.access(helper, os.X_OK) and inner.is_file() and os.access(inner, os.X_OK),
+         "the helper and agent-desktop are executable")
+    verify = subprocess.run(["codesign", "--verify", "--strict", "--deep", str(hands)], capture_output=True, text=True)
+    c.ok(verify.returncode == 0, "Arslan Hands' signature verifies", verify.stderr[-500:])
+    app_team, hands_team = _codesign_info(app).get("TeamIdentifier"), _codesign_info(hands).get("TeamIdentifier")
+    c.ok(hands_team not in (None, "not set") and hands_team == app_team,
+         "Arslan Hands is signed by the app's team", f"app {app_team}, hands {hands_team}")
+    inner_id = _codesign_info(inner).get("Identifier")
+    c.ok(inner_id == "com.arslan.desktop.hands.agent-desktop", "agent-desktop is signed under its own identifier",
+         str(inner_id))
+    recorded = (hands / "Contents/Resources/agent-desktop.sha256").read_text().split()[0] \
+        if (hands / "Contents/Resources/agent-desktop.sha256").is_file() else ""
+    actual = hashlib.sha256(inner.read_bytes()).hexdigest() if inner.is_file() else ""
+    c.ok(bool(recorded) and recorded == actual, "agent-desktop is the binary the build recorded",
+         f"recorded {recorded[:12]}…, shipped {actual[:12]}…")
+    c.ok((hands / "Contents/Resources/NOTICE").is_file()
+         and (hands / "Contents/Resources/LICENSE-agent-desktop").is_file(),
+         "the Apache-2.0 notice and license ship with agent-desktop")
+
+
+def check_hands_runtime(port: int, token: str, c: Checks) -> None:
+    """Through the running backend: Hands starts via LaunchServices, answers, and
+    in a signed build verifies its peer (this backend). Accessibility is not
+    granted on a fresh machine and that is expected (D3: the user allows it)."""
+    req = urllib.request.Request(f"http://127.0.0.1:{port}/api/v1/hands/check", method="POST",
+                                 headers={"Authorization": f"Bearer {token}"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            status = json.loads(r.read())
+    except Exception as exc:  # noqa: BLE001
+        c.ok(False, "Arslan Hands starts and answers through the backend", str(exc))
+        return
+    c.ok(status.get("running") is True, "Arslan Hands starts and answers through the backend", str(status))
+    c.ok(status.get("peer_check") == "verified",
+         "Arslan Hands accepted the signed backend as its peer", str(status))
+    stop = urllib.request.Request(f"http://127.0.0.1:{port}/api/v1/hands/stop", method="POST",
+                                  headers={"Authorization": f"Bearer {token}"})
+    try:
+        with urllib.request.urlopen(stop, timeout=10) as r:
+            c.ok(json.loads(r.read()).get("stopped") is True, "Stop answers")
+    except Exception as exc:  # noqa: BLE001
+        c.ok(False, "Stop answers", str(exc))
 
 
 def _boot_environment(home: pathlib.Path) -> dict[str, str]:
@@ -461,6 +526,7 @@ def check_runtime(port: int, home: pathlib.Path, log: pathlib.Path, c: Checks) -
         authed = _status({"Authorization": f"Bearer {token}"})
         c.ok(authed == 200, "the persisted token is accepted",
              f"authed GET /api/v1/spawns returned {authed}")
+        check_hands_runtime(port, token, c)
 
     # ---- the chat transport actually holds a WebSocket ------------------
     # THE BUG THIS CATCHES (0.1.0-0.1.6, found 2026-07-27): `websockets` sat in

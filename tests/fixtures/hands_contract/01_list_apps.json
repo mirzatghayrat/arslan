@@ -1,0 +1,35 @@
+{
+ "case": "list_apps",
+ "order": 1,
+ "op": "list_apps",
+ "args": {},
+ "argv": [
+  "list-apps"
+ ],
+ "expect": {
+  "ok": true,
+  "reads": {
+   "/data/apps": "array",
+   "/data/apps/0/name": "string",
+   "/data/apps/0/bundle_id": "string",
+   "/data/apps/0/pid": "integer"
+  }
+ },
+ "exit": 0,
+ "envelope": {
+  "version": "2.4",
+  "ok": true,
+  "command": "list-apps",
+  "data": {
+   "apps": [
+    {
+     "bundle_id": "com.arslan.hands-fixture",
+     "name": "Hands Fixture",
+     "pid": 98829,
+     "presentation": "background",
+     "process_instance": "macos-proc-v1:1790986630:771228"
+    }
+   ]
+  }
+ }
+}

@@ -1,0 +1,52 @@
+{
+ "case": "scroll",
+ "order": 14,
+ "op": "scroll",
+ "args": {
+  "ref": "@sfixture0:e6",
+  "direction": "down",
+  "amount": 3
+ },
+ "argv": [
+  "scroll",
+  "--direction=down",
+  "--amount=3",
+  "--",
+  "@sfixture0:e6"
+ ],
+ "expect": {
+  "ok": true,
+  "reads": {
+   "/data/action": "string"
+  }
+ },
+ "exit": 0,
+ "envelope": {
+  "version": "2.4",
+  "ok": true,
+  "command": "scroll",
+  "data": {
+   "action": "scroll",
+   "details": {
+    "auto_wait": {
+     "lease_contention_count": 0,
+     "lease_hold_ms": 76,
+     "read_only_preflight_attempts": 2,
+     "read_only_resolve_attempts": 2
+    }
+   },
+   "disposition": {
+    "delivery": "delivered_verified",
+    "retry": "unsafe"
+   },
+   "steps": [
+    {
+     "label": "Scroll",
+     "mechanism": "semantic_api",
+     "outcome": "succeeded",
+     "verified": true
+    }
+   ]
+  }
+ }
+}

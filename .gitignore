@@ -55,6 +55,7 @@ packaging/build/
 
 # Tauri build artefacts (the sidecar is staged here by build_dmg.sh)
 desktop/src-tauri/target/
+desktop/hands/target/
 desktop/src-tauri/binaries/
 desktop/node_modules/
 

@@ -231,3 +231,22 @@ Optional webpage preview installs the separately integrity-locked Playwright MCP
 and Chromium Headless Shell runtime only after the user requests setup. It is not
 copied into the desktop bundle. The installation retains upstream package and
 browser notices; see `server/resources/browser_runtime/package-lock.json`.
+
+---
+
+## Arslan Hands — `Arslan.app/Contents/Resources/hands/` (desktop 0.1.53+)
+
+### lahfir/agent-desktop — Apache License 2.0 (verified 2026-10-03)
+- <https://github.com/lahfir/agent-desktop>, Copyright its authors. The LICENSE file was
+  read at the source (tag `v0.9.4`, commit `a4a695fdd1f673426579696c7e17074910e799fc`):
+  the Apache License, Version 2.0, unmodified. Upstream ships no NOTICE file.
+- Shipped **unmodified**, built from our fork `mirzatghayrat/agent-desktop` at the commit
+  pinned in `packaging/hands/agent-desktop.pin` (upstream `v0.9.4` plus commits that only
+  vendor its dependencies). The binary ships beside the helper, as `hands/agent-desktop` next
+  to `hands/Arslan Hands.app` in Arslan.app's Resources; its LICENSE ships in the helper as
+  `Arslan Hands.app/Contents/Resources/LICENSE-agent-desktop`, with a `NOTICE`.
+- Its Rust dependencies (62 crates, vendored in the fork) are MIT, Apache-2.0, MIT OR
+  Apache-2.0, Unlicense OR MIT, or include Unicode-3.0; `cargo deny check` (licenses,
+  bans, sources, advisories) gates every CI run and therefore every release.
+- Arslan's own helper `arslan-hands` (`desktop/hands/`) depends only on serde, serde_json
+  and libc (MIT OR Apache-2.0).

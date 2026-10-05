@@ -1,0 +1,29 @@
+[package]
+name = "arslan-hands"
+version = "0.1.0"
+description = "Arslan Hands: the helper app that holds Accessibility and runs agent-desktop for Arslan"
+edition = "2021"
+rust-version = "1.77.2"
+license = "Apache-2.0"
+publish = false
+
+# Kept tiny on purpose: this process holds the Accessibility grant, so every
+# dependency is code that runs with it. No async runtime, no networking crates.
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+libc = "0.2"
+
+[features]
+# DEVELOPMENT ONLY: skip the peer check although the build is signed, so a
+# Hands signed with a personal Apple Development certificate (a stable identity
+# macOS can grant Accessibility to) can be driven by an unsigned dev backend.
+# Never in a release: build_dmg.sh does not set it, and the fresh-install
+# acceptance requires peer_check == "verified".
+dev-unverified-peer = []
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true

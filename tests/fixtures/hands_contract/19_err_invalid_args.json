@@ -1,0 +1,31 @@
+{
+ "case": "err_invalid_args",
+ "order": 19,
+ "op": null,
+ "args": null,
+ "argv": [
+  "click",
+  "--",
+  "@1"
+ ],
+ "expect": {
+  "ok": false,
+  "code": "INVALID_ARGS",
+  "hint": null,
+  "note": "Hands never builds this: unqualified refs are refused before a command line exists"
+ },
+ "exit": 1,
+ "envelope": {
+  "version": "2.4",
+  "ok": false,
+  "command": "click",
+  "error": {
+   "code": "INVALID_ARGS",
+   "message": "Invalid ref_id '@1': expected @<snapshot_id>:e<N> or legacy @e<N> with an explicit snapshot",
+   "disposition": {
+    "delivery": "not_delivered",
+    "retry": "safe"
+   }
+  }
+ }
+}

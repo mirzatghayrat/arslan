@@ -633,7 +633,7 @@ export type ArslanServerMessage =
   | { type: "propose_enroll_node"; call_id: string; name: string; host: string; user: string; fingerprints: string[] }
   | { type: "propose_workspace_write"; call_id: string; workspace: string; action: string; path: string; background?: boolean }
   | { type: "propose_schedule"; call_id: string; name: string; when: string; background?: boolean }
-  | { type: "propose_action"; call_id: string; kind: "browser_site" | "mac_shortcut" | "mac_script"; target: string;
+  | { type: "propose_action"; call_id: string; kind: ActionKind; target: string;
       detail: string; background?: boolean }
   // NEXT BUILD (conversation-driven MCP, Task 3/5): Arslan proposes connecting a preset
   // MCP server. Emitting this frame connects NOTHING — env_keys carries credential NAMES +
@@ -1303,3 +1303,8 @@ export interface SshAuditEntry {
   error: string | null;
   conversation_id: string | null;
 }
+
+/** What a confirmation card for an action asks about (0.1.45 browser / Mac;
+ * 0.1.53 Mac apps through Arslan Hands: look once per app per conversation,
+ * act once per app per job, a risky button every time). */
+export type ActionKind = "browser_site" | "mac_shortcut" | "mac_script" | "desktop_look" | "desktop_app" | "desktop_risky";

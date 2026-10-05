@@ -1,0 +1,51 @@
+{
+ "case": "find",
+ "order": 5,
+ "op": "find",
+ "args": {
+  "app": "Hands Fixture",
+  "role": "button",
+  "name": "Save"
+ },
+ "argv": [
+  "find",
+  "--app=Hands Fixture",
+  "--role=button",
+  "--name=Save",
+  "--limit=30"
+ ],
+ "expect": {
+  "ok": true,
+  "reads": {
+   "/data/matches": "array",
+   "/data/matches/0/ref_id": "string",
+   "/data/matches/0/role": "string",
+   "/data/matches/0/name": "string",
+   "/data/snapshot_id": "string"
+  }
+ },
+ "exit": 0,
+ "envelope": {
+  "version": "2.4",
+  "ok": true,
+  "command": "find",
+  "data": {
+   "matches": [
+    {
+     "interactive": true,
+     "name": "Save",
+     "path": [
+      "window:Hands Fixture"
+     ],
+     "ref_id": "@s24c360hm28tco:e1",
+     "role": "button",
+     "states": [],
+     "value": null
+    }
+   ],
+   "snapshot_id": "s24c360hm28tco",
+   "total_matches": 1,
+   "truncated": false
+  }
+ }
+}

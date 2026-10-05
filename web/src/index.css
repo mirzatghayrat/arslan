@@ -2037,6 +2037,10 @@ button:disabled {
   background: var(--surface);
   max-width: 32rem;
 }
+/* 0.1.53: a button that deletes, sends, pays, buys, transfers or submits. */
+.runcmd-card--risky {
+  border-color: var(--warning);
+}
 .runcmd-card__label {
   font-size: 0.8125rem;
   font-weight: 600;
