@@ -157,6 +157,7 @@ mod tests {
             ("com.apple.notificationcenterui", "Notification Center"),
             ("com.arslan.desktop", "Arslan"),
             ("com.arslan.desktop.hands", "Arslan Hands"),
+            ("com.arslan.desktop.hands.dev", "Arslan Hands (dev)"),
         ] {
             assert_eq!(tier(bundle, name, &[]), Tier::Denied, "{bundle}");
         }

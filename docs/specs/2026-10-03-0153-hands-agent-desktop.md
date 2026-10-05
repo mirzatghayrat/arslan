@@ -305,3 +305,15 @@ These change the design above; each was measured on the user's Mac (macOS 26.6).
     again: CI checks every vendored file of the pinned commit against its checksums
     (`scripts/verify_vendored_checksums.py`: on `ccd72ee0` it names exactly those two files, on `2c2f505e`
     nothing), and `build_hands.sh` refuses a local checkout whose `vendor/` holds files git ignores.
+15. **First run of the signed Hands on the user's Mac: refused although the switch showed on.** tccd logged
+    "Failed to match existing code requirement for subject com.arslan.desktop.hands and service
+    kTCCServiceAccessibility" for Hands and for its agent-desktop child (the child is judged as Hands, as
+    designed). macOS keys the grant by bundle id and keeps the code requirement of the build that asked; the
+    entry had been created by the development build (Apple Development certificate, same bundle id), so the
+    Developer ID build matched nothing, no prompt appeared, and System Settings still showed the switch on. The
+    model then fell back to AppleScript and osascript, one approval card per script ("it kept asking"). Changes:
+    development builds now get their own bundle id `com.arslan.desktop.hands.dev` ("Arslan Hands (dev)"), still
+    under the never-list's `com.arslan.desktop.*`; the PERM_DENIED advice tells the model to stop rather than
+    switch to AppleScript, and tells the user to remove the entry and ask again; the settings line for "not
+    allowed" says the same in six languages. A user who never ran a development build cannot hit this; a Developer
+    ID re-sign keeps the team, so the requirement still matches across releases.

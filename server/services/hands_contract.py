@@ -30,9 +30,14 @@ MESSAGES = {
                    "a more specific ref.",
     "open_app": "That app (or a window of it) is not open on the current screen. Open it first — e.g. "
                 "run_command `open -a \"<App>\"` — or ask the user to bring it up; Hands never launches apps.",
-    "allow_hands": "Arslan Hands does not have Accessibility permission yet. macOS has just shown its prompt: "
-                   "the user turns on “Arslan Hands” in System Settings → Privacy & Security → "
-                   "Accessibility, then you try again. Tell the user exactly that.",
+    # Measured 2026-10-05: with a stale grant (a development build of the same bundle id) the switch shows
+    # on, macOS shows no prompt, and the model fell back to AppleScript — one approval card per script.
+    "allow_hands": "Arslan Hands does not have Accessibility permission: macOS refused it, even if its switch "
+                   "looks on. Stop this part of the task: do not do it with AppleScript, osascript or the "
+                   "terminal instead (every script would ask the user again). Tell the user exactly this: open "
+                   "System Settings → Privacy & Security → Accessibility; if “Arslan Hands” is listed, remove "
+                   "it with “−”; then in Arslan open Settings → Arslan Hands, click “Ask macOS” and turn "
+                   "Arslan Hands on. Then try again.",
     "use_set_value": "This field cannot take typed text without taking focus, which Arslan never does.",
     "other_way": "That element cannot do this. Look for another way (a menu item, a different button).",
 }

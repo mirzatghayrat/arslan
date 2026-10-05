@@ -403,6 +403,11 @@ async def test_without_accessibility_hands_asks_macos_once_and_says_where_the_sw
     await look.execute({"app": "Notes"})
     assert first["code"] == "PERM_DENIED" and "Privacy & Security → Accessibility" in first["error"]
     assert hands.ops("request_permission") == ["request_permission"]
+    # Measured on a real Mac: a stale grant kept the switch on while macOS refused, no prompt came, and
+    # the model ran AppleScript after AppleScript, each one asking the user. The advice stops that and
+    # names the fix (remove the entry, ask again).
+    assert "do not do it with AppleScript" in first["error"]
+    assert "remove it with “−”" in first["error"] and "Ask macOS" in first["error"]
 
 
 async def test_a_read_that_times_out_is_tried_once_more_an_action_never(hands, asks, in_turn, monkeypatch):

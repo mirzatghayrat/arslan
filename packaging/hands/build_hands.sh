@@ -87,6 +87,19 @@ if [ "${HANDS_DEV_UNVERIFIED_PEER:-}" = "1" ]; then
 fi
 "$CARGO" build --release --locked --manifest-path "$ROOT/desktop/hands/Cargo.toml" \
   --target-dir "$WORK/hands-target" ${FEATURES[@]+"${FEATURES[@]}"}
+# A development build (dev peer check, or not signed with an identity) gets its own bundle id and
+# name. macOS keys the Accessibility grant by bundle id and keeps the code requirement of the build
+# that asked, so a development build and the signed release sharing com.arslan.desktop.hands leave
+# the other one refused while its switch shows on (measured on the user's Mac, 2026-10-05: tccd
+# "Failed to match existing code requirement for subject com.arslan.desktop.hands"). Both ids fall
+# under the never-list's com.arslan.desktop.* entry.
+BUNDLE_ID=com.arslan.desktop.hands
+BUNDLE_NAME="Arslan Hands"
+if [ "${HANDS_DEV_UNVERIFIED_PEER:-}" = "1" ] || [ -z "${APPLE_SIGNING_IDENTITY:-}" ]; then
+  BUNDLE_ID=com.arslan.desktop.hands.dev
+  BUNDLE_NAME="Arslan Hands (dev)"
+  echo "    development bundle id $BUNDLE_ID (its own Accessibility entry)" >&2
+fi
 HANDS_BIN="$WORK/hands-target/release/arslan-hands"
 
 # ── 3. the bundle ───────────────────────────────────────────────────────────
@@ -111,9 +124,9 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleIdentifier</key><string>com.arslan.desktop.hands</string>
-  <key>CFBundleName</key><string>Arslan Hands</string>
-  <key>CFBundleDisplayName</key><string>Arslan Hands</string>
+  <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
+  <key>CFBundleName</key><string>$BUNDLE_NAME</string>
+  <key>CFBundleDisplayName</key><string>$BUNDLE_NAME</string>
   <key>CFBundleExecutable</key><string>arslan-hands</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
@@ -148,7 +161,7 @@ sign() {
   done
   return 1
 }
-sign --identifier com.arslan.desktop.hands.agent-desktop "$OUT/agent-desktop"
+sign --identifier "$BUNDLE_ID.agent-desktop" "$OUT/agent-desktop"
 SIGNED_SHA="$(shasum -a 256 "$OUT/agent-desktop" | cut -d' ' -f1)"
 echo "$SIGNED_SHA  agent-desktop, signed (built $AD_SHA from $REPOSITORY @ $COMMIT)" \
   > "$APP/Contents/Resources/agent-desktop.sha256"
