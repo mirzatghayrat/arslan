@@ -8,9 +8,10 @@ import type { BackendStatus } from "../hooks/useBackendStatus";
 import BackgroundJobs from "./companion/BackgroundJobs";
 import { threadDisplayTitle } from "../lib/threadTitles";
 import ConversationGlyph from "./ConversationGlyph";
-import { remoteFirst, type ConversationMeta } from "../lib/conversationMeta";
+import { phoneSide, remoteFirst, type ConversationMeta } from "../lib/conversationMeta";
 import { Smartphone } from "lucide-react";
 
+const REMOTE_OPEN_KEY = "arslan_sidebar_remote_open";
 interface ArslanThread { id: string; title: string; archived?: boolean; temporary?: boolean; defaultTitle?: boolean }
 interface SidebarProps {
   threads: ArslanThread[]; activeThreadId: string; onSelectThread: (id: string) => void; onAddThread: () => void;
@@ -30,7 +31,21 @@ export default function Sidebar(props: SidebarProps) {
     onDeleteThread, backendStatus, onOpenConversation, inboxUnread = 0, inboxHigh = 0, meta = {} } = props;
   const { t } = useTranslation();
   const [archivedOpen, setArchivedOpen] = useState(false);
-  const activeThreads = remoteFirst(threads.filter(thread => !thread.archived), meta);
+  // 0.1.53 (the user's call): Remote and what the iPhone started sit in their own group, which
+  // folds away, so they don't mix with the Arslan conversations. Open by default; remembered.
+  const [remoteOpen, setRemoteOpen] = useState(() => {
+    try { return localStorage.getItem(REMOTE_OPEN_KEY) !== "0"; } catch { return true; }
+  });
+  function toggleRemote() {
+    setRemoteOpen(open => {
+      try { localStorage.setItem(REMOTE_OPEN_KEY, open ? "0" : "1"); } catch { /* private mode */ }
+      return !open;
+    });
+  }
+  const unarchived = remoteFirst(threads.filter(thread => !thread.archived), meta);
+  const remoteThreads = unarchived.filter(thread => phoneSide(thread, meta));
+  const activeThreads = unarchived.filter(thread => !phoneSide(thread, meta));
+  const activeInsideRemote = activeSection === "arslan" && remoteThreads.some(thread => thread.id === activeThreadId);
   const archivedThreads = threads.filter(thread => thread.archived);
   // 0.1.44 one Arslan: the sidebar lists conversations only; former experts are
   // turned into skills from Capabilities.
@@ -81,8 +96,17 @@ export default function Sidebar(props: SidebarProps) {
         {/* 0.1.47: no "Conversations" nav entry and no second "+" here. The rows below ARE the way
             back to a conversation (the open one is highlighted), and "New conversation" at the top
             is the one way to start one. */}
-        <div className="mb-2 px-3 text-xs text-muted-foreground">{t("workspace.recentConversations")}</div>
         <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
+          {remoteThreads.length > 0 && <div data-testid="remote-group" className="mb-2 border-b border-border/40 pb-2">
+            <button id="btn-toggle-remote-group" onClick={toggleRemote} aria-expanded={remoteOpen}
+              className={`relative flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs ${!remoteOpen && activeInsideRemote ? "text-foreground" : "text-muted-foreground"} hover:text-foreground`}>
+              {!remoteOpen && activeInsideRemote && marker}
+              <Smartphone size={13} /><span className="flex-1">{t("sidebar.remoteGroup")} ({remoteThreads.length})</span>
+              {remoteOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+            </button>
+            {remoteOpen && remoteThreads.map(thread => renderThread(thread, false))}
+          </div>}
+          <div className="mb-2 px-3 text-xs text-muted-foreground">{t("workspace.recentConversations")}</div>
           {activeThreads.map(thread => renderThread(thread, false))}
           {archivedThreads.length > 0 && <div className="mt-2 border-t border-border/40 pt-2">
             <button id="btn-toggle-archived-threads" onClick={() => setArchivedOpen(value => !value)} aria-expanded={archivedOpen}

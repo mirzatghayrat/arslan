@@ -8,9 +8,11 @@ const KEY = 'arslan_icon_style';
 export function isIconStyle(value: unknown): value is IconStyle {
   return value === 'frosted' || value === 'monochrome';
 }
-function load(): IconStyle {
-  try { const value = localStorage.getItem(KEY); return isIconStyle(value) ? value : 'frosted'; }
-  catch { return 'frosted'; }
+/** Black and white unless the user picked frosted (the default since 0.1.53). */
+export const DEFAULT_ICON_STYLE: IconStyle = 'monochrome';
+export function storedIconStyle(): IconStyle {
+  try { const value = localStorage.getItem(KEY); return isIconStyle(value) ? value : DEFAULT_ICON_STYLE; }
+  catch { return DEFAULT_ICON_STYLE; }
 }
 function publish(style: IconStyle) {
   try { localStorage.setItem(KEY, style); } catch { /* Private browsing may deny persistence. */ }
@@ -25,14 +27,14 @@ interface IconState {
   select: (style: IconStyle) => Promise<void>;
 }
 export const useIconStore = create<IconState>((set, get) => ({
-  style: load(), pending: false, error: false,
+  style: storedIconStyle(), pending: false, error: false,
   initialize: async () => {
     if (get().pending) return;
     set({ pending: true });
     try {
       // Native preference survives the sidecar's port/origin changing at launch.
       const native = shellAvailable() ? await invoke<unknown>('get_app_icon') : get().style;
-      const style = isIconStyle(native) ? native : 'frosted';
+      const style = isIconStyle(native) ? native : DEFAULT_ICON_STYLE;
       publish(style); set({ style });
     } catch { publish(get().style); }
     finally { set({ pending: false }); }

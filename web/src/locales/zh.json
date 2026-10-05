@@ -890,6 +890,7 @@
     "no_spawns": "还没有专家",
     "no_spawns_desc": "创建之后会出现在这里。",
     "remote": "Remote",
+    "remoteGroup": "Remote · iPhone",
     "fromPhone": "由 iPhone 发起",
     "glyph": {
       "waiting": "等你批准",
