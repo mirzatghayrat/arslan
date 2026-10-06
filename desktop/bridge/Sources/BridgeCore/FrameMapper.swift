@@ -151,6 +151,8 @@ public final class FrameMapper {
         return body
     }
 
+    public static let biometricProof: Set<String> = ["faceid", "touchid"]
+
     /// A phone message → the frames a window would send. Throws `approval_expired` for a
     /// card the Mac no longer has open.
     public func backendFrames(for type: String, body: [String: Any]) throws -> [[String: Any]] {
@@ -161,7 +163,10 @@ public final class FrameMapper {
             guard let id = body["approval_id"] as? String, let kind = cards[id], answered.insert(id).inserted else {
                 throw BridgeError.code("approval_expired")
             }
-            let approve = body["decision"] as? String == "approve" && body["auth"] as? String == "faceid"
+            // A yes counts only with biometric proof the phone vouches for: Face ID or Touch ID (iPhone
+            // SE). Anything else, "none" or unknown, is a no. Before 2026-10-06 only "faceid" counted,
+            // so a Touch ID yes turned into a cancel (iPhone store audit).
+            let approve = body["decision"] as? String == "approve" && FrameMapper.biometricProof.contains(body["auth"] as? String ?? "")
             // Marked, so the Mac can tell the other windows the phone answered it.
             var frame: [String: Any] = ["type": "\(approve ? "confirm" : "cancel")_\(kind.rawValue)", "call_id": id,
                                         "source": "phone"]

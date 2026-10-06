@@ -132,8 +132,10 @@ public final class ConversationLinks {
                 _ = try await mailbox.send(type: "file.offer", body: file, to: received.from, asset: data)
             case "hello":
                 _ = try await mailbox.send(type: "hello", body: ["app_version": "mac", "protocol_version": Wire.version,
+                                                                // "touchid": a Touch ID yes counts (the phone
+                                                                // holds one back from a Mac without it)
                                                                 "capabilities": ["chat", "approvals", "jobs", "history", "files",
-                                                                                 "status", "review", "tasks"]],
+                                                                                 "status", "review", "tasks", "touchid"]],
                                            to: received.from)
                 await status?.send(to: received.from)
             case "error":
