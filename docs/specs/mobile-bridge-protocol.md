@@ -209,7 +209,7 @@ never the content. A lock-screen alert shows generic text unless the user turned
 | `chat.event` | Mac → phone | `conversation_id`, `kind` (message/progress/error), `message_id`, `text`, `final`, `job_id?`, `run_id?` |
 | `job.event` | Mac → phone | `id`, `conversation_id`, `state` (running/done/partial/stuck/stopped), `title`, `current_step`, `completed`, `total`, `plan[]`, `summary?`, `files[]`, `run_id?`, `origin?`, `criteria[]?` |
 | `approval.request` | Mac → phone | `approval_id`, `action`, `target`, `risk` (write/send/delete/install/payment/publish), `task_id`, `task_title`, `expires_at` |
-| `approval.answer` | phone → Mac | `approval_id`, `decision` (approve/deny), `auth` (`faceid` for approve, `none` for deny), `ts` |
+| `approval.answer` | phone → Mac | `approval_id`, `decision` (approve/deny), `auth` (`faceid` or `touchid` for approve, `none` for deny; a Mac that counts `touchid` says `touchid` in its hello capabilities, and a phone sends a Touch ID yes only to such a Mac), `ts` |
 | `approval.result` | Mac → phone | `approval_id`, `outcome` (done/denied/expired/failed), `detail?` |
 | `file.offer` / `file.get` | Mac → phone / phone → Mac | `id`, `name`, `size`, `mime_type`, `sha256` (hex of the plaintext) / `file_id` |
 | `run.get` / `run.result` | phone → Mac / Mac → phone | `run_id` / `run_id`, `conversation_id`, `title`, `state` (working/done/failed/stopped), `started_at`, `duration_ms`, `total`, `steps[]`, `files[]` (§5.5) |

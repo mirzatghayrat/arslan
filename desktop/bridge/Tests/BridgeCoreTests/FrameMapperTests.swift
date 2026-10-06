@@ -73,6 +73,19 @@ final class FrameMapperTests: XCTestCase {
         }
     }
 
+    func testAYesNeedsFaceIDOrTouchIDAndNothingElse() throws {
+        func answer(_ auth: String, _ decision: String = "approve") throws -> String? {
+            let m = FrameMapper(conversationID: "c1")
+            _ = m.phoneMessages(for: ["type": "propose_workspace_write", "call_id": "w", "path": "a.txt", "reason": "r"], now: t0)
+            return try m.backendFrames(for: "approval.answer", body: ["approval_id": "w", "decision": decision, "auth": auth, "ts": "t"]).first?["type"] as? String
+        }
+        XCTAssertEqual(try answer("faceid"), "confirm_workspace_write")
+        XCTAssertEqual(try answer("touchid"), "confirm_workspace_write", "iPhone SE approves with Touch ID")
+        XCTAssertEqual(try answer("none"), "cancel_workspace_write", "no proof, no yes")
+        XCTAssertEqual(try answer("passcode"), "cancel_workspace_write", "only biometric proof counts")
+        XCTAssertEqual(try answer("touchid", "deny"), "cancel_workspace_write")
+    }
+
     func testHowTheMacDecidedACardReachesThePhoneOnce() throws {
         let m = FrameMapper(conversationID: "c1")
         for id in ["p", "m", "x", "d"] { _ = m.phoneMessages(for: ["type": "propose_schedule", "call_id": id, "name": "n", "when": "w"]) }
