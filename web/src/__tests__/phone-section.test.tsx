@@ -1,7 +1,7 @@
 /** Settings › iPhone (mobile bridge §6.1): offline state, a pairing code, deciding a request
  *  only by clicking, removing a phone. */
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, waitFor, within } from "@testing-library/react";
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string, opts?: Record<string, unknown>) =>
@@ -107,11 +107,13 @@ describe("Settings › iPhone", () => {
     expect(row).toHaveTextContent("Mirror iPhone");
     expect(screen.getByTestId("phone-device-state-iphone-new")).toHaveTextContent("settings.phoneConnecting");
     expect(screen.queryByText("settings.phoneNone")).toBeNull();
+    expect(within(row).queryByLabelText("settings.phoneRemove")).toBeNull();   // not the Bridge's yet: nothing to remove
     // The Bridge's list names it and says it has heard from it: one row, its own state.
     status.mockResolvedValue(online({ devices: [{ device_id: "iphone-new", name: "Mirror iPhone",
       paired_at: new Date().toISOString(), state: "connected", last_seen: new Date().toISOString() }] }));
     await waitFor(() => expect(screen.getByTestId("phone-device-state-iphone-new")).toHaveAttribute("data-state", "connected"));
     expect(screen.getAllByTestId("phone-device-iphone-new")).toHaveLength(1);
+    expect(within(screen.getByTestId("phone-device-iphone-new")).getByLabelText("settings.phoneRemove")).toBeInTheDocument();
     expect(screen.getByTestId("phone-device-state-iphone-new")).toHaveTextContent("settings.phoneConnectedSeen:settings.timeJustNow");
   });
 

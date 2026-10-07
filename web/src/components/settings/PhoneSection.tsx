@@ -107,9 +107,10 @@ export default function PhoneSection({ pollMs = 3000, enabled = false, onEnabled
           <span className="flex-1">{device.name}</span>
           <DeviceState device={device} />
           {device.paired_at && <span className="text-[11px] text-muted-foreground">{t("settings.phonePairedAt", { when: new Date(device.paired_at).toLocaleDateString() })}</span>}
-          <button type="button" aria-label={t("settings.phoneRemove")} title={t("settings.phoneRemove")} disabled={busy}
+          {/* Only a phone the Bridge lists can be removed; a just-allowed one is not on its list yet. */}
+          {listed.has(device.device_id) && <button type="button" aria-label={t("settings.phoneRemove")} title={t("settings.phoneRemove")} disabled={busy}
             className="text-muted-foreground hover:text-destructive disabled:opacity-50"
-            onClick={() => void act(() => api.phoneRevoke(device.device_id))}><Trash2 size={14} /></button>
+            onClick={() => void act(() => api.phoneRevoke(device.device_id))}><Trash2 size={14} /></button>}
         </div>)}
       </div>
       {error && <p role="alert" className="text-xs text-destructive">{t("settings.phoneError")}</p>}
