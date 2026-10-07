@@ -127,7 +127,7 @@ iPhone 链路没有 Arslan 服务器，也没有中转：消息走你私有 iClo
 
 ## 现状——只说已经证实的
 
-- **Pre-v1。** 目前只支持 Apple Silicon 上的 macOS 11+。沙箱基于 macOS seatbelt，其他平台一律拒绝运行。
+- **Pre-v1。** 目前只支持 Apple Silicon 上的 macOS 11+。沙箱基于 macOS seatbelt；在其他平台上，生成的 Python 会被拒绝，终端命令则在无沙箱状态下运行并如实标明。
 - **自带模型 key。** Arslan 用你的账户跑，费用由你的服务商结算。原生工具调用已实现并对 OpenAI 兼容、Anthropic、Gemini 三条路径做了协议测试——这不等于每个模型或端点都经过实测。
 - **Hands 只看得到当前桌面的窗口**；另一个空间里或被全屏 app 挡住的 app 视为未打开。大窗口（比如笔记很多的备忘录）读一次要 10–20 秒。
 - **Arslan for iPhone 即将上架 App Store**，Mac 端已随 0.1.53 发布。

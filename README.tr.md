@@ -127,7 +127,7 @@ Görsellerde ve taranmış PDF'lerde metin tanıma, güvenlik duruşunun tamamı
 
 ## Durum — kanıtlanana dair dürüst
 
-- **Pre-v1.** Şimdilik yalnızca Apple Silicon'da macOS 11+. Sanal alanlar macOS seatbelt'tir; diğer platformlarda güvenli biçimde reddedilir.
+- **Pre-v1.** Şimdilik yalnızca Apple Silicon'da macOS 11+. Sanal alanlar macOS seatbelt'tir; diğer platformlarda üretilen Python reddedilir, kabuk komutları ise sanal alan olmadan çalışır ve bu açıkça belirtilir.
 - **Kendi model anahtarın.** Arslan senin hesabınla çalışır; faturayı sağlayıcın keser. Yerel araç taşıma OpenAI uyumlu, Anthropic ve Gemini yolları için uygulanmış ve protokol düzeyinde test edilmiştir — bu her model ya da uç noktanın canlı sertifikası değildir.
 - **Hands yalnızca geçerli masaüstündeki pencereleri görür**; başka bir Space'teki ya da tam ekran bir uygulamanın arkasındaki uygulama açık sayılmaz. Büyük bir pencerenin (çok notlu Notlar) okunması 10–20 saniye sürebilir.
 - **iPhone için Arslan yakında App Store'da.** Mac tarafı 0.1.53 ile geldi.

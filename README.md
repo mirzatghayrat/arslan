@@ -177,7 +177,7 @@ Arslan is **safe by default**:
 - **Localhost-only by default.** Dev + localhost runs unauthenticated on purpose (local convenience). Cross-site drive-by requests are blocked by TrustedHost + CORS + WebSocket-Origin checks; non-localhost / prod deploys must set the allowlists below.
 - **Tokens where they matter.** `prod`, packaged builds, and non-loopback binds require a bearer token — auto-generated, persisted, and rotatable from Settings so you can't lock yourself out.
 - **Secrets refuse the public key.** BYOK secrets are Fernet-encrypted with a PBKDF2-HMAC-SHA256 key derived from `ARSLAN_SECRET_KEY` over a per-install salt; the app refuses to write secrets under the built-in public dev key.
-- **Two sandboxes, both fail closed.** Generated Python (`run_python`) runs under a default-deny macOS `sandbox-exec` profile with the network denied and a scrubbed environment. Shell commands (`run_command`) run under seatbelt that limits **writes** to the working folder, temp and caches and closes SSH keys, keychain files and Arslan's own data — the network stays open there, because Arslan reads the web with it. Running a command outside the sandbox always takes your click.
+- **Two sandboxes, two rules.** Generated Python (`run_python`) runs under a default-deny macOS `sandbox-exec` profile with the network denied and a scrubbed environment, and is refused where that isolation is unavailable. Shell commands (`run_command`) run under seatbelt that limits **writes** to the working folder, temp and caches and closes SSH keys, keychain files and Arslan's own data — the network stays open there, because Arslan reads the web with it. Running a command outside the sandbox always takes your click. Where seatbelt itself cannot start, a shell command still runs and its result says `sandbox="unavailable"`; only the wrap-up step, which must stay offline, refuses instead.
 - **Hands holds no permission itself.** Accessibility is granted to the separate **Arslan Hands** helper, never to Arslan; it accepts only the signed Arslan backend as its peer.
 
 **Do not expose the server to an untrusted network without a token and host/origin allowlists.** Full threat model and reporting policy: [SECURITY.md](SECURITY.md).
@@ -216,7 +216,7 @@ One deliberate exception: the secret itself lives **outside** that directory. If
 
 **Pre-v1.** We'd rather under-claim than over-sell:
 
-- **macOS 11+ on Apple Silicon only, for now.** The sandboxes are macOS seatbelt; other platforms fail closed.
+- **macOS 11+ on Apple Silicon only, for now.** The sandboxes are macOS seatbelt; elsewhere generated Python is refused and shell commands run unsandboxed, marked as such.
 - **Bring your own model key.** Arslan runs against your account; your provider bills you. Native tool transport is implemented and wire-tested for OpenAI-compatible, Anthropic and Gemini paths — that is not live certification of every model or endpoint.
 - **Hands sees windows on the current desktop only**; an app on another Space or behind a full-screen app counts as not open. A large window (Notes with many notes) can take 10–20 seconds to read.
 - **Arslan for iPhone is coming to the App Store.** The Mac side ships in 0.1.53.
