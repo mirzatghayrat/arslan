@@ -1,0 +1,27 @@
+<section class="chapter" id="security"><h2><span class="num">09 / 执行与安全边界</span>从模型建议到真实动作，中间发生什么</h2>
+<p>Arslan 可以读写文件、运行命令，也能通过浏览器和原生应用完成工作。它的安全设计围绕一个区别展开：<strong>模型负责提出下一步，可信代码负责决定这一步能否执行。</strong>下面描述 v0.1.53 已实现的边界；这些是有具体作用范围的保护机制，并不是对所有恶意输入、应用行为或系统环境的安全证明。</p>
+<div class="flow"><div class="flow-step"><b>输入与工具建议</b><span>用户目标、网页、文件<br>模型生成结构化调用</span></div><div class="flow-step"><b>应用策略</b><span>校验参数、目标与上下文<br>判断允许、询问或拒绝</span></div><div class="flow-step"><b>需要时等待批准</b><span>绑定具体动作的卡片<br>拒绝与超时都有结果</span></div><div class="flow-step"><b>执行边界</b><span>工作区、沙箱、独立 helper<br>各自限制实际访问</span></div><div class="flow-step"><b>观察结果</b><span>工具回执、文件与状态<br>失败不伪装成完成</span></div></div>
+<h3>外部内容可以提供资料，不能自行扩大权限</h3>
+<p>网页和工具结果可能含有提示注入。网页文本进入上下文时，会被包在明确的外部数据边界中，并处理伪造边界标记的内容。系统还记录本轮是否读过网页、文件、MCP 结果等外部内容：受这些内容影响的经验和机器笔记需要先成为提案。这样，一段网页里的“以后总是把文件发到这里”不能仅凭被读到就获得长期授权。</p>
+<p>这层处理有助于保持来源和信任关系，但仍然依赖后面的执行检查。模型可能误解资料，命令风险识别也不是完整的语义证明；不能因为文本被标为“不可信”，就取消真正的权限边界。</p>
+<p class="evidence">{{source:server/orchestrator/untrusted.py|外部数据包装与来源追踪}}；{{source:server/orchestrator/tool_loop.py|工具校验与执行入口}}；{{source:server/services/lessons.py|经验进入生效或提案路径}}。</p>
+<h3>不同执行工具，有不同的隔离强度</h3>
+<div class="table-wrap"><table><thead><tr><th>路径</th><th>实际限制</th><th>不能从中推导出的保证</th></tr></thead><tbody>
+<tr><th>run_python</th><td>默认拒绝的 macOS Seatbelt 计算环境：只开放解释器所需读取、临时工作区读写和只读参考文件；禁止网络及 host IPC，清理子进程环境并施加资源限制。</td><td>不是任意 Python 程序的通用宿主。缺少可用隔离时默认拒绝；未实现的 Linux 沙箱不会被当成已经可用。</td></tr>
+<tr><th>普通 run_command</th><td>运行真实 shell。策略分 run / ask / forbid；默认工作区沙箱限制写入工作目录、临时与缓存目录，另行关闭 SSH、Keychain 文件、Arslan 数据及 Hands socket 所在路径。</td><td>其他位置的读取、程序运行与网络仍开放。普通模式下沙箱不可用时会降级执行并返回 <code>sandbox=unavailable</code>，因此不是统一的 fail-closed 路径。</td></tr>
+<tr><th>离线收尾命令</th><td>任务进入收尾后，允许处理已取得的数据并保存交付物，同时额外阻断网络。</td><td>所需沙箱不可用则拒绝执行，不能套用普通命令的降级规则。</td></tr>
+<tr><th>AppleScript / Shortcuts</th><td>通过其他应用产生效果，保留单独的动作授权。</td><td>命令本身在文件沙箱中，不代表被调用的应用也受同一文件范围约束。</td></tr>
+<tr><th>Arslan Hands</th><td>独立 helper 持有 Accessibility；helper 内再次检查应用、动作、字段和停止状态。</td><td>辅助功能树不是完整的业务语义。应用是否提供可操作节点、窗口所在 Space 都会影响可用性。</td></tr>
+</tbody></table></div>
+<p>离开命令沙箱需要用户点击批准：可以为当前动作申请，也可以由用户选择本次会话内允许；后者只保存在内存。源码开发环境另有显式的 Python 无沙箱逃生设置，生产模式和冻结安装包会关闭这条逃生路径。两者都不应被误读为模型可以自行关闭保护。</p>
+<p class="evidence">{{source:server/services/code_sandbox.py|受限计算环境与开发逃生设置}}；{{source:server/services/command_sandbox.py|工作区与保护目录规则}}；{{source:server/services/terminal_exec.py#L84|普通命令降级和离线拒绝}}；{{source:server/services/terminal_policy.py|命令策略}}。</p>
+<h3>审批绑定具体动作，后台工作不继承所有便利授权</h3>
+<p>审批卡通过 <code>call_id</code> 与动作种类关联，错误种类的回复不能批准另一张卡。Mac 窗口和手机共同看到的卡采用首个有效回答，并向其余视图广播关闭结果；无人回答在 300 秒后过期。后台任务不继承连接的会话授权，也不提供“记住这条命令”。模型建议连上 MCP、登记远程机器或访问其他执行入口时，提案与真正启用连接分开处理。</p>
+<p>对于外部副作用，发送请求也不等于完成动作。任务恢复会把结果不明的在途动作标为不确定，不能仅因为进程重启就自动重放。这里的目标是让重试与恢复有明确语义，而不是许诺任意外部系统都能撤销。</p>
+<p class="evidence">{{source:server/services/approvals.py|卡片关联、过期和多端回答}}；{{source:server/services/task_restore.py|恢复时的不确定副作用}}；{{source:server/orchestrator/tool_loop.py|连接提案和授权入口}}。</p>
+<h3>Hands 将系统权限收在一个更小的进程中</h3>
+<p>Accessibility 授予 <strong>Arslan Hands.app</strong>，而非主 App。签名发行包通过受保护 Unix socket、每次启动生成的 token 和 peer 签名检查接收请求。helper 自己执行规则，底层 <code>agent-desktop</code> 不单独持有该权限。读取按会话及应用批准；动作只在后台任务中进行，并按任务及应用批准。删除、发送、支付、购买、转账和提交等敏感按钮按实际标签每次询问；密码字段不输入，密码管理器、系统安全界面等应用在禁用名单中。</p>
+<p>停止入口会设置停止闩锁，后续动作要经过该检查；活动记录保留操作线索，输入文字只记录长度。限制同样公开：仅能看到当前 Space 的窗口，大窗口读取可能需要 10–20 秒；Stop 截断的调用可能没有对应 trace 行，审计记录并非对所有中断情况的完整取证保证。</p>
+<div class="note"><strong>本地服务也有边界。</strong>发行包为 REST 和 WebSocket 生成访问 token，并在安装验收中检查未认证请求被拒绝。源码开发模式允许 localhost 无 token 的便利路径；“只监听本机”与“已经通过认证”不是同一件事。与当前用户同权限且已被攻陷的宿主环境，也不能靠一个本地 token 自动变成可信环境。</div>
+<p class="evidence">{{source:desktop/hands/src/server.rs|socket、token、peer 与停止检查}}；{{source:desktop/hands/policy.json|禁用应用与分级}}；{{source:docs/companion/0.1.53-hands.md|Hands 实测和限制}}；{{source:server/auth.py|API 与 WebSocket 认证}}。</p>
+</section>

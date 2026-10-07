@@ -1,0 +1,68 @@
+[
+  {
+    "version": "v0.1.40-beta.1",
+    "status": "tag_only_no_release",
+    "published_at_utc": null,
+    "published_at_shanghai": null,
+    "tagged_commit": "74af4cabeace6c861e569ec3ab4c151bf3bd0263",
+    "evidence_url": null,
+    "draft_file": "docs/releases/v0.1.40-beta.1.md",
+    "title": "personal companion 预览候选",
+    "summary": "项目/记忆/任务工作区、可调整侧面板、只读公共网页与受限文件输入。beta.2 文稿明确 beta.1 未发布，其云构建因 AnyIO 公告取消；tag 保留。"
+  },
+  {
+    "version": "v0.1.40-beta.2",
+    "status": "tag_only_no_release",
+    "published_at_utc": null,
+    "published_at_shanghai": null,
+    "tagged_commit": "6646b61543e1fbd95704ec42d0a61d25d78e5054",
+    "evidence_url": null,
+    "draft_file": "docs/releases/v0.1.40-beta.2.md",
+    "title": "安全补丁候选，CI 阻挡发布",
+    "summary": "AnyIO 锁定版本修复；签名构建/65 fresh-install 通过，但同 tag CI 未通过，文稿明确 DO NOT PUBLISH。不能以打包成功替代同源 CI。"
+  },
+  {
+    "version": "v0.1.40-beta.3",
+    "status": "published_prerelease",
+    "published_at_utc": "2026-09-20T10:33:11Z",
+    "published_at_shanghai": "2026-09-20T18:33:11+08:00",
+    "tagged_commit": "fe0624943534e63b38a9a440c6631000c0798eec",
+    "evidence_url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.40-beta.3",
+    "draft_file": "docs/releases/v0.1.40-beta.3.md",
+    "title": "首个当前可见公开预览",
+    "summary": "整合工作区、只读浏览、文件来源、六语言资源和安全修复；发布开始强制 exact-source CI 先通过再签名。仍非 companion v1.2 完成。"
+  },
+  {
+    "version": "v0.1.40-beta.4",
+    "status": "release_draft_document_only_no_local_tag",
+    "published_at_utc": null,
+    "published_at_shanghai": null,
+    "tagged_commit": null,
+    "evidence_url": null,
+    "draft_file": "docs/releases/v0.1.40-beta.4.md",
+    "title": "未单独发布的身份与信任澄清",
+    "summary": "设置显示真正运行的客户端版本和稳定/预览通道；可复制精简身份摘要。beta.5 明确将 unpublished beta.4 改动包含进去，无需单独安装。"
+  },
+  {
+    "version": "v0.1.40-beta.5",
+    "status": "published_prerelease",
+    "published_at_utc": "2026-09-23T12:17:13Z",
+    "published_at_shanghai": "2026-09-23T20:17:13+08:00",
+    "tagged_commit": "a8669bca1dc597204581ff2c2485ce452424ece7",
+    "evidence_url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.40-beta.5",
+    "draft_file": "docs/releases/v0.1.40-beta.5.md",
+    "title": "研究证据与连续性",
+    "summary": "已读/未读/部分读取标签、受限来源链接、Word 当前文本抽取与修订披露、损坏轨迹容错；有受限模型 pilot，但不是 12/12 完整通过。"
+  },
+  {
+    "version": "v0.1.40-beta.6",
+    "status": "published_prerelease",
+    "published_at_utc": "2026-09-23T15:37:33Z",
+    "published_at_shanghai": "2026-09-23T23:37:33+08:00",
+    "tagged_commit": "0beb89bd638d5846745b7546adeb128452a5a0c2",
+    "evidence_url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.40-beta.6",
+    "draft_file": "docs/releases/v0.1.40-beta.6.md",
+    "title": "视觉和应用身份打磨",
+    "summary": "更新图标，允许磨砂橙/纯单色选择；修复 WebKit 启动圆角和排版。手动安装预览，稳定自动更新通道保持原样。"
+  }
+]

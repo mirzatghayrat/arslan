@@ -1,0 +1,56 @@
+<section class="chapter" id="data"><h2><span class="num">07 / 数据与记忆</span>保留可用的上下文，也保留清晰的数据边界</h2>
+<p>Arslan 把主要状态保存在本机 SQLite：会话、运行记录、任务、个人记忆、模型配置及用量都有对应数据模型。文件产物写在磁盘；过长的工具输出全文另存于应用数据目录（保留 7 天），模型按结果里给出的路径分段读取。这样，关闭一个窗口不会抹掉任务过程；也能分别管理“当时说了什么”“实际做了什么”和“以后可以记住什么”。</p>
+<p>数据访问采用异步 SQLAlchemy 与 <code>aiosqlite</code>。连接启用 WAL、外键检查、5 秒忙等待，并使用 <code>synchronous=NORMAL</code>。这些选择服务于本机单用户应用：减少部署依赖，并改善读写并存时的体验。数据目录还有协作式进程锁，避免遵守同一协议的实例同时使用同一份数据。</p>
+
+<div class="diagram"><svg viewBox="0 0 980 440" role="img" aria-labelledby="mem-title"><title id="mem-title">记忆的形成、授权与召回流程</title><defs><marker id="m-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#5c8071"/></marker></defs>
+<rect x="20" y="30" width="250" height="88" rx="9" class="box"/><text x="39" y="61" class="boxtext">来源</text><text x="39" y="86" class="small">用户原话 / 纠正 / 实际工具轨迹</text><text x="39" y="108" class="small">网页与文件属于外部内容</text>
+<path d="M270 74 H334" class="edge" marker-end="url(#m-arrow)"/>
+<rect x="338" y="30" width="280" height="88" rx="9" class="box"/><text x="356" y="61" class="boxtext">范围与信任判断</text><text x="356" y="86" class="small">临时会话？敏感？外部内容影响？</text><text x="356" y="108" class="small">普通偏好 / 经验 / 机器限制分类</text>
+<path d="M618 74 H683" class="edge" marker-end="url(#m-arrow)"/>
+<rect x="687" y="30" width="270" height="88" rx="9" class="box"/><text x="705" y="61" class="boxtext">生效或待审阅</text><text x="705" y="86" class="small">允许的普通内容可立即生效</text><text x="705" y="108" class="small">敏感／外部影响项通常需审阅</text>
+<path d="M822 118 V184" class="edge" marker-end="url(#m-arrow)"/>
+<rect x="687" y="188" width="270" height="104" rx="9" class="box"/><text x="705" y="219" class="boxtext">持久化与可见管理</text><text x="705" y="245" class="small">内容 / 版本 / 来源 / 使用策略</text><text x="705" y="270" class="small">Brain 可查看、撤销或删除</text>
+<path d="M687 240 H622" class="edge" marker-end="url(#m-arrow)"/>
+<rect x="338" y="188" width="280" height="104" rx="9" class="box"/><text x="356" y="219" class="boxtext">下次使用前先过滤</text><text x="356" y="245" class="small">个人／项目范围 + 云端使用许可</text><text x="356" y="270" class="small">相关性、上限、当前有效状态</text>
+<path d="M338 240 H274" class="edge" marker-end="url(#m-arrow)"/>
+<rect x="20" y="188" width="250" height="104" rx="9" class="dark"/><text x="39" y="219" class="boxtext white">注入本轮上下文</text><text x="39" y="245" class="small white">About you / Mac notes / lessons</text><text x="39" y="270" class="small white">记录使用回执与实际结果</text>
+<rect x="20" y="338" width="937" height="72" rx="9" class="planned"/><text x="39" y="368" class="boxtext">经验只能改善方法，不能增加权限。</text><text x="39" y="394" class="small">删除不只是 UI 隐藏：要处理旧修订、来源、摘要与删除账本，防止旧状态重新引入已删内容。</text>
+</svg><p class="diagram-caption">图 3 · 记忆闭环。纯文本：来源 → 判断 → 生效／提案 → 保存 → 按范围与权限过滤 → 召回 → 记录使用；记住“用 EventKit”不等于获得提醒事项权限。</p></div>
+<h3>数据对象按职责分层</h3>
+<div class="table-wrap"><table><thead><tr><th>数据组</th><th>主要对象</th><th>回答的问题</th></tr></thead><tbody><tr><td>对话与运行</td><td><code>ArslanMessage</code>、<code>ArslanSummary</code>、<code>Run</code>、<code>RunStep</code>、<code>UsageLedger</code></td><td>用户说了什么、调用过什么、消耗了多少。</td></tr><tr><td>持久任务</td><td><code>companion_tasks</code>、<code>task_revisions</code>、<code>task_attempts</code>、<code>task_checkpoints</code>、<code>task_events</code>、<code>task_actions</code></td><td>任务采用哪版约定、处于哪次尝试、有哪些动作与证据。</td></tr><tr><td>个人记忆</td><td><code>memory_entries</code>、<code>memory_revisions</code>、<code>memory_sources</code></td><td>记住哪条信息、当前是哪一版、依据来自哪里。</td></tr><tr><td>使用与删除记录</td><td><code>context_receipts</code>、<code>memory_deletions</code>、<code>memory_suppressions</code></td><td>哪版记忆进入过上下文，以及哪些删除需要继续生效。</td></tr><tr><td>资料与经验</td><td><code>KnowledgeChunk</code>、<code>Lesson</code>、<code>Judgment</code></td><td>可检索的资料、可复用的经验及小判断的结果。</td></tr></tbody></table></div>
+<p>任务表保存当前状态，修订表保存任务约定，attempt 表记录执行尝试，event 表提供有序事件，action 表记录实际动作及效果状态。它们共同支撑检查和恢复。个人记忆则把稳定身份、内容修订和来源拆开，便于编辑、溯源与删除；它没有直接复用全部聊天内容作为永久记忆。</p>
+<p class="evidence">源码：{{source:server/db/session.py|SQLite 连接}}；{{source:server/db/models.py|运行、资料与配置模型}}；{{source:server/db/task_models.py|任务模型}}；{{source:server/db/companion_models.py|个人上下文与记忆模型}}。</p>
+
+<h3>工作上下文：控制本轮输入，保留原始历史</h3>
+<p>模型每次能接收的内容有限，Arslan 会用有上限的滚动摘要加上近期消息构成工作上下文。该历史窗口的默认估算预算为 3,000 token，摘要本身也受长度限制。这是历史装配的预算，不代表整个模型请求只有 3,000 token：系统指令、工具 schema、资料和结果还会占用其他空间。</p>
+<p>对话变长后，旧消息可以被概括为摘要，近期消息保留原文。压缩影响下一次装配哪些内容，不等于删除数据库中的完整会话；压缩失败也会保留原始记录。过长工具输出另有落盘机制：模型得到头尾摘要和文件路径，需要时再分段读取，完整输出按保留策略清理。</p>
+<p>这种分层让模型优先看到当前任务所需的信息，同时给后续核对留下原始依据。摘要只是已有内容的压缩表示，不能代替某个外部动作的真实回执。</p>
+
+<h3>个人记忆：先决定能不能用，再决定是否相关</h3>
+<p>记忆条目包含类型、范围、敏感级别、使用策略、状态、置信信息与版本。范围可以是全局或某个项目（另有领域、专家等内部范围），条目同时归属所有者；<code>local_only</code> 等使用策略进一步决定内容能否进入云模型请求。每轮的可信上下文从数据库载入会话设置，普通用户文本、网页或模型输出不能自行改写这些权限。</p>
+<div class="flow"><div class="flow-step"><b>读取会话设置</b><span>项目、临时会话与记忆许可</span></div><div class="flow-step"><b>过滤边界</b><span>范围、状态、敏感性、云端策略</span></div><div class="flow-step"><b>选择内容</b><span>基础记忆与相关性排序</span></div><div class="flow-step"><b>限量注入</b><span>受控内容进入本轮上下文</span></div><div class="flow-step"><b>记录回执</b><span>条目 ID、修订与使用原因</span></div></div>
+<p>“关于你”和“Mac 笔记”有受限的基础注入，其余内容按相关性选择。自 v0.1.52 起，默认开启的“记住我并在对话中使用”可允许普通、<code>cloud_allowed</code> 条目用于已配置的云模型。敏感内容还需要额外许可；<code>local_only</code> 不会因为总开关开启而变成可上云内容。</p>
+<p><code>ContextReceipt</code> 记录使用了哪些条目和修订、为何使用以及估算计数，不复制记忆正文。用户能追溯一次上下文选择的依据，系统也不必为此再制造一份敏感内容副本。</p>
+<p>编辑记忆会产生新的修订，条目的当前修订指针随之更新；来源记录继续说明这版内容是如何形成的。暂停、过期、被替代和删除等状态，也会影响是否进入后续上下文。版本化有利于核对变化，但删除流程会清除需要抹去的正文，所以不能把它理解成所有历史内容永久不可删除的事件库。</p>
+<p class="evidence">源码：{{source:server/orchestrator/memory.py|历史与摘要}}；{{source:server/services/tool_outputs.py|长工具输出}}；{{source:server/services/task_context.py|会话许可}}；{{source:server/services/personal_context.py|范围与隐私过滤、回执}}。</p>
+
+<h3>资料检索：关键词与向量可以组合使用</h3>
+<p>知识资料的检索模块支持 SQLite FTS5 全文搜索和向量余弦相似度搜索。前者找词面匹配，后者利用 embedding 寻找语义相关片段；两路都可用时，通过 RRF 把排名融合。RRF 比较的是排名位置，不直接混用不同量纲的原始分数。未配置 embedding 或缺少向量时，仍可走全文检索。</p>
+<p>检索所得片段附带来源进入模型上下文，由模型结合当前问题组织答复，这就是此处的 RAG。记忆 v2 启用后，资料检索只在绑定了资料集的项目中进行；使用云模型时，还需该对话单独开启云端记忆许可（默认的“记住我”开关不覆盖资料）。结果作为 recall 工具的返回值进入上下文。它无需修改基础模型权重，也不依赖单独部署的向量数据库。个人记忆 v2 的选择主要使用权限过滤、全文与本地相关性逻辑，不能据此推断所有记忆都经过同一套向量管线。</p>
+
+<h3>经验学习：把纠正变成可审阅的规则</h3>
+<p><code>Lesson</code> 用于保存用户纠正、失败后成功的绕行方法以及机器环境特点。例如，某个命令在当前 Mac 上需要不同参数，可以形成有来源的经验，供相似任务参考。召回最多 5 条、总计约 800 字符，放入动态的 agent status，不污染稳定系统前缀；召回、遵循、成功与失败都有计数。</p>
+<p>是否值得保存、是否与已有内容重复或冲突，可以由 judgment 层提出范围很小的判断，并记录概率与后续结果。用户纠正或未受外部内容影响的经验，在设置允许且判断有价值时可以直接生效；其他需要审阅的内容进入提案。含凭证的候选会被直接丢弃；“推断出的敏感信息需要审阅”这条规则属于个人记忆，而不是经验。判断缺失或超时时有回退路径。</p>
+<p>这些机制修改应用保存与召回的知识，不训练模型权重。judgment 的启用范围也各不相同：例如工具审批判断处于 shadow 模式时只记录建议，仍由真实授权流程决定能否执行。</p>
+<p class="evidence">源码：{{source:server/services/knowledge.py|混合资料检索}}；{{source:server/services/lessons.py|经验提取与召回}}；{{source:server/services/judgment.py|小判断与运行模式}}。</p>
+
+<h3>删除需要跨过摘要和旧备份</h3>
+<p>删除一条记忆时，系统会提高 deletion epoch，清除该条的旧修订正文与来源，并清空所有会话的滚动摘要和运行记录中缓存的提示词，防止旧的派生内容把已删记忆带回来。删除记录只保留用于匹配的内容指纹（本地密钥 HMAC）和范围等元数据，避免在账本里重新保存已删除正文；suppression 记录防止仍在聊天历史中的同一来源再次自动生成这条记忆。删除记忆与删除原始会话是不同的数据操作。</p>
+<p>独立删除账本和删除清单用于在启动及恢复路径继续落实删除。恢复旧备份前，系统检查存储身份，在激活数据前对照删除信息整理暂存数据，降低旧备份让已删除记忆重新出现的可能。这个保证依赖恢复流程与可用删除记录，不能解释成能撤回所有已经导出到外部的副本。</p>
+<p>备份里的其余记忆也不会立即恢复全部使用许可：恢复处理会将其隔离待审，收紧使用策略，清掉缓存上下文，停用全部定时任务，并收回会话级的云端与敏感许可、归档进行中的项目。恢复数据与重新批准使用数据分开完成，避免旧会话许可在新的运行环境中静默生效。</p>
+
+<h3>迁移先完成，应用再开始使用数据</h3>
+<p>当前数据库升级使用显式迁移 runner：检查 schema 版本、准备升级备份、创建缺少的表、按顺序执行待运行迁移，然后处理密钥兼容和记忆 v2 激活。未知或过新的 schema 会被拒绝，避免较旧程序盲目修改较新数据。v0.1.53 的显式登记已到 <code>0061</code>；早期 Alembic 历史不应当作当前运行机制。</p>
+<p>记忆 v2 激活时，旧事实与学习表改名为 legacy 表并加只读触发器，兼容视图将旧读入口映射到新结构，全文索引也在这一过程中建立。模型 API 密钥、MCP 环境变量与 OAuth 令牌、SSH 密钥等秘密字段使用 Fernet 字段级加密（PBKDF2 + 每次安装独立的盐值）；普通会话和任务表并未因此变成整库加密。持久化、秘密保护与备份恢复各有具体边界。</p>
+<p class="evidence">源码：{{source:server/services/memory_repository.py|记忆删除与版本}}；{{source:server/services/memory_deletion_ledger.py|删除账本}}；{{source:server/services/memory_deletion_manifest.py|恢复前删除核对}}；{{source:server/services/backup.py|备份恢复协调}}；{{source:server/services/memory_restore.py|恢复数据隔离}}；{{source:server/services/storage_boot.py|存储启动顺序}}；{{source:server/db/migrations/runner.py|显式迁移}}；{{source:server/services/memory_activation.py|记忆结构激活}}；{{source:server/crypto.py|密钥字段保护}}。</p>
+</section>

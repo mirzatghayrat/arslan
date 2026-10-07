@@ -1,0 +1,21 @@
+<section class="chapter" id="stack"><h2><span class="num">03 / 技术栈</span>界面、宿主、执行与数据的分工</h2>
+<p>Arslan 的技术栈围绕桌面交付与个人 Agent 的职责划分。下面的精确版本来自 <strong>v0.1.53 的锁文件</strong>，代表该源码的依赖解析结果；不是要求用户机器安装的工具版本，也不是项目的发行版本。</p>
+<div class="table-wrap"><table><thead><tr><th>层次</th><th>实际技术</th><th>承担的工作与选型意义</th></tr></thead><tbody>
+<tr><th>界面</th><td>React 19.2.7<br>TypeScript 5.8.3<br>Vite 6.4.3</td><td>组件化聊天、任务卡、审批卡、设置与记忆页面；类型约束帮助维护跨页面状态和事件协议；Vite 负责开发与构建。</td></tr>
+<tr><th>界面状态与样式</th><td>Zustand 5.0.14<br>Tailwind CSS 4.3.1<br>i18next 26.3.1</td><td>共享 UI 状态、样式组织和六语言资源。ECharts 渲染聊天中由 render_chart 工具生成的图表及运行对比图，D3 用于记忆关系图；这些不是后端推理框架。</td></tr>
+<tr><th>桌面宿主</th><td>Tauri 2.11.5 / Rust<br>系统 WebView / objc2</td><td>负责窗口、托盘、启动、退出、状态岛、更新及 macOS API。Rust 工程声明最低版本 1.77.2、edition 2021，不应当成实际构建器版本。</td></tr>
+<tr><th>本地服务</th><td>Python ≥ 3.11<br>FastAPI 0.141.1<br>Uvicorn 0.51.0</td><td>接口、WebSocket、Agent 循环、异步 I/O、工具执行和调度。选择 Python 方便复用模型与文档处理生态。</td></tr>
+<tr><th>数据模型</th><td>Pydantic 2.13.4<br>SQLAlchemy 2.0.51<br>aiosqlite 0.22.1 / SQLite</td><td>输入与任务契约校验、异步数据库访问、本地持久化。SQLite 降低个人桌面产品的部署成本，但不是多租户分布式数据平台。</td></tr>
+<tr><th>检索与记忆</th><td>SQLite FTS5<br>Embedding / cosine / RRF<br>可选 fastembed 0.8.0</td><td>全文和语义检索互补；没有 embedding 路径时仍可用关键词检索。个人记忆另有范围、敏感性和使用权限。</td></tr>
+<tr><th>模型传输</th><td>httpx 0.28.1<br>OpenAI-compatible / Anthropic / Gemini 适配器</td><td>统一模型调用接口，保留各家工具调用、推理延续和使用量语义；模型能力仍受具体模型与端点限制。</td></tr>
+<tr><th>扩展</th><td>MCP Python SDK 1.28.1<br>SKILL.md / arslan.plugin.json</td><td>MCP 提供工具协议，Skill 提供操作方法，插件清单描述如何组合能力。三者不是同一个概念。</td></tr>
+<tr><th>附件与本地 OCR</th><td>pypdf / pypdfium2<br>python-docx / python-pptx / Pillow<br>macOS Vision + PyObjC</td><td>读取文档内容和图片文字。OCR 是识字，不等于理解图表或保证整篇文档被完整读取；要披露部分读取和语言限制。</td></tr>
+<tr><th>原生 Mac 应用</th><td>Arslan Hands（Rust helper）<br>agent-desktop 0.9.4<br>Accessibility / Unix socket</td><td>读取辅助功能树并按规则执行动作。agent-desktop 为未修改的 Apache-2.0 开源依赖，应明确归属。</td></tr>
+<tr><th>跨设备</th><td>Mac Swift Bridge（本仓库）<br>CloudKit / CryptoKit / Keychain<br>iPhone 端 SwiftUI 位于独立的 iOS 工程，不在本仓库</td><td>Mac 与 iPhone 的密文消息、审批和结果同步；移动端的工程进展与正式上架状态分别陈述。</td></tr>
+<tr><th>打包与质量</th><td>uv.lock / npm lock / Cargo.lock<br>PyInstaller 6.21.0<br>pytest / Vitest / Rust / Swift tests<br>GitHub Actions</td><td>可复现依赖、冻结本地服务、跨语言测试、平台检查、签名公证和真实安装包验收。</td></tr>
+</tbody></table></div>
+<h3>为什么保留 Python 执行核心</h3>
+<p>Python 承担模型适配、文档处理、Agent 循环和任务服务，已有生态和现有实现能直接复用；Tauri 与 Rust 承担窗口、进程生命周期及原生集成。公开架构决策记录了保留这一执行核心的选择。将核心迁往另一种语言，会同时改变工具、数据迁移、打包和测试边界，不能只用“更原生”判断收益。</p>
+<p>这种结构在逻辑上分层，在部署上仍以本地服务为主体。内部 Python 模块没有各自成为远端微服务，也不依赖 Redis、Celery 或 Kubernetes 才能运行。Hands、Bridge、MCP 服务和终端子进程在需要独立权限或独立运行环境的位置形成进程边界。</p>
+<p class="evidence">锁定依赖：{{source:web/package-lock.json|前端锁文件}}；{{source:desktop/src-tauri/Cargo.lock|桌面锁文件}}；{{source:uv.lock|Python 锁文件}}。设计与归属：{{source:docs/companion/ADR-001-native-runtime.md|运行核心决策}}；{{source:THIRD_PARTY_NOTICES.md|第三方归属}}。</p>
+</section>

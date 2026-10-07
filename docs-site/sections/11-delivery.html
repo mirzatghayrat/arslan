@@ -1,0 +1,30 @@
+<section class="chapter" id="delivery"><h2><span class="num">11 / 验证与软件交付</span>从能运行的源码，到可以安装和更新的应用</h2>
+<p>桌面软件的交付单位是应用包。源码环境中存在的 Python 模块、系统工具和旧数据库，都可能让一个缺少资源的安装包看起来正常。Arslan 将验证分成源码、平台、冻结产物、全新用户环境和分发几个层次。本章记录 v0.1.53 的流程及对应发布证据。</p>
+<h3>CI 同时检查行为、平台与依赖边界</h3>
+<div class="table-wrap"><table><thead><tr><th>检查组</th><th>主要内容</th><th>设计目的</th></tr></thead><tbody>
+<tr><th>Linux 后端</th><td>Python 3.11、uv frozen lock、Ruff、pytest；显式安装并检查 OCR 测试依赖。</td><td>执行完整后端测试，保留“缺少 macOS 隔离时必须拒绝”的平台负例。</td></tr>
+<tr><th>macOS</th><td>Swift 语音 helper 类型检查、Bridge 构建与测试、Rust fmt/test/clippy、Hands 检查、原生 Python 用例。</td><td>让最终交付平台上的 Vision、Seatbelt 和宿主代码进入常规验证。</td></tr>
+<tr><th>前端</th><td>Node 22、npm ci、TypeScript 类型检查、Vitest、生产构建。</td><td>覆盖状态与组件行为，并确认生产资源可以生成。</td></tr>
+<tr><th>历史与供应链</th><td>gitleaks 扫完整 Git 历史并脱敏输出；Hands 固定上游 commit、校验 vendored 文件，以 cargo-deny 检查依赖。</td><td>避免只检查最新 diff，或让构建悄然使用变动的外部源码。</td></tr>
+</tbody></table></div>
+<p>其中 macOS 测试并不只接受 pytest 的退出码。流水线解析 JUnit，要求 <strong>49 个指定平台用例实际执行、零跳过且无失败</strong>；缺依赖导致全部跳过也会拒绝通过。Python 与 Rust 共享 Hands 契约样例，Mac、iOS 与独立 Python 参考实现共享 Bridge 向量，使参数映射、签名、收件人、篡改和重放的边界可以跨语言核对。</p>
+<p>这些结果仍有范围：Swift 类型检查不验证麦克风授权，Linux 单元测试不验证 macOS 内核，模拟信箱不验证生产 CloudKit。测试数量也不是整体覆盖率；重叠套件不能相加成独立场景数。</p>
+<p class="evidence">{{source:.github/workflows/ci.yml|四组 CI 与实际执行门禁}}；{{source:tests/fixtures/hands_contract/01_list_apps.json|跨语言 Hands 契约样例}}；{{source:spec/mobile-bridge/reference.py|Bridge 参考实现}}。</p>
+<h3>发布从精确的源码提交开始</h3>
+<div class="flow"><div class="flow-step"><b>源码提交</b><span>发布的精确 SHA<br>已有成功 CI</span></div><div class="flow-step"><b>构建应用</b><span>前端、Python sidecar<br>Swift / Rust helpers</span></div><div class="flow-step"><b>签名与公证</b><span>内嵌程序 → App → DMG<br>notarize、staple、Gatekeeper</span></div><div class="flow-step"><b>真实包检查</b><span>隔离全新 HOME<br>认证、资源和运行通路</span></div><div class="flow-step"><b>发布与更新</b><span>带签名归档与 manifest<br>Draft 审阅后正式发布</span></div></div>
+<p>Release workflow 查询将发布的 SHA 是否有成功 CI，另一个提交通过不能替代。构建使用受锁文件约束的依赖；Python 明确选择 uv 管理的独立解释器，防止 runner 偶然选中 framework build。后端以 PyInstaller onedir 冻结，前端静态资源和 Swift/Rust helper 随 Tauri 应用一起装配。</p>
+<p>签名与公证各有作用。内嵌 Mach-O 需要先签名，再由外层应用封装；Developer ID、hardened runtime 和时间戳用于发行。DMG 提交 Apple 公证，随后 staple 票据并用 Gatekeeper 检查。构建脚本保留无签名开发包以及缺少部分凭据时的警告路径，所以“能构建”不自动等于“已经满足公开分发条件”；正式发布应核对真正得到的产物。</p>
+<p>更新清单还有独立约束：tag 必须与 Tauri 版本一致；有 updater 签名才生成对应 manifest。流程生成 GitHub Draft Release，正式发布后，已安装应用才会在后续检查中看到该更新。</p>
+<p class="evidence">{{source:.github/workflows/release.yml|精确 SHA 门禁、版本检查与 Draft Release}}；{{source:packaging/build_dmg.sh|冻结、装配、签名、公证与降级分支}}；{{source:packaging/arslan-server.spec|PyInstaller 依赖与资源}}。</p>
+<h3>全新安装验收直接启动应用包</h3>
+<p><code>fresh_install_check.py</code> 使用临时 HOME 和最小环境启动包内真正的 <code>arslan-desktop</code>，不是在源码 venv 中替它启动服务。检查包含包内没有混入用户数据库或秘密文件、首启初始化、token 的生成与文件权限、未认证请求拒绝、真实 WebSocket 101 握手，以及前端 JavaScript 能被正确取得。HTTP 200 可能只是 SPA 的兜底页面，因此资源检查不能只看状态码。</p>
+<p>同一脚本还检查原生 OCR、嵌入 helper、Bridge 自检和相关签名。历史上冻结包曾漏掉动态加载的 WebSocket 依赖：健康接口正常，聊天却不能升级连接。这个问题说明，导入成功、服务存活和核心功能随包交付是三种不同的证据。</p>
+<p class="evidence">{{source:packaging/fresh_install_check.py|应用启动与包内验收}}；{{source:packaging/arslan-server.spec|动态 WebSocket 依赖的显式收集}}。</p>
+<h3>更新由用户触发安装，并验证下载内容</h3>
+<p>Tauri updater 从公开的 <code>latest.json</code> 发现更新，用编译在应用中的公钥验证归档签名。应用启动检查一次，菜单也可以手动检查；本版没有周期检查 timer。发现新版本显示提示，用户点击安装后才下载、验签、替换并重启。自动检查失败可以是暂时离线，安装失败则需要向用户明确反馈。</p>
+<p>早期 0.1.0/0.1.1 只注册了 updater 插件，没有主动调用检查函数，不能自动发现版本。当前实现把检查、可安装状态、下载失败与重启串成显式流程；有签名配置并不等于流程已经被触发。</p>
+<p class="evidence">{{source:desktop/src-tauri/src/lib.rs#L399|检查、安装与重启状态}}；{{source:desktop/src-tauri/tauri.conf.json|更新地址与公钥配置}}。</p>
+<h3>0.1.53 的交付证据对应哪个对象</h3>
+<p><a href="https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.53">公开 Release 的 Verification</a> 记录：发布源码为 <code>efc1c271</code>；主 CI 第二次尝试通过，首次的一个顺序相关波动也已披露。Release 的源码验证、构建和发布步骤通过；App 与 DMG 公证接受，完成 staple，Gatekeeper 接受。发货应用的 fresh-install 为 <strong>87 项通过、0 项失败</strong>，包含 Hands 接受签名后端连接及 Bridge 自检。</p>
+<p>同一发布记录也保留了对象差异：真实 Mac 上通过 Hands 创建并读回 Notes、审批等待 36 秒的操作，使用的是 <code>43751254</code> 的 build-only 包；它与最终发布源码仅有版本配置和文档差异。发布前没有从最终这份精确 DMG 手动安装并完整操作一次。自动包验收、较早构建的功能实测与精确发行包手工验收应分别陈述，不能互相替代。</p>
+</section>

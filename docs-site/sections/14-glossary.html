@@ -1,0 +1,63 @@
+<section class="chapter" id="glossary"><h2><span class="num">14 / 术语表</span>从术语回到具体实现</h2>
+<p>术语用于区分不同机制。下表给出简明定义，并把每个概念放回 Arslan 的实现中；历史机制会明确标注。</p>
+<h3>AI 与上下文</h3><div class="table-wrap"><table><thead><tr><th>术语</th><th>通俗解释</th><th>在 Arslan 里怎么用</th></tr></thead><tbody>
+<tr><th>LLM</th><td>理解与生成语言的大模型</td><td>来自用户配置的供应商；Arslan 负责应用与执行系统</td></tr>
+<tr><th>Agent</th><td>会根据结果决定下一步的执行过程</td><td>调用模型、运行工具、看结果、继续或收尾</td></tr>
+<tr><th>Orchestrator</th><td>把不同能力安排到一起的协调者</td><td>协调模型、上下文、工具、权限与任务状态</td></tr>
+<tr><th>Tool calling</th><td>模型用结构化方式请求一个工具</td><td>工具名和 JSON 参数经过校验才执行</td></tr>
+<tr><th>Native tool protocol</th><td>使用供应商正式定义的工具消息格式</td><td>保持 tool call ID、结果和推理延续正确对应</td></tr>
+<tr><th>Trajectory</th><td>模型与工具交互的结构化轨迹</td><td>OpenAI 兼容采用 native history，其他 Provider 保留各自路径</td></tr>
+<tr><th>Context window</th><td>模型单次能看到的信息范围</td><td>不能把所有历史、所有记忆和完整长输出无限塞入</td></tr>
+<tr><th>Compaction</th><td>把旧上下文压缩成有界摘要</td><td>控制请求体，保留近期内容；不等于删除原始会话</td></tr>
+<tr><th>RAG</th><td>先找相关资料，再让模型回答</td><td>从导入知识里检索片段，并带上来源</td></tr>
+<tr><th>FTS5</th><td>SQLite 的全文检索</td><td>擅长找词面匹配，即使没有向量也能查资料</td></tr>
+<tr><th>Embedding</th><td>把文本意思转换为数字向量</td><td>帮助找措辞不同但语义相近的内容</td></tr>
+<tr><th>Cosine similarity</th><td>比较向量方向是否相近</td><td>语义检索的一种相似度计算方法</td></tr>
+<tr><th>RRF</th><td>把多种检索结果按名次合并</td><td>融合 FTS 和向量排名，不直接混合不同单位的分数</td></tr>
+<tr><th>Skill</th><td>可复用的“怎么做”说明</td><td>SKILL.md、可选脚本与参考；不是另一个模型</td></tr>
+<tr><th>MCP</th><td>Agent 与外部工具之间的标准接口</td><td>通过 stdio 或 HTTP 接外部能力，授权仍需应用控制</td></tr>
+<tr><th>BYOK</th><td>用户自带模型 API 密钥</td><td>由用户选供应商并承担对应模型调用费用</td></tr>
+<tr><th>Prompt injection</th><td>把网页或工具内容伪装成给 Agent 的新指令</td><td>外部内容按数据处理，未经确认的外部影响经验通常进入提案；这不是彻底免疫证明</td></tr>
+<tr><th>Learned practice</th><td>从纠正或成功绕路中记下的方法</td><td>“此机 AppleScript 不通，尝试 EventKit”；不修改模型权重</td></tr>
+<tr><th>Shadow mode</th><td>只记录判断，暂不让它改变实际行为</td><td>判断层可记录审批建议，真实卡片仍等用户点</td></tr>
+<tr><th>Held-out evaluation</th><td>留出没用于改提示词的题目来考试</td><td>早期专家演进的历史设计，不是当前每轮对话的固定步骤</td></tr>
+</tbody></table></div>
+<h3>软件架构、状态与可靠性</h3><div class="table-wrap"><table><thead><tr><th>术语</th><th>通俗解释</th><th>在 Arslan 里怎么用</th></tr></thead><tbody>
+<tr><th>SPA</th><td>在一个 Web 应用里切换页面与状态</td><td>React 工作台由本地服务提供静态资源</td></tr>
+<tr><th>Sidecar</th><td>随主应用一起启动的辅助进程</td><td>Tauri 旁边运行的 Python 本地后端</td></tr>
+<tr><th>IPC</th><td>同一电脑上进程之间的通信</td><td>管道、Unix socket；不是所有模块都通过云通信</td></tr>
+<tr><th>REST / HTTP</th><td>一次请求获取或修改一个资源</td><td>设置、历史、任务与文件管理接口</td></tr>
+<tr><th>WebSocket</th><td>保持双向连接持续推送信息</td><td>回复流、工具状态、审批与进度事件</td></tr>
+<tr><th>Async I/O</th><td>等待 I/O 时让出事件循环，供其他任务推进</td><td>Python asyncio、异步 API 与数据库访问；不等于 CPU 任务无限并行</td></tr>
+<tr><th>Schema / Contract</th><td>输入、输出和合法状态的明确约定</td><td>Pydantic、工具参数与任务验收契约</td></tr>
+<tr><th>State machine</th><td>用有限状态描述一个流程走到哪</td><td>queued、running、waiting_user、verifying、succeeded 等</td></tr>
+<tr><th>Checkpoint</th><td>记录走到哪、做过什么、还剩什么</td><td>任务恢复用引用、证据和预算，不盲目重播未知副作用</td></tr>
+<tr><th>Attempt</th><td>任务的一次执行尝试</td><td>恢复产生新尝试，旧异步结果不能覆盖新轮状态</td></tr>
+<tr><th>Optimistic concurrency</th><td>写入前确认数据还是自己刚才看到的版本</td><td>row version 和 attempt ID 防止旧结果覆盖取消或更新</td></tr>
+<tr><th>Idempotency</th><td>重复请求不应造成意外重复操作</td><td>消息／任务 ID 防重；外部未知效果还需要核对</td></tr>
+<tr><th>ACK</th><td>接收方说“这个包我收到了”</td><td>不表示任务做成，也不表示审批已经生效</td></tr>
+<tr><th>Single-flight</th><td>上一轮没结束，就不重叠启动同一项</td><td>定时任务避免一层层堆积重复执行</td></tr>
+<tr><th>Backoff</th><td>失败后逐渐拉长重试间隔</td><td>限流／服务错误退避，尊重 Retry-After；认证错误不盲重试</td></tr>
+<tr><th>WAL</th><td>SQLite 先写日志，改善读写共存</td><td>本机数据持久化；仍有写并发边界</td></tr>
+<tr><th>Migration</th><td>把旧数据库结构安全升级到新结构</td><td>显式版本 runner、升级前备份、拒绝未知 schema</td></tr>
+<tr><th>Provenance</th><td>一条信息从哪里来</td><td>文档来源、记忆来源、真实运行轨迹</td></tr>
+<tr><th>Observability</th><td>出现问题时能看见发生了什么</td><td>Run/Step、Activity、usage、错误与产物关联</td></tr>
+</tbody></table></div>
+<h3>操作系统、安全与交付</h3><div class="table-wrap"><table><thead><tr><th>术语</th><th>通俗解释</th><th>在 Arslan 里怎么用</th></tr></thead><tbody>
+<tr><th>Sandbox / Seatbelt</th><td>由操作系统限制进程可访问的资源</td><td>计算沙箱和命令沙箱规则不同，网络与降级行为分别说明</td></tr>
+<tr><th>Fail-closed</th><td>保护层不可用就拒绝执行</td><td>适用于默认 Python 沙箱和离线收尾路径；不能套用全部普通命令</td></tr>
+<tr><th>Accessibility tree</th><td>系统暴露的窗口、按钮、文本等结构</td><td>Hands 读取和定位控件，不依赖截图像素识别</td></tr>
+<tr><th>TCC</th><td>macOS 的隐私权限管理体系</td><td>辅助功能、麦克风、Apple Events 等不是应用自己点个开关就获准</td></tr>
+<tr><th>SSRF</th><td>诱导服务访问不该访问的内部地址</td><td>网页提取和外部 URL 需要校验目标、重定向与网络边界</td></tr>
+<tr><th>AEAD</th><td>同时保护内容秘密性和完整性的加密方式</td><td>Bridge 使用 ChaCha20-Poly1305，篡改后验证失败</td></tr>
+<tr><th>Key agreement / Signature</th><td>前者协商加密材料，后者验证发送者身份</td><td>X25519 与 Ed25519 职责不同，不要混说</td></tr>
+<tr><th>Replay protection</th><td>不让攻击者重复投递旧消息再次生效</td><td>签名、收件人、序号滑窗、持久去重共同作用</td></tr>
+<tr><th>CI / CD</th><td>把构建、检查与分发流程自动化</td><td>成功 CI 必须对应待发布 SHA，最后产物还要检查</td></tr>
+<tr><th>Contract test</th><td>验证边界两端遵守同一协议</td><td>Python/Rust、Mac/iPhone 共享正例和负例向量</td></tr>
+<tr><th>Mutation testing</th><td>故意弄坏保护逻辑，看测试能否抓住</td><td>用于证明特定断言有区分度，不是换个名字的普通单元测试</td></tr>
+<tr><th>Code signing</th><td>验证软件来源与产物未被修改</td><td>App 与内嵌 helper 都需要正确签名</td></tr>
+<tr><th>Notarization / Staple</th><td>Apple 检查发行包，再把票据附到包里</td><td>与签名不同，还要用 Gatekeeper 验收结果</td></tr>
+<tr><th>Fresh-install acceptance</th><td>模拟没有开发环境、没有旧数据的新用户</td><td>验证真正安装包的认证、WebSocket、资源与 helper</td></tr>
+</tbody></table></div>
+<p class="note">当前系统主要是本地分层单体加独立 helper。SQLite 与进程内异步调度适配个人桌面产品的安装和运行方式；相关术语都应在这一部署规模下理解。</p>
+</section>

@@ -1,0 +1,2206 @@
+[
+  {
+    "version": "v0.1.0",
+    "title": "首个桌面安装版",
+    "date": "2026-07-27",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-07-26T17:01:03Z",
+    "published_at_shanghai": "2026-07-27T01:01:03+08:00",
+    "summary": "把此前的 Meta-Agent、记忆、工具和研究能力打包为 Tauri 桌面应用；Python 后端以 PyInstaller sidecar 随应用发布，建立签名、公证、安装验收和自动更新产物。",
+    "status": "published_stable",
+    "tag_object_type": "tag",
+    "tag_object_sha": "c7231d600690ae13bfe057e2baa15bc43ea9b87c",
+    "tag_created_or_commit_date": "2026-07-27T00:52:31+08:00",
+    "tagged_commit": "40bf485bc19fa9a9e1efc806221692473e7b89d4",
+    "tagged_commit_authored_at": "2026-07-27T00:25:53+08:00",
+    "tagged_commit_committed_at": "2026-07-27T00:44:51+08:00",
+    "commit_count_no_merges_since_previous_tag": 1125,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.0",
+        "published_at": "2026-07-26T17:01:03Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.0",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.0"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "40bf485bc19fa9a9e1efc806221692473e7b89d4",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/40bf485bc19fa9a9e1efc806221692473e7b89d4"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.1",
+    "title": "首启聊天与草稿",
+    "date": "2026-07-27",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-07-26T18:20:45Z",
+    "published_at_shanghai": "2026-07-27T02:20:45+08:00",
+    "summary": "修复首次启动发送、保留聊天草稿，整理 Settings 布局并补齐 Brain/Diagnostics 本地化。",
+    "status": "published_stable",
+    "tag_object_type": "tag",
+    "tag_object_sha": "b1a1e80242a19fdf7710cf1a9e71421ec48e8b08",
+    "tag_created_or_commit_date": "2026-07-27T02:10:35+08:00",
+    "tagged_commit": "52114154e18da7886e656d3f18d29ee73f364af3",
+    "tagged_commit_authored_at": "2026-07-27T02:01:11+08:00",
+    "tagged_commit_committed_at": "2026-07-27T02:01:11+08:00",
+    "commit_count_no_merges_since_previous_tag": 4,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.1",
+        "published_at": "2026-07-26T18:20:45Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.1",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.1"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "52114154e18da7886e656d3f18d29ee73f364af3",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/52114154e18da7886e656d3f18d29ee73f364af3"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.0...v0.1.1"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.2",
+    "title": "自动更新真正检查",
+    "date": "2026-07-27",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-07-26T18:43:11Z",
+    "published_at_shanghai": "2026-07-27T02:43:11+08:00",
+    "summary": "补齐更新检查调用；此前已有更新管道但没有实际发起检查。",
+    "status": "published_stable",
+    "tag_object_type": "tag",
+    "tag_object_sha": "67d8490e15de272f02ac1ae1ed1fc0855a28e55d",
+    "tag_created_or_commit_date": "2026-07-27T02:32:10+08:00",
+    "tagged_commit": "4f89787f6939272bb3529b154ce0db101a8ac6bd",
+    "tagged_commit_authored_at": "2026-07-27T02:24:25+08:00",
+    "tagged_commit_committed_at": "2026-07-27T02:24:25+08:00",
+    "commit_count_no_merges_since_previous_tag": 1,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.2",
+        "published_at": "2026-07-26T18:43:11Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.2",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.2"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "4f89787f6939272bb3529b154ce0db101a8ac6bd",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/4f89787f6939272bb3529b154ce0db101a8ac6bd"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.1...v0.1.2"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.3",
+    "title": "安装与浮窗",
+    "date": "2026-07-27",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-07-27T03:40:02Z",
+    "published_at_shanghai": "2026-07-27T11:40:02+08:00",
+    "summary": "阻止从 DMG 直接运行；修复浮窗标题栏与拖动权限。",
+    "status": "published_stable",
+    "tag_object_type": "commit",
+    "tag_object_sha": "9b882c28811b8f63e69079f1b40019f2c40773f1",
+    "tag_created_or_commit_date": "2026-07-27T11:19:11+08:00",
+    "tagged_commit": "9b882c28811b8f63e69079f1b40019f2c40773f1",
+    "tagged_commit_authored_at": "2026-07-27T11:19:11+08:00",
+    "tagged_commit_committed_at": "2026-07-27T11:19:11+08:00",
+    "commit_count_no_merges_since_previous_tag": 2,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.3",
+        "published_at": "2026-07-27T03:40:02Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.3",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.3"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "9b882c28811b8f63e69079f1b40019f2c40773f1",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/9b882c28811b8f63e69079f1b40019f2c40773f1"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.2...v0.1.3"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.4",
+    "title": "桌面优先与国际化",
+    "date": "2026-07-27",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-07-27T07:06:12Z",
+    "published_at_shanghai": "2026-07-27T15:06:12+08:00",
+    "summary": "安装叙事改为桌面优先；后端输出稳定翻译 key，清理剩余硬编码中文并增加回归约束。",
+    "status": "published_stable",
+    "tag_object_type": "commit",
+    "tag_object_sha": "a41e2f24cd59c1b50169d701c0694a6265df6f55",
+    "tag_created_or_commit_date": "2026-07-27T14:43:55+08:00",
+    "tagged_commit": "a41e2f24cd59c1b50169d701c0694a6265df6f55",
+    "tagged_commit_authored_at": "2026-07-27T14:43:55+08:00",
+    "tagged_commit_committed_at": "2026-07-27T14:43:55+08:00",
+    "commit_count_no_merges_since_previous_tag": 7,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.4",
+        "published_at": "2026-07-27T07:06:12Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.4",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.4"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "a41e2f24cd59c1b50169d701c0694a6265df6f55",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/a41e2f24cd59c1b50169d701c0694a6265df6f55"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.3...v0.1.4"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.5",
+    "title": "非阻塞更新提示",
+    "date": "2026-07-27",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-07-27T10:33:58Z",
+    "published_at_shanghai": "2026-07-27T18:33:58+08:00",
+    "summary": "增加角落更新胶囊，不用阻塞对话框；修复更新检查前状态。",
+    "status": "published_stable",
+    "tag_object_type": "commit",
+    "tag_object_sha": "dc95b3fc521422b27089bd5b07d4ca0484ab520f",
+    "tag_created_or_commit_date": "2026-07-27T18:14:37+08:00",
+    "tagged_commit": "dc95b3fc521422b27089bd5b07d4ca0484ab520f",
+    "tagged_commit_authored_at": "2026-07-27T18:14:37+08:00",
+    "tagged_commit_committed_at": "2026-07-27T18:14:37+08:00",
+    "commit_count_no_merges_since_previous_tag": 2,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.5",
+        "published_at": "2026-07-27T10:33:58Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.5",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.5"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "dc95b3fc521422b27089bd5b07d4ca0484ab520f",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/dc95b3fc521422b27089bd5b07d4ca0484ab520f"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.4...v0.1.5"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.6",
+    "title": "布局与可访问性",
+    "date": "2026-07-27",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-07-27T11:59:54Z",
+    "published_at_shanghai": "2026-07-27T19:59:54+08:00",
+    "summary": "修复 Skills 溢出、重复标题、交互名称和布局细节。",
+    "status": "published_stable",
+    "tag_object_type": "commit",
+    "tag_object_sha": "e47dfd8f3fd11ef51dd577300d89e743cab24d3f",
+    "tag_created_or_commit_date": "2026-07-27T19:40:06+08:00",
+    "tagged_commit": "e47dfd8f3fd11ef51dd577300d89e743cab24d3f",
+    "tagged_commit_authored_at": "2026-07-27T19:40:06+08:00",
+    "tagged_commit_committed_at": "2026-07-27T19:40:06+08:00",
+    "commit_count_no_merges_since_previous_tag": 2,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.6",
+        "published_at": "2026-07-27T11:59:54Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.6",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.6"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "e47dfd8f3fd11ef51dd577300d89e743cab24d3f",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/e47dfd8f3fd11ef51dd577300d89e743cab24d3f"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.5...v0.1.6"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.7",
+    "title": "打包后的 WebSocket 热修复",
+    "date": "2026-07-28",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-07-27T16:32:16Z",
+    "published_at_shanghai": "2026-07-28T00:32:16+08:00",
+    "summary": "修复安装版无法连接 WebSocket 导致聊天不可用；文件未实际存入时不再显示已喂入成功。",
+    "status": "published_stable",
+    "tag_object_type": "commit",
+    "tag_object_sha": "542ec40d5b91f102cbeca55f74d911a546b31413",
+    "tag_created_or_commit_date": "2026-07-28T00:10:08+08:00",
+    "tagged_commit": "542ec40d5b91f102cbeca55f74d911a546b31413",
+    "tagged_commit_authored_at": "2026-07-28T00:10:08+08:00",
+    "tagged_commit_committed_at": "2026-07-28T00:10:08+08:00",
+    "commit_count_no_merges_since_previous_tag": 5,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.7",
+        "published_at": "2026-07-27T16:32:16Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.7",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.7"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "542ec40d5b91f102cbeca55f74d911a546b31413",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/542ec40d5b91f102cbeca55f74d911a546b31413"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.6...v0.1.7"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.8",
+    "title": "聊天与窗口回归修复",
+    "date": "2026-07-28",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-07-27T17:43:33Z",
+    "published_at_shanghai": "2026-07-28T01:43:33+08:00",
+    "summary": "修复空白聊天、失效拖放区和不可拖动窗口三项回归。",
+    "status": "published_stable",
+    "tag_object_type": "commit",
+    "tag_object_sha": "ebe4c93c8952b7bae7fe23caf9d505390bb705c1",
+    "tag_created_or_commit_date": "2026-07-28T01:16:55+08:00",
+    "tagged_commit": "ebe4c93c8952b7bae7fe23caf9d505390bb705c1",
+    "tagged_commit_authored_at": "2026-07-28T01:16:55+08:00",
+    "tagged_commit_committed_at": "2026-07-28T01:16:55+08:00",
+    "commit_count_no_merges_since_previous_tag": 2,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.8",
+        "published_at": "2026-07-27T17:43:33Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.8",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.8"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "ebe4c93c8952b7bae7fe23caf9d505390bb705c1",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/ebe4c93c8952b7bae7fe23caf9d505390bb705c1"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.7...v0.1.8"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.9",
+    "title": "图片与扫描 PDF",
+    "date": "2026-07-28",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-07-28T01:13:05Z",
+    "published_at_shanghai": "2026-07-28T09:13:05+08:00",
+    "summary": "将图片贯通输入、三类 provider、聊天及旧专家路径；扫描 PDF 按受限页数栅格化供视觉模型读取。",
+    "status": "published_stable",
+    "tag_object_type": "commit",
+    "tag_object_sha": "d5c59c220aae1516aaf77e3d73bc5d902a1f5e7a",
+    "tag_created_or_commit_date": "2026-07-28T08:49:36+08:00",
+    "tagged_commit": "d5c59c220aae1516aaf77e3d73bc5d902a1f5e7a",
+    "tagged_commit_authored_at": "2026-07-28T08:49:36+08:00",
+    "tagged_commit_committed_at": "2026-07-28T08:49:36+08:00",
+    "commit_count_no_merges_since_previous_tag": 9,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.9",
+        "published_at": "2026-07-28T01:13:05Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.9",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.9"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "d5c59c220aae1516aaf77e3d73bc5d902a1f5e7a",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/d5c59c220aae1516aaf77e3d73bc5d902a1f5e7a"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.8...v0.1.9"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.10",
+    "title": "保留模型错误详情",
+    "date": "2026-07-28",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-07-28T02:34:04Z",
+    "published_at_shanghai": "2026-07-28T10:34:04+08:00",
+    "summary": "将 provider 原始错误正文传递到异常，避免只给笼统失败。",
+    "status": "published_stable",
+    "tag_object_type": "tag",
+    "tag_object_sha": "03c3cccbeaf3300392ad69e213361d7d9f7b00b0",
+    "tag_created_or_commit_date": "2026-07-28T10:19:31+08:00",
+    "tagged_commit": "2f76f7ccf0cbeed0a279981048e8004be40a1dee",
+    "tagged_commit_authored_at": "2026-07-28T09:57:41+08:00",
+    "tagged_commit_committed_at": "2026-07-28T09:57:41+08:00",
+    "commit_count_no_merges_since_previous_tag": 2,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.10",
+        "published_at": "2026-07-28T02:34:04Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.10",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.10"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "2f76f7ccf0cbeed0a279981048e8004be40a1dee",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/2f76f7ccf0cbeed0a279981048e8004be40a1dee"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.9...v0.1.10"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.11",
+    "title": "系统 OCR 兜底",
+    "date": "2026-07-29",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-07-28T18:06:58Z",
+    "published_at_shanghai": "2026-07-29T02:06:58+08:00",
+    "summary": "视觉模型无法读取时，使用 macOS Vision OCR 兜底；补齐系统语言过滤与打包验收。",
+    "status": "published_stable",
+    "tag_object_type": "tag",
+    "tag_object_sha": "07fb280cfcd3ce08fb0f2ae29326d9abb6045515",
+    "tag_created_or_commit_date": "2026-07-29T01:53:09+08:00",
+    "tagged_commit": "9ea6da6d010b732d2c559b7fa798d5c4a04f788e",
+    "tagged_commit_authored_at": "2026-07-29T01:45:05+08:00",
+    "tagged_commit_committed_at": "2026-07-29T01:45:05+08:00",
+    "commit_count_no_merges_since_previous_tag": 7,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.11",
+        "published_at": "2026-07-28T18:06:58Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.11",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.11"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "9ea6da6d010b732d2c559b7fa798d5c4a04f788e",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/9ea6da6d010b732d2c559b7fa798d5c4a04f788e"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.10...v0.1.11"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.12",
+    "title": "能力与界面补全",
+    "date": "2026-07-31",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-07-31T00:29:05Z",
+    "published_at_shanghai": "2026-07-31T08:29:05+08:00",
+    "summary": "加入能力适配矩阵、Brain 搜索、OCR 语言选择、Playwright MCP 预设；约束演化评估消耗并增加打包存活检查。",
+    "status": "published_stable",
+    "tag_object_type": "tag",
+    "tag_object_sha": "3ad689100b1d9ecdb34a923629ede9734bb62556",
+    "tag_created_or_commit_date": "2026-07-31T01:23:48+08:00",
+    "tagged_commit": "cc5d207d0318c81bf453d652ebc4c7b970eaf10e",
+    "tagged_commit_authored_at": "2026-07-31T01:16:35+08:00",
+    "tagged_commit_committed_at": "2026-07-31T01:16:35+08:00",
+    "commit_count_no_merges_since_previous_tag": 16,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.12",
+        "published_at": "2026-07-31T00:29:05Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.12",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.12"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "cc5d207d0318c81bf453d652ebc4c7b970eaf10e",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/cc5d207d0318c81bf453d652ebc4c7b970eaf10e"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.11...v0.1.12"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.13",
+    "title": "能力声明与边界修复",
+    "date": "2026-08-01",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-08-01T03:18:51Z",
+    "published_at_shanghai": "2026-08-01T11:18:51+08:00",
+    "summary": "修复 Skill 注入截断、并发演化预算归还问题；补齐空状态和后端国际化。",
+    "status": "published_stable",
+    "tag_object_type": "commit",
+    "tag_object_sha": "a180a073ff86dd3bd43107b558a070b1f54d0a3c",
+    "tag_created_or_commit_date": "2026-08-01T10:51:21+08:00",
+    "tagged_commit": "a180a073ff86dd3bd43107b558a070b1f54d0a3c",
+    "tagged_commit_authored_at": "2026-08-01T10:51:21+08:00",
+    "tagged_commit_committed_at": "2026-08-01T10:51:21+08:00",
+    "commit_count_no_merges_since_previous_tag": 11,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.13",
+        "published_at": "2026-08-01T03:18:51Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.13",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.13"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "a180a073ff86dd3bd43107b558a070b1f54d0a3c",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/a180a073ff86dd3bd43107b558a070b1f54d0a3c"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.12...v0.1.13"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.14",
+    "title": "设置重组",
+    "date": "2026-08-01",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-08-01T04:49:49Z",
+    "published_at_shanghai": "2026-08-01T12:49:49+08:00",
+    "summary": "重新分组 Settings，把消耗控制集中到一处。",
+    "status": "published_stable",
+    "tag_object_type": "commit",
+    "tag_object_sha": "bebb87ac63d60cbc06114c2ceba4949144274c7a",
+    "tag_created_or_commit_date": "2026-08-01T12:30:05+08:00",
+    "tagged_commit": "bebb87ac63d60cbc06114c2ceba4949144274c7a",
+    "tagged_commit_authored_at": "2026-08-01T12:30:05+08:00",
+    "tagged_commit_committed_at": "2026-08-01T12:30:05+08:00",
+    "commit_count_no_merges_since_previous_tag": 2,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.14",
+        "published_at": "2026-08-01T04:49:49Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.14",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.14"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "bebb87ac63d60cbc06114c2ceba4949144274c7a",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/bebb87ac63d60cbc06114c2ceba4949144274c7a"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.13...v0.1.14"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.15",
+    "title": "会话重启恢复",
+    "date": "2026-08-02",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-08-02T04:22:12Z",
+    "published_at_shanghai": "2026-08-02T12:22:12+08:00",
+    "summary": "保证会话在重启后保留，澄清回答后继续保留旧专家邀请状态。",
+    "status": "published_stable",
+    "tag_object_type": "commit",
+    "tag_object_sha": "09917c23c0344b96d58e19aea0bb5daf3f2e82f8",
+    "tag_created_or_commit_date": "2026-08-02T12:02:28+08:00",
+    "tagged_commit": "09917c23c0344b96d58e19aea0bb5daf3f2e82f8",
+    "tagged_commit_authored_at": "2026-08-02T12:02:28+08:00",
+    "tagged_commit_committed_at": "2026-08-02T12:02:28+08:00",
+    "commit_count_no_merges_since_previous_tag": 2,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.15",
+        "published_at": "2026-08-02T04:22:12Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.15",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.15"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "09917c23c0344b96d58e19aea0bb5daf3f2e82f8",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/09917c23c0344b96d58e19aea0bb5daf3f2e82f8"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.14...v0.1.15"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.16",
+    "title": "浮层交互一致性",
+    "date": "2026-08-03",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-08-02T16:53:50Z",
+    "published_at_shanghai": "2026-08-03T00:53:50+08:00",
+    "summary": "修复菜单越界和关闭方式；防止编辑弹层静默丢修改，并修正端口探测。",
+    "status": "published_stable",
+    "tag_object_type": "commit",
+    "tag_object_sha": "9099c4d19e62a8e5187938209668d7956df3f103",
+    "tag_created_or_commit_date": "2026-08-03T00:35:24+08:00",
+    "tagged_commit": "9099c4d19e62a8e5187938209668d7956df3f103",
+    "tagged_commit_authored_at": "2026-08-03T00:35:24+08:00",
+    "tagged_commit_committed_at": "2026-08-03T00:35:24+08:00",
+    "commit_count_no_merges_since_previous_tag": 7,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.16",
+        "published_at": "2026-08-02T16:53:50Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.16",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.16"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "9099c4d19e62a8e5187938209668d7956df3f103",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/9099c4d19e62a8e5187938209668d7956df3f103"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.15...v0.1.16"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.17",
+    "title": "旧专家沙盒会话连续性",
+    "date": "2026-08-03",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-08-03T04:15:30Z",
+    "published_at_shanghai": "2026-08-03T12:15:30+08:00",
+    "summary": "返回主对话不再销毁专家试用会话；旧专家可读取主对话最后一轮作为只读背景。",
+    "status": "published_stable",
+    "tag_object_type": "commit",
+    "tag_object_sha": "18544a4234bb400ee408d976163204441320b124",
+    "tag_created_or_commit_date": "2026-08-03T11:56:19+08:00",
+    "tagged_commit": "18544a4234bb400ee408d976163204441320b124",
+    "tagged_commit_authored_at": "2026-08-03T11:56:19+08:00",
+    "tagged_commit_committed_at": "2026-08-03T11:56:19+08:00",
+    "commit_count_no_merges_since_previous_tag": 3,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.17",
+        "published_at": "2026-08-03T04:15:30Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.17",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.17"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "18544a4234bb400ee408d976163204441320b124",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/18544a4234bb400ee408d976163204441320b124"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.16...v0.1.17"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.18",
+    "title": "界面回归和设置完善",
+    "date": "2026-08-03",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-08-03T10:24:55Z",
+    "published_at_shanghai": "2026-08-03T18:24:55+08:00",
+    "summary": "修复浮层自行消失；完善 LLM 布局、系统主题、OCR 选择和相关提示。",
+    "status": "published_stable",
+    "tag_object_type": "commit",
+    "tag_object_sha": "6897b46e3a46ef09e727d5277193ed907afa61f6",
+    "tag_created_or_commit_date": "2026-08-03T18:04:39+08:00",
+    "tagged_commit": "6897b46e3a46ef09e727d5277193ed907afa61f6",
+    "tagged_commit_authored_at": "2026-08-03T18:04:39+08:00",
+    "tagged_commit_committed_at": "2026-08-03T18:04:39+08:00",
+    "commit_count_no_merges_since_previous_tag": 4,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.18",
+        "published_at": "2026-08-03T10:24:55Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.18",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.18"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "6897b46e3a46ef09e727d5277193ed907afa61f6",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/6897b46e3a46ef09e727d5277193ed907afa61f6"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.17...v0.1.18"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.19",
+    "title": "启动动画与新会话",
+    "date": "2026-08-04",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-08-04T08:01:30Z",
+    "published_at_shanghai": "2026-08-04T16:01:30+08:00",
+    "summary": "加载后端时播放启动动画；启动进入新会话，清理未使用空会话，修复视频资源打包与缓存路径。",
+    "status": "published_stable",
+    "tag_object_type": "commit",
+    "tag_object_sha": "dee43d042fe131de1854f1d2ccccecccb8cbbc3c",
+    "tag_created_or_commit_date": "2026-08-03T21:50:44+08:00",
+    "tagged_commit": "dee43d042fe131de1854f1d2ccccecccb8cbbc3c",
+    "tagged_commit_authored_at": "2026-08-03T21:50:44+08:00",
+    "tagged_commit_committed_at": "2026-08-03T21:50:44+08:00",
+    "commit_count_no_merges_since_previous_tag": 6,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.19",
+        "published_at": "2026-08-04T08:01:30Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.19",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.19"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "dee43d042fe131de1854f1d2ccccecccb8cbbc3c",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/dee43d042fe131de1854f1d2ccccecccb8cbbc3c"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.18...v0.1.19"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.20",
+    "title": "密钥三态、搜索与模型分工",
+    "date": "2026-08-09",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-08-09T15:06:17Z",
+    "published_at_shanghai": "2026-08-09T23:06:17+08:00",
+    "summary": "区分未配置、可解密、不可解密的密钥状态，稳定数据库盐迁移；加入零 key 搜索兜底、搜索来源和错误、按任务模型槽与回答模型展示。",
+    "status": "published_stable",
+    "tag_object_type": "tag",
+    "tag_object_sha": "6cdc9cc8b330224eec32456f11988f34f7528ec4",
+    "tag_created_or_commit_date": "2026-08-09T22:40:01+08:00",
+    "tagged_commit": "e9a0f174593af51dbb7bdeb6d8ce6332a469ed13",
+    "tagged_commit_authored_at": "2026-08-09T22:31:06+08:00",
+    "tagged_commit_committed_at": "2026-08-09T22:31:06+08:00",
+    "commit_count_no_merges_since_previous_tag": 60,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.20",
+        "published_at": "2026-08-09T15:06:17Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.20",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.20"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "e9a0f174593af51dbb7bdeb6d8ce6332a469ed13",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/e9a0f174593af51dbb7bdeb6d8ce6332a469ed13"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.19...v0.1.20"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.21",
+    "title": "模型槽 UI 与连接修复",
+    "date": "2026-08-13",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-08-13T02:21:34Z",
+    "published_at_shanghai": "2026-08-13T10:21:34+08:00",
+    "summary": "为按任务模型槽提供可操作界面；修复 Anthropic 工具 schema 传输，支持受 SSRF 约束的自托管 SearXNG。",
+    "status": "published_stable",
+    "tag_object_type": "tag",
+    "tag_object_sha": "1f2b4f6a459e14634b6040ebc62a6b879c45b2d0",
+    "tag_created_or_commit_date": "2026-08-12T16:59:38+08:00",
+    "tagged_commit": "1e827cf401305d0c49b41f2511cd55e1eb5abd15",
+    "tagged_commit_authored_at": "2026-08-12T16:58:41+08:00",
+    "tagged_commit_committed_at": "2026-08-12T16:58:41+08:00",
+    "commit_count_no_merges_since_previous_tag": 8,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.21",
+        "published_at": "2026-08-13T02:21:34Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.21",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.21"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "1e827cf401305d0c49b41f2511cd55e1eb5abd15",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/1e827cf401305d0c49b41f2511cd55e1eb5abd15"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.20...v0.1.21"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.22",
+    "title": "OAuth 与首次引导",
+    "date": "2026-08-16",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-08-16T01:14:03Z",
+    "published_at_shanghai": "2026-08-16T09:14:03+08:00",
+    "summary": "打通远程 MCP OAuth、OpenRouter 登录和四步首次引导；更新检查状态可见，桌面 shell 在每次 push 编译。",
+    "status": "published_stable",
+    "tag_object_type": "tag",
+    "tag_object_sha": "7f9f5d08f7993852c43d8021d9f9e29eac03524d",
+    "tag_created_or_commit_date": "2026-08-16T02:32:24+08:00",
+    "tagged_commit": "a2c7908db84a26af265988b8af2b1d4fcd3dddb9",
+    "tagged_commit_authored_at": "2026-08-16T02:32:00+08:00",
+    "tagged_commit_committed_at": "2026-08-16T02:32:00+08:00",
+    "commit_count_no_merges_since_previous_tag": 12,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.22",
+        "published_at": "2026-08-16T01:14:03Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.22",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.22"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "a2c7908db84a26af265988b8af2b1d4fcd3dddb9",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/a2c7908db84a26af265988b8af2b1d4fcd3dddb9"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.21...v0.1.22"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.23",
+    "title": "切换聊天仍继续执行",
+    "date": "2026-08-17",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-08-17T02:35:36Z",
+    "published_at_shanghai": "2026-08-17T10:35:36+08:00",
+    "summary": "通过 turn journal 和重新挂接回放保留正在回答的轮次；打包应用能找到 npx。",
+    "status": "published_stable",
+    "tag_object_type": "tag",
+    "tag_object_sha": "9426295b650ba6babfc09291f364c072883039e2",
+    "tag_created_or_commit_date": "2026-08-17T10:24:11+08:00",
+    "tagged_commit": "b31ccf2ba1d85a21680698a4bd9fdb19d4b333d4",
+    "tagged_commit_authored_at": "2026-08-17T10:23:52+08:00",
+    "tagged_commit_committed_at": "2026-08-17T10:23:52+08:00",
+    "commit_count_no_merges_since_previous_tag": 3,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.23",
+        "published_at": "2026-08-17T02:35:36Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.23",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.23"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "b31ccf2ba1d85a21680698a4bd9fdb19d4b333d4",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/b31ccf2ba1d85a21680698a4bd9fdb19d4b333d4"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.22...v0.1.23"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.24",
+    "title": "扩展清单与装备可见性",
+    "date": "2026-08-20",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-08-19T16:13:17Z",
+    "published_at_shanghai": "2026-08-20T00:13:17+08:00",
+    "summary": "识别 arslan.plugin.json；以 MCP server 为粒度确认装备，显示扩展作者提供的配置并让 Arslan 知道自己实际能力。",
+    "status": "published_stable",
+    "tag_object_type": "tag",
+    "tag_object_sha": "72bf1c330f9ed5f3758c6ed047cb902c39a1a2d0",
+    "tag_created_or_commit_date": "2026-08-20T00:01:49+08:00",
+    "tagged_commit": "0067c4fca296ddbd8692e7273c6457b2485f36fe",
+    "tagged_commit_authored_at": "2026-08-20T00:01:21+08:00",
+    "tagged_commit_committed_at": "2026-08-20T00:01:21+08:00",
+    "commit_count_no_merges_since_previous_tag": 6,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.24",
+        "published_at": "2026-08-19T16:13:17Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.24",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.24"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "0067c4fca296ddbd8692e7273c6457b2485f36fe",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/0067c4fca296ddbd8692e7273c6457b2485f36fe"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.23...v0.1.24"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.25",
+    "title": "本地工作区读写",
+    "date": "2026-08-20",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-08-20T15:06:19Z",
+    "published_at_shanghai": "2026-08-20T23:06:19+08:00",
+    "summary": "可读取工作区，写入经会话授权后执行；改善 Discover 结果说明。",
+    "status": "published_stable",
+    "tag_object_type": "tag",
+    "tag_object_sha": "7e3aa17bf7f4d6bf70caf8df83a0e37f8898466e",
+    "tag_created_or_commit_date": "2026-08-20T22:51:56+08:00",
+    "tagged_commit": "23d56ae2ee23b67d156ae2cb3514d6311f85d098",
+    "tagged_commit_authored_at": "2026-08-20T22:51:19+08:00",
+    "tagged_commit_committed_at": "2026-08-20T22:51:19+08:00",
+    "commit_count_no_merges_since_previous_tag": 4,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.25",
+        "published_at": "2026-08-20T15:06:19Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.25",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.25"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "23d56ae2ee23b67d156ae2cb3514d6311f85d098",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/23d56ae2ee23b67d156ae2cb3514d6311f85d098"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.24...v0.1.25"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.26",
+    "title": "自然语言定时工作",
+    "date": "2026-08-21",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-08-21T02:21:55Z",
+    "published_at_shanghai": "2026-08-21T10:21:55+08:00",
+    "summary": "让 Arslan 创建定时任务并读取任务清单；加入调度授权卡、输出预算和错误说明。",
+    "status": "published_stable",
+    "tag_object_type": "tag",
+    "tag_object_sha": "b43f9efc4f7be1b2c02cf3a5d831ec04ac2b1e52",
+    "tag_created_or_commit_date": "2026-08-21T01:39:07+08:00",
+    "tagged_commit": "b3c7a8ebd2f7d25f2d6db860751814293ab16b5b",
+    "tagged_commit_authored_at": "2026-08-21T01:38:41+08:00",
+    "tagged_commit_committed_at": "2026-08-21T01:38:41+08:00",
+    "commit_count_no_merges_since_previous_tag": 5,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.26",
+        "published_at": "2026-08-21T02:21:55Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.26",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.26"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "b3c7a8ebd2f7d25f2d6db860751814293ab16b5b",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/b3c7a8ebd2f7d25f2d6db860751814293ab16b5b"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.25...v0.1.26"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.27",
+    "title": "网络发现与 SSH",
+    "date": "2026-08-21",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-08-21T14:26:49Z",
+    "published_at_shanghai": "2026-08-21T22:26:49+08:00",
+    "summary": "增加网络发现、远程机器记录与 SSH 执行；每次远程执行都询问，并修复 aiosqlite 并发错误归因。",
+    "status": "published_stable",
+    "tag_object_type": "tag",
+    "tag_object_sha": "b68b25ef0c2832038ee4067b862067629550cc98",
+    "tag_created_or_commit_date": "2026-08-21T22:12:47+08:00",
+    "tagged_commit": "311a90b514413dc9b5c3f360a7fb3ac09599d394",
+    "tagged_commit_authored_at": "2026-08-21T22:12:28+08:00",
+    "tagged_commit_committed_at": "2026-08-21T22:12:28+08:00",
+    "commit_count_no_merges_since_previous_tag": 5,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.27",
+        "published_at": "2026-08-21T14:26:49Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.27",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.27"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "311a90b514413dc9b5c3f360a7fb3ac09599d394",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/311a90b514413dc9b5c3f360a7fb3ac09599d394"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.26...v0.1.27"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.28",
+    "title": "装备处解释不生效原因",
+    "date": "2026-08-23",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-08-23T03:09:01Z",
+    "published_at_shanghai": "2026-08-23T11:09:01+08:00",
+    "summary": "在装备入口解释 provider 无法调用工具的限制；修复多个页标题泄露 i18n key。",
+    "status": "published_stable",
+    "tag_object_type": "tag",
+    "tag_object_sha": "931005f72bd930f3339b5f9062601d2585997fbe",
+    "tag_created_or_commit_date": "2026-08-22T21:31:26+08:00",
+    "tagged_commit": "fe98b746de4de79e18e4101a4fbe7c3ed9f59d4f",
+    "tagged_commit_authored_at": "2026-08-22T21:31:06+08:00",
+    "tagged_commit_committed_at": "2026-08-22T21:31:06+08:00",
+    "commit_count_no_merges_since_previous_tag": 3,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.28",
+        "published_at": "2026-08-23T03:09:01Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.28",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.28"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "fe98b746de4de79e18e4101a4fbe7c3ed9f59d4f",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/fe98b746de4de79e18e4101a4fbe7c3ed9f59d4f"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.27...v0.1.28"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.29",
+    "title": "已拥有内容搜索",
+    "date": "2026-08-23",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-08-23T15:27:09Z",
+    "published_at_shanghai": "2026-08-23T23:27:09+08:00",
+    "summary": "搜索现有资源；记忆收件箱支持键盘处理并防止误删除；依据验证解除 FastAPI/Starlette 版本上限。",
+    "status": "published_stable",
+    "tag_object_type": "tag",
+    "tag_object_sha": "459075919de8ddb3cb58812ef859bf73bb56090e",
+    "tag_created_or_commit_date": "2026-08-23T23:15:30+08:00",
+    "tagged_commit": "0151ffadb527b0759d3cc37d3460cb344751711d",
+    "tagged_commit_authored_at": "2026-08-23T23:15:12+08:00",
+    "tagged_commit_committed_at": "2026-08-23T23:15:12+08:00",
+    "commit_count_no_merges_since_previous_tag": 5,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.29",
+        "published_at": "2026-08-23T15:27:09Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.29",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.29"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "0151ffadb527b0759d3cc37d3460cb344751711d",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/0151ffadb527b0759d3cc37d3460cb344751711d"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.28...v0.1.29"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.30",
+    "title": "解释模型服务拒绝",
+    "date": "2026-08-31",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-08-30T16:22:14Z",
+    "published_at_shanghai": "2026-08-31T00:22:14+08:00",
+    "summary": "把三类 provider 拒绝转换为可理解的原因。",
+    "status": "published_stable",
+    "tag_object_type": "tag",
+    "tag_object_sha": "c415f1d62a3ca0028bf17c9e77767a55fa2d4d1e",
+    "tag_created_or_commit_date": "2026-08-31T00:00:32+08:00",
+    "tagged_commit": "643071949413d74b73a1c47fce8c2ee338040078",
+    "tagged_commit_authored_at": "2026-08-31T00:00:24+08:00",
+    "tagged_commit_committed_at": "2026-08-31T00:00:24+08:00",
+    "commit_count_no_merges_since_previous_tag": 2,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.30",
+        "published_at": "2026-08-30T16:22:14Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.30",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.30"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "643071949413d74b73a1c47fce8c2ee338040078",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/643071949413d74b73a1c47fce8c2ee338040078"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.29...v0.1.30"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.31",
+    "title": "默认可读常用文件夹",
+    "date": "2026-08-31",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-08-30T17:43:33Z",
+    "published_at_shanghai": "2026-08-31T01:43:33+08:00",
+    "summary": "扩大默认只读范围到 Desktop、Documents、Downloads。",
+    "status": "published_stable",
+    "tag_object_type": "tag",
+    "tag_object_sha": "7128a2ef667e1fee44635ea2ea6ef36e82768c61",
+    "tag_created_or_commit_date": "2026-08-31T01:30:29+08:00",
+    "tagged_commit": "ebca57c46f554fbaa12b1350887b65745f279cfe",
+    "tagged_commit_authored_at": "2026-08-31T01:30:20+08:00",
+    "tagged_commit_committed_at": "2026-08-31T01:30:20+08:00",
+    "commit_count_no_merges_since_previous_tag": 2,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.31",
+        "published_at": "2026-08-30T17:43:33Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.31",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.31"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "ebca57c46f554fbaa12b1350887b65745f279cfe",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/ebca57c46f554fbaa12b1350887b65745f279cfe"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.30...v0.1.31"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.32",
+    "title": "语音输出",
+    "date": "2026-08-31",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-08-31T03:58:16Z",
+    "published_at_shanghai": "2026-08-31T11:58:16+08:00",
+    "summary": "可把回复朗读出来。",
+    "status": "published_stable",
+    "tag_object_type": "tag",
+    "tag_object_sha": "fb039067a5501769c7adedd293a5e28b8ab85942",
+    "tag_created_or_commit_date": "2026-08-31T02:35:34+08:00",
+    "tagged_commit": "cb569a57e6c60c3c684267cc9105e84583de21e6",
+    "tagged_commit_authored_at": "2026-08-31T02:35:18+08:00",
+    "tagged_commit_committed_at": "2026-08-31T02:35:18+08:00",
+    "commit_count_no_merges_since_previous_tag": 2,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.32",
+        "published_at": "2026-08-31T03:58:16Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.32",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.32"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "cb569a57e6c60c3c684267cc9105e84583de21e6",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/cb569a57e6c60c3c684267cc9105e84583de21e6"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.31...v0.1.32"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.33",
+    "title": "连接状态以实测为准",
+    "date": "2026-09-01",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-09-01T01:32:13Z",
+    "published_at_shanghai": "2026-09-01T09:32:13+08:00",
+    "summary": "统一 provider 连接状态并在启动时检测，让绿色状态代表实际可用。",
+    "status": "published_stable",
+    "tag_object_type": "tag",
+    "tag_object_sha": "bfe108cb790882f24f70e0c710f4d3ba761c6076",
+    "tag_created_or_commit_date": "2026-09-01T02:53:34+08:00",
+    "tagged_commit": "a3af5e2f112881d84833f777941fe6ecf2e43e16",
+    "tagged_commit_authored_at": "2026-09-01T02:53:20+08:00",
+    "tagged_commit_committed_at": "2026-09-01T02:53:20+08:00",
+    "commit_count_no_merges_since_previous_tag": 2,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.33",
+        "published_at": "2026-09-01T01:32:13Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.33",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.33"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "a3af5e2f112881d84833f777941fe6ecf2e43e16",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/a3af5e2f112881d84833f777941fe6ecf2e43e16"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.32...v0.1.33"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.34",
+    "title": "迁移修复",
+    "date": "2026-09-01",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-09-01T15:35:40Z",
+    "published_at_shanghai": "2026-09-01T23:35:40+08:00",
+    "summary": "修复曾记录成功却没有实际完成的迁移。",
+    "status": "published_stable",
+    "tag_object_type": "tag",
+    "tag_object_sha": "e3fc2bc8cc75549b121448a69d67df4c372ae421",
+    "tag_created_or_commit_date": "2026-09-01T23:18:35+08:00",
+    "tagged_commit": "0bb7498ff4d387b6517dda1edb6a092343629d52",
+    "tagged_commit_authored_at": "2026-09-01T23:18:16+08:00",
+    "tagged_commit_committed_at": "2026-09-01T23:18:16+08:00",
+    "commit_count_no_merges_since_previous_tag": 2,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.34",
+        "published_at": "2026-09-01T15:35:40Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.34",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.34"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "0bb7498ff4d387b6517dda1edb6a092343629d52",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/0bb7498ff4d387b6517dda1edb6a092343629d52"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.33...v0.1.34"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.35",
+    "title": "安装版代理发现",
+    "date": "2026-09-02",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-09-01T16:25:35Z",
+    "published_at_shanghai": "2026-09-02T00:25:35+08:00",
+    "summary": "修复打包应用发现系统代理的路径。",
+    "status": "published_stable",
+    "tag_object_type": "tag",
+    "tag_object_sha": "33627dffc6d27d9c39ab23aa4c4c0ca5e4bd75c8",
+    "tag_created_or_commit_date": "2026-09-02T00:01:25+08:00",
+    "tagged_commit": "1f7670151144a14a7af6d0550a9dc69decc83973",
+    "tagged_commit_authored_at": "2026-09-02T00:01:06+08:00",
+    "tagged_commit_committed_at": "2026-09-02T00:01:06+08:00",
+    "commit_count_no_merges_since_previous_tag": 2,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.35",
+        "published_at": "2026-09-01T16:25:35Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.35",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.35"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "1f7670151144a14a7af6d0550a9dc69decc83973",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/1f7670151144a14a7af6d0550a9dc69decc83973"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.34...v0.1.35"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.36",
+    "title": "按住说话",
+    "date": "2026-09-02",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-09-02T02:33:50Z",
+    "published_at_shanghai": "2026-09-02T10:33:50+08:00",
+    "summary": "加入按住录音的语音输入。",
+    "status": "published_stable",
+    "tag_object_type": "tag",
+    "tag_object_sha": "e307f56a47a9eec9ce26665597f914bff9afe468",
+    "tag_created_or_commit_date": "2026-09-02T02:15:30+08:00",
+    "tagged_commit": "c93d645fd7d696e6925e299ede4ba24ad1e48011",
+    "tagged_commit_authored_at": "2026-09-02T02:15:13+08:00",
+    "tagged_commit_committed_at": "2026-09-02T02:15:13+08:00",
+    "commit_count_no_merges_since_previous_tag": 2,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.36",
+        "published_at": "2026-09-02T02:33:50Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.36",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.36"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "c93d645fd7d696e6925e299ede4ba24ad1e48011",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/c93d645fd7d696e6925e299ede4ba24ad1e48011"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.35...v0.1.36"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.37",
+    "title": "半双工语音对话",
+    "date": "2026-09-03",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-09-03T05:23:20Z",
+    "published_at_shanghai": "2026-09-03T13:23:20+08:00",
+    "summary": "加入说完即发送的语音对话；修复麦克风权限和朗读语言选择。",
+    "status": "published_stable",
+    "tag_object_type": "tag",
+    "tag_object_sha": "fbbca17a67f7b8523a17040fc50e38851526b9c6",
+    "tag_created_or_commit_date": "2026-09-03T12:51:50+08:00",
+    "tagged_commit": "19f307720c9ffb00df04a591781a2be8a1f94dc1",
+    "tagged_commit_authored_at": "2026-09-03T12:51:29+08:00",
+    "tagged_commit_committed_at": "2026-09-03T12:51:29+08:00",
+    "commit_count_no_merges_since_previous_tag": 5,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.37",
+        "published_at": "2026-09-03T05:23:20Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.37",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.37"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "19f307720c9ffb00df04a591781a2be8a1f94dc1",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/19f307720c9ffb00df04a591781a2be8a1f94dc1"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.36...v0.1.37"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.38",
+    "title": "可靠性地基",
+    "date": "2026-09-14",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-09-14T00:07:06Z",
+    "published_at_shanghai": "2026-09-14T08:07:06+08:00",
+    "summary": "加强 Python 默认拒绝沙箱、独立计算运行时、持久 Runs/检查点/产物、共享执行预算、recipes 与恢复；修复 Gemini 工具回路和权限边界。",
+    "status": "published_stable",
+    "tag_object_type": "tag",
+    "tag_object_sha": "9d4cfd5250b5971c3dafcca90d270a7901318ad7",
+    "tag_created_or_commit_date": "2026-09-14T04:06:31+08:00",
+    "tagged_commit": "1724d2afa95fd4dfff28d1151135e00ec15926d4",
+    "tagged_commit_authored_at": "2026-09-14T03:48:50+08:00",
+    "tagged_commit_committed_at": "2026-09-14T03:48:50+08:00",
+    "commit_count_no_merges_since_previous_tag": 18,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.38",
+        "published_at": "2026-09-14T00:07:06Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.38",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.38"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "1724d2afa95fd4dfff28d1151135e00ec15926d4",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/1724d2afa95fd4dfff28d1151135e00ec15926d4"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.37...v0.1.38"
+      },
+      {
+        "type": "local_release_draft",
+        "file": "docs/releases/v0.1.38.md",
+        "caution": "此文件可能保留 HOLD 草稿字样；公开发布状态以 GitHub Release API 为准。"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.39",
+    "title": "聚焦桌面设置（tag）",
+    "date": "2026-09-14",
+    "date_kind": "local_tag_creatordate_not_publication",
+    "published_at_utc": null,
+    "published_at_shanghai": null,
+    "summary": "改进桌面 Settings 布局、侧导航和 API key 显示；有版本标签（GitHub 可见），无公开 Release。",
+    "status": "tag_only_no_release",
+    "tag_object_type": "tag",
+    "tag_object_sha": "1b17cacee0c7ac16cff2e2d5dcf7771b9b17faa9",
+    "tag_created_or_commit_date": "2026-09-14T14:21:38+08:00",
+    "tagged_commit": "d3e8081d0fc7a72072731edfaa0ea33acf095724",
+    "tagged_commit_authored_at": "2026-09-14T14:06:25+08:00",
+    "tagged_commit_committed_at": "2026-09-14T14:06:25+08:00",
+    "commit_count_no_merges_since_previous_tag": 3,
+    "evidence": [
+      {
+        "type": "git_tag",
+        "ref": "v0.1.39",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.39"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "d3e8081d0fc7a72072731edfaa0ea33acf095724",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/d3e8081d0fc7a72072731edfaa0ea33acf095724"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.38...v0.1.39"
+      },
+      {
+        "type": "local_release_draft",
+        "file": "docs/releases/v0.1.39.md",
+        "caution": "此文件可能保留 HOLD 草稿字样；公开发布状态以 GitHub Release API 为准。"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.40",
+    "title": "日常研究助手稳定版",
+    "date": "2026-09-26",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-09-26T03:34:15Z",
+    "published_at_shanghai": "2026-09-26T11:34:15+08:00",
+    "summary": "把项目记忆、任务延续、文档来源证据和工作区整合到稳定版；迁移前自动校验备份，提供原生手动备份。",
+    "status": "published_stable",
+    "tag_object_type": "tag",
+    "tag_object_sha": "ac1d6b40508d124ccd885ea5b0ee184b28b017b3",
+    "tag_created_or_commit_date": "2026-09-25T23:34:17+08:00",
+    "tagged_commit": "6247c1c98cb3ac74f789507162a6929bca7dec45",
+    "tagged_commit_authored_at": "2026-09-25T23:13:13+08:00",
+    "tagged_commit_committed_at": "2026-09-25T23:13:13+08:00",
+    "commit_count_no_merges_since_previous_tag": 267,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.40",
+        "published_at": "2026-09-26T03:34:15Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.40",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.40"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "6247c1c98cb3ac74f789507162a6929bca7dec45",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/6247c1c98cb3ac74f789507162a6929bca7dec45"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.39...v0.1.40"
+      },
+      {
+        "type": "local_release_draft",
+        "file": "docs/releases/v0.1.40.md",
+        "caution": "此文件可能保留 HOLD 草稿字样；公开发布状态以 GitHub Release API 为准。"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.41",
+    "title": "常驻菜单栏",
+    "date": "2026-09-27",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-09-27T15:58:34Z",
+    "published_at_shanghai": "2026-09-27T23:58:34+08:00",
+    "summary": "关闭窗口改为隐藏并继续工作；加桌面通知和运行时防自动休眠；来源审阅改为默认关闭的保存后建议。",
+    "status": "published_stable",
+    "tag_object_type": "commit",
+    "tag_object_sha": "8594e7bec180516540423bf4afab14974efce174",
+    "tag_created_or_commit_date": "2026-09-27T23:13:35+08:00",
+    "tagged_commit": "8594e7bec180516540423bf4afab14974efce174",
+    "tagged_commit_authored_at": "2026-09-27T23:13:35+08:00",
+    "tagged_commit_committed_at": "2026-09-27T23:13:35+08:00",
+    "commit_count_no_merges_since_previous_tag": 6,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.41",
+        "published_at": "2026-09-27T15:58:34Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.41",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.41"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "8594e7bec180516540423bf4afab14974efce174",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/8594e7bec180516540423bf4afab14974efce174"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.40...v0.1.41"
+      },
+      {
+        "type": "local_release_draft",
+        "file": "docs/releases/v0.1.41.md",
+        "caution": "此文件可能保留 HOLD 草稿字样；公开发布状态以 GitHub Release API 为准。"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.42",
+    "title": "后台工作与自由对话",
+    "date": "2026-09-28",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-09-28T07:20:46Z",
+    "published_at_shanghai": "2026-09-28T15:20:46+08:00",
+    "summary": "长期工作放到后台 job，聊天可继续；展示完成标准、进度和 Stop，最多并行 3 个 job；重启后明确标记中断。",
+    "status": "published_stable",
+    "tag_object_type": "tag",
+    "tag_object_sha": "4fc0be026d2d55e74218faf9d044bbba457582ed",
+    "tag_created_or_commit_date": "2026-09-28T15:02:59+08:00",
+    "tagged_commit": "66f6a8f51848af5fd8e6e34a031b8d31cd6e4745",
+    "tagged_commit_authored_at": "2026-09-28T14:46:42+08:00",
+    "tagged_commit_committed_at": "2026-09-28T14:46:42+08:00",
+    "commit_count_no_merges_since_previous_tag": 9,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.42",
+        "published_at": "2026-09-28T07:20:46Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.42",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.42"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "66f6a8f51848af5fd8e6e34a031b8d31cd6e4745",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/66f6a8f51848af5fd8e6e34a031b8d31cd6e4745"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.41...v0.1.42"
+      },
+      {
+        "type": "local_release_draft",
+        "file": "docs/releases/v0.1.42.md",
+        "caution": "此文件可能保留 HOLD 草稿字样；公开发布状态以 GitHub Release API 为准。"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.43",
+    "title": "预算到点先收尾",
+    "date": "2026-09-30",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-09-29T17:18:13Z",
+    "published_at_shanghai": "2026-09-30T01:18:13+08:00",
+    "summary": "后台任务采用独立预算；达到软限后结束搜索并交付现有成果，真正失控才硬停。",
+    "status": "published_stable",
+    "tag_object_type": "tag",
+    "tag_object_sha": "98484633c7131c60b0d7864360042477423b0c9e",
+    "tag_created_or_commit_date": "2026-09-30T00:49:18+08:00",
+    "tagged_commit": "037f51f2b714a79027ffafca8fcc0fe9203fba71",
+    "tagged_commit_authored_at": "2026-09-30T00:33:14+08:00",
+    "tagged_commit_committed_at": "2026-09-30T00:33:14+08:00",
+    "commit_count_no_merges_since_previous_tag": 4,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.43",
+        "published_at": "2026-09-29T17:18:13Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.43",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.43"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "037f51f2b714a79027ffafca8fcc0fe9203fba71",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/037f51f2b714a79027ffafca8fcc0fe9203fba71"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.42...v0.1.43"
+      },
+      {
+        "type": "local_release_draft",
+        "file": "docs/releases/v0.1.43.md",
+        "caution": "此文件可能保留 HOLD 草稿字样；公开发布状态以 GitHub Release API 为准。"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.44",
+    "title": "One Arslan",
+    "date": "2026-09-30",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-09-30T01:56:19Z",
+    "published_at_shanghai": "2026-09-30T09:56:19+08:00",
+    "summary": "停止创建和调度专家；旧专家可转成 Skill，定时任务统一由 Arslan 执行；只读失败不再终止整轮，副作用结果未知则避免重复。",
+    "status": "published_stable",
+    "tag_object_type": "tag",
+    "tag_object_sha": "21cc95b8cebb32944f14e71aa963a61d362c3bcd",
+    "tag_created_or_commit_date": "2026-09-30T03:45:52+08:00",
+    "tagged_commit": "9d63e289cd5adce43c6a449b3b86c70033093973",
+    "tagged_commit_authored_at": "2026-09-30T03:27:32+08:00",
+    "tagged_commit_committed_at": "2026-09-30T03:27:32+08:00",
+    "commit_count_no_merges_since_previous_tag": 4,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.44",
+        "published_at": "2026-09-30T01:56:19Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.44",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.44"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "9d63e289cd5adce43c6a449b3b86c70033093973",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/9d63e289cd5adce43c6a449b3b86c70033093973"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.43...v0.1.44"
+      },
+      {
+        "type": "local_release_draft",
+        "file": "docs/releases/v0.1.44.md",
+        "caution": "此文件可能保留 HOLD 草稿字样；公开发布状态以 GitHub Release API 为准。"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.45",
+    "title": "浏览器与 Mac 动作",
+    "date": "2026-09-30",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-09-30T01:57:14Z",
+    "published_at_shanghai": "2026-09-30T09:57:14+08:00",
+    "summary": "加入自己的浏览器动作、Shortcuts 和 AppleScript；动作放后台并有按站点、快捷指令或脚本的授权规则。",
+    "status": "published_stable",
+    "tag_object_type": "tag",
+    "tag_object_sha": "76bfdc89582125cfedc411da8b645ca02c090aa0",
+    "tag_created_or_commit_date": "2026-09-30T04:22:14+08:00",
+    "tagged_commit": "42fdd358c37a7fbfdbcfbdebbde7fc2660cc9020",
+    "tagged_commit_authored_at": "2026-09-30T04:06:07+08:00",
+    "tagged_commit_committed_at": "2026-09-30T04:06:07+08:00",
+    "commit_count_no_merges_since_previous_tag": 3,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.45",
+        "published_at": "2026-09-30T01:57:14Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.45",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.45"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "42fdd358c37a7fbfdbcfbdebbde7fc2660cc9020",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/42fdd358c37a7fbfdbcfbdebbde7fc2660cc9020"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.44...v0.1.45"
+      },
+      {
+        "type": "local_release_draft",
+        "file": "docs/releases/v0.1.45.md",
+        "caution": "此文件可能保留 HOLD 草稿字样；公开发布状态以 GitHub Release API 为准。"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.46",
+    "title": "紧凑设置与停止无效花费",
+    "date": "2026-09-30",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-09-30T08:37:50Z",
+    "published_at_shanghai": "2026-09-30T16:37:50+08:00",
+    "summary": "Settings 侧栏固定、右侧独立滚动；停止已退役专家的后台自我演化消耗。",
+    "status": "published_stable",
+    "tag_object_type": "tag",
+    "tag_object_sha": "575ab0d5a0035156011945bcf204ebc5f84c905d",
+    "tag_created_or_commit_date": "2026-09-30T16:16:28+08:00",
+    "tagged_commit": "9253d3d196297473d80d3e4cad1dedcdd0aeb451",
+    "tagged_commit_authored_at": "2026-09-30T15:59:20+08:00",
+    "tagged_commit_committed_at": "2026-09-30T15:59:20+08:00",
+    "commit_count_no_merges_since_previous_tag": 3,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.46",
+        "published_at": "2026-09-30T08:37:50Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.46",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.46"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "9253d3d196297473d80d3e4cad1dedcdd0aeb451",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/9253d3d196297473d80d3e4cad1dedcdd0aeb451"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.45...v0.1.46"
+      },
+      {
+        "type": "local_release_draft",
+        "file": "docs/releases/v0.1.46.md",
+        "caution": "此文件可能保留 HOLD 草稿字样；公开发布状态以 GitHub Release API 为准。"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.47",
+    "title": "主动收件箱",
+    "date": "2026-09-30",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-09-30T09:24:52Z",
+    "published_at_shanghai": "2026-09-30T17:24:52+08:00",
+    "summary": "确定性检测未完成任务、失败调度、网页或目录变化，生成带证据的 Inbox 建议；用户选择去办才启动后台工作。",
+    "status": "published_stable",
+    "tag_object_type": "tag",
+    "tag_object_sha": "d0b799fdae6b6391216b06354e335f96717ade68",
+    "tag_created_or_commit_date": "2026-09-30T17:04:14+08:00",
+    "tagged_commit": "4134b314a9dccab96306fde2c708caceb3a72785",
+    "tagged_commit_authored_at": "2026-09-30T16:47:02+08:00",
+    "tagged_commit_committed_at": "2026-09-30T16:47:02+08:00",
+    "commit_count_no_merges_since_previous_tag": 12,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.47",
+        "published_at": "2026-09-30T09:24:52Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.47",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.47"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "4134b314a9dccab96306fde2c708caceb3a72785",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/4134b314a9dccab96306fde2c708caceb3a72785"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.46...v0.1.47"
+      },
+      {
+        "type": "local_release_draft",
+        "file": "docs/releases/v0.1.47.md",
+        "caution": "此文件可能保留 HOLD 草稿字样；公开发布状态以 GitHub Release API 为准。"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.48",
+    "title": "统一 Agent 回路",
+    "date": "2026-10-01",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-10-01T04:40:08Z",
+    "published_at_shanghai": "2026-10-01T12:40:08+08:00",
+    "summary": "删除前置 router 和专家执行链路，每条消息直接交给 agent；默认工作目录 ~/Arslan、终端、浏览器自动准备、Activity 和任务工作区统一。",
+    "status": "published_stable",
+    "tag_object_type": "tag",
+    "tag_object_sha": "d27dd39c260f2f8ac32429df8f680fcf966432c6",
+    "tag_created_or_commit_date": "2026-10-01T12:10:22+08:00",
+    "tagged_commit": "ca403cc247f8e479c7642278cdddd93810d7a778",
+    "tagged_commit_authored_at": "2026-10-01T11:18:26+08:00",
+    "tagged_commit_committed_at": "2026-10-01T11:18:26+08:00",
+    "commit_count_no_merges_since_previous_tag": 13,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.48",
+        "published_at": "2026-10-01T04:40:08Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.48",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.48"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "ca403cc247f8e479c7642278cdddd93810d7a778",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/ca403cc247f8e479c7642278cdddd93810d7a778"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.47...v0.1.48"
+      },
+      {
+        "type": "local_release_draft",
+        "file": "docs/releases/v0.1.48.md",
+        "caution": "此文件可能保留 HOLD 草稿字样；公开发布状态以 GitHub Release API 为准。"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.49",
+    "title": "原生工具协议执行层",
+    "date": "2026-10-02",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-10-02T10:47:49Z",
+    "published_at_shanghai": "2026-10-02T18:47:49+08:00",
+    "summary": "OpenAI-compatible 使用 native tool calling 和规范工具历史；保留 reasoning、处理截断、退避重试、流式 watchdog，长输出完整落盘，搜索修复。",
+    "status": "published_stable",
+    "tag_object_type": "tag",
+    "tag_object_sha": "1d03c9d4df23214d7e16f659ebe37da889e09c45",
+    "tag_created_or_commit_date": "2026-10-02T17:46:31+08:00",
+    "tagged_commit": "05a9d1ac9da7b6e85aef2054c5ac6e50d49a347c",
+    "tagged_commit_authored_at": "2026-10-02T17:41:58+08:00",
+    "tagged_commit_committed_at": "2026-10-02T17:41:58+08:00",
+    "commit_count_no_merges_since_previous_tag": 22,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.49",
+        "published_at": "2026-10-02T10:47:49Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.49",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.49"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "05a9d1ac9da7b6e85aef2054c5ac6e50d49a347c",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/05a9d1ac9da7b6e85aef2054c5ac6e50d49a347c"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.48...v0.1.49"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.50",
+    "title": "上下文与交付收尾",
+    "date": "2026-10-03",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-10-02T17:05:45Z",
+    "published_at_shanghai": "2026-10-03T01:05:45+08:00",
+    "summary": "加入 agent_status、update_plan、失败替代路线、能力真实性修正、链接校验和更可靠的文件落盘；重做 Activity 统计。",
+    "status": "published_stable",
+    "tag_object_type": "tag",
+    "tag_object_sha": "9ac5037411e75611502235b076566a95b5dbe598",
+    "tag_created_or_commit_date": "2026-10-03T00:45:37+08:00",
+    "tagged_commit": "2e7839f1d83f346a3b7a47c1c2a4620eec853052",
+    "tagged_commit_authored_at": "2026-10-03T00:25:08+08:00",
+    "tagged_commit_committed_at": "2026-10-03T00:25:08+08:00",
+    "commit_count_no_merges_since_previous_tag": 17,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.50",
+        "published_at": "2026-10-02T17:05:45Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.50",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.50"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "2e7839f1d83f346a3b7a47c1c2a4620eec853052",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/2e7839f1d83f346a3b7a47c1c2a4620eec853052"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.49...v0.1.50"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.51",
+    "title": "刘海岛与命令沙箱",
+    "date": "2026-10-03",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-10-03T03:51:46Z",
+    "published_at_shanghai": "2026-10-03T11:51:46+08:00",
+    "summary": "Island 呈现任务进度及停止入口；run_command 默认限制写入工作目录/临时/缓存，保护 key 文件，越界需用户授权。",
+    "status": "published_stable",
+    "tag_object_type": "tag",
+    "tag_object_sha": "1de0b6a32c9e19c56f6953418fcacb00364b4f51",
+    "tag_created_or_commit_date": "2026-10-03T10:11:03+08:00",
+    "tagged_commit": "00ebe85fb6ae82506025b928c9907de53eeb284e",
+    "tagged_commit_authored_at": "2026-10-03T09:05:57+08:00",
+    "tagged_commit_committed_at": "2026-10-03T09:05:57+08:00",
+    "commit_count_no_merges_since_previous_tag": 11,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.51",
+        "published_at": "2026-10-03T03:51:46Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.51",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.51"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "00ebe85fb6ae82506025b928c9907de53eeb284e",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/00ebe85fb6ae82506025b928c9907de53eeb284e"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.50...v0.1.51"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.52",
+    "title": "记忆真正进入模型",
+    "date": "2026-10-03",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-10-03T15:45:30Z",
+    "published_at_shanghai": "2026-10-03T23:45:30+08:00",
+    "summary": "用户记忆与 Mac 笔记常驻上下文；可搜过去对话；纠正和成功替代路线形成可撤销 learned practices；普通沙箱脚本少打扰。",
+    "status": "published_stable",
+    "tag_object_type": "tag",
+    "tag_object_sha": "c60ef929b3d5ba14680cc2746de14e350d1eba85",
+    "tag_created_or_commit_date": "2026-10-03T23:25:32+08:00",
+    "tagged_commit": "24287d5bfc4d3790fb7db20c286904a2f7465b0c",
+    "tagged_commit_authored_at": "2026-10-03T22:20:03+08:00",
+    "tagged_commit_committed_at": "2026-10-03T22:20:03+08:00",
+    "commit_count_no_merges_since_previous_tag": 13,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.52",
+        "published_at": "2026-10-03T15:45:30Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.52",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.52"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "24287d5bfc4d3790fb7db20c286904a2f7465b0c",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/24287d5bfc4d3790fb7db20c286904a2f7465b0c"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.51...v0.1.52"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.53",
+    "title": "Arslan Hands 与 iPhone Mac 端",
+    "date": "2026-10-06",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-10-05T17:58:22Z",
+    "published_at_shanghai": "2026-10-06T01:58:22+08:00",
+    "summary": "以独立 macOS helper 持有 Accessibility 权限，读取 AX 树并操作 Mac 应用；按应用授权、敏感动作逐次确认、可停止与追踪。Mac 侧 Bridge 纳入，iPhone App 标注即将上线。",
+    "status": "published_stable",
+    "tag_object_type": "tag",
+    "tag_object_sha": "88e04f23567936f57be474386638a30cf80c2cee",
+    "tag_created_or_commit_date": "2026-10-05T23:36:59+08:00",
+    "tagged_commit": "efc1c27195cacc1baa9e879ed0714dfb582f49a8",
+    "tagged_commit_authored_at": "2026-10-05T23:36:39+08:00",
+    "tagged_commit_committed_at": "2026-10-05T23:36:39+08:00",
+    "commit_count_no_merges_since_previous_tag": 60,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.53",
+        "published_at": "2026-10-05T17:58:22Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.53",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.53"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "efc1c27195cacc1baa9e879ed0714dfb582f49a8",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/efc1c27195cacc1baa9e879ed0714dfb582f49a8"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.52...v0.1.53"
+      }
+    ]
+  }
+]
