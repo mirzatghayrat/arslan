@@ -1,5 +1,5 @@
 <section class="chapter" id="mobile"><h2><span class="num">10 / iPhone 与 Mac Bridge</span>手机负责交代和查看，Mac 负责执行</h2>
-<p>移动桥接让已经配对的 iPhone 查看 Mac 的任务、发起工作、回答审批并读取结果。执行仍由 Mac 上的 Arslan 完成；手机既不是另一套云端 Agent 服务，也不直接暴露或调用 Mac 的 HTTP 接口。<strong>本章以 Mac v0.1.53 的公开协议和源码为基准。</strong>该版本已经包含 Mac Bridge；其公开发行说明仍将 iPhone App 标为即将上架，本文不据此声称已完成 App Store 发布或完整生产链路验收。</p>
+<p>移动桥接让已经配对的 iPhone 查看 Mac 的任务、发起工作、回答审批并读取结果。执行仍由 Mac 上的 Arslan 完成；手机既不是另一套云端 Agent 服务，也不直接暴露或调用 Mac 的 HTTP 接口。<strong>本章以 Mac v0.1.54 的公开协议和源码为基准。</strong>该版本已经包含 Mac Bridge；其公开发行说明仍将 iPhone App 标为即将上架，本文不据此声称已完成 App Store 发布或完整生产链路验收。</p>
 <div class="flow"><div class="flow-step"><b>iPhone</b><span>SwiftUI 页面与本机认证<br>加密、发件箱、状态视图</span></div><div class="flow-step"><b>CloudKit</b><span>私有数据库 ArslanBridge zone<br>异步保存密文信封</span></div><div class="flow-step"><b>Mac Bridge</b><span>验证、解密与协议映射<br>本地 HTTP / WebSocket</span></div><div class="flow-step"><b>Arslan 后端</b><span>任务、工具、审批与产物<br>结构化结果沿原路返回</span></div></div>
 <h3>CloudKit 是信箱，设备身份仍由协议确认</h3>
 <p>v1 使用同一 Apple ID 下的 CloudKit 私有数据库。Mac 必须开机、在线并处于可运行状态；否则消息等待处理，手机并不能让一台已经关机的 Mac 继续工作。局域网 Bonjour 是后续方向，不是本版的备用直连通道。Mac helper 是随应用运行的独立 <code>ArslanBridge.app</code>，通过 stdin 获得本地 API token，再连接后端；手机不持有该 token，也不接收模型 API key。</p>
@@ -7,7 +7,7 @@
 <p class="evidence">{{source:docs/specs/mobile-bridge-protocol.md|传输、信封和 Mac 接线协议}}；{{source:desktop/bridge/Sources/BridgeCore/CloudKitStore.swift|CloudKit 存储实现}}；{{source:desktop/bridge/Sources/BridgeCore/Runtime.swift|Bridge 运行入口}}。</p>
 <h3>扫描二维码只是配对的开始</h3>
 <p>二维码携带一次性 <code>pairing_id</code>、Mac 的签名与交换公钥、32 字节配对密钥、固定容器标识和期限。有效期不超过 600 秒；手机拒绝过期信息、错误容器和不符合约束的内容，并固定二维码里的 Mac 公钥。随后手机生成自己的身份与交换密钥，发出加密配对请求。Mac 验证请求后仍要展示给用户，由 Mac 上的点击决定接受或拒绝。</p>
-<p>同一请求重试应得到相同决定，不能产生第二次授权。接受后使用设备身份通信，配对码被消耗；Mac 可以撤销手机。设备私钥由各自 Keychain 保存。这里的信任来自一次性配对材料与用户确认的组合，而非“同在一个 iCloud 账户，所以任何消息都可信”。</p>
+<p>同一请求重试应得到相同决定，不能产生第二次授权。接受后使用设备身份通信，配对码被消耗；Mac 可以撤销手机。同一台 iPhone 再次配对时会带上它以前的 ID，Mac 移除这些旧条目，而不是并存两条。移除手机还会删除 Mac 留在 iCloud 里给它的消息；启动时 Mac 也会清理仍在等待已不再配对的手机的记录。设置 › iPhone 中，每台手机在 Mac 读到它的第一条已认证消息前显示<em>正在连接…</em>，之后显示<em>已连接</em>及最后在线时间。设备私钥由各自 Keychain 保存。这里的信任来自一次性配对材料与用户确认的组合，而非“同在一个 iCloud 账户，所以任何消息都可信”。</p>
 <h3>消息同时校验内容、来源与上下文</h3>
 <p>每条新消息使用临时 X25519 密钥协商共享秘密，以 HKDF-SHA256 派生 32 字节密钥，由 ChaCha20-Poly1305 加密认证，再以 Ed25519 签名。消息头使用按长度编码的 UTF-8 字段，避免跨语言 JSON 排序差异影响验证；头字段同时被签名和 AEAD 认证绑定。这是以 CryptoKit 原语实现的应用协议，没有实现 Signal 双棘轮，也不应仅凭临时密钥就宣称所有场景的前向保密。</p>
 <p>接收顺序有明确要求：检查形状与收件人，验证签名，再解密；随后检查明文与头字段是否一致，有文件时再验证附件。任一步失败都不应留下部分业务效果。文件上限为 20 MiB，密文摘要、认证标签、明文大小和摘要都要匹配后才能缓存或预览。</p>
@@ -17,12 +17,12 @@
 <tr><th>持久化与同包重试</th><td>重试复用同一信封 ID、seq 和密文；序号等关键状态先保存，避免网络失败导致状态倒退。</td><td>投递日志不能代替外部业务系统的事务。</td></tr>
 <tr><th>重放窗口</th><td>按发送者保留最近 1,024 个序号，接收窗口内的新乱序包，拒绝重复或过旧包。</td><td>合法新序号不一定代表业务状态更新，旧进度也可能较晚才发送。</td></tr>
 <tr><th>ACK</th><td>确认信封投递；重复包可再次得到 ACK。原记录确认后删除，ACK 自身不再被 ACK。</td><td>ACK 不表示任务成功，也不表示审批动作执行完成。</td></tr>
-<tr><th>业务标识与结果</th><td><code>client_msg_id</code>、<code>client_task_id</code> 用于防重；<code>approval.result</code>、任务事件和结果承载业务状态。</td><td>v0.1.53 的业务 ID 映射有内存状态，不能承诺任意崩溃下的全局 exactly-once。</td></tr>
+<tr><th>业务标识与结果</th><td><code>client_msg_id</code>、<code>client_task_id</code> 用于防重；<code>approval.result</code>、任务事件和结果承载业务状态。</td><td>v0.1.54 的业务 ID 映射有内存状态，不能承诺任意崩溃下的全局 exactly-once。</td></tr>
 </tbody></table></div>
 <p>Mac 状态快照只列仍在运行的任务；正常心跳间隔为 60 秒，手机按 90 秒未见更新判断离线。进度会节流合并，终态应及时发送。客户端因此既要处理消息重复和乱序，也要让任务列表、审批卡与历史记录收敛；不能只用“最后收到的文本覆盖前一条”维护状态。</p>
 <p class="evidence">{{source:desktop/bridge/Sources/BridgeCore/Mailbox.swift|序号、处理记录、ACK 与清理}}；{{source:desktop/bridge/Sources/BridgeCore/ConversationLinks.swift|业务防重与结果映射}}；{{source:desktop/bridge/Sources/BridgeCore/StatusReporter.swift|快照与心跳}}。</p>
 <h3>手机审批复用 Mac 的授权与执行链</h3>
 <p>手机展示具体 action、target 和 risk。批准需要本机生物识别，拒绝不需要；发送回答后还要等待 Mac 的 <code>approval.result</code>。Mac 检查卡片是否仍有效，映射为原来的 confirm / cancel 操作，手机不会授予命令“永远允许”。语音入口可以形成待确认的文字，不能代替批准。</p>
-<div class="note important"><strong>版本边界：</strong>v0.1.53 的 Mac 只接受 <code>faceid</code> 批准标记；Touch ID 的兼容修复属于其后的 <a href="https://github.com/mirzatghayrat/arslan/pull/115">main 变更 #115</a>，不能并入本版能力。协议中的 <code>high_risk_mac_only</code> 在此版固定为 false，尚不是用户可配置的开关。共享协议与测试向量能验证互操作和负例，不能替代最终分发包、真实 iCloud、推送与设备认证的端到端验收。</div>
-<p class="evidence">{{source:desktop/bridge/Sources/BridgeCore/FrameMapper.swift|批准标记与原有动作的映射}}；{{source:server/api/phone.py|状态与功能字段}}；{{source:spec/mobile-bridge/reference.py|独立协议参考实现}}；<a href="https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.53">0.1.53 公开交付状态</a>。</p>
+<div class="note important"><strong>版本边界：</strong>自 v0.1.54 起，Mac 只在带有 <code>faceid</code> 或 <code>touchid</code> 标记（iPhone SE 用 Touch ID）时把回答算作批准，并在能力声明中告知手机；其他标记一律视为拒绝。0.1.54 之前，Touch ID 的批准会被当作取消。协议中的 <code>high_risk_mac_only</code> 在此版固定为 false，尚不是用户可配置的开关。共享协议与测试向量能验证互操作和负例，不能替代最终分发包、真实 iCloud、推送与设备认证的端到端验收。</div>
+<p class="evidence">{{source:desktop/bridge/Sources/BridgeCore/FrameMapper.swift|批准标记与原有动作的映射}}；{{source:desktop/bridge/Sources/BridgeCore/Mailbox.swift|移除或重新配对手机时的清理}}；{{source:server/api/phone.py|状态与功能字段}}；{{source:spec/mobile-bridge/reference.py|独立协议参考实现}}；<a href="https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.54">0.1.54 公开交付状态</a>。</p>
 </section>

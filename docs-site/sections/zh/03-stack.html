@@ -1,5 +1,5 @@
 <section class="chapter" id="stack"><h2><span class="num">03 / 技术栈</span>界面、宿主、执行与数据的分工</h2>
-<p>Arslan 的技术栈围绕桌面交付与个人 Agent 的职责划分。下面的精确版本来自 <strong>v0.1.53 的锁文件</strong>，代表该源码的依赖解析结果；不是要求用户机器安装的工具版本，也不是项目的发行版本。</p>
+<p>Arslan 的技术栈围绕桌面交付与个人 Agent 的职责划分。下面的精确版本来自 <strong>v0.1.54 的锁文件</strong>，代表该源码的依赖解析结果；不是要求用户机器安装的工具版本，也不是项目的发行版本。</p>
 <div class="table-wrap"><table><thead><tr><th>层次</th><th>实际技术</th><th>承担的工作与选型意义</th></tr></thead><tbody>
 <tr><th>界面</th><td>React 19.2.7<br>TypeScript 5.8.3<br>Vite 6.4.3</td><td>组件化聊天、任务卡、审批卡、设置与记忆页面；类型约束帮助维护跨页面状态和事件协议；Vite 负责开发与构建。</td></tr>
 <tr><th>界面状态与样式</th><td>Zustand 5.0.14<br>Tailwind CSS 4.3.1<br>i18next 26.3.1</td><td>共享 UI 状态、样式组织和六语言资源。ECharts 渲染聊天中由 render_chart 工具生成的图表及运行对比图，D3 用于记忆关系图；这些不是后端推理框架。</td></tr>

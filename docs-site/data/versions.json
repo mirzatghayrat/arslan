@@ -2202,5 +2202,45 @@
         "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.52...v0.1.53"
       }
     ]
+  },
+  {
+    "version": "v0.1.54",
+    "title": "为 iPhone 版就绪，终端闸门更严",
+    "date": "2026-10-08",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-10-07T19:21:14Z",
+    "published_at_shanghai": "2026-10-08T03:21:14+08:00",
+    "summary": "Touch ID 审批生效；同一台 iPhone 重新配对替换旧条目；移除手机会删除 iCloud 中留给它的消息；设置显示正在连接…/已连接。终端闸门检查命令链中的每一条，“不再询问”须覆盖命中的全部规则，访问 token 只给已持有它的调用方，后台任务保持在沙箱内。iPhone App 仍标注即将上架。",
+    "status": "published_stable",
+    "tag_object_type": "tag",
+    "tag_object_sha": "00a0d5c27a308133d8b642d431cc047f8d678538",
+    "tag_created_or_commit_date": "2026-10-08T02:01:16+08:00",
+    "tagged_commit": "ebf438dc6fc9bcc8b9178f8bf7e1efe001fe575e",
+    "tagged_commit_authored_at": "2026-10-08T02:00:54+08:00",
+    "tagged_commit_committed_at": "2026-10-08T02:00:54+08:00",
+    "commit_count_no_merges_since_previous_tag": 13,
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.54",
+        "published_at": "2026-10-07T19:21:14Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.54",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.54"
+      },
+      {
+        "type": "tagged_commit",
+        "ref": "ebf438dc6fc9bcc8b9178f8bf7e1efe001fe575e",
+        "url": "https://github.com/mirzatghayrat/arslan/commit/ebf438dc6fc9bcc8b9178f8bf7e1efe001fe575e"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.53...v0.1.54"
+      }
+    ]
   }
 ]

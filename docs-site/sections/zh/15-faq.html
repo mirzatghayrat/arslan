@@ -10,7 +10,7 @@
 <details><summary>关掉聊天窗口后，任务会怎样？</summary><div><p>连接和任务分开管理，后台 job 可以在应用服务继续运行时执行；窗口关闭也不能直接等同于进程退出。若服务退出或 Mac 休眠，任务不能继续依赖本地执行。重启后通过记录检查中断情况，再按支持的路径显式恢复。</p></div></details>
 <details><summary>恢复会自动重新执行先前的每个动作吗？</summary><div><p>不会。恢复需要检查已有步骤与外部效果，未知副作用先核对。任务尝试、动作状态、检查点和版本约束帮助防止旧结果覆盖新状态，但不能为所有外部系统提供恰好执行一次的保证。</p></div></details>
 <details><summary>Hands 可以操作任何 Mac 应用吗？</summary><div><p>兼容性依赖应用暴露的 Accessibility 结构、系统授权和 Arslan 的动作规则。可读取控件不等于可安全完成所有业务操作。敏感按钮与按键会触发更细的确认，部分应用或控件仍可能不支持。</p></div></details>
-<details><summary>iPhone 能在 Mac 关机时替它完成任务吗？</summary><div><p>Mac Bridge 路径仍由 Mac 执行，Mac 不可用时消息会在 iCloud 等待。v0.1.53 发布了 Mac 侧 Bridge，不能据此认定 iPhone 客户端已经正式上架。手机显示消息已收到，也不等于任务已做成。</p></div></details>
+<details><summary>iPhone 能在 Mac 关机时替它完成任务吗？</summary><div><p>Mac Bridge 路径仍由 Mac 执行，Mac 不可用时消息会在 iCloud 等待。v0.1.53 发布了 Mac 侧 Bridge，v0.1.54 为 iPhone App 做好了准备，不能据此认定 iPhone 客户端已经正式上架。手机显示消息已收到，也不等于任务已做成。</p></div></details>
 <details><summary>测试都通过，就意味着任意真实任务都能完成吗？</summary><div><p>测试只覆盖各自的条件：单元测试检查局部逻辑，协议测试检查边界一致性，安装验收检查产物，真实任务对照检查指定模型与任务下的效果。模型、网页、系统权限和外部应用都可能改变结果。</p></div></details>
 <details><summary>为什么版本号还在 0.1.x？</summary><div><p>项目仍处于 pre-v1 的持续迭代阶段。五十多个编号反映了迭代历程；判断成熟度应结合具体能力、失败处理、测试范围与发布状态。本文的完整版本附录保留了这些差别。</p></div></details>
 </section>
