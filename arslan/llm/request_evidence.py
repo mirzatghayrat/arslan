@@ -34,9 +34,10 @@ async def begin(payload: dict[str, Any]) -> Acknowledgement | None:
     try:
         async with asyncio.timeout(_TIMEOUT_SECONDS):
             return await observer(payload)
-    except Exception:
-        # Do not log an exception containing SQL, request content or secrets.
-        logger.warning("Model request evidence could not be recorded")
+    except Exception as exc:
+        # Do not log an exception containing SQL, request content or secrets: its type only
+        # (a CI run lost one record and the log could not say whether it was the timeout).
+        logger.warning("Model request evidence could not be recorded (%s)", type(exc).__name__)
         return None
 
 
@@ -45,5 +46,5 @@ async def acknowledge(callback: Acknowledgement | None):
         try:
             async with asyncio.timeout(_TIMEOUT_SECONDS):
                 await callback()
-        except Exception:
-            logger.warning("Model response evidence could not be recorded")
+        except Exception as exc:
+            logger.warning("Model response evidence could not be recorded (%s)", type(exc).__name__)

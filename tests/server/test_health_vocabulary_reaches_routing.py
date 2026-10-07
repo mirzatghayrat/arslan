@@ -33,14 +33,15 @@ FAILED = "failed"
 
 
 @pytest.fixture
-async def db():
+async def db(monkeypatch):
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
     eng = create_async_engine("sqlite+aiosqlite://")
     async with eng.begin() as c:
         await c.run_sync(Base.metadata.create_all)
-    db_session.AsyncSessionLocal = async_sessionmaker(eng, expire_on_commit=False)
+    monkeypatch.setattr(db_session, "AsyncSessionLocal", async_sessionmaker(eng, expire_on_commit=False))
     async with db_session.AsyncSessionLocal() as s:
         yield s
+    await eng.dispose()
 
 
 class _Row:

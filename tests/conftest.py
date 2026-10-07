@@ -109,6 +109,23 @@ def _data_dir_pin_survives():
                     pytrace=False)
 
 
+@pytest.fixture(autouse=True)
+def _session_global_restored():
+    """Repair, then fail, a test that replaced `db_session.AsyncSessionLocal` and kept it.
+
+    Every later test then gets that test's engine. An in-memory one (StaticPool) shares a
+    single connection, and fire-and-forget writes cancelled at teardown closed it twice and
+    hung pytest for 120 s (2026-10-04, six fixtures). Use monkeypatch.setattr and dispose
+    the engine."""
+    from server.db import session as db_session
+    before = db_session.AsyncSessionLocal
+    yield
+    if db_session.AsyncSessionLocal is not before:
+        db_session.AsyncSessionLocal = before
+        pytest.fail("this test replaced db_session.AsyncSessionLocal and did not restore it "
+                    "(repaired now); use monkeypatch.setattr and dispose the engine", pytrace=False)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _real_data_dir_untouched():
     """Fail the run if the user's real data dir gained an entry while it ran.

@@ -233,26 +233,22 @@ def _restore_config_after_test(monkeypatch):
         )
 
 
-def _patch_session_global(maker):
-    """Point `db_session.AsyncSessionLocal` at `maker`; returns an undo callable.
+def _patch_session_global(monkeypatch, maker):
+    """Point `db_session.AsyncSessionLocal` at `maker`, through the test's monkeypatch.
 
-    Done by hand rather than with monkeypatch because this fixture is
-    async-generator based and monkeypatch's own teardown ordering relative to
-    the yield is not what we want here.
+    Not by hand: many tests patch it again with the same maker. A hand-made undo ran in
+    `client`'s teardown, BEFORE monkeypatch's own undo (which `_restore_config_after_test`
+    runs last), so monkeypatch then "restored" the client's disposed engine and every later
+    test inherited it (the AsyncSessionLocal guard in tests/conftest.py caught 13 files,
+    2026-10-06). One monkeypatch unwinds the stacked patches in order.
     """
     from server.db import session as db_session
 
-    previous = db_session.AsyncSessionLocal
-    db_session.AsyncSessionLocal = maker
-
-    def _undo() -> None:
-        db_session.AsyncSessionLocal = previous
-
-    return _undo
+    monkeypatch.setattr(db_session, "AsyncSessionLocal", maker)
 
 
 @pytest_asyncio.fixture
-async def client(tmp_path):
+async def client(tmp_path, monkeypatch):
     """Async HTTP client with an isolated temp-file SQLite DB."""
     import os
 
@@ -291,12 +287,11 @@ async def client(tmp_path):
     # same path would have let a DELETE test purge real rows if an id had
     # happened to collide. Files that need it already patch this themselves; the
     # shared fixture should not be the one that forgets.
-    monkeypatch_session = _patch_session_global(maker)
+    _patch_session_global(monkeypatch, maker)
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         ac.db_maker = maker  # type: ignore[attr-defined]  # direct DB access for fixtures
         yield ac
-    monkeypatch_session()
     await engine.dispose()
     if previous_spawns_dir is None:
         os.environ.pop("ARSLAN_SPAWNS_DIR", None)
