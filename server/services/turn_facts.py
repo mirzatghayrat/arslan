@@ -125,7 +125,7 @@ async def capture(conversation_id: str, user_message: str, emit) -> int:
     for fact in created:
         emit({"type": "memory_proposed" if getattr(fact, "status", "active") != "active" else "fact_saved",
               "content": fact.content, "sensitive": fact.sensitive,
-              "entry_id": getattr(fact, "entry_id", None)})
+              "entry_id": getattr(fact, "entry_id", None), "version": getattr(fact, "version", None)})
     if created:
         try:
             from server.services import recap_service

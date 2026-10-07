@@ -527,6 +527,16 @@ export interface JobCard {
   criteria: JobCriterion[];
 }
 
+/** D1 (0.1.55): one thing Arslan noticed and remembered (or wants to) after a turn. */
+export interface RememberedFact {
+  content: string;
+  sensitive: boolean;
+  entryId?: string | null;
+  version?: number | null;
+  /** "active" took effect (undoable); "proposed" waits for the user in Memory. */
+  status: "active" | "proposed";
+}
+
 export interface ArslanThreadItem {
   id: number;
   kind: "message" | "fact" | "system" | "escalation" | "job" | "lesson";
@@ -541,6 +551,8 @@ export interface ArslanThreadItem {
   spawnId?: number | null;
   spawnName?: string | null;
   sensitive?: boolean; // kind === "fact"
+  /** kind === "fact" (D1, 0.1.55): everything remembered in this turn, shown as one quiet line. */
+  facts?: RememberedFact[];
   /** A user message forwarded from a paired iPhone (history row source "phone"). */
   fromPhone?: boolean;
   /** kind === "lesson" (0.1.52 S5): the practice just learned. */
@@ -648,7 +660,8 @@ export type ArslanServerMessage =
   | { type: "mcp_connect_followup"; server_id: number; tool_count: number; safe_count: number;
       restricted_count: number; assignable: boolean }
   | { type: "spawn_meta"; arslan_message_id: number; spawn_id: number; assistant_message_id: number; task_brief: string; run_id?: number }
-  | { type: "fact_saved"; content: string; sensitive: boolean }
+  | { type: "fact_saved"; content: string; sensitive: boolean; entry_id?: string | null; version?: number | null }
+  | { type: "memory_proposed"; content: string; sensitive: boolean; entry_id?: string | null; version?: number | null }
   | { type: "lesson_learned"; lesson: { id: number; text: string; status: string } }
   // source "phone": the paired iPhone's message, shown live in a window open on its conversation.
   | { type: "message"; message_id: number; content: string; role: string; job_id?: string; outcome?: JobOutcome | null;

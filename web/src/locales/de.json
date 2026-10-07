@@ -288,7 +288,13 @@
     "roster_joined_no_pending": "{{name}} ist beigetreten · für {{name}} war diesmal nichts eingeplant — Aufgaben direkt per @ übergeben",
     "stopRun": "Stoppen",
     "attachment_stored": "📎 In die Wissensbasis von {{name}} aufgenommen · {{chunks}} Blöcke",
-    "attachment_stored_generic": "📎 In die Wissensbasis aufgenommen · {{chunks}} Blöcke"
+    "attachment_stored_generic": "📎 In die Wissensbasis aufgenommen · {{chunks}} Blöcke",
+    "remembered": "Gemerkt: {{text}}",
+    "wantsToRemember": "Arslan möchte sich merken: {{text}}",
+    "rememberedUndo": "Rückgängig",
+    "rememberedUndone": "Rückgängig gemacht",
+    "rememberedReview": "In Erinnerung prüfen",
+    "rememberedChanged": "Inzwischen geändert – siehe Erinnerung"
   },
   "conversation": {
     "title": "Arslan",

@@ -288,7 +288,13 @@
     "roster_joined_no_pending": "{{name}} 已加入 · 本轮没有交给 TA 的任务,直接 @ TA 交办即可",
     "stopRun": "停止",
     "attachment_stored": "📎 已记入 {{name}} 的知识库 · {{chunks}} 块",
-    "attachment_stored_generic": "📎 已记入知识库 · {{chunks}} 块"
+    "attachment_stored_generic": "📎 已记入知识库 · {{chunks}} 块",
+    "remembered": "记住了：{{text}}",
+    "wantsToRemember": "Arslan 想记住：{{text}}",
+    "rememberedUndo": "撤销",
+    "rememberedUndone": "已撤销",
+    "rememberedReview": "去「记忆」里确认",
+    "rememberedChanged": "之后已有改动，到「记忆」里看"
   },
   "conversation": {
     "title": "Arslan",

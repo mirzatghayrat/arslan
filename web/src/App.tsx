@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { SECTIONS, type Section } from "./lib/sections";
+import { OPEN_SECTION_EVENT, SECTIONS, type Section } from "./lib/sections";
 import { useTranslation } from 'react-i18next';
 import { DEFAULT_SETTINGS } from './data';
 import { Message, MessageAttachment, AppSettings } from './types';
@@ -133,6 +133,14 @@ export default function App() {
     };
     window.addEventListener(OPEN_CONVERSATION_EVENT, onLink);
     return () => window.removeEventListener(OPEN_CONVERSATION_EVENT, onLink);
+  }, []);
+  useEffect(() => {
+    const onOpen = (event: Event) => {
+      const section = (event as CustomEvent<string>).detail;
+      if ((SECTIONS as readonly string[]).includes(section)) { setActiveSection(section as Section); setPanelView('default'); }
+    };
+    window.addEventListener(OPEN_SECTION_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_SECTION_EVENT, onOpen);
   }, []);
 
   // Lightweight transient toast (no toast component exists yet) — used for the

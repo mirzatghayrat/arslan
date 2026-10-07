@@ -22,3 +22,10 @@ export const SECTIONS = [
 ] as const;
 
 export type Section = (typeof SECTIONS)[number];
+
+/** 0.1.55: any component can ask the app to show a page (e.g. "Review in Memory"). */
+export const OPEN_SECTION_EVENT = "arslan:open-section";
+
+export function openSection(section: Section): void {
+  window.dispatchEvent(new CustomEvent(OPEN_SECTION_EVENT, { detail: section }));
+}

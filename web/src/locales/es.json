@@ -288,7 +288,13 @@
     "roster_joined_no_pending": "{{name}} se unió · no había nada pendiente para {{name}} esta vez — usa @ para asignarle tareas",
     "stopRun": "Detener",
     "attachment_stored": "📎 Guardado en la base de conocimiento de {{name}} · {{chunks}} bloques",
-    "attachment_stored_generic": "📎 Guardado en la base de conocimiento · {{chunks}} bloques"
+    "attachment_stored_generic": "📎 Guardado en la base de conocimiento · {{chunks}} bloques",
+    "remembered": "Recordado: {{text}}",
+    "wantsToRemember": "Arslan quiere recordar: {{text}}",
+    "rememberedUndo": "Deshacer",
+    "rememberedUndone": "Deshecho",
+    "rememberedReview": "Revisar en Memoria",
+    "rememberedChanged": "Cambió desde entonces: míralo en Memoria"
   },
   "conversation": {
     "title": "Arslan",

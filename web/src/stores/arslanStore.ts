@@ -728,19 +728,25 @@ function makeActions(set: SetState, get: GetState) {
           });
           break;
         case "fact_saved":
-          set({
-            items: [
-              ...state.items,
-              {
-                id: nextClientId(),
-                kind: "fact",
-                role: "arslan",
-                content: frame.content,
-                sensitive: frame.sensitive,
-              },
-            ],
-          });
+        case "memory_proposed": {
+          // D1 (0.1.55): everything remembered after one turn becomes ONE quiet line.
+          // Facts arrive after the answer, back to back; a new item starts the next turn.
+          const fact = {
+            content: frame.content, sensitive: frame.sensitive,
+            entryId: frame.entry_id ?? null, version: frame.version ?? null,
+            status: frame.type === "memory_proposed" ? "proposed" as const : "active" as const,
+          };
+          const last = state.items[state.items.length - 1];
+          if (last && last.kind === "fact") {
+            const facts = [...(last.facts ?? []), fact];
+            set({ items: [...state.items.slice(0, -1),
+              { ...last, facts, content: facts.map((f) => f.content).join(" · ") }] });
+          } else {
+            set({ items: [...state.items, { id: nextClientId(), kind: "fact", role: "arslan",
+              content: frame.content, sensitive: frame.sensitive, facts: [fact] }] });
+          }
           break;
+        }
         case "suggest_update":
           set({
             pending: false,

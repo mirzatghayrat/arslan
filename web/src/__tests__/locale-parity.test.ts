@@ -50,7 +50,7 @@ describe("locale parity", () => {
 // 1580 → 1589 (phone v2): sidebar.remote, sidebar.fromPhone, sidebar.glyph.{waiting,remote,working,progress,done,failed,scheduled}.
 // 1589 → 1590 (device e2e): sidebar.glyph.unfinished — a task that ended without getting it done.
 // 1590 → 1592 (0.1.53): settings.phoneComingSoon(+Desc) — the iPhone app teaser.
-  it("en locale has 1592 keys (baseline guard)", () => {
+  it("en locale has 1601 keys (baseline guard)", () => {
     // 1318 → 1335: the first-run wizard redesign — the four-beat "how it
     // works" tour (title + typed line + 4×title/body), the catalog capability
     // caption, the test-before-save states (test & save / testing / ok /
@@ -277,7 +277,8 @@ describe("locale parity", () => {
     // +1: externalLink.failed added by fe9c12b5 (native HTTPS refusal).
     // +1: chat.expert_involved (0.1.42 quiet "asked X to help" line replaces the roster notices).
     // +3: Settings › iPhone device state — Connecting… / Connected / last seen (bridge §3.3).
-    expect(enKeys).toHaveLength(1595);
+    // 1595 → 1601 (0.1.55 D1): chat.remembered, wantsToRemember, rememberedUndo/Undone/Review/Changed.
+    expect(enKeys).toHaveLength(1601);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

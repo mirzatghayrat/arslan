@@ -288,7 +288,13 @@
     "roster_joined_no_pending": "{{name}} a rejoint · rien n'était en attente pour {{name}} cette fois — utilisez @ pour confier une tâche",
     "stopRun": "Arrêter",
     "attachment_stored": "📎 Enregistré dans la base de connaissances de {{name}} · {{chunks}} blocs",
-    "attachment_stored_generic": "📎 Enregistré dans la base de connaissances · {{chunks}} blocs"
+    "attachment_stored_generic": "📎 Enregistré dans la base de connaissances · {{chunks}} blocs",
+    "remembered": "Retenu : {{text}}",
+    "wantsToRemember": "Arslan aimerait retenir : {{text}}",
+    "rememberedUndo": "Annuler",
+    "rememberedUndone": "Annulé",
+    "rememberedReview": "Vérifier dans Mémoire",
+    "rememberedChanged": "Modifié depuis — voir Mémoire"
   },
   "conversation": {
     "title": "Arslan",

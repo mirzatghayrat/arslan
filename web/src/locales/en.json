@@ -288,7 +288,13 @@
     "roster_joined_no_pending": "{{name}} joined · nothing was queued for them this round — @ them to hand off a task",
     "stopRun": "Stop",
     "attachment_stored": "📎 Filed into {{name}}'s knowledge base · {{chunks}} chunks",
-    "attachment_stored_generic": "📎 Filed into the knowledge base · {{chunks}} chunks"
+    "attachment_stored_generic": "📎 Filed into the knowledge base · {{chunks}} chunks",
+    "remembered": "Remembered: {{text}}",
+    "wantsToRemember": "Arslan would like to remember: {{text}}",
+    "rememberedUndo": "Undo",
+    "rememberedUndone": "Undone",
+    "rememberedReview": "Review in Memory",
+    "rememberedChanged": "Changed since — see Memory"
   },
   "conversation": {
     "title": "Arslan",

@@ -288,7 +288,13 @@
     "roster_joined_no_pending": "{{name}} が参加 · 今回 {{name}} 宛ての保留タスクはありません。@ で直接依頼してください",
     "stopRun": "停止",
     "attachment_stored": "📎 {{name}} のナレッジベースに記録 · {{chunks}} チャンク",
-    "attachment_stored_generic": "📎 ナレッジベースに記録 · {{chunks}} チャンク"
+    "attachment_stored_generic": "📎 ナレッジベースに記録 · {{chunks}} チャンク",
+    "remembered": "覚えました：{{text}}",
+    "wantsToRemember": "Arslan が覚えたいこと：{{text}}",
+    "rememberedUndo": "取り消す",
+    "rememberedUndone": "取り消しました",
+    "rememberedReview": "「メモリー」で確認",
+    "rememberedChanged": "その後変更されています。「メモリー」で確認してください"
   },
   "conversation": {
     "title": "Arslan",

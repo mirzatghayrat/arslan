@@ -55,3 +55,16 @@ async def test_extraction_honors_learning_and_secret_gates(active_memory):
     with pc.bind(pc.TaskMemoryContext(task_id="task-a", run_id="run-a")):
         assert await memory.save_facts([{"content": "password=veryprivatevalue"}],
                                        provenance={"source_kind": "router"}) == []
+
+
+async def test_a_near_duplicate_noticed_fact_is_not_saved_twice(active_memory):
+    """D1 (0.1.55): two almost identical facts minutes apart were both saved."""
+    ctx = pc.TaskMemoryContext(task_id="task-a", run_id="run-a", model_is_local=True, auto_activate_noticed=True)
+    with pc.bind(ctx):
+        first = await memory.save_facts([{"content": "用户关注并比较 Hermes、OpenClaw 等各类 AI agent 的取舍"}],
+                                         provenance={"source_kind": "conversation"})
+        again = await memory.save_facts([{"content": "用户关注并比较 Hermes、OpenClaw 等各类 AI agent 的取舍。"},
+                                         {"content": "用户在做一款水利调度解谜游戏"}],
+                                        provenance={"source_kind": "conversation"})
+    assert len(first) == 1
+    assert [f.content for f in again] == ["用户在做一款水利调度解谜游戏"]
