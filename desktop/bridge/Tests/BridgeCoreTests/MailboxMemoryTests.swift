@@ -103,6 +103,7 @@ final class MailboxMemoryTests: XCTestCase {
             func changes(since token: Data?) async throws -> (records: [EnvelopeRecord], token: Data?) { ([], nil) }
             func delete(ids: [String]) async throws {}
             func ages() async throws -> [(id: String, createdAt: Date)] { [] }
+            func recipients(of ids: [String]) async throws -> [String: String] { [:] }
         }
         let memory = InMemoryMemoryStore()
         var saved = MailboxMemory(); saved.nextSeq = 1_900_000_000_000
@@ -123,6 +124,7 @@ final class MailboxMemoryTests: XCTestCase {
             try await inner.delete(ids: ids)
         }
         func ages() async throws -> [(id: String, createdAt: Date)] { try await inner.ages() }
+        func recipients(of ids: [String]) async throws -> [String: String] { try await inner.recipients(of: ids) }
     }
 
     func testAFailedDeleteNeverStopsReadingAndIsRetriedEvenAfterARestart() async throws {

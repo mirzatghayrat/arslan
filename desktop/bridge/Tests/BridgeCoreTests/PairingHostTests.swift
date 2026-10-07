@@ -11,14 +11,16 @@ final class PairingHostTests: XCTestCase {
     func phoneRequest(uri: String, now: Date, id: String = UUID().uuidString.lowercased(),
                       phoneSigning: Curve25519.Signing.PrivateKey = .init(),
                       phoneExchange: Curve25519.KeyAgreement.PrivateKey = .init(),
-                      tamperKey: Bool = false, bodySigning: Curve25519.Signing.PublicKey? = nil) throws -> EnvelopeRecord {
+                      tamperKey: Bool = false, bodySigning: Curve25519.Signing.PublicKey? = nil,
+                      phoneID: String = "iphone-t", replaces: [Any]? = nil) throws -> EnvelopeRecord {
         let code = try PairingCode.decode(uri, now: now, containerID: container)
-        let body: [String: Any] = ["device_name": "Test iPhone",
+        var body: [String: Any] = ["device_name": "Test iPhone",
                                    "signing_public_key": (bodySigning ?? phoneSigning.publicKey).rawRepresentation.base64EncodedString(),
                                    "exchange_public_key": phoneExchange.publicKey.rawRepresentation.base64EncodedString()]
-        let env: [String: Any] = ["v": 1, "id": id, "seq": 1, "ts": "2026-10-03T00:00:00Z", "from": "iphone-t",
+        if let replaces { body["replaces"] = replaces }
+        let env: [String: Any] = ["v": 1, "id": id, "seq": 1, "ts": "2026-10-03T00:00:00Z", "from": phoneID,
                                   "to": code.macDeviceID, "type": "pair.request", "body": body]
-        let header = Header(id: id, from: "iphone-t", to: code.macDeviceID, seq: 1, kind: "control", ephemeral: "", notify: false,
+        let header = Header(id: id, from: phoneID, to: code.macDeviceID, seq: 1, kind: "control", ephemeral: "", notify: false,
                             pairingID: code.pairingID, signingKey: phoneSigning.publicKey.rawRepresentation.base64EncodedString())
         let salt = tamperKey ? Data(repeating: 7, count: 32) : code.pairingKey
         let p = try Seal.seal(plaintext: try JSONSerialization.data(withJSONObject: env, options: [.sortedKeys]),
@@ -27,7 +29,7 @@ final class PairingHostTests: XCTestCase {
         let data = try JSONSerialization.data(withJSONObject: ["header": Mailbox.headerJSON(p.header),
                                                                 "sealed": p.sealed.base64EncodedString(),
                                                                 "signature": p.signature.base64EncodedString()])
-        return EnvelopeRecord(id: id, to: code.macDeviceID, from: "iphone-t", seq: 1, kind: "control", notify: false, sealed: data)
+        return EnvelopeRecord(id: id, to: code.macDeviceID, from: phoneID, seq: 1, kind: "control", notify: false, sealed: data)
     }
 
     func host() -> PairingHost {
@@ -91,6 +93,18 @@ final class PairingHostTests: XCTestCase {
         XCTAssertThrowsError(try h.open(try phoneRequest(uri: uri, now: now), now: now)) {
             XCTAssertEqual(($0 as? BridgeError)?.code, "pairing_invalid")
         }
+    }
+
+    /// §3.3: `replaces` lists the phone's earlier ids — the first eight entries, strings only.
+    func testReplacesTakesTheFirstEightEntriesAndSkipsWhatIsNotAString() throws {
+        let h = host(), now = Date()
+        let (uri, _) = try h.newCode(now: now)
+        let list: [Any] = ["old-0", 1, "old-2", ["nested"], "old-4", "old-5", "old-6", "old-7", "old-8", "old-9"]
+        let (request, _) = try h.open(try phoneRequest(uri: uri, now: now, replaces: list), now: now)
+        XCTAssertEqual(request.replaces, ["old-0", "old-2", "old-4", "old-5", "old-6", "old-7"])
+        let (uri2, _) = try h.newCode(now: now)
+        let (plain, _) = try h.open(try phoneRequest(uri: uri2, now: now), now: now)
+        XCTAssertEqual(plain.replaces, [], "an older phone sends no list")
     }
 
     func testTheCodeDecodesOnThePhoneSide() throws {

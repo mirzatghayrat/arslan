@@ -10,9 +10,12 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Smartphone, Trash2 } from "lucide-react";
 import { api } from "../../api/client";
-import type { PhoneCode, PhoneStatus } from "../../api/client.types";
+import type { PhoneCode, PhoneDevice, PhoneRequest, PhoneStatus } from "../../api/client.types";
+import { formatRelativeTime } from "./relativeTime";
 
 const EMPTY: PhoneStatus = { connected: false, bridge: {}, devices: [], pending: [], code: null };
+/** How long an allowed phone shows as Connecting… before the Bridge's own list must take over. */
+const ACCEPTED_GRACE_MS = 15_000;
 
 export default function PhoneSection({ pollMs = 3000, enabled = false, onEnabledChange }: {
   pollMs?: number;
@@ -25,6 +28,8 @@ export default function PhoneSection({ pollMs = 3000, enabled = false, onEnabled
   const [code, setCode] = useState<PhoneCode | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
+  // Phones just allowed here, shown as Connecting… until the Bridge's list names them (a poll later).
+  const [accepted, setAccepted] = useState<{ request: PhoneRequest; at: number }[]>([]);
 
   const load = async () => {
     try { setStatus(await api.phoneStatus()); } catch { setStatus(EMPTY); }
@@ -34,6 +39,12 @@ export default function PhoneSection({ pollMs = 3000, enabled = false, onEnabled
     const timer = setInterval(() => void load(), pollMs);   // a request can arrive any time
     return () => clearInterval(timer);
   }, [pollMs]);
+
+  const listed = new Set(status.devices.map(d => d.device_id));
+  const waiting: PhoneDevice[] = accepted
+    .filter(({ request, at }) => request.phone_id && !listed.has(request.phone_id) && Date.now() - at < ACCEPTED_GRACE_MS)
+    .map(({ request }) => ({ device_id: request.phone_id!, name: request.phone_name || "iPhone", state: "connecting" }));
+  const devices = [...status.devices, ...waiting];
 
   const act = async (work: () => Promise<unknown>) => {
     setBusy(true); setError(false);
@@ -80,17 +91,21 @@ export default function PhoneSection({ pollMs = 3000, enabled = false, onEnabled
         className="flex flex-wrap items-center gap-3 rounded-xl border border-primary/30 bg-primary/5 p-3 text-sm">
         <span className="flex-1">{t("settings.phoneRequest", { name: request.phone_name || "iPhone" })}</span>
         <button type="button" className="rounded-lg bg-primary px-3 py-1 text-xs text-primary-foreground disabled:opacity-50" disabled={busy}
-          onClick={() => void act(() => api.phoneDecide(request.request_id, true))}>{t("settings.phoneAccept")}</button>
+          onClick={() => void act(async () => {
+            await api.phoneDecide(request.request_id, true);
+            setAccepted(list => [...list, { request, at: Date.now() }]);
+          })}>{t("settings.phoneAccept")}</button>
         <button type="button" className="rounded-lg border border-border px-3 py-1 text-xs disabled:opacity-50" disabled={busy}
           onClick={() => void act(() => api.phoneDecide(request.request_id, false))}>{t("settings.phoneDecline")}</button>
       </div>)}
 
       <div className="space-y-2">
         <h4 className="text-xs font-bold text-foreground">{t("settings.phoneDevices")}</h4>
-        {!status.devices.length && <p className="text-[11px] text-muted-foreground">{t("settings.phoneNone")}</p>}
-        {status.devices.map(device => <div key={device.device_id} data-testid={`phone-device-${device.device_id}`}
+        {!devices.length && <p className="text-[11px] text-muted-foreground">{t("settings.phoneNone")}</p>}
+        {devices.map(device => <div key={device.device_id} data-testid={`phone-device-${device.device_id}`}
           className="flex items-center gap-3 rounded-lg bg-foreground/5 px-3 py-2 text-sm">
           <span className="flex-1">{device.name}</span>
+          <DeviceState device={device} />
           {device.paired_at && <span className="text-[11px] text-muted-foreground">{t("settings.phonePairedAt", { when: new Date(device.paired_at).toLocaleDateString() })}</span>}
           <button type="button" aria-label={t("settings.phoneRemove")} title={t("settings.phoneRemove")} disabled={busy}
             className="text-muted-foreground hover:text-destructive disabled:opacity-50"
@@ -99,5 +114,22 @@ export default function PhoneSection({ pollMs = 3000, enabled = false, onEnabled
       </div>
       {error && <p role="alert" className="text-xs text-destructive">{t("settings.phoneError")}</p>}
     </div>
+  );
+}
+
+/** "Connecting…" until the Bridge has read a message from the phone, then "Connected · last seen …"
+ *  (mobile-bridge-protocol §3.3). An older Bridge sends no state, and nothing is shown. */
+function DeviceState({ device }: { device: PhoneDevice }) {
+  const { t } = useTranslation();
+  if (device.state !== "connecting" && device.state !== "connected") return null;
+  const connected = device.state === "connected";
+  return (
+    <span data-testid={`phone-device-state-${device.device_id}`} data-state={device.state}
+      className="flex items-center gap-1.5 text-[11px] text-muted-foreground whitespace-nowrap">
+      <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${connected ? "bg-success" : "bg-warning animate-pulse"}`} />
+      {!connected ? t("settings.phoneConnecting")
+        : device.last_seen ? t("settings.phoneConnectedSeen", { when: formatRelativeTime(device.last_seen, t) })
+        : t("settings.phoneConnected")}
+    </span>
   );
 }

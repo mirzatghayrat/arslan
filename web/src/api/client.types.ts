@@ -1268,7 +1268,8 @@ export interface NoteSuggestDto {
 /** A machine enrolled for SSH (P3c). Nothing here is secret: a host key is
  *  public, and the key Arslan signs with never leaves the backend. */
 /** Settings › iPhone (docs/specs/mobile-bridge-protocol.md §6.1). */
-export interface PhoneDevice { device_id: string; name: string; paired_at?: string | null; last_seen?: string | null }
+/** `state` (mobile-bridge-protocol §3.3): "connecting" until the Bridge has heard from the phone; absent from an older Bridge. */
+export interface PhoneDevice { device_id: string; name: string; paired_at?: string | null; last_seen?: string | null; state?: "connecting" | "connected" | null }
 export interface PhoneRequest { request_id: string; pairing_id?: string; phone_id?: string; phone_name?: string }
 export interface PhoneCode { uri: string; qr_png: string; expires_at: string }
 export interface PhoneStatus {

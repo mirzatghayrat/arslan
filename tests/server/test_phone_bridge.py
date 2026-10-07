@@ -35,8 +35,9 @@ async def test_attaching_asks_for_the_device_list_and_hello_names_the_bridge(hub
     await hub.handle({"type": "bridge.hello", "device_id": "mac-1", "version": "0.1.53", "protocol": 1, "secret": "x"})
     assert hub.status()["bridge"] == {"device_id": "mac-1", "version": "0.1.53", "protocol": 1}
     await hub.handle({"type": "devices", "items": [{"device_id": "iphone-1", "name": "A", "paired_at": "t",
-                                                    "last_seen": "t", "signing": "never relayed"}]})
-    assert hub.status()["devices"] == [{"device_id": "iphone-1", "name": "A", "paired_at": "t", "last_seen": "t"}]
+                                                    "last_seen": "t", "state": "connected", "signing": "never relayed"}]})
+    assert hub.status()["devices"] == [{"device_id": "iphone-1", "name": "A", "paired_at": "t", "last_seen": "t",
+                                        "state": "connected"}]
 
 
 async def test_a_new_code_waits_for_the_bridge_and_times_out_without_one(hub, monkeypatch):
@@ -103,6 +104,11 @@ async def test_the_window_api(client, hub):
     r = await client.post("/api/v1/phone/requests/r1", json={"accept": False})
     assert r.status_code == 200 and sock.sent[-1] == {"type": "pairing.decide", "request_id": "r1", "accept": False}
     assert (await client.delete("/api/v1/phone/devices/iphone-9")).status_code == 404
+    # Settings reads each phone's state from here: connecting until the Bridge has heard from it (§3.3).
+    await hub.handle({"type": "devices", "items": [{"device_id": "iphone-2", "name": "B", "paired_at": "t",
+                                                    "state": "connecting"}]})
+    devices = (await client.get("/api/v1/phone")).json()["devices"]
+    assert [(d["device_id"], d["state"], d["last_seen"]) for d in devices] == [("iphone-2", "connecting", None)]
 
 
 def test_the_control_socket_requires_the_token(tmp_path, monkeypatch, portal):
