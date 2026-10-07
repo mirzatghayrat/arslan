@@ -751,7 +751,7 @@
     "searchNoHits": "没有匹配的分区",
     "modeSystem": "跟随系统",
     "tool_transport_title": "此 provider 上工具不会运行",
-    "tool_transport_unsupported": "Arslan 目前不向此 provider 传递工具定义，因此已装备的工具和已连接的 MCP 服务器根本不会被交给模型，也不会触发。技能仍会作为指令进入模型，但技能中任何依赖调用工具的步骤都无法完成。需要用工具请改选 OpenAI 兼容的 provider。",
+    "tool_transport_unsupported": "Arslan 目前不向此 provider 传递工具定义，因此这里打开的能力和已连接的 MCP 服务器根本不会被交给模型，也不会触发。技能仍会作为指令进入模型，但技能中任何依赖调用工具的步骤都无法完成。需要用工具请改选 OpenAI 兼容的 provider。",
     "tool_transport_unverified": "此 provider 尚未针对 Arslan 的工具通路做过实测。工具可能触发也可能不触发——目前没人验过。",
     "capabilityTableNote": "0–10 评分，用于给任务挑模型。它描述的是模型自身的强项——不代表 Arslan 在你这套配置下能不能把工具发给该供应商。",
     "cryptoHealthTitle": "存储的密钥读不出来",
@@ -1317,7 +1317,7 @@
       "retire": "退役",
       "retireConfirm": "退役 — 全部解绑",
       "cancel": "取消",
-      "retireHint": "已标记待审 — 退役会从所有专家解绑并使其不可装备",
+      "retireHint": "已标记待审 — 退役后不再提供给 Arslan，也会从所有专家解绑",
       "retired": "已退役 \"{{key}}\" — 从 {{count}} 个专家解绑。"
     },
     "modes": {

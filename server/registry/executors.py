@@ -767,6 +767,9 @@ class ReadSkillExecutor:
             row = await db.get(SkillPack, skey)
         if row is None or not (row.body or "").strip():
             return {"ok": False, "external": False, "error": f"skill not found or empty: {skey}"}
+        if row.enabled is False:
+            # 0.1.55 §14: switched off on the Capabilities page — off means not used.
+            return {"ok": False, "external": False, "error": f"skill switched off by the user: {skey}"}
         body = row.body.strip()
         section = (args.get("section") or "").strip()
         if section.startswith("references/"):

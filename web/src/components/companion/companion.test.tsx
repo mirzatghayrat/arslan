@@ -100,11 +100,14 @@ describe("memory controls", () => {
       sensitivity: "normal", use_policy: "cloud_allowed", topic: null, valid_from: null, review_at: null,
       expires_at: null, core: "about_you" });
     expect(scope).toBe(false);
+    // Buttons are disabled while the page reloads after a change; wait like a person would.
+    await waitFor(() => expect(screen.getAllByLabelText("companion.takeOutOfView")[0]).toBeEnabled());
     fireEvent.click(screen.getAllByLabelText("companion.takeOutOfView")[0]);
     await waitFor(() => expect(edit).toHaveBeenCalledTimes(2));
     expect(edit.mock.calls[1][0].id).toBe("a");
     expect(edit.mock.calls[1][1].core).toBeNull();
     // the same choice from the entry itself in the list
+    await waitFor(() => expect(screen.getAllByText("companion.takeOutOfView")[1]).toBeEnabled());
     fireEvent.click(screen.getAllByText("companion.takeOutOfView")[1]);
     await waitFor(() => expect(edit).toHaveBeenCalledTimes(3));
     expect(edit.mock.calls[2][0].id).toBe("n");

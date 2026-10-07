@@ -840,7 +840,7 @@ async def _skill_index(limit: int = 80) -> str:
     try:
         async with db_session.AsyncSessionLocal() as db:
             rows = (await db.execute(select(SkillPack).where(
-                SkillPack.status == "registered", SkillPack.body.is_not(None),
+                SkillPack.status == "registered", SkillPack.body.is_not(None), SkillPack.enabled.is_not(False),
                 func.trim(SkillPack.body) != "").order_by(SkillPack.key).limit(limit))).scalars().all()
     except Exception:  # noqa: BLE001 — a missing index must never break a turn
         return ""

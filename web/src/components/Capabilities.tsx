@@ -14,8 +14,9 @@ import ToolTransportWarning from "./settings/ToolTransportWarning";
 import { getMcpCatalog } from "../api/catalog";
 import { listMcpServers } from "../api/mcp";
 import ProfessionalMethods from "./companion/ProfessionalMethods";
+import CapabilitySwitches from "./CapabilitySwitches";
 
-type CapTab = "experts" | "discover" | "tools" | "skills" | "forge" | "mcps" | "saved";
+type CapTab = "experts" | "abilities" | "discover" | "skills" | "forge" | "mcps" | "saved";
 type McpChip = "all" | "recommended" | "registered";
 
 // Capability Library page: one tab bar at the top
@@ -31,7 +32,8 @@ export default function Capabilities({ provider, experts, initialTab }: {
   provider?: string | null; experts?: ReactNode; initialTab?: CapTab;
 } = {}) {
   const { t } = useTranslation();
-  const [tab, setTab] = useState<CapTab>(initialTab ?? (experts ? "experts" : "discover"));
+  // 0.1.55 §14: the page opens on the switches — what Arslan can do, and why not.
+  const [tab, setTab] = useState<CapTab>(initialTab ?? "abilities");
   useEffect(() => { if (initialTab) setTab(initialTab); }, [initialTab]);
   const [mcpPrefill, setMcpPrefill] = useState<McpPrefill | null>(null);
   // Bumped when an MCP is added/connected elsewhere (dossier, recommended list) so the
@@ -87,16 +89,18 @@ export default function Capabilities({ provider, experts, initialTab }: {
           active={tab === "forge" ? "skills" : tab === "saved" ? "discover" : tab}
           onChange={(id) => setTab(id as CapTab)}
           tabs={[
-            ...(experts ? [{ id: "experts", label: t("workspace.legacyExperts") }] : []),
+            { id: "abilities", label: t("capabilityList.tab") },
             { id: "skills", label: t("workspace.skillsWorkflows") },
-            { id: "tools", label: t("capabilities.tabs.tools") },
             // 0.1.48: connections (MCP servers) live here; the separate Connections page is gone.
             { id: "mcps", label: t("workspace.connections") },
             { id: "discover", label: t("capabilities.tabs.discover") },
+            // Only for people who still have legacy experts (unchanged condition), and last.
+            ...(experts ? [{ id: "experts", label: t("workspace.legacyExperts") }] : []),
           ]}
         />
 
         {tab === "experts" && experts}
+        {tab === "abilities" && <CapabilitySwitches onOpenTab={(next) => setTab(next)} />}
         {(tab === "discover" || tab === "saved") && <FilterChips active={tab} onSelect={id => setTab(id as CapTab)} chips={[
           { id: "discover", label: t("capabilities.chips.all") }, { id: "saved", label: t("capabilities.tabs.saved") },
         ]} />}
@@ -106,10 +110,6 @@ export default function Capabilities({ provider, experts, initialTab }: {
           <ToolHubDiscover onMcpAdded={() => setMcpRefreshKey((k) => k + 1)} />
         )}
 
-        {tab === "tools" && <><div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-4 text-sm">
-          <p className="text-muted-foreground">{t("workspace.toolsConnectionsHint")}</p>
-          <button className="text-primary underline" onClick={() => setTab("mcps")}>{t("workspace.connections")}</button>
-        </div><CapabilityCatalog kind="tools" /></>}
 
         {(tab === "skills" || tab === "forge") && <div className="mb-5 flex justify-end">
           <button className="rounded-lg border border-border px-3 py-2 text-sm hover:border-primary" onClick={() => setTab(tab === "forge" ? "skills" : "forge")}>
@@ -126,7 +126,7 @@ export default function Capabilities({ provider, experts, initialTab }: {
               </div>
               <SkillImportPanel />
             </section>
-            <CapabilityCatalog kind="skills" />
+            <CapabilityCatalog kind="skills" assign={!!experts} />
           </div>
         )}
 

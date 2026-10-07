@@ -5,7 +5,7 @@
 //   仅 Arslan       = orchestrator-tier items (real, but security-gated to the orchestrator)
 //   全部            = everything with badges
 // Infeasible items stay hidden entirely (existing behavior).
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Stethoscope, Boxes } from "lucide-react";
 import { api } from "../api/client";
@@ -26,7 +26,9 @@ function classify(it: { tier: string; assignable: boolean }): AvailClass {
   return "unimplemented"; // safe-tier but not functional yet (honesty gate)
 }
 
-export default function CapabilityCatalog({ kind }: { kind: "tools" | "skills" }) {
+/** `assign`: show "assign to an expert" — only for people who still have legacy experts
+ * (0.1.55 §14: the page no longer speaks of equipping). */
+export default function CapabilityCatalog({ kind, assign = true }: { kind: "tools" | "skills"; assign?: boolean }) {
   const { t } = useTranslation();
   const [cat, setCat] = useState<RegistryCatalog | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -47,16 +49,21 @@ export default function CapabilityCatalog({ kind }: { kind: "tools" | "skills" }
     );
 
   return (
+    <AssignContext.Provider value={assign}>
     <div>
-      <p className="text-[10px] text-subtle-foreground font-sans mb-3">{t("capabilities.catalog.equip_hint")}</p>
+      {assign && <p className="text-[10px] text-subtle-foreground font-sans mb-3">{t("capabilities.catalog.equip_hint")}</p>}
       {kind === "tools" ? (
         <ToolsView toolsets={cat.toolsets.filter((ts) => ts.status !== "infeasible")} />
       ) : (
         <SkillsView skills={cat.skills.filter((s) => s.status !== "infeasible")} />
       )}
     </div>
+    </AssignContext.Provider>
   );
 }
+
+/** Whether rows offer "assign to an expert" (only while legacy experts exist). */
+const AssignContext = createContext(true);
 
 /** The shared availability chip row: 可用 (default) | 未实装 | 仅 Arslan | 全部. */
 function availabilityChips(
@@ -147,6 +154,7 @@ function ToolCard({ ts, matchedTools = [] }: {
    *  results look arbitrary is one people stop using. */
   matchedTools?: string[];
 }) {
+  const assign = useContext(AssignContext);
   const { t } = useTranslation();
   const avail = classify(ts);
   const warning = ts.warning_code === "unsandboxed_python"
@@ -174,7 +182,7 @@ function ToolCard({ ts, matchedTools = [] }: {
         )}
         {avail === "usable" && (
           <span className="ml-auto">
-            <EquipPopover kind="toolset" capKey={ts.key} />
+            {assign && <EquipPopover kind="toolset" capKey={ts.key} />}
           </span>
         )}
       </div>
@@ -276,6 +284,7 @@ function SkillsView({ skills }: { skills: RegistrySkill[] }) {
 
 function SkillRow({ s }: { s: RegistrySkill }) {
   const { t } = useTranslation();
+  const assign = useContext(AssignContext);
   const avail = classify(s);
   // PC-5 health: probe on demand (mirrors RailMcpList's 体检). null = never checked.
   const [health, setHealth] = useState<SkillHealth | null>(null);
@@ -337,7 +346,7 @@ function SkillRow({ s }: { s: RegistrySkill }) {
         </button>
         {avail === "usable" && (
           <span className="ml-auto">
-            <EquipPopover kind="skill" capKey={s.key} />
+            {assign && <EquipPopover kind="skill" capKey={s.key} />}
           </span>
         )}
       </div>

@@ -466,6 +466,8 @@ def create_app() -> FastAPI:
     app.include_router(desktop_api.router, prefix="/api/v1")
     from server.api import approvals as approvals_api
     app.include_router(approvals_api.router, prefix="/api/v1")
+    from server.api import capabilities as capabilities_api
+    app.include_router(capabilities_api.router, prefix="/api/v1")
     from server.api import judgments as judgments_api
     app.include_router(judgments_api.router, prefix="/api/v1")
     from server.api import lessons as lessons_api
