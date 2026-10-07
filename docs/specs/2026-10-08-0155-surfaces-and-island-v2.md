@@ -1,6 +1,8 @@
-# 0.1.54 — One surface kit for everything that interrupts, and Island v2
+# 0.1.55 — One surface kit for everything that interrupts, Island v2, and four small fixes
 
-Status: spec, for review. Mock: https://claude.ai/artifact/Y7bbsGqK21DxeX2h3BrzH3 (the user approved its look,
+Status: spec, for review. Renumbered 2026-10-08: 0.1.54 is the security/Bridge batch already on main (#111–#118);
+this is 0.1.55. Then 0.1.56 = output rules, the folded work timeline, the reading panel; 0.1.57 = the right-hand
+workbench and clickable paths (task book `Arslan-输出与交付面-任务书-2026-10-04.md` §3–§8). Mock: https://claude.ai/artifact/Y7bbsGqK21DxeX2h3BrzH3 (the user approved its look,
 2026-10-05, and widened the scope on 2026-10-06 to "every pop-up inside Arslan").
 Inventory: 2026-10-06, four angles (components, i18n keys, backend card frames, native shell), file:line facts
 in §9.
@@ -129,3 +131,28 @@ island 5 expanded views + compact + peek; native: 7 notifications, 12 message bo
 window, splash. Sources: `App.tsx:708-822`, `arslanStore.ts:686-984`, `server/ws/protocol.py:229-340`,
 `index.css:1342-2099`, `companion/CompanionDialog.tsx`, `island/IslandApp.tsx`, `desktop/src-tauri/src/{lib,
 recovery_ui,resident}.rs`, `native_messages.json`.
+
+## 10. Four small fixes in the same release (task book 2026-10-04 §2, and a real-Mac finding)
+
+Checked on main `6c0f42c9` (2026-10-08).
+
+- **D1 A saved fact looks like Arslan's reply.** `web/src/api/adapters.ts:406` turns `kind === "fact"` into an
+  ordinary Arslan message (`sender: "arslan"`, avatar, text). It becomes a `ProposalRow`-style quiet line
+  "记住了：…" with Undo, one line per turn for several facts, worded to the user ("你关注…"). Near-duplicates:
+  `server/orchestrator/memory.py:218 save_facts` gets a near-duplicate check (two almost identical facts within
+  minutes were seen), with tests.
+- **D2 Arslan does not know its version.** `server/config.py:69` `app_version = "0.1.0"`; nothing in the system
+  prompt; `docs/releases` has v0.1.47, v0.1.48, v0.1.53 only. The packaged build injects its real version
+  (`/api/v1/health` reports it), the prompt says "You are Arslan vX.Y.Z", and the last three releases' notes ship
+  in the app behind a read-only tool for "what changed". v0.1.49–v0.1.52 notes are added from their GitHub
+  release bodies. Acceptance: the packaged app answers "what version / what's new" as the release page says.
+- **D3 Tool cards under the answer.** Seen in a screenshot, not yet in code: reproduce first; the card must sit
+  where the step happened. (The full fold-into-one-line timeline is 0.1.56; this is only the order.)
+- **L1 A plain request learned as a correction, and backwards (real Mac, 2026-10-05).** "在访达里把 … 改名" was
+  the conversation's first message; the turn renamed the file with `mv` (correct, by design); `server/services/
+  lessons.py` still saved, active at once, "需要对文件做重命名等访达层面的操作时 → 在访达里完成，而不是用命令行"
+  (`source == "user_correction"` takes effect immediately, `:236`, `:253`). Fix: a correction must answer
+  something Arslan did earlier in the conversation (a first request is never one); and a lesson that contradicts
+  the route that worked in the same turn is at most a proposal. Tests use that exact exchange (and its mirror: a
+  real correction after a wrong route still takes effect at once). The pending proposal "PERM_DENIED → use
+  osascript" seen on the same Mac is checked against the same rule.
