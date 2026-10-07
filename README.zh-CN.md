@@ -111,7 +111,7 @@ Arslan 现在能通过一个小助手 **Arslan Hands** 读取并使用你 Mac �
   <img src="docs/assets/readme/iphone.jpg" alt="Mac 与 iPhone：经由你的私有 iCloud 端到端加密（X25519、HKDF-SHA256、ChaCha20-Poly1305、Ed25519），先答者生效，Island 的表情" width="100%">
 </div>
 
-iPhone 链路没有 Arslan 服务器，也没有中转：消息走你私有 iCloud 数据库里的一个 CloudKit 区——X25519 密钥协商、HKDF-SHA256、ChaCha20-Poly1305、Ed25519 签名。已确认的消息由发送方删除，每天还会清掉超过 7 天的残留。
+iPhone 链路没有 Arslan 服务器，也没有中转：消息走你私有 iCloud 数据库里的一个 CloudKit 区——X25519 密钥协商、HKDF-SHA256、ChaCha20-Poly1305、Ed25519 签名。送达的消息随即删除；没送达的残留超过 7 天后由 Arslan Mac 版删除——Mac 开着并联网时大约每天检查一次，离线期间的清理等它恢复后再做。
 
 ## 隐私
 
@@ -127,7 +127,7 @@ iPhone 链路没有 Arslan 服务器，也没有中转：消息走你私有 iClo
 
 ## 现状——只说已经证实的
 
-- **Pre-v1。** 目前只支持 Apple Silicon 上的 macOS 11+。沙箱基于 macOS seatbelt，其他平台一律拒绝运行。
+- **Pre-v1。** 目前只支持 Apple Silicon 上的 macOS 11+。沙箱基于 macOS seatbelt；在其他平台上，生成的 Python 会被拒绝，终端命令则在无沙箱状态下运行并如实标明。
 - **自带模型 key。** Arslan 用你的账户跑，费用由你的服务商结算。原生工具调用已实现并对 OpenAI 兼容、Anthropic、Gemini 三条路径做了协议测试——这不等于每个模型或端点都经过实测。
 - **Hands 只看得到当前桌面的窗口**；另一个空间里或被全屏 app 挡住的 app 视为未打开。大窗口（比如笔记很多的备忘录）读一次要 10–20 秒。
 - **Arslan for iPhone 即将上架 App Store**，Mac 端已随 0.1.53 发布。

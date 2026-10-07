@@ -111,7 +111,7 @@ Arslan ahora puede leer y usar las apps de tu Mac — Notas, Mail, Pages y el re
   <img src="docs/assets/readme/iphone.jpg" alt="Mac y iPhone: cifrado de extremo a extremo a través de tu iCloud privado (X25519, HKDF-SHA256, ChaCha20-Poly1305, Ed25519), gana la primera respuesta, la cara de la Island" width="100%">
 </div>
 
-El enlace con el iPhone no tiene servidor de Arslan ni relé: los mensajes viajan por una zona de CloudKit en tu base de datos privada de iCloud — acuerdo de claves X25519, HKDF-SHA256, ChaCha20-Poly1305, firmas Ed25519. El remitente borra los mensajes confirmados, y un barrido diario elimina lo que tenga más de siete días.
+El enlace con el iPhone no tiene servidor de Arslan ni relé: los mensajes viajan por una zona de CloudKit en tu base de datos privada de iCloud — acuerdo de claves X25519, HKDF-SHA256, ChaCha20-Poly1305, firmas Ed25519. Los mensajes entregados se borran; lo que quede lo borra Arslan para Mac cuando tiene más de 7 días — el Mac lo comprueba aproximadamente una vez al día mientras está encendido y en línea, y si no, más tarde.
 
 ## Privacidad
 
@@ -127,7 +127,7 @@ Reconocimiento de texto en imágenes y PDF escaneados, la postura de seguridad c
 
 ## Estado — honestos sobre lo comprobado
 
-- **Pre-v1.** Por ahora solo macOS 11+ en Apple Silicon. Los sandboxes son seatbelt de macOS; en otras plataformas se niega de forma segura.
+- **Pre-v1.** Por ahora solo macOS 11+ en Apple Silicon. Los sandboxes son seatbelt de macOS; en otras plataformas el Python generado se rechaza y los comandos de shell se ejecutan sin sandbox, indicándolo.
 - **Tu propia clave de modelo.** Arslan funciona con tu cuenta; te factura tu proveedor. El transporte nativo de herramientas está implementado y probado a nivel de protocolo para rutas compatibles con OpenAI, Anthropic y Gemini — no es una certificación en vivo de cada modelo o endpoint.
 - **Hands solo ve ventanas del escritorio actual**; una app en otro Space o detrás de una app a pantalla completa cuenta como no abierta. Una ventana grande (Notas con muchas notas) puede tardar 10–20 segundos en leerse.
 - **Arslan para iPhone llega pronto a la App Store.** La parte de Mac está en 0.1.53.

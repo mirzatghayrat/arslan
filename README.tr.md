@@ -111,7 +111,7 @@ Arslan artık küçük bir yardımcı olan **Arslan Hands** ile Mac'indeki uygul
   <img src="docs/assets/readme/iphone.jpg" alt="Mac ve iPhone: özel iCloud'un üzerinden uçtan uca şifreleme (X25519, HKDF-SHA256, ChaCha20-Poly1305, Ed25519), ilk cevap geçerli, Island'ın yüzü" width="100%">
 </div>
 
-iPhone bağlantısında Arslan sunucusu ya da aktarıcı yoktur: mesajlar özel iCloud veritabanındaki bir CloudKit bölgesinden geçer — X25519 anahtar anlaşması, HKDF-SHA256, ChaCha20-Poly1305, Ed25519 imzaları. Onaylanan mesajları gönderen siler ve günlük bir temizlik yedi günden eski her şeyi kaldırır.
+iPhone bağlantısında Arslan sunucusu ya da aktarıcı yoktur: mesajlar özel iCloud veritabanındaki bir CloudKit bölgesinden geçer — X25519 anahtar anlaşması, HKDF-SHA256, ChaCha20-Poly1305, Ed25519 imzaları. Teslim edilen mesajlar silinir; geride kalanları Arslan for Mac 7 günden eski olduklarında siler — Mac açık ve çevrimiçiyken yaklaşık günde bir kez kontrol eder, değilse daha sonra.
 
 ## Gizlilik
 
@@ -127,7 +127,7 @@ Görsellerde ve taranmış PDF'lerde metin tanıma, güvenlik duruşunun tamamı
 
 ## Durum — kanıtlanana dair dürüst
 
-- **Pre-v1.** Şimdilik yalnızca Apple Silicon'da macOS 11+. Sanal alanlar macOS seatbelt'tir; diğer platformlarda güvenli biçimde reddedilir.
+- **Pre-v1.** Şimdilik yalnızca Apple Silicon'da macOS 11+. Sanal alanlar macOS seatbelt'tir; diğer platformlarda üretilen Python reddedilir, kabuk komutları ise sanal alan olmadan çalışır ve bu açıkça belirtilir.
 - **Kendi model anahtarın.** Arslan senin hesabınla çalışır; faturayı sağlayıcın keser. Yerel araç taşıma OpenAI uyumlu, Anthropic ve Gemini yolları için uygulanmış ve protokol düzeyinde test edilmiştir — bu her model ya da uç noktanın canlı sertifikası değildir.
 - **Hands yalnızca geçerli masaüstündeki pencereleri görür**; başka bir Space'teki ya da tam ekran bir uygulamanın arkasındaki uygulama açık sayılmaz. Büyük bir pencerenin (çok notlu Notlar) okunması 10–20 saniye sürebilir.
 - **iPhone için Arslan yakında App Store'da.** Mac tarafı 0.1.53 ile geldi.

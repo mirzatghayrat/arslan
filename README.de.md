@@ -111,7 +111,7 @@ Arslan kann jetzt die Apps auf deinem Mac lesen und bedienen — Notizen, Mail, 
   <img src="docs/assets/readme/iphone.jpg" alt="Mac und iPhone: Ende-zu-Ende-Verschlüsselung über deine private iCloud (X25519, HKDF-SHA256, ChaCha20-Poly1305, Ed25519), die erste Antwort gilt, das Gesicht der Island" width="100%">
 </div>
 
-Die iPhone-Verbindung hat keinen Arslan-Server und kein Relay: Nachrichten laufen durch eine CloudKit-Zone in deiner privaten iCloud-Datenbank — X25519-Schlüsselvereinbarung, HKDF-SHA256, ChaCha20-Poly1305, Ed25519-Signaturen. Bestätigte Nachrichten löscht der Absender, und ein täglicher Durchlauf räumt alles auf, was älter als sieben Tage ist.
+Die iPhone-Verbindung hat keinen Arslan-Server und kein Relay: Nachrichten laufen durch eine CloudKit-Zone in deiner privaten iCloud-Datenbank — X25519-Schlüsselvereinbarung, HKDF-SHA256, ChaCha20-Poly1305, Ed25519-Signaturen. Zugestellte Nachrichten werden gelöscht; was liegen bleibt, löscht Arslan für Mac, sobald es älter als 7 Tage ist — der Mac prüft etwa einmal täglich, solange er läuft und online ist, sonst später.
 
 ## Datenschutz
 
@@ -127,7 +127,7 @@ Texterkennung in Bildern und gescannten PDFs, die vollständige Sicherheitslage,
 
 ## Status — ehrlich über das Bewiesene
 
-- **Pre-v1.** Vorerst nur macOS 11+ auf Apple Silicon. Die Sandboxen sind macOS-Seatbelt; andere Plattformen verweigern sicher.
+- **Pre-v1.** Vorerst nur macOS 11+ auf Apple Silicon. Die Sandboxen sind macOS-Seatbelt; anderswo wird generiertes Python verweigert, Shell-Befehle laufen ohne Sandbox und sind entsprechend markiert.
 - **Eigener Modellschlüssel.** Arslan läuft über dein Konto; dein Anbieter rechnet ab. Nativer Tool-Transport ist für OpenAI-kompatible, Anthropic- und Gemini-Pfade implementiert und protokollgetestet — das ist keine Live-Zertifizierung jedes Modells oder Endpunkts.
 - **Hands sieht nur Fenster auf dem aktuellen Schreibtisch**; eine App in einem anderen Space oder hinter einer Vollbild-App gilt als nicht geöffnet. Ein großes Fenster (Notizen mit vielen Notizen) braucht zum Lesen 10–20 Sekunden.
 - **Arslan für iPhone kommt bald in den App Store.** Die Mac-Seite ist in 0.1.53 enthalten.
