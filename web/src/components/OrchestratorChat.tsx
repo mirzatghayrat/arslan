@@ -658,6 +658,8 @@ export default function OrchestratorChat({
                         ? 'bg-surface/80 backdrop-blur border border-border-strong text-foreground rounded-2xl rounded-tl-none shadow-sm shadow-black/40'
                         : 'bg-background/90 backdrop-blur border border-primary/15 text-foreground rounded-2xl rounded-tl-none'
                     }`}>
+                      {/* D3 (0.1.55): the steps ran BEFORE the answer, so their card sits above it. */}
+                      {msg.toolActivity && <div className="mb-3"><ToolActivityCard activity={msg.toolActivity} /></div>}
                       {/* Message Content */}
                       {isUser
                         ? <>
@@ -732,8 +734,6 @@ export default function OrchestratorChat({
                       </div>
                     )}
 
-                    {/* 2. Tool-Activity Card — humanized headline, raw JSON behind 详情 (shared component) */}
-                    {msg.toolActivity && <ToolActivityCard activity={msg.toolActivity} />}
 
                     {/* 🔒 HTML deliverable card — artifactHtml comes ONLY from the backend
                         stream_end frame's kind:"html" artifact (HX-2), never LLM text.
@@ -843,6 +843,12 @@ export default function OrchestratorChat({
                     <span className="text-subtle-foreground text-[10px]">{msg.timestamp}</span>
                   </div>
 
+                  {/* D3 (0.1.55): the steps ran BEFORE the answer, so their card sits above it. */}
+                  {msg.toolActivity && (
+                    <div className="mb-3">
+                      <ToolActivityCard activity={msg.toolActivity} />
+                    </div>
+                  )}
                   {isUser
                     ? <p className="whitespace-pre-line text-muted-foreground font-mono leading-relaxed">{msg.text}</p>
                     : <MessageBody text={msg.text} streaming={msg.id === '__streaming__'} hasMessageActions={isSpawn && !msg.isProposal && !!msg.spawnId} className="text-muted-foreground font-sans leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
@@ -885,12 +891,6 @@ export default function OrchestratorChat({
                     </div>
                   )}
 
-                  {/* Tool Activity — humanized headline, raw JSON behind 详情 (shared component) */}
-                  {msg.toolActivity && (
-                    <div className="mt-4">
-                      <ToolActivityCard activity={msg.toolActivity} />
-                    </div>
-                  )}
 
                   {/* 🔒 HTML deliverable card — backend stream_end kind:"html" artifact only (HX-2). */}
                   {msg.artifactHtml && (
@@ -979,6 +979,12 @@ export default function OrchestratorChat({
                     )}
                   </div>
 
+                  {/* D3 (0.1.55): the steps ran BEFORE the answer, so their card sits above it. */}
+                  {msg.toolActivity && (
+                    <div className="pl-5 pb-2">
+                      <ToolActivityCard activity={msg.toolActivity} />
+                    </div>
+                  )}
                   {/* Body Content */}
                   <MessageBody text={msg.text} indent streaming={msg.id === '__streaming__'} hasMessageActions={isSpawn && !msg.isProposal && !!msg.spawnId} className="text-foreground font-sans leading-relaxed text-[12.5px] pl-5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
                   {msg.cancelled && <div className="pl-5"><RunCancelledMarker /></div>}
@@ -1023,12 +1029,6 @@ export default function OrchestratorChat({
                     </div>
                   )}
 
-                  {/* Linear Minimal Tool activity — humanized headline, raw JSON behind 详情 (shared component) */}
-                  {msg.toolActivity && (
-                    <div className="pl-5 pt-2">
-                      <ToolActivityCard activity={msg.toolActivity} />
-                    </div>
-                  )}
 
                   {/* 🔒 HTML deliverable card — backend stream_end kind:"html" artifact only (HX-2). */}
                   {msg.artifactHtml && (
