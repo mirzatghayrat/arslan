@@ -1,11 +1,18 @@
-# 0.1.55 — One surface kit for everything that interrupts, Island v2, and four small fixes
+# 0.1.55 — One surface kit, Island v2, Settings in seven places, and the four app pages
 
-Status: spec, for review. Renumbered 2026-10-08: 0.1.54 is the security/Bridge batch already on main (#111–#118);
-this is 0.1.55. Then 0.1.56 = output rules, the folded work timeline, the reading panel; 0.1.57 = the right-hand
-workbench and clickable paths (task book `Arslan-输出与交付面-任务书-2026-10-04.md` §3–§8). Mock: https://claude.ai/artifact/Y7bbsGqK21DxeX2h3BrzH3 (the user approved its look,
-2026-10-05, and widened the scope on 2026-10-06 to "every pop-up inside Arslan").
-Inventory: 2026-10-06, four angles (components, i18n keys, backend card frames, native shell), file:line facts
-in §9.
+Status: spec. Direction approved by the user on 2026-10-08 after three mock rounds ("都可以，按你建议的版本排，开工吧").
+Mock: https://claude.ai/artifact/Y7bbsGqK21DxeX2h3BrzH3 (v13; boards named below). Release order agreed the same day:
+
+| Version | Content |
+| --- | --- |
+| 0.1.55 (this) | surface kit + Island v2 (§1–§9); D1–D3 + L1 (§10); Settings 11 → 7 (§11); Inbox = "waiting for your decision" (§12); Memory page (§13); Capabilities as switches + two verified bugs (§14) |
+| 0.1.56 | Projects in two layers: four universal columns, per-type levels, evidence, shadow-mode moves, distance to done, re-plan (mock round 3 boards Projects-Board-v3, Project-Templates, Project-New, Project-LevelMap, Project-Habits, Project-Replan) — own spec |
+| 0.1.57 | Capabilities discover loop: find → vet (license at source, activity, scan, pinned version) → propose card → install, test once, retry; use in a project (boards Capabilities-v3, Capability-Propose, Capability-Dossier) — own spec |
+| 0.1.58 | output rules, folded work timeline, reading panel (task book §3, §4 P1, §7) |
+| 0.1.59 | right-hand workbench, clickable paths (task book §4 P2, §8) |
+
+0.1.54 is the security/Bridge batch on main (#111–#119). Inventory for §1–§9: 2026-10-06, four angles
+(components, i18n keys, backend card frames, native shell), file:line facts in §9; for §11–§14: 2026-10-08.
 
 ## 0. What is wrong today (measured, not taste)
 
@@ -156,3 +163,26 @@ Checked on main `6c0f42c9` (2026-10-08).
   the route that worked in the same turn is at most a proposal. Tests use that exact exchange (and its mirror: a
   real correction after a wrong route still takes effect at once). The pending proposal "PERM_DENIED → use
   osascript" seen on the same Mac is checked against the same rule.
+
+## 11. Settings: eleven sections → seven (board Settings-General / -Permissions / -Background; user: "方向可以")
+
+Today: eleven nav entries in three groups (`web/src/components/settings/sectionRegistry.ts:46-67`), and
+"Advanced" holds eleven unrelated controls (telemetry, shell, confirm policy, sandbox, job budget, workspace
+folder, LAN discovery, default read, voice ×3, SSH; `SettingsScreen.tsx:253-283`). New nav, one flat list,
+each section opens with one sentence of what lives there:
+
+| Section | Holds (existing controls only — no new settings) | Was |
+| --- | --- | --- |
+| 通用 General | name, language, OCR languages, theme/palette/icon; **notifications** (desktop notifications, proactive notify limit, quiet hours); **on this Mac** (island, keep awake); **voice** (mode, input language, silence) | appearance, desktop, proactive (notify/quiet), advanced (voice) |
+| 模型 Models | providers + strategy; "model per task" (the five slots + embedding model) | models, modelroles, memory (embedding) |
+| Arslan 能做什么 What Arslan may do | files (default read, workspace folder); terminal (shell on/off, when to ask, sandbox, remembered rules); Mac apps (Arslan Hands); Arslan's browser; other computers (LAN discovery, SSH + identity + nodes) | advanced, desktop (Hands) |
+| 后台与主动 Background | looking out (proactive on, sources, brief; watches and mutes are managed in the Inbox — link); spends money (curation, research review, checklist, cause-guess cap); background job budget; link to Activity | proactive, automation, advanced (budget) |
+| 记忆与隐私 Memory & privacy | remember me in conversations, learned practices take effect, distil on session end, retention, run-debug retention, telemetry, index health + rebuild, backup / deletion export | memory, advanced (telemetry) |
+| 连接 Connections | iPhone; search provider + key + base URL; GitHub token; access token + MCP server | phone, search, access |
+| 关于 About | version (AppIdentityCard), updates, diagnostics/activity link, data folder | (scattered) |
+
+- `FIELD_HOMES` is rewritten to the seven ids and its test keeps "not one control lost": every key present before
+  must still have a home. Old section ids in links/deep links (`initialSection`) map to the new ones.
+- Look: grouped rows (title, one-line description, control on the right), the kit's toggles/segmented
+  controls, no uppercase mono headings (`AdvancedSection.tsx:108`).
+- The settings search keeps working over the registry (labels + hints of all seven).
