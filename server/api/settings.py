@@ -26,12 +26,13 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(dependencies=[Depends(require_auth)])
 
-# S1-3: the access-token view/reset endpoints must be reachable BEFORE the caller
-# knows the token (a packaged user has to discover it), so they live on a router
-# with NO require_auth dependency and are gated on the *client host* instead: only
-# a DIRECT loopback caller (same machine) may read or rotate the token. A remote caller
-# gets `token_required` but never the value, and cannot reset. This closes the
-# "packaged user locked out" gap without opening the token to the network.
+# S1-3: the access-token endpoints must answer a caller that does not have the token
+# yet (it needs to learn that one is required), so they live on a router with NO
+# require_auth dependency and gate the value themselves: only a DIRECT loopback caller
+# (same machine) that already presents the token sees it or may rotate it (0.1.53:
+# the read used to need loopback alone). A remote caller gets `token_required` but
+# never the value, and cannot reset; a packaged user's token is in the token file,
+# which the desktop shell reads.
 access_token_router = APIRouter()
 
 # FIX 3: request.client.host reflects X-Forwarded-For when uvicorn runs with
@@ -64,15 +65,20 @@ def _bearer_matches(request: Request, expected: str) -> bool:
 
 @access_token_router.get("/settings/access-token", response_model=AccessTokenOut)
 async def get_access_token(request: Request) -> AccessTokenOut:
-    """Report whether auth is required, and (direct-localhost only) the active token.
+    """Report whether auth is required, and the active token to a caller that already has it.
 
     ``active_token()`` returns the authoritative token — the explicit ARSLAN_API_TOKEN
-    when env-managed, else the boot-minted one — so a direct-localhost caller sees the
-    value that actually gates the API (honest even under an env override). A remote /
-    proxy-forwarded caller learns only that auth is required, never the value.
+    when env-managed, else the boot-minted one — so the Settings screen shows the value
+    that actually gates the API (honest even under an env override).
+
+    0.1.53: the value goes only to a DIRECT loopback caller that presents it as its
+    bearer (the desktop shell reads it from the token file and injects it). Loopback
+    alone is not enough: anything on this Mac can open a loopback socket, including a
+    command running in the workspace sandbox, which may not read the token file but may
+    reach the network. Everyone else learns only that auth is required.
     """
     active = auth.active_token()
-    token = active if (active and _is_direct_localhost(request)) else None
+    token = active if (active and _is_direct_localhost(request) and _bearer_matches(request, active)) else None
     return AccessTokenOut(token_required=bool(active), token=token)
 
 

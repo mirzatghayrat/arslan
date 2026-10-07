@@ -395,7 +395,8 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             # 'ask_risky' (the 0.1.48 default) runs harmless commands without a card.
             async with db_session.AsyncSessionLocal() as db:
                 policy = await settings_service.shell_confirm_policy(db)
-                standing = verdict.rule in await terminal_policy.always_allowed(db)
+                standing = terminal_policy.standing_allows(terminal_policy.as_shell(command, argv),
+                                                           await terminal_policy.always_allowed(db))
         if may_skip_card(remote_host, in_session_allow=sig in session_cmd_allow,
                          policy=policy, risk=risk, always_allowed=standing):
             return True
@@ -429,6 +430,10 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 async with db_session.AsyncSessionLocal() as db:
                     await terminal_policy.allow_always(db, verdict.rule)
         return bool(decision.get("approved"))
+
+    # This window's sandbox grant ("rest of this conversation") is its own to use; the tool
+    # loop honours it only for a callback that says so (never a job's, never no callback).
+    confirm_command.honours_session_grants = True
 
     try:
         await ws.send_json({"type": "history", "messages": await _history(conversation_id)})

@@ -97,6 +97,7 @@ async def test_outside_the_sandbox_or_under_ask_all_the_card_comes_back(monkeypa
     async def cards(command, argv, **kw):
         asked.append(kw)
         return True
+    cards.honours_session_grants = True                      # the chat window's callback
 
     async def off():
         return False

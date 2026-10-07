@@ -1,27 +1,26 @@
 <div align="center">
 
 <a href="https://aralem.dev/arslan/">
-  <img src="docs/assets/banner.jpg" alt="Arslan — one becomes many: a local-first personal AI orchestrator for macOS" width="100%">
+  <img src="docs/assets/readme/banner.jpg" alt="Arslan — does the work, asks before it acts. The Arslan Island in the Mac notch, waiting for approval to move files." width="100%">
 </a>
 
 <br/><br/>
 
-**You talk to one host agent. It routes work to persona spawns you raised yourself.**<br/>
-**Their prompts improve on their own — but every change passes a held-out exam,**<br/>
-**and nothing ships until *you* press Promote.**
+**An open-source AI agent that lives on your Mac — and answers to your iPhone.**<br/>
+**It runs your terminal, uses your apps and keeps working while you talk.**<br/>
+**Anything that acts in your name waits for *your* click.**
 
 <br/>
 
+[![Release](https://img.shields.io/github/v/release/mirzatghayrat/arslan?style=flat-square&color=34d399&label=release)](https://github.com/mirzatghayrat/arslan/releases/latest)
 [![License](https://img.shields.io/badge/license-Apache--2.0-4c72e0?style=flat-square)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-macOS--first-8a63f4?style=flat-square)](#status--honest-about-whats-proven)
-[![Python](https://img.shields.io/badge/python-3.11%2B-e6863c?style=flat-square)](pyproject.toml)
-[![Frontend](https://img.shields.io/badge/react-19_%2B_TS_%2B_Vite-ff9ffc?style=flat-square)](web/)
+[![Platform](https://img.shields.io/badge/macOS_11+-Apple_Silicon-111?style=flat-square)](#status--honest-about-whats-proven)
 [![Status](https://img.shields.io/badge/status-pre--v1-orange?style=flat-square)](#status--honest-about-whats-proven)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-2ea44f?style=flat-square)](CONTRIBUTING.md)
 
 <br/>
 
-<a href="https://github.com/mirzatghayrat/arslan/releases/latest/download/Arslan-macos-arm64.dmg"><img src="docs/assets/btn/en-download.png" alt="Download for macOS" height="28"></a>&nbsp;&nbsp;<a href="https://aralem.dev/arslan/"><img src="docs/assets/btn/en-website.png" alt="Website" height="28"></a>&nbsp;&nbsp;<a href="docs/QUICKSTART.md"><img src="docs/assets/btn/en-quickstart.png" alt="Quickstart" height="28"></a>&nbsp;&nbsp;<a href="docs/ARCHITECTURE.md"><img src="docs/assets/btn/en-architecture.png" alt="Architecture" height="28"></a>&nbsp;&nbsp;<a href="SECURITY.md"><img src="docs/assets/btn/en-security.png" alt="Security" height="28"></a>&nbsp;&nbsp;<a href="CONTRIBUTING.md"><img src="docs/assets/btn/en-contributing.png" alt="Contributing" height="28"></a>
+<a href="https://github.com/mirzatghayrat/arslan/releases/latest/download/Arslan-macos-arm64.dmg"><img src="docs/assets/btn/en-download.png" alt="Download for macOS" height="28"></a>&nbsp;&nbsp;<a href="https://aralem.dev/arslan/"><img src="docs/assets/btn/en-website.png" alt="Website" height="28"></a>&nbsp;&nbsp;<a href="docs/QUICKSTART.md"><img src="docs/assets/btn/en-quickstart.png" alt="Quickstart" height="28"></a>&nbsp;&nbsp;<a href="SECURITY.md"><img src="docs/assets/btn/en-security.png" alt="Security" height="28"></a>&nbsp;&nbsp;<a href="CONTRIBUTING.md"><img src="docs/assets/btn/en-contributing.png" alt="Contributing" height="28"></a>
 
 <img src="docs/assets/btn/lang-en-on.png" alt="English" height="22">&nbsp;<a href="README.zh-CN.md"><img src="docs/assets/btn/lang-zh.png" alt="简体中文" height="22"></a>&nbsp;<a href="README.de.md"><img src="docs/assets/btn/lang-de.png" alt="Deutsch" height="22"></a>&nbsp;<a href="README.ja.md"><img src="docs/assets/btn/lang-ja.png" alt="日本語" height="22"></a>&nbsp;<a href="README.es.md"><img src="docs/assets/btn/lang-es.png" alt="Español" height="22"></a>&nbsp;<a href="README.tr.md"><img src="docs/assets/btn/lang-tr.png" alt="Türkçe" height="22"></a>
 
@@ -29,68 +28,101 @@
 
 ---
 
-## One request, end to end
-
 <div align="center">
-  <img src="docs/assets/demo.gif" alt="Four screens of the shipped Arslan client — orchestration thread, spawns ledger, second brain, diagnostics" width="90%">
+  <img src="docs/assets/readme/island.gif" alt="The Arslan Island in the notch: a background job gathers invoices, stops to ask before moving files, then reports it's done" width="760">
+  <br/>
+  <sub>A background job, live in the notch: it works, <b>stops to ask</b> before it moves your files, then tells you what it found.</sub>
 </div>
 
-<p align="center"><em>You ask once. The host agent picks the spawn, splits the job, runs generated code in a kernel sandbox, and answers — all in one thread.</em></p>
+## Try asking it
 
-<p align="center"><a href="docs/assets/arslan-clay-60s.mp4"><b>▶ Watch the 60-second film</b></a> — the clay-animated film the <a href="https://aralem.dev/arslan/">project site</a> is cut from. <br><sub>The screens above are the shipped client, unretouched.</sub></p>
+> *“Gather this year's invoices from Downloads into one folder, and tell me which months are missing.”*<br/>
+> *“How many duplicate files are in Downloads? Move the copies to the Trash, keep the newest.”*<br/>
+> *“Turn sales_q3.csv into a one-page report with a chart.”*<br/>
+> *“Make a note in Notes with the three points from this meeting.”*<br/>
+> *“Every morning at 9, check this page and tell me if the price changed.”*
 
-**Arslan is a local-first personal AI orchestrator.** It runs on your own machine, against your own LLM keys, with a **safe-by-default kernel sandbox**, **honesty guardrails**, and a **visible second brain** you can browse and edit.
+You keep talking while it works. Anything that deletes, sends, installs or touches another app **asks you first** — on your Mac or your iPhone.
+
+## Get started in a minute
+
+1. **[Download Arslan for macOS](https://github.com/mirzatghayrat/arslan/releases/latest/download/Arslan-macos-arm64.dmg)** (Apple Silicon, macOS 11+) — signed, notarized, updates itself.
+2. Drag it into **Applications** and open it.
+3. Paste a model API key in Settings — OpenAI, Anthropic, Gemini, DeepSeek, Qwen, Kimi, OpenRouter and more — or point it at a local model through **Ollama**.
+
+That's it. No account, no sign-up, no Arslan server.
+
+## What's new in 0.1.53 — Hands for your Mac apps
+
+Arslan can now read and use the apps on your Mac — Notes, Mail, Pages and the rest — through a small helper, **Arslan Hands**. It reads a window as its accessibility tree (never a screenshot) and acts in the background: your mouse, keyboard and front window stay yours. Looking at an app asks once per app in a conversation; acting happens only in background work and asks once per app; a button that deletes, sends, pays, buys, transfers or submits asks every time. The Mac side of **Arslan for iPhone** is in too (Settings › iPhone), and the black-and-white icon is now the default. [Full release notes →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.53)
+
+<div align="center">
+  <img src="docs/assets/readme/devices.jpg" alt="Arslan on a Mac — a background job gathering invoices — and Arslan for iPhone showing an approval waiting" width="100%">
+</div>
+
+<p align="center"><sub>Mac: from the 0.1.52 launch film, interface rebuilt from source, scenario staged. iPhone: a real screen recording. <a href="https://aralem.dev/arslan/#film">▶ The whole system in 60 seconds</a></sub></p>
 
 ## Why Arslan
 
 | | |
 |---|---|
-| <img src="docs/assets/icons/users.svg" width="20"><br/>**A persona team you grow** | Arslan is the front door; behind it you build a roster of specialist spawns — equip them with tools, `SKILL.md` skill packs, and MCP servers, then let a two-tier evolution loop refine them over time. |
-| <img src="docs/assets/icons/graduation-cap.svg" width="20"><br/>**Self-evolution with an exam gate** | A spawn's prompt revises itself from its own run history — then replays against the incumbent on held-out past tasks, judged blind with the positions swapped. It has to win **at least 60% of a minimum of 10 held-out pairs**, with **no dimension** (fabrication, identity, completion) **scoring worse** than the incumbent. Pass → a readable diff lands in your inbox. **Nothing takes effect until you press Promote.** |
-| <img src="docs/assets/icons/shield-check.svg" width="20"><br/>**Safe by default, not disclaimed** | Generated code runs network-denied in a kernel-enforced macOS sandbox and fails closed when that sandbox is unavailable. Selected network commands use constrained public, unauthenticated transport. Credential-backed repository/account operations remain disabled pending an isolated broker and security acceptance; this is not a completed credential-injection capability. |
-| <img src="docs/assets/icons/brain.svg" width="20"><br/>**A second brain you can browse and correct** | Materials, learnings, a profile, and `[[wiki-link]]` notes — hybrid FTS5 + embedding retrieval, browsable as an Obsidian-style force-directed graph. Entries record when they took effect and what superseded them, and the graph can be **filtered by start time** — a filter over entries that still exist, not a replay of the past. |
-| <img src="docs/assets/icons/badge-check.svg" width="20"><br/>**Honest by design** | Guardrails intercept fabricated "I already did that" claims and keep the agent's self-reporting tied to what actually ran. A **delete** never applies on its own — it lands in an inbox you accept or dismiss. An **overwrite** by the host agent applies at once, but it writes a pointer rather than replacing text: the original entry stays and one click undoes it. Anything a spawn proposes against shared memory goes to the inbox too. |
-| <img src="docs/assets/icons/key-round.svg" width="20"><br/>**Local-first, bring your own key** | Your machine, your API keys, and **zero third-party servers** in the middle. Configure more than one provider and you can turn on routing across them (one model by default); the judge and router roles stay pinned to your primary, so evaluation never drifts to a cheaper model. Ships with 6-language i18n and 6 theme palettes (light + dark). |
+| **One loop, every action behind a gate** | A message enters one native tool-calling loop. The model proposes; a fixed policy function — not another model — answers **run**, **ask** or **forbid** for every shell command before it runs. Results come back wrapped as untrusted data, so instructions hidden in a web page are read, not obeyed. |
+| **It keeps working while you talk** | Long work becomes a background job and the turn ends. A job ends **done**, **partial**, **blocked** or **stopped** — never silently. Schedules run at most every 15 minutes (up to 10), and a schedule your Mac slept through is not replayed. |
+| **Status in the notch** | The **Arslan Island** shows what it's doing, asks when it needs you, and tells you when it's done. Menu bar, push-to-talk, and a Stop button for anything in flight. |
+| **Hands, asked not assumed** | Mac apps through Arslan Hands, Arslan's own browser, your Shortcuts, AppleScript. It never types into a password field, and never touches Keychain Access, password managers, System Settings, macOS security prompts, Notification Center or itself. |
+| **Your Mac in your pocket** | Arslan for iPhone (coming to the App Store) talks to your Mac through **your own private iCloud**, end-to-end encrypted. The same approval card shows on both; the first answer wins, and an unanswered card is declined after 300 s. |
+| **Local-first, bring your own key** | Memory lives in SQLite on your Mac; your model provider sees only the turns you send, on your key. **Arslan runs no servers.** Correct it once and it remembers the practice — with Undo. |
+| <img src="docs/assets/icons/shield-check.svg" width="16"> **Credentials stay yours** | Arslan never fetches or injects your account credentials. Authenticated connectors (App Store Connect and the like) remain disabled until an isolated credential broker passes security review — see [W11](docs/companion/W11-security-boundary.md). A command you approve outside the sandbox runs with your own permissions. |
 
-<sub>Backend: FastAPI + async SQLAlchemy/SQLite (`server/`) · Frontend: React 19 + TypeScript + Vite (`web/`) · Tracing, LLM-judge evals, and a Grafana-style diagnosis dashboard feed the evolution loop.</sub>
-
-## Inside the actual client
-
-<div align="center">
-  <img src="docs/assets/screens.jpg" alt="The shipped Arslan client in four screens — orchestration thread, spawns ledger, second brain, diagnostics" width="100%">
-</div>
-
-## How a request flows
+## One turn, end to end
 
 <div align="center">
-  <img src="docs/assets/fig01-request-path.png" alt="FIG. 01 — Request path: one thread in, the host agent routes to specialist spawns; kernel sandbox and second brain underneath" width="100%">
+  <img src="docs/assets/readme/loop.jpg" alt="The loop: Message, Loop, Policy, Sandbox, Result — each step names the file that enforces it" width="100%">
 </div>
 
-## Governed self-evolution
+| Step | What happens | Enforced in |
+|---|---|---|
+| **Message** | From the window, your iPhone or your voice — one conversation, one loop | `server/orchestrator/arslan.py`, `server/services/phone_bridge.py` |
+| **Loop** | Native tool calls; the plan is kept by the host; a cut-off reply continues instead of guessing; 75 s per model call | `server/orchestrator/tool_loop.py` |
+| **Policy** | `run` · `ask` · `forbid`, a pure function of the command text | `server/services/terminal_policy.py` (destructive-command detection vendored from Hermes Agent, MIT) |
+| **Sandbox** | macOS seatbelt: commands write only to the working folder, temp and caches; SSH keys, keychain and Arslan's data stay closed; model keys never reach a command; 20 s per tool call | `server/services/command_sandbox.py`, `terminal_exec.py` |
+| **Result** | Wrapped as untrusted data and checked before it reaches you; claims of work that never ran are caught by a deterministic guard | `server/orchestrator/untrusted.py`, `promise_guard.py` |
+
+## The gate
 
 <div align="center">
-  <img src="docs/assets/fig02-promotion-gate.png" alt="FIG. 02 — Promotion gate: rewrite, held-out exam, proposal card, you promote; fail is discarded, reject keeps the incumbent" width="100%">
+  <img src="docs/assets/readme/gate.jpg" alt="The gate on the project site: type a command and see Arslan's real answer — forbid for reading keychain passwords" width="100%">
 </div>
 
-A spawn's prompt gets revised automatically — then it has to prove itself on held-out past tasks before you ever see it: at least 10 non-tie pairs, a 60% win rate across them, and no dimension scoring worse than the incumbent. Synthetic wins cannot carry a real-task regression, and a candidate cannot win by getting longer. Fail → discarded, never surfaces. Pass → a proposal card with a readable diff; the change lands **only when you click Promote**.
+| Answer | When | Examples (each is `terminal_policy.assess()`'s real answer) |
+|---|---|---|
+| **run** | Reading, listing, converting, building, fetching a page | `ls -la ~/Downloads` · `ffmpeg -i talk.mov talk.mp4` · `npm run build` · `curl -s https://example.com` |
+| **ask** | Destructive, or acting outward in your name | `rm -rf build/` · `git push --force` · `curl … \| sh` · `osascript …` · `brew install jq` · `mail -s …` · `scp … mac-mini:` |
+| **forbid** | Never, even with “don't ask again” | `security find-generic-password … -w` · `cat ~/.arslan/secret_key` · `rm -rf ~` · `sudo …` · `shutdown` |
 
-## A second brain, filterable by start time
+“Don't ask again” is remembered per kind of command and listed in Settings › Advanced; forbidden rules can never be remembered. The gate guards against mistakes and smuggled instructions — it is not a cage: a command you allow runs with your permissions. Try 64 commands on the [project site](https://aralem.dev/arslan/#gate).
+
+## Hands, background work and the iPhone
 
 <div align="center">
-  <img src="docs/assets/fig03-second-brain.png" alt="FIG. 03 — Second brain: memory forms automatically, spawns read it via hybrid retrieval, model deletes pass through your inbox, and entries record when they took effect" width="100%">
+  <img src="docs/assets/readme/hands.jpg" alt="Hands: Mac apps through Arslan Hands, the browser, Shortcuts and AppleScript; seen and stoppable; apps that are never touched" width="100%">
 </div>
 
-Memory forms on its own — router-extracted facts and end-of-session distillation — and spawns read it back with hybrid FTS5 + embedding retrieval. Entries record when they took effect and what superseded them, and you can filter the Obsidian-style graph by start time. Be precise about what that is: a filter over entries that still exist, not a replay of the past — deletes and in-place edits leave no trace, and an entry's end is inferred from its successor rather than recorded. When the model wants to **delete** a memory, the proposal lands in your inbox first. An **overwrite** from the host agent applies immediately, but the superseded entry is kept and one click restores it.
+<div align="center">
+  <img src="docs/assets/readme/iphone.jpg" alt="Mac and iPhone: end-to-end encryption through your private iCloud (X25519, HKDF-SHA256, ChaCha20-Poly1305, Ed25519), first answer wins, the Island face" width="100%">
+</div>
+
+The iPhone link has no Arslan server and no relay: messages travel through a CloudKit zone in your private iCloud database — X25519 key agreement, HKDF-SHA256, ChaCha20-Poly1305, Ed25519 signatures. Delivered messages are deleted; anything left over is deleted by Arslan for Mac once it is more than 7 days old — the Mac checks about once a day while it is running and online, and catches up when it is back.
+
+## Privacy
+
+<div align="center">
+  <img src="docs/assets/readme/privacy.jpg" alt="Who sees what: this Mac sees everything, your model provider the turns you send, iCloud ciphertext and routing, Arslan's servers nothing because none exist" width="100%">
+</div>
 
 ## Install
 
-**The desktop app is the way to use Arslan** — signed, notarized, and it keeps itself up to date:
-
-<p><a href="https://github.com/mirzatghayrat/arslan/releases/latest/download/Arslan-macos-arm64.dmg"><b>⬇ Download Arslan for macOS</b></a> (Apple Silicon) — open the DMG and drag Arslan into <b>Applications</b>.</p>
-
-On first run, add your model API key in Settings and you're set.
-
-Running from source or with Docker (contributors & self-hosters): see **[docs/QUICKSTART.md](docs/QUICKSTART.md)**.
+The desktop app is the way to use Arslan — see [Get started in a minute](#get-started-in-a-minute). Running from source or with Docker (contributors & self-hosters): see **[docs/QUICKSTART.md](docs/QUICKSTART.md)**.
 
 ### Reading text in images and scanned PDFs
 
@@ -145,7 +177,8 @@ Arslan is **safe by default**:
 - **Localhost-only by default.** Dev + localhost runs unauthenticated on purpose (local convenience). Cross-site drive-by requests are blocked by TrustedHost + CORS + WebSocket-Origin checks; non-localhost / prod deploys must set the allowlists below.
 - **Tokens where they matter.** `prod`, packaged builds, and non-loopback binds require a bearer token — auto-generated, persisted, and rotatable from Settings so you can't lock yourself out.
 - **Secrets refuse the public key.** BYOK secrets are Fernet-encrypted with a PBKDF2-HMAC-SHA256 key derived from `ARSLAN_SECRET_KEY` over a per-install salt; the app refuses to write secrets under the built-in public dev key.
-- **Sandbox fails closed.** Generated code runs network-denied under the macOS seatbelt; where the kernel sandbox is unavailable it fails closed rather than silently running unsandboxed.
+- **Two sandboxes, two rules.** Generated Python (`run_python`) runs under a default-deny macOS `sandbox-exec` profile with the network denied and a scrubbed environment, and is refused where that isolation is unavailable. Shell commands (`run_command`) run under seatbelt that limits **writes** to the working folder, temp and caches and closes SSH keys, keychain files and Arslan's own data — the network stays open there, because Arslan reads the web with it. Running a command outside the sandbox always takes your click. Where seatbelt itself cannot start, a shell command still runs and its result says `sandbox="unavailable"`; only the wrap-up step, which must stay offline, refuses instead.
+- **Hands holds no permission itself.** Accessibility is granted to the separate **Arslan Hands** helper, never to Arslan; it accepts only the signed Arslan backend as its peer.
 
 **Do not expose the server to an untrusted network without a token and host/origin allowlists.** Full threat model and reporting policy: [SECURITY.md](SECURITY.md).
 
@@ -183,22 +216,25 @@ One deliberate exception: the secret itself lives **outside** that directory. If
 
 **Pre-v1.** We'd rather under-claim than over-sell:
 
-- **macOS-first.** The kernel sandbox is macOS seatbelt only; on other platforms it fails closed (Linux / Windows are targeted later via a Tauri desktop app).
-- **The self-evolving agent team is being hardened.** The two-tier evolution loop works but is not yet claimed as fully proven — treat it as maturing, not finished.
-- **Native tool transport is implemented for OpenAI-compatible, Anthropic and Gemini paths.** Wire-contract tests exercise schemas, calls and responses. This is not live certification of every model or third-party compatible endpoint; model-specific acceptance still needs real evaluation.
-- **Versioned task recipes are executable.** Open the spawn ledger → Task recipes to build bounded dependency workflows, inspect step results/files, approve gates and explicitly resume unfinished steps. These are user-authored recipes, not a claim that arbitrary free-form teams always coordinate successfully.
-- **The two background loops that spend money ship disabled.** Auto-evolution and sleep-time curation each call the LLM on their own schedule, so both default to off — you turn them on in Settings. **What is enforced:** a cap on the number of replay DISPATCHES an evolution attempt may project (you set it in Settings; an attempt over the cap is refused before it runs), and a fetch budget on web search/extract — per run for a live turn, and per attempt for the evaluation loop, which is the surface that multiplies. **What is not:** there is no exact token ceiling. Dispatches are counted rather than tokens because the per-dispatch cost varies too much for a token number to mean anything, and the pre-run token estimate over-states by 3.7–5.2x — a cap set from real spend would refuse every attempt. So treat the caps as bounding the ORDER of magnitude, and still keep a hard limit in your provider's billing dashboard.
-- APIs, schemas, and defaults may change before v1.
+- **macOS 11+ on Apple Silicon only, for now.** The sandboxes are macOS seatbelt; elsewhere generated Python is refused and shell commands run unsandboxed, marked as such.
+- **Bring your own model key.** Arslan runs against your account; your provider bills you. Native tool transport is implemented and wire-tested for OpenAI-compatible, Anthropic and Gemini paths — that is not live certification of every model or endpoint.
+- **Hands sees windows on the current desktop only**; an app on another Space or behind a full-screen app counts as not open. A large window (Notes with many notes) can take 10–20 seconds to read.
+- **Arslan for iPhone is coming to the App Store.** The Mac side ships in 0.1.53.
+- **Anything that spends on its own schedule ships off.** Background memory curation calls your model when you turn it on in Settings › Automation; keep a hard limit in your provider's billing dashboard.
+- APIs, schemas and defaults may change before v1.
 
 ## Community
 
 - <img src="docs/assets/icons/bug.svg" width="14" height="14"> Found a bug or have an idea? [Open an issue](https://github.com/mirzatghayrat/arslan/issues).
 - <img src="docs/assets/icons/heart-handshake.svg" width="14" height="14"> Want to help? Start with [CONTRIBUTING.md](CONTRIBUTING.md).
-- <img src="docs/assets/icons/globe.svg" width="14" height="14"> The project site lives in [`docs/index.html`](docs/index.html) (served via GitHub Pages). The blueprint figures in this README are hand-drawn SVGs — sources in [`docs/diagrams/`](docs/diagrams/).
+- <img src="docs/assets/icons/globe.svg" width="14" height="14"> The project site lives in [`docs/index.html`](docs/index.html) (served via GitHub Pages). The images in this README are captures of that site.
 
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). Third-party dependency notices are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Icons: [Lucide](https://lucide.dev) (ISC).
+## License
+
+Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). Third-party notices — including Hermes Agent (MIT) and agent-desktop (Apache-2.0, shipped unmodified inside Arslan Hands) — are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Icons: [Lucide](https://lucide.dev) (ISC).
 
 ---
 

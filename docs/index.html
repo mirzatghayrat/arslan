@@ -2,524 +2,910 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Arslan — a local-first AI orchestrator · One Becomes Many</title>
+<title>Arslan — the AI agent that asks before it acts · Mac + iPhone</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="A local-first personal AI orchestrator. One host agent, persona spawns you raised yourself; every prompt change passes a held-out exam and ships only when you press Promote.">
-<style>
-:root{
-  --night:#231710; --night2:#2e1e13; --butter:#F3C34A; --butter2:#E4AE32;
-  --cream:#F6EBD6; --blue:#3E7BD6; --paper:#2B5AA7; --orange:#E8703C;
-  --green:#5FB558; --violet:#8A5FD1; --ink:#241407; --cink:#3A2A16;
-  --disp:"SF Pro Rounded",ui-rounded,"Hiragino Maru Gothic ProN","Arial Rounded MT Bold","Nunito",-apple-system,sans-serif;
-  --body:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
-  --clay:inset 6px 8px 18px rgba(255,255,255,.32),inset -8px -10px 20px rgba(0,0,0,.18),16px 22px 44px rgba(20,10,4,.35);
-}
-*{box-sizing:border-box}
-html{scroll-behavior:smooth}
-body{margin:0;font-family:var(--body);color:var(--cream);background:var(--night);line-height:1.55;overflow-x:hidden}
-img,video{display:block;max-width:100%}
-a{color:inherit}
-a:focus-visible,button:focus-visible{outline:3px solid var(--butter);outline-offset:3px;border-radius:10px}
-h1,h2,h3{font-family:var(--disp);letter-spacing:-.025em;text-wrap:balance;margin:0}
-p{margin:0}
-.kick{font-family:var(--mono);font-size:clamp(11px,1.3vw,14px);letter-spacing:.24em;text-transform:uppercase;opacity:.7}
-.wrapc{max-width:1240px;margin:0 auto;padding:0 clamp(20px,4vw,56px)}
-section{position:relative}
-/* reveal */
-.rv{opacity:0;transform:translateY(34px)}
-.rv.in{opacity:1;transform:none;transition:opacity .7s cubic-bezier(.2,.7,.2,1),transform .7s cubic-bezier(.2,.7,.2,1)}
-.rv.d1.in{transition-delay:.12s}.rv.d2.in{transition-delay:.24s}.rv.d3.in{transition-delay:.36s}
-/* ============ HERO ============ */
-.hero{min-height:100svh;display:flex;align-items:flex-end;overflow:hidden}
-.hero video,.hero .fallback{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 30%}
-.hero::after{content:"";position:absolute;inset:0;background:
-  linear-gradient(180deg,rgba(20,12,6,.25) 0%,rgba(20,12,6,0) 30%,rgba(24,14,6,.82) 78%,#231710 100%),
-  radial-gradient(70% 60% at 70% 30%,rgba(0,0,0,0) 40%,rgba(20,12,6,.5) 100%)}
-.hero-inner{position:relative;z-index:2;width:100%;padding-bottom:clamp(58px,9vh,110px)}
-.hero h1{font-size:clamp(58px,9.5vw,152px);font-weight:800;line-height:.95;color:var(--cream);
-  text-shadow:0 10px 60px rgba(0,0,0,.65)}
-.hero h1 .w{display:inline-block;opacity:0;transform:translateY(.55em) rotate(2deg)}
-.loaded .hero h1 .w{opacity:1;transform:none;transition:opacity .8s cubic-bezier(.2,.7,.2,1),transform .8s cubic-bezier(.2,.7,.2,1)}
-.loaded .hero h1 .w:nth-child(2){transition-delay:.1s}.loaded .hero h1 .w:nth-child(3){transition-delay:.2s}
-.hero .sub{max-width:34em;margin-top:22px;font-size:clamp(16px,2vw,21px);color:rgba(246,235,214,.92)}
-.cta-row{display:flex;gap:14px;flex-wrap:wrap;margin-top:30px}
-.pill{display:inline-flex;align-items:center;gap:10px;text-decoration:none;cursor:pointer;border:0;
-  font-family:var(--disp);font-weight:700;font-size:clamp(16px,1.8vw,19px);padding:16px 32px;border-radius:999px;
-  background:var(--butter);color:var(--ink);
-  box-shadow:inset 4px 5px 10px rgba(255,255,255,.35),inset -5px -7px 12px rgba(0,0,0,.22),10px 16px 32px rgba(0,0,0,.4);
-  transition:transform .16s ease}
-.pill:hover{transform:translateY(-3px)}
-.pill.ghost{background:transparent;color:var(--cream);box-shadow:inset 0 0 0 3px rgba(246,235,214,.5)}
-.hero .meta{margin-top:20px;font-family:var(--mono);font-size:12.5px;letter-spacing:.06em;color:rgba(246,235,214,.6)}
-.scrollcue{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);z-index:2;width:12px;height:12px;border-radius:50%;
-  background:var(--butter);box-shadow:0 0 24px rgba(243,195,74,.8)}
-@keyframes cue{0%,100%{transform:translate(-50%,0)}50%{transform:translate(-50%,10px)}}
-.scrollcue{animation:cue 1.6s ease-in-out infinite}
-
-
-/* ============ clay monitors ============ */
-.monwrap{position:relative;padding-bottom:44px}
-.monitor{background:#DFDCD4;border-radius:26px;padding:14px 14px 18px;box-shadow:var(--clay);position:relative}
-.monitor img{border-radius:13px;width:100%}
-.monwrap::after{content:"";position:absolute;left:50%;bottom:16px;transform:translateX(-50%);
-  width:26%;height:26px;background:#D3D0C7;border-radius:0 0 14px 14px;
-  box-shadow:inset 4px -4px 8px rgba(255,255,255,.3),inset -4px 4px 8px rgba(0,0,0,.12),0 10px 22px rgba(20,10,4,.25)}
-.monwrap::before{content:"";position:absolute;left:50%;bottom:6px;transform:translateX(-50%);
-  width:40%;height:12px;background:#C9C6BD;border-radius:8px;box-shadow:0 8px 18px rgba(20,10,4,.25)}
-.monwrap.tl{transform:rotate(-1.6deg)} .monwrap.tr{transform:rotate(1.4deg)}
-.mongrid{display:grid;grid-template-columns:1.35fr 1fr;gap:clamp(24px,4vw,56px);align-items:end;margin-top:clamp(30px,4vw,50px)}
-.strip .cell.shot{background:#DFDCD4;padding:10px;border-radius:24px}
-.strip .cell.shot img{border-radius:14px}
-@media (max-width:860px){.mongrid{grid-template-columns:1fr}}
-/* ============ MARQUEE ============ */
-.strip{background:var(--butter);padding:0 0 clamp(26px,3.4vw,48px);overflow:visible;position:relative;z-index:3;display:flow-root}
-.strip .track{display:flex;align-items:center;gap:clamp(14px,2vw,26px);width:max-content;
-  /* The strip laps over the bottom of the hero, but only over empty frame:
-     pulled up far enough it used to sit on the spec line. */
-  margin-top:calc(-1*clamp(40px,5vw,80px));
-  transform:rotate(-1.6deg);animation:mq 52s linear infinite}
-.strip:hover .track{animation-play-state:paused}
-@keyframes mq{to{transform:rotate(-1.6deg) translateX(-50%)}}
-.strip .cell{height:clamp(150px,17vw,240px);border-radius:22px;overflow:hidden;flex:none;
-  box-shadow:inset 0 0 0 5px rgba(36,20,7,.18),14px 18px 34px rgba(120,80,10,.35)}
-.strip .cell video,.strip .cell>img{height:100%;width:auto;display:block}
-.strip .cell.shot{background:#DFDCD4;padding:9px;border-radius:22px}
-.strip .cell.shot .slides{height:100%;border-radius:13px;overflow:hidden}
-/* cross-fading product screens — the "gif" of real UI */
-.slides{position:relative;aspect-ratio:1300/854}
-.slides img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;animation:cyc 12s infinite}
-.slides img:nth-child(1){animation-delay:0s}
-.slides img:nth-child(2){animation-delay:4s}
-.slides img:nth-child(3){animation-delay:8s}
-@keyframes cyc{0%{opacity:0}4%{opacity:1}33%{opacity:1}41%{opacity:0}100%{opacity:0}}
-.slides.two img{animation:cyc2 10s infinite}
-.slides.two img:nth-child(1){animation-delay:0s}
-.slides.two img:nth-child(2){animation-delay:5s}
-@keyframes cyc2{0%{opacity:0}5%{opacity:1}45%{opacity:1}55%{opacity:0}100%{opacity:0}}
-@media (prefers-reduced-motion:reduce){
-  .strip .track{animation:none}
-  .slides img{animation:none}
-  .slides img:nth-child(1){opacity:1}
-}
-/* ============ split sections ============ */
-.band{padding:clamp(64px,10vw,140px) 0}
-.cream-bg{background:var(--cream);color:var(--cink)}
-.butter-bg{background:var(--butter);color:var(--ink)}
-.paper-bg{background:var(--paper)}
-.night-bg{background:var(--night)}
-.split{display:grid;grid-template-columns:1.05fr 1fr;gap:clamp(30px,5vw,72px);align-items:center}
-.figure{border-radius:clamp(22px,3vw,40px);overflow:hidden;box-shadow:var(--clay);transform:rotate(-1.4deg)}
-.figure video,.blobframe video,.finale .img video{width:100%;display:block}
-.figure.alt{transform:rotate(1.4deg)}
-.band h2{font-size:clamp(38px,5.6vw,78px);font-weight:800;line-height:1.02;margin-top:12px}
-.lead{margin-top:20px;font-size:clamp(16px,2vw,20px);max-width:36em}
-.facts{margin:24px 0 0;padding:0;list-style:none;display:grid;gap:11px;max-width:44em}
-.facts li{padding-left:24px;position:relative}
-.facts li::before{content:"";position:absolute;left:0;top:.5em;width:11px;height:11px;border-radius:50%;
-  background:currentColor;opacity:.5;box-shadow:inset 1px 1px 2px rgba(255,255,255,.7)}
-.mline{font-family:var(--mono);font-size:clamp(13px,1.6vw,15px);margin-top:18px;letter-spacing:.02em;opacity:.8}
-/* ============ composer / spawns ============ */
-.playpen{margin-top:clamp(30px,4vw,50px);display:grid;grid-template-columns:1fr 1fr;gap:clamp(26px,4vw,60px);align-items:center}
-.blobframe{border-radius:clamp(22px,3vw,40px);overflow:hidden;box-shadow:var(--clay);transform:rotate(1.2deg)}
-.composer{background:var(--cream);border-radius:26px;box-shadow:var(--clay);padding:22px 24px;color:var(--cink)}
-.composer .line{font-family:var(--mono);font-size:clamp(14px,1.7vw,17px);min-height:1.6em}
-.caret{display:inline-block;width:.55em;height:1.1em;vertical-align:-.15em;background:var(--orange)}
-@keyframes blink{50%{opacity:0}} .caret{animation:blink 1s steps(1) infinite}
-.spawnrow{display:flex;gap:12px;margin-top:18px;min-height:66px;flex-wrap:wrap}
-.spawn{display:inline-flex;align-items:center;gap:9px;border-radius:999px;padding:10px 18px;color:#fff;
-  font-family:var(--disp);font-weight:700;font-size:14.5px;box-shadow:inset 3px 4px 8px rgba(255,255,255,.3),inset -4px -5px 9px rgba(0,0,0,.22),6px 9px 18px rgba(0,0,0,.25);
-  transform:scale(0);cursor:pointer}
-.spawn.pop{transform:scale(1);transition:transform .45s cubic-bezier(.2,1.6,.4,1)}
-.spawn i{width:12px;height:12px;border-radius:50%;background:rgba(255,255,255,.85);box-shadow:inset -2px -2px 3px rgba(0,0,0,.25)}
-@keyframes wob{0%,100%{transform:scale(1) rotate(0)}30%{transform:scale(1.08) rotate(-3deg)}60%{transform:scale(.96) rotate(2deg)}}
-.spawn.wob{animation:wob .5s ease}
-.toolchips{display:flex;gap:12px;flex-wrap:wrap;margin-top:22px}
-.chip{font-family:var(--mono);font-size:13px;letter-spacing:.04em;border-radius:999px;padding:9px 16px;
-  box-shadow:inset 0 0 0 2.5px rgba(36,20,7,.35)}
-/* ============ gate ============ */
-.gate-bg{position:absolute;inset:0;overflow:hidden}
-.gate-bg img,.gate-bg video{position:absolute;right:-6%;bottom:-8%;width:min(62vw,900px);opacity:.24;border-radius:30px;
-  -webkit-mask-image:radial-gradient(80% 80% at 60% 50%,#000 40%,transparent 100%);
-  mask-image:radial-gradient(80% 80% at 60% 50%,#000 40%,transparent 100%)}
-.stats{display:flex;gap:16px;flex-wrap:wrap;margin-top:28px}
-.stat{background:rgba(246,235,214,.12);border-radius:22px;padding:18px 26px;min-width:150px;
-  box-shadow:inset 2px 3px 8px rgba(255,255,255,.14),inset -3px -4px 9px rgba(0,0,0,.25)}
-.stat b{display:block;font-family:var(--disp);font-size:clamp(30px,4vw,46px);font-weight:800;color:var(--butter)}
-.stat span{font-family:var(--mono);font-size:12px;letter-spacing:.08em;opacity:.75}
-.promote{margin-top:34px;display:inline-flex;flex-direction:column;gap:12px}
-.bigbtn{border:0;cursor:pointer;font-family:var(--disp);font-weight:800;font-size:clamp(19px,2.4vw,26px);
-  color:var(--ink);background:var(--butter);border-radius:26px;padding:22px 46px;
-  box-shadow:inset 5px 6px 12px rgba(255,255,255,.4),inset -6px -8px 14px rgba(0,0,0,.24),0 14px 0 rgba(0,0,0,.28),0 26px 44px rgba(0,0,0,.4);
-  transition:transform .1s ease,box-shadow .1s ease}
-.bigbtn:active{transform:translateY(10px);box-shadow:inset 5px 6px 12px rgba(255,255,255,.4),inset -6px -8px 14px rgba(0,0,0,.24),0 4px 0 rgba(0,0,0,.28),0 10px 20px rgba(0,0,0,.4)}
-.toast{font-family:var(--mono);font-size:14px;color:var(--butter);opacity:0;transform:translateY(8px)}
-.toast.show{opacity:1;transform:none;transition:all .5s ease}
-/* ============ guard ============ */
-.chat{max-width:640px;display:grid;gap:14px;margin-top:30px}
-.bub{border-radius:22px;padding:16px 22px;max-width:88%;opacity:0;transform:translateY(14px)}
-.bub.in{opacity:1;transform:none;transition:all .55s cubic-bezier(.2,.7,.2,1)}
-.bub.user{background:rgba(246,235,214,.14);justify-self:end;border-bottom-right-radius:6px}
-.bub.lie{background:var(--cream);color:var(--cink);font-style:italic;border-bottom-left-radius:6px}
-.stamp{display:inline-block;margin-top:30px;font-family:var(--disp);font-weight:800;
-  font-size:clamp(34px,5.6vw,64px);color:#FF8A3D;border:6px solid #FF8A3D;border-radius:18px;padding:10px 26px;
-  transform:rotate(-6deg) scale(2.2);opacity:0}
-.stamp.in{opacity:1;transform:rotate(-6deg) scale(1);transition:all .35s cubic-bezier(.2,1.4,.3,1)}
-.guard-claim{margin-top:26px;font-family:var(--disp);font-weight:800;font-size:clamp(22px,3vw,32px);max-width:22em}
-/* ============ toggles ============ */
-.tog-list{display:grid;gap:14px;margin-top:26px;max-width:560px}
-.tog{display:flex;align-items:center;justify-content:space-between;gap:20px;background:rgba(58,42,22,.07);
-  border-radius:18px;padding:14px 18px}
-.tog .sw{flex:none;width:58px;height:32px;border-radius:999px;background:#cdbfa4;position:relative;
-  box-shadow:inset 2px 3px 6px rgba(0,0,0,.25)}
-.tog .sw::after{content:"";position:absolute;left:4px;top:4px;width:24px;height:24px;border-radius:50%;
-  background:#f8f2e2;box-shadow:1px 2px 4px rgba(0,0,0,.3)}
-.tog b{font-family:var(--disp)} .tog small{font-family:var(--mono);letter-spacing:.06em;opacity:.65}
-/* ============ finale ============ */
-.finale{padding:clamp(70px,10vw,150px) 0 0;text-align:center;overflow:hidden}
-.finale h2{font-size:clamp(44px,7vw,104px)}
-.finale .img{margin-top:clamp(30px,5vw,60px)}
-.finale .img img,.finale .img video{width:min(1100px,92vw);margin:0 auto;border-radius:34px 34px 0 0;box-shadow:0 -20px 80px rgba(0,0,0,.25)}
-footer{background:var(--night);padding:clamp(44px,6vw,72px) 0 60px}
-.foot{display:grid;gap:26px;font-family:var(--mono);font-size:13px;letter-spacing:.04em;
-  color:rgba(246,235,214,.62);line-height:1.8}
-.foot a{color:var(--cream);text-decoration:none;border-bottom:1px solid rgba(246,235,214,.35)}
-.frow{display:flex;gap:10px 28px;flex-wrap:wrap;align-items:baseline}
-.fnote{max-width:60em;margin:0}
-.fattr{display:grid;gap:12px}
-.fhead{letter-spacing:.2em;font-size:11px;text-transform:uppercase;color:rgba(246,235,214,.38)}
-.fattr ul{margin:0;padding:0;list-style:none;display:grid;
-  grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:6px 36px}
-.fattr li{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-@media (max-width:860px){
-  .split,.playpen{grid-template-columns:1fr}
-  .figure,.figure.alt,.blobframe{transform:none}
-  .gate-bg img,.gate-bg video{opacity:.14}
-}
-/* ============ phones ============ */
-/* Everything below 640px is design, not arithmetic: the clamp() scale above keeps a
-   phone from breaking, but it was only ever composed for wide frames. Nothing in this
-   block can touch a desktop render — that is verified by pixel-comparing a 1440px
-   screenshot before and after any edit here. */
-@media (max-width:640px){
-  /* The film frame is landscape; a portrait crop of its center misses the character
-     entirely and spends the top half of the screen on empty room. Shift the focal
-     point to where he sits and give the text back some of the height. */
-  .hero{min-height:88svh}
-  .hero video,.hero .fallback{object-position:68% 30%}
-  .hero-inner{padding-bottom:clamp(40px,7vh,64px)}
-  .hero h1{font-size:clamp(44px,13vw,56px)}
-  /* Stacked full-width buttons: at this width the pair wraps anyway, ragged.
-     Full-width is the phone idiom and doubles as a bigger tap target. */
-  .cta-row{flex-direction:column;align-items:stretch}
-  .cta-row .pill{justify-content:center}
-  /* 17vw clamps to the 150px floor here, which turns the product screenshots into
-     postage stamps. Taller cells keep them recognisable; the strip stays one row. */
-  .strip .cell{height:190px}
-  /* Ragged flex leaves the third card hanging; a two-up grid reads as designed. */
-  .stats{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-  .stat{min-width:0;padding:16px 18px}
-  .band{padding:56px 0}
-  /* The desktop ellipsis assumed a >=320px column. Here it truncated every third-party
-     attribution line — the one list on the page that must not lose its tail. */
-  .fattr ul{grid-template-columns:1fr}
-  .fattr li{white-space:normal;overflow:visible;text-overflow:clip}
-}
-@media (prefers-reduced-motion:reduce){
-  *{animation:none!important;transition:none!important}
-  .rv,.hero h1 .w,.bub,.stamp,.spawn{opacity:1!important;transform:none!important}
-}
-</style>
+<meta name="description" content="Arslan is an open-source AI agent for your Mac and iPhone. It runs your terminal, drives your apps and keeps working while you talk — and anything that acts in your name waits for your click. Your machine, your keys, no Arslan servers.">
+<meta name="theme-color" content="#050506">
 <link rel="canonical" href="https://aralem.dev/arslan/">
-<link rel="icon" type="image/svg+xml" href="assets/site/favicon.svg">
+<link rel="icon" type="image/svg+xml" href="assets/v2/favicon.svg">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Arslan">
-<meta property="og:title" content="Arslan — a local-first AI orchestrator">
-<meta property="og:description" content="One host agent, many persona spawns you raised yourself. Runs on your machine with your own keys; every prompt change passes a held-out exam and ships only when you press Promote.">
+<meta property="og:title" content="Arslan — the AI agent that asks before it acts">
+<meta property="og:description" content="Open-source AI agent for Mac and iPhone. One loop, every action behind a gate. Your machine, your keys, no Arslan servers.">
 <meta property="og:url" content="https://aralem.dev/arslan/">
-<meta property="og:image" content="https://aralem.dev/arslan/assets/site/og.jpg">
+<meta property="og:image" content="https://aralem.dev/arslan/assets/v2/og.jpg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Arslan — a local-first AI orchestrator">
-<meta name="twitter:description" content="One host agent, many persona spawns you raised yourself. Runs on your machine with your own keys; every prompt change passes a held-out exam and ships only when you press Promote.">
-<meta name="twitter:image" content="https://aralem.dev/arslan/assets/site/og.jpg">
+<meta name="twitter:image" content="https://aralem.dev/arslan/assets/v2/og.jpg">
+<style>
+:root{
+  --bg:#050506; --s1:#0b0c0f; --s2:#111318; --s3:#171a20;
+  --line:rgba(255,255,255,.075); --line2:rgba(255,255,255,.14);
+  --tx:#f2f3f6; --mu:#9aa0ab; --dim:#5f646d;
+  --work:#3b9eff; --search:#7c83ff; --ask:#f5a524; --done:#34d399; --stop:#ff6b57; --cyan:#22d3ee;
+  --ui:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Inter","Helvetica Neue",Arial,sans-serif;
+  --mono:"SF Mono",ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace;
+  --spring:cubic-bezier(.32,1.22,.42,1);
+  --r:22px;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.55 var(--ui);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+img,video,svg{display:block;max-width:100%}
+a{color:inherit;text-decoration:none}
+h1,h2,h3,p{margin:0}
+::selection{background:rgba(59,158,255,.35)}
+:focus-visible{outline:2px solid #8ab4ff;outline-offset:3px;border-radius:8px}
+.wrap{max-width:1200px;margin:0 auto;padding:0 24px}
+.eyebrow{font:500 12px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--mu);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.eyebrow .n{display:inline-grid;place-items:center;height:22px;padding:0 8px;border:1px solid var(--line2);border-radius:6px;color:var(--tx)}
+h2{font-size:clamp(34px,5.2vw,64px);line-height:1.02;letter-spacing:-.035em;font-weight:700;margin-top:18px;text-wrap:balance}
+h2 .g,h1 .g{background:linear-gradient(180deg,#fff 0%,#7d828c 120%);-webkit-background-clip:text;background-clip:text;color:transparent}
+.lede{margin-top:18px;font-size:clamp(16px,1.6vw,19px);color:var(--mu);max-width:40em;text-wrap:pretty}
+.lede b{color:var(--tx);font-weight:600}
+section,header{position:relative}
+.sec{padding:clamp(90px,12vw,150px) 0}
+.rule{height:1px;background:linear-gradient(90deg,transparent,var(--line2),transparent)}
+.badge{display:inline-flex;align-items:center;gap:6px;font:500 11px/1 var(--mono);letter-spacing:.06em;padding:5px 8px;border-radius:6px;border:1px solid var(--line2);color:var(--mu);white-space:nowrap;text-transform:none}
+.badge.new{color:var(--work);border-color:rgba(59,158,255,.4);background:rgba(59,158,255,.08)}
+.badge.soon{color:var(--ask);border-color:rgba(245,165,36,.4);background:rgba(245,165,36,.08)}
+.dot{width:7px;height:7px;border-radius:50%;background:currentColor;flex:none;display:inline-block}
+.btn{display:inline-flex;align-items:center;gap:10px;height:48px;padding:0 22px;border-radius:999px;font-weight:600;font-size:15.5px;border:0;cursor:pointer;transition:transform .15s,background .15s,box-shadow .15s;white-space:nowrap}
+.btn.pri{background:#f5f6f8;color:#0b0c0e;box-shadow:0 0 0 1px rgba(255,255,255,.2),0 10px 40px rgba(255,255,255,.12)}
+.btn.pri:hover{transform:translateY(-1px);box-shadow:0 0 0 1px rgba(255,255,255,.3),0 14px 50px rgba(255,255,255,.2)}
+.btn.sec2{background:rgba(255,255,255,.06);color:var(--tx);box-shadow:inset 0 0 0 1px var(--line2)}
+.btn.sec2:hover{background:rgba(255,255,255,.1)}
+.btn svg{width:18px;height:18px}
+.card{background:linear-gradient(180deg,var(--s2),var(--s1));border:1px solid var(--line);border-radius:var(--r);position:relative;overflow:hidden}
+.card::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;background:radial-gradient(600px 200px at 20% -20%,rgba(255,255,255,.05),transparent 60%)}
+.rv{opacity:0;transform:translateY(24px);transition:opacity .8s cubic-bezier(.2,.7,.2,1),transform .8s cubic-bezier(.2,.7,.2,1)}
+.rv.in{opacity:1;transform:none}
+.rv.d1{transition-delay:.08s}.rv.d2{transition-delay:.16s}.rv.d3{transition-delay:.24s}
+
+/* ---------- nav ---------- */
+.nav{position:fixed;top:0;left:0;right:0;z-index:50;height:60px;display:flex;align-items:center;
+  background:rgba(5,5,6,.72);backdrop-filter:saturate(180%) blur(18px);-webkit-backdrop-filter:saturate(180%) blur(18px);border-bottom:1px solid var(--line)}
+.nav .wrap{display:flex;align-items:center;gap:28px;width:100%}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:-.01em;font-size:17px}
+.brand svg{width:26px;height:26px}
+.nav ul{display:flex;gap:24px;list-style:none;margin:0;padding:0;font-size:14px;color:var(--mu)}
+.nav ul a:hover{color:var(--tx)}
+.nav .sp{flex:1}
+.nav .gh{font-size:14px;color:var(--mu);display:flex;gap:8px;align-items:center}
+.nav .gh:hover{color:var(--tx)}
+.nav .btn{height:36px;padding:0 16px;font-size:14px}
+@media (max-width:900px){.nav ul,.nav .gh{display:none}}
+
+/* ---------- hero ---------- */
+.hero{padding:60px 0 0;overflow:hidden;isolation:isolate}
+.hero::before{content:"";position:absolute;inset:0;z-index:-2;
+  background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);
+  background-size:64px 64px;-webkit-mask-image:radial-gradient(1000px 640px at 50% 18%,#000 0%,transparent 75%);mask-image:radial-gradient(1000px 640px at 50% 18%,#000 0%,transparent 75%)}
+.hero .glow{position:absolute;left:50%;top:-260px;width:1200px;height:820px;transform:translateX(-50%);z-index:-1;pointer-events:none}
+.hero .glow i{position:absolute;inset:0;opacity:0;transition:opacity 1.2s}
+.hero .glow i.working{background:radial-gradient(closest-side,rgba(59,158,255,.17),rgba(124,131,255,.06) 50%,transparent 75%)}
+.hero .glow i.approval{background:radial-gradient(closest-side,rgba(245,165,36,.17),rgba(245,165,36,.05) 50%,transparent 75%)}
+.hero .glow i.finished{background:radial-gradient(closest-side,rgba(52,211,153,.16),rgba(52,211,153,.05) 50%,transparent 75%)}
+.hero[data-mood="working"] .glow i.working,.hero[data-mood="approval"] .glow i.approval,.hero[data-mood="finished"] .glow i.finished{opacity:1}
+.hero-copy{text-align:center;display:flex;flex-direction:column;align-items:center}
+h1{font-size:clamp(46px,8.4vw,108px);line-height:.96;letter-spacing:-.045em;font-weight:700;margin-top:30px;text-wrap:balance}
+.hero .lede{text-align:center;margin-top:24px;max-width:38em}
+.cta{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-top:34px}
+.meta{margin-top:20px;font:12.5px var(--mono);color:var(--dim);letter-spacing:.02em}
+
+/* the live island: hangs from the nav like the notch */
+.island-stage{display:flex;justify-content:center;height:200px;align-items:flex-start;width:100%}
+.island{background:#000;color:#f2f3f6;border-radius:0 0 14px 14px;box-shadow:0 0 0 1px rgba(255,255,255,.09),0 30px 80px rgba(0,0,0,.7);
+  width:300px;height:34px;overflow:hidden;position:relative;transition:width .52s var(--spring),height .52s var(--spring),border-radius .52s var(--spring);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;text-align:left}
+.island.open{width:min(620px,92vw);height:168px;border-radius:0 0 30px 30px}
+.island .bar{position:absolute;inset:0 0 auto 0;height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 14px 0 10px;transition:opacity .2s}
+.island.open .bar{opacity:0}
+.island .bar .l{display:flex;align-items:center;gap:8px}
+.island .bar .r{display:flex;align-items:center;gap:8px;font-size:12px;color:#cfd3da;font-variant-numeric:tabular-nums}
+.ring{width:16px;height:16px}
+.island .body{position:absolute;inset:0;padding:20px 20px 16px 16px;display:flex;gap:16px;opacity:0;transition:opacity .25s}
+.island.open .body{opacity:1;transition:opacity .3s .16s}
+.island .who{display:flex;align-items:center;gap:8px;font-size:13px;color:#9aa0ab;white-space:nowrap;overflow:hidden}
+.island .who b{color:#fff;font-weight:600;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.island .tt{font-size:15px;font-weight:600;margin-top:6px;color:#fff}
+.island .tx{font-size:13px;color:#c9cdd5;margin-top:6px;line-height:1.45}
+.island .plan{display:flex;gap:6px;margin-top:9px;flex-wrap:wrap}
+.island .plan span{font-size:11.5px;padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.06);color:#9aa0ab;white-space:nowrap}
+.island .plan span.done{color:#8ee6c0;background:rgba(52,211,153,.12)}
+.island .plan span.now{color:#fff;background:rgba(59,158,255,.2)}
+.island .tick{font-size:12.5px;margin-top:9px;background:linear-gradient(90deg,#8d929c 0%,#fff 45%,#8d929c 90%);background-size:220% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:shimmer 2.2s linear infinite}
+@keyframes shimmer{from{background-position:120% 0}to{background-position:-100% 0}}
+.island .code{font:12.5px var(--mono);background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.07);border-radius:10px;padding:6px 10px;margin-top:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.island .ib{display:inline-flex;height:28px;align-items:center;border-radius:14px;padding:0 13px;font-size:12.5px;font-weight:500;background:#f5f6f8;color:#0b0c0e;margin-top:8px}
+.island .ib.g{background:rgba(255,255,255,.09);color:#eef0f4;margin-left:6px}
+.island .col{min-width:0;flex:1}
+.island .pane{display:none}.island .pane.on{display:block}
+
+/* mascot: Arslan's own head; the mouth constellation carries the state */
+.mascot{--c:#e9ecf1;--nc:#111;position:relative;width:var(--s);height:var(--s);flex:none}
+.mascot svg{width:100%;height:100%;overflow:visible;position:relative}
+.mascot .halo{position:absolute;inset:-25%;border-radius:50%;background:radial-gradient(closest-side,color-mix(in srgb,var(--c) 45%,transparent),transparent 70%);opacity:.55}
+.mascot .head{transform-origin:626px 600px;animation:breathe 4.2s ease-in-out infinite}
+.mascot .ears{fill:#999}
+.mascot .eyes{transform-origin:626px 585px;animation:blink 5.6s infinite}
+.mascot .eyes path{fill:#000}
+.mascot .net line,.mascot .net path{stroke:var(--nc);stroke-linecap:round;fill:none;transition:stroke .4s}
+.mascot .net circle{fill:var(--nc);transition:fill .4s}
+.mascot .net circle.trk{fill:none;stroke:color-mix(in srgb,var(--nc) 30%,transparent);stroke-width:6}
+.mascot[data-state="working"]{--c:var(--work);--nc:var(--work)}
+.mascot[data-state="searching"]{--c:var(--search);--nc:var(--search)}
+.mascot[data-state="approval"]{--c:var(--ask);--nc:#e08a00}
+.mascot[data-state="finished"]{--c:var(--done);--nc:#10b981}
+@keyframes breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.025)}}
+@keyframes blink{0%,46%,50%,100%{transform:scaleY(1)}48%{transform:scaleY(.08)}}
+
+/* devices */
+.stage{position:relative;margin:56px auto 0;max-width:1120px;padding:0 24px;height:clamp(300px,50vw,620px)}
+.mac{position:absolute;left:24px;right:13%;top:0}
+.mac .lid{background:#0d0e11;border-radius:18px 18px 6px 6px;padding:1.4% 1.4% 2.2%;box-shadow:0 0 0 1px rgba(255,255,255,.12),inset 0 0 0 2px #000,0 40px 120px rgba(0,0,0,.7)}
+.mac .scr{position:relative;aspect-ratio:16/10;border-radius:6px;overflow:hidden;background:#000}
+.mac .scr video,.mac .scr img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.mac .notch{position:absolute;top:0;left:50%;transform:translateX(-50%);width:13%;height:3.2%;background:#000;border-radius:0 0 8px 8px;z-index:2}
+.mac .base{height:clamp(10px,1.4vw,18px);margin:0 -5%;background:linear-gradient(180deg,#2a2c31,#16171a 60%,#0a0a0b);border-radius:2px 2px 16px 16px;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+.mac .base::before{content:"";display:block;width:14%;height:42%;margin:0 auto;background:#0b0c0e;border-radius:0 0 8px 8px}
+.phone{position:absolute;right:24px;bottom:2%;width:clamp(130px,21%,240px);aspect-ratio:444/962;border-radius:clamp(22px,3.6vw,42px);padding:clamp(5px,.7vw,9px);
+  background:linear-gradient(145deg,#3a3c42,#141518 40%,#2a2c31);box-shadow:0 0 0 1px rgba(255,255,255,.14),0 40px 100px rgba(0,0,0,.8);z-index:2}
+.phone .scr{width:100%;height:100%;border-radius:clamp(17px,2.9vw,34px);overflow:hidden;background:#fff;position:relative}
+.phone .scr video,.phone .scr img{width:100%;height:100%;object-fit:cover}
+.phone .di{position:absolute;top:2.2%;left:50%;transform:translateX(-50%);width:32%;height:3.6%;background:#000;border-radius:99px;z-index:2}
+.arc-label{position:absolute;right:calc(24px + clamp(130px,21%,240px) - 30px);top:34%;font:11.5px var(--mono);color:var(--mu);background:rgba(5,5,6,.82);border:1px solid var(--line2);padding:7px 11px;border-radius:9px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);white-space:nowrap;z-index:3;display:flex;gap:8px;align-items:center}
+.arc-label .dot{color:var(--done);box-shadow:0 0 10px var(--done);animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.35}}
+.stage-fade{position:absolute;left:0;right:0;bottom:-2px;height:24%;background:linear-gradient(transparent,var(--bg));pointer-events:none;z-index:1}
+@media (max-width:700px){.arc-label{display:none}.mac{right:16%}}
+
+/* proof strip */
+.proof{border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--s1)}
+.proof .wrap{display:grid;grid-template-columns:repeat(5,1fr)}
+.proof .p{padding:28px 20px;border-left:1px solid var(--line)}
+.proof .p:first-child{border-left:0}
+.proof b{display:block;font-size:clamp(26px,3vw,38px);font-weight:700;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.proof span{font:12px var(--mono);color:var(--mu);letter-spacing:.02em}
+@media (max-width:860px){.proof .wrap{grid-template-columns:repeat(2,1fr)}.proof .p{border-left:0;border-top:1px solid var(--line)}.proof .p:nth-child(-n+2){border-top:0}.proof .p:last-child{grid-column:1/-1}}
+
+/* 01 loop */
+.loop{margin-top:56px;display:grid;grid-template-columns:repeat(5,1fr);position:relative}
+.node{position:relative;padding:22px 20px 20px;border:1px solid var(--line);background:var(--s1);cursor:pointer;text-align:left;color:var(--tx);font:inherit;transition:background .25s,border-color .25s;overflow:hidden}
+.node:first-child{border-radius:18px 0 0 18px}.node:last-child{border-radius:0 18px 18px 0}
+.node+.node{border-left:0}
+.node .k{font:11px var(--mono);color:var(--dim);letter-spacing:.1em}
+.node h3{font-size:20px;letter-spacing:-.02em;margin-top:10px}
+.node p{font-size:13.5px;color:var(--mu);margin-top:4px}
+.node .m{font:12.5px var(--mono);margin-top:14px;color:var(--tx)}
+.node.on{background:var(--s3);border-color:var(--line2)}
+.node.on .k{color:var(--work)}
+.node .bar{position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--work);transform:scaleX(0);transform-origin:left}
+.node.on .bar{transform:scaleX(1);transition:transform 2.9s linear}
+.loop.stopped .node.on .bar{transition:none}
+.detail{margin-top:18px;display:grid;grid-template-columns:1.3fr 1fr;gap:18px}
+.detail .card{padding:26px 28px;min-height:170px}
+.detail h4{margin:0;font-size:18px;letter-spacing:-.01em}
+.detail p{color:var(--mu);margin-top:8px;font-size:15px}
+.src{font:12.5px var(--mono);color:var(--mu);margin:12px 0 0;padding:0}
+.src li{list-style:none;padding:9px 0;border-bottom:1px dashed var(--line);display:flex;justify-content:space-between;gap:12px}
+.src li:last-child{border-bottom:0}
+.src li span:last-child{color:var(--tx);text-align:right;word-break:break-all}
+@media (max-width:900px){.loop{grid-template-columns:1fr}.node:first-child{border-radius:18px 18px 0 0}.node:last-child{border-radius:0 0 18px 18px}.node+.node{border-left:1px solid var(--line);border-top:0}.detail{grid-template-columns:1fr}}
+
+/* 02 gate */
+.term{margin-top:56px;border-radius:18px;border:1px solid var(--line2);background:#08090b;box-shadow:0 40px 120px rgba(0,0,0,.6);overflow:hidden}
+.term .tb{height:40px;display:flex;align-items:center;gap:8px;padding:0 16px;border-bottom:1px solid var(--line);background:var(--s1)}
+.term .tb i{width:12px;height:12px;border-radius:50%;background:#2c2e33}
+.term .tb .t{flex:1;text-align:center;font:12px var(--mono);color:var(--dim);margin-right:44px}
+.term .in{display:grid;grid-template-columns:1.15fr 1fr}
+.cmds{padding:14px;border-right:1px solid var(--line);display:grid;gap:2px;align-content:start}
+.cmd{display:flex;align-items:center;gap:12px;justify-content:space-between;width:100%;background:transparent;border:0;color:var(--mu);cursor:pointer;font:13.5px var(--mono);padding:9px 12px;border-radius:10px;text-align:left}
+.cmd:hover{background:rgba(255,255,255,.04);color:var(--tx)}
+.cmd.sel{background:rgba(255,255,255,.07);color:var(--tx)}
+.cmd .c{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cmd .c::before{content:"$ ";color:var(--dim)}
+.ans{flex:none;font:600 10.5px var(--mono);letter-spacing:.1em;padding:4px 8px;border-radius:5px}
+.ans.run{color:var(--done);background:rgba(52,211,153,.1)}
+.ans.ask{color:var(--ask);background:rgba(245,165,36,.1)}
+.ans.forbid{color:var(--stop);background:rgba(255,107,87,.12)}
+.verdict{padding:34px 34px 30px;display:flex;flex-direction:column;position:relative}
+.verdict .p{font:14.5px var(--mono);color:var(--tx);word-break:break-word;min-height:3em}
+.verdict .p::before{content:"$ ";color:var(--dim)}
+.verdict .cur{display:inline-block;width:8px;height:1.1em;vertical-align:-.2em;background:var(--tx);animation:bl 1s steps(1) infinite;margin-left:2px}
+@keyframes bl{50%{opacity:0}}
+.verdict .big{font-size:clamp(56px,7vw,92px);font-weight:700;letter-spacing:-.05em;line-height:1;margin-top:28px;transition:color .3s}
+.verdict .why{color:var(--tx);font-size:16px;margin-top:12px;min-height:3em}
+.verdict .meta2{margin-top:auto;padding-top:24px;font:12px var(--mono);color:var(--dim);display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.legend{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:18px}
+.legend .card{padding:20px 22px}
+.legend b{font:600 12px var(--mono);letter-spacing:.12em}
+.legend p{color:var(--mu);font-size:14.5px;margin-top:8px}
+@media (max-width:900px){.term .in{grid-template-columns:1fr}.cmds{border-right:0;border-bottom:1px solid var(--line)}.legend{grid-template-columns:1fr}}
+
+/* 03 background */
+.bg-grid{margin-top:56px;display:grid;grid-template-columns:1.25fr 1fr;gap:18px}
+.lanes{padding:24px 24px 20px}
+.lanes .hd{display:flex;justify-content:space-between;font:12px var(--mono);color:var(--dim);margin-bottom:10px}
+.lane{display:grid;grid-template-columns:86px 1fr;align-items:center;height:44px;font:12.5px var(--mono);color:var(--mu)}
+.lane .tr{position:relative;height:100%;border-bottom:1px dashed var(--line)}
+.blk{position:absolute;top:13px;height:14px;border-radius:5px}
+.lane .tg{position:absolute;top:29px;font-size:10.5px;white-space:nowrap;color:var(--dim)}
+.lanes .ph{position:absolute;top:58px;height:264px;width:1.5px;background:#fff;box-shadow:0 0 12px rgba(255,255,255,.8);left:110px;animation:sweep 12s linear infinite}
+@keyframes sweep{from{left:110px}to{left:calc(100% - 24px)}}
+.outc{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+.islandvid{display:flex;flex-direction:column}
+.islandvid video,.islandvid img{width:100%;aspect-ratio:1200/516;object-fit:cover;border-bottom:1px solid var(--line)}
+.islandvid .cap{padding:20px 24px}
+.islandvid .cap p{color:var(--mu);font-size:14.5px;margin-top:6px}
+.facts3{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:18px}
+.facts3 .card{padding:22px 24px}
+.facts3 b{font-size:26px;letter-spacing:-.03em;display:block}
+.facts3 p{color:var(--mu);font-size:14px;margin-top:4px}
+@media (max-width:900px){.bg-grid,.facts3{grid-template-columns:1fr}}
+
+/* 04 hands */
+.hands{margin-top:56px;display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:18px}
+.hands .hero-card{background:linear-gradient(180deg,#0f1a2a,var(--s1));border-color:rgba(59,158,255,.25)}
+.stopbar{margin-top:18px;display:flex;align-items:center;justify-content:space-between;gap:24px;padding:22px 26px;border-radius:var(--r);border:1px solid var(--line);background:var(--s1)}
+.stopbar p{color:var(--mu);font-size:14.5px;margin-top:4px;max-width:46em}
+.stopbtn{flex:none;display:inline-flex;align-items:center;gap:10px;height:42px;padding:0 18px;border-radius:12px;border:1px solid rgba(255,107,87,.45);background:rgba(255,107,87,.1);color:#ffb3a8;font:600 14px var(--ui);cursor:pointer;transition:transform .1s,background .2s}
+.stopbtn:hover{background:rgba(255,107,87,.18)}
+.stopbtn:active{transform:scale(.96)}
+.stopbtn .sq{width:10px;height:10px;border-radius:2px;background:currentColor}
+.stopbtn.done{border-color:rgba(52,211,153,.45);background:rgba(52,211,153,.1);color:#8ee6c0}
+.never2{margin-top:18px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.never2 .lbl{font:500 11px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin-right:6px}
+.never2 span:not(.lbl){font:12.5px var(--mono);color:var(--tx);border:1px dashed var(--line2);border-radius:8px;padding:6px 10px}
+.hands .card{padding:28px 26px 26px;min-height:250px;display:flex;flex-direction:column}
+.hands .ic{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;background:rgba(255,255,255,.06);border:1px solid var(--line2)}
+.hands .ic svg{width:22px;height:22px;stroke:var(--tx);fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.hands h3{font-size:21px;letter-spacing:-.02em;margin-top:22px}
+.hands p{color:var(--mu);font-size:14.5px;margin-top:8px}
+.hands .rule2{margin-top:auto;padding-top:18px;font:12.5px var(--mono);color:var(--tx);display:flex;gap:8px;align-items:center}
+.hands .rule2 .dot{color:var(--ask)}
+.nevers{margin-top:18px;display:flex;gap:10px;flex-wrap:wrap}
+.nevers span{font:13px var(--mono);color:var(--mu);border:1px solid var(--line);border-radius:999px;padding:8px 14px}
+.nevers span::before{content:"✕  ";color:var(--stop)}
+@media (max-width:900px){.hands{grid-template-columns:1fr}.stopbar{flex-direction:column;align-items:flex-start}}
+
+/* 05 devices bento */
+.bento{margin-top:56px;display:grid;grid-template-columns:repeat(6,1fr);gap:18px}
+.b-phone{grid-column:span 2;grid-row:span 3;padding:28px 24px 0;display:flex;flex-direction:column;align-items:center;text-align:center}
+.b-phone .ph2{width:80%;margin-top:auto;padding-top:26px}
+.b-phone .ph2 .frame{border-radius:40px 40px 0 0;padding:9px 9px 0;background:linear-gradient(145deg,#3a3c42,#141518 40%,#2a2c31);box-shadow:0 0 0 1px rgba(255,255,255,.14)}
+.b-phone .ph2 .scr{border-radius:32px 32px 0 0;overflow:hidden;aspect-ratio:444/720;background:#fff}
+.b-phone .ph2 video{width:100%;height:100%;object-fit:cover;object-position:top}
+.bento h3{font-size:22px;letter-spacing:-.02em}
+.bento p{color:var(--mu);font-size:14.5px;margin-top:8px}
+.bento p b{color:var(--tx)}
+.b-crypto{grid-column:span 4;padding:28px}
+.chain{display:flex;align-items:center;margin-top:26px;flex-wrap:wrap;row-gap:12px}
+.chain .st{font:12px var(--mono);padding:9px 10px;border:1px solid var(--line2);border-radius:10px;background:rgba(255,255,255,.03);white-space:nowrap}
+.chain .st small{display:block;color:var(--dim);font-size:10.5px;margin-top:2px}
+.chain .ar{width:18px;height:1px;background:var(--line2);position:relative;overflow:hidden}
+.chain .ar::after{content:"";position:absolute;left:-40%;top:0;width:40%;height:1px;background:var(--done);animation:pk 1.4s linear infinite}
+@keyframes pk{to{left:100%}}
+.b-appr{grid-column:span 2;padding:28px}
+.b-is{grid-column:span 2;padding:28px}
+.race{margin-top:20px;display:grid;gap:8px;font:12.5px var(--mono)}
+.race div{display:flex;justify-content:space-between;padding:10px 12px;border-radius:10px;background:rgba(255,255,255,.04);border:1px solid var(--line);color:var(--mu)}
+.race .w{border-color:rgba(52,211,153,.4);color:var(--done)}
+.b-mac{grid-column:span 4;padding:28px;display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:center}
+.mrow{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
+.mrow span{font:12.5px var(--mono);padding:8px 12px;border:1px solid var(--line2);border-radius:999px;color:var(--tx)}
+.mrow button{font:12.5px var(--mono);padding:8px 12px;border:1px solid var(--line2);border-radius:999px;color:var(--mu);background:transparent;cursor:pointer}
+.mrow button.on{color:var(--tx);border-color:#fff}
+.mini-island{display:flex;justify-content:center}
+@media (max-width:900px){.bento{grid-template-columns:1fr}.bento>*{grid-column:auto!important;grid-row:auto!important}.b-mac{grid-template-columns:1fr}}
+
+/* 06 privacy */
+.priv{margin-top:56px;display:grid;grid-template-columns:1.3fr 1fr;gap:18px}
+.who2{padding:10px 0}
+.wr{display:grid;grid-template-columns:1.2fr auto 1.3fr;gap:20px;align-items:center;padding:18px 26px;border-bottom:1px solid var(--line)}
+.wr:last-child{border-bottom:0}
+.wr b{font-weight:600}
+.wr small{font:12.5px var(--mono);color:var(--mu)}
+.meter{display:flex;gap:5px}.meter i{width:26px;height:10px;border-radius:3px;background:rgba(255,255,255,.07)}
+.meter i.on{background:var(--done)}.meter.zero i{background:transparent;box-shadow:inset 0 0 0 1px var(--stop)}
+.guard{padding:28px;display:flex;flex-direction:column}
+.bub{border-radius:16px;padding:12px 16px;font-size:14.5px;max-width:88%}
+.bub.u{align-self:flex-end;background:#2a62d9;color:#fff;border-bottom-right-radius:5px;margin-top:22px}
+.bub.a{align-self:flex-start;background:var(--s3);border:1px solid var(--line);margin-top:10px;border-bottom-left-radius:5px}
+.bub.a s{text-decoration-color:var(--stop);text-decoration-thickness:2px;color:var(--mu)}
+.stamp{align-self:flex-start;margin-top:16px;font:700 12.5px var(--mono);letter-spacing:.12em;color:var(--stop);border:1.5px solid var(--stop);border-radius:8px;padding:6px 10px;transform:rotate(-3deg)}
+.guard p.s{color:var(--mu);font-size:14px;margin-top:auto;padding-top:18px}
+@media (max-width:900px){.priv{grid-template-columns:1fr}.wr{grid-template-columns:1fr auto}.wr small{grid-column:1/-1}}
+
+/* film */
+.film{margin-top:56px;border-radius:20px;overflow:hidden;border:1px solid var(--line2);box-shadow:0 40px 140px rgba(0,0,0,.7);position:relative;background:#000;aspect-ratio:16/9}
+.film video{width:100%;height:100%}
+.film .play{position:absolute;inset:0;display:grid;place-items:center;background:linear-gradient(180deg,transparent 40%,rgba(0,0,0,.55));cursor:pointer;border:0;color:#fff;font:inherit}
+.film .play span{display:inline-flex;align-items:center;gap:12px;height:56px;padding:0 26px;border-radius:999px;background:rgba(20,20,22,.55);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:inset 0 0 0 1px rgba(255,255,255,.25);font-weight:600}
+.film.playing .play{display:none}
+
+/* 08 shipping */
+.ship{margin-top:56px;display:grid;grid-template-columns:1.2fr 1fr;gap:18px}
+.log ul{margin:0;padding:8px 0}
+.log li{list-style:none;display:grid;grid-template-columns:76px 96px 1fr;gap:14px;padding:16px 26px;border-bottom:1px solid var(--line);align-items:baseline}
+.log li:last-child{border-bottom:0}
+.log .v{font:600 13px var(--mono)}
+.log .d{font:12px var(--mono);color:var(--dim)}
+.log .w{font-size:14.5px;color:var(--mu)}
+.log .w b{color:var(--tx);font-weight:600}
+.limits{padding:28px}
+.limits ul{margin:12px 0 0;padding:0}
+.limits li{color:var(--mu);font-size:14.5px;padding:12px 0;border-bottom:1px dashed var(--line);list-style:none}
+.limits li:last-child{border-bottom:0}
+@media (max-width:900px){.ship{grid-template-columns:1fr}.log li{grid-template-columns:60px 1fr}.log .d{display:none}}
+
+/* finale */
+.fin{text-align:center;padding:clamp(110px,14vw,180px) 0;overflow:hidden;isolation:isolate}
+.fin::before{content:"";position:absolute;left:50%;top:50%;width:900px;height:600px;transform:translate(-50%,-50%);z-index:-1;background:radial-gradient(closest-side,rgba(255,255,255,.07),transparent 70%)}
+.fin .mwrap{display:flex;justify-content:center}
+.fin h2{font-size:clamp(44px,7vw,92px);margin-top:30px}
+.fin .cta{margin-top:30px}
+footer{border-top:1px solid var(--line);padding:48px 0 60px;font:13px var(--mono);color:var(--dim)}
+footer .row{display:flex;gap:12px 28px;flex-wrap:wrap;align-items:center}
+footer a{color:var(--mu)}footer a:hover{color:var(--tx)}
+footer .att{margin-top:28px;display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:6px 28px;font-size:12px}
+footer .att div:first-child{grid-column:1/-1;letter-spacing:.16em;text-transform:uppercase;font-size:11px;margin-bottom:6px}
+footer p{margin-top:22px;font-size:12px;max-width:70em;line-height:1.7}
+
+/* ---- v3 interactions ---- */
+.progress{position:fixed;left:0;top:60px;height:2px;width:100%;transform-origin:left;transform:scaleX(0);background:linear-gradient(90deg,var(--work),var(--search),var(--done));z-index:51}
+.island .ib{border:0;cursor:pointer;font-family:inherit}
+.island .ib:hover{filter:brightness(.92)}
+.island .ib.press{transform:scale(.94)}
+.island .ib.run{background:#f5a524;color:#1a1204}
+.island .note{font-size:12px;color:#9aa0ab;margin-top:6px;line-height:1.4}
+.island .hint{position:absolute;right:16px;bottom:10px;font:10.5px var(--mono);color:#5f646d}
+.island .hint{display:none}
+.island.wait:not(.user) .hint{display:block}
+@media (max-width:640px){
+  .island-stage{height:250px}
+  .island.open{height:226px;border-radius:0 0 26px 26px}
+  .island .body{padding:16px 14px 14px 12px;gap:10px}
+  .island .body>.mascot{--s:52px!important}
+  .island .who span:last-child{display:none}
+  .island .tt{font-size:14px}
+  .island .note{display:none}
+  .island .ib{height:30px;font-size:12px;padding:0 11px}
+  .island .hint{display:none!important}
+}
+.mascot[data-state="stopped"]{--c:var(--stop);--nc:#f0533e}
+.gsearch{display:flex;align-items:center;gap:10px;margin:2px 2px 8px;padding:0 12px;height:44px;border-radius:12px;background:rgba(255,255,255,.04);border:1px solid var(--line2);transition:border-color .2s,box-shadow .2s}
+.gsearch:focus-within{border-color:rgba(59,158,255,.6);box-shadow:0 0 0 4px rgba(59,158,255,.12)}
+.gsearch span{font:14px var(--mono);color:var(--dim)}
+.gsearch input{flex:1;min-width:0;background:transparent;border:0;outline:0;color:var(--tx);font:14px var(--mono)}
+.gsearch input::placeholder{color:var(--dim)}
+.gsearch kbd{font:11px var(--mono);color:var(--dim);border:1px solid var(--line2);border-radius:5px;padding:2px 6px}
+.gcount{font:11.5px var(--mono);color:var(--dim);padding:4px 12px 8px;display:flex;justify-content:space-between;gap:10px}
+.gempty{padding:14px 12px;color:var(--mu);font-size:14px}
+.cmds{max-height:none}
+.chips{display:flex;gap:6px;flex-wrap:wrap;padding:0 2px 10px}
+.chips button{font:11.5px var(--mono);color:var(--mu);background:transparent;border:1px solid var(--line);border-radius:999px;padding:5px 10px;cursor:pointer}
+.chips button:hover,.chips button.on{color:var(--tx);border-color:var(--line2);background:rgba(255,255,255,.05)}
+.wr{cursor:pointer;transition:background .2s}
+.wr:hover{background:rgba(255,255,255,.03)}
+.wr.on{background:rgba(255,255,255,.05)}
+.wr .chev{font:12px var(--mono);color:var(--dim)}
+.seen{margin:0 18px 18px;border-radius:14px;background:#08090b;border:1px solid var(--line);padding:16px 18px;font:12.5px/1.6 var(--mono);color:var(--mu);min-height:132px;word-break:break-all;white-space:pre-wrap}
+.seen b{color:var(--tx);font-weight:500}
+.seen .k{color:var(--dim)}
+.seen .ct{color:#7c83ff}
+.log li a{display:contents}
+.log li{transition:background .2s;cursor:pointer}
+.log li:hover{background:rgba(255,255,255,.03)}
+.log li:hover .v{color:var(--work)}
+@media (prefers-reduced-motion:reduce){
+  *{animation:none!important;transition:none!important}
+  .rv{opacity:1;transform:none}
+}
+</style>
 </head>
 <body>
-<!-- ================= HERO ================= -->
-<section class="hero" id="top">
-  <img class="fallback" alt="" src="assets/site/aa544b6421a.jpg">
-  <video autoplay muted loop playsinline poster="assets/site/aa544b6421a.jpg" id="herovid">
-    <source src="assets/site/a2b60f76d7e.mp4" type="video/mp4">
-  </video>
-  <div class="hero-inner"><div class="wrapc" id="heropara">
-    <p class="kick" style="color:var(--butter)">Local-first · Open source · macOS</p>
-    <h1><span class="w">One</span> <span class="w">becomes</span> <span class="w">many.</span></h1>
-    <p class="sub"><strong>Arslan</strong> is a local-first personal AI orchestrator. You talk to
-    one host agent; it routes work to persona spawns you raised yourself. Their prompts improve on
-    their own — but every change passes a held-out exam, and nothing ships until you press
-    <strong>Promote</strong>.</p>
-    <div class="cta-row">
-      <a class="pill" href="https://github.com/mirzatghayrat/arslan/releases/latest/download/Arslan-macos-arm64.dmg">↓&nbsp;&nbsp;Download for macOS</a>
-      <a class="pill ghost" href="https://github.com/mirzatghayrat/arslan">View on GitHub</a>
-    </div>
-    <p class="meta">macOS 11+ · Apple Silicon · signed &amp; notarized · Apache-2.0 · pre-v1 · open source</p>
-  </div></div>
-  <div class="scrollcue" aria-hidden="true"></div>
-</section>
 
-<!-- ================= MARQUEE ================= -->
-<div class="strip" aria-hidden="true"><div class="track" id="mq">
-  <div class="cell"><video autoplay muted loop playsinline poster="assets/site/aa53de4f0b5.jpg" src="assets/site/a8530bc1754.mp4"></video></div>
-  <div class="cell shot"><div class="slides two" style="height:100%;aspect-ratio:1300/854"><img src="assets/site/a01391bbd3d.jpg" alt=""><img src="assets/site/ac17ffb11aa.jpg" alt=""></div></div>
-  <div class="cell"><video autoplay muted loop playsinline poster="assets/site/a4a23e65acf.jpg" src="assets/site/a2bb22e2d2d.mp4"></video></div>
-  <div class="cell"><video autoplay muted loop playsinline poster="assets/site/a689fb4e241.jpg" src="assets/site/a31619f7bc1.mp4"></video></div>
-  <div class="cell"><video autoplay muted loop playsinline poster="assets/site/a06687afac7.jpg" src="assets/site/ad88a16e433.mp4"></video></div>
+<!-- NAV -->
+<nav class="nav" aria-label="Main"><div class="wrap">
+  <a class="brand" href="#top" aria-label="Arslan home">
+    <svg viewBox="250 190 750 840" aria-hidden="true"><path fill="#fff" d="M286 517L283 287C283 231 320 208 358 237L494 332Q626 280 758 332L894 237C932 208 969 231 969 287L966 517C966 562 982 603 963 651C944 694 909 731 880 777L811 890C758 974 698 1006 626 1006C554 1006 494 974 441 890L372 777C343 731 308 694 289 651C270 603 286 562 286 517Z"/><path fill="#999" d="M310 496L307 286Q307 236 349 259L465 343Q376 404 310 496ZM942 496L945 286Q945 236 903 259L787 343Q876 404 942 496Z"/><path d="M386 518C478 501 558 551 552 650C449 654 387 604 386 518ZM866 518C774 501 694 551 700 650C803 654 865 604 866 518Z"/><g stroke="#000" stroke-width="14" stroke-linecap="round"><line x1="626" y1="696" x2="495" y2="813"/><line x1="626" y1="696" x2="757" y2="813"/><line x1="626" y1="696" x2="626" y2="893"/></g><circle cx="626" cy="696" r="29"/><circle cx="495" cy="813" r="25"/><circle cx="757" cy="813" r="25"/><circle cx="626" cy="893" r="30"/></svg>
+    Arslan
+  </a>
+  <ul>
+    <li><a href="#how">How it works</a></li>
+    <li><a href="#gate">The gate</a></li>
+    <li><a href="#hands">Hands</a></li>
+    <li><a href="#devices">Mac + iPhone</a></li>
+    <li><a href="#privacy">Privacy</a></li>
+    <li><a href="#ship">Changelog</a></li>
+  </ul>
+  <span class="sp"></span>
+  <a class="gh" href="https://github.com/mirzatghayrat/arslan"><svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.290 6.530 5.470 7.590.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.010.37-2.530-.49-2.690-.94-.09-.23-.48-.94-.82-1.130-.28-.15-.68-.52-.01-.53.63-.01 1.080.58 1.230.82.72 1.210 1.870.87 2.330.66.07-.52.28-.87.51-1.070-1.780-.2-3.640-.89-3.640-3.950 0-.87.31-1.590.82-2.150-.08-.2-.36-1.020.08-2.120 0 0 .67-.21 2.200.82.64-.18 1.320-.27 2-.27.68 0 1.360.09 2 .27 1.530-1.040 2.200-.82 2.200-.82.44 1.100.16 1.920.08 2.120.51.56.82 1.270.82 2.150 0 3.070-1.870 3.750-3.650 3.950.29.25.54.73.54 1.480 0 1.070-.01 1.930-.01 2.200 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.420-3.580-8-8-8z"/></svg>GitHub</a>
+  <a class="btn pri" href="https://github.com/mirzatghayrat/arslan/releases/latest/download/Arslan-macos-arm64.dmg">Download</a>
+</div></nav>
+
+<div class="progress" id="prog" aria-hidden="true"></div>
+<!-- HERO -->
+<header class="hero" id="top" data-mood="working">
+  <div class="glow" aria-hidden="true"><i class="working"></i><i class="approval"></i><i class="finished"></i></div>
+  <div class="wrap hero-copy">
+    <div class="island-stage" aria-label="Live demo of Arslan Island">
+      <div class="island" id="island">
+        <div class="bar">
+          <div class="l"><div class="mascot" data-m data-state="working" style="--s:22px"></div><span style="font-size:12px;color:#cfd3da" id="ibar">1 running</span></div>
+          <div class="r"><svg class="ring" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="none" stroke="rgba(255,255,255,.15)" stroke-width="2.4"/><circle id="iring" cx="10" cy="10" r="8" fill="none" stroke="#3b9eff" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="50.3" stroke-dashoffset="50.3" transform="rotate(-90 10 10)" style="transition:stroke-dashoffset .6s,stroke .4s"/></svg><span id="icount">0/4</span></div>
+        </div>
+        <div class="body">
+          <div class="mascot" data-m data-state="working" style="--s:86px;margin-top:4px"></div>
+          <div class="col">
+            <div class="pane on" data-p="working">
+              <div class="who"><span class="dot" style="color:var(--work)"></span><b>Gather this year's invoices into one folder</b><span>Background work</span></div>
+              <div class="plan"><span class="done">✓ Find invoices in Downloads</span><span class="now">Sort them by month</span><span>Move them to Documents</span></div>
+              <div class="tick" id="itick">Read invoice_2026-02.pdf</div>
+            </div>
+            <div class="pane" data-p="approval">
+              <div class="who"><span class="dot" style="color:var(--ask)"></span><b>Gather this year's invoices into one folder</b><span>Waiting for you</span></div>
+              <div class="tt">Arslan wants to do something that needs your OK.</div>
+              <div class="code">Run mv ~/Downloads/invoice_2026-*.pdf ~/Documents/Invoices/</div>
+              <div><button type="button" class="ib" id="iopen">Open to approve</button></div>
+            </div>
+            <div class="pane" data-p="card">
+              <div class="who"><span class="dot" style="color:var(--ask)"></span><b>A background job is asking</b></div>
+              <div class="tt">Run this outside the sandbox?</div>
+              <div class="note">Commands normally write only inside Arslan's working folder. This one needs to change files elsewhere on your Mac.</div>
+              <div><button type="button" class="ib run" id="irun">Run outside the sandbox</button><button type="button" class="ib g" id="icancel">Cancel</button></div>
+            </div>
+            <div class="pane" data-p="stopped">
+              <div class="who"><span class="dot" style="color:var(--stop)"></span><b>Gather this year's invoices into one folder</b><span>Stopped</span></div>
+              <div class="tt">You said no, so nothing moved.</div>
+              <div class="tx">The invoices are still in Downloads. Ask again whenever you like.</div>
+            </div>
+            <div class="pane" data-p="finished">
+              <div class="who"><span class="dot" style="color:var(--done)"></span><b>Gather this year's invoices into one folder</b><span>Done</span></div>
+              <div class="tx">Moved 31 invoices into Documents/Invoices. Every month from January to August has one — except June.</div>
+              <div><span class="ib">Open conversation</span><span class="ib g">Close</span></div>
+            </div>
+          </div>
+        </div>
+        <span class="hint">your turn — tap it</span>
+      </div>
+    </div>
+
+    <a class="badge rv" href="https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.53"><span class="dot" style="color:var(--done)"></span>New in 0.1.53 · Hands for your Mac apps →</a>
+    <h1 class="rv d1">Does the work.<br><span class="g">Asks before it acts.</span></h1>
+    <p class="lede rv d2"><b>Arslan</b> is an AI agent that lives on your Mac. It runs your terminal, drives your apps and keeps working in the background while you talk — and keeps you posted from the notch, or from your iPhone. Anything that acts in your name <b>waits for your click</b>.</p>
+    <div class="cta rv d3">
+      <a class="btn pri" href="https://github.com/mirzatghayrat/arslan/releases/latest/download/Arslan-macos-arm64.dmg"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.37 12.6c-.02-2.3 1.88-3.4 1.97-3.46-1.07-1.57-2.74-1.79-3.34-1.81-1.42-.14-2.77.84-3.49.84-.72 0-1.83-.82-3.01-.8-1.55.02-2.98.9-3.78 2.29-1.61 2.8-.41 6.94 1.16 9.21.77 1.11 1.68 2.36 2.88 2.310 1.16-.05 1.59-.75 2.99-.75 1.4 0 1.79.75 3.01.72 1.24-.02 2.03-1.13 2.79-2.25.88-1.29 1.24-2.53 1.26-2.6-.03-.01-2.42-.93-2.44-3.7zM14.08 5.83c.64-.77 1.07-1.85.95-2.92-.92.04-2.03.61-2.69 1.38-.59.68-1.11 1.77-.97 2.82 1.02.08 2.07-.52 2.71-1.28z"/></svg>Download for Mac</a>
+      <a class="btn sec2" href="#film"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>The system in 60 s</a>
+    </div>
+    <p class="meta rv d3">v0.1.53 · macOS 11+ · Apple Silicon · signed &amp; notarized · free · open source · bring your own model key</p>
+  </div>
+
+  <div class="stage rv" aria-label="Arslan on a Mac and on an iPhone">
+    <div class="mac">
+      <div class="lid"><div class="scr"><div class="notch"></div><video autoplay muted playsinline poster="assets/v2/mac-work.jpg" src="assets/v2/mac-work.mp4"></video></div></div>
+      <div class="base"></div>
+    </div>
+    <div class="arc-label"><span class="dot"></span>end-to-end · through your private iCloud</div>
+    <div class="phone"><div class="scr"><div class="di"></div><video autoplay muted loop playsinline poster="assets/v2/iphone.jpg" src="assets/v2/iphone.mp4"></video></div></div>
+    <div class="stage-fade"></div>
+  </div>
+</header>
+
+<!-- PROOF -->
+<div class="proof"><div class="wrap">
+  <div class="p rv"><b>0</b><span>Arslan servers in the middle</span></div>
+  <div class="p rv d1"><b>3</b><span>answers for every command</span></div>
+  <div class="p rv d1"><b>300 s</b><span>to approve, Mac or iPhone</span></div>
+  <div class="p rv d2"><b>153</b><span>service modules, all open</span></div>
+  <div class="p rv d3"><b>911</b><span>test files guarding them</span></div>
 </div></div>
 
-<!-- ================= WRAPPER ================= -->
-<section class="band cream-bg"><div class="wrapc split">
-  <div class="figure rv"><video autoplay muted loop playsinline poster="assets/site/ac39310270c.jpg" src="assets/site/adc5536dc61.mp4"></video></div>
-  <div>
-    <p class="kick rv">A machine, not a chat box</p>
-    <h2 class="rv d1">Not another wrapper.</h2>
-    <p class="lead rv d2">A chat box talks about the work. Arslan dispatches it — and if it can do
-    the job itself, it does; routing is not the default. Everything runs and logs on your machine,
-    in one thread you can read end to end.</p>
-    <p class="mline rv d3">doer-first routing · every dispatch lands in the ledger</p>
+<!-- 01 HOW -->
+<section class="sec" id="how"><div class="wrap">
+  <p class="eyebrow rv"><span class="n">01</span>How it works</p>
+  <h2 class="rv d1">One loop. <span class="g">Every step needs the one before it.</span></h2>
+  <p class="lede rv d2">A message enters one native tool loop. The model proposes; a fixed policy — not another model — decides. Every step below names the file that enforces it.</p>
+  <div class="loop rv d2" id="loop" role="tablist" aria-label="The loop, step by step"></div>
+  <div class="detail rv d3">
+    <div class="card"><h4 id="dt">—</h4><p id="dd"></p></div>
+    <div class="card"><p class="eyebrow" style="font-size:11px">Enforced in</p><ul class="src" id="ds"></ul></div>
+  </div>
+</div></section>
+<div class="rule"></div>
+
+<!-- 02 GATE -->
+<section class="sec" id="gate"><div class="wrap">
+  <p class="eyebrow rv"><span class="n">02</span>The gate · try it</p>
+  <h2 class="rv d1">What “it runs your terminal” <span class="g">actually means.</span></h2>
+  <p class="lede rv d2">Every shell command gets one of three answers before it runs. Type one, or pick from the list — each of these 64 commands was run through Arslan's actual policy function. Nothing here is hand-labelled.</p>
+  <div class="term rv d2">
+    <div class="tb"><i></i><i></i><i></i><span class="t">arslan · terminal_policy.assess()</span></div>
+    <div class="in">
+      <div class="cmds">
+        <label class="gsearch"><span>$</span><input id="gq" type="text" placeholder="type a command — try “git push” or “rm”" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Search commands"><kbd>↵</kbd></label>
+        <div class="chips" id="gchips"><button type="button" data-f="">all</button><button type="button" data-f="run">run</button><button type="button" data-f="ask">ask</button><button type="button" data-f="forbid">forbid</button></div>
+        <div id="cmdlist" role="listbox" aria-label="Commands"></div>
+        <div class="gcount"><span id="gcount"></span><span>↑ ↓ to move</span></div>
+      </div>
+      <div class="verdict" aria-live="polite">
+        <div class="p"><span id="vcmd"></span><span class="cur"></span></div>
+        <div class="big" id="vans">—</div>
+        <div class="why" id="vwhy"></div>
+        <div class="meta2"><span id="vrule"></span><span>pure function · decided before it runs</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="legend">
+    <div class="card rv"><b style="color:var(--done)">RUN</b><p>Reading, listing, converting, building, fetching a page — inside a sandbox that can only write to your work folder, temp and caches.</p></div>
+    <div class="card rv d1"><b style="color:var(--ask)">ASK</b><p>Destructive, or acting outward in your name: deleting, force-pushing, other apps, mail, installs. Tick “don't ask again” for that kind of command.</p></div>
+    <div class="card rv d2"><b style="color:var(--stop)">FORBID</b><p>Never, even with a tick: wiping the disk or home folder, shutting down, keychain passwords, Arslan's own keys, sudo.</p></div>
+  </div>
+</div></section>
+<div class="rule"></div>
+
+<!-- 03 BACKGROUND -->
+<section class="sec" id="bg"><div class="wrap">
+  <p class="eyebrow rv"><span class="n">03</span>While you talk</p>
+  <h2 class="rv d1">The conversation stays free. <span class="g">The work keeps going.</span></h2>
+  <p class="lede rv d2">Long work moves into a background job and the turn ends. The Island in your notch shows what it's doing, asks when it needs you, and tells you when it's done.</p>
+  <div class="bg-grid">
+    <div class="card lanes rv d1" aria-hidden="true">
+      <div class="hd"><span>one afternoon</span><span>6 lanes · 1 playhead</span></div>
+      <div class="ph"></div>
+      <div class="lane"><span>you</span><div class="tr"><i class="blk" style="left:0;width:9%;background:#e9ecf1"></i><i class="blk" style="left:24%;width:8%;background:#e9ecf1"></i><i class="blk" style="left:48%;width:9%;background:#e9ecf1"></i><i class="blk" style="left:74%;width:8%;background:#e9ecf1"></i><span class="tg" style="left:0">keep talking</span></div></div>
+      <div class="lane"><span>loop</span><div class="tr"><i class="blk" style="left:10%;width:6%;background:var(--work)"></i><span class="tg" style="left:10%">starts a job, ends its turn</span></div></div>
+      <div class="lane"><span>job</span><div class="tr"><i class="blk" style="left:16%;width:68%;background:linear-gradient(90deg,var(--work),var(--done))"></i><span class="tg" style="left:16%">→ done</span></div></div>
+      <div class="lane"><span>approval</span><div class="tr"><i class="blk" style="left:40%;width:5%;background:var(--ask)"></i><span class="tg" style="left:40%">waits for you · 300 s</span></div></div>
+      <div class="lane"><span>schedule</span><div class="tr"><i class="blk" style="left:5%;width:1.4%;background:var(--cyan)"></i><i class="blk" style="left:38%;width:1.4%;background:var(--cyan)"></i><i class="blk" style="left:71%;width:1.4%;background:var(--cyan)"></i><span class="tg" style="left:5%">≥ 15 min apart · up to 10</span></div></div>
+      <div class="lane"><span>inbox</span><div class="tr"><i class="blk" style="left:60%;width:6%;background:var(--search)"></i><span class="tg" style="left:60%">noticed → you decide</span></div></div>
+      <div class="outc"><span class="badge"><span class="dot" style="color:var(--done)"></span>done</span><span class="badge"><span class="dot" style="color:var(--work)"></span>partial</span><span class="badge"><span class="dot" style="color:var(--ask)"></span>blocked</span><span class="badge"><span class="dot" style="color:var(--stop)"></span>stopped</span></div>
+    </div>
+    <div class="card islandvid rv d2">
+      <video autoplay muted loop playsinline poster="assets/v2/mac-island.jpg" src="assets/v2/mac-island.mp4"></video>
+      <div class="cap"><h3 style="font-size:19px;letter-spacing:-.02em">Arslan Island</h3><p>Lives in the notch. Its face is the status: working, waiting for you, done.</p></div>
+    </div>
+  </div>
+  <div class="facts3">
+    <div class="card rv"><b>4 outcomes</b><p>A job ends done, partial, blocked or stopped — never “quietly gave up”.</p></div>
+    <div class="card rv d1"><b>No replays</b><p>A schedule your Mac slept through is not fired late in a burst.</p></div>
+    <div class="card rv d2"><b>Proposes only</b><p>The heartbeat suggests; it never acts on its own.</p></div>
+  </div>
+</div></section>
+<div class="rule"></div>
+
+<!-- 04 HANDS -->
+<section class="sec" id="hands"><div class="wrap">
+  <p class="eyebrow rv"><span class="n">04</span>Hands <span class="badge new">new in 0.1.53</span></p>
+  <h2 class="rv d1">Hands for your Mac. <span class="g">Asked, not assumed.</span></h2>
+  <p class="lede rv d2">Arslan can read and use the apps on your Mac — Notes, Mail, Pages and the rest — through a small helper, <b>Arslan Hands</b>. It reads a window as its accessibility tree, never a screenshot, and works in the background: your mouse, keyboard and front window stay yours.</p>
+  <div class="hands">
+    <div class="card rv hero-card"><div class="ic"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg></div><h3>Mac apps <span class="badge new" style="margin-left:6px">Arslan Hands</span></h3><p>Looking at an app asks once per app in a conversation. Acting happens only in background work and asks once per app.</p><div class="rule2"><span class="dot"></span>delete · send · pay · buy · submit → asks every time</div></div>
+    <div class="card rv d1"><div class="ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18"/></svg></div><h3>Browser</h3><p>Arslan's own browser reads pages freely; clicking and typing ask. Your Safari or Chrome is only ever read.</p><div class="rule2"><span class="dot"></span>asks once per site, per job</div></div>
+    <div class="card rv d2"><div class="ic"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="5"/><path d="M9 12l2 2 4-4"/></svg></div><h3>Shortcuts &amp; AppleScript</h3><p>Runs the Shortcuts you built. Scripts your apps when nothing else can — and you read the script first.</p><div class="rule2"><span class="dot"></span>every AppleScript shown in full</div></div>
+  </div>
+  <div class="stopbar rv d2">
+    <div><b>Seen and stoppable</b><p>A labelled cursor shows what it's doing. The Island shows the step, with a Stop button. The menu bar has “Stop Arslan's hands”. Activity keeps seven days of Hands actions — typed text only as its length.</p></div>
+    <button type="button" class="stopbtn" id="stopbtn"><span class="sq"></span>Stop Arslan's hands</button>
+  </div>
+  <div class="never2 rv d3"><span class="lbl">Never touched</span><span>Keychain Access</span><span>password managers</span><span>System Settings</span><span>macOS security prompts</span><span>Notification Center</span><span>Arslan itself</span></div>
+  <div class="nevers rv d3"><span>types into a password field</span><span>hands a model key to a command</span><span>runs a script you haven't seen</span><span>clicks through Finder to move files — that's a command</span></div>
+</div></section>
+<div class="rule"></div>
+
+<!-- 05 DEVICES -->
+<section class="sec" id="devices"><div class="wrap">
+  <p class="eyebrow rv"><span class="n">05</span>Mac + iPhone</p>
+  <h2 class="rv d1">Your Mac does the work. <span class="g">Your pocket holds the leash.</span></h2>
+  <p class="lede rv d2">Arslan for iPhone talks to the Arslan on your Mac — from anywhere, through your own private iCloud, encrypted end to end.</p>
+  <div class="bento">
+    <div class="card b-phone rv">
+      <span class="badge soon">coming to the App Store</span>
+      <h3 style="margin-top:16px">Arslan for iPhone</h3>
+      <p>Ask from anywhere, follow every job, and approve or deny in one tap. The Mac side ships in 0.1.53 — Settings › iPhone.</p>
+      <div class="ph2"><div class="frame"><div class="scr"><video autoplay muted loop playsinline poster="assets/v2/iphone.jpg" src="assets/v2/iphone.mp4"></video></div></div></div>
+    </div>
+    <div class="card b-crypto rv d1">
+      <h3>No server of ours. Not even a relay.</h3>
+      <p>Messages travel through a CloudKit zone in <b>your</b> private iCloud database. Apple carries only ciphertext; delivered messages are deleted, and Arslan for Mac clears anything left over once it is more than 7 days old — it checks about daily while it is running and online.</p>
+      <div class="chain">
+        <div class="st">X25519<small>key agreement</small></div><div class="ar"></div>
+        <div class="st">HKDF-SHA256<small>derive</small></div><div class="ar"></div>
+        <div class="st">ChaCha20-Poly1305<small>seal</small></div><div class="ar"></div>
+        <div class="st">Ed25519<small>sign</small></div><div class="ar"></div>
+        <div class="st" style="border-color:rgba(52,211,153,.45)">iCloud · ArslanBridge<small>your private DB</small></div>
+      </div>
+    </div>
+    <div class="card b-appr rv d1">
+      <h3>First answer wins</h3>
+      <p>The same approval card shows on both. Whichever you tap first decides.</p>
+      <div class="race"><div class="w"><span>iPhone · Approve</span><span>0:41</span></div><div><span>Mac · same card</span><span>closed</span></div><div><span>nobody answers</span><span>declined at 5:00</span></div></div>
+    </div>
+    <div class="card b-is rv d2">
+      <h3>Always one glance away</h3>
+      <p>Menu bar, the Island in the notch, push-to-talk. It stays resident, recovers itself, and updates are signed.</p>
+      <div class="mrow"><span>menu bar</span><span>Island</span><span>push-to-talk</span><span>signed updates</span></div>
+    </div>
+    <div class="card b-mac rv d2">
+      <div><h3>The Island face, live</h3><p>The same mascot logic the app runs — the mouth constellation carries the state. Pick one.</p>
+        <div class="mrow" id="moods"><button type="button" data-mood="working">working</button><button type="button" data-mood="searching">searching</button><button type="button" data-mood="approval">waiting for you</button><button type="button" data-mood="finished">done</button></div></div>
+      <div class="mini-island"><div class="mascot" data-m id="bigmascot" data-state="working" style="--s:170px"></div></div>
+    </div>
+  </div>
+</div></section>
+<div class="rule"></div>
+
+<!-- 06 PRIVACY -->
+<section class="sec" id="privacy"><div class="wrap">
+  <p class="eyebrow rv"><span class="n">06</span>Privacy &amp; honesty</p>
+  <h2 class="rv d1">Your Mac keeps it. <span class="g">The rest sees less.</span></h2>
+  <p class="lede rv d2">Memory lives in SQLite on your Mac, every entry stamped with when it took effect. Your model provider sees the turns you send, on your own key. Nobody else is in the middle.</p>
+  <div class="priv">
+    <div class="card who2 rv d1">
+      <div class="wr on" data-w="mac" tabindex="0"><b>This Mac · SQLite</b><span class="meter"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span><small>everything</small></div>
+      <div class="wr" data-w="prov" tabindex="0"><b>Your model provider</b><span class="meter"><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span><small>the turns you send, on your key</small></div>
+      <div class="wr" data-w="icloud" tabindex="0"><b>iCloud · iPhone link</b><span class="meter"><i class="on"></i><i></i><i></i><i></i></span><small>ciphertext + routing</small></div>
+      <div class="wr" data-w="none" tabindex="0"><b>Arslan's servers</b><span class="meter zero"><i></i><i></i><i></i><i></i></span><small>none exist</small></div>
+      <p class="eyebrow" style="font-size:11px;padding:16px 26px 10px">What they actually see · tap a row</p>
+      <div class="seen" id="seen" aria-live="polite"></div>
+    </div>
+    <div class="card guard rv d2">
+      <p class="eyebrow" style="font-size:11px">The promise guard</p>
+      <div class="bub u">Send the deck to the team when it's ready.</div>
+      <div class="bub a"><s>“Done — I've sent it, it's in their inboxes now.”</s></div>
+      <span class="stamp">0 TOOL CALLS · CAUGHT</span>
+      <p class="s">A deterministic check — not another model call — catches claims of work that never ran. One rewrite; if it promises again, an honest template goes out instead.</p>
+    </div>
   </div>
 </div></section>
 
-<!-- ================= ONE BECOMES MANY ================= -->
-<section class="band butter-bg"><div class="wrapc">
-  <p class="kick rv">How it works</p>
-  <h2 class="rv d1">One host. As many spawns as&nbsp;you&nbsp;raise.</h2>
-  <div class="playpen">
-    <div>
-      <div class="composer rv d2" aria-label="Example prompts being typed">
-        <div class="line"><span id="type"></span><span class="caret"></span></div>
-        <div class="spawnrow" id="spawnrow"></div>
-      </div>
-      <p class="lead rv d3">Spawns are drafted from a persona seed library, named by you, kept on
-      your Spawns Ledger. Each one equips only what you grant it — and nothing more:</p>
-      <div class="toolchips rv d3">
-        <span class="chip" style="background:#f9d9c8;color:#8a3d1c">🔧 tools</span>
-        <span class="chip" style="background:#e6d9f7;color:#4d2f86">⚙ SKILL.md packs</span>
-        <span class="chip" style="background:#d7ecd2;color:#2c6b25">◎ MCP servers</span>
-      </div>
-    </div>
-    <div class="blobframe rv d2">
-      <video autoplay muted loop playsinline poster="assets/site/a767c7947ec.jpg" src="assets/site/aa24f73aa5f.mp4"></video>
+<!-- FILM -->
+<section class="sec" id="film" style="padding-top:0"><div class="wrap">
+  <p class="eyebrow rv"><span class="n">07</span>The system map</p>
+  <h2 class="rv d1">Eight subsystems. One loop. <span class="g">All gates on.</span></h2>
+  <div class="film rv d2" id="filmbox">
+    <video id="filmv" playsinline preload="none" poster="assets/v2/system-map-60s.jpg" src="assets/v2/system-map-60s.mp4"></video>
+    <button class="play" id="filmplay" type="button"><span><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>Play · 60 s · with sound</span></button>
+  </div>
+</div></section>
+<div class="rule"></div>
+
+<!-- 08 SHIPPING -->
+<section class="sec" id="ship"><div class="wrap">
+  <p class="eyebrow rv"><span class="n">08</span>Open source, shipped in the open</p>
+  <h2 class="rv d1">Six releases in five days. <span class="g">Every one signed and notarized.</span></h2>
+  <div class="ship">
+    <div class="card log rv d1"><ul>
+      <li onclick="window.open('https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.53','_blank','noopener')" title="Release notes on GitHub"><span class="v">0.1.53 ↗</span><span class="d">Oct 5 · latest</span><span class="w"><b>Hands for your Mac apps.</b> Arslan Hands, the Mac side of Arslan for iPhone, the black-and-white icon; cards no longer time out.</span></li>
+      <li onclick="window.open('https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.52','_blank','noopener')" title="Release notes on GitHub"><span class="v">0.1.52 ↗</span><span class="d">Oct 3</span><span class="w"><b>Learned practices.</b> Correct it once; it remembers, with Undo.</span></li>
+      <li onclick="window.open('https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.51','_blank','noopener')" title="Release notes on GitHub"><span class="v">0.1.51 ↗</span><span class="d">Oct 3</span><span class="w"><b>Island + command sandbox.</b> Status in the notch; seatbelt around every command.</span></li>
+      <li onclick="window.open('https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.50','_blank','noopener')" title="Release notes on GitHub"><span class="v">0.1.50 ↗</span><span class="d">Oct 2</span><span class="w"><b>Kernel, part two.</b> Native tool calls end to end.</span></li>
+      <li onclick="window.open('https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.49','_blank','noopener')" title="Release notes on GitHub"><span class="v">0.1.49 ↗</span><span class="d">Oct 2</span><span class="w"><b>Kernel, part one.</b> A cut-off reply continues instead of guessing.</span></li>
+      <li onclick="window.open('https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.48','_blank','noopener')" title="Release notes on GitHub"><span class="v">0.1.48 ↗</span><span class="d">Oct 1</span><span class="w"><b>One loop.</b> The terminal, with run · ask · forbid.</span></li>
+    </ul></div>
+    <div class="card limits rv d2">
+      <p class="eyebrow" style="font-size:11px">Honest limitations</p>
+      <ul>
+        <li>Pre-v1. macOS 11+ on Apple Silicon only, for now.</li>
+        <li>Bring your own model key — your provider bills you.</li>
+        <li>The gate guards against mistakes and smuggled instructions; it is not a cage. A command you allow runs with your permissions.</li>
+        <li>The sandbox limits where commands write, not where they connect — Arslan reads the web with it.</li>
+        <li>Hands sees windows on the current desktop only, and a large window (Notes with many notes) can take 10–20 seconds to read.</li>
+      </ul>
     </div>
   </div>
 </div></section>
 
-<!-- ================= GATE ================= -->
-<section class="band paper-bg">
-  <div class="gate-bg"><video autoplay muted loop playsinline poster="assets/site/a16c3f82a8d.jpg" src="assets/site/a158b91113b.mp4"></video></div>
-  <div class="wrapc" style="position:relative">
-    <p class="kick rv" style="color:var(--butter)">Self-evolution, with an exam</p>
-    <h2 class="rv d1">Prompts improve on their own.<br>Changes pass an exam first.</h2>
-    <p class="lead rv d1" style="color:rgba(246,235,214,.9)">Your spawns get better at their jobs —
-    without ever changing behind your back. A rewrite only replaces the incumbent prompt if it wins
-    where it counts:</p>
-    <div class="stats">
-      <div class="stat rv d1"><b data-count="60" data-suffix="%">0%</b><span>WIN RATE REQUIRED</span></div>
-      <div class="stat rv d2"><b data-count="10" data-suffix="+">0+</b><span>HELD-OUT TASKS, MINIMUM</span></div>
-      <div class="stat rv d3"><b>blind</b><span>JUDGED, POSITIONS SWAPPED</span></div>
+<!-- FINALE -->
+<section class="fin">
+  <div class="wrap">
+    <div class="mwrap"><div class="mascot" data-m id="finmascot" data-state="finished" style="--s:120px"></div></div>
+    <h2>Give it something to do.</h2>
+    <div class="cta">
+      <a class="btn pri" href="https://github.com/mirzatghayrat/arslan/releases/latest/download/Arslan-macos-arm64.dmg">Download for Mac</a>
+      <a class="btn sec2" href="https://github.com/mirzatghayrat/arslan">Read the source</a>
     </div>
-    <ul class="facts rv d2" style="margin-top:30px">
-      <li>No dimension may score worse than the incumbent.</li>
-      <li>A candidate cannot win by getting longer.</li>
-      <li>The holdout is enforced in code, not by convention.</li>
-      <li>Real and synthetic win-rates are never merged into one number.</li>
-      <li>Fail → discarded, you never see it. Pass → a readable diff, in your inbox.</li>
-    </ul>
-    <div class="promote rv d3">
-      <button class="bigbtn" id="promote">Promote</button>
-      <span class="toast" id="toast">Promoted. Until you press it, nothing ships. That is the whole point.</span>
-    </div>
+    <p class="meta">free · Apache-2.0 · github.com/mirzatghayrat/arslan</p>
   </div>
 </section>
 
-<!-- ================= GUARD ================= -->
-<section class="band night-bg"><div class="wrapc">
-  <p class="kick rv" style="color:#FF8A3D">The promise guard</p>
-  <h2 class="rv d1" style="color:var(--cream)">Caught in the act,<br>by design.</h2>
-  <div class="chat">
-    <div class="bub user" data-step="0">Turn this repo into a launch deck.</div>
-    <div class="bub lie" data-step="1">“I have handed that to Deck Master — generating now, one moment.”</div>
-  </div>
-  <span class="stamp" data-step="2">0 DISPATCHES</span>
-  <p class="lead" style="color:rgba(246,235,214,.85);margin-top:24px">If you have used an agent, you have been lied to exactly like this. Arslan intercepts it with a deterministic check — not another model call.
-  One rewrite allowed; if it promises again, an honest template goes out instead.</p>
-  <p class="guard-claim" style="color:var(--cream)">Arslan cannot tell you it did something it did not do.</p>
-</div></section>
-
-<!-- ================= SECOND BRAIN ================= -->
-<section class="band cream-bg"><div class="wrapc">
-  <p class="kick rv">The second brain</p>
-  <h2 class="rv d1">Memory that shows<br>when it took effect.</h2>
-  <p class="lead rv d2">What your spawns learn lands in a shared brain: [[wiki-link]] notes on a
-  live force-directed graph, retrieved by hybrid FTS5 + embedding search.</p>
-  <ul class="facts rv d3">
-    <li>Every entry records when it took effect — and what superseded it.</li>
-    <li>Filter the graph by start time — surviving entries, not a replay of the past.</li>
-    <li>Ask it directly: “what did my second brain learn this week?”</li>
-  </ul>
-</div></section>
-
-<!-- ================= REAL SCREENS ================= -->
-<section class="band butter-bg"><div class="wrapc">
-  <p class="kick rv">The real client</p>
-  <h2 class="rv d1">And this is the real thing.</h2>
-  <p class="lead rv d2">Everything above is brand animation. Everything below is a screenshot —
-  the shipped app, light theme, untouched.</p>
-  <div class="mongrid">
-    <div class="monwrap tl rv d1"><div class="monitor"><div class="slides two"><img src="assets/site/a8231dc73ee.jpg" alt="Real screenshot, light theme"><img src="assets/site/a0a28f4c7a1.jpg" alt="Real screenshot, light theme"></div></div></div>
-    <div class="monwrap tr rv d2"><div class="monitor"><img src="assets/site/adf2aaecbf0.jpg" alt="New orchestrator session — real screenshot, light theme"></div></div>
-  </div>
-  <p class="mline rv d3">real screenshots · ships with 6 languages · 6 theme palettes · light + dark</p>
-</div></section>
-
-<!-- ================= SAFETY ================= -->
-<section class="band cream-bg"><div class="wrapc split">
-  <div>
-    <p class="kick rv">Safety is built in, not disclaimed</p>
-    <h2 class="rv d1">Everything that can spend or write is off by default.</h2>
-    <p class="lead rv d2">From the shipped Settings page, verbatim: “They are all off by default and
-    none of them changes anything without you.”</p>
-    <div class="tog-list rv d2" aria-hidden="true">
-      <div class="tog"><div><b>Auto-evolution</b><br><small>SPENDS API CREDITS</small></div><span class="sw"></span></div>
-      <div class="tog"><div><b>Background tidying</b><br><small>WRITES TO MEMORY</small></div><span class="sw"></span></div>
-      <div class="tog"><div><b>Anything silent</b><br><small>THERE ISN'T ONE</small></div><span class="sw"></span></div>
-    </div>
-    <ul class="facts rv d3">
-      <li>Generated code runs network-denied under the macOS kernel sandbox — and with no sandbox, it fails closed.</li>
-      <li>A local proxy injects git credentials; raw tokens never enter the sandbox.</li>
-      <li>Deletions go to an inbox; an overwrite keeps the original and can be undone.</li>
-      <li>Your machine · your keys · zero third-party servers in the middle.</li>
-    </ul>
-  </div>
-  <div class="figure alt rv d1"><video autoplay muted loop playsinline poster="assets/site/a1a78348746.jpg" src="assets/site/a5b73410fb1.mp4"></video></div>
-</div></section>
-
-<!-- ================= LIMITS ================= -->
-<section class="band night-bg" style="padding-top:clamp(40px,6vw,80px);padding-bottom:clamp(40px,6vw,80px)"><div class="wrapc">
-  <p class="kick rv" style="color:var(--butter)">Honest limitations</p>
-  <h2 class="rv d1" style="font-size:clamp(28px,3.6vw,44px);color:var(--cream)">Pre-v1, and it says so.</h2>
-  <ul class="facts rv d2" style="color:rgba(246,235,214,.85)">
-    <li>macOS 11+ on Apple Silicon only, for now.</li>
-    <li>Bring your own model API key — Arslan runs against your account.</li>
-    <li>Auto-evolution has no spend cap yet; the product itself tells you to set a hard limit at your provider first.</li>
-  </ul>
-</div></section>
-
-<!-- ================= FINALE ================= -->
-<section class="finale butter-bg">
-  <div class="wrapc">
-    <p class="kick rv">Free · Apache-2.0 · github.com/mirzatghayrat/arslan</p>
-    <h2 class="rv d1">Raise your first spawn.</h2>
-    <div class="cta-row rv d2" style="justify-content:center">
-      <a class="pill" style="background:var(--night);color:var(--cream)" href="https://github.com/mirzatghayrat/arslan/releases/latest/download/Arslan-macos-arm64.dmg">↓&nbsp;&nbsp;Download for macOS</a>
-    </div>
-  </div>
-  <div class="img rv d2"><video autoplay muted loop playsinline poster="assets/site/a9506a2c896.jpg" src="assets/site/a847c763cac.mp4"></video></div>
-</section>
-
-<footer><div class="wrapc foot">
-  <div class="frow">
-    <a href="https://github.com/mirzatghayrat/arslan">github.com/mirzatghayrat/arslan</a>
-    <span>Apache-2.0</span>
-    <span>pre-v1 · macOS-first · open source</span>
-    <a href="privacy/">Privacy</a>
-    <a href="support/">Support</a>
-  </div>
-  <p class="fnote">Site imagery is generated brand animation; the app screens are real, untouched screenshots.</p>
-  <div class="fattr">
-    <span class="fhead">Third-party attribution</span>
-    <ul>
-      <li>obra/superpowers — MIT © 2025 Jesse Vincent</li>
-      <li>anthropics/skills — Apache-2.0 © 2025 Anthropic PBC</li>
-      <li>anthropics/financial-services — Apache-2.0 © 2025 Anthropic PBC</li>
-      <li>mattpocock/skills — MIT © Matt Pocock</li>
-      <li>JimLiu/baoyu-skills — MIT © JimLiu</li>
-      <li>msitarzewski/agency-agents — MIT</li>
-      <li>hugohe3/ppt-master — MIT (inspiration only)</li>
-    </ul>
+<footer><div class="wrap">
+  <div class="row"><span style="color:var(--tx)">Arslan</span><a href="https://github.com/mirzatghayrat/arslan">GitHub</a><a href="privacy/">Privacy</a><a href="support/">Support</a><span>Apache-2.0 · pre-v1</span></div>
+  <p>The Mac clips come from Arslan's 0.1.52 launch film: the interface is rebuilt from source and the scenario is staged. The iPhone clip is a real screen recording. The gate answers on this page are produced by Arslan's own policy code.</p>
+  <div class="att">
+    <div>Third-party attribution</div>
+    <div>lahfir/agent-desktop 0.9.4 — Apache-2.0 (inside Arslan Hands, unmodified)</div>
+    <div>NousResearch/hermes-agent — MIT © 2025 Nous Research (command-safety rules, vendored)</div>
+    <div>obra/superpowers — MIT © 2025 Jesse Vincent</div>
+    <div>anthropics/skills — Apache-2.0 © 2025 Anthropic PBC</div>
+    <div>anthropics/financial-services — Apache-2.0 © 2025 Anthropic PBC</div>
+    <div>mattpocock/skills — MIT © Matt Pocock</div>
+    <div>JimLiu/baoyu-skills — MIT © JimLiu</div>
+    <div>msitarzewski/agency-agents — MIT</div>
+    <div>hugohe3/ppt-master — MIT (inspiration only)</div>
   </div>
 </div></footer>
 
 <script>
 (function(){
-  var reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if(reduced)document.querySelectorAll('video').forEach(function(v){v.removeAttribute('autoplay');try{v.pause()}catch(e){}});
-  document.documentElement.classList.add('loaded');
-  document.body.classList.add('loaded');
-  // reveal
-  var io=new IntersectionObserver(function(es){es.forEach(function(e){
-    if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);}
-  })},{threshold:.18});
-  document.querySelectorAll('.rv').forEach(function(el){io.observe(el)});
-  var mq=document.getElementById('mq'); if(mq)mq.innerHTML+=mq.innerHTML;
-  // guard chat sequence
-  var guard=document.querySelectorAll('[data-step]');
-  if(guard.length){
-    var gio=new IntersectionObserver(function(es){es.forEach(function(e){
-      if(!e.isIntersecting)return; gio.disconnect();
-      var steps=Array.prototype.slice.call(guard).sort(function(a,b){return a.dataset.step-b.dataset.step});
-      steps.forEach(function(el,i){setTimeout(function(){el.classList.add('in')}, reduced?0:500+i*900)});
-    })},{threshold:.5});
-    gio.observe(guard[0]);
-  }
-  // counters
-  document.querySelectorAll('[data-count]').forEach(function(b){
-    var cio=new IntersectionObserver(function(es){es.forEach(function(e){
-      if(!e.isIntersecting)return; cio.disconnect();
-      var end=+b.dataset.count, suf=b.dataset.suffix||'', t0=null;
-      if(reduced){b.textContent=end+suf;return}
-      function step(ts){t0=t0||ts;var p=Math.min(1,(ts-t0)/900);
-        b.textContent=Math.round(end*(1-Math.pow(1-p,3)))+suf;
-        if(p<1)requestAnimationFrame(step)}
-      requestAnimationFrame(step);
-    })},{threshold:.6});
-    cio.observe(b);
-  });
-  // composer typing + spawns
-  var prompts=["Turn this repo into a launch deck.","Compare these three vendors and brief me.","Refactor the auth module, tests first.","What did my second brain learn this week?"];
-  var names=[["deck",'#8A5FD1'],["research",'#3E7BD6'],["code",'#5FB558'],["brain",'#E8703C']];
-  var typeEl=document.getElementById('type'),row=document.getElementById('spawnrow'),pi=0;
-  function typeLoop(){
-    var s=prompts[pi%prompts.length],i=0;
-    typeEl.textContent='';
-    if(reduced){typeEl.textContent=s;addSpawn();pi++;setTimeout(typeLoop,3000);return}
-    var iv=setInterval(function(){
-      typeEl.textContent=s.slice(0,++i);
-      if(i>=s.length){clearInterval(iv);setTimeout(function(){addSpawn();pi++;setTimeout(typeLoop,2100)},420)}
-    },34);
-  }
-  function addSpawn(){
-    var n=names[pi%names.length];
-    if(row.children.length>=4)row.innerHTML='';
-    var el=document.createElement('span');el.className='spawn';el.style.background=n[1];
-    el.innerHTML='<i></i>'+n[0];row.appendChild(el);
-    requestAnimationFrame(function(){requestAnimationFrame(function(){el.classList.add('pop')})});
-    el.addEventListener('click',function(){el.classList.remove('wob');void el.offsetWidth;el.classList.add('wob')});
-  }
-  if(typeEl)typeLoop();
-  // promote button
-  var pb=document.getElementById('promote'),toast=document.getElementById('toast');
-  if(pb)pb.addEventListener('click',function(){toast.classList.add('show')});
-  // hero parallax (fine pointers only)
-  if(matchMedia('(pointer:fine)').matches && !reduced){
-    var hp=document.getElementById('heropara'),hv=document.getElementById('herovid');
-    addEventListener('mousemove',function(e){
-      var x=(e.clientX/innerWidth-.5),y=(e.clientY/innerHeight-.5);
-      if(hp)hp.style.transform='translate('+(-x*10)+'px,'+(-y*6)+'px)';
-      if(hv)hv.style.transform='scale(1.06) translate('+(x*12)+'px,'+(y*8)+'px)';
-    },{passive:true});
-  }
+var reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+if(reduced)document.querySelectorAll('video[autoplay]').forEach(function(v){v.removeAttribute('autoplay');try{v.pause()}catch(e){}});
+var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}})},{threshold:.01,rootMargin:'0px 0px -6% 0px'});
+document.querySelectorAll('.rv').forEach(function(el){io.observe(el)});
 
+/* ---------- mascot: ported from web/src/island/mascotEngine.ts ---------- */
+function line(x0,y0,x1,y1){var o=[x0,y0];for(var i=1;i<=6;i++)o.push(x0+(x1-x0)*i/6,y0+(y1-y0)*i/6);return o}
+function at(x,y){return line(x,y,x,y)}
+var GLYPH={
+  y:{C:[626,696,29],L:[495,813,25],R:[757,813,25],B:[626,893,30],S:line(626,696,626,893),w:10},
+  bang:{C:[626,640,0],L:[626,640,0],R:[626,640,0],B:[626,884,27],S:line(626,640,626,800),w:36},
+  smile:{C:[626,736,27],L:[626,736,0],R:[626,736,0],B:[626,806,0],S:[528,800,528,862,626,862,626,806,626,862,724,862,724,800],w:26},
+  orbit:{C:[626,790,0],L:[546,744,22],R:[706,744,22],B:[626,882,22],S:at(626,790),w:0}
+};
+var GLYPH_OF={idle:'y',working:'y',searching:'orbit',approval:'bang',finished:'smile'};
+var MORPH=560,ORB=92;
+function lerp(a,b,t){return a+(b-a)*t}
+function easeBack(t){var c=1.35;return 1+(c+1)*Math.pow(t-1,3)+c*Math.pow(t-1,2)}
+function mixD(a,b,t){return[lerp(a[0],b[0],t),lerp(a[1],b[1],t),lerp(a[2],b[2],t)]}
+function mix(a,b,t){return{C:mixD(a.C,b.C,t),L:mixD(a.L,b.L,t),R:mixD(a.R,b.R,t),B:mixD(a.B,b.B,t),S:a.S.map(function(v,i){return lerp(v,b.S[i],t)}),w:lerp(a.w,b.w,t)}}
+function frameAt(mood,from,to,t,sec){
+  var g=mix(from,to,easeBack(Math.min(1,Math.max(0,t))));
+  var d={C:g.C.slice(),L:g.L.slice(),R:g.R.slice(),B:g.B.slice(),S:g.S.slice(),w:g.w},sparks=[],ring=0;
+  if(mood==='searching'){
+    var ease=function(x){return x<.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2},grow=Math.min(1,t*1.1);ring=ORB*grow;
+    ['B','L','R'].forEach(function(k,i){var ti=sec*.72-i*.075,turn=Math.floor(ti)+ease(ti-Math.floor(ti));
+      var a=Math.PI/2+i*(2*Math.PI/3)+turn*2*Math.PI*grow;
+      d[k]=[lerp(d[k][0],d.C[0]+ORB*Math.cos(a),grow),lerp(d[k][1],d.C[1]+ORB*Math.sin(a),grow),d[k][2]]});
+  }else if(mood==='working'){
+    ['L','R','B'].forEach(function(k,i){var ph=(sec/1.05+i*.33)%1,e=ph*ph*(3-2*ph);
+      sparks.push([lerp(d.C[0],d[k][0],e),lerp(d.C[1],d[k][1],e),15*Math.sin(Math.PI*ph)]);
+      var arrive=Math.max(0,1-Math.abs(ph-.97)*14);d[k][2]*=1+.45*arrive});
+  }else if(mood==='finished'&&t>=1){var k=9*Math.sin(sec*3.4);[3,5,9,11].forEach(function(i){d.S[i]+=k})}
+  else if(mood==='approval'&&t>=1){d.B[2]*=1+.14*(.5+.5*Math.sin(sec*6.6))}
+  return{g:d,sparks:sparks,ring:ring};
+}
+function stemPath(S){var f=S.map(function(v){return v.toFixed(1)});return 'M'+f[0]+' '+f[1]+'C'+f[2]+' '+f[3]+' '+f[4]+' '+f[5]+' '+f[6]+' '+f[7]+'C'+f[8]+' '+f[9]+' '+f[10]+' '+f[11]+' '+f[12]+' '+f[13]}
+var HEAD='<div class="halo"></div><svg viewBox="250 190 750 840"><defs><linearGradient id="GID" x1=".85" y1="0" x2=".15" y2="1"><stop offset="0" stop-color="#fff"/><stop offset=".7" stop-color="#fff"/><stop offset="1" stop-color="#e9ebee"/></linearGradient></defs><g class="head"><path fill="url(#GID)" d="M286 517L283 287C283 231 320 208 358 237L494 332Q626 280 758 332L894 237C932 208 969 231 969 287L966 517C966 562 982 603 963 651C944 694 909 731 880 777L811 890C758 974 698 1006 626 1006C554 1006 494 974 441 890L372 777C343 731 308 694 289 651C270 603 286 562 286 517Z"/><path class="ears" d="M310 496L307 286Q307 236 349 259L465 343Q376 404 310 496ZM942 496L945 286Q945 236 903 259L787 343Q876 404 942 496Z"/><g class="eyes"><path d="M386 518C478 501 558 551 552 650C449 654 387 604 386 518ZM866 518C774 501 694 551 700 650C803 654 865 604 866 518Z"/></g><g class="net"><circle class="trk"/><line class="cl"/><line class="cr"/><path class="stem"/><circle class="nc"/><circle class="nl"/><circle class="nr"/><circle class="nb"/><circle class="s0"/><circle class="s1"/><circle class="s2"/></g></g></svg>';
+var M=[];
+document.querySelectorAll('[data-m]').forEach(function(el,i){
+  el.innerHTML=HEAD.replace(/GID/g,'mg'+i);
+  var q=function(c){return el.querySelector('.'+c)};
+  var mood=el.dataset.state,gl=GLYPH[GLYPH_OF[mood]];
+  M.push({el:el,mood:mood,cur:gl,from:gl,to:gl,t0:-1e9,vis:true,r:{cl:q('cl'),cr:q('cr'),stem:q('stem'),nc:q('nc'),nl:q('nl'),nr:q('nr'),nb:q('nb'),s0:q('s0'),s1:q('s1'),s2:q('s2'),trk:q('trk')}});
+});
+var vio=new IntersectionObserver(function(es){es.forEach(function(e){M.forEach(function(m){if(m.el===e.target)m.vis=e.isIntersecting})})});
+M.forEach(function(m){vio.observe(m.el)});
+function setMood(m,mood){if(m.mood===mood)return;m.from=m.cur;m.to=GLYPH[GLYPH_OF[mood]];m.t0=performance.now();m.mood=mood;m.el.dataset.state=mood}
+function setL(el,p,q,w){el.setAttribute('x1',p[0]);el.setAttribute('y1',p[1]);el.setAttribute('x2',q[0]);el.setAttribute('y2',q[1]);el.setAttribute('stroke-width',w)}
+function setD(el,c){el.setAttribute('cx',c[0]);el.setAttribute('cy',c[1]);el.setAttribute('r',Math.max(0,c[2]))}
+function drawOne(m,now){
+  var t=reduced?1:Math.min(1,(now-m.t0)/MORPH),f=frameAt(m.mood,m.from,m.to,t,reduced?0:now/1000),g=f.g,r=m.r;
+  m.cur=t>=1?m.to:g;
+  setL(r.cl,g.C,g.L,g.w);setL(r.cr,g.C,g.R,g.w);r.stem.setAttribute('d',stemPath(g.S));r.stem.setAttribute('stroke-width',g.w);
+  setD(r.nc,g.C);setD(r.nl,g.L);setD(r.nr,g.R);setD(r.nb,g.B);
+  [r.s0,r.s1,r.s2].forEach(function(el,i){setD(el,f.sparks[i]||[0,0,0])});setD(r.trk,[g.C[0],g.C[1],f.ring]);
+}
+function draw(now){M.forEach(function(m){if(m.vis||reduced)drawOne(m,now)});if(!reduced)requestAnimationFrame(draw)}
+M.forEach(function(m){drawOne(m,performance.now())});
+requestAnimationFrame(draw);
+
+/* ---------- hero island: one job, start to finish; you can take over ---------- */
+GLYPH.flat={C:[626,812,0],L:[522,812,21],R:[730,812,21],B:[626,812,0],S:at(626,812),w:30};GLYPH_OF.stopped='flat';
+var isl=document.getElementById('island'),hero=document.querySelector('.hero'),heroM=M.filter(function(m){return isl.contains(m.el)});
+var ring=document.getElementById('iring'),cnt=document.getElementById('icount'),bar=document.getElementById('ibar'),tick=document.getElementById('itick');
+var files=['Read invoice_2026-02.pdf','Read invoice_2026-03.pdf','Read invoice_2026-05.pdf','Read invoice_2026-07.pdf'],fi=0;
+var CLR={working:'#3b9eff',approval:'#f5a524',finished:'#34d399',stopped:'#ff6b57'};
+function pane(p){isl.querySelectorAll('.pane').forEach(function(x){x.classList.toggle('on',x.dataset.p===p)})}
+function state(mood,open,step,p){
+  heroM.forEach(function(m){setMood(m,mood)});hero.dataset.mood=mood==='stopped'?'approval':mood;pane(p||mood);isl.classList.toggle('open',open);isl.classList.toggle('wait',mood==='approval');
+  ring.style.stroke=CLR[mood];ring.style.strokeDashoffset=50.3*(1-step/4);cnt.textContent=step+'/4';
+  bar.textContent=mood==='approval'?'Waiting for you':(mood==='finished'?'Done':(mood==='stopped'?'Stopped':'1 running'));
+}
+var timers=[],waiting=false,user=false;
+function later(ms,f){timers.push(setTimeout(f,ms))}
+function clear(){timers.forEach(clearTimeout);timers=[]}
+function press(el,f){el.classList.add('press');setTimeout(function(){el.classList.remove('press');f()},180)}
+function cycle(){clear();waiting=false;user=false;isl.classList.remove('user');
+  state('working',false,0);later(1500,function(){state('working',true,1)});later(4200,function(){state('working',true,2)});
+  later(6600,function(){state('approval',true,2);waiting=true;
+    later(2600,function(){if(!user)press(document.getElementById('iopen'),openCard)})})}
+function openCard(){clear();state('approval',true,2,'card');later(2600,function(){if(!user)press(document.getElementById('irun'),approve)})}
+function approve(){clear();waiting=false;state('working',false,3);later(1700,function(){state('finished',true,4)});later(6400,function(){state('finished',false,4)});later(7800,cycle)}
+function deny(){clear();waiting=false;state('stopped',true,2);later(5200,function(){state('stopped',false,2)});later(6600,cycle)}
+function takeOver(){user=true;isl.classList.add('user')}
+isl.addEventListener('pointerenter',function(){if(waiting){takeOver();clear()}});
+document.getElementById('iopen').addEventListener('click',function(){takeOver();openCard()});
+document.getElementById('irun').addEventListener('click',function(){takeOver();approve()});
+document.getElementById('icancel').addEventListener('click',function(){takeOver();deny()});
+if(reduced)state('working',true,2);else{cycle();setInterval(function(){tick.textContent=files[fi++%files.length]},1100)}
+
+/* ---------- Hands stop button ---------- */
+var sb=document.getElementById('stopbtn');
+sb.addEventListener('click',function(){if(sb.classList.contains('done'))return;sb.classList.add('done');sb.innerHTML='✓ Stopped — nothing else will be clicked';setTimeout(function(){sb.classList.remove('done');sb.innerHTML='<span class="sq"></span>Stop Arslan\'s hands'},3200)});
+
+/* ---------- scroll progress ---------- */
+var prog=document.getElementById('prog');
+addEventListener('scroll',function(){var h=document.documentElement.scrollHeight-innerHeight;prog.style.transform='scaleX('+(h>0?scrollY/h:0)+')'},{passive:true});
+
+/* ---------- 01 the loop ---------- */
+var LOOP=[
+ ['01','Message','window · iPhone · voice','/ws/arslan','You ask from the window, from your iPhone, or by voice. Every surface feeds the same conversation and the same loop.',[['host','server/orchestrator/arslan.py'],['iPhone link','server/services/phone_bridge.py'],['voice','desktop/src-tauri/src/voice.rs']]],
+ ['02','Loop','model ⇄ tools','75 s per model call','One native tool-calling loop. The plan is kept by the host, not the model, and a reply cut off half-way continues instead of guessing.',[['loop','server/orchestrator/tool_loop.py'],['model call cap','_CHAT_TIMEOUT_S = 75.0'],['plan','turn_plan.py']]],
+ ['03','Policy','run · ask · forbid','a pure function','Before anything runs, a fixed function of the command text answers run, ask or forbid. Not another model — the same command always gets the same answer.',[['policy','server/services/terminal_policy.py'],['detection','arslan/vendor/hermes (MIT)'],['approval window','approvals.py · 300 s']]],
+ ['04','Sandbox','macOS seatbelt','20 s per tool call','Commands may write only to the work folder, temp and caches. SSH keys, the keychain and Arslan’s own data stay closed, and model keys never reach a command.',[['sandbox','server/services/command_sandbox.py'],['tool call cap','TOOL_TIMEOUT_S = 20.0'],['keys','terminal_exec.py']]],
+ ['05','Result','wrapped as untrusted','then shown','Whatever comes back — a web page, a file, a command’s output — is wrapped as untrusted data, so instructions hidden inside it are read, not obeyed.',[['wrap','server/orchestrator/untrusted.py'],['guard','promise_guard.py'],['ledger','usage ledger · every call']]]
+];
+var lp=document.getElementById('loop'),dt=document.getElementById('dt'),dd=document.getElementById('dd'),ds=document.getElementById('ds'),li=0,ltimer;
+LOOP.forEach(function(n,i){var b=document.createElement('button');b.className='node';b.type='button';b.setAttribute('role','tab');
+  b.innerHTML='<span class="k">'+n[0]+'</span><h3>'+n[1]+'</h3><p>'+n[2]+'</p><div class="m">'+n[3]+'</div><span class="bar"></span>';
+  b.addEventListener('click',function(){lp.classList.add('stopped');clearTimeout(ltimer);showL(i)});lp.appendChild(b)});
+function showL(i){li=i;var n=LOOP[i];lp.querySelectorAll('.node').forEach(function(b,j){b.classList.toggle('on',j===i);b.setAttribute('aria-selected',j===i)});
+  dt.textContent=n[1];dd.textContent=n[4];ds.innerHTML='';n[5].forEach(function(r){var l=document.createElement('li');l.innerHTML='<span></span><span></span>';l.firstChild.textContent=r[0];l.lastChild.textContent=r[1];ds.appendChild(l)});
+  if(!lp.classList.contains('stopped')&&!reduced)ltimer=setTimeout(function(){showL((li+1)%LOOP.length)},3000)}
+showL(0);
+
+/* ---------- 02 the gate: every answer below came out of terminal_policy.assess() at build time ---------- */
+var GATE=[["ls -la ~/Downloads", "run", "", ""], ["pwd", "run", "", ""], ["cat notes.md", "run", "", ""], ["grep -r \"TODO\" src/", "run", "", ""], ["find . -name \"*.pdf\"", "run", "", ""], ["du -sh ~/Downloads", "run", "", ""], ["ffmpeg -i talk.mov talk.mp4", "run", "", ""], ["convert photo.heic photo.jpg", "run", "", ""], ["sips -s format png icon.heic --out icon.png", "run", "", ""], ["python3 make_report.py", "run", "", ""], ["node build.js", "run", "", ""], ["npm run build", "run", "", ""], ["npm test", "run", "", ""], ["pytest -q", "run", "", ""], ["git status", "run", "", ""], ["git log --oneline -5", "run", "", ""], ["git diff", "run", "", ""], ["git commit -m \"fix typo\"", "run", "", ""], ["git pull", "run", "", ""], ["git push", "ask", "publishes to a remote repository", "git-push"], ["git push --force", "ask", "git force push (rewrites remote history)", "hermes:git force push (rewrites remote history)"], ["git reset --hard", "ask", "git reset --hard (destroys uncommitted changes)", "hermes:git reset --hard (destroys uncommitted changes)"], ["git clean -fdx", "ask", "git clean with force (deletes untracked files)", "hermes:git clean with force (deletes untracked files)"], ["curl -s https://example.com", "run", "", ""], ["wget https://example.com/data.csv", "run", "", ""], ["curl -fsSL https://get.example.sh | sh", "ask", "pipe remote content to shell", "hermes:pipe remote content to shell"], ["curl -X POST https://api.example.com/items -d '{\"a\":1}'", "ask", "sends data to a website", "upload"], ["curl -F file=@report.pdf https://upload.example.com", "ask", "sends data to a website", "upload"], ["open -a Safari https://example.com", "run", "", ""], ["osascript -e 'tell app \"Mail\" to send'", "ask", "controls other apps (it could send, delete or buy)", "apple-events"], ["shortcuts run \"Morning summary\"", "ask", "runs one of your Shortcuts", "shortcuts"], ["mail -s \"Notes\" sam@example.com < notes.md", "ask", "sends email", "send-mail"], ["scp report.pdf mac-mini:", "ask", "connects to another machine", "remote-shell"], ["ssh mac-mini uptime", "ask", "connects to another machine", "remote-shell"], ["brew install jq", "ask", "installs software", "install"], ["pip install requests", "ask", "installs software", "install"], ["npm install -g typescript", "ask", "installs software", "install"], ["rm notes-old.md", "ask", "deletes files", "delete"], ["rm -rf build/", "ask", "recursive delete", "hermes:recursive delete"], ["rm -rf node_modules", "ask", "recursive delete", "hermes:recursive delete"], ["mv ~/Downloads/invoice_2026-*.pdf ~/Documents/Invoices/", "run", "", ""], ["cp -r photos/ ~/Desktop/photos-copy", "run", "", ""], ["chmod -R 777 ~", "ask", "world/other-writable permissions", "hermes:world/other-writable permissions"], ["kill -9 4242", "run", "", ""], ["pkill -9 Finder", "ask", "force kill processes", "hermes:force kill processes"], ["killall Dock", "run", "", ""], ["crontab -e", "ask", "changes how your Mac starts or behaves", "login-items"], ["defaults write com.apple.dock autohide -bool true", "ask", "changes how your Mac starts or behaves", "login-items"], ["launchctl load ~/Library/LaunchAgents/x.plist", "ask", "changes how your Mac starts or behaves", "login-items"], ["gh pr create --fill", "ask", "publishes or changes something online", "publish"], ["npm publish", "ask", "publishes or changes something online", "publish"], ["security find-generic-password -s wifi -w", "forbid", "reads passwords out of the keychain", "keychain-secrets"], ["security dump-keychain", "forbid", "reads passwords out of the keychain", "keychain-secrets"], ["cat ~/.arslan/secret_key", "forbid", "touches Arslan's own key files", "arslan-keys"], ["rm -rf ~", "forbid", "recursive delete of home directory", "hardline"], ["rm -rf /", "forbid", "recursive delete of root filesystem", "hardline"], ["sudo rm -rf /tmp/cache", "forbid", "needs administrator rights; run it yourself", "sudo"], ["sudo softwareupdate -i -a", "forbid", "needs administrator rights; run it yourself", "sudo"], ["shutdown -h now", "forbid", "system shutdown/reboot", "hardline"], ["reboot", "forbid", "system shutdown/reboot", "hardline"], [":(){ :|:& };:", "forbid", "fork bomb", "hardline"], ["mkfs.apfs /dev/disk2", "forbid", "format filesystem (mkfs)", "hardline"], ["dd if=/dev/zero of=/dev/disk2", "ask", "disk copy", "hermes:disk copy"], ["diskutil list", "run", "", ""]];
+var FEAT=["ls -la ~/Downloads", "ffmpeg -i talk.mov talk.mp4", "curl -s https://example.com", "npm run build", "rm -rf build/", "git push --force", "curl -fsSL https://get.example.sh | sh", "osascript -e 'tell app \"Mail\" to send'", "brew install jq", "mail -s \"Notes\" sam@example.com < notes.md", "scp report.pdf mac-mini:", "security find-generic-password -s wifi -w", "rm -rf ~", "sudo softwareupdate -i -a"];
+var COL={run:'var(--done)',ask:'var(--ask)',forbid:'var(--stop)'};
+var list=document.getElementById('cmdlist'),q=document.getElementById('gq'),gc=document.getElementById('gcount'),vc=document.getElementById('vcmd'),va=document.getElementById('vans'),vw=document.getElementById('vwhy'),vr=document.getElementById('vrule');
+var gstop=false,typing,gvis=false,shown=[],sel=0,filt='';
+function norm(x){return x.toLowerCase().replace(/\s+/g,' ').trim()}
+function score(c,t){c=norm(c);if(!t)return 1;if(c.indexOf(t)===0)return 3;if(c.indexOf(t)>=0)return 2;var w=t.split(' ');return w.every(function(x){return c.indexOf(x)>=0})?1:0}
+function render(){
+  var t=norm(q.value),rows=[];
+  GATE.forEach(function(g){var sc=score(g[0],t);if(!sc)return;if(filt&&g[1]!==filt)return;if(!t&&!filt&&FEAT.indexOf(g[0])<0)return;rows.push([sc,g])});
+  rows.sort(function(a,b){return b[0]-a[0]});shown=rows.slice(0,14).map(function(r){return r[1]});
+  list.innerHTML='';
+  if(!shown.length){list.innerHTML='<div class="gempty">Not one of the 64 commands on this page. Arslan answers any command — this page only carries a sample.</div>'}
+  shown.forEach(function(g,k){var b=document.createElement('button');b.className='cmd';b.type='button';b.setAttribute('role','option');
+    b.innerHTML='<span class="c"></span><span class="ans '+g[1]+'">'+g[1].toUpperCase()+'</span>';b.firstChild.textContent=g[0];
+    b.addEventListener('click',function(){gstop=true;pick(k)});list.appendChild(b)});
+  var n={run:0,ask:0,forbid:0};GATE.forEach(function(g){n[g[1]]++});
+  gc.textContent=(t||filt?shown.length+' match'+(shown.length===1?'':'es')+' · ':'')+GATE.length+' commands · run '+n.run+' · ask '+n.ask+' · forbid '+n.forbid;
+}
+function mark(){list.querySelectorAll('.cmd').forEach(function(b,j){b.classList.toggle('sel',j===sel);b.setAttribute('aria-selected',j===sel)})}
+function pick(k){if(!shown[k])return;sel=k;mark();show(shown[k])}
+function show(g){clearInterval(typing);va.textContent='…';va.style.color='var(--dim)';vw.textContent='';vr.textContent='';
+  var fin=function(){va.textContent=g[1];va.style.color=COL[g[1]];
+    vw.textContent=g[1]==='run'?'Runs — inside the sandbox.':(g[1]==='ask'?'Asks first: ':'Never: ')+(g[1]==='run'?'':g[2]+'.');
+    vr.textContent=g[3]?'rule · '+g[3]:'rule · default'};
+  if(reduced){vc.textContent=g[0];fin();return}
+  var n=0;vc.textContent='';typing=setInterval(function(){vc.textContent=g[0].slice(0,++n);if(n>=g[0].length){clearInterval(typing);setTimeout(fin,240)}},20)}
+q.addEventListener('input',function(){gstop=true;render();sel=0;if(shown.length)pick(0)});
+q.addEventListener('keydown',function(e){if(e.key==='ArrowDown'){e.preventDefault();pick(Math.min(sel+1,shown.length-1))}else if(e.key==='ArrowUp'){e.preventDefault();pick(Math.max(sel-1,0))}else if(e.key==='Enter'){e.preventDefault();pick(sel)}});
+document.querySelectorAll('#gchips button').forEach(function(b){b.addEventListener('click',function(){gstop=true;filt=b.dataset.f;document.querySelectorAll('#gchips button').forEach(function(x){x.classList.toggle('on',x===b)});render();sel=0;pick(0)})});
+document.querySelector('#gchips button').classList.add('on');
+render();pick(0);
+new IntersectionObserver(function(es){gvis=es[0].isIntersecting}).observe(list);
+setInterval(function(){if(!gstop&&!reduced&&gvis)pick((sel+1)%shown.length)},3200);
+
+/* ---------- 06 what they see ---------- */
+var SEEN={
+ mac:'<span class="k">~/Library/Application Support/Arslan · SQLite</span>\n<b>you</b>     Gather this year\'s invoices from Downloads into one folder.\n<b>arslan</b>  On it. I\'ll gather them into Documents/Invoices.\n<b>memory</b>  Invoices go under Documents/Invoices · since Oct 3 · <span class="k">undo</span>\n<b>job</b>     done · 31 files moved · June missing',
+ prov:'<span class="k">POST to your provider · on your own key</span>\n<b>messages[-1]</b>  "Gather this year\'s invoices from Downloads into one folder."\n<b>tools</b>         run_command, read_file, …\n<span class="k">Only the turns you send. Not your files, not your keychain.</span>',
+ icloud:'',
+ none:'<span class="k">There is no request to show.</span>\nArslan has no servers. Nothing about you is sent to the people who make it.'
+};
+var seen=document.getElementById('seen'),rows=document.querySelectorAll('.wr[data-w]'),scr;
+function cipher(n,seed){var a='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/',o='',x=seed;for(var i=0;i<n;i++){x=(x*1103515245+12345)&0x7fffffff;o+=a[(x>>>16)&63]}return o}
+function showSeen(w){clearInterval(scr);rows.forEach(function(r){r.classList.toggle('on',r.dataset.w===w)});
+  if(w!=='icloud'){seen.innerHTML=SEEN[w];return}
+  var k=1;var draw=function(){seen.innerHTML='<span class="k">CloudKit · private database · zone ArslanBridge</span>\n<b>record</b>  msg-'+cipher(8,k).toLowerCase().replace(/[^a-z0-9]/g,'7')+'\n<b>body</b>    <span class="ct">'+cipher(148,k*7+3)+'=</span>\n<span class="k">ChaCha20-Poly1305 · 12-byte nonce · 16-byte tag · signed Ed25519</span>'};
+  draw();if(!reduced)scr=setInterval(function(){k++;draw()},90);setTimeout(function(){clearInterval(scr)},900)}
+rows.forEach(function(r){r.addEventListener('click',function(){showSeen(r.dataset.w)});r.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();showSeen(r.dataset.w)}})});
+showSeen('mac');
+
+/* ---------- 05 mood picker ---------- */
+var big=M.filter(function(m){return m.el.id==='bigmascot'})[0],mstop=false,moods=['working','searching','approval','finished'],mk=0,mbtn=document.querySelectorAll('#moods [data-mood]');
+function hl(){mbtn.forEach(function(s){s.classList.toggle('on',s.dataset.mood===big.mood)})}
+mbtn.forEach(function(s){s.addEventListener('click',function(){mstop=true;setMood(big,s.dataset.mood);hl()})});
+hl();setInterval(function(){if(mstop||reduced)return;mk=(mk+1)%moods.length;setMood(big,moods[mk]);hl()},2600);
+
+/* ---------- film ---------- */
+var fv=document.getElementById('filmv'),fb=document.getElementById('filmbox');
+document.getElementById('filmplay').addEventListener('click',function(){fb.classList.add('playing');fv.controls=true;fv.play()});
 })();
 </script>
 </body>

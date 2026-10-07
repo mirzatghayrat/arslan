@@ -53,12 +53,14 @@ public final class FrameMapper {
             // A background task's result (its turn streams nothing). The phone's own words come back
             // here too — it already has those.
             guard frame["role"] as? String == "arslan", let id = frame["message_id"] as? Int else { return [] }
+            heldProgress = nil                            // see `endsTurn`
             var event: [String: Any] = ["conversation_id": conversationID, "kind": "message", "message_id": String(id),
                                         "text": frame["content"] as? String ?? "", "final": true]
             if let job = frame["job_id"] as? String { event["job_id"] = job }
             if let run = frame["run_id"] as? Int { event["run_id"] = run }
             return [("chat.event", event)]
         case "error":
+            heldProgress = nil                            // see `endsTurn`
             return [("chat.event", ["conversation_id": conversationID, "kind": "error", "message_id": messageID,
                                     "text": frame["message"] as? String ?? "", "final": true])]
         case "tool_call":
@@ -92,6 +94,7 @@ public final class FrameMapper {
             if frame["by"] as? String == "mac" { body["detail"] = "answered_on_mac" }
             return [("approval.result", body)]
         case "job_update":
+            if frame["phase"] as? String == "finished" { heldProgress = nil }    // see `endsTurn`
             return [("job.event", Self.jobEvent(frame, conversationID: conversationID))]
         default:
             return []
@@ -111,6 +114,13 @@ public final class FrameMapper {
         }
         return "write"
     }
+
+    /// A turn's end drops the step it still holds back: stream_end, an answer to a background task
+    /// (which streams nothing), an error, a job finishing. Before 2026-10-07 only stream_end did, and
+    /// `flush` sent the old step after the end under a newer number; the phone showed "working" again
+    /// (Codex's audit of iPhone build 7). One mapper per conversation: a chat turn running beside a
+    /// job there loses at most its one held line, and its next step or its end comes anyway.
+    static let endsTurn = "stream_end, message, error, finished job_update"
 
     /// A held progress line, once its 2 seconds have passed.
     public func flush(now: Date = Date()) -> [Message] {
@@ -151,6 +161,8 @@ public final class FrameMapper {
         return body
     }
 
+    public static let biometricProof: Set<String> = ["faceid", "touchid"]
+
     /// A phone message → the frames a window would send. Throws `approval_expired` for a
     /// card the Mac no longer has open.
     public func backendFrames(for type: String, body: [String: Any]) throws -> [[String: Any]] {
@@ -161,7 +173,10 @@ public final class FrameMapper {
             guard let id = body["approval_id"] as? String, let kind = cards[id], answered.insert(id).inserted else {
                 throw BridgeError.code("approval_expired")
             }
-            let approve = body["decision"] as? String == "approve" && body["auth"] as? String == "faceid"
+            // A yes counts only with biometric proof the phone vouches for: Face ID or Touch ID (iPhone
+            // SE). Anything else, "none" or unknown, is a no. Before 2026-10-06 only "faceid" counted,
+            // so a Touch ID yes turned into a cancel (iPhone store audit).
+            let approve = body["decision"] as? String == "approve" && FrameMapper.biometricProof.contains(body["auth"] as? String ?? "")
             // Marked, so the Mac can tell the other windows the phone answered it.
             var frame: [String: Any] = ["type": "\(approve ? "confirm" : "cancel")_\(kind.rawValue)", "call_id": id,
                                         "source": "phone"]

@@ -18,6 +18,14 @@ from server.services.memory_migration import migrate_legacy_sync
 from server.services.memory_repository import repository
 
 
+@pytest.fixture(autouse=True)
+def _evidence_has_time(monkeypatch):
+    """These tests check what is counted, not how fast it is written. The 0.5 s production
+    limit may be what dropped one write on a loaded CI runner (main CI 37334224630, attempt 1:
+    request_attempts 0); the warning now names the exception type to tell."""
+    monkeypatch.setattr(request_evidence, "_TIMEOUT_SECONDS", 10)
+
+
 @pytest.fixture
 async def selected(execution_db):
     async with execution_db.kw["bind"].begin() as db:

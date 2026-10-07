@@ -152,6 +152,36 @@ public final class CloudKitStore: EnvelopeStore {
         return out
     }
 
+    /// Each record's `to`, fetched by id (`desiredKeys`: no sealed bytes, no assets). A record that
+    /// is gone is left out; any other failure throws, so the caller concludes nothing (§3.3).
+    public func recipients(of ids: [String]) async throws -> [String: String] {
+        var out: [String: String] = [:]
+        for start in stride(from: 0, to: ids.count, by: 200) {      // well under CloudKit's 400 per request
+            let batch = Array(ids[start..<min(start + 200, ids.count)])
+            let page: [String: String] = try await Transient.retrying {
+                try await withCheckedThrowingContinuation { done in
+                    let op = CKFetchRecordsOperation(recordIDs: batch.map { CKRecord.ID(recordName: $0, zoneID: zoneID) })
+                    op.desiredKeys = ["to"]
+                    op.fetchRecordsCompletionBlock = { records, error in
+                        var got: [String: String] = [:]
+                        for (id, record) in records ?? [:] { if let to = record["to"] as? String { got[id.recordName] = to } }
+                        if let ck = error as? CKError, ck.code == .partialFailure,
+                           ck.partialErrorsByItemID?.values.allSatisfy({ ($0 as? CKError)?.code == .unknownItem }) == true {
+                            done.resume(returning: got)          // the missing ones are simply gone
+                        } else if let error {
+                            done.resume(throwing: error)
+                        } else {
+                            done.resume(returning: got)
+                        }
+                    }
+                    run(op)
+                }
+            }
+            out.merge(page) { $1 }
+        }
+        return out
+    }
+
     /// Whether a record with this id exists in the zone (a direct fetch, not the change feed).
     public func exists(id: String) async throws -> Bool {
         try await withCheckedThrowingContinuation { (done: CheckedContinuation<Bool, Error>) in

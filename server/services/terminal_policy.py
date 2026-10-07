@@ -88,6 +88,18 @@ class Assessment:
     reason: str = ""
 
 
+def _detection_texts(text: str) -> tuple[str, ...]:
+    """The forms Arslan's own rules are matched against: as written, normalized, and Hermes'
+    variants with a newline at every real (quote-aware) command start. `_POS` anchors at a
+    newline, not at `;` `&&` `|` `(`, so without the variants only the first command of a
+    chain was checked: `ls && git push` ran with no card."""
+    return (text, hermes._normalize_command_for_detection(text), *hermes._command_detection_variants(text))
+
+
+def _matches(pattern, texts) -> bool:
+    return any(pattern.search(t) for t in texts)
+
+
 def as_shell(command: str, argv=None) -> str:
     """One shell string from either form the tool accepts ({command} or legacy {command, argv})."""
     command = str(command or "").strip()
@@ -107,17 +119,56 @@ def assess(command: str) -> Assessment:
     hard, desc = hermes.detect_hardline_command(text)[:2]
     if hard:
         return Assessment("forbid", "hardline", desc or "can destroy the system")
-    normalized = hermes._normalize_command_for_detection(text)
+    texts = _detection_texts(text)
     for key, pattern, why in _FORBID_C:
-        if pattern.search(text) or pattern.search(normalized):
+        if _matches(pattern, texts):
             return Assessment("forbid", key, why)
     dangerous, key, desc = hermes.detect_dangerous_command(text)
     if dangerous:
         return Assessment("ask", f"hermes:{key}", desc or "could cause damage")
     for key, pattern, why in _ASK_C:
-        if pattern.search(text) or pattern.search(normalized):
+        if _matches(pattern, texts):
             return Assessment("ask", key, why)
     return Assessment("run")
+
+
+def _hermes_ask_rules(text: str) -> set[str]:
+    """Every Hermes finding for the command, where `detect_dangerous_command` stops at the first."""
+    if hermes._command_parser_limit_exceeded(text):
+        return {f"hermes:{hermes._PARSER_LIMIT_DESCRIPTION}"}
+    if hermes._is_verification_artifact_cleanup(text):
+        return set()
+    found: set[str] = set()
+    for variant in hermes._command_detection_variants(text):
+        lowered = hermes._lower_preserving_flags(variant)
+        masked = hermes._lower_preserving_flags(hermes._mask_quoted_prose(variant))
+        for pattern_re, description in hermes.DANGEROUS_PATTERNS_COMPILED:
+            subject = masked if description in hermes._QUOTE_MASKED_DANGEROUS_DESCRIPTIONS else lowered
+            if pattern_re.search(subject):
+                found.add(f"hermes:{description}")
+    found |= {f"hermes:{d}" for d, _ in hermes._execution_flag_findings(hermes._normalize_command_for_detection(text))}
+    if hermes._is_shell_token_spliced_gateway_lifecycle(text):
+        found.add(f"hermes:{hermes._GATEWAY_LIFECYCLE_SPLICE_DESCRIPTION}")
+    return found
+
+
+def ask_rules(command: str) -> set[str]:
+    """Every ask-rule the command matches. `assess` names only the first, which is what the
+    card shows; a standing answer must be checked against all of them (`standing_allows`)."""
+    verdict = assess(command)
+    if verdict.level != "ask":
+        return set()
+    text = str(command or "")
+    texts = _detection_texts(text)
+    return {verdict.rule} | _hermes_ask_rules(text) | {key for key, pattern, _why in _ASK_C if _matches(pattern, texts)}
+
+
+def standing_allows(command: str, allowed: set[str]) -> bool:
+    """Whether the user's "don't ask again" answers cover this command: every rule it matches
+    must be one of them. `osascript …; curl -d @file …` is "apple-events" to `assess`, but a
+    standing answer for apple-events must not wave the upload through."""
+    rules = ask_rules(command)
+    return bool(rules) and rules <= allowed
 
 
 # 0.1.52: inside the workspace sandbox a plain script can only write to the working
@@ -152,7 +203,7 @@ def runs_freely_in_sandbox(command: str) -> bool:
     if _SCRIPT_REACH.search(text) or _SCRIPT_REACH.search(normalized):
         return False
     for _key, pattern, _why in _ASK_C:                     # Arslan's own ask rules, anywhere
-        if pattern.search(text) or pattern.search(normalized):
+        if _matches(pattern, _detection_texts(text)):
             return False
     lowered = hermes._lower_preserving_flags(text)
     for pattern_re, description in hermes.DANGEROUS_PATTERNS_COMPILED:

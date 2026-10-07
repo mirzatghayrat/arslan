@@ -98,5 +98,7 @@ final class StatusReporterTests: XCTestCase {
         let got = try await phone.receive()
         XCTAssertEqual(got.map(\.type), ["hello", "status.snapshot"])
         XCTAssertTrue(((got[0].envelope["body"] as? [String: Any])?["capabilities"] as? [String] ?? []).contains("status"))
+        XCTAssertTrue(((got[0].envelope["body"] as? [String: Any])?["capabilities"] as? [String] ?? []).contains("touchid"),
+                      "so the phone knows a Touch ID yes counts here")
     }
 }

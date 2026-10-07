@@ -8,6 +8,11 @@ import Foundation
 public struct PairRequest: Equatable {
     public let pairingID: String, requestID: String, phoneID: String, phoneName: String
     public let signing: Data, exchange: Data
+    /// Device ids this phone had in earlier pairings with this Mac (§3.3): removed on accept.
+    public var replaces: [String] = []
+
+    /// At most this many ids are taken from `replaces`; the rest is ignored.
+    public static let maxReplaces = 8
 }
 
 public enum PairDecision: Equatable { case accept, reject(String) }
@@ -75,8 +80,10 @@ public final class PairingHost {
               let exchangeB64 = body["exchange_public_key"] as? String, let exchangeRaw = Data(base64Encoded: exchangeB64),
               exchangeRaw.count == 32, let name = body["device_name"] as? String, !name.isEmpty
         else { throw BridgeError.code("malformed") }
+        // §3.3: the first eight entries; anything that is not a string is skipped.
+        let replaces = (body["replaces"] as? [Any] ?? []).prefix(PairRequest.maxReplaces).compactMap { $0 as? String }
         return (PairRequest(pairingID: pairingID, requestID: packet.header.id.lowercased(), phoneID: packet.header.from,
-                            phoneName: name, signing: signingRaw, exchange: exchangeRaw), nil)
+                            phoneName: name, signing: signingRaw, exchange: exchangeRaw, replaces: replaces), nil)
     }
 
     /// Answer once, after the user's click on the Mac. The code is spent either way.

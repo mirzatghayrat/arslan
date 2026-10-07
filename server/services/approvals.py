@@ -166,10 +166,8 @@ class JobConfirmations:
         verdict = terminal_policy.assess(terminal_policy.as_shell(command, argv))
         if sandbox in ("outside", "retry"):
             # 0.1.51 P3: leaving the sandbox is always a card; a job's card offers no
-            # "rest of the conversation" (jobs never add standing answers).
-            from server.services import command_sandbox
-            if command_sandbox.granted(self.conversation_id):
-                return True
+            # "rest of the conversation" (jobs never add standing answers), and a job never
+            # uses one the chat window was given: that grant is a session grant.
             return await self._ask_with_shadow(protocol.propose_run_command(
                 uuid.uuid4().hex, command, argv, reason=verdict.reason if verdict.level == "ask" else "",
                 sandbox=sandbox, why=why), command, verdict, sandboxed=False)
@@ -177,7 +175,8 @@ class JobConfirmations:
         if not remote_host:
             async with db_session.AsyncSessionLocal() as db:
                 policy = await settings_service.shell_confirm_policy(db)
-                standing = verdict.rule in await terminal_policy.always_allowed(db)
+                standing = terminal_policy.standing_allows(terminal_policy.as_shell(command, argv),
+                                                           await terminal_policy.always_allowed(db))
         # A job never ADDS a standing answer (no "remember" here), but it honours
         # the ones the user gave in a conversation.
         if may_skip_card(remote_host, in_session_allow=False, policy=policy, risk=risk,

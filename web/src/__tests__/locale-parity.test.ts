@@ -276,7 +276,8 @@ describe("locale parity", () => {
     // +6: bundled app icon choices and persistence feedback.
     // +1: externalLink.failed added by fe9c12b5 (native HTTPS refusal).
     // +1: chat.expert_involved (0.1.42 quiet "asked X to help" line replaces the roster notices).
-    expect(enKeys).toHaveLength(1592);
+    // +3: Settings › iPhone device state — Connecting… / Connected / last seen (bridge §3.3).
+    expect(enKeys).toHaveLength(1595);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

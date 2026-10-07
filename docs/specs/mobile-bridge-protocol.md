@@ -103,6 +103,38 @@ Errors: `pairing_invalid` (bad window), `pairing_expired`, `wrong_container`, `u
    decision and sends nothing else before `pair.accept`.
 6. Revocation (Mac settings) sends `device.revoked` and forgets the phone's keys.
 
+### 3.3 Pairing again, removing a phone, device state (added 2026-10-07; additive within v1)
+
+Found on a real iPhone (TestFlight 1.0 (11)): every pairing gives the phone a new device id, and
+unpairing on the phone does not tell the Mac. The same phone scanning again became another row in
+Settings › iPhone (four "iPhone"s), the Mac kept writing to the old ids, and none of those records was
+ever acknowledged: 1,602 stayed in the user's iCloud, and a freshly paired phone paged through them
+all looking for its `pair.accept` and timed out.
+
+1. **`pair.request.replaces`** (optional): an array of up to 8 strings — device ids this phone used in
+   earlier pairings with this Mac. Only when the user **accepts** the request does the Mac remove each
+   of them exactly as Settings › Remove does (item 2), except that it sends them nothing (no
+   `device.revoked`: that phone identity is gone). The Mac takes the first 8 entries and skips any
+   that is not a string; an id it does not know matches nothing; the requesting phone's own id is
+   never removed. A reject removes nothing. A phone that sends no `replaces` pairs as before.
+2. **Removing a phone** (Settings › Remove, or `replaces`): the Mac forgets its keys, deletes from the
+   zone the records it sent that phone that still wait for its `ack`, and stops waiting for them. On
+   Settings › Remove the `device.revoked` it sends first is left for the phone to read (no ack can
+   be read from a forgotten key; the 7-day clean-up takes it). The Mac remembers each waiting
+   record's recipient (`to`) across restarts, so a removal after a restart still finds them.
+3. **At start-up** the Mac deletes the records still waiting for an ack whose recipient is no longer a
+   paired phone. Waiting ids remembered before this change carry no recipient: the Mac reads each
+   record's `to` from the zone by id (that field only). An id the zone no longer has stops being
+   waited for; if the lookup fails, nothing is concluded and nothing is deleted (tried again at the
+   next start). A record addressed to a phone that is still paired is never deleted this way.
+4. **Device state** in the Bridge's `devices` control frame (§6.1): each item is `device_id`, `name`,
+   `paired_at`, `state` and `last_seen?`. `state` is `connecting` while the phone is paired but no
+   authenticated message from it has been read yet, and `connected` from the first one (any type,
+   acks included). `last_seen` (ISO 8601) is when the Mac last read one, kept to the minute and
+   remembered across restarts; absent until then. The Bridge sends a new `devices` frame when a phone
+   becomes connected and when its `last_seen` moves on — at most once a minute per phone, not on
+   every message.
+
 ## 4. Packets
 
 ### 4.1 Keys
@@ -197,7 +229,7 @@ never the content. A lock-screen alert shows generic text unless the user turned
 
 | Type | Direction | Body (`?` optional) |
 | --- | --- | --- |
-| `pair.request` | phone → Mac | `device_name`, `signing_public_key`, `exchange_public_key` |
+| `pair.request` | phone → Mac | `device_name`, `signing_public_key`, `exchange_public_key`, `replaces[]?` (≤ 8 earlier device ids, §3.3) |
 | `pair.accept` | Mac → phone | `phone_device_id`, `mac_device_id`, `device_name`, `signing_public_key`, `exchange_public_key` |
 | `pair.reject` | Mac → phone | `reason` |
 | `hello` | both | `app_version`, `protocol_version`, `capabilities[]` |
@@ -209,7 +241,7 @@ never the content. A lock-screen alert shows generic text unless the user turned
 | `chat.event` | Mac → phone | `conversation_id`, `kind` (message/progress/error), `message_id`, `text`, `final`, `job_id?`, `run_id?` |
 | `job.event` | Mac → phone | `id`, `conversation_id`, `state` (running/done/partial/stuck/stopped), `title`, `current_step`, `completed`, `total`, `plan[]`, `summary?`, `files[]`, `run_id?`, `origin?`, `criteria[]?` |
 | `approval.request` | Mac → phone | `approval_id`, `action`, `target`, `risk` (write/send/delete/install/payment/publish), `task_id`, `task_title`, `expires_at` |
-| `approval.answer` | phone → Mac | `approval_id`, `decision` (approve/deny), `auth` (`faceid` for approve, `none` for deny), `ts` |
+| `approval.answer` | phone → Mac | `approval_id`, `decision` (approve/deny), `auth` (`faceid` or `touchid` for approve, `none` for deny; a Mac that counts `touchid` says `touchid` in its hello capabilities, and a phone sends a Touch ID yes only to such a Mac), `ts` |
 | `approval.result` | Mac → phone | `approval_id`, `outcome` (done/denied/expired/failed), `detail?` |
 | `file.offer` / `file.get` | Mac → phone / phone → Mac | `id`, `name`, `size`, `mime_type`, `sha256` (hex of the plaintext) / `file_id` |
 | `run.get` / `run.result` | phone → Mac / Mac → phone | `run_id` / `run_id`, `conversation_id`, `title`, `state` (working/done/failed/stopped), `started_at`, `duration_ms`, `total`, `steps[]`, `files[]` (§5.5) |
@@ -305,8 +337,8 @@ the existing `confirm_*` / `cancel_*` frames. Its private keys live in its own K
 - Control channel: the Bridge opens `/ws/bridge?token=…` (same origin, same token rules as `/ws/arslan`).
   The backend relays: "new pairing code" → QR shown in Settings; a pending `pair.request` → a card
   "iPhone 'x' wants to connect" that only a click in Arslan's window can accept (never voice, never the
-  phone); device list, revoke, last seen; the two switches (keep awake while a phone is connected,
-  high-risk only on the Mac).
+  phone); device list (with each phone's `state` and `last_seen`, §3.3), revoke; the two switches
+  (keep awake while a phone is connected, high-risk only on the Mac).
 - Conversation channel: one `/ws/arslan/{conversation_id}` per active conversation, mapped by
   `FrameMapper` (BridgeCore). The pocket conversation (no `conversation_id`) is one fixed conversation
   the Bridge creates on first use.

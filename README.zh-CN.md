@@ -1,27 +1,25 @@
 <div align="center">
 
 <a href="https://aralem.dev/arslan/">
-  <img src="docs/assets/banner.jpg" alt="Arslan——一生多：本地优先的个人 AI 编排器（macOS）" width="100%">
+  <img src="docs/assets/readme/banner.jpg" alt="Arslan——干活，先问再动手。Mac 刘海里的 Arslan Island 正在等你批准移动文件。" width="100%">
 </a>
 
 <br/><br/>
 
-**你只需和一个主控 agent 对话。它把活儿派给你亲手养成的人格分身（spawn）。**<br/>
-**它们的提示词会自我进化——但每次改动都必须通过一场留出考试（held-out），**<br/>
-**在*你*按下 Promote 之前，一切都不会上线。**
+**一个住在你 Mac 上的开源 AI agent——也听你 iPhone 的。**<br/>
+**它能用你的终端、操作你的 app，你聊天的时候它在后台接着干。**<br/>
+**凡是以你的名义做的事，都要等*你*点头。**
 
 <br/>
 
+[![Release](https://img.shields.io/github/v/release/mirzatghayrat/arslan?style=flat-square&color=34d399&label=release)](https://github.com/mirzatghayrat/arslan/releases/latest)
 [![License](https://img.shields.io/badge/license-Apache--2.0-4c72e0?style=flat-square)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-macOS--first-8a63f4?style=flat-square)](#项目现状--诚实面对已验证的部分)
-[![Python](https://img.shields.io/badge/python-3.11%2B-e6863c?style=flat-square)](pyproject.toml)
-[![Frontend](https://img.shields.io/badge/react-19_%2B_TS_%2B_Vite-ff9ffc?style=flat-square)](web/)
-[![Status](https://img.shields.io/badge/status-pre--v1-orange?style=flat-square)](#项目现状--诚实面对已验证的部分)
+[![Platform](https://img.shields.io/badge/macOS_11+-Apple_Silicon-111?style=flat-square)](README.md#status--honest-about-whats-proven)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-2ea44f?style=flat-square)](CONTRIBUTING.md)
 
 <br/>
 
-<a href="https://github.com/mirzatghayrat/arslan/releases/latest/download/Arslan-macos-arm64.dmg"><img src="docs/assets/btn/zh-download.png" alt="下载 macOS 版" height="28"></a>&nbsp;&nbsp;<a href="https://aralem.dev/arslan/"><img src="docs/assets/btn/zh-website.png" alt="官网" height="28"></a>&nbsp;&nbsp;<a href="docs/QUICKSTART.md"><img src="docs/assets/btn/zh-quickstart.png" alt="快速上手" height="28"></a>&nbsp;&nbsp;<a href="docs/ARCHITECTURE.md"><img src="docs/assets/btn/zh-architecture.png" alt="架构" height="28"></a>&nbsp;&nbsp;<a href="SECURITY.md"><img src="docs/assets/btn/zh-security.png" alt="安全" height="28"></a>&nbsp;&nbsp;<a href="CONTRIBUTING.md"><img src="docs/assets/btn/zh-contributing.png" alt="参与贡献" height="28"></a>
+<a href="https://github.com/mirzatghayrat/arslan/releases/latest/download/Arslan-macos-arm64.dmg"><img src="docs/assets/btn/zh-download.png" alt="下载 macOS 版" height="28"></a>&nbsp;&nbsp;<a href="https://aralem.dev/arslan/"><img src="docs/assets/btn/zh-website.png" alt="官网" height="28"></a>&nbsp;&nbsp;<a href="docs/QUICKSTART.md"><img src="docs/assets/btn/zh-quickstart.png" alt="快速上手" height="28"></a>&nbsp;&nbsp;<a href="SECURITY.md"><img src="docs/assets/btn/zh-security.png" alt="安全" height="28"></a>&nbsp;&nbsp;<a href="CONTRIBUTING.md"><img src="docs/assets/btn/zh-contributing.png" alt="参与贡献" height="28"></a>
 
 <a href="README.md"><img src="docs/assets/btn/lang-en.png" alt="English" height="22"></a>&nbsp;<img src="docs/assets/btn/lang-zh-on.png" alt="简体中文" height="22">&nbsp;<a href="README.de.md"><img src="docs/assets/btn/lang-de.png" alt="Deutsch" height="22"></a>&nbsp;<a href="README.ja.md"><img src="docs/assets/btn/lang-ja.png" alt="日本語" height="22"></a>&nbsp;<a href="README.es.md"><img src="docs/assets/btn/lang-es.png" alt="Español" height="22"></a>&nbsp;<a href="README.tr.md"><img src="docs/assets/btn/lang-tr.png" alt="Türkçe" height="22"></a>
 
@@ -29,137 +27,125 @@
 
 ---
 
-## 一次请求，端到端跑完
-
 <div align="center">
-  <img src="docs/assets/demo.gif" alt="Arslan 客户端的四个真实界面——编排线程、分身名册、第二大脑、诊断" width="90%">
+  <img src="docs/assets/readme/island.gif" alt="Arslan——干活，先问再动手。Mac 刘海里的 Arslan Island 正在等你批准移动文件。" width="760">
+  <br/>
+  <sub>后台任务实时显示在刘海里：它在干活，移动你的文件之前<b>停下来问你</b>，做完告诉你发现了什么。</sub>
 </div>
 
-<p align="center"><em>你只问一次。主控 agent 挑选合适的分身、拆分任务、在内核沙箱里运行生成的代码，然后给出答案——全程都在同一个线程里。</em></p>
+## 你可以这样问它
 
-<p align="center"><a href="docs/assets/arslan-clay-60s.mp4"><b>▶ 观看 60 秒短片</b></a>——与<a href="https://aralem.dev/arslan/">官网</a>同源的黏土动画短片。<br><sub>上面的界面截图来自已发布的客户端，未经修饰。</sub></p>
+> *“把今年的发票从下载文件夹整理到一个文件夹里，告诉我缺了哪几个月。”*<br/>
+> *“下载文件夹里有多少重复文件？把副本移到废纸篓，保留最新的。”*<br/>
+> *“把 sales_q3.csv 做成一页带图表的报告。”*<br/>
+> *“在备忘录里新建一条笔记，写下这次会议的三个要点。”*<br/>
+> *“每天早上 9 点看一下这个网页，价格变了就告诉我。”*
 
-**Arslan 是一个本地优先（local-first）的个人 AI 编排器。**它跑在你自己的机器上、用你自己的 LLM 密钥，自带**默认安全的内核沙箱**、**诚实护栏**，以及一个可浏览、可编辑的**可见第二大脑**。
+它干活的时候你可以接着聊。凡是删除、发送、安装或操作其他 app 的事，**都会先问你**——在 Mac 上或 iPhone 上。
 
-## 为什么选择 Arslan
+## 一分钟上手
+
+1. **[下载 macOS 版 Arslan](https://github.com/mirzatghayrat/arslan/releases/latest/download/Arslan-macos-arm64.dmg)**（Apple Silicon，macOS 11+）——已签名、已公证，会自动更新。
+2. 把它拖进 **应用程序** 并打开。
+3. 在设置里粘贴一个模型 API key——OpenAI、Anthropic、Gemini、DeepSeek、通义千问、Kimi、OpenRouter 等等——或者通过 **Ollama** 接本地模型。
+
+就这样。不用注册账号，也没有 Arslan 服务器。
+
+## 0.1.53 新功能：操作你 Mac 上的 app
+
+Arslan 现在能通过一个小助手 **Arslan Hands** 读取并使用你 Mac 上的 app——备忘录、邮件、Pages 等等。它读的是窗口的辅助功能树（从不截图），在后台操作：你的鼠标、键盘和最前面的窗口都还是你的。看一个 app，每次对话里每个 app 问一次；动手只在后台任务里进行，每个 app 问一次；凡是删除、发送、付款、购买、转账、提交的按钮，每次都问。**Arslan for iPhone** 的 Mac 端也已就位（设置 › iPhone），黑白图标成为默认。 [完整发布说明 →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.53)
+
+<div align="center">
+  <img src="docs/assets/readme/devices.jpg" alt="Mac 上的 Arslan 正在后台整理发票；iPhone 上的 Arslan 显示一条待批准" width="100%">
+</div>
+
+<p align="center"><sub>Mac 画面：取自 0.1.52 发布片，界面按源码重建，场景为摆拍。iPhone 画面：真实录屏。 <a href="https://aralem.dev/arslan/#film">▶ 60 秒看完整个系统</a></sub></p>
+
+## 为什么是 Arslan
 
 | | |
 |---|---|
-| <img src="docs/assets/icons/users.svg" width="20"><br/>**一支由你亲手养成的人格团队** | Arslan 是前门；门后是你一手组建的专家分身阵容——为它们配上工具、`SKILL.md` 技能包和 MCP 服务器，再让两级进化循环随时间不断打磨它们。 |
-| <img src="docs/assets/icons/graduation-cap.svg" width="20"><br/>**带考试关卡的自我进化** | 分身的提示词会依据自己的运行历史自我修订——然后在留出的历史任务上与在任版本对打,盲评、左右位置互换。它必须**在至少 10 组留出对局中赢下 60% 以上**,并且**没有任何一个维度**(fabrication / identity / completion)**比在任版本更差**。通过 → 一份清晰可读的 diff 送进你的收件箱。**在你按下 Promote 之前,任何改动都不会生效。** |
-| <img src="docs/assets/icons/shield-check.svg" width="20"><br/>**默认安全，而不是一纸免责声明** | 生成的代码在 macOS 内核沙箱里断网运行，沙箱不可用时失效关闭。指定网络命令仅支持受限的公开、无凭证传输。需要凭证的仓库或账号操作仍保持禁用，等待隔离代理和安全验收；不能视为已完成凭证注入能力。 |
-| <img src="docs/assets/icons/brain.svg" width="20"><br/>**可浏览、可修正的第二大脑** | 资料、心得、个人档案和 `[[wiki-link]]` 笔记——FTS5 + 向量嵌入的混合检索,还能以 Obsidian 风格的力导向图浏览。每条记录都带着它何时生效、被什么取代,图谱可以**按生效时刻筛选**——这是对现存条目的筛选,不是历史回放。 |
-| <img src="docs/assets/icons/badge-check.svg" width="20"><br/>**诚实是设计出来的** | 护栏会拦截“我已经做过了”这类凭空捏造,让 agent 的自我汇报始终与真实执行过的内容挂钩。**删除**永远不会自行生效——它会先落进收件箱,由你接受或驳回。主控 agent 的**覆盖**会立即生效,但它写的是一个指针而不是抹掉原文:原记录仍在,一键即可撤销。分身对共享记忆提出的任何改动同样要走收件箱。 |
-| <img src="docs/assets/icons/key-round.svg" width="20"><br/>**本地优先,自带密钥** | 你的机器、你的 API 密钥,中间**没有任何第三方服务器**。配置多家供应商后,你可以开启跨供应商路由(默认只用一个模型);评审(judge)与路由(router)角色始终锁定在你的主模型上,评估不会漂到更便宜的模型上。开箱即带 6 种语言的 i18n 和 6 套主题配色(明暗双版)。 |
+| **一条回路，每个动作都在闸门后面** | 一条消息进入一条原生工具调用回路。模型只负责提议；每条 shell 命令运行前，由一个固定的策略函数——不是另一个模型——给出 **run**、**ask** 或 **forbid**。返回结果一律当作不可信数据包裹，网页里藏的指令只会被读，不会被执行。 |
+| **你聊天，它接着干** | 长任务变成后台任务，这一轮对话随即结束。任务的结局只有 **done**、**partial**、**blocked**、**stopped** 四种——从不悄悄放弃。定时任务最短间隔 15 分钟（最多 10 个），Mac 睡着时错过的不会补跑。 |
+| **状态就在刘海里** | **Arslan Island** 显示它在做什么、需要你时来问、做完了告诉你。还有菜单栏、按住说话，以及随时可按的 Stop。 |
+| **Hands：先问，不擅自** | 通过 Arslan Hands 操作 Mac app、Arslan 自己的浏览器、你的快捷指令、AppleScript。从不在密码框里打字，也从不碰钥匙串访问、密码管理器、系统设置、macOS 安全提示、通知中心和它自己。 |
+| **你的 Mac，装进口袋** | Arslan for iPhone（即将上架 App Store）通过**你自己的私有 iCloud** 与 Mac 通信，端到端加密。同一张批准卡同时出现在两端，谁先点算谁的；无人回应的卡 300 秒后自动拒绝。 |
+| **本地优先，自带 key** | 记忆存在你 Mac 上的 SQLite 里；模型服务商只看到你发出的那几轮，用的是你的 key。**Arslan 不运营任何服务器。** 纠正它一次，它就记住这个做法——还能撤销。 |
+| <img src="docs/assets/icons/shield-check.svg" width="16"> **凭据始终归你** | Arslan 从不获取或注入你的账号凭据。需要凭据的连接器（如 App Store Connect）仍保持禁用，直到隔离的凭据代理通过安全验收——见 [W11](docs/companion/W11-security-boundary.md)。你批准在沙箱外运行的命令，以你自己的权限执行。 |
 
-<sub>后端：FastAPI + 异步 SQLAlchemy/SQLite（`server/`）· 前端：React 19 + TypeScript + Vite（`web/`）· 链路追踪、LLM 评审评测和 Grafana 风格的诊断面板共同为进化循环供能。</sub>
-
-## 走进真实的客户端
-
-<div align="center">
-  <img src="docs/assets/screens.jpg" alt="Arslan 客户端的四个界面——编排线程、分身名册、第二大脑、诊断" width="100%">
-</div>
-
-## 一次请求如何流转
+## 一轮对话，从头到尾
 
 <div align="center">
-  <img src="docs/assets/fig01-request-path.png" alt="FIG. 01——请求路径：一个线程进入，主控 agent 路由至专家分身；下层是内核沙箱与第二大脑" width="100%">
+  <img src="docs/assets/readme/loop.jpg" alt="回路：消息、循环、策略、沙箱、结果——每一步都标出负责它的源码文件" width="100%">
 </div>
 
-## 自我进化，由你把关
+| 步骤 | 发生什么 | 源码位置 |
+|---|---|---|
+| **消息** | 来自窗口、iPhone 或语音——同一个对话，同一条回路 | `server/orchestrator/arslan.py`, `server/services/phone_bridge.py` |
+| **回路** | 原生工具调用；计划由宿主保管；回复被截断时接着写而不是猜；每次模型调用上限 75 秒 | `server/orchestrator/tool_loop.py` |
+| **策略** | `run` · `ask` · `forbid`，命令文本的纯函数 | `server/services/terminal_policy.py`（危险命令检测取自 Hermes Agent，MIT） |
+| **沙箱** | macOS seatbelt：命令只能写工作文件夹、临时目录和缓存；SSH 密钥、钥匙串和 Arslan 数据一律关闭；模型 key 永远不会交给命令；每次工具调用上限 20 秒 | `server/services/command_sandbox.py`, `terminal_exec.py` |
+| **结果** | 包裹成不可信数据、检查后才给你；没真正做过的事被确定性守卫拦下 | `server/orchestrator/untrusted.py`, `promise_guard.py` |
+
+## 闸门
 
 <div align="center">
-  <img src="docs/assets/fig02-promotion-gate.png" alt="FIG. 02——晋升关卡：重写、留出考试、提案卡片、由你晋升；不通过即丢弃，驳回则保留在任版本" width="100%">
+  <img src="docs/assets/readme/gate.jpg" alt="官网上的闸门：输入命令，看 Arslan 的真实判定——读取钥匙串密码为 forbid" width="100%">
 </div>
 
-分身的提示词会被自动修订——但在你看到它之前,它必须先在留出的历史任务上证明自己:至少 10 组非平局对局、其中胜率不低于 60%,且没有任何一个维度比在任版本更差。合成任务上的胜利不能掩盖真实任务上的退步,候选版本也不能靠把回答写长来取胜。不通过 → 直接丢弃,永远不会浮出水面。通过 → 一张附带清晰可读 diff 的提案卡片;改动**只在你点击 Promote 时才落地**。
+| 判定 | 什么时候 | 例子（都是 `terminal_policy.assess()` 的真实输出） |
+|---|---|---|
+| **run** | 读取、列目录、转换、构建、抓网页 | `ls -la ~/Downloads` · `ffmpeg -i talk.mov talk.mp4` · `npm run build` · `curl -s https://example.com` |
+| **ask** | 有破坏性，或以你的名义对外动作 | `rm -rf build/` · `git push --force` · `curl … \| sh` · `osascript …` · `brew install jq` · `mail -s …` · `scp … mac-mini:` |
+| **forbid** | 永远不行，勾了“不再询问”也不行 | `security find-generic-password … -w` · `cat ~/.arslan/secret_key` · `rm -rf ~` · `sudo …` · `shutdown` |
 
-## 可按生效时刻筛选的第二大脑
+“不再询问”按命令种类记住，可在 设置 › 高级 里查看；forbid 的规则永远记不住。闸门防的是失误和网页里夹带的指令——不是牢笼：你放行的命令会以你的权限运行。在[官网](https://aralem.dev/arslan/#gate)试试 64 条命令。
+
+## Hands、后台任务与 iPhone
 
 <div align="center">
-  <img src="docs/assets/fig03-second-brain.png" alt="图 03 — 第二大脑:记忆自动形成,分身通过混合检索读取,模型提出的删除要经过你的收件箱,每条记录都带着生效时刻" width="100%">
+  <img src="docs/assets/readme/hands.jpg" alt="Hands：通过 Arslan Hands 操作 Mac app、浏览器、快捷指令和 AppleScript；看得见、停得下；永远不碰的 app" width="100%">
 </div>
 
-记忆会自行生长——路由器抽取的事实 + 会话结束时的蒸馏——分身再通过 FTS5 + 向量嵌入的混合检索把它读回来。每条记录都带着它何时生效、被什么取代,你可以按生效时刻筛选这张 Obsidian 风格的图谱。这里要说准确:它筛的是**现在还存在**的条目,不是历史回放——删除和就地编辑都不留痕迹,而一条记录的“终止时刻”是从它的后继推出来的,并没有被记录下来。当模型想**删除**某条记忆时,提案会先进你的收件箱;主控 agent 的**覆盖**会立即生效,但被取代的那条仍在,一键即可恢复。
+<div align="center">
+  <img src="docs/assets/readme/iphone.jpg" alt="Mac 与 iPhone：经由你的私有 iCloud 端到端加密（X25519、HKDF-SHA256、ChaCha20-Poly1305、Ed25519），先答者生效，Island 的表情" width="100%">
+</div>
+
+iPhone 链路没有 Arslan 服务器，也没有中转：消息走你私有 iCloud 数据库里的一个 CloudKit 区——X25519 密钥协商、HKDF-SHA256、ChaCha20-Poly1305、Ed25519 签名。送达的消息随即删除；没送达的残留超过 7 天后由 Arslan Mac 版删除——Mac 开着并联网时大约每天检查一次，离线期间的清理等它恢复后再做。
+
+## 隐私
+
+<div align="center">
+  <img src="docs/assets/readme/privacy.jpg" alt="谁能看到什么：本机看到全部，模型服务商只看到你发的那几轮，iCloud 只有密文和路由，Arslan 服务器什么也看不到——因为根本不存在" width="100%">
+</div>
 
 ## 安装
 
-**桌面版就是使用 Arslan 的方式**——已签名、已公证、自动保持最新:
+从源码或用 Docker 运行（贡献者与自托管）：见 **[docs/QUICKSTART.md](docs/QUICKSTART.md)**。
 
-<p><a href="https://github.com/mirzatghayrat/arslan/releases/latest/download/Arslan-macos-arm64.dmg"><b>⬇ 下载 macOS 版 Arslan</b></a>(Apple Silicon)——打开 DMG,把 Arslan 拖进「应用程序」。</p>
+图片与扫描版 PDF 的文字识别、完整的安全说明、环境变量和数据备份，请看[英文 README](README.md#install)（以英文版为准）。
 
-首次启动时在设置里填入你的模型 API key,即可开用。
+## 现状——只说已经证实的
 
-从源码运行或使用 Docker(贡献者 / 自部署):见 **[docs/QUICKSTART.md](docs/QUICKSTART.md)**。
-
-## 安全态势
-
-<div align="center">
-  <a href="docs/companion/W11-security-boundary.md">W11 — Security boundary / verification limits</a>
-</div>
-
-Arslan **默认安全**：
-
-- **默认只监听 localhost。** Dev + localhost 有意不做鉴权（本地便利）。跨站 drive-by 请求会被 TrustedHost + CORS + WebSocket-Origin 检查拦截；非 localhost / 生产部署必须设置下方的白名单。
-- **令牌用在刀刃上。** `prod`、打包构建与非回环绑定都要求 bearer 令牌——自动生成、自动持久化，并可在设置中轮换，绝不会把你锁在门外。
-- **密钥拒绝公开 key。** BYOK 密钥使用 Fernet 加密，其密钥由 `ARSLAN_SECRET_KEY` 经 PBKDF2-HMAC-SHA256 结合每次安装独立的盐派生而来；应用拒绝在内置的公开开发 key 下写入任何密钥。
-- **沙箱失效即关闭。** 生成的代码在 macOS seatbelt 下断网运行；内核沙箱不可用时直接失效关闭，绝不悄悄裸奔。
-
-**没有令牌和 host/origin 白名单，切勿把服务器暴露给不受信任的网络。** 完整威胁模型与报告策略：[SECURITY.md](SECURITY.md)。
-
-<details>
-<summary><b>环境变量（完整参考）</b></summary>
-<br/>
-
-| 环境变量 | 默认值 | 用途 |
-| --- | --- | --- |
-| `ARSLAN_SECRET_KEY` | *(dev 下自动生成)* | 派生用于静态加密已存 BYOK 密钥的 Fernet key。Dev：未设置 → 首次启动时自动生成、持久化到 `~/.arslan/secret_key`，之后一直复用；显式设置的值永远优先（与已持久化文件不一致时会记录一条警告）。在 `prod` 中缺失即启动失败，且**绝不**读取持久化的 dev 文件。 |
-| `ARSLAN_SECRET_KEY_FILE` | `~/.arslan/secret_key` | 仅限 dev：自动生成的密钥的持久化位置——刻意放在数据目录**之外**（备份 = 数据目录 **+** 此文件）。设为**空**可彻底禁用自动生成。在 `prod` 中被忽略。任何会加载服务器配置的 dev 入口（服务器、迁移 CLI、诊断工具）都可能在首次使用时生成它；每次生成都会打印一行说明其位置。 |
-| `ARSLAN_API_TOKEN` | *(空)* | API/WS bearer 令牌。**Dev + localhost 下留空 = 不鉴权**（零阻力本地体验）。对 prod / 打包 / 非回环绑定，首次运行会自动生成令牌（见下文）。 |
-| `ARSLAN_DATA_DIR` | 平台应用数据目录 | 数据库、笔记与密钥的安身之处。未设置 → macOS `~/Library/Application Support/Arslan`、Linux `~/.local/share/Arslan`、Windows `%APPDATA%/Arslan`。**此目录加上你的密钥就是备份单元**（见[数据与备份](#数据与备份)）。 |
-| `ARSLAN_ENV` | `dev` | `dev` 或 `prod`。`prod` 要求令牌并收紧各项默认值；`prod` 中缺失 `ARSLAN_SECRET_KEY` 即启动失败。 |
-| `ARSLAN_ALLOWED_HOSTS` | 仅 localhost | 逗号分隔的 TrustedHost 白名单，供非 localhost / 生产部署使用。 |
-| `ARSLAN_ALLOWED_ORIGINS` | 仅 localhost | 逗号分隔的 CORS + WebSocket-Origin 白名单，供非 localhost / 生产部署使用。 |
-| `ARSLAN_ALLOW_INSECURE_SECRETS` | *(关闭)* | 仅限 dev 的逃生舱：允许在公开默认 key 下写入密钥。**绝不要用于真实密钥。** |
-| `ARSLAN_ALLOW_UNSANDBOXED_PY` | *(关闭)* | 仅限 dev 的逃生舱：在没有任何可用沙箱时，允许生成的 Python **不带沙箱**运行。届时任意代码将带着服务器的权限与网络访问运行；此类运行会被标记为 `sandboxed=false` 以供审计。只在你完全信任的机器上启用。 |
-
-对 prod / 打包（`ARSLAN_PACKAGED=1`）/ 非回环绑定，若 `ARSLAN_API_TOKEN` 为空，应用会在首次运行时**自动生成**令牌，持久化到 `<data_dir>/api_token`（仅属主可读），在启动时打印一次，并允许你在设置中查看/重置。
-
-</details>
-
-<details>
-<summary><b>数据与备份</b></summary>
-<br/>
-
-数据库、笔记、加密后的供应商凭证和交付文件默认位于 `ARSLAN_DATA_DIR`。每次安装的加密盐已存入**数据库内部**，不再依赖独立的 `crypto_salt` 文件。备份前请停止 Arslan，使用[恢复与执行约定](docs/RELIABILITY.md)中的带校验备份工具。恢复只允许写入新目录，不覆盖正在使用的数据。解密密钥请另行保管；访问令牌可以重新生成。
-
-一个刻意的例外：密钥本身住在该目录**之外**。如果你从未亲自设置过 `ARSLAN_SECRET_KEY`，dev 自动生成的值就放在 `~/.arslan/secret_key`——这样，单凭一份拷贝走的数据目录无法解密你存储的供应商密钥（锁和箱子分开旅行）。因此一份完整备份是**两件东西**：数据目录，**加上**密钥（你的环境变量值或那个文件）。
-
-</details>
-
-## 项目现状 — 诚实面对已验证的部分
-
-**Pre-v1。** 我们宁可少说，也不夸大：
-
-- **macOS 优先。** 内核沙箱目前仅支持 macOS seatbelt；在其他平台上它会失效关闭（Linux / Windows 计划稍后通过 Tauri 桌面应用支持）。
-- **自我进化的 agent 团队仍在加固中。** 两级进化循环能够工作，但我们尚不宣称它已完全经受验证——请把它当作正在成熟，而非已经完工。
-- **OpenAI 兼容、Anthropic 和 Gemini 路径均已实现原生工具传输。** 协议测试覆盖工具定义、调用和结果返回，但不等于所有模型和第三方兼容端点都经过真实任务认证。
-- **可执行的版本化任务流程。** 在分身总览中打开“任务流程”，可以编辑步骤依赖、限制并行、查看逐步结果与文件，并在人工确认点或中断后明确继续。这是用户定义的受限流程，不代表任意自由协作团队都能可靠完成任务。
-- **两个会花钱的后台循环出厂即关闭。** 自动进化与睡眠时段整理各自按自己的节奏调用 LLM，因此默认全部关闭——由你在设置中开启。目前还没有可用的花费上限：运行前的估算是已知偏高的高估值，且会随你的语料增长而膨胀，因此不会依据它强制执行任何限制。在修复之前，请在供应商的账单后台设置硬性限额来兜底。
-- 在 v1 之前，API、schema 与默认值都可能发生变化。
+- **Pre-v1。** 目前只支持 Apple Silicon 上的 macOS 11+。沙箱基于 macOS seatbelt；在其他平台上，生成的 Python 会被拒绝，终端命令则在无沙箱状态下运行并如实标明。
+- **自带模型 key。** Arslan 用你的账户跑，费用由你的服务商结算。原生工具调用已实现并对 OpenAI 兼容、Anthropic、Gemini 三条路径做了协议测试——这不等于每个模型或端点都经过实测。
+- **Hands 只看得到当前桌面的窗口**；另一个空间里或被全屏 app 挡住的 app 视为未打开。大窗口（比如笔记很多的备忘录）读一次要 10–20 秒。
+- **Arslan for iPhone 即将上架 App Store**，Mac 端已随 0.1.53 发布。
+- **会自己按时花钱的功能，出厂一律关闭。** 后台记忆整理要在 设置 › 自动化 里手动打开才会调用你的模型；仍建议在服务商的账单后台设个硬上限。
+- v1 之前，API、数据结构和默认值都可能变化。
 
 ## 社区
 
-- <img src="docs/assets/icons/bug.svg" width="14" height="14"> 发现 bug 或有好点子？[提交 issue](https://github.com/mirzatghayrat/arslan/issues)。
-- <img src="docs/assets/icons/heart-handshake.svg" width="14" height="14"> 想搭把手？从 [CONTRIBUTING.md](CONTRIBUTING.md) 开始。
-- <img src="docs/assets/icons/globe.svg" width="14" height="14"> 项目官网源码位于 [`docs/index.html`](docs/index.html)（经 GitHub Pages 提供）。本 README 中的蓝图插图均为手绘 SVG——源文件见 [`docs/diagrams/`](docs/diagrams/)。
+- 发现 bug 或有想法？[提交 issue](https://github.com/mirzatghayrat/arslan/issues)。
+- 想帮忙？先看 [CONTRIBUTING.md](CONTRIBUTING.md)。
+- 项目官网在 [`docs/index.html`](docs/index.html)（GitHub Pages）。本 README 的图片都截自官网。
 
 ## 许可证
 
-Apache-2.0。参见 [LICENSE](LICENSE) 与 [NOTICE](NOTICE)。第三方依赖声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。图标：[Lucide](https://lucide.dev)（ISC）。
+Apache-2.0。见 [LICENSE](LICENSE) 与 [NOTICE](NOTICE)。第三方声明——包括 Hermes Agent（MIT）和 agent-desktop（Apache-2.0，原样随 Arslan Hands 分发）——见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。图标：[Lucide](https://lucide.dev)（ISC）。
 
 ---
 
 <div align="center">
-<sub>如果 Arslan 打动了你，<a href="https://github.com/mirzatghayrat/arslan/stargazers">点一颗 <img src="docs/assets/icons/star.svg" width="12" height="12"> 就能帮更多人发现它</a>。</sub>
+<sub>如果 Arslan 打动了你，<a href="https://github.com/mirzatghayrat/arslan/stargazers">点一颗 <img src="docs/assets/icons/star.svg" width="12" height="12"> 能帮更多人找到它</a>。</sub>
 </div>

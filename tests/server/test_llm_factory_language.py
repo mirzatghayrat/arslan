@@ -17,12 +17,12 @@ from server.services import llm_factory, provider_config_service as pcs, setting
 
 
 @pytest.fixture
-async def db_language():
+async def db_language(monkeypatch):
     """Two-config DB: openai (strong en) vs deepseek (strong zh), balanced strategy."""
     eng = create_async_engine("sqlite+aiosqlite://")
     async with eng.begin() as c:
         await c.run_sync(Base.metadata.create_all)
-    db_session.AsyncSessionLocal = async_sessionmaker(eng, expire_on_commit=False)
+    monkeypatch.setattr(db_session, "AsyncSessionLocal", async_sessionmaker(eng, expire_on_commit=False))
     async with db_session.AsyncSessionLocal() as s:
         # openai: en=10, zh=7 → strong English
         oa = await pcs.add_config(s, label="OpenAI", provider="openai",

@@ -40,6 +40,8 @@ class _Exec:
 
 
 class _Cards:
+    honours_session_grants = True      # like the chat window's callback
+
     def __init__(self, *answers):
         self.answers = list(answers)
         self.calls: list[dict] = []
@@ -152,3 +154,48 @@ async def test_a_background_job_asks_with_a_card_and_never_grants(monkeypatch):
     job = approvals.JobConfirmations("c9")
     assert await job.command("mv a ~/b", [], sandbox="retry") is True
     assert frames[0]["sandbox"] == "retry" and not command_sandbox.granted("c9")
+
+
+async def test_a_background_job_never_inherits_the_conversations_sandbox_grant(monkeypatch):
+    """The grant ("for the rest of this conversation") belongs to the chat window that
+    gave it; a background job on the same conversation still asks, every time."""
+    from server.services import approvals
+    frames = []
+
+    async def ask(cid, frame):
+        frames.append(frame)
+        return False
+    monkeypatch.setattr(approvals, "ask", ask)
+    command_sandbox.grant("c9")
+    job = approvals.JobConfirmations("c9")
+    assert await job.command("mv a ~/b", [], sandbox="retry") is False
+    assert [f["sandbox"] for f in frames] == ["retry"]
+
+
+async def test_a_job_on_a_granted_conversation_starts_inside_the_sandbox(monkeypatch):
+    from server.services import approvals, settings_service
+    from unittest.mock import AsyncMock
+    monkeypatch.setattr(settings_service, "shell_confirm_policy", AsyncMock(return_value="ask_risky"))
+    frames = []
+
+    async def ask(cid, frame):
+        frames.append(frame)
+        return False
+    monkeypatch.setattr(approvals, "ask", ask)
+    command_sandbox.grant("c9")
+    ex = _Exec()
+    r = await _dispatch(monkeypatch, {"command": "ls"}, executor=ex,
+                        cards=approvals.JobConfirmations("c9").command, cid="c9")
+    assert ex.outside == [False] and "ran_outside_sandbox" not in r
+    assert [f.get("sandbox") for f in frames] == ["retry"]          # asked, declined
+    ex = _Exec()
+    await _dispatch(monkeypatch, {"command": "ls", "outside_sandbox": True}, executor=ex,
+                    cards=approvals.JobConfirmations("c9").command, cid="c9")
+    assert ex.outside == [] and frames[-1]["sandbox"] == "outside"
+
+
+async def test_an_unattended_turn_never_inherits_the_conversations_sandbox_grant(monkeypatch):
+    command_sandbox.grant("c1")
+    ex = _Exec(stop=False)
+    r = await _dispatch(monkeypatch, {"command": "ls"}, executor=ex, cards=None, cid="c1")
+    assert ex.outside == [False] and "ran_outside_sandbox" not in r

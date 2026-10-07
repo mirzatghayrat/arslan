@@ -30,7 +30,7 @@ The pairing keys (in the iOS keychain), an encrypted local record of recent mess
 We do not share any data with anyone. The AI model service is one you choose and contract with yourself, on your Mac; your Mac sends it your requests under that service's terms.
 
 ### Keeping and deleting data
-Records in your iCloud are deleted once they have been delivered, and Arslan for Mac deletes anything left over after 7 days (for example, messages for a phone that stayed switched off). You can remove a paired phone at any time on your Mac (Settings › iPhone) or on your iPhone (Settings › Unpair). You can also delete the app's data from your iCloud in iOS Settings › your name › iCloud.
+Records in your iCloud are deleted once they have been delivered. Anything left over (for example, messages for a phone that stayed switched off) is deleted by Arslan for Mac once it is more than 7 days old: the Mac checks about once a day while it is running and online, so if it is off or offline for a while, the clean-up happens when it is back. You can remove a paired phone at any time on your Mac (Settings › iPhone) or on your iPhone (Settings › Unpair). You can also delete the app's data from your iCloud in iOS Settings › your name › iCloud.
 
 ### Children
 Arslan is not directed to children.
@@ -71,7 +71,7 @@ AI 智能体运行在你的 Mac 上。为了回答你，Arslan Mac 版会把你�
 我们不与任何人共享任何数据。AI 模型服务由你自己在 Mac 上选择并签约；你的 Mac 依照该服务的条款把请求发给它。
 
 ### 保留与删除
-你 iCloud 里的记录在送达后即被删除；没能送达的（比如发给一台一直关机的手机），Arslan Mac 版会在 7 天后删除。你可以随时在 Mac 上（设置 › iPhone）或 iPhone 上（设置 › 解除配对）移除已配对的手机，也可以在 iOS 的 设置 › 你的名字 › iCloud 里删除这个 App 在 iCloud 中的数据。
+你 iCloud 里的记录在送达后即被删除。没能送达的（比如发给一台一直关机的手机），超过 7 天后由 Arslan Mac 版删除：Mac 开着并联网时大约每天检查一次；如果 Mac 关机或离线了一段时间，等它恢复后再清理。你可以随时在 Mac 上（设置 › iPhone）或 iPhone 上（设置 › 解除配对）移除已配对的手机，也可以在 iOS 的 设置 › 你的名字 › iCloud 里删除这个 App 在 iCloud 中的数据。
 
 ### 儿童
 Arslan 不面向儿童。

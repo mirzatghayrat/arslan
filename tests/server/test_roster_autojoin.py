@@ -5,7 +5,13 @@ from server.services import roster_service
 async def _aw(v): return v
 
 @pytest.mark.asyncio
-async def test_dispatch_autojoins_roster(monkeypatch):
+async def test_dispatch_autojoins_roster(monkeypatch, execution_db):
+    # Its own test DB: dispatch reads the memory tables. It used to pass only when an earlier
+    # test had leaked its engine into db_session.AsyncSessionLocal; alone it failed (2026-10-06).
+    from server.db.models import Spawn
+    async with execution_db() as db:          # the run row it records refers to spawn 4
+        db.add(Spawn(id=4, name="x", domain_category="g", system_prompt="sp"))
+        await db.commit()
     joined = []
     async def fake_join(conversation_id, spawn_id, *, via): joined.append((conversation_id, spawn_id, via))
     async def fake_list(conversation_id): return []
