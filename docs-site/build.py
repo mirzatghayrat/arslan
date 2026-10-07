@@ -131,9 +131,9 @@ tbody th{color:var(--tx);font-weight:600;min-width:96px}tbody tr:last-child>*{bo
 .grid2,.grid3{display:grid;gap:16px;margin:20px 0}.grid2{grid-template-columns:repeat(2,minmax(0,1fr))}.grid3{grid-template-columns:repeat(3,minmax(0,1fr))}
 .card{background:linear-gradient(180deg,var(--s2),var(--s1));border:1px solid var(--line);border-radius:16px;padding:20px 22px}
 .card h3,.card h4{margin-top:0}.card p{font-size:14.5px}
-.flow{display:flex;gap:26px;flex-wrap:wrap;margin:24px 0}
-.flow-step{flex:1;min-width:150px;position:relative;background:var(--s1);border:1px solid var(--line2);border-radius:14px;padding:16px 18px;font-size:14px}
-.flow-step:not(:last-child):after{content:"→";position:absolute;right:-20px;top:36%;color:var(--work)}
+.flow{display:flex;gap:22px;flex-wrap:wrap;margin:24px 0}
+.flow-step{flex:1;min-width:120px;position:relative;background:var(--s1);border:1px solid var(--line2);border-radius:14px;padding:16px 18px;font-size:14px}
+.flow-step:not(:last-child):after{content:"→";position:absolute;right:-17px;top:36%;color:var(--work)}
 .flow-step b{display:block;font-size:15.5px;margin-bottom:4px}.flow-step span{color:var(--mu);font-size:12.5px}
 .stage{position:relative;margin-left:8px;padding:6px 0 22px 30px;border-left:1px solid var(--line2)}
 .stage:before{content:"";position:absolute;left:-5px;top:16px;width:9px;height:9px;border-radius:50%;background:var(--work);box-shadow:0 0 12px var(--work)}
@@ -185,9 +185,9 @@ var toc=document.getElementById('toc');var current=null;
 function buildToc(ch){if(ch===current)return;current=ch;toc.innerHTML='<p class="lbl">本章</p>';
   [].slice.call(ch.querySelectorAll('h3[id]')).forEach(function(h){var a=document.createElement('a');a.href='#'+h.id;a.textContent=h.textContent;toc.appendChild(a)})}
 function onScroll(){var h=document.documentElement.scrollHeight-innerHeight;prog.style.transform='scaleX('+(h>0?scrollY/h:0)+')';
-  var cur=chapters[0];chapters.forEach(function(c){if(c.getBoundingClientRect().top<140)cur=c});
+  var cur=chapters[0];chapters.forEach(function(c){if(c.getBoundingClientRect().top<innerHeight*0.35)cur=c});
   side.forEach(function(a){a.classList.toggle('on',a.dataset.ch===cur.id)});buildToc(cur);
-  var hs=[].slice.call(cur.querySelectorAll('h3[id]')),on=null;hs.forEach(function(h){if(h.getBoundingClientRect().top<160)on=h});
+  var hs=[].slice.call(cur.querySelectorAll('h3[id]')),on=null;hs.forEach(function(h){if(h.getBoundingClientRect().top<innerHeight*0.35)on=h});
   [].slice.call(toc.querySelectorAll('a')).forEach(function(a){a.classList.toggle('on',on&&a.hash==='#'+on.id)})}
 addEventListener('scroll',onScroll,{passive:true});addEventListener('resize',onScroll);onScroll();
 var menu=document.getElementById('menu');menu.addEventListener('click',function(){document.body.classList.toggle('menu-open');menu.setAttribute('aria-expanded',document.body.classList.contains('menu-open'))});
