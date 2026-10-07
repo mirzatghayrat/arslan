@@ -234,6 +234,17 @@ browser notices; see `server/resources/browser_runtime/package-lock.json`.
 
 ---
 
+## Terminal command safety — `arslan/vendor/hermes/` (0.1.48+)
+
+### NousResearch/hermes-agent — MIT License
+- <https://github.com/NousResearch/hermes-agent>, Copyright (c) 2025 Nous Research. The
+  MIT License text ships with the code as `arslan/vendor/hermes/LICENSE`.
+- Vendored: `tools/approval_detection.py` at commit
+  `6b2fe92af66a95ea6a5caa309e05c5643cdd79de` (main, 2026-10-01), with one change (the
+  `ansi_strip` import path), plus `ansi_strip.py`. They provide the dangerous-command
+  detection that `server/services/terminal_policy.py` uses for its ask and forbid answers;
+  Arslan's own outward-action and credential rules live in that policy file.
+
 ## Arslan Hands — `Arslan.app/Contents/Resources/hands/` (desktop 0.1.53+)
 
 ### lahfir/agent-desktop — Apache License 2.0 (verified 2026-10-03)

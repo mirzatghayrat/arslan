@@ -1,0 +1,42 @@
+<section class="chapter" id="quality"><h2><span class="num">12 / 测试与验证</span>如何判断任务做得对</h2>
+<p>一个任务结束、一份文件能打开、一份报告内容正确，是三种不同的判断。Arslan 用运行记录说明发生了什么，用产物与契约检查验证能够确定的部分，再用真实任务评测观察模型表现。任何一层通过，都不能替代其他层。</p>
+<div class="note">本节汇总公开源码、发布说明与历史实验记录。数字对应各自版本和环境，不表示这些测试在本文编写时全部重跑，也不表示全部功能都经过真实设备和真实模型验收。</div>
+<h3>先把“完成”拆成可检查的证据</h3>
+<div class="grid3"><div class="card"><h3>执行是否发生</h3><p>工具调用有没有返回？退出码是什么？动作结果是明确成功、明确失败，还是未知？模型写下“已完成”不能替代工具证据；结果未知的副作用也不能当作可以安全再执行一次。</p></div><div class="card"><h3>交付物是否成立</h3><p>文件是否存在、属于本任务、字节数与哈希是否匹配、格式能否解析？表格能打开不等于数据正确，图片尺寸正确也不等于排版合格。</p></div><div class="card"><h3>任务要求是否满足</h3><p>要求十条有效结果，六条就没有满足要求。引用来源必须与结论对应；读过网页不能证明其中支持某个说法。这一层仍需要任务专用校验与人工判断。</p></div></div>
+<p>任务验收体系保留规则检查、模型评估和人工复核的区别。文本、JSON、文件完整性、图像尺寸和实际执行结果可以采用确定性检查；模型评估只能覆盖适合它判断的部分，不能把没有运行的检查改成成功。产物解析成功证明结构可读，来源读取记录证明系统拿到过内容，它们都不自动证明事实或视觉质量。</p>
+<p class="evidence">{{source:docs/companion/W10-acceptance.md|验收规则与产物检查的边界}}；<a href="https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.53">0.1.53：未完成任务明确显示 Not done</a>。</p>
+<h3>测试分层：每层回答一个问题</h3>
+<div class="table-wrap"><table><thead><tr><th>证据层</th><th>检查对象与例子</th><th>不能据此推出什么</th></tr></thead><tbody>
+<tr><th>单元与契约</th><td>参数校验、状态转换、错误分类、序列化、权限决策；合法输入与篡改、重放等负例</td><td>真实模型必然选择正确工具，或所有第三方服务永远兼容</td></tr>
+<tr><th>服务集成</th><td>数据库、运行记录、取消、产物导出、恢复与权限回调真正连通；模型可用确定性替身</td><td>替身跑通就是自然语言任务被真实模型完成</td></tr>
+<tr><th>平台运行</th><td>macOS 沙箱和系统接口在指定环境实际运行，缺依赖或跳过不能算通过</td><td>所有系统版本、权限组合与应用都兼容</td></tr>
+<tr><th>最终安装包</th><td>冻结依赖、前端资源、认证、真实 WebSocket 握手和 helper 随安装包交付</td><td>所有真实任务的完成率与交互品质已验证</td></tr>
+<tr><th>真实任务评测</th><td>固定模型、任务、授权与检查规则，多次运行并保存成功和失败</td><td>小样本代表总体成功率，或普遍优于其他产品</td></tr>
+<tr><th>精确产物的实机验收</th><td>指定分发包在真实设备、权限状态与服务中完成链路</td><td>相邻构建或模拟器通过可以替代本次分发包的全部实机检查</td></tr>
+</tbody></table></div>
+<p>例如，2026 年 9 月可靠性工作提供了 30 项固定的零外部模型费用契约，真实执行存储、取消、产物、备份和权限等代码，但使用确定性 provider 替身。这是工程契约证据，不是 30 个真实模型端到端任务。后来的付费评测属于另一层证据，二者不能混成同一个成功率。</p>
+<p>测试还需要证明自己确实执行了。v0.1.53 的 macOS CI 解析 JUnit 报告，要求 <strong>49 个指定平台用例实际执行且零跳过</strong>。Hands 的 Python 与 Rust 端使用共享契约样例；Bridge 两端使用共享协议向量。对于关键保护，变异检查会临时破坏规则并确认测试变红，以发现只验证实现表象、没有约束行为的用例。</p>
+<p class="evidence">{{source:docs/EVALUATION.md|工程契约与模型质量的区分}}；{{source:.github/workflows/ci.yml|平台用例数量与跳过门禁}}；{{source:docs/companion/0.1.41-review-and-residency.md|来源审阅的回归与变异检查}}。</p>
+<h3>发布验证必须绑定到源码和产物</h3>
+<div class="flow"><div class="flow-step"><b>源码与 CI</b><span>后端／前端／macOS<br>完整历史凭据扫描</span></div><div class="flow-step"><b>同一 SHA 门禁</b><span>待发布提交<br>有对应成功 CI</span></div><div class="flow-step"><b>构建与签名</b><span>SPA、Python、helpers<br>应用与安装包</span></div><div class="flow-step"><b>安装验收</b><span>公证、staple、Gatekeeper<br>隔离配置实际启动</span></div><div class="flow-step"><b>分发与更新</b><span>Release、更新清单<br>更新产物签名</span></div></div>
+<p>Fresh-install 检查使用隔离的全新 HOME 启动应用，覆盖认证、WebSocket 的真实 101 握手、前端资源、OCR 和 helper。只检查健康接口返回 200 不够：早期安装包曾在 HTTP 服务正常时完全无法建立聊天连接。</p>
+<p>v0.1.53 的公开发布记录对应提交 <code>efc1c271</code>：主 CI 第二次尝试成功，首次有已披露的顺序相关测试波动；发布流程的源码验证、构建与 Release 步骤成功；App 和 DMG 公证被接受并 staple，Gatekeeper 接受。发布应用的 fresh-install 检查为 <strong>87 通过、0 失败</strong>，包括 Hands 启动与 Bridge 自检。</p>
+<p><strong>实机交互证据来自另一份明确标识的构建。</strong>Notes 测试中，后台任务通过 Hands 创建并读回笔记，第一次审批卡等待 36 秒后仍能继续；文件重命名任务使用 <code>mv</code>，没有操作 Finder 窗口。这些测试使用较早的 build-only 包，提交为 <code>43751254</code>，与正式发布提交的差异为版本号及说明文档。它不是最终发布的同一个 SHA；发布说明也明确披露，发布前没有手动安装精确的最终 DMG 完整操作一次。安装检查和较早构建的 Notes 实测应分别陈述。</p>
+<p class="evidence"><a href="https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.53">0.1.53 的完整验证记录</a>；{{source:.github/workflows/release.yml|发布流水线}}；{{source:packaging/fresh_install_check.py|安装检查}}；{{source:packaging/build_dmg.sh|打包与签名}}。</p>
+<h3>真实任务数据：保留对照，也保留短板</h3>
+<p>2026 年 10 月 3 日的 0.1.51 评测使用 <code>deepseek-v4-pro</code>，与当轮 Hermes 对照，四类任务各运行三次。“验收通过”指 checker score=3，不等于运行状态为 done。费用与时间为每类三次运行的均值，包含失败结果；费用按当轮低峰价。时间是首个模型请求开始至最后请求结束的跨度，既不是完整任务端到端耗时，也不是纯模型推理时间。</p>
+<div class="table-wrap"><table><thead><tr><th>任务</th><th>Arslan 验收通过 / 3</th><th>Hermes 验收通过 / 3</th><th>均值费用与模型调用区间：Arslan / Hermes</th><th>这组证据说明什么</th></tr></thead><tbody>
+<tr><th>提醒事项</th><td>3/3</td><td>2/3</td><td>$0.025、76 s / $0.058、142 s</td><td>这轮结果较好，样本仍很小</td></tr>
+<tr><th>职位研究表</th><td>1/3</td><td>3/3</td><td>$0.167、313 s / $0.093、160 s</td><td>结果数量与研究完整性仍有缺口</td></tr>
+<tr><th>Apple 财务表</th><td>3/3</td><td>3/3</td><td>$0.041、77 s / $0.026、36 s</td><td>都通过；对照请求区间更短、费用更低</td></tr>
+<tr><th>整理下载目录</th><td>3/3</td><td>3/3</td><td>$0.053、113 s / $0.046、100 s</td><td>验收通过数相同</td></tr>
+</tbody></table></div>
+<p>这组实验适合定位改进方向，不适合形成总体产品排名。模型、任务、环境和审批策略都会影响结果。该轮还经历余额用尽与续跑；四次零费用失败请求从计时用的 usage log 中移除，原日志被保留。公开实验记录保留了这些过程条件，读取汇总时也应一并考虑。</p>
+<p>版本比较同样需要限制解释：提醒事项样本从 0.1.49 的 1/3 变为 0.1.50 的 3/3，恢复路线和上下文状态在这一阶段得到改进。但版本之间有多项变化，不能把全部差异严格归因于某一条提示词或单个模块。</p>
+<p class="evidence">{{source:docs/plans/2026-10-03-p3-acceptance.md|0.1.51 实验方法与过程}}；{{source:docs/companion/0.1.51-island-sandbox.md|四任务汇总}}；{{source:docs/companion/0.1.50-context.md|恢复路线的阶段评测}}。</p>
+<h3>模型评审也需要被评审</h3>
+<p>0.1.41 来源审阅校准中，13 份报告产生 14 个提示：1 个正确、2 个边缘、11 个错误，同时漏掉两项预先登记的已知错误。该能力因此保持默认关闭。调用另一个模型并没有自动获得可靠的事实核查器；格式合法、锚点存在，也不能保证批评内容成立。</p>
+<p>0.1.52 的经验学习验证则呈现另一种边界：一次 AppleScript 被拒后，经验被保存、召回，下一次直接选择 EventKit，证明经验能够影响执行。但是后续脚本编辑与检查产生更多调用，没有测出提速。要判断经验本身是否提高效率，需要在相同任务上进行有经验／无经验的配对重复实验；当时的记录明确说明这项公平速度对照尚未运行。</p>
+<p>更强的质量结论需要预先冻结任务、交付物和检查标准，记录模型与配置、调用轨迹、实际费用及失败原因，并用独立人工标注校准模型评分。格式不合法的评分、没有运行的检查、无法取得的证据，都应保留自己的状态，不能为了汇总好看而计为通过。</p>
+<p class="evidence"><a href="https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.41">来源审阅公开校准结果</a>；{{source:docs/plans/2026-10-03-0152-acceptance.md|经验学习的通过项与未证明项}}；{{source:docs/EVALUATION.md|更强质量结论所需的评测条件}}。</p>
+</section>

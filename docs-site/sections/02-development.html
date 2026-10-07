@@ -1,0 +1,18 @@
+<section class="chapter" id="development"><h2><span class="num">02 / 独立开发与开源</span>一个人，借助 AI，把应用做成系统</h2>
+<blockquote><p>Arslan 是我独立通过 AI 辅助开发做出来的项目，也就是通常所说的 vibe coding。从最初的原型到后续版本，项目一直由我独立推进。</p></blockquote>
+<p>这里的“独立开发”指项目整体由作者独立推进，AI 是实现过程中的协作工具。Arslan 同时建立在开源框架、系统 API、外部模型与第三方组件之上。开发方式、项目责任和组件来源各有清晰含义；下文讨论的，是最终进入产品的设计与实现。</p>
+<h3>从生成代码到维护一个可用产品</h3>
+<p>一段代码能运行，只覆盖产品的一小部分。桌面应用还要解决服务如何启动、窗口怎样连接、旧数据库怎样升级、进程被结束后如何清理、系统权限由谁持有，以及安装包在没有开发环境的机器上能否工作。Agent 又增加了新的不确定性：模型会超时、工具参数会截断、网页可能读不全，执行到一半也可能需要用户批准。</p>
+<p>这些问题把 Arslan 的迭代逐渐推向四个方向：用明确契约约束输入与状态，用可观察的工具结果核对完成情况，用权限边界控制实际副作用，用测试与发布验收检查更改是否成立。AI 辅助可以加快实现与排查，但最终交付需要这些约束共同支撑。</p>
+<div class="grid2"><div class="card"><h3>敢于删掉早期假设</h3><p>早期围绕专家分身组织能力，后来收敛到一个统一的 Arslan。工具和方法可以继续复用，用户入口与执行主路径则随着真实问题重新设计。</p></div><div class="card"><h3>保留没有改善的证据</h3><p>增加审阅层、学习经验或并行能力，并不必然提高任务效果。项目记录过审阅失败、研究任务落后和学习后未提速的结果，为下一轮修改提供具体方向。</p></div></div>
+<h3>哪些工作属于 Arslan，哪些来自依赖</h3>
+<div class="table-wrap"><table><thead><tr><th>组成</th><th>在项目中的角色</th></tr></thead><tbody>
+<tr><th>应用与运行系统</th><td>Arslan 将界面、模型适配、统一循环、任务状态、记忆、工具权限和桌面交付组织为可安装的个人应用。</td></tr>
+<tr><th>基础框架</th><td>React、Tauri、FastAPI、SQLAlchemy、SQLite 等承担通用界面、宿主、服务与持久化能力。</td></tr>
+<tr><th>模型</th><td>模型通过用户配置的端点调用。Arslan 提供应用运行环境与执行链路，没有在此项目中训练一个新的基础模型。</td></tr>
+<tr><th>桌面自动化组件</th><td>Hands 使用未修改的 <code>agent-desktop 0.9.4</code>（Apache-2.0），Arslan 在外层实现独立 helper、身份验证和权限策略。</td></tr>
+<tr><th>终端规则来源</th><td>部分破坏性命令与安全底线规则复用 Hermes Agent 的 MIT 许可代码，再结合 Arslan 的对外行为与凭证规则。</td></tr>
+</tbody></table></div>
+<p>项目以 Apache-2.0 开源，第三方组件的许可和归属见 THIRD_PARTY_NOTICES.md；Hermes Agent 的 MIT 许可另随源码保存在 arslan/vendor/hermes/LICENSE。开源让实现、限制和演进过程可被检查，也让“为什么这么做”成为文档的一部分。</p>
+<p class="evidence">作者开发方式来自作者说明。实现与归属：{{source:LICENSE|项目许可证}}；{{source:THIRD_PARTY_NOTICES.md|第三方组件归属}}；{{source:docs/companion/ADR-001-native-runtime.md|运行核心的架构选择}}；{{source:docs/companion/0.1.48-one-loop.md|统一循环重构}}。</p>
+</section>
