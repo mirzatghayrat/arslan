@@ -40,6 +40,11 @@ export interface AskCardProps {
   /** Answers to ⌘⏎ / esc while it is the top surface. Off when shown as a preview. */
   keys?: boolean;
   testId?: string;
+  /** Extra attributes on the card (e.g. data-kind), and stable test ids for the two answers. */
+  attrs?: Record<string, string>;
+  allowTestId?: string;
+  saidTestId?: string;
+  declineTestId?: string;
   className?: string;
 }
 
@@ -53,7 +58,7 @@ export function AskCard(p: AskCardProps) {
   const top = useLayer(p.keys !== false);
   useAnswerKeys(top && !p.busy, { onAllow: p.onAllow, onDecline: p.onDecline });
   return (
-    <section data-testid={p.testId ?? "ask-card"} role="alertdialog" aria-label={p.who}
+    <section data-testid={p.testId ?? "ask-card"} role="alertdialog" aria-label={p.who} {...p.attrs}
       className={`flex w-full max-w-[460px] flex-col gap-3.5 rounded-2xl border border-border bg-surface px-5 pb-4 pt-[18px] text-foreground shadow-kit ${p.className ?? ""}`}>
       <header className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2.5">
@@ -75,7 +80,7 @@ export function AskCard(p: AskCardProps) {
       </header>
       <h3 className="text-[19px] font-bold leading-[1.35]">{p.title}</h3>
       {p.said ? (
-        <p data-testid="ask-said" className="-mt-1.5 text-[13px] text-muted-foreground">
+        <p data-testid={p.saidTestId ?? "ask-said"} className="-mt-1.5 text-[13px] text-muted-foreground">
           <span className="text-subtle-foreground">{t("kit.arslanSays")}</span>{p.said}
         </p>
       ) : null}
@@ -95,11 +100,11 @@ export function AskCard(p: AskCardProps) {
       )}
       {p.options}
       <div className="flex gap-2.5">
-        <Button tone="secondary" grow={1} kbd="esc" disabled={p.busy} onClick={p.onDecline} data-testid="ask-decline">
+        <Button tone="secondary" grow={1} kbd="esc" disabled={p.busy} onClick={p.onDecline} data-testid={p.declineTestId ?? "ask-decline"}>
           {p.declineLabel ?? t("kit.decline")}
         </Button>
         <Button tone={p.destructive ? "destructive" : "primary"} grow={1.4} kbd="⌘⏎" disabled={p.busy}
-          onClick={p.onAllow} data-testid="ask-allow">
+          onClick={p.onAllow} data-testid={p.allowTestId ?? "ask-allow"}>
           {p.allowLabel ?? t("kit.allow")}
         </Button>
       </div>

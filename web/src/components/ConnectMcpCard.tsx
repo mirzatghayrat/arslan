@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plug, FolderOpen, X, Check, ExternalLink, Loader2 } from 'lucide-react';
+import { FolderOpen, ExternalLink, KeyRound, Plug } from 'lucide-react';
+import { AskCard, CodeBox, Notice, type AskQueuePosition } from './kit';
+import { lineIcon } from './kit/askParts';
 import { addMcpServer, connectMcpServer, exposeMcpServer, wireMcpTool } from '../api/mcp';
 import type { McpConnectorEnvVar, McpTool } from '../api/client.types';
 import { catalogText } from '../lib/catalogDisplay';
@@ -128,6 +130,8 @@ export interface ConnectMcpCardProps {
   prerequisites?: string;
   requiresPath?: boolean;
   pathPlaceholder?: string | null;
+  expiresAt?: number | null;
+  queue?: AskQueuePosition;
   /** Fired once the apply chain settles (success or failure) so the parent can
    *  send the secret-free confirm_connect_mcp frame on success. */
   onApplied: (result: ApplyConnectMcpResult) => void;
@@ -135,28 +139,16 @@ export interface ConnectMcpCardProps {
 }
 
 /**
- * In-chat confirm card for a `propose_connect_mcp` frame. Discloses prerequisites
- * (per required env: name/description/get-it link/paid flag) and collects
- * credential VALUES in password fields (reused McpServers.tsx markup) — those
- * values are read locally and go straight into `applyConnectMcp`'s REST calls,
- * never onto the WebSocket. A `requires_path` connector (Filesystem/Git) instead
- * shows a plain text path field and gates Connect until it's filled; the typed
- * path is appended to a NEW args array before applying.
+ * In-chat confirm card for a `propose_connect_mcp` frame, in the 0.1.55 AskCard.
+ * Discloses prerequisites (per required env: name / description / get-it link /
+ * paid flag) and collects credential VALUES in password fields — read locally and
+ * sent only through `applyConnectMcp`'s REST calls, never onto the WebSocket. A
+ * `requires_path` connector (Filesystem / Git) shows a path field and gates Connect
+ * until it is filled; the typed path is appended to a NEW args array.
  */
 export default function ConnectMcpCard({
-  callId,
-  label,
-  labelKey,
-  transport,
-  command,
-  args,
-  url,
-  envKeys,
-  prerequisites,
-  requiresPath,
-  pathPlaceholder,
-  onApplied,
-  onCancel,
+  callId, label, labelKey, transport, command, args, url, envKeys, prerequisites, requiresPath,
+  pathPlaceholder, expiresAt, queue, onApplied, onCancel,
 }: ConnectMcpCardProps) {
   const { t } = useTranslation();
   const [envValues, setEnvValues] = useState<Record<string, string>>({});
@@ -168,7 +160,7 @@ export default function ConnectMcpCard({
   const pathMissing = !!requiresPath && !path.trim();
 
   async function handleConnect() {
-    if (busy) return;
+    if (busy || result?.ok) return;
     if (pathMissing) {
       setPathError('path_required');
       return;
@@ -189,132 +181,57 @@ export default function ConnectMcpCard({
     onApplied(res);
   }
 
-  return (
-    <div
-      className="bg-surface border border-border-strong rounded-2xl p-5 space-y-4"
-      data-testid="connect-mcp-card"
-    >
-      <div className="flex items-center gap-2">
-        <Plug className="w-4 h-4 text-primary" />
-        <h3 className="text-sm font-bold text-foreground">{catalogText(t, labelKey, label)}</h3>
-      </div>
-      <p className="text-[11px] text-subtle-foreground font-mono truncate">
-        {transport === 'http' ? `http · ${url ?? ''}` : `${command} ${args.join(' ')}`}
-      </p>
-      {prerequisites ? <p className="text-[11px] text-muted-foreground">{
-        envKeys.length > 0 && prerequisites === `Needs: ${envKeys.map(e => e.name).join(', ')}`
-          ? `${t('connectionsUI.needsKey')}: ${envKeys.map(e => e.name).join(', ')}`
-          : prerequisites
-      }</p> : null}
-
-      {envKeys.length > 0 && (
-        <div className="space-y-3">
-          {envKeys.map((e) => (
-            <div key={e.name} className="space-y-1">
-              <label
-                htmlFor={`mcp-env-${e.name}`}
-                className="block text-[10px] font-mono uppercase tracking-wide text-subtle-foreground"
-              >
-                {e.name}
-              </label>
-              <p className="text-[11px] text-muted-foreground">
-                {catalogText(t, e.description_key, e.description)}
-                {e.get_it_url ? (
-                  <>
-                    {' '}
-                    <a
-                      href={e.get_it_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-primary underline inline-flex items-center gap-0.5"
-                    >
-                      {t('connectionsUI.getKey')} <ExternalLink className="w-3 h-3" />
-                    </a>
-                  </>
-                ) : null}
-              </p>
-              {e.paid ? (
-                <span className="inline-block text-[9px] font-mono uppercase tracking-wide text-warning">
-                  {t('connectionsUI.paid')}
-                </span>
-              ) : null}
-              {/* Secret-via-REST: this value is collected locally and only ever
-                  leaves the browser inside addMcpServer's POST body. */}
-              <input
-                id={`mcp-env-${e.name}`}
-                type="password"
-                autoComplete="off"
-                aria-label={e.name}
-                value={envValues[e.name] ?? ''}
-                onChange={(ev) => setEnvValues((prev) => ({ ...prev, [e.name]: ev.target.value }))}
-                className="w-full bg-surface border border-border-strong focus:border-primary focus:ring-1 focus:ring-ring rounded-lg px-3 py-2 text-xs text-foreground placeholder-subtle-foreground focus:outline-none transition-all font-mono"
-              />
-            </div>
-          ))}
+  const field = 'w-full rounded-[10px] border border-border bg-surface-raised px-3 py-2 font-mono text-[12px] text-foreground placeholder:text-subtle-foreground focus:outline-none focus:ring-2 focus:ring-foreground/20';
+  const needs = prerequisites
+    ? (envKeys.length > 0 && prerequisites === `Needs: ${envKeys.map(e => e.name).join(', ')}`
+        ? `${t('connectionsUI.needsKey')}: ${envKeys.map(e => e.name).join(', ')}` : prerequisites)
+    : null;
+  const form = (
+    <div className="flex flex-col gap-3">
+      <CodeBox code={transport === 'http' ? `http · ${url ?? ''}` : `${command} ${args.join(' ')}`} numbered={false} />
+      {envKeys.map((e) => (
+        <div key={e.name} className="flex flex-col gap-1">
+          <label htmlFor={`mcp-env-${e.name}`} className="font-mono text-[12px] text-foreground">{e.name}
+            {e.paid ? <span className="ml-2 font-sans text-[11px] text-ask">{t('connectionsUI.paid')}</span> : null}</label>
+          <p className="text-[12px] text-muted-foreground">
+            {catalogText(t, e.description_key, e.description)}
+            {e.get_it_url ? (<>{' '}<a href={e.get_it_url} target="_blank" rel="noreferrer"
+              className="inline-flex items-center gap-0.5 underline underline-offset-2 hover:text-foreground">
+              {t('connectionsUI.getKey')} <ExternalLink className="h-3 w-3" /></a></>) : null}
+          </p>
+          {/* Secret-via-REST: only ever leaves the browser inside addMcpServer's POST body. */}
+          <input id={`mcp-env-${e.name}`} type="password" autoComplete="off" aria-label={e.name}
+            value={envValues[e.name] ?? ''} className={field}
+            onChange={(ev) => setEnvValues((prev) => ({ ...prev, [e.name]: ev.target.value }))} />
         </div>
-      )}
-
+      ))}
       {requiresPath && (
-        <div className="space-y-1">
-          <div className="flex items-center gap-1.5">
-            <FolderOpen className="w-3.5 h-3.5 text-subtle-foreground shrink-0" />
-            <input
-              type="text"
-              aria-label={t('connectionsUI.localPath')}
-              value={path}
-              onChange={(e) => {
-                setPath(e.target.value);
-                if (pathError) setPathError(null);
-              }}
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2">
+            <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+            <input type="text" aria-label={t('connectionsUI.localPath')} value={path} className={field}
               placeholder={pathPlaceholder ?? undefined}
-              className="flex-1 bg-surface border border-border-strong focus:border-primary focus:outline-none rounded-md px-2 py-1 text-[10.5px] text-foreground font-mono placeholder-subtle-foreground"
-            />
+              onChange={(e) => { setPath(e.target.value); if (pathError) setPathError(null); }} />
           </div>
-          {pathError ? <p className="text-[10.5px] text-danger">{t('connectionsUI.pathFirst')}</p> : null}
+          {pathError ? <p className="text-[12px] text-danger-strong">{t('connectionsUI.pathFirst')}</p> : null}
         </div>
       )}
-
-      {result && !result.ok && (
-        <div
-          role="alert"
-          className="flex items-start gap-2 bg-danger/10 border border-danger/30 rounded-lg px-3 py-2 text-[11px] text-danger"
-        >
-          <X className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-          <span>{result.stage ? t(`connectionsUI.failed_${result.stage}`) : t('connectionsUI.error')}</span>
-        </div>
-      )}
-      {result && result.ok && (
-        <div className="flex items-start gap-2 bg-success/10 border border-success/30 rounded-lg px-3 py-2 text-[11px] text-success">
-          <Check className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-          <span>
-            {result.assignable
-              ? t('connectionsUI.ready', { safe: result.safeCount, restricted: result.restrictedCount })
-              : t('connectionsUI.needsReview')}
-          </span>
-        </div>
-      )}
-
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          disabled={busy || (result?.ok ?? false)}
-          onClick={handleConnect}
-          data-testid="connect-mcp-connect"
-          className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold font-sans uppercase rounded-lg bg-primary hover:bg-primary-hover text-primary-foreground transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plug className="w-3.5 h-3.5" />}
-          {t(busy ? 'connectionsUI.connecting' : 'connectionsUI.connect')}
-        </button>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => onCancel(callId)}
-          data-testid="connect-mcp-cancel"
-          className="px-4 py-2 text-xs font-bold font-sans uppercase rounded-lg bg-surface-raised hover:bg-surface text-muted-foreground hover:text-foreground transition-all disabled:opacity-50"
-        >
-          {t('common.cancel')}
-        </button>
-      </div>
     </div>
+  );
+  return (
+    <AskCard testId="connect-mcp-card" who={t('kit.whoArslan')}
+      title={<span className="inline-flex items-center gap-2">{lineIcon(Plug)}<span>{catalogText(t, labelKey, label)}</span></span>}
+      detail={form}
+      context={needs ? [{ icon: lineIcon(KeyRound), text: needs }] : []}
+      extra={result ? (result.ok
+        ? <Notice tone="info" title={result.assignable
+            ? t('connectionsUI.ready', { safe: result.safeCount, restricted: result.restrictedCount })
+            : t('connectionsUI.needsReview')} />
+        : <Notice tone="error">{result.stage ? t(`connectionsUI.failed_${result.stage}`) : t('connectionsUI.error')}</Notice>)
+        : null}
+      expiresAt={expiresAt} queue={queue} busy={busy}
+      allowLabel={t(busy ? 'connectionsUI.connecting' : 'connectionsUI.connect')} declineLabel={t('common.cancel')}
+      allowTestId="connect-mcp-connect" declineTestId="connect-mcp-cancel"
+      onAllow={() => void handleConnect()} onDecline={() => onCancel(callId)} />
   );
 }

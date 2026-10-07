@@ -32,7 +32,9 @@ describe("desktop cards", () => {
     rerender(<ActionApprovalCard kind="desktop_app" target="Notes" detail="click" onConfirm={vi.fn()} onCancel={vi.fn()} />);
     expect(screen.getByText("jobs.askingBadge")).toBeInTheDocument();
     rerender(<ActionApprovalCard kind="desktop_risky" target="Mail · “Send”" detail="send" onConfirm={vi.fn()} onCancel={vi.fn()} />);
-    expect(screen.getByTestId("action-card").className).toContain("runcmd-card--risky");
+    // 0.1.55: marked by its attribute and a RED allow button (the old class is gone).
+    expect(screen.getByTestId("action-card")).toHaveAttribute("data-risky", "true");
+    expect(screen.getByTestId("action-allow").className).toContain("text-danger-strong");
     expect(screen.getByText("hands.title.desktop_risky:Mail · “Send”")).toBeInTheDocument();
   });
 

@@ -1802,7 +1802,13 @@
     "body": "Arslan wants to schedule a recurring task:",
     "scope": "Approving lets it create scheduled tasks for the rest of this session. Scheduled runs happen unattended — they can look things up and report back, but cannot write files or run commands.",
     "allow": "Allow",
-    "deny": "Not now"
+    "deny": "Not now",
+    "every_day": "every day",
+    "every_n_days": "every {{count}} days",
+    "every_hour": "every hour",
+    "every_n_hours": "every {{count}} hours",
+    "every_minute": "every minute",
+    "every_n_minutes": "every {{count}} minutes"
   },
   "enroll": {
     "label": "Remember {{name}} ({{host}})?",
@@ -1843,6 +1849,20 @@
     "next": "Next",
     "arslanSays": "Arslan says: ",
     "showAll": "Show all {{count}} lines",
-    "showLess": "Show less"
+    "showLess": "Show less",
+    "whoArslan": "Arslan is asking",
+    "riskLine": "This script will {{what}} (line {{lines}}: {{words}}) · read from the code",
+    "riskUnknown": "Arslan can't tell what this script changes — read it before allowing",
+    "riskJoin": ", ",
+    "risk": {
+      "delete": "delete things",
+      "move": "move things",
+      "send": "send something",
+      "shell": "run terminal commands",
+      "create": "create things",
+      "save": "save files",
+      "modify": "change content",
+      "quit": "quit an app"
+    }
   }
 }

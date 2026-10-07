@@ -37,7 +37,7 @@ interface ArslanState {
   pendingInvite: { spawnId: number; reason: string } | null;
   // Pending shell command: set when a `propose_run_command` frame arrives; cleared
   // once the user confirms (sends confirm_run_command) or cancels.
-  pendingCommand: { callId: string; pretty: string; reason: string; remoteHost: string; fingerprints: string[]; background?: boolean; sandbox?: "outside" | "retry"; why?: string } | null;
+  pendingCommand: { callId: string; pretty: string; reason: string; remoteHost: string; fingerprints: string[]; background?: boolean; sandbox?: "outside" | "retry"; why?: string; receivedAt?: number } | null;
   // 0.1.42 background jobs in this conversation, keyed by job id. Each has a
   // `kind: "job"` item in `items` marking where its live card sits.
   jobs: Record<string, JobCard>;
@@ -46,11 +46,12 @@ interface ArslanState {
   jobNotice: { seq: number; jobId: string; kind: "finished" | "needs_approval"; outcome: JobOutcome | null; goal: string } | null;
   // P3c: Arslan asks to enrol a machine. The card WRITES NOTHING over the socket —
   // its button calls the REST endpoint, which is what makes enrolment a human act.
-  pendingEnrollNode: { callId: string; name: string; host: string; user: string; fingerprints: string[] } | null;
-  pendingWorkspaceWrite: { callId: string; workspace: string; action: string; path: string; background?: boolean } | null;
-  pendingSchedule: { callId: string; name: string; when: string; background?: boolean } | null;
+  // 0.1.55: receivedAt drives the asking card's countdown (cards expire after 300 s).
+  pendingEnrollNode: { callId: string; name: string; host: string; user: string; fingerprints: string[]; receivedAt?: number } | null;
+  pendingWorkspaceWrite: { callId: string; workspace: string; action: string; path: string; background?: boolean; receivedAt?: number } | null;
+  pendingSchedule: { callId: string; name: string; when: string; background?: boolean; receivedAt?: number } | null;
   // 0.1.45: a background job asks before it acts in the browser or on the Mac.
-  pendingAction: { callId: string; kind: ActionKind; target: string; detail: string } | null;
+  pendingAction: { callId: string; kind: ActionKind; target: string; detail: string; receivedAt?: number } | null;
   // NEXT BUILD (conversation-driven MCP, Task 5): set when a `propose_connect_mcp`
   // frame arrives. env_keys carries credential NAMES + metadata only — the card
   // collects VALUES locally and sends them only over REST (addMcpServer). Cleared
@@ -912,21 +913,23 @@ function makeActions(set: SetState, get: GetState) {
                                   background: frame.background === true,
                                   // 0.1.51 P3: the card is about leaving the sandbox.
                                   ...(frame.sandbox === "outside" || frame.sandbox === "retry"
-                                    ? { sandbox: frame.sandbox, why: frame.why || "" } : {}) },
+                                    ? { sandbox: frame.sandbox, why: frame.why || "" } : {}),
+                                  receivedAt: Date.now() },
                ...(frame.background ? _approvalNotice(state) : {}) });
           break;
         case "propose_enroll_node":
           set({ pendingEnrollNode: { callId: frame.call_id, name: frame.name,
                                      host: frame.host, user: frame.user,
-                                     fingerprints: frame.fingerprints || [] } });
+                                     fingerprints: frame.fingerprints || [], receivedAt: Date.now() } });
           break;
         case "propose_schedule":
           set({ pendingSchedule: { callId: frame.call_id, name: frame.name,
-                                   when: frame.when, background: frame.background === true },
+                                   when: frame.when, background: frame.background === true, receivedAt: Date.now() },
                ...(frame.background ? _approvalNotice(state) : {}) });
           break;
         case "propose_action":
-          set({ pendingAction: { callId: frame.call_id, kind: frame.kind, target: frame.target, detail: frame.detail },
+          set({ pendingAction: { callId: frame.call_id, kind: frame.kind, target: frame.target, detail: frame.detail,
+                                 receivedAt: Date.now() },
                 ..._approvalNotice(state) });
           break;
         case "card_resolved": {
@@ -944,7 +947,7 @@ function makeActions(set: SetState, get: GetState) {
         case "propose_workspace_write":
           set({ pendingWorkspaceWrite: {
             callId: frame.call_id, workspace: frame.workspace,
-            action: frame.action, path: frame.path, background: frame.background === true },
+            action: frame.action, path: frame.path, background: frame.background === true, receivedAt: Date.now() },
                ...(frame.background ? _approvalNotice(state) : {}) });
           break;
         case "propose_connect_mcp":

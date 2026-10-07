@@ -1,5 +1,9 @@
 import { Hand, ListChecks, LockKeyhole, Code2 } from "lucide-react";
 import { AskCard, Button, CodeBox, ConfirmSheet, Dialog, Notice, ProposalRow, Tag } from "../../components/kit";
+import RunCommandCard from "../../components/RunCommandCard";
+import ActionApprovalCard from "../../components/ActionApprovalCard";
+import ConnectMcpCard from "../../components/ConnectMcpCard";
+import WorkspaceWriteCard from "../../components/WorkspaceWriteCard";
 
 /**
  * Dev-only gallery of the surface kit (0.1.55), sample content (kept under __tests__/: sample copy, never shipped),
@@ -43,9 +47,24 @@ export default function KitGallery() {
           </div>
         </div>
       </div>
-      <ConfirmSheet open options={{ title: "删除这个模型配置？", action: "删除",
+      {location.hash.includes("cards") && (
+        <div className="mt-10 grid grid-cols-[repeat(auto-fill,minmax(480px,1fr))] items-start gap-10">
+          <RunCommandCard callId="c" pretty="rm -rf ~/Downloads/重复文件/*.dmg" reason="会删除文件" onConfirm={noop} onCancel={noop}
+            expiresAt={Date.now() + 200_000} />
+          <RunCommandCard callId="r" pretty="uptime" remoteHost="me@192.168.1.20" onConfirm={noop} onCancel={noop}
+            fingerprints={["SHA256:9Zq3k5c0aXbP1ut0n0mQ0+ofBq9vRrj7c1vSDQ7mZ2E"]} />
+          <ActionApprovalCard kind="mac_script" target="Notes" onConfirm={noop} onCancel={noop}
+            detail={'tell application "Notes"\n  delete (notes whose name = "Hands 冒烟")\nend tell'} />
+          <ActionApprovalCard kind="desktop_risky" target="Mail · “Send”" detail="点击「发送」" onConfirm={noop} onCancel={noop} />
+          <WorkspaceWriteCard callId="w" workspace="~/Arslan" action="write_file" path="~/Arslan/报告/周报.md" onConfirm={noop} onCancel={noop} />
+          <ConnectMcpCard callId="m" label="GitHub" transport="stdio" command="npx" args={["-y", "@modelcontextprotocol/server-github"]}
+            url={null} envKeys={[{ name: "GITHUB_PERSONAL_ACCESS_TOKEN", description: "A token with repo scope", get_it_url: "https://github.com/settings/tokens", paid: false } as never]}
+            prerequisites="Needs: GITHUB_PERSONAL_ACCESS_TOKEN" onApplied={noop} onCancel={noop} />
+        </div>
+      )}
+      {!location.hash.includes("cards") && <ConfirmSheet open options={{ title: "删除这个模型配置？", action: "删除",
         body: "「DeepSeek · deepseek-v4-flash」和它保存的 API key 会一起删掉，不能撤销。用它的角色会改用你的主模型。" }}
-        onAnswer={noop} />
+        onAnswer={noop} />}
       {location.hash.includes("dialog") && (
         <Dialog open title="项目和记忆" onClose={noop}
           footer={<><Button>取消</Button><Button tone="primary">保存</Button></>}>

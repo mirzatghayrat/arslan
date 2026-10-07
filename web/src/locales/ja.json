@@ -1802,7 +1802,13 @@
     "body": "Arslan が定期タスクの作成を求めています:",
     "scope": "許可すると、このセッション中は定期タスクを作成できます。定期実行は無人で行われ、調べて報告することはできますが、ファイルの書き込みやコマンドの実行はできません。",
     "allow": "許可",
-    "deny": "今はしない"
+    "deny": "今はしない",
+    "every_day": "毎日",
+    "every_n_days": "{{count}} 日ごと",
+    "every_hour": "1 時間ごと",
+    "every_n_hours": "{{count}} 時間ごと",
+    "every_minute": "1 分ごと",
+    "every_n_minutes": "{{count}} 分ごと"
   },
   "enroll": {
     "label": "{{name}}({{host}})を記憶しますか?",
@@ -1843,6 +1849,20 @@
     "next": "次へ",
     "arslanSays": "Arslan の説明：",
     "showAll": "全 {{count}} 行を表示",
-    "showLess": "閉じる"
+    "showLess": "閉じる",
+    "whoArslan": "Arslan が確認しています",
+    "riskLine": "このスクリプトは{{what}}（{{lines}} 行目：{{words}}）· コードから判定",
+    "riskUnknown": "このスクリプトが何を変えるか判定できません。許可する前にコードを読んでください",
+    "riskJoin": "・",
+    "risk": {
+      "delete": "削除します",
+      "move": "移動します",
+      "send": "送信します",
+      "shell": "ターミナルコマンドを実行します",
+      "create": "新規作成します",
+      "save": "保存します",
+      "modify": "内容を変更します",
+      "quit": "アプリを終了します"
+    }
   }
 }

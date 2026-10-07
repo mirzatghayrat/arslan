@@ -1353,14 +1353,15 @@ button:disabled {
 /* ── SuggestCreateCard ──────────────────────────────────────────────────────── */
 
 /* Overlay wrapper: sits above the chat, below the top bar */
-.suggest-create-card-overlay {
+/* 0.1.55: the one slot for asking cards (AskQueue) — above the composer, centred. */
+.ask-slot {
   position: absolute;
   bottom: 5rem;
   left: 50%;
   transform: translateX(-50%);
   z-index: 40;
   width: 100%;
-  max-width: 520px;
+  max-width: 492px;
   padding: 0 1rem;
 }
 

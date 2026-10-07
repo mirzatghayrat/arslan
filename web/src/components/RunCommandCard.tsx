@@ -1,106 +1,76 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Globe2, ShieldAlert, Terminal } from "lucide-react";
+import { AskCard, CodeBox } from "./kit";
+import { AskOption, Fingerprints, lineIcon } from "./kit/askParts";
 
 interface Props {
   callId: string;
   /** Full command as one string, e.g. "git status". */
   pretty: string;
+  /** Why it asks — the terminal rule that matched (host classification, never the model's words). */
   reason?: string;
   /** Non-empty when the command runs on ANOTHER machine (P3b), as "user@ip". */
   remoteHost?: string;
   /** That machine's host key fingerprints, for the user to compare. */
   fingerprints?: string[];
-  /** 0.1.42: a background job is asking. The backend never honours "remember"
-   *  for a job, so the checkbox is not offered — same reasoning as remote. */
+  /** 0.1.42: a background job is asking; "remember" is never honoured for a job. */
   background?: boolean;
-  /** 0.1.51 P3: "outside" — Arslan asks to run this outside the sandbox; "retry" —
-   *  the sandbox stopped it and it would run again outside, from the start. */
+  /** 0.1.51 P3: "outside" — leave the sandbox; "retry" — the sandbox stopped it. */
   sandbox?: "outside" | "retry";
-  /** With "outside": Arslan's one-line reason. */
+  /** With "outside": Arslan's one-line reason (the model's words). */
   why?: string;
+  expiresAt?: number | null;
+  queue?: import("./kit").AskQueuePosition;
+  onOpenContext?: () => void;
   onConfirm: (callId: string, remember: boolean) => void;
   onCancel: (callId: string) => void;
 }
 
 /**
- * Per-command confirmation card for a backend `propose_run_command` frame.
- * Shows the FULL command verbatim; the user must click Run for it to execute.
- * "Don't ask again" (0.1.48) remembers the KIND of command — the rule the backend
- * matched — until the user takes it back in Settings › Advanced.
+ * Per-command confirmation (a `propose_run_command` frame), in the 0.1.55 AskCard.
+ * The FULL command is shown; only the user's click (or ⌘⏎) runs it.
  *
- * When `remoteHost` is set the card changes shape rather than adding a footnote:
- * the machine goes first, the fingerprint is shown so a person can compare it
- * against the machine itself, and "remember this session" is GONE — the backend
- * refuses to honour it for a remote command, and offering a checkbox that does
- * nothing would be a lie told in a safety dialog.
- *
- * When `sandbox` is set (0.1.51 P3) the question is about leaving the sandbox, so the
- * card says that first, and its checkbox means "for the rest of this conversation"
- * (the backend keeps it in memory only), not "don't ask again for this kind".
+ * Remote: the machine leads, its fingerprint is shown to compare, and there is NO
+ * "remember" — the backend refuses it for a remote command, and a checkbox that does
+ * nothing would be a lie in a safety dialog. Sandbox: the question is about leaving
+ * the sandbox, and the checkbox means "for the rest of this conversation".
  */
 export default function RunCommandCard({ callId, pretty, reason, remoteHost, fingerprints, background,
-                                         sandbox, why, onConfirm, onCancel }: Props) {
+                                         sandbox, why, expiresAt, queue, onOpenContext, onConfirm, onCancel }: Props) {
   const { t } = useTranslation();
   const [remember, setRemember] = useState(false);
   const isRemote = Boolean(remoteHost);
-  const label = isRemote ? t("runcmd.remoteLabel", { host: remoteHost })
+  const title = isRemote ? t("runcmd.remoteLabel", { host: remoteHost })
     : sandbox === "outside" ? t("runcmd.sandboxOutsideLabel")
     : sandbox === "retry" ? t("runcmd.sandboxRetryLabel")
     : t("runcmd.label");
+  const context = [
+    ...(background ? [{ icon: lineIcon(Terminal), text: <span data-testid="runcmd-background">{t("jobs.askingBadge")}</span> }] : []),
+    ...(sandbox ? [{ icon: lineIcon(ShieldAlert), text: <span data-testid="runcmd-sandbox-note">
+      {t(sandbox === "outside" ? "runcmd.sandboxOutsideNote" : "runcmd.sandboxRetryNote")}</span> }] : []),
+    ...(isRemote ? [{ icon: lineIcon(Globe2), text: <span data-testid="runcmd-remote-note">{t("runcmd.remoteWarning")}</span> }] : []),
+  ];
   return (
-    <div className={isRemote ? "runcmd-card runcmd-card--remote" : "runcmd-card"} data-testid="runcmd-card">
-      {background ? <div className="runcmd-card__reason" data-testid="runcmd-background">{t("jobs.askingBadge")}</div> : null}
-      <div className="runcmd-card__label">{label}</div>
-      {sandbox ? (
-        <div className="runcmd-card__remote-note" data-testid="runcmd-sandbox-note">
-          {t(sandbox === "outside" ? "runcmd.sandboxOutsideNote" : "runcmd.sandboxRetryNote")}
-        </div>
-      ) : null}
-      {isRemote ? (
-        <div className="runcmd-card__remote-note" data-testid="runcmd-remote-note">
-          {t("runcmd.remoteWarning")}
-        </div>
-      ) : null}
-      <pre className="runcmd-card__cmd">{pretty}</pre>
-      {isRemote && (fingerprints?.length ?? 0) > 0 ? (
-        <div className="runcmd-card__fingerprints" data-testid="runcmd-fingerprints">
-          <div className="runcmd-card__fingerprints-label">{t("runcmd.fingerprint")}</div>
-          {fingerprints!.map((fp) => (
-            <code key={fp} className="runcmd-card__fingerprint">{fp}</code>
-          ))}
-        </div>
-      ) : null}
-      {sandbox === "outside" && why ? <div className="runcmd-card__reason" data-testid="runcmd-why">{why}</div> : null}
-      {reason ? <div className="runcmd-card__reason">{reason}</div> : null}
-      {isRemote || background ? null : (
-      <label className="runcmd-card__remember">
-        <input
-          type="checkbox"
-          data-testid="runcmd-remember"
-          checked={remember}
-          onChange={(e) => setRemember(e.target.checked)}
-        />
-        {t(sandbox ? "runcmd.sandboxRemember" : "runcmd.remember")}
-      </label>
+    <AskCard testId="runcmd-card" attrs={isRemote ? { "data-remote": "true" } : undefined}
+      who={background ? t("jobs.askingBadge") : t("kit.whoArslan")}
+      title={title}
+      said={sandbox === "outside" && why ? why : null} saidTestId="runcmd-why"
+      risk={reason || null}
+      detail={<>
+        <CodeBox code={pretty} numbered={false} fold={8} />
+        {isRemote ? <Fingerprints label={t("runcmd.fingerprint")} list={fingerprints ?? []} testId="runcmd-fingerprints" /> : null}
+      </>}
+      context={context}
+      options={isRemote || background ? null : (
+        <AskOption checked={remember} onChange={setRemember} testId="runcmd-remember"
+          label={t(sandbox ? "runcmd.sandboxRemember" : "runcmd.remember")} />
       )}
-      <div className="runcmd-card__actions">
-        <button
-          type="button"
-          className="runcmd-card__btn runcmd-card__btn--primary"
-          data-testid="runcmd-run"
-          onClick={() => onConfirm(callId, remember && !background)}
-        >
-          {isRemote ? t("runcmd.runRemote") : sandbox ? t("runcmd.runOutside") : t("runcmd.run")}
-        </button>
-        <button
-          type="button"
-          className="runcmd-card__btn runcmd-card__btn--ghost"
-          data-testid="runcmd-cancel"
-          onClick={() => onCancel(callId)}
-        >
-          {t("runcmd.cancel")}
-        </button>
-      </div>
-    </div>
+      expiresAt={expiresAt} queue={queue} onOpenContext={onOpenContext}
+      allowLabel={isRemote ? t("runcmd.runRemote") : sandbox ? t("runcmd.runOutside") : t("runcmd.run")}
+      declineLabel={t("runcmd.cancel")}
+      allowTestId="runcmd-run" declineTestId="runcmd-cancel"
+      onAllow={() => onConfirm(callId, remember && !background && !isRemote)}
+      onDecline={() => onCancel(callId)} />
   );
 }

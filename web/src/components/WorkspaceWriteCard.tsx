@@ -1,4 +1,7 @@
 import { useTranslation } from "react-i18next";
+import { FileText, LockKeyhole } from "lucide-react";
+import { AskCard, CodeBox, type AskQueuePosition } from "./kit";
+import { lineIcon } from "./kit/askParts";
 
 interface Props {
   callId: string;
@@ -8,52 +11,32 @@ interface Props {
   action: string;
   /** The file that triggered it, shown as context. */
   path: string;
+  background?: boolean;
+  expiresAt?: number | null;
+  queue?: AskQueuePosition;
+  onOpenContext?: () => void;
   onConfirm: (callId: string) => void;
   onCancel: (callId: string) => void;
 }
 
 /**
- * Grant card for a backend `propose_workspace_write` frame.
- *
- * This asks about a CAPABILITY, not a filename: approving lets Arslan write
- * anywhere in the named directory for the rest of this session. So the card
- * leads with the DIRECTORY (the thing actually being agreed to), shows the
- * triggering file only as context, and carries no "remember" checkbox —
- * approval already lasts the session, and a checkbox would imply the choice
- * was narrower than it is.
+ * A `propose_workspace_write` grant. It asks about a CAPABILITY, not a filename:
+ * approving lets Arslan write anywhere in the folder for the rest of the session,
+ * so the FOLDER leads and the file is context; no "remember" — it already lasts.
  */
-export default function WorkspaceWriteCard({
-  callId, workspace, action, path, onConfirm, onCancel,
-}: Props) {
+export default function WorkspaceWriteCard({ callId, workspace, action, path, background, expiresAt, queue,
+                                             onOpenContext, onConfirm, onCancel }: Props) {
   const { t } = useTranslation();
   const verb = action === "edit_file" ? t("wswrite.action.edit") : t("wswrite.action.write");
   return (
-    <div className="runcmd-card" data-testid="wswrite-card">
-      <div className="runcmd-card__label">{t("wswrite.label")}</div>
-      <p className="text-[12px] text-foreground font-sans">{t("wswrite.body")}</p>
-      <pre className="runcmd-card__cmd">{workspace}</pre>
-      <div className="runcmd-card__reason">
-        {verb} · {path}
-      </div>
-      <p className="text-[10.5px] text-subtle-foreground font-sans">{t("wswrite.scope")}</p>
-      <div className="runcmd-card__actions">
-        <button
-          type="button"
-          className="runcmd-card__btn runcmd-card__btn--primary"
-          data-testid="wswrite-allow"
-          onClick={() => onConfirm(callId)}
-        >
-          {t("wswrite.allow")}
-        </button>
-        <button
-          type="button"
-          className="runcmd-card__btn"
-          data-testid="wswrite-deny"
-          onClick={() => onCancel(callId)}
-        >
-          {t("wswrite.deny")}
-        </button>
-      </div>
-    </div>
+    <AskCard testId="wswrite-card" who={background ? t("jobs.askingBadge") : t("kit.whoArslan")}
+      title={t("wswrite.label")}
+      detail={<><p className="text-[13px] text-muted-foreground">{t("wswrite.body")}</p><CodeBox code={workspace} numbered={false} /></>}
+      context={[{ icon: lineIcon(FileText), text: `${verb} · ${path}` },
+                { icon: lineIcon(LockKeyhole), text: t("wswrite.scope") }]}
+      expiresAt={expiresAt} queue={queue} onOpenContext={onOpenContext}
+      allowLabel={t("wswrite.allow")} declineLabel={t("wswrite.deny")}
+      allowTestId="wswrite-allow" declineTestId="wswrite-deny"
+      onAllow={() => onConfirm(callId)} onDecline={() => onCancel(callId)} />
   );
 }

@@ -1802,7 +1802,13 @@
     "body": "Arslan 想创建一个定期任务:",
     "scope": "同意后,本次会话内它可以创建定时任务。定时运行是无人值守的——它可以查资料并汇报,但写不了文件、跑不了命令。",
     "allow": "允许",
-    "deny": "暂不"
+    "deny": "暂不",
+    "every_day": "每天",
+    "every_n_days": "每 {{count}} 天",
+    "every_hour": "每小时",
+    "every_n_hours": "每 {{count}} 小时",
+    "every_minute": "每分钟",
+    "every_n_minutes": "每 {{count}} 分钟"
   },
   "enroll": {
     "label": "记住 {{name}}({{host}})?",
@@ -1843,6 +1849,20 @@
     "next": "下一张",
     "arslanSays": "Arslan 说：",
     "showAll": "展开全部 {{count}} 行",
-    "showLess": "收起"
+    "showLess": "收起",
+    "whoArslan": "Arslan 在问你",
+    "riskLine": "这段脚本会{{what}}（第 {{lines}} 行：{{words}}）· 以代码为准",
+    "riskUnknown": "看不出这段脚本会改什么——允许前请读一遍代码",
+    "riskJoin": "、",
+    "risk": {
+      "delete": "删除东西",
+      "move": "移动东西",
+      "send": "发送",
+      "shell": "执行终端命令",
+      "create": "新建东西",
+      "save": "保存文件",
+      "modify": "修改内容",
+      "quit": "退出应用"
+    }
   }
 }

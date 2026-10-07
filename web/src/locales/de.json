@@ -1802,7 +1802,13 @@
     "body": "Arslan möchte eine wiederkehrende Aufgabe einplanen:",
     "scope": "Mit deiner Zustimmung darf es für den Rest dieser Sitzung geplante Aufgaben anlegen. Geplante Läufe finden unbeaufsichtigt statt — sie können nachschlagen und berichten, aber keine Dateien schreiben und keine Befehle ausführen.",
     "allow": "Erlauben",
-    "deny": "Jetzt nicht"
+    "deny": "Jetzt nicht",
+    "every_day": "jeden Tag",
+    "every_n_days": "alle {{count}} Tage",
+    "every_hour": "jede Stunde",
+    "every_n_hours": "alle {{count}} Stunden",
+    "every_minute": "jede Minute",
+    "every_n_minutes": "alle {{count}} Minuten"
   },
   "enroll": {
     "label": "{{name}} ({{host}}) merken?",
@@ -1843,6 +1849,20 @@
     "next": "Weiter",
     "arslanSays": "Arslan sagt: ",
     "showAll": "Alle {{count}} Zeilen zeigen",
-    "showLess": "Weniger zeigen"
+    "showLess": "Weniger zeigen",
+    "whoArslan": "Arslan fragt dich",
+    "riskLine": "Dieses Skript wird {{what}} (Zeile {{lines}}: {{words}}) · aus dem Code gelesen",
+    "riskUnknown": "Arslan kann nicht erkennen, was dieses Skript ändert – lies es, bevor du es erlaubst",
+    "riskJoin": ", ",
+    "risk": {
+      "delete": "etwas löschen",
+      "move": "etwas verschieben",
+      "send": "etwas senden",
+      "shell": "Terminalbefehle ausführen",
+      "create": "etwas anlegen",
+      "save": "Dateien speichern",
+      "modify": "Inhalte ändern",
+      "quit": "eine App beenden"
+    }
   }
 }

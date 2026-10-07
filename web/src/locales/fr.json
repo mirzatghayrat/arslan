@@ -1802,7 +1802,13 @@
     "body": "Arslan souhaite planifier une tâche récurrente :",
     "scope": "En acceptant, il pourra créer des tâches planifiées pour le reste de cette session. Les exécutions planifiées ont lieu sans surveillance : elles peuvent consulter et rendre compte, mais ne peuvent ni écrire de fichiers ni lancer de commandes.",
     "allow": "Autoriser",
-    "deny": "Pas maintenant"
+    "deny": "Pas maintenant",
+    "every_day": "chaque jour",
+    "every_n_days": "tous les {{count}} jours",
+    "every_hour": "chaque heure",
+    "every_n_hours": "toutes les {{count}} heures",
+    "every_minute": "chaque minute",
+    "every_n_minutes": "toutes les {{count}} minutes"
   },
   "enroll": {
     "label": "Mémoriser {{name}} ({{host}}) ?",
@@ -1843,6 +1849,20 @@
     "next": "Suivant",
     "arslanSays": "Arslan dit : ",
     "showAll": "Afficher les {{count}} lignes",
-    "showLess": "Afficher moins"
+    "showLess": "Afficher moins",
+    "whoArslan": "Arslan te demande",
+    "riskLine": "Ce script va {{what}} (ligne {{lines}} : {{words}}) · lu dans le code",
+    "riskUnknown": "Arslan ne peut pas savoir ce que ce script modifie — lis-le avant d'autoriser",
+    "riskJoin": ", ",
+    "risk": {
+      "delete": "supprimer des choses",
+      "move": "déplacer des choses",
+      "send": "envoyer quelque chose",
+      "shell": "lancer des commandes de terminal",
+      "create": "créer des choses",
+      "save": "enregistrer des fichiers",
+      "modify": "modifier du contenu",
+      "quit": "quitter une app"
+    }
   }
 }

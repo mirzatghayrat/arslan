@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { OPEN_SECTION_EVENT, SECTIONS, type Section } from "./lib/sections";
 import { ConfirmHost, ToastHost, toast as showToast } from "./components/kit";
+import AskSlot from "./components/AskSlot";
 import { useTranslation } from 'react-i18next';
 import { DEFAULT_SETTINGS } from './data';
 import { Message, MessageAttachment, AppSettings } from './types';
@@ -26,18 +27,12 @@ import SettingsScreen from './components/SettingsScreen';
 import Capabilities from './components/Capabilities';
 import { Globe, PanelRight } from 'lucide-react';
 import { ThemeApplier } from './components/ThemeApplier';
-import RunCommandCard from './components/RunCommandCard';
-import EnrollNodeCard from './components/EnrollNodeCard';
-import WorkspaceWriteCard from './components/WorkspaceWriteCard';
-import ScheduleGrantCard from './components/ScheduleGrantCard';
-import ConnectMcpCard from './components/ConnectMcpCard';
 import ActivityView from './components/ActivityView';
 import MemorySection from './components/companion/MemorySection';
 import ProjectsSection from './components/companion/ProjectsSection';
 import ConversationControls from './components/companion/ConversationControls';
 import TaskPanel from './components/companion/TaskPanel';
 import LegacyExperts from './components/companion/LegacyExperts';
-import ActionApprovalCard from './components/ActionApprovalCard';
 import { companionApi, type Project } from './api/companion';
 import FirstRunWizard from './components/FirstRunWizard';
 import UpdatePill from './components/UpdatePill';
@@ -213,21 +208,6 @@ export default function App() {
   const arslanStreaming = useArslanStore((s) => s.streaming);
   const arslanRunning = useArslanStore((s) => s.thinking || s.streaming || s.pending || s.activeRunId != null);
   const arslanStreamingText = useArslanStore((s) => s.streamingText);
-  // propose_run_command state — per-command confirmation card
-  const pendingCommand = useArslanStore((s) => s.pendingCommand);
-  const pendingEnrollNode = useArslanStore((s) => s.pendingEnrollNode);
-  const clearPendingCommand = useArslanStore((s) => s.clearPendingCommand);
-  const clearPendingEnrollNode = useArslanStore((s) => s.clearPendingEnrollNode);
-  const pendingWorkspaceWrite = useArslanStore((s) => s.pendingWorkspaceWrite);
-  const clearPendingWorkspaceWrite = useArslanStore((s) => s.clearPendingWorkspaceWrite);
-  const pendingSchedule = useArslanStore((s) => s.pendingSchedule);
-  const pendingAction = useArslanStore((s) => s.pendingAction);
-  const clearPendingAction = useArslanStore((s) => s.clearPendingAction);
-  const clearPendingSchedule = useArslanStore((s) => s.clearPendingSchedule);
-  // propose_connect_mcp state — in-chat MCP connect card (security-load-bearing:
-  // secrets never leave this card except over REST; see ConnectMcpCard.tsx)
-  const pendingConnectMcp = useArslanStore((s) => s.pendingConnectMcp);
-  const clearPendingConnectMcp = useArslanStore((s) => s.clearPendingConnectMcp);
 
   // Handler for incoming WS frames — routes to the proven store logic
   const handleArslanFrame = useCallback((raw: unknown) => {
@@ -581,6 +561,8 @@ export default function App() {
   // 0.1.44/0.1.48: former experts can be turned into skills; the tab shows only while any remain.
   const experts = legacyExperts > 0 ? <LegacyExperts /> : null;
 
+
+
   return (
     <div className="flex w-screen h-screen bg-background text-foreground overflow-hidden font-sans antialiased">
       <ThemeApplier />
@@ -706,121 +688,9 @@ export default function App() {
           </div>
 
           <div className="flex-1 flex flex-col overflow-hidden relative">
-            {activeSection === 'arslan' && pendingCommand && (
-              <div className="suggest-create-card-overlay">
-                <RunCommandCard
-                  callId={pendingCommand.callId}
-                  pretty={pendingCommand.pretty}
-                  reason={pendingCommand.reason}
-                  remoteHost={pendingCommand.remoteHost}
-                  fingerprints={pendingCommand.fingerprints}
-                  background={pendingCommand.background}
-                  sandbox={pendingCommand.sandbox}
-                  why={pendingCommand.why}
-                  onConfirm={(callId, remember) => {
-                    wsSend({ type: 'confirm_run_command', call_id: callId, remember });
-                    clearPendingCommand();
-                  }}
-                  onCancel={(callId) => {
-                    wsSend({ type: 'cancel_run_command', call_id: callId });
-                    clearPendingCommand();
-                  }}
-                />
-              </div>
-            )}
-
-            {activeSection === 'arslan' && pendingEnrollNode && (
-              <div className="suggest-create-card-overlay">
-                <EnrollNodeCard
-                  callId={pendingEnrollNode.callId}
-                  name={pendingEnrollNode.name}
-                  host={pendingEnrollNode.host}
-                  user={pendingEnrollNode.user}
-                  fingerprints={pendingEnrollNode.fingerprints}
-                  onDone={() => clearPendingEnrollNode()}
-                />
-              </div>
-            )}
-
-            {activeSection === 'arslan' && pendingWorkspaceWrite && (
-              <div className="suggest-create-card-overlay">
-                {pendingWorkspaceWrite.background && <p className="mb-1 text-[11px] text-muted-foreground">{t('jobs.askingBadge')}</p>}
-                <WorkspaceWriteCard
-                  callId={pendingWorkspaceWrite.callId}
-                  workspace={pendingWorkspaceWrite.workspace}
-                  action={pendingWorkspaceWrite.action}
-                  path={pendingWorkspaceWrite.path}
-                  onConfirm={(callId) => {
-                    wsSend({ type: 'confirm_workspace_write', call_id: callId });
-                    clearPendingWorkspaceWrite();
-                  }}
-                  onCancel={(callId) => {
-                    wsSend({ type: 'cancel_workspace_write', call_id: callId });
-                    clearPendingWorkspaceWrite();
-                  }}
-                />
-              </div>
-            )}
-
-            {activeSection === 'arslan' && pendingAction && (
-              <div className="suggest-create-card-overlay">
-                <ActionApprovalCard kind={pendingAction.kind} target={pendingAction.target} detail={pendingAction.detail}
-                  onConfirm={() => { wsSend({ type: 'confirm_action', call_id: pendingAction.callId }); clearPendingAction(); }}
-                  onCancel={() => { wsSend({ type: 'cancel_action', call_id: pendingAction.callId }); clearPendingAction(); }} />
-              </div>
-            )}
-
-            {activeSection === 'arslan' && pendingSchedule && (
-              <div className="suggest-create-card-overlay">
-                {pendingSchedule.background && <p className="mb-1 text-[11px] text-muted-foreground">{t('jobs.askingBadge')}</p>}
-                <ScheduleGrantCard
-                  callId={pendingSchedule.callId}
-                  name={pendingSchedule.name}
-                  when={pendingSchedule.when}
-                  onConfirm={(callId) => {
-                    wsSend({ type: 'confirm_schedule', call_id: callId });
-                    clearPendingSchedule();
-                  }}
-                  onCancel={(callId) => {
-                    wsSend({ type: 'cancel_schedule', call_id: callId });
-                    clearPendingSchedule();
-                  }}
-                />
-              </div>
-            )}
-
-            {activeSection === 'arslan' && pendingConnectMcp && (
-              <div className="suggest-create-card-overlay">
-                <ConnectMcpCard
-                  callId={pendingConnectMcp.callId}
-                  label={pendingConnectMcp.label}
-                  labelKey={pendingConnectMcp.labelKey}
-                  transport={pendingConnectMcp.transport}
-                  command={pendingConnectMcp.command}
-                  args={pendingConnectMcp.argv}
-                  url={pendingConnectMcp.url}
-                  envKeys={pendingConnectMcp.envKeys}
-                  prerequisites={pendingConnectMcp.prerequisites}
-                  requiresPath={pendingConnectMcp.requiresPath}
-                  pathPlaceholder={pendingConnectMcp.pathPlaceholder}
-                  onApplied={(res) => {
-                    // Secret-free confirm: server_id + tool_count only — no env
-                    // values, no client-computed tier counts (the backend
-                    // recomputes the honest tier split from the DB and emits the
-                    // mcp_connect_followup note, which clears this card).
-                    if (res.ok) {
-                      wsSend({
-                        type: 'confirm_connect_mcp',
-                        call_id: pendingConnectMcp.callId,
-                        server_id: res.serverId,
-                        tool_count: res.toolCount,
-                      });
-                    }
-                  }}
-                  onCancel={() => clearPendingConnectMcp()}
-                />
-              </div>
-            )}
+            {/* 0.1.55: every pending ask in ONE slot, queued "‹ 1 / 3 ›" (they used to
+                render into the same absolute spot and overlap). Same frames, same answers. */}
+            {activeSection === 'arslan' && <AskSlot send={wsSend} />}
 
             {activeSection === 'arslan' && (
               <div className="flex h-full min-h-0 flex-col">

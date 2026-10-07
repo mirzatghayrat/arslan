@@ -1802,7 +1802,13 @@
     "body": "Arslan quiere programar una tarea periódica:",
     "scope": "Si lo permites, durante el resto de esta sesión podrá crear tareas programadas. Las ejecuciones programadas ocurren sin supervisión: pueden consultar e informar, pero no escribir archivos ni ejecutar comandos.",
     "allow": "Permitir",
-    "deny": "Ahora no"
+    "deny": "Ahora no",
+    "every_day": "cada día",
+    "every_n_days": "cada {{count}} días",
+    "every_hour": "cada hora",
+    "every_n_hours": "cada {{count}} horas",
+    "every_minute": "cada minuto",
+    "every_n_minutes": "cada {{count}} minutos"
   },
   "enroll": {
     "label": "¿Recordar {{name}} ({{host}})?",
@@ -1843,6 +1849,20 @@
     "next": "Siguiente",
     "arslanSays": "Arslan dice: ",
     "showAll": "Mostrar las {{count}} líneas",
-    "showLess": "Mostrar menos"
+    "showLess": "Mostrar menos",
+    "whoArslan": "Arslan te pregunta",
+    "riskLine": "Este script va a {{what}} (línea {{lines}}: {{words}}) · leído del código",
+    "riskUnknown": "Arslan no puede saber qué cambia este script: léelo antes de permitirlo",
+    "riskJoin": ", ",
+    "risk": {
+      "delete": "borrar cosas",
+      "move": "mover cosas",
+      "send": "enviar algo",
+      "shell": "ejecutar comandos de terminal",
+      "create": "crear cosas",
+      "save": "guardar archivos",
+      "modify": "cambiar contenido",
+      "quit": "cerrar una app"
+    }
   }
 }
