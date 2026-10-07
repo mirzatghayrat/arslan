@@ -1,4 +1,6 @@
 import { useTranslation } from "react-i18next";
+import { Check } from "lucide-react";
+import { AskMark } from "./kit";
 
 interface Props {
   /** The clarifying question Arslan needs answered before it can proceed. */
@@ -12,39 +14,32 @@ interface Props {
 }
 
 /**
- * PA-3 structured clarification card for a backend `clarify_options` frame. Renders
- * inline in the chat flow (same visual family as InviteConfirmCard): the question +
- * 2-4 one-click option buttons (label bold, hint muted). Picking an option sends the
- * label over the SAME WS send path the composer uses, so one click advances the
- * conversation instead of a free-text counter-question restarting the confirm loop.
+ * PA-3 structured clarification for a backend `clarify_options` frame — 0.1.55 the kit's
+ * ChoiceCard: the same surface as an asking card without the asking header. The question,
+ * then 2–4 one-click options (label, muted hint). Picking sends the label over the SAME
+ * WS send path the composer uses, so one click advances the conversation.
  */
 export default function ClarifyOptionsCard({ question, options, answered, onPick }: Props) {
   const { t } = useTranslation();
-
   return (
-    <div
-      className={`clarify-card${answered ? " clarify-card--answered" : ""}`}
-      data-testid="clarify-options-card"
-    >
-      <span className="clarify-card__question">{question}</span>
-      <div className="clarify-card__options">
+    <div data-testid="clarify-options-card" data-answered={answered ? "true" : "false"}
+      className={`flex max-w-[460px] flex-col gap-3 rounded-2xl border border-border bg-surface px-4 py-3.5 text-foreground ${answered ? "opacity-70" : ""}`}>
+      <div className="flex items-start gap-2.5">
+        <AskMark size={26} mouth="idle" />
+        <span className="pt-0.5 text-[14px] font-semibold leading-snug">{question}</span>
+      </div>
+      <div className="flex flex-col gap-1.5">
         {options.map((o) => (
-          <button
-            key={o.label}
-            type="button"
-            className="clarify-card__option"
-            data-testid="clarify-option"
-            disabled={!!answered}
-            onClick={() => onPick(o.label)}
-          >
-            <span className="clarify-card__label">{o.label}</span>
-            {o.hint && <span className="clarify-card__hint">{o.hint}</span>}
+          <button key={o.label} type="button" data-testid="clarify-option" disabled={!!answered} onClick={() => onPick(o.label)}
+            className="flex flex-col items-start gap-0.5 rounded-[10px] bg-fill px-3 py-2 text-left hover:bg-fill-strong disabled:cursor-default disabled:hover:bg-fill">
+            <span className="text-[13px] font-semibold">{o.label}</span>
+            {o.hint && <span className="text-[12px] text-muted-foreground">{o.hint}</span>}
           </button>
         ))}
       </div>
       {answered && (
-        <span className="clarify-card__done" data-testid="clarify-answered">
-          ✓ {t("clarify_card.answered")}
+        <span className="inline-flex items-center gap-1 text-[12px] text-muted-foreground" data-testid="clarify-answered">
+          <Check className="h-3.5 w-3.5" aria-hidden /> {t("clarify_card.answered")}
         </span>
       )}
     </div>

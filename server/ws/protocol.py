@@ -108,8 +108,16 @@ def spawn_meta(
     }
 
 
-def fact_saved(content: str, sensitive: bool) -> dict[str, Any]:
-    return {"type": "fact_saved", "content": content, "sensitive": sensitive}
+def fact_saved(content: str, sensitive: bool, entry_id: str | None = None,
+               version: int | None = None) -> dict[str, Any]:
+    """D1 (0.1.55): carries the entry id and version, so the chat's quiet line can
+    Undo exactly that entry (DELETE at the version it was created with)."""
+    frame: dict[str, Any] = {"type": "fact_saved", "content": content, "sensitive": sensitive}
+    if entry_id:
+        frame["entry_id"] = entry_id
+    if version is not None:
+        frame["version"] = version
+    return frame
 
 
 def spawn_created(

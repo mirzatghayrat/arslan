@@ -27,6 +27,7 @@ import MessageBody, { HtmlDocCard } from './MessageBody';
 import CopyButton from './CopyButton';
 import LiveActivity from './LiveActivity';
 import ToolActivityCard from './ToolActivityCard';
+import { Dialog, Notice } from './kit';
 import { useArslanStore } from '../stores/arslanStore';
 import { taskErrorKey } from './companion/errors';
 import { runtimeErrorText } from '../lib/runtimeErrorText';
@@ -653,7 +654,7 @@ export default function OrchestratorChat({
                     {/* Styled Bubble Body */}
                     <div className={`px-4 py-3 text-[12.5px] leading-relaxed relative ${
                       isUser
-                        ? 'bg-[rgba(120,140,170,0.10)] border border-[rgba(255,255,255,0.08)] rounded-[12px_12px_4px_12px] text-foreground text-left'
+                        ? 'bg-fill border border-border rounded-[12px_12px_4px_12px] text-foreground text-left'
                         : isArslan
                         ? 'bg-surface/80 backdrop-blur border border-border-strong text-foreground rounded-2xl rounded-tl-none shadow-sm shadow-black/40'
                         : 'bg-background/90 backdrop-blur border border-primary/15 text-foreground rounded-2xl rounded-tl-none'
@@ -813,7 +814,7 @@ export default function OrchestratorChat({
               if (isUser) {
                 return (
                   <div key={msg.id} className="flex justify-end">
-                    <div className="max-w-[68%] border border-[rgba(255,255,255,0.08)] bg-[rgba(120,140,170,0.10)] p-3 font-mono text-[12px] text-foreground text-left" style={{ borderRadius: '12px 12px 4px 12px' }}>
+                    <div className="max-w-[68%] border border-border bg-fill p-3 font-mono text-[12px] text-foreground text-left" style={{ borderRadius: '12px 12px 4px 12px' }}>
                       <SentAttachments attachments={msg.attachments} />
                       <p className="whitespace-pre-line leading-relaxed">{msg.text}</p>
                       {msg.fromPhone && <div className="mt-1.5 flex justify-end"><RemoteChip label={t('chat.fromPhone')} /></div>}
@@ -936,11 +937,8 @@ export default function OrchestratorChat({
                     <div className="max-w-[68%]">
                       <div
                         className="px-4 py-2.5 text-foreground text-[12.5px] leading-relaxed font-sans"
-                        style={{
-                          background: 'rgba(120,140,170,0.10)',
-                          border: '1px solid rgba(255,255,255,0.08)',
-                          borderRadius: '12px 12px 4px 12px',
-                        }}
+                        // 0.1.55: theme tokens (the white hairline vanished in the light theme).
+                        style={{ background: 'var(--fill)', border: '1px solid var(--border)', borderRadius: '12px 12px 4px 12px' }}
                       >
                         <SentAttachments attachments={msg.attachments} />
                         <span className="whitespace-pre-line">{msg.text}</span>
@@ -1074,27 +1072,17 @@ export default function OrchestratorChat({
           // 0.1.44: a task-status code (a check to make, a budget used up…) is not a
           // model failure; it gets its own neutral title instead of "Model error".
           const taskKey = taskErrorKey(llmError);
-          // Literal class strings: Tailwind cannot see names spliced at runtime.
-          const c = taskKey
-            ? { box: 'bg-warning/10 border-warning/30', icon: 'text-warning', title: 'text-warning', body: 'text-warning/80', close: 'hover:bg-warning/20 text-warning/60 hover:text-warning' }
-            : { box: 'bg-danger/10 border-danger/30', icon: 'text-danger', title: 'text-danger', body: 'text-danger/80 font-mono', close: 'hover:bg-danger/20 text-danger/60 hover:text-danger' };
+          // 0.1.55: the kit's Notice — warn for a task status, error for a model failure.
           return (
           <div className="flex gap-3 items-start py-2 select-none" data-testid="chat-error" data-kind={taskKey ? 'task' : 'model'}>
             <BrandMark alt="Arslan" className="w-7 h-7 object-contain select-none shrink-0 mt-0.5" draggable={false} />
-            <div className={`flex items-start gap-2 px-3 py-2.5 border ${c.box} rounded-2xl rounded-tl-none max-w-2xl`}>
-              <AlertTriangle className={`w-3.5 h-3.5 ${c.icon} shrink-0 mt-0.5`} />
-              <div className="flex flex-col gap-1 min-w-0">
-                <span className={`text-[11px] ${c.title} font-semibold`}>{t(taskKey ? 'ui.needsYourCheck' : 'ui.modelError')}</span>
-                <span className={`text-[11px] ${c.body} break-words`}>{taskKey ? t(taskKey) : runtimeErrorText(llmError, llmErrorTranslations, i18n?.resolvedLanguage)}</span>
-              </div>
-              <button
-                onClick={clearLlmError}
-                className={`ml-auto shrink-0 p-0.5 rounded ${c.close} transition-colors`}
-                aria-label={t('errors.dismiss')}
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </div>
+            <Notice className="max-w-2xl flex-1" tone={taskKey ? 'warn' : 'error'} testId="chat-error-notice"
+              title={t(taskKey ? 'ui.needsYourCheck' : 'ui.modelError')}
+              action={<button onClick={clearLlmError} aria-label={t('errors.dismiss')}
+                className="shrink-0 self-start rounded p-0.5 text-muted-foreground hover:text-foreground"><X className="h-3 w-3" /></button>}>
+              <span className={`break-words ${taskKey ? '' : 'font-mono text-[12px]'}`}>
+                {taskKey ? t(taskKey) : runtimeErrorText(llmError, llmErrorTranslations, i18n?.resolvedLanguage)}</span>
+            </Notice>
           </div>
           );
         })()}
@@ -1199,11 +1187,11 @@ export default function OrchestratorChat({
   </div>
 
   {replayRunId != null && (
-    <div className="run-replay-overlay" onClick={() => setReplayRunId(null)}>
-      <div className="run-replay-overlay__panel" onClick={(e) => e.stopPropagation()}>
-        <RunReplay runId={replayRunId} onClose={() => setReplayRunId(null)} />
-      </div>
-    </div>
+    // 0.1.55: the kit Dialog (role=dialog, aria-modal, esc, focus kept inside).
+    <Dialog open bare width={960} title={t('replay.title', { defaultValue: 'Run' })} testId="run-replay-dialog"
+      onClose={() => setReplayRunId(null)}>
+      <RunReplay runId={replayRunId} onClose={() => setReplayRunId(null)} />
+    </Dialog>
   )}
 </div>
 );

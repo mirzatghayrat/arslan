@@ -619,7 +619,8 @@ def _to_frame(ev: dict) -> dict:
             ev.get("draft") or {}, task_brief=ev.get("task_brief"), overlaps=ev.get("overlaps")
         )
     if t == "fact_saved":
-        return protocol.fact_saved(ev.get("content", ""), bool(ev.get("sensitive")))
+        return protocol.fact_saved(ev.get("content", ""), bool(ev.get("sensitive")),
+                                   entry_id=ev.get("entry_id"), version=ev.get("version"))
     if t == "tool_call":
         return protocol.tool_call(ev.get("tool", ""), ev.get("args_summary", ""))
     if t == "tool_result":

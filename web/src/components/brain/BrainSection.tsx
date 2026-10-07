@@ -13,6 +13,7 @@ import BrainLineage from "./BrainLineage";
 import BrainNav from "./BrainNav";
 import NoteEditor from "./NoteEditor";
 import EmptyState from "../EmptyState";
+import { toast } from "../kit";
 
 export default function BrainSection() {
   const { t } = useTranslation();
@@ -107,11 +108,11 @@ export default function BrainSection() {
       }
     }
     reloadAll();
-    setStatus(
-      unreadable.length ? t("brain.fed_unreadable", { n: ok, reasons: unreadable.join("; ") })
+    // 0.1.55: progress stays a quiet line here; the result is the app's one toast.
+    setStatus(null);
+    toast(unreadable.length ? t("brain.fed_unreadable", { n: ok, reasons: unreadable.join("; ") })
       : failed.length ? t("brain.fed_partial", { n: ok, names: failed.join(", ") })
-      : t("brain.fed_ok", { n: ok }));
-    setTimeout(() => setStatus(null), 4000);
+      : t("brain.fed_ok", { n: ok }), { ms: unreadable.length || failed.length ? 7000 : 3500 });
   };
 
   return (
@@ -181,7 +182,7 @@ export default function BrainSection() {
         <BrainActivityStrip litId={lit} onHover={setHoveredId} onPick={pick} reloadKey={graphKey} />
       </div>
 
-      {status && <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 text-[12px] px-3 py-1.5 rounded-lg bg-surface border border-border text-foreground">{status}</div>}
+      {status && <div role="status" aria-live="polite" className="absolute top-3 left-1/2 -translate-x-1/2 z-20 rounded-full bg-toast px-4 py-2 text-[12px] text-toast-foreground shadow-kit">{status}</div>}
       {dragging && (
         <div data-drop-overlay="1" className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none bg-primary/[0.10] border-2 border-dashed border-primary rounded-2xl">
           <div className="text-[15px] font-medium text-primary">{t("brain.drop_to_feed")}</div>

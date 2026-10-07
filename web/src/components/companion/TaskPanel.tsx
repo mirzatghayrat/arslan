@@ -173,7 +173,7 @@ export default function TaskPanel({ conversationId, onResume, compact = false }:
             <button key={runId} className={buttonClass} disabled={busy}
               onClick={() => { setOpen(false); setReplayRunId(runId); }}>{t("tasks.openAttempt", { number: attempt.number })} · #{runId}</button>
           ))}</div>
-          {!!unresolved.length && <div className="space-y-3 rounded-lg border border-amber-500/40 p-3">
+          {!!unresolved.length && <div className="space-y-3 rounded-lg border border-ask/40 p-3">
             <h3 className="font-medium">{t("tasks.uncertain")}</h3>
             {unresolved.map(action => <div key={action.id} className="flex flex-wrap items-center justify-between gap-2">
               <span className="break-all text-xs">{action.tool_key}</span>{action.status === "uncertain" && <button className={buttonClass} disabled={busy || active}

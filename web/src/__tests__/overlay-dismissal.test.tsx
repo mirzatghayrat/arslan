@@ -32,7 +32,8 @@ beforeEach(() => vi.clearAllMocks());
 // ---------------------------------------------------------------------------
 
 const OVERLAYS = [
-  { file: "components/MessageBody.tsx",     outsideCloses: true,  why: "read-only HTML preview — nothing to lose" },
+  // 0.1.55: the kit Dialog — its scrim closes it (checked in kit/Dialog.tsx below).
+  { file: "components/MessageBody.tsx",     outsideCloses: true,  why: "read-only HTML preview — nothing to lose", kit: true },
   { file: "components/FirstRunWizard.tsx",  outsideCloses: false, why: "closing it skips setup" },
   { file: "components/brain/NoteEditor.tsx",     outsideCloses: false, why: "holds unsaved note text" },
   { file: "components/brain/BrainEntryDetail.tsx", outsideCloses: false, why: "sits over the graph — every graph interaction is an outside click" },
@@ -49,6 +50,11 @@ describe("the classification is recorded, not implied", () => {
   for (const o of OVERLAYS) {
     it(`${o.file} — outside click ${o.outsideCloses ? "closes" : `does NOT close: ${o.why}`}`, () => {
       const src = read(o.file);
+      if ("kit" in o && o.kit) {
+        expect(src).toContain("<Dialog");
+        expect(read("components/kit/Dialog.tsx")).toMatch(/bg-scrim" onClick=\{close\}/);
+        return;
+      }
       // A backdrop that closes is `onClick` on the full-screen layer itself.
       const backdropCloses = /className="fixed inset-0[^"]*"[\s\S]{0,200}?onClick=\{\(\) =>/.test(src);
       expect(backdropCloses).toBe(o.outsideCloses);

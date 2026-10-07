@@ -68,3 +68,15 @@ async def test_a_near_duplicate_noticed_fact_is_not_saved_twice(active_memory):
                                         provenance={"source_kind": "conversation"})
     assert len(first) == 1
     assert [f.content for f in again] == ["用户在做一款水利调度解谜游戏"]
+
+
+def test_the_wire_frame_keeps_what_undo_needs():
+    """D1: the socket rebuilds event frames (ws/arslan._to_frame); fact_saved used to
+    keep only the text, so the chat line had nothing to undo with."""
+    from server.ws.arslan import _to_frame
+    frame = _to_frame({"type": "fact_saved", "content": "你关注 Hermes", "sensitive": False,
+                       "entry_id": "e-1", "version": 1})
+    assert frame == {"type": "fact_saved", "content": "你关注 Hermes", "sensitive": False,
+                     "entry_id": "e-1", "version": 1}
+    waiting = {"type": "memory_proposed", "content": "血压", "sensitive": True, "entry_id": "e-2", "version": 1}
+    assert _to_frame(waiting) == waiting
