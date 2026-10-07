@@ -2,5 +2,8 @@
   "version": "v0.1.53",
   "sha": "efc1c27195ca",
   "checked": "2026-10-08",
-  "stats_html": "<div><b>2026.06.07 →</b><p>Git 可追溯的最早开发起点<br>不等同于最早构思或开源日</p></div><div><b>54 个版本标签</b><p>v0.1.0–v0.1.53 连续齐全<br>其中 53 个是公开正式 Release</p></div><div><b>一个核心转变</b><p>专家分身编排 → 统一 Agent 循环<br>能力保留，执行路径更短</p></div>"
+  "stats_html": {
+    "en": "<div><b>2026.06.07 →</b><p>Earliest traceable development in Git<br>not the first idea or the open-source date</p></div><div><b>54 version tags</b><p>v0.1.0–v0.1.53, none missing<br>53 of them public releases</p></div><div><b>One core shift</b><p>Expert personas → one agent loop<br>capabilities kept, a shorter path</p></div>",
+    "zh": "<div><b>2026.06.07 →</b><p>Git 可追溯的最早开发起点<br>不等同于最早构思或开源日</p></div><div><b>54 个版本标签</b><p>v0.1.0–v0.1.53 连续齐全<br>其中 53 个是公开正式 Release</p></div><div><b>一个核心转变</b><p>专家分身编排 → 统一 Agent 循环<br>能力保留，执行路径更短</p></div>"
+  }
 }
