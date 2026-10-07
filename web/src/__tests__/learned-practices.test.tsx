@@ -12,6 +12,7 @@ vi.mock("../components/settings/CreateBackupButton", () => ({ default: () => nul
 
 import LearnedLine from "../components/LearnedLine";
 import MemoryList from "../components/companion/MemoryList";
+import { ConfirmHost } from "../components/kit";
 import MemoryDataSection from "../components/settings/MemoryDataSection";
 import { lessonsApi, type Lesson } from "../api/lessons";
 import { companionApi } from "../api/companion";
@@ -76,26 +77,32 @@ describe("Brain › learned practices", () => {
     const first = await screen.findByTestId("practice-1");
     expect(first).toHaveTextContent("companion.sourceQuirk");
     expect(first).toHaveTextContent("companion.practiceCounts");
-    expect(screen.getByTestId("practice-2")).toHaveTextContent("companion.practiceWaiting");
+    // 0.1.55 §13: a practice that waits sits with everything else that waits, once.
+    expect(await screen.findByTestId("pending-memory-l:2")).toHaveTextContent("Reports → tables first");
+    expect(screen.queryByTestId("practice-2")).toBeNull();
     expect(screen.queryByTestId("practice-3")).toBeNull();
     fireEvent.click(screen.getByText("companion.practiceRetired"));
     expect(screen.getByTestId("practice-3")).toHaveTextContent("companion.practiceRestore");
   });
-  it("use, retire, pin and delete call the API", async () => {
-    vi.spyOn(lessonsApi, "list").mockResolvedValue([lesson({ id: 2, status: "proposed" })]);
+  it("use, retire, pin and delete call the API; delete asks first", async () => {
+    vi.spyOn(lessonsApi, "list").mockResolvedValue([lesson({ id: 2, status: "proposed", text: "waits" }), lesson({ id: 4, text: "in use" })]);
     const set = vi.spyOn(lessonsApi, "setStatus").mockResolvedValue({} as Lesson);
     const pin = vi.spyOn(lessonsApi, "pin").mockResolvedValue({} as Lesson);
     const remove = vi.spyOn(lessonsApi, "remove").mockResolvedValue({});
-    render(<MemoryList />);
-    await screen.findByTestId("practice-2");
-    fireEvent.click(screen.getByText("companion.practiceUse"));
+    render(<><MemoryList /><ConfirmHost /></>);
+    await screen.findByTestId("pending-memory-l:2");
+    fireEvent.click(screen.getByText("pendingMemory.use"));
     await waitFor(() => expect(set).toHaveBeenCalledWith(2, "active"));
+    await screen.findByTestId("practice-4");
     fireEvent.click(await screen.findByText("companion.practiceRetire"));
-    await waitFor(() => expect(set).toHaveBeenLastCalledWith(2, "archived"));
+    await waitFor(() => expect(set).toHaveBeenLastCalledWith(4, "archived"));
     fireEvent.click(await screen.findByText("companion.practicePin"));
-    await waitFor(() => expect(pin).toHaveBeenCalledWith(2, true));
+    await waitFor(() => expect(pin).toHaveBeenCalledWith(4, true));
     fireEvent.click(await screen.findByText("companion.remove"));
-    await waitFor(() => expect(remove).toHaveBeenCalledWith(2));
+    expect((await screen.findAllByText("memoryPage.deletePracticeTitle")).length).toBeGreaterThan(0);
+    expect(remove).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("confirm-action"));
+    await waitFor(() => expect(remove).toHaveBeenCalledWith(4));
   });
   it("no practices, no panel", async () => {
     vi.spyOn(lessonsApi, "list").mockResolvedValue([]);

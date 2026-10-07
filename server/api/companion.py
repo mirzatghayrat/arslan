@@ -306,6 +306,13 @@ async def list_memory(scope_kind: str | None = None, scope_id: str | None = None
     return await repo.list_entries(scope=scope, include_deleted=include_deleted, limit=limit, offset=offset)
 
 
+@router.get("/memory/stats")
+async def memory_stats(days: int = Query(7, ge=1, le=90), repo=Depends(_repository, scope="function")):
+    """0.1.55 §13: the Memory page's right rail — usage this week, core budgets, materials."""
+    from server.services import memory_stats as stats_service
+    return await stats_service.stats(repo.db, owner_id=USER.owner_id, days=days)
+
+
 @router.get("/memory/deletion-record-status")
 async def deletion_record_status(response: Response, repo=Depends(_repository, scope="function")):
     from server.services.memory_deletion_ledger import status

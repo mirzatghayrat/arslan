@@ -39,6 +39,23 @@ export interface MemoryEntry extends Omit<MemoryWrite, "sensitivity" | "use_poli
   created_at: string;
   updated_at: string;
   sources: { id: string; revision_id: string; kind: string; author: string; reference: Record<string, unknown> }[];
+  /** How it became active: user_form, explicit_user_request, auto_noticed, arslan_note (null while proposed). */
+  confirmation_kind?: string | null;
+  /** 0.1.55 §13: turns this week whose context carried it (from the turn receipts). */
+  uses_this_week?: number;
+  last_used_at?: string | null;
+}
+/** GET /memory/stats (0.1.55 §13): the Memory page's right rail. */
+export interface MemoryStats {
+  days: number;
+  retrievals: number;
+  conversations: number;
+  new_entries: number;
+  user_edits: number;
+  core: Record<"about_you" | "notes", { used: number; cap: number; entries: number; left_out: number }>;
+  remember_in_conversations: boolean;
+  materials: { count: number; latest: string | null };
+  notes: { count: number; latest: string | null };
 }
 export interface ProjectInput {
   name: string;
@@ -122,6 +139,7 @@ export const companionApi = {
   history: (entryId: string) => request<MemoryRevision[]>(`/memory/entries/${encodeURIComponent(entryId)}/history`),
   proposals: (offset = 0) => request<MemoryProposal[]>(`/memory/proposals?limit=100&offset=${offset}`),
   /** 0.1.52: facts noticed before memory took effect at once, waiting for the user's choice. */
+  memoryStats: (days = 7) => request<MemoryStats>(`/memory/stats?days=${days}`),
   noticedEarlier: () => request<{ count: number }>(`/memory/noticed-earlier`),
   acceptNoticedEarlier: () => request<{ accepted: number }>(`/memory/noticed-earlier/accept`, { method: "POST" }),
   resolveProposal: (id: number, accept: boolean, sensitive: boolean, cloud: boolean) => request(

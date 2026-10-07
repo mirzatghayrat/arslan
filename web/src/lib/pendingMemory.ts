@@ -1,6 +1,6 @@
 import type { TFunction } from "i18next";
 import { api } from "../api/client";
-import { companionApi } from "../api/companion";
+import { companionApi, type MemoryProposal } from "../api/companion";
 import { lessonsApi } from "../api/lessons";
 
 /**
@@ -20,6 +20,8 @@ export interface PendingMemoryItem {
   /** Keep it: memory → confirmed, only for local models (sensitive acknowledged); curation → apply; lesson → use. */
   accept: () => Promise<unknown>;
   reject: () => Promise<unknown>;
+  /** The memory proposal itself, for the full review dialog (scope, cloud choice, conflicts). */
+  proposal?: MemoryProposal;
 }
 
 export async function loadPendingMemory(t: TFunction): Promise<PendingMemoryItem[]> {
@@ -31,7 +33,7 @@ export async function loadPendingMemory(t: TFunction): Promise<PendingMemoryItem
     for (const p of memory.value) {
       const sensitive = p.entry.sensitivity !== "normal";
       out.push({
-        key: `m:${p.id}`, source: "memory", sensitive, createdAt: p.entry.created_at ?? null,
+        key: `m:${p.id}`, source: "memory", sensitive, createdAt: p.entry.created_at ?? null, proposal: p,
         text: p.candidate?.content ?? p.entry.content ?? "",
         // Kept for local models only: the safe default for something that waited.
         accept: () => companionApi.resolveProposal(p.id, true, sensitive, false),

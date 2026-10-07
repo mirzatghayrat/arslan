@@ -15,7 +15,9 @@ import NoteEditor from "./NoteEditor";
 import EmptyState from "../EmptyState";
 import { toast } from "../kit";
 
-export default function BrainSection() {
+/** `page`: the Memory page's graph view (0.1.55 §13) — the canvas fills the page and the
+ * navigator floats on it as the legend/filter card. Rendering of the graph is unchanged. */
+export default function BrainSection({ page = false }: { page?: boolean } = {}) {
   const { t } = useTranslation();
   const { branches, loading, error, refresh } = useBrainTree();
   const glowIds = useMemo(() => recentIds(branches), [branches]);
@@ -120,14 +122,17 @@ export default function BrainSection() {
       onDragOver={(e) => { if (hasFiles(e)) { e.preventDefault(); setDragging(true); } }}
       onDragLeave={(e) => { if (e.currentTarget === e.target) setDragging(false); }}
       onDrop={(e) => void onDrop(e)}>
-      <BrainNav branches={branches} litId={lit} onHover={setHoveredId} onPick={pick} onChanged={reloadAll}
+      {!page && <BrainNav branches={branches} litId={lit} onHover={setHoveredId} onPick={pick} onChanged={reloadAll}
         onTagFilter={onTagFilter} activeTag={tagFilter} onClearTag={() => setTagFilter(null)}
         showTags={showTags} onToggleTags={toggleTags}
         onCreateNote={(title) => void createNoteWithTitle(title)}
         inboxOpen={showInbox} onToggleInbox={() => setShowInbox((v) => !v)}
-        onGenerate={(t) => void generateFromTopic(t)} />
+        onGenerate={(t) => void generateFromTopic(t)} />}
 
       <div className="flex-1 relative h-full overflow-hidden">
+        {page && <BrainNav floating branches={branches} litId={lit} onHover={setHoveredId} onPick={pick} onChanged={reloadAll}
+          onTagFilter={onTagFilter} activeTag={tagFilter} onClearTag={() => setTagFilter(null)}
+          showTags={showTags} onToggleTags={toggleTags} />}
         <BrainGraph litId={lit} onHover={setHoveredId} onPick={pick}
               onCreateNoteWithTitle={(t) => void createNoteWithTitle(t)} showTags={showTags}
               glowIds={glowIds} reloadKey={graphKey} asOf={asOf} onData={setGraphNodes} onStatus={setGraphStatus}

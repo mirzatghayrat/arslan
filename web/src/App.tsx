@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { OPEN_SECTION_EVENT, SECTIONS, type Section } from "./lib/sections";
+import { OPEN_SECTION_EVENT, readOpenSection, type Section } from "./lib/sections";
 import { ConfirmHost, ToastHost, toast as showToast } from "./components/kit";
 import AskSlot from "./components/AskSlot";
 import { useTranslation } from 'react-i18next';
@@ -37,7 +37,7 @@ import { companionApi, type Project } from './api/companion';
 import FirstRunWizard from './components/FirstRunWizard';
 import UpdatePill from './components/UpdatePill';
 import WorkDock from './components/WorkDock';
-import type { SettingsSectionId } from './components/settings/sectionRegistry';
+import { resolveSection, type SettingsSectionId } from './components/settings/sectionRegistry';
 import { getFirstRunSeen, setFirstRunSeen, firstRunShouldShow, restoreFirstRunSeen } from './lib/firstRun';
 import { threadNavAction } from './lib/threadNav';
 import type { ImagePayload } from './lib/imagePayload';
@@ -132,8 +132,10 @@ export default function App() {
   }, []);
   useEffect(() => {
     const onOpen = (event: Event) => {
-      const section = (event as CustomEvent<string>).detail;
-      if ((SECTIONS as readonly string[]).includes(section)) { setActiveSection(section as Section); setPanelView('default'); }
+      const asked = readOpenSection((event as CustomEvent<unknown>).detail);
+      if (!asked) return;
+      if (asked.section === 'settings') setSettingsInitialSection(resolveSection(asked.sub));
+      setActiveSection(asked.section); setPanelView('default');
     };
     window.addEventListener(OPEN_SECTION_EVENT, onOpen);
     return () => window.removeEventListener(OPEN_SECTION_EVENT, onOpen);

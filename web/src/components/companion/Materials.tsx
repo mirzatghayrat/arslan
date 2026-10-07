@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FileText, Plus, Upload } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { api, type BrainLeaf } from "../../api/client";
@@ -8,7 +8,10 @@ import BrainEntryDetail from "../brain/BrainEntryDetail";
 import NoteEditor from "../brain/NoteEditor";
 import { buttonClass, inputClass, primaryClass } from "./CompanionDialog";
 
-export default function Materials() {
+/** Materials and notes (0.1.55 §13: a sub-page of Memory, reached from the rail or "Add").
+ * `mode` puts the cursor where the user meant to start. Generating notes from a topic
+ * moved here from the graph's side column. */
+export default function Materials({ mode = "browse" }: { mode?: "browse" | "feed" | "note" }) {
   const { t } = useTranslation();
   const { branches, loading, error, refresh } = useBrainTree();
   const [picked, setPicked] = useState<BrainLeaf | null>(null);
@@ -18,6 +21,13 @@ export default function Materials() {
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const feedBox = useRef<HTMLTextAreaElement>(null);
+  const noteBox = useRef<HTMLInputElement>(null);
+  const [topic, setTopic] = useState("");
+  useEffect(() => {
+    if (mode === "feed") feedBox.current?.focus();
+    if (mode === "note") noteBox.current?.focus();
+  }, [mode]);
   const leaves = branches.flatMap(branch => branch.children).filter(leaf => leaf.kind === "material" || leaf.kind === "note");
   async function act(operation: () => Promise<void>) {
     setBusy(true); setFailure(null);
@@ -32,7 +42,7 @@ export default function Materials() {
       <h1 className="text-xl font-semibold">{t("companion.materials")}</h1>
       <div className="grid gap-4 lg:grid-cols-2">
         <form className="space-y-2 rounded-xl border border-border p-4" onSubmit={event => { event.preventDefault(); void act(async () => { await feedTextOrUrl(text, t); setText(""); }); }}>
-          <textarea className={inputClass} rows={3} value={text} aria-label={t("brain.feed_ph")} placeholder={t("brain.feed_ph")} onChange={event => setText(event.target.value)} />
+          <textarea ref={feedBox} data-testid="materials-feed" className={inputClass} rows={3} value={text} aria-label={t("brain.feed_ph")} placeholder={t("brain.feed_ph")} onChange={event => setText(event.target.value)} />
           <div className="flex flex-wrap gap-2"><button className={primaryClass} disabled={busy || !text.trim()}><Plus size={14} />{t("brain.feed_btn")}</button>
             <button type="button" className={buttonClass} disabled={busy} onClick={() => fileInput.current?.click()}><Upload size={14} />{t("brain.upload_title")}</button></div>
           <input ref={fileInput} type="file" multiple className="hidden" onChange={event => {
@@ -42,8 +52,12 @@ export default function Materials() {
         </form>
         <form className="space-y-2 rounded-xl border border-border p-4" onSubmit={event => { event.preventDefault(); void act(async () => {
           const note = await api.createNote({ title: noteTitle.trim() }); setNoteTitle(""); pickNote(note.id, note.title);
-        }); }}><input className={inputClass} value={noteTitle} maxLength={200} aria-label={t("brain.new_note_ph")} placeholder={t("brain.new_note_ph")}
+        }); }}><input ref={noteBox} data-testid="materials-note" className={inputClass} value={noteTitle} maxLength={200} aria-label={t("brain.new_note_ph")} placeholder={t("brain.new_note_ph")}
           onChange={event => setNoteTitle(event.target.value)} /><button className={buttonClass} disabled={busy || !noteTitle.trim()}><Plus size={14} />{t("brain.kind_note")}</button></form>
+        <form className="space-y-2 rounded-xl border border-border p-4 lg:col-span-2" onSubmit={event => { event.preventDefault(); void act(async () => {
+          await api.generateNotes(topic.trim()); setTopic("");
+        }); }}><input className={inputClass} value={topic} aria-label={t("brain.ai_note_ph")} placeholder={t("brain.ai_note_ph")}
+          onChange={event => setTopic(event.target.value)} /><button className={buttonClass} disabled={busy || !topic.trim()}>{t("brain.generate")}</button></form>
       </div>
       {(failure || error) && <p role="alert" className="text-sm text-destructive">{failure || t("brain.read_failed")}</p>}
       <input type="search" className={inputClass} value={query} aria-label={t("brain.search_ph")} placeholder={t("brain.search_ph")} onChange={event => setQuery(event.target.value)} />

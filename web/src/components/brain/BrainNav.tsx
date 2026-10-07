@@ -34,6 +34,10 @@ interface Props {
   /** F2 — the memory-proposal inbox toggle (a different inbox from the evolution one). */
   inboxOpen?: boolean;
   onToggleInbox?: () => void;
+  /** 0.1.55 §13: the Memory page's graph — a card floating on the canvas that filters
+   * and browses only. Feeding, new notes and generating live in the page's Add menu;
+   * the index line lives in the list's rail and in Settings. */
+  floating?: boolean;
 }
 
 /** Second-Brain left column: a persistent navigator for the always-on graph.
@@ -41,7 +45,7 @@ interface Props {
  * graph), then a tidy multi-level collapsible tree (画像 grouped by category, 材料
  * by provenance); then create/generate/feed + a collapsed index-health strip.
  * Hovering a row focuses its graph node; clicking opens its detail in the right rail. */
-export default function BrainNav({ branches, litId, onHover, onPick, onChanged, onTagFilter, activeTag, onClearTag, showTags, onToggleTags, onCreateNote, onGenerate, inboxOpen, onToggleInbox }: Props) {
+export default function BrainNav({ branches, litId, onHover, onPick, onChanged, onTagFilter, activeTag, onClearTag, showTags, onToggleTags, onCreateNote, onGenerate, inboxOpen, onToggleInbox, floating = false }: Props) {
   const { t } = useTranslation();
   const [q, setQ] = useState("");
   // ONE BOX (decision 甲): typing filters what is loaded; Enter runs the real
@@ -156,7 +160,7 @@ export default function BrainNav({ branches, litId, onHover, onPick, onChanged, 
   };
 
   return (
-    <aside className="brain-nav">
+    <aside className={floating ? "brain-nav brain-nav--floating" : "brain-nav"} data-testid="brain-nav">
       <div className="brain-nav__search">
         <input value={q}
           onChange={(e) => { setQ(e.target.value); setPipeline(null); }}
@@ -271,6 +275,7 @@ export default function BrainNav({ branches, litId, onHover, onPick, onChanged, 
         </div>
       )}
 
+      {!floating && <>
       {/* spacer pushes the ingest group (feed + index health) to the bottom, split off from the chips above */}
       <div className="brain-nav__spacer" />
 
@@ -314,6 +319,7 @@ export default function BrainNav({ branches, litId, onHover, onPick, onChanged, 
         </button>
         {healthOpen && <BrainIndexHealth />}
       </div>
+      </>}
     </aside>
   );
 }
