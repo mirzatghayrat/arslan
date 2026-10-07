@@ -1864,5 +1864,31 @@
       "modify": "cambiar contenido",
       "quit": "cerrar una app"
     }
+  },
+  "inbox": {
+    "approveNow": "Aprobar ahora",
+    "answerFailed": "Esa tarjeta ya se respondió o caducó.",
+    "stalled": "Detenido",
+    "changed": "Cambios",
+    "other": "Otros",
+    "memoryWaiting": "Memoria esperando tu OK",
+    "memoryOpen": "Abrir Memoria",
+    "watching": "Vigilando",
+    "muted": "Sin recordatorios",
+    "addWatch": "Vigilar otra página o carpeta"
+  },
+  "pendingMemory": {
+    "curationFallback": "Una sugerencia para ordenar tu memoria",
+    "keep": "Guardar",
+    "keepLocal": "Guardar, solo modelos locales",
+    "drop": "No",
+    "apply": "Aplicar",
+    "use": "Usarla",
+    "source": {
+      "memory": "Sobre ti",
+      "curation": "Orden",
+      "lesson": "Práctica aprendida"
+    },
+    "sensitive": "Sensible"
   }
 }

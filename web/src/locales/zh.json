@@ -1864,5 +1864,31 @@
       "modify": "修改内容",
       "quit": "退出应用"
     }
+  },
+  "inbox": {
+    "approveNow": "现在就要你批准",
+    "answerFailed": "这张卡已经被处理或过期了。",
+    "stalled": "停住了",
+    "changed": "有变化",
+    "other": "其他",
+    "memoryWaiting": "记忆等你确认",
+    "memoryOpen": "去「记忆」里看全部",
+    "watching": "正在盯着",
+    "muted": "不再提醒",
+    "addWatch": "再盯一个网页或文件夹"
+  },
+  "pendingMemory": {
+    "curationFallback": "一条整理记忆的建议",
+    "keep": "留下",
+    "keepLocal": "留下，只给本机用",
+    "drop": "不要",
+    "apply": "合并",
+    "use": "用上",
+    "source": {
+      "memory": "关于你",
+      "curation": "整理",
+      "lesson": "学到的做法"
+    },
+    "sensitive": "敏感"
   }
 }

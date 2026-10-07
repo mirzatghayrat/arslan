@@ -8,6 +8,7 @@ import i18n from "../i18n";
 import { ApiError } from "../api/client";
 import type { ProactiveConfig, ProactiveWatch } from "../api/proactive";
 import ProactiveSection from "../components/settings/ProactiveSection";
+import { ConfirmHost } from "../components/kit";
 import ProactiveDiagnosisCap from "../components/settings/ProactiveDiagnosisCap";
 import { FIELD_HOMES, SETTINGS_SECTIONS } from "../components/settings/sectionRegistry";
 
@@ -111,7 +112,13 @@ describe("watches", () => {
     fireEvent.click(within(row).getByRole("button", { name: "Pause" }));
     fireEvent.click(within(row).getByRole("checkbox", { name: "Notify me" }));
     fireEvent.change(within(row).getByRole("combobox", { name: "Check every" }), { target: { value: "86400" } });
+    // 0.1.55: removing asks first (its history goes too); nothing is deleted until confirmed.
+    render(<ConfirmHost />);
     fireEvent.click(within(row).getByRole("button", { name: "Remove" }));
+    fireEvent.click(await screen.findByTestId("confirm-cancel"));
+    expect(api.deleteWatch).not.toHaveBeenCalled();
+    fireEvent.click(within(row).getByRole("button", { name: "Remove" }));
+    fireEvent.click(await screen.findByTestId("confirm-action"));
     await waitFor(() => expect(api.deleteWatch).toHaveBeenCalledWith(4));
     expect(api.updateWatch.mock.calls).toEqual([[4, { enabled: false }], [4, { notify: false }], [4, { interval_s: 86400 }]]);
   });

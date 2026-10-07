@@ -1864,5 +1864,31 @@
       "modify": "change content",
       "quit": "quit an app"
     }
+  },
+  "inbox": {
+    "approveNow": "Approve now",
+    "answerFailed": "That card was already answered or expired.",
+    "stalled": "Stopped",
+    "changed": "Changed",
+    "other": "Other",
+    "memoryWaiting": "Memory waiting for your OK",
+    "memoryOpen": "Open Memory",
+    "watching": "Watching",
+    "muted": "Not reminding",
+    "addWatch": "Watch another page or folder"
+  },
+  "pendingMemory": {
+    "curationFallback": "A suggestion to tidy your memory",
+    "keep": "Keep",
+    "keepLocal": "Keep, local models only",
+    "drop": "Don't",
+    "apply": "Apply",
+    "use": "Use it",
+    "source": {
+      "memory": "About you",
+      "curation": "Tidy-up",
+      "lesson": "Learned practice"
+    },
+    "sensitive": "Sensitive"
   }
 }

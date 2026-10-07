@@ -8,6 +8,10 @@ import { evidenceLines, groupEvidence, proactiveErrorText, titleOf } from "../..
 import { buttonClass, primaryClass } from "../companion/CompanionDialog";
 import { useDismissable } from "../../hooks/useDismissable";
 import EmptyState from "../EmptyState";
+import InboxApprovals from "./InboxApprovals";
+import InboxMemory from "./InboxMemory";
+import WatchesPanel from "./WatchesPanel";
+import { Notice } from "../kit";
 
 const ICONS: Record<ProactiveKind, typeof Globe> = {
   web_change: Globe, folder_change: FolderOpen, job_followup: ListChecks, scheduled_problem: CalendarClock, brief: Sun,
@@ -46,14 +50,14 @@ function Card({ item, busy, language, onDo, onSnooze, onDismiss, onOpenConversat
   const when = formatUiDateTime(item.created_at, language);
   const titleId = `proactive-item-${item.id}`;
   return <article aria-labelledby={titleId} data-testid={`proactive-item-${item.id}`} data-kind={item.kind}
-    className="rounded-xl border border-border bg-surface p-5">
+    className="rounded-xl border border-border bg-surface p-4">
     <div className="flex items-start gap-3">
-      <Icon size={18} className="mt-0.5 shrink-0 text-primary" aria-hidden />
+      <Icon size={18} className="mt-0.5 shrink-0 text-muted-foreground" aria-hidden />
       <div className="min-w-0 flex-1">
         <h2 id={titleId} className="break-words text-sm font-medium">{titleOf(t, item)}</h2>
         <p className="mt-0.5 text-[11px] text-muted-foreground">{when}</p>
       </div>
-      {item.priority === "high" && item.status !== "accepted" && <span className="shrink-0 rounded-full bg-warning/15 px-2 py-0.5 text-[11px] text-warning">{t("proactive.item.needsLook")}</span>}
+      {item.priority === "high" && item.status !== "accepted" && <span className="shrink-0 rounded-full bg-ask-soft px-2 py-0.5 text-[11px] text-ask">{t("proactive.item.needsLook")}</span>}
     </div>
     <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
       {groups.map((group, index) => <li key={`${group.key}-${index}`}>
@@ -84,7 +88,7 @@ function Card({ item, busy, language, onDo, onSnooze, onDismiss, onOpenConversat
       {item.status === "snoozed" && item.snooze_until && <span className="text-[11px] text-muted-foreground">{t("proactive.item.snoozedUntil", { date: formatUiDateTime(item.snooze_until, language) })}</span>}
     </div> : <p className="mt-4 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
       <span>{t(item.status === "accepted" ? "proactive.item.started" : item.status === "expired" ? "proactive.item.expired" : "proactive.item.dismissed")}</span>
-      {item.status === "accepted" && item.conversation_id && <button className="inline-flex items-center gap-1 text-primary underline" onClick={onOpenConversation}><MessageSquare size={12} />{t("proactive.item.openChat")}</button>}
+      {item.status === "accepted" && item.conversation_id && <button className="inline-flex items-center gap-1 text-foreground underline" onClick={onOpenConversation}><MessageSquare size={12} />{t("proactive.item.openChat")}</button>}
     </p>}
   </article>;
 }
@@ -152,9 +156,32 @@ export default function ProactiveInbox({ onOpenSettings, onOpenModelSettings, on
     finally { if (alive.current) setChecking(false); }
   }
 
+  const [waiting, setWaiting] = useState(0);
+  const [memoryWaiting, setMemoryWaiting] = useState(0);
   const emptyBody = scope === "open" ? t("proactive.page.emptyBody") : t(scope === "snoozed" ? "proactive.page.emptySnoozed" : "proactive.page.emptyDone");
+  const card = (item: ProactiveItem) => <li key={item.id}>
+    <Card item={item} busy={busyId === item.id} language={i18n.language}
+      onDo={() => void doIt(item)}
+      onSnooze={(days) => void act(item, () => proactiveApi.snooze(item.id, days))}
+      onDismiss={(mute) => void act(item, () => proactiveApi.dismiss(item.id, mute))}
+      onOpenConversation={() => item.conversation_id && onOpenConversation(item.conversation_id, false)} />
+  </li>;
+  // 0.1.55 §12: grouped by what the user has to decide, not by where it came from.
+  const open = scope === "open";
+  const briefs = open ? items.filter((i) => i.kind === "brief") : [];
+  const stalled = open ? items.filter((i) => i.kind === "job_followup" || i.kind === "scheduled_problem") : [];
+  const changed = open ? items.filter((i) => i.kind === "web_change" || i.kind === "folder_change") : [];
+  const rest = open ? items.filter((i) => !briefs.includes(i) && !stalled.includes(i) && !changed.includes(i)) : items;
+  const group = (key: string, dot: string, list: ProactiveItem[]) => list.length > 0 && <section aria-label={t(key)} className="flex flex-col gap-2">
+    <h2 className="flex items-center gap-2 text-[13px] font-semibold">
+      <span aria-hidden="true" className={`h-[7px] w-[7px] rounded-full ${dot}`} />{t(key)}
+      <span className="font-mono text-[12px] text-subtle-foreground">{list.length}</span></h2>
+    <ul className="space-y-3">{list.map(card)}</ul>
+  </section>;
+  const nothing = !loading && !failed && items.length === 0 && waiting === 0 && memoryWaiting === 0;
   return <section data-testid="proactive-inbox" className="h-full overflow-y-auto px-5 py-6 sm:px-8">
-    <div className="mx-auto max-w-3xl space-y-5">
+    <div className="mx-auto flex max-w-6xl gap-7">
+    <div className="min-w-0 max-w-[700px] flex-1 space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0"><h1 className="text-xl font-semibold">{t("proactive.page.title")}</h1>
           <p className="mt-2 max-w-xl text-sm text-muted-foreground">{t("proactive.page.intro")}</p></div>
@@ -165,21 +192,30 @@ export default function ProactiveInbox({ onOpenSettings, onOpenModelSettings, on
       </div>
       <div role="tablist" className="flex gap-1 border-b border-border">
         {TABS.map((tab) => <button key={tab.scope} role="tab" aria-selected={scope === tab.scope} onClick={() => setScope(tab.scope)}
-          className={`-mb-px border-b-2 px-3 py-2 text-sm ${scope === tab.scope ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>{t(tab.label)}</button>)}
+          className={`-mb-px border-b-2 px-3 py-2 text-sm ${scope === tab.scope ? "border-foreground font-semibold text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>{t(tab.label)}</button>)}
       </div>
-      {notice && <p role={notice.kind === "error" ? "alert" : "status"} className={`text-sm ${notice.kind === "error" ? "text-destructive" : "text-muted-foreground"}`}>{notice.text}
-        {notice.needsModel && onOpenModelSettings && <button className="ml-2 underline" onClick={onOpenModelSettings}>{t("proactive.item.errors.openModels")}</button>}</p>}
-      {failed && <p role="alert" className="text-sm text-destructive">{t("proactive.page.loadFailed")} <button className="underline" onClick={() => void load(scope)}>{t("proactive.page.retry")}</button></p>}
+      {notice && <Notice tone={notice.kind === "error" ? "error" : "info"}
+        action={notice.needsModel && onOpenModelSettings ? <button className="text-[13px] underline" onClick={onOpenModelSettings}>{t("proactive.item.errors.openModels")}</button> : undefined}>
+        {notice.text}</Notice>}
+      {failed && <p role="alert" className="text-sm text-danger-strong">{t("proactive.page.loadFailed")} <button className="underline" onClick={() => void load(scope)}>{t("proactive.page.retry")}</button></p>}
+      {open && <InboxApprovals onCount={setWaiting} onOpenConversation={(id) => onOpenConversation(id, false)} />}
       {loading && !failed && <p role="status" className="text-sm text-muted-foreground">{t("companion.loading")}</p>}
-      {!loading && !failed && items.length === 0 && <EmptyState icon={scope === "open" ? Inbox : BellOff} title={t("proactive.page.emptyTitle")} body={emptyBody}
-        action={scope === "open" ? <button className={primaryClass} onClick={onOpenSettings}>{t("proactive.page.emptyAction")}</button> : undefined} testId="proactive-empty" />}
-      <ul className="space-y-4">{items.map((item) => <li key={item.id}>
-        <Card item={item} busy={busyId === item.id} language={i18n.language}
-          onDo={() => void doIt(item)}
-          onSnooze={(days) => void act(item, () => proactiveApi.snooze(item.id, days))}
-          onDismiss={(mute) => void act(item, () => proactiveApi.dismiss(item.id, mute))}
-          onOpenConversation={() => item.conversation_id && onOpenConversation(item.conversation_id, false)} />
-      </li>)}</ul>
+      {nothing && <EmptyState icon={open ? Inbox : BellOff} title={t("proactive.page.emptyTitle")} body={emptyBody}
+        action={open ? <button className={primaryClass} onClick={onOpenSettings}>{t("proactive.page.emptyAction")}</button> : undefined} testId="proactive-empty" />}
+      {open ? <>
+        {group("inbox.stalled", "bg-danger-strong", stalled)}
+        {group("inbox.changed", "bg-info-strong", changed)}
+        {group("inbox.other", "bg-subtle-foreground", rest)}
+        <InboxMemory onCount={setMemoryWaiting} />
+      </> : <ul className="space-y-4">{items.map(card)}</ul>}
+    </div>
+    <aside data-testid="inbox-side" className="hidden w-[300px] shrink-0 flex-col gap-5 lg:flex">
+      {briefs.length > 0 && <ul className="space-y-3">{briefs.map(card)}</ul>}
+      <div className="flex flex-col gap-2">
+        <h2 className="text-[13px] font-semibold text-muted-foreground">{t("inbox.watching")}</h2>
+        <WatchesPanel quiet />
+      </div>
+    </aside>
     </div>
   </section>;
 }

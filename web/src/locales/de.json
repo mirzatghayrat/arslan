@@ -1864,5 +1864,31 @@
       "modify": "Inhalte ändern",
       "quit": "eine App beenden"
     }
+  },
+  "inbox": {
+    "approveNow": "Jetzt freigeben",
+    "answerFailed": "Diese Karte wurde schon beantwortet oder ist abgelaufen.",
+    "stalled": "Angehalten",
+    "changed": "Geändert",
+    "other": "Sonstiges",
+    "memoryWaiting": "Erinnerungen warten auf dein OK",
+    "memoryOpen": "Erinnerung öffnen",
+    "watching": "Beobachtet",
+    "muted": "Keine Erinnerung",
+    "addWatch": "Weitere Seite oder Ordner beobachten"
+  },
+  "pendingMemory": {
+    "curationFallback": "Ein Vorschlag zum Aufräumen",
+    "keep": "Behalten",
+    "keepLocal": "Behalten, nur lokale Modelle",
+    "drop": "Nein",
+    "apply": "Übernehmen",
+    "use": "Verwenden",
+    "source": {
+      "memory": "Über dich",
+      "curation": "Aufräumen",
+      "lesson": "Gelernte Vorgehensweise"
+    },
+    "sensitive": "Sensibel"
   }
 }

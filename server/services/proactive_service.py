@@ -295,9 +295,29 @@ async def summary() -> dict:
         rows = (await db.execute(select(ProactiveItem.status, ProactiveItem.priority, func.count())
                                  .where(ProactiveItem.status.in_(OPEN))
                                  .group_by(ProactiveItem.status, ProactiveItem.priority))).all()
+        memory = await _memory_waiting(db)
+    from server.services import approvals
     return {"open": sum(n for _, _, n in rows),
             "unread": sum(n for status, _, n in rows if status == "new"),
-            "high": sum(n for status, p, n in rows if status == "new" and p == "high")}
+            "high": sum(n for status, p, n in rows if status == "new" and p == "high"),
+            # 0.1.55 §12: the Inbox is everything waiting for the user's decision —
+            # cards to approve (any conversation or job) and memory waiting for an OK.
+            "approvals": len(approvals.all_pending()),
+            "memory": memory}
+
+
+async def _memory_waiting(db) -> int:
+    """Pending memory proposals (all kinds: noticed facts that wait, curation) plus
+    learned practices that wait. Fails soft: the badge must never break the page."""
+    from server.db.models import Lesson, MemoryProposal
+    try:
+        proposals = (await db.execute(select(func.count()).select_from(MemoryProposal)
+                                      .where(MemoryProposal.status == "pending"))).scalar_one()
+        lessons = (await db.execute(select(func.count()).select_from(Lesson)
+                                    .where(Lesson.status == "proposed"))).scalar_one()
+        return int(proposals) + int(lessons)
+    except Exception:  # noqa: BLE001
+        return 0
 
 
 async def mark_seen(ids: list[int]) -> None:

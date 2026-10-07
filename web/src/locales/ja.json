@@ -1864,5 +1864,31 @@
       "modify": "内容を変更します",
       "quit": "アプリを終了します"
     }
+  },
+  "inbox": {
+    "approveNow": "今すぐ承認が必要",
+    "answerFailed": "このカードはすでに処理されたか期限切れです。",
+    "stalled": "止まっています",
+    "changed": "変化あり",
+    "other": "その他",
+    "memoryWaiting": "確認待ちの記憶",
+    "memoryOpen": "「メモリー」ですべて見る",
+    "watching": "見守り中",
+    "muted": "通知しない",
+    "addWatch": "ページやフォルダーを追加で見守る"
+  },
+  "pendingMemory": {
+    "curationFallback": "記憶を整理する提案",
+    "keep": "残す",
+    "keepLocal": "残す（ローカルモデルのみ）",
+    "drop": "いらない",
+    "apply": "適用",
+    "use": "使う",
+    "source": {
+      "memory": "あなたについて",
+      "curation": "整理",
+      "lesson": "学んだやり方"
+    },
+    "sensitive": "機微"
   }
 }

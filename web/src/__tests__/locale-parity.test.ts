@@ -50,7 +50,7 @@ describe("locale parity", () => {
 // 1580 → 1589 (phone v2): sidebar.remote, sidebar.fromPhone, sidebar.glyph.{waiting,remote,working,progress,done,failed,scheduled}.
 // 1589 → 1590 (device e2e): sidebar.glyph.unfinished — a task that ended without getting it done.
 // 1590 → 1592 (0.1.53): settings.phoneComingSoon(+Desc) — the iPhone app teaser.
-  it("en locale has 1630 keys (baseline guard)", () => {
+  it("en locale has 1650 keys (baseline guard)", () => {
     // 1318 → 1335: the first-run wizard redesign — the four-beat "how it
     // works" tour (title + typed line + 4×title/body), the catalog capability
     // caption, the test-before-save states (test & save / testing / ok /
@@ -280,7 +280,9 @@ describe("locale parity", () => {
     // 1595 → 1601 (0.1.55 D1): chat.remembered, wantsToRemember, rememberedUndo/Undone/Review/Changed.
     // 1601 → 1612 (0.1.55 S1): kit.* — the surface kit's eleven shared words.
     // 1612 → 1630 (0.1.55 S2): kit.whoArslan, the code-derived risk line (4 + 8 effects), schedgrant cadence ×6.
-    expect(enKeys).toHaveLength(1630);
+    // 1630 → 1649 (0.1.55 §12): inbox.* (9), pendingMemory.* (10).
+    // +1: inbox.addWatch.
+    expect(enKeys).toHaveLength(1650);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

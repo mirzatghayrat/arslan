@@ -11,7 +11,11 @@ export interface ProactiveItem {
   diagnosis: { cause: string; next_step: string; model: string; usd: number } | null;
   conversation_id: string | null; job_id: string | null; created_at: string; snooze_until: string | null;
 }
-export interface ProactiveSummary { open: number; unread: number; high: number }
+export interface ProactiveSummary {
+  open: number; unread: number; high: number;
+  /** 0.1.55 §12: cards waiting for approval (any conversation or job) and memory waiting for an OK. */
+  approvals?: number; memory?: number;
+}
 export interface ProactiveConfig {
   enabled: boolean; notify: boolean; notify_daily_cap: number; quiet_start: string; quiet_end: string;
   job_followups: boolean; scheduled_problems: boolean; watches: boolean; brief_enabled: boolean; brief_time: string;

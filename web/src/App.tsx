@@ -579,8 +579,8 @@ export default function App() {
           setActiveSection('arslan');
         }}
         onAddThread={() => handleAddArslanThread()}
-        inboxUnread={proactive.unread}
-        inboxHigh={proactive.high}
+        inboxUnread={proactive.unread + (proactive.approvals ?? 0) + (proactive.memory ?? 0)}
+        inboxHigh={proactive.high + (proactive.approvals ?? 0)}
         activeSection={activeSection}
         onChangeSection={(section) => {
           if (section === 'settings') setSettingsInitialSection(undefined);
