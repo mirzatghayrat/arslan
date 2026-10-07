@@ -29,6 +29,18 @@ MAX_PRACTICES = 2
 # 0.1.52 S5: the practices the same reply named, for capture() — one model call, and
 # the tests that replace extract() see no practices.
 _practices: contextvars.ContextVar[list[dict]] = contextvars.ContextVar("turn_practices", default=[])
+# 0.1.55 (L1): whether the latest user message came after a reply of Arslan's. A
+# correction answers something Arslan did; a conversation's first message never does.
+_after_reply: contextvars.ContextVar[bool] = contextvars.ContextVar("turn_after_reply", default=False)
+
+
+def answers_earlier_reply(history: list[dict], summary: str = "") -> bool:
+    """True when an Arslan reply precedes the latest user message (or a compaction
+    summary stands for earlier turns)."""
+    last_user = max((i for i, m in enumerate(history) if m.get("role") == "user"), default=None)
+    if last_user is None:
+        return bool(summary)
+    return bool(summary) or any(m.get("role") == "assistant" for m in history[:last_user])
 
 _SYSTEM = (
     "You read a conversation and pick out DURABLE facts about the user worth remembering in "
@@ -83,6 +95,7 @@ async def extract(conversation_id: str, user_message: str) -> list[dict[str, Any
     output; since a noticed fact now takes effect at once (D1), it must come from
     the user's words — by construction, not by a filter on the output."""
     ctx = await memory.assemble_working_context(conversation_id)
+    _after_reply.set(answers_earlier_reply(ctx["history"], ctx.get("summary") or ""))
     known = await memory.facts_text(include_sensitive=True)
     own = [m["content"] for m in ctx["history"] if m.get("role") == "user"]
     prompt = (
@@ -98,6 +111,7 @@ async def extract(conversation_id: str, user_message: str) -> list[dict[str, Any
 async def capture(conversation_id: str, user_message: str, emit) -> int:
     """Extract and save; announce what was saved. Never raises. Returns how many."""
     _practices.set([])
+    _after_reply.set(False)
     try:
         facts = await extract(conversation_id, user_message)
         _learn_practices(conversation_id, emit)
@@ -127,7 +141,8 @@ def _learn_practices(conversation_id: str, emit) -> None:
     from server.services import lessons
     made = [lessons.candidate(p["situation"], p["advice"], source="user_correction",
                               polarity="avoid" if p["avoid"] else "do",
-                              evidence={"conversation_id": conversation_id})
+                              evidence={"conversation_id": conversation_id,
+                                        "answers_earlier_reply": _after_reply.get()})
             for p in _practices.get()]
     made = [m for m in made if m]
     if made:

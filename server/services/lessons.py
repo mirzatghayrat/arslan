@@ -47,6 +47,11 @@ SCAN_LIMIT = 500
 # malformed, or not run at all.
 _NOT_A_TRY = {"invalid_arguments", "declined", "user_declined", "denied", "not_executed", "not_run",
               "budget_exhausted", "duplicate_call", "cancelled", "approval_timeout"}
+# L1 (0.1.55): failures the USER has to fix, whose own advice is "stop and ask" — never
+# a reason to learn another route. Seen on a real Mac: Arslan Hands refused by macOS
+# (PERM_DENIED), then osascript did the job, and "PERM_DENIED → use osascript" was
+# proposed — the opposite of what hands_contract tells the model.
+_USER_MUST_ALLOW = {"PERM_DENIED"}
 # Work tools only; bookkeeping and memory tools are never a "route".
 _NOT_A_ROUTE = {"update_plan", "memory_note", "remember", "recall", "conversation_search", "task_progress",
                 "render_chart", "clarify", "escalate", "read_skill"}
@@ -132,7 +137,8 @@ def detours(trace: list[dict]) -> list[dict]:
     for i, item in enumerate(trace):
         result = item.get("result") or {}
         family = _family(item.get("tool") or "")
-        if family is None or result.get("ok") is not False or str(result.get("code") or "") in _NOT_A_TRY:
+        code = str(result.get("code") or "")
+        if family is None or result.get("ok") is not False or code in _NOT_A_TRY or code in _USER_MUST_ALLOW:
             continue
         route = _route(item)
         if route in tried:
@@ -182,6 +188,40 @@ async def detour_candidates(found: list[dict], user_request: str, conversation_i
         if made:
             out.append(made)
     return out
+
+
+# -- what worked in the latest turn (L1, 0.1.55) ------------------------------------
+
+_WORKED: dict[str, list[str]] = {}
+_WORKED_MAX = 200
+
+
+def note_turn(conversation_id: str | None, trace: list[dict]) -> None:
+    """Called synchronously at the end of a host turn, before anything is captured:
+    the work calls that succeeded, so a "correction" noticed afterwards can be checked
+    against the route that just worked."""
+    if not conversation_id:
+        return
+    worked = [f"{item.get('tool')}: {_brief(item)}" for item in trace or []
+              if _family(item.get("tool") or "") and (item.get("result") or {}).get("ok") is True]
+    _WORKED.pop(conversation_id, None)
+    if worked:
+        _WORKED[conversation_id] = worked[-6:]
+        while len(_WORKED) > _WORKED_MAX:
+            _WORKED.pop(next(iter(_WORKED)))
+
+
+async def _contradicts_what_worked(text: str, conversation_id: str | None) -> bool:
+    """A correction that goes against the route that worked in the same turn is not
+    taken on trust (the 0.1.53 real-Mac case: the rename worked with mv, and "do it in
+    Finder" was learned). No judge answer counts as a contradiction: it then waits."""
+    worked = _WORKED.get(conversation_id or "")
+    if not worked:
+        return False
+    verdict = await _yes("memory.conflict", {"candidate": text,
+                                             "existing": "What worked in this turn: " + "; ".join(worked)},
+                         conversation_id)
+    return verdict is not False
 
 
 # -- capture -------------------------------------------------------------------
@@ -234,6 +274,13 @@ async def _capture(candidates, *, conversation_id, external_seen, emit) -> list[
         if worth is False or (worth is None and cand.source != "user_correction"):
             continue
         immediate = bool(worth) and take_effect and (cand.source == "user_correction" or not external_seen)
+        if cand.source == "user_correction" and immediate:
+            # L1 (0.1.55): a correction must answer something Arslan did earlier in the
+            # conversation — a first message is a request, never a correction — and it
+            # must not go against the route that just worked. Otherwise it is a proposal.
+            if (cand.evidence.get("answers_earlier_reply") is False
+                    or await _contradicts_what_worked(text, conversation_id)):
+                immediate = False
         merged = conflicting = None
         for row in await _nearest(text):
             pair = {"candidate": text, "existing": render(row)}
