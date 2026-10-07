@@ -1,0 +1,63 @@
+<section class="chapter" id="glossary"><h2><span class="num">14 / Glossary</span>From terms back to the implementation</h2>
+<p>Terms here distinguish different mechanisms. The tables give a short definition and place each concept back in Arslan's implementation; historical mechanisms are marked as such.</p>
+<h3>AI and context</h3><div class="table-wrap"><table><thead><tr><th>Term</th><th>In plain words</th><th>How Arslan uses it</th></tr></thead><tbody>
+<tr><th>LLM</th><td>A large model that understands and generates language</td><td>From the provider the user configures; Arslan provides the app and the execution system</td></tr>
+<tr><th>Agent</th><td>A process that decides its next step from results</td><td>Call the model, run tools, look at results, continue or wrap up</td></tr>
+<tr><th>Orchestrator</th><td>A coordinator that brings different capabilities together</td><td>Coordinates the model, context, tools, permissions and task state</td></tr>
+<tr><th>Tool calling</th><td>The model requests a tool in a structured way</td><td>Tool name and JSON arguments are validated before anything runs</td></tr>
+<tr><th>Native tool protocol</th><td>The tool message format a provider officially defines</td><td>Keeps tool call IDs, results and reasoning continuation correctly matched</td></tr>
+<tr><th>Trajectory</th><td>A structured record of the model's interaction with tools</td><td>OpenAI-compatible providers use native history; other providers keep their own paths</td></tr>
+<tr><th>Context window</th><td>How much a model can see at once</td><td>All history, all memory and full long output cannot be stuffed in without limit</td></tr>
+<tr><th>Compaction</th><td>Compressing old context into a bounded summary</td><td>Controls request size while keeping recent content; it does not delete the original conversation</td></tr>
+<tr><th>RAG</th><td>Find relevant material first, then let the model answer</td><td>Retrieves passages from imported knowledge, with their sources</td></tr>
+<tr><th>FTS5</th><td>SQLite's full-text search</td><td>Good at word matches; material can be searched even without vectors</td></tr>
+<tr><th>Embedding</th><td>Turning the meaning of text into a numeric vector</td><td>Helps find content that is worded differently but means something similar</td></tr>
+<tr><th>Cosine similarity</th><td>Comparing whether vectors point the same way</td><td>One way of measuring similarity for semantic search</td></tr>
+<tr><th>RRF</th><td>Merging several retrieval results by rank</td><td>Fuses FTS and vector rankings without mixing scores in different units</td></tr>
+<tr><th>Skill</th><td>A reusable "how to do it" guide</td><td>SKILL.md with optional scripts and references; not another model</td></tr>
+<tr><th>MCP</th><td>A standard interface between an agent and external tools</td><td>Connects external capabilities over stdio or HTTP; the app still controls authorisation</td></tr>
+<tr><th>BYOK</th><td>Bring your own model API key</td><td>You choose the provider and pay for the model calls</td></tr>
+<tr><th>Prompt injection</th><td>Web or tool content disguised as new instructions for the agent</td><td>External content is treated as data, and practices influenced by it without confirmation usually become proposals; this is not proof of immunity</td></tr>
+<tr><th>Learned practice</th><td>A method noted down from a correction or a detour that worked</td><td>"AppleScript doesn't work on this Mac — try EventKit"; model weights are not changed</td></tr>
+<tr><th>Shadow mode</th><td>Recording a judgement without letting it change behaviour yet</td><td>The judgement layer can record an approval suggestion; the real card still waits for your click</td></tr>
+<tr><th>Held-out evaluation</th><td>Testing on questions not used to tune the prompt</td><td>A historical design from early expert evolution, not a fixed step in today's turns</td></tr>
+</tbody></table></div>
+<h3>Software architecture, state and reliability</h3><div class="table-wrap"><table><thead><tr><th>Term</th><th>In plain words</th><th>How Arslan uses it</th></tr></thead><tbody>
+<tr><th>SPA</th><td>Switching pages and state inside one web app</td><td>The local service serves the React workbench's static assets</td></tr>
+<tr><th>Sidecar</th><td>A helper process launched alongside the main app</td><td>The local Python backend running next to Tauri</td></tr>
+<tr><th>IPC</th><td>Communication between processes on the same computer</td><td>Pipes, Unix sockets; not every module talks through the cloud</td></tr>
+<tr><th>REST / HTTP</th><td>One request reads or changes one resource</td><td>Settings, history, task and file management APIs</td></tr>
+<tr><th>WebSocket</th><td>A two-way connection that keeps pushing updates</td><td>Reply streams, tool status, approvals and progress events</td></tr>
+<tr><th>Async I/O</th><td>Yielding the event loop while waiting on I/O so other work can proceed</td><td>Python asyncio, async APIs and database access; not unlimited parallel CPU work</td></tr>
+<tr><th>Schema / Contract</th><td>An explicit agreement on inputs, outputs and valid states</td><td>Pydantic, tool arguments and task acceptance contracts</td></tr>
+<tr><th>State machine</th><td>Describing how far a process has got with a finite set of states</td><td>queued, running, waiting_user, verifying, succeeded and so on</td></tr>
+<tr><th>Checkpoint</th><td>A record of where things are, what was done and what is left</td><td>Resuming uses references, evidence and budget; unknown side effects are not blindly replayed</td></tr>
+<tr><th>Attempt</th><td>One run of a task</td><td>Resuming creates a new attempt; old async results cannot overwrite the new round's state</td></tr>
+<tr><th>Optimistic concurrency</th><td>Checking before writing that the data is still the version you saw</td><td>Row version and attempt ID stop old results overwriting a cancellation or update</td></tr>
+<tr><th>Idempotency</th><td>A repeated request should not cause an unintended repeated action</td><td>Message and task IDs prevent duplicates; unknown external effects still need checking</td></tr>
+<tr><th>ACK</th><td>The receiver saying "I got this packet"</td><td>Does not mean the task succeeded or that an approval took effect</td></tr>
+<tr><th>Single-flight</th><td>Not starting the same thing again until the last run finishes</td><td>Scheduled tasks avoid piling up repeated runs</td></tr>
+<tr><th>Backoff</th><td>Waiting longer between retries after failures</td><td>Backs off on rate limits and server errors, honouring Retry-After; authentication errors are not blindly retried</td></tr>
+<tr><th>WAL</th><td>SQLite writes a log first, so reads and writes coexist better</td><td>Local persistence; write concurrency still has limits</td></tr>
+<tr><th>Migration</th><td>Safely upgrading an old database structure to a new one</td><td>An explicit versioned runner, a backup before upgrading, unknown schemas refused</td></tr>
+<tr><th>Provenance</th><td>Where a piece of information came from</td><td>Document sources, memory sources, real run trajectories</td></tr>
+<tr><th>Observability</th><td>Being able to see what happened when something goes wrong</td><td>Runs/Steps, Activity, usage, errors linked to deliverables</td></tr>
+</tbody></table></div>
+<h3>Operating system, security and delivery</h3><div class="table-wrap"><table><thead><tr><th>Term</th><th>In plain words</th><th>How Arslan uses it</th></tr></thead><tbody>
+<tr><th>Sandbox / Seatbelt</th><td>The operating system limits what a process can reach</td><td>The compute sandbox and the command sandbox have different rules; network and fallback behaviour are described separately</td></tr>
+<tr><th>Fail-closed</th><td>Refuse to run when the protection is unavailable</td><td>Applies to the default Python sandbox and the offline wrap-up path; not to every ordinary command</td></tr>
+<tr><th>Accessibility tree</th><td>The structure of windows, buttons and text that the system exposes</td><td>Hands reads and locates controls with it, not by recognising screenshot pixels</td></tr>
+<tr><th>TCC</th><td>macOS's privacy permission system</td><td>Accessibility, microphone, Apple Events and others are not granted by the app flipping its own switch</td></tr>
+<tr><th>SSRF</th><td>Tricking a service into reaching internal addresses it shouldn't</td><td>Web extraction and external URLs need their target, redirects and network boundary checked</td></tr>
+<tr><th>AEAD</th><td>Encryption that protects both secrecy and integrity</td><td>Bridge uses ChaCha20-Poly1305; tampering makes verification fail</td></tr>
+<tr><th>Key agreement / Signature</th><td>The first agrees encryption material; the second verifies who sent it</td><td>X25519 and Ed25519 do different jobs and should not be conflated</td></tr>
+<tr><th>Replay protection</th><td>Stopping an attacker from re-sending an old message to make it count again</td><td>Signatures, recipients, a sliding sequence window and persistent de-duplication work together</td></tr>
+<tr><th>CI / CD</th><td>Automating build, checks and distribution</td><td>Successful CI must belong to the SHA being released, and the final artifact is checked too</td></tr>
+<tr><th>Contract test</th><td>Checking both sides of a boundary follow the same protocol</td><td>Python/Rust and Mac/iPhone share positive and negative vectors</td></tr>
+<tr><th>Mutation testing</th><td>Deliberately breaking a protection to see whether tests catch it</td><td>Shows a specific assertion actually discriminates; not just a unit test under another name</td></tr>
+<tr><th>Code signing</th><td>Verifying where software came from and that it was not modified</td><td>The app and its embedded helpers all need correct signatures</td></tr>
+<tr><th>Notarization / Staple</th><td>Apple checks the release, then the ticket is attached to it</td><td>Different from signing; Gatekeeper also checks the result</td></tr>
+<tr><th>Fresh-install acceptance</th><td>Simulating a new user with no development environment and no old data</td><td>Verifies authentication, WebSocket, assets and helpers in the real installer</td></tr>
+</tbody></table></div>
+<p class="note">Today's system is mainly a layered local monolith plus separate helpers. SQLite and in-process async scheduling suit how a personal desktop product is installed and run; read these terms at that deployment scale.</p>
+</section>

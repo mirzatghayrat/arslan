@@ -1,14 +1,17 @@
-"""Build aralem.dev/arslan/docs/ from docs-site/sections/*.html and docs-site/data/*.json.
+"""Build aralem.dev/arslan/docs/ from docs-site/sections/<lang>/*.html and docs-site/data/*.json.
 
-    python3 docs-site/build.py            # writes docs/docs/index.html (+ diagrams/)
+    python3 docs-site/build.py            # writes docs/docs/index.html (English) and docs/docs/zh/
 
-The chapters are HTML fragments. {{source:path|label}} becomes a GitHub link pinned to
-the baseline commit in baseline.json, so every claim points at the code it was checked
-against. When a release ships: update baseline.json, data/versions.json, the chapters
-that changed, then rebuild. The build warns when the baseline lags the app version.
+English is the default page; each other language lives at /docs/<lang>/ and shares the
+chapters' ids, so the language switch keeps your place. The chapters are HTML fragments.
+{{source:path|label}} becomes a GitHub link pinned to the baseline commit in
+baseline.json, so every claim points at the code it was checked against. When a release
+ships: update baseline.json, the version appendix and the chapters that changed in every
+language, then rebuild. The build refuses languages with different chapter sets and warns
+when the baseline lags the app version.
 
-Origin: content drafted by Codex (2026-10-07), audited against v0.1.53 and restyled to
-match the project site (2026-10-08).
+Origin: content drafted by Codex (2026-10-07, Chinese), audited against v0.1.53, restyled
+to match the project site and translated to English (2026-10-08).
 """
 from pathlib import Path
 import html
@@ -17,7 +20,7 @@ import re
 
 ROOT = Path(__file__).resolve().parent
 REPO = ROOT.parent
-OUT_DIR = REPO / "docs" / "docs"
+OUT_DIR = REPO / "docs" / "docs"  # English at /docs/, other languages at /docs/<lang>/
 BASE = json.loads((ROOT / "baseline.json").read_text())
 SHA = BASE["sha"]
 GH = "https://github.com/mirzatghayrat/arslan"
@@ -80,7 +83,7 @@ background:rgba(5,5,6,.78);backdrop-filter:saturate(180%) blur(18px);-webkit-bac
 .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px;color:var(--tx)}.brand:hover{text-decoration:none}.brand svg{width:26px;height:26px}
 .brand small{font:500 12px var(--mono);color:var(--mu);border:1px solid var(--line2);border-radius:6px;padding:2px 7px;margin-left:4px}
 .nav .links{display:flex;gap:22px;font-size:14px}.nav .links a{color:var(--mu)}.nav .links a:hover{color:var(--tx);text-decoration:none}
-.nav .sp{flex:1}.nav .menu{display:none;white-space:nowrap;flex:none;background:transparent;border:1px solid var(--line2);color:var(--tx);border-radius:8px;padding:4px 10px;font:13px var(--ui)}
+.nav .sp{flex:1}.lang{display:inline-flex;border:1px solid var(--line2);border-radius:999px;overflow:hidden;font:600 12px var(--mono)}.lang a{padding:5px 10px;color:var(--mu)}.lang a:hover{text-decoration:none;color:var(--tx)}.lang a.on{background:rgba(255,255,255,.1);color:var(--tx)}.nav .menu{display:none;white-space:nowrap;flex:none;background:transparent;border:1px solid var(--line2);color:var(--tx);border-radius:8px;padding:4px 10px;font:13px var(--ui)}
 .btn{display:inline-flex;align-items:center;height:36px;padding:0 16px;border-radius:999px;font-weight:600;font-size:14px;background:#f5f6f8;color:#0b0c0e}.btn:hover{text-decoration:none}
 .progress{position:fixed;left:0;top:60px;height:2px;width:100%;transform-origin:left;transform:scaleX(0);background:linear-gradient(90deg,var(--work),var(--search),var(--done));z-index:51}
 .layout{display:grid;grid-template-columns:260px minmax(0,1fr) 220px;max-width:1440px;margin:0 auto;padding-top:60px}
@@ -160,7 +163,7 @@ details[open] summary:before{content:"–"}details>div{padding:8px 0 0 24px;font
 .closing{margin-top:40px;font:12px/1.8 var(--mono);color:var(--dim)}
 .screen-only{}[hidden]{display:none!important}
 @media (max-width:1180px){.layout{grid-template-columns:240px minmax(0,1fr)}.toc{display:none}main{padding:0 36px 100px}}
-@media (max-width:860px){.layout{grid-template-columns:1fr}.nav{gap:14px;padding:0 16px}.nav .links{display:none}.nav .menu{display:inline-block}
+@media (max-width:860px){.layout{grid-template-columns:1fr}.nav{gap:12px;padding:0 14px}.nav .links,.nav .btn,.brand small{display:none}.lang{flex:none}.nav .menu{display:inline-block}
 .side{position:fixed;top:60px;left:0;bottom:0;z-index:40;width:min(320px,86vw);height:auto;background:var(--bg);transform:translateX(-102%);transition:transform .25s ease;box-shadow:0 20px 60px rgba(0,0,0,.6)}
 body.menu-open .side{transform:none}main{padding:0 18px 80px}.hero{padding:40px 0 28px}.stats{grid-template-columns:1fr}.stats div{border-left:0;border-top:1px solid var(--line)}.stats div:first-child{border-top:0}
 .grid2,.grid3{grid-template-columns:1fr}.flow{flex-direction:column;gap:22px}.flow-step:not(:last-child):after{content:"↓";right:auto;left:50%;top:auto;bottom:-22px}
@@ -178,11 +181,12 @@ MASK = ('<svg viewBox="250 190 750 840" aria-hidden="true"><path fill="#fff" d="
 
 JS = r"""
 (function(){
+var T=document.body.dataset;
 var prog=document.getElementById('prog');
 var chapters=[].slice.call(document.querySelectorAll('.chapter'));
 var side=[].slice.call(document.querySelectorAll('.side a[data-ch]'));
 var toc=document.getElementById('toc');var current=null;
-function buildToc(ch){if(ch===current)return;current=ch;toc.innerHTML='<p class="lbl">本章</p>';
+function buildToc(ch){if(ch===current)return;current=ch;toc.innerHTML='';var l=document.createElement('p');l.className='lbl';l.textContent=T.onpage;toc.appendChild(l);
   [].slice.call(ch.querySelectorAll('h3[id]')).forEach(function(h){var a=document.createElement('a');a.href='#'+h.id;a.textContent=h.textContent;toc.appendChild(a)})}
 function onScroll(){var h=document.documentElement.scrollHeight-innerHeight;prog.style.transform='scaleX('+(h>0?scrollY/h:0)+')';
   var cur=chapters[0];chapters.forEach(function(c){if(c.getBoundingClientRect().top<innerHeight*0.35)cur=c});
@@ -193,14 +197,47 @@ addEventListener('scroll',onScroll,{passive:true});addEventListener('resize',onS
 var menu=document.getElementById('menu');menu.addEventListener('click',function(){document.body.classList.toggle('menu-open');menu.setAttribute('aria-expanded',document.body.classList.contains('menu-open'))});
 side.forEach(function(a){a.addEventListener('click',function(){document.body.classList.remove('menu-open')})});
 var q=document.getElementById('version-search');if(q){var rows=[].slice.call(document.querySelectorAll('#version-table tbody tr')),n=document.getElementById('version-count');
-  function f(){var t=q.value.toLowerCase(),k=0;rows.forEach(function(r){r.hidden=t&&r.textContent.toLowerCase().indexOf(t)<0;if(!r.hidden)k++});n.textContent=t?k+' 条匹配':rows.length+' 条版本记录'}
+  function f(){var t=q.value.toLowerCase(),k=0;rows.forEach(function(r){r.hidden=t&&r.textContent.toLowerCase().indexOf(t)<0;if(!r.hidden)k++});n.textContent=t?T.matches.replace('{n}',k):T.records.replace('{n}',rows.length)}
   q.addEventListener('input',f);f()}
+// keep the reader's place when switching language: the chapters share ids
+[].slice.call(document.querySelectorAll('.lang a')).forEach(function(a){a.addEventListener('click',function(){var c=chapters.filter(function(x){return x.getBoundingClientRect().top<innerHeight*0.35}).pop();if(c&&scrollY>200)a.href=a.getAttribute('href').split('#')[0]+'#'+c.id})});
 })();
 """
 
+# Per-language page text. Chapters live in sections/<lang>/; English is the default page.
+LANGS = {
+    "en": dict(dir="", html_lang="en", up="../", label="EN",
+               title="Arslan docs · based on {v}",
+               description="How Arslan is designed, built and evolving: architecture, execution runtime, data and memory, security boundaries, the iPhone bridge, delivery and evaluation. Every claim links to the {v} source.",
+               og_title="Arslan technical docs", og_description="Arslan, explained: design, implementation and evolution from the first prototype to {v}.",
+               menu="Contents", side_label="Chapters", onpage="On this page", based="Based on release {v}", src="Source", checked="Checked {d}",
+               badges='<span class="badge ok">Based on {v}</span><span class="badge">English</span>',
+               h1="Arslan, explained.<span>Design, implementation and evolution, from the first prototype to {v}</span>",
+               lead="A local-first, open-source personal AI assistant for the Mac: its product choices, how it runs, its data and permissions, and the engineering lessons of more than fifty releases. The text separates what shipped, historical designs and future directions; every claim links to the {v} source.",
+               closing="Arslan technical docs · based on {v} (source {sha}), checked {d}. Updated with each release; the source files are in the repository's docs-site/ folder.",
+               matches="{n} matches", records="{n} version records"),
+    "zh": dict(dir="zh", html_lang="zh-CN", up="../../", label="中文",
+               title="Arslan 技术文档 · 基于 {v}",
+               description="Arslan 的设计、实现与演进：系统架构、执行运行时、数据与记忆、安全边界、iPhone 桥接、交付与验证。每个结论都链接到 {v} 的源码。",
+               og_title="Arslan 技术文档", og_description="把 Arslan 讲清楚：从最早原型到 {v} 的设计、实现与演进。",
+               menu="目录", side_label="章节目录", onpage="本章", based="基于正式版 {v}", src="源码", checked="核对 {d}",
+               badges='<span class="badge ok">基于 {v}</span><span class="badge">中文</span>',
+               h1="把 Arslan 讲清楚。<span>从最早原型到 {v} 的设计、实现与演进</span>",
+               lead="一个本地优先、开源的 Mac 个人 AI 助手：它的产品选择、运行机制、数据与权限，以及五十多个版本积累下来的工程经验。正文区分已发布实现、历史设计和后续方向；每个结论都链接到 {v} 的源码。",
+               closing="Arslan 技术文档 · 基于 {v}（源码 {sha}），核对 {d}。内容会随新版本更新；源文件在仓库的 docs-site/ 目录。",
+               matches="{n} 条匹配", records="{n} 条版本记录"),
+}
 
-def build() -> None:
-    files = sorted((ROOT / "sections").glob("*.html"))
+
+def page_url(lang: str) -> str:
+    d = LANGS[lang]["dir"]
+    return "https://aralem.dev/arslan/docs/" + (d + "/" if d else "")
+
+
+def build_lang(lang: str) -> dict:
+    L = LANGS[lang]
+    version, checked = BASE["version"], BASE["checked"]
+    files = sorted((ROOT / "sections" / lang).glob("*.html"))
     chapters, side = [], []
     for f in files:
         t = f.read_text()
@@ -218,67 +255,83 @@ def build() -> None:
             k[0] += 1
             return f'<h3 id="{cid}-{k[0]}"' + m[1]
         t = re.sub(r"<h3(?! id=)(\s|>)", h3id, t)
+
         # newest release first: readers come for what changed lately
         def newest_first(m):
             rows = re.findall(r"<tr\b.*?</tr>", m[2], re.S)
             return m[1] + "".join(reversed(rows)) + m[3]
         t = re.sub(r'(<table id="version-table">.*?<tbody>)(.*?)(</tbody>)', newest_first, t, flags=re.S)
         chapters.append(t)
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    version = BASE["version"]
+    up = L["up"]
+    fmt = dict(v=version, d=checked, sha=SHA[:12])
+    switch = "".join(f'<a href="{up}docs/{(LANGS[o]["dir"] + "/") if LANGS[o]["dir"] else ""}" hreflang="{LANGS[o]["html_lang"]}"'
+                     f'{" class=on" if o == lang else ""} lang="{LANGS[o]["html_lang"]}">{LANGS[o]["label"]}</a>' for o in LANGS)
+    alternates = "".join(f'<link rel="alternate" hreflang="{LANGS[o]["html_lang"]}" href="{page_url(o)}">\n' for o in LANGS)
     page = f"""<!doctype html>
-<html lang="zh-CN">
+<html lang="{L["html_lang"]}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Arslan 技术文档 · 基于 {version}</title>
-<meta name="description" content="Arslan 的设计、实现与演进：系统架构、执行运行时、数据与记忆、安全边界、iPhone 桥接、交付与验证。每个结论都链接到 {version} 的源码。">
+<title>{L["title"].format(**fmt)}</title>
+<meta name="description" content="{L["description"].format(**fmt)}">
 <meta name="theme-color" content="#050506">
-<link rel="canonical" href="https://aralem.dev/arslan/docs/">
-<link rel="icon" type="image/svg+xml" href="../assets/v2/favicon.svg">
-<meta property="og:title" content="Arslan 技术文档">
-<meta property="og:description" content="把 Arslan 讲清楚：从最早原型到 {version} 的设计、实现与演进。">
+<link rel="canonical" href="{page_url(lang)}">
+{alternates}<link rel="alternate" hreflang="x-default" href="{page_url("en")}">
+<link rel="icon" type="image/svg+xml" href="{up}assets/v2/favicon.svg">
+<meta property="og:title" content="{L["og_title"]}">
+<meta property="og:description" content="{L["og_description"].format(**fmt)}">
 <meta property="og:image" content="https://aralem.dev/arslan/assets/v2/og.jpg">
 <meta name="twitter:card" content="summary_large_image">
 <style>{CSS}</style>
 </head>
-<body>
+<body data-onpage="{L["onpage"]}" data-matches="{L["matches"]}" data-records="{L["records"]}">
 <div class="progress" id="prog" aria-hidden="true"></div>
 <nav class="nav" aria-label="Main">
-  <button class="menu" id="menu" type="button" aria-expanded="false" aria-controls="side">目录</button>
-  <a class="brand" href="../">{MASK}Arslan<small>Docs</small></a>
-  <div class="links"><a href="../#how">How it works</a><a href="../#gate">The gate</a><a href="../#hands">Hands</a><a href="../#devices">Mac + iPhone</a><a href="../#privacy">Privacy</a></div>
+  <button class="menu" id="menu" type="button" aria-expanded="false" aria-controls="side">{L["menu"]}</button>
+  <a class="brand" href="{up}">{MASK}Arslan<small>Docs</small></a>
+  <div class="links"><a href="{up}#how">How it works</a><a href="{up}#gate">The gate</a><a href="{up}#hands">Hands</a><a href="{up}#devices">Mac + iPhone</a><a href="{up}#privacy">Privacy</a></div>
   <span class="sp"></span>
+  <span class="lang" aria-label="Language">{switch}</span>
   <div class="links"><a href="{GH}">GitHub</a></div>
   <a class="btn" href="{GH}/releases/latest/download/Arslan-macos-arm64.dmg">Download</a>
 </nav>
 <div class="layout">
-<aside class="side" id="side" aria-label="章节目录">
-  <p class="lbl">目录</p>
+<aside class="side" id="side" aria-label="{L["side_label"]}">
+  <p class="lbl">{L["menu"]}</p>
   {''.join(side)}
-  <div class="base">基于正式版 {version}<br>源码 <a href="{GH}/tree/{SHA}">{SHA[:8]}</a><br>核对 {BASE["checked"]}</div>
+  <div class="base">{L["based"].format(**fmt)}<br>{L["src"]} <a href="{GH}/tree/{SHA}">{SHA[:8]}</a><br>{L["checked"].format(**fmt)}</div>
 </aside>
 <main>
 <header class="hero">
-  <p class="eyebrow">Arslan Docs <span class="badge ok">基于 {version}</span><span class="badge">中文</span><span class="badge soon">English coming</span></p>
-  <h1>把 Arslan 讲清楚。<span>从最早原型到 {version} 的设计、实现与演进</span></h1>
-  <p class="lead">一个本地优先、开源的 Mac 个人 AI 助手：它的产品选择、运行机制、数据与权限，以及五十多个版本积累下来的工程经验。正文区分已发布实现、历史设计和后续方向；每个结论都链接到 {version} 的源码。</p>
-  <div class="stats">{BASE["stats_html"]}</div>
+  <p class="eyebrow">Arslan Docs {L["badges"].format(**fmt)}</p>
+  <h1>{L["h1"].format(**fmt)}</h1>
+  <p class="lead">{L["lead"].format(**fmt)}</p>
+  <div class="stats">{BASE["stats_html"][lang]}</div>
 </header>
 {''.join(chapters)}
-<p class="closing">Arslan 技术文档 · 基于 {version}（源码 {SHA[:12]}），核对 {BASE["checked"]}。内容会随新版本更新；源文件在仓库的 docs-site/ 目录。</p>
+<p class="closing">{L["closing"].format(**fmt)}</p>
 </main>
-<nav class="toc" id="toc" aria-label="本章"></nav>
+<nav class="toc" id="toc" aria-label="{L["onpage"]}"></nav>
 </div>
 <script>{JS}</script>
 </body>
 </html>
 """
-    (OUT_DIR / "index.html").write_text(page)
+    out = OUT_DIR / L["dir"] / "index.html" if L["dir"] else OUT_DIR / "index.html"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(page)
+    return {"lang": lang, "out": str(out.relative_to(REPO)), "bytes": len(page.encode()), "chapters": len(files)}
+
+
+def build() -> None:
+    counts = {lang: len(list((ROOT / "sections" / lang).glob("*.html"))) for lang in LANGS}
+    if len(set(counts.values())) != 1:
+        raise SystemExit(f"every language needs the same chapters: {counts}")
+    for lang in LANGS:
+        print(json.dumps(build_lang(lang), ensure_ascii=False))
     app_version = json.loads((REPO / "desktop/src-tauri/tauri.conf.json").read_text())["version"]
-    if "v" + app_version != version:
-        print(f"WARNING: docs baseline is {version}, the app is v{app_version}: update the chapters and baseline.json")
-    print(json.dumps({"out": str(OUT_DIR / "index.html"), "bytes": len(page.encode()), "chapters": len(files)}, ensure_ascii=False))
+    if "v" + app_version != BASE["version"]:
+        print(f"WARNING: docs baseline is {BASE['version']}, the app is v{app_version}: update the chapters and baseline.json")
 
 
 if __name__ == "__main__":

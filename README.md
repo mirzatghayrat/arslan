@@ -22,7 +22,7 @@
 
 <a href="https://github.com/mirzatghayrat/arslan/releases/latest/download/Arslan-macos-arm64.dmg"><img src="docs/assets/btn/en-download.png" alt="Download for macOS" height="28"></a>&nbsp;&nbsp;<a href="https://aralem.dev/arslan/"><img src="docs/assets/btn/en-website.png" alt="Website" height="28"></a>&nbsp;&nbsp;<a href="docs/QUICKSTART.md"><img src="docs/assets/btn/en-quickstart.png" alt="Quickstart" height="28"></a>&nbsp;&nbsp;<a href="SECURITY.md"><img src="docs/assets/btn/en-security.png" alt="Security" height="28"></a>&nbsp;&nbsp;<a href="CONTRIBUTING.md"><img src="docs/assets/btn/en-contributing.png" alt="Contributing" height="28"></a>
 
-<a href="https://aralem.dev/arslan/docs/"><b>📖 Technical docs</b></a> <sub>(Chinese for now)</sub>
+<a href="https://aralem.dev/arslan/docs/"><b>📖 Technical docs</b></a> <sub>(English · <a href="https://aralem.dev/arslan/docs/zh/">中文</a>)</sub>
 
 <img src="docs/assets/btn/lang-en-on.png" alt="English" height="22">&nbsp;<a href="README.zh-CN.md"><img src="docs/assets/btn/lang-zh.png" alt="简体中文" height="22"></a>&nbsp;<a href="README.de.md"><img src="docs/assets/btn/lang-de.png" alt="Deutsch" height="22"></a>&nbsp;<a href="README.ja.md"><img src="docs/assets/btn/lang-ja.png" alt="日本語" height="22"></a>&nbsp;<a href="README.es.md"><img src="docs/assets/btn/lang-es.png" alt="Español" height="22"></a>&nbsp;<a href="README.tr.md"><img src="docs/assets/btn/lang-tr.png" alt="Türkçe" height="22"></a>
 
