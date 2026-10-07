@@ -2,8 +2,9 @@
  * AccessTokenSettings — the "Access token" section of the Settings screen.
  *
  * On mount it asks the backend (GET /settings/access-token) whether a bearer
- * token is required and, when the caller is localhost, what the bootstrapped
- * token is. Three states:
+ * token is required and, when the caller is a direct localhost one that already
+ * presents it (the desktop shell injects it from the token file), what the
+ * active token is. Three states:
  *   - token NOT required (dev + localhost) → a subtle, non-nagging note.
  *   - token required + we have it (localhost bootstrap, or already stored) →
  *     show it (masked, copyable) + a Reset button that rotates it.

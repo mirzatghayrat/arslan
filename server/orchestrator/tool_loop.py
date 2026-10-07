@@ -978,7 +978,11 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                                         mcp_fail_counts=mcp_fail_counts)
         sandbox_on = await _sandbox_enabled()
         wants_out = sandbox_on and args.get("outside_sandbox") is True
-        run_outside = sandbox_on and command_sandbox.granted(conversation_id)
+        # The conversation's "rest of this conversation" grant is a session grant: only a
+        # callback that says it honours them (the chat window's) may use it. A background
+        # job or an unattended turn starts inside the sandbox whatever the window said.
+        run_outside = (sandbox_on and getattr(confirm_command, "honours_session_grants", False)
+                       and command_sandbox.granted(conversation_id))
         if wants_out and not run_outside:
             # Asked up front: always a card, even for a command that would just run,
             # and one card covers the command's own reason too.

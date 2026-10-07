@@ -186,11 +186,27 @@ async def test_get_access_token_localhost_returns_value(monkeypatch, tmp_path):
     app, auth = _app_after_bootstrap(monkeypatch, tmp_path, ARSLAN_PACKAGED="1")
     transport = ASGITransport(app=app, client=("127.0.0.1", 5001))
     async with AsyncClient(transport=transport, base_url="http://localhost") as c:
-        r = await c.get("/api/v1/settings/access-token")
+        r = await c.get("/api/v1/settings/access-token",
+                        headers={"Authorization": f"Bearer {auth.active_token()}"})
     assert r.status_code == 200
     body = r.json()
     assert body["token_required"] is True
     assert body["token"] == auth.active_token()
+
+
+@pytest.mark.asyncio
+async def test_get_access_token_loopback_without_the_token_learns_only_that_it_is_required(monkeypatch, tmp_path):
+    """A plain loopback GET (e.g. `curl` from a sandboxed command, which may reach
+    loopback but not read the token file) must not be handed the token. The shell
+    reads the token from the file and presents it; only that caller sees it echoed."""
+    app, auth = _app_after_bootstrap(monkeypatch, tmp_path, ARSLAN_PACKAGED="1")
+    transport = ASGITransport(app=app, client=("127.0.0.1", 5001))
+    async with AsyncClient(transport=transport, base_url="http://localhost") as c:
+        bare = await c.get("/api/v1/settings/access-token")
+        wrong = await c.get("/api/v1/settings/access-token", headers={"Authorization": "Bearer nope"})
+    for r in (bare, wrong):
+        assert r.status_code == 200
+        assert r.json() == {"token_required": True, "token": None}
 
 
 @pytest.mark.asyncio
@@ -204,6 +220,20 @@ async def test_get_access_token_remote_does_not_leak(monkeypatch, tmp_path):
     # A remote/cross-origin caller learns that auth is required but NEVER the value.
     assert body["token_required"] is True
     assert body["token"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_access_token_with_the_bearer_but_not_direct_loopback_learns_nothing(monkeypatch, tmp_path):
+    app, auth = _app_after_bootstrap(monkeypatch, tmp_path, ARSLAN_PACKAGED="1")
+    bearer = {"Authorization": f"Bearer {auth.active_token()}"}
+    remote = ASGITransport(app=app, client=("203.0.113.9", 5555))
+    async with AsyncClient(transport=remote, base_url="http://localhost") as c:
+        r1 = await c.get("/api/v1/settings/access-token", headers=bearer)
+    local = ASGITransport(app=app, client=("127.0.0.1", 5001))
+    async with AsyncClient(transport=local, base_url="http://localhost") as c:
+        r2 = await c.get("/api/v1/settings/access-token", headers={**bearer, "X-Forwarded-For": "127.0.0.1"})
+    for r in (r1, r2):
+        assert r.json() == {"token_required": True, "token": None}
 
 
 @pytest.mark.asyncio
@@ -274,7 +304,7 @@ async def test_get_reports_env_token_honestly(monkeypatch, tmp_path):
         ARSLAN_SECRET_KEY="x" * 32)
     transport = ASGITransport(app=app, client=("127.0.0.1", 5001))
     async with AsyncClient(transport=transport, base_url="http://localhost") as c:
-        r = await c.get("/api/v1/settings/access-token")
+        r = await c.get("/api/v1/settings/access-token", headers={"Authorization": "Bearer explicit-tok"})
     body = r.json()
     assert body["token_required"] is True
     assert body["token"] == "explicit-tok"

@@ -65,3 +65,19 @@ def test_retry_card_runs_it_outside_and_the_checkbox_grants_this_conversation(ap
         async with app_client.db_maker() as db:
             return await terminal_policy.always_allowed(db)
     assert app_client.portal.call(rules) == set()
+
+
+def test_the_window_that_was_given_the_grant_runs_outside_from_the_start(app_client, monkeypatch):
+    """The grant stays the chat window's own (jobs and unattended turns never use it)."""
+    _enable_shell(app_client, policy="ask_risky")
+    _stub_tool_loop_adapter(monkeypatch, "mv", ["~/Downloads/a.png", "~/Pictures/"])
+    _stub_run_command_executor(monkeypatch)
+    stops = _StopsInside()
+    tool_loop_mod.EXECUTORS["run_command"] = stops
+    command_sandbox.grant("main")
+    with app_client.websocket_connect("/ws/arslan/main") as ws:
+        ws.receive_json()  # history
+        ws.send_json({"type": "user_message", "content": "move my screenshot to Pictures"})
+        frames = _collect_until(ws, "stream_end")
+    assert "propose_run_command" not in [f["type"] for f in frames]
+    assert stops.outside == [True]
