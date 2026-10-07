@@ -25,6 +25,9 @@ public protocol EnvelopeStore {
     func delete(ids: [String]) async throws
     /// Every record in the zone and when it was made, nothing else (the daily clean-up, §2).
     func ages() async throws -> [(id: String, createdAt: Date)]
+    /// Who each of these records is addressed to (`to` only). An id missing from the answer is no
+    /// longer in the store; a failed lookup throws, and then nothing may be concluded (§3.3).
+    func recipients(of ids: [String]) async throws -> [String: String]
 }
 
 public struct Peer {
@@ -52,10 +55,26 @@ public struct MailboxMemory: Codable, Equatable {
     public var windows: [String: ReplayWindow] = [:]
     public var processed: [String] = []          // oldest first, capped
     public var awaitingAck: [String] = []        // oldest first, capped
+    public var awaitingTo: [String: String] = [:]   // awaiting id → its recipient (none for ids saved before 2026-10-07)
     public var toDelete: [String] = []           // acked records not yet deleted (a delete that failed is retried)
+    public var heard: [String: Date] = [:]       // phone → when an authenticated message from it was last read
     public var token: Data?
     public init() {}
     static let cap = 4096
+
+    /// Every field may be missing: a file written by an older Bridge has no `awaitingTo` or `heard`,
+    /// and failing to read it would forget the replay windows and every id already acted on.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        nextSeq = try c.decodeIfPresent(Int64.self, forKey: .nextSeq) ?? 1
+        windows = try c.decodeIfPresent([String: ReplayWindow].self, forKey: .windows) ?? [:]
+        processed = try c.decodeIfPresent([String].self, forKey: .processed) ?? []
+        awaitingAck = try c.decodeIfPresent([String].self, forKey: .awaitingAck) ?? []
+        awaitingTo = try c.decodeIfPresent([String: String].self, forKey: .awaitingTo) ?? [:]
+        toDelete = try c.decodeIfPresent([String].self, forKey: .toDelete) ?? []
+        heard = try c.decodeIfPresent([String: Date].self, forKey: .heard) ?? [:]
+        token = try c.decodeIfPresent(Data.self, forKey: .token)
+    }
 }
 
 public protocol MailboxMemoryStore: AnyObject {
@@ -95,6 +114,7 @@ public final class Mailbox {
     var processedOrder: [String] = []
     var sentAwaitingAck: [String: EnvelopeRecord] = [:]
     var awaitingFromBefore: Set<String> = []        // our records sent before a restart, not yet acked
+    var awaitingTo: [String: String] = [:]          // …and whom each was for, when known (remember() keeps only awaited ids)
     public private(set) var toDelete: Set<String> = []   // acked, waiting for CloudKit to delete them
     var nextSeq: Int64
     public var token: Data?
@@ -114,7 +134,9 @@ public final class Mailbox {
         processedOrder = memory.processed
         processed = Set(memory.processed)
         awaitingFromBefore = Set(memory.awaitingAck)
+        awaitingTo = memory.awaitingTo.filter { awaitingFromBefore.contains($0.key) }
         toDelete = Set(memory.toDelete)
+        heard = memory.heard
         token = memory.token
     }
 
@@ -130,14 +152,53 @@ public final class Mailbox {
         }
         memory.processed = processedOrder
         memory.awaitingAck = Array((awaitingFromBefore.union(sentAwaitingAck.keys)).sorted().suffix(MailboxMemory.cap))
+        // The recipient goes with each id, so removing a phone after a restart still finds its records.
+        for id in memory.awaitingAck { memory.awaitingTo[id] = sentAwaitingAck[id]?.to ?? awaitingTo[id] }
         memory.toDelete = Array(toDelete.sorted().suffix(MailboxMemory.cap))
+        memory.heard = heard
         memory.token = token
         try memoryStore.save(memory)
     }
 
     public func add(peer: Peer) { peers[peer.deviceID] = peer }
     public func isPaired(_ deviceID: String) -> Bool { peers[deviceID] != nil }
-    public func remove(peer deviceID: String) { peers[deviceID] = nil; windows[deviceID] = nil }
+
+    /// Forget a phone (Settings › Remove, or a newer pairing of the same phone that `replaces` it,
+    /// §3.3). What we sent it and it has not acknowledged never will be now: those records go with
+    /// the next deletions and nothing waits for them. Found 2026-10-07: every re-pairing left the old
+    /// identity's records in the user's iCloud for good (1,602 waiting for acks that never came).
+    /// `sparing` stays in the store (not waited for): the `device.revoked` the phone should still read.
+    public func remove(peer deviceID: String, sparing: Set<String> = []) throws {
+        peers[deviceID] = nil; windows[deviceID] = nil; heard[deviceID] = nil
+        let theirs = sentAwaitingAck.values.filter { $0.to == deviceID }.map(\.id)
+            + awaitingFromBefore.filter { awaitingTo[$0] == deviceID }
+        for id in theirs {
+            sentAwaitingAck[id] = nil; awaitingFromBefore.remove(id)
+            if !sparing.contains(id) { toDelete.insert(id) }
+        }
+        try remember()
+    }
+
+    /// At start-up: records still waiting for an ack from a phone that is no longer paired are
+    /// deleted. Ids remembered before 2026-10-07 carry no recipient; the store is asked for it
+    /// (`to` only). An id the store no longer has stops being waited for; if the lookup fails,
+    /// those ids are left exactly as they were — a record is deleted only when we know it is
+    /// addressed to a phone that is not paired, never on a guess. Returns how many were queued.
+    @discardableResult
+    public func dropOrphans() async throws -> Int {
+        let unknown = awaitingFromBefore.filter { awaitingTo[$0] == nil }.sorted()
+        if !unknown.isEmpty {
+            let found = try await store.recipients(of: unknown)
+            for id in unknown {
+                if let to = found[id] { awaitingTo[id] = to } else { awaitingFromBefore.remove(id) }
+            }
+        }
+        let orphans = sentAwaitingAck.values.filter { peers[$0.to] == nil }.map(\.id)
+            + awaitingFromBefore.filter { awaitingTo[$0].map { peers[$0] == nil } ?? false }
+        for id in orphans { sentAwaitingAck[id] = nil; awaitingFromBefore.remove(id); toDelete.insert(id) }
+        try remember()
+        return orphans.count
+    }
 
     /// Seal a message to a paired peer and put it in the store. The record is kept until the
     /// peer's `ack`; a retry re-sends this exact record (§4.5). `asset` (a `file.offer`'s bytes)
@@ -181,7 +242,7 @@ public final class Mailbox {
     }
 
     /// The same, for records fetched by the caller (the runtime splits pairing traffic off first).
-    public func process(_ records: [EnvelopeRecord]) async throws -> [Received] {
+    public func process(_ records: [EnvelopeRecord], now: Date = Date()) async throws -> [Received] {
         var out: [Received] = []
         var acks: [String: [String]] = [:]
         for record in records where record.to == deviceID {
@@ -192,7 +253,10 @@ public final class Mailbox {
                                               senderSigning: peer.signing, asset: record.asset) else { continue }
             let id = packet.header.id.lowercased()
             let type = opened.envelope["type"] as? String ?? ""
-            lastHeard = Date()
+            lastHeard = now
+            // Settings shows the phone as connected from its first message; after that the time is
+            // kept to the minute, so a phone acking every heartbeat does not redraw Settings each time.
+            if heard[record.from].map({ now.timeIntervalSince($0) >= Self.heardResolution }) ?? true { heard[record.from] = now }
             if processed.contains(id) {                    // a duplicate: ack again, act never
                 if type != "ack" { acks[record.from, default: []].append(id) } else { toDelete.insert(record.id) }
                 continue
@@ -263,6 +327,11 @@ public final class Mailbox {
     /// every heartbeat, so this stays recent exactly as long as someone is looking (`PollPace`).
     public private(set) var lastHeard: Date?
 
+    /// Each paired phone: when the Mac last read an authenticated message from it (to the minute,
+    /// remembered across restarts). No entry = paired but not heard from yet ("connecting").
+    public private(set) var heard: [String: Date] = [:]
+    public static let heardResolution: TimeInterval = 60
+
     /// Records still waiting for an ack (to re-send, unchanged, with backoff).
     public var unacknowledged: [EnvelopeRecord] { Array(sentAwaitingAck.values) }
 
@@ -300,6 +369,12 @@ public final class MemoryStore: EnvelopeStore {
     public func delete(ids: [String]) async throws { ids.forEach { records[$0] = nil } }
 
     public func ages() async throws -> [(id: String, createdAt: Date)] { records.values.map { ($0.id, $0.createdAt) } }
+
+    public func recipients(of ids: [String]) async throws -> [String: String] {
+        var out: [String: String] = [:]
+        for id in ids { if let record = records[id] { out[id] = record.to } }
+        return out
+    }
 }
 
 /// How often the Bridge reads the store: every 2 s while the phone wrote in the last two minutes

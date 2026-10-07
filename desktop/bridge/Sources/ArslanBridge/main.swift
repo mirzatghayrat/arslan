@@ -123,6 +123,7 @@ Task {
     if let cloud = store as? CloudKitStore {
         do { try await cloud.ensureZone() } catch { BridgeLog.error("creating the CloudKit zone", error) }
     }
+    await runtime.tidy()                           // §3.3: what still waits for a phone no longer paired
     while true {                                   // §2: every 2 s while the phone app is open, else 10 s
         do { for received in try await runtime.poll() { await links.handle(received) } }
         catch { BridgeLog.error("reading the store", error) }

@@ -71,7 +71,8 @@ class BridgeHub:
             self.pending[str(frame["request_id"])] = request
             self._notify(request)
         elif kind == "devices":
-            self.devices = [{k: d.get(k) for k in ("device_id", "name", "paired_at", "last_seen")}
+            # `state` is "connecting" until the Bridge has heard from the phone, then "connected" (§3.3).
+            self.devices = [{k: d.get(k) for k in ("device_id", "name", "paired_at", "last_seen", "state")}
                             for d in frame.get("items") or [] if isinstance(d, dict)]
 
     def _notify(self, request: dict) -> None:
