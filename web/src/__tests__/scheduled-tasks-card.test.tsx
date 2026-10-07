@@ -39,6 +39,7 @@ import ScheduledTasksCard, { cronLooksValid } from "../components/ScheduledTasks
 import { api, ApiError } from "../api/client";
 import en from "../locales/en.json";
 import zh from "../locales/zh.json";
+import { ConfirmHost } from "../components/kit";
 
 const IN_30_MIN = new Date(Date.now() + 30 * 60000).toISOString();
 
@@ -147,12 +148,12 @@ describe("ScheduledTasksCard — pause/resume", () => {
 describe("ScheduledTasksCard — delete", () => {
   it("asks for confirmation, then deletes", async () => {
     vi.mocked(api.deleteScheduledTask).mockResolvedValue({ ok: true } as never);
-    render(<ScheduledTasksCard />);
+    render(<><ScheduledTasksCard /><ConfirmHost /></>);
     await screen.findByText("Morning research");
     fireEvent.click(screen.getByTestId("sched-delete-1"));
     expect(api.deleteScheduledTask).not.toHaveBeenCalled();
-    expect(screen.getByText("scheduled.delete_confirm")).toBeTruthy();
-    fireEvent.click(screen.getByTestId("sched-delete-confirm-1"));
+    expect(await screen.findByTestId("confirm-sheet")).toBeTruthy();
+    fireEvent.click(await screen.findByTestId("confirm-action"));
     await waitFor(() => expect(api.deleteScheduledTask).toHaveBeenCalledWith(1));
     await waitFor(() => expect(screen.queryByText("Morning research")).toBeNull());
   });

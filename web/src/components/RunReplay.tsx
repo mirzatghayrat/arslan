@@ -8,6 +8,7 @@ import RunCompareChart from "./RunCompareChart";
 import EChart from "./EChart";
 import ArtifactDownloads from "./ArtifactDownloads";
 import { triggerDownload } from "./MessageBody";
+import { confirmSheet } from "./kit";
 
 const STATUS_ICON: Record<string, string> = { pass: "✓", warn: "⚠", fail: "✗" };
 const BADGE_KEY: Record<string, string> = { good: "replay.badge_good", ok: "replay.badge_ok", bad: "replay.badge_bad" };
@@ -150,7 +151,8 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
   }, [run?.spawnId]);
 
   async function handleClearThisRun() {
-    if (!window.confirm(t("replay.confirm_clear"))) {
+    // 0.1.55: the kit's sheet, not window.confirm (irreversible: the details are redacted).
+    if (!(await confirmSheet({ title: t("confirm.runTitle"), body: t("confirm.runBody"), action: t("confirm.clear") }))) {
       return;
     }
     setClearing(true);

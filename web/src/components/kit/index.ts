@@ -10,4 +10,4 @@ export { Dialog } from "./Dialog";
 export { useAnswerKeys, useLayer } from "./layers";
 export { Notice, type NoticeTone } from "./Notice";
 export { ProposalRow, Tag } from "./ProposalRow";
-export { ToastHost, dismissToast, toast } from "./Toast";
+export { ToastHost, deleteWithUndo, dismissToast, toast } from "./Toast";

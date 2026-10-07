@@ -29,6 +29,7 @@ vi.mock("../../api/client", () => ({
 }));
 
 import NoteEditor from "./NoteEditor";
+import { ConfirmHost } from "../kit";
 
 describe("NoteEditor", () => {
   it("loads and renders the note title + backlinks", async () => {
@@ -72,9 +73,11 @@ describe("NoteEditor", () => {
     const onChanged = vi.fn();
     const onClose = vi.fn();
     const { api } = await import("../../api/client");
-    render(<NoteEditor noteId={1} onClose={onClose} onChanged={onChanged} allLabels={[]} />);
+    render(<><NoteEditor noteId={1} onClose={onClose} onChanged={onChanged} allLabels={[]} /><ConfirmHost /></>);
     await waitFor(() => expect(screen.getByDisplayValue("OKX 模板")).toBeInTheDocument());
     fireEvent.click(screen.getByText("brain.delete"));
+    expect(api.deleteNote).not.toHaveBeenCalled();   // 0.1.55: asks first
+    fireEvent.click(await screen.findByTestId("confirm-action"));
     await waitFor(() => expect(api.deleteNote).toHaveBeenCalledWith(1));
     expect(onChanged).toHaveBeenCalled();
     expect(onClose).toHaveBeenCalled();

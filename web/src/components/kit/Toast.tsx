@@ -50,3 +50,18 @@ export function ToastHost() {
     </div>
   );
 }
+
+/**
+ * Delete with Undo instead of a confirm (0.1.55, for small reversible-looking things such
+ * as a saved candidate): the row leaves at once, a toast offers Undo, and only when the
+ * toast runs out is the delete actually sent. A failed delete puts the row back.
+ */
+export function deleteWithUndo(o: {
+  text: string; undoLabel: string; hide: () => void; restore: () => void; commit: () => Promise<unknown>; ms?: number;
+}) {
+  const ms = o.ms ?? 6000;
+  let undone = false;
+  o.hide();
+  toast(o.text, { action: { label: o.undoLabel, onClick: () => { undone = true; o.restore(); } }, ms });
+  window.setTimeout(() => { if (!undone) void o.commit().catch(() => o.restore()); }, ms);
+}

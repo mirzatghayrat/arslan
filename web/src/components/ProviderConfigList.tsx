@@ -23,6 +23,7 @@ import { purgeCapabilityOverrides } from './settings/CapabilityBadges';
 import { formatRelativeTime } from './settings/relativeTime';
 import { providerStatus, type LiveTest } from '../lib/providerStatus';
 import { maskSecretForDisplay } from '../lib/maskSecretForDisplay';
+import { confirmSheet } from "./kit";
 
 interface ProviderConfigListProps {
   llmProviders: ProviderOption[];
@@ -229,6 +230,11 @@ export default function ProviderConfigList({
   };
 
   const handleDelete = async (id: number) => {
+    // 0.1.55: it deleted at once (with its saved key); now it asks first.
+    const cfg = providerConfigs.find((c) => c.id === id);
+    if (!(await confirmSheet({ title: t('confirm.providerTitle'),
+      body: t('confirm.providerBody', { name: cfg ? `${cfg.label || cfg.provider} · ${cfg.model}` : '' }),
+      action: t('confirm.delete') }))) return;
     setBusy(id);
     try {
       await deleteProviderConfig(id);

@@ -9,6 +9,7 @@ import {
   type Candidate, type SkillDraft,
 } from '../api/discovery';
 import type { McpPrefill } from './ToolHubDiscover';
+import { deleteWithUndo } from './kit';
 
 // Saved Candidates — the persistent discovery catalog (its own tab).
 // Self-contained: loads its own list on mount; each row can Refresh / Delete /
@@ -100,18 +101,20 @@ export default function SavedCandidates({ onPrefillMcp }: { onPrefillMcp?: (d: M
     }
   };
 
+  // 0.1.55: delete with Undo — the row leaves at once, the delete is sent when the toast ends.
   const handleDeleteCandidate = async (id: number) => {
-    setBusyCandidateId(id);
     setCatalogNotice(null);
     setCatalogError(null);
-    try {
-      await deleteCandidate(id);
-      await reloadCandidates();
-    } catch (e) {
-      setCatalogError(String(e instanceof Error ? e.message : e));
-    } finally {
-      setBusyCandidateId(null);
-    }
+    const before = candidates;
+    deleteWithUndo({
+      text: t('confirm.deleted'), undoLabel: t('confirm.undo'),
+      hide: () => setCandidates((prev) => prev.filter((c) => c.id !== id)),
+      restore: () => setCandidates(before),
+      commit: async () => {
+        try { await deleteCandidate(id); await reloadCandidates(); }
+        catch (e) { setCatalogError(String(e instanceof Error ? e.message : e)); throw e; }
+      },
+    });
   };
 
   const handleAddCandidateToMcp = (cand: Candidate) => {

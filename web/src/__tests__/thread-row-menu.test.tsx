@@ -11,9 +11,10 @@
  * i18n is mocked to echo keys so assertions are locale-independent.
  */
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 import ThreadRowMenu from "../components/ThreadRowMenu";
+import { ConfirmHost } from "../components/kit";
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (k: string) => k }),
@@ -56,24 +57,26 @@ describe("ThreadRowMenu", () => {
     expect(onDistill).toHaveBeenCalledWith("t1");
   });
 
-  it("Delete requires a confirmation before calling onDelete", () => {
+  it("Delete requires a confirmation before calling onDelete", async () => {
     const { onDelete } = setup();
+    render(<ConfirmHost />);
     fireEvent.click(screen.getByLabelText("sidebar.thread_menu"));
     fireEvent.click(screen.getByText("sidebar.delete"));
-    // Confirmation surfaced; onDelete not yet fired.
-    expect(screen.getByText("sidebar.delete_confirm_body")).toBeTruthy();
+    // 0.1.55: the kit's confirm sheet; onDelete not yet fired.
+    expect(await screen.findByText("confirm.conversationBody")).toBeTruthy();
     expect(onDelete).not.toHaveBeenCalled();
-    // Cancel → no delete.
-    fireEvent.click(screen.getByText("common.cancel"));
+    fireEvent.click(screen.getByTestId("confirm-cancel"));
+    await waitFor(() => expect(screen.queryByTestId("confirm-sheet")).toBeNull());
     expect(onDelete).not.toHaveBeenCalled();
   });
 
-  it("confirming the delete dialog calls onDelete(threadId)", () => {
+  it("confirming the delete dialog calls onDelete(threadId)", async () => {
     const { onDelete } = setup();
+    render(<ConfirmHost />);
     fireEvent.click(screen.getByLabelText("sidebar.thread_menu"));
     fireEvent.click(screen.getByText("sidebar.delete"));
-    fireEvent.click(screen.getByText("sidebar.delete_confirm_ok"));
-    expect(onDelete).toHaveBeenCalledWith("t1");
+    fireEvent.click(await screen.findByTestId("confirm-action"));
+    await waitFor(() => expect(onDelete).toHaveBeenCalledWith("t1"));
   });
 
   it("in the archived variant, Unarchive calls onUnarchive(threadId)", () => {

@@ -21,6 +21,7 @@ import { api } from "../api/client";
 import { useAuthStore } from "../stores/authStore";
 import type { BackendStatus } from "../hooks/useBackendStatus";
 import McpTokenControl from './settings/McpTokenControl';
+import { confirmSheet } from "./kit";
 
 interface AccessTokenSettingsProps {
   /** Inbound MCP server — moved here from Advanced. It belongs beside the
@@ -85,6 +86,8 @@ export default function AccessTokenSettings({
   };
 
   const handleReset = async () => {
+    // 0.1.55: a reset breaks every paired client; it asks first.
+    if (!(await confirmSheet({ title: t("confirm.tokenTitle"), body: t("confirm.tokenBody"), action: t("confirm.reset") }))) return;
     setResetting(true);
     setResetError(false);
     try {

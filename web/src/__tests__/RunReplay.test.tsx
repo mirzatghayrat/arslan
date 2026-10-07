@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import RunReplay, { isTerminalRunStatus } from "../components/RunReplay";
 import type { RunDetailDto } from "../api/client.types";
+import { ConfirmHost } from "../components/kit";
 
 const scored: RunDetailDto = {
   run: { id: 7, conversation_id: "c1", spawn_id: 1, spawn_name: "Mermer",
@@ -284,12 +285,13 @@ describe("RunReplay", () => {
   });
 
   it("clear button calls redactRun after confirm", async () => {
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     (api.getRun as ReturnType<typeof vi.fn>).mockResolvedValue(scoredWithP2);
     const spy = api.redactRun as ReturnType<typeof vi.fn>;
     spy.mockResolvedValue({ redacted: true });
-    render(<RunReplay runId={7} onClose={() => {}} />);
+    render(<><RunReplay runId={7} onClose={() => {}} /><ConfirmHost /></>);
     fireEvent.click(await screen.findByText("replay.clear_btn"));
+    expect(spy).not.toHaveBeenCalled();          // 0.1.55: the kit's sheet asks first
+    fireEvent.click(await screen.findByTestId("confirm-action"));
     await waitFor(() => expect(spy).toHaveBeenCalledWith(7));
   });
 
