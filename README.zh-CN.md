@@ -111,7 +111,7 @@ Arslan 现在能通过一个小助手 **Arslan Hands** 读取并使用你 Mac �
   <img src="docs/assets/readme/iphone.jpg" alt="Mac 与 iPhone：经由你的私有 iCloud 端到端加密（X25519、HKDF-SHA256、ChaCha20-Poly1305、Ed25519），先答者生效，Island 的表情" width="100%">
 </div>
 
-iPhone 链路没有 Arslan 服务器，也没有中转：消息走你私有 iCloud 数据库里的一个 CloudKit 区——X25519 密钥协商、HKDF-SHA256、ChaCha20-Poly1305、Ed25519 签名。已确认的消息由发送方删除，每天还会清掉超过 7 天的残留。
+iPhone 链路没有 Arslan 服务器，也没有中转：消息走你私有 iCloud 数据库里的一个 CloudKit 区——X25519 密钥协商、HKDF-SHA256、ChaCha20-Poly1305、Ed25519 签名。送达的消息随即删除；没送达的残留超过 7 天后由 Arslan Mac 版删除——Mac 开着并联网时大约每天检查一次，离线期间的清理等它恢复后再做。
 
 ## 隐私
 

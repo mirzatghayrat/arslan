@@ -112,7 +112,7 @@ Arslan can now read and use the apps on your Mac — Notes, Mail, Pages and the 
   <img src="docs/assets/readme/iphone.jpg" alt="Mac and iPhone: end-to-end encryption through your private iCloud (X25519, HKDF-SHA256, ChaCha20-Poly1305, Ed25519), first answer wins, the Island face" width="100%">
 </div>
 
-The iPhone link has no Arslan server and no relay: messages travel through a CloudKit zone in your private iCloud database — X25519 key agreement, HKDF-SHA256, ChaCha20-Poly1305, Ed25519 signatures. Acknowledged messages are deleted by the sender, and a daily sweep clears anything older than seven days.
+The iPhone link has no Arslan server and no relay: messages travel through a CloudKit zone in your private iCloud database — X25519 key agreement, HKDF-SHA256, ChaCha20-Poly1305, Ed25519 signatures. Delivered messages are deleted; anything left over is deleted by Arslan for Mac once it is more than 7 days old — the Mac checks about once a day while it is running and online, and catches up when it is back.
 
 ## Privacy
 

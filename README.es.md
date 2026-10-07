@@ -111,7 +111,7 @@ Arslan ahora puede leer y usar las apps de tu Mac — Notas, Mail, Pages y el re
   <img src="docs/assets/readme/iphone.jpg" alt="Mac y iPhone: cifrado de extremo a extremo a través de tu iCloud privado (X25519, HKDF-SHA256, ChaCha20-Poly1305, Ed25519), gana la primera respuesta, la cara de la Island" width="100%">
 </div>
 
-El enlace con el iPhone no tiene servidor de Arslan ni relé: los mensajes viajan por una zona de CloudKit en tu base de datos privada de iCloud — acuerdo de claves X25519, HKDF-SHA256, ChaCha20-Poly1305, firmas Ed25519. El remitente borra los mensajes confirmados, y un barrido diario elimina lo que tenga más de siete días.
+El enlace con el iPhone no tiene servidor de Arslan ni relé: los mensajes viajan por una zona de CloudKit en tu base de datos privada de iCloud — acuerdo de claves X25519, HKDF-SHA256, ChaCha20-Poly1305, firmas Ed25519. Los mensajes entregados se borran; lo que quede lo borra Arslan para Mac cuando tiene más de 7 días — el Mac lo comprueba aproximadamente una vez al día mientras está encendido y en línea, y si no, más tarde.
 
 ## Privacidad
 

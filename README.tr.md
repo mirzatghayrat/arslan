@@ -111,7 +111,7 @@ Arslan artık küçük bir yardımcı olan **Arslan Hands** ile Mac'indeki uygul
   <img src="docs/assets/readme/iphone.jpg" alt="Mac ve iPhone: özel iCloud'un üzerinden uçtan uca şifreleme (X25519, HKDF-SHA256, ChaCha20-Poly1305, Ed25519), ilk cevap geçerli, Island'ın yüzü" width="100%">
 </div>
 
-iPhone bağlantısında Arslan sunucusu ya da aktarıcı yoktur: mesajlar özel iCloud veritabanındaki bir CloudKit bölgesinden geçer — X25519 anahtar anlaşması, HKDF-SHA256, ChaCha20-Poly1305, Ed25519 imzaları. Onaylanan mesajları gönderen siler ve günlük bir temizlik yedi günden eski her şeyi kaldırır.
+iPhone bağlantısında Arslan sunucusu ya da aktarıcı yoktur: mesajlar özel iCloud veritabanındaki bir CloudKit bölgesinden geçer — X25519 anahtar anlaşması, HKDF-SHA256, ChaCha20-Poly1305, Ed25519 imzaları. Teslim edilen mesajlar silinir; geride kalanları Arslan for Mac 7 günden eski olduklarında siler — Mac açık ve çevrimiçiyken yaklaşık günde bir kez kontrol eder, değilse daha sonra.
 
 ## Gizlilik
 

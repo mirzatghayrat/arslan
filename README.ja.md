@@ -111,7 +111,7 @@ Arslan は小さなヘルパー **Arslan Hands** を通じて、Mac のアプリ
   <img src="docs/assets/readme/iphone.jpg" alt="Mac と iPhone：プライベート iCloud 経由のエンドツーエンド暗号化（X25519、HKDF-SHA256、ChaCha20-Poly1305、Ed25519）、先に答えた方が有効、Island の表情" width="100%">
 </div>
 
-iPhone との接続に Arslan のサーバーや中継はありません。メッセージはあなたのプライベート iCloud データベース内の CloudKit ゾーンを通ります — X25519 鍵合意、HKDF-SHA256、ChaCha20-Poly1305、Ed25519 署名。確認済みのメッセージは送信側が削除し、7 日より古いものは毎日の掃除で消えます。
+iPhone との接続に Arslan のサーバーや中継はありません。メッセージはあなたのプライベート iCloud データベース内の CloudKit ゾーンを通ります — X25519 鍵合意、HKDF-SHA256、ChaCha20-Poly1305、Ed25519 署名。配信済みのメッセージは削除され、残ったものは 7 日を過ぎると Arslan for Mac が削除します。Mac は起動中かつオンラインのとき、およそ 1 日 1 回確認します（オフラインの間は復帰後に）。
 
 ## プライバシー
 

@@ -111,7 +111,7 @@ Arslan kann jetzt die Apps auf deinem Mac lesen und bedienen — Notizen, Mail, 
   <img src="docs/assets/readme/iphone.jpg" alt="Mac und iPhone: Ende-zu-Ende-Verschlüsselung über deine private iCloud (X25519, HKDF-SHA256, ChaCha20-Poly1305, Ed25519), die erste Antwort gilt, das Gesicht der Island" width="100%">
 </div>
 
-Die iPhone-Verbindung hat keinen Arslan-Server und kein Relay: Nachrichten laufen durch eine CloudKit-Zone in deiner privaten iCloud-Datenbank — X25519-Schlüsselvereinbarung, HKDF-SHA256, ChaCha20-Poly1305, Ed25519-Signaturen. Bestätigte Nachrichten löscht der Absender, und ein täglicher Durchlauf räumt alles auf, was älter als sieben Tage ist.
+Die iPhone-Verbindung hat keinen Arslan-Server und kein Relay: Nachrichten laufen durch eine CloudKit-Zone in deiner privaten iCloud-Datenbank — X25519-Schlüsselvereinbarung, HKDF-SHA256, ChaCha20-Poly1305, Ed25519-Signaturen. Zugestellte Nachrichten werden gelöscht; was liegen bleibt, löscht Arslan für Mac, sobald es älter als 7 Tage ist — der Mac prüft etwa einmal täglich, solange er läuft und online ist, sonst später.
 
 ## Datenschutz
 
