@@ -1,18 +1,19 @@
 import { useEffect, useReducer, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { fetchFeed, stopHands, type Activity, type Feed } from './feed';
+import { answerCard, fetchFeed, fetchPending, stopHands, stopJob, type Activity, type Feed, type PendingCard } from './feed';
+import { askKind, askLine, mmss, secondsLeft } from './islandAsk';
 import IslandMascot from './IslandMascot';
 import {
   applyFeed, bodyTop, countdown, dismiss, focused, hitRect, hoverEnter, hoverLeave, initialState, interact, isSearchTool, mood, open,
-  setFocus, setMainFocused, setPresence, shape, tick, waitingActivity,
+  setFocus, setFullscreen, setMainFocused, setPresence, shape, tick, waitingActivity,
   type IslandState, type Mood, type StepLine,
 } from './islandMachine';
 import { initialGeometry, inShell, isGeometry, listenShell, openConversation, reportShape } from './islandShell';
-import { pickLang, stepText, t, type Lang } from '../locales/island';
+import { askText, pickLang, stepText, t, type Lang } from '../locales/island';
 
 type Action =
   | { type: 'feed'; feed: Feed } | { type: 'enter' } | { type: 'leave' } | { type: 'move' } | { type: 'open' }
   | { type: 'dismiss' } | { type: 'presence'; away: boolean } | { type: 'mainFocus'; focused: boolean }
-  | { type: 'focus'; id: number } | { type: 'tick' };
+  | { type: 'focus'; id: number } | { type: 'tick' } | { type: 'fullscreen'; on: boolean };
 
 function reducer(s: IslandState, a: Action): IslandState {
   const now = Date.now();
@@ -27,6 +28,7 @@ function reducer(s: IslandState, a: Action): IslandState {
     case 'mainFocus': return setMainFocused(s, a.focused);
     case 'focus': return setFocus(s, a.id, now);
     case 'tick': return tick(s, now);
+    case 'fullscreen': return setFullscreen(s, a.on, now);
   }
 }
 
@@ -50,6 +52,8 @@ export default function IslandApp() {
   const [lang, setLang] = useState(readLang);
   const [cd, setCd] = useState(0);
   const [clock, setClock] = useState(() => Math.floor(Date.now() / 1000));
+  // 0.1.55: the cards themselves, so the island can answer them (only while some wait).
+  const [pending, setPending] = useState<PendingCard[]>([]);
   const stateRef = useRef(s);
   stateRef.current = s;
 
@@ -62,6 +66,8 @@ export default function IslandApp() {
       try {
         const feed = await fetchFeed(stateRef.current.cursor, ctl.signal);
         dispatch({ type: 'feed', feed });
+        if (feed.awaiting > 0) setPending(await fetchPending(ctl.signal).catch(() => []));
+        else setPending((old) => (old.length ? [] : old));
       } catch {
         if (ctl.signal.aborted) return;
         failed = true;
@@ -78,13 +84,16 @@ export default function IslandApp() {
       dispatch({ type: 'tick' });
       const now = Date.now();
       setCd(Math.round(countdown(stateRef.current, now) * 100) / 100);
-      if (stateRef.current.mode === 'compact') setClock(Math.floor(now / 1000));
+      if (stateRef.current.mode !== 'hidden') setClock(Math.floor(now / 1000));
     }, 250);
     return () => clearInterval(id);
   }, []);
 
   useEffect(() => {
-    const offGeo = listenShell<typeof geo>('island-geometry', (g) => { if (isGeometry(g)) setGeo(g); });
+    const offGeo = listenShell<typeof geo>('island-geometry', (g) => {
+      if (isGeometry(g)) { setGeo(g); dispatch({ type: 'fullscreen', on: g.fullscreen === true }); }
+    });
+    dispatch({ type: 'fullscreen', on: initialGeometry().fullscreen === true });
     // In the shell the window is never key, so the page gets no reliable hover
     // of its own: the shell's pointer poll says when the pointer arrives and leaves.
     const offPointer = listenShell<{ inside: boolean }>('island-pointer', (p) => dispatch({ type: p?.inside ? 'enter' : 'leave' }));
@@ -128,7 +137,8 @@ export default function IslandApp() {
         <button type="button" className="slot-left" onClick={() => dispatch({ type: 'open' })} aria-label={t(lang, 'openArslan')}>
           <IslandMascot mood={m} size={geo.notch ? 22 : 16} small paused={s.mode === 'hidden' && geo.notch} />
         </button>
-        <div className="slot-right">{s.mode === 'compact' && <CompactRight s={s} clock={clock} />}</div>
+        <div className="slot-right">{s.mode === 'compact' && <CompactRight s={s} clock={clock} />}
+          {s.mode === 'tab' && <TabRight lang={lang} card={pending[0]} clock={clock} />}</div>
         <div className="expanded" aria-hidden={s.mode !== 'expanded'}>
           <div className="ihead">
             <span className="count">
@@ -139,11 +149,22 @@ export default function IslandApp() {
               <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
             </button>
           </div>
-          <div className="ibody">{s.mode === 'expanded' && <View s={s} m={m} lang={lang} dispatch={dispatch} />}</div>
+          <div className="ibody">{s.mode === 'expanded' && <View s={s} m={m} lang={lang} dispatch={dispatch} pending={pending}
+            clock={clock} onAnswered={(callId) => setPending((old) => old.filter((c) => c.call_id !== callId))} />}</div>
           <div className="countdown" />
         </div>
       </div>
     </>
+  );
+}
+
+/** Over a full-screen app (decision 4): "needs you" and the time left, still — no pulse. */
+function TabRight({ lang, card, clock }: { lang: Lang; card: PendingCard | undefined; clock: number }) {
+  return (
+    <span className="tab-right" data-testid="island-tab">
+      <span className="still-dot" aria-hidden="true" />{t(lang, 'needsYou')}
+      {card && <span className="mono">{mmss(secondsLeft(card, clock * 1000))}</span>}
+    </span>
   );
 }
 
@@ -196,12 +217,68 @@ function Card({ m, size, children, onClick }: { m: Mood; size: number; children:
   );
 }
 
-function Who({ color, title, label }: { color: string; title: string; label: string }) {
-  return <div className="who"><span className="dot" style={{ '--sc': color } as CSSProperties} /><b>{title}</b><span>{label}</span></div>;
+function Who({ color, title, label, elapsed: time }: { color: string; title: string; label: string; elapsed?: string }) {
+  return <div className="who"><span className="dot" style={{ '--sc': color } as CSSProperties} /><b>{title}</b><span>{label}</span>
+    {time && <span className="mono" data-testid="island-elapsed">{time}</span>}</div>;
 }
 
-function View({ s, m, lang, dispatch }: { s: IslandState; m: Mood; lang: Lang; dispatch: (a: Action) => void }) {
+/**
+ * One waiting card, answerable here (0.1.55 decision 3) — unless the server says it is
+ * risky (`island_ok` false): then it says why and offers "Open in Arslan". Declining is
+ * always offered: saying no is never the risky answer.
+ */
+function AskView({ card, total, m, lang, clock, onAnswered }: {
+  card: PendingCard; total: number; m: Mood; lang: Lang; clock: number; onAnswered: (callId: string) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => { setFailed(false); }, [card.call_id]);
+  const answer = async (approve: boolean) => {
+    setBusy(true); setFailed(false);
+    const ok = await answerCard(card.call_id, approve).catch(() => false);
+    setBusy(false);
+    if (ok) onAnswered(card.call_id); else setFailed(true);
+  };
+  const line = askLine(card);
+  return (
+    <>
+      {total > 1 && <span className="queue" data-testid="island-queue">1 / {total}</span>}
+      <Card m={m} size={58}>
+        <Who color={STATE_COLOR.approval} title={askText(lang, askKind(card))} label={t(lang, 'needsYou')}
+          elapsed={mmss(secondsLeft(card, clock * 1000))} />
+        {line && <div className="code" data-testid="island-ask-line" title={line}>{line}</div>}
+        {!card.island_ok && <div className="itext risky" data-testid="island-risky">{t(lang, 'riskyNote')}</div>}
+        {failed && <div className="itext" role="alert">{t(lang, 'answerFailed')}</div>}
+        <div className="btns">
+          <button type="button" className="btn" disabled={busy} data-testid="island-decline" onClick={() => void answer(false)}>{t(lang, 'decline')}</button>
+          {card.island_ok
+            ? <button type="button" className="btn primary" disabled={busy} data-testid="island-allow" onClick={() => void answer(true)}>{t(lang, 'allow')}</button>
+            : <button type="button" className="btn primary" data-testid="island-open-in-arslan" onClick={() => openConversation(card.conversation_id)}>{t(lang, 'openInArslan')}</button>}
+        </div>
+      </Card>
+    </>
+  );
+}
+
+/** Stop the background job this card shows. */
+function StopJob({ jobId, lang }: { jobId: string; lang: Lang }) {
+  const [stopping, setStopping] = useState(false);
+  return (
+    <button type="button" className="btn" data-testid="island-stop-job" disabled={stopping}
+      onClick={(e) => { e.stopPropagation(); setStopping(true); stopJob(jobId).then((ok) => { if (!ok) setStopping(false); }).catch(() => setStopping(false)); }}>
+      {t(lang, stopping ? 'stoppingJob' : 'stopJob')}
+    </button>
+  );
+}
+
+function View({ s, m, lang, dispatch, pending, clock, onAnswered }: {
+  s: IslandState; m: Mood; lang: Lang; dispatch: (a: Action) => void;
+  pending: PendingCard[]; clock: number; onAnswered: (callId: string) => void;
+}) {
   const close = <button type="button" className="btn" onClick={() => dispatch({ type: 'dismiss' })}>{t(lang, 'close')}</button>;
+  if (s.view === 'needsYou' && pending.length) {
+    return <AskView card={pending[0]} total={pending.length} m={m} lang={lang} clock={clock} onAnswered={onAnswered} />;
+  }
   if (s.view === 'needsYou') {
     const a = waitingActivity(s);
     const cid = s.awaitingConversations[0] ?? null;
@@ -244,11 +321,17 @@ function View({ s, m, lang, dispatch }: { s: IslandState; m: Mood; lang: Lang; d
     const others = s.active.filter((o) => o.id !== a.id);
     return (
       <>
-        <Card m={m} size={70} onClick={() => openConversation(a.conversation_id)}>
-          <Who color={STATE_COLOR[m] ?? STATE_COLOR.working} title={titleOf(lang, a.title, a.kind)} label={t(lang, a.kind)} />
+        <Card m={m} size={70}>
+          <Who color={STATE_COLOR[m] ?? STATE_COLOR.working} title={titleOf(lang, a.title, a.kind)} label={t(lang, a.kind)}
+            elapsed={elapsed(clock - a.started_at)} />
           {a.plan && a.plan.items.length > 0 && <Plan items={a.plan.items} />}
           <Ticker steps={s.steps[a.id] ?? []} lang={lang} />
-          {usingHands(s.active) && <StopHands lang={lang} />}
+          <div className="btns">
+            {a.job_id && <StopJob jobId={a.job_id} lang={lang} />}
+            {usingHands(s.active) && <StopHands lang={lang} />}
+            <button type="button" className="btn primary" data-testid="island-open" onClick={() => openConversation(a.conversation_id)}>
+              {t(lang, 'openArslan')}</button>
+          </div>
         </Card>
         {others.length > 0 && (
           <div className="card side">
@@ -281,12 +364,10 @@ export function usingHands(active: { step: { tool: string } | null }[]): boolean
 function StopHands({ lang }: { lang: Lang }) {
   const [done, setDone] = useState(false);
   return (
-    <div className="btns">
-      <button type="button" className="btn" data-testid="island-stop-hands" disabled={done}
-        onClick={(e) => { e.stopPropagation(); stopHands().then((ok) => setDone(ok)).catch(() => {}); }}>
-        {t(lang, done ? 'stoppedHands' : 'stopHands')}
-      </button>
-    </div>
+    <button type="button" className="btn" data-testid="island-stop-hands" disabled={done}
+      onClick={(e) => { e.stopPropagation(); stopHands().then((ok) => setDone(ok)).catch(() => {}); }}>
+      {t(lang, done ? 'stoppedHands' : 'stopHands')}
+    </button>
   );
 }
 

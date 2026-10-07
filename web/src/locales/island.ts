@@ -34,6 +34,14 @@ const en = {
   plan: 'Plan',
   stopHands: 'Stop',
   stoppedHands: 'Stopped',
+  allow: 'Allow',
+  decline: 'Decline',
+  openInArslan: 'Open in Arslan',
+  riskyNote: 'This one may delete, send or pay — read it in Arslan before allowing.',
+  answerFailed: 'Could not answer here. Open Arslan.',
+  stopJob: 'Stop',
+  stoppingJob: 'Stopping…',
+  ask: { run_command: 'Run a command', workspace_write: 'Write in your folder', schedule: 'Set up a scheduled task', browser_site: 'Act on a website', desktop_look: 'Look at an app', desktop_app: 'Act in an app', desktop_risky: 'A step that may delete, send or pay', mac_shortcut: 'Run a Shortcut', mac_script: 'Run an AppleScript', other: 'Needs your OK' },
   step: {
     desktop_apps: 'List the open apps', desktop_look: 'Look at {{t}}', desktop_click: 'Click {{t}}', desktop_type: 'Type in {{t}}', desktop_select: 'Choose in {{t}}', desktop_scroll: 'Scroll {{t}}', desktop_press: 'Press {{t}}',
     web_search: 'Search “{{t}}”', web_extract: 'Read {{t}}', browser_open: 'Open {{t}} in the browser',
@@ -70,6 +78,14 @@ const zh: Messages = {
   plan: '计划',
   stopHands: '停止',
   stoppedHands: '已停止',
+  allow: '允许',
+  decline: '不要',
+  openInArslan: '在 Arslan 里看',
+  riskyNote: '这一步可能删除、发送或付款——请在 Arslan 里看完整再批准。',
+  answerFailed: '这里没能答复，请打开 Arslan。',
+  stopJob: '停下',
+  stoppingJob: '正在停…',
+  ask: { run_command: '跑一条命令', workspace_write: '写到你的文件夹', schedule: '建一个定时任务', browser_site: '在网站上操作', desktop_look: '看一个应用', desktop_app: '在应用里操作', desktop_risky: '可能删除、发送或付款的一步', mac_shortcut: '运行快捷指令', mac_script: '运行 AppleScript', other: '需要你点头' },
   step: {
     desktop_apps: '列出打开的应用', desktop_look: '查看 {{t}}', desktop_click: '点击 {{t}}', desktop_type: '在 {{t}} 输入', desktop_select: '在 {{t}} 选择', desktop_scroll: '滚动 {{t}}', desktop_press: '按键 {{t}}',
     web_search: '搜索「{{t}}」', web_extract: '读取 {{t}}', browser_open: '在浏览器里打开 {{t}}',
@@ -105,6 +121,14 @@ const ja: Messages = {
   plan: '計画',
   stopHands: '止める',
   stoppedHands: '停止しました',
+  allow: '許可',
+  decline: '許可しない',
+  openInArslan: 'Arslan で見る',
+  riskyNote: '削除・送信・支払いになる可能性があります。Arslan で全体を見てから許可してください。',
+  answerFailed: 'ここでは答えられませんでした。Arslan を開いてください。',
+  stopJob: '止める',
+  stoppingJob: '停止中…',
+  ask: { run_command: 'コマンドを実行', workspace_write: 'フォルダに書き込む', schedule: '定期タスクを作る', browser_site: 'ウェブサイトで操作', desktop_look: 'アプリを見る', desktop_app: 'アプリで操作', desktop_risky: '削除・送信・支払いになりうる操作', mac_shortcut: 'ショートカットを実行', mac_script: 'AppleScript を実行', other: '確認が必要です' },
   step: {
     desktop_apps: '開いているアプリを一覧', desktop_look: '{{t}} を見る', desktop_click: '{{t}} をクリック', desktop_type: '{{t}} に入力', desktop_select: '{{t}} で選択', desktop_scroll: '{{t}} をスクロール', desktop_press: '{{t}} を押す',
     web_search: '「{{t}}」を検索', web_extract: '{{t}} を読む', browser_open: 'ブラウザで {{t}} を開く',
@@ -140,6 +164,14 @@ const es: Messages = {
   plan: 'Plan',
   stopHands: 'Detener',
   stoppedHands: 'Detenido',
+  allow: 'Permitir',
+  decline: 'No',
+  openInArslan: 'Abrir en Arslan',
+  riskyNote: 'Esto puede borrar, enviar o pagar: revísalo en Arslan antes de permitirlo.',
+  answerFailed: 'No se pudo responder aquí. Abre Arslan.',
+  stopJob: 'Detener',
+  stoppingJob: 'Deteniendo…',
+  ask: { run_command: 'Ejecutar un comando', workspace_write: 'Escribir en tu carpeta', schedule: 'Crear una tarea programada', browser_site: 'Actuar en un sitio web', desktop_look: 'Mirar una app', desktop_app: 'Actuar en una app', desktop_risky: 'Un paso que puede borrar, enviar o pagar', mac_shortcut: 'Ejecutar un Atajo', mac_script: 'Ejecutar un AppleScript', other: 'Necesita tu visto bueno' },
   step: {
     desktop_apps: 'Listar las apps abiertas', desktop_look: 'Ver {{t}}', desktop_click: 'Clic en {{t}}', desktop_type: 'Escribir en {{t}}', desktop_select: 'Elegir en {{t}}', desktop_scroll: 'Desplazar {{t}}', desktop_press: 'Pulsar {{t}}',
     web_search: 'Buscar «{{t}}»', web_extract: 'Leer {{t}}', browser_open: 'Abrir {{t}} en el navegador',
@@ -175,6 +207,14 @@ const de: Messages = {
   plan: 'Plan',
   stopHands: 'Stoppen',
   stoppedHands: 'Gestoppt',
+  allow: 'Erlauben',
+  decline: 'Ablehnen',
+  openInArslan: 'In Arslan öffnen',
+  riskyNote: 'Das kann löschen, senden oder bezahlen – erst in Arslan ansehen, dann erlauben.',
+  answerFailed: 'Hier ließ sich nicht antworten. Öffne Arslan.',
+  stopJob: 'Stoppen',
+  stoppingJob: 'Wird gestoppt…',
+  ask: { run_command: 'Einen Befehl ausführen', workspace_write: 'In deinen Ordner schreiben', schedule: 'Geplante Aufgabe anlegen', browser_site: 'Auf einer Website handeln', desktop_look: 'Eine App ansehen', desktop_app: 'In einer App handeln', desktop_risky: 'Ein Schritt, der löschen, senden oder bezahlen kann', mac_shortcut: 'Kurzbefehl ausführen', mac_script: 'AppleScript ausführen', other: 'Braucht dein OK' },
   step: {
     desktop_apps: 'Offene Apps auflisten', desktop_look: '{{t}} ansehen', desktop_click: '{{t}} klicken', desktop_type: 'In {{t}} tippen', desktop_select: 'In {{t}} auswählen', desktop_scroll: '{{t}} scrollen', desktop_press: '{{t}} drücken',
     web_search: 'Suche „{{t}}“', web_extract: '{{t}} lesen', browser_open: '{{t}} im Browser öffnen',
@@ -210,6 +250,14 @@ const fr: Messages = {
   plan: 'Plan',
   stopHands: 'Arrêter',
   stoppedHands: 'Arrêté',
+  allow: 'Autoriser',
+  decline: 'Refuser',
+  openInArslan: 'Ouvrir dans Arslan',
+  riskyNote: 'Cela peut supprimer, envoyer ou payer : lisez-le dans Arslan avant d’autoriser.',
+  answerFailed: 'Impossible de répondre ici. Ouvrez Arslan.',
+  stopJob: 'Arrêter',
+  stoppingJob: 'Arrêt…',
+  ask: { run_command: 'Lancer une commande', workspace_write: 'Écrire dans votre dossier', schedule: 'Créer une tâche planifiée', browser_site: 'Agir sur un site web', desktop_look: 'Regarder une app', desktop_app: 'Agir dans une app', desktop_risky: 'Une étape qui peut supprimer, envoyer ou payer', mac_shortcut: 'Lancer un Raccourci', mac_script: 'Lancer un AppleScript', other: 'Il faut votre accord' },
   step: {
     desktop_apps: 'Lister les apps ouvertes', desktop_look: 'Regarder {{t}}', desktop_click: 'Cliquer {{t}}', desktop_type: 'Écrire dans {{t}}', desktop_select: 'Choisir dans {{t}}', desktop_scroll: 'Faire défiler {{t}}', desktop_press: 'Appuyer sur {{t}}',
     web_search: 'Rechercher « {{t}} »', web_extract: 'Lire {{t}}', browser_open: 'Ouvrir {{t}} dans le navigateur',
@@ -219,7 +267,7 @@ const fr: Messages = {
 };
 
 export const MESSAGES: Record<Lang, Messages> = { en, zh, ja, es, de, fr };
-export type MessageKey = Exclude<keyof Messages, 'step'>;
+export type MessageKey = Exclude<keyof Messages, 'step' | 'ask'>;
 
 export function pickLang(stored: string | null, navigatorLang: string | undefined): Lang {
   for (const raw of [stored, navigatorLang]) {
@@ -242,4 +290,10 @@ export function stepText(lang: Lang, tool: string, target: string | null): strin
   const known = table[tool];
   if (known && (target || !known.includes('{{t}}'))) return fill(known, { t: target ?? '' });
   return fill(table.other, { tool: tool.replace(/_/g, ' ') });
+}
+
+/** What a waiting card asks, in a few words (0.1.55 Island v2). */
+export function askText(lang: Lang, kind: string): string {
+  const table = MESSAGES[lang].ask as Record<string, string>;
+  return table[kind] ?? table.other;
 }

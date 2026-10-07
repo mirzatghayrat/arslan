@@ -19,6 +19,7 @@ and asks for a workspace write once per job.
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 import uuid
 from contextvars import ContextVar
@@ -137,13 +138,51 @@ def known_ids() -> set[str]:
     return set(_pending)
 
 
+#: Terminal rules whose command deletes, sends, publishes or reaches elsewhere — and
+#: AppleScript / Shortcuts, which can do any of those from inside an app.
+_ISLAND_RISKY_RULES = {"delete", "send-mail", "send-message", "upload", "publish", "git-push",
+                       "remote-shell", "apple-events", "login-items", "install"}
+_RISKY_SCRIPT = re.compile(r"\b(?:delete|send|move|do\s+shell\s+script|purchase|buy|pay|submit|transfer|empty\s+trash)\b",
+                           re.IGNORECASE)
+
+
+def island_may_answer(frame: dict) -> bool:
+    """0.1.55 decision 3: the island answers every card except a risky one (delete, send,
+    pay, buy, transfer, submit) — those are answered in Arslan, with the whole context in
+    view. Fail-closed: a kind this does not know is not answerable from the island."""
+    kind = frame.get("type")
+    if kind in ("propose_workspace_write", "propose_schedule"):
+        return True
+    if kind == "propose_action":
+        action = frame.get("kind")
+        if action in ("browser_site", "desktop_look", "desktop_app", "mac_shortcut"):
+            return True
+        if action == "mac_script":
+            return not _RISKY_SCRIPT.search(str(frame.get("detail") or ""))
+        return False                       # desktop_risky, and anything new
+    if kind == "propose_run_command":
+        if frame.get("remote_host") or frame.get("sandbox") in ("outside", "retry"):
+            return False                   # another machine, or writing outside the sandbox
+        from server.services import terminal_policy
+        verdict = terminal_policy.assess(str(frame.get("pretty") or ""))
+        return verdict.level != "forbid" and verdict.rule not in _ISLAND_RISKY_RULES \
+            and not verdict.rule.startswith("hermes:")
+    return False
+
+
 def all_pending() -> list[dict]:
     """Every card waiting for the user, in any conversation, oldest first (0.1.55: the
-    Inbox's "现在就要你批准" and the island). `expires_at` is when it is declined."""
+    Inbox's "现在就要你批准" and the island). `expires_at` is when it is declined;
+    `island_ok` says whether the island may answer it (see `island_may_answer`)."""
     rows = sorted(_pending.values(), key=lambda p: p.opened_at)
     return [{"call_id": p.call_id, "conversation_id": p.conversation_id, "frame": p.frame,
-             "opened_at": p.opened_at, "expires_at": p.opened_at + TIMEOUT_S}
+             "opened_at": p.opened_at, "expires_at": p.opened_at + TIMEOUT_S,
+             "island_ok": island_may_answer(p.frame)}
             for p in rows if not p.future.done()]
+
+
+class OpenInArslan(Exception):
+    """A risky card was answered from the island: it is answered in Arslan only."""
 
 
 def answer_by_id(call_id: str, approve: bool, *, source: str, remember: bool = False) -> bool:
@@ -153,6 +192,10 @@ def answer_by_id(call_id: str, approve: bool, *, source: str, remember: bool = F
     pending = _pending.get(call_id)
     if pending is None:
         return False
+    if source == "island" and approve and not island_may_answer(pending.frame):
+        # Enforced here, not only by hiding the buttons: the island page is a client.
+        # Declining is always safe, so only an approval is refused.
+        raise OpenInArslan(call_id)
     kind = pending.frame["type"].removeprefix("propose_")
     return answer({"type": f"{'confirm' if approve else 'cancel'}_{kind}", "call_id": call_id,
                    "remember": remember, "source": source})

@@ -3,14 +3,15 @@
  * every rule is testable without timers; IslandApp feeds it events and a tick.
  *
  * Modes: hidden (behind the notch) · peek (pointer on it) · compact (a strip
- * while work runs) · expanded (a panel). Where the island rests when nobody is
+ * while work runs) · tab (0.1.55: a card waits while a full-screen app is in front —
+ * a small still tab, the card opens on hover) · expanded (a panel). Where the island rests when nobody is
  * pointing at it, in order: something needs you → expanded and stays; a
  * finished/stopped result → expanded for a while; you are away → hidden; work
  * running → compact; otherwise hidden.
  */
 import type { Activity, Feed, FeedEvent, WorkKind } from './feed';
 
-export type Mode = 'hidden' | 'peek' | 'compact' | 'expanded';
+export type Mode = 'hidden' | 'peek' | 'compact' | 'tab' | 'expanded';
 export type View = 'overview' | 'empty' | 'needsYou' | 'finished' | 'stopped';
 export type Mood = 'idle' | 'working' | 'searching' | 'approval' | 'finished' | 'stopped' | 'sleeping';
 
@@ -49,6 +50,8 @@ export interface IslandState {
   focusId: number | null;
   /** 0.1.52 S5: practices learned since you last closed or opened from the island ("+1 practice"). */
   learned: number;
+  /** 0.1.55 decision 4: a full-screen app is in front (the shell's geometry says so). */
+  fullscreen: boolean;
 }
 
 export const PEEK_TO_EXPAND_MS = 650;
@@ -70,7 +73,7 @@ export function initialState(): IslandState {
     enabled: true, mode: 'hidden', view: 'empty', cursor: null, active: [], steps: {},
     awaiting: 0, awaitingConversations: [], needsYouSeen: 0, queue: [], current: null, shownAt: 0,
     away: false, mainFocused: false, hovering: false, hoverSince: 0, leftAt: -Infinity,
-    lastInteract: 0, focusId: null, learned: 0,
+    lastInteract: 0, focusId: null, learned: 0, fullscreen: false,
   };
 }
 
@@ -159,7 +162,12 @@ function show(s: IslandState, mode: Mode, view: View | null, now: number): Islan
 /** Where the island goes now, given what is pending; keeps what the pointer holds open. */
 export function settle(s: IslandState, now: number): IslandState {
   if (!s.enabled) return show(s, 'hidden', null, now);
-  if (needsYou(s)) return show(s, 'expanded', 'needsYou', now);
+  if (needsYou(s)) {
+    // Over a full-screen app the whole card would cover what you are doing: a small
+    // still tab says something waits; the pointer opens the card, and leaving folds it.
+    const open = !s.fullscreen || s.hovering || now - s.leftAt < LEAVE_COLLAPSE_MS;
+    return show(s, open ? 'expanded' : 'tab', 'needsYou', now);
+  }
   let next = s;
   // A result does not jump in under the pointer while you are reading other
   // work that is still running; when nothing is left running it shows at once.
@@ -179,6 +187,7 @@ export function settle(s: IslandState, now: number): IslandState {
 export function hoverEnter(s: IslandState, now: number): IslandState {
   if (s.hovering) return s;
   const next = { ...s, hovering: true, hoverSince: now, lastInteract: now };
+  if (s.mode === 'tab') return settle(next, now);            // the waiting card opens at once
   return s.mode === 'hidden' && s.enabled ? { ...next, mode: 'peek' } : next;
 }
 
@@ -218,6 +227,10 @@ export function setPresence(s: IslandState, away: boolean, now: number): IslandS
   return s.away === away ? s : settle({ ...s, away }, now);
 }
 
+export function setFullscreen(s: IslandState, fullscreen: boolean, now: number): IslandState {
+  return s.fullscreen === fullscreen ? s : settle({ ...s, fullscreen }, now);
+}
+
 export function setMainFocused(s: IslandState, focused: boolean): IslandState {
   return s.mainFocused === focused ? s : { ...s, mainFocused: focused };
 }
@@ -227,6 +240,10 @@ export function setFocus(s: IslandState, id: number, now: number): IslandState {
 }
 
 export function tick(s: IslandState, now: number): IslandState {
+  if (s.mode === 'tab' && s.hovering) return settle(s, now);   // the card opens at once
+  if (s.view === 'needsYou' && s.fullscreen && s.mode === 'expanded' && !s.hovering && now - s.leftAt >= LEAVE_COLLAPSE_MS) {
+    return settle(s, now);                                       // folds back into the tab
+  }
   if (s.mode === 'peek' && s.hovering && now - s.hoverSince >= PEEK_TO_EXPAND_MS) {
     return show(s, 'expanded', s.active.length ? 'overview' : 'empty', now);
   }
@@ -277,11 +294,13 @@ export function mood(s: IslandState): Mood {
   return isSearchTool(a.step?.tool) ? 'searching' : 'working';
 }
 
-export interface ScreenGeometry { notch: boolean; notchWidth: number; barHeight: number }
+export interface ScreenGeometry { notch: boolean; notchWidth: number; barHeight: number; fullscreen?: boolean }
 export interface Shape { w: number; h: number; r: number }
 
-export const VIEW_H: Record<View, number> = { overview: 210, empty: 150, needsYou: 190, finished: 176, stopped: 186 };
+export const VIEW_H: Record<View, number> = { overview: 236, empty: 150, needsYou: 214, finished: 176, stopped: 186 };
 export const EXPANDED_W = 640;
+/** The full-screen tab: mascot on the left, "needs you" and the time left on the right. */
+export const TAB_W = 220;
 export const EAR = 14;
 /** Where the panel's cards start; VIEW_H assumes this. */
 export const BODY_TOP = 36;
@@ -299,11 +318,13 @@ export function bodyTop(g: ScreenGeometry): number {
 export function shape(s: IslandState, g: ScreenGeometry): Shape {
   if (s.mode === 'expanded') return { w: EXPANDED_W, h: VIEW_H[s.view] + bodyTop(g) - BODY_TOP, r: 30 };
   if (!g.notch) {
+    if (s.mode === 'tab') return { w: TAB_W, h: 28, r: 14 };
     if (s.mode === 'compact') return { w: 240, h: 26, r: 13 };
     if (s.mode === 'peek') return { w: 140, h: 26, r: 13 };
     return { w: 80, h: 22, r: 11 };
   }
   const h = Math.max(24, g.barHeight);
+  if (s.mode === 'tab') return { w: g.notchWidth + TAB_W, h, r: 14 };
   if (s.mode === 'compact') return { w: g.notchWidth + 120, h, r: 14 };
   if (s.mode === 'peek') return { w: g.notchWidth + 64, h, r: 14 };
   return { w: g.notchWidth, h, r: 12 };

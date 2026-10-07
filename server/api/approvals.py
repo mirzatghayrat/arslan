@@ -31,6 +31,10 @@ class Answer(BaseModel):
 @router.post("/approvals/{call_id}/answer")
 async def answer(call_id: str, body: Answer) -> dict:
     # "remember" is never offered from here: a remembered rule is chosen on the card itself.
-    if not approvals.answer_by_id(call_id, body.approve, source=body.source):
+    try:
+        answered = approvals.answer_by_id(call_id, body.approve, source=body.source)
+    except approvals.OpenInArslan as exc:
+        raise HTTPException(status_code=403, detail={"code": "open_in_arslan"}) from exc
+    if not answered:
         raise HTTPException(status_code=404, detail="no such pending card (answered or expired)")
     return {"ok": True}

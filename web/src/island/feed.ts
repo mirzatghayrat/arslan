@@ -21,6 +21,19 @@ export interface Activity {
   started_at: number;
   step: { tool: string; target: string | null; at: number } | null;
   plan: { items: PlanItem[]; done: number; total: number } | null;
+  /** 0.1.55: set for a background job, so the island can stop it. */
+  job_id?: string | null;
+}
+
+/** One card waiting for the user (GET /api/v1/approvals/pending, 0.1.55). */
+export interface PendingCard {
+  call_id: string;
+  conversation_id: string;
+  frame: Record<string, unknown> & { type: string };
+  opened_at: number;
+  expires_at: number;
+  /** The server's rule (approvals.island_may_answer): false = risky, answer it in Arslan. */
+  island_ok: boolean;
 }
 
 export interface FeedEvent {
@@ -80,5 +93,37 @@ export async function stopHands(): Promise<boolean> {
   const t = token();
   if (t) headers.Authorization = `Bearer ${t}`;
   const res = await fetch('/api/v1/hands/stop', { method: 'POST', headers, cache: 'no-store' });
+  return res.ok;
+}
+
+function authHeaders(): Record<string, string> {
+  const t = token();
+  return t ? { Authorization: `Bearer ${t}` } : {};
+}
+
+/** Every card waiting for the user, oldest first (0.1.55 Island v2). */
+export async function fetchPending(signal?: AbortSignal): Promise<PendingCard[]> {
+  const res = await fetch('/api/v1/approvals/pending', { headers: authHeaders(), signal, cache: 'no-store' });
+  if (!res.ok) throw new Error(`pending ${res.status}`);
+  const body: unknown = await res.json();
+  if (!Array.isArray(body)) throw new Error('pending: not a list');
+  return body.filter((c): c is PendingCard => !!c && typeof c === 'object'
+    && typeof (c as PendingCard).call_id === 'string' && typeof (c as PendingCard).frame?.type === 'string');
+}
+
+/** Answer one card from the island. The server refuses to APPROVE a risky one (403). */
+export async function answerCard(callId: string, approve: boolean): Promise<boolean> {
+  const res = await fetch(`/api/v1/approvals/${encodeURIComponent(callId)}/answer`, {
+    method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ approve, source: 'island' }),
+  });
+  return res.ok;
+}
+
+/** Stop one background job (the island's Stop on a job). */
+export async function stopJob(jobId: string): Promise<boolean> {
+  const res = await fetch(`/api/v1/background-jobs/${encodeURIComponent(jobId)}/stop`, {
+    method: 'POST', headers: authHeaders(),
+  });
   return res.ok;
 }

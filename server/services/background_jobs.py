@@ -271,7 +271,8 @@ async def _execute(job: Job) -> tuple[str, str, str | None]:
             return await arslan.background_body(conversation_id, instruction, _job_sink(job, sink), confirmations)
         return await host_run.execute(conversation_id, instruction, emit, body, announce=False)
 
-    with personal_context.bind(ctx), desktop_status.working(job.conversation_id, title=job.goal, kind="job"):
+    with personal_context.bind(ctx), desktop_status.working(job.conversation_id, title=job.goal, kind="job",
+                                                                     job_id=job.job_id):
         try:
             output = await task_service.run_turn(function, job.conversation_id, job.goal,
                                                  _job_sink(job, downstream), _driver={"kind": "background"},
