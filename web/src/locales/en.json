@@ -1831,5 +1831,18 @@
     "draft": "Report:",
     "source": "Source:",
     "openSource": "Open source"
+  },
+  "kit": {
+    "allow": "Allow",
+    "decline": "Don't allow",
+    "cancel": "Cancel",
+    "close": "Close",
+    "seeContext": "See the whole context",
+    "queueOf": "{{index}} / {{total}}",
+    "previous": "Previous",
+    "next": "Next",
+    "arslanSays": "Arslan says: ",
+    "showAll": "Show all {{count}} lines",
+    "showLess": "Show less"
   }
 }

@@ -1831,5 +1831,18 @@
     "draft": "レポート：",
     "source": "出典：",
     "openSource": "出典を開く"
+  },
+  "kit": {
+    "allow": "許可",
+    "decline": "許可しない",
+    "cancel": "キャンセル",
+    "close": "閉じる",
+    "seeContext": "会話で全体を見る",
+    "queueOf": "{{index}} / {{total}}",
+    "previous": "前へ",
+    "next": "次へ",
+    "arslanSays": "Arslan の説明：",
+    "showAll": "全 {{count}} 行を表示",
+    "showLess": "閉じる"
   }
 }

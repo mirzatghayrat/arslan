@@ -63,6 +63,20 @@ button:disabled {
   --color-warning: var(--warning);
   --color-unfinished: var(--unfinished);
   --color-info: var(--info);
+  /* 0.1.55 surface kit (theme/tokens.css) */
+  --color-ask: var(--ask);
+  --color-ask-soft: var(--ask-soft);
+  --color-danger-strong: var(--danger-strong);
+  --color-danger-soft: var(--danger-soft);
+  --color-info-strong: var(--info-strong);
+  --color-info-soft: var(--info-soft);
+  --color-fill: var(--fill);
+  --color-fill-strong: var(--fill-strong);
+  --color-scrim: var(--scrim);
+  --color-mark: var(--mark-bg);
+  --color-toast: var(--toast-bg);
+  --color-toast-foreground: var(--toast-fg);
+  --shadow-kit: var(--kit-shadow);
 }
 
 @import "./theme/tokens.css";

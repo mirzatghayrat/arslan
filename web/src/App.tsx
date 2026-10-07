@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { OPEN_SECTION_EVENT, SECTIONS, type Section } from "./lib/sections";
+import { ConfirmHost, ToastHost, toast as showToast } from "./components/kit";
 import { useTranslation } from 'react-i18next';
 import { DEFAULT_SETTINGS } from './data';
 import { Message, MessageAttachment, AppSettings } from './types';
@@ -143,14 +144,6 @@ export default function App() {
     return () => window.removeEventListener(OPEN_SECTION_EVENT, onOpen);
   }, []);
 
-  // Lightweight transient toast (no toast component exists yet) — used for the
-  // distill result confirmation. Auto-clears after a few seconds.
-  const [toast, setToast] = useState<string | null>(null);
-  useEffect(() => {
-    if (!toast) return;
-    const h = window.setTimeout(() => setToast(null), 3200);
-    return () => window.clearTimeout(h);
-  }, [toast]);
 
   // ── Auto-title: track which threads have already received a generated title
   // so we never regenerate on re-renders or subsequent messages.
@@ -460,13 +453,13 @@ export default function App() {
       const res = await distillConversation(id);
       // `distilled_spawns` is a count of AGENTS folded into memory, NOT memory items.
       // Zero producing spawns → a truthful no-op message instead of "distilled 0".
-      setToast(
+      showToast(
         res.distilled_spawns > 0
           ? t('sidebar.distilled_toast', { count: res.distilled_spawns })
           : t('sidebar.distilled_none'),
       );
     } catch {
-      setToast(t('sidebar.distill_failed'));
+      showToast(t('sidebar.distill_failed'));
     }
   };
 
@@ -930,15 +923,9 @@ export default function App() {
         />
       )}
 
-      {/* Transient toast (distill confirmation / failure). */}
-      {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] animate-fade-in">
-          <div className="flex items-center gap-2 px-4 py-2.5 bg-surface-raised border border-border-strong rounded-xl shadow-2xl shadow-primary/10 select-none">
-            <span className="w-1.5 h-1.5 rounded-full bg-primary" />
-            <span className="text-xs font-sans text-foreground">{toast}</span>
-          </div>
-        </div>
-      )}
+      {/* 0.1.55 surface kit: the one toast stack and the one confirm sheet. */}
+      <ToastHost />
+      <ConfirmHost />
 
     </div>
   );

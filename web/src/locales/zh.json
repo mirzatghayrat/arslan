@@ -1831,5 +1831,18 @@
     "draft": "报告原句：",
     "source": "来源原文：",
     "openSource": "打开来源"
+  },
+  "kit": {
+    "allow": "允许",
+    "decline": "不允许",
+    "cancel": "取消",
+    "close": "关闭",
+    "seeContext": "在对话里看完整上下文",
+    "queueOf": "{{index}} / {{total}}",
+    "previous": "上一张",
+    "next": "下一张",
+    "arslanSays": "Arslan 说：",
+    "showAll": "展开全部 {{count}} 行",
+    "showLess": "收起"
   }
 }

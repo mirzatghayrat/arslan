@@ -1831,5 +1831,18 @@
     "draft": "Informe:",
     "source": "Fuente:",
     "openSource": "Abrir fuente"
+  },
+  "kit": {
+    "allow": "Permitir",
+    "decline": "No permitir",
+    "cancel": "Cancelar",
+    "close": "Cerrar",
+    "seeContext": "Ver todo el contexto",
+    "queueOf": "{{index}} / {{total}}",
+    "previous": "Anterior",
+    "next": "Siguiente",
+    "arslanSays": "Arslan dice: ",
+    "showAll": "Mostrar las {{count}} líneas",
+    "showLess": "Mostrar menos"
   }
 }

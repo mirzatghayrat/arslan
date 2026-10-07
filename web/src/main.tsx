@@ -13,13 +13,22 @@ void useIconStore.getState().initialize();
 // into the auth store before first render. No-op in dev (global absent).
 bootstrapInjectedToken();
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <ErrorBoundary>
-      <App />
-    </ErrorBoundary>
-  </StrictMode>,
-);
+const root = createRoot(document.getElementById('root')!);
+if (import.meta.env.DEV && location.hash.startsWith('#kit-gallery')) {
+  // 0.1.55: dev-only surface-kit gallery for screenshots (never in a build).
+  const params = new URLSearchParams(location.hash.slice(location.hash.indexOf('&') + 1));
+  document.documentElement.classList.toggle('dark', location.hash.includes('&dark'));
+  if (params.get('p')) document.documentElement.dataset.palette = params.get('p')!;
+  void import('./__tests__/gallery/KitGallery').then(({ default: KitGallery }) => root.render(<KitGallery />));
+} else {
+  root.render(
+    <StrictMode>
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
+    </StrictMode>,
+  );
+}
 
 // Two frames, not one. `render` only schedules work, and a single rAF can fire
 // before React has committed and painted — which would fade the veil away from
