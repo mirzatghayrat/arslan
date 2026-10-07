@@ -69,7 +69,7 @@ export default function PhoneSection({ pollMs = 3000, enabled = false, onEnabled
       <div className="flex items-start justify-between gap-4">
         <div>
           <h4 className="text-xs font-bold text-foreground">{t("settings.phoneEnable")}</h4>
-          <p className="text-[11px] text-muted-foreground mt-0.5 max-w-xl">{t("settings.phoneEnableDesc")}</p>
+          <p className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">{t("settings.phoneEnableDesc")}</p>
         </div>
         <input id="settings-phone-enabled" data-testid="settings-phone-enabled" type="checkbox" checked={enabled}
           onChange={(e) => onEnabledChange?.(e.target.checked)}

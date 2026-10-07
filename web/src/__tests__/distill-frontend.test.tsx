@@ -26,6 +26,8 @@ const mockUpdateSettings = vi.fn().mockResolvedValue({});
 const mockGetPreferences = vi.fn();
 const mockDeletePreference = vi.fn();
 vi.mock("../api/client", () => ({
+  // General shows the proactive notify block, whose error text checks `instanceof ApiError`.
+  ApiError: class ApiError extends Error {},
   api: {
     updateSettings: (...args: unknown[]) => mockUpdateSettings(...args),
     getPreferences: (...args: unknown[]) => mockGetPreferences(...args),

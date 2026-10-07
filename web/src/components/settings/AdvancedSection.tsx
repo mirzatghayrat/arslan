@@ -68,7 +68,13 @@ export interface AdvancedSectionProps {
   /** May Arslan log into another machine over SSH? Default OFF, separately. */
   sshEnabled: boolean;
   onSshChange: (value: boolean) => void;
+  /** 0.1.55 §11: render only these blocks (each lives in a different section now). */
+  only?: AdvancedBlock[];
+  /** No card and title: the section around it provides them. */
+  bare?: boolean;
 }
+
+export type AdvancedBlock = 'telemetry' | 'workspace' | 'defaultRead' | 'voice' | 'lan' | 'ssh' | 'terminal' | 'budget' | 'browser';
 
 // Moved out of here, deliberately, and the moves are the point of the redesign:
 //   mcpServerEnabled  → AccessTokenSettings (beside the token that guards it)
@@ -98,22 +104,21 @@ export default function AdvancedSection({
   onVoiceEndpointSilenceChange,
   sshEnabled,
   onSshChange,
+  only,
+  bare = false,
 }: AdvancedSectionProps) {
   const { t } = useTranslation();
 
-  return (
-    <div className="bg-surface/60 border border-border rounded-2xl p-6 space-y-6">
-      <div className="flex items-center gap-2 pb-4 border-b border-border/50 select-none">
-        <Sliders className="w-4.5 h-4.5 text-primary" />
-        <h3 className="text-xs font-semibold font-mono uppercase tracking-widest text-foreground leading-none">{t('settings.navAdvanced')}</h3>
-      </div>
-
-      <div className="space-y-4">
+  // 0.1.55 §11: the blocks of this card, so Settings can place each in its new home
+  // (voice → General, telemetry → Memory & privacy, budget → Background, the rest →
+  // What Arslan may do). Without `only`, all of them, in the old order.
+  const blocks: [AdvancedBlock, React.ReactNode][] = [
+    ['telemetry', (<>
         {/* Toggle telemetry */}
         <div className="flex items-center justify-between">
           <div>
-            <h4 className="text-xs font-bold text-foreground font-sans">{t('settings.labelTelemetry')}</h4>
-            <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">
+            <h4 className="text-[13px] font-medium text-foreground">{t('settings.labelTelemetry')}</h4>
+            <p className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">
               {t('settings.telemetryDesc')}
             </p>
           </div>
@@ -122,10 +127,11 @@ export default function AdvancedSection({
             type="checkbox"
             checked={telemetry}
             onChange={(e) => onTelemetryChange(e.target.checked)}
-            className="w-4 h-4 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer"
+            className="kit-switch"
           />
         </div>
-
+    </>)],
+    ['workspace', (<>
         {/* Where Arslan saves its work. Empty = Arslan's own folder (~/Arslan). */}
         <div className="space-y-1.5">
           <label htmlFor="workspace-dir" className="text-[11px] font-mono text-muted-foreground">
@@ -144,17 +150,18 @@ export default function AdvancedSection({
             {t('settings.workspaceDirHint')}
           </p>
         </div>
-
+    </>)],
+    ['defaultRead', (<>
         {/* Default read (spec 2026-08-24). ON by default — the one switch here
             that ships enabled, because reading is the low-risk half and it is
             what makes a fresh install useful. Turning it off reverts to
             "workspace only". */}
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h4 className="text-xs font-bold text-foreground font-sans">
+            <h4 className="text-[13px] font-medium text-foreground">
               {t('settings.labelDefaultRead')}
             </h4>
-            <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">
+            <p className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">
               {t('settings.defaultReadDesc')}
             </p>
           </div>
@@ -164,20 +171,21 @@ export default function AdvancedSection({
             type="checkbox"
             checked={defaultReadEnabled}
             onChange={(e) => onDefaultReadChange(e.target.checked)}
-            className="w-4 h-4 mt-1 shrink-0 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer"
+            className="kit-switch mt-0.5"
           />
         </div>
-
+    </>)],
+    ['voice', (<>
         {/* The language you SPEAK. Separate from the interface language on
             purpose: reading replies aloud followed the interface language and
             handed an English voice Chinese sentences, and reading an English
             UI while speaking Chinese is the ordinary case, not the edge one. */}
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h4 className="text-xs font-bold text-foreground font-sans">
+            <h4 className="text-[13px] font-medium text-foreground">
               {t('settings.labelVoiceInputLocale')}
             </h4>
-            <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">
+            <p className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">
               {t('settings.voiceInputLocaleDesc')}
             </p>
           </div>
@@ -200,8 +208,8 @@ export default function AdvancedSection({
             listens all the time is a choice the user makes, never a default. */}
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h4 className="text-xs font-bold text-foreground font-sans">{t('settings.labelVoiceMode')}</h4>
-            <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">{t('settings.voiceModeDesc')}</p>
+            <h4 className="text-[13px] font-medium text-foreground">{t('settings.labelVoiceMode')}</h4>
+            <p className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">{t('settings.voiceModeDesc')}</p>
           </div>
           <select
             data-testid="voice-mode"
@@ -219,8 +227,8 @@ export default function AdvancedSection({
             every breath ends a sentence, above 3 s the app feels deaf. */}
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h4 className="text-xs font-bold text-foreground font-sans">{t('settings.labelVoiceEndpointSilence')}</h4>
-            <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">{t('settings.voiceEndpointSilenceDesc')}</p>
+            <h4 className="text-[13px] font-medium text-foreground">{t('settings.labelVoiceEndpointSilence')}</h4>
+            <p className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">{t('settings.voiceEndpointSilenceDesc')}</p>
           </div>
           <input
             data-testid="voice-endpoint-silence"
@@ -236,14 +244,15 @@ export default function AdvancedSection({
             className="w-24 text-[11px] font-mono bg-background border border-border rounded-lg px-2 py-1.5 shrink-0"
           />
         </div>
-
+    </>)],
+    ['lan', (<>
         {/* Local network discovery (P3a). Read-only, and off until chosen. */}
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h4 className="text-xs font-bold text-foreground font-sans">
+            <h4 className="text-[13px] font-medium text-foreground">
               {t('settings.labelLanDiscovery')}
             </h4>
-            <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">
+            <p className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">
               {t('settings.lanDiscoveryDesc')}
             </p>
           </div>
@@ -253,18 +262,19 @@ export default function AdvancedSection({
             type="checkbox"
             checked={lanDiscoveryEnabled}
             onChange={(e) => onLanDiscoveryChange(e.target.checked)}
-            className="w-4 h-4 mt-1 shrink-0 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer"
+            className="kit-switch mt-0.5"
           />
         </div>
-
+    </>)],
+    ['ssh', (<>
         {/* Reaching another machine (P3b). A separate consent from discovery:
             seeing a machine and logging into it are different decisions. */}
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h4 className="text-xs font-bold text-foreground font-sans">
+            <h4 className="text-[13px] font-medium text-foreground">
               {t('settings.labelSsh')}
             </h4>
-            <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">
+            <p className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">
               {t('settings.sshDesc')}
             </p>
           </div>
@@ -274,20 +284,18 @@ export default function AdvancedSection({
             type="checkbox"
             checked={sshEnabled}
             onChange={(e) => onSshChange(e.target.checked)}
-            className="w-4 h-4 mt-1 shrink-0 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer"
+            className="kit-switch mt-0.5"
           />
         </div>
         {sshEnabled ? <SshIdentityPanel /> : null}
         {sshEnabled ? <SshNodesPanel /> : null}
-
-        {/* Separation divider */}
-        <div className="h-[1px] bg-border/40"></div>
-
+    </>)],
+    ['terminal', (<>
         {/* Terminal (0.1.48): on by default; the policy decides what asks first. */}
         <div className="flex items-center justify-between">
           <div>
-            <h4 className="text-xs font-bold text-foreground font-sans">{t('settings.labelOrchestratorShell')}</h4>
-            <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">
+            <h4 className="text-[13px] font-medium text-foreground">{t('settings.labelOrchestratorShell')}</h4>
+            <p className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">
               {t('settings.orchestratorShellDesc')}
             </p>
           </div>
@@ -296,14 +304,14 @@ export default function AdvancedSection({
             type="checkbox"
             checked={orchestratorShellEnabled}
             onChange={(e) => onOrchestratorShellChange(e.target.checked)}
-            className="w-4 h-4 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer"
+            className="kit-switch"
           />
         </div>
 
         {orchestratorShellEnabled && (
           <div className="flex items-center justify-between pl-4 border-l-2 border-primary/20">
             <div>
-              <h4 className="text-xs font-bold text-foreground font-sans">{t('settings.labelShellConfirmPolicy')}</h4>
+              <h4 className="text-[13px] font-medium text-foreground">{t('settings.labelShellConfirmPolicy')}</h4>
             </div>
             <Select
               id="settings-shell-policy"
@@ -321,8 +329,8 @@ export default function AdvancedSection({
         {orchestratorShellEnabled && (
           <div className="flex items-start justify-between gap-4 pl-4 border-l-2 border-primary/20">
             <div>
-              <h4 className="text-xs font-bold text-foreground font-sans">{t('settings.labelTerminalSandbox')}</h4>
-              <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">
+              <h4 className="text-[13px] font-medium text-foreground">{t('settings.labelTerminalSandbox')}</h4>
+              <p className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">
                 {t('settings.terminalSandboxDesc')}
               </p>
             </div>
@@ -332,22 +340,19 @@ export default function AdvancedSection({
               type="checkbox"
               checked={terminalSandboxEnabled}
               onChange={(e) => onTerminalSandboxChange?.(e.target.checked)}
-              className="w-4 h-4 mt-1 shrink-0 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer"
+              className="kit-switch mt-0.5"
             />
           </div>
         )}
         {orchestratorShellEnabled && <TerminalRulesPanel />}
-
-        {/* Separation divider */}
-        <div className="h-[1px] bg-border/40"></div>
-
+    </>)],
+    ['budget', (<>
         {/* 0.1.43: where a background job stops gathering and writes up its result. */}
         {onBackgroundJobBudgetChange && <>
-        <div className="h-[1px] bg-border/40"></div>
         <div className="flex items-center justify-between gap-4">
           <div>
-            <h4 className="text-xs font-bold text-foreground font-sans">{t('jobs.budgetLabel')}</h4>
-            <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl" data-testid="job-budget-desc">
+            <h4 className="text-[13px] font-medium text-foreground">{t('jobs.budgetLabel')}</h4>
+            <p className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl" data-testid="job-budget-desc">
               {t('jobs.budgetDesc', JOB_TIER_NUMBERS[backgroundJobBudget])}
             </p>
           </div>
@@ -361,13 +366,23 @@ export default function AdvancedSection({
           />
         </div>
         </>}
-
+    </>)],
+    ['browser', (<>
         {/* 0.1.42: moved here from the work panel's footer — this is the one
             place that sets up the browser runtime and runs a static preview. */}
-        <div className="h-[1px] bg-border/40"></div>
         <BrowserSetupRow />
-
+    </>)],
+  ];
+  const shown = blocks.filter(([k]) => !only || only.includes(k))
+    .map(([k, node]) => <React.Fragment key={k}>{node}</React.Fragment>);
+  if (bare) return <div className="space-y-4" data-testid="settings-advanced-blocks">{shown}</div>;
+  return (
+    <div className="bg-surface/60 border border-border rounded-2xl p-6 space-y-6">
+      <div className="flex items-center gap-2 pb-4 border-b border-border/50 select-none">
+        <Sliders className="w-4.5 h-4.5 text-primary" />
+        <h3 className="text-xs font-semibold font-mono uppercase tracking-widest text-foreground leading-none">{t('settings.navAdvanced')}</h3>
       </div>
+      <div className="space-y-4">{shown}</div>
     </div>
   );
 }
@@ -377,7 +392,7 @@ function BrowserSetupRow() {
   const [open, setOpen] = React.useState(false);
   return (
     <div className="flex items-center justify-between">
-      <h4 className="text-xs font-bold text-foreground font-sans">{t('dock.staticPreview')}</h4>
+      <h4 className="text-[13px] font-medium text-foreground">{t('dock.staticPreview')}</h4>
       <button type="button" data-testid="settings-browser-setup" onClick={() => setOpen(true)}
         className="rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-foreground/5">{t('ui.open')}</button>
       <BrowserPanel open={open} onClose={() => setOpen(false)} />

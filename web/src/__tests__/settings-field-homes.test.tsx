@@ -22,7 +22,7 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
-  SETTINGS_SECTIONS, SETTINGS_GROUPS, FIELD_HOMES, sectionsByGroup,
+  SETTINGS_SECTIONS, SETTINGS_GROUPS, FIELD_HOMES, LEGACY_SECTION, resolveSection, sectionsByGroup,
   type SettingsSectionId,
 } from "../components/settings/sectionRegistry";
 import en from "../locales/en.json";
@@ -68,7 +68,7 @@ describe("settings section registry", () => {
     expect(ids).not.toContain("scheduled");
     expect(ids).not.toContain("usage");
     // …and the pointer they existed to provide survives.
-    expect(FIELD_HOMES["automation.activity_link"]).toBe("automation");
+    expect(FIELD_HOMES["automation.activity_link"]).toBe("background");
   });
 
   it("every nav label and group label resolves to a real string", () => {
@@ -87,11 +87,43 @@ describe("settings section registry", () => {
   });
 
   it("everything that can spend money is in one section", () => {
-    // The reason `automation` exists. Split across sections is how someone
-    // turns on the second spend control without seeing the first one's warning.
-    const spenders = ["curation.enabled", "research_review.enabled", "proactive.diagnosis_cap"];
+    // Split across sections is how someone turns on the second spend control
+    // without seeing the first one's warning. Since 0.1.55 they all live in
+    // "Background", the place for things Arslan does when nobody asked.
+    const spenders = ["curation.enabled", "research_review.enabled", "proactive.diagnosis_cap",
+      "advanced.background_job_budget"];
     for (const f of spenders) {
-      expect(FIELD_HOMES[f], `${f} is not in automation`).toBe("automation");
+      expect(FIELD_HOMES[f], `${f} is not in background`).toBe("background");
+    }
+  });
+});
+
+describe("0.1.55: seven places", () => {
+  it("the nav is exactly the seven sections, in this order", () => {
+    expect(SETTINGS_SECTIONS.map((s) => s.id)).toEqual(
+      ["general", "models", "abilities", "background", "memory", "connections", "about"]);
+  });
+
+  it("every id from before 0.1.55 still lands somewhere real", () => {
+    // Old deep links (App's "open Settings › Automation", the island's
+    // "notification settings") must not fall through to General by accident.
+    const OLD = ["modelroles", "search", "appearance", "automation", "proactive",
+      "desktop", "phone", "access", "advanced"];
+    const ids = new Set<string>(SETTINGS_SECTIONS.map((s) => s.id));
+    for (const old of OLD) {
+      expect(ids.has(LEGACY_SECTION[old]), `${old} maps to nothing`).toBe(true);
+      expect(resolveSection(old)).toBe(LEGACY_SECTION[old]);
+    }
+    expect(resolveSection("automation")).toBe("background");
+    expect(resolveSection("phone")).toBe("connections");
+    expect(resolveSection("models")).toBe("models");
+    expect(resolveSection("nonsense")).toBeUndefined();
+  });
+
+  it("no field kept a pre-0.1.55 section name", () => {
+    const OLD = new Set(Object.keys(LEGACY_SECTION));
+    for (const [field, home] of Object.entries(FIELD_HOMES)) {
+      expect(OLD.has(home), `${field} still points at "${home}"`).toBe(false);
     }
   });
 });
@@ -103,7 +135,7 @@ describe("no control was lost in the redesign", () => {
     // had ZERO references to it — a background loop that spends, with no way
     // for the user to see or stop it. A component-only reading of the settings
     // code could never have found that, because there was nothing to read.
-    expect(FIELD_HOMES["curation.enabled"]).toBe("automation");
+    expect(FIELD_HOMES["curation.enabled"]).toBe("background");
     const src = read("components/settings/AutomationSection.tsx");
     expect(src).toMatch(/curationEnabled/);
   });
@@ -167,8 +199,8 @@ describe("no control was lost in the redesign", () => {
     }
   });
 
-  it("the MCP server toggle moved to access, not into limbo", () => {
-    expect(FIELD_HOMES["access.mcp_server_enabled"]).toBe("access");
+  it("the MCP server toggle moved to connections, not into limbo", () => {
+    expect(FIELD_HOMES["access.mcp_server_enabled"]).toBe("connections");
     expect(read("components/settings/AdvancedSection.tsx")).not.toMatch(/labelMcpServer/);
     expect(read("components/AccessTokenSettings.tsx")).toMatch(/labelMcpServer/);
   });

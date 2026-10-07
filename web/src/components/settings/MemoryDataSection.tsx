@@ -42,7 +42,12 @@ export interface MemoryDataSectionProps {
   /** 0.1.52 S5: "Learned practices take effect" (on by default). */
   learnedPracticesTakeEffect?: boolean;
   onLearnedPracticesChange?: (value: boolean) => void;
+  /** 0.1.55 §11: the embedding model moved to Models; the rest stays in Memory & privacy. */
+  only?: MemoryBlock[];
+  bare?: boolean;
 }
+
+export type MemoryBlock = 'remember' | 'practices' | 'data' | 'embedding' | 'distill' | 'retention';
 
 export default function MemoryDataSection({
   providerConfigs,
@@ -56,52 +61,51 @@ export default function MemoryDataSection({
   onMemoryInConversationsChange,
   learnedPracticesTakeEffect = true,
   onLearnedPracticesChange,
+  only,
+  bare = false,
 }: MemoryDataSectionProps) {
   const { t } = useTranslation();
 
-  return (
-    <div className="bg-surface/60 border border-border rounded-2xl p-6 space-y-6">
-      <div className="flex items-center gap-2 pb-4 border-b border-border/50 select-none">
-        <Database className="w-4.5 h-4.5 text-primary" />
-        <h3 className="text-xs font-semibold font-mono uppercase tracking-widest text-foreground leading-none">{t('settings.navMemory')}</h3>
-      </div>
-
+  const blocks: [MemoryBlock, React.ReactNode][] = [
+    ['remember', (<>
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h4 className="text-xs font-bold text-foreground font-sans">{t('settings.labelMemoryInConversations')}</h4>
-          <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">{t('settings.memoryInConversationsDesc')}</p>
+          <h4 className="text-[13px] font-medium text-foreground">{t('settings.labelMemoryInConversations')}</h4>
+          <p className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">{t('settings.memoryInConversationsDesc')}</p>
         </div>
         <input id="settings-memory-in-conversations" data-testid="settings-memory-in-conversations" type="checkbox"
           checked={memoryInConversations} onChange={(e) => onMemoryInConversationsChange?.(e.target.checked)}
-          className="w-4 h-4 mt-1 shrink-0 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer" />
+          className="kit-switch mt-0.5" />
       </div>
-
+    </>)],
+    ['practices', (<>
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h4 className="text-xs font-bold text-foreground font-sans">{t('settings.labelLearnedPractices')}</h4>
-          <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">{t('settings.learnedPracticesDesc')}</p>
+          <h4 className="text-[13px] font-medium text-foreground">{t('settings.labelLearnedPractices')}</h4>
+          <p className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">{t('settings.learnedPracticesDesc')}</p>
         </div>
         <input id="settings-learned-practices" data-testid="settings-learned-practices" type="checkbox"
           checked={learnedPracticesTakeEffect} onChange={(e) => onLearnedPracticesChange?.(e.target.checked)}
-          className="w-4 h-4 mt-1 shrink-0 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer" />
+          className="kit-switch mt-0.5" />
       </div>
-
+    </>)],
+    ['data', (<>
       <DeletionManifestExport />
       <CreateBackupButton />
+    </>)],
+    ['embedding', (<>
       <EmbeddingSettings
         providerConfigs={providerConfigs}
         embeddingConfigId={embeddingConfigId}
         onEmbeddingConfigIdChange={onEmbeddingConfigIdChange}
       />
-
-      {/* Separation divider */}
-      <div className="h-[1px] bg-border/40"></div>
-
+    </>)],
+    ['distill', (<>
       {/* Toggle session-end distillation */}
       <div className="flex items-center justify-between">
         <div>
-          <h4 className="text-xs font-bold text-foreground font-sans">{t('settings.distill_on_session_end')}</h4>
-          <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">
+          <h4 className="text-[13px] font-medium text-foreground">{t('settings.distill_on_session_end')}</h4>
+          <p className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">
             {t('settings.distill_hint')}
           </p>
         </div>
@@ -110,18 +114,16 @@ export default function MemoryDataSection({
           type="checkbox"
           checked={distillOnSessionEnd}
           onChange={(e) => onDistillChange(e.target.checked)}
-          className="w-4 h-4 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer"
+          className="kit-switch"
         />
       </div>
-
-      {/* Separation divider */}
-      <div className="h-[1px] bg-border/40"></div>
-
+    </>)],
+    ['retention', (<>
       {/* Run debug detail retention — days before boot sweep redacts sensitive/bulky run fields */}
       <div className="flex items-center justify-between">
         <div>
-          <h4 className="text-xs font-bold text-foreground font-sans">{t('settings.retentionLabel')}</h4>
-          <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">
+          <h4 className="text-[13px] font-medium text-foreground">{t('settings.retentionLabel')}</h4>
+          <p className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">
             {t('settings.retentionHint')}
           </p>
         </div>
@@ -134,6 +136,18 @@ export default function MemoryDataSection({
           className="w-24 bg-surface border border-border-strong focus:border-primary focus:ring-1 focus:ring-ring rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none transition-all font-mono"
         />
       </div>
+    </>)],
+  ];
+  const shown = blocks.filter(([k]) => !only || only.includes(k))
+    .map(([k, node]) => <React.Fragment key={k}>{node}</React.Fragment>);
+  if (bare) return <div className="space-y-5">{shown}</div>;
+  return (
+    <div className="bg-surface/60 border border-border rounded-2xl p-6 space-y-6">
+      <div className="flex items-center gap-2 pb-4 border-b border-border/50 select-none">
+        <Database className="w-4.5 h-4.5 text-primary" />
+        <h3 className="text-xs font-semibold font-mono uppercase tracking-widest text-foreground leading-none">{t('settings.navMemory')}</h3>
+      </div>
+      {shown}
     </div>
   );
 }

@@ -135,8 +135,8 @@ describe("Settings › iPhone", () => {
   });
 
   it("has a home in the settings registry", () => {
-    expect(SETTINGS_SECTIONS.find((s) => s.id === "phone")?.group).toBe("system");
-    expect(FIELD_HOMES["phone.devices"]).toBe("phone");
-    expect(FIELD_HOMES["phone.enabled"]).toBe("phone");
+    expect(SETTINGS_SECTIONS.some((s) => s.id === "connections")).toBe(true);
+    expect(FIELD_HOMES["phone.devices"]).toBe("connections");
+    expect(FIELD_HOMES["phone.enabled"]).toBe("connections");
   });
 });

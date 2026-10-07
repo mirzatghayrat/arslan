@@ -689,12 +689,12 @@ export default function ProviderConfigList({
     <div className="space-y-5">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 id="settings-models-title" className="text-2xl font-semibold tracking-tight">{t('settings.navModels')}</h2>
-          <p className="text-sm text-muted-foreground mt-2 leading-relaxed">{t('settings.modelsDescription')}</p>
+          <h2 id="settings-models-title" className="text-[22px] font-bold text-foreground">{t('settings.navModels')}</h2>
+          <p className="mt-1 max-w-2xl text-[13px] text-muted-foreground">{t('settings.modelsDescription')}</p>
         </div>
         <button type="button" data-testid="provider-add-model" onClick={openDraft}
           disabled={draft !== null || llmProviders.length === 0}
-          className="flex shrink-0 items-center gap-2 px-4 py-2.5 text-sm font-medium bg-primary text-primary-foreground hover:opacity-90 rounded-lg disabled:opacity-50">
+          className="flex shrink-0 items-center gap-2 px-3.5 py-2 text-[13px] font-medium bg-foreground text-background hover:opacity-90 rounded-lg disabled:opacity-50">
           <Plus className="w-4 h-4" />{t('settings.btnAddModel')}
         </button>
       </div>

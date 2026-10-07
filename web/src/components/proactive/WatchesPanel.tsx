@@ -55,8 +55,8 @@ export default function WatchesPanel({ watchesOn = true, quiet = false }: { watc
       {/* In the Inbox (quiet) a failure hides nothing else and raises no alert of its own. */}
       {error && !quiet && <p role="alert" className="text-[11px] text-danger-strong">{error}</p>}
         <div data-testid="proactive-watches" className="space-y-3">
-          {!quiet && <div><h4 className="text-xs font-bold text-foreground font-sans">{t('proactive.settings.watchesTitle')}</h4>
-            <p className="text-[11px] text-muted-foreground mt-0.5 max-w-xl">{t('proactive.settings.watchesDesc')}</p></div>}
+          {!quiet && <div><h4 className="text-[13px] font-medium text-foreground">{t('proactive.settings.watchesTitle')}</h4>
+            <p className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">{t('proactive.settings.watchesDesc')}</p></div>}
           {watches.length > 0 && !watchesOn && <p data-testid="proactive-watches-off" role="status"
             className="text-[11px] text-warning max-w-xl">{t('proactive.settings.watchesOff')}</p>}
           {watches.length === 0 && <p className="text-xs text-muted-foreground">{t('proactive.settings.noWatches')}</p>}
@@ -108,7 +108,7 @@ export default function WatchesPanel({ watchesOn = true, quiet = false }: { watc
         </div>
         {divider}
         <div data-testid="proactive-mutes" className="space-y-2">
-          <h4 className="text-xs font-bold text-foreground font-sans">{t('proactive.settings.muted')}</h4>
+          <h4 className="text-[13px] font-medium text-foreground">{t('proactive.settings.muted')}</h4>
           {mutes.length === 0 && <p className="text-xs text-muted-foreground">{t('proactive.settings.mutedNone')}</p>}
           <ul className="space-y-1">{mutes.map((key) => <li key={key} className="flex items-center justify-between gap-3 text-xs">
             <span>{muteLabel(t, key)}</span>

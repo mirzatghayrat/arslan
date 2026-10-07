@@ -16,6 +16,8 @@ export default function DesktopSection({
   onNotificationsChange,
   islandEnabled = true,
   onIslandChange,
+  only,
+  bare = false,
 }: {
   keepAwakeEnabled: boolean;
   onKeepAwakeChange?: (v: boolean) => void;
@@ -23,19 +25,31 @@ export default function DesktopSection({
   onNotificationsChange?: (v: boolean) => void;
   islandEnabled?: boolean;
   onIslandChange?: (v: boolean) => void;
+  /** 0.1.55 §11: notifications and "on this Mac" now sit in different groups of General. */
+  only?: ('keepAwake' | 'notifications' | 'island')[];
+  bare?: boolean;
 }) {
   const { t } = useTranslation();
   const row = (id: string, label: string, desc: string, checked: boolean, onChange?: (v: boolean) => void) => (
     <div className="flex items-start justify-between gap-4">
       <div>
-        <h4 className="text-xs font-bold text-foreground font-sans">{t(label)}</h4>
-        <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">{t(desc)}</p>
+        <h4 className="text-[13px] font-medium text-foreground">{t(label)}</h4>
+        <p className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">{t(desc)}</p>
       </div>
       <input id={id} data-testid={id} type="checkbox" checked={checked}
         onChange={(e) => onChange?.(e.target.checked)}
-        className="w-4 h-4 mt-1 shrink-0 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer" />
+        className="kit-switch mt-0.5" />
     </div>
   );
+  const show = (k: 'keepAwake' | 'notifications' | 'island') => !only || only.includes(k);
+  const rows = [
+    show('keepAwake') && row('settings-keep-awake-toggle', 'settings.labelKeepAwake', 'settings.keepAwakeDesc',
+      keepAwakeEnabled, onKeepAwakeChange),
+    show('notifications') && row('settings-desktop-notifications-toggle', 'settings.labelDesktopNotifications',
+      'settings.desktopNotificationsDesc', notificationsEnabled, onNotificationsChange),
+    show('island') && row('settings-island-toggle', 'settings.labelIsland', 'settings.islandDesc', islandEnabled, onIslandChange),
+  ].filter(Boolean);
+  if (bare) return <div className="space-y-4" data-testid="settings-desktop">{rows.map((r, i) => <div key={i}>{r}</div>)}</div>;
   return (
     <div className="bg-surface border border-border rounded-2xl p-6" data-testid="settings-desktop">
       <div className="flex items-center gap-2 mb-1">
@@ -45,16 +59,7 @@ export default function DesktopSection({
         </h3>
       </div>
       <p className="text-[11px] text-muted-foreground font-sans max-w-2xl mb-5">{t('settings.desktopLede')}</p>
-      <div className="space-y-5">
-        {row('settings-keep-awake-toggle', 'settings.labelKeepAwake', 'settings.keepAwakeDesc',
-          keepAwakeEnabled, onKeepAwakeChange)}
-        <div className="h-[1px] bg-border/40" />
-        {row('settings-desktop-notifications-toggle', 'settings.labelDesktopNotifications',
-          'settings.desktopNotificationsDesc', notificationsEnabled, onNotificationsChange)}
-        <div className="h-[1px] bg-border/40" />
-        {row('settings-island-toggle', 'settings.labelIsland', 'settings.islandDesc',
-          islandEnabled, onIslandChange)}
-      </div>
+      <div className="space-y-5">{rows.map((r, i) => <div key={i}>{r}</div>)}</div>
     </div>
   );
 }

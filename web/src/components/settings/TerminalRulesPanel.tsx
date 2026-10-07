@@ -30,7 +30,7 @@ export default function TerminalRulesPanel() {
   if (rules == null) return null;
   return (
     <div className="pl-4 border-l-2 border-primary/20 space-y-1.5" data-testid="terminal-rules">
-      <h4 className="text-xs font-bold text-foreground font-sans">{t('settings.terminalRulesTitle')}</h4>
+      <h4 className="text-[13px] font-medium text-foreground">{t('settings.terminalRulesTitle')}</h4>
       {rules.length === 0 ? (
         <p className="text-[11px] text-muted-foreground font-sans">{t('settings.terminalRulesEmpty')}</p>
       ) : (

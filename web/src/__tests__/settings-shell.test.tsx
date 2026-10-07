@@ -6,7 +6,9 @@
  * section, a change callback, and a `children` map of section id → ReactNode.
  *
  * What changed, and what these tests still have to guarantee:
- *  - ten sections in three groups, no placeholders
+ *  - 0.1.55 §11: seven flat sections (general, models, abilities, background,
+ *    memory, connections, about), no group headings, no placeholders
+ *  - before that: eleven sections in three groups
  *    (nine until `proactive` was added in 0.1.47 — what Arslan looks out for; free to
  *     run, so not in automation, while its one spending control is)
  *    (eight until `desktop` was added in 0.1.41 — resident-mode switches that are
@@ -37,17 +39,17 @@ import {
 } from "../components/settings/sectionRegistry";
 
 const CHILDREN: Partial<Record<SettingsSectionId, React.ReactNode>> = {
+  general: <div data-testid="child-general">general-body</div>,
   models: <div data-testid="child-models">models-body</div>,
-  search: <div data-testid="child-search">search-body</div>,
-  appearance: <div data-testid="child-appearance">appearance-body</div>,
-  access: <div data-testid="child-access">access-body</div>,
+  abilities: <div data-testid="child-abilities">abilities-body</div>,
+  background: <div data-testid="child-background">background-body</div>,
   memory: <div data-testid="child-memory">memory-body</div>,
-  automation: <div data-testid="child-automation">automation-body</div>,
-  advanced: <div data-testid="child-advanced">advanced-body</div>,
+  connections: <div data-testid="child-connections">connections-body</div>,
+  about: <div data-testid="child-about">about-body</div>,
 };
 
 const IDS: SettingsSectionId[] = [
-  "models", "modelroles", "search", "appearance", "memory", "automation", "proactive", "desktop", "phone", "access", "advanced",
+  "general", "models", "abilities", "background", "memory", "connections", "about",
 ];
 
 const shell = (active: SettingsSectionId, onChange = vi.fn()) =>
@@ -59,7 +61,7 @@ const shell = (active: SettingsSectionId, onChange = vi.fn()) =>
 
 describe("SettingsShell", () => {
   it("allows desktop labels to wrap while preserving compact mobile chips", () => {
-    shell("appearance");
+    shell("general");
     for (const id of IDS) {
       const button = screen.getByTestId(`settings-nav-${id}`);
       expect(button).toHaveClass("whitespace-nowrap", "md:whitespace-normal");
@@ -73,10 +75,10 @@ describe("SettingsShell", () => {
     await userEvent.click(screen.getByTestId("settings-back"));
     expect(onBack).toHaveBeenCalledOnce();
   });
-  it("exposes eleven sections in nav order, with no placeholders", () => {
+  it("exposes seven sections in nav order, with no placeholders", () => {
     expect(SETTINGS_SECTIONS.map((s) => s.id)).toEqual(IDS);
     // Discriminating: renaming a placeholder rather than deleting it would keep
-    // the count at seven only if something real were dropped to make room.
+    // the count only if something real were dropped to make room.
     expect(SETTINGS_SECTIONS.map((s) => s.id)).not.toContain("scheduled");
     expect(SETTINGS_SECTIONS.map((s) => s.id)).not.toContain("usage");
   });
@@ -88,25 +90,24 @@ describe("SettingsShell", () => {
     }
   });
 
-  it("renders a heading per group", () => {
+  it("renders no group headings — seven entries are read at a glance", () => {
     shell("models");
-    for (const g of SETTINGS_GROUPS) {
-      expect(screen.getByText(g.labelKey)).toBeInTheDocument();
-    }
+    expect(SETTINGS_GROUPS).toEqual([]);
+    expect(screen.queryByText("settings.navRegion")).toBeNull();
   });
 
   it("clicking a nav item calls onSectionChange with its id", async () => {
     const onSectionChange = vi.fn();
     const user = userEvent.setup();
     shell("models", onSectionChange);
-    await user.click(screen.getByTestId("settings-nav-automation"));
-    expect(onSectionChange).toHaveBeenCalledWith("automation");
+    await user.click(screen.getByTestId("settings-nav-background"));
+    expect(onSectionChange).toHaveBeenCalledWith("background");
   });
 
   it("shows only the active section's child", () => {
     shell("models");
     expect(screen.getByTestId("child-models")).toBeInTheDocument();
-    expect(screen.queryByTestId("child-search")).toBeNull();
+    expect(screen.queryByTestId("child-general")).toBeNull();
   });
 
   it("switches the visible child when activeSection changes", () => {
@@ -128,17 +129,8 @@ describe("settings search", () => {
     shell("models");
     await user.type(screen.getByTestId("settings-search"), "memory");
     expect(screen.getByTestId("settings-nav-memory")).toBeInTheDocument();
-    expect(screen.queryByTestId("settings-nav-advanced")).toBeNull();
-  });
-
-  it("hides the group headings while filtering", async () => {
-    // With two of seven entries left, three headings are more chrome than content.
-    const user = userEvent.setup();
-    shell("models");
-    await user.type(screen.getByTestId("settings-search"), "memory");
-    for (const g of SETTINGS_GROUPS) {
-      expect(screen.queryByText(g.labelKey)).toBeNull();
-    }
+    expect(screen.queryByTestId("settings-nav-models")).toBeNull();
+    expect(screen.queryByTestId("settings-nav-about")).toBeNull();
   });
 
   it("matches the translated label, not only the raw id", async () => {
@@ -147,8 +139,8 @@ describe("settings search", () => {
     // appear inside the keys. This searches for text that is ONLY in the label.
     const user = userEvent.setup();
     shell("models");
-    await user.type(screen.getByTestId("settings-search"), "navaccess");
-    expect(screen.getByTestId("settings-nav-access")).toBeInTheDocument();
+    await user.type(screen.getByTestId("settings-search"), "navconnections");
+    expect(screen.getByTestId("settings-nav-connections")).toBeInTheDocument();
     expect(screen.queryByTestId("settings-nav-models")).toBeNull();
   });
 
@@ -199,16 +191,16 @@ describe("SettingsShell layout", () => {
     const { rerender } = shell("models");
     const first = screen.getByTestId("child-models").parentElement!;
     expect(first.className).toMatch(/settings-pane-in/);
-    rerender(<SettingsShell activeSection="search" onSectionChange={vi.fn()}>{CHILDREN}</SettingsShell>);
-    const second = screen.getByTestId("child-search").parentElement!;
+    rerender(<SettingsShell activeSection="general" onSectionChange={vi.fn()}>{CHILDREN}</SettingsShell>);
+    const second = screen.getByTestId("child-general").parentElement!;
     expect(second).not.toBe(first);          // a new element: the animation plays again
   });
 
-  it("uses small type so every entry fits on one screen", () => {
+  it("uses one quiet type size for every entry", () => {
     shell("models");
     for (const id of IDS) {
       const label = screen.getByTestId(`settings-nav-${id}`).querySelector("span > span")!;
-      expect(label.className).toMatch(/text-\[12\.5px\]/);
+      expect(label.className).toMatch(/text-\[13px\]/);
     }
   });
 });

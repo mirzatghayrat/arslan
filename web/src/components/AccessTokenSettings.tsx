@@ -227,8 +227,8 @@ export default function AccessTokenSettings({
       {/* ── Inbound MCP server (relocated from Advanced) ─────────────────── */}
       <div className="mt-6 pt-6 border-t border-border/40 flex items-center justify-between gap-4">
         <div>
-          <h4 className="text-xs font-bold text-foreground font-sans">{t('settings.labelMcpServer')}</h4>
-          <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">
+          <h4 className="text-[13px] font-medium text-foreground">{t('settings.labelMcpServer')}</h4>
+          <p className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">
             {t('settings.mcpServerDesc')}
           </p>
         </div>

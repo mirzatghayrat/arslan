@@ -736,7 +736,7 @@ export default function App() {
 
             {activeSection === 'projects' && <ProjectsSection onStart={handleStartProject} />}
             {activeSection === 'inbox' && <ProactiveInbox onOpenConversation={openInboxConversation}
-              onOpenSettings={() => { setSettingsInitialSection('proactive'); setActiveSection('settings'); }}
+              onOpenSettings={() => { setSettingsInitialSection('background'); setActiveSection('settings'); }}
               onOpenModelSettings={() => { setSettingsInitialSection('models'); setActiveSection('settings'); }} />}
             {activeSection === 'brain' && <MemorySection legacy={!restoredInit.mintedFresh} />}
             {activeSection === 'activity' && <ActivityView />}

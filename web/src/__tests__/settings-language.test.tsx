@@ -7,7 +7,7 @@
 
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 // Hoisted spy so we can assert changeLanguage was called from the component.
@@ -22,6 +22,8 @@ vi.mock("react-i18next", () => ({
 }));
 
 vi.mock("../api/client", () => ({
+  // General shows the proactive notify block, whose error text checks `instanceof ApiError`.
+  ApiError: class ApiError extends Error {},
   api: {
     updateSettings: vi.fn().mockResolvedValue({}),
     embeddingStatus: vi.fn().mockResolvedValue(null),
@@ -88,19 +90,20 @@ describe("SettingsScreen language selector", () => {
   it("offers all 6 supported languages", async () => {
     const user = userEvent.setup();
     renderSettings();
-    // The language selector lives in the 'appearance' section — navigate first.
-    await user.click(screen.getByTestId("settings-nav-appearance"));
+    // The language selector lives in General, beside other pickers (voice
+    // language), so the options are read from ITS listbox only.
+    await user.click(screen.getByTestId("settings-nav-general"));
     await user.click(document.getElementById("settings-language") as HTMLButtonElement);
-    const options = screen.getAllByRole("option");
+    const options = within(document.getElementById("settings-language-listbox")!).getAllByRole("option");
     expect(options).toHaveLength(6);
   });
 
   it("calls i18n.changeLanguage('zh') when Chinese is selected", async () => {
     const user = userEvent.setup();
     renderSettings();
-    await user.click(screen.getByTestId("settings-nav-appearance"));
+    await user.click(screen.getByTestId("settings-nav-general"));
     await user.click(document.getElementById("settings-language") as HTMLButtonElement);
-    const zhOption = screen
+    const zhOption = within(document.getElementById("settings-language-listbox")!)
       .getAllByRole("option")
       .find((o) => /简体中文/.test(o.textContent ?? ""));
     expect(zhOption).toBeTruthy();

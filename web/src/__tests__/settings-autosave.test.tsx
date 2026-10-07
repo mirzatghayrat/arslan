@@ -26,6 +26,8 @@ vi.mock("react-i18next", () => ({
 // ── api mock ─────────────────────────────────────────────────────────────────
 const mockUpdateSettings = vi.fn().mockResolvedValue({});
 vi.mock("../api/client", () => ({
+  // General shows the proactive notify block, whose error text checks `instanceof ApiError`.
+  ApiError: class ApiError extends Error {},
   api: {
     updateSettings: (...args: unknown[]) => mockUpdateSettings(...args),
     embeddingStatus: vi.fn().mockResolvedValue(null),
@@ -110,7 +112,7 @@ describe("SettingsScreen auto-save (Task 6)", () => {
   // ── THE constraint: key fields save on BLUR only, never per-keystroke ─────────
   it("does NOT PUT while typing in the search key, and PUTs exactly once on blur", () => {
     renderSettings();
-    fireEvent.click(screen.getByTestId("settings-nav-search"));
+    fireEvent.click(screen.getByTestId("settings-nav-connections"));
     const input = document.getElementById("settings-search-key") as HTMLInputElement;
 
     // Typing — display updates, but NO save is triggered…
@@ -131,7 +133,7 @@ describe("SettingsScreen auto-save (Task 6)", () => {
 
   it("does NOT PUT when a key field is focused and blurred without editing (dirty-guard)", () => {
     renderSettings({ apiKeySearch: "tv...bcde" }); // pre-filled masked echo
-    fireEvent.click(screen.getByTestId("settings-nav-search"));
+    fireEvent.click(screen.getByTestId("settings-nav-connections"));
     const input = document.getElementById("settings-search-key") as HTMLInputElement;
     // Tab through: focus then blur, no change event.
     fireEvent.focus(input);
@@ -144,7 +146,7 @@ describe("SettingsScreen auto-save (Task 6)", () => {
 
   it("saves the GitHub token on blur only", () => {
     renderSettings();
-    fireEvent.click(screen.getByTestId("settings-nav-search"));
+    fireEvent.click(screen.getByTestId("settings-nav-connections"));
     const input = document.getElementById("settings-github-token") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "ghp_abc" } });
     act(() => {
@@ -158,7 +160,7 @@ describe("SettingsScreen auto-save (Task 6)", () => {
 
   it("debounces a non-key toggle into a single PUT (no per-event PUT)", () => {
     renderSettings();
-    fireEvent.click(screen.getByTestId("settings-nav-advanced"));
+    fireEvent.click(screen.getByTestId("settings-nav-memory"));
     const toggle = document.getElementById("settings-telemetry-toggle") as HTMLInputElement;
     fireEvent.click(toggle);
     // Nothing before the debounce elapses…
@@ -172,11 +174,11 @@ describe("SettingsScreen auto-save (Task 6)", () => {
   it("does not carry a mid-typed (un-blurred) search key on a non-key debounced save", () => {
     renderSettings();
     // Type a real key but do NOT blur it.
-    fireEvent.click(screen.getByTestId("settings-nav-search"));
+    fireEvent.click(screen.getByTestId("settings-nav-connections"));
     const keyInput = document.getElementById("settings-search-key") as HTMLInputElement;
     fireEvent.change(keyInput, { target: { value: "tvly-not-blurred" } });
     // Now toggle a non-key control and let its debounce fire.
-    fireEvent.click(screen.getByTestId("settings-nav-advanced"));
+    fireEvent.click(screen.getByTestId("settings-nav-memory"));
     fireEvent.click(document.getElementById("settings-telemetry-toggle")!);
     act(() => {
       vi.advanceTimersByTime(600);
@@ -195,14 +197,14 @@ describe("SettingsScreen auto-save (Task 6)", () => {
     renderSettings({ apiKeySearch: "tv...bcde" }); // pre-filled masked echo
 
     // Toggle telemetry (non-key) and let its debounced PUT fire and hang.
-    fireEvent.click(screen.getByTestId("settings-nav-advanced"));
+    fireEvent.click(screen.getByTestId("settings-nav-memory"));
     fireEvent.click(document.getElementById("settings-telemetry-toggle")!);
     act(() => {
       vi.advanceTimersByTime(600);
     });
 
     // While that PUT is in flight, the user types a real key.
-    fireEvent.click(screen.getByTestId("settings-nav-search"));
+    fireEvent.click(screen.getByTestId("settings-nav-connections"));
     const keyInput = document.getElementById("settings-search-key") as HTMLInputElement;
     fireEvent.change(keyInput, { target: { value: "tvly-typed" } });
 
@@ -218,7 +220,7 @@ describe("SettingsScreen auto-save (Task 6)", () => {
 
   it("does not PUT when the backend is offline (no crash)", () => {
     renderSettings({}, "offline");
-    fireEvent.click(screen.getByTestId("settings-nav-advanced"));
+    fireEvent.click(screen.getByTestId("settings-nav-memory"));
     fireEvent.click(document.getElementById("settings-telemetry-toggle")!);
     act(() => {
       vi.advanceTimersByTime(1000);
@@ -241,7 +243,7 @@ describe("SettingsScreen auto-save (Task 6)", () => {
     );
     const { rerender } = render(el("offline"));
 
-    fireEvent.click(screen.getByTestId("settings-nav-advanced"));
+    fireEvent.click(screen.getByTestId("settings-nav-abilities"));
     fireEvent.click(document.getElementById("settings-shell-toggle")!);
     act(() => {
       vi.advanceTimersByTime(1000);

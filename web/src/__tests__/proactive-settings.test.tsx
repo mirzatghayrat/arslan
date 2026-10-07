@@ -1,6 +1,6 @@
 /**
  * Proactivity settings: every control saves what it shows, a refused save puts the old value
- * back, and the one control that spends lives in Automation with its warning.
+ * back, and the one control that spends lives in Background with its warning.
  */
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -159,10 +159,9 @@ describe("silenced", () => {
 });
 
 describe("the cause-guess limit", () => {
-  it("lives in Automation, with the other spenders", () => {
-    expect(FIELD_HOMES["proactive.diagnosis_cap"]).toBe("automation");
-    const proactive = SETTINGS_SECTIONS.find((s) => s.id === "proactive");
-    expect(proactive?.group).toBe("system");
+  it("lives in Background, with the other spenders", () => {
+    expect(FIELD_HOMES["proactive.diagnosis_cap"]).toBe("background");
+    expect(SETTINGS_SECTIONS.some((s) => s.id === "background")).toBe(true);
   });
 
   it("is off by default, carries its honest warning, and saves the chosen limit", async () => {

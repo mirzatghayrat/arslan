@@ -25,6 +25,8 @@ vi.mock("react-i18next", () => ({
 // ── api mock ───────────────────────────────────────────────────────────────────
 const mockUpdateSettings = vi.fn().mockResolvedValue({});
 vi.mock("../api/client", () => ({
+  // General shows the proactive notify block, whose error text checks `instanceof ApiError`.
+  ApiError: class ApiError extends Error {},
   api: {
     updateSettings: (...args: unknown[]) => mockUpdateSettings(...args),
     // SettingsScreen renders <EmbeddingSettings/>, which calls api.embeddingStatus()
@@ -128,6 +130,8 @@ describe("SettingsScreen", () => {
 
   it("renders the multi-config provider list section heading", () => {
     renderSettings();
+    // General opens first since 0.1.55; the models live one entry down.
+    fireEvent.click(screen.getByTestId("settings-nav-models"));
     // The section is named in plain language, with no extra nested LLM card.
     expect(screen.getByRole("heading", { name: "settings.navModels" })).toBeInTheDocument();
   });
@@ -138,7 +142,7 @@ describe("SettingsScreen", () => {
     const user = userEvent.setup();
     renderSettings();
     // The search controls live in the 'search' section — navigate there first.
-    await user.click(screen.getByTestId("settings-nav-search"));
+    await user.click(screen.getByTestId("settings-nav-connections"));
     // Custom Select renders a button trigger; open it to inspect options
     const trigger = document.getElementById("settings-search-provider") as HTMLButtonElement;
     expect(trigger).not.toBeNull();
@@ -151,13 +155,13 @@ describe("SettingsScreen", () => {
 
   it("renders the search API key input", () => {
     renderSettings();
-    fireEvent.click(screen.getByTestId("settings-nav-search"));
+    fireEvent.click(screen.getByTestId("settings-nav-connections"));
     expect(document.getElementById("settings-search-key")).not.toBeNull();
   });
 
   it("renders the language dropdown", () => {
     renderSettings();
-    fireEvent.click(screen.getByTestId("settings-nav-appearance"));
+    fireEvent.click(screen.getByTestId("settings-nav-general"));
     expect(document.getElementById("settings-language")).not.toBeNull();
   });
 
@@ -194,7 +198,7 @@ describe("SettingsScreen", () => {
     const user = userEvent.setup();
     renderSettings();
     // Advanced section hosts the telemetry toggle (a non-key control).
-    await user.click(screen.getByTestId("settings-nav-advanced"));
+    await user.click(screen.getByTestId("settings-nav-memory"));
     await user.click(document.getElementById("settings-telemetry-toggle")!);
     await waitFor(() => {
       expect(mockUpdateSettings).toHaveBeenCalledTimes(1);
@@ -205,7 +209,7 @@ describe("SettingsScreen", () => {
     const user = userEvent.setup();
     renderSettings({ apiKeySearch: "" });
     // Trigger a non-key auto-save (search provider) — the empty key must stay out.
-    await user.click(screen.getByTestId("settings-nav-advanced"));
+    await user.click(screen.getByTestId("settings-nav-memory"));
     await user.click(document.getElementById("settings-telemetry-toggle")!);
     await waitFor(() => expect(mockUpdateSettings).toHaveBeenCalled(), { timeout: 2000 });
     const body = mockUpdateSettings.mock.calls[0][0];

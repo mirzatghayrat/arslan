@@ -41,11 +41,11 @@ export default function HandsSection() {
   const toggle = (id: string, label: string, desc: string, checked: boolean, onChange: (v: boolean) => void) => (
     <div className="flex items-start justify-between gap-4">
       <div>
-        <h4 className="text-xs font-bold text-foreground font-sans">{t(label)}</h4>
-        <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">{t(desc)}</p>
+        <h4 className="text-[13px] font-medium text-foreground">{t(label)}</h4>
+        <p className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">{t(desc)}</p>
       </div>
       <input id={id} data-testid={id} type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)}
-        className="w-4 h-4 mt-1 shrink-0 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer" />
+        className="kit-switch mt-0.5" />
     </div>
   );
   const list = (label: string, items: string[]) => (
@@ -74,7 +74,7 @@ export default function HandsSection() {
           <div className="h-[1px] bg-border/40" />
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h4 className="text-xs font-bold text-foreground font-sans">{t('hands.settings.access')}</h4>
+              <h4 className="text-[13px] font-medium text-foreground">{t('hands.settings.access')}</h4>
               <p className="text-[11px] text-muted-foreground font-sans mt-0.5" data-testid="hands-access">
                 {t(`hands.settings.${access}`)}</p>
             </div>
