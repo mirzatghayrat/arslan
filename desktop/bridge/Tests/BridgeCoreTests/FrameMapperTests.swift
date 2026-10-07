@@ -56,6 +56,37 @@ final class FrameMapperTests: XCTestCase {
         XCTAssertFalse(Wire.shouldNotify(type: "chat.event", body: held[0].body))
     }
 
+    /// The traces from Codex's audit of iPhone build 7: a step held back, then the turn ends. Nothing
+    /// of that turn may go out after its end. Stream_end already dropped it; the rest did not.
+    func testATurnsEndDropsTheStepItHeldBack() {
+        let ends: [(String, [[String: Any]])] = [
+            ("background answer", [["type": "job_update", "job_id": "j", "phase": "finished", "outcome": "done"],
+                                   ["type": "message", "role": "arslan", "message_id": 501, "content": "Done", "job_id": "j"]]),
+            ("stopped job", [["type": "job_update", "job_id": "j", "phase": "finished", "outcome": "stopped"]]),
+            ("answer alone", [["type": "message", "role": "arslan", "message_id": 501, "content": "Done", "job_id": "j"]]),
+            ("turn error", [["type": "error", "message": "turn failed"]]),
+            ("stream end", [["type": "stream_end", "message_id": 501]]),
+        ]
+        for (name, frames) in ends {
+            let m = FrameMapper(conversationID: "c1")
+            XCTAssertEqual(m.phoneMessages(for: ["type": "tool_call", "tool": "read", "args_summary": "first"], now: t0).count, 1)
+            XCTAssertTrue(m.phoneMessages(for: ["type": "tool_call", "tool": "read", "args_summary": "held"], now: t0 + 0.5).isEmpty)
+            for frame in frames { _ = m.phoneMessages(for: frame, now: t0 + 1) }
+            XCTAssertTrue(m.flush(now: t0 + 3).isEmpty, "\(name): the held step belongs to a turn that is over")
+        }
+    }
+
+    func testARunningJobsUpdateAndThePhonesOwnWordsKeepTheHeldStep() {
+        for frame: [String: Any] in [["type": "job_update", "job_id": "j", "phase": "running", "step": "next"],
+                                     ["type": "message", "role": "user", "message_id": 9, "content": "and this"]] {
+            let m = FrameMapper(conversationID: "c1")
+            _ = m.phoneMessages(for: ["type": "tool_call", "tool": "read", "args_summary": "first"], now: t0)
+            _ = m.phoneMessages(for: ["type": "tool_call", "tool": "read", "args_summary": "held"], now: t0 + 0.5)
+            _ = m.phoneMessages(for: frame, now: t0 + 1)
+            XCTAssertEqual(m.flush(now: t0 + 3).first?.body["text"] as? String, "read: held", "still the same turn")
+        }
+    }
+
     func testCardsBecomeApprovalsAndAnswersBecomeTheWindowsFrames() throws {
         let m = FrameMapper(conversationID: "c1")
         let req = m.phoneMessages(for: ["type": "propose_run_command", "call_id": "k1", "pretty": "rm -rf old/",

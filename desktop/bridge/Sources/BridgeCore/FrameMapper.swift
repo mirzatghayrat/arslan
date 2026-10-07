@@ -53,12 +53,14 @@ public final class FrameMapper {
             // A background task's result (its turn streams nothing). The phone's own words come back
             // here too — it already has those.
             guard frame["role"] as? String == "arslan", let id = frame["message_id"] as? Int else { return [] }
+            heldProgress = nil                            // see `endsTurn`
             var event: [String: Any] = ["conversation_id": conversationID, "kind": "message", "message_id": String(id),
                                         "text": frame["content"] as? String ?? "", "final": true]
             if let job = frame["job_id"] as? String { event["job_id"] = job }
             if let run = frame["run_id"] as? Int { event["run_id"] = run }
             return [("chat.event", event)]
         case "error":
+            heldProgress = nil                            // see `endsTurn`
             return [("chat.event", ["conversation_id": conversationID, "kind": "error", "message_id": messageID,
                                     "text": frame["message"] as? String ?? "", "final": true])]
         case "tool_call":
@@ -92,6 +94,7 @@ public final class FrameMapper {
             if frame["by"] as? String == "mac" { body["detail"] = "answered_on_mac" }
             return [("approval.result", body)]
         case "job_update":
+            if frame["phase"] as? String == "finished" { heldProgress = nil }    // see `endsTurn`
             return [("job.event", Self.jobEvent(frame, conversationID: conversationID))]
         default:
             return []
@@ -111,6 +114,13 @@ public final class FrameMapper {
         }
         return "write"
     }
+
+    /// A turn's end drops the step it still holds back: stream_end, an answer to a background task
+    /// (which streams nothing), an error, a job finishing. Before 2026-10-07 only stream_end did, and
+    /// `flush` sent the old step after the end under a newer number; the phone showed "working" again
+    /// (Codex's audit of iPhone build 7). One mapper per conversation: a chat turn running beside a
+    /// job there loses at most its one held line, and its next step or its end comes anyway.
+    static let endsTurn = "stream_end, message, error, finished job_update"
 
     /// A held progress line, once its 2 seconds have passed.
     public func flush(now: Date = Date()) -> [Message] {
