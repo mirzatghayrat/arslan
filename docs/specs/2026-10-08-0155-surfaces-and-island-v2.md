@@ -186,3 +186,71 @@ each section opens with one sentence of what lives there:
 - Look: grouped rows (title, one-line description, control on the right), the kit's toggles/segmented
   controls, no uppercase mono headings (`AdvancedSection.tsx:108`).
 - The settings search keeps working over the registry (labels + hints of all seven).
+
+## 12. Inbox = "waiting for your decision" (board Inbox-v2)
+
+Today (`components/proactive/ProactiveInbox.tsx`): only the proactive items — `job_followup`,
+`scheduled_problem`, `web_change`, `folder_change`, `brief` (`server/db/models.py:929`) — in tabs
+open/snoozed/done; watches and mutes are managed only in Settings (`settings/ProactiveSection.tsx:120-170`);
+the badge counts unread proactive items only (`proactive_service.py:293-300`). Pending approval cards, memory
+proposals and lesson proposals live elsewhere.
+
+New page, sections in this order, each hidden when empty:
+1. **现在就要你批准** — every pending approval card, from any conversation or background job, rendered with
+   `AskCard` (answerable here; risky ones open the conversation). Needs: foreground desktop cards registered in
+   `approvals` like background ones (today the Mac-window turn waits inside its own socket loop,
+   `server/ws/arslan.py:258-283`, so nothing else can see or answer it); `approvals.all_pending()`;
+   `GET /approvals/pending` and `POST /approvals/{call_id}/answer` (same `approvals.answer` path, `by` = where it
+   was answered). The island (§4) uses the same two routes.
+2. **停住了** — `job_followup` + `scheduled_problem` (existing actions: continue / open / snooze / not useful).
+3. **有变化** — `web_change` + `folder_change`.
+4. **记忆等你确认** — the merged pending list of §13 (count + first two, "see all" opens Memory).
+Right column: today's brief card (existing `brief` item), **正在盯着** (watches: list, pause, delete, add —
+moved here from Settings), **不再提醒** (mutes, unmute). Tabs become 待决定 / 稍后 / 已处理 (same scopes).
+Badge = pending approvals + new proactive items + pending memory items; amber when any approval waits.
+
+## 13. Memory page (boards Memory-List-v3, Memory-Graph-v3; user: keep the graph as it is)
+
+Today: three tabs (About me / Materials / Graph, `companion/MemorySection.tsx:25-30`); each entry row carries five
+buttons (`MemoryList.tsx:244-263`); three pending sources shown in three places (`/memory/proposals`,
+`/brain/proposals`, `/lessons?status=proposed`); feed / new note / generate exist twice (`Materials.tsx`,
+`brain/BrainNav.tsx:251-300`); core budgets hard-coded in the client (`MemoryList.tsx:70-73`) duplicating
+`personal_context.py:343-345`.
+
+- **List** (default view), top to bottom: 等你确认 (the three sources merged client-side; sensitive memory,
+  curation proposals, lesson proposals; each with its existing accept/reject call) → 始终带上 (about_you / notes
+  with their real budgets from the server) → 关于你 (active entries, most recently used first, with kind, project,
+  origin from `confirmation_kind` — 你加的 / 你让记的 / 对话里注意到 / Arslan 记的 —, 仅本机 / 敏感 markers and
+  "used N times this week"; row actions on hover: keep in view, edit, pause, delete, history) → 学到的做法 (lessons
+  with `recalled/succeeded/failed`). Right rail: materials & notes (counts, latest, 喂资料 / 写笔记), this week,
+  who can use memory (local models / cloud models when "remember me" is on, except 仅本机 / sensitive per
+  conversation), index health line.
+- **Backend additions:** per-entry usage from the existing per-turn `context_receipts` (`receipt.used` items with
+  `kind: "memory"`) aggregated over 7 days in `list_entries` (`memory_repository.py:385-416`, `present(**extra)`);
+  `GET /memory/stats?days=7` (retrievals, conversations, new entries, edits by the user, core budgets, whether the
+  memory models are local, materials/notes counts). No new tables.
+- **Graph** view: `BrainSection`'s graph unchanged (rendering, colours, sizes); the page around it: canvas fills
+  the page, the filter legend and the detail card float on it; feed / new note / generate move to the page's
+  "添加" menu; the graph's proposal inbox toggle and index health leave the graph nav (they live in the list and in
+  Settings). Legend labels match the list (关于你 / 学到的做法 / 资料 / 笔记).
+
+## 14. Capabilities as switches + two fixes (board Capabilities-v2; discover loop is 0.1.57)
+
+Today: tabs experts / skills / tools / connections / discover (`Capabilities.tsx:86-97`); "tools" lists the
+legacy spawn toolsets, not what the main assistant can use; "equip" means equipping experts
+(`EquipPopover.tsx`, `zh.json:1178`, `:1100` contradicts itself); built-in tools disappear silently when a gate is
+off (`arslan.py:838-1156`) and nothing tells the user why; MCP presets need Node/uv, the app ships neither
+(`server/mcp/catalog.py:22-81`, `tauri.conf.json:28-34`), and a missing runtime only shows as a connect error.
+
+- One list grouped by what it does (Mac / work & files / research & making), each row **on** (switch),
+  **差一步** (one button: add a key, log in, turn a setting on) or **用不了** (greyed, the reason). Rows come from one
+  backend list `GET /capabilities` built from the same gates `_arslan_tools` uses, each gate returning its reason
+  (setting off, not on macOS, Hands not allowed, browser runtime missing, no key, MCP error, runtime missing).
+  Off = not offered to the model (MCP: `host_allowed`; skills: a new `enabled` flag, default on; built-ins: their
+  existing setting).
+- Discover (GitHub search) stays as a tab with today's behaviour until 0.1.57; saved candidates stay.
+- "Equip/装备/spawn" wording removed from the page; the experts tab only appears for users who still have legacy
+  experts (unchanged condition).
+- **Fixed in this release (done, commit 89195711):** the skill index dropped bodyless rows after its SQL limit (44
+  usable skills, the model saw 31); skill import read only the repo license (anthropics/skills refused entirely) —
+  now the skill's own license file, read at the source.
