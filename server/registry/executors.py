@@ -357,6 +357,23 @@ class ListMyCapabilitiesExecutor:
         return out
 
 
+class WhatsNewExecutor:
+    """D2 (0.1.55): Arslan's own version and the notes of the last releases, so
+    "what version are you / what changed" is answered from the shipped notes and
+    never from the model's memory."""
+
+    key = "whats_new"
+
+    async def execute(self, args: dict) -> dict:
+        from server.services import release_notes
+        try:
+            count = max(1, min(int(args.get("count") or 3), 6))
+        except (TypeError, ValueError):
+            count = 3
+        return {"ok": True, "version": release_notes.settings.app_version,
+                "releases": release_notes.recent(count)}
+
+
 _CHART_MAX_POINTS = 50
 _CHART_MAX_SERIES = 8
 
@@ -822,7 +839,7 @@ from server.registry.file_tools import (  # noqa: E402 — registry assembly
 
 EXECUTORS = {e.key: e for e in (
     WebSearchExecutor(), WebExtractExecutor(), ChartExecutor(), CreateSkillExecutor(),
-    DeckExecutor(), RunPythonExecutor(), RunCommandExecutor(), ListMyCapabilitiesExecutor(),
+    DeckExecutor(), RunPythonExecutor(), RunCommandExecutor(), ListMyCapabilitiesExecutor(), WhatsNewExecutor(),
     ReadSkillExecutor(), RecallExecutor(), RememberExecutor(), ConversationSearchExecutor(), MemoryNoteExecutor(),
     TaskProgressExecutor(), DelegateWorkExecutor(),
     StartBackgroundWorkExecutor(), BackgroundStatusExecutor(), StopBackgroundWorkExecutor(),

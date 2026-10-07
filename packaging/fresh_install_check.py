@@ -308,6 +308,26 @@ def check_hands_bundle(app: pathlib.Path, c: Checks) -> None:
          "the Apache-2.0 notice and license ship with agent-desktop")
 
 
+def check_version(app: pathlib.Path, port: int, token: str, c: Checks) -> None:
+    """D2 (0.1.55): the backend reports the bundle's version and ships its notes.
+    Before 0.1.55 /health said a hard-coded 0.1.0 and Arslan named an old version."""
+    bundle = plistlib.loads((app / "Contents/Info.plist").read_bytes()).get("CFBundleShortVersionString")
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/v1/health", timeout=5) as r:
+            reported = json.loads(r.read()).get("version")
+        req = urllib.request.Request(f"http://127.0.0.1:{port}/api/v1/about",
+                                     headers={"Authorization": f"Bearer {token}"})
+        with urllib.request.urlopen(req, timeout=5) as r:
+            about = json.loads(r.read())
+    except Exception as exc:  # noqa: BLE001
+        c.ok(False, "the backend reports its version", str(exc))
+        return
+    c.ok(reported == bundle, "the backend reports the app's version", f"{reported} vs bundle {bundle}")
+    newest = (about.get("releases") or [{}])[0]
+    c.ok(newest.get("version") == bundle and bool(newest.get("notes")),
+         "this version's release notes ship in the app", str(newest.get("version")))
+
+
 def check_hands_runtime(port: int, token: str, c: Checks) -> None:
     """Through the running backend: Hands starts via LaunchServices, answers, and
     in a signed build verifies its peer (this backend). Accessibility is not
@@ -434,7 +454,7 @@ def _check_crypto_salt_location(conn, appsup: pathlib.Path, c: Checks) -> None:
          f"crypto_salt_lost_at_boot = {marker[0] if marker else ''}")
 
 
-def check_runtime(port: int, home: pathlib.Path, log: pathlib.Path, c: Checks) -> None:
+def check_runtime(port: int, home: pathlib.Path, log: pathlib.Path, c: Checks, app: pathlib.Path | None = None) -> None:
     # ---- the UI is actually served ------------------------------------
     for path, label in (("/", "the UI is served at /"),
                         ("/api/v1/health", "the API answers")):
@@ -527,6 +547,8 @@ def check_runtime(port: int, home: pathlib.Path, log: pathlib.Path, c: Checks) -
         c.ok(authed == 200, "the persisted token is accepted",
              f"authed GET /api/v1/spawns returned {authed}")
         check_hands_runtime(port, token, c)
+        if app is not None:
+            check_version(app, port, token, c)
 
     # ---- the chat transport actually holds a WebSocket ------------------
     # THE BUG THIS CATCHES (0.1.0-0.1.6, found 2026-07-27): `websockets` sat in
@@ -795,7 +817,7 @@ def main() -> int:
     try:
         proc, port, log = boot(app, home)
         print(f"    booted on port {port} with HOME={home}")
-        check_runtime(port, home, log, c)
+        check_runtime(port, home, log, c, app)
     finally:
         if proc is not None:
             proc.kill()

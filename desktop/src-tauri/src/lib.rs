@@ -212,6 +212,9 @@ fn start_sidecar(app: &tauri::AppHandle) -> Result<(u16, NormalChild), StartupFa
     }
 
     let mut cmd = Command::new(&exe);
+    // The sidecar reports THIS bundle's version (/api/v1/health, the system
+    // prompt, "what's new"); before 0.1.55 it said a hard-coded 0.1.0.
+    cmd.env("ARSLAN_APP_VERSION", app.package_info().version.to_string());
     // Hand the sidecar the proxy this process had to go looking for. httpx
     // reads these variables and nothing else, and a Finder-launched app has
     // none of them, so without this every outbound call from the sidecar —

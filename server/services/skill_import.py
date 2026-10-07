@@ -81,6 +81,53 @@ def _license_gate(spdx: str | None) -> str | None:
     return None
 
 
+_LICENSE_NAMES = ("LICENSE", "LICENSE.txt", "LICENSE.md", "LICENCE", "COPYING")
+
+
+def detect_license(text: str) -> str | None:
+    """The SPDX id of a license FILE, from its text — only the permissive licenses
+    we allow, recognised by their operative wording. Anything else (including
+    "All rights reserved" terms) is None, which the gate refuses."""
+    t = " ".join((text or "").split()).lower()
+    if not t:
+        return None
+    if "apache license" in t and "version 2.0" in t:
+        return "Apache-2.0"
+    if "permission is hereby granted, free of charge" in t:
+        return "MIT"
+    if "redistribution and use in source and binary forms" in t:
+        return "BSD-3-Clause" if "neither the name" in t else "BSD-2-Clause"
+    if "permission to use, copy, modify, and/or distribute this software for any purpose" in t:
+        return "ISC" if "with or without fee is hereby granted, provided that" in t else "0BSD"
+    if "this is free and unencumbered software released into the public domain" in t:
+        return "Unlicense"
+    if "cc0 1.0 universal" in t:
+        return "CC0-1.0"
+    return None
+
+
+async def _skill_license(owner: str, repo: str, skill_path: str, paths: list[str],
+                         repo_spdx: str | None) -> tuple[str | None, str]:
+    """(SPDX, where it came from) for ONE skill. The skill's own license file wins
+    over the repo's (0.1.55): anthropics/skills has no repo license, but every skill
+    folder has a LICENSE.txt — Apache-2.0 for most, Anthropic's own terms for the
+    document skills. Read at the source, never from frontmatter or package metadata."""
+    folder = skill_path.rsplit("/", 1)[0] if "/" in skill_path else ""
+    for name in _LICENSE_NAMES:
+        candidate = f"{folder}/{name}" if folder else name
+        if candidate in paths and folder:
+            return detect_license(await _fetch_raw(owner, repo, candidate)), candidate
+    return repo_spdx, "repo"
+
+
+def _skill_license_block(spdx: str | None, source: str) -> str | None:
+    if source == "repo":
+        return _license_gate(spdx)
+    if spdx is None:
+        return f"this skill's own {source.rsplit('/', 1)[-1]} is not a permissive license — cannot bundle it"
+    return _license_gate(spdx)
+
+
 async def _get(path: str, *, raw: bool = False) -> httpx.Response:
     token = await github_eval._token()
     headers = github_eval._headers(token)
@@ -125,7 +172,7 @@ def _references_for(skill_md_path: str, all_paths: list[str]) -> list[str]:
 
 async def scan_skills(ref: str, subpath: str = "") -> dict:
     """Find standard SKILL.md skills in a repo and report per-skill importability.
-    The license gate applies to the WHOLE scan (repo-level license, like github_eval)."""
+    0.1.55: the license gate is per skill — its own license file, else the repo's."""
     parsed = github_eval.parse_repo_ref(ref)
     if parsed is None:
         raise ValueError("not a GitHub repo reference (owner/name)")
@@ -153,8 +200,11 @@ async def scan_skills(ref: str, subpath: str = "") -> dict:
         else:
             entry.update(key=info["key"], name=info["name"], description=info["description"],
                          body_bytes=len(info["body"].encode("utf-8")))
-            if license_block:
-                entry.update(importable=False, reason=license_block)
+            spdx, source = await _skill_license(owner, repo, p, paths, meta["license"])
+            block = _skill_license_block(spdx, source)
+            entry.update(license=spdx, license_source=source)
+            if block:
+                entry.update(importable=False, reason=block)
             elif info["key"] in existing:
                 entry.update(importable=False, reason="already in the library")
             elif entry["body_bytes"] > MAX_SKILL_BYTES:
@@ -165,7 +215,8 @@ async def scan_skills(ref: str, subpath: str = "") -> dict:
         skills.append(entry)
     return {"repo": {"full_name": meta["full_name"], "html_url": meta["html_url"],
                      "license": meta["license"], "stars": meta["stars"]},
-            "license_ok": license_block is None, "license_note": license_block,
+            "license_ok": license_block is None or any(e.get("importable") for e in skills),
+            "license_note": license_block if not any(e.get("license_source", "repo") != "repo" for e in skills) else None,
             "skills": skills}
 
 
@@ -176,7 +227,9 @@ async def import_skill(ref: str, path: str) -> dict:
         raise ValueError("not a GitHub repo reference")
     owner, repo = parsed
     meta = await github_eval.fetch_repo(owner, repo)
-    block = _license_gate(meta["license"])
+    paths = await _tree_paths(owner, repo)
+    spdx, source = await _skill_license(owner, repo, path, paths, meta["license"])
+    block = _skill_license_block(spdx, source)
     if block:
         raise ValueError(block)
 
@@ -193,7 +246,6 @@ async def import_skill(ref: str, path: str) -> dict:
             raise ValueError(f"skill '{key}' already exists in the library")
 
     # bundled scripts → data_dir/skill_scripts/<key>/ (flat names, .py only, capped)
-    paths = await _tree_paths(owner, repo)
     script_paths = _scripts_for(path, paths)[:_MAX_SCRIPTS]
     stored: list[str] = []
     if script_paths:
@@ -230,7 +282,7 @@ async def import_skill(ref: str, path: str) -> dict:
 
     today = datetime.now(timezone.utc).date().isoformat()
     attribution = (f"> Imported verbatim from https://github.com/{meta['full_name']} "
-                   f"({meta['license']}) on {today}.\n\n")
+                   f"({spdx}{'' if source == 'repo' else ', ' + source}) on {today}.\n\n")
     body = attribution + info["body"]
     if stored:
         body += ("\n\n## Bundled scripts\n"
@@ -250,4 +302,4 @@ async def import_skill(ref: str, path: str) -> dict:
         db.add(row)
         await db.commit()
     return {"key": key, "name": info["name"], "description": info["description"],
-            "scripts": stored, "references": stored_refs, "license": meta["license"]}
+            "scripts": stored, "references": stored_refs, "license": spdx}

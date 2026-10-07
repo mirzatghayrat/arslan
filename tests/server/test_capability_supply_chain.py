@@ -73,7 +73,9 @@ def test_the_license_gate_is_server_side_and_not_advisory():
     unchecked licence is the whole hazard in one step."""
     source = pathlib.Path(inspect.getfile(skill_import)).read_text()
     body = source[source.index("async def import_skill"):]
-    assert "_license_gate" in body, (
+    # 0.1.55: per skill (its own license file, else the repo's), through
+    # _skill_license_block → _license_gate; behaviour is pinned in test_skill_import.
+    assert "_skill_license_block" in body, (
         "import_skill no longer consults the licence gate — a client could then "
         "import anything by calling the API directly")
 
