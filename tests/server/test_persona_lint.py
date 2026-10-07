@@ -166,7 +166,6 @@ async def _mk_spawn(maker) -> int:
 
 async def test_draft_update_ppt_persona_without_deck_warns(seeded, monkeypatch):
     from server.orchestrator import update_drafter
-    from server.ws import protocol
     sid = await _mk_spawn(seeded)
 
     class _A:
@@ -180,9 +179,6 @@ async def test_draft_update_ppt_persona_without_deck_warns(seeded, monkeypatch):
     assert out is not None
     warnings = out.get("capability_warnings")
     assert warnings and any("render_deck" in w for w in warnings)
-    # the proposal payload must round-trip into the suggest_update frame for the confirm card
-    frame = protocol.suggest_update(**out)
-    assert frame["capability_warnings"] == warnings
 
 
 async def test_draft_update_adding_deck_toolset_clears_ppt_warning(seeded, monkeypatch):

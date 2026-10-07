@@ -614,10 +614,6 @@ def _to_frame(ev: dict) -> dict:
         # run_id must ride through the rebuild — it is the client's cancel handle (S3-M1).
         return protocol.stream_start_src(ev.get("source", "arslan"), ev.get("spawn_id"),
                                          run_id=ev.get("run_id"))
-    if t == "suggest_create":
-        return protocol.suggest_create(
-            ev.get("draft") or {}, task_brief=ev.get("task_brief"), overlaps=ev.get("overlaps")
-        )
     if t == "fact_saved":
         return protocol.fact_saved(ev.get("content", ""), bool(ev.get("sensitive")),
                                    entry_id=ev.get("entry_id"), version=ev.get("version"))

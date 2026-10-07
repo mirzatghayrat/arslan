@@ -88,14 +88,6 @@ def stream_start_src(source: str, spawn_id: int | None = None,
     return frame
 
 
-def suggest_create(
-    draft: dict[str, Any],
-    task_brief: str | None = None,
-    overlaps: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    return {"type": "suggest_create", "draft": draft, "task_brief": task_brief, "overlaps": overlaps}
-
-
 def spawn_meta(
     *, arslan_message_id: int, spawn_id: int, assistant_message_id: int, task_brief: str
 ) -> dict[str, Any]:
@@ -183,51 +175,11 @@ def attachment_stored(spawn_name: str | None, chunks: int) -> dict[str, Any]:
     return {"type": "attachment_stored", "spawn_name": spawn_name, "chunks": chunks}
 
 
-def propose_invite(spawn_id: int, reason: str) -> dict[str, Any]:
-    """Arslan proposes bringing an existing spawn into the conversation.
-
-    The frontend renders a confirmation card; on confirm it sends the existing
-    `roster_invite {spawn_id, origin: "invite_card"}` frame which joins exactly that
-    one spawn. The `origin` is load-bearing: it marks a CARD accept (which promised a
-    consequence) so the handler can answer with an honest `joined_no_pending` notice
-    when the parked task is gone, instead of joining silently. Build it via
-    web/src/lib/rosterInvite.ts, never inline. Emitting this frame does NOT join the
-    roster — the join awaits the user's confirmation.
-    """
-    return {"type": "propose_invite", "spawn_id": spawn_id, "reason": reason}
-
-
-def suggest_update(spawn_id: int, spawn_name: str, current: dict[str, Any],
-                   changes: dict[str, Any], reason: str = "",
-                   capability_warnings: list[str] | None = None) -> dict[str, Any]:
-    """Arslan proposes CHANGES to an existing spawn (persona/tone/capabilities/equipment).
-
-    Like suggest_create, emitting this frame changes NOTHING — the frontend renders a
-    confirm card showing before→after; only the user's `confirm_update` applies it.
-    capability_warnings (HX-6/P2): advisory delivery lint on the PROPOSED persona vs
-    the resulting equipment, so the confirm card can surface the mismatch pre-apply."""
-    return {"type": "suggest_update", "spawn_id": spawn_id, "spawn_name": spawn_name,
-            "current": current, "changes": changes, "reason": reason,
-            "capability_warnings": capability_warnings or []}
-
-
 def spawn_updated(spawn_id: int, spawn_name: str, applied: dict[str, Any],
                   equipment: dict[str, Any] | None = None) -> dict[str, Any]:
     """Ack after a confirmed update was applied: what changed + the fresh equipment."""
     return {"type": "spawn_updated", "spawn_id": spawn_id, "spawn_name": spawn_name,
             "applied": applied, "equipment": equipment or {"toolsets": [], "skills": []}}
-
-
-def propose_staffing(candidates: list[dict], create_draft: dict) -> dict[str, Any]:
-    """Arslan offers a staffing choice: pick one of the comparable existing spawns
-    (each {spawn_id, name, score, why}) OR create a fresh one from `create_draft`.
-
-    Like `propose_invite`, emitting this frame joins NOTHING and creates NOTHING —
-    the frontend renders a picker card; the user's choice drives a `roster_invite`
-    (pick, sent with `origin: "invite_card"` — see propose_invite) or a
-    `confirm_create` (create) on the existing single, idempotent paths.
-    """
-    return {"type": "propose_staffing", "candidates": candidates, "create_draft": create_draft}
 
 
 def propose_run_command(call_id: str, command: str, argv: list[str], reason: str = "",
