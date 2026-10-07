@@ -19,6 +19,7 @@ and asks for a workspace write once per job.
 from __future__ import annotations
 
 import asyncio
+import time
 import uuid
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -27,6 +28,8 @@ from server.services import desktop_status, run_registry
 from server.ws import protocol
 
 TIMEOUT_S = 300
+#: Where an answer may come from, besides a Mac window ("mac").
+SOURCES = ("phone", "inbox", "island")
 #: How the last card this task waited on ended: "approved", "declined", or "expired" (nobody
 #: answered in time). A tool result must not tell the model the user said no when nobody did.
 LAST_OUTCOME: ContextVar[str | None] = ContextVar("approvals_last_outcome", default=None)
@@ -44,18 +47,26 @@ class Pending:
     conversation_id: str
     frame: dict
     future: asyncio.Future = field(repr=False)
+    opened_at: float = field(default_factory=time.time)
+    #: A window's own card: never replayed into another tab, never broadcast. Only the
+    #: Inbox / island answer it from outside that socket (by call_id).
+    private: bool = False
 
 
 _pending: dict[str, Pending] = {}
 
 
-def open_card(conversation_id: str, frame: dict) -> Pending:
-    """Broadcast one card to every socket on the conversation and register it, so a
-    reply from any of them resolves `pending.future` (see `answer`). The caller waits
-    and must call `close_card` once it is decided or given up on."""
-    pending = Pending(frame["call_id"], conversation_id, frame, asyncio.get_running_loop().create_future())
+def open_card(conversation_id: str, frame: dict, *, broadcast: bool = True) -> Pending:
+    """Register one card so a reply from anywhere resolves `pending.future` (see
+    `answer`): any socket on the conversation, the Inbox, the island (0.1.55). With
+    `broadcast`, it is also sent to every socket on the conversation; a window's own
+    turn sends it to its own socket instead. The caller waits and must call
+    `close_card` once it is decided or given up on."""
+    pending = Pending(frame["call_id"], conversation_id, frame, asyncio.get_running_loop().create_future(),
+                      private=not broadcast)
     _pending[pending.call_id] = pending
-    run_registry.make_emit(conversation_id)(frame)
+    if broadcast:
+        run_registry.make_emit(conversation_id)(frame)
     return pending
 
 
@@ -69,8 +80,9 @@ def close_card(pending: Pending) -> dict:
     else:
         decision = {"approved": False, "remember": False, "by": None}
         outcome = "expired"
-    run_registry.make_emit(pending.conversation_id)(
-        protocol.card_resolved(pending.call_id, outcome, decision["by"]))
+    if not pending.private:
+        run_registry.make_emit(pending.conversation_id)(
+            protocol.card_resolved(pending.call_id, outcome, decision["by"]))
     return decision
 
 
@@ -106,8 +118,9 @@ def answer(data: dict) -> bool:
         return False
     if not pending.future.done():
         pending.future.set_result({"approved": ANSWERS[kind], "remember": bool(data.get("remember")),
-                                   # The Bridge marks what the phone sends; anything else is a Mac window.
-                                   "by": "phone" if data.get("source") == "phone" else "mac"})
+                                   # The Bridge marks what the phone sends; the Inbox and the
+                                   # island mark theirs (0.1.55); anything else is a Mac window.
+                                   "by": data.get("source") if data.get("source") in SOURCES else "mac"})
     return True
 
 
@@ -116,7 +129,33 @@ def _same_kind(reply: str, card: str) -> bool:
 
 
 def pending_cards(conversation_id: str) -> list[dict]:
-    return [p.frame for p in _pending.values() if p.conversation_id == conversation_id]
+    """Shared cards to replay into a (re)connecting socket — never a window's private one."""
+    return [p.frame for p in _pending.values() if p.conversation_id == conversation_id and not p.private]
+
+
+def known_ids() -> set[str]:
+    return set(_pending)
+
+
+def all_pending() -> list[dict]:
+    """Every card waiting for the user, in any conversation, oldest first (0.1.55: the
+    Inbox's "现在就要你批准" and the island). `expires_at` is when it is declined."""
+    rows = sorted(_pending.values(), key=lambda p: p.opened_at)
+    return [{"call_id": p.call_id, "conversation_id": p.conversation_id, "frame": p.frame,
+             "opened_at": p.opened_at, "expires_at": p.opened_at + TIMEOUT_S}
+            for p in rows if not p.future.done()]
+
+
+def answer_by_id(call_id: str, approve: bool, *, source: str, remember: bool = False) -> bool:
+    """Answer one pending card by id from outside a socket (Inbox, island). Same rule
+    as `answer`: the reply is built from the card's own kind, so it can only ever
+    confirm or cancel THAT card."""
+    pending = _pending.get(call_id)
+    if pending is None:
+        return False
+    kind = pending.frame["type"].removeprefix("propose_")
+    return answer({"type": f"{'confirm' if approve else 'cancel'}_{kind}", "call_id": call_id,
+                   "remember": remember, "source": source})
 
 
 class JobConfirmations:
