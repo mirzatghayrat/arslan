@@ -135,13 +135,6 @@ button:disabled {
   font-family: monospace;
 }
 
-.run-replay--error {
-  padding: 1rem 1.5rem;
-  color: var(--danger);
-  border: 1px solid var(--danger);
-  border-radius: 0.75rem;
-  background: color-mix(in srgb, var(--danger) 8%, var(--surface));
-}
 
 /* Header */
 .run-replay__head {
@@ -202,16 +195,6 @@ button:disabled {
 }
 
 /* Run-level error banner (error_kind · error_text) */
-.run-replay__error-banner {
-  font-size: 0.6875rem;
-  color: var(--danger);
-  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
-  border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
-  border-radius: 0.5rem;
-  padding: 0.5rem 0.75rem;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
 
 /* KPI row */
 .run-replay__kpis {
@@ -2575,14 +2558,6 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
-.attach-error {
-  font-size: 0.625rem;
-  color: var(--danger);
-  padding: 0.25rem 0.375rem;
-  background: color-mix(in srgb, var(--danger) 8%, var(--surface));
-  border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
-  border-radius: 0.25rem;
-}
 
 .tool-chart {
   max-width: 100%;

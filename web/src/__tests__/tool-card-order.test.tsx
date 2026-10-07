@@ -29,3 +29,22 @@ describe.each(["quartz", "brutalist", "linear"] as const)("chat style %s", (styl
     cleanup();
   });
 });
+
+/** 0.1.55 S5: a legacy expert's escalation is one kit Notice in every style (was three banners). */
+describe.each(["quartz", "brutalist", "linear"] as const)("escalation in style %s", (style) => {
+  it.each([["need_raised", "warn"], ["arslan_resolving", "info"], ["resolved", "info"], ["refused", "error"]] as const)(
+    "%s reads as a %s notice with the issue and the resolution", (status, tone) => {
+      const msg = { id: "e1", sender: "spawn", senderName: "Writer", senderAvatar: "", timestamp: "", text: "",
+        escalation: { status, spawnName: "Writer", issue: "needs a login", resolutionMessage: status === "refused" ? "not allowed" : undefined },
+      } as unknown as Message;
+      render(<OrchestratorChat chatHistory={[msg]} setChatHistory={() => {}} spawns={[]}
+        currentStyle={style} setCurrentStyle={() => {}} activeThread={null} />);
+      const notices = screen.getAllByTestId("escalation-notice");
+      expect(notices).toHaveLength(1);
+      expect(notices[0]).toHaveAttribute("data-tone", tone);
+      expect(notices[0]).toHaveTextContent("needs a login");
+      expect(notices[0]).toHaveTextContent("Writer");
+      if (status === "refused") expect(notices[0]).toHaveTextContent("not allowed");
+      cleanup();
+    });
+});

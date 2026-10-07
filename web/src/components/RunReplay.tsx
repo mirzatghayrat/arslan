@@ -8,7 +8,7 @@ import RunCompareChart from "./RunCompareChart";
 import EChart from "./EChart";
 import ArtifactDownloads from "./ArtifactDownloads";
 import { triggerDownload } from "./MessageBody";
-import { confirmSheet } from "./kit";
+import { Notice, confirmSheet } from "./kit";
 
 const STATUS_ICON: Record<string, string> = { pass: "✓", warn: "⚠", fail: "✗" };
 const BADGE_KEY: Record<string, string> = { good: "replay.badge_good", ok: "replay.badge_ok", bad: "replay.badge_bad" };
@@ -164,7 +164,7 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
     }
   }
 
-  if (error) return <div className="run-replay run-replay--error" role="alert">{error}</div>;
+  if (error) return <div className="run-replay"><Notice tone="error" testId="run-replay-error">{error}</Notice></div>;
   if (!run) return <div className="run-replay run-replay--loading">…</div>;
 
   const tokensNode = run.tokensEstimated
@@ -263,9 +263,7 @@ export default function RunReplay({ runId, onClose, pollMs = 1500 }: Props) {
       <ArtifactDownloads files={run.artifacts} />
 
       {run.errorText != null && (
-        <div className="run-replay__error-banner" role="alert">
-          {run.errorKind ? `${run.errorKind} · ` : ""}{run.errorText}
-        </div>
+        <Notice tone="error" testId="run-replay-error-banner" title={run.errorKind ?? undefined}>{run.errorText}</Notice>
       )}
 
       <div className="run-replay__kpis">

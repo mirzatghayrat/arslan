@@ -4,9 +4,8 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { ImagePayload } from "../lib/imagePayload";
 import {
   ArrowRight,
-  AlertTriangle, CheckCircle2, XOctagon,
   CornerDownRight,
-  Cpu, X, Square,
+  X, Square,
   RadioTower,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -448,7 +447,7 @@ export default function OrchestratorChat({
                 </button>
               </div>
 
-              {attach.error && <div className="attach-error mt-1" role="alert">{attach.error}</div>}
+              {attach.error && <Notice tone="error" testId="attach-error" className="mt-1">{attach.error}</Notice>}
               {attach.dragActive && (
                 <div className="absolute inset-0 z-10 rounded-2xl flex items-center justify-center pointer-events-none bg-primary/[0.08] text-primary text-xs font-semibold">
                   {t('attach.drop_hint')}
@@ -749,45 +748,7 @@ export default function OrchestratorChat({
                     )}
 
                     {/* 3. Escalation Banner Status Indicator (specifically asked in prompt) */}
-                    {msg.escalation && (
-                      <div className={`p-4 rounded-2xl border flex items-start gap-3.5 shadow-md ${
-                        msg.escalation.status === 'need_raised'
-                          ? 'bg-warning/15 border-warning/60 text-warning shadow-warning/5'
-                          : msg.escalation.status === 'arslan_resolving'
-                          ? 'bg-primary/20 border-primary/30 text-primary shadow-primary/5'
-                          : msg.escalation.status === 'resolved'
-                          ? 'bg-success/15 border-success/60 text-success shadow-success/5'
-                          : 'bg-danger/15 border-danger/60 text-danger shadow-danger/5'
-                      }`}>
-                        <div className="mt-0.5">
-                          {msg.escalation.status === 'need_raised' && <AlertTriangle className="w-4.5 h-4.5 animate-bounce" />}
-                          {msg.escalation.status === 'arslan_resolving' && <Cpu className="w-4.5 h-4.5 animate-spin" />}
-                          {msg.escalation.status === 'resolved' && <CheckCircle2 className="w-4.5 h-4.5 text-success" />}
-                          {msg.escalation.status === 'refused' && <XOctagon className="w-4.5 h-4.5 text-danger" />}
-                        </div>
-                        <div className="space-y-1 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[11.5px] font-bold font-mono tracking-wide uppercase">
-                              {msg.escalation.status === 'need_raised' && t('orchestrator.escalation_raised')}
-                              {msg.escalation.status === 'arslan_resolving' && t('orchestrator.arslan_resolving')}
-                              {msg.escalation.status === 'resolved' && t('orchestrator.escalation_resolved')}
-                              {msg.escalation.status === 'refused' && t('orchestrator.escalation_refused')}
-                            </span>
-                            <span className="text-[9px] bg-background/30 font-mono px-2 py-0.5 rounded">
-                              {t('ui.from')} {msg.escalation.spawnName}
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-muted-foreground font-sans leading-relaxed">{msg.escalation.issue}</p>
-
-                          {/* Inner details if context resolution message exists */}
-                          {msg.escalation.resolutionMessage && (
-                            <div className="mt-2.5 p-2.5 bg-background/50 rounded-lg border border-danger/40 text-danger font-mono text-[10.5px] leading-relaxed">
-                              {msg.escalation.resolutionMessage}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
+                    {msg.escalation && <EscalationNotice escalation={msg.escalation} />}
 
                     {/* 0.1.48: an old expert message keeps copy + its run; the expert actions went with the experts. */}
                     {isSpawn && !msg.isProposal && msg.spawnId && (
@@ -903,20 +864,7 @@ export default function OrchestratorChat({
                   )}
 
                   {/* Brutalist Escalation Panel */}
-                  {msg.escalation && (
-                    <div className="mt-4 border-2 border-danger bg-background p-3 text-[11px]">
-                      <div className="text-danger font-bold uppercase select-none pb-2 flex justify-between">
-                        <span>{t('ui.escalation')}</span>
-                        <span>{t(({ need_raised: 'orchestrator.escalation_raised', arslan_resolving: 'orchestrator.arslan_resolving', resolved: 'orchestrator.escalation_resolved', refused: 'orchestrator.escalation_refused' } as Record<string, string>)[msg.escalation.status] ?? 'ui.escalation')}</span>
-                      </div>
-                      <p className="text-muted-foreground font-semibold">{msg.escalation.issue.toUpperCase()}</p>
-                      {msg.escalation.resolutionMessage && (
-                        <div className="mt-2 bg-danger/20 text-danger p-2 border border-danger">
-                          {t('ui.resolution')} {msg.escalation.resolutionMessage.toUpperCase()}
-                        </div>
-                      )}
-                    </div>
-                  )}
+                  {msg.escalation && <EscalationNotice escalation={msg.escalation} />}
 
                   {/* 0.1.48: an old expert message keeps copy + its run; the expert actions went with the experts. */}
                   {isSpawn && !msg.isProposal && msg.spawnId && (
@@ -1038,20 +986,7 @@ export default function OrchestratorChat({
                   )}
 
                   {/* Linear Minimal Escalation status */}
-                  {msg.escalation && (
-                    <div className="pl-5 pt-2">
-                      <div className="border border-danger/40 bg-danger/5 border-l-2 border-l-danger rounded-r-lg p-3 max-w-xl">
-                        <div className="flex items-center gap-1 text-[10.5px] text-danger font-mono font-bold uppercase select-none">
-                          <AlertTriangle className="w-3.5 h-3.5" />
-                          <span>{t('ui.accessBlocked', { status: t(({ need_raised: 'orchestrator.escalation_raised', arslan_resolving: 'orchestrator.arslan_resolving', resolved: 'orchestrator.escalation_resolved', refused: 'orchestrator.escalation_refused' } as Record<string, string>)[msg.escalation.status] ?? 'ui.escalation') })}</span>
-                        </div>
-                        <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">{msg.escalation.issue}</p>
-                        {msg.escalation.resolutionMessage && (
-                          <p className="mt-2 text-danger text-[10px] font-mono whitespace-pre-wrap pl-2 bg-background/40 py-1.5 rounded">{msg.escalation.resolutionMessage}</p>
-                        )}
-                      </div>
-                    </div>
-                  )}
+                  {msg.escalation && <EscalationNotice escalation={msg.escalation} />}
 
                   {/* 0.1.48: an old expert message keeps copy + its run; the expert actions went with the experts. */}
                   {isSpawn && !msg.isProposal && msg.spawnId && (
@@ -1204,5 +1139,22 @@ function RemoteChip({ label }: { label: string }) {
     <span data-testid="from-phone" className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
       <RadioTower size={11} aria-hidden />{t('sidebar.remote')} · {label}
     </span>
+  );
+}
+
+
+/** 0.1.55: a legacy expert's escalation as one kit Notice (it was three hand-styled banners). */
+function EscalationNotice({ escalation }: { escalation: NonNullable<Message['escalation']> }) {
+  const { t } = useTranslation();
+  const status = escalation.status;
+  const tone = status === 'refused' ? 'error' : status === 'need_raised' ? 'warn' : 'info';
+  const title = t(({ need_raised: 'orchestrator.escalation_raised', arslan_resolving: 'orchestrator.arslan_resolving',
+    resolved: 'orchestrator.escalation_resolved', refused: 'orchestrator.escalation_refused' } as Record<string, string>)[status] ?? 'ui.escalation');
+  return (
+    <Notice tone={tone} testId="escalation-notice" attrs={{ 'data-status': status }}
+      title={<>{title} <span className="font-normal text-subtle-foreground">· {t('ui.from')} {escalation.spawnName}</span></>}>
+      {escalation.issue}
+      {escalation.resolutionMessage ? <span className="mt-1 block">{t('ui.resolution')} {escalation.resolutionMessage}</span> : null}
+    </Notice>
   );
 }

@@ -147,6 +147,19 @@ describe("FirstRunWizard", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it("is a labelled dialog, and Esc does not skip setup (0.1.55 S5)", () => {
+    const onClose = vi.fn();
+    render(<FirstRunWizard llmProviders={providers} onAdded={vi.fn()} onClose={onClose} />);
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+    const title = document.getElementById(dialog.getAttribute("aria-labelledby")!);
+    expect(title?.tagName).toBe("H2");
+    fireEvent.keyDown(window, { key: "Escape" });
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    expect(onClose).not.toHaveBeenCalled();
+    expect(getFirstRunSeen()).toBe(false);
+  });
+
   it("a key that passes the test is saved and advances to hello", async () => {
     const onAdded = vi.fn();
     const user = userEvent.setup();
@@ -182,6 +195,7 @@ describe("FirstRunWizard", () => {
     fireEvent.click(screen.getByTestId("first-run-test-save"));
 
     await waitFor(() => expect(screen.getByText(/401 invalid api key/)).toBeInTheDocument());
+    expect(screen.getByRole("alert")).toHaveTextContent("401 invalid api key");
     expect(mockAddProviderConfig).not.toHaveBeenCalled();
 
     // The stated escape: save anyway → saved blind, advances to hello.
