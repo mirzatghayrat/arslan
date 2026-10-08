@@ -53,9 +53,14 @@ O çalışırken sen konuşmaya devam edersin. Silen, gönderen, kuran ya da ba�
 
 Bu kadar. Hesap yok, kayıt yok, Arslan sunucusu yok.
 
-## 0.1.53'te yeni — Mac uygulamaların için eller
+## 0.1.56'da yeni — iki katmanlı projeler
 
-Arslan artık küçük bir yardımcı olan **Arslan Hands** ile Mac'indeki uygulamaları — Notlar, Mail, Pages ve diğerleri — okuyup kullanabiliyor. Bir pencereyi erişilebilirlik ağacı olarak okur (asla ekran görüntüsü değil) ve arka planda çalışır: faren, klavyen ve öndeki pencere senin kalır. Bir uygulamaya bakmak her sohbette uygulama başına bir kez sorar; işlem yalnızca arka plan işinde olur ve uygulama başına bir kez sorar; silen, gönderen, ödeyen, satın alan, para aktaran ya da gönder'e basan bir düğme her seferinde sorar. **iPhone için Arslan**'ın Mac tarafı da geldi (Ayarlar › iPhone) ve siyah-beyaz simge artık varsayılan. [Tüm sürüm notları →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.53)
+Projeler artık tek bir panoda duruyor — Fikir, Şekilleniyor, Yapılıyor, Bitti — ve her proje kendi seviyelerini tek tek çıkıyor. Bir tür (oyun, uygulama, web sitesi, araştırma, yazı, video, beceri, seyahat, iş) ve bir bitiş çizgisi seçersin; seviyeler model çağrısı olmadan hemen taslak olarak hazırlanır, her seviyenin açık bir koşulu ve birkaç kontrol noktası vardır. Arslan görebildiğini işaretler: proje klasöründe beliren dosyalar, ona söylediklerin, biten bir arka plan işi. Her işaret nedenini söyler ve geri alınabilir; bir seviyeyi geçmek her zaman yalnızca bir öneridir, Bitti ve Bırakıldı kararı yalnızca senindir. [Tüm sürüm notları →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.56)
+
+Son sürümler:
+- **[0.1.55](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.55)** — soru soran her şey için tek görünüm: kartlar tek bir kuyrukta bekler, ⌘⏎ izin verir, Esc reddeder ve Island da yanıtlayabilir (silen, gönderen, ödeyen ya da gönderim yapan bir adım bunun yerine Arslan'da açılır). Gelen kutusu, Bellek ve Yetenekler artık birer sayfa.
+- **[0.1.54](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.54)** — Mac tarafı iPhone için Arslan'a hazır (Touch ID ile onay, telefon başına tek kayıt, telefon kaldırılınca temizlik) ve terminal kapısı bir zincirdeki her komutu denetler.
+- **[0.1.53](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.53)** — **Arslan Hands**: Arslan, Mac uygulamalarını erişilebilirlik ağacı üzerinden arka planda okur ve kullanır; silen, gönderen, ödeyen, satın alan, para aktaran ya da gönderim yapan bir düğme her seferinde sorar.
 
 <div align="center">
   <img src="docs/assets/readme/devices.jpg" alt="Mac'te Arslan — arka planda faturaları toplayan bir iş — ve bekleyen bir onayı gösteren iPhone için Arslan" width="100%">

@@ -2271,5 +2271,29 @@
         "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.54...v0.1.55"
       }
     ]
+  },
+  {
+    "version": "v0.1.56",
+    "title": "项目分两层",
+    "date": "2026-10-09",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-10-08T17:03:01Z",
+    "published_at_shanghai": "2026-10-09T01:03:01+08:00",
+    "summary": "所有项目一块看板，每个项目各有关卡；Arslan 凭证据为检查点打勾，过关只是提议。Hands 每个请求最多执行一次。",
+    "status": "published_stable",
+    "tagged_commit": "e13130034e31df0bc4d2fd1a037ef191b87ba630",
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.56",
+        "published_at": "2026-10-08T17:03:01Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.55...v0.1.56"
+      }
+    ]
   }
 ]

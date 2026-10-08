@@ -122,10 +122,18 @@ def parse_envelope(envelope: dict, reply: dict | None = None) -> Result:
                   hint=HINTS.get(code), reply=reply or {})
 
 
+OUTCOMES = ("done", "sent_unconfirmed", "no_effect", "partly_done", "refused")
+
+
 def outcome(result: Result) -> str:
-    """P0 D7: what an action that succeeded really achieved. agent-desktop says
-    `delivered_verified` only when it read the change back; anything else was sent
-    without proof, and the model must look before building on it."""
+    """What an action that succeeded really achieved, in one vocabulary for both engines
+    (spec 2026-10-08-0157 §5.3). Hands says it (`outcome` in its reply); a Hands too old
+    to say it is read the P0 way: agent-desktop's `delivered_verified` is done, anything
+    else was sent without proof and the model must look before building on it. A word
+    this backend does not know is never taken for done."""
+    said = (result.reply or {}).get("outcome")
+    if isinstance(said, str):
+        return said if said in OUTCOMES else "sent_unconfirmed"
     data = result.data if isinstance(result.data, dict) else {}
     delivery = (data.get("disposition") or {}).get("delivery")
     return "done" if delivery == "delivered_verified" else "sent_unconfirmed"

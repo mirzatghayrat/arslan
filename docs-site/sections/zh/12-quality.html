@@ -15,14 +15,14 @@
 <tr><th>精确产物的实机验收</th><td>指定分发包在真实设备、权限状态与服务中完成链路</td><td>相邻构建或模拟器通过可以替代本次分发包的全部实机检查</td></tr>
 </tbody></table></div>
 <p>例如，2026 年 9 月可靠性工作提供了 30 项固定的零外部模型费用契约，真实执行存储、取消、产物、备份和权限等代码，但使用确定性 provider 替身。这是工程契约证据，不是 30 个真实模型端到端任务。后来的付费评测属于另一层证据，二者不能混成同一个成功率。</p>
-<p>测试还需要证明自己确实执行了。v0.1.55 的 macOS CI 解析 JUnit 报告，要求 <strong>49 个指定平台用例实际执行且零跳过</strong>。Hands 的 Python 与 Rust 端使用共享契约样例；Bridge 两端使用共享协议向量。对于关键保护，变异检查会临时破坏规则并确认测试变红，以发现只验证实现表象、没有约束行为的用例。</p>
+<p>测试还需要证明自己确实执行了。v0.1.56 的 macOS CI 解析 JUnit 报告，要求 <strong>49 个指定平台用例实际执行且零跳过</strong>。Hands 的 Python 与 Rust 端使用共享契约样例；Bridge 两端使用共享协议向量。对于关键保护，变异检查会临时破坏规则并确认测试变红，以发现只验证实现表象、没有约束行为的用例。</p>
 <p class="evidence">{{source:docs/EVALUATION.md|工程契约与模型质量的区分}}；{{source:.github/workflows/ci.yml|平台用例数量与跳过门禁}}；{{source:docs/companion/0.1.41-review-and-residency.md|来源审阅的回归与变异检查}}。</p>
 <h3>发布验证必须绑定到源码和产物</h3>
 <div class="flow"><div class="flow-step"><b>源码与 CI</b><span>后端／前端／macOS<br>完整历史凭据扫描</span></div><div class="flow-step"><b>同一 SHA 门禁</b><span>待发布提交<br>有对应成功 CI</span></div><div class="flow-step"><b>构建与签名</b><span>SPA、Python、helpers<br>应用与安装包</span></div><div class="flow-step"><b>安装验收</b><span>公证、staple、Gatekeeper<br>隔离配置实际启动</span></div><div class="flow-step"><b>分发与更新</b><span>Release、更新清单<br>更新产物签名</span></div></div>
 <p>Fresh-install 检查使用隔离的全新 HOME 启动应用，覆盖认证、WebSocket 的真实 101 握手、前端资源、OCR 和 helper。只检查健康接口返回 200 不够：早期安装包曾在 HTTP 服务正常时完全无法建立聊天连接。</p>
-<p>v0.1.55 的发布对应提交 <code>81c0028c</code>：该提交的 CI 首次尝试即成功；发布流程的源码验证、构建与 Release 步骤成功；DMG 公证被接受并 staple，Gatekeeper 接受。发布应用的 fresh-install 检查 <strong>89 项通过、0 项失败</strong>，包括 Hands 启动和 Bridge 自检。（0.1.53 因一次顺序相关波动需要第二次 CI 尝试；0.1.54 修复了根因——测试泄漏共享的数据库会话——并加了一道守卫，任何这样做的测试都会失败。）</p>
+<p>v0.1.56 的发布对应提交 <code>e1313003</code>：该提交的 CI 首次尝试即成功；发布流程的源码验证、构建与 Release 步骤成功；DMG 公证被接受并 staple，Gatekeeper 接受。发布应用的 fresh-install 检查 <strong>89 项通过、0 项失败</strong>，包括 Hands 启动和 Bridge 自检。（0.1.53 因一次顺序相关波动需要第二次 CI 尝试；0.1.54 修复了根因——测试泄漏共享的数据库会话——并加了一道守卫，任何这样做的测试都会失败。）</p>
 <p><strong>实机交互证据来自另一份明确标识的构建。</strong>Notes 测试中，后台任务通过 Hands 创建并读回笔记，第一次审批卡等待 36 秒后仍能继续；文件重命名任务使用 <code>mv</code>，没有操作 Finder 窗口。这些测试使用较早的 build-only 包，提交为 <code>43751254</code>，与正式发布提交的差异为版本号及说明文档。它不是最终发布的同一个 SHA；发布说明也明确披露，发布前没有手动安装精确的最终 DMG 完整操作一次。安装检查和较早构建的 Notes 实测应分别陈述。</p>
-<p class="evidence"><a href="https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.55">0.1.55 的发布说明</a>；{{source:.github/workflows/release.yml|发布流水线}}；{{source:packaging/fresh_install_check.py|安装检查}}；{{source:packaging/build_dmg.sh|打包与签名}}。</p>
+<p class="evidence"><a href="https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.56">0.1.56 的发布说明</a>；{{source:.github/workflows/release.yml|发布流水线}}；{{source:packaging/fresh_install_check.py|安装检查}}；{{source:packaging/build_dmg.sh|打包与签名}}。</p>
 <h3>真实任务数据：保留对照，也保留短板</h3>
 <p>2026 年 10 月 3 日的 0.1.51 评测使用 <code>deepseek-v4-pro</code>，与当轮 Hermes 对照，四类任务各运行三次。“验收通过”指 checker score=3，不等于运行状态为 done。费用与时间为每类三次运行的均值，包含失败结果；费用按当轮低峰价。时间是首个模型请求开始至最后请求结束的跨度，既不是完整任务端到端耗时，也不是纯模型推理时间。</p>
 <div class="table-wrap"><table><thead><tr><th>任务</th><th>Arslan 验收通过 / 3</th><th>Hermes 验收通过 / 3</th><th>均值费用与模型调用区间：Arslan / Hermes</th><th>这组证据说明什么</th></tr></thead><tbody>

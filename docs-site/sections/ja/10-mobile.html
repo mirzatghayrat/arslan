@@ -1,5 +1,5 @@
 <section class="chapter" id="mobile"><h2><span class="num">10 / iPhone と Mac Bridge</span>依頼と確認はスマートフォンで、実行は Mac で</h2>
-<p>モバイル連携により、ペアリング済みの iPhone から Mac のタスクを確認し、作業を依頼し、承認に回答し、結果を読むことができます。実行するのは引き続き Mac 上の Arslan です。スマートフォンは別のクラウド Agent サービスではなく、Mac の HTTP インターフェースを直接公開したり呼び出したりすることもありません。<strong>本章は、Mac v0.1.55 の公開プロトコルとソースコードを基準にしています。</strong>この版には Mac Bridge が含まれていますが、公開リリースノートでは iPhone App は引き続き公開予定とされています。そのため、本書では App Store での公開や、本番環境における一連の経路の受け入れ確認が完了したとは述べません。</p>
+<p>モバイル連携により、ペアリング済みの iPhone から Mac のタスクを確認し、作業を依頼し、承認に回答し、結果を読むことができます。実行するのは引き続き Mac 上の Arslan です。スマートフォンは別のクラウド Agent サービスではなく、Mac の HTTP インターフェースを直接公開したり呼び出したりすることもありません。<strong>本章は、Mac v0.1.56 の公開プロトコルとソースコードを基準にしています。</strong>この版には Mac Bridge が含まれていますが、公開リリースノートでは iPhone App は引き続き公開予定とされています。そのため、本書では App Store での公開や、本番環境における一連の経路の受け入れ確認が完了したとは述べません。</p>
 <div class="flow"><div class="flow-step"><b>iPhone</b><span>SwiftUI の画面と端末内の認証<br>暗号化、送信キュー、状態表示</span></div><div class="flow-step"><b>CloudKit</b><span>非公開 DB の ArslanBridge zone<br>暗号化エンベロープを非同期保存</span></div><div class="flow-step"><b>Mac Bridge</b><span>検証、復号、プロトコル変換<br>ローカル HTTP / WebSocket</span></div><div class="flow-step"><b>Arslan バックエンド</b><span>タスク、ツール、承認、成果物<br>構造化した結果を同じ経路で返す</span></div></div>
 <h3>CloudKit はメールボックスであり、デバイスの本人性はプロトコルで確認する</h3>
 <p>v1 は、同じ Apple ID の CloudKit 非公開データベースを使います。Mac は電源が入り、オンラインで、実行可能な状態である必要があります。そうでなければメッセージは処理待ちとなり、スマートフォンから電源の切れた Mac を動かすことはできません。LAN 内の Bonjour は今後の方向性であり、この版の代替直結経路ではありません。Mac helper は、アプリに伴って動く独立した <code>ArslanBridge.app</code>で、stdin 経由でローカル API token を受け取ってバックエンドに接続します。スマートフォンはこの token を持たず、モデルの API key も受け取りません。</p>
@@ -17,7 +17,7 @@
 <tr><th>永続化と同じパケットの再試行</th><td>再試行では同じエンベロープ ID、seq、暗号文を使います。シーケンス番号などの重要な状態を先に保存し、ネットワーク障害で状態が後戻りするのを防ぎます。</td><td>配信ログは、外部の業務システムのトランザクションの代わりにはなりません。</td></tr>
 <tr><th>リプレイウィンドウ</th><td>送信者ごとに直近 1,024 個のシーケンス番号を保持します。ウィンドウ内の新しいパケットは順不同でも受け取り、重複または古すぎるものは拒否します。</td><td>有効な新しい番号でも、業務状態が新しいとは限りません。古い進捗が後から送られることもあります。</td></tr>
 <tr><th>ACK</th><td>エンベロープの配信を確認します。重複パケットにも再び ACK を返せます。元の記録は確認後に削除し、ACK 自体には ACK を返しません。</td><td>ACK はタスクの成功でも、承認した操作の実行完了でもありません。</td></tr>
-<tr><th>業務上の識別子と結果</th><td><code>client_msg_id</code>、<code>client_task_id</code> は重複防止に使い、<code>approval.result</code>、タスクイベント、結果が業務上の状態を伝えます。</td><td>v0.1.55 の業務 ID の対応付けにはメモリ内の状態があるため、任意のクラッシュでも全体で exactly-once が成立するとは約束できません。</td></tr>
+<tr><th>業務上の識別子と結果</th><td><code>client_msg_id</code>、<code>client_task_id</code> は重複防止に使い、<code>approval.result</code>、タスクイベント、結果が業務上の状態を伝えます。</td><td>v0.1.56 の業務 ID の対応付けにはメモリ内の状態があるため、任意のクラッシュでも全体で exactly-once が成立するとは約束できません。</td></tr>
 </tbody></table></div>
 <p>Mac の状態スナップショットは、まだ実行中のタスクだけを含みます。通常の heartbeat 間隔は 60 秒で、スマートフォンは 90 秒間更新がなければオフラインと判断します。進捗は頻度を制限してまとめ、最終状態は速やかに送る必要があります。そのためクライアントは、メッセージの重複と順序の乱れを処理しながら、タスク一覧、承認カード、履歴を整合させなければなりません。「最後に受け取ったテキストで前を上書きする」だけでは状態を維持できません。</p>
 <p class="evidence">{{source:desktop/bridge/Sources/BridgeCore/Mailbox.swift|シーケンス番号、処理記録、ACK、削除}}；{{source:desktop/bridge/Sources/BridgeCore/ConversationLinks.swift|業務上の重複防止と結果の対応付け}}；{{source:desktop/bridge/Sources/BridgeCore/StatusReporter.swift|スナップショットと heartbeat}}。</p>

@@ -703,6 +703,10 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
         "exit": exit,
         "envelope": envelope,
         "focus_restored": focus_restored,
+        // One vocabulary for both engines (outcome.rs); only actions have one.
+        "outcome": (acts(op) && envelope.get("ok") == Some(&Value::Bool(true)))
+            .then(|| crate::outcome::from_agent_desktop(&envelope)),
+        "mode_used": acts(op).then_some("background"),
         // What was in front just before and just after this action (pids), so a
         // check can tell an app Hands acted on taking the focus from the user
         // switching apps between actions.
@@ -1155,12 +1159,14 @@ fn cua_op(ctx: &Ctx, args: &Value) -> Result<Value, Refusal> {
     let result = match tool {
         "list_apps" => cua_filtered_apps(&answer.result, &never),
         "get_window_state" => {
+            let mut answer_result = answer.result;
+            cua_policy::without_system_menu(&mut answer_result);
             ctx.state
                 .tokens
                 .lock()
                 .unwrap_or_else(|p| p.into_inner())
-                .record(&answer.result);
-            answer.result
+                .record(&answer_result);
+            answer_result
         }
         _ => answer.result,
     };
@@ -1172,6 +1178,8 @@ fn cua_op(ctx: &Ctx, args: &Value) -> Result<Value, Refusal> {
         "result": result,
         "app": app.as_ref().map(app_json),
         "secure_check": secure_check,
+        "outcome": (kind == Kind::Act).then(|| crate::outcome::from_cua(&result)),
+        "mode_used": (kind == Kind::Act).then_some("background"),
         "focus_restored": focus_restored,
         "front": {"before": front_before, "after": front_after},
     }))
