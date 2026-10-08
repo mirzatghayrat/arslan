@@ -121,8 +121,16 @@ class Cua:
         return self.hands.call("cua", {"tool": tool, "args": args, "session": "harness"})
 
     def _target(self) -> None:
-        apps = (self._call("list_apps", {}).get("result") or {}).get("structuredContent", {}).get("apps", [])
-        app = next((a for a in apps if a.get("name") == self.app and a.get("running")), None)
+        app = None
+        deadline = time.monotonic() + 3          # a just-started app takes a moment to be listed
+        while app is None and time.monotonic() < deadline:
+            listed = self._call("list_apps", {})
+            if listed.get("ok") is not True:
+                raise RuntimeError(f"list_apps failed: {listed.get('refused')} ({listed.get('completion')})")
+            apps = (listed.get("result") or {}).get("structuredContent", {}).get("apps", [])
+            app = next((a for a in apps if a.get("name") == self.app and a.get("running")), None)
+            if app is None:
+                time.sleep(0.3)
         if app is None:
             raise RuntimeError(f"{self.app} is not in Cua's app list")
         self.pid = int(app["pid"])

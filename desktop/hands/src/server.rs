@@ -967,9 +967,30 @@ fn cua_running_apps(result: &Value) -> Vec<App> {
         .collect()
 }
 
-/// The app `pid` belongs to, from Cua Driver's own list (kept two seconds; a pid not
-/// in the kept list asks again).
+#[cfg(target_os = "macos")]
+fn app_of_pid(pid: i64) -> Option<App> {
+    i32::try_from(pid)
+        .ok()
+        .and_then(crate::macos::app_of_pid)
+        .map(|(name, bundle_id)| App {
+            name,
+            bundle_id,
+            pid,
+        })
+}
+
+#[cfg(not(target_os = "macos"))]
+fn app_of_pid(_pid: i64) -> Option<App> {
+    None
+}
+
+/// The app `pid` belongs to: asked of macOS directly (NSRunningApplication, fast); only when
+/// macOS does not know it (the tests' fake pids), from Cua's own list, kept two seconds —
+/// that list scans installed apps too and took ~0.9 s a call (measured 2026-10-09).
 fn cua_app(ctx: &Ctx, cua: &Cua, pid: i64, session: &str) -> Result<App, Refusal> {
+    if let Some(app) = app_of_pid(pid) {
+        return Ok(app);
+    }
     let cached = ctx
         .state
         .cua_apps
