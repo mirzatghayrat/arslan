@@ -81,15 +81,34 @@ export interface BoardCard {
   proposal: Proposal | null;
   done_at: string | null;
   has_plan: boolean;
+  /** §9: quiet for too long — shown on the card only, never notified. */
+  stall?: { days: number; usual: number | null; left: number } | null;
+  /** The current level's next open checkpoint ("接着做"). */
+  next?: { id: string; text: string } | null;
+}
+export interface Shadow {
+  proposed: number; accepted: number; streak: number; ask_at: number; asked: boolean; auto_advance: boolean;
+  /** §5: ask once, at `ask_at` kept in a row; offer to turn auto-advance off after 2 undos in a row. */
+  ask_due?: boolean;
+  offer_off?: boolean;
+  /** The last answer was a miss (the board offers the optional line only then). */
+  miss_is_latest?: boolean;
+  last_miss?: { id: string; project_id: string; level: string | null; outcome: "declined" | "undone"; note: string | null; at: string } | null;
 }
 export interface Board {
   cards: BoardCard[];
   counts: { paused: number; archived: number };
-  shadow: { proposed: number; accepted: number; streak: number; ask_at: number; asked: boolean; auto_advance: boolean };
+  shadow: Shadow;
 }
+export interface PlanRule {
+  id: string; template: ProjectTemplate | null; text: string; enabled: boolean; sources: string[]; created_at: string;
+  value: { code?: "add_level" | "cut_scope" | "note"; name?: string };
+}
+export interface PaceRow { template: ProjectTemplate; band: Band; levels: number; median_days: number | null; override_days: number | null }
+export interface Habits { shadow: Shadow; rules: PlanRule[]; pace: PaceRow[]; cleared_levels: number; pace_min_levels: number }
 export interface ProjectEvent {
   id: string;
-  kind: "tick" | "untick" | "proposal" | "advance" | "plan_change" | "stage" | "auto_ask";
+  kind: "tick" | "untick" | "proposal" | "advance" | "plan_change" | "plan_proposal" | "stage" | "handoff" | "retro";
   actor: "user" | "arslan";
   payload: Record<string, unknown> & { evidence?: Evidence | null; text?: string; level?: string; next?: string | null };
   outcome: string | null;
@@ -118,6 +137,15 @@ export const projectsApi = {
   advance: (projectId: string) => request<Plan>(`/projects/${id(projectId)}/advance`, { method: "POST" }),
   decide: (projectId: string, proposalId: string, accept: boolean) =>
     request<Plan>(`/projects/${id(projectId)}/proposals/${id(proposalId)}/${accept ? "accept" : "decline"}`, { method: "POST" }),
+  /** §5: the optional line after a decline; it becomes a plan rule. */
+  note: (projectId: string, proposalId: string, note: string) =>
+    request<Plan>(`/projects/${id(projectId)}/proposal-notes/${id(proposalId)}`, json("POST", { note })),
+  habits: () => request<Habits>("/project-habits"),
+  setRule: (ruleId: string, enabled: boolean) => request<Habits>(`/project-habits/rules/${id(ruleId)}`, json("PUT", { enabled })),
+  setPace: (template: ProjectTemplate, band: Band, days: number | null) =>
+    request<Habits>("/project-habits/pace", json("PUT", { template, band, days })),
+  autoAdvance: (on: boolean, answered: "ask" | "offer" | "settings") =>
+    request<Habits>("/project-habits/auto-advance", json("PUT", { on, answered })),
   decidePlan: (projectId: string, proposalId: string, accept: boolean) =>
     request<Plan>(`/projects/${id(projectId)}/plan-proposals/${id(proposalId)}/${accept ? "accept" : "decline"}`, { method: "POST" }),
   undo: (projectId: string, eventId: string) => request<Plan>(`/projects/${id(projectId)}/events/${id(eventId)}/undo`, { method: "POST" }),

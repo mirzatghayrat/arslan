@@ -30,6 +30,8 @@ _PLAIN_KEYS = (
                "desktop_notifications_enabled", "island_enabled", "terminal_sandbox_enabled",
                "memory_in_conversations", "learned_practices_take_effect", "phone_bridge_enabled", "ocr_languages",
                "workspace_dir", "heartbeat_enabled", "heartbeat_checklist",
+               # 0.1.56 §5: Arslan clears project levels itself ("true" | "false"; default off).
+               "projects_auto_advance",
                "heartbeat_interval_s", "lan_discovery_enabled", "ssh_enabled", "default_read_enabled",
                "voice_output_enabled", "voice_input_locale", "voice_mode", "voice_endpoint_silence_ms")
 # Integer keys, handled like _PLAIN_KEYS but round-tripped through int() on read.

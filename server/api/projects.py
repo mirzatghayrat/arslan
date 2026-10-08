@@ -140,12 +140,33 @@ async def advance(project_id: str, repo=Depends(_repository, scope="function")) 
     return await project_plan.plan_of(repo.db, project)
 
 
+class DecideIn(BaseModel):
+    #: §5 the optional line on a decline ("还想再试一版"); it becomes a plan rule (§6 c).
+    note: Annotated[str, Field(max_length=200)] | None = None
+
+
 @router.post("/projects/{project_id}/proposals/{event_id}/{decision}")
 async def decide(project_id: str, event_id: str, decision: Literal["accept", "decline"],
-                 repo=Depends(_repository, scope="function")) -> dict:
+                 body: DecideIn | None = None, repo=Depends(_repository, scope="function")) -> dict:
     project = await _project(repo, project_id)
     try:
-        await project_plan.decide(repo.db, project, event_id, decision == "accept")
+        await project_plan.decide(repo.db, project, event_id, decision == "accept",
+                                  note=body.note if body else None)   # decide() reads it on a decline only
+    except PlanError as exc:
+        raise _error(exc) from exc
+    return await project_plan.plan_of(repo.db, project)
+
+
+class NoteIn(BaseModel):
+    note: Annotated[str, Field(min_length=1, max_length=200)]
+
+
+@router.post("/projects/{project_id}/proposal-notes/{event_id}")   # not under /proposals: {decision} would catch it
+async def note(project_id: str, event_id: str, body: NoteIn, repo=Depends(_repository, scope="function")) -> dict:
+    """The optional line said after declining (the board's "想补一句吗？")."""
+    project = await _project(repo, project_id)
+    try:
+        await project_plan.add_note(repo.db, project, event_id, body.note)
     except PlanError as exc:
         raise _error(exc) from exc
     return await project_plan.plan_of(repo.db, project)
@@ -257,3 +278,64 @@ async def files(project_id: str, repo=Depends(_repository, scope="function")) ->
             break
         entries.append({"name": child.name, "dir": child.is_dir()})
     return {"folder": str(folder), "exists": True, "entries": entries, "truncated": truncated}
+
+
+# ── what Arslan learned (§5, §6) ─────────────────────────────────────────────
+
+@router.get("/project-habits")
+async def habits(repo=Depends(_repository, scope="function")) -> dict:
+    from server.services import project_habits
+    return await project_habits.sheet(repo.db, USER.owner_id)
+
+
+class RuleIn(BaseModel):
+    enabled: bool
+
+
+@router.put("/project-habits/rules/{rule_id}")
+async def set_rule(rule_id: str, body: RuleIn, repo=Depends(_repository, scope="function")) -> dict:
+    from server.db.models import ProjectHabit
+    from server.services import project_habits
+    row = await repo.db.get(ProjectHabit, rule_id)
+    if row is None or row.owner_id != USER.owner_id or row.kind != "plan_rule":
+        raise HTTPException(404, detail={"code": "rule_not_found"})
+    row.enabled = body.enabled
+    await repo.db.flush()
+    return await project_habits.sheet(repo.db, USER.owner_id)
+
+
+class PaceIn(BaseModel):
+    template: Literal[tuple(project_templates.TEMPLATES)]  # type: ignore[valid-type]
+    band: Literal["shaping", "doing", "done"]
+    #: None clears the override (back to the median).
+    days: Annotated[float, Field(gt=0, le=365)] | None = None
+
+
+@router.put("/project-habits/pace")
+async def set_pace(body: PaceIn, repo=Depends(_repository, scope="function")) -> dict:
+    from server.services import project_habits
+    await project_habits.set_pace(repo.db, USER.owner_id, body.template, body.band, body.days)
+    return await project_habits.sheet(repo.db, USER.owner_id)
+
+
+class AutoAdvanceIn(BaseModel):
+    on: bool
+    #: ask = the one question at 10 in a row; offer = "turn it off?" after 2 undos; settings = the switch.
+    answered: Literal["ask", "offer", "settings"] = "settings"
+
+
+@router.put("/project-habits/auto-advance")
+async def auto_advance(body: AutoAdvanceIn, repo=Depends(_repository, scope="function")) -> dict:
+    """Only the user turns auto-advance on (§5): on 好 to the ask, or the Settings switch."""
+    from server.services import project_habits, settings_service
+    db = repo.db
+    await settings_service._set_raw(db, "projects_auto_advance", "true" if body.on else "false")
+    if body.answered == "ask":
+        await settings_service._set_raw(db, project_plan.ASKED_KEY, "yes" if body.on else "no")
+    if body.answered == "offer" and body.on:
+        # Keep it on: do not offer again for the same run of undos.
+        miss = (await project_plan.shadow(db)).last_miss
+        if miss:
+            await settings_service._set_raw(db, project_plan.KEPT_KEY, miss["id"])
+    await db.flush()
+    return await project_habits.sheet(db, USER.owner_id)

@@ -229,6 +229,8 @@ export interface AppSettings {
   /** Periodic checklist turn. Default OFF; an empty checklist means no task. */
   heartbeatEnabled: boolean;
   heartbeatChecklist: string;
+  /** 0.1.56 §5: Arslan clears project levels itself (logged, undoable; never Done). Default OFF. */
+  projectsAutoAdvance?: boolean;
   /** May Arslan look at what is on the local network? Default OFF. */
   lanDiscoveryEnabled: boolean;
   sshEnabled: boolean;

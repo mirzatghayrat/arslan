@@ -318,6 +318,7 @@ export interface AppSettings {
   workspace_dir?: string;   // "" = unset = file tools not offered
   heartbeat_enabled?: string;     // "true" | "false"
   heartbeat_checklist?: string;
+  projects_auto_advance?: string; // "true" | "false" (0.1.56)
   heartbeat_interval_s?: string;
   lan_discovery_enabled?: string; // "true" | "false"
   ssh_enabled?: string; // "true" | "false"

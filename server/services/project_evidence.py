@@ -19,9 +19,10 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from server.db import session as db_session
 from server.db.models import ArslanMessage, ConversationContext, Project, ProjectCheckpoint, ProjectEvent
@@ -139,17 +140,48 @@ async def check_files(db, project: Project) -> int:
     return ticked
 
 
+def newest_change(folder: Path, paths: list[str]) -> datetime | None:
+    """When a scanned file last changed (UTC, naive like the database's times)."""
+    newest = None
+    for rel in paths:
+        try:
+            mtime = (folder / rel).stat().st_mtime
+        except OSError:
+            continue
+        newest = mtime if newest is None or mtime > newest else newest
+    return datetime.fromtimestamp(newest, timezone.utc).replace(tzinfo=None) if newest is not None else None
+
+
+async def note_folder_activity(db, project: Project) -> bool:
+    """§9: a file changed in the folder since the project last moved counts as activity (and
+    starts a planned project in Idea, like a first conversation does)."""
+    from server.api.projects import project_folder
+    from server.services import project_habits
+    folder = project_folder(project)
+    if folder is None:
+        return False
+    changed = newest_change(folder, scan_folder(folder))
+    since = await project_habits.last_activity(db, project.id) or project.created_at
+    if changed is None or (since is not None and changed <= since):
+        return False
+    await project_plan.note_activity(db, project.id)
+    return True
+
+
 async def scan_projects(owner_id: str = "local") -> int:
-    """The proactive loop's pass (§4.2): every active, unpaused project with a folder."""
+    """The proactive loop's pass: every project with a folder that is not finished — file
+    changes are activity (§9); the current level's file checkpoints tick (§4.2)."""
     ticked = 0
     async with db_session.AsyncSessionLocal() as db:
         ids = (await db.execute(select(Project.id).where(
-            Project.owner_id == owner_id, Project.status == "active", Project.stage == "active",
+            Project.owner_id == owner_id, Project.status == "active",
+            or_(Project.stage.is_(None), Project.stage.in_(("idea", "active"))),
             Project.workspace_ref.is_not(None)))).scalars().all()
     for project_id in ids:
         try:
             async with db_session.AsyncSessionLocal() as db:
                 project = await db.get(Project, project_id)
+                await note_folder_activity(db, project)
                 ticked += await check_files(db, project)
                 await db.commit()
         except Exception:  # noqa: BLE001 — one project never stops the others

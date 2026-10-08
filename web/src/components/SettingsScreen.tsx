@@ -260,6 +260,17 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
       />
         </SettingsGroup>
         <SettingsGroup title={t('settings.grpJobs')}>{advanced(['budget'])}</SettingsGroup>
+        <SettingsGroup title={t('projectsUI.settingsGroup')}>
+          <label className="flex items-start justify-between gap-4" data-testid="settings-projects-auto">
+            <span>
+              <span className="block text-[13px] font-medium text-foreground">{t('projectsUI.settingsAuto')}</span>
+              <span className="mt-0.5 block max-w-xl text-[12px] leading-snug text-muted-foreground">{t('projectsUI.settingsAutoDesc')}</span>
+            </span>
+            <input type="checkbox" className="kit-switch mt-0.5" data-testid="projects-auto-toggle"
+              checked={localSettings.projectsAutoAdvance ?? false}
+              onChange={(e) => saveField({ projectsAutoAdvance: e.target.checked })} />
+          </label>
+        </SettingsGroup>
       </div>
     ),
     memory: (

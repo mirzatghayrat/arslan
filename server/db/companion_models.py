@@ -112,7 +112,7 @@ class ProjectEvent(Base):
     what Undo reverses; proposal outcomes are the shadow-mode record."""
     __tablename__ = "project_events"
     __table_args__ = (
-        CheckConstraint("kind IN ('tick','untick','proposal','advance','plan_change','plan_proposal','stage','auto_ask','activity','handoff','retro')",
+        CheckConstraint("kind IN ('tick','untick','proposal','advance','plan_change','plan_proposal','stage','activity','handoff','retro')",
                         name="ck_project_event_kind"),
         CheckConstraint("actor IN ('user','arslan')", name="ck_project_event_actor"),
     )

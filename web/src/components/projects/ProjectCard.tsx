@@ -21,8 +21,9 @@ export function LevelBar({ levels }: { levels: BoardCard["levels"] }) {
  * this level — and, when Arslan thinks a level is cleared, the proposal with its evidence.
  * The card is never dragged: where it sits follows its level.
  */
-export default function ProjectCard({ card, onOpen, onDecide, onPlan, busy }: {
-  card: BoardCard; onOpen: () => void; onDecide: (accept: boolean) => void; onPlan: () => void; busy?: boolean;
+export default function ProjectCard({ card, onOpen, onDecide, onPlan, onResume, onPause, busy }: {
+  card: BoardCard; onOpen: () => void; onDecide: (accept: boolean) => void; onPlan: () => void;
+  onResume?: () => void; onPause?: () => void; busy?: boolean;
 }) {
   const { t } = useTranslation();
   const days = daysSince(card.current?.started_at);
@@ -54,6 +55,21 @@ export default function ProjectCard({ card, onOpen, onDecide, onPlan, busy }: {
           <span className="text-[11px] text-subtle-foreground">{t("projectsUI.dayIn", { days: days + 1 })}</span>)}
       </button>
       {!card.has_plan && <Button size="sm" onClick={onPlan} data-testid={`project-plan-${card.id}`}>{t("projectsUI.planIt")}</Button>}
+      {card.stall && !p && (
+        // §9: said quietly, on the card only — "不催你，只是让你知道".
+        <div data-testid={`project-stall-${card.id}`} className="flex flex-col gap-2 rounded-lg bg-fill p-2.5">
+          <span className="text-[12px] leading-snug text-muted-foreground">
+            {t(card.stall.usual != null ? "projectsUI.stallUsual" : "projectsUI.stall", { n: card.current?.position ?? "",
+              days: card.stall.days, usual: card.stall.usual != null ? Math.round(card.stall.usual) : "", count: card.stall.left })}</span>
+          <span className="flex flex-wrap gap-1.5">
+            {onResume && card.next && <Button size="sm" disabled={busy} onClick={onResume} data-testid={`project-resume-${card.id}`}>
+              {t("projectsUI.stallResume")}</Button>}
+            {onPause && <Button size="sm" disabled={busy} onClick={onPause} data-testid={`project-pause-${card.id}`}>
+              {t("projectsUI.stallPause")}</Button>}
+            <Button size="sm" disabled={busy} onClick={onOpen} data-testid={`project-replan-${card.id}`}>{t("projectsUI.stallReplan")}</Button>
+          </span>
+        </div>
+      )}
       {p && (
         <div data-testid={`project-proposal-${card.id}`} className="flex flex-col gap-2 rounded-lg bg-info-soft p-2.5">
           <span className="flex gap-2 text-[12px] leading-snug">
