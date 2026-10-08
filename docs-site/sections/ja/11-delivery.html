@@ -1,0 +1,30 @@
+<section class="chapter" id="delivery"><h2><span class="num">11 / 検証とソフトウェアの配布</span>動くソースから、インストールして更新できるアプリへ</h2>
+<p>デスクトップソフトウェアの配布単位は、アプリのパッケージです。ソース環境に存在する Python モジュール、システムツール、古いデータベースによって、リソースが不足したインストールパッケージでも正常に見えることがあります。Arslan では、ソース、プラットフォーム、凍結した成果物、新規ユーザー環境、配布という層に分けて検証します。本章は、v0.1.55 の手順と対応するリリースの証拠を記録しています。</p>
+<h3>CI は動作、プラットフォーム、依存関係の境界を確認する</h3>
+<div class="table-wrap"><table><thead><tr><th>検査グループ</th><th>主な内容</th><th>設計の目的</th></tr></thead><tbody>
+<tr><th>Linux バックエンド</th><td>Python 3.11、uv frozen lock、Ruff、pytest。OCR テストの依存関係を明示的にインストールし、確認する。</td><td>バックエンド全体のテストを実行し、「macOS の隔離機構がなければ拒否する」というプラットフォームの異常系を残す。</td></tr>
+<tr><th>macOS</th><td>Swift 音声 helper の型チェック、Bridge のビルドとテスト、Rust fmt/test/clippy、Hands の検査、ネイティブ Python のテストケース。</td><td>最終的な配布先の Vision、Seatbelt、ホストコードを日常的な検証に含める。</td></tr>
+<tr><th>フロントエンド</th><td>Node 22、npm ci、TypeScript の型チェック、Vitest、本番ビルド。</td><td>状態とコンポーネントの動作を確認し、本番用リソースが生成できることを確かめる。</td></tr>
+<tr><th>履歴とサプライチェーン</th><td>gitleaks が Git 履歴全体を走査し、機密値を伏せて出力する。Hands は上流 commit を固定し、同梱ファイルを照合し、cargo-deny で依存関係を検査する。</td><td>最新 diff だけの検査に留めず、変更された外部ソースが意図せずビルドに使われるのを防ぐ。</td></tr>
+</tbody></table></div>
+<p>macOS のテストは、pytest の終了コードだけで合格とはしません。パイプラインは JUnit を解析し、<strong>指定した 49 件のプラットフォームテストが実行され、スキップも失敗もゼロであること</strong>を要求します。依存関係の不足ですべてスキップされた場合も不合格です。Python と Rust は Hands の契約サンプルを共有し、Mac、iOS、独立した Python 参照実装は Bridge のベクトルを共有します。これにより、引数のマッピング、署名、宛先、改ざん、再送攻撃の境界を言語間で照合できます。</p>
+<p>それでも結果には適用範囲があります。Swift の型チェックはマイクの許可を、Linux のユニットテストは macOS カーネルを、模擬メールボックスは本番の CloudKit を検証しません。テスト件数は全体の網羅率でもなく、重複するスイートを足して独立したシナリオ数にすることもできません。</p>
+<p class="evidence">{{source:.github/workflows/ci.yml|四つの CI グループと実行必須の条件}}；{{source:tests/fixtures/hands_contract/01_list_apps.json|言語間で共有する Hands の契約サンプル}}；{{source:spec/mobile-bridge/reference.py|Bridge の参照実装}}。</p>
+<h3>リリースは厳密に特定したソースコミットから始まる</h3>
+<div class="flow"><div class="flow-step"><b>ソースコミット</b><span>公開する正確な SHA<br>成功した CI が存在</span></div><div class="flow-step"><b>アプリのビルド</b><span>フロントエンド、Python sidecar<br>Swift / Rust helpers</span></div><div class="flow-step"><b>署名と公証</b><span>内蔵プログラム → App → DMG<br>notarize、staple、Gatekeeper</span></div><div class="flow-step"><b>実パッケージの検査</b><span>隔離した新規 HOME<br>認証、リソース、実行経路</span></div><div class="flow-step"><b>公開と更新</b><span>署名付きアーカイブと manifest<br>Draft を確認して正式公開</span></div></div>
+<p>Release workflow は、公開する SHA に対して成功した CI があるかを照会します。別のコミットの成功では代替できません。ビルドではロックファイルに従った依存関係を使用し、Python は uv が管理する独立したインタープリターを明示的に選び、runner が偶然 framework build を選ぶのを防ぎます。バックエンドは PyInstaller onedir で凍結し、フロントエンドの静的リソースと Swift/Rust helper を Tauri アプリと一緒に組み立てます。</p>
+<p>署名と公証には別々の役割があります。内蔵 Mach-O を先に署名し、外側のアプリで包みます。配布には Developer ID、hardened runtime、タイムスタンプを使用します。DMG を Apple の公証に提出し、チケットを staple して Gatekeeper で検査します。ビルドスクリプトには、未署名の開発用パッケージや、一部の認証情報がない場合の警告経路も残されています。そのため、「ビルドできる」ことが、そのまま「一般配布の条件を満たした」ことにはなりません。正式公開では、実際に生成された成果物を確認する必要があります。</p>
+<p>更新マニフェストには別の制約もあります。tag は Tauri のバージョンと一致する必要があり、updater の署名がある場合にだけ対応する manifest を生成します。手順は GitHub Draft Release を作成し、正式公開後に初めて、インストール済みアプリが次回以降の確認で更新を見つけられます。</p>
+<p class="evidence">{{source:.github/workflows/release.yml|正確な SHA の確認、バージョン検査、Draft Release}}；{{source:packaging/build_dmg.sh|凍結、組み立て、署名、公証、フォールバック分岐}}；{{source:packaging/arslan-server.spec|PyInstaller の依存関係とリソース}}。</p>
+<h3>新規インストールの検証ではアプリ本体を直接起動する</h3>
+<p><code>fresh_install_check.py</code> は一時的な HOME と最小限の環境を使い、パッケージ内の実物の <code>arslan-desktop</code> を起動します。ソースの venv で代わりにサービスを起動するのではありません。検査項目は、ユーザーのデータベースや秘密ファイルがパッケージに混入していないこと、初回起動の初期化、token の生成とファイル権限、未認証リクエストの拒否、実際の WebSocket 101 ハンドシェイク、フロントエンド JavaScript の正常な取得です。HTTP 200 は SPA のフォールバックページにすぎない可能性があるため、リソースの検査ではステータスコードだけを見てはいけません。</p>
+<p>同じスクリプトは、ネイティブ OCR、埋め込み helper、Bridge の自己診断、関連する署名も検査します。過去には凍結パッケージから動的に読み込む WebSocket 依存関係が抜け、ヘルス API は正常でもチャットの接続をアップグレードできないことがありました。これは、インポートの成功、サービスの稼働、コア機能がパッケージに含まれていることが、三つの異なる証拠であると示しています。</p>
+<p class="evidence">{{source:packaging/fresh_install_check.py|アプリ起動とパッケージ内の検証}}；{{source:packaging/arslan-server.spec|動的な WebSocket 依存関係の明示的な収集}}。</p>
+<h3>更新のインストールはユーザーが開始し、ダウンロード内容を検証する</h3>
+<p>Tauri updater は公開された <code>latest.json</code> から更新を見つけ、アプリに組み込まれた公開鍵でアーカイブの署名を検証します。起動時に一度確認し、メニューからの手動確認も可能です。この版には定期確認の timer はありません。新しいバージョンがあると通知を表示し、ユーザーがインストールをクリックしてから、ダウンロード、署名検証、置換、再起動を行います。自動確認の失敗は一時的なオフラインの可能性がありますが、インストールの失敗はユーザーに明確に伝える必要があります。</p>
+<p>初期の 0.1.0/0.1.1 では updater プラグインを登録しただけで、確認関数を明示的に呼んでいなかったため、新しい版を自動検出できませんでした。現在の実装では、確認、インストール可能な状態、ダウンロード失敗、再起動を明示的な流れとしてつないでいます。署名の設定があることと、その流れが実際に呼び出されることは別です。</p>
+<p class="evidence">{{source:desktop/src-tauri/src/lib.rs#L399|確認、インストール、再起動の状態}}；{{source:desktop/src-tauri/tauri.conf.json|更新 URL と公開鍵の設定}}。</p>
+<h3>0.1.55 の配布に関する証拠は何を対象にしているか</h3>
+<p>リリースコミットの GitHub Actions の記録によると、リリースのソースは <code>81c0028c</code> です。このコミットの CI は初回の試行で成功し（<a href="https://github.com/mirzatghayrat/arslan/actions/runs/37729747101">run 37729747101</a>）、macOS ジョブの<strong>指定した 49 件のプラットフォームテストはスキップゼロ</strong>、バックエンドは 6,324 件成功、119 件スキップでした。Release workflow（<a href="https://github.com/mirzatghayrat/arslan/actions/runs/37729747033">run 37729747033</a>）のソース検証、ビルド、公開の各手順は成功し、DMG の公証は承認され、staple と Gatekeeper の確認も完了しました。出荷アプリの fresh-install の検査は <strong>89 件成功、0 件失敗</strong>で、Hands による署名済みバックエンド接続の受け入れと Bridge の自己診断を含みます。0.1.54 も同じ検査で 87 件成功、0 件失敗で、CI も初回の試行で成功していました。</p>
+<p>検証対象はそれぞれ異なり、記録もそれを区別しています。0.1.55 の公開ノートには実際の Mac での手動検証の記録がないため、本書では、この正確な 0.1.55 の DMG を手動インストールして一連の操作を完走したとも、出荷版のアプリで iPhone から Mac までの経路を一通り実行したとも主張しません。比較として、<a href="https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.53">0.1.53 の Verification</a> には、実際の Mac で Hands を使って Notes のメモを作成して読み戻し、承認を 36 秒待った操作が記録されています。ただしこれは最終 DMG ではなく、<code>43751254</code> の build-only パッケージで行われたものです。自動のパッケージ検証、以前のビルドによる機能実測、正確な配布パッケージの手動受け入れ検証は、互いに代用せず、分けて説明すべきです。</p>
+</section>

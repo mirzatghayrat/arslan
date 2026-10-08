@@ -1,0 +1,27 @@
+<section class="chapter" id="blueprint"><h2><span class="num">13 / 技術的な方向性</span>既存の機能から、より確実な成果の提供へ</h2>
+<p>Arslan には、実行、継続的なタスク、記憶という三つの基盤があります。次に検証すべきなのは、より複雑な場面でも正しい状態を保ち、信頼できる結果を出し、ユーザーが制御を維持できるかどうかです。下図では、実装済みの機能、引き続き検証が必要な部分、今後の選択肢を分けています。これは技術的な検討資料であり、日程付きのリリース公約ではありません。</p><div class="diagram"><svg viewBox="0 0 1000 590" role="img" aria-labelledby="blueprint-title"><title id="blueprint-title">Arslan の成果提供能力の構想</title><defs><marker id="b-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#5c8071"/></marker></defs>
+<text x="40" y="35" class="boxtext">実装済み · v0.1.55</text><text x="375" y="35" class="boxtext">引き続き検証が必要</text><text x="710" y="35" class="boxtext">今後の方向性 · 日程未定</text>
+<rect x="25" y="61" width="285" height="94" rx="9" class="box"/><text x="45" y="93" class="boxtext">実行できる</text><text x="45" y="120" class="small">統一ループ、ファイル、端末、Web、Hands</text><text x="45" y="142" class="small">モデル標準プロトコルとツール結果の返却</text>
+<rect x="358" y="61" width="285" height="94" rx="9" class="planned"/><text x="378" y="93" class="boxtext">デバイスをまたぐ継続</text><text x="378" y="120" class="small">iOS App の公開、最終状態の同期</text><text x="378" y="142" class="small">配布と全体の動作を個別に検証</text>
+<rect x="691" y="61" width="285" height="94" rx="9" class="planned"/><text x="711" y="93" class="boxtext">実タスクの完了率を高める</text><text x="711" y="120" class="small">調査の網羅性と出典の確認を優先</text><text x="711" y="142" class="small">固定タスク群で継続的に回帰確認</text>
+<rect x="25" y="184" width="285" height="94" rx="9" class="box"/><text x="45" y="216" class="boxtext">継続できる</text><text x="45" y="243" class="small">バックグラウンド、予算、チェックポイント</text><text x="45" y="265" class="small">明示的な再開、常駐、予約実行、提案</text>
+<rect x="358" y="184" width="285" height="94" rx="9" class="planned"/><text x="378" y="216" class="boxtext">再開時の状態を整合させる</text><text x="378" y="243" class="small">再生、承認、最終状態、キャッシュの関係</text><text x="378" y="265" class="small">再起動と順序逆転を継続的に検証</text>
+<rect x="691" y="184" width="285" height="94" rx="9" class="planned"/><text x="711" y="216" class="boxtext">実証できる再開の契約</text><text x="711" y="243" class="small">安定した業務 ID、障害注入、副作用の照合</text><text x="711" y="265" class="small">再試行と再開の適用範囲を明示</text>
+<rect x="25" y="307" width="285" height="94" rx="9" class="box"/><text x="45" y="339" class="boxtext">記憶できる</text><text x="45" y="366" class="small">好み、マシンのメモ、経験、RAG</text><text x="45" y="388" class="small">出典、権限、提案、取り消し</text>
+<rect x="358" y="307" width="285" height="94" rx="9" class="planned"/><text x="378" y="339" class="boxtext">学習効果の検証を広げる</text><text x="378" y="366" class="small">経験の想起と適用は確認済み</text><text x="378" y="388" class="small">一般的な高速化・低コスト化は未実証</text>
+<rect x="691" y="307" width="285" height="94" rx="9" class="planned"/><text x="711" y="339" class="boxtext">条件をそろえた学習比較</text><text x="711" y="366" class="small">同じタスクを経験あり／なしで反復</text><text x="711" y="388" class="small">成功、費用、権限の誤りを併せて確認</text>
+<path d="M310 108 H353" class="edge" marker-end="url(#b-arrow)"/><path d="M643 108 H686" class="edge dashed" marker-end="url(#b-arrow)"/>
+<path d="M310 231 H353" class="edge" marker-end="url(#b-arrow)"/><path d="M643 231 H686" class="edge dashed" marker-end="url(#b-arrow)"/>
+<path d="M310 354 H353" class="edge" marker-end="url(#b-arrow)"/><path d="M643 354 H686" class="edge dashed" marker-end="url(#b-arrow)"/>
+<rect x="25" y="451" width="951" height="107" rx="10" class="dark"/><text x="46" y="485" class="boxtext white">全段階で守る原則：見える、許可できる、止められる、追跡できる</text><text x="46" y="513" class="small white">ワークスペースと OS 権限 / 実行証拠 / 予算と費用 / ユーザーデータの管理 / 同一ソースの CI と配布物検証</text><text x="46" y="538" class="small white">製品目標：ユーザーの意図から成果の提供までをつなぐ。機能数や版数をタスクの成果の代わりにしない。</text>
+</svg><p class="diagram-caption">図 4 · 能力の構想。テキスト版：実行、継続的なタスク、記憶という既存の三つの基盤 → デバイス間連携と信頼性の受け入れ検証 → 実タスクの完了率、再開の契約、学習の比較実験を優先事項として提案。提案は、すでに提供済みであるという約束ではありません。</p></div>
+<h3>実タスクでの成果</h3>
+<p>固定タスク群では、検索の網羅性、引用と結論の対応、ファイルを開けること、システム操作が実際に反映されたこと、失敗時に事実を正しく伝えて終了できることを確認すべきです。既存の比較では調査タスクの課題が明らかになっています。ツールを増やす前に、「見つからなかった」「最後まで読めなかった」「検証しなかった」「正しく成果を渡せなかった」がそれぞれどの段階で起きたかを特定するほうが、完了率の改善につながります。</p>
+<h3>再開とデバイス間の整合性</h3>
+<p>ネットワークの再試行、メッセージの重複、アプリの再起動、ユーザーによるキャンセルは、同時に起こり得ます。今後は、安定した業務 ID、古いメッセージによる最終状態の上書き防止、承認を取り消した後の動作、副作用が不明な場合の確認経路を中心に検証できます。クラッシュの注入やプロトコルの異常系を通じて、自動処理できる状況と、ユーザーの確認に戻る必要がある状況を明確にします。</p>
+<h3>測定可能な学習の効果</h3>
+<p>経験を記憶することは出発点にすぎません。同じタスクとモデルの条件で、経験あり／なしの完了率、呼び出し費用、所要時間、誤動作を繰り返し比較する必要があります。古くなった経験が修正されるか、外部の文章が経験を汚染し得るか、削除後も想起されることがないかも確認すべきです。</p>
+<h3>プラットフォームと拡張の負担</h3>
+<p>Tauri はクロスプラットフォームのホスト基盤を提供しますが、Seatbelt、Vision、Accessibility、Apple Events、CloudKit にはプラットフォーム固有の性質があります。他のデスクトップ OS に対応するには、これらの機能を置き換えて検証する必要があり、一度コンパイルできたことを製品機能の移植完了とはみなせません。外部ツールが増えれば、認証情報、権限、障害の種類も増えます。</p>
+<p class="note">以上は、現行の実装とテスト結果から整理した技術的な方向性です。具体的な優先順位や日程は、今後の正式なリリースノートに従います。</p>
+</section>

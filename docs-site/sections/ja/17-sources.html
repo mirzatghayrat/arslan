@@ -1,0 +1,24 @@
+<section class="chapter" id="sources"><h2><span class="num">17 / バージョンの基準とソースへの入口</span>文書の結論から根拠をたどれるようにする</h2>
+<p>本書は固定したバージョンの実装を説明し、公開リリースの記録、Git タグと履歴、リリースコミットのソース、アーキテクチャ上の判断、公開された受け入れ検証資料を相互に確認しています。初期の設計は変遷を説明するために用い、後のコードで置き換えられた動作は過去のものと明記します。作者が独立して AI 支援による開発を行っているという説明は、作者本人によるものです。</p>
+<div class="table-wrap"><table><thead><tr><th>対象</th><th>採用する基準</th></tr></thead><tbody>
+<tr><th>正式版</th><td>v0.1.55 · <code>81c0028c827ea61c58574a09783dccd6fe909d6a</code></td></tr>
+<tr><th>公開日時</th><td>北京時間（UTC+8）2026-10-08 14:34:14；UTC 2026-10-08 06:34:14</td></tr>
+<tr><th>確認の締切</th><td>2026-10-08。日付は原則として北京時間を使用し、Git 上の実装時点と Release の公開日を区別して記載しています。</td></tr>
+<tr><th>リリース後の開発</th><td><code>81c0028c</code> 以降の main 上の変更は、正式版としてリリースされるまで v0.1.55 の内容に含めません。</td></tr>
+<tr><th>バージョンの範囲</th><td>v0.1.0–v0.1.55 の連続する 56 タグと、現在公開されている 55 件の正式 Release を扱います。0.1.39 はタグのみとして明示しています。別途、0.1.40 の六つの beta 番号と、それぞれ異なる公開状態も掲載しています。</td></tr>
+</tbody></table></div>
+<h3>疑問に対応する実装を探す</h3>
+<ol class="source-list">
+<li><strong>プロジェクトの変遷：</strong><a href="https://github.com/mirzatghayrat/arslan/releases">公開 Release</a>；<a href="https://github.com/mirzatghayrat/arslan/commit/1cd701af">追跡できる最初のコミット</a>；{{source:docs/companion/0.1.44-one-arslan.md|One Arslan}}；{{source:docs/companion/0.1.48-one-loop.md|統一ループ}}。</li>
+<li><strong>プログラムの起動：</strong>{{source:desktop/src-tauri/src/lib.rs|デスクトップのライフサイクル}}；{{source:packaging/server_entry.py|ローカルサービスの入口}}；{{source:server/orchestrator/arslan.py|Agent の入口}}；{{source:server/orchestrator/tool_loop.py|ツールループ}}。</li>
+<li><strong>モデルの接続：</strong>{{source:arslan/llm/adapter.py|アダプター}}；{{source:arslan/llm/trajectory.py|ツールの実行軌跡}}；{{source:arslan/execution_budget.py|実行予算}}。</li>
+<li><strong>タスクの保存と再開：</strong>{{source:arslan/companion/contracts.py|タスクの契約}}；{{source:server/services/task_repository.py|状態、永続化、試行の隔離とチェックポイント}}；{{source:server/services/task_validation.py|受け入れ検証}}；{{source:server/services/task_restore.py|バックアップ復元後の承認の無効化とタスクの隔離}}。</li>
+<li><strong>記憶の使用と削除：</strong>{{source:server/services/personal_context.py|個人コンテキスト}}；{{source:server/services/knowledge.py|資料の検索}}；{{source:server/services/lessons.py|経験}}；{{source:server/services/memory_repository.py|記憶の永続化}}；{{source:server/db/migrations/runner.py|バージョン管理された移行}}。</li>
+<li><strong>機能の拡張：</strong>{{source:server/registry/executors.py|組み込み実行器}}；{{source:server/services/plugin_manifest.py|プラグインのマニフェスト}}；{{source:server/services/mcp_service.py|MCP}}；{{source:server/services/task_workers.py|読み取り専用ワーカー}}。</li>
+<li><strong>権限の適用主体：</strong>{{source:server/services/terminal_policy.py|ターミナルのポリシー}}；{{source:server/services/command_sandbox.py|コマンドサンドボックス}}；{{source:server/services/terminal_exec.py|実行とフォールバック}}；{{source:desktop/hands/src/server.rs|Hands helper}}。</li>
+<li><strong>スマートフォンの接続：</strong>{{source:docs/specs/mobile-bridge-protocol.md|Bridge プロトコル}}；{{source:desktop/src-tauri/src/bridge.rs|Bridge のライフサイクル}}；{{source:desktop/bridge/Sources/BridgeCore/FrameMapper.swift|イベントと承認のマッピング}}。</li>
+<li><strong>評価とリリース：</strong>{{source:docs/companion/0.1.51-island-sandbox.md|0.1.51 の実タスク比較}}；{{source:docs/plans/2026-10-03-0152-acceptance.md|0.1.52 の受け入れ検証}}；{{source:packaging/fresh_install_check.py|インストールの受け入れ検証}}；{{source:.github/workflows/release.yml|リリースワークフロー}}。</li>
+<li><strong>オープンソースの出典とフィードバック：</strong>{{source:LICENSE|ライセンス}}；{{source:THIRD_PARTY_NOTICES.md|第三者の権利帰属}}；{{source:SECURITY.md|セキュリティ報告の方針}}；<a href="https://github.com/mirzatghayrat/arslan/issues">プロジェクトの Issues</a>。</li>
+</ol>
+<p>本書は、特定のバージョンと、その確認可能な範囲を説明するものです。後続のバージョンについては、対応する Release とソースの両方を参照してください。アーキテクチャの方向性、設計意図、テスト範囲、正式な提供内容を分けて記載し、それぞれの結論がどこまで適用できるかを判断しやすくしています。</p>
+</section>
