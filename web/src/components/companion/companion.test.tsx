@@ -8,7 +8,7 @@ import { useArslanStore, initialArslanState } from "../../stores/arslanStore";
 import { initialMemoryView, MEMORY_VIEW_KEY } from "./MemorySection";
 import MemoryEditor from "./MemoryEditor";
 import MemoryList from "./MemoryList";
-import ProjectsSection from "./ProjectsSection";
+import { ProjectEditor } from "./ProjectsSection";
 import ConversationControls from "./ConversationControls";
 
 vi.mock("./Materials", () => ({ default: () => <div>materials</div> }));
@@ -181,8 +181,8 @@ describe("project controls", () => {
   it("stores an explicit App version and shows the account-access gate", async () => {
     vi.spyOn(api, "listCollections").mockResolvedValue([]);
     const save = vi.spyOn(companionApi, "editProject").mockResolvedValue(project);
-    render(<ProjectsSection onStart={async () => {}} />);
-    fireEvent.click(await screen.findByText("companion.edit"));
+    // 0.1.56: the editor opens from a project's Settings tab; it is the same component.
+    render(<ProjectEditor project={{ ...project, template: "game", finish_line: "Shipped" }} onClose={() => {}} onSaved={() => {}} />);
     fireEvent.change(screen.getByLabelText("companion.appId"), { target: { value: "123" } });
     fireEvent.change(screen.getByLabelText("companion.bundleId"), { target: { value: "com.example.app" } });
     fireEvent.change(screen.getByLabelText("companion.appVersionId"), { target: { value: "version-1" } });
@@ -191,19 +191,13 @@ describe("project controls", () => {
     fireEvent.click(screen.getByText("companion.save"));
     await waitFor(() => expect(save).toHaveBeenCalled());
     expect(save.mock.calls[0][1].app_binding).toMatchObject({ app_id: "123", bundle_id: "com.example.app", version_id: "version-1", platform: "IOS" });
-  });
-  it("starts the chosen active project and includes archived projects in its query", async () => {
-    const start = vi.fn().mockResolvedValue(undefined);
-    render(<ProjectsSection onStart={start} />);
-    fireEvent.click(await screen.findByText("companion.startTask"));
-    await waitFor(() => expect(start).toHaveBeenCalledWith(project));
-    expect(companionApi.projects).toHaveBeenCalledWith(true);
+    // An edit keeps the project's type and finish line (the API stores what it is sent).
+    expect(save.mock.calls[0][1]).toMatchObject({ template: "game", finish_line: "Shipped" });
   });
   it("creates a project with user-chosen collection identifiers", async () => {
     vi.spyOn(api, "listCollections").mockResolvedValue([{ id: 7, name: "Documents", chunks: 1, sources: 1, spawn_ids: [] }]);
     const create = vi.spyOn(companionApi, "createProject").mockResolvedValue(project);
-    render(<ProjectsSection onStart={async () => {}} />);
-    fireEvent.click(screen.getByText("companion.addProject"));
+    render(<ProjectEditor onClose={() => {}} onSaved={() => {}} />);
     fireEvent.change(screen.getByLabelText("companion.name"), { target: { value: "New project" } });
     fireEvent.click(await screen.findByLabelText("Documents"));
     fireEvent.click(screen.getByText("companion.save"));
