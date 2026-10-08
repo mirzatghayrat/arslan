@@ -1,0 +1,14 @@
+# Cua Driver as Arslan Hands builds it (Hands v2, spec docs/specs/2026-10-08-0157-hands-v2.md §3.6).
+# Our fork's branch = upstream tag + vendored crates (aarch64-apple-darwin) + "no network"
+# (telemetry, update check, skill downloads, self-update compiled out) + two lock bumps for
+# advisories; ARSLAN-FORK.md in the fork says exactly what. build_hands.sh refuses any checkout
+# whose HEAD is not COMMIT, and builds it offline from WORKSPACE. Moving the pin: monthly sync
+# (ARSLAN-FORK.md), then a build from a clean fetch, cargo-deny with packaging/hands/cua-deny.toml,
+# and the Hands harness on a Mac.
+REPOSITORY=https://github.com/mirzatghayrat/cua.git
+BRANCH=arslan/cua-driver-rs-v0.34.0
+COMMIT=0c4069af6589f9b6ca9a6f1f1194345263cf9366
+WORKSPACE=libs/cua-driver/rust
+UPSTREAM=trycua/cua
+UPSTREAM_TAG=cua-driver-rs-v0.34.0
+UPSTREAM_COMMIT=b0968e1b12834e485dda68789541a3cc57664a9f

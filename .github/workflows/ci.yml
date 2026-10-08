@@ -143,6 +143,37 @@ jobs:
         with:
           manifest-path: desktop/hands/Cargo.toml
 
+      # ── Hands v2: Cua Driver at its pin (spec 2026-10-08-0157 §3.6) ─────────
+      # Same three checks as agent-desktop's: the checkout is the pin, every vendored
+      # file is in the pinned commit, and cargo-deny passes Arslan's own policy for it
+      # (permissive licences only — never AGPL or FSL — crates.io only, advisories).
+      - name: Hands — read the Cua Driver pin
+        id: cua_pin
+        run: |
+          set -euo pipefail
+          grep -E '^(COMMIT|WORKSPACE)=' packaging/hands/cua-driver.pin \
+            | sed -e 's/^COMMIT=/commit=/' -e 's/^WORKSPACE=/workspace=/' >> "$GITHUB_OUTPUT"
+
+      - name: Hands — check out Cua Driver at the pin
+        uses: actions/checkout@v4
+        with:
+          repository: mirzatghayrat/cua
+          ref: ${{ steps.cua_pin.outputs.commit }}
+          path: third_party/cua
+          fetch-depth: 1
+
+      - name: Hands — the Cua Driver checkout is exactly the pin
+        run: test "$(git -C third_party/cua rev-parse HEAD)" = "${{ steps.cua_pin.outputs.commit }}"
+
+      - name: Hands — every vendored Cua Driver file is in the pinned commit
+        run: python3 scripts/verify_vendored_checksums.py "third_party/cua/${{ steps.cua_pin.outputs.workspace }}/vendor"
+
+      - name: Hands — cargo-deny on Cua Driver (licenses, bans, sources, advisories)
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          manifest-path: third_party/cua/${{ steps.cua_pin.outputs.workspace }}/Cargo.toml
+          arguments: --all-features --config packaging/hands/cua-deny.toml
+
   # ---------------------------------------------------------------------------
   # The platform Arslan actually ships on.
   # ---------------------------------------------------------------------------
