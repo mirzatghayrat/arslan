@@ -2242,5 +2242,34 @@
         "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.53...v0.1.54"
       }
     ]
+  },
+  {
+    "version": "v0.1.55",
+    "title": "所有需要回答的地方，一个样子",
+    "date": "2026-10-08",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-10-08T06:34:14Z",
+    "published_at_shanghai": "2026-10-08T14:34:14+08:00",
+    "summary": "卡片、对话框和提示统一设计；卡片排进同一个队列；⌘⏎ 允许、Esc 拒绝。Island v2 可直接回答卡片，有风险的步骤改为在 Arslan 中打开。收件箱集中放等你决定的事；设置收成七处；记忆合为一页；能力改成开关；Arslan 知道自己的版本。",
+    "status": "published_stable",
+    "tagged_commit": "81c0028c827ea61c58574a09783dccd6fe909d6a",
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.55",
+        "published_at": "2026-10-08T06:34:14Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "git_tag",
+        "ref": "v0.1.55",
+        "url": "https://github.com/mirzatghayrat/arslan/tree/v0.1.55"
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.54...v0.1.55"
+      }
+    ]
   }
 ]
