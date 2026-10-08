@@ -46,6 +46,24 @@ fn main() {
         eprintln!("arslan-hands: no agent-desktop.sha256 in a signed build");
         std::process::exit(1);
     }
+    // Hands v2: Cua Driver, beside the bundle like agent-desktop, when this build has it.
+    // A signed Hands runs it only against the sha256 recorded inside its bundle.
+    let cua_binary = contents
+        .parent()
+        .and_then(|bundle| bundle.parent())
+        .map(|hands| hands.join("cua-driver"))
+        .filter(|path| path.is_file());
+    let cua_driver_sha256 =
+        arslan_hands::integrity::recorded(&contents.join("Resources/cua-driver.sha256"));
+    let cua_driver = match (cua_binary, &cua_driver_sha256) {
+        (Some(_), None) if team.is_some() => {
+            eprintln!(
+                "arslan-hands: cua-driver without its sha256 record in a signed build: not used"
+            );
+            None
+        }
+        (binary, _) => binary,
+    };
     let config = server::Config {
         folder: paths::folder(&home),
         agent_desktop,
@@ -53,6 +71,9 @@ fn main() {
         home,
         idle: Duration::from_secs(15 * 60),
         team,
+        cua_driver,
+        cua_driver_sha256,
+        host_bundle_id: arslan_hands::paths::own_bundle_id(&contents),
     };
     let bound = match server::bind(&config) {
         Ok(bound) => bound,
