@@ -1,0 +1,212 @@
+"""Hands engine harness, L1 (spec docs/specs/2026-10-08-0157-hands-v2.md §8): drives a
+development Arslan Hands directly over its socket, with either engine, against the
+HarnessFixture app, judging every case by ground truth and the observer.
+
+    .venv/bin/python -m scripts.hands_harness.run --hands-app ".../Arslan Hands DEV.app" \\
+        [--engines agent-desktop,cua] [--cases a,b] [--runs 3] [--typist] [--out DIR]
+
+Needs macOS, a development Hands with Cua Driver beside it (HANDS_CUA_DRIVER=1), allowed
+Accessibility and Screen Recording, and Xcode's swiftc. Acts only on the fixture app.
+
+--typist starts the user's stand-in: a front window the harness types into at 8 characters a
+second during every action, by posting key events as a user would. It takes the keyboard:
+run it only when the Mac is left alone (the bake-off, §8.4).
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import statistics
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+from pathlib import Path
+
+from scripts.hands_harness import cases as C
+from scripts.hands_harness import oracles
+from scripts.hands_harness.engines import AgentDesktop, Cua, Hands
+from scripts.hands_harness.observer import Observer
+
+HERE = Path(__file__).resolve().parent
+FIXTURE_NAME = "HarnessFixture"
+
+
+def build(work: Path) -> tuple[Path, Path]:
+    """Each fixture as a real app bundle (bundle id, regular app), as the engines see apps;
+    run from inside its bundle so it has that identity, with the environment the harness sets."""
+    binaries = []
+    for name, bundle_id in (("HarnessFixture", "com.arslan.harness.fixture"), ("Typist", "com.arslan.harness.typist")):
+        contents = work / f"{name}.app" / "Contents"
+        (contents / "MacOS").mkdir(parents=True, exist_ok=True)
+        subprocess.run(["swiftc", "-O", "-o", str(contents / "MacOS" / name), str(HERE / f"{name}.swift")], check=True)
+        (contents / "Info.plist").write_text(
+            '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
+            '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict>'
+            f"<key>CFBundleIdentifier</key><string>{bundle_id}</string><key>CFBundleName</key><string>{name}</string>"
+            f"<key>CFBundleExecutable</key><string>{name}</string><key>CFBundlePackageType</key><string>APPL</string>"
+            "</dict></plist>\n")
+        subprocess.run(["codesign", "--force", "--sign", "-", str(contents.parent)], check=True, capture_output=True)
+        binaries.append(contents / "MacOS" / name)
+    return binaries[0], binaries[1]
+
+
+def launch(binary: Path, env: dict[str, str]) -> subprocess.Popen:
+    return subprocess.Popen([str(binary)], env={**os.environ, **env}, stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL)
+
+
+def start_hands(app: Path) -> Hands:
+    ready = Path.home() / "Library" / "Application Support" / "Arslan Hands" / "ready.json"
+
+    def alive() -> bool:
+        try:
+            os.kill(int(json.loads(ready.read_text())["pid"]), 0)
+            return True
+        except (OSError, ValueError, KeyError):
+            return False
+    if not alive():                      # none, or one that ended without cleaning up
+        subprocess.run(["/usr/bin/open", "-g", "-j", str(app)], check=True)
+        deadline = time.monotonic() + 15
+        while not alive() and time.monotonic() < deadline:
+            time.sleep(0.1)
+    hands = Hands()
+    status = hands.call("status")
+    if not (status.get("accessibility") and status.get("cua_driver")):
+        sys.exit(f"Hands is not ready for the harness: {status}")
+    return hands
+
+
+def engine_pids() -> set[int]:
+    """Hands and its engines draw their own windows (the agent cursor): not the user's."""
+    out = subprocess.run(["pgrep", "-f", "arslan-hands|cua-driver|agent-desktop"], capture_output=True, text=True)
+    return {int(p) for p in out.stdout.split()} | {os.getpid()}
+
+
+class TypistDriver:
+    """Types into the Typist window as a user would (HID-level key events) while an action
+    runs, and judges O2 and O5 from the Typist's own log."""
+
+    TEXT = "the quick brown fox jumps over the lazy dog "
+
+    def __init__(self, log: Path, fixture: C.Fixture):
+        self.log, self.fixture = log, fixture
+        self.expected = ""
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._i = 0
+
+    def _type(self) -> None:
+        import Quartz
+        while not self._stop.is_set():
+            ch = self.TEXT[self._i % len(self.TEXT)]
+            self._i += 1
+            for down in (True, False):
+                event = Quartz.CGEventCreateKeyboardEvent(None, 0, down)
+                Quartz.CGEventKeyboardSetUnicodeString(event, 1, ch)
+                Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
+            self.expected += ch
+            self._stop.wait(0.125)
+
+    def start(self) -> None:
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._type, daemon=True)
+        self._thread.start()
+
+    def _rows(self) -> list[dict]:
+        try:
+            return [json.loads(line) for line in self.log.read_text().splitlines() if line.strip()]
+        except OSError:
+            return []
+
+    def stop_and_judge(self, start: float, end: float) -> list[str]:
+        time.sleep(0.4)                                   # keep typing a little after the action
+        self._stop.set()
+        if self._thread:
+            self._thread.join()
+        time.sleep(0.4)
+        rows = self._rows()
+        texts = [r["value"] for r in rows if r.get("event") == "text"]
+        state = self.fixture.state()
+        verdict = oracles.typed_exactly(self.expected, texts[-1] if texts else "",
+                                        [str(state.get(k, "")) for k in ("title", "notes", "chat")])
+        # The Typist logs in its own clock; key changes are judged over the whole run window.
+        keys = [(float(r["t"]), bool(r["value"])) for r in rows if r.get("event") == "key"]
+        first_ready = next((float(r["t"]) for r in rows if r.get("event") == "ready"), 0.0)
+        key_verdict = oracles.key_window(keys, first_ready + 0.5, float("inf"), borrow_ms=150)
+        return verdict.violations + key_verdict.violations
+
+
+def summarize(results: list[C.Result]) -> str:
+    lines = ["| case | engine | pass | median ms | look ms | outcomes | violations |", "|---|---|---|---|---|---|---|"]
+    keys = sorted({(r.case, r.engine) for r in results}, key=lambda k: (list(C.CASES).index(k[0]), k[1]))
+    for case, engine in keys:
+        rows = [r for r in results if r.case == case and r.engine == engine]
+        passed = sum(r.status == "pass" for r in rows)
+        ms = [r.ms for r in rows if r.ms is not None]
+        look = [r.look_ms for r in rows if r.look_ms is not None]
+        outcomes = ",".join(sorted({str(r.outcome or r.code or r.status) for r in rows}))
+        violations = "; ".join(sorted({v for r in rows for v in r.violations}))[:160]
+        lines.append(f"| {case} | {engine} | {passed}/{len(rows)} | {statistics.median(ms) if ms else '–'} | "
+                     f"{statistics.median(look) if look else '–'} | {outcomes} | {violations or '–'} |")
+    return "\n".join(lines)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--hands-app", required=True, type=Path)
+    parser.add_argument("--engines", default="agent-desktop,cua")
+    parser.add_argument("--cases", default=",".join(C.CASES))
+    parser.add_argument("--runs", type=int, default=1)
+    parser.add_argument("--typist", action="store_true")
+    parser.add_argument("--out", type=Path, default=None)
+    args = parser.parse_args()
+
+    work = Path(tempfile.mkdtemp(prefix="hands-harness-"))
+    out = args.out or work
+    out.mkdir(parents=True, exist_ok=True)
+    fixture_bin, typist_bin = build(work)
+    subprocess.run(["pkill", "-x", FIXTURE_NAME], capture_output=True)
+    fixture_proc = launch(fixture_bin, {"HARNESS_LOG": str(work / "events.log"), "HARNESS_STATE": str(work / "state.json"),
+                                        "HARNESS_CMD": str(work / "cmd")})
+    typist_proc = None
+    fixture = C.Fixture(work)
+    try:
+        if not fixture.wait(lambda s: "title" in s, timeout=10):
+            sys.exit("the fixture did not start")
+        hands = start_hands(args.hands_app)
+        typist = None
+        if args.typist:
+            typist_proc = launch(typist_bin, {"TYPIST_LOG": str(work / "typist.log")})
+            time.sleep(1.5)
+            typist = TypistDriver(work / "typist.log", fixture)
+        ignore = engine_pids()
+        results: list[C.Result] = []
+        for engine_name in [e.strip() for e in args.engines.split(",") if e.strip()]:
+            engine = AgentDesktop(hands, FIXTURE_NAME) if engine_name == "agent-desktop" else Cua(hands, FIXTURE_NAME)
+            for run in range(args.runs):
+                for name in [c.strip() for c in args.cases.split(",") if c.strip()]:
+                    ctx = C.Ctx(engine=engine, fixture=fixture, observe=lambda: Observer(ignore | engine_pids()),
+                                typist=typist)
+                    try:
+                        result = C.CASES[name](ctx)
+                    except Exception as exc:  # noqa: BLE001 — one broken case must not end the run
+                        result = C.Result(name, engine.name, "error", note=f"{type(exc).__name__}: {exc}")
+                    results.append(result)
+                    print(json.dumps({"run": run, **result.to_dict()}, ensure_ascii=False), flush=True)
+        (out / "results.json").write_text(json.dumps([r.to_dict() for r in results], ensure_ascii=False, indent=1))
+        summary = summarize(results)
+        (out / "summary.md").write_text(summary + "\n")
+        print(summary)
+        print(f"results: {out}")
+    finally:
+        fixture_proc.terminate()
+        if typist_proc:
+            typist_proc.terminate()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
