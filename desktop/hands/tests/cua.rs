@@ -53,6 +53,14 @@ for line in sys.stdin:
     if op != "call":
         send(rid, ok=False, error="unknown private worker operation: " + op); continue
     name, args = request["name"], request.get("arguments") or {}
+    if args.get("session") == "expired":
+        refusal = {"code": "session_ended", "message": "session 'expired' has ended"}
+        send(rid, result={"content": [{"type": "text", "text": refusal["message"]}], "isError": True,
+                          "structuredContent": {"refusal": refusal, "status": "refused"}}); continue
+    if args.get("text") == "refuse-me":
+        refusal = {"code": "element_disabled", "message": "the element is disabled"}
+        send(rid, result={"content": [{"type": "text", "text": refusal["message"]}], "isError": True,
+                          "structuredContent": {"refusal": refusal, "status": "refused"}}); continue
     if args.get("text") == "crash":
         sys.exit(3)
     if args.get("text") == "hang":
@@ -512,4 +520,40 @@ fn a_request_id_is_answered_once_for_cua_too() {
     assert_eq!(first["ok"], true);
     assert_eq!(again["result"], first["result"]);
     assert_eq!(hands.called("click"), 1, "the same id did not click twice");
+}
+
+#[test]
+fn an_ended_session_is_renewed_once_and_a_refusal_is_said() {
+    let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    let hands = plain("sess");
+    // The label's session has ended: Hands starts a fresh label and the call succeeds.
+    let apps = hands.ask(
+        "cua",
+        json!({"tool": "list_apps", "args": {}, "session": "expired"}),
+    );
+    assert_eq!(apps["ok"], true, "{apps}");
+    assert!(!apps["result"]["structuredContent"]["apps"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    let sessions: Vec<String> = hands
+        .calls()
+        .iter()
+        .filter(|r| r["name"] == "list_apps")
+        .map(|r| r["arguments"]["session"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(sessions, ["expired", "expired-1"]);
+    // Cua's own "no" is a refusal, never an ok with an empty result.
+    hands.cua("get_window_state", json!({"pid": 100, "window_id": 1}));
+    let refused = hands.cua(
+        "type_text",
+        json!({"pid": 100, "element_token": "s00000001:1", "text": "refuse-me"}),
+    );
+    assert_eq!(refused["ok"], false, "{refused}");
+    assert_eq!(code(&refused), "engine_refused");
+    assert!(refused["refused"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("element_disabled"));
+    assert_eq!(refused["outcome"], "refused");
 }

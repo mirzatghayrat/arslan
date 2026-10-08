@@ -78,6 +78,10 @@ final class Fixture: NSObject, NSApplicationDelegate, NSTextFieldDelegate, NSTex
         window = NSWindow(contentRect: NSRect(x: 240, y: 160, width: 460, height: 560),
                           styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
         window.title = "Harness Fixture"
+        // On every Space, as the contract fixture is: a case must not fail because the window
+        // opened on another desktop (seen: arc found no window "on this desktop"). Other
+        // Spaces get their own case.
+        window.collectionBehavior = [.canJoinAllSpaces]
         let stack = NSStackView()
         stack.orientation = .vertical
         stack.alignment = .leading
