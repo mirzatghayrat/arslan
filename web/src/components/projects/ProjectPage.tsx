@@ -9,6 +9,7 @@ import { ProjectEditor } from "../companion/ProjectsSection";
 import { companionError } from "../companion/errors";
 import LevelMap from "./LevelMap";
 import PlanProposalCard from "./PlanProposalCard";
+import RetroCard from "./RetroCard";
 import { templateOf } from "./NewProject";
 import PlanEditor, { planIsValid } from "./PlanEditor";
 import { daysSince, evidenceText } from "./projectUi";
@@ -108,6 +109,7 @@ export default function ProjectPage({ projectId, onBack, onStart, onPlan, onChan
       {tab === "levels" && levels.length > 0 && <>
         {plan.plan_proposal && <PlanProposalCard key={plan.plan_proposal.id} projectId={projectId} proposal={plan.plan_proposal}
           onDone={() => { void load(); onChanged(); }} />}
+        {plan.stage === "done" && <RetroCard projectId={projectId} />}
         <LevelMap levels={levels} />
         {plan.stage === "idea" && <Notice tone="info" title={t("projectsUI.notStarted")}
           action={<Button size="sm" disabled={busy} onClick={() => void act(() => projectsApi.stage(projectId, { stage: "active" }))}

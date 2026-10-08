@@ -27,7 +27,7 @@ FILES_LIMIT = 200
 
 def _error(exc: PlanError) -> HTTPException:
     status = 404 if exc.code.endswith("not_found") else 409 if "conflict" in exc.code or exc.code in {
-        "proposal_decided", "only_latest_advance", "no_current_level", "no_levels"} else 422
+        "proposal_decided", "only_latest_advance", "no_current_level", "no_levels", "not_done"} else 422
     return HTTPException(status, detail={"code": exc.code})
 
 
@@ -339,3 +339,37 @@ async def auto_advance(body: AutoAdvanceIn, repo=Depends(_repository, scope="fun
             await settings_service._set_raw(db, project_plan.KEPT_KEY, miss["id"])
     await db.flush()
     return await project_habits.sheet(db, USER.owner_id)
+
+
+# ── the retro at Done (§10) ──────────────────────────────────────────────────
+
+@router.get("/projects/{project_id}/retro")
+async def get_retro(project_id: str, repo=Depends(_repository, scope="function")) -> dict | None:
+    from server.services import project_retro
+    project = await _project(repo, project_id)
+    return project_retro.view(await project_retro.latest(repo.db, project.id))
+
+
+class RetroIn(BaseModel):
+    lang: Annotated[str, Field(max_length=10)] | None = None
+
+
+@router.post("/projects/{project_id}/retro")
+async def write_retro(project_id: str, body: RetroIn, repo=Depends(_repository, scope="function")) -> dict:
+    """Only when the user asks (one model call on their model); skippable."""
+    from server.services import project_retro
+    project = await _project(repo, project_id)
+    try:
+        return project_retro.view(await project_retro.write(repo.db, project, body.lang))
+    except PlanError as exc:
+        raise _error(exc) from exc
+
+
+@router.post("/projects/{project_id}/retro/rules/{index}/keep")
+async def keep_retro_rule(project_id: str, index: int, repo=Depends(_repository, scope="function")) -> dict:
+    from server.services import project_retro
+    project = await _project(repo, project_id)
+    try:
+        return project_retro.view(await project_retro.keep_rule(repo.db, project, index))
+    except PlanError as exc:
+        raise _error(exc) from exc

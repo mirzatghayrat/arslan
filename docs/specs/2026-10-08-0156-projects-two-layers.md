@@ -246,3 +246,34 @@ sharing projects.
 
 One call per new project draft, one per re-plan, one per retro; the `project.progress` judgment per turn
 in a project conversation, on the router model under the existing judgment daily cap.
+
+## 17. As built: where the implementation differs (flagged for review, not waiting)
+
+1. **§3.2 model draft is on a button** ("让 Arslan 细化"), not automatic after the template draft:
+   a paid call only when asked. Failure keeps the draft (`refine_failed`).
+2. **§7 a changed plan is a non-blocking card** answered through the projects API
+   (`/plan-proposals/{id}/accept|decline`), not an entry in the approvals registry: the turn goes on;
+   a newer proposal makes the older one stale.
+3. **§4.3 two decision points, not one**: the judge answers yes/no only, so `project.progress` is a
+   gate asked once per user turn ("does this message say any of it is done?"), and only on its yes
+   `project.progress.item` is asked per open checkpoint (≤ 5) and for the condition. Cost: 1 call on
+   most turns, up to 7 on a "done" message, all under the existing judgment daily cap. Background-job
+   turns are not asked (a job's goal is not the user speaking).
+4. **§4.4 the link is conversation ↔ checkpoint** (`POST /projects/{id}/handoff`, event `handoff`),
+   not a `project_checkpoint_id` on the job: any background job in that conversation that ends `done`
+   ticks it.
+5. **§4.2 files tick only the current level's checkpoints**; a later level's files are not evidence
+   until that level is current. File changes also count as activity (§9) and start a planned Idea.
+6. **§6 (a)** counts a level as "added" only in a plan built on the type's template (≥ 2 template
+   levels kept) and never a level a rule put there; the rule is named as first written.
+   **§6 (b)** "twice" = in two different projects of the type.
+7. **§6 rules are not given to re-plans (§7)** — only to drafting (§3). The project card goes to the
+   model on every turn in the conversation, and §6 says rules leave the Mac only inside a drafting
+   request the user started. Re-plans therefore do not use rules yet.
+8. **§9 "twice the usual" has a floor of 3 days**, so a fast usual never marks a short gap.
+9. **§5 the ask's answer is a setting** (`projects_auto_asked`), not an `auto_ask` event (events
+   belong to one project; the ask is global). Undoing twice in a row offers to turn it off; 留着
+   holds until a new miss. The decline's optional line can also be added right after declining
+   (board footer, `/proposal-notes/{id}`).
+10. **§10 the retro is offered at Done and written on request** (one call), not automatically;
+    skippable; without a model it is the counted facts alone. Asking again replaces it.

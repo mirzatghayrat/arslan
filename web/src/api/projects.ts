@@ -102,9 +102,20 @@ export interface Board {
 }
 export interface PlanRule {
   id: string; template: ProjectTemplate | null; text: string; enabled: boolean; sources: string[]; created_at: string;
-  value: { code?: "add_level" | "cut_scope" | "note"; name?: string };
+  value: { code?: "add_level" | "cut_scope" | "note" | "retro"; name?: string };
 }
 export interface PaceRow { template: ProjectTemplate; band: Band; levels: number; median_days: number | null; override_days: number | null }
+export interface Retro {
+  id: string;
+  summary: string | null;
+  source: "model" | "facts";
+  rules: { text: string; kept: boolean }[];
+  facts: {
+    total_days: number | null; plan_changes: number; cut_checkpoints: number; slower: string[];
+    levels: { level: string; band: Band; days: number | null; usual: number | null; slower: boolean }[];
+  };
+  created_at: string;
+}
 export interface Habits { shadow: Shadow; rules: PlanRule[]; pace: PaceRow[]; cleared_levels: number; pace_min_levels: number }
 export interface ProjectEvent {
   id: string;
@@ -141,6 +152,11 @@ export const projectsApi = {
   note: (projectId: string, proposalId: string, note: string) =>
     request<Plan>(`/projects/${id(projectId)}/proposal-notes/${id(proposalId)}`, json("POST", { note })),
   habits: () => request<Habits>("/project-habits"),
+  /** §10: the retro of a Done project (null until written); writing it is one model call, on request. */
+  retro: (projectId: string) => request<Retro | null>(`/projects/${id(projectId)}/retro`),
+  writeRetro: (projectId: string, lang: string) => request<Retro>(`/projects/${id(projectId)}/retro`, json("POST", { lang })),
+  keepRetroRule: (projectId: string, index: number) =>
+    request<Retro>(`/projects/${id(projectId)}/retro/rules/${index}/keep`, { method: "POST" }),
   setRule: (ruleId: string, enabled: boolean) => request<Habits>(`/project-habits/rules/${id(ruleId)}`, json("PUT", { enabled })),
   setPace: (template: ProjectTemplate, band: Band, days: number | null) =>
     request<Habits>("/project-habits/pace", json("PUT", { template, band, days })),
