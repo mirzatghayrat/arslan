@@ -132,7 +132,8 @@ class Cua:
             if app is None:
                 time.sleep(0.3)
         if app is None:
-            raise RuntimeError(f"{self.app} is not in Cua's app list")
+            names = sorted({str(a.get("name")) for a in apps if a.get("running")})
+            raise RuntimeError(f"{self.app} is not in Cua's app list ({len(apps)} apps; running: {names[:30]})")
         self.pid = int(app["pid"])
         windows = ((self._call("list_windows", {"pid": self.pid}).get("result") or {})
                    .get("structuredContent") or {}).get("windows") or []

@@ -87,16 +87,21 @@ def engine_pids() -> set[int]:
 
 class TypistDriver:
     """Types into the Typist window as a user would (HID-level key events) while an action
-    runs, and judges O2 and O5 from the Typist's own log."""
+    runs, and judges that one action: O2 from the Typist's own key-window log within the
+    action's time, O5 from the text it gained during the action (exactly what was typed then,
+    and none of it in the fixture's fields)."""
 
     TEXT = "the quick brown fox jumps over the lazy dog "
 
-    def __init__(self, log: Path, fixture: C.Fixture):
-        self.log, self.fixture = log, fixture
-        self.expected = ""
+    def __init__(self, log: Path, fixture: C.Fixture, pid: int):
+        self.log, self.fixture, self.pid = log, fixture, pid
+        self._skipped = False
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._i = 0
+        self._typed = ""
+        self._t0 = 0.0
+        self._text0 = ""
 
     def _type(self) -> None:
         import Quartz
@@ -107,13 +112,8 @@ class TypistDriver:
                 event = Quartz.CGEventCreateKeyboardEvent(None, 0, down)
                 Quartz.CGEventKeyboardSetUnicodeString(event, 1, ch)
                 Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
-            self.expected += ch
+            self._typed += ch
             self._stop.wait(0.125)
-
-    def start(self) -> None:
-        self._stop.clear()
-        self._thread = threading.Thread(target=self._type, daemon=True)
-        self._thread.start()
 
     def _rows(self) -> list[dict]:
         try:
@@ -121,21 +121,50 @@ class TypistDriver:
         except OSError:
             return []
 
-    def stop_and_judge(self, start: float, end: float) -> list[str]:
+    def _text(self) -> str:
+        texts = [r["value"] for r in self._rows() if r.get("event") == "text"]
+        return texts[-1] if texts else ""
+
+    def _in_front(self) -> bool:
+        from scripts.hands_harness.observer import _front_pid
+        return _front_pid() == self.pid
+
+    def start(self) -> None:
+        """Type only into the Typist: if it is not in front, bring it back first; if it still
+        is not, type nothing at all (never into whatever app is in front instead)."""
+        time.sleep(0.3)                                   # let the last action's keys land
+        if not self._in_front():
+            import AppKit
+            app = AppKit.NSRunningApplication.runningApplicationWithProcessIdentifier_(self.pid)
+            if app is not None:
+                app.activateWithOptions_(0)
+            time.sleep(0.5)
+        self._skipped = not self._in_front()
+        if self._skipped:
+            return
+        self._text0 = self._text()
+        self._typed = ""
+        self._t0 = time.time()
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._type, daemon=True)
+        self._thread.start()
+
+    def stop_and_judge(self, _start: float, _end: float) -> list[str]:
+        if self._skipped:
+            return ["typist not in front before the action: nothing typed"]
         time.sleep(0.4)                                   # keep typing a little after the action
         self._stop.set()
         if self._thread:
             self._thread.join()
-        time.sleep(0.4)
-        rows = self._rows()
-        texts = [r["value"] for r in rows if r.get("event") == "text"]
+        t1 = time.time()
+        time.sleep(0.5)
+        text = self._text()
+        gained = text[len(self._text0):] if text.startswith(self._text0) else text
         state = self.fixture.state()
-        verdict = oracles.typed_exactly(self.expected, texts[-1] if texts else "",
+        verdict = oracles.typed_exactly(self._typed, gained,
                                         [str(state.get(k, "")) for k in ("title", "notes", "chat")])
-        # The Typist logs in its own clock; key changes are judged over the whole run window.
-        keys = [(float(r["t"]), bool(r["value"])) for r in rows if r.get("event") == "key"]
-        first_ready = next((float(r["t"]) for r in rows if r.get("event") == "ready"), 0.0)
-        key_verdict = oracles.key_window(keys, first_ready + 0.5, float("inf"), borrow_ms=150)
+        keys = [(float(r["t"]), bool(r["value"])) for r in self._rows() if r.get("event") == "key"]
+        key_verdict = oracles.key_window(keys, self._t0, t1, borrow_ms=150)
         return verdict.violations + key_verdict.violations
 
 
@@ -182,7 +211,7 @@ def main() -> int:
         if args.typist:
             typist_proc = launch(typist_bin, {"TYPIST_LOG": str(work / "typist.log")})
             time.sleep(1.5)
-            typist = TypistDriver(work / "typist.log", fixture)
+            typist = TypistDriver(work / "typist.log", fixture, typist_proc.pid)
         ignore = engine_pids()
         results: list[C.Result] = []
         for engine_name in [e.strip() for e in args.engines.split(",") if e.strip()]:

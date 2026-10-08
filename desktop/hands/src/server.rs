@@ -68,6 +68,9 @@ struct State {
     cua: Option<Cua>,
     /// Element tokens of the window states relayed from Cua Driver (cua_policy.rs).
     tokens: Mutex<cua_policy::Tokens>,
+    /// Cua sessions end (1 h at most, set at initialize): a label whose session ended is
+    /// replaced by `label-N`, counted here.
+    cua_sessions: Mutex<HashMap<String, u32>>,
     /// Cua Driver's running apps, briefly, to resolve a pid to an app.
     cua_apps: Mutex<Option<(Instant, Vec<App>)>>,
 }
@@ -298,6 +301,7 @@ pub fn serve(
             })
         }),
         tokens: Mutex::new(cua_policy::Tokens::default()),
+        cua_sessions: Mutex::new(HashMap::new()),
         cua_apps: Mutex::new(None),
     });
     // The token is published only now that the socket listens, mode 0600.
@@ -939,6 +943,15 @@ fn cua_deadline(kind: Kind) -> Duration {
     }
 }
 
+/// The code of a refusal Cua put in a result (`structuredContent.refusal.code` or `error.code`).
+fn cua_refusal_code(result: &Value) -> Option<String> {
+    result
+        .pointer("/structuredContent/refusal/code")
+        .or_else(|| result.pointer("/structuredContent/error/code"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
 /// A refusal that also says whether what was asked may have happened.
 fn refused_after(r: Refusal, completion: Completion) -> Value {
     json!({"ok": false, "refused": {"code": r.code, "message": r.message},
@@ -1144,16 +1157,45 @@ fn cua_op(ctx: &Ctx, args: &Value) -> Result<Value, Refusal> {
     } else {
         None
     };
-    let answer = match cua.call(tool, Value::Object(call), cua_deadline(kind)) {
-        Ok(answer) => answer,
-        Err(failed) => {
-            let refusal = if runner::generation() != ctx.generation {
-                refuse("stopped_by_user", "stopped")
-            } else {
-                failed.refusal
-            };
-            return Ok(refused_after(refusal, failed.completion));
+    let mut call = call;
+    let mut renewed = false;
+    let answer = loop {
+        let round = *ctx
+            .state
+            .cua_sessions
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .get(&session)
+            .unwrap_or(&0);
+        let label = if round == 0 {
+            session.clone()
+        } else {
+            format!("{session}-{round}")
+        };
+        call.insert("session".into(), Value::String(label));
+        let answer = match cua.call(tool, Value::Object(call.clone()), cua_deadline(kind)) {
+            Ok(answer) => answer,
+            Err(failed) => {
+                let refusal = if runner::generation() != ctx.generation {
+                    refuse("stopped_by_user", "stopped")
+                } else {
+                    failed.refusal
+                };
+                return Ok(refused_after(refusal, failed.completion));
+            }
+        };
+        // A session that ended refuses before doing anything: start a fresh label, once.
+        if !renewed && cua_refusal_code(&answer.result).as_deref() == Some("session_ended") {
+            renewed = true;
+            *ctx.state
+                .cua_sessions
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .entry(session.clone())
+                .or_insert(0) += 1;
+            continue;
         }
+        break answer;
     };
     let focus_restored = match (kind, pid) {
         (Kind::Act, Some(pid)) => front_back(front_before, pid),
@@ -1176,6 +1218,33 @@ fn cua_op(ctx: &Ctx, args: &Value) -> Result<Value, Refusal> {
             ),
             Completion::Completed,
         ));
+    }
+    // Cua's own "no" (isError): said as a refusal, never relayed as a success — an empty app
+    // list in place of "session ended" hid every app from the harness (2026-10-09).
+    if answer.result.get("isError").and_then(Value::as_bool) == Some(true) {
+        let code = cua_refusal_code(&answer.result).unwrap_or_else(|| "error".into());
+        let text = answer
+            .result
+            .pointer("/content/0/text")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .chars()
+            .take(500)
+            .collect::<String>();
+        let mut refused = refused_after(
+            refuse("engine_refused", format!("{code}: {text}")),
+            Completion::Completed,
+        );
+        if kind == Kind::Act {
+            // Cua refused it: nothing was delivered, unless its result says otherwise.
+            let said = crate::outcome::from_cua(&answer.result);
+            refused["outcome"] = json!(if said == "sent_unconfirmed" {
+                "refused"
+            } else {
+                said
+            });
+        }
+        return Ok(refused);
     }
     let result = match tool {
         "list_apps" => cua_filtered_apps(&answer.result, &never),
