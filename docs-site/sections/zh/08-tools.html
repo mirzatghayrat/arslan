@@ -11,14 +11,15 @@
 <div class="flow"><div class="flow-step"><b>发现能力</b><span>内建注册表、已配置 MCP、Skill 索引</span></div><div class="flow-step"><b>筛选与提供</b><span>根据上下文、配置与权限提供本轮 schema</span></div><div class="flow-step"><b>解析请求</b><span>校验工具名、JSON 参数和完整性</span></div><div class="flow-step"><b>执行与回流</b><span>实际授权后调用执行器，记录结果和失败</span></div></div>
 <p>内建工具由注册执行器承接，带 <code>mcp_</code> 前缀的调用进入 MCP 代理。工具结果回到统一循环，模型可以据此补充参数、选择替代方法或结束任务。即使模型已经读过一份 Skill，文件、命令和应用操作仍要通过各自权限边界。</p>
 <p>Skill 采用按需读取：索引告诉模型有什么方法，<code>read_skill</code> 再从已注册的 SkillPack 或允许的参考路径取出正文。这样可以让方法库增长，同时控制每轮上下文体积。历史专家迁移为 Skill，也遵循“保留方法与资料，简化执行入口”的方向。</p>
+<p>自 0.1.55 起，“能力”页把 Arslan 能做的事列成开关：每一项是开、关、差一步，或在此处不可用，并写明原因。关闭就意味着根本不提供给模型，<code>read_skill</code> 也会拒绝读取已关闭的 Skill。各行状态读自决定每轮可用工具的同一组闸门，因此不会出现显示“开”而工具其实缺失的情况。新增的 <code>whats_new</code> 工具用随应用发布的版本说明回答“你是哪个版本、改了什么”，而不是凭模型记忆。</p>
 <h3>扩展服务是新的信任边界</h3>
 <p>本地 stdio MCP 通常意味着启动一个独立进程，HTTP MCP 则可能连接远端服务。Arslan 需要分别管理连接、主助手是否可用、工具是否暴露，以及凭证怎样保存和展示。插件清单中声明的 HTTP MCP 服务 URL 必须使用 HTTPS；secret 槽位声明参数形状，不在清单中内嵌真实凭证。已配置环境值会加密保存，读取显示时掩码处理。</p>
 <p>这些约束降低了意外暴露和误执行的机会，但实际 MCP 服务仍可能访问它获得的资源。工具来源、所需权限、发送到远端的数据和操作副作用，都属于扩展能力需要解释的部分。</p>
 <h3>并行研究为何仍然存在</h3>
-<p>统一 Agent 循环保留了受限的临时只读 workers。v0.1.54 中，一批最多 4 项，最多同时运行 2 个；工具限定为搜索与网页提取，不写入文件和个人记忆，也不能递归创建更多 workers。主助手负责检查并综合它们的结果。</p>
+<p>统一 Agent 循环保留了受限的临时只读 workers。v0.1.55 中，一批最多 4 项，最多同时运行 2 个；工具限定为搜索与网页提取，不写入文件和个人记忆，也不能递归创建更多 workers。主助手负责检查并综合它们的结果。</p>
 <p>这类委派适合拆开互相独立的资料查询。它与早期永久专家分身的生命周期不同：没有要求用户先挑选或管理一个专家团队，也没有把每条消息强制路由给另一位“专家”。是否使用并行，仍应取决于任务是否能有效拆分以及额外调用成本。</p>
 <h3>后台、定时与 heartbeat</h3>
 <p>后台 job 将耗时执行与当前聊天分开，复用同一套模型、工具和验收逻辑。定时任务把“何时开始”持久化；heartbeat 是定期检查清单的一种使用方式，默认关闭，负责检查与提出建议。定时触发不会把建议变成已批准的写入或命令。</p>
 <p>当前调度由本地服务实现，包含重叠跳过、失败暂停和重启清理等处理。错过的周期不会逐一补跑；同一个任务上一轮未完成时，不叠加启动下一轮。这些行为适合个人桌面应用，也意味着它的运行条件与持续在线的服务器不同。</p>
-<p class="evidence">实现：{{source:server/registry/executors.py|工具注册与 read_skill}}；{{source:server/services/plugin_manifest.py|插件清单契约}}；{{source:server/services/mcp_service.py|MCP 连接与配置}}；{{source:server/services/task_workers.py|只读 workers}}；{{source:server/services/background_jobs.py|后台任务}}；{{source:server/services/scheduler.py|本地调度}}；{{source:server/services/heartbeat.py|heartbeat}}。</p>
+<p class="evidence">实现：{{source:server/registry/executors.py|工具注册与 read_skill}}；{{source:server/services/capability_list.py|能力开关}}；{{source:server/services/plugin_manifest.py|插件清单契约}}；{{source:server/services/mcp_service.py|MCP 连接与配置}}；{{source:server/services/task_workers.py|只读 workers}}；{{source:server/services/background_jobs.py|后台任务}}；{{source:server/services/scheduler.py|本地调度}}；{{source:server/services/heartbeat.py|heartbeat}}。</p>
 </section>
