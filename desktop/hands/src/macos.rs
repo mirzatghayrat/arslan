@@ -76,6 +76,19 @@ extern "C" {
     static kAXTrustedCheckOptionPrompt: CFTypeRef;
     fn AXIsProcessTrusted() -> u8;
     fn AXIsProcessTrustedWithOptions(options: CFTypeRef) -> u8;
+    fn AXUIElementCreateApplication(pid: i32) -> CFTypeRef;
+    fn AXUIElementCopyAttributeValue(
+        element: CFTypeRef,
+        attribute: CFTypeRef,
+        value: *mut CFTypeRef,
+    ) -> i32;
+    fn AXUIElementCopyElementAtPosition(
+        application: CFTypeRef,
+        x: f32,
+        y: f32,
+        element: *mut CFTypeRef,
+    ) -> i32;
+    fn AXUIElementGetPid(element: CFTypeRef, pid: *mut i32) -> i32;
 }
 
 /// Releases a CF object when dropped.
@@ -131,9 +144,78 @@ fn dictionary(key: CFTypeRef, value: CFTypeRef) -> Owned {
     })
 }
 
+fn ax_text(element: CFTypeRef, attribute: &str) -> Option<String> {
+    let name = cf_string(attribute);
+    let mut value: CFTypeRef = std::ptr::null();
+    let rc = unsafe { AXUIElementCopyAttributeValue(element, name.0, &mut value) };
+    let value = Owned(value);
+    (rc == 0).then(|| rust_string(value.0)).flatten()
+}
+
+/// A password field by what macOS itself says of it: the role or subrole
+/// `AXSecureTextField` (agent-desktop and Cua Driver both type into them).
+fn secure(element: CFTypeRef) -> bool {
+    ["AXRole", "AXSubrole"]
+        .iter()
+        .any(|a| ax_text(element, a).is_some_and(|v| v.contains("SecureTextField")))
+}
+
+/// Whether the element of app `pid` at screen point (x, y) is a password field.
+/// None when there is no element of that app there to ask (covered, gone).
+pub fn secure_at(pid: i32, x: f64, y: f64) -> Option<bool> {
+    let app = Owned(unsafe { AXUIElementCreateApplication(pid) });
+    if app.0.is_null() {
+        return None;
+    }
+    let mut hit: CFTypeRef = std::ptr::null();
+    let rc = unsafe { AXUIElementCopyElementAtPosition(app.0, x as f32, y as f32, &mut hit) };
+    let hit = Owned(hit);
+    if rc != 0 || hit.0.is_null() {
+        return None;
+    }
+    let mut owner = 0;
+    if unsafe { AXUIElementGetPid(hit.0, &mut owner) } != 0 || owner != pid {
+        return None;
+    }
+    Some(secure(hit.0))
+}
+
+/// Whether app `pid`'s focused element is a password field. None when it has none.
+pub fn focused_secure(pid: i32) -> Option<bool> {
+    let app = Owned(unsafe { AXUIElementCreateApplication(pid) });
+    if app.0.is_null() {
+        return None;
+    }
+    let name = cf_string("AXFocusedUIElement");
+    let mut focused: CFTypeRef = std::ptr::null();
+    let rc = unsafe { AXUIElementCopyAttributeValue(app.0, name.0, &mut focused) };
+    let focused = Owned(focused);
+    if rc != 0 || focused.0.is_null() {
+        return None;
+    }
+    Some(secure(focused.0))
+}
+
 /// Hands holds Accessibility (as its own responsible process).
 pub fn accessibility_trusted() -> bool {
     unsafe { AXIsProcessTrusted() != 0 }
+}
+
+#[link(name = "CoreGraphics", kind = "framework")]
+extern "C" {
+    fn CGPreflightScreenCaptureAccess() -> u8;
+    fn CGRequestScreenCaptureAccess() -> u8;
+}
+
+/// Hands holds Screen Recording (Cua Driver's window screenshots are Hands').
+pub fn screen_recording() -> bool {
+    unsafe { CGPreflightScreenCaptureAccess() != 0 }
+}
+
+/// Ask macOS to show its Screen Recording prompt for Hands (once; afterwards the
+/// user switches it on in System Settings, and macOS wants Hands relaunched).
+pub fn request_screen_recording() -> bool {
+    unsafe { CGRequestScreenCaptureAccess() != 0 }
 }
 
 /// Ask macOS to show its Accessibility prompt for Arslan Hands (D3: the user

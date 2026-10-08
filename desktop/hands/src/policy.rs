@@ -31,6 +31,18 @@ fn policy() -> &'static Policy {
     POLICY.get_or_init(|| serde_json::from_str(POLICY_JSON).expect("policy.json is valid"))
 }
 
+/// Words that mark a password field by its label (lower case), in the UI languages.
+pub const PASSWORD_WORDS: [&str; 8] = [
+    "password",
+    "passcode",
+    "passphrase",
+    "密码",
+    "口令",
+    "パスワード",
+    "contraseña",
+    "passwort",
+];
+
 /// What Hands may do in one app.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tier {

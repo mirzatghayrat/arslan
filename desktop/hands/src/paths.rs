@@ -14,6 +14,10 @@ pub const SOCKET: &str = "s.sock";
 pub const READY: &str = "ready.json";
 pub const LOCK: &str = "lock";
 pub const AGENT_DESKTOP_HOME: &str = "ad";
+/// Cua Driver's HOME (its config, ids and logs stay inside Hands' folder).
+pub const CUA_HOME: &str = "cua-home";
+/// Cua Driver's stderr.
+pub const CUA_LOG: &str = "cua.log";
 /// `sun_path` is 104 bytes on macOS, including the terminating NUL.
 pub const MAX_SOCKET_PATH: usize = 103;
 
@@ -62,6 +66,21 @@ pub fn ensure_private_dir(dir: &Path) -> Result<(), String> {
             .map_err(|e| format!("cannot chmod {}: {e}", dir.display()))?;
     }
     Ok(())
+}
+
+/// Hands' bundle id from its own Info.plist (`CFBundleIdentifier`); the release id
+/// when it cannot be read.
+pub fn own_bundle_id(contents: &Path) -> String {
+    let plist = fs::read_to_string(contents.join("Info.plist")).unwrap_or_default();
+    plist
+        .split("<key>CFBundleIdentifier</key>")
+        .nth(1)
+        .and_then(|rest| rest.split("<string>").nth(1))
+        .and_then(|rest| rest.split("</string>").next())
+        .map(str::trim)
+        .filter(|id| !id.is_empty() && id.len() <= 200)
+        .unwrap_or("com.arslan.desktop.hands")
+        .to_string()
 }
 
 pub fn socket_path_fits(path: &Path) -> bool {
