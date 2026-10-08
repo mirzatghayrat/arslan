@@ -39,7 +39,11 @@ ANSWERS = {
     "confirm_schedule": True, "cancel_schedule": False,
     "confirm_run_command": True, "cancel_run_command": False,
     "confirm_action": True, "cancel_action": False,   # 0.1.45 browser / Mac actions
+    "confirm_capability": True, "cancel_capability": False,   # 0.1.57 install and retry
 }
+#: Kinds approved only in the Arslan window that asked (never the Inbox, the phone or the
+#: island): the card may carry a key typed on it, and installing code wants the whole card.
+WINDOW_ONLY = {"propose_capability"}
 
 
 @dataclass
@@ -117,12 +121,31 @@ def answer(data: dict) -> bool:
     pending = _pending.get(call_id) if isinstance(call_id, str) else None
     if pending is None or kind not in ANSWERS or not _same_kind(kind, pending.frame["type"]):
         return False
+    by = data.get("source") if data.get("source") in SOURCES else "mac"
+    if ANSWERS[kind] and pending.frame["type"] in WINDOW_ONLY and by != "mac":
+        return True                         # swallowed: only the asking window approves this one
     if not pending.future.done():
-        pending.future.set_result({"approved": ANSWERS[kind], "remember": bool(data.get("remember")),
-                                   # The Bridge marks what the phone sends; the Inbox and the
-                                   # island mark theirs (0.1.55); anything else is a Mac window.
-                                   "by": data.get("source") if data.get("source") in SOURCES else "mac"})
+        decision = {"approved": ANSWERS[kind], "remember": bool(data.get("remember")),
+                    # The Bridge marks what the phone sends; the Inbox and the
+                    # island mark theirs (0.1.55); anything else is a Mac window.
+                    "by": by}
+        if pending.frame["type"] in WINDOW_ONLY:
+            decision["extras"] = _extras(pending.frame, data) if ANSWERS[kind] else {}
+        pending.future.set_result(decision)
     return True
+
+
+def _extras(frame: dict, data: dict) -> dict:
+    """What an approval may carry (0.1.57): values for the keys THIS card asked for, and the
+    folders it offered — a subset the user kept, never one it added. Anything else is dropped."""
+    if frame.get("type") != "propose_capability":
+        return {}
+    asked = {k.get("name") for k in frame.get("keys") or [] if isinstance(k, dict)}
+    keys = {name: value.strip()[:2000] for name, value in (data.get("keys") or {}).items()
+            if name in asked and isinstance(value, str) and value.strip()} if isinstance(data.get("keys"), dict) else {}
+    offered = list(frame.get("folders") or [])
+    kept = [f for f in data.get("folders") or [] if f in offered] if isinstance(data.get("folders"), list) else offered
+    return {"keys": keys, "folders": kept}
 
 
 def _same_kind(reply: str, card: str) -> bool:
@@ -192,6 +215,8 @@ def answer_by_id(call_id: str, approve: bool, *, source: str, remember: bool = F
     pending = _pending.get(call_id)
     if pending is None:
         return False
+    if approve and pending.frame.get("type") in WINDOW_ONLY:
+        raise OpenInArslan(call_id)
     if source == "island" and approve and not island_may_answer(pending.frame):
         # Enforced here, not only by hiding the buttons: the island page is a client.
         # Declining is always safe, so only an approval is refused.

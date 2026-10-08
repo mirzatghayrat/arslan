@@ -33,6 +33,8 @@ export interface AskCardProps {
   onAllow: () => void;
   onDecline: () => void;
   busy?: boolean;
+  /** Only the allow answer is not possible yet (e.g. a required key is empty); esc still declines. */
+  allowDisabled?: boolean;
   /** "See the whole context" (island, inbox → the conversation). */
   onOpenContext?: () => void;
   /** Extra actions beside the two answers (e.g. "run again outside the sandbox"). */
@@ -56,7 +58,7 @@ export interface AskCardProps {
 export function AskCard(p: AskCardProps) {
   const { t } = useTranslation();
   const top = useLayer(p.keys !== false);
-  useAnswerKeys(top && !p.busy, { onAllow: p.onAllow, onDecline: p.onDecline });
+  useAnswerKeys(top && !p.busy, { onAllow: () => { if (!p.allowDisabled) p.onAllow(); }, onDecline: p.onDecline });
   return (
     <section data-testid={p.testId ?? "ask-card"} role="alertdialog" aria-label={p.who} {...p.attrs}
       className={`flex w-full max-w-[460px] flex-col gap-3.5 rounded-2xl border border-border bg-surface px-5 pb-4 pt-[18px] text-foreground shadow-kit ${p.className ?? ""}`}>
@@ -103,7 +105,7 @@ export function AskCard(p: AskCardProps) {
         <Button tone="secondary" grow={1} kbd="esc" disabled={p.busy} onClick={p.onDecline} data-testid={p.declineTestId ?? "ask-decline"}>
           {p.declineLabel ?? t("kit.decline")}
         </Button>
-        <Button tone={p.destructive ? "destructive" : "primary"} grow={1.4} kbd="⌘⏎" disabled={p.busy}
+        <Button tone={p.destructive ? "destructive" : "primary"} grow={1.4} kbd="⌘⏎" disabled={p.busy || p.allowDisabled}
           onClick={p.onAllow} data-testid={p.allowTestId ?? "ask-allow"}>
           {p.allowLabel ?? t("kit.allow")}
         </Button>

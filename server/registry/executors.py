@@ -794,6 +794,9 @@ class ReadSkillExecutor:
         if row.enabled is False:
             # 0.1.55 §14: switched off on the Capabilities page — off means not used.
             return {"ok": False, "external": False, "error": f"skill switched off by the user: {skey}"}
+        # 0.1.57 decision 5: a skill imported from outside is read like a web page — wrapped as
+        # untrusted, and the turn counts as having read outside content. Arslan's own are not.
+        outside = row.category == "imported"
         body = row.body.strip()
         section = (args.get("section") or "").strip()
         if section.startswith("references/"):
@@ -812,7 +815,7 @@ class ReadSkillExecutor:
                 text = target.read_text(encoding="utf-8")
             except UnicodeDecodeError:
                 text = target.read_text(encoding="utf-8", errors="replace")
-            return {"ok": True, "external": False, "body": text[:self._READ_SKILL_CAP],
+            return {"ok": True, "external": outside, "body": text[:self._READ_SKILL_CAP],
                     "summary": f"技能 {skey} · {section}"}
         if section:
             lines = body.splitlines()
@@ -832,15 +835,15 @@ class ReadSkillExecutor:
             if len(sect) > self._READ_SKILL_CAP:  # cap like the other branches
                 sect = (sect[:self._READ_SKILL_CAP].rsplit("\n", 1)[0]
                         + "\n\n[本节过长已截断,用更细 section 读取]")
-            return {"ok": True, "external": False, "body": sect,
+            return {"ok": True, "external": outside, "body": sect,
                     "summary": f"技能 {skey} · {section}"}
         if len(body) <= self._READ_SKILL_CAP:
-            return {"ok": True, "external": False, "body": body, "summary": f"技能 {skey}(全文)"}
+            return {"ok": True, "external": outside, "body": body, "summary": f"技能 {skey}(全文)"}
         toc = [ln.strip() for ln in body.splitlines() if _re.match(r"#{2,3}\s+\S", ln.strip())]
         head = body[:self._READ_SKILL_CAP].rsplit("\n", 1)[0]
         note = ("\n\n[正文过长, 以上为前半。请按章节读取: read_skill(key, section='## 标题')。目录:\n"
                 + "\n".join(f"- {t}" for t in toc) + "]")
-        return {"ok": True, "external": False, "body": head + note,
+        return {"ok": True, "external": outside, "body": head + note,
                 "summary": f"技能 {skey}(前半+目录)"}
 
 

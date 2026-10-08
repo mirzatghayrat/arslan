@@ -236,6 +236,19 @@ def propose_schedule(call_id: str, name: str, when: str) -> dict[str, Any]:
     return {"type": "propose_schedule", "call_id": call_id, "name": name, "when": when}
 
 
+def propose_capability(call_id: str, card: dict) -> dict[str, Any]:
+    """0.1.57 §3.1: Arslan wants to add a capability to retry a step. Emitting this installs
+    NOTHING; only `confirm_capability {call_id, keys?, folders?}` from THIS window does (the
+    Inbox, the phone and the island cannot approve it: the card may carry a key). `card` is
+    built by the server from the search result, never from the model's words."""
+    return {"type": "propose_capability", "call_id": call_id, **card}
+
+
+def capability_result(call_id: str, source_id: str | None, state: str, **detail: Any) -> dict[str, Any]:
+    """How the install the user approved ended: on (tested), failed (where), blocked (scan)."""
+    return {"type": "capability_result", "call_id": call_id, "source_id": source_id, "state": state, **detail}
+
+
 def propose_workspace_write(call_id: str, workspace: str, action: str, path: str) -> dict[str, Any]:
     """Arslan asks for write access to the workspace — ONCE per session, not per
     file. Emitting this frame writes NOTHING; only the user's

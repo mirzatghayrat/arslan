@@ -310,7 +310,8 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                                                               decision["by"]))
                 except Exception:  # noqa: BLE001 — the window may be gone; the decision stands
                     pass
-        return {"approved": bool(decision["approved"]), "remember": bool(decision["remember"])}
+        return {"approved": bool(decision["approved"]), "remember": bool(decision["remember"]),
+                "extras": decision.get("extras") or {}}
 
     async def confirm_workspace_write(action: str, path: str) -> bool:
         from server.services import settings_service
@@ -421,6 +422,19 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
     # This window's sandbox grant ("rest of this conversation") is its own to use; the tool
     # loop honours it only for a callback that says so (never a job's, never no callback).
     confirm_command.honours_session_grants = True
+
+    async def confirm_capability(card: dict) -> dict:
+        """0.1.57 §3.1: the install-and-retry card, in THIS window only (it may carry a key).
+        Returns {"approved", "keys", "folders"}; the tool loop installs on approval."""
+        call_id = uuid.uuid4().hex
+        decision = await _ask_everywhere(protocol.propose_capability(call_id, card), broadcast=False)
+        extras = decision.get("extras") or {}
+        return {"approved": decision["approved"], "call_id": call_id,
+                "keys": extras.get("keys") or {}, "folders": extras.get("folders") or []}
+
+    # Reaches the tool loop on the callback every turn already carries (as the session
+    # grants do), instead of a new parameter through four layers.
+    confirm_command.ask_capability = confirm_capability
 
     try:
         await ws.send_json({"type": "history", "messages": await _history(conversation_id)})

@@ -330,7 +330,8 @@ def _record_tool_result(tool_key, args, result, emit, tool_trace, assistant_cont
                       ok=bool(result.get("ok")), error=result.get("error"), ms=None)
     framed = raw_payload if result.get("external") is False else wrap_external(raw_payload)
     from server.orchestrator import untrusted as _untrusted
-    if result.get("ok") and _untrusted.counts_as_external(tool_key, args):
+    if result.get("ok") and (_untrusted.counts_as_external(tool_key, args)
+                             or (tool_key == "read_skill" and result.get("external") is True)):
         _untrusted.mark_external()           # 0.1.52: this turn read outside content
     # PB-3 degrade hint. Placement is deliberate: `framed` ends with DELIM_CLOSE, so the
     # hint sits AFTER the wrap_external data frame — it is OUR trusted framing (like the
@@ -1438,6 +1439,16 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                                                   "description": "The service, e.g. GitHub, Notion."}},
                           "required": ["name"]},
     "update_plan": _PLAN_PARAMS,
+    # 0.1.57 §3: propose one candidate find_capability returned (the card is the server's).
+    "propose_capability": {
+        "type": "object",
+        "properties": {
+            "candidate_id": {"type": "string", "description": "An id from find_capability's candidates."},
+            "why": {"type": "string", "description": "What failed and why this helps, in one sentence."},
+            "retry": {"type": "string", "description": "The step you will retry with it."},
+            "folders": {"type": "array", "maxItems": 3, "items": {"type": "string"},
+                        "description": "Folders it needs (e.g. the folder of the file you work on)."}},
+        "required": ["candidate_id", "why"]},
     # 0.1.57 §2: find a capability for what the turn could not do.
     "find_capability": {
         "type": "object",
@@ -2292,6 +2303,24 @@ async def _run_native(
                           "args_summary": json.dumps(args, ensure_ascii=False)[:200]})
                     outcome = await _propose_plan_change(args, emit)
                     _record_tool_result(name, args, outcome, emit, tool_trace, assistant_content, convo)
+                    continue
+                if name == "propose_capability" and name in wired_keys:
+                    # 0.1.57 §3: the install-and-retry card. A blocking ask in THIS window
+                    # (confirm_command carries it); a job or a turn nobody watches records
+                    # the find instead. On success the tools are read again, so the new
+                    # capability is callable for the retry in this same turn.
+                    emit({"type": "tool_call", "tool": name,
+                          "args_summary": json.dumps(args, ensure_ascii=False)[:200]})
+                    from server.services import background_jobs, capability_flow
+                    ask = None if background_jobs.inside_job() else getattr(confirm_command, "ask_capability", None)
+                    outcome = await capability_flow.propose(args, conversation_id=conversation_id, ask=ask, emit=emit)
+                    refresh = bool(outcome.pop("refresh", False))
+                    _record_tool_result(name, args, outcome, emit, tool_trace, assistant_content, convo)
+                    if refresh:
+                        wired = await resolve_tools()
+                        wired_keys = {t["key"] for t in wired}
+                        schemas = _native_tool_schemas(wired, allow_escalation=allow_escalation)
+                        params_by_key = {t["key"]: _tool_params(t) for t in wired}
                     continue
                 if name == "update_plan" and "update_plan" in wired_keys:
                     emit({"type": "tool_call", "tool": name,
