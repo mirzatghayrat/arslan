@@ -9,6 +9,10 @@
 <link rel="canonical" href="https://aralem.dev/arslan/docs/zh/">
 <link rel="alternate" hreflang="en" href="https://aralem.dev/arslan/docs/">
 <link rel="alternate" hreflang="zh-CN" href="https://aralem.dev/arslan/docs/zh/">
+<link rel="alternate" hreflang="de" href="https://aralem.dev/arslan/docs/de/">
+<link rel="alternate" hreflang="ja" href="https://aralem.dev/arslan/docs/ja/">
+<link rel="alternate" hreflang="es" href="https://aralem.dev/arslan/docs/es/">
+<link rel="alternate" hreflang="tr" href="https://aralem.dev/arslan/docs/tr/">
 <link rel="alternate" hreflang="x-default" href="https://aralem.dev/arslan/docs/">
 <link rel="icon" type="image/svg+xml" href="../../assets/v2/favicon.svg">
 <meta property="og:title" content="Arslan 技术文档">
@@ -29,7 +33,7 @@ background:rgba(5,5,6,.78);backdrop-filter:saturate(180%) blur(18px);-webkit-bac
 .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px;color:var(--tx)}.brand:hover{text-decoration:none}.brand svg{width:26px;height:26px}
 .brand small{font:500 12px var(--mono);color:var(--mu);border:1px solid var(--line2);border-radius:6px;padding:2px 7px;margin-left:4px}
 .nav .links{display:flex;gap:22px;font-size:14px}.nav .links a{color:var(--mu)}.nav .links a:hover{color:var(--tx);text-decoration:none}
-.nav .sp{flex:1}.lang{display:inline-flex;border:1px solid var(--line2);border-radius:999px;overflow:hidden;font:600 12px var(--mono)}.lang a{padding:5px 10px;color:var(--mu)}.lang a:hover{text-decoration:none;color:var(--tx)}.lang a.on{background:rgba(255,255,255,.1);color:var(--tx)}.nav .menu{display:none;white-space:nowrap;flex:none;background:transparent;border:1px solid var(--line2);color:var(--tx);border-radius:8px;padding:4px 10px;font:13px var(--ui)}
+.nav .sp{flex:1}.lang{position:relative;font:600 12px var(--mono)}.lang summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line2);border-radius:999px;padding:5px 12px;color:var(--tx);white-space:nowrap}.lang summary::-webkit-details-marker{display:none}.nav details.lang>summary::before{content:none;display:none}.lang summary::after{content:"";width:6px;height:6px;border:solid var(--mu);border-width:0 1.5px 1.5px 0;transform:rotate(45deg) translateY(-2px)}.lang[open] summary{background:rgba(255,255,255,.08)}.lang .langs{position:absolute;right:0;top:calc(100% + 8px);min-width:170px;display:grid;gap:2px;padding:6px;background:var(--s2);border:1px solid var(--line2);border-radius:12px;box-shadow:0 14px 40px rgba(0,0,0,.55);z-index:60}.lang .langs a{padding:8px 12px;border-radius:8px;color:var(--mu);font:14px var(--ui)}.lang .langs a:hover{text-decoration:none;color:var(--tx);background:rgba(255,255,255,.05)}.lang .langs a.on{color:var(--tx);background:rgba(255,255,255,.08)}.nav .menu{display:none;white-space:nowrap;flex:none;background:transparent;border:1px solid var(--line2);color:var(--tx);border-radius:8px;padding:4px 10px;font:13px var(--ui)}
 .btn{display:inline-flex;align-items:center;height:36px;padding:0 16px;border-radius:999px;font-weight:600;font-size:14px;background:#f5f6f8;color:#0b0c0e}.btn:hover{text-decoration:none}
 .progress{position:fixed;left:0;top:60px;height:2px;width:100%;transform-origin:left;transform:scaleX(0);background:linear-gradient(90deg,var(--work),var(--search),var(--done));z-index:51}
 .layout{display:grid;grid-template-columns:260px minmax(0,1fr) 220px;max-width:1440px;margin:0 auto;padding-top:60px}
@@ -126,7 +130,7 @@ body.menu-open .side{transform:none}main{padding:0 18px 80px}.hero{padding:40px 
   <a class="brand" href="../../"><svg viewBox="250 190 750 840" aria-hidden="true"><path fill="#fff" d="M286 517L283 287C283 231 320 208 358 237L494 332Q626 280 758 332L894 237C932 208 969 231 969 287L966 517C966 562 982 603 963 651C944 694 909 731 880 777L811 890C758 974 698 1006 626 1006C554 1006 494 974 441 890L372 777C343 731 308 694 289 651C270 603 286 562 286 517Z"/><path fill="#999" d="M310 496L307 286Q307 236 349 259L465 343Q376 404 310 496ZM942 496L945 286Q945 236 903 259L787 343Q876 404 942 496Z"/><path d="M386 518C478 501 558 551 552 650C449 654 387 604 386 518ZM866 518C774 501 694 551 700 650C803 654 865 604 866 518Z"/><g stroke="#000" stroke-width="14" stroke-linecap="round"><line x1="626" y1="696" x2="495" y2="813"/><line x1="626" y1="696" x2="757" y2="813"/><line x1="626" y1="696" x2="626" y2="893"/></g><circle cx="626" cy="696" r="29"/><circle cx="495" cy="813" r="25"/><circle cx="757" cy="813" r="25"/><circle cx="626" cy="893" r="30"/></svg>Arslan<small>Docs</small></a>
   <div class="links"><a href="../../#how">How it works</a><a href="../../#gate">The gate</a><a href="../../#hands">Hands</a><a href="../../#devices">Mac + iPhone</a><a href="../../#privacy">Privacy</a></div>
   <span class="sp"></span>
-  <span class="lang" aria-label="Language"><a href="../../docs/" hreflang="en" lang="en">EN</a><a href="../../docs/zh/" hreflang="zh-CN" class=on lang="zh-CN">中文</a></span>
+  <details class="lang"><summary aria-label="Language: 简体中文">中文</summary><div class="langs"><a href="../../docs/" hreflang="en" lang="en">English</a><a href="../../docs/zh/" hreflang="zh-CN" class=on aria-current=page lang="zh-CN">简体中文</a><a href="../../docs/de/" hreflang="de" lang="de">Deutsch</a><a href="../../docs/ja/" hreflang="ja" lang="ja">日本語</a><a href="../../docs/es/" hreflang="es" lang="es">Español</a><a href="../../docs/tr/" hreflang="tr" lang="tr">Türkçe</a></div></details>
   <div class="links"><a href="https://github.com/mirzatghayrat/arslan">GitHub</a></div>
   <a class="btn" href="https://github.com/mirzatghayrat/arslan/releases/latest/download/Arslan-macos-arm64.dmg">Download</a>
 </nav>
@@ -673,7 +677,7 @@ body.menu-open .side{transform:none}main{padding:0 18px 80px}.hero{padding:40px 
 <h3 id="versions-2">如何追溯一项变化</h3>
 <p>正式发布条目链接到对应 Release；v0.1.39 链接到版本标签。更新摘要综合正式发布说明和相邻标签的提交，不把仅存在于计划文档的功能写成已交付。需要检查具体实现时，应固定到该版标签或发布提交，避免使用不断变化的 main 解释过去版本。</p>
 <p>仓库中的部分发布文稿仍保留构建前的 HOLD 或草稿说明。这些文件能够说明当时的发布过程，但不应单独用于判断当前是否公开发布；公开 Release 的状态与最终验证记录需要一并核对。此处“当前无公开 Release”描述本次可见状态；发布文稿显示 v0.1.39 与 beta.2 曾有未发布的 Release 草稿，目前已不在 Release 列表中。</p>
-<p class="evidence"><a href="https://github.com/mirzatghayrat/arslan/releases">全部公开 Releases</a>；<a href="https://github.com/mirzatghayrat/arslan/tags">版本标签</a>；<a href="https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.40-beta.3">beta.3 的同提交 CI 验证</a>；<a href="https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.40-beta.5">beta.5 对未发布 beta.4 的说明</a>；<a href="https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.53">当前正式版本</a>。</p>
+<p class="evidence"><a href="https://github.com/mirzatghayrat/arslan/releases">全部公开 Releases</a>；<a href="https://github.com/mirzatghayrat/arslan/tags">版本标签</a>；<a href="https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.40-beta.3">beta.3 的同提交 CI 验证</a>；<a href="https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.40-beta.5">beta.5 对未发布 beta.4 的说明</a>；<a href="https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.54">当前正式版本</a>。</p>
 </section>
 <section class="chapter" id="sources"><h2><span class="num">17 / 版本基线与源码入口</span>让文档中的结论可以回到证据</h2>
 <p>本文按固定版本说明实现，交叉核对公开发布记录、Git 标签与历史、发布提交源码、架构决策和公开验收材料。较早设计用于解释演进；已经被后续代码替换的行为，会标为历史。作者的独立 AI 辅助开发方式来自作者说明。</p>
@@ -724,6 +728,7 @@ side.forEach(function(a){a.addEventListener('click',function(){document.body.cla
 var q=document.getElementById('version-search');if(q){var rows=[].slice.call(document.querySelectorAll('#version-table tbody tr')),n=document.getElementById('version-count');
   function f(){var t=q.value.toLowerCase(),k=0;rows.forEach(function(r){r.hidden=t&&r.textContent.toLowerCase().indexOf(t)<0;if(!r.hidden)k++});n.textContent=t?T.matches.replace('{n}',k):T.records.replace('{n}',rows.length)}
   q.addEventListener('input',f);f()}
+var lm=document.querySelector('details.lang');if(lm){document.addEventListener('click',function(e){if(lm.open&&!lm.contains(e.target))lm.open=false});document.addEventListener('keydown',function(e){if(e.key==='Escape'&&lm.open){lm.open=false;lm.querySelector('summary').focus()}})}
 // keep the reader's place when switching language: the chapters share ids
 [].slice.call(document.querySelectorAll('.lang a')).forEach(function(a){a.addEventListener('click',function(){var c=chapters.filter(function(x){return x.getBoundingClientRect().top<innerHeight*0.35}).pop();if(c&&scrollY>200)a.href=a.getAttribute('href').split('#')[0]+'#'+c.id})});
 })();

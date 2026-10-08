@@ -1,0 +1,63 @@
+<section class="chapter" id="glossary"><h2><span class="num">14 / Glossar</span>Von Fachbegriffen zur konkreten Implementierung</h2>
+<p>Die Begriffe unterscheiden verschiedene Mechanismen. Die folgenden Tabellen erklären sie knapp und ordnen sie Arslans Implementierung zu. Historische Mechanismen sind ausdrücklich gekennzeichnet.</p>
+<h3>KI und Kontext</h3><div class="table-wrap"><table><thead><tr><th>Begriff</th><th>Einfach erklärt</th><th>Verwendung in Arslan</th></tr></thead><tbody>
+<tr><th>LLM</th><td>Großes Modell zum Verstehen und Erzeugen von Sprache</td><td>Stammt von einem vom Nutzer eingerichteten Anbieter; Arslan stellt die Anwendung und das Ausführungssystem bereit</td></tr>
+<tr><th>Agent</th><td>Ausführungsprozess, der anhand von Ergebnissen den nächsten Schritt bestimmt</td><td>Modell aufrufen, Werkzeuge ausführen, Ergebnisse prüfen, fortfahren oder abschließen</td></tr>
+<tr><th>Orchestrator</th><td>Koordinator, der verschiedene Fähigkeiten zusammenführt</td><td>Koordiniert Modell, Kontext, Werkzeuge, Berechtigungen und Aufgabenstatus</td></tr>
+<tr><th>Tool calling</th><td>Strukturierte Anforderung eines Werkzeugs durch das Modell</td><td>Werkzeugname und JSON-Parameter werden vor der Ausführung validiert</td></tr>
+<tr><th>Native tool protocol</th><td>Das offiziell vom Anbieter definierte Format für Werkzeugnachrichten verwenden</td><td>Ordnet tool call ID, Ergebnis und Fortsetzung des Reasonings korrekt einander zu</td></tr>
+<tr><th>Trajectory</th><td>Strukturierter Verlauf der Interaktion zwischen Modell und Werkzeugen</td><td>OpenAI-kompatible Anbieter nutzen native history; andere Provider behalten ihre eigenen Pfade</td></tr>
+<tr><th>Context window</th><td>Informationsumfang, den das Modell bei einem Aufruf sehen kann</td><td>Nicht sämtliche Verläufe, Erinnerungen und langen Ausgaben passen unbegrenzt hinein</td></tr>
+<tr><th>Compaction</th><td>Älteren Kontext in eine begrenzte Zusammenfassung verdichten</td><td>Begrenzt den Anfrageumfang und erhält aktuelle Inhalte; löscht nicht das ursprüngliche Gespräch</td></tr>
+<tr><th>RAG</th><td>Zuerst relevante Unterlagen finden, dann das Modell antworten lassen</td><td>Sucht Ausschnitte aus importiertem Wissen und liefert deren Quellen mit</td></tr>
+<tr><th>FTS5</th><td>Volltextsuche von SQLite</td><td>Findet Wortübereinstimmungen und ermöglicht Dokumentensuche auch ohne Vektoren</td></tr>
+<tr><th>Embedding</th><td>Bedeutung von Text in Zahlenvektoren umwandeln</td><td>Hilft, unterschiedlich formulierte Inhalte mit ähnlicher Bedeutung zu finden</td></tr>
+<tr><th>Cosine similarity</th><td>Vergleichen, wie ähnlich die Richtungen von Vektoren sind</td><td>Eine Methode zur Ähnlichkeitsberechnung bei semantischer Suche</td></tr>
+<tr><th>RRF</th><td>Ergebnisse mehrerer Suchverfahren anhand ihrer Rangfolge zusammenführen</td><td>Verbindet FTS- und Vektorranglisten, ohne verschieden skalierte Punktwerte direkt zu mischen</td></tr>
+<tr><th>Skill</th><td>Wiederverwendbare Anleitung zur Vorgehensweise</td><td>SKILL.md mit optionalen Skripten und Referenzen; kein zusätzliches Modell</td></tr>
+<tr><th>MCP</th><td>Standardschnittstelle zwischen Agent und externen Werkzeugen</td><td>Bindet externe Fähigkeiten über stdio oder HTTP an; die Anwendung muss weiterhin Freigaben kontrollieren</td></tr>
+<tr><th>BYOK</th><td>Der Nutzer bringt seinen eigenen Modell-API-Schlüssel mit</td><td>Der Nutzer wählt den Anbieter und trägt die jeweiligen Modellkosten</td></tr>
+<tr><th>Prompt injection</th><td>Webseiten- oder Werkzeuginhalte als neue Anweisungen an den Agent tarnen</td><td>Externe Inhalte gelten als Daten; unbestätigte, extern beeinflusste Erfahrungen werden meist als Vorschläge behandelt. Das belegt keine vollständige Immunität</td></tr>
+<tr><th>Learned practice</th><td>Vorgehensweise, die aus einer Korrektur oder einem erfolgreichen Umweg festgehalten wird</td><td>„AppleScript funktioniert auf diesem Rechner nicht; EventKit versuchen.“ Verändert keine Modellgewichte</td></tr>
+<tr><th>Shadow mode</th><td>Eine Bewertung nur protokollieren, ohne das tatsächliche Verhalten zu verändern</td><td>Die Bewertungsebene kann Freigabeempfehlungen speichern; die eigentliche Karte wartet weiterhin auf den Klick des Nutzers</td></tr>
+<tr><th>Held-out evaluation</th><td>Mit Aufgaben prüfen, die nicht zur Anpassung der Prompts verwendet wurden</td><td>Historischer Entwurf der früheren Expertenentwicklung; kein fester Schritt jeder heutigen Gesprächsrunde</td></tr>
+</tbody></table></div>
+<h3>Softwarearchitektur, Zustand und Zuverlässigkeit</h3><div class="table-wrap"><table><thead><tr><th>Begriff</th><th>Einfach erklärt</th><th>Verwendung in Arslan</th></tr></thead><tbody>
+<tr><th>SPA</th><td>Zwischen Ansichten und Zuständen innerhalb einer Web-Anwendung wechseln</td><td>Der lokale Dienst liefert die statischen Ressourcen der React-Arbeitsoberfläche aus</td></tr>
+<tr><th>Sidecar</th><td>Hilfsprozess, der gemeinsam mit der Hauptanwendung startet</td><td>Das lokale Python-Backend läuft neben Tauri</td></tr>
+<tr><th>IPC</th><td>Kommunikation zwischen Prozessen auf demselben Rechner</td><td>Pipes und Unix socket; nicht alle Module kommunizieren über die Cloud</td></tr>
+<tr><th>REST / HTTP</th><td>Mit einer Anfrage eine Ressource abrufen oder verändern</td><td>Schnittstellen für Einstellungen, Verlauf, Aufgaben und Dateiverwaltung</td></tr>
+<tr><th>WebSocket</th><td>Informationen fortlaufend über eine bidirektionale Verbindung übertragen</td><td>Antwortstreams, Werkzeugstatus, Freigaben und Fortschrittsereignisse</td></tr>
+<tr><th>Async I/O</th><td>Während I/O-Wartezeiten die Ereignisschleife für andere Aufgaben freigeben</td><td>Python asyncio, asynchrone APIs und Datenbankzugriffe; keine unbegrenzte Parallelisierung von CPU-Aufgaben</td></tr>
+<tr><th>Schema / Contract</th><td>Klare Vereinbarung über Eingaben, Ausgaben und zulässige Zustände</td><td>Pydantic, Werkzeugparameter und Verträge zur Aufgabenabnahme</td></tr>
+<tr><th>State machine</th><td>Den Fortschritt eines Ablaufs durch endlich viele Zustände beschreiben</td><td>Etwa queued, running, waiting_user, verifying und succeeded</td></tr>
+<tr><th>Checkpoint</th><td>Festhalten, wie weit die Arbeit ist, was erledigt wurde und was noch aussteht</td><td>Wiederherstellung nutzt Verweise, Belege und Budgets; Seiteneffekte mit unbekanntem Ergebnis werden nicht blind wiederholt</td></tr>
+<tr><th>Attempt</th><td>Ein einzelner Ausführungsversuch einer Aufgabe</td><td>Wiederherstellung erzeugt einen neuen Versuch; alte asynchrone Ergebnisse dürfen dessen Zustand nicht überschreiben</td></tr>
+<tr><th>Optimistic concurrency</th><td>Vor dem Schreiben prüfen, ob die Daten noch der zuvor gelesenen Version entsprechen</td><td>row version und attempt ID verhindern, dass alte Ergebnisse einen Abbruch oder eine Aktualisierung überschreiben</td></tr>
+<tr><th>Idempotency</th><td>Wiederholte Anfragen sollen keine unbeabsichtigten doppelten Aktionen auslösen</td><td>Nachrichten-/Aufgaben-IDs verhindern Duplikate; unbekannte externe Wirkungen müssen zusätzlich geprüft werden</td></tr>
+<tr><th>ACK</th><td>Die Empfangsseite bestätigt: „Dieses Paket ist angekommen“</td><td>Belegt weder den erfolgreichen Aufgabenabschluss noch eine wirksame Freigabe</td></tr>
+<tr><th>Single-flight</th><td>Dieselbe Arbeit nicht erneut parallel starten, solange der vorherige Lauf noch läuft</td><td>Verhindert, dass sich wiederholte Ausführungen geplanter Aufgaben aufstauen</td></tr>
+<tr><th>Backoff</th><td>Nach Fehlschlägen die Abstände zwischen Wiederholungen vergrößern</td><td>Wartet bei Ratenbegrenzungen und Dienstfehlern, beachtet Retry-After; wiederholt Authentifizierungsfehler nicht blind</td></tr>
+<tr><th>WAL</th><td>SQLite schreibt zunächst ein Protokoll, damit Lesen und Schreiben besser nebeneinander möglich sind</td><td>Lokale Datenpersistenz; gleichzeitige Schreibzugriffe bleiben begrenzt</td></tr>
+<tr><th>Migration</th><td>Eine alte Datenbankstruktur sicher auf eine neue umstellen</td><td>Explizit versionierter Runner, Sicherung vor dem Upgrade, Ablehnung unbekannter Schemas</td></tr>
+<tr><th>Provenance</th><td>Herkunft einer Information</td><td>Dokumentenquellen, Herkunft von Erinnerungen und reale Ausführungsspuren</td></tr>
+<tr><th>Observability</th><td>Bei Problemen erkennen können, was geschehen ist</td><td>Verknüpfung von Run/Step, Activity, usage, Fehlern und Artefakten</td></tr>
+</tbody></table></div>
+<h3>Betriebssystem, Sicherheit und Auslieferung</h3><div class="table-wrap"><table><thead><tr><th>Begriff</th><th>Einfach erklärt</th><th>Verwendung in Arslan</th></tr></thead><tbody>
+<tr><th>Sandbox / Seatbelt</th><td>Das Betriebssystem beschränkt die Ressourcen, auf die ein Prozess zugreifen darf</td><td>Berechnungs- und Befehlssandbox haben unterschiedliche Regeln; Netzwerk- und Rückfallverhalten werden getrennt erläutert</td></tr>
+<tr><th>Fail-closed</th><td>Ausführung verweigern, wenn die Schutzschicht nicht verfügbar ist</td><td>Gilt für die standardmäßige Python-Sandbox und den Offline-Abschlusspfad; nicht pauschal für alle normalen Befehle</td></tr>
+<tr><th>Accessibility tree</th><td>Vom System bereitgestellte Struktur von Fenstern, Schaltflächen, Texten und ähnlichen Elementen</td><td>Hands liest und findet Bedienelemente über diese Struktur, ohne Pixel in Screenshots erkennen zu müssen</td></tr>
+<tr><th>TCC</th><td>Das Datenschutz- und Berechtigungssystem von macOS</td><td>Bedienungshilfen, Mikrofon und Apple Events lassen sich nicht allein durch einen Schalter in der App freigeben</td></tr>
+<tr><th>SSRF</th><td>Einen Dienst dazu verleiten, unerlaubte interne Adressen aufzurufen</td><td>Webextraktion und externe URLs benötigen Prüfungen von Ziel, Weiterleitungen und Netzwerkgrenzen</td></tr>
+<tr><th>AEAD</th><td>Verschlüsselung, die Vertraulichkeit und Integrität des Inhalts zugleich schützt</td><td>Bridge verwendet ChaCha20-Poly1305; manipulierte Inhalte bestehen die Prüfung nicht</td></tr>
+<tr><th>Key agreement / Signature</th><td>Das erste vereinbart Verschlüsselungsmaterial, das zweite prüft die Identität des Absenders</td><td>X25519 und Ed25519 erfüllen unterschiedliche Aufgaben und dürfen nicht gleichgesetzt werden</td></tr>
+<tr><th>Replay protection</th><td>Verhindern, dass ein Angreifer alte Nachrichten erneut wirksam zustellt</td><td>Signaturen, Empfängerprüfung, gleitendes Sequenznummernfenster und dauerhafte Deduplizierung wirken zusammen</td></tr>
+<tr><th>CI / CD</th><td>Builds, Prüfungen und Verteilung automatisieren</td><td>Erfolgreiche CI muss zum zu veröffentlichenden SHA gehören; das fertige Paket wird zusätzlich geprüft</td></tr>
+<tr><th>Contract test</th><td>Prüfen, ob beide Seiten einer Schnittstelle denselben Vertrag einhalten</td><td>Python/Rust und Mac/iPhone verwenden gemeinsame positive und negative Testvektoren</td></tr>
+<tr><th>Mutation testing</th><td>Schutzlogik absichtlich beschädigen und prüfen, ob die Tests das erkennen</td><td>Belegt die Aussagekraft bestimmter Assertions; kein bloß umbenannter Unit-Test</td></tr>
+<tr><th>Code signing</th><td>Herkunft der Software und Unverändertheit des Artefakts prüfen</td><td>App und eingebettete Helper benötigen korrekte Signaturen</td></tr>
+<tr><th>Notarization / Staple</th><td>Apple prüft das Distributionspaket; anschließend wird das Ticket daran angeheftet</td><td>Unterscheidet sich vom Signieren; das Ergebnis muss außerdem mit Gatekeeper geprüft werden</td></tr>
+<tr><th>Fresh-install acceptance</th><td>Einen neuen Nutzer ohne Entwicklungsumgebung und Altdaten nachbilden</td><td>Prüft Authentifizierung, WebSocket, Ressourcen und Helper des tatsächlichen Installationspakets</td></tr>
+</tbody></table></div>
+<p class="note">Das heutige System besteht überwiegend aus einem lokal geschichteten Monolithen und eigenständigen Helpern. SQLite und prozessinterne asynchrone Planung passen zur Installation und zum Betrieb eines persönlichen Desktop-Produkts. Die Begriffe sind in diesem Bereitstellungsmaßstab zu verstehen.</p>
+</section>

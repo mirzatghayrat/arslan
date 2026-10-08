@@ -83,7 +83,7 @@ background:rgba(5,5,6,.78);backdrop-filter:saturate(180%) blur(18px);-webkit-bac
 .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px;color:var(--tx)}.brand:hover{text-decoration:none}.brand svg{width:26px;height:26px}
 .brand small{font:500 12px var(--mono);color:var(--mu);border:1px solid var(--line2);border-radius:6px;padding:2px 7px;margin-left:4px}
 .nav .links{display:flex;gap:22px;font-size:14px}.nav .links a{color:var(--mu)}.nav .links a:hover{color:var(--tx);text-decoration:none}
-.nav .sp{flex:1}.lang{display:inline-flex;border:1px solid var(--line2);border-radius:999px;overflow:hidden;font:600 12px var(--mono)}.lang a{padding:5px 10px;color:var(--mu)}.lang a:hover{text-decoration:none;color:var(--tx)}.lang a.on{background:rgba(255,255,255,.1);color:var(--tx)}.nav .menu{display:none;white-space:nowrap;flex:none;background:transparent;border:1px solid var(--line2);color:var(--tx);border-radius:8px;padding:4px 10px;font:13px var(--ui)}
+.nav .sp{flex:1}.lang{position:relative;font:600 12px var(--mono)}.lang summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line2);border-radius:999px;padding:5px 12px;color:var(--tx);white-space:nowrap}.lang summary::-webkit-details-marker{display:none}.nav details.lang>summary::before{content:none;display:none}.lang summary::after{content:"";width:6px;height:6px;border:solid var(--mu);border-width:0 1.5px 1.5px 0;transform:rotate(45deg) translateY(-2px)}.lang[open] summary{background:rgba(255,255,255,.08)}.lang .langs{position:absolute;right:0;top:calc(100% + 8px);min-width:170px;display:grid;gap:2px;padding:6px;background:var(--s2);border:1px solid var(--line2);border-radius:12px;box-shadow:0 14px 40px rgba(0,0,0,.55);z-index:60}.lang .langs a{padding:8px 12px;border-radius:8px;color:var(--mu);font:14px var(--ui)}.lang .langs a:hover{text-decoration:none;color:var(--tx);background:rgba(255,255,255,.05)}.lang .langs a.on{color:var(--tx);background:rgba(255,255,255,.08)}.nav .menu{display:none;white-space:nowrap;flex:none;background:transparent;border:1px solid var(--line2);color:var(--tx);border-radius:8px;padding:4px 10px;font:13px var(--ui)}
 .btn{display:inline-flex;align-items:center;height:36px;padding:0 16px;border-radius:999px;font-weight:600;font-size:14px;background:#f5f6f8;color:#0b0c0e}.btn:hover{text-decoration:none}
 .progress{position:fixed;left:0;top:60px;height:2px;width:100%;transform-origin:left;transform:scaleX(0);background:linear-gradient(90deg,var(--work),var(--search),var(--done));z-index:51}
 .layout{display:grid;grid-template-columns:260px minmax(0,1fr) 220px;max-width:1440px;margin:0 auto;padding-top:60px}
@@ -199,6 +199,7 @@ side.forEach(function(a){a.addEventListener('click',function(){document.body.cla
 var q=document.getElementById('version-search');if(q){var rows=[].slice.call(document.querySelectorAll('#version-table tbody tr')),n=document.getElementById('version-count');
   function f(){var t=q.value.toLowerCase(),k=0;rows.forEach(function(r){r.hidden=t&&r.textContent.toLowerCase().indexOf(t)<0;if(!r.hidden)k++});n.textContent=t?T.matches.replace('{n}',k):T.records.replace('{n}',rows.length)}
   q.addEventListener('input',f);f()}
+var lm=document.querySelector('details.lang');if(lm){document.addEventListener('click',function(e){if(lm.open&&!lm.contains(e.target))lm.open=false});document.addEventListener('keydown',function(e){if(e.key==='Escape'&&lm.open){lm.open=false;lm.querySelector('summary').focus()}})}
 // keep the reader's place when switching language: the chapters share ids
 [].slice.call(document.querySelectorAll('.lang a')).forEach(function(a){a.addEventListener('click',function(){var c=chapters.filter(function(x){return x.getBoundingClientRect().top<innerHeight*0.35}).pop();if(c&&scrollY>200)a.href=a.getAttribute('href').split('#')[0]+'#'+c.id})});
 })();
@@ -206,7 +207,7 @@ var q=document.getElementById('version-search');if(q){var rows=[].slice.call(doc
 
 # Per-language page text. Chapters live in sections/<lang>/; English is the default page.
 LANGS = {
-    "en": dict(dir="", html_lang="en", up="../", label="EN",
+    "en": dict(dir="", html_lang="en", up="../", label="EN", name="English",
                title="Arslan docs · based on {v}",
                description="How Arslan is designed, built and evolving: architecture, execution runtime, data and memory, security boundaries, the iPhone bridge, delivery and evaluation. Every claim links to the {v} source.",
                og_title="Arslan technical docs", og_description="Arslan, explained: design, implementation and evolution from the first prototype to {v}.",
@@ -216,7 +217,7 @@ LANGS = {
                lead="A local-first, open-source personal AI assistant for the Mac: its product choices, how it runs, its data and permissions, and the engineering lessons of more than fifty releases. The text separates what shipped, historical designs and future directions; every claim links to the {v} source.",
                closing="Arslan technical docs · based on {v} (source {sha}), checked {d}. Updated with each release; the source files are in the repository's docs-site/ folder.",
                matches="{n} matches", records="{n} version records"),
-    "zh": dict(dir="zh", html_lang="zh-CN", up="../../", label="中文",
+    "zh": dict(dir="zh", html_lang="zh-CN", up="../../", label="中文", name="简体中文",
                title="Arslan 技术文档 · 基于 {v}",
                description="Arslan 的设计、实现与演进：系统架构、执行运行时、数据与记忆、安全边界、iPhone 桥接、交付与验证。每个结论都链接到 {v} 的源码。",
                og_title="Arslan 技术文档", og_description="把 Arslan 讲清楚：从最早原型到 {v} 的设计、实现与演进。",
@@ -226,6 +227,46 @@ LANGS = {
                lead="一个本地优先、开源的 Mac 个人 AI 助手：它的产品选择、运行机制、数据与权限，以及五十多个版本积累下来的工程经验。正文区分已发布实现、历史设计和后续方向；每个结论都链接到 {v} 的源码。",
                closing="Arslan 技术文档 · 基于 {v}（源码 {sha}），核对 {d}。内容会随新版本更新；源文件在仓库的 docs-site/ 目录。",
                matches="{n} 条匹配", records="{n} 条版本记录"),
+    "de": dict(dir="de", html_lang="de", up="../../", label="DE", name="Deutsch",
+               title="Arslan-Dokumentation · Stand {v}",
+               description="Wie Arslan entworfen, gebaut und weiterentwickelt wird: Architektur, Laufzeit, Daten und Gedächtnis, Sicherheitsgrenzen, die iPhone-Brücke, Auslieferung und Prüfung. Jede Aussage verweist auf den Quellcode von {v}.",
+               og_title="Arslan – technische Dokumentation", og_description="Arslan erklärt: Entwurf, Umsetzung und Entwicklung vom ersten Prototyp bis {v}.",
+               menu="Inhalt", side_label="Kapitel", onpage="Auf dieser Seite", based="Stand: Release {v}", src="Quelle", checked="Geprüft am {d}",
+               badges='<span class="badge ok">Stand {v}</span><span class="badge">Deutsch</span>',
+               h1="Arslan, erklärt.<span>Entwurf, Umsetzung und Entwicklung vom ersten Prototyp bis {v}</span>",
+               lead="Ein lokal arbeitender, quelloffener persönlicher KI-Assistent für den Mac: seine Produktentscheidungen, seine Funktionsweise, Daten und Berechtigungen sowie die technischen Erfahrungen aus mehr als fünfzig Releases. Der Text trennt Ausgeliefertes, historische Entwürfe und künftige Richtungen; jede Aussage verweist auf den Quellcode von {v}.",
+               closing="Arslan-Dokumentation · Stand {v} (Quellcode {sha}), geprüft am {d}. Wird mit jedem Release aktualisiert; die Quelldateien liegen im Ordner docs-site/ des Repositorys.",
+               matches="{n} Treffer", records="{n} Versionseinträge"),
+    "ja": dict(dir="ja", html_lang="ja", up="../../", label="日本語", name="日本語",
+               title="Arslan 技術ドキュメント · {v} 準拠",
+               description="Arslan の設計・実装・進化：アーキテクチャ、実行ランタイム、データと記憶、セキュリティ境界、iPhone ブリッジ、配布と検証。すべての記述は {v} のソースコードにリンクしています。",
+               og_title="Arslan 技術ドキュメント", og_description="Arslan を解き明かす：最初のプロトタイプから {v} までの設計・実装・進化。",
+               menu="目次", side_label="章", onpage="この章", based="リリース {v} 準拠", src="ソース", checked="確認日 {d}",
+               badges='<span class="badge ok">{v} 準拠</span><span class="badge">日本語</span>',
+               h1="Arslan を解き明かす。<span>最初のプロトタイプから {v} までの設計・実装・進化</span>",
+               lead="ローカルファーストでオープンソースの、Mac 向けパーソナル AI アシスタント。その製品判断、動作の仕組み、データと権限、そして五十を超えるリリースで積み重ねたエンジニアリングの知見をまとめます。本文はリリース済みの実装、過去の設計、今後の方向を区別し、すべての記述を {v} のソースコードにリンクしています。",
+               closing="Arslan 技術ドキュメント · {v} 準拠（ソース {sha}）、確認日 {d}。リリースごとに更新します。ソースファイルはリポジトリの docs-site/ にあります。",
+               matches="{n} 件一致", records="{n} 件のバージョン記録"),
+    "es": dict(dir="es", html_lang="es", up="../../", label="ES", name="Español",
+               title="Documentación de Arslan · basada en {v}",
+               description="Cómo se diseña, construye y evoluciona Arslan: arquitectura, entorno de ejecución, datos y memoria, límites de seguridad, el puente con el iPhone, entrega y evaluación. Cada afirmación enlaza al código fuente de {v}.",
+               og_title="Documentación técnica de Arslan", og_description="Arslan, explicado: diseño, implementación y evolución desde el primer prototipo hasta {v}.",
+               menu="Contenido", side_label="Capítulos", onpage="En esta página", based="Basada en la versión {v}", src="Fuente", checked="Revisada el {d}",
+               badges='<span class="badge ok">Basada en {v}</span><span class="badge">Español</span>',
+               h1="Arslan, explicado.<span>Diseño, implementación y evolución, desde el primer prototipo hasta {v}</span>",
+               lead="Un asistente personal de IA para el Mac, local y de código abierto: sus decisiones de producto, cómo funciona, sus datos y permisos, y las lecciones de ingeniería de más de cincuenta versiones. El texto distingue lo publicado, los diseños históricos y las direcciones futuras; cada afirmación enlaza al código fuente de {v}.",
+               closing="Documentación técnica de Arslan · basada en {v} (código {sha}), revisada el {d}. Se actualiza con cada versión; los archivos fuente están en la carpeta docs-site/ del repositorio.",
+               matches="{n} coincidencias", records="{n} registros de versión"),
+    "tr": dict(dir="tr", html_lang="tr", up="../../", label="TR", name="Türkçe",
+               title="Arslan belgeleri · {v} sürümüne göre",
+               description="Arslan nasıl tasarlandı, nasıl çalışıyor, nasıl gelişiyor: mimari, çalışma zamanı, veri ve bellek, güvenlik sınırları, iPhone köprüsü, dağıtım ve doğrulama. Her ifade {v} kaynak koduna bağlanır.",
+               og_title="Arslan teknik belgeleri", og_description="Arslan'ı anlamak: ilk prototipten {v} sürümüne tasarım, uygulama ve gelişim.",
+               menu="İçindekiler", side_label="Bölümler", onpage="Bu sayfada", based="{v} sürümüne göre", src="Kaynak", checked="Kontrol: {d}",
+               badges='<span class="badge ok">{v} sürümüne göre</span><span class="badge">Türkçe</span>',
+               h1="Arslan'ı anlamak.<span>İlk prototipten {v} sürümüne tasarım, uygulama ve gelişim</span>",
+               lead="Mac için yerel öncelikli, açık kaynaklı kişisel bir yapay zekâ asistanı: ürün kararları, çalışma biçimi, verileri ve izinleri, elliden fazla sürümde biriken mühendislik deneyimi. Metin yayımlanmış uygulamayı, tarihsel tasarımları ve gelecekteki yönleri ayırır; her ifade {v} kaynak koduna bağlanır.",
+               closing="Arslan teknik belgeleri · {v} sürümüne göre (kaynak {sha}), kontrol tarihi {d}. Her sürümle güncellenir; kaynak dosyalar deponun docs-site/ klasöründedir.",
+               matches="{n} eşleşme", records="{n} sürüm kaydı"),
 }
 
 
@@ -264,8 +305,10 @@ def build_lang(lang: str) -> dict:
         chapters.append(t)
     up = L["up"]
     fmt = dict(v=version, d=checked, sha=SHA[:12])
-    switch = "".join(f'<a href="{up}docs/{(LANGS[o]["dir"] + "/") if LANGS[o]["dir"] else ""}" hreflang="{LANGS[o]["html_lang"]}"'
-                     f'{" class=on" if o == lang else ""} lang="{LANGS[o]["html_lang"]}">{LANGS[o]["label"]}</a>' for o in LANGS)
+    switch = (f'<summary aria-label="Language: {L["name"]}">{L["label"]}</summary><div class="langs">'
+              + "".join(f'<a href="{up}docs/{(LANGS[o]["dir"] + "/") if LANGS[o]["dir"] else ""}" hreflang="{LANGS[o]["html_lang"]}"'
+                        f'{" class=on aria-current=page" if o == lang else ""} lang="{LANGS[o]["html_lang"]}">{LANGS[o]["name"]}</a>' for o in LANGS)
+              + "</div>")
     alternates = "".join(f'<link rel="alternate" hreflang="{LANGS[o]["html_lang"]}" href="{page_url(o)}">\n' for o in LANGS)
     page = f"""<!doctype html>
 <html lang="{L["html_lang"]}">
@@ -291,7 +334,7 @@ def build_lang(lang: str) -> dict:
   <a class="brand" href="{up}">{MASK}Arslan<small>Docs</small></a>
   <div class="links"><a href="{up}#how">How it works</a><a href="{up}#gate">The gate</a><a href="{up}#hands">Hands</a><a href="{up}#devices">Mac + iPhone</a><a href="{up}#privacy">Privacy</a></div>
   <span class="sp"></span>
-  <span class="lang" aria-label="Language">{switch}</span>
+  <details class="lang">{switch}</details>
   <div class="links"><a href="{GH}">GitHub</a></div>
   <a class="btn" href="{GH}/releases/latest/download/Arslan-macos-arm64.dmg">Download</a>
 </nav>
