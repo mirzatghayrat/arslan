@@ -76,7 +76,8 @@ class MCPSessionManager:
                     # (deny by default; its folder, granted folders, network only if declared).
                     from server.services import capability_sandbox
                     command, args, env, cwd = capability_sandbox.wrap(command, args, env, server["sandbox"])
-                params = StdioServerParameters(command=command, args=args, env=env, cwd=cwd)
+                # cwd only for an installed capability: a hand-added server starts exactly as before.
+                params = StdioServerParameters(command=command, args=args, env=env, **({"cwd": cwd} if cwd else {}))
                 read, write = await stack.enter_async_context(stdio_client(params))
             client = await stack.enter_async_context(ClientSession(read, write))
             await client.initialize()
