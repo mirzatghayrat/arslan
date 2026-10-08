@@ -1,5 +1,5 @@
 <section class="chapter" id="delivery"><h2><span class="num">11 / 验证与软件交付</span>从能运行的源码，到可以安装和更新的应用</h2>
-<p>桌面软件的交付单位是应用包。源码环境中存在的 Python 模块、系统工具和旧数据库，都可能让一个缺少资源的安装包看起来正常。Arslan 将验证分成源码、平台、冻结产物、全新用户环境和分发几个层次。本章记录 v0.1.55 的流程及对应发布证据。</p>
+<p>桌面软件的交付单位是应用包。源码环境中存在的 Python 模块、系统工具和旧数据库，都可能让一个缺少资源的安装包看起来正常。Arslan 将验证分成源码、平台、冻结产物、全新用户环境和分发几个层次。本章记录 v0.1.56 的流程及对应发布证据。</p>
 <h3>CI 同时检查行为、平台与依赖边界</h3>
 <div class="table-wrap"><table><thead><tr><th>检查组</th><th>主要内容</th><th>设计目的</th></tr></thead><tbody>
 <tr><th>Linux 后端</th><td>Python 3.11、uv frozen lock、Ruff、pytest；显式安装并检查 OCR 测试依赖。</td><td>执行完整后端测试，保留“缺少 macOS 隔离时必须拒绝”的平台负例。</td></tr>
@@ -24,7 +24,7 @@
 <p>Tauri updater 从公开的 <code>latest.json</code> 发现更新，用编译在应用中的公钥验证归档签名。应用启动检查一次，菜单也可以手动检查；本版没有周期检查 timer。发现新版本显示提示，用户点击安装后才下载、验签、替换并重启。自动检查失败可以是暂时离线，安装失败则需要向用户明确反馈。</p>
 <p>早期 0.1.0/0.1.1 只注册了 updater 插件，没有主动调用检查函数，不能自动发现版本。当前实现把检查、可安装状态、下载失败与重启串成显式流程；有签名配置并不等于流程已经被触发。</p>
 <p class="evidence">{{source:desktop/src-tauri/src/lib.rs#L399|检查、安装与重启状态}}；{{source:desktop/src-tauri/tauri.conf.json|更新地址与公钥配置}}。</p>
-<h3>0.1.55 的交付证据对应哪个对象</h3>
-<p>发布提交的 GitHub Actions 记录显示：发布源码为 <code>81c0028c</code>；该提交的 CI 首次尝试即通过（<a href="https://github.com/mirzatghayrat/arslan/actions/runs/37729747101">run 37729747101</a>），其中 macOS 任务的 <strong>49 个指定平台用例零跳过</strong>，后端测试 6,324 项通过、119 项跳过。发布流程（<a href="https://github.com/mirzatghayrat/arslan/actions/runs/37729747033">run 37729747033</a>）的源码验证、构建和发布步骤通过；DMG 公证被接受并 staple，Gatekeeper 接受。发布应用的 fresh-install 检查 <strong>89 项通过、0 项失败</strong>，包括 Hands 接受签名后端的连接和 Bridge 自检。0.1.54 在同一检查中为 87 项通过、0 项失败，CI 同样首次即通过。</p>
-<p>验证对象各不相同，记录也要分开说。0.1.55 的公开说明中没有真实 Mac 上的手工实测记录，因此本文不声称这份精确的 0.1.55 DMG 被手动安装并完整操作过，也不声称用发布版完成过 iPhone 到 Mac 的完整链路。作为对照，<a href="https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.53">0.1.53 的 Verification</a> 记录过一次真实 Mac 实测：通过 Hands 创建并读回 Notes、审批等待 36 秒——用的是 <code>43751254</code> 的 build-only 包，而非最终 DMG。自动包验收、较早构建的功能实测与精确发行包手工验收应分别陈述，不能互相替代。</p>
+<h3>0.1.56 的交付证据对应哪个对象</h3>
+<p>发布提交的 GitHub Actions 记录显示：发布源码为 <code>e1313003</code>；标签上的 CI 首次尝试即通过（<a href="https://github.com/mirzatghayrat/arslan/actions/runs/37797395413">run 37797395413</a>；main 分支上的那次运行在它开始后被取消），其中 macOS 任务的 <strong>49 个指定平台用例零跳过</strong>，后端测试 6,434 项通过、119 项跳过。发布流程（<a href="https://github.com/mirzatghayrat/arslan/actions/runs/37797395391">run 37797395391</a>）的源码验证、构建和发布步骤通过；DMG 公证被接受并 staple，Gatekeeper 接受。发布应用的 fresh-install 检查 <strong>89 项通过、0 项失败</strong>，包括 Hands 接受签名后端的连接和 Bridge 自检，与 0.1.55 相同。</p>
+<p>验证对象各不相同，记录也要分开说。0.1.56 的公开说明中没有真实 Mac 上的手工实测记录，因此本文不声称这份精确的 0.1.56 DMG 被手动安装并完整操作过，也不声称用发布版完成过 iPhone 到 Mac 的完整链路。作为对照，<a href="https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.53">0.1.53 的 Verification</a> 记录过一次真实 Mac 实测：通过 Hands 创建并读回 Notes、审批等待 36 秒——用的是 <code>43751254</code> 的 build-only 包，而非最终 DMG。自动包验收、较早构建的功能实测与精确发行包手工验收应分别陈述，不能互相替代。</p>
 </section>
