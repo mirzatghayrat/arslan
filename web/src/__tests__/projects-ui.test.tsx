@@ -12,6 +12,9 @@ vi.mock("react-i18next", () => ({
 import ProjectsBoard from "../components/projects/ProjectsBoard";
 import NewProject from "../components/projects/NewProject";
 import ProjectPage from "../components/projects/ProjectPage";
+import PlanEditor from "../components/projects/PlanEditor";
+import { evidenceText } from "../components/projects/projectUi";
+import type { TFunction } from "i18next";
 import { ConfirmHost } from "../components/kit";
 import { companionApi, type Project } from "../api/companion";
 import { projectsApi, type Board, type BoardCard, type Level, type Plan } from "../api/projects";
@@ -184,8 +187,9 @@ describe("a project's page", () => {
     const onStart = mountPage();
     fireEvent.click(await screen.findByTestId("project-hand-off"));
     expect(onStart).toHaveBeenCalledTimes(1);
-    const [project, prefill] = onStart.mock.calls[0];
+    const [project, prefill, checkpointId] = onStart.mock.calls[0];
     expect(project.id).toBe("p1");
+    expect(checkpointId).toBe("c2");          // §4.4: a done job in that conversation ticks it
     expect(prefill).toContain("projectsUI.handOffText");
     expect(prefill).toContain("First level");
   });
@@ -240,6 +244,32 @@ describe("a project's page", () => {
   });
 });
 
+describe("evidence (P4)", () => {
+  it("each kind says what Arslan saw", () => {
+    const t = ((key: string, o?: Record<string, unknown>) => (o ? `${key}:${JSON.stringify(o)}` : key)) as unknown as TFunction;
+    expect(evidenceText(t, { kind: "file", paths: ["levels/a.json", "levels/b.json"], count: 3, pattern: "levels/*.json" }))
+      .toBe('projectsUI.ev_files:{"count":3,"pattern":"levels/*.json"}');
+    expect(evidenceText(t, { kind: "file", paths: ["outline.md"], count: 1, pattern: "outline.md" }))
+      .toBe('projectsUI.ev_file:{"path":"outline.md"}');
+    expect(evidenceText(t, { kind: "run", job_id: "job-1", goal: "Run the fun test" }))
+      .toBe('projectsUI.ev_runGoal:{"goal":"Run the fun test"}');
+    expect(evidenceText(t, { kind: "run" })).toBe("projectsUI.ev_run");
+    expect(evidenceText(t, null)).toBe("");
+  });
+
+  it("a checkpoint can name the file that shows it is done; clearing it removes the expectation", () => {
+    const onChange = vi.fn();
+    const levels: Level[] = [{ name: "Build", band: "doing", checkpoints: [{ text: "Three levels", expects: { kind: "file", pattern: "x", min: 3 } }] }];
+    render(<PlanEditor levels={levels} onChange={onChange} />);
+    const field = screen.getByTestId("plan-cp-file-0-0");
+    expect(field).toHaveValue("x");
+    fireEvent.change(field, { target: { value: "levels/*.json" } });
+    expect(onChange.mock.calls[0][0][0].checkpoints[0].expects).toEqual({ kind: "file", pattern: "levels/*.json", min: 3 });
+    fireEvent.change(field, { target: { value: "  " } });
+    expect(onChange.mock.calls[1][0][0].checkpoints[0].expects).toBeNull();
+  });
+});
+
 describe("the project client", () => {
   it("an edit sends the type and finish line, so the API does not clear them", async () => {
     const fetchMock = vi.fn(async () => new Response("{}", { status: 200 }));
@@ -247,6 +277,16 @@ describe("the project client", () => {
     await companionApi.editProject(PROJECT, PROJECT);
     const body = JSON.parse(String((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body));
     expect(body.project).toMatchObject({ template: "game", finish_line: "On the App Store" });
+    vi.unstubAllGlobals();
+  });
+
+  it("a hand-off links the conversation to the checkpoint", async () => {
+    const fetchMock = vi.fn(async () => new Response('{"id":"e1"}', { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await projectsApi.handoff("p1", "c2", "thread-1");
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toContain("/projects/p1/handoff");
+    expect(JSON.parse(String(init.body))).toEqual({ checkpoint_id: "c2", conversation_id: "thread-1" });
     vi.unstubAllGlobals();
   });
 });

@@ -21,7 +21,7 @@ type Tab = "levels" | "conversations" | "files" | "materials" | "settings";
  * folder, materials and settings.
  */
 export default function ProjectPage({ projectId, onBack, onStart, onPlan, onChanged }: {
-  projectId: string; onBack: () => void; onStart: (project: Project, prefill?: string) => Promise<void>;
+  projectId: string; onBack: () => void; onStart: (project: Project, prefill?: string, checkpointId?: string) => Promise<void>;
   onPlan: (project: Project) => void; onChanged: () => void;
 }) {
   const { t } = useTranslation();
@@ -136,7 +136,7 @@ export default function ProjectPage({ projectId, onBack, onStart, onPlan, onChan
               {nextBest && !ended && <div className="flex flex-wrap items-center gap-3 rounded-xl bg-info-soft px-3.5 py-2.5" data-testid="project-next">
                 <span className="min-w-0 flex-1 text-[13px]">{t("projectsUI.nextBest", { text: nextBest.text })}</span>
                 <Button size="sm" tone="primary" onClick={() => void onStart(project, t("projectsUI.handOffText", {
-                  checkpoint: nextBest.text, level: current.name, project: project.name }))} data-testid="project-hand-off">
+                  checkpoint: nextBest.text, level: current.name, project: project.name }), nextBest.id)} data-testid="project-hand-off">
                   {t("projectsUI.handOff")}</Button></div>}
               {!ended && <Button size="sm" className="self-start" disabled={busy} data-testid="project-clear-level"
                 onClick={() => void act(() => projectsApi.advance(projectId))}>{t("projectsUI.clearByHand")}</Button>}

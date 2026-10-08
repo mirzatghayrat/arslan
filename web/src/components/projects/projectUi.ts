@@ -25,8 +25,13 @@ export function evidenceText(t: TFunction, evidence: Evidence | null | undefined
   if (!evidence) return "";
   switch (evidence.kind) {
     case "said": return t("projectsUI.ev_said", { quote: evidence.quote ?? "" });
-    case "file": return t("projectsUI.ev_file", { path: evidence.path ?? "" });
-    case "run": return t("projectsUI.ev_run");
+    case "file": {
+      const path = evidence.path ?? evidence.paths?.[0] ?? evidence.pattern ?? "";
+      return (evidence.count ?? 1) > 1
+        ? t("projectsUI.ev_files", { count: evidence.count, pattern: evidence.pattern ?? path })
+        : t("projectsUI.ev_file", { path });
+    }
+    case "run": return evidence.goal ? t("projectsUI.ev_runGoal", { goal: evidence.goal }) : t("projectsUI.ev_run");
     case "checkpoints": return t("projectsUI.ev_checkpoints");
     default: return evidence.quote ?? evidence.path ?? "";
   }

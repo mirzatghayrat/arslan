@@ -30,6 +30,7 @@ import { ThemeApplier } from './components/ThemeApplier';
 import ActivityView from './components/ActivityView';
 import MemorySection from './components/companion/MemorySection';
 import ProjectsSection from './components/companion/ProjectsSection';
+import { projectsApi } from './api/projects';
 import ConversationControls from './components/companion/ConversationControls';
 import TaskPanel from './components/companion/TaskPanel';
 import LegacyExperts from './components/companion/LegacyExperts';
@@ -416,12 +417,14 @@ export default function App() {
 
   /** A new conversation in the project. `prefill` (0.1.56 "交给 Arslan 起头") is typed into the
    *  composer for the user to send — nothing is sent on their behalf. */
-  const handleStartProject = async (project: Project, prefill?: string) => {
+  const handleStartProject = async (project: Project, prefill?: string, checkpointId?: string) => {
     const conversationId = `thread-${crypto.randomUUID()}`;
     if (prefill) composerDrafts.set(conversationId, prefill);
     await companionApi.saveContext({ conversation_id: conversationId, version: 0, project_id: null,
       no_memory: false, no_learning: false, temporary: false, cloud_memory_allowed: false, allow_sensitive: false },
     { project_id: project.id });
+    // 0.1.56 §4.4: link the conversation to the checkpoint; best-effort — the chat opens either way.
+    if (checkpointId) await projectsApi.handoff(project.id, checkpointId, conversationId).catch(() => undefined);
     handleAddArslanThread(conversationId);
   };
 

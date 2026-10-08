@@ -50,6 +50,12 @@ export default function PlanEditor({ levels, onChange }: { levels: Level[]; onCh
                       <input className={`${input} py-1 text-[12.5px]`} value={cp.text} maxLength={200} placeholder={t("projectsUI.checkpointPh")}
                         aria-label={t("projectsUI.checkpointPh")}
                         onChange={e => set(i, { checkpoints: lv.checkpoints.map((c, n) => (n === k ? { ...c, text: e.target.value } : c)) })} />
+                      {/* §4.2: optional — a file in the project folder that shows this is done. */}
+                      <input className={`${input} w-36 shrink-0 py-1 font-mono text-[11.5px]`} value={cp.expects?.pattern ?? ""} maxLength={200}
+                        placeholder={t("projectsUI.filePatternPh")} aria-label={t("projectsUI.filePattern")} title={t("projectsUI.filePatternHint")}
+                        data-testid={`plan-cp-file-${i}-${k}`}
+                        onChange={e => set(i, { checkpoints: lv.checkpoints.map((c, n) => (n === k ? { ...c, expects: e.target.value.trim()
+                          ? { kind: "file", pattern: e.target.value, min: c.expects?.min ?? 1 } : null } : c)) })} />
                       <button type="button" aria-label={t("projectsUI.remove")} className="text-subtle-foreground hover:text-foreground"
                         onClick={() => set(i, { checkpoints: lv.checkpoints.filter((_, n) => n !== k) })}><X size={13} /></button>
                     </div>))}

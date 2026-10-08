@@ -107,6 +107,28 @@ async def checkpoint(project_id: str, checkpoint_id: str, action: Literal["tick"
     return await project_plan.plan_of(repo.db, project)
 
 
+class HandoffIn(BaseModel):
+    checkpoint_id: Annotated[str, Field(min_length=1, max_length=40)]
+    conversation_id: Annotated[str, Field(min_length=1, max_length=50)]
+
+
+@router.post("/projects/{project_id}/handoff")
+async def handoff(project_id: str, body: HandoffIn, repo=Depends(_repository, scope="function")) -> dict:
+    """§4.4 "交给 Arslan 起头": a background job in this conversation that ends done ticks
+    the checkpoint. The conversation must already be set to this project."""
+    from server.services import project_evidence
+    project = await _project(repo, project_id)
+    owner = (await repo.db.execute(select(ConversationContext.project_id).where(
+        ConversationContext.id == body.conversation_id, ConversationContext.owner_id == USER.owner_id))).scalar()
+    if owner != project.id:
+        raise HTTPException(409, detail={"code": "conversation_not_in_project"})
+    try:
+        event = await project_evidence.record_handoff(repo.db, project, body.checkpoint_id, body.conversation_id)
+    except PlanError as exc:
+        raise _error(exc) from exc
+    return {"id": event.id}
+
+
 @router.post("/projects/{project_id}/advance")
 async def advance(project_id: str, repo=Depends(_repository, scope="function")) -> dict:
     """The user clears the current level by hand."""

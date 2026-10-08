@@ -9,8 +9,16 @@ export interface Evidence {
   kind: "said" | "file" | "run" | "checkpoints" | string;
   quote?: string;
   path?: string;
+  /** file: the first matches, how many matched, and the pattern. */
+  paths?: string[];
+  count?: number;
+  pattern?: string;
+  /** run: the job and what it was asked to do. */
   job_id?: string;
+  goal?: string;
   level_id?: string;
+  conversation_id?: string;
+  message_id?: number | null;
 }
 export interface Checkpoint {
   id?: string;
@@ -104,6 +112,9 @@ export const projectsApi = {
     request<Plan>(`/projects/${id(projectId)}/plan`, json("PUT", { expected_version, levels })),
   tick: (projectId: string, checkpointId: string, on: boolean) =>
     request<Plan>(`/projects/${id(projectId)}/checkpoints/${id(checkpointId)}/${on ? "tick" : "untick"}`, { method: "POST" }),
+  /** §4.4 "Hand to Arslan": a background job in that conversation that ends done ticks the checkpoint. */
+  handoff: (projectId: string, checkpointId: string, conversationId: string) =>
+    request<{ id: string }>(`/projects/${id(projectId)}/handoff`, json("POST", { checkpoint_id: checkpointId, conversation_id: conversationId })),
   advance: (projectId: string) => request<Plan>(`/projects/${id(projectId)}/advance`, { method: "POST" }),
   decide: (projectId: string, proposalId: string, accept: boolean) =>
     request<Plan>(`/projects/${id(projectId)}/proposals/${id(proposalId)}/${accept ? "accept" : "decline"}`, { method: "POST" }),

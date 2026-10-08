@@ -142,6 +142,13 @@ def _clean_level(raw: dict) -> dict:
         if expects is not None and not (isinstance(expects, dict) and expects.get("kind") == "file"
                                         and isinstance(expects.get("pattern"), str) and expects["pattern"].strip()):
             raise PlanError("invalid_expects")
+        if expects is not None:
+            # §4.2: a glob relative to the folder and how many files it needs (1 when absent).
+            try:
+                need = max(1, min(1000, int(expects.get("min") or 1)))
+            except (TypeError, ValueError):
+                raise PlanError("invalid_expects") from None
+            expects = {"kind": "file", "pattern": expects["pattern"].strip()[:200], "min": need}
         clean_cps.append({"id": cp.get("id"), "text": text, "expects": expects})
     return {"id": raw.get("id"), "name": name, "band": band,
             "description": str(raw.get("description") or "").strip()[:300],

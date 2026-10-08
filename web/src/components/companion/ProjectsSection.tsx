@@ -82,7 +82,7 @@ type View = { kind: "board" } | { kind: "new"; project?: Project } | { kind: "pa
  * Projects (0.1.56): the board, a project's page, and new / plan-it. The board reloads
  * whenever something on a page changed.
  */
-export default function ProjectsSection({ onStart }: { onStart: (project: Project, prefill?: string) => Promise<void> }) {
+export default function ProjectsSection({ onStart }: { onStart: (project: Project, prefill?: string, checkpointId?: string) => Promise<void> }) {
   const { t } = useTranslation();
   const [board, setBoard] = useState<Board | null>(null);
   const [view, setView] = useState<View>({ kind: "board" });

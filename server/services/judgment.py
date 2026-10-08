@@ -83,6 +83,17 @@ REGISTRY: dict[str, DecisionPoint] = {p.name: p for p in (
                   "Does the assistant's final answer say the task's goal was achieved, rather than that it "
                   "was blocked, refused, expired, is waiting on the user, or was only partly done?",
                   ("goal", "answer"), "active", 0.7, after_turn=True),
+    # 0.1.56 §4.3 "you said": active, after the user's own turn in a project conversation. The
+    # gate runs once per turn; only on its yes is each open checkpoint (and the condition) asked.
+    # A yes ticks a checkpoint (undoable) or proposes the level clear (the user decides).
+    DecisionPoint("project.progress",
+                  "Does the user's message say that some of the listed open checkpoints are finished, approved "
+                  "or accepted, or that the level's condition is met? Plans, wishes and questions are not.",
+                  ("level", "condition", "open_checkpoints", "user_message"), "active", 0.8, after_turn=True),
+    DecisionPoint("project.progress.item",
+                  "Does the user's message say that this item is finished, approved or accepted (not planned, "
+                  "hoped for, or asked about)?",
+                  ("item", "user_message"), "active", 0.8, after_turn=True),
     # Registered, off (C2.3): gets a shadow trial on the bench later.
     DecisionPoint("turn.completion",
                   "Was the user's request actually completed, with the result verified, in the steps shown?",

@@ -639,7 +639,7 @@ async def test_refine_uses_the_models_levels_when_they_hold_the_rules(api, execu
     assert body["source"] == "model"
     assert [lv["name"] for lv in body["levels"]] == ["Pitch", "Look approved", "Build", "Launch"]
     assert body["levels"][1]["habit"] is True
-    assert body["levels"][2]["checkpoints"][0]["expects"] == {"kind": "file", "pattern": "levels/*.json"}
+    assert body["levels"][2]["checkpoints"][0]["expects"] == {"kind": "file", "pattern": "levels/*.json", "min": 1}
     (call,) = calls
     assert "Simplified Chinese" in call["system"]
     sent = _json.loads(call["user"])

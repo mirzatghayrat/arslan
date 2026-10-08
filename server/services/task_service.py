@@ -468,7 +468,18 @@ async def run_turn(function, conversation_id: str, user_message: str, emit, *arg
         value = await repo.start(spec.id, created["version"])
     async def body(sink):
         return await function(conversation_id, user_message, sink, *args, **kwargs)
-    return await _launch(value, emit, body, context=ctx)
+    result = await _launch(value, emit, body, context=ctx)
+    if ctx.project_id:
+        _project_evidence_later(ctx.project_id, conversation_id, user_message)
+    return result
+
+
+def _project_evidence_later(project_id: str, conversation_id: str, user_message: str) -> None:
+    """0.1.56 §4: after a turn in a project conversation, look at the folder and (for the
+    user's own turns, not a background job's) at what the user said. Off the reply path."""
+    from server.services import background_jobs, lessons, project_evidence
+    lessons.later(project_evidence.after_turn(project_id, conversation_id, user_message,
+                                              said=not background_jobs.inside_job()))
 
 
 async def prepare_resume(task_id, expected_version, conversation_id, ctx, *, instruction=None, driver=None):
