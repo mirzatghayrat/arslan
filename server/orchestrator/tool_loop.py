@@ -1234,6 +1234,30 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
 
 
 
+async def _propose_plan_change(args: dict, emit) -> dict:
+    """Record Arslan's changed plan for this conversation's project and show it as a card
+    ("计划要不要跟着改？"). The user keeps the old plan or takes the new one."""
+    from server.db import session as db_session
+    from server.db.models import Project
+    from server.services import personal_context, project_plan
+    ctx = personal_context.current()
+    if ctx is None or not ctx.project_id:
+        return {"ok": False, "error": "this conversation has no project"}
+    try:
+        async with db_session.AsyncSessionLocal() as db:
+            project = await db.get(Project, ctx.project_id)
+            if project is None or project.status != "active":
+                return {"ok": False, "error": "the project is not available"}
+            event = await project_plan.propose_plan(db, project, args.get("levels") or [], str(args.get("reason") or ""))
+            await db.commit()
+    except project_plan.PlanError as exc:
+        return {"ok": False, "error": exc.code}
+    emit({"type": "plan_proposed", "project_id": ctx.project_id, "proposal_id": event.id,
+          "diff": event.payload["diff"], "reason": event.payload["reason"], "cleared": event.payload["cleared"]})
+    return {"ok": True, "proposal_id": event.id,
+            "note": "Shown to the user as a card. Nothing changed yet; they keep the plan or take this one."}
+
+
 # Native tool-calling is the sole production execution loop.
 
 # Minimal OpenAI-format parameter schemas per known tool key. The executor re-validates args,
@@ -1414,6 +1438,22 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                                                   "description": "The service, e.g. GitHub, Notion."}},
                           "required": ["name"]},
     "update_plan": _PLAN_PARAMS,
+    # 0.1.56 §7: a changed plan for the project, proposed — the user decides on the card.
+    "propose_plan_change": {
+        "type": "object",
+        "properties": {
+            "reason": {"type": "string", "description": "What changed, in the user's words."},
+            "levels": {"type": "array", "minItems": 1, "maxItems": 15, "description":
+                       "Every level NOT cleared yet, as it should be after the change, in order.",
+                       "items": {"type": "object", "properties": {
+                           "name": {"type": "string"},
+                           "band": {"type": "string", "enum": ["shaping", "doing", "done"]},
+                           "clear_condition": {"type": "string"},
+                           "checkpoints": {"type": "array", "maxItems": 12,
+                                           "items": {"type": "object", "properties": {"text": {"type": "string"}},
+                                                     "required": ["text"]}}},
+                                 "required": ["name", "band"]}}},
+        "required": ["levels", "reason"]},
     "ask_user_choice": {
         "type": "object",
         "properties": {
@@ -2236,6 +2276,14 @@ async def _run_native(
                 assistant_content = json.dumps({"tool": name, "args": args}, ensure_ascii=False)
                 # 0.1.50 S2: the plan is host bookkeeping — no executor, no tool
                 # budget, no progress signal; allowed during wrap-up too.
+                if name == "propose_plan_change" and name in wired_keys:
+                    # 0.1.56 §7: bookkeeping like update_plan — the proposal waits for the
+                    # user on a card; nothing in the plan changes here.
+                    emit({"type": "tool_call", "tool": name,
+                          "args_summary": json.dumps(args, ensure_ascii=False)[:200]})
+                    outcome = await _propose_plan_change(args, emit)
+                    _record_tool_result(name, args, outcome, emit, tool_trace, assistant_content, convo)
+                    continue
                 if name == "update_plan" and "update_plan" in wired_keys:
                     emit({"type": "tool_call", "tool": name,
                           "args_summary": json.dumps(args, ensure_ascii=False)[:200]})

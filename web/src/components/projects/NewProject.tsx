@@ -32,6 +32,7 @@ export default function NewProject({ project, onDone, onCancel }: {
   const [drafting, setDrafting] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [refined, setRefined] = useState<"no" | "yes" | "failed">("no");
   const conditionTouched = useRef(false);
 
   useEffect(() => {
@@ -56,6 +57,17 @@ export default function NewProject({ project, onDone, onCancel }: {
     if (lastBefore && lastAfter && lastBefore.clear_condition !== lastAfter.clear_condition) conditionTouched.current = true;
     setLevels(next);
   };
+
+  /** One model call, only on this click (§3.2): adapts what the editor shows to the finish line. */
+  async function refine() {
+    setDrafting(true); setError(null);
+    try {
+      const d = await projectsApi.draft(template, finish, lang, { refine: true, levels });
+      setLevels(d.levels);
+      setRefined(d.source === "model" ? "yes" : "failed");
+    } catch { setRefined("failed"); }
+    finally { setDrafting(false); }
+  }
 
   async function create() {
     setBusy(true); setError(null);
@@ -102,8 +114,12 @@ export default function NewProject({ project, onDone, onCancel }: {
           <span className="-mt-1 text-[12px] text-subtle-foreground">{t("projectsUI.q3hint")}</span>
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-2">
-          <span className="text-[13px] font-semibold">4 {t("projectsUI.q4", { count: levels.length })}
-            {drafting && <span className="ml-2 font-normal text-subtle-foreground">{t("projectsUI.drafting")}</span>}</span>
+          <span className="flex flex-wrap items-center gap-2 text-[13px] font-semibold">4 {t("projectsUI.q4", { count: levels.length })}
+            {drafting && <span className="font-normal text-subtle-foreground">{t("projectsUI.drafting")}</span>}
+            <Button size="sm" className="ml-auto" disabled={drafting || !levels.length} onClick={() => void refine()}
+              data-testid="new-project-refine">{t("projectsUI.refine")}</Button></span>
+          <span className="text-[12px] text-subtle-foreground">{t(refined === "yes" ? "projectsUI.refined"
+            : refined === "failed" ? "projectsUI.refineFailed" : "projectsUI.refineHint")}</span>
           {levels.length > 0 && <PlanEditor levels={levels} onChange={editLevels} />}
         </div>
       </div>

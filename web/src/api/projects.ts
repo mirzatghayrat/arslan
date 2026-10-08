@@ -35,7 +35,14 @@ export interface Level {
   cleared_at?: string | null;
   checkpoints: Checkpoint[];
 }
+export type PlanDiffLine =
+  | { op: "add"; level: string; band: Band }
+  | { op: "remove"; level: string }
+  | { op: "change"; level: string; added: string[]; removed: string[]; band: Band | null };
+/** Arslan's proposed new plan (0.1.56 §7): what changes in the levels not cleared yet. */
+export interface PlanProposal { id: string; diff: PlanDiffLine[]; reason: string; cleared: number }
 export interface Plan {
+  plan_proposal?: PlanProposal | null;
   project_id: string;
   version: number;
   stage: "idea" | "active" | "done" | "dropped";
@@ -88,8 +95,10 @@ const id = (s: string) => encodeURIComponent(s);
 export const projectsApi = {
   board: () => request<Board>("/projects/board"),
   templates: (lang: string) => request<TemplateInfo[]>(`/project-templates?lang=${id(lang)}`),
-  draft: (template: ProjectTemplate, finish_line: string, lang: string) =>
-    request<{ levels: Level[]; source: "template" | "model" }>("/projects/draft", json("POST", { template, finish_line, lang })),
+  /** The template draft; with `refine`, one model call adapts `levels` to the finish line (0.1.56 §3.2). */
+  draft: (template: ProjectTemplate, finish_line: string, lang: string, opts: { refine?: boolean; levels?: Level[] } = {}) =>
+    request<{ levels: Level[]; source: "template" | "model"; refine_failed?: boolean }>("/projects/draft",
+      json("POST", { template, finish_line, lang, ...opts })),
   plan: (projectId: string) => request<Plan>(`/projects/${id(projectId)}/plan`),
   savePlan: (projectId: string, expected_version: number, levels: Level[]) =>
     request<Plan>(`/projects/${id(projectId)}/plan`, json("PUT", { expected_version, levels })),
@@ -98,6 +107,8 @@ export const projectsApi = {
   advance: (projectId: string) => request<Plan>(`/projects/${id(projectId)}/advance`, { method: "POST" }),
   decide: (projectId: string, proposalId: string, accept: boolean) =>
     request<Plan>(`/projects/${id(projectId)}/proposals/${id(proposalId)}/${accept ? "accept" : "decline"}`, { method: "POST" }),
+  decidePlan: (projectId: string, proposalId: string, accept: boolean) =>
+    request<Plan>(`/projects/${id(projectId)}/plan-proposals/${id(proposalId)}/${accept ? "accept" : "decline"}`, { method: "POST" }),
   undo: (projectId: string, eventId: string) => request<Plan>(`/projects/${id(projectId)}/events/${id(eventId)}/undo`, { method: "POST" }),
   stage: (projectId: string, body: { stage?: "active" | "done" | "dropped"; paused?: boolean }) =>
     request<Plan>(`/projects/${id(projectId)}/stage`, json("PUT", body)),

@@ -661,6 +661,13 @@ function makeActions(set: SetState, get: GetState) {
           }
           break;
         }
+        case "plan_proposed":
+          set({
+            items: [...state.items, { id: nextClientId(), kind: "plan", role: "arslan", content: frame.reason,
+              planProposal: { projectId: frame.project_id, id: frame.proposal_id, diff: frame.diff, reason: frame.reason,
+                cleared: frame.cleared } }],
+          });
+          break;
         case "lesson_learned":
           set({
             items: [

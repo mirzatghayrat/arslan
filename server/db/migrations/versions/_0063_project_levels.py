@@ -58,7 +58,7 @@ _STATEMENTS = (
         outcome VARCHAR(10),
         undo_of VARCHAR(36),
         created_at DATETIME NOT NULL,
-        CONSTRAINT ck_project_event_kind CHECK (kind IN ('tick','untick','proposal','advance','plan_change','stage','auto_ask','activity')),
+        CONSTRAINT ck_project_event_kind CHECK (kind IN ('tick','untick','proposal','advance','plan_change','plan_proposal','stage','auto_ask','activity')),
         CONSTRAINT ck_project_event_actor CHECK (actor IN ('user','arslan'))
     )""",
     "CREATE INDEX IF NOT EXISTS ix_project_events_project_id ON project_events (project_id)",

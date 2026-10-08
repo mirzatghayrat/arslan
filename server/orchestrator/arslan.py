@@ -580,6 +580,22 @@ async def _background_tools() -> list[dict]:
                                    "stop_background_work"}]
 
 
+async def _with_project_card(facts: str) -> str:
+    """0.1.56 §8: in a project's conversation the model sees the project — name, finish
+    line, current level and its open checkpoints — beside the memory block."""
+    from server.services import personal_context, project_plan
+    ctx = personal_context.current()
+    if ctx is None or not ctx.project_id:
+        return facts
+    try:
+        async with db_session.AsyncSessionLocal() as db:
+            card = await project_plan.card_text(db, ctx.project_id)
+    except Exception:  # noqa: BLE001 — the card is context, never a reason to fail a turn
+        logger.warning("project card unavailable", exc_info=True)
+        return facts
+    return f"{facts}\n\n{card}".strip() if card else facts
+
+
 async def background_body(conversation_id: str, goal: str, emit: EventSink, confirmations) -> str:
     """One background job's execution: the answer machinery without the chat stream."""
     ctx = await memory.assemble_working_context(conversation_id)
@@ -590,6 +606,7 @@ async def background_body(conversation_id: str, goal: str, emit: EventSink, conf
         await personal_context.record(personal)
     else:
         facts = await memory.facts_text(include_sensitive=True)
+    facts = await _with_project_card(facts)
     kb_block = ""
     try:
         from server.services import knowledge as _knowledge
@@ -627,6 +644,7 @@ async def _handle_answer_body(
         await personal_context.record(personal)
     else:
         facts = await memory.facts_text(include_sensitive=True)
+    facts = await _with_project_card(facts)
     roster = await _team_roster()
     # Prompt-cache reorder (spec 2026-07-13): KB is per-query volatile → gather it, then
     # assemble via _build_answer_system so the static guards stay a byte-stable cacheable
@@ -1007,6 +1025,16 @@ async def _arslan_tools() -> list[dict]:
             "service connected. Shows the user a confirm card; nothing connects until they confirm, and "
             "any key is typed on the card, never here. args: {name}. If there is no such connector, the "
             "result lists what exists: then do the task another way instead of stopping."})
+    # 0.1.56 §7: a project's conversation may propose a changed plan (a card; the user decides).
+    from server.services import personal_context as _pc
+    _ctx = _pc.current()
+    if _ctx is not None and _ctx.project_id:
+        tools.append({"key": "propose_plan_change", "description":
+            "This conversation belongs to a project with levels (see the project card). When the user "
+            "changes direction (drops a feature, adds a goal, changes the order), propose the new plan: "
+            "every level NOT cleared yet, as it should be, in order. Cleared levels never change. The user "
+            "sees a card with what is added and removed and keeps the old plan or takes yours. "
+            "args: {levels: [{name, band: shaping|doing|done, clear_condition?, checkpoints?: [{text}]}], reason}."})
     if "whats_new" in EXECUTORS:
         tools.append({"key": "whats_new",
                       "description": "Your own version and the release notes of the latest versions "

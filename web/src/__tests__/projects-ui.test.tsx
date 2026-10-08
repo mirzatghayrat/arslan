@@ -250,3 +250,77 @@ describe("the project client", () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe("refining the draft with the model (P3)", () => {
+  it("is one call on the button, with what the editor shows; a failure keeps the draft", async () => {
+    const draft = vi.spyOn(projectsApi, "draft")
+      .mockResolvedValueOnce({ levels: drafted(), source: "template" })
+      .mockResolvedValueOnce({ levels: [{ name: "Pitch", band: "shaping", checkpoints: [] }, { name: "Ship", band: "done", checkpoints: [] }], source: "model" })
+      .mockResolvedValueOnce({ levels: [{ name: "Pitch", band: "shaping", checkpoints: [] }, { name: "Ship", band: "done", checkpoints: [] }], source: "template", refine_failed: true });
+    render(<NewProject onDone={() => {}} onCancel={() => {}} />);
+    await waitFor(() => expect(screen.getByTestId("plan-level-1")).toBeInTheDocument());
+    expect(draft).toHaveBeenCalledTimes(1);                                    // the template draft: no model
+    expect(screen.getByText("projectsUI.refineHint")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("new-project-refine"));
+    await waitFor(() => expect(within(screen.getByTestId("plan-level-0")).getByLabelText("projectsUI.levelName")).toHaveValue("Pitch"));
+    expect(draft.mock.calls[1][3]).toEqual({ refine: true, levels: drafted() });
+    expect(screen.getByText("projectsUI.refined")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("new-project-refine"));
+    await waitFor(() => expect(screen.getByText("projectsUI.refineFailed")).toBeInTheDocument());
+  });
+});
+
+import PlanProposalCard from "../components/projects/PlanProposalCard";
+import { useArslanStore, initialArslanState } from "../stores/arslanStore";
+import { toUiMessages } from "../api/adapters";
+
+const PROPOSAL = { id: "pp1", reason: "no online mode", cleared: 3, diff: [
+  { op: "add" as const, level: "Six more levels", band: "doing" as const },
+  { op: "remove" as const, level: "Stress test" },
+  { op: "change" as const, level: "Beta", added: ["Solo playtest"], removed: [], band: null },
+] };
+
+describe("a changed plan, proposed (P3)", () => {
+  it("shows what changes and keeps cleared levels; taking it goes through the projects API", async () => {
+    const decide = vi.spyOn(projectsApi, "decidePlan").mockResolvedValue(PLAN);
+    const onDone = vi.fn();
+    render(<PlanProposalCard projectId="p1" proposal={PROPOSAL} onDone={onDone} />);
+    const diff = screen.getByTestId("plan-diff");
+    expect(diff).toHaveTextContent('projectsUI.diffAdd:{"level":"Six more levels"}');
+    expect(diff).toHaveTextContent('projectsUI.diffRemove:{"level":"Stress test"}');
+    expect(diff).toHaveTextContent('"added":"Solo playtest"');
+    expect(diff).toHaveTextContent('projectsUI.diffKept:{"count":3}');
+    expect(screen.getByTestId("plan-proposal")).toHaveTextContent("no online mode");
+    fireEvent.click(screen.getByTestId("plan-proposal-take"));
+    await waitFor(() => expect(decide).toHaveBeenCalledWith("p1", "pp1", true));
+    expect(await screen.findByTestId("plan-proposal-decided")).toHaveTextContent("projectsUI.planTaken");
+    expect(onDone).toHaveBeenCalled();
+  });
+
+  it("keeping the plan declines it", async () => {
+    const decide = vi.spyOn(projectsApi, "decidePlan").mockResolvedValue(PLAN);
+    render(<PlanProposalCard projectId="p1" proposal={PROPOSAL} />);
+    fireEvent.click(screen.getByTestId("plan-proposal-keep"));
+    await waitFor(() => expect(decide).toHaveBeenCalledWith("p1", "pp1", false));
+    expect(await screen.findByTestId("plan-proposal-decided")).toHaveTextContent("projectsUI.planKept");
+  });
+
+  it("the plan_proposed frame becomes a card in the conversation", () => {
+    useArslanStore.setState(initialArslanState());
+    useArslanStore.getState().handleFrame({ type: "plan_proposed", project_id: "p1", proposal_id: "pp1", diff: PROPOSAL.diff,
+      reason: "no online mode", cleared: 3 });
+    const items = useArslanStore.getState().items;
+    expect(items[items.length - 1]).toMatchObject({ kind: "plan", planProposal: { projectId: "p1", id: "pp1", cleared: 3 } });
+    const messages = toUiMessages(items);
+    expect(messages[messages.length - 1].planProposal).toMatchObject({ projectId: "p1", id: "pp1" });
+  });
+
+  it("an open proposal shows on the project page too", async () => {
+    vi.spyOn(companionApi, "projects").mockResolvedValue([PROJECT]);
+    vi.spyOn(projectsApi, "plan").mockResolvedValue({ ...PLAN, plan_proposal: PROPOSAL });
+    vi.spyOn(projectsApi, "events").mockResolvedValue([]);
+    vi.spyOn(projectsApi, "conversations").mockResolvedValue([]);
+    render(<ProjectPage projectId="p1" onBack={() => {}} onStart={async () => {}} onPlan={() => {}} onChanged={() => {}} />);
+    expect(await screen.findByTestId("plan-proposal")).toBeInTheDocument();
+  });
+});

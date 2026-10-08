@@ -8,6 +8,7 @@ import { Button, Dialog, Notice, Tag, confirmSheet } from "../kit";
 import { ProjectEditor } from "../companion/ProjectsSection";
 import { companionError } from "../companion/errors";
 import LevelMap from "./LevelMap";
+import PlanProposalCard from "./PlanProposalCard";
 import { templateOf } from "./NewProject";
 import PlanEditor, { planIsValid } from "./PlanEditor";
 import { daysSince, evidenceText } from "./projectUi";
@@ -105,6 +106,8 @@ export default function ProjectPage({ projectId, onBack, onStart, onPlan, onChan
           {t("projectsUI.noPlanBody")}</Notice>)}
 
       {tab === "levels" && levels.length > 0 && <>
+        {plan.plan_proposal && <PlanProposalCard key={plan.plan_proposal.id} projectId={projectId} proposal={plan.plan_proposal}
+          onDone={() => { void load(); onChanged(); }} />}
         <LevelMap levels={levels} />
         {plan.stage === "idea" && <Notice tone="info" title={t("projectsUI.notStarted")}
           action={<Button size="sm" disabled={busy} onClick={() => void act(() => projectsApi.stage(projectId, { stage: "active" }))}

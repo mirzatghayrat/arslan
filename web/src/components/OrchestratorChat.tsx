@@ -11,6 +11,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import JobCard, { JobResultLabel } from './JobCard';
 import RememberedLine from './RememberedLine';
+import PlanProposalCard from './projects/PlanProposalCard';
 import LearnedLine from "./LearnedLine";
 
 import { formatUiTime } from '../lib/localeFormatting';
@@ -489,6 +490,7 @@ export default function OrchestratorChat({
 
             // 0.1.42: a background job's live card sits where the job was started.
             if (msg.jobId) return <JobCard key={msg.id} jobId={msg.jobId} />;
+            if (msg.planProposal) return <PlanProposalCard key={msg.id} projectId={msg.planProposal.projectId} proposal={msg.planProposal} />;
             if (msg.learned) return <LearnedLine key={msg.id} id={msg.learned.id} text={msg.text} status={msg.learned.status} />;
             if (msg.remembered) return <RememberedLine key={msg.id} facts={msg.remembered} />;
 

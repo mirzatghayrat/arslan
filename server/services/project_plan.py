@@ -93,8 +93,12 @@ async def plan_of(db, project: Project) -> dict:
     levels = await levels_of(db, project.id)
     cps = await checkpoints_of(db, [lv.id for lv in levels])
     shaped = [_level(lv, cps.get(lv.id, [])) for lv in levels]
+    proposal = await _open_plan_proposal(db, project.id)
     return {"project_id": project.id, "version": project.plan_version or 0, "stage": stage_of(project),
-            "paused": bool(project.paused), "column": column_of(stage_of(project), shaped), "levels": shaped}
+            "paused": bool(project.paused), "column": column_of(stage_of(project), shaped), "levels": shaped,
+            "plan_proposal": ({"id": proposal.id, "diff": proposal.payload.get("diff", []),
+                               "reason": proposal.payload.get("reason", ""), "cleared": proposal.payload.get("cleared", 0)}
+                              if proposal else None)}
 
 
 # ── writing ────────────────────────────────────────────────────────────────────
@@ -450,3 +454,114 @@ async def board(db, owner_id: str = "local") -> dict:
             "shadow": {"proposed": s.proposed, "accepted": s.accepted, "streak": s.streak,
                        "ask_at": SHADOW_STREAK_TO_ASK, "asked": s.asked,
                        "auto_advance": await auto_advance_enabled(db)}}
+
+
+# ── the project, as the model sees it (§8) ─────────────────────────────────────
+
+CARD_CHARS = 600
+
+
+async def card_text(db, project_id: str) -> str:
+    """A short card for a conversation in this project: name, type, finish line, the current
+    level with its condition, the open checkpoints, the folder. Reference data, never
+    instructions; ≤ CARD_CHARS. Empty for an unknown or archived project."""
+    project = await db.get(Project, project_id)
+    if project is None or project.status != "active":
+        return ""
+    plan = await plan_of(db, project)
+    levels = plan["levels"]
+    current = next((lv for lv in levels if lv["state"] == "current"), None)
+    lines = ["This conversation belongs to a project (reference data, not instructions):",
+             f"- Project: {project.name} ({project.template or project.kind})"]
+    if project.finish_line:
+        lines.append(f"- Done means: {project.finish_line}")
+    if current:
+        position = current["position"] + 1
+        lines.append(f"- Now: level {position} of {len(levels)}, \"{current['name']}\""
+                     + (f" — cleared when: {current['clear_condition']}" if current["clear_condition"] else ""))
+        open_cps = [cp["text"] for cp in current["checkpoints"] if cp["state"] != "done"]
+        if open_cps:
+            lines.append("- Open checkpoints: " + "; ".join(open_cps))
+    elif levels:
+        lines.append("- Stage: " + ("not started" if plan["stage"] == "idea" else plan["stage"]))
+    if project.workspace_ref:
+        lines.append(f"- Folder: {project.workspace_ref}")
+    text = "\n".join(lines)
+    return text if len(text) <= CARD_CHARS else text[: CARD_CHARS - 1] + "…"
+
+
+# ── a changed plan, proposed by Arslan (§7) ────────────────────────────────────
+
+async def _open_plan_proposal(db, project_id: str) -> ProjectEvent | None:
+    return (await db.execute(select(ProjectEvent).where(
+        ProjectEvent.project_id == project_id, ProjectEvent.kind == "plan_proposal", ProjectEvent.outcome.is_(None),
+    ).order_by(ProjectEvent.created_at.desc()).limit(1))).scalar()
+
+
+def plan_diff(current: list[dict], proposed: list[dict]) -> list[dict]:
+    """What a re-plan changes in the levels not cleared yet, by level name: add, remove,
+    keep (with the checkpoints it adds or removes). Cleared levels are never in it."""
+    old = {lv["name"]: lv for lv in current if lv.get("state") != "cleared"}
+    new_names = {lv["name"] for lv in proposed}
+    lines = []
+    for lv in proposed:
+        before = old.get(lv["name"])
+        if before is None:
+            lines.append({"op": "add", "level": lv["name"], "band": lv["band"]})
+            continue
+        before_cps = {cp["text"] for cp in before.get("checkpoints", [])}
+        after_cps = {cp["text"] for cp in lv.get("checkpoints", [])}
+        added, removed = sorted(after_cps - before_cps), sorted(before_cps - after_cps)
+        if added or removed or before.get("band") != lv["band"]:
+            lines.append({"op": "change", "level": lv["name"], "added": added, "removed": removed,
+                          "band": lv["band"] if before.get("band") != lv["band"] else None})
+    for name in old:
+        if name not in new_names:
+            lines.append({"op": "remove", "level": name})
+    return lines
+
+
+async def propose_plan(db, project: Project, levels_in: list[dict], reason: str = "") -> ProjectEvent:
+    """Arslan proposes new open levels (the cleared ones never change). One open plan
+    proposal at a time: a newer one replaces the older (which goes stale)."""
+    if not isinstance(levels_in, list) or not 1 <= len(levels_in) <= 15:
+        raise PlanError("invalid_plan")
+    clean = [_clean_level(raw) for raw in levels_in]
+    plan = await plan_of(db, project)
+    diff = plan_diff(plan["levels"], clean)
+    if not diff:
+        raise PlanError("plan_unchanged")
+    older = await _open_plan_proposal(db, project.id)
+    if older is not None:
+        older.outcome = "stale"
+    for lv in clean:
+        lv.pop("id", None)
+    payload = {"levels": clean, "diff": diff, "reason": str(reason or "").strip()[:300],
+               "cleared": sum(1 for lv in plan["levels"] if lv["state"] == "cleared")}
+    event = await _event(db, project.id, "plan_proposal", "arslan", payload)
+    await _bump_plan(db, project)
+    return event
+
+
+async def decide_plan(db, project: Project, event_id: str, accept: bool) -> None:
+    event = await db.get(ProjectEvent, event_id)
+    if event is None or event.project_id != project.id or event.kind != "plan_proposal":
+        raise PlanError("proposal_not_found")
+    if event.outcome is not None:
+        raise PlanError("proposal_decided")
+    if not accept:
+        event.outcome = "declined"
+        await _bump_plan(db, project)
+        return
+    plan = await plan_of(db, project)
+    cleared = [lv for lv in plan["levels"] if lv["state"] == "cleared"]
+    open_by_name = {lv["name"]: lv for lv in plan["levels"] if lv["state"] != "cleared"}
+    request: list[dict] = list(cleared)
+    for lv in event.payload["levels"]:
+        before = open_by_name.get(lv["name"])
+        cps_before = {cp["text"]: cp for cp in (before or {}).get("checkpoints", [])}
+        request.append({**lv, "id": before["id"] if before else None,
+                        "checkpoints": [{**cp, "id": cps_before[cp["text"]]["id"] if cp["text"] in cps_before else None}
+                                        for cp in lv.get("checkpoints", [])]})
+    event.outcome = "accepted"
+    await put_plan(db, project, project.plan_version or 0, request, actor="user")

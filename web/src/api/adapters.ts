@@ -397,6 +397,11 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
       };
     }
 
+    if (item.kind === "plan" && item.planProposal) {
+      return { id, sender: "arslan", senderName: "Arslan", senderAvatar: "🦁", text: item.content, timestamp,
+        planProposal: item.planProposal };
+    }
+
     if (item.kind === "lesson" && item.lesson) {
       return { id, sender: "arslan", senderName: "Arslan", senderAvatar: "🦁", text: item.content, timestamp,
         learned: item.lesson };

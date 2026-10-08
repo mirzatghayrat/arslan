@@ -65,6 +65,8 @@ export interface Message {
   jobId?: string;
   /** 0.1.52 S5: a practice learned in this turn (render one quiet line with undo). */
   learned?: { id: number; status: string };
+  /** 0.1.56 §7: Arslan proposes a changed plan for the project (a card, answered here). */
+  planProposal?: import('./api/projects').PlanProposal & { projectId: string };
   /** D1 (0.1.55): what was remembered after this turn — one quiet line, never a reply. */
   remembered?: import('./api/client.types').RememberedFact[];
   /** 0.1.42: this Arslan message is the result of that background job. */

@@ -49,12 +49,24 @@ class DraftIn(BaseModel):
     template: Annotated[str, Field(max_length=30)]
     finish_line: Annotated[str, Field(max_length=400)] = ""
     lang: Annotated[str, Field(max_length=10)] | None = None
+    #: §3.2 one model call, only when the user asks; `levels` = what the editor shows now.
+    refine: bool = False
+    levels: list[dict[str, Any]] | None = None
 
 
 @router.post("/projects/draft")
 async def draft(body: DraftIn) -> dict:
-    """§3.1 the deterministic draft. (P3 adds the model's adaptation on top.)"""
-    return {"levels": project_templates.draft(body.template, body.finish_line, body.lang), "source": "template"}
+    """§3.1 the template draft, always without a model; with `refine`, the model adapts the
+    given levels (or the template draft) to the finish line. A failed refine says so and
+    returns the levels it was given, unchanged."""
+    base = body.levels or project_templates.draft(body.template, body.finish_line, body.lang)
+    if not body.refine:
+        return {"levels": base, "source": "template"}
+    from server.services import project_drafter
+    refined = await project_drafter.refine(body.template, body.finish_line, body.lang, base)
+    if refined is None:
+        return {"levels": base, "source": "template", "refine_failed": True}
+    return {"levels": refined, "source": "model"}
 
 
 @router.get("/projects/board")
@@ -112,6 +124,17 @@ async def decide(project_id: str, event_id: str, decision: Literal["accept", "de
     project = await _project(repo, project_id)
     try:
         await project_plan.decide(repo.db, project, event_id, decision == "accept")
+    except PlanError as exc:
+        raise _error(exc) from exc
+    return await project_plan.plan_of(repo.db, project)
+
+
+@router.post("/projects/{project_id}/plan-proposals/{event_id}/{decision}")
+async def decide_plan(project_id: str, event_id: str, decision: Literal["accept", "decline"],
+                      repo=Depends(_repository, scope="function")) -> dict:
+    project = await _project(repo, project_id)
+    try:
+        await project_plan.decide_plan(repo.db, project, event_id, decision == "accept")
     except PlanError as exc:
         raise _error(exc) from exc
     return await project_plan.plan_of(repo.db, project)

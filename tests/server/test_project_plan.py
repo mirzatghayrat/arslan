@@ -426,3 +426,237 @@ async def test_the_activity_hook_starts_a_planned_project_and_never_raises(api, 
         raise RuntimeError("db gone")
     monkeypatch.setattr(project_plan, "note_activity", broken)
     await task_service._note_project_activity(pid)           # logged, not raised
+
+
+# ── the project reaches the model (§8) ───────────────────────────────────────
+
+async def test_the_card_names_the_project_its_finish_line_level_and_open_checkpoints(api, execution_db, tmp_path):
+    pid = (await _create(api, workspace_ref=str(tmp_path)))["id"]
+    async with execution_db() as db:
+        assert "not started" not in await project_plan.card_text(db, pid)      # no plan yet: no stage line
+    await _plan(api, pid)
+    await api.put(f"/api/v1/projects/{pid}/stage", json={"stage": "active"})
+    await api.post(f"/api/v1/projects/{pid}/advance")
+    async with execution_db() as db:
+        card = await project_plan.card_text(db, pid)
+    assert "reference data, not instructions" in card
+    assert "Sluice (sample) (game)" in card and "Done means: On the App Store" in card
+    assert 'level 2 of 4, "Prototype"' in card
+    assert "Open checkpoints: Playable build; Fun test" in card
+    assert f"Folder: {tmp_path}" in card
+    assert len(card) <= project_plan.CARD_CHARS
+
+
+async def test_an_archived_or_unknown_project_has_no_card(api, execution_db):
+    project = await _create(api)
+    await api.put(f"/api/v1/projects/{project['id']}", json={"expected_version": project["version"], "status": "archived",
+                                                             "project": {"name": "x", "kind": "general"}})
+    async with execution_db() as db:
+        assert await project_plan.card_text(db, project["id"]) == ""
+        assert await project_plan.card_text(db, "nope") == ""
+
+
+async def test_a_turn_in_the_project_sees_the_card_and_one_outside_does_not(api, execution_db, monkeypatch):
+    from server.orchestrator import arslan
+    from server.services import personal_context as pc
+    pid = (await _create(api))["id"]
+    await _plan(api, pid)
+    systems = []
+
+    async def fake_run_native(**kw):
+        systems.append(kw["system"])
+        return {"answer": "ok"}
+
+    monkeypatch.setattr(arslan.tool_loop, "run_native", fake_run_native)
+    with pc.bind(pc.TaskMemoryContext(task_id="t1", run_id="r1", conversation_id="c1", model_is_local=True, project_id=pid)):
+        await arslan._handle_answer_body("c1", "what next?", lambda ev: None)
+    with pc.bind(pc.TaskMemoryContext(task_id="t2", run_id="r2", conversation_id="c2", model_is_local=True)):
+        await arslan._handle_answer_body("c2", "what next?", lambda ev: None)
+    assert "This conversation belongs to a project" in systems[0] and "Sluice (sample)" in systems[0]
+    assert "This conversation belongs to a project" not in systems[1]
+
+
+# ── a changed plan, proposed (§7) ────────────────────────────────────────────
+
+async def _active_with_cleared_first(api):
+    pid = (await _create(api))["id"]
+    await _plan(api, pid)
+    await api.put(f"/api/v1/projects/{pid}/stage", json={"stage": "active"})
+    await api.post(f"/api/v1/projects/{pid}/advance")                    # Idea cleared, Prototype current
+    plan = (await api.get(f"/api/v1/projects/{pid}/plan")).json()
+    await api.post(f"/api/v1/projects/{pid}/checkpoints/{plan['levels'][1]['checkpoints'][0]['id']}/tick")
+    return pid
+
+
+NEW_OPEN = [
+    {"name": "Prototype", "band": "shaping", "checkpoints": [{"text": "Playable build"}, {"text": "Fun test"},
+                                                            {"text": "Single-player only"}]},
+    {"name": "Production", "band": "doing", "checkpoints": []},
+    {"name": "Six more levels", "band": "doing", "checkpoints": []},
+]
+
+
+async def test_a_plan_proposal_shows_what_changes_and_waits(api, execution_db):
+    from server.db.models import Project
+    pid = await _active_with_cleared_first(api)
+    async with execution_db() as db:
+        project = await db.get(Project, pid)
+        event = await project_plan.propose_plan(db, project, NEW_OPEN, "no online mode")
+        await db.commit()
+    plan = (await api.get(f"/api/v1/projects/{pid}/plan")).json()
+    proposal = plan["plan_proposal"]
+    assert proposal["id"] == event.id and proposal["reason"] == "no online mode" and proposal["cleared"] == 1
+    assert {"op": "add", "level": "Six more levels", "band": "doing"} in proposal["diff"]
+    assert {"op": "remove", "level": "Launch"} in proposal["diff"]
+    assert {"op": "change", "level": "Prototype", "added": ["Single-player only"], "removed": [], "band": None} in proposal["diff"]
+    # Nothing changed yet.
+    assert [lv["name"] for lv in plan["levels"]] == ["Idea", "Prototype", "Production", "Launch"]
+
+
+async def test_taking_the_new_plan_keeps_cleared_levels_ticks_and_the_current_level(api, execution_db):
+    from server.db.models import Project
+    pid = await _active_with_cleared_first(api)
+    before = (await api.get(f"/api/v1/projects/{pid}/plan")).json()
+    async with execution_db() as db:
+        project = await db.get(Project, pid)
+        event = await project_plan.propose_plan(db, project, NEW_OPEN, "no online mode")
+        await db.commit()
+    after = (await api.post(f"/api/v1/projects/{pid}/plan-proposals/{event.id}/accept")).json()
+    assert [lv["name"] for lv in after["levels"]] == ["Idea", "Prototype", "Production", "Six more levels"]
+    assert after["levels"][0]["state"] == "cleared" and after["levels"][0]["id"] == before["levels"][0]["id"]
+    proto = after["levels"][1]
+    assert proto["id"] == before["levels"][1]["id"] and proto["state"] == "current"
+    assert proto["started_at"] == before["levels"][1]["started_at"]
+    assert [cp["state"] for cp in proto["checkpoints"]] == ["done", "todo", "todo"]
+    assert after["plan_proposal"] is None
+    again = await api.post(f"/api/v1/projects/{pid}/plan-proposals/{event.id}/accept")
+    assert again.status_code == 409
+
+
+async def test_a_newer_proposal_replaces_the_older_and_declining_changes_nothing(api, execution_db):
+    from server.db.models import Project
+    pid = await _active_with_cleared_first(api)
+    async with execution_db() as db:
+        project = await db.get(Project, pid)
+        first = await project_plan.propose_plan(db, project, NEW_OPEN, "one")
+        second = await project_plan.propose_plan(db, project, NEW_OPEN[:2], "two")
+        await db.commit()
+    plan = (await api.get(f"/api/v1/projects/{pid}/plan")).json()
+    assert plan["plan_proposal"]["id"] == second.id
+    assert (await api.post(f"/api/v1/projects/{pid}/plan-proposals/{first.id}/accept")).status_code == 409
+    after = (await api.post(f"/api/v1/projects/{pid}/plan-proposals/{second.id}/decline")).json()
+    assert [lv["name"] for lv in after["levels"]] == ["Idea", "Prototype", "Production", "Launch"]
+
+
+async def test_the_same_plan_is_not_a_proposal(api, execution_db):
+    from server.db.models import Project
+    pid = await _active_with_cleared_first(api)
+    plan = (await api.get(f"/api/v1/projects/{pid}/plan")).json()
+    same = [{"name": lv["name"], "band": lv["band"], "checkpoints": [{"text": c["text"]} for c in lv["checkpoints"]]}
+            for lv in plan["levels"][1:]]
+    async with execution_db() as db:
+        project = await db.get(Project, pid)
+        with pytest.raises(project_plan.PlanError, match="plan_unchanged"):
+            await project_plan.propose_plan(db, project, same)
+
+
+async def test_the_tool_records_the_proposal_and_shows_the_card(api, execution_db):
+    from server.orchestrator import tool_loop
+    from server.services import personal_context as pc
+    pid = await _active_with_cleared_first(api)
+    frames = []
+    with pc.bind(pc.TaskMemoryContext(task_id="t", run_id="r", conversation_id="c", model_is_local=True, project_id=pid)):
+        result = await tool_loop._propose_plan_change({"levels": NEW_OPEN, "reason": "no online mode"}, frames.append)
+    assert result["ok"] is True
+    (frame,) = frames
+    assert frame["type"] == "plan_proposed" and frame["project_id"] == pid and frame["proposal_id"] == result["proposal_id"]
+    assert any(line["op"] == "add" for line in frame["diff"])
+    with pc.bind(pc.TaskMemoryContext(task_id="t2", run_id="r2", conversation_id="c2", model_is_local=True)):
+        assert (await tool_loop._propose_plan_change({"levels": NEW_OPEN}, frames.append))["ok"] is False
+    assert len(frames) == 1
+
+
+async def test_the_tool_is_offered_only_in_a_project_conversation(api, execution_db):
+    from server.orchestrator import arslan
+    from server.services import personal_context as pc
+    pid = (await _create(api))["id"]
+    with pc.bind(pc.TaskMemoryContext(task_id="t", run_id="r", conversation_id="c", model_is_local=True, project_id=pid)):
+        assert "propose_plan_change" in {t["key"] for t in await arslan._arslan_tools()}
+    with pc.bind(pc.TaskMemoryContext(task_id="t2", run_id="r2", conversation_id="c2", model_is_local=True)):
+        assert "propose_plan_change" not in {t["key"] for t in await arslan._arslan_tools()}
+
+
+# ── the model's draft (§3.2), adapter stubbed ────────────────────────────────
+
+class _Reply:
+    def __init__(self, content):
+        self.content = content
+
+
+def _stub(monkeypatch, content=None, error=None):
+    from server.services import project_drafter
+    calls = []
+
+    class Adapter:
+        async def chat(self, system, user, **kw):
+            calls.append({"system": system, "user": user})
+            if error:
+                raise error
+            return _Reply(content)
+    monkeypatch.setattr(project_drafter, "_get_adapter", lambda: Adapter())
+    return calls
+
+
+GOOD = {"levels": [
+    {"name": "Pitch", "band": "shaping", "description": "One line", "clear_condition": "You approve the pitch",
+     "checkpoints": [{"text": "Write the pitch", "expects": None}]},
+    {"name": "Look approved", "band": "shaping", "habit": True, "clear_condition": "You approve the key art",
+     "checkpoints": []},
+    {"name": "Build", "band": "doing", "checkpoints": [{"text": "First level", "expects": {"kind": "file", "pattern": "levels/*.json"}}]},
+    {"name": "Launch", "band": "done", "clear_condition": "On the App Store", "checkpoints": []},
+]}
+
+
+async def test_without_refine_no_model_is_called(api, monkeypatch):
+    calls = _stub(monkeypatch, content="{}")
+    body = (await api.post("/api/v1/projects/draft", json={"template": "game", "finish_line": "x"})).json()
+    assert body["source"] == "template" and calls == []
+
+
+async def test_refine_uses_the_models_levels_when_they_hold_the_rules(api, execution_db, monkeypatch):
+    import json as _json
+
+    from server.db.models import ProjectHabit
+    async with execution_db() as db:
+        db.add(ProjectHabit(id="h1", template="game", kind="plan_rule", text="Approve the look before building",
+                            sources=[], enabled=True))
+        db.add(ProjectHabit(id="h2", template="game", kind="plan_rule", text="SWITCHED OFF RULE", sources=[], enabled=False))
+        db.add(ProjectHabit(id="h3", template="trip", kind="plan_rule", text="OTHER TYPE RULE", sources=[], enabled=True))
+        await db.commit()
+    calls = _stub(monkeypatch, content=_json.dumps(GOOD))
+    body = (await api.post("/api/v1/projects/draft", json={"template": "game", "finish_line": "On the App Store",
+                                                             "lang": "zh", "refine": True})).json()
+    assert body["source"] == "model"
+    assert [lv["name"] for lv in body["levels"]] == ["Pitch", "Look approved", "Build", "Launch"]
+    assert body["levels"][1]["habit"] is True
+    assert body["levels"][2]["checkpoints"][0]["expects"] == {"kind": "file", "pattern": "levels/*.json"}
+    (call,) = calls
+    assert "Simplified Chinese" in call["system"]
+    sent = _json.loads(call["user"])
+    assert sent["plan_rules"] == ["Approve the look before building"]
+    assert sent["finish_line"] == "On the App Store" and sent["levels"][0]["name"] == "点子"
+
+
+@pytest.mark.parametrize("content, error", [
+    ('{"levels": [{"name": "Only", "band": "done"}]}', None),                                  # too few
+    ('{"levels": [{"name": "A", "band": "doing"}, {"name": "B", "band": "shaping"}, {"name": "C", "band": "done"}]}', None),
+    ('{"levels": [{"name": "A", "band": "shaping"}, {"name": "B", "band": "doing"}, {"name": "C", "band": "doing"}]}', None),
+    ("not json at all", None),
+    (None, RuntimeError("no model configured")),
+])
+async def test_a_reply_that_breaks_the_rules_keeps_the_draft(api, monkeypatch, content, error):
+    _stub(monkeypatch, content=content, error=error)
+    given = [{"name": "Mine", "band": "shaping", "checkpoints": []}, {"name": "End", "band": "done", "checkpoints": []}]
+    body = (await api.post("/api/v1/projects/draft", json={"template": "game", "refine": True, "levels": given})).json()
+    assert body["refine_failed"] is True and body["source"] == "template"
+    assert [lv["name"] for lv in body["levels"]] == ["Mine", "End"]

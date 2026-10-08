@@ -539,7 +539,9 @@ export interface RememberedFact {
 
 export interface ArslanThreadItem {
   id: number;
-  kind: "message" | "fact" | "system" | "escalation" | "job" | "lesson";
+  kind: "message" | "fact" | "system" | "escalation" | "job" | "lesson" | "plan";
+  /** kind === "plan" (0.1.56 §7): Arslan's proposed new plan for this conversation's project. */
+  planProposal?: import("./projects").PlanProposal & { projectId: string };
   /** kind === "job": the background job whose live card sits at this point in the
    *  thread; the card's state lives in the store's `jobs` map. On a message, the
    *  job this result came from. */
@@ -662,6 +664,7 @@ export type ArslanServerMessage =
   | { type: "spawn_meta"; arslan_message_id: number; spawn_id: number; assistant_message_id: number; task_brief: string; run_id?: number }
   | { type: "fact_saved"; content: string; sensitive: boolean; entry_id?: string | null; version?: number | null }
   | { type: "memory_proposed"; content: string; sensitive: boolean; entry_id?: string | null; version?: number | null }
+  | { type: "plan_proposed"; project_id: string; proposal_id: string; diff: import("./projects").PlanDiffLine[]; reason: string; cleared: number }
   | { type: "lesson_learned"; lesson: { id: number; text: string; status: string } }
   // source "phone": the paired iPhone's message, shown live in a window open on its conversation.
   | { type: "message"; message_id: number; content: string; role: string; job_id?: string; outcome?: JobOutcome | null;
