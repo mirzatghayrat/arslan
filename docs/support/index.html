@@ -2,59 +2,179 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Arslan Support</title>
-<meta name="description" content="Help with Arslan for iPhone and Arslan for Mac: pairing, approvals, and how to reach us.">
+<meta name="description" content="Help with Arslan for iPhone and Arslan for Mac: setting up, pairing, approvals, voice, and how to reach the developer.">
 <link rel="canonical" href="https://aralem.dev/arslan/support/">
 <link rel="icon" type="image/svg+xml" href="../assets/site/favicon.svg">
-<meta name="color-scheme" content="light dark">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#050506">
+<meta property="og:title" content="Arslan Support">
+<meta property="og:description" content="Set up Arslan for iPhone with your Mac, fix pairing, and reach the developer.">
+<meta property="og:image" content="https://aralem.dev/arslan/assets/site/og.jpg">
+<link rel="stylesheet" href="../assets/legal/legal.css">
 <style>
-:root{--bg:#F6EBD6;--fg:#2A1E10;--muted:#6B5A44;--rule:rgba(42,30,16,.16);--link:#9A4A12}
-@media (prefers-color-scheme:dark){:root{--bg:#231710;--fg:#F6EBD6;--muted:#C9B79B;--rule:rgba(246,235,214,.18);--link:#F3C34A}}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font:17px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;-webkit-text-size-adjust:100%}
-main{max-width:44rem;margin:0 auto;padding:28px 20px 72px}
-nav{display:flex;gap:18px;flex-wrap:wrap;font-size:15px;margin-bottom:28px}
-a{color:var(--link);text-underline-offset:2px;overflow-wrap:anywhere}
-a:focus-visible{outline:3px solid var(--link);outline-offset:2px;border-radius:4px}
-h1{font-size:clamp(26px,6vw,34px);line-height:1.2;margin:0 0 6px}
-h2{font-size:22px;margin:44px 0 6px;padding-top:28px;border-top:1px solid var(--rule)}
-h3{font-size:18px;margin:28px 0 4px}
-p,ul{margin:10px 0}
-ul{padding-left:1.3em}
-li{margin:6px 0}
-.updated{color:var(--muted);font-size:15px;margin:0}
-section[lang="zh-Hans"]{line-height:1.8}
-footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--rule);font-size:15px;color:var(--muted);display:flex;gap:18px;flex-wrap:wrap}
+main{--ec:var(--work)}
+.reach{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:36px 0 0}
+.reach a{display:block;border:1px solid var(--line2);border-radius:18px;padding:18px 20px;background:linear-gradient(180deg,var(--s2),var(--s1));color:var(--tx2)}
+.reach a:hover{text-decoration:none;border-color:rgba(138,180,255,.5)}
+.reach b{display:block;color:var(--tx);font-size:16px}.reach span{display:block;font-size:14px;color:var(--mu);margin-top:2px}.reach code{font:13px var(--mono);color:var(--link)}
+.steps{list-style:none;padding:0;margin:18px 0 0;display:grid;gap:10px;counter-reset:s}
+.steps li{counter-increment:s;margin:0;display:grid;grid-template-columns:38px 1fr;gap:14px;border:1px solid var(--line);border-radius:16px;padding:16px 18px;background:var(--s1)}
+.steps li::before{content:counter(s);width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font:600 13px var(--mono);color:var(--work);background:rgba(59,158,255,.12)}
+.steps b{color:var(--tx);display:block;line-height:1.5}.steps p{margin:4px 0 0;font-size:15px;color:var(--mu);line-height:1.65}
+.req{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:16px 0}
+.req div{border:1px solid var(--line);border-radius:14px;padding:14px 16px;background:var(--s1);min-width:0}
+.req small{display:block;font:500 11px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}.req b{display:block;color:var(--tx);font-size:15px;line-height:1.45;margin-top:4px}.req span{display:block;font-size:13.5px;color:var(--mu);line-height:1.5;margin-top:3px}
+details{border:1px solid var(--line);border-radius:14px;background:var(--s1);margin:10px 0;overflow:hidden}
+details[open]{border-color:var(--line2)}
+summary{cursor:pointer;list-style:none;padding:14px 46px 14px 18px;color:var(--tx);font-weight:600;position:relative;line-height:1.5}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"+";position:absolute;right:18px;top:12px;font:400 20px var(--mono);color:var(--dim)}
+details[open] summary::after{content:"−"}
+details>div{padding:0 18px 14px;font-size:15.5px}details>div p:first-child{margin-top:0}
+.tag{font:600 11px var(--mono);color:var(--ask);border:1px solid rgba(245,165,36,.4);border-radius:6px;padding:1px 6px;margin-left:6px;white-space:nowrap}
+@media (max-width:720px){.req{grid-template-columns:1fr}}
+@media (max-width:560px){.reach{grid-template-columns:1fr}.steps li{grid-template-columns:30px 1fr;gap:12px;padding:14px}}
 </style>
+<script>
+(function(){var d=document.documentElement,q=new URLSearchParams(location.search).get("lang"),h=location.hash,l=null;
+try{l=localStorage.getItem("arslan-lang")}catch(e){}
+var p=q||(h=="#zh"?"zh":h=="#en"?"en":null)||l||((navigator.languages&&navigator.languages[0])||navigator.language||"en");
+p=String(p).toLowerCase().indexOf("zh")===0?"zh":"en";d.classList.add("js",p);d.lang=p=="zh"?"zh-Hans":"en";})();
+</script>
 </head>
 <body>
+<nav class="nav" aria-label="Main">
+  <a class="brand" href="../"><svg viewBox="250 190 750 840" aria-hidden="true"><path fill="#fff" d="M286 517L283 287C283 231 320 208 358 237L494 332Q626 280 758 332L894 237C932 208 969 231 969 287L966 517C966 562 982 603 963 651C944 694 909 731 880 777L811 890C758 974 698 1006 626 1006C554 1006 494 974 441 890L372 777C343 731 308 694 289 651C270 603 286 562 286 517Z"/><path fill="#999" d="M310 496L307 286Q307 236 349 259L465 343Q376 404 310 496ZM942 496L945 286Q945 236 903 259L787 343Q876 404 942 496Z"/><path d="M386 518C478 501 558 551 552 650C449 654 387 604 386 518ZM866 518C774 501 694 551 700 650C803 654 865 604 866 518Z"/><g stroke="#000" stroke-width="14" stroke-linecap="round"><line x1="626" y1="696" x2="495" y2="813"/><line x1="626" y1="696" x2="757" y2="813"/><line x1="626" y1="696" x2="626" y2="893"/></g><circle cx="626" cy="696" r="29"/><circle cx="495" cy="813" r="25"/><circle cx="757" cy="813" r="25"/><circle cx="626" cy="893" r="30"/></svg>Arslan<small>Support</small></a>
+  <div class="links"><a class="hide" href="../docs/">Docs</a><a href="../privacy/">Privacy</a><a href="./" aria-current="page">Support</a><a class="hide" href="https://github.com/mirzatghayrat/arslan">GitHub</a></div>
+  <span class="sp"></span>
+  <span class="lang" role="group" aria-label="Language"><button type="button" data-set="en" aria-pressed="true">EN</button><button type="button" data-set="zh" aria-pressed="false" lang="zh-Hans">中文</button></span>
+</nav>
 <main>
-<nav aria-label="Page"><a href="../">← Arslan</a><a href="#en">English</a><a href="#zh" lang="zh-Hans">中文</a></nav>
-<h1>Arslan Support / Arslan 支持</h1>
-<section id="en" lang="en"><h2>English</h2>
-<p><strong>Contact:</strong> <a href="mailto:support@aralem.dev">support@aralem.dev</a> — or open an issue at <a href="https://github.com/mirzatghayrat/arslan/issues">https://github.com/mirzatghayrat/arslan/issues</a></p>
-<p><strong>What do I need?</strong> Arslan for Mac (free, from <a href="https://aralem.dev/arslan/">https://aralem.dev/arslan/</a>) on a Mac with Apple silicon and macOS 11 or later, and an iPhone with iOS 17 or later, both signed in to the <strong>same Apple ID</strong> with iCloud turned on.</p>
-<p><strong>How do I pair?</strong> On your Mac, open Arslan › Settings › iPhone, turn on "Use Arslan from your iPhone" and click "Add iPhone". On your iPhone, open Arslan and scan the code. Confirm the request on your Mac.</p>
-<p><strong>My Mac shows as offline.</strong> Make sure the Mac is awake, Arslan is running and the switch above is on, both devices use the same Apple ID, and both are online.</p>
-<p><strong>How do approvals work?</strong> When the agent on your Mac wants to do something outside its own folder or sandbox, it asks first. Approve with Face ID or Touch ID, or decline, on the phone or on the Mac — the first answer counts. Voice can ask, but only you approve. A card nobody answers expires after five minutes.</p>
-<p><strong>Can I try it without a Mac?</strong> Yes: on the first screen, tap "Try the demo".</p>
-<p><strong>Voice input:</strong> hold to talk; it listens in the app's language (English or Chinese) and turns your voice into text on the iPhone. You review the text before sending.</p>
-<p><strong>How do I unpair?</strong> On the Mac: Settings › iPhone › remove the phone. On the iPhone: Settings › Unpair.</p>
-<p><strong>Privacy:</strong> <a href="https://aralem.dev/arslan/privacy">https://aralem.dev/arslan/privacy</a></p>
-</section>
-<section id="zh" lang="zh-Hans"><h2>中文</h2>
-<p><strong>联系我们：</strong> <a href="mailto:support@aralem.dev">support@aralem.dev</a>，或在 <a href="https://github.com/mirzatghayrat/arslan/issues">https://github.com/mirzatghayrat/arslan/issues</a> 提 issue</p>
-<p><strong>需要什么？</strong> 一台 Apple 芯片、macOS 11 或更高版本的 Mac，装好 Arslan Mac 版（免费，<a href="https://aralem.dev/arslan/">https://aralem.dev/arslan/</a>），以及 iOS 17 或更高版本的 iPhone；两台设备登录<strong>同一个 Apple ID</strong>，并打开 iCloud。</p>
-<p><strong>怎么配对？</strong> 在 Mac 上打开 Arslan › 设置 › iPhone，打开“在 iPhone 上使用 Arslan”，点“添加 iPhone”。在 iPhone 上打开 Arslan 扫码，再到 Mac 上确认。</p>
-<p><strong>Mac 显示离线？</strong> 确认 Mac 没有睡眠、Arslan 在运行且上面的开关已打开、两台设备是同一个 Apple ID、并且都联网。</p>
-<p><strong>批准怎么用？</strong> Mac 上的智能体要在它自己的文件夹或沙箱之外做事时，会先来问你。可以在手机或 Mac 上用面容 ID 或触控 ID 批准，或者拒绝，以先到的回答为准。语音可以提要求，但只有你能批准。没人回应的批准卡五分钟后过期。</p>
-<p><strong>没有 Mac 能先试试吗？</strong> 可以：在第一个页面点“先看看演示”。</p>
-<p><strong>语音输入：</strong> 按住说话，识别语言跟随 App 的语言（中文或英文），在 iPhone 本机转成文字，你确认后再发送。</p>
-<p><strong>怎么解除配对？</strong> Mac 上：设置 › iPhone › 移除这台手机。iPhone 上：设置 › 解除配对。</p>
-<p><strong>隐私政策：</strong> <a href="https://aralem.dev/arslan/privacy">https://aralem.dev/arslan/privacy</a></p>
-</section>
-<footer><a href="../">aralem.dev/arslan</a><a href="../privacy/">Privacy</a><a href="../support/">Support</a></footer>
+
+<article data-l="en" lang="en">
+<div class="eyebrow">Support</div>
+<h1>Arslan on your iPhone,<br><span class="g">working on your Mac.</span></h1>
+<p class="lead">Set it up in a few minutes, fix the usual snags, or write to the developer directly.</p>
+
+<div class="reach">
+  <a href="mailto:support@aralem.dev"><b>Email the developer</b><span><code>support@aralem.dev</code> · questions, problems, ideas</span></a>
+  <a href="https://github.com/mirzatghayrat/arslan/issues"><b>Report a bug on GitHub</b><span>Public issues for Arslan for Mac and the iPhone link</span></a>
+</div>
+
+<h2><span class="n">01</span>What you need</h2>
+<div class="req">
+  <div><small>Mac</small><b>Apple silicon, macOS 11 or later</b><span>with <a href="../">Arslan for Mac</a> (free) — 0.1.54 or later recommended</span></div>
+  <div><small>iPhone</small><b>iOS 17 or later</b><span>Face ID or Touch ID to approve</span></div>
+  <div><small>iCloud</small><b>The same Apple ID on both</b><span>with iCloud turned on, both online</span></div>
+</div>
+
+<h2><span class="n">02</span>Pair in three steps</h2>
+<ol class="steps">
+  <li><div><b>On your Mac, open Arslan › Settings › iPhone</b><p>Turn on <span class="k">Use Arslan from your iPhone</span>, then click <span class="k">Add iPhone</span>. A code appears; it works once, for 10 minutes.</p></div></li>
+  <li><div><b>On your iPhone, open Arslan and scan the code</b><p>The app asks for the camera only to read this code.</p></div></li>
+  <li><div><b>Back on the Mac, click Allow</b><p>The phone shows each step. On the Mac it reads <em>Connecting…</em> until the first message arrives, then <em>Connected</em>.</p></div></li>
+</ol>
+<p>Just looking? On the iPhone's first screen, tap <span class="k">Try the demo</span>. It never connects to a real Mac.</p>
+
+<h2><span class="n">03</span>Common questions</h2>
+
+<details><summary>The app says my Mac is offline</summary><div>
+<p>Check that the Mac is awake, Arslan is running, <span class="k">Use Arslan from your iPhone</span> is on, both devices use the same Apple ID, and both are online. What you send while the Mac is offline waits and goes when it is back.</p></div></details>
+
+<details><summary>Pairing is stuck, or the code stopped working</summary><div>
+<p>The code lasts 10 minutes and works once. If it has expired, click <span class="k">Add iPhone</span> again on the Mac and scan the new one. Keep both apps open for the first few seconds after you click Allow.</p>
+<p>Pairing the same iPhone again replaces its old entry on the Mac instead of adding a second one.<span class="tag">Mac 0.1.54+</span></p></div></details>
+
+<details><summary>How do approvals work?</summary><div>
+<p>When the agent on your Mac wants to do something that needs your OK, it asks first, on the Mac and on your phone. Approve with Face ID or Touch ID, or decline; the first answer counts. A card nobody answers expires after five minutes. Voice can ask for things, but it can never approve.</p></div></details>
+
+<details><summary>It says to update Arslan on the Mac before I can approve with Touch ID</summary><div>
+<p>Touch ID approvals (for example on iPhone SE) need Arslan for Mac 0.1.54 or later. Open Arslan on the Mac and install the update it offers, or download the latest version from <a href="../">aralem.dev/arslan</a>. Face ID approvals work with earlier versions too.</p></div></details>
+
+<details><summary>Voice input</summary><div>
+<p>Hold to talk, let go to check the text, then send. Each recording can be up to 60 seconds. Recognition runs on your iPhone in the app's language (English or Chinese); recordings are never saved or uploaded. The first time, iOS may need to download its speech resources, which can be large, so Wi-Fi is best.</p></div></details>
+
+<details><summary>Can I send photos or files from my iPhone?</summary><div>
+<p>Not in this version: files go from your Mac to your phone, where you can open them. Sending photos and files from the iPhone to the Mac is planned for a later version.</p></div></details>
+
+<details><summary>Notifications</summary><div>
+<p>Arslan tells you when the Mac needs an approval or has finished a task. Previews are decrypted on your iPhone. To keep message text off the lock screen, turn off <span class="k">Show content in notifications</span> in the app's settings.</p></div></details>
+
+<details><summary>Which AI model does it use?</summary><div>
+<p>The one you set up in Arslan for Mac, with your own API key. The iPhone app never talks to an AI service; before your first message it asks you to agree to your Mac sending your requests to that service. You can withdraw that in the app's <span class="k">Settings › Privacy</span>.</p></div></details>
+
+<details><summary>How do I unpair?</summary><div>
+<p>On the iPhone: <span class="k">Settings › Unpair</span> clears the iPhone. On the Mac: <span class="k">Settings › iPhone › Remove</span> removes the phone and deletes the messages waiting for it in your iCloud. Do both to remove a phone completely.</p></div></details>
+
+<h2><span class="n">04</span>Reporting a problem</h2>
+<p>Tell us the versions (iPhone app version, Arslan for Mac version from its About window, iOS and macOS), what you did, and what you expected. A screenshot helps. Please never send API keys, pairing codes or pairing links.</p>
+<div class="contact"><a class="btn" href="mailto:support@aralem.dev?subject=Arslan%20support">Write to support</a><a class="btn ghost" href="https://github.com/mirzatghayrat/arslan/issues/new">Open an issue</a><a class="btn ghost" href="../privacy/">Privacy policy</a></div>
+</article>
+
+<article data-l="zh" lang="zh-Hans">
+<div class="eyebrow">支持</div>
+<h1>在 iPhone 上交代，<br><span class="g">在 Mac 上把活干完。</span></h1>
+<p class="lead">几分钟就能设置好；这里有常见问题的解法，也可以直接写信给开发者。</p>
+
+<div class="reach">
+  <a href="mailto:support@aralem.dev"><b>写信给开发者</b><span><code>support@aralem.dev</code> · 问题、故障、建议都可以</span></a>
+  <a href="https://github.com/mirzatghayrat/arslan/issues"><b>在 GitHub 上报告问题</b><span>Arslan Mac 版和 iPhone 连接的公开问题单</span></a>
+</div>
+
+<h2><span class="n">01</span>需要什么</h2>
+<div class="req">
+  <div><small>Mac</small><b>Apple 芯片，macOS 11 或更高</b><span>装好 <a href="../">Arslan Mac 版</a>（免费），建议 0.1.54 或更高</span></div>
+  <div><small>iPhone</small><b>iOS 17 或更高</b><span>用面容 ID 或触控 ID 批准</span></div>
+  <div><small>iCloud</small><b>两台设备同一个 Apple ID</b><span>打开 iCloud，并且都联网</span></div>
+</div>
+
+<h2><span class="n">02</span>三步完成配对</h2>
+<ol class="steps">
+  <li><div><b>在 Mac 上打开 Arslan › 设置 › iPhone</b><p>打开 <span class="k">在 iPhone 上使用 Arslan</span>，再点 <span class="k">添加 iPhone</span>。会出现一个配对码，只能用一次，10 分钟内有效。</p></div></li>
+  <li><div><b>在 iPhone 上打开 Arslan，扫这个码</b><p>App 只为读这个码才使用相机。</p></div></li>
+  <li><div><b>回到 Mac，点“允许”</b><p>手机上会显示每一步进度。Mac 上先显示<em>连接中…</em>，收到第一条消息后变成<em>已连接</em>。</p></div></li>
+</ol>
+<p>只想先看看？在 iPhone 的第一个页面点 <span class="k">先看看演示</span>，它不会连接任何真实的 Mac。</p>
+
+<h2><span class="n">03</span>常见问题</h2>
+
+<details><summary>App 显示 Mac 离线</summary><div>
+<p>确认 Mac 没有睡眠、Arslan 正在运行、<span class="k">在 iPhone 上使用 Arslan</span> 已打开、两台设备是同一个 Apple ID，并且都联网。Mac 离线时你发的内容会先排队，等它恢复后再送达。</p></div></details>
+
+<details><summary>配对卡住了，或者配对码失效了</summary><div>
+<p>配对码 10 分钟内有效，只能用一次。过期了就在 Mac 上再点一次 <span class="k">添加 iPhone</span>，扫新的码。点“允许”之后的头几秒，两边的 App 都保持打开。</p>
+<p>同一台 iPhone 再次配对，会替换 Mac 上的旧条目，而不是多出一条。<span class="tag">Mac 0.1.54+</span></p></div></details>
+
+<details><summary>批准是怎么回事？</summary><div>
+<p>Mac 上的智能体要做需要你点头的事时，会先在 Mac 和手机上同时来问你。用面容 ID 或触控 ID 批准，或者拒绝，以先到的回答为准。没人回应的批准卡五分钟后过期。语音可以提要求，但永远不能批准。</p></div></details>
+
+<details><summary>提示我先在 Mac 上更新 Arslan，才能用触控 ID 批准</summary><div>
+<p>用触控 ID 批准（比如 iPhone SE）需要 Arslan Mac 版 0.1.54 或更高版本。在 Mac 上打开 Arslan 安装它提示的更新，或者从 <a href="../">aralem.dev/arslan</a> 下载最新版。面容 ID 批准在更早的版本上也能用。</p></div></details>
+
+<details><summary>语音输入</summary><div>
+<p>按住说话，松开后检查文字，再发送。每段最长 60 秒。识别在 iPhone 本机完成，语言跟随 App（中文或英文）；录音从不保存、也不上传。第一次使用时，iOS 可能需要下载语音资源，体积可能较大，最好连着 Wi-Fi。</p></div></details>
+
+<details><summary>能从 iPhone 发照片或文件吗？</summary><div>
+<p>这个版本还不能：文件是从 Mac 发到手机，在手机上打开查看。从 iPhone 往 Mac 发照片和文件，计划在之后的版本加入。</p></div></details>
+
+<details><summary>通知</summary><div>
+<p>Mac 需要你批准、或任务做完时，Arslan 会提醒你。通知预览在 iPhone 上解密。不想让消息内容出现在锁屏上，可以在 App 设置里关闭 <span class="k">通知里显示内容</span>。</p></div></details>
+
+<details><summary>用的是哪个 AI 模型？</summary><div>
+<p>你在 Arslan Mac 版里设置的那个，用你自己的 API key。iPhone 版本身从不连接 AI 服务；在你发第一条消息前，它会请你同意由 Mac 把请求发给那个服务。可以在 App 的 <span class="k">设置 › 隐私</span> 里撤回。</p></div></details>
+
+<details><summary>怎么解除配对？</summary><div>
+<p>iPhone 上：<span class="k">设置 › 解除配对</span>，清空这台 iPhone 上的数据。Mac 上：<span class="k">设置 › iPhone › 移除</span>，移除这台手机，并删除 iCloud 里等着发给它的消息。两边都做，才算彻底移除。</p></div></details>
+
+<h2><span class="n">04</span>报告问题</h2>
+<p>请告诉我们版本（iPhone App 版本、Mac 上“关于”窗口里的 Arslan 版本、iOS 和 macOS 版本）、你做了什么、期望看到什么；附一张截图更好。请不要发送 API key、配对码或配对链接。</p>
+<div class="contact"><a class="btn" href="mailto:support@aralem.dev?subject=Arslan%20support">写信给支持</a><a class="btn ghost" href="https://github.com/mirzatghayrat/arslan/issues/new">提 issue</a><a class="btn ghost" href="../privacy/">隐私政策</a></div>
+</article>
+
+<footer><a href="../">aralem.dev/arslan</a><a href="../docs/">Docs</a><a href="../privacy/">Privacy</a><a href="./">Support</a><a href="https://github.com/mirzatghayrat/arslan">GitHub</a></footer>
 </main>
+<script src="../assets/legal/legal.js"></script>
 </body>
 </html>
