@@ -372,6 +372,7 @@ class CapabilitySource(Base):
     scan = Column(JSON, nullable=True)
     test = Column(JSON, nullable=True)
     files = Column(JSON, nullable=True)                    # skills: {path: sha256}
+    candidate = Column(JSON, nullable=True)                # the search result it came from (start arguments)
     state = Column(String(12), nullable=False, default="proposed")
     error = Column(Text, nullable=True)
     mcp_server_id = Column(Integer, nullable=True)

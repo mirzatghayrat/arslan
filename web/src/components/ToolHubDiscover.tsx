@@ -5,6 +5,8 @@ import { evaluateRepo, saveCandidate, type EvalResult } from '../api/discovery';
 import { capabilitiesApi, type CapabilitySearch } from '../api/capabilities';
 import RepoDossier from './RepoDossier';
 import DiscoverResults from './capabilities/DiscoverResults';
+import CandidateDossier from './capabilities/CandidateDossier';
+import type { CapabilityCandidate } from '../api/capabilities';
 import type { McpPrefill } from '../api/client.types';
 
 // Re-export McpPrefill so existing importers (SavedCandidates) keep their path.
@@ -27,6 +29,7 @@ export default function ToolHubDiscover({ onMcpAdded }: { onMcpAdded?: () => voi
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<EvalResult | null>(null);
   const [found, setFound] = useState<CapabilitySearch | null>(null);
+  const [dossier, setDossier] = useState<CapabilityCandidate | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [rowBusy, setRowBusy] = useState<string | null>(null);
   const [catalogNotice, setCatalogNotice] = useState<string | null>(null);
@@ -149,9 +152,11 @@ export default function ToolHubDiscover({ onMcpAdded }: { onMcpAdded?: () => voi
       )}
 
       {/* Search results (free-text queries): 0.1.57 — registry + GitHub + skill libraries */}
+      {dossier && <CandidateDossier candidate={dossier} onClose={() => setDossier(null)}
+        onInstalled={(r) => { if (r.state === 'on') onMcpAdded?.(); }} />}
       {found && (
         <DiscoverResults result={found} busyId={rowBusy}
-          onLook={(c) => { if (c.repo) void evaluateItem(c.repo, c.id); }}
+          onLook={(c) => setDossier(c)}
           onSave={(c) => { if (c.repo) void saveItem(c.repo, c.id); }} />
       )}
     </div>

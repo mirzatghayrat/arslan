@@ -12,6 +12,7 @@ Rules (spec §1, §4, §5):
 """
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -19,6 +20,8 @@ from datetime import datetime, timedelta
 from sqlalchemy import and_, or_, select, update
 
 from server.db.models import Project, ProjectCheckpoint, ProjectEvent, ProjectLevel
+
+logger = logging.getLogger(__name__)
 
 COLUMNS = ("idea", "shaping", "doing", "done", "dropped")
 STAGES = ("idea", "active", "done", "dropped")
@@ -232,7 +235,22 @@ async def start(db, project: Project, *, actor: str, reason: str) -> bool:
     project.stage = "active"
     await _event(db, project.id, "stage", actor, {"to": "active", "reason": reason})
     await _bump_plan(db, project)
+    await _level_started(db, project, first)
     return True
+
+
+async def _level_started(db, project: Project, level: ProjectLevel) -> None:
+    """0.1.57 §4.2: a level became current — look ahead for a capability it may need (off the
+    request; a find on the Capabilities page at most, never a notification)."""
+    try:
+        from server.services import capability_lookahead
+        cps = (await checkpoints_of(db, [level.id])).get(level.id, [])
+        capability_lookahead.later(
+            {"id": project.id, "name": project.name, "template": project.template},
+            {"id": level.id, "name": level.name, "clear_condition": level.clear_condition,
+             "checkpoints": [{"text": c.text} for c in cps]})
+    except Exception:  # noqa: BLE001 — bookkeeping only
+        logger.info("capability lookahead not started", exc_info=True)
 
 
 async def note_activity(db, project_id: str) -> None:
@@ -330,6 +348,7 @@ async def advance(db, project: Project, *, actor: str, evidence: dict | None = N
     current.state, current.cleared_at = "cleared", now
     if nxt is not None:
         nxt.state, nxt.started_at = "current", now
+        await _level_started(db, project, nxt)
     event = await _event(db, project.id, "advance", actor, {
         "level_id": current.id, "level": current.name, "next_level_id": nxt.id if nxt else None,
         "next": nxt.name if nxt else None, "evidence": evidence, "proposal_id": proposal.id if proposal else None})

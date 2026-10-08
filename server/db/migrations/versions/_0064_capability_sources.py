@@ -31,7 +31,7 @@ def upgrade_sync(connection) -> None:
         license_spdx VARCHAR(40), license_path VARCHAR(300),
         stars INTEGER, pushed_days INTEGER, checked_at DATETIME,
         runtime VARCHAR(10), needs JSON NOT NULL, grants JSON NOT NULL,
-        scan JSON, test JSON, files JSON,
+        scan JSON, test JSON, files JSON, candidate JSON,
         state VARCHAR(12) NOT NULL DEFAULT 'proposed', error TEXT,
         mcp_server_id INTEGER, skill_key VARCHAR(60),
         created_at DATETIME NOT NULL, installed_at DATETIME,

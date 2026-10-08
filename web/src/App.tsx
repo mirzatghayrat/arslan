@@ -31,6 +31,8 @@ import ActivityView from './components/ActivityView';
 import MemorySection from './components/companion/MemorySection';
 import ProjectsSection from './components/companion/ProjectsSection';
 import { projectsApi } from './api/projects';
+import { capabilitiesApi } from './api/capabilities';
+import { START_PROJECT_EVENT } from './components/capabilities/CandidateDossier';
 import ConversationControls from './components/companion/ConversationControls';
 import TaskPanel from './components/companion/TaskPanel';
 import LegacyExperts from './components/companion/LegacyExperts';
@@ -417,6 +419,25 @@ export default function App() {
 
   /** A new conversation in the project. `prefill` (0.1.56 "交给 Arslan 起头") is typed into the
    *  composer for the user to send — nothing is sent on their behalf. */
+  // 0.1.57 §4: what Arslan found for later — a quiet count beside 能力, refreshed when the page changes.
+  const [capabilityFinds, setCapabilityFinds] = useState(0);
+  useEffect(() => {
+    capabilitiesApi.finds().then((f) => setCapabilityFinds(f.length)).catch(() => {});
+  }, [activeSection]);
+  // 0.1.57 §8 "当依赖": a capability's dossier opens a project conversation with the request typed.
+  useEffect(() => {
+    const onStartProject = (e: Event) => {
+      const { projectId, prefill } = (e as CustomEvent<{ projectId: string; prefill: string }>).detail ?? {};
+      if (!projectId) return;
+      void companionApi.projects(false).then((all) => {
+        const project = all.find((p) => p.id === projectId);
+        if (project) { void handleStartProject(project, prefill); setActiveSection('arslan'); }
+      }).catch(() => {});
+    };
+    window.addEventListener(START_PROJECT_EVENT, onStartProject);
+    return () => window.removeEventListener(START_PROJECT_EVENT, onStartProject);
+  });
+
   const handleStartProject = async (project: Project, prefill?: string, checkpointId?: string) => {
     const conversationId = `thread-${crypto.randomUUID()}`;
     if (prefill) composerDrafts.set(conversationId, prefill);
@@ -585,6 +606,7 @@ export default function App() {
         onAddThread={() => handleAddArslanThread()}
         inboxUnread={proactive.unread + (proactive.approvals ?? 0) + (proactive.memory ?? 0)}
         inboxHigh={proactive.high + (proactive.approvals ?? 0)}
+        capabilityFinds={capabilityFinds}
         activeSection={activeSection}
         onChangeSection={(section) => {
           if (section === 'settings') setSettingsInitialSection(undefined);

@@ -77,10 +77,10 @@ export default function DiscoverResults({ result, busyId, onLook, onSave }: {
           <p className="text-[12px] text-muted-foreground" data-testid={`cand-run-${c.id}`}>{runLine(t, c)}</p>
           {c.needs.keys.some(k => k.required) && <p className="text-[12px] text-muted-foreground">
             {t("discover.needsKeys", { keys: c.needs.keys.filter(k => k.required).map(k => k.name).join(", ") })}</p>}
-          {c.repo && <div className="flex gap-1.5">
+          <div className="flex gap-1.5">
             <Button size="sm" disabled={busyId === c.id} onClick={() => onLook(c)} data-testid={`cand-look-${c.id}`}>{t("discover.look")}</Button>
-            <Button size="sm" disabled={busyId === c.id} onClick={() => onSave(c)} data-testid={`cand-save-${c.id}`}>{t("discover.save")}</Button>
-          </div>}
+            {c.repo && <Button size="sm" disabled={busyId === c.id} onClick={() => onSave(c)} data-testid={`cand-save-${c.id}`}>{t("discover.save")}</Button>}
+          </div>
         </article>
       ))}
     </section>

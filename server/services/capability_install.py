@@ -275,7 +275,7 @@ async def install(candidate: dict, *, folders: list[str], keys: dict[str, str] |
         version=(candidate.get("package") or {}).get("version") or candidate.get("version"),
         license_spdx=spdx, license_path=license_path, stars=candidate.get("stars"),
         pushed_days=candidate.get("pushed_days"), checked_at=datetime.utcnow(), runtime=candidate.get("runtime"),
-        needs=needs, grants=grants, state="proposed", created_at=datetime.utcnow())
+        needs=needs, grants=grants, candidate=candidate, state="proposed", created_at=datetime.utcnow())
     root = capabilities_root() / source_id
     try:
         if candidate["runtime"] == "remote":

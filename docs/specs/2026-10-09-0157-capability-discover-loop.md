@@ -269,3 +269,32 @@ red lines stay (the search code lives in a new module; the importer still takes 
 
 `find_capability` / `propose_capability` run inside the user's own turn (no extra call). One router
 call per project level start (§4.2). No model call for scanning or testing.
+
+## 16. As built: where the implementation differs (flagged, not waiting)
+
+1. **The registry's search is slow** (13–60 s per query, measured 2026-10-09). It still runs, with
+   a 30 s budget and a 6 h cache, and two faster paths feed the same results: GitHub repositories
+   tagged as MCP servers are looked up in the registry **by name** (`io.github.<owner>/<repo>`,
+   ≈0.9 s), and licenses/stars for many registry entries come from **one** GitHub search with
+   `repo:` qualifiers. One ranking score (fit, usable license, runs here, installable, popularity,
+   staleness) replaced "fit first", which buried the right server under small repositories.
+2. **Skill libraries are read from one archive** (codeload, its pax header names the commit)
+   instead of the GitHub API (60 calls an hour without a token; the per-file way spent ~40).
+3. **A package's license is read from its repository's LICENSE at HEAD** (raw file, recognised by
+   its wording), not at the version's tag — the registry does not say which commit a version is.
+4. **The scan reads a package's own files**, not its dependencies (HTTP clients there phone home by
+   design). Rules were checked against excel-mcp-server 1.1.2 and all 20 anthropics/skills; one
+   false alarm found and fixed.
+5. **Partial: mcpb bundles of type `python` are not installed** (they need their own interpreter
+   set-up); `node` and `binary` bundles are. Said in code and here.
+6. **The card is answered only in the Arslan window that asked** — not the Inbox, the phone or the
+   island (it may carry a key). Declining works from anywhere.
+7. **Network for an installed local server** is allowed only when it needs a secret key (the
+   registry declares no network need; a secret key means a remote service). The card says so.
+8. **Decision 5 is narrow**: `read_skill` on an imported skill wraps it and marks the turn as having
+   read outside content. Other tools that return `external: True` (Hands) are unchanged — that is
+   the Hands session's area.
+9. **Updates link to GitHub's compare of `v<old>...v<new>`** for "what changed" (release notes are
+   not in the registry); the update itself installs beside, scans, tests, and only then removes the
+   old one.
+10. **"收藏" on a candidate** still uses the existing evaluate-and-save path (GitHub repositories).
