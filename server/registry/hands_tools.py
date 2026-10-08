@@ -607,13 +607,23 @@ class _DesktopAct:
         if outcome == "done":
             text = (f"Done: {verb} “{label}” in {app.get('name')} (the change was read back). "
                     "Look again (desktop_look) to see the result before the next step.")
+        elif outcome == "no_effect":
+            text = (f"Nothing changed: {verb} “{label}” in {app.get('name')} was delivered but the app did not "
+                    "react. Look again: the element may be disabled or need the app in front. Do not repeat it "
+                    "blindly.")
+        elif outcome == "partly_done":
+            text = (f"Partly done: {verb} “{label}” in {app.get('name')} stopped part way. Look at what is there "
+                    "now before doing anything else.")
+        elif outcome == "refused":
+            text = (f"Not done: {app.get('name')} refused {verb} “{label}”; nothing was delivered. Look again and "
+                    "try another way.")
         else:
             text = (f"Sent, not confirmed: {verb} “{label}” in {app.get('name')}. Arslan could not read the "
                     "change back, so look (desktop_look) before the next step, and do not simply repeat it.")
         if hands_contract.kept_the_front(result):
             text += (f" {app.get('name')} came to the front when this ran and could not be put back; "
                      "tell the user if it gets in their way.")
-        return {"ok": True, "external": False, "outcome": outcome, "text": text,
+        return {"ok": outcome != "refused", "external": False, "outcome": outcome, "text": text,
                 "summary": f"{self.op} · {app.get('name')} · {label}"[:200]}
 
     def trace_extra(self, args: dict) -> dict:

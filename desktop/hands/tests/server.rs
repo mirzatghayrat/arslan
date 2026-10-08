@@ -506,3 +506,31 @@ fn answer_of_waits_for_a_request_still_running_and_deadlines_say_timeout() {
     assert_eq!(fetched["state"], "done", "{fetched}");
     assert_eq!(code(&fetched["answer"]), "TIMEOUT", "{fetched}");
 }
+
+#[test]
+fn actions_say_what_they_achieved_in_one_vocabulary() {
+    let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    let hands = start("outc");
+    // 08_click: delivered_unverified; 10_set_value: delivered_verified.
+    let click = hands.ask(
+        "click",
+        json!({"app": "Hands Fixture", "ref": "@sfixture0:e3"}),
+    );
+    assert_eq!(click["outcome"], "sent_unconfirmed", "{click}");
+    assert_eq!(click["mode_used"], "background");
+    let set = hands.ask(
+        "set_value",
+        json!({"app": "Hands Fixture", "ref": "@sfixture0:e1", "value": "Weekend plan"}),
+    );
+    assert_eq!(set["outcome"], "done", "{set}");
+    // An action agent-desktop reported as an error has no outcome: its code says why.
+    let failed = hands.ask(
+        "set_value",
+        json!({"app": "Hands Fixture", "ref": "@sfixture0:e1", "value": "not in the fixtures"}),
+    );
+    assert_eq!(failed["envelope"]["ok"], false);
+    assert!(failed["outcome"].is_null(), "{failed}");
+    // A read has no outcome.
+    let apps = hands.ask("list_apps", json!({}));
+    assert!(apps.get("outcome").is_none_or(Value::is_null), "{apps}");
+}
