@@ -418,6 +418,18 @@ def checked_driver(driver: dict | None) -> dict:
     return dict(driver)
 
 
+async def _note_project_activity(project_id: str) -> None:
+    """0.1.56: a turn in a project's conversation is activity — a planned project in Idea
+    starts (its first level becomes current). Never in the way of the turn itself."""
+    from server.services import project_plan
+    try:
+        async with db_session.AsyncSessionLocal() as db:
+            await project_plan.note_activity(db, project_id)
+            await db.commit()
+    except Exception:  # noqa: BLE001 — bookkeeping only
+        logger.warning("project activity not recorded", exc_info=True)
+
+
 async def run_turn(function, conversation_id: str, user_message: str, emit, *args, _driver=None,
                    _acceptance: list[dict] | None = None, _budget: Budget | None = None, **kwargs):
     if current() is not None:
@@ -428,6 +440,8 @@ async def run_turn(function, conversation_id: str, user_message: str, emit, *arg
     budget = current_budget() or _budget or turn_budget()
     async with db_session.AsyncSessionLocal() as db:
         locale = await db.scalar(select(Setting.value).where(Setting.key == "language")) or "en"
+    if ctx.project_id:
+        await _note_project_activity(ctx.project_id)
     from server.services.runtime_messages import normalize
     locale = normalize(locale)
     spec = TaskSpec.model_validate({

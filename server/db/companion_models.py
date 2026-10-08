@@ -58,6 +58,89 @@ class Project(Base):
     version = Column(Integer, nullable=False, default=1)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    # 0.1.56 projects in two layers. Nullable, so migration 0063 only adds columns; NONE of
+    # these writes bump `version` (a version bump fails every task pinned to the project).
+    template = Column(String(30), nullable=True)
+    finish_line = Column(Text, nullable=True)
+    stage = Column(String(20), nullable=True)            # idea | active | done | dropped (NULL = idea)
+    paused = Column(Boolean, nullable=True)
+    done_at = Column(DateTime, nullable=True)
+    plan_version = Column(Integer, nullable=True)        # the plan's own optimistic version
+
+
+class ProjectLevel(Base):
+    """One level of a project's plan (0.1.56). Its band says which board column it counts for."""
+    __tablename__ = "project_levels"
+    __table_args__ = (
+        CheckConstraint("band IN ('shaping','doing','done')", name="ck_project_level_band"),
+        CheckConstraint("state IN ('todo','current','cleared')", name="ck_project_level_state"),
+    )
+    id = Column(String(36), primary_key=True)
+    project_id = Column(String(36), ForeignKey("projects.id"), nullable=False, index=True)
+    position = Column(Integer, nullable=False)
+    name = Column(String(120), nullable=False)
+    description = Column(String(300), nullable=False, default="")
+    band = Column(String(10), nullable=False)
+    clear_condition = Column(String(400), nullable=False, default="")
+    state = Column(String(10), nullable=False, default="todo")
+    habit = Column(Boolean, nullable=False, default=False)
+    started_at = Column(DateTime, nullable=True)
+    cleared_at = Column(DateTime, nullable=True)
+
+
+class ProjectCheckpoint(Base):
+    """A checkpoint inside a level; `expects` says what evidence ticks it by itself."""
+    __tablename__ = "project_checkpoints"
+    __table_args__ = (
+        CheckConstraint("state IN ('todo','done')", name="ck_project_checkpoint_state"),
+    )
+    id = Column(String(36), primary_key=True)
+    level_id = Column(String(36), ForeignKey("project_levels.id"), nullable=False, index=True)
+    position = Column(Integer, nullable=False)
+    text = Column(String(200), nullable=False)
+    expects = Column(JSON, nullable=True)
+    state = Column(String(10), nullable=False, default="todo")
+    progress = Column(String(40), nullable=True)
+    evidence = Column(JSON, nullable=True)
+    done_at = Column(DateTime, nullable=True)
+    done_by = Column(String(10), nullable=True)          # user | arslan
+
+
+class ProjectEvent(Base):
+    """What happened to a project's plan: ticks, proposals and their outcome, advances,
+    plan changes, stage changes. Arslan's own entries are what "Arslan 最近做的" lists and
+    what Undo reverses; proposal outcomes are the shadow-mode record."""
+    __tablename__ = "project_events"
+    __table_args__ = (
+        CheckConstraint("kind IN ('tick','untick','proposal','advance','plan_change','stage','auto_ask','activity')",
+                        name="ck_project_event_kind"),
+        CheckConstraint("actor IN ('user','arslan')", name="ck_project_event_actor"),
+    )
+    id = Column(String(36), primary_key=True)
+    project_id = Column(String(36), ForeignKey("projects.id"), nullable=False, index=True)
+    kind = Column(String(20), nullable=False)
+    actor = Column(String(10), nullable=False)
+    payload = Column(JSON, nullable=False, default=dict)
+    outcome = Column(String(10), nullable=True)          # proposals: accepted|declined|undone|stale; others: undone
+    undo_of = Column(String(36), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+
+
+class ProjectHabit(Base):
+    """How the user advances projects (0.1.56 §6): plan rules Arslan learned, and pace overrides."""
+    __tablename__ = "project_habits"
+    __table_args__ = (
+        CheckConstraint("kind IN ('plan_rule','pace_override')", name="ck_project_habit_kind"),
+    )
+    id = Column(String(36), primary_key=True)
+    owner_id = Column(String(100), nullable=False, default="local")
+    template = Column(String(30), nullable=True)
+    kind = Column(String(20), nullable=False)
+    text = Column(String(300), nullable=False)
+    value = Column(JSON, nullable=True)
+    sources = Column(JSON, nullable=False, default=list)
+    enabled = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
 class MemoryEntry(Base):

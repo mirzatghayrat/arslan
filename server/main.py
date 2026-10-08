@@ -504,6 +504,9 @@ def create_app() -> FastAPI:
     from server.api import brain as brain_api
 
     app.include_router(brain_api.router, prefix="/api/v1")
+    # 0.1.56: before companion, so "/projects/board" is never read as a project id.
+    from server.api import projects as projects_api
+    app.include_router(projects_api.router, prefix="/api/v1")
     from server.api import companion as companion_api
     app.include_router(companion_api.router, prefix="/api/v1")
     from server.api import tasks as tasks_api

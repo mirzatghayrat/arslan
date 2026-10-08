@@ -56,6 +56,10 @@ class ProjectInput(Contract):
     workspace_ref: Annotated[str, Field(max_length=200)] | None = None
     collection_ids: tuple[Annotated[int, Field(gt=0, strict=True)], ...] = ()
     app_binding: AppBinding | None = None
+    # 0.1.56: the project's type (its level template) and what "done" means, in one sentence.
+    template: Literal["game", "app", "website", "research", "writing", "video", "skill", "trip", "job",
+                      "other"] | None = None
+    finish_line: Annotated[str, Field(max_length=400)] | None = None
 
     @model_validator(mode="after")
     def no_credentials(self):
@@ -75,6 +79,8 @@ def _project(row):
     return {"id": row.id, "name": row.name, "kind": row.kind, "summary": row.summary,
             "workspace_ref": row.workspace_ref, "collection_ids": row.collection_ids,
             "app_binding": row.app_binding, "status": row.status, "version": row.version,
+            "template": row.template, "finish_line": row.finish_line, "stage": row.stage or "idea",
+            "paused": bool(row.paused),
             "created_at": row.created_at.isoformat() + "Z", "updated_at": row.updated_at.isoformat() + "Z"}
 
 
