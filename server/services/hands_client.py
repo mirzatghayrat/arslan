@@ -13,7 +13,10 @@ read the token nor connect.
 
 Protocol: one JSON line `{token, id, op, args}` per connection, one JSON line
 back. Hands' own refusals come as `{"ok": false, "refused": {code, message}}`;
-otherwise `{"ok": true, "envelope": <agent-desktop's envelope>, ...}`.
+otherwise `{"ok": true, "envelope": <agent-desktop's envelope>, ...}`. Every reply
+carries Hands' pid. Requests are run at most once: Hands keeps the answer to each
+id for ten minutes, answers a repeated id from memory, and `answer_of {id, wait_ms}`
+returns `done` (with the answer), `running` or `unknown_id` (spec 2026-10-08-0157 §1).
 """
 from __future__ import annotations
 
@@ -23,6 +26,7 @@ import os
 import pwd
 import sys
 import time
+import uuid
 from pathlib import Path
 
 FOLDER_NAME = "Arslan Hands"
@@ -92,29 +96,79 @@ async def _launch() -> dict:
     raise HandsUnavailable("Arslan Hands did not start in time")
 
 
+class _NotSent(Exception):
+    """The request never reached Hands (no socket, refused connection): resending is safe."""
+
+
+class _Lost(Exception):
+    """The request was written but no usable reply came back: it may have run."""
+
+
 async def _exchange(doc: dict, request: dict, timeout: float) -> dict:
-    reader, writer = await asyncio.wait_for(asyncio.open_unix_connection(str(folder() / "s.sock"),
-                                                                         limit=MAX_REPLY), 5)
+    try:
+        reader, writer = await asyncio.wait_for(asyncio.open_unix_connection(str(folder() / "s.sock"),
+                                                                             limit=MAX_REPLY), 5)
+    except (OSError, asyncio.TimeoutError) as exc:
+        raise _NotSent(str(exc)) from None
     try:
         writer.write((json.dumps({**request, "token": doc["token"]}) + "\n").encode())
         await writer.drain()
         line = await asyncio.wait_for(reader.readline(), timeout)
+    except (OSError, asyncio.TimeoutError, asyncio.IncompleteReadError, ValueError) as exc:
+        raise _Lost(str(exc) or type(exc).__name__) from None
     finally:
         writer.close()
     if not line:
-        raise ConnectionError("Arslan Hands closed the connection")
-    reply = json.loads(line)
+        raise _Lost("Arslan Hands closed the connection")
+    try:
+        reply = json.loads(line)
+    except ValueError:
+        raise _Lost("not a reply") from None
     if not isinstance(reply, dict):
-        raise ValueError("not a reply")
+        raise _Lost("not a reply")
     return reply
 
 
+# P0 D1 (spec 2026-10-08-0157 §1): a request is sent at most once. Python ≥ 3.11's
+# TimeoutError is an OSError, so the old "resend on any OSError" ran an action again
+# whenever its reply was late (Hands serves one request at a time).
+_RESEND = object()
+
+
+def _unknown(why: str) -> dict:
+    return {"ok": False, "refused": {"code": "unknown", "message": why}}
+
+
+async def _recover(doc: dict, request: dict, timeout: float):
+    """The reply to `request` was lost. Ask the same Hands for it by id; if that
+    Hands is gone, nobody can say whether it ran."""
+    now = _ready()
+    if now is None or now.get("pid") != doc.get("pid"):
+        return _unknown("Arslan Hands restarted while this was running")
+    query = {"id": f"answer_of-{uuid.uuid4().hex}", "op": "answer_of",
+             "args": {"id": request["id"], "wait_ms": int(max(timeout, 1.0) * 1000)}}
+    try:
+        reply = await _exchange(now, query, max(timeout, 1.0) + 10)
+    except (_NotSent, _Lost):
+        return _unknown("Arslan Hands stopped answering")
+    if reply.get("pid") not in (None, doc.get("pid")):
+        return _unknown("Arslan Hands restarted while this was running")
+    state = reply.get("state")
+    if state == "done" and isinstance(reply.get("answer"), dict):
+        return reply["answer"]
+    if state == "unknown_id":
+        return _RESEND                    # this Hands never received it
+    return _unknown("Arslan Hands is still busy with it")
+
+
 async def call(op: str, args: dict | None = None, *, timeout: float = 60.0, start: bool = True) -> dict:
-    """One request. Starts Hands if needed (unless `start=False`); if Hands was
-    restarted under us (new token, new socket), retries once with the new one."""
+    """One request, run at most once. Starts Hands if needed (unless `start=False`);
+    resends only what provably never ran: a connection that never opened, a stale
+    token, or an id the same Hands says it never received. A lost reply is fetched
+    by id; when that is impossible the answer is `unknown` ("look before anything")."""
     if sys.platform != "darwin":
         raise HandsUnavailable("Arslan Hands runs on macOS only")
-    request = {"id": f"{op}-{time.monotonic_ns()}", "op": op, "args": args or {}}
+    request = {"id": f"{op}-{uuid.uuid4().hex}", "op": op, "args": args or {}}
     doc = _ready()
     if doc is None:
         if not start:
@@ -123,11 +177,18 @@ async def call(op: str, args: dict | None = None, *, timeout: float = 60.0, star
     for attempt in range(2):
         try:
             reply = await _exchange(doc, request, timeout)
-        except (OSError, ConnectionError, ValueError, asyncio.IncompleteReadError):
+        except _NotSent:
             if attempt or not start:
                 raise HandsUnavailable("could not reach Arslan Hands") from None
             doc = _ready() or await _launch()
             continue
+        except _Lost:
+            reply = await _recover(doc, request, timeout)
+            if reply is _RESEND:
+                if attempt:
+                    return _unknown("Arslan Hands did not receive it twice")
+                continue
+            return reply
         if (reply.get("refused") or {}).get("code") == "bad_token" and not attempt:
             doc = _ready() or (await _launch() if start else doc)
             continue

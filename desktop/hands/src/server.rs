@@ -12,7 +12,7 @@ use crate::refmap;
 use crate::runner::{self, Runner};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::fd::AsRawFd;
@@ -20,12 +20,15 @@ use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 const MAX_REQUEST: u64 = 256 * 1024;
+/// Answers kept for `answer_of` and repeated ids (spec 2026-10-08-0157 §1, D1).
+const ANSWERS_KEPT: usize = 256;
+const ANSWER_TTL: Duration = Duration::from_secs(600);
 const PASSWORD_WORDS: [&str; 8] = [
     "password",
     "passcode",
@@ -64,6 +67,107 @@ struct State {
     last_seen: AtomicU64,
     busy: AtomicU64,
     sessions: Mutex<HashSet<String>>,
+    answers: Answers,
+}
+
+/// At most once (P0 D1): every answer to a request with a string id is kept for ten
+/// minutes. The same id again is answered from here without running anything, and
+/// `answer_of` lets the backend fetch an answer whose reply it lost (a timeout, a
+/// dropped connection) instead of sending the action a second time.
+#[derive(Default)]
+struct Answers {
+    slots: Mutex<HashMap<String, Slot>>,
+    changed: Condvar,
+}
+
+enum Slot {
+    Running,
+    Done(Value, Instant),
+}
+
+enum Claim {
+    Mine,
+    Answered(Value),
+    StillRunning,
+}
+
+impl Answers {
+    /// Claim `id` to run it, or wait (up to `wait`) for the answer of the request that has it.
+    fn claim(&self, id: &str, wait: Duration) -> Claim {
+        let mut slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
+        let until = Instant::now() + wait;
+        loop {
+            match slots.get(id) {
+                None => {
+                    slots.insert(id.to_string(), Slot::Running);
+                    return Claim::Mine;
+                }
+                Some(Slot::Done(answer, _)) => return Claim::Answered(answer.clone()),
+                Some(Slot::Running) => {
+                    let now = Instant::now();
+                    if now >= until {
+                        return Claim::StillRunning;
+                    }
+                    slots = self
+                        .changed
+                        .wait_timeout(slots, until - now)
+                        .unwrap_or_else(|p| p.into_inner())
+                        .0;
+                }
+            }
+        }
+    }
+
+    fn finish(&self, id: &str, answer: &Value) {
+        let mut slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
+        slots.insert(id.to_string(), Slot::Done(answer.clone(), Instant::now()));
+        slots.retain(|_, slot| match slot {
+            Slot::Done(_, at) => at.elapsed() < ANSWER_TTL,
+            Slot::Running => true,
+        });
+        while slots.len() > ANSWERS_KEPT {
+            let oldest = slots
+                .iter()
+                .filter_map(|(k, slot)| match slot {
+                    Slot::Done(_, at) => Some((k.clone(), *at)),
+                    Slot::Running => None,
+                })
+                .min_by_key(|(_, at)| *at)
+                .map(|(k, _)| k);
+            match oldest {
+                Some(k) => {
+                    slots.remove(&k);
+                }
+                None => break,
+            }
+        }
+        self.changed.notify_all();
+    }
+
+    /// The answer to `id`: done, still running after `wait`, or never received here.
+    fn lookup(&self, id: &str, wait: Duration) -> Value {
+        let mut slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
+        let until = Instant::now() + wait;
+        loop {
+            match slots.get(id) {
+                None => return json!({"ok": true, "state": "unknown_id"}),
+                Some(Slot::Done(answer, _)) => {
+                    return json!({"ok": true, "state": "done", "answer": answer})
+                }
+                Some(Slot::Running) => {
+                    let now = Instant::now();
+                    if now >= until {
+                        return json!({"ok": true, "state": "running"});
+                    }
+                    slots = self
+                        .changed
+                        .wait_timeout(slots, until - now)
+                        .unwrap_or_else(|p| p.into_inner())
+                        .0;
+                }
+            }
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -178,6 +282,7 @@ pub fn serve(
         last_seen: AtomicU64::new(now()),
         busy: AtomicU64::new(0),
         sessions: Mutex::new(HashSet::new()),
+        answers: Answers::default(),
     });
     // The token is published only now that the socket listens, mode 0600.
     let ready = json!({
@@ -247,10 +352,11 @@ fn handle(state: &State, mut stream: UnixStream) {
                 }
                 Ok(req) => {
                     state.last_seen.store(now(), Ordering::SeqCst);
-                    let mut out = dispatch(state, &req);
+                    let mut out = answered(state, &req);
                     if let Some(map) = out.as_object_mut() {
                         map.insert("id".into(), req.id.clone());
                         map.insert("op".into(), Value::String(req.op.clone()));
+                        map.insert("pid".into(), json!(std::process::id()));
                     }
                     if req.op == "quit" {
                         let _ = stream.write_all(format!("{out}\n").as_bytes()); // one write: one line
@@ -289,7 +395,7 @@ fn run_envelope(
         .run(argv, limit, ctx.generation)
         .map_err(|e| refuse("helper_failed", e))?;
     if out.timed_out {
-        return Err(refuse("timeout", "agent-desktop did not finish in time"));
+        return Err(refuse("TIMEOUT", "agent-desktop did not finish in time"));
     }
     if out.killed {
         return Err(refuse("stopped_by_user", "stopped"));
@@ -425,6 +531,38 @@ fn live_states(ctx: &Ctx, reference: &str, session: Option<&str>) -> Result<Vec<
                 .collect()
         })
         .unwrap_or_default())
+}
+
+/// `dispatch`, at most once per string id (P0 D1).
+fn answered(state: &State, req: &Request) -> Value {
+    if req.op == "answer_of" {
+        let id = req.args.get("id").and_then(Value::as_str).unwrap_or("");
+        let wait = req
+            .args
+            .get("wait_ms")
+            .and_then(Value::as_u64)
+            .unwrap_or(0)
+            .min(120_000);
+        return state.answers.lookup(id, Duration::from_millis(wait));
+    }
+    let id = match req.id.as_str() {
+        Some(id) if !id.is_empty() && !matches!(req.op.as_str(), "status" | "stop" | "quit") => id,
+        _ => return dispatch(state, req),
+    };
+    match state.answers.claim(id, Duration::from_secs(120)) {
+        Claim::Answered(answer) => answer,
+        Claim::StillRunning => refused(refuse("busy", "the same request is still running")),
+        Claim::Mine => {
+            let mut out = dispatch(state, req);
+            if let Some(map) = out.as_object_mut() {
+                map.insert("id".into(), req.id.clone());
+                map.insert("op".into(), Value::String(req.op.clone()));
+                map.insert("pid".into(), json!(std::process::id()));
+            }
+            state.answers.finish(id, &out);
+            out
+        }
+    }
 }
 
 fn dispatch(state: &State, req: &Request) -> Value {

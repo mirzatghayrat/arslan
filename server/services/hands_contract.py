@@ -60,7 +60,17 @@ REFUSALS = {
     "app_not_running": "That app is not running. Open it first — e.g. run_command `open -a \"<App>\"` — or ask "
                        "the user; Hands never launches apps.",
     "app_ambiguous": "More than one running app has that name; use its bundle id (from desktop_apps).",
-    "timeout": "It took too long. Look again.",
+    "TIMEOUT": "It took too long. Look again.",
+    # P0 (spec 2026-10-08-0157 §1)
+    "unknown": "The reply from Arslan Hands was lost, so this may or may not have happened. Look again with "
+               "desktop_look before doing anything else; do not simply repeat it.",
+    "append_unreadable": "Could not read what the field holds now, so adding to it could erase it. Look again "
+                         "and retry once, or ask the user.",
+    "append_needs_set_value": "This field does not take its whole text at once, so Arslan cannot add to the end "
+                              "without risking a duplicate. Tell the user what you wanted to add.",
+    "submit_unsure": "The text is in the field, but Return was NOT pressed: the field does not have the focus, "
+                     "so Return could have gone somewhere else. Click the form's own button (send, OK, search) "
+                     "with desktop_click instead.",
     "op_not_allowed": "Hands does not do that.",
 }
 
@@ -110,6 +120,24 @@ def parse_envelope(envelope: dict, reply: dict | None = None) -> Result:
     code = str(error.get("code") or "INTERNAL")
     return Result(ok=False, command=command, code=code, message=str(error.get("message") or ""),
                   hint=HINTS.get(code), reply=reply or {})
+
+
+def outcome(result: Result) -> str:
+    """P0 D7: what an action that succeeded really achieved. agent-desktop says
+    `delivered_verified` only when it read the change back; anything else was sent
+    without proof, and the model must look before building on it."""
+    data = result.data if isinstance(result.data, dict) else {}
+    delivery = (data.get("disposition") or {}).get("delivery")
+    return "done" if delivery == "delivered_verified" else "sent_unconfirmed"
+
+
+def kept_the_front(result: Result) -> bool:
+    """The app acted on came to the front and Hands could not give it back."""
+    reply = result.reply or {}
+    front = reply.get("front") or {}
+    pid = (reply.get("app") or {}).get("pid")
+    return (reply.get("focus_restored") is False and pid is not None and front.get("after") == pid
+            and front.get("before") != pid)
 
 
 # ── showing a tree to the model ──────────────────────────────────────────────

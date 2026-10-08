@@ -435,3 +435,68 @@ fn a_swapped_agent_desktop_is_never_run() {
         "the swapped binary never started"
     );
 }
+
+// ── P0 (spec 2026-10-08-0157 §1): at most once, one deadline code ───────────
+
+fn ask_id(hands: &Hands, id: &str, op: &str, args: Value) -> Value {
+    hands.raw(&json!({"token": hands.token, "id": id, "op": op, "args": args}).to_string())
+}
+
+#[test]
+fn the_same_request_id_runs_once() {
+    let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    let hands = start("once");
+    let click = json!({"app": "Hands Fixture", "ref": "@sfixture0:e3"});
+    let first = ask_id(&hands, "click-abc", "click", click.clone());
+    let again = ask_id(&hands, "click-abc", "click", click.clone());
+    assert_eq!(first["ok"], true, "{first}");
+    assert_eq!(hands.acted(), ["click"], "a repeated id ran again");
+    assert_eq!(again["envelope"], first["envelope"]);
+    // Another id is another action.
+    ask_id(&hands, "click-def", "click", click);
+    assert_eq!(hands.acted(), ["click", "click"]);
+}
+
+#[test]
+fn a_lost_answer_can_be_fetched_by_its_id() {
+    let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    let hands = start("answ");
+    let pid = std::process::id();
+    let unknown = hands.ask("answer_of", json!({"id": "never-sent", "wait_ms": 10}));
+    assert_eq!(unknown["state"], "unknown_id", "{unknown}");
+    assert_eq!(unknown["pid"], pid);
+    let done = ask_id(
+        &hands,
+        "click-xyz",
+        "click",
+        json!({"app": "Hands Fixture", "ref": "@sfixture0:e3"}),
+    );
+    let fetched = hands.ask("answer_of", json!({"id": "click-xyz", "wait_ms": 10}));
+    assert_eq!(fetched["state"], "done", "{fetched}");
+    assert_eq!(fetched["answer"]["envelope"], done["envelope"]);
+    assert_eq!(hands.acted(), ["click"], "answer_of never runs anything");
+}
+
+#[test]
+fn answer_of_waits_for_a_request_still_running_and_deadlines_say_timeout() {
+    let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    let hands = start("wait");
+    let socket = hands.folder().join("s.sock");
+    let token = hands.token.clone();
+    // The fake agent-desktop sleeps on "slow"; Hands' deadline (100 ms + 5 s) cuts it.
+    std::thread::spawn(move || {
+        let mut stream = UnixStream::connect(socket).unwrap();
+        let req = json!({"token": token, "id": "wait-slow", "op": "wait",
+                         "args": {"app": "Hands Fixture", "text": "slow", "timeout_ms": 100}});
+        writeln!(stream, "{req}").unwrap();
+        // The caller gives up without reading: its answer must still be kept.
+    });
+    let started = Instant::now();
+    while !hands.calls().iter().any(|c| c[0] == "wait") {
+        assert!(started.elapsed() < Duration::from_secs(5));
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let fetched = hands.ask("answer_of", json!({"id": "wait-slow", "wait_ms": 15000}));
+    assert_eq!(fetched["state"], "done", "{fetched}");
+    assert_eq!(code(&fetched["answer"]), "TIMEOUT", "{fetched}");
+}
