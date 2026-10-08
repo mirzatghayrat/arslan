@@ -38,3 +38,4 @@ python3 docs-site/build.py
 - Audited claim by claim against `efc1c271` and restyled to match the site on 2026-10-08.
 - Translated to English on 2026-10-08; English became the default.
 - Updated to v0.1.54 (`ebf438dc`) on 2026-10-08: terminal gate, Bridge pairing/Touch ID, delivery evidence, version row.
+- Six languages on 2026-10-08: German, Japanese, Spanish and Turkish from Codex's translations of the 2026-10-07 Chinese draft, with every block that the audit or 0.1.54 changed retranslated from the current English (structure checked against `sections/en/`). The language switch became a menu.

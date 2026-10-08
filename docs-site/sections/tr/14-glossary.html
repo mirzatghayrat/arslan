@@ -1,0 +1,63 @@
+<section class="chapter" id="glossary"><h2><span class="num">14 / Terimler sözlüğü</span>Terimlerden somut uygulamaya</h2>
+<p>Terimler, farklı mekanizmaları ayırt etmeyi sağlar. Aşağıdaki tablolar kısa tanımlar verir ve her kavramı Arslan'daki uygulamasıyla ilişkilendirir. Geçmişte kullanılan mekanizmalar ayrıca belirtilmiştir.</p>
+<h3>AI ve bağlam</h3><div class="table-wrap"><table><thead><tr><th>Terim</th><th>Sade açıklama</th><th>Arslan'da kullanımı</th></tr></thead><tbody>
+<tr><th>LLM</th><td>Dili anlayan ve üreten büyük model</td><td>Kullanıcının yapılandırdığı sağlayıcıdan gelir; uygulama ve yürütme sistemini Arslan sağlar</td></tr>
+<tr><th>Agent</th><td>Sonuçlara göre bir sonraki adıma karar veren yürütme süreci</td><td>Modeli çağırır, araçları çalıştırır, sonuçları değerlendirir, devam eder veya sonuçlandırır</td></tr>
+<tr><th>Orchestrator</th><td>Farklı yetenekleri bir araya getiren koordinatör</td><td>Modeli, bağlamı, araçları, izinleri ve görev durumunu koordine eder</td></tr>
+<tr><th>Tool calling</th><td>Modelin yapılandırılmış biçimde bir araç istemesi</td><td>Araç adı ve JSON parametreleri doğrulandıktan sonra yürütülür</td></tr>
+<tr><th>Native tool protocol</th><td>Sağlayıcının resmen tanımladığı araç mesajı biçiminin kullanılması</td><td>Araç çağrısı kimliği, sonuç ve akıl yürütmenin devamı arasındaki ilişkiyi korur</td></tr>
+<tr><th>Trajectory</th><td>Model ve araç etkileşimlerinin yapılandırılmış izi</td><td>OpenAI uyumlu yolda native history kullanılır; diğer Provider'lar kendi yollarını korur</td></tr>
+<tr><th>Context window</th><td>Modelin tek seferde görebileceği bilgi kapsamı</td><td>Tüm geçmiş, tüm bellek ve uzun çıktıların tamamı sınırsızca eklenemez</td></tr>
+<tr><th>Compaction</th><td>Eski bağlamın boyutu sınırlı bir özete sıkıştırılması</td><td>İstek boyutunu sınırlar, yakın içeriği korur; asıl konuşmayı silmek değildir</td></tr>
+<tr><th>RAG</th><td>Önce ilgili kaynakları bulup sonra modelden yanıt istemek</td><td>İçe aktarılan bilgilerden ilgili parçaları kaynaklarıyla birlikte getirir</td></tr>
+<tr><th>FTS5</th><td>SQLite'ın tam metin araması</td><td>Sözcük eşleştirmede etkilidir; vektör olmadan da kaynak aranabilir</td></tr>
+<tr><th>Embedding</th><td>Metnin anlamını sayısal vektöre dönüştürmek</td><td>Farklı sözcüklerle anlatılan ancak anlamı yakın olan içeriği bulmaya yardımcı olur</td></tr>
+<tr><th>Cosine similarity</th><td>Vektörlerin yönlerinin ne kadar yakın olduğunu karşılaştırmak</td><td>Anlamsal aramada kullanılan benzerlik hesaplama yöntemlerinden biri</td></tr>
+<tr><th>RRF</th><td>Farklı arama sonuçlarını sıralarına göre birleştirmek</td><td>Farklı birimlerdeki puanları doğrudan karıştırmadan FTS ve vektör sıralamalarını birleştirir</td></tr>
+<tr><th>Skill</th><td>Yeniden kullanılabilen “nasıl yapılır” yönergeleri</td><td>SKILL.md, isteğe bağlı betikler ve başvuru kaynakları; ayrı bir model değildir</td></tr>
+<tr><th>MCP</th><td>Agent ile dış araçlar arasında standart arayüz</td><td>Dış yetenekleri stdio veya HTTP üzerinden bağlar; yetkilendirme uygulamanın kontrolünde kalır</td></tr>
+<tr><th>BYOK</th><td>Kullanıcının kendi model API anahtarını sağlaması</td><td>Sağlayıcıyı kullanıcı seçer ve ilgili model çağrılarının ücretini karşılar</td></tr>
+<tr><th>Prompt injection</th><td>Web sayfası veya araç içeriğinin Agent'a verilmiş yeni bir talimat gibi gösterilmesi</td><td>Dış içerik veri olarak ele alınır; doğrulanmamış dış etkiler içeren deneyimler genellikle öneriye dönüşür. Bu, tam bağışıklık kanıtı değildir</td></tr>
+<tr><th>Learned practice</th><td>Düzeltmelerden veya başarılı alternatif yollardan kaydedilen yöntem</td><td>“Bu makinede AppleScript çalışmıyor, EventKit'i dene”; model ağırlıklarını değiştirmez</td></tr>
+<tr><th>Shadow mode</th><td>Kararı kaydetmek, ancak henüz gerçek davranışı değiştirmesine izin vermemek</td><td>Karar katmanı onay önerisini kaydedebilir; gerçek onay kartı yine kullanıcının seçimini bekler</td></tr>
+<tr><th>Held-out evaluation</th><td>İstemleri iyileştirirken kullanılmayan sorularla değerlendirme yapmak</td><td>İlk dönem uzman evriminin tarihsel tasarımıdır; güncel konuşmanın her turunda zorunlu bir adım değildir</td></tr>
+</tbody></table></div>
+<h3>Yazılım mimarisi, durum ve güvenilirlik</h3><div class="table-wrap"><table><thead><tr><th>Terim</th><th>Sade açıklama</th><th>Arslan'da kullanımı</th></tr></thead><tbody>
+<tr><th>SPA</th><td>Tek bir web uygulamasında sayfalar ve durumlar arasında geçiş</td><td>React çalışma arayüzünün statik kaynaklarını yerel hizmet sunar</td></tr>
+<tr><th>Sidecar</th><td>Ana uygulamayla birlikte başlatılan yardımcı süreç</td><td>Tauri'nin yanında çalışan yerel Python arka ucu</td></tr>
+<tr><th>IPC</th><td>Aynı bilgisayardaki süreçler arasında iletişim</td><td>Boru hatları ve Unix socket; bütün modüller bulut üzerinden haberleşmez</td></tr>
+<tr><th>REST / HTTP</th><td>Bir istekle bir kaynağı almak veya değiştirmek</td><td>Ayarlar, geçmiş, görevler ve dosya yönetimi arayüzleri</td></tr>
+<tr><th>WebSocket</th><td>Bilgiyi sürekli iletmek için çift yönlü bağlantıyı açık tutmak</td><td>Yanıt akışı, araç durumu, onay ve ilerleme olayları</td></tr>
+<tr><th>Async I/O</th><td>I/O beklerken olay döngüsünü diğer görevlerin ilerlemesi için serbest bırakmak</td><td>Python asyncio, asenkron API ve veritabanı erişimi; CPU işlerinin sınırsız paralel çalışması demek değildir</td></tr>
+<tr><th>Schema / Contract</th><td>Girdileri, çıktıları ve geçerli durumları açıkça tanımlayan sözleşme</td><td>Pydantic, araç parametreleri ve görev kabul sözleşmeleri</td></tr>
+<tr><th>State machine</th><td>Bir sürecin hangi aşamada olduğunu sonlu durumlarla tanımlamak</td><td>queued, running, waiting_user, verifying, succeeded gibi durumlar</td></tr>
+<tr><th>Checkpoint</th><td>Nereye gelindiğini, yapılanları ve kalanları kaydetmek</td><td>Görev kurtarma; başvuruları, kanıtları ve bütçeyi kullanır, etkisi bilinmeyen eylemleri körlemesine tekrarlamaz</td></tr>
+<tr><th>Attempt</th><td>Bir görevin tek bir yürütme denemesi</td><td>Kurtarma yeni bir deneme oluşturur; eski asenkron sonuçlar yeni turun durumunun üzerine yazamaz</td></tr>
+<tr><th>Optimistic concurrency</th><td>Yazmadan önce verinin hâlâ az önce okunan sürümde olduğunu doğrulamak</td><td>row version ve attempt ID, eski sonuçların iptal veya güncellemelerin üzerine yazmasını önler</td></tr>
+<tr><th>Idempotency</th><td>Yinelenen isteklerin beklenmedik tekrar işlemleri oluşturmaması</td><td>Mesaj/görev ID'leri tekrarları önler; bilinmeyen dış etkiler ayrıca kontrol edilmelidir</td></tr>
+<tr><th>ACK</th><td>Alıcının “bu paketi aldım” demesi</td><td>Görevin tamamlandığı veya onayın yürürlüğe girdiği anlamına gelmez</td></tr>
+<tr><th>Single-flight</th><td>Önceki yürütme bitmeden aynı işi yeniden başlatmamak</td><td>Zamanlanmış görevlerde yinelenen yürütmelerin üst üste birikmesini önler</td></tr>
+<tr><th>Backoff</th><td>Başarısızlık sonrası yeniden deneme aralıklarını kademeli uzatmak</td><td>Hız sınırı/hizmet hatalarında bekleme uygular, Retry-After'a uyar; kimlik doğrulama hatasını körlemesine yeniden denemez</td></tr>
+<tr><th>WAL</th><td>SQLite'ın önce günlüğe yazarak okuma ve yazmanın birlikte yürütülmesini iyileştirmesi</td><td>Yerel veri kalıcılığı sağlar; eşzamanlı yazmanın yine sınırları vardır</td></tr>
+<tr><th>Migration</th><td>Eski veritabanı yapısını güvenle yeni yapıya yükseltmek</td><td>Açık sürüm runner'ı, yükseltme öncesi yedek ve bilinmeyen şemayı reddetme</td></tr>
+<tr><th>Provenance</th><td>Bir bilginin nereden geldiği</td><td>Belge kaynakları, bellek kaynakları ve gerçek yürütme izleri</td></tr>
+<tr><th>Observability</th><td>Sorun olduğunda ne yaşandığını görebilmek</td><td>Run/Step, Activity, usage, hata ve çıktıların ilişkilendirilmesi</td></tr>
+</tbody></table></div>
+<h3>İşletim sistemi, güvenlik ve teslimat</h3><div class="table-wrap"><table><thead><tr><th>Terim</th><th>Sade açıklama</th><th>Arslan'da kullanımı</th></tr></thead><tbody>
+<tr><th>Sandbox / Seatbelt</th><td>İşletim sisteminin bir sürecin erişebileceği kaynakları sınırlaması</td><td>Hesaplama ve komut korumalı alanlarının kuralları farklıdır; ağ ve koruma kullanılamadığındaki davranış ayrı açıklanır</td></tr>
+<tr><th>Fail-closed</th><td>Koruma katmanı kullanılamıyorsa yürütmeyi reddetmek</td><td>Varsayılan Python korumalı alanı ve çevrimdışı sonuçlandırma yolu için geçerlidir; tüm sıradan komutlara genellenemez</td></tr>
+<tr><th>Accessibility tree</th><td>Sistemin sunduğu pencere, düğme ve metin gibi öğelerin yapısı</td><td>Hands, ekran görüntüsündeki pikselleri tanımaya gerek duymadan denetimleri okur ve bulur</td></tr>
+<tr><th>TCC</th><td>macOS'un gizlilik izinlerini yöneten sistemi</td><td>Erişilebilirlik, mikrofon ve Apple Events izinleri uygulamadaki bir anahtarı açmakla verilmiş olmaz</td></tr>
+<tr><th>SSRF</th><td>Hizmeti erişmemesi gereken iç adreslere erişmeye yönlendirmek</td><td>Web içeriği çıkarılırken ve dış URL'ler kullanılırken hedefler, yönlendirmeler ve ağ sınırları doğrulanmalıdır</td></tr>
+<tr><th>AEAD</th><td>İçeriğin gizliliğini ve bütünlüğünü birlikte koruyan şifreleme yöntemi</td><td>Bridge, ChaCha20-Poly1305 kullanır; değiştirilmiş içerik doğrulamadan geçmez</td></tr>
+<tr><th>Key agreement / Signature</th><td>İlki şifreleme malzemesi üzerinde anlaşmayı, ikincisi gönderenin kimliğini doğrulamayı sağlar</td><td>X25519 ve Ed25519'un görevleri farklıdır; birbirine karıştırılmamalıdır</td></tr>
+<tr><th>Replay protection</th><td>Saldırganın eski mesajları tekrar gönderip yeniden işleme koymasını önlemek</td><td>İmza, alıcı kontrolü, kayan sıra numarası penceresi ve kalıcı tekrar önleme birlikte çalışır</td></tr>
+<tr><th>CI / CD</th><td>Derleme, kontrol ve dağıtım süreçlerini otomatikleştirmek</td><td>Başarılı CI, yayımlanacak SHA'ya ait olmalıdır; nihai çıktı da kontrol edilmelidir</td></tr>
+<tr><th>Contract test</th><td>Bir sınırın iki tarafının aynı protokole uyduğunu doğrulamak</td><td>Python/Rust ve Mac/iPhone tarafları geçerli ve geçersiz ortak test vektörlerini kullanır</td></tr>
+<tr><th>Mutation testing</th><td>Koruma mantığını bilerek bozup testlerin bunu yakalayıp yakalamadığını görmek</td><td>Belirli doğrulamaların hatayı ayırt edebildiğini kanıtlar; sıradan birim testinin başka adı değildir</td></tr>
+<tr><th>Code signing</th><td>Yazılımın kaynağını ve çıktının değiştirilmediğini doğrulamak</td><td>App ve içindeki yardımcılar doğru biçimde imzalanmalıdır</td></tr>
+<tr><th>Notarization / Staple</th><td>Apple'ın dağıtım paketini kontrol etmesi ve biletin pakete eklenmesi</td><td>İmzalamadan farklıdır; sonuç ayrıca Gatekeeper ile doğrulanmalıdır</td></tr>
+<tr><th>Fresh-install acceptance</th><td>Geliştirme ortamı ve eski verileri olmayan yeni bir kullanıcıyı canlandırmak</td><td>Gerçek kurulum paketinin kimlik doğrulamasını, WebSocket'ini, kaynaklarını ve yardımcılarını doğrular</td></tr>
+</tbody></table></div>
+<p class="note">Mevcut sistem ağırlıklı olarak yerel, katmanlı bir monolit ve bağımsız yardımcılardan oluşur. SQLite ve süreç içi asenkron zamanlama, kişisel masaüstü ürününün kurulum ve çalışma biçimine uygundur. İlgili terimler bu dağıtım ölçeğinde anlaşılmalıdır.</p>
+</section>

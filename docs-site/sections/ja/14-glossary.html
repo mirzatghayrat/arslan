@@ -1,0 +1,63 @@
+<section class="chapter" id="glossary"><h2><span class="num">14 / 用語集</span>用語を具体的な実装に結び付ける</h2>
+<p>用語は、異なる仕組みを区別するために使います。以下では簡潔な定義とともに、各概念が Arslan の実装でどう使われるかを示します。過去の仕組みは、その旨を明記しています。</p>
+<h3>AI とコンテキスト</h3><div class="table-wrap"><table><thead><tr><th>用語</th><th>わかりやすい説明</th><th>Arslan での使い方</th></tr></thead><tbody>
+<tr><th>LLM</th><td>言語を理解し、生成する大規模なモデル</td><td>ユーザーが設定したプロバイダーから提供される。Arslan はアプリと実行システムを担う</td></tr>
+<tr><th>Agent</th><td>結果を見て次の手順を決める実行プロセス</td><td>モデルを呼び出し、ツールを実行し、結果を見て継続または終了する</td></tr>
+<tr><th>Orchestrator</th><td>複数の機能を組み合わせる調整役</td><td>モデル、コンテキスト、ツール、権限、タスク状態を調整する</td></tr>
+<tr><th>Tool calling</th><td>モデルが構造化された形式でツールを要求すること</td><td>ツール名と JSON 引数を検証してから実行する</td></tr>
+<tr><th>Native tool protocol</th><td>プロバイダーが正式に定義したツールメッセージ形式を使うこと</td><td>tool call ID、結果、推論の継続を正しく対応させる</td></tr>
+<tr><th>Trajectory</th><td>モデルとツールのやり取りを構造化して記録した軌跡</td><td>OpenAI 互換経路では native history を使用し、他の Provider はそれぞれの経路を維持する</td></tr>
+<tr><th>Context window</th><td>モデルが一回の呼び出しで参照できる情報の範囲</td><td>すべての履歴、記憶、長い出力全文を無制限に詰め込むことはできない</td></tr>
+<tr><th>Compaction</th><td>古いコンテキストを長さに上限のある要約へ圧縮すること</td><td>リクエストの大きさを抑え、直近の内容を残す。元の会話を削除することではない</td></tr>
+<tr><th>RAG</th><td>関連資料を先に探し、その後モデルに回答させること</td><td>取り込んだ知識から関連部分を検索し、出典を添える</td></tr>
+<tr><th>FTS5</th><td>SQLite の全文検索</td><td>語句の一致を探すのが得意で、ベクトルがなくても資料を検索できる</td></tr>
+<tr><th>Embedding</th><td>文章の意味を数値ベクトルに変換すること</td><td>表現が異なっても意味の近い内容を見つけるために使う</td></tr>
+<tr><th>Cosine similarity</th><td>ベクトルの方向がどれだけ近いかを比べること</td><td>意味検索で使う類似度の計算方法の一つ</td></tr>
+<tr><th>RRF</th><td>複数の検索結果を順位に基づいて統合すること</td><td>FTS とベクトルの順位を統合し、単位の異なるスコアを直接混ぜない</td></tr>
+<tr><th>Skill</th><td>再利用できる「やり方」の説明</td><td>SKILL.md と任意のスクリプトや参照資料で構成される。別のモデルではない</td></tr>
+<tr><th>MCP</th><td>Agent と外部ツールをつなぐ標準インターフェース</td><td>stdio または HTTP で外部機能に接続する。承認の制御は引き続きアプリが担う</td></tr>
+<tr><th>BYOK</th><td>ユーザーが自分のモデル API キーを持ち込むこと</td><td>ユーザーがプロバイダーを選び、対応するモデル呼び出し費用を負担する</td></tr>
+<tr><th>Prompt injection</th><td>Web ページやツールの内容を、Agent への新しい指示に見せかけること</td><td>外部の内容はデータとして扱う。外部の影響を受けた未確認の経験は通常、提案に回すが、完全な耐性の証明ではない</td></tr>
+<tr><th>Learned practice</th><td>訂正や成功した代替手段から記録する方法</td><td>「このマシンでは AppleScript が使えないので EventKit を試す」など。モデルの重みは変更しない</td></tr>
+<tr><th>Shadow mode</th><td>判断だけを記録し、実際の動作にはまだ反映させない方式</td><td>判断層が承認の推奨を記録できるが、実際のカードはユーザーのクリックを待つ</td></tr>
+<tr><th>Held-out evaluation</th><td>プロンプトの調整に使っていない課題を残して評価すること</td><td>初期のエキスパート進化に関する過去の設計で、現在の各会話ターンの固定手順ではない</td></tr>
+</tbody></table></div>
+<h3>ソフトウェア構造、状態、信頼性</h3><div class="table-wrap"><table><thead><tr><th>用語</th><th>わかりやすい説明</th><th>Arslan での使い方</th></tr></thead><tbody>
+<tr><th>SPA</th><td>一つの Web アプリ内で画面や状態を切り替える構成</td><td>React の作業画面に必要な静的リソースをローカルサービスが配信する</td></tr>
+<tr><th>Sidecar</th><td>メインアプリと一緒に起動する補助プロセス</td><td>Tauri と並行して動く Python のローカルバックエンド</td></tr>
+<tr><th>IPC</th><td>同じコンピューター上のプロセス間通信</td><td>パイプや Unix socket を使う。すべてのモジュールがクラウド経由で通信するわけではない</td></tr>
+<tr><th>REST / HTTP</th><td>一回のリクエストでリソースを取得または変更する方式</td><td>設定、履歴、タスク、ファイル管理の API</td></tr>
+<tr><th>WebSocket</th><td>双方向接続を維持して情報を継続的に送る方式</td><td>応答ストリーム、ツール状態、承認、進捗のイベント</td></tr>
+<tr><th>Async I/O</th><td>I/O の待機中にイベントループを明け渡し、他のタスクを進める仕組み</td><td>Python asyncio、非同期 API、データベースアクセス。CPU 処理が無制限に並列化されるわけではない</td></tr>
+<tr><th>Schema / Contract</th><td>入力、出力、許される状態についての明確な取り決め</td><td>Pydantic、ツール引数、タスクの受け入れ契約</td></tr>
+<tr><th>State machine</th><td>有限個の状態で処理の進行位置を表す仕組み</td><td>queued、running、waiting_user、verifying、succeeded など</td></tr>
+<tr><th>Checkpoint</th><td>進行位置、実施済みの内容、残作業の記録</td><td>参照、証拠、予算を使ってタスクを再開する。結果不明の副作用を無条件に再実行しない</td></tr>
+<tr><th>Attempt</th><td>タスクの一回の実行試行</td><td>再開時は新しい試行を作り、古い非同期結果が新しい状態を上書きしないようにする</td></tr>
+<tr><th>Optimistic concurrency</th><td>書き込む前に、データが先ほど読んだ版のままか確かめる方法</td><td>row version と attempt ID により、古い結果がキャンセルや更新を上書きするのを防ぐ</td></tr>
+<tr><th>Idempotency</th><td>同じ要求を繰り返しても、意図せず操作が重複しない性質</td><td>メッセージ／タスク ID で重複を防ぐ。外部への影響が不明な場合は、別途確認が必要</td></tr>
+<tr><th>ACK</th><td>受信側が「このパケットを受け取った」と伝えること</td><td>タスクの成功や承認の適用を意味するものではない</td></tr>
+<tr><th>Single-flight</th><td>前の実行が終わるまで、同じ処理を重ねて開始しない方式</td><td>予約タスクの重複実行が積み重なるのを防ぐ</td></tr>
+<tr><th>Backoff</th><td>失敗後、再試行の間隔を徐々に広げること</td><td>レート制限やサービスエラーでは待機し、Retry-After を尊重する。認証エラーをむやみに再試行しない</td></tr>
+<tr><th>WAL</th><td>SQLite が先にログを書き、読み書きの共存を改善する方式</td><td>ローカルデータの永続化に使用するが、同時書き込みには引き続き制約がある</td></tr>
+<tr><th>Migration</th><td>古いデータベース構造を新しい構造へ安全に更新すること</td><td>明示的なバージョン付き runner、更新前のバックアップ、未知の schema の拒否</td></tr>
+<tr><th>Provenance</th><td>情報がどこから来たかという来歴</td><td>文書の出典、記憶の出典、実際の実行軌跡</td></tr>
+<tr><th>Observability</th><td>問題が起きたときに、何が起きたかを把握できる性質</td><td>Run/Step、Activity、usage、エラー、成果物を関連付ける</td></tr>
+</tbody></table></div>
+<h3>OS、セキュリティ、配布</h3><div class="table-wrap"><table><thead><tr><th>用語</th><th>わかりやすい説明</th><th>Arslan での使い方</th></tr></thead><tbody>
+<tr><th>Sandbox / Seatbelt</th><td>OS がプロセスのアクセス可能なリソースを制限する仕組み</td><td>計算サンドボックスとコマンドサンドボックスではルールが異なり、ネットワークとフォールバックの動作を分けて説明する</td></tr>
+<tr><th>Fail-closed</th><td>保護層が利用できなければ実行を拒否する方式</td><td>標準の Python サンドボックスとオフラインでの終了経路に適用される。通常の全コマンドに一般化してはいけない</td></tr>
+<tr><th>Accessibility tree</th><td>OS が公開するウィンドウ、ボタン、テキストなどの構造</td><td>Hands がコントロールを読み取り、特定するために使う。スクリーンショットの画素認識には依存しない</td></tr>
+<tr><th>TCC</th><td>macOS のプライバシー権限管理の仕組み</td><td>アクセシビリティ、マイク、Apple Events などは、アプリ内のスイッチだけで許可されるものではない</td></tr>
+<tr><th>SSRF</th><td>サービスを誘導し、本来アクセスすべきでない内部アドレスに接続させる攻撃</td><td>Web 抽出や外部 URL では、接続先、リダイレクト、ネットワークの境界を検証する必要がある</td></tr>
+<tr><th>AEAD</th><td>内容の機密性と完全性を同時に保護する暗号方式</td><td>Bridge は ChaCha20-Poly1305 を使用し、改ざんされると検証が失敗する</td></tr>
+<tr><th>Key agreement / Signature</th><td>前者は暗号用の材料を共有し、後者は送信者の身元を検証する</td><td>X25519 と Ed25519 は役割が異なり、混同してはいけない</td></tr>
+<tr><th>Replay protection</th><td>攻撃者が古いメッセージを再送して、再び効果を生じさせるのを防ぐこと</td><td>署名、宛先、シーケンス番号のスライディングウィンドウ、永続的な重複排除を組み合わせる</td></tr>
+<tr><th>CI / CD</th><td>ビルド、検査、配布の手順を自動化すること</td><td>成功した CI が公開予定の SHA と一致する必要があり、最終成果物も検査する</td></tr>
+<tr><th>Contract test</th><td>境界の両側が同じプロトコルに従っているかを検証するテスト</td><td>Python/Rust、Mac/iPhone で正常系・異常系のベクトルを共有する</td></tr>
+<tr><th>Mutation testing</th><td>保護ロジックを意図的に壊し、テストで検出できるか調べる方法</td><td>特定のアサーションが違いを検出できることを示す。単なるユニットテストの別名ではない</td></tr>
+<tr><th>Code signing</th><td>ソフトウェアの出所と、成果物が変更されていないことを検証する仕組み</td><td>App と内蔵 helper の両方に正しい署名が必要</td></tr>
+<tr><th>Notarization / Staple</th><td>Apple が配布パッケージを審査し、チケットをパッケージに添付する手順</td><td>署名とは別の処理で、結果は Gatekeeper でも確認する必要がある</td></tr>
+<tr><th>Fresh-install acceptance</th><td>開発環境も過去のデータもない、新しいユーザーを再現する検証</td><td>実際のインストールパッケージの認証、WebSocket、リソース、helper を確認する</td></tr>
+</tbody></table></div>
+<p class="note">現在のシステムは、主にローカルの階層型モノリスと独立した helper で構成されています。SQLite とプロセス内の非同期スケジューリングは、個人向けデスクトップ製品のインストールと運用に適しています。関連する用語は、この規模の配置を前提に理解してください。</p>
+</section>
