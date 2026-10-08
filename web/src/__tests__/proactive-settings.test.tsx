@@ -1,6 +1,6 @@
 /**
  * Proactivity settings: every control saves what it shows, a refused save puts the old value
- * back, and the one control that spends lives in Automation with its warning.
+ * back, and the one control that spends lives in Background with its warning.
  */
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -8,6 +8,7 @@ import i18n from "../i18n";
 import { ApiError } from "../api/client";
 import type { ProactiveConfig, ProactiveWatch } from "../api/proactive";
 import ProactiveSection from "../components/settings/ProactiveSection";
+import { ConfirmHost } from "../components/kit";
 import ProactiveDiagnosisCap from "../components/settings/ProactiveDiagnosisCap";
 import { FIELD_HOMES, SETTINGS_SECTIONS } from "../components/settings/sectionRegistry";
 
@@ -111,7 +112,13 @@ describe("watches", () => {
     fireEvent.click(within(row).getByRole("button", { name: "Pause" }));
     fireEvent.click(within(row).getByRole("checkbox", { name: "Notify me" }));
     fireEvent.change(within(row).getByRole("combobox", { name: "Check every" }), { target: { value: "86400" } });
+    // 0.1.55: removing asks first (its history goes too); nothing is deleted until confirmed.
+    render(<ConfirmHost />);
     fireEvent.click(within(row).getByRole("button", { name: "Remove" }));
+    fireEvent.click(await screen.findByTestId("confirm-cancel"));
+    expect(api.deleteWatch).not.toHaveBeenCalled();
+    fireEvent.click(within(row).getByRole("button", { name: "Remove" }));
+    fireEvent.click(await screen.findByTestId("confirm-action"));
     await waitFor(() => expect(api.deleteWatch).toHaveBeenCalledWith(4));
     expect(api.updateWatch.mock.calls).toEqual([[4, { enabled: false }], [4, { notify: false }], [4, { interval_s: 86400 }]]);
   });
@@ -152,10 +159,9 @@ describe("silenced", () => {
 });
 
 describe("the cause-guess limit", () => {
-  it("lives in Automation, with the other spenders", () => {
-    expect(FIELD_HOMES["proactive.diagnosis_cap"]).toBe("automation");
-    const proactive = SETTINGS_SECTIONS.find((s) => s.id === "proactive");
-    expect(proactive?.group).toBe("system");
+  it("lives in Background, with the other spenders", () => {
+    expect(FIELD_HOMES["proactive.diagnosis_cap"]).toBe("background");
+    expect(SETTINGS_SECTIONS.some((s) => s.id === "background")).toBe(true);
   });
 
   it("is off by default, carries its honest warning, and saves the chosen limit", async () => {

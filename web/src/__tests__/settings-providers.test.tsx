@@ -34,6 +34,8 @@ const mockFetchProviderModels = vi.fn().mockResolvedValue({
 });
 
 vi.mock("../api/client", () => ({
+  // General shows the proactive notify block, whose error text checks `instanceof ApiError`.
+  ApiError: class ApiError extends Error {},
   api: {
     updateSettings: vi.fn().mockResolvedValue({}),
     getAccessToken: vi.fn().mockResolvedValue({ token_required: false, token: null }),

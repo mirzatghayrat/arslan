@@ -357,6 +357,23 @@ class ListMyCapabilitiesExecutor:
         return out
 
 
+class WhatsNewExecutor:
+    """D2 (0.1.55): Arslan's own version and the notes of the last releases, so
+    "what version are you / what changed" is answered from the shipped notes and
+    never from the model's memory."""
+
+    key = "whats_new"
+
+    async def execute(self, args: dict) -> dict:
+        from server.services import release_notes
+        try:
+            count = max(1, min(int(args.get("count") or 3), 6))
+        except (TypeError, ValueError):
+            count = 3
+        return {"ok": True, "version": release_notes.settings.app_version,
+                "releases": release_notes.recent(count)}
+
+
 _CHART_MAX_POINTS = 50
 _CHART_MAX_SERIES = 8
 
@@ -750,6 +767,9 @@ class ReadSkillExecutor:
             row = await db.get(SkillPack, skey)
         if row is None or not (row.body or "").strip():
             return {"ok": False, "external": False, "error": f"skill not found or empty: {skey}"}
+        if row.enabled is False:
+            # 0.1.55 §14: switched off on the Capabilities page — off means not used.
+            return {"ok": False, "external": False, "error": f"skill switched off by the user: {skey}"}
         body = row.body.strip()
         section = (args.get("section") or "").strip()
         if section.startswith("references/"):
@@ -822,7 +842,7 @@ from server.registry.file_tools import (  # noqa: E402 — registry assembly
 
 EXECUTORS = {e.key: e for e in (
     WebSearchExecutor(), WebExtractExecutor(), ChartExecutor(), CreateSkillExecutor(),
-    DeckExecutor(), RunPythonExecutor(), RunCommandExecutor(), ListMyCapabilitiesExecutor(),
+    DeckExecutor(), RunPythonExecutor(), RunCommandExecutor(), ListMyCapabilitiesExecutor(), WhatsNewExecutor(),
     ReadSkillExecutor(), RecallExecutor(), RememberExecutor(), ConversationSearchExecutor(), MemoryNoteExecutor(),
     TaskProgressExecutor(), DelegateWorkExecutor(),
     StartBackgroundWorkExecutor(), BackgroundStatusExecutor(), StopBackgroundWorkExecutor(),

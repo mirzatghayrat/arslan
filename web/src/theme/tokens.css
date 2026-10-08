@@ -118,3 +118,28 @@
   --hub:#7DD3FC;
   --success:#10B981; --danger:#EF4444; --warning:#F59E0B; --info:#3B82F6; --unfinished: #EAB308;
 }
+
+/* 0.1.55 surface kit — meanings, not decoration, so they do not change with the
+   palette: amber = something waits for you, red = destroys or stops, blue = info.
+   Surfaces themselves (--surface, --surface-raised, --border, text) DO follow the
+   palette. --primary stays a brand accent; kit buttons use the label colour. */
+:root {
+  --ask: #B86400; --ask-soft: rgba(255, 149, 0, 0.12);
+  --danger-strong: #D70015; --danger-soft: rgba(255, 59, 48, 0.10);
+  --info-strong: #0064D2; --info-soft: rgba(0, 122, 255, 0.08);
+  --fill: rgba(118, 118, 128, 0.12); --fill-strong: rgba(118, 118, 128, 0.20);
+  --scrim: rgba(0, 0, 0, 0.25);
+  --kit-shadow: 0 18px 50px rgba(0, 0, 0, 0.14);
+  --mark-bg: #000000;
+  --toast-bg: #1C1C1E; --toast-fg: #FFFFFF;
+}
+.dark {
+  --ask: #FF9F0A; --ask-soft: rgba(255, 159, 10, 0.14);
+  --danger-strong: #FF453A; --danger-soft: rgba(255, 69, 58, 0.16);
+  --info-strong: #409CFF; --info-soft: rgba(10, 132, 255, 0.14);
+  --fill: rgba(118, 118, 128, 0.24); --fill-strong: rgba(118, 118, 128, 0.34);
+  --scrim: rgba(0, 0, 0, 0.5);
+  --kit-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  --mark-bg: transparent;
+  --toast-bg: #F2F2F7; --toast-fg: #000000;
+}

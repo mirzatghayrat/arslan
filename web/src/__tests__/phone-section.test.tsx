@@ -12,6 +12,7 @@ import PhoneSection from "../components/settings/PhoneSection";
 import { api } from "../api/client";
 import type { PhoneStatus } from "../api/client.types";
 import { FIELD_HOMES, SETTINGS_SECTIONS } from "../components/settings/sectionRegistry";
+import { ConfirmHost } from "../components/kit";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
@@ -69,9 +70,11 @@ describe("Settings › iPhone", () => {
   it("lists paired phones and removes one", async () => {
     vi.spyOn(api, "phoneStatus").mockResolvedValue(online({ devices: [{ device_id: "iphone-1", name: "A", paired_at: "2026-10-03T00:00:00Z" }] }));
     const revoke = vi.spyOn(api, "phoneRevoke").mockResolvedValue({ revoked: true });
-    render(<PhoneSection pollMs={60_000} />);
+    render(<><PhoneSection pollMs={60_000} /><ConfirmHost /></>);
     expect(await screen.findByTestId("phone-device-iphone-1")).toHaveTextContent("A");
     fireEvent.click(screen.getByLabelText("settings.phoneRemove"));
+    expect(revoke).not.toHaveBeenCalled();   // 0.1.55: asks first
+    fireEvent.click(await screen.findByTestId("confirm-action"));
     await waitFor(() => expect(revoke).toHaveBeenCalledWith("iphone-1"));
   });
 
@@ -132,8 +135,8 @@ describe("Settings › iPhone", () => {
   });
 
   it("has a home in the settings registry", () => {
-    expect(SETTINGS_SECTIONS.find((s) => s.id === "phone")?.group).toBe("system");
-    expect(FIELD_HOMES["phone.devices"]).toBe("phone");
-    expect(FIELD_HOMES["phone.enabled"]).toBe("phone");
+    expect(SETTINGS_SECTIONS.some((s) => s.id === "connections")).toBe(true);
+    expect(FIELD_HOMES["phone.devices"]).toBe("connections");
+    expect(FIELD_HOMES["phone.enabled"]).toBe("connections");
   });
 });

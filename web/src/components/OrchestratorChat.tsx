@@ -4,13 +4,13 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { ImagePayload } from "../lib/imagePayload";
 import {
   ArrowRight,
-  AlertTriangle, CheckCircle2, XOctagon,
   CornerDownRight,
-  Cpu, X, Square,
+  X, Square,
   RadioTower,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import JobCard, { JobResultLabel } from './JobCard';
+import RememberedLine from './RememberedLine';
 import LearnedLine from "./LearnedLine";
 
 import { formatUiTime } from '../lib/localeFormatting';
@@ -26,6 +26,7 @@ import MessageBody, { HtmlDocCard } from './MessageBody';
 import CopyButton from './CopyButton';
 import LiveActivity from './LiveActivity';
 import ToolActivityCard from './ToolActivityCard';
+import { Dialog, Notice } from './kit';
 import { useArslanStore } from '../stores/arslanStore';
 import { taskErrorKey } from './companion/errors';
 import { runtimeErrorText } from '../lib/runtimeErrorText';
@@ -446,7 +447,7 @@ export default function OrchestratorChat({
                 </button>
               </div>
 
-              {attach.error && <div className="attach-error mt-1" role="alert">{attach.error}</div>}
+              {attach.error && <Notice tone="error" testId="attach-error" className="mt-1">{attach.error}</Notice>}
               {attach.dragActive && (
                 <div className="absolute inset-0 z-10 rounded-2xl flex items-center justify-center pointer-events-none bg-primary/[0.08] text-primary text-xs font-semibold">
                   {t('attach.drop_hint')}
@@ -489,6 +490,7 @@ export default function OrchestratorChat({
             // 0.1.42: a background job's live card sits where the job was started.
             if (msg.jobId) return <JobCard key={msg.id} jobId={msg.jobId} />;
             if (msg.learned) return <LearnedLine key={msg.id} id={msg.learned.id} text={msg.text} status={msg.learned.status} />;
+            if (msg.remembered) return <RememberedLine key={msg.id} facts={msg.remembered} />;
 
             // Roster notice (0.1.42): experts are not a standing cast in the chat.
             // One quiet line says who was asked to help; leaving says nothing.
@@ -651,11 +653,13 @@ export default function OrchestratorChat({
                     {/* Styled Bubble Body */}
                     <div className={`px-4 py-3 text-[12.5px] leading-relaxed relative ${
                       isUser
-                        ? 'bg-[rgba(120,140,170,0.10)] border border-[rgba(255,255,255,0.08)] rounded-[12px_12px_4px_12px] text-foreground text-left'
+                        ? 'bg-fill border border-border rounded-[12px_12px_4px_12px] text-foreground text-left'
                         : isArslan
                         ? 'bg-surface/80 backdrop-blur border border-border-strong text-foreground rounded-2xl rounded-tl-none shadow-sm shadow-black/40'
                         : 'bg-background/90 backdrop-blur border border-primary/15 text-foreground rounded-2xl rounded-tl-none'
                     }`}>
+                      {/* D3 (0.1.55): the steps ran BEFORE the answer, so their card sits above it. */}
+                      {msg.toolActivity && <div className="mb-3"><ToolActivityCard activity={msg.toolActivity} /></div>}
                       {/* Message Content */}
                       {isUser
                         ? <>
@@ -730,8 +734,6 @@ export default function OrchestratorChat({
                       </div>
                     )}
 
-                    {/* 2. Tool-Activity Card — humanized headline, raw JSON behind 详情 (shared component) */}
-                    {msg.toolActivity && <ToolActivityCard activity={msg.toolActivity} />}
 
                     {/* 🔒 HTML deliverable card — artifactHtml comes ONLY from the backend
                         stream_end frame's kind:"html" artifact (HX-2), never LLM text.
@@ -746,45 +748,7 @@ export default function OrchestratorChat({
                     )}
 
                     {/* 3. Escalation Banner Status Indicator (specifically asked in prompt) */}
-                    {msg.escalation && (
-                      <div className={`p-4 rounded-2xl border flex items-start gap-3.5 shadow-md ${
-                        msg.escalation.status === 'need_raised'
-                          ? 'bg-warning/15 border-warning/60 text-warning shadow-warning/5'
-                          : msg.escalation.status === 'arslan_resolving'
-                          ? 'bg-primary/20 border-primary/30 text-primary shadow-primary/5'
-                          : msg.escalation.status === 'resolved'
-                          ? 'bg-success/15 border-success/60 text-success shadow-success/5'
-                          : 'bg-danger/15 border-danger/60 text-danger shadow-danger/5'
-                      }`}>
-                        <div className="mt-0.5">
-                          {msg.escalation.status === 'need_raised' && <AlertTriangle className="w-4.5 h-4.5 animate-bounce" />}
-                          {msg.escalation.status === 'arslan_resolving' && <Cpu className="w-4.5 h-4.5 animate-spin" />}
-                          {msg.escalation.status === 'resolved' && <CheckCircle2 className="w-4.5 h-4.5 text-success" />}
-                          {msg.escalation.status === 'refused' && <XOctagon className="w-4.5 h-4.5 text-danger" />}
-                        </div>
-                        <div className="space-y-1 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[11.5px] font-bold font-mono tracking-wide uppercase">
-                              {msg.escalation.status === 'need_raised' && t('orchestrator.escalation_raised')}
-                              {msg.escalation.status === 'arslan_resolving' && t('orchestrator.arslan_resolving')}
-                              {msg.escalation.status === 'resolved' && t('orchestrator.escalation_resolved')}
-                              {msg.escalation.status === 'refused' && t('orchestrator.escalation_refused')}
-                            </span>
-                            <span className="text-[9px] bg-background/30 font-mono px-2 py-0.5 rounded">
-                              {t('ui.from')} {msg.escalation.spawnName}
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-muted-foreground font-sans leading-relaxed">{msg.escalation.issue}</p>
-
-                          {/* Inner details if context resolution message exists */}
-                          {msg.escalation.resolutionMessage && (
-                            <div className="mt-2.5 p-2.5 bg-background/50 rounded-lg border border-danger/40 text-danger font-mono text-[10.5px] leading-relaxed">
-                              {msg.escalation.resolutionMessage}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
+                    {msg.escalation && <EscalationNotice escalation={msg.escalation} />}
 
                     {/* 0.1.48: an old expert message keeps copy + its run; the expert actions went with the experts. */}
                     {isSpawn && !msg.isProposal && msg.spawnId && (
@@ -811,7 +775,7 @@ export default function OrchestratorChat({
               if (isUser) {
                 return (
                   <div key={msg.id} className="flex justify-end">
-                    <div className="max-w-[68%] border border-[rgba(255,255,255,0.08)] bg-[rgba(120,140,170,0.10)] p-3 font-mono text-[12px] text-foreground text-left" style={{ borderRadius: '12px 12px 4px 12px' }}>
+                    <div className="max-w-[68%] border border-border bg-fill p-3 font-mono text-[12px] text-foreground text-left" style={{ borderRadius: '12px 12px 4px 12px' }}>
                       <SentAttachments attachments={msg.attachments} />
                       <p className="whitespace-pre-line leading-relaxed">{msg.text}</p>
                       {msg.fromPhone && <div className="mt-1.5 flex justify-end"><RemoteChip label={t('chat.fromPhone')} /></div>}
@@ -841,6 +805,12 @@ export default function OrchestratorChat({
                     <span className="text-subtle-foreground text-[10px]">{msg.timestamp}</span>
                   </div>
 
+                  {/* D3 (0.1.55): the steps ran BEFORE the answer, so their card sits above it. */}
+                  {msg.toolActivity && (
+                    <div className="mb-3">
+                      <ToolActivityCard activity={msg.toolActivity} />
+                    </div>
+                  )}
                   {isUser
                     ? <p className="whitespace-pre-line text-muted-foreground font-mono leading-relaxed">{msg.text}</p>
                     : <MessageBody text={msg.text} streaming={msg.id === '__streaming__'} hasMessageActions={isSpawn && !msg.isProposal && !!msg.spawnId} className="text-muted-foreground font-sans leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
@@ -883,12 +853,6 @@ export default function OrchestratorChat({
                     </div>
                   )}
 
-                  {/* Tool Activity — humanized headline, raw JSON behind 详情 (shared component) */}
-                  {msg.toolActivity && (
-                    <div className="mt-4">
-                      <ToolActivityCard activity={msg.toolActivity} />
-                    </div>
-                  )}
 
                   {/* 🔒 HTML deliverable card — backend stream_end kind:"html" artifact only (HX-2). */}
                   {msg.artifactHtml && (
@@ -900,20 +864,7 @@ export default function OrchestratorChat({
                   )}
 
                   {/* Brutalist Escalation Panel */}
-                  {msg.escalation && (
-                    <div className="mt-4 border-2 border-danger bg-background p-3 text-[11px]">
-                      <div className="text-danger font-bold uppercase select-none pb-2 flex justify-between">
-                        <span>{t('ui.escalation')}</span>
-                        <span>{t(({ need_raised: 'orchestrator.escalation_raised', arslan_resolving: 'orchestrator.arslan_resolving', resolved: 'orchestrator.escalation_resolved', refused: 'orchestrator.escalation_refused' } as Record<string, string>)[msg.escalation.status] ?? 'ui.escalation')}</span>
-                      </div>
-                      <p className="text-muted-foreground font-semibold">{msg.escalation.issue.toUpperCase()}</p>
-                      {msg.escalation.resolutionMessage && (
-                        <div className="mt-2 bg-danger/20 text-danger p-2 border border-danger">
-                          {t('ui.resolution')} {msg.escalation.resolutionMessage.toUpperCase()}
-                        </div>
-                      )}
-                    </div>
-                  )}
+                  {msg.escalation && <EscalationNotice escalation={msg.escalation} />}
 
                   {/* 0.1.48: an old expert message keeps copy + its run; the expert actions went with the experts. */}
                   {isSpawn && !msg.isProposal && msg.spawnId && (
@@ -934,11 +885,8 @@ export default function OrchestratorChat({
                     <div className="max-w-[68%]">
                       <div
                         className="px-4 py-2.5 text-foreground text-[12.5px] leading-relaxed font-sans"
-                        style={{
-                          background: 'rgba(120,140,170,0.10)',
-                          border: '1px solid rgba(255,255,255,0.08)',
-                          borderRadius: '12px 12px 4px 12px',
-                        }}
+                        // 0.1.55: theme tokens (the white hairline vanished in the light theme).
+                        style={{ background: 'var(--fill)', border: '1px solid var(--border)', borderRadius: '12px 12px 4px 12px' }}
                       >
                         <SentAttachments attachments={msg.attachments} />
                         <span className="whitespace-pre-line">{msg.text}</span>
@@ -977,6 +925,12 @@ export default function OrchestratorChat({
                     )}
                   </div>
 
+                  {/* D3 (0.1.55): the steps ran BEFORE the answer, so their card sits above it. */}
+                  {msg.toolActivity && (
+                    <div className="pl-5 pb-2">
+                      <ToolActivityCard activity={msg.toolActivity} />
+                    </div>
+                  )}
                   {/* Body Content */}
                   <MessageBody text={msg.text} indent streaming={msg.id === '__streaming__'} hasMessageActions={isSpawn && !msg.isProposal && !!msg.spawnId} className="text-foreground font-sans leading-relaxed text-[12.5px] pl-5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
                   {msg.cancelled && <div className="pl-5"><RunCancelledMarker /></div>}
@@ -1021,12 +975,6 @@ export default function OrchestratorChat({
                     </div>
                   )}
 
-                  {/* Linear Minimal Tool activity — humanized headline, raw JSON behind 详情 (shared component) */}
-                  {msg.toolActivity && (
-                    <div className="pl-5 pt-2">
-                      <ToolActivityCard activity={msg.toolActivity} />
-                    </div>
-                  )}
 
                   {/* 🔒 HTML deliverable card — backend stream_end kind:"html" artifact only (HX-2). */}
                   {msg.artifactHtml && (
@@ -1038,20 +986,7 @@ export default function OrchestratorChat({
                   )}
 
                   {/* Linear Minimal Escalation status */}
-                  {msg.escalation && (
-                    <div className="pl-5 pt-2">
-                      <div className="border border-danger/40 bg-danger/5 border-l-2 border-l-danger rounded-r-lg p-3 max-w-xl">
-                        <div className="flex items-center gap-1 text-[10.5px] text-danger font-mono font-bold uppercase select-none">
-                          <AlertTriangle className="w-3.5 h-3.5" />
-                          <span>{t('ui.accessBlocked', { status: t(({ need_raised: 'orchestrator.escalation_raised', arslan_resolving: 'orchestrator.arslan_resolving', resolved: 'orchestrator.escalation_resolved', refused: 'orchestrator.escalation_refused' } as Record<string, string>)[msg.escalation.status] ?? 'ui.escalation') })}</span>
-                        </div>
-                        <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">{msg.escalation.issue}</p>
-                        {msg.escalation.resolutionMessage && (
-                          <p className="mt-2 text-danger text-[10px] font-mono whitespace-pre-wrap pl-2 bg-background/40 py-1.5 rounded">{msg.escalation.resolutionMessage}</p>
-                        )}
-                      </div>
-                    </div>
-                  )}
+                  {msg.escalation && <EscalationNotice escalation={msg.escalation} />}
 
                   {/* 0.1.48: an old expert message keeps copy + its run; the expert actions went with the experts. */}
                   {isSpawn && !msg.isProposal && msg.spawnId && (
@@ -1072,27 +1007,17 @@ export default function OrchestratorChat({
           // 0.1.44: a task-status code (a check to make, a budget used up…) is not a
           // model failure; it gets its own neutral title instead of "Model error".
           const taskKey = taskErrorKey(llmError);
-          // Literal class strings: Tailwind cannot see names spliced at runtime.
-          const c = taskKey
-            ? { box: 'bg-warning/10 border-warning/30', icon: 'text-warning', title: 'text-warning', body: 'text-warning/80', close: 'hover:bg-warning/20 text-warning/60 hover:text-warning' }
-            : { box: 'bg-danger/10 border-danger/30', icon: 'text-danger', title: 'text-danger', body: 'text-danger/80 font-mono', close: 'hover:bg-danger/20 text-danger/60 hover:text-danger' };
+          // 0.1.55: the kit's Notice — warn for a task status, error for a model failure.
           return (
           <div className="flex gap-3 items-start py-2 select-none" data-testid="chat-error" data-kind={taskKey ? 'task' : 'model'}>
             <BrandMark alt="Arslan" className="w-7 h-7 object-contain select-none shrink-0 mt-0.5" draggable={false} />
-            <div className={`flex items-start gap-2 px-3 py-2.5 border ${c.box} rounded-2xl rounded-tl-none max-w-2xl`}>
-              <AlertTriangle className={`w-3.5 h-3.5 ${c.icon} shrink-0 mt-0.5`} />
-              <div className="flex flex-col gap-1 min-w-0">
-                <span className={`text-[11px] ${c.title} font-semibold`}>{t(taskKey ? 'ui.needsYourCheck' : 'ui.modelError')}</span>
-                <span className={`text-[11px] ${c.body} break-words`}>{taskKey ? t(taskKey) : runtimeErrorText(llmError, llmErrorTranslations, i18n?.resolvedLanguage)}</span>
-              </div>
-              <button
-                onClick={clearLlmError}
-                className={`ml-auto shrink-0 p-0.5 rounded ${c.close} transition-colors`}
-                aria-label={t('errors.dismiss')}
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </div>
+            <Notice className="max-w-2xl flex-1" tone={taskKey ? 'warn' : 'error'} testId="chat-error-notice"
+              title={t(taskKey ? 'ui.needsYourCheck' : 'ui.modelError')}
+              action={<button onClick={clearLlmError} aria-label={t('errors.dismiss')}
+                className="shrink-0 self-start rounded p-0.5 text-muted-foreground hover:text-foreground"><X className="h-3 w-3" /></button>}>
+              <span className={`break-words ${taskKey ? '' : 'font-mono text-[12px]'}`}>
+                {taskKey ? t(taskKey) : runtimeErrorText(llmError, llmErrorTranslations, i18n?.resolvedLanguage)}</span>
+            </Notice>
           </div>
           );
         })()}
@@ -1197,11 +1122,11 @@ export default function OrchestratorChat({
   </div>
 
   {replayRunId != null && (
-    <div className="run-replay-overlay" onClick={() => setReplayRunId(null)}>
-      <div className="run-replay-overlay__panel" onClick={(e) => e.stopPropagation()}>
-        <RunReplay runId={replayRunId} onClose={() => setReplayRunId(null)} />
-      </div>
-    </div>
+    // 0.1.55: the kit Dialog (role=dialog, aria-modal, esc, focus kept inside).
+    <Dialog open bare width={960} title={t('replay.title', { defaultValue: 'Run' })} testId="run-replay-dialog"
+      onClose={() => setReplayRunId(null)}>
+      <RunReplay runId={replayRunId} onClose={() => setReplayRunId(null)} />
+    </Dialog>
   )}
 </div>
 );
@@ -1214,5 +1139,22 @@ function RemoteChip({ label }: { label: string }) {
     <span data-testid="from-phone" className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
       <RadioTower size={11} aria-hidden />{t('sidebar.remote')} · {label}
     </span>
+  );
+}
+
+
+/** 0.1.55: a legacy expert's escalation as one kit Notice (it was three hand-styled banners). */
+function EscalationNotice({ escalation }: { escalation: NonNullable<Message['escalation']> }) {
+  const { t } = useTranslation();
+  const status = escalation.status;
+  const tone = status === 'refused' ? 'error' : status === 'need_raised' ? 'warn' : 'info';
+  const title = t(({ need_raised: 'orchestrator.escalation_raised', arslan_resolving: 'orchestrator.arslan_resolving',
+    resolved: 'orchestrator.escalation_resolved', refused: 'orchestrator.escalation_refused' } as Record<string, string>)[status] ?? 'ui.escalation');
+  return (
+    <Notice tone={tone} testId="escalation-notice" attrs={{ 'data-status': status }}
+      title={<>{title} <span className="font-normal text-subtle-foreground">· {t('ui.from')} {escalation.spawnName}</span></>}>
+      {escalation.issue}
+      {escalation.resolutionMessage ? <span className="mt-1 block">{t('ui.resolution')} {escalation.resolutionMessage}</span> : null}
+    </Notice>
   );
 }

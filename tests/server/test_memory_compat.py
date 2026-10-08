@@ -55,3 +55,28 @@ async def test_extraction_honors_learning_and_secret_gates(active_memory):
     with pc.bind(pc.TaskMemoryContext(task_id="task-a", run_id="run-a")):
         assert await memory.save_facts([{"content": "password=veryprivatevalue"}],
                                        provenance={"source_kind": "router"}) == []
+
+
+async def test_a_near_duplicate_noticed_fact_is_not_saved_twice(active_memory):
+    """D1 (0.1.55): two almost identical facts minutes apart were both saved."""
+    ctx = pc.TaskMemoryContext(task_id="task-a", run_id="run-a", model_is_local=True, auto_activate_noticed=True)
+    with pc.bind(ctx):
+        first = await memory.save_facts([{"content": "用户关注并比较 Hermes、OpenClaw 等各类 AI agent 的取舍"}],
+                                         provenance={"source_kind": "conversation"})
+        again = await memory.save_facts([{"content": "用户关注并比较 Hermes、OpenClaw 等各类 AI agent 的取舍。"},
+                                         {"content": "用户在做一款水利调度解谜游戏"}],
+                                        provenance={"source_kind": "conversation"})
+    assert len(first) == 1
+    assert [f.content for f in again] == ["用户在做一款水利调度解谜游戏"]
+
+
+def test_the_wire_frame_keeps_what_undo_needs():
+    """D1: the socket rebuilds event frames (ws/arslan._to_frame); fact_saved used to
+    keep only the text, so the chat line had nothing to undo with."""
+    from server.ws.arslan import _to_frame
+    frame = _to_frame({"type": "fact_saved", "content": "你关注 Hermes", "sensitive": False,
+                       "entry_id": "e-1", "version": 1})
+    assert frame == {"type": "fact_saved", "content": "你关注 Hermes", "sensitive": False,
+                     "entry_id": "e-1", "version": 1}
+    waiting = {"type": "memory_proposed", "content": "血压", "sensitive": True, "entry_id": "e-2", "version": 1}
+    assert _to_frame(waiting) == waiting

@@ -97,10 +97,6 @@ def test_history_rows_carry_run_id(app_client):
         assert rows[1]["run_id"] == run_id
 
 
-
-
-
-
 def _drain(ws, max_frames: int = 30) -> list[dict]:
     """Collect frames until a stream_end is seen (or budget exhausted)."""
     frames: list[dict] = []
@@ -124,35 +120,6 @@ def _drain_roster_after_created(ws) -> None:
     else:
         # No roster_event, this frame should already be roster_update
         assert f["type"] == "roster_update"
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-def test_to_frame_carries_task_brief_and_overlaps():
-    from server.ws.arslan import _to_frame
-
-    frame = _to_frame({
-        "type": "suggest_create",
-        "draft": {"name": "x"},
-        "task_brief": "do X",
-        "overlaps": {"spawn_id": 3, "name": "y", "axes": ["a"]},
-    })
-    assert frame["task_brief"] == "do X"
-    assert frame["overlaps"] == {"spawn_id": 3, "name": "y", "axes": ["a"]}
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -207,10 +174,5 @@ def test_to_frame_escalation_and_refused():
 
 
 # --- Task 4: in-chat attach storage intent ----------------------------------
-
-
-
-
-
 
 

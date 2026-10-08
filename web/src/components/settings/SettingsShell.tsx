@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import AppIdentityCard from './AppIdentityCard';
 import {
   Cpu, Search, Palette, KeyRound, Database, Bot, Sliders, Monitor, Circle, ArrowLeft, BellRing, Smartphone,
+  SlidersHorizontal, Hand, Globe, Info,
   type LucideIcon,
 } from 'lucide-react';
 import {
@@ -15,6 +15,7 @@ import {
 /** Explicit icon map (avoids a heavy `import * as Icons` namespace import). */
 const ICONS: Record<string, LucideIcon> = {
   Cpu, Search, Palette, KeyRound, Database, Bot, Sliders, Monitor, BellRing, Smartphone,
+  SlidersHorizontal, Hand, Globe, Info,
 };
 
 interface SettingsShellProps {
@@ -91,16 +92,16 @@ export default function SettingsShell({
         onClick={() => onSectionChange(s.id)}
         className={[
           'relative flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left shrink-0',
-          'whitespace-nowrap md:whitespace-normal transition-colors select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
+          'whitespace-nowrap md:whitespace-normal transition-colors select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20',
+          // 0.1.55: the active entry is a raised neutral row, not the brand orange.
           active
-            ? 'bg-primary/10 text-primary border border-transparent'
+            ? 'bg-surface text-foreground font-semibold border border-border shadow-sm'
             : 'text-muted-foreground hover:text-foreground hover:bg-surface/60 border border-transparent',
         ].join(' ')}
       >
-        {active && <span aria-hidden className="absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-full bg-primary" />}
         <Icon className="w-3.5 h-3.5 shrink-0" />
         <span className="flex min-w-0 flex-col leading-tight md:break-words">
-          <span className="text-[12.5px] font-medium font-sans">{t(s.labelKey)}</span>
+          <span className="text-[13px] font-sans">{t(s.labelKey)}</span>
         </span>
       </button>
     );
@@ -108,7 +109,7 @@ export default function SettingsShell({
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col md:flex-row">
-      <aside data-testid="settings-sidebar" className="w-full md:w-44 lg:w-48 md:shrink-0 md:overflow-y-auto overscroll-contain bg-sidebar/60 border-b md:border-b-0 md:border-r border-border px-2.5 py-3 flex flex-col">
+      <aside data-testid="settings-sidebar" className="w-full md:w-52 lg:w-56 md:shrink-0 md:overflow-y-auto overscroll-contain bg-sidebar/60 border-b md:border-b-0 md:border-r border-border px-2.5 py-3 flex flex-col">
         <label className="sr-only" htmlFor="settings-search">{t('settings.searchPlaceholder')}</label>
         <div className="flex items-center gap-2 bg-surface border border-border rounded-md px-2.5 py-1.5 mb-2 focus-within:border-primary/50">
           <Search className="w-3.5 h-3.5 text-subtle-foreground shrink-0" aria-hidden />
@@ -130,7 +131,7 @@ export default function SettingsShell({
             <React.Fragment key={group.id}>
               {/* Group headings are hidden while filtering: with two of seven
                   entries left, three headings are more chrome than content. */}
-              {!matches && (
+              {!matches && group.id !== 'all' && (
                 <div className="hidden md:block px-2.5 pt-3 pb-1 text-[9.5px] font-sans font-medium uppercase tracking-[0.1em] text-muted-foreground">
                   {t(group.labelKey)}
                 </div>
@@ -149,14 +150,14 @@ export default function SettingsShell({
           {onBack && <button type="button" data-testid="settings-back" onClick={onBack} className="mb-2 flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[12.5px] text-muted-foreground hover:text-foreground hover:bg-surface/60">
             <ArrowLeft className="w-3.5 h-3.5" />{t('settings.backToWorkspace')}
           </button>}
-          <AppIdentityCard />
+          {/* 0.1.55: the version card lives on About now, not twice on screen. */}
         </div>
       </aside>
 
       {/* The one scrolling region. `key` restarts the short slide-in when the
           section changes, so switching reads as the pane changing, not the page. */}
       <div data-testid="settings-content" className="min-h-0 w-full flex-1 min-w-0 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6 lg:px-8">
-        <div key={activeSection} className="settings-pane-in mx-auto w-full max-w-5xl space-y-6">
+        <div key={activeSection} className="settings-pane-in mx-auto w-full max-w-3xl space-y-6">
           {children[activeSection]}
         </div>
       </div>

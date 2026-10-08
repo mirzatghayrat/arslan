@@ -283,8 +283,7 @@ export function toUiSpawn(s: SpawnSummary & {
  *   spawnIntro: populated from equipment + intro if available
  *
  * kind === "fact"
- *   sender: "arslan", senderName: "Arslan", senderAvatar: "🦁"
- *   text: content
+ *   remembered: the turn's facts (D1) — rendered as one quiet line, never a bubble
  *
  * Fields with no counterpart (routedTo for routing items, timestamp) get
  * sensible defaults: timestamp = "" (component shows it conditionally).
@@ -404,6 +403,8 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
     }
 
     if (item.kind === "fact") {
+      // D1 (0.1.55): a remembered fact is NOT a reply. It used to render as an ordinary
+      // Arslan message, so third-person lines ("用户关注…") read as Arslan talking.
       return {
         id,
         sender: "arslan",
@@ -411,6 +412,7 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
         senderAvatar: "🦁",
         text: item.content,
         timestamp,
+        remembered: item.facts ?? [{ content: item.content, sensitive: !!item.sensitive, status: "active" }],
       };
     }
 

@@ -157,3 +157,58 @@ async def test_skill_script_traversal_rejected(maker, tmp_path):
     for ref in ("../secrets.py", "handoff/../../x.py", "handoff/", "absolute//etc.py"):
         out = await RunPythonExecutor().execute({"skill_script": ref})
         assert out["ok"] is False, ref
+
+
+# ── 0.1.55: the license is read per skill, from the skill's own license file ───
+
+APACHE = "                                 Apache License\n                           Version 2.0, January 2004\n"
+ANTHROPIC_TERMS = ("© 2025 Anthropic, PBC. All rights reserved.\n\nLICENSE: Use of these materials ... is governed "
+                   "by your agreement with Anthropic")
+
+
+def _anthropic_like(monkeypatch):
+    """The shape of github.com/anthropics/skills, checked 2026-10-08: no repo license,
+    a LICENSE.txt in every skill folder — Apache-2.0 for most, Anthropic's own terms
+    for the document skills (docx/pdf/pptx/xlsx)."""
+    _mock_github(monkeypatch, license=None,
+                 tree=["skills/theme-factory/SKILL.md", "skills/theme-factory/LICENSE.txt",
+                       "skills/docx/SKILL.md", "skills/docx/LICENSE.txt"],
+                 raws={"skills/theme-factory/SKILL.md": VALID_MD.replace("handoff", "theme-factory"),
+                       "skills/theme-factory/LICENSE.txt": APACHE,
+                       "skills/docx/SKILL.md": VALID_MD.replace("handoff", "docx"),
+                       "skills/docx/LICENSE.txt": ANTHROPIC_TERMS})
+
+
+async def test_a_skill_with_its_own_permissive_license_imports_from_an_unlicensed_repo(maker, monkeypatch):
+    _anthropic_like(monkeypatch)
+    out = await skill_import.scan_skills("anthropics/skills")
+    by_key = {s["key"]: s for s in out["skills"]}
+    assert by_key["theme-factory"]["importable"] is True
+    assert by_key["theme-factory"]["license"] == "Apache-2.0"
+    assert by_key["docx"]["importable"] is False and "not a permissive license" in by_key["docx"]["reason"]
+    done = await skill_import.import_skill("anthropics/skills", "skills/theme-factory/SKILL.md")
+    assert done["license"] == "Apache-2.0"
+    async with maker() as db:
+        row = await db.get(SkillPack, "theme-factory")
+    assert "(Apache-2.0, skills/theme-factory/LICENSE.txt)" in row.body
+
+
+async def test_a_proprietary_skill_is_refused_on_import_too(maker, monkeypatch):
+    _anthropic_like(monkeypatch)
+    with pytest.raises(ValueError, match="not a permissive license"):
+        await skill_import.import_skill("anthropics/skills", "skills/docx/SKILL.md")
+
+
+async def test_the_skills_own_license_wins_over_a_permissive_repo(maker, monkeypatch):
+    _mock_github(monkeypatch, license="MIT", tree=["skills/x/SKILL.md", "skills/x/LICENSE"],
+                 raws={"skills/x/SKILL.md": VALID_MD, "skills/x/LICENSE": ANTHROPIC_TERMS})
+    with pytest.raises(ValueError, match="not a permissive license"):
+        await skill_import.import_skill("x/y", "skills/x/SKILL.md")
+
+
+def test_license_text_detection():
+    from server.services.skill_import import detect_license
+    assert detect_license(APACHE) == "Apache-2.0"
+    assert detect_license("Permission is hereby granted, free of charge, to any person") == "MIT"
+    assert detect_license(ANTHROPIC_TERMS) is None
+    assert detect_license("GNU GENERAL PUBLIC LICENSE Version 3") is None

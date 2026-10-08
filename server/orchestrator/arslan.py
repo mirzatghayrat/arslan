@@ -9,6 +9,7 @@ from datetime import datetime
 
 from sqlalchemy import select
 
+from server.config import settings as _settings
 from server.orchestrator import llm_errors
 from server.services import ocr_fallback
 from server.db import session as db_session
@@ -276,9 +277,14 @@ def _now_line() -> str:
 # byte-stable STABLE PREFIX (the static guards, same order as before, minus the timestamp)
 # + a VOLATILE SUFFIX (everything per-turn/per-conversation). Kept as a named pure helper so
 # the stable-prefix byte-stability invariant is directly testable.
+# D2 (0.1.55): the running version, fixed for the life of the process, so the prefix
+# stays byte-stable. "What changed" comes from whats_new, never from memory.
+_VERSION_LINE = (f"\n\nYou are Arslan {_settings.app_version}. For which version you are or what changed, "
+                 "use this line and the whats_new tool; never guess a version.")
+
 _ANSWER_STABLE_PREFIX = (
     _ARSLAN_SYSTEM + _ANTI_FABRICATION + _NO_BACKGROUND_EXEC
-    + _CLARIFY_CHOICE_NUDGE + _NO_REPASTE + _WEB_TOOL_GUIDANCE + _CAPABILITY_SELF
+    + _CLARIFY_CHOICE_NUDGE + _NO_REPASTE + _WEB_TOOL_GUIDANCE + _CAPABILITY_SELF + _VERSION_LINE
 )
 
 
@@ -822,17 +828,24 @@ def _arslan_fetch_executor():
     return EXECUTORS["web_search"]
 
 
-async def _skill_index(limit: int = 40) -> str:
-    """One line per registered skill: key — name: what it is for."""
+async def _skill_index(limit: int = 80) -> str:
+    """One line per registered skill: key — name: what it is for.
+
+    0.1.55: only skills with a body are counted, and in SQL BEFORE the limit. The
+    limit used to apply first, so bodyless rows (registered but never usable) took
+    the slots: on a fresh install 44 skills had a body and the model saw 31."""
+    from sqlalchemy import func
+
     from server.db.models import SkillPack
     try:
         async with db_session.AsyncSessionLocal() as db:
-            rows = (await db.execute(select(SkillPack).where(SkillPack.status == "registered")
-                                     .order_by(SkillPack.key).limit(limit))).scalars().all()
+            rows = (await db.execute(select(SkillPack).where(
+                SkillPack.status == "registered", SkillPack.body.is_not(None), SkillPack.enabled.is_not(False),
+                func.trim(SkillPack.body) != "").order_by(SkillPack.key).limit(limit))).scalars().all()
     except Exception:  # noqa: BLE001 — a missing index must never break a turn
         return ""
     return "\n".join(f"- {r.key} — {r.name}: {' '.join((r.description or '').split())[:100]}"
-                     for r in rows if (r.body or "").strip())
+                     for r in rows)
 
 
 async def _arslan_tools() -> list[dict]:
@@ -994,6 +1007,12 @@ async def _arslan_tools() -> list[dict]:
             "service connected. Shows the user a confirm card; nothing connects until they confirm, and "
             "any key is typed on the card, never here. args: {name}. If there is no such connector, the "
             "result lists what exists: then do the task another way instead of stopping."})
+    if "whats_new" in EXECUTORS:
+        tools.append({"key": "whats_new",
+                      "description": "Your own version and the release notes of the latest versions "
+                                     "(newest first). Call it when the user asks which version you are, "
+                                     "what changed, or what is new; answer from it, never from memory. "
+                                     "args: {count?: 1-6, default 3}."})
     if "list_my_capabilities" in EXECUTORS:
         tools.append({"key": "list_my_capabilities",
                       "description": "List your OWN usable capabilities (built-in tools + installed "

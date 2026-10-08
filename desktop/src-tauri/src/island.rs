@@ -17,8 +17,14 @@
 //! - Geometry: the display with a notch hosts it, sized to the notch; without
 //!   one, the main display gets a small bar (`island-geometry`).
 //!
-//! Known I1 limit: a click on the island activates Arslan (an NSWindow, not a
-//! non-activating NSPanel). I1's clicks all open Arslan anyway; I2 changes it.
+//! Known limit, still open in 0.1.55: a click on the island activates Arslan (an
+//! NSWindow, not a non-activating NSPanel). Since 0.1.55 the island answers cards
+//! itself (Allow / Decline, POST /approvals/{id}/answer), so that click now does
+//! something here AND brings Arslan forward — over a full-screen app that can switch
+//! Spaces. The fix is a non-activating panel (class swap to an NSPanel subclass with
+//! the nonactivating style); it is NOT done: it must be measured on a real Mac
+//! (full-screen app, a waiting card, answered from the tab) before it ships.
+//! `fullscreen` in the geometry (menu bar hidden) is likewise unmeasured on hardware.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -49,6 +55,10 @@ pub struct Geometry {
     pub notch: bool,
     pub notch_width: f64,
     pub bar_height: f64,
+    /// 0.1.55 decision 4: the menu bar is hidden on this display — a full-screen app
+    /// (or "hide the menu bar automatically"). A waiting card then shows as a small
+    /// still tab instead of the whole card, until the pointer opens it.
+    pub fullscreen: bool,
 }
 
 /// A display as AppKit measures it: points, origin bottom-left.
@@ -82,6 +92,7 @@ pub fn pick_display(displays: &[Display]) -> Option<(Display, Geometry)> {
                         notch: true,
                         notch_width: width,
                         bar_height: d.safe_top,
+                        fullscreen: menu_bar_hidden(d),
                     },
                 ));
             }
@@ -99,8 +110,14 @@ pub fn pick_display(displays: &[Display]) -> Option<(Display, Geometry)> {
             notch: false,
             notch_width: 0.0,
             bar_height: bar,
+            fullscreen: menu_bar_hidden(&d),
         },
     ))
+}
+
+/// No menu bar showing on this display: its visible frame reaches the top.
+pub fn menu_bar_hidden(d: &Display) -> bool {
+    d.menu_bar < 1.0
 }
 
 /// Bottom-left origin (AppKit) of the island window: centred on the display
@@ -489,9 +506,30 @@ mod tests {
             Geometry {
                 notch: true,
                 notch_width: 188.0,
-                bar_height: 32.0
+                bar_height: 32.0,
+                fullscreen: false
             }
         );
+    }
+
+    #[test]
+    fn a_hidden_menu_bar_reads_as_full_screen_on_either_kind_of_display() {
+        // In a full-screen Space the menu bar is hidden: the visible frame reaches the top.
+        let full = Display {
+            menu_bar: 0.0,
+            ..notched()
+        };
+        let (_, g) = pick_display(&[full]).unwrap();
+        assert!(g.notch && g.fullscreen);
+        // The notch height stays the bar height: the notch is still there.
+        assert_eq!(g.bar_height, 32.0);
+        let flat = Display {
+            menu_bar: 0.0,
+            ..external()
+        };
+        let (_, g) = pick_display(&[flat]).unwrap();
+        assert!(!g.notch && g.fullscreen);
+        assert!(!pick_display(&[notched()]).unwrap().1.fullscreen);
     }
 
     #[test]
@@ -503,7 +541,8 @@ mod tests {
             Geometry {
                 notch: false,
                 notch_width: 0.0,
-                bar_height: 25.0
+                bar_height: 25.0,
+                fullscreen: false
             }
         );
         assert!(pick_display(&[]).is_none());
@@ -598,11 +637,12 @@ mod tests {
             notch: true,
             notch_width: 188.0,
             bar_height: 32.0,
+            fullscreen: false,
         };
         let s = init_script(Some("ab\"c"), &g);
         assert!(s.contains(r#"window.__ARSLAN_TOKEN__ = "ab\"c";"#), "{s}");
         assert!(
-            s.contains(r#"{"notch":true,"notchWidth":188.0,"barHeight":32.0}"#),
+            s.contains(r#"{"notch":true,"notchWidth":188.0,"barHeight":32.0,"fullscreen":false}"#),
             "{s}"
         );
         assert!(!init_script(None, &g).contains("__ARSLAN_TOKEN__"));

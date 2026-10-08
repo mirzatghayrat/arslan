@@ -18,6 +18,7 @@ import {
   getMcpOauthStatus,
 } from "../api/mcp";
 import { openExternal } from "../lib/shell";
+import { confirmSheet } from "./kit";
 
 interface EnvRow {
   k: string;
@@ -230,6 +231,9 @@ export default function McpServers({ prefill }: McpServersProps = {}) {
   }
 
   async function remove(id: number) {
+    const server = servers.find((s) => s.id === id);
+    if (!(await confirmSheet({ title: tr("confirm.mcpTitle", { name: server?.label ?? "" }), body: tr("confirm.mcpBody"),
+      action: tr("confirm.remove") }))) return;
     setBusy(true);
     setError(null);
     try {

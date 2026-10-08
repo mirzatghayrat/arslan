@@ -58,6 +58,7 @@ vi.mock("../stores/authStore", () => ({
 }));
 
 import ProviderConfigList from "../components/ProviderConfigList";
+import { ConfirmHost } from "../components/kit";
 import { capabilityOverrideKey } from "../components/settings/CapabilityBadges";
 import type { ProviderOption, ProviderConfig } from "../api/client.types";
 
@@ -139,12 +140,13 @@ describe("provider card list", () => {
         <ProviderConfigList llmProviders={providers} providerConfigs={cfgs} onConfigsChange={setCfgs} />
       );
     }
-    render(<Harness />);
+    render(<><Harness /><ConfirmHost /></>);
     // Select the non-primary row (id 2) — its detail delete button is enabled
     await user.click(screen.getByTestId("provider-card-row-1"));
     expect(screen.getByTestId("provider-config-model-1")).toBeInTheDocument();
     await user.click(screen.getByTestId("provider-config-more-1"));
     await user.click(screen.getByTestId("provider-config-delete-1"));
+    await user.click(await screen.findByTestId("confirm-action"));   // 0.1.55: asks first
     // The row is gone and selection re-anchors to the surviving primary config
     await waitFor(() => expect(screen.queryByTestId("provider-card-row-1")).toBeNull());
     expect(mockDeleteProviderConfig).toHaveBeenCalledWith(2);
@@ -164,10 +166,11 @@ describe("provider card list", () => {
         <ProviderConfigList llmProviders={providers} providerConfigs={cfgs} onConfigsChange={setCfgs} />
       );
     }
-    render(<Harness />);
+    render(<><Harness /><ConfirmHost /></>);
     await user.click(screen.getByTestId("provider-card-row-1"));
     await user.click(screen.getByTestId("provider-config-more-1"));
     await user.click(screen.getByTestId("provider-config-delete-1"));
+    await user.click(await screen.findByTestId("confirm-action"));   // 0.1.55: asks first
     await waitFor(() => expect(mockDeleteProviderConfig).toHaveBeenCalledWith(2));
     // The override for the deleted id is purged so a future config reusing id 2
     // can't silently inherit it (SQLite reuses integer PKs).
@@ -249,7 +252,7 @@ describe("provider card list", () => {
         <ProviderConfigList llmProviders={providers} providerConfigs={cfgs} onConfigsChange={setCfgs} />
       );
     }
-    render(<Harness />);
+    render(<><Harness /><ConfirmHost /></>);
 
     // Select the non-primary row (id 2) so its detail delete button is enabled.
     await user.click(screen.getByTestId("provider-card-row-1"));
@@ -264,6 +267,7 @@ describe("provider card list", () => {
     });
     await user.click(screen.getByTestId("provider-config-more-1"));
     await user.click(screen.getByTestId("provider-config-delete-1"));
+    await user.click(await screen.findByTestId("confirm-action"));   // 0.1.55: asks first
     await waitFor(() => expect(screen.queryByTestId("provider-card-row-1")).toBeNull());
     // Flush any queued mutation records before disconnecting.
     await Promise.resolve();

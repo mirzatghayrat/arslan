@@ -35,6 +35,8 @@ vi.mock("react-i18next", () => ({
 
 const testSearchInstance = vi.fn();
 vi.mock("../api/client", () => ({
+  // General shows the proactive notify block, whose error text checks `instanceof ApiError`.
+  ApiError: class ApiError extends Error {},
   testSearchInstance: (...args: unknown[]) => testSearchInstance(...args),
 }));
 

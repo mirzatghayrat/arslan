@@ -246,52 +246,25 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
     async def _ask(frame: dict) -> dict:
         """Show one card and wait for its answer: {"approved", "remember"}.
 
-        A window's own turn: the card is private to THIS socket — deliberately NOT
-        emit(): only this connection's receive-router below can answer the call_id,
-        so fanning it out would paint an unanswerable card on every other tab. It is
-        also deliberately un-journaled (raw ws.send_json, never a recorder tee), so a
-        reattaching socket cannot replay a dead interactive card.
+        0.1.55: every card is registered in `approvals`, so the Inbox and the island
+        can answer it too (by call_id, through the same reply rule). A window's own
+        turn still sends the card to THIS socket only — other windows do not paint a
+        copy — and it is never journaled, so a reattaching socket cannot replay a dead
+        card. A turn the iPhone started shows it everywhere (`_ask_everywhere`)."""
+        return await _ask_everywhere(frame, broadcast=phone_turn["on"])
 
-        A turn the iPhone started: see `_ask_everywhere`."""
-        if phone_turn["on"]:
-            return await _ask_everywhere(frame)
-        kind, call_id = frame["type"].removeprefix("propose_"), frame["call_id"]
-        await ws.send_json(frame)
-        # Own ws.receive HERE, only while this one card is pending. The orchestration
-        # coro that led here is blocked awaiting this call, so the outer
-        # `while True: ws.receive_json()` loop is not receiving — there is exactly one
-        # receiver. We loop until THIS call_id is answered; any other frame arriving
-        # mid-confirmation gets a recoverable BUSY notice (ping/pong ignored). On the
-        # matching confirm/cancel we return, and the outer loop resumes receiving. A
-        # client vanishing mid-confirmation raises WebSocketDisconnect out of here, so
-        # the outer handler's disconnect path runs (clean socket teardown).
-        with desktop_status.awaiting_approval(conversation_id):
-            while True:
-                try:
-                    data = await asyncio.wait_for(_receive(), timeout=300)
-                except TimeoutError:
-                    return {"approved": False, "remember": False}
-                t = data.get("type")
-                if t in ("ping", "pong"):
-                    continue
-                if t in (f"confirm_{kind}", f"cancel_{kind}") and data.get("call_id") == call_id:
-                    return {"approved": t == f"confirm_{kind}", "remember": bool(data.get("remember"))}
-                # Any other frame (including a confirm for an unknown/stale call_id) is
-                # not actionable while we are paused — tell the client, keep waiting.
-                if approvals.answer(data):   # a background job's card, not this one
-                    continue
-                await ws.send_json(protocol.error(
-                    "BUSY", "An action is awaiting your confirmation.", recoverable=True))
-
-    async def _ask_everywhere(frame: dict) -> dict:
-        """A turn the iPhone started shows its cards everywhere: on the phone (through
-        this socket, the Bridge's) and in every Mac window open on the conversation.
-        The first answer from any of them decides — a window's reply reaches the
-        registry through its own receive loop, the phone's through this one — and
-        `card_resolved` closes the copies nobody answered (approvals.open_card /
-        close_card). Like every foreground card it is never journaled."""
+    async def _ask_everywhere(frame: dict, broadcast: bool = True) -> dict:
+        """Wait for a registered card. A turn the iPhone started (`broadcast`) shows it
+        on the phone (through this socket, the Bridge's) and in every Mac window open
+        on the conversation; a window's own turn shows it here only. The first answer
+        from anywhere decides — a window's reply through its receive loop, the phone's
+        through this one, the Inbox's and the island's over HTTP — and `card_resolved`
+        closes the copies nobody answered. Like every foreground card it is never
+        journaled."""
         loop = asyncio.get_running_loop()
-        pending = approvals.open_card(conversation_id, frame)
+        pending = approvals.open_card(conversation_id, frame, broadcast=broadcast)
+        if not broadcast:
+            await ws.send_json(frame)
         deadline = loop.time() + approvals.TIMEOUT_S
         receiving: asyncio.Future | None = None
         try:
@@ -309,7 +282,13 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                     if t in ("ping", "pong"):
                         continue
                     if t in approvals.ANSWERS:
-                        approvals.answer(data)       # this card's answer, or a late second one
+                        # This card's answer, another card's (a background job's), or a
+                        # late second one. A reply that matches no pending card at all is
+                        # stale: say so, as a window's own turn always has.
+                        if not approvals.answer(data) and not pending.future.done() \
+                                and data.get("call_id") not in approvals.known_ids():
+                            await ws.send_json(protocol.error(
+                                "BUSY", "An action is awaiting your confirmation.", recoverable=True))
                         continue
                     if pending.future.done():
                         pushback.append(data)        # decided meanwhile: the next reader gets it
@@ -323,6 +302,14 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 if not receiving.cancelled() and receiving.exception() is None:
                     pushback.append(receiving.result())
             decision = approvals.close_card(pending)
+            if not broadcast and decision["by"] in approvals.SOURCES:
+                # Answered from the Inbox or the island: close this window's copy.
+                try:
+                    await ws.send_json(protocol.card_resolved(pending.call_id,
+                                                              "approved" if decision["approved"] else "declined",
+                                                              decision["by"]))
+                except Exception:  # noqa: BLE001 — the window may be gone; the decision stands
+                    pass
         return {"approved": bool(decision["approved"]), "remember": bool(decision["remember"])}
 
     async def confirm_workspace_write(action: str, path: str) -> bool:
@@ -627,12 +614,9 @@ def _to_frame(ev: dict) -> dict:
         # run_id must ride through the rebuild — it is the client's cancel handle (S3-M1).
         return protocol.stream_start_src(ev.get("source", "arslan"), ev.get("spawn_id"),
                                          run_id=ev.get("run_id"))
-    if t == "suggest_create":
-        return protocol.suggest_create(
-            ev.get("draft") or {}, task_brief=ev.get("task_brief"), overlaps=ev.get("overlaps")
-        )
     if t == "fact_saved":
-        return protocol.fact_saved(ev.get("content", ""), bool(ev.get("sensitive")))
+        return protocol.fact_saved(ev.get("content", ""), bool(ev.get("sensitive")),
+                                   entry_id=ev.get("entry_id"), version=ev.get("version"))
     if t == "tool_call":
         return protocol.tool_call(ev.get("tool", ""), ev.get("args_summary", ""))
     if t == "tool_result":

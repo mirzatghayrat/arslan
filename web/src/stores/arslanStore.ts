@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { runtimeErrorTranslations, type RuntimeErrorTranslations } from "../lib/runtimeErrorText";
 import { createSpeaker } from "../lib/speech";
-import type { ActionKind, ArslanServerMessage, ArslanThreadItem, JobCard, JobOutcome, SuggestDraft, ToolStep, OverlapInfo, RosterMember, StaffingCandidate, SpawnUpdateChanges, SpawnUpdateCurrent } from "../api/client.types";
+import type { ActionKind, ArslanServerMessage, ArslanThreadItem, JobCard, JobOutcome, ToolStep, RosterMember } from "../api/client.types";
 import type { MessageAttachment } from "../types";
 
 interface ArslanState {
@@ -12,14 +12,11 @@ interface ArslanState {
   streamSpawnId: number | null;
   streamSpawnName: string | null;
   pendingRoute: { spawnId: number; spawnName: string | null } | null;
-  suggestion: SuggestDraft | null;
   spawnNames: Record<number, string>;
   error: string | null;
   errorTranslations: RuntimeErrorTranslations | null;
   lastMessageId: number;
   pending: boolean;
-  suggestionTaskBrief: string | null;
-  suggestionOverlaps: OverlapInfo | null;
   // spawn_meta frames can arrive BEFORE the stream_end that creates the item
   // (production order). Stash them here keyed by arslan_message_id and apply on
   // stream_end. Cleared per-key once applied.
@@ -32,12 +29,9 @@ interface ArslanState {
   pendingProposalSpawnId: number | null;
   // Active conversation roster: spawns currently joined to this conversation thread.
   roster: RosterMember[];
-  // Pending invite: set when a `propose_invite` frame arrives; cleared once the
-  // user confirms (sends roster_invite) or cancels.
-  pendingInvite: { spawnId: number; reason: string } | null;
   // Pending shell command: set when a `propose_run_command` frame arrives; cleared
   // once the user confirms (sends confirm_run_command) or cancels.
-  pendingCommand: { callId: string; pretty: string; reason: string; remoteHost: string; fingerprints: string[]; background?: boolean; sandbox?: "outside" | "retry"; why?: string } | null;
+  pendingCommand: { callId: string; pretty: string; reason: string; remoteHost: string; fingerprints: string[]; background?: boolean; sandbox?: "outside" | "retry"; why?: string; receivedAt?: number } | null;
   // 0.1.42 background jobs in this conversation, keyed by job id. Each has a
   // `kind: "job"` item in `items` marking where its live card sits.
   jobs: Record<string, JobCard>;
@@ -46,11 +40,12 @@ interface ArslanState {
   jobNotice: { seq: number; jobId: string; kind: "finished" | "needs_approval"; outcome: JobOutcome | null; goal: string } | null;
   // P3c: Arslan asks to enrol a machine. The card WRITES NOTHING over the socket —
   // its button calls the REST endpoint, which is what makes enrolment a human act.
-  pendingEnrollNode: { callId: string; name: string; host: string; user: string; fingerprints: string[] } | null;
-  pendingWorkspaceWrite: { callId: string; workspace: string; action: string; path: string; background?: boolean } | null;
-  pendingSchedule: { callId: string; name: string; when: string; background?: boolean } | null;
+  // 0.1.55: receivedAt drives the asking card's countdown (cards expire after 300 s).
+  pendingEnrollNode: { callId: string; name: string; host: string; user: string; fingerprints: string[]; receivedAt?: number } | null;
+  pendingWorkspaceWrite: { callId: string; workspace: string; action: string; path: string; background?: boolean; receivedAt?: number } | null;
+  pendingSchedule: { callId: string; name: string; when: string; background?: boolean; receivedAt?: number } | null;
   // 0.1.45: a background job asks before it acts in the browser or on the Mac.
-  pendingAction: { callId: string; kind: ActionKind; target: string; detail: string } | null;
+  pendingAction: { callId: string; kind: ActionKind; target: string; detail: string; receivedAt?: number } | null;
   // NEXT BUILD (conversation-driven MCP, Task 5): set when a `propose_connect_mcp`
   // frame arrives. env_keys carries credential NAMES + metadata only — the card
   // collects VALUES locally and sends them only over REST (addMcpServer). Cleared
@@ -69,12 +64,6 @@ interface ArslanState {
     requiresPath: boolean;
     pathPlaceholder: string | null;
   } | null;
-  // Pending staffing decision: set when a `propose_staffing` frame arrives.
-  // Candidates are mapped snake→camel. Cleared once the user picks or dismisses.
-  pendingStaffing: { candidates: { spawnId: number; name: string | null; score: number; why: string }[]; createDraft: SuggestDraft | null } | null;
-  // Pending conversational spawn edit: set by a `suggest_update` frame; cleared on
-  // confirm (sends confirm_update) or dismiss. Applied ONLY by the backend on confirm.
-  pendingUpdate: { spawnId: number; spawnName: string; current: SpawnUpdateCurrent; changes: SpawnUpdateChanges; reason?: string } | null;
   // True from the moment the user sends a message until the first response frame arrives.
   thinking: boolean;
   // Timestamp of the current turn's start (send/confirm) — drives the LiveActivity timer.
@@ -101,19 +90,10 @@ interface ArslanState {
   setThinking: (v: boolean) => void;
   addUserMessage: (content: string, attachments?: MessageAttachment[]) => void;
   handleFrame: (frame: ArslanServerMessage) => void;
-  dismissSuggestion: () => void;
-  dismissUpdate: () => void;
-  // Implicit-dismiss: clear ALL user-facing proposal cards in one call. Fired when
-  // the user sends a new message without acting on a pending card. Does NOT touch
-  // pendingRoute / pendingProposalSpawnId (execution-phase markers cleared on stream_end).
-  dismissAllPending: () => void;
-  /** The user just sent something. Applies the implicit-decline rule. */
-  noteUserSend: (opts?: { fromClarify?: boolean }) => void;
   markProposalConfirmed: (spawnId: number) => void;
   // PA-3: flip a clarify card to its answered (disabled) state once the user picked
   // an option — a stale re-click can never send a second user_message.
   markClarifyAnswered: (itemId: number) => void;
-  clearPendingInvite: () => void;
   clearPendingCommand: () => void;
   setVoice: (v: { enabled: boolean; lang: string }) => void;
   /** Say one line aloud (a background job finished, or is waiting on a card).
@@ -124,7 +104,6 @@ interface ArslanState {
   clearPendingSchedule: () => void;
   clearPendingAction: () => void;
   clearPendingConnectMcp: () => void;
-  clearPendingStaffing: () => void;
   clearError: () => void;
   resetForNewConversation: () => void;
   // Watchdog tick: marks the current turn `stalled` if it is active and no frame
@@ -201,19 +180,15 @@ function initialData() {
     streamSpawnId: null as number | null,
     streamSpawnName: null as string | null,
     pendingRoute: null as { spawnId: number; spawnName: string | null } | null,
-    suggestion: null as SuggestDraft | null,
     spawnNames: {} as Record<number, string>,
     error: null as string | null,
     errorTranslations: null as RuntimeErrorTranslations | null,
     lastMessageId: 0,
     pending: false,
-    suggestionTaskBrief: null as string | null,
-    suggestionOverlaps: null as OverlapInfo | null,
     pendingSpawnMeta: {} as Record<number, { assistant_message_id: number; task_brief: string; run_id?: number }>,
     activitySteps: [] as ToolStep[],
     pendingProposalSpawnId: null as number | null,
     roster: [] as RosterMember[],
-    pendingInvite: null as { spawnId: number; reason: string } | null,
     pendingCommand: null as { callId: string; pretty: string; reason: string; remoteHost: string; fingerprints: string[]; background?: boolean; sandbox?: "outside" | "retry"; why?: string } | null,
     jobs: {} as Record<string, JobCard>,
     jobNotice: null as { seq: number; jobId: string; kind: "finished" | "needs_approval"; outcome: JobOutcome | null; goal: string } | null,
@@ -234,8 +209,6 @@ function initialData() {
       requiresPath: boolean;
       pathPlaceholder: string | null;
     } | null,
-    pendingStaffing: null as { candidates: { spawnId: number; name: string | null; score: number; why: string }[]; createDraft: SuggestDraft | null } | null,
-    pendingUpdate: null as { spawnId: number; spawnName: string; current: SpawnUpdateCurrent; changes: SpawnUpdateChanges; reason?: string } | null,
     thinking: false,
     workStartedAt: null as number | null,
     lastFrameAt: null as number | null,
@@ -271,26 +244,6 @@ function makeActions(set: SetState, get: GetState) {
         stalled: false,
       }),
 
-    dismissSuggestion: () => set({ suggestion: null, suggestionTaskBrief: null, suggestionOverlaps: null }),
-    dismissUpdate: () => set({ pendingUpdate: null }),
-    dismissAllPending: () => set({
-      suggestion: null, suggestionTaskBrief: null, suggestionOverlaps: null,
-      pendingInvite: null, pendingStaffing: null, pendingUpdate: null,
-    }),
-    // The implicit-decline rule lives HERE, beside the state it governs, rather
-    // than as a bare dismissAllPending() at the top of the send path.
-    //
-    // Sending a typed message without acting on a pending card means the user
-    // moved on, so the card clears instead of stacking forever — that half is
-    // unchanged. But answering a CLARIFY question also goes through the send
-    // path, and that is the opposite of moving on: it is the user engaging with
-    // the question Arslan just asked. It used to destroy the spawn invite
-    // sitting beside it, so the two were mutually exclusive by construction and
-    // the user had to choose one.
-    noteUserSend: (opts) => {
-      if (opts?.fromClarify) return;
-      get().dismissAllPending();
-    },
     // One-shot confirm (doom-loop guard, frontend half): flipping isProposal off disables the
     // confirm button immediately so a stale re-click can never re-fire execute_confirmed.
     markProposalConfirmed: (spawnId: number) =>
@@ -305,7 +258,6 @@ function makeActions(set: SetState, get: GetState) {
             ? { ...it, clarifyOptions: { ...it.clarifyOptions, answered: true } }
             : it),
       }),
-    clearPendingInvite: () => set({ pendingInvite: null }),
     clearPendingCommand: () => set({ pendingCommand: null }),
     setVoice: ({ enabled, lang }) => {
       _voiceEnabled = enabled;
@@ -322,7 +274,6 @@ function makeActions(set: SetState, get: GetState) {
     clearPendingSchedule: () => set({ pendingSchedule: null }),
     clearPendingAction: () => set({ pendingAction: null }),
     clearPendingConnectMcp: () => set({ pendingConnectMcp: null }),
-    clearPendingStaffing: () => set({ pendingStaffing: null }),
     clearError: () => set({ error: null, errorTranslations: null }),
 
     // Clear all conversation state so the incoming `history` frame for the new
@@ -360,7 +311,7 @@ function makeActions(set: SetState, get: GetState) {
       // delivers no content yet. Slow models (e.g. Gemini 2.5 Pro) have a long
       // delay between stream_start and the first token, so we keep the thinking
       // indicator alive until stream_chunk (first real content) clears it.
-      const RESPONDING_TYPES = new Set(["suggest_create", "message", "error", "fact_saved", "propose_invite", "propose_run_command", "propose_enroll_node", "propose_workspace_write", "propose_schedule", "propose_connect_mcp", "propose_staffing", "suggest_update", "spawn_updated", "clarify_options"]);
+      const RESPONDING_TYPES = new Set(["message", "error", "fact_saved", "propose_run_command", "propose_enroll_node", "propose_workspace_write", "propose_schedule", "propose_connect_mcp", "spawn_updated", "clarify_options"]);
       if (RESPONDING_TYPES.has(frame.type)) {
         set({ thinking: false });
       }
@@ -683,14 +634,6 @@ function makeActions(set: SetState, get: GetState) {
           set({ activitySteps: shown, thinking: true });
           break;
         }
-        case "suggest_create":
-          set({
-            pending: false,
-            suggestion: frame.draft,
-            suggestionTaskBrief: frame.task_brief ?? null,
-            suggestionOverlaps: frame.overlaps ?? null,
-          });
-          break;
         case "spawn_meta": {
           // Production order is spawn_meta BEFORE stream_end, so the target item
           // usually doesn't exist yet — stash it for stream_end to apply. If the
@@ -728,34 +671,27 @@ function makeActions(set: SetState, get: GetState) {
           });
           break;
         case "fact_saved":
-          set({
-            items: [
-              ...state.items,
-              {
-                id: nextClientId(),
-                kind: "fact",
-                role: "arslan",
-                content: frame.content,
-                sensitive: frame.sensitive,
-              },
-            ],
-          });
+        case "memory_proposed": {
+          // D1 (0.1.55): everything remembered after one turn becomes ONE quiet line.
+          // Facts arrive after the answer, back to back; a new item starts the next turn.
+          const fact = {
+            content: frame.content, sensitive: frame.sensitive,
+            entryId: frame.entry_id ?? null, version: frame.version ?? null,
+            status: frame.type === "memory_proposed" ? "proposed" as const : "active" as const,
+          };
+          const last = state.items[state.items.length - 1];
+          if (last && last.kind === "fact") {
+            const facts = [...(last.facts ?? []), fact];
+            set({ items: [...state.items.slice(0, -1),
+              { ...last, facts, content: facts.map((f) => f.content).join(" · ") }] });
+          } else {
+            set({ items: [...state.items, { id: nextClientId(), kind: "fact", role: "arslan",
+              content: frame.content, sensitive: frame.sensitive, facts: [fact] }] });
+          }
           break;
-        case "suggest_update":
-          set({
-            pending: false,
-            pendingUpdate: {
-              spawnId: frame.spawn_id,
-              spawnName: frame.spawn_name,
-              current: frame.current,
-              changes: frame.changes,
-              reason: frame.reason,
-            },
-          });
-          break;
+        }
         case "spawn_updated":
           set({
-            pendingUpdate: null,
             items: [
               ...state.items,
               {
@@ -770,9 +706,6 @@ function makeActions(set: SetState, get: GetState) {
           break;
         case "spawn_created":
           set({
-            suggestion: null,
-            suggestionTaskBrief: null,
-            suggestionOverlaps: null,
             spawnNames: { ...state.spawnNames, [frame.spawn_id]: frame.spawn_name },
             items: [
               ...state.items,
@@ -873,15 +806,12 @@ function makeActions(set: SetState, get: GetState) {
             })),
           });
           break;
-        case "propose_invite":
-          set({ pendingInvite: { spawnId: frame.spawn_id, reason: frame.reason } });
-          break;
         case "clarify_options":
           // PA-3 structured clarification card: rendered as a thread ITEM (question +
           // one-click option buttons). A pick sends the label as a normal user_message
           // and markClarifyAnswered disables the card. 🔒 question/options come ONLY
           // from the backend clarify_options frame (validated/clamped 2-4 server-side),
-          // NEVER from LLM message text — same invariant as propose_invite/suggest_create.
+          // NEVER from LLM message text.
           set({
             pending: false,
             items: [
@@ -906,21 +836,23 @@ function makeActions(set: SetState, get: GetState) {
                                   background: frame.background === true,
                                   // 0.1.51 P3: the card is about leaving the sandbox.
                                   ...(frame.sandbox === "outside" || frame.sandbox === "retry"
-                                    ? { sandbox: frame.sandbox, why: frame.why || "" } : {}) },
+                                    ? { sandbox: frame.sandbox, why: frame.why || "" } : {}),
+                                  receivedAt: Date.now() },
                ...(frame.background ? _approvalNotice(state) : {}) });
           break;
         case "propose_enroll_node":
           set({ pendingEnrollNode: { callId: frame.call_id, name: frame.name,
                                      host: frame.host, user: frame.user,
-                                     fingerprints: frame.fingerprints || [] } });
+                                     fingerprints: frame.fingerprints || [], receivedAt: Date.now() } });
           break;
         case "propose_schedule":
           set({ pendingSchedule: { callId: frame.call_id, name: frame.name,
-                                   when: frame.when, background: frame.background === true },
+                                   when: frame.when, background: frame.background === true, receivedAt: Date.now() },
                ...(frame.background ? _approvalNotice(state) : {}) });
           break;
         case "propose_action":
-          set({ pendingAction: { callId: frame.call_id, kind: frame.kind, target: frame.target, detail: frame.detail },
+          set({ pendingAction: { callId: frame.call_id, kind: frame.kind, target: frame.target, detail: frame.detail,
+                                 receivedAt: Date.now() },
                 ..._approvalNotice(state) });
           break;
         case "card_resolved": {
@@ -938,7 +870,7 @@ function makeActions(set: SetState, get: GetState) {
         case "propose_workspace_write":
           set({ pendingWorkspaceWrite: {
             callId: frame.call_id, workspace: frame.workspace,
-            action: frame.action, path: frame.path, background: frame.background === true },
+            action: frame.action, path: frame.path, background: frame.background === true, receivedAt: Date.now() },
                ...(frame.background ? _approvalNotice(state) : {}) });
           break;
         case "propose_connect_mcp":
@@ -979,19 +911,6 @@ function makeActions(set: SetState, get: GetState) {
                 content: _mcpConnectFollowupText(frame),
               },
             ],
-          });
-          break;
-        case "propose_staffing":
-          set({
-            pendingStaffing: {
-              candidates: frame.candidates.map((c: StaffingCandidate) => ({
-                spawnId: c.spawn_id,
-                name: c.name,
-                score: c.score,
-                why: c.why,
-              })),
-              createDraft: frame.create_draft,
-            },
           });
           break;
         case "roster_event":

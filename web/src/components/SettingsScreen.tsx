@@ -18,7 +18,11 @@ import ModelRolesSection from './settings/ModelRolesSection';
 import AppearanceSection from './settings/AppearanceSection';
 import MemoryDataSection from './settings/MemoryDataSection';
 import AdvancedSection from './settings/AdvancedSection';
-import type { SettingsSectionId } from './settings/sectionRegistry';
+import { SETTINGS_SECTIONS, resolveSection, type SettingsSectionId } from './settings/sectionRegistry';
+import { SettingsGroup, SectionIntro } from './settings/SettingsGroup';
+import AboutSection from './settings/AboutSection';
+import type { AdvancedBlock } from './settings/AdvancedSection';
+import type { MemoryBlock } from './settings/MemoryDataSection';
 import { useDebouncedSettingsSave } from '../hooks/useDebouncedSettingsSave';
 import AutomationSection from './settings/AutomationSection';
 import DesktopSection from './settings/DesktopSection';
@@ -38,7 +42,8 @@ interface SettingsScreenProps {
   /** Called when the configs list changes (add/update/delete/set-primary). */
   onProviderConfigsChange?: (configs: ProviderConfig[]) => void;
   /** Deep-link: which section opens first (defaults to 'models'). */
-  initialSection?: SettingsSectionId;
+  /** A section id — including one from before 0.1.55 (mapped to its new home). */
+  initialSection?: SettingsSectionId | string;
   /** Automation points at Diagnostics for scheduled tasks and usage — the two
    *  placeholder nav entries it replaced did the same, but as dead tabs. */
   onOpenActivity?: () => void;
@@ -48,7 +53,7 @@ interface SettingsScreenProps {
 export default function SettingsScreen({ settings, setSettings, llmProviders, searchProviders, backendStatus, providerConfigs = [], onProviderConfigsChange, initialSection, onOpenActivity, onBack }: SettingsScreenProps) {
   const { t, i18n } = useTranslation();
   const [localSettings, setLocalSettings] = useState<AppSettings>({ ...settings });
-  const [activeSection, setActiveSection] = useState<SettingsSectionId>(initialSection ?? 'models');
+  const [activeSection, setActiveSection] = useState<SettingsSectionId>(resolveSection(initialSection) ?? 'general');
   // A failed save rolls localSettings back. Keep the visible language aligned
   // with that rollback rather than caching an unsaved language until reload.
   useEffect(() => {
@@ -110,149 +115,13 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
   // Pure relocation of the existing cards into the shell's section slots. The
   // controls, handlers, ids and state setters are unchanged — only their host
   // section differs. (Task 1: no internal edits, no save-logic change.)
-  const sections: Partial<Record<SettingsSectionId, React.ReactNode>> = {
-    // Providers — the multi-model LLM provider list (embedding moved to memory).
-    models: (
-      <section className="space-y-5" aria-labelledby="settings-models-title">
-        <ProviderConfigList
-          startCollapsed
-          llmProviders={llmProviders}
-          providerConfigs={providerConfigs}
-          onConfigsChange={(updated) => onProviderConfigsChange?.(updated)}
-          strategy={localSettings.llmStrategy}
-          onStrategyChange={(s) =>
-            saveField({ llmStrategy: s as AppSettings['llmStrategy'] })
-          }
-        />
-      </section>
-    ),
-
-    // Model roles — which task uses which model. Its own section rather than part
-    // of Automation: these slots do not spend on their own.
-    modelroles: (
-      <ModelRolesSection
-        values={{
-          synthesisConfigId: localSettings.synthesisConfigId ?? '',
-          compactionConfigId: localSettings.compactionConfigId ?? '',
-          titleConfigId: localSettings.titleConfigId ?? '',
-          routerConfigId: localSettings.routerConfigId ?? '',
-          visionConfigId: localSettings.visionConfigId ?? '',
-        }}
-        onChange={(key, v) => saveField({ [key]: v } as Partial<AppSettings>)}
-        providerConfigs={providerConfigs ?? []}
-        strategy={localSettings.llmStrategy ?? 'single'}
-        // Without this the "no models configured yet" line is a dead end: it
-        // names the problem and offers nothing to do about it.
-        onGoToProviders={() => setActiveSection('models')}
-      />
-    ),
-
-    // Search & Tools — search provider + search key + GitHub token.
-    search: (
-      <SearchToolsSection
-        cryptoHealth={cryptoHealth}
-        searchProvider={localSettings.searchProvider}
-        searchProviders={searchProviders}
-        onSearchProviderChange={(v) => saveField({ searchProvider: v })}
-        searchKey={localSettings.apiKeySearch}
-        // Key-type field: onChange updates the display value only + marks dirty
-        // (no save); the value persists on blur via flushField, and ONLY if the
-        // user actually edited it (an unedited tab-through blur is a no-op).
-        onSearchKeyChange={(v) => editKeyField('apiKeySearch', v)}
-        onSearchKeyBlur={(v) => flushField({ apiKeySearch: v })}
-        githubToken={localSettings.githubToken}
-        onGithubTokenChange={(v) => editKeyField('githubToken', v)}
-        onGithubTokenBlur={(v) => flushField({ githubToken: v })}
-        searchBaseUrl={localSettings.searchBaseUrl}
-        onSearchBaseUrlChange={(v) => saveField({ searchBaseUrl: v })}
-      />
-    ),
-
-    // Appearance & Language — display name + language + palette/mode.
-    appearance: (
-      <AppearanceSection
-        language={localSettings.language}
-        onLanguageChange={(code) => {
-          // Language must persist before a quick Back navigation unmounts this
-          // screen and cancels its debounce timer. Only this non-secret patch
-          // is flushed; unblurred keys remain excluded by the save hook.
-          i18n.changeLanguage(code);
-          flushField({ language: code });
-        }}
-        ocrLanguages={localSettings.ocrLanguages ?? ''}
-        onOcrLanguagesChange={(next) => saveField({ ocrLanguages: next })}
-      />
-    ),
-
-    // Access token card — token-entry / copy / reset (packaged builds).
-    access: (
-      <AccessTokenSettings
-        backendStatus={backendStatus}
-        mcpServerEnabled={localSettings.mcpServerEnabled ?? false}
-        onMcpServerChange={(v) => saveField({ mcpServerEnabled: v })}
-      />
-    ),
-
-    // Memory & Data — embedding config + distillation + run-debug retention.
-    memory: (
-      <MemoryDataSection
-        providerConfigs={providerConfigs}
-        embeddingConfigId={localSettings.embeddingConfigId ?? ''}
-        onEmbeddingConfigIdChange={(v) => saveField({ embeddingConfigId: v })}
-        distillOnSessionEnd={localSettings.distillOnSessionEnd ?? true}
-        onDistillChange={(v) => saveField({ distillOnSessionEnd: v })}
-        retentionDays={localSettings.runDebugRetentionDays ?? 30}
-        onRetentionDaysChange={(v) => saveField({ runDebugRetentionDays: v })}
-        memoryInConversations={localSettings.memoryInConversations ?? true}
-        onMemoryInConversationsChange={(v) => saveField({ memoryInConversations: v })}
-        learnedPracticesTakeEffect={localSettings.learnedPracticesTakeEffect ?? true}
-        onLearnedPracticesChange={(v) => saveField({ learnedPracticesTakeEffect: v })}
-      />
-    ),
-
-    // Automation — everything that runs on its own and spends. See the section's
-    // own docstring for why they had to stop being scattered.
-    automation: (
-      <AutomationSection
-        curationEnabled={localSettings.curationEnabled ?? false}
-        onCurationEnabledChange={(v) => saveField({ curationEnabled: v })}
-        researchReviewEnabled={localSettings.researchReviewEnabled ?? false}
-        onResearchReviewEnabledChange={(v) => saveField({ researchReviewEnabled: v })}
-        heartbeatEnabled={localSettings.heartbeatEnabled ?? false}
-        onHeartbeatEnabledChange={(v) => saveField({ heartbeatEnabled: v })}
-        heartbeatChecklist={localSettings.heartbeatChecklist ?? ''}
-        onHeartbeatChecklistChange={(v) => saveField({ heartbeatChecklist: v })}
-        onOpenActivity={onOpenActivity}
-      />
-    ),
-
-    // Proactivity — what Arslan looks out for and how it tells you (0.1.47).
-    proactive: <ProactiveSection />,
-
-    // Desktop — resident behaviour while the window is closed (0.1.41).
-    // 0.1.53: Arslan Hands (Mac apps) sits under it, with its own endpoint.
-    desktop: (
-      <div className="space-y-6">
-        <DesktopSection
-          keepAwakeEnabled={localSettings.keepAwakeEnabled ?? true}
-          onKeepAwakeChange={(v) => saveField({ keepAwakeEnabled: v })}
-          notificationsEnabled={localSettings.desktopNotificationsEnabled ?? true}
-          onNotificationsChange={(v) => saveField({ desktopNotificationsEnabled: v })}
-          islandEnabled={localSettings.islandEnabled ?? true}
-          onIslandChange={(v) => saveField({ islandEnabled: v })}
-        />
-        <HandsSection />
-      </div>
-    ),
-
-    // iPhone — the companion: pairing and paired phones (mobile bridge §6.1).
-    phone: <PhoneSection enabled={localSettings.phoneBridgeEnabled ?? false}
-      onEnabledChange={(v) => saveField({ phoneBridgeEnabled: v })} />,
-
-    // Advanced — telemetry + orchestrator shell + confirm policy + spawn mode.
-    advanced: (
-      <div className="space-y-4">
-      <AdvancedSection
+  // 0.1.55 §11: eleven sections → seven. The controls, handlers, ids and save paths are
+  // unchanged — only where each one lives. Groups inside a section give it a shape.
+  const intro = (id: SettingsSectionId) => {
+    const meta = SETTINGS_SECTIONS.find((s) => s.id === id)!;
+    return <SectionIntro title={t(meta.labelKey)} hint={t(meta.hintKey ?? '')} />;
+  };
+  const advanced = (only: AdvancedBlock[]) => <AdvancedSection
         telemetry={localSettings.telemetry}
         onTelemetryChange={(v) => saveField({ telemetry: v })}
         orchestratorShellEnabled={localSettings.orchestratorShellEnabled ?? true}
@@ -277,7 +146,169 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         onVoiceEndpointSilenceChange={(v) => saveField({ voiceEndpointSilenceMs: v })}
         sshEnabled={localSettings.sshEnabled ?? false}
         onSshChange={(v) => saveField({ sshEnabled: v })}
+        bare only={only}
+      />;
+  const desktop = (only: ('keepAwake' | 'notifications' | 'island')[]) => <DesktopSection
+          keepAwakeEnabled={localSettings.keepAwakeEnabled ?? true}
+          onKeepAwakeChange={(v) => saveField({ keepAwakeEnabled: v })}
+          notificationsEnabled={localSettings.desktopNotificationsEnabled ?? true}
+          onNotificationsChange={(v) => saveField({ desktopNotificationsEnabled: v })}
+          islandEnabled={localSettings.islandEnabled ?? true}
+          onIslandChange={(v) => saveField({ islandEnabled: v })}
+        bare only={only}
+      />;
+  const memoryData = (only: MemoryBlock[]) => <MemoryDataSection
+        providerConfigs={providerConfigs}
+        embeddingConfigId={localSettings.embeddingConfigId ?? ''}
+        onEmbeddingConfigIdChange={(v) => saveField({ embeddingConfigId: v })}
+        distillOnSessionEnd={localSettings.distillOnSessionEnd ?? true}
+        onDistillChange={(v) => saveField({ distillOnSessionEnd: v })}
+        retentionDays={localSettings.runDebugRetentionDays ?? 30}
+        onRetentionDaysChange={(v) => saveField({ runDebugRetentionDays: v })}
+        memoryInConversations={localSettings.memoryInConversations ?? true}
+        onMemoryInConversationsChange={(v) => saveField({ memoryInConversations: v })}
+        learnedPracticesTakeEffect={localSettings.learnedPracticesTakeEffect ?? true}
+        onLearnedPracticesChange={(v) => saveField({ learnedPracticesTakeEffect: v })}
+        bare only={only}
+      />;
+  const sections: Partial<Record<SettingsSectionId, React.ReactNode>> = {
+    general: (
+      <div className="space-y-6" data-testid="settings-general">
+        {intro('general')}
+      <AppearanceSection
+        language={localSettings.language}
+        onLanguageChange={(code) => {
+          // Language must persist before a quick Back navigation unmounts this
+          // screen and cancels its debounce timer. Only this non-secret patch
+          // is flushed; unblurred keys remain excluded by the save hook.
+          i18n.changeLanguage(code);
+          flushField({ language: code });
+        }}
+        ocrLanguages={localSettings.ocrLanguages ?? ''}
+        onOcrLanguagesChange={(next) => saveField({ ocrLanguages: next })}
       />
+        <SettingsGroup title={t('settings.grpNotifications')}>
+          {desktop(['notifications'])}
+          <div className="mt-5"><ProactiveSection bare only={['notify']} /></div>
+        </SettingsGroup>
+        <SettingsGroup title={t('settings.grpOnMac')}>{desktop(['island', 'keepAwake'])}</SettingsGroup>
+        <SettingsGroup title={t('settings.grpVoice')}>{advanced(['voice'])}</SettingsGroup>
+      </div>
+    ),
+    models: (
+      <div className="space-y-6">
+        {/* No intro here: the provider list carries the page title beside its Add button. */}
+      <section className="space-y-5" aria-labelledby="settings-models-title">
+        <ProviderConfigList
+          startCollapsed
+          llmProviders={llmProviders}
+          providerConfigs={providerConfigs}
+          onConfigsChange={(updated) => onProviderConfigsChange?.(updated)}
+          strategy={localSettings.llmStrategy}
+          onStrategyChange={(s) =>
+            saveField({ llmStrategy: s as AppSettings['llmStrategy'] })
+          }
+        />
+      </section>
+      <ModelRolesSection
+        values={{
+          synthesisConfigId: localSettings.synthesisConfigId ?? '',
+          compactionConfigId: localSettings.compactionConfigId ?? '',
+          titleConfigId: localSettings.titleConfigId ?? '',
+          routerConfigId: localSettings.routerConfigId ?? '',
+          visionConfigId: localSettings.visionConfigId ?? '',
+        }}
+        onChange={(key, v) => saveField({ [key]: v } as Partial<AppSettings>)}
+        providerConfigs={providerConfigs ?? []}
+        strategy={localSettings.llmStrategy ?? 'single'}
+        // Without this the "no models configured yet" line is a dead end: it
+        // names the problem and offers nothing to do about it.
+        onGoToProviders={() => setActiveSection('models')}
+      />
+        <SettingsGroup>{memoryData(['embedding'])}</SettingsGroup>
+      </div>
+    ),
+    abilities: (
+      <div className="space-y-6" data-testid="settings-abilities">
+        {intro('abilities')}
+        <SettingsGroup title={t('settings.grpFiles')}>{advanced(['defaultRead', 'workspace'])}</SettingsGroup>
+        <SettingsGroup title={t('settings.grpTerminal')}>{advanced(['terminal'])}</SettingsGroup>
+        <SettingsGroup title={t('settings.grpApps')}>
+          <HandsSection />
+          <div className="mt-5">{advanced(['browser'])}</div>
+        </SettingsGroup>
+        <SettingsGroup title={t('settings.grpOtherComputers')}>{advanced(['lan', 'ssh'])}</SettingsGroup>
+      </div>
+    ),
+    background: (
+      <div className="space-y-6" data-testid="settings-background">
+        {intro('background')}
+        <SettingsGroup title={t('settings.grpLookingOut')} note={t('settings.watchesInInbox')}>
+          <ProactiveSection bare only={['looking', 'brief']} />
+        </SettingsGroup>
+        <SettingsGroup title={t('settings.grpSpends')}>
+      <AutomationSection
+        curationEnabled={localSettings.curationEnabled ?? false}
+        onCurationEnabledChange={(v) => saveField({ curationEnabled: v })}
+        researchReviewEnabled={localSettings.researchReviewEnabled ?? false}
+        onResearchReviewEnabledChange={(v) => saveField({ researchReviewEnabled: v })}
+        heartbeatEnabled={localSettings.heartbeatEnabled ?? false}
+        onHeartbeatEnabledChange={(v) => saveField({ heartbeatEnabled: v })}
+        heartbeatChecklist={localSettings.heartbeatChecklist ?? ''}
+        onHeartbeatChecklistChange={(v) => saveField({ heartbeatChecklist: v })}
+        onOpenActivity={onOpenActivity}
+      />
+        </SettingsGroup>
+        <SettingsGroup title={t('settings.grpJobs')}>{advanced(['budget'])}</SettingsGroup>
+      </div>
+    ),
+    memory: (
+      <div className="space-y-6">
+        {intro('memory')}
+        <SettingsGroup title={t('settings.grpRemember')}>{memoryData(['remember', 'practices', 'distill'])}</SettingsGroup>
+        <SettingsGroup title={t('settings.grpData')}>
+          {memoryData(['data', 'retention'])}
+          <div className="mt-5">{advanced(['telemetry'])}</div>
+        </SettingsGroup>
+      </div>
+    ),
+    connections: (
+      <div className="space-y-6" data-testid="settings-connections">
+        {intro('connections')}
+        <SettingsGroup title={t('settings.grpPhone')}><PhoneSection enabled={localSettings.phoneBridgeEnabled ?? false}
+      onEnabledChange={(v) => saveField({ phoneBridgeEnabled: v })} /></SettingsGroup>
+        <SettingsGroup title={t('settings.grpSearch')}>
+      <SearchToolsSection
+        cryptoHealth={cryptoHealth}
+        searchProvider={localSettings.searchProvider}
+        searchProviders={searchProviders}
+        onSearchProviderChange={(v) => saveField({ searchProvider: v })}
+        searchKey={localSettings.apiKeySearch}
+        // Key-type field: onChange updates the display value only + marks dirty
+        // (no save); the value persists on blur via flushField, and ONLY if the
+        // user actually edited it (an unedited tab-through blur is a no-op).
+        onSearchKeyChange={(v) => editKeyField('apiKeySearch', v)}
+        onSearchKeyBlur={(v) => flushField({ apiKeySearch: v })}
+        githubToken={localSettings.githubToken}
+        onGithubTokenChange={(v) => editKeyField('githubToken', v)}
+        onGithubTokenBlur={(v) => flushField({ githubToken: v })}
+        searchBaseUrl={localSettings.searchBaseUrl}
+        onSearchBaseUrlChange={(v) => saveField({ searchBaseUrl: v })}
+      />
+        </SettingsGroup>
+        <SettingsGroup title={t('settings.grpAccess')}>
+      <AccessTokenSettings
+        backendStatus={backendStatus}
+        mcpServerEnabled={localSettings.mcpServerEnabled ?? false}
+        onMcpServerChange={(v) => saveField({ mcpServerEnabled: v })}
+      />
+        </SettingsGroup>
+      </div>
+    ),
+    about: (
+      <div className="space-y-6">
+        {intro('about')}
+        <AboutSection onOpenActivity={onOpenActivity} />
       </div>
     ),
   };

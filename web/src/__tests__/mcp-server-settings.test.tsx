@@ -29,6 +29,8 @@ vi.mock("react-i18next", () => ({
 const mockUpdateSettings = vi.fn(async (b: Record<string, unknown>) => b);
 const mockGenerateMcpToken = vi.fn(async () => ({ token: "MCP-TOKEN-XYZ" }));
 vi.mock("../api/client", () => ({
+  // General shows the proactive notify block, whose error text checks `instanceof ApiError`.
+  ApiError: class ApiError extends Error {},
   api: {
     updateSettings: (b: Record<string, unknown>) => mockUpdateSettings(b),
     generateMcpToken: () => mockGenerateMcpToken(),
@@ -100,7 +102,7 @@ describe("MCP server settings", () => {
   it("toggling on auto-saves mcp_server_enabled=true to the PUT path", async () => {
     const user = userEvent.setup();
     renderSettings({ mcpServerEnabled: false });
-    await user.click(screen.getByTestId("settings-nav-access"));
+    await user.click(screen.getByTestId("settings-nav-connections"));
     const toggle = document.getElementById("settings-mcp-server-toggle") as HTMLInputElement;
     expect(toggle.checked).toBe(false);
     await user.click(toggle);
@@ -112,7 +114,7 @@ describe("MCP server settings", () => {
   it("reflects mcpServerEnabled=true on mount", async () => {
     const user = userEvent.setup();
     renderSettings({ mcpServerEnabled: true });
-    await user.click(screen.getByTestId("settings-nav-access"));
+    await user.click(screen.getByTestId("settings-nav-connections"));
     const toggle = document.getElementById("settings-mcp-server-toggle") as HTMLInputElement;
     expect(toggle.checked).toBe(true);
   });
@@ -120,7 +122,7 @@ describe("MCP server settings", () => {
   it("generate shows the token once", async () => {
     const user = userEvent.setup();
     renderSettings({ mcpServerEnabled: true });
-    await user.click(screen.getByTestId("settings-nav-access"));
+    await user.click(screen.getByTestId("settings-nav-connections"));
     await user.click(screen.getByTestId("mcp-token-generate"));
     await waitFor(() =>
       expect((screen.getByTestId("mcp-token-value") as HTMLInputElement).value).toBe("MCP-TOKEN-XYZ"));
@@ -130,7 +132,7 @@ describe("MCP server settings", () => {
   it("does not push the generated token into the auth store", async () => {
     const user = userEvent.setup();
     renderSettings({ mcpServerEnabled: true });
-    await user.click(screen.getByTestId("settings-nav-access"));
+    await user.click(screen.getByTestId("settings-nav-connections"));
     await user.click(screen.getByTestId("mcp-token-generate"));
     await waitFor(() =>
       expect((screen.getByTestId("mcp-token-value") as HTMLInputElement).value).toBe("MCP-TOKEN-XYZ"));

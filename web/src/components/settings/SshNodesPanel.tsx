@@ -12,6 +12,7 @@ import { useTranslation } from "react-i18next";
 import { Trash2, Server } from "lucide-react";
 import { api } from "../../api/client";
 import type { SshNode } from "../../api/client.types";
+import { confirmSheet } from "../kit";
 
 export default function SshNodesPanel() {
   const { t } = useTranslation();
@@ -30,6 +31,9 @@ export default function SshNodesPanel() {
   useEffect(() => { void load(); }, []);
 
   const revoke = async (id: number) => {
+    const node = nodes.find((n) => n.id === id);
+    if (!(await confirmSheet({ title: t("confirm.sshNodeTitle", { name: node?.name ?? "" }), body: t("confirm.sshNodeBody"),
+      action: t("confirm.forget") }))) return;
     setBusy(true);
     try {
       await api.revokeSshNode(id);

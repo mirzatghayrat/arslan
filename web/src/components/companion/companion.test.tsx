@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, cleanup } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, cleanup, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { companionMessages } from "../../locales/companion";
 import { companionApi, type ConversationContext, type MemoryEntry, type MemoryProposal, type Project } from "../../api/companion";
@@ -47,6 +47,9 @@ describe("memory controls", () => {
       .mockResolvedValueOnce([{ ...entry, id: "older", content: "Older memory" } as MemoryEntry]);
     vi.spyOn(companionApi, "proposals").mockResolvedValue([]);
     render(<MemoryList />);
+    // 0.1.55 §13: the list opens with the most recently used few; "All N" shows the rest.
+    expect(await screen.findAllByText("First page")).toHaveLength(12);
+    fireEvent.click(screen.getByText(/memoryPage\.showAll/));
     fireEvent.click(await screen.findByText("companion.loadMore"));
     expect(await screen.findByRole("alert")).toHaveTextContent("brain.read_failed");
     expect(screen.getAllByText("First page")).toHaveLength(100);
@@ -97,11 +100,14 @@ describe("memory controls", () => {
       sensitivity: "normal", use_policy: "cloud_allowed", topic: null, valid_from: null, review_at: null,
       expires_at: null, core: "about_you" });
     expect(scope).toBe(false);
+    // Buttons are disabled while the page reloads after a change; wait like a person would.
+    await waitFor(() => expect(screen.getAllByLabelText("companion.takeOutOfView")[0]).toBeEnabled());
     fireEvent.click(screen.getAllByLabelText("companion.takeOutOfView")[0]);
     await waitFor(() => expect(edit).toHaveBeenCalledTimes(2));
     expect(edit.mock.calls[1][0].id).toBe("a");
     expect(edit.mock.calls[1][1].core).toBeNull();
     // the same choice from the entry itself in the list
+    await waitFor(() => expect(screen.getAllByText("companion.takeOutOfView")[1]).toBeEnabled());
     fireEvent.click(screen.getAllByText("companion.takeOutOfView")[1]);
     await waitFor(() => expect(edit).toHaveBeenCalledTimes(3));
     expect(edit.mock.calls[2][0].id).toBe("n");
@@ -117,13 +123,15 @@ describe("memory controls", () => {
       { id: 2, target_id: "e2", target_version: 1, candidate: null, entry: { ...entry, id: "e2", content: "Salary detail", sensitivity: "sensitive" }, reason: "" },
     ] as unknown as MemoryProposal[]);
     render(<MemoryList />);
-    fireEvent.click(await screen.findByText("companion.pending"));
-    fireEvent.click(await screen.findByText("Prefers tables"));
+    const review = async (key: string) => {
+      const row = await screen.findByTestId(`pending-memory-${key}`);
+      fireEvent.click(within(row).getByText(/memoryPage\.review/));
+    };
+    await review("m:1");
     expect((screen.getByLabelText("companion.cloud") as HTMLInputElement).checked).toBe(true);
     cleanup();
     render(<MemoryList />);
-    fireEvent.click(await screen.findByText("companion.pending"));
-    fireEvent.click(await screen.findByText("Salary detail"));
+    await review("m:2");
     expect((screen.getByLabelText("companion.cloud") as HTMLInputElement).checked).toBe(false);
   });
   it("renders withheld legacy credential content without crashing or offering edit", async () => {
@@ -131,14 +139,21 @@ describe("memory controls", () => {
       scope: { kind: "global", id: null }, sensitivity: "secret", use_policy: "never", sources: [], updated_at: "2026-09-14T00:00:00Z" } as unknown as MemoryEntry]);
     vi.spyOn(companionApi, "proposals").mockResolvedValue([]);
     render(<MemoryList />);
+    // Not active, not paused: folded under "not in use".
+    fireEvent.click(await screen.findByText("memoryPage.notInUse"));
     expect(await screen.findByText("companion.credentialError")).toBeVisible();
     expect(screen.getByText("companion.edit")).toBeDisabled();
   });
   it("keeps the graph default for existing users and remembers their explicit view", () => {
     expect(initialMemoryView(true)).toBe("graph");
-    expect(initialMemoryView(false)).toBe("about");
+    expect(initialMemoryView(false)).toBe("list");
+    localStorage.setItem(MEMORY_VIEW_KEY, "graph");
+    expect(initialMemoryView(false)).toBe("graph");
+    // The views before 0.1.55 (about / materials) both land on the one list.
     localStorage.setItem(MEMORY_VIEW_KEY, "materials");
-    expect(initialMemoryView(true)).toBe("materials");
+    expect(initialMemoryView(true)).toBe("list");
+    localStorage.setItem(MEMORY_VIEW_KEY, "about");
+    expect(initialMemoryView(true)).toBe("list");
   });
   it("requires a separate acknowledgement for sensitive memory and defaults to local only", async () => {
     const create = vi.spyOn(companionApi, "createMemory").mockResolvedValue({} as MemoryEntry);

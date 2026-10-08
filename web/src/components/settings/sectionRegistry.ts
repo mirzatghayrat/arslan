@@ -1,26 +1,23 @@
 /**
  * Settings section registry — the single source of truth for the Settings
  * side-nav, and (via `FIELD_HOMES`) the contract that no existing control is
- * lost in the redesign.
+ * lost when sections move.
  *
- * The flat list of eight tabs became three groups. The problem was never the
- * number of settings — it was that all of them sat at one level of disclosure,
- * so finding one meant scanning all eight. The research behind the mock reached
- * the same sentence about the provider pane: crowding is fixed by DISCLOSURE
- * LEVELS, not by deleting things and not by adding whitespace.
+ * 0.1.55 §11: eleven sections in three groups became seven flat ones, named for
+ * what a person is looking for (General, Models, What Arslan can do, Background,
+ * Memory & privacy, Connections, About) rather than for how the code is split.
+ * Old ids still resolve through `LEGACY_SECTION`, so deep links keep working.
  *
- * The two placeholder sections (`scheduled`, `usage`) are gone. They rendered a
- * "coming soon" card pointing at Diagnostics — a nav entry whose only function
- * was to tell you it does nothing. The pointer survives as a link inside
- * `automation`, beside the settings it actually relates to.
+ * The two placeholder sections (`scheduled`, `usage`) stay gone. They rendered a
+ * "coming soon" card pointing at Diagnostics; the pointer survives as a link in
+ * `background` and on the About page.
  */
 
 export type SettingsSectionId =
-  | 'models' | 'modelroles' | 'search'        // Connection
-  | 'appearance' | 'memory'                   // Personal
-  | 'automation' | 'proactive' | 'desktop' | 'phone' | 'access' | 'advanced';     // System
+  | 'general' | 'models' | 'abilities' | 'background' | 'memory' | 'connections' | 'about';
 
-export type SettingsGroupId = 'connection' | 'personal' | 'system';
+/** 0.1.55 §11: one flat list of seven. Kept as a type for callers that still pass a group. */
+export type SettingsGroupId = 'all';
 
 export interface SettingsGroupMeta {
   id: SettingsGroupId;
@@ -32,60 +29,41 @@ export interface SettingsSectionMeta {
   group: SettingsGroupId;
   labelKey: string;
   icon: string;          // lucide-react icon name
-  /** Optional one-line "what lives here", shown under the nav label. */
+  /** One sentence: what lives here (shown at the top of the section, and searched). */
   hintKey?: string;
 }
 
-export const SETTINGS_GROUPS: SettingsGroupMeta[] = [
-  { id: 'connection', labelKey: 'settings.groupConnection' },
-  { id: 'personal',   labelKey: 'settings.groupPersonal' },
-  { id: 'system',     labelKey: 'settings.groupSystem' },
-];
+/** 0.1.55 §11: no group headings — seven entries are read at a glance. */
+export const SETTINGS_GROUPS: SettingsGroupMeta[] = [];
 
 export const SETTINGS_SECTIONS: SettingsSectionMeta[] = [
-  { id: 'models',     group: 'connection', labelKey: 'settings.navModels',     icon: 'Cpu' },
-  // Which task uses which model. NOT in `automation`: that section's narrative is a
-  // spend warning, and these slots do not spend on their own — they change which
-  // model handles a call that was going to happen anyway.
-  { id: 'modelroles', group: 'connection', labelKey: 'settings.navModelRoles', icon: 'Cpu' },
-  { id: 'search',     group: 'connection', labelKey: 'settings.navSearch',     icon: 'Search' },
-  { id: 'appearance', group: 'personal',   labelKey: 'settings.navAppearance', icon: 'Palette' },
-  { id: 'memory',     group: 'personal',   labelKey: 'settings.navMemory',     icon: 'Database' },
-  // Everything that can spend money lives together, with the honest copy about
-  // what the caps do and do not bound. Split across sections is how someone
-  // turns on the second one without ever seeing the first one's warning.
-  { id: 'automation', group: 'system',     labelKey: 'settings.navAutomation', icon: 'Bot',
-    hintKey: 'settings.navAutomationHint' },
-  // What Arslan looks out for and how it tells you (0.1.47). Free to run, so it is
-  // not in automation; its one spending control (the cause-guess limit) IS, below.
-  { id: 'proactive',  group: 'system',     labelKey: 'settings.navProactive',  icon: 'BellRing' },
-  // Resident behaviour while the window is closed (0.1.41). Not in automation:
-  // both switches are ON by default and neither spends anything.
-  { id: 'desktop',    group: 'system',     labelKey: 'settings.navDesktop',    icon: 'Monitor' },
-  // The iPhone companion (mobile bridge §6.1): pairing and paired phones.
-  { id: 'phone',      group: 'system',     labelKey: 'settings.navPhone',      icon: 'Smartphone' },
-  { id: 'access',     group: 'system',     labelKey: 'settings.navAccess',     icon: 'KeyRound' },
-  { id: 'advanced',   group: 'system',     labelKey: 'settings.navAdvanced',   icon: 'Sliders' },
+  { id: 'general',     group: 'all', labelKey: 'settings.navGeneral',     icon: 'SlidersHorizontal', hintKey: 'settings.hintGeneral' },
+  { id: 'models',      group: 'all', labelKey: 'settings.navModels',      icon: 'Cpu',               hintKey: 'settings.hintModels' },
+  { id: 'abilities',   group: 'all', labelKey: 'settings.navAbilities',   icon: 'Hand',              hintKey: 'settings.hintAbilities' },
+  { id: 'background',  group: 'all', labelKey: 'settings.navBackground',  icon: 'BellRing',          hintKey: 'settings.hintBackground' },
+  { id: 'memory',      group: 'all', labelKey: 'settings.navMemoryPrivacy', icon: 'Database',        hintKey: 'settings.hintMemory' },
+  { id: 'connections', group: 'all', labelKey: 'settings.navConnections', icon: 'Globe',             hintKey: 'settings.hintConnections' },
+  { id: 'about',       group: 'all', labelKey: 'settings.navAbout',       icon: 'Info',              hintKey: 'settings.hintAbout' },
 ];
 
+/** Section ids from before 0.1.55, so an old deep link still lands on the right page. */
+export const LEGACY_SECTION: Record<string, SettingsSectionId> = {
+  modelroles: 'models', search: 'connections', appearance: 'general', automation: 'background',
+  proactive: 'background', desktop: 'general', phone: 'connections', access: 'connections', advanced: 'abilities',
+};
+
+export function resolveSection(id: string | undefined): SettingsSectionId | undefined {
+  if (!id) return undefined;
+  if (SETTINGS_SECTIONS.some((s) => s.id === id)) return id as SettingsSectionId;
+  return LEGACY_SECTION[id];
+}
+
 /**
- * Every control that exists, and the section it lives in. This is the mock's
- * §03 "not one field is lost" table written as data, so a test checks it
- * instead of a person re-reading two screens.
- *
- * Built from a four-angle sweep — by component, by i18n key, by server schema,
- * and by "can this spend money" — because reading components alone misses two
- * whole classes: settings the API exposes with NO UI, and controls rendered
- * from a list rather than as literal JSX.
- *
- * 🔴 `curation.enabled` is the first class, and it is why the sweep was worth
- * doing. It has shipped in `SettingsIn`/`SettingsOut` since the curation round,
- * `server/schemas.py:20` documents it as opt-in because "it spends" — and the
- * app never rendered a control for it. The mock's §03 listed it as a MOVE from
- * Advanced; there was nothing in Advanced to move. It is built here.
+ * Every control that exists, and the section it lives in — the "not one field is
+ * lost" table as data, so a test checks it instead of a person re-reading screens.
+ * 0.1.55 §11 rehomed every key that existed before; none was dropped.
  */
 export const FIELD_HOMES: Record<string, SettingsSectionId> = {
-  // ── models (was `providers`) ──────────────────────────────────────────────
   'provider.list': 'models',
   'provider.api_key': 'models',
   'provider.base_url': 'models',
@@ -96,78 +74,67 @@ export const FIELD_HOMES: Record<string, SettingsSectionId> = {
   'provider.connection_test': 'models',
   'provider.capabilities': 'models',
   'llm.strategy': 'models',
-
-  // ── model roles (per-task slots) ──────────────────────────────────────────
-  //: Shipped on the backend in v0.1.20 with no surface at all — the same class as
-  //: curation.enabled below, found the same way: by sweeping the server schema
-  //: rather than the components.
-  'slot.compaction': 'modelroles',
-  'slot.title': 'modelroles',
-  'slot.synthesis': 'modelroles',
-  'slot.vision': 'modelroles',
-  'slot.router': 'modelroles',
-
-  // ── search ────────────────────────────────────────────────────────────────
-  'search.tools': 'search',
-
-  // ── appearance ────────────────────────────────────────────────────────────
-  'appearance.display_name': 'appearance',
-  'appearance.language': 'appearance',
-  'appearance.theme': 'appearance',
-  'appearance.ocr_languages': 'appearance',
-
-  // ── memory ────────────────────────────────────────────────────────────────
+  'slot.compaction': 'models',
+  'slot.title': 'models',
+  'slot.synthesis': 'models',
+  'slot.vision': 'models',
+  'slot.router': 'models',
+  'search.tools': 'connections',
+  'appearance.display_name': 'general',
+  'appearance.language': 'general',
+  'appearance.theme': 'general',
+  'appearance.ocr_languages': 'general',
   'memory.in_conversations': 'memory',
   'memory.learned_practices': 'memory',
   'memory.distill_on_session_end': 'memory',
   'memory.retention_days': 'memory',
   'memory.run_debug_retention_days': 'memory',
-  'memory.embedding_model': 'memory',
-
-  // ── automation (new section; everything that spends lives here) ───────────
-  'curation.enabled': 'automation',
-  'research_review.enabled': 'automation',
-
-  // ── proactive (0.1.47: Arslan looks out for things and leaves them in the Inbox) ──
-  'proactive.enabled': 'proactive',
-  'proactive.sources': 'proactive',
-  'proactive.notify': 'proactive',
-  'proactive.quiet_hours': 'proactive',
-  'proactive.brief': 'proactive',
-  'proactive.watches': 'proactive',
-  'proactive.muted': 'proactive',
-  //: The one proactivity control that spends money, so it sits with the other spenders.
-  'proactive.diagnosis_cap': 'automation',
-
-  // ── desktop (0.1.41: the window hides, Arslan stays in the menu bar) ──────
-  'desktop.keep_awake': 'desktop',
-  'desktop.notifications': 'desktop',
-  'desktop.island': 'desktop',
-  //: Replaces the two placeholder nav entries.
-  'automation.activity_link': 'automation',
-
-  // ── iPhone (mobile bridge §6.1: pairing code, requests, paired phones) ────
-  'phone.enabled': 'phone',
-  'phone.pairing': 'phone',
-  'phone.requests': 'phone',
-  'phone.devices': 'phone',
-
-  // ── access & security ─────────────────────────────────────────────────────
-  'access.api_token': 'access',
-  'access.mcp_server_enabled': 'access',
-
-  // ── advanced ──────────────────────────────────────────────────────────────
-  'advanced.telemetry': 'advanced',
-  'advanced.orchestrator_shell': 'advanced',
-  'advanced.shell_confirm_policy': 'advanced',
-  'advanced.background_job_budget': 'advanced',
-  'advanced.terminal_rules': 'advanced',
+  'memory.embedding_model': 'models',
+  'curation.enabled': 'background',
+  'research_review.enabled': 'background',
+  'proactive.enabled': 'background',
+  'proactive.sources': 'background',
+  'proactive.notify': 'general',
+  'proactive.quiet_hours': 'general',
+  'proactive.brief': 'background',
+  'proactive.watches': 'background',
+  'proactive.muted': 'background',
+  'proactive.diagnosis_cap': 'background',
+  'desktop.keep_awake': 'general',
+  'desktop.notifications': 'general',
+  'desktop.island': 'general',
+  'automation.activity_link': 'background',
+  'phone.enabled': 'connections',
+  'phone.pairing': 'connections',
+  'phone.requests': 'connections',
+  'phone.devices': 'connections',
+  'access.api_token': 'connections',
+  'access.mcp_server_enabled': 'connections',
+  'advanced.telemetry': 'memory',
+  'advanced.orchestrator_shell': 'abilities',
+  'advanced.shell_confirm_policy': 'abilities',
+  'advanced.background_job_budget': 'background',
+  'advanced.terminal_rules': 'abilities',
+  'general.voice_mode': 'general',
+  'general.voice_input_locale': 'general',
+  'general.voice_silence': 'general',
+  'abilities.default_read': 'abilities',
+  'abilities.workspace_dir': 'abilities',
+  'abilities.sandbox': 'abilities',
+  'abilities.lan_discovery': 'abilities',
+  'abilities.ssh': 'abilities',
+  'abilities.hands': 'abilities',
+  'abilities.browser_setup': 'abilities',
+  'memory.index_health': 'memory',
+  'memory.backup': 'memory',
+  'memory.deletion_export': 'memory',
+  'connections.github_token': 'connections',
+  'about.version': 'about',
+  'about.whats_new': 'about',
+  'about.activity_link': 'about',
 };
 
-/** Sections in nav order, grouped. */
+/** Sections in nav order (one flat group since 0.1.55). */
 export function sectionsByGroup(): { group: SettingsGroupMeta; sections: SettingsSectionMeta[] }[] {
-  return SETTINGS_GROUPS.map((group) => ({
-    group,
-    sections: SETTINGS_SECTIONS.filter((s) => s.group === group.id),
-  }));
+  return [{ group: { id: 'all', labelKey: 'settings.navRegion' }, sections: SETTINGS_SECTIONS }];
 }

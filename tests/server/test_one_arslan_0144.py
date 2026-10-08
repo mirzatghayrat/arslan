@@ -164,3 +164,19 @@ def test_startup_no_longer_seeds_the_example_experts():
     from server import main
     # Behaviour would need the whole lifespan; the call site is the whole contract here.
     assert "seed_default_spawns()" not in inspect.getsource(main.lifespan)
+
+
+@pytest.mark.asyncio
+async def test_the_skill_index_counts_only_skills_with_a_body_before_its_limit(execution_db):
+    """0.1.55: the limit applied before the bodyless rows were dropped, so registered
+    rows without a body took the slots (fresh install: 44 usable skills, 31 shown)."""
+    from server.db.models import SkillPack
+    async with execution_db() as db:
+        for i in range(45):     # sort before the real ones and outnumber the limit
+            db.add(SkillPack(key=f"a-empty-{i:02d}", name=f"Empty {i}", category="x", description="",
+                             tier="safe", status="registered", body=None))
+        db.add(SkillPack(key="z-real", name="Real one", category="x", description="does a thing",
+                         tier="safe", status="registered", body="# Real\nsteps"))
+        await db.commit()
+    index = await arslan._skill_index(limit=40)
+    assert "z-real" in index and "a-empty" not in index

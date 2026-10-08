@@ -87,7 +87,7 @@ def push(kind: str, *, conversation_id: str | None = None, outcome: str | None =
 
 @contextmanager
 def working(conversation_id: str | None = None, *, title: str | None = None,
-            kind: str = "turn") -> Iterator[None]:
+            kind: str = "turn", job_id: str | None = None) -> Iterator[None]:
     """Mark work in flight for as long as the block runs, however it exits.
     The activity (title, latest step, plan) is reachable from inside the block
     through a context variable, so the tool loop can report steps without
@@ -99,7 +99,9 @@ def working(conversation_id: str | None = None, *, title: str | None = None,
         _working[token] = conversation_id
         activity = {"id": token, "conversation_id": conversation_id, "kind": kind,
                     "title": _clip(title, TITLE_CHARS), "started_at": int(time.time()),
-                    "step": None, "plan": None}
+                    "step": None, "plan": None,
+                    # 0.1.55: lets the island's Stop end this job (POST /background-jobs/{id}/stop).
+                    "job_id": job_id}
         _activity[token] = activity
     reset = _current.set(activity)
     try:

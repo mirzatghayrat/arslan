@@ -52,6 +52,10 @@ vi.mock("../api/catalog", () => ({
   getMcpCatalog: vi.fn(),
 }));
 
+vi.mock("../api/capabilities", () => ({
+  capabilitiesApi: { list: vi.fn(async () => []), switch: vi.fn() },
+}));
+
 import { api } from "../api/client";
 import * as discovery from "../api/discovery";
 import * as mcp from "../api/mcp";
@@ -86,39 +90,48 @@ beforeEach(() => {
 });
 
 describe("Capabilities page structure and legacy feature reachability", () => {
-  it("renders five primary tabs when former experts exist (0.1.48: Connections joined as a tab)", () => {
+  it("0.1.55: opens on the switches; the legacy experts tab exists only for those who have experts, last", () => {
     render(<Capabilities experts={<div>Expert workspace</div>} />);
     const tabs = screen.getAllByRole("tab");
     expect(tabs.map((el) => el.textContent)).toEqual([
-      "workspace.legacyExperts",
+      "capabilityList.tab",
       "workspace.skillsWorkflows",
-      "capabilities.tabs.tools",
       "workspace.connections",
       "capabilities.tabs.discover",
+      "workspace.legacyExperts",
     ]);
+    expect(screen.getByRole("tab", { name: "capabilityList.tab" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByText("Expert workspace")).toBeNull();
+    fireEvent.click(screen.getByRole("tab", { name: "workspace.legacyExperts" }));
     expect(screen.getByText("Expert workspace")).toBeInTheDocument();
   });
 
-  it("DISCOVER is the default tab and holds the Tool-Hub hero (input + Research)", () => {
+  it("without experts there is no experts tab, and no legacy spawn toolsets tab", () => {
     render(<Capabilities />);
-    expect(screen.getByRole("tab", { name: "capabilities.tabs.discover" }))
-      .toHaveAttribute("aria-selected", "true");
+    const names = screen.getAllByRole("tab").map((el) => el.textContent);
+    expect(names).not.toContain("workspace.legacyExperts");
+    expect(names).not.toContain("capabilities.tabs.tools");
+  });
+
+  it("Discover holds the Tool-Hub hero (input + Research)", () => {
+    render(<Capabilities />);
+    fireEvent.click(screen.getByRole("tab", { name: "capabilities.tabs.discover" }));
     expect(screen.getByPlaceholderText("capabilities.hero.placeholder")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /capabilities\.hero\.research/ })).toBeInTheDocument();
   });
 
   it("the hero lives only inside the Discover tab (gone on other tabs)", () => {
     render(<Capabilities />);
-    fireEvent.click(screen.getByRole("tab", { name: "capabilities.tabs.tools" }));
     expect(screen.queryByPlaceholderText("capabilities.hero.placeholder")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "capabilities.tabs.discover" }));
     expect(screen.getByPlaceholderText("capabilities.hero.placeholder")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "workspace.skillsWorkflows" }));
+    expect(screen.queryByPlaceholderText("capabilities.hero.placeholder")).not.toBeInTheDocument();
   });
 
-  it("legacy embedded connection entry still reaches recommended connectors", async () => {
+  it("Add from elsewhere › MCP directory reaches recommended connectors", async () => {
     render(<Capabilities />);
-    fireEvent.click(screen.getByRole("tab", { name: "capabilities.tabs.tools" }));
-    fireEvent.click(screen.getByRole("button", { name: "workspace.connections" }));
+    fireEvent.click(screen.getByTestId("cap-add-mcps"));
     expect(screen.getByText("capabilities.sections.recommended_mcp")).toBeInTheDocument();
     // RecommendedMcp preset cards render inside the tab
     expect(await screen.findByText("Memory")).toBeInTheDocument();
@@ -126,8 +139,7 @@ describe("Capabilities page structure and legacy feature reachability", () => {
 
   it("MCPS chips filter between the presets section and the server list; all resets", async () => {
     render(<Capabilities />);
-    fireEvent.click(screen.getByRole("tab", { name: "capabilities.tabs.tools" }));
-    fireEvent.click(screen.getByRole("button", { name: "workspace.connections" }));
+    fireEvent.click(screen.getByRole("tab", { name: "workspace.connections" }));
     // Chip row derived from real data: both counts are fetched (presets via GET /mcp/catalog,
     // registered servers via GET /mcp/servers) — wait for the async catalog fetch to resolve.
     const recommendedChip = screen.getByRole("button", { name: /capabilities\.chips\.recommended/ });
@@ -170,6 +182,7 @@ describe("Capabilities page structure and legacy feature reachability", () => {
 
   it("Saved is a Discover filter and retains SavedCandidates content", async () => {
     render(<Capabilities />);
+    fireEvent.click(screen.getByRole("tab", { name: "capabilities.tabs.discover" }));
     fireEvent.click(screen.getByRole("button", { name: "capabilities.tabs.saved" }));
     // SavedCandidates renders "Refresh list" button
     expect(await screen.findByRole("button", { name: "connectionsUI.refreshList" })).toBeInTheDocument();
@@ -183,8 +196,7 @@ describe("Capabilities page structure and legacy feature reachability", () => {
 
   it("connections are a tab here (0.1.48: no separate Connections page)", () => {
     render(<Capabilities />);
-    fireEvent.click(screen.getByRole("tab", { name: "capabilities.tabs.tools" }));
-    fireEvent.click(screen.getByRole("button", { name: "workspace.connections" }));
+    fireEvent.click(screen.getByTestId("cap-add-mcps"));
     expect(screen.getByRole("tab", { name: "workspace.connections" }).getAttribute("aria-selected")).toBe("true");
   });
 });

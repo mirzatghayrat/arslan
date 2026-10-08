@@ -3,6 +3,7 @@ import { describe, test, expect, vi, beforeEach } from "vitest";
 import SshNodesPanel from "./SshNodesPanel";
 import { api } from "../../api/client";
 import "../../i18n";
+import { ConfirmHost } from "../kit";
 
 vi.mock("../../api/client", () => ({
   api: { listSshNodes: vi.fn(), revokeSshNode: vi.fn(async () => ({ ok: true })) },
@@ -42,10 +43,12 @@ describe("SshNodesPanel", () => {
   });
 
   test("forgetting a machine calls revoke and refreshes", async () => {
-    render(<SshNodesPanel />);
+    render(<><SshNodesPanel /><ConfirmHost /></>);
     await screen.findByText("studio");
     vi.mocked(api.listSshNodes).mockResolvedValue({ nodes: [], enabled: true });
     fireEvent.click(screen.getByTestId("ssh-node-revoke-7"));
+    expect(api.revokeSshNode).not.toHaveBeenCalled();   // 0.1.55: asks first
+    fireEvent.click(await screen.findByTestId("confirm-action"));
     await waitFor(() => expect(api.revokeSshNode).toHaveBeenCalledWith(7));
     await waitFor(() => expect(screen.getByTestId("ssh-nodes-empty")).toBeInTheDocument());
   });

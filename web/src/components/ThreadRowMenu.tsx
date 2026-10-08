@@ -13,7 +13,8 @@ import { useTranslation } from "react-i18next";
 
 import { useDismissable } from "../hooks/useDismissable";
 import AnchoredPortal from "./AnchoredPortal";
-import { MoreHorizontal, Wand2, Archive, ArchiveRestore, Trash2, AlertTriangle } from "lucide-react";
+import { MoreHorizontal, Wand2, Archive, ArchiveRestore, Trash2 } from "lucide-react";
+import { confirmSheet } from "./kit";
 
 interface ThreadRowMenuProps {
   threadId: string;
@@ -35,11 +36,9 @@ export default function ThreadRowMenu({
 }: ThreadRowMenuProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
-  const [confirming, setConfirming] = useState(false);
 
   const close = () => {
     setOpen(false);
-    setConfirming(false);
   };
 
   // Two fixes, one cause each:
@@ -63,7 +62,6 @@ export default function ThreadRowMenu({
         onClick={(e) => {
           e.stopPropagation();
           setOpen((o) => !o);
-          setConfirming(false);
         }}
         className="opacity-0 group-hover:opacity-100 focus:opacity-100 aria-expanded:opacity-100 w-5 h-5 flex items-center justify-center rounded text-subtle-foreground hover:text-primary hover:bg-primary/10 transition-all shrink-0"
         aria-expanded={open}
@@ -78,7 +76,6 @@ export default function ThreadRowMenu({
           onClick={(e) => e.stopPropagation()}
           className="w-52 bg-surface-raised border border-border-strong rounded-lg shadow-lg p-1"
         >
-            {!confirming ? (
               <>
                 <button
                   type="button"
@@ -125,41 +122,17 @@ export default function ThreadRowMenu({
                   type="button"
                   role="menuitem"
                   className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[11px] font-sans text-left text-danger hover:bg-danger/10 transition-all"
-                  onClick={() => setConfirming(true)}
+                  onClick={() => {
+                    // 0.1.55: the one confirm sheet (it was an inline box inside this menu).
+                    close();
+                    void confirmSheet({ title: t("confirm.conversationTitle"), body: t("confirm.conversationBody"),
+                      action: t("confirm.delete") }).then((ok) => { if (ok) onDelete(threadId); });
+                  }}
                 >
                   <Trash2 className="w-3.5 h-3.5 shrink-0" />
                   <span>{t("sidebar.delete")}</span>
                 </button>
               </>
-            ) : (
-              <div className="p-1.5 space-y-2.5">
-                <div className="flex items-start gap-2">
-                  <AlertTriangle className="w-3.5 h-3.5 text-danger shrink-0 mt-0.5" />
-                  <p className="text-[10.5px] font-sans text-muted-foreground leading-relaxed">
-                    {t("sidebar.delete_confirm_body")}
-                  </p>
-                </div>
-                <div className="flex items-center justify-end gap-2">
-                  <button
-                    type="button"
-                    className="px-2.5 py-1 rounded-md text-[10.5px] font-sans font-medium text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] transition-all"
-                    onClick={close}
-                  >
-                    {t("common.cancel")}
-                  </button>
-                  <button
-                    type="button"
-                    className="px-2.5 py-1 rounded-md text-[10.5px] font-sans font-bold text-danger bg-danger/10 border border-danger/30 hover:bg-danger/20 transition-all"
-                    onClick={() => {
-                      onDelete(threadId);
-                      close();
-                    }}
-                  >
-                    {t("sidebar.delete_confirm_ok")}
-                  </button>
-                </div>
-              </div>
-          )}
         </div>
       </AnchoredPortal>
     </span>

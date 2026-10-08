@@ -239,6 +239,8 @@ class SkillPack(Base):
     tier = Column(String(20), nullable=False)
     status = Column(String(20), nullable=False, default="registered")
     body = Column(Text, nullable=True)
+    # 0.1.55 §14: the user's switch. Off = not in the index the model sees, read_skill refuses.
+    enabled = Column(Boolean, nullable=False, default=True, server_default="1")
 
 
 class SkillCandidate(Base):

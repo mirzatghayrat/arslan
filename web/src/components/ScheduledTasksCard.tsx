@@ -10,6 +10,7 @@ import type {
 } from "../api/client.types";
 import Select from "./Select";
 import EmptyState, { EmptyStateAction } from "./EmptyState";
+import { confirmSheet } from "./kit";
 
 /**
  * S3-M4 Diagnostics 定时任务卡 — list + create/edit form + execution history.
@@ -296,7 +297,6 @@ export default function ScheduledTasksCard({ onOpenRun }: Props) {
   // fire-now bookkeeping: "firing" while the request is pending, "running" after
   // a 202 OR a 409 (already running) — both mean a run is in flight right now.
   const [busy, setBusy] = useState<Record<number, "firing" | "running">>({});
-  const [confirmingDelete, setConfirmingDelete] = useState<number | null>(null);
   const [form, setForm] = useState<{ editing: ScheduledTaskDto | null } | null>(null);
 
   useEffect(() => {
@@ -366,7 +366,6 @@ export default function ScheduledTasksCard({ onOpenRun }: Props) {
     try {
       await api.deleteScheduledTask(id);
       setTasks((ts) => ts.filter((x) => x.id !== id));
-      setConfirmingDelete(null);
       if (expanded === id) setExpanded(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -458,26 +457,7 @@ export default function ScheduledTasksCard({ onOpenRun }: Props) {
                   <td><OutcomeBadge task={task} /></td>
                   <td className="usage-card__num">{fmtNextDue(task)}</td>
                   <td>
-                    {confirmingDelete === task.id ? (
-                      <span className="sched-table__confirm">
-                        <span className="sched-table__confirm-text">{t("scheduled.delete_confirm")}</span>
-                        <button
-                          type="button"
-                          className="text-[11px] font-mono font-bold text-danger hover:bg-danger/10 px-1.5 rounded transition-colors"
-                          data-testid={`sched-delete-confirm-${task.id}`}
-                          onClick={() => doDelete(task.id)}
-                        >
-                          {t("scheduled.action.delete")}
-                        </button>
-                        <button
-                          type="button"
-                          className={ACTION_BTN}
-                          onClick={() => setConfirmingDelete(null)}
-                        >
-                          {t("common.cancel")}
-                        </button>
-                      </span>
-                    ) : (
+                    {(
                       <span className="sched-table__actions">
                         <button
                           type="button"
@@ -521,7 +501,11 @@ export default function ScheduledTasksCard({ onOpenRun }: Props) {
                           type="button"
                           className="text-[11px] font-mono text-danger/80 hover:text-danger transition-colors"
                           data-testid={`sched-delete-${task.id}`}
-                          onClick={() => setConfirmingDelete(task.id)}
+                          onClick={() => void (async () => {
+                            // 0.1.55: the one confirm sheet (it was an inline yes/no in this row).
+                            if (await confirmSheet({ title: t("confirm.taskTitle", { name: task.name }), body: t("confirm.taskBody"),
+                              action: t("confirm.delete") })) await doDelete(task.id);
+                          })()}
                         >
                           {t("scheduled.action.delete")}
                         </button>

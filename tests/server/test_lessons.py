@@ -391,3 +391,115 @@ async def test_after_turn_work_runs_detached_from_the_finished_turn():
         lessons.later(work())
         await asyncio.gather(*list(lessons._background))
     assert seen["ctx"] is context
+
+
+# -- L1 (0.1.55): a request is not a correction, and what just worked is not overruled --
+
+FINDER = ("在访达里把文件改名", "在访达里完成，而不是用命令行")   # the 2026-10-05 real-Mac lesson
+
+
+@pytest.fixture
+def fresh_worked():
+    lessons._WORKED.clear()
+    yield
+    lessons._WORKED.clear()
+
+
+def test_only_a_message_after_an_arslan_reply_can_correct():
+    from server.services.turn_facts import answers_earlier_reply as after
+    first = [{"role": "user", "content": "在访达里把 a.txt 改名为 b.txt"}, {"role": "assistant", "content": "改好了"}]
+    assert after(first) is False                      # the conversation's first message
+    later = first + [{"role": "user", "content": "下次别用命令行"}, {"role": "assistant", "content": "好"}]
+    assert after(later) is True
+    assert after([{"role": "user", "content": "x"}], summary="earlier turns") is True
+
+
+async def test_a_first_request_is_learned_only_as_a_proposal(execution_db, judge, fresh_worked):
+    first = correction(*FINDER, evidence={"conversation_id": CID, "answers_earlier_reply": False})
+    [learned] = await lessons.capture([first], conversation_id=CID)
+    assert learned["status"] == "proposed"
+
+
+async def test_a_correction_against_the_route_that_just_worked_waits(execution_db, judge, fresh_worked):
+    lessons.note_turn(CID, [call("run_command", True, command="mv ~/Desktop/a.txt ~/Desktop/b.txt")])
+    judge.answers["memory.conflict"] = True
+    real = correction(*FINDER, evidence={"conversation_id": CID, "answers_earlier_reply": True})
+    [learned] = await lessons.capture([real], conversation_id=CID)
+    assert learned["status"] == "proposed"
+    [(point, state)] = [a for a in judge.asked if a[0] == "memory.conflict"]
+    assert "mv ~/Desktop/a.txt" in state["existing"]
+
+
+async def test_a_real_correction_after_a_wrong_route_still_takes_effect_at_once(execution_db, judge, fresh_worked):
+    """The mirror: Arslan used AppleScript (it worked, but the user wants EventKit) —
+    the judge says no contradiction with a different route... and with no route
+    worked at all the correction applies at once, as in 0.1.52."""
+    real = correction(evidence={"conversation_id": CID, "answers_earlier_reply": True})
+    [learned] = await lessons.capture([real], conversation_id=CID)
+    assert learned["status"] == "active"
+    lessons.note_turn(CID, [call("run_command", True, command="swift add_reminder.swift")])
+    judge.answers.update({"memory.conflict": False, "memory.merge": False})
+    again = correction("Listing reminders", "use EventKit, not AppleScript",
+                       evidence={"conversation_id": CID, "answers_earlier_reply": True})
+    [learned] = await lessons.capture([again], conversation_id=CID)
+    assert learned["status"] == "active"
+
+
+async def test_no_judge_answer_on_the_contradiction_check_waits(execution_db, judge, fresh_worked):
+    lessons.note_turn(CID, [call("run_command", True, command="mv a b")])
+    judge.answers["memory.conflict"] = None
+    real = correction(*FINDER, evidence={"conversation_id": CID, "answers_earlier_reply": True})
+    [learned] = await lessons.capture([real], conversation_id=CID)
+    assert learned["status"] == "proposed"
+
+
+async def test_turn_facts_marks_a_first_message(monkeypatch):
+    from server.services import turn_facts
+    captured = []
+
+    class Adapter:
+        async def chat(self, *, system, user):
+            class R:
+                content = ('{"new_facts": [], "practices": [{"situation": "%s", "advice": "%s"}]}' % FINDER)
+            return R()
+
+    async def adapter():
+        return Adapter()
+
+    async def working(cid):
+        return {"history": [{"role": "user", "content": "在访达里把 a 改名为 b"},
+                            {"role": "assistant", "content": "已改名"}]}
+
+    async def facts_text(**k):
+        return ""
+
+    async def fake_capture(made, **kw):
+        captured.append(made)
+        return []
+    monkeypatch.setattr(turn_facts, "_get_adapter", adapter)
+    monkeypatch.setattr(turn_facts.memory, "assemble_working_context", working)
+    monkeypatch.setattr(turn_facts.memory, "facts_text", facts_text)
+    monkeypatch.setattr(lessons, "capture", fake_capture)
+    pending = []
+    monkeypatch.setattr(lessons, "later", pending.append)
+    await turn_facts.capture(CID, "在访达里把 a 改名为 b", lambda e: None)
+    await pending[0]
+    assert captured[0][0].evidence["answers_earlier_reply"] is False
+
+
+def test_the_host_turn_records_what_worked_before_learning(monkeypatch, fresh_worked):
+    from server.orchestrator import tool_loop
+    scheduled = []
+    monkeypatch.setattr(tool_loop, "_host_turn", lambda *a: True)
+    monkeypatch.setattr(lessons, "later", lambda coro: (coro.close(), scheduled.append(1)))
+    tool_loop._learn_after({"conversation_id": CID}, {"tool_trace": [call("run_command", True, command="mv a b")]},
+                           {"final": "ok"})
+    assert lessons._WORKED[CID] == ["run_command: mv a b"] and scheduled == [1]
+
+
+def test_hands_refused_by_macos_never_teaches_another_route():
+    """L1: the real-Mac proposal "PERM_DENIED → use osascript" contradicted the advice
+    the model is given (stop, ask the user to allow Arslan Hands)."""
+    trace = [call("desktop_look", False, app="Notes", result={"code": "PERM_DENIED", "error": "refused"}),
+             call("run_command", True, command="osascript -e 'tell app \"Notes\"'")]
+    assert lessons.detours(trace) == []

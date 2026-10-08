@@ -30,6 +30,7 @@ vi.mock("../api/client", () => ({
 
 import AccessTokenSettings from "../components/AccessTokenSettings";
 import { useAuthStore } from "../stores/authStore";
+import { ConfirmHost } from "../components/kit";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -70,10 +71,12 @@ describe("AccessTokenSettings", () => {
   it("resets the token and updates both the display and the store", async () => {
     mockGetAccessToken.mockResolvedValue({ token_required: true, token: "srv-1" });
     mockResetAccessToken.mockResolvedValue({ token: "rotated-9" });
-    render(<AccessTokenSettings backendStatus="online" />);
+    render(<><AccessTokenSettings backendStatus="online" /><ConfirmHost /></>);
 
     await screen.findByTestId("access-token-value");
     fireEvent.click(screen.getByTestId("access-token-reset"));
+    expect(mockResetAccessToken).not.toHaveBeenCalled();   // 0.1.55: asks first
+    fireEvent.click(await screen.findByTestId("confirm-action"));
 
     await waitFor(() => {
       expect(mockResetAccessToken).toHaveBeenCalledTimes(1);

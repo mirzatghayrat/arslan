@@ -13,7 +13,7 @@
  * keeping because they are not obvious:
  *
  *  - The clear had to happen on send, and the send path lives in the zustand
- *    store (arslanStore.ts noteUserSend), which has no access to `threads` or
+ *    store (arslanStore.ts), which has no access to `threads` or
  *    persistThreads. Clearing there clears nothing durable. The marker would
  *    stay set through a 40-message conversation, and the NEXT launch would
  *    "reuse" that conversation as your new session and append to it. Nothing

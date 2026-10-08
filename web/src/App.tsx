@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { SECTIONS, type Section } from "./lib/sections";
+import { OPEN_SECTION_EVENT, readOpenSection, type Section } from "./lib/sections";
+import { ConfirmHost, ToastHost, toast as showToast } from "./components/kit";
+import AskSlot from "./components/AskSlot";
 import { useTranslation } from 'react-i18next';
 import { DEFAULT_SETTINGS } from './data';
 import { Message, MessageAttachment, AppSettings } from './types';
@@ -25,23 +27,17 @@ import SettingsScreen from './components/SettingsScreen';
 import Capabilities from './components/Capabilities';
 import { Globe, PanelRight } from 'lucide-react';
 import { ThemeApplier } from './components/ThemeApplier';
-import RunCommandCard from './components/RunCommandCard';
-import EnrollNodeCard from './components/EnrollNodeCard';
-import WorkspaceWriteCard from './components/WorkspaceWriteCard';
-import ScheduleGrantCard from './components/ScheduleGrantCard';
-import ConnectMcpCard from './components/ConnectMcpCard';
 import ActivityView from './components/ActivityView';
 import MemorySection from './components/companion/MemorySection';
 import ProjectsSection from './components/companion/ProjectsSection';
 import ConversationControls from './components/companion/ConversationControls';
 import TaskPanel from './components/companion/TaskPanel';
 import LegacyExperts from './components/companion/LegacyExperts';
-import ActionApprovalCard from './components/ActionApprovalCard';
 import { companionApi, type Project } from './api/companion';
 import FirstRunWizard from './components/FirstRunWizard';
 import UpdatePill from './components/UpdatePill';
 import WorkDock from './components/WorkDock';
-import type { SettingsSectionId } from './components/settings/sectionRegistry';
+import { resolveSection, type SettingsSectionId } from './components/settings/sectionRegistry';
 import { getFirstRunSeen, setFirstRunSeen, firstRunShouldShow, restoreFirstRunSeen } from './lib/firstRun';
 import { threadNavAction } from './lib/threadNav';
 import type { ImagePayload } from './lib/imagePayload';
@@ -134,15 +130,17 @@ export default function App() {
     window.addEventListener(OPEN_CONVERSATION_EVENT, onLink);
     return () => window.removeEventListener(OPEN_CONVERSATION_EVENT, onLink);
   }, []);
-
-  // Lightweight transient toast (no toast component exists yet) — used for the
-  // distill result confirmation. Auto-clears after a few seconds.
-  const [toast, setToast] = useState<string | null>(null);
   useEffect(() => {
-    if (!toast) return;
-    const h = window.setTimeout(() => setToast(null), 3200);
-    return () => window.clearTimeout(h);
-  }, [toast]);
+    const onOpen = (event: Event) => {
+      const asked = readOpenSection((event as CustomEvent<unknown>).detail);
+      if (!asked) return;
+      if (asked.section === 'settings') setSettingsInitialSection(resolveSection(asked.sub));
+      setActiveSection(asked.section); setPanelView('default');
+    };
+    window.addEventListener(OPEN_SECTION_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_SECTION_EVENT, onOpen);
+  }, []);
+
 
   // ── Auto-title: track which threads have already received a generated title
   // so we never regenerate on re-renders or subsequent messages.
@@ -212,21 +210,6 @@ export default function App() {
   const arslanStreaming = useArslanStore((s) => s.streaming);
   const arslanRunning = useArslanStore((s) => s.thinking || s.streaming || s.pending || s.activeRunId != null);
   const arslanStreamingText = useArslanStore((s) => s.streamingText);
-  // propose_run_command state — per-command confirmation card
-  const pendingCommand = useArslanStore((s) => s.pendingCommand);
-  const pendingEnrollNode = useArslanStore((s) => s.pendingEnrollNode);
-  const clearPendingCommand = useArslanStore((s) => s.clearPendingCommand);
-  const clearPendingEnrollNode = useArslanStore((s) => s.clearPendingEnrollNode);
-  const pendingWorkspaceWrite = useArslanStore((s) => s.pendingWorkspaceWrite);
-  const clearPendingWorkspaceWrite = useArslanStore((s) => s.clearPendingWorkspaceWrite);
-  const pendingSchedule = useArslanStore((s) => s.pendingSchedule);
-  const pendingAction = useArslanStore((s) => s.pendingAction);
-  const clearPendingAction = useArslanStore((s) => s.clearPendingAction);
-  const clearPendingSchedule = useArslanStore((s) => s.clearPendingSchedule);
-  // propose_connect_mcp state — in-chat MCP connect card (security-load-bearing:
-  // secrets never leave this card except over REST; see ConnectMcpCard.tsx)
-  const pendingConnectMcp = useArslanStore((s) => s.pendingConnectMcp);
-  const clearPendingConnectMcp = useArslanStore((s) => s.clearPendingConnectMcp);
 
   // Handler for incoming WS frames — routes to the proven store logic
   const handleArslanFrame = useCallback((raw: unknown) => {
@@ -310,10 +293,6 @@ export default function App() {
   const sendOrchestratorMessage = useCallback((text: string, attached?: { context: string; names: string[]; display?: MessageAttachment[]; images?: ImagePayload[] }, opts?: { fromClarify?: boolean }) => {
     // display = session-only echo for the sent bubble (image thumbnails / doc chips);
     // only text-bearing attachments ride to the backend as attached_context below.
-    // Sending a new message without acting on a pending proposal card = implicitly
-    // dismiss it, so un-acted suggest_create / propose_invite / propose_staffing /
-    // suggest_update cards clear when the user moves on instead of stacking forever.
-    useArslanStore.getState().noteUserSend(opts);
     useArslanStore.getState().addUserMessage(text, attached?.display);
     useArslanStore.getState().setThinking(true);
     wsSend({
@@ -452,13 +431,13 @@ export default function App() {
       const res = await distillConversation(id);
       // `distilled_spawns` is a count of AGENTS folded into memory, NOT memory items.
       // Zero producing spawns → a truthful no-op message instead of "distilled 0".
-      setToast(
+      showToast(
         res.distilled_spawns > 0
           ? t('sidebar.distilled_toast', { count: res.distilled_spawns })
           : t('sidebar.distilled_none'),
       );
     } catch {
-      setToast(t('sidebar.distill_failed'));
+      showToast(t('sidebar.distill_failed'));
     }
   };
 
@@ -580,6 +559,8 @@ export default function App() {
   // 0.1.44/0.1.48: former experts can be turned into skills; the tab shows only while any remain.
   const experts = legacyExperts > 0 ? <LegacyExperts /> : null;
 
+
+
   return (
     <div className="flex w-screen h-screen bg-background text-foreground overflow-hidden font-sans antialiased">
       <ThemeApplier />
@@ -596,8 +577,8 @@ export default function App() {
           setActiveSection('arslan');
         }}
         onAddThread={() => handleAddArslanThread()}
-        inboxUnread={proactive.unread}
-        inboxHigh={proactive.high}
+        inboxUnread={proactive.unread + (proactive.approvals ?? 0) + (proactive.memory ?? 0)}
+        inboxHigh={proactive.high + (proactive.approvals ?? 0)}
         activeSection={activeSection}
         onChangeSection={(section) => {
           if (section === 'settings') setSettingsInitialSection(undefined);
@@ -705,121 +686,9 @@ export default function App() {
           </div>
 
           <div className="flex-1 flex flex-col overflow-hidden relative">
-            {activeSection === 'arslan' && pendingCommand && (
-              <div className="suggest-create-card-overlay">
-                <RunCommandCard
-                  callId={pendingCommand.callId}
-                  pretty={pendingCommand.pretty}
-                  reason={pendingCommand.reason}
-                  remoteHost={pendingCommand.remoteHost}
-                  fingerprints={pendingCommand.fingerprints}
-                  background={pendingCommand.background}
-                  sandbox={pendingCommand.sandbox}
-                  why={pendingCommand.why}
-                  onConfirm={(callId, remember) => {
-                    wsSend({ type: 'confirm_run_command', call_id: callId, remember });
-                    clearPendingCommand();
-                  }}
-                  onCancel={(callId) => {
-                    wsSend({ type: 'cancel_run_command', call_id: callId });
-                    clearPendingCommand();
-                  }}
-                />
-              </div>
-            )}
-
-            {activeSection === 'arslan' && pendingEnrollNode && (
-              <div className="suggest-create-card-overlay">
-                <EnrollNodeCard
-                  callId={pendingEnrollNode.callId}
-                  name={pendingEnrollNode.name}
-                  host={pendingEnrollNode.host}
-                  user={pendingEnrollNode.user}
-                  fingerprints={pendingEnrollNode.fingerprints}
-                  onDone={() => clearPendingEnrollNode()}
-                />
-              </div>
-            )}
-
-            {activeSection === 'arslan' && pendingWorkspaceWrite && (
-              <div className="suggest-create-card-overlay">
-                {pendingWorkspaceWrite.background && <p className="mb-1 text-[11px] text-muted-foreground">{t('jobs.askingBadge')}</p>}
-                <WorkspaceWriteCard
-                  callId={pendingWorkspaceWrite.callId}
-                  workspace={pendingWorkspaceWrite.workspace}
-                  action={pendingWorkspaceWrite.action}
-                  path={pendingWorkspaceWrite.path}
-                  onConfirm={(callId) => {
-                    wsSend({ type: 'confirm_workspace_write', call_id: callId });
-                    clearPendingWorkspaceWrite();
-                  }}
-                  onCancel={(callId) => {
-                    wsSend({ type: 'cancel_workspace_write', call_id: callId });
-                    clearPendingWorkspaceWrite();
-                  }}
-                />
-              </div>
-            )}
-
-            {activeSection === 'arslan' && pendingAction && (
-              <div className="suggest-create-card-overlay">
-                <ActionApprovalCard kind={pendingAction.kind} target={pendingAction.target} detail={pendingAction.detail}
-                  onConfirm={() => { wsSend({ type: 'confirm_action', call_id: pendingAction.callId }); clearPendingAction(); }}
-                  onCancel={() => { wsSend({ type: 'cancel_action', call_id: pendingAction.callId }); clearPendingAction(); }} />
-              </div>
-            )}
-
-            {activeSection === 'arslan' && pendingSchedule && (
-              <div className="suggest-create-card-overlay">
-                {pendingSchedule.background && <p className="mb-1 text-[11px] text-muted-foreground">{t('jobs.askingBadge')}</p>}
-                <ScheduleGrantCard
-                  callId={pendingSchedule.callId}
-                  name={pendingSchedule.name}
-                  when={pendingSchedule.when}
-                  onConfirm={(callId) => {
-                    wsSend({ type: 'confirm_schedule', call_id: callId });
-                    clearPendingSchedule();
-                  }}
-                  onCancel={(callId) => {
-                    wsSend({ type: 'cancel_schedule', call_id: callId });
-                    clearPendingSchedule();
-                  }}
-                />
-              </div>
-            )}
-
-            {activeSection === 'arslan' && pendingConnectMcp && (
-              <div className="suggest-create-card-overlay">
-                <ConnectMcpCard
-                  callId={pendingConnectMcp.callId}
-                  label={pendingConnectMcp.label}
-                  labelKey={pendingConnectMcp.labelKey}
-                  transport={pendingConnectMcp.transport}
-                  command={pendingConnectMcp.command}
-                  args={pendingConnectMcp.argv}
-                  url={pendingConnectMcp.url}
-                  envKeys={pendingConnectMcp.envKeys}
-                  prerequisites={pendingConnectMcp.prerequisites}
-                  requiresPath={pendingConnectMcp.requiresPath}
-                  pathPlaceholder={pendingConnectMcp.pathPlaceholder}
-                  onApplied={(res) => {
-                    // Secret-free confirm: server_id + tool_count only — no env
-                    // values, no client-computed tier counts (the backend
-                    // recomputes the honest tier split from the DB and emits the
-                    // mcp_connect_followup note, which clears this card).
-                    if (res.ok) {
-                      wsSend({
-                        type: 'confirm_connect_mcp',
-                        call_id: pendingConnectMcp.callId,
-                        server_id: res.serverId,
-                        tool_count: res.toolCount,
-                      });
-                    }
-                  }}
-                  onCancel={() => clearPendingConnectMcp()}
-                />
-              </div>
-            )}
+            {/* 0.1.55: every pending ask in ONE slot, queued "‹ 1 / 3 ›" (they used to
+                render into the same absolute spot and overlap). Same frames, same answers. */}
+            {activeSection === 'arslan' && <AskSlot send={wsSend} />}
 
             {activeSection === 'arslan' && (
               <div className="flex h-full min-h-0 flex-col">
@@ -865,7 +734,7 @@ export default function App() {
 
             {activeSection === 'projects' && <ProjectsSection onStart={handleStartProject} />}
             {activeSection === 'inbox' && <ProactiveInbox onOpenConversation={openInboxConversation}
-              onOpenSettings={() => { setSettingsInitialSection('proactive'); setActiveSection('settings'); }}
+              onOpenSettings={() => { setSettingsInitialSection('background'); setActiveSection('settings'); }}
               onOpenModelSettings={() => { setSettingsInitialSection('models'); setActiveSection('settings'); }} />}
             {activeSection === 'brain' && <MemorySection legacy={!restoredInit.mintedFresh} />}
             {activeSection === 'activity' && <ActivityView />}
@@ -922,15 +791,9 @@ export default function App() {
         />
       )}
 
-      {/* Transient toast (distill confirmation / failure). */}
-      {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] animate-fade-in">
-          <div className="flex items-center gap-2 px-4 py-2.5 bg-surface-raised border border-border-strong rounded-xl shadow-2xl shadow-primary/10 select-none">
-            <span className="w-1.5 h-1.5 rounded-full bg-primary" />
-            <span className="text-xs font-sans text-foreground">{toast}</span>
-          </div>
-        </div>
-      )}
+      {/* 0.1.55 surface kit: the one toast stack and the one confirm sheet. */}
+      <ToastHost />
+      <ConfirmHost />
 
     </div>
   );

@@ -56,3 +56,11 @@ async def get_island_feed(after: int = Query(0, ge=0),
                 event["title"] = names.get(event["task_id"]) or None
     feed["enabled"] = await settings_service.island_enabled(db)
     return feed
+
+
+@router.get("/about")
+async def get_about() -> dict:
+    """D2 (0.1.55): the running version and the latest release notes — for
+    Settings › About and the fresh-install check."""
+    from server.services import release_notes
+    return release_notes.about()

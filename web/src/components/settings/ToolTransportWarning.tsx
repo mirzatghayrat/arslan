@@ -46,18 +46,18 @@ export default function ToolTransportWarning(
       data-testid="tool-transport-warning"
       data-state={state}
       className={
-        "sm:col-span-2 min-w-0 rounded-lg border px-3 py-2.5 text-xs leading-relaxed " +
+        "sm:col-span-2 min-w-0 rounded-xl px-3 py-2.5 text-xs leading-relaxed " +
         // The house warning tokens (--color-warning), not raw Tailwind amber:
         // they are the pair the theme system keeps legible in both light and
         // dark, and `bg-surface-muted` — my first guess — is not a token at all
         // and would have rendered as no background whatsoever.
         (unsupported
-          ? "border-warning/40 bg-warning/10 text-warning"
-          : "border-border bg-surface-raised text-muted-foreground")
+          ? "bg-ask-soft text-ask"
+          : "bg-fill text-muted-foreground")
       }
     >
       {unsupported && (
-        <div className="font-medium mb-0.5 text-warning">
+        <div className="mb-0.5 font-semibold text-ask">
           {t("settings.tool_transport_title")}
         </div>
       )}

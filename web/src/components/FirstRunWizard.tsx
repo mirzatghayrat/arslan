@@ -35,6 +35,7 @@ import { LANGUAGE_OPTIONS, normalizeLanguage } from "../lib/languages";
 import { setFirstRunSeen } from "../lib/firstRun";
 import { useProfileStore } from "../stores/profileStore";
 import "./firstRun.css";
+import { useLayer } from "./kit";
 
 interface FirstRunWizardProps {
   llmProviders: ProviderOption[];
@@ -223,12 +224,16 @@ export default function FirstRunWizard({ llmProviders, onAdded, onClose, onLangu
   }
 
   const busy = keyState === "testing" || keyState === "saving";
+  // 0.1.55: the top layer while it is shown, so no card underneath answers to keys.
+  // Deliberately NOT closed by Esc: skipping setup is a choice made with the ×.
+  useLayer(true);
 
   return (
     // On "leaving" the WHOLE overlay fades — outro clip, glass and backdrop
     // together — revealing the live app beneath: the tail boundary is a real
     // crossfade into the product, never a fade back to the wizard + hard cut.
-    <div className={`fr-root animate-fade-in${outroPhase === "leaving" ? " fr-leaving" : ""}`}>
+    <div className={`fr-root animate-fade-in${outroPhase === "leaving" ? " fr-leaving" : ""}`}
+      role="dialog" aria-modal="true" aria-labelledby="first-run-title">
       {/* The video is the aesthetic — the frosted panel only reads as glass with
           content moving behind it. On error (asset missing, or a webview without
           h264) the poster-frame fallback stands in so the wizard still works. */}
@@ -255,6 +260,7 @@ export default function FirstRunWizard({ llmProviders, onAdded, onClose, onLangu
           onClick={dismiss}
           className="fr-x"
           title={t("firstRun.skip")}
+          aria-label={t("firstRun.skip")}
         >
           <X className="w-4 h-4" />
         </button>
@@ -263,7 +269,7 @@ export default function FirstRunWizard({ llmProviders, onAdded, onClose, onLangu
         <div className="fr-step" key={step}>
           {step === STEP_LANG && (
             <>
-              <h2 className="fr-h1">{t("firstRun.stepLanguage")}</h2>
+              <h2 id="first-run-title" className="fr-h1">{t("firstRun.stepLanguage")}</h2>
               <p className="fr-sub">{t("firstRun.stepLanguageHint")}</p>
               <div className="fr-langs">
                 {LANGUAGE_OPTIONS.map((o) => (
@@ -284,7 +290,7 @@ export default function FirstRunWizard({ llmProviders, onAdded, onClose, onLangu
 
           {step === STEP_HOW && (
             <>
-              <h2 className="fr-h1">{t("firstRun.howTitle")}</h2>
+              <h2 id="first-run-title" className="fr-h1">{t("firstRun.howTitle")}</h2>
               <span className="fr-typed">{t("firstRun.howTyped")}</span>
               <div>
                 {[1, 2, 3, 4].map((n) => (
@@ -302,7 +308,7 @@ export default function FirstRunWizard({ llmProviders, onAdded, onClose, onLangu
 
           {step === STEP_KEY && (
             <>
-              <h2 className="fr-h1">{t("firstRun.stepKey")}</h2>
+              <h2 id="first-run-title" className="fr-h1">{t("firstRun.stepKey")}</h2>
               <p className="fr-sub">{t("firstRun.stepKeyHint")}</p>
 
               <button
@@ -314,9 +320,9 @@ export default function FirstRunWizard({ llmProviders, onAdded, onClose, onLangu
               >
                 {orState === "waiting" ? t("firstRun.openrouterWaiting") : t("firstRun.openrouterSignIn")}
               </button>
-              {orState === "error" && <p className="fr-err">{orError}</p>}
+              {orState === "error" && <p className="fr-err" role="alert">{orError}</p>}
               {orState === "paid-fallback" && (
-                <p className="fr-warn">{t("firstRun.openrouterPaidFallback")}</p>
+                <p className="fr-warn" role="status">{t("firstRun.openrouterPaidFallback")}</p>
               )}
 
               <div className="fr-divider">{t("firstRun.orDivider")}</div>
@@ -376,10 +382,10 @@ export default function FirstRunWizard({ llmProviders, onAdded, onClose, onLangu
               >
                 {keyState === "testing" ? t("firstRun.testing") : t("firstRun.testSave")}
               </button>
-              {keyState === "ok" && <p className="fr-ok">{t("firstRun.testOk")}</p>}
+              {keyState === "ok" && <p className="fr-ok" role="status">{t("firstRun.testOk")}</p>}
               {keyState === "failed" && (
                 <div className="fr-shake">
-                  <p className="fr-err">{keyError}</p>
+                  <p className="fr-err" role="alert">{keyError}</p>
                   <button
                     type="button"
                     data-testid="first-run-save-anyway"
@@ -395,7 +401,7 @@ export default function FirstRunWizard({ llmProviders, onAdded, onClose, onLangu
 
           {step === STEP_HELLO && (
             <>
-              <h2 className="fr-h1 font-sans">{t("firstRun.title")}</h2>
+              <h2 id="first-run-title" className="fr-h1 font-sans">{t("firstRun.title")}</h2>
               <p className="fr-sub">{t("firstRun.welcomeBody")}</p>
               <label htmlFor="first-run-name" className="fr-label">
                 {t("firstRun.namePrompt")}

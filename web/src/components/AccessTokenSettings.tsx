@@ -21,6 +21,7 @@ import { api } from "../api/client";
 import { useAuthStore } from "../stores/authStore";
 import type { BackendStatus } from "../hooks/useBackendStatus";
 import McpTokenControl from './settings/McpTokenControl';
+import { confirmSheet } from "./kit";
 
 interface AccessTokenSettingsProps {
   /** Inbound MCP server — moved here from Advanced. It belongs beside the
@@ -85,6 +86,8 @@ export default function AccessTokenSettings({
   };
 
   const handleReset = async () => {
+    // 0.1.55: a reset breaks every paired client; it asks first.
+    if (!(await confirmSheet({ title: t("confirm.tokenTitle"), body: t("confirm.tokenBody"), action: t("confirm.reset") }))) return;
     setResetting(true);
     setResetError(false);
     try {
@@ -224,8 +227,8 @@ export default function AccessTokenSettings({
       {/* ── Inbound MCP server (relocated from Advanced) ─────────────────── */}
       <div className="mt-6 pt-6 border-t border-border/40 flex items-center justify-between gap-4">
         <div>
-          <h4 className="text-xs font-bold text-foreground font-sans">{t('settings.labelMcpServer')}</h4>
-          <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">
+          <h4 className="text-[13px] font-medium text-foreground">{t('settings.labelMcpServer')}</h4>
+          <p className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">
             {t('settings.mcpServerDesc')}
           </p>
         </div>

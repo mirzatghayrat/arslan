@@ -33,8 +33,8 @@ export default function ProactiveDiagnosisCap() {
   return (
     <div className="flex items-start justify-between gap-4" data-testid="settings-proactive-diagnosis">
       <div>
-        <h4 className="text-xs font-bold text-foreground font-sans">{t('proactive.settings.diagnosisTitle')}</h4>
-        <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">{t('proactive.settings.diagnosisDesc')}</p>
+        <h4 className="text-[13px] font-medium text-foreground">{t('proactive.settings.diagnosisTitle')}</h4>
+        <p className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">{t('proactive.settings.diagnosisDesc')}</p>
         <p className="mt-1 flex items-start gap-1.5 text-[11px] text-warning font-sans max-w-xl" data-testid="proactive-diagnosis-spend-note">
           <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-[1px]" aria-hidden />
           <span>{t('proactive.settings.diagnosisHonest')}</span>

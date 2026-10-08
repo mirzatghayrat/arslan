@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Activity, Feed, FeedEvent } from '../island/feed';
 import {
-  applyFeed, bodyTop, countdown, dismiss, hitRect, hoverEnter, hoverLeave, initialState, mood, open, setMainFocused,
+  applyFeed, bodyTop, countdown, dismiss, hitRect, hoverEnter, hoverLeave, initialState, mood, open, setFullscreen, setMainFocused, TAB_W,
   setPresence, shape, tick, COMPACT_TO_EXPAND_MS, FINISHED_MS, IDLE_COLLAPSE_MS, LEAVE_COLLAPSE_MS,
   PEEK_TO_EXPAND_MS, STEP_HISTORY, type IslandState,
 } from '../island/islandMachine';
@@ -201,7 +201,7 @@ describe('island geometry', () => {
   it('hides exactly behind the notch and grows out of it', () => {
     expect(shape(at('hidden'), notch)).toEqual({ w: 186, h: 33, r: 12 });
     expect(shape(at('compact'), notch).w).toBe(186 + 120);
-    expect(shape(at('expanded', 'overview'), notch)).toEqual({ w: 640, h: 210 + 3, r: 30 });
+    expect(shape(at('expanded', 'overview'), notch)).toEqual({ w: 640, h: 236 + 3, r: 30 });
   });
 
   it('starts the cards below a tall notch and grows the panel by the same amount', () => {
@@ -217,5 +217,47 @@ describe('island geometry', () => {
   it('takes the pointer over the shape plus its ears, centred in the window', () => {
     expect(hitRect(at('hidden'), notch, 720)).toEqual({ x: 253, y: 0, w: 214, h: 33 });
     expect(hitRect(at('hidden'), flat, 720)).toEqual({ x: 320, y: 0, w: 80, h: 22 });
+  });
+});
+
+describe('full screen (0.1.55 decision 4)', () => {
+  const waiting = (fullscreen: boolean) => setFullscreen(applyFeed(initialState(), {
+    cursor: 1, awaiting: 1, awaiting_conversations: ['c'], active: [], events: [], enabled: true,
+  }, 0), fullscreen, 0);
+
+  it('a waiting card over a full-screen app is a still tab, not the whole card', () => {
+    expect(waiting(false).mode).toBe('expanded');
+    const s = waiting(true);
+    expect(s.mode).toBe('tab');
+    expect(s.view).toBe('needsYou');
+    expect(mood(s)).toBe('approval');
+  });
+
+  it('the pointer opens the card at once; leaving folds it back after the grace', () => {
+    let s = hoverEnter(waiting(true), 100);
+    expect(s.mode).toBe('expanded');
+    s = hoverLeave(s, 200);
+    expect(tick(s, 200 + LEAVE_COLLAPSE_MS - 1).mode).toBe('expanded');
+    expect(tick(s, 200 + LEAVE_COLLAPSE_MS).mode).toBe('tab');
+  });
+
+  it('a feed poll inside the grace does not fold the card under a pointer that just left', () => {
+    const left = hoverLeave(hoverEnter(waiting(true), 100), 200);
+    const polled = applyFeed(left, { cursor: 1, awaiting: 1, awaiting_conversations: ['c'], active: [], events: [], enabled: true }, 300);
+    expect(polled.mode).toBe('expanded');
+    const later = applyFeed(left, { cursor: 1, awaiting: 1, awaiting_conversations: ['c'], active: [], events: [], enabled: true }, 200 + LEAVE_COLLAPSE_MS);
+    expect(later.mode).toBe('tab');
+  });
+
+  it('leaving full screen shows the whole card again; nothing waiting, no tab', () => {
+    expect(setFullscreen(waiting(true), false, 5).mode).toBe('expanded');
+    const quiet = setFullscreen(initialState(), true, 0);
+    expect(quiet.mode).toBe('hidden');
+  });
+
+  it('the tab is small and sits around the notch', () => {
+    const s = waiting(true);
+    expect(shape(s, { notch: true, notchWidth: 188, barHeight: 32 })).toEqual({ w: 188 + TAB_W, h: 32, r: 14 });
+    expect(shape(s, { notch: false, notchWidth: 0, barHeight: 24 })).toEqual({ w: TAB_W, h: 28, r: 14 });
   });
 });

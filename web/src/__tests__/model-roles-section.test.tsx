@@ -216,17 +216,18 @@ describe("locale coverage", () => {
 
 
 describe("the section is wired into Settings", () => {
-  it("registers a nav entry", async () => {
-    const { SETTINGS_SECTIONS } = await import("../components/settings/sectionRegistry");
-    expect(SETTINGS_SECTIONS.some((s) => s.id === "modelroles")).toBe(true);
+  it("lives on the Models page, and the old id still lands there", async () => {
+    const { SETTINGS_SECTIONS, resolveSection } = await import("../components/settings/sectionRegistry");
+    expect(SETTINGS_SECTIONS.some((s) => s.id === "models")).toBe(true);
+    expect(resolveSection("modelroles")).toBe("models");
   });
 
   it("gives every slot a home in FIELD_HOMES", async () => {
     // A section with no fields behind it is exactly what the deleted `scheduled`
     // and `usage` placeholder tabs were, and the existing field-homes guard fails
-    // on one. Five entries, one per slot.
+    // on one. Five entries, one per slot, all on the Models page.
     const { FIELD_HOMES } = await import("../components/settings/sectionRegistry");
-    const homed = Object.entries(FIELD_HOMES).filter(([, v]) => v === "modelroles");
+    const homed = Object.entries(FIELD_HOMES).filter(([k, v]) => k.startsWith("slot.") && v === "models");
     expect(homed).toHaveLength(5);
   });
 

@@ -41,6 +41,27 @@ def _resolve_data_dir() -> Path:
     return resolve_data_dir()
 
 
+def _app_version() -> str:
+    """The version this backend reports (D2, 0.1.55).
+
+    The packaged app passes its own bundle version (``ARSLAN_APP_VERSION``, set by
+    the desktop shell from tauri.conf.json at build time), so the sidecar can never
+    disagree with the app around it. A source checkout has no bundle: it reports the
+    last released version from tauri.conf.json with ``-dev``, which is the honest
+    answer for "work after that release". Before 0.1.55 this was a hard-coded
+    "0.1.0", and Arslan told users it was an old version.
+    """
+    explicit = os.environ.get("ARSLAN_APP_VERSION", "").strip()
+    if explicit:
+        return explicit
+    conf = Path(__file__).resolve().parent.parent / "desktop" / "src-tauri" / "tauri.conf.json"
+    try:
+        import json
+        return str(json.loads(conf.read_text())["version"]) + "-dev"
+    except (OSError, ValueError, KeyError):
+        return "unknown"
+
+
 def data_dir() -> Path:
     """Live-resolved root data dir for subsystems (skill_scripts, artifacts, …).
 
@@ -66,7 +87,7 @@ class Settings:
     # the token bootstrap doesn't have to re-derive it from db_path.
     data_dir: Path = Path("data")
     static_dir: str = ""
-    app_version: str = "0.1.0"
+    app_version: str = "unknown"
     attach_extract_char_limit: int = 12000
     # Deployment mode. Code default is "dev" so local zero-config still boots.
     # Release artifacts (Dockerfile / docker-compose) pin ARSLAN_ENV=prod, which
@@ -150,6 +171,7 @@ def load_settings() -> Settings:
         spawns_dir=spawns_dir,
         data_dir=data_dir,
         static_dir=static_dir,
+        app_version=_app_version(),
         attach_extract_char_limit=int(os.environ.get("ARSLAN_ATTACH_CHAR_LIMIT", "12000")),
         env=env,
         bind_host=os.environ.get("ARSLAN_BIND_HOST", "127.0.0.1"),

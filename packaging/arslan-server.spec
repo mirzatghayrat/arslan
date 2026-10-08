@@ -36,6 +36,8 @@ datas += [(os.path.join(ROOT, "server", "resources", "browser_reader_policy.cjs"
 datas += [(os.path.join(ROOT, "web", "src", "lib", "input_formats.json"), "server/resources")]
 # 0.1.53: Arslan Hands' never-list and app tiers — the helper compiles in the same file.
 datas += [(os.path.join(ROOT, "desktop", "hands", "policy.json"), "server/resources/hands")]
+# 0.1.55 (D2): the release notes, so Arslan can answer "what changed" from the app itself.
+datas += [(os.path.join(ROOT, "docs", "releases"), "server/resources/releases")]
 binaries = []
 
 # `server` is NOT in the built wheel (pyproject's hatch wheel target packages

@@ -419,3 +419,28 @@
 }
 .fr-pri:hover:not(:disabled) { opacity: 0.86; }
 .fr-pri:disabled { opacity: 0.55; }
+
+/* ── 0.1.55 S5: the surface kit's rules on the glass ──
+   One primary look (ink, never the brand orange), sentence-case labels instead of
+   tracked uppercase, readable sizes, and messages as soft notices with a role.
+   The glass, the video and the step choreography stay as they are. */
+.fr-pri, .fr-or-btn, .fr-test-btn {
+  height: 40px; padding: 0 20px; border-radius: 10px;
+  background: #1d1d1f; color: #ffffff; font-size: 14px; font-weight: 600;
+}
+.fr-or-btn, .fr-test-btn { width: 100%; }
+.fr-test-btn:hover:not(:disabled) { opacity: 0.86; }
+.fr-ghost { font-size: 13px; }
+.fr-dot.on { background: #1d1d1f; }
+.fr-field { font-size: 14px; border-radius: 10px; }
+.fr-field:focus { border-color: rgba(29, 29, 31, 0.55); box-shadow: 0 0 0 3px rgba(29, 29, 31, 0.08); }
+.fr-label { font-size: 12px; font-weight: 500; letter-spacing: normal; text-transform: none; color: #6e6a64; }
+.fr-divider { font-size: 12px; font-weight: 500; letter-spacing: normal; text-transform: none; }
+.fr-cap { font-size: 12px; }
+.fr-linklike { font-size: 12px; }
+.fr-ok, .fr-err, .fr-warn {
+  font-size: 12.5px; line-height: 1.45; margin-top: 10px; padding: 8px 11px; border-radius: 10px;
+}
+.fr-ok   { color: #1f6b2c; background: rgba(52, 199, 89, 0.12); font-weight: 500; }
+.fr-err  { color: #b3261e; background: rgba(215, 0, 21, 0.08); }
+.fr-warn { color: #8a5a00; background: rgba(245, 165, 36, 0.14); }

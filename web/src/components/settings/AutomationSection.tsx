@@ -60,10 +60,10 @@ export default function AutomationSection({
         {/* ── background curation — API-only until this round ─────────────── */}
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h4 className="text-xs font-bold text-foreground font-sans">
+            <h4 className="text-[13px] font-medium text-foreground">
               {t('settings.labelCuration')}
             </h4>
-            <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">
+            <p className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">
               {t('settings.curationDesc')}
             </p>
             {/* 🔴 Unconditional, unlike the evolution warning above, and that
@@ -82,7 +82,7 @@ export default function AutomationSection({
             type="checkbox"
             checked={curationEnabled}
             onChange={(e) => onCurationEnabledChange?.(e.target.checked)}
-            className="w-4 h-4 mt-1 shrink-0 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer"
+            className="kit-switch mt-0.5"
           />
         </div>
 
@@ -94,10 +94,10 @@ export default function AutomationSection({
             its false-positive rate is still being measured. */}
         <div className="flex items-start justify-between gap-4" data-testid="settings-research-review">
           <div>
-            <h4 className="text-xs font-bold text-foreground font-sans">
+            <h4 className="text-[13px] font-medium text-foreground">
               {t('settings.labelResearchReview')}
             </h4>
-            <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">
+            <p className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">
               {t('settings.researchReviewDesc')}
             </p>
             <p className="mt-1 flex items-start gap-1.5 text-[11px] text-warning font-sans max-w-xl"
@@ -112,7 +112,7 @@ export default function AutomationSection({
             type="checkbox"
             checked={researchReviewEnabled}
             onChange={(e) => onResearchReviewEnabledChange?.(e.target.checked)}
-            className="w-4 h-4 mt-1 shrink-0 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer"
+            className="kit-switch mt-0.5"
           />
         </div>
 
@@ -122,10 +122,10 @@ export default function AutomationSection({
         <div className="space-y-2" data-testid="settings-heartbeat">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h4 className="text-xs font-bold text-foreground font-sans">
+              <h4 className="text-[13px] font-medium text-foreground">
                 {t('settings.labelHeartbeat')}
               </h4>
-              <p className="text-[11px] text-muted-foreground font-sans mt-0.5 max-w-xl">
+              <p className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">
                 {t('settings.heartbeatDesc')}
               </p>
               <p className="mt-1 flex items-start gap-1.5 text-[11px] text-warning font-sans max-w-xl"
@@ -140,7 +140,7 @@ export default function AutomationSection({
               type="checkbox"
               checked={heartbeatEnabled}
               onChange={(e) => onHeartbeatEnabledChange?.(e.target.checked)}
-              className="w-4 h-4 mt-1 shrink-0 text-primary bg-background border-border rounded focus:ring-0 select-none cursor-pointer"
+              className="kit-switch mt-0.5"
             />
           </div>
           {heartbeatEnabled && (

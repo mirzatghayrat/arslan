@@ -415,7 +415,14 @@ class MemoryRepository:
             query = query.where(MemoryEntry.scope_kind == scope.kind, MemoryEntry.scope_id == scope.id)
         entries = (await self.db.execute(query.order_by(MemoryEntry.updated_at.desc(), MemoryEntry.id)
                                         .limit(min(max(limit, 1), 500)).offset(max(offset, 0)))).scalars().all()
-        return [await self.present(entry) for entry in entries]
+        # 0.1.55 §13: "used N times this week", counted from the turn receipts.
+        from server.services.memory_stats import usage
+        used, _totals = await usage(self.db, owner_id=owner_id)
+        return [await self.present(entry, **self._usage(used.get(entry.id))) for entry in entries]
+
+    @staticmethod
+    def _usage(seen: dict | None) -> dict:
+        return {"uses_this_week": (seen or {}).get("uses", 0), "last_used_at": (seen or {}).get("last_used_at")}
 
     async def history(self, entry_id: str, *, owner_id="local") -> list[dict]:
         entry = await self.get(entry_id, owner_id=owner_id)

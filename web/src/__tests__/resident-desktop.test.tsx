@@ -36,12 +36,12 @@ describe("Desktop settings (0.1.41 resident mode)", () => {
     expect(island).toHaveBeenCalledWith(false);
     rerender(<DesktopSection keepAwakeEnabled notificationsEnabled islandEnabled={false} onIslandChange={island} />);
     expect((screen.getByTestId("settings-island-toggle") as HTMLInputElement).checked).toBe(false);
-    expect(FIELD_HOMES["desktop.island"]).toBe("desktop");
+    expect(FIELD_HOMES["desktop.island"]).toBe("general");
   });
 
-  it("lives in its own section, not under the spend-only Automation copy", () => {
-    expect(FIELD_HOMES["desktop.keep_awake"]).toBe("desktop");
-    expect(FIELD_HOMES["desktop.notifications"]).toBe("desktop");
+  it("lives in General, not under the spend-only Background copy", () => {
+    expect(FIELD_HOMES["desktop.keep_awake"]).toBe("general");
+    expect(FIELD_HOMES["desktop.notifications"]).toBe("general");
   });
 });
 

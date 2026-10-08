@@ -34,7 +34,7 @@ _run_owners: dict[int, str] = {}
 # This is an effect classification, NOT a permission grant.
 _READ_TOOLS = frozenset({
     "web_search", "web_extract", "read_skill", "recall", "read_file", "list_dir",
-    "search_files", "list_my_tasks", "list_nodes", "list_my_capabilities", "render_chart", "task_progress", "delegate_work",
+    "search_files", "list_my_tasks", "list_nodes", "list_my_capabilities", "whats_new", "render_chart", "task_progress", "delegate_work",
 })
 _LOCAL_WRITE_TOOLS = frozenset({"write_file", "edit_file", "run_python", "render_deck", "remember", "create_skill",
                                 "start_background_work", "stop_background_work"})

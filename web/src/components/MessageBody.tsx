@@ -17,6 +17,7 @@ import { useTranslation } from 'react-i18next';
 import { Copy, Check, Download, ChevronDown, ChevronUp, Eye, X, FileCode } from 'lucide-react';
 import Markdown from './Markdown';
 import { useDismissable } from "../hooks/useDismissable";
+import { Dialog } from './kit';
 
 const LONG_CHARS = 1800;      // prose longer than this collapses in-bubble AND gets .md/.html downloads
 const COPY_MIN_CHARS = 240;   // shorter messages don't get a standalone copy row (keeps chat clean)
@@ -226,38 +227,13 @@ export function HtmlDocCard({
       )}
 
       {preview && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-6"
-          onClick={() => setPreview(false)}
-        >
-          <div
-            className="w-full max-w-4xl h-[80vh] flex flex-col bg-surface border border-border-strong rounded-xl overflow-hidden shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between px-4 py-2.5 border-b border-border bg-surface-raised">
-              <div className="flex items-center gap-2 text-[11.5px] font-mono text-muted-foreground">
-                <FileCode className="w-3.5 h-3.5 text-primary" />
-                <span>{t('msg.html_preview')}</span>
-                <span className="text-subtle-foreground">· {kb} KB</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setPreview(false)}
-                className="text-subtle-foreground hover:text-foreground transition-colors"
-                title={t('msg.close')}
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            {/* 🔒 sandbox="" → no scripts, no same-origin: untrusted HTML rendered fully isolated. */}
-            <iframe
-              title={t('msg.html_preview')}
-              srcDoc={html}
-              sandbox=""
-              className="flex-1 w-full bg-white"
-            />
-          </div>
-        </div>
+        // 0.1.55: the kit Dialog (it was a bare overlay: no role, no esc).
+        <Dialog open width={896} testId="html-preview-dialog" onClose={() => setPreview(false)} closeLabel={t('msg.close')}
+          title={<span className="flex items-center gap-2 font-mono text-[12px] font-normal text-muted-foreground">
+            <FileCode className="h-3.5 w-3.5" />{t('msg.html_preview')}<span className="text-subtle-foreground">· {kb} KB</span></span>}>
+          {/* 🔒 sandbox="" → no scripts, no same-origin: untrusted HTML rendered fully isolated. */}
+          <iframe title={t('msg.html_preview')} srcDoc={html} sandbox="" className="block h-[70vh] w-full bg-white" />
+        </Dialog>
       )}
     </div>
   );

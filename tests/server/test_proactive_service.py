@@ -444,9 +444,9 @@ async def test_dismiss_can_mute_a_whole_kind_and_unmute_undoes_it(execution_db):
 
 async def test_unread_and_high_counts_follow_the_user_reading(execution_db):
     await ingest(found(cand(1, priority="high"), cand(2)), ProactiveConfig(notify=False))
-    assert await svc.summary() == {"open": 2, "unread": 2, "high": 1}
+    assert await svc.summary() == {"open": 2, "unread": 2, "high": 1, "approvals": 0, "memory": 0}
     await svc.mark_seen([i.id for i in await rows(execution_db)])
-    assert await svc.summary() == {"open": 2, "unread": 0, "high": 0}
+    assert await svc.summary() == {"open": 2, "unread": 0, "high": 0, "approvals": 0, "memory": 0}
 
 
 async def test_list_puts_the_urgent_first_and_scopes_done_items_apart(execution_db):
@@ -651,3 +651,28 @@ async def test_every_detector_and_the_brief_produce_items_the_gate_and_the_catal
     # The same scan again finds nothing new: items dedupe, baselines moved only after storing.
     again = await svc.scan_once(now_utc=NOON + timedelta(minutes=10), now_local=NOON + timedelta(minutes=10), fetch=fetch)
     assert again["created"] == [] and len(await rows(execution_db)) == 5
+
+
+async def test_the_inbox_counts_cards_waiting_and_memory_waiting(execution_db):
+    """0.1.55 §12: the badge counts what waits for a decision, not only proactive items."""
+    import asyncio
+
+    from server.db.models import Lesson, MemoryProposal
+    from server.services import approvals
+    from server.services import proactive_service as svc
+    async with execution_db() as db:
+        db.add(MemoryProposal(kind="memory_v2", table_name="memory", reason="sensitive", status="pending"))
+        db.add(MemoryProposal(kind="merge", table_name="notes", reason="dup", status="dismissed"))
+        now = __import__("datetime").datetime.utcnow()
+        db.add(Lesson(situation="s", advice="a", polarity="do", source="detour", status="proposed",
+                      evidence={}, created_at=now, updated_at=now))
+        await db.commit()
+    approvals._reset_for_tests()
+    pending = approvals.open_card("c", {"type": "propose_schedule", "call_id": "x1"}, broadcast=False)
+    try:
+        got = await svc.summary()
+        assert (got["approvals"], got["memory"]) == (1, 2)
+    finally:
+        pending.future.cancel()
+        approvals.close_card(pending)
+        await asyncio.sleep(0)

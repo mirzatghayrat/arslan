@@ -7,6 +7,7 @@ import { activeWikilink, insertWikilink, type WikilinkToken } from "../../lib/wi
 import { useDismissable } from "../../hooks/useDismissable";
 import DiscardChangesBar from "../DiscardChangesBar";
 import { noteDirty as isNoteDirty } from "../../lib/dirty";
+import { confirmSheet } from "../kit";
 
 interface Props {
   noteId: number;
@@ -143,6 +144,9 @@ export default function NoteEditor({ noteId, onClose, onChanged, allLabels, onOp
   };
 
   const remove = async () => {
+    // 0.1.55: a note (and its links) is deleted for good; it asks first.
+    if (!(await confirmSheet({ title: tr("confirm.noteTitle"), body: tr("confirm.noteBody", { title }),
+      action: tr("confirm.delete") }))) return;
     await api.deleteNote(noteId);
     onChanged();
     onClose();
@@ -284,12 +288,14 @@ export default function NoteEditor({ noteId, onClose, onChanged, allLabels, onOp
                   data-testid="backlink"
                   onMouseEnter={() => onHover?.(`note:${b.id}`)}
                   onMouseLeave={() => onHover?.(null)}
-                  onClick={() => {
+                  onClick={() => void (async () => {
                     // 🔴 Navigating away would DISCARD unsaved edits with no prompt —
-                    // silent data loss, and the edits are the user's own typing. Ask.
-                    if (dirty && !window.confirm(tr("brain.unsaved_confirm"))) return;
+                    // silent data loss, and the edits are the user's own typing. Ask
+                    // (0.1.55: the kit's sheet, not window.confirm).
+                    if (dirty && !(await confirmSheet({ title: tr("confirm.unsavedTitle"), body: tr("confirm.unsavedBody"),
+                      action: tr("confirm.discard") }))) return;
                     onOpenNote?.(b.id, b.title);
-                  }}>
+                  })()}>
                   {b.title}
                 </button>
               ))

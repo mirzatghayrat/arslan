@@ -50,7 +50,7 @@ describe("locale parity", () => {
 // 1580 → 1589 (phone v2): sidebar.remote, sidebar.fromPhone, sidebar.glyph.{waiting,remote,working,progress,done,failed,scheduled}.
 // 1589 → 1590 (device e2e): sidebar.glyph.unfinished — a task that ended without getting it done.
 // 1590 → 1592 (0.1.53): settings.phoneComingSoon(+Desc) — the iPhone app teaser.
-  it("en locale has 1592 keys (baseline guard)", () => {
+  it("en locale has 1717 keys (baseline guard)", () => {
     // 1318 → 1335: the first-run wizard redesign — the four-beat "how it
     // works" tour (title + typed line + 4×title/body), the catalog capability
     // caption, the test-before-save states (test & save / testing / ok /
@@ -277,7 +277,14 @@ describe("locale parity", () => {
     // +1: externalLink.failed added by fe9c12b5 (native HTTPS refusal).
     // +1: chat.expert_involved (0.1.42 quiet "asked X to help" line replaces the roster notices).
     // +3: Settings › iPhone device state — Connecting… / Connected / last seen (bridge §3.3).
-    expect(enKeys).toHaveLength(1595);
+    // 1595 → 1601 (0.1.55 D1): chat.remembered, wantsToRemember, rememberedUndo/Undone/Review/Changed.
+    // 1601 → 1612 (0.1.55 S1): kit.* — the surface kit's eleven shared words.
+    // 1612 → 1630 (0.1.55 S2): kit.whoArslan, the code-derived risk line (4 + 8 effects), schedgrant cadence ×6.
+    // 1630 → 1649 (0.1.55 §12): inbox.* (9), pendingMemory.* (10).
+    // +1: inbox.addWatch.
+    // +32: confirm.* — the confirm sheets added to every destructive action (0.1.55 S3).
+    // +35: Settings in seven sections (0.1.55 §11): nav labels, one-line hints, group titles.
+    expect(enKeys).toHaveLength(1717);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

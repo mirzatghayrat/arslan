@@ -12,6 +12,7 @@ import { Smartphone, Trash2 } from "lucide-react";
 import { api } from "../../api/client";
 import type { PhoneCode, PhoneDevice, PhoneRequest, PhoneStatus } from "../../api/client.types";
 import { formatRelativeTime } from "./relativeTime";
+import { confirmSheet } from "../kit";
 
 const EMPTY: PhoneStatus = { connected: false, bridge: {}, devices: [], pending: [], code: null };
 /** How long an allowed phone shows as Connecting… before the Bridge's own list must take over. */
@@ -68,7 +69,7 @@ export default function PhoneSection({ pollMs = 3000, enabled = false, onEnabled
       <div className="flex items-start justify-between gap-4">
         <div>
           <h4 className="text-xs font-bold text-foreground">{t("settings.phoneEnable")}</h4>
-          <p className="text-[11px] text-muted-foreground mt-0.5 max-w-xl">{t("settings.phoneEnableDesc")}</p>
+          <p className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">{t("settings.phoneEnableDesc")}</p>
         </div>
         <input id="settings-phone-enabled" data-testid="settings-phone-enabled" type="checkbox" checked={enabled}
           onChange={(e) => onEnabledChange?.(e.target.checked)}
@@ -110,7 +111,10 @@ export default function PhoneSection({ pollMs = 3000, enabled = false, onEnabled
           {/* Only a phone the Bridge lists can be removed; a just-allowed one is not on its list yet. */}
           {listed.has(device.device_id) && <button type="button" aria-label={t("settings.phoneRemove")} title={t("settings.phoneRemove")} disabled={busy}
             className="text-muted-foreground hover:text-destructive disabled:opacity-50"
-            onClick={() => void act(() => api.phoneRevoke(device.device_id))}><Trash2 size={14} /></button>}
+            onClick={() => void (async () => {
+              if (await confirmSheet({ title: t("confirm.phoneTitle", { name: device.name }), body: t("confirm.phoneBody"),
+                action: t("confirm.remove") })) await act(() => api.phoneRevoke(device.device_id));
+            })()}><Trash2 size={14} /></button>}
         </div>)}
       </div>
       {error && <p role="alert" className="text-xs text-destructive">{t("settings.phoneError")}</p>}

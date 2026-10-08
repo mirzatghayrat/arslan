@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Copy, Check, KeyRound, Trash2 } from "lucide-react";
 import { api } from "../../api/client";
+import { confirmSheet } from "../kit";
 
 export default function SshIdentityPanel() {
   const { t } = useTranslation();
@@ -42,6 +43,7 @@ export default function SshIdentityPanel() {
   };
 
   const forget = async () => {
+    if (!(await confirmSheet({ title: t("confirm.sshIdentityTitle"), body: t("confirm.sshIdentityBody"), action: t("confirm.forget") }))) return;
     setBusy(true);
     try {
       setPublicKey((await api.deleteSshIdentity()).public_key);

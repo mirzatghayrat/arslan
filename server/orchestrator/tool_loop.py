@@ -1866,6 +1866,7 @@ def _learn_after(kwargs: dict, facts: dict, result: dict) -> None:
         return
     from server.services import lessons, personal_context
     ctx = personal_context.current()
+    lessons.note_turn(kwargs.get("conversation_id"), list(facts.get("tool_trace") or []))
     lessons.later(lessons.after_turn(
         conversation_id=kwargs.get("conversation_id"), user_request=(ctx.query if ctx else "") or "",
         trace=list(facts.get("tool_trace") or []), external_seen=bool(result.get("external_seen")),

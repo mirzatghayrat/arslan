@@ -10,6 +10,7 @@
  */
 import { useTranslation } from 'react-i18next';
 
+import { Notice } from '../kit';
 import { VERDICT_COPY_KEY, cryptoNoticeTone, needsCryptoNotice, type CryptoHealth } from '../../lib/cryptoHealth';
 
 export default function CryptoHealthNotice({ health }: { health: CryptoHealth | null }) {
@@ -17,27 +18,16 @@ export default function CryptoHealthNotice({ health }: { health: CryptoHealth | 
   if (!needsCryptoNotice(health) || !health) return null;
 
   const tone = cryptoNoticeTone(health.verdict);
-  const border = tone === 'danger' ? 'border-danger/40 bg-danger/10' : 'border-warning/40 bg-warning/10';
-  const text = tone === 'danger' ? 'text-danger' : 'text-warning';
-
+  // 0.1.55: the kit's Notice; still role="status" (a standing property, see above).
   return (
-    <div
-      role="status"
-      data-testid="crypto-health-notice"
-      data-verdict={health.verdict}
-      className={`rounded-xl border ${border} px-3 py-2.5 space-y-1`}
-    >
-      <p className={`text-[10.5px] font-mono font-semibold uppercase tracking-wide ${text}`}>
-        {t('settings.cryptoHealthTitle')}
-      </p>
-      <p className={`text-[11px] font-sans leading-relaxed ${text}`}>
-        {t(`settings.${VERDICT_COPY_KEY[health.verdict]}`)}
-      </p>
+    <Notice tone={tone === 'danger' ? 'error' : 'warn'} role="status" testId="crypto-health-notice"
+      attrs={{ 'data-verdict': health.verdict }} title={t('settings.cryptoHealthTitle')}>
+      {t(`settings.${VERDICT_COPY_KEY[health.verdict]}`)}
       {/* The count, so "some of your keys" is a number rather than a feeling. */}
-      <p className="text-[10px] font-mono text-subtle-foreground">
+      <span className="mt-1 block font-mono text-[11px] text-subtle-foreground">
         {t('settings.cryptoHealthCount')}: {health.undecryptable}
         {health.recoverable > 0 ? ` · ${t('settings.cryptoHealthRecoverableCount')}: ${health.recoverable}` : ''}
-      </p>
-    </div>
+      </span>
+    </Notice>
   );
 }
