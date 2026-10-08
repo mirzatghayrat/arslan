@@ -1,5 +1,5 @@
 <section class="chapter" id="runtime"><h2><span class="num">06 / 実行ランタイム</span>一つの依頼に、過程と境界と結果を持たせる</h2>
-<p>Arslan の実行コアは、ユーザーの意図を観察可能な一連の動作へ変えます。コンテキストを準備し、モデルを呼び出し、ツールの要求を検証し、許可された操作を実行し、実際の結果を読んで、続行するか成果を届けるかを判断します。v0.1.55 の既定の入口は統一ループで、<code>EXPERTS_ENABLED=False</code>です。メッセージは直接回答処理に入り、長期的な事実の抽出は回答後に行います。過去の専門家システムの互換コードは残っていますが、現在の主要経路では、最初にモデルによるルーティングを行いません。</p>
+<p>Arslan の実行コアは、ユーザーの意図を観察可能な一連の動作へ変えます。コンテキストを準備し、モデルを呼び出し、ツールの要求を検証し、許可された操作を実行し、実際の結果を読んで、続行するか成果を届けるかを判断します。v0.1.56 の既定の入口は統一ループで、<code>EXPERTS_ENABLED=False</code>です。メッセージは直接回答処理に入り、長期的な事実の抽出は回答後に行います。過去の専門家システムの互換コードは残っていますが、現在の主要経路では、最初にモデルによるルーティングを行いません。</p>
 <div class="flow"><div class="flow-step"><b>タスクを作る</b><span>会話、ワークスペース、権限を関連付ける</span></div><div class="flow-step"><b>入力を準備する</b><span>履歴、記憶、資料、利用可能なツール</span></div><div class="flow-step"><b>モデルが判断する</b><span>ツールを要求するか、回答を生成する</span></div><div class="flow-step"><b>実際に実行する</b><span>検証、許可、記録、結果の返却</span></div><div class="flow-step"><b>成果を確認する</b><span>合意した条件、証拠、成果物を照合する</span></div></div>
 <p class="evidence">ソース：{{source:server/orchestrator/arslan.py|メッセージの入口とコンテキストの構成}}；{{source:server/services/task_context.py|信頼できるタスクコンテキスト}}；{{source:server/orchestrator/tool_loop.py|統一ツールループ}}。</p>
 
@@ -39,7 +39,7 @@
 
 <h3>入口を統一しながら、モデルのプロトコルの違いを保つ</h3>
 <p><code>LLMAdapter</code> が統一された呼び出しインターフェースを提供し、各 Provider がリクエスト形式、ストリーミングイベント、ツール呼び出し、usage を扱います。Provider の実装は <code>httpx</code> で HTTP リクエストを送信します。OpenAI 互換エンドポイントにはローカルモデルサービスも設定できます。クラウドモデルを選んだ場合、対応するリクエストのコンテキストは、ユーザーが設定した提供者へ送られます。</p>
-<div class="table-wrap"><table><thead><tr><th>プロトコルの経路</th><th>v0.1.55 での処理</th></tr></thead><tbody><tr><td>OpenAI 互換</td><td>native trajectory に対応します。assistant のツール呼び出し、呼び出し ID、tool result を、ネイティブなメッセージ履歴として構成します。特定のプロトコル拒否が発生すると、限定的なフォールバックが行われる場合があります。</td></tr><tr><td>Anthropic</td><td>この Provider の既存のメッセージとツール結果の構成経路を使います。OpenAI 経路の native trajectory の能力フラグは有効にしていません。</td></tr><tr><td>Gemini</td><td>独自のツール呼び出しと履歴の表現を保ち、提供者側で必要な継続情報を維持します。各社のストリーミング機能を、完全に同じものとして扱うことはできません。</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>プロトコルの経路</th><th>v0.1.56 での処理</th></tr></thead><tbody><tr><td>OpenAI 互換</td><td>native trajectory に対応します。assistant のツール呼び出し、呼び出し ID、tool result を、ネイティブなメッセージ履歴として構成します。特定のプロトコル拒否が発生すると、限定的なフォールバックが行われる場合があります。</td></tr><tr><td>Anthropic</td><td>この Provider の既存のメッセージとツール結果の構成経路を使います。OpenAI 経路の native trajectory の能力フラグは有効にしていません。</td></tr><tr><td>Gemini</td><td>独自のツール呼び出しと履歴の表現を保ち、提供者側で必要な継続情報を維持します。各社のストリーミング機能を、完全に同じものとして扱うことはできません。</td></tr></tbody></table></div>
 <p><em>Trajectory</em> はループ内の構造化された実行軌跡であり、「どの呼び出しがどの結果を生んだか」という関係を保持します。内部の記録を統一しながら、各提供者がそれぞれのプロトコルを使えるため、ツールとのやり取りを照合しにくい一続きの通常テキストに押し込めずに済みます。</p>
 <p class="evidence">ソース：{{source:arslan/llm/adapter.py|モデルの共通インターフェース}}；{{source:arslan/llm/trajectory.py|軌跡のデータ構造}}；{{source:arslan/llm/providers/base.py|Provider の能力に関する契約}}；{{source:docs/companion/0.1.49-execution-layer.md|実行層の変更説明}}。</p>
 
@@ -64,4 +64,8 @@
 <p>プロセス再起動後、終了していない実行は中断として識別され、ユーザーが明示的に続行します。外部へ送信済みでも応答を受け取れていない操作は、効果が不明です。直接再送せず、先に照合する必要があります。バックアップからの復元では、古い操作許可を失効させ、関連する操作を不確定として記録します。チェックポイントが解決するのは「どこから安全に続けられるか」であり、すでに生じた外部の結果を取り消すものではありません。</p>
 <p>停止にも二つの層があります。実行レジストリは待機中または実行中の非同期処理をキャンセルし、永続化された状態は遅れて届く結果の反映を阻止します。外部システムがすでに受け付けた要求について、ローカルの待機をキャンセルしても、相手側が未実行であるとは証明できません。そのため、操作テーブルでは、準備中、開始済み、確認済み、失敗、効果不明、キャンセル済みなどの状態を区別します。復旧処理はまずそれらを確認し、どの手順を再試行できるかを判断します。</p>
 <p class="evidence">ソース：{{source:arslan/companion/contracts.py|タスクと受け入れ確認の契約}}；{{source:server/services/task_repository.py|永続化された状態と並行更新の検査}}；{{source:server/services/task_validation.py|成果物の検証}}；{{source:server/services/task_service.py|実行と明示的な続行}}；{{source:server/services/run_registry.py|接続と実行の分離}}；{{source:server/services/task_restore.py|バックアップ復元の境界}}。</p>
+<h3>プロジェクト：ボード、レベル、証拠を必要とするチェックポイント</h3>
+<p>0.1.56 以降、プロジェクトはレベルの計画を持ちます。各レベルには明確な達成条件と、いくつかのチェックポイントがあります。種類（ゲーム、アプリ、ウェブサイト、リサーチ、執筆、動画、スキル、旅行、仕事、その他）を選ぶと、モデルを呼び出さずにテンプレートからレベルの下書きが作られます。「Let Arslan refine」を使うと、ユーザー自身のモデルを 1 回だけ呼び出し、ゴールに合わせてレベルを調整します。ユーザーがプロジェクトを作成するまで、何も保存されません。ボードの列（Idea、Shaping、Doing、Done）は現在のレベルから導かれるもので、ドラッグで動かすことはありません。Done と Dropped を設定できるのはユーザーだけです。</p>
+<p>Arslan が計画を進めるのは、示せる証拠があるときだけで、対象も現在のレベルに限られます。ファイルを指定したチェックポイントは、そのファイルがプロジェクトフォルダーに現れた時点でチェックが付きます。ユーザー自身の発言の後には、判定役（judge）がそのメッセージが何かの完了を伝えているかを確かめます。プロジェクトの引き継ぎから始めたバックグラウンドジョブは、完了状態で終わったときに対応するチェックポイントにチェックを付けます。小さなチェックは取り消せます。レベルのクリアはカード上の提案として示され、通知や Inbox の項目にはなりません。Arslan が自分でレベルを進めてよいか一度だけ尋ねるのは、10 回続けて推測が正しかった後に限られます。学習した計画のルール、ユーザーのペース、「停滞」のヒントはローカルにとどまり、モデルに届くのはユーザーが自分で始めた下書き作成の要求の中だけです。</p>
+<p class="evidence">ソース：{{source:server/services/project_plan.py|レベル、ボード、提案}}；{{source:server/services/project_evidence.py|ファイル、ユーザーの発言、実行}}；{{source:server/services/project_templates.py|レベルのテンプレート}}；{{source:server/services/project_habits.py|計画のルール、ペース、停滞}}。</p>
 </section>
