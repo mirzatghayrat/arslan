@@ -1,5 +1,5 @@
 <section class="chapter" id="runtime"><h2><span class="num">06 / 执行运行时</span>让一次请求有过程、有边界、有结果</h2>
-<p>Arslan 的执行核心负责把用户意图变成一连串可观察的动作：准备上下文、调用模型、校验工具请求、执行获准的操作、读取真实结果，再决定继续还是交付。v0.1.53 的默认入口采用统一循环，<code>EXPERTS_ENABLED=False</code>；消息直接进入答复流程，长期事实的提取放在答复之后。历史专家系统仍留有兼容代码，当前主流程不再先经过一次模型路由。</p>
+<p>Arslan 的执行核心负责把用户意图变成一连串可观察的动作：准备上下文、调用模型、校验工具请求、执行获准的操作、读取真实结果，再决定继续还是交付。v0.1.54 的默认入口采用统一循环，<code>EXPERTS_ENABLED=False</code>；消息直接进入答复流程，长期事实的提取放在答复之后。历史专家系统仍留有兼容代码，当前主流程不再先经过一次模型路由。</p>
 <div class="flow"><div class="flow-step"><b>建立任务</b><span>绑定会话、工作区与权限</span></div><div class="flow-step"><b>准备输入</b><span>历史、记忆、资料和可用工具</span></div><div class="flow-step"><b>模型决策</b><span>请求工具，或生成答复</span></div><div class="flow-step"><b>真实执行</b><span>校验、授权、记录与结果回流</span></div><div class="flow-step"><b>检查交付</b><span>核对约定、证据和产物</span></div></div>
 <p class="evidence">源码：{{source:server/orchestrator/arslan.py|消息入口与上下文组装}}；{{source:server/services/task_context.py|可信任务上下文}}；{{source:server/orchestrator/tool_loop.py|统一工具循环}}。</p>
 
@@ -39,7 +39,7 @@
 
 <h3>统一入口之下保留模型协议差异</h3>
 <p><code>LLMAdapter</code> 提供统一调用接口，具体 Provider 处理请求格式、流式事件、工具调用与 usage。Provider 实现通过 <code>httpx</code> 发送 HTTP 请求；OpenAI 兼容端点也可配置为本地模型服务。选择云端模型时，对应请求上下文会发往用户配置的供应商。</p>
-<div class="table-wrap"><table><thead><tr><th>协议路径</th><th>v0.1.53 的实际处理</th></tr></thead><tbody><tr><td>OpenAI 兼容</td><td>支持 native trajectory：将 assistant 工具调用、调用 ID 和 tool result 渲染为原生消息历史；特定协议拒绝可触发有限降级。</td></tr><tr><td>Anthropic</td><td>使用该 Provider 既有的消息与工具结果渲染路径，没有启用 OpenAI 路径的 native trajectory 能力标记。</td></tr><tr><td>Gemini</td><td>保留自身的工具调用与历史表示，并维护所需的供应商续接信息；不能把各家流式能力视作完全相同。</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>协议路径</th><th>v0.1.54 的实际处理</th></tr></thead><tbody><tr><td>OpenAI 兼容</td><td>支持 native trajectory：将 assistant 工具调用、调用 ID 和 tool result 渲染为原生消息历史；特定协议拒绝可触发有限降级。</td></tr><tr><td>Anthropic</td><td>使用该 Provider 既有的消息与工具结果渲染路径，没有启用 OpenAI 路径的 native trajectory 能力标记。</td></tr><tr><td>Gemini</td><td>保留自身的工具调用与历史表示，并维护所需的供应商续接信息；不能把各家流式能力视作完全相同。</td></tr></tbody></table></div>
 <p><em>Trajectory</em> 是循环中的结构化轨迹，作用是保留“哪个调用产生了哪个结果”的关系。它使内部记录统一，同时允许不同供应商使用各自协议，避免把工具交互压成一段难以核对的普通文本。</p>
 <p class="evidence">源码：{{source:arslan/llm/adapter.py|模型门面}}；{{source:arslan/llm/trajectory.py|轨迹数据结构}}；{{source:arslan/llm/providers/base.py|Provider 能力约定}}；{{source:docs/companion/0.1.49-execution-layer.md|执行层变更说明}}。</p>
 

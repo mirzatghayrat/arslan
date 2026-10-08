@@ -37,3 +37,4 @@ python3 docs-site/build.py
 - Drafted in Chinese by Codex on 2026-10-07 (17 chapters, baseline v0.1.53).
 - Audited claim by claim against `efc1c271` and restyled to match the site on 2026-10-08.
 - Translated to English on 2026-10-08; English became the default.
+- Updated to v0.1.54 (`ebf438dc`) on 2026-10-08: terminal gate, Bridge pairing/Touch ID, delivery evidence, version row.

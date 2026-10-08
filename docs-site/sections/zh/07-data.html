@@ -50,7 +50,7 @@
 <p>备份里的其余记忆也不会立即恢复全部使用许可：恢复处理会将其隔离待审，收紧使用策略，清掉缓存上下文，停用全部定时任务，并收回会话级的云端与敏感许可、归档进行中的项目。恢复数据与重新批准使用数据分开完成，避免旧会话许可在新的运行环境中静默生效。</p>
 
 <h3>迁移先完成，应用再开始使用数据</h3>
-<p>当前数据库升级使用显式迁移 runner：检查 schema 版本、准备升级备份、创建缺少的表、按顺序执行待运行迁移，然后处理密钥兼容和记忆 v2 激活。未知或过新的 schema 会被拒绝，避免较旧程序盲目修改较新数据。v0.1.53 的显式登记已到 <code>0061</code>；早期 Alembic 历史不应当作当前运行机制。</p>
+<p>当前数据库升级使用显式迁移 runner：检查 schema 版本、准备升级备份、创建缺少的表、按顺序执行待运行迁移，然后处理密钥兼容和记忆 v2 激活。未知或过新的 schema 会被拒绝，避免较旧程序盲目修改较新数据。v0.1.54 的显式登记已到 <code>0061</code>；早期 Alembic 历史不应当作当前运行机制。</p>
 <p>记忆 v2 激活时，旧事实与学习表改名为 legacy 表并加只读触发器，兼容视图将旧读入口映射到新结构，全文索引也在这一过程中建立。模型 API 密钥、MCP 环境变量与 OAuth 令牌、SSH 密钥等秘密字段使用 Fernet 字段级加密（PBKDF2 + 每次安装独立的盐值）；普通会话和任务表并未因此变成整库加密。持久化、秘密保护与备份恢复各有具体边界。</p>
 <p class="evidence">源码：{{source:server/services/memory_repository.py|记忆删除与版本}}；{{source:server/services/memory_deletion_ledger.py|删除账本}}；{{source:server/services/memory_deletion_manifest.py|恢复前删除核对}}；{{source:server/services/backup.py|备份恢复协调}}；{{source:server/services/memory_restore.py|恢复数据隔离}}；{{source:server/services/storage_boot.py|存储启动顺序}}；{{source:server/db/migrations/runner.py|显式迁移}}；{{source:server/services/memory_activation.py|记忆结构激活}}；{{source:server/crypto.py|密钥字段保护}}。</p>
 </section>

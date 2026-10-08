@@ -1,7 +1,7 @@
-<section class="chapter" id="versions"><h2><span class="num">16 / 版本附录</span>从 0.1.0 到 0.1.53 的完整变化记录</h2>
-<p>本附录覆盖 v0.1.0–v0.1.53 共 54 个稳定格式版本标签，以及 0.1.40 的预览支线。以 2026 年 10 月 7 日核对的公开发布记录为准，GitHub 当前可见 <strong>53 个正式 Release 和 3 个预发布 Release，共 56 个</strong>。v0.1.39 有版本标签，但当前没有对应公开 Release。</p>
-<p>最新正式版 v0.1.53 发表于北京时间 <strong>2026 年 10 月 6 日 01:58:22</strong>；原始 UTC 时间是 10 月 5 日 17:58:22。下表统一使用北京时间的日期。除明确标出的 v0.1.39 标签日期外，日期均来自 Release 的 <code>published_at</code>，不以提交日期代替发布日期。</p>
-<div class="note"><strong>版本变化不等于当前能力的累加。</strong>表格描述各版当时的变化。专家编排在 0.1.44–0.1.48 退役，旧专家方法可以转为 Skill；0.1.32 的独立朗读开关也在 0.1.48 移除。判断当前行为，应以 0.1.53 的实现与明确标注的限制为准。</div>
+<section class="chapter" id="versions"><h2><span class="num">16 / 版本附录</span>从 0.1.0 到 0.1.54 的完整变化记录</h2>
+<p>本附录覆盖 v0.1.0–v0.1.54 共 55 个稳定格式版本标签，以及 0.1.40 的预览支线。以 2026 年 10 月 8 日核对的公开发布记录为准，GitHub 当前可见 <strong>54 个正式 Release 和 3 个预发布 Release，共 57 个</strong>。v0.1.39 有版本标签，但当前没有对应公开 Release。</p>
+<p>最新正式版 v0.1.54 发表于北京时间 <strong>2026 年 10 月 8 日 03:21:14</strong>；原始 UTC 时间是 10 月 7 日 19:21:14。下表统一使用北京时间的日期。除明确标出的 v0.1.39 标签日期外，日期均来自 Release 的 <code>published_at</code>，不以提交日期代替发布日期。</p>
+<div class="note"><strong>版本变化不等于当前能力的累加。</strong>表格描述各版当时的变化。专家编排在 0.1.44–0.1.48 退役，旧专家方法可以转为 Skill；0.1.32 的独立朗读开关也在 0.1.48 移除。判断当前行为，应以 0.1.54 的实现与明确标注的限制为准。</div>
 <label class="search-row screen-only" for="version-search"><input id="version-search" type="search" aria-label="搜索版本或更新关键词" placeholder="搜索版本或关键词，例如：OCR、记忆、沙箱" autocomplete="off"><span id="version-count" aria-live="polite"></span></label>
 <div class="table-wrap"><table id="version-table"><thead><tr><th>版本</th><th>北京时间</th><th>发布状态</th><th>主要变化</th></tr></thead><tbody>
 <tr data-version="v0.1.0"><th><a href="https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.0">v0.1.0</a></th><td>2026-07-27</td><td>正式发布</td><td><strong>首个桌面安装版</strong><br>把此前的 Meta-Agent、记忆、工具和研究能力打包为 Tauri 桌面应用；Python 后端以 PyInstaller sidecar 随应用发布，建立签名、公证、安装验收和自动更新产物。</td></tr>
@@ -58,6 +58,7 @@
 <tr data-version="v0.1.51"><th><a href="https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.51">v0.1.51</a></th><td>2026-10-03</td><td>正式发布</td><td><strong>刘海岛与命令沙箱</strong><br>Island 在刘海处显示任务与进度，悬停可看计划，需要确认时自动展开，并提示完成或已停止；run_command 默认限制写入工作目录/临时/缓存，保护 key 文件，越界需用户授权。</td></tr>
 <tr data-version="v0.1.52"><th><a href="https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.52">v0.1.52</a></th><td>2026-10-03</td><td>正式发布</td><td><strong>记忆真正进入模型</strong><br>“关于你”与“Arslan 对这台 Mac 的备注”两组条目常驻上下文；可搜过去对话；纠正和成功替代路线形成可撤销 learned practices；普通沙箱脚本少打扰。</td></tr>
 <tr data-version="v0.1.53"><th><a href="https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.53">v0.1.53</a></th><td>2026-10-06</td><td>正式发布</td><td><strong>Arslan Hands 与 iPhone Mac 端</strong><br>以独立 macOS helper 持有 Accessibility 权限，读取 AX 树并操作 Mac 应用；按应用授权、敏感动作逐次确认、可停止与追踪。Mac 侧 Bridge 纳入，iPhone App 标注即将上线。</td></tr>
+<tr data-version="v0.1.54"><th><a href="https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.54">v0.1.54</a></th><td>2026-10-08</td><td>正式发布</td><td><strong>为 iPhone 版就绪，终端闸门更严</strong><br>Touch ID 审批生效；同一台 iPhone 重新配对替换旧条目；移除手机会删除 iCloud 中留给它的消息；设置显示正在连接…/已连接。终端闸门检查命令链中的每一条，“不再询问”须覆盖命中的全部规则，访问 token 只给已持有它的调用方，后台任务保持在沙箱内。iPhone App 仍标注即将上架。</td></tr>
 </tbody></table></div>
 <h3>0.1.40 的预览支线：编号存在不代表已经发布</h3>
 <p>公开预发布版是 beta.3、beta.5 和 beta.6。beta.1、beta.2 保留候选标签与相关记录；beta.4 未单独发布，改动并入 beta.5。不能把六个编号理解为六次面向用户的公开预发布。</p>

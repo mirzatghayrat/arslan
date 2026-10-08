@@ -22,6 +22,6 @@
 <h3>九月末到十月：收敛为一条执行循环</h3>
 <p>早期设计把专家作为长期存在的角色，用户和系统都需要处理选择、邀请与路由。0.1.44 停止创建和调度专家，旧专家的方法可以转为 Skill；0.1.46 停止已无消费路径的专家后台演化；0.1.48 移除前置 router，每条消息直接进入 Agent 循环。发布说明指出，某些“我不能做”的固定回答来自路由判断，而不是实际能力。这次收敛把工具选择放回拥有真实工具和状态的执行过程。</p>
 <p>收敛后，改进集中到共同的执行层：0.1.49 完善原生工具协议、截断与失败恢复；0.1.50 增加当前工作状态、计划与替代路线；0.1.51 增加命令沙箱和 Island；0.1.52 让用户记忆与 learned practices 进入后续工作。这里的“学习”是保存和使用可管理的经验，不是更新基础模型权重。</p>
-<p>0.1.53 进一步通过独立 Hands helper 读取辅助功能树、操作 Mac 应用，并纳入 Mac 侧 iPhone Bridge。旧的专家编排已经属于历史，辅助功能操作也不能外推为所有应用都可靠可控。当前版本仍以可见的状态、明确的权限和可检查的结果，约束模型能够实际完成的工作。</p>
+<p>0.1.53 进一步通过独立 Hands helper 读取辅助功能树、操作 Mac 应用，并纳入 Mac 侧 iPhone Bridge。0.1.54 为 iPhone App 补齐这一 Mac 侧（Touch ID 审批、一台手机一个条目、移除手机后清理），并补上终端闸门的四处缺口，每一处都只会多问、不会少问。旧的专家编排已经属于历史，辅助功能操作也不能外推为所有应用都可靠可控。当前版本仍以可见的状态、明确的权限和可检查的结果，约束模型能够实际完成的工作。</p>
 <p class="evidence"><a href="https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.38">可靠性基础</a>；<a href="https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.40">稳定研究助手的范围</a>；<a href="https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.42">后台工作</a>；<a href="https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.48">统一 Agent 循环</a>；<a href="https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.53">Hands 与 Bridge</a>。</p>
 </section>
