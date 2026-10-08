@@ -356,3 +356,59 @@ async def test_a_rate_limited_github_is_noted_not_hidden(net, monkeypatch):
     monkeypatch.setattr(github_eval, "search_repos", limited)
     result = await cs.search("excel", words=["excel"])
     assert result["notes"] == ["github_unavailable"]
+
+
+def test_something_arslan_can_install_comes_before_a_more_starred_library():
+    lib = cs.Candidate(id="lib", kind="project", name="excel-lib", summary="", source="github", source_url=None,
+                       repo="a/excel-lib", stars=5000, license={"spdx": "MIT", "read_from": "x", "verdict": "usable"})
+    server = cs.Candidate(id="srv", kind="mcp", name="excel-server", summary="", source="registry", source_url=None,
+                          repo="b/excel-server", stars=10, runtime="uv",
+                          license={"spdx": "MIT", "read_from": "x", "verdict": "usable"})
+    assert [c.id for c in cs.rank([lib, server], ["excel"])] == ["srv", "lib"]
+
+
+async def test_a_repository_not_in_the_registry_is_asked_about_once(net):
+    GITHUB_SEARCH["items"].append({"full_name": "zed/excel-mcp-x", "html_url": "https://github.com/zed/excel-mcp-x",
+                                   "stargazers_count": 70, "license": {"spdx_id": "MIT"},
+                                   "pushed_at": "2026-09-01T00:00:00Z", "description": "Excel MCP", "topics": ["mcp"]})
+    try:
+        await cs.search("excel", words=["excel"], kinds={"mcp"})
+        asked = [u for u in net.calls if "zed%2Fexcel-mcp-x" in u]
+        cs._cache.pop("gh:excel", None)
+        cs._cache.pop("gh:excel mcp", None)                       # GitHub asked again, the registry answer kept
+        await cs.search("excel", words=["excel"], kinds={"mcp"})
+        assert len(asked) == 1 and len([u for u in net.calls if "zed%2Fexcel-mcp-x" in u]) == 1
+    finally:
+        GITHUB_SEARCH["items"].pop()
+
+
+async def test_many_registry_entries_are_enriched_in_searches_of_limited_length(monkeypatch):
+    cs.clear_cache()
+    queries = []
+
+    async def search_repos(q):
+        queries.append(q)
+        return []
+    monkeypatch.setattr(github_eval, "search_repos", search_repos)
+    cands = [cs.Candidate(id=f"r{i}", kind="mcp", name=f"n{i}", summary="", source="registry", source_url=None,
+                          repo=f"some-owner-{i:02}/some-fairly-long-repository-{i:02}") for i in range(10)]
+    await cs.enrich_batch(cands)
+    assert len(queries) == 3                                    # at most three searches, never one per repository
+    assert all(len(q) <= 240 for q in queries)
+    assert sum(q.count("repo:") for q in queries) <= 10
+
+
+async def test_the_registry_is_asked_for_latest_versions_and_github_also_for_mcp_servers(net):
+    await cs.search("excel", words=["excel"], kinds={"mcp"})
+    reg = [u for u in net.calls if "registry.modelcontextprotocol.io/v0/servers?" in u]
+    assert reg and all("version=latest" in u for u in reg)               # ≈19 s instead of a timeout (measured)
+    gh = [u for u in net.calls if "/search/repositories" in u and "repo%3A" not in u]
+    assert any("q=excel+mcp" in u for u in gh)                           # the MCP-shaped GitHub query
+
+
+async def test_a_failed_name_lookup_is_not_reported_as_the_registry_being_down(net, monkeypatch):
+    async def broken(client, repo):
+        raise httpx.ConnectError("down")
+    monkeypatch.setattr(cs, "lookup_registry", broken)
+    result = await cs.search("excel", words=["excel"], kinds={"mcp"})
+    assert result["notes"] == []
