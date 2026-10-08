@@ -27,7 +27,7 @@ from pathlib import Path
 
 from scripts.hands_harness import cases as C
 from scripts.hands_harness import oracles
-from scripts.hands_harness.engines import AgentDesktop, Cua, Hands
+from scripts.hands_harness.engines import AgentDesktop, Arc, Cua, Hands
 from scripts.hands_harness.observer import Observer
 
 HERE = Path(__file__).resolve().parent
@@ -176,6 +176,7 @@ def main() -> int:
     try:
         if not fixture.wait(lambda s: "title" in s, timeout=10):
             sys.exit("the fixture did not start")
+        time.sleep(3)          # its window's accessibility tree is not ready at once (arc: measured)
         hands = start_hands(args.hands_app)
         typist = None
         if args.typist:
@@ -185,7 +186,12 @@ def main() -> int:
         ignore = engine_pids()
         results: list[C.Result] = []
         for engine_name in [e.strip() for e in args.engines.split(",") if e.strip()]:
-            engine = AgentDesktop(hands, FIXTURE_NAME) if engine_name == "agent-desktop" else Cua(hands, FIXTURE_NAME)
+            if engine_name == "arc":
+                engine = Arc(os.environ["ARC_CUA"], FIXTURE_NAME)
+            elif engine_name == "agent-desktop":
+                engine = AgentDesktop(hands, FIXTURE_NAME)
+            else:
+                engine = Cua(hands, FIXTURE_NAME)
             for run in range(args.runs):
                 for name in [c.strip() for c in args.cases.split(",") if c.strip()]:
                     ctx = C.Ctx(engine=engine, fixture=fixture, observe=lambda: Observer(ignore | engine_pids()),
