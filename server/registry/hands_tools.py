@@ -267,6 +267,30 @@ class MacAppleScriptExecutor:
 
 _VERBS = {"click": "clicking", "set_value": "typing in", "type": "typing in", "select": "choosing in",
           "scroll": "scrolling", "press": "pressing"}
+# P0 D6: the cursor label is on the user's screen, so it speaks the UI language.
+_LABEL_VERBS = {
+    "en": _VERBS,
+    "zh": {"click": "点击", "set_value": "输入", "type": "输入", "select": "选择", "scroll": "滚动", "press": "按键"},
+    "ja": {"click": "クリック", "set_value": "入力", "type": "入力", "select": "選択", "scroll": "スクロール",
+           "press": "キー操作"},
+    "de": {"click": "klickt", "set_value": "schreibt in", "type": "schreibt in", "select": "wählt in",
+           "scroll": "scrollt", "press": "drückt"},
+    "es": {"click": "haciendo clic", "set_value": "escribiendo en", "type": "escribiendo en",
+           "select": "eligiendo en", "scroll": "desplazando", "press": "pulsando"},
+    "fr": {"click": "clique", "set_value": "écrit dans", "type": "écrit dans", "select": "choisit dans",
+           "scroll": "fait défiler", "press": "appuie"},
+}
+
+
+async def _label_verb(op: str) -> str:
+    from server.services import runtime_messages
+    try:
+        locale = await runtime_messages.selected_locale()
+    except Exception:  # noqa: BLE001 — a label must never stop an action
+        locale = "en"
+    return _LABEL_VERBS.get(locale, _VERBS).get(op, _VERBS.get(op, op))
+
+
 _ASKS = {"click": "click", "set_value": "type into", "select": "choose", "scroll": "scroll", "press": "press"}
 # What each limited tier may still do (Hands enforces the same; checked here first
 # so the user is never asked to allow something Hands would refuse anyway).
@@ -460,6 +484,7 @@ class DesktopLookExecutor:
                         "error": f"The user did not allow looking at {app['name']}. Do not retry; ask them."}
             hands_service.allow_look(conversation_id, bundle)
         call = {"app": app["name"]}
+        not_seen = ""
         if isinstance(args.get("window"), str) and args["window"].strip():
             window = await _window_id(app["name"], args["window"], job_id)
             if window is None:
@@ -472,6 +497,9 @@ class DesktopLookExecutor:
                                   job_id=job_id)
             if not waited.ok and waited.code != "TIMEOUT":
                 return _failed(waited, app=app["name"])
+            if not waited.ok:      # P0 D4: say so; the look below is of a window without it
+                not_seen = (f"“{args['wait_for_text'][:200]}” did not appear within 10 seconds; "
+                            "this is the window as it is now.\n")
         if args.get("text") or args.get("role"):
             find = {k: str(args[k])[:200] for k in ("text", "role") if args.get(k)}
             result = await _look_one_window("find", {**call, **find}, job_id)
@@ -492,6 +520,8 @@ class DesktopLookExecutor:
             text = (f"{app['name']} — window “{window}”. Refs [@…] work for actions in this piece of work; "
                     "an entry with “… inside” opens with desktop_look {app, ref}.\n"
                     + hands_contract.render_tree(data.get("tree") or {}))
+        if not_seen:
+            text = not_seen + text
         _trace("look", app, "ok", started)
         # Window contents are other people's text: framed as untrusted by the tool loop.
         return {"ok": True, "external": True, "text": text, "summary": f"look · {app['name']}"[:200]}
@@ -565,14 +595,25 @@ class _DesktopAct:
                     "error": f"The user did not allow {why}. Do not retry; report it."}
         session = hands_service.session_for(job_id)
         if session:
-            await _hands("session_label", {"session": session, "label": f"Arslan · {verb} {label}"[:80]})
+            shown = await _label_verb(self.op)
+            await _hands("session_label", {"session": session, "label": f"Arslan · {shown} {label}"[:80]})
         result = await self.run(args, app)
         _trace(self.op, app, "ok" if result.ok else (result.code or "error"), started, target=label,
                **self.trace_extra(args))
         if not result.ok:
             return _failed(result, app=str(app.get("name")))
-        return {"ok": True, "external": False, "text": f"Done: {verb} “{label}” in {app.get('name')}. "
-                "Look again (desktop_look) to see the result before the next step.",
+        # P0 D7: "sent" is not "done" — only a change agent-desktop read back is.
+        outcome = hands_contract.outcome(result)
+        if outcome == "done":
+            text = (f"Done: {verb} “{label}” in {app.get('name')} (the change was read back). "
+                    "Look again (desktop_look) to see the result before the next step.")
+        else:
+            text = (f"Sent, not confirmed: {verb} “{label}” in {app.get('name')}. Arslan could not read the "
+                    "change back, so look (desktop_look) before the next step, and do not simply repeat it.")
+        if hands_contract.kept_the_front(result):
+            text += (f" {app.get('name')} came to the front when this ran and could not be put back; "
+                     "tell the user if it gets in their way.")
+        return {"ok": True, "external": False, "outcome": outcome, "text": text,
                 "summary": f"{self.op} · {app.get('name')} · {label}"[:200]}
 
     def trace_extra(self, args: dict) -> dict:
@@ -612,14 +653,27 @@ class DesktopTypeExecutor(_DesktopAct):
         if len(text) > 20_000:
             from server.services import hands_contract
             return hands_contract.Result(ok=False, code="too_long", refused=True, message="text too long")
-        if args.get("mode") == "append":
+        from server.services import hands_contract
+        append = args.get("mode") == "append"
+        if append:
+            # P0 D2: without the old text, "append" would set the field to the new text alone.
             current = await _hands("get", {"app": app["name"], "ref": ref, "property": "value"}, job_id=job_id)
-            if current.ok and isinstance(current.data, dict) and isinstance(current.data.get("value"), str):
-                text = current.data["value"] + text
+            if not (current.ok and isinstance(current.data, dict) and isinstance(current.data.get("value"), str)):
+                return hands_contract.Result(ok=False, code="append_unreadable", refused=True)
+            text = current.data["value"] + text
         result = await _hands("set_value", {"app": app["name"], "ref": ref, "value": text}, job_id=job_id)
         if not result.ok and result.code in ("ACTION_NOT_SUPPORTED", "POLICY_DENIED"):
+            if append:
+                # `type` inserts at the caret: old + new typed there would duplicate the old text.
+                return hands_contract.Result(ok=False, code="append_needs_set_value", refused=True)
             result = await _hands("type", {"app": app["name"], "ref": ref, "text": text}, job_id=job_id)
         if result.ok and args.get("submit"):
+            # P0 D3: Return goes to whatever has the app's focus. Press it only when that
+            # is this field, read live just before.
+            states = await _hands("get", {"app": app["name"], "ref": ref, "property": "states"}, job_id=job_id)
+            value = states.data.get("value") if states.ok and isinstance(states.data, dict) else None
+            if not (isinstance(value, list) and "focused" in value):
+                return hands_contract.Result(ok=False, code="submit_unsure", refused=True)
             result = await _hands("press", {"app": app["name"], "keys": "return"}, job_id=job_id)
         return result
 
