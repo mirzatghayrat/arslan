@@ -31,6 +31,7 @@ import { addMcpServer } from '../api/mcp';
 import { api } from '../api/client';
 import type { EvalResult } from '../api/discovery';
 import ToolHubDiscover from '../components/ToolHubDiscover';
+import { capabilitiesApi } from '../api/capabilities';
 import RepoDossier, { isLicensePermissive, detectRepoKind } from '../components/RepoDossier';
 
 const EVAL: EvalResult = {
@@ -72,7 +73,7 @@ describe('ToolHub hero', () => {
     await waitFor(() => expect(discovery.evaluateRepo).toHaveBeenCalledWith('owner/repo'));
     expect(await screen.findByTestId('repo-dossier')).toBeInTheDocument();
     expect(screen.getByText('owner/repo')).toBeInTheDocument();
-    expect(discovery.searchRepos).not.toHaveBeenCalled();
+    
   });
 
   it('github URLs also route to evaluate', async () => {
@@ -86,25 +87,26 @@ describe('ToolHub hero', () => {
       expect(discovery.evaluateRepo).toHaveBeenCalledWith('https://github.com/owner/repo'));
   });
 
-  it('free-text input searches GitHub and per-row Evaluate opens the dossier', async () => {
-    (discovery.searchRepos as ReturnType<typeof vi.fn>).mockResolvedValue([
-      {
-        full_name: 'found/one', html_url: 'https://github.com/found/one', stars: 9, forks: 1,
-        license: 'MIT', pushed_days: 1, description: 'hit',
-        trust: { tier: 'high', license_note: '' },
-      },
-    ]);
+  it('free-text input runs the capability search and Look opens the dossier', async () => {
+    const search = vi.spyOn(capabilitiesApi, 'search').mockResolvedValue({ words: ['vector'], notes: [], candidates: [{
+      id: 'github:found/one', kind: 'project', name: 'one', summary: 'hit', source: 'github',
+      source_url: 'https://github.com/found/one', repo: 'found/one', version: null, runtime: null, package: null,
+      remote: null, not_here: null, needs: { keys: [], network: null },
+      license: { spdx: 'MIT', read_from: 'github:LICENSE', verdict: 'usable' }, stars: 9, pushed_days: 1,
+      checked_at: null, path: null }] });
     (discovery.evaluateRepo as ReturnType<typeof vi.fn>).mockResolvedValue(EVAL);
     render(<ToolHubDiscover />);
     fireEvent.change(screen.getByPlaceholderText('capabilities.hero.placeholder'), {
       target: { value: 'vector database tools' },
     });
     fireEvent.click(screen.getByRole('button', { name: /capabilities\.hero\.research/ }));
-    expect(await screen.findByText('found/one')).toBeInTheDocument();
+    expect(await screen.findByText('one')).toBeInTheDocument();
+    expect(search).toHaveBeenCalledWith('vector database tools');
     expect(discovery.evaluateRepo).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: /capabilities\.hero\.evaluate/ }));
+    fireEvent.click(screen.getByTestId('cand-look-github:found/one'));
     await waitFor(() => expect(discovery.evaluateRepo).toHaveBeenCalledWith('found/one'));
     expect(await screen.findByTestId('repo-dossier')).toBeInTheDocument();
+    search.mockRestore();
   });
 
   it('shows an honest error when evaluate fails', async () => {

@@ -27,3 +27,13 @@ async def switch_capability(key: str, body: Switch) -> dict:
         raise HTTPException(status_code=409, detail={"code": "not_switchable"}) from exc
     row = next((r for r in await capability_list.capabilities() if r["key"] == key), None)
     return row or {"key": key}
+
+
+@router.get("/capability-search")
+async def search_capabilities(q: str = "", kind: str | None = None) -> dict:
+    """0.1.57 §2/§9: the Discover box — what you want done, across the official MCP Registry,
+    GitHub and reviewed skill libraries. Read-only; nothing here installs."""
+    from server.services import capability_search
+    words = await capability_search.words_for(q)
+    kinds = {kind} if kind in ("mcp", "skill", "project") else None
+    return await capability_search.search(q, words=words, kinds=kinds)

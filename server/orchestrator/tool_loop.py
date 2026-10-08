@@ -1438,6 +1438,15 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                                                   "description": "The service, e.g. GitHub, Notion."}},
                           "required": ["name"]},
     "update_plan": _PLAN_PARAMS,
+    # 0.1.57 §2: find a capability for what the turn could not do.
+    "find_capability": {
+        "type": "object",
+        "properties": {
+            "need": {"type": "string", "description": "What could not be done, in one sentence."},
+            "keywords": {"type": "array", "minItems": 1, "maxItems": 4, "items": {"type": "string"},
+                         "description": "1-4 short English search words, e.g. [\"excel\", \"xlsx\"]."},
+            "kinds": {"type": "array", "items": {"type": "string", "enum": ["mcp", "skill", "project"]}}},
+        "required": ["need", "keywords"]},
     # 0.1.56 §7: a changed plan for the project, proposed — the user decides on the card.
     "propose_plan_change": {
         "type": "object",

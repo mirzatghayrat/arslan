@@ -357,6 +357,29 @@ class ListMyCapabilitiesExecutor:
         return out
 
 
+class FindCapabilityExecutor:
+    """0.1.57 §2: search the official MCP Registry, GitHub and reviewed skill libraries for
+    something that does what the turn could not. Returns candidates as outside content;
+    installs nothing (an install is the user's click on a card, P3)."""
+
+    key = "find_capability"
+
+    async def execute(self, args: dict) -> dict:
+        from server.services import capability_search, personal_context
+        need = str(args.get("need") or "").strip()[:300]
+        words = [str(w)[:40] for w in (args.get("keywords") or []) if str(w).strip()][:4]
+        if not need and not words:
+            return {"ok": False, "error": "say what is needed (need) and 1-3 English search words (keywords)"}
+        kinds = {k for k in (args.get("kinds") or []) if k in ("mcp", "skill", "project")} or None
+        result = await capability_search.search(need, words=words, kinds=kinds)
+        ctx = personal_context.current()
+        capability_search.remember(ctx.conversation_id if ctx else None, result)
+        out = capability_search.for_model(result)
+        return {"ok": True, "external": True, **out,
+                "note": "Candidates only; nothing is installed. Prefer license_verdict 'usable' and not_here null. "
+                        "Never install by other means (no pip/npm/git clone in the terminal for this)."}
+
+
 class WhatsNewExecutor:
     """D2 (0.1.55): Arslan's own version and the notes of the last releases, so
     "what version are you / what changed" is answered from the shipped notes and
@@ -843,6 +866,7 @@ from server.registry.file_tools import (  # noqa: E402 — registry assembly
 EXECUTORS = {e.key: e for e in (
     WebSearchExecutor(), WebExtractExecutor(), ChartExecutor(), CreateSkillExecutor(),
     DeckExecutor(), RunPythonExecutor(), RunCommandExecutor(), ListMyCapabilitiesExecutor(), WhatsNewExecutor(),
+    FindCapabilityExecutor(),
     ReadSkillExecutor(), RecallExecutor(), RememberExecutor(), ConversationSearchExecutor(), MemoryNoteExecutor(),
     TaskProgressExecutor(), DelegateWorkExecutor(),
     StartBackgroundWorkExecutor(), BackgroundStatusExecutor(), StopBackgroundWorkExecutor(),
