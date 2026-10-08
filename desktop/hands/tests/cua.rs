@@ -68,9 +68,11 @@ for line in sys.stdin:
             {"role": "AXTextField", "label": "Title", "element_token": "s0000000%d:1" % (pid // 100)},
             {"role": "AXSecureTextField", "label": "", "element_token": "s0000000%d:2" % (pid // 100)},
             {"role": "AXTextField", "label": "Password", "element_token": "s0000000%d:3" % (pid // 100)},
+            {"role": "AXMenuBarItem", "label": "Apple", "depth": 2},
+            {"role": "AXMenuItem", "label": "Log Out Someone", "depth": 4},
         ]
         send(rid, result={"content": [], "structuredContent": {"pid": pid, "window_id": args.get("window_id", 1),
-                                                               "elements": elements}})
+                                                               "elements": elements, "tree_markdown": "- Log Out Someone"}})
     else:
         send(rid, result={"content": [{"type": "text", "text": "done"}],
                           "structuredContent": {"effect": "confirmed", "route": "accessibility"}})
@@ -389,10 +391,10 @@ fn an_element_token_must_come_from_a_window_state_hands_relayed() {
     let hands = plain("tok");
     let early = hands.cua("click", json!({"pid": 100, "element_token": "s00000001:0"}));
     assert_eq!(code(&early), "ref_unknown");
-    assert_eq!(
-        hands.cua("get_window_state", json!({"pid": 100, "window_id": 1}))["ok"],
-        true
-    );
+    let state = hands.cua("get_window_state", json!({"pid": 100, "window_id": 1}));
+    assert_eq!(state["ok"], true);
+    // The system's Apple menu (recent documents, the user's name) never leaves Hands.
+    assert!(!state.to_string().contains("Log Out Someone"), "{state}");
     let click = hands.cua("click", json!({"pid": 100, "element_token": "s00000001:0"}));
     assert_eq!(click["ok"], true, "{click}");
     assert_eq!(click["completion"], "completed");

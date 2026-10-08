@@ -35,11 +35,7 @@ pub enum Kind {
 pub fn kind(tool: &str) -> Result<Kind, Refusal> {
     match tool {
         "list_apps" | "get_screen_size" | "check_permissions" | "health_report" => Ok(Kind::Global),
-        "list_windows"
-        | "get_window_state"
-        | "get_accessibility_tree"
-        | "verify_state"
-        | "zoom" => Ok(Kind::Read),
+        "list_windows" | "get_window_state" | "verify_state" | "zoom" => Ok(Kind::Read),
         "click" | "double_click" | "right_click" | "scroll" | "set_value" | "type_text"
         | "press_key" | "hotkey" => Ok(Kind::Act),
         _ => Err(refuse(
@@ -190,6 +186,46 @@ pub fn sanitize(
         }
     }
     Ok(args)
+}
+
+/// A window state without what is not the app's own: the system's Apple menu (its Recent
+/// Items lists the user's recent documents and apps, and Log Out names the user — seen in a
+/// harness run, 2026-10-09) is cut from `elements`, and `tree_markdown`, the same tree as
+/// text, is dropped: Hands relays the structured elements only.
+pub fn without_system_menu(result: &mut Value) {
+    let Some(state) = result
+        .get_mut("structuredContent")
+        .and_then(Value::as_object_mut)
+    else {
+        return;
+    };
+    state.remove("tree_markdown");
+    let Some(elements) = state.get_mut("elements").and_then(Value::as_array_mut) else {
+        return;
+    };
+    let mut kept = Vec::with_capacity(elements.len());
+    let mut cutting_below: Option<i64> = None;
+    for element in elements.drain(..) {
+        let depth = element.get("depth").and_then(Value::as_i64).unwrap_or(0);
+        if let Some(cut) = cutting_below {
+            if depth > cut {
+                continue;
+            }
+            cutting_below = None;
+        }
+        let role = element.get("role").and_then(Value::as_str).unwrap_or("");
+        let label = element.get("label").and_then(Value::as_str).unwrap_or("");
+        if role == "AXMenuBarItem" && label == "Apple" {
+            cutting_below = Some(depth);
+            continue;
+        }
+        kept.push(element);
+    }
+    let count = kept.len();
+    *elements = kept;
+    if state.contains_key("returned_element_count") {
+        state.insert("returned_element_count".into(), Value::from(count));
+    }
 }
 
 /// One element Hands relayed from a window state.
@@ -347,6 +383,7 @@ mod tests {
             assert!(kind(tool).is_ok(), "{tool}");
         }
         for tool in [
+            "get_accessibility_tree",
             "clipboard_read",
             "clipboard_write",
             "browser_click",
@@ -516,6 +553,31 @@ mod tests {
             tokens.get("s00000002:0", 5).unwrap_err().code,
             "ref_unknown"
         );
+    }
+
+    #[test]
+    fn the_apple_menu_and_the_text_tree_are_not_relayed() {
+        let mut result = json!({"content": [], "structuredContent": {"pid": 5, "window_id": 1,
+            "tree_markdown": "- Log Out Someone", "returned_element_count": 6, "elements": [
+            {"role": "AXButton", "label": "Save", "depth": 2},
+            {"role": "AXMenuBar", "label": "", "depth": 1},
+            {"role": "AXMenuBarItem", "label": "Apple", "depth": 2},
+            {"role": "AXMenu", "label": "", "depth": 3},
+            {"role": "AXMenuItem", "label": "secret-plan.pdf", "depth": 4},
+            {"role": "AXMenuItem", "label": "Log Out Someone", "depth": 4},
+            {"role": "AXMenuBarItem", "label": "Fixture", "depth": 2},
+            {"role": "AXMenuItem", "label": "Bold", "depth": 4}]}});
+        without_system_menu(&mut result);
+        let state = &result["structuredContent"];
+        assert!(state.get("tree_markdown").is_none());
+        let labels: Vec<&str> = state["elements"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e["label"].as_str().unwrap())
+            .collect();
+        assert_eq!(labels, ["Save", "", "Fixture", "Bold"]);
+        assert_eq!(state["returned_element_count"], 4);
     }
 
     #[test]

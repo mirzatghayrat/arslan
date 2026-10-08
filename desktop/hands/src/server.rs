@@ -1159,12 +1159,14 @@ fn cua_op(ctx: &Ctx, args: &Value) -> Result<Value, Refusal> {
     let result = match tool {
         "list_apps" => cua_filtered_apps(&answer.result, &never),
         "get_window_state" => {
+            let mut answer_result = answer.result;
+            cua_policy::without_system_menu(&mut answer_result);
             ctx.state
                 .tokens
                 .lock()
                 .unwrap_or_else(|p| p.into_inner())
-                .record(&answer.result);
-            answer.result
+                .record(&answer_result);
+            answer_result
         }
         _ => answer.result,
     };
