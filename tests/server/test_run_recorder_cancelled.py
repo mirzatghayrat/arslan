@@ -198,3 +198,45 @@ async def test_finalize_without_override_still_schedules_scoring(memdb, monkeypa
         run = (await db.execute(select(Run).where(Run.id == rec.run_id))).scalar_one()
     assert run.status == "recorded"
     assert scheduled == [rec.run_id]
+
+
+async def test_a_cancel_during_the_final_write_waits_for_it(tmp_path, monkeypatch):
+    """2026-10-08 (CI run 37676906940): a cancel that lands while finalize's UPDATE is in
+    aiosqlite's thread must not cut it in half. Cut there, SQLAlchemy terminated the
+    connection inside the cancel, the cancel aborted that too, and the connection was never
+    checked in; the garbage collector later terminated it from another request's greenlet,
+    which failed that request. Here another connection holds the write lock so the UPDATE
+    is certainly in flight when the cancel comes; the run must still be finalized, the
+    cancel must still reach the caller."""
+    import sqlite3
+
+    from sqlalchemy.pool import NullPool
+
+    path = tmp_path / "runs.db"
+    engine = create_async_engine(f"sqlite+aiosqlite:///{path}", poolclass=NullPool)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    monkeypatch.setattr(db_session, "AsyncSessionLocal", Session)
+    rec = await run_recorder.RunRecorder.start(
+        conversation_id="c-write", spawn_id=None, spawn_name="Arslan", user_message="u", kind="host")
+
+    blocker = sqlite3.connect(path, timeout=0)
+    blocker.execute("BEGIN IMMEDIATE")              # holds the write lock
+    try:
+        with usage_sink.collecting():
+            task = asyncio.create_task(rec.finalize(summary_message_id=None, full_output="done"))
+        await asyncio.sleep(0.3)                    # finalize now waits on the lock, in the driver
+        assert not task.done()
+        task.cancel()
+        await asyncio.sleep(0.1)
+    finally:
+        blocker.rollback()
+        blocker.close()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    async with Session() as db:
+        run = await db.get(Run, rec.run_id)
+    assert run.status == "completed" and run.ended_at is not None
+    await engine.dispose()
