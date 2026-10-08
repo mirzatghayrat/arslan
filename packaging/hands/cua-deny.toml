@@ -1,0 +1,42 @@
+# cargo-deny policy for the pinned Cua Driver (Hands v2, spec
+# docs/specs/2026-10-08-0157-hands-v2.md §3.6), checked in CI against the fork's
+# workspace at the pin: libs/cua-driver/rust in packaging/hands/cua-driver.pin.
+# Only what ships matters: the aarch64-apple-darwin graph, without dev-dependencies.
+[graph]
+targets = [{ triple = "aarch64-apple-darwin" }]
+exclude-dev = true
+
+[advisories]
+version = 2
+yanked = "deny"
+ignore = [
+  # ttf-parser is unmaintained and has no maintained release to move to. Cua's cursor
+  # overlay (fontdue) parses only the font it ships, never a font from the user or a
+  # page. Re-checked at every monthly sync.
+  { id = "RUSTSEC-2026-0192", reason = "unmaintained, no upgrade; parses only Cua's own bundled cursor font" },
+]
+
+[licenses]
+version = 2
+confidence-threshold = 0.8
+# Permissive only. No GPL, LGPL or AGPL, and no FSL (Cua Spaces): those must never
+# reach this graph.
+allow = [
+  "Apache-2.0", "MIT", "MIT-0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Zlib", "Unicode-3.0",
+  # File-level copyleft (uniffi, cbindgen): changed MPL files would have to be published.
+  # We change none, and the vendored sources are public in the fork anyway.
+  "MPL-2.0",
+  # webpki-roots' certificate data, linked through ureq (whose senders the fork compiles out).
+  "CDLA-Permissive-2.0",
+]
+
+[bans]
+multiple-versions = "allow"
+# Upstream's workspace crates depend on each other by path inside its own repository;
+# every crates.io dependency is locked and vendored at an exact version.
+wildcards = "allow"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
