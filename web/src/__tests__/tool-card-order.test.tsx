@@ -48,3 +48,17 @@ describe.each(["quartz", "brutalist", "linear"] as const)("escalation in style %
       cleanup();
     });
 });
+
+/** 0.1.56 §7: Arslan's proposed plan change is a card in the conversation, in every style. */
+describe.each(["quartz", "brutalist", "linear"] as const)("plan proposal in style %s", (style) => {
+  it("renders the card, not a bubble", () => {
+    const msg = { id: "pp", sender: "arslan", senderName: "Arslan", senderAvatar: "", timestamp: "", text: "no online mode",
+      planProposal: { projectId: "p1", id: "pp1", reason: "no online mode", cleared: 1, diff: [{ op: "remove", level: "Stress test" }] },
+    } as unknown as Message;
+    render(<OrchestratorChat chatHistory={[msg]} setChatHistory={() => {}} spawns={[]}
+      currentStyle={style} setCurrentStyle={() => {}} activeThread={null} />);
+    expect(screen.getByTestId("plan-proposal")).toBeInTheDocument();
+    expect(screen.getByTestId("plan-diff")).toHaveTextContent("projectsUI.diffRemove");
+    cleanup();
+  });
+});

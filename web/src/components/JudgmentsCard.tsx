@@ -20,6 +20,10 @@ const POINT_KEY: Record<string, string> = {
   "memory.worth": "activityPage.pointWorth",
   "memory.merge": "activityPage.pointMerge",
   "memory.applied": "activityPage.pointApplied",
+  "memory.conflict": "activityPage.pointConflict",
+  "job.accomplished": "activityPage.pointAccomplished",
+  "project.progress": "activityPage.pointProgress",
+  "project.progress.item": "activityPage.pointProgressItem",
 };
 
 /**

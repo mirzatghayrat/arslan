@@ -13,6 +13,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   workspaceDir: '',          // zero default, by user ruling: pick it explicitly
   heartbeatEnabled: false,   // default OFF
   heartbeatChecklist: '',
+  projectsAutoAdvance: false,  // default OFF; turned on by the user's 好 or here
   lanDiscoveryEnabled: false,  // default OFF
   sshEnabled: false,           // default OFF — the highest-risk surface here
   defaultReadEnabled: true,    // default ON — reads of Desktop/Documents/Downloads

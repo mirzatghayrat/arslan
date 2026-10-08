@@ -65,12 +65,18 @@ export interface ProjectInput {
   collection_ids: number[];
   app_binding: { app_id: string | null; bundle_id: string | null; connection_id?: string | null;
     version_id?: string | null; platform?: "IOS" | "MAC_OS" | "TV_OS" | "VISION_OS" | null } | null;
+  /** 0.1.56: the level template, and what "done" means in one sentence. */
+  template?: ProjectTemplate | null;
+  finish_line?: string | null;
 }
+export type ProjectTemplate = "game" | "app" | "website" | "research" | "writing" | "video" | "skill" | "trip" | "job" | "other";
 export interface Project extends ProjectInput {
   id: string;
   version: number;
   status: "active" | "archived";
   updated_at: string;
+  stage?: "idea" | "active" | "done" | "dropped";
+  paused?: boolean;
 }
 export interface ConversationContext {
   conversation_id: string;
@@ -119,8 +125,10 @@ export interface ContextMemoryReview {
   content: string | null;
 }
 const json = (method: string, body: unknown) => ({ method, body: JSON.stringify(body) });
-const projectBody = ({ name, kind, summary, workspace_ref, collection_ids, app_binding }: ProjectInput): ProjectInput =>
-  ({ name, kind, summary, workspace_ref, collection_ids, app_binding });
+// Every field the API writes must be carried: an edit that dropped template / finish_line
+// would clear them (the API stores what it is sent).
+const projectBody = ({ name, kind, summary, workspace_ref, collection_ids, app_binding, template, finish_line }: ProjectInput): ProjectInput =>
+  ({ name, kind, summary, workspace_ref, collection_ids, app_binding, template: template ?? null, finish_line: finish_line ?? null });
 export const companionApi = {
   projects: (includeArchived = false) => request<Project[]>(`/projects${includeArchived ? "?include_archived=true" : ""}`),
   createProject: (body: ProjectInput) => request<Project>("/projects", json("POST", projectBody(body))),

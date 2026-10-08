@@ -527,6 +527,13 @@ async def _loop(interval: float, first_delay: float) -> None:
             await scan_once()
         except Exception as exc:  # noqa: BLE001 — the loop outlives any one scan
             logger.warning("proactive scan failed: %s %s", type(exc).__name__, exc)
+        # 0.1.56 §4.2: project folders are checked on the same beat, also with proactive
+        # off — a tick waits on the project card and is never a notification.
+        try:
+            from server.services import project_evidence
+            await project_evidence.scan_projects()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("project scan failed: %s %s", type(exc).__name__, exc)
         try:
             await asyncio.wait_for(_stop_event.wait(), timeout=interval)
         except TimeoutError:

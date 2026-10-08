@@ -140,6 +140,7 @@ describe("every settings field the UI can edit is mappable", () => {
       workspace_dir: { workspaceDir: "/tmp/ws" },
       heartbeat_enabled: { heartbeatEnabled: true },
       heartbeat_checklist: { heartbeatChecklist: "- x" },
+      projects_auto_advance: { projectsAutoAdvance: true },
       lan_discovery_enabled: { lanDiscoveryEnabled: true },
       ssh_enabled: { sshEnabled: true },
       default_read_enabled: { defaultReadEnabled: true },

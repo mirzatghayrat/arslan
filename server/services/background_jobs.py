@@ -230,6 +230,16 @@ async def _run(job: Job) -> None:
         job.detail = reason
         _emit(job)
         await _report(job, final_text)
+        await _report_to_project(job)
+
+
+async def _report_to_project(job: Job) -> None:
+    """0.1.56 §4.4: a job in a conversation handed a project checkpoint ticks it when done."""
+    try:
+        from server.services import project_evidence
+        await project_evidence.job_finished(job.conversation_id, job.job_id, job.goal, job.outcome or "")
+    except Exception as exc:  # noqa: BLE001 — bookkeeping; the job's own result is already posted
+        logger.warning("background job %s not reported to its project: %s", job.job_id, type(exc).__name__)
 
 
 async def _goal_not_reached(job: Job, text: str) -> bool:
