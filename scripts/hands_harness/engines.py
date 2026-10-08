@@ -121,10 +121,19 @@ class Cua:
         return self.hands.call("cua", {"tool": tool, "args": args, "session": "harness"})
 
     def _target(self) -> None:
-        apps = (self._call("list_apps", {}).get("result") or {}).get("structuredContent", {}).get("apps", [])
-        app = next((a for a in apps if a.get("name") == self.app and a.get("running")), None)
+        app = None
+        deadline = time.monotonic() + 3          # a just-started app takes a moment to be listed
+        while app is None and time.monotonic() < deadline:
+            listed = self._call("list_apps", {})
+            if listed.get("ok") is not True:
+                raise RuntimeError(f"list_apps failed: {listed.get('refused')} ({listed.get('completion')})")
+            apps = (listed.get("result") or {}).get("structuredContent", {}).get("apps", [])
+            app = next((a for a in apps if a.get("name") == self.app and a.get("running")), None)
+            if app is None:
+                time.sleep(0.3)
         if app is None:
-            raise RuntimeError(f"{self.app} is not in Cua's app list")
+            names = sorted({str(a.get("name")) for a in apps if a.get("running")})
+            raise RuntimeError(f"{self.app} is not in Cua's app list ({len(apps)} apps; running: {names[:30]})")
         self.pid = int(app["pid"])
         windows = ((self._call("list_windows", {"pid": self.pid}).get("result") or {})
                    .get("structuredContent") or {}).get("windows") or []
@@ -172,3 +181,92 @@ def find(elements: list[Element], label: str, role: str = "") -> Element | None:
         if e.label.strip().lower() == label.lower() and role.lower() in e.role.lower():
             return e
     return None
+
+
+class Arc:
+    """arc-driver (shhivv/arc-cua, MIT) over its own MCP stdio server — a bake-off candidate
+    only (spec §15 A2): it is NOT behind Hands, so Hands' rules do not apply to it here, and it
+    runs with this process's grants. `ARC_CUA` names its `arc-cua` executable."""
+    name = "arc"
+
+    def __init__(self, executable: str, app: str, settle: bool = True):
+        import subprocess
+        self.app, self.settle = app, settle
+        self.proc = subprocess.Popen([executable, "mcp"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                     stderr=subprocess.DEVNULL, text=True)
+        self._id = 0
+        self._rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
+                                 "clientInfo": {"name": "hands-harness", "version": "1"}})
+        self.proc.stdin.write(json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n")
+        self.proc.stdin.flush()
+        self.pid: int | None = None
+        self.snapshot: str | None = None
+
+    def _rpc(self, method: str, params: dict) -> dict:
+        self._id += 1
+        self.proc.stdin.write(json.dumps({"jsonrpc": "2.0", "id": self._id, "method": method, "params": params}) + "\n")
+        self.proc.stdin.flush()
+        while True:
+            message = json.loads(self.proc.stdout.readline())
+            if message.get("id") == self._id:
+                return message.get("result") or {}
+
+    def _tool(self, name: str, args: dict) -> dict:
+        result = self._rpc("tools/call", {"name": name, "arguments": args})
+        return result.get("structuredContent") or {}
+
+    def close(self) -> None:
+        self.proc.kill()
+
+    def look(self) -> tuple[list[Element], int]:
+        if self.pid is None:
+            apps = self._tool("apps", {}).get("apps") or []
+            app = next((a for a in apps if a.get("name") == self.app), None)
+            if app is None:
+                raise RuntimeError(f"{self.app} is not in arc's app list")
+            self.pid = int(app["pid"])
+        started = time.monotonic()
+        state = self._tool("observe", {"pid": self.pid})
+        ms = round((time.monotonic() - started) * 1000)
+        if not state.get("snapshot"):
+            raise RuntimeError(f"look failed: {state.get('code')}: {state.get('message')}")
+        self.snapshot = state["snapshot"]
+        return [Element(str(e["id"]), str(e.get("role") or ""), str(e.get("name") or ""))
+                for e in state.get("elements") or []], ms
+
+    def _act(self, action: str, element: Element | None, **extra) -> Act:
+        args = {"snapshot": self.snapshot, "action": action, "settle": self.settle, **extra}
+        if element is not None:
+            args["element"] = element.id
+        started = time.monotonic()
+        result = self._tool("act", args)
+        ms = round((time.monotonic() - started) * 1000)
+        status = result.get("status")
+        if result.get("snapshot"):                 # settle returns a fresh snapshot
+            self.snapshot = result["snapshot"]
+        # arc's word: done (acted), changed / stale (refused: the screen moved since the look).
+        outcome = {"done": "sent_unconfirmed", "changed": "refused", "stale": "refused"}.get(status)
+        if status == "done" and result.get("state_changed") is True:
+            outcome = "done"
+        ok = status == "done"
+        return Act(ok=ok, outcome=outcome, code=None if ok else (result.get("code") or status), ms=ms, raw=result)
+
+    def click(self, element: Element) -> Act:
+        return self._act("CLICK", element)
+
+    def set_value(self, element: Element, text: str) -> Act:
+        return self._act("SET_VALUE", element, value=text)
+
+    def select(self, element: Element, value: str) -> Act:
+        return self._act("SET_VALUE", element, value=value)
+
+    def type_text(self, element: Element, text: str) -> Act:
+        return self._act("TYPE_TEXT", element, value=text)
+
+    def press(self, keys: str, element: Element | None = None) -> Act:
+        parts = [k.strip().upper() for k in keys.split("+") if k.strip()]
+        if len(parts) == 1:
+            key = {"RETURN": "ENTER"}.get(parts[0], parts[0])
+            return self._act("PRESS_KEY", element, key=key)
+        chord = "+".join("MOD" if p == "CMD" else p for p in parts)
+        return self._act("HOTKEY", element, hotkey=chord)

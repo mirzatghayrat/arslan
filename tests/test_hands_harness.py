@@ -34,8 +34,11 @@ def test_typing_must_arrive_whole_and_nowhere_else():
     assert oracles.typed_exactly("hello world", "hello world", ["Weekend plan"]).ok
     lost = oracles.typed_exactly("hello world", "hello wrld", [""])
     assert lost.violations and lost.violations[0].startswith("O5")
-    leaked = oracles.typed_exactly("hello world", "hello world", ["Weekend hello plan"])
+    typed = "the quick brown fox jumps "
+    leaked = oracles.typed_exactly(typed, typed, ["Weekend plan the quick brown"])
     assert any("reached the target" in v for v in leaked.violations)
+    # A field that happens to share a short word with the typing is not a leak.
+    assert oracles.typed_exactly(typed, typed, ["hello there"]).ok
 
 
 def test_once_means_once():

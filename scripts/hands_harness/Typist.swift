@@ -10,10 +10,10 @@
 import AppKit
 
 let logPath = ProcessInfo.processInfo.environment["TYPIST_LOG"] ?? "/tmp/harness-typist.log"
-let started = Date()
 
 func record(_ event: String, _ value: Any = "") {
-    let line: [String: Any] = ["t": Date().timeIntervalSince(started), "event": event, "value": value]
+    // Wall-clock seconds, so the harness can match each line to the action it ran during.
+    let line: [String: Any] = ["t": Date().timeIntervalSince1970, "event": event, "value": value]
     guard let data = try? JSONSerialization.data(withJSONObject: line),
           var text = String(data: data, encoding: .utf8) else { return }
     text += "\n"

@@ -77,7 +77,7 @@ def typed_exactly(expected: str, typist_text: str, target_texts: list[str]) -> V
     return verdict
 
 
-def _chunks(text: str, size: int = 4) -> list[str]:
+def _chunks(text: str, size: int = 10) -> list[str]:
     return [text[i:i + size] for i in range(0, max(len(text) - size + 1, 1), size)] if len(text) >= size else [text]
 
 

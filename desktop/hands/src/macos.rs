@@ -345,6 +345,41 @@ pub fn frontmost_pid() -> Option<i32> {
     }
 }
 
+/// The running app `pid` belongs to: (name, bundle id), straight from
+/// NSRunningApplication. Hands resolves a pid this way before every Cua call: Cua's own
+/// app list scans installed apps too and took ~0.9 s (measured 2026-10-09).
+pub fn app_of_pid(pid: i32) -> Option<(String, String)> {
+    type MsgWithPid = unsafe extern "C" fn(*mut c_void, *mut c_void, i32) -> *mut c_void;
+    type MsgUtf8 = unsafe extern "C" fn(*mut c_void, *mut c_void) -> *const c_char;
+    unsafe {
+        let send0: Msg0 = std::mem::transmute(objc_msgSend as *const ());
+        let send_with_pid: MsgWithPid = std::mem::transmute(objc_msgSend as *const ());
+        let send_utf8: MsgUtf8 = std::mem::transmute(objc_msgSend as *const ());
+        let app = send_with_pid(
+            class(c"NSRunningApplication"),
+            sel(c"runningApplicationWithProcessIdentifier:"),
+            pid,
+        );
+        if app.is_null() {
+            return None;
+        }
+        let text = |object: *mut c_void| -> String {
+            if object.is_null() {
+                return String::new();
+            }
+            let raw = send_utf8(object, sel(c"UTF8String"));
+            if raw.is_null() {
+                String::new()
+            } else {
+                CStr::from_ptr(raw).to_string_lossy().into_owned()
+            }
+        };
+        let name = text(send0(app, sel(c"localizedName")));
+        let bundle = text(send0(app, sel(c"bundleIdentifier")));
+        (!name.is_empty()).then_some((name, bundle))
+    }
+}
+
 /// Put `pid`'s app back in front (NSRunningApplication activate). Used when an
 /// app Hands acted on brought itself forward: Hands never takes the focus, and
 /// a user typing elsewhere must keep typing there.
