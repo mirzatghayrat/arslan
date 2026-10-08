@@ -396,6 +396,9 @@ fn an_element_token_must_come_from_a_window_state_hands_relayed() {
     let click = hands.cua("click", json!({"pid": 100, "element_token": "s00000001:0"}));
     assert_eq!(click["ok"], true, "{click}");
     assert_eq!(click["completion"], "completed");
+    // The fake answers effect "confirmed": the shared vocabulary says done.
+    assert_eq!(click["outcome"], "done");
+    assert_eq!(click["mode_used"], "background");
     // A token of one app spent in another is refused, whatever the pid says.
     let elsewhere = hands.cua("click", json!({"pid": 200, "element_token": "s00000001:0"}));
     assert_eq!(code(&elsewhere), "ref_wrong_app");
