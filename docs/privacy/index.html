@@ -101,12 +101,12 @@ p=String(p).toLowerCase().indexOf("zh")===0?"zh":"en";d.classList.add("js",p);d.
 <h3>On your iPhone</h3>
 <p>The pairing keys (in the iOS keychain), an encrypted local record of recent messages and tasks so the app can show them offline, your settings, and the device IDs this iPhone used in earlier pairings with each Mac (at most 8; not secret), so that pairing again replaces the old entry on your Mac instead of adding one. Unpairing removes the pairing keys and the local record.</p>
 <h3>On your Mac, about your phone</h3>
-<p>The phone's name, its public keys, when it was paired, and when the Mac last heard from it (to the minute). Settings › iPhone shows this as <em>Connecting…</em> or <em>Connected · last seen …</em>.</p>
+<p>The phone's name, its public keys, when it was paired, and when the Mac last heard from it (to the minute). Settings › Connections › iPhone shows this as <em>Connecting…</em> or <em>Connected · last seen …</em>.</p>
 
 <h2><span class="n">07</span>Keeping and deleting data</h2>
 <ul>
   <li>Each record is deleted from your iCloud once the other device confirms it has received it.</li>
-  <li><strong>Removing a phone</strong> on your Mac (<span class="k">Settings › iPhone › Remove</span>) also deletes the messages the Mac had left in iCloud for that phone.</li>
+  <li><strong>Removing a phone</strong> on your Mac (<span class="k">Settings › Connections › iPhone › Remove</span>) also deletes the messages the Mac had left in iCloud for that phone.</li>
   <li><strong>Pairing the same iPhone again</strong> replaces its old entry on the Mac, and what was waiting for the old one is deleted.</li>
   <li>At start-up, the Mac deletes what is still waiting for phones that are no longer paired.</li>
   <li>Anything else left over (for example, messages for a phone that stayed switched off) is deleted once it is more than 7 days old. The Mac checks about once a day while it is running and online; if it is off or offline for a while, the clean-up happens when it is back.</li>
@@ -184,12 +184,12 @@ p=String(p).toLowerCase().indexOf("zh")===0?"zh":"en";d.classList.add("js",p);d.
 <h3>iPhone 上</h3>
 <p>配对密钥（保存在 iOS 钥匙串里）、一份加密的近期消息和任务记录（方便离线时显示）、你的设置，以及这台 iPhone 以前和每台 Mac 配对时用过的设备 ID（最多 8 个，不是机密）——这样再次配对时，Mac 上会替换旧条目，而不是多出一条。解除配对会移除配对密钥和本机记录。</p>
 <h3>Mac 上关于你手机的信息</h3>
-<p>手机的名称、公钥、配对时间，以及 Mac 最后一次收到它消息的时间（精确到分钟）。设置 › iPhone 中显示为<em>连接中…</em>或<em>已连接 · 某时在线</em>。</p>
+<p>手机的名称、公钥、配对时间，以及 Mac 最后一次收到它消息的时间（精确到分钟）。设置 › 连接 › iPhone 中显示为<em>连接中…</em>或<em>已连接 · 某时在线</em>。</p>
 
 <h2><span class="n">07</span>保留与删除</h2>
 <ul>
   <li>每条记录在对方设备确认收到后，就会从你的 iCloud 里删除。</li>
-  <li>在 Mac 上<strong>移除手机</strong>（<span class="k">设置 › iPhone › 移除</span>），也会删除 Mac 留在 iCloud 里给这台手机的消息。</li>
+  <li>在 Mac 上<strong>移除手机</strong>（<span class="k">设置 › 连接 › iPhone › 移除</span>），也会删除 Mac 留在 iCloud 里给这台手机的消息。</li>
   <li><strong>同一台 iPhone 再次配对</strong>时，Mac 上的旧条目会被替换，等待旧条目的消息会被删除。</li>
   <li>Mac 启动时，会删除仍在等待已不再配对的手机的记录。</li>
   <li>其他残留（比如发给一台一直关机的手机的消息），超过 7 天后删除。Mac 开着并联网时大约每天检查一次；如果 Mac 关机或离线了一段时间，等它恢复后再清理。</li>
