@@ -45,15 +45,19 @@ def _mock_github(monkeypatch, *, license="MIT", tree=None, raws=None):
                 "stars": 10, "forks": 1, "license": license, "pushed_days": 1,
                 "description": "", "topics": []}
 
-    async def _tree_paths(owner, repo):
+    async def _tree_paths(owner, repo, sha=None):
         return tree or []
 
-    async def _fetch_raw(owner, repo, path):
+    async def _fetch_raw(owner, repo, path, sha=None):
         return (raws or {})[path]
 
     monkeypatch.setattr(skill_import.github_eval, "fetch_repo", _fetch_repo)
     monkeypatch.setattr(skill_import, "_tree_paths", _tree_paths)
     monkeypatch.setattr(skill_import, "_fetch_raw", _fetch_raw)
+
+    async def _head_sha(owner, repo):               # 0.1.57: imports pin to a commit
+        return "0" * 40
+    monkeypatch.setattr(skill_import, "head_sha", _head_sha)
 
 
 # ── storage + surfacing + per-file size cap ────────────────────────────────────

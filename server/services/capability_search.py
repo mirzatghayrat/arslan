@@ -29,13 +29,16 @@ logger = logging.getLogger(__name__)
 
 REGISTRY = "https://registry.modelcontextprotocol.io"
 GITHUB = "https://api.github.com"
-RAW = "https://raw.githubusercontent.com"
-TIMEOUT_S = 8.0
+TIMEOUT_S = 10.0
+#: The official registry answered in 13–60 s per query on 2026-10-09 (≈19 s with
+#: version=latest); a slower budget for it, and a longer cache so a word is asked rarely.
+REGISTRY_TIMEOUT_S = 30.0
+REGISTRY_CACHE_S = 6 * 3600
+LIBRARY_TIMEOUT_S = 30.0
 CACHE_S = 3600
 LIBRARY_CACHE_S = 24 * 3600
 MAX_RESULTS = 24
 MODEL_RESULTS = 8
-ENRICH = 8                       # registry hits whose repository we look up (license, stars)
 
 #: Reviewed skill libraries (§2): read as an index of SKILL.md files, one license per skill.
 SKILL_LIBRARIES = ("anthropics/skills",)
@@ -185,7 +188,10 @@ def from_registry(entry: dict) -> Candidate:
         cand.package = {"registry_type": usable["registryType"], "identifier": usable.get("identifier"),
                         "version": usable.get("version") or srv.get("version"),
                         "file_sha256": usable.get("fileSha256"), "runtime_hint": usable.get("runtimeHint"),
-                        "transport": (usable.get("transport") or {}).get("type")}
+                        "transport": (usable.get("transport") or {}).get("type"),
+                        # How the server is started (e.g. ["stdio", "--allow-dir <folder>"]).
+                        "arguments": [{k: a.get(k) for k in ("type", "name", "value", "format", "isRequired")}
+                                      for a in usable.get("packageArguments") or [] if isinstance(a, dict)][:12]}
         env = usable.get("environmentVariables") or []
         cand.needs = {"keys": [{"name": e.get("name"), "secret": bool(e.get("isSecret")),
                                 "required": bool(e.get("isRequired")), "description": (e.get("description") or "")[:200]}
@@ -206,10 +212,11 @@ def from_registry(entry: dict) -> Candidate:
 
 
 async def search_registry(client: httpx.AsyncClient, word: str) -> list[Candidate]:
-    hit = _cached(f"reg:{word}", CACHE_S)
+    hit = _cached(f"reg:{word}", REGISTRY_CACHE_S)
     if hit is not None:
         return hit
-    r = await client.get(f"{REGISTRY}/v0/servers", params={"search": word, "limit": 100})
+    r = await client.get(f"{REGISTRY}/v0/servers", params={"search": word, "version": "latest", "limit": 50},
+                         timeout=REGISTRY_TIMEOUT_S)
     r.raise_for_status()
     newest: dict[str, dict] = {}
     for entry in r.json().get("servers") or []:
@@ -219,6 +226,26 @@ async def search_registry(client: httpx.AsyncClient, word: str) -> list[Candidat
                      _version_key(newest[name].get("server", newest[name]).get("version"))):
             newest[name] = entry
     return _store(f"reg:{word}", [from_registry(e) for e in newest.values()])
+
+
+LOOKUPS = 6                      # GitHub MCP repositories checked against the registry by name
+
+
+async def lookup_registry(client: httpx.AsyncClient, repo: str) -> Candidate | None:
+    """The registry entry a GitHub repository published under the usual name
+    (io.github.<owner>/<repo>): one fast call (≈0.9 s, against ≈19 s or a timeout for a
+    registry search on 2026-10-09). None when it published nothing there."""
+    key = f"regname:{repo.lower()}"
+    hit = _cached(key, REGISTRY_CACHE_S)
+    if hit is not None:
+        return hit or None
+    owner, name = repo.split("/", 1)
+    r = await client.get(f"{REGISTRY}/v0/servers/io.github.{owner}%2F{name}/versions/latest", timeout=TIMEOUT_S)
+    if r.status_code == 404:
+        _store(key, False)
+        return None
+    r.raise_for_status()
+    return _store(key, from_registry(r.json()))
 
 
 # ── GitHub ───────────────────────────────────────────────────────────────────
@@ -254,73 +281,92 @@ async def search_github(word: str) -> list[Candidate]:
     hit = _cached(f"gh:{word}", CACHE_S)
     if hit is not None:
         return hit
-    try:
-        items = await github_eval.search_repos(word)
-    except ValueError as exc:            # rate limit / bad query: say it once, return nothing
-        logger.info("github search: %s", exc)
-        return []
+    items = await github_eval.search_repos(word)     # a rate limit raises: the search notes it
     return _store(f"gh:{word}", [from_github(i) for i in items])
 
 
-async def enrich_from_github(cand: Candidate) -> Candidate:
-    """A registry candidate's repository: license (GitHub's reading of its LICENSE file),
-    stars, last push. Cached per repository."""
-    if not cand.repo:
-        return cand
-    hit = _cached(f"repo:{cand.repo}", CACHE_S)
-    if hit is None:
-        try:
-            owner, repo = cand.repo.split("/", 1)
-            hit = _store(f"repo:{cand.repo}", await github_eval.fetch_repo(owner, repo))
-        except (ValueError, httpx.HTTPError) as exc:
-            logger.info("repo lookup %s: %s", cand.repo, type(exc).__name__)
-            return cand
-    spdx = hit.get("license")
-    cand.license = {"spdx": spdx, "read_from": "github:LICENSE", "verdict": license_verdict(spdx)}
-    cand.stars, cand.pushed_days, cand.checked_at = hit.get("stars"), hit.get("pushed_days"), time.time()
-    return cand
+async def enrich_batch(cands: list[Candidate]) -> None:
+    """License, stars and last push for many registry entries at once: one GitHub search per
+    ~240 characters of `repo:` qualifiers (search allows several), instead of a call per
+    repository (the core API allows 60 an hour without a token). Cached per repository."""
+    todo = [c for c in cands if c.repo and _cached(f"repo:{c.repo}", CACHE_S) is None]
+    chunks, current = [], []
+    for c in todo:
+        if current and len(" ".join(f"repo:{r.repo}" for r in [*current, c])) > 240:
+            chunks.append(current)
+            current = []
+        current.append(c)
+    if current:
+        chunks.append(current)
+    for chunk in chunks[:3]:
+        items = await github_eval.search_repos(" ".join(f"repo:{c.repo}" for c in chunk))
+        for item in items:
+            if item.get("full_name"):
+                _store(f"repo:{item['full_name']}", item)
+    for c in cands:
+        hit = _cached(f"repo:{c.repo}", CACHE_S) if c.repo else None
+        if hit:
+            spdx = hit.get("license")
+            c.license = {"spdx": spdx, "read_from": "github:LICENSE", "verdict": license_verdict(spdx)}
+            c.stars, c.pushed_days, c.checked_at = hit.get("stars"), hit.get("pushed_days"), time.time()
 
 
 # ── reviewed skill libraries ─────────────────────────────────────────────────
 
+CODELOAD = "https://codeload.github.com"
+LIBRARY_MAX_BYTES = 30 * 1024 * 1024
+
+
+def index_archive(library: str, data: bytes) -> list[Candidate]:
+    """Every SKILL.md in a library's archive, with that skill's own license file (§2). The
+    archive's pax header carries the commit it was made from (GitHub writes it there), so
+    the index — and an import from it — names one exact commit."""
+    import io
+    import tarfile
+
+    from server.services import skill_import
+    with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as archive:
+        sha = (archive.pax_headers or {}).get("comment") or ""
+        files: dict[str, bytes] = {}
+        for member in archive.getmembers():
+            if not member.isfile() or member.size > 1_000_000:
+                continue
+            rel = member.name.split("/", 1)[1] if "/" in member.name else member.name
+            if rel.endswith("SKILL.md") or rel.rsplit("/", 1)[-1] in skill_import._LICENSE_NAMES:
+                fh = archive.extractfile(member)
+                if fh is not None:
+                    files[rel] = fh.read()
+    out: list[Candidate] = []
+    for path in sorted(p for p in files if p.endswith("SKILL.md"))[:60]:
+        parsed = skill_import.parse_skill_md(files[path].decode("utf-8", "replace"))
+        if not parsed:
+            continue
+        folder = path.rsplit("/", 1)[0] if "/" in path else ""
+        lic_path = next((f"{folder}/{n}" for n in skill_import._LICENSE_NAMES if folder and f"{folder}/{n}" in files), None)
+        spdx = proprietary = None
+        if lic_path:
+            spdx = skill_import.detect_license(files[lic_path].decode("utf-8", "replace"))
+            proprietary = spdx is None                        # a license file that is not permissive
+        out.append(Candidate(
+            id=f"library:{library}:{path}", kind="skill", name=parsed["name"], summary=parsed["description"],
+            source="library", source_url=f"https://github.com/{library}/tree/{sha or 'HEAD'}/{folder}", repo=library,
+            version=sha[:12] or None, runtime="skill", path=path,
+            license={"spdx": spdx, "read_from": lic_path, "verdict": license_verdict(spdx, proprietary=bool(proprietary))},
+            checked_at=time.time()))
+    return out
+
+
 async def library_index(client: httpx.AsyncClient, library: str) -> list[Candidate]:
-    """Every SKILL.md in a reviewed library, with that skill's own license (§2)."""
+    """A reviewed library as one archive from codeload (not the rate-limited API: without a
+    token GitHub allows 60 API calls an hour, and the per-file way spent ~40 of them)."""
     hit = _cached(f"lib:{library}", LIBRARY_CACHE_S)
     if hit is not None:
         return hit
-    from server.services import skill_import
-    headers = github_eval._headers(await github_eval._token())
-    meta = await client.get(f"{GITHUB}/repos/{library}", headers=headers)
-    meta.raise_for_status()
-    branch = meta.json().get("default_branch") or "main"
-    ref = await client.get(f"{GITHUB}/repos/{library}/commits/{branch}", headers=headers)
-    ref.raise_for_status()
-    sha = ref.json()["sha"]
-    tree = await client.get(f"{GITHUB}/repos/{library}/git/trees/{sha}", params={"recursive": "1"}, headers=headers)
-    tree.raise_for_status()
-    paths = [e["path"] for e in tree.json().get("tree") or [] if e.get("type") == "blob"]
-    out: list[Candidate] = []
-    for path in [p for p in paths if p.endswith("SKILL.md")][:60]:
-        raw = await client.get(f"{RAW}/{library}/{sha}/{path}")
-        if raw.status_code != 200:
-            continue
-        parsed = skill_import.parse_skill_md(raw.text)
-        if not parsed:
-            continue
-        folder = path.rsplit("/", 1)[0]
-        lic_path = next((f"{folder}/{n}" for n in skill_import._LICENSE_NAMES if f"{folder}/{n}" in paths), None)
-        spdx, proprietary = None, False
-        if lic_path:
-            text = await client.get(f"{RAW}/{library}/{sha}/{lic_path}")
-            spdx = skill_import.detect_license(text.text) if text.status_code == 200 else None
-            proprietary = spdx is None and text.status_code == 200      # a license file that is not permissive
-        out.append(Candidate(
-            id=f"library:{library}:{path}", kind="skill", name=parsed["name"], summary=parsed["description"],
-            source="library", source_url=f"https://github.com/{library}/tree/{sha}/{folder}", repo=library,
-            version=sha[:12], runtime="skill", path=path,
-            license={"spdx": spdx, "read_from": lic_path or None,
-                     "verdict": license_verdict(spdx, proprietary=proprietary)}, checked_at=time.time()))
-    return _store(f"lib:{library}", out)
+    r = await client.get(f"{CODELOAD}/{library}/tar.gz/HEAD", follow_redirects=True, timeout=LIBRARY_TIMEOUT_S)
+    r.raise_for_status()
+    if len(r.content) > LIBRARY_MAX_BYTES:
+        raise ValueError("library archive too large")
+    return _store(f"lib:{library}", index_archive(library, r.content))
 
 
 def _matches(cand: Candidate, words: list[str]) -> int:
@@ -331,11 +377,19 @@ def _matches(cand: Candidate, words: list[str]) -> int:
 # ── together ─────────────────────────────────────────────────────────────────
 
 def rank(cands: list[Candidate], words: list[str]) -> list[Candidate]:
-    """For the page (§2): fit to the words, then a license we can use, then can run here,
-    then activity. The model does its own ranking from the top MODEL_RESULTS."""
+    """One score (§2): fit to the words, a license we can use, can run here, and how widely
+    used (log of stars), minus a year without commits. Fit alone buried the server that does
+    the job under small repositories that merely mention a word (measured 2026-10-09 with
+    "excel formulas"). The model does its own choosing from the top MODEL_RESULTS."""
+    import math
+
     def score(c: Candidate):
-        return (-_matches(c, words), c.license["verdict"] != "usable", c.not_here is not None,
-                -(c.stars or 0), c.pushed_days if c.pushed_days is not None else 10_000)
+        usable = c.license["verdict"] == "usable"
+        installable = usable and c.not_here is None and c.runtime in ("uv", "node", "mcpb", "remote", "skill")
+        value = (2 * _matches(c, words) / max(1, len(words)) + 2 * usable + 2 * (c.not_here is None)
+                 + 1.5 * installable                      # something Arslan can actually add, first
+                 + math.log10((c.stars or 0) + 1) / 2 - (1 if (c.pushed_days or 0) > 365 else 0))
+        return (-value, c.id)
     seen, out = set(), []
     for c in sorted(cands, key=score):
         key = (c.repo or c.id).lower() if c.kind != "skill" or c.source != "library" else c.id
@@ -354,28 +408,45 @@ async def search(need: str, *, words: list[str] | None = None, kinds: set[str] |
     notes: list[str] = []
     found: list[Candidate] = []
     async with httpx.AsyncClient(timeout=TIMEOUT_S) as client:
+        budgets = {"registry": REGISTRY_TIMEOUT_S, "library": LIBRARY_TIMEOUT_S, "github": TIMEOUT_S,
+                   "registry_lookup": TIMEOUT_S}
+
         async def guarded(name, coro):
             try:
-                return await asyncio.wait_for(coro, TIMEOUT_S + 2)
+                return await asyncio.wait_for(coro, budgets[name] + 2)
             except Exception as exc:  # noqa: BLE001 — one source never stops the others
                 logger.info("capability search %s failed: %s", name, type(exc).__name__)
-                notes.append(f"{name}_unavailable")
+                if name != "registry_lookup" and f"{name}_unavailable" not in notes:
+                    notes.append(f"{name}_unavailable")
                 return []
         jobs = []
         if not kinds or "mcp" in kinds:
             jobs += [guarded("registry", search_registry(client, w)) for w in words[:2]]
         if not kinds or kinds & {"mcp", "skill", "project"}:
             jobs.append(guarded("github", search_github(" ".join(words[:3]))))
+        if not kinds or "mcp" in kinds:
+            jobs.append(guarded("github", search_github(" ".join(words[:2]) + " mcp")))
         if not kinds or "skill" in kinds:
             jobs += [guarded("library", library_index(client, lib)) for lib in SKILL_LIBRARIES]
         for batch in await asyncio.gather(*jobs):
             found.extend(batch)
+        # The fast way to the registry: GitHub's MCP repositories, looked up by name.
+        known = {c.repo.lower() for c in found if c.source == "registry" and c.repo}
+        ask = sorted({c.repo for c in found if c.source == "github" and c.kind == "mcp" and c.repo
+                      and c.repo.lower() not in known and (not kinds or "mcp" in kinds)}, key=lambda r: -max(
+                          (c.stars or 0) for c in found if c.repo == r))[:LOOKUPS]
+        for entry in await asyncio.gather(*(guarded("registry_lookup", lookup_registry(client, r)) for r in ask)):
+            if isinstance(entry, Candidate):
+                found.append(entry)
     found = [c for c in found if c.source != "library" or _matches(c, words)]
     if kinds:
         found = [c for c in found if c.kind in kinds]
     found = merge(found)
-    unread = [c for c in rank(found, words) if c.source == "registry" and c.license["verdict"] == "unknown"]
-    await asyncio.gather(*(enrich_from_github(c) for c in unread[:ENRICH]))
+    unread = [c for c in found if c.source == "registry" and c.repo and c.license["verdict"] == "unknown"]
+    try:
+        await asyncio.wait_for(enrich_batch(unread), TIMEOUT_S + 2)
+    except Exception as exc:  # noqa: BLE001 — unread licenses stay "unknown" (not installable)
+        logger.info("capability search enrich: %s", type(exc).__name__)
     return {"words": words, "candidates": [c.view() for c in rank(found, words)[:MAX_RESULTS]], "notes": notes}
 
 

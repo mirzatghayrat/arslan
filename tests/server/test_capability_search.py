@@ -1,5 +1,6 @@
 """0.1.57 P1: finding capabilities — the official MCP Registry, GitHub, reviewed skill libraries."""
 import inspect
+import re
 import pathlib
 
 import httpx
@@ -53,11 +54,20 @@ GITHUB_SEARCH = {"items": [
      "description": "Excel skills for agents", "topics": ["claude-skills"]},
 ]}
 
-LIB_TREE = {"tree": [{"type": "blob", "path": p} for p in (
-    "skills/xlsx/SKILL.md", "skills/xlsx/LICENSE.txt",
-    "skills/csv-tidy/SKILL.md", "skills/csv-tidy/LICENSE.txt",
-    "skills/poetry/SKILL.md")]}
+#: Published in the registry under the usual name, but not found by the registry's own search.
+LOOKUP = {"io.github.openpyxl-mirror/openpyxl": None,
+          "io.github.acme/excel-mcp-gpl": reg("io.github.acme/excel-mcp-gpl", "0.3", repo="acme/excel-mcp-gpl",
+                                              packages=[{"registryType": "npm", "identifier": "excel-mcp-gpl",
+                                                         "version": "0.3", "transport": {"type": "stdio"}}])}
+
+#: What GitHub knows of repositories the registry names (for the batch lookup).
+REPOS = [
+    {"full_name": "someone/excel-dotnet", "html_url": "https://github.com/someone/excel-dotnet", "stargazers_count": 3,
+     "license": None, "pushed_at": "2026-09-28T00:00:00Z", "description": "", "topics": []},
+]
+
 SKILL = lambda name, desc: f"---\nname: {name}\ndescription: {desc}\n---\n# {name}\nDo the thing.\n"  # noqa: E731
+LIB_SHA = "abc123def4567890abc123def4567890abc12345"
 RAW = {
     "skills/xlsx/SKILL.md": SKILL("xlsx", "Work with Excel spreadsheets"),
     "skills/xlsx/LICENSE.txt": PROPRIETARY,
@@ -65,6 +75,21 @@ RAW = {
     "skills/csv-tidy/LICENSE.txt": MIT,
     "skills/poetry/SKILL.md": SKILL("poetry", "Write poems"),
 }
+
+
+def library_archive() -> bytes:
+    """What codeload serves: a tar.gz whose pax header names the commit (as GitHub's do)."""
+    import io
+    import tarfile
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz", format=tarfile.PAX_FORMAT,
+                      pax_headers={"comment": LIB_SHA}) as tar:
+        for path, text in RAW.items():
+            data = text.encode()
+            info = tarfile.TarInfo(f"skills-HEAD/{path}")
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+    return buf.getvalue()
 
 
 class Net:
@@ -80,17 +105,19 @@ class Net:
         if host in self.fail:
             raise httpx.ConnectError("down", request=request)
         if host == "registry.modelcontextprotocol.io":
+            if request.url.path.startswith("/v0/servers/"):
+                name = request.url.path.split("/v0/servers/", 1)[1].split("/versions/")[0].replace("%2F", "/")
+                entry = LOOKUP.get(name)
+                return httpx.Response(200, json=entry) if entry else httpx.Response(404, json={})
             return httpx.Response(200, json=REGISTRY)
         if host == "api.github.com":
             path = request.url.path
             if path == "/search/repositories":
+                q = request.url.params.get("q", "")
+                if "repo:" in q:                      # the batch lookup of registry entries
+                    wanted = {r.lower() for r in re.findall(r"repo:(\S+)", q)}
+                    return httpx.Response(200, json={"items": [i for i in REPOS if i["full_name"].lower() in wanted]})
                 return httpx.Response(200, json=GITHUB_SEARCH)
-            if path == "/repos/anthropics/skills":
-                return httpx.Response(200, json={"default_branch": "main"})
-            if path == "/repos/anthropics/skills/commits/main":
-                return httpx.Response(200, json={"sha": "abc123def4567890"})
-            if path.startswith("/repos/anthropics/skills/git/trees/"):
-                return httpx.Response(200, json=LIB_TREE)
             if path == "/repos/haris-musa/excel-mcp-server":
                 return httpx.Response(200, json={"full_name": "haris-musa/excel-mcp-server", "stargazers_count": 4212,
                                                  "license": {"spdx_id": "MIT"}, "pushed_at": "2026-09-28T00:00:00Z"})
@@ -98,9 +125,9 @@ class Net:
                 return httpx.Response(200, json={"full_name": "someone/excel-dotnet", "stargazers_count": 3,
                                                  "license": None, "pushed_at": "2026-09-28T00:00:00Z"})
             return httpx.Response(404, json={})
-        if host == "raw.githubusercontent.com":
-            path = request.url.path.split("/abc123def4567890/", 1)[-1]
-            return httpx.Response(200, text=RAW[path]) if path in RAW else httpx.Response(404)
+        if host == "codeload.github.com":
+            return httpx.Response(200, content=library_archive()) if request.url.path == "/anthropics/skills/tar.gz/HEAD" \
+                else httpx.Response(404)
         return httpx.Response(404)
 
 
@@ -177,8 +204,9 @@ async def test_a_library_is_indexed_per_skill_with_each_skills_own_license_at_on
     assert found["csv-tidy"].license == {"spdx": "MIT", "read_from": "skills/csv-tidy/LICENSE.txt", "verdict": "usable"}
     assert found["xlsx"].license["verdict"] == "reference_only"           # a license file that is not permissive
     assert found["poetry"].license["verdict"] == "unknown"                 # no license file at all
-    assert found["xlsx"].version == "abc123def456" and "/tree/abc123def4567890/skills/xlsx" in found["xlsx"].source_url
-    assert all("/abc123def4567890/" in u for u in net.calls if "raw.githubusercontent.com" in u)
+    assert found["xlsx"].version == LIB_SHA[:12] and f"/tree/{LIB_SHA}/skills/xlsx" in found["xlsx"].source_url
+    # One archive, no API call (60 an hour without a token).
+    assert [u for u in net.calls if "anthropics" in u] == ["https://codeload.github.com/anthropics/skills/tar.gz/HEAD"]
 
 
 # ── together ─────────────────────────────────────────────────────────────────
@@ -198,8 +226,9 @@ async def test_search_puts_installable_usable_matches_first_and_merges_the_same_
     # A registry entry with no GitHub search hit has its repository read directly.
     dotnet = next(c for c in result["candidates"] if c["name"] == "excel-dotnet")
     assert dotnet["stars"] == 3 and dotnet["license"]["verdict"] == "unknown"
-    assert any(u.endswith("/repos/someone/excel-dotnet") for u in net.calls)
-    assert not any(u.endswith("/repos/haris-musa/excel-mcp-server") for u in net.calls)   # merged instead
+    batch = [u for u in net.calls if "repo%3A" in u]
+    assert len(batch) == 1 and "someone%2Fexcel-dotnet" in batch[0]          # one search for all of them
+    assert "haris-musa" not in batch[0]                                       # merged from GitHub instead
 
 
 async def test_one_source_down_never_stops_the_others(net):
@@ -307,3 +336,23 @@ def test_with_the_same_fit_a_usable_license_comes_before_more_stars():
     gpl = cs.Candidate(id="b", kind="project", name="excel-pro", summary="", source="github", source_url=None,
                        repo="b/excel-pro", stars=9000, license={"spdx": "GPL-3.0", "read_from": "x", "verdict": "reference_only"})
     assert [c.id for c in cs.rank([gpl, usable], ["excel"])] == ["a", "b"]
+
+
+async def test_a_github_mcp_repository_is_looked_up_in_the_registry_by_name(net):
+    """The registry's search is slow (≈19 s or a timeout); a lookup by name is ≈0.9 s.
+    A GitHub MCP repository published under io.github.<owner>/<repo> becomes installable."""
+    result = await cs.search("excel", words=["excel"], kinds={"mcp"})
+    gpl = [c for c in result["candidates"] if c["repo"] == "acme/excel-mcp-gpl"]
+    assert len(gpl) == 1 and gpl[0]["source"] == "registry" and gpl[0]["runtime"] == "node"
+    assert gpl[0]["license"]["verdict"] == "reference_only"        # taken from the GitHub result
+    assert any("/v0/servers/io.github.acme%2Fexcel-mcp-gpl/versions/latest" in u for u in net.calls)
+    # The ones already found by the registry's search are not looked up again.
+    assert not any("haris-musa%2Fexcel-mcp-server/versions" in u for u in net.calls)
+
+
+async def test_a_rate_limited_github_is_noted_not_hidden(net, monkeypatch):
+    async def limited(q):
+        raise ValueError("GitHub rate-limited — set GITHUB_TOKEN in Settings to raise the limit")
+    monkeypatch.setattr(github_eval, "search_repos", limited)
+    result = await cs.search("excel", words=["excel"])
+    assert result["notes"] == ["github_unavailable"]

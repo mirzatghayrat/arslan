@@ -62,7 +62,9 @@ def runtime_dict(srv) -> dict:
         except Exception:  # noqa: BLE001
             env = {}
     return {"id": srv.id, "transport": srv.transport or "stdio",
-            "command": srv.command, "args": srv.args or [], "url": srv.url, "env": env}
+            "command": srv.command, "args": srv.args or [], "url": srv.url, "env": env,
+            # 0.1.57 §5.3: installed capabilities start under their seatbelt profile.
+            "sandbox": getattr(srv, "sandbox", None)}
 
 
 def _describe_failure(exc: BaseException, *, has_headers: bool) -> str:

@@ -68,11 +68,15 @@ class MCPSessionManager:
                 # against the merged (login-shell) PATH and hand the child that PATH
                 # too — npx itself needs to find node. A user-configured PATH wins.
                 env["PATH"] = server_env.get("PATH") or spawn_env.merged_path()
-                params = StdioServerParameters(
-                    command=spawn_env.resolve_command(server["command"]),
-                    args=list(server.get("args") or []),
-                    env=env,
-                )
+                command = spawn_env.resolve_command(server["command"])
+                args = list(server.get("args") or [])
+                cwd = None
+                if server.get("sandbox"):
+                    # 0.1.57 §5.3: a capability Arslan installed runs under its own profile
+                    # (deny by default; its folder, granted folders, network only if declared).
+                    from server.services import capability_sandbox
+                    command, args, env, cwd = capability_sandbox.wrap(command, args, env, server["sandbox"])
+                params = StdioServerParameters(command=command, args=args, env=env, cwd=cwd)
                 read, write = await stack.enter_async_context(stdio_client(params))
             client = await stack.enter_async_context(ClientSession(read, write))
             await client.initialize()

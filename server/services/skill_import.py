@@ -16,6 +16,7 @@ Safety/discipline:
 """
 from __future__ import annotations
 
+import hashlib
 import re
 from datetime import datetime, timezone
 
@@ -107,7 +108,7 @@ def detect_license(text: str) -> str | None:
 
 
 async def _skill_license(owner: str, repo: str, skill_path: str, paths: list[str],
-                         repo_spdx: str | None) -> tuple[str | None, str]:
+                         repo_spdx: str | None, sha: str | None = None) -> tuple[str | None, str]:
     """(SPDX, where it came from) for ONE skill. The skill's own license file wins
     over the repo's (0.1.55): anthropics/skills has no repo license, but every skill
     folder has a LICENSE.txt — Apache-2.0 for most, Anthropic's own terms for the
@@ -116,7 +117,7 @@ async def _skill_license(owner: str, repo: str, skill_path: str, paths: list[str
     for name in _LICENSE_NAMES:
         candidate = f"{folder}/{name}" if folder else name
         if candidate in paths and folder:
-            return detect_license(await _fetch_raw(owner, repo, candidate)), candidate
+            return detect_license(await _fetch_raw(owner, repo, candidate, sha)), candidate
     return repo_spdx, "repo"
 
 
@@ -137,20 +138,31 @@ async def _get(path: str, *, raw: bool = False) -> httpx.Response:
         return await client.get(f"{_GITHUB_API}{path}", headers=headers)
 
 
-async def _tree_paths(owner: str, repo: str) -> list[str]:
-    """All blob paths in the default branch (recursive tree)."""
+async def head_sha(owner: str, repo: str) -> str:
+    """The commit the default branch points at now — what an import pins to (0.1.57 §5.2)."""
     r = await _get(f"/repos/{owner}/{repo}")
     r.raise_for_status()
     branch = r.json().get("default_branch") or "main"
-    r = await _get(f"/repos/{owner}/{repo}/git/trees/{branch}?recursive=1")
+    r = await _get(f"/repos/{owner}/{repo}/commits/{branch}")
+    r.raise_for_status()
+    return r.json()["sha"]
+
+
+async def _tree_paths(owner: str, repo: str, sha: str | None = None) -> list[str]:
+    """All blob paths at `sha`, or in the default branch (recursive tree)."""
+    if sha is None:
+        r = await _get(f"/repos/{owner}/{repo}")
+        r.raise_for_status()
+        sha = r.json().get("default_branch") or "main"
+    r = await _get(f"/repos/{owner}/{repo}/git/trees/{sha}?recursive=1")
     if r.status_code == 403 and "rate limit" in (r.text or "").lower():
         raise ValueError("GitHub rate-limited — set GITHUB_TOKEN in Settings")
     r.raise_for_status()
     return [e["path"] for e in r.json().get("tree") or [] if e.get("type") == "blob"]
 
 
-async def _fetch_raw(owner: str, repo: str, path: str) -> str:
-    r = await _get(f"/repos/{owner}/{repo}/contents/{path}", raw=True)
+async def _fetch_raw(owner: str, repo: str, path: str, sha: str | None = None) -> str:
+    r = await _get(f"/repos/{owner}/{repo}/contents/{path}" + (f"?ref={sha}" if sha else ""), raw=True)
     r.raise_for_status()
     return r.text or ""
 
@@ -220,20 +232,37 @@ async def scan_skills(ref: str, subpath: str = "") -> dict:
             "skills": skills}
 
 
+_SHA_RE = re.compile(r"^[0-9a-f]{7,40}$")
+
+
 async def import_skill(ref: str, path: str) -> dict:
-    """Import ONE skill faithfully. Re-validates everything server-side (never trust the UI)."""
+    """Import ONE skill faithfully. Re-validates everything server-side (never trust the UI).
+
+    0.1.57 §5.2: pinned. `ref` may name the commit (`owner/repo@<sha>`, what a dossier
+    recorded); without one, the import pins to the commit the default branch points at now.
+    Every file is fetched AT that commit and its SHA-256 returned, so the dossier can say
+    exactly what was installed."""
+    ref, _, sha = (ref or "").partition("@")
     parsed = github_eval.parse_repo_ref(ref)
     if parsed is None:
         raise ValueError("not a GitHub repo reference")
+    if sha and not _SHA_RE.fullmatch(sha.lower()):
+        raise ValueError("not a commit id")
     owner, repo = parsed
     meta = await github_eval.fetch_repo(owner, repo)
-    paths = await _tree_paths(owner, repo)
-    spdx, source = await _skill_license(owner, repo, path, paths, meta["license"])
+    sha = sha.lower() or await head_sha(owner, repo)
+    paths = await _tree_paths(owner, repo, sha)
+    spdx, source = await _skill_license(owner, repo, path, paths, meta["license"], sha)
     block = _skill_license_block(spdx, source)
     if block:
         raise ValueError(block)
+    files: dict[str, str] = {}
 
-    raw = await _fetch_raw(owner, repo, path)
+    def _keep(file_path: str, content: str) -> str:
+        files[file_path] = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        return content
+
+    raw = _keep(path, await _fetch_raw(owner, repo, path, sha))
     info = parse_skill_md(raw)
     if info is None:
         raise ValueError("not a valid SKILL.md (frontmatter name+description required)")
@@ -252,13 +281,13 @@ async def import_skill(ref: str, path: str) -> dict:
         script_dir = _data_dir() / "skill_scripts" / key
         script_dir.mkdir(parents=True, exist_ok=True)
         for sp in script_paths:
-            content = await _fetch_raw(owner, repo, sp)
+            content = await _fetch_raw(owner, repo, sp, sha)
             if len(content.encode("utf-8")) > _MAX_SCRIPT_BYTES:
                 continue
             fname = sp.rsplit("/", 1)[-1]
             if not re.fullmatch(r"[A-Za-z0-9._-]+\.py", fname):
                 continue
-            (script_dir / fname).write_text(content, encoding="utf-8")
+            (script_dir / fname).write_text(_keep(sp, content), encoding="utf-8")
             stored.append(fname)
 
     # bundled references → data_dir/skill_scripts/<key>/references/ (flat basenames,
@@ -269,7 +298,7 @@ async def import_skill(ref: str, path: str) -> dict:
         ref_dir = _data_dir() / "skill_scripts" / key / "references"
         ref_dir.mkdir(parents=True, exist_ok=True)
         for rp in ref_paths:
-            content = await _fetch_raw(owner, repo, rp)
+            content = await _fetch_raw(owner, repo, rp, sha)
             if len(content.encode("utf-8")) > _MAX_REFERENCE_BYTES:
                 continue
             fname = rp.rsplit("/", 1)[-1]
@@ -277,11 +306,11 @@ async def import_skill(ref: str, path: str) -> dict:
                 continue
             if fname in stored_refs:  # basename collision from a nested ref — keep the first
                 continue
-            (ref_dir / fname).write_text(content, encoding="utf-8")
+            (ref_dir / fname).write_text(_keep(rp, content), encoding="utf-8")
             stored_refs.append(fname)
 
     today = datetime.now(timezone.utc).date().isoformat()
-    attribution = (f"> Imported verbatim from https://github.com/{meta['full_name']} "
+    attribution = (f"> Imported verbatim from https://github.com/{meta['full_name']} at {sha[:12]} "
                    f"({spdx}{'' if source == 'repo' else ', ' + source}) on {today}.\n\n")
     body = attribution + info["body"]
     if stored:
@@ -302,4 +331,5 @@ async def import_skill(ref: str, path: str) -> dict:
         db.add(row)
         await db.commit()
     return {"key": key, "name": info["name"], "description": info["description"],
-            "scripts": stored, "references": stored_refs, "license": spdx}
+            "scripts": stored, "references": stored_refs, "license": spdx,
+            "license_source": source, "commit": sha, "files": files}

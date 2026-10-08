@@ -370,7 +370,8 @@ class FindCapabilityExecutor:
         words = [str(w)[:40] for w in (args.get("keywords") or []) if str(w).strip()][:4]
         if not need and not words:
             return {"ok": False, "error": "say what is needed (need) and 1-3 English search words (keywords)"}
-        kinds = {k for k in (args.get("kinds") or []) if k in ("mcp", "skill", "project")} or None
+        # Capabilities by default: an open-source library is only found when asked for.
+        kinds = {k for k in (args.get("kinds") or []) if k in ("mcp", "skill", "project")} or {"mcp", "skill"}
         result = await capability_search.search(need, words=words, kinds=kinds)
         ctx = personal_context.current()
         capability_search.remember(ctx.conversation_id if ctx else None, result)
