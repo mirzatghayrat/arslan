@@ -1,6 +1,6 @@
 # 0.1.57 — Capabilities that grow: find → check → ask → test → retry
 
-Status: draft for review (2026-10-09). Boards: round 3 "Capabilities-v3", "Capability-Propose",
+Status: approved 2026-10-09 — all six decisions as recommended (§13). Boards: round 3 "Capabilities-v3", "Capability-Propose",
 "Capability-Dossier" (design canvas, approved direction 2026-10-08). Hands v2 (cua-driver) also rides
 0.1.57 on its own spec (`2026-10-08-0157-hands-v2.md`); no file of this spec overlaps it.
 
@@ -237,7 +237,7 @@ red lines stay (the search code lives in a new module; the importer still takes 
 - **P4 Rail, dossier, projects, updates**: "Arslan 找到的" (from declines, jobs, level starts), dossier
   page, use in project, update check with what changed, nav count.
 
-## 13. Decisions for the user
+## 13. Decisions (user, 2026-10-09: "都按你的建议" — each as recommended)
 
 1. **Runtimes**: download pinned **uv and Node** on first need (recommended — most registry servers
    are pypi or npm), or uv only (npm servers then show "要 Node").
