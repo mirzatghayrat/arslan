@@ -34,6 +34,18 @@ async def execution_db(tmp_path, monkeypatch):
     await engine.dispose()
 
 
+@pytest.fixture(autouse=True)
+def _home_with_folders(tmp_path, monkeypatch):
+    """A home that HAS Desktop/Documents/Downloads. CI runners have none, and with no
+    folders `green_roots()` is empty — then "the home folders are readable" is true
+    of an empty set whatever the switch says, and the files checks prove nothing."""
+    from server.services import workspace_paths
+    home = tmp_path / "home"
+    for name in workspace_paths.GREEN_SUBDIRS:
+        (home / name).mkdir(parents=True)
+    monkeypatch.setattr(workspace_paths, "_home", lambda: home)
+
+
 @pytest.fixture
 async def api(execution_db, monkeypatch):
     monkeypatch.setattr(auth, "active_token", lambda: "synthetic-capabilities-token")
@@ -52,6 +64,7 @@ async def _set(execution_db, **values):
 async def _reads_home_folders(execution_db) -> bool:
     """Whether the Desktop/Documents/Downloads are readable, as the file tools resolve it."""
     from server.services.workspace_paths import green_roots, read_roots
+    assert green_roots(), "no home folders exist: the check below would be vacuously true"
     async with execution_db() as db:
         roots = read_roots(await settings_service.workspace_dir(db),
                            default_read=await settings_service.default_read_enabled(db))
