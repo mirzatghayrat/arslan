@@ -54,9 +54,14 @@ You keep talking while it works. Anything that deletes, sends, installs or touch
 
 That's it. No account, no sign-up, no Arslan server.
 
-## What's new in 0.1.53 — Hands for your Mac apps
+## What's new in 0.1.56 — projects in two layers
 
-Arslan can now read and use the apps on your Mac — Notes, Mail, Pages and the rest — through a small helper, **Arslan Hands**. It reads a window as its accessibility tree (never a screenshot) and acts in the background: your mouse, keyboard and front window stay yours. Looking at an app asks once per app in a conversation; acting happens only in background work and asks once per app; a button that deletes, sends, pays, buys, transfers or submits asks every time. The Mac side of **Arslan for iPhone** is in too (Settings › iPhone), and the black-and-white icon is now the default. [Full release notes →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.53)
+Projects now sit on one board — Idea, Shaping, Doing, Done — and each project climbs its own levels. Pick a type (game, app, website, research, writing, video, skill, trip, job) and a finish line, and the levels are drafted at once, without a model call; each level has a clear condition and a few checkpoints. Arslan ticks what it can see: files that appear in the project folder, what you tell it, a background job that finishes. Every tick says why and can be undone, clearing a level is only ever a proposal, and Done and Dropped are yours alone. [Full release notes →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.56)
+
+Recently:
+- **[0.1.55](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.55)** — one look for everything that asks: cards wait in one queue, ⌘⏎ allows and Esc declines, and the Island answers them (a step that deletes, sends, pays or submits opens in Arslan instead). The Inbox, Memory and Capabilities are one page each.
+- **[0.1.54](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.54)** — the Mac side is ready for Arslan for iPhone (Touch ID approvals, one entry per phone, clean-up when a phone goes), and the terminal gate checks every command in a chain.
+- **[0.1.53](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.53)** — **Arslan Hands**: Arslan reads and uses your Mac apps through their accessibility tree, in the background; a button that deletes, sends, pays, buys, transfers or submits asks every time.
 
 <div align="center">
   <img src="docs/assets/readme/devices.jpg" alt="Arslan on a Mac — a background job gathering invoices — and Arslan for iPhone showing an approval waiting" width="100%">

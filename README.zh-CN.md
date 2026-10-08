@@ -53,9 +53,14 @@
 
 就这样。不用注册账号，也没有 Arslan 服务器。
 
-## 0.1.53 新功能：操作你 Mac 上的 app
+## 0.1.56 新功能：项目分两层
 
-Arslan 现在能通过一个小助手 **Arslan Hands** 读取并使用你 Mac 上的 app——备忘录、邮件、Pages 等等。它读的是窗口的辅助功能树（从不截图），在后台操作：你的鼠标、键盘和最前面的窗口都还是你的。看一个 app，每次对话里每个 app 问一次；动手只在后台任务里进行，每个 app 问一次；凡是删除、发送、付款、购买、转账、提交的按钮，每次都问。**Arslan for iPhone** 的 Mac 端也已就位（设置 › iPhone），黑白图标成为默认。 [完整发布说明 →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.53)
+项目现在放在一块看板上——想法、成形、在做、完成——每个项目各自一关一关往上走。选一个类型（游戏、app、网站、研究、写作、视频、技能、旅行、工作）和一条终点线，关卡立刻按类型起草好，不调用模型；每一关都有清楚的过关条件和几个检查点。Arslan 能看到的就替你打勾：项目文件夹里出现的文件、你告诉它的话、在后台做完的任务。每个勾都写明理由、可以撤销；过关永远只是提议；"完成"和"放弃"只能由你来定。[完整发布说明 →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.56)
+
+最近几版：
+- **[0.1.55](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.55)**——所有需要你回答的地方统一成一个样子：卡片排进同一个队列，⌘⏎ 允许、Esc 拒绝，在 Island 里就能回答（会删除、发送、付款或提交的步骤改为在 Arslan 里打开）。收件箱、记忆、能力各成一页。
+- **[0.1.54](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.54)**——Mac 端为 Arslan iPhone 版准备就绪（Touch ID 审批、一台手机一个条目、移除手机后清理），终端闸门会检查命令链里的每一条命令。
+- **[0.1.53](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.53)**——**Arslan Hands**：通过辅助功能树在后台读取并使用你 Mac 上的 app；凡是删除、发送、付款、购买、转账、提交的按钮，每次都问。
 
 <div align="center">
   <img src="docs/assets/readme/devices.jpg" alt="Mac 上的 Arslan 正在后台整理发票；iPhone 上的 Arslan 显示一条待批准" width="100%">

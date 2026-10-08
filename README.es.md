@@ -53,9 +53,14 @@ Sigues hablando mientras trabaja. Todo lo que borra, envía, instala o toca otra
 
 Y ya está. Sin cuenta, sin registro, sin servidor de Arslan.
 
-## Novedades de 0.1.53 — Manos para tus apps del Mac
+## Novedades de 0.1.56 — proyectos en dos capas
 
-Arslan ahora puede leer y usar las apps de tu Mac — Notas, Mail, Pages y el resto — mediante un pequeño ayudante, **Arslan Hands**. Lee una ventana como su árbol de accesibilidad (nunca una captura) y actúa en segundo plano: tu ratón, tu teclado y tu ventana activa siguen siendo tuyos. Mirar una app pregunta una vez por app en cada conversación; actuar ocurre solo en trabajo en segundo plano y pregunta una vez por app; un botón que borra, envía, paga, compra, transfiere o confirma pregunta siempre. También llega la parte de Mac de **Arslan para iPhone** (Ajustes › iPhone), y el icono en blanco y negro es ahora el predeterminado. [Notas de la versión completas →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.53)
+Los proyectos viven ahora en un tablero — Idea, Dando forma, Haciendo, Hecho — y cada proyecto sube por sus propios niveles. Elige un tipo (juego, app, web, investigación, escritura, vídeo, skill, viaje, trabajo) y una meta, y los niveles se redactan al momento, sin llamar a ningún modelo; cada nivel tiene una condición clara y unos pocos puntos de control. Arslan marca lo que puede ver: archivos que aparecen en la carpeta del proyecto, lo que le cuentas, un trabajo en segundo plano que termina. Cada marca dice por qué y se puede deshacer; superar un nivel es siempre solo una propuesta, y Hecho y Descartado los decides tú. [Notas completas →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.56)
+
+Recientemente:
+- **[0.1.55](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.55)** — un mismo aspecto para todo lo que pregunta: las tarjetas esperan en una cola, ⌘⏎ permite y Esc rechaza, y la Island las responde (un paso que borra, envía, paga o envía un formulario se abre en Arslan). Bandeja, Memoria y Capacidades son una página cada una.
+- **[0.1.54](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.54)** — el lado del Mac está listo para Arslan para iPhone (aprobaciones con Touch ID, una entrada por teléfono, limpieza al quitar un teléfono), y la puerta del terminal comprueba cada comando de una cadena.
+- **[0.1.53](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.53)** — **Arslan Hands**: Arslan lee y usa las apps de tu Mac a través de su árbol de accesibilidad, en segundo plano; un botón que borra, envía, paga, compra, transfiere o confirma pregunta siempre.
 
 <div align="center">
   <img src="docs/assets/readme/devices.jpg" alt="Arslan en un Mac — un trabajo en segundo plano reúne facturas — y Arslan para iPhone con una aprobación pendiente" width="100%">
