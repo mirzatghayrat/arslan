@@ -73,6 +73,9 @@ struct State {
     cua_sessions: Mutex<HashMap<String, u32>>,
     /// Cua Driver's running apps, briefly, to resolve a pid to an app.
     cua_apps: Mutex<Option<(Instant, Vec<App>)>>,
+    /// Each app's structure at its latest look, per (session, pid): the structural-change
+    /// check (structure.rs) compares it before every action.
+    structures: Mutex<HashMap<(String, i64), crate::structure::Structure>>,
 }
 
 /// At most once (P0 D1): every answer to a request with a string id is kept for ten
@@ -303,6 +306,7 @@ pub fn serve(
         tokens: Mutex::new(cua_policy::Tokens::default()),
         cua_sessions: Mutex::new(HashMap::new()),
         cua_apps: Mutex::new(None),
+        structures: Mutex::new(HashMap::new()),
     });
     // The token is published only now that the socket listens, mode 0600.
     let ready = json!({
@@ -705,6 +709,43 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
         map.insert("app".into(), Value::String(app.name.clone()));
     }
     let argv = argv::build(op, &call, session.as_deref())?;
+    let key = (session.clone().unwrap_or_default(), app.pid);
+    if matches!(op, "snapshot" | "find") {
+        // Read BEFORE the tree: a sheet that opens while the tree is read then counts as a
+        // change, so an action on that tree is refused rather than allowed.
+        if let Some(now) = crate::structure::read(app.pid) {
+            let mut kept = ctx
+                .state
+                .structures
+                .lock()
+                .unwrap_or_else(|p| p.into_inner());
+            if kept.len() > 256 {
+                kept.clear();
+            }
+            kept.insert(key.clone(), now);
+        }
+    } else if acts(op) {
+        let before = ctx
+            .state
+            .structures
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .get(&key)
+            .cloned();
+        if let (Some(before), Some(now)) = (before, crate::structure::read(app.pid)) {
+            let changed = crate::structure::changes(&before, &now);
+            if !changed.is_empty() {
+                return Err(refuse(
+                    "changed",
+                    format!(
+                        "{} changed since your look: {}. Nothing was done; look again",
+                        app.name,
+                        changed.join("; ")
+                    ),
+                ));
+            }
+        }
+    }
     let front_before = if acts(op) { frontmost_pid() } else { None };
     let (exit, envelope) = run_envelope(ctx, &argv, deadline(op, args))?;
     let focus_restored = front_back(front_before, app.pid);

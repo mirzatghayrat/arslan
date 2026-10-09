@@ -15,3 +15,4 @@ pub mod policy;
 pub mod refmap;
 pub mod runner;
 pub mod server;
+pub mod structure;

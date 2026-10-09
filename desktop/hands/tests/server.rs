@@ -611,3 +611,62 @@ fn a_screenshot_does_not_wait_behind_a_command_in_flight() {
     hands.ask("stop", json!({}));
     slow.join().unwrap();
 }
+
+// The structural-change check, with accessibility stood in for: how many sheets the fixture's
+// window has right now.
+static SHEETS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+fn fixture_structure(pid: i32) -> Option<arslan_hands::structure::Structure> {
+    (pid == 100).then(|| arslan_hands::structure::Structure {
+        windows: vec![arslan_hands::structure::Window {
+            id: 7,
+            subrole: "AXStandardWindow".into(),
+            title: "Hands Fixture".into(),
+            sheets: SHEETS.load(std::sync::atomic::Ordering::SeqCst),
+        }],
+        focused: Some(7),
+        menu_open: false,
+    })
+}
+
+#[test]
+fn an_action_on_a_look_older_than_a_new_sheet_is_refused_and_nothing_runs() {
+    let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    SHEETS.store(0, std::sync::atomic::Ordering::SeqCst);
+    arslan_hands::structure::set_probe_for_tests(Some(fixture_structure));
+    let hands = start("struct");
+    let click = || {
+        hands.ask(
+            "click",
+            json!({"app": "Hands Fixture", "ref": "@sfixture0:e3"}),
+        )
+    };
+    assert_eq!(
+        hands.ask("snapshot", json!({"app": "Hands Fixture"}))["ok"],
+        true
+    );
+    assert_eq!(click()["ok"], true, "an action on a current look runs");
+    assert_eq!(
+        click()["ok"],
+        true,
+        "values are not structure: a second action on one look runs"
+    );
+    SHEETS.store(1, std::sync::atomic::Ordering::SeqCst); // a sheet opens after the look
+    let refused = click();
+    assert_eq!(code(&refused), "changed", "{refused}");
+    assert!(refused["refused"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("a sheet or popover opened"));
+    assert_eq!(
+        hands.acted().len(),
+        2,
+        "the refused click never reached agent-desktop"
+    );
+    assert_eq!(
+        hands.ask("snapshot", json!({"app": "Hands Fixture"}))["ok"],
+        true
+    );
+    assert_eq!(click()["ok"], true, "a new look makes it current again");
+    arslan_hands::structure::set_probe_for_tests(None);
+}
