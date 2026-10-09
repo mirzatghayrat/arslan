@@ -192,6 +192,18 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
           <div className="mt-5"><ProactiveSection bare only={['notify']} /></div>
         </SettingsGroup>
         <SettingsGroup title={t('settings.grpOnMac')}>{desktop(['island', 'keepAwake'])}</SettingsGroup>
+        {/* 0.1.58 §1: raw tool data under a reply's steps — off for everyone who does not ask. */}
+        <SettingsGroup title={t('process.convGroup')}>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h4 className="text-[13px] font-medium text-foreground">{t('process.techTitle')}</h4>
+              <p className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">{t('process.techBody')}</p>
+            </div>
+            <input id="settings-technical-details" data-testid="settings-technical-details" type="checkbox"
+              checked={localSettings.showTechnicalDetails ?? false}
+              onChange={(e) => saveField({ showTechnicalDetails: e.target.checked })} className="kit-switch mt-0.5" />
+          </div>
+        </SettingsGroup>
         <SettingsGroup title={t('settings.grpVoice')}>{advanced(['voice'])}</SettingsGroup>
       </div>
     ),

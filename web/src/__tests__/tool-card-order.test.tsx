@@ -1,5 +1,3 @@
-/** D3 (0.1.55): the tool steps ran before the answer, so their card sits ABOVE the
- *  answer text — in all three chat styles. It used to come after the text. */
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 import React from "react";
@@ -12,20 +10,24 @@ vi.mock("react-i18next", () => ({
   Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
-const answer: Message = {
+/** 0.1.58 §1 (decision 1): nothing sits above the answer any more — the steps fold into one
+ *  footer row under it ("✓ 1 步 · 1.2s"), with the model, copy and ⋯, in all three styles. */
+const answer = {
   id: "m1", sender: "arslan", senderName: "Arslan", senderAvatar: "🦁", timestamp: "",
   text: "THE-ANSWER-TEXT",
-  toolActivity: { id: "t1", toolName: "run_command", emoji: "", status: "completed", stepStatus: "ok",
-    action: "ran a command", outputSummary: "ok", collapsed: true },
-} as Message;
+  process: { runId: null, entries: [{ kind: "tool", tool: "run_command", status: "ok", argsSummary: '{"command": "ls"}' }],
+    summary: { steps: 1, failed: 0, ms: 1200, usage: null } },
+} as unknown as Message;
 
 describe.each(["quartz", "brutalist", "linear"] as const)("chat style %s", (style) => {
-  it("puts the tool card before the answer", () => {
+  it("puts the steps in one row under the answer, and no card above it", () => {
     render(<OrchestratorChat chatHistory={[answer]} setChatHistory={() => {}} spawns={[]}
       currentStyle={style} setCurrentStyle={() => {}} activeThread={null} />);
-    const card = screen.getByTestId("tool-activity-card");
+    expect(screen.queryByTestId("tool-activity-card")).toBeNull();
     const text = screen.getByText("THE-ANSWER-TEXT");
-    expect(card.compareDocumentPosition(text) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const row = screen.getByTestId("reply-steps");
+    expect(text.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByText("nav.arslan")).toBeNull();          // the 主助手 badge is gone
     cleanup();
   });
 });

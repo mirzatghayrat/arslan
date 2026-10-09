@@ -1,5 +1,6 @@
 import type { AppSettings, Message, Spawn, UiRun, UiRunDimension, UiRunStep } from "../types";
 import type { AppSettings as BackendAppSettings, ArslanThreadItem, RunDetailDto, RunStepDto, SpawnSummary } from "./client.types";
+import { fromSteps, summarize } from "../lib/process";
 
 // ── Settings adapters ─────────────────────────────────────────────────────────
 
@@ -81,6 +82,7 @@ export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "th
     heartbeatEnabled: backend.heartbeat_enabled === "true",
     heartbeatChecklist: backend.heartbeat_checklist ?? "",
     projectsAutoAdvance: backend.projects_auto_advance === "true",
+    showTechnicalDetails: backend.show_technical_details === "true",
     lanDiscoveryEnabled: backend.lan_discovery_enabled === "true",
     sshEnabled: backend.ssh_enabled === "true",
     // Default-ON, unlike its neighbours: absent OR anything-but-"false" is on,
@@ -141,6 +143,7 @@ const SETTINGS_WIRE: Record<string, { key: keyof BackendAppSettings; to?: (v: un
   heartbeatEnabled: { key: "heartbeat_enabled", to: (v) => (v ? "true" : "false") },
   heartbeatChecklist: { key: "heartbeat_checklist", to: (v) => (v as string) ?? "" },
   projectsAutoAdvance: { key: "projects_auto_advance", to: (v) => (v ? "true" : "false") },
+  showTechnicalDetails: { key: "show_technical_details", to: (v) => (v ? "true" : "false") },
   lanDiscoveryEnabled: { key: "lan_discovery_enabled", to: (v) => (v ? "true" : "false") },
   sshEnabled: { key: "ssh_enabled", to: (v) => (v ? "true" : "false") },
   defaultReadEnabled: { key: "default_read_enabled", to: (v) => (v ? "true" : "false") },
@@ -469,6 +472,17 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
             artifacts: item.toolSteps?.flatMap((s) => s.artifacts ?? []),
           }
         : undefined;
+    // 0.1.58 §1: the footer row and its steps. A reloaded reply carries the server's row
+    // (processSummary); a live one counts its in-memory steps the same way.
+    const entries = fromSteps(item.toolSteps);
+    const live = summarize(entries, item.elapsedMs ?? null, item.usage ?? null);
+    const process = {
+      runId: item.runId ?? null,
+      entries,
+      summary: item.processSummary
+        ? { ...item.processSummary, usage: item.usage ?? item.processSummary.usage ?? null }
+        : live,
+    };
     if (item.role === "spawn") {
       return {
         id,
@@ -492,6 +506,7 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
         cancelled: item.cancelled ?? undefined,
         // S3-M3: the turn's usage from the stream_end frame → bubble usage chip.
         usage: item.usage,
+        process,
       };
     }
 
@@ -516,6 +531,7 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
       // 0.1.42: this is a background job's result, checked against its criteria.
       resultOfJob: item.jobId,
       jobOutcome: item.jobOutcome ?? undefined,
+      process,
     };
   });
 }

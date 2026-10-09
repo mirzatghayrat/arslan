@@ -538,6 +538,20 @@ async def get_artifact_review(run_id: int, filename: str) -> dict:
     return artifact_store.read_review(run_id, filename) or {"status": "none"}
 
 
+@router.get("/runs/{run_id}/process")
+async def run_process(run_id: int, db: AsyncSession = Depends(get_session)) -> dict:
+    """0.1.58 §1: what a reply did, in order and in plain data — the list under its footer.
+    Raw input/output only with 设置 › 通用 › 显示技术细节 on."""
+    from server.services import run_process as rp, settings_service
+    run = await db.get(Run, run_id)
+    if run is None:
+        raise HTTPException(404, detail={"code": "run_not_found"})
+    steps = (await db.execute(select(RunStep).where(RunStep.run_id == run_id).order_by(RunStep.seq))).scalars().all()
+    raw = (await settings_service._get_raw(db, "show_technical_details")) == "true"
+    summary = (await rp.summaries(db, [run_id])).get(run_id, {})
+    return {"run_id": run_id, "status": run.status, **summary, "entries": rp.entries(list(steps), raw=raw)}
+
+
 @router.get("/runs/{run_id}", response_model=RunDetailOut)
 async def get_run(run_id: int, db: AsyncSession = Depends(get_session)) -> RunDetailOut:
     from server.services import artifact_store

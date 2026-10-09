@@ -495,6 +495,7 @@ def _usage_frame(detail: dict) -> dict:
         "tokens_in": detail["tokens_in"],
         "tokens_out": detail["tokens_out"],
         "tokens_total": usage_sink.total(),
+        "calls": usage_sink.calls(),
         "estimated": detail["tokens_in"] is None,
         "usd": _frame_usd(detail["buckets"]),
         # 🔴 Who answered. detail() has computed this every turn and _usage_frame threw

@@ -81,6 +81,33 @@ export interface StreamUsage {
    *  carry it, and declaring it required would be the type asserting something
    *  about the wire that is not true. */
   models?: { model: string; provider: string | null }[];
+  /** 0.1.58: how many model calls the turn made (why a short answer carries a large input). */
+  calls?: number;
+}
+
+/** 0.1.58 §1: GET /runs/{id}/process. */
+export interface RunProcessOut extends Partial<ProcessSummary> {
+  run_id: number;
+  status: string;
+  entries: {
+    kind: "note" | "tool";
+    text?: string;
+    tool?: string;
+    ok?: boolean;
+    ms?: number | null;
+    args_summary?: string;
+    summary?: string;
+    detail?: { view: string; error?: string | null; [key: string]: unknown };
+    raw?: { args: string; result: string };
+  }[];
+}
+
+/** 0.1.58 §1: a reply's footer row — steps, how many did not work, time, usage. */
+export interface ProcessSummary {
+  steps: number;
+  failed: number;
+  ms: number | null;
+  usage?: StreamUsage | null;
 }
 
 /** One scope's slice of a conversation's cumulative usage (spawn/answer/router/…). */
@@ -210,6 +237,13 @@ export type ScheduledTaskUpdateBody = Partial<ScheduledTaskCreateBody>;
 /** One step of a spawn's tool loop, paired from tool_call/tool_result frames. */
 export interface ToolStep {
   artifacts?: StoredArtifact[];
+  /** 0.1.58 §1: "note" = what Arslan said before its next tool call (the tool loop's
+   *  narration frame) — shown between steps, never part of the answer. */
+  kind?: "note";
+  text?: string;
+  /** Client clock: when the call went out, and how long it took. */
+  startedAt?: number;
+  ms?: number;
   tool: string;
   argsSummary: string;
   status: "running" | "ok" | "error";
@@ -324,6 +358,7 @@ export interface AppSettings {
   heartbeat_enabled?: string;     // "true" | "false"
   heartbeat_checklist?: string;
   projects_auto_advance?: string; // "true" | "false" (0.1.56)
+  show_technical_details?: string; // "true" | "false" (0.1.58)
   heartbeat_interval_s?: string;
   lan_discovery_enabled?: string; // "true" | "false"
   ssh_enabled?: string; // "true" | "false"
@@ -599,6 +634,10 @@ export interface ArslanThreadItem {
   /** S3-M3: the turn's usage from the terminal stream_end frame — drives the
    *  bubble's usage chip. Absent on cancelled/usage-free turns. */
   usage?: StreamUsage;
+  /** 0.1.58 §1: how long the turn took (client clock, live turns). */
+  elapsedMs?: number;
+  /** 0.1.58 §1: the footer row from a history row (a reloaded conversation). */
+  processSummary?: ProcessSummary;
   /** Original deliverable message id this item was refined from (deliverable_finalized). */
   refinedFrom?: number | null;
   /** kind === "system" roster notice: "joined" | "left" */
@@ -628,12 +667,16 @@ export interface ArslanHistoryRow {
   job_outcome?: JobOutcome | null;
   /** Mobile bridge: "phone" when a paired iPhone sent it; null/absent = the window. */
   source?: string | null;
+  /** 0.1.58 §1: the reply's footer row (steps, time, model, usage), from its Run. */
+  process?: ProcessSummary;
 }
 
 // Server -> client frames on /ws/arslan
 export type ArslanServerMessage =
   | import("./tasks").TaskFrame
   | { type: "history"; messages: ArslanHistoryRow[] }
+  /** 0.1.58 §1: what Arslan said before its next tool call (tool loop narration). */
+  | { type: "note"; text: string }
   | { type: "proposal"; spawn_id: number; spawn_name: string | null }
   | { type: "routing"; spawn_id: number; spawn_name: string | null; announcement?: string | null }
   | { type: "auto_continue"; spawn_id: number; spawn_name?: string | null; remaining?: number }
