@@ -4,9 +4,7 @@ never served as a page of Arslan's own origin."""
 from __future__ import annotations
 
 import io
-import os
 import zipfile
-from pathlib import Path
 
 import pytest
 
