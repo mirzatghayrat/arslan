@@ -62,6 +62,10 @@ REFUSALS = {
                          "done. Do other work and try again in a little while.",
     "secure_input": "The user is typing a password, so Arslan does not take the front now. Nothing was done. "
                     "Try again in a little while.",
+    # Hands v2 §6.4: taking the screen over.
+    "takeover_paused": "The user touched the keyboard or mouse, so the takeover paused and nothing more was sent.",
+    "takeover_unsafe": "Arslan Hands cannot watch the keyboard and mouse right now, so it cannot take the screen "
+                       "over safely. Work in the background instead.",
     "target_unreadable": "Could not read the field before typing. Look again and retry once.",
     "stopped_by_user": "The user stopped Arslan's hands. Do not retry; finish and report what was done.",
     "app_not_running": "That app is not running. Open it first with desktop_open {app} (in the background), "

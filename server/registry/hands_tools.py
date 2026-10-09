@@ -70,6 +70,12 @@ async def _ask_once(grant: str, kind: str, target: str, detail: str) -> bool:
 
 def forget_job(job_id: str) -> None:
     _grants.pop(job_id, None)
+    if job_id in _takeovers:                     # a job's takeover ends with it (§6.4)
+        _takeovers.discard(job_id)
+        try:
+            asyncio.get_running_loop().create_task(_end_takeover())
+        except RuntimeError:
+            pass
     from server.services import hands_service, look_diff
     look_diff.forget(job_id)
     _shot_notes_said.difference_update({k for k in _shot_notes_said if k[0] == job_id})
@@ -625,6 +631,94 @@ def _borrow_note(gave: dict) -> str:
     return note
 
 
+# Hands v2 §6.4: jobs holding a takeover (ended when the job ends).
+_takeovers: set[str] = set()
+TAKEOVER_WAIT_S = 30 * 60          # how long a paused takeover waits for the user
+
+
+async def _end_takeover() -> None:
+    from server.services import hands_client
+    try:
+        await hands_client.call("takeover_end", {}, timeout=5, start=False)
+    except hands_client.HandsUnavailable:
+        pass
+
+
+async def _wait_for_the_user(job_id: str | None) -> dict:
+    """A takeover paused because the user touched the keyboard or mouse (§6.4): the job waits —
+    the island offers continue / I'll do it / stop — up to 30 minutes."""
+    from server.services import hands_client, hands_service
+    deadline = time.monotonic() + TAKEOVER_WAIT_S
+    while time.monotonic() < deadline:
+        if job_id is not None and hands_service.stopped(job_id):
+            break
+        try:
+            reply = await hands_client.call("takeover_status", {}, timeout=5, start=False)
+        except hands_client.HandsUnavailable:
+            break
+        state = reply.get("takeover") or {}
+        if state.get("active") and not state.get("paused"):
+            return {"ok": False, "external": False, "code": "takeover_resumed",
+                    "error": "The user paused the takeover and has now let you continue. The screen may have "
+                             "changed: look again (desktop_look) before the next action."}
+        if not state.get("active"):
+            break
+        await asyncio.sleep(0.5)
+    _takeovers.discard(job_id or "")
+    await _end_takeover()
+    return {"ok": False, "external": False, "code": "takeover_ended",
+            "error": "The user took the screen back and the takeover ended. Nothing more was sent. Carry on in "
+                     "the background if you can, or tell the user what is left."}
+
+
+class DesktopTakeoverExecutor:
+    """Take the screen over for long foreground work (§6.4): background work only, a card every
+    time (the island may answer it), the edge glows, and the user's first touch pauses it."""
+    key = "desktop_takeover"
+    timeout_s = CARD_S + 30
+
+    async def execute(self, args: dict) -> dict:
+        from server.services import hands_client, hands_contract
+        args = dict(args or {})
+        why = " ".join(str(args.get("why") or "").split())[:300]
+        try:
+            minutes = int(args.get("minutes") or 0)
+        except (TypeError, ValueError):
+            minutes = 0
+        if not why or not 1 <= minutes <= 30:
+            return {"ok": False, "external": False, "code": "bad_request",
+                    "error": "why (what you will do, in words) and minutes (1 to 30) are required"}
+        conversation_id, job_id = _conversation_and_job()
+        if job_id is None:
+            return {"ok": False, "external": False, "code": "act_in_background",
+                    "error": "Taking the screen over runs in background work only. Call start_background_work."}
+        if not desktop_available():
+            return {"ok": False, "external": False, "error": "Arslan Hands is not available on this Mac."}
+        started = time.monotonic()
+        if not await _ask_once(f"takeover:{uuid.uuid4().hex}", "desktop_takeover", f"{minutes} min · {why}",
+                               f"Arslan wants to take over the screen for about {minutes} minutes: {why}. Please "
+                               "keep off the keyboard and mouse meanwhile — touching either pauses it at once, and "
+                               "Esc stops it. Deleting, sending and the like still ask you each time."):
+            _trace("takeover", "screen", "declined", started)
+            return {"ok": False, "external": False, "code": "declined",
+                    "error": "The user did not allow taking the screen over. Do not retry; work in the background "
+                             "or report it."}
+        try:
+            reply = await hands_client.call("takeover_begin", {"minutes": minutes}, timeout=10)
+        except hands_client.HandsUnavailable as exc:
+            return {"ok": False, "external": False, "error": f"Arslan Hands is not available ({exc})."}
+        result = hands_contract.parse(reply)
+        if not result.ok:
+            return _failed(result)
+        _takeovers.add(job_id)
+        _trace("takeover", "screen", "ok", started, minutes=minutes)
+        return {"ok": True, "external": False, "outcome": "done",
+                "text": f"The screen is yours for up to {minutes} minutes (the edge glows). Actions may now use the "
+                        "front without waiting. If the user touches the keyboard or mouse it pauses and the next "
+                        "action tells you what they chose. It ends when this work ends.",
+                "summary": f"takeover · {minutes} min"}
+
+
 # Hands v2 §5.7: in a chat reply (not background work) at most this many actions, all in one app.
 INLINE_ACTIONS = 5
 _inline: dict[tuple[str, str], tuple[int, str]] = {}      # (conversation, turn) → (actions, app)
@@ -729,6 +823,8 @@ class _DesktopAct:
         result = await self.run(args, app)
         _trace(self.op, app, "ok" if result.ok else (result.code or "error"), started, target=label,
                **self.trace_extra(args))
+        if not result.ok and result.code == "takeover_paused":
+            return await _wait_for_the_user(job_id)
         if not result.ok:
             return _failed(result, app=str(app.get("name")))
         # P0 D7: "sent" is not "done" — only a change agent-desktop read back is.

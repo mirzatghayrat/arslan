@@ -68,3 +68,67 @@ async def test_why_nothing_was_done_is_said(hands, asks, in_job, monkeypatch, co
         {"app": "Notes", "element": "Color", "ref": "@sfixture0:e5", "value": "Blue"})
     assert result["ok"] is False and result["code"] == code
     assert said in result["error"] and "Nothing was done" in result["error"]
+
+
+# ── takeover (§6.4) ──────────────────────────────────────────────────────────
+
+async def test_a_takeover_is_background_work_only_and_needs_why_and_minutes(hands, asks, in_turn):
+    chat = await hands_tools.DesktopTakeoverExecutor().execute({"why": "drag the photos", "minutes": 5})
+    assert chat["code"] == "act_in_background"
+    assert hands.ops("takeover_begin") == []
+
+
+async def test_a_takeover_asks_every_time_and_the_island_may_answer(hands, asks, in_job):
+    from server.services import approvals
+    seen, _ = asks
+    for _ in range(2):
+        result = await hands_tools.DesktopTakeoverExecutor().execute({"why": "drag 12 photos into Keynote",
+                                                                     "minutes": 5})
+        assert result["ok"] is True and "up to 5 minutes" in result["text"]
+    cards = [f for f in seen if f.get("kind") == "desktop_takeover"]
+    assert len(cards) == 2 and "about 5 minutes: drag 12 photos into Keynote" in cards[0]["detail"]
+    assert approvals.island_may_answer(cards[0]) is True
+    assert [a["minutes"] for op, a in hands.calls if op == "takeover_begin"] == [5, 5]
+    bad = await hands_tools.DesktopTakeoverExecutor().execute({"why": "x", "minutes": 31})
+    assert bad["code"] == "bad_request"
+
+
+async def test_a_declined_takeover_takes_nothing(hands, asks, in_job):
+    _, answer = asks
+    answer["value"] = False
+    result = await hands_tools.DesktopTakeoverExecutor().execute({"why": "drag", "minutes": 5})
+    assert result["code"] == "declined" and hands.ops("takeover_begin") == []
+
+
+async def test_a_paused_takeover_waits_for_the_user_then_says_what_they_chose(hands, asks, in_job, monkeypatch):
+    monkeypatch.setattr(hands_client, "call", answering(hands, "click", {
+        "ok": False, "refused": {"code": "takeover_paused", "message": "touched"}}))
+    real_sleep = hands_tools.asyncio.sleep
+    monkeypatch.setattr(hands_tools.asyncio, "sleep", lambda s: real_sleep(0))
+    hands.takeover = [{"active": True, "paused": True}, {"active": True, "paused": True},
+                      {"active": True, "paused": False}]
+    click = {"app": "Notes", "element": "Save", "ref": "@sfixture0:e3"}
+    resumed = await hands_tools.DesktopClickExecutor().execute(click)
+    assert resumed["code"] == "takeover_resumed" and "look again" in resumed["error"]
+    hands.takeover = [{"active": True, "paused": True}, {"active": False}]
+    ended = await hands_tools.DesktopClickExecutor().execute(click)
+    assert ended["code"] == "takeover_ended" and "Nothing more was sent" in ended["error"]
+    assert "takeover_end" in hands.ops()
+
+
+async def test_a_jobs_takeover_ends_with_the_job(hands, asks, in_job):
+    import asyncio
+    await hands_tools.DesktopTakeoverExecutor().execute({"why": "drag", "minutes": 5})
+    hands_tools.forget_job("job-1")
+    await asyncio.sleep(0.05)
+    assert "takeover_end" in hands.ops()
+
+
+async def test_the_islands_continue_and_end_reach_hands(hands, monkeypatch):
+    from server.api import hands as api
+    monkeypatch.setattr(hands_client, "running", lambda: True)
+    hands.takeover = [{"active": True, "paused": True}]
+    assert (await api.takeover_status())["paused"] is True
+    assert (await api.takeover_continue())["ok"] is True
+    assert (await api.takeover_end())["ended"] is True
+    assert hands.ops("takeover_resume", "takeover_end") == ["takeover_resume", "takeover_end"]

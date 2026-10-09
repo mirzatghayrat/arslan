@@ -178,7 +178,8 @@ def island_may_answer(frame: dict) -> bool:
         return True
     if kind == "propose_action":
         action = frame.get("kind")
-        if action in ("browser_site", "desktop_look", "desktop_app", "mac_shortcut"):
+        if action in ("browser_site", "desktop_look", "desktop_app", "mac_shortcut",
+                      "desktop_takeover"):          # Hands v2 §6.4: the island may answer it
             return True
         if action == "mac_script":
             return not _RISKY_SCRIPT.search(str(frame.get("detail") or ""))

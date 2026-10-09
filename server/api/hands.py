@@ -65,6 +65,40 @@ async def stop_hands() -> dict:
     return {"stopped": True, "jobs": len(jobs), "killed": killed}
 
 
+@router.get("/hands/takeover")
+async def takeover_status() -> dict:
+    """Hands v2 §6.4: whether a job has the screen, and whether it is paused (for the island)."""
+    if not hands_client.running():
+        return {"active": False}
+    try:
+        reply = await hands_client.call("takeover_status", {}, timeout=5, start=False)
+    except hands_client.HandsUnavailable:
+        return {"active": False}
+    return reply.get("takeover") or {"active": False}
+
+
+@router.post("/hands/takeover/continue")
+async def takeover_continue() -> dict:
+    """The user let the paused takeover go on (the island's 继续)."""
+    try:
+        reply = await hands_client.call("takeover_resume", {}, timeout=5, start=False)
+    except hands_client.HandsUnavailable as exc:
+        return {"ok": False, "error": str(exc)[:200]}
+    return {"ok": bool(reply.get("ok")), **(reply.get("takeover") or {}),
+            **({"code": (reply.get("refused") or {}).get("code")} if not reply.get("ok") else {})}
+
+
+@router.post("/hands/takeover/end")
+async def takeover_end() -> dict:
+    """The user took the screen back (the island's 停止 for the takeover; the job carries on in
+    the background or reports)."""
+    try:
+        reply = await hands_client.call("takeover_end", {}, timeout=5, start=False)
+    except hands_client.HandsUnavailable as exc:
+        return {"ok": False, "error": str(exc)[:200]}
+    return {"ok": True, "ended": bool(reply.get("ended"))}
+
+
 @router.post("/hands/check")
 async def check_hands() -> dict:
     return await _status(start=True)

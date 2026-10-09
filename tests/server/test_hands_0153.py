@@ -162,6 +162,7 @@ class FakeHands:
                      {"name": "Safari", "bundle_id": "com.apple.Safari", "tier": "look_only"},
                      {"name": "Messages", "bundle_id": "com.apple.MobileSMS", "tier": "full"}]
         self.fail_with: dict | None = None
+        self.takeover: list[dict] = []
         # Hands v2 capture_window: by default as on a Mac without Screen Recording for Hands.
         self.capture: dict = {"ok": False, "refused": {"code": "screen_recording_off", "message": "not allowed"}}
 
@@ -180,6 +181,20 @@ class FakeHands:
             return {"ok": True, "accessibility": False, "peer_check": "off", "version": "0.1.0"}
         if op == "capture_window":
             return self.capture
+        if op == "takeover_begin":
+            self.takeover = [{"active": True, "paused": False, "remaining_s": 60 * args["minutes"]}]
+            return {"ok": True, "takeover": self.takeover[0]}
+        if op == "takeover_status":           # walks through the states a test queued
+            state = self.takeover[0] if self.takeover else {"active": False}
+            if len(self.takeover) > 1:
+                self.takeover.pop(0)
+            return {"ok": True, "takeover": state}
+        if op == "takeover_end":
+            ended = bool(self.takeover and self.takeover[0].get("active"))
+            self.takeover = []
+            return {"ok": True, "ended": ended}
+        if op == "takeover_resume":
+            return {"ok": True, "takeover": {"active": True, "paused": False}}
         if op == "menu":
             return {"ok": True, "outcome": "sent_unconfirmed", "mode_used": "background", "route": "menu_item",
                     "menu_item": args.get("path"), "tier": self.tier,
