@@ -101,6 +101,7 @@ def run_activity(runs: list[tuple], items: list[tuple], since: datetime, now: da
 
     totals = UsageRunsOut()
     finished: list[int] = []
+    per_bin_ms: dict[int, list[int]] = {}
     for status, total_ms, created in runs:
         totals.total += 1
         kind = ("running" if status == "recording" else "failed" if status == "failed"
@@ -114,12 +115,28 @@ def run_activity(runs: list[tuple], items: list[tuple], since: datetime, now: da
             finished.append(total_ms)
             if index is not None:
                 bins[index].durations[_band(total_ms)] += 1
+                per_bin_ms.setdefault(index, []).append(total_ms)
     finished.sort()
     totals.p50_ms, totals.p95_ms = _percentile(finished, 0.5), _percentile(finished, 0.95)
+    for index, ms in per_bin_ms.items():
+        ms.sort()
+        bins[index].p50_ms, bins[index].max_ms = _percentile(ms, 0.5), ms[-1]
+    models: dict[int, dict[str, int]] = {}
     for item in items:
         index = slot(item[-1])
         if index is not None:
             bins[index].tokens_total += item[-2]
+            if len(item) == 8:      # (scope, provider, model, tin, tout, est, total, ts)
+                _, provider, model, tin, tout, est, total, _ = item
+                if model:
+                    per = models.setdefault(index, {})
+                    per[model] = per.get(model, 0) + total
+                usd = item_usd(model, tin, tout, est, provider)
+                if usd is not None:
+                    bins[index].usd = round((bins[index].usd or 0.0) + usd, 6)
+    for index, per in models.items():
+        bins[index].models = [{"model": m, "tokens": t} for m, t in
+                              sorted(per.items(), key=lambda kv: kv[1], reverse=True)[:3]]
     return totals, bins
 
 

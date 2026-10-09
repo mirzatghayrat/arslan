@@ -820,6 +820,11 @@ class RunListItemOut(BaseModel):
     total_ms: int | None
     user_message: str
     created_at: str | None = None
+    # 0.1.58 §7: where the work came from (chat | job | scheduled | phone | browser),
+    # which model did it and how many tokens — Activity's icons and filters.
+    origin: str = "chat"
+    model: str | None = None
+    tokens: int | None = None
 
 
 class RunSpawnSummaryOut(BaseModel):
@@ -1112,6 +1117,11 @@ class UsageBinOut(BaseModel):
     failed: int = 0
     tokens_total: int = 0
     durations: list[int] = []     # finished runs per DURATION_BANDS entry
+    # 0.1.58 §7: what the hover card says about this slice.
+    p50_ms: int | None = None     # median of the slice's finished runs
+    max_ms: int | None = None     # its longest finished run
+    usd: float | None = None      # priced items only; None = unknown, never $0
+    models: list[dict] = []       # top 3 by tokens: {"model": str, "tokens": int}
 
 
 class UsageSummaryOut(BaseModel):

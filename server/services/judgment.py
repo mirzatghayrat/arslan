@@ -264,13 +264,15 @@ def record_outcome_later(ref: str, outcome: str, *, point: str | None = None) ->
         pass
 
 
-async def recent(limit: int = 100, point: str | None = None) -> list[dict]:
+async def recent(limit: int = 100, point: str | None = None, *, before_id: int | None = None) -> list[dict]:
     from sqlalchemy import select
     from server.db.models import Judgment
     async with db_session.AsyncSessionLocal() as db:
         q = select(Judgment).order_by(Judgment.created_at.desc(), Judgment.id.desc()).limit(max(1, min(limit, 500)))
         if point:
             q = q.where(Judgment.point == point)
+        if before_id is not None:       # 0.1.58: Activity's box pages back by id
+            q = q.where(Judgment.id < before_id)
         rows = (await db.scalars(q)).all()
     return [{"id": r.id, "point": r.point, "mode": r.mode, "verdict": r.verdict, "probability": r.probability,
              "latency_ms": r.latency_ms, "model": r.model, "error": r.error, "outcome": r.outcome,

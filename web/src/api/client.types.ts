@@ -148,6 +148,11 @@ export interface UsageBin {
   failed: number;
   tokens_total: number;
   durations: number[];       // finished runs per duration band
+  /** 0.1.58 hover card; absent on older backends. */
+  p50_ms?: number | null;
+  max_ms?: number | null;
+  usd?: number | null;
+  models?: { model: string; tokens: number }[];
 }
 
 /** One row of GET /scheduled-tasks (S3-M4). Mirrors ScheduledTaskOut. */
@@ -1056,6 +1061,10 @@ export interface RunListItem {
   total_ms: number | null;
   user_message: string;
   created_at?: string | null;
+  /** 0.1.58: where the work came from; older backends omit it (treated as chat). */
+  origin?: "chat" | "job" | "scheduled" | "phone" | "browser";
+  model?: string | null;
+  tokens?: number | null;
 }
 
 /** Per-spawn aggregate over scored runs (GET /runs/summary). */
