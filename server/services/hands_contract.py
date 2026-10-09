@@ -150,7 +150,28 @@ def kept_the_front(result: Result) -> bool:
 
 # ── showing a tree to the model ──────────────────────────────────────────────
 
-def _node_line(node: dict) -> str:
+def placer(capture: dict):
+    """Element frame (screen points) → its centre in the screenshot's pixels, or None when it
+    is not inside the image. `capture` is Hands' capture_window answer: `frame` in points,
+    `scale` pixels per point, `width`/`height` in pixels."""
+    frame = capture.get("frame") or {}
+    try:
+        x0, y0, scale = float(frame["x"]), float(frame["y"]), float(capture["scale"])
+        width, height = int(capture["width"]), int(capture["height"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+    def place(bounds) -> tuple[int, int] | None:
+        try:
+            x = (float(bounds["x"]) + float(bounds["width"]) / 2 - x0) * scale
+            y = (float(bounds["y"]) + float(bounds["height"]) / 2 - y0) * scale
+        except (KeyError, TypeError, ValueError):
+            return None
+        return (round(x), round(y)) if 0 <= x < width and 0 <= y < height else None
+    return place
+
+
+def _node_line(node: dict, place=None) -> str:
     role = str(node.get("role") or "?")
     parts = [role]
     name = node.get("name")
@@ -164,6 +185,9 @@ def _node_line(node: dict) -> str:
         parts.append("(" + ", ".join(str(s) for s in states[:6]) + ")")
     if node.get("ref_id"):
         parts.append(f"[{node['ref_id']}]")
+    spot = place(node["bounds"]) if place and isinstance(node.get("bounds"), dict) else None
+    if spot:
+        parts.append(f"({spot[0]}, {spot[1]})")
     if node.get("children_count") and not node.get("children"):
         parts.append(f"… {node['children_count']} inside: look with ref to open")
     return " ".join(parts)
@@ -173,15 +197,16 @@ LONG_RUN = 15
 SHOW_OF_RUN = 10
 
 
-def render_tree(tree: dict, limit: int = 12_000) -> str:
-    """An indented outline: role “name” = value (states) [ref]. Truncated with a
-    note when long, so the model drills in with `ref` instead."""
+def render_tree(tree: dict, limit: int = 12_000, place=None) -> str:
+    """An indented outline: role “name” = value (states) [ref] (x, y). Truncated with a
+    note when long, so the model drills in with `ref` instead. (x, y), with a `placer`, is
+    the element's centre in the window's screenshot, in its pixels."""
     lines: list[str] = []
     size = 0
 
     def walk(node: dict, depth: int) -> bool:
         nonlocal size
-        line = "  " * depth + _node_line(node)
+        line = "  " * depth + _node_line(node, place)
         if size + len(line) > limit:
             lines.append("  " * depth + "… (more not shown: look again with a ref to open a part)")
             return False

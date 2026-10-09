@@ -69,7 +69,9 @@ async def _ask_once(grant: str, kind: str, target: str, detail: str) -> bool:
 
 def forget_job(job_id: str) -> None:
     _grants.pop(job_id, None)
-    from server.services import hands_service
+    from server.services import hands_service, look_diff
+    look_diff.forget(job_id)
+    _shot_notes_said.difference_update({k for k in _shot_notes_said if k[0] == job_id})
     session = hands_service.forget_job(job_id)
     if session:                     # hide the job's cursor; best effort, never blocks the job's end
         try:
@@ -433,6 +435,41 @@ def _app_arg(args: dict) -> str | None:
     return app if app and len(app) <= 120 else None
 
 
+# Why a look came without a screenshot, said once per conversation (or job) and code.
+_SHOT_NOTES = {
+    "screen_recording_off": "No screenshot: Arslan Hands is not allowed to record the screen. Working from the "
+                            "window's text. The user can allow it in Arslan's Settings → Arslan Hands.",
+    "needs_macos_14": "No screenshot: window screenshots need macOS 14 or later. Working from the window's text.",
+}
+_shot_notes_said: set[tuple[str, str]] = set()
+
+
+async def _screenshot(app: dict, window, conversation_id: str | None, job_id: str | None) -> tuple[dict | None, str]:
+    """Hands' screenshot of the window just looked at (spec §4.2): the capture, or None and
+    a note for the model (once per conversation for a lasting reason; never an error: the
+    look stands on its text)."""
+    args = {"app": app["name"]}
+    if window:
+        args["window"] = str(window)
+    result = await _hands("capture_window", args, job_id=job_id)
+    capture = (result.data or {}).get("capture") if result.ok and isinstance(result.data, dict) else None
+    if isinstance(capture, dict) and capture.get("data") and capture.get("mime"):
+        note = "" if capture.get("onscreen", True) else (
+            "This window is not on the current screen (another Space, minimized or behind a full-screen app): "
+            "the screenshot is what it last showed and may be incomplete or out of date.\n")
+        return capture, note
+    code = result.code or "capture_failed"
+    scope = job_id or conversation_id or ""
+    if code in _SHOT_NOTES:
+        if (scope, code) in _shot_notes_said:
+            return None, ""
+        if len(_shot_notes_said) > 1_000:          # bounded; a reason said again is harmless
+            _shot_notes_said.clear()
+        _shot_notes_said.add((scope, code))
+        return None, _SHOT_NOTES[code] + "\n"
+    return None, f"No screenshot this time ({code}); working from the window's text.\n"
+
+
 class DesktopAppsExecutor:
     key = "desktop_apps"
     timeout_s = RUN_S + 30
@@ -457,7 +494,7 @@ class DesktopLookExecutor:
     timeout_s = CARD_S + 2 * RUN_S        # one card; window lookup + the look, tried twice
 
     async def execute(self, args: dict) -> dict:
-        from server.services import approvals, hands_contract, hands_service
+        from server.services import approvals, hands_contract, hands_service, look_diff
         from server.ws import protocol
         args = dict(args or {})
         name = _app_arg(args)
@@ -511,15 +548,42 @@ class DesktopLookExecutor:
             snap = dict(call)
             if args.get("ref"):
                 snap["root"] = str(args["ref"])[:200]
+            screenshots = hands_service.settings()["screenshots"]
+            if screenshots:
+                snap["include_bounds"] = True
             result = await _look_one_window("snapshot", snap, job_id)
             if not result.ok:
                 _trace("look", app, result.code or "error", started)
                 return _failed(result, app=app["name"])
             data = result.data if isinstance(result.data, dict) else {}
             window = (data.get("window") or {}).get("title") or ""
+            if screenshots:
+                capture, shot_note = await _screenshot(app, call.get("window_id") or (data.get("window") or {}).get("id"),
+                                                       conversation_id, job_id)
+            else:
+                capture, shot_note = None, ""
+            changed = None if args.get("ref") else look_diff.since_last(
+                job_id or conversation_id or "", bundle, window, data.get("tree") or {})
             text = (f"{app['name']} — window “{window}”. Refs [@…] work for actions in this piece of work; "
-                    "an entry with “… inside” opens with desktop_look {app, ref}.\n"
-                    + hands_contract.render_tree(data.get("tree") or {}))
+                    "an entry with “… inside” opens with desktop_look {app, ref}.\n")
+            if capture:
+                text += (f"A screenshot of this window ({capture['width']}×{capture['height']} px) is attached; "
+                         "(x, y) after an element is its centre in that screenshot, in its pixels.\n")
+            text += shot_note
+            if changed:
+                text += f"Changed since your last look: {changed}\n"
+            elif changed == "":
+                text += "Nothing changed since your last look.\n"
+            text += hands_contract.render_tree(data.get("tree") or {},
+                                               place=hands_contract.placer(capture) if capture else None)
+            if capture:
+                if not_seen:
+                    text = not_seen + text
+                _trace("look", app, "ok", started, screenshot=f"{capture['width']}x{capture['height']}",
+                       screenshot_bytes=len(capture.get("data") or "") * 3 // 4)
+                return {"ok": True, "external": True, "text": text, "summary": f"look · {app['name']}"[:200],
+                        "images": [{"mime_type": capture["mime"], "data": capture["data"]}],
+                        "image_label": f"{app['name']} · {window or capture.get('title') or 'window'}"[:120]}
         if not_seen:
             text = not_seen + text
         _trace("look", app, "ok", started)

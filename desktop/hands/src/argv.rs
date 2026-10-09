@@ -163,6 +163,10 @@ pub fn build(op: &str, args: &Value, session: Option<&str>) -> Result<Vec<String
             if args.get("interactive_only").and_then(Value::as_bool) == Some(true) {
                 opts.push("-i".into());
             }
+            // Hands v2: each element's frame, to place it in the window's screenshot.
+            if args.get("include_bounds").and_then(Value::as_bool) == Some(true) {
+                opts.push("--include-bounds".into());
+            }
             "snapshot"
         }
         "find" => {
@@ -323,6 +327,26 @@ pub fn targets_ref(op: &str) -> bool {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn bounds_are_asked_for_only_by_a_true_flag() {
+        let with = build(
+            "snapshot",
+            &json!({"app": "Notes", "include_bounds": true}),
+            None,
+        )
+        .unwrap();
+        assert_eq!(with.last().map(String::as_str), Some("--include-bounds"));
+        for given in [json!(false), json!("true"), json!(1), Value::Null] {
+            let argv = build(
+                "snapshot",
+                &json!({"app": "Notes", "include_bounds": given}),
+                None,
+            )
+            .unwrap();
+            assert!(!argv.iter().any(|a| a == "--include-bounds"), "{argv:?}");
+        }
+    }
 
     #[test]
     fn values_never_become_flags() {

@@ -53,16 +53,20 @@ def settings() -> dict:
     return {
         "enabled": bool(raw.get("enabled", True)) if isinstance(raw, dict) else True,
         "cursor": bool(raw.get("cursor", True)) if isinstance(raw, dict) else True,
+        # Hands v2: a screenshot of the window with each look (spec §4.2); on unless turned off.
+        "screenshots": bool(raw.get("screenshots", True)) if isinstance(raw, dict) else True,
         "never": [str(n)[:120] for n in never if isinstance(n, str) and n.strip()][:MAX_NEVER]
                  if isinstance(never, list) else [],
     }
 
 
 def update_settings(*, enabled: bool | None = None, cursor: bool | None = None,
-                    never: list[str] | None = None) -> dict:
+                    never: list[str] | None = None, screenshots: bool | None = None) -> dict:
     current = settings()
     if enabled is not None:
         current["enabled"] = bool(enabled)
+    if screenshots is not None:
+        current["screenshots"] = bool(screenshots)
     if cursor is not None:
         current["cursor"] = bool(cursor)
     if never is not None:
