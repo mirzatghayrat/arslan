@@ -833,3 +833,60 @@ class DesktopPressExecutor(_DesktopAct):
         _, job_id = _conversation_and_job()
         return await _hands("press", {"app": app["name"], "keys": str(args.get("keys") or "").strip().lower()},
                             job_id=job_id)
+
+
+# Hands v2 §5.6: several steps on one app in one call, then one look.
+_BATCH_STEPS = {"click": DesktopClickExecutor, "type": DesktopTypeExecutor, "select": DesktopSelectExecutor,
+                "scroll": DesktopScrollExecutor, "press": DesktopPressExecutor, "menu": DesktopMenuExecutor}
+BATCH_MAX = 8
+# A step that went through (done) or was delivered without proof (sent_unconfirmed) lets the next
+# one run: a step that changed the window's structure makes Hands refuse the next (`changed`),
+# which stops the batch. Anything else stops it at once.
+_BATCH_GOES_ON = {"done", "sent_unconfirmed"}
+
+
+class DesktopBatchExecutor:
+    """Run up to eight steps on one app, in order, each with every check a single call has (cards,
+    risky labels, password fields, the structural-change check), stop at the first step that did
+    not go through, and end with one look (screenshot and changes included)."""
+    key = "desktop_batch"
+    timeout_s = BATCH_MAX * (2 * CARD_S + 2 * RUN_S) + CARD_S + 2 * RUN_S
+
+    async def execute(self, args: dict) -> dict:
+        args = dict(args or {})
+        name = _app_arg(args)
+        steps = args.get("steps")
+        if name is None:
+            return {"ok": False, "external": False, "error": "app required (a name from desktop_apps)"}
+        if not isinstance(steps, list) or not 1 <= len(steps) <= BATCH_MAX:
+            return {"ok": False, "external": False, "code": "bad_request",
+                    "error": f"steps: 1 to {BATCH_MAX} steps, each {{action, …that action's args}}"}
+        lines: list[str] = []
+        stopped = None
+        done = 0
+        for number, step in enumerate(steps, 1):
+            action = str(step.get("action") or "") if isinstance(step, dict) else ""
+            executor = _BATCH_STEPS.get(action)
+            if executor is None:
+                stopped = f"step {number}: unknown action “{action[:40]}” ({', '.join(_BATCH_STEPS)})"
+                break
+            call = {k: v for k, v in step.items() if k != "action"}
+            call["app"] = name                      # one app per batch, whatever a step says
+            result = await executor().execute(call)
+            said = result.get("text") or result.get("error") or ""
+            lines.append(f"{number}. {action}: {said}")
+            if not result.get("ok") or result.get("outcome") not in _BATCH_GOES_ON:
+                stopped = f"stopped at step {number} ({result.get('code') or result.get('outcome') or 'not done'})"
+                break
+            done += 1
+        look = await DesktopLookExecutor().execute({"app": name})
+        head = (f"Batch in {name}: {done} of {len(steps)} steps went through"
+                + (f"; {stopped}" if stopped else "") + ".\n")
+        out = {"ok": stopped is None, "external": True,
+               "text": head + "\n".join(lines) + "\n\nThe window now:\n" + (look.get("text") or look.get("error") or ""),
+               "summary": f"batch · {name} · {done}/{len(steps)}"[:200]}
+        if stopped is not None:
+            out["code"] = "batch_stopped"
+        if look.get("images"):
+            out["images"], out["image_label"] = look["images"], look.get("image_label")
+        return out

@@ -1405,6 +1405,20 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
         "app": {"type": "string", "minLength": 1, "maxLength": 120},
         "keys": {"type": "string", "minLength": 1, "maxLength": 40, "description": "return, escape, tab, cmd+n…"}},
         "required": ["app", "keys"], "additionalProperties": False},
+    "desktop_batch": {"type": "object", "properties": {
+        "app": {"type": "string", "minLength": 1, "maxLength": 120},
+        "steps": {"type": "array", "minItems": 1, "maxItems": 8, "items": {
+            "type": "object", "properties": {
+                "action": {"type": "string", "enum": ["click", "type", "select", "scroll", "press", "menu"]},
+                "element": {"type": "string", "maxLength": 300}, "ref": {"type": "string", "maxLength": 200},
+                "text": {"type": "string", "maxLength": 20000}, "mode": {"type": "string", "enum": ["replace", "append"]},
+                "submit": {"type": "boolean"}, "value": {"type": "string", "maxLength": 200},
+                "direction": {"type": "string", "enum": ["up", "down", "left", "right"]},
+                "amount": {"type": "integer", "minimum": 1, "maximum": 20},
+                "keys": {"type": "string", "maxLength": 40},
+                "path": {"type": "array", "minItems": 2, "maxItems": 4, "items": {"type": "string", "maxLength": 120}}},
+            "required": ["action"], "additionalProperties": False}}},
+        "required": ["app", "steps"], "additionalProperties": False},
     "desktop_menu": {"type": "object", "properties": {
         "app": {"type": "string", "minLength": 1, "maxLength": 120},
         "path": {"type": "array", "minItems": 2, "maxItems": 4,

@@ -1007,6 +1007,11 @@ async def _arslan_tools() -> list[dict]:
                  "Never for passwords — ask the user to type those."},
                 {"key": "desktop_select", "description": "Choose an option in a pop-up or list (by ref)."},
                 {"key": "desktop_scroll", "description": "Scroll an element (by ref): direction up/down/left/right."},
+                {"key": "desktop_batch", "description": "Several actions in one app in one call, then one look: "
+                 "{app, steps: [{action: click|type|select|scroll|press|menu, …that action's args}] (up to 8)}. "
+                 "Every step asks and checks as its own call would; the batch stops at the first step that "
+                 "did not go through (or when the window changed), and ends with the window as it is now. "
+                 "Use refs from one look; prefer it to many single calls."},
                 {"key": "desktop_menu", "description": "Choose a menu-bar item of an app, in the background, by its "
                  "titles: {app, path: [\"Format\", \"Font\", \"Bold\"]}. Prefer a button in the window; then a "
                  "menu item; keys last. A missing item answers with what that menu has. Items that delete, send, "
