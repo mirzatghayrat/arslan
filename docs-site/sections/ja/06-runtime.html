@@ -1,5 +1,5 @@
 <section class="chapter" id="runtime"><h2><span class="num">06 / 実行ランタイム</span>一つの依頼に、過程と境界と結果を持たせる</h2>
-<p>Arslan の実行コアは、ユーザーの意図を観察可能な一連の動作へ変えます。コンテキストを準備し、モデルを呼び出し、ツールの要求を検証し、許可された操作を実行し、実際の結果を読んで、続行するか成果を届けるかを判断します。v0.1.56 の既定の入口は統一ループで、<code>EXPERTS_ENABLED=False</code>です。メッセージは直接回答処理に入り、長期的な事実の抽出は回答後に行います。過去の専門家システムの互換コードは残っていますが、現在の主要経路では、最初にモデルによるルーティングを行いません。</p>
+<p>Arslan の実行コアは、ユーザーの意図を観察可能な一連の動作へ変えます。コンテキストを準備し、モデルを呼び出し、ツールの要求を検証し、許可された操作を実行し、実際の結果を読んで、続行するか成果を届けるかを判断します。v0.1.57 の既定の入口は統一ループで、<code>EXPERTS_ENABLED=False</code>です。メッセージは直接回答処理に入り、長期的な事実の抽出は回答後に行います。過去の専門家システムの互換コードは残っていますが、現在の主要経路では、最初にモデルによるルーティングを行いません。</p>
 <div class="flow"><div class="flow-step"><b>タスクを作る</b><span>会話、ワークスペース、権限を関連付ける</span></div><div class="flow-step"><b>入力を準備する</b><span>履歴、記憶、資料、利用可能なツール</span></div><div class="flow-step"><b>モデルが判断する</b><span>ツールを要求するか、回答を生成する</span></div><div class="flow-step"><b>実際に実行する</b><span>検証、許可、記録、結果の返却</span></div><div class="flow-step"><b>成果を確認する</b><span>合意した条件、証拠、成果物を照合する</span></div></div>
 <p class="evidence">ソース：{{source:server/orchestrator/arslan.py|メッセージの入口とコンテキストの構成}}；{{source:server/services/task_context.py|信頼できるタスクコンテキスト}}；{{source:server/orchestrator/tool_loop.py|統一ツールループ}}。</p>
 
@@ -39,7 +39,7 @@
 
 <h3>入口を統一しながら、モデルのプロトコルの違いを保つ</h3>
 <p><code>LLMAdapter</code> が統一された呼び出しインターフェースを提供し、各 Provider がリクエスト形式、ストリーミングイベント、ツール呼び出し、usage を扱います。Provider の実装は <code>httpx</code> で HTTP リクエストを送信します。OpenAI 互換エンドポイントにはローカルモデルサービスも設定できます。クラウドモデルを選んだ場合、対応するリクエストのコンテキストは、ユーザーが設定した提供者へ送られます。</p>
-<div class="table-wrap"><table><thead><tr><th>プロトコルの経路</th><th>v0.1.56 での処理</th></tr></thead><tbody><tr><td>OpenAI 互換</td><td>native trajectory に対応します。assistant のツール呼び出し、呼び出し ID、tool result を、ネイティブなメッセージ履歴として構成します。特定のプロトコル拒否が発生すると、限定的なフォールバックが行われる場合があります。</td></tr><tr><td>Anthropic</td><td>この Provider の既存のメッセージとツール結果の構成経路を使います。OpenAI 経路の native trajectory の能力フラグは有効にしていません。</td></tr><tr><td>Gemini</td><td>独自のツール呼び出しと履歴の表現を保ち、提供者側で必要な継続情報を維持します。各社のストリーミング機能を、完全に同じものとして扱うことはできません。</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>プロトコルの経路</th><th>v0.1.57 での処理</th></tr></thead><tbody><tr><td>OpenAI 互換</td><td>native trajectory に対応します。assistant のツール呼び出し、呼び出し ID、tool result を、ネイティブなメッセージ履歴として構成します。特定のプロトコル拒否が発生すると、限定的なフォールバックが行われる場合があります。</td></tr><tr><td>Anthropic</td><td>この Provider の既存のメッセージとツール結果の構成経路を使います。OpenAI 経路の native trajectory の能力フラグは有効にしていません。</td></tr><tr><td>Gemini</td><td>独自のツール呼び出しと履歴の表現を保ち、提供者側で必要な継続情報を維持します。各社のストリーミング機能を、完全に同じものとして扱うことはできません。</td></tr></tbody></table></div>
 <p><em>Trajectory</em> はループ内の構造化された実行軌跡であり、「どの呼び出しがどの結果を生んだか」という関係を保持します。内部の記録を統一しながら、各提供者がそれぞれのプロトコルを使えるため、ツールとのやり取りを照合しにくい一続きの通常テキストに押し込めずに済みます。</p>
 <p class="evidence">ソース：{{source:arslan/llm/adapter.py|モデルの共通インターフェース}}；{{source:arslan/llm/trajectory.py|軌跡のデータ構造}}；{{source:arslan/llm/providers/base.py|Provider の能力に関する契約}}；{{source:docs/companion/0.1.49-execution-layer.md|実行層の変更説明}}。</p>
 

@@ -1,13 +1,13 @@
 {
-  "version": "v0.1.56",
-  "sha": "e13130034e31",
+  "version": "v0.1.57",
+  "sha": "ad2f87c84c09",
   "checked": "2026-10-09",
   "stats_html": {
-    "en": "<div><b>2026.06.07 →</b><p>Earliest traceable development in Git<br>not the first idea or the open-source date</p></div><div><b>57 version tags</b><p>v0.1.0–v0.1.56, none missing<br>56 of them public releases</p></div><div><b>One core shift</b><p>Expert personas → one agent loop<br>capabilities kept, a shorter path</p></div>",
-    "zh": "<div><b>2026.06.07 →</b><p>Git 可追溯的最早开发起点<br>不等同于最早构思或开源日</p></div><div><b>57 个版本标签</b><p>v0.1.0–v0.1.56 连续齐全<br>其中 56 个是公开正式 Release</p></div><div><b>一个核心转变</b><p>专家分身编排 → 统一 Agent 循环<br>能力保留，执行路径更短</p></div>",
-    "de": "<div><b>2026.06.07 →</b><p>Früheste in Git nachvollziehbare Entwicklung<br>nicht die erste Idee und nicht der Open-Source-Start</p></div><div><b>57 Versions-Tags</b><p>v0.1.0–v0.1.56, lückenlos<br>davon 56 öffentliche Releases</p></div><div><b>Ein zentraler Wandel</b><p>Experten-Personas → eine Agentenschleife<br>Fähigkeiten erhalten, kürzerer Weg</p></div>",
-    "ja": "<div><b>2026.06.07 →</b><p>Git で追える最初の開発<br>最初の構想や公開日ではない</p></div><div><b>57 のバージョンタグ</b><p>v0.1.0–v0.1.56 欠番なし<br>うち 56 が公開リリース</p></div><div><b>ひとつの大きな転換</b><p>エキスパートの分身 → 単一のエージェントループ<br>機能はそのまま、経路は短く</p></div>",
-    "es": "<div><b>2026.06.07 →</b><p>Primer desarrollo rastreable en Git<br>no es la primera idea ni la apertura del código</p></div><div><b>57 etiquetas de versión</b><p>v0.1.0–v0.1.56, sin huecos<br>56 de ellas son versiones públicas</p></div><div><b>Un cambio central</b><p>Personas expertas → un único bucle de agente<br>las capacidades se mantienen, el camino es más corto</p></div>",
-    "tr": "<div><b>2026.06.07 →</b><p>Git'te izlenebilen en erken geliştirme<br>ilk fikir ya da açık kaynak tarihi değil</p></div><div><b>57 sürüm etiketi</b><p>v0.1.0–v0.1.56, eksiksiz<br>56'sı herkese açık sürüm</p></div><div><b>Tek temel değişim</b><p>Uzman personalar → tek bir ajan döngüsü<br>yetenekler korunur, yol kısalır</p></div>"
+    "en": "<div><b>2026.06.07 →</b><p>Earliest traceable development in Git<br>not the first idea or the open-source date</p></div><div><b>58 version tags</b><p>v0.1.0–v0.1.57, none missing<br>57 of them public releases</p></div><div><b>One core shift</b><p>Expert personas → one agent loop<br>capabilities kept, a shorter path</p></div>",
+    "zh": "<div><b>2026.06.07 →</b><p>Git 可追溯的最早开发起点<br>不等同于最早构思或开源日</p></div><div><b>58 个版本标签</b><p>v0.1.0–v0.1.57 连续齐全<br>其中 57 个是公开正式 Release</p></div><div><b>一个核心转变</b><p>专家分身编排 → 统一 Agent 循环<br>能力保留，执行路径更短</p></div>",
+    "de": "<div><b>2026.06.07 →</b><p>Früheste in Git nachvollziehbare Entwicklung<br>nicht die erste Idee und nicht der Open-Source-Start</p></div><div><b>58 Versions-Tags</b><p>v0.1.0–v0.1.57, lückenlos<br>davon 57 öffentliche Releases</p></div><div><b>Ein zentraler Wandel</b><p>Experten-Personas → eine Agentenschleife<br>Fähigkeiten erhalten, kürzerer Weg</p></div>",
+    "ja": "<div><b>2026.06.07 →</b><p>Git で追える最初の開発<br>最初の構想や公開日ではない</p></div><div><b>58 のバージョンタグ</b><p>v0.1.0–v0.1.57 欠番なし<br>うち 57 が公開リリース</p></div><div><b>ひとつの大きな転換</b><p>エキスパートの分身 → 単一のエージェントループ<br>機能はそのまま、経路は短く</p></div>",
+    "es": "<div><b>2026.06.07 →</b><p>Primer desarrollo rastreable en Git<br>no es la primera idea ni la apertura del código</p></div><div><b>58 etiquetas de versión</b><p>v0.1.0–v0.1.57, sin huecos<br>57 de ellas son versiones públicas</p></div><div><b>Un cambio central</b><p>Personas expertas → un único bucle de agente<br>las capacidades se mantienen, el camino es más corto</p></div>",
+    "tr": "<div><b>2026.06.07 →</b><p>Git'te izlenebilen en erken geliştirme<br>ilk fikir ya da açık kaynak tarihi değil</p></div><div><b>58 sürüm etiketi</b><p>v0.1.0–v0.1.57, eksiksiz<br>57'si herkese açık sürüm</p></div><div><b>Tek temel değişim</b><p>Uzman personalar → tek bir ajan döngüsü<br>yetenekler korunur, yol kısalır</p></div>"
   }
 }

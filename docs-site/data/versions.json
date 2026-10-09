@@ -2295,5 +2295,29 @@
         "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.55...v0.1.56"
       }
     ]
+  },
+  {
+    "version": "v0.1.57",
+    "title": "能力自己长",
+    "date": "2026-10-09",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-10-09T06:11:18Z",
+    "published_at_shanghai": "2026-10-09T14:11:18+08:00",
+    "summary": "缺能力时搜索、询问、固定版本安装、扫描、沙箱运行、测试后重试；“能力”页新增发现与档案。",
+    "status": "published_stable",
+    "tagged_commit": "ad2f87c84c09bbce094bb3bf0ac7b87374e89e69",
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.57",
+        "published_at": "2026-10-09T06:11:18Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.56...v0.1.57"
+      }
+    ]
   }
 ]

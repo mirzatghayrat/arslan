@@ -53,14 +53,14 @@
 
 就这样。不用注册账号，也没有 Arslan 服务器。
 
-## 0.1.56 新功能：项目分两层
+## 0.1.57 新功能：能力自己长
 
-项目现在放在一块看板上——想法、成形、在做、完成——每个项目各自一关一关往上走。选一个类型（游戏、app、网站、研究、写作、视频、技能、旅行、工作）和一条终点线，关卡立刻按类型起草好，不调用模型；每一关都有清楚的过关条件和几个检查点。Arslan 能看到的就替你打勾：项目文件夹里出现的文件、你告诉它的话、在后台做完的任务。每个勾都写明理由、可以撤销；过关永远只是提议；"完成"和"放弃"只能由你来定。[完整发布说明 →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.56)
+某一步需要 Arslan 还做不到的事时——比如读出 Excel 文件里的公式，而不只是数值——它会搜索官方 MCP Registry、GitHub 和经过审核的 Skill 库，然后用一张卡片问你：要添加什么、来自哪里、许可证（从项目自己的许可证文件读取）、怎样运行、可以用哪些文件夹。你点**装上并重试**，它就安装固定版本，安装过程中不运行任何代码，扫描已知的危险写法，在一个"默认什么都不许"的沙箱里启动（只能用自己的文件夹和你给它的文件夹，碰不到 SSH 密钥，除非某个服务需要 key 否则不联网），测试一次，然后在同一次回复里重试那一步。每个添加的能力在"能力"页都有一份档案。[完整发布说明 →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.57)
 
 最近几版：
-- **[0.1.55](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.55)**——所有需要你回答的地方统一成一个样子：卡片排进同一个队列，⌘⏎ 允许、Esc 拒绝，在 Island 里就能回答（会删除、发送、付款或提交的步骤改为在 Arslan 里打开）。收件箱、记忆、能力各成一页。
-- **[0.1.54](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.54)**——Mac 端为 Arslan iPhone 版准备就绪（Touch ID 审批、一台手机一个条目、移除手机后清理），终端闸门会检查命令链里的每一条命令。
-- **[0.1.53](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.53)**——**Arslan Hands**：通过辅助功能树在后台读取并使用你 Mac 上的 app；凡是删除、发送、付款、购买、转账、提交的按钮，每次都问。
+- **[0.1.56](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.56)**——项目分两层：所有项目一块看板，每个项目各有关卡；Arslan 只凭能说出来源的证据打勾，过关只是提议。
+- **[0.1.55](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.55)**——所有需要你回答的地方统一成一个样子：卡片排进同一个队列，⌘⏎ 允许、Esc 拒绝，在 Island 里就能回答（会删除、发送、付款或提交的步骤改为在 Arslan 里打开）。
+- **[0.1.54](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.54)**——Mac 端为 Arslan iPhone 版准备就绪（Touch ID 审批、一台手机一个条目），终端闸门会检查命令链里的每一条命令。
 
 <div align="center">
   <img src="docs/assets/readme/devices.jpg" alt="Mac 上的 Arslan 正在后台整理发票；iPhone 上的 Arslan 显示一条待批准" width="100%">
