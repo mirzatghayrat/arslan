@@ -139,7 +139,7 @@ pub fn allows(tier: Tier, op: &str) -> bool {
         Tier::Full => {
             read || matches!(
                 op,
-                "click" | "scroll" | "type" | "set_value" | "select" | "press"
+                "click" | "scroll" | "type" | "set_value" | "select" | "press" | "menu"
             )
         }
     }

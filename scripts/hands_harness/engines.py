@@ -121,6 +121,11 @@ class AgentDesktop:
         started = time.monotonic()
         return _act(self.hands.call("select", {"app": self.app, "ref": element.id, "value": value}), started)
 
+    def menu(self, path: list[str]) -> Act:
+        """Hands v2: a menu item pressed in the background by its path (Hands' own accessibility)."""
+        started = time.monotonic()
+        return _act(self.hands.call("menu", {"app": self.app, "path": path}), started)
+
     def press(self, keys: str, element: Element | None = None) -> Act:
         """agent-desktop presses keys for the whole app: to aim them, the element is clicked
         (focused) first, and that click is part of the measured action."""

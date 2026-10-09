@@ -52,6 +52,10 @@ extern "C" {
     fn CFArrayGetCount(array: CFTypeRef) -> CFIndex;
     fn CFArrayGetValueAtIndex(array: CFTypeRef, index: CFIndex) -> CFTypeRef;
     fn CFHash(cf: CFTypeRef) -> usize;
+    fn CFBooleanGetValue(boolean: CFTypeRef) -> u8;
+    fn CFBooleanGetTypeID() -> usize;
+    fn CFNumberGetValue(number: CFTypeRef, kind: CFIndex, out: *mut c_void) -> u8;
+    fn CFNumberGetTypeID() -> usize;
     fn CFRelease(cf: CFTypeRef);
 }
 
@@ -93,6 +97,7 @@ extern "C" {
         element: *mut CFTypeRef,
     ) -> i32;
     fn AXUIElementGetPid(element: CFTypeRef, pid: *mut i32) -> i32;
+    fn AXUIElementPerformAction(element: CFTypeRef, action: CFTypeRef) -> i32;
 }
 
 /// Releases a CF object when dropped.
@@ -265,6 +270,116 @@ pub fn structure(pid: i32) -> Option<crate::structure::Structure> {
         focused: (!focused.0.is_null()).then(|| unsafe { CFHash(focused.0) } as u64),
         menu_open,
     })
+}
+
+fn ax_bool(element: CFTypeRef, attribute: &str) -> Option<bool> {
+    let value = ax_copy(element, attribute);
+    (!value.0.is_null() && unsafe { CFGetTypeID(value.0) == CFBooleanGetTypeID() })
+        .then(|| unsafe { CFBooleanGetValue(value.0) } != 0)
+}
+
+fn ax_int(element: CFTypeRef, attribute: &str) -> Option<i64> {
+    let value = ax_copy(element, attribute);
+    if value.0.is_null() || unsafe { CFGetTypeID(value.0) != CFNumberGetTypeID() } {
+        return None;
+    }
+    let mut out: i64 = 0;
+    const SINT64: CFIndex = 4; // kCFNumberSInt64Type
+    (unsafe { CFNumberGetValue(value.0, SINT64, (&mut out as *mut i64).cast()) } != 0)
+        .then_some(out)
+}
+
+/// Every item of app `pid`'s menu bar below its first menu (the system's Apple menu is never
+/// read or pressed), to `depth` levels of submenus. None when the app has no menu bar to read.
+pub fn menu_items(pid: i32) -> Option<Vec<crate::menus::MenuItem>> {
+    let mut found = Vec::new();
+    walk_menus(pid, |path, item| {
+        let character = ax_text(item, "AXMenuItemCmdChar").filter(|c| !c.trim().is_empty());
+        found.push(crate::menus::MenuItem {
+            path: path.to_vec(),
+            enabled: ax_bool(item, "AXEnabled").unwrap_or(false),
+            shortcut: character.map(|c| {
+                (
+                    c.to_lowercase(),
+                    ax_int(item, "AXMenuItemCmdModifiers").unwrap_or(0),
+                )
+            }),
+        });
+        false
+    })?;
+    Some(found)
+}
+
+/// Press the menu item at `path` (titles, top level first) through accessibility: the app's own
+/// action, delivered in the background. Some(true) pressed, Some(false) the press failed, None
+/// no such item.
+pub fn press_menu_item(pid: i32, path: &[String]) -> Option<bool> {
+    let mut pressed = None;
+    walk_menus(pid, |at, item| {
+        if at == path {
+            let action = cf_string("AXPress");
+            pressed = Some(unsafe { AXUIElementPerformAction(item, action.0) } == 0);
+            return true;
+        }
+        false
+    })?;
+    pressed
+}
+
+/// Visit every menu item under the menu bar (skipping the Apple menu) with its path; `visit`
+/// returns true to stop. None when there is no menu bar.
+fn walk_menus(pid: i32, mut visit: impl FnMut(&[String], CFTypeRef) -> bool) -> Option<()> {
+    let app = Owned(unsafe { AXUIElementCreateApplication(pid) });
+    if app.0.is_null() {
+        return None;
+    }
+    let bar = ax_copy(app.0, "AXMenuBar");
+    if bar.0.is_null() {
+        return None;
+    }
+    let tops = ax_copy(bar.0, "AXChildren");
+    for top in items(&tops).into_iter().skip(1) {
+        let title = ax_text(top, "AXTitle").unwrap_or_default();
+        if title.is_empty() {
+            continue;
+        }
+        if descend(top, &mut vec![title], &mut visit, 0) {
+            break;
+        }
+    }
+    Some(())
+}
+
+/// The menu under `element` (its one AXMenu child) and that menu's items, recursively.
+fn descend(
+    element: CFTypeRef,
+    path: &mut Vec<String>,
+    visit: &mut impl FnMut(&[String], CFTypeRef) -> bool,
+    depth: usize,
+) -> bool {
+    if depth > 3 {
+        return false;
+    }
+    let children = ax_copy(element, "AXChildren");
+    for menu in items(&children) {
+        if ax_text(menu, "AXRole").as_deref() != Some("AXMenu") {
+            continue;
+        }
+        let entries = ax_copy(menu, "AXChildren");
+        for item in items(&entries) {
+            let title = ax_text(item, "AXTitle").unwrap_or_default();
+            if title.is_empty() {
+                continue; // separators
+            }
+            path.push(title);
+            let stop = visit(path, item) || descend(item, path, visit, depth + 1);
+            path.pop();
+            if stop {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// Hands holds Accessibility (as its own responsible process).
