@@ -1,6 +1,7 @@
 import type { AppSettings, Message, Spawn, UiRun, UiRunDimension, UiRunStep } from "../types";
 import type { AppSettings as BackendAppSettings, ArslanThreadItem, RunDetailDto, RunStepDto, SpawnSummary } from "./client.types";
 import { fromSteps, summarize } from "../lib/process";
+import { lastVersions } from "../components/reply/ReplyArtifacts";
 
 // ── Settings adapters ─────────────────────────────────────────────────────────
 
@@ -476,6 +477,8 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
     // (processSummary); a live one counts its in-memory steps the same way.
     const entries = fromSteps(item.toolSteps);
     const live = summarize(entries, item.elapsedMs ?? null, item.usage ?? null);
+    // 0.1.58 §2: the reply's files — from its steps live, from the history row after a reload.
+    const files = lastVersions([...(item.files ?? []), ...(item.toolSteps ?? []).flatMap((s) => s.artifacts ?? [])]);
     const process = {
       runId: item.runId ?? null,
       entries,
@@ -507,6 +510,7 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
         // S3-M3: the turn's usage from the stream_end frame → bubble usage chip.
         usage: item.usage,
         process,
+        files,
       };
     }
 
@@ -532,6 +536,7 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
       resultOfJob: item.jobId,
       jobOutcome: item.jobOutcome ?? undefined,
       process,
+      files,
     };
   });
 }

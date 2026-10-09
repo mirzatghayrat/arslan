@@ -29,6 +29,7 @@ import CopyButton from './CopyButton';
 import LiveActivity from './LiveActivity';
 import ReplyArtifacts from './reply/ReplyArtifacts';
 import ReplyFooter from './reply/ReplyFooter';
+import { COMPOSER_INSERT_EVENT } from './workbench/Reader';
 import { Dialog, Notice } from './kit';
 import { useArslanStore } from '../stores/arslanStore';
 import { taskErrorKey } from './companion/errors';
@@ -240,6 +241,18 @@ export default function OrchestratorChat({
     if (temporary) discardComposerDraft(draftKey);
     return () => { if (temporary) discardComposerDraft(draftKey); };
   }, [draftKey, temporary]);
+  // 0.1.58 §2: "加进对话" from the reader or the 文件 tab appends a file's path to the composer.
+  const inputRef = useRef(inputValue);
+  inputRef.current = inputValue;
+  useEffect(() => {
+    const insert = (e: Event) => {
+      const text = (e as CustomEvent<string>).detail;
+      if (typeof text !== 'string' || !text) return;
+      setInputValue(inputRef.current ? `${inputRef.current} ${text}` : text);
+    };
+    window.addEventListener(COMPOSER_INSERT_EVENT, insert);
+    return () => window.removeEventListener(COMPOSER_INSERT_EVENT, insert);
+  }, [setInputValue]);
   const attach = useComposerAttach(() => {}, false, {
     allowUrlExtraction: !temporary,
     draft: temporary ? undefined : getAttachmentDraft(draftKey),
@@ -664,7 +677,7 @@ export default function OrchestratorChat({
                       }
                       {msg.cancelled && <RunCancelledMarker />}
 {msg.resultOfJob && <JobResultLabel outcome={msg.jobOutcome} />}
-                      {(isArslan || isSpawn) && <ReplyArtifacts activity={msg.toolActivity} />}
+                      {(isArslan || isSpawn) && <ReplyArtifacts activity={msg.toolActivity} files={msg.files} />}
 {isArslan && msg.id !== '__streaming__' && msg.process && <ReplyFooter text={msg.text} process={msg.process} latest={msg.id === lastReplyId} onReplay={setReplayRunId} />}
 
                       {/* Routed Indicator - specifically asked in prompt */}
@@ -805,7 +818,7 @@ export default function OrchestratorChat({
                   }
                   {msg.cancelled && <RunCancelledMarker />}
 {msg.resultOfJob && <JobResultLabel outcome={msg.jobOutcome} />}
-                  {(isArslan || isSpawn) && <ReplyArtifacts activity={msg.toolActivity} />}
+                  {(isArslan || isSpawn) && <ReplyArtifacts activity={msg.toolActivity} files={msg.files} />}
 {isArslan && msg.id !== '__streaming__' && msg.process && <ReplyFooter text={msg.text} process={msg.process} latest={msg.id === lastReplyId} onReplay={setReplayRunId} />}
 
                   {/* Routed branch block */}
@@ -912,7 +925,7 @@ export default function OrchestratorChat({
                   <MessageBody text={msg.text} indent streaming={msg.id === '__streaming__'} hasMessageActions={isSpawn && !msg.isProposal && !!msg.spawnId} footerActions={isArslan} className="text-foreground font-sans leading-relaxed text-[12.5px] pl-5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
                   {msg.cancelled && <div className="pl-5"><RunCancelledMarker /></div>}
                   {msg.resultOfJob && <div className="pl-5"><JobResultLabel outcome={msg.jobOutcome} /></div>}
-                  {(isArslan || isSpawn) && <ReplyArtifacts activity={msg.toolActivity} />}
+                  {(isArslan || isSpawn) && <ReplyArtifacts activity={msg.toolActivity} files={msg.files} />}
 {isArslan && msg.id !== '__streaming__' && msg.process && <ReplyFooter text={msg.text} process={msg.process} latest={msg.id === lastReplyId} onReplay={setReplayRunId} />}
 
                   {/* Linear clean route badge */}

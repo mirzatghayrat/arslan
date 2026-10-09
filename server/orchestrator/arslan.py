@@ -282,9 +282,26 @@ def _now_line() -> str:
 _VERSION_LINE = (f"\n\nYou are Arslan {_settings.app_version}. For which version you are or what changed, "
                  "use this line and the whats_new tool; never guess a version.")
 
+# 0.1.58 §2 (output rules, delivery brief §3): what the window does with an answer — copy buttons on
+# code blocks, clickable local paths that open in the reader, file cards for what was written — only
+# helps when the answer is shaped for it. One short narration line before a tool call becomes a line
+# in the reply's folded steps (the tool loop's note frame), never part of the answer.
+_OUTPUT_RULES = (
+    "\n\nHow to shape an answer:\n"
+    "- Things the user will paste or run go in fenced code blocks: commands as ```bash, a message to send "
+    "someone as ```text, code with its language.\n"
+    "- Name local files with their full path (~/Arslan/报告/x.md or /Users/…), in backticks, so the user "
+    "can open them from the reply.\n"
+    "- A long deliverable — a report, a table, anything longer than about a screen — goes into a file in "
+    "the conversation's folder (write_file); the reply gives 2–5 lines of summary and the file's path. "
+    "Do not paste the whole document into the chat.\n"
+    "- Before calling a tool, you may say in one short sentence what you are about to do; keep it to one "
+    "line. The final answer comes after the last tool result."
+)
+
 _ANSWER_STABLE_PREFIX = (
     _ARSLAN_SYSTEM + _ANTI_FABRICATION + _NO_BACKGROUND_EXEC
-    + _CLARIFY_CHOICE_NUDGE + _NO_REPASTE + _WEB_TOOL_GUIDANCE + _CAPABILITY_SELF + _VERSION_LINE
+    + _CLARIFY_CHOICE_NUDGE + _NO_REPASTE + _OUTPUT_RULES + _WEB_TOOL_GUIDANCE + _CAPABILITY_SELF + _VERSION_LINE
 )
 
 

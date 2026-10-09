@@ -121,6 +121,8 @@ export interface Message {
   toolActivity?: ToolActivity;
   /** 0.1.58 §1: the footer row under the reply and the steps it opens. */
   process?: import('./components/reply/ReplyFooter').ReplyProcess;
+  /** 0.1.58 §2: the files this reply produced, one per path (file cards). */
+  files?: import('./api/client.types').StoredArtifact[];
   /** HTML deliverable card data (kind:"html" stream_end artifact). 🔒 Backend frames only. */
   artifactHtml?: HtmlArtifact;
   escalation?: Escalation;
