@@ -62,6 +62,8 @@ REFUSALS = {
                          "done. Do other work and try again in a little while.",
     "secure_input": "The user is typing a password, so Arslan does not take the front now. Nothing was done. "
                     "Try again in a little while.",
+    "screen_locked": "The Mac's screen is locked, and Arslan never acts on a locked Mac. Nothing was done. "
+                     "Wait until the user unlocks it, or tell them what is left.",
     # Hands v2 §6.4: taking the screen over.
     "takeover_paused": "The user touched the keyboard or mouse, so the takeover paused and nothing more was sent.",
     "takeover_unsafe": "Arslan Hands cannot watch the keyboard and mouse right now, so it cannot take the screen "

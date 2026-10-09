@@ -55,6 +55,21 @@ fn standing_in() -> bool {
     STAND_IN.load(Ordering::SeqCst)
 }
 
+/// §6.4/§6.7: a takeover ends when the screen locks.
+fn screen_locked() -> bool {
+    if standing_in() {
+        return false;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        crate::macos::screen_locked()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        false
+    }
+}
+
 /// Did the user press a key or move / click the mouse since `since`?
 fn user_input_since(since: Instant) -> bool {
     if standing_in() {
@@ -100,7 +115,7 @@ fn watch(me: u64) {
         }
         let mut state = lock();
         let Some(t) = state.as_mut() else { return };
-        if Instant::now() >= t.until {
+        if Instant::now() >= t.until || screen_locked() {
             *state = None;
             drop(state);
             if !standing_in() {

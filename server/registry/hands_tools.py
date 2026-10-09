@@ -671,6 +671,23 @@ async def _wait_for_the_user(job_id: str | None) -> dict:
                      "the background if you can, or tell the user what is left."}
 
 
+AWAY_AFTER_S = 180              # §6.5: no input for this long (the island's measure) = away
+
+
+async def _user_away() -> bool:
+    """§6.5: the user turned on "while I'm away" and has not touched the keyboard or mouse for
+    three minutes (Hands' key tap measures it; unknown counts as here)."""
+    from server.services import hands_client, hands_service
+    if not hands_service.settings()["away"]:
+        return False
+    try:
+        status = await hands_client.call("status", {}, timeout=5, start=False)
+    except hands_client.HandsUnavailable:
+        return False
+    idle = status.get("user_idle_ms")
+    return isinstance(idle, (int, float)) and idle >= AWAY_AFTER_S * 1000
+
+
 class DesktopTakeoverExecutor:
     """Take the screen over for long foreground work (§6.4): background work only, a card every
     time (the island may answer it), the edge glows, and the user's first touch pauses it."""
@@ -695,7 +712,9 @@ class DesktopTakeoverExecutor:
         if not desktop_available():
             return {"ok": False, "external": False, "error": "Arslan Hands is not available on this Mac."}
         started = time.monotonic()
-        if not await _ask_once(f"takeover:{uuid.uuid4().hex}", "desktop_takeover", f"{minutes} min · {why}",
+        away = await _user_away()
+        if not away and not await _ask_once(f"takeover:{uuid.uuid4().hex}", "desktop_takeover",
+                                            f"{minutes} min · {why}",
                                f"Arslan wants to take over the screen for about {minutes} minutes: {why}. Please "
                                "keep off the keyboard and mouse meanwhile — touching either pauses it at once, and "
                                "Esc stops it. Deleting, sending and the like still ask you each time."):
@@ -711,11 +730,13 @@ class DesktopTakeoverExecutor:
         if not result.ok:
             return _failed(result)
         _takeovers.add(job_id)
-        _trace("takeover", "screen", "ok", started, minutes=minutes)
+        _trace("takeover", "screen", "ok", started, minutes=minutes, away=away)
         return {"ok": True, "external": False, "outcome": "done",
                 "text": f"The screen is yours for up to {minutes} minutes (the edge glows). Actions may now use the "
                         "front without waiting. If the user touches the keyboard or mouse it pauses and the next "
-                        "action tells you what they chose. It ends when this work ends.",
+                        "action tells you what they chose. It ends when this work ends."
+                        + (" The user is away and allowed this without asking; risky actions still wait for them."
+                           if away else ""),
                 "summary": f"takeover · {minutes} min"}
 
 

@@ -93,6 +93,10 @@ fn main() {
     #[cfg(target_os = "macos")]
     {
         let _ = serving;
+        // The key tap watches from launch (holding nothing until a borrow): how long the user
+        // has been away (§6.5) and whether they are typing need it. Without Accessibility it
+        // cannot start; borrows and takeovers then start it, or say why not.
+        let _ = arslan_hands::keyhold::start();
         arslan_hands::macos::run_app_loop();
     }
     #[cfg(not(target_os = "macos"))]

@@ -391,9 +391,23 @@ struct CGPoint {
 
 #[link(name = "CoreGraphics", kind = "framework")]
 extern "C" {
+    fn CGSessionCopyCurrentDictionary() -> CFTypeRef;
     fn CGEventCreate(source: CFTypeRef) -> CFTypeRef;
     fn CGEventGetLocation(event: CFTypeRef) -> CGPoint;
     fn CGWarpMouseCursorPosition(point: CGPoint) -> i32;
+}
+
+/// The screen is locked (§6.7: no Hands action then; a takeover ends).
+pub fn screen_locked() -> bool {
+    let session = Owned(unsafe { CGSessionCopyCurrentDictionary() });
+    if session.0.is_null() {
+        return false;
+    }
+    let key = cf_string("CGSSessionScreenIsLocked");
+    let value = unsafe { CFDictionaryGetValue(session.0, key.0) };
+    !value.is_null()
+        && unsafe { CFGetTypeID(value) == CFBooleanGetTypeID() }
+        && unsafe { CFBooleanGetValue(value) } != 0
 }
 
 /// Where the pointer is now (global display coordinates, top-left origin).

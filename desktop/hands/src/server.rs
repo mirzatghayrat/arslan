@@ -773,6 +773,12 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
     let popup = op == "select" && target.as_ref().is_some_and(|t| is_popup(&t.role));
     // §6.4: inside a takeover the user said yes to the screen: no borrow, the app may come
     // forward; while it is paused nothing is sent.
+    if acts(op) && screen_locked() {
+        return Err(refuse(
+            "screen_locked",
+            "the screen is locked; Arslan does not act on a locked Mac",
+        ));
+    }
     let in_takeover = acts(op) && crate::takeover::check_before_action()?;
     if in_takeover {
         if wants_front || popup {
@@ -948,6 +954,12 @@ fn menu_op(ctx: &Ctx, args: &Value) -> Result<Value, Refusal> {
             "`path` is the menu's titles, top level first, like [\"Format\", \"Font\", \"Bold\"] (2 to 4)",
         ));
     }
+    if screen_locked() {
+        return Err(refuse(
+            "screen_locked",
+            "the screen is locked; Arslan does not act on a locked Mac",
+        ));
+    }
     crate::takeover::check_before_action()?;
     unchanged_since_look(ctx, &(session.unwrap_or_default(), app.pid), &app)?;
     let items = crate::menus::read(app.pid).ok_or_else(|| {
@@ -1053,6 +1065,16 @@ fn front_back(before: Option<i32>, acted_on: i64) -> bool {
         }
         _ => false,
     }
+}
+
+#[cfg(target_os = "macos")]
+fn screen_locked() -> bool {
+    crate::macos::screen_locked()
+}
+
+#[cfg(not(target_os = "macos"))]
+fn screen_locked() -> bool {
+    false
 }
 
 #[cfg(target_os = "macos")]
@@ -1196,7 +1218,20 @@ fn status(state: &State) -> Value {
         "agent_desktop_pinned": state.runner.pinned.as_ref().map(|p| p.check().is_ok()),
         "cua_driver": state.cua.as_ref().map(Cua::present),
         "cua_driver_pinned": state.cua.as_ref().and_then(Cua::pinned),
+        // §6.5: how long since the user's last key or mouse event (the key tap's watch, which
+        // Hands' own events never touch); null until the tap has seen one.
+        "user_idle_ms": user_idle_ms(),
+        "screen_locked": screen_locked(),
     })
+}
+
+fn user_idle_ms() -> Option<u64> {
+    let key = crate::keyhold::user_key_age_ms();
+    let mouse = crate::keyhold::user_mouse_age_ms();
+    match (key, mouse) {
+        (Some(k), Some(m)) => Some(k.min(m) as u64),
+        (one, other) => one.or(other).map(|ms| ms as u64),
+    }
 }
 
 #[cfg(target_os = "macos")]

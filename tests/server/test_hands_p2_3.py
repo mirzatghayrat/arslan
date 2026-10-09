@@ -132,3 +132,26 @@ async def test_the_islands_continue_and_end_reach_hands(hands, monkeypatch):
     assert (await api.takeover_continue())["ok"] is True
     assert (await api.takeover_end())["ended"] is True
     assert hands.ops("takeover_resume", "takeover_end") == ["takeover_resume", "takeover_end"]
+
+
+# ── while the user is away (§6.5) ────────────────────────────────────────────
+
+@pytest.mark.parametrize("switch, idle_ms, asked", [
+    (True, 181_000, False),        # away and allowed: no card
+    (True, 60_000, True),          # allowed, but they were here a minute ago
+    (False, 3_600_000, True),      # away an hour, but the switch is off (the default)
+    (True, None, True),            # Hands cannot tell: counts as here
+])
+async def test_a_takeover_skips_its_card_only_when_the_user_is_away_and_allowed_it(
+        hands, asks, in_job, switch, idle_ms, asked):
+    seen, _ = asks
+    hands_service.update_settings(away=switch)
+    hands.user_idle_ms = idle_ms
+    result = await hands_tools.DesktopTakeoverExecutor().execute({"why": "drag the photos", "minutes": 5})
+    assert result["ok"] is True
+    assert bool([f for f in seen if f.get("kind") == "desktop_takeover"]) is asked
+    assert ("The user is away" in result["text"]) is (not asked)
+
+
+async def test_away_is_off_by_default():
+    assert hands_service.settings()["away"] is False
