@@ -470,6 +470,18 @@ fn running_apps(ctx: &Ctx) -> Result<Vec<App>, Refusal> {
         &["list-apps".to_string()],
         deadline("list_apps", &Value::Null),
     )?;
+    // A list agent-desktop could not make is said as such: an empty list would tell the model
+    // (and the user) that no app is running, which is how a stale macOS entry once looked.
+    if envelope.get("ok").and_then(Value::as_bool) != Some(true) {
+        let why = envelope
+            .pointer("/error/message")
+            .and_then(Value::as_str)
+            .unwrap_or("no reason given");
+        return Err(refuse(
+            "apps_unreadable",
+            format!("macOS did not give the list of running apps: {why}"),
+        ));
+    }
     let apps = envelope
         .pointer("/data/apps")
         .and_then(Value::as_array)
@@ -816,6 +828,9 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
             restore_front(pid); // the app comes forward for this one action
         }
     }
+    if acts(op) {
+        crate::late_front::action_begins();
+    }
     let front_before = if acts(op) { frontmost_pid() } else { None };
     let ran = run_envelope(ctx, &argv, deadline(op, args));
     let gave = borrowed.map(crate::borrow::end);
@@ -830,10 +845,15 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
             return press_item(&app, tier, &item, Some(keys));
         }
     }
+    // A borrow gives the front back itself; inside a takeover the app may stay in front.
+    let in_background = gave.is_none() && !in_takeover;
     let focus_restored = match gave {
         Some(gave) => gave.front_restored,
         None => front_back(front_before, app.pid),
     };
+    if acts(op) && in_background {
+        crate::late_front::watch(front_before, app.pid);
+    }
     let front_after = if acts(op) { frontmost_pid() } else { None };
     Ok(json!({
         "ok": true,
@@ -1011,6 +1031,7 @@ fn press_item(
     path: &[String],
     keys: Option<&str>,
 ) -> Result<Value, Refusal> {
+    crate::late_front::action_begins();
     let front_before = frontmost_pid();
     match crate::menus::press(app.pid, path) {
         Some(true) => {}
@@ -1023,6 +1044,9 @@ fn press_item(
         None => return Err(refuse("menu_not_found", "the menu item is gone")),
     }
     let focus_restored = front_back(front_before, app.pid);
+    if !crate::takeover::active() {
+        crate::late_front::watch(front_before, app.pid);
+    }
     Ok(json!({
         "ok": true,
         "app": app_json(app),
@@ -1231,6 +1255,8 @@ fn status(state: &State) -> Value {
         // Hands' own events never touch); null until the tap has seen one.
         "user_idle_ms": user_idle_ms(),
         "screen_locked": screen_locked(),
+        // P2-5: how many times an app that came forward late was given its front back.
+        "late_front_given_back": crate::late_front::given_back(),
     })
 }
 

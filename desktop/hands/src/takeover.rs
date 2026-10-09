@@ -157,6 +157,11 @@ pub fn resume() -> Result<Value, Refusal> {
     }
 }
 
+/// A takeover is on (paused or not): the app may come forward, nothing gives the front back.
+pub fn active() -> bool {
+    lock().is_some()
+}
+
 pub fn paused() -> bool {
     lock().as_ref().is_some_and(|t| t.paused)
 }
