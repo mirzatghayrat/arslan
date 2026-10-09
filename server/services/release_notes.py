@@ -46,7 +46,14 @@ def recent(count: int = 3, version: str | None = None) -> list[dict]:
         found.append((key, path))
     found.sort(reverse=True)
     out = []
-    for key, path in found[:max(1, count)]:
+    # A pre-release that is running (0.1.59-beta.2) leads with its own notes: other betas stay
+    # skipped, but "what's new" in a beta has to name what the beta brought (0.1.59-beta.1's
+    # packaged check failed on exactly this).
+    running = (version or settings.app_version or "").strip()
+    own = folder / f"v{running}.md"
+    if "-" in running and not running.endswith("-dev") and own.is_file():
+        out.append({"version": running, "notes": own.read_text(errors="replace").strip()[:MAX_CHARS]})
+    for key, path in found[:max(1, count) - len(out)]:
         text = path.read_text(errors="replace").strip()
         out.append({"version": "%d.%d.%d" % key, "notes": text[:MAX_CHARS]})
     return out

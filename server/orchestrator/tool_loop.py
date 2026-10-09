@@ -263,8 +263,8 @@ _MCP_FAIL_HINT_AT = 2
 
 
 def _mcp_degrade_hint(n: int) -> str:
-    return (f"⚠ 此 MCP 工具本回合已连续失败 {n} 次。请改用等价的内置工具完成任务"
-            "(网页抓取用 web_extract,搜索用 web_search);不要再重试该 MCP 工具。")
+    return (f"⚠ This MCP tool has failed {n} times in a row this turn. Use the equivalent built-in tool "
+            "instead (web_extract to read a page, web_search to search); do not retry this MCP tool.")
 
 
 def _web_read_feedback(tool_key, args, result):
@@ -671,7 +671,7 @@ async def _log_degrade_hint(conversation_id, tool_key, count) -> None:
         await recap_service.log_event(
             conversation_id, "mcp_degrade_hint",
             {"tool_key": tool_key, "count": count},
-            f"MCP 工具 {tool_key} 本回合连续失败 {count} 次,已提示改用内置等价工具")
+            f"MCP tool {tool_key} failed {count} times in a row this turn; suggested the built-in equivalent")
     except Exception:  # noqa: BLE001 — observability is never fatal
         pass
 
@@ -1439,10 +1439,11 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
         "required": ["app", "path"], "additionalProperties": False},
     "start_background_work": {"type": "object", "properties": {
         "goal": {"type": "string", "minLength": 1, "maxLength": 4000,
-                 "description": "The work to do, in the user's words."},
+                 "description": "The work to do, in the user's own words and language."},
         "criteria": {"type": "array", "minItems": 1, "maxItems": 5, "items": {
             "type": "object", "properties": {
-                "description": {"type": "string", "minLength": 1, "maxLength": 300},
+                "description": {"type": "string", "minLength": 1, "maxLength": 300,
+                                "description": "One check, in the user's language."},
                 "kind": {"type": "string", "enum": ["file_saved", "sources_read", "mentions", "judgement"]},
                 "target": {"type": "string", "maxLength": 240,
                            "description": "file name for file_saved; phrase for mentions"},
@@ -1497,7 +1498,7 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                     "required": ["command"]},
     "conversation_search": {"type": "object",
                             "properties": {"query": {"type": "string", "minLength": 1, "maxLength": 200,
-                                                     "description": "Words to find, e.g. \"周报\" or \"landlord\"."},
+                                                     "description": "Words to find, e.g. \"weekly report\" or \"landlord\"."},
                                            "since": {"type": "string", "description": "YYYY-MM-DD, optional."},
                                            "until": {"type": "string", "description": "YYYY-MM-DD, optional."},
                                            "limit": {"type": "integer", "minimum": 1, "maximum": 20}},
@@ -1762,7 +1763,7 @@ def _clean_findings(tool_trace: list, *, limit: int = 8000) -> str:
             payload = {k: v for k, v in res.items()
                        if k not in ("ok", "artifact", "external", "error")}
             if payload:
-                lines.append(f"{step.get('tool')} 返回:{json.dumps(payload, ensure_ascii=False)[:900]}")
+                lines.append(f"{step.get('tool')} returned: {json.dumps(payload, ensure_ascii=False)[:900]}")
     return "\n".join(lines)[:limit]
 
 

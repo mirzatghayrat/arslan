@@ -21,7 +21,7 @@ export const jobMessages = {
     "budgetTier": {"lean": "Lean", "standard": "Standard", "ample": "Ample"},
     "budgetStop": "Used up its {{what}} ({{used}}/{{limit}})",
     "budgetWhat": {"model_requests": "model requests", "tool_calls": "tool calls", "tokens": "tokens", "wall_seconds": "time (seconds)", "artifact_bytes": "file storage"},
-    "detail": {"goal_not_reached": "It answered, but by its own account the goal was not reached.", "task_validation_failed": "Finished, but a completion check did not pass.", "task_checks_not_run": "Finished; some checks could not run on this Mac.", "task_execution_failed": "Stopped by an error.", "task_no_progress": "Stopped: it kept repeating itself without progress.", "task_input_required": "Needs your input to go on.", "process_interrupted": "Interrupted by a restart."},
+    "detail": {"goal_not_reached": "It answered, but by its own account the goal was not reached.", "task_validation_failed": "Finished, but a completion check did not pass.", "task_checks_not_run": "Finished; some checks could not run on this Mac.", "task_execution_failed": "Stopped by an error.", "task_no_progress": "Stopped: it kept repeating itself without progress.", "task_input_required": "Needs your input to go on.", "process_interrupted": "Interrupted by a restart.", "task_reconciliation_required": "Mostly done, but a step that changes files or settings did not finish cleanly — have a quick look at the result.", "execution_failed": "Stopped by an error.", "acceptance_review_required": "Done — please look over the result; there was no automatic way to check it."},
     "detailGeneric": "Stopped ({{code}})"
   },
   "zh": {
@@ -44,7 +44,7 @@ export const jobMessages = {
     "budgetTier": {"lean": "精简", "standard": "标准", "ample": "充裕"},
     "budgetStop": "用满了{{what}}（{{used}}/{{limit}}）",
     "budgetWhat": {"model_requests": "模型调用次数", "tool_calls": "工具调用次数", "tokens": "token 用量", "wall_seconds": "时间（秒）", "artifact_bytes": "文件存储"},
-    "detail": {"goal_not_reached": "回答了，但它自己说没做成。", "task_validation_failed": "做完了，但有完成标准没通过。", "task_checks_not_run": "做完了；有些检查在这台 Mac 上跑不了。", "task_execution_failed": "出错停止了。", "task_no_progress": "停下了：一直在重复、没有进展。", "task_input_required": "需要你补充信息才能继续。", "process_interrupted": "重启时中断了。"},
+    "detail": {"goal_not_reached": "回答了，但它自己说没做成。", "task_validation_failed": "做完了，但有完成标准没通过。", "task_checks_not_run": "做完了；有些检查在这台 Mac 上跑不了。", "task_execution_failed": "出错停止了。", "task_no_progress": "停下了：一直在重复、没有进展。", "task_input_required": "需要你补充信息才能继续。", "process_interrupted": "重启时中断了。", "task_reconciliation_required": "基本做完了，但有一步改动文件或设置的操作没干净完成——请看一眼结果。", "execution_failed": "出错停止了。", "acceptance_review_required": "做完了——请自己看一眼结果，这次没有自动检查的办法。"},
     "detailGeneric": "已停止（{{code}}）"
   },
   "ja": {
@@ -67,7 +67,7 @@ export const jobMessages = {
     "budgetTier": {"lean": "控えめ", "standard": "標準", "ample": "たっぷり"},
     "budgetStop": "{{what}}を使い切りました（{{used}}/{{limit}}）",
     "budgetWhat": {"model_requests": "モデル呼び出し回数", "tool_calls": "ツール呼び出し回数", "tokens": "トークン量", "wall_seconds": "時間（秒）", "artifact_bytes": "ファイル保存容量"},
-    "detail": {"goal_not_reached": "回答はしましたが、目標は達成できなかったとのことです。", "task_validation_failed": "完了しましたが、完了条件の確認に通りませんでした。", "task_checks_not_run": "完了しました。一部の確認はこの Mac では実行できません。", "task_execution_failed": "エラーで停止しました。", "task_no_progress": "進展がないまま繰り返したため停止しました。", "task_input_required": "続けるにはあなたの入力が必要です。", "process_interrupted": "再起動で中断されました。"},
+    "detail": {"goal_not_reached": "回答はしましたが、目標は達成できなかったとのことです。", "task_validation_failed": "完了しましたが、完了条件の確認に通りませんでした。", "task_checks_not_run": "完了しました。一部の確認はこの Mac では実行できません。", "task_execution_failed": "エラーで停止しました。", "task_no_progress": "進展がないまま繰り返したため停止しました。", "task_input_required": "続けるにはあなたの入力が必要です。", "process_interrupted": "再起動で中断されました。", "task_reconciliation_required": "ほぼ完了しましたが、ファイルや設定を変える手順が正常に終わりませんでした。結果を一度確認してください。", "execution_failed": "エラーで停止しました。", "acceptance_review_required": "完了しました。自動で確認する方法がないため、結果を確認してください。"},
     "detailGeneric": "停止（{{code}}）"
   },
   "es": {
@@ -90,7 +90,7 @@ export const jobMessages = {
     "budgetTier": {"lean": "Ligero", "standard": "Estándar", "ample": "Amplio"},
     "budgetStop": "Agotó sus {{what}} ({{used}}/{{limit}})",
     "budgetWhat": {"model_requests": "llamadas al modelo", "tool_calls": "llamadas a herramientas", "tokens": "tokens", "wall_seconds": "tiempo (segundos)", "artifact_bytes": "almacenamiento de archivos"},
-    "detail": {"goal_not_reached": "Respondió, pero según su propia respuesta no alcanzó el objetivo.", "task_validation_failed": "Terminó, pero una comprobación no se cumplió.", "task_checks_not_run": "Terminó; algunas comprobaciones no pueden ejecutarse en este Mac.", "task_execution_failed": "Se detuvo por un error.", "task_no_progress": "Se detuvo: repetía pasos sin avanzar.", "task_input_required": "Necesita tu información para seguir.", "process_interrupted": "Interrumpido por un reinicio."},
+    "detail": {"goal_not_reached": "Respondió, pero según su propia respuesta no alcanzó el objetivo.", "task_validation_failed": "Terminó, pero una comprobación no se cumplió.", "task_checks_not_run": "Terminó; algunas comprobaciones no pueden ejecutarse en este Mac.", "task_execution_failed": "Se detuvo por un error.", "task_no_progress": "Se detuvo: repetía pasos sin avanzar.", "task_input_required": "Necesita tu información para seguir.", "process_interrupted": "Interrumpido por un reinicio.", "task_reconciliation_required": "Casi terminado, pero un paso que cambia archivos o ajustes no terminó bien: revisa el resultado.", "execution_failed": "Se detuvo por un error.", "acceptance_review_required": "Terminado: revisa el resultado, no había forma de comprobarlo automáticamente."},
     "detailGeneric": "Detenido ({{code}})"
   },
   "de": {
@@ -113,7 +113,7 @@ export const jobMessages = {
     "budgetTier": {"lean": "Sparsam", "standard": "Standard", "ample": "Großzügig"},
     "budgetStop": "{{what}} aufgebraucht ({{used}}/{{limit}})",
     "budgetWhat": {"model_requests": "Modellaufrufe", "tool_calls": "Werkzeugaufrufe", "tokens": "Tokens", "wall_seconds": "Zeit (Sekunden)", "artifact_bytes": "Dateispeicher"},
-    "detail": {"goal_not_reached": "Es hat geantwortet, sagt aber selbst, dass das Ziel nicht erreicht wurde.", "task_validation_failed": "Fertig, aber eine Prüfung wurde nicht bestanden.", "task_checks_not_run": "Fertig; einige Prüfungen laufen auf diesem Mac nicht.", "task_execution_failed": "Wegen eines Fehlers gestoppt.", "task_no_progress": "Gestoppt: Wiederholungen ohne Fortschritt.", "task_input_required": "Braucht deine Angaben, um weiterzumachen.", "process_interrupted": "Durch Neustart unterbrochen."},
+    "detail": {"goal_not_reached": "Es hat geantwortet, sagt aber selbst, dass das Ziel nicht erreicht wurde.", "task_validation_failed": "Fertig, aber eine Prüfung wurde nicht bestanden.", "task_checks_not_run": "Fertig; einige Prüfungen laufen auf diesem Mac nicht.", "task_execution_failed": "Wegen eines Fehlers gestoppt.", "task_no_progress": "Gestoppt: Wiederholungen ohne Fortschritt.", "task_input_required": "Braucht deine Angaben, um weiterzumachen.", "process_interrupted": "Durch Neustart unterbrochen.", "task_reconciliation_required": "Fast fertig, aber ein Schritt, der Dateien oder Einstellungen ändert, lief nicht sauber durch – schau dir das Ergebnis kurz an.", "execution_failed": "Wegen eines Fehlers gestoppt.", "acceptance_review_required": "Fertig – sieh dir das Ergebnis bitte selbst an, es gab keine automatische Prüfung."},
     "detailGeneric": "Gestoppt ({{code}})"
   },
   "fr": {
@@ -136,7 +136,7 @@ export const jobMessages = {
     "budgetTier": {"lean": "Léger", "standard": "Standard", "ample": "Large"},
     "budgetStop": "A épuisé ses {{what}} ({{used}}/{{limit}})",
     "budgetWhat": {"model_requests": "appels au modèle", "tool_calls": "appels d’outils", "tokens": "jetons", "wall_seconds": "temps (secondes)", "artifact_bytes": "stockage de fichiers"},
-    "detail": {"goal_not_reached": "Il a répondu, mais de son propre aveu l’objectif n’est pas atteint.", "task_validation_failed": "Terminé, mais une vérification n’a pas réussi.", "task_checks_not_run": "Terminé ; certaines vérifications ne peuvent pas s’exécuter sur ce Mac.", "task_execution_failed": "Arrêté par une erreur.", "task_no_progress": "Arrêté : répétitions sans progrès.", "task_input_required": "A besoin de vos informations pour continuer.", "process_interrupted": "Interrompu par un redémarrage."},
+    "detail": {"goal_not_reached": "Il a répondu, mais de son propre aveu l’objectif n’est pas atteint.", "task_validation_failed": "Terminé, mais une vérification n’a pas réussi.", "task_checks_not_run": "Terminé ; certaines vérifications ne peuvent pas s’exécuter sur ce Mac.", "task_execution_failed": "Arrêté par une erreur.", "task_no_progress": "Arrêté : répétitions sans progrès.", "task_input_required": "A besoin de vos informations pour continuer.", "process_interrupted": "Interrompu par un redémarrage.", "task_reconciliation_required": "Presque terminé, mais une étape qui modifie des fichiers ou des réglages ne s’est pas terminée proprement : jetez un œil au résultat.", "execution_failed": "Arrêté par une erreur.", "acceptance_review_required": "Terminé : vérifiez le résultat, il n’y avait pas de moyen automatique de le contrôler."},
     "detailGeneric": "Arrêté ({{code}})"
   }
 };

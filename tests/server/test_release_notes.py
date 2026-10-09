@@ -38,11 +38,27 @@ def test_recent_is_newest_first_and_never_ahead_of_the_running_version(tmp_path,
     assert [r["version"] for r in release_notes.recent(1, version="0.1.12-dev")] == ["0.1.12"]
 
 
+def test_a_running_beta_leads_with_its_own_notes(tmp_path, monkeypatch):
+    for name in ("v0.1.10.md", "v0.1.11-beta.1.md", "v0.1.11-beta.2.md"):
+        (tmp_path / name).write_text(f"notes {name}")
+    monkeypatch.setattr(release_notes, "_notes_dir", lambda: tmp_path)
+    got = release_notes.recent(2, version="0.1.11-beta.2")
+    assert [r["version"] for r in got] == ["0.1.11-beta.2", "0.1.10"]     # not beta.1, not ahead
+    assert got[0]["notes"] == "notes v0.1.11-beta.2.md"
+    # a beta without its own file, and a source checkout, list the stable ones as before
+    assert [r["version"] for r in release_notes.recent(1, version="0.1.11-beta.3")] == ["0.1.10"]
+    assert [r["version"] for r in release_notes.recent(1, version="0.1.10-dev")] == ["0.1.10"]
+
+
 def test_every_release_since_048_has_notes_in_the_repo():
     """The gap that made Arslan answer 0.1.48: v0.1.49–v0.1.52 had no notes here."""
     have = {p.name for p in (ROOT / "docs/releases").glob("v*.md")}
     shipped = json.loads((ROOT / "desktop/src-tauri/tauri.conf.json").read_text())["version"]
-    last = int(shipped.split(".")[2])
+    base, _, pre = shipped.partition("-")
+    last = int(base.split(".")[2])
+    if pre:  # a pre-release (0.1.59-beta.1) has its own notes; the final version's come with it
+        assert f"v{shipped}.md" in have
+        last -= 1
     missing = [f"v0.1.{n}.md" for n in range(48, last + 1) if f"v0.1.{n}.md" not in have]
     assert missing == []
 
