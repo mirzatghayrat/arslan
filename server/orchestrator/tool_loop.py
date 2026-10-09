@@ -1405,6 +1405,9 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
         "app": {"type": "string", "minLength": 1, "maxLength": 120},
         "keys": {"type": "string", "minLength": 1, "maxLength": 40, "description": "return, escape, tab, cmd+n…"}},
         "required": ["app", "keys"], "additionalProperties": False},
+    "desktop_open": {"type": "object", "properties": {
+        "app": {"type": "string", "minLength": 1, "maxLength": 120, "description": "the app's name, e.g. TextEdit"}},
+        "required": ["app"], "additionalProperties": False},
     "desktop_batch": {"type": "object", "properties": {
         "app": {"type": "string", "minLength": 1, "maxLength": 120},
         "steps": {"type": "array", "minItems": 1, "maxItems": 8, "items": {

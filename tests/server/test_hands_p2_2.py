@@ -126,3 +126,51 @@ async def test_a_batch_is_one_app_and_at_most_eight_steps(hands, asks, in_job):
     assert pressed == ["Notes"], f"a step cannot change the app: {pressed}"
     bad = await hands_tools.DesktopBatchExecutor().execute({"app": "Notes", "steps": [{"action": "drag"}]})
     assert "0 of 1 steps went through; step 1: unknown action “drag”" in bad["text"]
+
+
+@pytest.fixture
+def opener(monkeypatch, hands):
+    """`open -g -a` stood in for: it starts the app (adds it to Hands' list) unless told not to."""
+    import asyncio
+    ran = []
+
+    class Done:
+        def __init__(self, code):
+            self.code = code
+
+        async def wait(self):
+            return self.code
+
+    async def exec_(*argv, **kw):
+        ran.append(list(argv))
+        name = argv[-1]
+        if name == "No Such App":
+            return Done(1)
+        hands.apps.append({"name": name, "bundle_id": f"com.example.{name.lower()}", "tier": "full"})
+        return Done(0)
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", exec_)
+    return ran
+
+
+async def test_an_app_is_opened_in_the_background_and_that_answer_is_its_acting_grant(hands, asks, in_job, opener):
+    seen, _ = asks
+    result = await hands_tools.DesktopOpenExecutor().execute({"app": "TextEdit"})
+    assert result["ok"] and result["outcome"] == "done", result
+    assert opener == [["/usr/bin/open", "-g", "-a", "TextEdit"]]          # -g: never brought to the front
+    assert [f["kind"] for f in seen] == ["desktop_app"]
+    assert (await hands_tools.DesktopPressExecutor().execute({"app": "TextEdit", "keys": "tab"}))["ok"]
+    assert [f["kind"] for f in seen] == ["desktop_app"], "no second card to act in the app just opened"
+
+
+async def test_the_never_list_is_not_opened_and_a_running_app_is_left_alone(hands, asks, in_job, opener):
+    seen, _ = asks
+    denied = await hands_tools.DesktopOpenExecutor().execute({"app": "Keychain Access"})
+    assert denied["code"] == "app_denied"
+    running = await hands_tools.DesktopOpenExecutor().execute({"app": "Notes"})
+    assert running["ok"] and running["outcome"] == "no_effect"
+    assert opener == [] and seen == []
+
+
+async def test_an_app_macos_does_not_know_is_said(hands, asks, in_job, opener):
+    result = await hands_tools.DesktopOpenExecutor().execute({"app": "No Such App"})
+    assert result["code"] == "app_not_found"

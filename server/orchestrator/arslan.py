@@ -1009,6 +1009,8 @@ async def _arslan_tools() -> list[dict]:
                  "Never for passwords — ask the user to type those."},
                 {"key": "desktop_select", "description": "Choose an option in a pop-up or list (by ref)."},
                 {"key": "desktop_scroll", "description": "Scroll an element (by ref): direction up/down/left/right."},
+                {"key": "desktop_open", "description": "Open a Mac app in the background (behind the user's "
+                 "windows; it does not come to the front): {app}. Asks the user once. Then desktop_look it."},
                 {"key": "desktop_batch", "description": "Several actions in one app in one call, then one look: "
                  "{app, steps: [{action: click|type|select|scroll|press|menu, …that action's args}] (up to 8)}. "
                  "Every step asks and checks as its own call would; the batch stops at the first step that "

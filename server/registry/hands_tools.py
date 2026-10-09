@@ -920,3 +920,65 @@ class DesktopBatchExecutor:
         if look.get("images"):
             out["images"], out["image_label"] = look["images"], look.get("image_label")
         return out
+
+
+class DesktopOpenExecutor:
+    """Hands v2 §5.2: open an app in the background (`open -g`: launched behind the user's windows,
+    never activated). The never-list is refused before anything starts; an app already running is
+    left as it is; opening asks once, and that answer is also the app's acting grant."""
+    key = "desktop_open"
+    timeout_s = CARD_S + 30
+
+    async def execute(self, args: dict) -> dict:
+        from server.services import hands_contract, hands_service
+        name = _app_arg(dict(args or {}))
+        if name is None:
+            return {"ok": False, "external": False, "error": "app required (the app's name, as in /Applications)"}
+        conversation_id, job_id = _conversation_and_job()
+        turn = _inline_turn() if job_id is None else None
+        if job_id is None:
+            if turn is None:
+                return {"ok": False, "external": False, "code": "no_one_to_ask",
+                        "error": "Opening a Mac app needs a conversation to ask the user in."}
+            if _inline.get(turn, (0, ""))[0] >= INLINE_ACTIONS:
+                return _inline_refusal(f"This reply has already acted {INLINE_ACTIONS} times, the most a chat "
+                                       "reply may.")
+        if not desktop_available():
+            return {"ok": False, "external": False, "error": "Arslan Hands is not available on this Mac."}
+        if hands_service.never_touched(name):
+            return _failed(hands_contract.Result(ok=False, code="app_denied", refused=True), app=name)
+        running, _ = await _resolve_app(name, job_id)
+        if running is not None:
+            return {"ok": True, "external": False, "outcome": "no_effect",
+                    "text": f"{running['name']} is already running; nothing was opened. Look at it with desktop_look."}
+        started = time.monotonic()
+        if not await _ask_once(f"open:{name.lower()}", "desktop_app", name,
+                               f"Arslan wants to open {name} in the background (behind your windows) for this "
+                               "piece of work, and then click, type and choose in it."):
+            _trace("open", name, "declined", started)
+            return {"ok": False, "external": False, "code": "declined",
+                    "error": f"The user did not allow opening {name}. Do not retry; report it."}
+        if turn is not None:
+            _inline[turn] = (_inline.get(turn, (0, name))[0] + 1, _inline.get(turn, (0, name))[1])
+        process = await asyncio.create_subprocess_exec(
+            "/usr/bin/open", "-g", "-a", name, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+        if await process.wait() != 0:
+            _trace("open", name, "not_found", started)
+            return {"ok": False, "external": False, "code": "app_not_found",
+                    "error": f"macOS has no app called “{name}”. Check the name (desktop_apps lists running apps)."}
+        app = None
+        for _ in range(40):                       # up to ten seconds for it to start
+            app, failure = await _resolve_app(name, job_id)
+            if app is not None or (failure is not None and failure.code == "app_denied"):
+                break
+            await asyncio.sleep(0.25)
+        if app is None:
+            _trace("open", name, "not_listed", started)
+            return {"ok": True, "external": False, "outcome": "sent_unconfirmed",
+                    "text": f"Asked macOS to open {name}; it is not running yet. Look again in a moment."}
+        _grants.setdefault(job_id or f"conversation:{conversation_id}", set()).add(
+            f"desktop:{app.get('bundle_id') or app.get('name')}")
+        _trace("open", app, "ok", started)
+        return {"ok": True, "external": False, "outcome": "done",
+                "text": f"Opened {app['name']} in the background. Look at it with desktop_look before acting.",
+                "summary": f"open · {app['name']}"[:200]}
