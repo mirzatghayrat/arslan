@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import MarkdownLink from './MarkdownLink';
+import PathChip, { isLocalPath } from './PathChip';
 import { Copy, Check, Info, Lightbulb, AlertTriangle, AlertCircle, Flame } from 'lucide-react';
 
 // ─── GFM Alert parsing ────────────────────────────────────────────────────────
@@ -258,7 +259,8 @@ const components: import('react-markdown').Components = {
     if (isBlock) {
       return <code className={className}>{children}</code>;
     }
-    return (
+    // 0.1.58 §2: a local path in backticks opens in the reader (or reveals in Finder).
+    const plain = (
       <code style={{
         fontFamily: '"JetBrains Mono", "Fira Mono", monospace',
         fontSize: '0.84em',
@@ -272,6 +274,8 @@ const components: import('react-markdown').Components = {
         {children}
       </code>
     );
+    // 0.1.58 §2: a local path in backticks opens in the reader (or reveals in Finder).
+    return typeof children === 'string' && isLocalPath(children) ? <PathChip path={children} fallback={plain} /> : plain;
   },
 
   // Code blocks
@@ -341,7 +345,9 @@ const components: import('react-markdown').Components = {
   },
 
   // Links
-  a: ({ href, children }) => <MarkdownLink href={href}>{children}</MarkdownLink>,
+  a: ({ href, children }) => href && isLocalPath(href)
+    ? <PathChip path={href} fallback={<MarkdownLink href={href}>{children}</MarkdownLink>}>{children}</PathChip>
+    : <MarkdownLink href={href}>{children}</MarkdownLink>,
 
   // Unordered lists
   ul: ({ children }) => (

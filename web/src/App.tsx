@@ -41,7 +41,9 @@ import { useActivityStore } from './stores/activityStore';
 import { OPEN_ACTIVITY_RUN_EVENT } from './components/reply/ReplyFooter';
 import FirstRunWizard from './components/FirstRunWizard';
 import UpdatePill from './components/UpdatePill';
-import WorkDock from './components/WorkDock';
+import Workbench from './components/workbench/Workbench';
+import { OPEN_PROJECT_EVENT } from './components/workbench/TaskTab';
+import { useWorkbench } from './stores/workbenchStore';
 import { resolveSection, type SettingsSectionId } from './components/settings/sectionRegistry';
 import { getFirstRunSeen, setFirstRunSeen, firstRunShouldShow, restoreFirstRunSeen } from './lib/firstRun';
 import { threadNavAction } from './lib/threadNav';
@@ -52,7 +54,6 @@ import { subscribeOpenConversation } from './lib/shell';
 import { notificationTarget, OPEN_CONVERSATION_EVENT } from './lib/openConversation';
 import ProactiveInbox from './components/proactive/ProactiveInbox';
 import { useProactiveSummary } from './hooks/useProactiveSummary';
-import ContextPanel from './components/panel/ContextPanel';
 import { request } from './api/client';
 
 interface ArslanThread {
@@ -82,7 +83,6 @@ export default function App() {
   }, []);
 
   const [activeSection, setActiveSection] = useState<Section>('arslan');
-  const [showBrowser, setShowBrowser] = useState(false);
   const [settingsInitialSection, setSettingsInitialSection] = useState<SettingsSectionId | undefined>();
   const [panelView, setPanelView] = useState<'default' | 'editor'>('default');
 
@@ -90,7 +90,6 @@ export default function App() {
   const [currentChatStyle, setCurrentChatStyle] = useState<'quartz' | 'brutalist' | 'linear'>('linear');
 
   // 0.1.48: the context panel beside a conversation (what runs, what was saved, where).
-  const [showControlPanel, setShowControlPanel] = useState<boolean>(false);
 
   // ── Orchestrator threads — declared early so activeThreadId is available for
   // the WS hook below (hooks must be called in a consistent order).
@@ -463,6 +462,17 @@ export default function App() {
       .catch(() => { /* offline: keep the last list */ });
   }, [activeSection]);
   const [openProjectId, setOpenProjectId] = useState<string | null>(null);
+  // 0.1.58 §3: the workbench, and how many background jobs run in this conversation ("后台 N").
+  const workbench = useWorkbench();
+  const runningJobs = useArslanStore((s) => Object.values(s.jobs).filter((j) => j.phase !== 'finished').length);
+  useEffect(() => {
+    const open = (e: Event) => {
+      const id = (e as CustomEvent<string>).detail;
+      if (typeof id === 'string') { setOpenProjectId(id); setActiveSection('projects'); }
+    };
+    window.addEventListener(OPEN_PROJECT_EVENT, open);
+    return () => window.removeEventListener(OPEN_PROJECT_EVENT, open);
+  }, []);
   // 0.1.58 §1: a reply's ⋯ → "在「动态」里看这一轮" opens Activity with that run in its drawer.
   useEffect(() => {
     const open = (e: Event) => {
@@ -729,16 +739,22 @@ export default function App() {
             <div className={`flex shrink-0 items-center gap-3 ${activeSection === 'settings' ? 'hidden' : ''}`}>
 
 
-              {/* The context panel: what runs for this conversation, what was saved, where. */}
-              {!isThreadEmpty && activeSection === 'arslan' && !activeThread?.temporary && (
+              {/* 0.1.58 §3: one workbench (任务 / 文件 / 浏览器) — a "后台 N" mark while a job runs here. */}
+              {activeSection === 'arslan' && runningJobs > 0 && (
+                <button type="button" data-testid="workbench-bg" onClick={() => workbench.show('task')}
+                  className="flex items-center gap-1.5 rounded-full bg-info/10 px-2.5 py-1 text-[11.5px] font-semibold text-info">
+                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-info" aria-hidden />{t('workbench.bg', { count: runningJobs })}
+                </button>
+              )}
+              {activeSection === 'arslan' && (
                 <button
                   id="toggle-control-panel"
-                  aria-label={t('panel.title')}
-                  aria-expanded={showControlPanel}
-                  aria-controls="context-panel"
-                  onClick={() => setShowControlPanel(!showControlPanel)}
+                  data-testid="workbench-toggle"
+                  aria-label={t('workbench.toggle')}
+                  aria-expanded={workbench.open}
+                  onClick={() => workbench.toggle()}
                   className={`flex items-center px-2 py-1.5 rounded-lg border transition-colors ${
-                    showControlPanel
+                    workbench.open
                       ? 'border-primary/30 bg-primary/5 text-primary'
                       : 'border-border text-muted-foreground hover:text-foreground'
                   }`}
@@ -750,7 +766,7 @@ export default function App() {
               {/* Explicit-user static preview, not an autonomous browser agent. */}
               <button
                 data-testid="browser-indicator"
-                onClick={() => setShowBrowser(true)}
+                onClick={() => { setActiveSection('arslan'); workbench.show('browser'); }}
                 title={t('dock.title')}
                 aria-label={t('dock.title')}
                 className="flex items-center px-2 py-1.5 rounded-lg border border-border text-muted-foreground hover:text-primary hover:border-primary"
@@ -831,16 +847,9 @@ export default function App() {
             )}
           </div>
         </main>
-
-        <WorkDock open={showBrowser} onOpen={() => setShowBrowser(true)} onClose={() => setShowBrowser(false)}
-          conversationId={activeThreadId}
+        {activeSection === 'arslan' && <Workbench conversationId={activeThreadId}
           taskId={dockTaskFrame?.conversation_id === activeThreadId ? dockTaskFrame.task_id : null}
-          temporary={Boolean(activeThread.temporary)} />
-        {showControlPanel && !showBrowser && !isThreadEmpty && !activeThread.temporary && activeSection === 'arslan' && (
-          <div id="context-panel" className="contents">
-            <ContextPanel conversationId={activeThreadId} onClose={() => setShowControlPanel(false)} />
-          </div>
-        )}
+          temporary={Boolean(activeThread.temporary)} />}
       </div>
       </main>
 

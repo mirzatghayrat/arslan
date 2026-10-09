@@ -43,7 +43,7 @@ function ModelUsage({ summary }: { summary: ProcessSummary }) {
       <button ref={anchorRef} type="button" onClick={() => { setUp(upward(anchorRef.current)); setOpen((v) => !v); }}
         aria-expanded={open} aria-haspopup="dialog"
         title={t("process.model")} data-testid="reply-model"
-        className="inline-flex items-center gap-0.5 rounded-md px-1 py-0.5 font-mono text-[11px] text-subtle-foreground hover:text-foreground">
+        className="inline-flex max-w-[220px] items-center gap-0.5 truncate whitespace-nowrap rounded-md px-1 py-0.5 font-mono text-[11px] text-subtle-foreground hover:text-foreground">
         {models.join(" + ")}<ChevronDown className="h-3 w-3" />
       </button>
       {open && <div ref={floatingRef} role="dialog" data-testid="reply-usage"
@@ -89,7 +89,7 @@ export default function ReplyFooter({ text, process, latest, onReplay }: {
       <div ref={rowRef} className="flex min-h-[26px] items-center gap-2">
         {summary.steps > 0 && (
           <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} data-testid="reply-steps"
-            className="inline-flex items-center gap-1 rounded-full bg-foreground/[0.05] px-2.5 py-0.5 text-[11.5px] text-muted-foreground hover:bg-foreground/[0.08]">
+            className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-foreground/[0.05] px-2.5 py-0.5 text-[11.5px] text-muted-foreground hover:bg-foreground/[0.08]">
             <span className={summary.failed ? "text-warning" : "text-success"}>{summary.failed ? "⚠" : "✓"}</span>
             {t("process.steps", { count: summary.steps })}
             {summary.failed > 0 && ` · ${t("process.failed", { count: summary.failed })}`}

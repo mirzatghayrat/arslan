@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { runtimeErrorTranslations, type RuntimeErrorTranslations } from "../lib/runtimeErrorText";
 import { createSpeaker } from "../lib/speech";
-import type { ActionKind, ArslanServerMessage, ArslanThreadItem, JobCard, JobOutcome, ProcessSummary, ToolStep, RosterMember } from "../api/client.types";
+import type { ActionKind, ArslanServerMessage, ArslanThreadItem, JobCard, JobOutcome, ProcessSummary, StoredArtifact, ToolStep, RosterMember } from "../api/client.types";
 import type { MessageAttachment } from "../types";
 
 interface ArslanState {
@@ -331,6 +331,7 @@ function makeActions(set: SetState, get: GetState) {
         job_outcome?: JobOutcome | null;
         source?: string | null;
         process?: ProcessSummary;
+        files?: StoredArtifact[];
       }): ArslanThreadItem => {
         if (row.role === "spawn_summary") {
           // Resolve the spawn name ONLY from an explicit spawn_id. History rows
@@ -359,6 +360,7 @@ function makeActions(set: SetState, get: GetState) {
           content: row.content,
           runId: row.run_id ?? undefined,
           ...(row.process && row.role === "arslan" ? { processSummary: row.process } : {}),
+          ...(row.files?.length && row.role === "arslan" ? { files: row.files } : {}),
           // 0.1.42: a background job's result keeps its label across reloads.
           ...(row.job_outcome ? { jobId: `message-${row.message_id}`, jobOutcome: row.job_outcome } : {}),
           ...(row.role === "user" && row.source === "phone" ? { fromPhone: true } : {}),
@@ -632,7 +634,9 @@ function makeActions(set: SetState, get: GetState) {
                 ...(steps[i].startedAt ? { ms: Date.now() - steps[i].startedAt! } : {}),
                 status: frame.ok ? "ok" : "error",
                 resultSummary: frame.summary,
-                artifacts: frame.artifacts,
+                // 0.1.58 §2: a file the step wrote rides as the singular `artifact` (kind "file",
+                // write_file / edit_file); it was dropped here, so written files never showed.
+                artifacts: [...(frame.artifacts ?? []), ...(frame.artifact?.kind === "file" ? [frame.artifact as StoredArtifact] : [])],
                 // 🔒 SECURITY: artifactSvg / artifactChart / artifactPptx come ONLY from the backend
                 // render_chart/render_deck tool_result frame's artifact, NEVER from LLM message text.
                 ...(frame.artifact?.kind === "svg" ? { artifactSvg: frame.artifact.content } : {}),

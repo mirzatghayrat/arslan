@@ -638,6 +638,8 @@ export interface ArslanThreadItem {
   elapsedMs?: number;
   /** 0.1.58 §1: the footer row from a history row (a reloaded conversation). */
   processSummary?: ProcessSummary;
+  /** 0.1.58 §2: the files the turn produced, from a history row. */
+  files?: StoredArtifact[];
   /** Original deliverable message id this item was refined from (deliverable_finalized). */
   refinedFrom?: number | null;
   /** kind === "system" roster notice: "joined" | "left" */
@@ -669,6 +671,8 @@ export interface ArslanHistoryRow {
   source?: string | null;
   /** 0.1.58 §1: the reply's footer row (steps, time, model, usage), from its Run. */
   process?: ProcessSummary;
+  /** 0.1.58 §2: the files the reply produced — its file cards after a reload. */
+  files?: StoredArtifact[];
 }
 
 // Server -> client frames on /ws/arslan
