@@ -42,7 +42,11 @@ def test_every_release_since_048_has_notes_in_the_repo():
     """The gap that made Arslan answer 0.1.48: v0.1.49–v0.1.52 had no notes here."""
     have = {p.name for p in (ROOT / "docs/releases").glob("v*.md")}
     shipped = json.loads((ROOT / "desktop/src-tauri/tauri.conf.json").read_text())["version"]
-    last = int(shipped.split(".")[2])
+    base, _, pre = shipped.partition("-")
+    last = int(base.split(".")[2])
+    if pre:  # a pre-release (0.1.59-beta.1) has its own notes; the final version's come with it
+        assert f"v{shipped}.md" in have
+        last -= 1
     missing = [f"v0.1.{n}.md" for n in range(48, last + 1) if f"v0.1.{n}.md" not in have]
     assert missing == []
 
