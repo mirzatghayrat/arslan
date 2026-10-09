@@ -120,7 +120,7 @@ async def test_a_batch_stops_at_the_first_step_that_did_not_go_through(hands, as
 async def test_a_batch_is_one_app_and_at_most_eight_steps(hands, asks, in_job):
     nine = [{"action": "press", "keys": "tab"}] * 9
     assert (await hands_tools.DesktopBatchExecutor().execute({"app": "Notes", "steps": nine}))["code"] == "bad_request"
-    result = await hands_tools.DesktopBatchExecutor().execute({"app": "Notes", "steps": [
+    await hands_tools.DesktopBatchExecutor().execute({"app": "Notes", "steps": [
         {"action": "press", "keys": "tab", "app": "Safari"}]})
     pressed = [a.get("app") for op, a in hands.calls if op == "press"]
     assert pressed == ["Notes"], f"a step cannot change the app: {pressed}"
