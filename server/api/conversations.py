@@ -229,3 +229,54 @@ async def delete_conversation(
             deleted[model.__tablename__] = res.rowcount or 0
         await db.commit()
     return {"ok": True, "deleted": deleted}
+
+
+# ── 0.1.58 §6: the model one conversation runs on ─────────────────────────────
+
+from datetime import datetime as _dt  # noqa: E402
+
+from fastapi import HTTPException  # noqa: E402
+from pydantic import BaseModel, ConfigDict, Field  # noqa: E402
+
+
+class ConversationModelIn(BaseModel):
+    model_config = ConfigDict(extra="forbid", protected_namespaces=())
+    config_id: int = Field(ge=1)
+    model: str = Field(min_length=1, max_length=200)
+
+
+@router.get("/conversations/{conversation_id}/model")
+async def get_conversation_model(conversation_id: str, db: AsyncSession = Depends(get_session)) -> dict:
+    """The model chosen for this conversation, or null = the default (the primary config's model)."""
+    from server.db.models import ConversationModel
+    row = await db.get(ConversationModel, conversation_id)
+    return {"choice": {"config_id": row.config_id, "model": row.model} if row else None}
+
+
+@router.put("/conversations/{conversation_id}/model")
+async def set_conversation_model(conversation_id: str, body: ConversationModelIn,
+                                 db: AsyncSession = Depends(get_session)) -> dict:
+    """From the next turn on, this conversation runs on that model. Nothing else changes."""
+    from server.db.models import ConversationModel, ProviderConfig
+    if len(conversation_id) > 100 or not conversation_id.strip():
+        raise HTTPException(422, detail={"code": "invalid_conversation_id"})
+    if await db.get(ProviderConfig, body.config_id) is None:
+        raise HTTPException(404, detail={"code": "provider_config_not_found"})
+    model = body.model.strip()
+    row = await db.get(ConversationModel, conversation_id)
+    if row is None:
+        db.add(ConversationModel(conversation_id=conversation_id, config_id=body.config_id, model=model, updated_at=_dt.utcnow()))
+    else:
+        row.config_id, row.model, row.updated_at = body.config_id, model, _dt.utcnow()
+    await db.commit()
+    return {"choice": {"config_id": body.config_id, "model": model}}
+
+
+@router.delete("/conversations/{conversation_id}/model")
+async def clear_conversation_model(conversation_id: str, db: AsyncSession = Depends(get_session)) -> dict:
+    from server.db.models import ConversationModel
+    row = await db.get(ConversationModel, conversation_id)
+    if row is not None:
+        await db.delete(row)
+        await db.commit()
+    return {"choice": None}

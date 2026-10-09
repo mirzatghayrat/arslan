@@ -8,7 +8,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 
-import en from "../locales/en.json";
+import enJson from "../locales/en.json";
+import { modelsMessages } from "../locales/models";
+
+// 0.1.58: the role pickers' words live in the models namespace (a TS locale module).
+const en = { ...enJson, models: modelsMessages.en };
 
 // The words are the deliverable, so the real shipped English resolves through the
 // mock and a blank or missing key throws instead of quietly rendering nothing.

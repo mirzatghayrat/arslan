@@ -21,6 +21,10 @@
 
 export type SlotId = "synthesis" | "compaction" | "title" | "router" | "vision";
 
+/** 0.1.58 §6: the slot's model override key (settingsKey with ConfigId → Model). */
+export const modelKeyOf = (key: SlotSettingsKey) => key.replace("ConfigId", "Model") as
+  "synthesisModel" | "compactionModel" | "titleModel" | "routerModel" | "visionModel";
+
 export type SlotSettingsKey =
   | "synthesisConfigId"
   | "compactionConfigId"

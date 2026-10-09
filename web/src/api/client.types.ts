@@ -83,6 +83,8 @@ export interface StreamUsage {
   models?: { model: string; provider: string | null }[];
   /** 0.1.58: how many model calls the turn made (why a short answer carries a large input). */
   calls?: number;
+  /** 0.1.58 §6: the last call's input tokens — how full the context is (the composer's ring). */
+  last_input?: number | null;
 }
 
 /** 0.1.58 §1: GET /runs/{id}/process. */
@@ -369,6 +371,11 @@ export interface AppSettings {
   /** Embedding provider override: "" (or absent) = auto, "local", or a provider-config id. */
   embedding_config_id?: string;
   synthesis_config_id?: string;
+  synthesis_model?: string;
+  compaction_model?: string;
+  title_model?: string;
+  router_model?: string;
+  vision_model?: string;
   compaction_config_id?: string;
   title_config_id?: string;
   router_config_id?: string;
@@ -442,6 +449,9 @@ export interface ModelInfo {
   /** Subset of ["tools", "vision", "reasoning"]. */
   capabilities: string[];
   source: string;
+  /** 0.1.58 §6: USD per million tokens, when the provider says (OpenRouter does). */
+  price_in?: number;
+  price_out?: number;
 }
 
 /** GET /settings/provider-configs/{id}/models — dynamic model catalog.

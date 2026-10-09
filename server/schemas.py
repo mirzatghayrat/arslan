@@ -61,6 +61,11 @@ class SettingsIn(BaseModel):
     # never reached the database. Same defect class as the D-round write-only int
     # keys, mirrored: that one lost the READ side, this one lost the WRITE side.
     synthesis_config_id: str | None = None
+    compaction_model: str | None = None
+    title_model: str | None = None
+    synthesis_model: str | None = None
+    router_model: str | None = None
+    vision_model: str | None = None
     embedding_config_id: str | None = None
     compaction_config_id: str | None = None
     title_config_id: str | None = None
@@ -129,6 +134,11 @@ class SettingsOut(BaseModel):
     run_debug_retention_days: int = 30
     evolution_auto: str = "off"
     synthesis_config_id: str = ""
+    compaction_model: str = ""
+    title_model: str = ""
+    synthesis_model: str = ""
+    router_model: str = ""
+    vision_model: str = ""
     embedding_config_id: str = ""
     compaction_config_id: str = ""
     title_config_id: str = ""
