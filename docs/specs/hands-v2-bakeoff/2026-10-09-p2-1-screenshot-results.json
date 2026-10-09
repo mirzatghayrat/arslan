@@ -1,0 +1,112 @@
+[
+ {
+  "case": "read_window",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": null,
+  "code": null,
+  "ms": null,
+  "look_ms": 2356,
+  "violations": [],
+  "note": "17 elements"
+ },
+ {
+  "case": "look_with_screenshot",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": null,
+  "code": null,
+  "ms": null,
+  "look_ms": 293,
+  "violations": [],
+  "note": "920x1184 px, title at (271, 32)"
+ },
+ {
+  "case": "read_window",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": null,
+  "code": null,
+  "ms": null,
+  "look_ms": 209,
+  "violations": [],
+  "note": "17 elements"
+ },
+ {
+  "case": "look_with_screenshot",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": null,
+  "code": null,
+  "ms": null,
+  "look_ms": 251,
+  "violations": [],
+  "note": "920x1184 px, title at (271, 32)"
+ },
+ {
+  "case": "read_window",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": null,
+  "code": null,
+  "ms": null,
+  "look_ms": 196,
+  "violations": [],
+  "note": "17 elements"
+ },
+ {
+  "case": "look_with_screenshot",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": null,
+  "code": null,
+  "ms": null,
+  "look_ms": 261,
+  "violations": [],
+  "note": "920x1184 px, title at (271, 32)"
+ },
+ {
+  "case": "read_window",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": null,
+  "code": null,
+  "ms": null,
+  "look_ms": 200,
+  "violations": [],
+  "note": "17 elements"
+ },
+ {
+  "case": "look_with_screenshot",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": null,
+  "code": null,
+  "ms": null,
+  "look_ms": 261,
+  "violations": [],
+  "note": "920x1184 px, title at (271, 32)"
+ },
+ {
+  "case": "read_window",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": null,
+  "code": null,
+  "ms": null,
+  "look_ms": 212,
+  "violations": [],
+  "note": "17 elements"
+ },
+ {
+  "case": "look_with_screenshot",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": null,
+  "code": null,
+  "ms": null,
+  "look_ms": 248,
+  "violations": [],
+  "note": "920x1184 px, title at (271, 32)"
+ }
+]

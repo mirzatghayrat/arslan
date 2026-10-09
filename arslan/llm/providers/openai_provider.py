@@ -76,11 +76,27 @@ class OpenAIProvider(BaseLLMProvider):
         from this endpoint+model. tool: role "tool" bound by tool_call_id. A
         host-run result was never requested by the model, so it is not dressed
         up as a model call (no fabricated assistant turn): it is user context.
-        Local bookkeeping keys ("_"-prefixed) never leave this function."""
+        Local bookkeeping keys ("_"-prefixed) never leave this function.
+
+        Images of tool results (Hands v2 screenshots): a role "tool" message carries text
+        only, so they follow that step's tool messages as one user message."""
         out: list[dict[str, Any]] = [{"role": "system", "content": system}]
         endpoint = self.endpoint_fingerprint()
+        shots: list[Any] = []
+
+        def flush() -> None:
+            if shots:
+                out.append({"role": "user", "content": list(shots)})
+                shots.clear()
+
         for m in messages:
             role = m.get("role")
+            if not (role == "tool" and not m.get("_synthetic")):
+                flush()
+            if m.get("_images") and role == "tool":
+                shots.append({"type": "text", "text": f"Screenshot for {m['name']} (call "
+                              f"{m.get('tool_call_id') or 'host'}): {m.get('_image_label') or m['name']}"})
+                shots.extend(m["_images"])
             if role == "assistant":
                 msg: dict[str, Any] = {"role": "assistant", "content": m.get("content") or ""}
                 calls = m.get("tool_calls") or []
@@ -100,6 +116,9 @@ class OpenAIProvider(BaseLLMProvider):
                 out.append({"role": "tool", "tool_call_id": m["tool_call_id"], "content": m["content"]})
             else:
                 out.append({k: v for k, v in m.items() if not k.startswith("_")})
+            if role == "tool" and m.get("_synthetic"):
+                flush()
+        flush()
         return out
 
     # ------------------------------------------------------------------

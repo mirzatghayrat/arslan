@@ -130,7 +130,7 @@ pub fn sends_on_return(bundle_id: &str, name: &str) -> bool {
 pub fn allows(tier: Tier, op: &str) -> bool {
     let read = matches!(
         op,
-        "list_windows" | "snapshot" | "find" | "get" | "wait" | "describe"
+        "list_windows" | "snapshot" | "find" | "get" | "wait" | "describe" | "capture_window"
     );
     match tier {
         Tier::Denied => false,

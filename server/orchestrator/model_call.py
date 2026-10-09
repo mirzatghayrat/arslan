@@ -52,6 +52,7 @@ class TurnRecovery:
     continuations: int = 0
     truncated_calls: int = 0
     capability_bounced: bool = False   # 0.1.50: one capability-truth correction per turn
+    images_read_locally: bool = False  # Hands v2 §4.4: one retry with screenshots read as text
 
     @property
     def exhausted(self) -> bool:
