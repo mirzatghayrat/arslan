@@ -1007,6 +1007,10 @@ async def _arslan_tools() -> list[dict]:
                  "Never for passwords — ask the user to type those."},
                 {"key": "desktop_select", "description": "Choose an option in a pop-up or list (by ref)."},
                 {"key": "desktop_scroll", "description": "Scroll an element (by ref): direction up/down/left/right."},
+                {"key": "desktop_menu", "description": "Choose a menu-bar item of an app, in the background, by its "
+                 "titles: {app, path: [\"Format\", \"Font\", \"Bold\"]}. Prefer a button in the window; then a "
+                 "menu item; keys last. A missing item answers with what that menu has. Items that delete, send, "
+                 "quit and the like ask every time. Not in terminals, editors or browsers."},
                 {"key": "desktop_press", "description": "Press keys in an app, e.g. return, escape, tab, cmd+n, "
                  "cmd+s. Delete/send shortcuts ask every time. Not available in terminals, editors or browsers."}]
         else:

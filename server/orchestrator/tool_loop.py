@@ -1405,6 +1405,12 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
         "app": {"type": "string", "minLength": 1, "maxLength": 120},
         "keys": {"type": "string", "minLength": 1, "maxLength": 40, "description": "return, escape, tab, cmd+n…"}},
         "required": ["app", "keys"], "additionalProperties": False},
+    "desktop_menu": {"type": "object", "properties": {
+        "app": {"type": "string", "minLength": 1, "maxLength": 120},
+        "path": {"type": "array", "minItems": 2, "maxItems": 4,
+                 "items": {"type": "string", "minLength": 1, "maxLength": 120},
+                 "description": "the menu's titles as the app shows them, top level first: [\"Format\", \"Font\", \"Bold\"]"}},
+        "required": ["app", "path"], "additionalProperties": False},
     "start_background_work": {"type": "object", "properties": {
         "goal": {"type": "string", "minLength": 1, "maxLength": 4000,
                  "description": "The work to do, in the user's words."},

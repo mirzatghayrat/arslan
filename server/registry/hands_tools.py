@@ -268,19 +268,20 @@ class MacAppleScriptExecutor:
 # ── Mac apps through Arslan Hands (0.1.53) ───────────────────────────────────
 
 _VERBS = {"click": "clicking", "set_value": "typing in", "type": "typing in", "select": "choosing in",
-          "scroll": "scrolling", "press": "pressing"}
+          "scroll": "scrolling", "press": "pressing", "menu": "choosing the menu item"}
 # P0 D6: the cursor label is on the user's screen, so it speaks the UI language.
 _LABEL_VERBS = {
     "en": _VERBS,
-    "zh": {"click": "点击", "set_value": "输入", "type": "输入", "select": "选择", "scroll": "滚动", "press": "按键"},
+    "zh": {"click": "点击", "set_value": "输入", "type": "输入", "select": "选择", "scroll": "滚动", "press": "按键",
+           "menu": "菜单"},
     "ja": {"click": "クリック", "set_value": "入力", "type": "入力", "select": "選択", "scroll": "スクロール",
-           "press": "キー操作"},
+           "press": "キー操作", "menu": "メニュー"},
     "de": {"click": "klickt", "set_value": "schreibt in", "type": "schreibt in", "select": "wählt in",
-           "scroll": "scrollt", "press": "drückt"},
+           "scroll": "scrollt", "press": "drückt", "menu": "Menü"},
     "es": {"click": "haciendo clic", "set_value": "escribiendo en", "type": "escribiendo en",
-           "select": "eligiendo en", "scroll": "desplazando", "press": "pulsando"},
+           "select": "eligiendo en", "scroll": "desplazando", "press": "pulsando", "menu": "menú"},
     "fr": {"click": "clique", "set_value": "écrit dans", "type": "écrit dans", "select": "choisit dans",
-           "scroll": "fait défiler", "press": "appuie"},
+           "scroll": "fait défiler", "press": "appuie", "menu": "menu"},
 }
 
 
@@ -293,7 +294,8 @@ async def _label_verb(op: str) -> str:
     return _LABEL_VERBS.get(locale, _VERBS).get(op, _VERBS.get(op, op))
 
 
-_ASKS = {"click": "click", "set_value": "type into", "select": "choose", "scroll": "scroll", "press": "press"}
+_ASKS = {"click": "click", "set_value": "type into", "select": "choose", "scroll": "scroll", "press": "press",
+         "menu": "choose the menu item"}
 # What each limited tier may still do (Hands enforces the same; checked here first
 # so the user is never asked to allow something Hands would refuse anyway).
 _TIER_ALLOWS = {"look_only": set(), "click_only": {"click", "scroll"}}
@@ -626,7 +628,7 @@ class _DesktopAct:
                     "error": hands_contract.REFUSALS["stopped_by_user"]}
         started = time.monotonic()
         target: dict = {}
-        if self.op == "press":
+        if self.op in ("press", "menu"):
             app, failure = await _resolve_app(name, job_id)
             if app is None:
                 return _failed(failure, app=name)
@@ -647,6 +649,8 @@ class _DesktopAct:
                 return _failed(hands_contract.Result(ok=False, code="password_field", refused=True))
         bundle = str(app.get("bundle_id") or app.get("name"))
         label = target.get("name") or args.get("element") or ""
+        if self.op == "menu":
+            label = " › ".join(_menu_path(args))
         verb = _VERBS.get(self.op, self.op)
         if not await _ask_once(f"desktop:{bundle}", "desktop_app", str(app.get("name")),
                                f"Arslan wants to click, type and choose in {app.get('name')} for this piece of "
@@ -689,6 +693,10 @@ class _DesktopAct:
         else:
             text = (f"Sent, not confirmed: {verb} “{label}” in {app.get('name')}. Arslan could not read the "
                     "change back, so look (desktop_look) before the next step, and do not simply repeat it.")
+        routed = (result.reply or {}).get("menu_item") if (result.reply or {}).get("route") == "menu_item" else None
+        if self.op == "press" and routed:
+            text += (f" (The app had nothing focused, so it went to the menu item with that shortcut: "
+                     f"“{' › '.join(map(str, routed))}”.)")
         if hands_contract.kept_the_front(result):
             text += (f" {app.get('name')} came to the front when this ran and could not be put back; "
                      "tell the user if it gets in their way.")
@@ -785,6 +793,29 @@ class DesktopScrollExecutor(_DesktopAct):
         amount = args.get("amount") if isinstance(args.get("amount"), int) else 3
         return await _hands("scroll", {"app": app["name"], "ref": str(args.get("ref") or ""),
                                        "direction": direction, "amount": amount}, job_id=job_id)
+
+
+def _menu_path(args: dict) -> list[str]:
+    path = args.get("path")
+    return [str(t)[:120] for t in path[:4]] if isinstance(path, list) else []
+
+
+class DesktopMenuExecutor(_DesktopAct):
+    """Hands v2 §5.5: a menu item chosen in the background by its path (Hands presses it through
+    accessibility; nothing comes to the front). Risky labels (delete, send, quit…) ask every time."""
+    key = "desktop_menu"
+    op = "menu"
+
+    def _risky(self, args, target, app):
+        from server.services import hands_service
+        path = _menu_path(args)
+        if path and hands_service.risky_label(path[-1]):
+            return f"the menu item “{' › '.join(path)}”"
+        return None
+
+    async def run(self, args, app):
+        _, job_id = _conversation_and_job()
+        return await _hands("menu", {"app": app["name"], "path": _menu_path(args)}, job_id=job_id)
 
 
 class DesktopPressExecutor(_DesktopAct):

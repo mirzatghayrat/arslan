@@ -173,6 +173,10 @@ class FakeHands:
             return {"ok": True, "accessibility": False, "peer_check": "off", "version": "0.1.0"}
         if op == "capture_window":
             return self.capture
+        if op == "menu":
+            return {"ok": True, "outcome": "sent_unconfirmed", "mode_used": "background", "route": "menu_item",
+                    "menu_item": args.get("path"), "tier": self.tier,
+                    "app": next((a for a in self.apps if a["name"] == args.get("app")), self.apps[0])}
         app = next((a for a in self.apps if a["name"] == args.get("app")), self.apps[0])
         if op == "describe":
             return {"ok": True, "app": app, "tier": self.tier, "sends_on_return": False, "target": self.target}
