@@ -461,7 +461,7 @@ class RememberExecutor:
         logger.info("remember: proposed %s on %s#%s (proposal_id=%s)",
                    kind, table, old_id, row.id)
         return {"ok": True, "proposed": True, "proposal_id": row.id,
-               "message": "已提议,待你在记忆里确认(REST accept)"}
+               "message": "Proposed; waiting for the user to confirm it in Memory"}
 
 
 class MemoryNoteExecutor:

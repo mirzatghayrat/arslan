@@ -112,7 +112,7 @@ async def test_executor_registered_and_wraps_result():
     assert "run_python" in EXECUTORS
     out = await RunPythonExecutor().execute({"code": "print('ok')"})
     assert out["ok"] is True and out["external"] is False
-    assert "ok" in out["stdout"] and "已执行 Python" in out["summary"]
+    assert "ok" in out["stdout"] and "Ran Python" in out["summary"]
 
 
 async def test_executor_missing_code():

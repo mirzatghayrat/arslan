@@ -137,7 +137,7 @@ def test_provider_options_includes_custom_entry():
     by_key = {o["key"]: o for o in provider_options()}
     assert by_key["custom"] == {
         "key": "custom",
-        "label": "OpenAI-compatible(自定义)",
+        "label": "OpenAI-compatible (custom)",
         "base_url": "",
         "default_model": "",
         "native": False,
