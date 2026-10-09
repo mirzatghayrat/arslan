@@ -167,6 +167,11 @@ final class Fixture: NSObject, NSApplicationDelegate, NSTextFieldDelegate, NSTex
                 title.stringValue = ""; notes.string = ""; chat.stringValue = ""; password.stringValue = ""
                 color.selectItem(at: 0); done.state = .off; slow.title = "Slow"
                 if let sheet = window.attachedSheet { window.endSheet(sheet) }
+                // A known start: this window is the app's key window with Title focused, as
+                // after launch. Restoring a minimized window in the background leaves the app
+                // with no focused element (keys_after_restore tests that state on purpose).
+                // makeKey on an inactive app does not activate it.
+                window.makeKey(); window.makeFirstResponder(title)
             case "minimize": window.miniaturize(nil)
             case "unminimize": window.deminiaturize(nil)
             case "hide": NSApp.hide(nil)

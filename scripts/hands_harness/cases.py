@@ -98,6 +98,9 @@ def _element(ctx: Ctx, label: str, role: str = "") -> tuple[Element | None, int]
 def _judged(name: str, ctx: Ctx, act: Act, violations: list[str], happened: bool, look_ms: int, note: str = "") -> Result:
     violations = [*violations, *oracles.honest(act.outcome, happened).violations]
     status = "pass" if happened and not violations else "fail"
+    if act.code and not note:            # what the engine said, so a failure can be read later
+        envelope = (act.raw.get("envelope") or {}).get("error") or act.raw.get("refused") or {}
+        note = f"{act.code}: {envelope.get('message') or ''} {envelope.get('details') or ''}".strip()[:400]
     return Result(name, ctx.engine.name, status, act.outcome, act.code, act.ms, look_ms, violations, note)
 
 
@@ -262,6 +265,24 @@ def _hidden_case(name: str, hide: str, show: str) -> Callable[[Ctx], Result]:
     return case
 
 
+def keys_after_restore(ctx: Ctx) -> Result:
+    """A window restored from the Dock in the background leaves its app with no focused
+    element. A menu shortcut must still run its menu item, once, without activating the app
+    (agent-desktop 0.9.4 pressed the menu item; upstream main refuses: no focused element)."""
+    ctx.fixture.command("reset", "minimize", settle=1.0)
+    ctx.fixture.command("unminimize", settle=1.0)
+    _, look_ms = ctx.engine.look()
+    before = len([e for e in ctx.fixture.events("menu") if e.get("value") == "Bold"])
+    act, violations = observed(ctx, lambda: ctx.engine.press("cmd+b"))
+    deadline = time.monotonic() + 1.5
+    count = before
+    while time.monotonic() < deadline and count == before:
+        count = len([e for e in ctx.fixture.events("menu") if e.get("value") == "Bold"])
+        time.sleep(0.05)
+    violations += oracles.once(before, count).violations if count != before else []
+    return _judged("keys_after_restore", ctx, act, violations, count == before + 1, look_ms)
+
+
 minimized_window = _hidden_case("minimized_window", "minimize", "unminimize")
 hidden_app = _hidden_case("hidden_app", "hide", "unhide")
 
@@ -280,4 +301,5 @@ CASES: dict[str, Callable[[Ctx], Result]] = {
     "sheet_after_look": sheet_after_look,
     "minimized_window": minimized_window,
     "hidden_app": hidden_app,
+    "keys_after_restore": keys_after_restore,
 }
