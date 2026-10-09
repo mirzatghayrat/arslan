@@ -127,3 +127,12 @@ button { font-family: inherit; }
 .tab-right { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #fff; white-space: nowrap; }
 .tab-right .mono { font-family: var(--font-mono); color: #9aa0aa; font-variant-numeric: tabular-nums; }
 .still-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--c-approval); }
+
+/* Hands v2 (§6.3-6.6, mock round 5): Stop in red, a smaller note line, and the window being
+   worked on as a thumbnail beside the steps. */
+.btn.danger { background: rgba(255,69,58,.16); color: #ff453a; }
+.itext.small { font-size: 12px; color: #6e737c; }
+.hands-row { display: flex; gap: 12px; align-items: center; min-width: 0; }
+.hands-row .ticker { flex: 1; min-width: 0; }
+.thumb { width: 96px; height: 66px; object-fit: cover; object-position: top; border-radius: 6px; flex-shrink: 0;
+  box-shadow: 0 0 0 1px rgba(255,255,255,.08); }

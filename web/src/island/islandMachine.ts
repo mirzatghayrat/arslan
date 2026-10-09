@@ -9,10 +9,10 @@
  * finished/stopped result → expanded for a while; you are away → hidden; work
  * running → compact; otherwise hidden.
  */
-import type { Activity, Feed, FeedEvent, WorkKind } from './feed';
+import type { Activity, Feed, FeedEvent, HandsLine, WorkKind } from './feed';
 
 export type Mode = 'hidden' | 'peek' | 'compact' | 'tab' | 'expanded';
-export type View = 'overview' | 'empty' | 'needsYou' | 'finished' | 'stopped';
+export type View = 'overview' | 'empty' | 'needsYou' | 'finished' | 'stopped' | 'hands';
 export type Mood = 'idle' | 'working' | 'searching' | 'approval' | 'finished' | 'stopped' | 'sleeping';
 
 export interface Alert {
@@ -52,6 +52,10 @@ export interface IslandState {
   learned: number;
   /** 0.1.55 decision 4: a full-screen app is in front (the shell's geometry says so). */
   fullscreen: boolean;
+  /** Hands v2 §6.3-6.4: a borrow waiting / borrowing, a takeover running / paused. */
+  hands: HandsLine | null;
+  /** The Hands state the user closed by hand: it shows again only when it changes. */
+  handsSeen: string;
 }
 
 export const PEEK_TO_EXPAND_MS = 650;
@@ -73,11 +77,19 @@ export function initialState(): IslandState {
     enabled: true, mode: 'hidden', view: 'empty', cursor: null, active: [], steps: {},
     awaiting: 0, awaitingConversations: [], needsYouSeen: 0, queue: [], current: null, shownAt: 0,
     away: false, mainFocused: false, hovering: false, hoverSince: 0, leftAt: -Infinity,
-    lastInteract: 0, focusId: null, learned: 0, fullscreen: false,
+    lastInteract: 0, focusId: null, learned: 0, fullscreen: false, hands: null, handsSeen: '',
   };
 }
 
 const needsYou = (s: IslandState) => s.awaiting > 0 && s.awaiting > s.needsYouSeen;
+
+/** One word for what Hands is doing, '' for nothing (a borrow or a takeover). */
+export function handsKey(h: HandsLine | null): string {
+  if (!h) return '';
+  if (h.takeover?.active) return h.takeover.paused ? 'paused' : 'takeover';
+  return h.borrow ?? '';
+}
+const needsHands = (s: IslandState) => handsKey(s.hands) !== '' && handsKey(s.hands) !== s.handsSeen;
 
 /** One feed event → what the island should show for it, or null for nothing. */
 export function alertFor(e: FeedEvent, previous: Activity[], mainFocused: boolean): Alert | null {
@@ -139,6 +151,7 @@ export function applyFeed(s: IslandState, feed: Feed, now: number): IslandState 
   const next: IslandState = {
     ...s, enabled: true, cursor: feed.cursor, active, steps: trackSteps(s.steps, active), queue, current, focusId, learned,
     awaiting: feed.awaiting, awaitingConversations: feed.awaiting_conversations,
+    hands: feed.hands ?? null, handsSeen: handsKey(feed.hands ?? null) ? s.handsSeen : '',
     needsYouSeen: feed.awaiting === 0 ? 0 : Math.min(s.needsYouSeen, feed.awaiting),
   };
   return settle(next, now);
@@ -168,6 +181,9 @@ export function settle(s: IslandState, now: number): IslandState {
     const open = !s.fullscreen || s.hovering || now - s.leftAt < LEAVE_COLLAPSE_MS;
     return show(s, open ? 'expanded' : 'tab', 'needsYou', now);
   }
+  // Hands v2: a borrow waiting for your pause, the front borrowed, the screen taken over, or a
+  // takeover paused because you moved - said at once, with its buttons.
+  if (needsHands(s)) return show(s, 'expanded', 'hands', now);
   let next = s;
   // A result does not jump in under the pointer while you are reading other
   // work that is still running; when nothing is left running it shows at once.
@@ -206,7 +222,8 @@ export function interact(s: IslandState, now: number): IslandState {
 /** A click on the strip or the mascot opens the panel for whatever is most relevant. */
 export function open(s: IslandState, now: number): IslandState {
   if (!s.enabled) return s;
-  const view: View = needsYou(s) ? 'needsYou' : s.current ? s.current.kind : (s.active.length ? 'overview' : 'empty');
+  const view: View = needsYou(s) ? 'needsYou' : needsHands(s) ? 'hands'
+    : s.current ? s.current.kind : (s.active.length ? 'overview' : 'empty');
   return { ...show(s, 'expanded', view, now), lastInteract: now, learned: 0 };
 }
 
@@ -214,6 +231,7 @@ export function open(s: IslandState, now: number): IslandState {
 export function dismiss(s: IslandState, now: number): IslandState {
   let next: IslandState = { ...s, hovering: false, leftAt: -Infinity, learned: 0 };
   if (s.view === 'needsYou') next.needsYouSeen = s.awaiting;
+  else if (s.view === 'hands') next.handsSeen = handsKey(s.hands);
   else if (s.current) next.current = null;
   next = settle({ ...next, mode: next.mode === 'peek' ? 'hidden' : next.mode }, now);
   // Closed by hand: rest instead of being held open by the grace period.
@@ -286,6 +304,7 @@ export function waitingActivity(s: IslandState): Activity | null {
 
 export function mood(s: IslandState): Mood {
   if (needsYou(s) || (s.awaiting > 0 && s.mode === 'compact')) return 'approval';
+  if (s.mode === 'expanded' && s.view === 'hands') return handsKey(s.hands) === 'paused' ? 'approval' : 'working';
   if (s.mode === 'expanded' && s.view === 'finished') return 'finished';
   if (s.mode === 'expanded' && s.view === 'stopped') return 'stopped';
   if (s.away) return 'sleeping';
@@ -297,7 +316,7 @@ export function mood(s: IslandState): Mood {
 export interface ScreenGeometry { notch: boolean; notchWidth: number; barHeight: number; fullscreen?: boolean }
 export interface Shape { w: number; h: number; r: number }
 
-export const VIEW_H: Record<View, number> = { overview: 236, empty: 150, needsYou: 214, finished: 176, stopped: 186 };
+export const VIEW_H: Record<View, number> = { overview: 236, empty: 150, needsYou: 214, finished: 176, stopped: 186, hands: 214 };
 export const EXPANDED_W = 640;
 /** The full-screen tab: mascot on the left, "needs you" and the time left on the right. */
 export const TAB_W = 220;
