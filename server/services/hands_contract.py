@@ -29,7 +29,7 @@ MESSAGES = {
     "look_closer": "More than one element matches. Look again (drill into the right group with `ref`) and use "
                    "a more specific ref.",
     "open_app": "That app (or a window of it) is not open on the current screen. Open it first — e.g. "
-                "run_command `open -a \"<App>\"` — or ask the user to bring it up; Hands never launches apps.",
+                "desktop_open {app} (in the background) — or ask the user to bring it up.",
     # Measured 2026-10-05: with a stale grant (a development build of the same bundle id) the switch shows
     # on, macOS shows no prompt, and the model fell back to AppleScript — one approval card per script.
     "allow_hands": "Arslan Hands does not have Accessibility permission: macOS refused it, even if its switch "
@@ -57,8 +57,8 @@ REFUSALS = {
     "password_field": "Arslan never types into password fields. Ask the user to fill it in themselves.",
     "target_unreadable": "Could not read the field before typing. Look again and retry once.",
     "stopped_by_user": "The user stopped Arslan's hands. Do not retry; finish and report what was done.",
-    "app_not_running": "That app is not running. Open it first — e.g. run_command `open -a \"<App>\"` — or ask "
-                       "the user; Hands never launches apps.",
+    "app_not_running": "That app is not running. Open it first with desktop_open {app} (in the background), "
+                       "or ask the user.",
     "app_ambiguous": "More than one running app has that name; use its bundle id (from desktop_apps).",
     "TIMEOUT": "It took too long. Look again.",
     # P0 (spec 2026-10-08-0157 §1)

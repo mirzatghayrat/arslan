@@ -52,13 +52,14 @@ RUN_S = 120                        # _run's default; a Hands call is 60 s, a rea
 
 
 async def _ask_once(grant: str, kind: str, target: str, detail: str) -> bool:
-    """True if already granted for this job, else ask the user (card + notification)."""
+    """True if already granted for this job (or, in a chat reply, this conversation), else ask the
+    user (card + notification)."""
     from server.services import approvals
     from server.ws import protocol
     conversation_id, job_id = _conversation_and_job()
-    if conversation_id is None or job_id is None:
+    if conversation_id is None:
         return False
-    granted = _grants.setdefault(job_id, set())
+    granted = _grants.setdefault(job_id or f"conversation:{conversation_id}", set())
     if grant in granted:
         return True
     ok = await approvals.ask(conversation_id, protocol.propose_action(uuid.uuid4().hex, kind, target, detail))
@@ -268,19 +269,20 @@ class MacAppleScriptExecutor:
 # ── Mac apps through Arslan Hands (0.1.53) ───────────────────────────────────
 
 _VERBS = {"click": "clicking", "set_value": "typing in", "type": "typing in", "select": "choosing in",
-          "scroll": "scrolling", "press": "pressing"}
+          "scroll": "scrolling", "press": "pressing", "menu": "choosing the menu item"}
 # P0 D6: the cursor label is on the user's screen, so it speaks the UI language.
 _LABEL_VERBS = {
     "en": _VERBS,
-    "zh": {"click": "点击", "set_value": "输入", "type": "输入", "select": "选择", "scroll": "滚动", "press": "按键"},
+    "zh": {"click": "点击", "set_value": "输入", "type": "输入", "select": "选择", "scroll": "滚动", "press": "按键",
+           "menu": "菜单"},
     "ja": {"click": "クリック", "set_value": "入力", "type": "入力", "select": "選択", "scroll": "スクロール",
-           "press": "キー操作"},
+           "press": "キー操作", "menu": "メニュー"},
     "de": {"click": "klickt", "set_value": "schreibt in", "type": "schreibt in", "select": "wählt in",
-           "scroll": "scrollt", "press": "drückt"},
+           "scroll": "scrollt", "press": "drückt", "menu": "Menü"},
     "es": {"click": "haciendo clic", "set_value": "escribiendo en", "type": "escribiendo en",
-           "select": "eligiendo en", "scroll": "desplazando", "press": "pulsando"},
+           "select": "eligiendo en", "scroll": "desplazando", "press": "pulsando", "menu": "menú"},
     "fr": {"click": "clique", "set_value": "écrit dans", "type": "écrit dans", "select": "choisit dans",
-           "scroll": "fait défiler", "press": "appuie"},
+           "scroll": "fait défiler", "press": "appuie", "menu": "menu"},
 }
 
 
@@ -293,7 +295,8 @@ async def _label_verb(op: str) -> str:
     return _LABEL_VERBS.get(locale, _VERBS).get(op, _VERBS.get(op, op))
 
 
-_ASKS = {"click": "click", "set_value": "type into", "select": "choose", "scroll": "scroll", "press": "press"}
+_ASKS = {"click": "click", "set_value": "type into", "select": "choose", "scroll": "scroll", "press": "press",
+         "menu": "choose the menu item"}
 # What each limited tier may still do (Hands enforces the same; checked here first
 # so the user is never asked to allow something Hands would refuse anyway).
 _TIER_ALLOWS = {"look_only": set(), "click_only": {"click", "scroll"}}
@@ -596,6 +599,24 @@ class DesktopLookExecutor:
         return {"ok": True, "external": True, "text": text, "summary": f"look · {app['name']}"[:200]}
 
 
+# Hands v2 §5.7: in a chat reply (not background work) at most this many actions, all in one app.
+INLINE_ACTIONS = 5
+_inline: dict[tuple[str, str], tuple[int, str]] = {}      # (conversation, turn) → (actions, app)
+
+
+def _inline_refusal(why: str) -> dict:
+    return {"ok": False, "external": False, "code": "act_in_background",
+            "error": f"{why} Call start_background_work with this goal; the work continues there."}
+
+
+def _inline_turn() -> tuple[str, str] | None:
+    from server.services import personal_context
+    ctx = personal_context.current()
+    if ctx is None or not ctx.conversation_id:
+        return None
+    return ctx.conversation_id, str(ctx.run_id or "")
+
+
 class _DesktopAct:
     op = ""
     timeout_s = 2 * CARD_S + 2 * RUN_S    # the app card and a risky-action card; describe, act, Return
@@ -615,18 +636,22 @@ class _DesktopAct:
         if name is None:
             return {"ok": False, "external": False, "error": "app required (a name from desktop_apps)"}
         conversation_id, job_id = _conversation_and_job()
+        turn = _inline_turn() if job_id is None else None
         if job_id is None:
-            return {"ok": False, "external": False, "code": "act_in_background",
-                    "error": "Acting in Mac apps (clicking, typing, choosing, pressing keys) runs as background "
-                             "work. Call start_background_work with this goal; looking is fine here."}
+            if turn is None:
+                return {"ok": False, "external": False, "code": "no_one_to_ask",
+                        "error": "Acting in a Mac app needs a conversation to ask the user in."}
+            if _inline.get(turn, (0, ""))[0] >= INLINE_ACTIONS:
+                return _inline_refusal(f"This reply has already acted {INLINE_ACTIONS} times, the most a chat "
+                                       "reply may.")
         if not desktop_available():
             return {"ok": False, "external": False, "error": "Arslan Hands is not available on this Mac."}
-        if hands_service.stopped(job_id):
+        if job_id is not None and hands_service.stopped(job_id):
             return {"ok": False, "external": False, "code": "stopped_by_user",
                     "error": hands_contract.REFUSALS["stopped_by_user"]}
         started = time.monotonic()
         target: dict = {}
-        if self.op == "press":
+        if self.op in ("press", "menu"):
             app, failure = await _resolve_app(name, job_id)
             if app is None:
                 return _failed(failure, app=name)
@@ -647,6 +672,15 @@ class _DesktopAct:
                 return _failed(hands_contract.Result(ok=False, code="password_field", refused=True))
         bundle = str(app.get("bundle_id") or app.get("name"))
         label = target.get("name") or args.get("element") or ""
+        if self.op == "menu":
+            label = " › ".join(_menu_path(args))
+        if turn is not None:
+            count, first = _inline.get(turn, (0, bundle))
+            if first != bundle:
+                return _inline_refusal("This reply already acted in another app; a chat reply acts in one app.")
+            if len(_inline) > 500:
+                _inline.clear()
+            _inline[turn] = (count + 1, first)
         verb = _VERBS.get(self.op, self.op)
         if not await _ask_once(f"desktop:{bundle}", "desktop_app", str(app.get("name")),
                                f"Arslan wants to click, type and choose in {app.get('name')} for this piece of "
@@ -689,6 +723,10 @@ class _DesktopAct:
         else:
             text = (f"Sent, not confirmed: {verb} “{label}” in {app.get('name')}. Arslan could not read the "
                     "change back, so look (desktop_look) before the next step, and do not simply repeat it.")
+        routed = (result.reply or {}).get("menu_item") if (result.reply or {}).get("route") == "menu_item" else None
+        if self.op == "press" and routed:
+            text += (f" (The app had nothing focused, so it went to the menu item with that shortcut: "
+                     f"“{' › '.join(map(str, routed))}”.)")
         if hands_contract.kept_the_front(result):
             text += (f" {app.get('name')} came to the front when this ran and could not be put back; "
                      "tell the user if it gets in their way.")
@@ -787,6 +825,29 @@ class DesktopScrollExecutor(_DesktopAct):
                                        "direction": direction, "amount": amount}, job_id=job_id)
 
 
+def _menu_path(args: dict) -> list[str]:
+    path = args.get("path")
+    return [str(t)[:120] for t in path[:4]] if isinstance(path, list) else []
+
+
+class DesktopMenuExecutor(_DesktopAct):
+    """Hands v2 §5.5: a menu item chosen in the background by its path (Hands presses it through
+    accessibility; nothing comes to the front). Risky labels (delete, send, quit…) ask every time."""
+    key = "desktop_menu"
+    op = "menu"
+
+    def _risky(self, args, target, app):
+        from server.services import hands_service
+        path = _menu_path(args)
+        if path and hands_service.risky_label(path[-1]):
+            return f"the menu item “{' › '.join(path)}”"
+        return None
+
+    async def run(self, args, app):
+        _, job_id = _conversation_and_job()
+        return await _hands("menu", {"app": app["name"], "path": _menu_path(args)}, job_id=job_id)
+
+
 class DesktopPressExecutor(_DesktopAct):
     key = "desktop_press"
     op = "press"
@@ -802,3 +863,122 @@ class DesktopPressExecutor(_DesktopAct):
         _, job_id = _conversation_and_job()
         return await _hands("press", {"app": app["name"], "keys": str(args.get("keys") or "").strip().lower()},
                             job_id=job_id)
+
+
+# Hands v2 §5.6: several steps on one app in one call, then one look.
+_BATCH_STEPS = {"click": DesktopClickExecutor, "type": DesktopTypeExecutor, "select": DesktopSelectExecutor,
+                "scroll": DesktopScrollExecutor, "press": DesktopPressExecutor, "menu": DesktopMenuExecutor}
+BATCH_MAX = 8
+# A step that went through (done) or was delivered without proof (sent_unconfirmed) lets the next
+# one run: a step that changed the window's structure makes Hands refuse the next (`changed`),
+# which stops the batch. Anything else stops it at once.
+_BATCH_GOES_ON = {"done", "sent_unconfirmed"}
+
+
+class DesktopBatchExecutor:
+    """Run up to eight steps on one app, in order, each with every check a single call has (cards,
+    risky labels, password fields, the structural-change check), stop at the first step that did
+    not go through, and end with one look (screenshot and changes included)."""
+    key = "desktop_batch"
+    timeout_s = BATCH_MAX * (2 * CARD_S + 2 * RUN_S) + CARD_S + 2 * RUN_S
+
+    async def execute(self, args: dict) -> dict:
+        args = dict(args or {})
+        name = _app_arg(args)
+        steps = args.get("steps")
+        if name is None:
+            return {"ok": False, "external": False, "error": "app required (a name from desktop_apps)"}
+        if not isinstance(steps, list) or not 1 <= len(steps) <= BATCH_MAX:
+            return {"ok": False, "external": False, "code": "bad_request",
+                    "error": f"steps: 1 to {BATCH_MAX} steps, each {{action, …that action's args}}"}
+        lines: list[str] = []
+        stopped = None
+        done = 0
+        for number, step in enumerate(steps, 1):
+            action = str(step.get("action") or "") if isinstance(step, dict) else ""
+            executor = _BATCH_STEPS.get(action)
+            if executor is None:
+                stopped = f"step {number}: unknown action “{action[:40]}” ({', '.join(_BATCH_STEPS)})"
+                break
+            call = {k: v for k, v in step.items() if k != "action"}
+            call["app"] = name                      # one app per batch, whatever a step says
+            result = await executor().execute(call)
+            said = result.get("text") or result.get("error") or ""
+            lines.append(f"{number}. {action}: {said}")
+            if not result.get("ok") or result.get("outcome") not in _BATCH_GOES_ON:
+                stopped = f"stopped at step {number} ({result.get('code') or result.get('outcome') or 'not done'})"
+                break
+            done += 1
+        look = await DesktopLookExecutor().execute({"app": name})
+        head = (f"Batch in {name}: {done} of {len(steps)} steps went through"
+                + (f"; {stopped}" if stopped else "") + ".\n")
+        out = {"ok": stopped is None, "external": True,
+               "text": head + "\n".join(lines) + "\n\nThe window now:\n" + (look.get("text") or look.get("error") or ""),
+               "summary": f"batch · {name} · {done}/{len(steps)}"[:200]}
+        if stopped is not None:
+            out["code"] = "batch_stopped"
+        if look.get("images"):
+            out["images"], out["image_label"] = look["images"], look.get("image_label")
+        return out
+
+
+class DesktopOpenExecutor:
+    """Hands v2 §5.2: open an app in the background (`open -g`: launched behind the user's windows,
+    never activated). The never-list is refused before anything starts; an app already running is
+    left as it is; opening asks once, and that answer is also the app's acting grant."""
+    key = "desktop_open"
+    timeout_s = CARD_S + 30
+
+    async def execute(self, args: dict) -> dict:
+        from server.services import hands_contract, hands_service
+        name = _app_arg(dict(args or {}))
+        if name is None:
+            return {"ok": False, "external": False, "error": "app required (the app's name, as in /Applications)"}
+        conversation_id, job_id = _conversation_and_job()
+        turn = _inline_turn() if job_id is None else None
+        if job_id is None:
+            if turn is None:
+                return {"ok": False, "external": False, "code": "no_one_to_ask",
+                        "error": "Opening a Mac app needs a conversation to ask the user in."}
+            if _inline.get(turn, (0, ""))[0] >= INLINE_ACTIONS:
+                return _inline_refusal(f"This reply has already acted {INLINE_ACTIONS} times, the most a chat "
+                                       "reply may.")
+        if not desktop_available():
+            return {"ok": False, "external": False, "error": "Arslan Hands is not available on this Mac."}
+        if hands_service.never_touched(name):
+            return _failed(hands_contract.Result(ok=False, code="app_denied", refused=True), app=name)
+        running, _ = await _resolve_app(name, job_id)
+        if running is not None:
+            return {"ok": True, "external": False, "outcome": "no_effect",
+                    "text": f"{running['name']} is already running; nothing was opened. Look at it with desktop_look."}
+        started = time.monotonic()
+        if not await _ask_once(f"open:{name.lower()}", "desktop_app", name,
+                               f"Arslan wants to open {name} in the background (behind your windows) for this "
+                               "piece of work, and then click, type and choose in it."):
+            _trace("open", name, "declined", started)
+            return {"ok": False, "external": False, "code": "declined",
+                    "error": f"The user did not allow opening {name}. Do not retry; report it."}
+        if turn is not None:
+            _inline[turn] = (_inline.get(turn, (0, name))[0] + 1, _inline.get(turn, (0, name))[1])
+        process = await asyncio.create_subprocess_exec(
+            "/usr/bin/open", "-g", "-a", name, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+        if await process.wait() != 0:
+            _trace("open", name, "not_found", started)
+            return {"ok": False, "external": False, "code": "app_not_found",
+                    "error": f"macOS has no app called “{name}”. Check the name (desktop_apps lists running apps)."}
+        app = None
+        for _ in range(40):                       # up to ten seconds for it to start
+            app, failure = await _resolve_app(name, job_id)
+            if app is not None or (failure is not None and failure.code == "app_denied"):
+                break
+            await asyncio.sleep(0.25)
+        if app is None:
+            _trace("open", name, "not_listed", started)
+            return {"ok": True, "external": False, "outcome": "sent_unconfirmed",
+                    "text": f"Asked macOS to open {name}; it is not running yet. Look again in a moment."}
+        _grants.setdefault(job_id or f"conversation:{conversation_id}", set()).add(
+            f"desktop:{app.get('bundle_id') or app.get('name')}")
+        _trace("open", app, "ok", started)
+        return {"ok": True, "external": False, "outcome": "done",
+                "text": f"Opened {app['name']} in the background. Look at it with desktop_look before acting.",
+                "summary": f"open · {app['name']}"[:200]}

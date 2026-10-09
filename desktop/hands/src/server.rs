@@ -73,6 +73,9 @@ struct State {
     cua_sessions: Mutex<HashMap<String, u32>>,
     /// Cua Driver's running apps, briefly, to resolve a pid to an app.
     cua_apps: Mutex<Option<(Instant, Vec<App>)>>,
+    /// Each app's structure at its latest look, per (session, pid): the structural-change
+    /// check (structure.rs) compares it before every action.
+    structures: Mutex<HashMap<(String, i64), crate::structure::Structure>>,
 }
 
 /// At most once (P0 D1): every answer to a request with a string id is kept for ten
@@ -303,6 +306,7 @@ pub fn serve(
         tokens: Mutex::new(cua_policy::Tokens::default()),
         cua_sessions: Mutex::new(HashMap::new()),
         cua_apps: Mutex::new(None),
+        structures: Mutex::new(HashMap::new()),
     });
     // The token is published only now that the socket listens, mode 0600.
     let ready = json!({
@@ -642,6 +646,7 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
         "session_end" => return session_end(ctx, args),
         "list_apps" => return list_apps(ctx, args),
         "cua" => return cua_op(ctx, args),
+        "menu" => return menu_op(ctx, args),
         _ => {}
     }
     if op != "describe" && !argv::OPS.contains(&op) {
@@ -705,8 +710,36 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
         map.insert("app".into(), Value::String(app.name.clone()));
     }
     let argv = argv::build(op, &call, session.as_deref())?;
+    let key = (session.clone().unwrap_or_default(), app.pid);
+    if matches!(op, "snapshot" | "find") {
+        // Read BEFORE the tree: a sheet that opens while the tree is read then counts as a
+        // change, so an action on that tree is refused rather than allowed.
+        if let Some(now) = crate::structure::read(app.pid) {
+            let mut kept = ctx
+                .state
+                .structures
+                .lock()
+                .unwrap_or_else(|p| p.into_inner());
+            if kept.len() > 256 {
+                kept.clear();
+            }
+            kept.insert(key.clone(), now);
+        }
+    } else if acts(op) {
+        unchanged_since_look(ctx, &key, &app)?;
+    }
     let front_before = if acts(op) { frontmost_pid() } else { None };
     let (exit, envelope) = run_envelope(ctx, &argv, deadline(op, args))?;
+    if op == "press" && keys_had_no_focus(&envelope) {
+        // The key went nowhere; the menu item with that shortcut does the same thing without
+        // focus (A9's keys_after_restore). Only one enabled item, never a guess.
+        let keys = args.get("keys").and_then(Value::as_str).unwrap_or("");
+        if let Some(item) = crate::menus::read(app.pid)
+            .and_then(|items| crate::menus::by_shortcut(&items, keys).map(|i| i.path.clone()))
+        {
+            return press_item(&app, tier, &item, Some(keys));
+        }
+    }
     let focus_restored = front_back(front_before, app.pid);
     let front_after = if acts(op) { frontmost_pid() } else { None };
     Ok(json!({
@@ -771,10 +804,141 @@ fn capture_code(code: &str) -> &'static str {
     }
 }
 
+/// The structural-change check (structure.rs): refuse an action when the app's structure is
+/// not what it was at the latest look in this session.
+fn unchanged_since_look(ctx: &Ctx, key: &(String, i64), app: &App) -> Result<(), Refusal> {
+    let before = ctx
+        .state
+        .structures
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .get(key)
+        .cloned();
+    if let (Some(before), Some(now)) = (before, crate::structure::read(app.pid)) {
+        let changed = crate::structure::changes(&before, &now);
+        if !changed.is_empty() {
+            return Err(refuse(
+                "changed",
+                format!(
+                    "{} changed since your look: {}. Nothing was done; look again",
+                    app.name,
+                    changed.join("; ")
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Press a menu item in the background (spec §5.5, A2 item 4, A8): `path` like ["Format",
+/// "Font", "Bold"], read from the app's own menu bar (never the Apple menu), pressed through
+/// accessibility. The same rules as any action: a full-tier app, the structural check, and the
+/// front given back if the app took it.
+fn menu_op(ctx: &Ctx, args: &Value) -> Result<Value, Refusal> {
+    let session = session_of(args)?;
+    let app = resolve_app(ctx, argv::app_name(args)?)?;
+    let tier = policy::tier(&app.bundle_id, &app.name, &never_list(args));
+    if !policy::allows(tier, "menu") {
+        return Err(tier_refusal(tier, "menu", &app));
+    }
+    let path: Vec<String> = args
+        .get("path")
+        .and_then(Value::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    if !(2..=4).contains(&path.len()) || path.iter().any(|t| t.trim().is_empty() || t.len() > 120) {
+        return Err(refuse(
+            "bad_request",
+            "`path` is the menu's titles, top level first, like [\"Format\", \"Font\", \"Bold\"] (2 to 4)",
+        ));
+    }
+    unchanged_since_look(ctx, &(session.unwrap_or_default(), app.pid), &app)?;
+    let items = crate::menus::read(app.pid).ok_or_else(|| {
+        refuse(
+            "menu_unreadable",
+            format!("{}'s menu bar cannot be read", app.name),
+        )
+    })?;
+    let item = match crate::menus::find(&items, &path) {
+        Ok(item) => item.path.clone(),
+        Err(crate::menus::NotThere::Disabled) => {
+            return Err(refuse(
+                "menu_disabled",
+                "that menu item is disabled right now",
+            ))
+        }
+        Err(crate::menus::NotThere::Ambiguous) => {
+            return Err(refuse(
+                "menu_ambiguous",
+                "more than one menu item has that path",
+            ))
+        }
+        Err(crate::menus::NotThere::Missing(there)) => {
+            return Err(refuse(
+                "menu_not_found",
+                format!(
+                    "no such menu item; at that level there is: {}",
+                    there.join(", ")
+                ),
+            ))
+        }
+    };
+    press_item(&app, tier, &item, None)
+}
+
+/// Press `path`'s item and answer as an action does.
+fn press_item(
+    app: &App,
+    tier: Tier,
+    path: &[String],
+    keys: Option<&str>,
+) -> Result<Value, Refusal> {
+    let front_before = frontmost_pid();
+    match crate::menus::press(app.pid, path) {
+        Some(true) => {}
+        Some(false) => {
+            return Err(refuse(
+                "menu_press_failed",
+                "the app did not take the press",
+            ))
+        }
+        None => return Err(refuse("menu_not_found", "the menu item is gone")),
+    }
+    let focus_restored = front_back(front_before, app.pid);
+    Ok(json!({
+        "ok": true,
+        "app": app_json(app),
+        "tier": policy::tier_name(tier),
+        "outcome": "sent_unconfirmed",
+        "mode_used": "background",
+        "route": "menu_item",
+        "menu_item": path,
+        "keys": keys,
+        "focus_restored": focus_restored,
+        "front": {"before": front_before, "after": frontmost_pid()},
+    }))
+}
+
+/// agent-desktop refused a key combo because nothing in the app has focus (upstream main, A9:
+/// a window restored from the Dock in the background); nothing was delivered.
+fn keys_had_no_focus(envelope: &Value) -> bool {
+    envelope.get("ok") == Some(&Value::Bool(false))
+        && envelope
+            .pointer("/error/message")
+            .and_then(Value::as_str)
+            .is_some_and(|m| m.contains("no verified focused element"))
+        && envelope.pointer("/error/details/physical_delivery_started") != Some(&Value::Bool(true))
+}
+
 fn acts(op: &str) -> bool {
     matches!(
         op,
-        "click" | "type" | "set_value" | "select" | "press" | "scroll"
+        "click" | "type" | "set_value" | "select" | "press" | "scroll" | "menu"
     )
 }
 

@@ -54,8 +54,11 @@ enrolment executor deliberately refuses execution; the UI owns enrolment.
 | `browser_type` | [server/registry/hands_tools.py](../server/registry/hands_tools.py) |
 | `cancel_task` | [server/registry/schedule_tools.py](../server/registry/schedule_tools.py) |
 | `desktop_apps` | [server/registry/hands_tools.py](../server/registry/hands_tools.py) |
+| `desktop_batch` | [server/registry/hands_tools.py](../server/registry/hands_tools.py) |
 | `desktop_click` | [server/registry/hands_tools.py](../server/registry/hands_tools.py) |
 | `desktop_look` | [server/registry/hands_tools.py](../server/registry/hands_tools.py) |
+| `desktop_menu` | [server/registry/hands_tools.py](../server/registry/hands_tools.py) |
+| `desktop_open` | [server/registry/hands_tools.py](../server/registry/hands_tools.py) |
 | `desktop_press` | [server/registry/hands_tools.py](../server/registry/hands_tools.py) |
 | `desktop_scroll` | [server/registry/hands_tools.py](../server/registry/hands_tools.py) |
 | `desktop_select` | [server/registry/hands_tools.py](../server/registry/hands_tools.py) |
@@ -114,9 +117,9 @@ trust decisions; see THIRD_PARTY_NOTICES.md and docs/RELIABILITY.md.
 
 | Source | SHA-256 |
 | --- | --- |
-| `server/registry/executors.py` | `dbc186b0eb666e094238bf90406b81378b38227bbf1bad27695ae97bef10797b` |
+| `server/registry/executors.py` | `62c76d61c0e861ec04f011b157718961cd7f1f3357f92754950c0e3808aab080` |
 | `server/registry/file_tools.py` | `a41416c5c239370a8ef992b5406e066e51dc1101ffdf83683a8d8b4f7b2390fd` |
-| `server/registry/hands_tools.py` | `e157b3d6b5dd8ef78652751e3062c19c0e52defffa43b2372e912a06d26cc47a` |
+| `server/registry/hands_tools.py` | `f615a469b2d8029e87c37817f38e480e33afd7508796fa96e4131b33ba2e705d` |
 | `server/registry/lan_tools.py` | `34778593e80f8276d545f4ab569803a208a290d5fe4e8d52402f7a876b6f63b1` |
 | `server/registry/memory_executors.py` | `9327d8aa27832c8793957dab38f74fe8682385f45a7ee4874d38765dc02bfdb3` |
 | `server/registry/schedule_tools.py` | `13a8698f7e824c1da64cb513b6ebf92de4ab618f75103445e9b12e984ca09a6d` |
