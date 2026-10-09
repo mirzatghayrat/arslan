@@ -304,6 +304,13 @@ def _web_read_feedback(tool_key, args, result):
 
 def _record_tool_result(tool_key, args, result, emit, tool_trace, assistant_content, convo,
                         mcp_fail_counts: dict | None = None) -> dict:
+    # Hands v2 screenshots (spec 2026-10-08-0157 §4.2-4.5): `images` go to the model as image
+    # parts of this result and nowhere else - not the payload text, the trace, the run trace,
+    # the UI event or any file. The result everyone else sees says only that one was taken.
+    images = result.get("images") if isinstance(result.get("images"), list) else None
+    image_label = str(result.get("image_label") or tool_key)
+    if "images" in result or "image_label" in result:
+        result = {k: v for k, v in result.items() if k not in ("images", "image_label")}
     web_feedback = _web_read_feedback(tool_key, args, result)
     if web_feedback is not None:
         result, raw_payload = web_feedback
@@ -356,7 +363,10 @@ def _record_tool_result(tool_key, args, result, emit, tool_trace, assistant_cont
     # request time; trajectory.to_legacy reproduces the old "TOOL RESULT for X"
     # user turn byte for byte.
     convo.append(trajectory.tool_result(None, tool_key, f"{framed}{hint}",
-                                        synthetic=True, legacy_call=assistant_content))
+                                        synthetic=True, legacy_call=assistant_content,
+                                        images=images, image_label=image_label))
+    if images:
+        trajectory.keep_latest_images(convo)
     return result
 
 
@@ -585,7 +595,8 @@ async def _recover_truncation(a, resp, request, state, remaining):
 
 def _rendered_size(messages: list[dict]) -> int:
     """Context size of what is actually sent, not of local bookkeeping."""
-    return len(json.dumps(trajectory.to_legacy(messages), ensure_ascii=False, default=str))
+    return (len(json.dumps(trajectory.to_legacy(messages, images=False), ensure_ascii=False, default=str))
+            + trajectory.IMAGE_SIZE_CHARS * trajectory.image_count(messages))
 
 
 async def _log_degrade_hint(conversation_id, tool_key, count) -> None:
