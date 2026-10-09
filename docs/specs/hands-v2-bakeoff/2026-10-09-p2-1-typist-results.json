@@ -1,0 +1,513 @@
+[
+ {
+  "case": "read_window",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": null,
+  "code": null,
+  "ms": null,
+  "look_ms": 2409,
+  "violations": [],
+  "note": "17 elements"
+ },
+ {
+  "case": "look_with_screenshot",
+  "engine": "agent-desktop",
+  "status": "fail",
+  "outcome": null,
+  "code": null,
+  "ms": null,
+  "look_ms": 438,
+  "violations": [],
+  "note": "no label drawn where Save is placed (0 dark pixels)"
+ },
+ {
+  "case": "set_title",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": "done",
+  "code": null,
+  "ms": 215,
+  "look_ms": 230,
+  "violations": [],
+  "note": ""
+ },
+ {
+  "case": "type_notes_unicode",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": "done",
+  "code": null,
+  "ms": 216,
+  "look_ms": 446,
+  "violations": [],
+  "note": ""
+ },
+ {
+  "case": "click_save_once",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": "sent_unconfirmed",
+  "code": null,
+  "ms": 285,
+  "look_ms": 431,
+  "violations": [],
+  "note": ""
+ },
+ {
+  "case": "checkbox",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": "sent_unconfirmed",
+  "code": null,
+  "ms": 284,
+  "look_ms": 233,
+  "violations": [],
+  "note": ""
+ },
+ {
+  "case": "popup",
+  "engine": "agent-desktop",
+  "status": "fail",
+  "outcome": "done",
+  "code": null,
+  "ms": 501,
+  "look_ms": 414,
+  "violations": [
+   "O4 window order changed",
+   "O5 typist text differs (+2 chars): 'psver '",
+   "O2 key window lost for 276 ms"
+  ],
+  "note": ""
+ },
+ {
+  "case": "password_refused",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": null,
+  "code": "password_field",
+  "ms": 181,
+  "look_ms": 273,
+  "violations": [],
+  "note": "0 characters reached the field"
+ },
+ {
+  "case": "chat_return",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": "sent_unconfirmed",
+  "code": null,
+  "ms": 435,
+  "look_ms": 317,
+  "violations": [],
+  "note": ""
+ },
+ {
+  "case": "menu_shortcut",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": "sent_unconfirmed",
+  "code": null,
+  "ms": 287,
+  "look_ms": 454,
+  "violations": [],
+  "note": ""
+ },
+ {
+  "case": "slow_button",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": "sent_unconfirmed",
+  "code": null,
+  "ms": 280,
+  "look_ms": 476,
+  "violations": [],
+  "note": "the engine saw the change after 1701 ms"
+ },
+ {
+  "case": "sheet_after_look",
+  "engine": "agent-desktop",
+  "status": "fail",
+  "outcome": "sent_unconfirmed",
+  "code": null,
+  "ms": 297,
+  "look_ms": 362,
+  "violations": [
+   "acted under a sheet that opened after the look"
+  ],
+  "note": ""
+ },
+ {
+  "case": "minimized_window",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": "sent_unconfirmed",
+  "code": null,
+  "ms": 182,
+  "look_ms": 290,
+  "violations": [],
+  "note": ""
+ },
+ {
+  "case": "hidden_app",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": "sent_unconfirmed",
+  "code": null,
+  "ms": 175,
+  "look_ms": 482,
+  "violations": [],
+  "note": ""
+ },
+ {
+  "case": "keys_after_restore",
+  "engine": "agent-desktop",
+  "status": "fail",
+  "outcome": null,
+  "code": "ACTION_FAILED",
+  "ms": 766,
+  "look_ms": 470,
+  "violations": [],
+  "note": "ACTION_FAILED: Application has no verified focused element for keyboard delivery {'physical_delivery_started': False}"
+ },
+ {
+  "case": "read_window",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": null,
+  "code": null,
+  "ms": null,
+  "look_ms": 250,
+  "violations": [],
+  "note": "17 elements"
+ },
+ {
+  "case": "look_with_screenshot",
+  "engine": "agent-desktop",
+  "status": "fail",
+  "outcome": null,
+  "code": null,
+  "ms": null,
+  "look_ms": 436,
+  "violations": [],
+  "note": "no label drawn where Save is placed (0 dark pixels)"
+ },
+ {
+  "case": "set_title",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": "done",
+  "code": null,
+  "ms": 263,
+  "look_ms": 250,
+  "violations": [],
+  "note": ""
+ },
+ {
+  "case": "type_notes_unicode",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": "done",
+  "code": null,
+  "ms": 212,
+  "look_ms": 253,
+  "violations": [],
+  "note": ""
+ },
+ {
+  "case": "click_save_once",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": "sent_unconfirmed",
+  "code": null,
+  "ms": 291,
+  "look_ms": 228,
+  "violations": [],
+  "note": ""
+ },
+ {
+  "case": "checkbox",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": "sent_unconfirmed",
+  "code": null,
+  "ms": 285,
+  "look_ms": 254,
+  "violations": [],
+  "note": ""
+ },
+ {
+  "case": "popup",
+  "engine": "agent-desktop",
+  "status": "fail",
+  "outcome": "done",
+  "code": null,
+  "ms": 575,
+  "look_ms": 244,
+  "violations": [
+   "O5 typist text differs (+3 chars): 'ju ov'",
+   "O2 key window lost for 365 ms"
+  ],
+  "note": ""
+ },
+ {
+  "case": "password_refused",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": null,
+  "code": "password_field",
+  "ms": 181,
+  "look_ms": 234,
+  "violations": [],
+  "note": "0 characters reached the field"
+ },
+ {
+  "case": "chat_return",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": "sent_unconfirmed",
+  "code": null,
+  "ms": 422,
+  "look_ms": 234,
+  "violations": [],
+  "note": ""
+ },
+ {
+  "case": "menu_shortcut",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": "sent_unconfirmed",
+  "code": null,
+  "ms": 301,
+  "look_ms": 257,
+  "violations": [],
+  "note": ""
+ },
+ {
+  "case": "slow_button",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": "sent_unconfirmed",
+  "code": null,
+  "ms": 296,
+  "look_ms": 238,
+  "violations": [],
+  "note": "the engine saw the change after 1156 ms"
+ },
+ {
+  "case": "sheet_after_look",
+  "engine": "agent-desktop",
+  "status": "fail",
+  "outcome": "sent_unconfirmed",
+  "code": null,
+  "ms": 295,
+  "look_ms": 249,
+  "violations": [
+   "acted under a sheet that opened after the look"
+  ],
+  "note": ""
+ },
+ {
+  "case": "minimized_window",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": "sent_unconfirmed",
+  "code": null,
+  "ms": 177,
+  "look_ms": 253,
+  "violations": [],
+  "note": ""
+ },
+ {
+  "case": "hidden_app",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": "sent_unconfirmed",
+  "code": null,
+  "ms": 183,
+  "look_ms": 234,
+  "violations": [],
+  "note": ""
+ },
+ {
+  "case": "keys_after_restore",
+  "engine": "agent-desktop",
+  "status": "fail",
+  "outcome": null,
+  "code": "ACTION_FAILED",
+  "ms": 766,
+  "look_ms": 248,
+  "violations": [],
+  "note": "ACTION_FAILED: Application has no verified focused element for keyboard delivery {'physical_delivery_started': False}"
+ },
+ {
+  "case": "read_window",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": null,
+  "code": null,
+  "ms": null,
+  "look_ms": 252,
+  "violations": [],
+  "note": "17 elements"
+ },
+ {
+  "case": "look_with_screenshot",
+  "engine": "agent-desktop",
+  "status": "fail",
+  "outcome": null,
+  "code": null,
+  "ms": null,
+  "look_ms": 427,
+  "violations": [],
+  "note": "no label drawn where Save is placed (0 dark pixels)"
+ },
+ {
+  "case": "set_title",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": "done",
+  "code": null,
+  "ms": 225,
+  "look_ms": 241,
+  "violations": [],
+  "note": ""
+ },
+ {
+  "case": "type_notes_unicode",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": "done",
+  "code": null,
+  "ms": 212,
+  "look_ms": 253,
+  "violations": [],
+  "note": ""
+ },
+ {
+  "case": "click_save_once",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": "sent_unconfirmed",
+  "code": null,
+  "ms": 287,
+  "look_ms": 251,
+  "violations": [],
+  "note": ""
+ },
+ {
+  "case": "checkbox",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": "sent_unconfirmed",
+  "code": null,
+  "ms": 295,
+  "look_ms": 244,
+  "violations": [],
+  "note": ""
+ },
+ {
+  "case": "popup",
+  "engine": "agent-desktop",
+  "status": "fail",
+  "outcome": "done",
+  "code": null,
+  "ms": 583,
+  "look_ms": 250,
+  "violations": [
+   "O5 typist text differs (+3 chars): ' fjump'",
+   "O2 key window lost for 365 ms"
+  ],
+  "note": ""
+ },
+ {
+  "case": "password_refused",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": null,
+  "code": "password_field",
+  "ms": 174,
+  "look_ms": 256,
+  "violations": [],
+  "note": "0 characters reached the field"
+ },
+ {
+  "case": "chat_return",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": "sent_unconfirmed",
+  "code": null,
+  "ms": 423,
+  "look_ms": 244,
+  "violations": [],
+  "note": ""
+ },
+ {
+  "case": "menu_shortcut",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": "sent_unconfirmed",
+  "code": null,
+  "ms": 289,
+  "look_ms": 261,
+  "violations": [],
+  "note": ""
+ },
+ {
+  "case": "slow_button",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": "sent_unconfirmed",
+  "code": null,
+  "ms": 297,
+  "look_ms": 247,
+  "violations": [],
+  "note": "the engine saw the change after 1142 ms"
+ },
+ {
+  "case": "sheet_after_look",
+  "engine": "agent-desktop",
+  "status": "fail",
+  "outcome": "sent_unconfirmed",
+  "code": null,
+  "ms": 291,
+  "look_ms": 247,
+  "violations": [
+   "acted under a sheet that opened after the look"
+  ],
+  "note": ""
+ },
+ {
+  "case": "minimized_window",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": "sent_unconfirmed",
+  "code": null,
+  "ms": 183,
+  "look_ms": 249,
+  "violations": [],
+  "note": ""
+ },
+ {
+  "case": "hidden_app",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": "sent_unconfirmed",
+  "code": null,
+  "ms": 184,
+  "look_ms": 241,
+  "violations": [],
+  "note": ""
+ },
+ {
+  "case": "keys_after_restore",
+  "engine": "agent-desktop",
+  "status": "fail",
+  "outcome": null,
+  "code": "ACTION_FAILED",
+  "ms": 767,
+  "look_ms": 260,
+  "violations": [],
+  "note": "ACTION_FAILED: Application has no verified focused element for keyboard delivery {'physical_delivery_started': False}"
+ }
+]
