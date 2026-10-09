@@ -24,7 +24,9 @@ let commandPath = env["HARNESS_CMD"] ?? "/tmp/harness-fixture.cmd"
 let started = Date()
 
 func record(_ event: String, _ value: Any = "") {
-    let line: [String: Any] = ["t": Date().timeIntervalSince(started), "event": event, "value": value]
+    // `wall`: wall-clock seconds, to set an action against the moment the user touched (G5).
+    let line: [String: Any] = ["t": Date().timeIntervalSince(started), "wall": Date().timeIntervalSince1970,
+                               "event": event, "value": value]
     guard let data = try? JSONSerialization.data(withJSONObject: line),
           var text = String(data: data, encoding: .utf8) else { return }
     text += "\n"

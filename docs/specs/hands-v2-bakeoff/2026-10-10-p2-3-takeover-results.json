@@ -1,0 +1,57 @@
+[
+ {
+  "case": "takeover_pause",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": null,
+  "code": null,
+  "ms": 0,
+  "look_ms": 2429,
+  "violations": [],
+  "note": "3 clicks before the touch; last action 0 ms after it; then takeover_paused"
+ },
+ {
+  "case": "takeover_pause",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": null,
+  "code": null,
+  "ms": 0,
+  "look_ms": 255,
+  "violations": [],
+  "note": "2 clicks before the touch; last action 0 ms after it; then takeover_paused"
+ },
+ {
+  "case": "takeover_pause",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": null,
+  "code": null,
+  "ms": 0,
+  "look_ms": 253,
+  "violations": [],
+  "note": "3 clicks before the touch; last action 0 ms after it; then takeover_paused"
+ },
+ {
+  "case": "takeover_pause",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": null,
+  "code": null,
+  "ms": 0,
+  "look_ms": 254,
+  "violations": [],
+  "note": "3 clicks before the touch; last action 0 ms after it; then takeover_paused"
+ },
+ {
+  "case": "takeover_pause",
+  "engine": "agent-desktop",
+  "status": "pass",
+  "outcome": null,
+  "code": null,
+  "ms": 0,
+  "look_ms": 260,
+  "violations": [],
+  "note": "3 clicks before the touch; last action 0 ms after it; then takeover_paused"
+ }
+]
