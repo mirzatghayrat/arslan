@@ -591,6 +591,8 @@ class DesktopLookExecutor:
             text += hands_contract.render_tree(data.get("tree") or {},
                                                place=hands_contract.placer(capture) if capture else None)
             if capture:
+                from server.services import desktop_status
+                desktop_status.note_thumb(capture["data"])        # the island's thumbnail (§6.6)
                 if not_seen:
                     text = not_seen + text
                 _trace("look", app, "ok", started, screenshot=f"{capture['width']}x{capture['height']}",

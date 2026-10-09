@@ -99,6 +99,19 @@ async def takeover_end() -> dict:
     return {"ok": True, "ended": bool(reply.get("ended"))}
 
 
+@router.post("/hands/borrow/{answer}")
+async def borrow_answer(answer: str) -> dict:
+    """The island's answer while a borrow waits for the user to pause typing (§6.3): "now"
+    borrows at once, "skip" gives this one up (nothing is done)."""
+    if answer not in ("now", "skip"):
+        return {"ok": False, "error": "answer is now or skip"}
+    try:
+        reply = await hands_client.call(f"borrow_{answer}", {}, timeout=5, start=False)
+    except hands_client.HandsUnavailable as exc:
+        return {"ok": False, "error": str(exc)[:200]}
+    return {"ok": bool(reply.get("ok"))}
+
+
 @router.post("/hands/check")
 async def check_hands() -> dict:
     return await _status(start=True)

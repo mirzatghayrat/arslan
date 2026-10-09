@@ -55,7 +55,28 @@ async def get_island_feed(after: int = Query(0, ge=0),
             if event.get("task_id") is not None and not event.get("title"):
                 event["title"] = names.get(event["task_id"]) or None
     feed["enabled"] = await settings_service.island_enabled(db)
+    feed["hands"] = await _hands_activity()
     return feed
+
+
+async def _hands_activity() -> dict | None:
+    """Hands v2 §6.6: what a borrow or takeover is doing now (waiting for the user's pause,
+    borrowing, taken over, paused), for the island's lines and buttons. None when Hands is not
+    running or says nothing - the island then shows what it always did."""
+    from server.services import hands_client
+    if not hands_client.running():
+        return None
+    try:
+        reply = await hands_client.call("activity_status", {}, timeout=1, start=False)
+    except hands_client.HandsUnavailable:
+        return None
+    takeover = reply.get("takeover") if isinstance(reply.get("takeover"), dict) else {}
+    borrow = reply.get("borrow") if reply.get("borrow") in ("waiting", "borrowing") else None
+    if not borrow and not takeover.get("active"):
+        return None
+    return {"borrow": borrow,
+            "takeover": {"active": True, "paused": bool(takeover.get("paused")),
+                         "remaining_s": int(takeover.get("remaining_s") or 0)} if takeover.get("active") else None}
 
 
 @router.get("/about")

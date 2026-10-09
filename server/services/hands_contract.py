@@ -62,6 +62,8 @@ REFUSALS = {
                          "done. Do other work and try again in a little while.",
     "secure_input": "The user is typing a password, so Arslan does not take the front now. Nothing was done. "
                     "Try again in a little while.",
+    "borrow_declined": "The user chose not to give Arslan the front this time. Nothing was done. Find a way "
+                       "that works in the background, or ask them.",
     "screen_locked": "The Mac's screen is locked, and Arslan never acts on a locked Mac. Nothing was done. "
                      "Wait until the user unlocks it, or tell them what is left.",
     # Hands v2 §6.4: taking the screen over.
