@@ -794,3 +794,45 @@ fn a_key_combo_with_nothing_focused_presses_its_menu_item_instead() {
     assert_eq!(PRESSED.lock().unwrap().len(), 1);
     arslan_hands::menus::set_stand_in_for_tests(None);
 }
+
+#[test]
+fn a_pop_up_and_front_true_borrow_the_front_only_with_the_users_switch() {
+    let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    arslan_hands::borrow::stand_in_for_tests(true);
+    let hands = start("borrow");
+    // Color (@e5) is a pop-up: choosing in it opens its menu, which takes the key window.
+    let pick = |borrow: Option<bool>| {
+        let mut args = json!({"app": "Hands Fixture", "ref": "@sfixture0:e5", "value": "Blue"});
+        if let Some(b) = borrow {
+            args["borrow"] = json!(b);
+        }
+        hands.ask("select", args)
+    };
+    assert_eq!(code(&pick(None)), "borrow_off");
+    assert_eq!(code(&pick(Some(false))), "borrow_off");
+    assert!(hands.acted().is_empty(), "nothing ran without the switch");
+    let picked = pick(Some(true));
+    assert_eq!(picked["ok"], true, "{picked}");
+    assert_eq!(picked["mode_used"], "borrow");
+    assert_eq!(picked["borrow"]["front_restored"], true);
+    assert_eq!(arslan_hands::borrow::borrows_for_tests(), 1);
+    // A click stays in the background unless the model asks for the front.
+    let click = hands.ask(
+        "click",
+        json!({"app": "Hands Fixture", "ref": "@sfixture0:e3"}),
+    );
+    assert_eq!(click["mode_used"], "background");
+    assert_eq!(arslan_hands::borrow::borrows_for_tests(), 1);
+    let front = hands.ask(
+        "click",
+        json!({"app": "Hands Fixture", "ref": "@sfixture0:e3", "front": true}),
+    );
+    assert_eq!(code(&front), "borrow_off");
+    let front = hands.ask(
+        "click",
+        json!({"app": "Hands Fixture", "ref": "@sfixture0:e3", "front": true, "borrow": true}),
+    );
+    assert_eq!(front["mode_used"], "borrow", "{front}");
+    assert_eq!(arslan_hands::borrow::borrows_for_tests(), 2);
+    arslan_hands::borrow::stand_in_for_tests(false);
+}

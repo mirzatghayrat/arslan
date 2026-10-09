@@ -24,6 +24,8 @@ static CFMachPortRef tap;
 static pthread_t tap_thread;
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 static bool armed;                                // guarded by lock
+static uint64_t armed_until;                      // guarded by lock: mach time; 0 = no deadline
+static _Atomic int expired_count;                 // holds the tap thread released on its own
 static CGEventRef held[HELD_MAX];                 // guarded by lock
 static int held_count;                            // guarded by lock
 static int held_overflow;                         // guarded by lock: events that did not fit
@@ -81,9 +83,26 @@ static CGEventRef on_event(CGEventTapProxy proxy, CGEventType type, CGEventRef e
     return hold ? NULL : event;
 }
 
+int hands_keyhold_release(void);
+
+// A hold never outlives its borrow: past its deadline the tap's own thread gives the keys back,
+// whatever the rest of Hands is doing (stuck, crashed in a request, killed by Stop).
+static void watchdog(CFRunLoopTimerRef timer, void *info) {
+    pthread_mutex_lock(&lock);
+    bool overdue = armed && armed_until != 0 && mach_absolute_time() > armed_until;
+    pthread_mutex_unlock(&lock);
+    if (overdue) {
+        atomic_fetch_add(&expired_count, 1);
+        hands_keyhold_release();
+    }
+}
+
 static void *run_tap(void *unused) {
     CFRunLoopSourceRef source = CFMachPortCreateRunLoopSource(NULL, tap, 0);
     CFRunLoopAddSource(CFRunLoopGetCurrent(), source, kCFRunLoopCommonModes);
+    CFRunLoopTimerRef timer = CFRunLoopTimerCreate(NULL, CFAbsoluteTimeGetCurrent() + 0.1, 0.1, 0, 0,
+                                                   watchdog, NULL);
+    CFRunLoopAddTimer(CFRunLoopGetCurrent(), timer, kCFRunLoopCommonModes);
     CGEventTapEnable(tap, true);
     CFRunLoopRun();
     return NULL;
@@ -108,10 +127,13 @@ int hands_keyhold_start(void) {
     return 0;
 }
 
-// From now on the user's key events are held.
-void hands_keyhold_arm(void) {
+// From now on the user's key events are held, for at most `max_ms` (then given back regardless).
+void hands_keyhold_arm(double max_ms) {
+    static mach_timebase_info_data_t base;
+    if (base.denom == 0) mach_timebase_info(&base);
     pthread_mutex_lock(&lock);
     armed = true;
+    armed_until = max_ms > 0 ? mach_absolute_time() + (uint64_t)(max_ms * 1e6 * base.denom / base.numer) : 0;
     pthread_mutex_unlock(&lock);
 }
 
@@ -124,6 +146,7 @@ int hands_keyhold_release(void) {
         pthread_mutex_lock(&lock);
         if (held_count == 0) {
             armed = false;
+            armed_until = 0;
             pthread_mutex_unlock(&lock);
             return replayed;
         }
@@ -158,6 +181,7 @@ char *hands_keyhold_probe(void) {
             @"tap": @(tap != NULL), @"armed": @(armed), @"held": @(held_count),
             @"overflow": @(held_overflow), @"seen_total": @(seen_total), @"seen": events,
             @"own_pid": @(own_pid), @"disabled": @(atomic_load(&disabled_count)),
+            @"expired": @(atomic_load(&expired_count)),
             @"secure_input": @(IsSecureEventInputEnabled()),
             @"listen_access": @(CGPreflightListenEventAccess()),
             @"post_access": @(CGPreflightPostEventAccess()),

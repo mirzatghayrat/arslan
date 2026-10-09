@@ -653,12 +653,15 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
             let started = match args.get("do").and_then(Value::as_str) {
                 Some("start") => crate::keyhold::start().err(),
                 Some("arm") => {
-                    crate::keyhold::arm();
+                    let ms = args.get("max_ms").and_then(Value::as_u64).unwrap_or(20_000);
+                    crate::keyhold::arm(Duration::from_millis(ms));
                     None
                 }
                 Some("release") => {
                     let replayed = crate::keyhold::release();
-                    return Ok(json!({"ok": true, "replayed": replayed, "probe": crate::keyhold::probe()}));
+                    return Ok(
+                        json!({"ok": true, "replayed": replayed, "probe": crate::keyhold::probe()}),
+                    );
                 }
                 _ => None,
             };
@@ -745,8 +748,34 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
     } else if acts(op) {
         unchanged_since_look(ctx, &key, &app)?;
     }
+    // §6.3: a pop-up's menu takes the key window while it is open (bake-off: ~370 ms, keys
+    // lost), and `front: true` asks for the app in front: both borrow the front, never without
+    // the user's switch (the backend sends it as `borrow`).
+    let wants_front = acts(op) && args.get("front").and_then(Value::as_bool) == Some(true);
+    let popup = op == "select" && target.as_ref().is_some_and(|t| is_popup(&t.role));
+    if (wants_front || popup) && args.get("borrow").and_then(Value::as_bool) != Some(true) {
+        return Err(refuse(
+            "borrow_off",
+            "this needs the app in front for a moment, and borrowing the front is off",
+        ));
+    }
+    let borrowed = if wants_front || popup {
+        let generation = ctx.generation;
+        Some(crate::borrow::begin(crate::borrow::WAIT_MAX, || {
+            runner::generation() != generation
+        })?)
+    } else {
+        None
+    };
+    if wants_front && borrowed.is_some() && !crate::borrow::standing_in() {
+        if let Ok(pid) = i32::try_from(app.pid) {
+            restore_front(pid); // the app comes forward for this one action
+        }
+    }
     let front_before = if acts(op) { frontmost_pid() } else { None };
-    let (exit, envelope) = run_envelope(ctx, &argv, deadline(op, args))?;
+    let ran = run_envelope(ctx, &argv, deadline(op, args));
+    let gave = borrowed.map(crate::borrow::end);
+    let (exit, envelope) = ran?;
     if op == "press" && keys_had_no_focus(&envelope) {
         // The key went nowhere; the menu item with that shortcut does the same thing without
         // focus (A9's keys_after_restore). Only one enabled item, never a guess.
@@ -757,7 +786,10 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
             return press_item(&app, tier, &item, Some(keys));
         }
     }
-    let focus_restored = front_back(front_before, app.pid);
+    let focus_restored = match gave {
+        Some(gave) => gave.front_restored,
+        None => front_back(front_before, app.pid),
+    };
     let front_after = if acts(op) { frontmost_pid() } else { None };
     Ok(json!({
         "ok": true,
@@ -771,7 +803,14 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
         // One vocabulary for both engines (outcome.rs); only actions have one.
         "outcome": (acts(op) && envelope.get("ok") == Some(&Value::Bool(true)))
             .then(|| crate::outcome::from_agent_desktop(&envelope)),
-        "mode_used": acts(op).then_some("background"),
+        "mode_used": acts(op).then_some(if gave.is_some() { "borrow" } else { "background" }),
+        "borrow": gave.map(|g| json!({
+            "front_restored": g.front_restored,
+            "keys_replayed": g.keys_replayed,
+            "yielded_to_user": g.yielded_to_user,
+            "waited_ms": g.waited_ms,
+            "borrowed_ms": g.borrowed_ms,
+        })),
         // What was in front just before and just after this action (pids), so a
         // check can tell an app Hands acted on taking the focus from the user
         // switching apps between actions.
@@ -950,6 +989,15 @@ fn keys_had_no_focus(envelope: &Value) -> bool {
             .and_then(Value::as_str)
             .is_some_and(|m| m.contains("no verified focused element"))
         && envelope.pointer("/error/details/physical_delivery_started") != Some(&Value::Bool(true))
+}
+
+/// A pop-up button (a closed menu of choices): choosing in it opens its menu, which takes the
+/// key window while open.
+fn is_popup(role: &str) -> bool {
+    matches!(
+        role.to_ascii_lowercase().as_str(),
+        "combobox" | "popupbutton" | "popup" | "menubutton"
+    )
 }
 
 fn acts(op: &str) -> bool {

@@ -9,7 +9,7 @@ mod ffi {
     use std::ffi::c_char;
     extern "C" {
         pub fn hands_keyhold_start() -> i32;
-        pub fn hands_keyhold_arm();
+        pub fn hands_keyhold_arm(max_ms: f64);
         pub fn hands_keyhold_release() -> i32;
         pub fn hands_keyhold_user_key_age_ms() -> f64;
         pub fn hands_keyhold_user_mouse_age_ms() -> f64;
@@ -29,11 +29,12 @@ pub fn start() -> Result<(), &'static str> {
     }
 }
 
-/// Hold the user's key events from now on.
+/// Hold the user's key events from now on, for at most `max`: past it the tap's own thread
+/// gives them back, whatever the rest of Hands is doing.
 #[cfg(target_os = "macos")]
-pub fn arm() {
-    // SAFETY: no arguments.
-    unsafe { ffi::hands_keyhold_arm() }
+pub fn arm(max: std::time::Duration) {
+    // SAFETY: a plain number.
+    unsafe { ffi::hands_keyhold_arm(max.as_secs_f64() * 1000.0) }
 }
 
 /// Replay what was held, in order, and stop holding. How many were replayed.
@@ -83,7 +84,7 @@ pub fn start() -> Result<(), &'static str> {
     Err("the key hold exists only on macOS")
 }
 #[cfg(not(target_os = "macos"))]
-pub fn arm() {}
+pub fn arm(_max: std::time::Duration) {}
 #[cfg(not(target_os = "macos"))]
 pub fn release() -> usize {
     0

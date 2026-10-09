@@ -1,12 +1,13 @@
 //! On macOS, compile Hands' Objective-C files (window screenshots through ScreenCaptureKit,
-//! src/capture.m; the key hold, src/keyhold.m) with the system clang and link them in. No
-//! build crate: Hands' dependencies run with its grants, so there are as few as possible.
+//! src/capture.m; the key hold, src/keyhold.m; the edge glow, src/glow.m) with the system
+//! clang and link them in. No build crate: Hands' dependencies run with its grants, so there
+//! are as few as possible.
 use std::env;
 use std::path::PathBuf;
 use std::process::Command;
 
 fn main() {
-    let sources = ["src/capture.m", "src/keyhold.m"];
+    let sources = ["src/capture.m", "src/keyhold.m", "src/glow.m"];
     for source in sources {
         println!("cargo:rerun-if-changed={source}");
     }
@@ -63,7 +64,14 @@ fn main() {
     println!("cargo:rustc-link-search=native={}", out.display());
     println!("cargo:rustc-link-lib=static=handscapture");
     // Carbon: IsSecureEventInputEnabled (keyhold.m: no borrow while the user types a password).
-    for framework in ["CoreGraphics", "ImageIO", "Foundation", "Carbon"] {
+    for framework in [
+        "CoreGraphics",
+        "ImageIO",
+        "Foundation",
+        "Carbon",
+        "AppKit",
+        "QuartzCore",
+    ] {
         println!("cargo:rustc-link-lib=framework={framework}");
     }
     // Arslan runs on macOS 11; ScreenCaptureKit's screenshots exist from 14. Weak, so Hands
