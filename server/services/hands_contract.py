@@ -55,6 +55,13 @@ REFUSALS = {
                    "ref from that result.",
     "bad_ref": "Refs look like @s1a2b3c4:e7 and come from desktop_look. Look first.",
     "password_field": "Arslan never types into password fields. Ask the user to fill it in themselves.",
+    # Hands v2 §6.3: borrowing the front.
+    "borrow_off": "This needs the app in front for about a second, and the user turned off \u201cborrow the front "
+                  "when needed\u201d. Nothing was done. Find a way that works in the background, or tell the user.",
+    "waiting_for_pause": "The user kept typing, and Arslan never takes the front while they type. Nothing was "
+                         "done. Do other work and try again in a little while.",
+    "secure_input": "The user is typing a password, so Arslan does not take the front now. Nothing was done. "
+                    "Try again in a little while.",
     "target_unreadable": "Could not read the field before typing. Look again and retry once.",
     "stopped_by_user": "The user stopped Arslan's hands. Do not retry; finish and report what was done.",
     "app_not_running": "That app is not running. Open it first with desktop_open {app} (in the background), "

@@ -1339,6 +1339,10 @@ async def _propose_plan_change(args: dict, emit) -> dict:
 # so these can be loose; they exist only to nudge the model toward the right shape.
 from server.orchestrator.turn_plan import PARAMS as _PLAN_PARAMS  # noqa: E402
 
+# Hands v2 §6.3: the one way the model asks for the front.
+_FRONT = ("only after this action, done in the background, did nothing (no_effect) and you looked again: "
+          "Arslan borrows the app's front for about a second, waiting for the user to pause typing")
+
 _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
     "read_file": {"type": "object", "properties": {
         "path": {"type": "string", "minLength": 1,
@@ -1387,7 +1391,8 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
     "desktop_click": {"type": "object", "properties": {
         "app": {"type": "string", "minLength": 1, "maxLength": 120},
         "element": {"type": "string", "maxLength": 300, "description": "what the element is, in words"},
-        "ref": {"type": "string", "maxLength": 200, "description": "the ref from your latest desktop_look"}},
+        "ref": {"type": "string", "maxLength": 200, "description": "the ref from your latest desktop_look"},
+        "front": {"type": "boolean", "description": _FRONT}},
         "required": ["app", "element", "ref"], "additionalProperties": False},
     "desktop_type": {"type": "object", "properties": {
         "app": {"type": "string", "minLength": 1, "maxLength": 120},
@@ -1412,7 +1417,8 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
         "required": ["app", "element", "ref"], "additionalProperties": False},
     "desktop_press": {"type": "object", "properties": {
         "app": {"type": "string", "minLength": 1, "maxLength": 120},
-        "keys": {"type": "string", "minLength": 1, "maxLength": 40, "description": "return, escape, tab, cmd+n…"}},
+        "keys": {"type": "string", "minLength": 1, "maxLength": 40, "description": "return, escape, tab, cmd+n…"},
+        "front": {"type": "boolean", "description": _FRONT}},
         "required": ["app", "keys"], "additionalProperties": False},
     "desktop_open": {"type": "object", "properties": {
         "app": {"type": "string", "minLength": 1, "maxLength": 120, "description": "the app's name, e.g. TextEdit"}},

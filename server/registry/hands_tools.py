@@ -599,6 +599,32 @@ class DesktopLookExecutor:
         return {"ok": True, "external": True, "text": text, "summary": f"look · {app['name']}"[:200]}
 
 
+def _front(args: dict) -> dict:
+    """What Hands needs to borrow the front (§6.3): the user's switch, always; `front` only when the
+    model asked for it (after a background try did nothing)."""
+    from server.services import hands_service
+    extra = {"borrow": hands_service.settings()["borrow"]}
+    if args.get("front") is True:
+        extra["front"] = True
+    return extra
+
+
+def _borrow_note(gave: dict) -> str:
+    """What a borrow did, for the model (the user saw the glow)."""
+    note = f" Arslan borrowed the front for {gave.get('borrowed_ms', 0)} ms"
+    if gave.get("waited_ms"):
+        note += f", after waiting {gave['waited_ms']} ms for the user to pause typing"
+    keys = gave.get("keys_replayed") or 0
+    if keys:
+        note += f"; {keys} key events the user typed meanwhile were held and given back"
+    note += "."
+    if gave.get("yielded_to_user"):
+        note += " The user moved the mouse while it ran: look before doing more."
+    if gave.get("front_restored") is False:
+        note += " The front could not be given back to the user's app: tell the user."
+    return note
+
+
 # Hands v2 §5.7: in a chat reply (not background work) at most this many actions, all in one app.
 INLINE_ACTIONS = 5
 _inline: dict[tuple[str, str], tuple[int, str]] = {}      # (conversation, turn) → (actions, app)
@@ -723,6 +749,9 @@ class _DesktopAct:
         else:
             text = (f"Sent, not confirmed: {verb} “{label}” in {app.get('name')}. Arslan could not read the "
                     "change back, so look (desktop_look) before the next step, and do not simply repeat it.")
+        gave = (result.reply or {}).get("borrow") if (result.reply or {}).get("mode_used") == "borrow" else None
+        if isinstance(gave, dict):
+            text += _borrow_note(gave)
         routed = (result.reply or {}).get("menu_item") if (result.reply or {}).get("route") == "menu_item" else None
         if self.op == "press" and routed:
             text += (f" (The app had nothing focused, so it went to the menu item with that shortcut: "
@@ -738,7 +767,8 @@ class _DesktopAct:
 
     async def run(self, args: dict, app: dict):
         _, job_id = _conversation_and_job()
-        return await _hands(self.op, {"app": app["name"], "ref": str(args.get("ref") or "")}, job_id=job_id)
+        return await _hands(self.op, {"app": app["name"], "ref": str(args.get("ref") or ""), **_front(args)},
+                            job_id=job_id)
 
 
 class DesktopClickExecutor(_DesktopAct):
@@ -807,7 +837,8 @@ class DesktopSelectExecutor(_DesktopAct):
     async def run(self, args, app):
         _, job_id = _conversation_and_job()
         return await _hands("select", {"app": app["name"], "ref": str(args.get("ref") or ""),
-                                       "value": str(args.get("value") or "")[:200]}, job_id=job_id)
+                                       "value": str(args.get("value") or "")[:200], **_front(args)},
+                            job_id=job_id)
 
 
 class DesktopScrollExecutor(_DesktopAct):
@@ -861,8 +892,8 @@ class DesktopPressExecutor(_DesktopAct):
 
     async def run(self, args, app):
         _, job_id = _conversation_and_job()
-        return await _hands("press", {"app": app["name"], "keys": str(args.get("keys") or "").strip().lower()},
-                            job_id=job_id)
+        return await _hands("press", {"app": app["name"], "keys": str(args.get("keys") or "").strip().lower(),
+                                      **_front(args)}, job_id=job_id)
 
 
 # Hands v2 §5.6: several steps on one app in one call, then one look.

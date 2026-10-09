@@ -55,14 +55,19 @@ def settings() -> dict:
         "cursor": bool(raw.get("cursor", True)) if isinstance(raw, dict) else True,
         # Hands v2: a screenshot of the window with each look (spec §4.2); on unless turned off.
         "screenshots": bool(raw.get("screenshots", True)) if isinstance(raw, dict) else True,
+        # Hands v2 §6.3: borrow the front for a moment when an action needs it (on by default).
+        "borrow": bool(raw.get("borrow", True)) if isinstance(raw, dict) else True,
         "never": [str(n)[:120] for n in never if isinstance(n, str) and n.strip()][:MAX_NEVER]
                  if isinstance(never, list) else [],
     }
 
 
 def update_settings(*, enabled: bool | None = None, cursor: bool | None = None,
-                    never: list[str] | None = None, screenshots: bool | None = None) -> dict:
+                    never: list[str] | None = None, screenshots: bool | None = None,
+                    borrow: bool | None = None) -> dict:
     current = settings()
+    if borrow is not None:
+        current["borrow"] = bool(borrow)
     if enabled is not None:
         current["enabled"] = bool(enabled)
     if screenshots is not None:

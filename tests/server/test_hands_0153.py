@@ -125,9 +125,11 @@ def test_risky_keys_and_return_where_it_sends():
 
 
 def test_settings_file_is_private_and_the_never_list_deduplicated(tmp_path):
-    assert hands_service.settings() == {"enabled": True, "cursor": True, "screenshots": True, "never": []}
-    hands_service.update_settings(never=["Notes", "notes", "  Mail  ", ""], cursor=False, screenshots=False)
-    assert hands_service.settings() == {"enabled": True, "cursor": False, "screenshots": False,
+    assert hands_service.settings() == {"enabled": True, "cursor": True, "screenshots": True, "borrow": True,
+                                        "never": []}
+    hands_service.update_settings(never=["Notes", "notes", "  Mail  ", ""], cursor=False, screenshots=False,
+                                  borrow=False)
+    assert hands_service.settings() == {"enabled": True, "cursor": False, "screenshots": False, "borrow": False,
                                         "never": ["Notes", "Mail"]}
     folder = tmp_path / "hands"
     assert stat.S_IMODE(os.stat(folder).st_mode) == 0o700
