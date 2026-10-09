@@ -37,6 +37,8 @@ import ConversationControls from './components/companion/ConversationControls';
 import TaskPanel from './components/companion/TaskPanel';
 import LegacyExperts from './components/companion/LegacyExperts';
 import { companionApi, type Project } from './api/companion';
+import { useActivityStore } from './stores/activityStore';
+import { OPEN_ACTIVITY_RUN_EVENT } from './components/reply/ReplyFooter';
 import FirstRunWizard from './components/FirstRunWizard';
 import UpdatePill from './components/UpdatePill';
 import WorkDock from './components/WorkDock';
@@ -461,6 +463,17 @@ export default function App() {
       .catch(() => { /* offline: keep the last list */ });
   }, [activeSection]);
   const [openProjectId, setOpenProjectId] = useState<string | null>(null);
+  // 0.1.58 §1: a reply's ⋯ → "在「动态」里看这一轮" opens Activity with that run in its drawer.
+  useEffect(() => {
+    const open = (e: Event) => {
+      const runId = (e as CustomEvent<number>).detail;
+      if (typeof runId !== 'number') return;
+      useActivityStore.getState().setOpenRun(runId);
+      setActiveSection('activity');
+    };
+    window.addEventListener(OPEN_ACTIVITY_RUN_EVENT, open);
+    return () => window.removeEventListener(OPEN_ACTIVITY_RUN_EVENT, open);
+  }, []);
 
   /** 移到项目… / 移出项目: the conversation's context carries the project (refused while it runs). */
   const handleMoveToProject = async (threadId: string, projectId: string | null) => {

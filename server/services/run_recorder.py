@@ -25,6 +25,7 @@ from server.db.models import ArslanMessage, Run, RunStep
 from server.services import memory_snapshot_guard
 
 RUN_RAW_CAP = 2000   # per-tool args_full / result_raw truncation cap
+NARRATION_CAP = 800  # 0.1.58: what Arslan said before one tool call, as kept with the step
 RUN_ERR_CAP = 2000   # error_text truncation cap
 CHECKPOINT_INTERVAL = 0.5
 CHECKPOINT_CHARS = 262_144
@@ -193,6 +194,17 @@ class RunRecorder:
         # START event so ties on started_at break by the order events streamed.
         pending_tool: tuple[datetime, dict, int] | None = None
         pending_esc: tuple[datetime, dict, int] | None = None
+        # 0.1.58 §1: what Arslan said before a tool call (the tool loop's `note` frames) rides
+        # on that call's step, so the folded process can be rebuilt after a reload without a
+        # new step kind for every consumer of RunStep to learn.
+        pending_notes: list[str] = []
+
+        def narration() -> dict:
+            if not pending_notes:
+                return {}
+            text = "\n\n".join(pending_notes)[:NARRATION_CAP]
+            pending_notes.clear()
+            return {"narration": text}
 
         def add(kind, ref, detail, start, end, order, duration_ms=None):
             ms = duration_ms
@@ -211,8 +223,12 @@ class RunRecorder:
             elif t == "stream_start" and ev.get("source") in {"spawn", "arslan"}:
                 dispatch_start = ts
                 dispatch_start_order = idx
+            elif t == "note":
+                text = str(ev.get("text") or "").strip()
+                if text:
+                    pending_notes.append(text)
             elif t == "tool_call":
-                pending_tool = (ts, ev, idx)
+                pending_tool = (ts, {**ev, **narration()}, idx)
             elif t == "tool_result" and pending_tool is not None:
                 call_ts, call_ev, call_idx = pending_tool
                 detail = {"args_summary": call_ev.get("args_summary", ""), "summary": ev.get("summary", "")}
@@ -220,6 +236,8 @@ class RunRecorder:
                     detail["target"] = call_ev["target"]
                 if ev.get("review"):
                     detail["review"] = ev["review"]        # the phone's quick review (tool_review)
+                if call_ev.get("narration"):
+                    detail["narration"] = call_ev["narration"]
                 add("tool_call", {"tool": ev.get("tool"), "ok": bool(ev.get("ok"))}, detail, call_ts, ts, call_idx)
                 pending_tool = None
             elif t == "escalation":
@@ -244,7 +262,8 @@ class RunRecorder:
             last_ts = self._events[-1][0] if self._events else call_ts
             add("tool_call",
                 {"tool": call_ev.get("tool"), "ok": False},
-                {"args_summary": call_ev.get("args_summary", ""), "summary": ""},
+                {"args_summary": call_ev.get("args_summary", ""), "summary": "",
+                 **({"narration": call_ev["narration"]} if call_ev.get("narration") else {})},
                 call_ts, last_ts, call_idx)
 
         if pending_esc is not None:

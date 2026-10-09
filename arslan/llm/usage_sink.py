@@ -26,6 +26,13 @@ def report(tokens: int, *, charged: int | None = None) -> None:
         bucket.append(int(tokens))
 
 
+def calls() -> int:
+    """How many model calls reported into the active bucket (0.1.58: the reply's usage
+    popover says "调用模型 N 次" — why a short answer can carry a large input total)."""
+    bucket = _sink.get()
+    return len(bucket) if bucket else 0
+
+
 def total() -> int:
     """Sum of the active bucket, or 0 when no context is active."""
     bucket = _sink.get()

@@ -1,7 +1,7 @@
 import { useAuthStore } from "../stores/authStore";
 import { fetchUpdateStatus } from "../lib/updater";
 import type { CryptoHealth } from "../lib/cryptoHealth";
-import type { PhoneCode, PhoneStatus,
+import type { RunProcessOut, PhoneCode, PhoneStatus,
   ArtifactReview,
   AccessTokenInfo,
   AnomalyDto,
@@ -499,6 +499,8 @@ export const api = {
     if (o.model) qs.set("model", o.model);
     return request<RunListItem[]>(`/runs?${qs.toString()}`);
   },
+  /** 0.1.58 §1: what a reply did, in plain data (the list under its footer row). */
+  runProcess: (runId: number) => request<RunProcessOut>(`/runs/${runId}/process`),
   getRunsSummary: () => request<RunSummary>("/runs/summary"),
   /** Per-spawn RED aggregate + fleet rollup, worst-first (diagnosis dashboard). */
   getRunCatalog: (range: string) => request<RunCatalogDto>(`/runs/catalog?range=${range}`),
