@@ -313,6 +313,24 @@ def _hidden_case(name: str, hide: str, show: str) -> Callable[[Ctx], Result]:
     return case
 
 
+def menu_by_path(ctx: Ctx) -> Result:
+    """Hands v2 §5.5: a menu item without a shortcut, pressed in the background by its path -
+    once, with the user's front app, key window, pointer and window order untouched."""
+    if getattr(ctx.engine, "menu", None) is None:
+        return Result("menu_by_path", ctx.engine.name, "skipped", note="engine has no menu op")
+    ctx.fixture.command("reset")
+    _, look_ms = ctx.engine.look()
+    before = len([e for e in ctx.fixture.events("menu") if e.get("value") == "Mark"])
+    act, violations = observed(ctx, lambda: ctx.engine.menu(["Fixture", "Mark"]))
+    deadline = time.monotonic() + 1.5
+    count = before
+    while time.monotonic() < deadline and count == before:
+        count = len([e for e in ctx.fixture.events("menu") if e.get("value") == "Mark"])
+        time.sleep(0.05)
+    violations += oracles.once(before, count).violations if count != before else []
+    return _judged("menu_by_path", ctx, act, violations, count == before + 1, look_ms)
+
+
 def keys_after_restore(ctx: Ctx) -> Result:
     """A window restored from the Dock in the background leaves its app with no focused
     element. A menu shortcut must still run its menu item, once, without activating the app
@@ -351,4 +369,5 @@ CASES: dict[str, Callable[[Ctx], Result]] = {
     "minimized_window": minimized_window,
     "hidden_app": hidden_app,
     "keys_after_restore": keys_after_restore,
+    "menu_by_path": menu_by_path,
 }

@@ -9,9 +9,11 @@ pub mod cua_policy;
 pub mod integrity;
 #[cfg(target_os = "macos")]
 pub mod macos;
+pub mod menus;
 pub mod outcome;
 pub mod paths;
 pub mod policy;
 pub mod refmap;
 pub mod runner;
 pub mod server;
+pub mod structure;

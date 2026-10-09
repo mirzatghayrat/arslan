@@ -28,6 +28,10 @@ if argv[:1] == ["get"] and "--property=states" in argv:
          "value": ["secure"] if argv[-1].endswith(":e2") else []}})
 if argv[:1] == ["wait"] and "--text=slow" in argv:
     time.sleep(30)
+if argv[:1] == ["press"] and (here / "nofocus").exists():
+    out({"version": "2.4", "ok": False, "command": "press", "error": {"code": "ACTION_FAILED",
+         "message": "Application has no verified focused element for keyboard delivery",
+         "details": {"physical_delivery_started": False}}}, 1)
 if argv[:2] == ["session", "start"]:
     out({"version": "2.4", "ok": True, "command": "session", "data": {"session_id": "run-1-2-0"}})
 if argv[:1] in (["session"], ["cursor-overlay"]):
@@ -610,4 +614,183 @@ fn a_screenshot_does_not_wait_behind_a_command_in_flight() {
     );
     hands.ask("stop", json!({}));
     slow.join().unwrap();
+}
+
+// The structural-change check, with accessibility stood in for: how many sheets the fixture's
+// window has right now.
+static SHEETS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+fn fixture_structure(pid: i32) -> Option<arslan_hands::structure::Structure> {
+    (pid == 100).then(|| arslan_hands::structure::Structure {
+        windows: vec![arslan_hands::structure::Window {
+            id: 7,
+            subrole: "AXStandardWindow".into(),
+            title: "Hands Fixture".into(),
+            sheets: SHEETS.load(std::sync::atomic::Ordering::SeqCst),
+        }],
+        focused: Some(7),
+        menu_open: false,
+    })
+}
+
+#[test]
+fn an_action_on_a_look_older_than_a_new_sheet_is_refused_and_nothing_runs() {
+    let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    SHEETS.store(0, std::sync::atomic::Ordering::SeqCst);
+    arslan_hands::structure::set_probe_for_tests(Some(fixture_structure));
+    let hands = start("struct");
+    let click = || {
+        hands.ask(
+            "click",
+            json!({"app": "Hands Fixture", "ref": "@sfixture0:e3"}),
+        )
+    };
+    assert_eq!(
+        hands.ask("snapshot", json!({"app": "Hands Fixture"}))["ok"],
+        true
+    );
+    assert_eq!(click()["ok"], true, "an action on a current look runs");
+    assert_eq!(
+        click()["ok"],
+        true,
+        "values are not structure: a second action on one look runs"
+    );
+    SHEETS.store(1, std::sync::atomic::Ordering::SeqCst); // a sheet opens after the look
+    let refused = click();
+    assert_eq!(code(&refused), "changed", "{refused}");
+    assert!(refused["refused"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("a sheet or popover opened"));
+    assert_eq!(
+        hands.acted().len(),
+        2,
+        "the refused click never reached agent-desktop"
+    );
+    assert_eq!(
+        hands.ask("snapshot", json!({"app": "Hands Fixture"}))["ok"],
+        true
+    );
+    assert_eq!(click()["ok"], true, "a new look makes it current again");
+    arslan_hands::structure::set_probe_for_tests(None);
+}
+
+// Menus, with accessibility stood in for: the fixture's menu bar, and what got pressed.
+static PRESSED: Mutex<Vec<Vec<String>>> = Mutex::new(Vec::new());
+
+fn fixture_menus(pid: i32) -> Option<Vec<arslan_hands::menus::MenuItem>> {
+    let item = |path: &[&str], enabled: bool, shortcut: Option<(&str, i64)>| {
+        arslan_hands::menus::MenuItem {
+            path: path.iter().map(|s| s.to_string()).collect(),
+            enabled,
+            shortcut: shortcut.map(|(c, m)| (c.to_string(), m)),
+        }
+    };
+    (pid == 100).then(|| {
+        vec![
+            item(&["Format", "Font", "Bold"], true, Some(("b", 0))),
+            item(&["File", "Export"], false, None),
+        ]
+    })
+}
+
+fn press_fixture_menu(pid: i32, path: &[String]) -> Option<bool> {
+    PRESSED.lock().unwrap().push(path.to_vec());
+    Some(pid == 100)
+}
+
+fn with_menus() {
+    PRESSED.lock().unwrap().clear();
+    arslan_hands::menus::set_stand_in_for_tests(Some((fixture_menus, press_fixture_menu)));
+}
+
+#[test]
+fn a_menu_item_is_pressed_by_its_path_under_the_action_rules() {
+    let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    with_menus();
+    let hands = start("menu");
+    let bold = hands.ask(
+        "menu",
+        json!({"app": "Hands Fixture", "path": ["format", "Font", "Bold"]}),
+    );
+    assert_eq!(bold["ok"], true, "{bold}");
+    assert_eq!(bold["route"], "menu_item");
+    assert_eq!(bold["outcome"], "sent_unconfirmed");
+    assert_eq!(
+        *PRESSED.lock().unwrap(),
+        vec![vec!["Format".to_string(), "Font".into(), "Bold".into()]]
+    );
+    let missing = hands.ask(
+        "menu",
+        json!({"app": "Hands Fixture", "path": ["Format", "Font", "Italic"]}),
+    );
+    assert_eq!(code(&missing), "menu_not_found");
+    assert!(missing["refused"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("Bold"));
+    assert_eq!(
+        code(&hands.ask(
+            "menu",
+            json!({"app": "Hands Fixture", "path": ["File", "Export"]})
+        )),
+        "menu_disabled"
+    );
+    assert_eq!(
+        code(&hands.ask("menu", json!({"app": "Hands Fixture", "path": ["Bold"]}))),
+        "bad_request"
+    );
+    assert_eq!(
+        code(&hands.ask(
+            "menu",
+            json!({"app": "Safari", "path": ["File", "New Window"]})
+        )),
+        "app_look_only"
+    );
+    assert_eq!(
+        code(&hands.ask(
+            "menu",
+            json!({"app": "Terminal", "path": ["Shell", "New Window"]})
+        )),
+        "app_click_only"
+    );
+    assert_eq!(
+        code(&hands.ask(
+            "menu",
+            json!({"app": "Keychain Access", "path": ["File", "New"]})
+        )),
+        "app_denied"
+    );
+    assert_eq!(
+        PRESSED.lock().unwrap().len(),
+        1,
+        "nothing refused was pressed"
+    );
+    assert!(
+        hands.acted().is_empty(),
+        "menus never go through agent-desktop"
+    );
+    arslan_hands::menus::set_stand_in_for_tests(None);
+}
+
+#[test]
+fn a_key_combo_with_nothing_focused_presses_its_menu_item_instead() {
+    let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    with_menus();
+    let hands = start("nofocus");
+    std::fs::write(hands.dir.join("bin/nofocus"), "").unwrap();
+    let bold = hands.ask("press", json!({"app": "Hands Fixture", "keys": "cmd+b"}));
+    assert_eq!(bold["ok"], true, "{bold}");
+    assert_eq!(bold["route"], "menu_item");
+    assert_eq!(bold["menu_item"], json!(["Format", "Font", "Bold"]));
+    assert_eq!(bold["keys"], "cmd+b");
+    // No item has this combo: the refusal stands as agent-desktop said it, nothing pressed.
+    let other = hands.ask(
+        "press",
+        json!({"app": "Hands Fixture", "keys": "cmd+shift+z"}),
+    );
+    assert!(other.get("route").is_none(), "{other}");
+    assert_eq!(other["envelope"]["error"]["code"], "ACTION_FAILED");
+    assert_eq!(PRESSED.lock().unwrap().len(), 1);
+    arslan_hands::menus::set_stand_in_for_tests(None);
 }
