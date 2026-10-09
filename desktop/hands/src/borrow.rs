@@ -24,9 +24,45 @@ use std::time::{Duration, Instant};
 static STAND_IN: AtomicBool = AtomicBool::new(false);
 static BORROWS: AtomicUsize = AtomicUsize::new(0);
 
+/// What a borrow is doing right now, for the island: 0 none, 1 waiting for the user to pause,
+/// 2 borrowing. And the user's answers from the island while it waits.
+static PHASE: AtomicUsize = AtomicUsize::new(0);
+static GO_NOW: AtomicBool = AtomicBool::new(false);
+static SKIP: AtomicBool = AtomicBool::new(false);
+
+/// The island's "now" (borrow without waiting for the pause) or "not this time" (give up).
+pub fn answer(now: bool) -> bool {
+    if PHASE.load(Ordering::SeqCst) != 1 {
+        return false;
+    }
+    if now {
+        GO_NOW.store(true, Ordering::SeqCst);
+    } else {
+        SKIP.store(true, Ordering::SeqCst);
+    }
+    true
+}
+
+/// For the island: "waiting" / "borrowing" / none.
+pub fn phase() -> Option<&'static str> {
+    match PHASE.load(Ordering::SeqCst) {
+        1 => Some("waiting"),
+        2 => Some("borrowing"),
+        _ => None,
+    }
+}
+
+static TYPING: AtomicBool = AtomicBool::new(false);
+
 pub fn stand_in_for_tests(on: bool) {
     STAND_IN.store(on, Ordering::SeqCst);
     BORROWS.store(0, Ordering::SeqCst);
+    TYPING.store(false, Ordering::SeqCst);
+}
+
+/// In tests: the user is (or stops) typing, so a borrow waits for the pause.
+pub fn typing_for_tests(typing: bool) {
+    TYPING.store(typing, Ordering::SeqCst);
 }
 
 pub fn standing_in() -> bool {
@@ -66,29 +102,36 @@ pub struct GaveBack {
 
 /// Steps 1-5. `stopped` says whether the user pressed Stop meanwhile.
 pub fn begin(wait_max: Duration, stopped: impl Fn() -> bool) -> Result<Borrowed, Refusal> {
-    if STAND_IN.load(Ordering::SeqCst) {
-        BORROWS.fetch_add(1, Ordering::SeqCst);
-        return Ok(Borrowed {
-            front: None,
-            pointer: None,
-            started: Instant::now(),
-            held: false,
-            waited: Duration::ZERO,
-        });
-    }
-    let held = crate::keyhold::start().is_ok();
+    let standing_in = STAND_IN.load(Ordering::SeqCst);
+    let held = !standing_in && crate::keyhold::start().is_ok();
     let asked = Instant::now();
+    GO_NOW.store(false, Ordering::SeqCst);
+    SKIP.store(false, Ordering::SeqCst);
+    PHASE.store(1, Ordering::SeqCst);
     loop {
         if stopped() {
+            PHASE.store(0, Ordering::SeqCst);
             return Err(refuse("stopped_by_user", "stopped before the borrow began"));
         }
-        let secure = crate::keyhold::secure_input();
-        let typing =
-            crate::keyhold::user_key_age_ms().is_some_and(|ms| ms < PAUSE.as_millis() as f64);
-        if !secure && !typing {
+        if SKIP.swap(false, Ordering::SeqCst) {
+            PHASE.store(0, Ordering::SeqCst);
+            return Err(refuse(
+                "borrow_declined",
+                "the user said not this time; nothing was done",
+            ));
+        }
+        let secure = !standing_in && crate::keyhold::secure_input();
+        let typing = if standing_in {
+            TYPING.load(Ordering::SeqCst)
+        } else {
+            crate::keyhold::user_key_age_ms().is_some_and(|ms| ms < PAUSE.as_millis() as f64)
+        };
+        // "Now" from the user skips the pause - never secure input (a password is being typed).
+        if !secure && (!typing || GO_NOW.swap(false, Ordering::SeqCst)) {
             break;
         }
         if asked.elapsed() >= wait_max {
+            PHASE.store(0, Ordering::SeqCst);
             return Err(if secure {
                 refuse(
                     "secure_input",
@@ -104,6 +147,17 @@ pub fn begin(wait_max: Duration, stopped: impl Fn() -> bool) -> Result<Borrowed,
         std::thread::sleep(Duration::from_millis(50));
     }
     let waited = asked.elapsed();
+    PHASE.store(2, Ordering::SeqCst);
+    if standing_in {
+        BORROWS.fetch_add(1, Ordering::SeqCst);
+        return Ok(Borrowed {
+            front: None,
+            pointer: None,
+            started: Instant::now(),
+            held: false,
+            waited,
+        });
+    }
     crate::glow::show();
     if held {
         crate::keyhold::arm(HOLD_MAX);
@@ -121,11 +175,12 @@ pub fn begin(wait_max: Duration, stopped: impl Fn() -> bool) -> Result<Borrowed,
 pub fn end(borrowed: Borrowed) -> GaveBack {
     let elapsed = borrowed.started.elapsed();
     if STAND_IN.load(Ordering::SeqCst) {
+        PHASE.store(0, Ordering::SeqCst);
         return GaveBack {
             front_restored: true,
             keys_replayed: 0,
             yielded_to_user: false,
-            waited_ms: 0,
+            waited_ms: borrowed.waited.as_millis() as u64,
             borrowed_ms: elapsed.as_millis() as u64,
         };
     }
@@ -156,6 +211,7 @@ pub fn end(borrowed: Borrowed) -> GaveBack {
         0
     };
     crate::glow::hide();
+    PHASE.store(0, Ordering::SeqCst);
     GaveBack {
         front_restored,
         keys_replayed,

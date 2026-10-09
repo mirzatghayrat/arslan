@@ -625,6 +625,15 @@ fn dispatch(state: &State, req: &Request) -> Value {
             .unwrap_or_else(refused),
         "takeover_end" => json!({"ok": true, "ended": crate::takeover::end()}),
         "takeover_status" => json!({"ok": true, "takeover": crate::takeover::status()}),
+        // For the island (polled about once a second): what a borrow or takeover is doing.
+        "activity_status" => json!({
+            "ok": true,
+            "borrow": crate::borrow::phase(),
+            "takeover": crate::takeover::status(),
+        }),
+        // The island's answer while a borrow waits for the user's pause.
+        "borrow_now" => json!({"ok": crate::borrow::answer(true)}),
+        "borrow_skip" => json!({"ok": crate::borrow::answer(false)}),
         // A screenshot runs beside an agent-desktop command, not after it (spec §15 A8: a look's
         // tree and its screenshot are asked for together). Stop still applies.
         "capture_window" => {

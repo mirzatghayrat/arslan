@@ -942,3 +942,43 @@ fn what_runs_when_the_user_touches_is_ended_and_said_paused_not_stopped() {
     hands.ask("takeover_end", json!({}));
     arslan_hands::takeover::stand_in_for_tests(false);
 }
+
+#[test]
+fn a_waiting_borrow_shows_on_the_island_and_takes_its_answer() {
+    let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    arslan_hands::borrow::stand_in_for_tests(true);
+    let hands = start("waiting");
+    let pick = || {
+        hands.ask(
+            "select",
+            json!({"app": "Hands Fixture", "ref": "@sfixture0:e5", "value": "Blue", "borrow": true}),
+        )
+    };
+    let phase = || hands.ask("activity_status", json!({}))["borrow"].clone();
+    assert_eq!(phase(), Value::Null);
+    assert_eq!(
+        hands.ask("borrow_now", json!({}))["ok"],
+        false,
+        "nothing is waiting"
+    );
+    // The user is typing: the borrow waits, and the island says so; "now" starts it.
+    arslan_hands::borrow::typing_for_tests(true);
+    std::thread::scope(|scope| {
+        let waiting = scope.spawn(pick);
+        assert!(wait_until(|| phase() == "waiting"));
+        assert_eq!(hands.ask("borrow_now", json!({}))["ok"], true);
+        let picked = waiting.join().unwrap();
+        assert_eq!(picked["mode_used"], "borrow", "{picked}");
+        assert!(picked["borrow"]["waited_ms"].as_u64().unwrap() > 0);
+    });
+    assert_eq!(phase(), Value::Null);
+    // "Not this time": nothing is done.
+    std::thread::scope(|scope| {
+        let waiting = scope.spawn(pick);
+        assert!(wait_until(|| phase() == "waiting"));
+        assert_eq!(hands.ask("borrow_skip", json!({}))["ok"], true);
+        assert_eq!(code(&waiting.join().unwrap()), "borrow_declined");
+    });
+    arslan_hands::borrow::typing_for_tests(false);
+    arslan_hands::borrow::stand_in_for_tests(false);
+}
