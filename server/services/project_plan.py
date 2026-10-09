@@ -32,9 +32,14 @@ ACTIVITY_EVERY = timedelta(hours=1)
 class PlanError(Exception):
     """A refused plan operation; `code` is what the API returns."""
 
-    def __init__(self, code: str):
+    def __init__(self, code: str, detail: dict | None = None):
         super().__init__(code)
         self.code = code
+        self.detail = detail or {}
+
+
+#: 0.1.58 §5: what to do with a level's unfinished checkpoints when it is cleared early.
+LEFTOVER = ("move", "drop")
 
 
 def _id() -> str:
@@ -330,7 +335,12 @@ async def propose_advance(db, project: Project, *, evidence: dict) -> ProjectEve
                "next": nxt.name if nxt else None, "evidence": evidence,
                "moves_column": bool(nxt) and _column_band(nxt.band) != _column_band(current.band),
                "last": nxt is None}
-    if nxt is not None and await auto_advance_enabled(db):
+    open_cps = await open_checkpoints(db, current)
+    if open_cps:
+        payload["open"] = [{"id": cp.id, "text": cp.text} for cp in open_cps]
+    # 0.1.58 §5: auto-advance only clears a level with nothing left open; a condition read
+    # from what you said, with checkpoints still open, stays a proposal that lists them.
+    if nxt is not None and not open_cps and await auto_advance_enabled(db):
         return await advance(db, project, actor="arslan", evidence=evidence)
     return await _event(db, project.id, "proposal", "arslan", payload)
 
@@ -339,24 +349,61 @@ def _column_band(band: str) -> str:
     return "shaping" if band == "shaping" else "doing"
 
 
+async def open_checkpoints(db, level: ProjectLevel) -> list[ProjectCheckpoint]:
+    return [cp for cp in (await checkpoints_of(db, [level.id])).get(level.id, []) if cp.state != "done"]
+
+
 async def advance(db, project: Project, *, actor: str, evidence: dict | None = None,
-                  proposal: ProjectEvent | None = None) -> ProjectEvent:
+                  proposal: ProjectEvent | None = None, leftover: str | None = None,
+                  note: str | None = None) -> ProjectEvent:
+    """Clear the current level. 0.1.58 §5: a level with unfinished checkpoints is never
+    cleared silently — the caller says what happens to them (`leftover`): "move" puts them
+    first in the next level, "drop" deletes them. Either is recorded on the event so undo
+    restores exactly; without a choice it is refused with the list (open_checkpoints)."""
     current, nxt = await _current_and_next(db, project)
     if current is None:
         raise PlanError("no_current_level")
+    open_cps = await open_checkpoints(db, current)
+    moved: list[dict] = []
+    dropped: list[dict] = []
+    if open_cps:
+        if leftover not in LEFTOVER:
+            raise PlanError("open_checkpoints", {"open": [{"id": cp.id, "text": cp.text} for cp in open_cps]})
+        if leftover == "move":
+            if nxt is None:
+                raise PlanError("no_next_level")
+            k = len(open_cps)
+            for cp in (await checkpoints_of(db, [nxt.id])).get(nxt.id, []):
+                cp.position += k
+            for i, cp in enumerate(open_cps):
+                moved.append({"id": cp.id, "position": cp.position})
+                cp.level_id, cp.position = nxt.id, i
+        else:
+            for cp in open_cps:
+                dropped.append({"id": cp.id, "position": cp.position, "text": cp.text, "expects": cp.expects,
+                                "progress": cp.progress, "evidence": cp.evidence})
+                await db.delete(cp)
+    note = " ".join((note or "").split())[:200]
+    if note and evidence is None:
+        evidence = {"kind": "user_note", "text": note}
     now = datetime.utcnow()
     current.state, current.cleared_at = "cleared", now
     if nxt is not None:
         nxt.state, nxt.started_at = "current", now
         await _level_started(db, project, nxt)
-    event = await _event(db, project.id, "advance", actor, {
-        "level_id": current.id, "level": current.name, "next_level_id": nxt.id if nxt else None,
-        "next": nxt.name if nxt else None, "evidence": evidence, "proposal_id": proposal.id if proposal else None})
+    payload = {"level_id": current.id, "level": current.name, "next_level_id": nxt.id if nxt else None,
+               "next": nxt.name if nxt else None, "evidence": evidence, "proposal_id": proposal.id if proposal else None}
+    if moved:
+        payload["moved"] = moved
+    if dropped:
+        payload["dropped"] = dropped
+    event = await _event(db, project.id, "advance", actor, payload)
     await _bump_plan(db, project)
     return event
 
 
-async def decide(db, project: Project, proposal_id: str, accept: bool, *, note: str | None = None) -> ProjectEvent | None:
+async def decide(db, project: Project, proposal_id: str, accept: bool, *, note: str | None = None,
+                 leftover: str | None = None) -> ProjectEvent | None:
     proposal = await db.get(ProjectEvent, proposal_id)
     if proposal is None or proposal.project_id != project.id or proposal.kind != "proposal":
         raise PlanError("proposal_not_found")
@@ -369,6 +416,10 @@ async def decide(db, project: Project, proposal_id: str, accept: bool, *, note: 
         proposal.outcome = "stale"
         await _bump_plan(db, project)
         return None
+    if accept and leftover not in LEFTOVER and not proposal.payload.get("last") \
+            and (open_cps := await open_checkpoints(db, current)):
+        # 0.1.58 §5: accepting Arslan's proposal asks the same question as clearing by hand.
+        raise PlanError("open_checkpoints", {"open": [{"id": cp.id, "text": cp.text} for cp in open_cps]})
     proposal.outcome = "accepted" if accept else "declined"
     if not accept:
         note = " ".join((note or "").split())[:200]
@@ -382,7 +433,8 @@ async def decide(db, project: Project, proposal_id: str, accept: bool, *, note: 
     if proposal.payload.get("last"):
         await _bump_plan(db, project)          # "the last level's condition is met": Done stays the user's
         return None
-    return await advance(db, project, actor="user", evidence=proposal.payload.get("evidence"), proposal=proposal)
+    return await advance(db, project, actor="user", evidence=proposal.payload.get("evidence"), proposal=proposal,
+                         leftover=leftover)
 
 
 async def add_note(db, project: Project, proposal_id: str, note: str) -> None:
@@ -421,6 +473,21 @@ async def undo(db, project: Project, event_id: str) -> None:
             cleared.state, cleared.cleared_at = "current", None
         if nxt is not None:
             nxt.state, nxt.started_at = "todo", None
+        # 0.1.58 §5: unfinished checkpoints come back exactly as they were.
+        moved = event.payload.get("moved") or []
+        if moved and cleared is not None and nxt is not None:
+            back = {m["id"]: m["position"] for m in moved}
+            for cp in (await checkpoints_of(db, [nxt.id])).get(nxt.id, []):
+                if cp.id in back:
+                    cp.level_id, cp.position = cleared.id, back[cp.id]
+                else:
+                    cp.position -= len(moved)
+        if cleared is not None:
+            for d in event.payload.get("dropped") or []:
+                if await db.get(ProjectCheckpoint, d["id"]) is None:
+                    db.add(ProjectCheckpoint(id=d["id"], level_id=cleared.id, position=d["position"], text=d["text"],
+                                             expects=d.get("expects"), progress=d.get("progress"),
+                                             evidence=d.get("evidence"), state="todo"))
         proposal_id = event.payload.get("proposal_id")
         if proposal_id:
             proposal = await db.get(ProjectEvent, proposal_id)

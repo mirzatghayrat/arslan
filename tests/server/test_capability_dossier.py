@@ -307,6 +307,6 @@ async def test_a_level_becoming_current_starts_the_look(execution_db, monkeypatc
         await project_plan.put_plan(db, project, 0, [{"name": "One", "band": "shaping", "checkpoints": [{"text": "a"}]},
                                                      {"name": "Two", "band": "done"}])
         await project_plan.start(db, project, actor="user", reason="test")
-        await project_plan.advance(db, project, actor="user")
+        await project_plan.advance(db, project, actor="user", leftover="move")   # 0.1.58: "a" is still open
         await db.commit()
     assert started == [("p2", "One"), ("p2", "Two")]

@@ -26,12 +26,16 @@ _PLAIN_KEYS = (
                # a settings field that looked saveable and was not.
                "compaction_config_id", "title_config_id",
                "router_config_id", "vision_config_id",
+               # 0.1.58 §6: one model of the slot's config (empty = the config's own model).
+               "compaction_model", "title_model", "synthesis_model", "router_model", "vision_model",
                "evolution_auto", "mcp_server_enabled", "curation_enabled", "research_review_enabled", "keep_awake_enabled",
                "desktop_notifications_enabled", "island_enabled", "terminal_sandbox_enabled",
                "memory_in_conversations", "learned_practices_take_effect", "phone_bridge_enabled", "ocr_languages",
                "workspace_dir", "heartbeat_enabled", "heartbeat_checklist",
                # 0.1.56 §5: Arslan clears project levels itself ("true" | "false"; default off).
                "projects_auto_advance",
+               # 0.1.58 §1: raw tool input/output under a reply's steps ("true" | "false"; default off).
+               "show_technical_details",
                "heartbeat_interval_s", "lan_discovery_enabled", "ssh_enabled", "default_read_enabled",
                "voice_output_enabled", "voice_input_locale", "voice_mode", "voice_endpoint_silence_ms")
 # Integer keys, handled like _PLAIN_KEYS but round-tripped through int() on read.

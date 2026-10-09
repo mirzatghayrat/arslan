@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import type { CryptoHealth } from '../lib/cryptoHealth';
 import { useTranslation } from 'react-i18next';
 import { AppSettings } from '../types';
-import { api } from '../api/client';
+import { api, listProviderConfigs, setPrimaryProviderConfig, updateProviderConfig } from '../api/client';
 import type { ProviderOption, ProviderConfig } from '../api/client.types';
 import type { BackendStatus } from '../hooks/useBackendStatus';
 import {
@@ -192,6 +192,18 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
           <div className="mt-5"><ProactiveSection bare only={['notify']} /></div>
         </SettingsGroup>
         <SettingsGroup title={t('settings.grpOnMac')}>{desktop(['island', 'keepAwake'])}</SettingsGroup>
+        {/* 0.1.58 §1: raw tool data under a reply's steps — off for everyone who does not ask. */}
+        <SettingsGroup title={t('process.convGroup')}>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h4 className="text-[13px] font-medium text-foreground">{t('process.techTitle')}</h4>
+              <p className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">{t('process.techBody')}</p>
+            </div>
+            <input id="settings-technical-details" data-testid="settings-technical-details" type="checkbox"
+              checked={localSettings.showTechnicalDetails ?? false}
+              onChange={(e) => saveField({ showTechnicalDetails: e.target.checked })} className="kit-switch mt-0.5" />
+          </div>
+        </SettingsGroup>
         <SettingsGroup title={t('settings.grpVoice')}>{advanced(['voice'])}</SettingsGroup>
       </div>
     ),
@@ -217,6 +229,18 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
           titleConfigId: localSettings.titleConfigId ?? '',
           routerConfigId: localSettings.routerConfigId ?? '',
           visionConfigId: localSettings.visionConfigId ?? '',
+          synthesisModel: localSettings.synthesisModel ?? '',
+          compactionModel: localSettings.compactionModel ?? '',
+          titleModel: localSettings.titleModel ?? '',
+          routerModel: localSettings.routerModel ?? '',
+          visionModel: localSettings.visionModel ?? '',
+        }}
+        onMainChange={async (configId, model) => {
+          // 0.1.58 §6: the default = the primary config on the chosen model.
+          const target = (providerConfigs ?? []).find((c) => c.id === configId);
+          if (target && target.model !== model) await updateProviderConfig(configId, { model });
+          await setPrimaryProviderConfig(configId);
+          onProviderConfigsChange?.(await listProviderConfigs());
         }}
         onChange={(key, v) => saveField({ [key]: v } as Partial<AppSettings>)}
         providerConfigs={providerConfigs ?? []}

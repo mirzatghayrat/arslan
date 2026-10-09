@@ -16,9 +16,11 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Cpu } from 'lucide-react';
 
-import Select from '../Select';
+import RolePicker from '../models/RolePicker';
+import type { ProviderConfig } from '../../api/client.types';
 import {
   MODEL_SLOTS,
+  modelKeyOf,
   slotFallback,
   type SlotConfig,
   type SlotFallback,
@@ -32,6 +34,8 @@ export interface ModelRolesSectionProps {
   /** AppSettings.llmStrategy — decides whether an unset slot is routed. */
   strategy: string;
   onGoToProviders?: () => void;
+  /** 0.1.58 §6: the main model (the default for new conversations) — any model of any config. */
+  onMainChange?: (configId: number, model: string) => void;
 }
 
 export default function ModelRolesSection({
@@ -40,6 +44,7 @@ export default function ModelRolesSection({
   providerConfigs,
   strategy,
   onGoToProviders,
+  onMainChange,
 }: ModelRolesSectionProps) {
   const { t } = useTranslation();
 
@@ -60,13 +65,8 @@ export default function ModelRolesSection({
     }
   };
 
-  const options = [
-    { value: '', label: t('settings.slotUnset') },
-    ...providerConfigs.map((c) => ({
-      value: String(c.id),
-      label: c.label?.trim() ? c.label : `${c.provider} (${c.model})`,
-    })),
-  ];
+  const configs = providerConfigs as ProviderConfig[];
+  const primary = configs.find((c) => c.is_primary) ?? configs[0];
 
   return (
     <div className="bg-surface/60 border border-border rounded-2xl p-6 space-y-6">
@@ -93,6 +93,16 @@ export default function ModelRolesSection({
         </button>
       )}
 
+      {/* 0.1.58 §6: the main model first — the default every new conversation starts on. */}
+      {primary && onMainChange && <div className="space-y-2">
+        <label htmlFor="settings-slot-main" className="block text-[10.5px] font-mono font-medium text-muted-foreground uppercase tracking-wide">
+          {t('models.main')}</label>
+        <p className="text-[10px] text-subtle-foreground font-sans leading-relaxed">{t('models.mainPurpose')}</p>
+        <RolePicker id="settings-slot-main" configs={configs} need="tools"
+          current={{ configId: primary.id, model: primary.model }}
+          onPick={(c) => onMainChange(c.configId, c.model)} />
+      </div>}
+
       {MODEL_SLOTS.map((slot) => {
         const f = slotFallback(slot.id, { strategy, configs: providerConfigs });
         return (
@@ -113,14 +123,19 @@ export default function ModelRolesSection({
                 call sites and does not forward arbitrary props, and widening its
                 API for a test hook would be the wrong direction. */}
             <div data-testid={`slot-${slot.id}`}>
-              <Select
-                id={`settings-slot-${slot.id}`}
-                value={values[slot.settingsKey] ?? ''}
-                onChange={(v) => onChange(slot.settingsKey, v)}
-                options={options}
-                className="max-w-sm"
-                ariaLabel={t(slot.labelKey)}
-              />
+              {/* 0.1.58 §6: a slot names a config AND (optionally) one model of it. */}
+              <RolePicker id={`settings-slot-${slot.id}`} configs={configs} need={slot.id === 'vision' ? 'vision' : null}
+                current={values[slot.settingsKey] ? (() => {
+                  const cfg = configs.find((c) => String(c.id) === values[slot.settingsKey]);
+                  return cfg ? { configId: cfg.id, model: values[modelKeyOf(slot.settingsKey)] || cfg.model } : null;
+                })() : null}
+                unsetLabel={t('models.unset')}
+                onUnset={() => { onChange(slot.settingsKey, ''); onChange(modelKeyOf(slot.settingsKey), ''); }}
+                onPick={(c) => {
+                  const cfg = configs.find((x) => x.id === c.configId);
+                  onChange(slot.settingsKey, String(c.configId));
+                  onChange(modelKeyOf(slot.settingsKey), cfg && cfg.model === c.model ? '' : c.model);
+                }} />
             </div>
             <p
               data-testid={`slot-fallback-${slot.id}`}

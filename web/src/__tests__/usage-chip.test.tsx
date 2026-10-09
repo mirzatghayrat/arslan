@@ -1,6 +1,4 @@
-import { render, screen } from "@testing-library/react";
 import { describe, it, expect } from "vitest";
-import UsageChip from "../components/UsageChip";
 import { fmtTok, fmtUsd } from "../lib/usageFormat";
 import { toUiMessages } from "../api/adapters";
 import type { ArslanThreadItem } from "../api/client.types";
@@ -18,42 +16,6 @@ describe("fmtTok / fmtUsd (S3-M3)", () => {
     expect(fmtUsd(0)).toBe("$0");
     expect(fmtUsd(0.003)).toBe("$0.003");
     expect(fmtUsd(1.5)).toBe("$1.50");
-  });
-});
-
-describe("UsageChip (bubble corner usage)", () => {
-  it("renders tokens + usd when both are known", () => {
-    render(
-      <UsageChip
-        usage={{ tokens_in: 100, tokens_out: 50, tokens_total: 1234, estimated: false, usd: 0.003 }}
-      />,
-    );
-    const chip = screen.getByTestId("usage-chip");
-    expect(chip.textContent).toContain("1.2k tok");
-    expect(chip.textContent).toContain("$0.003");
-    expect(chip.textContent).not.toContain("≈");
-  });
-
-  it("usd null → tokens only (unknown ≠ free: never invent a $ figure)", () => {
-    render(
-      <UsageChip
-        usage={{ tokens_in: 10, tokens_out: 5, tokens_total: 500, estimated: false, usd: null }}
-      />,
-    );
-    const chip = screen.getByTestId("usage-chip");
-    expect(chip.textContent).toContain("500 tok");
-    expect(chip.textContent).not.toContain("$");
-  });
-
-  it("estimated → ≈ prefix", () => {
-    render(
-      <UsageChip
-        usage={{ tokens_in: null, tokens_out: null, tokens_total: 2000, estimated: true, usd: null }}
-      />,
-    );
-    const chip = screen.getByTestId("usage-chip");
-    expect(chip.textContent).toContain("≈");
-    expect(chip.textContent).toContain("2k tok");
   });
 });
 

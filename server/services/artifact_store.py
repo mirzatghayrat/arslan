@@ -136,6 +136,31 @@ def list_artifacts(run_id: int) -> list[dict]:
     return out
 
 
+def artifacts_by_run(run_ids: list[int], *, per_run: int = 20) -> dict[int, list[dict]]:
+    """0.1.58 §2: the files several runs produced, in ONE pass over the folder (history rows
+    carry each reply's files, so a reloaded reply shows its file cards)."""
+    wanted = {i for i in run_ids if isinstance(i, int) and i > 0}
+    out: dict[int, list[dict]] = {}
+    if not wanted or not root().is_dir():
+        return out
+    for path in sorted(root().glob("run_*.manifest.json")):
+        m = re.match(r"run_(\d+)_", path.name)
+        if not m or int(m[1]) not in wanted or path.is_symlink():
+            continue
+        run_id = int(m[1])
+        if len(out.get(run_id, [])) >= per_run:
+            continue
+        try:
+            item = json.loads(path.read_text(encoding="utf-8"))
+            filename = item.get("filename", "")
+            target = root() / filename
+            if item.get("run_id") == run_id and safe_filename(run_id, filename) and not target.is_symlink() and target.is_file():
+                out.setdefault(run_id, []).append(item)
+        except (OSError, ValueError, TypeError):
+            continue
+    return out
+
+
 def read_owned(run_id: int, filename: str) -> tuple[dict, bytes]:
     """Read a bounded manifest/file pair through one no-follow directory handle.
 

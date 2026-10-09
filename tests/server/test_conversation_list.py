@@ -134,3 +134,19 @@ async def test_the_listing_is_auth_gated_like_its_siblings(monkeypatch):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
         r = await c.get("/api/v1/conversations")
     assert r.status_code in (401, 403), r.status_code
+
+
+async def test_each_row_says_which_project_it_belongs_to(client):
+    """0.1.58 §4: the sidebar keeps a project's conversations under the project."""
+    from server.db.models import ConversationContext, Project
+    await _seed(client, "thread-p", 1, first="in a project")
+    await _seed(client, "thread-x", 1, first="on its own")
+    async with client.db_maker() as db:
+        db.add(Project(id="proj-1", name="Sample", kind="general"))
+        await db.flush()
+        db.add(ConversationContext(id="thread-p", project_id="proj-1"))
+        db.add(ConversationContext(id="thread-x"))
+        await db.commit()
+    rows = {c["conversation_id"]: c for c in (await client.get("/api/v1/conversations")).json()}
+    assert rows["thread-p"]["project_id"] == "proj-1"
+    assert rows["thread-x"]["project_id"] is None

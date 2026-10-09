@@ -944,7 +944,17 @@
       "unfinished": "未達成",
       "failed": "問題で停止",
       "scheduled": "スケジュール"
-    }
+    },
+    "projects": "プロジェクト",
+    "allProjects": "すべてのプロジェクト",
+    "allInProject": "すべて（{{count}}）",
+    "newInProject": "「{{name}}」で新しい会話",
+    "moveToProject": "プロジェクトへ移動…",
+    "moveOut": "プロジェクトから外す",
+    "moveBack": "戻る",
+    "movedTo": "「{{name}}」へ移動しました",
+    "movedOut": "プロジェクトから外しました",
+    "moveFailed": "移動できませんでした。作業中かもしれません。"
   },
   "orchestrator": {
     "greeting_morning": "おはようございます",

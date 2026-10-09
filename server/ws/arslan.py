@@ -91,6 +91,14 @@ async def _history(conversation_id: str) -> list[dict]:
             .order_by(ArslanMessage.id)
         )
         msgs = rows.scalars().all()
+        # 0.1.58 §1: each reply's footer row (steps, time, model, usage), so a reloaded
+        # conversation shows what a live one showed.
+        from server.services import run_process
+        process = await run_process.summaries(db, [m.run_id for m in msgs if m.run_id and m.role != "user"])
+    # 0.1.58 §2: and the files each reply produced (its file cards after a reload).
+    from server.services import artifact_store
+    files = await asyncio.to_thread(artifact_store.artifacts_by_run,
+                                    [m.run_id for m in msgs if m.run_id and m.role != "user"])
     return [
         {
             "message_id": m.id,
@@ -104,6 +112,8 @@ async def _history(conversation_id: str) -> list[dict]:
             "job_outcome": m.job_outcome,
             # Mobile bridge: "phone" when a paired iPhone sent it (shown "from iPhone").
             "source": m.source,
+            **({"process": process[m.run_id]} if m.role != "user" and m.run_id in process else {}),
+            **({"files": files[m.run_id]} if m.role != "user" and m.run_id in files else {}),
         }
         for m in msgs
     ]

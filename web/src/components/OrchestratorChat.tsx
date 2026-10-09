@@ -19,7 +19,7 @@ import { formatUiTime } from '../lib/localeFormatting';
 import { getIcon } from './iconMap';
 import { Message, MessageAttachment, Spawn } from '../types';
 import type { ProviderConfig, ProviderOption } from '../api/client.types';
-import ModelSwitcher from './ModelSwitcher';
+import ConversationModelChip from './models/ConversationModelChip';
 import { useCapabilityLabel } from '../stores/registryStore';
 import { useProfileStore } from '../stores/profileStore';
 import SFSymbol from './SFSymbol';
@@ -27,7 +27,9 @@ import { SpawnAvatar } from './SpawnAvatar';
 import MessageBody, { HtmlDocCard } from './MessageBody';
 import CopyButton from './CopyButton';
 import LiveActivity from './LiveActivity';
-import ToolActivityCard from './ToolActivityCard';
+import ReplyArtifacts from './reply/ReplyArtifacts';
+import ReplyFooter from './reply/ReplyFooter';
+import { COMPOSER_INSERT_EVENT } from './workbench/Reader';
 import { Dialog, Notice } from './kit';
 import { useArslanStore } from '../stores/arslanStore';
 import { taskErrorKey } from './companion/errors';
@@ -45,7 +47,6 @@ import { useComposerAttach, AttachChips, AttachControl, SentAttachments, attachm
 import { composerDrafts, getAttachmentDraft, discardComposerDraft } from '../lib/composerDrafts';
 import ClarifyOptionsCard from './ClarifyOptionsCard';
 import MentionText from './MentionText';
-import UsageChip from './UsageChip';
 
 /** S3-M1: muted "interrupted" line under a bubble whose run was cancelled
  *  mid-stream — same look as the stall indicator (⏸ + working.stalled, which
@@ -186,6 +187,8 @@ export default function OrchestratorChat({
   );
   const thinking = useArslanStore((s) => (s as any).thinking as boolean);
   const liveSteps = useArslanStore((s) => (s as any).activitySteps as import('../api/client.types').ToolStep[]);
+  // 0.1.58 §1: the latest finished Arslan reply keeps its footer row visible; older ones on hover.
+  const lastReplyId = [...chatHistory].reverse().find((m) => m.sender === 'arslan' && m.id !== '__streaming__')?.id;
   const liveStreaming = useArslanStore((s) => (s as any).streaming as boolean);
   const workStartedAt = useArslanStore((s) => (s as any).workStartedAt as number | null);
   // HX-4/A1: stall watchdog — while a turn is active (runtime-frame flags only,
@@ -238,6 +241,18 @@ export default function OrchestratorChat({
     if (temporary) discardComposerDraft(draftKey);
     return () => { if (temporary) discardComposerDraft(draftKey); };
   }, [draftKey, temporary]);
+  // 0.1.58 §2: "加进对话" from the reader or the 文件 tab appends a file's path to the composer.
+  const inputRef = useRef(inputValue);
+  inputRef.current = inputValue;
+  useEffect(() => {
+    const insert = (e: Event) => {
+      const text = (e as CustomEvent<string>).detail;
+      if (typeof text !== 'string' || !text) return;
+      setInputValue(inputRef.current ? `${inputRef.current} ${text}` : text);
+    };
+    window.addEventListener(COMPOSER_INSERT_EVENT, insert);
+    return () => window.removeEventListener(COMPOSER_INSERT_EVENT, insert);
+  }, [setInputValue]);
   const attach = useComposerAttach(() => {}, false, {
     allowUrlExtraction: !temporary,
     draft: temporary ? undefined : getAttachmentDraft(draftKey),
@@ -425,13 +440,9 @@ export default function OrchestratorChat({
                       now: two fields adapters.ts stopped mapping when the
                       multi-config list became the source of truth, so the chip
                       rendered a bare "·" forever. */}
-                  <ModelSwitcher
-                    configs={providerConfigs ?? []}
-                    llmProviders={llmProviders ?? []}
-                    testingIds={providerTestingIds}
-                    onSelect={(id) => onSelectModel?.(id)}
-                    onManage={onOpenSettings}
-                  />
+                  {/* 0.1.58 §6: this conversation's model — any model of any provider. */}
+                  <ConversationModelChip conversationId={conversationId ?? 'main'} configs={providerConfigs ?? []}
+                    llmProviders={llmProviders ?? []} onSetDefault={(id) => onSelectModel?.(id)} onManage={onOpenSettings} />
                 </div>
 
                 <button
@@ -561,13 +572,10 @@ export default function OrchestratorChat({
               }
               if (currentStyle === 'linear') {
                 return (
-                  <div key={msg.id} className="text-[12px] space-y-2">
+                  <div key={msg.id} data-reply className="group/reply text-[12px] space-y-2">
                     <div className="flex items-center gap-2 select-none text-[11px]">
                       <BrandMark alt="Arslan" className="w-5 h-5 object-contain select-none" draggable={false} />
                       <span className="font-bold text-foreground">{msg.senderName}</span>
-                      <span className="text-[9px] bg-surface-raised text-primary px-2 py-0.5 rounded font-mono uppercase">
-                        {t('nav.arslan')}
-                      </span>
                     </div>
                     <div className="pl-5">
                       <MentionText
@@ -591,9 +599,6 @@ export default function OrchestratorChat({
                   <div className="space-y-3 max-w-2xl">
                     <div className="flex items-center gap-1.5 select-none">
                       <span className="text-[11px] font-semibold text-muted-foreground">{msg.senderName}</span>
-                      <span className="text-[9px] bg-primary/10 text-primary px-2 py-0.5 rounded font-semibold font-mono uppercase tracking-wider">
-                        {t('app.name')} {t('nav.arslan')}
-                      </span>
                     </div>
                     <div className="px-4 py-3 text-[12.5px] leading-relaxed relative bg-surface/80 backdrop-blur border border-border-strong text-foreground rounded-2xl rounded-tl-none shadow-sm shadow-black/40">
                       <MentionText
@@ -640,11 +645,7 @@ export default function OrchestratorChat({
                         {msg.refinedFrom != null && (
                           <span className="text-[9px] bg-success/10 text-success px-2 py-0.5 rounded font-mono uppercase tracking-wider font-semibold">{t('orchestrator.refined_badge')}</span>
                         )}
-                        {isArslan ? (
-                          <span className="text-[9px] bg-primary/10 text-primary px-2 py-0.5 rounded font-semibold font-mono uppercase tracking-wider">
-                            {t('app.name')} {t('nav.arslan')}
-                          </span>
-                        ) : (
+                        {!isArslan && (
                           <div className="flex items-center gap-1">
                             <span className="text-[9px] bg-primary/10 text-primary px-2 py-0.5 rounded font-mono uppercase tracking-wider font-semibold">
                               {t('ui.expert')}
@@ -662,20 +663,18 @@ export default function OrchestratorChat({
                         ? 'bg-surface/80 backdrop-blur border border-border-strong text-foreground rounded-2xl rounded-tl-none shadow-sm shadow-black/40'
                         : 'bg-background/90 backdrop-blur border border-primary/15 text-foreground rounded-2xl rounded-tl-none'
                     }`}>
-                      {/* D3 (0.1.55): the steps ran BEFORE the answer, so their card sits above it. */}
-                      {msg.toolActivity && <div className="mb-3"><ToolActivityCard activity={msg.toolActivity} /></div>}
                       {/* Message Content */}
                       {isUser
                         ? <>
                             <SentAttachments attachments={msg.attachments} />
                             <p className="whitespace-pre-line font-sans leading-relaxed">{msg.text}</p>
                           </>
-                        : <MessageBody text={msg.text} streaming={msg.id === '__streaming__'} hasMessageActions={isSpawn && !msg.isProposal && !!msg.spawnId} className="text-[12.5px] leading-relaxed font-sans [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
+                        : <MessageBody text={msg.text} streaming={msg.id === '__streaming__'} hasMessageActions={isSpawn && !msg.isProposal && !!msg.spawnId} footerActions={isArslan} className="text-[12.5px] leading-relaxed font-sans [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
                       }
                       {msg.cancelled && <RunCancelledMarker />}
 {msg.resultOfJob && <JobResultLabel outcome={msg.jobOutcome} />}
-                      {msg.usage && <UsageChip usage={msg.usage} />}
-                      {isArslan && msg.id !== '__streaming__' && <HostRunResultButton runId={msg.runId} onOpen={setReplayRunId} />}
+                      {(isArslan || isSpawn) && <ReplyArtifacts activity={msg.toolActivity} files={msg.files} />}
+{isArslan && msg.id !== '__streaming__' && msg.process && <ReplyFooter text={msg.text} process={msg.process} latest={msg.id === lastReplyId} onReplay={setReplayRunId} />}
 
                       {/* Routed Indicator - specifically asked in prompt */}
                       {msg.routedTo && (
@@ -809,20 +808,14 @@ export default function OrchestratorChat({
                     <span className="text-subtle-foreground text-[10px]">{msg.timestamp}</span>
                   </div>
 
-                  {/* D3 (0.1.55): the steps ran BEFORE the answer, so their card sits above it. */}
-                  {msg.toolActivity && (
-                    <div className="mb-3">
-                      <ToolActivityCard activity={msg.toolActivity} />
-                    </div>
-                  )}
                   {isUser
                     ? <p className="whitespace-pre-line text-muted-foreground font-mono leading-relaxed">{msg.text}</p>
-                    : <MessageBody text={msg.text} streaming={msg.id === '__streaming__'} hasMessageActions={isSpawn && !msg.isProposal && !!msg.spawnId} className="text-muted-foreground font-sans leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
+                    : <MessageBody text={msg.text} streaming={msg.id === '__streaming__'} hasMessageActions={isSpawn && !msg.isProposal && !!msg.spawnId} footerActions={isArslan} className="text-muted-foreground font-sans leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
                   }
                   {msg.cancelled && <RunCancelledMarker />}
 {msg.resultOfJob && <JobResultLabel outcome={msg.jobOutcome} />}
-                  {msg.usage && <UsageChip usage={msg.usage} />}
-                  {isArslan && msg.id !== '__streaming__' && <HostRunResultButton runId={msg.runId} onOpen={setReplayRunId} />}
+                  {(isArslan || isSpawn) && <ReplyArtifacts activity={msg.toolActivity} files={msg.files} />}
+{isArslan && msg.id !== '__streaming__' && msg.process && <ReplyFooter text={msg.text} process={msg.process} latest={msg.id === lastReplyId} onReplay={setReplayRunId} />}
 
                   {/* Routed branch block */}
                   {msg.routedTo && (
@@ -903,7 +896,7 @@ export default function OrchestratorChat({
               }
 
               return (
-                <div key={msg.id} className="text-[12px] space-y-2">
+                <div key={msg.id} data-reply className="group/reply text-[12px] space-y-2">
                   {/* Sender Metadata Row */}
                   <div className="flex items-center gap-2 select-none text-[11px]">
                     {isArslan
@@ -917,11 +910,6 @@ export default function OrchestratorChat({
                     )}
                     <span className="text-subtle-foreground font-mono">•</span>
                     <span className="text-subtle-foreground font-mono">{msg.timestamp}</span>
-                    {isArslan && (
-                      <span className="text-[9px] bg-surface-raised text-primary px-2 py-0.5 rounded font-mono uppercase">
-                        {t('nav.arslan')}
-                      </span>
-                    )}
                     {!isArslan && !isUser && (
                       <span className="text-[9px] bg-background text-primary px-2 py-0.5 rounded font-mono uppercase">
                         {t('ui.expert')}
@@ -929,18 +917,12 @@ export default function OrchestratorChat({
                     )}
                   </div>
 
-                  {/* D3 (0.1.55): the steps ran BEFORE the answer, so their card sits above it. */}
-                  {msg.toolActivity && (
-                    <div className="pl-5 pb-2">
-                      <ToolActivityCard activity={msg.toolActivity} />
-                    </div>
-                  )}
                   {/* Body Content */}
-                  <MessageBody text={msg.text} indent streaming={msg.id === '__streaming__'} hasMessageActions={isSpawn && !msg.isProposal && !!msg.spawnId} className="text-foreground font-sans leading-relaxed text-[12.5px] pl-5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
+                  <MessageBody text={msg.text} indent streaming={msg.id === '__streaming__'} hasMessageActions={isSpawn && !msg.isProposal && !!msg.spawnId} footerActions={isArslan} className="text-foreground font-sans leading-relaxed text-[12.5px] pl-5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
                   {msg.cancelled && <div className="pl-5"><RunCancelledMarker /></div>}
                   {msg.resultOfJob && <div className="pl-5"><JobResultLabel outcome={msg.jobOutcome} /></div>}
-                  {msg.usage && <div className="pl-5"><UsageChip usage={msg.usage} /></div>}
-                  {isArslan && msg.id !== '__streaming__' && <HostRunResultButton runId={msg.runId} onOpen={setReplayRunId} />}
+                  {(isArslan || isSpawn) && <ReplyArtifacts activity={msg.toolActivity} files={msg.files} />}
+{isArslan && msg.id !== '__streaming__' && msg.process && <ReplyFooter text={msg.text} process={msg.process} latest={msg.id === lastReplyId} onReplay={setReplayRunId} />}
 
                   {/* Linear clean route badge */}
                   {msg.routedTo && (
@@ -1035,7 +1017,8 @@ export default function OrchestratorChat({
             <BrandMark alt="Arslan" className="w-7 h-7 object-contain select-none shrink-0" draggable={false} />
             {/* LiveActivity carries its own motion (✳ pulse + per-step spinner) — the old
                 bouncing-dots trio beside it was redundant noise (user-flagged). */}
-            <div className="px-3 py-2 bg-surface/80 border border-border-strong rounded-2xl rounded-tl-none">
+            {/* 0.1.58 §1: no box — the steps sit where the reply will be. */}
+            <div className="py-1">
               {stalled ? (
                 /* HX-4/A1: >90s without any runtime frame — everything goes still.
                    Static muted marker, no spinner/pulse/scramble. */
@@ -1077,6 +1060,9 @@ export default function OrchestratorChat({
                 <div data-testid="composer-input-tools" className="flex items-center gap-2">
                   <AttachControl busy={attach.busy} onPickFiles={attach.addFiles} />
                   {micControl}
+                  {/* 0.1.58 §6: the model picker sits under EVERY composer, not only the empty one. */}
+                  <ConversationModelChip conversationId={conversationId ?? 'main'} configs={providerConfigs ?? []}
+                    llmProviders={llmProviders ?? []} onSetDefault={(id) => onSelectModel?.(id)} onManage={onOpenSettings} />
                 </div>
                 {/* Right-side action group: composer-row is space-between, so stop
                     must share a wrapper with send to sit NEXT to it (not centered). */}

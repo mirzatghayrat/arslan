@@ -104,7 +104,7 @@ export function triggerDownload(filename: string, content: string, mime: string)
 }
 
 /** Wrap rendered markdown HTML in a standalone, theme-matched document for .html export. */
-function buildStandaloneHtml(innerHtml: string, title: string): string {
+export function buildStandaloneHtml(innerHtml: string, title: string): string {
   const root = getComputedStyle(document.documentElement);
   const v = (name: string, fallback: string) => root.getPropertyValue(name).trim() || fallback;
   const vars = [
@@ -239,7 +239,7 @@ export function HtmlDocCard({
   );
 }
 
-function ProseBody({ text, className, indent, streaming, hasMessageActions }: { text: string; className?: string; indent: boolean; streaming: boolean; hasMessageActions: boolean }) {
+function ProseBody({ text, className, indent, streaming, hasMessageActions, footerActions = false }: { text: string; className?: string; indent: boolean; streaming: boolean; hasMessageActions: boolean; footerActions?: boolean }) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -250,10 +250,11 @@ function ProseBody({ text, className, indent, streaming, hasMessageActions }: { 
   // Downloads belong ONLY to the long-output collapse box: "boxed ⇔ downloadable" is one
   // rule (isLong). Short/normal replies get no .md/.html affordance — the persistent
   // message action row (👍 👎 copy 重新生成 / refine) is the parent's and stays on every message.
-  const showDownloads = isLong;
+  // 0.1.58 §1: an Arslan reply's footer row owns copy and the downloads (⋯).
+  const showDownloads = isLong && !footerActions;
   // Standalone copy keeps its old, lower threshold — but only when the parent renders no
   // message action row (which owns copy otherwise; see hasMessageActions).
-  const showCopy = !streaming && !hasMessageActions && text.length >= COPY_MIN_CHARS;
+  const showCopy = !streaming && !hasMessageActions && !footerActions && text.length >= COPY_MIN_CHARS;
   const ind = indent ? 'ml-5' : '';
 
   const copy = useCallback(() => {
@@ -353,9 +354,11 @@ interface Props {
   /** True when the parent renders a persistent message action row (👍 👎 copy 重新生成) below this
    *  message — the prose export row then omits its own copy button to avoid a duplicate. */
   hasMessageActions?: boolean;
+  /** 0.1.58 §1: the reply's footer row carries copy and the .md/.html downloads. */
+  footerActions?: boolean;
 }
 
-export default function MessageBody({ text, className, indent = false, streaming = false, hasMessageActions = false }: Props) {
+export default function MessageBody({ text, className, indent = false, streaming = false, hasMessageActions = false, footerActions = false }: Props) {
   if (!streaming && isFullHtmlDoc(text)) {
     // A bare doc that starts with the doctype but lost its </html> to max-tokens is
     // still shown as a card — honestly labeled truncated.
@@ -380,5 +383,6 @@ export default function MessageBody({ text, className, indent = false, streaming
       );
     }
   }
-  return <ProseBody text={text} className={className} indent={indent} streaming={streaming} hasMessageActions={hasMessageActions} />;
+  return <ProseBody text={text} className={className} indent={indent} streaming={streaming} hasMessageActions={hasMessageActions}
+    footerActions={footerActions} />;
 }

@@ -61,6 +61,11 @@ class SettingsIn(BaseModel):
     # never reached the database. Same defect class as the D-round write-only int
     # keys, mirrored: that one lost the READ side, this one lost the WRITE side.
     synthesis_config_id: str | None = None
+    compaction_model: str | None = None
+    title_model: str | None = None
+    synthesis_model: str | None = None
+    router_model: str | None = None
+    vision_model: str | None = None
     embedding_config_id: str | None = None
     compaction_config_id: str | None = None
     title_config_id: str | None = None
@@ -76,6 +81,7 @@ class SettingsIn(BaseModel):
     workspace_dir: str | None = None
     heartbeat_enabled: str | None = None
     projects_auto_advance: str | None = None
+    show_technical_details: str | None = None
     heartbeat_checklist: str | None = None
     heartbeat_interval_s: str | None = None
     lan_discovery_enabled: str | None = None
@@ -128,6 +134,11 @@ class SettingsOut(BaseModel):
     run_debug_retention_days: int = 30
     evolution_auto: str = "off"
     synthesis_config_id: str = ""
+    compaction_model: str = ""
+    title_model: str = ""
+    synthesis_model: str = ""
+    router_model: str = ""
+    vision_model: str = ""
     embedding_config_id: str = ""
     compaction_config_id: str = ""
     title_config_id: str = ""
@@ -143,6 +154,7 @@ class SettingsOut(BaseModel):
     workspace_dir: str = ""
     heartbeat_enabled: str = ""
     projects_auto_advance: str = ""
+    show_technical_details: str = ""
     heartbeat_checklist: str = ""
     heartbeat_interval_s: str = ""
     lan_discovery_enabled: str = ""
@@ -820,6 +832,11 @@ class RunListItemOut(BaseModel):
     total_ms: int | None
     user_message: str
     created_at: str | None = None
+    # 0.1.58 §7: where the work came from (chat | job | scheduled | phone | browser),
+    # which model did it and how many tokens — Activity's icons and filters.
+    origin: str = "chat"
+    model: str | None = None
+    tokens: int | None = None
 
 
 class RunSpawnSummaryOut(BaseModel):
@@ -1068,6 +1085,9 @@ class ConversationListItem(BaseModel):
     preview: str = ""
     #: Files its runs made.
     files: int = 0
+    #: 0.1.58 §4: the project it belongs to (conversation_contexts.project_id), so the
+    #: sidebar can keep a project's conversations under the project.
+    project_id: str | None = None
     #: The job still running in it: {"id", "step", "done", "total"}.
     job: dict | None = None
 
@@ -1112,6 +1132,11 @@ class UsageBinOut(BaseModel):
     failed: int = 0
     tokens_total: int = 0
     durations: list[int] = []     # finished runs per DURATION_BANDS entry
+    # 0.1.58 §7: what the hover card says about this slice.
+    p50_ms: int | None = None     # median of the slice's finished runs
+    max_ms: int | None = None     # its longest finished run
+    usd: float | None = None      # priced items only; None = unknown, never $0
+    models: list[dict] = []       # top 3 by tokens: {"model": str, "tokens": int}
 
 
 class UsageSummaryOut(BaseModel):

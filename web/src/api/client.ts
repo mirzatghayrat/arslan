@@ -1,7 +1,7 @@
 import { useAuthStore } from "../stores/authStore";
 import { fetchUpdateStatus } from "../lib/updater";
 import type { CryptoHealth } from "../lib/cryptoHealth";
-import type { PhoneCode, PhoneStatus,
+import type { RunProcessOut, PhoneCode, PhoneStatus,
   ArtifactReview,
   AccessTokenInfo,
   AnomalyDto,
@@ -489,6 +489,18 @@ export const api = {
     return request<RunListItem[]>(`/runs?${qs.toString()}`);
   },
   /** Aggregates for the evaluation-summary charts. */
+  /** 0.1.58 §7: Activity's list — a page of 20 back from `beforeId`, narrowed to a chart
+   *  slice (epoch seconds) and/or one model. */
+  listRuns: (o: { limit?: number; beforeId?: number; since?: number; until?: number; model?: string } = {}) => {
+    const qs = new URLSearchParams({ limit: String(o.limit ?? 20) });
+    if (o.beforeId != null) qs.set("before_id", String(o.beforeId));
+    if (o.since != null) qs.set("since", new Date(o.since * 1000).toISOString());
+    if (o.until != null) qs.set("until", new Date(o.until * 1000).toISOString());
+    if (o.model) qs.set("model", o.model);
+    return request<RunListItem[]>(`/runs?${qs.toString()}`);
+  },
+  /** 0.1.58 §1: what a reply did, in plain data (the list under its footer row). */
+  runProcess: (runId: number) => request<RunProcessOut>(`/runs/${runId}/process`),
   getRunsSummary: () => request<RunSummary>("/runs/summary"),
   /** Per-spawn RED aggregate + fleet rollup, worst-first (diagnosis dashboard). */
   getRunCatalog: (range: string) => request<RunCatalogDto>(`/runs/catalog?range=${range}`),

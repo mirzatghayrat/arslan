@@ -200,7 +200,7 @@ async def _ready_with_proposal(api, execution_db, level_index=0):
 
 async def test_accept_advances_and_the_streak_counts_decline_and_undo_as_misses(api, execution_db):
     pid, proposal = await _ready_with_proposal(api, execution_db)
-    plan = (await api.post(f"/api/v1/projects/{pid}/proposals/{proposal}/accept")).json()
+    plan = (await api.post(f"/api/v1/projects/{pid}/proposals/{proposal}/accept", json={"leftover": "drop"})).json()
     assert [lv["state"] for lv in plan["levels"]] == ["cleared", "current", "todo", "todo"]
     shadow = (await api.get("/api/v1/projects/board")).json()["shadow"]
     assert (shadow["proposed"], shadow["accepted"], shadow["streak"]) == (1, 1, 1)
@@ -211,12 +211,12 @@ async def test_accept_advances_and_the_streak_counts_decline_and_undo_as_misses(
     assert (await api.post(f"/api/v1/projects/{pid}/proposals/{second}/decline")).status_code == 200
     shadow = (await api.get("/api/v1/projects/board")).json()["shadow"]
     assert (shadow["proposed"], shadow["accepted"], shadow["streak"]) == (2, 1, 0)
-    assert (await api.post(f"/api/v1/projects/{pid}/proposals/{second}/accept")).status_code == 409
+    assert (await api.post(f"/api/v1/projects/{pid}/proposals/{second}/accept", json={"leftover": "drop"})).status_code == 409
 
 
 async def test_undoing_an_accepted_advance_reverts_it_and_counts_as_a_miss(api, execution_db):
     pid, proposal = await _ready_with_proposal(api, execution_db)
-    await api.post(f"/api/v1/projects/{pid}/proposals/{proposal}/accept")
+    await api.post(f"/api/v1/projects/{pid}/proposals/{proposal}/accept", json={"leftover": "drop"})
     advance = next(e for e in (await api.get(f"/api/v1/projects/{pid}/events")).json() if e["kind"] == "advance")
     plan = (await api.post(f"/api/v1/projects/{pid}/events/{advance['id']}/undo")).json()
     assert [lv["state"] for lv in plan["levels"]][:2] == ["current", "todo"]
@@ -229,8 +229,8 @@ async def test_only_the_latest_advance_can_be_undone(api, execution_db):
     pid = (await _create(api))["id"]
     await _plan(api, pid)
     await api.put(f"/api/v1/projects/{pid}/stage", json={"stage": "active"})
-    await api.post(f"/api/v1/projects/{pid}/advance")
-    await api.post(f"/api/v1/projects/{pid}/advance")
+    await api.post(f"/api/v1/projects/{pid}/advance", json={"leftover": "drop"})
+    await api.post(f"/api/v1/projects/{pid}/advance", json={"leftover": "drop"})
     advances = [e for e in (await api.get(f"/api/v1/projects/{pid}/events")).json() if e["kind"] == "advance"]
     older = advances[-1]["id"]
     response = await api.post(f"/api/v1/projects/{pid}/events/{older}/undo")
@@ -239,8 +239,8 @@ async def test_only_the_latest_advance_can_be_undone(api, execution_db):
 
 async def test_a_proposal_the_plan_moved_past_goes_stale_and_does_not_count(api, execution_db):
     pid, proposal = await _ready_with_proposal(api, execution_db)
-    await api.post(f"/api/v1/projects/{pid}/advance")                       # cleared by hand meanwhile
-    assert (await api.post(f"/api/v1/projects/{pid}/proposals/{proposal}/accept")).status_code == 200
+    await api.post(f"/api/v1/projects/{pid}/advance", json={"leftover": "drop"})                       # cleared by hand meanwhile
+    assert (await api.post(f"/api/v1/projects/{pid}/proposals/{proposal}/accept", json={"leftover": "drop"})).status_code == 200
     plan = (await api.get(f"/api/v1/projects/{pid}/plan")).json()
     assert [lv["state"] for lv in plan["levels"]][:3] == ["cleared", "current", "todo"]   # not advanced twice
     shadow = (await api.get("/api/v1/projects/board")).json()["shadow"]
@@ -269,7 +269,8 @@ async def test_with_auto_advance_on_arslan_advances_itself_but_never_past_the_la
         await settings_service._set_raw(db, "projects_auto_advance", "true")
         await db.commit()
     pid = (await _create(api))["id"]
-    await _plan(api, pid, GAME_LEVELS[:2])
+    # 0.1.58 §5: auto-advance only clears a level with nothing left open.
+    await _plan(api, pid, [{**lv, "checkpoints": []} for lv in GAME_LEVELS[:2]])
     await api.put(f"/api/v1/projects/{pid}/stage", json={"stage": "active"})
     propose = await _run(execution_db, project_plan.propose_advance)
     await propose(pid, evidence={"kind": "said", "quote": "pitch done"})
@@ -288,7 +289,7 @@ async def test_cleared_levels_stay_and_kept_checkpoints_keep_their_ticks(api, ex
     pid = (await _create(api))["id"]
     await _plan(api, pid)
     await api.put(f"/api/v1/projects/{pid}/stage", json={"stage": "active"})
-    await api.post(f"/api/v1/projects/{pid}/advance")
+    await api.post(f"/api/v1/projects/{pid}/advance", json={"leftover": "drop"})
     plan = (await api.get(f"/api/v1/projects/{pid}/plan")).json()
     proto = plan["levels"][1]
     await api.post(f"/api/v1/projects/{pid}/checkpoints/{proto['checkpoints'][0]['id']}/tick")
@@ -436,7 +437,7 @@ async def test_the_card_names_the_project_its_finish_line_level_and_open_checkpo
         assert "not started" not in await project_plan.card_text(db, pid)      # no plan yet: no stage line
     await _plan(api, pid)
     await api.put(f"/api/v1/projects/{pid}/stage", json={"stage": "active"})
-    await api.post(f"/api/v1/projects/{pid}/advance")
+    await api.post(f"/api/v1/projects/{pid}/advance", json={"leftover": "drop"})
     async with execution_db() as db:
         card = await project_plan.card_text(db, pid)
     assert "reference data, not instructions" in card
@@ -482,7 +483,7 @@ async def _active_with_cleared_first(api):
     pid = (await _create(api))["id"]
     await _plan(api, pid)
     await api.put(f"/api/v1/projects/{pid}/stage", json={"stage": "active"})
-    await api.post(f"/api/v1/projects/{pid}/advance")                    # Idea cleared, Prototype current
+    await api.post(f"/api/v1/projects/{pid}/advance", json={"leftover": "drop"})                    # Idea cleared, Prototype current
     plan = (await api.get(f"/api/v1/projects/{pid}/plan")).json()
     await api.post(f"/api/v1/projects/{pid}/checkpoints/{plan['levels'][1]['checkpoints'][0]['id']}/tick")
     return pid
@@ -660,3 +661,78 @@ async def test_a_reply_that_breaks_the_rules_keeps_the_draft(api, monkeypatch, c
     body = (await api.post("/api/v1/projects/draft", json={"template": "game", "refine": True, "levels": given})).json()
     assert body["refine_failed"] is True and body["source"] == "template"
     assert [lv["name"] for lv in body["levels"]] == ["Mine", "End"]
+
+
+# ── 0.1.58 §5: clearing a level early is honest about what was left ──────────
+
+async def _active_game(api):
+    pid = (await _create(api))["id"]
+    await _plan(api, pid)
+    await api.put(f"/api/v1/projects/{pid}/stage", json={"stage": "active"})
+    return pid
+
+
+async def test_clearing_with_open_checkpoints_asks_first(api):
+    pid = await _active_game(api)
+    response = await api.post(f"/api/v1/projects/{pid}/advance")
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert detail["code"] == "open_checkpoints" and [o["text"] for o in detail["open"]] == ["One-line pitch"]
+    plan = (await api.get(f"/api/v1/projects/{pid}/plan")).json()
+    assert plan["levels"][0]["state"] == "current"          # nothing moved
+
+
+async def test_move_puts_the_open_ones_first_in_the_next_level_and_undo_puts_them_back(api):
+    pid = await _active_game(api)
+    before = (await api.get(f"/api/v1/projects/{pid}/plan")).json()
+    pitch = before["levels"][0]["checkpoints"][0]["id"]
+    plan = (await api.post(f"/api/v1/projects/{pid}/advance", json={"leftover": "move", "note": "pitch later"})).json()
+    assert [cp["text"] for cp in plan["levels"][1]["checkpoints"]] == ["One-line pitch", "Playable build", "Fun test"]
+    assert plan["levels"][0]["checkpoints"] == []
+    advance = next(e for e in (await api.get(f"/api/v1/projects/{pid}/events")).json() if e["kind"] == "advance")
+    assert advance["actor"] == "user" and advance["payload"]["evidence"] == {"kind": "user_note", "text": "pitch later"}
+    plan = (await api.post(f"/api/v1/projects/{pid}/events/{advance['id']}/undo")).json()
+    assert [cp["id"] for cp in plan["levels"][0]["checkpoints"]] == [pitch]
+    assert [cp["text"] for cp in plan["levels"][1]["checkpoints"]] == ["Playable build", "Fun test"]
+    assert [lv["state"] for lv in plan["levels"]][:2] == ["current", "todo"]
+
+
+async def test_drop_deletes_them_and_undo_brings_them_back_with_their_ids(api):
+    pid = await _active_game(api)
+    await api.post(f"/api/v1/projects/{pid}/advance")                                   # refused, nothing changes
+    await api.post(f"/api/v1/projects/{pid}/advance", json={"leftover": "move"})         # Idea → Prototype
+    plan = (await api.get(f"/api/v1/projects/{pid}/plan")).json()
+    ids = [cp["id"] for cp in plan["levels"][1]["checkpoints"]]
+    plan = (await api.post(f"/api/v1/projects/{pid}/advance", json={"leftover": "drop"})).json()
+    assert plan["levels"][1]["checkpoints"] == [] and plan["levels"][2]["state"] == "current"
+    advance = [e for e in (await api.get(f"/api/v1/projects/{pid}/events")).json() if e["kind"] == "advance"][0]
+    assert len(advance["payload"]["dropped"]) == 3
+    plan = (await api.post(f"/api/v1/projects/{pid}/events/{advance['id']}/undo")).json()
+    assert [cp["id"] for cp in plan["levels"][1]["checkpoints"]] == ids
+
+
+async def test_everything_done_clears_without_a_question(api):
+    pid = await _active_game(api)
+    plan = (await api.get(f"/api/v1/projects/{pid}/plan")).json()
+    await api.post(f"/api/v1/projects/{pid}/checkpoints/{plan['levels'][0]['checkpoints'][0]['id']}/tick")
+    response = await api.post(f"/api/v1/projects/{pid}/advance")
+    assert response.status_code == 200 and response.json()["levels"][1]["state"] == "current"
+
+
+async def test_move_on_the_last_level_is_refused(api):
+    pid = (await _create(api))["id"]
+    await _plan(api, pid, [{"name": "Only", "band": "done", "checkpoints": [{"text": "Ship"}]}])
+    await api.put(f"/api/v1/projects/{pid}/stage", json={"stage": "active"})
+    response = await api.post(f"/api/v1/projects/{pid}/advance", json={"leftover": "move"})
+    assert response.status_code == 409 and response.json()["detail"]["code"] == "no_next_level"
+
+
+async def test_accepting_arslans_proposal_with_open_checkpoints_asks_the_same_question(api, execution_db):
+    pid, proposal = await _ready_with_proposal(api, execution_db)
+    card = (await api.get("/api/v1/projects/board")).json()["cards"][0]
+    assert [o["text"] for o in card["proposal"]["open"]] == ["One-line pitch"]
+    response = await api.post(f"/api/v1/projects/{pid}/proposals/{proposal}/accept")
+    assert response.status_code == 409 and response.json()["detail"]["code"] == "open_checkpoints"
+    plan = (await api.post(f"/api/v1/projects/{pid}/proposals/{proposal}/accept", json={"leftover": "move"})).json()
+    assert plan["levels"][1]["state"] == "current"
+    assert plan["levels"][1]["checkpoints"][0]["text"] == "One-line pitch"

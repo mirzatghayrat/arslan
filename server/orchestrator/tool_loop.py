@@ -47,7 +47,7 @@ def _get_adapter():
     return build_adapter(role="execute")
 
 
-async def _adapter_for_turn(*, has_images: bool):
+async def _adapter_for_turn(*, has_images: bool, conversation_id: str | None = None):
     """The adapter for this turn, honouring the vision slot ONLY when it carries an image.
 
     🔴 THE `has_images` CONDITION IS THE WHOLE POINT, not an optimization. Ruling ②B
@@ -73,6 +73,15 @@ async def _adapter_for_turn(*, has_images: bool):
         slotted = await build_slot_adapter("vision_config_id")
         if slotted is not None:
             return slotted
+    # 0.1.58 §6: the model chosen for this conversation, when there is one.
+    if conversation_id:
+        from server.services.llm_factory import build_conversation_adapter
+        try:
+            chosen = await build_conversation_adapter(conversation_id)
+        except Exception:  # noqa: BLE001 — a broken choice must never take the turn down
+            chosen = None
+        if chosen is not None:
+            return chosen
     adapter = _get_adapter()
     return await adapter if hasattr(adapter, "__await__") else adapter
 
@@ -2057,7 +2066,8 @@ async def _run_native(
     # The vision slot needs to know whether this turn carries an image, and this
     # signature is the only place that fact is available — hence a parameter rather
     # than something guessed further down.
-    a = adapter_override if adapter_override is not None else await _adapter_for_turn(has_images=has_images)
+    a = adapter_override if adapter_override is not None else await _adapter_for_turn(
+        has_images=has_images, conversation_id=conversation_id)
     from arslan.execution_budget import current as current_budget
     from server.services.task_service import current as current_task
     budget = current_budget()

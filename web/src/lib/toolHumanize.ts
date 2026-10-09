@@ -2,7 +2,7 @@
  * toolHumanize — the single source of natural-language wording for tool activity.
  *
  * Shared by LiveActivity (in-flight steps) AND the finished-message tool cards
- * (ToolActivityCard) so the phrasing never diverges (user feedback: finished cards
+ * (the reply's steps, lib/process) so the phrasing never diverges (user feedback: finished cards
  * read as `Standard Executor tool render_deck: OK` + a raw JSON wall while the live
  * view already narrated 搜索「query」/ 生成 PPT).
  *

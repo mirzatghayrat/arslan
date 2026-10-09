@@ -15,7 +15,7 @@ describe("JudgmentsCard", () => {
   it("shows nothing until there is a judgment", async () => {
     request.mockResolvedValue({ items: [] });
     const { container } = render(<JudgmentsCard />);
-    await waitFor(() => expect(request).toHaveBeenCalledWith("/judgments?limit=30"));
+    await waitFor(() => expect(request).toHaveBeenCalledWith("/judgments?limit=20"));
     expect(container.innerHTML).toBe("");
   });
 

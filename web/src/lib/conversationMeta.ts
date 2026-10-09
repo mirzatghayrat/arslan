@@ -12,6 +12,8 @@ export interface ConversationMeta {
   origin: "phone" | "mac";
   files: number;
   job?: ConversationJob | null;
+  /** 0.1.58 §4: the project it belongs to (null = none). */
+  projectId?: string | null;
 }
 
 export const REMOTE_ID = "pocket";
@@ -29,6 +31,7 @@ export function metaFrom(rows: ServerConversation[]): Record<string, Conversatio
       origin: row.origin === "phone" ? "phone" : "mac",
       files: typeof row.files === "number" ? row.files : 0,
       job: row.job ?? null,
+      projectId: typeof row.project_id === "string" && row.project_id ? row.project_id : null,
     };
   }
   return out;
