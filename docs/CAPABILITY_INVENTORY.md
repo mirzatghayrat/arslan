@@ -53,6 +53,7 @@ enrolment executor deliberately refuses execution; the UI owns enrolment.
 | `browser_select` | [server/registry/hands_tools.py](../server/registry/hands_tools.py) |
 | `browser_type` | [server/registry/hands_tools.py](../server/registry/hands_tools.py) |
 | `cancel_task` | [server/registry/schedule_tools.py](../server/registry/schedule_tools.py) |
+| `desktop_access` | [server/registry/hands_tools.py](../server/registry/hands_tools.py) |
 | `desktop_apps` | [server/registry/hands_tools.py](../server/registry/hands_tools.py) |
 | `desktop_batch` | [server/registry/hands_tools.py](../server/registry/hands_tools.py) |
 | `desktop_click` | [server/registry/hands_tools.py](../server/registry/hands_tools.py) |
@@ -118,9 +119,9 @@ trust decisions; see THIRD_PARTY_NOTICES.md and docs/RELIABILITY.md.
 
 | Source | SHA-256 |
 | --- | --- |
-| `server/registry/executors.py` | `478528243922661be6ae75eaf8e2cf56c0c3cb40d40d18e055cfa64ac3a79515` |
+| `server/registry/executors.py` | `bb8f347a90630c6eb352b03bcea90fc5da8b5166dce56c5aed72d922074cf1c9` |
 | `server/registry/file_tools.py` | `a41416c5c239370a8ef992b5406e066e51dc1101ffdf83683a8d8b4f7b2390fd` |
-| `server/registry/hands_tools.py` | `3ec362b2cd06cce73b517fc15212b1701a217da30bccb94dd342782879b767e8` |
+| `server/registry/hands_tools.py` | `71c90b36489f507d0ca86ec2341f87f5a02c9b5fb6f05f6fb855c4ff8cd7c8e2` |
 | `server/registry/lan_tools.py` | `34778593e80f8276d545f4ab569803a208a290d5fe4e8d52402f7a876b6f63b1` |
 | `server/registry/memory_executors.py` | `9327d8aa27832c8793957dab38f74fe8682385f45a7ee4874d38765dc02bfdb3` |
 | `server/registry/schedule_tools.py` | `13a8698f7e824c1da64cb513b6ebf92de4ab618f75103445e9b12e984ca09a6d` |

@@ -11,6 +11,8 @@ Loopback + the API token, like every router here.
 """
 from __future__ import annotations
 
+import time
+
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
@@ -24,6 +26,19 @@ class HandsSettings(BaseModel):
     enabled: bool | None = None
     cursor: bool | None = None
     never: list[str] | None = Field(default=None, max_length=hands_service.MAX_NEVER)
+    # Hands v2 §7.4
+    screenshots: bool | None = None
+    borrow: bool | None = None
+    away: bool | None = None
+    no_screenshots: list[str] | None = Field(default=None, max_length=hands_service.MAX_NEVER)
+
+
+class AlwaysApp(BaseModel):
+    app: str = Field(min_length=1, max_length=120)
+
+
+class Permission(BaseModel):
+    kind: str = "accessibility"
 
 
 async def _status(start: bool) -> dict:
@@ -34,6 +49,7 @@ async def _status(start: bool) -> dict:
     except hands_client.HandsUnavailable as exc:
         return {"running": False, "error": str(exc)[:200]}
     return {"running": True, "accessibility": bool(reply.get("accessibility")),
+            "screen_recording": bool(reply.get("screen_recording")),
             "peer_check": reply.get("peer_check"), "version": reply.get("version")}
 
 
@@ -46,7 +62,9 @@ async def get_hands() -> dict:
 
 @router.put("/hands")
 async def put_hands(body: HandsSettings) -> dict:
-    updated = hands_service.update_settings(enabled=body.enabled, cursor=body.cursor, never=body.never)
+    updated = hands_service.update_settings(enabled=body.enabled, cursor=body.cursor, never=body.never,
+                                            screenshots=body.screenshots, borrow=body.borrow, away=body.away,
+                                            no_screenshots=body.no_screenshots)
     return {"available": hands_client.available(), **updated, "built_in": hands_service.built_in_lists()}
 
 
@@ -118,14 +136,40 @@ async def check_hands() -> dict:
 
 
 @router.post("/hands/permission")
-async def ask_permission() -> dict:
+async def ask_permission(body: Permission | None = None) -> dict:
+    """macOS's own prompt for Arslan Hands: Accessibility (default) or, Hands v2 §4.2, Screen
+    Recording for window screenshots (asked from Settings, never in the middle of a job)."""
+    screen = body is not None and body.kind == "screen"
+    key = "screen_recording" if screen else "accessibility"
     if not hands_client.available():
-        return {"accessibility": False, "available": False}
+        return {key: False, "available": False}
     try:
-        reply = await hands_client.call("request_permission", {}, timeout=10)
+        reply = await hands_client.call("request_permission", {"kind": "screen"} if screen else {}, timeout=10)
     except hands_client.HandsUnavailable as exc:
-        return {"accessibility": False, "error": str(exc)[:200]}
-    return {"accessibility": bool(reply.get("accessibility"))}
+        return {key: False, "error": str(exc)[:200]}
+    return {key: bool(reply.get(key))}
+
+
+@router.post("/hands/always")
+async def add_always(body: AlwaysApp) -> dict:
+    """§7.2/7.4: allow a running app for good (looking and acting no longer ask; risky steps still
+    do). Kept by bundle id, so an app is never mistaken for another of the same name."""
+    from server.registry import hands_tools
+    app, failure = await hands_tools._resolve_app(body.app, None)
+    if app is None or not app.get("bundle_id"):
+        code = failure.code if failure else "app_not_running"
+        return {"ok": False, "code": code, "error": "Open the app first; Arslan keeps it by its bundle id."}
+    current = hands_service.settings()["always"]
+    if all(a["bundle_id"] != app["bundle_id"] for a in current):
+        current.append({"bundle_id": app["bundle_id"], "name": str(app.get("name") or ""),
+                        "since": time.strftime("%Y-%m-%d")})
+    return {"ok": True, **hands_service.update_settings(always=current)}
+
+
+@router.delete("/hands/always/{bundle_id}")
+async def remove_always(bundle_id: str) -> dict:
+    current = [a for a in hands_service.settings()["always"] if a["bundle_id"] != bundle_id]
+    return {"ok": True, **hands_service.update_settings(always=current)}
 
 
 @router.get("/hands/trace")

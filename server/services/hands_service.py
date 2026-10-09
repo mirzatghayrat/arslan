@@ -62,13 +62,51 @@ def settings() -> dict:
         "away": bool(raw.get("away", False)) if isinstance(raw, dict) else False,
         "never": [str(n)[:120] for n in never if isinstance(n, str) and n.strip()][:MAX_NEVER]
                  if isinstance(never, list) else [],
+        # Hands v2 §7.2-7.4: apps allowed for good (looking and acting asked no more; risky steps still
+        # ask every time), and apps whose windows are never screenshotted (read as text only).
+        "always": _always(raw.get("always") if isinstance(raw, dict) else None),
+        "no_screenshots": [str(n)[:120] for n in raw.get("no_screenshots") or [] if isinstance(n, str) and n.strip()][
+            :MAX_NEVER] if isinstance(raw, dict) and isinstance(raw.get("no_screenshots"), list) else [],
     }
+
+
+MAX_ALWAYS = 100
+
+
+def _always(raw) -> list[dict]:
+    out: list[dict] = []
+    for item in raw if isinstance(raw, list) else []:
+        if isinstance(item, dict) and isinstance(item.get("bundle_id"), str) and item["bundle_id"].strip():
+            out.append({"bundle_id": item["bundle_id"].strip()[:200], "name": str(item.get("name") or "")[:120],
+                        "since": str(item.get("since") or "")[:40]})
+    return out[:MAX_ALWAYS]
+
+
+def always_allowed(bundle_id: str) -> bool:
+    """§7.2: the user allowed this app for good in Settings (bundle id, exact)."""
+    return bool(bundle_id) and any(a["bundle_id"] == bundle_id for a in settings()["always"])
+
+
+def no_screenshots(name: str, bundle_id: str) -> bool:
+    """§4.2: the user listed this app as never screenshotted (name or bundle id, any case)."""
+    wanted = {name.strip().lower(), bundle_id.strip().lower()} - {""}
+    return any(n.strip().lower() in wanted for n in settings()["no_screenshots"])
 
 
 def update_settings(*, enabled: bool | None = None, cursor: bool | None = None,
                     never: list[str] | None = None, screenshots: bool | None = None,
-                    borrow: bool | None = None, away: bool | None = None) -> dict:
+                    borrow: bool | None = None, away: bool | None = None,
+                    always: list[dict] | None = None, no_screenshots: list[str] | None = None) -> dict:
     current = settings()
+    if always is not None:
+        current["always"] = _always(always)
+    if no_screenshots is not None:
+        seen_names: list[str] = []
+        for item in no_screenshots:
+            item = " ".join(str(item).split())[:120]
+            if item and item.lower() not in (n.lower() for n in seen_names):
+                seen_names.append(item)
+        current["no_screenshots"] = seen_names[:MAX_NEVER]
     if borrow is not None:
         current["borrow"] = bool(borrow)
     if away is not None:

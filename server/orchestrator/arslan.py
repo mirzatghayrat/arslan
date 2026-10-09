@@ -1008,6 +1008,9 @@ async def _arslan_tools() -> list[dict]:
              "use (name and bundle id). Web pages: use browser_* instead; native apps (Notes, Finder, Mail, "
              "Pages, Slack…): desktop_*. To rename, move or copy files use run_command (mv/cp), not Finder "
              "(in the background Finder ignores keys, and clicking a file opens it)."},
+            {"key": "desktop_access", "description": "Before a task that needs several Mac apps, ask for all of "
+             "them in one card instead of one card per app as each is first used: {apps, why}. Allowed apps "
+             "can be looked at in this conversation and used in this piece of work; risky steps still ask."},
             {"key": "desktop_look", "description": "Read an app's front window as an outline of elements with "
              "refs like [@s1a2b3c4:e7] (accessibility tree; nothing is clicked), with a screenshot of that "
              "window when the user allows it: (x, y) after an element is its centre in the screenshot, and the "

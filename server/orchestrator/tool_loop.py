@@ -1420,6 +1420,11 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
         "keys": {"type": "string", "minLength": 1, "maxLength": 40, "description": "return, escape, tab, cmd+n…"},
         "front": {"type": "boolean", "description": _FRONT}},
         "required": ["app", "keys"], "additionalProperties": False},
+    "desktop_access": {"type": "object", "properties": {
+        "apps": {"type": "array", "minItems": 1, "maxItems": 8, "items": {"type": "string", "maxLength": 120},
+                 "description": "the apps this task needs, by name"},
+        "why": {"type": "string", "minLength": 1, "maxLength": 300, "description": "what you will do, in words"}},
+        "required": ["apps", "why"], "additionalProperties": False},
     "desktop_takeover": {"type": "object", "properties": {
         "why": {"type": "string", "minLength": 1, "maxLength": 300,
                 "description": "what you will do with the screen, in the user's words"},
