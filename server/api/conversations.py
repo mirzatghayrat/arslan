@@ -94,9 +94,15 @@ async def list_conversations(
     # phone's own conversation named Remote rather than after its first message.
     from server.services import phone_reads
     extra = await phone_reads.describe(db, [c.conversation_id for c in out])
+    from server.db.companion_models import ConversationContext
+    projects = dict((await db.execute(
+        select(ConversationContext.id, ConversationContext.project_id).where(
+            ConversationContext.id.in_([c.conversation_id for c in out]),
+            ConversationContext.project_id.isnot(None)))).all())
     for item in out:
         for key, value in extra.get(item.conversation_id, {}).items():
             setattr(item, key, value)
+        item.project_id = projects.get(item.conversation_id)
         if item.conversation_id == phone_reads.REMOTE_ID:
             item.title = phone_reads.REMOTE_TITLE
     return out

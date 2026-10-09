@@ -32,6 +32,8 @@ _PLAIN_KEYS = (
                "workspace_dir", "heartbeat_enabled", "heartbeat_checklist",
                # 0.1.56 §5: Arslan clears project levels itself ("true" | "false"; default off).
                "projects_auto_advance",
+               # 0.1.58 §1: raw tool input/output under a reply's steps ("true" | "false"; default off).
+               "show_technical_details",
                "heartbeat_interval_s", "lan_discovery_enabled", "ssh_enabled", "default_read_enabled",
                "voice_output_enabled", "voice_input_locale", "voice_mode", "voice_endpoint_silence_ms")
 # Integer keys, handled like _PLAIN_KEYS but round-tripped through int() on read.

@@ -239,13 +239,14 @@ async def test_a_plan_that_moved_while_the_judge_thought_is_left_alone(api, exec
 
     async def slow(point, state, **kw):
         if point == "project.progress.item" and state["item"] == "Fun test":
-            await api.post(f"/api/v1/projects/{pid}/advance")          # the user clears it meanwhile
+            await api.post(f"/api/v1/projects/{pid}/advance", json={"leftover": "move"})   # cleared meanwhile
         return await judge(point, state, **kw)
     monkeypatch.setattr(judgment, "judge", slow)
     assert (await _said(execution_db, pid, "fun test done"))["ticked"] == []
     plan = (await api.get(f"/api/v1/projects/{pid}/plan")).json()
     assert plan["levels"][0]["state"] == "cleared"
-    assert all(cp["state"] == "todo" for cp in plan["levels"][0]["checkpoints"])
+    # The open checkpoints went to the next level with the hand clear, and none was ticked.
+    assert all(cp["state"] == "todo" for lv in plan["levels"][:2] for cp in lv["checkpoints"])
 
 
 async def test_no_judge_means_nothing_happens(api, execution_db, monkeypatch):

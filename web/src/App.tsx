@@ -60,6 +60,8 @@ interface ArslanThread {
   history: Message[];
   archived?: boolean;
   temporary?: boolean;
+  /** 0.1.58 §4: started in this project (the server lists it only after its first message). */
+  projectId?: string;
 }
 
 export default function App() {
@@ -396,12 +398,13 @@ export default function App() {
   useEffect(() => { loadRegistry(); }, [loadRegistry]);
 
   // Handle addition of a brand new Orchestrator thread context
-  const handleAddArslanThread = (threadId = `thread-${crypto.randomUUID()}`) => {
+  const handleAddArslanThread = (threadId = `thread-${crypto.randomUUID()}`, projectId?: string) => {
     const newThread: ArslanThread = {
       id: threadId,
       title: 'New Session',
       defaultTitle: true,
-      history: []
+      history: [],
+      ...(projectId ? { projectId } : {}),
     };
 
     // Signal the OLD conversation ended (backend may background-distill prefs).
@@ -446,7 +449,31 @@ export default function App() {
     { project_id: project.id });
     // 0.1.56 §4.4: link the conversation to the checkpoint; best-effort — the chat opens either way.
     if (checkpointId) await projectsApi.handoff(project.id, checkpointId, conversationId).catch(() => undefined);
-    handleAddArslanThread(conversationId);
+    handleAddArslanThread(conversationId, project.id);
+  };
+
+  // 0.1.58 §4: the projects the sidebar groups conversations under — active ones, refreshed
+  // when the section changes (a project made or finished elsewhere shows up on the way back).
+  const [sidebarProjects, setSidebarProjects] = useState<Project[]>([]);
+  useEffect(() => {
+    companionApi.projects(false)
+      .then((all) => setSidebarProjects(all.filter((p) => p.status === 'active' && p.stage !== 'done' && p.stage !== 'dropped')))
+      .catch(() => { /* offline: keep the last list */ });
+  }, [activeSection]);
+  const [openProjectId, setOpenProjectId] = useState<string | null>(null);
+
+  /** 移到项目… / 移出项目: the conversation's context carries the project (refused while it runs). */
+  const handleMoveToProject = async (threadId: string, projectId: string | null) => {
+    try {
+      const context = await companionApi.context(threadId);
+      await companionApi.saveContext(context, { project_id: projectId });
+      setThreads(prev => prev.map(thread => thread.id === threadId
+        ? { ...thread, projectId: projectId ?? undefined } : thread));
+      const name = sidebarProjects.find(p => p.id === projectId)?.name ?? '';
+      showToast(projectId ? t('sidebar.movedTo', { name }) : t('sidebar.movedOut'));
+    } catch {
+      showToast(t('sidebar.moveFailed'));
+    }
   };
 
   // ── Conversation row overflow actions (Distill / Archive / Delete) ──────────
@@ -619,6 +646,13 @@ export default function App() {
         onDeleteThread={handleDeleteThread}
         backendStatus={backendStatus}
         meta={conversationIndex.meta}
+        projects={sidebarProjects}
+        onStartInProject={(projectId) => {
+          const project = sidebarProjects.find(p => p.id === projectId);
+          if (project) void handleStartProject(project);
+        }}
+        onOpenProject={(projectId) => { setOpenProjectId(projectId); setActiveSection('projects'); }}
+        onMoveToProject={(threadId, projectId) => void handleMoveToProject(threadId, projectId)}
       />}
 
       {/* Main Workspace Frame container with glass window feel */}
@@ -760,7 +794,8 @@ export default function App() {
               />
             )}
 
-            {activeSection === 'projects' && <ProjectsSection onStart={handleStartProject} />}
+            {activeSection === 'projects' && <ProjectsSection onStart={handleStartProject}
+              openProjectId={openProjectId} onOpenedProject={() => setOpenProjectId(null)} />}
             {activeSection === 'inbox' && <ProactiveInbox onOpenConversation={openInboxConversation}
               onOpenSettings={() => { setSettingsInitialSection('background'); setActiveSection('settings'); }}
               onOpenModelSettings={() => { setSettingsInitialSection('models'); setActiveSection('settings'); }} />}

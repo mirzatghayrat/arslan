@@ -76,6 +76,7 @@ class SettingsIn(BaseModel):
     workspace_dir: str | None = None
     heartbeat_enabled: str | None = None
     projects_auto_advance: str | None = None
+    show_technical_details: str | None = None
     heartbeat_checklist: str | None = None
     heartbeat_interval_s: str | None = None
     lan_discovery_enabled: str | None = None
@@ -143,6 +144,7 @@ class SettingsOut(BaseModel):
     workspace_dir: str = ""
     heartbeat_enabled: str = ""
     projects_auto_advance: str = ""
+    show_technical_details: str = ""
     heartbeat_checklist: str = ""
     heartbeat_interval_s: str = ""
     lan_discovery_enabled: str = ""
@@ -1073,6 +1075,9 @@ class ConversationListItem(BaseModel):
     preview: str = ""
     #: Files its runs made.
     files: int = 0
+    #: 0.1.58 §4: the project it belongs to (conversation_contexts.project_id), so the
+    #: sidebar can keep a project's conversations under the project.
+    project_id: str | None = None
     #: The job still running in it: {"id", "step", "done", "total"}.
     job: dict | None = None
 

@@ -27,8 +27,9 @@ FILES_LIMIT = 200
 
 def _error(exc: PlanError) -> HTTPException:
     status = 404 if exc.code.endswith("not_found") else 409 if "conflict" in exc.code or exc.code in {
-        "proposal_decided", "only_latest_advance", "no_current_level", "no_levels", "not_done"} else 422
-    return HTTPException(status, detail={"code": exc.code})
+        "proposal_decided", "only_latest_advance", "no_current_level", "no_levels", "not_done",
+        "open_checkpoints", "no_next_level"} else 422
+    return HTTPException(status, detail={"code": exc.code, **exc.detail})
 
 
 async def _project(repo, project_id: str) -> Project:
@@ -129,12 +130,21 @@ async def handoff(project_id: str, body: HandoffIn, repo=Depends(_repository, sc
     return {"id": event.id}
 
 
+class AdvanceIn(BaseModel):
+    #: 0.1.58 §5: what happens to unfinished checkpoints — required when there are any.
+    leftover: Literal["move", "drop"] | None = None
+    #: "为什么现在过关", kept with the advance as its evidence.
+    note: Annotated[str, Field(max_length=200)] | None = None
+
+
 @router.post("/projects/{project_id}/advance")
-async def advance(project_id: str, repo=Depends(_repository, scope="function")) -> dict:
-    """The user clears the current level by hand."""
+async def advance(project_id: str, body: AdvanceIn | None = None, repo=Depends(_repository, scope="function")) -> dict:
+    """The user clears the current level by hand. With checkpoints still open and no
+    `leftover`, 409 open_checkpoints + the list (the client asks, then sends it again)."""
     project = await _project(repo, project_id)
     try:
-        await project_plan.advance(repo.db, project, actor="user")
+        await project_plan.advance(repo.db, project, actor="user",
+                                   leftover=body.leftover if body else None, note=body.note if body else None)
     except PlanError as exc:
         raise _error(exc) from exc
     return await project_plan.plan_of(repo.db, project)
@@ -143,6 +153,8 @@ async def advance(project_id: str, repo=Depends(_repository, scope="function")) 
 class DecideIn(BaseModel):
     #: §5 the optional line on a decline ("还想再试一版"); it becomes a plan rule (§6 c).
     note: Annotated[str, Field(max_length=200)] | None = None
+    #: 0.1.58 §5: accepting with checkpoints still open says what happens to them.
+    leftover: Literal["move", "drop"] | None = None
 
 
 @router.post("/projects/{project_id}/proposals/{event_id}/{decision}")
@@ -151,7 +163,8 @@ async def decide(project_id: str, event_id: str, decision: Literal["accept", "de
     project = await _project(repo, project_id)
     try:
         await project_plan.decide(repo.db, project, event_id, decision == "accept",
-                                  note=body.note if body else None)   # decide() reads it on a decline only
+                                  note=body.note if body else None,   # decide() reads it on a decline only
+                                  leftover=body.leftover if body else None)
     except PlanError as exc:
         raise _error(exc) from exc
     return await project_plan.plan_of(repo.db, project)
