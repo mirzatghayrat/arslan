@@ -241,6 +241,8 @@ class SkillPack(Base):
     body = Column(Text, nullable=True)
     # 0.1.55 §14: the user's switch. Off = not in the index the model sees, read_skill refuses.
     enabled = Column(Boolean, nullable=False, default=True, server_default="1")
+    # 0.1.57 §5.2: the capability source it was installed from (pinned commit + checksums).
+    source_id = Column(String(36), nullable=True)
 
 
 class SkillCandidate(Base):
@@ -334,6 +336,69 @@ class MCPServer(Base):
     last_checked_at = Column(DateTime, nullable=True)    # PB-4: last on-demand health probe
     health_status = Column(String(20), nullable=True)    # PB-4: ok|failing|NULL=never checked
     created_at = Column(DateTime, default=datetime.utcnow)
+    # 0.1.57 §5.3: set for servers Arslan installed — {root, folders, network, read}: the
+    # seatbelt profile it is started under. NULL = started as before (hand-added servers).
+    sandbox = Column(JSON, nullable=True)
+
+
+class CapabilitySource(Base):
+    """0.1.57 §5.4 the dossier of one capability Arslan proposed or installed: where it came
+    from, the license as read at the source, the pinned version and checksums, how it runs,
+    what it may touch, and what the scan and the first test said."""
+    __tablename__ = "capability_sources"
+    __table_args__ = (
+        CheckConstraint("kind IN ('mcp','skill')", name="ck_capability_source_kind"),
+        CheckConstraint("state IN ('proposed','installed','failed','removed')", name="ck_capability_source_state"),
+    )
+    id = Column(String(36), primary_key=True)
+    owner_id = Column(String(100), nullable=False, default="local")
+    kind = Column(String(10), nullable=False)
+    name = Column(String(120), nullable=False)
+    candidate_id = Column(String(300), nullable=False)
+    source_url = Column(String(500), nullable=True)
+    repo = Column(String(200), nullable=True)
+    version = Column(String(80), nullable=True)
+    commit_sha = Column(String(64), nullable=True)
+    artifact_sha256 = Column(String(64), nullable=True)
+    lock_sha256 = Column(String(64), nullable=True)
+    license_spdx = Column(String(40), nullable=True)
+    license_path = Column(String(300), nullable=True)
+    stars = Column(Integer, nullable=True)
+    pushed_days = Column(Integer, nullable=True)
+    checked_at = Column(DateTime, nullable=True)
+    runtime = Column(String(10), nullable=True)            # uv | node | mcpb | remote | skill
+    needs = Column(JSON, nullable=False, default=dict)     # {keys:[...], network}
+    grants = Column(JSON, nullable=False, default=dict)    # {folders:[...], network: bool}
+    scan = Column(JSON, nullable=True)
+    test = Column(JSON, nullable=True)
+    files = Column(JSON, nullable=True)                    # skills: {path: sha256}
+    candidate = Column(JSON, nullable=True)                # the search result it came from (start arguments)
+    state = Column(String(12), nullable=False, default="proposed")
+    error = Column(Text, nullable=True)
+    mcp_server_id = Column(Integer, nullable=True)
+    skill_key = Column(String(60), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    installed_at = Column(DateTime, nullable=True)
+
+
+class CapabilityFind(Base):
+    """0.1.57 §4 "Arslan 找到的": a need Arslan met and what it found, kept for later. Never a
+    notification, never an Inbox item."""
+    __tablename__ = "capability_finds"
+    __table_args__ = (
+        CheckConstraint("why IN ('declined','job','project_level')", name="ck_capability_find_why"),
+        CheckConstraint("state IN ('open','dismissed','installed')", name="ck_capability_find_state"),
+    )
+    id = Column(String(36), primary_key=True)
+    owner_id = Column(String(100), nullable=False, default="local")
+    need = Column(String(300), nullable=False)
+    why = Column(String(16), nullable=False)
+    conversation_id = Column(String(50), nullable=True)
+    project_id = Column(String(36), nullable=True)
+    level_id = Column(String(36), nullable=True)
+    candidate = Column(JSON, nullable=False)
+    state = Column(String(10), nullable=False, default="open")
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
 
 
 class DiscoveryCandidate(Base):

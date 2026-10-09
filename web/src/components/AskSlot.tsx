@@ -1,5 +1,6 @@
 import { useArslanStore } from "../stores/arslanStore";
 import ActionApprovalCard from "./ActionApprovalCard";
+import CapabilityProposeCard from "./capabilities/CapabilityProposeCard";
 import ConnectMcpCard from "./ConnectMcpCard";
 import EnrollNodeCard from "./EnrollNodeCard";
 import RunCommandCard from "./RunCommandCard";
@@ -19,6 +20,8 @@ export default function AskSlot({ send }: { send: (frame: Record<string, unknown
   const pendingWorkspaceWrite = useArslanStore((s) => s.pendingWorkspaceWrite);
   const pendingSchedule = useArslanStore((s) => s.pendingSchedule);
   const pendingAction = useArslanStore((s) => s.pendingAction);
+  const pendingCapability = useArslanStore((s) => s.pendingCapability);
+  const clearPendingCapability = useArslanStore((s) => s.clearPendingCapability);
   // Security-load-bearing: secrets never leave this card except over REST (ConnectMcpCard.tsx).
   const pendingConnectMcp = useArslanStore((s) => s.pendingConnectMcp);
   const clearPendingCommand = useArslanStore((s) => s.clearPendingCommand);
@@ -60,6 +63,11 @@ export default function AskSlot({ send }: { send: (frame: Record<string, unknown
         background={pendingSchedule.background} expiresAt={expires(pendingSchedule.receivedAt)} queue={queue}
         onConfirm={(callId) => { send({ type: 'confirm_schedule', call_id: callId }); clearPendingSchedule(); }}
         onCancel={(callId) => { send({ type: 'cancel_schedule', call_id: callId }); clearPendingSchedule(); }} />) },
+    pendingCapability && { at: pendingCapability.receivedAt ?? 0, key: `cap:${pendingCapability.callId}`, render: (queue: AskQueuePosition) => (
+      <CapabilityProposeCard card={pendingCapability} callId={pendingCapability.callId}
+        expiresAt={expires(pendingCapability.receivedAt)} queue={queue}
+        onConfirm={(callId, keys, folders) => { send({ type: 'confirm_capability', call_id: callId, keys, folders }); clearPendingCapability(); }}
+        onCancel={(callId) => { send({ type: 'cancel_capability', call_id: callId }); clearPendingCapability(); }} />) },
     pendingConnectMcp && { at: Number.MAX_SAFE_INTEGER, key: `mcp:${pendingConnectMcp.callId}`, render: (queue: AskQueuePosition) => (
       <ConnectMcpCard callId={pendingConnectMcp.callId} label={pendingConnectMcp.label} labelKey={pendingConnectMcp.labelKey}
         transport={pendingConnectMcp.transport} command={pendingConnectMcp.command} args={pendingConnectMcp.argv}

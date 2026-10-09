@@ -538,9 +538,23 @@ export interface RememberedFact {
   status: "active" | "proposed";
 }
 
+/** What the install-and-retry card shows (server/services/capability_flow.card_for). */
+export interface CapabilityCard {
+  kind: "mcp" | "skill"; name: string; summary: string; source_url: string | null; repo: string | null;
+  version: string | null; license: { spdx: string | null; read_from: string | null };
+  stars: number | null; pushed_days: number | null; runtime: "uv" | "node" | "mcpb" | "remote" | "skill";
+  runtime_download: { name: string; size_mb: number } | null; remote_host: string | null; network: boolean;
+  folders: string[]; keys: { name: string; secret: boolean; required: boolean; description: string }[];
+  why: string; retry: string;
+}
+export interface CapabilityResult { state: "on" | "failed" | "blocked"; name: string; tools: number;
+  sourceId: string | null; stage?: string; code?: string; detail?: string }
+
 export interface ArslanThreadItem {
   id: number;
-  kind: "message" | "fact" | "system" | "escalation" | "job" | "lesson" | "plan";
+  kind: "message" | "fact" | "system" | "escalation" | "job" | "lesson" | "plan" | "capability";
+  /** kind === "capability" (0.1.57): how an install the user approved ended. */
+  capabilityResult?: CapabilityResult;
   /** kind === "plan" (0.1.56 §7): Arslan's proposed new plan for this conversation's project. */
   planProposal?: import("./projects").PlanProposal & { projectId: string };
   /** kind === "job": the background job whose live card sits at this point in the
@@ -648,6 +662,10 @@ export type ArslanServerMessage =
   | { type: "propose_enroll_node"; call_id: string; name: string; host: string; user: string; fingerprints: string[] }
   | { type: "propose_workspace_write"; call_id: string; workspace: string; action: string; path: string; background?: boolean }
   | { type: "propose_schedule"; call_id: string; name: string; when: string; background?: boolean }
+  // 0.1.57 §3.1: add a capability and retry — answered only in this window (it may carry a key).
+  | ({ type: "propose_capability"; call_id: string } & CapabilityCard)
+  | { type: "capability_result"; call_id: string | null; source_id: string | null; state: "on" | "failed" | "blocked";
+      name: string; tools: number; stage?: string; code?: string; detail?: string }
   | { type: "propose_action"; call_id: string; kind: ActionKind; target: string;
       detail: string; background?: boolean }
   // NEXT BUILD (conversation-driven MCP, Task 3/5): Arslan proposes connecting a preset

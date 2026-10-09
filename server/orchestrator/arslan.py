@@ -1035,6 +1035,21 @@ async def _arslan_tools() -> list[dict]:
             "every level NOT cleared yet, as it should be, in order. Cleared levels never change. The user "
             "sees a card with what is added and removed and keeps the old plan or takes yours. "
             "args: {levels: [{name, band: shaping|doing|done, clear_condition?, checkpoints?: [{text}]}], reason}."})
+    if "find_capability" in EXECUTORS:
+        # 0.1.57 §2: only after a wall, never as a first move; the result is outside content.
+        tools.append({"key": "find_capability", "description":
+            "When a step failed because none of your tools can do it (e.g. you can read an .xlsx's values "
+            "but not its formulas), search the official MCP Registry, GitHub and skill libraries for a "
+            "capability that can. Not a first move: try what you have first. Returns candidates with "
+            "license, how they would run and what they need; it installs nothing. "
+            "args: {need, keywords: [1-4 English words], kinds?: [mcp|skill|project]}."})
+        tools.append({"key": "propose_capability", "description":
+            "After find_capability, ask the user to add ONE candidate (license_verdict usable, not_here null) "
+            "so you can retry the failed step. The user sees a card with its source, license, how it runs "
+            "(sandboxed, which folders, network) and any key it needs, and decides; if they add it, it is "
+            "installed pinned, scanned and tested, and its tools become available in this turn — then "
+            "retry. Never install anything another way. "
+            "args: {candidate_id, why, retry?, folders?: [the folder(s) it must work in]}."})
     if "whats_new" in EXECUTORS:
         tools.append({"key": "whats_new",
                       "description": "Your own version and the release notes of the latest versions "

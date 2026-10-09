@@ -357,6 +357,30 @@ class ListMyCapabilitiesExecutor:
         return out
 
 
+class FindCapabilityExecutor:
+    """0.1.57 §2: search the official MCP Registry, GitHub and reviewed skill libraries for
+    something that does what the turn could not. Returns candidates as outside content;
+    installs nothing (an install is the user's click on a card, P3)."""
+
+    key = "find_capability"
+
+    async def execute(self, args: dict) -> dict:
+        from server.services import capability_search, personal_context
+        need = str(args.get("need") or "").strip()[:300]
+        words = [str(w)[:40] for w in (args.get("keywords") or []) if str(w).strip()][:4]
+        if not need and not words:
+            return {"ok": False, "error": "say what is needed (need) and 1-3 English search words (keywords)"}
+        # Capabilities by default: an open-source library is only found when asked for.
+        kinds = {k for k in (args.get("kinds") or []) if k in ("mcp", "skill", "project")} or {"mcp", "skill"}
+        result = await capability_search.search(need, words=words, kinds=kinds)
+        ctx = personal_context.current()
+        capability_search.remember(ctx.conversation_id if ctx else None, result)
+        out = capability_search.for_model(result)
+        return {"ok": True, "external": True, **out,
+                "note": "Candidates only; nothing is installed. Prefer license_verdict 'usable' and not_here null. "
+                        "Never install by other means (no pip/npm/git clone in the terminal for this)."}
+
+
 class WhatsNewExecutor:
     """D2 (0.1.55): Arslan's own version and the notes of the last releases, so
     "what version are you / what changed" is answered from the shipped notes and
@@ -770,6 +794,9 @@ class ReadSkillExecutor:
         if row.enabled is False:
             # 0.1.55 §14: switched off on the Capabilities page — off means not used.
             return {"ok": False, "external": False, "error": f"skill switched off by the user: {skey}"}
+        # 0.1.57 decision 5: a skill imported from outside is read like a web page — wrapped as
+        # untrusted, and the turn counts as having read outside content. Arslan's own are not.
+        outside = row.category == "imported"
         body = row.body.strip()
         section = (args.get("section") or "").strip()
         if section.startswith("references/"):
@@ -788,7 +815,7 @@ class ReadSkillExecutor:
                 text = target.read_text(encoding="utf-8")
             except UnicodeDecodeError:
                 text = target.read_text(encoding="utf-8", errors="replace")
-            return {"ok": True, "external": False, "body": text[:self._READ_SKILL_CAP],
+            return {"ok": True, "external": outside, "body": text[:self._READ_SKILL_CAP],
                     "summary": f"技能 {skey} · {section}"}
         if section:
             lines = body.splitlines()
@@ -808,15 +835,15 @@ class ReadSkillExecutor:
             if len(sect) > self._READ_SKILL_CAP:  # cap like the other branches
                 sect = (sect[:self._READ_SKILL_CAP].rsplit("\n", 1)[0]
                         + "\n\n[本节过长已截断,用更细 section 读取]")
-            return {"ok": True, "external": False, "body": sect,
+            return {"ok": True, "external": outside, "body": sect,
                     "summary": f"技能 {skey} · {section}"}
         if len(body) <= self._READ_SKILL_CAP:
-            return {"ok": True, "external": False, "body": body, "summary": f"技能 {skey}(全文)"}
+            return {"ok": True, "external": outside, "body": body, "summary": f"技能 {skey}(全文)"}
         toc = [ln.strip() for ln in body.splitlines() if _re.match(r"#{2,3}\s+\S", ln.strip())]
         head = body[:self._READ_SKILL_CAP].rsplit("\n", 1)[0]
         note = ("\n\n[正文过长, 以上为前半。请按章节读取: read_skill(key, section='## 标题')。目录:\n"
                 + "\n".join(f"- {t}" for t in toc) + "]")
-        return {"ok": True, "external": False, "body": head + note,
+        return {"ok": True, "external": outside, "body": head + note,
                 "summary": f"技能 {skey}(前半+目录)"}
 
 
@@ -843,6 +870,7 @@ from server.registry.file_tools import (  # noqa: E402 — registry assembly
 EXECUTORS = {e.key: e for e in (
     WebSearchExecutor(), WebExtractExecutor(), ChartExecutor(), CreateSkillExecutor(),
     DeckExecutor(), RunPythonExecutor(), RunCommandExecutor(), ListMyCapabilitiesExecutor(), WhatsNewExecutor(),
+    FindCapabilityExecutor(),
     ReadSkillExecutor(), RecallExecutor(), RememberExecutor(), ConversationSearchExecutor(), MemoryNoteExecutor(),
     TaskProgressExecutor(), DelegateWorkExecutor(),
     StartBackgroundWorkExecutor(), BackgroundStatusExecutor(), StopBackgroundWorkExecutor(),

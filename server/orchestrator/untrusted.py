@@ -47,7 +47,8 @@ def wrap_external(text: str) -> str:
 # run_native for one turn; outside a turn the answer is "yes" (the safe side).
 
 _EXTERNAL: contextvars.ContextVar[dict | None] = contextvars.ContextVar("turn_external_seen", default=None)
-_OUTSIDE_TOOLS = ("web_search", "web_extract", "read_file", "search_files", "conversation_search", "recall")
+_OUTSIDE_TOOLS = ("web_search", "web_extract", "read_file", "search_files", "conversation_search", "recall",
+                  "find_capability")
 _NETWORK_COMMAND = re.compile(
     r"\b(?:curl|wget|http|https|nc|ncat|ssh|scp|rsync|git\s+(?:clone|pull|fetch)|pip3?\s+download"
     r"|requests|urllib\d?|httpx|aiohttp|fetch)\b|https?://", re.I)

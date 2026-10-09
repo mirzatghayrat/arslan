@@ -44,15 +44,24 @@ def _mock_github(monkeypatch, *, license="MIT", tree=None, raws=None):
                 "stars": 10, "forks": 1, "license": license, "pushed_days": 1,
                 "description": "", "topics": []}
 
-    async def _tree_paths(owner, repo):
+    shas: list = []
+
+    async def _tree_paths(owner, repo, sha=None):
+        shas.append(sha)
         return tree or []
 
-    async def _fetch_raw(owner, repo, path):
+    async def _fetch_raw(owner, repo, path, sha=None):
+        shas.append(sha)
         return (raws or {})[path]
+
+    async def _head_sha(owner, repo):
+        return "0123456789abcdef0123456789abcdef01234567"
 
     monkeypatch.setattr(skill_import.github_eval, "fetch_repo", _fetch_repo)
     monkeypatch.setattr(skill_import, "_tree_paths", _tree_paths)
     monkeypatch.setattr(skill_import, "_fetch_raw", _fetch_raw)
+    monkeypatch.setattr(skill_import, "head_sha", _head_sha)
+    return shas
 
 
 # ── parsing ────────────────────────────────────────────────────────────────────
@@ -97,11 +106,35 @@ async def test_import_verbatim_with_attribution(maker, monkeypatch):
     async with maker() as db:
         row = await db.get(SkillPack, "handoff")
     assert row.tier == "safe" and row.status == "registered" and row.category == "imported"
-    assert "Imported verbatim from https://github.com/mattpocock/skills (MIT)" in row.body
+    assert "Imported verbatim from https://github.com/mattpocock/skills at 0123456789ab (MIT)" in row.body
     assert "1. State the goal." in row.body               # body content preserved verbatim
     # P0 honesty gate: imported skill has a real body → assignable
     from server.registry.service import skill_is_assignable
     assert skill_is_assignable(row.tier, row.status, row.body)
+
+
+async def test_an_import_is_pinned_to_one_commit_and_records_each_files_checksum(maker, monkeypatch):
+    """0.1.57 §5.2: without a commit it pins to the default branch's head; with one, it
+    fetches every file at exactly that commit. The checksums say what was installed."""
+    import hashlib
+    shas = _mock_github(monkeypatch, license="MIT",
+                        tree=["skills/handoff/SKILL.md", "skills/handoff/scripts/run.py", "skills/handoff/references/a.md"],
+                        raws={"skills/handoff/SKILL.md": VALID_MD, "skills/handoff/scripts/run.py": "print(1)\n",
+                              "skills/handoff/references/a.md": "# ref\n"})
+    out = await skill_import.import_skill("mattpocock/skills", "skills/handoff/SKILL.md")
+    assert out["commit"] == "0123456789abcdef0123456789abcdef01234567"
+    assert set(shas) == {out["commit"]}
+    assert out["files"] == {"skills/handoff/SKILL.md": hashlib.sha256(VALID_MD.encode()).hexdigest(),
+                            "skills/handoff/scripts/run.py": hashlib.sha256(b"print(1)\n").hexdigest(),
+                            "skills/handoff/references/a.md": hashlib.sha256(b"# ref\n").hexdigest()}
+    async with maker() as db:
+        await db.delete(await db.get(SkillPack, "handoff"))
+        await db.commit()
+    shas.clear()
+    pinned = await skill_import.import_skill("mattpocock/skills@ABCDEF1234567", "skills/handoff/SKILL.md")
+    assert pinned["commit"] == "abcdef1234567" and set(shas) == {"abcdef1234567"}
+    with pytest.raises(ValueError, match="not a commit id"):
+        await skill_import.import_skill("mattpocock/skills@main;rm", "skills/handoff/SKILL.md")
 
 
 async def test_import_refuses_existing_key(maker, monkeypatch):

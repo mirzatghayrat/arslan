@@ -73,12 +73,16 @@ EXPECTED_FILES: dict[str, int] = {
     # measurement the design rests on), one asserts the port confinement
     # actually enforces.
     "server/test_ssh_exec.py": 3,
+    # 2026-10-09 (0.1.57 P2): an installed capability's MCP server profile (deny by default):
+    # only its folder and the granted one, a protected folder stays closed inside a grant,
+    # the network only when declared. Seatbelt is macOS-only. Appended boundary case.
+    "server/test_capability_sandbox.py": 3,
 }
 #: 🔴 MIRRORED in .github/workflows/ci.yml ("Assert they RAN, and did not skip").
 #: That step re-derives this number from the junit XML, so changing one without
 #: the other turns a green local run into a red CI run, or worse, hides drift
 #: from the guard meant to catch it. Both, same commit, or neither.
-EXPECTED_TOTAL = 49  # +1 0.1.53 Hands: protected socket; +6 0.1.51 P3: run_command workspace sandbox; +2 0.1.50: run_command offline mode (seatbelt deny network*);
+EXPECTED_TOTAL = 52  # +3 0.1.57: installed capability sandbox; +1 0.1.53 Hands: protected socket; +6 0.1.51 P3: run_command workspace sandbox; +2 0.1.50: run_command offline mode (seatbelt deny network*);
 #                     −4 0.1.48: the unused command sandbox and its tests were deleted
 # The external-file test has six attack cases under one marked function.
 PARAMETERIZED_EXTRA_CASES = 5

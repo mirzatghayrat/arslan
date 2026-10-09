@@ -1,6 +1,6 @@
 # Generated capability inventory
 
-Desktop configuration version: `0.1.56`.
+Desktop configuration version: `0.1.57`.
 
 Regenerate with `uv run python -m scripts.capability_inventory`. This is static
 source evidence, not an installed-account probe or proof of model quality.
@@ -62,6 +62,7 @@ enrolment executor deliberately refuses execution; the UI owns enrolment.
 | `desktop_type` | [server/registry/hands_tools.py](../server/registry/hands_tools.py) |
 | `edit_file` | [server/registry/file_tools.py](../server/registry/file_tools.py) |
 | `enroll_node` | [server/registry/ssh_tools.py](../server/registry/ssh_tools.py) |
+| `find_capability` | [server/registry/executors.py](../server/registry/executors.py) |
 | `list_dir` | [server/registry/file_tools.py](../server/registry/file_tools.py) |
 | `list_my_capabilities` | [server/registry/executors.py](../server/registry/executors.py) |
 | `list_my_tasks` | [server/registry/schedule_tools.py](../server/registry/schedule_tools.py) |
@@ -113,7 +114,7 @@ trust decisions; see THIRD_PARTY_NOTICES.md and docs/RELIABILITY.md.
 
 | Source | SHA-256 |
 | --- | --- |
-| `server/registry/executors.py` | `fa6dec759b383f1b83c7564b030f32b7f5b9b7e41c4d997561711e8391fc57d2` |
+| `server/registry/executors.py` | `dbc186b0eb666e094238bf90406b81378b38227bbf1bad27695ae97bef10797b` |
 | `server/registry/file_tools.py` | `a41416c5c239370a8ef992b5406e066e51dc1101ffdf83683a8d8b4f7b2390fd` |
 | `server/registry/hands_tools.py` | `025cd1cb5b22b98a8424a0e28080ac7b3af1cde2b4f7819313f3fb2e6e99f989` |
 | `server/registry/lan_tools.py` | `34778593e80f8276d545f4ab569803a208a290d5fe4e8d52402f7a876b6f63b1` |

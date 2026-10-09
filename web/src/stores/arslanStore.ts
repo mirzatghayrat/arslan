@@ -44,6 +44,9 @@ interface ArslanState {
   pendingEnrollNode: { callId: string; name: string; host: string; user: string; fingerprints: string[]; receivedAt?: number } | null;
   pendingWorkspaceWrite: { callId: string; workspace: string; action: string; path: string; background?: boolean; receivedAt?: number } | null;
   pendingSchedule: { callId: string; name: string; when: string; background?: boolean; receivedAt?: number } | null;
+  // 0.1.57: add a capability and retry (only this window answers; the card may carry a key).
+  pendingCapability: ({ callId: string; receivedAt?: number } & import("../api/client.types").CapabilityCard) | null;
+  clearPendingCapability: () => void;
   // 0.1.45: a background job asks before it acts in the browser or on the Mac.
   pendingAction: { callId: string; kind: ActionKind; target: string; detail: string; receivedAt?: number } | null;
   // NEXT BUILD (conversation-driven MCP, Task 5): set when a `propose_connect_mcp`
@@ -194,7 +197,8 @@ function initialData() {
     jobNotice: null as { seq: number; jobId: string; kind: "finished" | "needs_approval"; outcome: JobOutcome | null; goal: string } | null,
     pendingEnrollNode: null as { callId: string; name: string; host: string; user: string; fingerprints: string[] } | null,
     pendingWorkspaceWrite: null as { callId: string; workspace: string; action: string; path: string; background?: boolean } | null,
-    pendingSchedule: null as { callId: string; name: string; when: string; background?: boolean } | null,
+    pendingCapability: null,
+  pendingSchedule: null as { callId: string; name: string; when: string; background?: boolean } | null,
     pendingAction: null as { callId: string; kind: ActionKind; target: string; detail: string } | null,
     pendingConnectMcp: null as {
       callId: string;
@@ -272,6 +276,7 @@ function makeActions(set: SetState, get: GetState) {
     clearPendingEnrollNode: () => set({ pendingEnrollNode: null }),
     clearPendingWorkspaceWrite: () => set({ pendingWorkspaceWrite: null }),
     clearPendingSchedule: () => set({ pendingSchedule: null }),
+  clearPendingCapability: () => set({ pendingCapability: null }),
     clearPendingAction: () => set({ pendingAction: null }),
     clearPendingConnectMcp: () => set({ pendingConnectMcp: null }),
     clearError: () => set({ error: null, errorTranslations: null }),
@@ -311,7 +316,7 @@ function makeActions(set: SetState, get: GetState) {
       // delivers no content yet. Slow models (e.g. Gemini 2.5 Pro) have a long
       // delay between stream_start and the first token, so we keep the thinking
       // indicator alive until stream_chunk (first real content) clears it.
-      const RESPONDING_TYPES = new Set(["message", "error", "fact_saved", "propose_run_command", "propose_enroll_node", "propose_workspace_write", "propose_schedule", "propose_connect_mcp", "spawn_updated", "clarify_options"]);
+      const RESPONDING_TYPES = new Set(["message", "error", "fact_saved", "propose_run_command", "propose_enroll_node", "propose_workspace_write", "propose_schedule", "propose_capability", "propose_connect_mcp", "spawn_updated", "clarify_options"]);
       if (RESPONDING_TYPES.has(frame.type)) {
         set({ thinking: false });
       }
@@ -857,6 +862,19 @@ function makeActions(set: SetState, get: GetState) {
                                    when: frame.when, background: frame.background === true, receivedAt: Date.now() },
                ...(frame.background ? _approvalNotice(state) : {}) });
           break;
+        case "propose_capability": {
+          const { type: _t, call_id, ...card } = frame;
+          void _t;
+          set({ pendingCapability: { callId: call_id, receivedAt: Date.now(), ...card } });
+          break;
+        }
+        case "capability_result":
+          set({
+            items: [...state.items, { id: nextClientId(), kind: "capability", role: "arslan", content: frame.name,
+              capabilityResult: { state: frame.state, name: frame.name, tools: frame.tools, sourceId: frame.source_id,
+                stage: frame.stage, code: frame.code, detail: frame.detail } }],
+          });
+          break;
         case "propose_action":
           set({ pendingAction: { callId: frame.call_id, kind: frame.kind, target: frame.target, detail: frame.detail,
                                  receivedAt: Date.now() },
@@ -868,6 +886,7 @@ function makeActions(set: SetState, get: GetState) {
           const id = frame.call_id;
           set({
             ...(state.pendingCommand?.callId === id ? { pendingCommand: null } : {}),
+            ...(state.pendingCapability?.callId === id ? { pendingCapability: null } : {}),
             ...(state.pendingWorkspaceWrite?.callId === id ? { pendingWorkspaceWrite: null } : {}),
             ...(state.pendingSchedule?.callId === id ? { pendingSchedule: null } : {}),
             ...(state.pendingAction?.callId === id ? { pendingAction: null } : {}),

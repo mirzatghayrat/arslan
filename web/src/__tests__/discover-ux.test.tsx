@@ -82,33 +82,5 @@ describe('dossier overview', () => {
 });
 
 // ── ③ search rows: type badge + topics + filter chips ───────────────────────
-describe('search type badges and filter', () => {
-  const items = [
-    { full_name: 'acme/mcp-thing', html_url: 'u', stars: 500, forks: 3, license: 'MIT',
-      pushed_days: 2, description: 'an mcp server', topics: ['mcp'], trust: { tier: 'high', license_note: '' } },
-    { full_name: 'acme/flameshot', html_url: 'u', stars: 30000, forks: 1000, license: 'GPL-3.0',
-      pushed_days: 0, description: 'screenshots', topics: ['gui'], trust: { tier: 'high', license_note: '' } },
-  ];
-
-  it('shows a kind badge and topic tags on each row', async () => {
-    (discovery.searchRepos as ReturnType<typeof vi.fn>).mockResolvedValue(items);
-    render(<ToolHubDiscover />);
-    fireEvent.change(screen.getByPlaceholderText('capabilities.hero.placeholder'), { target: { value: 'x' } });
-    fireEvent.click(screen.getByText('capabilities.hero.research'));
-    await waitFor(() => expect(screen.getByTestId('kind-badge-acme/mcp-thing')).toBeTruthy());
-    expect(screen.getByTestId('kind-badge-acme/mcp-thing').textContent).toContain('mcp');
-    expect(screen.getByTestId('kind-badge-acme/flameshot').textContent).toContain('other');
-    expect(screen.getByText('#mcp')).toBeTruthy();
-  });
-
-  it('filter chips narrow the visible rows by kind', async () => {
-    (discovery.searchRepos as ReturnType<typeof vi.fn>).mockResolvedValue(items);
-    render(<ToolHubDiscover />);
-    fireEvent.change(screen.getByPlaceholderText('capabilities.hero.placeholder'), { target: { value: 'x' } });
-    fireEvent.click(screen.getByText('capabilities.hero.research'));
-    await waitFor(() => expect(screen.getByText('acme/mcp-thing')).toBeTruthy());
-    fireEvent.click(screen.getByTestId('filter-chip-mcp'));
-    expect(screen.getByText('acme/mcp-thing')).toBeTruthy();
-    expect(screen.queryByText('acme/flameshot')).toBeNull();
-  });
-});
+// 0.1.57: free text no longer lists raw GitHub rows with type badges; it goes to the capability
+// search (registry + GitHub + skill libraries) — see capability-discover.test.tsx.

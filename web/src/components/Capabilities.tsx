@@ -15,6 +15,8 @@ import { getMcpCatalog } from "../api/catalog";
 import { listMcpServers } from "../api/mcp";
 import ProfessionalMethods from "./companion/ProfessionalMethods";
 import CapabilitySwitches from "./CapabilitySwitches";
+import AddedCapabilities from "./capabilities/AddedCapabilities";
+import FoundRail from "./capabilities/FoundRail";
 
 type CapTab = "experts" | "abilities" | "discover" | "skills" | "forge" | "mcps" | "saved";
 type McpChip = "all" | "recommended" | "registered";
@@ -100,14 +102,18 @@ export default function Capabilities({ provider, experts, initialTab }: {
         />
 
         {tab === "experts" && experts}
-        {tab === "abilities" && <CapabilitySwitches onOpenTab={(next) => setTab(next)} />}
+        {tab === "abilities" && <><CapabilitySwitches onOpenTab={(next) => setTab(next)} /><AddedCapabilities /></>}
         {(tab === "discover" || tab === "saved") && <FilterChips active={tab} onSelect={id => setTab(id as CapTab)} chips={[
           { id: "discover", label: t("capabilities.chips.all") }, { id: "saved", label: t("capabilities.tabs.saved") },
         ]} />}
 
         {/* Discover: the Tool-Hub hero (centered search input + RESEARCH → dossier) */}
         {tab === "discover" && (
-          <ToolHubDiscover onMcpAdded={() => setMcpRefreshKey((k) => k + 1)} />
+          // 0.1.57 board Capabilities-v3: the search, and what Arslan found on the right.
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
+            <ToolHubDiscover onMcpAdded={() => setMcpRefreshKey((k) => k + 1)} />
+            <div className="lg:pt-8"><FoundRail /></div>
+          </div>
         )}
 
 

@@ -34,4 +34,12 @@ describe("Inbox in the sidebar", () => {
     expect(screen.getByTestId("inbox-badge").textContent).toBe("99+");
     expect(screen.getByTestId("inbox-badge").className).toContain("bg-warning");
   });
+
+  it("0.1.57: what Arslan found shows as a quiet count beside Capabilities, none when zero", () => {
+    const { rerender } = render(<Sidebar {...props({ capabilityFinds: 0 })} />);
+    expect(screen.queryByTestId("capabilities-badge")).toBeNull();
+    rerender(<Sidebar {...props({ capabilityFinds: 3 })} />);
+    expect(screen.getByTestId("capabilities-badge")).toHaveTextContent("3");
+    expect(screen.getByTestId("capabilities-badge").className).not.toContain("bg-primary");   // quiet, not an alert
+  });
 });
