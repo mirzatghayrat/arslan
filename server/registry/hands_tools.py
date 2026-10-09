@@ -52,13 +52,14 @@ RUN_S = 120                        # _run's default; a Hands call is 60 s, a rea
 
 
 async def _ask_once(grant: str, kind: str, target: str, detail: str) -> bool:
-    """True if already granted for this job, else ask the user (card + notification)."""
+    """True if already granted for this job (or, in a chat reply, this conversation), else ask the
+    user (card + notification)."""
     from server.services import approvals
     from server.ws import protocol
     conversation_id, job_id = _conversation_and_job()
-    if conversation_id is None or job_id is None:
+    if conversation_id is None:
         return False
-    granted = _grants.setdefault(job_id, set())
+    granted = _grants.setdefault(job_id or f"conversation:{conversation_id}", set())
     if grant in granted:
         return True
     ok = await approvals.ask(conversation_id, protocol.propose_action(uuid.uuid4().hex, kind, target, detail))
@@ -598,6 +599,24 @@ class DesktopLookExecutor:
         return {"ok": True, "external": True, "text": text, "summary": f"look · {app['name']}"[:200]}
 
 
+# Hands v2 §5.7: in a chat reply (not background work) at most this many actions, all in one app.
+INLINE_ACTIONS = 5
+_inline: dict[tuple[str, str], tuple[int, str]] = {}      # (conversation, turn) → (actions, app)
+
+
+def _inline_refusal(why: str) -> dict:
+    return {"ok": False, "external": False, "code": "act_in_background",
+            "error": f"{why} Call start_background_work with this goal; the work continues there."}
+
+
+def _inline_turn() -> tuple[str, str] | None:
+    from server.services import personal_context
+    ctx = personal_context.current()
+    if ctx is None or not ctx.conversation_id:
+        return None
+    return ctx.conversation_id, str(ctx.run_id or "")
+
+
 class _DesktopAct:
     op = ""
     timeout_s = 2 * CARD_S + 2 * RUN_S    # the app card and a risky-action card; describe, act, Return
@@ -617,13 +636,17 @@ class _DesktopAct:
         if name is None:
             return {"ok": False, "external": False, "error": "app required (a name from desktop_apps)"}
         conversation_id, job_id = _conversation_and_job()
+        turn = _inline_turn() if job_id is None else None
         if job_id is None:
-            return {"ok": False, "external": False, "code": "act_in_background",
-                    "error": "Acting in Mac apps (clicking, typing, choosing, pressing keys) runs as background "
-                             "work. Call start_background_work with this goal; looking is fine here."}
+            if turn is None:
+                return {"ok": False, "external": False, "code": "no_one_to_ask",
+                        "error": "Acting in a Mac app needs a conversation to ask the user in."}
+            if _inline.get(turn, (0, ""))[0] >= INLINE_ACTIONS:
+                return _inline_refusal(f"This reply has already acted {INLINE_ACTIONS} times, the most a chat "
+                                       "reply may.")
         if not desktop_available():
             return {"ok": False, "external": False, "error": "Arslan Hands is not available on this Mac."}
-        if hands_service.stopped(job_id):
+        if job_id is not None and hands_service.stopped(job_id):
             return {"ok": False, "external": False, "code": "stopped_by_user",
                     "error": hands_contract.REFUSALS["stopped_by_user"]}
         started = time.monotonic()
@@ -651,6 +674,13 @@ class _DesktopAct:
         label = target.get("name") or args.get("element") or ""
         if self.op == "menu":
             label = " › ".join(_menu_path(args))
+        if turn is not None:
+            count, first = _inline.get(turn, (0, bundle))
+            if first != bundle:
+                return _inline_refusal("This reply already acted in another app; a chat reply acts in one app.")
+            if len(_inline) > 500:
+                _inline.clear()
+            _inline[turn] = (count + 1, first)
         verb = _VERBS.get(self.op, self.op)
         if not await _ask_once(f"desktop:{bundle}", "desktop_app", str(app.get("name")),
                                f"Arslan wants to click, type and choose in {app.get('name')} for this piece of "

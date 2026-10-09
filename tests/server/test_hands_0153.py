@@ -31,8 +31,13 @@ def _case(name: str) -> dict:
 def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(hands_service, "_dir", lambda: tmp_path / "hands")
     hands_service._reset_for_tests()
+    from server.registry import hands_tools as _tools
+    _tools._inline.clear()           # per (conversation, turn): tests share one turn id
+    _tools._grants.clear()
     yield
     hands_service._reset_for_tests()
+    _tools._inline.clear()
+    _tools._grants.clear()
 
 
 # ── the contract, backend side ───────────────────────────────────────────────
@@ -322,11 +327,23 @@ async def test_a_declined_look_reads_nothing(hands, asks, in_turn):
     assert hands.ops("snapshot", "find", "wait") == []
 
 
-async def test_acting_outside_a_job_is_sent_to_background_work(hands, asks, in_turn):
+async def test_a_chat_reply_acts_five_times_in_one_app_then_sends_the_rest_to_background_work(
+        hands, asks, in_turn):
     seen, _ = asks
-    result = await hands_tools.DesktopClickExecutor().execute({"app": "Notes", "element": "Save", "ref": "@sfixture0:e3"})
-    assert result["code"] == "act_in_background"
-    assert hands.calls == [] and seen == []
+    click = hands_tools.DesktopClickExecutor()
+    for _ in range(hands_tools.INLINE_ACTIONS):
+        assert (await click.execute({"app": "Notes", "element": "Save", "ref": "@sfixture0:e3"}))["ok"]
+    assert [f["kind"] for f in seen] == ["desktop_app"]          # asked once in this conversation
+    sixth = await click.execute({"app": "Notes", "element": "Save", "ref": "@sfixture0:e3"})
+    assert sixth["code"] == "act_in_background"
+    assert hands.ops("click") == ["click"] * hands_tools.INLINE_ACTIONS
+
+
+async def test_a_chat_reply_acts_in_one_app(hands, asks, in_turn):
+    assert (await hands_tools.DesktopPressExecutor().execute({"app": "Notes", "keys": "tab"}))["ok"]
+    other = await hands_tools.DesktopPressExecutor().execute({"app": "Messages", "keys": "tab"})
+    assert other["code"] == "act_in_background" and "one app" in other["error"]
+    assert [a["app"] for op, a in hands.calls if op == "press"] == ["Notes"]
 
 
 async def test_acting_asks_once_per_app_per_job_and_risky_labels_every_time(hands, asks, in_job):
@@ -449,9 +466,12 @@ async def test_stale_refs_say_look_again(hands, asks, in_job):
 async def test_tools_are_offered_like_the_browser(execution_db, hands, monkeypatch):
     monkeypatch.setattr(sys, "platform", "darwin")
     monkeypatch.setattr(task_service, "current", lambda: object())
-    keys = [t["key"] for t in await arslan._arslan_tools()]
+    tools = await arslan._arslan_tools()
+    keys = [t["key"] for t in tools]
     assert {"desktop_apps", "desktop_look"} <= set(keys)
-    assert not {"desktop_click", "desktop_type", "desktop_press"} & set(keys)
+    # Hands v2 §5.7: a chat reply may act too (five actions, one app), and is told so.
+    assert {"desktop_click", "desktop_type", "desktop_press", "desktop_menu", "desktop_batch"} <= set(keys)
+    assert "at most five times, all in one app" in tools[keys.index("desktop_press")]["description"]
     token = background_jobs._inside_job.set("job-9")
     try:
         in_job_keys = {t["key"] for t in await arslan._arslan_tools()}
@@ -465,7 +485,8 @@ async def test_tools_are_offered_like_the_browser(execution_db, hands, monkeypat
 async def test_effects_and_island_steps():
     assert await task_service.effect_of("desktop_look", {}) == "read"
     assert await task_service.effect_of("desktop_apps", {}) == "read"
-    for key in ("desktop_click", "desktop_type", "desktop_select", "desktop_scroll", "desktop_press"):
+    for key in ("desktop_click", "desktop_type", "desktop_select", "desktop_scroll", "desktop_press",
+                "desktop_menu", "desktop_batch"):
         assert await task_service.effect_of(key, {}) == "external_write"
     step = desktop_status.step_target("desktop_type", {"app": "Notes", "element": "Body", "text": "SECRET"})
     assert step == "Notes · Body"
