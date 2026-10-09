@@ -1,0 +1,10 @@
+{
+  "seconds": 12.0,
+  "events": 703,
+  "by_source": {
+    "mouse pid=0 parent=-1 ours=False": 50,
+    "key pid=0 parent=-1 ours=False": 14
+  },
+  "user_key_age_ms": 1099.2439583333332,
+  "user_mouse_age_ms": 281.5115416666667
+}

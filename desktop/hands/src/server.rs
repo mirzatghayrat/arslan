@@ -647,6 +647,23 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
         "list_apps" => return list_apps(ctx, args),
         "cua" => return cua_op(ctx, args),
         "menu" => return menu_op(ctx, args),
+        // Development builds only: drive the key hold for the Q2 spike (spec §12).
+        #[cfg(feature = "dev-unverified-peer")]
+        "probe_keyhold" => {
+            let started = match args.get("do").and_then(Value::as_str) {
+                Some("start") => crate::keyhold::start().err(),
+                Some("arm") => {
+                    crate::keyhold::arm();
+                    None
+                }
+                Some("release") => {
+                    let replayed = crate::keyhold::release();
+                    return Ok(json!({"ok": true, "replayed": replayed, "probe": crate::keyhold::probe()}));
+                }
+                _ => None,
+            };
+            return Ok(json!({"ok": true, "error": started, "probe": crate::keyhold::probe()}));
+        }
         _ => {}
     }
     if op != "describe" && !argv::OPS.contains(&op) {

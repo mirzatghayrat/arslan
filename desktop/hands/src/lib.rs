@@ -7,6 +7,7 @@ pub mod capture;
 pub mod cua;
 pub mod cua_policy;
 pub mod integrity;
+pub mod keyhold;
 #[cfg(target_os = "macos")]
 pub mod macos;
 pub mod menus;
