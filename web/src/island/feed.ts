@@ -23,6 +23,14 @@ export interface Activity {
   plan: { items: PlanItem[]; done: number; total: number } | null;
   /** 0.1.55: set for a background job, so the island can stop it. */
   job_id?: string | null;
+  /** Hands v2 §6.6: the window the work last looked at, small (JPEG, base64); memory only. */
+  thumb?: string | null;
+}
+
+/** Hands v2 §6.3-6.4: what a borrow or takeover is doing right now. */
+export interface HandsLine {
+  borrow: 'waiting' | 'borrowing' | null;
+  takeover: { active: boolean; paused: boolean; remaining_s: number } | null;
 }
 
 /** One card waiting for the user (GET /api/v1/approvals/pending, 0.1.55). */
@@ -55,6 +63,7 @@ export interface Feed {
   active: Activity[];
   events: FeedEvent[];
   enabled: boolean;
+  hands?: HandsLine | null;
 }
 
 declare global {
@@ -127,3 +136,16 @@ export async function stopJob(jobId: string): Promise<boolean> {
   });
   return res.ok;
 }
+
+async function post(path: string): Promise<boolean> {
+  const res = await fetch(`/api/v1${path}`, { method: 'POST', headers: authHeaders(), cache: 'no-store' });
+  if (!res.ok) return false;
+  const body = (await res.json().catch(() => ({}))) as { ok?: boolean };
+  return body.ok !== false;
+}
+
+/** A borrow waits for the user to pause typing (§6.3): borrow now, or not this time. */
+export const answerBorrow = (answer: 'now' | 'skip') => post(`/hands/borrow/${answer}`);
+/** A paused takeover (§6.4): let it go on, or take the screen back. */
+export const continueTakeover = () => post('/hands/takeover/continue');
+export const endTakeover = () => post('/hands/takeover/end');

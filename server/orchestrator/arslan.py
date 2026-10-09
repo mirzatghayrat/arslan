@@ -1093,6 +1093,11 @@ async def _arslan_tools() -> list[dict]:
                  "Never for passwords — ask the user to type those."},
                 {"key": "desktop_select", "description": "Choose an option in a pop-up or list (by ref)."},
                 {"key": "desktop_scroll", "description": "Scroll an element (by ref): direction up/down/left/right."},
+                {"key": "desktop_takeover", "description": "Take the screen over for long work that only "
+                 "works in front (many steps where background actions did nothing): {why, minutes ≤ 30}. "
+                 "Background work only; asks the user every time; the screen edge glows; the user's first "
+                 "touch of the keyboard or mouse pauses it and you are told what they chose. Last resort: try "
+                 "background actions, then front: true, first."},
                 {"key": "desktop_open", "description": "Open a Mac app in the background (behind the user's "
                  "windows; it does not come to the front): {app}. Asks the user once. Then desktop_look it."},
                 {"key": "desktop_batch", "description": "Several actions in one app in one call, then one look: "

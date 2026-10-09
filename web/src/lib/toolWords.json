@@ -22,6 +22,7 @@
   "desktop_press": { "family": "hands", "arg": "app" },
   "desktop_scroll": { "family": "hands", "arg": "app" },
   "desktop_select": { "family": "hands", "arg": "app" },
+  "desktop_takeover": { "family": "hands" },
   "desktop_type": { "family": "hands", "arg": "app" },
   "edit_file": { "family": "write", "arg": "path" },
   "enroll_node": { "family": "command" },

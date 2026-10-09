@@ -78,15 +78,27 @@ class Ctx:
     typist: object | None = None    # run.TypistDriver when the user's stand-in is typing
 
 
-def observed(ctx: Ctx, action: Callable[[], Act]) -> tuple[Act, list[str]]:
-    """Run one engine action under the observer (and the typist, if any); its violations."""
+def observed(ctx: Ctx, action: Callable[[], Act], borrow: bool = False) -> tuple[Act, list[str]]:
+    """Run one engine action under the observer (and the typist, if any); its violations.
+    `borrow`: a borrow-class action (§6.3): the typist types in bursts, and if Hands did borrow,
+    the front and key window may change DURING it - what is judged is the end state (front app,
+    window order), the give-back Hands reports, the borrow's length and every key (G4)."""
     if ctx.typist:
-        ctx.typist.start()
+        ctx.typist.start(bursts=borrow)
     with ctx.observe() as o:
         act = action()
-    violations = oracles.disturbance(o.before, o.samples, o.after).violations
+    borrowed = act.raw.get("mode_used") == "borrow"
+    if borrowed:
+        violations = oracles.disturbance(o.before, [], o.after, top_only=True).violations
+        gave = act.raw.get("borrow") or {}
+        if not gave.get("front_restored"):
+            violations.append("G4 the front was not given back")
+        if (gave.get("borrowed_ms") or 0) > 1500:
+            violations.append(f"G4 borrowed the front for {gave.get('borrowed_ms')} ms (more than 1.5 s)")
+    else:
+        violations = oracles.disturbance(o.before, o.samples, o.after).violations
     if ctx.typist:
-        violations += ctx.typist.stop_and_judge(o.before.t, o.after.t)
+        violations += ctx.typist.stop_and_judge(o.before.t, o.after.t, borrowed=borrowed)
     return act, violations
 
 
@@ -204,8 +216,12 @@ def popup(ctx: Ctx) -> Result:
     target, look_ms = _element(ctx, "Color")
     if target is None:
         return Result("popup", ctx.engine.name, "fail", look_ms=look_ms, note="no Color element")
-    act, violations = observed(ctx, lambda: ctx.engine.select(target, "Green"))
-    return _judged("popup", ctx, act, violations, ctx.fixture.wait(lambda s: s.get("color") == "Green"), look_ms)
+    act, violations = observed(ctx, lambda: ctx.engine.select(target, "Green"), borrow=True)
+    gave = act.raw.get("borrow") or {}
+    note = (f"borrowed {gave.get('borrowed_ms')} ms after waiting {gave.get('waited_ms')} ms; "
+            f"{gave.get('keys_replayed')} keys held and replayed") if gave else ""
+    return _judged("popup", ctx, act, violations, ctx.fixture.wait(lambda s: s.get("color") == "Green"), look_ms,
+                   note)
 
 
 def password_refused(ctx: Ctx) -> Result:
@@ -331,6 +347,65 @@ def menu_by_path(ctx: Ctx) -> Result:
     return _judged("menu_by_path", ctx, act, violations, count == before + 1, look_ms)
 
 
+def takeover_pause(ctx: Ctx) -> Result:
+    """Hands v2 §6.4, gate G5: during a takeover Hands clicks Save every ~50 ms; the user moves the
+    mouse; at most 0.2 s later nothing more reaches the app, the takeover is paused, and after
+    continue it acts again. Measured on the fixture's own clock against the moment of the touch."""
+    import threading
+
+    hands = getattr(ctx.engine, "hands", None)
+    if hands is None or ctx.engine.name != "agent-desktop":
+        return Result("takeover_pause", ctx.engine.name, "skipped", note="Hands' takeover only")
+    ctx.fixture.command("reset")
+    save, look_ms = _element(ctx, "Save")
+    if save is None:
+        return Result("takeover_pause", ctx.engine.name, "fail", look_ms=look_ms, note="Save not seen")
+    began = hands.call("takeover_begin", {"minutes": 1})
+    if began.get("ok") is not True:
+        return Result("takeover_pause", ctx.engine.name, "fail", note=f"no takeover: {began.get('refused')}")
+    codes: list[str | None] = []
+    done = threading.Event()
+
+    def clicker() -> None:
+        while not done.is_set():
+            reply = hands.call("click", {"app": ctx.engine.app, "ref": save.id})
+            codes.append((reply.get("refused") or {}).get("code") or reply.get("mode_used"))
+            if codes[-1] == "takeover_paused":
+                return
+            time.sleep(0.05)
+
+    worker = threading.Thread(target=clicker, daemon=True)
+    worker.start()
+    time.sleep(1.0)
+    import Quartz
+    here = Quartz.CGEventGetLocation(Quartz.CGEventCreate(None))
+    touched = time.time()
+    for dx in (3, 0):                                    # the user nudges the mouse (and it comes back)
+        move = Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventMouseMoved, (here.x + dx, here.y), 0)
+        Quartz.CGEventPost(Quartz.kCGHIDEventTap, move)
+        time.sleep(0.02)
+    worker.join(timeout=3)
+    done.set()
+    time.sleep(0.4)
+    after = [e["wall"] for e in ctx.fixture.events("save") if e.get("wall", 0) > touched]
+    late = round((max(after) - touched) * 1000) if after else 0
+    paused = (hands.call("takeover_status", {}).get("takeover") or {}).get("paused")
+    violations = []
+    if late > 200:
+        violations.append(f"G5 the app still got an action {late} ms after the user touched")
+    if not paused:
+        violations.append("G5 the takeover did not pause")
+    resumed = hands.call("takeover_resume", {})
+    again = hands.call("click", {"app": ctx.engine.app, "ref": save.id})
+    if again.get("mode_used") != "takeover":
+        violations.append(f"after continue: {again.get('refused') or again.get('mode_used')}")
+    hands.call("takeover_end", {})
+    clicks = sum(1 for c in codes if c == "takeover")
+    status = "pass" if not violations and resumed.get("ok") else "fail"
+    return Result("takeover_pause", ctx.engine.name, status, look_ms=look_ms, ms=late, violations=violations,
+                  note=f"{clicks} clicks before the touch; last action {late} ms after it; then {codes[-1]}")
+
+
 def keys_after_restore(ctx: Ctx) -> Result:
     """A window restored from the Dock in the background leaves its app with no focused
     element. A menu shortcut must still run its menu item, once, without activating the app
@@ -370,4 +445,5 @@ CASES: dict[str, Callable[[Ctx], Result]] = {
     "hidden_app": hidden_app,
     "keys_after_restore": keys_after_restore,
     "menu_by_path": menu_by_path,
+    "takeover_pause": takeover_pause,
 }

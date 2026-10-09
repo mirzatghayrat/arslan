@@ -1,9 +1,12 @@
 import { useEffect, useReducer, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { answerCard, fetchFeed, fetchPending, stopHands, stopJob, type Activity, type Feed, type PendingCard } from './feed';
+import {
+  answerBorrow, answerCard, continueTakeover, endTakeover, fetchFeed, fetchPending, stopHands, stopJob,
+  type Activity, type Feed, type PendingCard,
+} from './feed';
 import { askKind, askLine, mmss, secondsLeft } from './islandAsk';
 import IslandMascot from './IslandMascot';
 import {
-  applyFeed, bodyTop, countdown, dismiss, focused, hitRect, hoverEnter, hoverLeave, initialState, interact, isSearchTool, mood, open,
+  applyFeed, bodyTop, countdown, dismiss, focused, handsKey, hitRect, hoverEnter, hoverLeave, initialState, interact, isSearchTool, mood, open,
   setFocus, setFullscreen, setMainFocused, setPresence, shape, tick, waitingActivity,
   type IslandState, type Mood, type StepLine,
 } from './islandMachine';
@@ -276,6 +279,7 @@ function View({ s, m, lang, dispatch, pending, clock, onAnswered }: {
   pending: PendingCard[]; clock: number; onAnswered: (callId: string) => void;
 }) {
   const close = <button type="button" className="btn" onClick={() => dispatch({ type: 'dismiss' })}>{t(lang, 'close')}</button>;
+  if (s.view === 'hands' && s.hands) return <HandsView s={s} m={m} lang={lang} dispatch={dispatch} />;
   if (s.view === 'needsYou' && pending.length) {
     return <AskView card={pending[0]} total={pending.length} m={m} lang={lang} clock={clock} onAnswered={onAnswered} />;
   }
@@ -325,7 +329,10 @@ function View({ s, m, lang, dispatch, pending, clock, onAnswered }: {
           <Who color={STATE_COLOR[m] ?? STATE_COLOR.working} title={titleOf(lang, a.title, a.kind)} label={t(lang, a.kind)}
             elapsed={elapsed(clock - a.started_at)} />
           {a.plan && a.plan.items.length > 0 && <Plan items={a.plan.items} />}
-          <Ticker steps={s.steps[a.id] ?? []} lang={lang} />
+          {a.thumb
+            ? <div className="hands-row"><img className="thumb" data-testid="island-thumb" alt={t(lang, 'thumbAlt')}
+              src={`data:image/jpeg;base64,${a.thumb}`} /><Ticker steps={s.steps[a.id] ?? []} lang={lang} /></div>
+            : <Ticker steps={s.steps[a.id] ?? []} lang={lang} />}
           <div className="btns">
             {a.job_id && <StopJob jobId={a.job_id} lang={lang} />}
             {usingHands(s.active) && <StopHands lang={lang} />}
@@ -351,6 +358,69 @@ function View({ s, m, lang, dispatch, pending, clock, onAnswered }: {
     <Card m={m} size={60}>
       <div className="ititle">{t(lang, 'emptyTitle')}</div>
       <div className="btns"><button type="button" className="btn primary" onClick={() => openConversation(null)}>{t(lang, 'openArslan')}</button></div>
+    </Card>
+  );
+}
+
+/**
+ * Hands v2 (§6.3-6.4, the mock's round 5): a borrow waiting for your pause (now / not this
+ * time), the front borrowed, the screen taken over (time left, Stop), or a takeover paused
+ * because you moved (Stop / I'll do it / Continue).
+ */
+function HandsView({ s, m, lang, dispatch }: { s: IslandState; m: Mood; lang: Lang; dispatch: (a: Action) => void }) {
+  const [busy, setBusy] = useState(false);
+  const a = focused(s);
+  const what = a?.step ? stepText(lang, a.step.tool, a.step.target) : '';
+  const run = (p: Promise<boolean>) => { setBusy(true); p.catch(() => false).finally(() => setBusy(false)); };
+  const key = handsKey(s.hands);
+  const left = s.hands?.takeover?.remaining_s ?? 0;
+  if (key === 'paused') {
+    return (
+      <Card m={m} size={58}>
+        <Who color={STATE_COLOR.approval} title={t(lang, 'pausedTitle')} label={t(lang, 'takeover')} />
+        <div className="itext">{t(lang, 'pausedText')}</div>
+        <div className="btns">
+          <button type="button" className="btn danger" disabled={busy} data-testid="island-takeover-stop"
+            onClick={() => run(endTakeover())}>{t(lang, 'stopHands')}</button>
+          <button type="button" className="btn" data-testid="island-takeover-me"
+            onClick={() => dispatch({ type: 'dismiss' })}>{t(lang, 'pausedMe')}</button>
+          <button type="button" className="btn primary" disabled={busy} data-testid="island-takeover-continue"
+            onClick={() => run(continueTakeover())}>{t(lang, 'pausedContinue')}</button>
+        </div>
+        <div className="itext small">{t(lang, 'pausedMeNote')}</div>
+      </Card>
+    );
+  }
+  if (key === 'takeover') {
+    return (
+      <Card m={m} size={58}>
+        <Who color={STATE_COLOR.working} title={t(lang, 'takeoverRunning')} label={what} elapsed={mmss(left)} />
+        <div className="itext">{t(lang, 'takeoverText')}</div>
+        <div className="btns">
+          <button type="button" className="btn danger" disabled={busy} data-testid="island-takeover-stop"
+            onClick={() => run(endTakeover())}>{t(lang, 'stopHands')}</button>
+        </div>
+      </Card>
+    );
+  }
+  if (key === 'waiting') {
+    return (
+      <Card m={m} size={58}>
+        <Who color={STATE_COLOR.working} title={t(lang, 'borrowWaiting')} label={what} />
+        <div className="itext">{t(lang, 'borrowWaitingText')}</div>
+        <div className="btns">
+          <button type="button" className="btn" disabled={busy} data-testid="island-borrow-skip"
+            onClick={() => run(answerBorrow('skip'))}>{t(lang, 'borrowSkip')}</button>
+          <button type="button" className="btn primary" disabled={busy} data-testid="island-borrow-now"
+            onClick={() => run(answerBorrow('now'))}>{t(lang, 'borrowNow')}</button>
+        </div>
+      </Card>
+    );
+  }
+  return (
+    <Card m={m} size={58}>
+      <Who color={STATE_COLOR.working} title={t(lang, 'borrowing')} label={what} />
+      <div className="itext">{t(lang, 'borrowingText')}</div>
     </Card>
   );
 }

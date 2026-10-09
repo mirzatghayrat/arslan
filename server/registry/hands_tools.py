@@ -70,6 +70,12 @@ async def _ask_once(grant: str, kind: str, target: str, detail: str) -> bool:
 
 def forget_job(job_id: str) -> None:
     _grants.pop(job_id, None)
+    if job_id in _takeovers:                     # a job's takeover ends with it (§6.4)
+        _takeovers.discard(job_id)
+        try:
+            asyncio.get_running_loop().create_task(_end_takeover())
+        except RuntimeError:
+            pass
     from server.services import hands_service, look_diff
     look_diff.forget(job_id)
     _shot_notes_said.difference_update({k for k in _shot_notes_said if k[0] == job_id})
@@ -585,6 +591,8 @@ class DesktopLookExecutor:
             text += hands_contract.render_tree(data.get("tree") or {},
                                                place=hands_contract.placer(capture) if capture else None)
             if capture:
+                from server.services import desktop_status
+                desktop_status.note_thumb(capture["data"])        # the island's thumbnail (§6.6)
                 if not_seen:
                     text = not_seen + text
                 _trace("look", app, "ok", started, screenshot=f"{capture['width']}x{capture['height']}",
@@ -597,6 +605,141 @@ class DesktopLookExecutor:
         _trace("look", app, "ok", started)
         # Window contents are other people's text: framed as untrusted by the tool loop.
         return {"ok": True, "external": True, "text": text, "summary": f"look · {app['name']}"[:200]}
+
+
+def _front(args: dict) -> dict:
+    """What Hands needs to borrow the front (§6.3): the user's switch, always; `front` only when the
+    model asked for it (after a background try did nothing)."""
+    from server.services import hands_service
+    extra = {"borrow": hands_service.settings()["borrow"]}
+    if args.get("front") is True:
+        extra["front"] = True
+    return extra
+
+
+def _borrow_note(gave: dict) -> str:
+    """What a borrow did, for the model (the user saw the glow)."""
+    note = f" Arslan borrowed the front for {gave.get('borrowed_ms', 0)} ms"
+    if gave.get("waited_ms"):
+        note += f", after waiting {gave['waited_ms']} ms for the user to pause typing"
+    keys = gave.get("keys_replayed") or 0
+    if keys:
+        note += f"; {keys} key events the user typed meanwhile were held and given back"
+    note += "."
+    if gave.get("yielded_to_user"):
+        note += " The user moved the mouse while it ran: look before doing more."
+    if gave.get("front_restored") is False:
+        note += " The front could not be given back to the user's app: tell the user."
+    return note
+
+
+# Hands v2 §6.4: jobs holding a takeover (ended when the job ends).
+_takeovers: set[str] = set()
+TAKEOVER_WAIT_S = 30 * 60          # how long a paused takeover waits for the user
+
+
+async def _end_takeover() -> None:
+    from server.services import hands_client
+    try:
+        await hands_client.call("takeover_end", {}, timeout=5, start=False)
+    except hands_client.HandsUnavailable:
+        pass
+
+
+async def _wait_for_the_user(job_id: str | None) -> dict:
+    """A takeover paused because the user touched the keyboard or mouse (§6.4): the job waits —
+    the island offers continue / I'll do it / stop — up to 30 minutes."""
+    from server.services import hands_client, hands_service
+    deadline = time.monotonic() + TAKEOVER_WAIT_S
+    while time.monotonic() < deadline:
+        if job_id is not None and hands_service.stopped(job_id):
+            break
+        try:
+            reply = await hands_client.call("takeover_status", {}, timeout=5, start=False)
+        except hands_client.HandsUnavailable:
+            break
+        state = reply.get("takeover") or {}
+        if state.get("active") and not state.get("paused"):
+            return {"ok": False, "external": False, "code": "takeover_resumed",
+                    "error": "The user paused the takeover and has now let you continue. The screen may have "
+                             "changed: look again (desktop_look) before the next action."}
+        if not state.get("active"):
+            break
+        await asyncio.sleep(0.5)
+    _takeovers.discard(job_id or "")
+    await _end_takeover()
+    return {"ok": False, "external": False, "code": "takeover_ended",
+            "error": "The user took the screen back and the takeover ended. Nothing more was sent. Carry on in "
+                     "the background if you can, or tell the user what is left."}
+
+
+AWAY_AFTER_S = 180              # §6.5: no input for this long (the island's measure) = away
+
+
+async def _user_away() -> bool:
+    """§6.5: the user turned on "while I'm away" and has not touched the keyboard or mouse for
+    three minutes (Hands' key tap measures it; unknown counts as here)."""
+    from server.services import hands_client, hands_service
+    if not hands_service.settings()["away"]:
+        return False
+    try:
+        status = await hands_client.call("status", {}, timeout=5, start=False)
+    except hands_client.HandsUnavailable:
+        return False
+    idle = status.get("user_idle_ms")
+    return isinstance(idle, (int, float)) and idle >= AWAY_AFTER_S * 1000
+
+
+class DesktopTakeoverExecutor:
+    """Take the screen over for long foreground work (§6.4): background work only, a card every
+    time (the island may answer it), the edge glows, and the user's first touch pauses it."""
+    key = "desktop_takeover"
+    timeout_s = CARD_S + 30
+
+    async def execute(self, args: dict) -> dict:
+        from server.services import hands_client, hands_contract
+        args = dict(args or {})
+        why = " ".join(str(args.get("why") or "").split())[:300]
+        try:
+            minutes = int(args.get("minutes") or 0)
+        except (TypeError, ValueError):
+            minutes = 0
+        if not why or not 1 <= minutes <= 30:
+            return {"ok": False, "external": False, "code": "bad_request",
+                    "error": "why (what you will do, in words) and minutes (1 to 30) are required"}
+        conversation_id, job_id = _conversation_and_job()
+        if job_id is None:
+            return {"ok": False, "external": False, "code": "act_in_background",
+                    "error": "Taking the screen over runs in background work only. Call start_background_work."}
+        if not desktop_available():
+            return {"ok": False, "external": False, "error": "Arslan Hands is not available on this Mac."}
+        started = time.monotonic()
+        away = await _user_away()
+        if not away and not await _ask_once(f"takeover:{uuid.uuid4().hex}", "desktop_takeover",
+                                            f"{minutes} min · {why}",
+                               f"Arslan wants to take over the screen for about {minutes} minutes: {why}. Please "
+                               "keep off the keyboard and mouse meanwhile — touching either pauses it at once, and "
+                               "Esc stops it. Deleting, sending and the like still ask you each time."):
+            _trace("takeover", "screen", "declined", started)
+            return {"ok": False, "external": False, "code": "declined",
+                    "error": "The user did not allow taking the screen over. Do not retry; work in the background "
+                             "or report it."}
+        try:
+            reply = await hands_client.call("takeover_begin", {"minutes": minutes}, timeout=10)
+        except hands_client.HandsUnavailable as exc:
+            return {"ok": False, "external": False, "error": f"Arslan Hands is not available ({exc})."}
+        result = hands_contract.parse(reply)
+        if not result.ok:
+            return _failed(result)
+        _takeovers.add(job_id)
+        _trace("takeover", "screen", "ok", started, minutes=minutes, away=away)
+        return {"ok": True, "external": False, "outcome": "done",
+                "text": f"The screen is yours for up to {minutes} minutes (the edge glows). Actions may now use the "
+                        "front without waiting. If the user touches the keyboard or mouse it pauses and the next "
+                        "action tells you what they chose. It ends when this work ends."
+                        + (" The user is away and allowed this without asking; risky actions still wait for them."
+                           if away else ""),
+                "summary": f"takeover · {minutes} min"}
 
 
 # Hands v2 §5.7: in a chat reply (not background work) at most this many actions, all in one app.
@@ -703,6 +846,8 @@ class _DesktopAct:
         result = await self.run(args, app)
         _trace(self.op, app, "ok" if result.ok else (result.code or "error"), started, target=label,
                **self.trace_extra(args))
+        if not result.ok and result.code == "takeover_paused":
+            return await _wait_for_the_user(job_id)
         if not result.ok:
             return _failed(result, app=str(app.get("name")))
         # P0 D7: "sent" is not "done" — only a change agent-desktop read back is.
@@ -723,6 +868,9 @@ class _DesktopAct:
         else:
             text = (f"Sent, not confirmed: {verb} “{label}” in {app.get('name')}. Arslan could not read the "
                     "change back, so look (desktop_look) before the next step, and do not simply repeat it.")
+        gave = (result.reply or {}).get("borrow") if (result.reply or {}).get("mode_used") == "borrow" else None
+        if isinstance(gave, dict):
+            text += _borrow_note(gave)
         routed = (result.reply or {}).get("menu_item") if (result.reply or {}).get("route") == "menu_item" else None
         if self.op == "press" and routed:
             text += (f" (The app had nothing focused, so it went to the menu item with that shortcut: "
@@ -738,7 +886,8 @@ class _DesktopAct:
 
     async def run(self, args: dict, app: dict):
         _, job_id = _conversation_and_job()
-        return await _hands(self.op, {"app": app["name"], "ref": str(args.get("ref") or "")}, job_id=job_id)
+        return await _hands(self.op, {"app": app["name"], "ref": str(args.get("ref") or ""), **_front(args)},
+                            job_id=job_id)
 
 
 class DesktopClickExecutor(_DesktopAct):
@@ -807,7 +956,8 @@ class DesktopSelectExecutor(_DesktopAct):
     async def run(self, args, app):
         _, job_id = _conversation_and_job()
         return await _hands("select", {"app": app["name"], "ref": str(args.get("ref") or ""),
-                                       "value": str(args.get("value") or "")[:200]}, job_id=job_id)
+                                       "value": str(args.get("value") or "")[:200], **_front(args)},
+                            job_id=job_id)
 
 
 class DesktopScrollExecutor(_DesktopAct):
@@ -861,8 +1011,8 @@ class DesktopPressExecutor(_DesktopAct):
 
     async def run(self, args, app):
         _, job_id = _conversation_and_job()
-        return await _hands("press", {"app": app["name"], "keys": str(args.get("keys") or "").strip().lower()},
-                            job_id=job_id)
+        return await _hands("press", {"app": app["name"], "keys": str(args.get("keys") or "").strip().lower(),
+                                      **_front(args)}, job_id=job_id)
 
 
 # Hands v2 §5.6: several steps on one app in one call, then one look.

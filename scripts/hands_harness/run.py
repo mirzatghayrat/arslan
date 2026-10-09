@@ -92,6 +92,7 @@ class TypistDriver:
     and none of it in the fixture's fields)."""
 
     TEXT = "the quick brown fox jumps over the lazy dog "
+    BURST, PAUSE = 1.5, 1.3          # typing in bursts, for borrow-class actions
 
     def __init__(self, log: Path, fixture: C.Fixture, pid: int):
         self.log, self.fixture, self.pid = log, fixture, pid
@@ -102,10 +103,18 @@ class TypistDriver:
         self._typed = ""
         self._t0 = 0.0
         self._text0 = ""
+        self._bursts = False
 
     def _type(self) -> None:
         import Quartz
+        burst_started = time.monotonic()
         while not self._stop.is_set():
+            if self._bursts and time.monotonic() - burst_started > self.BURST:
+                # A person pauses: a borrow waits for 1 s without keys, and the next burst
+                # starts while it runs, so those keys must be held and given back.
+                self._stop.wait(self.PAUSE)
+                burst_started = time.monotonic()
+                continue
             ch = self.TEXT[self._i % len(self.TEXT)]
             self._i += 1
             for down in (True, False):
@@ -129,9 +138,11 @@ class TypistDriver:
         from scripts.hands_harness.observer import _front_pid
         return _front_pid() == self.pid
 
-    def start(self) -> None:
+    def start(self, bursts: bool = False) -> None:
         """Type only into the Typist: if it is not in front, bring it back first; if it still
-        is not, type nothing at all (never into whatever app is in front instead)."""
+        is not, type nothing at all (never into whatever app is in front instead). `bursts`:
+        type and pause like a person, so a borrow (which waits for a pause) can start."""
+        self._bursts = bursts
         time.sleep(0.3)                                   # let the last action's keys land
         if not self._in_front():
             import AppKit
@@ -149,7 +160,7 @@ class TypistDriver:
         self._thread = threading.Thread(target=self._type, daemon=True)
         self._thread.start()
 
-    def stop_and_judge(self, _start: float, _end: float) -> list[str]:
+    def stop_and_judge(self, _start: float, _end: float, borrowed: bool = False) -> list[str]:
         if self._skipped:
             return ["typist not in front before the action: nothing typed"]
         time.sleep(0.4)                                   # keep typing a little after the action
@@ -163,6 +174,10 @@ class TypistDriver:
         state = self.fixture.state()
         verdict = oracles.typed_exactly(self._typed, gained,
                                         [str(state.get(k, "")) for k in ("title", "notes", "chat")])
+        if borrowed:
+            # A borrow takes the key window by design (G4); what must hold is every key
+            # arriving exactly once, in order, in the user's window - O5 above.
+            return verdict.violations
         keys = [(float(r["t"]), bool(r["value"])) for r in self._rows() if r.get("event") == "key"]
         key_verdict = oracles.key_window(keys, self._t0, t1, borrow_ms=150)
         return verdict.violations + key_verdict.violations

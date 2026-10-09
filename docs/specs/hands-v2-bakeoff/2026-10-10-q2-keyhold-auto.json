@@ -1,0 +1,71 @@
+{
+  "start": {
+    "tap": 1,
+    "listen_access": true,
+    "post_access": true,
+    "own_pid": 90744,
+    "error": null
+  },
+  "E2": {
+    "this_pid": 92011,
+    "key_events": [
+      {
+        "type": 10,
+        "pid": 92011,
+        "parent": 92010,
+        "ours": false
+      },
+      {
+        "type": 11,
+        "pid": 92011,
+        "parent": 92010,
+        "ours": false
+      },
+      {
+        "type": 10,
+        "pid": 92011,
+        "parent": 92010,
+        "ours": false
+      },
+      {
+        "type": 11,
+        "pid": 92011,
+        "parent": 92010,
+        "ours": false
+      }
+    ]
+  },
+  "E3": {
+    "typed": "the quick brown fox",
+    "typing_ms": 1195,
+    "held_events": 38,
+    "replayed": 38,
+    "release_ms": 1,
+    "arrived_while_held": "",
+    "arrived_after": "the quick brown fox",
+    "exact": true
+  },
+  "E6": {
+    "plain": "你好",
+    "held": "你好",
+    "same": true
+  },
+  "E7": {
+    "plain": "AB出",
+    "held": "AB出",
+    "same": true
+  },
+  "E4": {
+    "idle_before_s": 3.8605935,
+    "idle_after_hands_press_s": 0.007895541,
+    "idle_after_a_user_key_s": 0.060361584,
+    "hands_press_resets_idle": true
+  },
+  "final": {
+    "armed": false,
+    "disabled": 0,
+    "held": 0,
+    "overflow": 0,
+    "secure_input": 0
+  }
+}

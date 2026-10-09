@@ -99,7 +99,7 @@ def working(conversation_id: str | None = None, *, title: str | None = None,
         _working[token] = conversation_id
         activity = {"id": token, "conversation_id": conversation_id, "kind": kind,
                     "title": _clip(title, TITLE_CHARS), "started_at": int(time.time()),
-                    "step": None, "plan": None,
+                    "step": None, "plan": None, "thumb": None,
                     # 0.1.55: lets the island's Stop end this job (POST /background-jobs/{id}/stop).
                     "job_id": job_id}
         _activity[token] = activity
@@ -140,6 +140,36 @@ def note_step(tool: str, args: dict) -> None:
         return
     with _lock:
         activity["step"] = {"tool": tool, "target": step_target(tool, args), "at": int(time.time())}
+
+
+THUMB_EDGE = 240         # px: the island's thumbnail of the window being worked on (§6.6)
+
+
+def _thumbnail(data_b64: str) -> str | None:
+    """A small JPEG (base64) of a Hands screenshot, for the island. Never written anywhere."""
+    import base64
+    import io
+    try:
+        from PIL import Image
+        with Image.open(io.BytesIO(base64.b64decode(data_b64))) as image:
+            image = image.convert("RGB")
+            image.thumbnail((THUMB_EDGE, THUMB_EDGE))
+            out = io.BytesIO()
+            image.save(out, format="JPEG", quality=70)
+        return base64.b64encode(out.getvalue()).decode()
+    except Exception:  # noqa: BLE001 - a thumbnail must never stop a look
+        return None
+
+
+def note_thumb(data_b64: str) -> None:
+    """Hands v2 §6.6: the window the run in flight just looked at, small, for the island.
+    No-op outside `working`."""
+    activity = _current.get()
+    if activity is None or not isinstance(data_b64, str):
+        return
+    thumb = _thumbnail(data_b64)
+    with _lock:
+        activity["thumb"] = thumb
 
 
 def note_plan(items: list[dict]) -> None:

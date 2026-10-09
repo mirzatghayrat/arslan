@@ -425,6 +425,11 @@ fn run_envelope(
         return Err(refuse("TIMEOUT", "agent-desktop did not finish in time"));
     }
     if out.killed {
+        // Ended because the user touched the keyboard or mouse during a takeover: paused, not
+        // stopped (the job waits for them).
+        if crate::takeover::paused() {
+            return Err(crate::takeover::paused_refusal());
+        }
         return Err(refuse("stopped_by_user", "stopped"));
     }
     let envelope: Value = serde_json::from_str(out.stdout.trim()).map_err(|_| {
@@ -607,6 +612,28 @@ fn dispatch(state: &State, req: &Request) -> Value {
         }
         "stop" => stop(state),
         "quit" => json!({"ok": true}),
+        // §6.4: answered at once, never behind an action in flight (continue / stop come from
+        // the user while one may be running).
+        "takeover_begin" => match req.args.get("minutes").and_then(Value::as_u64) {
+            Some(minutes) => crate::takeover::begin(minutes)
+                .map(|status| json!({"ok": true, "takeover": status}))
+                .unwrap_or_else(refused),
+            None => refused(refuse("bad_request", "`minutes` is 1 to 30")),
+        },
+        "takeover_resume" => crate::takeover::resume()
+            .map(|status| json!({"ok": true, "takeover": status}))
+            .unwrap_or_else(refused),
+        "takeover_end" => json!({"ok": true, "ended": crate::takeover::end()}),
+        "takeover_status" => json!({"ok": true, "takeover": crate::takeover::status()}),
+        // For the island (polled about once a second): what a borrow or takeover is doing.
+        "activity_status" => json!({
+            "ok": true,
+            "borrow": crate::borrow::phase(),
+            "takeover": crate::takeover::status(),
+        }),
+        // The island's answer while a borrow waits for the user's pause.
+        "borrow_now" => json!({"ok": crate::borrow::answer(true)}),
+        "borrow_skip" => json!({"ok": crate::borrow::answer(false)}),
         // A screenshot runs beside an agent-desktop command, not after it (spec §15 A8: a look's
         // tree and its screenshot are asked for together). Stop still applies.
         "capture_window" => {
@@ -647,6 +674,26 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
         "list_apps" => return list_apps(ctx, args),
         "cua" => return cua_op(ctx, args),
         "menu" => return menu_op(ctx, args),
+        // Development builds only: drive the key hold for the Q2 spike (spec §12).
+        #[cfg(feature = "dev-unverified-peer")]
+        "probe_keyhold" => {
+            let started = match args.get("do").and_then(Value::as_str) {
+                Some("start") => crate::keyhold::start().err(),
+                Some("arm") => {
+                    let ms = args.get("max_ms").and_then(Value::as_u64).unwrap_or(20_000);
+                    crate::keyhold::arm(Duration::from_millis(ms));
+                    None
+                }
+                Some("release") => {
+                    let replayed = crate::keyhold::release();
+                    return Ok(
+                        json!({"ok": true, "replayed": replayed, "probe": crate::keyhold::probe()}),
+                    );
+                }
+                _ => None,
+            };
+            return Ok(json!({"ok": true, "error": started, "probe": crate::keyhold::probe()}));
+        }
         _ => {}
     }
     if op != "describe" && !argv::OPS.contains(&op) {
@@ -728,8 +775,51 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
     } else if acts(op) {
         unchanged_since_look(ctx, &key, &app)?;
     }
+    // §6.3: a pop-up's menu takes the key window while it is open (bake-off: ~370 ms, keys
+    // lost), and `front: true` asks for the app in front: both borrow the front, never without
+    // the user's switch (the backend sends it as `borrow`).
+    let wants_front = acts(op) && args.get("front").and_then(Value::as_bool) == Some(true);
+    let popup = op == "select" && target.as_ref().is_some_and(|t| is_popup(&t.role));
+    // §6.4: inside a takeover the user said yes to the screen: no borrow, the app may come
+    // forward; while it is paused nothing is sent.
+    if acts(op) && screen_locked() {
+        return Err(refuse(
+            "screen_locked",
+            "the screen is locked; Arslan does not act on a locked Mac",
+        ));
+    }
+    let in_takeover = acts(op) && crate::takeover::check_before_action()?;
+    if in_takeover {
+        if wants_front || popup {
+            if let Ok(pid) = i32::try_from(app.pid) {
+                if !crate::borrow::standing_in() {
+                    restore_front(pid);
+                }
+            }
+        }
+    } else if (wants_front || popup) && args.get("borrow").and_then(Value::as_bool) != Some(true) {
+        return Err(refuse(
+            "borrow_off",
+            "this needs the app in front for a moment, and borrowing the front is off",
+        ));
+    }
+    let borrowed = if (wants_front || popup) && !in_takeover {
+        let generation = ctx.generation;
+        Some(crate::borrow::begin(crate::borrow::WAIT_MAX, || {
+            runner::generation() != generation
+        })?)
+    } else {
+        None
+    };
+    if wants_front && borrowed.is_some() && !crate::borrow::standing_in() {
+        if let Ok(pid) = i32::try_from(app.pid) {
+            restore_front(pid); // the app comes forward for this one action
+        }
+    }
     let front_before = if acts(op) { frontmost_pid() } else { None };
-    let (exit, envelope) = run_envelope(ctx, &argv, deadline(op, args))?;
+    let ran = run_envelope(ctx, &argv, deadline(op, args));
+    let gave = borrowed.map(crate::borrow::end);
+    let (exit, envelope) = ran?;
     if op == "press" && keys_had_no_focus(&envelope) {
         // The key went nowhere; the menu item with that shortcut does the same thing without
         // focus (A9's keys_after_restore). Only one enabled item, never a guess.
@@ -740,7 +830,10 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
             return press_item(&app, tier, &item, Some(keys));
         }
     }
-    let focus_restored = front_back(front_before, app.pid);
+    let focus_restored = match gave {
+        Some(gave) => gave.front_restored,
+        None => front_back(front_before, app.pid),
+    };
     let front_after = if acts(op) { frontmost_pid() } else { None };
     Ok(json!({
         "ok": true,
@@ -754,7 +847,20 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
         // One vocabulary for both engines (outcome.rs); only actions have one.
         "outcome": (acts(op) && envelope.get("ok") == Some(&Value::Bool(true)))
             .then(|| crate::outcome::from_agent_desktop(&envelope)),
-        "mode_used": acts(op).then_some("background"),
+        "mode_used": acts(op).then_some(if in_takeover {
+            "takeover"
+        } else if gave.is_some() {
+            "borrow"
+        } else {
+            "background"
+        }),
+        "borrow": gave.map(|g| json!({
+            "front_restored": g.front_restored,
+            "keys_replayed": g.keys_replayed,
+            "yielded_to_user": g.yielded_to_user,
+            "waited_ms": g.waited_ms,
+            "borrowed_ms": g.borrowed_ms,
+        })),
         // What was in front just before and just after this action (pids), so a
         // check can tell an app Hands acted on taking the focus from the user
         // switching apps between actions.
@@ -857,6 +963,13 @@ fn menu_op(ctx: &Ctx, args: &Value) -> Result<Value, Refusal> {
             "`path` is the menu's titles, top level first, like [\"Format\", \"Font\", \"Bold\"] (2 to 4)",
         ));
     }
+    if screen_locked() {
+        return Err(refuse(
+            "screen_locked",
+            "the screen is locked; Arslan does not act on a locked Mac",
+        ));
+    }
+    crate::takeover::check_before_action()?;
     unchanged_since_look(ctx, &(session.unwrap_or_default(), app.pid), &app)?;
     let items = crate::menus::read(app.pid).ok_or_else(|| {
         refuse(
@@ -935,6 +1048,15 @@ fn keys_had_no_focus(envelope: &Value) -> bool {
         && envelope.pointer("/error/details/physical_delivery_started") != Some(&Value::Bool(true))
 }
 
+/// A pop-up button (a closed menu of choices): choosing in it opens its menu, which takes the
+/// key window while open.
+fn is_popup(role: &str) -> bool {
+    matches!(
+        role.to_ascii_lowercase().as_str(),
+        "combobox" | "popupbutton" | "popup" | "menubutton"
+    )
+}
+
 fn acts(op: &str) -> bool {
     matches!(
         op,
@@ -952,6 +1074,16 @@ fn front_back(before: Option<i32>, acted_on: i64) -> bool {
         }
         _ => false,
     }
+}
+
+#[cfg(target_os = "macos")]
+fn screen_locked() -> bool {
+    crate::macos::screen_locked()
+}
+
+#[cfg(not(target_os = "macos"))]
+fn screen_locked() -> bool {
+    false
 }
 
 #[cfg(target_os = "macos")]
@@ -1072,9 +1204,11 @@ fn end_sessions(state: &State) {
 }
 
 fn stop(state: &State) -> Value {
+    // Stop ends a takeover too (and its glow), before killing what runs.
+    let took_over = crate::takeover::end();
     // kill_all moves the Stop generation even when no agent-desktop runs, so a Cua
     // request in flight learns it was stopped.
-    let killed = runner::kill_all();
+    let killed = runner::kill_all() || took_over;
     let cua_killed = state.cua.as_ref().is_some_and(Cua::stop);
     end_sessions(state);
     json!({"ok": true, "killed": killed || cua_killed})
@@ -1093,7 +1227,20 @@ fn status(state: &State) -> Value {
         "agent_desktop_pinned": state.runner.pinned.as_ref().map(|p| p.check().is_ok()),
         "cua_driver": state.cua.as_ref().map(Cua::present),
         "cua_driver_pinned": state.cua.as_ref().and_then(Cua::pinned),
+        // §6.5: how long since the user's last key or mouse event (the key tap's watch, which
+        // Hands' own events never touch); null until the tap has seen one.
+        "user_idle_ms": user_idle_ms(),
+        "screen_locked": screen_locked(),
     })
+}
+
+fn user_idle_ms() -> Option<u64> {
+    let key = crate::keyhold::user_key_age_ms();
+    let mouse = crate::keyhold::user_mouse_age_ms();
+    match (key, mouse) {
+        (Some(k), Some(m)) => Some(k.min(m) as u64),
+        (one, other) => one.or(other).map(|ms| ms as u64),
+    }
 }
 
 #[cfg(target_os = "macos")]

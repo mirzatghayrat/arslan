@@ -382,6 +382,49 @@ fn descend(
     false
 }
 
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct CGPoint {
+    x: f64,
+    y: f64,
+}
+
+#[link(name = "CoreGraphics", kind = "framework")]
+extern "C" {
+    fn CGSessionCopyCurrentDictionary() -> CFTypeRef;
+    fn CGEventCreate(source: CFTypeRef) -> CFTypeRef;
+    fn CGEventGetLocation(event: CFTypeRef) -> CGPoint;
+    fn CGWarpMouseCursorPosition(point: CGPoint) -> i32;
+}
+
+/// The screen is locked (§6.7: no Hands action then; a takeover ends).
+pub fn screen_locked() -> bool {
+    let session = Owned(unsafe { CGSessionCopyCurrentDictionary() });
+    if session.0.is_null() {
+        return false;
+    }
+    let key = cf_string("CGSSessionScreenIsLocked");
+    let value = unsafe { CFDictionaryGetValue(session.0, key.0) };
+    !value.is_null()
+        && unsafe { CFGetTypeID(value) == CFBooleanGetTypeID() }
+        && unsafe { CFBooleanGetValue(value) } != 0
+}
+
+/// Where the pointer is now (global display coordinates, top-left origin).
+pub fn pointer() -> Option<(f64, f64)> {
+    let event = Owned(unsafe { CGEventCreate(std::ptr::null()) });
+    if event.0.is_null() {
+        return None;
+    }
+    let at = unsafe { CGEventGetLocation(event.0) };
+    Some((at.x, at.y))
+}
+
+/// Put the pointer back where it was (no click; the user sees it move there).
+pub fn warp_pointer(x: f64, y: f64) -> bool {
+    unsafe { CGWarpMouseCursorPosition(CGPoint { x, y }) == 0 }
+}
+
 /// Hands holds Accessibility (as its own responsible process).
 pub fn accessibility_trusted() -> bool {
     unsafe { AXIsProcessTrusted() != 0 }

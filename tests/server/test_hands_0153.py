@@ -125,10 +125,12 @@ def test_risky_keys_and_return_where_it_sends():
 
 
 def test_settings_file_is_private_and_the_never_list_deduplicated(tmp_path):
-    assert hands_service.settings() == {"enabled": True, "cursor": True, "screenshots": True, "never": []}
-    hands_service.update_settings(never=["Notes", "notes", "  Mail  ", ""], cursor=False, screenshots=False)
-    assert hands_service.settings() == {"enabled": True, "cursor": False, "screenshots": False,
-                                        "never": ["Notes", "Mail"]}
+    assert hands_service.settings() == {"enabled": True, "cursor": True, "screenshots": True, "borrow": True,
+                                        "away": False, "never": []}
+    hands_service.update_settings(never=["Notes", "notes", "  Mail  ", ""], cursor=False, screenshots=False,
+                                  borrow=False, away=True)
+    assert hands_service.settings() == {"enabled": True, "cursor": False, "screenshots": False, "borrow": False,
+                                        "away": True, "never": ["Notes", "Mail"]}
     folder = tmp_path / "hands"
     assert stat.S_IMODE(os.stat(folder).st_mode) == 0o700
     assert stat.S_IMODE(os.stat(folder / "settings.json").st_mode) == 0o600
@@ -160,6 +162,8 @@ class FakeHands:
                      {"name": "Safari", "bundle_id": "com.apple.Safari", "tier": "look_only"},
                      {"name": "Messages", "bundle_id": "com.apple.MobileSMS", "tier": "full"}]
         self.fail_with: dict | None = None
+        self.takeover: list[dict] = []
+        self.user_idle_ms: int | None = 1_000
         # Hands v2 capture_window: by default as on a Mac without Screen Recording for Hands.
         self.capture: dict = {"ok": False, "refused": {"code": "screen_recording_off", "message": "not allowed"}}
 
@@ -175,9 +179,24 @@ class FakeHands:
         if op in ("session_label", "session_end", "request_permission", "stop"):
             return {"ok": True}
         if op == "status":
-            return {"ok": True, "accessibility": False, "peer_check": "off", "version": "0.1.0"}
+            return {"ok": True, "accessibility": False, "peer_check": "off", "version": "0.1.0",
+                    "user_idle_ms": self.user_idle_ms}
         if op == "capture_window":
             return self.capture
+        if op == "takeover_begin":
+            self.takeover = [{"active": True, "paused": False, "remaining_s": 60 * args["minutes"]}]
+            return {"ok": True, "takeover": self.takeover[0]}
+        if op == "takeover_status":           # walks through the states a test queued
+            state = self.takeover[0] if self.takeover else {"active": False}
+            if len(self.takeover) > 1:
+                self.takeover.pop(0)
+            return {"ok": True, "takeover": state}
+        if op == "takeover_end":
+            ended = bool(self.takeover and self.takeover[0].get("active"))
+            self.takeover = []
+            return {"ok": True, "ended": ended}
+        if op == "takeover_resume":
+            return {"ok": True, "takeover": {"active": True, "paused": False}}
         if op == "menu":
             return {"ok": True, "outcome": "sent_unconfirmed", "mode_used": "background", "route": "menu_item",
                     "menu_item": args.get("path"), "tier": self.tier,

@@ -62,3 +62,10 @@ def test_the_summary_counts_passes_per_case_and_engine():
     assert "| click_save_once | cua | 1/2 | 100.0 |" in table
     assert "O6 happened 2 times" in table
     assert "| click_save_once | agent-desktop | 1/1 | 900 |" in table
+
+
+def test_after_a_borrow_only_the_users_top_window_must_be_on_top_again():
+    # The borrowed app's window (3) now sits above another app's (2): allowed after a borrow.
+    assert oracles.disturbance(s(0), [], s(0.5, order=(1, 3, 2)), top_only=True).ok
+    assert not oracles.disturbance(s(0), [], s(0.5, order=(3, 1, 2)), top_only=True).ok
+    assert not oracles.disturbance(s(0), [], s(0.5, order=(1, 3, 2))).ok

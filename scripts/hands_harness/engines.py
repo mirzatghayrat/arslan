@@ -119,7 +119,9 @@ class AgentDesktop:
 
     def select(self, element: Element, value: str) -> Act:
         started = time.monotonic()
-        return _act(self.hands.call("select", {"app": self.app, "ref": element.id, "value": value}), started)
+        # Hands v2 §6.3: a pop-up borrows the front, with the user's switch (on, as by default).
+        return _act(self.hands.call("select", {"app": self.app, "ref": element.id, "value": value, "borrow": True}),
+                    started)
 
     def menu(self, path: list[str]) -> Act:
         """Hands v2: a menu item pressed in the background by its path (Hands' own accessibility)."""
