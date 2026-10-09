@@ -32,11 +32,13 @@ def send(request_id, ok=True, result=None, completion="completed", error=None, c
     if result is not None: out["result"] = result
     if error is not None: out["error"] = error; out["error_code"] = code or "worker_request_failed"
     sys.stdout.write(json.dumps(out) + "\n"); sys.stdout.flush()
-APPS = [{"name": "Hands Fixture", "bundle_id": "com.arslan.hands-fixture", "pid": 100, "running": True},
-        {"name": "Notes", "bundle_id": "com.apple.Notes", "pid": 200, "running": True},
-        {"name": "Keychain Access", "bundle_id": "com.apple.keychainaccess", "pid": 300, "running": True},
-        {"name": "Safari", "bundle_id": "com.apple.Safari", "pid": 400, "running": True},
-        {"name": "Terminal", "bundle_id": "com.apple.Terminal", "pid": 500, "running": True},
+# Fake pids are above macOS's largest (99998): Hands asks macOS first, and a real
+# process holding a low test pid (a CI runner's daemon) once answered for "Safari".
+APPS = [{"name": "Hands Fixture", "bundle_id": "com.arslan.hands-fixture", "pid": 1000100, "running": True},
+        {"name": "Notes", "bundle_id": "com.apple.Notes", "pid": 1000200, "running": True},
+        {"name": "Keychain Access", "bundle_id": "com.apple.keychainaccess", "pid": 1000300, "running": True},
+        {"name": "Safari", "bundle_id": "com.apple.Safari", "pid": 1000400, "running": True},
+        {"name": "Terminal", "bundle_id": "com.apple.Terminal", "pid": 1000500, "running": True},
         {"name": "Installed Only", "bundle_id": "com.example.installed", "pid": 0, "running": False}]
 for line in sys.stdin:
     request = json.loads(line)
@@ -71,11 +73,11 @@ for line in sys.stdin:
     elif name == "get_window_state":
         pid = args["pid"]
         elements = [
-            {"role": "AXButton", "label": "Save", "element_token": "s0000000%d:0" % (pid // 100),
+            {"role": "AXButton", "label": "Save", "element_token": "s0000000%d:0" % (pid % 1000 // 100),
              "frame": {"x": 10, "y": 20, "w": 40, "h": 20}},
-            {"role": "AXTextField", "label": "Title", "element_token": "s0000000%d:1" % (pid // 100)},
-            {"role": "AXSecureTextField", "label": "", "element_token": "s0000000%d:2" % (pid // 100)},
-            {"role": "AXTextField", "label": "Password", "element_token": "s0000000%d:3" % (pid // 100)},
+            {"role": "AXTextField", "label": "Title", "element_token": "s0000000%d:1" % (pid % 1000 // 100)},
+            {"role": "AXSecureTextField", "label": "", "element_token": "s0000000%d:2" % (pid % 1000 // 100)},
+            {"role": "AXTextField", "label": "Password", "element_token": "s0000000%d:3" % (pid % 1000 // 100)},
             {"role": "AXMenuBarItem", "label": "Apple", "depth": 2},
             {"role": "AXMenuItem", "label": "Log Out Someone", "depth": 4},
         ]
@@ -316,7 +318,7 @@ fn only_reads_and_background_actions_reach_the_worker() {
         "drag",
     ] {
         assert_eq!(
-            code(&hands.cua(tool, json!({"pid": 100}))),
+            code(&hands.cua(tool, json!({"pid": 1000100}))),
             "op_not_allowed",
             "{tool}"
         );
@@ -324,21 +326,21 @@ fn only_reads_and_background_actions_reach_the_worker() {
     assert_eq!(
         code(&hands.cua(
             "type_text",
-            json!({"pid": 100, "text": "x", "scope": "desktop"})
+            json!({"pid": 1000100, "text": "x", "scope": "desktop"})
         )),
         "arg_not_allowed"
     );
     assert_eq!(
         code(&hands.cua(
             "get_window_state",
-            json!({"pid": 100, "window_id": 1, "screenshot_out_file": "/tmp/x.png"})
+            json!({"pid": 1000100, "window_id": 1, "screenshot_out_file": "/tmp/x.png"})
         )),
         "arg_not_allowed"
     );
     assert_eq!(
         code(&hands.cua(
             "click",
-            json!({"pid": 100, "x": 5, "y": 5, "delivery_mode": "foreground"})
+            json!({"pid": 1000100, "x": 5, "y": 5, "delivery_mode": "foreground"})
         )),
         "borrow_not_allowed"
     );
@@ -367,28 +369,28 @@ fn the_never_list_and_the_tiers_hold() {
         "the text part names every app"
     );
     assert_eq!(
-        code(&hands.cua("get_window_state", json!({"pid": 300, "window_id": 1}))),
+        code(&hands.cua("get_window_state", json!({"pid": 1000300, "window_id": 1}))),
         "app_denied"
     );
     assert_eq!(
-        code(&hands.cua("click", json!({"pid": 400, "x": 5, "y": 5}))),
+        code(&hands.cua("click", json!({"pid": 1000400, "x": 5, "y": 5}))),
         "app_look_only"
     );
     assert_eq!(
-        hands.cua("get_window_state", json!({"pid": 400, "window_id": 1}))["ok"],
+        hands.cua("get_window_state", json!({"pid": 1000400, "window_id": 1}))["ok"],
         true,
         "browsers may be read"
     );
     assert_eq!(
-        code(&hands.cua("press_key", json!({"pid": 500, "key": "return"}))),
+        code(&hands.cua("press_key", json!({"pid": 1000500, "key": "return"}))),
         "app_click_only"
     );
     assert_eq!(
-        code(&hands.cua("get_window_state", json!({"pid": 999, "window_id": 1}))),
+        code(&hands.cua("get_window_state", json!({"pid": 1000999, "window_id": 1}))),
         "app_not_running"
     );
     // The user's own additions to the never-list count too.
-    let mine = hands.ask("cua", json!({"tool": "get_window_state", "args": {"pid": 200, "window_id": 1}, "never": ["Notes"]}));
+    let mine = hands.ask("cua", json!({"tool": "get_window_state", "args": {"pid": 1000200, "window_id": 1}, "never": ["Notes"]}));
     assert_eq!(code(&mine), "app_denied");
     assert_eq!(hands.called("click") + hands.called("press_key"), 0);
 }
@@ -397,20 +399,20 @@ fn the_never_list_and_the_tiers_hold() {
 fn an_element_token_must_come_from_a_window_state_hands_relayed() {
     let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
     let hands = plain("tok");
-    let early = hands.cua("click", json!({"pid": 100, "element_token": "s00000001:0"}));
+    let early = hands.cua("click", json!({"pid": 1000100, "element_token": "s00000001:0"}));
     assert_eq!(code(&early), "ref_unknown");
-    let state = hands.cua("get_window_state", json!({"pid": 100, "window_id": 1}));
+    let state = hands.cua("get_window_state", json!({"pid": 1000100, "window_id": 1}));
     assert_eq!(state["ok"], true);
     // The system's Apple menu (recent documents, the user's name) never leaves Hands.
     assert!(!state.to_string().contains("Log Out Someone"), "{state}");
-    let click = hands.cua("click", json!({"pid": 100, "element_token": "s00000001:0"}));
+    let click = hands.cua("click", json!({"pid": 1000100, "element_token": "s00000001:0"}));
     assert_eq!(click["ok"], true, "{click}");
     assert_eq!(click["completion"], "completed");
     // The fake answers effect "confirmed": the shared vocabulary says done.
     assert_eq!(click["outcome"], "done");
     assert_eq!(click["mode_used"], "background");
     // A token of one app spent in another is refused, whatever the pid says.
-    let elsewhere = hands.cua("click", json!({"pid": 200, "element_token": "s00000001:0"}));
+    let elsewhere = hands.cua("click", json!({"pid": 1000200, "element_token": "s00000001:0"}));
     assert_eq!(code(&elsewhere), "ref_wrong_app");
     assert_eq!(hands.called("click"), 1);
     // Hands chose the session label, not the caller.
@@ -426,23 +428,23 @@ fn an_element_token_must_come_from_a_window_state_hands_relayed() {
 fn password_fields_are_never_typed_into() {
     let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
     let hands = plain("pw");
-    hands.cua("get_window_state", json!({"pid": 100, "window_id": 1}));
+    hands.cua("get_window_state", json!({"pid": 1000100, "window_id": 1}));
     for token in ["s00000001:2", "s00000001:3"] {
         let reply = hands.cua(
             "type_text",
-            json!({"pid": 100, "element_token": token, "text": "hunter2"}),
+            json!({"pid": 1000100, "element_token": token, "text": "hunter2"}),
         );
         assert_eq!(code(&reply), "password_field", "{token}: {reply}");
         let set = hands.cua(
             "set_value",
-            json!({"pid": 100, "element_token": token, "value": "hunter2"}),
+            json!({"pid": 1000100, "element_token": token, "value": "hunter2"}),
         );
         assert_eq!(code(&set), "password_field", "{token}");
     }
     assert_eq!(hands.called("type_text") + hands.called("set_value"), 0);
     let ok = hands.cua(
         "type_text",
-        json!({"pid": 100, "element_token": "s00000001:1", "text": "Groceries"}),
+        json!({"pid": 1000100, "element_token": "s00000001:1", "text": "Groceries"}),
     );
     assert_eq!(ok["ok"], true, "{ok}");
     // On Linux there is no live accessibility to ask: the reply says the check rested on
@@ -455,10 +457,10 @@ fn password_fields_are_never_typed_into() {
 fn a_worker_that_dies_mid_request_is_unknown_then_replaced() {
     let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
     let hands = plain("crash");
-    hands.cua("get_window_state", json!({"pid": 100, "window_id": 1}));
+    hands.cua("get_window_state", json!({"pid": 1000100, "window_id": 1}));
     let died = hands.cua(
         "type_text",
-        json!({"pid": 100, "element_token": "s00000001:1", "text": "crash"}),
+        json!({"pid": 1000100, "element_token": "s00000001:1", "text": "crash"}),
     );
     assert_eq!(code(&died), "engine_died", "{died}");
     assert_eq!(
@@ -475,13 +477,13 @@ fn a_worker_that_dies_mid_request_is_unknown_then_replaced() {
 fn stop_ends_a_request_in_the_worker_within_a_second() {
     let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
     let hands = plain("stop");
-    hands.cua("get_window_state", json!({"pid": 100, "window_id": 1}));
+    hands.cua("get_window_state", json!({"pid": 1000100, "window_id": 1}));
     let socket = hands.folder().join("s.sock");
     let token = hands.token.clone();
     let slow = std::thread::spawn(move || {
         let mut stream = UnixStream::connect(socket).unwrap();
         let req = json!({"token": token, "op": "cua", "args": {"tool": "type_text",
-            "args": {"pid": 100, "element_token": "s00000001:1", "text": "hang"}}});
+            "args": {"pid": 1000100, "element_token": "s00000001:1", "text": "hang"}}});
         writeln!(stream, "{req}").unwrap();
         let mut reply = String::new();
         BufReader::new(stream).read_line(&mut reply).unwrap();
@@ -511,9 +513,9 @@ fn stop_ends_a_request_in_the_worker_within_a_second() {
 fn a_request_id_is_answered_once_for_cua_too() {
     let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
     let hands = plain("once");
-    hands.cua("get_window_state", json!({"pid": 100, "window_id": 1}));
+    hands.cua("get_window_state", json!({"pid": 1000100, "window_id": 1}));
     let line = json!({"token": hands.token, "id": "cua-click-1", "op": "cua",
-                      "args": {"tool": "click", "args": {"pid": 100, "element_token": "s00000001:0"}}})
+                      "args": {"tool": "click", "args": {"pid": 1000100, "element_token": "s00000001:0"}}})
     .to_string();
     let first = hands.raw(&line);
     let again = hands.raw(&line);
@@ -544,10 +546,10 @@ fn an_ended_session_is_renewed_once_and_a_refusal_is_said() {
         .collect();
     assert_eq!(sessions, ["expired", "expired-1"]);
     // Cua's own "no" is a refusal, never an ok with an empty result.
-    hands.cua("get_window_state", json!({"pid": 100, "window_id": 1}));
+    hands.cua("get_window_state", json!({"pid": 1000100, "window_id": 1}));
     let refused = hands.cua(
         "type_text",
-        json!({"pid": 100, "element_token": "s00000001:1", "text": "refuse-me"}),
+        json!({"pid": 1000100, "element_token": "s00000001:1", "text": "refuse-me"}),
     );
     assert_eq!(refused["ok"], false, "{refused}");
     assert_eq!(code(&refused), "engine_refused");
