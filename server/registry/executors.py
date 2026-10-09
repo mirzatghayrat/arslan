@@ -351,8 +351,8 @@ class ListMyCapabilitiesExecutor:
         if any(s["status"] == "connected" and s["tool_count"] and not s["host_allowed"]
                for s in mcp):
             out["note"] = (
-                "有 MCP 已连接但对我的授权被关掉了:在 Capabilities → MCPS 的服务器卡上"
-                "打开「Allow Arslan」开关,我下一轮对话就能调用它的全部工具。"
+                "An MCP server is connected but my access to it is switched off: turn on \"Allow Arslan\" "
+                "on its card in Capabilities → MCPS, and I can use all its tools from the next message."
             )
         return out
 
@@ -461,8 +461,8 @@ class ChartExecutor:
         return {
             "ok": True,
             "external": False,
-            "summary": f"已渲染 {ctype} 图" + (f"「{title}」" if title else "") +
-                       f":{npts} 个数据点、{len(series)} 条系列",
+            "summary": f"Rendered a {ctype} chart" + (f" \"{title}\"" if title else "") +
+                       f": {npts} data points, {len(series)} series",
             "artifact": {"kind": "echarts", "spec": option},
         }
 
@@ -493,7 +493,8 @@ class CreateSkillExecutor:
         return {
             "ok": True,
             "external": False,
-            "summary": f"已创建技能候选「{c.name}」(观察期,待评测+人工确认后才入库)",
+            "summary": f"Created skill candidate \"{c.name}\" (on probation: it joins the library only after "
+                       "evaluation and the user's confirmation)",
             "candidate_id": c.id,
             "status": c.status,
         }
@@ -610,7 +611,7 @@ class DeckExecutor:
         return {
             "ok": True,
             "external": False,
-            "summary": f"已生成 PPTX「{title}」:{len(slides)} 页(原生可编辑)",
+            "summary": f"Made PPTX \"{title}\": {len(slides)} slides (natively editable)",
             "artifact": {
                 "kind": "pptx",
                 "filename": f"{safe}.pptx",
@@ -732,9 +733,9 @@ class RunPythonExecutor:
                                  "artifacts", "artifact_warnings")
                        if k in result}}
         n_files = len(result.get("files") or [])
-        summary = (f"已执行 Python:exit 0,stdout {len(result.get('stdout') or '')} 字"
-                   + (f",生成 {n_files} 个文件" if n_files else "")
-                   + ("" if result.get("network_isolated") else "(本次未网络隔离)"))
+        summary = (f"Ran Python: exit 0, stdout {len(result.get('stdout') or '')} chars"
+                   + (f", {n_files} file(s) made" if n_files else "")
+                   + ("" if result.get("network_isolated") else " (not network-isolated this time)"))
         return {"ok": True, "external": False, "summary": summary, **result}
 
 

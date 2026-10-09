@@ -26,7 +26,7 @@ PRESETS: dict[str, dict[str, str]] = {
         "default_model": "deepseek-v4-flash",
     },
     "qwen": {
-        "label": "通义千问 Qwen (阿里云)",
+        "label": "Qwen (Alibaba Cloud)",
         "provider": "openai",
         "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
         "default_model": "qwen3.7-plus",
@@ -38,7 +38,7 @@ PRESETS: dict[str, dict[str, str]] = {
         "default_model": "kimi-k2.5",
     },
     "zhipu": {
-        "label": "智谱 GLM",
+        "label": "Zhipu GLM",
         "provider": "openai",
         "base_url": "https://open.bigmodel.cn/api/paas/v4",
         "default_model": "glm-5-turbo",
@@ -68,13 +68,13 @@ PRESETS: dict[str, dict[str, str]] = {
         "default_model": "mistral-medium-2604",
     },
     "openrouter": {
-        "label": "OpenRouter (聚合，含 Claude/Gemini)",
+        "label": "OpenRouter (Claude, Gemini and more)",
         "provider": "openai",
         "base_url": "https://openrouter.ai/api/v1",
         "default_model": "anthropic/claude-sonnet-5",
     },
     "ollama": {
-        "label": "Ollama (本地)",
+        "label": "Ollama (local)",
         "provider": "openai",
         "base_url": "http://localhost:11434/v1",
         # B5: no static default — the dynamic list (/api/tags) is king; the UI
@@ -158,7 +158,7 @@ def provider_options() -> list[dict[str, object]]:
     options.append(
         {
             "key": "custom",
-            "label": "OpenAI-compatible(自定义)",
+            "label": "OpenAI-compatible (custom)",
             "base_url": "",  # user must fill
             "default_model": "",
             "native": False,
