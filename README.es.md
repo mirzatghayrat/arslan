@@ -53,14 +53,14 @@ Sigues hablando mientras trabaja. Todo lo que borra, envía, instala o toca otra
 
 Y ya está. Sin cuenta, sin registro, sin servidor de Arslan.
 
-## Novedades de 0.1.56 — proyectos en dos capas
+## Novedades de 0.1.57 — capacidades que crecen
 
-Los proyectos viven ahora en un tablero — Idea, Dando forma, Haciendo, Hecho — y cada proyecto sube por sus propios niveles. Elige un tipo (juego, app, web, investigación, escritura, vídeo, skill, viaje, trabajo) y una meta, y los niveles se redactan al momento, sin llamar a ningún modelo; cada nivel tiene una condición clara y unos pocos puntos de control. Arslan marca lo que puede ver: archivos que aparecen en la carpeta del proyecto, lo que le cuentas, un trabajo en segundo plano que termina. Cada marca dice por qué y se puede deshacer; superar un nivel es siempre solo una propuesta, y Hecho y Descartado los decides tú. [Notas completas →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.56)
+Cuando un paso necesita algo que Arslan no sabe hacer — por ejemplo, leer las fórmulas de un Excel, no solo los valores —, busca en el MCP Registry oficial, en GitHub y en bibliotecas de skills revisadas, y pregunta en una tarjeta: qué añadiría, de dónde viene, su licencia (leída del propio archivo de licencia del proyecto), cómo se ejecutaría y qué carpetas podría usar. Con **Añadir y reintentar**, instala una versión fijada sin ejecutar código durante la instalación, la analiza en busca de patrones peligrosos conocidos, la arranca en un sandbox que empieza por el no (su propia carpeta y las que tú le des, sin claves SSH, sin red salvo que un servicio necesite una clave), la prueba una vez y reintenta el paso en la misma respuesta. Cada capacidad añadida tiene un expediente en la página Capacidades. [Notas completas →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.57)
 
 Recientemente:
-- **[0.1.55](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.55)** — un mismo aspecto para todo lo que pregunta: las tarjetas esperan en una cola, ⌘⏎ permite y Esc rechaza, y la Island las responde (un paso que borra, envía, paga o envía un formulario se abre en Arslan). Bandeja, Memoria y Capacidades son una página cada una.
-- **[0.1.54](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.54)** — el lado del Mac está listo para Arslan para iPhone (aprobaciones con Touch ID, una entrada por teléfono, limpieza al quitar un teléfono), y la puerta del terminal comprueba cada comando de una cadena.
-- **[0.1.53](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.53)** — **Arslan Hands**: Arslan lee y usa las apps de tu Mac a través de su árbol de accesibilidad, en segundo plano; un botón que borra, envía, paga, compra, transfiere o confirma pregunta siempre.
+- **[0.1.56](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.56)** — proyectos en dos capas: un tablero para todos y niveles para cada uno; Arslan solo marca lo que puede demostrar, y superar un nivel es una propuesta.
+- **[0.1.55](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.55)** — un mismo aspecto para todo lo que pregunta: las tarjetas esperan en una cola, ⌘⏎ permite y Esc rechaza, y la Island las responde (un paso que borra, envía, paga o confirma un envío se abre en Arslan).
+- **[0.1.54](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.54)** — el lado del Mac está listo para Arslan para iPhone (aprobaciones con Touch ID, una entrada por teléfono), y la puerta del terminal comprueba cada comando de una cadena.
 
 <div align="center">
   <img src="docs/assets/readme/devices.jpg" alt="Arslan en un Mac — un trabajo en segundo plano reúne facturas — y Arslan para iPhone con una aprobación pendiente" width="100%">

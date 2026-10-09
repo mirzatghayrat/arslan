@@ -249,10 +249,11 @@ browser notices; see `server/resources/browser_runtime/package-lock.json`.
 
 ### lahfir/agent-desktop — Apache License 2.0 (verified 2026-10-03)
 - <https://github.com/lahfir/agent-desktop>, Copyright its authors. The LICENSE file was
-  read at the source (tag `v0.9.4`, commit `a4a695fdd1f673426579696c7e17074910e799fc`):
+  read at the source (tag `v0.9.4`, commit `a4a695fdd1f673426579696c7e17074910e799fc`; read again
+  unchanged at upstream main `9d7ba42a94bc4ec018e624f3033602188f64af63`, 2026-10-09):
   the Apache License, Version 2.0, unmodified. Upstream ships no NOTICE file.
 - Shipped **unmodified**, built from our fork `mirzatghayrat/agent-desktop` at the commit
-  pinned in `packaging/hands/agent-desktop.pin` (upstream `v0.9.4` plus commits that only
+  pinned in `packaging/hands/agent-desktop.pin` (upstream main `9d7ba42a`, v0.9.4 plus four commits, plus commits that only
   vendor its dependencies). The binary ships beside the helper, as `hands/agent-desktop` next
   to `hands/Arslan Hands.app` in Arslan.app's Resources; its LICENSE ships in the helper as
   `Arslan Hands.app/Contents/Resources/LICENSE-agent-desktop`, with a `NOTICE`.
