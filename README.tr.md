@@ -53,14 +53,14 @@ O çalışırken sen konuşmaya devam edersin. Silen, gönderen, kuran ya da ba�
 
 Bu kadar. Hesap yok, kayıt yok, Arslan sunucusu yok.
 
-## 0.1.56'da yeni — iki katmanlı projeler
+## 0.1.57'de yeni — büyüyen yetenekler
 
-Projeler artık tek bir panoda duruyor — Fikir, Şekilleniyor, Yapılıyor, Bitti — ve her proje kendi seviyelerini tek tek çıkıyor. Bir tür (oyun, uygulama, web sitesi, araştırma, yazı, video, beceri, seyahat, iş) ve bir bitiş çizgisi seçersin; seviyeler model çağrısı olmadan hemen taslak olarak hazırlanır, her seviyenin açık bir koşulu ve birkaç kontrol noktası vardır. Arslan görebildiğini işaretler: proje klasöründe beliren dosyalar, ona söylediklerin, biten bir arka plan işi. Her işaret nedenini söyler ve geri alınabilir; bir seviyeyi geçmek her zaman yalnızca bir öneridir, Bitti ve Bırakıldı kararı yalnızca senindir. [Tüm sürüm notları →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.56)
+Bir adım Arslan'ın yapamadığı bir şey gerektirdiğinde — örneğin bir Excel dosyasındaki yalnızca değerleri değil formülleri okumak — resmî MCP Registry'de, GitHub'da ve incelenmiş beceri kütüphanelerinde arar ve tek bir kartta sorar: ne ekleneceğini, nereden geldiğini, lisansını (projenin kendi lisans dosyasından okunur), nasıl çalışacağını ve hangi klasörleri kullanabileceğini. **Add and retry** dersen sabitlenmiş bir sürümü kurulum sırasında hiçbir kod çalıştırmadan kurar, bilinen tehlikeli kalıplar için tarar, "hayır"la başlayan bir sanal alanda başlatır (kendi klasörü ve senin verdiğin klasörler; SSH anahtarlarına erişmez, bir hizmet anahtarı gerektirmedikçe ağa çıkmaz), bir kez test eder ve adımı aynı yanıtta yeniden dener. Eklenen her yeteneğin Yetenekler sayfasında bir dosyası vardır. [Tüm sürüm notları →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.57)
 
 Son sürümler:
-- **[0.1.55](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.55)** — soru soran her şey için tek görünüm: kartlar tek bir kuyrukta bekler, ⌘⏎ izin verir, Esc reddeder ve Island da yanıtlayabilir (silen, gönderen, ödeyen ya da gönderim yapan bir adım bunun yerine Arslan'da açılır). Gelen kutusu, Bellek ve Yetenekler artık birer sayfa.
-- **[0.1.54](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.54)** — Mac tarafı iPhone için Arslan'a hazır (Touch ID ile onay, telefon başına tek kayıt, telefon kaldırılınca temizlik) ve terminal kapısı bir zincirdeki her komutu denetler.
-- **[0.1.53](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.53)** — **Arslan Hands**: Arslan, Mac uygulamalarını erişilebilirlik ağacı üzerinden arka planda okur ve kullanır; silen, gönderen, ödeyen, satın alan, para aktaran ya da gönderim yapan bir düğme her seferinde sorar.
+- **[0.1.56](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.56)** — iki katmanlı projeler: hepsi için bir pano, her biri için seviyeler; Arslan yalnızca gösterebildiğini işaretler ve bir seviyeyi geçmek bir öneridir.
+- **[0.1.55](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.55)** — soru soran her şey için tek görünüm: kartlar tek bir kuyrukta bekler, ⌘⏎ izin verir, Esc reddeder ve Island da yanıtlayabilir (silen, gönderen, ödeyen ya da gönderim yapan bir adım bunun yerine Arslan'da açılır).
+- **[0.1.54](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.54)** — Mac tarafı iPhone için Arslan'a hazır (Touch ID ile onay, telefon başına tek kayıt) ve terminal kapısı bir zincirdeki her komutu denetler.
 
 <div align="center">
   <img src="docs/assets/readme/devices.jpg" alt="Mac'te Arslan — arka planda faturaları toplayan bir iş — ve bekleyen bir onayı gösteren iPhone için Arslan" width="100%">

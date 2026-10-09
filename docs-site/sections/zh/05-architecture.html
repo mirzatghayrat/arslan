@@ -1,7 +1,7 @@
 <section class="chapter" id="architecture"><h2><span class="num">05 / 系统架构</span>界面、执行和权限，各自负责什么</h2>
 <p>一句通俗解释：<strong>React 是用户看到的工作台，Tauri 是连接 macOS 的外壳，Python 是协调工作的引擎，模型提供判断，工具产生实际动作，数据库和磁盘保存过程与结果。</strong>这些职责组合在同一个桌面产品里，但不属于同一个进程。</p>
-<div class="diagram"><svg viewBox="0 0 1200 860" role="img" aria-labelledby="arch-title arch-desc"><title id="arch-title">Arslan v0.1.56 系统架构</title><desc id="arch-desc">React通过HTTP和WebSocket连接Python服务，Tauri管理桌面和服务生命周期。统一Agent循环访问模型、状态与工具，工具访问文件和独立Hands。Bridge通过独立本地控制通道接入Python服务，再经CloudKit与开发中的iPhone客户端双向投递。</desc><defs><marker id="a-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto-start-reverse"><path d="M0,0 L9,4.5 L0,9 Z" fill="#5c8071"/></marker></defs>
-<rect x="18" y="18" width="795" height="744" rx="14" fill="#e0e9df" stroke="#bacbbb"/><text x="38" y="46" class="small">用户的 Mac · 正式版 v0.1.56</text>
+<div class="diagram"><svg viewBox="0 0 1200 860" role="img" aria-labelledby="arch-title arch-desc"><title id="arch-title">Arslan v0.1.57 系统架构</title><desc id="arch-desc">React通过HTTP和WebSocket连接Python服务，Tauri管理桌面和服务生命周期。统一Agent循环访问模型、状态与工具，工具访问文件和独立Hands。Bridge通过独立本地控制通道接入Python服务，再经CloudKit与开发中的iPhone客户端双向投递。</desc><defs><marker id="a-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto-start-reverse"><path d="M0,0 L9,4.5 L0,9 Z" fill="#5c8071"/></marker></defs>
+<rect x="18" y="18" width="795" height="744" rx="14" fill="#e0e9df" stroke="#bacbbb"/><text x="38" y="46" class="small">用户的 Mac · 正式版 v0.1.57</text>
 <rect x="44" y="70" width="330" height="78" rx="9" class="box"/><text x="64" y="99" class="boxtext">React 19 + TypeScript 工作台</text><text x="64" y="125" class="small">聊天 / Activity / Brain / 工具与设置</text>
 <rect x="410" y="70" width="376" height="78" rx="9" class="box"/><text x="430" y="99" class="boxtext">Tauri 2 + Rust 桌面壳</text><text x="430" y="125" class="small">窗口 / 进程管理 / Island / 更新</text>
 <path d="M209 148 V194" class="edge" marker-end="url(#a-arrow)"/><text x="64" y="179" class="small">本地 HTTP + WebSocket</text>
@@ -40,7 +40,7 @@
 <p>这些细节共同保证窗口、服务和数据库生命周期保持一致。只检查 HTTP health 返回成功，无法证明 WebSocket、附件、静态资源和原生 helper 都已可用；它们在发布验收中还需要分别检查。</p>
 <p class="evidence">启动细节：{{source:packaging/server_entry.py|冻结服务入口与端口策略}}；{{source:desktop/src-tauri/src/lib.rs|sidecar 握手与管道管理}}；{{source:server/ws/arslan.py|WebSocket 接入}}。</p>
 <h3>旧架构与新架构：保留复用，退役专家调度</h3>
-<div class="grid2"><div class="card"><span class="pill warn">历史</span><h3>多专家／Meta-Agent</h3><p>用户 → 前置 Router → 选择／创建 Spawn → 专家执行 → 汇总；专家提示词可进入留出评测和人工 Promote。产品需要用户理解专家身份、装备、名册和演进。</p></div><div class="card"><span class="pill">0.1.56 主路径</span><h3>One Arslan／统一循环</h3><p>用户 → 同一个 Agent loop → 按需加载 Skill 和调用工具 → 输出结果；普通事实在回答后提取。旧专家可转成 Skill，保留历史记录，但不再把专家路由作为主执行路径。</p></div></div>
+<div class="grid2"><div class="card"><span class="pill warn">历史</span><h3>多专家／Meta-Agent</h3><p>用户 → 前置 Router → 选择／创建 Spawn → 专家执行 → 汇总；专家提示词可进入留出评测和人工 Promote。产品需要用户理解专家身份、装备、名册和演进。</p></div><div class="card"><span class="pill">0.1.57 主路径</span><h3>One Arslan／统一循环</h3><p>用户 → 同一个 Agent loop → 按需加载 Skill 和调用工具 → 输出结果；普通事实在回答后提取。旧专家可转成 Skill，保留历史记录，但不再把专家路由作为主执行路径。</p></div></div>
 <p class="note">“统一循环”不等于“一切串行”或“永远不委派”。代码仍有受约束的只读 worker 能力；它不等于早期那套有独立人格、装备、演进与路由的专家产品系统。</p>
 <p class="evidence">代码入口：{{source:desktop/src-tauri/src/lib.rs|桌面壳与 sidecar 生命周期}}；{{source:server/orchestrator/arslan.py|统一入口}}；{{source:server/orchestrator/tool_loop.py|执行循环}}；{{source:docs/companion/ADR-001-native-runtime.md|保留 Python 原生执行核心的决策}}；{{source:desktop/src-tauri/src/bridge.rs|Bridge 进程监督}}；{{source:server/ws/bridge.py|本地 Bridge 控制通道}}；{{source:docs/specs/mobile-bridge-protocol.md|跨设备协议}}。</p>
 </section>

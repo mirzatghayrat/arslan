@@ -54,14 +54,14 @@ You keep talking while it works. Anything that deletes, sends, installs or touch
 
 That's it. No account, no sign-up, no Arslan server.
 
-## What's new in 0.1.56 — projects in two layers
+## What's new in 0.1.57 — capabilities that grow
 
-Projects now sit on one board — Idea, Shaping, Doing, Done — and each project climbs its own levels. Pick a type (game, app, website, research, writing, video, skill, trip, job) and a finish line, and the levels are drafted at once, without a model call; each level has a clear condition and a few checkpoints. Arslan ticks what it can see: files that appear in the project folder, what you tell it, a background job that finishes. Every tick says why and can be undone, clearing a level is only ever a proposal, and Done and Dropped are yours alone. [Full release notes →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.56)
+When a step needs something Arslan cannot do — say, reading the formulas in an Excel file, not just the values — it searches the official MCP Registry, GitHub and reviewed skill libraries, and asks on one card: what it would add, where it comes from, its license (read from the project's own license file), how it would run and which folders it may use. Say **Add and retry**, and it installs a pinned version with no code running during the install, scans it for known dangerous patterns, starts it in a sandbox that begins from no (its own folder and the folders you gave it, no SSH keys, no network unless a service key needs it), tests it once, and retries the step in the same reply. Every added capability has a dossier on the Capabilities page. [Full release notes →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.57)
 
 Recently:
-- **[0.1.55](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.55)** — one look for everything that asks: cards wait in one queue, ⌘⏎ allows and Esc declines, and the Island answers them (a step that deletes, sends, pays or submits opens in Arslan instead). The Inbox, Memory and Capabilities are one page each.
-- **[0.1.54](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.54)** — the Mac side is ready for Arslan for iPhone (Touch ID approvals, one entry per phone, clean-up when a phone goes), and the terminal gate checks every command in a chain.
-- **[0.1.53](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.53)** — **Arslan Hands**: Arslan reads and uses your Mac apps through their accessibility tree, in the background; a button that deletes, sends, pays, buys, transfers or submits asks every time.
+- **[0.1.56](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.56)** — projects in two layers: a board for all of them, levels for each; Arslan ticks only what it can show, and clearing a level is a proposal.
+- **[0.1.55](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.55)** — one look for everything that asks: cards wait in one queue, ⌘⏎ allows and Esc declines, and the Island answers them (a step that deletes, sends, pays or submits opens in Arslan instead).
+- **[0.1.54](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.54)** — the Mac side is ready for Arslan for iPhone (Touch ID approvals, one entry per phone), and the terminal gate checks every command in a chain.
 
 <div align="center">
   <img src="docs/assets/readme/devices.jpg" alt="Arslan on a Mac — a background job gathering invoices — and Arslan for iPhone showing an approval waiting" width="100%">
