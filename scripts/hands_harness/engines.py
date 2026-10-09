@@ -84,6 +84,27 @@ class AgentDesktop:
         walk(tree)
         return found, ms
 
+    def look_with_screenshot(self) -> tuple[dict, dict, int]:
+        """Hands v2's look as desktop_look makes it: the tree with bounds, then Hands' screenshot of
+        the window just read. (snapshot data, capture, total ms)."""
+        from concurrent.futures import ThreadPoolExecutor
+        started = time.monotonic()
+        with ThreadPoolExecutor(2) as pool:       # asked together, as desktop_look does
+            front = pool.submit(self.hands.call, "capture_window", {"app": self.app})
+            reply = self.hands.call("snapshot", {"app": self.app, "include_bounds": True})
+            shot = front.result()
+        envelope = reply.get("envelope") or {}
+        if reply.get("ok") is not True or envelope.get("ok") is not True:
+            raise RuntimeError(f"look failed: {reply.get('refused') or envelope.get('error')}")
+        data = envelope.get("data") or {}
+        read = str((data.get("window") or {}).get("id") or "")
+        if shot.get("ok") and read and str(shot["capture"].get("window_id")) != read.removeprefix("w-"):
+            shot = self.hands.call("capture_window", {"app": self.app, "window": read})
+        ms = round((time.monotonic() - started) * 1000)
+        if shot.get("ok") is not True:
+            raise RuntimeError(f"capture failed: {shot.get('refused')}")
+        return data, shot["capture"], ms
+
     def click(self, element: Element) -> Act:
         started = time.monotonic()
         return _act(self.hands.call("click", {"app": self.app, "ref": element.id}), started)

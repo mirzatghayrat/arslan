@@ -549,19 +549,24 @@ class DesktopLookExecutor:
             if args.get("ref"):
                 snap["root"] = str(args["ref"])[:200]
             screenshots = hands_service.settings()["screenshots"]
+            shot = None
             if screenshots:
                 snap["include_bounds"] = True
+                # Asked together (§15 A8: a look under 400 ms): the named window, or the app's
+                # front one, which is checked against the window the tree came from below.
+                shot = asyncio.create_task(_screenshot(app, call.get("window_id"), conversation_id, job_id))
             result = await _look_one_window("snapshot", snap, job_id)
             if not result.ok:
+                if shot is not None:
+                    await shot
                 _trace("look", app, result.code or "error", started)
                 return _failed(result, app=app["name"])
             data = result.data if isinstance(result.data, dict) else {}
             window = (data.get("window") or {}).get("title") or ""
-            if screenshots:
-                capture, shot_note = await _screenshot(app, call.get("window_id") or (data.get("window") or {}).get("id"),
-                                                       conversation_id, job_id)
-            else:
-                capture, shot_note = None, ""
+            capture, shot_note = (await shot) if shot is not None else (None, "")
+            read = str((data.get("window") or {}).get("id") or "")
+            if capture and read and str(capture.get("window_id")) != read.removeprefix("w-"):
+                capture, shot_note = await _screenshot(app, read, conversation_id, job_id)
             changed = None if args.get("ref") else look_diff.since_last(
                 job_id or conversation_id or "", bundle, window, data.get("tree") or {})
             text = (f"{app['name']} — window “{window}”. Refs [@…] work for actions in this piece of work; "

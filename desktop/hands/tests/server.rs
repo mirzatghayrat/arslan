@@ -580,3 +580,34 @@ fn a_screenshot_follows_the_look_rules_and_never_runs_agent_desktop() {
         hands.calls()
     );
 }
+
+#[test]
+fn a_screenshot_does_not_wait_behind_a_command_in_flight() {
+    let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    let hands = start("beside");
+    let socket = hands.folder().join("s.sock");
+    let token = hands.token.clone();
+    let slow = std::thread::spawn(move || {
+        let mut stream = UnixStream::connect(socket).unwrap();
+        let req = json!({"token": token, "op": "wait", "args": {"app": "Hands Fixture", "text": "slow", "timeout_ms": 20000}});
+        writeln!(stream, "{req}").unwrap();
+        let mut reply = String::new();
+        BufReader::new(stream).read_line(&mut reply).unwrap();
+    });
+    let started = Instant::now();
+    while !hands.calls().iter().any(|c| c[0] == "wait") {
+        assert!(started.elapsed() < Duration::from_secs(5));
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    // The wait holds Hands' one-at-a-time lock for 30 s; the screenshot answers anyway.
+    let asked = Instant::now();
+    let shot = hands.ask("capture_window", json!({"app": "Keychain Access"}));
+    assert_eq!(code(&shot), "app_denied");
+    assert!(
+        asked.elapsed() < Duration::from_secs(5),
+        "{:?}",
+        asked.elapsed()
+    );
+    hands.ask("stop", json!({}));
+    slow.join().unwrap();
+}

@@ -603,6 +603,17 @@ fn dispatch(state: &State, req: &Request) -> Value {
         }
         "stop" => stop(state),
         "quit" => json!({"ok": true}),
+        // A screenshot runs beside an agent-desktop command, not after it (spec §15 A8: a look's
+        // tree and its screenshot are asked for together). Stop still applies.
+        "capture_window" => {
+            let generation = runner::generation();
+            let ctx = Ctx { state, generation };
+            let out = capture_window(&ctx, &req.args).unwrap_or_else(refused);
+            if runner::generation() != generation {
+                return refused(refuse("stopped_by_user", "stopped"));
+            }
+            out
+        }
         _ => {
             let generation = runner::generation();
             let _one = state
@@ -631,7 +642,6 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
         "session_end" => return session_end(ctx, args),
         "list_apps" => return list_apps(ctx, args),
         "cua" => return cua_op(ctx, args),
-        "capture_window" => return capture_window(ctx, args),
         _ => {}
     }
     if op != "describe" && !argv::OPS.contains(&op) {

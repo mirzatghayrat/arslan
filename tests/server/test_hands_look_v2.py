@@ -68,8 +68,15 @@ async def test_a_look_attaches_the_windows_screenshot_and_places_each_element(ha
     assert PIXELS not in result["text"]
     snapshot = next(a for op, a in hands.calls if op == "snapshot")
     assert snapshot["include_bounds"] is True
-    capture = next(a for op, a in hands.calls if op == "capture_window")
-    assert capture == {"app": "Notes", "window": "w-85125", "never": []}   # the window just read
+    # Asked beside the tree for the front window; it is the window the tree came from, so once.
+    assert [a for op, a in hands.calls if op == "capture_window"] == [{"app": "Notes", "never": []}]
+
+
+async def test_a_screenshot_of_another_window_than_the_one_read_is_taken_again(hands, asks, in_turn):
+    with_capture(hands, window_id=99)                    # the front window is not the one read
+    await look()
+    asked = [a.get("window") for op, a in hands.calls if op == "capture_window"]
+    assert asked == [None, "w-85125"]
 
 
 async def test_the_trace_records_a_screenshot_was_taken_never_its_pixels(hands, asks, in_turn):
