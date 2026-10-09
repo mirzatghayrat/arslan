@@ -119,6 +119,10 @@ export interface Message {
     skills: string[];
   };
   toolActivity?: ToolActivity;
+  /** 0.1.58 §1: the footer row under the reply and the steps it opens. */
+  process?: import('./components/reply/ReplyFooter').ReplyProcess;
+  /** 0.1.58 §2: the files this reply produced, one per path (file cards). */
+  files?: import('./api/client.types').StoredArtifact[];
   /** HTML deliverable card data (kind:"html" stream_end artifact). 🔒 Backend frames only. */
   artifactHtml?: HtmlArtifact;
   escalation?: Escalation;
@@ -233,6 +237,8 @@ export interface AppSettings {
   heartbeatChecklist: string;
   /** 0.1.56 §5: Arslan clears project levels itself (logged, undoable; never Done). Default OFF. */
   projectsAutoAdvance?: boolean;
+  /** 0.1.58 §1: raw tool input/output under a reply's steps (default off). */
+  showTechnicalDetails?: boolean;
   /** May Arslan look at what is on the local network? Default OFF. */
   lanDiscoveryEnabled: boolean;
   sshEnabled: boolean;
@@ -252,6 +258,12 @@ export interface AppSettings {
   titleConfigId?: string;
   routerConfigId?: string;
   visionConfigId?: string;
+  /** 0.1.58 §6: one model of the slot's config ("" = the config's own model). */
+  synthesisModel?: string;
+  compactionModel?: string;
+  titleModel?: string;
+  routerModel?: string;
+  visionModel?: string;
   /** Days a run's sensitive/bulky debug detail is kept before the boot sweep redacts it. Default 30. */
   runDebugRetentionDays?: number;
   /** S4.1-C: whether the inbound MCP server (exposing Arslan's read-only tools

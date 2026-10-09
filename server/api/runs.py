@@ -100,31 +100,101 @@ def _health(error_ratio: float, avg_score: float | None, pass_rate: int | None) 
 _HEALTH_ORDER = {"red": 0, "amber": 1, "green": 2}
 
 
+#: Browser previews run through host_run under this name (server/api/browser.py).
+_BROWSER_RUN_NAME = "Browser preview"
+
+
+async def run_origins(db: AsyncSession, runs: list[Run]) -> dict[int, str]:
+    """Where each run came from, read from records that already exist (0.1.58 §7):
+    a scheduled fire (Run.kind), a browser preview (its run name), a background job
+    (its result message carries job_outcome), a message sent from the paired iPhone
+    (the user message that started the turn has source="phone"); otherwise chat."""
+    from server.db.models import ArslanMessage
+    out: dict[int, str] = {}
+    pending: list[Run] = []
+    for r in runs:
+        if r.kind == "scheduled":
+            out[r.id] = "scheduled"
+        elif r.spawn_name == _BROWSER_RUN_NAME:
+            out[r.id] = "browser"
+        else:
+            out[r.id] = "chat"
+            pending.append(r)
+    if not pending:
+        return out
+    ids = [r.id for r in pending]
+    answers = (await db.execute(
+        select(ArslanMessage.run_id, ArslanMessage.id, ArslanMessage.conversation_id, ArslanMessage.job_outcome)
+        .where(ArslanMessage.run_id.in_(ids), ArslanMessage.role != "user"))).all()
+    first_answer: dict[int, tuple[int, str]] = {}
+    for run_id, msg_id, conv, job_outcome in answers:
+        if job_outcome is not None:
+            out[run_id] = "job"
+        elif run_id not in first_answer or msg_id < first_answer[run_id][0]:
+            first_answer[run_id] = (msg_id, conv)
+    convs = {conv for _, conv in first_answer.values()}
+    phoned = set((await db.execute(
+        select(ArslanMessage.conversation_id).where(
+            ArslanMessage.conversation_id.in_(convs), ArslanMessage.source == "phone").distinct())).scalars())
+    for run_id, (msg_id, conv) in first_answer.items():
+        if out[run_id] != "chat" or conv not in phoned:
+            continue
+        # The user message that started this turn: the last one before its answer.
+        source = (await db.execute(
+            select(ArslanMessage.source).where(
+                ArslanMessage.conversation_id == conv, ArslanMessage.role == "user",
+                ArslanMessage.id < msg_id).order_by(ArslanMessage.id.desc()).limit(1))).scalar()
+        if source == "phone":
+            out[run_id] = "phone"
+    return out
+
+
 @router.get("/runs", response_model=list[RunListItemOut])
 async def list_runs(
     spawn_id: int | None = None,
     conversation_id: str | None = None,
     limit: int = Query(50, ge=1, le=200),
+    before_id: int | None = Query(None, ge=1),
+    since: datetime | None = None,
+    until: datetime | None = None,
+    model: str | None = Query(None, max_length=200),
     db: AsyncSession = Depends(get_session),
 ) -> list[RunListItemOut]:
     # E2: replay runs (kind='replay') are the gate's internal two-arm evidence — they never
     # surface in the runs list. get_run detail stays unfiltered so the card can link into a
-    # specific replay run's trace.
-    q = select(Run).where(Run.kind.in_(("live", "host"))).order_by(Run.id.desc()).limit(limit)
+    # specific replay run's trace. 0.1.58: scheduled fires are listed too — Activity's tiles
+    # already counted them, the list beneath silently did not.
+    q = select(Run).where(Run.kind.in_(("live", "host", "scheduled"))).order_by(Run.id.desc()).limit(limit)
     if spawn_id is not None:
         q = q.where(Run.spawn_id == spawn_id)
     if conversation_id is not None:
         q = q.where(Run.conversation_id == conversation_id)
+    if before_id is not None:
+        q = q.where(Run.id < before_id)
+    # Stored times are naive UTC; an aware bound is converted, never compared raw.
+    if since is not None:
+        q = q.where(Run.created_at >= _naive_utc(since))
+    if until is not None:
+        q = q.where(Run.created_at < _naive_utc(until))
+    if model:
+        q = q.where(Run.model == model)
     rows = (await db.execute(q)).scalars().all()
+    origins = await run_origins(db, list(rows))
     return [
         RunListItemOut(
             id=r.id, spawn_id=r.spawn_id, spawn_name=r.spawn_name, status=r.status,
             overall_score=r.overall_score, overall_badge=r.overall_badge,
             total_ms=r.total_ms, user_message=r.user_message,
             created_at=r.created_at.isoformat() if r.created_at else None,
+            origin=origins.get(r.id, "chat"), model=r.model, tokens=r.task_tokens or None,
         )
         for r in rows
     ]
+
+
+def _naive_utc(ts: datetime) -> datetime:
+    from datetime import timezone
+    return ts.astimezone(timezone.utc).replace(tzinfo=None) if ts.tzinfo else ts
 
 
 # NOTE: must stay registered BEFORE /runs/{run_id}, or FastAPI tries to parse
@@ -466,6 +536,20 @@ async def get_artifact_review(run_id: int, filename: str) -> dict:
     if not artifact_store.safe_filename(run_id, filename):
         raise HTTPException(status_code=400, detail="invalid artifact filename")
     return artifact_store.read_review(run_id, filename) or {"status": "none"}
+
+
+@router.get("/runs/{run_id}/process")
+async def run_process(run_id: int, db: AsyncSession = Depends(get_session)) -> dict:
+    """0.1.58 §1: what a reply did, in order and in plain data — the list under its footer.
+    Raw input/output only with 设置 › 通用 › 显示技术细节 on."""
+    from server.services import run_process as rp, settings_service
+    run = await db.get(Run, run_id)
+    if run is None:
+        raise HTTPException(404, detail={"code": "run_not_found"})
+    steps = (await db.execute(select(RunStep).where(RunStep.run_id == run_id).order_by(RunStep.seq))).scalars().all()
+    raw = (await settings_service._get_raw(db, "show_technical_details")) == "true"
+    summary = (await rp.summaries(db, [run_id])).get(run_id, {})
+    return {"run_id": run_id, "status": run.status, **summary, "entries": rp.entries(list(steps), raw=raw)}
 
 
 @router.get("/runs/{run_id}", response_model=RunDetailOut)

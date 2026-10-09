@@ -11,6 +11,7 @@ router = APIRouter(dependencies=[Depends(require_auth)])
 
 
 @router.get("/judgments")
-async def list_judgments(limit: int = Query(50, ge=1, le=500), point: str | None = Query(None, max_length=40)):
+async def list_judgments(limit: int = Query(50, ge=1, le=500), point: str | None = Query(None, max_length=40),
+                         before_id: int | None = Query(None, ge=1)):
     return {"points": {name: p.mode for name, p in judgment.REGISTRY.items()},
-            "items": await judgment.recent(limit, point)}
+            "items": await judgment.recent(limit, point, before_id=before_id)}

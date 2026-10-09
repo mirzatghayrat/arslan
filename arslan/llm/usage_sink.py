@@ -14,6 +14,15 @@ _detail: ContextVar[dict[tuple[str | None, str | None], dict] | None] = ContextV
 )
 
 
+# 0.1.58 §6: the latest call's input — how full the context is now (the composer's ring).
+_last_in: ContextVar[dict | None] = ContextVar("usage_last_in", default=None)
+
+
+def last_input() -> int | None:
+    holder = _last_in.get()
+    return holder["value"] if holder else None
+
+
 def report(tokens: int, *, charged: int | None = None) -> None:
     """Add a token count to the active bucket (no-op when none is active).
 
@@ -24,6 +33,13 @@ def report(tokens: int, *, charged: int | None = None) -> None:
     charge_tokens(tokens if charged is None else charged)
     if bucket is not None:
         bucket.append(int(tokens))
+
+
+def calls() -> int:
+    """How many model calls reported into the active bucket (0.1.58: the reply's usage
+    popover says "调用模型 N 次" — why a short answer can carry a large input total)."""
+    bucket = _sink.get()
+    return len(bucket) if bucket else 0
 
 
 def total() -> int:
@@ -46,6 +62,9 @@ def report_detail(
     (None or 0)+real and silently launder the estimated call's tokens into a
     real-flagged total). Real values still accumulate per-bucket regardless of the
     flag. No-op without context."""
+    holder = _last_in.get()
+    if holder is not None and tokens_in is not None:
+        holder["value"] = int(tokens_in)
     buckets = _detail.get()
     if buckets is None:
         return
@@ -114,11 +133,13 @@ def collecting():
     detail_buckets: dict[tuple[str | None, str | None], dict] = {}
     token = _sink.set(bucket)
     dtoken = _detail.set(detail_buckets)
+    ltoken = _last_in.set({"value": None})
     try:
         yield bucket
     finally:
         _sink.reset(token)
         _detail.reset(dtoken)
+        _last_in.reset(ltoken)
 
 
 # What one image contributes to the ESTIMATE. Providers bill images by tile and

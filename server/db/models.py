@@ -429,6 +429,18 @@ class ProviderConfig(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class ConversationModel(Base):
+    """0.1.58 §6: the model one conversation runs on (any model its provider config offers).
+    No row = the default (the primary config and its model)."""
+
+    __tablename__ = "conversation_models"
+
+    conversation_id = Column(String(100), primary_key=True)
+    config_id = Column(Integer, ForeignKey("provider_configs.id", ondelete="CASCADE"), nullable=False)
+    model = Column(String(200), nullable=False)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
 class ModelCatalogCache(Base):
     """P2: cached dynamic model list per provider config (Settings-only surface).
 

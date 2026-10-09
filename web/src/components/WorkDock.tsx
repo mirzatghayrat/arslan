@@ -5,12 +5,14 @@ import { OPEN_ARTIFACT, restoreDock, saveDock, validArtifact, type DockTab } fro
 import BrowserReader from "./BrowserReader";
 import ArtifactPreview from "./ArtifactPreview";
 
-export default function WorkDock({ open, onOpen, onClose, conversationId, taskId, temporary }: {
+export default function WorkDock({ open, onOpen, onClose, conversationId, taskId, temporary, embedded = false }: {
   open: boolean; onOpen: () => void; onClose: () => void; conversationId: string; taskId: string | null; temporary: boolean;
+  /** 0.1.58 §3: inside the workbench's 浏览器 tab — browser tabs only (files open in the reader), no own frame. */
+  embedded?: boolean;
 }) {
   const { t } = useTranslation();
   const initial = useRef(restoreDock());
-  const [tabs, setTabs] = useState<DockTab[]>(initial.current.tabs);
+  const [tabs, setTabs] = useState<DockTab[]>(embedded ? initial.current.tabs.filter(tab => tab.kind === "browser") : initial.current.tabs);
   const [selected, setSelected] = useState(initial.current.tabs[0]?.id ?? "");
   const [width, setWidth] = useState(initial.current.width);
   const [narrow, setNarrow] = useState(() => window.innerWidth < 768);
@@ -48,6 +50,7 @@ export default function WorkDock({ open, onOpen, onClose, conversationId, taskId
     if (!tabs.some(tab => tab.id === selected)) setSelected(tabs[0]?.id ?? "");
   }, [tabs, selected]);
   useEffect(() => {
+    if (embedded) return;      // the workbench's reader opens files (0.1.58)
     function openFile(event: Event) {
       const file = (event as CustomEvent).detail;
       if (!validArtifact(file)) return;
@@ -60,7 +63,7 @@ export default function WorkDock({ open, onOpen, onClose, conversationId, taskId
     }
     window.addEventListener(OPEN_ARTIFACT, openFile);
     return () => window.removeEventListener(OPEN_ARTIFACT, openFile);
-  }, [tabs, temporary, onOpen]);
+  }, [tabs, temporary, onOpen, embedded]);
   function addBrowser() {
     if (tabs.length >= 8) { setLimit(true); return; }
     const id = crypto.randomUUID();
@@ -76,6 +79,26 @@ export default function WorkDock({ open, onOpen, onClose, conversationId, taskId
     panel.current?.querySelector<HTMLButtonElement>(`[data-tab-id="${tabs[next].id}"]`)?.focus();
   }
   if (!open) return null;
+  if (embedded) return <div className="flex h-full min-h-0 flex-col" data-testid="dock-embedded">
+    <div className="flex shrink-0 items-center border-b border-border">
+      <div role="tablist" aria-label={t("dock.tabs")} className="flex min-w-0 flex-1 overflow-x-auto">
+        {tabs.map(tab => <div key={tab.id} className={`flex max-w-[200px] shrink-0 items-center border-r border-border ${tab.id === selected ? "bg-surface" : ""}`}>
+          <button role="tab" aria-selected={tab.id === selected} onClick={() => setSelected(tab.id)} className="flex min-w-0 items-center gap-2 px-3 py-2 text-xs">
+            <Globe size={14} className="shrink-0" /><span className="truncate">{tab.kind === "browser" ? tab.title || t("dock.browser") : ""}</span></button>
+          <button className="shrink-0 p-1.5 hover:bg-background" aria-label={t("dock.closeTab")}
+            onClick={() => setTabs(old => old.filter(item => item.id !== tab.id))}><X size={13} /></button>
+        </div>)}
+      </div>
+      <button className="shrink-0 rounded p-2 hover:bg-surface" onClick={addBrowser} aria-label={t("dock.newBrowser")}><Plus size={16} /></button>
+    </div>
+    {limit && <p role="alert" className="p-3 text-xs text-destructive">{t("dock.tabLimit")}</p>}
+    {!tabs.length && <div className="space-y-4 p-5 text-sm text-muted-foreground"><p>{t("dock.empty")}</p>
+      <button className="rounded-lg border border-border px-3 py-2 text-foreground" onClick={addBrowser}>{t("dock.newBrowser")}</button></div>}
+    {tabs.map(tab => tab.kind === "browser" && <div key={tab.id} role="tabpanel" hidden={tab.id !== selected} className="min-h-0 flex-1 overflow-hidden">
+      <BrowserReader conversationId={tab.conversationId} taskId={tab.taskId}
+        onTitle={title => setTabs(old => old.map(item => item.id === tab.id && item.kind === "browser" ? { ...item, title } : item))} />
+    </div>)}
+  </div>;
   return <aside ref={panel} aria-label={t("dock.title")} role={narrow ? "dialog" : undefined} aria-modal={narrow || undefined}
     style={{ width: narrow ? "100%" : width, maxWidth: narrow ? "none" : "55vw" }}
     className={`${narrow ? "fixed inset-0 z-[100]" : "relative z-20"} flex h-full min-w-0 shrink-0 flex-col border-l border-border bg-background`}

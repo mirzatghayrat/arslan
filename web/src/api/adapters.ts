@@ -1,5 +1,7 @@
 import type { AppSettings, Message, Spawn, UiRun, UiRunDimension, UiRunStep } from "../types";
 import type { AppSettings as BackendAppSettings, ArslanThreadItem, RunDetailDto, RunStepDto, SpawnSummary } from "./client.types";
+import { fromSteps, summarize } from "../lib/process";
+import { lastVersions } from "../components/reply/ReplyArtifacts";
 
 // ── Settings adapters ─────────────────────────────────────────────────────────
 
@@ -81,6 +83,7 @@ export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "th
     heartbeatEnabled: backend.heartbeat_enabled === "true",
     heartbeatChecklist: backend.heartbeat_checklist ?? "",
     projectsAutoAdvance: backend.projects_auto_advance === "true",
+    showTechnicalDetails: backend.show_technical_details === "true",
     lanDiscoveryEnabled: backend.lan_discovery_enabled === "true",
     sshEnabled: backend.ssh_enabled === "true",
     // Default-ON, unlike its neighbours: absent OR anything-but-"false" is on,
@@ -99,6 +102,11 @@ export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "th
   titleConfigId: backend.title_config_id ?? "",
   routerConfigId: backend.router_config_id ?? "",
   visionConfigId: backend.vision_config_id ?? "",
+  synthesisModel: backend.synthesis_model ?? "",
+  compactionModel: backend.compaction_model ?? "",
+  titleModel: backend.title_model ?? "",
+  routerModel: backend.router_model ?? "",
+  visionModel: backend.vision_model ?? "",
     curationEnabled: backend.curation_enabled ?? false,
     researchReviewEnabled: backend.research_review_enabled ?? false,
     keepAwakeEnabled: backend.keep_awake_enabled ?? true,
@@ -141,6 +149,7 @@ const SETTINGS_WIRE: Record<string, { key: keyof BackendAppSettings; to?: (v: un
   heartbeatEnabled: { key: "heartbeat_enabled", to: (v) => (v ? "true" : "false") },
   heartbeatChecklist: { key: "heartbeat_checklist", to: (v) => (v as string) ?? "" },
   projectsAutoAdvance: { key: "projects_auto_advance", to: (v) => (v ? "true" : "false") },
+  showTechnicalDetails: { key: "show_technical_details", to: (v) => (v ? "true" : "false") },
   lanDiscoveryEnabled: { key: "lan_discovery_enabled", to: (v) => (v ? "true" : "false") },
   sshEnabled: { key: "ssh_enabled", to: (v) => (v ? "true" : "false") },
   defaultReadEnabled: { key: "default_read_enabled", to: (v) => (v ? "true" : "false") },
@@ -153,6 +162,11 @@ const SETTINGS_WIRE: Record<string, { key: keyof BackendAppSettings; to?: (v: un
   titleConfigId: { key: "title_config_id", to: (v) => (v as string) ?? "" },
   routerConfigId: { key: "router_config_id", to: (v) => (v as string) ?? "" },
   visionConfigId: { key: "vision_config_id", to: (v) => (v as string) ?? "" },
+  synthesisModel: { key: "synthesis_model", to: (v) => (v as string) ?? "" },
+  compactionModel: { key: "compaction_model", to: (v) => (v as string) ?? "" },
+  titleModel: { key: "title_model", to: (v) => (v as string) ?? "" },
+  routerModel: { key: "router_model", to: (v) => (v as string) ?? "" },
+  visionModel: { key: "vision_model", to: (v) => (v as string) ?? "" },
   curationEnabled: { key: "curation_enabled", to: (v) => (v as boolean) ?? false },
   researchReviewEnabled: { key: "research_review_enabled", to: (v) => (v as boolean) ?? false },
   keepAwakeEnabled: { key: "keep_awake_enabled", to: (v) => (v as boolean) ?? true },
@@ -469,6 +483,19 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
             artifacts: item.toolSteps?.flatMap((s) => s.artifacts ?? []),
           }
         : undefined;
+    // 0.1.58 §1: the footer row and its steps. A reloaded reply carries the server's row
+    // (processSummary); a live one counts its in-memory steps the same way.
+    const entries = fromSteps(item.toolSteps);
+    const live = summarize(entries, item.elapsedMs ?? null, item.usage ?? null);
+    // 0.1.58 §2: the reply's files — from its steps live, from the history row after a reload.
+    const files = lastVersions([...(item.files ?? []), ...(item.toolSteps ?? []).flatMap((s) => s.artifacts ?? [])]);
+    const process = {
+      runId: item.runId ?? null,
+      entries,
+      summary: item.processSummary
+        ? { ...item.processSummary, usage: item.usage ?? item.processSummary.usage ?? null }
+        : live,
+    };
     if (item.role === "spawn") {
       return {
         id,
@@ -492,6 +519,8 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
         cancelled: item.cancelled ?? undefined,
         // S3-M3: the turn's usage from the stream_end frame → bubble usage chip.
         usage: item.usage,
+        process,
+        files,
       };
     }
 
@@ -516,6 +545,8 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
       // 0.1.42: this is a background job's result, checked against its criteria.
       resultOfJob: item.jobId,
       jobOutcome: item.jobOutcome ?? undefined,
+      process,
+      files,
     };
   });
 }

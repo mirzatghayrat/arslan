@@ -485,6 +485,11 @@ def create_app() -> FastAPI:
 
     app.include_router(conversations_api.router, prefix="/api/v1")
 
+    # 0.1.58 §2–§3: files in Arslan's window (browse, read, open/reveal, a conversation's files).
+    from server.api import files as files_api
+
+    app.include_router(files_api.router, prefix="/api/v1")
+
     from server.api import usage as usage_api
 
     app.include_router(usage_api.router, prefix="/api/v1")

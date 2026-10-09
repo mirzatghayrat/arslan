@@ -944,7 +944,17 @@
       "unfinished": "No se logró",
       "failed": "Detenido por un problema",
       "scheduled": "Programado"
-    }
+    },
+    "projects": "Proyectos",
+    "allProjects": "Todos los proyectos",
+    "allInProject": "Todas ({{count}})",
+    "newInProject": "Nueva conversación en «{{name}}»",
+    "moveToProject": "Mover a un proyecto…",
+    "moveOut": "Quitar del proyecto",
+    "moveBack": "Atrás",
+    "movedTo": "Movida a «{{name}}»",
+    "movedOut": "Quitada del proyecto",
+    "moveFailed": "No se pudo mover; quizá esté trabajando ahora."
   },
   "orchestrator": {
     "greeting_morning": "Buenos días",

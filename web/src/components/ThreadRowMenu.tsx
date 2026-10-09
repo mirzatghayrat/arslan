@@ -13,7 +13,7 @@ import { useTranslation } from "react-i18next";
 
 import { useDismissable } from "../hooks/useDismissable";
 import AnchoredPortal from "./AnchoredPortal";
-import { MoreHorizontal, Wand2, Archive, ArchiveRestore, Trash2 } from "lucide-react";
+import { MoreHorizontal, Wand2, Archive, ArchiveRestore, Trash2, FolderInput, FolderMinus, ChevronLeft, Folder } from "lucide-react";
 import { confirmSheet } from "./kit";
 
 interface ThreadRowMenuProps {
@@ -24,6 +24,10 @@ interface ThreadRowMenuProps {
   onArchive: (id: string) => void;
   onUnarchive?: (id: string) => void;
   onDelete: (id: string) => void;
+  /** 0.1.58 §4: move this conversation into a project, or out of one (null). */
+  projects?: { id: string; name: string }[];
+  projectId?: string | null;
+  onMove?: (id: string, projectId: string | null) => void;
 }
 
 export default function ThreadRowMenu({
@@ -33,12 +37,17 @@ export default function ThreadRowMenu({
   onArchive,
   onUnarchive,
   onDelete,
+  projects,
+  projectId = null,
+  onMove,
 }: ThreadRowMenuProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
+  const [picking, setPicking] = useState(false);
 
   const close = () => {
     setOpen(false);
+    setPicking(false);
   };
 
   // Two fixes, one cause each:
@@ -76,7 +85,33 @@ export default function ThreadRowMenu({
           onClick={(e) => e.stopPropagation()}
           className="w-52 bg-surface-raised border border-border-strong rounded-lg shadow-lg p-1"
         >
+          {picking && onMove ? (
+            <div data-testid="thread-move-list">
+              <button type="button" role="menuitem" className={itemClass} onClick={() => setPicking(false)}>
+                <ChevronLeft className="w-3.5 h-3.5 shrink-0" /><span>{t("sidebar.moveBack")}</span>
+              </button>
+              {(projects ?? []).filter((p) => p.id !== projectId).map((p) => (
+                <button key={p.id} type="button" role="menuitem" className={itemClass} data-testid={`thread-move-to-${p.id}`}
+                  onClick={() => { onMove(threadId, p.id); close(); }}>
+                  <Folder className="w-3.5 h-3.5 text-subtle-foreground shrink-0" /><span className="truncate">{p.name}</span>
+                </button>
+              ))}
+              {projectId && (
+                <button type="button" role="menuitem" className={itemClass} data-testid="thread-move-out"
+                  onClick={() => { onMove(threadId, null); close(); }}>
+                  <FolderMinus className="w-3.5 h-3.5 text-subtle-foreground shrink-0" /><span>{t("sidebar.moveOut")}</span>
+                </button>
+              )}
+            </div>
+          ) : (
               <>
+                {onMove && ((projects?.length ?? 0) > 0 || projectId) && (
+                  <button type="button" role="menuitem" className={itemClass} data-testid="thread-move"
+                    onClick={() => setPicking(true)}>
+                    <FolderInput className="w-3.5 h-3.5 text-subtle-foreground shrink-0" />
+                    <span>{t("sidebar.moveToProject")}</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   role="menuitem"
@@ -133,6 +168,7 @@ export default function ThreadRowMenu({
                   <span>{t("sidebar.delete")}</span>
                 </button>
               </>
+          )}
         </div>
       </AnchoredPortal>
     </span>

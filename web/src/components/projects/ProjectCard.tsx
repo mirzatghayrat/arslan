@@ -78,6 +78,8 @@ export default function ProjectCard({ card, onOpen, onDecide, onPlan, onResume, 
               : t("projectsUI.proposalMove", { level: p.level, next: p.next ?? "", evidence: evidenceText(t, p.evidence) })}
               {p.moves_column ? ` ${t("projectsUI.proposalColumn")}` : ""}</span>
           </span>
+          {!!p.open?.length && <span className="pl-3.5 text-[12px] text-warning" data-testid={`project-proposal-open-${card.id}`}>
+            {t("projectsUI.proposalOpen", { count: p.open.length })}</span>}
           <span className="flex gap-1.5 pl-3.5">
             <Button size="sm" tone="primary" disabled={busy} onClick={() => onDecide(true)}
               data-testid={`project-accept-${card.id}`}>{t(p.last ? "projectsUI.gotIt" : "projectsUI.accept")}</Button>

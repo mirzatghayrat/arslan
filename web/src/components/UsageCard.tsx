@@ -3,8 +3,9 @@ import { useTranslation } from "react-i18next";
 import { api } from "../api/client";
 import type { UsageBin, UsageSummary } from "../api/client.types";
 import { fmtMs, fmtTok, fmtUsd } from "../lib/usageFormat";
+import { useActivityStore, type UsageRange } from "../stores/activityStore";
 
-type RangeKey = "24h" | "7d" | "30d";
+type RangeKey = UsageRange;
 const RANGES: RangeKey[] = ["24h", "7d", "30d"];
 
 /** A palette-aware tint of the accent: every theme and palette gets its own heat scale. */
@@ -24,7 +25,11 @@ const tint = (pct: number) => `color-mix(in srgb, var(--primary) ${Math.round(pc
  */
 export default function UsageCard() {
   const { t, i18n } = useTranslation();
-  const [range, setRange] = useState<RangeKey>("7d");
+  // 0.1.58: the range lives in the Activity store, so leaving the page keeps it.
+  const range = useActivityStore((s) => s.range);
+  const setRange = useActivityStore((s) => s.setRange);
+  const filter = useActivityStore((s) => s.filter);
+  const setFilter = useActivityStore((s) => s.setFilter);
   const [summary, setSummary] = useState<UsageSummary | null>(null);
 
   useEffect(() => {
@@ -83,7 +88,9 @@ export default function UsageCard() {
 
       {bins.length > 0 && (summary?.duration_bands?.length ?? 0) > 0 ? (
         <Timeline bins={bins} bands={summary!.duration_bands!} binSeconds={summary!.bin_seconds ?? 3600}
-          range={range} locale={i18n.language} />
+          range={range} locale={i18n.language}
+          selected={filter.since}
+          onPick={(b) => setFilter({ ...filter, since: b.start_ts, until: b.start_ts + (summary!.bin_seconds ?? 3600) })} />
       ) : (summary?.daily.length ?? 0) > 0 && (
         // An older backend sends only daily totals: still draw them.
         <div className="flex h-12 items-end gap-[3px] rounded-lg border border-border bg-surface/40 p-3" data-testid="usage-daily-spark">
@@ -102,7 +109,12 @@ export default function UsageCard() {
           <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{t("activityPage.byModel")}</h3>
           <ul className="space-y-1.5">
             {modelRows.map((r, i) => (
-              <li key={i} data-testid="usage-row" className="grid grid-cols-[minmax(0,1fr)_minmax(60px,30%)_auto_auto] items-center gap-3 text-[12px]">
+              <li key={i} data-testid="usage-row" role={r.model ? "button" : undefined} tabIndex={r.model ? 0 : undefined}
+                aria-pressed={r.model ? filter.model === r.model : undefined}
+                title={r.model ? t("activityPage.filterModel") : undefined}
+                onClick={() => r.model && setFilter({ ...filter, model: filter.model === r.model ? undefined : r.model })}
+                onKeyDown={(e) => { if (r.model && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); setFilter({ ...filter, model: filter.model === r.model ? undefined : r.model }); } }}
+                className={`grid grid-cols-[minmax(0,1fr)_minmax(60px,30%)_auto_auto] items-center gap-3 rounded px-1 text-[12px] ${r.model ? "cursor-pointer hover:bg-surface/70" : ""} ${filter.model && filter.model === r.model ? "bg-primary/10" : ""}`}>
                 <span className="min-w-0 truncate">
                   <span className="font-mono text-foreground">{r.model ?? "—"}</span>
                   <span className="ml-2 text-subtle-foreground">{r.provider ?? "—"} · {r.scope}</span>
@@ -143,9 +155,11 @@ function Kpi({ label, value, sub, tone, subTone }: { label: string; value: strin
 }
 
 /** Three rows on one time axis: tokens, duration heatmap, outcome. */
-function Timeline({ bins, bands, binSeconds, range, locale }:
-  { bins: UsageBin[]; bands: string[]; binSeconds: number; range: RangeKey; locale: string }) {
+function Timeline({ bins, bands, binSeconds, range, locale, selected, onPick }:
+  { bins: UsageBin[]; bands: string[]; binSeconds: number; range: RangeKey; locale: string;
+    selected?: number; onPick?: (b: UsageBin) => void }) {
   const { t } = useTranslation();
+  const [hover, setHover] = useState<number | null>(null);
   const fmt = useMemo(() => new Intl.DateTimeFormat(locale, range === "24h"
     ? { hour: "2-digit", minute: "2-digit" } : range === "7d"
       ? { weekday: "short", hour: "2-digit" } : { month: "short", day: "numeric" }), [locale, range]);
@@ -155,8 +169,37 @@ function Timeline({ bins, bands, binSeconds, range, locale }:
   const cols = { gridTemplateColumns: `repeat(${bins.length}, minmax(0, 1fr))` };
   const label = "w-16 shrink-0 pr-2 text-right text-[10px] text-subtle-foreground";
 
+  const hb = hover != null ? bins[hover] : null;
   return (
-    <div className="rounded-lg border border-border bg-surface/40 p-3" data-testid="usage-timeline">
+    <div className="relative rounded-lg border border-border bg-surface/40 p-3" data-testid="usage-timeline"
+      onMouseLeave={() => setHover(null)}>
+      {/* 0.1.58 §7: one hit area per column across all three rows — hover shows one card for
+          the slice, a click narrows 最近的工作 to it. Keyboard: Tab to a column, Enter. */}
+      <div className="absolute bottom-9 left-[76px] right-3 top-3 z-10 grid gap-[3px]" style={cols} data-testid="usage-columns">
+        {bins.map((b, i) => (
+          <button key={b.start_ts} type="button" data-testid={`usage-col-${i}`}
+            aria-label={`${span(b)} · ${t("activityPage.sliceRuns", { n: b.runs, failed: b.failed })}`}
+            aria-pressed={selected === b.start_ts}
+            onMouseEnter={() => setHover(i)} onFocus={() => setHover(i)} onBlur={() => setHover(null)}
+            onClick={() => onPick?.(b)}
+            className={`rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${
+              selected === b.start_ts ? "bg-primary/15" : hover === i ? "bg-foreground/5" : ""}`} />
+        ))}
+      </div>
+      {hb && (
+        <div role="tooltip" data-testid="usage-hovercard"
+          className="pointer-events-none absolute top-2 z-20 w-60 rounded-lg bg-foreground px-3 py-2 text-[11.5px] leading-relaxed text-background shadow-lg"
+          style={hover! / bins.length > 0.5
+            ? { right: `calc(${(1 - (hover! + 1) / bins.length) * 100}% + 12px)` }
+            : { left: `calc(${((hover! + 1) / bins.length) * 100}% + 12px)` }}>
+          <div className="font-semibold">{span(hb)}</div>
+          <div>{t("activityPage.sliceRuns", { n: hb.runs, failed: hb.failed })} · {fmtTok(hb.tokens_total)}</div>
+          {hb.p50_ms != null && <div>{t("activityPage.hoverTimes", { p50: fmtMs(hb.p50_ms), max: fmtMs(hb.max_ms ?? hb.p50_ms) })}</div>}
+          {hb.usd != null && <div>≈ {fmtUsd(hb.usd)}</div>}
+          {!!hb.models?.length && <div className="opacity-70">{hb.models.map((m) => m.model).join(" · ")}</div>}
+          {onPick && hb.runs > 0 && <div className="mt-0.5 text-primary">{t("activityPage.clickToFilter")}</div>}
+        </div>
+      )}
       {/* Tokens per slice (the daily spark's successor). */}
       <div className="flex items-end" data-testid="usage-daily-spark">
         <span className={`${label} self-center`}>{t("activityPage.chartTokens")}</span>

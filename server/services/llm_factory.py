@@ -118,15 +118,38 @@ async def build_slot_adapter(slot: str) -> LLMAdapter | None:
         sid = str(cfg.get(slot) or "").strip()
         if not sid:
             return None
-        for c in await provider_config_service.list_configs(db):
-            if str(c.get("id")) == sid:
-                _guard_memory_destination(c["provider"], c.get("base_url") or "")
-                key = await provider_config_service.get_decrypted_key(db, c["id"])
-                provider, model, base_url = expand_preset(
-                    c["provider"], c["model"], c.get("base_url") or "")
-                return LLMAdapter(provider, _require_model(model, c["provider"]), api_key=key,
-                                  base_url=base_url, report_provider=c["provider"])
+        # 0.1.58 §6: a slot may name one model of its config ("<slot>" → "<slot minus _config_id>_model").
+        override = str(cfg.get(slot.replace("_config_id", "_model")) or "").strip() or None
+        return await _config_adapter(db, sid, override)
+
+
+async def _config_adapter(db, config_id, model_override: str | None) -> LLMAdapter | None:
+    """An adapter for one provider config, optionally on another model it offers (0.1.58 §6).
+    None when the config no longer exists."""
+    for c in await provider_config_service.list_configs(db):
+        if str(c.get("id")) == str(config_id):
+            _guard_memory_destination(c["provider"], c.get("base_url") or "")
+            key = await provider_config_service.get_decrypted_key(db, c["id"])
+            provider, model, base_url = expand_preset(
+                c["provider"], model_override or c["model"], c.get("base_url") or "")
+            return LLMAdapter(provider, _require_model(model, c["provider"]), api_key=key,
+                              base_url=base_url, report_provider=c["provider"])
     return None
+
+
+async def build_conversation_adapter(conversation_id: str | None) -> LLMAdapter | None:
+    """The model chosen for this conversation (0.1.58 §6, decision 6), or None for the default.
+
+    None is the contract, as for the slots: no choice — or a choice whose config was deleted —
+    leaves the turn on exactly the adapter it had before."""
+    if not conversation_id:
+        return None
+    from server.db.models import ConversationModel
+    async with db_session.AsyncSessionLocal() as db:
+        row = await db.get(ConversationModel, conversation_id)
+        if row is None:
+            return None
+        return await _config_adapter(db, row.config_id, row.model)
 
 
 async def build_synthesis_adapter() -> LLMAdapter | None:
@@ -140,15 +163,8 @@ async def build_synthesis_adapter() -> LLMAdapter | None:
         sid = str(cfg.get("synthesis_config_id") or "").strip()
         if not sid:
             return None
-        for c in await provider_config_service.list_configs(db):
-            if str(c.get("id")) == sid:
-                _guard_memory_destination(c["provider"], c.get("base_url") or "")
-                key = await provider_config_service.get_decrypted_key(db, c["id"])
-                provider, model, base_url = expand_preset(
-                    c["provider"], c["model"], c.get("base_url") or "")
-                return LLMAdapter(provider, _require_model(model, c["provider"]), api_key=key,
-                                  base_url=base_url, report_provider=c["provider"])
-    return None
+        override = str(cfg.get("synthesis_model") or "").strip() or None
+        return await _config_adapter(db, sid, override)
 
 
 async def _legacy_build_adapter(db) -> LLMAdapter:  # noqa: ANN001

@@ -2,9 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 import { ChevronLeft, FileText, Folder, Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { companionApi, type Project } from "../../api/companion";
-import { projectsApi, type Level, type Plan, type ProjectEvent } from "../../api/projects";
+import { openCheckpointsOf, projectsApi, type Leftover, type Level, type Plan, type ProjectEvent } from "../../api/projects";
 import { OPEN_CONVERSATION_EVENT } from "../../lib/openConversation";
-import { Button, Dialog, Notice, Tag, confirmSheet } from "../kit";
+import { Button, Dialog, Notice, Tag, confirmSheet, toast } from "../kit";
+import LeftoverSheet from "./LeftoverSheet";
 import { ProjectEditor } from "../companion/ProjectsSection";
 import { companionError } from "../companion/errors";
 import LevelMap from "./LevelMap";
@@ -36,6 +37,8 @@ export default function ProjectPage({ projectId, onBack, onStart, onPlan, onChan
   const [settings, setSettings] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 0.1.58 §5: the open checkpoints the "提前过关…" sheet asks about (null = closed).
+  const [leftover, setLeftover] = useState<{ id: string; text: string }[] | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -51,6 +54,23 @@ export default function ProjectPage({ projectId, onBack, onStart, onPlan, onChan
     projectsApi.files(projectId).then(setFiles).catch(() => setFiles(null));
   }, [tab, projectId]);
 
+  /** Clear the current level; with checkpoints open, only after the sheet's answer. */
+  async function clear(choice?: { leftover: Leftover; note?: string }) {
+    setBusy(true); setError(null);
+    try {
+      await projectsApi.advance(projectId, choice);
+      setLeftover(null);
+      const latest = (await projectsApi.events(projectId, 5)).find(e => e.kind === "advance" && e.outcome == null);
+      toast(next ? t("projectsUI.clearedTo", { next: next.name }) : t("projectsUI.clearedLast"), latest ? {
+        action: { label: t("projectsUI.undo"), onClick: () => void act(() => projectsApi.undo(projectId, latest.id)) } } : {});
+      await load(); onChanged();
+    } catch (cause) {
+      const open = openCheckpointsOf(cause);
+      if (open) setLeftover(open);          // something was left open meanwhile: ask
+      else setError(companionError(cause));
+    } finally { setBusy(false); }
+  }
+
   async function act(op: () => Promise<unknown>) {
     setBusy(true); setError(null);
     try { await op(); await load(); onChanged(); } catch (cause) { setError(companionError(cause)); }
@@ -65,7 +85,11 @@ export default function ProjectPage({ projectId, onBack, onStart, onPlan, onChan
   const current = currentIndex >= 0 ? levels[currentIndex] : null;
   const left = levels.filter(lv => lv.state !== "cleared").length;
   const nextBest = current?.checkpoints.find(cp => cp.state !== "done") ?? null;
-  const recent = events.filter(e => e.actor === "arslan" && (e.kind === "tick" || e.kind === "advance") && e.outcome !== "undone");
+  // 0.1.58 §5: every clear is listed with its undo — yours too, not only Arslan's.
+  const recent = events.filter(e => e.outcome !== "undone" && (e.kind === "advance" ? e.actor === "arslan" || e.actor === "user"
+    : e.kind === "tick" && e.actor === "arslan"));
+  const next = currentIndex >= 0 ? levels[currentIndex + 1] ?? null : null;
+  const openCps = current?.checkpoints.filter(cp => cp.state !== "done") ?? [];
   const planChanges = events.filter(e => e.kind === "plan_change").length;
   const days = daysSince(current?.started_at);
   const ended = plan.stage === "done" || plan.stage === "dropped";
@@ -140,8 +164,13 @@ export default function ProjectPage({ projectId, onBack, onStart, onPlan, onChan
                 <Button size="sm" tone="primary" onClick={() => void onStart(project, t("projectsUI.handOffText", {
                   checkpoint: nextBest.text, level: current.name, project: project.name }), nextBest.id)} data-testid="project-hand-off">
                   {t("projectsUI.handOff")}</Button></div>}
-              {!ended && <Button size="sm" className="self-start" disabled={busy} data-testid="project-clear-level"
-                onClick={() => void act(() => projectsApi.advance(projectId))}>{t("projectsUI.clearByHand")}</Button>}
+              {!ended && (openCps.length === 0
+                ? <Button size="sm" tone="primary" className="self-start" disabled={busy} data-testid="project-clear-level"
+                    onClick={() => void clear()}>{next ? t("projectsUI.clearNext", { next: next.name }) : t("projectsUI.clearLast")}</Button>
+                : <Button size="sm" className="self-start" disabled={busy} data-testid="project-clear-early"
+                    onClick={() => setLeftover(openCps.map(cp => ({ id: cp.id, text: cp.text })))}>{t("projectsUI.clearEarly")}</Button>)}
+              {leftover && current && <LeftoverSheet level={current.name} next={next?.name ?? null} open={leftover} busy={busy}
+                onCancel={() => setLeftover(null)} onConfirm={(choice, note) => void clear({ leftover: choice, note: note.trim() || undefined })} />}
             </>}
             {!current && plan.stage === "active" && <Notice tone="info" title={t("projectsUI.allClear")}>{t("projectsUI.markDoneHint")}</Notice>}
           </div>
@@ -153,7 +182,8 @@ export default function ProjectPage({ projectId, onBack, onStart, onPlan, onChan
                 {recent.slice(0, 6).map(e => <li key={e.id} className="flex items-start gap-2 border-t border-border px-3.5 py-2.5 first:border-t-0">
                   <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                     <span className="text-[13px]">{e.kind === "tick" ? t("projectsUI.recentTick", { text: e.payload.text ?? "" })
-                      : t("projectsUI.recentAdvance", { level: e.payload.level ?? "", next: e.payload.next ?? "" })}</span>
+                      : t(e.actor === "user" ? "projectsUI.recentAdvanceYou" : "projectsUI.recentAdvance",
+                        { level: e.payload.level ?? "", next: e.payload.next ?? "" })}</span>
                     {e.payload.evidence && <span className="text-[12px] text-subtle-foreground">{t("projectsUI.ev", { text: evidenceText(t, e.payload.evidence) })}</span>}
                   </span>
                   <button type="button" disabled={busy} className="shrink-0 text-[12px] text-muted-foreground hover:text-foreground"
