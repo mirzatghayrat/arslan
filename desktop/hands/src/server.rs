@@ -425,6 +425,11 @@ fn run_envelope(
         return Err(refuse("TIMEOUT", "agent-desktop did not finish in time"));
     }
     if out.killed {
+        // Ended because the user touched the keyboard or mouse during a takeover: paused, not
+        // stopped (the job waits for them).
+        if crate::takeover::paused() {
+            return Err(crate::takeover::paused_refusal());
+        }
         return Err(refuse("stopped_by_user", "stopped"));
     }
     let envelope: Value = serde_json::from_str(out.stdout.trim()).map_err(|_| {
@@ -607,6 +612,19 @@ fn dispatch(state: &State, req: &Request) -> Value {
         }
         "stop" => stop(state),
         "quit" => json!({"ok": true}),
+        // §6.4: answered at once, never behind an action in flight (continue / stop come from
+        // the user while one may be running).
+        "takeover_begin" => match req.args.get("minutes").and_then(Value::as_u64) {
+            Some(minutes) => crate::takeover::begin(minutes)
+                .map(|status| json!({"ok": true, "takeover": status}))
+                .unwrap_or_else(refused),
+            None => refused(refuse("bad_request", "`minutes` is 1 to 30")),
+        },
+        "takeover_resume" => crate::takeover::resume()
+            .map(|status| json!({"ok": true, "takeover": status}))
+            .unwrap_or_else(refused),
+        "takeover_end" => json!({"ok": true, "ended": crate::takeover::end()}),
+        "takeover_status" => json!({"ok": true, "takeover": crate::takeover::status()}),
         // A screenshot runs beside an agent-desktop command, not after it (spec §15 A8: a look's
         // tree and its screenshot are asked for together). Stop still applies.
         "capture_window" => {
@@ -753,13 +771,24 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
     // the user's switch (the backend sends it as `borrow`).
     let wants_front = acts(op) && args.get("front").and_then(Value::as_bool) == Some(true);
     let popup = op == "select" && target.as_ref().is_some_and(|t| is_popup(&t.role));
-    if (wants_front || popup) && args.get("borrow").and_then(Value::as_bool) != Some(true) {
+    // §6.4: inside a takeover the user said yes to the screen: no borrow, the app may come
+    // forward; while it is paused nothing is sent.
+    let in_takeover = acts(op) && crate::takeover::check_before_action()?;
+    if in_takeover {
+        if wants_front || popup {
+            if let Ok(pid) = i32::try_from(app.pid) {
+                if !crate::borrow::standing_in() {
+                    restore_front(pid);
+                }
+            }
+        }
+    } else if (wants_front || popup) && args.get("borrow").and_then(Value::as_bool) != Some(true) {
         return Err(refuse(
             "borrow_off",
             "this needs the app in front for a moment, and borrowing the front is off",
         ));
     }
-    let borrowed = if wants_front || popup {
+    let borrowed = if (wants_front || popup) && !in_takeover {
         let generation = ctx.generation;
         Some(crate::borrow::begin(crate::borrow::WAIT_MAX, || {
             runner::generation() != generation
@@ -803,7 +832,13 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
         // One vocabulary for both engines (outcome.rs); only actions have one.
         "outcome": (acts(op) && envelope.get("ok") == Some(&Value::Bool(true)))
             .then(|| crate::outcome::from_agent_desktop(&envelope)),
-        "mode_used": acts(op).then_some(if gave.is_some() { "borrow" } else { "background" }),
+        "mode_used": acts(op).then_some(if in_takeover {
+            "takeover"
+        } else if gave.is_some() {
+            "borrow"
+        } else {
+            "background"
+        }),
         "borrow": gave.map(|g| json!({
             "front_restored": g.front_restored,
             "keys_replayed": g.keys_replayed,
@@ -913,6 +948,7 @@ fn menu_op(ctx: &Ctx, args: &Value) -> Result<Value, Refusal> {
             "`path` is the menu's titles, top level first, like [\"Format\", \"Font\", \"Bold\"] (2 to 4)",
         ));
     }
+    crate::takeover::check_before_action()?;
     unchanged_since_look(ctx, &(session.unwrap_or_default(), app.pid), &app)?;
     let items = crate::menus::read(app.pid).ok_or_else(|| {
         refuse(
@@ -1137,9 +1173,11 @@ fn end_sessions(state: &State) {
 }
 
 fn stop(state: &State) -> Value {
+    // Stop ends a takeover too (and its glow), before killing what runs.
+    let took_over = crate::takeover::end();
     // kill_all moves the Stop generation even when no agent-desktop runs, so a Cua
     // request in flight learns it was stopped.
-    let killed = runner::kill_all();
+    let killed = runner::kill_all() || took_over;
     let cua_killed = state.cua.as_ref().is_some_and(Cua::stop);
     end_sessions(state);
     json!({"ok": true, "killed": killed || cua_killed})

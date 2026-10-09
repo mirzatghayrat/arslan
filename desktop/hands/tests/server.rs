@@ -836,3 +836,109 @@ fn a_pop_up_and_front_true_borrow_the_front_only_with_the_users_switch() {
     assert_eq!(arslan_hands::borrow::borrows_for_tests(), 2);
     arslan_hands::borrow::stand_in_for_tests(false);
 }
+
+fn wait_until(what: impl Fn() -> bool) -> bool {
+    let until = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < until {
+        if what() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    false
+}
+
+#[test]
+fn a_takeover_uses_the_front_pauses_when_the_user_touches_anything_and_ends() {
+    let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    arslan_hands::takeover::stand_in_for_tests(true);
+    arslan_hands::borrow::stand_in_for_tests(true);
+    let hands = start("takeover");
+    let click = || {
+        hands.ask(
+            "click",
+            json!({"app": "Hands Fixture", "ref": "@sfixture0:e3"}),
+        )
+    };
+    let status = || hands.ask("takeover_status", json!({}))["takeover"].clone();
+    assert_eq!(
+        code(&hands.ask("takeover_begin", json!({"minutes": 0}))),
+        "bad_request"
+    );
+    assert_eq!(
+        code(&hands.ask("takeover_begin", json!({"minutes": 31}))),
+        "bad_request"
+    );
+    assert_eq!(
+        hands.ask("takeover_begin", json!({"minutes": 5}))["takeover"]["active"],
+        true
+    );
+    assert_eq!(click()["mode_used"], "takeover");
+    // A pop-up needs no borrow (and no borrow switch) inside a takeover.
+    let pick = hands.ask(
+        "select",
+        json!({"app": "Hands Fixture", "ref": "@sfixture0:e5", "value": "Blue"}),
+    );
+    assert_eq!(pick["mode_used"], "takeover", "{pick}");
+    assert_eq!(arslan_hands::borrow::borrows_for_tests(), 0);
+    // The user moves the mouse: paused at once, and nothing more is sent.
+    arslan_hands::takeover::touch_for_tests();
+    assert!(wait_until(|| status()["paused"] == true));
+    let acted = hands.acted().len();
+    assert_eq!(code(&click()), "takeover_paused");
+    assert_eq!(
+        code(&hands.ask(
+            "menu",
+            json!({"app": "Hands Fixture", "path": ["Format", "Bold"]})
+        )),
+        "takeover_paused"
+    );
+    assert_eq!(hands.acted().len(), acted, "nothing ran while paused");
+    // Continue: actions run again.
+    assert_eq!(
+        hands.ask("takeover_resume", json!({}))["takeover"]["paused"],
+        false
+    );
+    assert_eq!(click()["mode_used"], "takeover");
+    assert_eq!(code(&hands.ask("takeover_resume", json!({}))), "not_paused");
+    // Time up: it ends by itself, and actions are background again.
+    arslan_hands::takeover::expire_for_tests();
+    assert!(wait_until(|| status()["active"] == false));
+    assert_eq!(click()["mode_used"], "background");
+    // Stop ends a takeover too.
+    hands.ask("takeover_begin", json!({"minutes": 1}));
+    hands.ask("stop", json!({}));
+    assert_eq!(status()["active"], false);
+    arslan_hands::takeover::stand_in_for_tests(false);
+    arslan_hands::borrow::stand_in_for_tests(false);
+}
+
+#[test]
+fn what_runs_when_the_user_touches_is_ended_and_said_paused_not_stopped() {
+    let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    arslan_hands::takeover::stand_in_for_tests(true);
+    let hands = start("touched");
+    hands.ask("takeover_begin", json!({"minutes": 5}));
+    let socket = hands.folder().join("s.sock");
+    let token = hands.token.clone();
+    let slow = std::thread::spawn(move || {
+        let mut stream = UnixStream::connect(socket).unwrap();
+        let req = json!({"token": token, "op": "wait", "args": {"app": "Hands Fixture", "text": "slow", "timeout_ms": 20000}});
+        writeln!(stream, "{req}").unwrap();
+        let mut reply = String::new();
+        BufReader::new(stream).read_line(&mut reply).unwrap();
+        serde_json::from_str::<Value>(&reply).unwrap()
+    });
+    assert!(wait_until(|| hands.calls().iter().any(|c| c[0] == "wait")));
+    let touched = Instant::now();
+    arslan_hands::takeover::touch_for_tests();
+    let reply = slow.join().unwrap();
+    assert!(
+        touched.elapsed() < Duration::from_secs(1),
+        "{:?}",
+        touched.elapsed()
+    );
+    assert_eq!(code(&reply), "takeover_paused", "{reply}");
+    hands.ask("takeover_end", json!({}));
+    arslan_hands::takeover::stand_in_for_tests(false);
+}
