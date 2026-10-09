@@ -399,20 +399,29 @@ fn the_never_list_and_the_tiers_hold() {
 fn an_element_token_must_come_from_a_window_state_hands_relayed() {
     let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
     let hands = plain("tok");
-    let early = hands.cua("click", json!({"pid": 1000100, "element_token": "s00000001:0"}));
+    let early = hands.cua(
+        "click",
+        json!({"pid": 1000100, "element_token": "s00000001:0"}),
+    );
     assert_eq!(code(&early), "ref_unknown");
     let state = hands.cua("get_window_state", json!({"pid": 1000100, "window_id": 1}));
     assert_eq!(state["ok"], true);
     // The system's Apple menu (recent documents, the user's name) never leaves Hands.
     assert!(!state.to_string().contains("Log Out Someone"), "{state}");
-    let click = hands.cua("click", json!({"pid": 1000100, "element_token": "s00000001:0"}));
+    let click = hands.cua(
+        "click",
+        json!({"pid": 1000100, "element_token": "s00000001:0"}),
+    );
     assert_eq!(click["ok"], true, "{click}");
     assert_eq!(click["completion"], "completed");
     // The fake answers effect "confirmed": the shared vocabulary says done.
     assert_eq!(click["outcome"], "done");
     assert_eq!(click["mode_used"], "background");
     // A token of one app spent in another is refused, whatever the pid says.
-    let elsewhere = hands.cua("click", json!({"pid": 1000200, "element_token": "s00000001:0"}));
+    let elsewhere = hands.cua(
+        "click",
+        json!({"pid": 1000200, "element_token": "s00000001:0"}),
+    );
     assert_eq!(code(&elsewhere), "ref_wrong_app");
     assert_eq!(hands.called("click"), 1);
     // Hands chose the session label, not the caller.
