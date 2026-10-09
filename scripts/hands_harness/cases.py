@@ -112,6 +112,54 @@ def read_window(ctx: Ctx) -> Result:
                   note=f"{len(elements)} elements" + (f"; missing {missing}" if missing else ""))
 
 
+def look_with_screenshot(ctx: Ctx) -> Result:
+    """Hands v2 look (spec §4.1-4.2): the tree with bounds and the window's screenshot, together
+    under 400 ms median (gate G8'); the image is the window at most 1280 px on its long edge, on
+    screen, and the window title's text element lands inside it where its letters are drawn.
+    (The title, not a control: the fixture's AppKit controls do not draw while it is never
+    active - measured 2026-10-09 with /usr/sbin/screencapture too - its canvas and title do.)"""
+    look = getattr(ctx.engine, "look_with_screenshot", None)
+    if look is None:
+        return Result("look_with_screenshot", ctx.engine.name, "skipped", note="engine has no Hands v2 look")
+    import base64
+    import io
+
+    from PIL import Image
+
+    from server.services import hands_contract
+    ctx.fixture.command("reset")
+    data, shot, ms = look()
+    problems = []
+    image = Image.open(io.BytesIO(base64.b64decode(shot["data"]))).convert("RGB")
+    if image.size != (shot["width"], shot["height"]) or max(image.size) > 1280:
+        problems.append(f"image {image.size} vs reported {shot['width']}x{shot['height']}")
+    if not shot.get("onscreen"):
+        problems.append("window reported off screen")
+    place = hands_contract.placer(shot)
+    save = None
+
+    def walk(node: dict) -> None:
+        nonlocal save
+        if node.get("role") == "statictext" and node.get("name") == "Harness Fixture" and node.get("bounds"):
+            save = node
+        for child in node.get("children") or []:
+            walk(child)
+    walk(data.get("tree") or {})
+    spot = place(save["bounds"]) if (save and place) else None
+    if spot is None:
+        problems.append("the title has no place in the screenshot")
+    else:
+        # The title's own area in the image holds its letters: pixels darker than the background.
+        b, scale = save["bounds"], float(shot["scale"])
+        x0, y0 = (b["x"] - shot["frame"]["x"]) * scale, (b["y"] - shot["frame"]["y"]) * scale
+        area = image.crop((round(x0), round(y0), round(x0 + b["width"] * scale), round(y0 + b["height"] * scale)))
+        dark = sum(1 for p in area.getdata() if sum(p) < 3 * 215)
+        if dark < 30:
+            problems.append(f"no letters where the title is placed ({dark} dark pixels)")
+    return Result("look_with_screenshot", ctx.engine.name, "fail" if problems else "pass", look_ms=ms,
+                  note="; ".join(problems) or f"{shot['width']}x{shot['height']} px, title at {spot}")
+
+
 def _text_case(name: str, label: str, key: str, text: str, typing: bool) -> Callable[[Ctx], Result]:
     def case(ctx: Ctx) -> Result:
         ctx.fixture.command("reset")
@@ -289,6 +337,7 @@ hidden_app = _hidden_case("hidden_app", "hide", "unhide")
 
 CASES: dict[str, Callable[[Ctx], Result]] = {
     "read_window": read_window,
+    "look_with_screenshot": look_with_screenshot,
     "set_title": set_title,
     "type_notes_unicode": type_notes,
     "click_save_once": click_save,

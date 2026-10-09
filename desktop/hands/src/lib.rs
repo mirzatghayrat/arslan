@@ -3,6 +3,7 @@
 //! docs/specs/2026-10-03-0153-hands-agent-desktop.md.
 
 pub mod argv;
+pub mod capture;
 pub mod cua;
 pub mod cua_policy;
 pub mod integrity;

@@ -603,6 +603,17 @@ fn dispatch(state: &State, req: &Request) -> Value {
         }
         "stop" => stop(state),
         "quit" => json!({"ok": true}),
+        // A screenshot runs beside an agent-desktop command, not after it (spec §15 A8: a look's
+        // tree and its screenshot are asked for together). Stop still applies.
+        "capture_window" => {
+            let generation = runner::generation();
+            let ctx = Ctx { state, generation };
+            let out = capture_window(&ctx, &req.args).unwrap_or_else(refused);
+            if runner::generation() != generation {
+                return refused(refuse("stopped_by_user", "stopped"));
+            }
+            out
+        }
         _ => {
             let generation = runner::generation();
             let _one = state
@@ -716,6 +727,48 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
         // switching apps between actions.
         "front": {"before": front_before, "after": front_after},
     }))
+}
+
+/// Hands v2's own window screenshot (spec §4.2, §15 A8): agent-desktop's `screenshot` writes a
+/// file, so Hands captures in memory itself. Same app rules as a look: the never-list refuses,
+/// browsers and terminals may be seen. The window must be one of that app's (capture.m checks
+/// the window server's list, not the caller's word).
+fn capture_window(ctx: &Ctx, args: &Value) -> Result<Value, Refusal> {
+    let app = resolve_app(ctx, argv::app_name(args)?)?;
+    let tier = policy::tier(&app.bundle_id, &app.name, &never_list(args));
+    if !policy::allows(tier, "capture_window") {
+        return Err(tier_refusal(tier, "capture_window", &app));
+    }
+    let window = crate::capture::window_id(args.get("window").unwrap_or(&Value::Null))
+        .ok_or_else(|| refuse("bad_request", "`window` is a window id like w-26104"))?;
+    let pid = i32::try_from(app.pid).map_err(|_| refuse("app_not_running", "bad pid"))?;
+    let shot = crate::capture::window(pid, window);
+    if shot.get("ok").and_then(Value::as_bool) != Some(true) {
+        let code = shot
+            .get("code")
+            .and_then(Value::as_str)
+            .unwrap_or("capture_failed");
+        let message = shot.get("message").and_then(Value::as_str).unwrap_or("");
+        return Err(refuse(capture_code(code), message.to_string()));
+    }
+    Ok(json!({
+        "ok": true,
+        "app": app_json(&app),
+        "tier": policy::tier_name(tier),
+        "capture": shot,
+    }))
+}
+
+/// capture.m's codes, as the fixed strings a Refusal carries.
+fn capture_code(code: &str) -> &'static str {
+    match code {
+        "screen_recording_off" => "screen_recording_off",
+        "window_not_found" => "window_not_found",
+        "window_not_capturable" => "window_not_capturable",
+        "needs_macos_14" => "needs_macos_14",
+        "not_supported" => "not_supported",
+        _ => "capture_failed",
+    }
 }
 
 fn acts(op: &str) -> bool {

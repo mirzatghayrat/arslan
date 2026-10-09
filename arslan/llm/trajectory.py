@@ -14,7 +14,14 @@ Messages:
       call = {"id", "name", "arguments": dict|None, "arguments_raw": str,
               "provider_id"?: str}
   {"role": "tool", "tool_call_id", "name", "content", "_synthetic"?: bool,
-   "_legacy_call"?: str, "_legacy_raw"?: bool, "_legacy_suffix"?: str}
+   "_legacy_call"?: str, "_legacy_raw"?: bool, "_legacy_suffix"?: str,
+   "_images"?: [neutral image block...], "_image_label"?: str}
+
+Images in a tool result (Hands v2 screenshots, spec 2026-10-08-0157 §4.3) are neutral image
+blocks kept beside the text: the legacy rendering puts them in the result's own user turn
+(Gemini: in the function-response turn); the native OpenAI-compatible provider adds one user
+message after that step's tool messages, because a role "tool" message carries text only.
+Only the newest IMAGES_KEPT stay images (`keep_latest_images`); older ones become a stub.
 
 Keys starting with "_" are local bookkeeping and never reach a wire payload.
 Pure functions only: no I/O, no provider imports.
@@ -25,6 +32,10 @@ import json
 from typing import Any
 
 LEGACY_TRAILER = "\nUse this to continue: call another tool, escalate, or give your final answer."
+IMAGES_KEPT = 2
+# What an image counts for when the history is measured (context size is chars of the
+# rendered text): about 1.5k tokens for a 1280-px screenshot, not its base64 length.
+IMAGE_SIZE_CHARS = 6_000
 LEGACY_COMPLETED = "Native tool invocation completed: "
 
 
@@ -68,13 +79,39 @@ def unique_ids(calls: list[dict], seen: set[str], step: int) -> list[dict]:
 
 
 def tool_result(call_id: str, name: str, content: str, *, synthetic: bool = False,
-                legacy_call: str | None = None) -> dict:
+                legacy_call: str | None = None, images: list[dict] | None = None,
+                image_label: str = "") -> dict:
     msg = {"role": "tool", "tool_call_id": call_id, "name": name, "content": content}
     if synthetic:
         msg["_synthetic"] = True
     if legacy_call is not None:
         msg["_legacy_call"] = legacy_call
+    if images:
+        msg["_images"] = [{"type": "image", "mime_type": i["mime_type"], "data": i["data"]} for i in images]
+        msg["_image_label"] = image_label or name
     return msg
+
+
+def keep_latest_images(messages: list[dict], keep: int = IMAGES_KEPT) -> int:
+    """Turn every image but the newest `keep` into a stub in its result's text (§4.5).
+    In place; returns how many were dropped."""
+    seen, dropped = 0, 0
+    for message in reversed(messages):
+        images = message.get("_images")
+        if not images:
+            continue
+        if seen + len(images) <= keep:
+            seen += len(images)
+            continue
+        label = message.get("_image_label") or message.get("name") or "screenshot"
+        message.pop("_images")
+        message["content"] = f"{message.get('content', '')}\n[screenshot of {label}: no longer shown]"
+        dropped += len(images)
+    return dropped
+
+
+def image_count(messages: list[dict]) -> int:
+    return sum(len(m.get("_images") or ()) for m in messages)
 
 
 def is_call_group_start(message: dict) -> bool:
@@ -138,7 +175,7 @@ def shrink_group(group: list[dict], max_chars: int, size_of) -> list[dict]:
     out = list(group)
     for index in range(1, len(out)):
         out[index] = {key: value for key, value in out[index].items()
-                      if key not in ("_legacy_raw", "_legacy_suffix")}
+                      if key not in ("_legacy_raw", "_legacy_suffix", "_images", "_image_label")}
         out[index]["content"] = OMITTED_RESULT
         if size_of(out) <= max_chars:
             break
@@ -156,7 +193,16 @@ def _legacy_result(message: dict) -> str:
             + message.get("_legacy_suffix", ""))
 
 
-def to_legacy(messages: list[dict]) -> list[dict]:
+def _with_images(text: str, message: dict, images: bool):
+    """A result's user-turn content: its text, plus its images when there are any."""
+    if not message.get("_images"):
+        return text
+    if not images:
+        return f"{text}\n[screenshot of {message.get('_image_label') or message['name']}]"
+    return [{"type": "text", "text": text}, *message["_images"]]
+
+
+def to_legacy(messages: list[dict], *, images: bool = True) -> list[dict]:
     """Render to the pre-0.1.49 text protocol, byte for byte.
 
     Each executed call becomes an assistant "Native tool invocation completed: X"
@@ -166,7 +212,9 @@ def to_legacy(messages: list[dict]) -> list[dict]:
     narration beside tool calls was never part of the prompt and is not now.
     (The old loop replaced the call JSON with "invocation completed" because
     repeating it as prose invited imitation and duplicated large write payloads;
-    the native protocol carries arguments in tool_calls instead.)"""
+    the native protocol carries arguments in tool_calls instead.)
+
+    images=False renders each image as a one-line stub (for measuring, never for sending)."""
     out: list[dict] = []
     for group in groups(messages):
         head = group[0]
@@ -174,7 +222,7 @@ def to_legacy(messages: list[dict]) -> list[dict]:
             if head.get("role") == "tool":  # synthetic, host-run
                 out.append({"role": "assistant", "content": head.get("_legacy_call") or json.dumps(
                     {"tool": head["name"], "args": {}})})
-                out.append({"role": "user", "content": _legacy_result(head)})
+                out.append({"role": "user", "content": _with_images(_legacy_result(head), head, images)})
             else:
                 out.append({k: v for k, v in head.items() if not k.startswith("_")
                             and not (k == "tool_calls" and not v)})
@@ -191,11 +239,15 @@ def to_legacy(messages: list[dict]) -> list[dict]:
                 responses.append(response)
             out.append({"role": "assistant", "content": [
                 {"type": "provider_content", **continuation["provider_content"]}]})
+            for result in results:
+                if result.get("_images"):
+                    shown = _with_images(f"Screenshot from {result['name']}", result, images)
+                    responses.extend(shown if isinstance(shown, list) else [{"type": "text", "text": shown}])
             out.append({"role": "user", "content": responses})
             continue
         for result in results:
             out.append({"role": "assistant", "content": LEGACY_COMPLETED + result["name"]})
-            out.append({"role": "user", "content": _legacy_result(result)})
+            out.append({"role": "user", "content": _with_images(_legacy_result(result), result, images)})
     return out
 
 

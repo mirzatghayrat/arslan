@@ -120,9 +120,10 @@ def test_risky_keys_and_return_where_it_sends():
 
 
 def test_settings_file_is_private_and_the_never_list_deduplicated(tmp_path):
-    assert hands_service.settings() == {"enabled": True, "cursor": True, "never": []}
-    hands_service.update_settings(never=["Notes", "notes", "  Mail  ", ""], cursor=False)
-    assert hands_service.settings() == {"enabled": True, "cursor": False, "never": ["Notes", "Mail"]}
+    assert hands_service.settings() == {"enabled": True, "cursor": True, "screenshots": True, "never": []}
+    hands_service.update_settings(never=["Notes", "notes", "  Mail  ", ""], cursor=False, screenshots=False)
+    assert hands_service.settings() == {"enabled": True, "cursor": False, "screenshots": False,
+                                        "never": ["Notes", "Mail"]}
     folder = tmp_path / "hands"
     assert stat.S_IMODE(os.stat(folder).st_mode) == 0o700
     assert stat.S_IMODE(os.stat(folder / "settings.json").st_mode) == 0o600
@@ -154,6 +155,8 @@ class FakeHands:
                      {"name": "Safari", "bundle_id": "com.apple.Safari", "tier": "look_only"},
                      {"name": "Messages", "bundle_id": "com.apple.MobileSMS", "tier": "full"}]
         self.fail_with: dict | None = None
+        # Hands v2 capture_window: by default as on a Mac without Screen Recording for Hands.
+        self.capture: dict = {"ok": False, "refused": {"code": "screen_recording_off", "message": "not allowed"}}
 
     async def call(self, op, args=None, *, timeout=60.0, start=True):
         self.calls.append((op, dict(args or {})))
@@ -168,6 +171,8 @@ class FakeHands:
             return {"ok": True}
         if op == "status":
             return {"ok": True, "accessibility": False, "peer_check": "off", "version": "0.1.0"}
+        if op == "capture_window":
+            return self.capture
         app = next((a for a in self.apps if a["name"] == args.get("app")), self.apps[0])
         if op == "describe":
             return {"ok": True, "app": app, "tier": self.tier, "sends_on_return": False, "target": self.target}

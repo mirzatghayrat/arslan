@@ -50,7 +50,9 @@ fn apps() -> Value {
         {"name": "Notes", "bundle_id": "com.apple.Notes", "pid": 200},
         {"name": "Keychain Access", "bundle_id": "com.apple.keychainaccess", "pid": 300},
         {"name": "Safari", "bundle_id": "com.apple.Safari", "pid": 400},
-        {"name": "Terminal", "bundle_id": "com.apple.Terminal", "pid": 500}]}})
+        {"name": "Terminal", "bundle_id": "com.apple.Terminal", "pid": 500},
+        // Above macOS's largest pid: a screenshot test must never find a real window.
+        {"name": "Capture Target", "bundle_id": "com.arslan.capture-target", "pid": 1_000_600}]}})
 }
 
 fn refmap(home: &Path, session: Option<&str>) {
@@ -533,4 +535,79 @@ fn actions_say_what_they_achieved_in_one_vocabulary() {
     // A read has no outcome.
     let apps = hands.ask("list_apps", json!({}));
     assert!(apps.get("outcome").is_none_or(Value::is_null), "{apps}");
+}
+
+#[test]
+fn a_screenshot_follows_the_look_rules_and_never_runs_agent_desktop() {
+    let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    let hands = start("shot");
+    assert_eq!(
+        code(&hands.ask("capture_window", json!({"app": "Keychain Access"}))),
+        "app_denied"
+    );
+    assert_eq!(
+        code(&hands.ask(
+            "capture_window",
+            json!({"app": "Notes", "never": ["Notes"]})
+        )),
+        "app_denied"
+    );
+    assert_eq!(
+        code(&hands.ask("capture_window", json!({"app": "Notes", "window": "w-x"}))),
+        "bad_request"
+    );
+    // An app that exists only in the fake list: the capture runs and finds nothing to show
+    // (no grant on CI, no such process anywhere, or not macOS) - never an image.
+    let shot = hands.ask(
+        "capture_window",
+        json!({"app": "Capture Target", "window": "w-26104"}),
+    );
+    assert!(
+        [
+            "screen_recording_off",
+            "window_not_found",
+            "not_supported",
+            "needs_macos_14"
+        ]
+        .contains(&code(&shot)),
+        "{shot}"
+    );
+    assert!(shot.get("capture").is_none());
+    // Hands captures itself: agent-desktop was asked only which apps run.
+    assert!(
+        hands.calls().iter().all(|c| c[0] == "list-apps"),
+        "{:?}",
+        hands.calls()
+    );
+}
+
+#[test]
+fn a_screenshot_does_not_wait_behind_a_command_in_flight() {
+    let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    let hands = start("beside");
+    let socket = hands.folder().join("s.sock");
+    let token = hands.token.clone();
+    let slow = std::thread::spawn(move || {
+        let mut stream = UnixStream::connect(socket).unwrap();
+        let req = json!({"token": token, "op": "wait", "args": {"app": "Hands Fixture", "text": "slow", "timeout_ms": 20000}});
+        writeln!(stream, "{req}").unwrap();
+        let mut reply = String::new();
+        BufReader::new(stream).read_line(&mut reply).unwrap();
+    });
+    let started = Instant::now();
+    while !hands.calls().iter().any(|c| c[0] == "wait") {
+        assert!(started.elapsed() < Duration::from_secs(5));
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    // The wait holds Hands' one-at-a-time lock for 30 s; the screenshot answers anyway.
+    let asked = Instant::now();
+    let shot = hands.ask("capture_window", json!({"app": "Keychain Access"}));
+    assert_eq!(code(&shot), "app_denied");
+    assert!(
+        asked.elapsed() < Duration::from_secs(5),
+        "{:?}",
+        asked.elapsed()
+    );
+    hands.ask("stop", json!({}));
+    slow.join().unwrap();
 }
