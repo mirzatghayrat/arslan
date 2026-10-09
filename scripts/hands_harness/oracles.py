@@ -28,8 +28,11 @@ class Verdict:
         return not self.violations
 
 
-def disturbance(before: Sample, during: list[Sample], after: Sample, *, pointer_slack: float = 0.5) -> Verdict:
-    """O1, O3, O4 over the samples of one action, against the moment before it."""
+def disturbance(before: Sample, during: list[Sample], after: Sample, *, pointer_slack: float = 0.5,
+                top_only: bool = False) -> Verdict:
+    """O1, O3, O4 over the samples of one action, against the moment before it. `top_only`: a
+    borrow (§6.3) gives back the front app and its key window, so O4 asks only that the user's
+    top window is on top again - the borrowed app's window may now sit above other apps'."""
     verdict = Verdict()
     for s in [*during, after]:
         if s.front_pid != before.front_pid:
@@ -39,7 +42,7 @@ def disturbance(before: Sample, during: list[Sample], after: Sample, *, pointer_
         if abs(s.pointer[0] - before.pointer[0]) > pointer_slack or abs(s.pointer[1] - before.pointer[1]) > pointer_slack:
             verdict.violations.append(f"O3 pointer moved at {s.t:.3f}s")
             break
-    if after.order != before.order:
+    if (after.order[:1] != before.order[:1]) if top_only else (after.order != before.order):
         verdict.violations.append("O4 window order changed")
     return verdict
 

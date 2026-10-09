@@ -78,15 +78,27 @@ class Ctx:
     typist: object | None = None    # run.TypistDriver when the user's stand-in is typing
 
 
-def observed(ctx: Ctx, action: Callable[[], Act]) -> tuple[Act, list[str]]:
-    """Run one engine action under the observer (and the typist, if any); its violations."""
+def observed(ctx: Ctx, action: Callable[[], Act], borrow: bool = False) -> tuple[Act, list[str]]:
+    """Run one engine action under the observer (and the typist, if any); its violations.
+    `borrow`: a borrow-class action (§6.3): the typist types in bursts, and if Hands did borrow,
+    the front and key window may change DURING it - what is judged is the end state (front app,
+    window order), the give-back Hands reports, the borrow's length and every key (G4)."""
     if ctx.typist:
-        ctx.typist.start()
+        ctx.typist.start(bursts=borrow)
     with ctx.observe() as o:
         act = action()
-    violations = oracles.disturbance(o.before, o.samples, o.after).violations
+    borrowed = act.raw.get("mode_used") == "borrow"
+    if borrowed:
+        violations = oracles.disturbance(o.before, [], o.after, top_only=True).violations
+        gave = act.raw.get("borrow") or {}
+        if not gave.get("front_restored"):
+            violations.append("G4 the front was not given back")
+        if (gave.get("borrowed_ms") or 0) > 1500:
+            violations.append(f"G4 borrowed the front for {gave.get('borrowed_ms')} ms (more than 1.5 s)")
+    else:
+        violations = oracles.disturbance(o.before, o.samples, o.after).violations
     if ctx.typist:
-        violations += ctx.typist.stop_and_judge(o.before.t, o.after.t)
+        violations += ctx.typist.stop_and_judge(o.before.t, o.after.t, borrowed=borrowed)
     return act, violations
 
 
@@ -204,8 +216,12 @@ def popup(ctx: Ctx) -> Result:
     target, look_ms = _element(ctx, "Color")
     if target is None:
         return Result("popup", ctx.engine.name, "fail", look_ms=look_ms, note="no Color element")
-    act, violations = observed(ctx, lambda: ctx.engine.select(target, "Green"))
-    return _judged("popup", ctx, act, violations, ctx.fixture.wait(lambda s: s.get("color") == "Green"), look_ms)
+    act, violations = observed(ctx, lambda: ctx.engine.select(target, "Green"), borrow=True)
+    gave = act.raw.get("borrow") or {}
+    note = (f"borrowed {gave.get('borrowed_ms')} ms after waiting {gave.get('waited_ms')} ms; "
+            f"{gave.get('keys_replayed')} keys held and replayed") if gave else ""
+    return _judged("popup", ctx, act, violations, ctx.fixture.wait(lambda s: s.get("color") == "Green"), look_ms,
+                   note)
 
 
 def password_refused(ctx: Ctx) -> Result:
