@@ -19,6 +19,8 @@ script answers "Allow" to (and records). It checks what tests cannot:
   text; a look with a screenshot (median, G8'); the same scripted task one call at a
   time and as a batch (wall time, G8'); for the whole run, Hands and agent-desktop open
   no network socket and no image lands in Hands' folder or the temp folder (G9).
+  HANDS_SMOKE_ELECTRON=<app> also reads an Electron app (G7'); it is opened in the background
+  and quit afterwards, and only how much was read is printed.
 
 Needs: macOS; Accessibility allowed for "Arslan Hands" (D3: the user clicks Allow
 once — the script asks macOS to show the prompt if it is missing); Xcode command
@@ -149,6 +151,8 @@ async def main() -> int:
         tools.forget_job("smoke-job")
 
     await v2_checks(tools, hands_service, front)
+    if os.environ.get("HANDS_SMOKE_ELECTRON"):
+        await electron_check(tools, os.environ["HANDS_SMOKE_ELECTRON"])
     watch.stop()
     watch.report()
 
@@ -322,6 +326,9 @@ class PrivacyWatch:
 
     def __init__(self, hands_client):
         self.folder = hands_client.folder()
+        # By executable path: a name pattern also matched other apps' processes (Cursor's).
+        app = hands_client.app_path()
+        self.binaries = (str(app / "Contents" / "MacOS"), str(app.parent / "agent-desktop"))
         self.roots = [self.folder, Path(tempfile.gettempdir()), Path("/tmp")]
         self.sockets: list[str] = []
         self.samples = 0
@@ -337,8 +344,9 @@ class PrivacyWatch:
         return found
 
     def _pids(self) -> list[str]:
-        out = subprocess.run(["pgrep", "-f", "Arslan Hands|agent-desktop"], capture_output=True, text=True).stdout
-        return [p for p in out.split() if p.strip() and int(p) != os.getpid()]
+        out = subprocess.run(["ps", "-axo", "pid=,comm="], capture_output=True, text=True).stdout
+        return [line.split(None, 1)[0] for line in out.splitlines()
+                if len(line.split(None, 1)) == 2 and line.split(None, 1)[1].startswith(self.binaries)]
 
     def _loop(self) -> None:
         while not self._stop:
@@ -512,6 +520,28 @@ async def v2_checks(tools, hands_service, front: str) -> None:
         print(f"  info  front app after the v2 checks: {front_app()} (was {front})")
     finally:
         subprocess.run(["pkill", "-x", "HandsFixture"], capture_output=True)
+
+
+async def electron_check(tools, app: str) -> None:
+    """G7': an Electron app's page content is read without relaunching it (opened here in the
+    background, quit afterwards). Its text is never printed: only how much was read."""
+    look = tools.DesktopLookExecutor()
+    subprocess.run(["open", "-g", "-a", app], check=False)
+    time.sleep(8)
+    try:
+        with job("v2-electron", "v2-electron"):
+            seen = await look.execute({"app": app})
+            folded = [line for line in seen.get("text", "").splitlines() if "inside: look with ref" in line]
+            refs = len(REF.findall(seen.get("text", "")))
+            for line in folded[:3]:              # the page sits under the web area, folded in a skeleton
+                ref = REF.search(line)
+                if ref:
+                    opened = await look.execute({"app": app, "ref": ref.group(1)})
+                    refs += len(REF.findall(opened.get("text", "")))
+        record(f"G7': {app}'s page content is read without relaunching it", refs >= 10,
+               f"{refs} refs (skeleton plus {min(len(folded), 3)} folded parts opened)")
+    finally:
+        subprocess.run(["osascript", "-e", f'tell application "{app}" to quit'], capture_output=True)
 
 
 if __name__ == "__main__":
