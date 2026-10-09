@@ -62,11 +62,26 @@ _CAPABILITY_KEYS = ("tools", "vision", "reasoning")
 def _info(model_id: str, *, display_name: str | None = None,
           context_window: int | None = None,
           capabilities: list[str] | None = None,
-          source: str = "api") -> dict:
+          source: str = "api", price_in: float | None = None, price_out: float | None = None) -> dict:
     caps = [c for c in (capabilities or []) if c in _CAPABILITY_KEYS]
-    return {"id": model_id, "display_name": display_name,
-            "context_window": context_window, "capabilities": caps,
-            "source": source}
+    out = {"id": model_id, "display_name": display_name,
+           "context_window": context_window, "capabilities": caps,
+           "source": source}
+    # 0.1.58 §6: USD per million tokens, when the provider says (OpenRouter does); absent = unknown.
+    if price_in is not None:
+        out["price_in"] = price_in
+    if price_out is not None:
+        out["price_out"] = price_out
+    return out
+
+
+def _per_million(value) -> float | None:
+    """OpenRouter sends USD per token as a string ("0.000003"); -1 and junk mean unknown."""
+    try:
+        n = float(value)
+    except (TypeError, ValueError):
+        return None
+    return round(n * 1_000_000, 6) if n >= 0 else None
 
 
 def _fingerprint(provider: str, base_url: str, api_key: str) -> str:
@@ -192,11 +207,20 @@ async def _fetch_openai_compat(client: httpx.AsyncClient, base_url: str,
         # Presence-based rich fields (OpenRouter ships them; plain OpenAI-compat
         # servers don't) — keyed on the entry shape, never on the provider name.
         caps: list[str] = []
-        if "tools" in (entry.get("supported_parameters") or []):
+        params = entry.get("supported_parameters") or []
+        if "tools" in params:
             caps.append("tools")
+        if "reasoning" in params or "include_reasoning" in params:
+            caps.append("reasoning")
+        arch = entry.get("architecture") if isinstance(entry.get("architecture"), dict) else {}
+        if "image" in (arch.get("input_modalities") or []):
+            caps.append("vision")
+        pricing = entry.get("pricing") if isinstance(entry.get("pricing"), dict) else {}
         ctx = entry.get("context_length")
-        out.append(_info(model_id, capabilities=caps,
-                         context_window=ctx if isinstance(ctx, int) else None))
+        name = entry.get("name")
+        out.append(_info(model_id, capabilities=caps, display_name=name if isinstance(name, str) else None,
+                         context_window=ctx if isinstance(ctx, int) else None,
+                         price_in=_per_million(pricing.get("prompt")), price_out=_per_million(pricing.get("completion"))))
     return out
 
 

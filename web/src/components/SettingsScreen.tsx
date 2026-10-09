@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import type { CryptoHealth } from '../lib/cryptoHealth';
 import { useTranslation } from 'react-i18next';
 import { AppSettings } from '../types';
-import { api } from '../api/client';
+import { api, listProviderConfigs, setPrimaryProviderConfig, updateProviderConfig } from '../api/client';
 import type { ProviderOption, ProviderConfig } from '../api/client.types';
 import type { BackendStatus } from '../hooks/useBackendStatus';
 import {
@@ -229,6 +229,18 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
           titleConfigId: localSettings.titleConfigId ?? '',
           routerConfigId: localSettings.routerConfigId ?? '',
           visionConfigId: localSettings.visionConfigId ?? '',
+          synthesisModel: localSettings.synthesisModel ?? '',
+          compactionModel: localSettings.compactionModel ?? '',
+          titleModel: localSettings.titleModel ?? '',
+          routerModel: localSettings.routerModel ?? '',
+          visionModel: localSettings.visionModel ?? '',
+        }}
+        onMainChange={async (configId, model) => {
+          // 0.1.58 §6: the default = the primary config on the chosen model.
+          const target = (providerConfigs ?? []).find((c) => c.id === configId);
+          if (target && target.model !== model) await updateProviderConfig(configId, { model });
+          await setPrimaryProviderConfig(configId);
+          onProviderConfigsChange?.(await listProviderConfigs());
         }}
         onChange={(key, v) => saveField({ [key]: v } as Partial<AppSettings>)}
         providerConfigs={providerConfigs ?? []}

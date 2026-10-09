@@ -258,6 +258,12 @@ export interface AppSettings {
   titleConfigId?: string;
   routerConfigId?: string;
   visionConfigId?: string;
+  /** 0.1.58 §6: one model of the slot's config ("" = the config's own model). */
+  synthesisModel?: string;
+  compactionModel?: string;
+  titleModel?: string;
+  routerModel?: string;
+  visionModel?: string;
   /** Days a run's sensitive/bulky debug detail is kept before the boot sweep redacts it. Default 30. */
   runDebugRetentionDays?: number;
   /** S4.1-C: whether the inbound MCP server (exposing Arslan's read-only tools

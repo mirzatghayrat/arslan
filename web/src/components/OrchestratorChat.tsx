@@ -19,7 +19,7 @@ import { formatUiTime } from '../lib/localeFormatting';
 import { getIcon } from './iconMap';
 import { Message, MessageAttachment, Spawn } from '../types';
 import type { ProviderConfig, ProviderOption } from '../api/client.types';
-import ModelSwitcher from './ModelSwitcher';
+import ConversationModelChip from './models/ConversationModelChip';
 import { useCapabilityLabel } from '../stores/registryStore';
 import { useProfileStore } from '../stores/profileStore';
 import SFSymbol from './SFSymbol';
@@ -440,13 +440,9 @@ export default function OrchestratorChat({
                       now: two fields adapters.ts stopped mapping when the
                       multi-config list became the source of truth, so the chip
                       rendered a bare "·" forever. */}
-                  <ModelSwitcher
-                    configs={providerConfigs ?? []}
-                    llmProviders={llmProviders ?? []}
-                    testingIds={providerTestingIds}
-                    onSelect={(id) => onSelectModel?.(id)}
-                    onManage={onOpenSettings}
-                  />
+                  {/* 0.1.58 §6: this conversation's model — any model of any provider. */}
+                  <ConversationModelChip conversationId={conversationId ?? 'main'} configs={providerConfigs ?? []}
+                    llmProviders={llmProviders ?? []} onSetDefault={(id) => onSelectModel?.(id)} onManage={onOpenSettings} />
                 </div>
 
                 <button
@@ -1064,6 +1060,9 @@ export default function OrchestratorChat({
                 <div data-testid="composer-input-tools" className="flex items-center gap-2">
                   <AttachControl busy={attach.busy} onPickFiles={attach.addFiles} />
                   {micControl}
+                  {/* 0.1.58 §6: the model picker sits under EVERY composer, not only the empty one. */}
+                  <ConversationModelChip conversationId={conversationId ?? 'main'} configs={providerConfigs ?? []}
+                    llmProviders={llmProviders ?? []} onSetDefault={(id) => onSelectModel?.(id)} onManage={onOpenSettings} />
                 </div>
                 {/* Right-side action group: composer-row is space-between, so stop
                     must share a wrapper with send to sit NEXT to it (not centered). */}
