@@ -21,6 +21,7 @@ afterEach(() => { cleanup(); request.mockReset(); vi.unstubAllGlobals(); });
 
 const state = (over: Record<string, unknown> = {}) => ({
   available: true, enabled: true, cursor: true, never: ["Mail"], running: false,
+  screenshots: true, borrow: true, away: false, always: [], no_screenshots: [],
   built_in: { never: ["Keychain Access", "System Settings", "Arslan"], look_only: ["Web browsers"],
               click_only: ["Terminals and code editors"] }, ...over });
 

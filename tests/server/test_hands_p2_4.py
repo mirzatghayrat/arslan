@@ -101,3 +101,9 @@ async def test_settings_api_keeps_always_by_bundle_id_and_asks_for_screen_record
     assert removed["always"] == []
     await hands_api.ask_permission(hands_api.Permission(kind="screen"))
     assert ("request_permission", {"kind": "screen"}) in hands.calls
+
+
+def test_the_island_names_the_apps_one_card_asks_for():
+    from server.services import desktop_status
+    assert desktop_status.step_target("desktop_access", {"apps": ["Notes", "Pages"], "why": "x"}) == "Notes · Pages"
+    assert desktop_status.step_target("desktop_access", {"why": "x"}) is None
