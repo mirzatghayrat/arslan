@@ -456,8 +456,8 @@ def test_a3_iron_rule_constant():
 
 def test_pa4_no_repaste_rule_constant():
     from server.orchestrator import arslan
-    assert "不要整段重贴" in arslan._NO_REPASTE
-    assert "沿用上面那份大纲" in arslan._NO_REPASTE
+    assert "is never re-pasted whole" in arslan._NO_REPASTE
+    assert "same outline as above" in arslan._NO_REPASTE
 
 
 @pytest.mark.asyncio
@@ -473,4 +473,4 @@ async def test_pa4_answer_system_prompt_carries_no_repaste_rule(maker, monkeypat
 
     await arslan.handle_user_message("main", "随便聊聊", lambda e: None)
 
-    assert "不要整段重贴" in adapter.chat_calls[0]["system"]
+    assert "is never re-pasted whole" in adapter.chat_calls[0]["system"]
