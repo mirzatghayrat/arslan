@@ -50,7 +50,9 @@ fn apps() -> Value {
         {"name": "Notes", "bundle_id": "com.apple.Notes", "pid": 200},
         {"name": "Keychain Access", "bundle_id": "com.apple.keychainaccess", "pid": 300},
         {"name": "Safari", "bundle_id": "com.apple.Safari", "pid": 400},
-        {"name": "Terminal", "bundle_id": "com.apple.Terminal", "pid": 500}]}})
+        {"name": "Terminal", "bundle_id": "com.apple.Terminal", "pid": 500},
+        // Above macOS's largest pid: a screenshot test must never find a real window.
+        {"name": "Capture Target", "bundle_id": "com.arslan.capture-target", "pid": 1_000_600}]}})
 }
 
 fn refmap(home: &Path, session: Option<&str>) {
@@ -533,4 +535,48 @@ fn actions_say_what_they_achieved_in_one_vocabulary() {
     // A read has no outcome.
     let apps = hands.ask("list_apps", json!({}));
     assert!(apps.get("outcome").is_none_or(Value::is_null), "{apps}");
+}
+
+#[test]
+fn a_screenshot_follows_the_look_rules_and_never_runs_agent_desktop() {
+    let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    let hands = start("shot");
+    assert_eq!(
+        code(&hands.ask("capture_window", json!({"app": "Keychain Access"}))),
+        "app_denied"
+    );
+    assert_eq!(
+        code(&hands.ask(
+            "capture_window",
+            json!({"app": "Notes", "never": ["Notes"]})
+        )),
+        "app_denied"
+    );
+    assert_eq!(
+        code(&hands.ask("capture_window", json!({"app": "Notes", "window": "w-x"}))),
+        "bad_request"
+    );
+    // An app that exists only in the fake list: the capture runs and finds nothing to show
+    // (no grant on CI, no such process anywhere, or not macOS) - never an image.
+    let shot = hands.ask(
+        "capture_window",
+        json!({"app": "Capture Target", "window": "w-26104"}),
+    );
+    assert!(
+        [
+            "screen_recording_off",
+            "window_not_found",
+            "not_supported",
+            "needs_macos_14"
+        ]
+        .contains(&code(&shot)),
+        "{shot}"
+    );
+    assert!(shot.get("capture").is_none());
+    // Hands captures itself: agent-desktop was asked only which apps run.
+    assert!(
+        hands.calls().iter().all(|c| c[0] == "list-apps"),
+        "{:?}",
+        hands.calls()
+    );
 }
