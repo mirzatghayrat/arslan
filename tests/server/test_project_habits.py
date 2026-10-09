@@ -28,6 +28,8 @@ async def api(execution_db, monkeypatch):
 TWO = [{"name": "Shape it", "band": "shaping", "checkpoints": [{"text": "Sketch"}, {"text": "Mood board"}]},
        {"name": "Make it", "band": "doing", "checkpoints": [{"text": "Build"}]},
        {"name": "Ship it", "band": "done", "checkpoints": []}]
+#: 0.1.58 §5: auto-advance only clears a level with nothing open, so its tests use empty levels.
+EMPTY = [{**lv, "checkpoints": []} for lv in TWO]
 
 
 async def _project(api, name="Sample", template="game", levels=TWO, folder=None, active=True) -> str:
@@ -71,7 +73,7 @@ async def test_the_ask_comes_once_at_ten_kept_in_a_row(api, execution_db):
     for i in range(10):
         pid = pids[i % 2]
         event = await _propose(execution_db, pid)
-        await api.post(f"/api/v1/projects/{pid}/proposals/{event.id}/accept")
+        await api.post(f"/api/v1/projects/{pid}/proposals/{event.id}/accept", json={"leftover": "drop"})
         s = await _shadow(api)
         assert s["streak"] == i + 1 and s["ask_due"] is (i == 9), i
     # 先不: asked, never again, nothing turned on.
@@ -81,14 +83,14 @@ async def test_the_ask_comes_once_at_ten_kept_in_a_row(api, execution_db):
     assert s["asked"] and not s["ask_due"] and not s["auto_advance"]
     event = await _propose(execution_db, pids[0])
     assert event.kind == "proposal"                  # still asks; auto-advance never on by itself
-    await api.post(f"/api/v1/projects/{pids[0]}/proposals/{event.id}/accept")
+    await api.post(f"/api/v1/projects/{pids[0]}/proposals/{event.id}/accept", json={"leftover": "drop"})
     assert not (await _shadow(api))["ask_due"]
 
 
 async def test_a_decline_or_an_undo_resets_the_streak(api, execution_db):
     pid = await _project(api, levels=[TWO[0]] + TWO[1:] * 4)
     event = await _propose(execution_db, pid)
-    await api.post(f"/api/v1/projects/{pid}/proposals/{event.id}/accept")
+    await api.post(f"/api/v1/projects/{pid}/proposals/{event.id}/accept", json={"leftover": "drop"})
     event = await _propose(execution_db, pid)
     await api.post(f"/api/v1/projects/{pid}/proposals/{event.id}/decline")
     s = await _shadow(api)
@@ -96,13 +98,13 @@ async def test_a_decline_or_an_undo_resets_the_streak(api, execution_db):
     assert s["last_miss"]["outcome"] == "declined" and s["last_miss"]["level"] == "Make it"
     assert s["miss_is_latest"] is True
     event = await _propose(execution_db, pid)
-    await api.post(f"/api/v1/projects/{pid}/proposals/{event.id}/accept")
+    await api.post(f"/api/v1/projects/{pid}/proposals/{event.id}/accept", json={"leftover": "drop"})
     s = await _shadow(api)
     assert s["miss_is_latest"] is False and s["last_miss"]["level"] == "Make it"   # the sheet still shows it
 
 
 async def test_with_auto_advance_its_moves_count_and_two_undos_offer_to_turn_it_off(api, execution_db):
-    pid = await _project(api, levels=[TWO[0]] + TWO[1:2] * 5 + TWO[2:])
+    pid = await _project(api, levels=[EMPTY[0]] + EMPTY[1:2] * 5 + EMPTY[2:])
     await api.put("/api/v1/project-habits/auto-advance", json={"on": True, "answered": "ask"})
     first = await _propose(execution_db, pid)
     assert first.kind == "advance" and first.actor == "arslan"
@@ -333,3 +335,14 @@ async def test_a_card_says_what_to_do_next(api):
     await api.post(f"/api/v1/projects/{pid}/checkpoints/{first['id']}/tick")
     card = await _card(api, pid)
     assert card["next"] == {"id": plan["levels"][0]["checkpoints"][1]["id"], "text": "Mood board"}
+
+
+async def test_auto_advance_never_clears_a_level_with_checkpoints_still_open(api, execution_db):
+    """0.1.58 §5: a condition read from what you said, with checkpoints open, stays a proposal
+    that lists them — even with auto-advance on."""
+    pid = await _project(api)
+    await api.put("/api/v1/project-habits/auto-advance", json={"on": True, "answered": "ask"})
+    event = await _propose(execution_db, pid)
+    assert event.kind == "proposal"
+    assert [o["text"] for o in event.payload["open"]] == ["Sketch", "Mood board"]
+    assert (await _plan(api, pid))["levels"][0]["state"] == "current"

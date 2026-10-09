@@ -24,6 +24,8 @@ export interface PersistedThread {
   history: [];
   memberSpawnIds?: string[];
   archived?: boolean;
+  /** 0.1.58 §4: started in a project (known before the server lists it — a new chat has no messages). */
+  projectId?: string;
 }
 
 export interface RestoredThreads {
@@ -55,6 +57,7 @@ interface ThreadLike {
   memberSpawnIds?: string[];
   archived?: boolean;
   temporary?: boolean;
+  projectId?: string;
 }
 
 /**
@@ -74,6 +77,7 @@ export function persistThreads(
       history: [],
       ...(t.memberSpawnIds ? { memberSpawnIds: t.memberSpawnIds } : {}),
       ...(t.archived ? { archived: true } : {}),
+      ...(t.projectId ? { projectId: t.projectId } : {}),
     }));
     localStorage.setItem(THREADS_KEY, JSON.stringify(slim));
     localStorage.setItem(ACTIVE_THREAD_KEY, slim.some(t => t.id === activeThreadId) ? activeThreadId : slim[0]?.id ?? "");
@@ -114,7 +118,7 @@ export function restoreThreads(): RestoredThreads {
       if (Array.isArray(parsed)) {
         threads = parsed
           .filter(
-            (t): t is { id: string; title: string; defaultTitle?: boolean; memberSpawnIds?: string[]; archived?: boolean } =>
+            (t): t is { id: string; title: string; defaultTitle?: boolean; memberSpawnIds?: string[]; archived?: boolean; projectId?: string } =>
               !!t && typeof t.id === "string" && typeof t.title === "string",
           )
           .map((t) => ({
@@ -126,6 +130,7 @@ export function restoreThreads(): RestoredThreads {
               ? { memberSpawnIds: t.memberSpawnIds }
               : {}),
             ...(t.archived === true ? { archived: true } : {}),
+            ...(typeof t.projectId === "string" && t.projectId ? { projectId: t.projectId } : {}),
           }));
       }
     }
@@ -180,6 +185,8 @@ export interface ServerConversation {
   preview?: string;
   files?: number;
   job?: { id: string; step: string; done: number; total: number } | null;
+  /** 0.1.58 §4: the project it belongs to, if any. */
+  project_id?: string | null;
 }
 
 /**

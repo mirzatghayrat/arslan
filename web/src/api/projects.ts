@@ -65,6 +65,8 @@ export interface Proposal {
   evidence: Evidence;
   moves_column: boolean;
   last: boolean;
+  /** 0.1.58 §5: checkpoints still open in the level (absent when none). */
+  open?: { id: string; text: string }[];
 }
 export interface BoardCard {
   id: string;
@@ -145,9 +147,13 @@ export const projectsApi = {
   /** §4.4 "Hand to Arslan": a background job in that conversation that ends done ticks the checkpoint. */
   handoff: (projectId: string, checkpointId: string, conversationId: string) =>
     request<{ id: string }>(`/projects/${id(projectId)}/handoff`, json("POST", { checkpoint_id: checkpointId, conversation_id: conversationId })),
-  advance: (projectId: string) => request<Plan>(`/projects/${id(projectId)}/advance`, { method: "POST" }),
-  decide: (projectId: string, proposalId: string, accept: boolean) =>
-    request<Plan>(`/projects/${id(projectId)}/proposals/${id(proposalId)}/${accept ? "accept" : "decline"}`, { method: "POST" }),
+  /** 0.1.58 §5: with checkpoints still open the server answers 409 open_checkpoints + the list
+   *  until `leftover` says what happens to them (move to the next level, or drop). */
+  advance: (projectId: string, choice?: { leftover: Leftover; note?: string }) =>
+    request<Plan>(`/projects/${id(projectId)}/advance`, json("POST", choice ?? {})),
+  decide: (projectId: string, proposalId: string, accept: boolean, leftover?: Leftover) =>
+    request<Plan>(`/projects/${id(projectId)}/proposals/${id(proposalId)}/${accept ? "accept" : "decline"}`,
+      json("POST", leftover ? { leftover } : {})),
   /** §5: the optional line after a decline; it becomes a plan rule. */
   note: (projectId: string, proposalId: string, note: string) =>
     request<Plan>(`/projects/${id(projectId)}/proposal-notes/${id(proposalId)}`, json("POST", { note })),
@@ -173,3 +179,12 @@ export const projectsApi = {
   files: (projectId: string) =>
     request<{ folder: string | null; exists: boolean; entries: { name: string; dir: boolean }[]; truncated: boolean }>(`/projects/${id(projectId)}/files`),
 };
+
+/** 0.1.58 §5: what happens to a level's unfinished checkpoints when it is cleared early. */
+export type Leftover = "move" | "drop";
+
+/** The open checkpoints a 409 open_checkpoints carries, or null for any other error. */
+export function openCheckpointsOf(cause: unknown): { id: string; text: string }[] | null {
+  const detail = (cause as { status?: number; detail?: { code?: string; open?: { id: string; text: string }[] } })?.detail;
+  return detail?.code === "open_checkpoints" && Array.isArray(detail.open) ? detail.open : null;
+}

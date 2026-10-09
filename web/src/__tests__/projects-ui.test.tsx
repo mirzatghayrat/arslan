@@ -201,8 +201,10 @@ describe("a project's page", () => {
     const undo = vi.spyOn(projectsApi, "undo").mockResolvedValue(PLAN);
     fireEvent.click(await screen.findByTestId("checkpoint-c2"));
     await waitFor(() => expect(tick).toHaveBeenCalledWith("p1", "c2", true));
-    fireEvent.click(screen.getByTestId("project-clear-level"));
-    await waitFor(() => expect(advance).toHaveBeenCalledWith("p1"));
+    // 0.1.58 §5: with a checkpoint still open, clearing asks what happens to it first.
+    fireEvent.click(screen.getByTestId("project-clear-early"));
+    fireEvent.click(within(await screen.findByTestId("leftover-sheet")).getByTestId("leftover-confirm"));
+    await waitFor(() => expect(advance).toHaveBeenCalledWith("p1", { leftover: "move", note: undefined }));
     // Only Arslan's own, not-undone steps are listed for undo.
     const recent = screen.getByTestId("project-recent");
     expect(recent).toHaveTextContent('projectsUI.recentTick:{"text":"Art direction"}');

@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api, type CollectionOut } from "../../api/client";
 import { companionApi, type Project, type ProjectInput } from "../../api/companion";
-import { projectsApi, type Board, type BoardCard } from "../../api/projects";
+import { openCheckpointsOf, projectsApi, type Board, type BoardCard, type Leftover } from "../../api/projects";
+import LeftoverSheet from "../projects/LeftoverSheet";
 import { Notice } from "../kit";
 import NewProject, { TEMPLATES } from "../projects/NewProject";
 import HabitsSheet from "../projects/HabitsSheet";
@@ -83,11 +84,22 @@ type View = { kind: "board" } | { kind: "new"; project?: Project } | { kind: "pa
  * Projects (0.1.56): the board, a project's page, and new / plan-it. The board reloads
  * whenever something on a page changed.
  */
-export default function ProjectsSection({ onStart }: { onStart: (project: Project, prefill?: string, checkpointId?: string) => Promise<void> }) {
+export default function ProjectsSection({ onStart, openProjectId, onOpenedProject }: {
+  onStart: (project: Project, prefill?: string, checkpointId?: string) => Promise<void>;
+  /** 0.1.58 §4: the sidebar's "全部 N 个" opens this project's page directly. */
+  openProjectId?: string | null; onOpenedProject?: () => void;
+}) {
   const { t } = useTranslation();
   const [board, setBoard] = useState<Board | null>(null);
-  const [view, setView] = useState<View>({ kind: "board" });
+  const [view, setView] = useState<View>(openProjectId ? { kind: "page", id: openProjectId } : { kind: "board" });
+  useEffect(() => {
+    if (!openProjectId) return;
+    setView({ kind: "page", id: openProjectId });
+    onOpenedProject?.();
+  }, [openProjectId, onOpenedProject]);
   const [error, setError] = useState<string | null>(null);
+  // 0.1.58 §5: accepting Arslan's proposal with checkpoints open asks what happens to them.
+  const [leftover, setLeftover] = useState<{ card: BoardCard; open: { id: string; text: string }[] } | null>(null);
   const [busy, setBusy] = useState(false);
   const reload = useCallback(async () => {
     setError(null);
@@ -104,10 +116,16 @@ export default function ProjectsSection({ onStart }: { onStart: (project: Projec
     catch (cause) { setError(companionError(cause)); }
     finally { setBusy(false); }
   }
-  async function decide(card: BoardCard, accept: boolean) {
+  async function decide(card: BoardCard, accept: boolean, choice?: Leftover) {
     if (!card.proposal) return;
     const proposalId = card.proposal.id;
-    await run(() => projectsApi.decide(card.id, proposalId, accept));
+    setBusy(true);
+    try { await projectsApi.decide(card.id, proposalId, accept, choice); setLeftover(null); await reload(); }
+    catch (cause) {
+      const open = accept ? openCheckpointsOf(cause) : null;
+      if (open) setLeftover({ card, open });
+      else setError(companionError(cause));
+    } finally { setBusy(false); }
   }
   /** §9 "接着做": a conversation in the project, at what to do next, typed and not sent. */
   async function resume(card: BoardCard) {
@@ -135,5 +153,8 @@ export default function ProjectsSection({ onStart }: { onStart: (project: Projec
       onAuto={(on, answered) => void run(() => projectsApi.autoAdvance(on, answered))}
       onNote={note => { const miss = board.shadow.last_miss; if (miss) void run(() => projectsApi.note(miss.project_id, miss.id, note)); }}
       onHabits={() => setView({ kind: "habits" })} />}
+    {leftover?.card.proposal && <LeftoverSheet level={leftover.card.proposal.level} next={leftover.card.proposal.next}
+      open={leftover.open} busy={busy} onCancel={() => setLeftover(null)}
+      onConfirm={choice => void decide(leftover.card, true, choice)} />}
   </>;
 }

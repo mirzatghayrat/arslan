@@ -944,7 +944,17 @@
       "unfinished": "没做成",
       "failed": "出了问题停下了",
       "scheduled": "定时任务"
-    }
+    },
+    "projects": "项目",
+    "allProjects": "全部项目",
+    "allInProject": "全部 {{count}} 个",
+    "newInProject": "在「{{name}}」里新对话",
+    "moveToProject": "移到项目…",
+    "moveOut": "移出项目",
+    "moveBack": "返回",
+    "movedTo": "已移到「{{name}}」",
+    "movedOut": "已移出项目",
+    "moveFailed": "没能移动——它可能正在干活。"
   },
   "orchestrator": {
     "greeting_morning": "早上好",
