@@ -465,6 +465,46 @@ TRUNCATED_CALL_ERROR = (
     "or shorten the payload.")
 
 
+# Hands v2 §4.4: model configurations that refused an image this process. Their screenshots are
+# read by this Mac's text recognition before sending, instead of failing again.
+_REFUSES_IMAGES: set[tuple[str, str, str]] = set()
+
+
+def _model_key(a) -> tuple[str, str, str]:
+    provider = getattr(a, "_provider", None)
+    return (type(provider).__name__, str(getattr(provider, "model", "")), str(getattr(provider, "base_url", "")))
+
+
+async def _images_to_text(convo: list[dict]) -> int:
+    """Tier 2 (spec §4.4, server/services/ocr_fallback.py): every screenshot in this turn becomes
+    the text macOS Vision reads off it, framed as untrusted like the window it came from.
+    In place; returns how many were read."""
+    import asyncio
+    import base64
+    from server.services import ocr_fallback
+    ui_language, chosen = await ocr_fallback.current_ui_language(), await ocr_fallback.current_ocr_languages()
+    read = 0
+    for message in convo:
+        images = message.pop("_images", None)
+        if not images:
+            continue
+        label = message.pop("_image_label", None) or message.get("name") or "screenshot"
+        texts = []
+        for image in images:
+            try:
+                data = base64.b64decode(image["data"])
+            except (KeyError, ValueError):
+                continue
+            text, _status = await asyncio.to_thread(ocr_fallback.read_locally, data, ui_language=ui_language,
+                                                    chosen_languages=chosen)
+            texts.append(text)
+            read += 1
+        body = "\n".join(t for t in texts if t) or "(no text could be read off it)"
+        message["content"] = (f"{message.get('content', '')}\n[screenshot of {label}: this model cannot take "
+                              f"images; the text this Mac read off it follows]\n{wrap_external(body)}")
+    return read
+
+
 async def _model_call(a, system: str, convo: list[dict], current_request: dict, *,
                       tools, schemas, forced: bool, state, status: str = ""):
     """The one model call of a run_native step, with recovery (0.1.49 S6).
@@ -489,6 +529,8 @@ async def _model_call(a, system: str, convo: list[dict], current_request: dict, 
     def build_messages():
         return convo if any(item is current_request for item in convo) else [current_request, *convo]
 
+    if trajectory.image_count(convo) and _model_key(a) in _REFUSES_IMAGES:
+        await _images_to_text(convo)          # known not to take images: read them first
     messages = build_messages()
     native = False
     use_native = getattr(a, "native_trajectory", None)
@@ -516,7 +558,19 @@ async def _model_call(a, system: str, convo: list[dict], current_request: dict, 
     try:
         resp = await mc.call_with_recovery(request, state, remaining_s=remaining)
     except mc.ModelCallError as exc:
-        if exc.kind == "protocol" and native and not state.exhausted:
+        from server.services import ocr_fallback
+        # First: an image refusal can also look like a protocol rejection; switching protocols
+        # would send the same screenshots again and fail the same way.
+        if (trajectory.image_count(convo) and not state.images_read_locally
+                and ocr_fallback.model_refused_the_image(f"{exc.excerpt} {exc}")):
+            # §4.4: the model refused the screenshots as images (vision_errors' narrow match, never
+            # a rate limit or a bad key). Read them locally, remember this model, ask once more.
+            state.images_read_locally = True
+            _REFUSES_IMAGES.add(_model_key(a))
+            await _images_to_text(convo)
+            messages = build_messages()
+            state.note("read screenshots as text (this model cannot take images)")
+        elif exc.kind == "protocol" and native and not state.exhausted:
             native = False
             state.legacy, state.reason = True, f"endpoint rejected native history: {exc.excerpt[:200]}"
             state.note("switched to the legacy tool protocol")
