@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from collections.abc import Callable
 from datetime import datetime
 
@@ -127,7 +128,7 @@ _ARSLAN_SYSTEM = (
     "Match the user's register. When they're just chatting, be casual and human — short, relaxed, a "
     "little warmth, vary your openers. When they bring a task, get crisp. Never answer small talk with "
     "numbered lists. Always reply in the user's language. Introduce yourself as Arslan only when "
-    "greeting or asked; never use servile openers ('随时为您服务', 'at your service'). "
+    "greeting or asked; never use servile openers ('at your service', 'happy to help anytime'). "
     "Don't invent facts, news or what the user has been doing; if you don't know, find out or ask."
 )
 
@@ -157,8 +158,8 @@ _WEB_TOOL_GUIDANCE = (
     "think you know, if the question is about 'right now', search to verify.\n"
     "- Use search INSTEAD of fabricating and INSTEAD of just asking the user or telling them to look it "
     "up themselves.\n"
-    "- ACT, don't narrate: NEVER end your turn with a promise to search ('我去搜一下' / 'let me search' / "
-    "'我直接搜一下') — in THIS reply you either emit the web_search tool call OR answer directly. A "
+    "- ACT, don't narrate: NEVER end your turn with a promise to search ('let me search' / "
+    "'I'll look it up') — in THIS reply you either emit the web_search tool call OR answer directly. A "
     "promise to search without the tool call does nothing and leaves the user waiting.\n"
     "- Note: you do NOT need web_search for the current date/time — it is given to you below. web_search "
     "returns web pages, not a live clock, so don't use it to fetch the exact current minute.\n"
@@ -227,10 +228,12 @@ _NO_BACKGROUND_EXEC = (
 # use the structured choice card (one click advances the conversation) — a free-text
 # counter-question restarts the confirm loop this PA round exists to kill.
 _CLARIFY_CHOICE_NUDGE = (
-    "\n\n需要用户在几个方向里选择时,调用 ask_user_choice 工具(给出 2-4 个具体选项),"
-    "仅在该工具实际可用时使用；不可用时用简短自然语言提出必要问题，不要输出工具调用标签。"
-    "用户只要求样式或格式简报时，按已确认偏好直接给出该简报；不要把它扩成完整报告，"
-    "也不要为完成该格式请求而追问无关主题、编造占位项目内容。"
+    "\n\nWhen the user needs to choose between a few directions, call the ask_user_choice tool (2-4 "
+    "concrete options) — only when that tool is actually available; otherwise ask the one necessary "
+    "question in a short natural sentence, and never print tool-call tags. When the user only asks for a "
+    "style or format brief, give that brief directly from the preferences already confirmed; do not grow "
+    "it into a full report, and do not ask about unrelated topics or invent placeholder project content "
+    "to complete it."
 )
 
 # PA-4: no-repaste iron rule. Live incident (thread-1783523936187): the SAME deck
@@ -238,9 +241,67 @@ _CLARIFY_CHOICE_NUDGE = (
 # loop spun. Content already delivered in-history and unchanged must be REFERENCED,
 # not re-pasted. Kept as its own constant so tests can pin it (A3 pattern).
 _NO_REPASTE = (
-    "\n\n对话历史里已经完整给出过、且没有修改的内容(大纲/清单/代码等),不要整段重贴——"
-    "引用它(如“沿用上面那份大纲”)并只写新增或变化的部分。"
+    "\n\nContent already given in full earlier in this conversation and not changed since (an outline, "
+    "a list, code…) is never re-pasted whole: refer to it (\"same outline as above\") and write only "
+    "what is new or changed."
 )
+
+
+# 0.1.59: which language a turn answers in, said explicitly every turn. "Reply in the user's
+# language" alone lost to everything else in the context: an English request came back in
+# Chinese (2026-10-09, DeepSeek, a promo recording), and the background job's goal, checks and
+# the lesson after it followed. The user's latest message decides; a message with no words
+# (a path, a number) follows the interface language. Paths, URLs and code are ignored, so
+# "copy 发票.pdf to ~/Docs" is still English.
+_LANGUAGE_NAMES = {"en": "English", "zh": "Chinese", "ja": "Japanese", "es": "Spanish",
+                   "de": "German", "fr": "French", "tr": "Turkish", "ko": "Korean"}
+_STOPWORDS = {
+    "English": {"the", "and", "to", "of", "in", "is", "it", "for", "this", "that", "me", "my", "what",
+                "which", "please", "from", "into", "with", "can", "you", "then", "how", "are", "do", "tell"},
+    "Spanish": {"el", "los", "las", "que", "por", "para", "con", "una", "es", "mi", "qué", "cómo", "y", "del"},
+    "German": {"der", "die", "das", "und", "ist", "nicht", "mit", "ich", "ein", "eine", "zu", "für",
+               "bitte", "mein", "wie", "was"},
+    "French": {"le", "les", "des", "et", "est", "une", "pour", "avec", "je", "mon", "ma", "dans", "sur", "du"},
+    "Turkish": {"ve", "bir", "bu", "için", "ile", "ne", "çok", "ben", "sen", "nasıl", "mı", "mi"},
+}
+_NOT_WORDS = re.compile(r"`[^`]*`|https?://\S+|(?<!\w)[~/][^\s]*|\S+\.[A-Za-z0-9]{1,5}\b")
+
+
+def reply_language(text: str | None, ui_locale: str | None = None) -> str:
+    plain = _NOT_WORDS.sub(" ", text or "")
+    kana = len(re.findall(r"[\u3040-\u30ff]", plain))
+    hangul = len(re.findall(r"[\uac00-\ud7af]", plain))
+    han = len(re.findall(r"[\u4e00-\u9fff]", plain))
+    words = re.findall(r"[A-Za-zÀ-ÿĞğİıŞş]{2,}", plain)
+    if kana:
+        return "Japanese"
+    if hangul and hangul >= len(words):
+        return "Korean"
+    if han and han >= len(words):
+        return "Chinese"
+    if words:
+        lower = [w.lower() for w in words]
+        scores = sorted(((sum(w in stop for w in lower), name) for name, stop in _STOPWORDS.items()), reverse=True)
+        if scores[0][0] >= 2 and scores[0][0] > scores[1][0]:
+            return scores[0][1]
+        return "the language the user's latest message is written in (it is not Chinese)"
+    return _LANGUAGE_NAMES.get((ui_locale or "").split("-")[0].lower(),
+                               "the language of the user's latest message")
+
+
+def language_line(text: str | None, ui_locale: str | None = None) -> str:
+    lang = reply_language(text, ui_locale)
+    return (f"\n\nReply language for this turn: {lang}. Write everything meant for the user in it — "
+            "the reply, a background job's goal and its checks, titles and notes — whatever language the "
+            "instructions, examples, memory, tool results or earlier messages are in.")
+
+
+async def _turn_language_line(text: str | None) -> str:
+    try:
+        ui = await runtime_messages.selected_locale()
+    except Exception:  # noqa: BLE001 — the line is guidance, never a reason to fail a turn
+        ui = None
+    return language_line(text, ui)
 
 
 def _now_line() -> str:
@@ -290,7 +351,7 @@ _OUTPUT_RULES = (
     "\n\nHow to shape an answer:\n"
     "- Things the user will paste or run go in fenced code blocks: commands as ```bash, a message to send "
     "someone as ```text, code with its language.\n"
-    "- Name local files with their full path (~/Arslan/报告/x.md or /Users/…), in backticks, so the user "
+    "- Name local files with their full path (~/Arslan/Reports/x.md or /Users/…), in backticks, so the user "
     "can open them from the reply.\n"
     "- A long deliverable — a report, a table, anything longer than about a screen — goes into a file in "
     "the conversation's folder (write_file); the reply gives 2–5 lines of summary and the file's path. "
@@ -306,7 +367,7 @@ _ANSWER_STABLE_PREFIX = (
 
 
 def _build_answer_system(
-    *, extra_system: str, roster: str, facts: str, summary: str, kb_block: str,
+    *, extra_system: str, roster: str, facts: str, summary: str, kb_block: str, language: str = "",
 ):
     """Assemble Arslan's answer system as a CachedSystem(stable_prefix, volatile_suffix).
 
@@ -321,6 +382,7 @@ def _build_answer_system(
     if summary:
         volatile += f"\n\nConversation summary so far:\n{summary}"
     volatile += kb_block
+    volatile += language  # 0.1.59: this turn's reply language (per turn, so never in the prefix)
     volatile += _now_line()  # now line LAST — the least cache-poisoning position
     return build_cached_system(_ANSWER_STABLE_PREFIX, volatile)
 
@@ -369,7 +431,7 @@ def build_user_blocks(
     would reshape all of them for nothing."""
     text = user_message
     if attached_context:
-        text = f"[附带材料]\n{attached_context}\n\n[用户消息]\n{user_message}"
+        text = f"[Attached material]\n{attached_context}\n\n[User message]\n{user_message}"
     if not images:
         return text
     blocks: list[dict] = [{"type": "text", "text": text}]
@@ -634,8 +696,10 @@ async def background_body(conversation_id: str, goal: str, emit: EventSink, conf
         kb_block = _knowledge.knowledge_block(_kb)
     except Exception as exc:  # noqa: BLE001 — retrieval is never fatal
         logger.warning("background kb retrieve failed (non-fatal): %s", exc)
+    asked = next((m.get("content") for m in reversed(ctx["history"]) if m.get("role") == "user"), None)
     system = _build_answer_system(extra_system=BACKGROUND_SYSTEM, roster=await _team_roster(), facts=facts,
-                                  summary=ctx["summary"], kb_block=kb_block)
+                                  summary=ctx["summary"], kb_block=kb_block,
+                                  language=await _turn_language_line(asked if isinstance(asked, str) else goal))
     run_trace.record_prompt(system_prompt=system, injected_kb=kb_block or None)
     pieces: list[str] = []
     result = await tool_loop.run_native(
@@ -678,7 +742,7 @@ async def _handle_answer_body(
         logger.warning("arslan kb retrieve failed (non-fatal): %s", exc)
     system = _build_answer_system(
         extra_system=extra_system, roster=roster, facts=facts,
-        summary=ctx["summary"], kb_block=kb_block,
+        summary=ctx["summary"], kb_block=kb_block, language=await _turn_language_line(user_message),
     )
     run_trace.record_prompt(system_prompt=system, injected_kb=kb_block or None)
 
@@ -950,7 +1014,7 @@ async def _arslan_tools() -> list[dict]:
             "request needs tools, files, several steps or more than a minute (research then write, organize "
             "files, draft a document, compare sources…). Do NOT do such work inline in this turn; a quick "
             "single step (save one short note, one lookup) is fine inline. Give the "
-            "goal in the user's words plus 2-5 completion criteria; prefer checkable ones (kind file_saved "
+            "goal in the user's own words and in the reply language of this turn, plus 2-5 completion criteria written in that language too; prefer checkable ones (kind file_saved "
             "with the file name, sources_read with a minimum, mentions with a phrase). Then reply in ONE "
             "short sentence: you started, and what done will look like. The result is posted to this "
             "conversation when the job ends. Not for simple questions you can answer now. Acting in the "
@@ -959,7 +1023,7 @@ async def _arslan_tools() -> list[dict]:
         tools.append({"key": "background_status", "description":
             "Read the real state of this conversation's background jobs (running, step, outcome, which "
             "budget limit ended it). Call it FIRST whenever the user asks about work you started — "
-            "\"how is it going\", \"进度怎么样\", \"is it done\", \"why did it stop\" — and answer from it; "
+            "\"how is it going\", \"is it done\", \"why did it stop\" — and answer from it; "
             "never guess progress, and never use task_progress for this."})
         tools.append({"key": "stop_background_work", "description":
             "Stop one running background job of this conversation by job_id when the user asks to stop it."})

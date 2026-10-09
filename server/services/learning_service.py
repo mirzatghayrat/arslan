@@ -18,8 +18,9 @@ from server.services.llm_factory import build_adapter
 
 logger = logging.getLogger(__name__)
 
-_SYS = ("把下面这段真实发生的事,提炼成一句可复用的做事心得(不超过 40 字,中文,"
-        "只依据给到的内容,不要编造)。只输出这句话本身。")
+_SYS = ("Turn what really happened below into ONE reusable working practice (at most 40 words, in the "
+        "same language as the text below; use only what is given, invent nothing). Output only that "
+        "sentence.")
 
 
 def _get_adapter():

@@ -93,7 +93,7 @@ def _convo_blob(call: dict) -> str:
     return str(call["user"]) + str(call["history"])
 
 
-HINT_MARK = "已连续失败"
+HINT_MARK = "times in a row this turn"
 
 
 @pytest.mark.asyncio
@@ -119,9 +119,9 @@ async def test_full_chain_hint_makes_model_switch_to_builtin(monkeypatch):
     assert HINT_MARK not in _convo_blob(adapter.calls[1])
     # (a) call#3 saw the second failure WITH the deterministic hint, naming web_extract.
     blob3 = _convo_blob(adapter.calls[2])
-    assert "此 MCP 工具本回合已连续失败 2 次" in blob3
+    assert "This MCP tool has failed 2 times in a row this turn" in blob3
     assert "web_extract" in blob3
-    assert "不要再重试该 MCP 工具" in blob3
+    assert "do not retry this MCP tool" in blob3
     # The hint is OUR trusted framing: it sits AFTER the external-data close marker,
     # never inside the wrapped (untrusted) region.
     msgs = [str(m.get("content", "")) for m in (adapter.calls[2]["history"] or [])]
@@ -158,7 +158,7 @@ async def test_third_failure_hints_again_but_logs_once(monkeypatch):
         system="s", user_content="fetch u", history=[], emit=lambda e: None,
         on_chunk=lambda c: None, resolve_tools=_resolve, conversation_id="conv-x")
     # hint escalates its count on the 3rd consecutive failure…
-    assert "已连续失败 3 次" in _convo_blob(adapter.calls[3])
+    assert "has failed 3 times in a row" in _convo_blob(adapter.calls[3])
     # …but the conversation_events row is logged only ONCE per turn per tool.
     assert len([e for e in events if e["kind"] == "mcp_degrade_hint"]) == 1
 
@@ -179,7 +179,7 @@ async def test_fresh_invocation_starts_at_zero(monkeypatch):
     await tool_loop.run_native(
         system="s", user_content="turn A", history=[], emit=lambda e: None,
         on_chunk=lambda c: None, resolve_tools=_resolve)
-    assert "已连续失败 2 次" in _convo_blob(adapter_a.calls[2])  # turn A did hint
+    assert "has failed 2 times in a row" in _convo_blob(adapter_a.calls[2])  # turn A did hint
 
     adapter_b = _ScriptedAdapter([
         _LLMResp(content="", tool_calls=[_tc("mcp_4__fetch", {"url": "u"})]),
@@ -252,5 +252,5 @@ async def test_no_conversation_id_is_fail_open(monkeypatch):
     r = await tool_loop.run_native(
         system="s", user_content="fetch u", history=[], emit=lambda e: None,
         on_chunk=lambda c: None, resolve_tools=_resolve)   # no conversation_id
-    assert "已连续失败 2 次" in _convo_blob(adapter.calls[2])
+    assert "has failed 2 times in a row" in _convo_blob(adapter.calls[2])
     assert r["final"] == "done"
