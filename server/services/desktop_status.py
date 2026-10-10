@@ -16,6 +16,7 @@ from __future__ import annotations
 import contextvars
 import itertools
 import threading
+import re
 import time
 from collections import deque
 from contextlib import contextmanager
@@ -52,10 +53,27 @@ SUMMARY_CHARS = 160
 PLAN_ITEM_CHARS = 60
 
 
+_FENCE = re.compile(r"^\s*(`{3,}|~{3,}).*$", re.MULTILINE)
+_LINK = re.compile(r"!?\[([^\]]*)\]\([^)]*\)")
+_LINE_MARK = re.compile(r"^\s*(?:#{1,6}\s+|>\s?|[-*+]\s+|\d{1,3}[.)]\s+)", re.MULTILINE)
+_EMPHASIS = re.compile(r"(\*{1,3}|__)(?=\S)(.+?)(?<=\S)\1")
+
+
+def _plain(text: str) -> str:
+    """0.1.59: the island shows plain text — a job's answer is Markdown, and it showed
+    `**Copied 9 invoice PDFs**` with its asterisks and backticks. Single underscores stay
+    (file names), so does everything that is not markup."""
+    text = _FENCE.sub("", text)
+    text = _LINK.sub(r"\1", text)
+    text = _LINE_MARK.sub("", text)
+    text = _EMPHASIS.sub(r"\2", text)
+    return text.replace("`", "")
+
+
 def _clip(text, limit: int) -> str | None:
     if not isinstance(text, str):
         return None
-    one_line = " ".join(text.split())
+    one_line = " ".join(_plain(text).split())
     return (one_line[: limit - 1] + "…" if len(one_line) > limit else one_line) or None
 
 

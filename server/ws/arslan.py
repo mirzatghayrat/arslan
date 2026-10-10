@@ -216,7 +216,7 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         except (TaskError, MemoryError, BudgetExceeded) as exc:
             outcome = "needs_review"
             code = exc.code if isinstance(exc, (TaskError, MemoryError)) else "task_budget_exhausted"
-            await ws.send_json(protocol.error("TASK_REVIEW_REQUIRED", code, recoverable=True))
+            await _send_or_gone(protocol.error("TASK_REVIEW_REQUIRED", code, recoverable=True))
         except asyncio.CancelledError:
             outcome = "cancelled"
             raise
@@ -249,6 +249,18 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
     phone_turn = {"on": False}
     # A frame read while a shared card was being decided elsewhere, kept for the next reader.
     pushback: list[dict] = []
+    # 0.1.59: this window's socket closed while its turn was still running (the app in the
+    # background, the WebView suspended). The turn carries on; its cards become shared.
+    socket_gone = {"yes": False}
+
+    def _window_gone(pending=None) -> None:
+        """The window that asked is gone: its card (if any) becomes a shared one — answerable
+        from the Inbox, the island or the window that reconnects (it is in pending_cards now) —
+        instead of the next send on the closed socket ending the whole turn with HostError."""
+        socket_gone["yes"] = True
+        if pending is not None and pending.private:
+            pending.private = False
+            emit(pending.frame)          # a window already re-attached gets it at once
 
     async def _receive() -> dict:
         return pushback.pop(0) if pushback else await ws.receive_json()
@@ -274,19 +286,35 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         loop = asyncio.get_running_loop()
         pending = approvals.open_card(conversation_id, frame, broadcast=broadcast)
         if not broadcast:
-            await ws.send_json(frame)
+            if socket_gone["yes"]:
+                _window_gone(pending)
+            else:
+                try:
+                    await ws.send_json(frame)
+                except Exception:  # noqa: BLE001 — closed under us; the card is answered elsewhere
+                    _window_gone(pending)
         deadline = loop.time() + approvals.TIMEOUT_S
         receiving: asyncio.Future | None = None
         try:
             with desktop_status.awaiting_approval(conversation_id):
                 while not pending.future.done() and loop.time() < deadline:
+                    if socket_gone["yes"]:
+                        # Nothing to read here any more: wait for the Inbox, the island or a
+                        # reconnected window to decide (or the card to expire).
+                        await asyncio.wait({pending.future}, timeout=deadline - loop.time())
+                        continue
                     if receiving is None:
                         receiving = asyncio.ensure_future(_receive())
                     await asyncio.wait({receiving, pending.future}, timeout=deadline - loop.time(),
                                        return_when=asyncio.FIRST_COMPLETED)
                     if not receiving.done():
                         continue
-                    data = receiving.result()        # a disconnect raises here
+                    try:
+                        data = receiving.result()
+                    except Exception:  # noqa: BLE001 — the window disconnected; the turn goes on
+                        receiving = None
+                        _window_gone(pending)
+                        continue
                     receiving = None
                     t = data.get("type")
                     if t in ("ping", "pong"):
@@ -297,14 +325,14 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                         # stale: say so, as a window's own turn always has.
                         if not approvals.answer(data) and not pending.future.done() \
                                 and data.get("call_id") not in approvals.known_ids():
-                            await ws.send_json(protocol.error(
-                                "BUSY", "An action is awaiting your confirmation.", recoverable=True))
+                            await _send_or_gone(protocol.error(
+                                "BUSY", "An action is awaiting your confirmation.", recoverable=True), pending)
                         continue
                     if pending.future.done():
                         pushback.append(data)        # decided meanwhile: the next reader gets it
                         continue
-                    await ws.send_json(protocol.error(
-                        "BUSY", "An action is awaiting your confirmation.", recoverable=True))
+                    await _send_or_gone(protocol.error(
+                        "BUSY", "An action is awaiting your confirmation.", recoverable=True), pending)
         finally:
             if receiving is not None and not receiving.done():
                 receiving.cancel()
@@ -312,7 +340,7 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 if not receiving.cancelled() and receiving.exception() is None:
                     pushback.append(receiving.result())
             decision = approvals.close_card(pending)
-            if not broadcast and decision["by"] in approvals.SOURCES:
+            if pending.private and decision["by"] in approvals.SOURCES:
                 # Answered from the Inbox or the island: close this window's copy.
                 try:
                     await ws.send_json(protocol.card_resolved(pending.call_id,
@@ -322,6 +350,14 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                     pass
         return {"approved": bool(decision["approved"]), "remember": bool(decision["remember"]),
                 "extras": decision.get("extras") or {}}
+
+    async def _send_or_gone(frame: dict, pending=None) -> None:
+        if socket_gone["yes"]:
+            return
+        try:
+            await ws.send_json(frame)
+        except Exception:  # noqa: BLE001 — closed under us
+            _window_gone(pending)
 
     async def confirm_workspace_write(action: str, path: str) -> bool:
         from server.services import settings_service
