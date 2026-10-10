@@ -4,6 +4,8 @@
 - Counts usage from OpenAI-style and Anthropic-style responses, streamed or not.
 - Hard cap: refuses new requests once the conservative (peak-price) total reaches BENCH_CAP_USD.
 - Logs one JSON line per request to usage.jsonl (no key, no prompt text).
+- Hands L3 (scripts/hands_l3): for a candidate whose name ends in "-nobatch", desktop_batch is taken
+  out of the tools offered, so a run can be compared with and without batches.
 """
 
 import json
@@ -30,6 +32,23 @@ DEFAULT_PRICE = PRICE["deepseek-v4-pro"]
 spent = {"total": 0.0}
 per_cand = {}
 lock = asyncio.Lock()
+
+
+WITHHELD = {"-nobatch": "desktop_batch"}
+
+
+def withhold_tools(cand, j):
+    """The request body with the tools this candidate must not be offered taken out; True if any were."""
+    names = {tool for suffix, tool in WITHHELD.items() if cand.endswith(suffix)}
+    tools = j.get("tools")
+    if not names or not isinstance(tools, list):
+        return False
+    kept = [t for t in tools if not (isinstance(t, dict)
+                                     and ((t.get("function") or {}).get("name") in names or t.get("name") in names))]
+    if len(kept) == len(tools):
+        return False
+    j["tools"] = kept
+    return True
 
 
 def cost(model, hit, miss, out):
@@ -119,8 +138,11 @@ async def handle(request):
             j = json.loads(body)
             model = j.get("model", "?")
             stream = bool(j.get("stream"))
+            changed = withhold_tools(cand, j)
             if stream and "messages" in j and "/anthropic" not in path:
                 j.setdefault("stream_options", {})["include_usage"] = True
+                changed = True
+            if changed:
                 body = json.dumps(j).encode()
         except Exception:
             pass
