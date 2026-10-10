@@ -77,6 +77,7 @@ async def _ask_once(grant: str, kind: str, target: str, detail: str) -> bool:
 
 def forget_job(job_id: str) -> None:
     _grants.pop(job_id, None)
+    _session_locks.pop(job_id, None)
     if job_id in _takeovers:                     # a job's takeover ends with it (§6.4)
         _takeovers.discard(job_id)
         try:
@@ -320,12 +321,28 @@ def desktop_available() -> bool:
     return hands_client.available() and hands_service.settings()["enabled"]
 
 
+# job id -> the lock its first session is started under
+_session_locks: dict[str, asyncio.Lock] = {}
+
+
 async def _job_session(job_id: str) -> str | None:
     """One agent-desktop session per job: it carries the cursor overlay and keeps
-    the job's refs apart from everything else's."""
-    from server.services import hands_client, hands_contract, hands_service
+    the job's refs apart from everything else's. A look's snapshot and screenshot run at
+    once (P2-1); without the lock each started its own session, the look's refs landed in
+    one and the job kept the other, so the first action after a job's first look answered
+    ref_unknown (P2-5 smoke, 2026-10-10)."""
+    from server.services import hands_service
     existing = hands_service.session_for(job_id)
     if existing or not hands_service.settings()["cursor"]:
+        return existing
+    async with _session_locks.setdefault(job_id, asyncio.Lock()):
+        return await _start_job_session(job_id)
+
+
+async def _start_job_session(job_id: str) -> str | None:
+    from server.services import hands_client, hands_contract, hands_service
+    existing = hands_service.session_for(job_id)
+    if existing:
         return existing
     try:
         result = hands_contract.parse(await hands_client.call("session_start", {"label": "Arslan"}, timeout=20))

@@ -295,6 +295,31 @@ fn denied_apps_are_not_even_looked_at_browsers_only_looked_at_terminals_not_type
 }
 
 #[test]
+fn an_app_list_agent_desktop_could_not_make_is_refused_not_empty() {
+    let _g = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    let hands = start("apps-unreadable");
+    std::fs::write(
+        hands.dir.join("bin/apps.json"),
+        json!({"version": "2.4", "ok": false, "command": "list-apps", "error": {"code": "TIMEOUT",
+               "message": "macOS application inventory did not stabilize before the deadline"}})
+        .to_string(),
+    )
+    .unwrap();
+    let listed = hands.ask("list_apps", json!({}));
+    assert_eq!(code(&listed), "apps_unreadable", "{listed}");
+    assert!(listed["refused"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("did not stabilize"));
+    let look = hands.ask("snapshot", json!({"app": "Notes"}));
+    assert_eq!(
+        code(&look),
+        "apps_unreadable",
+        "not \"not running\": {look}"
+    );
+}
+
+#[test]
 fn a_ref_is_spent_only_in_the_app_it_came_from() {
     let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
     let hands = start("refs");

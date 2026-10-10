@@ -13,6 +13,14 @@ script answers "Allow" to (and records). It checks what tests cannot:
   6. Stop: a Hands call in flight ends within 1 second
   7. the P3 sandbox: a sandboxed command can neither reach Hands' socket nor read its token
   8. agent-desktop (next to Hands.app), run on its own, holds no Accessibility
+  Hands v2 (P2-5, spec 2026-10-08-0157 §8.1 L2): a chat reply acts at most five times;
+  a batch; a pop-up chosen by borrowing the front (given back); one card for several
+  apps; an app allowed for good asks nothing; an app never screenshotted is read as
+  text; a look with a screenshot (median, G8'); the same scripted task one call at a
+  time and as a batch (wall time, G8'); for the whole run, Hands and agent-desktop open
+  no network socket and no image lands in Hands' folder or the temp folder (G9).
+  HANDS_SMOKE_ELECTRON=<app> also reads an Electron app (G7'); it is opened in the background
+  and quit afterwards, and only how much was read is printed.
 
 Needs: macOS; Accessibility allowed for "Arslan Hands" (D3: the user clicks Allow
 once — the script asks macOS to show the prompt if it is missing); Xcode command
@@ -26,6 +34,7 @@ Leaves behind one note titled "Arslan Hands smoke …" in Notes (delete it by ha
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import re
@@ -44,7 +53,7 @@ os.environ["ARSLAN_DATA_DIR"] = _DATA            # trace and settings stay out o
 REF = re.compile(r"\[(@s[a-z0-9]+:e\d+)\]")
 results: list[tuple[str, bool, str]] = []
 cards: list[dict] = []
-fronts: list[tuple] = []          # (op, app, {before, after}, focus_restored) for every action
+fronts: list[tuple] = []          # (op, app, {before, after}, focus_restored, borrowed) for every action
 
 
 def record(name: str, ok: bool, detail: str = "") -> bool:
@@ -98,7 +107,8 @@ async def main() -> int:
     async def recording_call(op, args=None, **kw):
         reply = await real_call(op, args, **kw)
         if op in ("click", "type", "set_value", "select", "press", "scroll") and isinstance(reply, dict):
-            fronts.append((op, (args or {}).get("app"), reply.get("front") or {}, reply.get("focus_restored")))
+            fronts.append((op, (args or {}).get("app"), reply.get("front") or {}, reply.get("focus_restored"),
+                           bool(reply.get("borrow"))))
         return reply
     hands_client.call = recording_call
 
@@ -119,10 +129,13 @@ async def main() -> int:
     typ, press = tools.DesktopTypeExecutor(), tools.DesktopPressExecutor()
     front = front_app()
 
-    # ── outside a job: acting is refused ──
-    with pc.bind(pc.TaskMemoryContext(task_id="smoke", run_id="smoke", conversation_id="smoke")):
-        outside = await click.execute({"app": "Finder", "element": "x", "ref": "@sx1y2z3:e1"})
-        record("acting outside a background job is refused", outside.get("code") == "act_in_background", str(outside.get("code")))
+    watch = PrivacyWatch(hands_client)
+    watch.start()
+
+    # ── with no conversation to ask in, acting is refused (a chat reply may act: see v2_checks) ──
+    outside = await click.execute({"app": "Finder", "element": "x", "ref": "@sx1y2z3:e1"})
+    record("acting with no conversation to ask in is refused", outside.get("code") == "no_one_to_ask",
+           str(outside.get("code")))
 
     token = background_jobs._inside_job.set("smoke-job")
     try:
@@ -137,7 +150,14 @@ async def main() -> int:
         background_jobs._inside_job.reset(token)
         tools.forget_job("smoke-job")
 
-    taken = [f for f in fronts if f[2].get("before") != f[2].get("after")]
+    await v2_checks(tools, hands_service, front)
+    if os.environ.get("HANDS_SMOKE_ELECTRON"):
+        await electron_check(tools, os.environ["HANDS_SMOKE_ELECTRON"])
+    watch.stop()
+    watch.report()
+
+    # A borrow takes the front on purpose and gives it back (judged in v2_checks).
+    taken = [f for f in fronts if f[2].get("before") != f[2].get("after") and not f[4]]
     record("no action left another app in front (checked by Hands around each action)", not taken and bool(fronts),
            f"{len(fronts)} actions; {sum(1 for f in fronts if f[3])} times the front was given back; taken: {taken[:3]}")
     await sandbox_check(terminal_exec, hands_client)
@@ -220,6 +240,11 @@ async def notes_check(look, typ, press, front) -> None:
     record("Notes: the note is there (observed)",
            any(line.strip().startswith("textfield") and f"Arslan Hands smoke {stamp}" in line
                for line in check.get("text", "").splitlines()), check.get("error", "")[:200])
+    # Notes brings itself forward ~50 ms after New Note, after the press answered (P2-5): Hands
+    # watches a little longer and gives the front back.
+    time.sleep(1)
+    record("Notes: the user's front app is in front again after the Notes step", front_app() == front,
+           f"front {front_app()} (was {front})")
     print(f"  info  front app after the Notes step: {front_app()} (was {front})")
 
 
@@ -289,6 +314,234 @@ def inner_binary_check(hands_client) -> None:
         state = f"unreadable: {out.stdout[:120]}"
     record("agent-desktop, run on its own, holds no Accessibility", state == "denied",
            f"state {state} — if granted, macOS lends it a grant and anything could drive apps with it")
+
+
+# ── Hands v2 (P2-5) ──────────────────────────────────────────────────────────
+
+class PrivacyWatch:
+    """G9 for the whole run: Hands and agent-desktop open no network socket (lsof, every 0.3 s),
+    and no image file appears in Hands' folder or in the temp folders while the run lasts."""
+
+    IMAGE = (".png", ".jpg", ".jpeg", ".heic", ".tiff", ".gif", ".bmp")
+
+    def __init__(self, hands_client):
+        self.folder = hands_client.folder()
+        # By executable path: a name pattern also matched other apps' processes (Cursor's).
+        app = hands_client.app_path()
+        self.binaries = (str(app / "Contents" / "MacOS"), str(app.parent / "agent-desktop"))
+        self.roots = [self.folder, Path(tempfile.gettempdir()), Path("/tmp")]
+        self.sockets: list[str] = []
+        self.samples = 0
+        self._stop = False
+        self._before = self._images()
+
+    def _images(self) -> set[str]:
+        found = set()
+        for root in self.roots:
+            for path in root.rglob("*") if root == self.folder else root.glob("*"):
+                if path.suffix.lower() in self.IMAGE:
+                    found.add(str(path))
+        return found
+
+    def _pids(self) -> list[str]:
+        out = subprocess.run(["ps", "-axo", "pid=,comm="], capture_output=True, text=True).stdout
+        return [line.split(None, 1)[0] for line in out.splitlines()
+                if len(line.split(None, 1)) == 2 and line.split(None, 1)[1].startswith(self.binaries)]
+
+    def _loop(self) -> None:
+        while not self._stop:
+            pids = self._pids()
+            if pids:
+                out = subprocess.run(["lsof", "-a", "-i", "-n", "-P", "-p", ",".join(pids)],
+                                     capture_output=True, text=True).stdout
+                self.sockets += [line for line in out.splitlines()[1:] if line.strip()]
+                self.samples += 1
+            time.sleep(0.3)
+
+    def start(self) -> None:
+        import threading
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop = True
+        self._thread.join(timeout=5)
+
+    def report(self) -> None:
+        record("G9: Hands and agent-desktop opened no network socket during the run",
+               not self.sockets and self.samples > 0, f"{self.samples} samples; {self.sockets[:3]}")
+        new = sorted(self._images() - self._before)
+        record("G9: no image file appeared in Hands' folder or the temp folders", not new, str(new[:5]))
+
+
+@contextlib.contextmanager
+def job(name: str, conversation: str):
+    """A background job of its own (cards counted per job), in a conversation of its own."""
+    from server.registry import hands_tools as tools
+    from server.services import background_jobs
+    from server.services import personal_context as pc
+    token = background_jobs._inside_job.set(name)
+    try:
+        with pc.bind(pc.TaskMemoryContext(task_id=name, run_id=name, conversation_id=conversation)):
+            yield
+    finally:
+        background_jobs._inside_job.reset(token)
+        tools.forget_job(name)
+
+
+def fixture_up() -> None:
+    from scripts.hands_contract_check import Desk
+    desk = Desk(Path("/usr/bin/true"), Path(tempfile.mkdtemp(prefix="hands-smoke-")))
+    subprocess.run(["pkill", "-x", "HandsFixture"], capture_output=True)
+    subprocess.run(["open", "-g", "-n", str(desk.app)], check=True)
+    time.sleep(2)
+
+
+def ref_of(text: str, label: str) -> str | None:
+    return (refs_on(text, f"“{label}”") or [None])[0]
+
+
+async def v2_checks(tools, hands_service, front: str) -> None:
+    from server.services import personal_context as pc
+    look, typ, click = tools.DesktopLookExecutor(), tools.DesktopTypeExecutor(), tools.DesktopClickExecutor()
+    press, select, batch = tools.DesktopPressExecutor(), tools.DesktopSelectExecutor(), tools.DesktopBatchExecutor()
+    app = "Hands Fixture"
+    fixture_up()
+    try:
+        # A chat reply acts at most INLINE_ACTIONS times, then says to continue in the background.
+        with pc.bind(pc.TaskMemoryContext(task_id="turn", run_id="turn-1", conversation_id="v2-chat")):
+            codes = [(await press.execute({"app": app, "keys": "tab"})).get("code")
+                     for _ in range(tools.INLINE_ACTIONS + 1)]
+        record(f"a chat reply acts {tools.INLINE_ACTIONS} times, then is sent to the background",
+               codes[:-1] == [None] * tools.INLINE_ACTIONS and codes[-1] == "act_in_background", str(codes))
+
+        # A batch: type and click in one call, ending with one look that shows the effect.
+        with job("v2-batch", "v2-batch"):
+            seen = await look.execute({"app": app})
+            done = await batch.execute({"app": app, "steps": [
+                {"action": "type", "element": "Title", "ref": ref_of(seen.get("text", ""), "Title"),
+                 "text": "Batch"},
+                {"action": "click", "element": "Save", "ref": ref_of(seen.get("text", ""), "Save")}]})
+            record("a batch runs its steps and ends with a look that shows the effect",
+                   done.get("ok") is True and "saved:Batch" in done.get("text", ""), str(done.get("text", ""))[:200])
+
+        # A pop-up is chosen by borrowing the front for a moment; the user's front app comes back.
+        with job("v2-borrow", "v2-borrow"):
+            seen = await look.execute({"app": app})
+            before = front_app()
+            started = time.monotonic()
+            chose = await select.execute({"app": app, "element": "Color",
+                                          "ref": ref_of(seen.get("text", ""), "Color"), "value": "Blue"})
+            took = time.monotonic() - started
+            time.sleep(0.5)
+            after = front_app()
+            waited = await look.execute({"app": app, "wait_for_text": "color:Blue"})
+            record("a pop-up is chosen by borrowing the front, and the front is given back",
+                   chose.get("ok") is True and "color:Blue" in waited.get("text", "") and after == before,
+                   f"{took:.2f}s in all; front {before} → {after}; {str(chose.get('text') or chose.get('error'))[:200]}")
+
+        # One card for several apps, then none for either.
+        cards.clear()
+        with job("v2-access", "v2-access"):
+            asked = await tools.DesktopAccessExecutor().execute({"apps": [app, "Finder"], "why": "the smoke"})
+            await look.execute({"app": app})
+            await look.execute({"app": "Finder"})
+            await press.execute({"app": app, "keys": "tab"})
+        record("one card for several apps, then no card to look or act in them",
+               asked.get("ok") is True and [c["kind"] for c in cards] == ["desktop_app"],
+               f"cards: {[(c['kind'], c['target']) for c in cards]}")
+
+        # An app allowed for good asks nothing (in a fresh conversation); risky steps still ask.
+        apps = await tools.DesktopAppsExecutor().execute({})
+        bundle = next((a.get("bundle_id") for a in (apps.get("apps") or [])
+                       if a.get("name") == app), "com.arslan.hands-fixture")
+        hands_service.update_settings(always=[{"bundle_id": bundle, "name": app, "since": "smoke"}])
+        cards.clear()
+        with job("v2-always", "v2-always"):
+            seen = await look.execute({"app": app})
+            await press.execute({"app": app, "keys": "tab"})
+            await click.execute({"app": app, "element": "Delete", "ref": ref_of(seen.get("text", ""), "Delete")})
+        record("an app allowed for good asks nothing, except its risky step",
+               [c["kind"] for c in cards] == ["desktop_risky"], f"cards: {[c['kind'] for c in cards]}")
+        hands_service.update_settings(always=[])
+
+        # An app never screenshotted is read as text only.
+        hands_service.update_settings(no_screenshots=[app])
+        with job("v2-noshot", "v2-noshot"):
+            plain = await look.execute({"app": app})
+        hands_service.update_settings(no_screenshots=[])
+        record("an app never screenshotted is read as text only", plain.get("ok") is True and not plain.get("images"),
+               f"{len(plain.get('images') or [])} images")
+
+        # G8': a look with a screenshot, median of five (a fresh job: the first look of a job is full).
+        with job("v2-speed", "v2-speed"):
+            await look.execute({"app": app})
+            times = []
+            for _ in range(5):
+                started = time.monotonic()
+                shot = await look.execute({"app": app})
+                times.append(time.monotonic() - started)
+        median = sorted(times)[2]
+        record("G8': a look with a screenshot, median ≤ 400 ms", median <= 0.4 and bool(shot.get("images")),
+               f"median {median * 1000:.0f} ms of {[round(t * 1000) for t in times]}; images {len(shot.get('images') or [])}")
+
+        # G8': the same scripted task one call at a time (with a look after each, as the model
+        # did before batches) and as a look + one batch.
+        async def one_at_a_time() -> bool:
+            seen = await look.execute({"app": app})
+            await typ.execute({"app": app, "element": "Title", "ref": ref_of(seen["text"], "Title"), "text": "Slow"})
+            seen = await look.execute({"app": app})
+            await click.execute({"app": app, "element": "Save", "ref": ref_of(seen["text"], "Save")})
+            seen = await look.execute({"app": app})
+            await press.execute({"app": app, "keys": "tab"})
+            seen = await look.execute({"app": app})
+            return "saved:Slow" in seen.get("text", "")
+
+        async def batched() -> bool:
+            seen = await look.execute({"app": app})
+            done = await batch.execute({"app": app, "steps": [
+                {"action": "type", "element": "Title", "ref": ref_of(seen["text"], "Title"), "text": "Fast"},
+                {"action": "click", "element": "Save", "ref": ref_of(seen["text"], "Save")},
+                {"action": "press", "keys": "tab"}]})
+            return "saved:Fast" in done.get("text", "")
+
+        walls = {}
+        for name, task in (("one at a time", one_at_a_time), ("batched", batched)):
+            with job(f"v2-wall-{name}", f"v2-wall-{name}"):
+                await look.execute({"app": app})          # cards and the first full look out of the timing
+                started = time.monotonic()
+                ok = await task()
+                walls[name] = (time.monotonic() - started, ok)
+        slow, fast = walls["one at a time"][0], walls["batched"][0]
+        record("G8': the scripted task as a batch takes at most half the one-at-a-time wall time",
+               walls["one at a time"][1] and walls["batched"][1] and fast <= slow / 2,
+               f"one at a time {slow:.2f}s, batched {fast:.2f}s ({fast / slow:.0%}); effects seen "
+               f"{walls['one at a time'][1]}/{walls['batched'][1]}")
+        print(f"  info  front app after the v2 checks: {front_app()} (was {front})")
+    finally:
+        subprocess.run(["pkill", "-x", "HandsFixture"], capture_output=True)
+
+
+async def electron_check(tools, app: str) -> None:
+    """G7': an Electron app's page content is read without relaunching it (opened here in the
+    background, quit afterwards). Its text is never printed: only how much was read."""
+    look = tools.DesktopLookExecutor()
+    subprocess.run(["open", "-g", "-a", app], check=False)
+    time.sleep(8)
+    try:
+        with job("v2-electron", "v2-electron"):
+            seen = await look.execute({"app": app})
+            folded = [line for line in seen.get("text", "").splitlines() if "inside: look with ref" in line]
+            refs = len(REF.findall(seen.get("text", "")))
+            for line in folded[:3]:              # the page sits under the web area, folded in a skeleton
+                ref = REF.search(line)
+                if ref:
+                    opened = await look.execute({"app": app, "ref": ref.group(1)})
+                    refs += len(REF.findall(opened.get("text", "")))
+        record(f"G7': {app}'s page content is read without relaunching it", refs >= 10,
+               f"{refs} refs (skeleton plus {min(len(folded), 3)} folded parts opened)")
+    finally:
+        subprocess.run(["osascript", "-e", f'tell application "{app}" to quit'], capture_output=True)
 
 
 if __name__ == "__main__":

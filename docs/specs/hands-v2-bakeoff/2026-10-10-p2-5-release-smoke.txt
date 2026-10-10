@@ -1,0 +1,44 @@
+  PASS  Arslan Hands runs and holds Accessibility — pid 41881, peer check off
+  PASS  acting with no conversation to ask in is refused — no_one_to_ask
+  PASS  look at the fixture
+  PASS  type into a field (no focus taken)
+  PASS  click a button
+  PASS  the click had its effect (observed, not trusted)
+  PASS  a password field is refused — password_field
+  PASS  a Delete button asks every time
+  info  front app after the fixture step: com.arslan.desktop (was com.arslan.desktop)
+  PASS  a never-list app is refused — app_denied
+  PASS  Notes: New Note through the menu shortcut
+  PASS  Notes: the new note's body is found — 2 text fields; 
+  PASS  Notes: the note gets its title and text
+  PASS  Notes: the note is there (observed)
+  PASS  Notes: the user's front app is in front again after the Notes step — front com.arslan.desktop (was com.arslan.desktop)
+  info  front app after the Notes step: com.arslan.desktop (was com.arslan.desktop)
+  PASS  Finder: the file is seen in its window — Finder — window “Hands smoke f1p3dmea”. Refs [@…] work for actions in this piece of work; an entry with “… inside” opens with desktop_look {app, ref}.
+A screenshot of this window (1280×607 px) is attached; (x, y) after an element is its centre in that screenshot, in its pixels.
+window “Hands smoke f
+  info  Finder rename in the background: not possible headless (spec §7) — the model uses mv
+  info  front app after the Finder step: com.arslan.desktop (was com.arslan.desktop)
+  PASS  Stop ends a Hands call in flight within 1 s — 0.05s after Stop (1.6s in all)
+  PASS  a chat reply acts 5 times, then is sent to the background — [None, None, None, None, None, 'act_in_background']
+  PASS  a batch runs its steps and ends with a look that shows the effect — Batch in Hands Fixture: 2 of 2 steps went through.
+1. type: Done: typing in “Title” in Hands Fixture (the change was read back). Look again (desktop_look) to see the result before the next step.
+2. cl
+  PASS  a pop-up is chosen by borrowing the front, and the front is given back — 1.34s in all; front com.arslan.desktop → com.arslan.desktop; Done: choosing in “Color” in Hands Fixture (the change was read back). Look again (desktop_look) to see the result before the next step. Arslan borrowed the front for 1003 ms.
+  PASS  one card for several apps, then no card to look or act in them — cards: [('desktop_app', 'Hands Fixture, Finder')]
+  PASS  an app allowed for good asks nothing, except its risky step — cards: ['desktop_risky']
+  PASS  an app never screenshotted is read as text only — 0 images
+  PASS  G8': a look with a screenshot, median ≤ 400 ms — median 385 ms of [393, 399, 379, 383, 385]; images 1
+  FAIL  G8': the scripted task as a batch takes at most half the one-at-a-time wall time — one at a time 3.91s, batched 3.08s (79%); effects seen True/True
+  info  front app after the v2 checks: com.arslan.desktop (was com.arslan.desktop)
+  PASS  G7': Cursor's page content is read without relaunching it — 47 refs (skeleton plus 1 folded parts opened)
+  PASS  G9: Hands and agent-desktop opened no network socket during the run — 168 samples; []
+  PASS  G9: no image file appeared in Hands' folder or the temp folders — []
+  PASS  no action left another app in front (checked by Hands around each action) — 23 actions; 1 times the front was given back; taken: []
+  PASS  a sandboxed command cannot reach Hands' socket — ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+  PASS  a sandboxed command cannot read Hands' token
+  PASS  agent-desktop, run on its own, holds no Accessibility — state denied — if granted, macOS lends it a grant and anything could drive apps with it
+
+30 passed, 1 failed; cards asked: desktop_risky:Hands Fixture · “Delete”, desktop_look:Hands Fixture, desktop_look:Hands Fixture, desktop_look:Hands Fixture, desktop_app:Hands Fixture, desktop_look:Hands Fixture, desktop_app:Hands Fixture, desktop_look:Cursor

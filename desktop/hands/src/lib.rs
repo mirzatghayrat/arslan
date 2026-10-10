@@ -10,6 +10,7 @@ pub mod cua_policy;
 pub mod glow;
 pub mod integrity;
 pub mod keyhold;
+pub mod late_front;
 #[cfg(target_os = "macos")]
 pub mod macos;
 pub mod menus;

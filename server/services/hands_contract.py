@@ -74,6 +74,8 @@ REFUSALS = {
     "stopped_by_user": "The user stopped Arslan's hands. Do not retry; finish and report what was done.",
     "app_not_running": "That app is not running. Open it first with desktop_open {app} (in the background), "
                        "or ask the user.",
+    "apps_unreadable": "macOS did not give Arslan Hands the list of running apps, so nothing was done. Try "
+                       "once more in a little while; if it keeps failing, tell the user (the message says why).",
     "app_ambiguous": "More than one running app has that name; use its bundle id (from desktop_apps).",
     "TIMEOUT": "It took too long. Look again.",
     # P0 (spec 2026-10-08-0157 §1)
@@ -88,6 +90,9 @@ REFUSALS = {
                      "with desktop_click instead.",
     "op_not_allowed": "Hands does not do that.",
 }
+
+# Refusals whose own words (from Hands) say something the fixed text cannot.
+_WITH_REASON = {"apps_unreadable"}
 
 
 @dataclass
@@ -106,7 +111,10 @@ class Result:
         if self.ok:
             return ""
         if self.refused:
-            return REFUSALS.get(self.code or "", self.message or "Arslan Hands refused.")
+            text = REFUSALS.get(self.code or "", self.message or "Arslan Hands refused.")
+            if self.code in _WITH_REASON and self.message:
+                text += f" ({self.message})"
+            return text
         base = MESSAGES.get(self.hint or "", "")
         return f"{self.code}: {self.message}. {base}".strip()
 
