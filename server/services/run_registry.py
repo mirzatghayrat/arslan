@@ -129,5 +129,12 @@ def journal_snapshots(conversation_id: str) -> list[tuple[int, list[dict]]]:
         # on every reconnect for the whole of round 2+.
         if getattr(recorder, "_finalized", False):
             continue
-        out.append((run_id, [ev for (_ts, ev) in recorder._events]))
+        events = [ev for (_ts, ev) in recorder._events]
+        # 0.1.59: an answered run is in history too. A host run stays registered after its
+        # stream_end through the post-answer work (lesson, task review) until finalize; replaying
+        # it there showed the answer twice — and when the hidden window's socket dropped again
+        # mid-replay, a frozen half copy plus a "working" row with a running timer.
+        if any(ev.get("type") == "stream_end" for ev in events):
+            continue
+        out.append((run_id, events))
     return out

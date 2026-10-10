@@ -185,8 +185,9 @@ def test_criteria_always_keep_one_non_model_check_and_map_checkable_kinds():
         {"description": "Reads naturally", "kind": "judgement"},
         {"description": "   "}] + [{"description": f"extra {i}"} for i in range(9)])
     assert checks[0]["id"] == "answer-delivered" and checks[0]["evaluator"] == "deterministic"
-    assert checks[1]["rule"] == {"kind": "artifact", "target": "resume.md"}
-    assert checks[2]["rule"] == {"kind": "research_sources", "minimum": 3}
+    # 0.1.59: file_saved looks at the disk too, sources_read counts local files read (test_job_checks_0159).
+    assert checks[1]["rule"] == {"kind": "file_saved", "target": "resume.md", "minimum": 1}
+    assert checks[2]["rule"] == {"kind": "sources_read", "minimum": 3}
     assert checks[3]["evaluator"] == "model"
     assert len(checks) <= 1 + background_jobs.MAX_CRITERIA
 
