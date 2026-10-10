@@ -485,38 +485,47 @@ async def v2_checks(tools, hands_service, front: str) -> None:
         record("G8': a look with a screenshot, median ≤ 400 ms", median <= 0.4 and bool(shot.get("images")),
                f"median {median * 1000:.0f} ms of {[round(t * 1000) for t in times]}; images {len(shot.get('images') or [])}")
 
-        # G8': the same scripted task one call at a time (with a look after each, as the model
-        # did before batches) and as a look + one batch.
+        # G8' as restated (spec A17): the same scripted task one call at a time (with a look after
+        # each, as the model did before batches) and as a look + one batch. The gate is the tool
+        # calls — each one is a model round trip in real use; wall time without a model is shown,
+        # not gated (both ways run the same actions, so it cannot reach half by construction).
+        calls = {"n": 0}
+
+        async def call(executor, args: dict) -> dict:
+            calls["n"] += 1
+            return await executor.execute(args)
+
         async def one_at_a_time() -> bool:
-            seen = await look.execute({"app": app})
-            await typ.execute({"app": app, "element": "Title", "ref": ref_of(seen["text"], "Title"), "text": "Slow"})
-            seen = await look.execute({"app": app})
-            await click.execute({"app": app, "element": "Save", "ref": ref_of(seen["text"], "Save")})
-            seen = await look.execute({"app": app})
-            await press.execute({"app": app, "keys": "tab"})
-            seen = await look.execute({"app": app})
+            seen = await call(look, {"app": app})
+            await call(typ, {"app": app, "element": "Title", "ref": ref_of(seen["text"], "Title"), "text": "Slow"})
+            seen = await call(look, {"app": app})
+            await call(click, {"app": app, "element": "Save", "ref": ref_of(seen["text"], "Save")})
+            seen = await call(look, {"app": app})
+            await call(press, {"app": app, "keys": "tab"})
+            seen = await call(look, {"app": app})
             return "saved:Slow" in seen.get("text", "")
 
         async def batched() -> bool:
-            seen = await look.execute({"app": app})
-            done = await batch.execute({"app": app, "steps": [
+            seen = await call(look, {"app": app})
+            done = await call(batch, {"app": app, "steps": [
                 {"action": "type", "element": "Title", "ref": ref_of(seen["text"], "Title"), "text": "Fast"},
                 {"action": "click", "element": "Save", "ref": ref_of(seen["text"], "Save")},
                 {"action": "press", "keys": "tab"}]})
             return "saved:Fast" in done.get("text", "")
 
-        walls = {}
+        runs = {}
         for name, task in (("one at a time", one_at_a_time), ("batched", batched)):
             with job(f"v2-wall-{name}", f"v2-wall-{name}"):
                 await look.execute({"app": app})          # cards and the first full look out of the timing
+                calls["n"] = 0
                 started = time.monotonic()
                 ok = await task()
-                walls[name] = (time.monotonic() - started, ok)
-        slow, fast = walls["one at a time"][0], walls["batched"][0]
-        record("G8': the scripted task as a batch takes at most half the one-at-a-time wall time",
-               walls["one at a time"][1] and walls["batched"][1] and fast <= slow / 2,
-               f"one at a time {slow:.2f}s, batched {fast:.2f}s ({fast / slow:.0%}); effects seen "
-               f"{walls['one at a time'][1]}/{walls['batched'][1]}")
+                runs[name] = (time.monotonic() - started, ok, calls["n"])
+        (slow, slow_ok, many), (fast, fast_ok, few) = runs["one at a time"], runs["batched"]
+        record("G8': the scripted task as a batch takes at most half the tool calls (model round trips)",
+               slow_ok and fast_ok and few * 2 <= many,
+               f"tool calls {many} → {few}; wall time without a model {slow:.2f}s → {fast:.2f}s ({fast / slow:.0%}, "
+               f"shown, not gated); effects seen {slow_ok}/{fast_ok}")
         print(f"  info  front app after the v2 checks: {front_app()} (was {front})")
     finally:
         subprocess.run(["pkill", "-x", "HandsFixture"], capture_output=True)
