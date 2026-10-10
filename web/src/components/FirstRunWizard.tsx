@@ -1,30 +1,26 @@
 /**
- * FirstRunWizard — the first-touch onboarding overlay, shown once when no
- * provider/model is configured yet (see lib/firstRun.firstRunShouldShow).
+ * FirstRunWizard — the first-run film (0.1.60, docs/specs/2026-10-11-0160-first-run.md), shown once
+ * when no model is configured yet (lib/firstRun.firstRunShouldShow).
  *
- * Four steps over a looping character video, content on a frosted-glass panel
- * (all visual styling lives in firstRun.css — this file stays token/color-free):
+ * One stage, one head — the island's own (IslandMascot, the mouth carries the mood) — and a camera:
  *
- *   1. language   — FIRST, so every later step renders in the chosen language
- *   2. how it works — four-beat product tour
- *   3. connect a model — OpenRouter one-click sign-in OR a BYOK key that is
- *      TESTED (POST /settings/test-llm) before it is saved; a failing key shows
- *      the real error and offers "save anyway" instead of saving blind
- *   4. hello — welcome copy + an optional name / one-line intro, stored in the
- *      same profileStore field Settings edits, so Arslan greets by name
+ *   hello    — light rises; six language pills switch the whole screen at once
+ *   model    — OpenRouter in one click, "Later", or your own key (tested before it is saved)
+ *   folders  — Desktop/Documents/Downloads or only ~/Arslan: an explicit choice, nothing preselected
+ *   hands    — only when Hands is here and not yet allowed: macOS's prompt, then a live check
+ *   you      — an optional name; Start sends the head to its place in the app
  *
- * Dismissible at any point; on finish OR dismiss it persists the firstRunSeen
- * flag so it never nags again.
+ * (The iPhone shot waits for the iPhone app to be on the App Store.)
+ * The × skips setup at any point; Esc does not. Finishing or skipping persists the seen flag.
  */
 
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { X, Check } from "lucide-react";
-import type { CatalogEntry, ProviderOption, ProviderConfig } from "../api/client.types";
+import { X, Check, ArrowRight, ArrowUpRight, Folder, FolderLock, ChevronRight } from "lucide-react";
+import type { ProviderOption, ProviderConfig } from "../api/client.types";
 import {
   addProviderConfig,
   api,
-  getCatalog,
   getOpenRouterOauthStatus,
   listProviderConfigs,
   startOpenRouterOauth,
@@ -32,8 +28,12 @@ import {
 } from "../api/client";
 import { openExternal } from "../lib/shell";
 import { LANGUAGE_OPTIONS, normalizeLanguage } from "../lib/languages";
-import { setFirstRunSeen } from "../lib/firstRun";
+import { setFirstRunSeen, recordFirstTasks } from "../lib/firstRun";
 import { useProfileStore } from "../stores/profileStore";
+import { getHands, askHandsPermission, checkHands } from "./settings/HandsSection";
+import IslandMascot from "../island/IslandMascot";
+import type { Mood } from "../island/islandMachine";
+import "../island/mascot.css";
 import "./firstRun.css";
 import { useLayer } from "./kit";
 
@@ -47,28 +47,66 @@ interface FirstRunWizardProps {
   onLanguageChange?: (language: string) => void;
 }
 
-const TOTAL_STEPS = 4;
-const STEP_LANG = 0;
-const STEP_HOW = 1;
-const STEP_KEY = 2;
-const STEP_HELLO = 3;
+type Shot = "hello" | "model" | "folders" | "hands" | "you";
+type Folders = "wide" | "own";
 
-/** Shipped outro clips (web/public/first-run/outro-N.mp4), one picked at random
- * per finish — three variants so the send-off stays fun across installs. */
-const OUTRO_COUNT = 3;
-/** Matches the .fr-outro.leaving CSS fade — finish() fires when it completes. */
-const OUTRO_FADE_MS = 480;
+/** Where the head stands in each shot: centre as a fraction of the stage, and its scale. */
+const CAMERA: Record<Shot, [number, number, number]> = {
+  hello: [0.665, 0.49, 1],
+  model: [0.705, 0.48, 0.86],
+  folders: [0.69, 0.51, 1.12],
+  hands: [0.71, 0.49, 0.94],
+  you: [0.665, 0.49, 1],
+};
+/** How long the head takes to travel into the app on Start (matches .fr2-leaving in firstRun.css). */
+export const HANDOFF_MS = 1300;
+const HANDS_POLL_MS = 2000;
+const HANDS_POLL_LIMIT = 90;   // three minutes of looking for the switch
+const SETTLE_MS = 1100;        // a moment on the smile before the next shot
+
+const reducedMotion = () =>
+  typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function useDarkTheme(): boolean {
+  const read = () => document.documentElement.classList.contains("dark");
+  const [dark, setDark] = useState(read);
+  useEffect(() => {
+    const observer = new MutationObserver(() => setDark(read()));
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, []);
+  return dark;
+}
+
+function useStageSize(): { w: number; h: number } {
+  const read = () => ({ w: window.innerWidth || 1280, h: window.innerHeight || 800 });
+  const [size, setSize] = useState(read);
+  useEffect(() => {
+    const onResize = () => setSize(read());
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  return size;
+}
 
 export default function FirstRunWizard({ llmProviders, onAdded, onClose, onLanguageChange }: FirstRunWizardProps) {
   const { t, i18n } = useTranslation();
-  const [step, setStep] = useState(STEP_LANG);
-  const [bgMissing, setBgMissing] = useState(false);
+  const dark = useDarkTheme();
+  const stage = useStageSize();
+  const [shot, setShot] = useState<Shot>("hello");
+  const [lit, setLit] = useState(false);
+  const timers = useRef<number[]>([]);
+  const later = (ms: number, fn: () => void) => { timers.current.push(window.setTimeout(fn, ms)); };
+  useEffect(() => {
+    later(reducedMotion() ? 0 : 250, () => setLit(true));
+    const pending = timers.current;
+    return () => { pending.forEach(clearTimeout); };
+  }, []);
 
-  // ── step 1: language ──
+  // ── hello: language ──
   // normalize: the detector can report region-tagged codes ("en-US") that would
   // never match an option, leaving no language visibly selected.
   const [language, setLanguage] = useState<string>(normalizeLanguage(i18n.language));
-
   const pickLanguage = (code: string) => {
     setLanguage(code);
     i18n.changeLanguage(code);
@@ -77,62 +115,40 @@ export default function FirstRunWizard({ llmProviders, onAdded, onClose, onLangu
     api.updateSettings({ language: code }).catch(() => {});
   };
 
-  // ── step 3: connect a model ──
+  // ── Hands: shown only when Hands is here and not yet allowed ──
+  const [handsNeeded, setHandsNeeded] = useState<boolean | null>(null);
+  const [handsPhase, setHandsPhase] = useState<"idle" | "waiting" | "allowed">("idle");
+  const [handsOn, setHandsOn] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    Promise.resolve().then(() => getHands())
+      .then((s) => { if (alive) { setHandsNeeded(Boolean(s?.available) && s.accessibility !== true); setHandsOn(s?.accessibility === true); } })
+      .catch(() => { if (alive) setHandsNeeded(false); });
+    return () => { alive = false; };
+  }, []);
+
+  // A ref too: `advance` also runs from timers set in an earlier render.
+  const handsNeededRef = useRef<boolean | null>(null);
+  handsNeededRef.current = handsNeeded;
+  const shots: Shot[] = ["hello", "model", "folders", ...(handsNeeded ? ["hands" as const] : []), "you"];
+  const advance = () => setShot((cur) => {
+    const list: Shot[] = ["hello", "model", "folders", ...(handsNeededRef.current ? ["hands" as const] : []), "you"];
+    const i = list.indexOf(cur);
+    return i >= 0 && i < list.length - 1 ? list[i + 1] : cur;
+  });
+
+  // ── model ──
   const [provider, setProvider] = useState<string>(llmProviders[0]?.key ?? "");
   const [apiKey, setApiKey] = useState("");
+  const [keyOpen, setKeyOpen] = useState(false);
   const [keyState, setKeyState] = useState<"idle" | "testing" | "ok" | "failed" | "saving">("idle");
   const [keyError, setKeyError] = useState("");
-  const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
-  const [orState, setOrState] = useState<"idle" | "waiting" | "error" | "paid-fallback">("idle");
+  const [orState, setOrState] = useState<"idle" | "waiting" | "connected" | "error" | "paid-fallback">("idle");
   const [orError, setOrError] = useState("");
 
-  // Capability annotation for the selected provider, straight from the server's
-  // read-only catalog (arslan/llm/catalog.py) — never hardcoded per provider.
-  useEffect(() => {
-    getCatalog().then(setCatalog).catch(() => {});
-  }, []);
-  const capabilities = catalog.find((c) => c.provider === provider)?.capabilities;
-
-  // ── step 4: hello ──
-  const setDisplayName = useProfileStore((s) => s.setDisplayName);
-  const [name, setName] = useState("");
-
-  // ── outro: the wizard → opening-animation hand-off ──
-  // null = not started; otherwise which of the three clips is playing. The clip
-  // fades IN over the live wizard (masking the pixel drift between the real
-  // panel and the video's redrawn one) and fades OUT into the app when it ends
-  // — both boundaries are crossfades, so neither cut lands on a hard frame
-  // jump. Click skips; a load error skips; a 15s net catches a stalled load.
-  const [outro, setOutro] = useState<number | null>(null);
-  const [outroPhase, setOutroPhase] = useState<"loading" | "playing" | "leaving">("loading");
-  const outroTimers = useRef<number[]>([]);
-  useEffect(() => () => { outroTimers.current.forEach(clearTimeout); }, []);
-
-  const finish = () => {
-    setFirstRunSeen();
-    onClose();
-  };
-
-  const dismiss = () => {
-    setFirstRunSeen();
-    onClose();
-  };
-
-  const finishHello = () => {
-    const trimmed = name.trim();
-    if (trimmed) setDisplayName(trimmed);
-    // Reduced-motion users get no ceremony — straight into the app.
-    if (typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      finish();
-      return;
-    }
-    setOutro(1 + Math.floor(Math.random() * OUTRO_COUNT));
-    outroTimers.current.push(window.setTimeout(finish, 15000));
-  };
-
-  const endOutro = () => {
-    setOutroPhase("leaving");
-    outroTimers.current.push(window.setTimeout(finish, OUTRO_FADE_MS));
+  const connected = () => {
+    setOrState("connected");
+    later(reducedMotion() ? 0 : SETTLE_MS, advance);
   };
 
   /** Persist the key config (shared by the tested and the save-anyway paths). */
@@ -154,11 +170,11 @@ export default function FirstRunWizard({ llmProviders, onAdded, onClose, onLangu
       /* best-effort — user can still add a key later in Settings */
     }
     setKeyState("ok");
-    setStep(STEP_HELLO);
+    connected();
   };
 
   /** Test first, save only on success — a bad key gets the REAL error plus an
-   * explicit "save anyway" escape, instead of the old silent blind save. */
+   * explicit "save anyway" escape, instead of a silent blind save. */
   const testAndSave = async () => {
     const info = llmProviders.find((p) => p.key === provider);
     const key = apiKey.trim();
@@ -166,12 +182,7 @@ export default function FirstRunWizard({ llmProviders, onAdded, onClose, onLangu
     setKeyState("testing");
     setKeyError("");
     try {
-      const res = await testLlm({
-        provider: info.key,
-        model: info.default_model,
-        base_url: info.base_url,
-        api_key: key,
-      });
+      const res = await testLlm({ provider: info.key, model: info.default_model, base_url: info.base_url, api_key: key });
       if (res.ok) {
         await saveKey();
       } else {
@@ -204,8 +215,7 @@ export default function FirstRunWizard({ llmProviders, onAdded, onClose, onLangu
             setOrState("paid-fallback");
             return;
           }
-          setOrState("idle");
-          setStep(STEP_HELLO);
+          connected();
           return;
         }
         if (st.state === "error") {
@@ -223,274 +233,263 @@ export default function FirstRunWizard({ llmProviders, onAdded, onClose, onLangu
     }
   }
 
-  const busy = keyState === "testing" || keyState === "saving";
+  // ── folders: an explicit choice ──
+  const [folders, setFolders] = useState<Folders | null>(null);
+  const pickFolders = (choice: Folders) => {
+    if (folders) return;
+    setFolders(choice);
+    api.updateSettings({ default_read_enabled: choice === "wide" ? "true" : "false" }).catch(() => {});
+    later(reducedMotion() ? 0 : SETTLE_MS, advance);
+  };
+
+  // ── Hands ──
+  const allowHands = async () => {
+    setHandsPhase("waiting");
+    try {
+      const asked = await askHandsPermission("accessibility");
+      if (asked?.accessibility === true) return handsAllowed();
+    } catch {
+      /* the check below still finds the switch */
+    }
+    for (let i = 0; i < HANDS_POLL_LIMIT; i++) {
+      await new Promise((r) => setTimeout(r, HANDS_POLL_MS));
+      try {
+        const st = await checkHands();
+        if (st?.accessibility === true) return handsAllowed();
+      } catch {
+        /* keep looking */
+      }
+    }
+  };
+  const handsAllowed = () => {
+    setHandsPhase("allowed");
+    setHandsOn(true);
+    later(reducedMotion() ? 0 : SETTLE_MS, advance);
+  };
+
+  // ── you ──
+  const setDisplayName = useProfileStore((s) => s.setDisplayName);
+  const [name, setName] = useState("");
+  const [leaving, setLeaving] = useState<{ x: number; y: number; s: number } | null>(null);
+
+  const finish = () => {
+    setFirstRunSeen();
+    onClose();
+  };
+  const dismiss = () => {
+    setFirstRunSeen();
+    onClose();
+  };
+  const start = () => {
+    const trimmed = name.trim();
+    if (trimmed) setDisplayName(trimmed);
+    recordFirstTasks({ folders: folders === "wide", hands: handsOn });
+    // The head travels to its place in the app: the empty conversation's mark, measured live.
+    const anchor = document.querySelector("[data-brand-anchor]") as HTMLElement | null;
+    const box = anchor?.getBoundingClientRect();
+    if (reducedMotion() || !box || box.width === 0) {
+      finish();
+      return;
+    }
+    setLeaving({ x: box.left + box.width / 2, y: box.top + box.height / 2, s: box.width / headSize });
+    later(HANDOFF_MS, finish);
+  };
+
   // 0.1.55: the top layer while it is shown, so no card underneath answers to keys.
   // Deliberately NOT closed by Esc: skipping setup is a choice made with the ×.
   useLayer(true);
 
+  // ── the camera ──
+  const narrow = stage.w < 980;
+  const headSize = Math.round(Math.max(260, Math.min(520, stage.h * 0.55)));
+  const [cx, cy, cs] = narrow ? [0.5, 0.24, 0.62] : CAMERA[shot];
+  const cam = leaving
+    ? { x: leaving.x, y: leaving.y, s: leaving.s }
+    : { x: stage.w * cx, y: stage.h * cy, s: cs };
+  const mood: Mood =
+    shot === "model" ? (orState === "waiting" ? "working" : orState === "connected" ? "finished" : "idle")
+      : shot === "folders" ? (folders ? "finished" : "approval")
+        : shot === "hands" ? (handsPhase === "allowed" ? "finished" : "approval")
+          : shot === "you" ? "finished" : "idle";
+  const step = shots.indexOf(shot) + 1;
+  const eyebrow = (label: string) => `${String(step).padStart(2, "0")} — ${t(label)}`;
+  const busy = keyState === "testing" || keyState === "saving";
+
   return (
-    // On "leaving" the WHOLE overlay fades — outro clip, glass and backdrop
-    // together — revealing the live app beneath: the tail boundary is a real
-    // crossfade into the product, never a fade back to the wizard + hard cut.
-    <div className={`fr-root animate-fade-in${outroPhase === "leaving" ? " fr-leaving" : ""}`}
-      role="dialog" aria-modal="true" aria-labelledby="first-run-title">
-      {/* The video is the aesthetic — the frosted panel only reads as glass with
-          content moving behind it. On error (asset missing, or a webview without
-          h264) the poster-frame fallback stands in so the wizard still works. */}
-      {!bgMissing ? (
-        <video
-          className="fr-bg"
-          src="/first-run/bg.mp4"
-          poster="/first-run/poster.jpg"
-          autoPlay
-          muted
-          loop
-          playsInline
-          onError={() => setBgMissing(true)}
-        />
-      ) : (
-        <div className="fr-bg fr-bg-fallback" />
-      )}
-      <div className="fr-shade" />
+    <div className={`fr2 ${dark ? "fr2-dark" : "fr2-light"}${lit ? " fr2-lit" : ""}${leaving ? " fr2-leaving" : ""}${narrow ? " fr2-narrow" : ""}`}
+      role="dialog" aria-modal="true" aria-labelledby="first-run-title" data-testid="first-run" data-shot={shot}>
+      <div className="fr2-lamp" aria-hidden="true" />
+      <div className="fr2-vignette" aria-hidden="true" />
+      <svg className="fr2-grain" aria-hidden="true" width="100%" height="100%">
+        <filter id="fr2-grain"><feTurbulence type="fractalNoise" baseFrequency=".85" numOctaves={2} stitchTiles="stitch" /><feColorMatrix type="saturate" values="0" /></filter>
+        <rect width="100%" height="100%" filter="url(#fr2-grain)" />
+      </svg>
 
-      <div className="fr-glass">
-        <button
-          type="button"
-          data-testid="first-run-dismiss"
-          onClick={dismiss}
-          className="fr-x"
-          title={t("firstRun.skip")}
-          aria-label={t("firstRun.skip")}
-        >
-          <X className="w-4 h-4" />
-        </button>
-
-        {/* body — keyed by step so the 220ms crossfade replays on each change */}
-        <div className="fr-step" key={step}>
-          {step === STEP_LANG && (
-            <>
-              <h2 id="first-run-title" className="fr-h1">{t("firstRun.stepLanguage")}</h2>
-              <p className="fr-sub">{t("firstRun.stepLanguageHint")}</p>
-              <div className="fr-langs">
-                {LANGUAGE_OPTIONS.map((o) => (
-                  <button
-                    key={o.code}
-                    type="button"
-                    data-testid={`first-run-lang-${o.code}`}
-                    onClick={() => pickLanguage(o.code)}
-                    className={`fr-lang${language === o.code ? " on" : ""}`}
-                  >
-                    <span>{o.label}</span>
-                    {language === o.code && <Check className="w-3.5 h-3.5" />}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-
-          {step === STEP_HOW && (
-            <>
-              <h2 id="first-run-title" className="fr-h1">{t("firstRun.howTitle")}</h2>
-              <span className="fr-typed">{t("firstRun.howTyped")}</span>
-              <div>
-                {[1, 2, 3, 4].map((n) => (
-                  <div className="fr-row" key={n}>
-                    <span className="fr-row-num">{`0${n}`}</span>
-                    <div>
-                      <div className="fr-row-title">{t(`firstRun.how${n}Title`)}</div>
-                      <div className="fr-row-body">{t(`firstRun.how${n}Body`)}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-
-          {step === STEP_KEY && (
-            <>
-              <h2 id="first-run-title" className="fr-h1">{t("firstRun.stepKey")}</h2>
-              <p className="fr-sub">{t("firstRun.stepKeyHint")}</p>
-
-              <button
-                type="button"
-                data-testid="openrouter-signin"
-                disabled={orState === "waiting"}
-                onClick={signInWithOpenRouter}
-                className="fr-or-btn"
-              >
-                {orState === "waiting" ? t("firstRun.openrouterWaiting") : t("firstRun.openrouterSignIn")}
-              </button>
-              {orState === "error" && <p className="fr-err" role="alert">{orError}</p>}
-              {orState === "paid-fallback" && (
-                <p className="fr-warn" role="status">{t("firstRun.openrouterPaidFallback")}</p>
-              )}
-
-              <div className="fr-divider">{t("firstRun.orDivider")}</div>
-
-              <div className="space-y-3">
-                <div>
-                  <label htmlFor="first-run-provider" className="fr-label">
-                    {t("firstRun.providerLabel")}
-                  </label>
-                  <select
-                    id="first-run-provider"
-                    data-testid="first-run-provider"
-                    value={provider}
-                    onChange={(e) => {
-                      setProvider(e.target.value);
-                      setKeyState("idle");
-                      setKeyError("");
-                    }}
-                    className="fr-field"
-                  >
-                    {llmProviders.map((p) => (
-                      <option key={p.key} value={p.key}>
-                        {p.label}
-                        {p.native ? ` (${t('ui.native')})` : ""}
-                      </option>
-                    ))}
-                  </select>
-                  {capabilities && (
-                    <p className="fr-cap" data-testid="first-run-capabilities">
-                      {t("firstRun.capLine", {
-                        tool: capabilities.tool_calling,
-                        ctx: capabilities.long_context,
-                        cost: capabilities.cost,
-                      })}
-                    </p>
-                  )}
-                </div>
-                <input
-                  data-testid="first-run-key"
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => {
-                    setApiKey(e.target.value);
-                    if (keyState === "failed") { setKeyState("idle"); setKeyError(""); }
-                  }}
-                  placeholder={t("firstRun.keyPlaceholder")}
-                  className="fr-field"
-                />
-              </div>
-
-              <button
-                type="button"
-                data-testid="first-run-test-save"
-                disabled={busy || !apiKey.trim()}
-                onClick={() => void testAndSave()}
-                className={`fr-test-btn${keyState === "testing" ? " fr-dotload" : ""}`}
-              >
-                {keyState === "testing" ? t("firstRun.testing") : t("firstRun.testSave")}
-              </button>
-              {keyState === "ok" && <p className="fr-ok" role="status">{t("firstRun.testOk")}</p>}
-              {keyState === "failed" && (
-                <div className="fr-shake">
-                  <p className="fr-err" role="alert">{keyError}</p>
-                  <button
-                    type="button"
-                    data-testid="first-run-save-anyway"
-                    onClick={() => void saveKey()}
-                    className="fr-linklike"
-                  >
-                    {t("firstRun.saveAnyway")}
-                  </button>
-                </div>
-              )}
-            </>
-          )}
-
-          {step === STEP_HELLO && (
-            <>
-              <h2 id="first-run-title" className="fr-h1 font-sans">{t("firstRun.title")}</h2>
-              <p className="fr-sub">{t("firstRun.welcomeBody")}</p>
-              <label htmlFor="first-run-name" className="fr-label">
-                {t("firstRun.namePrompt")}
-              </label>
-              <input
-                id="first-run-name"
-                data-testid="first-run-name"
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder={t("firstRun.namePlaceholder")}
-                className="fr-field"
-              />
-              <p className="fr-hint mt-2">{t("firstRun.nameHint")}</p>
-              {/* Consent moment (spec 2026-08-24): macOS shows no dialog for
-                  Desktop/Documents/Downloads to this app class, so default-read
-                  would otherwise be silent. Stated here, in the open, non-modal —
-                  not a gate. The switch to turn it off lives in Settings. */}
-              <p className="fr-hint mt-3" data-testid="first-run-read-notice">
-                {t("firstRun.readNotice")}
-              </p>
-            </>
-          )}
-        </div>
-
-        {/* footer: progress dots + nav */}
-        <div className="fr-foot">
-          <div className="fr-dots" aria-hidden="true">
-            {Array.from({ length: TOTAL_STEPS }, (_, i) => (
-              <span key={i} className={`fr-dot${i === step ? " on" : ""}`} />
-            ))}
-          </div>
-          <div className="fr-nav">
-            {step === STEP_LANG ? (
-              <button type="button" data-testid="first-run-skip" onClick={dismiss} className="fr-ghost">
-                {t("firstRun.skip")}
-              </button>
-            ) : (
-              <button
-                type="button"
-                data-testid="first-run-back"
-                onClick={() => setStep((s) => Math.max(0, s - 1))}
-                className="fr-ghost"
-              >
-                {t("firstRun.back")}
-              </button>
-            )}
-
-            {step === STEP_KEY && (
-              <button type="button" data-testid="first-run-add-later" onClick={() => setStep(STEP_HELLO)} className="fr-ghost">
-                {t("firstRun.addLater")}
-              </button>
-            )}
-
-            {(step === STEP_LANG || step === STEP_HOW) && (
-              <button
-                type="button"
-                data-testid="first-run-next"
-                onClick={() => setStep((s) => s + 1)}
-                className="fr-pri"
-              >
-                {t("firstRun.next")}
-              </button>
-            )}
-            {step === STEP_HELLO && (
-              <button type="button" data-testid="first-run-finish" onClick={finishHello} className="fr-pri">
-                {t("firstRun.enter")}
-              </button>
-            )}
-          </div>
-        </div>
+      <div className="fr2-head" data-testid="first-run-head" data-mood={mood}
+        style={{ width: headSize, height: headSize, transform: `translate(${cam.x - headSize / 2}px, ${cam.y - headSize / 2}px) scale(${cam.s})` }}>
+        <IslandMascot mood={mood} size={headSize} tone={dark ? "paper" : "ink"} />
       </div>
 
-      {/* outro overlay — painted above the glass; click to skip */}
-      {outro != null && (
-        <video
-          data-testid="first-run-outro"
-          className={`fr-outro ${outroPhase}`}
-          src={`/first-run/outro-${outro}.mp4`}
-          autoPlay
-          muted
-          playsInline
-          title={t("firstRun.skip")}
-          onPlaying={() => setOutroPhase((p) => (p === "loading" ? "playing" : p))}
-          onEnded={endOutro}
-          onError={finish}
-          onClick={finish}
-        />
-      )}
+      <button type="button" data-testid="first-run-dismiss" onClick={dismiss} className="fr2-x"
+        title={t("firstRun.skip")} aria-label={t("firstRun.skip")}>
+        <X className="w-4 h-4" />
+      </button>
+
+      <div className="fr2-bars" role="img" aria-label={`${step} / ${shots.length}`}>
+        {shots.map((s, i) => <span key={s} className={i < step ? "on" : ""} />)}
+      </div>
+
+      {/* keyed by shot so the text cross-fades in as the camera moves */}
+      <div className="fr2-panel" key={shot}>
+        {shot === "hello" && (
+          <>
+            <p className="fr2-eyebrow">{eyebrow("firstRun.eyebrowHello")}</p>
+            <h1 id="first-run-title" className="fr2-title">{t("firstRun.helloTitle")}</h1>
+            <p className="fr2-body">{t("firstRun.helloBody")}</p>
+            <div className="fr2-langs" role="group" aria-label={t("firstRun.languageLabel")}>
+              {LANGUAGE_OPTIONS.map((o) => (
+                <button key={o.code} type="button" data-testid={`first-run-lang-${o.code}`} aria-pressed={language === o.code}
+                  onClick={() => pickLanguage(o.code)} className={`fr2-pill${language === o.code ? " on" : ""}`}>
+                  {o.label}
+                </button>
+              ))}
+            </div>
+            <div className="fr2-actions">
+              <button type="button" data-testid="first-run-next" onClick={advance} className="fr2-pri">
+                {t("firstRun.begin")}<ArrowRight className="w-4 h-4" aria-hidden="true" />
+              </button>
+            </div>
+          </>
+        )}
+
+        {shot === "model" && (
+          <>
+            <p className="fr2-eyebrow">{eyebrow("firstRun.eyebrowModel")}</p>
+            <h1 id="first-run-title" className="fr2-title">{t("firstRun.modelTitle")}</h1>
+            <p className="fr2-body">{t("firstRun.modelBody")}</p>
+            {orState === "waiting" ? (
+              <p className="fr2-status" role="status"><span className="fr2-dot fr2-dot-blue" aria-hidden="true" />{t("firstRun.openrouterWaiting")}</p>
+            ) : orState === "connected" ? (
+              <p className="fr2-status" role="status"><Check className="w-4 h-4 fr2-ok" aria-hidden="true" />
+                {keyState === "ok" ? t("firstRun.testOk") : t("firstRun.openrouterConnected")}</p>
+            ) : orState === "paid-fallback" ? (
+              <>
+                <p className="fr2-note fr2-warn" role="status">{t("firstRun.openrouterPaidFallback")}</p>
+                <div className="fr2-actions">
+                  <button type="button" data-testid="first-run-continue" onClick={advance} className="fr2-pri">
+                    {t("firstRun.continue")}<ArrowRight className="w-4 h-4" aria-hidden="true" />
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="fr2-actions">
+                  <button type="button" data-testid="openrouter-signin" onClick={() => void signInWithOpenRouter()} className="fr2-pri">
+                    {t("firstRun.openrouterContinue")}<ArrowUpRight className="w-4 h-4" aria-hidden="true" />
+                  </button>
+                  <button type="button" data-testid="first-run-add-later" onClick={advance} className="fr2-ghost">
+                    {t("firstRun.later")}
+                  </button>
+                </div>
+                {orState === "error" && <p className="fr2-note fr2-err" role="alert">{orError}</p>}
+                <button type="button" data-testid="first-run-own-key" aria-expanded={keyOpen}
+                  onClick={() => setKeyOpen((v) => !v)} className={`fr2-fold${keyOpen ? " open" : ""}`}>
+                  {t("firstRun.ownKey")}<ChevronRight className="w-3.5 h-3.5" aria-hidden="true" />
+                </button>
+                {keyOpen && (
+                  <div className="fr2-keyform">
+                    <label className="fr2-label">{t("firstRun.providerLabel")}
+                      <select data-testid="first-run-provider" value={provider} className="fr2-field"
+                        onChange={(e) => { setProvider(e.target.value); setKeyState("idle"); setKeyError(""); }}>
+                        {llmProviders.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
+                      </select>
+                    </label>
+                    <label className="fr2-label">{t("firstRun.keyLabel")}
+                      <input data-testid="first-run-key" type="password" value={apiKey} className="fr2-field"
+                        placeholder={t("firstRun.keyPlaceholder")}
+                        onChange={(e) => { setApiKey(e.target.value); if (keyState === "failed") { setKeyState("idle"); setKeyError(""); } }} />
+                    </label>
+                    <p className="fr2-note fr2-wide">{t("firstRun.keyNote")}</p>
+                    <div className="fr2-wide fr2-keyrow">
+                      <button type="button" data-testid="first-run-test-save" disabled={busy || !apiKey.trim()}
+                        onClick={() => void testAndSave()} className="fr2-ghost fr2-small">
+                        {keyState === "testing" ? t("firstRun.testing") : t("firstRun.testSave")}
+                      </button>
+                      {keyState === "failed" && (
+                        <button type="button" data-testid="first-run-save-anyway" onClick={() => void saveKey()} className="fr2-link">
+                          {t("firstRun.saveAnyway")}
+                        </button>
+                      )}
+                    </div>
+                    {keyState === "failed" && <p className="fr2-note fr2-err fr2-wide" role="alert">{keyError}</p>}
+                  </div>
+                )}
+              </>
+            )}
+          </>
+        )}
+
+        {shot === "folders" && (
+          <>
+            <p className="fr2-eyebrow">{eyebrow("firstRun.eyebrowFolders")}</p>
+            <h1 id="first-run-title" className="fr2-title">{t("firstRun.foldersTitle")}</h1>
+            <p className="fr2-body">{t("firstRun.foldersBody")}</p>
+            <div className="fr2-cards" role="group" aria-label={t("firstRun.foldersTitle")}>
+              {([["wide", Folder], ["own", FolderLock]] as const).map(([key, Icon]) => (
+                <button key={key} type="button" data-testid={`first-run-folders-${key}`} aria-pressed={folders === key}
+                  disabled={folders !== null && folders !== key} onClick={() => pickFolders(key)}
+                  className={`fr2-card${folders === key ? " on" : ""}`}>
+                  <Icon className="w-6 h-6" aria-hidden="true" strokeWidth={1.5} />
+                  <span className="fr2-card-title">{t(key === "wide" ? "firstRun.foldersWide" : "firstRun.foldersOwn")}</span>
+                  <span className="fr2-card-body">{t(key === "wide" ? "firstRun.foldersWideBody" : "firstRun.foldersOwnBody")}</span>
+                  {folders === key && <span className="fr2-card-check" aria-hidden="true"><Check className="w-3.5 h-3.5" /></span>}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
+        {shot === "hands" && (
+          <>
+            <p className="fr2-eyebrow">{eyebrow("firstRun.eyebrowHands")}</p>
+            <h1 id="first-run-title" className="fr2-title">{t("firstRun.handsTitle")}</h1>
+            <p className="fr2-body">{t("firstRun.handsBody")}</p>
+            <div className="fr2-actions">
+              <button type="button" data-testid="first-run-hands-open" disabled={handsPhase !== "idle"}
+                onClick={() => void allowHands()} className="fr2-pri">
+                {t("firstRun.handsOpen")}<ArrowUpRight className="w-4 h-4" aria-hidden="true" />
+              </button>
+              <button type="button" data-testid="first-run-hands-skip" onClick={advance} className="fr2-ghost">
+                {t("firstRun.notNow")}
+              </button>
+            </div>
+            <p className={`fr2-status${handsPhase === "idle" ? " fr2-muted" : ""}`} role="status" data-testid="first-run-hands-status">
+              {handsPhase === "allowed"
+                ? <Check className="w-4 h-4 fr2-ok" aria-hidden="true" />
+                : <span className={`fr2-dot${handsPhase === "waiting" ? " fr2-dot-amber" : ""}`} aria-hidden="true" />}
+              {t(handsPhase === "allowed" ? "firstRun.handsAllowed" : handsPhase === "waiting" ? "firstRun.handsWaiting" : "firstRun.handsIdle")}
+            </p>
+          </>
+        )}
+
+        {shot === "you" && (
+          <>
+            <p className="fr2-eyebrow">{eyebrow("firstRun.eyebrowYou")}</p>
+            <h1 id="first-run-title" className="fr2-title">{t("firstRun.youTitle")}</h1>
+            <p className="fr2-body">{t("firstRun.youBody")}</p>
+            <label className="fr2-label fr2-name">{t("firstRun.nameLabel")}
+              <input data-testid="first-run-name" type="text" value={name} autoComplete="given-name" className="fr2-field"
+                placeholder={t("firstRun.namePlaceholder")} onChange={(e) => setName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") start(); }} />
+            </label>
+            <div className="fr2-actions">
+              <button type="button" data-testid="first-run-finish" onClick={start} disabled={Boolean(leaving)} className="fr2-pri">
+                {t("firstRun.start")}<ArrowRight className="w-4 h-4" aria-hidden="true" />
+              </button>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
