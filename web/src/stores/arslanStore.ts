@@ -79,6 +79,11 @@ interface ArslanState {
   // spinner. Any new frame un-stalls; stream_end/error end the turn entirely.
   lastFrameAt: number | null;
   stalled: boolean;
+  // 0.1.59: when the turn last moved (any frame but the server's "still working" beat) —
+  // drives the live row's "Still working — a long answer can take a few minutes".
+  lastStepAt: number | null;
+  // 0.1.59: this window's message is waiting for the conversation's current turn to finish.
+  queued: boolean;
   // S3-M1 · cancellable runs: the recorded run id of the in-flight stream (from
   // stream_start's run_id — both host and spawn runs). The stop button POSTs
   // /runs/{activeRunId}/cancel. Cleared on stream_end/error/run_cancelled.
@@ -118,6 +123,11 @@ interface ArslanState {
 // A turn is "stalled" (server went quiet mid-turn) after this many ms without
 // any incoming frame. Indicators then show 「已中断」 instead of animating.
 export const STALL_MS = 90_000;
+
+// When the reply now on screen started, or now if none is streaming.
+function runningSince(s: { streaming: boolean; workStartedAt: number | null }): number {
+  return s.streaming && s.workStartedAt != null ? s.workStartedAt : Date.now();
+}
 
 // Negative, decrementing ids for client-only items (user echoes, fact chips)
 // so they never collide with server message ids.
@@ -217,6 +227,8 @@ function initialData() {
     workStartedAt: null as number | null,
     lastFrameAt: null as number | null,
     stalled: false,
+    lastStepAt: null as number | null,
+    queued: false,
     activeRunId: null as number | null,
     taskState: null as import("../api/tasks").TaskFrame | null,
     taskSequences: {} as Record<string, number>,
@@ -231,8 +243,10 @@ function makeActions(set: SetState, get: GetState) {
   return {
     // Turn start also arms the stall watchdog (lastFrameAt baseline) so a
     // dispatch that never produces a single frame still times out into 「已中断」.
+    // A message sent while a reply is still streaming (0.1.59: it waits its turn) keeps that reply's timer.
     setThinking: (v: boolean) =>
-      set(v ? { thinking: true, workStartedAt: Date.now(), lastFrameAt: Date.now(), stalled: false } : { thinking: false }),
+      set(v ? { thinking: true, workStartedAt: runningSince(get()), lastFrameAt: Date.now(), lastStepAt: Date.now(),
+        stalled: false } : { thinking: false }),
 
     setSpawnNames: (map: Record<number, string>) =>
       set({ spawnNames: { ...get().spawnNames, ...map } }),
@@ -243,8 +257,9 @@ function makeActions(set: SetState, get: GetState) {
       set({
         items: [...get().items, { id: nextClientId(), kind: "message", role: "user", content, ...(attachments?.length ? { attachments } : {}) }],
         pending: true,
-        workStartedAt: Date.now(),
+        workStartedAt: runningSince(get()),
         lastFrameAt: Date.now(),
+        lastStepAt: Date.now(),
         stalled: false,
       }),
 
@@ -303,8 +318,12 @@ function makeActions(set: SetState, get: GetState) {
       const state = get();
       // Every incoming frame proves the server is alive: refresh the watchdog
       // baseline and un-stall. stream_end/error additionally clear the activity
-      // flags below, ending the turn entirely.
-      set({ lastFrameAt: Date.now(), stalled: false });
+      // flags below, ending the turn entirely. 0.1.59: the server's "working" beat
+      // (every 15 s of a turn) is alive but not a step — it never resets lastStepAt.
+      const now = Date.now();
+      set(frame.type === "working" || frame.type === "queued"
+        ? { lastFrameAt: now, stalled: false }
+        : { lastFrameAt: now, lastStepAt: now, stalled: false });
       // Clear thinking on the first frame that signals Arslan is responding with
       // real content or a card. Intermediate dispatch frames ("routing",
       // "roster_event", "spawn_meta") are NOT included here — they fire during
@@ -383,7 +402,7 @@ function makeActions(set: SetState, get: GetState) {
           if (state.streaming) _voiceStop();
           set({
             items, lastMessageId: lastId, activitySteps: [], activeRunId: null,
-            streaming: false, streamingText: "", thinking: false, workStartedAt: null,
+            streaming: false, streamingText: "", thinking: false, workStartedAt: null, queued: false,
             streamSource: null, streamSpawnId: null, streamSpawnName: null,
           });
           break;
@@ -1018,6 +1037,17 @@ function makeActions(set: SetState, get: GetState) {
             activitySteps: [],
             activeRunId: null,
           });
+          break;
+        // 0.1.59: a long answer is not "Interrupted" — the beat above kept the watchdog quiet.
+        case "working":
+          break;
+        // 0.1.59: this window's message waits for the conversation's current turn…
+        case "queued":
+          set({ queued: true });
+          break;
+        // …and its own turn has started now.
+        case "dequeued":
+          set({ queued: false, thinking: true, workStartedAt: Date.now(), lastStepAt: Date.now() });
           break;
         default:
           break;

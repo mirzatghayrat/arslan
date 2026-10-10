@@ -1403,11 +1403,10 @@
     "image_unsendable": "couldn't be prepared — not sent"
   },
   "working": {
-    "summon": "Summoning specialist…",
-    "context": "Assembling context & skills…",
-    "tools": "Dispatching tools…",
-    "compose": "Composing the answer…",
-    "stalled": "Interrupted"
+    "stalled": "Lost touch with Arslan — it may still be working. Reopen this chat to check.",
+    "thinking": "Thinking…",
+    "long": "Still working — a long answer can take a few minutes",
+    "queued": "Arslan will read this as soon as it finishes the current reply"
   },
   "eval": {
     "scope_conversation": "This chat",

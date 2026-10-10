@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 from collections.abc import Coroutine
@@ -29,6 +30,22 @@ logger = logging.getLogger(__name__)
 
 # S3-M2 heartbeat interval (seconds). Module-level so tests can shrink it.
 _HEARTBEAT_INTERVAL_S = 30
+# 0.1.59: while a turn runs, every window on the conversation hears "still working" this often
+# (a model writing one long tool call sends nothing for minutes; the window's 90 s watchdog then
+# said "Interrupted" while the server was working — run 160). Module-level so tests can shrink it.
+_WORKING_BEAT_S = 15
+
+# 0.1.59: one turn at a time per conversation. A message that arrives while another turn runs —
+# on the same socket or another window's — waits here and runs next ("queued"), instead of
+# starting a second turn that the task layer refuses as a conflict (and the message is lost).
+_turn_locks: dict[str, asyncio.Lock] = {}
+
+
+def _turn_lock(conversation_id: str) -> asyncio.Lock:
+    lock = _turn_locks.get(conversation_id)
+    if lock is None:
+        lock = _turn_locks[conversation_id] = asyncio.Lock()
+    return lock
 
 
 def effective_risk(remote_host: str | None, command: str, argv: list) -> str:
@@ -163,6 +180,7 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
 
     emit = run_registry.make_emit(conversation_id)
     drainer: asyncio.Task | None = None
+    reader: asyncio.Task | None = None
 
     async def _drain() -> None:
         """Resident sender: the single consumer of `queue` for this socket's whole
@@ -209,6 +227,7 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         from arslan.companion.memory import MemoryError
         from arslan.execution_budget import BudgetExceeded
         outcome = "error"
+        beat = asyncio.ensure_future(_working_beats())
         try:
             with desktop_status.working(conversation_id, title=title):
                 await coro
@@ -221,9 +240,31 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             outcome = "cancelled"
             raise
         finally:
+            beat.cancel()
             desktop_status.push("turn_finished", conversation_id=conversation_id, outcome=outcome, title=title,
                                 work="turn")
             await queue.join()
+
+    async def _working_beats() -> None:
+        """'Still working' for every window on the conversation while a turn runs (0.1.59).
+        Through the fan-out, never the turn's journal: nothing to replay."""
+        started = time.monotonic()
+        while True:
+            await asyncio.sleep(_WORKING_BEAT_S)
+            emit({"type": "working", "elapsed_s": int(time.monotonic() - started)})
+
+    @contextlib.asynccontextmanager
+    async def _turn(data: dict):
+        """Hold the conversation's turn lock; a message that had to wait is told when it starts."""
+        lock = _turn_lock(conversation_id)
+        told = bool(data.get("_queued"))
+        if lock.locked() and not told:
+            await _send_or_gone({"type": "queued"})
+            told = True
+        async with lock:
+            if told:
+                await _send_or_gone({"type": "dequeued"})
+            yield
 
     async def run_connect_mcp_followup(server_id: int) -> None:
         """Task 3: after a connect card completes, report the honest tier split —
@@ -247,11 +288,42 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
     # Mobile bridge: whether the turn running on this socket was started by the iPhone
     # (only the Arslan Bridge's socket ever sends source "phone").
     phone_turn = {"on": False}
-    # A frame read while a shared card was being decided elsewhere, kept for the next reader.
-    pushback: list[dict] = []
     # 0.1.59: this window's socket closed while its turn was still running (the app in the
     # background, the WebView suspended). The turn carries on; its cards become shared.
     socket_gone = {"yes": False}
+    gone = asyncio.Event()
+    # 0.1.59 resident reader: the ONLY reader of this socket, for its whole life. A turn runs
+    # inside this endpoint's loop, so before this nothing read the socket during a turn except a
+    # pending card: pongs went unread and uvicorn closed the socket on its keepalive (~35 s), and
+    # a Hands card answered in this window was never read (③Hands' trace). Now: pings/pongs are
+    # drained here, card answers go to approvals at once, everything else waits in `inbox`.
+    inbox: asyncio.Queue = asyncio.Queue()
+    _CLOSED = {"type": "__socket_closed__"}
+    cards_waiting = {"n": 0}
+
+    async def _reader() -> None:
+        try:
+            while True:
+                data = await ws.receive_json()
+                t = data.get("type") if isinstance(data, dict) else None
+                if t in ("ping", "pong"):
+                    continue
+                if t in approvals.ANSWERS:
+                    if approvals.answer(data) or data.get("source") == "phone":
+                        continue
+                    if cards_waiting["n"] and data.get("call_id") not in approvals.known_ids():
+                        # A stale reply while a card waits: say so, as a window's turn always has.
+                        await _send_or_gone(protocol.error(
+                            "BUSY", "An action is awaiting your confirmation.", recoverable=True))
+                        continue
+                if t == "user_message" and _turn_lock(conversation_id).locked():
+                    data = {**data, "_queued": True}
+                    await _send_or_gone({"type": "queued"})
+                await inbox.put(data)
+        except Exception:  # noqa: BLE001 — disconnect (or a closed socket): the loop ends after the turn
+            socket_gone["yes"] = True
+            gone.set()
+            await inbox.put(_CLOSED)
 
     def _window_gone(pending=None) -> None:
         """The window that asked is gone: its card (if any) becomes a shared one — answerable
@@ -263,7 +335,11 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             emit(pending.frame)          # a window already re-attached gets it at once
 
     async def _receive() -> dict:
-        return pushback.pop(0) if pushback else await ws.receive_json()
+        data = await inbox.get()
+        if data is _CLOSED:
+            inbox.put_nowait(_CLOSED)      # every later read sees the close too
+            raise WebSocketDisconnect(1000)
+        return data
 
     async def _ask(frame: dict) -> dict:
         """Show one card and wait for its answer: {"approved", "remember"}.
@@ -294,51 +370,23 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 except Exception:  # noqa: BLE001 — closed under us; the card is answered elsewhere
                     _window_gone(pending)
         deadline = loop.time() + approvals.TIMEOUT_S
-        receiving: asyncio.Future | None = None
+        cards_waiting["n"] += 1
+        watching = asyncio.ensure_future(gone.wait())
         try:
             with desktop_status.awaiting_approval(conversation_id):
+                # The answer arrives through the resident reader (this window), the phone's
+                # socket, the Inbox or the island; if this window goes away meanwhile, the card
+                # becomes a shared one (#154) and the wait goes on.
                 while not pending.future.done() and loop.time() < deadline:
-                    if socket_gone["yes"]:
-                        # Nothing to read here any more: wait for the Inbox, the island or a
-                        # reconnected window to decide (or the card to expire).
+                    if gone.is_set():
+                        _window_gone(pending)
                         await asyncio.wait({pending.future}, timeout=deadline - loop.time())
                         continue
-                    if receiving is None:
-                        receiving = asyncio.ensure_future(_receive())
-                    await asyncio.wait({receiving, pending.future}, timeout=deadline - loop.time(),
+                    await asyncio.wait({pending.future, watching}, timeout=deadline - loop.time(),
                                        return_when=asyncio.FIRST_COMPLETED)
-                    if not receiving.done():
-                        continue
-                    try:
-                        data = receiving.result()
-                    except Exception:  # noqa: BLE001 — the window disconnected; the turn goes on
-                        receiving = None
-                        _window_gone(pending)
-                        continue
-                    receiving = None
-                    t = data.get("type")
-                    if t in ("ping", "pong"):
-                        continue
-                    if t in approvals.ANSWERS:
-                        # This card's answer, another card's (a background job's), or a
-                        # late second one. A reply that matches no pending card at all is
-                        # stale: say so, as a window's own turn always has.
-                        if not approvals.answer(data) and not pending.future.done() \
-                                and data.get("call_id") not in approvals.known_ids():
-                            await _send_or_gone(protocol.error(
-                                "BUSY", "An action is awaiting your confirmation.", recoverable=True), pending)
-                        continue
-                    if pending.future.done():
-                        pushback.append(data)        # decided meanwhile: the next reader gets it
-                        continue
-                    await _send_or_gone(protocol.error(
-                        "BUSY", "An action is awaiting your confirmation.", recoverable=True), pending)
         finally:
-            if receiving is not None and not receiving.done():
-                receiving.cancel()
-                await asyncio.wait({receiving})
-                if not receiving.cancelled() and receiving.exception() is None:
-                    pushback.append(receiving.result())
+            cards_waiting["n"] -= 1
+            watching.cancel()
             decision = approvals.close_card(pending)
             if pending.private and decision["by"] in approvals.SOURCES:
                 # Answered from the Inbox or the island: close this window's copy.
@@ -524,6 +572,7 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             await ws.send_json(card)
 
         drainer = asyncio.create_task(_drain())
+        reader = asyncio.create_task(_reader())
 
         while True:
             data = await _receive()
@@ -544,12 +593,13 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                     with_context = await task_context.load(conversation_id)
                     from server.services.personal_context import bind
                     with bind(with_context):
-                        await run_with_confirm_frames(arslan.handle_user_message(
-                            conversation_id, data.get("content", ""), emit,
-                            attached_context=data.get("attached_context") or None,
-                            images=data.get("images") or None,
-                            source=message_source(data),
-                        ), title=data.get("content") or None)
+                        async with _turn(data):
+                            await run_with_confirm_frames(arslan.handle_user_message(
+                                conversation_id, data.get("content", ""), emit,
+                                attached_context=data.get("attached_context") or None,
+                                images=data.get("images") or None,
+                                source=message_source(data),
+                            ), title=data.get("content") or None)
                 elif msg_type == "session_ended":
                     temporary_turn.clear(conversation_id)
                     await ws.send_json({"type": "session_ended_ack", "conversation_id": conversation_id})
@@ -575,9 +625,10 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                     continue
                 phone_turn["on"] = False
                 try:
-                    await run_with_confirm_frames(task_service.resume_turn(
-                        task_id, version, conversation_id, emit, confirm_command=confirm_command,
-                        confirm_workspace_write=confirm_workspace_write, confirm_schedule=confirm_schedule))
+                    async with _turn(data):
+                        await run_with_confirm_frames(task_service.resume_turn(
+                            task_id, version, conversation_id, emit, confirm_command=confirm_command,
+                            confirm_workspace_write=confirm_workspace_write, confirm_schedule=confirm_schedule))
                 except (TaskError, BudgetExceeded) as exc:
                     code = exc.code if isinstance(exc, TaskError) else "task_budget_exhausted"
                     await ws.send_json(protocol.error("TASK_REVIEW_REQUIRED", code, recoverable=True))
@@ -631,16 +682,17 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             images = data.get("images") or []
             attached = (data.get("attached_context") or "").strip()
 
-            await run_with_confirm_frames(
-                arslan.handle_user_message(conversation_id, content, emit,
-                                           attached_context=attached or None,
-                                           images=images or None,
-                                           source=message_source(data),
-                                           confirm_command=confirm_command,
-                                           confirm_workspace_write=confirm_workspace_write,
-                                           confirm_schedule=confirm_schedule),
-                title=content or None,
-            )
+            async with _turn(data):
+                await run_with_confirm_frames(
+                    arslan.handle_user_message(conversation_id, content, emit,
+                                               attached_context=attached or None,
+                                               images=images or None,
+                                               source=message_source(data),
+                                               confirm_command=confirm_command,
+                                               confirm_workspace_write=confirm_workspace_write,
+                                               confirm_schedule=confirm_schedule),
+                    title=content or None,
+                )
     except WebSocketDisconnect:
         return
     except Exception as exc:  # noqa: BLE001
@@ -661,6 +713,8 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         clear_temporary(conversation_id)
         if drainer is not None:
             drainer.cancel()
+        if reader is not None:
+            reader.cancel()
         keepalive.cancel()
 
 

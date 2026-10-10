@@ -32,7 +32,7 @@ import ReplyFooter from './reply/ReplyFooter';
 import { COMPOSER_INSERT_EVENT } from './workbench/Reader';
 import { Dialog, Notice } from './kit';
 import { useArslanStore } from '../stores/arslanStore';
-import { taskErrorKey } from './companion/errors';
+import { chatTaskErrorKey } from './companion/errors';
 import { runtimeErrorText } from '../lib/runtimeErrorText';
 import { api } from '../api/client';
 import { useSettingsStore } from '../stores/settingsStore';
@@ -191,6 +191,8 @@ export default function OrchestratorChat({
   const lastReplyId = [...chatHistory].reverse().find((m) => m.sender === 'arslan' && m.id !== '__streaming__')?.id;
   const liveStreaming = useArslanStore((s) => (s as any).streaming as boolean);
   const workStartedAt = useArslanStore((s) => (s as any).workStartedAt as number | null);
+  const lastStepAt = useArslanStore((s) => s.lastStepAt);
+  const queued = useArslanStore((s) => s.queued);
   // HX-4/A1: stall watchdog — while a turn is active (runtime-frame flags only,
   // never message text), tick checkStall() so a turn whose frames stop arriving
   // for >90s renders a static 「已中断」 instead of an infinite pulse. Any new
@@ -992,7 +994,7 @@ export default function OrchestratorChat({
         {llmError && (() => {
           // 0.1.44: a task-status code (a check to make, a budget used up…) is not a
           // model failure; it gets its own neutral title instead of "Model error".
-          const taskKey = taskErrorKey(llmError);
+          const taskKey = chatTaskErrorKey(llmError);
           // 0.1.55: the kit's Notice — warn for a task status, error for a model failure.
           return (
           <div className="flex gap-3 items-start py-2 select-none" data-testid="chat-error" data-kind={taskKey ? 'task' : 'model'}>
@@ -1026,10 +1028,15 @@ export default function OrchestratorChat({
                   ⏸ {t('working.stalled')}
                 </span>
               ) : (
-                <LiveActivity steps={liveSteps} startedAt={workStartedAt} phrases={[t('working.summon'), t('working.context'), t('working.tools'), t('working.compose')]} />
+                <LiveActivity steps={liveSteps} startedAt={workStartedAt} quietSince={lastStepAt} />
               )}
             </div>
           </div>
+        )}
+        {/* 0.1.59: a message sent while a reply runs waits its turn — said, not lost. */}
+        {queued && (
+          <p className="pl-10 text-[11px] text-muted-foreground select-none" data-testid="queued-notice">
+            {t('working.queued')}</p>
         )}
 
       </div>

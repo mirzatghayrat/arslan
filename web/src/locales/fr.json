@@ -1403,11 +1403,10 @@
     "image_unsendable": "n'a pas pu être préparée — non envoyée"
   },
   "working": {
-    "summon": "Préparation de l’expert…",
-    "context": "Préparation du contexte et des compétences…",
-    "tools": "Exécution des outils…",
-    "compose": "Rédaction de la réponse…",
-    "stalled": "Interrompu"
+    "stalled": "Contact perdu avec Arslan — il travaille peut-être encore. Rouvrez cette conversation pour vérifier.",
+    "thinking": "Réflexion…",
+    "long": "Toujours au travail — une longue réponse peut prendre quelques minutes",
+    "queued": "Arslan lira ceci dès qu’il aura fini la réponse en cours"
   },
   "eval": {
     "scope_conversation": "Cette conversation",

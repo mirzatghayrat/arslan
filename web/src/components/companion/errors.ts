@@ -14,6 +14,12 @@ export function companionError(error: unknown): string {
   return "companion.failure";
 }
 
+/** In the chat a refused turn is not an edit conflict: the last message was still running (0.1.59). */
+export function chatTaskErrorKey(code: string): string | null {
+  if (code === "task_version_conflict" || code === "task_attempt_stale") return "tasks.chatBusy";
+  return taskErrorKey(code);
+}
+
 export function taskErrorKey(code: string): string | null {
   if (code === "task_validation_failed") return "validation.failedReason";
   if (code === "task_artifact_changed") return "validation.changedReason";
