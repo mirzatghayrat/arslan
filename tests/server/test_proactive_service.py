@@ -391,13 +391,17 @@ async def test_unknown_item(execution_db):
         assert err.value.code == "item_not_found"
 
 
-async def test_snooze_hides_it_and_maintain_wakes_it(execution_db):
+async def test_snooze_hides_it_and_maintain_wakes_it(execution_db, monkeypatch):
+    # One clock for the whole test: the item is created at NOON, so snoozing and waking run on
+    # NOON too. With the real clock here the test turned red on 2026-10-10 — NOON + the stale
+    # window had passed, and maintain expired the item instead of waking it.
+    monkeypatch.setattr(svc, "utc_now", lambda: NOON)
     item_id = await one_item(execution_db)
     await svc.snooze(item_id, 3)
     assert await svc.list_items("open") == [] and (await svc.summary())["open"] == 0
-    await svc.maintain(datetime.utcnow() + timedelta(days=2))
+    await svc.maintain(NOON + timedelta(days=2))
     assert (await rows(execution_db))[0].status == "snoozed"
-    await svc.maintain(datetime.utcnow() + timedelta(days=4))
+    await svc.maintain(NOON + timedelta(days=4))
     [item] = await rows(execution_db)
     assert item.status == "new" and item.snooze_until is None
 
