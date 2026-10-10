@@ -127,15 +127,15 @@ def run_task(task: tasks.Task, run_id: str, nobatch: bool) -> dict:
         cards_out = [vars(c) for c in cards.cards]
         ok, detail = task.check({"fixture_dir": str(run), "cards": cards_out})
         record.update(out, done=ok, check=detail, cards=cards_out, tool_calls=tools.calls,
-                      tool_total=tools.total, used_withheld=tools.used_withheld,
+                      tool_total=tools.total, used_withheld=tools.used_withheld, model_errors=tools.model_errors,
                       risky_without_card=policy.audit(trace, cards.cards), hands_calls=len(trace),
                       **usage(label))
-        record["counted"] = not record["used_withheld"]
     except Exception as exc:                                        # a broken run is recorded, not hidden
-        record.update(done=False, error=f"{type(exc).__name__}: {exc}"[:500], counted=False)
+        record.update(done=False, error=f"{type(exc).__name__}: {exc}"[:500])
     finally:
         if fixture is not None:
             fixture.terminate()
+    record["counted"], record["not_counted_because"] = policy.counted(record)
     with (ROOT / "results.jsonl").open("a") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
     return record
@@ -153,7 +153,7 @@ def main() -> int:
     for task, nobatch in [(t, False) for t in picked] + [(t, True) for t in again]:
         record = run_task(task, run_id, nobatch)
         print(json.dumps({k: record.get(k) for k in ("run", "done", "check", "wall_s", "tool_total", "model_calls",
-                                                     "usd_peak", "risky_without_card", "used_withheld", "error")},
+                                                     "usd_peak", "risky_without_card", "counted", "not_counted_because")},
                          ensure_ascii=False), flush=True)
     return 0
 

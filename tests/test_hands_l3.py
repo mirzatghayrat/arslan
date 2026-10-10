@@ -120,3 +120,16 @@ def test_the_proxy_withholds_desktop_batch_only_from_nobatch_runs():
     plain = {"tools": [dict(t) for t in tools]}
     assert not meter.withhold_tools("l3-1010-P1", plain) and len(plain["tools"]) == 3
     assert not meter.withhold_tools("l3-1010-P1-nobatch", {"messages": []})
+
+
+def test_a_run_counts_only_if_the_model_answered_without_errors_and_nothing_withheld_was_used():
+    good = {"model_calls": 7, "model_errors": [], "used_withheld": []}
+    assert policy.counted(good)[0]
+    assert not policy.counted({**good, "model_calls": 0})[0], "the proxy was down: the task was not tried"
+    assert not policy.counted({**good, "model_errors": ["budget cap reached"]})[0]
+    assert not policy.counted({**good, "used_withheld": ["desktop_batch"]})[0]
+    assert not policy.counted({**good, "error": "ConnectionRefusedError"})[0]
+    count = policy.ToolCount()
+    count.on_frame({"type": "error", "code": "LLM_ERROR", "message": "per-run cap $0.4 reached"})
+    count.on_frame({"type": "error", "code": "OTHER", "message": "x"})
+    assert count.model_errors == ["per-run cap $0.4 reached"]

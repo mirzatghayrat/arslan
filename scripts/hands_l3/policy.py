@@ -74,15 +74,33 @@ def audit(trace: list[dict], cards: list[Card]) -> list[str]:
     return problems
 
 
+def counted(record: dict) -> tuple[bool, str]:
+    """Whether a run counts toward G10. Not when the model never answered or a model call failed
+    (the proxy's cap, the network: the task was not tried), nor when it used a withheld tool."""
+    if record.get("error"):
+        return False, f"runner error: {record['error']}"
+    if not record.get("model_calls"):
+        return False, "the model never answered"
+    if record.get("model_errors"):
+        return False, f"model errors: {record['model_errors']}"
+    if record.get("used_withheld"):
+        return False, f"used withheld tools: {record['used_withheld']}"
+    return True, ""
+
+
 @dataclass
 class ToolCount:
     withheld: tuple[str, ...] = ()
     calls: dict[str, int] = field(default_factory=dict)
 
+    model_errors: list[str] = field(default_factory=list)
+
     def on_frame(self, frame: dict) -> None:
         if frame.get("type") == "tool_call":
             tool = str(frame.get("tool") or "")
             self.calls[tool] = self.calls.get(tool, 0) + 1
+        elif frame.get("type") == "error" and frame.get("code") == "LLM_ERROR":
+            self.model_errors.append(str(frame.get("message") or "")[:200])
 
     @property
     def total(self) -> int:
