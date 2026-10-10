@@ -80,13 +80,17 @@ def criteria_to_acceptance(criteria: list[dict]) -> list[dict]:
         if not description:
             continue
         kind, target = item.get("kind"), item.get("target")
+        target = target.strip()[:240] if isinstance(target, str) and target.strip() else None
+        minimum = item.get("minimum")
+        minimum = minimum if isinstance(minimum, int) and not isinstance(minimum, bool) and 1 <= minimum <= 20 else 1
         check = {"id": f"criterion-{index}", "description": description, "evaluator": "model"}
-        if kind == "file_saved" and isinstance(target, str) and target.strip():
-            check.update(evaluator="deterministic", rule={"kind": "artifact", "target": target.strip()[:240]})
+        # 0.1.59: file_saved looks at the disk (a folder the user named, not only files Arslan
+        # produced), and sources_read counts local files read as well as web pages.
+        if kind == "file_saved" and target:
+            check.update(evaluator="deterministic", rule={"kind": "file_saved", "target": target, "minimum": minimum})
         elif kind == "sources_read":
-            minimum = item.get("minimum")
-            check.update(evaluator="deterministic", rule={"kind": "research_sources",
-                         "minimum": minimum if isinstance(minimum, int) and 1 <= minimum <= 20 else 1})
+            check.update(evaluator="deterministic", rule={"kind": "sources_read", "minimum": minimum,
+                                                          **({"target": target} if target else {})})
         elif kind == "mentions" and isinstance(target, str) and target.strip():
             check.update(evaluator="deterministic", rule={"kind": "text", "contains": [target.strip()[:200]]})
         checks.append(check)
@@ -103,10 +107,14 @@ def criteria_from_acceptance(acceptance: list[dict]) -> list[dict]:
             continue
         entry = {"description": str(check.get("description") or "")[:300], "kind": "judgement"}
         rule = check.get("rule") or {}
-        if rule.get("kind") == "artifact" and rule.get("target"):
+        if rule.get("kind") in {"artifact", "file_saved"} and rule.get("target"):
             entry.update(kind="file_saved", target=rule["target"])
-        elif rule.get("kind") == "research_sources":
+            if rule.get("kind") == "file_saved" and rule.get("minimum", 1) != 1:
+                entry["minimum"] = rule["minimum"]
+        elif rule.get("kind") in {"research_sources", "sources_read"}:
             entry.update(kind="sources_read", minimum=rule.get("minimum", 1))
+            if rule.get("kind") == "sources_read" and rule.get("target"):
+                entry["target"] = rule["target"]
         elif rule.get("kind") == "text" and rule.get("contains"):
             entry.update(kind="mentions", target=rule["contains"][0])
         if entry["description"]:

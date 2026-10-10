@@ -43,6 +43,40 @@ _READ_TOOLS = _READ_TOOLS | {"background_status", "browser_open", "browser_look"
 _READ_TOOLS = _READ_TOOLS | {"desktop_apps", "desktop_look"}       # 0.1.53: Hands reads; desktop_* acts
 
 
+# 0.1.59: terminal-policy rules whose commands reach beyond this Mac. A failure there can still have
+# left something behind elsewhere (an upload that broke after the server took it), so it stays a
+# reason to ask the user to check.
+_OUTBOUND_RULES = frozenset({"apple-events", "shortcuts", "send-mail", "send-message", "upload",
+                             "remote-shell", "git-push", "publish"})
+
+
+def known_local_failure(tool_key: str, arguments: dict, result) -> bool:
+    """A failed action whose outcome is KNOWN and stayed on this Mac (0.1.59).
+
+    `reconciliation_required` means "Arslan does not know what this action did". A command that ran
+    and exited with a code (or was refused before running), and a write_file/edit_file that returned
+    an error, are known outcomes — treating them as unknown ended every job with a failed probe on
+    the way as "needs your review" (seen recording the 0.1.59 promo: nine invoices copied, "Stuck").
+    Still unknown, and still asking: exceptions, cancellations, a command killed by its timeout or a
+    signal, any command matching an outbound rule, and every other tool.
+    Not covered (said here and in docs/specs/2026-10-10-0159-job-checks.md): a local script that sends
+    something over the network itself and then fails is treated as local — the terminal policy cannot
+    see inside the script.
+    """
+    if not isinstance(result, dict) or result.get("ok"):
+        return False
+    if tool_key in {"write_file", "edit_file"}:
+        return True
+    if tool_key != "run_command":
+        return False
+    code = result.get("exit_code")
+    if str(result.get("error") or "").startswith("stopped") or (code is not None and (type(code) is not int or code < 0)):
+        return False
+    from server.services import terminal_policy
+    command = terminal_policy.as_shell(arguments.get("command"), arguments.get("argv"))
+    return not (terminal_policy.ask_rules(command) & _OUTBOUND_RULES)
+
+
 async def effect_of(tool_key: str, arguments: dict) -> str:
     """What one call can change, from what the tool really is (0.1.44).
 
@@ -146,6 +180,7 @@ class TaskRuntime:
         self.cancelled = False
         self.saw_error = False
         self.reconciliation_required = False
+        self.trace: list[dict] = []   # 0.1.59: every tool call of this task, for the finish-time checks
         self.run_ids: set[int] = set()
         self.closed = False
         self.pause_reason: str | None = None
@@ -254,6 +289,7 @@ class TaskRuntime:
             self.reconciliation_required = self.reconciliation_required or effect != "read"
             raise
         succeeded = isinstance(result, dict) and bool(result.get("ok"))
+        self.trace.append({"tool": tool_key, "args": arguments, "result": result})
         refs = []
         if isinstance(result, dict):
             items = [result.get("artifact"), *(result.get("artifacts") or [])]
@@ -269,13 +305,16 @@ class TaskRuntime:
                                                 logical_key=item.get("logical_key")))
                     except ValueError:
                         pass
+        known = not succeeded and known_local_failure(tool_key, arguments, result)
         async with self.lock:
             async with repository() as repo:
                 await repo.action_finished(self.task_id, self.attempt_id, action["id"],
                     status="succeeded" if succeeded else "failed", evidence=tuple(refs),
-                    error_code=None if succeeded else "tool_failed")
-            # Sticky: a later success elsewhere does not settle an earlier unknown outcome.
-            self.reconciliation_required = self.reconciliation_required or (not succeeded and effect != "read")
+                    error_code=None if succeeded else "known_local_failure" if known else "tool_failed")
+            # Sticky: a later success elsewhere does not settle an earlier unknown outcome. A known
+            # local failure (0.1.59) is not unknown: the steps under the reply say it did not work.
+            self.reconciliation_required = self.reconciliation_required or (
+                not succeeded and effect != "read" and not known)
             updates = {
                 "pending_actions": tuple(item for item in self.progress.pending_actions if item != action["id"]),
                 "artifacts": tuple({(ref.id, ref.locator): ref for ref in (*self.progress.artifacts, *refs)}.values()),

@@ -376,7 +376,16 @@ function makeActions(set: SetState, get: GetState) {
           const lastId = items.reduce((max, it) => (it.id > max ? it.id : max), 0);
           // A reconnect replays history; the live job cards are not in it.
           items.push(...state.items.filter((it) => it.kind === "job"));
-          set({ items, lastMessageId: lastId, activitySteps: [], activeRunId: null });
+          // 0.1.59: history is the truth; a run still in flight is rebuilt by the replay that
+          // follows it (run_in_progress + its journal). A live stream left over from before the
+          // socket dropped — a replay cut by a second drop — used to survive here as a frozen
+          // half copy of the answer plus a "working" row whose timer never stopped.
+          if (state.streaming) _voiceStop();
+          set({
+            items, lastMessageId: lastId, activitySteps: [], activeRunId: null,
+            streaming: false, streamingText: "", thinking: false, workStartedAt: null,
+            streamSource: null, streamSpawnId: null, streamSpawnName: null,
+          });
           break;
         }
         case "message": {
@@ -547,10 +556,13 @@ function makeActions(set: SetState, get: GetState) {
           };
           const nextPendingSpawnMeta = { ...state.pendingSpawnMeta };
           if (frame.message_id != null) delete nextPendingSpawnMeta[frame.message_id];
+          // 0.1.59: a replayed stream_end for a message already shown adds no second copy.
+          const shown = frame.message_id != null
+            && state.items.some((it) => it.kind === "message" && it.id === frame.message_id);
           set({
             thinking: false,
             workStartedAt: null,
-            items: [...state.items, item],
+            items: shown ? state.items : [...state.items, item],
             streaming: false,
             streamingText: "",
             streamSource: null,

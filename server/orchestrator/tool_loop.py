@@ -1457,7 +1457,9 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                                 "description": "One check, in the user's language."},
                 "kind": {"type": "string", "enum": ["file_saved", "sources_read", "mentions", "judgement"]},
                 "target": {"type": "string", "maxLength": 240,
-                           "description": "file name for file_saved; phrase for mentions"},
+                           "description": "file_saved: the file or folder's full path (~/… or /…); "
+                                          "sources_read: optional, a file name or site the sources must include; "
+                                          "mentions: the phrase"},
                 "minimum": {"type": "integer", "minimum": 1, "maximum": 20}},
             "required": ["description"], "additionalProperties": False}}},
         "required": ["goal", "criteria"], "additionalProperties": False},

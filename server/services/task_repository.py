@@ -399,7 +399,9 @@ class TaskRepository:
         previous = await self.db.scalar(select(TaskAction).where(
             TaskAction.task_id == row.id, TaskAction.spec_revision == row.spec_revision,
             TaskAction.intent_hash == digest))
-        if previous and previous.status != "not_applied":
+        # A known failure (0.1.59: a local command that exited with a code, a refused local write) may
+        # be tried again — the user or the model fixed something. Only an unknown outcome is refused.
+        if previous and previous.status not in {"not_applied", "failed"}:
             code = "task_action_already_completed" if previous.status == "succeeded" else "task_reconciliation_required"
             raise TaskError(code)
         if previous:
@@ -447,8 +449,10 @@ class TaskRepository:
         # 0.1.44: one exception — our own local tools report a clean refusal
         # (validation, path outside the workspace…) as ok:false before touching
         # anything; only an exception midway can leave a local write half-done.
+        # 0.1.59: and a failure task_service.known_local_failure recognised (a local command that ran
+        # and exited with a code, outside every outbound rule) is known, not uncertain.
         if status == "failed" and action.effect != "read" and not (
-                action.effect == "local_write" and error_code == "tool_failed"):
+                action.effect == "local_write" and error_code == "tool_failed") and error_code != "known_local_failure":
             status = "uncertain"
         action.status, action.version, action.updated_at = status, action.version + 1, datetime.utcnow()
         action.evidence = [item.model_dump(mode="json") for item in evidence]

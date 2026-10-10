@@ -154,7 +154,8 @@ async def test_journal_snapshots_run_id_order_copies_and_skips_missing_recorder(
         await asyncio.sleep(30)
 
     now = _dt.datetime.utcnow()
-    rec_hi = _FakeRecorder([(now, {"type": "stream_start"}), (now, {"type": "stream_end"})])
+    # Still streaming (no stream_end): an answered run is not replayed at all (0.1.59, test_job_checks_0159).
+    rec_hi = _FakeRecorder([(now, {"type": "stream_start"}), (now, {"type": "stream_chunk", "content": "x"})])
     rec_lo = _FakeRecorder([(now, {"type": "tool_call"})])
 
     t1 = asyncio.create_task(_work())
@@ -168,7 +169,7 @@ async def test_journal_snapshots_run_id_order_copies_and_skips_missing_recorder(
     snaps = run_registry.journal_snapshots("conv-j")
     assert snaps == [
         (7, [{"type": "tool_call"}]),
-        (42, [{"type": "stream_start"}, {"type": "stream_end"}]),
+        (42, [{"type": "stream_start"}, {"type": "stream_chunk", "content": "x"}]),
     ]
 
     # copies: mutating the snapshot list must not touch the recorder journal
