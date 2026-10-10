@@ -25,7 +25,7 @@ describe('LiveActivity', () => {
     render(
       <LiveActivity
         startedAt={Date.now() - 65_000}
-        phrases={['working…']}
+        quietSince={Date.now()}
         steps={[
           { tool: 'web_search', argsSummary: '{"query":"OKX 永续合约"}', status: 'ok', resultSummary: '5 results' },
           { tool: 'web_extract', argsSummary: '{"url":"https://x.test/a"}', status: 'error',
@@ -42,8 +42,25 @@ describe('LiveActivity', () => {
   });
 
   it('shows just the pulse footer before any tool fires (no empty box)', () => {
-    const { container } = render(<LiveActivity startedAt={Date.now()} phrases={['thinking…']} steps={[]} />);
+    const { container } = render(<LiveActivity startedAt={Date.now()} steps={[]} />);
     expect(screen.getByText(/0s/)).toBeTruthy();
     expect(container.querySelectorAll('.border').length).toBe(0);  // no steps → no steps box
+  });
+
+  // 0.1.59 (run 160): the row cycled "Summoning specialist…", "Dispatching tools…" whatever was
+  // happening. Now it says only what is true.
+  it('says "Thinking…" while the turn moves, and that a long answer takes minutes after a quiet minute', () => {
+    const { unmount } = render(<LiveActivity startedAt={Date.now() - 200_000} quietSince={Date.now() - 5_000} steps={[]} />);
+    expect(screen.getByText('working.thinking')).toBeTruthy();
+    expect(screen.queryByText('working.long')).toBeNull();
+    unmount();
+    render(<LiveActivity startedAt={Date.now() - 200_000} quietSince={Date.now() - 61_000} steps={[]} />);
+    expect(screen.getByText('working.long')).toBeTruthy();
+    expect(screen.queryByText(/working\.(summon|context|tools|compose)/)).toBeNull();
+  });
+
+  it('with no step time yet it counts the quiet from the start of the turn', () => {
+    render(<LiveActivity startedAt={Date.now() - 61_000} steps={[]} />);
+    expect(screen.getByText('working.long')).toBeTruthy();
   });
 });

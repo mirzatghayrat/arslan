@@ -22,6 +22,12 @@ function catalog(id: number): Promise<ModelInfo[]> {
 }
 export function _resetChipCatalogs() { catalogs.clear(); }
 
+/** The chip names the provider short — "OpenRouter", not "OpenRouter (Claude, Gemini and more)" —
+ *  so the model stays readable (0.1.59). The picker keeps the full label. */
+export function shortProvider(label: string): string {
+  return label.replace(/\s*[(\uFF08][^()\uFF08\uFF09]*[)\uFF09]\s*$/, "").trim() || label;
+}
+
 function Ring({ pct }: { pct: number }) {
   const r = 7, c = 2 * Math.PI * r;
   return <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden>
@@ -108,10 +114,11 @@ export default function ConversationModelChip({ conversationId, configs, llmProv
   return (
     <span className="relative flex items-center gap-1.5">
       <button ref={anchorRef} type="button" onClick={() => setOpen((v) => !v)} aria-haspopup="dialog" aria-expanded={open}
-        data-testid="model-chip" title={health.status === "failed" && health.reason ? health.reason : t("models.pick")}
+        data-testid="model-chip"
+        title={health.status === "failed" && health.reason ? health.reason : `${label(cfg)} · ${current.model} — ${t("models.pick")}`}
         className="flex max-w-[260px] items-center gap-1.5 rounded-full border border-border bg-background/40 px-2.5 py-1 font-mono text-[10px] text-muted-foreground hover:border-primary/40">
         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${DOT[health.status]}`} data-testid="model-chip-dot" data-status={health.status} />
-        <span className="truncate">{label(cfg)} · {current.model}</span><ChevronDown className="h-2.5 w-2.5 shrink-0 opacity-60" />
+        <span className="truncate">{shortProvider(label(cfg))} · {current.model}</span><ChevronDown className="h-2.5 w-2.5 shrink-0 opacity-60" />
       </button>
       {pct != null && <span className="flex items-center gap-1 text-[10px] text-subtle-foreground" title={t("models.context", { pct })} data-testid="context-ring">
         <Ring pct={pct} />{pct}%</span>}

@@ -1403,11 +1403,10 @@
     "image_unsendable": "no se pudo preparar — no se envió"
   },
   "working": {
-    "summon": "Preparando experto…",
-    "context": "Preparando contexto y habilidades…",
-    "tools": "Ejecutando herramientas…",
-    "compose": "Redactando la respuesta…",
-    "stalled": "Interrumpido"
+    "stalled": "Se perdió el contacto con Arslan; puede que siga trabajando. Vuelve a abrir este chat para comprobarlo.",
+    "thinking": "Pensando…",
+    "long": "Sigue trabajando: una respuesta larga puede tardar unos minutos",
+    "queued": "Arslan leerá esto en cuanto termine la respuesta actual"
   },
   "eval": {
     "scope_conversation": "Esta conversación",
