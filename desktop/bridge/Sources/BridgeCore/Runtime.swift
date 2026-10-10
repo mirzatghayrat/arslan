@@ -141,13 +141,20 @@ public final class BridgeRuntime {
             }
         }
         let heardBefore = mailbox.heard
-        let received = try await mailbox.process(forMailbox, now: now)
+        var received = try await mailbox.process(forMailbox, now: now)
+        // §3.3: a phone that unpaired itself says so (iPhone 1.0, 2026-10-10: it unpaired and the Mac
+        // kept listing it as connected). Forgotten as Settings › Remove does, without a farewell (it has
+        // gone), and nothing else from it in this batch is acted on. Only the sender, who signed it: a
+        // phone can remove itself, never another.
+        let leaving = Set(received.filter { $0.type == "device.revoked" }.map(\.from))
+        received.removeAll { leaving.contains($0.from) }
+        for id in leaving { try forget(id); BridgeLog.notice("a phone unpaired itself") }
         mailbox.token = next          // only once this batch is acted on and remembered
         try mailbox.remember()
         await deleteQueued()
         // A phone heard from for the first time (connecting → connected), or its last_seen moved on
-        // (at most once a minute per phone, Mailbox.heardResolution): Settings gets the new list.
-        if mailbox.heard != heardBefore {
+        // (at most once a minute per phone, Mailbox.heardResolution), or one that left: Settings gets the new list.
+        if mailbox.heard != heardBefore || !leaving.isEmpty {
             do { try await sendDevices() } catch { BridgeLog.error("sending the device list", error) }
         }
         return received

@@ -169,6 +169,56 @@ final class RuntimeTests: XCTestCase {
         XCTAssertEqual(bridge.mailbox.unacknowledged.map(\.id), [others.id], "and nothing waits for the removed phone")
     }
 
+    /// The phone's own side of a pairing as a Mailbox, for sending as that phone.
+    func phoneSide(_ bridge: BridgeRuntime, _ store: MemoryStore, id: String, signing: Curve25519.Signing.PrivateKey,
+                   exchange: Curve25519.KeyAgreement.PrivateKey) -> Mailbox {
+        let phone = Mailbox(deviceID: id, signing: signing, exchange: exchange, store: store)
+        phone.add(peer: Peer(deviceID: bridge.identity.deviceID, signing: bridge.identity.signing.publicKey,
+                             exchange: bridge.identity.exchange.publicKey))
+        return phone
+    }
+
+    /// §3.3: a phone that unpairs itself says so (iPhone 1.0, 2026-10-10: the phone unpaired and the
+    /// Mac kept showing it connected). The Mac forgets it as Settings › Remove does, without the
+    /// farewell, and nothing more from it reaches Arslan.
+    func testAPhoneThatUnpairsItselfIsForgottenAndNothingMoreFromItIsActedOn() async throws {
+        let store = MemoryStore(), control = FakeControl(), secrets = MemorySecrets(), memory = InMemoryMemoryStore()
+        let bridge = try runtime(store, control, secrets: secrets, memory: memory)
+        let signing = Curve25519.Signing.PrivateKey(), exchange = Curve25519.KeyAgreement.PrivateKey()
+        let id = try await ask(bridge, store, control, phoneID: "iphone-t", signing: signing, exchange: exchange)
+        try await bridge.handleControl(["type": "pairing.decide", "request_id": id, "accept": true])
+        XCTAssertEqual(listed(control), ["iphone-t"])
+        let phone = phoneSide(bridge, store, id: "iphone-t", signing: signing, exchange: exchange)
+        try await phone.send(type: "conversations.list", body: [:], to: bridge.identity.deviceID)
+        try await phone.send(type: "device.revoked", body: ["reason": "unpaired_on_phone"], to: bridge.identity.deviceID)
+        let received = try await bridge.poll()
+        XCTAssertTrue(received.isEmpty, "a phone that has gone is not answered")
+        XCTAssertEqual(listed(control), [], "Settings › iPhone drops it at once")
+        XCTAssertFalse(bridge.mailbox.isPaired("iphone-t"))
+        let sentBefore = control.sent.count
+        try await phone.send(type: "conversations.list", body: [:], to: bridge.identity.deviceID)
+        _ = try await bridge.poll()
+        XCTAssertFalse(control.sent.dropFirst(sentBefore).contains { $0["type"] as? String == "pairing.request" },
+                       "a later message from its old key is not taken as a new pairing either")
+        let restartedControl = FakeControl()
+        try await runtime(store, restartedControl, secrets: secrets, memory: memory).hello()
+        XCTAssertEqual(listed(restartedControl), [], "forgotten for good: its keys are gone")
+    }
+
+    func testAPhoneCanOnlyUnpairItselfNeverAnother() async throws {
+        let store = MemoryStore(), control = FakeControl()
+        let bridge = try runtime(store, control)
+        let signing = Curve25519.Signing.PrivateKey(), exchange = Curve25519.KeyAgreement.PrivateKey()
+        let a = try await ask(bridge, store, control, phoneID: "iphone-a", signing: signing, exchange: exchange)
+        try await bridge.handleControl(["type": "pairing.decide", "request_id": a, "accept": true])
+        try await pair(bridge, store, control, phoneID: "iphone-b")
+        let phone = phoneSide(bridge, store, id: "iphone-a", signing: signing, exchange: exchange)
+        try await phone.send(type: "device.revoked", body: ["reason": "unpaired_on_phone", "device_id": "iphone-b"],
+                             to: bridge.identity.deviceID)
+        _ = try await bridge.poll()
+        XCTAssertEqual(listed(control), ["iphone-b"], "the sender is who signed it; a body naming another phone changes nothing")
+    }
+
     func testAPhoneIsConnectingUntilHeardThenConnectedAndStaysSoAcrossARestart() async throws {
         let store = MemoryStore(), control = FakeControl(), secrets = MemorySecrets(), memory = InMemoryMemoryStore()
         let bridge = try runtime(store, control, secrets: secrets, memory: memory)
