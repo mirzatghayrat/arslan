@@ -82,7 +82,8 @@ def offline_wrapper() -> list[str] | None:
 
 
 async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
-              offline: bool = False, sandbox: bool = False) -> dict:
+              offline: bool = False, sandbox: bool = False, closed: list[Path] = (),
+              readable: list[Path] = ()) -> dict:
     """`sandbox`: run inside the workspace sandbox. Where seatbelt is missing or
     cannot start, the command runs as before and the result says
     sandbox="unavailable" (offline mode still refuses without isolation)."""
@@ -97,7 +98,7 @@ async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
     prefix: list[str] = []
     mode = "off"
     if sandbox:
-        prefix = command_sandbox.wrapper(cwd, offline=offline) or []
+        prefix = command_sandbox.wrapper(cwd, offline=offline, closed=closed, readable=readable) or []
         mode = "workspace" if prefix else "unavailable"
     if offline and not prefix:
         prefix = offline_wrapper() or []
@@ -152,7 +153,7 @@ async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
         result["truncated"] = True
     if command_sandbox.stopped_by_sandbox(result):
         result["sandbox_denied"] = True
-        result["note"] = command_sandbox.note(cwd)
+        result["note"] = command_sandbox.note(cwd, closed)
     elif mode == "unavailable":
         result["sandbox_note"] = "ran without the sandbox: it is not available on this system"
     return result
