@@ -50,12 +50,10 @@ def _clean(tmp_path, monkeypatch):
     monkeypatch.setattr(hands_service, "_dir", lambda: tmp_path / "hands")
     hands_service._reset_for_tests()
     hands_tools._grants.clear()
-    hands_tools._inline.clear()
     yield
     approvals._reset_for_tests()
     hands_service._reset_for_tests()
     hands_tools._grants.clear()
-    hands_tools._inline.clear()
 
 
 @pytest.fixture
