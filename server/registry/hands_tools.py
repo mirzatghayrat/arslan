@@ -56,11 +56,18 @@ async def _ask_once(grant: str, kind: str, target: str, detail: str) -> bool:
     user (card + notification)."""
     from server.services import approvals
     from server.ws import protocol
+    from server.services import hands_service
     conversation_id, job_id = _conversation_and_job()
     if conversation_id is None:
         return False
     granted = _grants.setdefault(job_id or f"conversation:{conversation_id}", set())
     if grant in granted:
+        return True
+    # §7.2: a job inherits what its conversation already allowed, and an app the user allowed for good
+    # in Settings is not asked again (risky steps have unique grant keys: still asked every time).
+    if job_id and grant in _grants.get(f"conversation:{conversation_id}", set()):
+        return True
+    if grant.startswith("desktop:") and hands_service.always_allowed(grant.removeprefix("desktop:")):
         return True
     ok = await approvals.ask(conversation_id, protocol.propose_action(uuid.uuid4().hex, kind, target, detail))
     if ok:                                     # a script's grant key is unique: asked every time
@@ -517,7 +524,8 @@ class DesktopLookExecutor:
         if app is None:
             return _failed(failure, app=name)
         bundle = str(app.get("bundle_id") or app.get("name"))
-        if not (conversation_id and hands_service.looked(conversation_id, bundle)):
+        if not (conversation_id and (hands_service.looked(conversation_id, bundle)
+                                     or hands_service.always_allowed(bundle))):
             if conversation_id is None:
                 return {"ok": False, "external": False, "code": "no_one_to_ask",
                         "error": "Looking at an app needs the user's OK in a conversation."}
@@ -557,7 +565,8 @@ class DesktopLookExecutor:
             snap = dict(call)
             if args.get("ref"):
                 snap["root"] = str(args["ref"])[:200]
-            screenshots = hands_service.settings()["screenshots"]
+            screenshots = hands_service.settings()["screenshots"] and not hands_service.no_screenshots(
+                str(app.get("name") or ""), str(app.get("bundle_id") or ""))
             shot = None
             if screenshots:
                 snap["include_bounds"] = True
@@ -1132,3 +1141,61 @@ class DesktopOpenExecutor:
         return {"ok": True, "external": False, "outcome": "done",
                 "text": f"Opened {app['name']} in the background. Look at it with desktop_look before acting.",
                 "summary": f"open · {app['name']}"[:200]}
+
+
+_TIER_WORDS = {"full": "look and act", "look_only": "look only (a browser)",
+               "click_only": "look, click and scroll only (runs commands)"}
+
+
+class DesktopAccessExecutor:
+    """Hands v2 §7.2: one card for several apps (instead of one card per app as each is first used).
+    Allow = looking at each in this conversation, and acting in each in this piece of work (a chat
+    reply, or the background job); apps on the never-list are left out and said."""
+    key = "desktop_access"
+    timeout_s = CARD_S + 2 * RUN_S
+
+    async def execute(self, args: dict) -> dict:
+        from server.services import approvals, hands_service
+        from server.ws import protocol
+        args = dict(args or {})
+        names = [str(n).strip()[:120] for n in args.get("apps") or [] if str(n).strip()][:8] \
+            if isinstance(args.get("apps"), list) else []
+        why = " ".join(str(args.get("why") or "").split())[:300]
+        if not names or not why:
+            return {"ok": False, "external": False, "code": "bad_request",
+                    "error": "apps (1 to 8 app names) and why (what you will do, in words) are required"}
+        if not desktop_available():
+            return {"ok": False, "external": False, "error": "Arslan Hands is not available on this Mac."}
+        conversation_id, job_id = _conversation_and_job()
+        if conversation_id is None:
+            return {"ok": False, "external": False, "code": "no_one_to_ask",
+                    "error": "Asking for apps needs a conversation to ask the user in."}
+        found, skipped = [], []
+        for name in names:
+            app, failure = await _resolve_app(name, job_id)
+            if app is None:
+                skipped.append(f"{name} ({failure.code if failure else 'not running'})")
+            elif all(a["bundle_id"] != app.get("bundle_id") for a in found):
+                found.append(app)
+        if not found:
+            return {"ok": False, "external": False, "code": "no_apps",
+                    "error": "None of these can be used: " + "; ".join(skipped)}
+        lines = "\n".join(f"· {a['name']} — {_TIER_WORDS.get(str(a.get('tier') or 'full'), 'look and act')}"
+                          for a in found)
+        detail = (f"Arslan wants to use these apps for this: {why}\n{lines}\n"
+                  "Allowing lets it look at them in this conversation and act in them for this piece of work; "
+                  "deleting, sending, paying and the like still ask every time.")
+        if not await approvals.ask(conversation_id, protocol.propose_action(
+                uuid.uuid4().hex, "desktop_app", ", ".join(a["name"] for a in found)[:300], detail)):
+            return {"ok": False, "external": False, "code": "declined",
+                    "error": "The user did not allow these apps. Do not retry; ask them or work another way."}
+        scope = _grants.setdefault(job_id or f"conversation:{conversation_id}", set())
+        for a in found:
+            bundle = str(a.get("bundle_id") or a.get("name"))
+            hands_service.allow_look(conversation_id, bundle)
+            scope.add(f"desktop:{bundle}")
+        text = "Allowed: " + ", ".join(a["name"] for a in found) + "."
+        if skipped:
+            text += " Not included: " + "; ".join(skipped) + "."
+        return {"ok": True, "external": False, "outcome": "done", "text": text,
+                "summary": f"access · {len(found)} apps"}

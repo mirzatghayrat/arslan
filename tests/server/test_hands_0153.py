@@ -126,11 +126,12 @@ def test_risky_keys_and_return_where_it_sends():
 
 def test_settings_file_is_private_and_the_never_list_deduplicated(tmp_path):
     assert hands_service.settings() == {"enabled": True, "cursor": True, "screenshots": True, "borrow": True,
-                                        "away": False, "never": []}
+                                        "away": False, "never": [], "always": [], "no_screenshots": []}
     hands_service.update_settings(never=["Notes", "notes", "  Mail  ", ""], cursor=False, screenshots=False,
                                   borrow=False, away=True)
     assert hands_service.settings() == {"enabled": True, "cursor": False, "screenshots": False, "borrow": False,
-                                        "away": True, "never": ["Notes", "Mail"]}
+                                        "away": True, "never": ["Notes", "Mail"], "always": [],
+                                        "no_screenshots": []}
     folder = tmp_path / "hands"
     assert stat.S_IMODE(os.stat(folder).st_mode) == 0o700
     assert stat.S_IMODE(os.stat(folder / "settings.json").st_mode) == 0o600

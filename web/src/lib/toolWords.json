@@ -13,6 +13,7 @@
   "conversation_search": { "family": "read", "arg": "query" },
   "create_skill": { "family": "write", "arg": "name" },
   "delegate_work": { "family": "plan" },
+  "desktop_access": { "family": "hands" },
   "desktop_apps": { "family": "hands" },
   "desktop_batch": { "family": "hands", "arg": "app" },
   "desktop_click": { "family": "hands", "arg": "app" },

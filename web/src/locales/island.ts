@@ -60,7 +60,7 @@ const en = {
   ask: { run_command: 'Run a command', workspace_write: 'Write in your folder', schedule: 'Set up a scheduled task', browser_site: 'Act on a website', desktop_look: 'Look at an app', desktop_app: 'Act in an app', desktop_risky: 'A step that may delete, send or pay', mac_shortcut: 'Run a Shortcut', mac_script: 'Run an AppleScript', desktop_takeover: 'Take over the screen', other: 'Needs your OK' },
   step: {
     desktop_apps: 'List the open apps', desktop_look: 'Look at {{t}}', desktop_click: 'Click {{t}}', desktop_type: 'Type in {{t}}', desktop_select: 'Choose in {{t}}', desktop_scroll: 'Scroll {{t}}', desktop_press: 'Press {{t}}',
-    desktop_menu: 'Choose {{t}} in the menu', desktop_batch: 'Several steps in {{t}}', desktop_open: 'Open {{t}}', desktop_takeover: 'Take over the screen',
+    desktop_menu: 'Choose {{t}} in the menu', desktop_batch: 'Several steps in {{t}}', desktop_open: 'Open {{t}}', desktop_takeover: 'Take over the screen', desktop_access: 'Ask to use {{t}}',
     web_search: 'Search “{{t}}”', web_extract: 'Read {{t}}', browser_open: 'Open {{t}} in the browser',
     read_file: 'Read {{t}}', write_file: 'Write {{t}}', edit_file: 'Edit {{t}}', list_dir: 'Look in {{t}}',
     run_command: 'Run {{t}}', update_plan: 'Update the plan', recall: 'Look through memory', other: 'Use {{tool}}',
@@ -121,7 +121,7 @@ const zh: Messages = {
   ask: { run_command: '跑一条命令', workspace_write: '写到你的文件夹', schedule: '建一个定时任务', browser_site: '在网站上操作', desktop_look: '看一个应用', desktop_app: '在应用里操作', desktop_risky: '可能删除、发送或付款的一步', mac_shortcut: '运行快捷指令', mac_script: '运行 AppleScript', desktop_takeover: '接管屏幕', other: '需要你点头' },
   step: {
     desktop_apps: '列出打开的应用', desktop_look: '查看 {{t}}', desktop_click: '点击 {{t}}', desktop_type: '在 {{t}} 输入', desktop_select: '在 {{t}} 选择', desktop_scroll: '滚动 {{t}}', desktop_press: '按键 {{t}}',
-    desktop_menu: '在菜单里选 {{t}}', desktop_batch: '在 {{t}} 里做几步', desktop_open: '打开 {{t}}', desktop_takeover: '接管屏幕',
+    desktop_menu: '在菜单里选 {{t}}', desktop_batch: '在 {{t}} 里做几步', desktop_open: '打开 {{t}}', desktop_takeover: '接管屏幕', desktop_access: '申请使用 {{t}}',
     web_search: '搜索「{{t}}」', web_extract: '读取 {{t}}', browser_open: '在浏览器里打开 {{t}}',
     read_file: '读取 {{t}}', write_file: '写入 {{t}}', edit_file: '修改 {{t}}', list_dir: '查看 {{t}}',
     run_command: '运行 {{t}}', update_plan: '更新计划', recall: '翻记忆', other: '使用 {{tool}}',
@@ -181,7 +181,7 @@ const ja: Messages = {
   ask: { run_command: 'コマンドを実行', workspace_write: 'フォルダに書き込む', schedule: '定期タスクを作る', browser_site: 'ウェブサイトで操作', desktop_look: 'アプリを見る', desktop_app: 'アプリで操作', desktop_risky: '削除・送信・支払いになりうる操作', mac_shortcut: 'ショートカットを実行', mac_script: 'AppleScript を実行', desktop_takeover: '画面を引き継ぐ', other: '確認が必要です' },
   step: {
     desktop_apps: '開いているアプリを一覧', desktop_look: '{{t}} を見る', desktop_click: '{{t}} をクリック', desktop_type: '{{t}} に入力', desktop_select: '{{t}} で選択', desktop_scroll: '{{t}} をスクロール', desktop_press: '{{t}} を押す',
-    desktop_menu: 'メニューで {{t}} を選ぶ', desktop_batch: '{{t}} で複数の操作', desktop_open: '{{t}} を開く', desktop_takeover: '画面を引き継ぐ',
+    desktop_menu: 'メニューで {{t}} を選ぶ', desktop_batch: '{{t}} で複数の操作', desktop_open: '{{t}} を開く', desktop_takeover: '画面を引き継ぐ', desktop_access: '{{t}} の利用を確認',
     web_search: '「{{t}}」を検索', web_extract: '{{t}} を読む', browser_open: 'ブラウザで {{t}} を開く',
     read_file: '{{t}} を読む', write_file: '{{t}} に書き込む', edit_file: '{{t}} を編集', list_dir: '{{t}} を見る',
     run_command: '{{t}} を実行', update_plan: '計画を更新', recall: '記憶を探す', other: '{{tool}} を使う',
@@ -241,7 +241,7 @@ const es: Messages = {
   ask: { run_command: 'Ejecutar un comando', workspace_write: 'Escribir en tu carpeta', schedule: 'Crear una tarea programada', browser_site: 'Actuar en un sitio web', desktop_look: 'Mirar una app', desktop_app: 'Actuar en una app', desktop_risky: 'Un paso que puede borrar, enviar o pagar', mac_shortcut: 'Ejecutar un Atajo', mac_script: 'Ejecutar un AppleScript', desktop_takeover: 'Tomar la pantalla', other: 'Necesita tu visto bueno' },
   step: {
     desktop_apps: 'Listar las apps abiertas', desktop_look: 'Ver {{t}}', desktop_click: 'Clic en {{t}}', desktop_type: 'Escribir en {{t}}', desktop_select: 'Elegir en {{t}}', desktop_scroll: 'Desplazar {{t}}', desktop_press: 'Pulsar {{t}}',
-    desktop_menu: 'Elegir {{t}} en el menú', desktop_batch: 'Varios pasos en {{t}}', desktop_open: 'Abrir {{t}}', desktop_takeover: 'Tomar la pantalla',
+    desktop_menu: 'Elegir {{t}} en el menú', desktop_batch: 'Varios pasos en {{t}}', desktop_open: 'Abrir {{t}}', desktop_takeover: 'Tomar la pantalla', desktop_access: 'Pedir usar {{t}}',
     web_search: 'Buscar «{{t}}»', web_extract: 'Leer {{t}}', browser_open: 'Abrir {{t}} en el navegador',
     read_file: 'Leer {{t}}', write_file: 'Escribir {{t}}', edit_file: 'Editar {{t}}', list_dir: 'Mirar en {{t}}',
     run_command: 'Ejecutar {{t}}', update_plan: 'Actualizar el plan', recall: 'Buscar en la memoria', other: 'Usar {{tool}}',
@@ -301,7 +301,7 @@ const de: Messages = {
   ask: { run_command: 'Einen Befehl ausführen', workspace_write: 'In deinen Ordner schreiben', schedule: 'Geplante Aufgabe anlegen', browser_site: 'Auf einer Website handeln', desktop_look: 'Eine App ansehen', desktop_app: 'In einer App handeln', desktop_risky: 'Ein Schritt, der löschen, senden oder bezahlen kann', mac_shortcut: 'Kurzbefehl ausführen', mac_script: 'AppleScript ausführen', desktop_takeover: 'Bildschirm übernehmen', other: 'Braucht dein OK' },
   step: {
     desktop_apps: 'Offene Apps auflisten', desktop_look: '{{t}} ansehen', desktop_click: '{{t}} klicken', desktop_type: 'In {{t}} tippen', desktop_select: 'In {{t}} auswählen', desktop_scroll: '{{t}} scrollen', desktop_press: '{{t}} drücken',
-    desktop_menu: '{{t}} im Menü wählen', desktop_batch: 'Mehrere Schritte in {{t}}', desktop_open: '{{t}} öffnen', desktop_takeover: 'Bildschirm übernehmen',
+    desktop_menu: '{{t}} im Menü wählen', desktop_batch: 'Mehrere Schritte in {{t}}', desktop_open: '{{t}} öffnen', desktop_takeover: 'Bildschirm übernehmen', desktop_access: 'Fragen, ob es {{t}} nutzen darf',
     web_search: 'Suche „{{t}}“', web_extract: '{{t}} lesen', browser_open: '{{t}} im Browser öffnen',
     read_file: '{{t}} lesen', write_file: '{{t}} schreiben', edit_file: '{{t}} bearbeiten', list_dir: 'In {{t}} schauen',
     run_command: '{{t}} ausführen', update_plan: 'Plan aktualisieren', recall: 'Im Gedächtnis suchen', other: '{{tool}} verwenden',
@@ -361,7 +361,7 @@ const fr: Messages = {
   ask: { run_command: 'Lancer une commande', workspace_write: 'Écrire dans votre dossier', schedule: 'Créer une tâche planifiée', browser_site: 'Agir sur un site web', desktop_look: 'Regarder une app', desktop_app: 'Agir dans une app', desktop_risky: 'Une étape qui peut supprimer, envoyer ou payer', mac_shortcut: 'Lancer un Raccourci', mac_script: 'Lancer un AppleScript', desktop_takeover: 'Prendre l’écran en main', other: 'Il faut votre accord' },
   step: {
     desktop_apps: 'Lister les apps ouvertes', desktop_look: 'Regarder {{t}}', desktop_click: 'Cliquer {{t}}', desktop_type: 'Écrire dans {{t}}', desktop_select: 'Choisir dans {{t}}', desktop_scroll: 'Faire défiler {{t}}', desktop_press: 'Appuyer sur {{t}}',
-    desktop_menu: 'Choisir {{t}} dans le menu', desktop_batch: 'Plusieurs étapes dans {{t}}', desktop_open: 'Ouvrir {{t}}', desktop_takeover: 'Prendre l’écran en main',
+    desktop_menu: 'Choisir {{t}} dans le menu', desktop_batch: 'Plusieurs étapes dans {{t}}', desktop_open: 'Ouvrir {{t}}', desktop_takeover: 'Prendre l’écran en main', desktop_access: 'Demander à utiliser {{t}}',
     web_search: 'Rechercher « {{t}} »', web_extract: 'Lire {{t}}', browser_open: 'Ouvrir {{t}} dans le navigateur',
     read_file: 'Lire {{t}}', write_file: 'Écrire {{t}}', edit_file: 'Modifier {{t}}', list_dir: 'Regarder dans {{t}}',
     run_command: 'Exécuter {{t}}', update_plan: 'Mettre à jour le plan', recall: 'Chercher dans la mémoire', other: 'Utiliser {{tool}}',
