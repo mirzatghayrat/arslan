@@ -169,8 +169,9 @@ cp "$SRC/LICENSE" "$APP/Contents/Resources/LICENSE-agent-desktop"
 cat > "$APP/Contents/Resources/NOTICE" <<NOTICE
 Arslan Hands includes agent-desktop (https://github.com/lahfir/agent-desktop),
 Copyright its authors, licensed under the Apache License, Version 2.0 (see
-LICENSE-agent-desktop). Built unmodified from $REPOSITORY at $COMMIT
-(upstream ${UPSTREAM_TAG:-} ${UPSTREAM_COMMIT:-}) with its dependencies vendored.
+LICENSE-agent-desktop). Built from $REPOSITORY at $COMMIT
+(upstream ${UPSTREAM_TAG:-} ${UPSTREAM_COMMIT:-}): its dependencies vendored, and Arslan's
+changes listed in ARSLAN-FORK.md there (each changed file says so in its first lines).
 NOTICE
 if [ -n "$CUA_BIN" ]; then
   cat >> "$APP/Contents/Resources/NOTICE" <<NOTICE

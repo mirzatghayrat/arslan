@@ -1,10 +1,11 @@
 # agent-desktop as Arslan Hands builds it (spec docs/specs/2026-10-03-0153-hands-agent-desktop.md §1).
-# Our fork's branch = an upstream commit + commits that only vendor every dependency.
+# Our fork's branch = an upstream commit + commits that only vendor every dependency + the
+# carried patches listed in ARSLAN-FORK.md there (each offered upstream, dropped once it lands).
 # build_hands.sh refuses any checkout whose HEAD is not COMMIT. Moving the pin:
 # monthly sync (ARSLAN-FORK.md in the fork), then the contract check and the smoke.
 REPOSITORY=https://github.com/mirzatghayrat/agent-desktop.git
 BRANCH=arslan/main-9d7ba42
-COMMIT=a75f63c863dca4e0c4323da82cb841cf2f442615
+COMMIT=8b7927296326a4ba511d274e0a57a0df95181954
 UPSTREAM=lahfir/agent-desktop
 UPSTREAM_TAG=none (main after v0.9.4; spec 2026-10-08-0157 §15 A8)
 UPSTREAM_COMMIT=9d7ba42a94bc4ec018e624f3033602188f64af63
