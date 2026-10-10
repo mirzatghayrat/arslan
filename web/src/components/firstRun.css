@@ -1,446 +1,143 @@
-/*
- * FirstRunWizard — the one screen that does NOT follow the app theme.
- *
- * The wizard is a frosted-glass panel over a filmed (clay-character) background
- * video, and its palette is pinned to that footage: warm paper neutrals, an
- * ink-black primary, and the product orange #D9741A as the single accent. Theme
- * tokens would repaint it in dark mode and break the glass against the video,
- * so the colors live HERE, in a stylesheet scoped by .fr-* class names, and the
- * component file stays free of color literals (no-raw-colors guard).
- *
- * Glass recipe (approved mock "full5", layout B: panel left, character right):
- * blur(46px) saturate(1.7) brightness(1.04) over a white 62→44% gradient with
- * an inset hairline + top highlight. backdrop-filter needs real content behind
- * it to read as frosted — hence the video (or the poster fallback) always
- * paints underneath, and the crop tucks the desk in behind the panel's edge.
- */
+/* First-run film (0.1.60, docs/specs/2026-10-11-0160-first-run.md §3).
+   The window is the screen: one stage (near black / paper, following the theme), one lamp (the key light),
+   a vignette, a little film grain, and the island's head moved by a camera. Text sits on the left
+   like a subtitle; at most two buttons. Reduced motion: no camera, fades only. */
 
-.fr-root {
+.fr2 {
+  --font-mono: "SF Mono", ui-monospace, Menlo, monospace;
   position: fixed;
   inset: 0;
   z-index: 70;
   overflow: hidden;
-  background: #efe9e2;
-  user-select: none;
+  background-color: var(--stage);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  transition: background-color 700ms ease 450ms;
+}
+.fr2-dark {
+  --stage: #08090C; --fg: #F5F6F7; --muted: #8C93A1; --hair: rgba(245,246,247,.16); --ghost: rgba(245,246,247,.24);
+  --btn: #F5F6F7; --btn-fg: #08090C; --card: rgba(255,255,255,.04); --card-line: rgba(245,246,247,.14);
+  --field: rgba(255,255,255,.05); --lamp: rgba(206,218,255,.10); --vig: rgba(0,0,0,.72); --grain: .07; --blend: screen;
+  --err: #ff8a78; --warn: #f5a524;
+}
+.fr2-light {
+  --stage: #F6F6F3; --fg: #111214; --muted: #5E6470; --hair: rgba(17,18,20,.14); --ghost: rgba(17,18,20,.24);
+  --btn: #111214; --btn-fg: #F6F6F3; --card: #FFFFFF; --card-line: rgba(17,18,20,.12);
+  --field: #FFFFFF; --lamp: rgba(255,255,255,.95); --vig: rgba(40,42,50,.16); --grain: .05; --blend: multiply;
+  --err: #b42318; --warn: #8a5300;
 }
 
-.fr-bg {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  /* character sits center-left in the source frame; this crop keeps it in the
-     clear right half, beside the panel (approved composition — do not shift
-     the scene to meet the glass; the glass is WIDENED to reach the desk) */
-  object-position: 16% 50%;
-}
+/* light, lens, grain */
+.fr2-lamp { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 2400ms ease;
+  background: radial-gradient(60vw 78vh at 66% 36%, var(--lamp) 0%, transparent 70%); }
+.fr2-lit .fr2-lamp { opacity: 1; }
+.fr2-vignette { position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(130% 110% at 62% 45%, transparent 48%, var(--vig) 100%); }
+.fr2-grain { position: absolute; inset: 0; pointer-events: none; opacity: var(--grain); mix-blend-mode: var(--blend); }
 
-/* When the video can't play (asset absent, or a browser without h264) this
-   stands in: the poster frame if it loads — same composition, just still —
-   over a warm gradient for when even the poster is missing. */
-.fr-bg-fallback {
-  background:
-    url("/first-run/poster.jpg") 16% 50% / cover no-repeat,
-    radial-gradient(120% 90% at 72% 42%, #f7f2ea 0%, #ece4d8 46%, #ddd2c2 100%);
-}
+/* the head and its camera */
+.fr2-head { position: absolute; left: 0; top: 0; transform-origin: 50% 50%; opacity: 0; pointer-events: none;
+  will-change: transform; transition: transform 1100ms cubic-bezier(.65,0,.35,1), opacity 1700ms ease; }
+.fr2-lit .fr2-head { opacity: 1; }
 
-/* Soft vignette so panel text keeps contrast over bright video moments. */
-.fr-shade {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(90deg, rgba(35, 28, 20, 0.10), rgba(35, 28, 20, 0) 40%);
-  pointer-events: none;
-}
+/* chrome */
+.fr2-x { position: absolute; top: 18px; right: 18px; z-index: 2; width: 34px; height: 34px; border-radius: 999px;
+  border: 1px solid var(--hair); background: transparent; color: var(--muted); display: flex; align-items: center;
+  justify-content: center; cursor: pointer; }
+.fr2-x:hover { color: var(--fg); }
+.fr2-bars { position: absolute; left: clamp(32px, 8vw, 104px); top: 64px; display: flex; gap: 6px; }
+.fr2-bars span { display: block; width: 28px; height: 3px; border-radius: 2px; background: var(--hair); transition: background-color .6s; }
+.fr2-bars span.on { background: var(--fg); }
 
-.fr-glass {
-  position: absolute;
-  left: 60px;
-  top: 54px;
-  bottom: 54px;
-  /* wide enough that the right edge rides over the desk's corner — the
-     frosted blur needs real scenery under it to read as glass. Fixed across
-     all four steps; only the content changes. */
-  width: 460px;
-  display: flex;
-  flex-direction: column;
-  padding: 30px 32px 26px;
-  border-radius: 26px;
-  background: linear-gradient(165deg, rgba(255, 255, 255, 0.62), rgba(255, 255, 255, 0.44));
-  -webkit-backdrop-filter: blur(46px) saturate(1.7) brightness(1.04);
-  backdrop-filter: blur(46px) saturate(1.7) brightness(1.04);
-  box-shadow:
-    0 24px 70px rgba(35, 28, 20, 0.16),
-    0 2px 8px rgba(35, 28, 20, 0.06),
-    inset 0 1px 1px rgba(255, 255, 255, 0.85),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.42);
-  color: #1d1d1f;
+/* the subtitle panel */
+/* Anchored from the top, so a fold that opens grows downward instead of moving the title. */
+.fr2-panel { position: absolute; left: clamp(32px, 8vw, 104px); top: clamp(112px, 26vh, 260px); width: min(560px, 46vw);
+  display: flex; flex-direction: column;
+  animation: fr2-in 700ms cubic-bezier(.2,.7,.2,1) 280ms both; }
+@keyframes fr2-in {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
 }
+.fr2-eyebrow { margin: 0; font: 500 12px/1 var(--font-mono); letter-spacing: .18em; text-transform: uppercase; color: var(--muted); }
+.fr2-title { margin: 20px 0 0; font-size: clamp(38px, 4.6vw, 60px); line-height: 1.04; font-weight: 650; letter-spacing: -0.025em; }
+.fr2-body { margin: 20px 0 0; max-width: 470px; font-size: 18px; line-height: 1.55; color: var(--muted); }
 
-@media (max-width: 860px) {
-  .fr-glass {
-    left: 16px;
-    right: 16px;
-    top: 24px;
-    bottom: 24px;
-    width: auto;
-  }
-}
+.fr2-langs { margin-top: 40px; display: flex; flex-wrap: wrap; gap: 8px; }
+.fr2-pill { height: 36px; padding: 0 13px; border-radius: 999px; border: 1px solid var(--ghost); background: transparent;
+  color: var(--fg); font-size: 14px; font-weight: 500; cursor: pointer; }
+.fr2-pill.on { background: var(--btn); color: var(--btn-fg); border-color: var(--btn); }
 
-/* ── dismiss ── */
+.fr2-actions { margin-top: 36px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.fr2-langs + .fr2-actions { margin-top: 28px; }
+.fr2-pri { height: 48px; padding: 0 24px; border-radius: 999px; border: 0; background: var(--btn); color: var(--btn-fg);
+  font-size: 15px; font-weight: 600; display: inline-flex; align-items: center; gap: 10px; cursor: pointer; }
+.fr2-pri:disabled { opacity: .5; cursor: default; }
+.fr2-ghost { height: 48px; padding: 0 22px; border-radius: 999px; border: 1px solid var(--ghost); background: transparent;
+  color: var(--fg); font-size: 15px; font-weight: 500; cursor: pointer; }
+.fr2-ghost:disabled { opacity: .5; cursor: default; }
+.fr2-small { height: 38px; padding: 0 16px; font-size: 14px; }
+.fr2-link { padding: 0; border: 0; background: transparent; color: var(--fg); font-size: 13px; text-decoration: underline; cursor: pointer; }
 
-.fr-x {
-  position: absolute;
-  top: 20px;
-  right: 20px;
-  color: #a49e95;
-  transition: color 0.15s;
-}
-.fr-x:hover {
-  color: #1d1d1f;
-}
+/* your own key, folded */
+.fr2-fold { margin-top: 20px; align-self: flex-start; height: 32px; padding: 0; border: 0; background: transparent;
+  color: var(--muted); font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.fr2-fold svg { transition: transform 200ms ease; }
+.fr2-fold.open svg { transform: rotate(90deg); }
+.fr2-lampform { margin-top: 10px; width: min(460px, 100%); box-sizing: border-box; padding: 16px; border-radius: 16px;
+  border: 1px solid var(--card-line); background: var(--card); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.fr2-wide { grid-column: 1 / -1; }
+.fr2-lamprow { display: flex; align-items: center; gap: 14px; }
+.fr2-label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--muted); }
+.fr2-field { height: 38px; box-sizing: border-box; border-radius: 10px; border: 1px solid var(--card-line); background: var(--field);
+  color: var(--fg); padding: 0 10px; font-size: 14px; font-family: inherit; }
+.fr2-name { margin-top: 36px; gap: 8px; font-size: 13px; }
+.fr2-name .fr2-field { width: min(360px, 100%); height: 52px; border-radius: 14px; padding: 0 16px; font-size: 17px; }
+.fr2-name + .fr2-actions { margin-top: 24px; }
 
-/* ── step body: 220ms crossfade on step change (wrapper keyed by step) ── */
+/* status lines */
+.fr2-note { margin: 10px 0 0; font-size: 12px; line-height: 1.5; color: var(--muted); }
+.fr2-err { color: var(--err); }
+.fr2-warn { margin-top: 28px; max-width: 470px; font-size: 14px; color: var(--warn); }
+.fr2-status { margin: 36px 0 0; min-height: 48px; display: flex; align-items: center; gap: 12px; font-size: 15px; color: var(--fg); }
+.fr2-actions + .fr2-status { margin-top: 22px; min-height: 0; font-size: 14px; }
+.fr2-muted { color: var(--muted); }
+.fr2-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--muted); box-sizing: border-box; }
+.fr2-dot-blue { background: #3b9eff; border-color: #3b9eff; box-shadow: 0 0 0 6px rgba(59,158,255,.18); animation: fr2-pulse 1.4s ease-in-out infinite; }
+.fr2-dot-amber { background: #f5a524; border-color: #f5a524; }
+.fr2-ok { flex: none; color: #34d399; }
+@keyframes fr2-pulse { 50% { box-shadow: 0 0 0 9px rgba(59,158,255,.06); } }
 
-.fr-step {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  animation: fr-fade 220ms ease-out;
-}
+/* the folder choice */
+.fr2-cards { margin-top: 36px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.fr2-card { position: relative; min-height: 172px; box-sizing: border-box; padding: 20px; border-radius: 18px;
+  border: 1px solid var(--card-line); background: var(--card); color: var(--fg); text-align: left; font-family: inherit;
+  display: flex; flex-direction: column; gap: 10px; cursor: pointer; transition: border-color .2s, transform .2s, opacity .3s; }
+.fr2-card:hover:not(:disabled) { border-color: var(--ghost); transform: translateY(-1px); }
+.fr2-card.on { border: 2px solid var(--btn); padding: 19px; }
+.fr2-card:disabled { opacity: .4; cursor: default; }
+.fr2-card-title { font-size: 16px; font-weight: 600; line-height: 1.3; }
+.fr2-card-body { font-size: 14px; line-height: 1.5; color: var(--muted); }
+.fr2-card-check { position: absolute; top: 16px; right: 16px; width: 20px; height: 20px; border-radius: 50%;
+  background: var(--btn); color: var(--btn-fg); display: flex; align-items: center; justify-content: center; }
 
-@keyframes fr-fade {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: none; }
-}
+.fr2 button:focus-visible, .fr2 input:focus-visible, .fr2 select:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
 
-.fr-h1 {
-  font-size: 21px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  margin-bottom: 6px;
-  padding-right: 28px;
-}
+/* the hand-off: the stage fades over the live app while the head travels to its place */
+.fr2-leaving { background-color: transparent; pointer-events: none; }
+/* The panel's entry animation holds its end state, which would beat the fade: drop it first. */
+.fr2-leaving .fr2-panel { animation: none; }
+.fr2-leaving .fr2-panel, .fr2-leaving .fr2-bars, .fr2-leaving .fr2-x,
+.fr2-leaving .fr2-lamp, .fr2-leaving .fr2-vignette, .fr2-leaving .fr2-grain { opacity: 0; transition: opacity 400ms ease; }
+.fr2-leaving .fr2-head { opacity: 0; transition: transform 1100ms cubic-bezier(.65,0,.35,1), opacity 200ms ease 1100ms; }
 
-.fr-sub {
-  font-size: 12px;
-  line-height: 1.6;
-  color: #6e6a64;
-  margin-bottom: 18px;
-}
+/* a narrow window: the head above, the text below */
+.fr2-narrow .fr2-panel { left: 24px; right: 24px; width: auto; top: auto; bottom: 40px; }
+.fr2-narrow .fr2-cards { grid-template-columns: minmax(0, 1fr); }
+.fr2-narrow .fr2-card { min-height: 0; }
 
-.fr-hint {
-  font-size: 10.5px;
-  line-height: 1.55;
-  color: #8a847b;
+@media (prefers-reduced-motion: reduce) {
+  .fr2, .fr2-head, .fr2-lamp, .fr2-bars span { transition: none; }
+  .fr2-panel { animation: none; }
+  .fr2-dot-blue { animation: none; }
+  .fr2-card:hover:not(:disabled) { transform: none; }
 }
-
-/* ── step 1: language grid ── */
-
-.fr-langs {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-
-.fr-lang {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 13px;
-  border-radius: 12px;
-  border: 1px solid rgba(29, 29, 31, 0.14);
-  background: rgba(255, 255, 255, 0.55);
-  font-size: 12.5px;
-  color: #3c3934;
-  transition: border-color 0.15s, background 0.15s, color 0.15s;
-}
-.fr-lang:hover {
-  border-color: rgba(29, 29, 31, 0.32);
-}
-.fr-lang.on {
-  border-color: #d9741a;
-  background: rgba(217, 116, 26, 0.09);
-  color: #b35f14;
-  font-weight: 600;
-}
-
-/* ── step 2: how it works ── */
-
-.fr-typed {
-  display: inline-block;
-  max-width: 100%;
-  overflow: hidden;
-  white-space: nowrap;
-  font-size: 13px;
-  font-weight: 600;
-  color: #d9741a;
-  border-right: 2px solid #d9741a;
-  padding-right: 3px;
-  margin-bottom: 16px;
-  animation:
-    fr-typein 900ms steps(24, end) 150ms backwards,
-    fr-caret 900ms step-end 1.05s 3,
-    fr-caret-off 1ms linear 3.75s forwards;
-}
-
-@keyframes fr-typein {
-  from { max-width: 0; }
-  to   { max-width: 100%; }
-}
-@keyframes fr-caret {
-  0%, 100% { border-right-color: #d9741a; }
-  50%      { border-right-color: transparent; }
-}
-@keyframes fr-caret-off {
-  to { border-right-color: transparent; }
-}
-
-.fr-row {
-  display: flex;
-  gap: 12px;
-  padding: 9px 0;
-  border-top: 1px solid rgba(29, 29, 31, 0.08);
-  animation: fr-fade 320ms ease-out backwards;
-}
-.fr-row:nth-child(1) { animation-delay: 0.35s; }
-.fr-row:nth-child(2) { animation-delay: 0.55s; }
-.fr-row:nth-child(3) { animation-delay: 0.75s; }
-.fr-row:nth-child(4) { animation-delay: 0.95s; }
-
-.fr-row-num {
-  font-size: 10px;
-  font-weight: 700;
-  color: #d9741a;
-  letter-spacing: 0.06em;
-  padding-top: 2px;
-  font-variant-numeric: tabular-nums;
-}
-
-.fr-row-title {
-  font-size: 12.5px;
-  font-weight: 600;
-  margin-bottom: 1px;
-}
-
-.fr-row-body {
-  font-size: 11px;
-  line-height: 1.5;
-  color: #6e6a64;
-}
-
-/* ── step 3: connect a model ── */
-
-.fr-or-btn {
-  width: 100%;
-  padding: 11px 16px;
-  border-radius: 999px;
-  background: #1d1d1f;
-  color: #ffffff;
-  font-size: 12.5px;
-  font-weight: 600;
-  transition: opacity 0.15s;
-}
-.fr-or-btn:hover:not(:disabled) { opacity: 0.86; }
-.fr-or-btn:disabled { opacity: 0.55; }
-
-.fr-divider {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 14px 0;
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: #a49e95;
-}
-.fr-divider::before,
-.fr-divider::after {
-  content: "";
-  flex: 1;
-  border-top: 1px solid rgba(29, 29, 31, 0.12);
-}
-
-.fr-label {
-  display: block;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: #8a847b;
-  margin-bottom: 5px;
-}
-
-.fr-field {
-  width: 100%;
-  padding: 10px 13px;
-  border-radius: 12px;
-  border: 1px solid rgba(29, 29, 31, 0.16);
-  background: rgba(255, 255, 255, 0.7);
-  font-size: 12.5px;
-  color: #1d1d1f;
-  outline: none;
-  transition: border-color 0.15s;
-}
-.fr-field:focus { border-color: #d9741a; }
-.fr-field::placeholder { color: #a49e95; }
-
-.fr-cap {
-  font-size: 10.5px;
-  color: #8a847b;
-  margin-top: 5px;
-  font-variant-numeric: tabular-nums;
-}
-
-.fr-test-btn {
-  width: 100%;
-  margin-top: 12px;
-  padding: 11px 16px;
-  border-radius: 999px;
-  background: #d9741a;
-  color: #ffffff;
-  font-size: 12.5px;
-  font-weight: 600;
-  transition: opacity 0.15s;
-}
-.fr-test-btn:hover:not(:disabled) { opacity: 0.88; }
-.fr-test-btn:disabled { opacity: 0.55; }
-
-.fr-ok    { font-size: 11px; font-weight: 600; color: #35773f; margin-top: 9px; }
-.fr-err   { font-size: 11px; color: #b3402e; margin-top: 9px; word-break: break-word; }
-.fr-warn  { font-size: 11px; color: #9a6b14; margin-top: 9px; }
-
-.fr-shake { animation: fr-shake 300ms ease-in-out; }
-@keyframes fr-shake {
-  0%, 100% { transform: none; }
-  25%      { transform: translateX(-5px); }
-  75%      { transform: translateX(5px); }
-}
-
-/* three-dot "testing" pulse — text stays, dots animate after it */
-.fr-dotload::after {
-  content: "···";
-  display: inline-block;
-  margin-left: 4px;
-  letter-spacing: 2px;
-  animation: fr-dotpulse 900ms ease-in-out infinite;
-}
-@keyframes fr-dotpulse {
-  0%, 100% { opacity: 0.25; }
-  50%      { opacity: 1; }
-}
-
-.fr-linklike {
-  font-size: 11px;
-  color: #6e6a64;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-.fr-linklike:hover { color: #1d1d1f; }
-
-/* ── outro overlay: wizard → opening-animation hand-off ──
-   Fades in over the live wizard once actually playing (masks the drift
-   between the real panel and the clip's redrawn one), fades out into the app
-   on end. Keep .leaving's duration in sync with OUTRO_FADE_MS. */
-
-.fr-outro {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  opacity: 0;
-  transition: opacity 300ms ease-out;
-  cursor: pointer;
-}
-.fr-outro.playing,
-.fr-outro.leaving { opacity: 1; }
-
-/* the whole overlay (clip + glass + backdrop) crossfades out into the app;
-   keep the duration in sync with OUTRO_FADE_MS */
-.fr-root.fr-leaving {
-  opacity: 0;
-  transition: opacity 480ms ease-out;
-  pointer-events: none;
-}
-
-/* ── footer: dots + nav ── */
-
-.fr-foot {
-  display: flex;
-  align-items: center;
-  margin-top: 18px;
-  padding-top: 16px;
-  border-top: 1px solid rgba(29, 29, 31, 0.08);
-}
-
-.fr-dots {
-  display: flex;
-  gap: 6px;
-  margin-right: auto;
-}
-.fr-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  background: rgba(29, 29, 31, 0.18);
-  transition: width 0.25s, background 0.25s;
-}
-.fr-dot.on {
-  width: 16px;
-  background: #d9741a;
-}
-
-.fr-nav {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.fr-ghost {
-  font-size: 11.5px;
-  font-weight: 500;
-  color: #6e6a64;
-  padding: 8px 10px;
-  transition: color 0.15s;
-}
-.fr-ghost:hover { color: #1d1d1f; }
-
-.fr-pri {
-  padding: 9px 20px;
-  border-radius: 999px;
-  background: #1d1d1f;
-  color: #ffffff;
-  font-size: 12px;
-  font-weight: 600;
-  transition: opacity 0.15s;
-}
-.fr-pri:hover:not(:disabled) { opacity: 0.86; }
-.fr-pri:disabled { opacity: 0.55; }
-
-/* ── 0.1.55 S5: the surface kit's rules on the glass ──
-   One primary look (ink, never the brand orange), sentence-case labels instead of
-   tracked uppercase, readable sizes, and messages as soft notices with a role.
-   The glass, the video and the step choreography stay as they are. */
-.fr-pri, .fr-or-btn, .fr-test-btn {
-  height: 40px; padding: 0 20px; border-radius: 10px;
-  background: #1d1d1f; color: #ffffff; font-size: 14px; font-weight: 600;
-}
-.fr-or-btn, .fr-test-btn { width: 100%; }
-.fr-test-btn:hover:not(:disabled) { opacity: 0.86; }
-.fr-ghost { font-size: 13px; }
-.fr-dot.on { background: #1d1d1f; }
-.fr-field { font-size: 14px; border-radius: 10px; }
-.fr-field:focus { border-color: rgba(29, 29, 31, 0.55); box-shadow: 0 0 0 3px rgba(29, 29, 31, 0.08); }
-.fr-label { font-size: 12px; font-weight: 500; letter-spacing: normal; text-transform: none; color: #6e6a64; }
-.fr-divider { font-size: 12px; font-weight: 500; letter-spacing: normal; text-transform: none; }
-.fr-cap { font-size: 12px; }
-.fr-linklike { font-size: 12px; }
-.fr-ok, .fr-err, .fr-warn {
-  font-size: 12.5px; line-height: 1.45; margin-top: 10px; padding: 8px 11px; border-radius: 10px;
-}
-.fr-ok   { color: #1f6b2c; background: rgba(52, 199, 89, 0.12); font-weight: 500; }
-.fr-err  { color: #b3261e; background: rgba(215, 0, 21, 0.08); }
-.fr-warn { color: #8a5a00; background: rgba(245, 165, 36, 0.14); }

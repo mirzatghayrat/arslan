@@ -50,7 +50,7 @@ describe("locale parity", () => {
 // 1580 → 1589 (phone v2): sidebar.remote, sidebar.fromPhone, sidebar.glyph.{waiting,remote,working,progress,done,failed,scheduled}.
 // 1589 → 1590 (device e2e): sidebar.glyph.unfinished — a task that ended without getting it done.
 // 1590 → 1592 (0.1.53): settings.phoneComingSoon(+Desc) — the iPhone app teaser.
-  it("en locale has 1726 keys (baseline guard)", () => {
+  it("en locale has 1740 keys (baseline guard)", () => {
     // 1318 → 1335: the first-run wizard redesign — the four-beat "how it
     // works" tour (title + typed line + 4×title/body), the catalog capability
     // caption, the test-before-save states (test & save / testing / ok /
@@ -285,7 +285,8 @@ describe("locale parity", () => {
     // +32: confirm.* — the confirm sheets added to every destructive action (0.1.55 S3).
     // +35: Settings in seven sections (0.1.55 §11): nav labels, one-line hints, group titles.
     // 1727 → 1726 (0.1.59 chat liveness): working.summon/context/tools/compose out; thinking/long/queued in.
-    expect(enKeys).toHaveLength(1726);
+    // 1726 → 1740 (0.1.60 first run): the tour, outro and capability-score keys out; the film's shots and first tasks in.
+    expect(enKeys).toHaveLength(1740);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

@@ -9,8 +9,10 @@ const STILL = new Set<Mood>(['idle', 'stopped']);
  * blinks; the mouth constellation carries the state. `paused` stops the frame
  * loop while the island is hidden behind the notch.
  */
-export default function IslandMascot({ mood, size, paused = false, small = false }:
-  { mood: Mood; size: number; paused?: boolean; small?: boolean }) {
+export default function IslandMascot({ mood, size, paused = false, small = false, tone = 'paper' }:
+  { mood: Mood; size: number; paused?: boolean; small?: boolean;
+    /** 0.1.60: "ink" = black face, white eyes and mouth, for a light stage (the first-run film). */
+    tone?: 'paper' | 'ink' }) {
   const gid = useId().replace(/:/g, '');
   const refs = useRef<Record<string, SVGElement | null>>({});
   const anim = useRef<{ cur: Glyph; from: Glyph; to: Glyph; t0: number; mood: Mood }>({
@@ -68,14 +70,15 @@ export default function IslandMascot({ mood, size, paused = false, small = false
   }, [paused, mood]);
 
   const ref = (k: string) => (el: SVGElement | null) => { refs.current[k] = el; };
+  const face = tone === 'ink' ? ['#141518', '#26282d'] : ['#ffffff', '#e9ebee'];
   return (
-    <div className={`mascot${small ? ' small' : ''}${paused ? ' paused' : ''}`} data-state={mood}
+    <div className={`mascot${small ? ' small' : ''}${paused ? ' paused' : ''}${tone === 'ink' ? ' ink' : ''}`} data-state={mood}
       style={{ ['--s' as string]: `${size}px` }} aria-hidden="true">
       <div className="halo" />
       <svg viewBox="250 190 750 840">
         <defs>
           <linearGradient id={`${gid}f`} x1="0.85" y1="0" x2="0.15" y2="1">
-            <stop offset="0" stopColor="#ffffff" /><stop offset=".7" stopColor="#ffffff" /><stop offset="1" stopColor="#e9ebee" />
+            <stop offset="0" stopColor={face[0]} /><stop offset=".7" stopColor={face[0]} /><stop offset="1" stopColor={face[1]} />
           </linearGradient>
         </defs>
         <g className="head">
