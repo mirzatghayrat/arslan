@@ -122,6 +122,12 @@ all looking for its `pair.accept` and timed out.
    Settings › Remove the `device.revoked` it sends first is left for the phone to read (no ack can
    be read from a forgotten key; the 7-day clean-up takes it). The Mac remembers each waiting
    record's recipient (`to`) across restarts, so a removal after a restart still finds them.
+2a. **Unpairing on the phone** (added 2026-10-10, iPhone 1.0): before it wipes itself, a paired phone
+   sends `device.revoked` with `reason: "unpaired_on_phone"` (phone → Mac, signed with its key) and
+   waits a few seconds at most for the upload; offline, it unpairs anyway and the Mac keeps the row
+   until Settings › Remove or the next pairing's `replaces`. The Mac removes the **sender** as in item 2,
+   sends it nothing back, and acts on nothing else from it in that batch. The body never names another
+   phone: a phone can remove only itself. A Mac older than this ignores the message.
 3. **At start-up** the Mac deletes the records still waiting for an ack whose recipient is no longer a
    paired phone. Waiting ids remembered before this change carry no recipient: the Mac reads each
    record's `to` from the zone by id (that field only). An id the zone no longer has stops being
@@ -247,7 +253,7 @@ never the content. A lock-screen alert shows generic text unless the user turned
 | `run.get` / `run.result` | phone → Mac / Mac → phone | `run_id` / `run_id`, `conversation_id`, `title`, `state` (working/done/failed/stopped), `started_at`, `duration_ms`, `total`, `steps[]`, `files[]` (§5.5) |
 | `task.start` / `task.started` | phone → Mac / Mac → phone | `goal`, `criteria[]?` (≤ 3), `client_task_id` (UUID) / `conversation_id`, `job_id`, `client_task_id` |
 | `task.stop` | phone → Mac | `job_id`, `conversation_id?` |
-| `device.revoked` | Mac → phone | `reason` |
+| `device.revoked` | Mac → phone; phone → Mac (§3.3 item 2a) | `reason` (`removed_on_mac` / `unpaired_on_phone`) |
 | `error` | both | `code`, `message`, `related_id?` (the request it answers) |
 
 Settled here (open in the proposal):
