@@ -155,7 +155,7 @@ async def test_the_executor_sandboxes_unless_the_setting_or_the_loop_says_otherw
     await _wire(tmp_path, monkeypatch, workspace=str(ws))
     seen = []
 
-    async def fake_run(command, *, cwd, timeout_s, offline=False, sandbox=False):
+    async def fake_run(command, *, cwd, timeout_s, offline=False, sandbox=False, **kw):
         seen.append(sandbox)
         return {"ok": True, "exit_code": 0, "stdout": "", "stderr": "", "cwd": str(cwd), "sandbox": "x"}
     monkeypatch.setattr(terminal_exec, "run", fake_run)
@@ -300,3 +300,101 @@ async def test_a_socket_in_a_protected_folder_cannot_be_reached(monkeypatch):
         folder.rmdir()
         ws.rmdir()
         short.rmdir()
+
+
+# ── 0.1.59: "Desktop, Documents, Downloads: Off" closes them to commands too ──
+
+@pytest.fixture
+def green(tmp_path):
+    """Stand-ins for the user's Documents and Downloads (never the real ones): a working folder
+    and a project kept inside them, a private file beside each, and a symlink pointing in."""
+    docs, downs = tmp_path / "Home" / "Documents", tmp_path / "Home" / "Downloads"
+    ws, project = docs / "Arslan", downs / "Pocket Garden"
+    for folder in (ws, project):
+        folder.mkdir(parents=True)
+    (docs / "taxes.txt").write_text("private")
+    (downs / "bank.pdf").write_text("private")
+    (ws / "notes.md").write_text("work")
+    (project / "plan.md").write_text("plan")
+    (tmp_path / "link").symlink_to(downs)
+    return {"closed": [docs, downs], "readable": [project], "ws": ws, "project": project,
+            "docs": docs, "downs": downs, "link": tmp_path / "link"}
+
+
+@pytest.mark.macos
+@macos
+async def test_closed_folders_cannot_be_opened_by_a_command(green):
+    g = green
+    run = lambda cmd: terminal_exec.run(cmd, cwd=g["ws"], sandbox=True, closed=g["closed"], readable=g["readable"])  # noqa: E731
+    for cmd in (f"cat '{g['docs']}/taxes.txt'", f"ls '{g['downs']}'", f"find '{g['downs']}' -type f",
+                f"cat '/System/Volumes/Data{command_sandbox._real(g['downs'])}/bank.pdf'",
+                f"cat '{g['link']}/bank.pdf'"):
+        out = await run(cmd)
+        assert out["ok"] is False and "private" not in out["stdout"] and "bank.pdf" not in out["stdout"], cmd
+        assert out["sandbox_denied"] is True and "closed" in out["note"], cmd
+    # The working folder and the project kept inside them stay open (the project read-only).
+    both = await run("cat notes.md && echo more > more.md")
+    assert both["ok"] is True and both["stdout"] == "work" and (g["ws"] / "more.md").read_text().strip() == "more"
+    assert (await run(f"cat '{g['project']}/plan.md'"))["stdout"].strip() == "plan"
+    write = await run(f"echo x > '{g['project']}/new.md'")
+    assert write["ok"] is False and not (g["project"] / "new.md").exists()
+
+
+@pytest.mark.macos
+@macos
+async def test_with_the_folders_on_nothing_changes(green):
+    g = green
+    out = await terminal_exec.run(f"cat '{g['docs']}/taxes.txt'", cwd=g["ws"], sandbox=True)
+    assert out["ok"] is True and out["stdout"].strip() == "private"
+
+
+async def test_the_executor_closes_the_folders_only_while_the_setting_is_off(tmp_path, monkeypatch):
+    from server.registry import executors
+    from server.registry.executors import RunCommandExecutor
+    from server.db import session as db_session
+    from server.db.models import Setting
+    from server.services import workspace_paths
+    from tests.server.test_workspace_tool_gate import _wire
+    ws, docs, project = tmp_path / "ws", tmp_path / "Documents", tmp_path / "Documents" / "Garden"
+    for folder in (ws, project):
+        folder.mkdir(parents=True)
+    await _wire(tmp_path, monkeypatch, workspace=str(ws))
+    monkeypatch.setattr(workspace_paths, "green_roots", lambda: [docs])
+
+    async def projects():
+        return [project]
+    monkeypatch.setattr(executors, "_project_folders", projects)
+    seen = []
+
+    async def fake_run(command, *, cwd, timeout_s, offline=False, sandbox=False, closed=(), readable=()):
+        seen.append((list(closed), list(readable)))
+        return {"ok": True, "exit_code": 0, "stdout": "", "stderr": "", "cwd": str(cwd), "sandbox": "workspace"}
+    monkeypatch.setattr(terminal_exec, "run", fake_run)
+    await RunCommandExecutor().execute({"command": "ls"})
+    async with db_session.AsyncSessionLocal() as db:
+        db.add(Setting(key="default_read_enabled", value="false"))
+        await db.commit()
+    await RunCommandExecutor().execute({"command": "ls"})
+    assert seen == [([], []), ([docs], [project])]
+
+
+def test_the_profile_closes_then_reopens_then_protects(tmp_path):
+    docs, ws, project, key = tmp_path / "Documents", tmp_path / "Documents" / "ws", tmp_path / "Documents" / "P", tmp_path / "k"
+    text = command_sandbox.profile([ws], [key], closed=[docs], readable=[project])
+    lines = text.splitlines()
+    closing = next(i for i, line in enumerate(lines) if line.startswith("(deny file-read* file-write*") and "Documents\"" in line)
+    reopen_rw = next(i for i, line in enumerate(lines) if line.startswith("(allow file-read* file-write*"))
+    reopen_r = next(i for i, line in enumerate(lines) if line.startswith("(allow file-read* ") and "file-write" not in line)
+    protect = next(i for i, line in enumerate(lines) if json.dumps(str(command_sandbox._real(key))) in line and "deny" in line)
+    assert closing < reopen_rw < protect and closing < reopen_r < protect
+    assert json.dumps(str(command_sandbox._real(ws))) in lines[reopen_rw]
+    assert json.dumps(str(command_sandbox._real(project))) in lines[reopen_r]
+    # The setting on: not a single extra rule.
+    assert command_sandbox.profile([ws], [key]) == command_sandbox.profile([ws], [key], closed=[], readable=[project])
+
+
+def test_a_stopped_command_is_told_which_folders_the_user_keeps_closed():
+    home = Path.home()
+    note = command_sandbox.note(home / "Arslan", [home / "Downloads", home / "Documents"])
+    assert "~/Downloads, ~/Documents" in note and "outside_sandbox" in note
+    assert "closed" not in command_sandbox.note(home / "Arslan")
