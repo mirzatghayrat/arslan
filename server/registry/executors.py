@@ -759,18 +759,46 @@ class RunCommandExecutor:
         async with db_session.AsyncSessionLocal() as db:
             cwd = await settings_service.workspace_dir(db)
             sandboxed = await settings_service.terminal_sandbox_enabled(db)
+            default_read = await settings_service.default_read_enabled(db)
         if cwd is None:
             return {"ok": False, "error": "the chosen workspace folder no longer exists"}
+        # 0.1.59: "Desktop, Documents, Downloads: Off" closes them to commands too (only inside the
+        # sandbox; a command the user lets run outside it is not confined). The working folder and
+        # the project folders kept in them stay open.
+        closed, readable = [], []
+        if not default_read:
+            from server.services import workspace_paths
+            closed = workspace_paths.green_roots()
+            readable = await _project_folders()
         # 0.1.51 P3: inside the workspace sandbox unless the user turned it off or
         # the loop says they clicked to let THIS command out (never the model's args).
         result = await terminal_exec.run(command, cwd=cwd,
                                          timeout_s=terminal_exec.timeout_of(args.get("timeout_s")),
                                          offline=terminal_exec.OFFLINE.get(),
-                                         sandbox=sandboxed and not terminal_exec.OUTSIDE_SANDBOX.get())
+                                         sandbox=sandboxed and not terminal_exec.OUTSIDE_SANDBOX.get(),
+                                         closed=closed, readable=readable)
         head = command if len(command) <= 80 else command[:77] + "…"
         result["summary"] = (f"`{head}` → exit {result['exit_code']}" if not result.get("error", "").startswith("stopped")
                              else f"`{head}` → {result['error']}")
         return result
+
+
+async def _project_folders() -> list:
+    """Active projects' folders (0.1.59): they stay open to commands when Desktop, Documents and
+    Downloads are closed, so a project kept in Documents keeps working."""
+    from pathlib import Path
+    from sqlalchemy import select
+    from server.db import session as db_session
+    from server.db.companion_models import Project
+    async with db_session.AsyncSessionLocal() as db:
+        refs = (await db.execute(select(Project.workspace_ref).where(
+            Project.status == "active", Project.workspace_ref.is_not(None)))).scalars().all()
+    out = []
+    for raw in refs:
+        text = str(raw or "").strip()
+        if text and Path(text).expanduser().is_dir():
+            out.append(Path(text).expanduser())
+    return out
 
 
 class ReadSkillExecutor:

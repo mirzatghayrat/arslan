@@ -18,6 +18,13 @@ protected folder). So every protected path is also closed to network-outbound,
 which for a path means exactly that: connecting to a socket under it. 0.1.53's
 Arslan Hands listens in such a folder.
 
+0.1.59: while "Desktop, Documents, Downloads" is off in Settings, those folders are closed too
+(`closed`), except the working folder and the project folders kept inside them (`reopen_*`).
+Measured on this Mac (2026-10-10): a deny on a folder followed by an allow on a folder inside it
+holds; the closed folder stays closed through /System/Volumes/Data/… and through a symlink; listing
+its parent still shows its name. Before, the toggle closed only the file tools — a question from
+the iPhone made Arslan scan the real ~/Downloads with ls/find/python while it was off.
+
 Leaving the sandbox is always a click (see tool_loop): the model asks up front,
 or a stopped command is offered a re-run, or the user ticks "for the rest of this
 conversation" — that last one is held here, in memory only, never saved.
@@ -101,16 +108,32 @@ def _rule(path: Path) -> str:
     return f"({kind} {json.dumps(str(path))})"
 
 
-def profile(writable: list[Path], protected: list[Path], *, offline: bool = False) -> str:
+def _inside(path: Path, folders: list[Path]) -> bool:
+    return any(path == folder or folder in path.parents for folder in folders)
+
+
+def profile(writable: list[Path], protected: list[Path], *, offline: bool = False,
+            closed: list[Path] = (), readable: list[Path] = ()) -> str:
     """The SBPL text. Order matters: deny all writes, re-allow the writable
-    folders, then close the protected paths (last rule wins) — to files and to
-    sockets alike."""
+    folders, close `closed` (0.1.59: the user's Desktop/Documents/Downloads while
+    they are off) and re-open what lives inside them — writable folders read and
+    write, `readable` ones (project folders) read only — then close the protected
+    paths (last rule wins) — to files and to sockets alike."""
     lines = ["(version 1)", "(allow default)"]
     if offline:
         lines.append("(deny network*)")
     lines.append('(deny file-write* (subpath "/"))')
     if writable:
         lines.append("(allow file-write* " + " ".join(_rule(_real(p)) for p in writable) + ")")
+    shut = [_real(p) for p in closed]
+    if shut:
+        lines.append("(deny file-read* file-write* " + " ".join(_rule(p) for p in shut) + ")")
+        open_rw = [p for p in map(_real, writable) if _inside(p, shut)]
+        open_r = [p for p in map(_real, readable) if _inside(p, shut) and p not in open_rw]
+        if open_rw:
+            lines.append("(allow file-read* file-write* " + " ".join(_rule(p) for p in open_rw) + ")")
+        if open_r:
+            lines.append("(allow file-read* " + " ".join(_rule(p) for p in open_r) + ")")
     if protected:
         closed = " ".join(_rule(_real(p)) for p in protected)
         lines.append("(deny file-read* file-write* " + closed + ")")
@@ -118,13 +141,15 @@ def profile(writable: list[Path], protected: list[Path], *, offline: bool = Fals
     return "\n".join(lines) + "\n"
 
 
-def wrapper(workspace: Path, *, offline: bool = False) -> list[str] | None:
+def wrapper(workspace: Path, *, offline: bool = False, closed: list[Path] = (),
+            readable: list[Path] = ()) -> list[str] | None:
     """The sandbox-exec prefix for a command in `workspace`, or None where seatbelt
     is missing or cannot start (then the caller runs as before and says so)."""
     if not available():
         return None
     return ["/usr/bin/sandbox-exec", "-p",
-            profile(default_writable(workspace), default_protected(), offline=offline)]
+            profile(default_writable(workspace), default_protected(), offline=offline,
+                    closed=closed, readable=readable)]
 
 
 def available() -> bool:
@@ -151,11 +176,16 @@ def stopped_by_sandbox(result: dict) -> bool:
     return bool(_DENIED.search(f"{result.get('stderr') or ''}\n{result.get('stdout') or ''}"))
 
 
-def note(workspace: Path) -> str:
+def note(workspace: Path, closed: list[Path] = ()) -> str:
+    shut = ""
+    if closed:
+        names = ", ".join(f"~/{p.name}" if p.parent == Path.home() else str(p) for p in closed)
+        shut = (f" The user keeps {names} closed (Settings: Desktop, Documents, Downloads is off), so commands "
+                "cannot open them either.")
     return ("The sandbox stopped this command: commands may write only inside the working folder "
-            f"({workspace}), temp and cache folders, and cannot read ~/.ssh, the keychain or Arslan's data. "
-            "If it really needs to work elsewhere, run it again with outside_sandbox: true and a short why — "
-            "the user decides with a click. Otherwise tell the user what you needed.")
+            f"({workspace}), temp and cache folders, and cannot read ~/.ssh, the keychain or Arslan's data."
+            + shut + " If it really needs to work elsewhere, run it again with outside_sandbox: true and a short "
+            "why — the user decides with a click. Otherwise tell the user what you needed.")
 
 
 # ── "for the rest of this conversation" (memory only) ─────────────────────────
