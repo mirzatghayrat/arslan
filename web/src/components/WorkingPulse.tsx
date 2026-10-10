@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 /**
  * WorkingPulse — a decrypt/scramble text indicator for every "something is happening"
  * moment (no dead air, ever). Cycles through phase phrases; each resolves left-to-right
- * out of random glyphs, holds briefly, then the next phrase scrambles in.
+ * out of random glyphs, holds briefly, then the next phrase scrambles in. A single phrase
+ * resolves once and holds (0.1.59: the live row's one true label, not a show).
  *
  * Written in-house (~50 lines): react-bits' DecryptedText is MIT+Commons-Clause, which
  * we do not mix into this MIT codebase. No dependencies, respects reduced motion.
@@ -50,6 +51,11 @@ export default function WorkingPulse({
     const resolveMs = Math.min(1500, periodMs * 0.4);
     let start = performance.now();
     const tick = setInterval(() => {
+      if (phrases.length === 1 && performance.now() - start >= resolveMs) {
+        setText(phrases[0]);
+        clearInterval(tick);
+        return;
+      }
       const elapsed = (performance.now() - start) % periodMs;
       if (elapsed < resolveMs) {
         setText(scrambleFrame(phrases[idx.current % phrases.length], elapsed / resolveMs));

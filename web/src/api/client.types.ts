@@ -691,6 +691,11 @@ export type ArslanServerMessage =
   | { type: "history"; messages: ArslanHistoryRow[] }
   /** 0.1.58 §1: what Arslan said before its next tool call (tool loop narration). */
   | { type: "note"; text: string }
+  /** 0.1.59: every 15 s of a turn — the server is still on it (liveness only, never replayed). */
+  | { type: "working"; elapsed_s: number }
+  /** 0.1.59: this window's message waits for the conversation's current turn; then it starts. */
+  | { type: "queued" }
+  | { type: "dequeued" }
   | { type: "proposal"; spawn_id: number; spawn_name: string | null }
   | { type: "routing"; spawn_id: number; spawn_name: string | null; announcement?: string | null }
   | { type: "auto_continue"; spawn_id: number; spawn_name?: string | null; remaining?: number }

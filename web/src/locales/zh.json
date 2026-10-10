@@ -1403,11 +1403,10 @@
     "image_unsendable": "无法处理,未发送"
   },
   "working": {
-    "summon": "正在召唤专家…",
-    "context": "组装上下文与技能…",
-    "tools": "调度工具中…",
-    "compose": "整理结论中…",
-    "stalled": "已中断"
+    "stalled": "与 Arslan 失去联系——它可能仍在工作。重新打开这个对话查看。",
+    "thinking": "思考中…",
+    "long": "仍在进行——较长的回答可能需要几分钟",
+    "queued": "Arslan 做完当前这条回复后马上读这条"
   },
   "eval": {
     "scope_conversation": "本会话",
