@@ -65,9 +65,11 @@ class BudgetSpec(Contract):
 
 
 class ValidationRule(Contract):
-    """Bounded declarative assertions, never code, paths or execution authority."""
+    """Bounded declarative assertions, never code or execution authority. A `file_saved` target may
+    name a path: it is only looked at read-only, inside the folders Arslan may already read (0.1.59)."""
     kind: Literal["text", "json", "artifact", "image_dimensions", "research_sources", "research_evidence",
-                  "code_build", "code_test", "language", "layout", "remote_readback"]
+                  "code_build", "code_test", "language", "layout", "remote_readback",
+                  "file_saved", "sources_read"]
     target: Annotated[str, Field(max_length=240)] | None = None
     equals: Annotated[str, Field(max_length=20_000)] | None = None
     contains: tuple[Annotated[str, Field(min_length=1, max_length=2000)], ...] = Field(default=(), max_length=32)
@@ -91,6 +93,8 @@ class ValidationRule(Contract):
             "artifact": {"target", "minimum", "maximum"},
             "image_dimensions": {"target", "width", "height", "minimum", "maximum"},
             "research_sources": {"target", "minimum", "maximum"},
+            "file_saved": {"target", "minimum"},
+            "sources_read": {"target", "minimum", "maximum"},
             "research_evidence": set(),
             "code_build": {"target", "argv", "equals", "contains"},
             "code_test": {"target", "argv", "equals", "contains"},
@@ -114,7 +118,8 @@ class AcceptanceCheck(Contract):
         if self.critical and self.evaluator == "model":
             raise ValueError("critical acceptance needs deterministic or human verification")
         if self.evaluator == "model" and self.rule is not None and self.rule.kind in {
-            "artifact", "image_dimensions", "research_sources", "research_evidence", "code_build", "code_test", "remote_readback"}:
+            "artifact", "image_dimensions", "research_sources", "research_evidence", "code_build", "code_test", "remote_readback",
+            "file_saved", "sources_read"}:
             raise ValueError("factual checks need deterministic or human verification")
         return self
 
