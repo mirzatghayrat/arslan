@@ -1,0 +1,93 @@
+# Release smoke on main 4ac18c0c (with #160), 2026-10-11 02:04-02:07, development Hands at pin 8b792729
+
+## Run 1 (load 4.2): Notes had no window; Claude opened one with `open -a Notes` just before, and Notes took the front back by itself a moment later (it was in front before run 2 started) — the one 'another app in front' failure
+  PASS  Arslan Hands runs and holds Accessibility — pid 60365, peer check off
+  PASS  acting with no conversation to ask in is refused — no_one_to_ask
+  PASS  look at the fixture
+  PASS  type into a field (no focus taken)
+  PASS  click a button
+  PASS  the click had its effect (observed, not trusted)
+  PASS  a password field is refused — password_field
+  PASS  a Delete button asks every time
+  info  front app after the fixture step: com.apple.Notes (was com.apple.Notes)
+  PASS  a never-list app is refused — app_denied
+  PASS  Notes: New Note through the menu shortcut
+  PASS  Notes: the new note's body is found — 2 text fields; 
+  PASS  Notes: the note gets its title and text
+  PASS  Notes: the note is there (observed)
+  PASS  Notes: the user's front app is in front again after the Notes step — front com.apple.Notes (was com.apple.Notes)
+  info  front app after the Notes step: com.apple.Notes (was com.apple.Notes)
+  PASS  Finder: the file is seen in its window — Finder — window “Hands smoke 5xziul0b”. Refs [@…] work for actions in this piece of work; an entry with “… inside” opens with desktop_look {app, ref}.
+A screenshot of this window (1280×607 px) is attached; (x, y) after an element is its centre in that screenshot, in its pixels.
+window “Hands smoke 5
+  info  Finder rename in the background: not possible headless (spec §7) — the model uses mv
+  info  front app after the Finder step: com.apple.Notes (was com.apple.Notes)
+  PASS  Stop ends a Hands call in flight within 1 s — 0.04s after Stop (1.5s in all)
+  PASS  a chat reply acts 5 times, then is sent to the background — [None, None, None, None, None, 'act_in_background']
+  PASS  a batch runs its steps and ends with a look that shows the effect — Batch in Hands Fixture: 2 of 2 steps went through.
+1. type: Done: typing in “Title” in Hands Fixture (the change was read back). Look again (desktop_look) to see the result before the next step.
+2. cl
+  PASS  a pop-up is chosen by borrowing the front, and the front is given back — 1.34s in all; front com.if.Amphetamine → com.if.Amphetamine; Done: choosing in “Color” in Hands Fixture (the change was read back). Look again (desktop_look) to see the result before the next step. Arslan borrowed the front for 986 ms. The user moved the mouse 
+  PASS  one card for several apps, then no card to look or act in them — cards: [('desktop_app', 'Hands Fixture, Finder')]
+  PASS  an app allowed for good asks nothing, except its risky step — cards: ['desktop_risky']
+  PASS  an app never screenshotted is read as text only — 0 images
+  FAIL  G8': a look with a screenshot, median ≤ 400 ms — median 401 ms of [401, 402, 407, 390, 387]; images 1
+  PASS  G8': the scripted task as a batch takes at most half the tool calls (model round trips) — tool calls 7 → 2; wall time without a model 3.99s → 3.13s (78%, shown, not gated); effects seen True/True
+  info  front app after the v2 checks: com.if.Amphetamine (was com.apple.Notes)
+  PASS  G7': Cursor's page content is read without relaunching it — 47 refs (skeleton plus 1 folded parts opened)
+  PASS  G9: Hands and agent-desktop opened no network socket during the run — 169 samples; []
+  PASS  G9: no image file appeared in Hands' folder or the temp folders — []
+  FAIL  no action left another app in front (checked by Hands around each action) — 23 actions; 1 times the front was given back; taken: [('click', 'Hands Fixture', {'after': 21529, 'before': 73186}, False, False)]
+  PASS  a sandboxed command cannot reach Hands' socket — ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+  PASS  a sandboxed command cannot read Hands' token
+  PASS  agent-desktop, run on its own, holds no Accessibility — state denied — if granted, macOS lends it a grant and anything could drive apps with it
+
+29 passed, 2 failed; cards asked: desktop_risky:Hands Fixture · “Delete”, desktop_look:Hands Fixture, desktop_look:Hands Fixture, desktop_look:Hands Fixture, desktop_app:Hands Fixture, desktop_look:Hands Fixture, desktop_app:Hands Fixture, desktop_look:Cursor
+
+## Run 2 (load 5.0), nothing touched before it
+  PASS  Arslan Hands runs and holds Accessibility — pid 60365, peer check off
+  PASS  acting with no conversation to ask in is refused — no_one_to_ask
+  PASS  look at the fixture
+  PASS  type into a field (no focus taken)
+  PASS  click a button
+  PASS  the click had its effect (observed, not trusted)
+  PASS  a password field is refused — password_field
+  PASS  a Delete button asks every time
+  info  front app after the fixture step: com.apple.Notes (was com.apple.Notes)
+  PASS  a never-list app is refused — app_denied
+  PASS  Notes: New Note through the menu shortcut
+  PASS  Notes: the new note's body is found — 2 text fields; 
+  PASS  Notes: the note gets its title and text
+  PASS  Notes: the note is there (observed)
+  PASS  Notes: the user's front app is in front again after the Notes step — front com.apple.Notes (was com.apple.Notes)
+  info  front app after the Notes step: com.apple.Notes (was com.apple.Notes)
+  PASS  Finder: the file is seen in its window — Finder — window “Hands smoke ccx5a_js”. Refs [@…] work for actions in this piece of work; an entry with “… inside” opens with desktop_look {app, ref}.
+A screenshot of this window (1280×607 px) is attached; (x, y) after an element is its centre in that screenshot, in its pixels.
+window “Hands smoke c
+  info  Finder rename in the background: not possible headless (spec §7) — the model uses mv
+  info  front app after the Finder step: com.apple.Notes (was com.apple.Notes)
+  PASS  Stop ends a Hands call in flight within 1 s — 0.05s after Stop (1.5s in all)
+  PASS  a chat reply acts 5 times, then is sent to the background — [None, None, None, None, None, 'act_in_background']
+  PASS  a batch runs its steps and ends with a look that shows the effect — Batch in Hands Fixture: 2 of 2 steps went through.
+1. type: Done: typing in “Title” in Hands Fixture (the change was read back). Look again (desktop_look) to see the result before the next step.
+2. cl
+  PASS  a pop-up is chosen by borrowing the front, and the front is given back — 1.38s in all; front com.apple.Notes → com.apple.Notes; Done: choosing in “Color” in Hands Fixture (the change was read back). Look again (desktop_look) to see the result before the next step. Arslan borrowed the front for 1008 ms.
+  PASS  one card for several apps, then no card to look or act in them — cards: [('desktop_app', 'Hands Fixture, Finder')]
+  PASS  an app allowed for good asks nothing, except its risky step — cards: ['desktop_risky']
+  PASS  an app never screenshotted is read as text only — 0 images
+  FAIL  G8': a look with a screenshot, median ≤ 400 ms — median 409 ms of [404, 413, 410, 405, 409]; images 1
+  PASS  G8': the scripted task as a batch takes at most half the tool calls (model round trips) — tool calls 7 → 2; wall time without a model 4.09s → 3.15s (77%, shown, not gated); effects seen True/True
+  info  front app after the v2 checks: com.apple.Notes (was com.apple.Notes)
+  PASS  G7': Cursor's page content is read without relaunching it — 47 refs (skeleton plus 1 folded parts opened)
+  PASS  G9: Hands and agent-desktop opened no network socket during the run — 170 samples; []
+  PASS  G9: no image file appeared in Hands' folder or the temp folders — []
+  PASS  no action left another app in front (checked by Hands around each action) — 23 actions; 1 times the front was given back; taken: []
+  PASS  a sandboxed command cannot reach Hands' socket — ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+
+  PASS  a sandboxed command cannot read Hands' token
+  PASS  agent-desktop, run on its own, holds no Accessibility — state denied — if granted, macOS lends it a grant and anything could drive apps with it
+
+30 passed, 1 failed; cards asked: desktop_risky:Hands Fixture · “Delete”, desktop_look:Hands Fixture, desktop_look:Hands Fixture, desktop_look:Hands Fixture, desktop_app:Hands Fixture, desktop_look:Hands Fixture, desktop_app:Hands Fixture, desktop_look:Cursor
