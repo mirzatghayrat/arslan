@@ -52,8 +52,15 @@ def test_the_apps_a_script_names():
     assert hands_service.script_apps(script) == ["Notes", "com.apple.Mail"]
 
 
-async def test_a_script_naming_a_never_list_app_is_refused_before_any_card(hands, asks, in_job, apps_folder):
+async def test_a_script_naming_a_never_list_app_is_refused_before_any_card(hands, asks, in_job, apps_folder,
+                                                                          monkeypatch):
     seen, _ = asks
+    ran = []
+
+    async def run(argv, *a, **kw):                  # nothing is run (no osascript on Linux CI either)
+        ran.append(argv)
+        return {"ok": True, "external": False, "text": ""}
+    monkeypatch.setattr(hands_tools, "_run", run)
     for script in ('tell application "Keychain Access" to activate', 'tell application "Vault" to quit',
                    'tell application id "com.apple.systempreferences" to activate'):
         result = await hands_tools.MacAppleScriptExecutor().execute({"script": script})
@@ -61,3 +68,4 @@ async def test_a_script_naming_a_never_list_app_is_refused_before_any_card(hands
     assert seen == []
     ok = await hands_tools.MacAppleScriptExecutor().execute({"script": 'tell application "Notes2" to activate'})
     assert [f["kind"] for f in seen] == ["mac_script"], ok
+    assert len(ran) == 1, "only the allowed script ran"
