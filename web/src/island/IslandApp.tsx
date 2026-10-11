@@ -374,6 +374,7 @@ function HandsView({ s, m, lang, dispatch }: { s: IslandState; m: Mood; lang: La
   const run = (p: Promise<boolean>) => { setBusy(true); p.catch(() => false).finally(() => setBusy(false)); };
   const key = handsKey(s.hands);
   const left = s.hands?.takeover?.remaining_s ?? 0;
+  const desk = s.hands?.desk ?? null;
   if (key === 'paused') {
     return (
       <Card m={m} size={58}>
@@ -406,8 +407,9 @@ function HandsView({ s, m, lang, dispatch }: { s: IslandState; m: Mood; lang: La
   if (key === 'waiting') {
     return (
       <Card m={m} size={58}>
-        <Who color={STATE_COLOR.working} title={t(lang, 'borrowWaiting')} label={what} />
-        <div className="itext">{t(lang, 'borrowWaitingText')}</div>
+        <Who color={STATE_COLOR.working} label={what}
+          title={desk ? t(lang, 'deskWaiting', { app: desk }) : t(lang, 'borrowWaiting')} />
+        <div className="itext">{desk ? t(lang, 'deskWaitingText', { app: desk }) : t(lang, 'borrowWaitingText')}</div>
         <div className="btns">
           <button type="button" className="btn" disabled={busy} data-testid="island-borrow-skip"
             onClick={() => run(answerBorrow('skip'))}>{t(lang, 'borrowSkip')}</button>
@@ -419,8 +421,9 @@ function HandsView({ s, m, lang, dispatch }: { s: IslandState; m: Mood; lang: La
   }
   return (
     <Card m={m} size={58}>
-      <Who color={STATE_COLOR.working} title={t(lang, 'borrowing')} label={what} />
-      <div className="itext">{t(lang, 'borrowingText')}</div>
+      <Who color={STATE_COLOR.working} label={what}
+        title={desk ? t(lang, 'deskWorking', { app: desk }) : t(lang, 'borrowing')} />
+      <div className="itext">{desk ? t(lang, 'deskWorkingText', { app: desk }) : t(lang, 'borrowingText')}</div>
     </Card>
   );
 }

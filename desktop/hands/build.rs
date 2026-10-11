@@ -1,5 +1,6 @@
 //! On macOS, compile Hands' Objective-C files (window screenshots through ScreenCaptureKit,
-//! src/capture.m; the key hold, src/keyhold.m; the edge glow, src/glow.m) with the system
+//! src/capture.m; the key hold, src/keyhold.m; the edge glow, src/glow.m; which desktop an app's
+//! windows are on, src/spaces.m) with the system
 //! clang and link them in. No build crate: Hands' dependencies run with its grants, so there
 //! are as few as possible.
 use std::env;
@@ -7,7 +8,12 @@ use std::path::PathBuf;
 use std::process::Command;
 
 fn main() {
-    let sources = ["src/capture.m", "src/keyhold.m", "src/glow.m"];
+    let sources = [
+        "src/capture.m",
+        "src/keyhold.m",
+        "src/glow.m",
+        "src/spaces.m",
+    ];
     for source in sources {
         println!("cargo:rerun-if-changed={source}");
     }

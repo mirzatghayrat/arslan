@@ -1431,7 +1431,9 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
         "minutes": {"type": "integer", "minimum": 1, "maximum": 30}},
         "required": ["why", "minutes"], "additionalProperties": False},
     "desktop_open": {"type": "object", "properties": {
-        "app": {"type": "string", "minLength": 1, "maxLength": 120, "description": "the app's name, e.g. TextEdit"}},
+        "app": {"type": "string", "minLength": 1, "maxLength": 120, "description": "the app's name, e.g. TextEdit"},
+        "path": {"type": "string", "minLength": 1, "maxLength": 1000,
+                 "description": "a file or folder to open in that app (optional)"}},
         "required": ["app"], "additionalProperties": False},
     "desktop_batch": {"type": "object", "properties": {
         "app": {"type": "string", "minLength": 1, "maxLength": 120},

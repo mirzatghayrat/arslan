@@ -1007,3 +1007,193 @@ fn a_waiting_borrow_shows_on_the_island_and_takes_its_answer() {
     arslan_hands::borrow::typing_for_tests(false);
     arslan_hands::borrow::stand_in_for_tests(false);
 }
+
+// §15 A18: the fixture (pid 100) with its window on another desktop. Accessibility lists none of
+// its windows and the window server lists one elsewhere — until a visit goes there (the stand-in
+// skips the activation; while the visit lasts, the window is seen).
+static AWAY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+fn seen_here(pid: i32) -> bool {
+    pid != 100
+        || !AWAY.load(std::sync::atomic::Ordering::SeqCst)
+        || arslan_hands::visit::active_for(100)
+}
+
+fn away_structure(pid: i32) -> Option<arslan_hands::structure::Structure> {
+    (pid == 100).then(|| arslan_hands::structure::Structure {
+        windows: if seen_here(pid) {
+            vec![arslan_hands::structure::Window {
+                id: 7,
+                subrole: "AXStandardWindow".into(),
+                title: "Hands Fixture".into(),
+                sheets: 0,
+            }]
+        } else {
+            vec![]
+        },
+        focused: None,
+        menu_open: false,
+    })
+}
+
+fn away_windows(pid: i32) -> arslan_hands::spaces::Windows {
+    match (pid == 100, seen_here(pid)) {
+        (true, true) => arslan_hands::spaces::Windows {
+            on_screen: 1,
+            elsewhere: 0,
+        },
+        (true, false) => arslan_hands::spaces::Windows {
+            on_screen: 0,
+            elsewhere: 1,
+        },
+        _ => arslan_hands::spaces::Windows::default(),
+    }
+}
+
+fn away_start(name: &str) -> Hands {
+    AWAY.store(true, std::sync::atomic::Ordering::SeqCst);
+    arslan_hands::borrow::stand_in_for_tests(true);
+    arslan_hands::visit::stand_in_for_tests(true);
+    arslan_hands::structure::set_probe_for_tests(Some(away_structure));
+    arslan_hands::spaces::set_probe_for_tests(Some(away_windows));
+    start(name)
+}
+
+fn away_done() {
+    arslan_hands::visit::end("test_done");
+    arslan_hands::spaces::set_probe_for_tests(None);
+    arslan_hands::structure::set_probe_for_tests(None);
+    arslan_hands::visit::stand_in_for_tests(false);
+    arslan_hands::borrow::stand_in_for_tests(false);
+}
+
+fn last_reason() -> String {
+    arslan_hands::visit::status()["last"]["reason"]
+        .as_str()
+        .unwrap_or("")
+        .to_string()
+}
+
+#[test]
+fn an_app_on_another_desktop_is_gone_to_only_with_the_users_switch_and_stays_for_the_work() {
+    let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    let hands = away_start("visit");
+    let off = hands.ask("snapshot", json!({"app": "Hands Fixture"}));
+    assert_eq!(code(&off), "window_elsewhere", "{off}");
+    assert!(
+        !hands.calls().iter().any(|c| c[0] == "snapshot"),
+        "nothing was read"
+    );
+    assert_eq!(arslan_hands::visit::visits_for_tests(), 0);
+
+    let look = hands.ask("snapshot", json!({"app": "Hands Fixture", "borrow": true}));
+    assert_eq!(look["ok"], true, "{look}");
+    assert_eq!(look["visit_started"], true);
+    assert_eq!(look["visit"]["active"], true);
+    assert_eq!(look["visit"]["app"], "Hands Fixture");
+    let click = hands.ask(
+        "click",
+        json!({"app": "Hands Fixture", "ref": "@sfixture0:e3", "borrow": true}),
+    );
+    assert_eq!(click["ok"], true, "{click}");
+    assert_eq!(click["mode_used"], "visit");
+    assert_eq!(
+        click["visit_started"], false,
+        "the visit goes on: no second switch"
+    );
+    assert_eq!(arslan_hands::visit::visits_for_tests(), 1);
+    assert_eq!(
+        arslan_hands::borrow::borrows_for_tests(),
+        1,
+        "one borrow for the whole visit"
+    );
+
+    let ended = hands.ask("visit_end", json!({}));
+    assert_eq!(ended["ended"], true, "{ended}");
+    assert_eq!(ended["visit"]["active"], false);
+    assert_eq!(last_reason(), "work_end");
+    assert_eq!(hands.ask("visit_end", json!({}))["ended"], false);
+    away_done();
+}
+
+#[test]
+fn a_visit_comes_back_for_another_app_the_users_touch_idle_and_stop() {
+    let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    let hands = away_start("visit-back");
+    let go = || hands.ask("snapshot", json!({"app": "Hands Fixture", "borrow": true}));
+
+    assert_eq!(go()["visit_started"], true);
+    let notes = hands.ask("snapshot", json!({"app": "Notes", "borrow": true}));
+    assert_eq!(notes["visit_started"], false, "{notes}");
+    assert!(!arslan_hands::visit::active_for(100));
+    assert_eq!(
+        last_reason(),
+        "another_app",
+        "a step on another app comes back first"
+    );
+
+    assert_eq!(go()["visit_started"], true);
+    arslan_hands::visit::user_touch_for_tests();
+    assert!(wait_until(|| !arslan_hands::visit::active_for(100)));
+    assert_eq!(last_reason(), "user");
+
+    assert_eq!(go()["visit_started"], true);
+    arslan_hands::visit::idle_for_tests();
+    assert!(wait_until(|| !arslan_hands::visit::active_for(100)));
+    assert_eq!(last_reason(), "idle");
+
+    assert_eq!(go()["visit_started"], true);
+    hands.ask("stop", json!({}));
+    assert!(!arslan_hands::visit::active_for(100));
+    assert_eq!(last_reason(), "stop");
+    assert_eq!(arslan_hands::visit::visits_for_tests(), 4);
+    away_done();
+}
+
+static STRUCTURE_READS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+fn counted_structure(pid: i32) -> Option<arslan_hands::structure::Structure> {
+    STRUCTURE_READS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    away_structure(pid)
+}
+
+#[test]
+fn an_app_with_a_window_on_screen_is_not_asked_through_accessibility_whether_it_is_here() {
+    // Accessibility can wait on a busy app; the window server answers "here" without it, and
+    // nearly every request is for an app whose window is on screen.
+    let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    let hands = away_start("visit-cheap");
+    AWAY.store(false, std::sync::atomic::Ordering::SeqCst);
+    arslan_hands::structure::set_probe_for_tests(Some(counted_structure));
+    STRUCTURE_READS.store(0, std::sync::atomic::Ordering::SeqCst);
+    let look = hands.ask("snapshot", json!({"app": "Hands Fixture", "borrow": true}));
+    assert_eq!(look["ok"], true, "{look}");
+    assert_eq!(look["visit_started"], false);
+    assert_eq!(
+        STRUCTURE_READS.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "only the look's own note of the structure"
+    );
+    away_done();
+}
+
+#[test]
+fn inside_a_takeover_an_app_on_another_desktop_is_brought_forward_without_a_visit() {
+    let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    let hands = away_start("visit-takeover");
+    arslan_hands::takeover::stand_in_for_tests(true);
+    assert_eq!(
+        hands.ask("takeover_begin", json!({"minutes": 5}))["ok"],
+        true
+    );
+    let look = hands.ask("snapshot", json!({"app": "Hands Fixture"}));
+    assert_eq!(look["ok"], true, "{look}");
+    assert_eq!(
+        look["visit_started"], false,
+        "the user said yes to the screen"
+    );
+    assert_eq!(arslan_hands::visit::visits_for_tests(), 0);
+    hands.ask("takeover_end", json!({}));
+    arslan_hands::takeover::stand_in_for_tests(false);
+    away_done();
+}

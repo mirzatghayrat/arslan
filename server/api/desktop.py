@@ -74,7 +74,10 @@ async def _hands_activity() -> dict | None:
     borrow = reply.get("borrow") if reply.get("borrow") in ("waiting", "borrowing") else None
     if not borrow and not takeover.get("active"):
         return None
-    return {"borrow": borrow,
+    # §15 A18: the borrow is a visit to another desktop (or about to be one): the app it is for.
+    visit = reply.get("visit") if isinstance(reply.get("visit"), dict) else {}
+    desk = visit.get("app") if visit.get("active") else visit.get("going")
+    return {"borrow": borrow, "desk": str(desk)[:80] if desk else None,
             "takeover": {"active": True, "paused": bool(takeover.get("paused")),
                          "remaining_s": int(takeover.get("remaining_s") or 0)} if takeover.get("active") else None}
 
