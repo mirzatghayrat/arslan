@@ -191,8 +191,8 @@ pub fn secure_at(pid: i32, x: f64, y: f64) -> Option<bool> {
 }
 
 /// The pid of the app with the keyboard focus, asked of accessibility now (the system-wide
-/// AXFocusedApplication). NSWorkspace's frontmostApplication is a copy a background process may
-/// see late; a visit to another desktop (src/visit.rs) notes and checks the front with this.
+/// AXFocusedApplication). Some apps leave it unanswered (kAXErrorCannotComplete with Codex in
+/// front, measured), so a visit (src/visit.rs) asks it only when NSWorkspace has no front app.
 pub fn focused_app_pid() -> Option<i32> {
     let system = Owned(unsafe { AXUIElementCreateSystemWide() });
     if system.0.is_null() {

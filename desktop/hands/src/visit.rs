@@ -9,9 +9,9 @@
 //! - staying: every step on that app keeps the visit going; a step on another app comes back first;
 //! - coming back at the first of: the work that went there ends (the backend's `visit_end`), the
 //!   user presses a key or moves or clicks the mouse, `IDLE` without a step, `MAX` in all, the
-//!   screen locks, Stop. First the desktops (`come_back`): the user's front app again — noted from
-//!   accessibility, and activated whatever NSWorkspace's copy of the front says — and every window
-//!   that was on screen before on screen again; then `borrow::end`: the pointer if Hands moved it,
+//!   screen locks, Stop. First the desktops (`come_back`): the user's front app again — activated
+//!   whatever NSWorkspace's copy of the front says at the end — and every window that was on screen
+//!   before on screen again; then `borrow::end`: the pointer if Hands moved it,
 //!   the held keys (into the user's own window), glow off.
 //!
 //! The key hold has its own short deadline (`borrow::HOLD_MAX`); while a visit lasts the watcher
@@ -39,7 +39,7 @@ struct Visit {
     borrowed: Option<crate::borrow::Borrowed>,
     since: Instant,
     last_step: Instant,
-    /// The user's front app when the visit began, from accessibility.
+    /// The user's front app when the visit began (NSWorkspace, else accessibility).
     front: Option<i32>,
     /// The windows on screen when the visit began (other than the visited app's): (number, pid).
     shown_before: Vec<(u32, i32)>,
@@ -149,7 +149,7 @@ pub fn begin(
     let (front, shown_before) = if standing_in() {
         (None, Vec::new())
     } else {
-        let front = focused_app().or(borrowed.front());
+        let front = borrowed.front().or_else(focused_app);
         borrowed.set_front(front);
         let shown = crate::spaces::shown()
             .unwrap_or_default()
@@ -237,7 +237,7 @@ pub fn end(reason: &str) -> Option<crate::borrow::GaveBack> {
     let front_restored = if standing_in() {
         gave.map(|g| g.front_restored)
     } else {
-        Some(visit.front.is_none() || focused_app() == visit.front)
+        Some(visit.front.is_none() || front_now() == visit.front)
     };
     *LAST.lock().unwrap_or_else(|p| p.into_inner()) = Some(json!({
         "app": visit.app,
@@ -330,6 +330,18 @@ fn activate(_pid: i32) {}
 #[cfg(target_os = "macos")]
 fn focused_app() -> Option<i32> {
     crate::macos::focused_app_pid()
+}
+
+/// The app in front now, the way the visit noted it: NSWorkspace, else accessibility (which
+/// cannot answer for some apps: kAXErrorCannotComplete with Codex in front, measured).
+#[cfg(target_os = "macos")]
+fn front_now() -> Option<i32> {
+    crate::macos::frontmost_pid().or_else(focused_app)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn front_now() -> Option<i32> {
+    None
 }
 
 #[cfg(not(target_os = "macos"))]
