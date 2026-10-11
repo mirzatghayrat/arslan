@@ -96,11 +96,11 @@ def _upstream_proxy(host: str) -> _UpstreamProxy | None:
     path. A user name in the proxy URL becomes `Proxy-Authorization: Basic`, read the way
     urllib reads it (percent-decoded, UTF-8).
 
-    A value that cannot be parsed, has no host, or names port 0 raises ValueError, which
-    `_accept` answers with a refusal: a broken proxy setting is not a licence to go direct.
-    Only a scheme that is not http returns None (that proxy is not ours to speak to). `host`
-    is the destination's canonical name, lower case and without brackets, for NO_PROXY and
-    the system exception list.
+    A value that cannot be parsed, has no scheme, has no host, or names port 0 raises
+    ValueError, which `_accept` answers with a refusal: a broken proxy setting is not a licence
+    to go direct. Only a scheme that is there and is not http returns None (that proxy is not
+    ours to speak to). `host` is the destination's canonical name, lower case and without
+    brackets, for NO_PROXY and the system exception list.
 
     The error carries a fixed text, never the value or the parser's message, and is raised
     after the handler so that it is not chained to the parser's error either: both can quote
@@ -114,6 +114,10 @@ def _upstream_proxy(host: str) -> _UpstreamProxy | None:
         return None
     try:
         parsed = urlsplit(raw if "://" in raw else f"http://{raw}")
+        if not parsed.scheme:
+            # Nothing readable before the "://" (HTTPS_PROXY=$SCHEME://host:7899, SCHEME unset):
+            # refused below like an unparsable value, not taken for somebody else's proxy.
+            raise ValueError
         if parsed.scheme != "http":
             return None
         port = parsed.port

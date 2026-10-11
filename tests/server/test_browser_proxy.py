@@ -220,6 +220,7 @@ def _basic(user: str, password: str) -> str:
     ({"https": "http://proxy.lan"}, ("proxy.lan", 80, None)),       # no port: http's default
     ({"http": "http://127.0.0.1:7899"}, None),                      # that one is for http only
     ({"https": "socks5://127.0.0.1:notaport"}, None),               # not ours to parse: direct
+    ({"https": "socks5://:1080"}, None),                            # ... not even its missing host
     ({}, None),
     # Credentials in the URL become the Proxy-Authorization value, as urllib reads them.
     ({"https": "http://user:pass@127.0.0.1:7899"}, ("127.0.0.1", 7899, _basic("user", "pass"))),
@@ -371,6 +372,11 @@ _MALFORMED_SETTINGS = [
     # Port 0 is not a port anyone listens on; it must not be read as "no port", i.e. 80.
     pytest.param("http://127.0.0.1:0", id="port-zero"),
     pytest.param("http://user:s3cret@127.0.0.1:0", id="port-zero-with-credentials"),
+    # Nothing readable before the "://", e.g. HTTPS_PROXY=$SCHEME://host:7899 with SCHEME unset.
+    # Only a scheme that IS there and is not http is somebody else's proxy; this is a broken one.
+    pytest.param("://127.0.0.1:7899", id="empty-scheme"),
+    pytest.param("://user:s3cret@127.0.0.1:7899", id="empty-scheme-with-credentials"),
+    pytest.param("ht tp://127.0.0.1:7899", id="unreadable-scheme"),
 ]
 
 
