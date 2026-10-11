@@ -50,13 +50,14 @@ interface FirstRunWizardProps {
 type Shot = "hello" | "model" | "folders" | "hands" | "you";
 type Folders = "wide" | "own";
 
-/** Where the head stands in each shot: centre as a fraction of the stage, and its scale. */
+/** Where the head stands in each shot: centre as a fraction of the stage, and its scale.
+ *  0.1.60 review: the head a supporting actor, not the whole frame (about 0.36 of the height). */
 const CAMERA: Record<Shot, [number, number, number]> = {
-  hello: [0.665, 0.49, 1],
-  model: [0.705, 0.48, 0.86],
-  folders: [0.69, 0.51, 1.12],
-  hands: [0.71, 0.49, 0.94],
-  you: [0.665, 0.49, 1],
+  hello: [0.70, 0.49, 1],
+  model: [0.725, 0.48, 0.9],
+  folders: [0.71, 0.5, 1.07],
+  hands: [0.725, 0.49, 0.95],
+  you: [0.70, 0.49, 1],
 };
 /** How long the head takes to travel into the app on Start (matches .fr2-leaving in firstRun.css). */
 export const HANDOFF_MS = 1300;
@@ -301,8 +302,8 @@ export default function FirstRunWizard({ llmProviders, onAdded, onClose, onLangu
 
   // ── the camera ──
   const narrow = stage.w < 980;
-  const headSize = Math.round(Math.max(260, Math.min(520, stage.h * 0.55)));
-  const [cx, cy, cs] = narrow ? [0.5, 0.24, 0.62] : CAMERA[shot];
+  const headSize = Math.round(Math.max(200, Math.min(340, stage.h * 0.36)));
+  const [cx, cy, cs] = narrow ? [0.5, 0.21, 0.78] : CAMERA[shot];
   const cam = leaving
     ? { x: leaving.x, y: leaving.y, s: leaving.s }
     : { x: stage.w * cx, y: stage.h * cy, s: cs };

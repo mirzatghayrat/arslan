@@ -29,7 +29,7 @@
 
 /* light, lens, grain */
 .fr2-lamp { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 2400ms ease;
-  background: radial-gradient(60vw 78vh at 66% 36%, var(--lamp) 0%, transparent 70%); }
+  background: radial-gradient(52vw 70vh at 70% 42%, var(--lamp) 0%, transparent 70%); }
 .fr2-lit .fr2-lamp { opacity: 1; }
 .fr2-vignette { position: absolute; inset: 0; pointer-events: none;
   background: radial-gradient(130% 110% at 62% 45%, transparent 48%, var(--vig) 100%); }
