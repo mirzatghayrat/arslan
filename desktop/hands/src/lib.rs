@@ -20,5 +20,7 @@ pub mod policy;
 pub mod refmap;
 pub mod runner;
 pub mod server;
+pub mod spaces;
 pub mod structure;
 pub mod takeover;
+pub mod visit;

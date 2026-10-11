@@ -1102,8 +1102,11 @@ async def _arslan_tools() -> list[dict]:
                  "Background work only; asks the user every time; the screen edge glows; the user's first "
                  "touch of the keyboard or mouse pauses it and you are told what they chose. Last resort: try "
                  "background actions, then front: true, first."},
-                {"key": "desktop_open", "description": "Open a Mac app in the background (behind the user's "
-                 "windows; it does not come to the front): {app}. Asks the user once. Then desktop_look it."},
+                {"key": "desktop_open", "description": "Open a Mac app, or a file in it, in the background "
+                 "(behind the user's windows; it does not come to the front): {app, path?}. Asks the user once. "
+                 "Then desktop_look it. Always open apps and documents this way, never with `open` in run_command: "
+                 "that brings the app to the front and does not give it back. If its window is on another "
+                 "desktop, looking or acting goes there by itself and comes back."},
                 {"key": "desktop_batch", "description": "Several actions in one app in one call, then one look: "
                  "{app, steps: [{action: click|type|select|scroll|press|menu, …that action's args}] (up to 8)}. "
                  "Every step asks and checks as its own call would; the batch stops at the first step that "

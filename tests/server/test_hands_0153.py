@@ -167,6 +167,7 @@ class FakeHands:
         self.user_idle_ms: int | None = 1_000
         # Hands v2 capture_window: by default as on a Mac without Screen Recording for Hands.
         self.capture: dict = {"ok": False, "refused": {"code": "screen_recording_off", "message": "not allowed"}}
+        self.list_windows: dict | None = None
 
     async def call(self, op, args=None, *, timeout=60.0, start=True):
         self.calls.append((op, dict(args or {})))
@@ -205,10 +206,12 @@ class FakeHands:
         app = next((a for a in self.apps if a["name"] == args.get("app")), self.apps[0])
         if op == "describe":
             return {"ok": True, "app": app, "tier": self.tier, "sends_on_return": False, "target": self.target}
+        if op == "list_windows" and self.list_windows is not None:   # §15 A18: a test's own answer
+            return self.list_windows
         envelope = {"snapshot": _case("snapshot"), "find": _case("find"), "click": _case("click"),
                     "set_value": _case("set_value"), "press": _case("press"), "select": _case("select"),
                     "scroll": _case("scroll"), "wait": _case("wait"), "get": _case("get_value"),
-                    "type": _case("type")}[op]["envelope"]
+                    "type": _case("type"), "list_windows": _case("list_windows")}[op]["envelope"]
         return {"ok": True, "app": app, "envelope": envelope}
 
     def ops(self, *names):

@@ -30,6 +30,8 @@ export interface Activity {
 /** Hands v2 §6.3-6.4: what a borrow or takeover is doing right now. */
 export interface HandsLine {
   borrow: 'waiting' | 'borrowing' | null;
+  /** §15 A18: the borrow goes (or went) to the desktop where this app's window is. */
+  desk?: string | null;
   takeover: { active: boolean; paused: boolean; remaining_s: number } | null;
 }
 

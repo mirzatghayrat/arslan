@@ -83,6 +83,19 @@ describe('island page for Hands', () => {
     expect(posted).toEqual(['/api/v1/hands/borrow/now', '/api/v1/hands/borrow/skip']);
   });
 
+  it('a borrow that goes to another desktop says which app, waiting and while there', async () => {
+    await mount(body({ borrow: 'waiting', desk: 'TextEdit', takeover: null }));
+    let island = screen.getByRole('region', { name: 'Arslan Island' });
+    expect(island).toHaveTextContent("Waiting for you to pause, to go to TextEdit's desktop");
+    expect(island).toHaveTextContent('switches to the desktop where TextEdit is');
+    expect(screen.getByTestId('island-borrow-now')).toBeInTheDocument();
+    cleanup();
+    await mount(body({ borrow: 'borrowing', desk: 'TextEdit', takeover: null }));
+    island = screen.getByRole('region', { name: 'Arslan Island' });
+    expect(island).toHaveTextContent('Working in TextEdit on another desktop');
+    expect(island).not.toHaveTextContent('Waiting for you to pause');
+  });
+
   it('a takeover shows the time left and Stop ends it', async () => {
     const posted = await mount(body(running));
     const island = screen.getByRole('region', { name: 'Arslan Island' });
@@ -119,7 +132,7 @@ describe('island page for Hands', () => {
   it('every Hands line exists in the six languages', () => {
     const keys = ['borrowWaiting', 'borrowWaitingText', 'borrowNow', 'borrowSkip', 'borrowing', 'borrowingText',
       'takeover', 'takeoverRunning', 'takeoverText', 'pausedTitle', 'pausedText', 'pausedMe', 'pausedContinue',
-      'pausedMeNote', 'thumbAlt'] as const;
+      'pausedMeNote', 'thumbAlt', 'deskWaiting', 'deskWaitingText', 'deskWorking', 'deskWorkingText'] as const;
     for (const lang of Object.keys(MESSAGES) as (keyof typeof MESSAGES)[]) {
       for (const key of keys) expect(MESSAGES[lang][key], `${lang}.${key}`).toBeTruthy();
       const step = MESSAGES[lang].step as Record<string, string>;

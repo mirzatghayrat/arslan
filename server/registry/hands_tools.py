@@ -20,6 +20,7 @@ transfers or submits asks every time.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import re
 import time
 import uuid
@@ -360,10 +361,57 @@ async def _start_job_session(job_id: str) -> str | None:
 _RETRY_READS = {"snapshot", "find", "list_windows", "get", "describe"}
 
 
+# Requests that need one of the app's windows (Hands' own list, `needs_window`): an app whose windows
+# are all on another desktop is gone to for them, under the user's borrow switch (§15 A18).
+_NEEDS_WINDOW = frozenset({"snapshot", "find", "get", "describe", "click", "type", "set_value", "select",
+                           "press", "scroll", "list_windows", "wait"})
+
+# §15 A18: what Arslan tells the model when Hands went to another desktop for this step (read by
+# the look / action that made the request, in the same task).
+_visit_note: contextvars.ContextVar[str | None] = contextvars.ContextVar("hands_visit_note", default=None)
+
+
+def _went_to_window(reply: dict) -> None:
+    """Hands went to the desktop where the app's window is: say so to the model, and come back
+    when the work that went there (this chat turn or background job) ends."""
+    from server.services import desktop_status
+    app = ((reply.get("visit") or {}).get("app") if isinstance(reply.get("visit"), dict) else None) or "the app"
+    _visit_note.set(f"Arslan went to the desktop where {app}'s window is (the screen edge glows; the user's "
+                    "keys are held and given back). It comes back when this work ends, or at once if the user "
+                    f"touches anything: keep the steps in {app} together.\n")
+    desktop_status.when_work_ends(_come_back, key="hands.visit")
+
+
+def _come_back() -> None:
+    try:
+        asyncio.get_running_loop().create_task(_visit_end())
+    except RuntimeError:               # no loop (a test's plain call): Hands' own idle limit applies
+        pass
+
+
+async def _visit_end() -> None:
+    from server.services import hands_client
+    try:
+        await hands_client.call("visit_end", {}, timeout=5, start=False)
+    except hands_client.HandsUnavailable:
+        pass
+
+
+def _take_visit_note() -> str:
+    note = _visit_note.get()
+    if note:
+        _visit_note.set(None)
+    return note or ""
+
+
 async def _hands(op: str, args: dict, *, job_id: str | None = None, timeout: float = 60.0):
-    """One Hands request with the user's never-list (and the job's session)."""
+    """One Hands request with the user's never-list (and the job's session). The user's "borrow
+    the front when needed" switch goes with every request: a step on an app whose windows are on
+    another desktop goes there under it (§15 A18)."""
     from server.services import hands_client, hands_contract, hands_service
     args = {**args, "never": hands_service.settings()["never"]}
+    if op in _NEEDS_WINDOW:
+        args.setdefault("borrow", hands_service.settings()["borrow"])
     if job_id is not None:
         session = await _job_session(job_id)
         if session:
@@ -379,6 +427,8 @@ async def _hands(op: str, args: dict, *, job_id: str | None = None, timeout: flo
             result = hands_contract.parse(await hands_client.call(op, args, timeout=timeout))
         except hands_client.HandsUnavailable:
             pass
+    if isinstance(result.reply, dict) and result.reply.get("visit_started"):
+        _went_to_window(result.reply)
     if result.code == "PERM_DENIED" and hands_service.permission_prompt_once():
         try:                     # D3: macOS shows its own prompt for Arslan Hands, once
             await hands_client.call("request_permission", {}, timeout=10)
@@ -619,15 +669,13 @@ class DesktopLookExecutor:
             if capture:
                 from server.services import desktop_status
                 desktop_status.note_thumb(capture["data"])        # the island's thumbnail (§6.6)
-                if not_seen:
-                    text = not_seen + text
+                text = _take_visit_note() + (not_seen or "") + text
                 _trace("look", app, "ok", started, screenshot=f"{capture['width']}x{capture['height']}",
                        screenshot_bytes=len(capture.get("data") or "") * 3 // 4)
                 return {"ok": True, "external": True, "text": text, "summary": f"look · {app['name']}"[:200],
                         "images": [{"mime_type": capture["mime"], "data": capture["data"]}],
                         "image_label": f"{app['name']} · {window or capture.get('title') or 'window'}"[:120]}
-        if not_seen:
-            text = not_seen + text
+        text = _take_visit_note() + (not_seen or "") + text
         _trace("look", app, "ok", started)
         # Window contents are other people's text: framed as untrusted by the tool loop.
         return {"ok": True, "external": True, "text": text, "summary": f"look · {app['name']}"[:200]}
@@ -904,6 +952,9 @@ class _DesktopAct:
         if hands_contract.kept_the_front(result):
             text += (f" {app.get('name')} came to the front when this ran and could not be put back; "
                      "tell the user if it gets in their way.")
+        note = _take_visit_note()
+        if note:
+            text += " " + note.strip()
         return {"ok": outcome != "refused", "external": False, "outcome": outcome, "text": text,
                 "summary": f"{self.op} · {app.get('name')} · {label}"[:200]}
 
@@ -1099,17 +1150,27 @@ class DesktopBatchExecutor:
 
 
 class DesktopOpenExecutor:
-    """Hands v2 §5.2: open an app in the background (`open -g`: launched behind the user's windows,
-    never activated). The never-list is refused before anything starts; an app already running is
-    left as it is; opening asks once, and that answer is also the app's acting grant."""
+    """Hands v2 §5.2, §15 A18: open an app — or a file in an app — in the background (`open -g`:
+    behind the user's windows, never activated). The never-list is refused before anything starts;
+    opening asks once, and that answer is also the app's acting grant. A running app with no window
+    is asked for one, still in the background (macOS' reopen). If the window lands on another
+    desktop, the next look or action goes there (with the user's borrow switch)."""
     key = "desktop_open"
     timeout_s = CARD_S + 30
 
     async def execute(self, args: dict) -> dict:
+        from pathlib import Path
         from server.services import hands_contract, hands_service
-        name = _app_arg(dict(args or {}))
+        args = dict(args or {})
+        name = _app_arg(args)
         if name is None:
             return {"ok": False, "external": False, "error": "app required (the app's name, as in /Applications)"}
+        path = None
+        if args.get("path"):
+            path = Path(str(args["path"])).expanduser()
+            if not path.exists():
+                return {"ok": False, "external": False, "code": "no_such_file",
+                        "error": f"There is no file or folder at {path}. Check the path (list_dir shows a folder)."}
         conversation_id, job_id = _conversation_and_job()
         turn = _inline_turn() if job_id is None else None
         if job_id is None:
@@ -1124,26 +1185,39 @@ class DesktopOpenExecutor:
         if hands_service.never_touched(name):
             return _failed(hands_contract.Result(ok=False, code="app_denied", refused=True), app=name)
         running, _ = await _resolve_app(name, job_id)
-        if running is not None:
-            return {"ok": True, "external": False, "outcome": "no_effect",
-                    "text": f"{running['name']} is already running; nothing was opened. Look at it with desktop_look."}
+        reopen = False
+        if running is not None and path is None:
+            # Its windows, without going anywhere for them (borrow off for this question).
+            windows = await _hands("list_windows", {"app": running["name"], "borrow": False}, job_id=job_id)
+            if windows.code == "window_elsewhere":
+                return {"ok": True, "external": False, "outcome": "no_effect",
+                        "text": f"{running['name']} is running with its windows on another desktop. Look at it or "
+                                "act in it as usual: Arslan goes to that desktop (the screen edge glows) and comes "
+                                "back when the work ends."}
+            if windows.ok and (windows.data or []):
+                return {"ok": True, "external": False, "outcome": "no_effect",
+                        "text": f"{running['name']} is already running with a window. Look at it with desktop_look."}
+            reopen = True                       # running with no window: ask it for one
         started = time.monotonic()
+        shown = f"{path.name} in {name}" if path is not None else name
         if not await _ask_once(f"open:{name.lower()}", "desktop_app", name,
-                               f"Arslan wants to open {name} in the background (behind your windows) for this "
+                               f"Arslan wants to open {shown} in the background (behind your windows) for this "
                                "piece of work, and then click, type and choose in it."):
             _trace("open", name, "declined", started)
             return {"ok": False, "external": False, "code": "declined",
                     "error": f"The user did not allow opening {name}. Do not retry; report it."}
         if turn is not None:
             _inline[turn] = (_inline.get(turn, (0, name))[0] + 1, _inline.get(turn, (0, name))[1])
+        argv = ["/usr/bin/open", "-g", "-a", name] + ([str(path)] if path is not None else [])
         process = await asyncio.create_subprocess_exec(
-            "/usr/bin/open", "-g", "-a", name, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+            *argv, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
         if await process.wait() != 0:
             _trace("open", name, "not_found", started)
             return {"ok": False, "external": False, "code": "app_not_found",
-                    "error": f"macOS has no app called “{name}”. Check the name (desktop_apps lists running apps)."}
-        app = None
-        for _ in range(40):                       # up to ten seconds for it to start
+                    "error": f"macOS could not open {shown}. Check the app's name (desktop_apps lists running "
+                             "apps) and the path."}
+        app = running
+        for _ in range(40 if running is None else 0):     # up to ten seconds for a new app to start
             app, failure = await _resolve_app(name, job_id)
             if app is not None or (failure is not None and failure.code == "app_denied"):
                 break
@@ -1151,12 +1225,15 @@ class DesktopOpenExecutor:
         if app is None:
             _trace("open", name, "not_listed", started)
             return {"ok": True, "external": False, "outcome": "sent_unconfirmed",
-                    "text": f"Asked macOS to open {name}; it is not running yet. Look again in a moment."}
+                    "text": f"Asked macOS to open {shown}; it is not running yet. Look again in a moment."}
         _grants.setdefault(job_id or f"conversation:{conversation_id}", set()).add(
             f"desktop:{app.get('bundle_id') or app.get('name')}")
         _trace("open", app, "ok", started)
+        what = (f"Opened {path.name} in {app['name']}" if path is not None
+                else f"Asked {app['name']} for a window" if reopen else f"Opened {app['name']}")
         return {"ok": True, "external": False, "outcome": "done",
-                "text": f"Opened {app['name']} in the background. Look at it with desktop_look before acting.",
+                "text": f"{what} in the background. Look at it with desktop_look before acting; if its window "
+                        "is on another desktop, Arslan goes there by itself (the screen edge glows) and comes back.",
                 "summary": f"open · {app['name']}"[:200]}
 
 

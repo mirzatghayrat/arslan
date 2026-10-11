@@ -637,11 +637,17 @@ fn dispatch(state: &State, req: &Request) -> Value {
             .unwrap_or_else(refused),
         "takeover_end" => json!({"ok": true, "ended": crate::takeover::end()}),
         "takeover_status" => json!({"ok": true, "takeover": crate::takeover::status()}),
+        // §15 A18: the work that went to an app's desktop ended: come back now.
+        "visit_end" => {
+            let gave = crate::visit::end("work_end");
+            json!({"ok": true, "ended": gave.is_some(), "visit": crate::visit::status()})
+        }
         // For the island (polled about once a second): what a borrow or takeover is doing.
         "activity_status" => json!({
             "ok": true,
             "borrow": crate::borrow::phase(),
             "takeover": crate::takeover::status(),
+            "visit": crate::visit::status(),
         }),
         // The island's answer while a borrow waits for the user's pause.
         "borrow_now" => json!({"ok": crate::borrow::answer(true)}),
@@ -720,6 +726,12 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
     if !policy::allows(tier, op) {
         return Err(tier_refusal(tier, op, &app));
     }
+    // §15 A18: an app whose windows are all on another desktop is gone to first.
+    let went = if needs_window(op) {
+        go_to_window(ctx, &app, args)?
+    } else {
+        false
+    };
     let mut target = None;
     if op == "describe" || argv::targets_ref(op) {
         let reference = args.get("ref").and_then(Value::as_str).unwrap_or("");
@@ -801,7 +813,9 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
         ));
     }
     let in_takeover = acts(op) && crate::takeover::check_before_action()?;
-    if in_takeover {
+    // §15 A18: on a visit the app is already in front, under the borrow that went there.
+    let visiting = acts(op) && crate::visit::active_for(app.pid);
+    if in_takeover && !visiting {
         if wants_front || popup {
             if let Ok(pid) = i32::try_from(app.pid) {
                 if !crate::borrow::standing_in() {
@@ -809,13 +823,17 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
                 }
             }
         }
-    } else if (wants_front || popup) && args.get("borrow").and_then(Value::as_bool) != Some(true) {
+    } else if !in_takeover
+        && !visiting
+        && (wants_front || popup)
+        && args.get("borrow").and_then(Value::as_bool) != Some(true)
+    {
         return Err(refuse(
             "borrow_off",
             "this needs the app in front for a moment, and borrowing the front is off",
         ));
     }
-    let borrowed = if (wants_front || popup) && !in_takeover {
+    let borrowed = if (wants_front || popup) && !in_takeover && !visiting {
         let generation = ctx.generation;
         Some(crate::borrow::begin(crate::borrow::WAIT_MAX, || {
             runner::generation() != generation
@@ -845,8 +863,9 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
             return press_item(&app, tier, &item, Some(keys));
         }
     }
-    // A borrow gives the front back itself; inside a takeover the app may stay in front.
-    let in_background = gave.is_none() && !in_takeover;
+    // A borrow gives the front back itself; inside a takeover the app may stay in front; a visit
+    // comes back when its work ends.
+    let in_background = gave.is_none() && !in_takeover && !visiting;
     let focus_restored = match gave {
         Some(gave) => gave.front_restored,
         None => front_back(front_before, app.pid),
@@ -869,6 +888,8 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
             .then(|| crate::outcome::from_agent_desktop(&envelope)),
         "mode_used": acts(op).then_some(if in_takeover {
             "takeover"
+        } else if visiting {
+            "visit"
         } else if gave.is_some() {
             "borrow"
         } else {
@@ -885,7 +906,97 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
         // check can tell an app Hands acted on taking the focus from the user
         // switching apps between actions.
         "front": {"before": front_before, "after": front_after},
+        // §15 A18: whether this step went to the app's desktop, and the visit going on.
+        "visit_started": went,
+        "visit": crate::visit::status(),
     }))
+}
+
+/// Operations that need one of the app's windows to be seen (§15 A18: such an app on another
+/// desktop is gone to). Menus are pressed in the background without a window; screenshots run
+/// beside a look.
+fn needs_window(op: &str) -> bool {
+    matches!(
+        op,
+        "snapshot"
+            | "find"
+            | "get"
+            | "describe"
+            | "click"
+            | "type"
+            | "set_value"
+            | "select"
+            | "press"
+            | "scroll"
+            | "list_windows"
+            | "wait"
+    )
+}
+
+/// §15 A18: before an operation that needs app `app`'s window — if all of its windows are on
+/// another desktop, go there (the borrow rules; `window_elsewhere` without the user's switch).
+/// A step on another app than the one being visited comes back first. Whether a visit began.
+fn go_to_window(ctx: &Ctx, app: &App, args: &Value) -> Result<bool, Refusal> {
+    if let Some(visited) = crate::visit::active_pid() {
+        if visited == app.pid {
+            crate::visit::touch();
+            return Ok(false);
+        }
+        crate::visit::end("another_app");
+    }
+    let Ok(pid) = i32::try_from(app.pid) else {
+        return Ok(false);
+    };
+    // The window server first: it answers without waiting on the app, and almost always says
+    // "here" (a window on screen, or none anywhere). Accessibility only to confirm "elsewhere".
+    let here = || {
+        let windows = crate::spaces::windows(pid);
+        if windows.on_screen > 0 || windows.elsewhere == 0 {
+            return true;
+        }
+        !crate::spaces::elsewhere(
+            crate::structure::read(app.pid).map(|s| s.windows.len()),
+            windows,
+        )
+    };
+    if here() {
+        return Ok(false);
+    }
+    if screen_locked() {
+        return Err(refuse(
+            "screen_locked",
+            "the screen is locked; Arslan does not act on a locked Mac",
+        ));
+    }
+    if crate::takeover::active() {
+        // The user said yes to the screen: just bring the app (and its desktop) forward.
+        if !crate::borrow::standing_in() {
+            restore_front(pid);
+            let until = Instant::now() + Duration::from_secs(2);
+            while !here() && Instant::now() < until {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        }
+        return Ok(false);
+    }
+    if args.get("borrow").and_then(Value::as_bool) != Some(true) {
+        return Err(refuse(
+            "window_elsewhere",
+            format!(
+                "{}'s windows are on another desktop, and borrowing the front is off",
+                app.name
+            ),
+        ));
+    }
+    let generation = ctx.generation;
+    crate::visit::begin(
+        app.pid,
+        &app.name,
+        crate::borrow::WAIT_MAX,
+        || runner::generation() != generation,
+        here,
+    )?;
+    Ok(true)
 }
 
 /// Hands v2's own window screenshot (spec §4.2, §15 A8): agent-desktop's `screenshot` writes a
@@ -1228,11 +1339,13 @@ fn end_sessions(state: &State) {
 }
 
 fn stop(state: &State) -> Value {
-    // Stop ends a takeover too (and its glow), before killing what runs.
+    // Stop ends a takeover too (and its glow), before killing what runs; and comes back from a
+    // visit to another desktop (§15 A18).
     let took_over = crate::takeover::end();
+    let visited = crate::visit::end("stop").is_some();
     // kill_all moves the Stop generation even when no agent-desktop runs, so a Cua
     // request in flight learns it was stopped.
-    let killed = runner::kill_all() || took_over;
+    let killed = runner::kill_all() || took_over || visited;
     let cua_killed = state.cua.as_ref().is_some_and(Cua::stop);
     end_sessions(state);
     json!({"ok": true, "killed": killed || cua_killed})

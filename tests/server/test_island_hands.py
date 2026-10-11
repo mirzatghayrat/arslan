@@ -53,9 +53,20 @@ async def test_a_look_with_a_screenshot_gives_the_island_its_thumbnail(hands, as
 
 
 @pytest.mark.parametrize("reply, shown", [
-    ({"ok": True, "borrow": "waiting", "takeover": {"active": False}}, {"borrow": "waiting", "takeover": None}),
+    ({"ok": True, "borrow": "waiting", "takeover": {"active": False}},
+     {"borrow": "waiting", "desk": None, "takeover": None}),
     ({"ok": True, "borrow": None, "takeover": {"active": True, "paused": True, "remaining_s": 180}},
-     {"borrow": None, "takeover": {"active": True, "paused": True, "remaining_s": 180}}),
+     {"borrow": None, "desk": None, "takeover": {"active": True, "paused": True, "remaining_s": 180}}),
+    # §15 A18: a borrow that goes (or went) to another desktop says which app's.
+    ({"ok": True, "borrow": "waiting", "takeover": {"active": False},
+      "visit": {"active": False, "going": "TextEdit", "last": None}},
+     {"borrow": "waiting", "desk": "TextEdit", "takeover": None}),
+    ({"ok": True, "borrow": "borrowing", "takeover": {"active": False},
+      "visit": {"active": True, "app": "Notes", "since_s": 4, "last": None}},
+     {"borrow": "borrowing", "desk": "Notes", "takeover": None}),
+    ({"ok": True, "borrow": "borrowing", "takeover": {"active": False},
+      "visit": {"active": False, "going": None, "last": {"app": "Notes", "reason": "work_end"}}},
+     {"borrow": "borrowing", "desk": None, "takeover": None}),
     ({"ok": True, "borrow": None, "takeover": {"active": False}}, None),
     ({"ok": True, "borrow": "something else", "takeover": {}}, None),
 ])

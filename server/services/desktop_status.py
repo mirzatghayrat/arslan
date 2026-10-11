@@ -14,6 +14,7 @@ notification can be read on a locked screen.
 from __future__ import annotations
 
 import contextvars
+import logging
 import itertools
 import threading
 import re
@@ -21,7 +22,7 @@ import time
 from collections import deque
 from contextlib import contextmanager
 from pathlib import PurePosixPath
-from typing import Iterator
+from typing import Callable, Iterator
 from urllib.parse import urlsplit
 
 # lesson_learned (0.1.52 S5): quiet — the island counts it ("+1 practice"); no notification.
@@ -30,6 +31,7 @@ KINDS = frozenset({"turn_finished", "approval_needed", "scheduled_finished", "sc
 OUTCOMES = frozenset({"ok", "error", "needs_review", "cancelled"})
 MAX_EVENTS = 100
 
+logger = logging.getLogger(__name__)
 _lock = threading.Lock()
 _events: deque[dict] = deque(maxlen=MAX_EVENTS)
 _event_ids = itertools.count(1)
@@ -44,6 +46,8 @@ _awaiting: dict[int, str | None] = {}
 # only reader of these. Steps are minimal on purpose: a tool and a short target
 # (a host, a file name, the start of a query or command), never full arguments.
 _activity: dict[int, dict] = {}
+# activity id -> {key: callback} to run when that work ends (`when_work_ends`).
+_on_end: dict[int, dict[str, Callable[[], None]]] = {}
 _details: dict[int, dict] = {}
 _current: contextvars.ContextVar[dict | None] = contextvars.ContextVar("desktop_activity", default=None)
 KINDS_OF_WORK = frozenset({"turn", "job", "scheduled"})
@@ -129,6 +133,27 @@ def working(conversation_id: str | None = None, *, title: str | None = None,
         with _lock:
             _working.pop(token, None)
             _activity.pop(token, None)
+            callbacks = list(_on_end.pop(token, {}).values())
+        for callback in callbacks:            # outside the lock; one's error never stops the rest
+            try:
+                callback()
+            except Exception:  # noqa: BLE001 — the work's own exit must not depend on a callback
+                logger.warning("desktop_status: a when_work_ends callback failed", exc_info=True)
+
+
+def when_work_ends(callback: Callable[[], None], *, key: str | None = None) -> bool:
+    """Run `callback` when the work in flight (this chat turn or background job) ends, however it
+    ends: normally, with an error, or cancelled. One callback per `key` (a later one replaces it).
+    Hands v2 §15 A18: a visit to another desktop comes back when the work that went there ends.
+    False outside any work (nothing to attach to)."""
+    activity = _current.get()
+    if activity is None:
+        return False
+    with _lock:
+        if activity["id"] not in _activity:
+            return False
+        _on_end.setdefault(activity["id"], {})[key or f"callback-{id(callback)}"] = callback
+    return True
 
 
 def step_target(tool: str, args: dict) -> str | None:
