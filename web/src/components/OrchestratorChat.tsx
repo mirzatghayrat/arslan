@@ -38,6 +38,7 @@ import { api } from '../api/client';
 import { useSettingsStore } from '../stores/settingsStore';
 import { clampEndpointSilenceMs } from '../api/adapters';
 import NoModelHint from './NoModelHint';
+import { readFirstTasks, clearFirstTasks, FIRST_TASKS_EVENT, type FirstTasks } from '../lib/firstRun';
 import RunReplay from './RunReplay';
 import PushToTalk from './PushToTalk';
 import ConversationToggle from './ConversationToggle';
@@ -304,9 +305,22 @@ export default function OrchestratorChat({
   }, [chatHistory]);
 
 
+  // 0.1.60: first things to try, from what the first run turned on — until the first message.
+  const [firstTasks, setFirstTasks] = useState<FirstTasks | null>(readFirstTasks);
+  useEffect(() => {
+    const reread = () => setFirstTasks(readFirstTasks());
+    window.addEventListener(FIRST_TASKS_EVENT, reread);
+    return () => window.removeEventListener(FIRST_TASKS_EVENT, reread);
+  }, []);
+  const hideFirstTasks = () => { clearFirstTasks(); setFirstTasks(null); };
+  const firstTaskKeys = firstTasks
+    ? [...(firstTasks.folders ? ['tryFolders'] : []), ...(firstTasks.hands ? ['tryHands'] : []), 'tryWeb']
+    : [];
+
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputValue.trim() || attach.busy) return;
+    if (firstTasks) hideFirstTasks();
     if (attachmentImageBudgetExceeded(attachments)) {
       attach.setError(t("inputs.imageBudget"));
       return;
@@ -382,7 +396,7 @@ export default function OrchestratorChat({
             <div className="space-y-3 animate-fade-in">
               <div className="flex items-center justify-center gap-3">
                 {/* Arslan mark */}
-                <BrandMark alt="Arslan" className="w-11 h-11 object-contain select-none" draggable={false} />
+                <BrandMark alt="Arslan" className="w-11 h-11 object-contain select-none" draggable={false} data-brand-anchor="" />
 
                 { /* Greeting */ }
                 <h1 className="min-w-0 break-words text-2xl sm:text-3xl font-sans text-foreground tracking-tight font-medium leading-tight">
@@ -401,6 +415,25 @@ export default function OrchestratorChat({
 
             {/* No-model hint — shown when zero ProviderConfigs are configured */}
             <NoModelHint hasModel={hasModel} onOpenSettings={onOpenSettings ?? (() => {})} />
+
+            {/* 0.1.60: a click puts the text in the box — it never sends by itself. */}
+            {firstTaskKeys.length > 0 && (
+              <div role="group" aria-label={t('firstRun.tryLabel')} data-testid="first-tasks"
+                className="w-full max-w-xl flex flex-wrap items-center justify-center gap-2 animate-fade-in">
+                {firstTaskKeys.map((key) => (
+                  <button key={key} type="button" data-testid={`first-task-${key}`}
+                    onClick={() => { setInputValue(t(`firstRun.${key}`)); document.getElementById('landing-message-input')?.focus(); }}
+                    className="h-8 px-3 rounded-full border border-border bg-surface text-[12px] text-foreground hover:border-primary/40 transition-colors">
+                    {t(`firstRun.${key}`)}
+                  </button>
+                ))}
+                <button type="button" data-testid="first-tasks-hide" aria-label={t('firstRun.tryHide')} title={t('firstRun.tryHide')}
+                  onClick={hideFirstTasks}
+                  className="h-8 w-8 rounded-full text-subtle-foreground hover:text-foreground flex items-center justify-center">
+                  <X className="w-3.5 h-3.5" aria-hidden="true" />
+                </button>
+              </div>
+            )}
 
             {/* Luxurious prompt input box resembling Claude's container design */}
             <div

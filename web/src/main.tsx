@@ -20,6 +20,10 @@ if (import.meta.env.DEV && location.hash.startsWith('#kit-gallery')) {
   document.documentElement.classList.toggle('dark', location.hash.includes('&dark'));
   if (params.get('p')) document.documentElement.dataset.palette = params.get('p')!;
   void import('./__tests__/gallery/KitGallery').then(({ default: KitGallery }) => root.render(<KitGallery />));
+} else if (import.meta.env.DEV && location.hash.startsWith('#first-run')) {
+  // 0.1.60: dev-only preview of the first-run film over a stand-in for the app (never in a build).
+  document.documentElement.classList.toggle('dark', location.hash.includes('&dark'));
+  void import('./__tests__/gallery/FirstRunPreview').then(({ default: FirstRunPreview }) => root.render(<FirstRunPreview />));
 } else {
   root.render(
     <StrictMode>
