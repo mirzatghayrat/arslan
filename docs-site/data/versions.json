@@ -2319,5 +2319,77 @@
         "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.56...v0.1.57"
       }
     ]
+  },
+  {
+    "version": "v0.1.58",
+    "title": "回复、文件与模型",
+    "date": "2026-10-09",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-10-09T15:14:13Z",
+    "published_at_shanghai": "2026-10-09T23:14:13+08:00",
+    "summary": "回复下方一行收起过程；写出的文件以卡片返回；工作台与阅读器；每个对话可选任意模型。",
+    "status": "published_stable",
+    "tagged_commit": "14e29ba14fa08d3d94847747a21c0450bb4776d4",
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.58",
+        "published_at": "2026-10-09T15:14:13Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.57...v0.1.58"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.59",
+    "title": "跟得上、用你的语言、做完算完成",
+    "date": "2026-10-11",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-10-10T18:09:23Z",
+    "published_at_shanghai": "2026-10-11T02:09:23+08:00",
+    "summary": "长回答不中断、第二条消息排队；按用户语言回答；做成的后台工作算完成；受保护文件夹对命令也关闭。",
+    "status": "published_stable",
+    "tagged_commit": "5bcbaf99347fd80c3e84eb8f349fb4f2ceaaa2fc",
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.59",
+        "published_at": "2026-10-10T18:09:23Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.58...v0.1.59"
+      }
+    ]
+  },
+  {
+    "version": "v0.1.60",
+    "title": "Hands v2",
+    "date": "2026-10-11",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-10-11T08:21:05Z",
+    "published_at_shanghai": "2026-10-11T16:21:05+08:00",
+    "summary": "看单个窗口、批量与菜单、一张卡片多个应用、借用前台与去另一个桌面、经同意接管屏幕；新的首次启动。",
+    "status": "published_stable",
+    "tagged_commit": "8b6d3cff488cff9de1c779138cb15428241e5f4e",
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.60",
+        "published_at": "2026-10-11T08:21:05Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.59...v0.1.60"
+      }
+    ]
   }
 ]

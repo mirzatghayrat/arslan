@@ -53,14 +53,14 @@ O çalışırken sen konuşmaya devam edersin. Silen, gönderen, kuran ya da ba�
 
 Bu kadar. Hesap yok, kayıt yok, Arslan sunucusu yok.
 
-## 0.1.57'de yeni — büyüyen yetenekler
+## 0.1.60'ta yeni — Hands v2
 
-Bir adım Arslan'ın yapamadığı bir şey gerektirdiğinde — örneğin bir Excel dosyasındaki yalnızca değerleri değil formülleri okumak — resmî MCP Registry'de, GitHub'da ve incelenmiş beceri kütüphanelerinde arar ve tek bir kartta sorar: ne ekleneceğini, nereden geldiğini, lisansını (projenin kendi lisans dosyasından okunur), nasıl çalışacağını ve hangi klasörleri kullanabileceğini. **Add and retry** dersen sabitlenmiş bir sürümü kurulum sırasında hiçbir kod çalıştırmadan kurar, bilinen tehlikeli kalıplar için tarar, "hayır"la başlayan bir sanal alanda başlatır (kendi klasörü ve senin verdiğin klasörler; SSH anahtarlarına erişmez, bir hizmet anahtarı gerektirmedikçe ağa çıkmaz), bir kez test eder ve adımı aynı yanıtta yeniden dener. Eklenen her yeteneğin Yetenekler sayfasında bir dosyası vardır. [Tüm sürüm notları →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.57)
+Arslan Mac uygulamalarını artık daha çok senin kullandığın gibi kullanıyor. Bir pencerenin metninin yanında, üzerinde çalıştığı tek pencerenin bir görüntüsüne de bakabilir — asla tüm ekrana değil, asla kaydedilmez. Bir uygulamadaki birkaç adım tek bir toplu iş olarak çalışır, menü öğeleri doğrudan seçilir ve uygulamalar arka planda açılır. Tek bir kart birden çok uygulamayı kapsayabilir ve güvendiğin uygulamalara Ayarlar › Hands'ten kalıcı izin verebilirsin; silme, gönderme, ödeme ve gönderim yapma her seferinde yine sorar. Bir şey yalnızca uygulama öndeyken yapılabiliyorsa Arslan önü yaklaşık bir saniye ödünç alır (ekran kenarı mavi parlar; bu sırada bastığın tuşlar tutulur ve sonra geri verilir); pencere başka bir masaüstündeyse oraya gider ve geri döner. Daha uzun işlerde ekranı en fazla 30 dakika devralabilir — yalnızca senin onayınla ve klavyeye ya da fareye dokunduğun anda duraklar. Kurulum artık kısa bir ilk açılış filmi. [Tüm sürüm notları →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.60)
 
 Son sürümler:
-- **[0.1.56](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.56)** — iki katmanlı projeler: hepsi için bir pano, her biri için seviyeler; Arslan yalnızca gösterebildiğini işaretler ve bir seviyeyi geçmek bir öneridir.
-- **[0.1.55](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.55)** — soru soran her şey için tek görünüm: kartlar tek bir kuyrukta bekler, ⌘⏎ izin verir, Esc reddeder ve Island da yanıtlayabilir (silen, gönderen, ödeyen ya da gönderim yapan bir adım bunun yerine Arslan'da açılır).
-- **[0.1.54](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.54)** — Mac tarafı iPhone için Arslan'a hazır (Touch ID ile onay, telefon başına tek kayıt) ve terminal kapısı bir zincirdeki her komutu denetler.
+- **[0.1.59](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.59)** — yetişen bir sohbet: uzun bir yanıt artık "Kesildi" olmuyor, ikinci mesaj sırasını bekliyor, Arslan senin yazdığın dilde yanıtlıyor ve "Masaüstü, Belgeler, İndirilenler: Kapalı" bunları komutlara da kapatıyor.
+- **[0.1.58](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.58)** — okunabilen yanıtlar, açılabilen dosyalar: Arslan'ın yaptıkları sakin tek bir satırda, yazdığı dosyalar kart olarak geri geliyor, çalışma tezgâhında bir okuyucu var ve her sohbet için herhangi bir sağlayıcının herhangi bir modeli seçilebiliyor.
+- **[0.1.57](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.57)** — büyüyen yetenekler: Arslan eksik bir aracı bulur, sorar, sabitlenmiş ve sanal alanda kurar, test eder ve adımı yeniden dener.
 
 <div align="center">
   <img src="docs/assets/readme/devices.jpg" alt="Mac'te Arslan — arka planda faturaları toplayan bir iş — ve bekleyen bir onayı gösteren iPhone için Arslan" width="100%">
@@ -136,7 +136,7 @@ Görsellerde ve taranmış PDF'lerde metin tanıma, güvenlik duruşunun tamamı
 
 - **Pre-v1.** Şimdilik yalnızca Apple Silicon'da macOS 11+. Sanal alanlar macOS seatbelt'tir; diğer platformlarda üretilen Python reddedilir, kabuk komutları ise sanal alan olmadan çalışır ve bu açıkça belirtilir.
 - **Kendi model anahtarın.** Arslan senin hesabınla çalışır; faturayı sağlayıcın keser. Yerel araç taşıma OpenAI uyumlu, Anthropic ve Gemini yolları için uygulanmış ve protokol düzeyinde test edilmiştir — bu her model ya da uç noktanın canlı sertifikası değildir.
-- **Hands yalnızca geçerli masaüstündeki pencereleri görür**; başka bir Space'teki ya da tam ekran bir uygulamanın arkasındaki uygulama açık sayılmaz. Büyük bir pencerenin (çok notlu Notlar) okunması 10–20 saniye sürebilir.
+- **Hands henüz ekrandaki bir konuma tıklayamıyor ya da sürükleyemiyor.** Başka bir masaüstündeki pencereye kısa bir süre oraya giderek ulaşır (önü ödünç alma açıkken). Bir uygulamanın öne fırladığı ~50 ms içinde basılan tuş o uygulamaya gider ve büyük bir pencerenin (çok notlu Notlar) okunması 10–20 saniye sürebilir.
 - **iPhone için Arslan yakında App Store'da.** Mac tarafı 0.1.53 ile geldi.
 - **Kendi takvimine göre para harcayan her şey kapalı gelir.** Arka plan bellek düzenleme, yalnızca Ayarlar › Otomasyon'da açarsan modelini çağırır; yine de sağlayıcının fatura panelinde kesin bir sınır koy.
 - API'ler, şemalar ve varsayılanlar v1'den önce değişebilir.
@@ -149,7 +149,7 @@ Görsellerde ve taranmış PDF'lerde metin tanıma, güvenlik duruşunun tamamı
 
 ## Lisans
 
-Apache-2.0. [LICENSE](LICENSE) ve [NOTICE](NOTICE) dosyalarına bak. Hermes Agent (MIT) ve agent-desktop (Apache-2.0, Arslan Hands içinde değiştirilmeden dağıtılır) dahil üçüncü taraf bildirimleri [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) içinde. Simgeler: [Lucide](https://lucide.dev) (ISC).
+Apache-2.0. [LICENSE](LICENSE) ve [NOTICE](NOTICE) dosyalarına bak. Hermes Agent (MIT) ve agent-desktop (Apache-2.0, Arslan'ın bir değişikliğini taşıyan bir fork'tan derlenip Arslan Hands içinde dağıtılır) dahil üçüncü taraf bildirimleri [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) içinde. Simgeler: [Lucide](https://lucide.dev) (ISC).
 
 ---
 

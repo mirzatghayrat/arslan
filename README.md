@@ -54,14 +54,14 @@ You keep talking while it works. Anything that deletes, sends, installs or touch
 
 That's it. No account, no sign-up, no Arslan server.
 
-## What's new in 0.1.57 — capabilities that grow
+## What's new in 0.1.60 — Hands v2
 
-When a step needs something Arslan cannot do — say, reading the formulas in an Excel file, not just the values — it searches the official MCP Registry, GitHub and reviewed skill libraries, and asks on one card: what it would add, where it comes from, its license (read from the project's own license file), how it would run and which folders it may use. Say **Add and retry**, and it installs a pinned version with no code running during the install, scans it for known dangerous patterns, starts it in a sandbox that begins from no (its own folder and the folders you gave it, no SSH keys, no network unless a service key needs it), tests it once, and retries the step in the same reply. Every added capability has a dossier on the Capabilities page. [Full release notes →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.57)
+Arslan uses your Mac apps more like you would. Besides a window's text, it can look at a picture of the one window it works in — never the whole screen, never saved. Several steps in one app run as one batch, menu items are chosen directly and apps open in the background. One card can cover several apps, and apps you trust can be allowed for good in Settings › Hands; deleting, sending, paying and submitting still ask every time. When something only works with the app in front, Arslan borrows the front for about a second (the screen edge glows blue; the keys you press meanwhile are held and given back), and if the window is on another desktop it goes there and comes back. For longer work it can take over the screen for up to 30 minutes — only with your yes, and it pauses the moment you touch the keyboard or mouse. Setting up is now a short first-run film. [Full release notes →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.60)
 
 Recently:
-- **[0.1.56](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.56)** — projects in two layers: a board for all of them, levels for each; Arslan ticks only what it can show, and clearing a level is a proposal.
-- **[0.1.55](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.55)** — one look for everything that asks: cards wait in one queue, ⌘⏎ allows and Esc declines, and the Island answers them (a step that deletes, sends, pays or submits opens in Arslan instead).
-- **[0.1.54](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.54)** — the Mac side is ready for Arslan for iPhone (Touch ID approvals, one entry per phone), and the terminal gate checks every command in a chain.
+- **[0.1.59](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.59)** — a chat that keeps up: a long answer is not "Interrupted", a second message waits its turn, Arslan answers in the language you write in, and "Desktop, Documents, Downloads: Off" closes them to commands too.
+- **[0.1.58](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.58)** — replies you can read and files you can open: one quiet line of what Arslan did, files back as cards, a reader in the workbench, and any model of any provider for each conversation.
+- **[0.1.57](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.57)** — capabilities that grow: Arslan finds a missing tool, asks, installs it pinned and sandboxed, tests it and retries the step.
 
 <div align="center">
   <img src="docs/assets/readme/devices.jpg" alt="Arslan on a Mac — a background job gathering invoices — and Arslan for iPhone showing an approval waiting" width="100%">
@@ -225,7 +225,7 @@ One deliberate exception: the secret itself lives **outside** that directory. If
 
 - **macOS 11+ on Apple Silicon only, for now.** The sandboxes are macOS seatbelt; elsewhere generated Python is refused and shell commands run unsandboxed, marked as such.
 - **Bring your own model key.** Arslan runs against your account; your provider bills you. Native tool transport is implemented and wire-tested for OpenAI-compatible, Anthropic and Gemini paths — that is not live certification of every model or endpoint.
-- **Hands sees windows on the current desktop only**; an app on another Space or behind a full-screen app counts as not open. A large window (Notes with many notes) can take 10–20 seconds to read.
+- **Hands can't click at a screen position or drag yet.** A window on another desktop is reached by going there for a moment (while borrowing the front is on). A key typed in the ~50 ms while an app jumps forward goes to that app, and a large window (Notes with many notes) can take 10–20 seconds to read.
 - **Arslan for iPhone is coming to the App Store.** The Mac side ships in 0.1.53.
 - **Anything that spends on its own schedule ships off.** Background memory curation calls your model when you turn it on in Settings › Automation; keep a hard limit in your provider's billing dashboard.
 - APIs, schemas and defaults may change before v1.
@@ -241,7 +241,7 @@ One deliberate exception: the secret itself lives **outside** that directory. If
 Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). Third-party dependency notices are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Icons: [Lucide](https://lucide.dev) (ISC).
 ## License
 
-Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). Third-party notices — including Hermes Agent (MIT) and agent-desktop (Apache-2.0, shipped unmodified inside Arslan Hands) — are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Icons: [Lucide](https://lucide.dev) (ISC).
+Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). Third-party notices — including Hermes Agent (MIT) and agent-desktop (Apache-2.0, built into Arslan Hands from a fork that carries one change by Arslan) — are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Icons: [Lucide](https://lucide.dev) (ISC).
 
 ---
 
