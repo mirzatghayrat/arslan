@@ -2,14 +2,17 @@
 
 On the user's Mac every name resolves into 198.18.0.0/15 (Clash-style fake-IP DNS),
 and `not is_global` refused all of them: web_search, web_extract and the agent browser
-had not worked since 2026-10-05 (spec §0.3). The rule now: a NAME whose IPv4 answers all
-lie in the fake range passes when a proxy carries the request (the proxy resolves it),
-or when the system DNS itself is fake-IP (a public canary resolves there too). Literal
-addresses, local names, real private answers and mixed answers stay refused.
+had not worked since 2026-10-05 (spec §0.3). The rule now: a NAME on port 80 or 443 whose
+IPv4 answers all lie in the fake range passes when a proxy carries the request (the proxy
+resolves it), or when the system DNS itself is fake-IP (a public canary resolves there
+too). Literal addresses (in any spelling), local names, the TUN gateway 198.18.0.1, real
+private answers and mixed answers stay refused, and a name is judged in its canonical
+form, the one the resolver and the HTTP stack really use.
 """
 from __future__ import annotations
 
 import ipaddress
+import logging
 import socket
 from types import SimpleNamespace
 
@@ -19,6 +22,7 @@ import pytest
 from server.registry import net_pin
 
 FAKE = "198.18.0.33"
+GATEWAY = "198.18.0.1"          # the TUN's own address: never a name's fake address
 PUBLIC = "93.184.216.34"
 
 
@@ -50,6 +54,13 @@ def no_proxy(monkeypatch):
                 "http_proxy", "https_proxy", "all_proxy", "no_proxy"):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setattr(net_pin, "getproxies", lambda: {})
+
+
+@pytest.fixture(autouse=True)
+def fresh_fake_ip_warnings(monkeypatch):
+    """The TUN-path warning is rate-limited per host in module state: every test starts with
+    none logged, or one test's warning would silence the next test's."""
+    monkeypatch.setattr(net_pin, "_fake_ip_warned", {})
 
 
 @pytest.fixture
@@ -126,11 +137,16 @@ async def test_real_private_and_mixed_answers_stay_refused_through_a_proxy(monke
     assert not seen
 
 
+@pytest.mark.parametrize("proxied", [False, True])
 @pytest.mark.parametrize("host", ["localhost", "LOCALHOST.", "app.localhost", "printer.local",
                                   "nas.lan", "metadata.google.internal", "router.home.arpa",
-                                  "wiki.intranet", "files.corp"])
-async def test_local_names_are_refused_whatever_dns_says(monkeypatch, seen, host):
-    _with_proxy(monkeypatch)
+                                  "wiki.intranet", "files.corp",
+                                  # each zone itself, and a name with no dot at all
+                                  "lan", "local", "internal", "intranet", "corp", "home.arpa",
+                                  "printer"])
+async def test_local_names_are_refused_whatever_dns_says(monkeypatch, seen, host, proxied):
+    if proxied:
+        _with_proxy(monkeypatch)
     _resolver(monkeypatch, {}, default=(FAKE,))
     with pytest.raises(net_pin._BlockedHost):
         await net_pin.pinned_get(f"https://{host}/")
@@ -162,7 +178,8 @@ async def test_web_search_reports_the_blocked_address(monkeypatch):
         name = "duckduckgo"
 
         async def search(self, query, num_results=5):
-            raise net_pin._BlockedHost("html.duckduckgo.com resolves to a private or internal address")
+            raise net_pin._BlockedHost(
+                "html.duckduckgo.com resolves to a private or internal address")
 
     async def provider():
         return SimpleNamespace(provider=Refused(), reason=None)
@@ -230,3 +247,239 @@ async def test_an_exotic_spelling_of_an_address_is_a_literal_not_a_name(monkeypa
     with pytest.raises(net_pin._BlockedHost):
         await net_pin.pinned_get(f"https://{host}/")
     assert not seen
+
+
+# ── review round 1 ─────────────────────────────────────────────────────────────────
+# CRITICAL 1: the guard judges the name the resolver and the HTTP stack really use.
+# NFKC/IDNA turn fullwidth digits and letters, and the dots U+3002, U+FF0E and U+FF61, into
+# ASCII AFTER the raw `urlparse` host was judged. A literal address or a local name in
+# disguise was taken for a public NAME, and in fake-IP mode it was allowed.
+
+
+@pytest.mark.parametrize("proxied", [False, True])
+@pytest.mark.parametrize("host", [
+    pytest.param("１２７.０.０.１", id="fullwidth-127.0.0.1"),
+    pytest.param("１９８.１８.０.１", id="fullwidth-198.18.0.1"),
+    pytest.param("198。18。0。1", id="ideographic-stops-198.18.0.1"),
+    pytest.param("files。corp", id="ideographic-stop-files.corp"),
+    pytest.param("metadata.google.ｉｎｔｅｒｎａｌ", id="fullwidth-metadata.google.internal"),
+    pytest.param("nas.ｌａｎ", id="fullwidth-nas.lan"),
+    # A name whose ONLY dots are ideographic looks dotless to a check on the raw spelling, so
+    # the dotless rule alone would refuse the two cases above. These keep an ASCII dot, and
+    # so prove that it is the canonical form that refuses.
+    pytest.param("198.18。0.1", id="mixed-stop-198.18.0.1"),
+    pytest.param("www.files。corp", id="mixed-stop-www.files.corp"),
+])
+async def test_a_unicode_spelling_is_judged_in_its_canonical_form(monkeypatch, seen, host,
+                                                                   proxied):
+    """Each of these is the literal address or the local name it normalises to, so each is
+    refused, with and without a proxy. httpx rejects some of them itself, so "nothing was
+    sent" proves little: the GUARD has to be the one that says no."""
+    if proxied:
+        _with_proxy(monkeypatch)
+    _resolver(monkeypatch, {}, default=(FAKE,))
+    with pytest.raises(net_pin._BlockedHost):
+        await net_pin.pinned_get(f"https://{host}/")
+    assert not seen
+
+
+# RULING: the exception is for the web (80, 443) and never for the TUN's own address.
+
+
+@pytest.mark.parametrize("proxied", [False, True])
+@pytest.mark.parametrize("url", ["https://github.com:8443/", "https://github.com:5000/",
+                                 "http://github.com:9090/"])
+async def test_the_fake_exception_is_for_ports_80_and_443_only(monkeypatch, seen, url, proxied):
+    """AirPlay/ControlCenter (5000, 7000) and rapportd listen on every interface, the TUN's
+    included: an odd port on a fake name could be a request to a service on this very Mac."""
+    if proxied:
+        _with_proxy(monkeypatch)
+    _resolver(monkeypatch, {}, default=(FAKE,))
+    with pytest.raises(net_pin._BlockedHost):
+        await net_pin.pinned_get(url)
+    assert not seen
+
+
+@pytest.mark.parametrize("url", ["https://github.com/", "https://github.com:443/",
+                                 "http://github.com/", "http://github.com:80/"])
+async def test_a_fake_name_on_port_80_or_443_is_still_allowed(monkeypatch, seen, url):
+    _resolver(monkeypatch, {}, default=(FAKE,))
+    await net_pin.pinned_get(url)
+    assert seen[0].url.host == FAKE
+
+
+@pytest.mark.parametrize("proxied", [False, True])
+@pytest.mark.parametrize("answers", [(GATEWAY,), (GATEWAY, FAKE), (FAKE, GATEWAY)],
+                         ids=["gateway", "gateway+fake", "fake+gateway"])
+async def test_the_tun_gateway_is_never_a_names_fake_address(monkeypatch, seen, answers,
+                                                             proxied):
+    """Clash and mihomo keep 198.18.0.1 for the TUN itself and never hand it out for a name,
+    and local services listen on it. A name that answers it is not a faked name."""
+    if proxied:
+        _with_proxy(monkeypatch)
+    _resolver(monkeypatch, {"evil.test": answers}, default=(FAKE,))
+    with pytest.raises(net_pin._BlockedHost):
+        await net_pin.pinned_get("https://evil.test/")
+    assert not seen
+
+
+# MINOR 5: a name with no dot is local; allow_host keeps its exemption; an address is not a name.
+
+
+async def test_a_configured_dotless_search_host_still_works(monkeypatch, seen):
+    """A single-label name is local (the machine's search domains resolve it), but allow_host,
+    typed by a human in Settings, keeps its exemption."""
+    _resolver(monkeypatch, {"searx": ("192.168.1.20",)})
+    await net_pin.pinned_get("http://searx/search", allow_host="searx")
+    assert seen
+
+
+async def test_a_public_ipv6_literal_is_not_taken_for_a_local_name(monkeypatch, seen):
+    """It has no dot either, but it is an address, and a public one is fine."""
+    _resolver(monkeypatch, {})
+    await net_pin.pinned_get("https://[2606:4700:4700::1111]/")
+    assert seen
+
+
+# MINOR 6: the order of the lookups, and a redirect out of a fake name.
+
+
+@pytest.mark.parametrize("proxied,expected", [(False, ["github.com", "example.com"]),
+                                              (True, ["github.com"])])
+async def test_the_lookup_order_in_fake_mode(monkeypatch, seen, proxied, expected):
+    """TUN: the target, then the canary that proves the DNS is fake-IP. Behind a proxy the
+    proxy resolves the name itself, so the canary is never asked."""
+    if proxied:
+        _with_proxy(monkeypatch)
+    calls = _resolver(monkeypatch, {}, default=(FAKE,))
+    await net_pin.pinned_get("https://github.com/")
+    assert calls == expected
+
+
+@pytest.mark.parametrize("proxied", [False, True])
+@pytest.mark.parametrize("location", ["http://printer.local/", "http://192.168.1.10/",
+                                      "http://127.0.0.1:9090/"])
+async def test_a_redirect_from_a_fake_name_to_a_local_target_is_refused(monkeypatch, location,
+                                                                       proxied):
+    """The first hop is a fake name and is allowed; the 302 it answers is judged like any URL."""
+    sent: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(request)
+        return httpx.Response(302, headers={"location": location})
+
+    monkeypatch.setattr(net_pin, "_build_client", lambda: httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), follow_redirects=False, trust_env=False))
+    if proxied:
+        _with_proxy(monkeypatch)
+    _resolver(monkeypatch, {}, default=(FAKE,))
+    with pytest.raises(net_pin._BlockedHost):
+        await net_pin.pinned_get("https://github.com/")
+    assert len(sent) == 1                                   # only the first hop left the machine
+
+
+# IMPORTANT 2: a refusal says what it is. Unresolvable and not-the-configured-host are still
+# refusals (callers catch `_BlockedHost`), but neither is "a blocked address on the local net".
+
+
+@pytest.mark.parametrize("cls,message,expected", [
+    ("_BlockedHost", "a.test resolves to a private or internal address",
+     "blocked address (local network)"),
+    ("_BlockedHost", "nas.lan is a local network name", "blocked address (local network)"),
+    ("_Unresolvable", "cannot resolve a.test", "cannot resolve"),
+    ("_NotConfiguredHost", "a.test is not the configured host (b.test)",
+     "not the configured search host"),
+])
+def test_each_refusal_is_named_for_what_it_is(cls, message, expected):
+    assert net_pin.categorize(getattr(net_pin, cls)(message)) == expected
+
+
+def test_the_named_refusals_are_still_blocked_hosts():
+    """web_extract and browser_proxy catch `_BlockedHost`; the subclasses must be caught there."""
+    assert issubclass(net_pin._Unresolvable, net_pin._BlockedHost)
+    assert issubclass(net_pin._NotConfiguredHost, net_pin._BlockedHost)
+
+
+@pytest.mark.parametrize("failure", ["raises", "empty"])
+async def test_an_unresolvable_name_raises_unresolvable(monkeypatch, seen, failure):
+    def getaddrinfo(host, *a, **k):
+        if failure == "raises":
+            raise socket.gaierror("Name or service not known")
+        return []
+
+    monkeypatch.setattr(socket, "getaddrinfo", getaddrinfo)
+    with pytest.raises(net_pin._Unresolvable):
+        await net_pin.pinned_get("https://nothing.example/")
+    assert not seen
+
+
+@pytest.mark.parametrize("url", ["http://printer/", "https://other.example/"])
+async def test_another_host_is_not_the_configured_host(monkeypatch, seen, url):
+    """The allow_host check comes first: a dotless name is `not the configured host`, not
+    `a local name`."""
+    _resolver(monkeypatch, {})
+    with pytest.raises(net_pin._NotConfiguredHost):
+        await net_pin.pinned_get(url, allow_host="searx")
+    assert not seen
+
+
+# IMPORTANT 3: the TUN path delegates, and says so. At most once per host per 10 minutes.
+
+
+def _fake_ip_warnings(caplog) -> list[str]:
+    return [r.getMessage() for r in caplog.records if r.getMessage().startswith("fake-IP DNS:")]
+
+
+def _warning_for(host: str, ip: str = FAKE) -> str:
+    return (f"fake-IP DNS: {host} → {ip}; the TUN/proxy maps it back and decides the real "
+            "destination — SSRF protection is delegated there")
+
+
+async def test_the_tun_path_says_that_protection_is_delegated(monkeypatch, seen, caplog):
+    _resolver(monkeypatch, {}, default=(FAKE,))
+    with caplog.at_level(logging.WARNING, logger="server.registry.net_pin"):
+        await net_pin.pinned_get("https://github.com/")
+    assert _fake_ip_warnings(caplog) == [_warning_for("github.com")]
+
+
+async def test_the_warning_is_once_per_host_per_ten_minutes(monkeypatch, seen, caplog):
+    _resolver(monkeypatch, {}, default=(FAKE,))
+    with caplog.at_level(logging.WARNING, logger="server.registry.net_pin"):
+        await net_pin.pinned_get("https://github.com/")
+        await net_pin.pinned_get("https://github.com/again")          # same host: silent
+        await net_pin.pinned_get("https://pypi.org/")                  # another host: heard
+        net_pin._fake_ip_warned["github.com"] -= 601                   # ten minutes pass
+        await net_pin.pinned_get("https://github.com/once-more")
+    assert _fake_ip_warnings(caplog) == [_warning_for("github.com"), _warning_for("pypi.org"),
+                                         _warning_for("github.com")]
+
+
+async def test_the_warning_names_and_keys_the_canonical_host(monkeypatch, seen, caplog):
+    """One host spelled two ways is one host: the log line is ASCII and the 10 minutes are
+    counted per canonical name, not per spelling."""
+    _resolver(monkeypatch, {}, default=(FAKE,))
+    with caplog.at_level(logging.WARNING, logger="server.registry.net_pin"):
+        await net_pin.pinned_get("https://bücher.example/")
+        await net_pin.pinned_get("https://ｂücher.example/")          # fullwidth b: same host
+    assert _fake_ip_warnings(caplog) == [_warning_for("xn--bcher-kva.example")]
+
+
+def test_the_warning_memory_is_bounded():
+    """A long-lived server meets many hosts; the table of who was warned about must not grow
+    without limit."""
+    for i in range(net_pin._FAKE_IP_WARN_HOSTS + 50):
+        net_pin._warn_fake_ip(f"host{i}.example", FAKE)
+    assert 0 < len(net_pin._fake_ip_warned) <= net_pin._FAKE_IP_WARN_HOSTS
+
+
+async def test_no_fake_ip_warning_for_ordinary_lookups_or_behind_a_proxy(monkeypatch, seen,
+                                                                         caplog):
+    """An ordinary lookup has nothing to say, and a proxied request already has its own
+    warning (the proxy branch of pinned_request): this one is for the TUN path only."""
+    with caplog.at_level(logging.WARNING, logger="server.registry.net_pin"):
+        _resolver(monkeypatch, {})                                 # public answers, public canary
+        await net_pin.pinned_get("https://example.org/")
+        _with_proxy(monkeypatch)
+        _resolver(monkeypatch, {"github.com": (FAKE,)})            # fake answer, a proxy carries it
+        await net_pin.pinned_get("https://github.com/")
+    assert _fake_ip_warnings(caplog) == []

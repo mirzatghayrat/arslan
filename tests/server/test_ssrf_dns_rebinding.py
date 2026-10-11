@@ -211,7 +211,8 @@ async def test_a_redirect_to_a_private_host_is_refused(monkeypatch):
     "192.168.1.1",         # RFC 1918
     "169.254.169.254",     # cloud metadata
     "0.0.0.0",             # unspecified
-    "198.18.0.1",          # benchmarking (refused unless the DNS itself is fake-IP, below)
+    "198.18.0.1",          # benchmarking, and the TUN gateway: never a name's fake address
+    "198.19.255.255",      # benchmarking (refused unless the DNS itself is fake-IP, below)
     "224.0.0.1",           # multicast
     "::ffff:127.0.0.1",    # IPv4-mapped loopback
     "fc00::1",             # IPv6 ULA

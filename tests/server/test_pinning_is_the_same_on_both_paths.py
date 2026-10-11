@@ -39,6 +39,10 @@ ADVERSARIAL = [
     # 0.1.61 §E: fake-IP DNS (Clash-style TUN). Every name answers in 198.18.0.0/15 — the
     # canary too — so the address stands for the name and both paths must reach it.
     ("fake-ip dns", "example.test", "198.18.0.33", False),
+    # Review round 1, same TUN world: a disguised address is judged as the address it
+    # normalises to, and the TUN's own gateway is never a name's fake address. Both paths refuse.
+    ("fullwidth literal", "１２７.０.０.１", "198.18.0.33", True),
+    ("tun gateway", "example.test", "198.18.0.1", True),
 ]
 
 

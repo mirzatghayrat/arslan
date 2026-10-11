@@ -230,6 +230,10 @@ class WebSearchExecutor:
         """Try the automatic order; a blocked or failed provider is reported, not
         mistaken for "nothing found", and the next one is tried."""
         failures = []
+        # Counted in the branch, never read back out of the failure text: "blocked" is also a
+        # word in the guard's own category ("blocked address (local network)"), and an
+        # unresolvable or refused host must not be reported as an anti-bot block.
+        other_failures = 0
         for provider in await _auto_search_providers():
             name = getattr(provider, "name", "unknown")
             try:
@@ -240,12 +244,13 @@ class WebSearchExecutor:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("web_search failed via %s: %s", name, exc, exc_info=True)
                 failures.append(f"{name}: {net_pin.categorize(exc)}")
+                other_failures += 1
                 continue
             found = self._found(provider, results)
             if failures:
                 found["fallback_from"] = failures
             return found
-        blocked = all(": blocked" in f for f in failures)
+        blocked = other_failures == 0
         return {"ok": False, "code": "search_blocked" if blocked else "search_failed",
                 "error": ("web search is unavailable right now — " + "; ".join(failures) +
                           ". This is not 'no results': nothing was searched. " + _SEARCH_ADVICE),
