@@ -87,6 +87,7 @@ from .versions._0063_project_levels import upgrade_sync as _m0063
 from .versions._0064_capability_sources import upgrade_sync as _m0064
 from .versions._0065_conversation_models import upgrade_sync as _m0065
 from .versions._0066_provider_labels_english import upgrade_sync as _m0066
+from .versions._0067_permissions import upgrade_sync as _m0067
 
 # VERBATIM order from the old main.py boot chain — do NOT reorder/add/drop.
 MIGRATIONS: list[tuple[str, Callable]] = [
@@ -151,6 +152,7 @@ MIGRATIONS: list[tuple[str, Callable]] = [
     ("0064", _m0064),
     ("0065", _m0065),
     ("0066", _m0066),
+    ("0067", _m0067),
 ]
 
 

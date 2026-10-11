@@ -26,14 +26,12 @@ an allowed command runs with the user's own permissions.
 """
 from __future__ import annotations
 
-import json
 import re
 import shlex
 from dataclasses import dataclass
 
 from arslan.vendor.hermes import approval_detection as hermes
 
-ALWAYS_ALLOW_KEY = "terminal_always_allow"
 MAX_COMMAND_CHARS = 8000
 
 _POS = hermes._CMDPOS           # command position: start, after ; | && $( ` and sudo/env wrappers
@@ -220,29 +218,28 @@ def risk_grade(command: str) -> str:
 # ── "don't ask again", remembered by rule ─────────────────────────────────────
 
 async def always_allowed(db) -> set[str]:
-    """Rules the user said not to ask about again. Unreadable means none: ask."""
-    from server.services import settings_service
+    """Rules the user said not to ask about again (0.1.61: `legacy_rule` rows in the permission
+    store). Unreadable means none: ask."""
+    from server.services import permission_store
     try:
-        raw = await settings_service._get_raw(db, ALWAYS_ALLOW_KEY)
-        return {str(r) for r in json.loads(raw)} if raw else set()
+        return {r.target for r in await permission_store.list_rules(db, "legacy_rule")}
     except Exception:  # noqa: BLE001 — a standing permission is never inferred from an error
         return set()
 
 
 async def allow_always(db, rule: str) -> None:
     """Remember a rule. Forbidden rules and the empty rule can never be remembered."""
-    from server.services import settings_service
+    from server.services import permission_store
     if not rule or rule in {k for k, _, _ in _FORBID} | {"hardline", "empty", "too-long"}:
         return
-    rules = await always_allowed(db) | {rule}
-    await settings_service._set_raw(db, ALWAYS_ALLOW_KEY, json.dumps(sorted(rules)))
+    await permission_store.add_rule(db, "legacy_rule", rule, label=describe(rule),
+                                    created_from="card")
     await db.commit()
 
 
 async def forget(db, rule: str) -> None:
-    from server.services import settings_service
-    rules = await always_allowed(db) - {rule}
-    await settings_service._set_raw(db, ALWAYS_ALLOW_KEY, json.dumps(sorted(rules)))
+    from server.services import permission_store
+    await permission_store.delete_rule_by(db, "legacy_rule", rule)
     await db.commit()
 
 
