@@ -123,7 +123,7 @@ async def test_a_batch_is_one_app_and_at_most_eight_steps(hands, asks, in_job):
     await hands_tools.DesktopBatchExecutor().execute({"app": "Notes", "steps": [
         {"action": "press", "keys": "tab", "app": "Safari"}]})
     pressed = [a.get("app") for op, a in hands.calls if op == "press"]
-    assert pressed == ["Notes"], f"a step cannot change the app: {pressed}"
+    assert pressed == ["com.apple.Notes"], f"a step cannot change the app: {pressed}"
     bad = await hands_tools.DesktopBatchExecutor().execute({"app": "Notes", "steps": [{"action": "drag"}]})
     assert "0 of 1 steps went through; step 1: unknown action “drag”" in bad["text"]
 

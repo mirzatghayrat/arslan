@@ -503,23 +503,205 @@ fn running_apps(ctx: &Ctx) -> Result<Vec<App>, Refusal> {
         .collect())
 }
 
-/// The one running app a request means: exact name or bundle id, any case.
-fn resolve_app(ctx: &Ctx, wanted: &str) -> Result<App, Refusal> {
-    let mut found: Vec<App> = running_apps(ctx)?
+/// The one running app a request means (src/apps.rs, §15 A19), and whether another running app
+/// has its name (then agent-desktop, which finds apps by name, is given one of its windows).
+fn resolve_app(ctx: &Ctx, wanted: &str) -> Result<(App, bool), Refusal> {
+    let apps: Vec<crate::apps::Candidate> = running_apps(ctx)?
         .into_iter()
-        .filter(|a| a.name.eq_ignore_ascii_case(wanted) || a.bundle_id.eq_ignore_ascii_case(wanted))
+        .map(|a| crate::apps::Candidate {
+            name: a.name,
+            bundle_id: a.bundle_id,
+            pid: a.pid,
+        })
         .collect();
-    match found.len() {
-        0 => Err(refuse(
+    match crate::apps::choose(&apps, wanted, &crate::apps::Live) {
+        crate::apps::Choice::One(i) => {
+            let shared = crate::apps::name_shared(&apps, &apps[i]);
+            let c = apps[i].clone();
+            Ok((
+                App {
+                    name: c.name,
+                    bundle_id: c.bundle_id,
+                    pid: c.pid,
+                },
+                shared,
+            ))
+        }
+        crate::apps::Choice::None => Err(refuse(
             "app_not_running",
             format!("no running app is called “{wanted}”"),
         )),
-        1 => Ok(found.remove(0)),
-        _ => Err(refuse(
-            "app_ambiguous",
-            format!("more than one running app is called “{wanted}”"),
-        )),
+        crate::apps::Choice::Several(left) => {
+            let named: Vec<String> = left
+                .iter()
+                .take(5)
+                .map(|&i| {
+                    if apps[i].bundle_id.is_empty() {
+                        format!("{} (pid {})", apps[i].name, apps[i].pid)
+                    } else {
+                        format!("{} ({})", apps[i].name, apps[i].bundle_id)
+                    }
+                })
+                .collect();
+            Err(refuse(
+                "app_ambiguous",
+                format!(
+                    "more than one running app is called “{wanted}”: {}",
+                    named.join(", ")
+                ),
+            ))
+        }
     }
+}
+
+/// §15 A19: agent-desktop's windows of every app, keeping `pid`'s that accessibility can reach. The
+/// list of every app's windows also has windows no one can look at — each app's thin strip behind
+/// the menu bar on every desktop (3008×30, 1800×39), `accessible: false` (measured, 2026-10-11).
+fn keep_windows_of(envelope: &mut Value, pid: i64) {
+    if let Some(data) = envelope.get_mut("data").and_then(Value::as_array_mut) {
+        data.retain(|w| {
+            w.get("pid").and_then(Value::as_i64) == Some(pid)
+                && w.get("accessible").and_then(Value::as_bool) != Some(false)
+        });
+    }
+}
+
+/// §15 A19: app `app`'s windows (on the desktops shown), from agent-desktop's list of every app's.
+fn windows_of(ctx: &Ctx, app: &App) -> Result<Vec<Value>, Refusal> {
+    let (_, mut envelope) = run_envelope(
+        ctx,
+        &["list-windows".to_string()],
+        deadline("list_windows", &Value::Null),
+    )?;
+    if envelope.get("ok").and_then(Value::as_bool) != Some(true) {
+        return Err(refuse(
+            "window_not_found",
+            format!("could not list {}'s windows", app.name),
+        ));
+    }
+    keep_windows_of(&mut envelope, app.pid);
+    Ok(envelope
+        .get("data")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default())
+}
+
+/// §15 A19: name app `app` to agent-desktop by one of its windows: the caller's `window_id` if it is
+/// one of this app's (else refused: without `--app` agent-desktop would look at any window), or the
+/// app's focused window, else a visible one, else its first. A list of windows is of every app, kept
+/// to this one's after the run.
+fn by_window(ctx: &Ctx, op: &str, app: &App, call: &mut Value) -> Result<(), Refusal> {
+    let Some(map) = call.as_object_mut() else {
+        return Ok(());
+    };
+    match op {
+        "list_windows" => {
+            map.insert(argv::ALL_APPS.into(), Value::Bool(true));
+        }
+        "snapshot" | "find" | "press" | "wait" => {
+            let windows = windows_of(ctx, app)?;
+            let id_of = |w: &Value| w.get("id").and_then(Value::as_str).map(str::to_string);
+            let chosen = match map.get("window_id").and_then(Value::as_str) {
+                Some(asked) => windows
+                    .iter()
+                    .filter_map(id_of)
+                    .find(|id| id == asked)
+                    .ok_or_else(|| {
+                        refuse(
+                            "window_not_found",
+                            format!("{} has no window {asked}", app.name),
+                        )
+                    })?,
+                None => windows
+                    .iter()
+                    .find(|w| w.get("is_focused").and_then(Value::as_bool) == Some(true))
+                    .or_else(|| {
+                        windows
+                            .iter()
+                            .find(|w| w.get("visible").and_then(Value::as_bool) != Some(false))
+                    })
+                    .or_else(|| windows.first())
+                    .and_then(id_of)
+                    .ok_or_else(|| {
+                        refuse(
+                            "window_not_found",
+                            format!("{} has no window on this desktop", app.name),
+                        )
+                    })?,
+            };
+            map.insert("window_id".into(), Value::String(chosen));
+            map.insert(argv::BY_WINDOW.into(), Value::Bool(true));
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// §15 A19: agent-desktop's `wait` scopes text to an app by name only; for an app whose name another
+/// app shares, the wait is a find on the app's window, repeated until the text is there or the time
+/// is up (answered in `wait`'s own envelope shapes: found, or a timeout).
+fn wait_by_window(
+    ctx: &Ctx,
+    call: &Value,
+    session: Option<&str>,
+) -> Result<(Option<i32>, Value), Refusal> {
+    let text = call.get("text").and_then(Value::as_str).unwrap_or("");
+    let timeout = call
+        .get("timeout_ms")
+        .and_then(Value::as_u64)
+        .unwrap_or(5_000)
+        .clamp(100, 30_000);
+    let mut find = call.clone();
+    if let Some(map) = find.as_object_mut() {
+        map.remove("timeout_ms");
+    }
+    let argv = argv::build("find", &find, session)?;
+    let started = Instant::now();
+    let until = started + Duration::from_millis(timeout);
+    loop {
+        let (exit, envelope) = run_envelope(ctx, &argv, deadline("find", &Value::Null))?;
+        let found = envelope.get("ok").and_then(Value::as_bool) == Some(true)
+            && envelope
+                .get("data")
+                .and_then(|d| d.get("matches").or(Some(d)))
+                .and_then(Value::as_array)
+                .is_some_and(|m| !m.is_empty());
+        if found {
+            return Ok((
+                exit,
+                json!({"ok": true, "command": "wait",
+                       "data": {"found": true, "text": text,
+                                "elapsed_ms": started.elapsed().as_millis() as u64}}),
+            ));
+        }
+        if Instant::now() >= until {
+            return Ok((
+                exit,
+                json!({"ok": false, "command": "wait",
+                       "error": {"code": "TIMEOUT",
+                                 "message": format!("“{text}” did not appear within {timeout} ms")}}),
+            ));
+        }
+        std::thread::sleep(Duration::from_millis(250));
+    }
+}
+
+/// §15 A19: which app a request means, before any card: the backend asks the card for this app
+/// and then names it by its bundle id.
+fn which_app(ctx: &Ctx, args: &Value) -> Result<Value, Refusal> {
+    let (app, shared) = resolve_app(ctx, argv::app_name(args)?)?;
+    let tier = policy::tier(&app.bundle_id, &app.name, &never_list(args));
+    if tier == Tier::Denied {
+        return Err(tier_refusal(tier, "which_app", &app));
+    }
+    let regular = crate::apps::Facts::regular(&crate::apps::Live, app.pid);
+    Ok(json!({
+        "ok": true,
+        "app": {"name": app.name, "bundle_id": app.bundle_id, "pid": app.pid,
+                "tier": policy::tier_name(tier), "regular": regular},
+        "name_shared": shared,
+    }))
 }
 
 fn tier_refusal(tier: Tier, op: &str, app: &App) -> Refusal {
@@ -690,6 +872,7 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
         "session_label" => return session_label(ctx, args),
         "session_end" => return session_end(ctx, args),
         "list_apps" => return list_apps(ctx, args),
+        "which_app" => return which_app(ctx, args),
         "cua" => return cua_op(ctx, args),
         "menu" => return menu_op(ctx, args),
         // Development builds only: drive the key hold for the Q2 spike (spec §12).
@@ -721,7 +904,7 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
         ));
     }
     let session = session_of(args)?;
-    let app = resolve_app(ctx, argv::app_name(args)?)?;
+    let (app, shared) = resolve_app(ctx, argv::app_name(args)?)?;
     let tier = policy::tier(&app.bundle_id, &app.name, &never_list(args));
     if !policy::allows(tier, op) {
         return Err(tier_refusal(tier, op, &app));
@@ -778,7 +961,15 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
     }
     let mut call = args.clone();
     if let Some(map) = call.as_object_mut() {
+        // Hands' own: never taken from a request.
+        map.remove(argv::ALL_APPS);
+        map.remove(argv::BY_WINDOW);
         map.insert("app".into(), Value::String(app.name.clone()));
+    }
+    // §15 A19: another running app has this one's name, so agent-desktop (which finds apps by name)
+    // is given one of this app's windows instead — always one of this app's, never the caller's word.
+    if shared {
+        by_window(ctx, op, &app, &mut call)?;
     }
     let argv = argv::build(op, &call, session.as_deref())?;
     let key = (session.clone().unwrap_or_default(), app.pid);
@@ -850,9 +1041,16 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
         crate::late_front::action_begins();
     }
     let front_before = if acts(op) { frontmost_pid() } else { None };
-    let ran = run_envelope(ctx, &argv, deadline(op, args));
+    let ran = if shared && op == "wait" {
+        wait_by_window(ctx, &call, session.as_deref())
+    } else {
+        run_envelope(ctx, &argv, deadline(op, args))
+    };
     let gave = borrowed.map(crate::borrow::end);
-    let (exit, envelope) = ran?;
+    let (exit, mut envelope) = ran?;
+    if shared && op == "list_windows" {
+        keep_windows_of(&mut envelope, app.pid);
+    }
     if op == "press" && keys_had_no_focus(&envelope) {
         // The key went nowhere; the menu item with that shortcut does the same thing without
         // focus (A9's keys_after_restore). Only one enabled item, never a guess.
@@ -1004,7 +1202,7 @@ fn go_to_window(ctx: &Ctx, app: &App, args: &Value) -> Result<bool, Refusal> {
 /// browsers and terminals may be seen. The window must be one of that app's (capture.m checks
 /// the window server's list, not the caller's word).
 fn capture_window(ctx: &Ctx, args: &Value) -> Result<Value, Refusal> {
-    let app = resolve_app(ctx, argv::app_name(args)?)?;
+    let (app, _) = resolve_app(ctx, argv::app_name(args)?)?;
     let tier = policy::tier(&app.bundle_id, &app.name, &never_list(args));
     if !policy::allows(tier, "capture_window") {
         return Err(tier_refusal(tier, "capture_window", &app));
@@ -1073,7 +1271,7 @@ fn unchanged_since_look(ctx: &Ctx, key: &(String, i64), app: &App) -> Result<(),
 /// front given back if the app took it.
 fn menu_op(ctx: &Ctx, args: &Value) -> Result<Value, Refusal> {
     let session = session_of(args)?;
-    let app = resolve_app(ctx, argv::app_name(args)?)?;
+    let (app, _) = resolve_app(ctx, argv::app_name(args)?)?;
     let tier = policy::tier(&app.bundle_id, &app.name, &never_list(args));
     if !policy::allows(tier, "menu") {
         return Err(tier_refusal(tier, "menu", &app));
@@ -1251,8 +1449,12 @@ fn list_apps(ctx: &Ctx, args: &Value) -> Result<Value, Refusal> {
         .iter()
         .filter_map(|a| {
             let tier = policy::tier(&a.bundle_id, &a.name, &never);
-            (tier != Tier::Denied)
-                .then(|| json!({"name": a.name, "bundle_id": a.bundle_id, "tier": policy::tier_name(tier)}))
+            // §15 A19: a helper may share its app's name; the model is told which is which.
+            let regular = crate::apps::Facts::regular(&crate::apps::Live, a.pid);
+            (tier != Tier::Denied).then(|| {
+                json!({"name": a.name, "bundle_id": a.bundle_id, "tier": policy::tier_name(tier),
+                       "regular": regular})
+            })
         })
         .collect();
     Ok(json!({"ok": true, "apps": apps}))

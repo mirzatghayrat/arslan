@@ -1199,3 +1199,138 @@ fn inside_a_takeover_an_app_on_another_desktop_is_brought_forward_without_a_visi
     arslan_hands::takeover::stand_in_for_tests(false);
     away_done();
 }
+
+// §15 A19: two running apps called "Hands Fixture" — the app (pid 100: a Dock icon, a window) and a
+// helper (pid 150), as WeChat and its WeChatAppEx are on the user's Mac. agent-desktop finds apps
+// by name and would refuse this one; Hands names it by one of its own windows instead.
+fn fixture_case(file: &str) -> Value {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/fixtures/hands_contract")
+        .join(file);
+    let doc: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+    doc["envelope"].clone()
+}
+
+fn shared_name_start(name: &str) -> Hands {
+    let hands = start(name);
+    let bin = hands.dir.join("bin");
+    let mut listed = apps();
+    listed["data"]["apps"].as_array_mut().unwrap().push(json!(
+        {"name": "Hands Fixture", "bundle_id": "com.arslan.hands-fixture.helper", "pid": 150}));
+    std::fs::write(bin.join("apps.json"), listed.to_string()).unwrap();
+    let case = |file: &str, argv: Value, envelope: Value| {
+        let doc = json!({"argv": argv, "exit": 0, "envelope": envelope});
+        std::fs::write(bin.join("cases").join(file), doc.to_string()).unwrap();
+    };
+    case(
+        "90_every_window.json",
+        json!(["list-windows"]),
+        json!({"version": "2.4", "ok": true, "command": "list-windows", "data": [
+            // Every app's strip behind the menu bar: listed, never reachable (measured).
+            {"id": "w-99", "pid": 100, "app_name": "Hands Fixture", "title": "Hands Fixture", "is_focused": false,
+             "accessible": false, "visible": false},
+            {"id": "w-150", "pid": 150, "app_name": "Hands Fixture", "title": "Mini program", "is_focused": true},
+            {"id": "w-100", "pid": 100, "app_name": "Hands Fixture", "title": "Hands Fixture", "is_focused": false},
+            {"id": "w-200", "pid": 200, "app_name": "Notes", "title": "Notes", "is_focused": false}]}),
+    );
+    case(
+        "91_snapshot_by_window.json",
+        json!(["snapshot", "--window-id=w-100", "--compact", "--skeleton"]),
+        fixture_case("03_snapshot.json"),
+    );
+    case(
+        "92_find_by_window.json",
+        json!(["find", "--window-id=w-100", "--text=saved:", "--limit=30"]),
+        fixture_case("05_find.json"),
+    );
+    case(
+        "93_press_by_window.json",
+        json!(["press", "--window-id=w-100", "--", "tab"]),
+        fixture_case("15_press.json"),
+    );
+    arslan_hands::apps::set_facts_for_tests(Some(arslan_hands::apps::TestFacts {
+        regular: |pid| pid == 100,
+        front: None,
+        has_window: |pid| pid == 100,
+    }));
+    hands
+}
+
+#[test]
+fn an_app_whose_name_another_app_shares_is_named_to_agent_desktop_by_its_own_window() {
+    let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    let hands = shared_name_start("shared");
+
+    let which = hands.ask("which_app", json!({"app": "hands fixture"}));
+    assert_eq!(
+        which["app"]["bundle_id"], "com.arslan.hands-fixture",
+        "{which}"
+    );
+    assert_eq!(which["app"]["regular"], true);
+    assert_eq!(which["name_shared"], true);
+    let helper = hands.ask(
+        "which_app",
+        json!({"app": "com.arslan.hands-fixture.helper"}),
+    );
+    assert_eq!(helper["app"]["pid"], 150, "an exact bundle id is that app");
+
+    let look = hands.ask("snapshot", json!({"app": "Hands Fixture"}));
+    assert_eq!(look["ok"], true, "{look}");
+    assert!(hands.calls().contains(&vec![
+        "snapshot".to_string(),
+        "--window-id=w-100".into(),
+        "--compact".into(),
+        "--skeleton".into()
+    ]));
+
+    let windows = hands.ask("list_windows", json!({"app": "Hands Fixture"}));
+    let ids: Vec<&str> = windows["envelope"]["data"]
+        .as_array()
+        .unwrap_or_else(|| panic!("{windows}"))
+        .iter()
+        .filter_map(|w| w["id"].as_str())
+        .collect();
+    assert_eq!(ids, ["w-100"], "only the app's own windows");
+
+    let other = hands.ask(
+        "snapshot",
+        json!({"app": "Hands Fixture", "window_id": "w-200"}),
+    );
+    assert_eq!(code(&other), "window_not_found", "{other}");
+
+    let pressed = hands.ask("press", json!({"app": "Hands Fixture", "keys": "tab"}));
+    assert_eq!(pressed["ok"], true, "{pressed}");
+    assert!(hands.calls().contains(&vec![
+        "press".to_string(),
+        "--window-id=w-100".into(),
+        "--".into(),
+        "tab".into()
+    ]));
+
+    let waited = hands.ask(
+        "wait",
+        json!({"app": "Hands Fixture", "text": "saved:", "timeout_ms": 1000}),
+    );
+    assert_eq!(waited["envelope"]["data"]["found"], true, "{waited}");
+    assert_eq!(waited["envelope"]["command"], "wait");
+
+    let names: Vec<Vec<String>> = hands
+        .calls()
+        .into_iter()
+        .filter(|c| c.iter().any(|a| a.starts_with("--app=")))
+        .collect();
+    assert!(
+        names.is_empty(),
+        "agent-desktop never got the shared name: {names:?}"
+    );
+
+    // The flags are Hands' own: a request cannot make Hands drop an app's name.
+    let _ = hands.ask(
+        "snapshot",
+        json!({"app": "Notes", "window_id": "w-100", "_by_window": true}),
+    );
+    let notes = hands.calls().into_iter().last().unwrap_or_default();
+    assert!(notes.contains(&"--app=Notes".to_string()), "{notes:?}");
+
+    arslan_hands::apps::set_facts_for_tests(None);
+}

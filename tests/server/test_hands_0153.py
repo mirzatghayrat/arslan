@@ -171,11 +171,13 @@ class FakeHands:
 
     async def call(self, op, args=None, *, timeout=60.0, start=True):
         self.calls.append((op, dict(args or {})))
-        if self.fail_with and op not in ("list_apps", "describe", "request_permission", "session_start",
-                                         "session_label"):
+        if self.fail_with and op not in ("list_apps", "which_app", "describe", "request_permission",
+                                         "session_start", "session_label"):
             return {"ok": True, "envelope": self.fail_with}
         if op == "list_apps":
             return {"ok": True, "apps": self.apps}
+        if op == "which_app":                 # §15 A19, as Hands' resolver (src/apps.rs) narrows
+            return self._which(str((args or {}).get("app") or "").strip())
         if op == "session_start":
             return {"ok": True, "session": "run-1-2-0"}
         if op in ("session_label", "session_end", "request_permission", "stop"):
@@ -202,8 +204,8 @@ class FakeHands:
         if op == "menu":
             return {"ok": True, "outcome": "sent_unconfirmed", "mode_used": "background", "route": "menu_item",
                     "menu_item": args.get("path"), "tier": self.tier,
-                    "app": next((a for a in self.apps if a["name"] == args.get("app")), self.apps[0])}
-        app = next((a for a in self.apps if a["name"] == args.get("app")), self.apps[0])
+                    "app": self._named(args.get("app"))}
+        app = self._named(args.get("app"))
         if op == "describe":
             return {"ok": True, "app": app, "tier": self.tier, "sends_on_return": False, "target": self.target}
         if op == "list_windows" and self.list_windows is not None:   # §15 A18: a test's own answer
@@ -216,6 +218,28 @@ class FakeHands:
 
     def ops(self, *names):
         return [op for op, _ in self.calls if not names or op in names]
+
+    def _named(self, wanted):
+        """The app a request names: by its bundle id (what the backend sends) or its name."""
+        return next((a for a in self.apps if wanted in (a["name"], a.get("bundle_id"))), self.apps[0])
+
+    def _which(self, wanted: str) -> dict:
+        hits = ([a for a in self.apps if a.get("bundle_id") and a["bundle_id"].lower() == wanted.lower()]
+                or [a for a in self.apps if a["name"].lower() == wanted.lower()])
+        if len(hits) > 1:
+            hits = [a for a in hits if a.get("regular", True)] or hits
+        if len(hits) > 1:
+            hits = [a for a in hits if a["name"] == wanted] or hits
+        if not hits:
+            return {"ok": False, "refused": {"code": "app_not_running", "message": f"no running app is called “{wanted}”"}}
+        if len(hits) > 1:
+            named = ", ".join(f"{a['name']} ({a.get('bundle_id')})" for a in hits)
+            return {"ok": False, "refused": {"code": "app_ambiguous",
+                                             "message": f"more than one running app is called “{wanted}”: {named}"}}
+        app = hits[0]
+        shared = sum(a["name"].lower() == app["name"].lower() for a in self.apps) > 1
+        return {"ok": True, "app": {**app, "pid": app.get("pid", 4242), "regular": app.get("regular", True)},
+                "name_shared": shared}
 
 
 @pytest.fixture
@@ -366,7 +390,7 @@ async def test_a_chat_reply_acts_in_one_app(hands, asks, in_turn):
     assert (await hands_tools.DesktopPressExecutor().execute({"app": "Notes", "keys": "tab"}))["ok"]
     other = await hands_tools.DesktopPressExecutor().execute({"app": "Messages", "keys": "tab"})
     assert other["code"] == "act_in_background" and "one app" in other["error"]
-    assert [a["app"] for op, a in hands.calls if op == "press"] == ["Notes"]
+    assert [a["app"] for op, a in hands.calls if op == "press"] == ["com.apple.Notes"]   # by bundle id (§15 A19)
 
 
 async def test_acting_asks_once_per_app_per_job_and_risky_labels_every_time(hands, asks, in_job):

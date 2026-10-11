@@ -69,7 +69,7 @@ async def test_a_look_attaches_the_windows_screenshot_and_places_each_element(ha
     snapshot = next(a for op, a in hands.calls if op == "snapshot")
     assert snapshot["include_bounds"] is True
     # Asked beside the tree for the front window; it is the window the tree came from, so once.
-    assert [a for op, a in hands.calls if op == "capture_window"] == [{"app": "Notes", "never": []}]
+    assert [a for op, a in hands.calls if op == "capture_window"] == [{"app": "com.apple.Notes", "never": []}]
 
 
 async def test_a_screenshot_of_another_window_than_the_one_read_is_taken_again(hands, asks, in_turn):

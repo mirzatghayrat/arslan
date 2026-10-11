@@ -457,32 +457,40 @@ def _trace(op: str, app: dict | str, outcome: str, started: float, **extra) -> N
 
 
 async def _resolve_app(name: str, job_id: str | None):
-    """The running app a name means, through Hands (which hides the never-list)."""
-    from server.services import hands_contract
-    result = await _hands("list_apps", {}, job_id=None)
+    """The running app a name or bundle id means, as Hands resolves it (§15 A19: one resolver, in
+    Hands; it refuses never-list apps and says when a name is ambiguous). Hands is then given that
+    app's bundle id (`_target`), so the card, the grant and the action are about the same app."""
+    from server.services import hands_contract, hands_service
+    result = await _hands("which_app", {"app": name}, job_id=None)
     if not result.ok:
+        # A never-list app is said as such, running or not.
+        if result.code == "app_not_running" and hands_service.never_touched(name):
+            return None, hands_contract.Result(ok=False, code="app_denied", refused=True)
         return None, result
-    wanted = name.strip().lower()
-    for app in (result.data or {}).get("apps") or []:
-        if wanted in (str(app.get("name", "")).lower(), str(app.get("bundle_id", "")).lower()):
-            return app, None
-    # Hands leaves never-list apps out of the list; say so instead of "not running".
-    from server.services import hands_service
-    if hands_service.never_touched(name):
-        return None, hands_contract.Result(ok=False, code="app_denied", refused=True)
-    return None, hands_contract.Result(ok=False, code="app_not_running", refused=True)
+    app = (result.data or {}).get("app")
+    if not isinstance(app, dict) or not app.get("name"):
+        return None, hands_contract.Result(ok=False, code="app_not_running", refused=True)
+    return app, None
 
 
-async def _window_id(app: str, title: str, job_id: str | None) -> str | None:
-    """The id of the app's window whose title contains `title`. Without Screen
-    Recording (which Hands never asks for) the window list has no real titles —
-    agent-desktop fills in the app's name (measured: every Finder window
-    "Finder") — so a title that does not match is read from the window's own
-    accessibility element: a one-level look at that window."""
+def _target(app: dict) -> str:
+    """How Hands is told which app (§15 A19): its bundle id — another running app may share its
+    name (WeChat's helper is also "WeChat") — else its name."""
+    return str(app.get("bundle_id") or app.get("name") or "")
+
+
+async def _window_id(app: str, title: str, job_id: str | None) -> tuple[str | None, list[str], bool]:
+    """The id of the app's window whose title contains `title`, the titles of its windows, and whether
+    that id is the app's only window, taken because no title matched (§15 A19: the model often names
+    a window after the app — "微信" for WeChat's window "Weixin"). Without Screen Recording (which
+    Hands never asks for) the window list has no real titles — agent-desktop fills in the app's name
+    (measured: every Finder window "Finder") — so a title that does not match is read from the
+    window's own accessibility element: a one-level look at that window."""
     result = await _hands("list_windows", {"app": app}, job_id=job_id)
     if not result.ok or not isinstance(result.data, list):
-        return None
+        return None, [], False
     wanted = title.strip().lower()
+    seen: list[tuple[str, str]] = []
     for window in result.data[:30]:
         if not isinstance(window, dict) or not window.get("id"):
             continue
@@ -493,8 +501,11 @@ async def _window_id(app: str, title: str, job_id: str | None) -> str | None:
             data = shallow.data if shallow.ok and isinstance(shallow.data, dict) else {}
             name = str((data.get("tree") or {}).get("name") or (data.get("window") or {}).get("title") or "")
         if wanted in name.lower():
-            return str(window["id"])
-    return None
+            return str(window["id"]), [name], False
+        seen.append((str(window["id"]), name))
+    if len(seen) == 1:
+        return seen[0][0], [seen[0][1]], True
+    return None, [name for _, name in seen if name], False
 
 
 async def _look_one_window(op: str, args: dict, job_id: str | None):
@@ -531,7 +542,7 @@ async def _screenshot(app: dict, window, conversation_id: str | None, job_id: st
     """Hands' screenshot of the window just looked at (spec §4.2): the capture, or None and
     a note for the model (once per conversation for a lasting reason; never an error: the
     look stands on its text)."""
-    args = {"app": app["name"]}
+    args = {"app": _target(app)}
     if window:
         args["window"] = str(window)
     result = await _hands("capture_window", args, job_id=job_id)
@@ -565,7 +576,10 @@ class DesktopAppsExecutor:
             return _failed(result)
         notes = {"look_only": " (look only: act on web pages with Arslan's browser)",
                  "click_only": " (click and scroll only)"}
+        # §15 A19: a helper may carry its app's name (WeChat's WeChatAppEx is also "WeChat").
+        helper = " (a background helper with no Dock icon: usually not the app meant)"
         lines = [f"- {a.get('name')} — {a.get('bundle_id')}{notes.get(a.get('tier'), '')}"
+                 f"{helper if a.get('regular') is False else ''}"
                  for a in (result.data or {}).get("apps") or []
                  if a.get("bundle_id")]    # helper processes (agent-desktop itself, measured) have none
         text = "Running apps Arslan may use:\n" + "\n".join(lines) if lines else "No apps Arslan may use are running."
@@ -604,14 +618,23 @@ class DesktopLookExecutor:
                 return {"ok": False, "external": False, "code": "declined",
                         "error": f"The user did not allow looking at {app['name']}. Do not retry; ask them."}
             hands_service.allow_look(conversation_id, bundle)
-        call = {"app": app["name"]}
+        call = {"app": _target(app)}
         not_seen = ""
+        window_note = ""
         if isinstance(args.get("window"), str) and args["window"].strip():
-            window = await _window_id(app["name"], args["window"], job_id)
+            asked = args["window"][:80]
+            window, titles, only = await _window_id(_target(app), args["window"], job_id)
             if window is None:
+                listed = ", ".join(f"“{t[:60]}”" for t in titles[:8])
                 return {"ok": False, "external": False, "code": "window_not_found",
-                        "error": f"{app['name']} has no window titled like “{args['window'][:80]}” on this "
-                                 "screen. Look without `window` to see its front window."}
+                        "error": f"{app['name']} has no window titled like “{asked}” on this screen. "
+                                 + (f"Its windows here: {listed}. Look with one of these titles, or without "
+                                    "`window` to see its front window." if listed else
+                                    "Look without `window` to see its front window.")}
+            if only:
+                shown = f", “{titles[0][:60]}”" if titles and titles[0] else ""
+                window_note = (f"No window of {app['name']} is titled like “{asked}”; this is its only "
+                               f"window{shown}.\n")
             call["window_id"] = window
         if isinstance(args.get("wait_for_text"), str) and args["wait_for_text"].strip():
             waited = await _hands("wait", {**call, "text": args["wait_for_text"][:200], "timeout_ms": 10_000},
@@ -669,13 +692,13 @@ class DesktopLookExecutor:
             if capture:
                 from server.services import desktop_status
                 desktop_status.note_thumb(capture["data"])        # the island's thumbnail (§6.6)
-                text = _take_visit_note() + (not_seen or "") + text
+                text = _take_visit_note() + window_note + (not_seen or "") + text
                 _trace("look", app, "ok", started, screenshot=f"{capture['width']}x{capture['height']}",
                        screenshot_bytes=len(capture.get("data") or "") * 3 // 4)
                 return {"ok": True, "external": True, "text": text, "summary": f"look · {app['name']}"[:200],
                         "images": [{"mime_type": capture["mime"], "data": capture["data"]}],
                         "image_label": f"{app['name']} · {window or capture.get('title') or 'window'}"[:120]}
-        text = _take_visit_note() + (not_seen or "") + text
+        text = _take_visit_note() + window_note + (not_seen or "") + text
         _trace("look", app, "ok", started)
         # Window contents are other people's text: framed as untrusted by the tool loop.
         return {"ok": True, "external": True, "text": text, "summary": f"look · {app['name']}"[:200]}
@@ -834,6 +857,12 @@ def _inline_turn() -> tuple[str, str] | None:
     return ctx.conversation_id, str(ctx.run_id or "")
 
 
+# Roles named by what they hold, not by what clicking them does (§15 A19: in the L3 pilot a note's
+# row, "a note for the delete task", asked as a delete). Every other role — buttons, menu items,
+# links, groups (a web page's clickable element is often a group) — and an unknown one still do.
+_CONTENT_ROLES = frozenset({"row", "cell", "treeitem", "textfield"})
+
+
 class _DesktopAct:
     op = ""
     timeout_s = 2 * CARD_S + 2 * RUN_S    # the app card and a risky-action card; describe, act, Return
@@ -842,7 +871,8 @@ class _DesktopAct:
         """Why this action asks every time, or None."""
         from server.services import hands_service
         label = target.get("name") if isinstance(target, dict) else None
-        if self.op in ("click", "select") and hands_service.risky_label(label):
+        role = str(target.get("role") or "").lower() if isinstance(target, dict) else ""
+        if self.op in ("click", "select") and role not in _CONTENT_ROLES and hands_service.risky_label(label):
             return f"“{label}”"
         return None
 
@@ -963,7 +993,7 @@ class _DesktopAct:
 
     async def run(self, args: dict, app: dict):
         _, job_id = _conversation_and_job()
-        return await _hands(self.op, {"app": app["name"], "ref": str(args.get("ref") or ""), **_front(args)},
+        return await _hands(self.op, {"app": _target(app), "ref": str(args.get("ref") or ""), **_front(args)},
                             job_id=job_id)
 
 
@@ -1000,24 +1030,24 @@ class DesktopTypeExecutor(_DesktopAct):
         append = args.get("mode") == "append"
         if append:
             # P0 D2: without the old text, "append" would set the field to the new text alone.
-            current = await _hands("get", {"app": app["name"], "ref": ref, "property": "value"}, job_id=job_id)
+            current = await _hands("get", {"app": _target(app), "ref": ref, "property": "value"}, job_id=job_id)
             if not (current.ok and isinstance(current.data, dict) and isinstance(current.data.get("value"), str)):
                 return hands_contract.Result(ok=False, code="append_unreadable", refused=True)
             text = current.data["value"] + text
-        result = await _hands("set_value", {"app": app["name"], "ref": ref, "value": text}, job_id=job_id)
+        result = await _hands("set_value", {"app": _target(app), "ref": ref, "value": text}, job_id=job_id)
         if not result.ok and result.code in ("ACTION_NOT_SUPPORTED", "POLICY_DENIED"):
             if append:
                 # `type` inserts at the caret: old + new typed there would duplicate the old text.
                 return hands_contract.Result(ok=False, code="append_needs_set_value", refused=True)
-            result = await _hands("type", {"app": app["name"], "ref": ref, "text": text}, job_id=job_id)
+            result = await _hands("type", {"app": _target(app), "ref": ref, "text": text}, job_id=job_id)
         if result.ok and args.get("submit"):
             # P0 D3: Return goes to whatever has the app's focus. Press it only when that
             # is this field, read live just before.
-            states = await _hands("get", {"app": app["name"], "ref": ref, "property": "states"}, job_id=job_id)
+            states = await _hands("get", {"app": _target(app), "ref": ref, "property": "states"}, job_id=job_id)
             value = states.data.get("value") if states.ok and isinstance(states.data, dict) else None
             if not (isinstance(value, list) and "focused" in value):
                 return hands_contract.Result(ok=False, code="submit_unsure", refused=True)
-            result = await _hands("press", {"app": app["name"], "keys": "return"}, job_id=job_id)
+            result = await _hands("press", {"app": _target(app), "keys": "return"}, job_id=job_id)
         return result
 
 
@@ -1032,7 +1062,7 @@ class DesktopSelectExecutor(_DesktopAct):
 
     async def run(self, args, app):
         _, job_id = _conversation_and_job()
-        return await _hands("select", {"app": app["name"], "ref": str(args.get("ref") or ""),
+        return await _hands("select", {"app": _target(app), "ref": str(args.get("ref") or ""),
                                        "value": str(args.get("value") or "")[:200], **_front(args)},
                             job_id=job_id)
 
@@ -1048,7 +1078,7 @@ class DesktopScrollExecutor(_DesktopAct):
         _, job_id = _conversation_and_job()
         direction = str(args.get("direction") or "down")
         amount = args.get("amount") if isinstance(args.get("amount"), int) else 3
-        return await _hands("scroll", {"app": app["name"], "ref": str(args.get("ref") or ""),
+        return await _hands("scroll", {"app": _target(app), "ref": str(args.get("ref") or ""),
                                        "direction": direction, "amount": amount}, job_id=job_id)
 
 
@@ -1072,7 +1102,7 @@ class DesktopMenuExecutor(_DesktopAct):
 
     async def run(self, args, app):
         _, job_id = _conversation_and_job()
-        return await _hands("menu", {"app": app["name"], "path": _menu_path(args)}, job_id=job_id)
+        return await _hands("menu", {"app": _target(app), "path": _menu_path(args)}, job_id=job_id)
 
 
 class DesktopPressExecutor(_DesktopAct):
@@ -1088,7 +1118,7 @@ class DesktopPressExecutor(_DesktopAct):
 
     async def run(self, args, app):
         _, job_id = _conversation_and_job()
-        return await _hands("press", {"app": app["name"], "keys": str(args.get("keys") or "").strip().lower(),
+        return await _hands("press", {"app": _target(app), "keys": str(args.get("keys") or "").strip().lower(),
                                       **_front(args)}, job_id=job_id)
 
 
@@ -1188,7 +1218,7 @@ class DesktopOpenExecutor:
         reopen = False
         if running is not None and path is None:
             # Its windows, without going anywhere for them (borrow off for this question).
-            windows = await _hands("list_windows", {"app": running["name"], "borrow": False}, job_id=job_id)
+            windows = await _hands("list_windows", {"app": _target(running), "borrow": False}, job_id=job_id)
             if windows.code == "window_elsewhere":
                 return {"ok": True, "external": False, "outcome": "no_effect",
                         "text": f"{running['name']} is running with its windows on another desktop. Look at it or "
