@@ -90,6 +90,18 @@ pub struct Borrowed {
     waited: Duration,
 }
 
+impl Borrowed {
+    /// The app that was in front when the borrow began (given back at the end).
+    pub fn front(&self) -> Option<i32> {
+        self.front
+    }
+
+    /// Give `front` back at the end instead (a visit notes the front itself, from accessibility).
+    pub fn set_front(&mut self, front: Option<i32>) {
+        self.front = front;
+    }
+}
+
 /// What a borrow gave back, for the reply.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GaveBack {

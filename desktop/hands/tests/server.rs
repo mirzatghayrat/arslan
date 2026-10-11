@@ -1132,15 +1132,17 @@ fn a_visit_comes_back_for_another_app_the_users_touch_idle_and_stop() {
         "a step on another app comes back first"
     );
 
+    // The watcher ends these two: wait for how it ended (the visit stops being active a moment
+    // before the borrow is given back and the ending is recorded).
     assert_eq!(go()["visit_started"], true);
     arslan_hands::visit::user_touch_for_tests();
-    assert!(wait_until(|| !arslan_hands::visit::active_for(100)));
-    assert_eq!(last_reason(), "user");
+    assert!(wait_until(|| last_reason() == "user"), "{}", last_reason());
+    assert!(!arslan_hands::visit::active_for(100));
 
     assert_eq!(go()["visit_started"], true);
     arslan_hands::visit::idle_for_tests();
-    assert!(wait_until(|| !arslan_hands::visit::active_for(100)));
-    assert_eq!(last_reason(), "idle");
+    assert!(wait_until(|| last_reason() == "idle"), "{}", last_reason());
+    assert!(!arslan_hands::visit::active_for(100));
 
     assert_eq!(go()["visit_started"], true);
     hands.ask("stop", json!({}));

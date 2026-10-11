@@ -272,9 +272,9 @@ async def finder_check(look, click, typ, press, front) -> None:
 
 
 def close_finder_window(name: str) -> None:
-    """Teardown only: close the Finder window this script opened."""
-    subprocess.run(["osascript", "-e", f'tell application "Finder" to close (every Finder window whose name is "{name}")'],
-                   capture_output=True)
+    """Teardown only: close the Finder window this script opened. (`close (every Finder window whose name is …)`
+    fails with -10010 on macOS 26 and left a "Documents" window behind after every run, measured 2026-10-11.)"""
+    subprocess.run(["osascript", "-e", f'tell application "Finder" to close window "{name}"'], capture_output=True)
 
 
 async def stop_check(look, hands_client, hands_service) -> None:

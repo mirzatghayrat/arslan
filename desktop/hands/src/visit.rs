@@ -7,10 +7,12 @@
 //!   held, the front app and the pointer noted (all `borrow::begin`); then activate the app, and
 //!   macOS switches to its desktop;
 //! - staying: every step on that app keeps the visit going; a step on another app comes back first;
-//! - coming back (`borrow::end`: the front app — macOS switches back —, the pointer if Hands moved
-//!   it, the held keys, glow off) at the first of: the work that went there ends (the backend's
-//!   `visit_end`), the user presses a key or moves or clicks the mouse, `IDLE` without a step,
-//!   `MAX` in all, the screen locks, Stop.
+//! - coming back at the first of: the work that went there ends (the backend's `visit_end`), the
+//!   user presses a key or moves or clicks the mouse, `IDLE` without a step, `MAX` in all, the
+//!   screen locks, Stop. First the desktops (`come_back`): the user's front app again — activated
+//!   whatever NSWorkspace's copy of the front says at the end — and every window that was on screen
+//!   before on screen again; then `borrow::end`: the pointer if Hands moved it,
+//!   the held keys (into the user's own window), glow off.
 //!
 //! The key hold has its own short deadline (`borrow::HOLD_MAX`); while a visit lasts the watcher
 //! renews it, and the first key the user presses ends the visit and is replayed into their window.
@@ -37,6 +39,10 @@ struct Visit {
     borrowed: Option<crate::borrow::Borrowed>,
     since: Instant,
     last_step: Instant,
+    /// The user's front app when the visit began (NSWorkspace, else accessibility).
+    front: Option<i32>,
+    /// The windows on screen when the visit began (other than the visited app's): (number, pid).
+    shown_before: Vec<(u32, i32)>,
 }
 
 static STATE: Mutex<Option<Visit>> = Mutex::new(None);
@@ -137,7 +143,21 @@ pub fn begin(
     *GOING.lock().unwrap_or_else(|p| p.into_inner()) = Some(app.to_string());
     let borrowed = crate::borrow::begin(wait_max, stopped);
     *GOING.lock().unwrap_or_else(|p| p.into_inner()) = None;
-    let borrowed = borrowed?;
+    let mut borrowed = borrowed?;
+    // Where the user is, noted now (after their pause, before anything moves): coming back is
+    // checked against it.
+    let (front, shown_before) = if standing_in() {
+        (None, Vec::new())
+    } else {
+        let front = borrowed.front().or_else(focused_app);
+        borrowed.set_front(front);
+        let shown = crate::spaces::shown()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|(_, owner)| i64::from(*owner) != pid)
+            .collect();
+        (front, shown)
+    };
     if !standing_in() {
         if let Ok(pid) = i32::try_from(pid) {
             activate(pid);
@@ -147,6 +167,7 @@ pub fn begin(
             std::thread::sleep(Duration::from_millis(50));
         }
         if !visible() {
+            come_back(&shown_before, front);
             let _ = crate::borrow::end(borrowed);
             return Err(refuse(
                 "window_unreachable",
@@ -164,6 +185,8 @@ pub fn begin(
         borrowed: Some(borrowed),
         since: now,
         last_step: now,
+        front,
+        shown_before,
     });
     let me = WATCHER.fetch_add(1, Ordering::SeqCst) + 1;
     std::thread::spawn(move || watch(me));
@@ -208,15 +231,74 @@ fn user_input_within(window: Duration) -> bool {
 pub fn end(reason: &str) -> Option<crate::borrow::GaveBack> {
     let visit = lock().take()?;
     WATCHER.fetch_add(1, Ordering::SeqCst);
+    // The desktops first, so the keys the user pressed meanwhile reach their own window.
+    let desktops_restored = standing_in() || come_back(&visit.shown_before, visit.front);
     let gave = visit.borrowed.map(crate::borrow::end);
+    let front_restored = if standing_in() {
+        gave.map(|g| g.front_restored)
+    } else {
+        Some(visit.front.is_none() || front_now() == visit.front)
+    };
     *LAST.lock().unwrap_or_else(|p| p.into_inner()) = Some(json!({
         "app": visit.app,
         "reason": reason,
         "lasted_ms": visit.since.elapsed().as_millis() as u64,
-        "front_restored": gave.map(|g| g.front_restored),
+        "front_restored": front_restored,
+        "desktops_restored": desktops_restored,
         "keys_replayed": gave.map(|g| g.keys_replayed),
     }));
     gave
+}
+
+/// Back to where the user was: their front app again (macOS switches back to its desktop), then
+/// every window that was on screen before the visit on screen again. A desktop that did not switch
+/// back — the front app has a window on the visited desktop too, or the visit was on another
+/// display — is brought back through the app of its front-most window that is missing, and then
+/// the front app once more. Whether every window came back.
+fn come_back(before: &[(u32, i32)], front: Option<i32>) -> bool {
+    if let Some(front) = front {
+        activate(front);
+    }
+    if back_within(before, Duration::from_millis(1200)) {
+        return true;
+    }
+    if let Some(&(_, owner)) = missing_now(before).first() {
+        activate(owner);
+        let _ = back_within(before, Duration::from_millis(800));
+        if let Some(front) = front {
+            activate(front);
+        }
+    }
+    back_within(before, Duration::from_millis(600))
+}
+
+fn missing_now(before: &[(u32, i32)]) -> Vec<(u32, i32)> {
+    let shown: Vec<u32> = crate::spaces::shown()
+        .unwrap_or_default()
+        .iter()
+        .map(|(n, _)| *n)
+        .collect();
+    if before.iter().all(|(n, _)| shown.contains(n)) {
+        return Vec::new();
+    }
+    crate::spaces::missing(
+        before,
+        &shown,
+        crate::spaces::ordered_in_everywhere().as_deref(),
+    )
+}
+
+fn back_within(before: &[(u32, i32)], wait: Duration) -> bool {
+    let until = Instant::now() + wait;
+    loop {
+        if missing_now(before).is_empty() {
+            return true;
+        }
+        if Instant::now() >= until {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
 }
 
 /// For the island and the backend: the visit going on, and how the last one ended.
@@ -244,6 +326,28 @@ fn activate(pid: i32) {
 
 #[cfg(not(target_os = "macos"))]
 fn activate(_pid: i32) {}
+
+#[cfg(target_os = "macos")]
+fn focused_app() -> Option<i32> {
+    crate::macos::focused_app_pid()
+}
+
+/// The app in front now, the way the visit noted it: NSWorkspace, else accessibility (which
+/// cannot answer for some apps: kAXErrorCannotComplete with Codex in front, measured).
+#[cfg(target_os = "macos")]
+fn front_now() -> Option<i32> {
+    crate::macos::frontmost_pid().or_else(focused_app)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn front_now() -> Option<i32> {
+    None
+}
+
+#[cfg(not(target_os = "macos"))]
+fn focused_app() -> Option<i32> {
+    None
+}
 
 fn screen_locked() -> bool {
     if standing_in() {
