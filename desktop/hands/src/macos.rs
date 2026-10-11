@@ -85,6 +85,7 @@ extern "C" {
     fn AXIsProcessTrusted() -> u8;
     fn AXIsProcessTrustedWithOptions(options: CFTypeRef) -> u8;
     fn AXUIElementCreateApplication(pid: i32) -> CFTypeRef;
+    fn AXUIElementCreateSystemWide() -> CFTypeRef;
     fn AXUIElementCopyAttributeValue(
         element: CFTypeRef,
         attribute: CFTypeRef,
@@ -189,6 +190,22 @@ pub fn secure_at(pid: i32, x: f64, y: f64) -> Option<bool> {
     Some(secure(hit.0))
 }
 
+/// The pid of the app with the keyboard focus, asked of accessibility now (the system-wide
+/// AXFocusedApplication). NSWorkspace's frontmostApplication is a copy a background process may
+/// see late; a visit to another desktop (src/visit.rs) notes and checks the front with this.
+pub fn focused_app_pid() -> Option<i32> {
+    let system = Owned(unsafe { AXUIElementCreateSystemWide() });
+    if system.0.is_null() {
+        return None;
+    }
+    let app = ax_copy(system.0, "AXFocusedApplication");
+    if app.0.is_null() {
+        return None;
+    }
+    let mut pid = 0;
+    (unsafe { AXUIElementGetPid(app.0, &mut pid) } == 0 && pid > 0).then_some(pid)
+}
+
 /// Whether app `pid`'s focused element is a password field. None when it has none.
 pub fn focused_secure(pid: i32) -> Option<bool> {
     let app = Owned(unsafe { AXUIElementCreateApplication(pid) });
@@ -244,6 +261,9 @@ pub fn structure(pid: i32) -> Option<crate::structure::Structure> {
     }
     let windows = items(&listed)
         .into_iter()
+        // Windows only: Finder lists its desktop (an AXScrollArea) among them on every desktop,
+        // which would make an app whose windows are all on another desktop look present (§15 A18).
+        .filter(|w| ax_text(*w, "AXRole").is_some_and(|r| r == "AXWindow"))
         .map(|w| {
             let children = ax_copy(w, "AXChildren");
             let sheets = items(&children)
