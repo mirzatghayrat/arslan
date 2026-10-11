@@ -362,13 +362,17 @@ def test_the_proxy_record_does_not_show_its_credentials(monkeypatch):
     pytest.param("http://user:s3cret@[::1", id="bad-ipv6"),
     # POSIX decodes an environment byte it cannot read to a lone surrogate, which UTF-8 refuses.
     pytest.param("http://user:s3cret\udcff@127.0.0.1:7899", id="undecodable-byte"),
+    # urlsplit's own message quotes the whole netloc here, password included.
+    pytest.param("http://user:s3cret\uff0f@127.0.0.1:7899", id="parser-quotes-the-netloc"),
 ])
 def test_a_malformed_proxy_value_is_refused_without_echoing_it(monkeypatch, bad):
     _proxy_url(monkeypatch, bad)
     with pytest.raises(ValueError, match="malformed") as caught:
         bp._upstream_proxy("duckduckgo.com")
     assert "s3cret" not in str(caught.value)
-    assert caught.value.__cause__ is None and caught.value.__suppress_context__
+    # Not chained to the parser's error either: it holds the value, and anything that walks the
+    # chain (a crash reporter, logging.exception) would print it.
+    assert caught.value.__cause__ is None and caught.value.__context__ is None
 
 
 @pytest.mark.asyncio
@@ -416,12 +420,15 @@ async def test_a_malformed_proxy_setting_is_named_and_refuses_the_tunnel(monkeyp
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("scenario", ["accepted", "refused", "dead", "malformed"])
+@pytest.mark.parametrize("scenario", ["accepted", "refused", "dead", "malformed",
+                                      "malformed-netloc"])
 async def test_credentials_never_reach_the_log(monkeypatch, caplog, scenario):
     secret = "s3cret-token"
     server = None
     if scenario == "malformed":
         url = f"http://user:{secret}@127.0.0.1:notaport"
+    elif scenario == "malformed-netloc":
+        url = f"http://user:{secret}\uff0f@127.0.0.1:7899"       # urlsplit's message quotes this
     else:
         if scenario == "dead":
             port = _dead_port()

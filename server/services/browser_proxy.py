@@ -98,7 +98,9 @@ def _upstream_proxy(host: str) -> _UpstreamProxy | None:
 
     A value that cannot be parsed raises ValueError, which `_accept` answers with a refusal: a
     broken proxy setting is not a licence to go direct. The error carries a fixed text, never
-    the value or the parser's message, because the value may hold the password."""
+    the value or the parser's message, and is raised after the handler so that it is not
+    chained to the parser's error either: both can quote the password (urlsplit's does for a
+    netloc that normalises to something else), and a chain is printed by whatever reports it."""
     proxies = net_pin.getproxies()
     if not proxies:
         return None
@@ -115,10 +117,12 @@ def _upstream_proxy(host: str) -> _UpstreamProxy | None:
             credentials = f"{unquote(parsed.username or '')}:{unquote(parsed.password or '')}"
             auth = "Basic " + base64.b64encode(credentials.encode()).decode("ascii")
     except ValueError:      # also UnicodeEncodeError: a byte the environment could not decode
-        _warn_once(("malformed",), "browser tunnel: the system proxy setting is malformed; "
-                                   "every tunnel is refused until it is fixed")
-        raise ValueError("The system proxy setting is malformed") from None
-    return _UpstreamProxy(parsed.hostname, port or 80, auth)
+        pass                # refused below, outside the handler (see the docstring)
+    else:
+        return _UpstreamProxy(parsed.hostname, port or 80, auth)
+    _warn_once(("malformed",), "browser tunnel: the system proxy setting is malformed; "
+                               "every tunnel is refused until it is fixed")
+    raise ValueError("The system proxy setting is malformed")
 
 
 def _connect_request(host: str, proxy: _UpstreamProxy) -> bytes:
