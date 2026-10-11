@@ -1,4 +1,6 @@
 import asyncio
+import base64
+import logging
 import socket
 
 import pytest
@@ -12,6 +14,13 @@ def no_system_proxy(monkeypatch):
     """The developer Mac has a system proxy (127.0.0.1:7899); without this the tunnel
     would chain through it and the existing tests would dial a real proxy."""
     monkeypatch.setattr(net_pin, "getproxies", lambda: {})
+
+
+@pytest.fixture(autouse=True)
+def fresh_warnings(monkeypatch):
+    """The tunnel's warnings are rate-limited per key in module state: every test starts with
+    none said, or one test's warning would silence the next test's."""
+    monkeypatch.setattr(bp, "_warned", {})
 
 
 @pytest.mark.parametrize("url", ["http://example.com", "file:///etc/passwd", "https://u:p@example.com",
@@ -200,15 +209,235 @@ async def test_a_fake_answer_passes_only_because_a_proxy_resolves_the_name(monke
     assert proxy.blocked == 1
 
 
+def _basic(user: str, password: str) -> str:
+    return "Basic " + base64.b64encode(f"{user}:{password}".encode()).decode("ascii")
+
+
 @pytest.mark.parametrize("proxies, expected", [
-    ({"https": "http://127.0.0.1:7899"}, ("127.0.0.1", 7899)),
-    ({"https": "127.0.0.1:7899"}, ("127.0.0.1", 7899)),         # no scheme: read as http://
-    ({"all": "http://127.0.0.1:7899"}, ("127.0.0.1", 7899)),    # ALL_PROXY
-    ({"https": "http://proxy.lan"}, ("proxy.lan", 80)),          # no port: http's default
-    ({"http": "http://127.0.0.1:7899"}, None),                   # that one is for http, not https
+    ({"https": "http://127.0.0.1:7899"}, ("127.0.0.1", 7899, None)),
+    ({"https": "127.0.0.1:7899"}, ("127.0.0.1", 7899, None)),      # no scheme: read as http://
+    ({"all": "http://127.0.0.1:7899"}, ("127.0.0.1", 7899, None)),  # ALL_PROXY
+    ({"https": "http://proxy.lan"}, ("proxy.lan", 80, None)),       # no port: http's default
+    ({"http": "http://127.0.0.1:7899"}, None),                      # that one is for http only
+    ({"https": "socks5://127.0.0.1:notaport"}, None),               # not ours to parse: direct
     ({}, None),
+    # Credentials in the URL become the Proxy-Authorization value, as urllib reads them.
+    ({"https": "http://user:pass@127.0.0.1:7899"}, ("127.0.0.1", 7899, _basic("user", "pass"))),
+    ({"https": "user:pass@proxy.lan:3128"}, ("proxy.lan", 3128, _basic("user", "pass"))),
+    ({"https": "http://alice:s3cret%3Ap%40ss@127.0.0.1:7899"},      # percent-encoded: decoded
+     ("127.0.0.1", 7899, _basic("alice", "s3cret:p@ss"))),
+    ({"https": "http://token@127.0.0.1:7899"}, ("127.0.0.1", 7899, _basic("token", ""))),
+    ({"https": "http://@127.0.0.1:7899"}, ("127.0.0.1", 7899, None)),    # empty: no credentials
 ])
 def test_upstream_proxy_reads_the_setting(monkeypatch, proxies, expected):
     monkeypatch.setattr(net_pin, "getproxies", lambda: proxies)
     monkeypatch.setattr(net_pin, "proxy_bypass", lambda host: False)
     assert bp._upstream_proxy("duckduckgo.com") == expected
+
+
+# The delegation is logged, a credentialed proxy is spoken to, and a failure names its cause.
+
+
+def _delegation(host: str, port: int) -> str:
+    return (f"browser tunnel: {host} via the system proxy 127.0.0.1:{port} — the proxy resolves "
+            "the name; rebinding protection is delegated there")
+
+
+def _tunnel_log(caplog) -> list[str]:
+    return [r.getMessage() for r in caplog.records if r.getMessage().startswith("browser tunnel:")]
+
+
+def _proxy_url(monkeypatch, url: str):
+    monkeypatch.setattr(net_pin, "getproxies", lambda: {"https": url})
+    monkeypatch.setattr(net_pin, "proxy_bypass", lambda host: False)
+
+
+def _headers(connect: bytes) -> dict[str, str]:
+    """The header fields of a recorded CONNECT, names lower-cased."""
+    fields = (line.partition(": ") for line in connect.decode("ascii").split("\r\n")[1:] if line)
+    return {name.lower(): value for name, _, value in fields}
+
+
+def _dead_port() -> int:
+    """A loopback port nothing listens on."""
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+def _dials(monkeypatch) -> list[tuple]:
+    """Record every connection attempted through asyncio, and refuse any that is not loopback:
+    a fail-open bug then shows up as a recorded dial and cannot reach the network."""
+    calls: list[tuple] = []
+    real = asyncio.open_connection
+
+    async def spy(host=None, port=None, **kwargs):
+        calls.append((host, port))
+        if host != "127.0.0.1":
+            raise ConnectionRefusedError("test: no network")
+        return await real(host, port, **kwargs)
+
+    monkeypatch.setattr(asyncio, "open_connection", spy)
+    return calls
+
+
+@pytest.mark.asyncio
+async def test_chaining_says_the_proxy_decides_once_per_host_per_ten_minutes(monkeypatch, caplog):
+    server, port = await _upstream([])
+    _system_proxy(monkeypatch, port)
+    _answers(monkeypatch, {"duckduckgo.com": "198.18.0.35", "news.example": "198.18.0.36"})
+    async with bp.PublicTunnel() as proxy:
+        with caplog.at_level(logging.WARNING, logger=bp.logger.name):
+            assert b"200" in await _request(proxy.port, "duckduckgo.com:443")
+            assert b"200" in await _request(proxy.port, "DuckDuckGo.COM:443")   # same host: silent
+            assert b"200" in await _request(proxy.port, "news.example:443")       # another: heard
+            bp._warned[("delegated", "duckduckgo.com")] -= 601                    # ten minutes pass
+            assert b"200" in await _request(proxy.port, "duckduckgo.com:443")
+    server.close()
+    await server.wait_closed()
+    assert _tunnel_log(caplog) == [_delegation("duckduckgo.com", port),
+                                   _delegation("news.example", port),
+                                   _delegation("duckduckgo.com", port)]
+
+
+def test_the_warning_memory_is_bounded():
+    """A long-lived server meets many hosts; the table of who was warned about must not grow
+    without limit."""
+    for i in range(bp._WARN_KEYS + 50):
+        bp._warn_once(("delegated", f"host{i}.example"), "browser tunnel: %s", i)
+    assert 0 < len(bp._warned) <= bp._WARN_KEYS
+
+
+@pytest.mark.asyncio
+async def test_a_refused_destination_is_not_reported_as_delegated(monkeypatch, caplog):
+    """Nothing is handed to the proxy for a name the check refuses, so nothing is said."""
+    server, port = await _upstream([])
+    _system_proxy(monkeypatch, port)
+    _answers(monkeypatch, {"wiki.example": "10.0.0.5"})
+    async with bp.PublicTunnel() as proxy:
+        with caplog.at_level(logging.WARNING, logger=bp.logger.name):
+            assert b"403" in await _request(proxy.port, "wiki.example:443")
+    server.close()
+    await server.wait_closed()
+    assert _tunnel_log(caplog) == []
+
+
+@pytest.mark.asyncio
+async def test_a_credentialed_proxy_url_sends_basic_auth_on_the_connect(monkeypatch):
+    record: list[bytes] = []
+    server, port = await _upstream(record)
+    _proxy_url(monkeypatch, f"http://user:pass@127.0.0.1:{port}")
+    _answers(monkeypatch, {"duckduckgo.com": "198.18.0.35"})
+    async with bp.PublicTunnel() as proxy:
+        assert b"200" in await _request(proxy.port, "duckduckgo.com:443")
+    server.close()
+    await server.wait_closed()
+    scheme, _, token = _headers(record[0])["proxy-authorization"].partition(" ")
+    assert (scheme, base64.b64decode(token)) == ("Basic", b"user:pass")
+
+
+@pytest.mark.asyncio
+async def test_a_proxy_url_without_credentials_sends_no_authorization(monkeypatch):
+    record: list[bytes] = []
+    server, port = await _upstream(record)
+    _system_proxy(monkeypatch, port)
+    _answers(monkeypatch, {"duckduckgo.com": "198.18.0.35"})
+    async with bp.PublicTunnel() as proxy:
+        assert b"200" in await _request(proxy.port, "duckduckgo.com:443")
+    server.close()
+    await server.wait_closed()
+    assert "proxy-authorization" not in _headers(record[0])
+
+
+def test_the_proxy_record_does_not_show_its_credentials(monkeypatch):
+    _proxy_url(monkeypatch, "http://user:s3cret@127.0.0.1:7899")
+    chain = bp._upstream_proxy("duckduckgo.com")
+    shown = f"{chain!r} {chain} {[chain]}"
+    assert "127.0.0.1" in shown                                  # still says where it points
+    assert "s3cret" not in shown and chain.auth.split()[1] not in shown
+
+
+@pytest.mark.parametrize("bad", [
+    pytest.param("http://user:s3cret@127.0.0.1:notaport", id="bad-port"),
+    pytest.param("http://user:s3cret@[::1", id="bad-ipv6"),
+    # POSIX decodes an environment byte it cannot read to a lone surrogate, which UTF-8 refuses.
+    pytest.param("http://user:s3cret\udcff@127.0.0.1:7899", id="undecodable-byte"),
+])
+def test_a_malformed_proxy_value_is_refused_without_echoing_it(monkeypatch, bad):
+    _proxy_url(monkeypatch, bad)
+    with pytest.raises(ValueError, match="malformed") as caught:
+        bp._upstream_proxy("duckduckgo.com")
+    assert "s3cret" not in str(caught.value)
+    assert caught.value.__cause__ is None and caught.value.__suppress_context__
+
+
+@pytest.mark.asyncio
+async def test_a_refusing_proxy_is_named_in_the_log(monkeypatch, caplog):
+    server, port = await _upstream([], reply=b"HTTP/1.1 407 Proxy Authentication Required\r\n\r\n")
+    _system_proxy(monkeypatch, port)
+    _answers(monkeypatch, {"duckduckgo.com": "198.18.0.35"})
+    async with bp.PublicTunnel() as proxy:
+        with caplog.at_level(logging.WARNING, logger=bp.logger.name):
+            assert b"403" in await _request(proxy.port, "duckduckgo.com:443")
+    server.close()
+    await server.wait_closed()
+    assert proxy.blocked == 1
+    assert _tunnel_log(caplog)[-1] == (f"browser tunnel: upstream proxy 127.0.0.1:{port} refused "
+                                       "the tunnel to duckduckgo.com (HTTP 407)")
+
+
+@pytest.mark.asyncio
+async def test_a_dead_proxy_is_named_in_the_log_and_the_tunnel_stays_closed(monkeypatch, caplog):
+    port = _dead_port()
+    _system_proxy(monkeypatch, port)
+    _answers(monkeypatch, {"duckduckgo.com": "93.184.216.34"})     # public: could be dialled direct
+    dials = _dials(monkeypatch)
+    async with bp.PublicTunnel() as proxy:
+        with caplog.at_level(logging.WARNING, logger=bp.logger.name):
+            assert b"403" in await _request(proxy.port, "duckduckgo.com:443")
+    assert proxy.blocked == 1
+    assert _tunnel_log(caplog)[-1] == (f"browser tunnel: upstream proxy 127.0.0.1:{port} "
+                                       "unreachable (ConnectionRefusedError)")
+    assert {host for host, _ in dials} == {"127.0.0.1"}              # no fallback to a direct dial
+
+
+@pytest.mark.asyncio
+async def test_a_malformed_proxy_setting_is_named_and_refuses_the_tunnel(monkeypatch, caplog):
+    _proxy_url(monkeypatch, "http://user:s3cret@127.0.0.1:notaport")
+    _answers(monkeypatch, {"duckduckgo.com": "93.184.216.34"})     # public: could be dialled direct
+    dials = _dials(monkeypatch)
+    async with bp.PublicTunnel() as proxy:
+        with caplog.at_level(logging.WARNING, logger=bp.logger.name):
+            assert b"403" in await _request(proxy.port, "duckduckgo.com:443")
+    assert proxy.blocked == 1
+    assert _tunnel_log(caplog) == ["browser tunnel: the system proxy setting is malformed; "
+                                   "every tunnel is refused until it is fixed"]
+    assert {host for host, _ in dials} == {"127.0.0.1"}              # not a licence to go direct
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scenario", ["accepted", "refused", "dead", "malformed"])
+async def test_credentials_never_reach_the_log(monkeypatch, caplog, scenario):
+    secret = "s3cret-token"
+    server = None
+    if scenario == "malformed":
+        url = f"http://user:{secret}@127.0.0.1:notaport"
+    else:
+        if scenario == "dead":
+            port = _dead_port()
+        else:
+            reply = (b"HTTP/1.1 200 Connection established\r\n\r\n" if scenario == "accepted"
+                     else b"HTTP/1.1 407 Proxy Authentication Required\r\n\r\n")
+            server, port = await _upstream([], reply=reply)
+        url = f"http://user:{secret}@127.0.0.1:{port}"
+    _proxy_url(monkeypatch, url)
+    _answers(monkeypatch, {"duckduckgo.com": "198.18.0.35"})
+    async with bp.PublicTunnel() as proxy:
+        with caplog.at_level(logging.DEBUG):                  # every logger, every level
+            await _request(proxy.port, "duckduckgo.com:443")
+    if server is not None:
+        server.close()
+        await server.wait_closed()
+    token = base64.b64encode(f"user:{secret}".encode()).decode("ascii")
+    assert _tunnel_log(caplog)                  # the tunnel did speak, so the check means something
+    assert secret not in caplog.text and token not in caplog.text
