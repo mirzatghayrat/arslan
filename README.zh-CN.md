@@ -53,14 +53,14 @@
 
 就这样。不用注册账号，也没有 Arslan 服务器。
 
-## 0.1.57 新功能：能力自己长
+## 0.1.60 新功能：Hands v2
 
-某一步需要 Arslan 还做不到的事时——比如读出 Excel 文件里的公式，而不只是数值——它会搜索官方 MCP Registry、GitHub 和经过审核的 Skill 库，然后用一张卡片问你：要添加什么、来自哪里、许可证（从项目自己的许可证文件读取）、怎样运行、可以用哪些文件夹。你点**装上并重试**，它就安装固定版本，安装过程中不运行任何代码，扫描已知的危险写法，在一个"默认什么都不许"的沙箱里启动（只能用自己的文件夹和你给它的文件夹，碰不到 SSH 密钥，除非某个服务需要 key 否则不联网），测试一次，然后在同一次回复里重试那一步。每个添加的能力在"能力"页都有一份档案。[完整发布说明 →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.57)
+Arslan 用起 Mac 上的应用更像你自己了。除了窗口里的文字，它还可以看它正在操作的那一个窗口的画面——从不截整个屏幕，也从不保存。同一个应用里的几个步骤一批完成，菜单项直接选择，应用在后台打开。一张卡片可以覆盖多个应用，你信任的应用可以在 设置 › Hands 里永久允许；删除、发送、付款和提交仍然每次都问。有些操作只有应用在前台才能完成时，Arslan 会借用前台约一秒（屏幕边缘亮起蓝光，这期间你按的键会先保留、之后补上）；窗口在另一个桌面上时，它会过去、做完再回来。较长的工作，它可以接管屏幕最多 30 分钟——只有你同意才会开始，你一碰键盘或鼠标它就暂停。首次设置现在是一段简短的影片。[完整发布说明 →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.60)
 
 最近几版：
-- **[0.1.56](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.56)**——项目分两层：所有项目一块看板，每个项目各有关卡；Arslan 只凭能说出来源的证据打勾，过关只是提议。
-- **[0.1.55](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.55)**——所有需要你回答的地方统一成一个样子：卡片排进同一个队列，⌘⏎ 允许、Esc 拒绝，在 Island 里就能回答（会删除、发送、付款或提交的步骤改为在 Arslan 里打开）。
-- **[0.1.54](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.54)**——Mac 端为 Arslan iPhone 版准备就绪（Touch ID 审批、一台手机一个条目），终端闸门会检查命令链里的每一条命令。
+- **[0.1.59](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.59)**——对话跟得上：长回答不再显示“已中断”，第二条消息排队等待，Arslan 用你写的语言回答，“桌面、文稿、下载：关”对命令同样生效。
+- **[0.1.58](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.58)**——回复读得懂、文件打得开：做过的事收成安静的一行，写出的文件以卡片返回，工作台里有阅读器，每个对话可以选任意服务商的任意模型。
+- **[0.1.57](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.57)**——能力自己长：缺工具时 Arslan 会去找、问你、固定版本并在沙箱里安装、测试后重试那一步。
 
 <div align="center">
   <img src="docs/assets/readme/devices.jpg" alt="Mac 上的 Arslan 正在后台整理发票；iPhone 上的 Arslan 显示一条待批准" width="100%">
@@ -136,7 +136,7 @@ iPhone 链路没有 Arslan 服务器，也没有中转：消息走你私有 iClo
 
 - **Pre-v1。** 目前只支持 Apple Silicon 上的 macOS 11+。沙箱基于 macOS seatbelt；在其他平台上，生成的 Python 会被拒绝，终端命令则在无沙箱状态下运行并如实标明。
 - **自带模型 key。** Arslan 用你的账户跑，费用由你的服务商结算。原生工具调用已实现并对 OpenAI 兼容、Anthropic、Gemini 三条路径做了协议测试——这不等于每个模型或端点都经过实测。
-- **Hands 只看得到当前桌面的窗口**；另一个空间里或被全屏 app 挡住的 app 视为未打开。大窗口（比如笔记很多的备忘录）读一次要 10–20 秒。
+- **Hands 还不能按屏幕位置点击或拖拽。**另一个桌面上的窗口要短暂过去才能操作（需开启借用前台）。应用跳到前台的约 50 毫秒内按下的键会进入那个应用；大窗口（比如笔记很多的备忘录）读一次要 10–20 秒。
 - **Arslan for iPhone 即将上架 App Store**，Mac 端已随 0.1.53 发布。
 - **会自己按时花钱的功能，出厂一律关闭。** 后台记忆整理要在 设置 › 自动化 里手动打开才会调用你的模型；仍建议在服务商的账单后台设个硬上限。
 - v1 之前，API、数据结构和默认值都可能变化。
@@ -149,7 +149,7 @@ iPhone 链路没有 Arslan 服务器，也没有中转：消息走你私有 iClo
 
 ## 许可证
 
-Apache-2.0。见 [LICENSE](LICENSE) 与 [NOTICE](NOTICE)。第三方声明——包括 Hermes Agent（MIT）和 agent-desktop（Apache-2.0，原样随 Arslan Hands 分发）——见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。图标：[Lucide](https://lucide.dev)（ISC）。
+Apache-2.0。见 [LICENSE](LICENSE) 与 [NOTICE](NOTICE)。第三方声明——包括 Hermes Agent（MIT）和 agent-desktop（Apache-2.0，从带有 Arslan 一处修改的 fork 构建，随 Arslan Hands 分发）——见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。图标：[Lucide](https://lucide.dev)（ISC）。
 
 ---
 

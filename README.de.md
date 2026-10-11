@@ -53,14 +53,14 @@ Du redest weiter, während er arbeitet. Alles, was löscht, sendet, installiert 
 
 Das war's. Kein Konto, keine Anmeldung, kein Arslan-Server.
 
-## Neu in 0.1.57 — Fähigkeiten, die wachsen
+## Neu in 0.1.60 — Hands v2
 
-Braucht ein Schritt etwas, das Arslan nicht kann — etwa die Formeln einer Excel-Datei lesen, nicht nur die Werte —, durchsucht es die offizielle MCP Registry, GitHub und geprüfte Skill-Bibliotheken und fragt auf einer Karte: was hinzukäme, woher es stammt, seine Lizenz (aus der Lizenzdatei des Projekts selbst gelesen), wie es liefe und welche Ordner es nutzen darf. Mit **Hinzufügen und neu versuchen** installiert es eine fest gepinnte Version, ohne dass beim Installieren Code läuft, prüft sie auf bekannte gefährliche Muster, startet sie in einer Sandbox, die bei Nein beginnt (eigener Ordner und die Ordner, die du freigibst, keine SSH-Schlüssel, kein Netz, außer ein Dienstschlüssel braucht es), testet sie einmal und wiederholt den Schritt in derselben Antwort. Jede hinzugefügte Fähigkeit hat ein Dossier auf der Seite Fähigkeiten. [Alle Release Notes →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.57)
+Arslan bedient deine Mac-Apps jetzt mehr so, wie du es tun würdest. Neben dem Text eines Fensters kann es ein Bild des einen Fensters ansehen, in dem es arbeitet — nie den ganzen Bildschirm, nie gespeichert. Mehrere Schritte in einer App laufen als ein Stapel, Menüpunkte werden direkt gewählt, und Apps öffnen sich im Hintergrund. Eine Karte kann mehrere Apps abdecken, und Apps, denen du vertraust, lassen sich unter Einstellungen › Hands dauerhaft erlauben; Löschen, Senden, Bezahlen und Absenden fragen weiterhin jedes Mal. Geht etwas nur mit der App im Vordergrund, leiht sich Arslan den Vordergrund für etwa eine Sekunde (der Bildschirmrand leuchtet blau; Tasten, die du in der Zeit drückst, werden gehalten und danach nachgereicht), und liegt das Fenster auf einem anderen Schreibtisch, geht es dorthin und kommt zurück. Für längere Arbeit kann es den Bildschirm bis zu 30 Minuten übernehmen — nur mit deinem Ja, und es hält an, sobald du Tastatur oder Maus berührst. Die Einrichtung ist jetzt ein kurzer Film beim ersten Start. [Alle Release Notes →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.60)
 
 Zuletzt:
-- **[0.1.56](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.56)** — Projekte in zwei Ebenen: ein Board für alle, Stufen für jedes; Arslan hakt nur ab, was es belegen kann, und eine Stufe abzuschließen ist ein Vorschlag.
-- **[0.1.55](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.55)** — ein Aussehen für alles, was fragt: Karten warten in einer Warteschlange, ⌘⏎ erlaubt, Esc lehnt ab, und die Island beantwortet sie (ein Schritt, der löscht, sendet, bezahlt oder absendet, öffnet sich stattdessen in Arslan).
-- **[0.1.54](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.54)** — die Mac-Seite ist bereit für Arslan für iPhone (Freigaben per Touch ID, ein Eintrag pro Telefon), und das Terminal-Tor prüft jeden Befehl einer Kette.
+- **[0.1.59](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.59)** — ein Chat, der mithält: eine lange Antwort ist nicht mehr „Unterbrochen“, eine zweite Nachricht wartet, bis sie dran ist, Arslan antwortet in der Sprache, in der du schreibst, und „Schreibtisch, Dokumente, Downloads: Aus“ sperrt sie auch für Befehle.
+- **[0.1.58](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.58)** — Antworten, die man lesen kann, Dateien, die man öffnen kann: eine ruhige Zeile mit dem, was Arslan getan hat, Dateien als Karten, ein Reader in der Werkbank und jedes Modell jedes Anbieters pro Unterhaltung.
+- **[0.1.57](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.57)** — Fähigkeiten, die wachsen: Arslan findet ein fehlendes Werkzeug, fragt, installiert es gepinnt und in einer Sandbox, testet es und wiederholt den Schritt.
 
 <div align="center">
   <img src="docs/assets/readme/devices.jpg" alt="Arslan auf dem Mac — ein Hintergrundauftrag sammelt Rechnungen — und Arslan für iPhone mit einer wartenden Freigabe" width="100%">
@@ -136,7 +136,7 @@ Texterkennung in Bildern und gescannten PDFs, die vollständige Sicherheitslage,
 
 - **Pre-v1.** Vorerst nur macOS 11+ auf Apple Silicon. Die Sandboxen sind macOS-Seatbelt; anderswo wird generiertes Python verweigert, Shell-Befehle laufen ohne Sandbox und sind entsprechend markiert.
 - **Eigener Modellschlüssel.** Arslan läuft über dein Konto; dein Anbieter rechnet ab. Nativer Tool-Transport ist für OpenAI-kompatible, Anthropic- und Gemini-Pfade implementiert und protokollgetestet — das ist keine Live-Zertifizierung jedes Modells oder Endpunkts.
-- **Hands sieht nur Fenster auf dem aktuellen Schreibtisch**; eine App in einem anderen Space oder hinter einer Vollbild-App gilt als nicht geöffnet. Ein großes Fenster (Notizen mit vielen Notizen) braucht zum Lesen 10–20 Sekunden.
+- **Hands kann noch nicht an eine Bildschirmposition klicken oder ziehen.** Ein Fenster auf einem anderen Schreibtisch erreicht es, indem es kurz dorthin geht (solange das Ausleihen des Vordergrunds an ist). Eine Taste, die in den ~50 ms gedrückt wird, in denen eine App nach vorn springt, landet in dieser App, und ein großes Fenster (Notizen mit vielen Notizen) braucht zum Lesen 10–20 Sekunden.
 - **Arslan für iPhone kommt bald in den App Store.** Die Mac-Seite ist in 0.1.53 enthalten.
 - **Was nach eigenem Zeitplan Geld ausgibt, ist ab Werk aus.** Die Hintergrund-Pflege des Gedächtnisses ruft dein Modell erst auf, wenn du sie unter Einstellungen › Automatisierung einschaltest; setze trotzdem ein hartes Limit im Abrechnungsbereich deines Anbieters.
 - APIs, Schemata und Voreinstellungen können sich vor v1 ändern.
@@ -149,7 +149,7 @@ Texterkennung in Bildern und gescannten PDFs, die vollständige Sicherheitslage,
 
 ## Lizenz
 
-Apache-2.0. Siehe [LICENSE](LICENSE) und [NOTICE](NOTICE). Hinweise zu Drittanbietern — darunter Hermes Agent (MIT) und agent-desktop (Apache-2.0, unverändert in Arslan Hands enthalten) — stehen in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Symbole: [Lucide](https://lucide.dev) (ISC).
+Apache-2.0. Siehe [LICENSE](LICENSE) und [NOTICE](NOTICE). Hinweise zu Drittanbietern — darunter Hermes Agent (MIT) und agent-desktop (Apache-2.0, in Arslan Hands aus einem Fork gebaut, der eine Änderung von Arslan enthält) — stehen in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Symbole: [Lucide](https://lucide.dev) (ISC).
 
 ---
 

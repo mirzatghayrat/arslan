@@ -1,5 +1,5 @@
 <section class="chapter" id="stack"><h2><span class="num">03 / 技術スタック</span>UI、ホスト、実行、データの役割分担</h2>
-<p>Arslan の技術スタックは、デスクトップ製品としての配布と個人用 Agent の役割に沿って構成されています。以下の正確なバージョンは、<strong>v0.1.57 のロックファイル</strong>に記載された、そのソースコードの依存関係の解決結果です。ユーザーのマシンにインストールすべきツールのバージョンでも、プロジェクト自体のリリース番号でもありません。</p>
+<p>Arslan の技術スタックは、デスクトップ製品としての配布と個人用 Agent の役割に沿って構成されています。以下の正確なバージョンは、<strong>v0.1.60 のロックファイル</strong>に記載された、そのソースコードの依存関係の解決結果です。ユーザーのマシンにインストールすべきツールのバージョンでも、プロジェクト自体のリリース番号でもありません。</p>
 <div class="table-wrap"><table><thead><tr><th>層</th><th>使用技術</th><th>役割と選定の意味</th></tr></thead><tbody>
 <tr><th>UI</th><td>React 19.2.7<br>TypeScript 5.8.3<br>Vite 6.4.3</td><td>チャット、タスクカード、承認カード、設定、記憶ページをコンポーネントで構成します。型による制約でページ間の状態やイベントプロトコルを保守しやすくし、Vite が開発とビルドを担います。</td></tr>
 <tr><th>UI の状態とスタイル</th><td>Zustand 5.0.14<br>Tailwind CSS 4.3.1<br>i18next 26.3.1</td><td>共有 UI 状態、スタイルの管理、六言語のリソースを扱います。ECharts はチャット内で render_chart ツールが生成するグラフと実行比較のグラフを描画し、D3 は記憶の関係図を描きます。これらはバックエンドの推論フレームワークではありません。</td></tr>
@@ -10,7 +10,7 @@
 <tr><th>モデルとの通信</th><td>httpx 0.28.1<br>OpenAI-compatible / Anthropic / Gemini アダプター</td><td>モデル呼び出しのインターフェースを統一しながら、各社のツール呼び出し、推論継続、使用量の意味を保持します。モデルの能力は、具体的なモデルとエンドポイントに依存します。</td></tr>
 <tr><th>拡張</th><td>MCP Python SDK 1.28.1<br>SKILL.md / arslan.plugin.json</td><td>MCP はツールのプロトコル、Skill は操作手順を提供し、プラグインのマニフェストは機能の組み合わせ方を記述します。この三つは別の概念です。</td></tr>
 <tr><th>添付ファイルとローカル OCR</th><td>pypdf / pypdfium2<br>python-docx / python-pptx / Pillow<br>macOS Vision + PyObjC</td><td>文書の内容と画像内の文字を読み取ります。OCR は文字認識であり、図表の理解や文書全体の完全な読み取りを保証するものではありません。部分的な読み取りや対応言語の制約を明示する必要があります。</td></tr>
-<tr><th>Mac のネイティブアプリ</th><td>Arslan Hands（Rust helper）<br>agent-desktop 0.9.4<br>Accessibility / Unix socket</td><td>アクセシビリティツリーを読み取り、ルールに従って操作します。agent-desktop は未改変の Apache-2.0 のオープンソース依存コンポーネントであり、その帰属を明示しています。</td></tr>
+<tr><th>Mac のネイティブアプリ</th><td>Arslan Hands（Rust helper）<br>agent-desktop（v0.9.4 + 上流の 4 コミット、固定した fork）<br>Accessibility / Unix socket</td><td>アクセシビリティツリーと、0.1.60 以降は作業対象の一つのウィンドウの画像を読み取り、ルールに従って操作します。agent-desktop は Apache-2.0 の依存コンポーネントです。fork には Arslan による変更が一つ含まれており、同梱の NOTICE にその旨を明記しています。</td></tr>
 <tr><th>デバイス間連携</th><td>Mac Swift Bridge（本リポジトリ）<br>CloudKit / CryptoKit / Keychain<br>iPhone 側の SwiftUI アプリは別の iOS プロジェクトにあり、本リポジトリには含まれません</td><td>Mac と iPhone の間で、暗号化されたメッセージ、承認、結果を同期します。モバイル側の開発進捗と正式なストア公開状況は分けて記述します。</td></tr>
 <tr><th>パッケージングと品質</th><td>uv.lock / npm lock / Cargo.lock<br>PyInstaller 6.21.0<br>pytest / Vitest / Rust / Swift tests<br>GitHub Actions</td><td>依存関係の再現、ローカルサービスの実行ファイル化、言語をまたぐテスト、プラットフォームの検査、署名と公証、実際の配布パッケージの受け入れ確認を行います。</td></tr>
 </tbody></table></div>

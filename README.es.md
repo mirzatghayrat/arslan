@@ -53,14 +53,14 @@ Sigues hablando mientras trabaja. Todo lo que borra, envía, instala o toca otra
 
 Y ya está. Sin cuenta, sin registro, sin servidor de Arslan.
 
-## Novedades de 0.1.57 — capacidades que crecen
+## Novedades de 0.1.60 — Hands v2
 
-Cuando un paso necesita algo que Arslan no sabe hacer — por ejemplo, leer las fórmulas de un Excel, no solo los valores —, busca en el MCP Registry oficial, en GitHub y en bibliotecas de skills revisadas, y pregunta en una tarjeta: qué añadiría, de dónde viene, su licencia (leída del propio archivo de licencia del proyecto), cómo se ejecutaría y qué carpetas podría usar. Con **Añadir y reintentar**, instala una versión fijada sin ejecutar código durante la instalación, la analiza en busca de patrones peligrosos conocidos, la arranca en un sandbox que empieza por el no (su propia carpeta y las que tú le des, sin claves SSH, sin red salvo que un servicio necesite una clave), la prueba una vez y reintenta el paso en la misma respuesta. Cada capacidad añadida tiene un expediente en la página Capacidades. [Notas completas →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.57)
+Arslan usa las apps de tu Mac más como lo harías tú. Además del texto de una ventana, puede ver una imagen de la única ventana en la que trabaja — nunca la pantalla entera, nunca guardada. Varios pasos en una app se ejecutan como un lote, los elementos de menú se eligen directamente y las apps se abren en segundo plano. Una tarjeta puede cubrir varias apps, y las apps en las que confías se pueden permitir para siempre en Ajustes › Hands; borrar, enviar, pagar y confirmar un envío siguen preguntando siempre. Cuando algo solo funciona con la app al frente, Arslan toma prestado el primer plano durante un segundo aproximadamente (el borde de la pantalla brilla en azul; las teclas que pulses mientras tanto se guardan y se devuelven después), y si la ventana está en otro escritorio, va allí y vuelve. Para trabajos más largos puede tomar el control de la pantalla hasta 30 minutos — solo con tu sí, y se pausa en cuanto tocas el teclado o el ratón. La configuración es ahora un breve vídeo de primer inicio. [Notas completas →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.60)
 
 Recientemente:
-- **[0.1.56](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.56)** — proyectos en dos capas: un tablero para todos y niveles para cada uno; Arslan solo marca lo que puede demostrar, y superar un nivel es una propuesta.
-- **[0.1.55](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.55)** — un mismo aspecto para todo lo que pregunta: las tarjetas esperan en una cola, ⌘⏎ permite y Esc rechaza, y la Island las responde (un paso que borra, envía, paga o confirma un envío se abre en Arslan).
-- **[0.1.54](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.54)** — el lado del Mac está listo para Arslan para iPhone (aprobaciones con Touch ID, una entrada por teléfono), y la puerta del terminal comprueba cada comando de una cadena.
+- **[0.1.59](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.59)** — un chat que no se queda atrás: una respuesta larga ya no aparece como «Interrumpida», un segundo mensaje espera su turno, Arslan responde en el idioma en que escribes y «Escritorio, Documentos, Descargas: desactivado» las cierra también a los comandos.
+- **[0.1.58](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.58)** — respuestas que se leen y archivos que se abren: una línea discreta con lo que hizo Arslan, archivos de vuelta como tarjetas, un lector en el banco de trabajo y cualquier modelo de cualquier proveedor en cada conversación.
+- **[0.1.57](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.57)** — capacidades que crecen: Arslan encuentra una herramienta que falta, pregunta, la instala fijada y en un sandbox, la prueba y reintenta el paso.
 
 <div align="center">
   <img src="docs/assets/readme/devices.jpg" alt="Arslan en un Mac — un trabajo en segundo plano reúne facturas — y Arslan para iPhone con una aprobación pendiente" width="100%">
@@ -136,7 +136,7 @@ Reconocimiento de texto en imágenes y PDF escaneados, la postura de seguridad c
 
 - **Pre-v1.** Por ahora solo macOS 11+ en Apple Silicon. Los sandboxes son seatbelt de macOS; en otras plataformas el Python generado se rechaza y los comandos de shell se ejecutan sin sandbox, indicándolo.
 - **Tu propia clave de modelo.** Arslan funciona con tu cuenta; te factura tu proveedor. El transporte nativo de herramientas está implementado y probado a nivel de protocolo para rutas compatibles con OpenAI, Anthropic y Gemini — no es una certificación en vivo de cada modelo o endpoint.
-- **Hands solo ve ventanas del escritorio actual**; una app en otro Space o detrás de una app a pantalla completa cuenta como no abierta. Una ventana grande (Notas con muchas notas) puede tardar 10–20 segundos en leerse.
+- **Hands aún no puede hacer clic en una posición de la pantalla ni arrastrar.** Llega a una ventana de otro escritorio yendo allí un momento (mientras tomar prestado el primer plano esté activado). Una tecla pulsada en los ~50 ms en que una app salta al frente va a esa app, y una ventana grande (Notas con muchas notas) puede tardar 10–20 segundos en leerse.
 - **Arslan para iPhone llega pronto a la App Store.** La parte de Mac está en 0.1.53.
 - **Lo que gasta según su propio horario viene apagado.** La curación de memoria en segundo plano solo llama a tu modelo si la activas en Ajustes › Automatización; aun así, pon un límite duro en la facturación de tu proveedor.
 - Las API, esquemas y valores predeterminados pueden cambiar antes de v1.
@@ -149,7 +149,7 @@ Reconocimiento de texto en imágenes y PDF escaneados, la postura de seguridad c
 
 ## Licencia
 
-Apache-2.0. Consulta [LICENSE](LICENSE) y [NOTICE](NOTICE). Los avisos de terceros — incluidos Hermes Agent (MIT) y agent-desktop (Apache-2.0, incluido sin modificar en Arslan Hands) — están en [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Iconos: [Lucide](https://lucide.dev) (ISC).
+Apache-2.0. Consulta [LICENSE](LICENSE) y [NOTICE](NOTICE). Los avisos de terceros — incluidos Hermes Agent (MIT) y agent-desktop (Apache-2.0, compilado en Arslan Hands desde un fork que incluye un cambio de Arslan) — están en [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Iconos: [Lucide](https://lucide.dev) (ISC).
 
 ---
 

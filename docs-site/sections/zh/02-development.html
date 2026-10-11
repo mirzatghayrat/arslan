@@ -10,7 +10,7 @@
 <tr><th>应用与运行系统</th><td>Arslan 将界面、模型适配、统一循环、任务状态、记忆、工具权限和桌面交付组织为可安装的个人应用。</td></tr>
 <tr><th>基础框架</th><td>React、Tauri、FastAPI、SQLAlchemy、SQLite 等承担通用界面、宿主、服务与持久化能力。</td></tr>
 <tr><th>模型</th><td>模型通过用户配置的端点调用。Arslan 提供应用运行环境与执行链路，没有在此项目中训练一个新的基础模型。</td></tr>
-<tr><th>桌面自动化组件</th><td>Hands 使用未修改的 <code>agent-desktop 0.9.4</code>（Apache-2.0），Arslan 在外层实现独立 helper、身份验证和权限策略。</td></tr>
+<tr><th>桌面自动化组件</th><td>Hands 使用 <code>agent-desktop</code>（Apache-2.0）上游 v0.9.4 之后再加四个提交的版本，从一个 fork 构建：fork 内置其依赖，并带有 Arslan 的一处修改（进程已不存在的 app 不再列入 app 清单），这处修改已提交给上游；Arslan 在外层实现独立 helper、身份验证和权限策略。</td></tr>
 <tr><th>终端规则来源</th><td>部分破坏性命令与安全底线规则复用 Hermes Agent 的 MIT 许可代码，再结合 Arslan 的对外行为与凭证规则。</td></tr>
 </tbody></table></div>
 <p>项目以 Apache-2.0 开源，第三方组件的许可和归属见 THIRD_PARTY_NOTICES.md；Hermes Agent 的 MIT 许可另随源码保存在 arslan/vendor/hermes/LICENSE。开源让实现、限制和演进过程可被检查，也让“为什么这么做”成为文档的一部分。</p>

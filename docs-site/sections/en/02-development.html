@@ -10,7 +10,7 @@
 <tr><th>App and runtime</th><td>Arslan organises the interface, model adapters, the single loop, task state, memory, tool permissions and desktop delivery into an installable personal app.</td></tr>
 <tr><th>Frameworks</th><td>React, Tauri, FastAPI, SQLAlchemy, SQLite and others provide the general interface, host, service and persistence layers.</td></tr>
 <tr><th>Models</th><td>Models are called through endpoints the user configures. Arslan provides the app and the execution path; this project did not train a new foundation model.</td></tr>
-<tr><th>Desktop automation</th><td>Hands uses an unmodified <code>agent-desktop 0.9.4</code> (Apache-2.0); Arslan implements the separate helper, identity checks and permission policy around it.</td></tr>
+<tr><th>Desktop automation</th><td>Hands uses <code>agent-desktop</code> (Apache-2.0) at upstream v0.9.4 plus four commits, built from a fork that vendors its dependencies and carries one change by Arslan (an app whose process is gone is left out of the app list), offered upstream; Arslan implements the separate helper, identity checks and permission policy around it.</td></tr>
 <tr><th>Terminal rules</th><td>Some destructive-command and hard-floor rules reuse MIT-licensed code from Hermes Agent, combined with Arslan's own rules for outward actions and credentials.</td></tr>
 </tbody></table></div>
 <p>The project is open source under Apache-2.0. Licences and attribution for third-party components are in THIRD_PARTY_NOTICES.md; Hermes Agent's MIT licence also ships with its code in arslan/vendor/hermes/LICENSE. Being open lets anyone inspect the implementation, its limits and how it evolved, and makes "why it was done this way" part of the documentation.</p>
