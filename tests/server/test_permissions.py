@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 import time
 from pathlib import Path
 
@@ -203,7 +204,7 @@ class _OpenSessions:
     whether one is held across a card."""
 
     def __init__(self, maker):
-        self.maker, self.open = maker, 0
+        self.maker, self.open, self.opened = maker, 0, 0
 
     def __call__(self):
         return self._session()
@@ -212,6 +213,7 @@ class _OpenSessions:
     async def _session(self):
         async with self.maker() as db:
             self.open += 1
+            self.opened += 1
             try:
                 yield db
             finally:
@@ -614,3 +616,159 @@ async def test_decide_many_hides_the_conversation_choice_when_any_app_forbids_it
     with permissions.asking_with(asker):
         await permissions.decide_many(reqs, CTX, title="Use Notes and Mail?")
     assert asker.frames[0]["options"] == ["task", "always"]
+
+
+# ── Fix round 1: decide_many is one kind, each rule has its own label, and the minors ──────────
+
+
+async def test_decide_many_needs_one_kind():
+    """A card offers the choices of one kind. With an app first, a money step on the same card was
+    offered "this conversation" and a money grant was stored."""
+    pay = Request(kind="money", target="com.apple.AppStore", title="Buy this app?")
+    asker = Asker()
+    with permissions.asking_with(asker):
+        with pytest.raises(ValueError, match="decide_many needs one kind"):
+            await permissions.decide_many([app("com.apple.Notes"), pay], CTX, title="Use Notes and buy?")
+    assert asker.frames == []                          # no card was shown...
+    assert await _grant_count() == 0                   # ...nothing was remembered...
+    async with db_session.AsyncSessionLocal() as db:
+        assert await permission_store.recent(db) == []  # ...and no decision was written
+
+
+async def test_decide_many_needs_one_kind_whatever_the_store_holds():
+    """The check does not wait for the store: a mixed list whose app is already allowed is the same
+    caller bug, and it must not work today only to fail the day the app is not allowed."""
+    with permissions.asking_with(Asker(yes("always"))):
+        await permissions.decide(app("com.apple.Notes"), CTX)
+    pay = Request(kind="money", target="com.apple.AppStore", title="Buy this app?")
+    with pytest.raises(ValueError, match="one kind"):
+        await permissions.decide_many([app("com.apple.Notes"), pay], CTX, title="t")
+
+
+async def test_the_combined_card_names_every_item_even_when_each_request_has_its_own_frame():
+    def with_own_frame(bundle, name):
+        return Request(kind="app", target=bundle, title=f"Use {name}?", detail=f"{name}: look only",
+                       always_label=name,
+                       frame=protocol.propose_action(f"own-{name}", "app", bundle, f"{name}: look only"))
+
+    asker = Asker(no())
+    with permissions.asking_with(asker):
+        await permissions.decide_many([with_own_frame("com.apple.reminders", "Reminders"),
+                                       with_own_frame("com.apple.mail", "Mail")], CTX,
+                                      title="Use Reminders and Mail?")
+    [frame] = asker.frames
+    assert "Reminders: look only" in frame["detail"] and "Mail: look only" in frame["detail"]
+    assert frame["title"] == "Use Reminders and Mail?"
+    assert frame["call_id"] not in ("own-Reminders", "own-Mail")      # the card is the combined one
+
+
+async def test_each_rule_a_many_app_card_stores_keeps_its_own_label():
+    reqs = [Request(kind="app", target="com.apple.reminders", title="t", always_label="Reminders"),
+            Request(kind="app", target="com.apple.mail", title="t", always_label="Mail")]
+    asker = Asker(yes("always"))
+    with permissions.asking_with(asker):
+        await permissions.decide_many(reqs, CTX, title="Use Reminders and Mail?")
+    assert asker.frames[0]["always_label"] == "Reminders, Mail"       # the card says both...
+    async with db_session.AsyncSessionLocal() as db:
+        rules = {r.target: r.label for r in await permission_store.list_rules(db, "app")}
+    assert rules == {"com.apple.reminders": "Reminders", "com.apple.mail": "Mail"}   # ...each rule one
+
+
+async def test_a_remember_as_entry_may_carry_its_own_label():
+    req = Request(kind="command", target="delete|git-push", title="Run it?",
+                  always_label="deletes files, publishes",
+                  remember_as=(("legacy_rule", "delete", "deletes files"), ("legacy_rule", "git-push")))
+    with permissions.asking_with(Asker(yes("always"))):
+        await permissions.decide(req, CTX)
+    async with db_session.AsyncSessionLocal() as db:
+        rules = {r.target: r.label for r in await permission_store.list_rules(db, "legacy_rule")}
+    # an entry with a label keeps it; one without falls back to the request's own
+    assert rules == {"delete": "deletes files", "git-push": "deletes files, publishes"}
+
+
+@pytest.mark.parametrize("answer, outcome", [(EXPIRED, "expired"), (no("later"), "declined")])
+async def test_after_decide_many_the_outcome_is_the_cards_not_the_last_apps(answer, outcome):
+    """The card's app comes first and an app allowed by a rule comes last: what a tool result reads
+    must still be the card's answer."""
+    with permissions.asking_with(Asker(yes("always"))):
+        await permissions.decide(app("com.apple.Notes"), CTX)
+    with permissions.asking_with(Asker(answer)):
+        out = await permissions.decide_many([app("com.apple.reminders"), app("com.apple.Notes")], CTX,
+                                            title="Use Reminders and Notes?")
+    assert [d.allowed for d in out] == [False, True]
+    assert approvals.LAST_OUTCOME.get() == outcome
+    assert permissions.LAST_DECISION.get() is out[0]
+
+
+@pytest.mark.parametrize("seconds, said", [(1800, "in 30 minutes."), (300, "in 5 minutes.")])
+async def test_the_expiry_text_names_the_wait_the_card_really_had(monkeypatch, seconds, said):
+    monkeypatch.setattr(approvals, "TIMEOUT_S", seconds)
+    with permissions.asking_with(Asker(EXPIRED)):
+        d = await permissions.decide(app(), CTX)
+    assert said in d.model_text and "NOT a refusal" in d.model_text
+
+
+async def test_a_ledger_that_cannot_be_written_does_not_take_back_a_standing_yes(monkeypatch, caplog):
+    with permissions.asking_with(Asker(yes("always"), yes("conversation"))):
+        await permissions.decide(app("com.apple.Notes"), CTX)                 # a rule
+        await permissions.decide(app("com.apple.mail"), CTX)                  # a conversation grant
+
+    async def broken(db, **fields):
+        raise RuntimeError("database is locked")
+
+    with monkeypatch.context() as patched, caplog.at_level(logging.WARNING):
+        patched.setattr(permission_store, "record", broken)
+        by_rule = await permissions.decide(app("com.apple.Notes"), CTX)
+        by_grant = await permissions.decide(app("com.apple.mail"), CTX)
+        many = await permissions.decide_many([app("com.apple.Notes"), app("com.apple.mail")], CTX, title="t")
+    assert (by_rule.allowed, by_rule.by) == (True, "rule")
+    assert (by_grant.allowed, by_grant.by) == (True, "grant")
+    assert [(d.allowed, d.by) for d in many] == [(True, "rule"), (True, "grant")]
+    assert "approval ledger write failed" in caplog.text
+    async with db_session.AsyncSessionLocal() as db:                  # rolled back: the use is not counted
+        rule = await permission_store.find_rule(db, "app", "com.apple.Notes")
+        assert (rule.use_count, rule.last_used_at) == (0, None)
+    await permissions.decide(app("com.apple.Notes"), CTX)             # the ledger is healthy again
+    async with db_session.AsyncSessionLocal() as db:
+        rule = await permission_store.find_rule(db, "app", "com.apple.Notes")
+        assert rule.use_count == 1
+        assert (await permission_store.recent(db))[0].decided_by == "rule"
+
+
+async def test_would_ask_opens_one_session_and_reads_no_settings(monkeypatch):
+    sessions = _OpenSessions(db_session.AsyncSessionLocal)
+    monkeypatch.setattr(db_session, "AsyncSessionLocal", sessions)
+    assert await permissions.would_ask(app(), CTX)
+    assert sessions.opened == 1                       # the lookup; the mode (a setting) would be a second
+
+
+async def test_the_ledger_keeps_a_long_target_whole():
+    """A many-app card's target is every bundle id joined: cutting it at 2000 characters cut an app in
+    two. Only an absurd one (past 20 000) is cut."""
+    many_apps = "\x1e".join(f"com.example.app{n:03d}" for n in range(250))
+    absurd = "t" * 30_000
+    with permissions.asking_with(Asker(yes("once"), yes("once"))):
+        await permissions.decide(Request(kind="schedule", target=many_apps, title="t"), CTX)
+        await permissions.decide(Request(kind="schedule", target=absurd, title="t"), CTX)
+    async with db_session.AsyncSessionLocal() as db:
+        newest, older = await permission_store.recent(db)
+    assert len(many_apps) > 2000 and older.target == many_apps
+    assert len(newest.target) == 20_000
+
+
+@pytest.mark.parametrize("call", ["decide", "decide_many"])
+async def test_a_decision_that_raises_leaves_no_stale_outcome(monkeypatch, call):
+    permissions.LAST_DECISION.set(permissions.Decision(True, "rule", "always"))
+    approvals.LAST_OUTCOME.set("approved")
+
+    async def unreadable(db, kind, target):
+        raise RuntimeError("store unreadable")
+
+    monkeypatch.setattr(permission_store, "find_rule", unreadable)
+    with pytest.raises(RuntimeError):
+        if call == "decide":
+            await permissions.decide(app(), CTX)
+        else:
+            await permissions.decide_many([app()], CTX, title="t")
+    assert permissions.LAST_DECISION.get() is None
+    assert approvals.LAST_OUTCOME.get() is None

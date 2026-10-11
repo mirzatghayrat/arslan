@@ -8,7 +8,9 @@
   4. a card on the surface bound to this turn (`asking_with`): the chat window, a job's
      broadcast — or none, for a scheduled run, which has nobody to ask: the answer is no, at
      once (silence is not consent; Hermes resolves unattended runs from policy the same way).
-Every decision is one ledger row (`approval_events`).
+Every decision is one ledger row (`approval_events`). A row that cannot be written never takes
+back a refusal or a standing yes (it is logged); the writes after a card's answer, the rule or
+grant and its row in one transaction, are part of remembering the answer and fail closed.
 
 What a request IS, and whether it is forbidden outright, is the caller's business —
 terminal_policy for commands, Hands for apps. This module remembers and asks. Approve for
@@ -38,8 +40,11 @@ _TASK_FIRST = frozenset({"app", "shortcut"})
 #: Kinds that never offer "Always".
 _NEVER_ALWAYS = _ONCE_ONLY | frozenset({"destructive", "screen", "workspace_write", "schedule"})
 _EXTRA_MAX = 1024
+#: A ledger row's target is kept whole up to this: a bound, not a trim (a many-app card's target
+#: is every bundle id joined, and cutting it would cut an app in two).
+_TARGET_MAX = 20_000
 
-_EXPIRED = ("Nobody answered the card for {title} in 30 minutes. This is NOT a refusal. Don't "
+_EXPIRED = ("Nobody answered the card for {title} in {minutes} minutes. This is NOT a refusal. Don't "
             "retry it in this turn. Finish what you can and tell the user what is waiting.")
 _NO_SURFACE = ("{title} needs the user's OK, and this run has nobody to ask (it runs on its "
                "own). It was not done. Tell the user, so they can allow it for next time.")
@@ -56,7 +61,9 @@ class Request:
     conversation_ok: bool = True
     extra: dict = field(default_factory=dict)
     frame: dict | None = None   # the caller's card frame (its type and fields); None → propose_action
-    remember_as: tuple[tuple[str, str], ...] = ()   # what "Always" stores; () → ((kind, target),)
+    #: What "Always" stores: (kind, target) or (kind, target, label); () → ((kind, target),).
+    #: An entry without a label stores `always_label`.
+    remember_as: tuple[tuple[str, str] | tuple[str, str, str], ...] = ()
     grant_as: tuple[tuple[str, str], ...] = ()      # what a task/conversation grant stores
 
 
@@ -105,6 +112,7 @@ def options_for(req: Request) -> list[str]:
 
 
 async def decide(req: Request, ctx: Context) -> Decision:
+    _forget_last()
     ctx = _filled(ctx)
     mode = await _mode()
     standing = await _standing(req, ctx, mode)
@@ -115,11 +123,20 @@ async def decide(req: Request, ctx: Context) -> Decision:
 
 async def decide_many(reqs: list[Request], ctx: Context, *, title: str) -> list[Decision]:
     """One card for several requests of one kind (Hands' DesktopAccess). Those already allowed
-    are left off the card; one answer covers every one shown; decisions in input order."""
+    are left off the card; one answer covers every one shown; decisions in input order.
+
+    The card is the generic `propose_action`, built from the requests' joined details so that it
+    names every one of them (their own frames are not used), and it offers the choices of their
+    one kind. A list of mixed kinds is a caller bug, since a money step on an app's card would be
+    offered "this conversation": it raises ValueError, whatever the store holds."""
+    _forget_last()
+    if len({r.kind for r in reqs}) > 1:
+        raise ValueError("decide_many needs one kind")
     ctx = _filled(ctx)
     mode = await _mode()
     out: list[Decision | None] = [await _standing(r, ctx, mode) for r in reqs]
     shown = [r for r, d in zip(reqs, out) if d is None]
+    decided = None
     if shown:
         combined = Request(
             kind=shown[0].kind, target="\x1e".join(r.target for r in shown), title=title,
@@ -128,17 +145,24 @@ async def decide_many(reqs: list[Request], ctx: Context, *, title: str) -> list[
                           if all(r.always_label for r in shown) else ""),
             conversation_ok=all(r.conversation_ok for r in shown),
             extra={"items": [r.extra for r in shown]},
-            remember_as=tuple((r.kind, r.target) for r in shown),
-            grant_as=tuple((r.kind, r.target) for r in shown),
-            frame=shown[0].frame)
+            # The card says every label; each rule keeps its own.
+            remember_as=tuple((r.kind, r.target, r.always_label) for r in shown),
+            grant_as=tuple((r.kind, r.target) for r in shown))
         decided = await _ask(combined, ctx, mode)
         out = [d if d is not None else decided for d in out]
-    return [_done(d) for d in out]          # type: ignore[arg-type]
+    decisions: list[Decision] = out          # type: ignore[assignment]
+    # What a tool result reads afterwards (LAST_DECISION, LAST_OUTCOME) is the card's answer when
+    # a card was shown, not whichever request happens to come last.
+    last = decided if decided is not None else (decisions[-1] if decisions else None)
+    if last is not None:
+        _done(last)
+    return decisions
 
 
 async def would_ask(req: Request, ctx: Context) -> bool:
-    """Would `decide` show a card? No side effects: nothing asked, nothing recorded."""
-    return await _standing(req, _filled(ctx), await _mode(), record=False) is None
+    """Would `decide` show a card? No side effects: nothing asked, nothing recorded, and no setting
+    read (the mode only goes into the ledger row, which `record=False` never writes)."""
+    return await _standing(req, _filled(ctx), "", record=False) is None
 
 
 async def record_standing(req: Request, ctx: Context) -> None:
@@ -157,19 +181,35 @@ async def _standing(req: Request, ctx: Context, mode: str, *, record: bool = Tru
         if rule is not None:
             decision = Decision(True, "rule", "always")
             if record:
-                await permission_store.touch_rule(db, rule)
-                await _record_in(db, req, ctx, mode, decision, rule_id=rule.id)
-                await db.commit()
+                await _note_standing_use(db, req, ctx, mode, decision, rule=rule)
             return decision
         grant = await permission_store.find_grant(db, ctx.conversation_id, ctx.task_id,
                                                   req.kind, req.target)
         if grant is not None:
             decision = Decision(True, "grant", "task" if grant.task_id else "conversation")
             if record:
-                await _record_in(db, req, ctx, mode, decision, grant_id=grant.id)
-                await db.commit()
+                await _note_standing_use(db, req, ctx, mode, decision, grant=grant)
             return decision
     return None
+
+
+async def _note_standing_use(db, req: Request, ctx: Context, mode: str, decision: Decision, *,
+                             rule=None, grant=None) -> None:
+    """The rule or grant has decided. Counting its use and writing the ledger row come after, and
+    a failure there (a locked database, a full disk) must not turn a standing yes into an
+    exception: the write is rolled back, logged, and the yes stands. (The lookup above is not
+    guarded: a store that cannot be read grants nothing.)"""
+    try:
+        if rule is not None:
+            await permission_store.touch_rule(db, rule)
+        await _record_in(db, req, ctx, mode, decision,
+                         rule_id=rule.id if rule is not None else None,
+                         grant_id=grant.id if grant is not None else None)
+        await db.commit()
+    except Exception:  # noqa: BLE001 — see above
+        logger.warning("approval ledger write failed", exc_info=True)
+        with contextlib.suppress(Exception):
+            await db.rollback()
 
 
 async def _ask(req: Request, ctx: Context, mode: str) -> Decision:
@@ -192,7 +232,8 @@ async def _ask(req: Request, ctx: Context, mode: str) -> Decision:
     wait_ms = int((time.monotonic() - started) * 1000)
     note = str(answer.get("note") or "").strip()[:500]
     if answer.get("by") is None:
-        decision = Decision(False, "expired", model_text=_EXPIRED.format(title=req.title))
+        decision = Decision(False, "expired", model_text=_EXPIRED.format(
+            title=req.title, minutes=max(1, int(approvals.TIMEOUT_S // 60))))
     elif answer.get("approved"):
         scope = answer.get("scope") if answer.get("scope") in opts else opts[0]
         decision = Decision(True, "user", scope)
@@ -201,9 +242,10 @@ async def _ask(req: Request, ctx: Context, mode: str) -> Decision:
     async with db_session.AsyncSessionLocal() as db:
         rule_id = grant_id = None
         if decision.allowed and decision.scope == "always":
-            for kind, target in req.remember_as or ((req.kind, req.target),):
-                rule = await permission_store.add_rule(db, kind, target, label=req.always_label,
-                                                       created_from=call_id)
+            for kind, target, *label in req.remember_as or ((req.kind, req.target),):
+                rule = await permission_store.add_rule(
+                    db, kind, target, label=label[0] if label else req.always_label,
+                    created_from=call_id)
                 rule_id = rule_id or rule.id
         elif decision.allowed and decision.scope in ("task", "conversation"):
             task = (ctx.task_id or "") if decision.scope == "task" else ""
@@ -231,6 +273,13 @@ def _declined_text(title: str, note: str) -> str:
     if note:
         return f"The user said no to: {title}. They said: {note}"
     return f"The user said no to: {title}. Don't ask for it again in this turn."
+
+
+def _forget_last() -> None:
+    """A new decision starts: what a tool result reads afterwards must be about it. If it raises,
+    that is nothing, not the answer to an earlier request."""
+    LAST_DECISION.set(None)
+    approvals.LAST_OUTCOME.set(None)
 
 
 def _done(decision: Decision) -> Decision:
@@ -263,11 +312,14 @@ async def _mode() -> str:
 
 
 async def _record(req: Request, ctx: Context, mode: str, decision: Decision, **ids) -> None:
+    """One ledger row, on its own, for a decision that does not wait on it: a refusal for lack of
+    a surface, or `record_standing`."""
     try:
         async with db_session.AsyncSessionLocal() as db:
             await _record_in(db, req, ctx, mode, decision, **ids)
             await db.commit()
-    except Exception:  # noqa: BLE001 — the ledger never breaks a decision
+    except Exception:  # noqa: BLE001 — such a decision stands even if its row cannot be written
+        # (the one write that fails closed is the one after a card's answer, in `_ask`)
         logger.warning("approval ledger write failed", exc_info=True)
 
 
@@ -277,7 +329,8 @@ async def _record_in(db, req: Request, ctx: Context, mode: str, decision: Decisi
     await permission_store.record(
         db, conversation_id=ctx.conversation_id, job_id=ctx.job_id,
         run_id=str(ctx.run_id) if ctx.run_id is not None else None,
-        kind=req.kind, target=req.target[:2000], detail=req.detail[:500], extra=_extra(req.extra),
+        kind=req.kind, target=req.target[:_TARGET_MAX], detail=req.detail[:500],
+        extra=_extra(req.extra),
         mode=mode, decided_by=decision.by,
         decision=("allow" if decision.allowed else "expired" if decision.by == "expired" else "deny"),
         scope=decision.scope, rule_id=rule_id, grant_id=grant_id, wait_ms=wait_ms)
