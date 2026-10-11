@@ -97,9 +97,17 @@ def _is_local_name(host: str) -> bool:
 
 
 def _is_ip_literal(host: str) -> bool:
+    """An address, however it is spelled: whatever `ipaddress` parses (IPv6, bracketed), or
+    what the OS resolver reads as one and `ipaddress` does not (`0xc6120021`, `198.18.33`, a
+    bare decimal). Such a spelling is an address, never a name, so it is never "fake"."""
     try:
         ipaddress.ip_address(host.strip("[]"))
+        return True
     except ValueError:
+        pass
+    try:
+        socket.inet_aton(host)
+    except (OSError, ValueError):
         return False
     return True
 

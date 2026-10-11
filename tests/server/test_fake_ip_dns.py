@@ -206,3 +206,27 @@ async def test_the_fake_v4_is_pinned_when_a_v6_answer_comes_first(monkeypatch, s
     _resolver(monkeypatch, {"github.com": ("2606:4700::6810:84e5", FAKE)}, default=(FAKE,))
     await net_pin.pinned_get("https://github.com/")
     assert seen[0].url.host == FAKE
+
+
+# ── a literal is a literal, however it is spelled ──────────────────────────────────
+# Added with the fix for a gap found in review: the OS resolver reads these spellings as the
+# address 198.18.0.33, `ipaddress` does not parse them, so they were taken for NAMES, and a
+# name in the fake block is allowed. browser_proxy takes its CONNECT host from the page.
+
+
+@pytest.mark.parametrize("proxied", [False, True])
+@pytest.mark.parametrize("host", ["0xc6120021", "198.18.33", "3323068449"])
+async def test_an_exotic_spelling_of_an_address_is_a_literal_not_a_name(monkeypatch, seen, host,
+                                                                       proxied):
+    """Hex, short-dotted and bare-decimal spellings of 198.18.0.33 are literal addresses, and
+    a literal is never fake: refused with and without a proxy, in fake-IP mode."""
+    assert socket.inet_aton(host) == socket.inet_aton(FAKE)     # the OS reads it as FAKE ...
+    with pytest.raises(ValueError):
+        ipaddress.ip_address(host)                               # ... and `ipaddress` does not
+    if proxied:
+        _with_proxy(monkeypatch)
+    # Canary fake, and the spelling resolves to FAKE, as the real resolver does for it.
+    _resolver(monkeypatch, {host: (FAKE,)}, default=(FAKE,))
+    with pytest.raises(net_pin._BlockedHost):
+        await net_pin.pinned_get(f"https://{host}/")
+    assert not seen
