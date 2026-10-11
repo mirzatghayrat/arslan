@@ -594,6 +594,23 @@ pub fn frontmost_pid() -> Option<i32> {
     }
 }
 
+/// Whether app `pid` has a Dock icon (NSApplicationActivationPolicyRegular), as opposed to a helper
+/// or a background process; a helper may share its app's name (§15 A19, src/apps.rs).
+pub fn is_regular_app(pid: i32) -> bool {
+    type MsgWithPid = unsafe extern "C" fn(*mut c_void, *mut c_void, i32) -> *mut c_void;
+    type MsgPolicy = unsafe extern "C" fn(*mut c_void, *mut c_void) -> isize;
+    unsafe {
+        let send_with_pid: MsgWithPid = std::mem::transmute(objc_msgSend as *const ());
+        let send_policy: MsgPolicy = std::mem::transmute(objc_msgSend as *const ());
+        let app = send_with_pid(
+            class(c"NSRunningApplication"),
+            sel(c"runningApplicationWithProcessIdentifier:"),
+            pid,
+        );
+        !app.is_null() && send_policy(app, sel(c"activationPolicy")) == 0
+    }
+}
+
 /// The running app `pid` belongs to: (name, bundle id), straight from
 /// NSRunningApplication. Hands resolves a pid this way before every Cua call: Cua's own
 /// app list scans installed apps too and took ~0.9 s (measured 2026-10-09).

@@ -2,6 +2,7 @@
 //! runs agent-desktop for Arslan's backend. Spec:
 //! docs/specs/2026-10-03-0153-hands-agent-desktop.md.
 
+pub mod apps;
 pub mod argv;
 pub mod borrow;
 pub mod capture;

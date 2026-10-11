@@ -45,7 +45,7 @@ async def test_an_app_list_hands_could_not_make_is_not_said_as_not_running(hands
     real = hands.call
 
     async def unreadable(op, args=None, **kw):
-        if op == "list_apps":
+        if op in ("list_apps", "which_app"):         # which_app reads the same list (§15 A19)
             return {"ok": False, "refused": {"code": "apps_unreadable", "message": (
                 "macOS did not give the list of running apps: inventory did not stabilize")}}
         return await real(op, args, **kw)

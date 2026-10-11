@@ -82,7 +82,8 @@ REFUSALS = {
                        "or ask the user.",
     "apps_unreadable": "macOS did not give Arslan Hands the list of running apps, so nothing was done. Try "
                        "once more in a little while; if it keeps failing, tell the user (the message says why).",
-    "app_ambiguous": "More than one running app has that name; use its bundle id (from desktop_apps).",
+    "app_ambiguous": "More than one running app has that name and Arslan could not tell which one is meant; use "
+                     "the bundle id of the one you mean (from desktop_apps).",
     "TIMEOUT": "It took too long. Look again.",
     # P0 (spec 2026-10-08-0157 §1)
     "unknown": "The reply from Arslan Hands was lost, so this may or may not have happened. Look again with "
@@ -98,7 +99,7 @@ REFUSALS = {
 }
 
 # Refusals whose own words (from Hands) say something the fixed text cannot.
-_WITH_REASON = {"apps_unreadable"}
+_WITH_REASON = {"apps_unreadable", "app_ambiguous"}      # the second names the apps (§15 A19)
 
 
 @dataclass

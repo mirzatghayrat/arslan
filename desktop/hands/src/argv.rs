@@ -48,6 +48,29 @@ pub const OPS: [&str; 12] = [
     "wait",
 ];
 
+/// Hands' own flags (§15 A19), set by the server for an app whose name another running app shares,
+/// never taken from a request: list every app's windows (kept to the app's after the run), and
+/// name the app to agent-desktop by one of its windows instead of by its name.
+pub const ALL_APPS: &str = "_all_apps";
+pub const BY_WINDOW: &str = "_by_window";
+
+fn flag(args: &Value, key: &str) -> bool {
+    args.get(key).and_then(Value::as_bool) == Some(true)
+}
+
+/// `--app=<name>`, or — for an app named by one of its windows — nothing, and that window must be
+/// given.
+fn app_or_window(args: &Value, opts: &mut Vec<String>) -> Result<(), Refusal> {
+    if flag(args, BY_WINDOW) {
+        if str_arg(args, "window_id").is_none() {
+            return Err(refuse("bad_request", "a window is needed to name this app"));
+        }
+    } else {
+        opts.push(format!("--app={}", app_name(args)?));
+    }
+    Ok(())
+}
+
 fn str_arg<'a>(args: &'a Value, key: &str) -> Option<&'a str> {
     args.get(key).and_then(Value::as_str)
 }
@@ -144,11 +167,13 @@ pub fn build(op: &str, args: &Value, session: Option<&str>) -> Result<Vec<String
     let command = match op {
         "list_apps" => "list-apps",
         "list_windows" => {
-            opts.push(format!("--app={}", app_name(args)?));
+            if !flag(args, ALL_APPS) {
+                opts.push(format!("--app={}", app_name(args)?));
+            }
             "list-windows"
         }
         "snapshot" => {
-            opts.push(format!("--app={}", app_name(args)?));
+            app_or_window(args, &mut opts)?;
             window_arg(args, &mut opts)?;
             opts.push("--compact".into());
             let depth = args.get("max_depth").and_then(Value::as_u64);
@@ -170,7 +195,7 @@ pub fn build(op: &str, args: &Value, session: Option<&str>) -> Result<Vec<String
             "snapshot"
         }
         "find" => {
-            opts.push(format!("--app={}", app_name(args)?));
+            app_or_window(args, &mut opts)?;
             window_arg(args, &mut opts)?;
             let mut any = false;
             for key in ["role", "name", "text"] {
@@ -248,7 +273,10 @@ pub fn build(op: &str, args: &Value, session: Option<&str>) -> Result<Vec<String
                     "`keys` is a combo like return, cmd+n, shift+tab",
                 ));
             }
-            opts.push(format!("--app={}", app_name(args)?));
+            app_or_window(args, &mut opts)?;
+            if flag(args, BY_WINDOW) {
+                window_arg(args, &mut opts)?; // keys to the process that owns this window
+            }
             pos.push(combo.into());
             "press"
         }
