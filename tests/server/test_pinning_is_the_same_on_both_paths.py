@@ -36,6 +36,9 @@ ADVERSARIAL = [
     ("ipv6 unique-local", "evil.test", "fd00::1", True),
     ("multicast", "evil.test", "224.0.0.1", True),
     ("ordinary public", "example.test", "93.184.216.34", False),
+    # 0.1.61 §E: fake-IP DNS (Clash-style TUN). Every name answers in 198.18.0.0/15 — the
+    # canary too — so the address stands for the name and both paths must reach it.
+    ("fake-ip dns", "example.test", "198.18.0.33", False),
 ]
 
 

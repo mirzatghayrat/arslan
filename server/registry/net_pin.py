@@ -14,6 +14,14 @@ copies that drift apart while both continue to look reasonable.
 
 ``tests/server/test_pinning_is_the_same_on_both_paths.py`` runs one table of adversarial
 URLs through BOTH callers and fails if their verdicts ever differ.
+
+FAKE-IP DNS (0.1.61). A Mac behind Clash/Surge/sing-box in fake-IP mode resolves EVERY
+name into 198.18.0.0/15, RFC 2544's benchmarking block, where no real host lives; the
+proxy (or its TUN) maps the address back to the name. `not is_global` refused all of it,
+so the web was dead on such a Mac. The exception is narrow on purpose: a NAME (never a
+literal address, never a local name) whose IPv4 answers all lie in that block passes,
+and only when a proxy carries the request or the system DNS is fake-IP for a public
+canary too. Everything else is judged exactly as before.
 """
 from __future__ import annotations
 
@@ -73,11 +81,52 @@ def _is_non_public(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     return (not ip.is_global) or ip.is_multicast
 
 
+#: RFC 2544's benchmarking block. No real host lives here; fake-IP DNS (Clash, Surge,
+#: Stash, sing-box, Shadowrocket) hands these out so the proxy can map them back to names.
+_FAKE_IP_NET = ipaddress.ip_network("198.18.0.0/15")
+#: A public name whose answer says whether the system DNS is fake-IP. IANA's, stable.
+_FAKE_IP_CANARY = "example.com"
+#: Names that are never on the public internet, whatever a resolver answers for them.
+_LOCAL_SUFFIXES = (".localhost", ".local", ".lan", ".internal", ".intranet", ".home.arpa",
+                   ".corp")
+
+
+def _is_local_name(host: str) -> bool:
+    name = host.lower().rstrip(".")
+    return name == "localhost" or name.endswith(_LOCAL_SUFFIXES)
+
+
+def _is_ip_literal(host: str) -> bool:
+    try:
+        ipaddress.ip_address(host.strip("[]"))
+    except ValueError:
+        return False
+    return True
+
+
+def _all_fake_v4(ips: list) -> bool:
+    """Every IPv4 answer lies in the fake-IP block. IPv6 answers are ignored: in fake mode
+    nothing connects to them (we pin the IPv4, or the proxy resolves the name itself)."""
+    v4 = [ip for ip in ips if ip.version == 4]
+    return bool(v4) and all(ip in _FAKE_IP_NET for ip in v4)
+
+
+def _fake_ip_dns() -> bool:
+    """Is this Mac's DNS fake-IP (a TUN-mode proxy)? Asked only after an answer was already
+    fake, so an ordinary lookup never pays for a second one."""
+    try:
+        infos = socket.getaddrinfo(_FAKE_IP_CANARY, 443, type=socket.SOCK_STREAM)
+    except OSError:
+        return False
+    return _all_fake_v4([ipaddress.ip_address(info[4][0]) for info in infos])
+
+
 class _BlockedHost(Exception):
     """The host may not be fetched — unresolvable, or resolves to a non-public address."""
 
 
-def _resolve_pinned(url: str, *, allow_host: str | None = None) -> tuple[str, str, int]:
+def _resolve_pinned(url: str, *, allow_host: str | None = None,
+                    via_proxy: bool = False) -> tuple[str, str, int]:
     """Resolve ONCE, validate EVERY answer, and return the address we will connect to.
 
     FU-1 (DNS rebinding). The old code checked `getaddrinfo(host)` and then handed the
@@ -100,6 +149,9 @@ def _resolve_pinned(url: str, *, allow_host: str | None = None) -> tuple[str, st
 
     Returns (pinned_ip, host, port). Raises _BlockedHost on refusal — unresolvable
     included, so failure is closed.
+
+    `via_proxy`: a proxy will resolve and connect, so a fake-IP answer needs no further
+    proof.
     """
     parts = urlparse(url)
     host = parts.hostname or ""
@@ -124,16 +176,27 @@ def _resolve_pinned(url: str, *, allow_host: str | None = None) -> tuple[str, st
                 f"{host} is not the configured host ({allow_host})")
         exempt = True
 
+    if not exempt and _is_local_name(host):
+        raise _BlockedHost(f"{host} is a local network name")
+
     try:
         infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
     except OSError as exc:
         raise _BlockedHost(f"cannot resolve {host}") from exc
     if not infos:
         raise _BlockedHost(f"cannot resolve {host}")
+    ips = [ipaddress.ip_address(info[4][0]) for info in infos]
+
+    # 0.1.61: fake-IP DNS. A NAME (a literal address is never "fake") whose IPv4 answers
+    # all lie in 198.18.0.0/15 stands for itself: the proxy resolves it, or the TUN maps
+    # the address back to it. The canary is only consulted here, after the answers were
+    # already fake, so ordinary lookups still resolve exactly once.
+    if (not exempt and not _is_ip_literal(host) and _all_fake_v4(ips)
+            and (via_proxy or _fake_ip_dns())):
+        return str(next(ip for ip in ips if ip.version == 4)), host, port
 
     pinned = None
-    for info in infos:
-        ip = ipaddress.ip_address(info[4][0])
+    for ip in ips:
         if not exempt and _is_non_public(ip):
             raise _BlockedHost(f"{host} resolves to a private or internal address")
         if pinned is None:
@@ -242,6 +305,9 @@ def categorize(exc: Exception) -> str:
     collapses every rate limit into "network error" — and the user gets told to check
     their connection when the real answer is "wait a minute". Two tests pin this.
     """
+    if isinstance(exc, _BlockedHost):
+        # The guard's own refusal: say so, instead of "unexpected error" (0.1.61 §E3).
+        return "blocked address (local network)"
     if isinstance(exc, httpx.TimeoutException):
         return "timeout"
     if isinstance(exc, httpx.HTTPStatusError):
@@ -326,7 +392,7 @@ async def pinned_request(
                 # Still validate — it blocks the obvious cases — but say plainly that the
                 # guarantee is the proxy's here, so a delegated install is discoverable
                 # instead of quietly believing it is protected.
-                _resolve_pinned(current, allow_host=allow_host)
+                _resolve_pinned(current, allow_host=allow_host, via_proxy=True)
                 logger.warning(
                     "pinned_request: https via a configured proxy — address pinning is "
                     "disabled for %s and SSRF protection is delegated to the proxy",
