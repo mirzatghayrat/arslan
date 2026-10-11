@@ -445,7 +445,8 @@ class PermissionRule(Base):
     """0.1.61 §A5: a standing answer ("Always"): this kind of boundary, this target, no card."""
 
     __tablename__ = "permission_rules"
-    __table_args__ = (UniqueConstraint("kind", "target"),)
+    # AUTOINCREMENT: the ledger keeps `rule_id` as a plain number, so an id is never given out twice.
+    __table_args__ = (UniqueConstraint("kind", "target"), {"sqlite_autoincrement": True})
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     kind = Column(String(30), nullable=False)
@@ -462,7 +463,9 @@ class PermissionGrant(Base):
     (task_id = ""). A job started from the conversation reads its conversation grants."""
 
     __tablename__ = "permission_grants"
-    __table_args__ = (UniqueConstraint("conversation_id", "task_id", "kind", "target"),)
+    # AUTOINCREMENT, as for the rules: the ledger keeps `grant_id`.
+    __table_args__ = (UniqueConstraint("conversation_id", "task_id", "kind", "target"),
+                      {"sqlite_autoincrement": True})
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     conversation_id = Column(String(100), nullable=False, index=True)
@@ -478,6 +481,7 @@ class ApprovalEvent(Base):
     waited. The number this round is judged by (cards per task) comes from here."""
 
     __tablename__ = "approval_events"
+    __table_args__ = {"sqlite_autoincrement": True}
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)

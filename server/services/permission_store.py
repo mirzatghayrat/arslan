@@ -11,6 +11,7 @@ import time
 from datetime import datetime, timedelta
 
 from sqlalchemy import delete, select
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from server.db.models import ApprovalEvent, PermissionGrant, PermissionRule
 
@@ -30,14 +31,15 @@ async def find_rule(db, kind: str, target: str) -> PermissionRule | None:
 
 async def add_rule(db, kind: str, target: str, *, label: str = "",
                    created_from: str = "") -> PermissionRule:
-    row = await find_rule(db, kind, target)
-    if row is None:
-        row = PermissionRule(kind=kind, target=target, label=label[:500],
-                             created_from=created_from[:80], created_at=datetime.utcnow(),
-                             use_count=0)
-        db.add(row)
-        await db.flush()
-    return row
+    """The rule for (kind, target), added if it is not there yet. Another session adding the
+    same one at the same moment is fine: whichever insert comes second does nothing, and both
+    get the one row. (An insert, even one that does nothing, holds SQLite's write lock until
+    the caller commits, so nobody can delete the row before it is read back.)"""
+    await db.execute(sqlite_insert(PermissionRule).values(
+        kind=kind, target=target, label=label[:500], created_from=created_from[:80],
+        created_at=datetime.utcnow(), use_count=0,
+    ).on_conflict_do_nothing(index_elements=["kind", "target"]))
+    return await find_rule(db, kind, target)
 
 
 async def touch_rule(db, row: PermissionRule) -> None:
@@ -85,15 +87,15 @@ async def add_grant(db, conversation_id: str, task_id: str, kind: str, target: s
                     call_id: str = "") -> PermissionGrant:
     await _prune(db)
     task_id = task_id or ""
-    row = (await db.execute(select(PermissionGrant).where(
+    await db.execute(sqlite_insert(PermissionGrant).values(
+        conversation_id=conversation_id, task_id=task_id, kind=kind, target=target,
+        call_id=call_id[:64], created_at=datetime.utcnow(),
+    ).on_conflict_do_nothing(
+        index_elements=["conversation_id", "task_id", "kind", "target"]))
+    # Exactly this key, not find_grant's "this task or the whole conversation".
+    return (await db.execute(select(PermissionGrant).where(
         PermissionGrant.conversation_id == conversation_id, PermissionGrant.task_id == task_id,
-        PermissionGrant.kind == kind, PermissionGrant.target == target))).scalar_one_or_none()
-    if row is None:
-        row = PermissionGrant(conversation_id=conversation_id, task_id=task_id, kind=kind,
-                              target=target, call_id=call_id[:64], created_at=datetime.utcnow())
-        db.add(row)
-        await db.flush()
-    return row
+        PermissionGrant.kind == kind, PermissionGrant.target == target))).scalar_one()
 
 
 async def record(db, **fields) -> ApprovalEvent:

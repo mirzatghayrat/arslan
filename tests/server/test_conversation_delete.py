@@ -17,6 +17,7 @@ from server.db.models import (
     RouterDecision,
     Run,
 )
+from server.services import permission_store
 
 AUTH = {"Authorization": "Bearer test-token"}
 
@@ -81,3 +82,26 @@ async def test_delete_purges_own_rows_keeps_runs(client):
         # audit/diagnosis rows deliberately KEPT
         assert await _count(Run) == 1
         assert await _count(RouterDecision) == 1
+
+
+async def test_delete_drops_the_conversations_permission_grants_and_keeps_the_ledger(client):
+    """0.1.61 §A5: grants live as long as their conversation. The ledger (§A8) keeps its 90 days."""
+    cid, other = "conv-x", "conv-y"
+    async with db_session.AsyncSessionLocal() as db:
+        await permission_store.add_grant(db, cid, "", "schedule", "*")                  # conversation
+        await permission_store.add_grant(db, cid, "turn-a", "app", "com.apple.Notes")   # one task
+        await permission_store.add_grant(db, other, "", "schedule", "*")
+        await permission_store.record(db, conversation_id=cid, kind="app", target="com.apple.Notes",
+                                      mode="standard", decided_by="grant", decision="allow",
+                                      scope="task")
+        await db.commit()
+
+    r = await client.delete(f"/api/v1/conversations/{cid}", headers=AUTH)
+    assert r.status_code == 200, r.text
+    assert r.json()["deleted"]["permission_grants"] == 2
+
+    async with db_session.AsyncSessionLocal() as db:
+        assert await permission_store.find_grant(db, cid, "turn-a", "app", "com.apple.Notes") is None
+        assert await permission_store.find_grant(db, cid, "turn-z", "schedule", "*") is None
+        assert await permission_store.find_grant(db, other, "turn-z", "schedule", "*")   # not theirs
+        assert [e.target for e in await permission_store.recent(db)] == ["com.apple.Notes"]
