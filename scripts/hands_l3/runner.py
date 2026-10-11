@@ -111,10 +111,11 @@ def run_task(task: tasks.Task, run_id: str, nobatch: bool) -> dict:
     label = f"{run_id}-{task.id}" + (NOBATCH_SUFFIX if nobatch else "")
     run = ROOT / "runs" / label
     run.mkdir(parents=True, exist_ok=True)
-    task.setup()
-    fixture = fixture_up(run) if task.fixture else None
     record: dict = {"run": label, "task": task.id, "nobatch": nobatch, "model": MODEL}
+    fixture = None
     try:
+        task.setup()                                                # a setup that fails is this run's error, not the round's
+        fixture = fixture_up(run) if task.fixture else None
         arslan_driver.configure(API, str(tasks.ROOT), f"{PROXY}/{label}", MODEL)
         cards = policy.CardPolicy(risky_ok=task.risky_ok)
         tools = policy.ToolCount(withheld=("desktop_batch",) if nobatch else ())
@@ -149,7 +150,7 @@ def main() -> int:
     ROOT.mkdir(parents=True, exist_ok=True)
     run_id = time.strftime("l3-%m%d-%H%M")
     picked = [tasks.TASKS[t] for t in args.tasks.split(",") if t]
-    again = [tasks.TASKS[t] for t in args.nobatch.split(",") if t]
+    again = [tasks.NOBATCH.get(t, tasks.TASKS[t]) for t in args.nobatch.split(",") if t]
     for task, nobatch in [(t, False) for t in picked] + [(t, True) for t in again]:
         record = run_task(task, run_id, nobatch)
         print(json.dumps({k: record.get(k) for k in ("run", "done", "check", "wall_s", "tool_total", "model_calls",

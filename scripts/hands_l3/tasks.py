@@ -23,7 +23,9 @@ FIELD = "␟"                                # between a note's name and its tex
 
 # ── Notes, the "Arslan L3" folder only ───────────────────────────────────────
 
-def _osascript(script: str, timeout: float = 30) -> str:
+def _osascript(script: str, timeout: float = 90) -> str:
+    # An app with a menu left open does not answer Apple events until the menu closes (seen: Notes after a
+    # run that opened its "More" menu); the run's own result is judged after a longer wait, not lost.
     out = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=timeout)
     if out.returncode != 0:
         raise RuntimeError(out.stderr.strip()[:300])
@@ -87,13 +89,23 @@ def _no_note(title: str) -> Callable[[], None]:
     return setup
 
 
-def _check_groceries(_: dict) -> tuple[bool, str]:
-    found = [text for name, text in notes() if name == "L3 groceries"]
-    if len(found) != 1:
-        return False, f"{len(found)} notes titled “L3 groceries”"
-    items = [line.lower() for line in lines_of(found[0])[1:]]
-    want = ["milk", "eggs", "bread"]
-    return all(w in items for w in want), f"lines after the title: {items}"
+def _check_groceries_titled(title: str) -> Callable[[dict], tuple[bool, str]]:
+    def check(_: dict) -> tuple[bool, str]:
+        found = [text for name, text in notes() if name == title]
+        if len(found) != 1:
+            return False, f"{len(found)} notes titled “{title}”"
+        items = [line.lower() for line in lines_of(found[0])[1:]]
+        want = ["milk", "eggs", "bread"]
+        return all(w in items for w in want), f"lines after the title: {items}"
+    return check
+
+
+_check_groceries = _check_groceries_titled("L3 groceries")
+
+
+def _groceries(task_id: str, title: str) -> "Task":
+    return Task(task_id, f'In Notes, make a note in the folder "Arslan L3" titled "{title}" with milk, eggs and '
+                         "bread on separate lines.", _no_note(title), _check_groceries_titled(title))
 
 
 def _setup_files() -> None:
@@ -161,8 +173,7 @@ def _check_scratch(run: dict) -> tuple[bool, str]:
 
 
 PILOT = [
-    Task("P1", 'In Notes, make a note in the folder "Arslan L3" titled "L3 groceries" with milk, eggs and bread on '
-               "separate lines.", _no_note("L3 groceries"), _check_groceries),
+    _groceries("P1", "L3 groceries"),
     Task("P2", f"Look in {ROOT}/in and write the names of the files there into a new note titled \"L3 files\" "
                'in the Notes folder "Arslan L3".', _setup_files, _check_files),
     Task("P3", f'Open {ROOT}/draft.txt in TextEdit, add the line "reviewed by Arslan" at the end, and save it.',
@@ -173,3 +184,6 @@ PILOT = [
          risky_ok=("delete", "trash", "删除")),
 ]
 TASKS = {t.id: t for t in PILOT}
+# The same task for its comparison run without batches: the first run's note stays (Claude deletes no notes),
+# so this one makes its own.
+NOBATCH = {"P1": _groceries("P1", "L3 groceries B")}
