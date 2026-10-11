@@ -357,14 +357,24 @@ def test_the_proxy_record_does_not_show_its_credentials(monkeypatch):
     assert "s3cret" not in shown and chain.auth.split()[1] not in shown
 
 
-@pytest.mark.parametrize("bad", [
+_MALFORMED_SETTINGS = [
     pytest.param("http://user:s3cret@127.0.0.1:notaport", id="bad-port"),
     pytest.param("http://user:s3cret@[::1", id="bad-ipv6"),
     # POSIX decodes an environment byte it cannot read to a lone surrogate, which UTF-8 refuses.
     pytest.param("http://user:s3cret\udcff@127.0.0.1:7899", id="undecodable-byte"),
     # urlsplit's own message quotes the whole netloc here, password included.
     pytest.param("http://user:s3cret\uff0f@127.0.0.1:7899", id="parser-quotes-the-netloc"),
-])
+    # No host, e.g. HTTPS_PROXY=http://$UNSET_VARIABLE:7899. Not an address: never "go direct".
+    pytest.param("http://:7899", id="empty-host"),
+    pytest.param("http://user:s3cret@:7899", id="empty-host-with-credentials"),
+    pytest.param("http://", id="nothing-after-the-scheme"),
+    # Port 0 is not a port anyone listens on; it must not be read as "no port", i.e. 80.
+    pytest.param("http://127.0.0.1:0", id="port-zero"),
+    pytest.param("http://user:s3cret@127.0.0.1:0", id="port-zero-with-credentials"),
+]
+
+
+@pytest.mark.parametrize("bad", _MALFORMED_SETTINGS)
 def test_a_malformed_proxy_value_is_refused_without_echoing_it(monkeypatch, bad):
     _proxy_url(monkeypatch, bad)
     with pytest.raises(ValueError, match="malformed") as caught:
@@ -373,6 +383,24 @@ def test_a_malformed_proxy_value_is_refused_without_echoing_it(monkeypatch, bad)
     # Not chained to the parser's error either: it holds the value, and anything that walks the
     # chain (a crash reporter, logging.exception) would print it.
     assert caught.value.__cause__ is None and caught.value.__context__ is None
+
+
+@pytest.mark.asyncio
+async def test_the_bypass_list_is_asked_about_the_canonical_name(monkeypatch):
+    """NO_PROXY and the system exception list are matched against the plain lower-case name:
+    fnmatch is case-sensitive on macOS, so the page's spelling would miss `*.local`. An IPv6
+    literal goes without its brackets."""
+    asked: list[str] = []
+    server, port = await _upstream([])
+    _system_proxy(monkeypatch, port)
+    monkeypatch.setattr(net_pin, "proxy_bypass", lambda host: asked.append(host) or False)
+    _answers(monkeypatch, {"duckduckgo.com": "198.18.0.35"})
+    async with bp.PublicTunnel() as proxy:
+        assert b"200" in await _request(proxy.port, "DuckDuckGo.COM:443")
+        assert b"200" in await _request(proxy.port, "[2001:4860:4860::8888]:443")
+    server.close()
+    await server.wait_closed()
+    assert asked == ["duckduckgo.com", "2001:4860:4860::8888"]
 
 
 @pytest.mark.asyncio
@@ -406,8 +434,9 @@ async def test_a_dead_proxy_is_named_in_the_log_and_the_tunnel_stays_closed(monk
 
 
 @pytest.mark.asyncio
-async def test_a_malformed_proxy_setting_is_named_and_refuses_the_tunnel(monkeypatch, caplog):
-    _proxy_url(monkeypatch, "http://user:s3cret@127.0.0.1:notaport")
+@pytest.mark.parametrize("bad", _MALFORMED_SETTINGS)
+async def test_a_malformed_proxy_setting_is_named_and_refuses_the_tunnel(monkeypatch, caplog, bad):
+    _proxy_url(monkeypatch, bad)
     _answers(monkeypatch, {"duckduckgo.com": "93.184.216.34"})     # public: could be dialled direct
     dials = _dials(monkeypatch)
     async with bp.PublicTunnel() as proxy:

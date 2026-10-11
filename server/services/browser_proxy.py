@@ -96,11 +96,16 @@ def _upstream_proxy(host: str) -> _UpstreamProxy | None:
     path. A user name in the proxy URL becomes `Proxy-Authorization: Basic`, read the way
     urllib reads it (percent-decoded, UTF-8).
 
-    A value that cannot be parsed raises ValueError, which `_accept` answers with a refusal: a
-    broken proxy setting is not a licence to go direct. The error carries a fixed text, never
-    the value or the parser's message, and is raised after the handler so that it is not
-    chained to the parser's error either: both can quote the password (urlsplit's does for a
-    netloc that normalises to something else), and a chain is printed by whatever reports it."""
+    A value that cannot be parsed, has no host, or names port 0 raises ValueError, which
+    `_accept` answers with a refusal: a broken proxy setting is not a licence to go direct.
+    Only a scheme that is not http returns None (that proxy is not ours to speak to). `host`
+    is the destination's canonical name, lower case and without brackets, for NO_PROXY and
+    the system exception list.
+
+    The error carries a fixed text, never the value or the parser's message, and is raised
+    after the handler so that it is not chained to the parser's error either: both can quote
+    the password (urlsplit's does for a netloc that normalises to something else), and a chain
+    is printed by whatever reports it."""
     proxies = net_pin.getproxies()
     if not proxies:
         return None
@@ -109,9 +114,13 @@ def _upstream_proxy(host: str) -> _UpstreamProxy | None:
         return None
     try:
         parsed = urlsplit(raw if "://" in raw else f"http://{raw}")
-        if parsed.scheme != "http" or not parsed.hostname:
+        if parsed.scheme != "http":
             return None
         port = parsed.port
+        if not parsed.hostname or port == 0:
+            # HTTPS_PROXY=http://$UNSET_VARIABLE:7899 has no host, and port 0 is nobody's port:
+            # both are broken settings, refused below like an unparsable one.
+            raise ValueError
         auth = None
         if parsed.username or parsed.password:
             credentials = f"{unquote(parsed.username or '')}:{unquote(parsed.password or '')}"
@@ -119,7 +128,7 @@ def _upstream_proxy(host: str) -> _UpstreamProxy | None:
     except ValueError:      # also UnicodeEncodeError: a byte the environment could not decode
         pass                # refused below, outside the handler (see the docstring)
     else:
-        return _UpstreamProxy(parsed.hostname, port or 80, auth)
+        return _UpstreamProxy(parsed.hostname, 80 if port is None else port, auth)
     _warn_once(("malformed",), "browser tunnel: the system proxy setting is malformed; "
                                "every tunnel is refused until it is fixed")
     raise ValueError("The system proxy setting is malformed")
@@ -183,13 +192,13 @@ class PublicTunnel:
                     raise ValueError("Only HTTPS tunnels to port 443 are allowed")
                 host = match[1]
                 url = validate_url(f"https://{host}:443/")
-                chain = _upstream_proxy(host.strip("[]"))
+                name = host.strip("[]").lower()
+                chain = _upstream_proxy(name)
                 if chain is not None:
                     # The proxy resolves and connects; we still refuse a local name or a real
                     # private answer first (fake-IP answers pass: via_proxy).
                     await asyncio.wait_for(
                         asyncio.to_thread(_resolve_pinned, url, via_proxy=True), 5)
-                    name = host.strip("[]").lower()
                     _warn_once(("delegated", name),
                                "browser tunnel: %s via the system proxy %s:%s — the proxy "
                                "resolves the name; rebinding protection is delegated there",
