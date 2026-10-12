@@ -146,7 +146,7 @@ async def test_a_private_only_answer_is_refused(monkeypatch, capture):
     monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **k: _addrinfo(PRIVATE))
     res = await executors.EXECUTORS["web_extract"].execute({"url": "http://intranet.test/"})
     assert not res.get("ok")
-    assert "private" in res["error"]
+    assert res["error"] == "url refused: blocked address (local network)"
     assert capture == [], "nothing may be sent when the host is refused"
 
 
@@ -211,14 +211,20 @@ async def test_a_redirect_to_a_private_host_is_refused(monkeypatch):
     "192.168.1.1",         # RFC 1918
     "169.254.169.254",     # cloud metadata
     "0.0.0.0",             # unspecified
-    "198.18.0.1",          # benchmarking
+    "198.18.0.1",          # benchmarking, and the TUN gateway: never a name's fake address
+    "198.19.255.255",      # benchmarking (refused unless the DNS itself is fake-IP, below)
     "224.0.0.1",           # multicast
     "::ffff:127.0.0.1",    # IPv4-mapped loopback
     "fc00::1",             # IPv6 ULA
     "ff02::1",             # IPv6 multicast
 ])
 async def test_non_public_addresses_are_refused(monkeypatch, capture, addr):
-    monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **k: _addrinfo(addr))
+    # 0.1.61 §E: the fake-IP canary answers PUBLIC, i.e. this is an ordinary DNS. A DNS that
+    # answers 198.18.0.0/15 for EVERY name, the canary too, is a fake-IP DNS, where a name
+    # in that block is allowed; test_fake_ip_dns.py owns that case. The canary is asked only
+    # when every answer is fake, so no other row here ever reaches it.
+    monkeypatch.setattr(socket, "getaddrinfo", lambda host, *a, **k: _addrinfo(
+        PUBLIC if host == net_pin._FAKE_IP_CANARY else addr))
     res = await executors.EXECUTORS["web_extract"].execute({"url": "http://attacker.test/x"})
     assert not res.get("ok"), f"{addr} was FETCHED — it must be refused"
     assert capture == [], f"a request was sent to {addr}"
@@ -242,6 +248,9 @@ async def test_https_through_a_proxy_degrades_LOUDLY_not_silently(monkeypatch, c
     monkeypatch.setattr(net_pin, "getproxies",
                         lambda: {"https": "http://127.0.0.1:7899"})
     monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **k: _addrinfo(PUBLIC))
+    # The warning is said once per 10 minutes for the whole proxy path; an earlier test in
+    # the same run may already have said it.
+    monkeypatch.setattr(net_pin, "_delegation_warned", {})
 
     with caplog.at_level("WARNING"):
         res = await executors.EXECUTORS["web_extract"].execute({"url": "https://ok.test/x"})
