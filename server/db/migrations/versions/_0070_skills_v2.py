@@ -1,6 +1,7 @@
 """0070: skills v2 (0.1.61 §C1, §C4, §C7): origin, folder, text hash, scan, frontmatter, invocable,
 pin and the local-use license on skill_packs; conversation and files on skill_candidates. Old imports
-(category 'imported') get origin 'imported'. Idempotent; create_all covers fresh databases.
+(category 'imported') get origin 'imported'. Bundled skills stay `saved` here; the seeder labels
+them `bundled` (Task 6). Idempotent; create_all covers fresh databases.
 """
 from __future__ import annotations
 
