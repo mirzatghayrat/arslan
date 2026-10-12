@@ -319,6 +319,90 @@ For "I'm out, the Mac is at home": glance, review fast, hand over a whole task.
 - When the phone asks for a conversation's history, the Mac starts forwarding that conversation's live
   events (progress, results, background-job cards) too.
 
+### 5.7 Files from the phone, live conversations, delete (added 2026-10-13; optional fields, new types — additive within v1)
+
+For "the same conversations on both sides, files both ways" (iPhone 1.0 final). A Mac without these
+answers the new types with `unknown_type`; a phone without them never receives the new events (below).
+
+**Capabilities.** The Mac's `hello.capabilities` add `files_in` (it takes files from the phone),
+`partial`, `delete`, `live` and `mac_messages`. The Mac remembers each phone's own `hello.capabilities`
+(across restarts) and sends `chat.event` kind `partial` only to a phone that said `partial`, and the
+words typed on the Mac (role `user`) only to a phone that said `mac_messages`. A phone that has not
+said hello gets neither: today's phone answers an unknown `chat.event` kind with `unknown_type` and
+would show the Mac's words as an answer. A phone that sends files says `files_out`.
+
+| Type | Direction | Body (`?` optional) |
+| --- | --- | --- |
+| `file.offer` (with asset) | phone → Mac | the `FileReference`: `id`, `name`, `size`, `mime_type`, `sha256` (hex of the plaintext); the asset sealed and bound exactly as §4.6 |
+| `chat.send` | phone → Mac | as §5.3; `attachments[]` = up to 10 `FileReference`s, each sent first as a `file.offer` with its asset |
+| `chat.event` | Mac → phone | as §5.3, plus kind `partial`; on a final `message`: `partial_id?`, `origin?` (`phone`/`mac`); on words typed on the Mac: `role: "user"`, `source: "mac"`; on `error`: `origin?` |
+| `file.offer` (reference) | Mac → phone | as §5.3, plus `conversation_id?`, `message_id?`, `run_id?`, `job_id?` |
+| `conversation.delete` / `conversation.deleted` | phone → Mac / Mac → phone | `conversation_id` / `conversation_id` |
+| `chat.history.result` | Mac → phone | as §5.3, plus `truncated?` (true when older messages were left out); a user message has `source` `phone`/`mac` |
+
+New error codes (may travel in `error`): `too_many_files` (more than 10 attachments), `not_found` (a
+conversation the Mac does not have).
+
+- **Files from the phone.** The phone sends each file as `file.offer` with its asset (≤ 20 MiB), then
+  the `chat.send` naming them in `attachments`. The Mac opens the asset exactly as the phone opens one
+  (§4.7: asset hash, AEAD, plaintext size, `sha256`; a failure drops the packet unacknowledged), saves
+  it to the workspace as `Inbox/iPhone/<local YYYY-MM-DD>/<name>` (the name's last path component, no
+  leading dots, no control characters or colons, at most 120 characters with its extension kept,
+  ` (2)`, ` (3)` … when taken), reads a non-picture's text once (`/api/v1/extract`), and keeps a
+  picture's bytes in memory until a message uses them or for 10 minutes. The same file offered again
+  is saved once. A phone `file.offer` without an asset answers `malformed`.
+- **A message with files.** `chat.send` runs once every referenced file is on the Mac, at most 120 s
+  after the Mac received it; then the Mac answers `error` `file_unavailable` with `related_id` = that
+  `chat.send` and does not count it as run, so the phone may send the files and the message again.
+  A later message to the same conversation waits behind it (order kept); other conversations do not
+  wait. More than 10 attachments: `too_many_files`. The message reaches Arslan as one turn, as the web
+  composer sends one: the text, a blank line, then one line per file `Attached from iPhone: <name> →
+  <saved path>`; pictures (`image/jpeg`, `png`, `gif`, `webp`; ≤ 3.5 MB each and 8 MiB together, so the
+  frame stays under the backend's 16 MiB) go to the model as images; other files' text goes in as
+  attached context under `=== <name> ===`. A picture not shown or a file whose text could not be read
+  says so on its line (`(not shown to the model as a picture; open the file itself)`, `(its text could
+  not be read; open the file itself)`): the agent can still open the saved file. `client_msg_id` stays
+  once-only.
+- **`partial`.** While Arslan writes an answer, `chat.event` kind `partial` carries the whole reply so
+  far (`final: false`), at most once a second and only when it changed, under the turn's own
+  `message_id` (the id its `progress` and `error` events also use). The final `message` keeps the stored
+  message id (history merge, §5.3) and names the partial it replaces in `partial_id`; a final or an
+  error ends the conversation's partial. No partials past 100 KB of reply (the final still comes). A
+  newer partial, or the turn's final word, takes back a partial the phone has not read yet. `partial`
+  never asks for an alert.
+- **Words typed on the Mac.** A user message typed in a Mac window reaches the phone as `chat.event`
+  `message` with `role: "user"`, `source: "mac"`, `final: true` and the stored message id; never an
+  alert. The phone's own words are never sent back. Today's backend sends no frame for a window's own
+  words, so the Mac reads the newest stored messages of a linked conversation when a turn starts there
+  (a phone's messages are `source: "phone"` in the history, a window's `source: "mac"`).
+- **Who started a turn, and who it rings.** A final `message` or `error` carries `origin`: `phone` when
+  the phone's words started that turn, `mac` when words typed on the Mac did; absent when unknown (a
+  schedule; a Mac not reading the Mac's words). Amending §5.2: a `chat.event` with `origin: "mac"` or
+  `role: "user"`, or kind `partial`, never asks for an alert (the user is at the Mac); an unknown
+  origin rings as before. A background job's result carries the job's `origin`; `job.event` in a
+  terminal state still always rings, the phone's own tasks included.
+- **Progress lines.** The backend's "still working" beat becomes a `progress` line `Working…` (only
+  inside a turn, never in place of a step held back) and "your message waits for the current turn"
+  becomes `Queued behind the current turn`, under the same 2-second rule.
+- **The Mac's files, attached to their answer.** A `file.offer` the Mac sends after a turn names
+  `conversation_id`, `run_id` and the stored `message_id` of the answer; a background job's files go
+  with its result message (`message_id`, `job_id`), or alone (`job_id`, no `message_id`) about 2 s
+  after a job that ended without one. A run's files are offered once.
+- **`conversation.delete`.** The Mac deletes the conversation as its own window does (`DELETE
+  /api/v1/conversations/<id>`; its runs are kept), closes its live link and answers
+  `conversation.deleted`. `pocket` (Remote) is never deleted: `malformed`. A conversation the Mac does
+  not have: `not_found`. An older Mac answers `unknown_type`.
+- **Live conversations.** At start, after each `conversations.list` and on `hello`, the Mac links the
+  newest 20 conversations and every one with a running job (never a temporary one), so their answers,
+  progress and shared cards (a phone's turn, a background job's, one whose window went away) reach the
+  phone without it opening them first. Linking is a read-only socket: it answers nothing and takes no
+  turn. A conversation the phone opens stays linked as before; beyond 40 links, ones unused for 15
+  minutes that are no longer among the live ones close (never one with a card open).
+- **History in one envelope.** The phone may ask for 200 messages and 100 conversations. The Mac keeps
+  the history body under 560 KB (the design said 700 KB, but after encryption and base64 a body that
+  size cannot fit the 800,000-byte record, §4 `Wire.maxSealedBytes`), dropping the oldest first, and
+  then sets `truncated: true`; one message bigger than that keeps its start, cut with `…`.
+
 ### 5.4 Error codes
 
 `malformed`, `unsupported_version`, `unknown_type`, `not_for_me`, `bad_signature`, `decrypt_failed`,
