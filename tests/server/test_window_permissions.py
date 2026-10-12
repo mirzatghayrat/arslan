@@ -398,3 +398,161 @@ def test_a_card_answered_after_the_turns_wall_clock_still_finishes_the_turn(app_
     assert frames[-1]["type"] == "stream_end", frames[-1]
     assert [f["ok"] for f in frames if f.get("type") == "tool_result"] == [True]
     assert len(executor.calls) == 1
+
+
+# ── review fix round 1 ───────────────────────────────────────────────────────
+
+def test_once_a_card_in_a_turn_goes_unanswered_the_turns_later_cards_do_not_wait(app_client, monkeypatch, judge):
+    """I1: as a job's surface, the window has a "person is away" latch. A turn can never stack
+    30-minute waits; the next turn asks again."""
+    monkeypatch.setattr(approvals, "TIMEOUT_S", 0.5)
+    _enable_shell(app_client, policy="ask_all")
+    monkeypatch.setattr(tool_loop_mod, "_get_adapter", lambda: _Steps(
+        *[("run_command", {"command": "git", "argv": ["log", f"-{n}"]}) for n in range(1, 5)]))
+    executor = _stub_run_command_executor(monkeypatch)
+    with app_client.websocket_connect("/ws/arslan/conv-u") as ws:
+        ws.receive_json()
+        started = time.monotonic()
+        ws.send_json({"type": "user_message", "content": "look"})
+        frames = _collect_until(ws, "stream_end")
+        elapsed = time.monotonic() - started
+        assert len([f for f in frames if f.get("type") == "propose_run_command"]) == 1
+        results = [f["summary"] for f in frames if f.get("type") == "tool_result"]
+        assert len(results) == 4 and all("NOT a refusal" in r for r in results), results
+        assert elapsed < 2.0, f"the later cards waited: {elapsed:.2f} s"
+        # A new turn: the person may be back, and is asked again.
+        monkeypatch.setattr(tool_loop_mod, "_get_adapter", lambda: _Steps(
+            ("run_command", {"command": "git", "argv": ["log", "-5"]})))
+        monkeypatch.setattr(approvals, "TIMEOUT_S", 10)
+        ws.send_json({"type": "user_message", "content": "look again"})
+        card = _collect_until(ws, "propose_run_command")[-1]
+        ws.send_json({"type": "confirm_run_command", "call_id": card["call_id"]})
+        later = _collect_until(ws, "stream_end")
+        assert [f["ok"] for f in later if f.get("type") == "tool_result"] == [True]
+    assert len(executor.calls) == 1
+    rows = _judgments(app_client, 2)
+    assert len(rows) == 2 and len(judge) == 2, "a card that did not open is not judged"
+
+
+class _FakeSsh:
+    key = "ssh_run"
+
+    def __init__(self):
+        self.calls = []
+
+    async def execute(self, args):
+        self.calls.append(args)
+        return {"ok": True, "summary": "ran remotely"}
+
+
+def test_a_remote_card_answered_with_remember_still_asks_next_time(app_client, monkeypatch):
+    """I2, P3b ruling ③ at the window: a remote command is never remembered — not by "remember",
+    not by "in this conversation". (The reviewer's probe.)"""
+    import server.registry.executors as executors_mod
+    from server.registry import ssh_tools
+    from server.services import settings_service, ssh_exec
+    _enable_shell(app_client, policy="ask_risky")
+
+    async def ssh_on():
+        async with app_client.db_maker() as db:
+            await settings_service.update_settings(db, {"ssh_enabled": "true"})
+    app_client.portal.call(ssh_on)
+
+    async def prep(args):
+        return {"ok": True, "host": "192.168.1.8", "user": "me", "command": "git", "argv": ["status"],
+                "fingerprints": ["256 SHA256:abc (ED25519)"], "node_name": None}
+    monkeypatch.setattr(ssh_tools, "prepare_confirmation", prep)
+    monkeypatch.setattr(ssh_exec, "take", lambda host: None)
+    fake = _FakeSsh()
+    patched = dict(executors_mod.EXECUTORS)
+    patched["ssh_run"] = fake
+    monkeypatch.setattr(executors_mod, "EXECUTORS", patched)
+    monkeypatch.setattr(tool_loop_mod, "EXECUTORS", patched)
+    args = {"host": "192.168.1.8", "user": "me", "command": "git", "argv": ["status"]}
+    with app_client.websocket_connect("/ws/arslan/conv-r") as ws:
+        ws.receive_json()
+        monkeypatch.setattr(tool_loop_mod, "_get_adapter", lambda: _Steps(("ssh_run", args)))
+        ws.send_json({"type": "user_message", "content": "check the other machine"})
+        card = _collect_until(ws, "propose_run_command")[-1]
+        assert card.get("remote_host") == "me@192.168.1.8"
+        ws.send_json({"type": "confirm_run_command", "call_id": card["call_id"], "remember": True,
+                      "scope": "conversation"})
+        _collect_until(ws, "stream_end")
+        monkeypatch.setattr(tool_loop_mod, "_get_adapter", lambda: _Steps(("ssh_run", args)))
+        ws.send_json({"type": "user_message", "content": "again"})
+        frames = _collect_until(ws, "propose_run_command")
+        assert frames[-1].get("type") == "propose_run_command", "a remote command must ask every time"
+        assert frames[-1].get("remote_host") == "me@192.168.1.8"
+        ws.send_json({"type": "cancel_run_command", "call_id": frames[-1]["call_id"]})
+        _collect_until(ws, "stream_end")
+    assert len(fake.calls) == 1
+
+
+class _AsksForApps:
+    """A tool that asks through permissions.decide (as Hands will): Notes, then Reminders."""
+    key = "list_dir"
+
+    def __init__(self, maker):
+        self.maker, self.during = maker, None
+
+    async def execute(self, args):
+        from server.db.models import PermissionGrant
+        from server.services import permissions
+        for title, app in (("Use Notes?", "com.apple.Notes"), ("Use Reminders?", "com.apple.reminders")):
+            await permissions.decide(permissions.Request(kind="app", target=app, title=title),
+                                     permissions.Context(conversation_id="conv-g"))
+        async with self.maker() as db:
+            self.during = sorted((bool(g.task_id), g.target) for g in (await db.scalars(select(PermissionGrant))).all())
+        return {"ok": True, "summary": "asked"}
+
+
+def test_a_turns_task_grants_end_with_the_turn_and_its_conversation_grants_stay(app_client, monkeypatch):
+    """S2 (§A5): "for this task" ends with the turn, as with a job."""
+    import server.registry.executors as executors_mod
+    from server.db.models import PermissionGrant
+    monkeypatch.setattr(task_context, "is_active", AsyncMock(return_value=True))   # the turn is a task
+    tool = _AsksForApps(app_client.db_maker)
+    patched = dict(executors_mod.EXECUTORS)
+    patched["list_dir"] = tool
+    monkeypatch.setattr(executors_mod, "EXECUTORS", patched)
+    monkeypatch.setattr(tool_loop_mod, "EXECUTORS", patched)
+    monkeypatch.setattr(tool_loop_mod, "_get_adapter", lambda: _Steps(("list_dir", {"path": "."})))
+    scopes = {"Use Notes?": "task", "Use Reminders?": "conversation"}
+
+    async def grants():
+        for _ in range(50):              # the turn ends just after its last frame
+            async with app_client.db_maker() as db:
+                rows = sorted((bool(g.task_id), g.target) for g in (await db.scalars(select(PermissionGrant))).all())
+            if len(rows) < 2:
+                return rows
+            await asyncio.sleep(0.05)
+        return rows
+    with app_client.websocket_connect("/ws/arslan/conv-g") as ws:
+        ws.receive_json()
+        ws.send_json({"type": "user_message", "content": "tidy my notes into reminders"})
+        for _ in scopes:
+            card = _collect_until(ws, "propose_action")[-1]
+            ws.send_json({"type": "confirm_action", "call_id": card["call_id"], "scope": scopes[card["title"]]})
+        _collect_until(ws, "stream_end")
+        assert tool.during == [(False, "com.apple.reminders"), (True, "com.apple.Notes")]
+        assert app_client.portal.call(grants) == [(False, "com.apple.reminders")]
+
+
+def test_a_window_ask_that_joins_a_card_on_screen_is_not_judged_again(app_client, monkeypatch, judge):
+    """J1: one card, one judgment — the job's, which opened it."""
+    monkeypatch.setattr(approvals, "TIMEOUT_S", 8)
+    _enable_shell(app_client, policy="ask_risky")
+    _stub_tool_loop_adapter(monkeypatch, "rm", ["-rf", "build"])
+    _stub_run_command_executor(monkeypatch)
+    job = approvals.JobConfirmations("conv-jj", job_id="job-jj")
+    with app_client.websocket_connect("/ws/arslan/conv-jj") as ws:
+        ws.receive_json()
+        asked = app_client.portal.start_task_soon(job.command, "rm -rf build", [])
+        job_card = _collect_until(ws, "propose_run_command")[-1]
+        ws.send_json({"type": "user_message", "content": "clean the build"})
+        _until(lambda: _waiters(job_card["call_id"]) == 2)
+        ws.send_json({"type": "confirm_run_command", "call_id": job_card["call_id"], "scope": "once"})
+        _collect_until(ws, "stream_end")
+        assert asked.result(timeout=5) is True
+    rows = _judgments(app_client, 1)
+    assert [(r.ref, r.outcome) for r in rows] == [(job_card["call_id"], "approved")] and len(judge) == 1

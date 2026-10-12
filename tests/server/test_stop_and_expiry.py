@@ -34,9 +34,17 @@ async def test_a_stopped_command_stops_with_its_children(tmp_path):
     assert _sleeps(tag) == 0, "nothing of it is left running"
 
 
+def _a_surface():
+    """A card surface bound, as in a chat turn or a job (with none, `approvals.ask` refuses at
+    once: a scheduled run)."""
+    from server.services import permissions
+    return permissions.asking_with(approvals.BroadcastAsker("c"))
+
+
 async def test_a_card_nobody_answered_is_not_reported_as_a_refusal(monkeypatch):
     monkeypatch.setattr(approvals, "TIMEOUT_S", 0.05)
-    assert await approvals.ask("c", {"type": "propose_run_command", "call_id": "x1"}) is False
+    with _a_surface():
+        assert await approvals.ask("c", {"type": "propose_run_command", "call_id": "x1"}) is False
     assert approvals.LAST_OUTCOME.get() == "expired"
     text = tool_loop._declined("user declined this command", "this command")
     assert text.startswith("Nobody answered the card for this command") and "NOT a refusal" in text
@@ -90,7 +98,8 @@ async def test_a_real_refusal_keeps_its_words(monkeypatch):
     monkeypatch.setattr(approvals, "TIMEOUT_S", 5)
 
     async def ask_and_tell():
-        approved = await approvals.ask("c", {"type": "propose_run_command", "call_id": "x2"})
+        with _a_surface():
+            approved = await approvals.ask("c", {"type": "propose_run_command", "call_id": "x2"})
         return approved, approvals.LAST_OUTCOME.get(), tool_loop._declined("user declined this command", "this command")
 
     task = asyncio.create_task(ask_and_tell())
@@ -107,7 +116,8 @@ async def test_a_plain_card_is_not_told_an_earlier_decision(monkeypatch):
 
     async def ask_and_tell():
         permissions.LAST_DECISION.set(permissions.Decision(False, "user", note="x", model_text="earlier words"))
-        approved = await approvals.ask("c", {"type": "propose_run_command", "call_id": "x4"})
+        with _a_surface():
+            approved = await approvals.ask("c", {"type": "propose_run_command", "call_id": "x4"})
         return approved, tool_loop._declined("user declined this command", "this command")
 
     task = asyncio.create_task(ask_and_tell())
@@ -137,3 +147,32 @@ async def test_a_jobs_card_is_told_its_own_answer_not_an_earlier_one(execution_d
     assert await job.workspace_write("write_file", "a.txt") is False                    # no card at all
     assert tool_loop._declined("user declined workspace write access", "writing") == \
         "user declined workspace write access"
+
+
+async def test_a_scheduled_run_is_refused_a_plain_card_at_once(monkeypatch):
+    """§A4 "scheduled runs never wait": with no card surface bound (nobody to ask), Hands' plain
+    card is refused at once — no card, nothing in the Inbox, no wait."""
+    sent = []
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: sent.append)
+    monkeypatch.setattr(approvals, "TIMEOUT_S", 3)      # were it to wait, it would wait this long
+    started = asyncio.get_running_loop().time()
+    assert await approvals.ask("c", {"type": "propose_action", "call_id": "x6", "kind": "desktop_look",
+                                     "target": "Notes", "detail": ""}) is False
+    assert asyncio.get_running_loop().time() - started < 0.5
+    assert sent == [] and approvals.all_pending() == [] and approvals.known_ids() == set()
+    assert approvals.LAST_OUTCOME.get() == "declined"
+
+
+async def test_a_plain_cards_wait_is_not_the_works_time(monkeypatch):
+    """Hands' plain card in a job or a chat turn: answered after the work's own wall clock would
+    have run out, the work goes on (its clock stood still meanwhile)."""
+    from arslan import execution_budget
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: lambda f: None)
+    budget = execution_budget.Budget(execution_budget.Limits(wall_seconds=0.3))
+    timeout = asyncio.timeout(budget.remaining_seconds())
+    asyncio.get_running_loop().call_later(0.6, approvals.answer, {"type": "confirm_action", "call_id": "x7"})
+    async with timeout:
+        with execution_budget.running_clock(budget, timeout), _a_surface():
+            assert await approvals.ask("c", {"type": "propose_action", "call_id": "x7", "kind": "desktop_look",
+                                             "target": "Notes", "detail": ""}) is True
+    assert not timeout.expired()

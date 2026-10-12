@@ -60,26 +60,21 @@ def effective_risk(remote_host: str | None, command: str, argv: list) -> str:
     return terminal_policy.risk_grade(terminal_policy.as_shell(command, argv))
 
 
-def may_skip_card(remote_host: str | None, *, in_session_allow: bool,
-                  policy: str, risk: str, always_allowed: bool = False) -> bool:
+def may_skip_card(remote_host: str | None, *, policy: str, risk: str,
+                  always_allowed: bool = False) -> bool:
     """Whether a confirmation may be answered without showing a card.
 
     Every shortcut is local-only: a remote command always gets a card, because the
     thing being asked (which machine) is not in the command text the shortcuts key
     on. HIGH (forbidden) never skips. "Always allowed" is the user's standing
-    answer for a rule, and holds even under ask_all."""
+    answer for a rule, and holds even under ask_all. (0.1.61: what a card allowed
+    beyond once is permissions.decide's — a remote command never reaches it, so it is
+    never remembered: P3b ruling ③.)"""
     if remote_host or risk == "HIGH":
         return False
-    if in_session_allow or always_allowed:
+    if always_allowed:
         return True
     return policy == "ask_risky" and risk == "LOW"
-
-
-def may_remember(remote_host: str | None, *, risk: str, remember: bool) -> bool:
-    """Whether "don't ask again" may be honoured. Never for HIGH, and never for
-    remote — a remembered remote command would be a trusted node with no gate,
-    which is precisely the thing the C4 ruling refused to build."""
-    return bool(remember) and risk != "HIGH" and not remote_host
 
 
 def _cmd_sig(command: str, argv: list) -> str:
@@ -227,6 +222,8 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         from arslan.companion.memory import MemoryError
         from arslan.execution_budget import BudgetExceeded
         outcome = "error"
+        turn_unanswered["yes"] = False            # a new turn: the person may be back
+        turn_tasks.clear()
         beat = asyncio.ensure_future(_working_beats())
         try:
             # 0.1.61: every turn asks on this window's cards (permissions.decide), Hands too.
@@ -242,6 +239,13 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             raise
         finally:
             beat.cancel()
+            # 0.1.61 §A5: what the user allowed "for this task" ends with the turn, as with a job.
+            for task_id in sorted(turn_tasks):
+                try:
+                    await permissions.forget_task(task_id)
+                except Exception as exc:  # noqa: BLE001 — the store's 24-hour prune is the backstop
+                    logger.warning("turn task grants not forgotten: %s", type(exc).__name__)
+            turn_tasks.clear()
             desktop_status.push("turn_finished", conversation_id=conversation_id, outcome=outcome, title=title,
                                 work="turn")
             await queue.join()
@@ -301,6 +305,11 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
     # wait a future a message typed meanwhile resolves: (its text, whether a job shares the card).
     my_cards: dict[str, int] = {}
     typed_while_waiting: dict[str, list[asyncio.Future]] = {}
+    # 0.1.61, as a job's surface: once a card in this turn went unanswered the person is away, and
+    # later cards of the turn do not open and wait 30 minutes each (reset when a turn starts).
+    turn_unanswered = {"yes": False}
+    # The tasks this turn's cards were asked for: their "for this task" grants end with the turn.
+    turn_tasks: set[str] = set()
 
     async def _reader() -> None:
         try:
@@ -377,6 +386,12 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         journaled."""
         from server.services import task_service
         permissions.LAST_DECISION.set(None)
+        if turn_unanswered["yes"]:
+            # A card earlier in this turn went unanswered: the person is away. This one does not
+            # open and wait 30 minutes more; it reads as expired at once ("NOT a refusal").
+            approvals.LAST_OUTCOME.set("expired")
+            return {"approved": False, "remember": False, "scope": None, "note": "", "by": None,
+                    "extras": {}, "call_id": frame.get("call_id")}
         loop = asyncio.get_running_loop()
         pending = approvals.open_card(conversation_id, frame, broadcast=broadcast)
         # An ask identical to a card still waiting in this conversation joined it (0.1.61 §A4):
@@ -384,23 +399,25 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         # already (a job's card is on every window; this window's own card is here).
         joined = pending.call_id != frame.get("call_id")
         on_screen = joined and (not pending.private or pending.call_id in my_cards)
+        # Registered with no await since the card opened, and undone in `finally` (a Stop during
+        # the send below must not leave this window believing a card still waits).
         my_cards[pending.call_id] = my_cards.get(pending.call_id, 0) + 1
         typed = loop.create_future()
         typed_while_waiting.setdefault(pending.call_id, []).append(typed)
-        if joined and broadcast and pending.private:
-            pending.private = False            # a phone turn's ask: everyone must see the card
-            emit(pending.frame)
-        elif not broadcast and not on_screen:
-            if socket_gone["yes"]:
-                _window_gone(pending)
-            else:
-                try:
-                    await ws.send_json(pending.frame)
-                except Exception:  # noqa: BLE001 — closed under us; the card is answered elsewhere
-                    _window_gone(pending)
-        deadline = loop.time() + approvals.TIMEOUT_S
         watching = asyncio.ensure_future(gone.wait())
         try:
+            if joined and broadcast and pending.private:
+                pending.private = False            # a phone turn's ask: everyone must see the card
+                emit(pending.frame)
+            elif not broadcast and not on_screen:
+                if socket_gone["yes"]:
+                    _window_gone(pending)
+                else:
+                    try:
+                        await ws.send_json(pending.frame)
+                    except Exception:  # noqa: BLE001 — closed under us; the card is answered elsewhere
+                        _window_gone(pending)
+            deadline = loop.time() + approvals.TIMEOUT_S
             # The user's time, not the task's: the turn's wall clock stands still meanwhile.
             with task_service.paused_clock(), desktop_status.awaiting_approval(conversation_id):
                 # The answer arrives through the resident reader (this window), the phone's
@@ -443,6 +460,8 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                                                               decision["by"]))
                 except Exception:  # noqa: BLE001 — the window may be gone; the decision stands
                     pass
+        if decision["by"] is None:
+            turn_unanswered["yes"] = True      # nobody answered: the person is away
         approvals.LAST_OUTCOME.set("approved" if decision["approved"]
                                    else "expired" if decision["by"] is None else "declined")
         return {"approved": bool(decision["approved"]), "remember": bool(decision["remember"]),
@@ -454,6 +473,11 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
     async def _window_asker(frame: dict) -> dict:
         """This window's card surface for permissions.decide (0.1.61): private to the window,
         answerable from the Inbox and the island; a turn the iPhone started shows it everywhere."""
+        from server.services import personal_context
+        current = personal_context.current()
+        if current is not None and getattr(current, "task_id", None):
+            # The task a "for this task" answer is kept for (decide reads the same context).
+            turn_tasks.add(str(current.task_id))
         return await _ask_everywhere(frame, broadcast=phone_turn["on"])
 
     async def _send_or_gone(frame: dict, pending=None) -> None:
@@ -537,7 +561,7 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 standing = terminal_policy.standing_allows(terminal_policy.as_shell(command, argv),
                                                            await terminal_policy.always_allowed(db))
         # The user's standing answer is taken below, where it writes its ledger row.
-        if may_skip_card(remote_host, in_session_allow=False, policy=policy, risk=risk):
+        if may_skip_card(remote_host, policy=policy, risk=risk):
             return True
         if remote_host:
             # The card (private to this socket, or everywhere for a phone turn): see `_ask`.
@@ -569,8 +593,9 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         surface = permissions.current_asker()          # the turn's: this window's cards
 
         async def ask(frame: dict) -> dict:
-            # No await between this check and the card opening inside the surface.
-            if approvals.joining(conversation_id, frame) is None:
+            # No await between this check and the card opening inside the surface. No judgment
+            # for a card that does not open: the person is away, or it joins one on screen.
+            if not turn_unanswered["yes"] and approvals.joining(conversation_id, frame) is None:
                 judgment.shadow("tool.approval", judgment.approval_state(
                     shell, rule=verdict.rule, reason=verdict.reason, user_request=latest_request["text"]),
                     ref=frame["call_id"], conversation_id=conversation_id)

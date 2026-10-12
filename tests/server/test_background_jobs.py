@@ -229,12 +229,20 @@ async def test_background_tools_exist_only_in_a_turn_never_inside_a_job(executio
     assert not keys & seen["job"] and not keys & seen["body"] and "ask_user_choice" not in seen["body"]
 
 
+async def _job_ask(conversation_id: str, frame: dict) -> bool:
+    """`approvals.ask` as a job calls it: with the job's card surface bound (0.1.61: with no
+    surface — a scheduled run — it is refused at once, with no card)."""
+    from server.services import permissions
+    with permissions.asking_with(approvals.BroadcastAsker(conversation_id)):
+        return await approvals.ask(conversation_id, frame)
+
+
 async def test_cards_are_answered_by_call_id_and_kind_and_time_out_to_no(monkeypatch):
     sent = []
     run_registry.attach_sink(CID, sent.append)
     try:
-        waiting = asyncio.create_task(approvals.ask(CID, {"type": "propose_schedule", "call_id": "c1",
-                                                          "name": "n", "when": "daily"}))
+        waiting = asyncio.create_task(_job_ask(CID, {"type": "propose_schedule", "call_id": "c1",
+                                                     "name": "n", "when": "daily"}))
         await _wait(lambda: sent)
         assert approvals.pending_cards(CID) == [sent[0]]
         assert desktop_status.snapshot()["awaiting"] == 1
@@ -244,8 +252,8 @@ async def test_cards_are_answered_by_call_id_and_kind_and_time_out_to_no(monkeyp
         assert await waiting is True
         assert approvals.pending_cards(CID) == [] and desktop_status.snapshot()["awaiting"] == 0
         monkeypatch.setattr(approvals, "TIMEOUT_S", 0.05)
-        assert await approvals.ask(CID, {"type": "propose_schedule", "call_id": "c2",
-                                         "name": "n", "when": "daily"}) is False
+        assert await _job_ask(CID, {"type": "propose_schedule", "call_id": "c2",
+                                    "name": "n", "when": "daily"}) is False
     finally:
         run_registry.detach_sink(CID, sent.append)
 
@@ -390,7 +398,7 @@ def test_a_background_card_is_answered_over_the_socket_and_resent_on_reconnect(a
     frame = {"type": "propose_schedule", "call_id": "bg-card", "name": "Weekly digest", "when": "weekly"}
     with app_client.websocket_connect("/ws/arslan/main") as ws:
         ws.receive_json()
-        waiting = app_client.portal.start_task_soon(approvals.ask, "main", frame)
+        waiting = app_client.portal.start_task_soon(_job_ask, "main", frame)
         # broadcast at once, marked as a job's card (the UI hides "remember" for it)
         assert ws.receive_json() == frame | {"background": True}
     with app_client.websocket_connect("/ws/arslan/main") as ws:   # a tab that opened later
@@ -427,7 +435,7 @@ def test_a_reconnecting_tab_gets_running_job_cards_but_not_finished_ones(app_cli
         job.phase = phase
         background_jobs._jobs[job_id] = job
     frame = {"type": "propose_schedule", "call_id": "marker", "name": "n", "when": "w"}
-    waiting = app_client.portal.start_task_soon(approvals.ask, "main", frame)
+    waiting = app_client.portal.start_task_soon(_job_ask, "main", frame)
     with app_client.websocket_connect("/ws/arslan/main") as ws:
         seen = []
         while not seen or seen[-1].get("call_id") != "marker":

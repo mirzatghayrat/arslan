@@ -128,9 +128,19 @@ def close_card(pending: Pending) -> dict:
 
 
 async def ask(conversation_id: str, frame: dict) -> bool:
-    """Broadcast one card and wait for its answer. False on timeout or refusal."""
+    """Broadcast one card and wait for its answer. False on timeout or refusal.
+
+    The plain card Hands still uses (until it moves onto permissions.decide). Like decide it asks
+    only where someone can answer: a chat turn and a job bind a card surface
+    (permissions.asking_with); a run with none — a scheduled run — is refused at once, with no
+    card, no wait and (unlike decide) no ledger row yet. While it waits, the wall clocks of the
+    turn or job stand still (`task_service.paused_clock`)."""
+    from server.services import permissions
     _forget_decision()
     LAST_OUTCOME.set(None)
+    if permissions.current_asker() is None:
+        LAST_OUTCOME.set("declined")         # as decide's refusal for want of a surface
+        return False
     # Marked so the card can say it is a background job asking, and hide the
     # "remember" option this path never honours.
     pending = open_card(conversation_id, frame | {"background": True})
@@ -425,7 +435,7 @@ class JobConfirmations:
                 standing = terminal_policy.standing_allows(terminal_policy.as_shell(command, argv),
                                                            await terminal_policy.always_allowed(db))
         # The user's standing answer is taken below, where it writes its ledger row.
-        if may_skip_card(remote_host, in_session_allow=False, policy=policy, risk=risk):
+        if may_skip_card(remote_host, policy=policy, risk=risk):
             return True
         if remote_host:
             return await self._card(protocol.propose_run_command(

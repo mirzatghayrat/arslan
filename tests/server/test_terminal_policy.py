@@ -99,12 +99,12 @@ async def test_an_unreadable_setting_grants_nothing():
 
 def test_skip_card_rules():
     from server.ws.arslan import may_skip_card
-    assert may_skip_card(None, in_session_allow=False, policy="ask_risky", risk="LOW")
-    assert not may_skip_card(None, in_session_allow=False, policy="ask_all", risk="LOW")
-    assert not may_skip_card(None, in_session_allow=False, policy="ask_risky", risk="MEDIUM")
-    assert may_skip_card(None, in_session_allow=False, policy="ask_all", risk="MEDIUM", always_allowed=True)
-    assert not may_skip_card(None, in_session_allow=True, policy="ask_risky", risk="HIGH", always_allowed=True)
-    assert not may_skip_card("box", in_session_allow=True, policy="ask_risky", risk="LOW", always_allowed=True)
+    assert may_skip_card(None, policy="ask_risky", risk="LOW")
+    assert not may_skip_card(None, policy="ask_all", risk="LOW")
+    assert not may_skip_card(None, policy="ask_risky", risk="MEDIUM")
+    assert may_skip_card(None, policy="ask_all", risk="MEDIUM", always_allowed=True)
+    assert not may_skip_card(None, policy="ask_risky", risk="HIGH", always_allowed=True)
+    assert not may_skip_card("box", policy="ask_risky", risk="LOW", always_allowed=True)
 
 
 @pytest.mark.parametrize("command,rule", [
