@@ -317,12 +317,18 @@ async def install(candidate: dict, *, folders: list[str], keys: dict[str, str] |
         raise
 
 
+def trash_dir() -> Path:
+    """The user's Trash. The test suite points it at a temp folder (tests/conftest.py), so no test
+    can move anything into the real one."""
+    return Path.home() / ".Trash"
+
+
 def to_trash(path: Path, *, name: str | None = None) -> Path | None:
     """Move a capability's folder to the user's Trash (never deleted outright). `name` is what
     it is called there (0.1.61: a skill folder moved aside has a dot name, hidden in Finder)."""
     if not path.exists():
         return None
-    trash = Path.home() / ".Trash"
+    trash = trash_dir()
     trash.mkdir(parents=True, exist_ok=True)
     label = name or path.name
     target = trash / f"Arslan capability {label}"

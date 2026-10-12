@@ -6,10 +6,12 @@ replaced folder goes to the Trash once the caller's database write committed.
 """
 from __future__ import annotations
 
+import asyncio
 import difflib
 import errno
 import hashlib
 import io
+import itertools
 import logging
 import os
 import re
@@ -17,6 +19,7 @@ import shutil
 import stat
 import tarfile
 import uuid
+import weakref
 import zlib
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
@@ -33,6 +36,13 @@ MAX_ARCHIVE_BYTES = 64 * 1024 * 1024
 MAX_UNPACKED_BYTES = 512 * 1024 * 1024
 #: Members of one archive: each costs memory while it is read (0.94 MB of download held 200,000).
 MAX_ENTRIES = 100_000
+#: tarfile reads a pax or GNU long-name header whole before read_archive sees its member, and git
+#: archive writes a symlink's target there — a blob, any size. The headers in a row before one
+#: member may hold this much; what GitHub writes for a long path or target is a few hundred bytes.
+MAX_HEADER_BYTES = 1024 * 1024
+#: Global pax headers, in all. GitHub writes one, the commit (52 bytes); tarfile copies them into
+#: each member that has its own pax header.
+MAX_GLOBAL_HEADER_BYTES = 64 * 1024
 MAX_LIST = 200
 #: What a skill's text may call its own folder (Claude Code, Agent Skills, OpenClaw).
 PLACEHOLDERS = ("${CLAUDE_SKILL_DIR}", "${SKILL_DIR}", "{baseDir}")
@@ -44,6 +54,10 @@ _NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 #: name in another case or normalisation, a file where a folder must be, a path too long for the
 #: disk, a name the disk refuses.
 _SKIPPABLE = frozenset({errno.EEXIST, errno.ENOTDIR, errno.ENAMETOOLONG, errno.EILSEQ})
+#: What may not be in a name: control characters (C0, DEL, C1) and the two Unicode line
+#: separators — everything str.splitlines() breaks on — so a name can never forge a line in a
+#: file list, nor carry a terminal escape.
+_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029]")
 
 
 class FolderTooLarge(ValueError):
@@ -65,11 +79,27 @@ def folder_for(key: str) -> Path:
     return skills_root() / key
 
 
+_KEY_LOCKS: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+
+
+def key_lock(key: str) -> asyncio.Lock:
+    """The one lock of `key`'s folder (one per key, per event loop; Arslan runs one loop).
+
+    CONTRACT: whoever swaps `key`'s folder holds it, `async with skill_files.key_lock(key):`, from
+    reading the folder it replaces (`checksums(final)`) through its database write and then
+    `retire(aside)` or `swap_back(key, aside)`. Two imports of one key then follow each other, and
+    the folder that ends up live is the one whose row committed. Different keys never wait on each
+    other."""
+    folder_for(key)                                            # a bad key is refused here too
+    locks = _KEY_LOCKS.setdefault(asyncio.get_running_loop(), {})
+    return locks.setdefault(key, asyncio.Lock())
+
+
 def safe_relpath(rel: str) -> str | None:
     """`rel` as a clean relative POSIX path, or None when it could leave the folder or is not a
-    plain name: absolute, `..`, empty parts, NUL, a backslash, a part over 255 bytes, a name that
-    was not UTF-8."""
-    if not rel or "\x00" in rel or "\\" in rel:
+    plain name: absolute, `..`, empty parts, a control character (NUL, a newline, an escape…), a
+    backslash, a part over 255 bytes, a name that was not UTF-8."""
+    if not rel or _CONTROL.search(rel) or "\\" in rel:
         return None
     try:
         rel.encode("utf-8")
@@ -85,7 +115,9 @@ def safe_relpath(rel: str) -> str | None:
 
 
 def _shown(name: str) -> str:
-    """A name as it can be shown and sent as JSON (bytes that were not UTF-8 become \\udcff)."""
+    """A name as it can be listed, shown and sent as JSON: control characters and bytes that were
+    not UTF-8 are written as escapes (\\n, \\x1b, \\udcff), so it stays one line."""
+    name = _CONTROL.sub(lambda m: m.group().encode("unicode_escape").decode("ascii"), name)
     return name.encode("utf-8", "backslashreplace").decode("utf-8")
 
 
@@ -123,12 +155,47 @@ class Archive:
                       and (not sub or p == f"{sub}/SKILL.md" or p.startswith(f"{sub}/")))
 
 
+_EXTENDED = frozenset({tarfile.XHDTYPE, tarfile.XGLTYPE, tarfile.SOLARIS_XHDTYPE,
+                       tarfile.GNUTYPE_LONGNAME, tarfile.GNUTYPE_LONGLINK})
+
+
+class _BoundedTarInfo(tarfile.TarInfo):
+    """A tar header that refuses, before tarfile reads anything more, what tarfile would read whole
+    before read_archive sees the member: extended headers (pax, GNU long name or link) over
+    MAX_HEADER_BYTES in a row, global headers over MAX_GLOBAL_HEADER_BYTES in all, and a sparse
+    member in any form (GNU's map runs on in extra blocks; pax sparse 1.0 reads its map from the
+    member's data). git archive writes no sparse member."""
+
+    def _proc_member(self, tarfile_):
+        if self.type == tarfile.GNUTYPE_SPARSE:
+            raise BadArchive("the repository archive has a sparse member")
+        if self.type in _EXTENDED:
+            run = getattr(tarfile_, "_arslan_header_run", 0) + self.size
+            if run > MAX_HEADER_BYTES:
+                raise BadArchive("a header of the repository archive is larger than 1 MB")
+            tarfile_._arslan_header_run = run
+            if self.type == tarfile.XGLTYPE:
+                seen = getattr(tarfile_, "_arslan_global_bytes", 0) + self.size
+                if seen > MAX_GLOBAL_HEADER_BYTES:
+                    raise BadArchive("the repository archive's global headers are larger than 64 KB")
+                tarfile_._arslan_global_bytes = seen
+        else:
+            tarfile_._arslan_header_run = 0                    # a member: the next run starts
+        return super()._proc_member(tarfile_)
+
+    def _proc_gnusparse_00(self, *args):
+        raise BadArchive("the repository archive has a sparse member")
+
+    _proc_gnusparse_01 = _proc_gnusparse_10 = _proc_gnusparse_00
+
+
 def read_archive(data: bytes, *, keep: Callable[[str], bool], keep_limit: int | None = None) -> Archive:
     """One pass over a GitHub tar.gz (codeload): every member's path, kind, size and mode, and the
     bytes of the members `keep` asks for — at most `keep_limit` bytes of them (default: one skill
     folder's budget; a scan of a whole repository passes more). GitHub writes the commit into the
-    global pax header. Headers and the data of every member count toward MAX_UNPACKED_BYTES, and
-    the stream is read to its end, where gzip checks its CRC-32 and length."""
+    global pax header. Headers and the data of every member count toward MAX_UNPACKED_BYTES, a
+    header tarfile reads whole is bounded before it is read (_BoundedTarInfo), no member is kept
+    once it is read, and the stream is read to its end, where gzip checks its CRC-32 and length."""
     if len(data) > MAX_ARCHIVE_BYTES:
         raise BadArchive("the repository archive is larger than 64 MB")
     out = Archive(commit="")
@@ -138,13 +205,14 @@ def read_archive(data: bytes, *, keep: Callable[[str], bool], keep_limit: int | 
     over = ("the skill's folder is larger than 20 MB" if keep_limit is None
             else f"what is read from the repository archive is larger than {mb} MB")
     try:
-        with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
-            for member in tar:
+        with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz", tarinfo=_BoundedTarInfo) as tar:
+            while (member := tar.next()) is not None:
+                # tarfile would keep every member, and its pax headers, for the archive's life.
+                tar.members.clear()
                 # tar.offset: where this member's data ends in the inflated stream — headers, long
                 # names and the data of every member, read or skipped — checked before tarfile
-                # inflates its way past it. Not covered: tarfile reads a pax or GNU long-name header
-                # whole, at its declared size, before this runs (git archive never writes a large
-                # one; a size-bounded reader under tarfile would close it).
+                # inflates its way past it. A header tarfile reads whole was bounded before it was
+                # read (_BoundedTarInfo).
                 if tar.offset > MAX_UNPACKED_BYTES:
                     raise BadArchive("the repository archive unpacks to more than 512 MB")
                 seen += 1
@@ -207,7 +275,7 @@ def _write(staging: Path, rel: str, data: bytes, executable: bool) -> str:
     fd = os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW, mode)
     with os.fdopen(fd, "wb") as handle:
         handle.write(data)
-    os.chmod(dest, mode)                       # the umask must not take the bit away
+        os.fchmod(handle.fileno(), mode)       # the umask must not take the bit away
     return hashlib.sha256(data).hexdigest()
 
 
@@ -380,7 +448,10 @@ def _walk_files(folder: Path) -> Iterator[tuple[str, Path]]:
             full = here / name
             if name in _SKIP_NAMES or full.is_symlink() or not full.is_file():
                 continue
-            yield full.relative_to(folder).as_posix(), full
+            rel = full.relative_to(folder).as_posix()
+            if safe_relpath(rel) is None:              # a name a copy refuses (a newline…): not listed
+                continue
+            yield rel, full
 
 
 def checksums(folder: Path | None) -> dict[str, str]:
@@ -390,9 +461,11 @@ def checksums(folder: Path | None) -> dict[str, str]:
 
 
 def list_files(folder: Path | None, limit: int = MAX_LIST) -> tuple[list[str], int]:
+    """The folder's first `limit` files (its own, then each subfolder's, in name order) and how
+    many there are, counted no further than `limit + 1`: the walk of a huge folder stops there."""
     if folder is None or not folder.is_dir():
         return [], 0
-    names = sorted(rel for rel, _ in _walk_files(folder))
+    names = [rel for rel, _ in itertools.islice(_walk_files(folder), limit + 1)]
     return names[:limit], len(names)
 
 
@@ -407,16 +480,19 @@ def has_scripts(folder: Path | None) -> bool:
 
 def read_text(folder: Path, rel: str, *, limit: int) -> str | None:
     """One file of the skill's folder as text, or None when `rel` is not a file inside it (no
-    `..`, no absolute path, no link that leads out)."""
+    `..`, no absolute path, no link that leads out) or cannot be read (a path too long…)."""
     clean = safe_relpath(rel)
     if clean is None:
         return None
-    base = folder.resolve()
-    target = (folder / clean).resolve()
-    if base not in target.parents or not target.is_file():
+    try:
+        base = folder.resolve()
+        target = (folder / clean).resolve()
+        if base not in target.parents or not target.is_file():
+            return None
+        with target.open("rb") as handle:
+            data = handle.read(limit * 4 + 4)
+    except OSError:
         return None
-    with target.open("rb") as handle:
-        data = handle.read(limit * 4 + 4)
     return data.decode("utf-8", "replace")[:limit]
 
 

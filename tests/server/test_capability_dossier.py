@@ -182,12 +182,9 @@ async def test_check_update_compares_with_the_registry(execution_db, monkeypatch
 
 
 async def test_removing_a_skill_moves_its_files_to_the_trash(execution_db, monkeypatch, tmp_path):
-    from pathlib import Path
-
     from server import config
     from server.db.models import CapabilitySource, SkillPack
     monkeypatch.setattr(config, "data_dir", lambda: tmp_path)
-    monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
     (tmp_path / "skill_scripts" / "csv-tidy").mkdir(parents=True)
     async with execution_db() as db:
         db.add(SkillPack(key="csv-tidy", name="c", category="imported", description="d", tier="safe",
@@ -200,7 +197,7 @@ async def test_removing_a_skill_moves_its_files_to_the_trash(execution_db, monke
         assert await db.get(SkillPack, "csv-tidy") is None
         assert (await db.get(CapabilitySource, "sk1")).state == "removed"
     assert not (tmp_path / "skill_scripts" / "csv-tidy").exists()
-    assert (tmp_path / "home" / ".Trash" / "Arslan capability csv-tidy").is_dir()
+    assert (capability_install.trash_dir() / "Arslan capability csv-tidy").is_dir()   # a temp Trash
 
 
 # ── using a candidate in a project ───────────────────────────────────────────

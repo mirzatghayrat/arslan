@@ -234,8 +234,7 @@ async def test_a_remote_server_is_registered_without_a_sandbox_and_keeps_its_key
 
 async def test_remove_moves_the_folder_to_the_trash(execution_db, data, monkeypatch, tmp_path):
     from server.db.models import CapabilitySource, MCPServer
-    trash = tmp_path / "home" / ".Trash"
-    monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
+    trash = ci.trash_dir()                     # tests/conftest.py points it at a temp folder
 
     async def mit(repo):
         return "MIT", "LICENSE"

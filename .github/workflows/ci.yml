@@ -324,6 +324,8 @@ jobs:
         # file. Updating only the test makes the suite green locally and fails
         # here; updating only this one hides drift from the guard that exists to
         # catch it. Change both, in the same commit, or neither.
+        #    54 → 55 (2026-10-13, 0.1.61 PR 6): a skill folder's file names as they
+        #    land on a Mac's case-insensitive disk.
         #    25 → 28 (2026-08-21, P3b): three seatbelt facts for the ssh
         #    transport — the shipped profile is accepted, a per-host profile is
         #    rejected, and the port confinement actually enforces.
@@ -334,7 +336,7 @@ jobs:
           # includes restricted recovery trial, file-denial attacks, durable export, and the fixed isolated
           # artifact parser (2026-09-15). MIRRORS EXPECTED_TOTAL in
           # tests/server/test_macos_marker_covers_the_platform_set.py — a test there now fails if they differ.
-          EXPECTED = 54
+          EXPECTED = 55
           suite = ET.parse("macos-results.xml").getroot().find("testsuite")
           total = int(suite.get("tests", 0))
           skipped = int(suite.get("skipped", 0))

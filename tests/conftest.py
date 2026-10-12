@@ -11,6 +11,7 @@ import os
 os.environ["ARSLAN_SECRET_KEY_FILE"] = ""
 
 import shutil
+import uuid
 
 import pytest
 
@@ -78,6 +79,19 @@ def _default_workspace_in_tmp(tmp_path_factory):
     relies on running after monkeypatch has restored the test's patches."""
     with pytest.MonkeyPatch.context() as mp:
         mp.setenv("ARSLAN_DEFAULT_WORKSPACE", str(tmp_path_factory.mktemp("arslan-home") / "Arslan"))
+        yield
+
+
+@pytest.fixture(autouse=True)
+def _trash_in_tmp(tmp_path_factory):
+    """0.1.61: no test may move anything into the user's real ~/.Trash. Each test gets its own
+    Trash folder under pytest's temp dir (made only if something is trashed); a test that checks
+    the Trash reads `capability_install.trash_dir()`. Its own MonkeyPatch, for the reason given
+    in `_default_workspace_in_tmp`."""
+    from server.services import capability_install
+    trash = tmp_path_factory.getbasetemp() / "trash" / uuid.uuid4().hex[:12]
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(capability_install, "trash_dir", lambda: trash)
         yield
 
 
