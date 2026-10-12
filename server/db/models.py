@@ -225,6 +225,7 @@ class Tool(Base):
     input_schema = Column(JSON, default=dict)
     external_name = Column(String(120), nullable=True)   # original MCP tool name (NULL for built-ins)
     host_enabled = Column(Boolean, nullable=False, default=False, server_default="0")  # Arslan (host) may use this MCP tool
+    annotations = Column(JSON, nullable=True)   # 0.1.61 §B4: the hints the MCP server declared
 
 
 class SkillPack(Base):
@@ -328,7 +329,7 @@ class MCPServer(Base):
     args = Column(JSON, nullable=False, default=list)
     env = Column(Text, nullable=True)                    # encrypted JSON string (dict[str,str])
     url = Column(String(500), nullable=True)   # streamable-HTTP endpoint (transport="http")
-    status = Column(String(20), nullable=False, default="registered")  # registered|connected|error
+    status = Column(String(20), nullable=False, default="registered")  # legacy, kept in step with `state` until PR 8: registered|connecting|connected|error
     # Server-level host consent (user ruling 2026-08-18): connect is the human
     # act; every discovered tool of an allowed server reaches Arslan's loop.
     host_allowed = Column(Boolean, nullable=False, default=True, server_default="1")
@@ -339,6 +340,13 @@ class MCPServer(Base):
     # 0.1.57 §5.3: set for servers Arslan installed — {root, folders, network, read}: the
     # seatbelt profile it is started under. NULL = started as before (hand-added servers).
     sandbox = Column(JSON, nullable=True)
+    # 0.1.61 §B1: one state per server — off|starting|ready|failed|needs_auth|parked. Written only
+    # by server/mcp/supervisor.py (`_set`); `status`/`health_status` follow it for the old UI.
+    state = Column(String(20), nullable=False, default="starting", server_default="starting")
+    state_at = Column(DateTime, nullable=True)
+    last_ok_at = Column(DateTime, nullable=True)
+    next_retry_at = Column(DateTime, nullable=True)
+    fail_count = Column(Integer, nullable=False, default=0, server_default="0")
 
 
 class CapabilitySource(Base):
