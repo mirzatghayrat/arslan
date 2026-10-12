@@ -2270,7 +2270,8 @@
         "type": "comparison",
         "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.54...v0.1.55"
       }
-    ]
+    ],
+    "commit_count_no_merges_since_previous_tag": 29
   },
   {
     "version": "v0.1.56",
@@ -2294,7 +2295,8 @@
         "type": "comparison",
         "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.55...v0.1.56"
       }
-    ]
+    ],
+    "commit_count_no_merges_since_previous_tag": 12
   },
   {
     "version": "v0.1.57",
@@ -2318,7 +2320,8 @@
         "type": "comparison",
         "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.56...v0.1.57"
       }
-    ]
+    ],
+    "commit_count_no_merges_since_previous_tag": 21
   },
   {
     "version": "v0.1.58",
@@ -2342,7 +2345,8 @@
         "type": "comparison",
         "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.57...v0.1.58"
       }
-    ]
+    ],
+    "commit_count_no_merges_since_previous_tag": 14
   },
   {
     "version": "v0.1.59",
@@ -2366,7 +2370,8 @@
         "type": "comparison",
         "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.58...v0.1.59"
       }
-    ]
+    ],
+    "commit_count_no_merges_since_previous_tag": 17
   },
   {
     "version": "v0.1.60",
@@ -2390,6 +2395,7 @@
         "type": "comparison",
         "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.59...v0.1.60"
       }
-    ]
+    ],
+    "commit_count_no_merges_since_previous_tag": 90
   }
 ]
