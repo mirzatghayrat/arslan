@@ -24,7 +24,8 @@ WHAT IT REFUSES, for every test (the file's tests are the exact list):
 Every refusal is RECORDED, and a test that provoked one it did not expect fails at teardown: a code
 path that swallows the refusal (``github_eval.fetch_file`` does) is a silent leak. A test that
 refuses on purpose carries ``network_refusals_expected`` (this whole file), and the opt-in live
-runners carry ``real_network``, which lifts the guard and nothing else.
+runners are marked ``real_network`` BY PATH in conftest (they are historical acceptance evidence,
+some frozen by digest, so the files stay as they were); the marker lifts the guard and nothing else.
 
 NOT covered, and said so: UDP ``sendto``, ``gethostbyname``, and raw loopback sockets to a port that
 is not the test's. It is a net under the fakes, not a sandbox.
@@ -67,6 +68,7 @@ REAL_SYNC = httpx.HTTPTransport.handle_request
 _PROXY_VARS = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy")
 
 #: The opt-in runners that call a model API or public pages when their own environment opt-in is set.
+#: The same nine paths as `_REAL_NETWORK_RUNNERS` in tests/conftest.py, which this file holds to.
 LIVE_RUNNERS = [
     "tests/server/test_escalation_eval.py",
     "tests/server/test_stable_document_live.py",
@@ -373,9 +375,16 @@ def test_an_unmarked_test_has_all_of_them_patched():
     assert httpx.HTTPTransport.handle_request is not REAL_SYNC
 
 
-def test_every_live_runner_carries_the_real_network_marker():
-    """The nine opt-in runners that call a model API or public pages. `-m real_network` selects what
-    pytest itself sees on each item, skipped ones included."""
+def test_every_live_runner_carries_the_real_network_marker(request):
+    """The nine opt-in runners that call a model API or public pages are marked by path in conftest,
+    and that list is exactly this one: no runner missing, no other file in it, none renamed away.
+    `-m real_network` then selects what pytest itself sees on each item, skipped ones included."""
+    conftest = next(plugin for plugin in request.config.pluginmanager.get_plugins()
+                    if str(getattr(plugin, "__file__", "")).endswith("tests/conftest.py"))
+    assert sorted(conftest._REAL_NETWORK_RUNNERS) == sorted(LIVE_RUNNERS)
+    assert len(set(conftest._REAL_NETWORK_RUNNERS)) == len(conftest._REAL_NETWORK_RUNNERS)
+    for relative in LIVE_RUNNERS:
+        assert (REPO / relative).is_file(), relative
     env = {key: value for key, value in os.environ.items() if not key.startswith(("ARSLAN_", "PYTEST_"))}
     env.update(ARSLAN_SECRET_KEY="ci-secret", ARSLAN_SECRET_KEY_FILE="")
     proc = subprocess.run(

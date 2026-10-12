@@ -3,11 +3,8 @@ import os
 import pytest
 from evals.companion import stable_four_retest as four
 
-pytestmark = [
-    pytest.mark.real_network,
-    pytest.mark.skipif(os.environ.get("ARSLAN_STABLE_FOUR") != four.OPT_IN,
-                       reason="independent 22/$3 grant required"),
-]
+pytestmark = pytest.mark.skipif(os.environ.get("ARSLAN_STABLE_FOUR") != four.OPT_IN,
+                               reason="independent 22/$3 grant required")
 
 
 async def test_document(execution_db, monkeypatch, tmp_path):

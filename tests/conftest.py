@@ -11,6 +11,7 @@ import os
 os.environ["ARSLAN_SECRET_KEY_FILE"] = ""
 
 import shutil
+from pathlib import Path
 
 import pytest
 
@@ -170,7 +171,8 @@ def _no_real_network_off_loopback(request):
     Every refusal is recorded (fixture `network_refusals`), and a test that provoked one it did not
     expect fails at teardown: code that swallows the refusal, as `github_eval.fetch_file` did, is a
     silent leak. A test that refuses on purpose carries `network_refusals_expected`; an opt-in
-    live runner carries `real_network`, which lifts all of this and nothing else.
+    live runner is marked `real_network` (by path, in `pytest_collection_modifyitems` below),
+    which lifts all of this and nothing else.
 
     NOT covered: UDP `sendto`, `gethostbyname`, and a raw loopback socket to a port that is not the
     test's (the system proxy's, for one). A net under the fakes, not a sandbox.
@@ -294,3 +296,33 @@ def _no_real_network_off_loopback(request):
 def network_refusals(_no_real_network_off_loopback):
     """What the network guard refused during this test, in order (always empty under `real_network`)."""
     return _no_real_network_off_loopback
+
+
+#: The opt-in live runners: each calls a model API or public pages once its own environment opt-in
+#: is set, and skips itself otherwise. They are marked `real_network` HERE, by path, and not in the
+#: files: they are historical acceptance evidence, several of them frozen by digest (the
+#: `freeze_contract` list in evals/companion/stable_retest.py, stable-0140-acceptance.json), and an
+#: edit to one would muddle the audit trail. `real_network` lifts the network guard
+#: (`_no_real_network_off_loopback`) and nothing else. tests/test_network_guard.py holds this list
+#: to the nine runners it names, and checks with `-m real_network` that pytest sees the marker.
+_REAL_NETWORK_RUNNERS = (
+    "tests/server/test_escalation_eval.py",
+    "tests/server/test_stable_document_live.py",
+    "tests/server/test_stable_memory_live.py",
+    "tests/server/test_stable_research_live.py",
+    "tests/server/test_stable_four_live.py",
+    "tests/server/test_stable_release_live.py",
+    "tests/server/test_stable_retest_live.py",
+    "tests/server/test_stable_two_live.py",
+    "tests/server/test_stage2_live.py",
+)
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_collection_modifyitems(items):
+    """Mark the live runners `real_network`. First, so the marker is there before `-m` selects."""
+    root = Path(__file__).resolve().parents[1]
+    runners = {(root / relative).resolve() for relative in _REAL_NETWORK_RUNNERS}
+    for item in items:
+        if item.path.resolve() in runners:
+            item.add_marker(pytest.mark.real_network)

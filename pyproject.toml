@@ -212,7 +212,7 @@ markers = [
     "macos: only meaningful on macOS (native frameworks — Vision, seatbelt). Arslan ships a macOS dmg, so these are the tests closest to what users run, and CI has never executed one.",
     "linux_only: only meaningful off macOS (asserts the fail-closed path a macOS host does not take).",
     "one_arslan: tests of the product default (0.1.44) with the legacy expert path switched off.",
-    "real_network: an opt-in live runner that really calls a model API or public pages (ARSLAN_STABLE_*, ARSLAN_STAGE2_LIVE, ARSLAN_LIVE_LLM); lifts the network guard in tests/conftest.py (names, sockets, httpx transports, the proxy environment) and nothing else. Each runner also skips itself unless its own environment opt-in is set.",
+    "real_network: an opt-in live runner that really calls a model API or public pages (ARSLAN_STABLE_*, ARSLAN_STAGE2_LIVE, ARSLAN_LIVE_LLM); lifts the network guard in tests/conftest.py (names, sockets, httpx transports, the proxy environment) and nothing else. Applied BY PATH in that file (_REAL_NETWORK_RUNNERS), because the runners are frozen evidence and are not edited. Each runner also skips itself unless its own environment opt-in is set.",
     "network_refusals_expected: the test provokes the network guard on purpose (tests/test_network_guard.py). Without it a refusal the test did not expect fails the test at teardown.",
 ]
 

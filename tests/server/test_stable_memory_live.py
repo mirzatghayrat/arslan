@@ -20,12 +20,9 @@ from server.services.memory_activation import activate_sync
 from server.services.memory_migration import migrate_legacy_sync
 from server.services.memory_repository import repository
 
-pytestmark = [
-    pytest.mark.real_network,
-    pytest.mark.skipif(
-        os.environ.get("ARSLAN_STABLE_LIVE") != "authorized-36-requests-usd5",
-        reason="independent stable paid-call grant requires explicit opt-in"),
-]
+pytestmark = pytest.mark.skipif(
+    os.environ.get("ARSLAN_STABLE_LIVE") != "authorized-36-requests-usd5",
+    reason="independent stable paid-call grant requires explicit opt-in")
 
 
 @pytest.mark.parametrize("case_id", CASES)

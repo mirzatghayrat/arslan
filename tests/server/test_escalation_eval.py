@@ -9,12 +9,9 @@ import os
 
 import pytest
 
-pytestmark = [
-    pytest.mark.real_network,
-    pytest.mark.skipif(
-        os.environ.get("ARSLAN_LIVE_LLM") != "1", reason="live-LLM eval; set ARSLAN_LIVE_LLM=1 to run"
-    ),
-]
+pytestmark = pytest.mark.skipif(
+    os.environ.get("ARSLAN_LIVE_LLM") != "1", reason="live-LLM eval; set ARSLAN_LIVE_LLM=1 to run"
+)
 
 from server.orchestrator.escalation import classify  # noqa: E402
 
