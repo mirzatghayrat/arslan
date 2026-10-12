@@ -320,13 +320,22 @@ class MCPSessionManager:
                 ClientSession(read, write, message_handler=self._handler(sid)))
             await client.initialize()
             return client, stack
-        except BaseException:
+        except BaseException as exc:
             # Keep the real cause. Closing a half-open stdio/http stack raises its own
             # ExceptionGroup(BrokenResourceError); if it escaped, it would replace the
             # TimeoutError / McpError being handled (measured 2026-10-12, mcp 1.28.1).
+            # One exception: the http transport sends each request from a child task of its
+            # task group, so a refused connection, an HTTP 401/405/500 or the silent provider's
+            # NeedsInteractiveAuth fails THAT task, and anyio cancels this one (awaiting
+            # initialize) — a CancelledError nobody asked for (cancelling() is 0 again once the
+            # group's scope has closed). Then the group the close raises IS the cause.
             try:
                 await stack.aclose()
-            except Exception:  # noqa: BLE001 — cleanup noise, never the cause
+            except Exception as cleanup:  # noqa: BLE001 — cleanup noise, never the cause
+                task = asyncio.current_task()
+                if (isinstance(exc, asyncio.CancelledError) and task is not None
+                        and not task.cancelling()):
+                    raise cleanup from None
                 logger.debug("MCP open cleanup failed for %s", sid, exc_info=True)
             raise
 

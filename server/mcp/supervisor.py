@@ -60,6 +60,7 @@ RUNTIME_FETCH_S = 600.0
 LIVE_LOG_CAP_BYTES = 1024 * 1024
 LAST_ERROR_CAP = 2000
 OK_WRITE_EVERY_S = 60.0
+STARTING_STALE_S = 60.0          # a `starting` row that no plan owns for this long is restarted
 
 LEGACY_STATUS = {"ready": "connected", "starting": "connecting", "failed": "error",
                  "parked": "error", "needs_auth": "error"}
@@ -79,6 +80,7 @@ SAFE_REASON_PREFIXES = (
     "this program did not answer as an MCP server", "the server exited during start",
     "speaks an MCP version", "the server refused to start (MCP error ",
     "could not reach the MCP URL", "the server keeps dropping its connection",
+    "the MCP URL answered HTTP ", "the connection ended the start without a reason",
 )
 
 
@@ -174,6 +176,12 @@ def classify(exc: BaseException, *, server: dict, non_json: int, budget_s: float
         code = status.response.status_code if status is not None else 404
         return "parked", (f"the URL did not answer as an MCP endpoint (HTTP {code}) — check the "
                           "path, often /mcp")
+    # 3b any other HTTP answer: a server error retries like an unreachable URL; the rest name it
+    if http and status is not None:
+        code = status.response.status_code
+        if code >= 500:
+            return "failed", f"could not reach the MCP URL — it answered HTTP {code}, a server error"
+        return "failed", f"the MCP URL answered HTTP {code}"
     # 4 timeouts: tools/list first (ListTimeout is a TimeoutError), then the start budget
     if find(mcp_session.ListTimeout) is not None or mcp_code(httpx.codes.REQUEST_TIMEOUT):
         return "failed", f"did not answer tools/list within {mcp_session.LIST_TIMEOUT_S:g} s"
@@ -196,8 +204,13 @@ def classify(exc: BaseException, *, server: dict, non_json: int, budget_s: float
     # 8 an http transport error
     if http and find(httpx.TransportError) is not None:
         return "failed", "could not reach the MCP URL — check the address and the network"
-    # 9 anything else: today's classified text, never empty
-    return "failed", discovery._describe_failure(exc, has_headers=bool(server.get("env")))
+    # 9 a cancel nobody asked for (the transport ended the start and nothing above says why)
+    if isinstance(exc, asyncio.CancelledError):
+        return "failed", "the connection ended the start without a reason"
+    # 10 anything else: today's classified text of the first real exception (never a task
+    #    group's own "unhandled errors in a TaskGroup"), never empty
+    leaf = next((e for e in chain if not isinstance(e, BaseExceptionGroup)), exc)
+    return "failed", discovery._describe_failure(leaf, has_headers=bool(server.get("env")))
 
 
 def budget_for(row, tool_count: int, *, fetched: bool = False) -> float:
@@ -277,6 +290,8 @@ class Supervisor:
         self._bg.clear()
         self._inflight.clear()
         self._attempt_fut.clear()
+        self._relisting.clear()       # a re-list cancelled before its first step never ran its finally
+        self._relist_wanted.clear()
         self._loop_task = None
         self._sem = None
 
@@ -334,14 +349,22 @@ class Supervisor:
             if await db.get(MCPServer, server_id) is None:
                 raise ValueError(f"mcp server {server_id} not found")
         waitable = self._attempt_fut.get(server_id) or self._new_plan(server_id, "restart")
-        try:
-            return await asyncio.shield(waitable)
-        except asyncio.CancelledError:
-            current = asyncio.current_task()
-            if current is not None and current.cancelling():
-                raise
-            return StartResult("failed", last_error="the start was cancelled (the server was "
-                               "switched off, removed or restarted)")
+        for _ in range(3):
+            try:
+                return await asyncio.shield(waitable)
+            except asyncio.CancelledError:
+                current = asyncio.current_task()
+                if current is not None and current.cancelling():
+                    raise                         # the caller's own cancel (wait_for, shutdown)
+                # The attempt was replaced by a fresh one (a drop, new folders): answer with the
+                # replacement's result. Switch-off, delete and give-up take the plan out of
+                # _inflight first, so they find nothing to follow and say "cancelled".
+                follow = self._attempt_fut.get(server_id) or self._inflight.get(server_id)
+                if follow is None or follow is waitable or follow.done():
+                    break
+                waitable = follow
+        return StartResult("failed", last_error="the start was cancelled (the server was "
+                           "switched off, removed or restarted)")
 
     async def forget(self, server_id: int) -> None:
         """A deleted server: cancel its plan, drop late writes, close and forget its session."""
@@ -355,7 +378,8 @@ class Supervisor:
 
     async def set_enabled(self, server_id: int, on: bool) -> None:
         """The user's switch. Off: cancel the plan, stop the process, state `off`. On: `starting`
-        and a start, unless it is already running or starting."""
+        and a start, unless it is already running or starting. The caller commits `host_allowed`
+        first: a background plan reads the row to respect the switch."""
         if on:
             task = self._inflight.get(server_id)
             if mcp_session.manager.cached(server_id) is not None or (task is not None and not task.done()):
@@ -415,6 +439,10 @@ class Supervisor:
     def _plan_done(self, server_id: int, task: asyncio.Task) -> None:
         if self._inflight.get(server_id) is task:
             del self._inflight[server_id]
+            if task.cancelled() and self.running:
+                # every deliberate cancel (a new plan, switch-off, delete, give-up, stop) takes
+                # the plan out of _inflight first: this one ended without anybody asking
+                logger.warning("mcp %s: start plan ended cancelled; nobody asked for it", server_id)
         if not task.cancelled() and task.exception() is not None:
             logger.warning("mcp %s: start plan crashed", server_id, exc_info=task.exception())
 
@@ -476,10 +504,14 @@ class Supervisor:
                 budget = budget_for(row, tool_count, fetched=True)
             tools = await discovery.connect_and_discover(sid, start_budget_s=budget)
         except discovery.ServerGone:
+            await mcp_session.manager.drop(sid)          # never a live process for a vanished row
             return StartResult("off", last_error="removed")
         except mcp_session.NotStarted:
             return StartResult("starting")      # overtaken, not failed: `_settle` writes nothing
-        except Exception as exc:  # noqa: BLE001 — classified below; the cause is kept
+        except (Exception, asyncio.CancelledError) as exc:  # noqa: BLE001 — classified below
+            current = asyncio.current_task()
+            if isinstance(exc, asyncio.CancelledError) and (current is None or current.cancelling()):
+                raise       # a real cancel (switch-off, delete, a new plan, shutdown): not a cause
             state, line = classify(exc, server=server, budget_s=budget,
                                    non_json=mcp_session.manager.non_json_lines(sid))
             command = str(server.get("command") or "")
@@ -610,9 +642,9 @@ class Supervisor:
         self.schedule(server_id, fresh=True)
 
     async def _give_up(self, server_id: int) -> None:
-        await self._cancel_plan(server_id)
+        gen = self._bump(server_id)      # first, like forget/set_enabled(off): a re-list the drop
+        await self._cancel_plan(server_id)   # below wakes sees a deliberate drop (review M-5)
         await mcp_session.manager.drop(server_id)
-        gen = self._bump(server_id)
         self._reconnects.pop(server_id, None)
         async with db_session.AsyncSessionLocal() as db:
             row = await db.get(MCPServer, server_id)
@@ -638,21 +670,26 @@ class Supervisor:
         self._spawn_bg(self._relist(server_id))
 
     async def _relist(self, server_id: int) -> None:
+        gen = None
         try:
             await asyncio.sleep(RELIST_DEBOUNCE_S)
             if server_id in self._attempt_fut:
                 self._relist_wanted.add(server_id)
                 return
+            gen = self._gen.get(server_id, 0)
             await discovery.relist(server_id)
         except Exception as exc:  # noqa: BLE001
             logger.warning("mcp %s: re-list after tools/list_changed failed: %s", server_id, exc)
             # A failed page (CONNECTION_CLOSED, ListTimeout, ...) has already dropped the session
             # it ran on, and list_tools never calls on_dropped: this caller saw the drop, so it
             # restarts the server (carry 2c; counted only for a real drop, ruling 11). Not when
-            # the session is still there (a database error), and not while a start runs: that
-            # start dropped the session itself (which ended this re-list) and is the fresh one.
+            # the session is still there (a database error); not while a start runs (that start
+            # dropped the session itself, which ended this re-list, and is the fresh one); and
+            # not when the generation moved (forget, switch-off, give-up or a new plan dropped
+            # it on purpose: a deliberate drop is not the server dying).
             if (mcp_session.manager.cached(server_id) is None
-                    and server_id not in self._attempt_fut):
+                    and server_id not in self._attempt_fut
+                    and self._gen.get(server_id, 0) == gen):
                 self._on_dropped(server_id, exc)
         finally:
             self._relisting.discard(server_id)
@@ -674,10 +711,22 @@ class Supervisor:
                 MCPServer.state.in_(("failed", "parked", "needs_auth")),
                 MCPServer.next_retry_at.is_not(None),
                 MCPServer.next_retry_at <= now))).all()
+            # A `starting` row whose plan is gone (a plan that crashed in its own writes, a boot
+            # that failed before start_all, an overtaken open nobody restarted) would wait for the
+            # next launch. Switched-off rows too: `refresh` respects the switch and ends them `off`.
+            stale = (await db.execute(select(MCPServer.id).where(
+                MCPServer.state == "starting",
+                MCPServer.state_at <= now - timedelta(seconds=STARTING_STALE_S)))).scalars().all()
         for sid, state in due:
             task = self._inflight.get(sid)
             if task is None or task.done():
                 self._new_plan(sid, "retry" if state == "failed" else "probe")
+        for sid in stale:
+            task = self._inflight.get(sid)
+            if task is None or task.done():
+                logger.warning("mcp %s: starting with no plan for %g s; restarting it", sid,
+                               STARTING_STALE_S)
+                self._new_plan(sid, "refresh")
         mono = time.monotonic()
         for sid, since in list(self._ready_since.items()):
             if mono - since >= RECONNECT_RESET_S:

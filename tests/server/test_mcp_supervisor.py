@@ -1,6 +1,7 @@
 """The MCP supervisor (0.1.61 §B1), with `session.manager.list_tools` faked."""
 import asyncio
 import json
+import logging
 import os
 import time
 from datetime import timedelta
@@ -655,7 +656,7 @@ async def test_a_relist_cut_short_by_a_starts_own_drop_never_restarts_that_start
     sup.start(run_loops=False)
     sup._on_tools_changed(1)
     await asyncio.wait_for(listing.wait(), 2)
-    result = await sup.restart(1)               # Reconnect while the re-list is pending
+    result = await asyncio.wait_for(sup.restart(1), 5)    # Reconnect while the re-list is pending
     assert result.state == "ready" and opens == [1]
     assert sup._reconnects.get(1, 0) == 0 and (await _row(sup.maker, 1)).state == "ready"
 
@@ -731,3 +732,588 @@ async def test_a_background_connect_that_wants_a_browser_raises_needs_interactiv
         await provider.context.redirect_handler("https://mcp.example.test/authorize")
     with pytest.raises(NeedsInteractiveAuth, match="no interactive callback available"):
         await provider.context.callback_handler()
+
+
+# ── Review round 1 (task-5-review.md): C-1, I-1, I-2, concern 4, and the I-3 gaps ─────────────
+
+class _Hung:
+    """A live session whose tools/list never answers (until its session is dropped)."""
+
+    def __init__(self):
+        self.listing = asyncio.Event()
+
+    async def list_tools(self, params=None):
+        self.listing.set()
+        await asyncio.sleep(3600)
+
+
+class _Clock:
+    """time.monotonic for the supervisor module only (the event loop keeps the real clock)."""
+
+    def __init__(self, now):
+        self.now = now
+
+    def monotonic(self):
+        return self.now
+
+
+def _fixed_utc(monkeypatch):
+    now = sm._utcnow()
+    monkeypatch.setattr(sm, "_utcnow", lambda: now)
+    return now
+
+
+async def _settled(sup):
+    """Wait for every plan and background task the supervisor has in flight."""
+    for _ in range(50):
+        pending = [t for t in (*sup._inflight.values(), *sup._bg) if not t.done()]
+        if not pending:
+            return
+        await asyncio.gather(*pending, return_exceptions=True)
+    raise AssertionError("the supervisor never settled")
+
+
+async def _until(predicate, *, tries=200):
+    for _ in range(tries):
+        if predicate():
+            return
+        await asyncio.sleep(0.01)
+    raise AssertionError("condition never met")
+
+
+def _opener(monkeypatch, opens):
+    async def open_(server):
+        opens.append(server["id"])
+        return _Live(), _stack()
+    monkeypatch.setattr(session.manager, "_open_session", open_)
+
+
+_CLOSED = McpError(types.ErrorData(code=types.CONNECTION_CLOSED, message="Connection closed"))
+
+
+# C-1 (the http transport cases themselves are in test_mcp_supervisor_http.py)
+
+async def test_a_cancel_nobody_asked_for_ends_the_start_failed_not_stranded(sup, monkeypatch):
+    """A CancelledError reaching the attempt while nobody cancelled the plan (the transport ended
+    the start) is a failure with a next try — never a plan that ends silently in `starting`."""
+    await _seed(sup.maker, 1)
+
+    async def stray(server):
+        raise asyncio.CancelledError("Cancelled via cancel scope 1 by <Task>")
+    _fake_list(monkeypatch, stray)
+    sup.start(run_loops=False)
+    result = await asyncio.wait_for(sup.restart(1), 5)
+    row = await _row(sup.maker, 1)
+    assert result.state == row.state == "failed" and row.next_retry_at is not None
+    assert row.last_error == "the connection ended the start without a reason"
+
+
+def test_classify_names_http_answers_and_never_stores_a_task_groups_own_words():
+    req = httpx.Request("POST", "https://h/mcp")
+    http = _server(transport="http", url="https://h/mcp", command="")
+
+    def status(code):
+        return ExceptionGroup("tg", [httpx.HTTPStatusError(
+            str(code), request=req, response=httpx.Response(code, request=req))])
+    cases = [
+        (asyncio.CancelledError("Cancelled via cancel scope 1"), http,
+         "failed", "the connection ended the start without a reason"),
+        (status(502), http, "failed", "could not reach the MCP URL — it answered HTTP 502, a server error"),
+        (status(429), http, "failed", "the MCP URL answered HTTP 429"),
+        (ExceptionGroup("tg", [RuntimeError("boom")]), _server(), "failed", "boom"),
+    ]
+    for exc, server, state, line in cases:
+        assert sm.classify(exc, server=server, non_json=0, budget_s=120) == (state, line)
+    for line in ("the connection ended the start without a reason", "the MCP URL answered HTTP 429",
+                 "could not reach the MCP URL — it answered HTTP 502, a server error"):
+        assert sm.safe_reason(line) == line              # Arslan's own words reach the prompt
+
+
+async def test_a_plan_cancelled_with_nobody_asking_is_logged_and_a_deliberate_one_is_not(
+        sup, monkeypatch, caplog):
+    await _seed(sup.maker, 1)
+    gate = asyncio.Event()
+
+    async def gated(server):
+        await gate.wait()
+        return _listing("a")
+    calls = _fake_list(monkeypatch, gated)
+    sup.start(run_loops=False)
+    caplog.set_level(logging.WARNING, logger="server.mcp.supervisor")
+    sup.schedule(1)
+    await _until(lambda: calls)
+    sup._inflight[1].cancel()                          # nobody asked: not one of the verbs
+    await _settled(sup)
+    assert "nobody asked for it" in caplog.text
+    caplog.clear()
+    sup.schedule(1)
+    await _until(lambda: len(calls) == 2)
+    await sup.set_enabled(1, False)                    # deliberate: switch-off
+    sup.schedule(1)
+    await _until(lambda: len(calls) == 3)
+    await sup.stop()                                   # deliberate: shutdown
+    assert "nobody asked for it" not in caplog.text
+
+
+# I-1: a deliberate drop is not a server death
+
+async def test_deleting_a_server_during_a_pending_relist_starts_nothing(sup, monkeypatch):
+    """forget (Task 6's delete: forget, then the row goes) wakes the pending re-list with
+    CONNECTION_CLOSED: no reconnect counted, no start, no process for the server being deleted."""
+    await _seed(sup.maker, 1, state="ready")
+    monkeypatch.setattr(sm, "RELIST_DEBOUNCE_S", 0.0)
+    hung, opens = _Hung(), []
+    session.manager._sessions[1] = (hung, _stack())
+    _opener(monkeypatch, opens)
+    sup.start(run_loops=False)
+    sup._on_tools_changed(1)
+    await asyncio.wait_for(hung.listing.wait(), 2)
+    await sup.forget(1)
+    async with sup.maker() as db:
+        await db.delete(await db.get(MCPServer, 1))
+        await db.commit()
+    await _settled(sup)
+    assert opens == [] and 1 not in sup._inflight and session.manager.cached(1) is None
+    assert sup._reconnects.get(1, 0) == 0
+
+
+@pytest.mark.parametrize("host_allowed_first", [True, False], ids=["host_allowed-first", "switch-first"])
+async def test_switching_off_during_a_pending_relist_ends_off(sup, monkeypatch, host_allowed_first):
+    """set_enabled(off) drops the session the re-list waits on: the server ends `off` with nothing
+    counted and nothing started — whether or not host_allowed was committed first."""
+    await _seed(sup.maker, 1, state="ready")
+    monkeypatch.setattr(sm, "RELIST_DEBOUNCE_S", 0.0)
+    hung, opens = _Hung(), []
+    session.manager._sessions[1] = (hung, _stack())
+    _opener(monkeypatch, opens)
+    sup.start(run_loops=False)
+    sup._on_tools_changed(1)
+    await asyncio.wait_for(hung.listing.wait(), 2)
+    if host_allowed_first:
+        async with sup.maker() as db:
+            (await db.get(MCPServer, 1)).host_allowed = False
+            await db.commit()
+    await sup.set_enabled(1, False)
+    await _settled(sup)
+    row = await _row(sup.maker, 1)
+    assert (row.state, opens, sup._reconnects.get(1, 0)) == ("off", [], 0)
+    assert session.manager.cached(1) is None and 1 not in sup._inflight
+
+
+async def test_a_start_whose_row_vanished_leaves_no_session(sup, monkeypatch):
+    """A Connect racing a delete: the row goes while the start lists. The attempt ends `off` and
+    closes what it opened — never a live process for a vanished row (or for the next server
+    that reuses its id)."""
+    await _seed(sup.maker, 1)
+    closed = []
+
+    async def close():
+        closed.append(1)
+
+    class _Vanishing:
+        async def list_tools(self, params=None):
+            async with sup.maker() as db:
+                await db.delete(await db.get(MCPServer, 1))
+                await db.commit()
+            return _listing("a")
+
+    async def open_(server):
+        return _Vanishing(), SimpleNamespace(aclose=close)
+    monkeypatch.setattr(session.manager, "_open_session", open_)
+    result = await asyncio.wait_for(sup.restart(1), 5)
+    assert result.state == "off" and session.manager.cached(1) is None and closed == [1]
+
+
+async def test_giving_up_during_a_pending_relist_starts_nothing(sup, monkeypatch):
+    """_give_up moves the generation before it drops (review M-5), so the re-list its drop wakes
+    sees a deliberate drop: no fresh start behind the fallback's back."""
+    await _seed(sup.maker, 1, state="ready")
+    monkeypatch.setattr(sm, "RELIST_DEBOUNCE_S", 0.0)
+    hung, opens = _Hung(), []
+
+    async def slow_close():
+        await asyncio.sleep(0.01)                     # a real close yields (it ends a process)
+    session.manager._sessions[1] = (hung, SimpleNamespace(aclose=slow_close))
+    _opener(monkeypatch, opens)
+    sup.start(run_loops=False)
+    sup._on_tools_changed(1)
+    await asyncio.wait_for(hung.listing.wait(), 2)
+    await sup._give_up(1)
+    await _settled(sup)
+    row = await _row(sup.maker, 1)
+    assert row.state == "failed" and row.last_error.startswith("the server keeps dropping")
+    assert opens == [] and 1 not in sup._inflight and session.manager.cached(1) is None
+
+
+async def test_a_relist_cut_short_by_a_first_start_retry_is_not_a_death(sup, monkeypatch):
+    """A first start whose attempt failed after it opened (its tool write) keeps that session while
+    it waits for its next attempt; a re-list on it is ended by that attempt's own drop. The attempt
+    IS the fresh start: nothing is counted and nothing replaces it. Its plan has not moved the
+    generation, so only the _attempt_fut guard sees this."""
+    await _seed(sup.maker, 1)
+    monkeypatch.setattr(sm, "FIRST_START_GAPS_S", (0.3, 0.3, 0.3))
+    monkeypatch.setattr(sm, "RELIST_DEBOUNCE_S", 0.0)
+    relisting, opens = asyncio.Event(), []
+
+    class _Session:
+        def __init__(self):
+            self.lists = 0
+
+        async def list_tools(self, params=None):
+            self.lists += 1
+            if len(opens) == 1 and self.lists == 2:          # the re-list on the first session
+                relisting.set()
+                await asyncio.sleep(3600)
+            return _listing("a")
+
+    async def open_(server):
+        opens.append(server["id"])
+        return _Session(), _stack()
+    monkeypatch.setattr(session.manager, "_open_session", open_)
+    real_write, failures = discovery._write, ["database is locked"]
+
+    async def flaky_write(*args, **kwargs):
+        if failures:
+            raise RuntimeError(failures.pop())
+        return await real_write(*args, **kwargs)
+    monkeypatch.setattr(discovery, "_write", flaky_write)
+    sup.start(run_loops=False)
+    sup.schedule(1)
+    await _until(lambda: opens and not failures and 1 not in sup._attempt_fut)  # waits for attempt 2
+    assert session.manager.cached(1) is not None
+    sup._on_tools_changed(1)
+    await asyncio.wait_for(relisting.wait(), 2)
+    await _settled(sup)
+    row = await _row(sup.maker, 1)
+    assert (row.state, opens, sup._reconnects.get(1, 0)) == ("ready", [1, 1], 0)
+
+# I-2: the tick restarts a `starting` row that no plan owns (ruling: STARTING_STALE_S = 60 s)
+
+async def test_the_tick_restarts_a_starting_row_that_no_plan_owns(sup, monkeypatch):
+    now = sm._utcnow()
+    old, recent = now - timedelta(seconds=sm.STARTING_STALE_S + 1), now - timedelta(seconds=5)
+    for sid, allowed in ((1, True), (2, True), (3, True), (4, False)):
+        await _seed(sup.maker, sid, host_allowed=allowed)              # all `starting`
+    async with sup.maker() as db:
+        for sid, at in ((1, old), (2, recent), (3, old), (4, old)):
+            (await db.get(MCPServer, sid)).state_at = at
+        await db.commit()
+    sup._inflight[3] = asyncio.create_task(asyncio.sleep(3600))      # a plan still running
+    plans = []
+    monkeypatch.setattr(sup, "_new_plan", lambda sid, plan: plans.append((sid, plan)))
+    await sup._tick()
+    assert sorted(plans) == [(1, "refresh"), (4, "refresh")]
+
+
+async def test_a_plan_that_crashed_in_its_own_write_is_rescued_by_the_tick(sup, monkeypatch):
+    """A plan whose `ready` write raised (a locked database) leaves the row `starting` with no
+    plan; the tick restarts it → `ready`. A switched-off row stuck `starting` ends `off` without
+    a start."""
+    await _seed(sup.maker, 1)
+    await _seed(sup.maker, 2, host_allowed=False)
+    calls = _fake_list(monkeypatch, _ok)
+    real_set, failures = sup._set, ["database is locked"]
+
+    async def flaky_set(sid, gen, state, **kw):
+        if state == "ready" and failures:
+            raise RuntimeError(failures.pop())
+        return await real_set(sid, gen, state, **kw)
+    monkeypatch.setattr(sup, "_set", flaky_set)
+    sup.start(run_loops=False)
+    sup.schedule(1)
+    await _settled(sup)
+    assert (await _row(sup.maker, 1)).state == "starting" and 1 not in sup._inflight   # stranded
+    async with sup.maker() as db:
+        for sid in (1, 2):
+            (await db.get(MCPServer, sid)).state_at = (
+                sm._utcnow() - timedelta(seconds=sm.STARTING_STALE_S + 1))
+        await db.commit()
+    await sup._tick()
+    await _settled(sup)
+    one, two = await _row(sup.maker, 1), await _row(sup.maker, 2)
+    assert (one.state, two.state, calls) == ("ready", "off", [1, 1])
+
+
+# Concern 4 / review M-1: a Reconnect follows the attempt that replaced its own
+
+async def test_a_reconnect_whose_attempt_is_replaced_answers_with_the_replacement(sup, monkeypatch):
+    await _seed(sup.maker, 1)
+    gate, calls = asyncio.Event(), []
+
+    async def gated(server):
+        calls.append(server["id"])
+        if len(calls) == 1:
+            await gate.wait()
+        return _listing("a")
+    monkeypatch.setattr(session.manager, "list_tools", lambda server, cursor=None: gated(server))
+    sup.start(run_loops=False)
+    click = asyncio.create_task(sup.restart(1))
+    await _until(lambda: calls)
+    sup.schedule(1, fresh=True)                       # e.g. new folder grants mid-start
+    result = await asyncio.wait_for(click, 5)
+    assert result.state == "ready" and calls == [1, 1]
+
+
+async def test_a_reconnect_cancelled_by_a_switch_off_says_cancelled(sup, monkeypatch):
+    await _seed(sup.maker, 1)
+    gate = asyncio.Event()
+
+    async def gated(server):
+        await gate.wait()
+        return _listing("a")
+    calls = _fake_list(monkeypatch, gated)
+    sup.start(run_loops=False)
+    click = asyncio.create_task(sup.restart(1))
+    await _until(lambda: calls)
+    try:
+        await asyncio.wait_for(sup.set_enabled(1, False), 5)   # a real cancel ends the start at once
+    finally:
+        gate.set()                                  # never leave a start waiting on the gate
+    result = await asyncio.wait_for(click, 5)
+    assert result.state == "failed" and result.last_error.startswith("the start was cancelled")
+    assert (await _row(sup.maker, 1)).state == "off" and calls == [1]
+
+
+# I-3: the Global-Constraint numbers and contracts the review found unpinned (R1–R25)
+
+async def test_failed_backs_off_30_s_doubling_to_600_s(sup, monkeypatch):            # R1
+    await _seed(sup.maker, 1)
+    now = _fixed_utc(monkeypatch)
+    gen = sup._bump(1)
+    seen = []
+    for _ in range(7):
+        seen.append((await sup._set(1, gen, "failed", error="x") - now).total_seconds())
+    assert seen == [30, 60, 120, 240, 480, 600, 600]
+
+
+async def test_a_first_start_makes_four_attempts_and_a_reconnect_one(sup, monkeypatch):  # R2, R3
+    """Ruling 9: `first` is an attempt and 3 more; every other plan is one attempt; fail_count
+    counts plans, not attempts."""
+    await _seed(sup.maker, 1)
+
+    async def fails(server):
+        raise RuntimeError("boom")
+    calls = _fake_list(monkeypatch, fails)
+    sup.start(run_loops=False)
+    sup.schedule(1)
+    await _settled(sup)
+    row = await _row(sup.maker, 1)
+    assert (len(calls), row.state, row.fail_count) == (4, "failed", 1)
+    assert (await sup.restart(1)).state == "failed"
+    assert (len(calls), (await _row(sup.maker, 1)).fail_count) == (5, 2)
+
+
+async def test_five_reconnects_then_the_backoff_and_the_count_starts_over(sup, monkeypatch):  # R4, R5
+    await _seed(sup.maker, 1, state="ready")
+    _fake_list(monkeypatch, _ok)
+    sup.start(run_loops=False)
+    for _ in range(sm.MAX_RECONNECTS):
+        sup._on_dropped(1, _CLOSED)
+        await _settled(sup)
+    assert (await _row(sup.maker, 1)).state == "ready" and sup._reconnects[1] == sm.MAX_RECONNECTS
+    sup._on_dropped(1, _CLOSED)                                  # the sixth
+    await _settled(sup)
+    row = await _row(sup.maker, 1)
+    assert row.state == "failed" and row.last_error.startswith("the server keeps dropping")
+    assert 1 not in sup._reconnects and 1 not in sup._inflight
+
+
+async def test_the_reconnect_count_starts_over_only_after_600_s_ready(sup, monkeypatch):  # R6
+    clock = _Clock(5000.0)
+    monkeypatch.setattr(sm, "time", clock)
+    sup._ready_since[1], sup._reconnects[1] = 5000.0, 3
+    clock.now = 5000.0 + sm.RECONNECT_RESET_S - 1
+    await sup._tick()
+    assert sup._reconnects[1] == 3
+    clock.now = 5000.0 + sm.RECONNECT_RESET_S
+    await sup._tick()
+    assert 1 not in sup._reconnects
+
+
+async def test_last_error_is_cut_at_2000_characters_after_masking(sup, monkeypatch):  # R7
+    secret = "-".join(["s3cr3t", "value", "123"])       # built at runtime (no literal for scanners)
+    await _seed(sup.maker, 1, env={"TOKEN": secret})
+
+    async def noisy(server):
+        (session.server_dir(1) / "stderr.log").write_text(
+            f"\n{session.START_MARK}x ---\n" + "x" * 1990 + f" {secret} " + "y" * 5000 + "\n")
+        session.manager._log_marks[1] = time.monotonic()
+        raise RuntimeError("boom")
+    _fake_list(monkeypatch, noisy)
+    await sup.restart(1)
+    last_error = (await _row(sup.maker, 1)).last_error
+    assert len(last_error) == sm.LAST_ERROR_CAP and last_error.startswith("boom\n")
+    assert "s3cr" not in last_error            # the secret straddled the cut; the tail is masked first
+
+
+async def test_note_ok_writes_last_ok_at_once_a_minute_and_only_when_ready(sup, monkeypatch):  # R8, R9
+    long_ago = sm._utcnow() - timedelta(days=1)
+    await _seed(sup.maker, 1, state="ready", last_ok_at=long_ago)
+    await _seed(sup.maker, 2, state="failed", last_ok_at=long_ago)
+    clock = _Clock(100.0)
+    monkeypatch.setattr(sm, "time", clock)
+    sup.start(run_loops=False)
+
+    async def last_ok(sid):
+        await _settled(sup)
+        return (await _row(sup.maker, sid)).last_ok_at
+
+    async def reset():
+        async with sup.maker() as db:
+            (await db.get(MCPServer, 1)).last_ok_at = long_ago
+            await db.commit()
+    sup.note_ok(1)
+    assert await last_ok(1) > long_ago                       # a call refreshed it
+    await reset()
+    clock.now += sm.OK_WRITE_EVERY_S - 1
+    sup.note_ok(1)
+    assert await last_ok(1) == long_ago                      # within the minute: no write
+    clock.now += 1
+    sup.note_ok(1)
+    assert await last_ok(1) > long_ago                       # a minute on: written again
+    sup.note_ok(2)
+    assert await last_ok(2) == long_ago                      # not ready: untouched
+
+
+async def test_switching_on_a_server_that_runs_changes_nothing(sup, monkeypatch):  # R10
+    await _seed(sup.maker, 1, state="ready")
+    session.manager._sessions[1] = (_Live(), _stack())
+    calls = _fake_list(monkeypatch, _ok)
+    sup.start(run_loops=False)
+    await sup.set_enabled(1, True)
+    assert (await _row(sup.maker, 1)).state == "ready" and 1 not in sup._inflight and calls == []
+
+
+async def test_a_reconnect_whose_caller_is_cancelled_raises_and_the_start_still_finishes(
+        sup, monkeypatch):  # R11
+    """The install test bounds its start with wait_for: the caller's own cancel propagates, while
+    the start — shielded — still ends `ready`."""
+    await _seed(sup.maker, 1)
+    gate = asyncio.Event()
+
+    async def gated(server):
+        await gate.wait()
+        return _listing("a")
+    calls = _fake_list(monkeypatch, gated)
+    sup.start(run_loops=False)
+    click = asyncio.create_task(sup.restart(1))
+    await _until(lambda: calls)
+    plan = sup._inflight[1]
+    click.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(click, 1)
+    gate.set()
+    assert (await asyncio.wait_for(plan, 5)).state == "ready"
+    assert (await _row(sup.maker, 1)).state == "ready"
+
+
+async def test_a_reconnect_always_starts_a_fresh_process(sup, monkeypatch):  # R12
+    """§B1: RECONNECT is a fresh process — the cached session is closed and a new one opened."""
+    await _seed(sup.maker, 1, state="ready")
+    closed, opens = [], []
+
+    async def close():
+        closed.append("old")
+    session.manager._sessions[1] = (_Live(), SimpleNamespace(aclose=close))
+    _opener(monkeypatch, opens)
+    assert (await asyncio.wait_for(sup.restart(1), 5)).state == "ready"
+    assert closed == ["old"] and opens == [1]
+
+
+async def test_boot_leaves_a_switched_off_rows_legacy_status_alone(sup):  # R13
+    await _seed(sup.maker, 1, state="ready", host_allowed=False)       # status "registered"
+    await sup.reset_for_boot()
+    row = await _row(sup.maker, 1)
+    assert (row.state, row.status) == ("off", "registered")
+
+
+async def test_start_all_joins_a_start_already_running(sup, monkeypatch):  # R14
+    await _seed(sup.maker, 1)
+    gate = asyncio.Event()
+
+    async def gated(server):
+        await gate.wait()
+        return _listing("a")
+    calls = _fake_list(monkeypatch, gated)
+    sup.start(run_loops=False)
+    sup.schedule(1)
+    await _until(lambda: calls)
+    everything = asyncio.create_task(sup.start_all())
+    await asyncio.sleep(0.05)
+    gate.set()
+    await asyncio.wait_for(everything, 5)
+    assert calls == [1] and (await _row(sup.maker, 1)).state == "ready"
+
+
+async def test_stop_cancels_background_work(sup, monkeypatch):  # R15
+    monkeypatch.setattr(sm, "RELIST_DEBOUNCE_S", 3600.0)
+    sup.start(run_loops=False)
+    sup._on_tools_changed(1)                            # a re-list waiting out its debounce
+    (pending,) = sup._bg
+    await sup.stop()
+    assert pending.cancelled() and not sup._bg and not sup._relisting
+
+
+async def test_schedule_leaves_a_live_session_alone(sup, monkeypatch):  # R17
+    await _seed(sup.maker, 1, state="ready")
+    session.manager._sessions[1] = (_Live(), _stack())
+    calls = _fake_list(monkeypatch, _ok)
+    sup.start(run_loops=False)
+    sup.schedule(1)
+    assert 1 not in sup._inflight and calls == []
+
+
+def test_safe_reason_is_cut_at_120_characters():  # R19
+    line = "command `" + "x" * 300
+    assert sm.safe_reason(line) == line[:120]
+
+
+async def test_the_tick_leaves_a_due_server_with_a_plan_in_flight_alone(sup, monkeypatch):  # R23
+    await _seed(sup.maker, 1, state="failed")
+    async with sup.maker() as db:
+        (await db.get(MCPServer, 1)).next_retry_at = sm._utcnow() - timedelta(seconds=1)
+        await db.commit()
+    sup._inflight[1] = asyncio.create_task(asyncio.sleep(3600))     # e.g. a Connect just pressed
+    plans = []
+    monkeypatch.setattr(sup, "_new_plan", lambda sid, plan: plans.append((sid, plan)))
+    await sup._tick()
+    assert plans == []
+
+
+async def test_switching_off_returns_only_after_the_start_unwound(sup, monkeypatch):  # R24
+    """_cancel_plan awaits the cancelled plan: when set_enabled(off) returns, the start's own
+    cleanup (closing what it opened) has run — no process outlives the switch."""
+    await _seed(sup.maker, 1)
+    unwound = []
+
+    async def slow_to_unwind(server):
+        try:
+            await asyncio.sleep(3600)
+        except asyncio.CancelledError:
+            await asyncio.sleep(0.2)                 # ending a process takes a moment
+            unwound.append(server["id"])
+            raise
+    calls = _fake_list(monkeypatch, slow_to_unwind)
+    sup.start(run_loops=False)
+    sup.schedule(1)
+    await _until(lambda: calls)
+    await sup.set_enabled(1, False)
+    assert unwound == [1]
+
+
+async def test_a_first_start_shows_its_last_cause_while_it_retries(sup, monkeypatch):  # R25
+    """Between the attempts of a first start the row is `starting` with the last attempt's cause
+    (the supervisor's own line — discovery's legacy write would say "TimeoutError (no message)")
+    and fail_count unmoved."""
+    await _seed(sup.maker, 1)
+    monkeypatch.setattr(sm, "FIRST_START_GAPS_S", (30.0, 30.0, 30.0))
+
+    async def hangs(server):
+        raise TimeoutError()
+    calls = _fake_list(monkeypatch, hangs)
+    sup.start(run_loops=False)
+    sup.schedule(1)
+    await _until(lambda: calls and 1 in sup._inflight and 1 not in sup._attempt_fut)
+    row = await _row(sup.maker, 1)
+    assert (row.state, row.fail_count) == ("starting", 0)
+    assert row.last_error == "did not start within 120 s (still downloading?)"
