@@ -29,7 +29,7 @@ from typing import Any
 import httpx
 
 from arslan.llm.providers import errors as provider_errors
-from arslan.llm import request_evidence
+from arslan.llm import param_heal, request_evidence
 
 from arslan.llm.cached_system import CachedSystem
 from arslan.llm.providers.base import BaseLLMProvider
@@ -301,6 +301,11 @@ class AnthropicProvider(BaseLLMProvider):
         payload["max_tokens"] = model_request(payload["max_tokens"])
         from arslan.execution_checkpoint import save
         await save("before_model")
+        data = await param_heal.send(self.endpoint_fingerprint(), payload, self._post)
+        return self._parse_response(data)
+
+    async def _post(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """One non-streamed send; param_heal may resend a changed payload."""
         evidence = await request_evidence.begin(payload)
         async with self._client() as client:
             response = await client.post(
@@ -318,8 +323,7 @@ class AnthropicProvider(BaseLLMProvider):
                     provider_errors.with_body(_exc),
                     request=_exc.request, response=_exc.response) from None
             await request_evidence.acknowledge(evidence)
-            data = response.json()
-        return self._parse_response(data)
+            return response.json()
 
     async def chat_stream(
         self,
@@ -341,6 +345,11 @@ class AnthropicProvider(BaseLLMProvider):
         payload["max_tokens"] = model_request(payload["max_tokens"])
         from arslan.execution_checkpoint import save
         await save("before_model")
+        async for piece in param_heal.stream(self.endpoint_fingerprint(), payload, self._stream_attempt):
+            yield piece
+
+    async def _stream_attempt(self, payload: dict[str, Any]) -> AsyncIterator[str]:
+        """One streamed send; param_heal may resend it before its first byte."""
         evidence = await request_evidence.begin(payload)
         # S3-M3: real usage from the SSE events — input_tokens arrives on
         # message_start (nested under "message"), output_tokens on message_delta.
@@ -363,6 +372,7 @@ class AnthropicProvider(BaseLLMProvider):
                 try:
                     response.raise_for_status()
                 except httpx.HTTPStatusError as _exc:
+                    await provider_errors.read_body(_exc)
                     # Carry the provider's OWN explanation, not just the status
                     # line — see providers/errors.py for why this matters.
                     raise httpx.HTTPStatusError(
