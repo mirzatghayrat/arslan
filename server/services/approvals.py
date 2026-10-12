@@ -365,7 +365,9 @@ class BroadcastAsker:
 
     Such an answer is marked `"away": True` (with `"by": None`, as an expiry): permissions.decide
     records it as an expiry decided by "away", with what "Always" on the card would have stored,
-    and the Inbox lists it with "Always allow" (§A4: "listed in the Inbox the same way")."""
+    and the Inbox lists it with "Always allow" (§A4: "listed in the Inbox the same way"). Not yet
+    for a plain card (leaving the sandbox, another machine): it writes no ledger row at all, so one
+    refused this way is not listed until it asks through decide (PR 3)."""
 
     def __init__(self, conversation_id: str):
         self.conversation_id = conversation_id

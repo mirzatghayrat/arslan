@@ -393,7 +393,8 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             # A card earlier in this turn went unanswered: the person is away. This one does not
             # open and wait 30 minutes more; it reads as expired at once ("NOT a refusal"). Marked
             # "away", as a job's (approvals.BroadcastAsker): decide records it so, and the Inbox
-            # lists it with "Always allow".
+            # lists it with "Always allow" — not yet a plain card (leaving the sandbox, another
+            # machine), which writes no ledger row until it asks through decide (PR 3).
             approvals.LAST_OUTCOME.set("expired")
             return {"approved": False, "remember": False, "scope": None, "note": "", "by": None,
                     "extras": {}, "call_id": frame.get("call_id"), "away": True}
