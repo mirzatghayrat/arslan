@@ -1,13 +1,14 @@
 import { useState } from "react";
-import { AppWindow, Eye, Globe, LockKeyhole, Terminal, TriangleAlert, Zap } from "lucide-react";
+import { AppWindow, CircleQuestionMark, Eye, Globe, LockKeyhole, Terminal, TriangleAlert, Zap } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { AskCard, CodeBox, type AskQueuePosition } from "./kit";
-import { DeclineNote, ScopeChoice, lineIcon, scopeToSend, scriptRiskLine, visibleScopes } from "./kit/askParts";
+import { DeclineNote, RED_KINDS, ScopeChoice, lineIcon, offeredScopes, scopeToSend, scriptRiskLine, visibleScopes } from "./kit/askParts";
 
 const ICONS: Record<string, typeof Globe> = { browser_site: Globe, mac_shortcut: Zap, mac_script: Terminal,
   desktop_look: Eye, desktop_app: AppWindow, desktop_risky: TriangleAlert };
-/** 0.1.61 §A11: the permission kinds whose Allow is drawn red (the step pays, or cannot be undone). */
-const RED_KINDS = new Set(["money", "app_risky", "destructive"]);
+/** The Hands kinds whose card line says what is granted apart from for how long (`hands.grant.<kind>`,
+ *  cut from `hands.scope.<kind>`). A Shortcut's line is only its scope, so it has none. */
+const GRANTS = new Set(["browser_site", "mac_script", "desktop_look", "desktop_app", "desktop_risky"]);
 
 /**
  * 0.1.45 / 0.1.53: a job asks before it acts — browser (once per website per job),
@@ -36,33 +37,44 @@ export default function ActionApprovalCard({ kind, target, detail, expiresAt, op
   onCancel: (note?: string) => void;
 }) {
   const { t } = useTranslation();
-  const known = kind in ICONS;
-  const Icon = ICONS[kind] ?? Terminal;
+  // Own keys only: a kind named "constructor" or "toString" is a kind this card has no words for.
+  const known = Object.hasOwn(ICONS, kind);
+  const Icon = known ? ICONS[kind] : CircleQuestionMark;
   const script = kind === "mac_script";
-  const v2 = Boolean(options?.length);
+  const offered = offeredScopes(options, permKind);
+  const v2 = Boolean(offered?.length);
   // Starts on the narrowest choice the card shows: Always is never the default, whatever its place.
-  const [scope, setScope] = useState(() => scopeToSend(options, undefined, alwaysLabel) ?? "");
-  // A fixed-scope line ("for this piece of work only") would contradict a choice shown below it.
-  const choice = visibleScopes(options, alwaysLabel).length > 1;
+  const [scope, setScope] = useState(() => scopeToSend(offered, undefined, alwaysLabel) ?? "");
+  // A scope sentence ("for this piece of work only") would contradict a choice shown below it.
+  const choice = visibleScopes(offered, alwaysLabel).length > 1;
+  // The kind's own line says what is granted and for how long. With a choice to pick, only the first is
+  // left to say; a kind with nothing but a scope sentence says nothing.
+  const grantLine = !known ? null : !choice ? t(`hands.scope.${kind}`) : GRANTS.has(kind) ? t(`hands.grant.${kind}`) : null;
+  // The frame's question is the server's English (plan R11: localised in PR 8); a bare target is not words.
+  const fromFrame = !known && Boolean(title);
   const heading = known ? t(`hands.title.${kind}`, { target }) : (title || target);
+  // Allow is red for a step that pays or cannot be undone (plan R14: the kit's one RED_KINDS, shared with the command card).
+  const red = kind === "desktop_risky" || RED_KINDS.has(permKind ?? "");
   return (
-    <AskCard testId="action-card" attrs={{ "data-kind": kind, "data-risky": String(kind === "desktop_risky") }}
+    <AskCard testId="action-card" attrs={{ "data-kind": kind, "data-risky": String(red) }}
       who={v2 ? (background ? t("jobs.askingBadge") : t("kit.whoArslan"))
         : kind === "desktop_look" ? t("kit.whoArslan") : t("jobs.askingBadge")}
-      title={<span className="inline-flex items-start gap-2">{lineIcon(Icon)}<span data-testid="action-title">{heading}</span></span>}
+      title={<span className="inline-flex items-start gap-2">{lineIcon(Icon)}
+        <span data-testid="action-title" lang={fromFrame ? "en" : undefined}>{heading}</span></span>}
       risk={script ? scriptRiskLine(detail, t) : null}
-      destructive={kind === "desktop_risky" || RED_KINDS.has(permKind ?? "")}
+      destructive={red}
       detail={script
         ? <div data-testid="action-script"><CodeBox code={detail} marks={["delete", "send", "move", "do shell script", "quit"]} /></div>
-        : <p className="text-[13px] text-muted-foreground">{detail}</p>}
-      context={known && !choice ? [{ icon: lineIcon(LockKeyhole), text: t(`hands.scope.${kind}`) }] : []}
-      options={v2 ? <ScopeChoice options={options} value={scope} onChange={setScope} alwaysLabel={alwaysLabel} testId="action-scope" /> : undefined}
+        : detail ? <p className="text-[13px] text-muted-foreground">{detail}</p> : null}
+      context={grantLine ? [{ icon: lineIcon(LockKeyhole), text: grantLine }] : []}
+      options={v2 ? <ScopeChoice options={offered} value={scope} onChange={setScope} alwaysLabel={alwaysLabel} testId="action-scope" /> : undefined}
       extra={v2 ? <DeclineNote testId="action-note" disabled={busy}
         onDeclineWithNote={(note) => (note ? onCancel(note) : onCancel())} /> : undefined}
       expiresAt={expiresAt} queue={queue} busy={busy} onOpenContext={onOpenContext}
+      allowDisabled={v2 && scopeToSend(offered, scope, alwaysLabel) === undefined}
       allowLabel={t("hands.allow")} declineLabel={t("hands.deny")}
       allowTestId="action-allow" declineTestId="action-deny"
-      onAllow={() => (v2 ? onConfirm(scopeToSend(options, scope, alwaysLabel)) : onConfirm())}
+      onAllow={() => (v2 ? onConfirm(scopeToSend(offered, scope, alwaysLabel)) : onConfirm())}
       onDecline={() => onCancel()} />
   );
 }

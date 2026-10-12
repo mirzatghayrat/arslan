@@ -65,6 +65,22 @@ export function scopeToSend(options: string[] | undefined, chosen: string | unde
   return shown.find((o) => o !== "always");
 }
 
+/** 0.1.61 (plan R14): the permission kinds whose Allow is drawn red — the step pays, or cannot be
+ *  undone. The one definition, for every card that carries the frame's `perm_kind`; the names are
+ *  checked against the server's `permissions.KINDS` by tests/server/test_card_kinds.py. */
+export const RED_KINDS = new Set(["money", "app_risky", "destructive"]);
+
+/** The kinds a card answers for this one time only. Mirrors the server's `permissions._ONCE_ONLY`; keep the
+ *  two in step (plan R14: tests/server/test_card_kinds.py is where the web's kind names meet the server's). */
+export const ONCE_ONLY_KINDS = new Set(["money", "app_risky", "capability", "other_agent", "system", "opaque", "remote", "takeover"]);
+
+/** The choices a card is willing to offer. For a once-only kind that is the frame's first alone,
+ *  whatever else it lists: the server already clamps, so this only keeps a mistaken frame from
+ *  drawing — or sending — a longer yes than the kind allows. */
+export function offeredScopes(options: string[] | undefined, permKind?: string): string[] | undefined {
+  return permKind && ONCE_ONLY_KINDS.has(permKind) ? options?.slice(0, 1) : options;
+}
+
 /** 0.1.61 §A4: how long a yes lasts — exactly the choices the card offers. What is ticked is what a
  *  yes will send (`scopeToSend`), so a value the card does not show ticks its default. One choice
  *  (or none) needs no picker, so nothing is drawn — except Always, which is drawn even alone: it

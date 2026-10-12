@@ -1429,7 +1429,7 @@
     "sandboxRemember": "Allow commands outside the sandbox for the rest of this conversation",
     "runOutside": "Run outside the sandbox",
     "label": "Run this command?",
-    "remember": "Don't ask again for this kind of command (undo in Settings → What Arslan may do)",
+    "remember": "Don't ask again for this kind of command (undo in Settings › What Arslan may do)",
     "run": "Run",
     "cancel": "Cancel",
     "pillLabel": "Shell",
@@ -1867,7 +1867,7 @@
     "every_n_hours": "every {{count}} hours",
     "every_minute": "every minute",
     "every_n_minutes": "every {{count}} minutes",
-    "unattended": "Scheduled runs happen on their own and never wait for you: a step that would need your OK is skipped, not done."
+    "unattended": "Scheduled runs happen on their own and never wait for you: a step that would need your OK is skipped, not done. What needs no OK still runs: looking things up, ordinary commands in the sandbox, and writing in Arslan's own working folder."
   },
   "enroll": {
     "label": "Remember {{name}} ({{host}})?",

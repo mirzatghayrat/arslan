@@ -1429,7 +1429,7 @@
     "sandboxRemember": "Autoriser les commandes hors du bac à sable pour le reste de cette conversation",
     "runOutside": "Exécuter hors du bac à sable",
     "label": "Exécuter cette commande ?",
-    "remember": "Ne plus demander pour ce type de commande (annulable dans Réglages → Ce qu’Arslan peut faire)",
+    "remember": "Ne plus demander pour ce type de commande (annulable dans Réglages › Ce qu’Arslan peut faire)",
     "run": "Exécuter",
     "cancel": "Annuler",
     "pillLabel": "Commande",
@@ -1867,7 +1867,7 @@
     "every_n_hours": "toutes les {{count}} heures",
     "every_minute": "chaque minute",
     "every_n_minutes": "toutes les {{count}} minutes",
-    "unattended": "Les exécutions planifiées tournent seules et ne vous attendent jamais : une étape qui demande votre accord est sautée, pas exécutée."
+    "unattended": "Les exécutions planifiées tournent seules et ne vous attendent jamais : une étape qui demande votre accord est sautée, pas exécutée. Ce qui n’en demande pas se fait quand même : consulter, lancer des commandes ordinaires dans le bac à sable et écrire dans le dossier de travail d’Arslan."
   },
   "enroll": {
     "label": "Mémoriser {{name}} ({{host}}) ?",

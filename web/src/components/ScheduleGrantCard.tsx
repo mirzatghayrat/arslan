@@ -52,9 +52,11 @@ export function humanCadence(when: string, t?: TFunction): string {
 
 /**
  * A `propose_schedule` grant: no "remember". The thing agreed to recurs and keeps costing, so
- * the cadence leads; the card says what a scheduled run cannot do (it only looks and reports,
- * with nobody watching). An old card is asked once per session; a card from the permission layer
- * (0.1.61) lets the person choose how long, and takes a note on No.
+ * the cadence leads. The card says what an unattended run does: it never waits for anyone, so a
+ * step that needs an OK is skipped; what needs none (reading, ordinary commands in the sandbox,
+ * writing in Arslan's own folder) still runs (scheduler.run_arslan_turn). An old card is asked
+ * once per session; a card from the permission layer (0.1.61) lets the person choose how long,
+ * and takes a note on No.
  */
 export default function ScheduleGrantCard({ callId, name, when, background, expiresAt, options, alwaysLabel, busy, queue,
                                             onOpenContext, onConfirm, onCancel }: Props) {
@@ -75,6 +77,7 @@ export default function ScheduleGrantCard({ callId, name, when, background, expi
       extra={v2 ? <DeclineNote testId="schedule-note" disabled={busy}
         onDeclineWithNote={(note) => (note ? onCancel(callId, note) : onCancel(callId))} /> : undefined}
       expiresAt={expiresAt} queue={queue} busy={busy} onOpenContext={onOpenContext}
+      allowDisabled={v2 && scopeToSend(options, scope, alwaysLabel) === undefined}
       allowLabel={t("schedgrant.allow")} declineLabel={t("schedgrant.deny")}
       allowTestId="schedule-allow" declineTestId="schedule-deny"
       onAllow={() => (v2 ? onConfirm(callId, scopeToSend(options, scope, alwaysLabel)) : onConfirm(callId))}

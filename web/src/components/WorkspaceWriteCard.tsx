@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FileText, LockKeyhole } from "lucide-react";
 import { AskCard, CodeBox, type AskQueuePosition } from "./kit";
-import { DeclineNote, ScopeChoice, lineIcon, scopeToSend, visibleScopes } from "./kit/askParts";
+import { DeclineNote, ScopeChoice, lineIcon, scopeToSend } from "./kit/askParts";
 
 interface Props {
   callId: string;
@@ -40,18 +40,19 @@ export default function WorkspaceWriteCard({ callId, workspace, action, path, ba
   const v2 = Boolean(options?.length);
   // Starts on the narrowest choice the card shows: Always is never the default, whatever its place.
   const [scope, setScope] = useState(() => scopeToSend(options, undefined, alwaysLabel) ?? "");
-  // The old line says a yes lasts the session; with a choice on the card, the choice says it.
-  const choice = visibleScopes(options, alwaysLabel).length > 1;
   return (
     <AskCard testId="wswrite-card" who={background ? t("jobs.askingBadge") : t("kit.whoArslan")}
       title={t("wswrite.label")}
       detail={<><p className="text-[13px] text-muted-foreground">{t("wswrite.body")}</p><CodeBox code={workspace} numbered={false} /></>}
       context={[{ icon: lineIcon(FileText), text: `${verb} · ${path}` },
-                ...(choice ? [] : [{ icon: lineIcon(LockKeyhole), text: t("wswrite.scope") }])]}
+                // The old line says a yes lasts the session. A card from the permission layer has the frame's
+                // options to say how long, and they are not always a choice: it never carries the old line.
+                ...(v2 ? [] : [{ icon: lineIcon(LockKeyhole), text: t("wswrite.scope") }])]}
       options={v2 ? <ScopeChoice options={options} value={scope} onChange={setScope} alwaysLabel={alwaysLabel} testId="wswrite-scope" /> : undefined}
       extra={v2 ? <DeclineNote testId="wswrite-note" disabled={busy}
         onDeclineWithNote={(note) => (note ? onCancel(callId, note) : onCancel(callId))} /> : undefined}
       expiresAt={expiresAt} queue={queue} busy={busy} onOpenContext={onOpenContext}
+      allowDisabled={v2 && scopeToSend(options, scope, alwaysLabel) === undefined}
       allowLabel={t("wswrite.allow")} declineLabel={t("wswrite.deny")}
       allowTestId="wswrite-allow" declineTestId="wswrite-deny"
       onAllow={() => (v2 ? onConfirm(callId, scopeToSend(options, scope, alwaysLabel)) : onConfirm(callId))}

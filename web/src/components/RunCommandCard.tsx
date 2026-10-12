@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Globe2, ShieldAlert, Terminal } from "lucide-react";
 import { AskCard, CodeBox } from "./kit";
-import { AskOption, DeclineNote, Fingerprints, ScopeChoice, lineIcon, scopeToSend } from "./kit/askParts";
+import { AskOption, DeclineNote, Fingerprints, RED_KINDS, ScopeChoice, lineIcon, offeredScopes, scopeToSend } from "./kit/askParts";
 
 interface Props {
   callId: string;
@@ -26,6 +26,9 @@ interface Props {
   options?: string[];
   /** The literal scope "Always" stores (the frame's `always_label`). */
   alwaysLabel?: string;
+  /** The frame's permission kind (`perm_kind`). A red kind (money, app_risky, destructive) draws Run red,
+   *  as the action card does; a once-only kind offers only the frame's first choice. Absent on an old frame. */
+  permKind?: string;
   /** The Inbox: the server never keeps "remember" from there, so the old checkbox is not shown. */
   noRemember?: boolean;
   /** An answer is on its way: the card is inert (its buttons, its keys and its note). */
@@ -50,14 +53,15 @@ interface Props {
  * of the checkbox, and takes a note on No.
  */
 export default function RunCommandCard({ callId, pretty, reason, remoteHost, fingerprints, background,
-                                         sandbox, why, expiresAt, options, alwaysLabel, noRemember, busy, queue,
+                                         sandbox, why, expiresAt, options, alwaysLabel, permKind, noRemember, busy, queue,
                                          onOpenContext, onConfirm, onCancel }: Props) {
   const { t } = useTranslation();
   const [remember, setRemember] = useState(false);
   // 0.1.61 §A4: a card with options offers them (a job's too: the same choices as the window).
-  const v2 = Boolean(options?.length);
+  const offered = offeredScopes(options, permKind);
+  const v2 = Boolean(offered?.length);
   // Starts on the narrowest choice the card shows: Always is never the default, whatever its place.
-  const [scope, setScope] = useState(() => scopeToSend(options, undefined, alwaysLabel) ?? "");
+  const [scope, setScope] = useState(() => scopeToSend(offered, undefined, alwaysLabel) ?? "");
   const isRemote = Boolean(remoteHost);
   const title = isRemote ? t("runcmd.remoteLabel", { host: remoteHost })
     : sandbox === "outside" ? t("runcmd.sandboxOutsideLabel")
@@ -80,18 +84,20 @@ export default function RunCommandCard({ callId, pretty, reason, remoteHost, fin
         {isRemote ? <Fingerprints label={t("runcmd.fingerprint")} list={fingerprints ?? []} testId="runcmd-fingerprints" /> : null}
       </>}
       context={context}
-      options={v2 ? <ScopeChoice options={options} value={scope} onChange={setScope} alwaysLabel={alwaysLabel} testId="runcmd-scope" />
+      options={v2 ? <ScopeChoice options={offered} value={scope} onChange={setScope} alwaysLabel={alwaysLabel} testId="runcmd-scope" />
         : isRemote || background || noRemember ? null : (
         <AskOption checked={remember} onChange={setRemember} testId="runcmd-remember"
           label={t(sandbox ? "runcmd.sandboxRemember" : "runcmd.remember")} />
       )}
       extra={v2 ? <DeclineNote testId="runcmd-note" disabled={busy}
         onDeclineWithNote={(note) => (note ? onCancel(callId, note) : onCancel(callId))} /> : undefined}
+      destructive={RED_KINDS.has(permKind ?? "")}
       expiresAt={expiresAt} queue={queue} busy={busy} onOpenContext={onOpenContext}
+      allowDisabled={v2 && scopeToSend(offered, scope, alwaysLabel) === undefined}
       allowLabel={isRemote ? t("runcmd.runRemote") : sandbox ? t("runcmd.runOutside") : t("runcmd.run")}
       declineLabel={t("runcmd.cancel")}
       allowTestId="runcmd-run" declineTestId="runcmd-cancel"
-      onAllow={() => (v2 ? onConfirm(callId, false, scopeToSend(options, scope, alwaysLabel))
+      onAllow={() => (v2 ? onConfirm(callId, false, scopeToSend(offered, scope, alwaysLabel))
         : onConfirm(callId, remember && !background && !isRemote && !noRemember))}
       onDecline={() => onCancel(callId)} />
   );

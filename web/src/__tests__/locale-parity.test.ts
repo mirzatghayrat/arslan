@@ -298,6 +298,46 @@ describe("locale parity", () => {
     }
   });
 
+  // 0.1.61 PR 2b: the words on the command and schedule cards point at the app's own places and name its own
+  // things, in every language, so a rewording in one place cannot leave another one lying.
+  describe("the card words", () => {
+    type CardWords = {
+      runcmd: { remember: string; sandboxOutsideLabel: string; sandboxOutsideNote: string };
+      settings: { navAbilities: string; terminalRulesEmpty: string };
+      kit: { scope: { always: string } };
+      schedgrant: { unattended: string };
+    };
+    /** The app's own word for the sandbox and for Arslan's working folder (runcmd.sandboxOutside*). */
+    const SANDBOX_AND_FOLDER: Record<string, [string, string]> = {
+      en: ["sandbox", "working folder"], zh: ["沙盒", "工作文件夹"], ja: ["サンドボックス", "作業フォルダ"],
+      es: ["entorno aislado", "carpeta de trabajo"], de: ["Sandbox", "Arbeitsordner"], fr: ["bac à sable", "dossier de travail"],
+    };
+    for (const [lang, data] of Object.entries(LOCALES)) {
+      const d = data as unknown as CardWords;
+
+      it(`${lang}: runcmd.remember points, with a ›, to the Settings section that holds the rules (settings.navAbilities)`, () => {
+        expect(d.runcmd.remember).toContain(`› ${d.settings.navAbilities}`);
+      });
+
+      it(`${lang}: runcmd.remember no longer sends the person to the old Advanced page`, () => {
+        expect(d.runcmd.remember).not.toMatch(/Advanced|高级|詳細|Avanzado|Erweitert|Avancé/);
+      });
+
+      it(`${lang}: terminalRulesEmpty names the card's own "Always" word (kit.scope.always)`, () => {
+        const word = d.kit.scope.always.split(/[:：]/)[0].trim();
+        expect(d.settings.terminalRulesEmpty).toContain(word);
+      });
+
+      it(`${lang}: schedgrant.unattended also says what still runs: the sandbox and the working folder, in the app's own words`, () => {
+        const [sandbox, folder] = SANDBOX_AND_FOLDER[lang];
+        expect(d.runcmd.sandboxOutsideLabel).toContain(sandbox);     // the table is the app's own word, not an invention
+        expect(d.runcmd.sandboxOutsideNote).toContain(folder);
+        expect(d.schedgrant.unattended).toContain(sandbox);
+        expect(d.schedgrant.unattended).toContain(folder);
+      });
+    }
+  });
+
   for (const [lang, data] of Object.entries(LOCALES)) {
     if (lang === "en") continue;
 

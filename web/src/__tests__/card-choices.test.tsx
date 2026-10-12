@@ -12,6 +12,8 @@ import ActionApprovalCard from "../components/ActionApprovalCard";
 import RunCommandCard from "../components/RunCommandCard";
 import ScheduleGrantCard from "../components/ScheduleGrantCard";
 import WorkspaceWriteCard from "../components/WorkspaceWriteCard";
+import { ONCE_ONLY_KINDS, RED_KINDS } from "../components/kit/askParts";
+import { handsMessages } from "../locales/hands";
 
 afterEach(() => cleanup());
 
@@ -111,7 +113,7 @@ describe("an action card", () => {
       options={["once"]} onConfirm={vi.fn()} onCancel={vi.fn()} />);
     expect(screen.getByTestId("action-title")).toHaveTextContent('hands.title.desktop_app:{"target":"Shop"}');
     expect(screen.queryByRole("radiogroup")).toBeNull();                     // one choice: nothing to pick
-    expect(screen.getByText("hands.scope.desktop_app")).toBeInTheDocument();  // its fixed line is true here
+    expect(screen.getByText("hands.scope.desktop_app")).toBeInTheDocument();  // no choice says how long: the kind's own whole line stays
     expect(screen.getByTestId("action-allow").className).toContain("danger");
   });
 
@@ -171,6 +173,22 @@ describe.each(CARDS)("the $name card", (row) => {
     expect(onConfirm.mock.calls.at(-1)).toStrictEqual(row.yesArgs("always"));
   });
 
+  it("a pick the frame still shows is kept; one it no longer shows is never sent (Always loses its literal scope)", () => {
+    const { onConfirm, onCancel } = spies();
+    const mount = (label: string) => row.mount({ options: ["once", "conversation", "always"], alwaysLabel: label, onConfirm, onCancel });
+    const { rerender } = render(mount("that kind"));
+    fireEvent.click(screen.getByTestId(`${row.choices}-always`));
+    expect((screen.getByTestId(`${row.choices}-always`) as HTMLInputElement).checked).toBe(true);
+    rerender(mount("another kind"));                                            // still shown, under another label: kept
+    expect((screen.getByTestId(`${row.choices}-always`) as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(screen.getByTestId(row.allow));
+    expect(onConfirm.mock.calls.at(-1)).toStrictEqual(row.yesArgs("always"));
+    rerender(mount(""));                                                        // no literal scope: Always is gone
+    expect(screen.queryByTestId(`${row.choices}-always`)).toBeNull();
+    fireEvent.click(screen.getByTestId(row.allow));
+    expect(onConfirm.mock.calls.at(-1)).toStrictEqual(row.yesArgs("once"));      // the card's first, never the stale pick
+  });
+
   it("draws Always only with its literal scope: without one the person cannot be led into it", () => {
     const { onConfirm, onCancel } = spies();
     render(row.mount({ options: ["always", "once", "conversation"], alwaysLabel: "  ", onConfirm, onCancel }));
@@ -183,8 +201,35 @@ describe.each(CARDS)("the $name card", (row) => {
     const { onConfirm, onCancel } = spies();
     render(row.mount({ options: ["once"], onConfirm, onCancel }));
     expect(screen.queryByRole("radiogroup")).toBeNull();
+    expect(screen.getByTestId(row.allow)).toBeEnabled();
     fireEvent.click(screen.getByTestId(row.allow));
     expect(onConfirm.mock.calls.at(-1)).toStrictEqual(row.yesArgs("once"));
+  });
+
+  it.each([
+    ["only ids the card does not know", ["forever"], undefined],
+    ["an Always without its literal scope", ["always"], ""],
+    ["a mix of both", ["always", "forever"], "   "],
+  ])("when the frame shows nothing sendable (%s), Allow is disabled, by button and by ⌘⏎; No still answers", (_why, options, alwaysLabel) => {
+    const { onConfirm, onCancel } = spies();
+    render(row.mount({ options, alwaysLabel, onConfirm, onCancel }));
+    expect(screen.getByTestId(row.allow)).toBeDisabled();
+    fireEvent.click(screen.getByTestId(row.allow));
+    fireEvent.keyDown(window, { key: "Enter", metaKey: true });
+    expect(onConfirm).not.toHaveBeenCalled();                                    // never a yes with no scope at all
+    fireEvent.click(screen.getByTestId(row.deny));
+    expect(onCancel.mock.calls.at(-1)).toStrictEqual(row.noArgs());
+  });
+
+  it("a lone Always is drawn but never sent unasked: Allow waits until the person picks it", () => {
+    const { onConfirm, onCancel } = spies();
+    render(row.mount({ options: ["always"], alwaysLabel: "that kind", onConfirm, onCancel }));
+    expect((screen.getAllByRole("radio") as HTMLInputElement[]).map((r) => [r.value, r.checked])).toEqual([["always", false]]);
+    expect(screen.getByTestId(row.allow)).toBeDisabled();
+    fireEvent.click(screen.getByTestId(`${row.choices}-always`));
+    expect(screen.getByTestId(row.allow)).toBeEnabled();
+    fireEvent.click(screen.getByTestId(row.allow));
+    expect(onConfirm.mock.calls.at(-1)).toStrictEqual(row.yesArgs("always"));
   });
 
   it("No takes the note typed, trimmed; an empty note is a plain No", () => {
@@ -239,17 +284,166 @@ describe.each(CARDS)("the $name card", (row) => {
   });
 });
 
-describe("the action card's words and its red", () => {
+// ── The permission kind: red Allow, and the once-only kinds ─────────────────────────────────────────────
+
+/** The two cards that carry the frame's permission kind: a command's and an action's. */
+const KINDED = [
+  { name: "run a command", choices: "runcmd-scope", allow: "runcmd-run",
+    mount: (permKind: string | undefined, m: Mount) => <RunCommandCard callId="r1" pretty="rm a" permKind={permKind} {...m} />,
+    yesArgs: (scope: string) => ["r1", false, scope] },
+  { name: "action", choices: "action-scope", allow: "action-allow",
+    mount: (permKind: string | undefined, m: Mount) => (
+      <ActionApprovalCard kind="app" target="com.example.App" detail="" title="Use App?" permKind={permKind} {...m} />),
+    yesArgs: (scope: string) => [scope] },
+];
+
+describe("the kit's one definition of the permission kinds a card treats specially", () => {
+  it("red is exactly money, app_risky and destructive; once-only is exactly the server's eight", () => {
+    // tests/server/test_card_kinds.py reads these two lists out of kit/askParts.tsx
+    expect([...RED_KINDS].sort()).toEqual(["app_risky", "destructive", "money"]);
+    expect([...ONCE_ONLY_KINDS].sort()).toEqual(
+      ["app_risky", "capability", "money", "opaque", "other_agent", "remote", "system", "takeover"]);
+  });
+});
+
+describe.each(KINDED)("the $name card and its permission kind", (row) => {
+  const mount = (permKind: string | undefined, options?: string[], alwaysLabel?: string) => {
+    const { onConfirm, onCancel } = spies();
+    render(row.mount(permKind, { options, alwaysLabel, onConfirm, onCancel }));
+    return onConfirm;
+  };
+
+  it.each(["money", "app_risky", "destructive"])("a %s step draws Allow red", (permKind) => {
+    mount(permKind, ["once", "conversation"]);
+    expect(screen.getByTestId(row.allow).className).toContain("danger");
+  });
+
+  it.each(["command", "send", "outside", "app", "folder", ""])("a step of kind %j does not", (permKind) => {
+    mount(permKind, ["once", "conversation"]);
+    expect(screen.getByTestId(row.allow).className).not.toContain("danger");
+  });
+
+  it("a card with no permission kind is not red either", () => {
+    mount(undefined, ["once", "conversation"]);
+    expect(screen.getByTestId(row.allow).className).not.toContain("danger");
+  });
+
+  it.each(["money", "app_risky", "capability", "other_agent", "system", "opaque", "remote", "takeover"])(
+    "a %s card (once only) shows and sends only the frame's first choice, whatever else the frame lists", (permKind) => {
+    const onConfirm = mount(permKind, ["once", "conversation", "always"], "that kind");
+    expect(screen.queryAllByRole("radio")).toHaveLength(0);                      // one choice: nothing to pick
+    fireEvent.click(screen.getByTestId(row.allow));
+    expect(onConfirm.mock.calls.at(-1)).toStrictEqual(row.yesArgs("once"));
+  });
+
+  it("the first choice is the frame's first, not a fixed word", () => {
+    const onConfirm = mount("money", ["task", "once"]);
+    expect(screen.queryAllByRole("radio")).toHaveLength(0);
+    fireEvent.click(screen.getByTestId(row.allow));
+    expect(onConfirm.mock.calls.at(-1)).toStrictEqual(row.yesArgs("task"));
+  });
+
+  it("a pick made while the kind was not once-only is never sent once it is: the send re-checks what the card shows", () => {
+    const { onConfirm, onCancel } = spies();
+    const asKind = (permKind: string) => row.mount(permKind, { options: ["once", "conversation"], onConfirm, onCancel });
+    const { rerender } = render(asKind("app"));
+    fireEvent.click(screen.getByTestId(`${row.choices}-conversation`));
+    rerender(asKind("money"));
+    expect(screen.queryAllByRole("radio")).toHaveLength(0);
+    fireEvent.click(screen.getByTestId(row.allow));
+    expect(onConfirm.mock.calls.at(-1)).toStrictEqual(row.yesArgs("once"));
+  });
+
+  it("a once-only card whose first choice it cannot show has nothing sendable: Allow stays disabled, whatever else is listed", () => {
+    const { onConfirm, onCancel } = spies();
+    render(row.mount("money", { options: ["forever", "once"], onConfirm, onCancel }));
+    expect(screen.getByTestId(row.allow)).toBeDisabled();
+    fireEvent.click(screen.getByTestId(row.allow));
+    fireEvent.keyDown(window, { key: "Enter", metaKey: true });
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it.each(["command", "app", "site", "shortcut", "send", undefined])(
+    "a card of kind %j keeps every choice the frame lists", (permKind) => {
+    const onConfirm = mount(permKind, ["once", "conversation", "always"], "that kind");
+    expect((screen.getAllByRole("radio") as HTMLInputElement[]).map((r) => r.value)).toEqual(["once", "conversation", "always"]);
+    fireEvent.click(screen.getByTestId(`${row.choices}-conversation`));
+    fireEvent.click(screen.getByTestId(row.allow));
+    expect(onConfirm.mock.calls.at(-1)).toStrictEqual(row.yesArgs("conversation"));
+  });
+});
+
+// ── The write card's session line ───────────────────────────────────────────────────────────────────────
+
+describe("the write card's session line", () => {
+  const write = (options?: string[], alwaysLabel?: string) => (
+    <WorkspaceWriteCard callId="w" workspace="/w" action="write_file" path="a.md" options={options} alwaysLabel={alwaysLabel}
+      onConfirm={vi.fn()} onCancel={vi.fn()} />);
+
+  it.each([
+    ["two choices", ["once", "conversation"], undefined],
+    ["one choice", ["once"], undefined],
+    ["a hidden Always beside one", ["once", "always"], ""],
+    ["a labelled Always beside one", ["once", "always"], "this folder"],
+  ])("a card from the permission layer (%s) never says 'the rest of this session': the frame's options say how long",
+    (_what, options, alwaysLabel) => {
+      render(write(options, alwaysLabel));
+      expect(screen.queryByText("wswrite.scope")).toBeNull();
+    });
+
+  it.each([["no options", undefined], ["an empty options list", [] as string[]]])(
+    "an old card (%s) keeps the line", (_what, options) => {
+      render(write(options));
+      expect(screen.getByText("wswrite.scope")).toBeInTheDocument();
+    });
+});
+
+// ── The action card ─────────────────────────────────────────────────────────────────────────────────────
+
+describe("the action card's words, its icon and its red", () => {
   const card = (p: Partial<Parameters<typeof ActionApprovalCard>[0]>) => (
     <ActionApprovalCard kind="desktop_app" target="Notes" detail="click" onConfirm={vi.fn()} onCancel={vi.fn()} {...p} />);
 
-  it("a known kind's fixed-scope line yields to a real choice, and stays when there is none to pick", () => {
+  it("a known kind's whole line yields to a real choice, and stays when there is none to pick", () => {
     const { rerender } = render(card({ options: ["once", "conversation"] }));
-    expect(screen.queryByText("hands.scope.desktop_app")).toBeNull();          // two choices say it themselves
+    expect(screen.queryByText("hands.scope.desktop_app")).toBeNull();          // two choices say how long themselves
     rerender(card({ options: ["once"] }));
-    expect(screen.getByText("hands.scope.desktop_app")).toBeInTheDocument();   // one choice: the fixed line is true
+    expect(screen.getByText("hands.scope.desktop_app")).toBeInTheDocument();   // one choice: the kind's own whole line
     rerender(card({}));
     expect(screen.getByText("hands.scope.desktop_app")).toBeInTheDocument();   // an old frame: as before
+  });
+
+  it("a kind it has no words for prints no scope line even with one choice (never a raw key)", () => {
+    render(card({ kind: "app", title: "Use App?", options: ["once"] }));
+    expect(screen.queryByText(/hands\.(scope|grant)\./)).toBeNull();
+  });
+
+  it("a hidden option is not a choice: Always without its literal scope leaves one choice, so the whole line stays", () => {
+    render(card({ options: ["once", "always"], alwaysLabel: "" }));
+    expect(screen.getByText("hands.scope.desktop_app")).toBeInTheDocument();
+    expect(screen.queryByText("hands.grant.desktop_app")).toBeNull();
+  });
+
+  it("Once + a labelled Always are two choices, so the whole line gives way to what is granted", () => {
+    render(card({ options: ["once", "always"], alwaysLabel: "Notes" }));
+    expect(screen.queryByText("hands.scope.desktop_app")).toBeNull();
+    expect(screen.getByText("hands.grant.desktop_app")).toBeInTheDocument();
+  });
+
+  it.each(Object.keys(handsMessages.en.scope))(
+    "a %s card with a real choice keeps what is granted and drops only how long", (kind) => {
+    const { rerender } = render(card({ kind, options: ["once", "conversation"] }));
+    expect(screen.queryByText(`hands.scope.${kind}`)).toBeNull();
+    if (kind in handsMessages.en.grant) expect(screen.getByText(`hands.grant.${kind}`)).toBeInTheDocument();
+    else expect(screen.queryByText(/hands\.grant\./)).toBeNull();               // a Shortcut's line is only its scope
+    rerender(card({ kind, options: ["once"] }));
+    expect(screen.getByText(`hands.scope.${kind}`)).toBeInTheDocument();         // no choice: the whole line, as before
+    expect(screen.queryByText(/hands\.grant\./)).toBeNull();
+  });
+
+  it("the grants are the two the card must not lose, and a Shortcut has none", () => {
+    expect(Object.keys(handsMessages.en.grant).sort()).toEqual(
+      ["browser_site", "desktop_app", "desktop_look", "desktop_risky", "mac_script"]);
   });
 
   it("a kind it has no words for with no title reads its target, never a blank question", () => {
@@ -263,6 +457,17 @@ describe("the action card's words and its red", () => {
   it("a known kind reads its own words even when the frame brings a title", () => {
     render(card({ title: "Something else entirely?" }));
     expect(screen.getByTestId("action-title")).toHaveTextContent('hands.title.desktop_app:{"target":"Notes"}');
+  });
+
+  it("the server's English question says it is English (R11); the card's own words and a bare target do not", () => {
+    render(card({ kind: "app", title: "Use App?" }));
+    expect(screen.getByTestId("action-title")).toHaveAttribute("lang", "en");
+    cleanup();
+    render(card({ kind: "app", title: "", target: "com.example.App" }));
+    expect(screen.getByTestId("action-title")).not.toHaveAttribute("lang");
+    cleanup();
+    render(card({ title: "Ignored for a known kind" }));
+    expect(screen.getByTestId("action-title")).not.toHaveAttribute("lang");
   });
 
   it.each(["money", "app_risky", "destructive"])("a %s step draws Allow red", (permKind) => {
@@ -280,6 +485,14 @@ describe("the action card's words and its red", () => {
     expect(screen.getByTestId("action-allow").className).not.toContain("danger");
   });
 
+  it.each([
+    ["desktop_risky", undefined, "true"], ["app", "money", "true"], ["app", "app_risky", "true"],
+    ["app", "destructive", "true"], ["app", "send", "false"], ["desktop_app", undefined, "false"],
+  ])("data-risky on kind %s with permission kind %s is %s: the same red as Allow", (kind, permKind, risky) => {
+    render(card({ kind, title: "Do it?", permKind }));
+    expect(screen.getByTestId("action-card")).toHaveAttribute("data-risky", risky);
+  });
+
   it("a job's card names the job as the one asking; the window's card names Arslan", () => {
     render(card({ kind: "app", title: "Use App?", options: ["task", "conversation"], background: true }));
     expect(screen.getByRole("alertdialog")).toHaveAccessibleName("jobs.askingBadge");
@@ -294,5 +507,38 @@ describe("the action card's words and its red", () => {
     cleanup();
     render(card({ kind: "desktop_app", background: false }));
     expect(screen.getByRole("alertdialog")).toHaveAccessibleName("jobs.askingBadge");
+  });
+
+  it("an old frame the server marked background (approvals.ask stamps it on every plain card) names the same asker", () => {
+    render(card({ kind: "desktop_look", background: true }));
+    expect(screen.getByRole("alertdialog")).toHaveAccessibleName("kit.whoArslan");
+    cleanup();
+    render(card({ kind: "desktop_app", background: true }));
+    expect(screen.getByRole("alertdialog")).toHaveAccessibleName("jobs.askingBadge");
+  });
+
+  it.each(["toString", "constructor", "__proto__", "hasOwnProperty", "valueOf"])(
+    "a kind named %s (a key every object has) is a kind it has no words for, not a crash", (kind) => {
+    render(card({ kind, title: "Use it?", target: "x", options: ["once", "conversation"] }));
+    expect(screen.getByTestId("action-title")).toHaveTextContent("Use it?");
+    expect(screen.queryByText(/hands\.(scope|grant|title)\./)).toBeNull();
+  });
+
+  it("a kind it has no words for gets a neutral icon, not the terminal's", () => {
+    const icon = () => document.querySelector(".lucide-terminal");
+    render(card({ kind: "mac_script", detail: "tell application \"Notes\" to activate" }));
+    expect(icon()).not.toBeNull();                                               // a script is a terminal-ish thing
+    cleanup();
+    render(card({ kind: "app", title: "Use App?" }));
+    expect(icon()).toBeNull();
+    expect(screen.getByTestId("action-title").parentElement?.querySelector("svg")).not.toBeNull();   // but it has an icon
+  });
+
+  it("an empty detail leaves no empty paragraph; a detail is a paragraph", () => {
+    const { container } = render(card({ kind: "app", title: "Use App?", detail: "" }));
+    expect(container.querySelector("p")).toBeNull();
+    cleanup();
+    const again = render(card({ kind: "app", title: "Use App?", detail: "Opens the inbox" }));
+    expect(again.container.querySelector("p")).toHaveTextContent("Opens the inbox");
   });
 });

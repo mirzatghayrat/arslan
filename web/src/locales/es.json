@@ -1429,7 +1429,7 @@
     "sandboxRemember": "Permitir comandos fuera del entorno aislado durante el resto de esta conversación",
     "runOutside": "Ejecutar fuera del entorno aislado",
     "label": "¿Ejecutar este comando?",
-    "remember": "No volver a preguntar por este tipo de comando (se deshace en Ajustes → Lo que Arslan puede hacer)",
+    "remember": "No volver a preguntar por este tipo de comando (se deshace en Ajustes › Lo que Arslan puede hacer)",
     "run": "Ejecutar",
     "cancel": "Cancelar",
     "pillLabel": "Comando",
@@ -1867,7 +1867,7 @@
     "every_n_hours": "cada {{count}} horas",
     "every_minute": "cada minuto",
     "every_n_minutes": "cada {{count}} minutos",
-    "unattended": "Las ejecuciones programadas van solas y nunca te esperan: un paso que necesite tu visto bueno se omite, no se hace."
+    "unattended": "Las ejecuciones programadas van solas y nunca te esperan: un paso que necesite tu visto bueno se omite, no se hace. Lo que no lo necesita sí se hace: consultar información, ejecutar comandos habituales en el entorno aislado y escribir en la carpeta de trabajo de Arslan."
   },
   "enroll": {
     "label": "¿Recordar {{name}} ({{host}})?",

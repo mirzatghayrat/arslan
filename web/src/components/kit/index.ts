@@ -1,7 +1,7 @@
 // 0.1.55 surface kit — one component per family (spec §2).
 export { AskCard, type AskCardProps, type AskQueuePosition } from "./AskCard";
 export { AskQueue, type QueuedAsk } from "./AskQueue";
-export { DeclineNote, ScopeChoice, SCOPES, scopeToSend, visibleScopes } from "./askParts";
+export { DeclineNote, ONCE_ONLY_KINDS, RED_KINDS, ScopeChoice, SCOPES, offeredScopes, scopeToSend, visibleScopes } from "./askParts";
 export { AskMark, MascotHead } from "./AskMark";
 export { Button, Kbd, type ButtonTone } from "./Button";
 export { CodeBox } from "./CodeBox";

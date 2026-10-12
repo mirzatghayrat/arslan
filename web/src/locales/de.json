@@ -1429,7 +1429,7 @@
     "sandboxRemember": "Befehle außerhalb der Sandbox für den Rest dieser Unterhaltung erlauben",
     "runOutside": "Außerhalb der Sandbox ausführen",
     "label": "Diesen Befehl ausführen?",
-    "remember": "Bei dieser Art Befehl nicht mehr fragen (rückgängig unter Einstellungen → Was Arslan darf)",
+    "remember": "Bei dieser Art Befehl nicht mehr fragen (rückgängig unter Einstellungen › Was Arslan darf)",
     "run": "Ausführen",
     "cancel": "Abbrechen",
     "pillLabel": "Befehl",
@@ -1867,7 +1867,7 @@
     "every_n_hours": "alle {{count}} Stunden",
     "every_minute": "jede Minute",
     "every_n_minutes": "alle {{count}} Minuten",
-    "unattended": "Geplante Läufe laufen allein und warten nie auf dich: Ein Schritt, der dein OK bräuchte, wird übersprungen, nicht ausgeführt."
+    "unattended": "Geplante Läufe laufen allein und warten nie auf dich: Ein Schritt, der dein OK bräuchte, wird übersprungen, nicht ausgeführt. Was kein OK braucht, läuft weiter: Nachschlagen, gewöhnliche Befehle in der Sandbox und Schreiben in Arslans eigenem Arbeitsordner."
   },
   "enroll": {
     "label": "{{name}} ({{host}}) merken?",

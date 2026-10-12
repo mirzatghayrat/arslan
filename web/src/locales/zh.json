@@ -1429,7 +1429,7 @@
     "sandboxRemember": "这次对话里，命令都可以在沙盒外运行",
     "runOutside": "在沙盒外运行",
     "label": "运行这条命令?",
-    "remember": "以后这类命令不再询问（可在 设置 → Arslan 能做什么 里恢复）",
+    "remember": "以后这类命令不再询问（可在 设置 › Arslan 能做什么 里恢复）",
     "run": "运行",
     "cancel": "取消",
     "pillLabel": "命令行",
@@ -1867,7 +1867,7 @@
     "every_n_hours": "每 {{count}} 小时",
     "every_minute": "每分钟",
     "every_n_minutes": "每 {{count}} 分钟",
-    "unattended": "定时运行无人值守，从不等你：需要你点头的步骤会跳过，不会执行。"
+    "unattended": "定时运行无人值守，从不等你：需要你点头的步骤会跳过，不会执行。不需要点头的照常进行：查资料、在沙盒里运行普通命令，以及在 Arslan 自己的工作文件夹里写文件。"
   },
   "enroll": {
     "label": "记住 {{name}}({{host}})?",
