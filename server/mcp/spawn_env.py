@@ -94,15 +94,16 @@ _PINNED = {"node": ("node", "bin/node"), "npm": ("node", "bin/npm"), "npx": ("no
 
 
 def runtime_for(command: str) -> str | None:
-    """'node' | 'uv' when `command` is a bare name Arslan pins, else None."""
-    entry = None if os.path.sep in (command or "") else _PINNED.get(command or "")
+    """'node' | 'uv' when `command` is a bare name Arslan pins, else None. (No key of _PINNED
+    holds a path separator, so an explicit path is never a match.)"""
+    entry = _PINNED.get(command or "")
     return entry[0] if entry else None
 
 
 def pinned_command(command: str) -> tuple[str, str | None]:
     """(absolute pinned binary, its bin dir) when that exact binary is installed; else
     (command, None). Never downloads: the supervisor decides when to fetch (0.1.61 §B1)."""
-    entry = None if os.path.sep in (command or "") else _PINNED.get(command or "")
+    entry = _PINNED.get(command or "")
     if entry is None:
         return command, None
     from server.services import capability_runtime
@@ -120,8 +121,12 @@ _TRIVIAL = frozenset({"true", "false", "yes", "no", "null", "none", "on", "off"}
 
 def secret_forms(server: dict) -> list[str]:
     """Every form in which this server's own secrets could appear in its error text: its env
-    values (header values for http, and the token after "Bearer"), the query values and password
-    of its URL — each raw, URL-quoted and quote_plus'd. Longest first, so a short secret inside a
+    values (header values for http, and the token after "Bearer"), the query values and the
+    userinfo of its URL. `httpx.HTTPStatusError` prints the URL exactly as written, so the query
+    values are taken both decoded and as written (`a+b/c==`, lower-case `%2f`, a partly encoded
+    value all print differently from any re-encoding), and the userinfo both as written and
+    decoded (a token may be the username alone). Each is added raw, `quote`d with the default
+    safe set, `quote`d with none, and `quote_plus`'d. Longest first, so a short secret inside a
     longer one never leaves the longer one's tail behind. Under 4 characters, or a plain boolean
     word, is not a secret."""
     import urllib.parse
@@ -129,13 +134,16 @@ def secret_forms(server: dict) -> list[str]:
     values = [str(v) for v in (server.get("env") or {}).values() if v]
     url = urllib.parse.urlsplit(server.get("url") or "")
     values += [v for _, v in urllib.parse.parse_qsl(url.query) if v]
-    if url.password:
-        values.append(url.password)
+    values += [pair.partition("=")[2] for pair in url.query.split("&") if "=" in pair]
+    for userinfo in (url.username, url.password):
+        if userinfo:
+            values += [userinfo, urllib.parse.unquote(userinfo)]
     forms: set[str] = set()
     for value in values:
         for part in (value, *value.split()[1:2]):
             if len(part) >= 4 and part.lower() not in _TRIVIAL:
-                forms |= {part, urllib.parse.quote(part, safe=""), urllib.parse.quote_plus(part)}
+                forms |= {part, urllib.parse.quote(part, safe=""), urllib.parse.quote(part),
+                          urllib.parse.quote_plus(part)}
     return sorted(forms, key=len, reverse=True)
 
 

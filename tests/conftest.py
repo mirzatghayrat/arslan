@@ -100,6 +100,38 @@ def _no_judge_model_calls():
 
 
 @pytest.fixture(autouse=True)
+def _no_real_mcp_spawn_or_download(request):
+    """0.1.61 PR 4: a unit test never spawns an MCP server or downloads a runtime for real.
+
+    The guard sits on the spawn itself (`mcp.client.stdio._create_platform_compatible_process`,
+    which every stdio MCP client path reaches: the session manager, agent_browser,
+    managed_browser) and on `capability_runtime._download`, so tests that fake `stdio_client` or
+    `_download` keep working. A real-process test is marked `@pytest.mark.real_mcp`: the marker
+    lifts this guard and nothing else — those tests run on CI and on the Mac like any other.
+
+    Here at the root so no test directory is left out, and with its own MonkeyPatch, for the
+    reason given above: a test's own `monkeypatch.undo()` (seven tests in tests/server call it)
+    would otherwise put the real functions back."""
+    if request.node.get_closest_marker("real_mcp") is not None:
+        yield
+        return
+    import mcp.client.stdio as stdio_mod
+
+    from server.services import capability_runtime
+
+    async def refuse_spawn(*args, **kwargs):
+        raise RuntimeError("real MCP spawn in a unit test: fake the session, or mark the test real_mcp")
+
+    async def refuse_download(*args, **kwargs):
+        raise RuntimeError("real runtime download in a unit test: fake capability_runtime._download")
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(stdio_mod, "_create_platform_compatible_process", refuse_spawn)
+        mp.setattr(capability_runtime, "_download", refuse_download)
+        yield
+
+
+@pytest.fixture(autouse=True)
 def _data_dir_pin_survives():
     """Repair, then fail, a test that changed the pinned data-dir env and kept it.
 
