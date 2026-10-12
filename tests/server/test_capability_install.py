@@ -258,7 +258,7 @@ async def test_the_launch_wraps_only_installed_servers(monkeypatch):
     class Stop(Exception):
         pass
 
-    def fake_stdio(params):
+    def fake_stdio(params, errlog=None):
         seen.append(params)
         raise Stop
     monkeypatch.setattr("mcp.client.stdio.stdio_client", fake_stdio)
@@ -267,7 +267,7 @@ async def test_the_launch_wraps_only_installed_servers(monkeypatch):
     for server in (base, {**base, "id": 2, "sandbox": {"root": "/tmp/arslan-cap-test", "folders": [], "network": False}}):
         with pytest.raises(Exception):
             await manager._open_session(server)
-    assert seen[0].command.endswith("echo") and seen[0].cwd is None
+    assert seen[0].command.endswith("echo") and seen[0].cwd == str(session.server_dir(1))
     assert seen[1].command == "/usr/bin/sandbox-exec" and seen[1].args[2:] == ["/bin/echo", "hi"]
     assert seen[1].cwd == "/tmp/arslan-cap-test/home"
 

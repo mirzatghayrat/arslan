@@ -114,7 +114,7 @@ async def test_stdio_spawn_uses_resolved_command_and_merged_path(tmp_path, monke
     captured = {}
 
     class _FakeStdio:
-        def __init__(self, params):
+        def __init__(self, params, errlog=None):
             captured["params"] = params
 
         async def __aenter__(self):
@@ -124,7 +124,7 @@ async def test_stdio_spawn_uses_resolved_command_and_merged_path(tmp_path, monke
             return False
 
     class _FakeSession:
-        def __init__(self, read, write):
+        def __init__(self, read, write, **kwargs):
             pass
 
         async def __aenter__(self):
@@ -176,7 +176,7 @@ async def test_stdio_spawn_explicit_env_path_wins(tmp_path, monkeypatch):
     captured = {}
 
     class _FakeStdio:
-        def __init__(self, params):
+        def __init__(self, params, errlog=None):
             captured["params"] = params
 
         async def __aenter__(self):
@@ -186,7 +186,7 @@ async def test_stdio_spawn_explicit_env_path_wins(tmp_path, monkeypatch):
             return False
 
     class _FakeSession:
-        def __init__(self, read, write):
+        def __init__(self, read, write, **kwargs):
             pass
 
         async def __aenter__(self):
