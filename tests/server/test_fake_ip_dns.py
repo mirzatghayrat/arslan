@@ -51,6 +51,23 @@ def _resolver(monkeypatch, table: dict[str, tuple[str, ...]], default: tuple[str
 
 
 @pytest.fixture(autouse=True)
+def hermetic(monkeypatch):
+    """No real resolver and no real transport, even under a mutant: on this project's fake-IP
+    Mac a real lookup answers a 198.18 address that the TUN routes out to the internet. Tests
+    replace both with `_resolver` and `seen` (or their own); a test that forgets, or code that
+    asks one more time than it should, fails here instead."""
+    def no_resolver(host, *a, **k):
+        raise socket.gaierror(socket.EAI_NONAME, f"test guard: no resolver for {host!r}")
+
+    def no_network(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("test guard: no network", request=request)
+
+    monkeypatch.setattr(socket, "getaddrinfo", no_resolver)
+    monkeypatch.setattr(net_pin, "_build_client", lambda: httpx.AsyncClient(
+        transport=httpx.MockTransport(no_network), follow_redirects=False, trust_env=False))
+
+
+@pytest.fixture(autouse=True)
 def no_proxy(monkeypatch):
     for var in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
                 "http_proxy", "https_proxy", "all_proxy", "no_proxy"):

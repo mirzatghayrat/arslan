@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import ipaddress
 import logging
 import socket
 
@@ -14,6 +15,66 @@ def no_system_proxy(monkeypatch):
     """The developer Mac has a system proxy (127.0.0.1:7899); without this the tunnel
     would chain through it and the existing tests would dial a real proxy."""
     monkeypatch.setattr(net_pin, "getproxies", lambda: {})
+
+
+def _addrinfo(ip: str, port: int = 0) -> list[tuple]:
+    if ":" in ip:
+        return [(socket.AF_INET6, socket.SOCK_STREAM, 6, "", (ip, port, 0, 0))]
+    return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, port))]
+
+
+def _literal_or_refuse(table: dict[str, str]):
+    """A resolver that answers a literal address with itself, a listed name from `table`, and
+    anything else with gaierror. It never asks the real resolver: on this project's fake-IP Mac
+    a real answer is a 198.18 address that the TUN routes out to the real internet."""
+    def resolve(host, port=None, *args, **kwargs):
+        name = host.decode() if isinstance(host, bytes) else str(host)
+        if name == "localhost":
+            return _addrinfo("127.0.0.1", port or 0)
+        try:
+            ipaddress.ip_address(name)
+        except ValueError:
+            if name in table:
+                return _addrinfo(table[name], port or 0)
+            raise socket.gaierror(socket.EAI_NONAME,
+                                  f"test guard: {name!r} is not in this test's table") from None
+        return _addrinfo(name, port or 0)
+    return resolve
+
+
+_LOOPBACK = frozenset({"127.0.0.1", "::1", "localhost"})
+
+
+@pytest.fixture(autouse=True)
+def hermetic(monkeypatch):
+    """Nothing in this file reaches the network, even when the code under test is wrong.
+
+    - The fake-IP canary answers "ordinary DNS" unless a test pins it otherwise: the real one is
+      a DNS lookup, and on a fake-IP Mac it answers "fake".
+    - No real resolver: a literal answers itself, any name a test did not list fails.
+    - A dial to anything but loopback raises `OSError("test guard: non-loopback dial")`, and a
+      loopback dial reaches only a server this test started: the developer Mac's real system
+      proxy listens on loopback (127.0.0.1:7899) and forwards to the internet. A loopback port
+      nobody here listens on is refused the way a dead port is."""
+    monkeypatch.setattr(net_pin, "_fake_ip_dns", lambda: False)
+    monkeypatch.setattr(socket, "getaddrinfo", _literal_or_refuse({}))
+    listening: set[int] = set()
+    real_start, real_connect = asyncio.start_server, asyncio.open_connection
+
+    async def start_server(*args, **kwargs):
+        server = await real_start(*args, **kwargs)
+        listening.update(sock.getsockname()[1] for sock in server.sockets)
+        return server
+
+    async def open_connection(host=None, port=None, **kwargs):
+        if host not in _LOOPBACK:
+            raise OSError("test guard: non-loopback dial")
+        if port not in listening:
+            raise ConnectionRefusedError(f"test guard: no test server on loopback port {port}")
+        return await real_connect(host, port, **kwargs)
+
+    monkeypatch.setattr(asyncio, "start_server", start_server)
+    monkeypatch.setattr(bp.asyncio, "open_connection", open_connection)
 
 
 @pytest.fixture(autouse=True)
@@ -94,15 +155,10 @@ async def test_proxy_admission_budget_fails_closed():
     assert proxy.blocked == 1
 
 
-_REAL_GETADDRINFO = socket.getaddrinfo
-
-
 def _answers(monkeypatch, table: dict[str, str]):
-    def fake(host, *a, **k):
-        if host in table:
-            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (table[host], 0))]
-        return _REAL_GETADDRINFO(host, *a, **k)
-    monkeypatch.setattr(socket, "getaddrinfo", fake)
+    """Answer the names in `table`; a literal answers itself; any other name fails (gaierror).
+    Never the real resolver."""
+    monkeypatch.setattr(socket, "getaddrinfo", _literal_or_refuse(table))
 
 
 def _system_proxy(monkeypatch, port: int, scheme: str = "http"):
@@ -207,6 +263,50 @@ async def test_a_fake_answer_passes_only_because_a_proxy_resolves_the_name(monke
     await server.wait_closed()
     assert record == [b"CONNECT duckduckgo.com:443 HTTP/1.1\r\nHost: duckduckgo.com:443\r\n\r\n"]
     assert proxy.blocked == 1
+
+
+@pytest.mark.asyncio
+async def test_a_fake_name_through_the_tunnel_in_tun_mode_is_still_allowed(monkeypatch):
+    """The tunnel checks `https://{host}:443/`, the one request a faked name may still make
+    (net_pin, R1), so the agent browser keeps working on a fake-IP Mac with no system proxy:
+    it dials the stand-in address and the TUN maps it back. Here that dial is redirected to a
+    local echo server, so nothing leaves the machine."""
+    monkeypatch.setattr(net_pin, "_fake_ip_dns", lambda: True)          # TUN mode
+    _answers(monkeypatch, {"duckduckgo.com": "198.18.0.35"})
+    async def echo(reader, writer):                                     # stands in for the site
+        try:
+            writer.write(await reader.read(100))
+            await writer.drain()
+        finally:
+            writer.close()
+            await writer.wait_closed()
+
+    server = await asyncio.start_server(echo, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    dialled: list[tuple] = []
+    guarded = asyncio.open_connection
+
+    async def tun(host=None, port_=None, **kwargs):
+        dialled.append((host, port_))
+        if (host, port_) == ("198.18.0.35", 443):
+            return await guarded("127.0.0.1", port, **kwargs)
+        return await guarded(host, port_, **kwargs)
+
+    async with bp.PublicTunnel() as proxy:
+        monkeypatch.setattr(bp.asyncio, "open_connection", tun)
+        reader, writer = await asyncio.open_connection("127.0.0.1", proxy.port)
+        writer.write(b"CONNECT duckduckgo.com:443 HTTP/1.1\r\n\r\n")
+        await writer.drain()
+        assert b"200" in await reader.readuntil(b"\r\n\r\n")
+        writer.write(b"opaque TLS bytes")
+        await writer.drain()
+        assert await reader.readexactly(16) == b"opaque TLS bytes"
+        writer.close()
+        await writer.wait_closed()
+    server.close()
+    await server.wait_closed()
+    assert ("198.18.0.35", 443) in dialled
+    assert proxy.blocked == 0
 
 
 def _basic(user: str, password: str) -> str:
@@ -431,6 +531,10 @@ _MALFORMED_SETTINGS = [
     pytest.param("://127.0.0.1:7899", id="empty-scheme"),
     pytest.param("://user:s3cret@127.0.0.1:7899", id="empty-scheme-with-credentials"),
     pytest.param("ht tp://127.0.0.1:7899", id="unreadable-scheme"),
+    # An '@' that is not in the netloc: here it is in the path, so urlsplit reads host "user"
+    # and port 12345, the user name and the password's leading digits. And one in the query.
+    pytest.param("http://user:12345/word@proxy:8080", id="at-sign-in-the-path"),
+    pytest.param("http://proxy.invalid:8080/?user@x", id="at-sign-in-the-query"),
 ]
 
 
@@ -510,6 +614,25 @@ async def test_a_malformed_proxy_setting_is_named_and_refuses_the_tunnel(monkeyp
     assert _tunnel_log(caplog) == ["browser tunnel: the system proxy setting is malformed; "
                                    "every tunnel is refused until it is fixed"]
     assert {host for host, _ in dials} == {"127.0.0.1"}              # not a licence to go direct
+
+
+@pytest.mark.asyncio
+async def test_an_at_sign_outside_the_netloc_is_malformed_never_dialled_never_logged(
+        monkeypatch, caplog):
+    """`http://user:12345/word@proxy:8080` parsed as the proxy user:12345, and the log lines
+    printed "user:12345": a user name and the start of a password. Refused as malformed."""
+    _proxy_url(monkeypatch, "http://user:12345/word@proxy:8080")
+    _answers(monkeypatch, {"duckduckgo.com": "198.18.0.35"})
+    dials = _dials(monkeypatch)
+    async with bp.PublicTunnel() as proxy:
+        with caplog.at_level(logging.DEBUG):                  # every logger, every level
+            assert b"403" in await _request(proxy.port, "duckduckgo.com:443")
+    assert proxy.blocked == 1
+    assert dials == [("127.0.0.1", proxy.port)]               # only our own way into the tunnel
+    assert _tunnel_log(caplog) == ["browser tunnel: the system proxy setting is malformed; "
+                                   "every tunnel is refused until it is fixed"]
+    assert not any("12345" in record.getMessage() for record in caplog.records)
+    assert "12345" not in caplog.text
 
 
 @pytest.mark.asyncio

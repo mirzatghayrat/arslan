@@ -1,9 +1,14 @@
 """Per-visit HTTPS CONNECT tunnel: public destinations only, no TLS interception.
 
-Connecting directly, the tunnel reaches public pinned IPs only: the name is resolved once,
-every answer must be public, and the connection goes to that address. With a system HTTP
-proxy set (0.1.61) the destination check still runs first, and the proxy then connects BY
-NAME, so the pinning is the proxy's and not ours (see the last paragraph).
+Connecting directly, the tunnel connects to the address it validated: the name is resolved
+once, every answer must pass `net_pin`, and the connection goes to that address. That address
+is public, except on a Mac whose DNS is fake-IP (a TUN-mode proxy, 0.1.61): there it is the
+name's stand-in in 198.18.0.0/15, which the TUN maps back to the name and routes, so the TUN
+decides the real destination. The tunnel only ever asks for https on port 443, the one request
+`net_pin` lets a faked name make, and TLS, checked by Chromium against the real name, bounds
+who can answer. With a system HTTP proxy set (0.1.61) the destination check still runs first,
+and the proxy then connects BY NAME, so the pinning is the proxy's and not ours (see the last
+paragraph).
 
 Chromium's trusted network service is configured to route page requests here;
 scripts, QUIC and proxy bypasses are disabled by the preview service. This is
@@ -99,11 +104,12 @@ def _upstream_proxy(host: str) -> _UpstreamProxy | None:
     path. A user name in the proxy URL becomes `Proxy-Authorization: Basic`, read the way
     urllib reads it (percent-decoded, UTF-8).
 
-    A value that cannot be parsed, has no scheme, has no host, or names port 0 raises
-    ValueError, which `_accept` answers with a refusal: a broken proxy setting is not a licence
-    to go direct. Only a scheme that is there and is not http returns None (that proxy is not
-    ours to speak to). `host` is the destination's canonical name, lower case and without
-    brackets, for NO_PROXY and the system exception list.
+    A value that cannot be parsed, has no scheme, has no host, names port 0, or has an '@'
+    outside its netloc raises ValueError, which `_accept` answers with a refusal: a broken
+    proxy setting is not a licence to go direct. Only a scheme that is there and is not http
+    returns None (that proxy is not ours to speak to). `host` is the destination as the page
+    wrote it, lower case and without brackets, for NO_PROXY and the system exception list; a
+    trailing dot is kept (stripping it would change what those lists match).
 
     The error carries a fixed text, never the value or the parser's message, and is raised
     after the handler so that it is not chained to the parser's error either: both can quote
@@ -123,6 +129,11 @@ def _upstream_proxy(host: str) -> _UpstreamProxy | None:
             raise ValueError
         if parsed.scheme != "http":
             return None
+        if "@" in raw and "@" not in parsed.netloc:
+            # An '@' outside the netloc: `http://user:12345/word@proxy:8080` reads as host
+            # "user", port 12345, a user name and the start of a password, which the log lines
+            # would then print. Whatever was meant, this is not it: refused below.
+            raise ValueError
         port = parsed.port
         if not parsed.hostname or port == 0:
             # HTTPS_PROXY=http://$UNSET_VARIABLE:7899 has no host, and port 0 is nobody's port:
