@@ -60,14 +60,15 @@ def test_a_command_card_is_shadow_judged_and_the_real_answer_is_joined(app_clien
 
 
 async def test_a_background_job_card_is_shadow_judged_too(execution_db, monkeypatch):
-    from server.services import approvals
+    from server.services import approvals, run_registry
     async def make():
         return _Adapter()
     monkeypatch.setattr(judgment, "_adapter", make)
 
-    async def ask(cid, frame):
-        return True
-    monkeypatch.setattr(approvals, "ask", ask)
+    def window(frame):            # a window on the conversation that approves the job's card
+        if frame["type"] == "propose_run_command":
+            approvals.answer({"type": "confirm_run_command", "call_id": frame["call_id"]})
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: window)
     async def ask_all(db):
         return "ask_all"
     monkeypatch.setattr("server.services.settings_service.shell_confirm_policy", ask_all)

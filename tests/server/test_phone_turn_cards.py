@@ -180,7 +180,8 @@ async def test_the_first_answer_wins_even_when_both_arrive_before_the_turn_wakes
         assert approvals.answer({"type": "confirm_run_command", "call_id": "k", "remember": True})
         assert approvals.answer({"type": "cancel_run_command", "call_id": "k", "source": "phone"}), \
             "the late reply is still recognised (and swallowed), not reported as unknown"
-        assert approvals.close_card(pending) == {"approved": True, "remember": True, "by": "mac"}
+        assert approvals.close_card(pending) == {"approved": True, "remember": True, "scope": None,
+                                                 "note": "", "by": "mac"}
         assert sent[-1] == {"type": "card_resolved", "call_id": "k", "outcome": "approved", "by": "mac"}
         assert approvals.pending_cards("c") == []
     finally:

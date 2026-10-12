@@ -104,6 +104,8 @@ def test_only_the_cards_own_kind_can_answer_it():
     async def go():
         pending = approvals.open_card("c", {"type": "propose_schedule", "call_id": "s1"}, broadcast=False)
         assert approvals.answer_by_id("s1", True, source="island")
-        assert pending.future.result() == {"approved": True, "remember": False, "by": "island"}
+        # 0.1.61: a decision carries a scope (none here: this card offers no choices) and a note.
+        assert pending.future.result() == {"approved": True, "remember": False, "scope": None,
+                                           "note": "", "by": "island"}
         approvals.close_card(pending)
     asyncio.run(go())

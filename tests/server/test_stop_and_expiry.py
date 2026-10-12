@@ -8,7 +8,7 @@ import subprocess
 import pytest
 
 from server.orchestrator import tool_loop
-from server.services import approvals, terminal_exec
+from server.services import approvals, run_registry, terminal_exec
 
 
 def _sleeps(tag: str) -> int:
@@ -44,15 +44,14 @@ async def test_a_card_nobody_answered_is_not_reported_as_a_refusal(monkeypatch):
     assert "Do not ask for it again" in text and "can be asked again" not in text
 
 
-async def test_after_one_unanswered_card_a_job_opens_no_more(monkeypatch):
+async def test_after_one_unanswered_card_a_job_opens_no_more(execution_db, monkeypatch):
+    # 0.1.61: the rule lives in the job's card surface (approvals.BroadcastAsker), and covers the
+    # cards decided through permissions.decide too (the schedule below).
+    monkeypatch.setattr(approvals, "TIMEOUT_S", 0.05)
     opened = []
-
-    async def ask(conversation_id, frame):
-        opened.append(frame["call_id"])
-        approvals.LAST_OUTCOME.set("expired")
-        return False
-    monkeypatch.setattr(approvals, "ask", ask)
-    job = approvals.JobConfirmations("c7")
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: lambda f: (
+        opened.append(f["call_id"]) if f["type"].startswith("propose_") else None))
+    job = approvals.JobConfirmations("c7", job_id="job-c7")
     assert await job.command("touch ~/Downloads/a", [], sandbox="retry") is False
     assert await job.command("touch ~/Downloads/a", [], sandbox="outside", why="again") is False
     assert await job.schedule("daily", "08:00") is False
@@ -63,11 +62,11 @@ async def test_after_one_unanswered_card_a_job_opens_no_more(monkeypatch):
 async def test_a_refused_card_does_not_close_the_job_to_later_cards(monkeypatch):
     opened = []
 
-    async def ask(conversation_id, frame):
-        opened.append(frame["call_id"])
-        approvals.LAST_OUTCOME.set("declined")
-        return False
-    monkeypatch.setattr(approvals, "ask", ask)
+    def window(f):                    # a window on the conversation that says no to each card
+        if f["type"].startswith("propose_"):
+            opened.append(f["call_id"])
+            approvals.answer({"type": "cancel_run_command", "call_id": f["call_id"]})
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: window)
     job = approvals.JobConfirmations("c8")
     await job.command("touch ~/Downloads/a", [], sandbox="retry")
     await job.command("touch ~/Downloads/b", [], sandbox="retry")

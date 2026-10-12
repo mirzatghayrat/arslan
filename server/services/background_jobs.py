@@ -281,7 +281,7 @@ async def _execute(job: Job) -> tuple[str, str, str | None]:
     ctx = await task_context.load(job.conversation_id, user_message=job.goal)
     ctx = replace(ctx, task_id=job.job_id, run_id=f"job-{job.job_id}", explicit_save_digest=None,
                   explicit_save_ref=None, allow_global_save=False)
-    confirmations = approvals.JobConfirmations(job.conversation_id)
+    confirmations = approvals.JobConfirmations(job.conversation_id, job_id=job.job_id)
     downstream = run_registry.make_emit(job.conversation_id)
 
     async def function(conversation_id, instruction, emit):

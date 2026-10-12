@@ -105,6 +105,21 @@ async def test_a_job_runs_as_its_own_task_and_posts_one_result(execution_db, act
     assert desktop_status.snapshot()["events"][-1]["kind"] == "turn_finished"
 
 
+async def test_a_job_gives_its_id_to_its_cards(execution_db, active, monkeypatch):
+    """0.1.61 §A8: a job's decisions are written with its job id (the ledger's `job_id`)."""
+    made = []
+    real = approvals.JobConfirmations
+
+    def recording(*args, **kwargs):
+        made.append(real(*args, **kwargs))
+        return made[-1]
+    monkeypatch.setattr(approvals, "JobConfirmations", recording)
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: JobAdapter())
+    job = await background_jobs.start(CID, "Tidy my notes into a report", _criteria())
+    await _wait(lambda: job.phase == "finished")
+    assert [(c.conversation_id, c.job_id) for c in made] == [(CID, job.job_id)]
+
+
 async def test_the_starting_turn_ends_before_the_job_and_shares_nothing_with_it(execution_db, active, monkeypatch):
     gate = asyncio.Event()
     adapter = JobAdapter(gate)
@@ -235,32 +250,35 @@ async def test_cards_are_answered_by_call_id_and_kind_and_time_out_to_no(monkeyp
         run_registry.detach_sink(CID, sent.append)
 
 
+def _declining(asked: list, field: str):
+    """Every window on the conversation, played by the test: it notes `field` of each card a job
+    shows and answers No (0.1.61: a job's cards are its BroadcastAsker's, not `approvals.ask`)."""
+    def window(frame):
+        if frame["type"].startswith("propose_"):
+            asked.append(frame.get(field))
+            approvals.answer({"type": "cancel_" + frame["type"].removeprefix("propose_"),
+                              "call_id": frame["call_id"]})
+    return window
+
+
 async def test_job_commands_never_reuse_session_grants_and_remote_always_asks(monkeypatch):
     from server.services import settings_service
     monkeypatch.setattr(settings_service, "shell_confirm_policy", AsyncMock(return_value="ask_risky"))
     asked = []
-
-    async def ask(cid, frame):
-        asked.append(frame["type"])
-        return False
-    monkeypatch.setattr(approvals, "ask", ask)
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: _declining(asked, "type"))
     confirm = approvals.JobConfirmations(CID)
     assert await confirm.command("git", ["status"]) is True          # LOW under ask_risky, as in the foreground
     assert await confirm.command("git", ["status"], remote_host="box") is False
     assert asked == ["propose_run_command"]
 
 
-async def test_a_job_honours_the_users_standing_answer_but_never_adds_one(monkeypatch):
-    """0.1.48: "don't ask again" given in a conversation holds for jobs too; a job has
-    no "remember" of its own (it cannot add a standing answer)."""
+async def test_a_job_honours_the_users_standing_answer(execution_db, monkeypatch):
+    """0.1.48: "don't ask again" given in a conversation holds for jobs too. (0.1.61: a job's card
+    offers the window's choices, so a job may now add one as well — test_approvals_v2.)"""
     from server.services import settings_service, terminal_policy
     monkeypatch.setattr(settings_service, "shell_confirm_policy", AsyncMock(return_value="ask_risky"))
     asked = []
-
-    async def ask(cid, frame):
-        asked.append(frame.get("reason"))
-        return False
-    monkeypatch.setattr(approvals, "ask", ask)
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: _declining(asked, "reason"))
     monkeypatch.setattr(terminal_policy, "always_allowed", AsyncMock(return_value={"install"}))
     confirm = approvals.JobConfirmations(CID)
     assert await confirm.command("brew install remindctl", []) is True      # standing answer
@@ -268,17 +286,13 @@ async def test_a_job_honours_the_users_standing_answer_but_never_adds_one(monkey
     assert asked == ["deletes files"]
 
 
-async def test_a_standing_answer_for_one_rule_does_not_carry_a_second_risk(monkeypatch):
+async def test_a_standing_answer_for_one_rule_does_not_carry_a_second_risk(execution_db, monkeypatch):
     """A remembered "apple-events" must not wave through an upload chained after it:
     assess() names only the first matching rule, so the job checks every rule."""
     from server.services import settings_service, terminal_policy
     monkeypatch.setattr(settings_service, "shell_confirm_policy", AsyncMock(return_value="ask_risky"))
     asked = []
-
-    async def ask(cid, frame):
-        asked.append(frame["command"])
-        return False
-    monkeypatch.setattr(approvals, "ask", ask)
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: _declining(asked, "command"))
     monkeypatch.setattr(terminal_policy, "always_allowed", AsyncMock(return_value={"apple-events"}))
     confirm = approvals.JobConfirmations(CID)
     alone = "osascript -e 'tell application \"Finder\" to activate'"
