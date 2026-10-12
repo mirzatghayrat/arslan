@@ -28,8 +28,8 @@ async def sup(execution_db, tmp_path, monkeypatch):
     supervisor = sm.Supervisor()
     supervisor.maker = execution_db
     yield supervisor
-    await supervisor.stop()
-    await session.manager.aclose_all()
+    await asyncio.wait_for(supervisor.stop(), 10)       # a hang fails the test, never stalls the run
+    await asyncio.wait_for(session.manager.aclose_all(), 10)
 
 
 async def _seed(maker, sid, *, command="x", transport="stdio", url=None, env=None, host_allowed=True,
@@ -70,6 +70,30 @@ def _fake_list(monkeypatch, behaviour):
 
 async def _ok(server):
     return _listing("a")
+
+
+async def test_a_plan_cancelled_for_real_ends_cancelled_and_is_never_classified(sup, monkeypatch):
+    """A deliberate cancel is never a cause: the plan ends cancelled, writing nothing. First in this
+    file on purpose — a regression here would otherwise hang the switch-off tests below."""
+    await _seed(sup.maker, 1)
+    gate = asyncio.Event()
+
+    async def gated(server):
+        await gate.wait()
+        return _listing("a")
+    calls = _fake_list(monkeypatch, gated)
+    sup.start(run_loops=False)
+    plan = sup._new_plan(1, "refresh")
+    await _until(lambda: calls)
+    sup._inflight.pop(1)                       # every deliberate cancel takes the plan out first
+    plan.cancel()
+    try:
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(plan, 2)
+    finally:
+        gate.set()
+    row = await _row(sup.maker, 1)
+    assert row.state == "starting" and row.last_error is None
 
 
 async def test_start_all_runs_at_most_four_attempts_at_once(sup, monkeypatch):
@@ -301,9 +325,9 @@ async def test_switching_off_cancels_the_start_drops_the_session_and_says_off(su
     sup.start(run_loops=False)
     sup.schedule(1)
     await asyncio.sleep(0.05)
-    await sup.set_enabled(1, False)
+    await asyncio.wait_for(sup.set_enabled(1, False), 5)
     assert (await _row(sup.maker, 1)).state == "off" and 1 not in sup._inflight
-    await sup.set_enabled(1, True)
+    await asyncio.wait_for(sup.set_enabled(1, True), 5)
     assert (await _row(sup.maker, 1)).state == "starting" and 1 in sup._inflight
     gate.set()
 
@@ -348,7 +372,7 @@ async def test_forget_cancels_an_inflight_start(sup, monkeypatch):
     sup.start(run_loops=False)
     sup.schedule(1)
     await asyncio.sleep(0.05)
-    await sup.forget(1)
+    await asyncio.wait_for(sup.forget(1), 5)
     assert 1 not in sup._inflight and session.manager.cached(1) is None
 
 
@@ -384,7 +408,7 @@ async def test_stop_cancels_everything_and_unhooks(sup, monkeypatch):
     sup.start()                                       # with start_all and the periodic loop
     await asyncio.sleep(0.05)
     assert session.manager.on_dropped is not None and sup._loop_task is not None
-    await sup.stop()
+    await asyncio.wait_for(sup.stop(), 5)
     assert not sup.running and sup._loop_task is None and not sup._inflight
     assert session.manager.on_dropped is None and session.manager.on_tools_changed is None
 
@@ -769,7 +793,7 @@ async def _settled(sup):
         pending = [t for t in (*sup._inflight.values(), *sup._bg) if not t.done()]
         if not pending:
             return
-        await asyncio.gather(*pending, return_exceptions=True)
+        await asyncio.wait_for(asyncio.gather(*pending, return_exceptions=True), 10)
     raise AssertionError("the supervisor never settled")
 
 
@@ -848,10 +872,10 @@ async def test_a_plan_cancelled_with_nobody_asking_is_logged_and_a_deliberate_on
     caplog.clear()
     sup.schedule(1)
     await _until(lambda: len(calls) == 2)
-    await sup.set_enabled(1, False)                    # deliberate: switch-off
+    await asyncio.wait_for(sup.set_enabled(1, False), 5)          # deliberate: switch-off
     sup.schedule(1)
     await _until(lambda: len(calls) == 3)
-    await sup.stop()                                   # deliberate: shutdown
+    await asyncio.wait_for(sup.stop(), 5)                         # deliberate: shutdown
     assert "nobody asked for it" not in caplog.text
 
 
@@ -868,7 +892,7 @@ async def test_deleting_a_server_during_a_pending_relist_starts_nothing(sup, mon
     sup.start(run_loops=False)
     sup._on_tools_changed(1)
     await asyncio.wait_for(hung.listing.wait(), 2)
-    await sup.forget(1)
+    await asyncio.wait_for(sup.forget(1), 5)
     async with sup.maker() as db:
         await db.delete(await db.get(MCPServer, 1))
         await db.commit()
@@ -893,7 +917,7 @@ async def test_switching_off_during_a_pending_relist_ends_off(sup, monkeypatch, 
         async with sup.maker() as db:
             (await db.get(MCPServer, 1)).host_allowed = False
             await db.commit()
-    await sup.set_enabled(1, False)
+    await asyncio.wait_for(sup.set_enabled(1, False), 5)
     await _settled(sup)
     row = await _row(sup.maker, 1)
     assert (row.state, opens, sup._reconnects.get(1, 0)) == ("off", [], 0)
@@ -938,7 +962,7 @@ async def test_giving_up_during_a_pending_relist_starts_nothing(sup, monkeypatch
     sup.start(run_loops=False)
     sup._on_tools_changed(1)
     await asyncio.wait_for(hung.listing.wait(), 2)
-    await sup._give_up(1)
+    await asyncio.wait_for(sup._give_up(1), 5)
     await _settled(sup)
     row = await _row(sup.maker, 1)
     assert row.state == "failed" and row.last_error.startswith("the server keeps dropping")
@@ -1180,7 +1204,7 @@ async def test_switching_on_a_server_that_runs_changes_nothing(sup, monkeypatch)
     session.manager._sessions[1] = (_Live(), _stack())
     calls = _fake_list(monkeypatch, _ok)
     sup.start(run_loops=False)
-    await sup.set_enabled(1, True)
+    await asyncio.wait_for(sup.set_enabled(1, True), 5)
     assert (await _row(sup.maker, 1)).state == "ready" and 1 not in sup._inflight and calls == []
 
 
@@ -1250,7 +1274,8 @@ async def test_stop_cancels_background_work(sup, monkeypatch):  # R15
     sup.start(run_loops=False)
     sup._on_tools_changed(1)                            # a re-list waiting out its debounce
     (pending,) = sup._bg
-    await sup.stop()
+    async with asyncio.timeout(5):      # bounded, without yielding first (wait_for would let the
+        await sup.stop()                # re-list start, and it never runs its own finally unstarted)
     assert pending.cancelled() and not sup._bg and not sup._relisting
 
 
@@ -1297,7 +1322,7 @@ async def test_switching_off_returns_only_after_the_start_unwound(sup, monkeypat
     sup.start(run_loops=False)
     sup.schedule(1)
     await _until(lambda: calls)
-    await sup.set_enabled(1, False)
+    await asyncio.wait_for(sup.set_enabled(1, False), 5)
     assert unwound == [1]
 
 
@@ -1317,3 +1342,265 @@ async def test_a_first_start_shows_its_last_cause_while_it_retries(sup, monkeypa
     row = await _row(sup.maker, 1)
     assert (row.state, row.fail_count) == ("starting", 0)
     assert row.last_error == "did not start within 120 s (still downloading?)"
+
+
+# ── Review round 2 (re-review minors 1–6) ───────────────────────────────────────────────────────
+
+def _slow_to_unwind(state, release):
+    """tools/list for a start whose first attempt hangs and, once cancelled, takes until `release`
+    to unwind (ending a process takes a moment); later attempts answer at once."""
+    async def listing(server):
+        state["n"] += 1
+        if state["n"] == 1:
+            try:
+                await asyncio.sleep(3600)
+            except asyncio.CancelledError:
+                await release.wait()
+                raise
+        return _listing("a")
+    return listing
+
+
+@pytest.mark.parametrize("verb", ["forget", "switch-off", "give-up"])
+async def test_the_tick_never_races_a_deliberate_verb(sup, monkeypatch, verb):
+    """Minor 1: forget / set_enabled(off) / _give_up take the plan out of _inflight and then await
+    its unwinding. A tick in that window must not see "starting, no plan" and start the server
+    again: not for a server being deleted (Task 6's forget-then-delete: nothing respawns), not for
+    one being switched off before host_allowed is committed (it must end `off`, not `ready`)."""
+    await _seed(sup.maker, 1)
+    state, release = {"n": 0}, asyncio.Event()
+    _fake_list(monkeypatch, _slow_to_unwind(state, release))
+    sup.start(run_loops=False)
+    sup.schedule(1)
+    await _until(lambda: state["n"] == 1)
+    async with sup.maker() as db:                         # the start has run for over a minute
+        (await db.get(MCPServer, 1)).state_at = (
+            sm._utcnow() - timedelta(seconds=sm.STARTING_STALE_S + 30))
+        await db.commit()
+    verbs = {"forget": lambda: sup.forget(1), "switch-off": lambda: sup.set_enabled(1, False),
+             "give-up": lambda: sup._give_up(1)}
+    acting = asyncio.create_task(verbs[verb]())
+    try:
+        await _until(lambda: 1 not in sup._inflight)      # the verb took the plan; it unwinds
+        await sup._tick()                                 # the 15 s tick lands in that window
+        tick_planned = 1 in sup._inflight
+    finally:
+        release.set()
+    await asyncio.wait_for(acting, 5)
+    if verb == "forget":
+        async with sup.maker() as db:                     # then the row goes (Task 6's order)
+            await db.delete(await db.get(MCPServer, 1))
+            await db.commit()
+    await _settled(sup)
+    assert not tick_planned and state["n"] == 1 and 1 not in sup._inflight
+    assert session.manager.cached(1) is None and 1 not in sup._busy      # the verb let go
+    if verb != "forget":
+        assert (await _row(sup.maker, 1)).state == ("off" if verb == "switch-off" else "failed")
+
+
+async def test_the_tick_leaves_a_due_server_alone_while_it_is_switched_off(sup, monkeypatch):
+    """The due-retry half of minor 1: a failed row whose retry is due is being switched off (the
+    `off` write is still in flight, host_allowed not yet committed). The tick must not retry it."""
+    await _seed(sup.maker, 1, state="failed")
+    async with sup.maker() as db:
+        (await db.get(MCPServer, 1)).next_retry_at = sm._utcnow() - timedelta(seconds=1)
+        await db.commit()
+    real_set, writing, release = sup._set, asyncio.Event(), asyncio.Event()
+
+    async def slow_set(sid, gen, state, **kw):
+        if state == "off":
+            writing.set()
+            await release.wait()
+        return await real_set(sid, gen, state, **kw)
+    monkeypatch.setattr(sup, "_set", slow_set)
+    calls = _fake_list(monkeypatch, _ok)
+    sup.start(run_loops=False)
+    switching = asyncio.create_task(sup.set_enabled(1, False))
+    try:
+        await asyncio.wait_for(writing.wait(), 2)
+        await sup._tick()
+        tick_planned = 1 in sup._inflight
+    finally:
+        release.set()
+    await asyncio.wait_for(switching, 5)
+    await _settled(sup)
+    assert not tick_planned and calls == [] and (await _row(sup.maker, 1)).state == "off"
+
+
+async def test_two_verbs_at_once_keep_the_server_busy_until_both_are_done(sup, monkeypatch):
+    """A delete arriving while a switch-off still waits for the plan to unwind: forget is done long
+    before set_enabled(off) is; the server stays out of the tick's reach until both are."""
+    await _seed(sup.maker, 1)
+    state, release = {"n": 0}, asyncio.Event()
+    _fake_list(monkeypatch, _slow_to_unwind(state, release))
+    sup.start(run_loops=False)
+    sup.schedule(1)
+    await _until(lambda: state["n"] == 1)
+    async with sup.maker() as db:
+        (await db.get(MCPServer, 1)).state_at = (
+            sm._utcnow() - timedelta(seconds=sm.STARTING_STALE_S + 30))
+        await db.commit()
+    switching = asyncio.create_task(sup.set_enabled(1, False))
+    try:
+        await _until(lambda: 1 not in sup._inflight)
+        await asyncio.wait_for(sup.forget(1), 5)            # done while the switch-off still waits
+        await sup._tick()
+        tick_planned = 1 in sup._inflight
+    finally:
+        release.set()
+    await asyncio.wait_for(switching, 5)
+    await _settled(sup)
+    assert not tick_planned and state["n"] == 1 and not sup._busy
+
+@pytest.mark.parametrize("failure", ["runtime", "group401"])
+async def test_a_cancel_that_wait_for_swallowed_still_ends_the_plan(sup, monkeypatch, failure):
+    """Minor 3 (CPython 3.11): a plan cancelled in the very iteration its open fails gets the
+    open's error from wait_for instead of the CancelledError. It is still a cancel: one open, no
+    retry, nothing written."""
+    await _seed(sup.maker, 1)
+    monkeypatch.setattr(sm, "FIRST_START_GAPS_S", (0.05, 0.05, 0.05))
+    opens = []
+
+    async def open_(server):
+        opens.append(server["id"])
+        if len(opens) == 1:
+            sup._inflight[1].cancel()             # a cancel lands as the open fails
+        if failure == "runtime":
+            raise RuntimeError("boom")
+        req = httpx.Request("POST", "https://h/mcp")
+        raise ExceptionGroup("tg", [httpx.HTTPStatusError(
+            "401", request=req, response=httpx.Response(401, request=req))])
+    monkeypatch.setattr(session.manager, "_open_session", open_)
+    sup.start(run_loops=False)
+    sup.schedule(1)
+    plan = sup._inflight[1]
+    await _until(lambda: opens)
+    await _settled(sup)
+    await asyncio.sleep(0.2)                      # longer than every first-start gap together
+    assert plan.cancelled()                       # a cancel, not a crash with the open's error
+    row = await _row(sup.maker, 1)
+    assert opens == [1] and 1 not in sup._inflight
+    # the supervisor wrote nothing (discovery's legacy last_error write stays until Task 6)
+    assert (row.state, row.fail_count, row.next_retry_at) == ("starting", 0, None)
+
+
+async def test_a_cancel_swallowed_during_the_runtime_fetch_still_ends_the_plan(sup, monkeypatch):
+    """The same CPython 3.11 quirk on the plan's other wait_for (the pinned runtime fetch): the
+    fetch fails as the plan is cancelled; the plan must not go on to start the server."""
+    from server.services import capability_runtime
+    await _seed(sup.maker, 1, command="npx")
+    monkeypatch.setattr(capability_runtime, "ready", lambda name: False)
+
+    def nowhere(c):
+        raise FileNotFoundError(c)
+    monkeypatch.setattr(spawn_env, "resolve_command", nowhere)
+
+    async def fails_as_the_plan_is_cancelled(name):
+        sup._inflight[1].cancel()
+        raise capability_runtime.RuntimeFailure("download_failed", "x")
+    monkeypatch.setattr(capability_runtime, "ensure", fails_as_the_plan_is_cancelled)
+    calls = _fake_list(monkeypatch, _ok)
+    sup.start(run_loops=False)
+    sup.schedule(1)
+    await _until(lambda: 1 not in sup._inflight)
+    await _settled(sup)
+    assert calls == [] and (await _row(sup.maker, 1)).state == "starting"
+
+
+async def test_a_relist_captures_the_generation_after_its_debounce(sup, monkeypatch):  # N10
+    """A start that runs and finishes inside the re-list's debounce moves the generation; the re-list
+    that then finds the new session dead must still restart it — the generation is captured just
+    before it lists, not when the notification arrived."""
+    await _seed(sup.maker, 1, state="ready")
+    monkeypatch.setattr(sm, "RELIST_DEBOUNCE_S", 0.3)
+    opens = []
+
+    class _DiesAfterOneListing:
+        def __init__(self):
+            self.lists = 0
+
+        async def list_tools(self, params=None):
+            self.lists += 1
+            if self.lists > 1:                    # the start's own listing was fine; then it died
+                raise _CLOSED
+            return _listing("a")
+
+    async def open_(server):
+        opens.append(server["id"])
+        return _DiesAfterOneListing(), _stack()
+    monkeypatch.setattr(session.manager, "_open_session", open_)
+    sup.start(run_loops=False)
+    sup._on_tools_changed(1)                      # the re-list waits out its debounce
+    await asyncio.sleep(0.01)                     # (it is waiting now, its generation not yet read)
+    sup.schedule(1, fresh=True)                   # a start runs and finishes inside that window
+    await _until(lambda: opens == [1] and 1 not in sup._inflight)
+    await _until(lambda: sup._reconnects.get(1, 0) == 1, tries=100)    # the dead re-list restarted it
+    await _settled(sup)
+    assert opens == [1, 1] and (await _row(sup.maker, 1)).state == "ready"
+
+
+async def test_a_start_scheduled_while_give_up_unwinds_its_plan_keeps_its_result(sup, monkeypatch):  # N12
+    """_give_up moves the generation before it cancels the plan in flight (review M-5): a fresh
+    start scheduled while that plan unwinds is newer than the fallback, so it keeps its result."""
+    await _seed(sup.maker, 1, state="ready")
+    state, release = {"n": 0}, asyncio.Event()
+    _fake_list(monkeypatch, _slow_to_unwind(state, release))
+    sup.start(run_loops=False)
+    sup.schedule(1, fresh=True)
+    await _until(lambda: state["n"] == 1)
+    giving_up = asyncio.create_task(sup._give_up(1))
+    try:
+        await _until(lambda: 1 not in sup._inflight)  # give-up took the plan; it is unwinding
+        sup.schedule(1, fresh=True)                    # a drop / new folders meanwhile
+    finally:
+        release.set()
+    await asyncio.wait_for(giving_up, 5)
+    await _settled(sup)
+    row = await _row(sup.maker, 1)
+    assert (row.state, state["n"]) == ("ready", 2) and 1 not in sup._reconnects
+
+
+async def test_stop_forgets_a_relist_a_start_asked_for(sup, monkeypatch):  # N6
+    """A list_changed during a start leaves a re-list wanted for after it; a stop that cancels the
+    start forgets it (a supervisor started again must not re-list for a session that is gone)."""
+    await _seed(sup.maker, 1)
+    gate = asyncio.Event()
+
+    async def gated(server):
+        sup._on_tools_changed(1)
+        await gate.wait()
+        return _listing("a")
+    calls = _fake_list(monkeypatch, gated)
+    sup.start(run_loops=False)
+    sup.schedule(1)
+    await _until(lambda: calls)
+    assert sup._relist_wanted == {1}
+    await asyncio.wait_for(sup.stop(), 5)
+    gate.set()
+    assert not sup._relist_wanted
+
+
+def test_a_permission_error_under_an_http_failure_is_not_a_missing_command():
+    """Minor 5: arm 2 is for a program; an http server's transport error caused by an OSError
+    (EPERM, a missing CA file) is about reaching the URL."""
+    req = httpx.Request("POST", "https://h/mcp")
+    http = _server(transport="http", url="https://h/mcp", command="")
+    for cause in (PermissionError(1, "Operation not permitted"), FileNotFoundError(2, "No such file")):
+        exc = httpx.ConnectError("could not connect", request=req)
+        exc.__cause__ = cause
+        state, line = sm.classify(ExceptionGroup("tg", [exc]), server=http, non_json=0, budget_s=120)
+        assert (state, line) == ("failed", "could not reach the MCP URL — check the address and the network")
+    assert sm.classify(PermissionError("x"), server=_server(command="/opt/tool/bin/srv"), non_json=0,
+                       budget_s=120)[0] == "parked"                  # a program's still is
+
+
+async def test_the_tick_also_restarts_a_starting_row_never_stamped(sup, monkeypatch):
+    """Minor 6: a `starting` row with no state_at (inserted, never started) is not invisible to the
+    safety net; one with a plan in flight is still left alone."""
+    await _seed(sup.maker, 1)                            # starting, state_at NULL
+    await _seed(sup.maker, 2)
+    sup._inflight[2] = asyncio.create_task(asyncio.sleep(3600))
+    plans = []
+    monkeypatch.setattr(sup, "_new_plan", lambda sid, plan: plans.append((sid, plan)))
+    await sup._tick()
+    assert plans == [(1, "refresh")]

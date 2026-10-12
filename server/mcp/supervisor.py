@@ -24,6 +24,7 @@ States: off | starting | ready | failed | needs_auth | parked.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import time
@@ -34,7 +35,7 @@ import anyio
 import httpx
 from mcp import types
 from mcp.shared.exceptions import McpError
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 
 from server.db import session as db_session
 from server.db.models import MCPServer, Tool
@@ -167,8 +168,8 @@ def classify(exc: BaseException, *, server: dict, non_json: int, budget_s: float
     status = find(httpx.HTTPStatusError)
     if status is not None and status.response.status_code in (401, 403):
         return "needs_auth", discovery._describe_failure(status, has_headers=bool(server.get("env")))
-    # 2 the program is missing or cannot run
-    missing = find((FileNotFoundError, PermissionError))
+    # 2 the program is missing or cannot run (a program: an http server's OSError is about the URL)
+    missing = None if http else find((FileNotFoundError, PermissionError))
     if missing is not None:
         return "parked", _missing_line(missing, server)
     # 3 an http URL that is not an MCP endpoint (a 404 arrives as McpError 32600 "Session terminated")
@@ -262,6 +263,10 @@ class Supervisor:
         self._relisting: set[int] = set()
         self._bg: set[asyncio.Task] = set()
         self._loop_task: asyncio.Task | None = None
+        # server -> deliberate verbs (forget, switch-off, give-up) acting on it right now. Each
+        # takes the plan out of _inflight and then awaits its unwinding; the tick must not read
+        # that window as "starting, no plan" and start the server again.
+        self._busy: dict[int, int] = {}
 
     # ── lifecycle ──────────────────────────────────────────────────────────────────────
     def start(self, *, run_loops: bool = True) -> None:
@@ -368,13 +373,14 @@ class Supervisor:
 
     async def forget(self, server_id: int) -> None:
         """A deleted server: cancel its plan, drop late writes, close and forget its session."""
-        self._bump(server_id)
-        await self._cancel_plan(server_id)
-        await mcp_session.manager.forget(server_id)
-        for per_id in (self._notes, self._fetch_error, self._reconnects, self._ready_since,
-                       self._ok_written):
-            per_id.pop(server_id, None)
-        self._relist_wanted.discard(server_id)
+        with self._verb(server_id):
+            self._bump(server_id)
+            await self._cancel_plan(server_id)
+            await mcp_session.manager.forget(server_id)
+            for per_id in (self._notes, self._fetch_error, self._reconnects, self._ready_since,
+                           self._ok_written):
+                per_id.pop(server_id, None)
+            self._relist_wanted.discard(server_id)
 
     async def set_enabled(self, server_id: int, on: bool) -> None:
         """The user's switch. Off: cancel the plan, stop the process, state `off`. On: `starting`
@@ -387,12 +393,13 @@ class Supervisor:
             await self._set(server_id, self._bump(server_id), "starting")
             self.schedule(server_id)
             return
-        gen = self._bump(server_id)
-        await self._cancel_plan(server_id)
-        await mcp_session.manager.drop(server_id)
-        self._ready_since.pop(server_id, None)
-        self._notes.pop(server_id, None)
-        await self._set(server_id, gen, "off")
+        with self._verb(server_id):
+            gen = self._bump(server_id)
+            await self._cancel_plan(server_id)
+            await mcp_session.manager.drop(server_id)
+            self._ready_since.pop(server_id, None)
+            self._notes.pop(server_id, None)
+            await self._set(server_id, gen, "off")
 
     def note(self, server_id: int) -> str | None:
         """What a starting server is doing now, e.g. "downloading Node 24.21.0 (50 MB)"."""
@@ -413,6 +420,19 @@ class Supervisor:
     def _bump(self, server_id: int) -> int:
         self._gen[server_id] = self._gen.get(server_id, 0) + 1
         return self._gen[server_id]
+
+    @contextlib.contextmanager
+    def _verb(self, server_id: int):
+        """Mark a deliberate verb acting on this server (counted: two may overlap)."""
+        self._busy[server_id] = self._busy.get(server_id, 0) + 1
+        try:
+            yield
+        finally:
+            left = self._busy[server_id] - 1
+            if left:
+                self._busy[server_id] = left
+            else:
+                del self._busy[server_id]
 
     def _spawn_bg(self, coro) -> asyncio.Task:
         task = asyncio.create_task(coro)
@@ -510,8 +530,13 @@ class Supervisor:
             return StartResult("starting")      # overtaken, not failed: `_settle` writes nothing
         except (Exception, asyncio.CancelledError) as exc:  # noqa: BLE001 — classified below
             current = asyncio.current_task()
-            if isinstance(exc, asyncio.CancelledError) and (current is None or current.cancelling()):
-                raise       # a real cancel (switch-off, delete, a new plan, shutdown): not a cause
+            if current is None or current.cancelling():
+                # A real cancel (switch-off, delete, a new plan, shutdown) is never a cause — also
+                # when CPython 3.11's wait_for swallowed it (cancelled in the very iteration the
+                # open failed) and raised the open's own error in its place.
+                if isinstance(exc, asyncio.CancelledError):
+                    raise
+                raise asyncio.CancelledError() from exc
             state, line = classify(exc, server=server, budget_s=budget,
                                    non_json=mcp_session.manager.non_json_lines(sid))
             command = str(server.get("command") or "")
@@ -557,6 +582,9 @@ class Supervisor:
             await asyncio.wait_for(capability_runtime.ensure(runtime), RUNTIME_FETCH_S)
             return True
         except Exception as exc:  # noqa: BLE001 — RuntimeFailure, TimeoutError, anything (ruling 8)
+            current = asyncio.current_task()
+            if current is not None and current.cancelling():
+                raise asyncio.CancelledError() from exc   # a cancel wait_for swallowed (3.11)
             self._fetch_error[sid] = getattr(exc, "code", None) or type(exc).__name__
             logger.warning("mcp %s: could not fetch %s: %s", sid, runtime, exc)
             return False
@@ -642,18 +670,20 @@ class Supervisor:
         self.schedule(server_id, fresh=True)
 
     async def _give_up(self, server_id: int) -> None:
-        gen = self._bump(server_id)      # first, like forget/set_enabled(off): a re-list the drop
-        await self._cancel_plan(server_id)   # below wakes sees a deliberate drop (review M-5)
-        await mcp_session.manager.drop(server_id)
-        self._reconnects.pop(server_id, None)
-        async with db_session.AsyncSessionLocal() as db:
-            row = await db.get(MCPServer, server_id)
-        secrets = _secrets(discovery.runtime_dict(row)) if row is not None else []
-        line = (f"the server keeps dropping its connection ({MAX_RECONNECTS} reconnects) — Arslan "
-                "retries it later")
-        tail = mcp_session.manager.stderr_tail(server_id, secrets=secrets)
-        text = line if not tail else f"{line}\n{tail}"
-        await self._set(server_id, gen, "failed", error=spawn_env.mask(text, secrets)[:LAST_ERROR_CAP])
+        with self._verb(server_id):
+            gen = self._bump(server_id)      # first, like forget/set_enabled(off): a re-list the
+            await self._cancel_plan(server_id)   # drop below wakes sees a deliberate drop (M-5)
+            await mcp_session.manager.drop(server_id)
+            self._reconnects.pop(server_id, None)
+            async with db_session.AsyncSessionLocal() as db:
+                row = await db.get(MCPServer, server_id)
+            secrets = _secrets(discovery.runtime_dict(row)) if row is not None else []
+            line = (f"the server keeps dropping its connection ({MAX_RECONNECTS} reconnects) — "
+                    "Arslan retries it later")
+            tail = mcp_session.manager.stderr_tail(server_id, secrets=secrets)
+            text = line if not tail else f"{line}\n{tail}"
+            await self._set(server_id, gen, "failed",
+                            error=spawn_env.mask(text, secrets)[:LAST_ERROR_CAP])
 
     def _on_tools_changed(self, server_id: int) -> None:
         if not self.running:
@@ -716,12 +746,17 @@ class Supervisor:
             # next launch. Switched-off rows too: `refresh` respects the switch and ends them `off`.
             stale = (await db.execute(select(MCPServer.id).where(
                 MCPServer.state == "starting",
-                MCPServer.state_at <= now - timedelta(seconds=STARTING_STALE_S)))).scalars().all()
+                or_(MCPServer.state_at.is_(None),             # inserted, never started
+                    MCPServer.state_at <= now - timedelta(seconds=STARTING_STALE_S))))).scalars().all()
         for sid, state in due:
+            if sid in self._busy:                             # a verb is acting on it
+                continue
             task = self._inflight.get(sid)
             if task is None or task.done():
                 self._new_plan(sid, "retry" if state == "failed" else "probe")
         for sid in stale:
+            if sid in self._busy:                             # its plan is unwinding for a verb
+                continue
             task = self._inflight.get(sid)
             if task is None or task.done():
                 logger.warning("mcp %s: starting with no plan for %g s; restarting it", sid,

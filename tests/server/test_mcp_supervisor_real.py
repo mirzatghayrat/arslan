@@ -25,8 +25,8 @@ async def sup(execution_db, tmp_path, monkeypatch):
     supervisor.maker = execution_db
     supervisor.start(run_loops=False)
     yield supervisor
-    await supervisor.stop()
-    await session.manager.aclose_all()
+    await asyncio.wait_for(supervisor.stop(), 10)
+    await asyncio.wait_for(session.manager.aclose_all(), 10)
 
 
 async def _seed(maker, mode, **env):

@@ -4,6 +4,7 @@
 http failure in a child task of its task group, which cancels the task waiting on `initialize()`;
 these tests pin that each such failure still ends classified, with its cause and a next try, and
 never as a silent `starting`."""
+import asyncio
 from datetime import timedelta
 
 import httpx
@@ -26,8 +27,8 @@ async def sup(execution_db, tmp_path, monkeypatch):
     supervisor = sm.Supervisor()
     supervisor.maker = execution_db
     yield supervisor
-    await supervisor.stop()
-    await session.manager.aclose_all()
+    await asyncio.wait_for(supervisor.stop(), 10)
+    await asyncio.wait_for(session.manager.aclose_all(), 10)
 
 
 def _serve(monkeypatch, handler):
@@ -52,6 +53,11 @@ def _refuse(request):
     raise httpx.ConnectError("[Errno 61] Connection refused", request=request)
 
 
+def _refuse_eperm(request):
+    raise httpx.ConnectError("[Errno 1] Operation not permitted", request=request) from PermissionError(
+        1, "Operation not permitted")
+
+
 CASES = [
     # (case, handler, state, first line starts with, seconds to the next try)
     ("401", _answer(401), "needs_auth",
@@ -68,6 +74,8 @@ CASES = [
      sm.RETRY_BASE_S),
     ("429", _answer(429), "failed", "the MCP URL answered HTTP 429", sm.RETRY_BASE_S),
     ("refused", _refuse, "failed", "could not reach the MCP URL — check the address", sm.RETRY_BASE_S),
+    ("refused-eperm", _refuse_eperm, "failed", "could not reach the MCP URL — check the address",
+     sm.RETRY_BASE_S),
 ]
 
 
