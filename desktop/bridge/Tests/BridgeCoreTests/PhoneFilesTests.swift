@@ -377,6 +377,13 @@ final class PhoneFilesTests: XCTestCase {
         XCTAssertEqual(ConversationLinks.message("not_found"), "That conversation is no longer on the Mac.")
     }
 
+    func testADeletedConversationsSocketNeverReconnects() async {
+        let socket = WebSocketControl(port: 9, token: "t", path: "/ws/arslan/gone")    // nothing listens on 9
+        socket.stop()
+        await socket.run()                       // returns at once, instead of retrying every 1…30 s for ever
+        XCTAssertNil(socket.task)
+    }
+
     // ------------------------------------------------------------------ live links
 
     func testTheNewestConversationsAndRunningJobsAreLinkedOnceAtStartAndAfterEachList() async throws {

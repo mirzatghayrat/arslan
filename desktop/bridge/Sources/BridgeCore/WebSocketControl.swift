@@ -48,7 +48,8 @@ public final class WebSocketControl: NSObject, ControlChannel {
         stopped = true
         task?.cancel(with: .goingAway, reason: nil)
         task = nil
-        session.invalidateAndCancel()
+        // The session is not invalidated: `run` may be about to make its next task on it, and a task
+        // on an invalidated session throws. The loop sees `stopped` and makes none.
     }
 
     /// Connect, read until the socket fails, reconnect after 1, 2, 4 … 30 s. Returns only after `stop`.
@@ -58,6 +59,7 @@ public final class WebSocketControl: NSObject, ControlChannel {
         while !stopped {
             let task = next ?? connect()
             next = nil
+            if stopped { task.cancel(with: .goingAway, reason: nil); return }    // stopped while it was being made
             do {
                 await onConnect?()
                 while true {
