@@ -47,3 +47,58 @@ def test_web_extract_steer_no_longer_invites_stopping():
     src = inspect.getsource(executors.WebExtractExecutor)
     assert "use your web_search result snippets or answer with what you have\"" not in src
     assert "only when sources are exhausted" in src
+
+
+# 0.1.61 final review: web_extract says "url refused: <label>" when Arslan's OWN network guard
+# refused the address. "blocked" in "blocked address (local network)" matched the site-refusal
+# pattern, so the model was told "That site refused the request". The labels are taken from
+# net_pin.categorize here, so a renamed label cannot quietly fall out of step with the hint.
+
+GUARD_HTTPS_ONLY = ("Arslan's own network guard refused this address, not the site. Retry once "
+                    "with the https:// form of the same page if it has one; otherwise use another "
+                    "source.")
+GUARD_REFUSED = ("Arslan's own network guard refused this address (it is on the local network or "
+                 "not a valid public host). Don't retry it; use another source.")
+
+
+def _refused(cls_name: str) -> dict:
+    from server.registry import net_pin
+    return {"ok": False, "error": f"url refused: {net_pin.categorize(getattr(net_pin, cls_name)())}"}
+
+
+@pytest.mark.parametrize("cls_name,expected", [
+    ("_FakeIpOnlyHttps", GUARD_HTTPS_ONLY),
+    ("_BlockedHost", GUARD_REFUSED),          # "blocked address (local network)"
+    ("_InvalidHost", GUARD_REFUSED),
+    ("_NotConfiguredHost", GUARD_REFUSED),
+])
+def test_the_guards_own_refusal_is_never_the_sites(cls_name, expected):
+    hint = hint_for("web_extract", _refused(cls_name))
+    assert hint == expected
+    assert "That site refused" not in hint
+
+
+def test_a_name_that_does_not_resolve_keeps_todays_hint():
+    """No hint today, before or after the guard's own hints were added."""
+    from server.registry import net_pin
+    steer = (" — do not retry this URL; try another source from your web_search results (their "
+             "snippets count too) or browser_open for script-rendered pages; answer with what you "
+             "have only when sources are exhausted, and say what is missing")
+    error = f"fetch failed: {net_pin.categorize(net_pin._Unresolvable())}{steer}"
+    assert hint_for("web_extract", {"ok": False, "error": error}) is None
+
+
+@pytest.mark.parametrize("cls_name,expected", [("_FakeIpOnlyHttps", GUARD_HTTPS_ONLY),
+                                               ("_BlockedHost", GUARD_REFUSED),
+                                               ("_InvalidHost", GUARD_REFUSED)])
+async def test_web_extracts_real_refusal_gets_the_guard_hint(monkeypatch, cls_name, expected):
+    """End to end: the text web_extract really returns for each refusal."""
+    from server.registry import executors, net_pin
+
+    async def refuse(url):
+        raise getattr(net_pin, cls_name)("refused by the guard")
+
+    monkeypatch.setattr(net_pin, "_fetch_text", refuse)
+    result = await executors.WebExtractExecutor().execute({"url": "http://evil.test/"})
+    assert result["error"].startswith("url refused: ")
+    assert hint_for("web_extract", result) == expected

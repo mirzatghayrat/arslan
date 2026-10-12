@@ -278,6 +278,10 @@ class MacAppleScriptExecutor:
             return {"ok": False, "external": False, "error": "script required (max 4000 characters)"}
         if _conversation_and_job()[1] is None:
             return _not_in_job()
+        from server.services import hands_contract, hands_service
+        denied = [app for app in hands_service.script_apps(script) if hands_service.never_touched(app)]
+        if denied:                        # the never-list holds for scripts too (0.1.61 §A11)
+            return _failed(hands_contract.Result(ok=False, code="app_denied", refused=True), app=denied[0])
         if not await _ask_once(f"script:{uuid.uuid4().hex}", "mac_script", "AppleScript", script):
             return {"ok": False, "external": False, "code": "declined", "error": "The user did not allow it."}
         return await _run(["/usr/bin/osascript", "-e", script])

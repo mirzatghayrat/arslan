@@ -151,7 +151,7 @@ async def test_web_extract_rejects_private_host(monkeypatch):
         {"url": "https://internal.example"}
     )
     assert out["ok"] is False
-    assert "private" in out["error"].lower() or "internal" in out["error"].lower()
+    assert out["error"] == "url refused: blocked address (local network)"
 
 
 # ---------------------------------------------------------------------------
