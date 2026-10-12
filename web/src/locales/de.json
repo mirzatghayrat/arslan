@@ -1929,7 +1929,7 @@
       "conversation": "In diesem Gespräch",
       "always": "Immer: {{label}}"
     },
-    "noteLink": "Nein — Arslan sagen, was stattdessen",
+    "noteLink": "Nein — Arslan sagen, was er stattdessen tun soll",
     "notePlaceholder": "Was soll Arslan stattdessen tun? (optional)",
     "noteSend": "Ablehnen",
     "expiredTitle": "Wartet auf dich",

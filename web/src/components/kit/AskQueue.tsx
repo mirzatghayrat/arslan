@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactElement } from "react";
+import { Fragment, useEffect, useState, type ReactElement } from "react";
 import type { AskQueuePosition } from "./AskCard";
 
 /**
@@ -23,5 +23,11 @@ export function AskQueue({ items }: { items: QueuedAsk[] }) {
     onPrev: items.length > 1 ? () => go(at - 1) : undefined,
     onNext: items.length > 1 ? () => go(at + 1) : undefined,
   };
-  return <div data-testid="ask-queue-host" className="flex w-full justify-center">{items[at].render(queue)}</div>;
+  // Keyed by the ask: two cards of one kind are one component, so without it ‹ › would carry what the
+  // person typed or ticked on the first (an opened note and its text) to the next.
+  return (
+    <div data-testid="ask-queue-host" className="flex w-full justify-center">
+      <Fragment key={items[at].key}>{items[at].render(queue)}</Fragment>
+    </div>
+  );
 }

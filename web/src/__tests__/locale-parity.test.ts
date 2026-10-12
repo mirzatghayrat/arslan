@@ -290,6 +290,13 @@ describe("locale parity", () => {
     expect(enKeys).toHaveLength(1750);
   });
 
+  // 0.1.61 PR 2b: a card's "Always" must say what it allows, in every language: the literal scope is interpolated.
+  it("kit.scope.always keeps its {{label}} in every language", () => {
+    for (const [lang, data] of Object.entries(LOCALES)) {
+      expect((data as { kit: { scope: { always: string } } }).kit.scope.always, lang).toContain("{{label}}");
+    }
+  });
+
   for (const [lang, data] of Object.entries(LOCALES)) {
     if (lang === "en") continue;
 
