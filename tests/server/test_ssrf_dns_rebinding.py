@@ -146,7 +146,7 @@ async def test_a_private_only_answer_is_refused(monkeypatch, capture):
     monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **k: _addrinfo(PRIVATE))
     res = await executors.EXECUTORS["web_extract"].execute({"url": "http://intranet.test/"})
     assert not res.get("ok")
-    assert "private" in res["error"]
+    assert res["error"] == "url refused: blocked address (local network)"
     assert capture == [], "nothing may be sent when the host is refused"
 
 

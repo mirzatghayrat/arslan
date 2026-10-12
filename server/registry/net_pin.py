@@ -19,18 +19,27 @@ FAKE-IP DNS (0.1.61). A Mac behind Clash/Surge/sing-box in fake-IP mode resolves
 name into 198.18.0.0/15, RFC 2544's benchmarking block, where no real host lives; the
 proxy (or its TUN) maps the address back to the name. `not is_global` refused all of it,
 so the web was dead on such a Mac. The exception is narrow on purpose: a NAME (never a
-literal address in any spelling, never a local name) on port 80 or 443 whose IPv4 answers
-all lie in that block passes, except 198.18.0.1, which Clash and mihomo keep for the TUN's
-own gateway and never hand out as a fake address. It passes only when a proxy carries the
-request or the system DNS is fake-IP for a public canary too. A name is judged in its
-canonical form (IDNA/NFKC, ASCII, lower case, no trailing dot): the one the resolver and
-the HTTP stack really use, not the raw spelling in the URL.
+literal address in any spelling, never a local name) asked for over https:// on port 443,
+whose IPv4 answers all lie in that block, passes, except 198.18.0.1, which Clash and mihomo
+keep for the TUN's own gateway and never hand out as a fake address. It passes only when a
+proxy carries the request or the system DNS is fake-IP for a public canary too. Plain http,
+or any other port, to such a name is refused (`_FakeIpOnlyHttps`). A name is judged in its
+canonical form (IDNA/NFKC, ASCII, lower case, no trailing dot): the one the resolver and the
+HTTP stack really use, not the raw spelling in the URL.
 
-🔴 WHAT THE EXCEPTION COSTS. For such a name the guard can no longer see the real
-address. The fake one stands for it, and the TUN or the proxy decides where the request
-really goes, so SSRF protection for that name is DELEGATED there, as it already is for
-https behind a configured proxy (see ``_pinning_disabled_by_proxy``). The TUN path says so
-in the log, once per host per 10 minutes. Every other name is judged exactly as before.
+🔴 WHAT THE EXCEPTION COSTS, AND WHAT BOUNDS IT. For such a name the guard can no longer see
+the real address. The fake one stands for it, and the TUN or the proxy decides where the
+request really goes, so SSRF protection for that name is DELEGATED there, as it already is
+for https behind a configured proxy (see ``_pinning_disabled_by_proxy``). The TUN path says
+so in the log, once per host per 10 minutes. What still holds is TLS, checked against the
+real name: wherever the TUN or the proxy connects, nothing is sent until the other end
+proves it is that name, which a service on the LAN or on this Mac cannot. That is why the
+exception is https on 443 only. Plain http proves nothing, and the proxy or the TUN resolves
+the name again and may route a LAN or loopback answer DIRECT.
+
+Every other name is still judged by its addresses, and more strictly than before 0.1.61:
+it is judged in its canonical form, and local names (dotless ones included) and hosts with
+a control character in them are refused whatever DNS says.
 """
 from __future__ import annotations
 
@@ -97,14 +106,20 @@ _FAKE_IP_NET = ipaddress.ip_network("198.18.0.0/15")
 #: The TUN's own address. Clash and mihomo keep it for the gateway and never hand it out as a
 #: name's fake address, and local services (AirPlay, rapportd) listen on it.
 _FAKE_IP_GATEWAY = ipaddress.ip_address("198.18.0.1")
-#: The exception is for the web. Any other port on a fake address could be a service on this
-#: very Mac, reached through the TUN.
-_FAKE_IP_PORTS = (80, 443)
+#: The (scheme, port) the exception is for, and the only one. TLS checked against the real name
+#: is what bounds it (module docstring). Plain http proves nothing: the proxy or the TUN
+#: resolves the name again and may route a LAN or loopback answer DIRECT, a card-free read of
+#: port-80 services on the LAN or on this Mac. Any other port on a fake address could be a
+#: service on this very Mac, reached through the TUN. Port 80 serves nothing under https only:
+#: the browser's CONNECT is always 443.
+_FAKE_IP_WEB = ("https", 443)
 #: A public name whose answer says whether the system DNS is fake-IP. IANA's, stable.
 _FAKE_IP_CANARY = "example.com"
 #: Zones that are never on the public internet, whatever a resolver answers for them. A name
-#: is local when it IS one of these or sits below one (see `_is_local_name`).
-_LOCAL_ZONES = ("localhost", "local", "lan", "internal", "intranet", "home.arpa", "corp")
+#: is local when it IS one of these or sits below one (see `_is_local_name`). Neither
+#: `localdomain` nor `home` is delegated on the public internet.
+_LOCAL_ZONES = ("localhost", "local", "lan", "internal", "intranet", "home.arpa", "corp",
+                "localdomain", "home")
 #: The TUN path warns that protection is delegated, at most once per host per this many seconds.
 _FAKE_IP_WARN_EVERY = 600.0
 #: ... and remembers at most this many hosts, so a long-lived server cannot grow without bound.
@@ -133,8 +148,9 @@ def _is_local_name(name: str) -> bool:
     on the local network), or one of the private zones itself, or a name below one.
 
     Takes the CANONICAL host (see `_canonical_host`) and is for names: an address literal has
-    no zone, and `_resolve_pinned` judges those by their address. An empty host is left to the
-    resolver, which refuses it.
+    no zone, and `_resolve_pinned` judges those by their address. An empty host is not a local
+    name here, and it is still refused: `getaddrinfo("")` answers loopback, and
+    `_is_non_public` refuses that.
     """
     if not name:
         return False
@@ -212,6 +228,14 @@ class _NotConfiguredHost(_BlockedHost):
     that host. Named apart from a refused address by `categorize`."""
 
 
+class _FakeIpOnlyHttps(_BlockedHost):
+    """A name behind fake-IP DNS asked for over plain http, or on a port other than 443."""
+
+
+class _InvalidHost(_BlockedHost):
+    """The host holds a C0 control character or DEL, so it is no host name at all."""
+
+
 def _resolve_pinned(url: str, *, allow_host: str | None = None,
                     via_proxy: bool = False) -> tuple[str, str, int]:
     """Resolve ONCE, validate EVERY answer, and return the address we will connect to.
@@ -237,18 +261,30 @@ def _resolve_pinned(url: str, *, allow_host: str | None = None,
     Returns (pinned_ip, host, port). Raises _BlockedHost on refusal — unresolvable
     included (`_Unresolvable`), so failure is closed.
 
-    🔴 THE ONE EXCEPTION to "the address we validated is the address we connect to" is a
-    NAME under fake-IP DNS (module docstring). Its answer is a stand-in that the TUN or the
-    proxy maps back to the name, so the guard cannot see the real address and that
-    protection is delegated there (and logged). Everything else about it is still judged
-    here: port, literal address, local name, the TUN gateway, and the host is judged in its
-    canonical form.
+    🔴 AN EXCEPTION to "the address we validated is the address we connect to" is a NAME
+    under fake-IP DNS (module docstring); the other is https through a proxy, where we never
+    connect at all (`_pinning_disabled_by_proxy`). A fake answer is a stand-in that the TUN
+    or the proxy maps back to the name, so the guard cannot see the real address and that
+    protection is delegated there (and logged). It holds for https:// on port 443 only, where
+    TLS against the real name bounds it; plain http or another port to such a name is
+    refused (`_FakeIpOnlyHttps`). Everything else about it is still judged here: literal
+    address, local name, the TUN gateway, and the host is judged in its canonical form.
+
+    A host with a control character in it is refused before anything else (`_InvalidHost`),
+    a configured `allow_host` included.
 
     `via_proxy`: a proxy will resolve and connect, so a fake-IP answer needs no further
     proof.
     """
     parts = urlparse(url)
     host = parts.hostname or ""
+    # 0.1.61 (final review): a C0 control character or DEL makes the host no name at all, and
+    # every layer below reads it differently. `198.18.0.33\x00.example.com` was taken for a
+    # NAME (`inet_aton` refuses the NUL, so it is no literal) while the C resolver stops at
+    # the NUL and answers the address 198.18.0.33, and in fake-IP mode that name passed. So it
+    # is refused here, before the port is read, before `allow_host` and before any lookup.
+    if any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in host):
+        raise _InvalidHost(f"{host!r} is not a host name: it holds a control character")
     port = parts.port or (443 if parts.scheme == "https" else 80)
 
     # `allow_host` WIDENS and NARROWS in the same breath, and the two halves are why
@@ -288,14 +324,19 @@ def _resolve_pinned(url: str, *, allow_host: str | None = None,
         raise _Unresolvable(f"cannot resolve {host}")
     ips = [ipaddress.ip_address(info[4][0]) for info in infos]
 
-    # 0.1.61: fake-IP DNS. A NAME (a literal address is never "fake") on the web's ports
-    # whose IPv4 answers all lie in 198.18.0.0/15, the TUN's own 198.18.0.1 excepted, stands
-    # for itself: the proxy resolves it, or the TUN maps the address back to it. The canary
-    # is only consulted here, after the answers were already fake, so ordinary lookups still
-    # resolve exactly once. The guard cannot see where such a name really goes: through a
-    # proxy that is already logged by `pinned_request`, on the TUN path we say so here.
-    if (not exempt and not literal and port in _FAKE_IP_PORTS and _all_fake_v4(ips)
-            and (via_proxy or _fake_ip_dns())):
+    # 0.1.61: fake-IP DNS. A NAME (a literal address is never "fake") whose IPv4 answers all
+    # lie in 198.18.0.0/15, the TUN's own 198.18.0.1 excepted, stands for itself: the proxy
+    # resolves it, or the TUN maps the address back to it. The canary is only consulted here,
+    # after the answers were already fake, so ordinary lookups still resolve exactly once. It
+    # is consulted for every scheme and port: when it says this DNS is NOT fake-IP, such an
+    # answer is a real non-public address and is refused as one, below. The guard cannot see
+    # where such a name really goes: through a proxy that is already logged by
+    # `pinned_request`, on the TUN path we say so here.
+    if not exempt and not literal and _all_fake_v4(ips) and (via_proxy or _fake_ip_dns()):
+        if (parts.scheme, port) != _FAKE_IP_WEB:
+            # Only TLS against the real name bounds where the proxy or the TUN sends it.
+            raise _FakeIpOnlyHttps(
+                f"{host}: behind fake-IP DNS only https:// on port 443 is fetched")
         pinned = str(next(ip for ip in ips if ip.version == 4))
         if not via_proxy:
             _warn_fake_ip(canon, pinned)
@@ -338,7 +379,11 @@ def _pinning_disabled_by_proxy(url: str) -> bool:
     absolute-form request line names, and no SNI is involved. Only the https+proxy cell
     degrades, and it degrades to "the proxy decides", which is the honest description of
     that configuration anyway — with a proxy WE never resolve or connect, so no rewrite
-    of ours could have carried the guarantee.
+    of ours could have carried the guarantee. TLS against the real name still holds there,
+    and under fake-IP DNS it is all that holds, so https on port 443 is the only request a
+    faked name gets at all: a plain-http pin to a fake address is a stand-in the proxy maps
+    back to the name and resolves itself, and nothing then proves who answers, so
+    `_resolve_pinned` refuses it (`_FakeIpOnlyHttps`).
 
     🔴 This is not hypothetical: a developer machine in this project has
     HTTPS_PROXY=http://127.0.0.1:7899 set, which means https fetches there run in the
@@ -411,15 +456,20 @@ def categorize(exc: Exception) -> str:
     collapses every rate limit into "network error" — and the user gets told to check
     their connection when the real answer is "wait a minute". Two tests pin this.
 
-    The same goes for the guard's own refusals: `_Unresolvable` and `_NotConfiguredHost`
-    are `_BlockedHost`s, so they are tested first or they would all be reported as a
-    blocked network. That matters beyond wording: `executors._auto` must not mistake a
-    host that will not resolve for an anti-bot block.
+    The same goes for the guard's own refusals: `_Unresolvable`, `_NotConfiguredHost`,
+    `_FakeIpOnlyHttps` and `_InvalidHost` are `_BlockedHost`s, so they are tested first or
+    they would all be reported as a blocked network. That matters beyond wording:
+    `executors._auto` must not mistake a host that will not resolve for an anti-bot block,
+    and plain http behind fake-IP DNS is refused for its scheme, not for its address.
     """
     if isinstance(exc, _Unresolvable):
         return "cannot resolve"
     if isinstance(exc, _NotConfiguredHost):
         return "not the configured search host"
+    if isinstance(exc, _FakeIpOnlyHttps):
+        return "behind fake-IP DNS only https:// on port 443 is fetched"
+    if isinstance(exc, _InvalidHost):
+        return "invalid host name"
     if isinstance(exc, _BlockedHost):
         # The guard's own refusal of an address or a local name: say so, instead of
         # "unexpected error" (0.1.61 §E3).
@@ -455,7 +505,8 @@ def _build_client() -> httpx.AsyncClient:
     # same guarantee. Without a proxy — the default — the pinning below is the guarantee,
     # with one exception: under fake-IP DNS (a TUN) a name's answer is a stand-in that the
     # TUN maps back to the name, so the guard cannot see its real address and that
-    # protection is delegated too (see `_resolve_pinned`; the TUN path logs it).
+    # protection is delegated too, for https on port 443 only, where TLS against the real
+    # name bounds it (see `_resolve_pinned`; the TUN path logs it).
     # max_keepalive_connections=0: after pinning, httpcore keys its pool on
     # (scheme, host, port) where host is now the IP — so two DIFFERENT hostnames that
     # resolve to the same address would share a connection, and the second hop would
