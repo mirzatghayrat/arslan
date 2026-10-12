@@ -16,7 +16,7 @@ ends with a `card_resolved` broadcast, so the copies nobody answered close.
 An answer carries a scope, one of the choices its card offered (the phone and the
 island give only the first), and on No the user's note (0.1.61 §A4). Identical
 requests in one conversation (the same `dedupe` key) share one card; it closes when
-its last waiter is done.
+its last waiter is done, and nobody waits on it past the expiry it shows.
 
 A background job asks like a window (0.1.61, `BroadcastAsker`): the same choices, and
 the grants and rules of its conversation, through `permissions.decide`. Leaving the
@@ -69,9 +69,23 @@ class Pending:
     #: How many callers wait on this card: identical requests share it (0.1.61 §A4), and it
     #: is unregistered when the last of them is done with it.
     waiters: int = 1
+    #: When it expires unanswered: set once, when it opens. Every waiter — an identical ask that
+    #: joins it later too — waits only until then, so the card never outlives the expiry it shows.
+    expires_at: float = 0.0
+
+    def __post_init__(self) -> None:
+        if not self.expires_at:
+            self.expires_at = self.opened_at + TIMEOUT_S
 
 
 _pending: dict[str, Pending] = {}
+
+
+def remaining(pending: Pending) -> float:
+    """How long a waiter on this card may still wait: what is left of the card's own time, never
+    a fresh `TIMEOUT_S` (PR 2b plan review: one waiting on a card it joined must not keep it open
+    past the expiry it showed; when the card expires, every waiter reads it as expired together)."""
+    return max(0.0, pending.expires_at - time.time())
 
 
 def joining(conversation_id: str, frame: dict) -> Pending | None:
@@ -82,8 +96,8 @@ def joining(conversation_id: str, frame: dict) -> Pending | None:
         return None
     for existing in _pending.values():
         if (existing.conversation_id == conversation_id and existing.frame.get("dedupe") == key
-                and not existing.future.done()):
-            return existing
+                and not existing.future.done() and remaining(existing) > 0):
+            return existing                # (a card whose time is up is not joined: never shown)
     return None
 
 
@@ -146,7 +160,7 @@ async def ask(conversation_id: str, frame: dict) -> bool:
     pending = open_card(conversation_id, frame | {"background": True})
     try:
         with _paused_clock(), desktop_status.awaiting_approval(conversation_id):
-            await asyncio.wait_for(asyncio.shield(pending.future), timeout=TIMEOUT_S)
+            await asyncio.wait_for(asyncio.shield(pending.future), timeout=remaining(pending))
     except TimeoutError:
         pass
     finally:
@@ -284,7 +298,7 @@ def all_pending() -> list[dict]:
     a refusal); `island_ok` says whether the island may answer it (see `island_may_answer`)."""
     rows = sorted(_pending.values(), key=lambda p: p.opened_at)
     return [{"call_id": p.call_id, "conversation_id": p.conversation_id, "frame": p.frame,
-             "opened_at": p.opened_at, "expires_at": p.opened_at + TIMEOUT_S,
+             "opened_at": p.opened_at, "expires_at": p.expires_at,
              "island_ok": island_may_answer(p.frame)}
             for p in rows if not p.future.done()]
 
@@ -312,14 +326,19 @@ def answer_by_id(call_id: str, approve: bool, *, source: str, remember: bool = F
                    "remember": remember, "scope": scope, "note": note, "source": source})
 
 
-def decline_pending(call_ids: set[str], note: str, *, source: str = "mac",
+def decline_pending(call_ids: set[str], note: str, *, source: str,
                     mine: dict[str, int] | None = None) -> int:
     """Answer these waiting cards No, with the user's words as the note — a message typed in
     the window while its card waits (spec §A4). Returns how many were answered.
 
+    `source` is the surface that typed — "mac" for a window, "phone" for a message the phone sent
+    during its turn — and every screen is told so (`card_resolved`): a card the phone answered
+    must not read "answered on Mac" (PR 2b plan review). Like `answer`, anything else is "mac".
+
     With `mine` (call_id → how many of the card's waiters are the caller's), a card someone else
     waits on too — a job that asked the identical question — is left open for them: the caller
     only stops waiting on it."""
+    by = source if source in SOURCES else "mac"
     answered = 0
     for call_id in list(call_ids):
         pending = _pending.get(call_id)
@@ -328,7 +347,7 @@ def decline_pending(call_ids: set[str], note: str, *, source: str = "mac",
         if mine is not None and pending.waiters > mine.get(call_id, 0):
             continue
         pending.future.set_result({"approved": False, "remember": False, "scope": None,
-                                   "note": note.strip()[:500], "by": source})
+                                   "note": note.strip()[:500], "by": by})
         answered += 1
     return answered
 
@@ -351,7 +370,7 @@ class BroadcastAsker:
         pending = open_card(self.conversation_id, frame | {"background": True})
         try:
             with _paused_clock(), desktop_status.awaiting_approval(self.conversation_id):
-                await asyncio.wait_for(asyncio.shield(pending.future), timeout=TIMEOUT_S)
+                await asyncio.wait_for(asyncio.shield(pending.future), timeout=remaining(pending))
         except TimeoutError:
             pass
         finally:

@@ -302,7 +302,8 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
     inbox: asyncio.Queue = asyncio.Queue()
     _CLOSED = {"type": "__socket_closed__"}
     # The cards this window waits on (call_id → how many of its asks wait on it), and for each
-    # wait a future a message typed meanwhile resolves: (its text, whether a job shares the card).
+    # wait a future a message typed meanwhile resolves: (its text, whether a job shares the card,
+    # the surface that typed it — "mac", or "phone" during a phone turn).
     my_cards: dict[str, int] = {}
     typed_while_waiting: dict[str, list[asyncio.Future]] = {}
     # 0.1.61, as a job's surface: once a card in this turn went unanswered the person is away, and
@@ -328,8 +329,9 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                         continue
                 if t == "user_message" and my_cards:
                     # 0.1.61 §A4: typing while this window's card waits answers it No, the message
-                    # being the note; the message itself is queued below and runs next.
-                    _answered_by_typing(str(data.get("content") or ""))
+                    # being the note; the message itself is queued below and runs next. The phone
+                    # types on this socket during its turn: the card says the phone answered.
+                    _answered_by_typing(str(data.get("content") or ""), message_source(data) or "mac")
                 if t == "user_message" and _turn_lock(conversation_id).locked():
                     data = {**data, "_queued": True}
                     await _send_or_gone({"type": "queued"})
@@ -339,16 +341,17 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             gone.set()
             await inbox.put(_CLOSED)
 
-    def _answered_by_typing(note: str) -> None:
+    def _answered_by_typing(note: str, by: str) -> None:
         """A message typed while this window's cards wait: a card only this window waits on is
         answered No with the message as the note; from a card a job also waits on (an identical
-        ask, one card) this window only withdraws — the card stays open for the job."""
+        ask, one card) this window only withdraws — the card stays open for the job. `by` is the
+        surface that typed it ("mac", or "phone" during a phone turn): what every screen is told."""
         shared = {call_id for call_id, mine in my_cards.items() if approvals.waiters(call_id) > mine}
-        approvals.decline_pending(set(my_cards), note, mine=dict(my_cards))
+        approvals.decline_pending(set(my_cards), note, source=by, mine=dict(my_cards))
         for call_id, waits in typed_while_waiting.items():
             for typed in waits:
                 if not typed.done():
-                    typed.set_result((note, call_id in shared))
+                    typed.set_result((note, call_id in shared, by))
 
     def _window_gone(pending=None) -> None:
         """The window that asked is gone: its card (if any) becomes a shared one — answerable
@@ -417,7 +420,9 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                         await ws.send_json(pending.frame)
                     except Exception:  # noqa: BLE001 — closed under us; the card is answered elsewhere
                         _window_gone(pending)
-            deadline = loop.time() + approvals.TIMEOUT_S
+            # What is left of the card's own time: a card this ask joined expires when it said it
+            # would, for every waiter together (PR 2b plan review), not a fresh 30 minutes later.
+            deadline = loop.time() + approvals.remaining(pending)
             # The user's time, not the task's: the turn's wall clock stands still meanwhile.
             with task_service.paused_clock(), desktop_status.awaiting_approval(conversation_id):
                 # The answer arrives through the resident reader (this window), the phone's
@@ -444,12 +449,14 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 # Typed while a card a job also waits on was shown: this window's answer is No,
                 # with the message; the card stays the job's.
                 decision = {"approved": False, "remember": False, "scope": None,
-                            "note": str(typed.result()[0]).strip()[:500], "by": "mac"}
+                            "note": str(typed.result()[0]).strip()[:500], "by": typed.result()[2]}
             if (pending.private and not pending.future.done()
-                    and pending.waiters > my_cards.get(pending.call_id, 0)):
+                    and pending.waiters > my_cards.get(pending.call_id, 0)
+                    and approvals.remaining(pending) > 0):
                 # Someone else still waits on this window's own card (an identical ask from a
-                # job): it must not vanish with this window's copy (its wait ran out, the turn
-                # ended, a message was typed). Everyone sees it now, as on #154.
+                # job): it must not vanish with this window's copy (the turn ended, a message was
+                # typed). Everyone sees it now, as on #154 — unless its time is up: the others'
+                # wait ends with it, and a card is never shown as it expires.
                 pending.private = False
                 emit(pending.frame)
             elif pending.private and (decision["by"] in approvals.SOURCES or typed.done()):

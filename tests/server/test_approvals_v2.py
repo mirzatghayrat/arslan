@@ -88,7 +88,7 @@ async def test_decline_pending_answers_only_the_named_cards(monkeypatch):
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: (lambda f: None))
     mine = approvals.open_card("conv", frame("c1"), broadcast=False)
     other = approvals.open_card("conv", frame("c2", dedupe="z"))
-    assert approvals.decline_pending({"c1"}, "actually, open Mail first") == 1
+    assert approvals.decline_pending({"c1"}, "actually, open Mail first", source="mac") == 1
     d = approvals.close_card(mine)
     assert (d["approved"], d["note"], d["by"]) == (False, "actually, open Mail first", "mac")
     assert not other.future.done()
@@ -348,17 +348,72 @@ async def test_an_ask_after_the_answer_gets_a_card_of_its_own(monkeypatch):
     assert b is not a and not b.future.done()
 
 
-async def test_one_job_giving_up_does_not_cancel_the_other_jobs_wait(monkeypatch):
+async def test_a_card_an_identical_ask_joined_expires_for_every_waiter_at_the_time_it_showed(monkeypatch):
+    """PR 2b plan review: the joiner waits only what is left of the card's time, not a fresh
+    30 minutes — the card must not outlive the expiry it shows — and every waiter reads it as
+    expired together. (A job that only gives up — it was stopped — still leaves the card to the
+    others: `test_a_stopped_job_leaves_a_shared_card_to_the_other`.)"""
+    sent = []
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: sent.append)
+    monkeypatch.setattr(approvals, "TIMEOUT_S", 0.6)
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+
+    async def ask(call_id):
+        decision = await approvals.BroadcastAsker("conv")(frame(call_id))
+        return decision, loop.time() - started
+    first = asyncio.ensure_future(ask("c1"))
+    await asyncio.sleep(0.3)
+    monkeypatch.setattr(approvals, "TIMEOUT_S", 5)              # a fresh wait would outlive the card
+    second = asyncio.ensure_future(ask("c2"))
+    await asyncio.sleep(0)
+    assert approvals.waiters("c1") == 2
+    (a, a_at), (b, b_at) = await first, await second
+    assert (a["by"], b["by"], b["call_id"]) == (None, None, "c1")
+    assert b_at < 1.0 and abs(a_at - b_at) < 0.15, (a_at, b_at)
+    assert approvals.known_ids() == set()
+    assert [f for f in sent if f["type"] == "card_resolved"] == [
+        protocol.card_resolved("c1", "expired", None)]
+
+
+async def test_a_plain_ask_that_joins_a_card_waits_only_what_is_left_of_it(monkeypatch):
+    """The third place a card is waited on (`approvals.ask`, Hands' plain card) keeps the same
+    rule: an ask that joins a card on screen ends with it."""
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: (lambda f: None))
+    monkeypatch.setattr(approvals, "TIMEOUT_S", 0.6)
+    loop = asyncio.get_running_loop()
+    first = asyncio.ensure_future(approvals.BroadcastAsker("conv")(frame("c1")))
+    await asyncio.sleep(0.3)
+    monkeypatch.setattr(approvals, "TIMEOUT_S", 5)
+
+    async def surface(f):                                      # a job or a turn is asking
+        raise AssertionError("approvals.ask opens its own card")
+    with permissions.asking_with(surface):
+        started = loop.time()
+        assert await approvals.ask("conv", frame("c2")) is False
+        waited = loop.time() - started
+    assert waited < 0.6 and approvals.LAST_OUTCOME.get() == "expired"
+    assert (await first)["by"] is None and approvals.known_ids() == set()
+
+
+async def test_an_ask_after_a_cards_time_is_up_gets_a_card_of_its_own(monkeypatch):
+    """A card whose time is up but whose waiter has not woken yet is not joined: the new ask would
+    read as expired without ever being shown."""
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: (lambda f: None))
     monkeypatch.setattr(approvals, "TIMEOUT_S", 0.05)
-    first = asyncio.ensure_future(approvals.BroadcastAsker("conv")(frame("c1")))
-    await asyncio.sleep(0)
+    a = approvals.open_card("conv", frame("c1"))
+    await asyncio.sleep(0.1)
+    b = approvals.open_card("conv", frame("c2"))
+    assert b is not a and b.call_id == "c2" and a.waiters == 1
+
+
+async def test_the_inbox_lists_a_card_until_the_time_its_first_ask_showed(monkeypatch):
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: (lambda f: None))
+    a = approvals.open_card("conv", frame("c1"))
     monkeypatch.setattr(approvals, "TIMEOUT_S", 5)
-    second = asyncio.ensure_future(approvals.BroadcastAsker("conv")(frame("c2")))
-    await asyncio.sleep(0)
-    assert (await first)["by"] is None and "c1" in approvals.known_ids()
-    approvals.answer({"type": "confirm_action", "call_id": "c1", "scope": "task"})
-    assert (await second)["approved"] is True
+    approvals.open_card("conv", frame("c2"))                   # joins: the card's time is unchanged
+    [listed] = approvals.all_pending()
+    assert listed["expires_at"] == a.opened_at + 1800
 
 
 async def test_a_job_stopped_while_its_card_waits_leaves_no_card(monkeypatch):
@@ -439,19 +494,34 @@ async def test_decline_pending_leaves_a_card_someone_else_also_waits_on(monkeypa
     approvals.open_card("conv", frame("c9"))                               # ...a job joins it
     own = approvals.open_card("conv", frame("c2", dedupe="own"), broadcast=False)
     assert shared.waiters == 2
-    assert approvals.decline_pending({"c1", "c2"}, "not that one", mine={"c1": 1, "c2": 1}) == 1
+    assert approvals.decline_pending({"c1", "c2"}, "not that one", source="mac",
+                                     mine={"c1": 1, "c2": 1}) == 1
     assert not shared.future.done() and own.future.done()
-    assert approvals.decline_pending({"c1"}, "both of mine", mine={"c1": 2}) == 1   # all its waiters
+    assert approvals.decline_pending({"c1"}, "both of mine", source="mac", mine={"c1": 2}) == 1  # all its
     assert shared.future.result()["note"] == "both of mine"
+
+
+async def test_a_card_declined_by_typing_on_the_phone_says_the_phone_answered(monkeypatch):
+    """PR 2b plan review: a message typed on the phone during a phone turn declines its card, and
+    every screen is told the phone answered — not the Mac."""
+    sent = []
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: sent.append)
+    p = approvals.open_card("conv", frame("c1"))                # a phone turn's card: on every screen
+    assert approvals.decline_pending({"c1"}, "check the other repo", source="phone") == 1
+    assert approvals.close_card(p)["by"] == "phone"
+    assert sent[-1] == protocol.card_resolved("c1", "declined", "phone")
+    q = approvals.open_card("conv", frame("c2", dedupe="q"))
+    approvals.decline_pending({"c2"}, "x", source="somewhere")   # unknown, as in `answer`: the Mac
+    assert approvals.close_card(q)["by"] == "mac"
 
 
 async def test_decline_pending_skips_a_decided_card_and_cuts_the_note(monkeypatch):
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: (lambda f: None))
     p = approvals.open_card("conv", frame("c1"))
     approvals.answer({"type": "confirm_action", "call_id": "c1"})
-    assert approvals.decline_pending({"c1"}, "too late") == 0           # answered already: no raise
+    assert approvals.decline_pending({"c1"}, "too late", source="mac") == 0   # answered already: no raise
     q = approvals.open_card("conv", frame("c2", dedupe="q"))
-    assert approvals.decline_pending({"c2"}, "n" * 600) == 1
+    assert approvals.decline_pending({"c2"}, "n" * 600, source="mac") == 1
     assert len(approvals.close_card(q)["note"]) == 500
     approvals.close_card(p)
 

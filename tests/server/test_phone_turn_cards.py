@@ -116,6 +116,28 @@ def test_the_phone_answers_first_and_the_mac_card_closes(app_client, shell):
     assert shell.calls == []
 
 
+def test_a_message_typed_on_the_phone_declines_its_card_and_says_the_phone_did(app_client, shell,
+                                                                            monkeypatch):
+    """PR 2b plan review: typing on the phone while its turn's card waits answers the card No, the
+    message being the note (§A4) — and the phone and every Mac window are told the phone answered,
+    not "on Mac"."""
+    monkeypatch.setattr(approvals, "TIMEOUT_S", 10)     # a message left waiting fails in seconds
+    with app_client.websocket_connect("/ws/arslan/main") as window, \
+            app_client.websocket_connect("/ws/arslan/main") as bridge:
+        window.receive_json(), bridge.receive_json()
+        bridge.send_json(PHONE_MESSAGE)
+        card = _collect_until(bridge, "propose_run_command")[-1]
+        bridge.send_json({"type": "user_message", "content": "no, the other repo", "source": "phone"})
+        expected = {"type": "card_resolved", "call_id": card["call_id"], "outcome": "declined",
+                    "by": "phone"}
+        assert _collect_until(bridge, "card_resolved")[-1] == expected
+        assert _collect_until(window, "card_resolved")[-1] == expected
+        after = _collect_until(bridge, "stream_end")
+        assert [f["ok"] for f in after if f.get("type") == "tool_result"] == [False]
+        _collect_until(bridge, "stream_end")                    # the typed message's own turn
+    assert shell.calls == []
+
+
 def test_the_second_answer_is_swallowed_without_an_error_to_the_phone(app_client, shell):
     with app_client.websocket_connect("/ws/arslan/main") as window, \
             app_client.websocket_connect("/ws/arslan/main") as bridge:

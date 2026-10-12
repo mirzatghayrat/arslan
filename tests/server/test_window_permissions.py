@@ -289,8 +289,11 @@ def test_a_typed_message_leaves_a_card_a_job_shares_open_for_the_job(app_client,
     assert executor.calls == [] and approvals.known_ids() == set()
 
 
-def test_a_window_copy_that_expires_leaves_the_card_to_the_job_for_everyone(app_client, monkeypatch):
-    monkeypatch.setattr(approvals, "TIMEOUT_S", 2)                    # the window's wait
+def test_a_window_card_a_job_joined_expires_for_both_at_the_time_it_showed(app_client, monkeypatch):
+    """PR 2b plan review: the job that joined the window's card waits only what is left of the
+    card's time, not a fresh wait of its own — so the card never outlives the expiry it showed, is
+    never published to the other windows as it expires, and both read it as no answer."""
+    monkeypatch.setattr(approvals, "TIMEOUT_S", 2)                    # the card's time
     _enable_shell(app_client, policy="ask_risky")
     _stub_tool_loop_adapter(monkeypatch, "rm", ["-rf", "build"])
     executor = _stub_run_command_executor(monkeypatch)
@@ -300,16 +303,39 @@ def test_a_window_copy_that_expires_leaves_the_card_to_the_job_for_everyone(app_
         ws.receive_json(), other.receive_json()
         ws.send_json({"type": "user_message", "content": "clean the build"})
         card = _collect_until(ws, "propose_run_command")[-1]
-        monkeypatch.setattr(approvals, "TIMEOUT_S", 30)               # the job's wait, longer
+        monkeypatch.setattr(approvals, "TIMEOUT_S", 30)               # a fresh wait would be longer
         asked = app_client.portal.start_task_soon(job.command, "rm -rf build", [])
         _until(lambda: _waiters(card["call_id"]) == 2)
-        frames = _collect_until(ws, "stream_end")                     # the window's copy expires
+        frames = _collect_until(ws, "stream_end")                     # the card expires
         assert "NOT a refusal" in str([f for f in frames if f.get("type") == "tool_result"])
-        assert [c["call_id"] for c in approvals.pending_cards("conv-e")] == [card["call_id"]]
+        assert asked.result(timeout=5) is False                       # the job's wait ended with it
+        assert approvals.pending_cards("conv-e") == [] and approvals.known_ids() == set()
         seen = _collect_until(other, "stream_end")
-        assert card["call_id"] in [f.get("call_id") for f in seen if f.get("type") == "propose_run_command"]
-        other.send_json({"type": "confirm_run_command", "call_id": card["call_id"], "scope": "once"})
-        assert asked.result(timeout=5) is True
+        assert card["call_id"] not in [f.get("call_id") for f in seen
+                                       if f.get("type") == "propose_run_command"]
+    assert executor.calls == []
+
+
+def test_a_window_ask_that_joins_a_jobs_card_waits_only_what_is_left_of_it(app_client, monkeypatch):
+    """The other way round: the window joins the job's card, and its wait ends when the card's
+    does — not a fresh 30 minutes after it joined (PR 2b plan review)."""
+    monkeypatch.setattr(approvals, "TIMEOUT_S", 4)                    # the job's card's time
+    _enable_shell(app_client, policy="ask_risky")
+    _stub_tool_loop_adapter(monkeypatch, "rm", ["-rf", "build"])
+    executor = _stub_run_command_executor(monkeypatch)
+    job = approvals.JobConfirmations("conv-j", job_id="job-j")
+    with app_client.websocket_connect("/ws/arslan/conv-j") as ws:
+        ws.receive_json()
+        started = time.monotonic()
+        asked = app_client.portal.start_task_soon(job.command, "rm -rf build", [])
+        job_card = _collect_until(ws, "propose_run_command")[-1]
+        monkeypatch.setattr(approvals, "TIMEOUT_S", 30)               # a fresh wait would be longer
+        ws.send_json({"type": "user_message", "content": "clean the build"})
+        _until(lambda: _waiters(job_card["call_id"]) == 2)            # the window joined it
+        frames = _collect_until(ws, "stream_end")
+        assert time.monotonic() - started < 8
+        assert "NOT a refusal" in str([f for f in frames if f.get("type") == "tool_result"])
+        assert asked.result(timeout=5) is False
     assert executor.calls == [] and approvals.known_ids() == set()
 
 
