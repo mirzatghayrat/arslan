@@ -13,8 +13,10 @@ acting in an app once per background job; a high-risk action every time.
 """
 from __future__ import annotations
 
+import functools
 import json
 import os
+import plistlib
 import re
 import threading
 from datetime import date, datetime, timedelta, timezone
@@ -160,12 +162,63 @@ def _matches(group: dict, bundle_id: str, name: str) -> bool:
     return any(n.lower() == name.strip().lower() for n in group.get("names", []))
 
 
+# Where installed apps live (0.1.61 §A11): an app's name is turned into its bundle id from its own
+# Info.plist, so a rule or the never-list can hold the bundle id while a script names the app.
+_APP_DIRS = ("/Applications", "/Applications/Utilities", "/System/Applications",
+             "/System/Applications/Utilities", "/System/Library/CoreServices",
+             "/System/Library/CoreServices/Applications", "~/Applications")
+_BUNDLE_ID = re.compile(r"^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$")
+
+
+@functools.lru_cache(maxsize=256)
+def app_identity(app: str) -> dict | None:
+    """{"name", "bundle_id"} for an app name or bundle id, read from the installed app's Info.plist —
+    never by launching it (`osascript -e 'id of app "X"'` would). A bundle id is taken as given. None
+    when no installed app has that name and it is no bundle id. Running apps outside these folders are resolved by Hands
+    (`which_app`) on the Hands path."""
+    app = app.strip().removesuffix(".app")
+    if not app or "/" in app:
+        return None
+    for folder in _APP_DIRS:
+        plist = Path(folder).expanduser() / f"{app}.app" / "Contents" / "Info.plist"
+        try:
+            with plist.open("rb") as f:
+                info = plistlib.load(f)
+        except (OSError, plistlib.InvalidFileException, ValueError):
+            continue
+        bundle = str(info.get("CFBundleIdentifier") or "")
+        if bundle:
+            return {"name": str(info.get("CFBundleName") or app), "bundle_id": bundle}
+    if _BUNDLE_ID.match(app):                     # no app has that name: it is a bundle id
+        return {"name": "", "bundle_id": app}
+    return None
+
+
 def never_touched(app: str) -> bool:
-    """A name or bundle id on the built-in never-list or the user's own."""
+    """A name or bundle id on the built-in never-list or the user's own — matched by the name and by
+    the bundle id of the installed app with that name (0.1.61 §A11), so a script that names an app
+    and a rule that holds its bundle id see the same list."""
     app = app.strip()
-    if any(app.lower() == n.lower() for n in settings()["never"]):
+    identity = app_identity(app) or {}
+    bundle = identity.get("bundle_id") or ""
+    keys = {app.lower(), bundle.lower()} - {""}
+    if any(n.strip().lower() in keys for n in settings()["never"]):
         return True
-    return any(_matches(g, app, app) for g in policy()["denied"])
+    return any(_matches(g, bundle or app, app) or _matches(g, app, app) for g in policy()["denied"])
+
+
+# `tell application "X"`, `tell app "X"`, `application id "com.x"`, `using terms from application "X"`.
+_SCRIPT_APP = re.compile(r'\b(?:application|app)\s+(?:id\s+)?"([^"\n]{1,120})"', re.I)
+
+
+def script_apps(script: str) -> list[str]:
+    """The apps an AppleScript names, in order, without repeats (0.1.61 §A2's "apps" category and
+    mac_applescript check these against the never-list)."""
+    seen: list[str] = []
+    for m in _SCRIPT_APP.finditer(script or ""):
+        if m.group(1) not in seen:
+            seen.append(m.group(1))
+    return seen
 
 
 def sends_on_return(bundle_id: str, name: str) -> bool:
