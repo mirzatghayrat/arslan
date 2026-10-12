@@ -9,7 +9,9 @@ from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
+from sqlalchemy import select
 
+from server.db.models import PermissionGrant
 from server.services import approvals, permission_store, permissions, run_registry, settings_service
 
 
@@ -222,6 +224,106 @@ async def test_a_jobs_remote_and_sandbox_cards_stay_plain_cards(job_db, monkeypa
     assert [c.get("remote_host") for c in windows.cards] == ["box", None]
     assert windows.cards[1]["sandbox"] == "retry"
     assert not any("options" in c for c in windows.cards)      # one answer each, nothing to remember
+
+
+# ── pre-review rulings (2026-10-12): merge only identical asks; phone/island answer once only ──
+
+async def _until(predicate, seconds=3.0):
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + seconds
+    while not predicate():
+        assert loop.time() < deadline, "condition not reached"
+        await asyncio.sleep(0.01)
+
+
+def _shown(sent):
+    return [f for f in sent if f["type"].startswith("propose_")]
+
+
+ASKS = {
+    "two commands under one rule": (lambda j: j.command("rm a.txt", []), lambda j: j.command("rm b.txt", [])),
+    "two schedules, two names": (lambda j: j.schedule("Brief", "daily"), lambda j: j.schedule("Digest", "daily")),
+    "two schedules, two times": (lambda j: j.schedule("Brief", "daily"), lambda j: j.schedule("Brief", "weekly")),
+    "two writes, two paths": (lambda j: j.workspace_write("write_file", "a.txt"),
+                              lambda j: j.workspace_write("write_file", "b.txt")),
+}
+
+
+@pytest.mark.parametrize("asks", ASKS.values(), ids=ASKS.keys())
+async def test_two_different_asks_never_share_a_card(job_db, monkeypatch, asks):
+    """One answer must never approve what its card did not show. Seen in a probe (2026-10-12):
+    `rm a.txt` and `rm b.txt` from two jobs (both under the rule "delete") were one card showing
+    `rm a.txt`, and one "Once" ran both."""
+    sent = []
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: sent.append)
+    first = asyncio.ensure_future(asks[0](approvals.JobConfirmations("conv", job_id="job-a")))
+    await _until(lambda: len(_shown(sent)) == 1)
+    second = asyncio.ensure_future(asks[1](approvals.JobConfirmations("conv", job_id="job-b")))
+    await _until(lambda: len(_shown(sent)) == 2 or any(p.waiters > 1 for p in approvals._pending.values()))
+    cards = _shown(sent)
+    assert len(cards) == 2, "the second ask joined the card of the first"
+    kind = cards[0]["type"].removeprefix("propose_")
+    approvals.answer({"type": f"confirm_{kind}", "call_id": cards[0]["call_id"], "scope": "once"})
+    approvals.answer({"type": f"cancel_{kind}", "call_id": cards[1]["call_id"]})
+    assert (await first, await second) == (True, False)
+
+
+async def test_two_identical_asks_from_two_jobs_share_one_card_and_one_answer(job_db, monkeypatch):
+    sent = []
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: sent.append)
+    first = asyncio.ensure_future(approvals.JobConfirmations("conv", job_id="job-a").command("rm a.txt", []))
+    await _until(lambda: len(_shown(sent)) == 1)
+    second = asyncio.ensure_future(approvals.JobConfirmations("conv", job_id="job-b").command("rm a.txt", []))
+    await _until(lambda: any(p.waiters == 2 for p in approvals._pending.values()))
+    [card] = _shown(sent)
+    approvals.answer({"type": "confirm_run_command", "call_id": card["call_id"], "scope": "once"})
+    assert (await first, await second) == (True, True)
+    assert [f["type"] for f in sent].count("card_resolved") == 1
+    assert sorted((r.job_id, r.decided_by, r.scope) for r in await _ledger(job_db)) == [
+        ("job-a", "user", "once"), ("job-b", "user", "once")]
+
+
+@pytest.mark.parametrize("source", ["phone", "island"])
+async def test_a_phone_or_island_answer_carries_no_remember(monkeypatch, source):
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: (lambda f: None))
+    p = approvals.open_card("conv", frame(options=("once", "conversation", "always")))
+    approvals.answer({"type": "confirm_action", "call_id": "c1", "remember": True, "scope": "always",
+                      "source": source})
+    d = approvals.close_card(p)
+    assert (d["approved"], d["scope"], d["remember"]) == (True, "once", False)
+
+
+@pytest.mark.parametrize("by", ["phone", "island"])
+async def test_decide_takes_only_the_first_choice_from_a_phone_or_the_island(job_db, by):
+    async def phone(frame):                       # any surface: decide clamps as well
+        return {"approved": True, "scope": "always", "note": "", "by": by}
+    with permissions.asking_with(phone):
+        d = await permissions.decide(permissions.Request(kind="app", target="com.apple.Notes",
+                                                         title="Use Notes?", always_label="Notes"),
+                                     permissions.Context(conversation_id="conv", task_id="turn-1"))
+    assert (d.allowed, d.scope) == (True, "task")
+    async with job_db() as db:
+        assert await permission_store.list_rules(db) == []
+        grants = (await db.scalars(select(PermissionGrant))).all()
+    assert [(g.task_id, g.target) for g in grants] == [("turn-1", "com.apple.Notes")]   # never the conversation
+
+
+@pytest.mark.parametrize("source", ["phone", "island"])
+@pytest.mark.parametrize("reply", [{"scope": "always"}, {"scope": "conversation"}, {"remember": True}],
+                         ids=["always", "conversation", "remember"])
+async def test_a_phone_or_island_yes_on_a_job_card_stores_no_rule_and_no_grant(job_db, monkeypatch,
+                                                                                source, reply):
+    def phone(f):
+        if f["type"] == "propose_run_command":
+            approvals.answer({"type": "confirm_run_command", "call_id": f["call_id"], "source": source,
+                              **reply})
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: phone)
+    assert await approvals.JobConfirmations("conv", job_id="job-1").command("rm old.txt", []) is True
+    async with job_db() as db:
+        assert await permission_store.list_rules(db) == []
+        assert (await db.scalars(select(PermissionGrant))).all() == []
+    [row] = await _ledger(job_db)
+    assert (row.decided_by, row.scope) == ("user", "once")
 
 
 def test_hands_tools_still_imports_first_in_a_fresh_interpreter():

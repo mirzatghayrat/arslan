@@ -171,6 +171,28 @@ def test_when_the_bridge_drops_mid_card_the_mac_card_closes(app_client, shell):
     assert shell.calls == []
 
 
+def test_a_phone_yes_never_leaves_a_standing_answer(app_client, monkeypatch):
+    """0.1.61 §A4 (ruling 2026-10-12): the phone answers a card this once only. Its "remember"
+    used to reach the window's "don't ask again" and store an Always rule from the phone."""
+    from server.services import terminal_policy
+    _enable_shell(app_client, policy="ask_risky")
+    _stub_tool_loop_adapter(monkeypatch, "rm", ["old.txt"])
+    shell = _stub_run_command_executor(monkeypatch)
+    with app_client.websocket_connect("/ws/arslan/main") as bridge:
+        bridge.receive_json()
+        bridge.send_json({**PHONE_MESSAGE, "content": "delete old.txt"})
+        card = _collect_until(bridge, "propose_run_command")[-1]
+        bridge.send_json({"type": "confirm_run_command", "call_id": card["call_id"], "remember": True,
+                          "source": "phone"})
+        _collect_until(bridge, "stream_end")
+    assert len(shell.calls) == 1
+
+    async def standing():
+        async with app_client.db_maker() as db:
+            return await terminal_policy.always_allowed(db)
+    assert app_client.portal.call(standing) == set()
+
+
 async def test_the_first_answer_wins_even_when_both_arrive_before_the_turn_wakes():
     sent = []
     run_registry.attach_sink("c", sent.append)

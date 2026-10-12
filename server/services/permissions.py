@@ -223,7 +223,7 @@ async def _ask(req: Request, ctx: Context, mode: str) -> Decision:
     call_id = base.get("call_id") or uuid.uuid4().hex
     frame = {**base, "call_id": call_id, "title": req.title, "options": opts,
              "always_label": req.always_label if "always" in opts else "",
-             "perm_kind": req.kind, "dedupe": f"{req.kind}\x1f{req.target}",
+             "perm_kind": req.kind, "dedupe": _dedupe(req),
              "expires_at": time.time() + approvals.TIMEOUT_S}
     if req.why and "why" not in frame:
         frame["why"] = req.why[:300]
@@ -236,6 +236,8 @@ async def _ask(req: Request, ctx: Context, mode: str) -> Decision:
             title=req.title, minutes=max(1, int(approvals.TIMEOUT_S // 60))))
     elif answer.get("approved"):
         scope = answer.get("scope") if answer.get("scope") in opts else opts[0]
+        if answer.get("by") in approvals.FIRST_CHOICE_ONLY:
+            scope = opts[0]                    # the phone and the island answer once only (§A4)
         decision = Decision(True, "user", scope)
     else:
         decision = Decision(False, "user", note=note, model_text=_declined_text(req.title, note))
@@ -262,6 +264,14 @@ async def _ask(req: Request, ctx: Context, mode: str) -> Decision:
                          grant_id=grant_id)
         await db.commit()
     return decision
+
+
+def _dedupe(req: Request) -> str:
+    """Identical asks share one card (§A4): the same kind and target AND the same words on the
+    card, its title and detail. Two commands under one rule, two schedules, two writes in one
+    folder are not identical: one answer must never approve what its card did not show. A JSON
+    list, so no separator inside a field can make two different asks read the same."""
+    return json.dumps([req.kind, req.target, req.title, req.detail])
 
 
 def _generic_frame(req: Request) -> dict:

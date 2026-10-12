@@ -38,6 +38,9 @@ from server.ws import protocol
 TIMEOUT_S = 1800                   # 30 minutes (0.1.61 §A4); hands_tools.CARD_S follows it
 #: Where an answer may come from, besides a Mac window ("mac").
 SOURCES = ("phone", "inbox", "island")
+#: Sources that answer a card this once only: their yes takes the card's first choice and never
+#: remembers (0.1.61 §A4: "a phone never grants always"; the island answers Once or No).
+FIRST_CHOICE_ONLY = ("phone", "island")
 #: How the last card this task waited on ended: "approved", "declined", or "expired" (nobody
 #: answered in time). A tool result must not tell the model the user said no when nobody did.
 LAST_OUTCOME: ContextVar[str | None] = ContextVar("approvals_last_outcome", default=None)
@@ -155,12 +158,14 @@ def answer(data: dict) -> bool:
         return True                         # swallowed: only the asking window approves this one
     if not pending.future.done():
         options = [o for o in pending.frame.get("options") or [] if isinstance(o, str)]
-        scope = data.get("scope")
-        if by in ("phone", "island"):
-            scope = options[0] if options else None          # never more than once from there
+        scope, remember = data.get("scope"), bool(data.get("remember"))
+        if by in FIRST_CHOICE_ONLY:
+            # Never more than once from there: no wider scope, and no "remember" either (the
+            # window's legacy "don't ask again" reads it).
+            scope, remember = (options[0] if options else None), False
         elif scope not in options:
-            scope = _legacy_scope(options, bool(data.get("remember")))
-        decision = {"approved": ANSWERS[kind], "remember": bool(data.get("remember")),
+            scope = _legacy_scope(options, remember)
+        decision = {"approved": ANSWERS[kind], "remember": remember,
                     "scope": scope if ANSWERS[kind] else None,
                     "note": "" if ANSWERS[kind] else str(data.get("note") or "").strip()[:500],
                     "by": by}

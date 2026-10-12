@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import logging
 import time
 from pathlib import Path
@@ -373,7 +374,9 @@ async def test_the_callers_card_frame_is_kept_and_gains_the_permission_fields():
         await permissions.decide(req, CTX)
     [shown] = asker.frames
     assert (shown["type"], shown["command"], shown["call_id"]) == ("propose_run_command", "rm", "call-77")
-    assert (shown["perm_kind"], shown["dedupe"]) == ("command", "command\x1fdelete")
+    # Identical asks share a card: the key is everything the card shows (ruling 2026-10-12).
+    assert shown["perm_kind"] == "command"
+    assert json.loads(shown["dedupe"]) == ["command", "delete", "Run rm -rf build?", ""]
     assert shown["why"] == "w" * 300
     assert "options" not in frame                      # the caller's own dict is left alone
     async with db_session.AsyncSessionLocal() as db:
