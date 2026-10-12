@@ -41,8 +41,13 @@ MAX_ENTRIES = 100_000
 #: member may hold this much; what GitHub writes for a long path or target is a few hundred bytes.
 MAX_HEADER_BYTES = 1024 * 1024
 #: Global pax headers, in all. GitHub writes one, the commit (52 bytes); tarfile copies them into
-#: each member that has its own pax header.
-MAX_GLOBAL_HEADER_BYTES = 64 * 1024
+#: every member (5,900 keys over 99,000 empty members took 27 s at 64 KB).
+MAX_GLOBAL_HEADER_BYTES = 4 * 1024
+#: One member's name, in bytes: longer than any path a copy could write (a Mac's PATH_MAX is 1,024,
+#: Linux's 4,096), so the archive is refused rather than read on.
+MAX_NAME_BYTES = 4096
+#: The names read_archive keeps, every member's (the skipped ones too), in bytes.
+MAX_NAMES_BYTES = 4 * 1024 * 1024
 MAX_LIST = 200
 #: What a skill's text may call its own folder (Claude Code, Agent Skills, OpenClaw).
 PLACEHOLDERS = ("${CLAUDE_SKILL_DIR}", "${SKILL_DIR}", "{baseDir}")
@@ -79,6 +84,8 @@ def folder_for(key: str) -> Path:
     return skills_root() / key
 
 
+#: Per running event loop, the locks of the keys in use, both levels weak: a contended asyncio.Lock
+#: holds its loop, so a lock lives only while someone holds it and a loop's locks go with the loop.
 _KEY_LOCKS: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 
 
@@ -91,8 +98,11 @@ def key_lock(key: str) -> asyncio.Lock:
     the folder that ends up live is the one whose row committed. Different keys never wait on each
     other."""
     folder_for(key)                                            # a bad key is refused here too
-    locks = _KEY_LOCKS.setdefault(asyncio.get_running_loop(), {})
-    return locks.setdefault(key, asyncio.Lock())
+    locks = _KEY_LOCKS.setdefault(asyncio.get_running_loop(), weakref.WeakValueDictionary())
+    lock = locks.get(key)
+    if lock is None:
+        lock = locks[key] = asyncio.Lock()
+    return lock
 
 
 def safe_relpath(rel: str) -> str | None:
@@ -177,7 +187,7 @@ class _BoundedTarInfo(tarfile.TarInfo):
             if self.type == tarfile.XGLTYPE:
                 seen = getattr(tarfile_, "_arslan_global_bytes", 0) + self.size
                 if seen > MAX_GLOBAL_HEADER_BYTES:
-                    raise BadArchive("the repository archive's global headers are larger than 64 KB")
+                    raise BadArchive("the repository archive's global headers are larger than 4 KB")
                 tarfile_._arslan_global_bytes = seen
         else:
             tarfile_._arslan_header_run = 0                    # a member: the next run starts
@@ -199,7 +209,7 @@ def read_archive(data: bytes, *, keep: Callable[[str], bool], keep_limit: int | 
     if len(data) > MAX_ARCHIVE_BYTES:
         raise BadArchive("the repository archive is larger than 64 MB")
     out = Archive(commit="")
-    kept = seen = 0
+    kept = seen = named = 0
     limit = keep_limit if keep_limit is not None else MAX_FOLDER_BYTES + 2 * 1024 * 1024
     mb = limit // (1024 * 1024)
     over = ("the skill's folder is larger than 20 MB" if keep_limit is None
@@ -218,10 +228,16 @@ def read_archive(data: bytes, *, keep: Callable[[str], bool], keep_limit: int | 
                 seen += 1
                 if seen > MAX_ENTRIES:
                     raise BadArchive(f"the repository archive has over {MAX_ENTRIES:,} entries")
+                name_bytes = len(member.name.encode("utf-8", "surrogatepass"))
+                if name_bytes > MAX_NAME_BYTES:
+                    raise BadArchive("a name in the repository archive is longer than 4,096 bytes")
                 name = member.name.split("/", 1)[1] if "/" in member.name else ""
                 name = name.rstrip("/")
                 if not name:
                     continue                                    # the archive's top folder
+                named += name_bytes
+                if named > MAX_NAMES_BYTES:
+                    raise BadArchive("the names in the repository archive add up to more than 4 MB")
                 kind = ("file" if member.isreg() else "dir" if member.isdir()
                         else "link" if (member.issym() or member.islnk()) else "other")
                 entry = Entry(path=name, kind=kind, size=member.size if kind == "file" else 0, mode=member.mode)
