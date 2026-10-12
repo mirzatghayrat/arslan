@@ -243,6 +243,20 @@ class SkillPack(Base):
     enabled = Column(Boolean, nullable=False, default=True, server_default="1")
     # 0.1.57 §5.2: the capability source it was installed from (pinned commit + checksums).
     source_id = Column(String(36), nullable=True)
+    # 0.1.61 §C1: where the skill comes from — bundled | imported | saved | agents | claude | codex —
+    # and its folder on disk (scripts, references, assets), if it has one.
+    origin = Column(String(20), nullable=False, default="saved", server_default="saved")
+    folder = Column(Text, nullable=True)
+    text_sha256 = Column(String(64), nullable=True)      # sha256 of its SKILL.md text
+    scan = Column(JSON, nullable=True)                   # {"level", "verdict", "findings"}
+    frontmatter = Column(JSON, nullable=True)            # shown, not obeyed: allowed-tools, requires, metadata
+    invocable = Column(Boolean, nullable=False, default=True, server_default="1")   # False: only when named
+    pinned = Column(Boolean, nullable=False, default=False, server_default="0")
+    # 0.1.61 §C4: "Use it on this Mac only" — the license text's sha256 and when it was accepted.
+    local_only = Column(Boolean, nullable=False, default=False, server_default="0")
+    license_spdx = Column(String(40), nullable=True)
+    license_sha256 = Column(String(64), nullable=True)
+    license_accepted_at = Column(DateTime, nullable=True)
 
 
 class SkillCandidate(Base):
@@ -269,6 +283,9 @@ class SkillCandidate(Base):
     evidence = Column(JSON, default=dict)  # reserved: Slice-2 eval evidence
     created_at = Column(DateTime, default=datetime.utcnow)
     promoted_at = Column(DateTime, nullable=True)
+    # 0.1.61 §C7: a draft saved from chat — the conversation it came from and its files.
+    conversation_id = Column(String(100), nullable=True)
+    files = Column(JSON, nullable=True)                  # {relative path: text}
 
 
 class SpawnCapability(Base):
