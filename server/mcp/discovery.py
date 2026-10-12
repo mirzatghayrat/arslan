@@ -1,14 +1,24 @@
 """Connect an MCP server, discover its tools, naturalize them into Tool/Toolset rows
-(locked: tier=orchestrator/status=registered). suggest_tier is a derived UI hint only."""
+(locked: tier=orchestrator/status=registered). suggest_tier is a derived UI hint only.
+
+0.1.61 §B1/§B4: tools follow the server — every listing (all pages, at most MAX_PAGES) adds new
+tools, updates changed ones, prunes vanished ones and stores each tool's declared hints. All pages
+are fetched before any database session opens, and one server's writes are serialized."""
 from __future__ import annotations
 
 import httpx
 import hashlib
 import json
+import logging
+
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from server.db import session as db_session
 from server.db.models import MCPServer, Tool, Toolset
-from server.mcp.session import manager
+from server.mcp.session import LoopLocks, NotStarted, manager
+
+logger = logging.getLogger(__name__)
 
 _READ_VERBS = ("list", "get", "search", "read", "fetch", "query", "find", "describe", "show", "view")
 _WRITE_VERBS = ("write", "create", "delete", "update", "exec", "run", "send", "patch", "move", "install", "remove", "set")
@@ -107,46 +117,148 @@ def _describe_failure(exc: BaseException, *, has_headers: bool) -> str:
     return text[:500] if text else f"{type(exc).__name__} (no message)"
 
 
-async def connect_and_discover(server_id: int) -> list[dict]:
-    """Returns [{key,name,description,suggested_tier}, ...]. Marks server connected/error."""
+MAX_PAGES = 20
+HINT_KEYS = ("readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint", "title")
+_write_locks = LoopLocks()
+
+
+class ServerGone(ValueError):
+    """The MCP server row does not exist (any more)."""
+
+
+def tool_hints(tool) -> dict | None:
+    """The tool's declared MCP annotations (§B4): the known keys that are set — booleans for the
+    hints, a title of at most 200 characters. None when it declares none. Hints are the server's
+    claims, stored as data; nothing in PR 4 decides on them."""
+    ann = getattr(tool, "annotations", None)
+    if ann is None:
+        return None
+    if hasattr(ann, "model_dump"):
+        data = ann.model_dump(exclude_none=True)
+    elif isinstance(ann, dict):
+        data = ann
+    else:
+        data = {key: getattr(ann, key, None) for key in HINT_KEYS}
+    hints: dict = {}
+    for key in HINT_KEYS:
+        value = data.get(key)
+        if key == "title":
+            if isinstance(value, str) and value.strip():
+                hints[key] = value.strip()[:200]
+        elif isinstance(value, bool):
+            hints[key] = value
+    return hints or None
+
+
+async def _runtime(server_id: int) -> dict:
     async with db_session.AsyncSessionLocal() as db:
         srv = await db.get(MCPServer, server_id)
         if srv is None:
-            raise ValueError(f"mcp server {server_id} not found")
-        server = runtime_dict(srv)
-    try:
-        listed = await manager.list_tools(server)
-    except Exception as exc:  # noqa: BLE001
-        async with db_session.AsyncSessionLocal() as db:
-            srv = await db.get(MCPServer, server_id)
-            srv.status = "error"
-            srv.last_error = _describe_failure(exc, has_headers=bool(server.get("env")))
-            await db.commit()
-        raise
+            raise ServerGone(f"mcp server {server_id} not found")
+        return runtime_dict(srv)
+
+
+async def _list_all(server: dict) -> tuple[list, bool]:
+    """Every page of tools/list → (tools, complete). Deduplicated by name (the last page wins);
+    complete=False when MAX_PAGES stopped it. No database session is open meanwhile."""
+    listed = await manager.list_tools(server)
+    by_name = {t.name: t for t in listed.tools}
+    cursor, pages = getattr(listed, "nextCursor", None), 1
+    while cursor:
+        if pages >= MAX_PAGES:
+            return list(by_name.values()), False
+        listed = await manager.list_tools(server, cursor=cursor)
+        by_name.update({t.name: t for t in listed.tools})
+        cursor, pages = getattr(listed, "nextCursor", None), pages + 1
+    return list(by_name.values()), True
+
+
+async def _write(server_id: int, tools: list, *, complete: bool, legacy_status: bool) -> list[dict]:
+    """Add, update and prune this server's Tool rows in one short transaction. Serialized per
+    server; a concurrent insert of the same key is retried once."""
+    async with _write_locks.get(server_id):
+        try:
+            return await _write_once(server_id, tools, complete=complete, legacy_status=legacy_status)
+        except IntegrityError:
+            logger.info("mcp %s: concurrent tool write, retrying once", server_id)
+            return await _write_once(server_id, tools, complete=complete, legacy_status=legacy_status)
+
+
+async def _write_once(server_id: int, tools: list, *, complete: bool, legacy_status: bool) -> list[dict]:
     discovered: list[dict] = []
     async with db_session.AsyncSessionLocal() as db:
         ts_key = f"mcp_{server_id}"
         srv = await db.get(MCPServer, server_id)
-        ts = await db.get(Toolset, ts_key)
-        if ts is None:
-            ts = Toolset(key=ts_key, name=srv.label, description=f"MCP server: {srv.command}",
-                         tier="orchestrator", status="registered", backend_note=f"MCP: {srv.command}")
-            db.add(ts)
-        for t in listed.tools:
+        if srv is None:
+            raise ServerGone(f"mcp server {server_id} not found")
+        if await db.get(Toolset, ts_key) is None:
+            db.add(Toolset(key=ts_key, name=srv.label, description=f"MCP server: {srv.command}",
+                           tier="orchestrator", status="registered", backend_note=f"MCP: {srv.command}"))
+        rows = (await db.execute(select(Tool).where(Tool.toolset_key == ts_key))).scalars().all()
+        by_key = {row.key: row for row in rows}
+        for t in tools:
             key = mcp_tool_key(server_id, t.name)
             schema = getattr(t, "inputSchema", None) or {}
-            existing = await db.get(Tool, key)
-            if existing is None:
-                db.add(Tool(key=key, toolset_key=ts_key, description=t.description or t.name,
-                            tier="orchestrator", status="registered", input_schema=schema,
-                            external_name=t.name))
-            else:
-                existing.description = t.description or t.name
-                existing.input_schema = schema
-                existing.external_name = t.name
+            hints = tool_hints(t)
+            row = by_key.get(key)
+            if row is None:
+                row = Tool(key=key, toolset_key=ts_key, description=t.description or t.name,
+                           tier="orchestrator", status="registered", input_schema=schema,
+                           external_name=t.name, annotations=hints)
+                db.add(row)
+                by_key[key] = row
+            else:                                  # tier/status (the user's wiring) are kept
+                row.description = t.description or t.name
+                row.input_schema = schema
+                row.external_name = t.name
+                row.annotations = hints
             discovered.append({"key": key, "name": t.name, "description": t.description or "",
                                "suggested_tier": suggested_tier_for(srv, t.name)})
-        srv.status = "connected"
-        srv.last_error = None
+        names = {t.name for t in tools}
+        stale = [row for row in rows if (row.external_name or "") not in names]
+        if stale and tools and complete:
+            for row in stale:
+                await db.delete(row)
+        elif stale:
+            logger.warning("mcp %s: listing was %s; kept %d tools it did not name", server_id,
+                           "empty" if not tools else f"cut at {MAX_PAGES} pages", len(stale))
+        if legacy_status:
+            srv.status = "connected"
+            srv.last_error = None
         await db.commit()
     return discovered
+
+
+async def connect_and_discover(server_id: int, *, start_budget_s: float | None = None) -> list[dict]:
+    """Returns [{key,name,description,suggested_tier}, ...]. Opens the session within
+    `start_budget_s` when none is live, lists every page, then adds, updates and prunes the Tool
+    rows and stores their hints. Raises whatever the open or the listing raised (ServerGone for an
+    unknown id). Legacy until every caller goes through the supervisor: also marks the row's
+    status connected/error. NotStarted — the open was superseded by a drop or forget — is
+    re-raised without touching the row: the open was overtaken, not failed."""
+    server = await _runtime(server_id)
+    if start_budget_s is not None:
+        server["start_budget_s"] = start_budget_s
+    try:
+        tools, complete = await _list_all(server)
+    except NotStarted:
+        raise
+    except Exception as exc:  # noqa: BLE001 — recorded for the old UI, then re-raised
+        async with db_session.AsyncSessionLocal() as db:
+            srv = await db.get(MCPServer, server_id)
+            if srv is not None:
+                srv.status = "error"
+                srv.last_error = _describe_failure(exc, has_headers=bool(server.get("env")))
+                await db.commit()
+        raise
+    return await _write(server_id, tools, complete=complete, legacy_status=True)
+
+
+async def relist(server_id: int) -> list[dict] | None:
+    """tools/list_changed (§B1): list again on the live session — never opens one, never
+    restarts — then add, update and prune. None when no session is live."""
+    if manager.cached(server_id) is None:
+        return None
+    server = await _runtime(server_id)
+    tools, complete = await _list_all(server)
+    return await _write(server_id, tools, complete=complete, legacy_status=False)
