@@ -317,17 +317,19 @@ async def install(candidate: dict, *, folders: list[str], keys: dict[str, str] |
         raise
 
 
-def to_trash(path: Path) -> Path | None:
-    """Move a capability's folder to the user's Trash (never deleted outright)."""
+def to_trash(path: Path, *, name: str | None = None) -> Path | None:
+    """Move a capability's folder to the user's Trash (never deleted outright). `name` is what
+    it is called there (0.1.61: a skill folder moved aside has a dot name, hidden in Finder)."""
     if not path.exists():
         return None
     trash = Path.home() / ".Trash"
     trash.mkdir(parents=True, exist_ok=True)
-    target = trash / f"Arslan capability {path.name}"
+    label = name or path.name
+    target = trash / f"Arslan capability {label}"
     n = 1
     while target.exists():
         n += 1
-        target = trash / f"Arslan capability {path.name} {n}"
+        target = trash / f"Arslan capability {label} {n}"
     shutil.move(str(path), str(target))
     return target
 
