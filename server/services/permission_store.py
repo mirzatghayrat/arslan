@@ -98,6 +98,15 @@ async def add_grant(db, conversation_id: str, task_id: str, kind: str, target: s
         PermissionGrant.kind == kind, PermissionGrant.target == target))).scalar_one()
 
 
+async def delete_task_grants(db, task_id: str) -> int:
+    """Every grant for this one task (a turn or a job). A conversation grant (task_id "") is never
+    one of them, so an empty id deletes nothing."""
+    if not task_id:
+        return 0
+    result = await db.execute(delete(PermissionGrant).where(PermissionGrant.task_id == task_id))
+    return result.rowcount or 0
+
+
 async def record(db, **fields) -> ApprovalEvent:
     await _prune(db)
     row = ApprovalEvent(created_at=datetime.utcnow(), **fields)

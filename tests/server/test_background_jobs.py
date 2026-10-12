@@ -707,3 +707,84 @@ async def test_a_job_with_its_own_checks_is_not_asked_again(execution_db, active
     job = await background_jobs.start(CID, "Tidy my notes into a report", _criteria())
     await _wait(lambda: job.phase == "finished")
     assert job.outcome == "done" and seen == []
+
+
+# ── 0.1.61 (Task 4 carries): a job asks through decide; its task grants end with it; its
+# cards' waits are not its working time ──────────────────────────────────────────────
+
+def _a_window_answering(scopes: dict[str, str], after: float = 0.0):
+    """Every window on the conversation, answering the job's app cards by title (after a while)."""
+    def window(frame: dict) -> None:
+        if frame.get("type") == "propose_action" and frame.get("title") in scopes:
+            asyncio.get_running_loop().call_later(after, approvals.answer, {
+                "type": "confirm_action", "call_id": frame["call_id"], "scope": scopes[frame["title"]]})
+    return window
+
+
+@pytest.mark.parametrize("ending", ["done", "stopped"])
+async def test_a_jobs_task_grants_end_with_it_and_its_conversation_grants_stay(execution_db, active, monkeypatch,
+                                                                                ending):
+    from server.db.models import PermissionGrant
+    from server.orchestrator import arslan as arslan_mod
+    from server.services import permissions
+
+    async def grants():
+        async with execution_db() as db:
+            return sorted((g.task_id, g.target) for g in (await db.scalars(select(PermissionGrant))).all())
+
+    seen = {}
+
+    async def body(conversation_id, goal, emit, confirmations):
+        for title, app in (("Use Notes?", "com.apple.Notes"), ("Use Reminders?", "com.apple.reminders")):
+            decision = await permissions.decide(permissions.Request(kind="app", target=app, title=title),
+                                                permissions.Context(conversation_id=conversation_id))
+            seen[title] = (decision.allowed, decision.scope)
+        seen["during"] = await grants()
+        if ending == "stopped":
+            await asyncio.Event().wait()                  # still working when it is stopped
+        return f"Done: {PHRASE}"
+    monkeypatch.setattr(arslan_mod, "background_body", body)
+    window = _a_window_answering({"Use Notes?": "task", "Use Reminders?": "conversation"})
+    run_registry.attach_sink(CID, window)
+    try:
+        job = await background_jobs.start(CID, "Tidy my notes into a report", _criteria())
+        await _wait(lambda: "during" in seen)
+        if ending == "stopped":
+            assert background_jobs.stop(CID, job.job_id)
+        await _wait(lambda: job.phase == "finished")
+    finally:
+        run_registry.detach_sink(CID, window)
+    # The job asked on its own card surface (no surface would have been a refusal at once).
+    assert (seen["Use Notes?"], seen["Use Reminders?"]) == ((True, "task"), (True, "conversation"))
+    assert seen["during"] == [("", "com.apple.reminders"), (job.job_id, "com.apple.Notes")]
+    assert job.outcome == {"done": "done", "stopped": "stopped"}[ending]
+    assert await grants() == [("", "com.apple.reminders")], "the task's grant ends with it, the conversation's stays"
+
+
+async def test_a_card_answered_after_the_jobs_wall_clock_does_not_stop_the_job(execution_db, active, monkeypatch):
+    from arslan import execution_budget
+    from server.orchestrator import arslan as arslan_mod
+    from server.services import permissions
+    monkeypatch.setattr(execution_budget, "job_budget",
+                        lambda tier: execution_budget.Budget(execution_budget.Limits(wall_seconds=2.0)))
+    seen = {}
+
+    async def body(conversation_id, goal, emit, confirmations):
+        decision = await permissions.decide(permissions.Request(kind="app", target="com.apple.Notes",
+                                                                title="Use Notes?"),
+                                            permissions.Context(conversation_id=conversation_id))
+        seen["allowed"] = decision.allowed
+        return f"Done: {PHRASE}"
+    monkeypatch.setattr(arslan_mod, "background_body", body)
+    window = _a_window_answering({"Use Notes?": "once"}, after=3.0)   # the user takes their time
+    run_registry.attach_sink(CID, window)
+    try:
+        job = await background_jobs.start(CID, "Tidy my notes into a report", _criteria())
+        await _wait(lambda: job.phase == "finished", seconds=15)
+    finally:
+        run_registry.detach_sink(CID, window)
+    assert seen == {"allowed": True}
+    assert (job.outcome, job.budget_stop) == ("done", None), (job.detail, job.budget_stop)
+    async with execution_db() as db:
+        used = (await db.get(CompanionTask, job.job_id)).budget["used"]["wall_seconds"]
+    assert used < 2.0, "the three seconds the card waited are not the job's working time"

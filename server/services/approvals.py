@@ -129,12 +129,13 @@ def close_card(pending: Pending) -> dict:
 
 async def ask(conversation_id: str, frame: dict) -> bool:
     """Broadcast one card and wait for its answer. False on timeout or refusal."""
+    _forget_decision()
+    LAST_OUTCOME.set(None)
     # Marked so the card can say it is a background job asking, and hide the
     # "remember" option this path never honours.
-    LAST_OUTCOME.set(None)
     pending = open_card(conversation_id, frame | {"background": True})
     try:
-        with desktop_status.awaiting_approval(conversation_id):
+        with _paused_clock(), desktop_status.awaiting_approval(conversation_id):
             await asyncio.wait_for(asyncio.shield(pending.future), timeout=TIMEOUT_S)
     except TimeoutError:
         pass
@@ -228,6 +229,12 @@ def known_ids() -> set[str]:
     return set(_pending)
 
 
+def waiters(call_id: str) -> int:
+    """How many callers still wait on this card (0 once it is decided or gone)."""
+    pending = _pending.get(call_id)
+    return pending.waiters if pending is not None and not pending.future.done() else 0
+
+
 #: Terminal rules whose command deletes, sends, publishes or reaches elsewhere — and
 #: AppleScript / Shortcuts, which can do any of those from inside an app.
 _ISLAND_RISKY_RULES = {"delete", "send-mail", "send-message", "upload", "publish", "git-push",
@@ -295,13 +302,20 @@ def answer_by_id(call_id: str, approve: bool, *, source: str, remember: bool = F
                    "remember": remember, "scope": scope, "note": note, "source": source})
 
 
-def decline_pending(call_ids: set[str], note: str, *, source: str = "mac") -> int:
+def decline_pending(call_ids: set[str], note: str, *, source: str = "mac",
+                    mine: dict[str, int] | None = None) -> int:
     """Answer these waiting cards No, with the user's words as the note — a message typed in
-    the window while its card waits (spec §A4). Returns how many were answered."""
+    the window while its card waits (spec §A4). Returns how many were answered.
+
+    With `mine` (call_id → how many of the card's waiters are the caller's), a card someone else
+    waits on too — a job that asked the identical question — is left open for them: the caller
+    only stops waiting on it."""
     answered = 0
     for call_id in list(call_ids):
         pending = _pending.get(call_id)
         if pending is None or pending.future.done():
+            continue
+        if mine is not None and pending.waiters > mine.get(call_id, 0):
             continue
         pending.future.set_result({"approved": False, "remember": False, "scope": None,
                                    "note": note.strip()[:500], "by": source})
@@ -320,12 +334,13 @@ class BroadcastAsker:
         self.unanswered = False
 
     async def __call__(self, frame: dict) -> dict:
+        _forget_decision()
         if self.unanswered:
             LAST_OUTCOME.set("expired")
             return {"approved": False, "remember": False, "scope": None, "note": "", "by": None}
         pending = open_card(self.conversation_id, frame | {"background": True})
         try:
-            with desktop_status.awaiting_approval(self.conversation_id):
+            with _paused_clock(), desktop_status.awaiting_approval(self.conversation_id):
                 await asyncio.wait_for(asyncio.shield(pending.future), timeout=TIMEOUT_S)
         except TimeoutError:
             pass
@@ -367,6 +382,8 @@ class JobConfirmations:
         async with db_session.AsyncSessionLocal() as db:
             root = await settings_service.workspace_dir(db)
         if root is None:
+            _forget_decision()                 # no card: the refusal is not an earlier answer
+            LAST_OUTCOME.set(None)
             return False
         # Decided with that session closed: decide opens its own, and a card may wait 30 minutes.
         with permissions.asking_with(self.asker):
@@ -471,6 +488,21 @@ def _command_request(shell: str, rules: list[str], frame: dict | None):
         kind="command", target="|".join(rules) or shell, title=f"Run `{shell[:80]}`?", detail=shell,
         always_label=", ".join(terminal_policy.describe(r) for r in rules),
         remember_as=tuple(("legacy_rule", r, terminal_policy.describe(r)) for r in rules), frame=frame)
+
+
+def _paused_clock():
+    """The wall clocks of the running turn or job stand still while a card waits
+    (`task_service.paused_clock`)."""
+    from server.services import task_service
+    return task_service.paused_clock()
+
+
+def _forget_decision() -> None:
+    """A card starts: an earlier decision is not its answer. `tool_loop._declined` reads
+    `permissions.LAST_DECISION` first, so a plain card (leaving the sandbox, another machine)
+    must not be told the words of a decide card before it; a decide card sets its own after."""
+    from server.services import permissions
+    permissions.LAST_DECISION.set(None)
 
 
 def _reset_for_tests() -> None:

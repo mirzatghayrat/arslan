@@ -229,6 +229,7 @@ async def _run(job: Job) -> None:
         _inside_job.reset(token)
         from server.registry import hands_tools
         hands_tools.forget_job(job.job_id)      # approvals never outlive their job
+        await _forget_task_grants(job)
         outcome = outcome_of(phase, job.results, reason)
         # Judged before the job reads as finished, so nothing shows "done" in between.
         if outcome == "done" and await _goal_not_reached(job, final_text):
@@ -239,6 +240,17 @@ async def _run(job: Job) -> None:
         _emit(job)
         await _report(job, final_text)
         await _report_to_project(job)
+
+
+async def _forget_task_grants(job: Job) -> None:
+    """0.1.61: what the user allowed "for this task" ends with the job, however it ended (done,
+    failed, stopped, cancelled). The conversation's grants stay. Bookkeeping: a database that
+    cannot be written now leaves the row to the store's 24-hour prune."""
+    from server.services import permissions
+    try:
+        await permissions.forget_task(job.job_id)
+    except Exception as exc:  # noqa: BLE001 — the job's own result is still reported
+        logger.warning("background job %s task grants not forgotten: %s", job.job_id, type(exc).__name__)
 
 
 async def _report_to_project(job: Job) -> None:
@@ -273,8 +285,8 @@ async def _execute(job: Job) -> tuple[str, str, str | None]:
     from server.orchestrator import arslan
     from arslan.execution_budget import job_budget
     from server.db import session as db_session
-    from server.services import (approvals, host_run, personal_context, settings_service, task_context,
-                                 task_service)
+    from server.services import (approvals, host_run, permissions, personal_context, settings_service,
+                                 task_context, task_service)
     from server.services.task_repository import repository
     async with db_session.AsyncSessionLocal() as db:
         tier = await settings_service.background_job_budget(db)
@@ -289,8 +301,10 @@ async def _execute(job: Job) -> tuple[str, str, str | None]:
             return await arslan.background_body(conversation_id, instruction, _job_sink(job, sink), confirmations)
         return await host_run.execute(conversation_id, instruction, emit, body, announce=False)
 
+    # 0.1.61: everything the job asks (permissions.decide, Hands too) asks on its own card surface.
     with personal_context.bind(ctx), desktop_status.working(job.conversation_id, title=job.goal, kind="job",
-                                                                     job_id=job.job_id):
+                                                                     job_id=job.job_id), \
+            permissions.asking_with(confirmations.asker):
         try:
             output = await task_service.run_turn(function, job.conversation_id, job.goal,
                                                  _job_sink(job, downstream), _driver={"kind": "background"},

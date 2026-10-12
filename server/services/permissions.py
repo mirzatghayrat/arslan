@@ -102,6 +102,12 @@ def asking_with(asker: Asker | None) -> Iterator[None]:
         _ASKER.reset(token)
 
 
+def current_asker() -> Asker | None:
+    """The card surface bound to this turn or job (`asking_with`), for a caller that wraps it —
+    the chat window's shadow judge goes with the cards that are really shown."""
+    return _ASKER.get()
+
+
 def options_for(req: Request) -> list[str]:
     opts = ["task" if req.kind in _TASK_FIRST else "once"]
     if req.conversation_ok and req.kind not in _ONCE_ONLY:
@@ -169,6 +175,17 @@ async def record_standing(req: Request, ctx: Context) -> None:
     """A caller that found a standing answer itself (terminal_policy's legacy rules) still
     writes the ledger row, so the count of decisions stays whole."""
     await _record(req, _filled(ctx), await _mode(), Decision(True, "rule", "always"))
+
+
+async def forget_task(task_id: str | None) -> int:
+    """A task's grants end with it (0.1.61 §A5): a job that is done, failed, stopped or cancelled
+    leaves no "for this task" grant behind. Its conversation's grants stay. Returns how many went."""
+    if not task_id:
+        return 0
+    async with db_session.AsyncSessionLocal() as db:
+        gone = await permission_store.delete_task_grants(db, task_id)
+        await db.commit()
+    return gone
 
 
 # ── the ladder ────────────────────────────────────────────────────────────────

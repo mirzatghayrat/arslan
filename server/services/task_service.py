@@ -6,10 +6,11 @@ this service automatically; a resume must be an explicit, versioned user action.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import json
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
 from contextvars import ContextVar
 from dataclasses import asdict, replace
 
@@ -19,6 +20,7 @@ from arslan import execution_checkpoint
 from arslan.companion.action_policy import ACCOUNT_ACTION_EFFECTS
 from arslan.companion.contracts import ResourceRef, TaskSpec
 from arslan.execution_budget import Budget, BudgetExceeded, current as current_budget, scope, turn_budget
+from arslan.execution_budget import paused as paused_budgets, running_clock
 from server.db import session as db_session
 from server.db.models import ArslanMessage, Run, Setting, TaskAttempt
 from server.services import personal_context
@@ -118,6 +120,17 @@ async def effect_of(tool_key: str, arguments: dict) -> str:
 def current() -> TaskRuntime | None:
     runtime = _current.get()
     return runtime if runtime is None or not runtime.closed else None
+
+
+@contextlib.contextmanager
+def paused_clock() -> Iterator[None]:
+    """A card waiting for the user is the user's time, not the task's (0.1.61 §A4). While it
+    waits, the wall clocks this turn or job runs under stand still — the task's (`_run`) and
+    the entry point's (`governed`): a chat turn's clock (about 15 minutes) would otherwise end a
+    30-minute card as a budget stop. On the way out each running timeout moves out by the time
+    waited and its budget is credited with it. Nothing happens when no clock is running."""
+    with paused_budgets():
+        yield
 
 
 def detached_context():
@@ -342,8 +355,9 @@ async def _run(value: dict, emit, body, *, progress=None, context=None):
     with scope(budget), personal_context.bind(context), execution_checkpoint.bind(runtime.checkpoint):
         emit(_state_frame(value))
         try:
-            async with asyncio.timeout(budget.remaining_seconds()):
-                result = await body(runtime.capture)
+            async with asyncio.timeout(budget.remaining_seconds()) as clock:
+                with running_clock(budget, clock):        # a card's wait pauses it (`paused_clock`)
+                    result = await body(runtime.capture)
             # A child Run may consume its cancellation to keep the socket alive.
             # That is still a cancellation of the containing task.
             if runtime.cancelled:

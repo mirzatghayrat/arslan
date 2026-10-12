@@ -39,9 +39,22 @@ async def test_a_card_nobody_answered_is_not_reported_as_a_refusal(monkeypatch):
     assert await approvals.ask("c", {"type": "propose_run_command", "call_id": "x1"}) is False
     assert approvals.LAST_OUTCOME.get() == "expired"
     text = tool_loop._declined("user declined this command", "this command")
-    assert text.startswith("nobody answered") and "did not decline" in text
+    assert text.startswith("Nobody answered the card for this command") and "NOT a refusal" in text
     # Told it may ask again, the model asked again within two seconds (device, 2026-10-05).
-    assert "Do not ask for it again" in text and "can be asked again" not in text
+    assert "Don't retry it in this turn" in text and "can be asked again" not in text
+
+
+async def test_a_decision_tells_the_model_in_its_own_words():
+    """0.1.61: a card decided through permissions.decide says what happened in its own text —
+    the user's note on a No — and a later plain card is not told the earlier decision."""
+    from server.services import permissions
+    permissions.LAST_DECISION.set(permissions.Decision(
+        False, "user", note="use dist", model_text="The user said no to: Run `rm`?. They said: use dist"))
+    approvals.LAST_OUTCOME.set("declined")
+    assert tool_loop._declined("user declined this command", "this command") == \
+        "The user said no to: Run `rm`?. They said: use dist"
+    permissions.LAST_DECISION.set(None)                 # a plain card: no decision of its own
+    assert tool_loop._declined("user declined this command", "this command") == "user declined this command"
 
 
 async def test_after_one_unanswered_card_a_job_opens_no_more(execution_db, monkeypatch):
@@ -84,3 +97,43 @@ async def test_a_real_refusal_keeps_its_words(monkeypatch):
     await asyncio.sleep(0.01)
     assert approvals.answer({"type": "cancel_run_command", "call_id": "x2", "source": "phone"})
     assert await task == (False, "declined", "user declined this command")
+
+
+async def test_a_plain_card_is_not_told_an_earlier_decision(monkeypatch):
+    """A card that is not decided by permissions.decide (Hands' plain card) starts afresh: the
+    words of an earlier No are not its answer."""
+    from server.services import permissions
+    monkeypatch.setattr(approvals, "TIMEOUT_S", 5)
+
+    async def ask_and_tell():
+        permissions.LAST_DECISION.set(permissions.Decision(False, "user", note="x", model_text="earlier words"))
+        approved = await approvals.ask("c", {"type": "propose_run_command", "call_id": "x4"})
+        return approved, tool_loop._declined("user declined this command", "this command")
+
+    task = asyncio.create_task(ask_and_tell())
+    await asyncio.sleep(0.01)
+    assert approvals.answer({"type": "cancel_run_command", "call_id": "x4", "source": "phone"})
+    assert await task == (False, "user declined this command")
+
+
+async def test_a_jobs_card_is_told_its_own_answer_not_an_earlier_one(execution_db, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from server.services import settings_service
+
+    def window(f):                    # every window on the conversation: No to each card
+        kind = f["type"].removeprefix("propose_")
+        if f["type"].startswith("propose_"):
+            approvals.answer({"type": f"cancel_{kind}", "call_id": f["call_id"],
+                              "note": "not daily" if kind == "schedule" else ""})
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: window)
+    job = approvals.JobConfirmations("c9", job_id="job-c9")
+    assert await job.schedule("daily", "08:00") is False
+    assert tool_loop._declined("user declined to schedule this task", "scheduling this task").endswith("not daily")
+    assert await job.command("touch ~/Downloads/a", [], sandbox="retry") is False      # a plain card
+    assert tool_loop._declined("user declined this command", "this command") == "user declined this command"
+    assert await job.schedule("weekly", "Mon") is False
+    monkeypatch.setattr(settings_service, "workspace_dir", AsyncMock(return_value=None))
+    assert await job.workspace_write("write_file", "a.txt") is False                    # no card at all
+    assert tool_loop._declined("user declined workspace write access", "writing") == \
+        "user declined workspace write access"

@@ -418,3 +418,23 @@ def test_a_standing_answer_for_one_rule_still_cards_a_chained_second_risk(app_cl
             _collect_until(ws, "stream_end")
     assert frames[-1]["type"] == "propose_run_command", [f["type"] for f in frames]
     assert fake_exec.calls == []
+
+
+# ── 0.1.61 §A9: "Always" stores every rule the command matched ──────────────
+
+def test_always_on_a_two_rule_command_silences_it_next_time(app_client, monkeypatch):
+    _enable_shell(app_client, policy="ask_risky")
+    _stub_tool_loop_adapter(monkeypatch, "rm", ["-rf", "build"])
+    executor = _stub_run_command_executor(monkeypatch)
+    with app_client.websocket_connect("/ws/arslan/two-rules") as ws:
+        ws.receive_json()
+        ws.send_json({"type": "user_message", "content": "clean"})
+        card = _collect_until(ws, "propose_run_command")[-1]
+        ws.send_json({"type": "confirm_run_command", "call_id": card["call_id"], "scope": "always"})
+        _collect_until(ws, "stream_end")
+        # The scripted model calls its tool once; the next turn gets a fresh script.
+        _stub_tool_loop_adapter(monkeypatch, "rm", ["-rf", "build"])
+        ws.send_json({"type": "user_message", "content": "clean again"})
+        frames = _collect_until(ws, "stream_end")
+        assert "propose_run_command" not in [f.get("type") for f in frames]
+    assert len(executor.calls) == 2

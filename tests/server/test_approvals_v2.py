@@ -431,6 +431,20 @@ async def test_a_yes_has_no_note_and_remember_takes_the_widest_scope_offered(mon
     assert approvals.close_card(q)["scope"] == "conversation"   # no "always" here: the next widest
 
 
+async def test_decline_pending_leaves_a_card_someone_else_also_waits_on(monkeypatch):
+    """Task 4 carry (M7): a message typed in a window declines only the cards every waiter of
+    which is that window's; a card a job also waits on stays open for the job."""
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: (lambda f: None))
+    shared = approvals.open_card("conv", frame("c1"), broadcast=False)    # the window's card...
+    approvals.open_card("conv", frame("c9"))                               # ...a job joins it
+    own = approvals.open_card("conv", frame("c2", dedupe="own"), broadcast=False)
+    assert shared.waiters == 2
+    assert approvals.decline_pending({"c1", "c2"}, "not that one", mine={"c1": 1, "c2": 1}) == 1
+    assert not shared.future.done() and own.future.done()
+    assert approvals.decline_pending({"c1"}, "both of mine", mine={"c1": 2}) == 1   # all its waiters
+    assert shared.future.result()["note"] == "both of mine"
+
+
 async def test_decline_pending_skips_a_decided_card_and_cuts_the_note(monkeypatch):
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: (lambda f: None))
     p = approvals.open_card("conv", frame("c1"))

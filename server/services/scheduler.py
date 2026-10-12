@@ -478,12 +478,15 @@ async def run_arslan_turn(conversation_id: str, prompt: str) -> None:
     involved — an answer turn has no Run row). Never an exception for want of
     a listener.
 
-    🔴 BOTH confirm callbacks are deliberately omitted, and that omission IS
-    the safety property: P1 made "no callback" mean "refuse", so an unattended
-    fire structurally cannot write a file or run a command — it is not a policy
-    someone could forget to apply. Unattended execution is exactly the surface
-    the two arXiv analyses of OpenClaw are about; here it is closed by
-    construction, leaving the read-only tools available.
+    🔴 Every confirm callback is deliberately omitted, and no card surface is
+    bound (permissions.asking_with): that omission IS the safety property. P1
+    made "no callback" mean "refuse", and 0.1.61 made "no surface" mean "no, at
+    once" (a ledger row the Inbox lists). So an unattended fire runs only what
+    needs no card — "run"-level commands (unless the user asks for every
+    command) and the read-only tools — and refuses anything that needs a card,
+    at once: it never waits, and it is not a policy someone could forget to
+    apply. Unattended execution is exactly the surface the two arXiv analyses
+    of OpenClaw are about; here it is closed by construction.
     """
     # Function-level import: arslan imports scheduling surfaces, so a module-level
     # import here would cycle.

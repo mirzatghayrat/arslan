@@ -16,7 +16,7 @@ from server.auth import is_ws_token_valid
 from server.db import session as db_session
 from server.db.models import ArslanMessage
 from server.orchestrator import arslan
-from server.services import approvals, background_jobs, desktop_status
+from server.services import approvals, background_jobs, desktop_status, permissions
 from server.services import (
     distill_service,
     mcp_service,
@@ -229,7 +229,8 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         outcome = "error"
         beat = asyncio.ensure_future(_working_beats())
         try:
-            with desktop_status.working(conversation_id, title=title):
+            # 0.1.61: every turn asks on this window's cards (permissions.decide), Hands too.
+            with desktop_status.working(conversation_id, title=title), permissions.asking_with(_window_asker):
                 await coro
             outcome = "ok"
         except (TaskError, MemoryError, BudgetExceeded) as exc:
@@ -274,14 +275,11 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             emit(protocol.mcp_connect_followup(server_id=server_id, **counts))
         await run_with_live_frames(_followup())
 
-    # Per-connection run_command confirmation state (Task 6).
     import uuid
 
-    session_cmd_allow: set[str] = set()  # command signatures auto-approved this session
-
-    # T1 workspace-write grant (P1b): ONE per connection, not per file — the
-    # user ruling is "first use asks, the rest of the session does not".
-    workspace_write_granted = {"yes": False}
+    # 0.1.61: what a card allows beyond once ("in this conversation", "Always") is kept by
+    # permissions.decide in the conversation's grants and rules — across sockets and reloads —
+    # instead of per-connection sets (the old exact-text command set and the write/schedule flags).
     # 0.1.52 S2: the user's latest message on this socket — the judge's tool.approval
     # question needs the user's own words, whether or not a memory context is bound.
     latest_request = {"text": ""}
@@ -299,7 +297,10 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
     # drained here, card answers go to approvals at once, everything else waits in `inbox`.
     inbox: asyncio.Queue = asyncio.Queue()
     _CLOSED = {"type": "__socket_closed__"}
-    cards_waiting = {"n": 0}
+    # The cards this window waits on (call_id → how many of its asks wait on it), and for each
+    # wait a future a message typed meanwhile resolves: (its text, whether a job shares the card).
+    my_cards: dict[str, int] = {}
+    typed_while_waiting: dict[str, list[asyncio.Future]] = {}
 
     async def _reader() -> None:
         try:
@@ -311,11 +312,15 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 if t in approvals.ANSWERS:
                     if approvals.answer(data) or data.get("source") == "phone":
                         continue
-                    if cards_waiting["n"] and data.get("call_id") not in approvals.known_ids():
+                    if my_cards and data.get("call_id") not in approvals.known_ids():
                         # A stale reply while a card waits: say so, as a window's turn always has.
                         await _send_or_gone(protocol.error(
                             "BUSY", "An action is awaiting your confirmation.", recoverable=True))
                         continue
+                if t == "user_message" and my_cards:
+                    # 0.1.61 §A4: typing while this window's card waits answers it No, the message
+                    # being the note; the message itself is queued below and runs next.
+                    _answered_by_typing(str(data.get("content") or ""))
                 if t == "user_message" and _turn_lock(conversation_id).locked():
                     data = {**data, "_queued": True}
                     await _send_or_gone({"type": "queued"})
@@ -324,6 +329,17 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             socket_gone["yes"] = True
             gone.set()
             await inbox.put(_CLOSED)
+
+    def _answered_by_typing(note: str) -> None:
+        """A message typed while this window's cards wait: a card only this window waits on is
+        answered No with the message as the note; from a card a job also waits on (an identical
+        ask, one card) this window only withdraws — the card stays open for the job."""
+        shared = {call_id for call_id, mine in my_cards.items() if approvals.waiters(call_id) > mine}
+        approvals.decline_pending(set(my_cards), note, mine=dict(my_cards))
+        for call_id, waits in typed_while_waiting.items():
+            for typed in waits:
+                if not typed.done():
+                    typed.set_result((note, call_id in shared))
 
     def _window_gone(pending=None) -> None:
         """The window that asked is gone: its card (if any) becomes a shared one — answerable
@@ -342,7 +358,7 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         return data
 
     async def _ask(frame: dict) -> dict:
-        """Show one card and wait for its answer: {"approved", "remember"}.
+        """Show one card and wait for its answer (`_ask_everywhere`'s: approved, scope, note, by).
 
         0.1.55: every card is registered in `approvals`, so the Inbox and the island
         can answer it too (by call_id, through the same reply rule). A window's own
@@ -359,45 +375,86 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         through this one, the Inbox's and the island's over HTTP — and `card_resolved`
         closes the copies nobody answered. Like every foreground card it is never
         journaled."""
+        from server.services import task_service
+        permissions.LAST_DECISION.set(None)
         loop = asyncio.get_running_loop()
         pending = approvals.open_card(conversation_id, frame, broadcast=broadcast)
-        if not broadcast:
+        # An ask identical to a card still waiting in this conversation joined it (0.1.61 §A4):
+        # this window shows THAT card, with its own call_id, or nothing when it is on this screen
+        # already (a job's card is on every window; this window's own card is here).
+        joined = pending.call_id != frame.get("call_id")
+        on_screen = joined and (not pending.private or pending.call_id in my_cards)
+        my_cards[pending.call_id] = my_cards.get(pending.call_id, 0) + 1
+        typed = loop.create_future()
+        typed_while_waiting.setdefault(pending.call_id, []).append(typed)
+        if joined and broadcast and pending.private:
+            pending.private = False            # a phone turn's ask: everyone must see the card
+            emit(pending.frame)
+        elif not broadcast and not on_screen:
             if socket_gone["yes"]:
                 _window_gone(pending)
             else:
                 try:
-                    await ws.send_json(frame)
+                    await ws.send_json(pending.frame)
                 except Exception:  # noqa: BLE001 — closed under us; the card is answered elsewhere
                     _window_gone(pending)
         deadline = loop.time() + approvals.TIMEOUT_S
-        cards_waiting["n"] += 1
         watching = asyncio.ensure_future(gone.wait())
         try:
-            with desktop_status.awaiting_approval(conversation_id):
+            # The user's time, not the task's: the turn's wall clock stands still meanwhile.
+            with task_service.paused_clock(), desktop_status.awaiting_approval(conversation_id):
                 # The answer arrives through the resident reader (this window), the phone's
                 # socket, the Inbox or the island; if this window goes away meanwhile, the card
                 # becomes a shared one (#154) and the wait goes on.
-                while not pending.future.done() and loop.time() < deadline:
+                while not pending.future.done() and not typed.done() and loop.time() < deadline:
                     if gone.is_set():
                         _window_gone(pending)
                         await asyncio.wait({pending.future}, timeout=deadline - loop.time())
                         continue
-                    await asyncio.wait({pending.future, watching}, timeout=deadline - loop.time(),
+                    await asyncio.wait({pending.future, watching, typed}, timeout=deadline - loop.time(),
                                        return_when=asyncio.FIRST_COMPLETED)
         finally:
-            cards_waiting["n"] -= 1
             watching.cancel()
+            my_cards[pending.call_id] -= 1
+            if not my_cards[pending.call_id]:
+                del my_cards[pending.call_id]
+            waits = typed_while_waiting[pending.call_id]
+            waits.remove(typed)
+            if not waits:
+                del typed_while_waiting[pending.call_id]
             decision = approvals.close_card(pending)
-            if pending.private and decision["by"] in approvals.SOURCES:
-                # Answered from the Inbox or the island: close this window's copy.
+            if typed.done() and typed.result()[1] and not pending.future.done():
+                # Typed while a card a job also waits on was shown: this window's answer is No,
+                # with the message; the card stays the job's.
+                decision = {"approved": False, "remember": False, "scope": None,
+                            "note": str(typed.result()[0]).strip()[:500], "by": "mac"}
+            if (pending.private and not pending.future.done()
+                    and pending.waiters > my_cards.get(pending.call_id, 0)):
+                # Someone else still waits on this window's own card (an identical ask from a
+                # job): it must not vanish with this window's copy (its wait ran out, the turn
+                # ended, a message was typed). Everyone sees it now, as on #154.
+                pending.private = False
+                emit(pending.frame)
+            elif pending.private and (decision["by"] in approvals.SOURCES or typed.done()):
+                # Answered from the Inbox or the island, or by typing: close this window's copy.
                 try:
                     await ws.send_json(protocol.card_resolved(pending.call_id,
                                                               "approved" if decision["approved"] else "declined",
                                                               decision["by"]))
                 except Exception:  # noqa: BLE001 — the window may be gone; the decision stands
                     pass
+        approvals.LAST_OUTCOME.set("approved" if decision["approved"]
+                                   else "expired" if decision["by"] is None else "declined")
         return {"approved": bool(decision["approved"]), "remember": bool(decision["remember"]),
-                "extras": decision.get("extras") or {}}
+                "scope": decision.get("scope"), "note": decision.get("note") or "",
+                "by": decision["by"], "extras": decision.get("extras") or {},
+                # The card the user answered: an identical ask that joined one records that one.
+                "call_id": pending.call_id}
+
+    async def _window_asker(frame: dict) -> dict:
+        """This window's card surface for permissions.decide (0.1.61): private to the window,
+        answerable from the Inbox and the island; a turn the iPhone started shows it everywhere."""
+        return await _ask_everywhere(frame, broadcast=phone_turn["on"])
 
     async def _send_or_gone(frame: dict, pending=None) -> None:
         if socket_gone["yes"]:
@@ -408,29 +465,31 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             _window_gone(pending)
 
     async def confirm_workspace_write(action: str, path: str) -> bool:
+        """0.1.61: decided by permissions.decide on this turn's card surface. "In this
+        conversation" is a conversation grant for the folder: it holds across sockets and
+        reloads (it replaces the per-connection grant)."""
         from server.services import settings_service
-        if workspace_write_granted["yes"]:
-            return True
         async with db_session.AsyncSessionLocal() as db:
             ws_root = await settings_service.workspace_dir(db)
         if ws_root is None:
+            permissions.LAST_DECISION.set(None)       # no card: the refusal is no earlier answer
+            approvals.LAST_OUTCOME.set(None)
             return False                     # nothing to grant access to
-        decision = (await _ask(protocol.propose_workspace_write(
-            uuid.uuid4().hex, str(ws_root), action, path)))["approved"]
-        if decision:
-            workspace_write_granted["yes"] = True     # session-wide, per the ruling
-        return decision
-
-    # Scheduling grant (P2 裁决①): one per connection, like the workspace write.
-    schedule_granted = {"yes": False}
+        # Decided with that session closed: decide opens its own, and a card may wait 30 minutes.
+        decision = await permissions.decide(permissions.Request(
+            kind="workspace_write", target=str(ws_root), title=f"Let Arslan write in {ws_root.name}?",
+            detail=path, frame=protocol.propose_workspace_write(uuid.uuid4().hex, str(ws_root), action, path)),
+            permissions.Context(conversation_id=conversation_id))
+        return decision.allowed
 
     async def confirm_schedule(name: str, when: str) -> bool:
-        if schedule_granted["yes"]:
-            return True
-        decision = (await _ask(protocol.propose_schedule(uuid.uuid4().hex, name, when)))["approved"]
-        if decision:
-            schedule_granted["yes"] = True
-        return decision
+        """0.1.61: decided by permissions.decide (P2 裁决①'s per-connection grant is now the
+        conversation's)."""
+        decision = await permissions.decide(permissions.Request(
+            kind="schedule", target="*", title=f"Schedule “{name}”?", detail=when,
+            frame=protocol.propose_schedule(uuid.uuid4().hex, name, when)),
+            permissions.Context(conversation_id=conversation_id))
+        return decision.allowed
 
     async def _sandbox_card(command: str, argv: list, sandbox: str, why: str, verdict) -> bool:
         from server.services import command_sandbox
@@ -458,13 +517,11 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         run again outside, from the start. Either always shows a card; its checkbox
         means "for the rest of this conversation" (memory only), never a saved rule."""
         from server.services import settings_service
-        # A remote command takes NONE of the shortcuts below. Not the session
-        # allow-list, not ask_risky, not "remember this one" — because the local
-        # risk grade describes a binary on THIS machine, and `git` over there is
-        # not the same program (P3b 裁决③). Remote is HIGH, always, and HIGH is
-        # already the grade this function refuses to remember.
+        # A remote command takes NONE of the shortcuts below. Not a grant, not ask_risky,
+        # not "remember this one" — because the local risk grade describes a binary on
+        # THIS machine, and `git` over there is not the same program (P3b 裁决③). Remote
+        # is HIGH, always, and its card is a plain one: nothing is ever remembered.
         from server.services import terminal_policy
-        sig = _cmd_sig(command, argv)
         risk = effective_risk(remote_host, command, argv)
         verdict = terminal_policy.assess(terminal_policy.as_shell(command, argv))
         if sandbox in ("outside", "retry"):
@@ -479,39 +536,54 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 policy = await settings_service.shell_confirm_policy(db)
                 standing = terminal_policy.standing_allows(terminal_policy.as_shell(command, argv),
                                                            await terminal_policy.always_allowed(db))
-        if may_skip_card(remote_host, in_session_allow=sig in session_cmd_allow,
-                         policy=policy, risk=risk, always_allowed=standing):
+        # The user's standing answer is taken below, where it writes its ledger row.
+        if may_skip_card(remote_host, in_session_allow=False, policy=policy, risk=risk):
             return True
-        call_id = uuid.uuid4().hex
-        # 0.1.52 S2: shadow judgment — what the judge would say about this card, recorded
-        # with the user's real answer below; it changes nothing (task book C2.1).
+        if remote_host:
+            # The card (private to this socket, or everywhere for a phone turn): see `_ask`.
+            decision = await _ask(protocol.propose_run_command(
+                uuid.uuid4().hex, command, argv, reason=verdict.reason or f"risk: {risk}",
+                remote_host=remote_host, fingerprints=list(fingerprints or [])))
+            return bool(decision.get("approved"))
+        shell = terminal_policy.as_shell(command, argv)
+        rules = sorted(terminal_policy.ask_rules(shell))
+        ctx = permissions.Context(conversation_id=conversation_id)
+        if standing:
+            await permissions.record_standing(approvals._command_request(shell, rules, None), ctx)
+            return True
+        # 0.1.61: a rule card is decided by permissions.decide: "In this conversation" is a grant
+        # for this kind of command here, "Always" stores every rule it matched (§A9).
+        frame = protocol.propose_run_command(uuid.uuid4().hex, command, argv,
+                                             reason=verdict.reason or f"risk: {risk}",
+                                             rule=verdict.rule or None)
+        return await _decide_with_shadow(approvals._command_request(shell, rules, frame), ctx, shell, verdict)
+
+    async def _decide_with_shadow(req, ctx, shell: str, verdict) -> bool:
+        """0.1.52 S2: the shadow judgment — what the judge would say about a card, joined to the
+        user's real answer; it changes nothing (task book C2.1). As on a job's card surface
+        (0.1.61): it goes with a card this window is shown — none when a rule or a grant
+        decides, one per card (an ask that joins a card already on screen is not judged again) —
+        and a card nobody answered is joined as "expired", never "declined"."""
         from server.services import judgment
-        if not remote_host:
-            judgment.shadow("tool.approval", judgment.approval_state(
-                terminal_policy.as_shell(command, argv), rule=verdict.rule, reason=verdict.reason,
-                user_request=latest_request["text"]),
-                ref=call_id, conversation_id=conversation_id)
-        # The card (private to this socket, or everywhere for a phone turn): see `_ask`.
-        decision = await _ask(
-            protocol.propose_run_command(call_id, command, argv, reason=verdict.reason or f"risk: {risk}",
-                                         remote_host=remote_host,
-                                         fingerprints=list(fingerprints or []),
-                                         rule=None if remote_host else verdict.rule)
-        )
-        if not remote_host:
-            judgment.record_outcome_later(call_id, "approved" if decision.get("approved") else "declined",
-                                          point="tool.approval")
-        # Never permanently auto-approve a HIGH-risk (e.g. network) command, even if
-        # the user checked "remember" — those always require a fresh card.
-        if may_remember(remote_host, risk=risk, remember=bool(decision.get("remember"))):
-            # 0.1.48: "don't ask again" is a standing answer for this KIND of command
-            # (its rule), kept across sessions and listed in Settings, where it can be
-            # withdrawn. A forbidden rule can never be remembered (HIGH never gets here).
-            session_cmd_allow.add(sig)
-            if verdict.rule:
-                async with db_session.AsyncSessionLocal() as db:
-                    await terminal_policy.allow_always(db, verdict.rule)
-        return bool(decision.get("approved"))
+        judged: list[str] = []
+        surface = permissions.current_asker()          # the turn's: this window's cards
+
+        async def ask(frame: dict) -> dict:
+            # No await between this check and the card opening inside the surface.
+            if approvals.joining(conversation_id, frame) is None:
+                judgment.shadow("tool.approval", judgment.approval_state(
+                    shell, rule=verdict.rule, reason=verdict.reason, user_request=latest_request["text"]),
+                    ref=frame["call_id"], conversation_id=conversation_id)
+                judged.append(frame["call_id"])
+            return await surface(frame)
+
+        with permissions.asking_with(ask if surface is not None else None):
+            decision = await permissions.decide(req, ctx)
+        outcome = ("approved" if decision.allowed
+                   else "expired" if decision.by == "expired" else "declined")
+        for ref in judged:
+            judgment.record_outcome_later(ref, outcome, point="tool.approval")
+        return decision.allowed
 
     # This window's sandbox grant ("rest of this conversation") is its own to use; the tool
     # loop honours it only for a callback that says so (never a job's, never no callback).
