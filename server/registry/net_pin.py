@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import ipaddress
 import logging
+import re
 import socket
 import time
 from urllib.parse import urljoin, urlparse, urlunparse
@@ -114,6 +115,10 @@ _FAKE_IP_GATEWAY = ipaddress.ip_address("198.18.0.1")
 #: service on this very Mac, reached through the TUN. Port 80 serves nothing under https only:
 #: the browser's CONNECT is always 443.
 _FAKE_IP_WEB = ("https", 443)
+#: One dot-separated piece of an address as the OS resolver reads it: decimal digits (leading
+#: zeros included, so `09` and `018` count) or `0x`/`0X` and hex digits. ASCII only: the
+#: caller hands over the canonical host, where fullwidth digits are already plain ones.
+_NUMERIC_LABEL = re.compile(r"[0-9]+|0[xX][0-9a-fA-F]+")
 #: A public name whose answer says whether the system DNS is fake-IP. IANA's, stable.
 _FAKE_IP_CANARY = "example.com"
 #: Zones that are never on the public internet, whatever a resolver answers for them. A name
@@ -164,7 +169,16 @@ def _is_ip_literal(host: str) -> bool:
     """An address, however it is spelled: whatever `ipaddress` parses (IPv6 included), or what
     the OS resolver reads as one and `ipaddress` does not (`0xc6120021`, `198.18.33`, a bare
     decimal). Such a spelling is an address, never a name, so it is never "fake". Takes the
-    CANONICAL host (see `_canonical_host`)."""
+    CANONICAL host (see `_canonical_host`).
+
+    The last arm is for the spellings that both parsers above refuse and the OS resolver still
+    reads, such as `198.18.0.09`, `0198.18.0.33` and `198.018.0.33`: `ipaddress` refuses any
+    leading zero, and `inet_aton` reads one as octal and so rejects an 8 or a 9 after it, while
+    macOS `getaddrinfo` reads the same text as 198.18.0.x. So a host whose dot-separated labels
+    are ALL numbers (decimal digits, leading zeros included, or `0x` and hex digits; one
+    trailing dot is fine) is an address too, however the parsers fall out. That cannot catch a
+    real name: public names never have an all-numeric top-level label (RFC 3696 section 2), and
+    a name like `123.example.com` or `1password.com` ends in a label with letters in it."""
     try:
         ipaddress.ip_address(host)
         return True
@@ -172,9 +186,11 @@ def _is_ip_literal(host: str) -> bool:
         pass
     try:
         socket.inet_aton(host)
+        return True
     except (OSError, ValueError):
-        return False
-    return True
+        pass
+    labels = host[:-1].split(".") if host.endswith(".") else host.split(".")
+    return all(_NUMERIC_LABEL.fullmatch(label) for label in labels)
 
 
 def _all_fake_v4(ips: list[ipaddress.IPv4Address | ipaddress.IPv6Address]) -> bool:

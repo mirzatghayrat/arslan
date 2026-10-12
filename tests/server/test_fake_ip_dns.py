@@ -270,6 +270,78 @@ async def test_an_exotic_spelling_of_an_address_is_a_literal_not_a_name(monkeypa
     assert not seen
 
 
+# Leading zeros. macOS `getaddrinfo` reads `198.18.0.09` as 198.18.0.9, but `ipaddress` and
+# `inet_aton` both refuse a `09` (not octal), so none of these was taken for an address. The
+# connection is https-only and TLS-bounded, so it was never a way in; it did break the rule
+# that an address, however it is spelled, is never a name. A host whose dot-separated labels
+# are all numbers is an address, because no public name ends in a number (RFC 3696 section 2).
+
+_LEADING_ZERO_SPELLINGS = ["198.18.0.09", "0198.18.0.33", "198.018.0.33"]
+
+
+@pytest.mark.parametrize("proxied", [False, True])
+@pytest.mark.parametrize("host", _LEADING_ZERO_SPELLINGS)
+async def test_a_leading_zero_spelling_of_an_address_is_a_literal_not_a_name(monkeypatch, seen,
+                                                                            host, proxied):
+    """Fake answers and a fake canary, with and without a proxy: a name would pass here, so a
+    refusal can only be the literal rule. It is the plain `_BlockedHost` of a literal judged by
+    its address, neither `_FakeIpOnlyHttps` nor the local-name refusal."""
+    with pytest.raises(ValueError):
+        ipaddress.ip_address(host)                               # `ipaddress` does not parse it ...
+    with pytest.raises(OSError):
+        socket.inet_aton(host)                                   # ... and neither does `inet_aton`
+    if proxied:
+        _with_proxy(monkeypatch)
+    _resolver(monkeypatch, {host: (FAKE,)}, default=(FAKE,))
+    with pytest.raises(net_pin._BlockedHost) as caught:
+        await net_pin.pinned_get(f"https://{host}/")
+    assert type(caught.value) is net_pin._BlockedHost
+    assert "private or internal address" in str(caught.value)
+    assert not seen
+
+
+@pytest.mark.parametrize("proxied", [False, True])
+@pytest.mark.parametrize("host", ["123.example.com", "1password.com", "198.18.0.33.example.com",
+                                  "0x7f.example.com"])
+async def test_a_real_name_with_digits_in_it_is_still_a_name(monkeypatch, seen, host, proxied):
+    """Only a host whose labels are ALL numbers is an address. A name with digits in a label,
+    even the first four labels of an address, ends in a real top-level domain and is allowed
+    behind fake-IP DNS exactly as before."""
+    if proxied:
+        _with_proxy(monkeypatch)
+    _resolver(monkeypatch, {}, default=(FAKE,))
+    resp = await net_pin.pinned_get(f"https://{host}/")
+    assert resp.status_code == 200
+    assert seen[0].url.host == (host if proxied else FAKE)   # proxy: the name; TUN: the stand-in
+
+
+@pytest.mark.parametrize("host,expected", [
+    # leading zeros: the spellings `ipaddress` and `inet_aton` refuse
+    pytest.param("198.18.0.09", True, id="zero-in-last-label"),
+    pytest.param("0198.18.0.33", True, id="zero-in-first-label"),
+    pytest.param("198.018.0.33", True, id="zero-in-second-label"),
+    # hex labels, one trailing dot
+    pytest.param("0x7f.1", True, id="hex-and-decimal"),
+    pytest.param("0X7F.0X1", True, id="upper-case-hex"),
+    pytest.param("1.2.3.4.", True, id="one-trailing-dot"),
+    pytest.param("1.2.3.4..", False, id="two-trailing-dots"),
+    pytest.param("1..2", False, id="empty-label"),
+    # the spellings the first two arms already read
+    pytest.param("198.18.0.33", True, id="dotted-quad"),
+    pytest.param("0xc6120021", True, id="bare-hex"),
+    pytest.param("3323068449", True, id="bare-decimal"),
+    pytest.param("::1", True, id="ipv6"),
+    # names
+    pytest.param("123.example.com", False, id="digits-then-a-real-tld"),
+    pytest.param("1password.com", False, id="digit-leading-name"),
+    pytest.param("a1.b2", False, id="letters-with-digits"),
+    pytest.param("0xzz.1", False, id="not-hex"),
+    pytest.param("", False, id="empty"),
+])
+def test_is_ip_literal_rows(host, expected):
+    assert net_pin._is_ip_literal(host) is expected
+
+
 # ── review round 1 ─────────────────────────────────────────────────────────────────
 # CRITICAL 1: the guard judges the name the resolver and the HTTP stack really use.
 # NFKC/IDNA turn fullwidth digits and letters, and the dots U+3002, U+FF0E and U+FF61, into
