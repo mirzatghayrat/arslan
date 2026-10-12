@@ -64,5 +64,38 @@
     "draft_file": "docs/releases/v0.1.40-beta.6.md",
     "title": "视觉和应用身份打磨",
     "summary": "更新图标，允许磨砂橙/纯单色选择；修复 WebKit 启动圆角和排版。手动安装预览，稳定自动更新通道保持原样。"
+  },
+  {
+    "version": "v0.1.59-beta.2",
+    "status": "published_prerelease",
+    "published_at_utc": "2026-10-09T17:51:04Z",
+    "published_at_shanghai": "2026-10-10T01:51:04+08:00",
+    "tagged_commit": "bf8b0535dd7d7287300ba51802fb5b0c16c61ebb",
+    "evidence_url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.59-beta.2",
+    "draft_file": null,
+    "title": "0.1.59 beta",
+    "summary": "Public prerelease before 0.1.59."
+  },
+  {
+    "version": "v0.1.59-beta.3",
+    "status": "published_prerelease",
+    "published_at_utc": "2026-10-10T11:44:16Z",
+    "published_at_shanghai": "2026-10-10T19:44:16+08:00",
+    "tagged_commit": "161b047000d4337cf75e4c4a4a4282edfa85007e",
+    "evidence_url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.59-beta.3",
+    "draft_file": null,
+    "title": "0.1.59 beta",
+    "summary": "Public prerelease before 0.1.59."
+  },
+  {
+    "version": "v0.1.59-beta.4",
+    "status": "published_prerelease",
+    "published_at_utc": "2026-10-10T15:08:58Z",
+    "published_at_shanghai": "2026-10-10T23:08:58+08:00",
+    "tagged_commit": "8661bcfbc1e52249efdde0e850344c7baf06ed85",
+    "evidence_url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.59-beta.4",
+    "draft_file": null,
+    "title": "0.1.59 beta",
+    "summary": "Public prerelease before 0.1.59."
   }
 ]

@@ -28,6 +28,16 @@ _HINTS: tuple[tuple[re.Pattern, str], ...] = (
 _WEB_EMPTY = ("That page gave no readable text (it may need scripts). Try browser_open for script-rendered "
               "pages, or another source from your search results.")
 _WEB_BLOCKED = "That site refused the request. Use another source; do not retry this URL."
+# web_extract says "url refused: <label>" when Arslan's OWN network guard (net_pin) refused the
+# address. It is never the site's refusal: "blocked address (local network)" matched the pattern
+# above and was answered "That site refused the request" (0.1.61 final review).
+_WEB_GUARD_PREFIX = "url refused:"
+_WEB_GUARD_HTTPS_ONLY_LABEL = "behind fake-IP DNS only https:// on port 443 is fetched"
+_WEB_GUARD_HTTPS_ONLY = ("Arslan's own network guard refused this address, not the site. Retry once "
+                         "with the https:// form of the same page if it has one; otherwise use "
+                         "another source.")
+_WEB_GUARD_REFUSED = ("Arslan's own network guard refused this address (it is on the local network "
+                      "or not a valid public host). Don't retry it; use another source.")
 
 
 def hint_for(tool_key: str, result: dict) -> str | None:
@@ -36,6 +46,12 @@ def hint_for(tool_key: str, result: dict) -> str | None:
         return None
     text = " ".join(str(result.get(k) or "") for k in ("error", "stderr", "stdout", "summary"))
     if tool_key == "web_extract":
+        error = str(result.get("error") or "")
+        if error.startswith(_WEB_GUARD_PREFIX):
+            # Checked first: the guard's labels must never reach the site-refusal pattern. Any
+            # label but the https-only one (an unknown one included) means "do not retry".
+            label = error[len(_WEB_GUARD_PREFIX):].strip()
+            return _WEB_GUARD_HTTPS_ONLY if label == _WEB_GUARD_HTTPS_ONLY_LABEL else _WEB_GUARD_REFUSED
         if re.search(r"no extractable text|empty|javascript", text, re.I):
             return _WEB_EMPTY
         if re.search(r"\b(401|403|429|451)\b|blocked|forbidden|rejected|paywall", text, re.I):

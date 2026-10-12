@@ -116,6 +116,28 @@ def test_the_phone_answers_first_and_the_mac_card_closes(app_client, shell):
     assert shell.calls == []
 
 
+def test_a_message_typed_on_the_phone_declines_its_card_and_says_the_phone_did(app_client, shell,
+                                                                            monkeypatch):
+    """PR 2b plan review: typing on the phone while its turn's card waits answers the card No, the
+    message being the note (§A4) — and the phone and every Mac window are told the phone answered,
+    not "on Mac"."""
+    monkeypatch.setattr(approvals, "TIMEOUT_S", 10)     # a message left waiting fails in seconds
+    with app_client.websocket_connect("/ws/arslan/main") as window, \
+            app_client.websocket_connect("/ws/arslan/main") as bridge:
+        window.receive_json(), bridge.receive_json()
+        bridge.send_json(PHONE_MESSAGE)
+        card = _collect_until(bridge, "propose_run_command")[-1]
+        bridge.send_json({"type": "user_message", "content": "no, the other repo", "source": "phone"})
+        expected = {"type": "card_resolved", "call_id": card["call_id"], "outcome": "declined",
+                    "by": "phone"}
+        assert _collect_until(bridge, "card_resolved")[-1] == expected
+        assert _collect_until(window, "card_resolved")[-1] == expected
+        after = _collect_until(bridge, "stream_end")
+        assert [f["ok"] for f in after if f.get("type") == "tool_result"] == [False]
+        _collect_until(bridge, "stream_end")                    # the typed message's own turn
+    assert shell.calls == []
+
+
 def test_the_second_answer_is_swallowed_without_an_error_to_the_phone(app_client, shell):
     with app_client.websocket_connect("/ws/arslan/main") as window, \
             app_client.websocket_connect("/ws/arslan/main") as bridge:
@@ -171,6 +193,28 @@ def test_when_the_bridge_drops_mid_card_the_mac_card_closes(app_client, shell):
     assert shell.calls == []
 
 
+def test_a_phone_yes_never_leaves_a_standing_answer(app_client, monkeypatch):
+    """0.1.61 §A4 (ruling 2026-10-12): the phone answers a card this once only. Its "remember"
+    used to reach the window's "don't ask again" and store an Always rule from the phone."""
+    from server.services import terminal_policy
+    _enable_shell(app_client, policy="ask_risky")
+    _stub_tool_loop_adapter(monkeypatch, "rm", ["old.txt"])
+    shell = _stub_run_command_executor(monkeypatch)
+    with app_client.websocket_connect("/ws/arslan/main") as bridge:
+        bridge.receive_json()
+        bridge.send_json({**PHONE_MESSAGE, "content": "delete old.txt"})
+        card = _collect_until(bridge, "propose_run_command")[-1]
+        bridge.send_json({"type": "confirm_run_command", "call_id": card["call_id"], "remember": True,
+                          "source": "phone"})
+        _collect_until(bridge, "stream_end")
+    assert len(shell.calls) == 1
+
+    async def standing():
+        async with app_client.db_maker() as db:
+            return await terminal_policy.always_allowed(db)
+    assert app_client.portal.call(standing) == set()
+
+
 async def test_the_first_answer_wins_even_when_both_arrive_before_the_turn_wakes():
     sent = []
     run_registry.attach_sink("c", sent.append)
@@ -180,7 +224,8 @@ async def test_the_first_answer_wins_even_when_both_arrive_before_the_turn_wakes
         assert approvals.answer({"type": "confirm_run_command", "call_id": "k", "remember": True})
         assert approvals.answer({"type": "cancel_run_command", "call_id": "k", "source": "phone"}), \
             "the late reply is still recognised (and swallowed), not reported as unknown"
-        assert approvals.close_card(pending) == {"approved": True, "remember": True, "by": "mac"}
+        assert approvals.close_card(pending) == {"approved": True, "remember": True, "scope": None,
+                                                 "note": "", "by": "mac"}
         assert sent[-1] == {"type": "card_resolved", "call_id": "k", "outcome": "approved", "by": "mac"}
         assert approvals.pending_cards("c") == []
     finally:

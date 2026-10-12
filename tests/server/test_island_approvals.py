@@ -96,7 +96,8 @@ async def test_a_risky_card_is_refused_from_the_island_but_declinable_and_approv
 async def test_the_inbox_inside_arslan_may_approve_a_risky_card(api):
     risky = approvals.open_card("c", protocol.propose_run_command("r2", "rm old.txt", []), broadcast=False)
     assert (await api.post("/api/v1/approvals/r2/answer", json={"approve": True, "source": "inbox"})).status_code == 200
-    assert risky.future.result() == {"approved": True, "remember": False, "by": "inbox"}
+    assert risky.future.result() == {"approved": True, "remember": False, "scope": None, "note": "",
+                                     "by": "inbox"}
     await asyncio.sleep(0)
 
 

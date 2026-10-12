@@ -183,6 +183,26 @@ async def test_only_policy_refusals_inside_the_window_are_listed_as_refused():
         assert [e.target for e in week] == ["refused", "old"]
 
 
+async def test_a_card_that_never_opened_while_the_person_was_away_is_listed_as_refused_too():
+    """F3: what the Inbox lists is what could not be asked: a policy refusal (a scheduled run) and
+    a card the away latch never opened (decided_by "away", an expiry, never a denial). A card that
+    was shown and ran out (decided_by "expired") is not one, nor an "away" row that is not an
+    expiry."""
+    async with db_session.AsyncSessionLocal() as db:
+        for decided_by, decision, target in (("policy", "deny", "scheduled"), ("away", "expired", "away"),
+                                             ("expired", "expired", "shown"), ("user", "deny", "no"),
+                                             ("away", "deny", "malformed")):
+            await permission_store.record(db, kind="app", target=target, mode="standard",
+                                          decided_by=decided_by, decision=decision)
+        await db.commit()
+        since = datetime.utcnow() - timedelta(hours=1)
+        assert {e.target for e in await permission_store.refused_since(db, since)} == {"away", "scheduled"}
+        assert [row.target for row, _, _ in await permission_store.refused_groups(db, since)] \
+            == ["away", "scheduled"]
+        for row in await permission_store.recent(db):
+            assert permission_store.could_not_ask(row) is (row.target in ("away", "scheduled"))
+
+
 async def test_a_deleted_rules_id_is_never_given_to_a_new_rule():
     """The ledger keeps `rule_id` as a plain number, so an id must not come back."""
     async with db_session.AsyncSessionLocal() as db:

@@ -188,34 +188,21 @@ def test_a_read_only_command_is_LOW_here_and_HIGH_over_there():
 
 
 def test_ask_risky_does_not_exempt_a_remote_read_only_command():
-    local = dict(in_session_allow=False, policy="ask_risky", risk="LOW")
+    local = dict(policy="ask_risky", risk="LOW")
     assert ws_arslan.may_skip_card(None, **local) is True
     assert ws_arslan.may_skip_card("me@192.168.1.8", **local) is False
 
 
-def test_the_session_allow_list_does_not_reach_across_the_network():
-    both = dict(in_session_allow=True, policy="ask_all", risk="LOW")
+def test_a_standing_answer_does_not_reach_across_the_network():
+    # 0.1.61: the per-socket session allow-list is gone (grants are permissions.decide's, which a
+    # remote command never reaches); the standing answer is the one shortcut left to pin here.
+    both = dict(always_allowed=True, policy="ask_all", risk="LOW")
     assert ws_arslan.may_skip_card(None, **both) is True
     assert ws_arslan.may_skip_card("me@192.168.1.8", **both) is False
 
 
 def test_ask_all_still_shows_a_card_locally():
-    assert ws_arslan.may_skip_card(
-        None, in_session_allow=False, policy="ask_all", risk="LOW") is False
-
-
-@pytest.mark.parametrize("risk", ["LOW", "MEDIUM", "HIGH"])
-def test_dont_ask_again_is_never_honoured_for_a_remote_command(risk):
-    """A remembered remote command would be a node that executes without a gate —
-    exactly what the C4 ruling declined to build."""
-    assert ws_arslan.may_remember("me@192.168.1.8", risk=risk, remember=True) is False
-
-
-def test_dont_ask_again_still_works_locally_below_HIGH():
-    assert ws_arslan.may_remember(None, risk="LOW", remember=True) is True
-    assert ws_arslan.may_remember(None, risk="MEDIUM", remember=True) is True
-    assert ws_arslan.may_remember(None, risk="HIGH", remember=True) is False
-    assert ws_arslan.may_remember(None, risk="LOW", remember=False) is False
+    assert ws_arslan.may_skip_card(None, policy="ask_all", risk="LOW") is False
 
 
 def test_the_card_frame_says_which_machine_and_which_key():

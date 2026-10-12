@@ -7,6 +7,7 @@ the NEXT request, not an exact monetary guarantee for a request already in fligh
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import math
 import os
 import time
@@ -224,6 +225,67 @@ def current() -> Budget | None:
     return _current.get()
 
 
+class _WallClock:
+    """A running wall clock: a budget and the entered timeout that enforces it. A card waiting
+    for the user pauses it (`paused`, 0.1.61): the deadline moves out and the budget is credited
+    by the time waited. Overlapping waits (two tasks, one clock) pause it once."""
+
+    def __init__(self, budget: Budget, timeout: asyncio.Timeout):
+        self.budget, self.timeout = budget, timeout
+        self.pauses, self.paused_at, self.deadline = 0, 0.0, None
+
+    def pause(self) -> None:
+        self.pauses += 1
+        if self.pauses > 1:
+            return
+        self.paused_at, self.deadline = time.monotonic(), None
+        if not self.timeout.expired() and self.timeout.when() is not None:
+            self.deadline = self.timeout.when()
+            with contextlib.suppress(RuntimeError):       # the timeout is no longer running
+                self.timeout.reschedule(None)
+
+    def resume(self) -> None:
+        self.pauses -= 1
+        if self.pauses > 0:
+            return
+        waited = max(0.0, time.monotonic() - self.paused_at)
+        self.budget.started += waited
+        deadline, self.deadline = self.deadline, None
+        if deadline is not None:
+            with contextlib.suppress(RuntimeError):       # the timeout is no longer running
+                self.timeout.reschedule(deadline + waited)
+
+
+#: The wall clocks the current code runs under, outermost first (an entry point's, a task's).
+_clocks: ContextVar[tuple[_WallClock, ...]] = ContextVar("execution_wall_clocks", default=())
+
+
+@contextmanager
+def running_clock(budget: Budget, timeout: asyncio.Timeout):
+    """Inside an entered `asyncio.timeout` that enforces `budget`'s wall time: make it a clock
+    a card's wait can pause (`paused`)."""
+    token = _clocks.set(_clocks.get() + (_WallClock(budget, timeout),))
+    try:
+        yield
+    finally:
+        _clocks.reset(token)
+
+
+@contextmanager
+def paused():
+    """Every wall clock this code runs under stands still meanwhile: the user's time is not the
+    work's (0.1.61 §A4: a card waits 30 minutes, a chat turn's clock is about 15). Nothing
+    happens when no clock is running."""
+    clocks = _clocks.get()
+    for clock in clocks:
+        clock.pause()
+    try:
+        yield
+    finally:
+        for clock in reversed(clocks):
+            clock.resume()
+
+
 @contextmanager
 def scope(budget: Budget | None = None):
     """Explicit scope. Nested execution should reuse current() rather than reset it."""
@@ -238,6 +300,7 @@ def detached_context():
     """Background maintenance gets its own budget, not a completed user's counter."""
     context = copy_context()
     context.run(_current.set, None)
+    context.run(_clocks.set, ())
     from arslan.execution_checkpoint import clear_in
     clear_in(context)
     return context
@@ -254,7 +317,8 @@ def governed(function):
             timeout = asyncio.timeout(budget.remaining_seconds())
             try:
                 async with timeout:
-                    return await function(*args, **kwargs)
+                    with running_clock(budget, timeout):    # a card's wait pauses it
+                        return await function(*args, **kwargs)
             except TimeoutError:
                 if timeout.expired():
                     budget.stop("wall_seconds")

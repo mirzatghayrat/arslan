@@ -10,13 +10,21 @@ from __future__ import annotations
 import time
 from datetime import datetime, timedelta
 
-from sqlalchemy import delete, select
+from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from server.db.models import ApprovalEvent, PermissionGrant, PermissionRule
 
 #: Ledger rows are kept this long (spec §A8).
 LEDGER_DAYS = 90
+#: The ledger rows of what could not be asked, as (decided_by, decision): the Inbox lists them,
+#: each with "Always allow" for next time (§A4, `refused_groups`).
+#: - ("policy", "deny"): refused because the run had nobody to ask (a scheduled run);
+#: - ("away", "expired"): a card that never opened because the person is away — an earlier card
+#:   of the same job or chat turn went unanswered (0.1.61, F3). An expiry, never a denial: a
+#:   count of the user's "no" (decided_by "user", decision "deny") never includes it, and a card
+#:   that was shown and ran out ("expired", "expired") is not one of these.
+NOT_ASKED = (("policy", "deny"), ("away", "expired"))
 #: A task grant's turn or job never comes back; its row is pruned after this.
 TASK_GRANT_HOURS = 24
 #: Pruning runs at most once an hour, on a write.
@@ -98,6 +106,15 @@ async def add_grant(db, conversation_id: str, task_id: str, kind: str, target: s
         PermissionGrant.kind == kind, PermissionGrant.target == target))).scalar_one()
 
 
+async def delete_task_grants(db, task_id: str) -> int:
+    """Every grant for this one task (a turn or a job). A conversation grant (task_id "") is never
+    one of them, so an empty id deletes nothing."""
+    if not task_id:
+        return 0
+    result = await db.execute(delete(PermissionGrant).where(PermissionGrant.task_id == task_id))
+    return result.rowcount or 0
+
+
 async def record(db, **fields) -> ApprovalEvent:
     await _prune(db)
     row = ApprovalEvent(created_at=datetime.utcnow(), **fields)
@@ -111,12 +128,38 @@ async def recent(db, *, limit: int = 200) -> list[ApprovalEvent]:
         ApprovalEvent.created_at.desc(), ApprovalEvent.id.desc()).limit(limit))).scalars().all())
 
 
+def could_not_ask(row: ApprovalEvent) -> bool:
+    """Whether this ledger row is one of `NOT_ASKED`: what the Inbox lists, and the only kind of
+    row "Always allow" may be given for."""
+    return (row.decided_by, row.decision) in NOT_ASKED
+
+
+def _not_asked():
+    return or_(*(and_(ApprovalEvent.decided_by == decided_by, ApprovalEvent.decision == decision)
+                 for decided_by, decision in NOT_ASKED))
+
+
 async def refused_since(db, since: datetime) -> list[ApprovalEvent]:
-    """Boundaries refused because nobody could be asked (a scheduled run): the Inbox offers
-    "Always allow" for next time (spec §A4)."""
+    """Boundaries that could not be asked (`NOT_ASKED`): a run with nobody to ask (a scheduled
+    run), or a card that never opened while the person was away. The Inbox offers "Always allow"
+    for next time (spec §A4)."""
     return list((await db.execute(select(ApprovalEvent).where(
-        ApprovalEvent.decided_by == "policy", ApprovalEvent.decision == "deny",
-        ApprovalEvent.created_at >= since).order_by(ApprovalEvent.created_at.desc()))).scalars().all())
+        _not_asked(), ApprovalEvent.created_at >= since,
+    ).order_by(ApprovalEvent.created_at.desc()))).scalars().all())
+
+
+async def refused_groups(db, since: datetime, *, limit: int = 500
+                         ) -> list[tuple[ApprovalEvent, int, datetime]]:
+    """`refused_since`, one entry per (kind, target): its latest row, how many times it was
+    refused, and when first — newest first, at most `limit` groups."""
+    groups = (await db.execute(
+        select(func.max(ApprovalEvent.id), func.count(), func.min(ApprovalEvent.created_at))
+        .where(_not_asked(), ApprovalEvent.created_at >= since)
+        .group_by(ApprovalEvent.kind, ApprovalEvent.target)
+        .order_by(func.max(ApprovalEvent.id).desc()).limit(limit))).all()
+    rows = {row.id: row for row in (await db.execute(select(ApprovalEvent).where(
+        ApprovalEvent.id.in_([latest for latest, _, _ in groups])))).scalars().all()}
+    return [(rows[latest], count, first) for latest, count, first in groups if latest in rows]
 
 
 async def _prune(db) -> None:

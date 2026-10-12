@@ -2,15 +2,19 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import logging
 import time
+from dataclasses import replace
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.db import session as db_session
-from server.db.models import PermissionGrant
+from server.db.models import ApprovalEvent, PermissionGrant, PermissionRule
 from server.services import approvals, permission_store, permissions, settings_service
 from server.services.permissions import Context, Request
 from server.ws import protocol
@@ -373,7 +377,14 @@ async def test_the_callers_card_frame_is_kept_and_gains_the_permission_fields():
         await permissions.decide(req, CTX)
     [shown] = asker.frames
     assert (shown["type"], shown["command"], shown["call_id"]) == ("propose_run_command", "rm", "call-77")
-    assert (shown["perm_kind"], shown["dedupe"]) == ("command", "command\x1fdelete")
+    # Identical asks share a card: the key is everything the card shows (ruling 2026-10-12, review
+    # M2): kind, target, title, detail and the caller's frame without its call_id — and everything
+    # an answer on it can store (final review m1): the "Always" label, whether "this conversation"
+    # is offered, `remember_as` and `grant_as`.
+    assert shown["perm_kind"] == "command"
+    assert json.loads(shown["dedupe"]) == ["command", "delete", "Run rm -rf build?", "",
+                                           {k: v for k, v in frame.items() if k != "call_id"},
+                                           "deletes files", True, [], []]
     assert shown["why"] == "w" * 300
     assert "options" not in frame                      # the caller's own dict is left alone
     async with db_session.AsyncSessionLocal() as db:
@@ -772,3 +783,192 @@ async def test_a_decision_that_raises_leaves_no_stale_outcome(monkeypatch, call)
             await permissions.decide_many([app()], CTX, title="t")
     assert permissions.LAST_DECISION.get() is None
     assert approvals.LAST_OUTCOME.get() is None
+
+
+# ── Final-review fix wave (F1–F5) ─────────────────────────────────────────────
+
+#: Spec §A11's `Kind`, plus `workspace_write` (the write card the window and jobs ask through decide).
+SPEC_KINDS = ["command", "folder", "outside", "send", "destructive", "system", "screen", "opaque",
+              "app", "app_risky", "money", "takeover", "shortcut", "site", "mcp_tool", "other_agent",
+              "capability", "schedule", "remote", "workspace_write"]
+#: Kinds a caller could mistype (final review probe P1).
+TYPOS = ["payment", "app-risky", "Money"]
+
+
+async def _store_counts() -> tuple[int, int, int]:
+    """How many rules, grants and ledger rows the store holds."""
+    async with db_session.AsyncSessionLocal() as db:
+        return tuple([(await db.execute(sa.select(sa.func.count()).select_from(table))).scalar_one()
+                      for table in (PermissionRule, PermissionGrant, ApprovalEvent)])
+
+
+async def _call(call: str, req: Request):
+    if call == "decide":
+        return await permissions.decide(req, CTX)
+    if call == "decide_many":
+        return await permissions.decide_many([req, replace(req, target=req.target + ".2")], CTX,
+                                             title="t")
+    if call == "would_ask":
+        return await permissions.would_ask(req, CTX)
+    return await permissions.record_standing(req, CTX)
+
+
+def test_the_kinds_are_the_specs_and_every_scope_set_names_only_them():
+    """F1: one public list of kinds; the sets that decide a card's choices name no other kind (a
+    kind mistyped there would protect nothing)."""
+    assert permissions.KINDS == frozenset(SPEC_KINDS)
+    for scope_set in (permissions._ONCE_ONLY, permissions._TASK_FIRST, permissions._NEVER_ALWAYS):
+        assert scope_set <= permissions.KINDS, sorted(scope_set - permissions.KINDS)
+
+
+@pytest.mark.parametrize("kind", SPEC_KINDS)
+async def test_every_known_kind_is_decided(kind):
+    assert await permissions.would_ask(Request(kind=kind, target="x", title="t"), CTX) is True
+
+
+@pytest.mark.parametrize("call", ["decide", "decide_many", "would_ask", "record_standing"])
+@pytest.mark.parametrize("kind", TYPOS)
+async def test_an_unknown_kind_raises_before_anything_is_asked_stored_or_recorded(kind, call):
+    """F1 (final review I1, probe P1): a mistyped kind was an ordinary one. Its card offered "In
+    this conversation" and "Always", and after one "Always" it was allowed in every conversation
+    with no card, even in a run with nobody to ask. Now it is the caller's bug, raised before the
+    store is read: a rule stored for it decides nothing, and no row is written."""
+    async with db_session.AsyncSessionLocal() as db:
+        await permission_store.add_rule(db, kind, "com.shop.app", label="Shop")
+        await db.commit()
+    asker = Asker(yes("always"), yes("always"))
+    req = Request(kind=kind, target="com.shop.app", title="Pay 30 EUR?", always_label="Shop")
+    with permissions.asking_with(asker), pytest.raises(ValueError, match="unknown permission kind"):
+        await _call(call, req)
+    assert asker.frames == []
+    assert await _store_counts() == (1, 0, 0)            # the rule put there first, and nothing else
+
+
+@pytest.mark.parametrize("call", ["decide", "decide_many", "would_ask"])
+@pytest.mark.parametrize("field, entries", [
+    ("remember_as", (("app", "com.apple.Notes"), ("payment", "com.shop.app"))),
+    ("remember_as", (("legacy-rule", "delete", "deletes files"),)),
+    ("grant_as", (("app", "com.apple.Notes"), ("Money", "com.shop.app"))),
+], ids=["remember_as", "remember_as-legacy", "grant_as"])
+async def test_a_kind_an_answer_would_store_must_be_known_too(field, entries, call):
+    """F1: what "Always" or a grant would store is checked too, before the card: an unknown kind
+    there is the same bug, only found after the user said yes."""
+    answer = yes("always" if field == "remember_as" else "conversation")
+    asker = Asker(answer, answer)
+    with permissions.asking_with(asker), pytest.raises(ValueError, match="unknown permission kind"):
+        await _call(call, replace(app(), **{field: entries}))
+    assert asker.frames == []
+    assert await _store_counts() == (0, 0, 0)
+
+
+AWAY = {"approved": False, "scope": None, "note": "", "by": None, "away": True}
+
+
+def _git_push() -> Request:
+    return Request(kind="command", target="rules:git-push", title="Run `git push origin main`?",
+                   detail="git push origin main", always_label="publishes to a remote",
+                   remember_as=(("legacy_rule", "git-push", "publishes to a remote"),))
+
+
+async def test_a_card_that_never_opened_because_the_person_is_away_is_an_expiry_the_inbox_lists():
+    """F3 (final review I3, §A4): once a card of a job or a turn went unanswered, its later cards do
+    not open. The model is told each one expired ("NOT a refusal"), and the ledger records it as
+    one: an expiry decided by the person being away, with what "Always" would have stored, so the
+    Inbox lists it as it lists what a scheduled run could not ask. It is never a denial, and a
+    card that was shown and ran out is not listed."""
+    with permissions.asking_with(Asker(AWAY, EXPIRED)):
+        away = await permissions.decide(_git_push(), CTX)
+        assert (approvals.LAST_OUTCOME.get(), permissions.LAST_DECISION.get()) == ("expired", away)
+        await permissions.decide(replace(_git_push(), title="Run `git push` again?"), CTX)
+    assert (away.allowed, away.by, away.scope) == (False, "expired", None)
+    assert "NOT a refusal" in away.model_text
+    async with db_session.AsyncSessionLocal() as db:
+        shown, never_shown = await permission_store.recent(db)          # newest first
+        listed = await permission_store.refused_groups(db, datetime.utcnow() - timedelta(hours=1))
+    assert (never_shown.decided_by, never_shown.decision, never_shown.scope, never_shown.wait_ms) \
+        == ("away", "expired", None, None)
+    assert permissions.always_from(never_shown.extra) == [("legacy_rule", "git-push",
+                                                           "publishes to a remote")]
+    assert (shown.decided_by, shown.decision) == ("expired", "expired")
+    assert permissions.always_from(shown.extra) == []
+    assert [row.id for row, _, _ in listed] == [never_shown.id]
+
+
+async def test_an_answer_someone_gave_is_theirs_even_with_a_stray_away_marker():
+    """F3: "away" is a card that did not open, so nobody answered it (`by` None). An answer that
+    says who gave it stays that person's: their "no" stays a "no" in the ledger, and nothing is
+    listed for the Inbox."""
+    with permissions.asking_with(Asker({**no("not now"), "away": True})):
+        d = await permissions.decide(_git_push(), CTX)
+    assert (d.allowed, d.by, d.note) == (False, "user", "not now")
+    async with db_session.AsyncSessionLocal() as db:
+        [row] = await permission_store.recent(db)
+    assert (row.decided_by, row.decision, permissions.always_from(row.extra)) == ("user", "deny", [])
+
+
+async def test_an_away_card_that_would_not_have_offered_always_records_no_always_set():
+    with permissions.asking_with(Asker(AWAY)):
+        d = await permissions.decide(Request(kind="schedule", target="*", title="Schedule “digest”?",
+                                             always_label="every schedule"), CTX)
+    assert (d.allowed, d.by) == (False, "expired")
+    async with db_session.AsyncSessionLocal() as db:
+        [row] = await permission_store.recent(db)
+    assert (row.decided_by, row.decision, row.extra) == ("away", "expired", None)
+
+
+@pytest.mark.parametrize("change", [
+    {"remember_as": (("app", "com.x"), ("app", "com.y"))},
+    {"grant_as": (("app", "com.x"), ("app", "com.y"))},
+    {"always_label": "X, and Y"},
+    {"conversation_ok": False},
+], ids=["remember_as", "grant_as", "always_label", "conversation_ok"])
+def test_two_asks_that_would_store_different_things_never_share_a_card(change):
+    """F4 (final review m1, probe P2): asks equal in all the card shows but not in what an answer
+    stores had one key; "Always" on that one card stored the other ask's extra rule."""
+    base = Request(kind="app", target="com.x", title="Use X?", detail="X", always_label="X",
+                   remember_as=(("app", "com.x"),), grant_as=(("app", "com.x"),))
+    assert permissions._dedupe(base) == permissions._dedupe(replace(base))
+    assert permissions._dedupe(base) != permissions._dedupe(replace(base, **change))
+
+
+@pytest.mark.parametrize("scope, breaks", [
+    ("always", "add_rule"), ("conversation", "add_grant"), ("task", "add_grant"),
+    ("always", "record"), ("conversation", "record"), ("task", "record"), ("once", "record"),
+    ("always", "commit"), ("conversation", "commit"), ("task", "commit"), ("once", "commit"),
+])
+async def test_an_answer_that_cannot_be_written_is_an_error_never_an_allow(monkeypatch, scope, breaks):
+    """F5 (Task 2's open test; mutant `answer_write_swallowed`): the rule or grant an answer stores
+    and its ledger row are one transaction, part of remembering the answer. If any of it fails,
+    decide raises (the tool call fails), nothing is kept, and the next request asks again."""
+    async def broken(*args, **kwargs):
+        raise RuntimeError("database is locked")
+
+    asker = Asker(yes(scope))
+    with monkeypatch.context() as patched:
+        if breaks == "commit":
+            patched.setattr(AsyncSession, "commit", broken)
+        else:
+            patched.setattr(permission_store, breaks, broken)
+        with permissions.asking_with(asker), pytest.raises(RuntimeError, match="database is locked"):
+            await permissions.decide(app(), CTX)
+    assert len(asker.frames) == 1                        # the user did answer...
+    assert await _store_counts() == (0, 0, 0)            # ...and nothing of it was kept
+    assert permissions.LAST_DECISION.get() is None and approvals.LAST_OUTCOME.get() is None
+    again = Asker(no())
+    with permissions.asking_with(again):
+        assert (await permissions.decide(app(), CTX)).allowed is False
+    assert len(again.frames) == 1                        # asked again: no standing yes was left
+
+
+@pytest.mark.parametrize("breaks", ["add_rule", "record", "commit"])
+async def test_the_same_holds_for_a_many_app_card(monkeypatch, breaks):
+    async def broken(*args, **kwargs):
+        raise RuntimeError("database is locked")
+
+    with monkeypatch.context() as patched:
+        patched.setattr(*((AsyncSession, "commit") if breaks == "commit" else (permission_store, breaks)),
+                        broken)
+        with permissions.asking_with(Asker(yes("always"))), pytest.raises(RuntimeError):
+            await permissions.decide_many([app("com.apple.Notes"), app("com.apple.mail")], CTX,
+                                          title="Use Notes and Mail?")
+    assert await _store_counts() == (0, 0, 0)

@@ -131,3 +131,56 @@ async def test_unrelated_timeout_is_not_mislabeled():
 
     with pytest.raises(TimeoutError, match="database timeout"):
         await fail()
+
+
+# ── 0.1.61: a card's wait pauses the wall clocks (Task 4 review M1, M2, M5) ─────
+
+async def test_overlapping_card_waits_pause_the_clock_once_and_credit_their_union():
+    from arslan import execution_budget
+    budget = execution_budget.Budget(execution_budget.Limits(wall_seconds=0.5))
+    timeout = asyncio.timeout(budget.remaining_seconds())
+    async with timeout:
+        with execution_budget.running_clock(budget, timeout):
+            async def wait(delay):
+                with execution_budget.paused():
+                    await asyncio.sleep(delay)
+            await asyncio.gather(wait(0.4), wait(0.8))          # overlapping cards, 0.8 s in all
+            assert timeout.when() is not None                   # running again, once
+            await asyncio.sleep(0.2)                            # still inside the budget
+    assert budget.remaining_seconds() > 0.05
+
+
+async def test_a_pause_ends_when_the_wait_raises():
+    """Every expired card raises TimeoutError through its pause: the clock must run again."""
+    from arslan import execution_budget
+    budget = execution_budget.Budget(execution_budget.Limits(wall_seconds=0.3))
+    timeout = asyncio.timeout(budget.remaining_seconds())
+    with pytest.raises(TimeoutError):
+        async with timeout:
+            with execution_budget.running_clock(budget, timeout):
+                with pytest.raises(TimeoutError):
+                    with execution_budget.paused():
+                        await asyncio.wait_for(asyncio.sleep(10), timeout=0.1)   # an expired card
+                await asyncio.sleep(2)                       # work after it: the clock runs again
+    assert timeout.expired()
+
+
+async def test_maintenance_detached_from_a_turn_never_pauses_its_clock():
+    """`detached_context` work (maintenance) is not the turn's: a wait there must not stop the
+    turn's clock."""
+    from arslan import execution_budget
+    budget = execution_budget.Budget(execution_budget.Limits(wall_seconds=0.3))
+    timeout = asyncio.timeout(budget.remaining_seconds())
+
+    async def maintenance():
+        with execution_budget.paused():
+            await asyncio.sleep(1.5)
+
+    with pytest.raises(TimeoutError):
+        async with timeout:
+            with execution_budget.running_clock(budget, timeout):
+                side = asyncio.get_running_loop().create_task(
+                    maintenance(), context=execution_budget.detached_context())
+                await asyncio.sleep(1)                  # the turn's own work outlives its clock
+    side.cancel()
+    assert timeout.expired()
