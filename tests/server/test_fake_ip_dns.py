@@ -60,9 +60,9 @@ def no_proxy(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def fresh_fake_ip_warnings(monkeypatch):
-    """The TUN-path warning is rate-limited per host in module state: every test starts with
-    none logged, or one test's warning would silence the next test's."""
-    monkeypatch.setattr(net_pin, "_fake_ip_warned", {})
+    """The delegation warnings are rate-limited per path in module state: every test starts
+    with none logged, or one test's warning would silence the next test's."""
+    monkeypatch.setattr(net_pin, "_delegation_warned", {})
 
 
 @pytest.fixture
@@ -597,63 +597,110 @@ async def test_web_extract_says_a_dead_name_cannot_resolve(monkeypatch, seen):
     assert not seen
 
 
-# IMPORTANT 3: the TUN path delegates, and says so. At most once per host per 10 minutes.
+# IMPORTANT 3: the TUN path delegates, and says so. Final review: at most ONE warning per 10
+# minutes for the whole path, not one per host. A hostile page can mint a fresh name for every
+# request (the agent browser allows a great many), and one warning per name floods the log.
+# Each name is still logged, at DEBUG, every time.
+
+TUN_WARNING = ("fake-IP DNS: names resolve to stand-in addresses in 198.18.0.0/15 that the TUN "
+               "maps back; the TUN decides where each request really goes, and SSRF protection "
+               "for those names is delegated there (each name is logged at DEBUG)")
+PROXY_WARNING = ("pinned_request: https via a configured proxy — address pinning is disabled "
+                 "and SSRF protection is delegated to the proxy (each host is logged at DEBUG)")
 
 
-def _fake_ip_warnings(caplog) -> list[str]:
-    return [r.getMessage() for r in caplog.records if r.getMessage().startswith("fake-IP DNS:")]
+def _logged(caplog, level: int, prefix: str) -> list[str]:
+    return [r.getMessage() for r in caplog.records
+            if r.levelno == level and r.getMessage().startswith(prefix)]
 
 
-def _warning_for(host: str, ip: str = FAKE) -> str:
-    return (f"fake-IP DNS: {host} → {ip}; the TUN/proxy maps it back and decides the real "
-            "destination — SSRF protection is delegated there")
+def _tun_detail(host: str, ip: str = FAKE) -> str:
+    return (f"fake-IP DNS: {host} → {ip}; the TUN maps it back and decides the real "
+            "destination")
 
 
 async def test_the_tun_path_says_that_protection_is_delegated(monkeypatch, seen, caplog):
     _resolver(monkeypatch, {}, default=(FAKE,))
-    with caplog.at_level(logging.WARNING, logger="server.registry.net_pin"):
+    with caplog.at_level(logging.DEBUG, logger="server.registry.net_pin"):
         await net_pin.pinned_get("https://github.com/")
-    assert _fake_ip_warnings(caplog) == [_warning_for("github.com")]
+    assert _logged(caplog, logging.WARNING, "fake-IP DNS:") == [TUN_WARNING]
+    assert _logged(caplog, logging.DEBUG, "fake-IP DNS:") == [_tun_detail("github.com")]
 
 
-async def test_the_warning_is_once_per_host_per_ten_minutes(monkeypatch, seen, caplog):
+async def test_the_tun_warning_is_once_per_ten_minutes_for_the_whole_path(monkeypatch, seen,
+                                                                         caplog):
     _resolver(monkeypatch, {}, default=(FAKE,))
-    with caplog.at_level(logging.WARNING, logger="server.registry.net_pin"):
+    with caplog.at_level(logging.DEBUG, logger="server.registry.net_pin"):
         await net_pin.pinned_get("https://github.com/")
-        await net_pin.pinned_get("https://github.com/again")          # same host: silent
-        await net_pin.pinned_get("https://pypi.org/")                  # another host: heard
-        net_pin._fake_ip_warned["github.com"] -= 601                   # ten minutes pass
+        await net_pin.pinned_get("https://pypi.org/")                  # another host: silent
+        net_pin._delegation_warned["tun"] -= 601                       # ten minutes pass
         await net_pin.pinned_get("https://github.com/once-more")
-    assert _fake_ip_warnings(caplog) == [_warning_for("github.com"), _warning_for("pypi.org"),
-                                         _warning_for("github.com")]
+    assert _logged(caplog, logging.WARNING, "fake-IP DNS:") == [TUN_WARNING, TUN_WARNING]
+    assert _logged(caplog, logging.DEBUG, "fake-IP DNS:") == [
+        _tun_detail("github.com"), _tun_detail("pypi.org"), _tun_detail("github.com")]
 
 
-async def test_the_warning_names_and_keys_the_canonical_host(monkeypatch, seen, caplog):
-    """One host spelled two ways is one host: the log line is ASCII and the 10 minutes are
-    counted per canonical name, not per spelling."""
+async def test_fifty_fresh_names_make_one_tun_warning(monkeypatch, seen, caplog):
     _resolver(monkeypatch, {}, default=(FAKE,))
+    with caplog.at_level(logging.DEBUG, logger="server.registry.net_pin"):
+        for i in range(50):
+            await net_pin.pinned_get(f"https://n{i}.evil.test/")
+    assert len(_logged(caplog, logging.WARNING, "fake-IP DNS:")) <= 1
+    assert _logged(caplog, logging.DEBUG, "fake-IP DNS:") == [
+        _tun_detail(f"n{i}.evil.test") for i in range(50)]
+
+
+async def test_fifty_fresh_names_through_a_proxy_make_one_proxy_warning(monkeypatch, seen,
+                                                                       caplog):
+    """The proxy branch of pinned_request is reached on every https hop on a Mac with a system
+    proxy, and it was not throttled at all."""
+    _with_proxy(monkeypatch)
+    _resolver(monkeypatch, {}, default=(FAKE,))
+    with caplog.at_level(logging.DEBUG, logger="server.registry.net_pin"):
+        for i in range(50):
+            await net_pin.pinned_get(f"https://n{i}.evil.test/")
+    assert _logged(caplog, logging.WARNING, "pinned_request:") == [PROXY_WARNING]
+    assert _logged(caplog, logging.DEBUG, "pinned_request:") == [
+        f"pinned_request: https via a configured proxy for n{i}.evil.test — the proxy "
+        "resolves and connects" for i in range(50)]
+
+
+async def test_the_two_paths_do_not_silence_each_other(monkeypatch, seen, caplog):
     with caplog.at_level(logging.WARNING, logger="server.registry.net_pin"):
+        _resolver(monkeypatch, {}, default=(FAKE,))
+        await net_pin.pinned_get("https://github.com/")                 # the TUN path
+        _with_proxy(monkeypatch)
+        await net_pin.pinned_get("https://pypi.org/")                   # the proxy path
+    assert [r.getMessage() for r in caplog.records
+            if r.name == "server.registry.net_pin"] == [TUN_WARNING, PROXY_WARNING]
+
+
+async def test_the_detail_names_the_canonical_host(monkeypatch, seen, caplog):
+    """One host spelled two ways is one host, and the DEBUG line is ASCII."""
+    _resolver(monkeypatch, {}, default=(FAKE,))
+    with caplog.at_level(logging.DEBUG, logger="server.registry.net_pin"):
         await net_pin.pinned_get("https://bücher.example/")
         await net_pin.pinned_get("https://ｂücher.example/")          # fullwidth b: same host
-    assert _fake_ip_warnings(caplog) == [_warning_for("xn--bcher-kva.example")]
+    assert _logged(caplog, logging.DEBUG, "fake-IP DNS:") == [
+        _tun_detail("xn--bcher-kva.example")] * 2
 
 
 def test_the_warning_memory_is_bounded():
-    """A long-lived server meets many hosts; the table of who was warned about must not grow
-    without limit."""
-    for i in range(net_pin._FAKE_IP_WARN_HOSTS + 50):
+    """A long-lived server meets many hosts; the table of what was warned about holds one key
+    per path, however many hosts it meets."""
+    for i in range(300):
         net_pin._warn_fake_ip(f"host{i}.example", FAKE)
-    assert 0 < len(net_pin._fake_ip_warned) <= net_pin._FAKE_IP_WARN_HOSTS
+    assert list(net_pin._delegation_warned) == ["tun"]
 
 
 async def test_no_fake_ip_warning_for_ordinary_lookups_or_behind_a_proxy(monkeypatch, seen,
                                                                          caplog):
     """An ordinary lookup has nothing to say, and a proxied request already has its own
     warning (the proxy branch of pinned_request): this one is for the TUN path only."""
-    with caplog.at_level(logging.WARNING, logger="server.registry.net_pin"):
+    with caplog.at_level(logging.DEBUG, logger="server.registry.net_pin"):
         _resolver(monkeypatch, {})                                 # public answers, public canary
         await net_pin.pinned_get("https://example.org/")
         _with_proxy(monkeypatch)
         _resolver(monkeypatch, {"github.com": (FAKE,)})            # fake answer, a proxy carries it
         await net_pin.pinned_get("https://github.com/")
-    assert _fake_ip_warnings(caplog) == []
+    assert [r for r in caplog.records if r.getMessage().startswith("fake-IP DNS:")] == []

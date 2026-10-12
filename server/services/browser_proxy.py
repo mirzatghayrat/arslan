@@ -16,7 +16,8 @@ resolves and connects, which is where fake-IP DNS lives, and dialling a fake add
 ourselves only works under a TUN. The destination check still runs first, so a local
 name or a real private answer is refused before the proxy is asked. The proxy then resolves
 the name itself, so "resolve once, connect to that address" is delegated to it, and a
-warning says so (once per host per 10 minutes). Credentials in the proxy URL go out as
+warning says so (once per proxy per 10 minutes; each name at DEBUG, so a page that mints
+fresh names cannot flood the log). Credentials in the proxy URL go out as
 `Proxy-Authorization: Basic` on the CONNECT and are never logged.
 """
 from __future__ import annotations
@@ -36,7 +37,7 @@ from server.registry.net_pin import _BlockedHost, _resolve_pinned
 logger = logging.getLogger(__name__)
 
 #: Each warning is said at most once per key per this many seconds: one page makes dozens of
-#: tunnels, and each would say the same thing ...
+#: tunnels, and each would say the same thing. A key names a proxy, never a destination ...
 _WARN_EVERY = 600.0
 #: ... and the table remembers at most this many keys, so a long-lived server cannot grow
 #: without bound.
@@ -47,8 +48,10 @@ _warned: dict[tuple, float] = {}
 
 
 def _warn_once(key: tuple, message: str, *args) -> None:
-    """Log a warning at most once per `key` per 10 minutes, in the style of net_pin's
-    `_warn_fake_ip`: a bounded table, purged of stale keys when it fills, then cleared."""
+    """Log a warning at most once per `key` per 10 minutes: a bounded table, purged of stale
+    keys when it fills, then cleared. Keys name the proxy and what happened, never the
+    destination, so a page that mints fresh names cannot multiply them (net_pin keys its own
+    delegation warnings by path for the same reason)."""
     now = time.monotonic()
     last = _warned.get(key)
     if last is not None and now - last < _WARN_EVERY:
@@ -203,10 +206,14 @@ class PublicTunnel:
                     # private answer first (fake-IP answers pass: via_proxy).
                     await asyncio.wait_for(
                         asyncio.to_thread(_resolve_pinned, url, via_proxy=True), 5)
-                    _warn_once(("delegated", name),
-                               "browser tunnel: %s via the system proxy %s:%s — the proxy "
-                               "resolves the name; rebinding protection is delegated there",
-                               name, chain.host, chain.port)
+                    # Keyed by the proxy, never the destination: a page can mint a fresh name
+                    # for every tunnel, and each would be a WARNING. The name goes to DEBUG.
+                    logger.debug("browser tunnel: %s via the system proxy %s:%s",
+                                 name, chain.host, chain.port)
+                    _warn_once(("delegated", chain.host, chain.port),
+                               "browser tunnel: tunnels go through the system proxy %s:%s, which "
+                               "resolves each name; rebinding protection is delegated there "
+                               "(each name is logged at DEBUG)", chain.host, chain.port)
                     try:
                         remote, upstream = await asyncio.wait_for(
                             asyncio.open_connection(chain.host, chain.port), 8)
@@ -222,9 +229,12 @@ class PublicTunnel:
                     if not re.match(rb"HTTP/1\.[01] 200\b", head):
                         status = re.match(rb"HTTP/1\.[01] (\d{3})\b", head)
                         what = f"HTTP {status[1].decode('ascii')}" if status else "a non-HTTP reply"
-                        _warn_once(("refused", chain.host, chain.port, name, what),
-                                   "browser tunnel: upstream proxy %s:%s refused the tunnel to "
-                                   "%s (%s)", chain.host, chain.port, name, what)
+                        logger.debug("browser tunnel: upstream proxy %s:%s refused the tunnel "
+                                     "to %s (%s)", chain.host, chain.port, name, what)
+                        _warn_once(("refused", chain.host, chain.port, what),
+                                   "browser tunnel: upstream proxy %s:%s refused a tunnel (%s); "
+                                   "each refused name is logged at DEBUG",
+                                   chain.host, chain.port, what)
                         raise ValueError("The upstream proxy refused the tunnel")
                 else:
                     # Resolver rejects EVERY non-public answer. Connect by IP, never resolve twice.

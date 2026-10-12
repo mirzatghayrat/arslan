@@ -31,7 +31,8 @@ HTTP stack really use, not the raw spelling in the URL.
 the real address. The fake one stands for it, and the TUN or the proxy decides where the
 request really goes, so SSRF protection for that name is DELEGATED there, as it already is
 for https behind a configured proxy (see ``_pinning_disabled_by_proxy``). The TUN path says
-so in the log, once per host per 10 minutes. What still holds is TLS, checked against the
+so in the log, once per 10 minutes for the whole path (each name at DEBUG, so a page that
+mints fresh names cannot flood it). What still holds is TLS, checked against the
 real name: wherever the TUN or the proxy connects, nothing is sent until the other end
 proves it is that name, which a service on the LAN or on this Mac cannot. That is why the
 exception is https on 443 only. Plain http proves nothing, and the proxy or the TUN resolves
@@ -120,13 +121,14 @@ _FAKE_IP_CANARY = "example.com"
 #: `localdomain` nor `home` is delegated on the public internet.
 _LOCAL_ZONES = ("localhost", "local", "lan", "internal", "intranet", "home.arpa", "corp",
                 "localdomain", "home")
-#: The TUN path warns that protection is delegated, at most once per host per this many seconds.
+#: Each path that delegates (the TUN, a configured proxy) says so at most once per this many
+#: seconds, for the whole path and not per host: a hostile page can mint a fresh name for every
+#: request, and the agent browser allows a great many, so a warning per name would flood the
+#: log. Every host is still logged, at DEBUG, every time.
 _FAKE_IP_WARN_EVERY = 600.0
-#: ... and remembers at most this many hosts, so a long-lived server cannot grow without bound.
-_FAKE_IP_WARN_HOSTS = 256
-#: host -> time.monotonic() of its last warning. Module state, so tests that look at the warning
-#: reset it.
-_fake_ip_warned: dict[str, float] = {}
+#: path ("tun" or "proxy") -> time.monotonic() of its last warning. One key per path, so it
+#: cannot grow. Module state, so tests that look at the warning reset it.
+_delegation_warned: dict[str, float] = {}
 
 
 def _canonical_host(host: str) -> str:
@@ -193,23 +195,27 @@ def _fake_ip_dns() -> bool:
     return _all_fake_v4([ipaddress.ip_address(info[4][0]) for info in infos])
 
 
-def _warn_fake_ip(host: str, ip: str) -> None:
-    """Say that a faked name's real destination is decided by the TUN or the proxy and not by
-    this guard: at most once per host per 10 minutes, in the style of the proxy branch's
-    warning in `pinned_request`, which this path would otherwise lack."""
+def _warn_delegated(path: str, message: str) -> None:
+    """Log `message` as a WARNING at most once per `_FAKE_IP_WARN_EVERY` for `path`. The key
+    is the path, never a host: see `_FAKE_IP_WARN_EVERY`."""
     now = time.monotonic()
-    last = _fake_ip_warned.get(host)
+    last = _delegation_warned.get(path)
     if last is not None and now - last < _FAKE_IP_WARN_EVERY:
         return
-    if len(_fake_ip_warned) >= _FAKE_IP_WARN_HOSTS:
-        for stale, then in list(_fake_ip_warned.items()):
-            if now - then >= _FAKE_IP_WARN_EVERY:
-                _fake_ip_warned.pop(stale, None)
-        if len(_fake_ip_warned) >= _FAKE_IP_WARN_HOSTS:
-            _fake_ip_warned.clear()
-    _fake_ip_warned[host] = now
-    logger.warning("fake-IP DNS: %s → %s; the TUN/proxy maps it back and decides the real "
-                   "destination — SSRF protection is delegated there", host, ip)
+    _delegation_warned[path] = now
+    logger.warning(message)
+
+
+def _warn_fake_ip(host: str, ip: str) -> None:
+    """Say that a faked name's real destination is decided by the TUN and not by this guard:
+    each name at DEBUG, and the WARNING at most once per 10 minutes for the whole TUN path, in
+    the style of the proxy branch's warning in `pinned_request`."""
+    logger.debug("fake-IP DNS: %s → %s; the TUN maps it back and decides the real destination",
+                 host, ip)
+    _warn_delegated("tun", "fake-IP DNS: names resolve to stand-in addresses in 198.18.0.0/15 "
+                           "that the TUN maps back; the TUN decides where each request really "
+                           "goes, and SSRF protection for those names is delegated there (each "
+                           "name is logged at DEBUG)")
 
 
 class _BlockedHost(Exception):
@@ -561,12 +567,15 @@ async def pinned_request(
             if _pinning_disabled_by_proxy(current):
                 # Still validate — it blocks the obvious cases — but say plainly that the
                 # guarantee is the proxy's here, so a delegated install is discoverable
-                # instead of quietly believing it is protected.
+                # instead of quietly believing it is protected. Once per 10 minutes for the
+                # path, each host at DEBUG: on a Mac with a system proxy this is every https
+                # hop, and a page can mint fresh names.
                 _resolve_pinned(current, allow_host=allow_host, via_proxy=True)
-                logger.warning(
-                    "pinned_request: https via a configured proxy — address pinning is "
-                    "disabled for %s and SSRF protection is delegated to the proxy",
-                    urlparse(current).hostname)
+                logger.debug("pinned_request: https via a configured proxy for %s — the proxy "
+                             "resolves and connects", urlparse(current).hostname)
+                _warn_delegated("proxy", "pinned_request: https via a configured proxy — "
+                                         "address pinning is disabled and SSRF protection is "
+                                         "delegated to the proxy (each host is logged at DEBUG)")
                 resp = await client.request(cur_method, current, headers=headers,
                                             params=params, json=cur_json, data=cur_data)
             else:

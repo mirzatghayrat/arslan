@@ -239,13 +239,22 @@ def test_upstream_proxy_reads_the_setting(monkeypatch, proxies, expected):
 # The delegation is logged, a credentialed proxy is spoken to, and a failure names its cause.
 
 
-def _delegation(host: str, port: int) -> str:
-    return (f"browser tunnel: {host} via the system proxy 127.0.0.1:{port} — the proxy resolves "
-            "the name; rebinding protection is delegated there")
+def _delegation(port: int) -> str:
+    """The WARNING, said once per proxy per 10 minutes: it names the proxy, never a destination,
+    so a page that mints fresh names cannot make more of them."""
+    return (f"browser tunnel: tunnels go through the system proxy 127.0.0.1:{port}, which "
+            "resolves each name; rebinding protection is delegated there (each name is logged "
+            "at DEBUG)")
 
 
-def _tunnel_log(caplog) -> list[str]:
-    return [r.getMessage() for r in caplog.records if r.getMessage().startswith("browser tunnel:")]
+def _delegated_name(name: str, port: int) -> str:
+    """The DEBUG detail, said for every tunnel."""
+    return f"browser tunnel: {name} via the system proxy 127.0.0.1:{port}"
+
+
+def _tunnel_log(caplog, level: int | None = None) -> list[str]:
+    return [r.getMessage() for r in caplog.records
+            if r.getMessage().startswith("browser tunnel:") and level in (None, r.levelno)]
 
 
 def _proxy_url(monkeypatch, url: str):
@@ -283,22 +292,67 @@ def _dials(monkeypatch) -> list[tuple]:
 
 
 @pytest.mark.asyncio
-async def test_chaining_says_the_proxy_decides_once_per_host_per_ten_minutes(monkeypatch, caplog):
+async def test_chaining_says_the_proxy_decides_once_per_proxy_per_ten_minutes(monkeypatch, caplog):
     server, port = await _upstream([])
+    other, other_port = await _upstream([])
     _system_proxy(monkeypatch, port)
     _answers(monkeypatch, {"duckduckgo.com": "198.18.0.35", "news.example": "198.18.0.36"})
     async with bp.PublicTunnel() as proxy:
-        with caplog.at_level(logging.WARNING, logger=bp.logger.name):
+        with caplog.at_level(logging.DEBUG, logger=bp.logger.name):
             assert b"200" in await _request(proxy.port, "duckduckgo.com:443")
-            assert b"200" in await _request(proxy.port, "DuckDuckGo.COM:443")   # same host: silent
-            assert b"200" in await _request(proxy.port, "news.example:443")       # another: heard
-            bp._warned[("delegated", "duckduckgo.com")] -= 601                    # ten minutes pass
+            assert b"200" in await _request(proxy.port, "news.example:443")       # same proxy: silent
+            bp._warned[("delegated", "127.0.0.1", port)] -= 601                   # ten minutes pass
             assert b"200" in await _request(proxy.port, "duckduckgo.com:443")
+            _system_proxy(monkeypatch, other_port)                                # another proxy: heard
+            assert b"200" in await _request(proxy.port, "duckduckgo.com:443")
+    for each in (server, other):
+        each.close()
+        await each.wait_closed()
+    assert _tunnel_log(caplog, logging.WARNING) == [_delegation(port), _delegation(port),
+                                                    _delegation(other_port)]
+    assert _tunnel_log(caplog, logging.DEBUG) == [_delegated_name("duckduckgo.com", port),
+                                                  _delegated_name("news.example", port),
+                                                  _delegated_name("duckduckgo.com", port),
+                                                  _delegated_name("duckduckgo.com", other_port)]
+
+
+@pytest.mark.asyncio
+async def test_fifty_fresh_names_through_one_proxy_make_one_warning(monkeypatch, caplog):
+    """A hostile page can mint a fresh name for every request; the agent browser allows a great
+    many. The names go to DEBUG, the WARNING stays one."""
+    server, port = await _upstream([])
+    _system_proxy(monkeypatch, port)
+    names = [f"n{i}.evil.test" for i in range(50)]
+    _answers(monkeypatch, {name: "198.18.0.35" for name in names})
+    async with bp.PublicTunnel(connection_limit=100) as proxy:
+        with caplog.at_level(logging.DEBUG, logger=bp.logger.name):
+            for name in names:
+                assert b"200" in await _request(proxy.port, f"{name}:443")
     server.close()
     await server.wait_closed()
-    assert _tunnel_log(caplog) == [_delegation("duckduckgo.com", port),
-                                   _delegation("news.example", port),
-                                   _delegation("duckduckgo.com", port)]
+    assert _tunnel_log(caplog, logging.WARNING) == [_delegation(port)]
+    assert _tunnel_log(caplog, logging.DEBUG) == [_delegated_name(name, port) for name in names]
+
+
+@pytest.mark.asyncio
+async def test_fifty_names_a_proxy_refuses_make_one_warning(monkeypatch, caplog):
+    """The refusal is keyed by the proxy and its answer, not by the name refused."""
+    server, port = await _upstream([], reply=b"HTTP/1.1 403 Forbidden\r\n\r\n")
+    _system_proxy(monkeypatch, port)
+    names = [f"n{i}.evil.test" for i in range(50)]
+    _answers(monkeypatch, {name: "198.18.0.35" for name in names})
+    async with bp.PublicTunnel(connection_limit=100) as proxy:
+        with caplog.at_level(logging.DEBUG, logger=bp.logger.name):
+            for name in names:
+                assert b"403" in await _request(proxy.port, f"{name}:443")
+    server.close()
+    await server.wait_closed()
+    refused = [line for line in _tunnel_log(caplog, logging.WARNING) if "refused" in line]
+    assert refused == [f"browser tunnel: upstream proxy 127.0.0.1:{port} refused a tunnel "
+                       "(HTTP 403); each refused name is logged at DEBUG"]
+    assert [line for line in _tunnel_log(caplog, logging.DEBUG) if "refused" in line] == [
+        f"browser tunnel: upstream proxy 127.0.0.1:{port} refused the tunnel to {name} "
+        "(HTTP 403)" for name in names]
 
 
 def test_the_warning_memory_is_bounded():
@@ -415,13 +469,17 @@ async def test_a_refusing_proxy_is_named_in_the_log(monkeypatch, caplog):
     _system_proxy(monkeypatch, port)
     _answers(monkeypatch, {"duckduckgo.com": "198.18.0.35"})
     async with bp.PublicTunnel() as proxy:
-        with caplog.at_level(logging.WARNING, logger=bp.logger.name):
+        with caplog.at_level(logging.DEBUG, logger=bp.logger.name):
             assert b"403" in await _request(proxy.port, "duckduckgo.com:443")
     server.close()
     await server.wait_closed()
     assert proxy.blocked == 1
-    assert _tunnel_log(caplog)[-1] == (f"browser tunnel: upstream proxy 127.0.0.1:{port} refused "
-                                       "the tunnel to duckduckgo.com (HTTP 407)")
+    assert _tunnel_log(caplog, logging.WARNING)[-1] == (
+        f"browser tunnel: upstream proxy 127.0.0.1:{port} refused a tunnel (HTTP 407); each "
+        "refused name is logged at DEBUG")
+    assert _tunnel_log(caplog, logging.DEBUG)[-1] == (
+        f"browser tunnel: upstream proxy 127.0.0.1:{port} refused the tunnel to duckduckgo.com "
+        "(HTTP 407)")
 
 
 @pytest.mark.asyncio

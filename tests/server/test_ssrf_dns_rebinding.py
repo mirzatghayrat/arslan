@@ -248,6 +248,9 @@ async def test_https_through_a_proxy_degrades_LOUDLY_not_silently(monkeypatch, c
     monkeypatch.setattr(net_pin, "getproxies",
                         lambda: {"https": "http://127.0.0.1:7899"})
     monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **k: _addrinfo(PUBLIC))
+    # The warning is said once per 10 minutes for the whole proxy path; an earlier test in
+    # the same run may already have said it.
+    monkeypatch.setattr(net_pin, "_delegation_warned", {})
 
     with caplog.at_level("WARNING"):
         res = await executors.EXECUTORS["web_extract"].execute({"url": "https://ok.test/x"})
