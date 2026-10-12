@@ -277,3 +277,241 @@ async def test_a_conflicting_insert_is_retried_once_and_then_raised(db, monkeypa
     with pytest.raises(IntegrityError):
         await discovery.connect_and_discover(1)
     assert len(calls) == 2                         # one retry, no more
+
+
+# ---- fix round 1: the real session manager behind a fake open ----
+
+@pytest.fixture(autouse=True)
+def _clean_manager():
+    """The manager is a process singleton: no test leaves a session behind for the next."""
+    def clear():
+        for per_id in (session.manager._sessions, session.manager._fingerprints,
+                       session.manager._wakes):
+            per_id.clear()
+    clear()
+    yield
+    clear()
+
+
+class _Paged:
+    """A live session whose pages are named after it, so a page from another session shows."""
+
+    def __init__(self, tag, names=None):
+        self.tag, self.names = tag, names
+
+    async def list_tools(self, params=None):
+        if self.names is not None:
+            return SimpleNamespace(tools=[_tool(n) for n in self.names], nextCursor=None)
+        if params is None:
+            return SimpleNamespace(tools=[_tool(f"{self.tag}-p1")], nextCursor="c1")
+        return SimpleNamespace(tools=[_tool(f"{self.tag}-p2")], nextCursor=None)
+
+
+def _fake_open(monkeypatch, *, names=("a", "b")):
+    opens = []
+
+    async def closed():
+        return None
+
+    async def open_session(server):
+        opens.append(dict(server))
+        session_ = _Paged(f"s{len(opens)}", list(names) if names else None)
+        return session_, SimpleNamespace(aclose=closed)
+    monkeypatch.setattr(session.manager, "_open_session", open_session)
+    return opens
+
+
+async def _edit_row(maker, **fields):
+    async with maker() as s:
+        srv = await s.get(MCPServer, 1)
+        for name, value in fields.items():
+            setattr(srv, name, value)
+        await s.commit()
+
+
+async def test_relist_does_not_restart_after_the_row_was_edited(db, monkeypatch):
+    opens = _fake_open(monkeypatch)
+    await discovery.connect_and_discover(1)
+    await _edit_row(db, args=["--new-flag"])
+    first = session.manager.cached(1)
+    assert await discovery.relist(1) is not None
+    assert len(opens) == 1 and session.manager.cached(1) is first
+
+
+async def test_relist_does_not_open_when_the_session_drops_during_its_own_read(db, monkeypatch):
+    opens = _fake_open(monkeypatch)
+    await discovery.connect_and_discover(1)
+    real = discovery._runtime
+
+    async def read_then_drop(server_id):
+        out = await real(server_id)
+        await session.manager.drop(server_id)       # a failed call or a health check, right now
+        return out
+    monkeypatch.setattr(discovery, "_runtime", read_then_drop)
+    assert await discovery.relist(1) is None and len(opens) == 1
+    assert session.manager.cached(1) is None
+
+
+async def test_pages_after_the_first_never_come_from_a_session_that_has_gone(db, monkeypatch):
+    opens = _fake_open(monkeypatch, names=None)
+    real = session.manager.list_tools
+
+    async def drop_before_page_two(server, cursor=None):
+        if cursor is not None:
+            await session.manager.drop(1)
+        return await real(server, cursor)
+    monkeypatch.setattr(session.manager, "list_tools", drop_before_page_two)
+    with pytest.raises(session.NotStarted):
+        await discovery.connect_and_discover(1)
+    async with db() as s:
+        srv = await s.get(MCPServer, 1)
+    assert len(opens) == 1 and await _names(db) == []
+    assert srv.status == "registered" and srv.last_error is None      # overtaken, not failed
+
+
+async def test_pages_after_the_first_never_come_from_a_replacement_session(db, monkeypatch):
+    opens = _fake_open(monkeypatch, names=None)
+    real = session.manager.list_tools
+
+    async def replace_before_page_two(server, cursor=None):
+        if cursor is not None:
+            await session.manager.drop(1)
+            await session.manager.get_session(await discovery._runtime(1))   # the supervisor
+        return await real(server, cursor)
+    monkeypatch.setattr(session.manager, "list_tools", replace_before_page_two)
+    with pytest.raises(session.NotStarted):          # page 2's cursor belongs to the first session
+        await discovery.connect_and_discover(1)
+    assert len(opens) == 2 and await _names(db) == []
+
+
+async def test_an_older_listing_finishing_last_never_undoes_a_newer_one(db, monkeypatch):
+    calls = {"n": 0}
+
+    async def listing(server, cursor=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            await asyncio.sleep(0.2)
+            return SimpleNamespace(tools=[_tool("a"), _tool("b")], nextCursor=None)
+        await asyncio.sleep(0.01)
+        return SimpleNamespace(tools=[_tool("a"), _tool("b"), _tool("c")], nextCursor=None)
+    monkeypatch.setattr(session.manager, "list_tools", listing)
+    monkeypatch.setitem(session.manager._sessions, 1, ("live", None))
+    first = asyncio.create_task(discovery.connect_and_discover(1))
+    await asyncio.sleep(0.02)
+    await discovery.relist(1)
+    await first
+    assert await _names(db) == ["a", "b", "c"]
+
+
+async def test_a_page_that_fails_midway_writes_and_prunes_nothing(db, monkeypatch):
+    _serve(monkeypatch, [[_tool("a"), _tool("b")]])
+    await discovery.connect_and_discover(1)
+
+    async def broken(server, cursor=None):
+        if cursor is None:
+            return SimpleNamespace(tools=[_tool("a")], nextCursor="p1")
+        raise session.ListTimeout("tools/list did not answer within 30 s")
+    monkeypatch.setattr(session.manager, "list_tools", broken)
+    with pytest.raises(session.ListTimeout):
+        await discovery.connect_and_discover(1)
+    assert await _names(db) == ["a", "b"]
+
+
+async def test_forgetting_a_server_forgets_its_discovery_lock(db, monkeypatch, tmp_path):
+    monkeypatch.setenv("ARSLAN_DATA_DIR", str(tmp_path))
+    _serve(monkeypatch, [[_tool("a")]])
+    await discovery.connect_and_discover(1)
+    assert 1 in discovery._write_locks._locks
+    await session.manager.forget(1)
+    assert 1 not in discovery._write_locks._locks
+
+
+async def test_forgetting_a_server_mid_listing_keeps_its_lock_so_listings_never_overlap(
+        db, monkeypatch, tmp_path):
+    monkeypatch.setenv("ARSLAN_DATA_DIR", str(tmp_path))
+    running = {"now": 0, "most": 0}
+
+    async def listing(server, cursor=None):
+        running["now"] += 1
+        running["most"] = max(running["most"], running["now"])
+        await asyncio.sleep(0.1)
+        running["now"] -= 1
+        return SimpleNamespace(tools=[_tool("a")], nextCursor=None)
+    monkeypatch.setattr(session.manager, "list_tools", listing)
+    first = asyncio.create_task(discovery.connect_and_discover(1))
+    await asyncio.sleep(0.03)
+    await session.manager.forget(1)                 # while the first listing holds the lock
+    second = asyncio.create_task(discovery.connect_and_discover(1))
+    await asyncio.gather(first, second)
+    assert running["most"] == 1
+
+
+# ---- fix round 1: what a re-list and an update must not touch ----
+
+async def test_an_update_keeps_every_user_setting(db, monkeypatch):
+    _serve(monkeypatch, [[_tool("a")]], [[_tool("a")]])
+    await discovery.connect_and_discover(1)
+    async with db() as s:
+        row = await s.get(Tool, "mcp_1__a")
+        row.tier, row.status, row.host_enabled = "safe", "wired", True
+        await s.commit()
+    await discovery.connect_and_discover(1)
+    async with db() as s:
+        row = await s.get(Tool, "mcp_1__a")
+    assert (row.tier, row.status, row.host_enabled) == ("safe", "wired", True)
+
+
+async def test_a_relist_leaves_the_legacy_status_alone(db, monkeypatch):
+    await _edit_row(db, status="error", last_error="boom")
+    _serve(monkeypatch, [[_tool("a")]])
+    monkeypatch.setitem(session.manager._sessions, 1, ("live", None))
+    assert await discovery.relist(1) is not None
+    async with db() as s:
+        srv = await s.get(MCPServer, 1)
+    assert (srv.status, srv.last_error) == ("error", "boom")
+
+
+async def test_a_server_deleted_during_the_listing_is_server_gone(db, monkeypatch):
+    async def listing(server, cursor=None):
+        async with db() as s:
+            await s.delete(await s.get(MCPServer, 1))
+            await s.commit()
+        return SimpleNamespace(tools=[_tool("a")], nextCursor=None)
+    monkeypatch.setattr(session.manager, "list_tools", listing)
+    with pytest.raises(discovery.ServerGone):
+        await discovery.connect_and_discover(1)
+    assert await _names(db) == []
+
+
+async def test_the_last_page_wins_when_a_name_is_listed_twice(db, monkeypatch):
+    first = types.Tool(name="a", description="first", inputSchema={})
+    last = types.Tool(name="a", description="last", inputSchema={})
+    _serve(monkeypatch, [[first], [last]])
+    await discovery.connect_and_discover(1)
+    async with db() as s:
+        assert (await s.get(Tool, "mcp_1__a")).description == "last"
+
+
+def test_a_title_is_capped_and_idempotent_hints_are_kept():
+    annotated = lambda **kw: SimpleNamespace(annotations=types.ToolAnnotations(**kw))   # noqa: E731
+    assert discovery.tool_hints(annotated(title="x" * 300))["title"] == "x" * 200
+    assert discovery.tool_hints(annotated(idempotentHint=True)) == {"idempotentHint": True}
+
+
+def test_a_title_loses_control_characters_and_ansi_codes():
+    tool = SimpleNamespace(annotations=types.ToolAnnotations(title="  a\nb\x1b[31mred\x07\tz  "))
+    assert discovery.tool_hints(tool) == {"title": "a bred z"}
+    assert discovery.tool_hints(SimpleNamespace(annotations={"title": "\x1b[0m\x07 "})) is None
+
+
+async def test_a_tool_without_hints_stores_sql_null_not_json_null(db, monkeypatch):
+    from sqlalchemy import text
+
+    _serve(monkeypatch, [[_tool("a"), _tool("b", readOnlyHint=True)]],
+           [[_tool("a", readOnlyHint=True), _tool("b")]])
+    await discovery.connect_and_discover(1)
+    await discovery.connect_and_discover(1)                  # a: set → ... b: hinted → none
+    async with db() as s:
+        rows = (await s.execute(text("select key, annotations from tools "
+                                     "where toolset_key = 'mcp_1' order by key"))).all()
+    assert rows[0][1] is not None and rows[1][1] is None     # b has no hints: SQL NULL, not 'null'

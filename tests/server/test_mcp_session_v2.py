@@ -466,3 +466,50 @@ async def test_a_failed_page_drops_only_the_session_it_ran_on():
     with pytest.raises(anyio.BrokenResourceError):
         await mgr.list_tools(_server())
     assert mgr._sessions[1] is newer and not newer[1].closed
+
+
+async def test_a_live_only_request_uses_the_live_session_and_never_restarts_it(monkeypatch):
+    mgr = sess.MCPSessionManager()
+    live = (_Session(), _Stack())
+    mgr._sessions[1] = live
+    mgr._fingerprints[1] = sess._fingerprint(_server())
+
+    async def must_not_open(server):
+        raise AssertionError("a live-only request opened a session")
+    monkeypatch.setattr(mgr, "_open_session", must_not_open)
+    page = await mgr.list_tools(_server(args=["--edited"], live_only=True))   # the row changed
+    assert page.tools[0].name == "a" and mgr._sessions[1] is live and not live[1].closed
+
+
+async def test_a_live_only_request_without_a_session_raises_at_once_and_opens_nothing(monkeypatch):
+    mgr = sess.MCPSessionManager()
+    release, opened = asyncio.Event(), []
+
+    async def slow_open(server):
+        opened.append(1)
+        await release.wait()
+        return _Session(), _Stack()
+    monkeypatch.setattr(mgr, "_open_session", slow_open)
+    with pytest.raises(sess.NotStarted):
+        await mgr.list_tools(_server(live_only=True))
+    assert opened == []
+    start = asyncio.create_task(mgr.get_session(_server()))
+    await asyncio.sleep(0.02)
+    with pytest.raises(sess.NotStarted):         # a start in progress is not a live session
+        await asyncio.wait_for(mgr.list_tools(_server(live_only=True)), 0.5)
+    release.set()
+    await start
+    assert opened == [1]
+
+
+async def test_a_live_only_request_naming_a_session_refuses_any_other(monkeypatch):
+    mgr = sess.MCPSessionManager()
+    old, new = _Session(), _Session()
+    mgr._sessions[1] = (new, _Stack())              # the session the cursor came from was replaced
+
+    async def must_not_open(server):
+        raise AssertionError("a live-only request opened a session")
+    monkeypatch.setattr(mgr, "_open_session", must_not_open)
+    with pytest.raises(sess.NotStarted):
+        await mgr.list_tools(_server(live_only=old))
+    assert (await mgr.list_tools(_server(live_only=new))).tools[0].name == "a"

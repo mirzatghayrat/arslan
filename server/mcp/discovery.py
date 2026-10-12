@@ -3,7 +3,9 @@
 
 0.1.61 §B1/§B4: tools follow the server — every listing (all pages, at most MAX_PAGES) adds new
 tools, updates changed ones, prunes vanished ones and stores each tool's declared hints. All pages
-are fetched before any database session opens, and one server's writes are serialized."""
+are fetched before any database session opens, and one server's listings are serialized (the
+listing and its write run under one lock, so a newer snapshot is never overwritten by an older
+one). A re-list uses the live session as it is and never opens or restarts one."""
 from __future__ import annotations
 
 import httpx
@@ -16,7 +18,7 @@ from sqlalchemy.exc import IntegrityError
 
 from server.db import session as db_session
 from server.db.models import MCPServer, Tool, Toolset
-from server.mcp.session import LoopLocks, NotStarted, manager
+from server.mcp.session import CONTROL_CHARS, LoopLocks, NotStarted, manager
 
 logger = logging.getLogger(__name__)
 
@@ -143,8 +145,10 @@ def tool_hints(tool) -> dict | None:
     for key in HINT_KEYS:
         value = data.get(key)
         if key == "title":
-            if isinstance(value, str) and value.strip():
-                hints[key] = value.strip()[:200]
+            if isinstance(value, str):      # server-controlled text: no control or ANSI codes
+                title = " ".join(CONTROL_CHARS.sub("", value).split())[:200]
+                if title:
+                    hints[key] = title
         elif isinstance(value, bool):
             hints[key] = value
     return hints or None
@@ -160,28 +164,37 @@ async def _runtime(server_id: int) -> dict:
 
 async def _list_all(server: dict) -> tuple[list, bool]:
     """Every page of tools/list → (tools, complete). Deduplicated by name (the last page wins);
-    complete=False when MAX_PAGES stopped it. No database session is open meanwhile."""
+    complete=False when MAX_PAGES stopped it. No database session is open meanwhile. Every page
+    comes from ONE session: the later pages ask for the live session as it is (never an open), and
+    a drop or replacement between pages raises NotStarted, because a cursor belongs to the session
+    that issued it."""
     listed = await manager.list_tools(server)
+    live = manager.cached(server["id"])
+    later = {**server, "live_only": live if live is not None else True}
     by_name = {t.name: t for t in listed.tools}
     cursor, pages = getattr(listed, "nextCursor", None), 1
     while cursor:
         if pages >= MAX_PAGES:
             return list(by_name.values()), False
-        listed = await manager.list_tools(server, cursor=cursor)
+        listed = await manager.list_tools(later, cursor=cursor)
         by_name.update({t.name: t for t in listed.tools})
         cursor, pages = getattr(listed, "nextCursor", None), pages + 1
     return list(by_name.values()), True
 
 
+def forget(server_id: int) -> None:
+    """The server is gone for good (`manager.forget`): drop its lock unless a listing holds it."""
+    _write_locks.forget(server_id)
+
+
 async def _write(server_id: int, tools: list, *, complete: bool, legacy_status: bool) -> list[dict]:
-    """Add, update and prune this server's Tool rows in one short transaction. Serialized per
-    server; a concurrent insert of the same key is retried once."""
-    async with _write_locks.get(server_id):
-        try:
-            return await _write_once(server_id, tools, complete=complete, legacy_status=legacy_status)
-        except IntegrityError:
-            logger.info("mcp %s: concurrent tool write, retrying once", server_id)
-            return await _write_once(server_id, tools, complete=complete, legacy_status=legacy_status)
+    """Add, update and prune this server's Tool rows in one short transaction. The caller holds the
+    server's lock; a concurrent insert of the same key (another process) is retried once."""
+    try:
+        return await _write_once(server_id, tools, complete=complete, legacy_status=legacy_status)
+    except IntegrityError:
+        logger.info("mcp %s: concurrent tool write, retrying once", server_id)
+        return await _write_once(server_id, tools, complete=complete, legacy_status=legacy_status)
 
 
 async def _write_once(server_id: int, tools: list, *, complete: bool, legacy_status: bool) -> list[dict]:
@@ -235,30 +248,40 @@ async def connect_and_discover(server_id: int, *, start_budget_s: float | None =
     rows and stores their hints. Raises whatever the open or the listing raised (ServerGone for an
     unknown id). Legacy until every caller goes through the supervisor: also marks the row's
     status connected/error. NotStarted — the open was superseded by a drop or forget — is
-    re-raised without touching the row: the open was overtaken, not failed."""
-    server = await _runtime(server_id)
-    if start_budget_s is not None:
-        server["start_budget_s"] = start_budget_s
-    try:
-        tools, complete = await _list_all(server)
-    except NotStarted:
-        raise
-    except Exception as exc:  # noqa: BLE001 — recorded for the old UI, then re-raised
-        async with db_session.AsyncSessionLocal() as db:
-            srv = await db.get(MCPServer, server_id)
-            if srv is not None:
-                srv.status = "error"
-                srv.last_error = _describe_failure(exc, has_headers=bool(server.get("env")))
-                await db.commit()
-        raise
-    return await _write(server_id, tools, complete=complete, legacy_status=True)
+    re-raised without touching the row: the open was overtaken, not failed. The listing and its
+    write run under the server's lock, so they never interleave with another listing's."""
+    async with _write_locks.hold(server_id):
+        server = await _runtime(server_id)
+        if start_budget_s is not None:
+            server["start_budget_s"] = start_budget_s
+        try:
+            tools, complete = await _list_all(server)
+        except NotStarted:
+            raise
+        except Exception as exc:  # noqa: BLE001 — recorded for the old UI, then re-raised
+            async with db_session.AsyncSessionLocal() as db:
+                srv = await db.get(MCPServer, server_id)
+                if srv is not None:
+                    srv.status = "error"
+                    srv.last_error = _describe_failure(exc, has_headers=bool(server.get("env")))
+                    await db.commit()
+            raise
+        return await _write(server_id, tools, complete=complete, legacy_status=True)
 
 
 async def relist(server_id: int) -> list[dict] | None:
-    """tools/list_changed (§B1): list again on the live session — never opens one, never
-    restarts — then add, update and prune. None when no session is live."""
+    """tools/list_changed (§B1): list again on the live session as it is — never opens one, never
+    restarts one (an edited row does not reopen it) — then add, update and prune. None when no
+    session is live, or it went away meanwhile: the supervisor restarts it, not this. Any other
+    failure is raised (the session it ran on is already dropped, so the caller schedules a fresh
+    start)."""
     if manager.cached(server_id) is None:
         return None
-    server = await _runtime(server_id)
-    tools, complete = await _list_all(server)
-    return await _write(server_id, tools, complete=complete, legacy_status=False)
+    async with _write_locks.hold(server_id):
+        server = await _runtime(server_id)
+        server["live_only"] = True
+        try:
+            tools, complete = await _list_all(server)
+        except NotStarted:
+            return None
+        return await _write(server_id, tools, complete=complete, legacy_status=False)

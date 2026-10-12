@@ -2,9 +2,11 @@
 
 `_open_session` is the only SDK/subprocess touchpoint (overridden in tests). Only the supervisor and
 discovery open sessions (`get_session`, `list_tools`); a tool call uses the cached session or raises
-NotStarted, so a chat turn never waits for a start. A stdio server runs in its own folder
-(`<data>/mcp/<id>/`), on Arslan's pinned Node/uv when its command is a bare npx/node/npm/uvx/uv and
-the runtime is installed, and writes its stderr to `stderr.log` there, one start marker per run.
+NotStarted, so a chat turn never waits for a start; a re-list and the later pages of a listing
+ask for `live_only` (the cached session as it is, never an open or a restart). A stdio server runs
+in its own folder (`<data>/mcp/<id>/`), on Arslan's pinned Node/uv when its command is a bare
+npx/node/npm/uvx/uv and the runtime is installed, and writes its stderr to `stderr.log` there, one
+start marker per run.
 
 Measured against mcp 1.28.1 (2026-10-12): a session-wide read timeout would also bound
 `initialize`, so none is set (the start budget bounds it; tools/list and tools/call have their own);
@@ -363,6 +365,18 @@ class MCPSessionManager:
 
     async def _entry(self, server: dict, *, budget_s: float | None = None):
         sid = server["id"]
+        only = server.get("live_only")
+        if only:
+            # A re-list (tools/list_changed) or a later page of one listing: the session as it
+            # is. No lock, no fingerprint check, no open: it never restarts a server, and a
+            # start still in progress is not a live session. `live_only` is True, or the session
+            # object the request must run on (a cursor belongs to the session that issued it):
+            # any other session is NotStarted. The flag is invisible to `_fingerprint` (it reads
+            # named keys only), like `start_budget_s`.
+            entry = self._sessions.get(sid)
+            if entry is None or (only is not True and entry[0] is not only):
+                raise NotStarted(sid)
+            return entry
         async with self._locks.hold(sid):
             fingerprint = _fingerprint(server)
             if sid in self._sessions and self._fingerprints.get(sid) not in (None, fingerprint):
@@ -407,7 +421,8 @@ class MCPSessionManager:
 
     async def list_tools(self, server: dict, cursor: str | None = None):
         """One page of tools. Opens the session when none is cached (the supervisor's and
-        discovery's path only); LIST_TIMEOUT_S per page; any failure drops the session it ran on
+        discovery's path only), unless `server["live_only"]` is set: then the cached session as it
+        is (or the one session it names), else NotStarted. LIST_TIMEOUT_S per page; any failure drops the session it ran on
         (never a newer one under the same id)."""
         sid = server["id"]
         entry = await self._entry(server)
@@ -486,6 +501,9 @@ class MCPSessionManager:
         whose id SQLite may hand out again, leaves nothing for the next one to inherit."""
         await self.drop(server_id)
         self._locks.forget(server_id)
+        from server.mcp import discovery      # imports this module, so only here
+
+        discovery.forget(server_id)
         for per_id in (self._non_json, self._proxy_sources, self._log_marks):
             per_id.pop(server_id, None)
         await asyncio.to_thread(_move_aside, server_id)

@@ -225,7 +225,8 @@ class Tool(Base):
     input_schema = Column(JSON, default=dict)
     external_name = Column(String(120), nullable=True)   # original MCP tool name (NULL for built-ins)
     host_enabled = Column(Boolean, nullable=False, default=False, server_default="0")  # Arslan (host) may use this MCP tool
-    annotations = Column(JSON, nullable=True)   # 0.1.61 §B4: the hints the MCP server declared
+    # 0.1.61 §B4: the hints the MCP server declared. None is SQL NULL, never the JSON text 'null'.
+    annotations = Column(JSON(none_as_null=True), nullable=True)
 
 
 class SkillPack(Base):
