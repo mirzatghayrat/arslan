@@ -7,6 +7,7 @@ replaced folder goes to the Trash once the caller's database write committed.
 from __future__ import annotations
 
 import difflib
+import errno
 import hashlib
 import io
 import logging
@@ -16,6 +17,7 @@ import shutil
 import stat
 import tarfile
 import uuid
+import zlib
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
@@ -29,6 +31,8 @@ MAX_FOLDER_BYTES = 20 * 1024 * 1024
 MAX_FOLDER_FILES = 2000
 MAX_ARCHIVE_BYTES = 64 * 1024 * 1024
 MAX_UNPACKED_BYTES = 512 * 1024 * 1024
+#: Members of one archive: each costs memory while it is read (0.94 MB of download held 200,000).
+MAX_ENTRIES = 100_000
 MAX_LIST = 200
 #: What a skill's text may call its own folder (Claude Code, Agent Skills, OpenClaw).
 PLACEHOLDERS = ("${CLAUDE_SKILL_DIR}", "${SKILL_DIR}", "{baseDir}")
@@ -36,6 +40,10 @@ _SKIP_NAMES = frozenset({".DS_Store"})
 #: Folders that are never part of a skill: Python's caches, a checkout's history.
 _SKIP_DIRS = frozenset({"__pycache__", ".git"})
 _NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
+#: Why a file of an archive could not be written, skipped rather than failing the skill: the same
+#: name in another case or normalisation, a file where a folder must be, a path too long for the
+#: disk, a name the disk refuses.
+_SKIPPABLE = frozenset({errno.EEXIST, errno.ENOTDIR, errno.ENAMETOOLONG, errno.EILSEQ})
 
 
 class FolderTooLarge(ValueError):
@@ -59,8 +67,13 @@ def folder_for(key: str) -> Path:
 
 def safe_relpath(rel: str) -> str | None:
     """`rel` as a clean relative POSIX path, or None when it could leave the folder or is not a
-    plain name: absolute, `..`, empty parts, NUL, a backslash, a part over 255 bytes."""
+    plain name: absolute, `..`, empty parts, NUL, a backslash, a part over 255 bytes, a name that
+    was not UTF-8."""
     if not rel or "\x00" in rel or "\\" in rel:
+        return None
+    try:
+        rel.encode("utf-8")
+    except UnicodeEncodeError:                 # not UTF-8 in the repository (surrogateescape)
         return None
     path = PurePosixPath(rel)
     if path.is_absolute():
@@ -69,6 +82,11 @@ def safe_relpath(rel: str) -> str | None:
     if not parts or any(p in ("", ".", "..") or len(p.encode("utf-8")) > 255 for p in parts):
         return None
     return "/".join(parts)
+
+
+def _shown(name: str) -> str:
+    """A name as it can be shown and sent as JSON (bytes that were not UTF-8 become \\udcff)."""
+    return name.encode("utf-8", "backslashreplace").decode("utf-8")
 
 
 # ── the archive ───────────────────────────────────────────────────────────────
@@ -101,6 +119,7 @@ class Archive:
         sub = subpath.strip("/")
         return sorted(p for p, e in self.entries.items() if e.kind == "file"
                       and (p == "SKILL.md" or p.endswith("/SKILL.md"))
+                      and safe_relpath(p) is not None
                       and (not sub or p == f"{sub}/SKILL.md" or p.startswith(f"{sub}/")))
 
 
@@ -108,15 +127,29 @@ def read_archive(data: bytes, *, keep: Callable[[str], bool], keep_limit: int | 
     """One pass over a GitHub tar.gz (codeload): every member's path, kind, size and mode, and the
     bytes of the members `keep` asks for — at most `keep_limit` bytes of them (default: one skill
     folder's budget; a scan of a whole repository passes more). GitHub writes the commit into the
-    global pax header."""
+    global pax header. Headers and the data of every member count toward MAX_UNPACKED_BYTES, and
+    the stream is read to its end, where gzip checks its CRC-32 and length."""
     if len(data) > MAX_ARCHIVE_BYTES:
         raise BadArchive("the repository archive is larger than 64 MB")
     out = Archive(commit="")
-    inflated = kept = 0
+    kept = seen = 0
     limit = keep_limit if keep_limit is not None else MAX_FOLDER_BYTES + 2 * 1024 * 1024
+    mb = limit // (1024 * 1024)
+    over = ("the skill's folder is larger than 20 MB" if keep_limit is None
+            else f"what is read from the repository archive is larger than {mb} MB")
     try:
         with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
             for member in tar:
+                # tar.offset: where this member's data ends in the inflated stream — headers, long
+                # names and the data of every member, read or skipped — checked before tarfile
+                # inflates its way past it. Not covered: tarfile reads a pax or GNU long-name header
+                # whole, at its declared size, before this runs (git archive never writes a large
+                # one; a size-bounded reader under tarfile would close it).
+                if tar.offset > MAX_UNPACKED_BYTES:
+                    raise BadArchive("the repository archive unpacks to more than 512 MB")
+                seen += 1
+                if seen > MAX_ENTRIES:
+                    raise BadArchive(f"the repository archive has over {MAX_ENTRIES:,} entries")
                 name = member.name.split("/", 1)[1] if "/" in member.name else ""
                 name = name.rstrip("/")
                 if not name:
@@ -124,18 +157,22 @@ def read_archive(data: bytes, *, keep: Callable[[str], bool], keep_limit: int | 
                 kind = ("file" if member.isreg() else "dir" if member.isdir()
                         else "link" if (member.issym() or member.islnk()) else "other")
                 entry = Entry(path=name, kind=kind, size=member.size if kind == "file" else 0, mode=member.mode)
-                inflated += entry.size
-                if inflated > MAX_UNPACKED_BYTES:
-                    raise BadArchive("the repository archive unpacks to more than 512 MB")
                 if kind == "file" and keep(name):
                     kept += entry.size
                     if kept > limit:
-                        raise FolderTooLarge("the skill's folder is larger than 20 MB")
+                        raise FolderTooLarge(over)
                     handle = tar.extractfile(member)
                     entry.data = handle.read() if handle is not None else b""
                 out.entries[name] = entry
             out.commit = str((tar.pax_headers or {}).get("comment") or "")
-    except (tarfile.TarError, OSError, EOFError, ValueError) as exc:
+            rest = MAX_UNPACKED_BYTES - tar.offset
+            while chunk := tar.fileobj.read(1 << 20):      # to the end, where gzip checks the CRC
+                rest -= len(chunk)
+                if rest < 0:
+                    raise BadArchive("the repository archive unpacks to more than 512 MB")
+    except (tarfile.TarError, OSError, EOFError, ValueError, zlib.error, RecursionError) as exc:
+        # zlib.error: a broken deflate stream (tarfile converts it only around a header read).
+        # RecursionError: a chain of pax or GNU long-name headers (tarfile reads them recursively).
         if isinstance(exc, (BadArchive, FolderTooLarge)):
             raise
         raise BadArchive(f"not a readable archive: {exc}") from None
@@ -184,22 +221,26 @@ def stage(archive: Archive, folder: str) -> Staged:
     if sum(e.size for e in files) > MAX_FOLDER_BYTES:
         raise FolderTooLarge("the skill's folder is larger than 20 MB")
     out = Staged(path=_new_staging(), files={},
-                 skipped=sorted(e.path[len(prefix):] for e in entries if e.kind in ("link", "other")))
+                 skipped=sorted(_shown(e.path[len(prefix):])
+                                for e in entries if e.kind in ("link", "other")))
     try:
         for entry in files:
             rel = safe_relpath(entry.path[len(prefix):])
-            if rel is None or rel.rsplit("/", 1)[-1] in _SKIP_NAMES:
-                out.skipped.append(entry.path[len(prefix):])
+            if (rel is None or rel.rsplit("/", 1)[-1] in _SKIP_NAMES
+                    or _SKIP_DIRS.intersection(rel.split("/")[:-1])):
+                out.skipped.append(_shown(entry.path[len(prefix):]))
                 continue
             if entry.data is None:
                 raise ValueError(f"{entry.path} was not read from the archive")
             try:
                 out.files[rel] = _write(out.path, rel, entry.data, bool(entry.mode & 0o111))
-            except (FileExistsError, NotADirectoryError):
-                # The same name in another case (a Mac's disk), or a file where a folder must be.
+            except OSError as exc:
+                if exc.errno not in _SKIPPABLE:
+                    raise
                 out.skipped.append(rel)
                 continue
             out.bytes += len(entry.data)
+        out.files = checksums(out.path)       # the names as on disk: a case twin's folder is one
     except BaseException:
         discard(out)
         raise
@@ -217,7 +258,14 @@ def stage_texts(files: dict[str, str], *, skill_md: str) -> Staged:
             if clean is None:
                 raise ValueError(f"not a file name inside the skill: {rel!r}")
             data = text.encode("utf-8")
-            out.files[clean] = _write(out.path, clean, data, text.startswith("#!"))
+            try:
+                out.files[clean] = _write(out.path, clean, data, text.startswith("#!"))
+            except OSError as exc:
+                if exc.errno not in _SKIPPABLE:
+                    raise
+                raise ValueError(f"{clean} clashes with another file of the skill (a name in "
+                                 "another case, or a file where a folder is), or the disk "
+                                 "refuses it") from None
             out.bytes += len(data)
     except BaseException:
         discard(out)
@@ -227,6 +275,7 @@ def stage_texts(files: dict[str, str], *, skill_md: str) -> Staged:
 
 def stage_tree(src: Path) -> Staged:
     """A copy of a folder on this Mac (a bundled seed, an old import): regular files only."""
+    # Parked (review): lstat then read_bytes() can race a swap to a link; bundled seeds only.
     out = Staged(path=_new_staging(), files={}, skipped=[])
     try:
         for dirpath, dirnames, filenames in os.walk(src, followlinks=False):
@@ -349,6 +398,7 @@ def list_files(folder: Path | None, limit: int = MAX_LIST) -> tuple[list[str], i
 
 def has_scripts(folder: Path | None) -> bool:
     """Whether the skill ships scripts (any file under scripts/): they run as commands."""
+    # Parked (review): follows a symlinked scripts/ that list_files hides; it is only a flag.
     scripts = folder / "scripts" if folder is not None else None
     if scripts is None or not scripts.is_dir():
         return False
