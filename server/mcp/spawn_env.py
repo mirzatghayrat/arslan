@@ -84,3 +84,63 @@ def resolve_command(command: str) -> str:
             f"inherit your terminal's PATH; the login shell's PATH was searched too{hint}"
         )
     return found
+
+
+# ── 0.1.61 §B1: Arslan's pinned Node and uv for bare npx/node/npm/uvx/uv ─────────────────
+
+#: bare command → (runtime, the binary inside that runtime's folder)
+_PINNED = {"node": ("node", "bin/node"), "npm": ("node", "bin/npm"), "npx": ("node", "bin/npx"),
+           "uv": ("uv", "uv"), "uvx": ("uv", "uvx")}
+
+
+def runtime_for(command: str) -> str | None:
+    """'node' | 'uv' when `command` is a bare name Arslan pins, else None."""
+    entry = None if os.path.sep in (command or "") else _PINNED.get(command or "")
+    return entry[0] if entry else None
+
+
+def pinned_command(command: str) -> tuple[str, str | None]:
+    """(absolute pinned binary, its bin dir) when that exact binary is installed; else
+    (command, None). Never downloads: the supervisor decides when to fetch (0.1.61 §B1)."""
+    entry = None if os.path.sep in (command or "") else _PINNED.get(command or "")
+    if entry is None:
+        return command, None
+    from server.services import capability_runtime
+
+    path = capability_runtime.binary(entry[0], entry[1])
+    if not (capability_runtime.ready(entry[0]) and path.is_file()):
+        return command, None
+    return str(path), str(path.parent)
+
+
+# ── 0.1.61 §B1: a server's own secrets never leave in its error text ──────────────────────
+
+_TRIVIAL = frozenset({"true", "false", "yes", "no", "null", "none", "on", "off"})
+
+
+def secret_forms(server: dict) -> list[str]:
+    """Every form in which this server's own secrets could appear in its error text: its env
+    values (header values for http, and the token after "Bearer"), the query values and password
+    of its URL — each raw, URL-quoted and quote_plus'd. Longest first, so a short secret inside a
+    longer one never leaves the longer one's tail behind. Under 4 characters, or a plain boolean
+    word, is not a secret."""
+    import urllib.parse
+
+    values = [str(v) for v in (server.get("env") or {}).values() if v]
+    url = urllib.parse.urlsplit(server.get("url") or "")
+    values += [v for _, v in urllib.parse.parse_qsl(url.query) if v]
+    if url.password:
+        values.append(url.password)
+    forms: set[str] = set()
+    for value in values:
+        for part in (value, *value.split()[1:2]):
+            if len(part) >= 4 and part.lower() not in _TRIVIAL:
+                forms |= {part, urllib.parse.quote(part, safe=""), urllib.parse.quote_plus(part)}
+    return sorted(forms, key=len, reverse=True)
+
+
+def mask(text: str, secrets: list[str]) -> str:
+    """Replace every secret with ****, longest first."""
+    for secret in sorted({s for s in secrets if s}, key=len, reverse=True):
+        text = text.replace(secret, "****")
+    return text

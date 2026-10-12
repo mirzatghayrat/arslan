@@ -10,6 +10,10 @@ import os
 # opt back in by pointing ARSLAN_SECRET_KEY_FILE at a tmp path.
 os.environ["ARSLAN_SECRET_KEY_FILE"] = ""
 
+# 0.1.61 PR 4: no app lifespan in the suite starts the MCP supervisor (it would start every MCP
+# server in the test's database). Supervisor tests drive their own Supervisor instances.
+os.environ["ARSLAN_MCP_SUPERVISOR"] = "0"
+
 import shutil
 
 import pytest

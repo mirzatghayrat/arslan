@@ -97,6 +97,31 @@ def _testclient_models_loopback(monkeypatch):
     monkeypatch.setattr(TestClient, "__init__", initialize)
 
 
+@pytest.fixture(autouse=True)
+def _no_real_mcp_spawn_or_download(request, monkeypatch):
+    """0.1.61 PR 4: a unit test never spawns an MCP server or downloads a runtime for real.
+
+    The guard sits on the spawn itself (`mcp.client.stdio._create_platform_compatible_process`,
+    which every stdio MCP client path reaches: the session manager, agent_browser,
+    managed_browser) and on `capability_runtime._download`, so tests that fake `stdio_client` or
+    `_download` keep working. A real-process test is marked `@pytest.mark.real_mcp`: the marker
+    lifts this guard and nothing else — those tests run on CI and on the Mac like any other."""
+    if request.node.get_closest_marker("real_mcp") is not None:
+        return
+    import mcp.client.stdio as stdio_mod
+
+    from server.services import capability_runtime
+
+    async def refuse_spawn(*args, **kwargs):
+        raise RuntimeError("real MCP spawn in a unit test: fake the session, or mark the test real_mcp")
+
+    async def refuse_download(*args, **kwargs):
+        raise RuntimeError("real runtime download in a unit test: fake capability_runtime._download")
+
+    monkeypatch.setattr(stdio_mod, "_create_platform_compatible_process", refuse_spawn)
+    monkeypatch.setattr(capability_runtime, "_download", refuse_download)
+
+
 @pytest.fixture
 async def execution_db(monkeypatch, tmp_path):
     """Isolated database for execution-lifecycle tests; never touch local app data."""
