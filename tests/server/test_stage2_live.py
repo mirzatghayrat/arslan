@@ -23,8 +23,12 @@ from server.services.memory_migration import migrate_legacy_sync
 from server.services.memory_repository import repository
 from arslan.companion.memory import MemoryActor, MemoryScope, MemoryWrite
 
-pytestmark = pytest.mark.skipif(
-    os.environ.get("ARSLAN_STAGE2_LIVE") != "authorized-36-requests-usd5", reason="paid calls require explicit opt-in")
+pytestmark = [
+    pytest.mark.real_network,
+    pytest.mark.skipif(
+        os.environ.get("ARSLAN_STAGE2_LIVE") != "authorized-36-requests-usd5",
+        reason="paid calls require explicit opt-in"),
+]
 
 
 @pytest.fixture

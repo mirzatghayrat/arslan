@@ -18,9 +18,12 @@ from server.db.models import ArslanMessage, Setting
 from server.orchestrator import arslan, memory, tool_loop
 from server.services import ingest, knowledge, task_context
 
-pytestmark = pytest.mark.skipif(
-    os.environ.get("ARSLAN_STABLE_LIVE") != "authorized-36-requests-usd5",
-    reason="independent stable paid-call grant requires explicit opt-in")
+pytestmark = [
+    pytest.mark.real_network,
+    pytest.mark.skipif(
+        os.environ.get("ARSLAN_STABLE_LIVE") != "authorized-36-requests-usd5",
+        reason="independent stable paid-call grant requires explicit opt-in"),
+]
 
 
 @pytest.mark.parametrize("case_id", DOCUMENT_CASES)

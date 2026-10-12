@@ -4,8 +4,11 @@ from pathlib import Path
 import pytest
 from evals.companion import stable_release_retest as release
 
-pytestmark = pytest.mark.skipif(os.environ.get("ARSLAN_STABLE_RELEASE") != release.OPT_IN,
-                               reason="independent cumulative 60/$6 grant required")
+pytestmark = [
+    pytest.mark.real_network,
+    pytest.mark.skipif(os.environ.get("ARSLAN_STABLE_RELEASE") != release.OPT_IN,
+                       reason="independent cumulative 60/$6 grant required"),
+]
 
 
 @pytest.mark.parametrize("case", ["S2-R1", "S2-R4"])

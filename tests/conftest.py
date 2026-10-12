@@ -148,73 +148,149 @@ def _real_data_dir_untouched():
 
 
 @pytest.fixture(autouse=True)
-def _no_real_network_off_loopback():
+def _no_real_network_off_loopback(request):
     """No test reaches the network, whatever code path it takes: a mutant or a regression included.
 
     Hermeticity used to hold only for a CORRECT implementation. A test replaced the resolver and
     the transport with fakes, and code that went around a fake reached this Mac's real system proxy
     (127.0.0.1:7899, which forwards to the internet) and its real, fake-IP DNS: a review mutation
-    run sent about 250 real GETs that way. Refused here, for every test:
-      * `socket.getaddrinfo` of anything that is not loopback, a literal address included;
+    run sent about 250 real GETs that way. For every test:
+      * `socket.getaddrinfo` refuses any NAME but `localhost`. An address literal needs no network
+        to "resolve" and is answered, so the code under test judges it itself (net_pin's
+        private-address check must be what refuses 169.254.169.254, not a failed lookup).
+      * `socket.socket.connect` and `connect_ex` refuse an address that is not loopback: the path
+        under asyncio, `socket.create_connection`, urllib, http.client and httpcore. Unix sockets
+        and loopback stay open: tests serve from this process and from subprocesses.
       * a request by a real httpx transport (`AsyncHTTPTransport`, `HTTPTransport`) to a host that
-        is not loopback;
-      * a request by a real httpx transport THROUGH A PROXY, a loopback one included: the system
-        proxy listens on 127.0.0.1, so "loopback only" let a real client through to it.
-    `MockTransport` and `ASGITransport` are not real transports and are untouched. Loopback itself
-    stays open: tests serve from this process and from subprocesses (test_profile_activation), so a
-    socket-level "only ports this process listens on" would refuse them. A test that needs a
-    resolver patches its own, which wins while it is active.
+        is not loopback, or through a proxy, a loopback one included, is refused.
+      * the proxy environment is scrubbed: HTTP_PROXY, HTTPS_PROXY and ALL_PROXY are removed and
+        NO_PROXY=* is set. With no proxy variable at all (pytest launched from an IDE) urllib on
+        macOS falls back to the SYSTEM proxy, and a real client would send even its loopback
+        requests to 127.0.0.1:7899.
+    Every refusal is recorded (fixture `network_refusals`), and a test that provoked one it did not
+    expect fails at teardown: code that swallows the refusal, as `github_eval.fetch_file` did, is a
+    silent leak. A test that refuses on purpose carries `network_refusals_expected`; an opt-in
+    live runner carries `real_network`, which lifts all of this and nothing else.
+
+    NOT covered: UDP `sendto`, `gethostbyname`, and a raw loopback socket to a port that is not the
+    test's (the system proxy's, for one). A net under the fakes, not a sandbox.
 
     Its own `MonkeyPatch.context()`, never the shared `monkeypatch` fixture, for the reasons given
-    at `_default_workspace_in_tmp`; and so that a test's own `monkeypatch.undo()` cannot lift it.
-    tests/test_network_guard.py holds it to all of this.
+    at `_default_workspace_in_tmp`; and so that a test's own `monkeypatch.undo()` cannot lift it. A
+    test's own resolver patch wins while it is active. tests/test_network_guard.py holds it to all
+    of this.
     """
+    if request.node.get_closest_marker("real_network") is not None:
+        yield []
+        return
+
+    import errno
     import ipaddress
     import socket
 
     import httpcore
     import httpx
 
+    refusals: list[str] = []
+
+    def text(host) -> str:
+        return host.decode("ascii", "replace") if isinstance(host, bytes) else str(host)
+
+    def is_literal(host) -> bool:
+        try:
+            ipaddress.ip_address(text(host))
+            return True
+        except ValueError:
+            return False
+
     def loopback(host) -> bool:
-        if isinstance(host, bytes):
-            host = host.decode("ascii", "replace")
+        host = text(host)
+        if host.lower() == "localhost":
+            return True
         try:
             return ipaddress.ip_address(host).is_loopback
         except ValueError:
-            return host in ("localhost", "") or str(host).endswith(".localhost")
+            return False
 
     real_lookup = socket.getaddrinfo
+    real_connect = socket.socket.connect
+    real_connect_ex = socket.socket.connect_ex
 
     def lookup(host, *args, **kwargs):
-        if host is None or loopback(host):
+        if host is None or is_literal(host) or loopback(host):
             return real_lookup(host, *args, **kwargs)
+        refusals.append(f"lookup of {text(host)!r}")
         raise socket.gaierror(socket.EAI_NONAME, f"test guard: a real lookup of {host!r}")
+
+    def leaves_the_machine(sock, address):
+        """The host of a connect that is not loopback (None: unix and the like, or loopback)."""
+        if sock.family not in (socket.AF_INET, socket.AF_INET6):
+            return None
+        host = address[0] if isinstance(address, tuple) else address
+        return None if loopback(host) else host
+
+    def connect(self, address):
+        host = leaves_the_machine(self, address)
+        if host is not None:
+            refusals.append(f"connect to {text(host)!r}")
+            raise OSError(errno.ENETUNREACH, f"test guard: a real connect to {text(host)!r}")
+        return real_connect(self, address)
+
+    def connect_ex(self, address):
+        host = leaves_the_machine(self, address)
+        if host is not None:
+            refusals.append(f"connect_ex to {text(host)!r}")
+            return errno.ENETUNREACH
+        return real_connect_ex(self, address)
 
     proxy_pools = tuple(getattr(httpcore, name) for name in
                         ("AsyncHTTPProxy", "HTTPProxy", "AsyncSOCKSProxy", "SOCKSProxy")
                         if hasattr(httpcore, name))
 
-    def check(transport, request) -> None:
-        if not loopback(request.url.host):
+    def check(transport, http_request) -> None:
+        host = http_request.url.host
+        if not loopback(host):
+            refusals.append(f"HTTP transport to {host!r}")
             raise httpx.ConnectError(f"test guard: a real HTTP transport was asked to reach "
-                                     f"{request.url.host}", request=request)
+                                     f"{host}", request=http_request)
         if isinstance(getattr(transport, "_pool", None), proxy_pools):
+            refusals.append("HTTP transport through a proxy")
             raise httpx.ConnectError("test guard: a real HTTP transport was asked to go through "
-                                     "a proxy", request=request)
+                                     "a proxy", request=http_request)
 
     real_async = httpx.AsyncHTTPTransport.handle_async_request
     real_sync = httpx.HTTPTransport.handle_request
 
-    async def guarded_async(self, request):
-        check(self, request)
-        return await real_async(self, request)
+    async def guarded_async(self, http_request):
+        check(self, http_request)
+        return await real_async(self, http_request)
 
-    def guarded_sync(self, request):
-        check(self, request)
-        return real_sync(self, request)
+    def guarded_sync(self, http_request):
+        check(self, http_request)
+        return real_sync(self, http_request)
 
     with pytest.MonkeyPatch.context() as mp:
+        for var in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
+            mp.delenv(var, raising=False)
+        mp.setenv("NO_PROXY", "*")
+        mp.setenv("no_proxy", "*")
         mp.setattr(socket, "getaddrinfo", lookup)
+        mp.setattr(socket.socket, "connect", connect)
+        mp.setattr(socket.socket, "connect_ex", connect_ex)
         mp.setattr(httpx.AsyncHTTPTransport, "handle_async_request", guarded_async)
         mp.setattr(httpx.HTTPTransport, "handle_request", guarded_sync)
-        yield
+        yield refusals
+    if refusals and request.node.get_closest_marker("network_refusals_expected") is None:
+        pytest.fail(
+            "this test tried to reach the network, and the guard (tests/conftest.py, "
+            "_no_real_network_off_loopback) refused it, but the test did not expect that:\n  - "
+            + "\n  - ".join(refusals)
+            + "\nFake what the code reached (a refusal the code swallows is a silent leak), or mark "
+            "the test `real_network` (an opt-in live runner) or `network_refusals_expected` "
+            "(refusing is the point).", pytrace=False)
+
+
+@pytest.fixture
+def network_refusals(_no_real_network_off_loopback):
+    """What the network guard refused during this test, in order (always empty under `real_network`)."""
+    return _no_real_network_off_loopback

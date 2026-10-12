@@ -3,8 +3,11 @@ import os
 import pytest
 from evals.companion import stable_two_retest as two
 
-pytestmark = pytest.mark.skipif(os.environ.get("ARSLAN_STABLE_TWO") != two.OPT_IN,
-                               reason="independent 12/$1.20 authorization required")
+pytestmark = [
+    pytest.mark.real_network,
+    pytest.mark.skipif(os.environ.get("ARSLAN_STABLE_TWO") != two.OPT_IN,
+                       reason="independent 12/$1.20 authorization required"),
+]
 
 
 @pytest.mark.parametrize("case", ["S2-R1", "S2-R4"])

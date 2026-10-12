@@ -9,8 +9,11 @@ from server.services import ingest
 from tests.server import test_extract_api as api_tests
 
 client = api_tests.client
-pytestmark = pytest.mark.skipif(os.environ.get("ARSLAN_STABLE_RETEST") != retest.OPT_IN,
-                               reason="additional explicit user grant required")
+pytestmark = [
+    pytest.mark.real_network,
+    pytest.mark.skipif(os.environ.get("ARSLAN_STABLE_RETEST") != retest.OPT_IN,
+                       reason="additional explicit user grant required"),
+]
 
 
 @pytest.mark.skipif(os.environ.get("ARSLAN_STABLE_RETEST_PREPARE") != "1",

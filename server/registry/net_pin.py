@@ -665,10 +665,10 @@ async def pinned_get(
     """The readable spelling of `pinned_request("GET", ...)`.
 
     A wrapper, never a second implementation — the whole point of this module is that
-    there is exactly one place where an outbound address is decided. It adds nothing of its
-    own, headers included: the identity of a PAGE READ belongs to `_fetch_text`
-    (`_page_headers`), so any other plain GET, of a JSON API or for a connection test, sends
-    exactly the headers it passes.
+    there is exactly one place where an outbound address is decided. It adds no header of its
+    own: the identity of a PAGE READ belongs to `_fetch_text` (`_page_headers`), so any other
+    plain GET, of a JSON API or for a connection test, sends the headers it passes, and httpx
+    still adds its own defaults for the rest (`User-Agent: python-httpx/x.y`, `Accept: */*`).
 
     Returns the final response WITHOUT `raise_for_status()`, exactly as
     `pinned_request` does.
