@@ -183,7 +183,7 @@ def test_always_allow_on_an_ordinary_refused_command_stores_exactly_its_rules(cl
     (§A9) — and the rule says which refusal it came from."""
     shell = "rm -rf build"
     rules = sorted(terminal_policy.ask_rules(shell))
-    assert len(rules) == 2
+    assert len(rules) == 3                          # delete, force-delete (PR 3a), recursive delete
     _decide(client, _cmd(shell))
     [row] = _refused(client)
     assert (row["kind"], row["target"], row["always_ok"]) == ("command", "rules:" + "|".join(rules), True)
@@ -435,7 +435,7 @@ def test_a_refused_entry_says_what_always_allow_will_store(client):
     the click: exactly what `POST {refused_id}` stores."""
     shell = "rm -rf build && git push origin main"
     rules = sorted(terminal_policy.ask_rules(shell))
-    assert len(rules) == 3
+    assert len(rules) == 4                          # PR 3a: `rm -rf` also matches force-delete
     _decide(client, _cmd(shell))
     [row] = _refused(client)
     assert row["always"] == [{"kind": "legacy_rule", "target": rule,

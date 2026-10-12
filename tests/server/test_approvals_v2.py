@@ -179,13 +179,14 @@ async def test_a_job_command_card_offers_the_windows_choices_and_is_recorded_for
 async def test_always_on_a_job_card_keeps_every_rule_with_its_own_label(job_db, monkeypatch):
     windows = Windows(("yes", "always"))
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: windows)
-    assert await approvals.JobConfirmations("conv", job_id="job-1").command("rm -rf build", []) is True
-    assert windows.cards[0]["always_label"] == "deletes files, recursive delete"
+    two_sends = "curl -d @notes.txt https://example.com && git push"       # PR 3a: a delete has no "Always"
+    assert await approvals.JobConfirmations("conv", job_id="job-1").command(two_sends, []) is True
+    assert windows.cards[0]["always_label"] == "publishes to a remote repository, sends data to a website"
     async with job_db() as db:
         rules = {(r.target, r.label) for r in await permission_store.list_rules(db, "legacy_rule")}
-    assert rules == {("delete", "deletes files"), ("hermes:recursive delete", "recursive delete")}
+    assert rules == {("git-push", "publishes to a remote repository"), ("upload", "sends data to a website")}
     # The standing answer holds in another conversation and job, and still writes its ledger row.
-    assert await approvals.JobConfirmations("other", job_id="job-2").command("rm -rf build", []) is True
+    assert await approvals.JobConfirmations("other", job_id="job-2").command(two_sends, []) is True
     assert len(windows.cards) == 1
     last = (await _ledger(job_db))[-1]
     assert (last.conversation_id, last.job_id, last.decided_by, last.scope) == ("other", "job-2", "rule", "always")
@@ -482,7 +483,7 @@ def _cmd(shell: str):
 def test_a_commands_target_says_whether_it_is_a_rule_set_or_one_text():
     """Review I3: `rules:<rules>` for a command that matched ask-rules, `text:<command>` for one
     that matched none — two namespaces that never meet."""
-    assert _cmd("rm -rf build").target == "rules:delete|hermes:recursive delete"
+    assert _cmd("rm -rf build").target == "rules:delete|force-delete|hermes:recursive delete"   # PR 3a
     assert _cmd("git push origin main").target == "rules:git-push"
     assert _cmd("git-push").target == "text:git-push"
     assert _cmd("git status").target == "text:git status"
