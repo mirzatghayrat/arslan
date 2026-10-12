@@ -733,8 +733,21 @@ class Supervisor:
             except Exception:  # noqa: BLE001 — one bad tick never stops the loop
                 logger.warning("mcp supervisor tick failed", exc_info=True)
 
+    async def _still(self, sid: int, states: tuple, gen: int) -> bool:
+        """At act time, is the tick's candidate still what its snapshot said? No deliberate verb
+        acts on it now, nothing moved its generation since the snapshot (a verb that came and went
+        while the tick read, a plan created meanwhile), and its row, read again, is still in
+        `states` (a plan that finished between the tick's read and now has its own answer)."""
+        if sid in self._busy or self._gen.get(sid, 0) != gen:
+            return False
+        async with db_session.AsyncSessionLocal() as db:
+            row = await db.get(MCPServer, sid)
+        return (row is not None and row.state in states and sid not in self._busy
+                and self._gen.get(sid, 0) == gen)
+
     async def _tick(self) -> None:
         now = _utcnow()
+        gens = dict(self._gen)            # before the reads: whatever acts after them moves these
         async with db_session.AsyncSessionLocal() as db:
             due = (await db.execute(select(MCPServer.id, MCPServer.state).where(
                 MCPServer.host_allowed.is_(True),
@@ -749,13 +762,13 @@ class Supervisor:
                 or_(MCPServer.state_at.is_(None),             # inserted, never started
                     MCPServer.state_at <= now - timedelta(seconds=STARTING_STALE_S))))).scalars().all()
         for sid, state in due:
-            if sid in self._busy:                             # a verb is acting on it
+            if not await self._still(sid, (state,), gens.get(sid, 0)):    # a verb, a plan, moved on
                 continue
             task = self._inflight.get(sid)
             if task is None or task.done():
                 self._new_plan(sid, "retry" if state == "failed" else "probe")
         for sid in stale:
-            if sid in self._busy:                             # its plan is unwinding for a verb
+            if not await self._still(sid, ("starting",), gens.get(sid, 0)):
                 continue
             task = self._inflight.get(sid)
             if task is None or task.done():

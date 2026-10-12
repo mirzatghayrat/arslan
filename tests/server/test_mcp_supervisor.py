@@ -1604,3 +1604,247 @@ async def test_the_tick_also_restarts_a_starting_row_never_stamped(sup, monkeypa
     monkeypatch.setattr(sup, "_new_plan", lambda sid, plan: plans.append((sid, plan)))
     await sup._tick()
     assert plans == [(1, "refresh")]
+
+
+# ── Review round 3: the tick acts on what is true when it acts ────────────────────────────────
+
+_VERBS = {"forget": lambda sup: sup.forget(1), "switch-off": lambda sup: sup.set_enabled(1, False),
+          "give-up": lambda sup: sup._give_up(1)}
+
+
+async def _aged(sup, sid):
+    async with sup.maker() as db:
+        (await db.get(MCPServer, sid)).state_at = (
+            sm._utcnow() - timedelta(seconds=sm.STARTING_STALE_S + 30))
+        await db.commit()
+
+
+def _pause_the_ticks_snapshot(monkeypatch):
+    """The next database session — the tick's snapshot — pauses as it closes, after its reads and
+    before the tick acts, until `resume` is set. Every later session is the real one."""
+    from server.db import session as db_session
+
+    real, first = db_session.AsyncSessionLocal, [True]
+    taken, resume = asyncio.Event(), asyncio.Event()
+
+    class _Paused:
+        def __init__(self):
+            self.inner = real()
+
+        async def __aenter__(self):
+            return await self.inner.__aenter__()
+
+        async def __aexit__(self, *exc):
+            out = await self.inner.__aexit__(*exc)
+            taken.set()
+            await resume.wait()
+            return out
+
+    def factory():
+        if first:
+            first.pop()
+            return _Paused()
+        return real()
+    monkeypatch.setattr(db_session, "AsyncSessionLocal", factory)
+    return taken, resume
+
+
+@pytest.mark.parametrize("verb", ["switch-off", "give-up", "forget", "delete"])
+async def test_a_tick_whose_snapshot_predates_a_verb_never_acts_after_it(sup, monkeypatch, verb):
+    """The tick reads (a stale `starting` row), then a whole verb runs and ends, then the tick
+    acts. At act time it re-checks: busy, its generation since the snapshot, the row again — else
+    a switched-off server ends `ready`, a given-up one starts again, a deleted one respawns.
+    `forget` leaves the row (today's delete order: only the generation tells); `delete` is
+    Task 6's order (the row first, then forget)."""
+    await _seed(sup.maker, 1)
+    state, release = {"n": 0}, asyncio.Event()
+    _fake_list(monkeypatch, _slow_to_unwind(state, release))
+    sup.start(run_loops=False)
+    sup.schedule(1)
+    await _until(lambda: state["n"] == 1)
+    await _aged(sup, 1)                                     # the start has run for over a minute
+    taken, resume = _pause_the_ticks_snapshot(monkeypatch)
+    ticking = asyncio.create_task(sup._tick())
+    try:
+        await asyncio.wait_for(taken.wait(), 5)             # the snapshot: starting, stale
+        release.set()
+        if verb == "delete":
+            async with sup.maker() as db:
+                await db.delete(await db.get(MCPServer, 1))
+                await db.commit()
+        await asyncio.wait_for(_VERBS["forget" if verb == "delete" else verb](sup), 5)
+    finally:
+        release.set()
+        resume.set()
+    await asyncio.wait_for(ticking, 5)
+    tick_planned = 1 in sup._inflight
+    await _settled(sup)
+    assert not tick_planned and state["n"] == 1
+    if verb in ("switch-off", "give-up"):
+        assert (await _row(sup.maker, 1)).state == ("off" if verb == "switch-off" else "failed")
+
+
+async def test_a_tick_whose_snapshot_predates_a_finished_start_leaves_it_alone(sup, monkeypatch):
+    """The tick reads a stale `starting` row whose start is still running; the start finishes
+    (`ready`) before the tick acts. The tick reads the row again and leaves a ready server alone."""
+    await _seed(sup.maker, 1)
+    gate, opens = asyncio.Event(), []
+
+    async def gated(server):
+        opens.append(server["id"])
+        if len(opens) == 1:
+            await gate.wait()
+        return _listing("a")
+    _fake_list(monkeypatch, gated)
+    sup.start(run_loops=False)
+    sup.schedule(1)
+    await _until(lambda: opens)
+    await _aged(sup, 1)
+    taken, resume = _pause_the_ticks_snapshot(monkeypatch)
+    ticking = asyncio.create_task(sup._tick())
+    try:
+        await asyncio.wait_for(taken.wait(), 5)             # snapshot: starting, stale, a plan running
+        gate.set()
+        await _until(lambda: 1 not in sup._inflight)       # the start finishes: ready
+    finally:
+        gate.set()
+        resume.set()
+    await asyncio.wait_for(ticking, 5)
+    tick_planned = 1 in sup._inflight
+    await _settled(sup)
+    assert not tick_planned and opens == [1] and (await _row(sup.maker, 1)).state == "ready"
+
+
+@pytest.mark.parametrize("verb", list(_VERBS))
+async def test_a_verb_that_raises_leaves_nothing_busy(sup, monkeypatch, verb):
+    await _seed(sup.maker, 1)
+    _fake_list(monkeypatch, _ok)
+    sup.start(run_loops=False)
+
+    async def boom(*args, **kwargs):
+        raise RuntimeError("boom")
+    monkeypatch.setattr(session.manager, "forget" if verb == "forget" else "drop", boom)
+    with pytest.raises(RuntimeError):
+        await asyncio.wait_for(_VERBS[verb](sup), 5)
+    assert 1 not in sup._busy
+
+
+@pytest.mark.parametrize("verb", list(_VERBS))
+async def test_a_verb_that_is_cancelled_leaves_nothing_busy(sup, monkeypatch, verb):
+    await _seed(sup.maker, 1)
+    state, release = {"n": 0}, asyncio.Event()
+    _fake_list(monkeypatch, _slow_to_unwind(state, release))
+    sup.start(run_loops=False)
+    sup.schedule(1)
+    await _until(lambda: state["n"] == 1)
+    acting = asyncio.create_task(_VERBS[verb](sup))
+    try:
+        await _until(lambda: 1 in sup._busy)
+        acting.cancel()
+    finally:
+        release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(acting, 5)
+    assert 1 not in sup._busy
+    await _settled(sup)
+
+
+@pytest.mark.parametrize("seed", range(6))
+async def test_the_hot_tick_against_the_verbs_seeded(sup, monkeypatch, seed):
+    """A seeded, bounded fuzz: three servers, a tick every 2 ms over rows kept looking stale, and
+    random verbs — switch-off (host_allowed committed before or after), switch-on, delete (Task 6's
+    order), give-up, fresh starts. After each verb the server is where the verb left it: off,
+    gone, failed — never started behind its back."""
+    import random
+
+    from sqlalchemy import delete, update
+
+    rng, up = random.Random(seed), {}
+
+    async def listing(server, cursor=None):
+        try:
+            await asyncio.sleep(rng.choice([0, 0.001, 0.005, 0.02]))
+        except asyncio.CancelledError:
+            await asyncio.sleep(rng.choice([0, 0.01, 0.03]))      # ending a process takes a moment
+            raise
+        up[server["id"]] = True
+        return _listing("a")
+
+    async def drop(sid):
+        await asyncio.sleep(rng.choice([0, 0.005]))
+        up[sid] = False
+    monkeypatch.setattr(session.manager, "list_tools", listing)
+    monkeypatch.setattr(session.manager, "drop", drop)
+    monkeypatch.setattr(session.manager, "forget", drop)
+    monkeypatch.setattr(session.manager, "cached", lambda sid: object() if up.get(sid) else None)
+    monkeypatch.setattr(sm, "LOOP_TICK_S", 0.002)
+    ids = (1, 2, 3)
+    for sid in ids:
+        await _seed(sup.maker, sid)
+    sup.start(run_loops=False)
+    sup._loop_task = asyncio.create_task(sup._loop())
+    stop = asyncio.Event()
+
+    async def keep_starting_rows_stale():
+        while not stop.is_set():
+            async with sup.maker() as db:
+                await db.execute(update(MCPServer).where(MCPServer.state == "starting").values(
+                    state_at=sm._utcnow() - timedelta(seconds=sm.STARTING_STALE_S + 30)))
+                await db.commit()
+            await asyncio.sleep(0.004)
+
+    async def state_of(sid):
+        async with sup.maker() as db:
+            row = await db.get(MCPServer, sid)
+        return None if row is None else row.state
+
+    async def allow(sid, allowed):
+        async with sup.maker() as db:
+            row = await db.get(MCPServer, sid)
+            if row is not None:
+                row.host_allowed = allowed
+                await db.commit()
+
+    problems = []
+
+    async def one_server(sid):
+        for step in range(6):
+            if await state_of(sid) is None:                     # deleted: a new server, same id
+                await _seed(sup.maker, sid)                     # never started; the net starts it
+                continue
+            op = rng.choice(["off", "off-late-commit", "on", "delete", "give-up", "fresh", "wait"])
+            if op == "off":
+                await allow(sid, False)
+                await sup.set_enabled(sid, False)
+            elif op == "off-late-commit":
+                await sup.set_enabled(sid, False)
+                await asyncio.sleep(rng.choice([0, 0.01, 0.03]))
+                await allow(sid, False)
+            elif op == "on":
+                await allow(sid, True)
+                await sup.set_enabled(sid, True)
+            elif op == "delete":                                 # Task 6's order: the row first
+                async with sup.maker() as db:
+                    await db.execute(delete(MCPServer).where(MCPServer.id == sid))
+                    await db.commit()
+                await sup.forget(sid)
+            elif op == "give-up":
+                await sup._give_up(sid)
+            elif op == "fresh":
+                sup.schedule(sid, fresh=True)
+            else:
+                await asyncio.sleep(rng.choice([0.005, 0.02]))
+            await asyncio.sleep(0.06)                              # ~30 hot ticks
+            now, alive, running = await state_of(sid), up.get(sid), sid in sup._inflight
+            want = {"off": "off", "off-late-commit": "off", "delete": None, "give-up": "failed"}
+            if op in want and (now != want[op] or alive or running):
+                problems.append((sid, step, op, now, alive, running))
+
+    stale = asyncio.create_task(keep_starting_rows_stale())
+    try:
+        await asyncio.wait_for(asyncio.gather(*(one_server(sid) for sid in ids)), 30)
+    finally:
+        stop.set()
+        await asyncio.wait_for(stale, 5)
+    assert not problems, problems[:5]
+    assert sup._busy == {}
