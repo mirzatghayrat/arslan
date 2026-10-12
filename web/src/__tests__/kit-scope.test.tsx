@@ -6,7 +6,8 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (k: string, o?: Record<string, unknown>) => (o ? `${k}:${JSON.stringify(o)}` : k) }),
 }));
 
-import { AskCard, CARD_MS, DeclineNote, ScopeChoice, scopeToSend, visibleScopes } from "../components/kit";
+import { AskCard, CARD_MS, DeclineNote, Dialog, ScopeChoice, scopeToSend, visibleScopes } from "../components/kit";
+import LeftoverSheet from "../components/projects/LeftoverSheet";
 
 afterEach(() => cleanup());
 
@@ -84,6 +85,30 @@ describe("DeclineNote", () => {
     fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter", isComposing: true } as never);
     expect(note).not.toHaveBeenCalled();
   });
+
+  it("⏎ and ⌘⏎ send the note trimmed, as the button does", () => {
+    const note = vi.fn();
+    render(<DeclineNote onDeclineWithNote={note} />);
+    fireEvent.click(screen.getByText("kit.noteLink"));
+    const box = screen.getByRole("textbox");
+    fireEvent.change(box, { target: { value: "  use Bear instead " } });
+    fireEvent.keyDown(box, { key: "Enter" });
+    expect(note).toHaveBeenLastCalledWith("use Bear instead");
+    fireEvent.keyDown(box, { key: "Enter", metaKey: true });
+    expect(note).toHaveBeenLastCalledWith("use Bear instead");
+    expect(note).toHaveBeenCalledTimes(2);
+  });
+
+  it("⏎ and ⌘⏎ are taken from the browser (its form would send the note a second time); typing is left alone", () => {
+    const note = vi.fn();
+    render(<DeclineNote onDeclineWithNote={note} />);
+    fireEvent.click(screen.getByText("kit.noteLink"));
+    const box = screen.getByRole("textbox");
+    expect(fireEvent.keyDown(box, { key: "Enter" })).toBe(false);                    // false: the default was prevented
+    expect(fireEvent.keyDown(box, { key: "Enter", metaKey: true })).toBe(false);
+    expect(fireEvent.keyDown(box, { key: "a" })).toBe(true);                         // an ordinary key is not ours
+    expect(note).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("the card's keys and a text field", () => {
@@ -107,5 +132,29 @@ describe("the card's keys and a text field", () => {
 
   it("the ring's whole is thirty minutes", () => {
     expect(CARD_MS).toBe(30 * 60 * 1000);
+  });
+});
+
+/** The same rule for a Dialog with onSubmit: its own fields submit with ⌘⏎, the composer behind it never does. */
+describe("a dialog's keys and a text field", () => {
+  it("⌘⏎ typed in a field of the dialog itself submits it (the leftover sheet's note)", () => {
+    const onConfirm = vi.fn();
+    render(<LeftoverSheet level="L1" next="L2" open={[{ id: "a", text: "first" }]} onCancel={vi.fn()} onConfirm={onConfirm} />);
+    const field = screen.getByTestId("leftover-note");
+    fireEvent.change(field, { target: { value: "not needed" } });
+    fireEvent.keyDown(field, { key: "Enter", metaKey: true });
+    expect(onConfirm).toHaveBeenCalledWith("move", "not needed");
+  });
+
+  it("⌘⏎ typed in a field outside an open dialog (the composer) never submits it; esc there still closes it", () => {
+    const onSubmit = vi.fn(), onClose = vi.fn();
+    render(<><textarea data-testid="composer" />
+      <Dialog open title="d" onClose={onClose} onSubmit={onSubmit}><input data-testid="inside" /></Dialog></>);
+    fireEvent.keyDown(screen.getByTestId("composer"), { key: "Enter", metaKey: true });
+    expect(onSubmit).not.toHaveBeenCalled();
+    fireEvent.keyDown(screen.getByTestId("inside"), { key: "Enter", metaKey: true });          // its own field does
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(screen.getByTestId("composer"), { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
