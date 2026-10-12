@@ -145,3 +145,76 @@ def _real_data_dir_untouched():
             "HOME pointed at a temp dir to reproduce safely. Nothing was removed.",
             pytrace=False,
         )
+
+
+@pytest.fixture(autouse=True)
+def _no_real_network_off_loopback():
+    """No test reaches the network, whatever code path it takes: a mutant or a regression included.
+
+    Hermeticity used to hold only for a CORRECT implementation. A test replaced the resolver and
+    the transport with fakes, and code that went around a fake reached this Mac's real system proxy
+    (127.0.0.1:7899, which forwards to the internet) and its real, fake-IP DNS: a review mutation
+    run sent about 250 real GETs that way. Refused here, for every test:
+      * `socket.getaddrinfo` of anything that is not loopback, a literal address included;
+      * a request by a real httpx transport (`AsyncHTTPTransport`, `HTTPTransport`) to a host that
+        is not loopback;
+      * a request by a real httpx transport THROUGH A PROXY, a loopback one included: the system
+        proxy listens on 127.0.0.1, so "loopback only" let a real client through to it.
+    `MockTransport` and `ASGITransport` are not real transports and are untouched. Loopback itself
+    stays open: tests serve from this process and from subprocesses (test_profile_activation), so a
+    socket-level "only ports this process listens on" would refuse them. A test that needs a
+    resolver patches its own, which wins while it is active.
+
+    Its own `MonkeyPatch.context()`, never the shared `monkeypatch` fixture, for the reasons given
+    at `_default_workspace_in_tmp`; and so that a test's own `monkeypatch.undo()` cannot lift it.
+    tests/test_network_guard.py holds it to all of this.
+    """
+    import ipaddress
+    import socket
+
+    import httpcore
+    import httpx
+
+    def loopback(host) -> bool:
+        if isinstance(host, bytes):
+            host = host.decode("ascii", "replace")
+        try:
+            return ipaddress.ip_address(host).is_loopback
+        except ValueError:
+            return host in ("localhost", "") or str(host).endswith(".localhost")
+
+    real_lookup = socket.getaddrinfo
+
+    def lookup(host, *args, **kwargs):
+        if host is None or loopback(host):
+            return real_lookup(host, *args, **kwargs)
+        raise socket.gaierror(socket.EAI_NONAME, f"test guard: a real lookup of {host!r}")
+
+    proxy_pools = tuple(getattr(httpcore, name) for name in
+                        ("AsyncHTTPProxy", "HTTPProxy", "AsyncSOCKSProxy", "SOCKSProxy")
+                        if hasattr(httpcore, name))
+
+    def check(transport, request) -> None:
+        if not loopback(request.url.host):
+            raise httpx.ConnectError(f"test guard: a real HTTP transport was asked to reach "
+                                     f"{request.url.host}", request=request)
+        if isinstance(getattr(transport, "_pool", None), proxy_pools):
+            raise httpx.ConnectError("test guard: a real HTTP transport was asked to go through "
+                                     "a proxy", request=request)
+
+    real_async = httpx.AsyncHTTPTransport.handle_async_request
+    real_sync = httpx.HTTPTransport.handle_request
+
+    async def guarded_async(self, request):
+        check(self, request)
+        return await real_async(self, request)
+
+    def guarded_sync(self, request):
+        check(self, request)
+        return real_sync(self, request)
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(socket, "getaddrinfo", lookup)
+        mp.setattr(httpx.AsyncHTTPTransport, "handle_async_request", guarded_async)
+        mp.setattr(httpx.HTTPTransport, "handle_request", guarded_sync)
+        yield

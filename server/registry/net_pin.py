@@ -55,8 +55,6 @@ from urllib.request import getproxies, proxy_bypass
 import httpx
 import trafilatura
 
-from server import config
-
 logger = logging.getLogger(__name__)
 
 _EXTRACT_CHAR_LIMIT = 12_000
@@ -538,12 +536,6 @@ def categorize_page(exc: Exception) -> str:
     return categorize(exc)
 
 
-def _categorize_exc(exc: Exception) -> str:
-    """Back-compat alias of `categorize`, the SEARCH vocabulary. `web_extract` speaks in
-    `categorize_page`, where a 401, 403 or 451 is the site's refusal and not a rejected key."""
-    return categorize(exc)
-
-
 _MAX_REDIRECTS = 5
 
 
@@ -604,6 +596,16 @@ async def pinned_request(
     connection test needs to read the status itself, and a helper that raised would
     force it to catch its own subject.
     """
+    # 🔴 A caller's `Host` is never sent, in any spelling, on either branch. Header names are
+    # case-insensitive, and the pinned branch used to merge `{**caller, **pinned}`: a caller's
+    # `host` beside the pinned `Host` reached httpx as two Host entries, which h11 refuses on the
+    # wire ("Found multiple Host: headers"), so the fetch failed. On the delegated-proxy branch,
+    # the one a Mac with a system proxy takes, httpx builds the Host from the real URL and a
+    # caller's would have replaced it: the proxy then forwards a request for one site with the Host
+    # of another. Dropped here, once, before the hop loop, so both branches send the same caller
+    # headers.
+    caller_headers = {name: value for name, value in (headers or {}).items()
+                      if name.lower() != "host"}
     async with _build_client() as client:
         current = url
         cur_method = method.upper()
@@ -625,19 +627,16 @@ async def pinned_request(
                 _warn_delegated("proxy", "pinned_request: https via a configured proxy — "
                                          "address pinning is disabled and SSRF protection is "
                                          "delegated to the proxy (each host is logged at DEBUG)")
-                resp = await client.request(cur_method, current, headers=headers,
+                resp = await client.request(cur_method, current, headers=caller_headers,
                                             params=params, json=cur_json, data=cur_data)
             else:
                 pinned_url, pin_headers, extensions = _pinned_request_args(
                     current, allow_host=allow_host)
                 # Pinning's own headers go last: a caller must not be able to overwrite
                 # `Host`, which is what preserves virtual hosting and keeps the request
-                # pointed at the address that was validated. Last AND alone: header names
-                # are case-insensitive, and a caller's `host` next to the pinned `Host`
-                # went out as two Host lines, one of them the caller's.
-                pinned_names = {name.lower() for name in pin_headers}
-                merged = {**{name: value for name, value in (headers or {}).items()
-                             if name.lower() not in pinned_names}, **pin_headers}
+                # pointed at the address that was validated. (`caller_headers` has no Host in
+                # any spelling: see above.)
+                merged = {**caller_headers, **pin_headers}
                 resp = await client.request(cur_method, pinned_url, headers=merged,
                                             params=params, json=cur_json, data=cur_data,
                                             extensions=extensions)
@@ -655,6 +654,29 @@ async def pinned_request(
         raise httpx.HTTPError("too many redirects")
 
 
+async def pinned_get(
+    url: str,
+    *,
+    headers: dict[str, str] | None = None,
+    params: dict[str, str] | None = None,
+    allow_host: str | None = None,
+    max_redirects: int = _MAX_REDIRECTS,
+) -> httpx.Response:
+    """The readable spelling of `pinned_request("GET", ...)`.
+
+    A wrapper, never a second implementation — the whole point of this module is that
+    there is exactly one place where an outbound address is decided. It adds nothing of its
+    own, headers included: the identity of a PAGE READ belongs to `_fetch_text`
+    (`_page_headers`), so any other plain GET, of a JSON API or for a connection test, sends
+    exactly the headers it passes.
+
+    Returns the final response WITHOUT `raise_for_status()`, exactly as
+    `pinned_request` does.
+    """
+    return await pinned_request("GET", url, headers=headers, params=params,
+                                allow_host=allow_host, max_redirects=max_redirects)
+
+
 #: Who a page read says it is: the agent's name and version and a link, the way the fetchers that
 #: act for a user in mainstream agents do (ChatGPT-User, Claude-User, Perplexity-User). A site can
 #: tell a person's assistant from a crawler, find where to complain, and allow or block it by name.
@@ -666,52 +688,40 @@ _PAGE_USER_AGENT = ("Mozilla/5.0 (compatible; Arslan-User/{version}; "
 _PAGE_ACCEPT = "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8"
 
 
-def _page_headers(headers: dict[str, str] | None) -> dict[str, str]:
+def _page_headers(headers: dict[str, str] | None = None) -> dict[str, str]:
     """`headers` plus the two defaults of a page read, each one only where the caller set none.
 
     Case-insensitive, because header names are: a caller's `user-agent` must not end up beside a
-    second `User-Agent`, which httpx would send as two lines. The version comes from the app's
-    version helper at the moment of the request and is kept nowhere here, so the agent cannot
-    disagree with the app around it.
+    second `User-Agent`, which httpx would send as two lines.
+
+    The version is the app's own (`config._app_version()`), asked here at the moment of the request
+    and kept nowhere, so the agent cannot disagree with the app around it. `server.config` is
+    imported HERE and not at module level: everything that fetches imports `net_pin`, and the app's
+    config reads settings and secrets the moment it is imported.
+
+    The version is only a token in a header, so it is made to fit one and can never fail a read.
+    What is not `[0-9A-Za-z.+_-]` is dropped (a CR or LF in it would make h11 refuse EVERY page
+    read, and a non-ASCII character the ASCII codec), it is cut to 40 characters, and whatever goes
+    wrong (the config will not import; a `tauri.conf.json` whose root is not an object makes
+    `_app_version()` raise TypeError) reads `unknown`.
     """
     merged = dict(headers or {})
     named = {name.lower() for name in merged}
     if "user-agent" not in named:
-        merged["User-Agent"] = _PAGE_USER_AGENT.format(version=config._app_version())
+        try:
+            from server import config
+            version = re.sub(r"[^0-9A-Za-z.+_-]", "", str(config._app_version()))[:40] or "unknown"
+        except Exception:  # noqa: BLE001 - a version string must never fail a page read
+            version = "unknown"
+        merged["User-Agent"] = _PAGE_USER_AGENT.format(version=version)
     if "accept" not in named:
         merged["Accept"] = _PAGE_ACCEPT
     return merged
 
 
-async def pinned_get(
-    url: str,
-    *,
-    headers: dict[str, str] | None = None,
-    params: dict[str, str] | None = None,
-    allow_host: str | None = None,
-    max_redirects: int = _MAX_REDIRECTS,
-) -> httpx.Response:
-    """The readable spelling of `pinned_request("GET", ...)`, and the PAGE READ.
-
-    A wrapper, never a second implementation — the whole point of this module is that
-    there is exactly one place where an outbound address is decided.
-
-    What it adds is the identity of a page read (`_page_headers`): the agent user agent and an
-    Accept header, unless the caller set its own. That belongs here and not in `pinned_request`,
-    which search, the SearXNG probe and the OpenRouter sign-in share: they are not page reads
-    and send exactly the headers they pass. The defaults ride into `pinned_request` as the
-    caller's headers, so pinning's own `Host` still goes last and every redirect hop, the
-    proxy branch included, carries them.
-
-    Returns the final response WITHOUT `raise_for_status()`, exactly as
-    `pinned_request` does.
-    """
-    return await pinned_request("GET", url, headers=_page_headers(headers), params=params,
-                                allow_host=allow_host, max_redirects=max_redirects)
-
-
 async def _fetch_text(url: str) -> str:
-    resp = await pinned_get(url)
+    """A PAGE READ, what `web_extract` calls: a GET that names itself (`_page_headers`)."""
+    resp = await pinned_get(url, headers=_page_headers())
     resp.raise_for_status()
     media_type = resp.headers.get("content-type", "").split(";", 1)[0].strip().lower()
     if media_type in {"text/plain", "text/markdown"}:

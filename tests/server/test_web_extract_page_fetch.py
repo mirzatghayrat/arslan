@@ -7,22 +7,32 @@ user-agent and respect our robot policy". The page fetch sent no headers of its 
 
 The rulings these tests hold:
 
-1. A page read (`pinned_get`, so `_fetch_text`) sends the agent user agent and an Accept header,
-   each one only if the caller did not set it. The pinning code still puts `Host` last. Search
-   (`pinned_request`) is not a page read and gets neither default.
+1. A page read (`_fetch_text`, what `web_extract` calls) sends the agent user agent and an Accept
+   header, each one only if the caller did not set it (`_page_headers`). `pinned_get` is a plain
+   GET, exactly `pinned_request("GET")`: it adds nothing, and neither does `pinned_request`, which
+   search and the connection tests share. A caller's `Host` is never sent, in any spelling, on
+   either branch of `pinned_request`; pinning's own goes last.
 2. `web_extract` names a refusal with `net_pin.categorize_page`: 401, 403 and 451 are `the site
    refused (http N)`, 429 stays `rate-limited`, any other status is `http N`. Search keeps
    `categorize`, where 401 and 403 still mean a rejected key.
+3. The app's version is only a token in a header. An odd one (control characters, non-ASCII,
+   absurdly long, none at all) or a broken config changes that token and never fails the read.
 
 Hermetic like test_fake_ip_dns.py, and for the same reason: this project's Mac really is behind a
 fake-IP proxy, where a real lookup answers an address that the TUN routes out to the internet.
 There is no real resolver and no real transport here, even under a mutant: the autouse fixture
-refuses both, and a test that wants an answer installs it with `serve`.
+refuses both, and a test that wants an answer installs it with `serve`. The suite-wide guard in
+tests/conftest.py is the backstop behind this file's own.
 """
 from __future__ import annotations
 
+import os
 import socket
+import subprocess
+import sys
+from pathlib import Path
 
+import h11
 import httpx
 import pytest
 
@@ -38,8 +48,7 @@ UA = "Mozilla/5.0 (compatible; Arslan-User/{version}; +https://github.com/mirzat
 ACCEPT = "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8"
 VERSION = "9.8.7"
 
-_PROXY_VARS = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
-               "http_proxy", "https_proxy", "all_proxy", "no_proxy")
+_PROXY_VARS = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy")
 
 
 def _addrinfo(*ips: str):
@@ -61,6 +70,11 @@ def hermetic(monkeypatch):
         transport=httpx.MockTransport(no_network), follow_redirects=False, trust_env=False))
     for var in _PROXY_VARS:
         monkeypatch.delenv(var, raising=False)
+    # NO_PROXY=* and NOT deleted: with no proxy variable at all, urllib on macOS falls back to the
+    # SYSTEM proxy (127.0.0.1:7899 on this Mac), and a real client that code under test builds
+    # would then send its request there.
+    monkeypatch.setenv("NO_PROXY", "*")
+    monkeypatch.setenv("no_proxy", "*")
     monkeypatch.setattr(net_pin, "getproxies", lambda: {})
     monkeypatch.setattr(net_pin, "_delegation_warned", {})
     monkeypatch.setenv("ARSLAN_APP_VERSION", VERSION)
@@ -104,12 +118,10 @@ def _with_proxy(monkeypatch) -> None:
 # ------------------------------------------------------------------ the user agent and Accept
 
 
-@pytest.mark.parametrize("fetch", [net_pin.pinned_get, net_pin._fetch_text],
-                         ids=["pinned_get", "_fetch_text"])
-async def test_a_page_fetch_sends_the_arslan_user_agent_and_accept(monkeypatch, fetch):
+async def test_a_page_fetch_sends_the_arslan_user_agent_and_accept(monkeypatch):
     """The bug itself: nothing was set, so httpx's own agent went out."""
     seen = serve(monkeypatch, _page)
-    await fetch("https://www.wikipedia.org/")
+    assert await net_pin._fetch_text("https://www.wikipedia.org/") == "plain page"
     request = seen[0]
     assert request.headers.get_list("user-agent") == [UA.format(version=VERSION)]
     assert request.headers.get_list("accept") == [ACCEPT]
@@ -133,42 +145,127 @@ async def test_web_extract_reads_a_site_that_refuses_the_default_httpx_agent(mon
 
 async def test_the_version_is_the_app_versions_and_not_a_constant(monkeypatch):
     seen = serve(monkeypatch, _page)
-    for version in ("9.8.7", "0.1.61", "0.2.0-dev"):
+    for version in ("9.8.7", "0.1.61", "0.2.0-dev", "0.1.61+build.5_rc-1"):
         monkeypatch.setenv("ARSLAN_APP_VERSION", version)
-        await net_pin.pinned_get("https://example.test/")
+        await net_pin._fetch_text("https://example.test/")
         assert seen[-1].headers["user-agent"] == UA.format(version=version)
 
 
 async def test_without_the_packaged_env_the_version_is_the_helpers_fallback(monkeypatch):
     monkeypatch.delenv("ARSLAN_APP_VERSION", raising=False)
     seen = serve(monkeypatch, _page)
-    await net_pin.pinned_get("https://example.test/")
+    await net_pin._fetch_text("https://example.test/")
     assert seen[0].headers["user-agent"] == UA.format(version=config._app_version())
 
 
-@pytest.mark.parametrize("name", ["User-Agent", "user-agent", "USER-AGENT"])
-async def test_a_callers_own_user_agent_wins(monkeypatch, name):
-    """Header names are case-insensitive: a second spelling must not go out beside the caller's."""
+@pytest.mark.parametrize("env,token", [
+    pytest.param("1.2.3\r\nX-Injected: yes", "1.2.3X-Injectedyes", id="crlf-and-a-second-header"),
+    pytest.param("1.2.3\nEvil", "1.2.3Evil", id="bare-lf"),
+    pytest.param("1.0.0-é", "1.0.0-", id="non-ascii-suffix"),
+    pytest.param("v 1.2 (beta; build 7)", "v1.2betabuild7", id="spaces-and-punctuation"),
+    pytest.param("日本語", "unknown", id="nothing-left"),
+    pytest.param("１２３", "unknown", id="fullwidth-digits-are-not-digits"),
+    pytest.param("x" * 100, "x" * 40, id="cut-to-40"),
+])
+async def test_an_odd_version_changes_the_token_and_never_fails_the_read(monkeypatch, env, token):
+    """On the real wire h11 refuses CR, LF and the like in a header value, and the ASCII codec
+    refuses the rest: before this, such a version failed EVERY page read."""
+    monkeypatch.setenv("ARSLAN_APP_VERSION", env)
     seen = serve(monkeypatch, _page)
-    await net_pin.pinned_get("https://example.test/", headers={name: "Mine/1.0"})
-    assert seen[0].headers.get_list("user-agent") == ["Mine/1.0"]
+    assert await net_pin._fetch_text("https://example.test/") == "plain page"
+    agent = seen[0].headers["user-agent"]
+    assert agent == UA.format(version=token)
+    assert agent.isascii() and agent.isprintable()
+    # and a legal header value: the same check the real wire makes (this raises for CR, LF, NUL)
+    h11.Request(method="GET", target="/", headers=[("Host", "example.test"), ("User-Agent", agent)])
+
+
+@pytest.mark.parametrize("conf,token", [
+    pytest.param('{"version": "0.9.9"}', "0.9.9-dev", id="control-a-real-file-is-read"),
+    pytest.param("[]", "unknown", id="root-is-a-list"),
+    pytest.param('"text"', "unknown", id="root-is-a-string"),
+    pytest.param("7", "unknown", id="root-is-a-number"),
+    pytest.param("null", "unknown", id="root-is-null"),
+    pytest.param("{}", "unknown", id="no-version-key"),
+    pytest.param("{not json", "unknown", id="invalid-json"),
+    pytest.param(None, "unknown", id="no-file"),
+])
+async def test_a_config_that_is_not_a_version_object_cannot_fail_the_read(
+        monkeypatch, tmp_path, conf, token):
+    """`config._app_version()` catches OSError, ValueError and KeyError, and a JSON root that is not
+    an object raises TypeError. The page read must not depend on the file being well formed."""
+    monkeypatch.delenv("ARSLAN_APP_VERSION", raising=False)
+    (tmp_path / "server").mkdir()
+    if conf is not None:
+        (tmp_path / "desktop" / "src-tauri").mkdir(parents=True)
+        (tmp_path / "desktop" / "src-tauri" / "tauri.conf.json").write_text(conf)
+    monkeypatch.setattr(config, "__file__", str(tmp_path / "server" / "config.py"))
+    seen = serve(monkeypatch, _page)
+    assert await net_pin._fetch_text("https://example.test/") == "plain page"
+    assert seen[0].headers["user-agent"] == UA.format(version=token)
+
+
+async def test_a_version_helper_that_raises_cannot_fail_the_read(monkeypatch):
+    def broken():
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(config, "_app_version", broken)
+    seen = serve(monkeypatch, _page)
+    assert await net_pin._fetch_text("https://example.test/") == "plain page"
+    assert seen[0].headers["user-agent"] == UA.format(version="unknown")
+
+
+def test_importing_net_pin_does_not_load_the_app_config(tmp_path):
+    """net_pin is imported by everything that fetches. `server.config` reads settings and secrets
+    the moment it is imported, and only a page read's agent name needs the version, so that is
+    where it is looked up. A fresh interpreter, with its own HOME and data dir."""
+    repo = Path(__file__).resolve().parents[2]
+    env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "PYTHONPATH": str(repo),
+           "HOME": str(tmp_path), "ARSLAN_DATA_DIR": str(tmp_path / "data"),
+           "ARSLAN_SECRET_KEY_FILE": ""}
+    out = subprocess.run(
+        [sys.executable, "-c",
+         "import sys, server.registry.net_pin; print('server.config' in sys.modules)"],
+        cwd=repo, env=env, capture_output=True, text=True, timeout=120)
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip() == "False"
+
+
+@pytest.mark.parametrize("name", ["User-Agent", "user-agent", "USER-AGENT"])
+def test_a_callers_own_user_agent_wins(name):
+    """Header names are case-insensitive: a second spelling must not go out beside the caller's."""
+    headers = net_pin._page_headers({name: "Mine/1.0"})
+    assert [value for key, value in headers.items() if key.lower() == "user-agent"] == ["Mine/1.0"]
 
 
 @pytest.mark.parametrize("name", ["Accept", "accept"])
-async def test_a_callers_own_accept_wins(monkeypatch, name):
-    seen = serve(monkeypatch, _page)
-    await net_pin.pinned_get("https://example.test/", headers={name: "application/json"})
-    assert seen[0].headers.get_list("accept") == ["application/json"]
+def test_a_callers_own_accept_wins(name):
+    headers = net_pin._page_headers({name: "application/json"})
+    assert [value for key, value in headers.items() if key.lower() == "accept"] == [
+        "application/json"]
 
 
-async def test_each_default_is_its_own(monkeypatch):
+def test_each_default_is_its_own():
     """A caller who names its agent still gets the Accept default, and one who sets only Accept
     still gets the user agent: the defaults are not a pair that a caller takes or leaves."""
+    assert net_pin._page_headers({"User-Agent": "Mine/1.0"})["Accept"] == ACCEPT
+    assert net_pin._page_headers({"Accept": "text/csv"})["User-Agent"] == UA.format(version=VERSION)
+
+
+def test_the_defaults_are_added_to_a_copy():
+    given = {"X-Test": "1"}
+    merged = net_pin._page_headers(given)
+    assert merged["X-Test"] == "1" and "User-Agent" in merged and "Accept" in merged
+    assert given == {"X-Test": "1"}
+    assert net_pin._page_headers(None) == net_pin._page_headers({}) == net_pin._page_headers()
+
+
+@pytest.mark.parametrize("name", ["User-Agent", "user-agent"])
+async def test_a_callers_own_user_agent_reaches_the_wire_once(monkeypatch, name):
     seen = serve(monkeypatch, _page)
-    await net_pin.pinned_get("https://example.test/", headers={"User-Agent": "Mine/1.0"})
-    await net_pin.pinned_get("https://example.test/", headers={"Accept": "application/json"})
-    assert seen[0].headers.get_list("accept") == [ACCEPT]
-    assert seen[1].headers.get_list("user-agent") == [UA.format(version=VERSION)]
+    await net_pin.pinned_get("https://example.test/",
+                             headers=net_pin._page_headers({name: "Mine/1.0"}))
+    assert seen[0].headers.get_list("user-agent") == ["Mine/1.0"]
 
 
 async def test_every_hop_of_a_redirect_carries_them(monkeypatch):
@@ -178,8 +275,8 @@ async def test_every_hop_of_a_redirect_carries_them(monkeypatch):
         return _page(request)
 
     seen = serve(monkeypatch, respond)
-    response = await net_pin.pinned_get("https://example.test/first")
-    assert response.status_code == 200 and len(seen) == 2
+    assert await net_pin._fetch_text("https://example.test/first") == "plain page"
+    assert len(seen) == 2
     for request in seen:
         assert request.headers.get_list("user-agent") == [UA.format(version=VERSION)]
         assert request.headers.get_list("accept") == [ACCEPT]
@@ -201,14 +298,15 @@ async def test_every_way_the_request_can_leave_carries_them(monkeypatch, path):
     assert request.headers.get_list("accept") == [ACCEPT]
 
 
-# ------------------------------------------------------------------ Host stays the pinned name
+# ------------------------------------------------------------------ Host: the caller never sets it
 
 
 @pytest.mark.parametrize("name", ["Host", "host", "HOST"])
 async def test_no_header_can_overwrite_the_pinned_host(monkeypatch, name):
-    """Pinning's own headers go last. Header names are case-insensitive, so the lower-case and
-    upper-case spellings must not reach the wire beside the pinned `Host` either: a request line
-    to the validated address with `host: evil` next to the real one is ambiguous."""
+    """Pinning's own headers go last and alone. Header names are case-insensitive: a caller's `host`
+    or `HOST` next to the pinned `Host` reaches httpx as two Host entries, and on a real wire h11
+    refuses the request ("Found multiple Host: headers"). MockTransport does not validate, so this
+    reads what the client built: the real name, exactly once, and the caller's value nowhere."""
     seen = serve(monkeypatch, _page)
     await net_pin.pinned_get("https://example.test:8443/page", headers={name: "evil.example"})
     request = seen[0]
@@ -217,7 +315,46 @@ async def test_no_header_can_overwrite_the_pinned_host(monkeypatch, name):
     assert request.extensions["sni_hostname"] == "example.test"
 
 
+@pytest.mark.parametrize("name", ["Host", "host", "HOST"])
+async def test_no_header_can_choose_the_host_of_a_delegated_proxy_request(monkeypatch, name):
+    """The branch this Mac takes: with an https proxy set, the request goes by NAME and httpx builds
+    the Host from the real URL. A caller's Host would replace that one, and the proxy would forward
+    a request for one site with the Host of another."""
+    seen = serve(monkeypatch, _page, dns=(FAKE,))
+    _with_proxy(monkeypatch)
+    await net_pin.pinned_get("https://www.wikipedia.org/", headers={name: "evil.example"})
+    request = seen[0]
+    assert request.url.host == "www.wikipedia.org"                       # by name: delegated
+    assert request.headers.get_list("host") == ["www.wikipedia.org"]
+
+
+@pytest.mark.parametrize("branch", ["pinned", "proxy"])
+async def test_the_other_caller_headers_still_pass_on_both_branches(monkeypatch, branch):
+    seen = serve(monkeypatch, _page, dns=(PUBLIC,) if branch == "pinned" else (FAKE,))
+    if branch == "proxy":
+        _with_proxy(monkeypatch)
+    await net_pin.pinned_get("https://www.wikipedia.org/",
+                             headers={"X-Test": "1", "host": "evil.example", "Accept": "text/csv"})
+    request = seen[0]
+    assert request.headers.get_list("x-test") == ["1"]
+    assert request.headers.get_list("accept") == ["text/csv"]
+    assert request.headers.get_list("host") == ["www.wikipedia.org"]
+
+
 # ------------------------------------------------------------------ page reads only
+
+
+async def test_pinned_get_and_pinned_request_are_plain_gets(monkeypatch):
+    """The identity of a page read is `_fetch_text`'s. `pinned_get` stays the readable spelling of
+    `pinned_request("GET")`: other callers (a JSON API, a connection test) send what they pass."""
+    seen = serve(monkeypatch, _page)
+    await net_pin.pinned_get("https://example.test/")
+    await net_pin.pinned_request("GET", "https://example.test/")
+    await net_pin.pinned_get("https://example.test/", headers={"User-Agent": "Mine/1.0"})
+    for request in seen[:2]:
+        assert "Arslan-User" not in request.headers["user-agent"]
+        assert request.headers["accept"] != ACCEPT
+    assert seen[2].headers.get_list("user-agent") == ["Mine/1.0"]
 
 
 async def test_the_search_path_is_not_a_page_read(monkeypatch):

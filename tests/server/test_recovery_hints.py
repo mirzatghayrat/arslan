@@ -106,11 +106,18 @@ async def test_web_extracts_real_refusal_gets_the_guard_hint(monkeypatch, cls_na
 
 # 0.1.61 PR 1 follow-up: a page fetch that the SITE refused (HTTP 401, 403 or 451) used to be
 # labelled `key-rejected`, a search API key's label, and now reads `the site refused (http 403)`.
-# The generic pattern below it matches that text too (the number 403 is in it), and answers "That
+# The generic pattern below it matches that text too (the number is in it), and answers "That
 # site refused the request", so the new text needs its own hint, and that hint has to come first.
+# The hint follows the code, because the remedy does: a 403 blocks automated reading, a 401 wants
+# a sign-in the agent does not have, a 451 is a legal block.
 
-SITE_REFUSED = ("This site blocks automated reading. Don't retry this URL; use another source, "
-                "or browser_open if the page is essential.")
+SITE_REFUSED = {
+    403: ("This site blocks automated reading. Don't retry this URL; use another source, or "
+          "browser_open if the page is essential."),
+    401: "This page needs a sign-in Arslan doesn't have; use another source.",
+    451: "This page is unavailable for legal reasons here; use another source.",
+}
+WEB_BLOCKED = "That site refused the request. Use another source; do not retry this URL."
 STEER = (" — do not retry this URL; try another source from your web_search results (their "
          "snippets count too) or browser_open for script-rendered pages; answer with what you "
          "have only when sources are exhausted, and say what is missing")
@@ -118,58 +125,81 @@ STEER = (" — do not retry this URL; try another source from your web_search re
 
 @pytest.mark.parametrize("code", [401, 403, 451])
 @pytest.mark.parametrize("suffix", ["", STEER], ids=["bare", "as-web_extract-returns-it"])
-def test_a_site_refusal_gets_the_site_hint(code, suffix):
+def test_a_site_refusal_gets_the_hint_of_its_code(code, suffix):
     error = f"fetch failed: the site refused (http {code}){suffix}"
     hint = hint_for("web_extract", {"ok": False, "error": error})
-    assert hint == SITE_REFUSED
-    assert "That site refused" not in hint          # not the generic pattern's sentence
+    assert hint == SITE_REFUSED[code]
+    assert hint != WEB_BLOCKED                      # not the generic pattern's sentence
 
 
-@pytest.mark.parametrize("error", [
-    "url refused: blocked address (local network)",
-    "url refused: behind fake-IP DNS only https:// on port 443 is fetched",
-    "url refused: invalid host name",
-    "url refused: not the configured search host",
-    "fetch failed: cannot resolve" + STEER,
-    "fetch failed: rate-limited" + STEER,
-    "fetch failed: http 404" + STEER,
-    "fetch failed: timeout" + STEER,
+def test_every_refused_status_has_a_hint_of_its_own():
+    from server.registry import net_pin
+    assert set(SITE_REFUSED) == set(net_pin._PAGE_REFUSED)
+    assert len(set(SITE_REFUSED.values())) == len(SITE_REFUSED)
+
+
+def test_a_refusal_code_with_no_hint_of_its_own_gets_the_site_sentence():
+    """Not a code `categorize_page` produces: the shape of the label is all this branch reads."""
+    error = "fetch failed: the site refused (http 418)" + STEER
+    assert hint_for("web_extract", {"ok": False, "error": error}) == SITE_REFUSED[403]
+
+
+@pytest.mark.parametrize("error,expected", [
+    pytest.param("url refused: blocked address (local network)", GUARD_REFUSED, id="guard-local"),
+    pytest.param("url refused: behind fake-IP DNS only https:// on port 443 is fetched",
+                 GUARD_HTTPS_ONLY, id="guard-https-only"),
+    pytest.param("url refused: invalid host name", GUARD_REFUSED, id="guard-invalid-host"),
+    pytest.param("url refused: not the configured search host", GUARD_REFUSED,
+                 id="guard-not-configured"),
+    pytest.param("fetch failed: cannot resolve" + STEER, None, id="cannot-resolve"),
+    pytest.param("fetch failed: rate-limited" + STEER, None, id="rate-limited"),
+    pytest.param("fetch failed: http 404" + STEER, None, id="http-404"),
+    pytest.param("fetch failed: timeout" + STEER, None, id="timeout"),
+    # The phrase is in the MIDDLE of the text, not at its start: it is not the executor's own
+    # label, and the generic pattern answers it as it always did. A "prefix anywhere" mutant would
+    # give the site hint here.
+    pytest.param("Retrying: fetch failed: the site refused (http 403)" + STEER, WEB_BLOCKED,
+                 id="phrase-in-the-middle"),
 ])
-def test_the_site_hint_is_given_to_nothing_but_a_site_refusal(error):
-    """The guard's own refusals keep their hints (asserted exactly above), a name that does not
-    resolve keeps none, and a status that is not a refusal is not "this site blocks you"."""
-    assert hint_for("web_extract", {"ok": False, "error": error}) != SITE_REFUSED
+def test_every_other_failure_keeps_exactly_its_own_hint(error, expected):
+    """The guard's own refusals keep their hints, a name that does not resolve keeps none, a status
+    that is not a refusal is not "this site blocks you", and a text that only mentions the phrase
+    is not the executor's label."""
+    assert hint_for("web_extract", {"ok": False, "error": error}) == expected
 
 
-async def test_web_extracts_real_403_gets_the_site_hint(monkeypatch):
-    """End to end: the text web_extract really returns for a page that answers 403."""
+def test_the_phrase_in_another_field_is_not_the_executors_label():
+    result = {"ok": False, "error": "fetch failed: timeout" + STEER,
+              "summary": "fetch failed: the site refused (http 403)"}
+    assert hint_for("web_extract", result) == WEB_BLOCKED
+
+
+async def _web_extract_refused_with(monkeypatch, code):
     import httpx
     from server.registry import executors, net_pin
 
     async def refused(url):
         request = httpx.Request("GET", url)
-        raise httpx.HTTPStatusError("403", request=request,
-                                    response=httpx.Response(403, request=request))
-
-    monkeypatch.setattr(net_pin, "_fetch_text", refused)
-    result = await executors.WebExtractExecutor().execute({"url": "https://www.wikipedia.org/"})
-    assert result["error"].startswith("fetch failed: the site refused (http 403)")
-    assert hint_for("web_extract", result) == SITE_REFUSED
-
-
-async def test_the_site_hint_reaches_the_model_after_the_untrusted_frame(monkeypatch):
-    import httpx
-    from server.registry import executors, net_pin
-
-    async def refused(url):
-        request = httpx.Request("GET", url)
-        raise httpx.HTTPStatusError("403", request=request,
-                                    response=httpx.Response(403, request=request))
+        raise httpx.HTTPStatusError(str(code), request=request,
+                                    response=httpx.Response(code, request=request))
 
     monkeypatch.setattr(net_pin, "_fetch_text", refused)
     args = {"url": "https://www.wikipedia.org/"}
-    result = await executors.WebExtractExecutor().execute(args)
+    return args, await executors.WebExtractExecutor().execute(args)
+
+
+@pytest.mark.parametrize("code", [401, 403, 451])
+async def test_web_extracts_real_refusal_gets_the_hint_of_its_code(monkeypatch, code):
+    """End to end: the text web_extract really returns for a page that answers with that code."""
+    _, result = await _web_extract_refused_with(monkeypatch, code)
+    assert result["error"].startswith(f"fetch failed: the site refused (http {code})")
+    assert hint_for("web_extract", result) == SITE_REFUSED[code]
+
+
+@pytest.mark.parametrize("code", [401, 403, 451])
+async def test_the_site_hint_reaches_the_model_after_the_untrusted_frame(monkeypatch, code):
+    args, result = await _web_extract_refused_with(monkeypatch, code)
     convo, trace = [], []
     tool_loop._record_tool_result("web_extract", args, result, lambda e: None, trace, "{}", convo)
     after = convo[-1]["content"].split(DELIM_CLOSE, 1)[1]
-    assert after.startswith(f"\n[Host hint: {SITE_REFUSED}]")
+    assert after.startswith(f"\n[Host hint: {SITE_REFUSED[code]}]")
