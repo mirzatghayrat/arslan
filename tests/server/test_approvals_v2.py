@@ -13,6 +13,7 @@ from sqlalchemy import select
 
 from server.db.models import PermissionGrant
 from server.services import approvals, permission_store, permissions, run_registry, settings_service
+from server.ws import protocol
 
 
 @pytest.fixture(autouse=True)
@@ -458,6 +459,64 @@ async def test_todays_ui_yes_on_a_write_or_schedule_card_holds_for_the_conversat
     assert await job.schedule("Brief", "daily") is True
     assert await approvals.JobConfirmations("conv", job_id="job-2").schedule("Brief", "daily") is True
     assert [f["type"] for f in shown] == ["propose_workspace_write", "propose_schedule"]
+
+
+# The edges of that mapping (re-review N1): it is for these two cards only, after the phone and
+# island clamp, and only for a yes that carries no scope at all.
+CARDS = {
+    "write": (lambda cid: protocol.propose_workspace_write(cid, "/w", "write_file", "a.txt"), ["once", "conversation"]),
+    "schedule": (lambda cid: protocol.propose_schedule(cid, "Brief", "daily"), ["once", "conversation"]),
+    "command": (lambda cid: protocol.propose_run_command(cid, "rm", ["a"], reason="x"), ["once", "conversation", "always"]),
+    "app": (lambda cid: protocol.propose_action(cid, "app", "Notes", ""), ["task", "conversation", "always"]),
+}
+
+
+def _open(kind: str) -> approvals.Pending:
+    build, options = CARDS[kind]
+    return approvals.open_card("conv", {**build("c1"), "options": options, "dedupe": kind})
+
+
+def _bare_yes(pending: approvals.Pending, source: str, **extra) -> None:
+    """A yes with no scope and no "remember" (today's UI): from a window, or by id from the Inbox."""
+    if source == "inbox":
+        approvals.answer_by_id(pending.call_id, True, source="inbox", **extra)
+        return
+    approvals.answer({"type": "confirm_" + pending.frame["type"].removeprefix("propose_"),
+                      "call_id": pending.call_id, **({} if source == "mac" else {"source": source}), **extra})
+
+
+@pytest.mark.parametrize("source", ["mac", "inbox"])
+@pytest.mark.parametrize("kind,first", [("command", "once"), ("app", "task")])
+async def test_a_bare_yes_on_any_other_card_is_its_first_choice(monkeypatch, source, kind, first):
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: (lambda f: None))
+    p = _open(kind)
+    _bare_yes(p, source)
+    assert approvals.close_card(p)["scope"] == first
+
+
+@pytest.mark.parametrize("source", ["phone", "island"])
+@pytest.mark.parametrize("kind", ["write", "schedule"])
+async def test_a_phone_or_island_yes_on_a_write_or_schedule_card_is_once(monkeypatch, source, kind):
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: (lambda f: None))
+    p = _open(kind)
+    _bare_yes(p, source)                                        # the clamp comes before the mapping
+    d = approvals.close_card(p)
+    assert (d["scope"], d["remember"]) == ("once", False)
+
+
+async def test_an_unoffered_scope_on_a_write_card_is_its_first_choice(monkeypatch):
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: (lambda f: None))
+    p = _open("write")
+    _bare_yes(p, "mac", scope="always")                        # a scope it did not offer: not "no scope"
+    assert approvals.close_card(p)["scope"] == "once"
+
+
+@pytest.mark.parametrize("kind", ["write", "schedule"])
+async def test_an_inbox_yes_on_a_write_or_schedule_card_holds_for_the_conversation(monkeypatch, kind):
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: (lambda f: None))
+    p = _open(kind)
+    _bare_yes(p, "inbox")                                       # as "Approve" there meant before
+    assert approvals.close_card(p)["scope"] == "conversation"
 
 
 async def _judgments(maker, count: int, seconds: float = 5.0) -> list:
