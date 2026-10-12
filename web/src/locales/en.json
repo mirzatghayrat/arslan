@@ -838,7 +838,7 @@
     "labelVoiceEndpointSilence": "End of sentence (ms)",
     "voiceEndpointSilenceDesc": "How long you have to pause before what you said is sent. 900 ms is a normal breath; shorter cuts you off, longer feels slow.",
     "terminalRulesTitle": "Never ask again for",
-    "terminalRulesEmpty": "Nothing yet. Tick “don't ask again” on a command card to add a kind of command here.",
+    "terminalRulesEmpty": "Nothing yet. Choose “Always” on a command card to add a kind of command here.",
     "terminalRulesForget": "Ask again",
     "navGeneral": "General",
     "navAbilities": "What Arslan may do",
@@ -1429,7 +1429,7 @@
     "sandboxRemember": "Allow commands outside the sandbox for the rest of this conversation",
     "runOutside": "Run outside the sandbox",
     "label": "Run this command?",
-    "remember": "Don't ask again for this kind of command (undo in Settings › Advanced)",
+    "remember": "Don't ask again for this kind of command (undo in Settings → What Arslan may do)",
     "run": "Run",
     "cancel": "Cancel",
     "pillLabel": "Shell",
@@ -1866,7 +1866,8 @@
     "every_hour": "every hour",
     "every_n_hours": "every {{count}} hours",
     "every_minute": "every minute",
-    "every_n_minutes": "every {{count}} minutes"
+    "every_n_minutes": "every {{count}} minutes",
+    "unattended": "Scheduled runs happen on their own and never wait for you: a step that would need your OK is skipped, not done."
   },
   "enroll": {
     "label": "Remember {{name}} ({{host}})?",

@@ -838,7 +838,7 @@
     "labelVoiceEndpointSilence": "Satzende (ms)",
     "voiceEndpointSilenceDesc": "Wie lange du pausierst, bevor das Gesagte gesendet wird. 900 ms sind ein normaler Atemzug; kürzer schneidet dich ab, länger wirkt träge.",
     "terminalRulesTitle": "Nie mehr fragen bei",
-    "terminalRulesEmpty": "Noch nichts. Hake auf einer Befehlskarte „nicht mehr fragen“ an, um die Art Befehl hier hinzuzufügen.",
+    "terminalRulesEmpty": "Noch nichts. Wähle auf einer Befehlskarte „Immer“, um die Art Befehl hier hinzuzufügen.",
     "terminalRulesForget": "Wieder fragen",
     "navGeneral": "Allgemein",
     "navAbilities": "Was Arslan darf",
@@ -1429,7 +1429,7 @@
     "sandboxRemember": "Befehle außerhalb der Sandbox für den Rest dieser Unterhaltung erlauben",
     "runOutside": "Außerhalb der Sandbox ausführen",
     "label": "Diesen Befehl ausführen?",
-    "remember": "Bei dieser Art Befehl nicht mehr fragen (rückgängig unter Einstellungen › Erweitert)",
+    "remember": "Bei dieser Art Befehl nicht mehr fragen (rückgängig unter Einstellungen → Was Arslan darf)",
     "run": "Ausführen",
     "cancel": "Abbrechen",
     "pillLabel": "Befehl",
@@ -1866,7 +1866,8 @@
     "every_hour": "jede Stunde",
     "every_n_hours": "alle {{count}} Stunden",
     "every_minute": "jede Minute",
-    "every_n_minutes": "alle {{count}} Minuten"
+    "every_n_minutes": "alle {{count}} Minuten",
+    "unattended": "Geplante Läufe laufen allein und warten nie auf dich: Ein Schritt, der dein OK bräuchte, wird übersprungen, nicht ausgeführt."
   },
   "enroll": {
     "label": "{{name}} ({{host}}) merken?",

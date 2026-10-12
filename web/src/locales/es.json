@@ -838,7 +838,7 @@
     "labelVoiceEndpointSilence": "Fin de frase (ms)",
     "voiceEndpointSilenceDesc": "Cuánto debes pausar antes de que se envíe lo dicho. 900 ms es una respiración normal; menos te corta, más parece lento.",
     "terminalRulesTitle": "No volver a preguntar por",
-    "terminalRulesEmpty": "Nada todavía. Marca «no volver a preguntar» en una tarjeta de comando para añadir ese tipo aquí.",
+    "terminalRulesEmpty": "Nada todavía. Elige «Siempre» en una tarjeta de comando para añadir ese tipo aquí.",
     "terminalRulesForget": "Volver a preguntar",
     "navGeneral": "General",
     "navAbilities": "Lo que Arslan puede hacer",
@@ -1429,7 +1429,7 @@
     "sandboxRemember": "Permitir comandos fuera del entorno aislado durante el resto de esta conversación",
     "runOutside": "Ejecutar fuera del entorno aislado",
     "label": "¿Ejecutar este comando?",
-    "remember": "No volver a preguntar por este tipo de comando (se deshace en Ajustes › Avanzado)",
+    "remember": "No volver a preguntar por este tipo de comando (se deshace en Ajustes → Lo que Arslan puede hacer)",
     "run": "Ejecutar",
     "cancel": "Cancelar",
     "pillLabel": "Comando",
@@ -1866,7 +1866,8 @@
     "every_hour": "cada hora",
     "every_n_hours": "cada {{count}} horas",
     "every_minute": "cada minuto",
-    "every_n_minutes": "cada {{count}} minutos"
+    "every_n_minutes": "cada {{count}} minutos",
+    "unattended": "Las ejecuciones programadas van solas y nunca te esperan: un paso que necesite tu visto bueno se omite, no se hace."
   },
   "enroll": {
     "label": "¿Recordar {{name}} ({{host}})?",

@@ -838,7 +838,7 @@
     "labelVoiceEndpointSilence": "文の区切り(ミリ秒)",
     "voiceEndpointSilenceDesc": "どれだけ間を置いたら送信するか。900 ミリ秒は普通の息継ぎ程度。短いと途中で切れ、長いと反応が鈍く感じます。",
     "terminalRulesTitle": "今後確認しない",
-    "terminalRulesEmpty": "まだありません。コマンドカードで「今後確認しない」にチェックすると、その種類のコマンドがここに表示されます。",
+    "terminalRulesEmpty": "まだありません。コマンドカードで「常に許可」を選ぶと、その種類のコマンドがここに表示されます。",
     "terminalRulesForget": "再び確認する",
     "navGeneral": "一般",
     "navAbilities": "Arslan ができること",
@@ -1429,7 +1429,7 @@
     "sandboxRemember": "この会話の間はサンドボックスの外での実行を許可する",
     "runOutside": "サンドボックスの外で実行",
     "label": "このコマンドを実行しますか？",
-    "remember": "この種類のコマンドは今後確認しない（設定 › 詳細 で元に戻せます）",
+    "remember": "この種類のコマンドは今後確認しない（設定 → Arslan ができること で元に戻せます）",
     "run": "実行",
     "cancel": "キャンセル",
     "pillLabel": "コマンド",
@@ -1866,7 +1866,8 @@
     "every_hour": "1 時間ごと",
     "every_n_hours": "{{count}} 時間ごと",
     "every_minute": "1 分ごと",
-    "every_n_minutes": "{{count}} 分ごと"
+    "every_n_minutes": "{{count}} 分ごと",
+    "unattended": "定期実行は無人で行われ、あなたを待ちません。確認が必要な手順は実行せずに飛ばします。"
   },
   "enroll": {
     "label": "{{name}}({{host}})を記憶しますか?",

@@ -838,7 +838,7 @@
     "labelVoiceEndpointSilence": "一句话的结束(毫秒)",
     "voiceEndpointSilenceDesc": "停顿多久之后把你说的话发出去。900 毫秒约等于正常换气;更短会打断你,更长会显得迟钝。",
     "terminalRulesTitle": "以后不再询问",
-    "terminalRulesEmpty": "还没有。在命令卡上勾选「不再询问」，那一类命令就会出现在这里。",
+    "terminalRulesEmpty": "还没有。在命令卡上选「始终允许」，那一类命令就会出现在这里。",
     "terminalRulesForget": "恢复询问",
     "navGeneral": "通用",
     "navAbilities": "Arslan 能做什么",
@@ -1429,7 +1429,7 @@
     "sandboxRemember": "这次对话里，命令都可以在沙盒外运行",
     "runOutside": "在沙盒外运行",
     "label": "运行这条命令?",
-    "remember": "以后这类命令不再询问（可在 设置 › 高级 里恢复）",
+    "remember": "以后这类命令不再询问（可在 设置 → Arslan 能做什么 里恢复）",
     "run": "运行",
     "cancel": "取消",
     "pillLabel": "命令行",
@@ -1866,7 +1866,8 @@
     "every_hour": "每小时",
     "every_n_hours": "每 {{count}} 小时",
     "every_minute": "每分钟",
-    "every_n_minutes": "每 {{count}} 分钟"
+    "every_n_minutes": "每 {{count}} 分钟",
+    "unattended": "定时运行无人值守，从不等你：需要你点头的步骤会跳过，不会执行。"
   },
   "enroll": {
     "label": "记住 {{name}}({{host}})?",

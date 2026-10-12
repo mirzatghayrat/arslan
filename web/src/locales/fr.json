@@ -838,7 +838,7 @@
     "labelVoiceEndpointSilence": "Fin de phrase (ms)",
     "voiceEndpointSilenceDesc": "Durée de la pause avant l'envoi de ce que vous avez dit. 900 ms correspondent à une respiration normale ; moins vous coupe, plus paraît lent.",
     "terminalRulesTitle": "Ne plus demander pour",
-    "terminalRulesEmpty": "Rien pour l’instant. Coche « ne plus demander » sur une carte de commande pour ajouter ce type ici.",
+    "terminalRulesEmpty": "Rien pour l’instant. Choisissez « Toujours » sur une carte de commande pour ajouter ce type ici.",
     "terminalRulesForget": "Redemander",
     "navGeneral": "Général",
     "navAbilities": "Ce qu’Arslan peut faire",
@@ -1429,7 +1429,7 @@
     "sandboxRemember": "Autoriser les commandes hors du bac à sable pour le reste de cette conversation",
     "runOutside": "Exécuter hors du bac à sable",
     "label": "Exécuter cette commande ?",
-    "remember": "Ne plus demander pour ce type de commande (annulable dans Réglages › Avancé)",
+    "remember": "Ne plus demander pour ce type de commande (annulable dans Réglages → Ce qu’Arslan peut faire)",
     "run": "Exécuter",
     "cancel": "Annuler",
     "pillLabel": "Commande",
@@ -1866,7 +1866,8 @@
     "every_hour": "chaque heure",
     "every_n_hours": "toutes les {{count}} heures",
     "every_minute": "chaque minute",
-    "every_n_minutes": "toutes les {{count}} minutes"
+    "every_n_minutes": "toutes les {{count}} minutes",
+    "unattended": "Les exécutions planifiées tournent seules et ne vous attendent jamais : une étape qui demande votre accord est sautée, pas exécutée."
   },
   "enroll": {
     "label": "Mémoriser {{name}} ({{host}}) ?",
