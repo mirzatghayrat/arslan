@@ -65,6 +65,90 @@ def beta_table() -> str:
             '</thead><tbody>' + "".join(rows) + "</tbody></table></div>")
 
 
+TIMELINE = {
+    "en": dict(h="Every release, to scale", rel="release · height = commits since the previous tag (log scale)", pre="prerelease",
+               tag="tag only, no public release", latest="latest", hint="Hover a line for its version, date and commit count; click to open the release.",
+               commits="commits", months=["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]),
+    "zh": dict(h="每一次发版，按真实时间排开", rel="正式版 · 高度＝距上一个标签的提交数（对数刻度）", pre="预发布",
+               tag="只有标签，没有公开 Release", latest="最新", hint="鼠标移到线上，看版本、日期和提交数；点击打开该版本的 Release。",
+               commits="次提交", months=[f"{m} 月" for m in range(1, 13)]),
+    "de": dict(h="Jedes Release, maßstabsgetreu", rel="Release · Höhe = Commits seit dem vorigen Tag (logarithmisch)", pre="Vorabversion",
+               tag="nur Tag, kein öffentliches Release", latest="neueste", hint="Zeige auf eine Linie für Version, Datum und Commits; Klick öffnet das Release.",
+               commits="Commits", months=["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"]),
+    "ja": dict(h="すべてのリリースを実際の時間軸で", rel="リリース · 高さ＝前のタグからのコミット数（対数）", pre="プレリリース",
+               tag="タグのみ（公開リリースなし）", latest="最新", hint="線にカーソルを合わせるとバージョン・日付・コミット数、クリックでリリースを開きます。",
+               commits="コミット", months=[f"{m}月" for m in range(1, 13)]),
+    "es": dict(h="Cada versión, a escala", rel="versión · altura = commits desde la etiqueta anterior (escala logarítmica)", pre="prelanzamiento",
+               tag="solo etiqueta, sin publicación", latest="la más reciente", hint="Pasa el cursor por una línea para ver versión, fecha y commits; haz clic para abrir la versión.",
+               commits="commits", months=["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]),
+    "tr": dict(h="Her sürüm, gerçek ölçekte", rel="sürüm · yükseklik = önceki etiketten bu yana commit sayısı (logaritmik)", pre="ön sürüm",
+               tag="yalnızca etiket, yayımlanmış sürüm yok", latest="en son", hint="Sürüm, tarih ve commit sayısı için bir çizginin üzerine gelin; tıklayınca sürüm açılır.",
+               commits="commit", months=["Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"]),
+}
+
+
+def release_timeline(lang: str) -> str:
+    """Every tag on one date axis (Beijing dates, as in the table). Line height is the number of
+    non-merge commits since the previous tag on a log scale, so a big release stands taller."""
+    import datetime as dt
+    import math
+    T = TIMELINE[lang]
+    items = []
+    for v in json.loads((ROOT / "data/versions.json").read_text()):
+        if isinstance(v, str):
+            continue
+        url = next((e["url"] for e in v.get("evidence", []) if e.get("type") == "github_release"), f"{GH}/tree/{v['version']}")
+        kind = "stable" if v.get("status") == "published_stable" else "tag"
+        items.append(dict(ver=v["version"], date=v["date"], kind=kind, n=v.get("commit_count_no_merges_since_previous_tag"), url=url))
+    for p in json.loads((ROOT / "data/prereleases.json").read_text()):
+        if p.get("status") == "published_prerelease" and p.get("published_at_shanghai"):
+            items.append(dict(ver=p["version"], date=p["published_at_shanghai"][:10], kind="pre", n=None, url=p["evidence_url"]))
+    items.sort(key=lambda i: (i["date"], i["ver"]))
+    day = lambda s: dt.date.fromisoformat(s).toordinal()
+    d0, d1 = day(items[0]["date"]), day(items[-1]["date"])
+    W, base, pad = 1000, 118, 14
+    x = lambda s: pad + (day(s) - d0) / (d1 - d0) * (W - 2 * pad)
+    cap = 300  # v0.1.0 brings the whole pre-release history (1,125 commits); cap it so the rest stay readable
+    # two releases can share a Beijing date (0.1.59 and 0.1.60), so "latest" is the highest version number
+    latest = max((i for i in items if i["kind"] == "stable"), key=lambda i: tuple(int(p) for p in i["ver"][1:].split(".")))
+    out, seen = [], {}
+    out.append(f'<line class="ax" x1="{pad}" x2="{W - pad}" y1="{base}" y2="{base}"/>')
+    first = dt.date.fromordinal(d0)
+    m = dt.date(first.year, first.month, 1)
+    while m.toordinal() <= d1:
+        if m.toordinal() >= d0:
+            xx = x(m.isoformat())
+            out.append(f'<line class="ax" x1="{xx:.1f}" x2="{xx:.1f}" y1="{base}" y2="{base + 6}"/>'
+                       f'<text class="mo" x="{xx + 4:.1f}" y="{base + 22}">{T["months"][m.month - 1]}</text>')
+        m = dt.date(m.year + (m.month == 12), m.month % 12 + 1, 1)
+    out.append(f'<text class="mo" x="{pad}" y="{base + 22}">{first.day} {T["months"][first.month - 1]}</text>')
+    for i in items:
+        k = seen[i["date"]] = seen.get(i["date"], 0) + 1
+        xx = i["x"] = x(i["date"]) + (k - 1) * 4.2
+        if i["kind"] == "pre":
+            h = 26
+        elif i["n"]:
+            h = 14 + 64 * math.log1p(min(i["n"], cap)) / math.log1p(cap)
+        else:
+            h = 18
+        cls = "pre" if i["kind"] == "pre" else ("tag" if i["kind"] == "tag" else ("now" if i is latest else ""))
+        tip = f'{i["ver"]} · {i["date"]}' + (f' · {i["n"]:,} {T["commits"]}' if i["n"] else "") + (f' · {T["pre"]}' if i["kind"] == "pre" else "") + (f' · {T["tag"]}' if i["kind"] == "tag" else "")
+        top = base - 4 - h
+        out.append(f'<a href="{html.escape(i["url"])}" target="_blank" rel="noopener"><title>{html.escape(tip)}</title>'
+                   f'<rect class="hit" x="{xx - 3:.1f}" y="{top - 4:.1f}" width="6" height="{h + 8:.1f}"/>'
+                   f'<line class="tk {cls}" x1="{xx:.1f}" x2="{xx:.1f}" y1="{base - 3}" y2="{top:.1f}"/></a>')
+    lx = latest["x"]
+    out.append(f'<text class="tg" x="{pad}" y="14">{items[0]["ver"]}</text>'
+               f'<text class="tg now" x="{lx + 3:.1f}" y="14" text-anchor="end">{latest["ver"]} · {T["latest"]}</text>')
+    svg = (f'<svg class="tl-svg" viewBox="0 0 {W} {base + 30}" role="img" aria-label="{html.escape(T["h"])}: '
+           f'{items[0]["ver"]} {items[0]["date"]} – {latest["ver"]} {latest["date"]}">{"".join(out)}</svg>')
+    return (f'<figure class="tl screen-only"><figcaption><strong>{html.escape(T["h"])}</strong>'
+            f'<span>{items[0]["date"]} → {latest["date"]}</span></figcaption><div class="tl-wrap">{svg}</div>'
+            f'<p class="tl-legend"><span><i></i>{html.escape(T["rel"])}</span><span><i class="pre"></i>{html.escape(T["pre"])}</span>'
+            f'<span><i class="tag"></i>{html.escape(T["tag"])}</span><span><i class="now"></i>{html.escape(T["latest"])}</span></p>'
+            f'<p class="tl-hint">{html.escape(T["hint"])}</p></figure>')
+
+
 # The chapters' diagrams were drawn for a light page; these are their dark equivalents.
 SVG_COLOURS = {"#e0e9df": "#0f1318", "#bacbbb": "#262b33", "#5c8071": "#7d8590",
                "#f4ebd7": "#1d1709", "#b6a177": "#8a6a1f"}
@@ -155,6 +239,7 @@ summary{cursor:pointer;color:var(--tx);font-weight:600;line-height:1.6;list-styl
 summary::-webkit-details-marker{display:none}summary:before{content:"+";font:600 15px var(--mono);color:var(--work);width:14px;flex:none}
 details[open] summary:before{content:"–"}details>div{padding:8px 0 0 24px;font-size:15px}
 .qa-label{font:12px var(--mono);color:var(--dim);margin-right:8px}
+.tl{margin:22px 0 6px;padding:18px 18px 12px;border:1px solid var(--line);border-radius:14px;background:var(--s1)}.tl figcaption{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}.tl figcaption strong{font-size:16px;color:var(--tx)}.tl figcaption span{font:12px var(--mono);color:var(--dim)}.tl-wrap{overflow-x:auto;margin-top:10px}.tl-svg{display:block;width:100%;min-width:620px;height:auto}.tl .ax{stroke:var(--line2);stroke-width:1}.tl .mo{fill:var(--dim);font:11px var(--mono)}.tl .tg{fill:var(--mu);font:500 11px var(--mono)}.tl .tg.now{fill:var(--work)}.tl .tk{stroke:var(--tx2);stroke-width:3;stroke-linecap:round;transition:stroke .15s}.tl .tk.pre{stroke:var(--mu);stroke-width:2;stroke-dasharray:2 3}.tl .tk.tag{stroke:var(--dim);stroke-width:2;stroke-dasharray:1 4}.tl .tk.now{stroke:var(--work)}.tl .hit{fill:transparent}.tl a:hover .tk,.tl a:focus-visible .tk{stroke:var(--ask)}.tl-legend{display:flex;flex-wrap:wrap;gap:6px 18px;margin:10px 0 0;font-size:12px;color:var(--mu)}.tl-legend i{display:inline-block;width:3px;height:12px;border-radius:2px;background:var(--tx2);vertical-align:-2px;margin-right:7px}.tl-legend i.pre{background:none;border-left:2px dashed var(--mu);width:0}.tl-legend i.tag{background:none;border-left:2px dotted var(--dim);width:0}.tl-legend i.now{background:var(--work)}.tl-hint{margin:4px 0 0;font-size:12px;color:var(--dim)}
 .search-row{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:18px 0}
 .search-row input{width:340px;max-width:100%;height:40px;border-radius:10px;border:1px solid var(--line2);background:var(--s1);color:var(--tx);padding:0 12px;font:14px var(--mono);outline:0}
 .search-row input:focus{border-color:rgba(59,158,255,.6);box-shadow:0 0 0 4px rgba(59,158,255,.12)}
@@ -282,7 +367,7 @@ def build_lang(lang: str) -> dict:
     chapters, side = [], []
     for f in files:
         t = f.read_text()
-        t = t.replace("<!-- VERSION_TABLE -->", version_table()).replace("<!-- BETA_TABLE -->", beta_table())
+        t = t.replace("<!-- VERSION_TABLE -->", version_table()).replace("<!-- BETA_TABLE -->", beta_table()).replace("<!-- RELEASE_TIMELINE -->", release_timeline(lang))
         t = re.sub(r"\{\{source:([^|}]+)\|([^}]+)\}\}", lambda m: source(m[1], m[2]), t)
         for old, new in SVG_COLOURS.items():
             t = t.replace(f'"{old}"', f'"{new}"').replace(f'"{old.upper()}"', f'"{new}"')
