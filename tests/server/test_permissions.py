@@ -894,6 +894,18 @@ async def test_a_card_that_never_opened_because_the_person_is_away_is_an_expiry_
     assert [row.id for row, _, _ in listed] == [never_shown.id]
 
 
+async def test_an_answer_someone_gave_is_theirs_even_with_a_stray_away_marker():
+    """F3: "away" is a card that did not open, so nobody answered it (`by` None). An answer that
+    says who gave it stays that person's: their "no" stays a "no" in the ledger, and nothing is
+    listed for the Inbox."""
+    with permissions.asking_with(Asker({**no("not now"), "away": True})):
+        d = await permissions.decide(_git_push(), CTX)
+    assert (d.allowed, d.by, d.note) == (False, "user", "not now")
+    async with db_session.AsyncSessionLocal() as db:
+        [row] = await permission_store.recent(db)
+    assert (row.decided_by, row.decision, permissions.always_from(row.extra)) == ("user", "deny", [])
+
+
 async def test_an_away_card_that_would_not_have_offered_always_records_no_always_set():
     with permissions.asking_with(Asker(AWAY)):
         d = await permissions.decide(Request(kind="schedule", target="*", title="Schedule “digest”?",
