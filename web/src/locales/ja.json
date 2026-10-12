@@ -1921,7 +1921,19 @@
       "save": "保存します",
       "modify": "内容を変更します",
       "quit": "アプリを終了します"
-    }
+    },
+    "scope": {
+      "label": "この許可の範囲",
+      "once": "今回だけ",
+      "task": "このタスクの間",
+      "conversation": "この会話の間",
+      "always": "常に許可：{{label}}"
+    },
+    "noteLink": "いいえ — 代わりにどうするか伝える",
+    "notePlaceholder": "代わりに何をすればいい？（任意）",
+    "noteSend": "断る",
+    "expiredTitle": "あなたを待っています",
+    "expiredBody": "30 分間だれも応答しなかったので、実行していません。拒否ではありません。何が待っているかは Arslan が伝えます。"
   },
   "inbox": {
     "approveNow": "今すぐ承認が必要",

@@ -1921,7 +1921,19 @@
       "save": "guardar archivos",
       "modify": "cambiar contenido",
       "quit": "cerrar una app"
-    }
+    },
+    "scope": {
+      "label": "Cuánto dura este sí",
+      "once": "Solo esta vez",
+      "task": "Durante esta tarea",
+      "conversation": "En esta conversación",
+      "always": "Siempre: {{label}}"
+    },
+    "noteLink": "No — dile a Arslan qué hacer en su lugar",
+    "notePlaceholder": "¿Qué debería hacer Arslan en su lugar? (opcional)",
+    "noteSend": "Decir que no",
+    "expiredTitle": "Esperándote",
+    "expiredBody": "Nadie respondió en 30 minutos, así que no se hizo. No es un no: Arslan te dirá qué queda pendiente."
   },
   "inbox": {
     "approveNow": "Aprobar ahora",

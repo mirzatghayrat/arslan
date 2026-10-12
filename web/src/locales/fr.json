@@ -1921,7 +1921,19 @@
       "save": "enregistrer des fichiers",
       "modify": "modifier du contenu",
       "quit": "quitter une app"
-    }
+    },
+    "scope": {
+      "label": "Durée de cet accord",
+      "once": "Cette fois seulement",
+      "task": "Pour cette tâche",
+      "conversation": "Dans cette conversation",
+      "always": "Toujours : {{label}}"
+    },
+    "noteLink": "Non — dire à Arslan quoi faire à la place",
+    "notePlaceholder": "Que doit faire Arslan à la place ? (facultatif)",
+    "noteSend": "Refuser",
+    "expiredTitle": "En attente de vous",
+    "expiredBody": "Personne n’a répondu en 30 minutes, donc rien n’a été fait. Ce n’est pas un refus : Arslan vous dira ce qui attend."
   },
   "inbox": {
     "approveNow": "À approuver maintenant",

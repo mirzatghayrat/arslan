@@ -286,7 +286,8 @@ describe("locale parity", () => {
     // +35: Settings in seven sections (0.1.55 §11): nav labels, one-line hints, group titles.
     // 1727 → 1726 (0.1.59 chat liveness): working.summon/context/tools/compose out; thinking/long/queued in.
     // 1726 → 1740 (0.1.60 first run): the tour, outro and capability-score keys out; the film's shots and first tasks in.
-    expect(enKeys).toHaveLength(1740);
+    // 1740 → 1750 (0.1.61 PR 2b): kit.scope.{label,once,task,conversation,always}, kit.note{Link,Placeholder,Send}, kit.expired{Title,Body}.
+    expect(enKeys).toHaveLength(1750);
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

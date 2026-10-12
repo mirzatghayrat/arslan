@@ -34,12 +34,26 @@ export function useLayer(active = true): boolean {
 
 export type KeyHandlers = { onAllow?: () => void; onDecline?: () => void };
 
+/** A field the user types words into (not a checkbox or a radio). */
+function typingField(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target instanceof HTMLTextAreaElement) return true;
+  if (target instanceof HTMLInputElement) {
+    return !["checkbox", "radio", "button", "submit", "reset", "range", "color", "file"].includes(target.type);
+  }
+  return target.closest('[contenteditable=""], [contenteditable="true"]') !== null;
+}
+
 /**
  * ⌘⏎ (Ctrl+⏎ elsewhere) allows, Esc declines — user decision 2, 2026-10-05.
  * Plain ⏎ NEVER answers: it would while typing in the composer. Keys typed during
  * an input-method composition (Chinese, Japanese) are ignored.
+ * 0.1.61 §A4: typing while a card waits is how the user says No, so ⌘⏎ from a text field
+ * OUTSIDE the card (the composer) never allows; a field on the card itself (a key it asks
+ * for) still does. Esc declines from anywhere, as before.
  */
-export function useAnswerKeys(enabled: boolean, { onAllow, onDecline }: KeyHandlers) {
+export function useAnswerKeys(enabled: boolean, { onAllow, onDecline }: KeyHandlers,
+                              within?: { current: HTMLElement | null }) {
   useEffect(() => {
     if (!enabled) return;
     const onKey = (e: KeyboardEvent) => {
@@ -48,11 +62,13 @@ export function useAnswerKeys(enabled: boolean, { onAllow, onDecline }: KeyHandl
         e.preventDefault();
         onDecline();
       } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && onAllow) {
+        const target = e.target as Node | null;
+        if (typingField(e.target) && !(within?.current && target && within.current.contains(target))) return;
         e.preventDefault();
         onAllow();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [enabled, onAllow, onDecline]);
+  }, [enabled, onAllow, onDecline, within]);
 }

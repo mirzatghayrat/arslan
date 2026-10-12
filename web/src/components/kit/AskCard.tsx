@@ -1,9 +1,9 @@
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowUpRight, Lock } from "lucide-react";
 import { AskMark } from "./AskMark";
 import { Button } from "./Button";
-import { Countdown } from "./Countdown";
+import { CARD_MS, Countdown } from "./Countdown";
 import { useAnswerKeys, useLayer } from "./layers";
 
 export interface AskQueuePosition { index: number; total: number; onPrev?: () => void; onNext?: () => void }
@@ -58,9 +58,10 @@ export interface AskCardProps {
 export function AskCard(p: AskCardProps) {
   const { t } = useTranslation();
   const top = useLayer(p.keys !== false);
-  useAnswerKeys(top && !p.busy, { onAllow: () => { if (!p.allowDisabled) p.onAllow(); }, onDecline: p.onDecline });
+  const root = useRef<HTMLElement>(null);
+  useAnswerKeys(top && !p.busy, { onAllow: () => { if (!p.allowDisabled) p.onAllow(); }, onDecline: p.onDecline }, root);
   return (
-    <section data-testid={p.testId ?? "ask-card"} role="alertdialog" aria-label={p.who} {...p.attrs}
+    <section ref={root} data-testid={p.testId ?? "ask-card"} role="alertdialog" aria-label={p.who} {...p.attrs}
       className={`flex w-full max-w-[460px] flex-col gap-3.5 rounded-2xl border border-border bg-surface px-5 pb-4 pt-[18px] text-foreground shadow-kit ${p.className ?? ""}`}>
       <header className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2.5">
@@ -77,7 +78,7 @@ export function AskCard(p: AskCardProps) {
                 className="px-0.5 hover:text-foreground disabled:opacity-40">›</button>
             </span>
           )}
-          {p.expiresAt ? <Countdown expiresAt={p.expiresAt} totalMs={p.totalMs ?? 300_000} /> : null}
+          {p.expiresAt ? <Countdown expiresAt={p.expiresAt} totalMs={p.totalMs ?? CARD_MS} /> : null}
         </div>
       </header>
       <h3 className="text-[19px] font-bold leading-[1.35]">{p.title}</h3>

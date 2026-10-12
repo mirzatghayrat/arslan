@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
 
+/** How long the Mac waits on a card (server approvals.TIMEOUT_S, 0.1.61 §A4): 30 minutes. */
+export const CARD_MS = 1_800_000;
+
 /** The asking card's countdown ring (0.1.55): amber, mono digits, m:ss. */
 export function Countdown({ expiresAt, totalMs, size = 40 }: { expiresAt: number; totalMs: number; size?: number }) {
   const [now, setNow] = useState(() => Date.now());

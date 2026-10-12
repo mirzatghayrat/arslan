@@ -1921,7 +1921,19 @@
       "save": "save files",
       "modify": "change content",
       "quit": "quit an app"
-    }
+    },
+    "scope": {
+      "label": "How long this yes lasts",
+      "once": "Once",
+      "task": "For this task",
+      "conversation": "In this conversation",
+      "always": "Always: {{label}}"
+    },
+    "noteLink": "No — tell Arslan what to do instead",
+    "notePlaceholder": "What should Arslan do instead? (optional)",
+    "noteSend": "Say no",
+    "expiredTitle": "Waiting for you",
+    "expiredBody": "Nobody answered in 30 minutes, so it was not done. That is not a no: Arslan will tell you what is waiting."
   },
   "inbox": {
     "approveNow": "Approve now",

@@ -1921,7 +1921,19 @@
       "save": "Dateien speichern",
       "modify": "Inhalte ändern",
       "quit": "eine App beenden"
-    }
+    },
+    "scope": {
+      "label": "Wie lange dieses Ja gilt",
+      "once": "Nur dieses Mal",
+      "task": "Für diese Aufgabe",
+      "conversation": "In diesem Gespräch",
+      "always": "Immer: {{label}}"
+    },
+    "noteLink": "Nein — Arslan sagen, was stattdessen",
+    "notePlaceholder": "Was soll Arslan stattdessen tun? (optional)",
+    "noteSend": "Ablehnen",
+    "expiredTitle": "Wartet auf dich",
+    "expiredBody": "In 30 Minuten hat niemand geantwortet, deshalb ist es nicht passiert. Das ist kein Nein: Arslan sagt dir, was noch wartet."
   },
   "inbox": {
     "approveNow": "Jetzt freigeben",
