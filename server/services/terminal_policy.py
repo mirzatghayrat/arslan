@@ -272,6 +272,8 @@ _MASKED_RULES = frozenset({"delete", "install", "sudo"})
 _FORBID_C = [(k, re.compile(p, re.I), w) for k, p, w in _FORBID]
 _ASK_C = [(k, re.compile(p, re.I), w) for k, p, w in _ASK if p is not None]
 _WHY = {k: w for k, _, w in _FORBID + _ASK}
+_WHY.update({"fetched-code": "runs code it downloads or decodes",
+             "unreadable": "Arslan could not read this command — run it?"})
 _ARSLAN_DATA = re.compile(
     r"(?P<folder>Application\s*Support[\"']?/+[\"']?Arslan(?![\w.-]))"   # the data folder (and Hands')
     r"|(?:~|\$\{?HOME\}?)/+\.arslan"                             # ~/.arslan, ~/.arslan-updater.key
@@ -324,6 +326,29 @@ class Assessment:
     reason: str = ""
 
 
+# ── what cannot be read asks (§A9; review I3, M3) ─────────────────────────────
+
+#: A command Arslan could not read: an error while reading it, or one past a parse ceiling. It
+#: asks as the `opaque` card, which is once only: never run unread, and never the floor, which no
+#: click can lift. Its words are the card's title.
+UNREADABLE = Finding("opaque", "unreadable", _WHY["unreadable"])
+#: The parse ceilings (review M3). Reading a command costs more with every substitution that runs:
+#: with their number, their depth, and the text they span. Measured with none (loaded machine):
+#: 300 backticks 2.7 s, 64 deep 3.7 s, 64 backticks spread over 8 KB 2.8 s, 16 deep around 7 KB
+#: 26 s; each command a script hands the system is a full read too. Real commands open a handful
+#: of substitutions, one or two deep, and a script runs a few commands. Within these ceilings the
+#: worst shapes measured read in about half a second; past any of them a command is not read.
+_MAX_SUBSTITUTIONS = 64           # backticks and `$(` that run; and the commands one script runs
+_MAX_SUBSTITUTION_DEPTH = 16      # `$(` inside `$(`
+_MAX_BACKTICK_WORK = 64 * 1024    # backticks × the length of the text: 64 in 1 KB, 8 in 8 KB
+_MAX_NESTED_WORK = 32 * 1024      # Σ depth² over the characters inside `$(…)`: any length 1 deep, 128 at 16
+_MAX_CODE_DEPTH = 3               # code handed to a shell within code handed to a shell (`bash -c`, `eval`)
+
+
+class _Unreadable(Exception):
+    """A parse ceiling: the command is not read, and asks (`UNREADABLE`)."""
+
+
 def as_shell(command: str, argv=None) -> str:
     """One shell string from either form the tool accepts ({command} or legacy {command, argv})."""
     command = str(command or "").strip()
@@ -337,18 +362,22 @@ def as_shell(command: str, argv=None) -> str:
 # ── classify ──────────────────────────────────────────────────────────────────
 
 def classify(command: str) -> Classification:
+    """Every finding in a command. It never raises (the tool loop has no catch around it): an
+    error while reading, or a command past a parse ceiling, is `UNREADABLE` alone (review I3)."""
     text = str(command or "")
     if not text.strip():
         return Classification(text, (Finding("floor", "empty", "no command"),))
     if len(text) > MAX_COMMAND_CHARS:
         return Classification(text, (Finding("floor", "too-long", "command is too long to review"),))
-    shell, bodies = split_heredocs(text)
-    commands = _commands(shell)
-    findings: list[Finding] = []
-    findings += _floor_findings(text, shell, commands)
-    findings += _hermes_findings(shell, raw=text)
-    findings += _arslan_findings(shell, commands, bodies)
-    findings += _script_findings(commands, bodies)
+    try:
+        findings = _read(text)
+    except _Unreadable as ceiling:
+        logger.info("terminal_policy: past a parse ceiling (%s), a command asks unread", ceiling)
+        return Classification(text, (UNREADABLE,))
+    except Exception:  # noqa: BLE001 — never raise, never run it unread, never the floor
+        logger.warning("terminal_policy: could not read a command (%d characters); it asks unread",
+                       len(text), exc_info=True)
+        return Classification(text, (UNREADABLE,))
     seen: set[tuple] = set()
     unique = []
     for f in findings:
@@ -357,6 +386,21 @@ def classify(command: str) -> Classification:
             seen.add(key)
             unique.append(f)
     return Classification(text, tuple(unique))
+
+
+def _read(text: str) -> list[Finding]:
+    """The findings of `classify`; raises `_Unreadable` past a parse ceiling."""
+    shell, bodies = split_heredocs(text)
+    _check_ceilings(shell)
+    shell = _without_zsh_modifiers(shell)
+    commands = _commands(shell)
+    findings: list[Finding] = []
+    findings += _floor_findings(text, shell, commands)
+    findings += _hermes_findings(shell, raw=text)
+    findings += _arslan_findings(shell, commands, bodies)
+    findings += _script_findings(commands, bodies)
+    findings += _fetched_code_findings(shell)
+    return findings
 
 
 def assess(command: str) -> Assessment:
@@ -405,19 +449,31 @@ def split_heredocs(text: str) -> tuple[str, list[tuple[str, str]]]:
     A body is data for the program that reads it (`cat > README.md <<EOF` writes text, `python3
     - <<EOF` reads code, `sqlite3 db <<SQL` reads SQL), so shell rules never see it. A body read
     by a shell (`bash <<EOF`, or piped into one) stays: it is shell. The body ends at the first
-    line that is exactly the delimiter (tabs stripped for `<<-`), or at the end, as in the shell."""
+    line that is exactly the delimiter (tabs stripped for `<<-`). A `<<` in a comment or in
+    arithmetic (`$((a<<b))`, `$[a<<b]`) opens no heredoc, and a body with no closing line is read
+    as shell as well: a line wrongly taken for data would run unread (found fixing review C1)."""
     out: list[str] = []
     bodies: list[tuple[str, str]] = []
     pos, n = 0, len(text)
+    arith = bracket = 0             # parentheses open since `((`, brackets since `$[`: arithmetic
     while pos < n:
-        ops, newline = [], None
-        for kind, i, _j, quote in hermes._scan_shell(text, pos):
-            if kind != "char" or quote is not None:
+        ops, newline, skip = [], None, -1
+        for kind, i, _j, quote in hermes._scan_shell(text, pos, comments=True):
+            if kind != "char" or quote is not None or i <= skip:
                 continue
-            if text[i] == "\n":
+            ch = text[i]
+            if ch == "\n":
                 newline = i
                 break
-            if text.startswith("<<", i) and not text.startswith("<<<", i) and (i == 0 or text[i - 1] != "<"):
+            if arith:
+                arith += (ch == "(") - (ch == ")")
+            elif bracket:
+                bracket += (ch == "[") - (ch == "]")
+            elif text.startswith("((", i):
+                arith, skip = 2, i + 1
+            elif text.startswith("$[", i):
+                bracket, skip = 1, i + 1
+            elif text.startswith("<<", i) and not text.startswith("<<<", i) and (i == 0 or text[i - 1] != "<"):
                 match = _HEREDOC_OP.match(text, i)
                 if match:
                     ops.append(match)
@@ -430,14 +486,14 @@ def split_heredocs(text: str) -> tuple[str, list[tuple[str, str]]]:
         for match in ops:
             delimiter = match.group(2) or match.group(3) or match.group(4)
             strip_tabs = match.group(1) == "-"
-            start, end, after = pos, n, n
+            start, end, after, closed = pos, n, n, False
             cursor = pos
             while cursor < n:
                 stop = text.find("\n", cursor)
                 stop = n if stop < 0 else stop
                 line = text[cursor:stop]
                 if (line.lstrip("\t") if strip_tabs else line) == delimiter:
-                    end, after = cursor, min(stop + 1, n)
+                    end, after, closed = cursor, min(stop + 1, n), True
                     break
                 cursor = stop + 1
             program = _heredoc_program(text, match.start())
@@ -446,28 +502,122 @@ def split_heredocs(text: str) -> tuple[str, list[tuple[str, str]]]:
                 out.append(text[start:after])
             else:
                 bodies.append((program, text[start:end]))
+                if not closed:          # no closing line: shell as well, never only data
+                    out.append(text[start:after])
             pos = after
     return "".join(out), bodies
 
 
+#: zsh precommand modifiers (run_command runs `/bin/zsh -c`): `noglob`, `nocorrect` and `-` run the
+#: command after them, `repeat N` runs it N times, and `=git` is git's own path (review I2).
+_ZSH_MODIFIER = re.compile(r"(?:noglob|nocorrect|-)[ \t]+|repeat[ \t]+\S+[ \t]+|=(?=[\w./~])")
+_ZSH_MODIFIER_WORDS = frozenset({"noglob", "nocorrect", "-"})
+
+
 def _heredoc_program(text: str, at: int) -> str:
-    """The program a heredoc at `at` feeds: the command word of its simple command."""
+    """The program a heredoc at `at` feeds: the command word of its simple command (past
+    assignments, wrappers and zsh modifiers)."""
     line_start = text.rfind("\n", 0, at) + 1
     head = re.split(r"\|\||&&|[;&|(]|\$\(", text[line_start:at])[-1]
     try:
         words = shlex.split(head, posix=True)
     except ValueError:
         words = head.split()
+    repeat_count = False
     for word in words:
-        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", word) or word in hermes._COMMAND_WRAPPER_WORDS:
+        if repeat_count:
+            repeat_count = False
             continue
-        return os.path.basename(word).lower()
+        if (re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", word) or word in hermes._COMMAND_WRAPPER_WORDS
+                or word in _ZSH_MODIFIER_WORDS):
+            continue
+        if word == "repeat":
+            repeat_count = True
+            continue
+        return os.path.basename(word.lstrip("=")).lower()
     return ""
+
+
+def _without_zsh_modifiers(shell: str) -> str:
+    """The command with the zsh modifiers that open a command taken out, so every rule, Hermes'
+    text patterns too, sees the command they run: `noglob sudo ls` is `sudo ls` (review I2)."""
+    edits: list[tuple[int, int, str]] = []
+    cursor = 0
+    for start in sorted(hermes._iter_shell_command_starts(shell)):
+        end = start
+        while (match := _ZSH_MODIFIER.match(shell, end)) is not None:
+            end = match.end()
+        if end > start and start >= cursor:
+            edits.append((start, end, ""))
+            cursor = end
+    return hermes._splice(shell, edits) if edits else shell
+
+
+def _check_ceilings(*texts: str) -> None:
+    """Raise `_Unreadable` when the texts, read together, pass a parse ceiling (review M3)."""
+    marks = deepest = ticks = nested = 0
+    for text in texts:
+        text_marks, text_depth, text_backticks, text_nested = _substitution_load(text)
+        marks, deepest = marks + text_marks, max(deepest, text_depth)
+        ticks, nested = ticks + text_backticks * len(text), nested + text_nested
+    if marks > _MAX_SUBSTITUTIONS:
+        raise _Unreadable(f"{marks} substitutions")
+    if deepest > _MAX_SUBSTITUTION_DEPTH:
+        raise _Unreadable(f"substitutions {deepest} deep")
+    if ticks > _MAX_BACKTICK_WORK:
+        raise _Unreadable(f"backticks over {ticks} characters")
+    if nested > _MAX_NESTED_WORK:
+        raise _Unreadable(f"nested substitutions weighing {nested}")
+
+
+def _check_nested(commands: list[str], what: str) -> None:
+    """The commands a script hands the system are each read in full: in their number, and in the
+    substitutions they open between them, they share the ceilings."""
+    if len(commands) > _MAX_SUBSTITUTIONS:
+        raise _Unreadable(f"{what} runs {len(commands)} commands")
+    _check_ceilings(*commands)
+
+
+def _substitution_load(text: str) -> tuple[int, int, int, int]:
+    """(the backticks and `$(` that run, how deep the `$(` nest, the backticks, Σ depth² over the
+    characters inside `$(…)`), in one pass that never raises. Nothing in single quotes runs; in
+    double quotes it does, and each `$(` opens a fresh quoting level until its `)`. Approximate
+    on purpose: it only bounds the reading, it never decides a card."""
+    marks = deepest = backticks = nested = 0
+    quotes: list[str | None] = [None]           # the quote open at each `$(` level
+    i, n = 0, len(text)
+    while i < n:
+        ch, quote = text[i], quotes[-1]
+        nested += (len(quotes) - 1) ** 2
+        if quote == "'":
+            if ch == "'":
+                quotes[-1] = None
+        elif ch == "\\":
+            i += 1                              # the next character is escaped
+        elif ch == "'" and quote is None:
+            quotes[-1] = "'"
+        elif ch == '"':
+            quotes[-1] = None if quote == '"' else '"'
+        elif ch == "`":
+            marks += 1
+            backticks += 1
+        elif text.startswith("$(", i):
+            marks += 1
+            quotes.append(None)
+            deepest = max(deepest, len(quotes) - 1)
+            i += 1
+        elif ch == ")" and quote is None and len(quotes) > 1:
+            quotes.pop()
+        i += 1
+    return marks, deepest, backticks, nested
 
 
 #: Programs that run the command written after their own options: what they run is read too.
 _RUNS_NEXT = frozenset({"xargs", "watch", "caffeinate", "arch", "ionice", "stdbuf", "unbuffer", "chronic",
                         "flock", "parallel", "npx", "bunx", "pnpx", "uvx"})
+#: Package runners, and the subcommand after which they run a command (`uv run twine upload`).
+_RUNNER_RUNS = {"uv": {"run"}, "poetry": {"run"}, "pdm": {"run"}, "pipx": {"run"}, "npm": {"exec"},
+                "pnpm": {"exec", "dlx"}, "yarn": {"dlx"}}
 _FIND_RUNS = ("-exec", "-execdir", "-ok", "-okdir")
 
 
@@ -475,25 +625,32 @@ def _commands(text: str, depth: int = 0) -> list[list[str]]:
     """The argv of every simple command in `text`, quote-aware (Hermes' own tokenizer): wrappers
     (`sudo`, `env`, `nohup`) appear with the command they run and as that command alone; what a
     shell runs (`bash -c '…'`, `eval '…'`) and what `xargs`, `find -exec`, `watch` … run appear as
-    their own commands. Hermes' tokenizer reads to the end of the segment, so the closer of a
-    subshell or substitution sticks to the last word (`(git push)` → `push)`): it is stripped."""
+    their own commands. Each command is read to where it ends (`;` `|` `&`, or the `)` or backtick
+    closing the substitution it is in): from `git`, the rest of `echo "$(git push)"` ends in the
+    enclosing quote, which shlex refused, and the command was dropped (review C1). Code handed to a
+    shell is read `_MAX_CODE_DEPTH` levels down; deeper, the command asks unread."""
     out: list[list[str]] = []
 
     def add(tokens: list[str]) -> None:
         out.append(tokens)
-        if depth < 3:
-            payload = (" ".join(tokens[1:]) if _name(tokens) == "eval"
-                       else hermes._bash_exec_payload(tokens[1:])[1] if _name(tokens) in _SHELLS else None)
-            if payload:
-                out.extend(_commands(payload, depth + 1))
+        payload = (" ".join(tokens[1:]) if _name(tokens) == "eval"
+                   else hermes._bash_exec_payload(tokens[1:])[1] if _name(tokens) in _SHELLS else None)
+        if payload:
+            if depth >= _MAX_CODE_DEPTH:
+                raise _Unreadable(f"code nested more than {_MAX_CODE_DEPTH} deep")
+            out.extend(_commands(payload, depth + 1))
 
     for segment in hermes._iter_top_level_shell_segments(text):
         for start, _end, word in hermes._iter_shell_command_word_spans(segment):
-            tokens = hermes._shell_segment_tokens(segment, start)
+            bounded = hermes._shell_command_segment(segment, start)
+            tokens = hermes._shell_segment_tokens(bounded, 0)
+            if tokens is None:              # quoting the shell would refuse: read it word by word
+                tokens = bounded.split()
             if not tokens:
                 continue
-            tokens = [hermes._deobfuscate_shell_word_for_detection(word),
-                      *(t.rstrip(")`") for t in tokens[1:])]
+            # No closer sticks to the last word any more (`(git push)` is read as `git push`), and
+            # stripping one would cut a substitution argument short (`bash -c "$(curl …)"`).
+            tokens = [hermes._deobfuscate_shell_word_for_detection(word), *tokens[1:]]
             tokens = [t for t in tokens if t]
             if not tokens:              # `''` alone: no command word, nothing runs (an empty argv raised)
                 continue
@@ -522,6 +679,10 @@ def _run_by(argv: list[str]) -> list[list[str]]:
         return out
     if name in _RUNS_NEXT:
         return [argv[i:] for i in range(1, len(argv)) if not argv[i].startswith("-")][:4]
+    if name in _RUNNER_RUNS:                        # review M2: `uv run`, `npm exec`, `pnpm dlx` …
+        at = next((i for i in range(1, len(argv)) if argv[i] in _RUNNER_RUNS[name]), None)
+        return [] if at is None else [argv[i:] for i in range(at + 1, len(argv))
+                                      if not argv[i].startswith("-")][:4]
     return []
 
 
@@ -615,17 +776,28 @@ def _touches_arslan_data(text: str) -> bool:
     the folder unseen: the sandbox closes it to every command (`command_sandbox.default_protected`,
     and in 0.1.61 the wide profile too), and every command that runs without the sandbox asks."""
     normalized = hermes._normalize_command_for_detection(text)
-    for subject in (normalized, text):
+    subjects = (normalized, text, _unspliced(normalized))
+    for subject in subjects:
         for match in _ARSLAN_DATA.finditer(subject):
             if not (match.group("folder") and _reads_a_skill(subject, match.end())):
                 return True
     literal = _data_dir_literal()
     if literal:
-        for subject in (normalized, text):
+        for subject in subjects:
             for match in re.finditer(re.escape(literal) + r"(?=[/\s\"';|&)]|$)", subject):
                 if not _reads_a_skill(subject, match.end()):
                     return True
     return False
+
+
+def _unspliced(text: str) -> str:
+    """The text with its quote marks taken out and `/./` folded, so a path spelled in quoted
+    pieces (`Application' 'Support`, `Ars'l'an`, `"Application Support"/./Arslan`) reads as the
+    path itself (review M4). For matching only: it joins words a shell would keep apart."""
+    text = text.replace("'", "").replace('"', "")
+    while "/./" in text:
+        text = text.replace("/./", "/")
+    return text
 
 
 def _reads_a_skill(subject: str, at: int) -> bool:
@@ -721,9 +893,14 @@ def _parses(text: str) -> bool:
 # ── Arslan's findings ─────────────────────────────────────────────────────────
 
 _SEND_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
-_CURL_SENDING = ("--data", "--data-ascii", "--data-binary", "--data-raw", "--data-urlencode", "--form",
-                 "--form-string", "--upload-file", "--json")
+#: curl's request data: the body of a POST, or with `-G` the query of a GET (a read).
+_CURL_DATA = ("--data", "--data-ascii", "--data-binary", "--data-raw", "--data-urlencode")
+_CURL_SENDING = ("--form", "--form-string", "--upload-file", "--json")
 _CURL_VALUE_SHORT = frozenset("dFTXHAbceEhKmortuUwxyYzCPQ")
+#: curl's long options that take no value: the word after one is never its value.
+_CURL_FLAGS = frozenset({"--silent", "--show-error", "--location", "--fail", "--fail-with-body", "--compressed",
+                         "--insecure", "--verbose", "--include", "--globoff", "--get", "--head",
+                         "--no-progress-meter"})
 _WGET_SENDING = ("--post-data", "--post-file", "--body-data", "--body-file")
 _REMOTE = frozenset({"ssh", "scp", "sftp", "ftp", "mosh", "ssh-copy-id"})
 _RAW_NET = frozenset({"nc", "ncat", "netcat", "socat", "telnet"})
@@ -808,7 +985,8 @@ def _options(argv: list[str]) -> list[str]:
 
 
 def _uploads(argv: list[str]) -> bool:
-    """curl or wget sending data: curl's data flags are case-sensitive (`-f`, `-sSf`, `-D -` read)."""
+    """curl or wget sending data: curl's data flags are case-sensitive (`-f`, `-sSf`, `-D -` read),
+    and `-G` turns the data into the query of a GET, a read (review M5)."""
     name, args = _name(argv), argv[1:]
     if name == "wget":
         return any(a.startswith(_WGET_SENDING) or (a.startswith("--method=") and a[9:].upper() in _SEND_METHODS)
@@ -816,6 +994,7 @@ def _uploads(argv: list[str]) -> bool:
                                          for i, a in enumerate(args))
     if name != "curl":
         return False
+    get = data = sends = False
     i = 0
     while i < len(args):
         arg = args[i]
@@ -823,12 +1002,15 @@ def _uploads(argv: list[str]) -> bool:
             break
         if arg.startswith("--"):
             option, equals, value = arg.partition("=")
-            if option in _CURL_SENDING:
-                return True
-            if option == "--request":
+            if option == "--get":
+                get = get or _curl_option_stands(args, i)
+            elif option in _CURL_DATA:
+                data = True
+            elif option in _CURL_SENDING:
+                sends = True
+            elif option == "--request":
                 method = value if equals else (args[i + 1] if i + 1 < len(args) else "")
-                if method.upper() in _SEND_METHODS:
-                    return True
+                sends = sends or method.upper() in _SEND_METHODS
                 i += 1 if equals else 2
                 continue
             i += 1
@@ -836,19 +1018,36 @@ def _uploads(argv: list[str]) -> bool:
         if arg.startswith("-") and len(arg) > 1:
             letters, skip = arg[1:], 1
             for j, letter in enumerate(letters):
-                if letter in "dFT":
-                    return True
-                if letter == "X":
+                if letter == "G":
+                    get = get or _curl_option_stands(args, i)
+                elif letter == "d":
+                    data = True
+                elif letter in "FT":
+                    sends = True
+                elif letter == "X":
                     method = letters[j + 1:] or (args[i + 1] if i + 1 < len(args) else "")
-                    if method.upper() in _SEND_METHODS:
-                        return True
+                    sends = sends or method.upper() in _SEND_METHODS
                 if letter in _CURL_VALUE_SHORT:
                     skip = 1 if j + 1 < len(letters) else 2      # its value: the rest, or the next word
                     break
             i += skip
             continue
         i += 1
-    return False
+    return sends or (data and not get)
+
+
+def _curl_option_stands(args: list[str], i: int) -> bool:
+    """Whether `args[i]` is an option of its own and not the value of the option before it
+    (`-H -G`, `--data-urlencode -G`): `-G` counts only then, so it never hides a POST."""
+    if i == 0:
+        return True
+    before = args[i - 1]
+    if before.startswith("--"):
+        return "=" in before or before in _CURL_FLAGS
+    if before.startswith("-") and len(before) > 1:
+        owner = next((j for j, letter in enumerate(before[1:]) if letter in _CURL_VALUE_SHORT), None)
+        return owner is None or owner < len(before) - 2         # a value-taking letter last takes the word
+    return True
 
 
 def _rsync_remote(argv: list[str]) -> bool:
@@ -956,7 +1155,7 @@ def _force_deletes(argv: list[str]) -> bool:
 def _kills_hard(argv: list[str]) -> bool:
     name = _name(argv)
     if name in ("pkill", "killall"):
-        return True
+        return not _signal_zero(argv[1:])
     if name != "kill":
         return False
     args = argv[1:]
@@ -966,6 +1165,23 @@ def _kills_hard(argv: list[str]) -> bool:
         if arg == "-s" and i + 1 < len(args) and args[i + 1].upper() in ("9", "KILL", "SIGKILL"):
             return True
     return False
+
+
+def _signal_zero(args: list[str]) -> bool:
+    """`pkill -0 x`, `killall -s 0 x`, `--signal 0`: signal 0 only checks that a process exists
+    (review M5). Any other signal named beside it, and it is a kill again."""
+    zero = other = False
+    for i, arg in enumerate(args):
+        value = None
+        if arg in ("-s", "--signal") and i + 1 < len(args):
+            value = args[i + 1]
+        elif arg.startswith("--signal="):
+            value = arg.partition("=")[2]
+        elif re.fullmatch(r"-(?:\d+|[A-Z][A-Z0-9+-]*)", arg):
+            value = arg[1:]
+        if value is not None:
+            zero, other = zero or value == "0", other or value != "0"
+    return zero and not other
 
 
 def _changes_startup(argv: list[str]) -> bool:
@@ -1144,8 +1360,9 @@ def _applescript_findings(script: str) -> list[Finding]:
         found.append(Finding("floor", "sudo", _WHY["sudo"]))
     if _SCRIPT_POWER.search(steps):
         found.append(Finding("floor", "shutdown", "shuts down, restarts or logs out the Mac"))
-    for m in _SCRIPT_SHELL.finditer(script):
-        payload = _unescape(next(g for g in m.groups() if g is not None))
+    payloads = [_unescape(next(g for g in m.groups() if g is not None)) for m in _SCRIPT_SHELL.finditer(script)]
+    _check_nested(payloads, "an AppleScript")
+    for payload in payloads:
         found += [f for f in classify(payload).findings if f.category != "local"]
     named = app_names(script)
     kind = _app_step_kind(script)
@@ -1187,16 +1404,27 @@ def app_names(script: str) -> list[str]:
 def app_findings(names: list[str], script: str, *, kind: str | None = None) -> list[Finding]:
     """One finding per app a script tells: the floor for an app on the never-list (Hands'
     `never_touched`, by name and bundle id); a money or risky step asks every time."""
-    from server.services import hands_service
     kind = kind or _app_step_kind(script)
     found = []
     for name in names:
-        if hands_service.never_touched(name):
+        if _never_touched(name):
             found.append(Finding("floor", "never-app", f"Arslan never touches {name} (the never-list)",
                                  app=name))
         else:
             found.append(Finding("apps", "apple-events", f"uses {name}", app=name, kind=kind))
     return found
+
+
+def _never_touched(name: str) -> bool:
+    """Hands' never-list. When it cannot be read (Hands' policy file is missing), the app is not
+    refused unseen and the command is not unread: the app asks, as its own card (review I3)."""
+    from server.services import hands_service
+    try:
+        return hands_service.never_touched(name)
+    except Exception:  # noqa: BLE001 — fail closed to the app's card
+        logger.warning("terminal_policy: Hands' never-list could not be read; %r asks as its app card", name,
+                       exc_info=True)
+        return False
 
 
 def _shortcut_name(argv: list[str]) -> str:
@@ -1271,6 +1499,8 @@ def _script_findings(commands: list[list[str]], bodies) -> list[Finding]:
     scripts += [(body, hermes._interpreter_family(program) or program) for program, body in bodies
                 if program in _RUNNERS or (hermes._interpreter_family(program) is not None and program != "osascript")]
     found: list[Finding] = []
+    if any(_runs_fetched_code(argv) for argv in commands):          # review I1
+        found.append(Finding("opaque", "fetched-code", _WHY["fetched-code"]))
     for script, family in scripts:
         if (_SCRIPT_SENDS.search(script) or (_HTTP_CLIENT.search(script) and _ANY_SEND_CALL.search(script))
                 or (_SOCKET_USE.search(script) and _SOCKET_SEND.search(script))):
@@ -1281,9 +1511,153 @@ def _script_findings(commands: list[list[str]], bodies) -> list[Finding]:
                 Finding("apps", "script-apps", "a script controls other apps", kind=_app_step_kind(script))]
         if _SCRIPT_HIDDEN.search(script):
             found.append(Finding("opaque", "script-hidden", "a script runs code it decoded or downloaded"))
-        for command in _shell_outs(script, family):
+        outs = _shell_outs(script, family)
+        _check_nested(outs, "a script")
+        for command in outs:
             found += [f for f in classify(command).findings if f.category != "local"]
     return found
+
+
+# ── code fetched or decoded, then run (§A2 opaque; review I1, M1) ─────────────
+
+#: Programs whose output is what the web sent (`curl`, `wget`, HTTPie).
+_FETCHERS = frozenset({"curl", "wget", "http", "https", "xh", "xhs"})
+
+
+def _fetches(argv: list[str]) -> bool:
+    return _name(argv) in _FETCHERS
+
+
+def _decodes(argv: list[str]) -> bool:
+    """`base64 -d`, `xxd -r`, `openssl … -d`: the decoders Hermes' decode-to-shell rules name."""
+    name, args = _name(argv), argv[1:]
+    if name in ("base64", "base32", "base16", "basenc"):
+        return any(a in ("-d", "-D", "--decode") or (a.startswith("-") and not a.startswith("--") and "d" in a[1:].lower())
+                   for a in args)
+    if name == "xxd":
+        return any(a.startswith("-") and not a.startswith("--") and "r" in a[1:] for a in args)
+    return name == "openssl" and "-d" in args
+
+
+def _runs_fetched_code(argv: list[str]) -> bool:
+    """`bash -c "$(curl …)"`, `eval "$(curl …)"`, `python3 -c "$(curl …)"`: the code a shell or an
+    interpreter is handed holds what a download or a decode printed, so it runs code nobody read.
+    (A substitution in the code is filled in before the code is read, quoted or not.)"""
+    name = _name(argv)
+    if name == "eval":
+        code = " ".join(argv[1:])
+    elif name in _SHELLS:
+        code = hermes._bash_exec_payload(argv[1:])[1] or ""
+    else:
+        family = hermes._interpreter_family(argv[0]) if argv else None
+        code = " ".join(argv[1:]) if family and hermes._interpreter_exec_flag(family, argv[1:]) else ""
+    return any(_fetches(inner) or _decodes(inner)
+               for body in _substitution_bodies(code) for inner in _commands(body))
+
+
+def _substitution_bodies(code: str) -> list[str]:
+    """The text inside each `$(…)`, `<(…)` and backtick span of `code` (outermost)."""
+    bodies, i = [], 0
+    while i < len(code):
+        end = None
+        if code.startswith(("$(", "<("), i):
+            end = hermes._scan_dollar_paren_end(code, i)
+            if end is not None:
+                bodies.append(code[i + 2:end - 1])
+        elif code[i] == "`":
+            end = hermes._scan_backtick_end(code, i)
+            if end is not None:
+                bodies.append(code[i + 1:end - 1])
+        i = end if end is not None else i + 1
+    return bodies
+
+
+def _fetched_code_findings(shell: str) -> list[Finding]:
+    """Fetched or decoded code run in ways Hermes' shell-only patterns miss (review M1): piped
+    into an interpreter that has no script of its own (`curl … | python3`, `| node`, `| ruby`,
+    `| perl`), or sourced from a process substitution (`source <(curl …)`) — at the top, and in
+    every substitution, which a quote does not stop from running (`echo "$(curl … | python3)"`)."""
+    pending, seen = [shell], set()
+    while pending:
+        text = pending.pop()
+        if text in seen:
+            continue
+        seen.add(text)
+        if _pipes_fetched_code(text) or _sources_fetched_code(text):
+            return [Finding("opaque", "fetched-code", _WHY["fetched-code"])]
+        pending += _substitution_bodies(text)
+    return []
+
+
+def _pipes_fetched_code(text: str) -> bool:
+    for pipeline in _pipelines(text):
+        fed = False
+        for piece in pipeline:
+            argvs = _commands(piece)
+            if fed and any(_reads_code_from_stdin(argv) for argv in argvs):
+                return True
+            fed = fed or any(_fetches(argv) or _decodes(argv) for argv in argvs)
+    return False
+
+
+def _sources_fetched_code(text: str) -> bool:
+    for _start, end, word in hermes._iter_shell_command_word_spans(text):
+        if hermes._deobfuscate_shell_word_for_detection(word) in ("source", "."):
+            at = hermes._skip_shell_whitespace(text, end)
+            close = hermes._scan_dollar_paren_end(text, at) if text.startswith("<(", at) else None
+            if close is not None and any(_fetches(a) or _decodes(a) for a in _commands(text[at + 2:close - 1])):
+                return True
+    return False
+
+
+def _pipelines(text: str) -> list[list[str]]:
+    """Each pipeline in `text`, as its commands' text in order: split at `|` (`|&` too), and from
+    the next pipeline at `;`, `&`, `&&`, `||` and newlines; quotes, comments and redirections such
+    as `2>&1` respected."""
+    pipelines: list[list[str]] = [[]]
+    start = skip_to = 0
+    for kind, i, j, quote in hermes._scan_shell(text, comments=True):
+        if i < skip_to:
+            continue
+        if kind == "comment":
+            pipelines[-1].append(text[start:i])
+            pipelines.append([])
+            start = skip_to = j
+            continue
+        if kind != "char" or quote is not None or text[i] not in ";&|\n":
+            continue
+        ch, nxt = text[i], text[i + 1:i + 2]
+        if ch == "&" and ((i and text[i - 1] in "<>") or nxt == ">"):
+            continue                                        # `2>&1`, `<&3`, `&>file`: a redirection
+        pipelines[-1].append(text[start:i])
+        if ch == "|" and nxt != "|":
+            start = i + 1 + (nxt == "&")
+        else:
+            pipelines.append([])
+            start = i + 1 + (nxt == ch and ch in "&|")
+        skip_to = start
+    pipelines[-1].append(text[start:])
+    return [p for p in pipelines if any(piece.strip() for piece in p)]
+
+
+def _reads_code_from_stdin(argv: list[str]) -> bool:
+    """An interpreter with no script of its own (`python3`, `python3 -`, `node`, `perl`): it runs what
+    the pipe feeds it. With a script file, `-c`/`-e` code or `-m module`, the pipe is its data."""
+    family = hermes._interpreter_family(argv[0]) if argv else None
+    if family is None or hermes._interpreter_exec_flag(family, argv[1:]):
+        return False
+    with_value = hermes._INTERPRETER_WITH_ARG.get(family, set())
+    args, i = argv[1:], 0
+    while i < len(args):
+        arg = args[i]
+        if arg == "-":
+            return True
+        if family == "python" and arg.startswith("-m"):
+            return False
+        if not arg.startswith("-"):
+            return False                                    # a script file
+        i += 2 if arg in with_value else 1
+    return True
 
 
 # ── 0.1.52's script exemption, kept until its caller goes (Task 3 deletes this block) ────────
@@ -1317,7 +1691,16 @@ _SCRIPT_REACH = re.compile("|".join((
 
 
 def runs_freely_in_sandbox(command: str) -> bool:
-    """0.1.52's exemption, exactly as before; Task 3 removes it with its caller (tool_loop)."""
+    """0.1.52's exemption, exactly as before; Task 3 removes it with its caller (tool_loop). It
+    never raises and reads nothing past the parse ceilings: such a command gets its card."""
+    try:
+        _check_ceilings(str(command or ""))
+        return _runs_freely(command)
+    except Exception:  # noqa: BLE001 — `_Unreadable` included: the card comes back
+        return False
+
+
+def _runs_freely(command: str) -> bool:
     text = str(command or "")
     if not text.strip() or len(text) > MAX_COMMAND_CHARS or hermes.detect_hardline_command(text)[0]:
         return False
@@ -1348,9 +1731,9 @@ async def always_allowed(db) -> set[str]:
         return set()
 
 
-#: Rules that can never be remembered: the floor.
+#: Rules that can never be remembered: the floor, and a command nobody could read.
 _NEVER_REMEMBERED = frozenset({k for k, _, _ in _FORBID} | {"hardline", "empty", "too-long", "arslan-data",
-                                                           "never-app", "disk-erase", "shutdown"})
+                                                           "never-app", "disk-erase", "shutdown", "unreadable"})
 
 
 async def allow_always(db, rule: str) -> None:
