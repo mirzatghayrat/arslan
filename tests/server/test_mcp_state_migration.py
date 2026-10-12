@@ -15,8 +15,10 @@ _PRE_0068 = (
     "description TEXT NOT NULL, tier VARCHAR(20) NOT NULL, status VARCHAR(20) NOT NULL, "
     "input_schema JSON, external_name VARCHAR(120), host_enabled BOOLEAN NOT NULL DEFAULT 0)",
 )
-# (id, status, host_allowed): connected, error, the user's real rea row, a switched-off one.
-_ROWS = ((1, "connected", 1), (2, "error", 1), (3, "disconnected", 1), (4, "connected", 0))
+# (id, status, host_allowed): connected, error, the user's real rea row, then three switched-off
+# ones (connected / error / registered): host access off wins over whatever status they last had.
+_ROWS = ((1, "connected", 1), (2, "error", 1), (3, "disconnected", 1), (4, "connected", 0),
+         (5, "error", 0), (6, "registered", 0))
 
 
 async def _legacy_db(path):
@@ -48,13 +50,29 @@ async def test_0068_maps_every_legacy_status_and_is_idempotent(tmp_path):
             await conn.run_sync(upgrade_sync)
         first = await _snapshot(engine)
         rows, servers, tools = first
-        assert {r[0]: r[1] for r in rows} == {1: "ready", 2: "failed", 3: "starting", 4: "off"}
+        assert {r[0]: r[1] for r in rows} == {
+            1: "ready", 2: "failed", 3: "starting", 4: "off", 5: "off", 6: "off"}
         assert all(r[2] == 0 and r[3] is None and r[4] is None and r[5] is None for r in rows)
         assert {"state", "state_at", "last_ok_at", "next_retry_at", "fail_count"} <= servers
         assert "annotations" in tools
         async with engine.begin() as conn:
             await conn.run_sync(upgrade_sync)            # a second run changes nothing
         assert await _snapshot(engine) == first
+        # What the supervisor writes later must survive a re-run: the legacy-status backfill
+        # happens once, when `state` is created, and never again.
+        async with engine.begin() as conn:
+            await conn.exec_driver_sql(
+                "UPDATE mcp_servers SET state = 'parked', fail_count = 3 WHERE id = 1")
+            await conn.run_sync(upgrade_sync)
+        rows_after, _, _ = await _snapshot(engine)
+        assert [r[:3] for r in rows_after if r[0] == 1] == [(1, "parked", 3)]
+        # The columns carry their own defaults: a row that names neither gets ('starting', 0).
+        async with engine.begin() as conn:
+            await conn.exec_driver_sql(
+                "INSERT INTO mcp_servers (id, label, command, args) VALUES (9, 'n', 'x', '[]')")
+            bare = (await conn.exec_driver_sql(
+                "SELECT state, fail_count FROM mcp_servers WHERE id = 9")).one()
+        assert tuple(bare) == ("starting", 0)
     finally:
         await engine.dispose()
 
