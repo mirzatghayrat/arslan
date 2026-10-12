@@ -32,3 +32,12 @@ def with_body(exc: httpx.HTTPStatusError) -> str:
     if len(body) > _MAX_BODY:
         body = body[:_MAX_BODY] + "…"
     return f"{base}\n{body}"
+
+
+async def read_body(exc: httpx.HTTPStatusError) -> None:
+    """A streamed response arrives unread; read an error's body so the vendor's
+    reason reaches with_body() — and param_heal, which acts on it."""
+    try:
+        await exc.response.aread()
+    except Exception:  # noqa: BLE001 — never let error formatting raise
+        pass
