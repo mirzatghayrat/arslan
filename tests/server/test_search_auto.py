@@ -143,6 +143,45 @@ async def test_everything_blocked_is_an_explicit_error_not_zero_results(monkeypa
     assert "not 'no results'" in out["error"] and "Tavily" in out["error"]
 
 
+@pytest.mark.parametrize("cls,message", [
+    ("_Unresolvable", "cannot resolve html.duckduckgo.com"),
+    ("_BlockedHost", "html.duckduckgo.com resolves to a private or internal address"),
+    ("_NotConfiguredHost", "html.duckduckgo.com is not the configured host (searx.lan)"),
+])
+async def test_a_refused_or_unresolvable_provider_is_search_failed_not_search_blocked(
+        monkeypatch, cls, message):
+    """`search_blocked` means an anti-bot page, and its advice (another provider, a key) is
+    for that. A host that does not resolve, or an address the guard refuses, is another
+    failure and must not wear that code."""
+    _auto(monkeypatch)                    # DeepSeek's own search first, then the scrape
+    refusal = getattr(net_pin, cls)       # looked up here: a missing class must fail the test
+
+    async def refused(self, query, num_results=5):
+        raise refusal(message)
+    monkeypatch.setattr(sp.DeepSeekNativeProvider, "search", refused)
+    monkeypatch.setattr(sp.DuckDuckGoHtmlProvider, "search", refused)
+    out = await executors.EXECUTORS["web_search"].execute({"query": "q"})
+    assert out["ok"] is False and out["code"] == "search_failed"
+    assert "not 'no results'" in out["error"]
+
+
+async def test_unresolvable_among_challenges_is_still_search_failed(monkeypatch):
+    """Only a run in which EVERY provider met a challenge is `search_blocked`."""
+    _auto(monkeypatch)
+    unresolvable = net_pin._Unresolvable
+
+    async def cannot_resolve(self, query, num_results=5):
+        raise unresolvable("cannot resolve api.deepseek.com")
+
+    async def challenged(self, query, num_results=5):
+        raise sp.SearchBlocked("DuckDuckGo answered with a human-verification challenge")
+    monkeypatch.setattr(sp.DeepSeekNativeProvider, "search", cannot_resolve)
+    monkeypatch.setattr(sp.DuckDuckGoHtmlProvider, "search", challenged)
+    out = await executors.EXECUTORS["web_search"].execute({"query": "q"})
+    assert out["ok"] is False and out["code"] == "search_failed"
+    assert "deepseek: cannot resolve" in out["error"]
+
+
 async def test_a_deliberate_searxng_choice_never_falls_back(monkeypatch):
     async def cfg():
         return executors.SearchConfig(name="searxng", key="", key_state="unset", base_url="http://10.0.0.5:8080")

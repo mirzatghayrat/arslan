@@ -44,7 +44,7 @@ async def test_expanded_read_does_not_bypass_private_host_rejection(monkeypatch)
     fetch = AsyncMock(side_effect=net_pin._BlockedHost())
     monkeypatch.setattr(net_pin, "_fetch_text", fetch)
     result = await executors.WebExtractExecutor().execute({"url": URL, "max_chars": 40_000})
-    assert result["ok"] is False and "private" in result["error"]
+    assert result == {"ok": False, "error": "url refused: blocked address (local network)"}
     assert "source" not in result
     fetch.assert_awaited_once_with(URL)
 
