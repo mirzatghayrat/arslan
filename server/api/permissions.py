@@ -1,9 +1,10 @@
 """Standing answers ("Always" rules), listed and withdrawn — and added from one place (0.1.61 §A5).
 
 Settings → What Arslan may do lists them, each removable. The only way to add one here is the
-Inbox's "Always allow" on something a run with nobody to ask could not do (§A4): the POST names
-that refusal (`refused_id`), and the server stores exactly what "Always" on its card would have
-stored, as recorded on the ledger row when it was refused (`permissions.ALWAYS_KEY`). A client
+Inbox's "Always allow" on something that could not be asked (§A4: a run with nobody to ask, or a
+card that never opened while the person was away): the POST names that row (`refused_id`), and
+the server stores exactly what "Always" on its card would have stored, as recorded on the ledger
+row when it was refused (`permissions.ALWAYS_KEY`). A client
 never names a kind or a target: what the model wrote never becomes a rule nobody saw, and a card
 that hides "Always" (a kind never remembered, a high-reach app, a command no rule matched) gives
 nothing to allow.
@@ -39,13 +40,15 @@ async def list_rules(db: AsyncSession = Depends(get_session)) -> list[dict]:
 @router.post("/permissions/rules")
 async def allow_refused(body: AllowRefused, db: AsyncSession = Depends(get_session)) -> dict:
     """The rules "Always" on the refused card would have stored: one per app of a many-app card,
-    one `legacy_rule` per rule a command matched (§A9), each under the words its card used.
-    404: no such row. 409: the row is not a refusal for want of someone to ask, or its card would
-    not have offered "Always". Returns the first rule, and every one under `rules`."""
+    one `legacy_rule` per rule a command matched (§A9), each under the words its card used — the
+    entry's `always` in `GET /approvals/refused`. 404: no such row. 409: the row is not one of
+    what could not be asked (`permission_store.NOT_ASKED`: a refusal for want of someone to ask,
+    or a card that never opened while the person was away), or its card would not have offered
+    "Always". Returns the first rule, and every one under `rules`."""
     row = await db.get(ApprovalEvent, body.refused_id)
     if row is None:
         raise HTTPException(status_code=404, detail="no such refusal")
-    if row.decided_by != "policy" or row.decision != "deny":
+    if not permission_store.could_not_ask(row):
         raise HTTPException(status_code=409, detail={"code": "not_a_refusal"})
     always = permissions.always_from(row.extra)
     if not always:

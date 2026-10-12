@@ -14,7 +14,8 @@ grant and its row in one transaction, are part of remembering the answer and fai
 
 What a request IS, and whether it is forbidden outright, is the caller's business —
 terminal_policy for commands, Hands for apps. This module remembers and asks. Approve for
-me and Full access (PR 7) slot in between 1 and 2.
+me and Full access (PR 7) slot in between 1 and 2. A request's kind is one of `KINDS`: any other
+is a caller bug, and it raises before anything is asked, stored or recorded.
 """
 from __future__ import annotations
 
@@ -32,6 +33,23 @@ from server.services import approvals, permission_store
 
 logger = logging.getLogger(__name__)
 
+#: Every kind a request may have: spec §A11's `Kind`, plus `workspace_write` (the write card the
+#: chat window and jobs ask through `decide`). The protections key on these exact strings — the
+#: money rung, the once-only kinds, the kinds that never offer "Always" — so a kind outside this
+#: set is a caller bug, never an ordinary kind: `decide`, `decide_many`, `would_ask` and
+#: `record_standing` raise ValueError for it before any card, grant, rule or ledger row ("payment"
+#: for "money" would otherwise be offered "In this conversation" and "Always"). A later PR that
+#: adds a kind adds it HERE and, in the same change, decides its scope sets below.
+KINDS = frozenset({"command", "folder", "outside", "send", "destructive", "system", "screen",
+                   "opaque", "app", "app_risky", "money", "takeover", "shortcut", "site",
+                   "mcp_tool", "other_agent", "capability", "schedule", "remote",
+                   "workspace_write"})
+#: What an answer may store (`remember_as`, `grant_as`) is one of `KINDS` or one of these: kinds
+#: of a stored rule or grant that are never a request's own. A command's "Always" is a
+#: `legacy_rule` per rule it matched (§A9). (§A5 also names the rule kinds `command_prefix` and
+#: `mcp_server`: the PR that first stores one adds it here.)
+_STORED_ONLY = frozenset({"legacy_rule"})
+
 #: Kinds a card answers for this one time only: never a grant, never a rule.
 _ONCE_ONLY = frozenset({"money", "app_risky", "capability", "other_agent", "system", "opaque",
                         "remote", "takeover"})
@@ -39,15 +57,20 @@ _ONCE_ONLY = frozenset({"money", "app_risky", "capability", "other_agent", "syst
 _TASK_FIRST = frozenset({"app", "shortcut"})
 #: Kinds that never offer "Always".
 _NEVER_ALWAYS = _ONCE_ONLY | frozenset({"destructive", "screen", "workspace_write", "schedule"})
+# The scope sets name kinds of KINDS only: a kind mistyped there would protect nothing.
+if not (_ONCE_ONLY | _TASK_FIRST | _NEVER_ALWAYS) <= KINDS:
+    raise AssertionError(f"scope sets name unknown kinds: "
+                         f"{sorted((_ONCE_ONLY | _TASK_FIRST | _NEVER_ALWAYS) - KINDS)}")
 _EXTRA_MAX = 1024
 #: A ledger row's target is kept whole up to this: a bound, not a trim (a many-app card's target
 #: is every bundle id joined, and cutting it would cut an app in two).
 _TARGET_MAX = 20_000
 
-#: The reserved key of a policy refusal's ledger `extra`: what "Always" on its card would have
-#: stored, as [[kind, target, label], …] — written only when the card would have offered "Always"
-#: (§A4). The Inbox's "Always allow" stores exactly this set, never a kind or target a client
-#: names (`always_from`).
+#: The reserved key of the ledger `extra` of what could not be asked — a refusal for want of a
+#: surface ("policy"), or a card that never opened while the person was away ("away"): what
+#: "Always" on its card would have stored, as [[kind, target, label], …] — written only when the
+#: card would have offered "Always" (§A4). The Inbox's "Always allow" stores exactly this set,
+#: never a kind or target a client names (`always_from`), and lists it first (`always`).
 ALWAYS_KEY = "always"
 
 _EXPIRED = ("Nobody answered the card for {title} in {minutes} minutes. This is NOT a refusal. Don't "
@@ -86,7 +109,11 @@ class Context:
 @dataclass(frozen=True)
 class Decision:
     allowed: bool
-    by: str                     # floor | mode | rule | grant | reviewer | user | expired | policy
+    #: floor | mode | rule | grant | reviewer | user | expired | policy (§A11). "expired" is also
+    #: a card that never opened because the person is away (an earlier card of the job or turn
+    #: went unanswered): for the caller it is the same — nobody answered, NOT a refusal — and only
+    #: its ledger row says "away" (`_record_in`).
+    by: str
     scope: str | None = None    # once | task | conversation | always
     note: str = ""              # the user's "tell Arslan instead"
     model_text: str = ""        # what the tool result tells the model when not allowed
@@ -125,6 +152,7 @@ def options_for(req: Request) -> list[str]:
 
 async def decide(req: Request, ctx: Context) -> Decision:
     _forget_last()
+    _check(req)
     ctx = _filled(ctx)
     mode = await _mode()
     standing = await _standing(req, ctx, mode)
@@ -140,8 +168,11 @@ async def decide_many(reqs: list[Request], ctx: Context, *, title: str) -> list[
     The card is the generic `propose_action`, built from the requests' joined details so that it
     names every one of them (their own frames are not used), and it offers the choices of their
     one kind. A list of mixed kinds is a caller bug, since a money step on an app's card would be
-    offered "this conversation": it raises ValueError, whatever the store holds."""
+    offered "this conversation": it raises ValueError, whatever the store holds — as does any
+    request of a kind outside `KINDS`, before any of them is looked up."""
     _forget_last()
+    for req in reqs:
+        _check(req)
     if len({r.kind for r in reqs}) > 1:
         raise ValueError("decide_many needs one kind")
     ctx = _filled(ctx)
@@ -173,13 +204,17 @@ async def decide_many(reqs: list[Request], ctx: Context, *, title: str) -> list[
 
 async def would_ask(req: Request, ctx: Context) -> bool:
     """Would `decide` show a card? No side effects: nothing asked, nothing recorded, and no setting
-    read (the mode only goes into the ledger row, which `record=False` never writes)."""
+    read (the mode only goes into the ledger row, which `record=False` never writes). A kind
+    outside `KINDS` raises, as in `decide`."""
+    _check(req)
     return await _standing(req, _filled(ctx), "", record=False) is None
 
 
 async def record_standing(req: Request, ctx: Context) -> None:
     """A caller that found a standing answer itself (terminal_policy's legacy rules) still
-    writes the ledger row, so the count of decisions stays whole."""
+    writes the ledger row, so the count of decisions stays whole. A kind outside `KINDS` raises,
+    as in `decide`, and writes nothing."""
+    _check(req)
     await _record(req, _filled(ctx), await _mode(), Decision(True, "rule", "always"))
 
 
@@ -192,6 +227,19 @@ async def forget_task(task_id: str | None) -> int:
         gone = await permission_store.delete_task_grants(db, task_id)
         await db.commit()
     return gone
+
+
+def _check(req: Request) -> None:
+    """A kind outside `KINDS` is a caller bug (see there): raised before the store is read, so a
+    rule or grant that somehow exists for it decides nothing. What an answer would store is
+    checked too, before the card: an unknown kind there would only surface after the user said
+    yes."""
+    if req.kind not in KINDS:
+        raise ValueError(f"unknown permission kind: {req.kind!r}")
+    for entry in (*req.remember_as, *req.grant_as):
+        kind = entry[0] if entry else None
+        if kind not in KINDS and kind not in _STORED_ONLY:
+            raise ValueError(f"unknown permission kind to store: {kind!r}")
 
 
 # ── the ladder ────────────────────────────────────────────────────────────────
@@ -262,6 +310,12 @@ async def _ask(req: Request, ctx: Context, mode: str) -> Decision:
     # records that card, not its own never-shown call_id.
     card_id = answer.get("call_id") or call_id
     note = str(answer.get("note") or "").strip()[:500]
+    # The card never opened: an earlier card of this job or turn went unanswered, so the person is
+    # away and the surface answered at once (`"by": None, "away": True` — BroadcastAsker, the chat
+    # window's latch). To the caller and the model it is expired, NOT a refusal. Its ledger row is
+    # an expiry decided by "away", with what "Always" on the card would have stored, so the Inbox
+    # lists it as it lists a refusal for want of a surface (§A4: "listed in the Inbox the same way").
+    away = answer.get("by") is None and bool(answer.get("away"))
     if answer.get("by") is None:
         decision = Decision(False, "expired", model_text=_EXPIRED.format(
             title=req.title, minutes=max(1, int(approvals.TIMEOUT_S // 60))))
@@ -290,8 +344,9 @@ async def _ask(req: Request, ctx: Context, mode: str) -> Decision:
                     grant = await permission_store.add_grant(db, ctx.conversation_id, task, kind,
                                                              target, call_id=card_id)
                     grant_id = grant_id or grant.id
-        await _record_in(db, req, ctx, mode, decision, wait_ms=wait_ms, rule_id=rule_id,
-                         grant_id=grant_id)
+        await _record_in(db, req, ctx, mode, decision, wait_ms=None if away else wait_ms,
+                         rule_id=rule_id, grant_id=grant_id, away=away,
+                         always=_always_set(req) if away and "always" in opts else None)
         await db.commit()
     return decision
 
@@ -304,9 +359,9 @@ def _always_set(req: Request) -> list[list[str]]:
 
 
 def always_from(extra) -> list[tuple[str, str, str]]:
-    """The "Always" set a policy refusal recorded (`ALWAYS_KEY`), or [] when there is none or it
-    is not well formed — then nothing may be allowed from that row. A kind never remembered is
-    never in it (fail closed: the whole set is refused)."""
+    """The "Always" set a row of what could not be asked recorded (`ALWAYS_KEY`), or [] when there
+    is none or it is not well formed — then nothing may be allowed from that row. A kind never
+    remembered is never in it (fail closed: the whole set is refused)."""
     entries = extra.get(ALWAYS_KEY) if isinstance(extra, dict) else None
     if not isinstance(entries, list) or not entries:
         return []
@@ -321,14 +376,18 @@ def always_from(extra) -> list[tuple[str, str, str]]:
 
 
 def _dedupe(req: Request) -> str:
-    """Identical asks share one card (§A4): the same kind and target AND everything the card
-    shows — its title, its detail and the caller's own frame (without its call_id). Two commands
-    under one rule, two schedules, two writes in one folder, writing vs editing one file are not
-    identical: one answer must never approve what its card did not show. JSON with sorted keys,
-    so no separator inside a field can make two different asks read the same."""
+    """Identical asks share one card (§A4): the same kind and target, what the card shows — its
+    title, its detail and the caller's own frame (without its call_id) — AND everything an answer
+    on it can grant: what "Always" stores (`always_label`, `remember_as`), what a grant stores
+    (`grant_as`) and whether "In this conversation" is offered (`conversation_ok`). Two commands
+    under one rule, two schedules, two writes in one folder, writing vs editing one file, or one
+    app vs that app plus another under "Always" are not identical: one answer must never approve
+    or store what its card did not show. JSON with sorted keys, so no separator inside a field can
+    make two different asks read the same. (The model's `why` is not in it.)"""
     shown = {k: v for k, v in (req.frame or {}).items() if k != "call_id"}
-    return json.dumps([req.kind, req.target, req.title, req.detail, shown], sort_keys=True,
-                      default=str)
+    return json.dumps([req.kind, req.target, req.title, req.detail, shown, req.always_label,
+                       req.conversation_ok, [list(e) for e in req.remember_as],
+                       [list(e) for e in req.grant_as]], sort_keys=True, default=str)
 
 
 def _generic_frame(req: Request) -> dict:
@@ -392,7 +451,13 @@ async def _record(req: Request, ctx: Context, mode: str, decision: Decision, **i
 
 async def _record_in(db, req: Request, ctx: Context, mode: str, decision: Decision, *,
                      wait_ms: int | None = None, rule_id: int | None = None,
-                     grant_id: int | None = None, always: list | None = None) -> None:
+                     grant_id: int | None = None, always: list | None = None,
+                     away: bool = False) -> None:
+    """One ledger row (§A8): `decided_by` is the decision's `by`, and `decision` is allow, deny or
+    expired (an expiry is never a deny). One addition to §A8's `decided_by` (0.1.61, F3): "away"
+    — `away`, a card that never opened because the person is away. Its decision is "expired" and
+    `wait_ms` is None (no card was open); with a refusal for want of a surface ("policy", deny) it
+    is what the Inbox lists (`permission_store.NOT_ASKED`)."""
     # The reserved key is the server's alone: a caller's `extra` never supplies an "Always" set,
     # and the set is kept whole, outside the 1 KB cut of the rest.
     extra = {k: v for k, v in (_extra(req.extra) or {}).items() if k != ALWAYS_KEY}
@@ -403,7 +468,7 @@ async def _record_in(db, req: Request, ctx: Context, mode: str, decision: Decisi
         run_id=str(ctx.run_id) if ctx.run_id is not None else None,
         kind=req.kind, target=req.target[:_TARGET_MAX], detail=req.detail[:500],
         extra=extra or None,
-        mode=mode, decided_by=decision.by,
+        mode=mode, decided_by="away" if away else decision.by,
         decision=("allow" if decision.allowed else "expired" if decision.by == "expired" else "deny"),
         scope=decision.scope, rule_id=rule_id, grant_id=grant_id, wait_ms=wait_ms)
 

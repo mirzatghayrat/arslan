@@ -7,8 +7,9 @@ route can only ever confirm or cancel THAT card; it cannot widen a permission.
 
 0.1.61 §A4: an answer carries a scope — one of the choices the card offered (the island's yes is
 its first choice: `approvals.answer` clamps it, never this route) — and, on No, a note. The Inbox
-also lists what a run with nobody to ask could not do ("Not done while you were away"), with
-"Always allow" for next time (`POST /permissions/rules {refused_id}`).
+also lists what could not be asked ("Not done while you were away": a run with nobody to ask, and
+the cards a job or a turn did not open once one went unanswered), with what "Always allow" will
+store and the button for it (`POST /permissions/rules {refused_id}`).
 """
 from __future__ import annotations
 
@@ -57,11 +58,16 @@ REFUSED_GROUPS = 100
 
 @router.get("/approvals/refused")
 async def list_refused(hours: int = 24, db: AsyncSession = Depends(get_session)) -> list[dict]:
-    """What was refused because nobody could be asked (a scheduled run: `decided_by` policy), the
-    last `hours` (1 to 168): one entry per kind and target — its latest row (`id` is what
+    """What could not be asked (`permission_store.NOT_ASKED`), the last `hours` (1 to 168): what
+    a run with nobody to ask refused (a scheduled run: `decided_by` policy), and the cards of a job
+    or a chat turn that never opened because an earlier one went unanswered (the person is away:
+    `decided_by` away, an expiry). One entry per kind and target — its latest row (`id` is what
     "Always allow" sends back), how many times (`count`) and since when (`first_at`) — newest
     first, at most `REFUSED_GROUPS`. `always_ok`: the card would have offered "Always" (its row
-    recorded the set). An entry whose "Always" set is all allowed already is left out."""
+    recorded the set). `always` (0.1.61, F2): what "Always allow" will store, exactly the rules
+    `POST /permissions/rules {refused_id: id}` makes — `[{kind, target, label}]`, each label the
+    words its card used; empty when `always_ok` is false. The Inbox shows it before the click.
+    An entry whose "Always" set is all allowed already is left out."""
     hours = max(1, min(168, hours))
     since = datetime.utcnow() - timedelta(hours=hours)
     groups = await permission_store.refused_groups(db, since)
@@ -73,7 +79,9 @@ async def list_refused(hours: int = 24, db: AsyncSession = Depends(get_session))
             continue                            # allowed since: nothing is waiting any more
         out.append({"id": row.id, "created_at": _utc(row.created_at), "first_at": _utc(first),
                     "count": count, "conversation_id": row.conversation_id, "kind": row.kind,
-                    "target": row.target, "detail": row.detail, "always_ok": bool(always)})
+                    "target": row.target, "detail": row.detail, "always_ok": bool(always),
+                    "always": [{"kind": kind, "target": target, "label": label}
+                               for kind, target, label in always]})
         if len(out) == REFUSED_GROUPS:
             break
     return out

@@ -779,3 +779,33 @@ def test_hands_tools_still_imports_first_in_a_fresh_interpreter():
                           cwd=Path(__file__).resolve().parents[2], capture_output=True, text=True,
                           timeout=120)
     assert done.returncode == 0, done.stderr[-2000:]
+
+
+# ── final-review fix wave: F4 ────────────────────────────────────────────────
+
+async def test_two_asks_that_would_store_different_rules_get_two_cards(job_db, monkeypatch):
+    """F4 (final review m1): two asks equal in everything their cards show, but one would store a
+    second app's rule under "Always". They are not identical: each gets its own card, and "Always"
+    on the first stores only its own rule."""
+    sent = []
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: sent.append)
+    notes = permissions.Request(kind="app", target="com.apple.Notes", title="Use Notes?",
+                                always_label="Notes")
+    wider = permissions.Request(kind="app", target="com.apple.Notes", title="Use Notes?",
+                                always_label="Notes",
+                                remember_as=(("app", "com.apple.Notes"), ("app", "com.apple.mail")))
+
+    async def job(req, job_id):
+        with permissions.asking_with(approvals.BroadcastAsker("conv")):
+            return await permissions.decide(req, permissions.Context(conversation_id="conv", job_id=job_id))
+    first = asyncio.ensure_future(job(notes, "job-a"))
+    await _until(lambda: len(_shown(sent)) == 1)
+    second = asyncio.ensure_future(job(wider, "job-b"))
+    await _until(lambda: len(_shown(sent)) == 2 or any(p.waiters > 1 for p in approvals._pending.values()))
+    cards = _shown(sent)
+    assert len(cards) == 2, "the wider ask joined the card of the narrower one"
+    approvals.answer({"type": "confirm_action", "call_id": cards[0]["call_id"], "scope": "always"})
+    approvals.answer({"type": "cancel_action", "call_id": cards[1]["call_id"]})
+    assert ((await first).allowed, (await second).allowed) == (True, False)
+    async with job_db() as db:
+        assert [r.target for r in await permission_store.list_rules(db, "app")] == ["com.apple.Notes"]

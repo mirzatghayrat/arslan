@@ -361,7 +361,11 @@ class BroadcastAsker:
     """A background job's card surface (0.1.61): every window on the conversation, the Inbox,
     the island and the phone see the card. Once one card in the job went unanswered the person
     is away: later cards do not open and wait 30 minutes each; they read as expired at once
-    (seen on a device 2026-10-05: a model told "expired" asked again within two seconds)."""
+    (seen on a device 2026-10-05: a model told "expired" asked again within two seconds).
+
+    Such an answer is marked `"away": True` (with `"by": None`, as an expiry): permissions.decide
+    records it as an expiry decided by "away", with what "Always" on the card would have stored,
+    and the Inbox lists it with "Always allow" (§A4: "listed in the Inbox the same way")."""
 
     def __init__(self, conversation_id: str):
         self.conversation_id = conversation_id
@@ -371,7 +375,8 @@ class BroadcastAsker:
         _forget_decision()
         if self.unanswered:
             LAST_OUTCOME.set("expired")
-            return {"approved": False, "remember": False, "scope": None, "note": "", "by": None}
+            return {"approved": False, "remember": False, "scope": None, "note": "", "by": None,
+                    "away": True}
         pending = open_card(self.conversation_id, frame | {"background": True})
         try:
             with _paused_clock(), desktop_status.awaiting_approval(self.conversation_id):

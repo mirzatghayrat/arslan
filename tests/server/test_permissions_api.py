@@ -288,9 +288,12 @@ def test_a_refusal_whose_recorded_set_is_not_one_decide_writes_allows_nothing(cl
 
 
 @pytest.mark.parametrize("decided_by,decision", [("user", "deny"), ("policy", "allow"),
-                                                 ("rule", "allow"), ("expired", "expired")])
+                                                 ("rule", "allow"), ("expired", "expired"),
+                                                 ("away", "deny"), ("away", "allow")])
 def test_only_a_refusal_for_want_of_someone_to_ask_can_be_allowed(client, decided_by, decision):
-    """Whatever a ledger row carries, "Always allow" is for a policy refusal alone."""
+    """Whatever a ledger row carries, "Always allow" is for what could not be asked alone: a policy
+    refusal, or a card that never opened because the person was away (an expiry, F3). A card that
+    was shown and ran out is not one."""
     async def seed():
         async with client.db_maker() as db:
             row = await permission_store.record(
@@ -342,10 +345,15 @@ def test_policy_refusals_are_listed_for_the_inbox(client):
     assert rows[0]["conversation_id"] == "c"
 
 
-def test_only_policy_refusals_are_listed(client):
-    """A card the user declined, or one nobody answered, is not "not done while you were away"."""
+def test_only_what_could_not_be_asked_is_listed(client):
+    """A card the user declined, or one shown that nobody answered, is not "not done while you were
+    away". A policy refusal is, and so is a card that never opened because an earlier one of its
+    job or turn went unanswered (F3)."""
     async def nobody(frame):
         return {"approved": False, "scope": None, "note": "", "by": None}
+
+    async def away(frame):
+        return {"approved": False, "scope": None, "note": "", "by": None, "away": True}
 
     async def allows(frame):
         return {"approved": True, "scope": "once", "note": "", "by": "mac"}
@@ -353,7 +361,8 @@ def test_only_policy_refusals_are_listed(client):
     _decide(client, permissions.Request(kind="app", target="b", title="B?"), asker=nobody)
     _decide(client, permissions.Request(kind="app", target="c", title="C?"), asker=allows)
     _decide(client, permissions.Request(kind="app", target="d", title="D?"))
-    assert [r["target"] for r in _refused(client)] == ["d"]
+    _decide(client, permissions.Request(kind="app", target="e", title="E?"), asker=away)
+    assert [r["target"] for r in _refused(client)] == ["e", "d"]
 
 
 def test_the_refused_list_looks_back_between_one_hour_and_a_week(client):
@@ -416,3 +425,66 @@ def test_an_entry_allowed_since_is_no_longer_listed(client):
     assert [r["target"] for r in _refused(client)] == ["com.apple.Mail"]
     client.delete(f"/api/v1/permissions/rules/{rule_id}")
     assert {r["target"] for r in _refused(client)} == {"com.apple.Notes", "com.apple.Mail"}
+
+
+# ── Final-review fix wave: what "Always allow" will store (F2); while the person was away (F3) ──
+
+def test_a_refused_entry_says_what_always_allow_will_store(client):
+    """F2 (final review I2, probe P3): one refused command can stand for several standing rules,
+    each for every matching command, everywhere. The entry lists them in the card's words before
+    the click: exactly what `POST {refused_id}` stores."""
+    shell = "rm -rf build && git push origin main"
+    rules = sorted(terminal_policy.ask_rules(shell))
+    assert len(rules) == 3
+    _decide(client, _cmd(shell))
+    [row] = _refused(client)
+    assert row["always"] == [{"kind": "legacy_rule", "target": rule,
+                              "label": terminal_policy.describe(rule)} for rule in rules]
+    assert all(entry["label"] for entry in row["always"])
+    stored = _allow(client, row["id"]).json()["rules"]
+    assert [{k: rule[k] for k in ("kind", "target", "label")} for rule in stored] == row["always"]
+
+
+@pytest.mark.parametrize("req", [
+    _cmd("git-push"),
+    _app("com.apple.Terminal", "Terminal", high_reach=True),
+    permissions.Request(kind="money", target="com.shop.app", title="Pay?", always_label="Shop"),
+], ids=["rule-less command", "high-reach app", "money"])
+def test_an_entry_whose_card_hid_always_lists_nothing_to_store(client, req):
+    _decide(client, req)
+    [row] = _refused(client)
+    assert (row["always_ok"], row["always"]) == (False, [])
+
+
+def test_a_jobs_card_after_one_went_unanswered_is_listed_and_always_allow_makes_its_rules(
+        client, monkeypatch):
+    """F3 (final review I3, probe P4; §A4: once one card of a job expires, its later cards "are
+    refused at once as 'waiting for you' and listed in the Inbox the same way"). The row is an
+    expiry, never a denial, and "Always allow" on it stores what "Always" on its card would have."""
+    from server.services import judgment
+    monkeypatch.setattr(judgment, "shadow", lambda *args, **kwargs: None)
+    monkeypatch.setattr(judgment, "record_outcome_later", lambda *args, **kwargs: None)
+    monkeypatch.setattr(approvals, "TIMEOUT_S", 0.05)
+    opened = []
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: lambda f: (
+        opened.append(f["call_id"]) if f["type"].startswith("propose_") else None))
+    job = approvals.JobConfirmations("c", job_id="job-1")
+    assert client.portal.call(job.command, "rm -rf build", []) is False          # shown; nobody answers
+    assert client.portal.call(job.command, "git push origin main", []) is False  # the person is away
+    assert len(opened) == 1, "the job's later card never opened"
+    [row] = _refused(client)                         # the card that was shown and ran out is not listed
+    assert (row["kind"], row["target"], row["conversation_id"]) == ("command", "rules:git-push", "c")
+    assert row["always_ok"] is True
+    assert row["always"] == [{"kind": "legacy_rule", "target": "git-push",
+                              "label": terminal_policy.describe("git-push")}]
+    assert _allow(client, row["id"]).status_code == 200
+    assert _rules(client) == {("legacy_rule", "git-push", terminal_policy.describe("git-push"))}
+    assert {r.created_from for r in _rule_rows(client)} == {f"refused:{row['id']}"}
+    assert _refused(client) == []                    # allowed since: nothing is waiting any more
+
+    async def ledger():
+        async with client.db_maker() as db:
+            return [(e.job_id, e.decided_by, e.decision)
+                    for e in reversed(await permission_store.recent(db))]
+    # Both are expiries; neither is the user's "no".
+    assert client.portal.call(ledger) == [("job-1", "expired", "expired"), ("job-1", "away", "expired")]

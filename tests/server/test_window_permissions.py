@@ -582,3 +582,35 @@ def test_a_window_ask_that_joins_a_card_on_screen_is_not_judged_again(app_client
         assert asked.result(timeout=5) is True
     rows = _judgments(app_client, 1)
     assert [(r.ref, r.outcome) for r in rows] == [(job_card["call_id"], "approved")] and len(judge) == 1
+
+
+# ── final-review fix wave: F3 ────────────────────────────────────────────────
+
+def test_a_turns_card_that_never_opened_while_the_person_was_away_is_listed_with_always_allow(
+        app_client, monkeypatch, judge):
+    """F3 (final review I3, §A4): after the window's away latch, a later card of the turn does not
+    open. The model is told it expired ("NOT a refusal"); the Inbox lists it with what "Always"
+    on its card would have stored, and "Always allow" stores exactly that."""
+    from server.services import terminal_policy
+    monkeypatch.setattr(approvals, "TIMEOUT_S", 0.3)
+    _enable_shell(app_client, policy="ask_risky")
+    monkeypatch.setattr(tool_loop_mod, "_get_adapter", lambda: _Steps(
+        ("run_command", {"command": "rm", "argv": ["-rf", "build"]}),
+        ("run_command", {"command": "git", "argv": ["push", "origin", "main"]})))
+    executor = _stub_run_command_executor(monkeypatch)
+    with app_client.websocket_connect("/ws/arslan/conv-away") as ws:
+        ws.receive_json()
+        ws.send_json({"type": "user_message", "content": "clean up, then publish"})
+        frames = _collect_until(ws, "stream_end")
+    assert len([f for f in frames if f.get("type") == "propose_run_command"]) == 1
+    results = [f["summary"] for f in frames if f.get("type") == "tool_result"]
+    assert len(results) == 2 and all("NOT a refusal" in r for r in results), results
+    [row] = app_client.get("/api/v1/approvals/refused").json()       # the shown card is not listed
+    assert (row["kind"], row["target"], row["conversation_id"]) == ("command", "rules:git-push",
+                                                                     "conv-away")
+    assert row["always"] == [{"kind": "legacy_rule", "target": "git-push",
+                              "label": terminal_policy.describe("git-push")}]
+    allowed = app_client.post("/api/v1/permissions/rules", json={"refused_id": row["id"]})
+    assert allowed.status_code == 200
+    assert [(r["kind"], r["target"]) for r in allowed.json()["rules"]] == [("legacy_rule", "git-push")]
+    assert executor.calls == []

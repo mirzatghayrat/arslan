@@ -493,8 +493,11 @@ class ApprovalEvent(Base):
     detail = Column(Text, nullable=False, default="")
     extra = Column(JSON, nullable=True)
     mode = Column(String(20), nullable=False)
+    # floor | mode | rule | grant | reviewer | user | expired | policy (§A8), and "away": a card
+    # that never opened because an earlier one of its job or turn went unanswered — an expiry
+    # (decision "expired"), listed in the Inbox with a policy refusal (permission_store.NOT_ASKED).
     decided_by = Column(String(20), nullable=False)
-    decision = Column(String(10), nullable=False)
+    decision = Column(String(10), nullable=False)       # allow | deny | expired
     scope = Column(String(20), nullable=True)
     rule_id = Column(Integer, nullable=True)
     grant_id = Column(Integer, nullable=True)

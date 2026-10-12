@@ -391,10 +391,12 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         permissions.LAST_DECISION.set(None)
         if turn_unanswered["yes"]:
             # A card earlier in this turn went unanswered: the person is away. This one does not
-            # open and wait 30 minutes more; it reads as expired at once ("NOT a refusal").
+            # open and wait 30 minutes more; it reads as expired at once ("NOT a refusal"). Marked
+            # "away", as a job's (approvals.BroadcastAsker): decide records it so, and the Inbox
+            # lists it with "Always allow".
             approvals.LAST_OUTCOME.set("expired")
             return {"approved": False, "remember": False, "scope": None, "note": "", "by": None,
-                    "extras": {}, "call_id": frame.get("call_id")}
+                    "extras": {}, "call_id": frame.get("call_id"), "away": True}
         loop = asyncio.get_running_loop()
         pending = approvals.open_card(conversation_id, frame, broadcast=broadcast)
         # An ask identical to a card still waiting in this conversation joined it (0.1.61 §A4):
