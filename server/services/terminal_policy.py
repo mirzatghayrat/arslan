@@ -495,6 +495,8 @@ def _commands(text: str, depth: int = 0) -> list[list[str]]:
             tokens = [hermes._deobfuscate_shell_word_for_detection(word),
                       *(t.rstrip(")`") for t in tokens[1:])]
             tokens = [t for t in tokens if t]
+            if not tokens:              # `''` alone: no command word, nothing runs (an empty argv raised)
+                continue
             add(tokens)
             for inner in _run_by(tokens):
                 add(inner)
@@ -1021,10 +1023,19 @@ def _write_targets(commands: list[list[str]]) -> list[Path]:
 
 
 def _expand(word: str) -> Path | None:
+    """The absolute path a write target names, or None when the text shows none: a variable, a
+    relative path, or a home the shell resolves only at run time or not at all (`~+`, `~-`,
+    `~<no such user>`, where `expanduser` raises). None is not the floor: a target whose home
+    cannot be resolved is not Arslan's data, so the write rules skip it and the rest of the
+    command is read as usual (a spelling of the data folder anywhere in the text is still the
+    floor; Seatbelt holds a write the text does not show, Ruling 11)."""
     word = re.sub(r"^(?:\$HOME|\$\{HOME\})(?=/|$)", "~", word)
     if not word or "$" in word:
         return None
-    path = Path(word).expanduser()
+    try:
+        path = Path(word).expanduser()
+    except RuntimeError:            # no such home: classify never raises (a raise ends the turn)
+        return None
     return path if path.is_absolute() else None
 
 

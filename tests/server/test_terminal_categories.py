@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ast
 import inspect
+import random
 
 import pytest
 
@@ -463,3 +464,47 @@ def test_the_rest_of_arslans_data_and_any_write_into_skills_stay_the_floor(form)
                     f"cp evil.sh {root}/k/evil.sh{close}", f"echo x > {root}/k/run.sh{close}",
                     f"python3 {root}/k/run.py{close} && ls {root}/..{close}"):
         assert tp.classify(command).floor is not None, command
+
+
+# ── any text gets an answer (pre-review fix): the tool loop has no catch around `assess` ──────
+
+@pytest.mark.parametrize("command,category", [
+    ("''", "local"), ('""', "local"), ("'' && ls", "local"), ("ls; ''", "local"),
+    ("mkdir -p ~+/build", "local"), ("cp report.pdf ~guest/Desktop/", "local"), ("echo hi | tee ~-/log", "local"),
+    ("'' && git push", "send"), ("cd ~/Library/Application\\ Support/Arslan && touch ~+/x", "floor"),
+])
+def test_an_empty_word_or_a_home_that_cannot_be_resolved_is_read_not_raised(command, category):
+    """The measured crashes: an empty command word (it runs nothing) raised IndexError, and `~+`,
+    `~-` or `~<no such user>` as a write target raised RuntimeError from `expanduser`. Such a
+    target is no path the text shows (like `$VAR`): it is not Arslan's data, the write rules skip
+    it and the rest of the command is read as usual, the floor included."""
+    found = tp.classify(command)
+    assert found.category == category, [(f.category, f.rule) for f in found.findings]
+    assert (tp.assess(command).level == "forbid") == (category == "floor")
+    assert tp.ask_rules(command) >= ({"git-push"} if category == "send" else set())
+
+
+def _fuzz_commands(count: int = 2000, seed: int = 161) -> list[str]:
+    """Seeded shell-ish text: quotes, separators, heredocs, substitutions, the interpreters and
+    AppleScript the classifier reads, and the spellings that once raised (an empty word; `~+`,
+    `~-`, `~x` as a write target)."""
+    rng = random.Random(seed)
+    pieces = [*"ab ~/$(){}[]<>|&;'\"`\\\n\t-=*?!#", "''", '""', "<<", "<<'E'", "\nE\n", "osascript -e ",
+              "python3 -c ", "bash -c ", "eval ", "do shell script ", "rm -rf ", "git push ", "mkdir ",
+              "tee ", "cp a ", "> ", "~+/", "~-/", "~x/", "~/", "sudo ", "find . -exec ", "xargs "]
+    return ["".join(rng.choice(pieces) for _ in range(rng.randint(1, 12))) for _ in range(count)]
+
+
+def test_no_text_makes_the_classifier_raise():
+    """`classify`, `assess` and `ask_rules` answer for any text: a raise would end the turn.
+    Seeded, so a failure names its input."""
+    raised = []
+    for command in _fuzz_commands():
+        try:
+            found = tp.classify(command)
+            _ = (found.floor, found.asking, found.category)
+            tp.assess(command)
+            tp.ask_rules(command)
+        except Exception as error:  # noqa: BLE001 — any exception is the failure
+            raised.append((command, f"{type(error).__name__}: {error}"))
+    assert raised == [], f"{len(raised)} of 2000 inputs raised, e.g. {raised[:3]}"
