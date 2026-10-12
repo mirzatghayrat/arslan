@@ -351,6 +351,24 @@ public actor ConversationLinks {
         return out
     }
 
+    /// `chat.history.result` in one envelope (§5.7): the backend trims to 560 KB, but the slashes
+    /// JSONSerialization escapes can still push the sealed record past `Wire.maxSealedBytes`; then
+    /// the oldest messages go, a quarter at a time, and the phone is told (`truncated`).
+    func sendHistory(_ result: [String: Any], to peer: String) async throws {
+        var body = result
+        while true {
+            do {
+                _ = try await mailbox.send(type: "chat.history.result", body: body, to: peer)
+                return
+            } catch BridgeError.code("too_large") {
+                var messages = body["messages"] as? [Any] ?? []
+                guard messages.count > 1 else { throw BridgeError.code("too_large") }
+                messages.removeFirst(max(1, messages.count / 4))
+                (body["messages"], body["truncated"]) = (messages, true)
+            }
+        }
+    }
+
     func refuse(_ error: Error, type: String, to peer: String, related: String) async {
         let code: String, message: String
         switch error {
@@ -417,7 +435,7 @@ public actor ConversationLinks {
                 let limit = min(max(body["limit"] as? Int ?? 50, 1), 200)
                 let result = try await backend.json("/api/v1/phone/conversations/\(id.pathSegment)/history?limit=\(limit)")
                 link(id, now: now)          // the phone is looking at it: its progress, cards and results come live
-                _ = try await mailbox.send(type: "chat.history.result", body: result, to: received.from)
+                try await sendHistory(result, to: received.from)
             case "run.get":
                 guard let run = body["run_id"] as? Int else { throw BridgeError.code("malformed") }
                 let result = try await backend.json("/api/v1/phone/runs/\(run)")

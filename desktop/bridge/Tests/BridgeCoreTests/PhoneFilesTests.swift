@@ -329,6 +329,24 @@ final class PhoneFilesTests: XCTestCase {
         XCTAssertTrue((frame["content"] as? String ?? "").contains("(not shown to the model as a picture; open the file itself)"))
     }
 
+    func testAHistoryTooBigForOneEnvelopeLosesItsOldestMessagesAndSaysSo() async throws {
+        // The backend trims to 560 KB; slashes the Mac's JSON escapes can still push it over the
+        // 800,000-byte record. Then the Bridge drops the oldest until it fits.
+        let p = try await pair(capabilities: nil)
+        let messages = (1...300).map { ["id": String($0), "role": "user", "text": String(repeating: "/", count: 2_000), "ts": "t",
+                                        "attachments": [] as [Any]] as [String: Any] }
+        p.backend.answers["/api/v1/phone/conversations/c-1/history?limit=200"] = .success(["conversation_id": "c-1", "messages": messages])
+        try await p.phone.send(type: "chat.history", body: ["conversation_id": "c-1", "limit": 200], to: "mac-1")
+        try await run(p)
+        let got = try await p.phone.receive().filter { $0.type != "ack" }
+        XCTAssertEqual(got.map(\.type), ["chat.history.result"])
+        let kept = body(got[0])["messages"] as? [[String: Any]] ?? []
+        XCTAssertEqual(body(got[0])["truncated"] as? Bool, true)
+        XCTAssertEqual(kept.last?["id"] as? String, "300", "the newest stay")
+        XCTAssertGreaterThan(kept.count, 50)
+        XCTAssertLessThan(kept.count, 300)
+    }
+
     // ------------------------------------------------------------------ delete
 
     func testDeletingAConversationFromThePhone() async throws {
