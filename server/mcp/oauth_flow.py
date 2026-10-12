@@ -96,6 +96,10 @@ def _metadata(redirect_uri: str) -> OAuthClientMetadata:
     )
 
 
+class NeedsInteractiveAuth(RuntimeError):
+    """A background connect reached a step that needs the user's browser (0.1.61 §B1: needs_auth)."""
+
+
 def silent_provider(server: dict) -> OAuthClientProvider:
     """Auth for a BACKGROUND connect: refresh with stored tokens is fine, but a
     flow that wants a browser must fail fast — a health probe or a boot-time
@@ -103,13 +107,13 @@ def silent_provider(server: dict) -> OAuthClientProvider:
     is not a feature."""
 
     async def refuse_redirect(url: str) -> None:
-        raise RuntimeError(
+        raise NeedsInteractiveAuth(
             "this MCP server wants interactive authorization — use the Authorize "
             "button; background connects never open a browser"
         )
 
     async def refuse_callback() -> tuple[str, str | None]:
-        raise RuntimeError("no interactive callback available in a background connect")
+        raise NeedsInteractiveAuth("no interactive callback available in a background connect")
 
     return OAuthClientProvider(
         server_url=server["url"],
