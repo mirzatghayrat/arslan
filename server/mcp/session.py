@@ -9,11 +9,18 @@ the runtime is installed, and writes its stderr to `stderr.log` there, one start
 Measured against mcp 1.28.1 (2026-10-12): a session-wide read timeout would also bound
 `initialize`, so none is set (the start budget bounds it; tools/list and tools/call have their own);
 closing a half-open stack raises its own ExceptionGroup, so the cleanup never replaces the cause;
-the message handler runs inside the receive loop, so it never awaits session I/O.
+the message handler runs inside the receive loop, so it never awaits session I/O; closing a session
+never wakes its pending requests (each would wait out its own timeout), so `drop` wakes them.
+
+A session is cached only by the open that made it, and only if nothing dropped or forgot the server
+while it opened (a per-server generation): a stale open closes what it made instead.
 """
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import hashlib
+import json
 import logging
 import os
 import re
@@ -42,6 +49,10 @@ LOG_KEEP_BYTES = 64 * 1024
 TAIL_BYTES = 8 * 1024
 TAIL_LINES = 20
 START_MARK = "--- arslan start "
+FORGOTTEN_DIR = ".forgotten"     # <data>/mcp/.forgotten/<id>-<utc>/: a forgotten server's folder
+#: The SDK's code for an http 404 on a request ("Session terminated": the server expired the
+#: session). JSON-RPC's invalid-request code is -32600, which stays a server's answer.
+SESSION_TERMINATED = 32600
 #: ANSI escape sequences and control characters other than tab and newline (npm progress bars).
 CONTROL_CHARS = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]|[\x00-\x08\x0b-\x1f\x7f]")
 
@@ -66,15 +77,33 @@ class LoopLocks:
     def __init__(self) -> None:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._locks: dict = {}
+        self._users: dict = {}            # key -> tasks holding or waiting for its lock
 
     def get(self, key) -> asyncio.Lock:
         loop = asyncio.get_running_loop()
         if loop is not self._loop:
-            self._loop, self._locks = loop, {}
+            self._loop, self._locks, self._users = loop, {}, {}
         return self._locks.setdefault(key, asyncio.Lock())
 
+    @contextlib.asynccontextmanager
+    async def hold(self, key):
+        """`async with lock`, counted, so `forget` never drops a lock someone holds or awaits."""
+        lock = self.get(key)
+        users = self._users
+        users[key] = users.get(key, 0) + 1
+        try:
+            async with lock:
+                yield
+        finally:
+            users[key] -= 1
+            if not users[key]:
+                del users[key]
+
     def forget(self, key) -> None:
-        self._locks.pop(key, None)
+        """Drop the key's lock unless a task holds or awaits it (a new lock beside a held one
+        would let two opens of one server run at once)."""
+        if not self._users.get(key):
+            self._locks.pop(key, None)
 
 
 def server_dir(server_id: int) -> Path:
@@ -94,10 +123,12 @@ def log_path(server_id: int) -> Path:
 
 
 def is_dropped_error(exc: BaseException) -> bool:
-    """The session is gone: the process exited, or the pipe or connection closed."""
+    """The session is gone: the process exited, the pipe or connection closed, or an http server
+    expired the session (the SDK's "Session terminated" for a 404: a new session is needed)."""
     if isinstance(exc, (anyio.ClosedResourceError, anyio.BrokenResourceError)):
         return True
-    return isinstance(exc, McpError) and exc.error.code == types.CONNECTION_CLOSED
+    return isinstance(exc, McpError) and exc.error.code in (types.CONNECTION_CLOSED,
+                                                            SESSION_TERMINATED)
 
 
 def cap_log(path: Path, *, limit: int = LOG_CAP_BYTES, keep: int = LOG_KEEP_BYTES) -> None:
@@ -139,9 +170,38 @@ def _utc_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _move_aside(server_id: int) -> Path | None:
+    """Move `<data>/mcp/<id>/` to `<data>/mcp/.forgotten/<id>-<utc>/` (never deleted), so a later
+    server that reuses the id starts in an empty folder with an empty log. Best effort."""
+    from server import config
+
+    root = config.data_dir() / "mcp"
+    source = root / str(int(server_id))
+    if not source.exists():
+        return None
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    target = root / FORGOTTEN_DIR / f"{int(server_id)}-{stamp}"
+    n = 1
+    while target.exists():
+        n += 1
+        target = root / FORGOTTEN_DIR / f"{int(server_id)}-{stamp}-{n}"
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        source.rename(target)
+    except OSError:
+        logger.warning("mcp %s: could not move its folder aside", server_id, exc_info=True)
+        return None
+    return target
+
+
 def _fingerprint(server: dict) -> tuple:
+    """What the running process was started from: a change under the same id reopens. The env is
+    hashed (its values are secrets); the sandbox carries an installed capability's folder grants."""
+    env = json.dumps(server.get("env") or {}, sort_keys=True, default=str)
     return (server.get("transport") or "stdio", server.get("command"),
-            tuple(server.get("args") or ()), server.get("url"))
+            tuple(server.get("args") or ()), server.get("url"),
+            hashlib.sha256(env.encode()).hexdigest(),
+            json.dumps(server.get("sandbox") or None, sort_keys=True, default=str))
 
 
 class MCPSessionManager:
@@ -152,6 +212,14 @@ class MCPSessionManager:
         self._proxy_sources: dict[int, str] = {}                # server_id -> PB-1 proxy source
         self._non_json: dict[int, int] = {}                     # unparsable stdout lines, this open
         self._log_marks: dict[int, float] = {}                  # monotonic time of the last start marker
+        # Bumped by drop/forget (per id) and aclose_all (all ids): an open that finishes under a
+        # different generation was overtaken and must not cache. Never popped (a reused id must
+        # not see its counter start over under an open still running).
+        self._epochs: dict[int, int] = {}
+        self._closing = 0
+        # server_id -> (entry, future): set when that entry is dropped, so its pending requests
+        # end at once (the SDK never wakes them when the session closes).
+        self._wakes: dict[int, tuple[object, asyncio.Future]] = {}
         # Set by the supervisor. Both are SYNC and only schedule work: the message handler runs
         # inside the session's receive loop, and awaiting session I/O there deadlocks it.
         self.on_tools_changed: Callable[[int], None] | None = None
@@ -282,59 +350,104 @@ class MCPSessionManager:
         finally:
             await stack.aclose()
 
+    def _generation(self, sid: int) -> tuple[int, int]:
+        return self._closing, self._epochs.get(sid, 0)
+
     async def get_session(self, server: dict, *, budget_s: float | None = None):
         """The live session, opened within the start budget when none is cached. Only the
-        supervisor and discovery call this (and `list_tools`, which calls this)."""
+        supervisor and discovery call this (and `list_tools`, which calls this). The budget bounds
+        open + initialize; after a timeout the cleanup (the SDK's ~2 s graceful wait, then a
+        terminate) comes on top. Raises NotStarted when the server was dropped or forgotten while
+        it opened: what it opened is closed, never cached."""
+        return (await self._entry(server, budget_s=budget_s))[0]
+
+    async def _entry(self, server: dict, *, budget_s: float | None = None):
         sid = server["id"]
-        async with self._locks.get(sid):
+        async with self._locks.hold(sid):
             fingerprint = _fingerprint(server)
             if sid in self._sessions and self._fingerprints.get(sid) not in (None, fingerprint):
                 await self.drop(sid)         # the row changed under this id, or the id was reused
-            if sid not in self._sessions:
+            entry = self._sessions.get(sid)
+            if entry is None:
                 budget = budget_s if budget_s is not None else float(
                     server.get("start_budget_s") or DEFAULT_START_BUDGET_S)
                 self._non_json.pop(sid, None)
-                self._sessions[sid] = await asyncio.wait_for(self._open_session(server), timeout=budget)
+                generation = self._generation(sid)
+                entry = await asyncio.wait_for(self._open_session(server), timeout=budget)
+                if self._generation(sid) != generation or sid in self._sessions:
+                    # Dropped or forgotten while it opened (set_folders, a delete, shutdown), or
+                    # cached by someone else: never undo that, never overwrite an entry.
+                    await self._close(sid, entry)
+                    raise NotStarted(sid)
+                self._sessions[sid] = entry
                 self._fingerprints[sid] = fingerprint
-            return self._sessions[sid][0]
+            return entry
+
+    async def _until_dropped(self, sid: int, entry, request):
+        """Await `request` (a coroutine on `entry`'s session), or raise CONNECTION_CLOSED as soon
+        as `entry` is dropped: closing a session never wakes its pending requests (measured,
+        mcp 1.28.1), so without this each would wait out its own timeout."""
+        if self._sessions.get(sid) is not entry:
+            request.close()
+            raise McpError(types.ErrorData(code=types.CONNECTION_CLOSED, message="Connection closed"))
+        wake = self._wakes.get(sid)
+        if wake is None or wake[0] is not entry:
+            wake = self._wakes[sid] = (entry, asyncio.get_running_loop().create_future())
+        task = asyncio.ensure_future(request)
+        try:
+            await asyncio.wait({task, wake[1]}, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            if not task.done():
+                task.cancel()
+                with contextlib.suppress(BaseException):
+                    await task
+        if task.cancelled():
+            raise McpError(types.ErrorData(code=types.CONNECTION_CLOSED, message="Connection closed"))
+        return task.result()
 
     async def list_tools(self, server: dict, cursor: str | None = None):
         """One page of tools. Opens the session when none is cached (the supervisor's and
-        discovery's path only); LIST_TIMEOUT_S per page; any failure drops the session."""
-        session = await self.get_session(server)
+        discovery's path only); LIST_TIMEOUT_S per page; any failure drops the session it ran on
+        (never a newer one under the same id)."""
+        sid = server["id"]
+        entry = await self._entry(server)
         try:
             if cursor is None:
-                request = session.list_tools()
+                request = entry[0].list_tools()
             else:
-                request = session.list_tools(params=types.PaginatedRequestParams(cursor=cursor))
+                request = entry[0].list_tools(params=types.PaginatedRequestParams(cursor=cursor))
             try:
-                return await asyncio.wait_for(request, LIST_TIMEOUT_S)
+                return await self._until_dropped(sid, entry, asyncio.wait_for(request, LIST_TIMEOUT_S))
             except TimeoutError as exc:
                 raise ListTimeout(f"tools/list did not answer within {LIST_TIMEOUT_S:g} s") from exc
         except BaseException:
-            await self.drop(server["id"])
+            if self._sessions.get(sid) is entry:
+                await self.drop(sid)
             raise
 
     async def call_tool(self, server: dict, name: str, args: dict):
         """One tool call on the LIVE session only — never opens one (a chat turn never waits for
         a start). A server's JSON-RPC error answer leaves the session alone; anything else that
-        failed drops it and tells the supervisor, which restarts it in the background."""
+        failed drops it and tells the supervisor, which restarts it in the background — once per
+        session, and never for a session that was already dropped or replaced."""
         sid = server["id"]
-        session = self.cached(sid)
-        if session is None:
+        entry = self._sessions.get(sid)
+        if entry is None:
             raise NotStarted(sid)
         try:
-            return await session.call_tool(
-                name, args, read_timeout_seconds=timedelta(seconds=CALL_TIMEOUT_S))
+            return await self._until_dropped(sid, entry, entry[0].call_tool(
+                name, args, read_timeout_seconds=timedelta(seconds=CALL_TIMEOUT_S)))
         except McpError as exc:
-            if exc.error.code in (types.CONNECTION_CLOSED, httpx.codes.REQUEST_TIMEOUT):
-                await self._drop_after_call(sid, exc)
+            if is_dropped_error(exc) or exc.error.code == httpx.codes.REQUEST_TIMEOUT:
+                await self._drop_after_call(sid, exc, entry)
             raise
         except Exception as exc:
-            await self._drop_after_call(sid, exc)
+            await self._drop_after_call(sid, exc, entry)
             raise
 
-    async def _drop_after_call(self, sid: int, exc: BaseException) -> None:
+    async def _drop_after_call(self, sid: int, exc: BaseException, entry) -> None:
+        if self._sessions.get(sid) is not entry:
+            return      # already dropped or replaced: whoever did it handles the restart
         await self.drop(sid)
         callback = self.on_dropped
         if callback is not None:
@@ -343,28 +456,39 @@ class MCPSessionManager:
             except Exception:  # noqa: BLE001
                 logger.warning("mcp %s: on_dropped callback failed", sid, exc_info=True)
 
+    async def _close(self, server_id: int, entry) -> None:
+        try:
+            await entry[1].aclose()
+        except Exception as exc:  # noqa: BLE001
+            if "different task" in str(exc):
+                # Closed from another task than the opener: anyio complains, the process is
+                # still terminated (measured 2026-10-12).
+                logger.debug("MCP session %s closed from another task", server_id)
+            else:
+                logger.warning("MCP session %s close failed: %s", server_id, exc)
+
     async def drop(self, server_id: int) -> None:
+        """Close this server's session, wake every request pending on it (CONNECTION_CLOSED),
+        and make an open still running for it close what it opens instead of caching it."""
+        self._epochs[server_id] = self._epochs.get(server_id, 0) + 1
         entry = self._sessions.pop(server_id, None)
         self._fingerprints.pop(server_id, None)
+        wake = self._wakes.pop(server_id, None)
+        if wake is not None and not wake[1].done():
+            wake[1].set_result(None)
         if entry is not None:
-            try:
-                await entry[1].aclose()
-            except Exception as exc:  # noqa: BLE001
-                if "different task" in str(exc):
-                    # Closed from another task than the opener: anyio complains, the process is
-                    # still terminated (measured 2026-10-12).
-                    logger.debug("MCP session %s closed from another task", server_id)
-                else:
-                    logger.warning("MCP session %s close failed: %s", server_id, exc)
+            await self._close(server_id, entry)
 
     _drop = drop
 
     async def forget(self, server_id: int) -> None:
-        """drop + every per-id record: a deleted server, whose id SQLite may hand out again."""
+        """drop + every per-id record + its folder moved aside (never deleted): a deleted server,
+        whose id SQLite may hand out again, leaves nothing for the next one to inherit."""
         await self.drop(server_id)
         self._locks.forget(server_id)
         for per_id in (self._non_json, self._proxy_sources, self._log_marks):
             per_id.pop(server_id, None)
+        await asyncio.to_thread(_move_aside, server_id)
 
     def stderr_tail(self, server_id: int, *, secrets: list[str], since: float | None = None) -> str:
         """The masked tail of this server's newest run. With `since` (a time.monotonic() value),
@@ -377,9 +501,12 @@ class MCPSessionManager:
         return mask(read_tail(log_path(server_id)), secrets)
 
     async def aclose_all(self) -> None:
+        """Close every session; an open still running closes what it opens. The locks stay (an
+        opener may hold one; LoopLocks starts over by itself on a new loop) and so do the
+        folders."""
+        self._closing += 1
         for sid in list(self._sessions):
             await self.drop(sid)
-        self._locks = LoopLocks()
         self._non_json.clear()
         self._log_marks.clear()
 

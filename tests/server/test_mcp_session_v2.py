@@ -88,18 +88,22 @@ async def test_a_call_never_starts_a_process(monkeypatch):
         await mgr.call_tool(_server(), "a", {})
 
 
-async def test_a_call_has_120_s_and_a_server_error_answer_keeps_the_session():
+@pytest.mark.parametrize("code", [-32602, types.INVALID_REQUEST])   # JSON-RPC's -32600, not 32600
+async def test_a_call_has_120_s_and_a_server_error_answer_keeps_the_session(code):
     mgr = sess.MCPSessionManager()
-    session = _Session(McpError(types.ErrorData(code=-32602, message="bad arguments")))
+    session = _Session(McpError(types.ErrorData(code=code, message="bad arguments")))
     mgr._sessions[1] = (session, _Stack())
+    told = []
+    mgr.on_dropped = lambda sid, exc: told.append(sid)
     with pytest.raises(McpError):
         await mgr.call_tool(_server(), "a", {})
     assert session.timeouts == [timedelta(seconds=sess.CALL_TIMEOUT_S)]
-    assert mgr.cached(1) is session
+    assert mgr.cached(1) is session and told == []     # a server's answer restarts nothing
 
 
 @pytest.mark.parametrize("failure, dropped", [
     (McpError(types.ErrorData(code=types.CONNECTION_CLOSED, message="Connection closed")), True),
+    (McpError(types.ErrorData(code=sess.SESSION_TERMINATED, message="Session terminated")), True),
     (anyio.ClosedResourceError(), True),
     (anyio.BrokenResourceError(), True),
     (McpError(types.ErrorData(code=408, message="Timed out")), False),
@@ -282,3 +286,183 @@ async def test_the_proxy_lookup_runs_off_the_event_loop(fake_sdk, monkeypatch):
     await stack.aclose()
     await tick
     assert max(gaps) < 0.3
+
+
+# ── fix round 1 (review I-2 … I-5) ──────────────────────────────────────────────────────────
+
+
+async def test_a_drop_during_a_start_is_not_undone(monkeypatch):
+    mgr = sess.MCPSessionManager()
+    opened = []
+
+    async def slow_open(server):
+        await asyncio.sleep(0.2)
+        stack = _Stack()
+        opened.append((server["sandbox"]["folders"], stack))
+        return _Session(), stack
+    monkeypatch.setattr(mgr, "_open_session", slow_open)
+    old = _server(sandbox={"root": "/r", "folders": ["/old"], "network": False})
+    new = _server(sandbox={"root": "/r", "folders": ["/old", "/new"], "network": False})
+    start = asyncio.create_task(mgr.get_session(old))
+    await asyncio.sleep(0.05)
+    await mgr.drop(1)                       # set_folders: the grants changed while it started
+    with pytest.raises(sess.NotStarted):
+        await start
+    assert opened[0][1].closed and mgr.cached(1) is None
+    session = await mgr.get_session(new)
+    assert [folders for folders, _ in opened] == [["/old"], ["/old", "/new"]]
+    assert mgr.cached(1) is session
+
+
+async def test_forget_during_a_start_keeps_the_lock_so_two_starts_never_overlap(data, monkeypatch):
+    mgr = sess.MCPSessionManager()
+    running, most = [0], [0]
+
+    async def slow_open(server):
+        running[0] += 1
+        most[0] = max(most[0], running[0])
+        await asyncio.sleep(0.2)
+        running[0] -= 1
+        return _Session(), _Stack()
+    monkeypatch.setattr(mgr, "_open_session", slow_open)
+    first = asyncio.create_task(mgr.get_session(_server()))
+    await asyncio.sleep(0.05)
+    await mgr.forget(1)
+    second = asyncio.create_task(mgr.get_session(_server()))
+    results = await asyncio.gather(first, second, return_exceptions=True)
+    assert isinstance(results[0], sess.NotStarted) and mgr.cached(1) is results[1]
+    assert most[0] == 1
+
+
+async def test_an_open_never_overwrites_a_cached_session(monkeypatch):
+    mgr = sess.MCPSessionManager()
+    theirs, mine = (_Session(), _Stack()), _Stack()
+
+    async def open_while_another_caches(server):
+        mgr._sessions[1] = theirs           # an opener that did not share this lock
+        return _Session(), mine
+    monkeypatch.setattr(mgr, "_open_session", open_while_another_caches)
+    with pytest.raises(sess.NotStarted):
+        await mgr.get_session(_server())
+    assert mgr._sessions[1] is theirs and mine.closed and not theirs[1].closed
+
+
+async def test_shutdown_during_a_start_caches_nothing(monkeypatch):
+    mgr = sess.MCPSessionManager()
+    stacks = []
+
+    async def slow_open(server):
+        await asyncio.sleep(0.2)
+        stacks.append(_Stack())
+        return _Session(), stacks[-1]
+    monkeypatch.setattr(mgr, "_open_session", slow_open)
+    start = asyncio.create_task(mgr.get_session(_server()))
+    await asyncio.sleep(0.05)
+    await mgr.aclose_all()
+    with pytest.raises(sess.NotStarted):
+        await start
+    assert stacks[0].closed and mgr.cached(1) is None
+
+
+async def test_a_changed_env_args_or_sandbox_under_the_same_id_reopens(monkeypatch):
+    mgr = sess.MCPSessionManager()
+    opened = []
+
+    async def fake_open(server):
+        opened.append(server)
+        return _Session(), _Stack()
+    monkeypatch.setattr(mgr, "_open_session", fake_open)
+    base = _server(env={"TOKEN": "old"})
+    env = {**base, "env": {"TOKEN": "new"}}
+    args = {**env, "args": ["--verbose"]}
+    grants = {**args, "sandbox": {"root": "/r", "folders": ["/a"], "network": False}}
+    more = {**args, "sandbox": {"root": "/r", "folders": ["/a", "/b"], "network": False}}
+    for server in (base, dict(base), env, args, grants, more, dict(more)):
+        await mgr.get_session(server)
+    assert opened == [base, env, args, grants, more]
+
+
+async def test_forget_closes_clears_and_moves_the_folder_aside(data):
+    mgr = sess.MCPSessionManager()
+    (sess.server_dir(5) / "notes.txt").write_text("kept")
+    sess.log_path(5).write_text(f"{sess.START_MARK}a ---\nthe deleted server's error\n")
+    stack = _Stack()
+    mgr._sessions[5] = (_Session(), stack)
+    mgr._non_json[5], mgr._log_marks[5], mgr._proxy_sources[5] = 2, 1.0, "scutil"
+    mgr._locks.get(5)
+    await mgr.forget(5)
+    assert stack.closed and mgr.cached(5) is None and 5 not in mgr._locks._locks
+    assert (mgr.non_json_lines(5), mgr.proxy_source(5), 5 in mgr._log_marks) == (0, None, False)
+    assert not (data / "mcp" / "5").exists() and mgr.stderr_tail(5, secrets=[]) == ""
+    [moved] = (data / "mcp" / sess.FORGOTTEN_DIR).iterdir()
+    assert moved.name.startswith("5-") and (moved / "notes.txt").read_text() == "kept"
+    assert "the deleted server's error" in (moved / "stderr.log").read_text()   # never deleted
+    sess.server_dir(6)
+    mgr._sessions[6] = (_Session(), _Stack())
+    await mgr.aclose_all()                  # a shutdown keeps every folder where it is
+    assert (data / "mcp" / "6").is_dir()
+
+
+async def test_the_stray_line_count_starts_over_with_each_run(monkeypatch):
+    mgr = sess.MCPSessionManager()
+
+    async def fake_open(server):
+        return _Session(), _Stack()
+    monkeypatch.setattr(mgr, "_open_session", fake_open)
+    await mgr._handler(1)(ValueError("not JSON"))
+    assert mgr.non_json_lines(1) == 1
+    await mgr.get_session(_server())
+    assert mgr.non_json_lines(1) == 0
+
+
+def test_since_without_a_start_marker_is_never_an_earlier_runs_log(data):
+    sess.server_dir(3)
+    sess.log_path(3).write_text(f"{sess.START_MARK}a ---\nan earlier run's error\n")
+    mgr = sess.MCPSessionManager()                # no start recorded in this process
+    assert mgr.stderr_tail(3, secrets=[]) == "an earlier run's error"
+    assert mgr.stderr_tail(3, secrets=[], since=0.0) == ""
+
+
+async def test_a_failing_hook_never_replaces_the_cause_or_ends_the_session():
+    mgr = sess.MCPSessionManager()
+
+    def boom(*args):
+        raise RuntimeError("boom")
+    mgr.on_dropped = mgr.on_tools_changed = boom
+    lost = McpError(types.ErrorData(code=types.CONNECTION_CLOSED, message="Connection closed"))
+    mgr._sessions[1] = (_Session(lost), _Stack())
+    with pytest.raises(McpError) as caught:
+        await mgr.call_tool(_server(), "a", {})
+    assert caught.value is lost
+    await mgr._handler(1)(types.ServerNotification(types.ToolListChangedNotification()))
+
+
+async def test_a_stale_failure_never_drops_the_session_that_replaced_it():
+    mgr = sess.MCPSessionManager()
+    newer = (_Session(), _Stack())
+
+    class _Replaced(_Session):
+        async def call_tool(self, name, arguments, read_timeout_seconds=None):
+            mgr._sessions[1] = newer          # replaced while this call was in flight
+            raise McpError(types.ErrorData(code=408, message="Timed out"))
+    mgr._sessions[1] = (_Replaced(), _Stack())
+    told = []
+    mgr.on_dropped = lambda sid, exc: told.append(sid)
+    with pytest.raises(McpError):
+        await mgr.call_tool(_server(), "a", {})
+    assert mgr._sessions[1] is newer and not newer[1].closed and told == []
+
+
+async def test_a_failed_page_drops_only_the_session_it_ran_on():
+    mgr = sess.MCPSessionManager()
+    newer = (_Session(), _Stack())
+
+    class _Replaced(_Session):
+        async def list_tools(self, params=None):
+            mgr._sessions[1] = newer
+            raise anyio.BrokenResourceError()
+    mgr._sessions[1] = (_Replaced(), _Stack())
+    mgr._fingerprints[1] = sess._fingerprint(_server())
+    with pytest.raises(anyio.BrokenResourceError):
+        await mgr.list_tools(_server())
+    assert mgr._sessions[1] is newer and not newer[1].closed

@@ -1,7 +1,9 @@
 """A tiny MCP stdio server for the real-process tests (0.1.61 PR 4). Standard library only.
 
-Run as `python fake_mcp_server.py MODE`:
+Run as `python fake_mcp_server.py MODE`. Every mode first writes "pid is <pid>" to stderr. Each
+tools/call runs on its own thread, so a call can be pending while another arrives:
   ok                one tool `a` (readOnlyHint, title "Tool A"); tools/call echoes; tool `die` exits
+                    the process at once; tool `slow` answers after $SLOW_CALL_S seconds (default 30)
   slow_init         answers initialize after $SLOW_INIT_S seconds (default 2)
   usage_exit        prints usage text to stdout and exits 2 (a program that does not speak MCP)
   crash_with_stderr writes "Error: REA_TOKEN is not set" to stderr and exits 1 on initialize
@@ -15,14 +17,17 @@ Run as `python fake_mcp_server.py MODE`:
 import json
 import os
 import sys
+import threading
 import time
 
 MODE = sys.argv[1] if len(sys.argv) > 1 else "ok"
+_SEND = threading.Lock()
 
 
 def send(obj):
-    sys.stdout.write(json.dumps(obj) + "\n")
-    sys.stdout.flush()
+    with _SEND:
+        sys.stdout.write(json.dumps(obj) + "\n")
+        sys.stdout.flush()
 
 
 def tool(name, **hints):
@@ -32,7 +37,18 @@ def tool(name, **hints):
     return item
 
 
+def answer_call(mid, name):
+    if name == "die":
+        os._exit(3)                       # the whole process, from a thread
+    if name == "slow":
+        time.sleep(float(os.environ.get("SLOW_CALL_S", "30")))
+    send({"jsonrpc": "2.0", "id": mid,
+          "result": {"content": [{"type": "text", "text": f"called {name}"}]}})
+
+
 def main():
+    sys.stderr.write(f"pid is {os.getpid()}\n")
+    sys.stderr.flush()
     if MODE == "usage_exit":
         print("usage: fake [--mcp]", flush=True)
         sys.stderr.write("fake: no command given\n")
@@ -81,11 +97,8 @@ def main():
             if MODE == "list_changed" and lists == 1:
                 send({"jsonrpc": "2.0", "method": "notifications/tools/list_changed"})
         elif method == "tools/call":
-            name = msg["params"]["name"]
-            if name == "die":
-                sys.exit(3)
-            send({"jsonrpc": "2.0", "id": mid,
-                  "result": {"content": [{"type": "text", "text": f"called {name}"}]}})
+            threading.Thread(target=answer_call, args=(mid, msg["params"]["name"]),
+                             daemon=True).start()
         elif mid is not None:
             send({"jsonrpc": "2.0", "id": mid, "result": {}})
 
