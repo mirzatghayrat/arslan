@@ -230,6 +230,9 @@ async def _ask(req: Request, ctx: Context, mode: str) -> Decision:
     started = time.monotonic()
     answer = await asker(frame)
     wait_ms = int((time.monotonic() - started) * 1000)
+    # Provenance is the card the user answered: an identical ask that joined a card on screen
+    # records that card, not its own never-shown call_id.
+    card_id = answer.get("call_id") or call_id
     note = str(answer.get("note") or "").strip()[:500]
     if answer.get("by") is None:
         decision = Decision(False, "expired", model_text=_EXPIRED.format(
@@ -247,7 +250,7 @@ async def _ask(req: Request, ctx: Context, mode: str) -> Decision:
             for kind, target, *label in req.remember_as or ((req.kind, req.target),):
                 rule = await permission_store.add_rule(
                     db, kind, target, label=label[0] if label else req.always_label,
-                    created_from=call_id)
+                    created_from=card_id)
                 rule_id = rule_id or rule.id
         elif decision.allowed and decision.scope in ("task", "conversation"):
             task = (ctx.task_id or "") if decision.scope == "task" else ""
@@ -258,7 +261,7 @@ async def _ask(req: Request, ctx: Context, mode: str) -> Decision:
             else:
                 for kind, target in req.grant_as or ((req.kind, req.target),):
                     grant = await permission_store.add_grant(db, ctx.conversation_id, task, kind,
-                                                             target, call_id=call_id)
+                                                             target, call_id=card_id)
                     grant_id = grant_id or grant.id
         await _record_in(db, req, ctx, mode, decision, wait_ms=wait_ms, rule_id=rule_id,
                          grant_id=grant_id)
@@ -267,11 +270,14 @@ async def _ask(req: Request, ctx: Context, mode: str) -> Decision:
 
 
 def _dedupe(req: Request) -> str:
-    """Identical asks share one card (§A4): the same kind and target AND the same words on the
-    card, its title and detail. Two commands under one rule, two schedules, two writes in one
-    folder are not identical: one answer must never approve what its card did not show. A JSON
-    list, so no separator inside a field can make two different asks read the same."""
-    return json.dumps([req.kind, req.target, req.title, req.detail])
+    """Identical asks share one card (§A4): the same kind and target AND everything the card
+    shows — its title, its detail and the caller's own frame (without its call_id). Two commands
+    under one rule, two schedules, two writes in one folder, writing vs editing one file are not
+    identical: one answer must never approve what its card did not show. JSON with sorted keys,
+    so no separator inside a field can make two different asks read the same."""
+    shown = {k: v for k, v in (req.frame or {}).items() if k != "call_id"}
+    return json.dumps([req.kind, req.target, req.title, req.detail, shown], sort_keys=True,
+                      default=str)
 
 
 def _generic_frame(req: Request) -> dict:

@@ -74,6 +74,19 @@ class Pending:
 _pending: dict[str, Pending] = {}
 
 
+def joining(conversation_id: str, frame: dict) -> Pending | None:
+    """The card still waiting in this conversation that `frame` would join (the same `dedupe`
+    key: an identical ask, 0.1.61 §A4), or None when it would open a card of its own."""
+    key = frame.get("dedupe")
+    if not key:
+        return None
+    for existing in _pending.values():
+        if (existing.conversation_id == conversation_id and existing.frame.get("dedupe") == key
+                and not existing.future.done()):
+            return existing
+    return None
+
+
 def open_card(conversation_id: str, frame: dict, *, broadcast: bool = True) -> Pending:
     """Register one card so a reply from anywhere resolves `pending.future` (see
     `answer`): any socket on the conversation, the Inbox, the island (0.1.55). With
@@ -84,13 +97,10 @@ def open_card(conversation_id: str, frame: dict, *, broadcast: bool = True) -> P
     A request identical to one still waiting in this conversation (the same `dedupe` key,
     0.1.61 §A4: parallel calls, a job and its window) opens no second card: the caller
     waits on the one already on screen, and gets that card back (with ITS call_id)."""
-    key = frame.get("dedupe")
-    if key:
-        for existing in _pending.values():
-            if (existing.conversation_id == conversation_id and existing.frame.get("dedupe") == key
-                    and not existing.future.done()):
-                existing.waiters += 1          # the same question, already on screen: one card
-                return existing
+    existing = joining(conversation_id, frame)
+    if existing is not None:
+        existing.waiters += 1                  # the same question, already on screen: one card
+        return existing
     pending = Pending(frame["call_id"], conversation_id, frame, asyncio.get_running_loop().create_future(),
                       private=not broadcast)
     _pending[pending.call_id] = pending
@@ -163,6 +173,12 @@ def answer(data: dict) -> bool:
             # Never more than once from there: no wider scope, and no "remember" either (the
             # window's legacy "don't ask again" reads it).
             scope, remember = (options[0] if options else None), False
+        elif (scope is None and not remember and "conversation" in options
+                and pending.frame["type"] in ("propose_workspace_write", "propose_schedule")):
+            # Until PR 2b sends scopes (remove this branch then): today's UI answers these two
+            # cards with neither a scope nor "remember", and such a yes held for the socket or the
+            # job (the per-socket and per-job grants this PR removed): "in this conversation".
+            scope = "conversation"
         elif scope not in options:
             scope = _legacy_scope(options, remember)
         decision = {"approved": ANSWERS[kind], "remember": remember,
@@ -247,8 +263,8 @@ def island_may_answer(frame: dict) -> bool:
 
 def all_pending() -> list[dict]:
     """Every card waiting for the user, in any conversation, oldest first (0.1.55: the
-    Inbox's "现在就要你批准" and the island). `expires_at` is when it is declined;
-    `island_ok` says whether the island may answer it (see `island_may_answer`)."""
+    Inbox's "现在就要你批准" and the island). `expires_at` is when it expires unanswered (never
+    a refusal); `island_ok` says whether the island may answer it (see `island_may_answer`)."""
     rows = sorted(_pending.values(), key=lambda p: p.opened_at)
     return [{"call_id": p.call_id, "conversation_id": p.conversation_id, "frame": p.frame,
              "opened_at": p.opened_at, "expires_at": p.opened_at + TIMEOUT_S,
@@ -319,7 +335,9 @@ class BroadcastAsker:
             self.unanswered = True
         LAST_OUTCOME.set("approved" if decision["approved"]
                          else "expired" if decision["by"] is None else "declined")
-        return decision
+        # The card the user answered: an identical ask that joined it records that one (§A8).
+        # A copy: waiters on one card share the decision dict.
+        return {**decision, "call_id": pending.call_id}
 
 
 class JobConfirmations:
@@ -418,16 +436,29 @@ class JobConfirmations:
         return approved
 
     async def _decide_with_shadow(self, req, command: str, verdict) -> bool:
-        """`_ask_with_shadow` for a rule card: the same shadow judgment and outcome, decided by
-        `permissions.decide` on this job's card surface."""
+        """`_ask_with_shadow` for a rule card, decided by `permissions.decide` on this job's card
+        surface. The shadow judgment goes with a card the user is shown: none when a rule or a
+        grant decides, none once the job stopped waiting, and one per card (an identical ask that
+        joins a card on screen is not judged again). It is joined to the real answer: "expired"
+        when nobody answered, never "declined"."""
         from server.services import judgment, permissions
-        judgment.shadow("tool.approval", judgment.approval_state(command, rule=verdict.rule,
-                                                                 reason=verdict.reason),
-                        ref=req.frame["call_id"], conversation_id=self.conversation_id)
-        with permissions.asking_with(self.asker):
+        judged: list[str] = []
+
+        async def ask(frame: dict) -> dict:
+            # No await between this check and the card opening inside `self.asker`.
+            if not self.asker.unanswered and joining(self.conversation_id, frame) is None:
+                judgment.shadow("tool.approval", judgment.approval_state(command, rule=verdict.rule,
+                                                                         reason=verdict.reason),
+                                ref=frame["call_id"], conversation_id=self.conversation_id)
+                judged.append(frame["call_id"])
+            return await self.asker(frame)
+
+        with permissions.asking_with(ask):
             decision = await permissions.decide(req, self._context())
-        judgment.record_outcome_later(req.frame["call_id"], "approved" if decision.allowed else "declined",
-                                      point="tool.approval")
+        outcome = ("approved" if decision.allowed
+                   else "expired" if decision.by == "expired" else "declined")
+        for ref in judged:
+            judgment.record_outcome_later(ref, outcome, point="tool.approval")
         return decision.allowed
 
 

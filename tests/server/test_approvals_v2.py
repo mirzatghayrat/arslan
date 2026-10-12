@@ -246,6 +246,9 @@ ASKS = {
     "two schedules, two times": (lambda j: j.schedule("Brief", "daily"), lambda j: j.schedule("Brief", "weekly")),
     "two writes, two paths": (lambda j: j.workspace_write("write_file", "a.txt"),
                               lambda j: j.workspace_write("write_file", "b.txt")),
+    # The card shows the action too (review M2): writing a file is not editing it.
+    "two writes, two actions": (lambda j: j.workspace_write("write_file", "a.txt"),
+                                lambda j: j.workspace_write("edit_file", "a.txt")),
 }
 
 
@@ -324,6 +327,229 @@ async def test_a_phone_or_island_yes_on_a_job_card_stores_no_rule_and_no_grant(j
         assert (await db.scalars(select(PermissionGrant))).all() == []
     [row] = await _ledger(job_db)
     assert (row.decided_by, row.scope) == ("user", "once")
+
+
+# ── review fix round 1: merge guards, the job surface's waits, small rules, judge, provenance ──
+
+async def test_identical_asks_in_two_conversations_get_two_cards(monkeypatch):
+    sent = []
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: (lambda f: sent.append((cid, f["call_id"]))))
+    a = approvals.open_card("conv-a", frame("c1"))
+    b = approvals.open_card("conv-b", frame("c2"))             # an answer in A must never approve B
+    assert a is not b and sent == [("conv-a", "c1"), ("conv-b", "c2")]
+
+
+async def test_an_ask_after_the_answer_gets_a_card_of_its_own(monkeypatch):
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: (lambda f: None))
+    a = approvals.open_card("conv", frame("c1"))
+    approvals.answer({"type": "confirm_action", "call_id": "c1", "scope": "task"})
+    b = approvals.open_card("conv", frame("c2"))               # the first waiter has not woken yet
+    assert b is not a and not b.future.done()
+
+
+async def test_one_job_giving_up_does_not_cancel_the_other_jobs_wait(monkeypatch):
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: (lambda f: None))
+    monkeypatch.setattr(approvals, "TIMEOUT_S", 0.05)
+    first = asyncio.ensure_future(approvals.BroadcastAsker("conv")(frame("c1")))
+    await asyncio.sleep(0)
+    monkeypatch.setattr(approvals, "TIMEOUT_S", 5)
+    second = asyncio.ensure_future(approvals.BroadcastAsker("conv")(frame("c2")))
+    await asyncio.sleep(0)
+    assert (await first)["by"] is None and "c1" in approvals.known_ids()
+    approvals.answer({"type": "confirm_action", "call_id": "c1", "scope": "task"})
+    assert (await second)["approved"] is True
+
+
+async def test_a_job_stopped_while_its_card_waits_leaves_no_card(monkeypatch):
+    sent = []
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: sent.append)
+    waiting = asyncio.ensure_future(approvals.BroadcastAsker("conv")(frame("c1")))
+    await asyncio.sleep(0)
+    assert [p["call_id"] for p in approvals.all_pending()] == ["c1"]
+    waiting.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await waiting
+    assert approvals.all_pending() == [] and approvals.known_ids() == set()
+    assert (sent[-1]["type"], sent[-1]["outcome"]) == ("card_resolved", "expired")
+
+
+async def test_a_stopped_job_leaves_a_shared_card_to_the_other(monkeypatch):
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: (lambda f: None))
+    a = asyncio.ensure_future(approvals.BroadcastAsker("conv")(frame("c1")))
+    await asyncio.sleep(0)
+    b = asyncio.ensure_future(approvals.BroadcastAsker("conv")(frame("c2")))
+    await asyncio.sleep(0)
+    a.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await a
+    assert "c1" in approvals.known_ids()
+    approvals.answer({"type": "confirm_action", "call_id": "c1"})
+    assert (await b)["approved"] is True and approvals.known_ids() == set()
+
+
+async def test_a_conversation_grant_for_one_rule_never_covers_a_second_rule(job_db, monkeypatch):
+    """`rm a.txt` (delete) allowed for the conversation must not wave `rm -rf build` (delete and
+    recursive delete) through: the grant's target is every rule the command matched."""
+    shown = []
+
+    def window(f):
+        if f["type"] == "propose_run_command":
+            shown.append(f["command"])
+            approvals.answer({"type": "confirm_run_command", "call_id": f["call_id"], "scope": "conversation"})
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: window)
+    assert await approvals.JobConfirmations("conv", job_id="job-1").command("rm a.txt", []) is True
+    assert await approvals.JobConfirmations("conv", job_id="job-2").command("rm -rf build", []) is True
+    assert shown == ["rm a.txt", "rm -rf build"]
+
+
+async def test_a_declined_plain_job_card_reads_declined(monkeypatch):
+    def window(f):
+        if f["type"].startswith("propose_"):
+            approvals.answer({"type": "cancel_run_command", "call_id": f["call_id"]})
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: window)
+    assert await approvals.JobConfirmations("c").command("touch ~/Downloads/a", [], sandbox="retry") is False
+    assert approvals.LAST_OUTCOME.get() == "declined"                # expired is not declined, nor back
+
+
+async def test_an_answer_by_nobody_never_allows(job_db):
+    async def ghost(frame):
+        return {"approved": True, "scope": "once", "note": "", "by": None}
+    with permissions.asking_with(ghost):
+        d = await permissions.decide(permissions.Request(kind="schedule", target="*", title="Schedule?"),
+                                     permissions.Context(conversation_id="conv"))
+    assert (d.allowed, d.by) == (False, "expired")
+
+
+async def test_a_yes_has_no_note_and_remember_takes_the_widest_scope_offered(monkeypatch):
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: (lambda f: None))
+    p = approvals.open_card("conv", frame("c1"))
+    approvals.answer({"type": "confirm_action", "call_id": "c1", "note": "only on a no"})
+    assert approvals.close_card(p)["note"] == ""
+    q = approvals.open_card("conv", frame("c2", dedupe="q", options=("once", "conversation")))
+    approvals.answer({"type": "confirm_action", "call_id": "c2", "remember": True})
+    assert approvals.close_card(q)["scope"] == "conversation"   # no "always" here: the next widest
+
+
+async def test_decline_pending_skips_a_decided_card_and_cuts_the_note(monkeypatch):
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: (lambda f: None))
+    p = approvals.open_card("conv", frame("c1"))
+    approvals.answer({"type": "confirm_action", "call_id": "c1"})
+    assert approvals.decline_pending({"c1"}, "too late") == 0           # answered already: no raise
+    q = approvals.open_card("conv", frame("c2", dedupe="q"))
+    assert approvals.decline_pending({"c2"}, "n" * 600) == 1
+    assert len(approvals.close_card(q)["note"]) == 500
+    approvals.close_card(p)
+
+
+async def test_todays_ui_yes_on_a_write_or_schedule_card_holds_for_the_conversation(job_db, monkeypatch):
+    """Until PR 2b: today's AskSlot answers these cards with neither a scope nor "remember", and
+    such a yes used to hold for the socket or the job. A job writing three files asks once."""
+    shown = []
+
+    def todays_ui(f):
+        if f["type"].startswith("propose_"):
+            shown.append(f)
+            approvals.answer({"type": "confirm_" + f["type"].removeprefix("propose_"), "call_id": f["call_id"]})
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: todays_ui)
+    job = approvals.JobConfirmations("conv", job_id="job-1")
+    for name in ("a.txt", "b.txt", "c.txt"):
+        assert await job.workspace_write("write_file", name) is True
+    assert len(shown) == 1
+    assert await job.schedule("Brief", "daily") is True
+    assert await approvals.JobConfirmations("conv", job_id="job-2").schedule("Brief", "daily") is True
+    assert [f["type"] for f in shown] == ["propose_workspace_write", "propose_schedule"]
+
+
+async def _judgments(maker, count: int, seconds: float = 5.0) -> list:
+    """The shadow judgments, once `count` of them have their outcome (both are written later)."""
+    from server.db.models import Judgment
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + seconds
+    while True:
+        async with maker() as db:
+            rows = (await db.scalars(select(Judgment))).all()
+        if (len([r for r in rows if r.outcome]) >= count) or loop.time() > deadline:
+            await asyncio.sleep(0.3)                  # a stray extra row would have landed by now
+            async with maker() as db:
+                return (await db.scalars(select(Judgment))).all()
+        await asyncio.sleep(0.05)
+
+
+@pytest.fixture
+def judge(monkeypatch):
+    """The judge model, counted (no network)."""
+    from server.services import judgment
+    calls = []
+
+    class Model:
+        model = "judge-fixture"
+
+        async def chat(self, *, system, user):
+            calls.append(user)
+
+            class Reply:
+                content = '{"answer": false, "p": 0.2}'
+            return Reply()
+
+    async def adapter():
+        return Model()
+    monkeypatch.setattr(judgment, "_adapter", adapter)
+    return calls
+
+
+async def test_the_shadow_judge_sees_only_cards_that_were_shown(job_db, judge, monkeypatch):
+    """Review M1: a command a grant allows shows no card, so it gets no judgment and no model
+    call; a card nobody answered is joined as "expired", never "declined"."""
+    windows = Windows(("yes", "conversation"), None)
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: windows)
+    assert await approvals.JobConfirmations("conv", job_id="job-1").command("rm old.txt", []) is True
+    assert await approvals.JobConfirmations("conv", job_id="job-2").command("rm old.txt", []) is True
+    monkeypatch.setattr(approvals, "TIMEOUT_S", 0.05)
+    # Two rules, so the grant for `delete` alone does not cover it: a card, and nobody answers.
+    away = approvals.JobConfirmations("conv", job_id="job-3")
+    assert await away.command("rm -rf build", []) is False
+    assert await away.command("rm -rf dist", []) is False       # the job stopped waiting: no card
+    rows = await _judgments(job_db, 2)
+    assert len(windows.cards) == 2 and len(judge) == 2
+    assert sorted((r.ref, r.outcome) for r in rows) == sorted(
+        [(windows.cards[0]["call_id"], "approved"), (windows.cards[1]["call_id"], "expired")])
+
+
+async def test_a_merged_ask_is_judged_once_under_the_card_shown(job_db, judge, monkeypatch):
+    sent = []
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: sent.append)
+    first = asyncio.ensure_future(approvals.JobConfirmations("conv", job_id="job-a").command("rm a.txt", []))
+    await _until(lambda: len(_shown(sent)) == 1)
+    second = asyncio.ensure_future(approvals.JobConfirmations("conv", job_id="job-b").command("rm a.txt", []))
+    await _until(lambda: any(p.waiters == 2 for p in approvals._pending.values()))
+    [card] = _shown(sent)
+    approvals.answer({"type": "confirm_run_command", "call_id": card["call_id"], "scope": "once"})
+    assert (await first, await second) == (True, True)
+    rows = await _judgments(job_db, 1)
+    assert [(r.ref, r.outcome) for r in rows] == [(card["call_id"], "approved")] and len(judge) == 1
+
+
+async def test_a_merged_ask_records_the_card_the_user_answered(job_db, monkeypatch):
+    """Review M5: provenance (a grant's call_id, a rule's created_from) is the card shown, also
+    for an ask that joined it — not the ask's own, never-shown call_id."""
+    sent = []
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: sent.append)
+    notes = permissions.Request(kind="app", target="com.apple.Notes", title="Use Notes?", always_label="Notes")
+
+    async def job(job_id):
+        with permissions.asking_with(approvals.BroadcastAsker("conv")):
+            return await permissions.decide(notes, permissions.Context(conversation_id="conv", job_id=job_id))
+    first = asyncio.ensure_future(job("job-a"))
+    await _until(lambda: len(_shown(sent)) == 1)
+    second = asyncio.ensure_future(job("job-b"))
+    await _until(lambda: any(p.waiters == 2 for p in approvals._pending.values()))
+    [card] = _shown(sent)
+    approvals.answer({"type": "confirm_action", "call_id": card["call_id"], "scope": "task"})
+    assert [(await first).scope, (await second).scope] == ["task", "task"]
+    async with job_db() as db:
+        grants = (await db.scalars(select(PermissionGrant))).all()
+    assert sorted((g.task_id, g.call_id) for g in grants) == [("job-a", card["call_id"]),
+                                                               ("job-b", card["call_id"])]
 
 
 def test_hands_tools_still_imports_first_in_a_fresh_interpreter():
