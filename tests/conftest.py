@@ -96,6 +96,17 @@ def _no_judge_model_calls():
 
 
 @pytest.fixture(autouse=True)
+def _param_heal_forgotten():
+    """0.1.61: providers remember, per process, the parameters an endpoint refused.
+    A test must start without another test's lessons — and a lesson must not hide
+    a regression (a provider sending `temperature` again would be healed silently)."""
+    from arslan.llm import param_heal
+    param_heal.forget()
+    yield
+    param_heal.forget()
+
+
+@pytest.fixture(autouse=True)
 def _data_dir_pin_survives():
     """Repair, then fail, a test that changed the pinned data-dir env and kept it.
 

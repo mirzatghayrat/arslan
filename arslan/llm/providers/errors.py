@@ -13,11 +13,14 @@ error strings rather than any this code produces.
 """
 from __future__ import annotations
 
+import asyncio
+
 import httpx
 
 # Long enough for a provider's message, short enough that an HTML error page or
 # a giant JSON dump does not become the whole screen.
 _MAX_BODY = 900
+_READ_BODY_S = 5.0
 
 
 def with_body(exc: httpx.HTTPStatusError) -> str:
@@ -36,8 +39,10 @@ def with_body(exc: httpx.HTTPStatusError) -> str:
 
 async def read_body(exc: httpx.HTTPStatusError) -> None:
     """A streamed response arrives unread; read an error's body so the vendor's
-    reason reaches with_body() — and param_heal, which acts on it."""
+    reason reaches with_body() — and param_heal, which acts on it. Bounded: a
+    proxy that sends a 502's headers and stalls must not delay the backoff."""
     try:
-        await exc.response.aread()
+        async with asyncio.timeout(_READ_BODY_S):
+            await exc.response.aread()
     except Exception:  # noqa: BLE001 — never let error formatting raise
         pass

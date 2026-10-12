@@ -39,7 +39,7 @@ OPENAI_MAX_TOKENS = {"error": {
                "Use 'max_completion_tokens' instead.",
     "type": "invalid_request_error", "param": "max_tokens", "code": "unsupported_parameter"}}
 GEMINI_TEMPERATURE = {"error": {"code": 400, "status": "INVALID_ARGUMENT", "message":
-    "Invalid value at 'generation_config.temperature': temperature is not supported for this model."}}
+    "Invalid JSON payload received. Unknown name \"temperature\" at 'generation_config': Cannot find field."}}
 
 
 @pytest.fixture(autouse=True)
@@ -273,3 +273,65 @@ async def test_a_stream_that_already_produced_output_is_never_resent():
         async for piece in param_heal.stream("fp", {"temperature": 0.7}, attempt):
             out.append(piece)
     assert out == ["Hel"] and len(calls) == 1
+
+
+async def test_the_parameter_named_first_is_the_one_refused():
+    """A strict server lists the fields it accepts after the one it refuses."""
+    err = {"detail": "unknown field `max_tokens`, expected one of `model`, `messages`, "
+                     "`temperature`, `max_completion_tokens`"}
+    v = Vendor([(has("max_tokens"), err)], OPENAI_OK, status=422)
+    assert (await _openai(v, model="m", base="https://strict.example/v1").chat(_PING)).content == "ok"
+    assert len(v.bodies) == 2
+    assert v.bodies[1]["temperature"] == 0.7 and "max_completion_tokens" in v.bodies[1]
+
+
+async def test_a_heal_the_next_answer_still_complains_about_is_not_learned():
+    """Wording that names temperature before the real culprit: the temperature
+    drop is tried, the vendor names temperature again, so only the rename that
+    actually got the answer is remembered."""
+    err = {"error": {"message": "Unsupported: temperature is fine here; max_tokens is not - "
+                                "use max_completion_tokens"}}
+    v = Vendor([(has("max_tokens"), err)], OPENAI_OK)
+    base = "https://odd.example/v1"
+    assert (await _openai(v, model="m", base=base).chat(_PING)).content == "ok"
+    assert len(v.bodies) == 3                      # dropped temperature (wrong), then renamed
+    await _openai(v, model="m", base=base).chat(_PING)
+    learned = v.bodies[3]
+    assert learned["temperature"] == 0.7 and "max_completion_tokens" in learned and len(v.bodies) == 4
+
+
+async def test_a_stream_learns_at_its_first_piece_even_if_the_reader_stops():
+    sse = ('data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"a"}}\n\n'
+           'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"b"}}\n\n')
+    v = Vendor([(has("temperature"), ANTHROPIC_TEMPERATURE)], None, sse=sse)
+    gen = _anthropic(v).chat_stream(_PING)
+    assert await gen.__anext__() == "a"
+    await gen.aclose()
+    out = [piece async for piece in _anthropic(v).chat_stream(_PING)]
+    assert out == ["a", "b"] and len(v.bodies) == 3 and "temperature" not in v.bodies[2]
+
+
+async def test_a_stalled_error_body_does_not_hold_the_error(monkeypatch):
+    """A proxy that sends a 502's headers and never its body: the error still
+    arrives promptly (the reason is read with a bound)."""
+    import asyncio
+    from arslan.llm.providers import errors
+
+    class _Stalled(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            await asyncio.sleep(3600)
+            yield b""
+
+    monkeypatch.setattr(errors, "_READ_BODY_S", 0.05)
+    p = _anthropic(lambda request: httpx.Response(502, stream=_Stalled()))
+    with pytest.raises(httpx.HTTPStatusError):
+        await asyncio.wait_for(p.chat_stream(_PING).__anext__(), timeout=5)
+
+
+async def test_the_error_param_field_outranks_what_the_message_names_first():
+    err = {"error": {"message": "Unsupported value: with max_tokens (or max_completion_tokens) set, "
+                                "temperature must be 1.", "param": "temperature", "code": "unsupported_value"}}
+    v = Vendor([(has("temperature"), err)], OPENAI_OK)
+    assert (await _openai(v).chat(_PING)).content == "ok"
+    assert len(v.bodies) == 2
+    assert "temperature" not in v.bodies[1] and "max_tokens" in v.bodies[1]
