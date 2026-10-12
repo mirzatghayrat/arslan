@@ -55,6 +55,8 @@ from urllib.request import getproxies, proxy_bypass
 import httpx
 import trafilatura
 
+from server import config
+
 logger = logging.getLogger(__name__)
 
 _EXTRACT_CHAR_LIMIT = 12_000
@@ -506,8 +508,39 @@ def categorize(exc: Exception) -> str:
     return "unexpected error"
 
 
+#: What a SITE answers when it will not serve a page to this reader: 401 wants a login, 403
+#: blocks automated reading (Wikimedia's "Please set a user-agent and respect our robot policy"),
+#: 451 is unavailable for legal reasons. For a search provider the same 401 and 403 mean the API
+#: key was rejected (`_STATUS_MEANING`); a page has no key.
+_PAGE_REFUSED = frozenset({401, 403, 451})
+
+
+def categorize_page(exc: Exception) -> str:
+    """`categorize`, for reading a PAGE (`web_extract`).
+
+    🔴 NOT THE SAME WORDS, because a status means something else here. `categorize` speaks for
+    search providers, where 401 and 403 are a rejected API key and 402 is a spent quota: remedies
+    for a key the user entered in Settings. A page has no key, and telling the model to fix one
+    sent it after the wrong cause. So a page's 401, 403 and 451 read `the site refused (http N)`;
+    429 is still `rate-limited`; any other status is its number, 402 included (a payment wall is
+    no quota to top up). Everything that is not a status (a timeout, a refused address, a name
+    that does not resolve, a network error) is `categorize`'s answer, unchanged.
+
+    `categorize` itself does not change: search keeps its vocabulary.
+    """
+    if isinstance(exc, httpx.HTTPStatusError):
+        code = exc.response.status_code
+        if code in _PAGE_REFUSED:
+            return f"the site refused (http {code})"
+        if code == 429:
+            return _STATUS_MEANING[429]
+        return f"http {code}"
+    return categorize(exc)
+
+
 def _categorize_exc(exc: Exception) -> str:
-    """Back-compat alias. web_extract's callers and their tests speak in these terms."""
+    """Back-compat alias of `categorize`, the SEARCH vocabulary. `web_extract` speaks in
+    `categorize_page`, where a 401, 403 or 451 is the site's refusal and not a rejected key."""
     return categorize(exc)
 
 
@@ -599,8 +632,12 @@ async def pinned_request(
                     current, allow_host=allow_host)
                 # Pinning's own headers go last: a caller must not be able to overwrite
                 # `Host`, which is what preserves virtual hosting and keeps the request
-                # pointed at the address that was validated.
-                merged = {**(headers or {}), **pin_headers}
+                # pointed at the address that was validated. Last AND alone: header names
+                # are case-insensitive, and a caller's `host` next to the pinned `Host`
+                # went out as two Host lines, one of them the caller's.
+                pinned_names = {name.lower() for name in pin_headers}
+                merged = {**{name: value for name, value in (headers or {}).items()
+                             if name.lower() not in pinned_names}, **pin_headers}
                 resp = await client.request(cur_method, pinned_url, headers=merged,
                                             params=params, json=cur_json, data=cur_data,
                                             extensions=extensions)
@@ -618,6 +655,34 @@ async def pinned_request(
         raise httpx.HTTPError("too many redirects")
 
 
+#: Who a page read says it is: the agent's name and version and a link, the way the fetchers that
+#: act for a user in mainstream agents do (ChatGPT-User, Claude-User, Perplexity-User). A site can
+#: tell a person's assistant from a crawler, find where to complain, and allow or block it by name.
+#: httpx's own `python-httpx/x.y` names a library and nothing else, and sites refuse it: Wikimedia
+#: answers it with a 403, "Please set a user-agent and respect our robot policy".
+_PAGE_USER_AGENT = ("Mozilla/5.0 (compatible; Arslan-User/{version}; "
+                    "+https://github.com/mirzatghayrat/arslan)")
+#: What a page read accepts: pages first, then plain text (a README, a raw file), then anything.
+_PAGE_ACCEPT = "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8"
+
+
+def _page_headers(headers: dict[str, str] | None) -> dict[str, str]:
+    """`headers` plus the two defaults of a page read, each one only where the caller set none.
+
+    Case-insensitive, because header names are: a caller's `user-agent` must not end up beside a
+    second `User-Agent`, which httpx would send as two lines. The version comes from the app's
+    version helper at the moment of the request and is kept nowhere here, so the agent cannot
+    disagree with the app around it.
+    """
+    merged = dict(headers or {})
+    named = {name.lower() for name in merged}
+    if "user-agent" not in named:
+        merged["User-Agent"] = _PAGE_USER_AGENT.format(version=config._app_version())
+    if "accept" not in named:
+        merged["Accept"] = _PAGE_ACCEPT
+    return merged
+
+
 async def pinned_get(
     url: str,
     *,
@@ -626,15 +691,22 @@ async def pinned_get(
     allow_host: str | None = None,
     max_redirects: int = _MAX_REDIRECTS,
 ) -> httpx.Response:
-    """The readable spelling of `pinned_request("GET", ...)`.
+    """The readable spelling of `pinned_request("GET", ...)`, and the PAGE READ.
 
     A wrapper, never a second implementation — the whole point of this module is that
     there is exactly one place where an outbound address is decided.
 
+    What it adds is the identity of a page read (`_page_headers`): the agent user agent and an
+    Accept header, unless the caller set its own. That belongs here and not in `pinned_request`,
+    which search, the SearXNG probe and the OpenRouter sign-in share: they are not page reads
+    and send exactly the headers they pass. The defaults ride into `pinned_request` as the
+    caller's headers, so pinning's own `Host` still goes last and every redirect hop, the
+    proxy branch included, carries them.
+
     Returns the final response WITHOUT `raise_for_status()`, exactly as
     `pinned_request` does.
     """
-    return await pinned_request("GET", url, headers=headers, params=params,
+    return await pinned_request("GET", url, headers=_page_headers(headers), params=params,
                                 allow_host=allow_host, max_redirects=max_redirects)
 
 

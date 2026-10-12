@@ -38,6 +38,14 @@ _WEB_GUARD_HTTPS_ONLY = ("Arslan's own network guard refused this address, not t
                          "another source.")
 _WEB_GUARD_REFUSED = ("Arslan's own network guard refused this address (it is on the local network "
                       "or not a valid public host). Don't retry it; use another source.")
+# web_extract says "fetch failed: the site refused (http 403)" when the SITE answered 401, 403 or
+# 451 to a page read (it used to say "key-rejected", a search API key's word). The generic
+# site-refusal pattern in `hint_for` matches that text too, since the number is in it, and would
+# answer "That site refused the request": the branch for this prefix has to come before it. The
+# prefix is the executor's own, so it is matched at the start of the error and nowhere else.
+_WEB_SITE_REFUSED_PREFIX = "fetch failed: the site refused (http "
+_WEB_SITE_REFUSED = ("This site blocks automated reading. Don't retry this URL; use another "
+                     "source, or browser_open if the page is essential.")
 
 
 def hint_for(tool_key: str, result: dict) -> str | None:
@@ -52,6 +60,9 @@ def hint_for(tool_key: str, result: dict) -> str | None:
             # label but the https-only one (an unknown one included) means "do not retry".
             label = error[len(_WEB_GUARD_PREFIX):].strip()
             return _WEB_GUARD_HTTPS_ONLY if label == _WEB_GUARD_HTTPS_ONLY_LABEL else _WEB_GUARD_REFUSED
+        if error.startswith(_WEB_SITE_REFUSED_PREFIX):
+            # Before the generic pattern below, which would call it "That site refused the request".
+            return _WEB_SITE_REFUSED
         if re.search(r"no extractable text|empty|javascript", text, re.I):
             return _WEB_EMPTY
         if re.search(r"\b(401|403|429|451)\b|blocked|forbidden|rejected|paywall", text, re.I):
