@@ -10,7 +10,7 @@ from __future__ import annotations
 import time
 from datetime import datetime, timedelta
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from server.db.models import ApprovalEvent, PermissionGrant, PermissionRule
@@ -126,6 +126,21 @@ async def refused_since(db, since: datetime) -> list[ApprovalEvent]:
     return list((await db.execute(select(ApprovalEvent).where(
         ApprovalEvent.decided_by == "policy", ApprovalEvent.decision == "deny",
         ApprovalEvent.created_at >= since).order_by(ApprovalEvent.created_at.desc()))).scalars().all())
+
+
+async def refused_groups(db, since: datetime, *, limit: int = 500
+                         ) -> list[tuple[ApprovalEvent, int, datetime]]:
+    """`refused_since`, one entry per (kind, target): its latest row, how many times it was
+    refused, and when first — newest first, at most `limit` groups."""
+    groups = (await db.execute(
+        select(func.max(ApprovalEvent.id), func.count(), func.min(ApprovalEvent.created_at))
+        .where(ApprovalEvent.decided_by == "policy", ApprovalEvent.decision == "deny",
+               ApprovalEvent.created_at >= since)
+        .group_by(ApprovalEvent.kind, ApprovalEvent.target)
+        .order_by(func.max(ApprovalEvent.id).desc()).limit(limit))).all()
+    rows = {row.id: row for row in (await db.execute(select(ApprovalEvent).where(
+        ApprovalEvent.id.in_([latest for latest, _, _ in groups])))).scalars().all()}
+    return [(rows[latest], count, first) for latest, count, first in groups if latest in rows]
 
 
 async def _prune(db) -> None:

@@ -8,7 +8,7 @@ route can only ever confirm or cancel THAT card; it cannot widen a permission.
 0.1.61 §A4: an answer carries a scope — one of the choices the card offered (the island's yes is
 its first choice: `approvals.answer` clamps it, never this route) — and, on No, a note. The Inbox
 also lists what a run with nobody to ask could not do ("Not done while you were away"), with
-"Always allow" for next time (`/permissions/rules`).
+"Always allow" for next time (`POST /permissions/rules {refused_id}`).
 """
 from __future__ import annotations
 
@@ -51,17 +51,32 @@ async def answer(call_id: str, body: Answer) -> dict:
     return {"ok": True}
 
 
+#: At most this many "not done" groups are listed.
+REFUSED_GROUPS = 100
+
+
 @router.get("/approvals/refused")
 async def list_refused(hours: int = 24, db: AsyncSession = Depends(get_session)) -> list[dict]:
     """What was refused because nobody could be asked (a scheduled run: `decided_by` policy), the
-    last `hours` (1 to 168). `always_ok` says whether "Always allow" may be offered: never for a
-    kind that is never remembered (`permissions._NEVER_ALWAYS` — money, a schedule, a deletion…)."""
+    last `hours` (1 to 168): one entry per kind and target — its latest row (`id` is what
+    "Always allow" sends back), how many times (`count`) and since when (`first_at`) — newest
+    first, at most `REFUSED_GROUPS`. `always_ok`: the card would have offered "Always" (its row
+    recorded the set). An entry whose "Always" set is all allowed already is left out."""
     hours = max(1, min(168, hours))
-    rows = await permission_store.refused_since(db, datetime.utcnow() - timedelta(hours=hours))
-    return [{"id": row.id, "created_at": _utc(row.created_at),
-             "conversation_id": row.conversation_id, "kind": row.kind, "target": row.target,
-             "detail": row.detail, "always_ok": row.kind not in permissions._NEVER_ALWAYS}
-            for row in rows]
+    since = datetime.utcnow() - timedelta(hours=hours)
+    groups = await permission_store.refused_groups(db, since)
+    rules = {(r.kind, r.target) for r in await permission_store.list_rules(db)}
+    out = []
+    for row, count, first in groups:
+        always = permissions.always_from(row.extra)
+        if always and all((kind, target) in rules for kind, target, _ in always):
+            continue                            # allowed since: nothing is waiting any more
+        out.append({"id": row.id, "created_at": _utc(row.created_at), "first_at": _utc(first),
+                    "count": count, "conversation_id": row.conversation_id, "kind": row.kind,
+                    "target": row.target, "detail": row.detail, "always_ok": bool(always)})
+        if len(out) == REFUSED_GROUPS:
+            break
+    return out
 
 
 def _utc(moment: datetime | None) -> str | None:

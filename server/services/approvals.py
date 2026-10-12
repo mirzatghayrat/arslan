@@ -69,13 +69,18 @@ class Pending:
     #: How many callers wait on this card: identical requests share it (0.1.61 §A4), and it
     #: is unregistered when the last of them is done with it.
     waiters: int = 1
-    #: When it expires unanswered: set once, when it opens. Every waiter — an identical ask that
-    #: joins it later too — waits only until then, so the card never outlives the expiry it shows.
+    #: When it expires unanswered (wall clock, what the Inbox shows): set once, when it opens.
     expires_at: float = 0.0
+    #: The same moment on the monotonic clock, which every waiter waits until — an identical ask
+    #: that joins it later too — so the card never outlives the expiry it shows, and a step of
+    #: the system clock never lengthens or ends a wait.
+    deadline: float = 0.0
 
     def __post_init__(self) -> None:
         if not self.expires_at:
             self.expires_at = self.opened_at + TIMEOUT_S
+        if not self.deadline:
+            self.deadline = time.monotonic() + TIMEOUT_S
 
 
 _pending: dict[str, Pending] = {}
@@ -85,7 +90,7 @@ def remaining(pending: Pending) -> float:
     """How long a waiter on this card may still wait: what is left of the card's own time, never
     a fresh `TIMEOUT_S` (PR 2b plan review: one waiting on a card it joined must not keep it open
     past the expiry it showed; when the card expires, every waiter reads it as expired together)."""
-    return max(0.0, pending.expires_at - time.time())
+    return max(0.0, pending.deadline - time.monotonic())
 
 
 def joining(conversation_id: str, frame: dict) -> Pending | None:
@@ -191,7 +196,7 @@ def answer(data: dict) -> bool:
     by = data.get("source") if data.get("source") in SOURCES else "mac"
     if ANSWERS[kind] and pending.frame["type"] in WINDOW_ONLY and by != "mac":
         return True                         # swallowed: only the asking window approves this one
-    if not pending.future.done():
+    if not pending.future.done() and remaining(pending) > 0:      # none after the card's time
         options = [o for o in pending.frame.get("options") or [] if isinstance(o, str)]
         scope, remember = data.get("scope"), bool(data.get("remember"))
         if by in FIRST_CHOICE_ONLY:
@@ -313,8 +318,8 @@ def answer_by_id(call_id: str, approve: bool, *, source: str, remember: bool = F
     as `answer`: the reply is built from the card's own kind, so it can only ever
     confirm or cancel THAT card; its scope and note are `answer`'s too."""
     pending = _pending.get(call_id)
-    if pending is None:
-        return False
+    if pending is None or (not pending.future.done() and remaining(pending) == 0):
+        return False                            # gone, or its time is up: "answered or expired"
     if approve and pending.frame.get("type") in WINDOW_ONLY:
         raise OpenInArslan(call_id)
     if source == "island" and approve and not island_may_answer(pending.frame):
@@ -342,7 +347,7 @@ def decline_pending(call_ids: set[str], note: str, *, source: str,
     answered = 0
     for call_id in list(call_ids):
         pending = _pending.get(call_id)
-        if pending is None or pending.future.done():
+        if pending is None or pending.future.done() or remaining(pending) == 0:
             continue
         if mine is not None and pending.waiters > mine.get(call_id, 0):
             continue
@@ -511,10 +516,17 @@ class JobConfirmations:
 def _command_request(shell: str, rules: list[str], frame: dict | None):
     """A rule card as a permission request: "In this conversation" covers this kind of command
     (its rules) here; "Always" stores EVERY rule it matched (spec §A9 — the first rule alone
-    could never silence `rm -rf build`, which matches two), each under its own words."""
+    could never silence `rm -rf build`, which matches two), each under its own words.
+
+    The target names which of two things a grant covers: `rules:<rule>|<rule>…` (sorted) for a
+    command that matched ask-rules — every command matching exactly those rules — and
+    `text:<command>` for one that matched none (asked under "ask for every command"), exactly that
+    text. Disjoint, so a command whose text reads like a rule set (`git-push`) never stands for
+    the commands that match it (`git push origin main`)."""
     from server.services import permissions, terminal_policy
+    target = "rules:" + "|".join(rules) if rules else "text:" + shell
     return permissions.Request(
-        kind="command", target="|".join(rules) or shell, title=f"Run `{shell[:80]}`?", detail=shell,
+        kind="command", target=target, title=f"Run `{shell[:80]}`?", detail=shell,
         always_label=", ".join(terminal_policy.describe(r) for r in rules),
         remember_as=tuple(("legacy_rule", r, terminal_policy.describe(r)) for r in rules), frame=frame)
 

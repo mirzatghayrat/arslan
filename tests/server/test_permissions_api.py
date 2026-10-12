@@ -1,5 +1,6 @@
 """0.1.61 §A4/§A5: the Inbox answers with a scope and a note; standing rules are listed and
-withdrawn; what a scheduled run could not ask for is listed, with "Always allow".
+withdrawn; what a scheduled run could not ask for is listed, with "Always allow" — which stores
+exactly what "Always" on that card would have stored, and nothing a client names.
 
 Cards are opened on the client's own loop (`portal.call`): a card's future belongs to the loop
 that answers it, and the routes are served there."""
@@ -10,7 +11,7 @@ from datetime import datetime, timedelta
 import pytest
 from sqlalchemy import update
 
-from server.db.models import ApprovalEvent
+from server.db.models import ApprovalEvent, PermissionRule
 from server.services import approvals, permission_store, permissions, run_registry, terminal_policy
 from tests.server.conftest import build_ws_client
 
@@ -40,6 +41,43 @@ def _decide(client, req: permissions.Request, conversation_id: str = "c", asker=
         with permissions.asking_with(asker):
             return await permissions.decide(req, permissions.Context(conversation_id=conversation_id))
     return client.portal.call(run)
+
+
+async def _no_card(frame):
+    raise AssertionError(f"a card was shown: {frame.get('title')}")
+
+
+async def _declines(frame):
+    return {"approved": False, "scope": None, "note": "", "by": "mac"}
+
+
+def _cmd(shell: str) -> permissions.Request:
+    return approvals._command_request(shell, sorted(terminal_policy.ask_rules(shell)), None)
+
+
+def _app(target: str, name: str, *, high_reach: bool = False) -> permissions.Request:
+    # Hands asks for a high-reach app (System Events, Terminal…) with no "Always" (§A4, §A11).
+    return permissions.Request(kind="app", target=target, title=f"Use {name}?",
+                               always_label="" if high_reach else name)
+
+
+def _refused(client, query: str = "") -> list[dict]:
+    return client.get(f"/api/v1/approvals/refused{query}").json()
+
+
+def _allow(client, refused_id: int):
+    return client.post("/api/v1/permissions/rules", json={"refused_id": refused_id})
+
+
+def _rules(client) -> set[tuple[str, str, str]]:
+    return {(r["kind"], r["target"], r["label"]) for r in client.get("/api/v1/permissions/rules").json()}
+
+
+def _rule_rows(client) -> list[PermissionRule]:
+    async def read():
+        async with client.db_maker() as db:
+            return await permission_store.list_rules(db)
+    return client.portal.call(read)
 
 
 def test_the_inbox_answers_with_a_scope_and_a_note(client, monkeypatch):
@@ -74,8 +112,9 @@ def test_an_answer_with_a_scope_no_card_has_is_refused_by_the_schema(client):
 
 
 def test_rules_are_listed_created_and_withdrawn(client):
-    r = client.post("/api/v1/permissions/rules", json={"kind": "app", "target": "com.apple.Notes",
-                                                       "label": "Notes"})
+    _decide(client, _app("com.apple.Notes", "Notes"))
+    [row] = _refused(client)
+    r = _allow(client, row["id"])
     assert r.status_code == 200
     rule_id = r.json()["id"]
     [listed] = client.get("/api/v1/permissions/rules").json()
@@ -88,49 +127,216 @@ def test_rules_are_listed_created_and_withdrawn(client):
     assert client.delete(f"/api/v1/permissions/rules/{rule_id}").status_code == 404
 
 
-def test_a_rule_made_here_is_the_rule_decide_honours_and_withdrawing_it_asks_again(client):
-    req = permissions.Request(kind="app", target="com.apple.Notes", title="Use Notes?")
-    rule_id = client.post("/api/v1/permissions/rules",
-                          json={"kind": "app", "target": "com.apple.Notes", "label": "Notes"}).json()["id"]
-    assert _decide(client, req).by == "rule"
+def test_a_rule_allowed_here_is_the_rule_decide_honours_and_withdrawing_it_asks_again(client):
+    req = _app("com.apple.Notes", "Notes")
+    _decide(client, req)
+    rule_id = _allow(client, _refused(client)[0]["id"]).json()["id"]
+    assert _decide(client, req, asker=_no_card).by == "rule"
     [listed] = client.get("/api/v1/permissions/rules").json()
     assert listed["use_count"] == 1 and listed["last_used_at"]
     client.delete(f"/api/v1/permissions/rules/{rule_id}")
     assert _decide(client, req).by == "policy"                  # no rule: a run with nobody to ask
 
 
-@pytest.mark.parametrize("kind", ["money", "capability", "other_agent", "destructive", "takeover"])
+@pytest.mark.parametrize("kind", ["money", "capability", "other_agent", "destructive", "takeover",
+                                  "screen", "workspace_write", "schedule"])
 def test_kinds_that_are_never_remembered_cannot_become_rules(client, kind):
-    assert client.post("/api/v1/permissions/rules",
-                       json={"kind": kind, "target": "x", "label": "x"}).status_code == 400
-    assert client.get("/api/v1/permissions/rules").json() == []
+    """Even with the words for "Always", a card of such a kind never offers it: its refused row
+    offers no "Always allow", and asking for one anyway is refused."""
+    _decide(client, permissions.Request(kind=kind, target="x", title="X?", always_label="x"))
+    [row] = _refused(client)
+    assert row["always_ok"] is False
+    assert _allow(client, row["id"]).status_code == 409
+    assert _rules(client) == set()
 
 
-@pytest.mark.parametrize("target", ["", "   ", "x" * 2001, "com.apple.Notes\x1e"])
-def test_a_rule_needs_a_target_of_at_most_2000_characters(client, target):
-    assert client.post("/api/v1/permissions/rules",
-                       json={"kind": "app", "target": target, "label": "x"}).status_code == 400
-    assert client.get("/api/v1/permissions/rules").json() == []
+@pytest.mark.parametrize("kind,target", [("command", "rules:git-push"),
+                                         ("legacy_rule", "hardline"), ("send", "*"),
+                                         ("outside", "/"), ("nonsense", "x")])
+def test_the_post_takes_a_refusal_and_nothing_a_client_names(client, kind, target):
+    """Review I1 (P4): no kind, target or label from the client ever becomes a rule."""
+    _decide(client, _app("com.apple.Notes", "Notes"))
+    [row] = _refused(client)
+    for body in ({"kind": kind, "target": target, "label": ""},
+                 {"refused_id": row["id"], "kind": kind, "target": target, "label": ""}):
+        assert client.post("/api/v1/permissions/rules", json=body).status_code == 422
+    assert _rules(client) == set()
 
 
-def test_a_migrated_legacy_rule_is_listed_in_words(client):
-    """Rules carried over from 0.1.60 have no label: they are listed as the card said them."""
+def test_an_unknown_refusal_is_404_and_a_row_that_is_not_a_policy_refusal_is_409(client):
+    async def allows(frame):
+        return {"approved": True, "scope": "once", "note": "", "by": "mac"}
+    _decide(client, _app("com.apple.Notes", "Notes"), asker=_declines)
+    _decide(client, _app("com.apple.Mail", "Mail"), asker=allows)
+
+    async def ids():
+        async with client.db_maker() as db:
+            return [e.id for e in await permission_store.recent(db)]
+    for event_id in client.portal.call(ids):
+        assert _allow(client, event_id).status_code == 409
+    assert _allow(client, 99_999).status_code == 404
+    assert _rules(client) == set()
+
+
+def test_always_allow_on_an_ordinary_refused_command_stores_exactly_its_rules(client):
+    """A command's "Always" is a `legacy_rule` for every rule it matched, each in its card's words
+    (§A9) — and the rule says which refusal it came from."""
+    shell = "rm -rf build"
+    rules = sorted(terminal_policy.ask_rules(shell))
+    assert len(rules) == 2
+    _decide(client, _cmd(shell))
+    [row] = _refused(client)
+    assert (row["kind"], row["target"], row["always_ok"]) == ("command", "rules:" + "|".join(rules), True)
+    assert _allow(client, row["id"]).status_code == 200
+    assert _rules(client) == {("legacy_rule", r, terminal_policy.describe(r)) for r in rules}
+    assert {r.created_from for r in _rule_rows(client)} == {f"refused:{row['id']}"}
+
+    async def standing():
+        async with client.db_maker() as db:
+            return terminal_policy.standing_allows(shell, await terminal_policy.always_allowed(db))
+    assert client.portal.call(standing) is True                     # the card's own "Always"
+
+
+def test_a_crafted_separator_in_a_command_makes_no_rule_nobody_saw(client):
+    """Review P3: a model-written command carrying the many-app separator is one command, not a
+    list — no rule for `git-push` can come of it."""
+    crafted = _cmd("echo hi\x1egit-push")
+    assert crafted.target == "text:echo hi\x1egit-push"
+    _decide(client, crafted)
+    [row] = _refused(client)
+    assert row["always_ok"] is False and _allow(client, row["id"]).status_code == 409
+    assert _rules(client) == set()
+    assert _decide(client, _cmd("git push origin main"), asker=_declines).by == "user"   # asked
+
+
+@pytest.mark.parametrize("req", [
+    _cmd("git-push"),                                            # P2: no rule matched
+    _app("com.apple.Terminal", "Terminal", high_reach=True),     # P1: a high-reach app
+], ids=["rule-less command", "high-reach app"])
+def test_a_refused_card_that_hid_always_offers_no_always_allow(client, req):
+    """Review I2: what the card offered decides, not the kind alone."""
+    assert "always" not in permissions.options_for(req)
+    _decide(client, req)
+    [row] = _refused(client)
+    assert row["always_ok"] is False and _allow(client, row["id"]).status_code == 409
+    assert _rules(client) == set()
+    assert _decide(client, req, asker=_declines).by == "user"
+
+
+def test_a_many_app_card_with_one_high_reach_app_offers_no_always_allow(client):
+    reqs = [_app("com.apple.Notes", "Notes"), _app("com.apple.Terminal", "Terminal", high_reach=True)]
+
+    async def refuse():
+        return await permissions.decide_many(reqs, permissions.Context(conversation_id="c"),
+                                             title="Use Notes and Terminal?")
+    client.portal.call(refuse)
+    [row] = _refused(client)
+    assert row["always_ok"] is False and _allow(client, row["id"]).status_code == 409
+    assert _rules(client) == set()
+
+
+def test_always_allow_on_a_refused_many_app_row_makes_one_rule_per_app(client):
+    """A many-app card's row joins its targets; "Always allow" on it is a rule for each app, each
+    under its own words — so each app, asked alone or together, needs no card next time."""
+    reqs = [_app("com.apple.Notes", "Notes"), _app("com.apple.reminders", "Reminders")]
+
+    async def refuse_both():
+        return await permissions.decide_many(reqs, permissions.Context(conversation_id="c"),
+                                             title="Use Notes and Reminders?")
+    assert [d.by for d in client.portal.call(refuse_both)] == ["policy", "policy"]
+    [row] = _refused(client)
+    assert row["always_ok"] is True and row["target"] == "com.apple.Notes\x1ecom.apple.reminders"
+    r = _allow(client, row["id"])
+    assert r.status_code == 200
+    assert [(x["target"], x["label"]) for x in r.json()["rules"]] == [
+        ("com.apple.Notes", "Notes"), ("com.apple.reminders", "Reminders")]
+    assert _rules(client) == {("app", "com.apple.Notes", "Notes"),
+                              ("app", "com.apple.reminders", "Reminders")}
+    assert [d.by for d in client.portal.call(refuse_both)] == ["rule", "rule"]
+    assert _decide(client, reqs[1], asker=_no_card).by == "rule"
+
+
+def test_a_caller_cannot_put_an_always_set_into_a_refusal(client):
+    """The reserved key of the ledger's `extra` is the server's: a request's own `extra` never
+    supplies what "Always allow" stores."""
+    req = permissions.Request(kind="app", target="com.apple.Terminal", title="Use Terminal?",
+                              extra={"always": [["legacy_rule", "git-push", "x"]]})
+    _decide(client, req)
+    [row] = _refused(client)
+    assert row["always_ok"] is False and _allow(client, row["id"]).status_code == 409
+    assert _rules(client) == set()
+
+
+@pytest.mark.parametrize("always", [
+    [["schedule", "*", "every schedule"]],                      # a kind never remembered
+    [["app", "com.apple.Notes", "Notes"], ["money", "*", "pay"]],   # one bad entry spoils the set
+    [["app", "", "nothing"]], [["", "x", "x"]], [["app", "x"]], [["app", "x", 1]], ["app"], "app", [],
+])
+def test_a_refusal_whose_recorded_set_is_not_one_decide_writes_allows_nothing(client, always):
+    """Fail closed on the ledger itself: a row whose "Always" set is not well formed, or names a
+    kind never remembered, offers nothing and allows nothing."""
+    async def seed():
+        async with client.db_maker() as db:
+            await permission_store.record(db, kind="app", target="x", mode="standard",
+                                          decided_by="policy", decision="deny",
+                                          conversation_id="c", extra={"always": always})
+            await db.commit()
+    client.portal.call(seed)
+    [row] = _refused(client)
+    assert row["always_ok"] is False and _allow(client, row["id"]).status_code == 409
+    assert _rules(client) == set()
+
+
+@pytest.mark.parametrize("decided_by,decision", [("user", "deny"), ("policy", "allow"),
+                                                 ("rule", "allow"), ("expired", "expired")])
+def test_only_a_refusal_for_want_of_someone_to_ask_can_be_allowed(client, decided_by, decision):
+    """Whatever a ledger row carries, "Always allow" is for a policy refusal alone."""
+    async def seed():
+        async with client.db_maker() as db:
+            row = await permission_store.record(
+                db, kind="app", target="com.apple.Notes", mode="standard", decided_by=decided_by,
+                decision=decision, conversation_id="c",
+                extra={"always": [["app", "com.apple.Notes", "Notes"]]})
+            await db.commit()
+            return row.id
+    assert _allow(client, client.portal.call(seed)).status_code == 409
+    assert _rules(client) == set()
+
+
+def test_a_rules_label_is_its_own_and_only_a_migrated_one_falls_back_to_words(client):
+    """Rules carried over from 0.1.60 have no label: they are listed as the card said them. Any
+    other rule keeps its own label, an empty one included."""
     async def seed():
         async with client.db_maker() as db:
             await permission_store.add_rule(db, "legacy_rule", "delete", created_from="migration")
             await permission_store.add_rule(db, "legacy_rule", "upload", label="uploads, my words")
+            await permission_store.add_rule(db, "app", "com.example.tool", created_from="card")
             await db.commit()
     client.portal.call(seed)
     labels = {r["target"]: r["label"] for r in client.get("/api/v1/permissions/rules").json()}
-    assert labels == {"delete": terminal_policy.describe("delete"), "upload": "uploads, my words"}
+    assert labels == {"delete": terminal_policy.describe("delete"), "upload": "uploads, my words",
+                      "com.example.tool": ""}
     assert labels["delete"] and labels["delete"] != "delete"
+
+
+def test_a_stray_rule_for_a_kind_never_remembered_is_not_honoured(client):
+    """Review M6: only a kind whose card offers "Always" has rules; a row for any other (written
+    by hand, or by a bug) decides nothing."""
+    async def seed():
+        async with client.db_maker() as db:
+            for kind in ("schedule", "screen", "workspace_write", "destructive"):
+                await permission_store.add_rule(db, kind, "*", created_from="stray")
+            await db.commit()
+    client.portal.call(seed)
+    for kind in ("schedule", "screen", "workspace_write", "destructive"):
+        assert _decide(client, permissions.Request(kind=kind, target="*", title="X?")).by == "policy"
 
 
 # ── what a run with nobody to ask could not do ────────────────────────────────
 
 def test_policy_refusals_are_listed_for_the_inbox(client):
     _decide(client, permissions.Request(kind="schedule", target="*", title="Schedule digest?"))
-    rows = client.get("/api/v1/approvals/refused?hours=24").json()
+    rows = _refused(client, "?hours=24")
     assert [(r["kind"], r["target"]) for r in rows] == [("schedule", "*")]
     assert set(rows[0]) >= {"id", "created_at", "conversation_id", "kind", "target", "detail"}
     assert rows[0]["conversation_id"] == "c"
@@ -138,19 +344,16 @@ def test_policy_refusals_are_listed_for_the_inbox(client):
 
 def test_only_policy_refusals_are_listed(client):
     """A card the user declined, or one nobody answered, is not "not done while you were away"."""
-    async def declines(frame):
-        return {"approved": False, "scope": None, "note": "", "by": "mac"}
-
     async def nobody(frame):
         return {"approved": False, "scope": None, "note": "", "by": None}
 
     async def allows(frame):
         return {"approved": True, "scope": "once", "note": "", "by": "mac"}
-    _decide(client, permissions.Request(kind="app", target="a", title="A?"), asker=declines)
+    _decide(client, permissions.Request(kind="app", target="a", title="A?"), asker=_declines)
     _decide(client, permissions.Request(kind="app", target="b", title="B?"), asker=nobody)
     _decide(client, permissions.Request(kind="app", target="c", title="C?"), asker=allows)
     _decide(client, permissions.Request(kind="app", target="d", title="D?"))
-    assert [r["target"] for r in client.get("/api/v1/approvals/refused").json()] == ["d"]
+    assert [r["target"] for r in _refused(client)] == ["d"]
 
 
 def test_the_refused_list_looks_back_between_one_hour_and_a_week(client):
@@ -166,49 +369,50 @@ def test_the_refused_list_looks_back_between_one_hour_and_a_week(client):
     client.portal.call(age)
 
     def seen(query: str) -> set[str]:
-        return {r["target"] for r in client.get(f"/api/v1/approvals/refused{query}").json()}
+        return {r["target"] for r in _refused(client, query)}
     assert seen("") == {"now", "two-hours"}                      # 24 hours by default
     assert seen("?hours=0") == {"now"}                           # at least one hour
     assert seen("?hours=72") == {"now", "two-hours", "two-days"}
     assert seen("?hours=10000") == {"now", "two-hours", "two-days"}   # at most a week
 
 
-def test_always_allow_on_a_refused_many_app_row_makes_one_rule_per_app(client):
-    """A many-app card's row joins its targets; "Always allow" on it is a rule for each app, each
-    under its own words — so each app, asked alone or together, needs no card next time."""
-    reqs = [permissions.Request(kind="app", target=t, title=f"Use {name}?", always_label=name)
-            for t, name in (("com.apple.Notes", "Notes"), ("com.apple.reminders", "Reminders"))]
+def test_the_same_refusal_again_and_again_is_one_entry_with_its_count(client):
+    """Review M7 (P5): a schedule hitting one boundary every 15 minutes is one entry, not 670."""
+    req = _app("com.apple.Notes", "Notes")
+    for _ in range(5):
+        _decide(client, req)
+    _decide(client, _app("com.apple.Mail", "Mail"))
 
-    async def refuse_both():
-        return await permissions.decide_many(reqs, permissions.Context(conversation_id="c"),
-                                             title="Use Notes and Reminders?")
-    assert [d.by for d in client.portal.call(refuse_both)] == ["policy", "policy"]
-    [row] = client.get("/api/v1/approvals/refused").json()
-    assert row["always_ok"] is True and row["target"] == "com.apple.Notes\x1ecom.apple.reminders"
-    r = client.post("/api/v1/permissions/rules",
-                    json={"kind": row["kind"], "target": row["target"], "label": "Notes\x1eReminders"})
-    assert r.status_code == 200
-    assert [(x["target"], x["label"]) for x in r.json()["rules"]] == [
-        ("com.apple.Notes", "Notes"), ("com.apple.reminders", "Reminders")]
-    listed = {(x["kind"], x["target"], x["label"]) for x in client.get("/api/v1/permissions/rules").json()}
-    assert listed == {("app", "com.apple.Notes", "Notes"), ("app", "com.apple.reminders", "Reminders")}
-    assert [d.by for d in client.portal.call(refuse_both)] == ["rule", "rule"]
-    assert _decide(client, reqs[1]).by == "rule"
+    async def stamp():
+        async with client.db_maker() as db:
+            return [(e.id, e.created_at) for e in await permission_store.recent(db)
+                    if e.target == "com.apple.Notes"]
+    notes = client.portal.call(stamp)                            # newest first
+    rows = _refused(client)
+    assert [(r["target"], r["count"]) for r in rows] == [("com.apple.Mail", 1), ("com.apple.Notes", 5)]
+    latest, first = notes[0], notes[-1]
+    assert rows[1]["id"] == latest[0]
+    assert rows[1]["created_at"] == latest[1].isoformat() + "Z"
+    assert rows[1]["first_at"] == first[1].isoformat() + "Z"
 
 
-def test_a_joined_target_without_a_label_for_each_keeps_each_target_as_its_label(client):
-    r = client.post("/api/v1/permissions/rules",
-                    json={"kind": "app", "target": "com.apple.Notes\x1ecom.apple.reminders",
-                          "label": "Notes, Reminders"})
-    assert [(x["target"], x["label"]) for x in r.json()["rules"]] == [
-        ("com.apple.Notes", "com.apple.Notes"), ("com.apple.reminders", "com.apple.reminders")]
+def test_the_refused_list_shows_at_most_a_hundred_entries_newest_first(client):
+    async def refuse_many():
+        for i in range(105):
+            await permissions.decide(_app(f"app.{i:03}", f"App {i}"),
+                                     permissions.Context(conversation_id="c"))
+    client.portal.call(refuse_many)
+    rows = _refused(client)
+    assert [r["target"] for r in rows] == [f"app.{i:03}" for i in range(104, 4, -1)]
 
 
-def test_a_refused_row_of_a_kind_never_remembered_offers_no_always_allow(client):
-    _decide(client, permissions.Request(kind="schedule", target="*", title="Schedule digest?"))
-    _decide(client, permissions.Request(kind="app", target="com.apple.Notes", title="Use Notes?"))
-    rows = {r["kind"]: r for r in client.get("/api/v1/approvals/refused").json()}
-    assert (rows["schedule"]["always_ok"], rows["app"]["always_ok"]) == (False, True)
-    assert client.post("/api/v1/permissions/rules",
-                       json={"kind": "schedule", "target": "*", "label": ""}).status_code == 400
-    assert client.get("/api/v1/permissions/rules").json() == []
+def test_an_entry_allowed_since_is_no_longer_listed(client):
+    """Review M7 (P7): once "Always allow" made its rules, nothing is waiting any more — and a
+    withdrawn rule brings it back."""
+    _decide(client, _app("com.apple.Notes", "Notes"))
+    _decide(client, _app("com.apple.Mail", "Mail"))
+    notes = next(r for r in _refused(client) if r["target"] == "com.apple.Notes")
+    rule_id = _allow(client, notes["id"]).json()["id"]
+    assert [r["target"] for r in _refused(client)] == ["com.apple.Mail"]
+    client.delete(f"/api/v1/permissions/rules/{rule_id}")
+    assert {r["target"] for r in _refused(client)} == {"com.apple.Notes", "com.apple.Mail"}

@@ -44,6 +44,12 @@ _EXTRA_MAX = 1024
 #: is every bundle id joined, and cutting it would cut an app in two).
 _TARGET_MAX = 20_000
 
+#: The reserved key of a policy refusal's ledger `extra`: what "Always" on its card would have
+#: stored, as [[kind, target, label], …] — written only when the card would have offered "Always"
+#: (§A4). The Inbox's "Always allow" stores exactly this set, never a kind or target a client
+#: names (`always_from`).
+ALWAYS_KEY = "always"
+
 _EXPIRED = ("Nobody answered the card for {title} in {minutes} minutes. This is NOT a refusal. Don't "
             "retry it in this turn. Finish what you can and tell the user what is waiting.")
 _NO_SURFACE = ("{title} needs the user's OK, and this run has nobody to ask (it runs on its "
@@ -194,7 +200,9 @@ async def _standing(req: Request, ctx: Context, mode: str, *, record: bool = Tru
     if req.kind in _ONCE_ONLY:
         return None
     async with db_session.AsyncSessionLocal() as db:
-        rule = await permission_store.find_rule(db, req.kind, req.target)
+        # Only a kind whose card offers "Always" has rules: a stray row for any other is not one.
+        rule = (await permission_store.find_rule(db, req.kind, req.target)
+                if req.kind not in _NEVER_ALWAYS else None)
         if rule is not None:
             decision = Decision(True, "rule", "always")
             if record:
@@ -231,11 +239,14 @@ async def _note_standing_use(db, req: Request, ctx: Context, mode: str, decision
 
 async def _ask(req: Request, ctx: Context, mode: str) -> Decision:
     asker = _ASKER.get()
+    opts = options_for(req)
     if asker is None:
         decision = Decision(False, "policy", model_text=_NO_SURFACE.format(title=req.title))
-        await _record(req, ctx, mode, decision)
+        # What "Always" on this card would have stored, for the Inbox's "Always allow" (§A4);
+        # nothing when the card would not have offered it.
+        await _record(req, ctx, mode, decision,
+                      always=_always_set(req) if "always" in opts else None)
         return decision
-    opts = options_for(req)
     base = dict(req.frame) if req.frame else _generic_frame(req)
     call_id = base.get("call_id") or uuid.uuid4().hex
     frame = {**base, "call_id": call_id, "title": req.title, "options": opts,
@@ -264,10 +275,9 @@ async def _ask(req: Request, ctx: Context, mode: str) -> Decision:
     async with db_session.AsyncSessionLocal() as db:
         rule_id = grant_id = None
         if decision.allowed and decision.scope == "always":
-            for kind, target, *label in req.remember_as or ((req.kind, req.target),):
-                rule = await permission_store.add_rule(
-                    db, kind, target, label=label[0] if label else req.always_label,
-                    created_from=card_id)
+            for kind, target, label in _always_set(req):
+                rule = await permission_store.add_rule(db, kind, target, label=label,
+                                                       created_from=card_id)
                 rule_id = rule_id or rule.id
         elif decision.allowed and decision.scope in ("task", "conversation"):
             task = (ctx.task_id or "") if decision.scope == "task" else ""
@@ -284,6 +294,30 @@ async def _ask(req: Request, ctx: Context, mode: str) -> Decision:
                          grant_id=grant_id)
         await db.commit()
     return decision
+
+
+def _always_set(req: Request) -> list[list[str]]:
+    """What "Always" stores for this request: [kind, target, label] each. An entry of
+    `remember_as` without a label stores `always_label`."""
+    return [[kind, target, label[0] if label else req.always_label]
+            for kind, target, *label in req.remember_as or ((req.kind, req.target),)]
+
+
+def always_from(extra) -> list[tuple[str, str, str]]:
+    """The "Always" set a policy refusal recorded (`ALWAYS_KEY`), or [] when there is none or it
+    is not well formed — then nothing may be allowed from that row. A kind never remembered is
+    never in it (fail closed: the whole set is refused)."""
+    entries = extra.get(ALWAYS_KEY) if isinstance(extra, dict) else None
+    if not isinstance(entries, list) or not entries:
+        return []
+    out: dict[tuple[str, str], str] = {}
+    for entry in entries:
+        if (not isinstance(entry, list) or len(entry) != 3
+                or not all(isinstance(x, str) for x in entry)
+                or not entry[0] or not entry[1] or entry[0] in _NEVER_ALWAYS):
+            return []
+        out.setdefault((entry[0], entry[1]), entry[2])
+    return [(kind, target, label) for (kind, target), label in out.items()]
 
 
 def _dedupe(req: Request) -> str:
@@ -346,7 +380,7 @@ async def _mode() -> str:
 
 async def _record(req: Request, ctx: Context, mode: str, decision: Decision, **ids) -> None:
     """One ledger row, on its own, for a decision that does not wait on it: a refusal for lack of
-    a surface, or `record_standing`."""
+    a surface (with the "Always" set it could have offered), or `record_standing`."""
     try:
         async with db_session.AsyncSessionLocal() as db:
             await _record_in(db, req, ctx, mode, decision, **ids)
@@ -358,12 +392,17 @@ async def _record(req: Request, ctx: Context, mode: str, decision: Decision, **i
 
 async def _record_in(db, req: Request, ctx: Context, mode: str, decision: Decision, *,
                      wait_ms: int | None = None, rule_id: int | None = None,
-                     grant_id: int | None = None) -> None:
+                     grant_id: int | None = None, always: list | None = None) -> None:
+    # The reserved key is the server's alone: a caller's `extra` never supplies an "Always" set,
+    # and the set is kept whole, outside the 1 KB cut of the rest.
+    extra = {k: v for k, v in (_extra(req.extra) or {}).items() if k != ALWAYS_KEY}
+    if always:
+        extra[ALWAYS_KEY] = always
     await permission_store.record(
         db, conversation_id=ctx.conversation_id, job_id=ctx.job_id,
         run_id=str(ctx.run_id) if ctx.run_id is not None else None,
         kind=req.kind, target=req.target[:_TARGET_MAX], detail=req.detail[:500],
-        extra=_extra(req.extra),
+        extra=extra or None,
         mode=mode, decided_by=decision.by,
         decision=("allow" if decision.allowed else "expired" if decision.by == "expired" else "deny"),
         scope=decision.scope, rule_id=rule_id, grant_id=grant_id, wait_ms=wait_ms)

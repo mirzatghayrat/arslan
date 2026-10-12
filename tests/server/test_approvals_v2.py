@@ -396,6 +396,37 @@ async def test_a_plain_ask_that_joins_a_card_waits_only_what_is_left_of_it(monke
     assert (await first)["by"] is None and approvals.known_ids() == set()
 
 
+async def test_a_step_of_the_system_clock_never_changes_how_long_a_card_waits(monkeypatch):
+    """Review M1 (P6): a card's time runs on the monotonic clock, like the waits on it. The wall
+    clock stepping back an hour must not stretch it; stepping forward must not end it."""
+    import time as clock
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: (lambda f: None))
+    p = approvals.open_card("conv", frame("c1"))
+    real = clock.time
+    monkeypatch.setattr(clock, "time", lambda: real() - 3600)
+    assert approvals.remaining(p) <= approvals.TIMEOUT_S
+    monkeypatch.setattr(clock, "time", lambda: real() + 3600)
+    assert approvals.remaining(p) > approvals.TIMEOUT_S - 60
+    assert approvals.open_card("conv", frame("c2")) is p           # still joined: not over
+    monkeypatch.setattr(clock, "time", real)
+    approvals.close_card(p)
+    approvals.close_card(p)
+
+
+async def test_no_answer_lands_after_the_time_a_card_showed(monkeypatch):
+    """Review M2: between a card's expiry and its waiters waking, an answer is too late — from a
+    window, the Inbox or typing — so every waiter reads it as expired, as the card said."""
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: (lambda f: None))
+    monkeypatch.setattr(approvals, "TIMEOUT_S", 0.05)
+    p = approvals.open_card("conv", frame("c1"))
+    await asyncio.sleep(0.1)                                       # its time is up; nobody woke
+    approvals.answer({"type": "confirm_action", "call_id": "c1", "scope": "task"})
+    assert not p.future.done()
+    assert approvals.answer_by_id("c1", True, source="inbox") is False      # "answered or expired"
+    assert approvals.decline_pending({"c1"}, "too late", source="mac") == 0
+    assert approvals.close_card(p)["by"] is None
+
+
 async def test_an_ask_after_a_cards_time_is_up_gets_a_card_of_its_own(monkeypatch):
     """A card whose time is up but whose waiter has not woken yet is not joined: the new ask would
     read as expired without ever being shown."""
@@ -441,6 +472,51 @@ async def test_a_stopped_job_leaves_a_shared_card_to_the_other(monkeypatch):
     assert "c1" in approvals.known_ids()
     approvals.answer({"type": "confirm_action", "call_id": "c1"})
     assert (await b)["approved"] is True and approvals.known_ids() == set()
+
+
+def _cmd(shell: str):
+    from server.services import terminal_policy
+    return approvals._command_request(shell, sorted(terminal_policy.ask_rules(shell)), None)
+
+
+def test_a_commands_target_says_whether_it_is_a_rule_set_or_one_text():
+    """Review I3: `rules:<rules>` for a command that matched ask-rules, `text:<command>` for one
+    that matched none — two namespaces that never meet."""
+    assert _cmd("rm -rf build").target == "rules:delete|hermes:recursive delete"
+    assert _cmd("git push origin main").target == "rules:git-push"
+    assert _cmd("git-push").target == "text:git-push"
+    assert _cmd("git status").target == "text:git status"
+
+
+async def test_this_conversation_on_a_command_named_like_a_rule_never_covers_that_rule(job_db):
+    """Review P2b: in Careful mode, "In this conversation" on a card reading "Run `git-push`?" (a
+    command that matched no rule) must not let `git push origin main` run with no card."""
+    async def conversation(frame):
+        return {"approved": True, "scope": "conversation", "note": "", "by": "mac"}
+
+    async def declines(frame):
+        return {"approved": False, "scope": None, "note": "", "by": "mac"}
+    ctx = permissions.Context(conversation_id="conv")
+    with permissions.asking_with(conversation):
+        assert (await permissions.decide(_cmd("git-push"), ctx)).scope == "conversation"
+    with permissions.asking_with(declines):
+        assert (await permissions.decide(_cmd("git push origin main"), ctx)).by == "user"   # asked
+
+
+@pytest.mark.parametrize("shell", ["rm -rf build", "git status"])
+async def test_a_command_grant_is_found_again_under_its_own_target(job_db, shell):
+    """Both forms round-trip through the store: the same command is covered next time, and the
+    grant is kept under the namespaced target."""
+    async def conversation(frame):
+        return {"approved": True, "scope": "conversation", "note": "", "by": "mac"}
+    ctx = permissions.Context(conversation_id="conv")
+    with permissions.asking_with(conversation):
+        await permissions.decide(_cmd(shell), ctx)
+    with permissions.asking_with(None):
+        assert (await permissions.decide(_cmd(shell), ctx)).by == "grant"
+    async with job_db() as db:
+        targets = [g.target for g in (await db.scalars(select(PermissionGrant))).all()]
+    assert targets == [_cmd(shell).target]
 
 
 async def test_a_conversation_grant_for_one_rule_never_covers_a_second_rule(job_db, monkeypatch):
