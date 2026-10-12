@@ -208,9 +208,13 @@ def test_critique_payloads_disable_thinking_and_stay_short():
         assert critique["temperature"] == 0 and critique["max_tokens"] == 2048
         assert "thinking" not in deepseek._payload([], [{"type": "function"}], 0.7)
         assert "thinking" not in other._payload([], None, 0.7)
+        # Claude Sonnet 5 thinks unless told not to and refuses any non-default
+        # temperature (400) — tests/llm/test_anthropic_model_rules.py has the rest.
         anthropic = AnthropicProvider("claude-sonnet-5", api_key="k")._payload([], 0.7)
-        assert anthropic["temperature"] == 0 and anthropic["max_tokens"] == 2048
-        assert "thinking" not in anthropic
+        assert "temperature" not in anthropic and anthropic["max_tokens"] == 2048
+        assert anthropic["thinking"] == {"type": "disabled"}
+        older = AnthropicProvider("claude-sonnet-4-6", api_key="k")._payload([], 0.7)
+        assert older["temperature"] == 0 and "thinking" not in older
     assert deepseek._payload([], None, 0.7) == normal
     assert deepseek.supports_bounded_critique() and not other.supports_bounded_critique()
     assert AnthropicProvider("claude-sonnet-5", api_key="k").supports_bounded_critique()
