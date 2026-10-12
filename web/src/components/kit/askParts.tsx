@@ -116,7 +116,7 @@ export function DeclineNote({ onDeclineWithNote, disabled = false, testId = "ask
       setOpen(false);
     } else if (e.key === "Enter") {
       e.preventDefault(); e.stopPropagation();                      // never the card's ⌘⏎
-      send();
+      if (!e.repeat) send();      // a held ⏎ says No once; its repeats are cancelled too, or the form would submit on each
     }
   };
   if (!open) {

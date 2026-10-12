@@ -71,10 +71,10 @@ export function AskCard(p: AskCardProps) {
         <div className="flex items-center gap-2.5">
           {p.queue && p.queue.total > 1 && (
             <span data-testid="ask-queue" className="inline-flex items-center gap-1.5 font-mono text-[12px] text-muted-foreground">
-              <button type="button" aria-label={t("kit.previous")} disabled={!p.queue.onPrev} onClick={p.queue.onPrev}
+              <button type="button" data-nav="prev" aria-label={t("kit.previous")} disabled={!p.queue.onPrev} onClick={p.queue.onPrev}
                 className="px-0.5 hover:text-foreground disabled:opacity-40">‹</button>
               {t("kit.queueOf", { index: p.queue.index + 1, total: p.queue.total })}
-              <button type="button" aria-label={t("kit.next")} disabled={!p.queue.onNext} onClick={p.queue.onNext}
+              <button type="button" data-nav="next" aria-label={t("kit.next")} disabled={!p.queue.onNext} onClick={p.queue.onNext}
                 className="px-0.5 hover:text-foreground disabled:opacity-40">›</button>
             </span>
           )}

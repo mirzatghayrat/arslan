@@ -34,18 +34,20 @@ export function useLayer(active = true): boolean {
 
 export type KeyHandlers = { onAllow?: () => void; onDecline?: () => void };
 
-/** A field the user types words into (not a checkbox, a radio or a button). */
+/** A field the user types words into (not a checkbox, a radio or a button of any kind). */
 function typingField(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   if (target instanceof HTMLTextAreaElement) return true;
   if (target instanceof HTMLInputElement) {
-    return !["checkbox", "radio", "button", "submit", "reset", "range", "color", "file"].includes(target.type);
+    return !["checkbox", "radio", "button", "submit", "reset", "image", "range", "color", "file"].includes(target.type);
   }
-  return target.closest('[contenteditable=""], [contenteditable="true"], [contenteditable="plaintext-only"], [role="textbox"]') !== null;
+  return target.closest(
+    '[contenteditable=""], [contenteditable="true"], [contenteditable="plaintext-only"], [role="textbox"], [role="combobox"]',
+  ) !== null;
 }
 
-/** Another card or dialog: a surface with keys of its own. */
-const SURFACE = '[role="alertdialog"], [role="dialog"]';
+/** Another card or dialog (the native <dialog> too): a surface with keys of its own. */
+const SURFACE = '[role="alertdialog"], [role="dialog"], dialog';
 
 /**
  * ⌘⏎ (Ctrl+⏎ elsewhere) allows, Esc declines — user decision 2, 2026-10-05.

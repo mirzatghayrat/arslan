@@ -1,6 +1,7 @@
 /** 0.1.61 §A4: the card's choices, the optional note on No, and the keys around them. */
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup, createEvent } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 
 vi.mock("react-i18next", () => ({
@@ -145,6 +146,21 @@ describe("DeclineNote", () => {
     expect(note).toHaveBeenCalledTimes(2);
   });
 
+  it("a held ⏎ or ⌘⏎ says No once: its repeats send nothing, and are still taken from the browser", () => {
+    const note = vi.fn();
+    render(<DeclineNote onDeclineWithNote={note} />);
+    fireEvent.click(screen.getByText("kit.noteLink"));
+    const box = screen.getByRole("textbox");
+    fireEvent.change(box, { target: { value: "hold" } });
+    fireEvent.keyDown(box, { key: "Enter" });
+    // a repeat that is not cancelled would submit the form again in a browser, so it is cancelled, not just ignored
+    expect(fireEvent.keyDown(box, { key: "Enter", repeat: true })).toBe(false);
+    expect(fireEvent.keyDown(box, { key: "Enter", repeat: true })).toBe(false);
+    expect(fireEvent.keyDown(box, { key: "Enter", metaKey: true, repeat: true })).toBe(false);
+    expect(note).toHaveBeenCalledTimes(1);
+    expect(note).toHaveBeenLastCalledWith("hold");
+  });
+
   it("the Say no button is part of the line: ⌘⏎ and esc on it are the line's keys, not the card's", () => {
     const allow = vi.fn(), decline = vi.fn(), note = vi.fn();
     render(<AskCard who="w" title="t" onAllow={allow} onDecline={decline} extra={<DeclineNote onDeclineWithNote={note} />} />);
@@ -236,6 +252,37 @@ describe("a queue of cards", () => {
     fireEvent.click(screen.getByText("kit.noteLink"));
     expect(screen.getByRole("textbox")).toHaveValue("");                             // ... and empty
   });
+
+  /** Three cards of one kind: the card is re-mounted per ask, so its ‹ › are new buttons each time. */
+  const queueOf3 = () => (
+    <AskQueue items={["a", "b", "c"].map((k) => ({ key: k, render: (q) => (
+      <AskCard who="w" title={`card ${k}`} queue={q} onAllow={vi.fn()} onDecline={vi.fn()} />) }))} />
+  );
+
+  it("paging from the keyboard keeps focus on the button that was pressed, on the next card too", async () => {
+    const user = userEvent.setup();
+    render(queueOf3());
+    screen.getByLabelText("kit.next").focus();
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("heading")).toHaveTextContent("card b");
+    expect(screen.getByLabelText("kit.next")).toHaveFocus();                         // the new card's button, not <body>
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("heading")).toHaveTextContent("card c");
+    expect(screen.getByLabelText("kit.next")).toHaveFocus();
+    screen.getByLabelText("kit.previous").focus();
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("heading")).toHaveTextContent("card b");
+    expect(screen.getByLabelText("kit.previous")).toHaveFocus();                     // ‹ stays ‹
+  });
+
+  it("a click that did not focus a nav button does not pull focus to one", () => {
+    render(<><textarea data-testid="composer" />{queueOf3()}</>);
+    const composer = screen.getByTestId("composer");
+    composer.focus();
+    fireEvent.click(screen.getByLabelText("kit.next"));                              // as in Safari: a click that focuses nothing
+    expect(screen.getByRole("heading")).toHaveTextContent("card b");
+    expect(composer).toHaveFocus();
+  });
 });
 
 describe("the card's keys and a text field", () => {
@@ -250,10 +297,16 @@ describe("the card's keys and a text field", () => {
     { name: "a contenteditable (a span inside it)", html: '<div contenteditable="true"><span id="hit">x</span></div>', blocks: true },
     { name: 'a contenteditable="plaintext-only"', html: '<div contenteditable="plaintext-only"><span id="hit">x</span></div>', blocks: true },
     { name: 'a role="textbox"', html: '<div role="textbox" tabindex="0" id="hit"></div>', blocks: true },
+    { name: 'a role="combobox"', html: '<div role="combobox" tabindex="0" id="hit"></div>', blocks: true },
+    { name: "a contenteditable with no value", html: '<div contenteditable><span id="hit">x</span></div>', blocks: true },
+    { name: 'a contenteditable=""', html: '<div contenteditable=""><span id="hit">x</span></div>', blocks: true },
     { name: "a checkbox", html: '<input type="checkbox">', blocks: false },
     { name: "a radio", html: '<input type="radio">', blocks: false },
     { name: "a button", html: "<button>b</button>", blocks: false },
     { name: "a select", html: "<select></select>", blocks: false },
+    // every other <input> that is a control, not a field: each entry of the list is pinned
+    ...["button", "submit", "reset", "range", "color", "file", "image"].map((type) => (
+      { name: `an <input type="${type}">`, html: `<input type="${type}">`, blocks: false })),
   ].map((r) => ({ ...r, verdict: r.blocks ? "never allows it; esc there still declines" : "still allows it" }));
 
   it.each(outside)("⌘⏎ in $name outside the card $verdict", ({ html, blocks }) => {
@@ -320,6 +373,34 @@ describe("the card's keys and a text field", () => {
     expect(aNo).not.toHaveBeenCalled();
     fireEvent.keyDown(screen.getByTestId("radioB"), { key: "Enter", metaKey: true });   // focus in the top card itself
     expect(b).toHaveBeenCalledTimes(1);
+  });
+
+  it("a native <dialog>, and the bare panel of another dialog (focus on it, nothing inside), are other surfaces too", () => {
+    const b = vi.fn(), bNo = vi.fn();
+    render(<>
+      <AskCard who="b" title="b" onAllow={b} onDecline={bNo} />
+      <dialog open data-testid="native"><button data-testid="native-button">n</button></dialog>
+      <div role="dialog" tabIndex={-1} data-testid="bare-panel" />
+    </>);
+    for (const id of ["native", "native-button", "bare-panel"]) {
+      fireEvent.keyDown(screen.getByTestId(id), { key: "Enter", metaKey: true });
+      fireEvent.keyDown(screen.getByTestId(id), { key: "Escape" });
+    }
+    expect(b).not.toHaveBeenCalled();
+    expect(bNo).not.toHaveBeenCalled();
+  });
+
+  it("a surface that has no panel (null) takes the keys from anywhere, a dialog included: it cannot tell which is another", () => {
+    const allow = vi.fn(), decline = vi.fn();
+    function Bare() {
+      useAnswerKeys(true, { onAllow: allow, onDecline: decline }, null);
+      return <div role="dialog"><button data-testid="inside-a-dialog">x</button></div>;
+    }
+    render(<Bare />);
+    fireEvent.keyDown(screen.getByTestId("inside-a-dialog"), { key: "Enter", metaKey: true });
+    fireEvent.keyDown(screen.getByTestId("inside-a-dialog"), { key: "Escape" });
+    expect(allow).toHaveBeenCalledTimes(1);
+    expect(decline).toHaveBeenCalledTimes(1);
   });
 
   it("a surface that has no panel says so with null: typing still never answers it, a radio does", () => {
