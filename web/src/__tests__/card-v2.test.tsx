@@ -353,6 +353,16 @@ describe("the model's why is the question (§A4)", () => {
     frame({ ...ACTION, why: "   " });
     expect(screen.getByTestId("action-title")).toHaveTextContent("Use WeChat?");
   });
+
+  it("the model's line never stands alone: the frame's own title is said under it, in the server's words", () => {
+    render(<AskSlot send={vi.fn()} />);
+    frame({ ...ACTION, target: "~/Notes/2025", title: "Delete ~/Notes/2025", why: "Tidy the notes" });
+    expect(screen.getByTestId("action-title")).toHaveTextContent("Tidy the notes");
+    expect(screen.getByTestId("action-subject")).toHaveTextContent("Delete ~/Notes/2025");
+    frame({ ...ACTION, call_id: "a2", target: "~/Notes/2025", title: "Delete ~/Notes/2025" });     // no why: said once, as the heading
+    expect(screen.getAllByText("Delete ~/Notes/2025")).toHaveLength(1);
+    expect(screen.queryByTestId("action-subject")).toBeNull();
+  });
 });
 
 // ── The permission kind reaches the command card ────────────────────────────────────────────────────────

@@ -484,6 +484,60 @@ describe("the action card's words, its icon and its red", () => {
     expect(screen.getByTestId("action-title")).toHaveAttribute("lang", "en");
   });
 
+  // A prompt-injected model can word a harmless-sounding why. It may frame the ask; it is never the only description of it.
+  describe("what is being approved is said in the server's own words whenever the heading is the model's line", () => {
+    const ASK = { kind: "app", target: "~/Notes/2025", title: "Delete ~/Notes/2025", why: "Tidy the notes", detail: "" };
+
+    it("the frame's title sits under a model's line that asks about something else, outside the heading", () => {
+      render(card(ASK));
+      expect(screen.getByTestId("action-title")).toHaveTextContent("Tidy the notes");
+      expect(screen.getByTestId("action-title")).not.toHaveTextContent("Delete ~/Notes/2025");
+      expect(screen.getByTestId("action-subject")).toHaveTextContent("Delete ~/Notes/2025");
+      expect(screen.getByTestId("action-card")).toHaveTextContent("Delete ~/Notes/2025");
+    });
+
+    it("it is the literal title: not translated, not marked as the model's, tagged as the server's English", () => {
+      render(card(ASK));
+      const subject = screen.getByTestId("action-subject");
+      expect(subject.textContent).toBe("Delete ~/Notes/2025");                       // nothing added, nothing looked up
+      expect(subject).toHaveAttribute("lang", "en");
+      expect(screen.queryByText(/kit\.arslanSays/)).toBeNull();                       // no "Arslan says:" on it
+      expect(screen.queryByTestId("ask-said")).toBeNull();
+      expect(screen.getByTestId("action-title")).not.toHaveAttribute("lang");        // the model's own line is not tagged English
+    });
+
+    it("with no title it is the bare target, which is not words and so is not tagged", () => {
+      render(card({ ...ASK, title: "" }));
+      expect(screen.getByTestId("action-title")).toHaveTextContent("Tidy the notes");
+      expect(screen.getByTestId("action-subject").textContent).toBe("~/Notes/2025");
+      expect(screen.getByTestId("action-subject")).not.toHaveAttribute("lang");
+    });
+
+    it("the frame's own detail stays, under it", () => {
+      render(card({ ...ASK, detail: "rm -rf ~/Notes/2025" }));
+      const subject = screen.getByTestId("action-subject");
+      const detail = screen.getByText("rm -rf ~/Notes/2025");
+      expect(subject.compareDocumentPosition(detail) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it.each([["no why at all", undefined], ["a why of nothing", ""], ["a why of spaces", "   "]])(
+      "with %s the title is the heading and is not said twice, nor is the target", (_what, why) => {
+      render(card({ ...ASK, why }));
+      expect(screen.getAllByText("Delete ~/Notes/2025")).toHaveLength(1);
+      expect(screen.queryByTestId("action-subject")).toBeNull();
+      cleanup();
+      render(card({ ...ASK, title: "", why }));
+      expect(screen.getAllByText("~/Notes/2025")).toHaveLength(1);
+      expect(screen.queryByTestId("action-subject")).toBeNull();
+    });
+
+    it("a kind with its own words says none of it again: its title already names what is granted", () => {
+      render(card({ kind: "desktop_app", target: "Notes", title: "Delete ~/Notes/2025", why: "Tidy the notes", detail: "" }));
+      expect(screen.queryByTestId("action-subject")).toBeNull();
+      expect(screen.getByTestId("action-card")).not.toHaveTextContent("Delete ~/Notes/2025");
+    });
+  });
+
   it.each([["spaces", "   "], ["nothing", ""], ["no why at all", undefined]])(
     "a why of %s asks the title, else the bare target: never a blank question", (_what, why) => {
     render(card({ kind: "app", title: "Use App?", target: "com.example.App", why }));

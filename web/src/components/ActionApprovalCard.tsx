@@ -58,6 +58,12 @@ export default function ActionApprovalCard({ kind, target, detail, expiresAt, op
   const modelLine = (why ?? "").trim();
   const fromFrame = !known && !modelLine && Boolean(title);
   const heading = known ? t(`hands.title.${kind}`, { target }) : (modelLine || title || target);
+  // The model's line may frame the ask; it is never the only description of it (a prompt-injected model could word a
+  // harmless-sounding one). So under it the card says what is being approved in the server's own words: the frame's
+  // literal title, else the bare target. Not translated and not marked as the model's. Without a model line the title
+  // (or the target) is the heading itself, and is not said twice.
+  const subject = known || !modelLine ? "" : (title || target);
+  const detailLine = detail ? <p className="text-[13px] text-muted-foreground">{detail}</p> : null;
   // Allow is red for a step that pays or cannot be undone (plan R14: the kit's one RED_KINDS, shared with the command card).
   const red = kind === "desktop_risky" || RED_KINDS.has(permKind ?? "");
   return (
@@ -70,7 +76,13 @@ export default function ActionApprovalCard({ kind, target, detail, expiresAt, op
       destructive={red}
       detail={script
         ? <div data-testid="action-script"><CodeBox code={detail} marks={["delete", "send", "move", "do shell script", "quit"]} /></div>
-        : detail ? <p className="text-[13px] text-muted-foreground">{detail}</p> : null}
+        : subject ? (
+          <div className="flex flex-col gap-1.5">
+            <p data-testid="action-subject" lang={title ? "en" : undefined}
+              className="break-words text-[14px] font-medium text-foreground">{subject}</p>
+            {detailLine}
+          </div>)
+        : detailLine}
       context={grantLine ? [{ icon: lineIcon(LockKeyhole), text: grantLine }] : []}
       options={v2 ? <ScopeChoice options={offered} value={scope} onChange={setScope} alwaysLabel={alwaysLabel} testId="action-scope" /> : undefined}
       extra={v2 ? <DeclineNote testId="action-note" disabled={busy}
