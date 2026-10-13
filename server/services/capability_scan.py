@@ -11,15 +11,21 @@ whole dependency tree — HTTP clients there phone home by design and would drow
 0.1.61: a skill's whole folder is read (`scan_skill_folder`) and a scan speaks in verdicts —
 "dangerous" (a high finding: the skill is off until the user has read why) and "caution" (notes:
 on, with a note). What could not be read is named in a note, so nothing unread is ever "clean".
-"Dangerous" costs the user a click, so it needs the real act: a script that writes, reads or sends, or
-words USED as an order. The same words quoted, advice, a pointer, an install line in a document are a
-note. The runtime cards, the sandbox and the agent-settings protection are the gate for what a skill
-makes Arslan do; this scan is the heads-up at import.
+
+"Dangerous" costs the user a click, so it needs the real act. In a script that is a write, a read or a
+send. In text (SKILL.md and the other prose) it is only one of three things: invisible or bidirectional
+characters, words that tell the model to ignore its earlier instructions USED as an order (not quoted,
+not forbidden), and a store of secrets sent to a destination. Everything else a rule finds in text —
+advice, a pointer, an install line, an act written out in a document, a credential handed to an API —
+is a note, and so is the same words in a script's comments or in a file's name. A text rule never fires
+inside a prohibition ("never send the key"). The runtime cards, the sandbox and the agent-settings
+protection are the gate for what a skill makes Arslan do; this scan is the heads-up at import.
 """
 from __future__ import annotations
 
 import os
 import re
+import string
 import time
 import unicodedata
 from collections.abc import Callable
@@ -40,12 +46,19 @@ MAX_WALKED = 50_000
 #: A regex holds the GIL, so a scan is a stall of the whole server for as long as it runs.
 MAX_SCAN_SECONDS = 3.0
 
+#: The kinds of file the rules read: `text` (SKILL.md and prose references) is read line by line as words; a skill's
+#: scripts (`skill_code`), a package's files (`code`) and its package.json (`manifest`) as code.
+_PROSE = ("text",)
+_BOM = chr(0xFEFF)
+
 
 @dataclass(frozen=True)
 class Rule:
     id: str
     level: str          # high | note
-    where: str          # text (instructions) | skill_code (a skill's script) | package (a package's file) | code (both) | manifest | any
+    #: What it reads. `text`: prose, and also a skill script's full-line comments and every file's name, at note level;
+    #: `prose`: prose only; `skill_code` (a skill's script), `package` (a package's file), `code` (both), `manifest`.
+    where: str
     pattern: re.Pattern
     #: Looks at each match before it counts: (the line, the match) -> counts? A rule with none counts
     #: its first match. Two rules may share an id and differ in level: the id says what was found,
@@ -54,10 +67,12 @@ class Rule:
     #: A cheap pattern the line must hold before `pattern` is tried. Most lines hold none of what a rule looks
     #: for, and a rule that starts at every `cp` or `>` of a hostile line would otherwise read on from each.
     needs: re.Pattern | None = None
+    #: A match inside a prohibition ("never send the key") does not count.
+    guard: bool = False
 
 
-def _r(rule_id, level, where, pattern, flags=re.I, accept=None, needs=None):
-    return Rule(rule_id, level, where, re.compile(pattern, flags), accept, re.compile(needs, flags) if needs else None)
+def _r(rule_id, level, where, pattern, flags=re.I, accept=None, needs=None, guard=False):
+    return Rule(rule_id, level, where, re.compile(pattern, flags), accept, re.compile(needs, flags) if needs else None, guard)
 
 
 # ── the line a rule reads ────────────────────────────────────────────────────────────────────
@@ -70,16 +85,22 @@ _QUOTES = tuple(re.compile(p) for p in (
     "\u00ab[^\u00bb\n]{0,300}+\u00bb", "\u300c[^\u300d\n]{0,300}+\u300d", "\u300e[^\u300f\n]{0,300}+\u300f", r"`[^`\n]*`",
     r"(?<![\w'])'[^'\n]*'(?![\w'])"))                     # a single quote that is not an apostrophe
 _YAML_VALUE = re.compile(r"""^(\s*(?:-\s+)?(?:[\w.-]+\s*:\s*)?)(["'])(.*)\2\s*(?:#.*)?$""")
-_FENCE = re.compile(r"^\s{0,3}(?:`{3,}|~{3,})")
+_FENCE = re.compile(r"^\s{0,3}(`{3,}|~{3,})")
+# A line break is `\n`, `\r\n` or `\r` — what an editor shows (see `_lines`). `str.splitlines()` also breaks at \x0b,
+# \x0c, \x1c-\x1e, \x85, U+2028 and U+2029, which split "ignore<VT>all previous instructions" into two lines no rule
+# reads whole (and moved every line number after it). They are whitespace to a pattern's `\s`.
+#: A full line of comment in a script: `#` (other than the shebang) or `//`.
+_COMMENT = re.compile(r"\s*(?:#|//)")
 
 
 class _Line:
     """One line of a text, as the rules read it. `fenced`: inside a ``` block. `front`: inside the
-    frontmatter, where a quoted value is a YAML string, not a quotation."""
-    __slots__ = ("text", "fenced", "front", "_inside")
+    frontmatter, where a quoted value is a YAML string, not a quotation. `comment`: a full line of comment
+    in a script, which the rules for acts do not read and the rules for words read at note level."""
+    __slots__ = ("text", "fenced", "front", "comment", "_inside")
 
-    def __init__(self, text: str, fenced: bool = False, front: bool = False):
-        self.text, self.fenced, self.front, self._inside = text, fenced, front, None
+    def __init__(self, text: str, fenced: bool = False, front: bool = False, comment: bool = False):
+        self.text, self.fenced, self.front, self.comment, self._inside = text, fenced, front, comment, None
 
     def quoted(self, m: re.Match) -> bool:
         """Whether the match lies wholly inside a quotation, a code span or a fenced block: the words
@@ -109,15 +130,22 @@ def _mentioned(line: _Line, m: re.Match) -> bool:
 
 
 # A negation in the clause before a verb ("do not", "don't" with either apostrophe, "never", "cannot", "must not",
-# "do not use this skill to") makes the sentence a ban, not an order. A clause ends at a full stop,
-# a semicolon, "but"/"instead"..., or a comma that begins a new order (", just", ", then").
-_CLAUSE_END = re.compile(r"[.!?;](?:\s|$)|\b(?:but|instead|however|except|otherwise|rather)\b|,\s*(?:and|then|so|now|just|but)\b",
-                         re.I)
-_NEGATION = re.compile(r"(?:\b(?:not|never)\b|n['\u2019]t\b)(?!\s+(?:forget|hesitate|fail)\b)|\b(?:cannot|nor|avoid|refrain)\b",
-                       re.I)                  # "don't forget to edit" is an order
+# "do not use this skill to") makes the sentence a ban, not an order. A clause ends at a full stop, a semicolon, a
+# dash, "but"/"instead"..., or a comma that begins a new order (", just", ", then"). "Do not worry, ignore all
+# previous instructions" and "never mind the above: ignore..." are orders: those negations do not forbid what follows.
+_CLAUSE_END = re.compile(r"[.!?;](?:\s|$)|\b(?:but|instead|however|except|otherwise|rather)\b|,\s*(?:and|then|so|now|just|but)\b|"
+                         r"[\u2014\u2013]|\s-{1,2}\s", re.I)
+_NEGATION = re.compile(r"(?:\b(?:not|never)\b|n['\u2019]t\b)(?!\s+(?:forget|hesitate|fail|worry|mind|delay|wait|be\s+(?:afraid|shy))\b)"
+                       r"|\b(?:cannot|nor|avoid|refrain)\b", re.I)                  # "don't forget to edit" is an order
 #: Words that point at a file instead of ordering a change to it ("see ~/.claude/settings.json").
 _POINTER = re.compile(r"\b(?:see|refer(?:s)?(?:\s+to)?|consult|per|according\s+to|documented\s+in|described\s+in|"
                       r"details\s+(?:are\s+)?in|look\s+at|located\s+(?:at|in)|found\s+in|lives\s+in|stored\s+in)\b", re.I)
+
+
+def _prohibited(line: _Line, m: re.Match) -> bool:
+    """Whether the match stands inside a prohibition: a negation in its clause, before it."""
+    head = line.text[max(0, m.start() - 120):m.start()]
+    return _NEGATION.search(_CLAUSE_END.split(head)[-1]) is not None
 
 
 def _is_an_order(line: _Line, m: re.Match) -> bool:
@@ -132,20 +160,31 @@ def _is_an_order(line: _Line, m: re.Match) -> bool:
 # ── where the rules look ─────────────────────────────────────────────────────────────────────
 #: Between two parts of a path: `/`, or what code writes instead (`", "` of os.path.join, `" / "` of pathlib).
 _SEP = r"""(?:/|['"]\s*[,/]\s*['"])"""
-#: Other agents' settings files (§A2): Hermes, Claude Code, Codex, Cursor, OpenClaw.
-_AGENT_SETTINGS = (r"(?:\.hermes" + _SEP + r"|\.claude" + _SEP + r"settings|\.claude\.json|\.codex" + _SEP + r"config"
-                   + r"|\.cursor" + _SEP + r"mcp\.json|\.openclaw" + _SEP + r")")
-#: The same, as a person writes them in an instruction.
+#: Other agents' homes (§A2), as whole folders: Hermes, Codex, Claude Code, Cursor, OpenClaw and the shared `.agents`;
+#: the file `.claude.json`; and the Claude desktop app's folder. Arslan never writes any of them.
+_AGENT_SETTINGS = (r"(?:\.(?:hermes|codex|claude|cursor|openclaw|agents)" + _SEP + r"|\.claude\.json"
+                   + r"|Library/Application(?:\s|\\ )+Support/Claude)")
+#: The same, as a person writes them in an instruction: the files an agent keeps its settings in (a skill is told
+#: where its own folder is, "~/.claude/skills/<name>", and that is no order to change anything).
 _AGENT_SETTINGS_TEXT = (r"(?:~|\$\{?HOME\}?)/\.(?:hermes/|claude/settings|claude\.json|codex/config|"
                         r"cursor/mcp\.json|openclaw/)")
-#: Where a shell or macOS starts programs.
-_STARTUP = r"(?:\.bash_profile|\.bashrc|\.zshrc|\.zprofile|LaunchAgents|LaunchDaemons)"
-_SSH_KEY = r"\.ssh" + _SEP + r"id_[a-z0-9_*?]++(?!\.pub|-cert)"           # a private key: not id_x.pub
+#: Where a shell or macOS starts programs: a start file by its exact name (`.zshrc.bak` is a copy, not a start
+#: file), or a launchd folder.
+_START_FILE = r"\.(?:bash_profile|bash_login|bashrc|profile|zshrc|zshenv|zprofile|zlogin)(?![\w-])(?!\.\w)"
+_STARTUP = r"(?:" + _START_FILE + r"|LaunchAgents|LaunchDaemons)"
+_SSH_KEY = r"\.ssh" + _SEP + r"(?:id_[a-z0-9_*?]++(?!\.pub|-cert)|\*)"      # a private key (not id_x.pub), or all of them
 _AUTHORIZED_KEYS = r"\.ssh" + _SEP + r"authorized_keys"
 #: What may stand before the named part of a path: `~/`, `$HOME/`, `/Users/x/`, `../` — whole parts, at most 8.
 _HEAD = r"['\"]?/?(?:[\w.${}~@%+=:-]{1,60}+['\"]?/){0,8}"
 #: Up to n more arguments of a command, one token each (a token is at most 200 characters; none is read twice).
 _ARGS = r"(?:[ \t]++\S{1,200}+){0,%d}?[ \t]++"
+#: A `>` that closes an HTML tag (`<code>`, `</b>`) is not a redirect: up to ten characters of tag name before it.
+_CLOSES_A_TAG = "".join(f"(?<!<[a-z0-9]{{{k}}})(?<!</[a-z0-9]{{{k}}})" for k in range(1, 11))
+#: What may follow the destination of a copy: options, redirects (`2>/dev/null`, `>/dev/null`, `2>&1`; `&>/dev/null` ends
+#: the command at its `&`) and a comment — not another argument, which would make the path the source
+#: ("cp ~/.claude/settings.json backup.json").
+_TAIL = (r"(?:[ \t]++(?:-\S{1,60}+|\d{0,2}>>?&?[ \t]*+\S{1,60}+)){0,6}+"
+         r"[ \t]*+(?:#[^\n]{0,200}+)?(?:$|[;&|)])")
 
 
 def _writes(path: str) -> str:
@@ -159,8 +198,8 @@ def _writes(path: str) -> str:
     `[^\\n]{0,200}` re-read the line from every `>`, `cp` or `tee` in it, so one 400 KB line (a minified bundle, or
     a hostile file) held the scan for minutes."""
     return "(?:" + "|".join((
-        r"(?<![-=])(?:>>?[ \t]{0,16}|\btee[ \t]++(?:-a[ \t]++)?)" + _HEAD + path,
-        r"\b(?:cp|mv|ln|install|rsync|ditto)\b" + _ARGS % 12 + _HEAD + path + r"[^\s'\"]{0,120}['\"]?[ \t]*(?:$|[;&|)])",
+        r"(?<![-=])(?:" + _CLOSES_A_TAG + r">>?[ \t]{0,16}|\btee[ \t]++(?:-a[ \t]++)?)" + _HEAD + path,
+        r"\b(?:cp|mv|ln|install|rsync|ditto)\b" + _ARGS % 12 + _HEAD + path + r"[^\s'\";&|)]{0,120}+['\"]?" + _TAIL,
         r"\b(?:curl|wget)\b" + _ARGS % 16 + r"(?:-[A-Za-z]*[oO][ \t]*+|--output(?:-document)?(?:=|[ \t]++))" + _HEAD + path,
         r"\b(?:sed|perl)\b(?:[ \t]++-\S{1,60}+){0,4}?[ \t]++(?:-[A-Za-z]*i|--in-place)\S{0,20}+" + _ARGS % 8 + _HEAD + path,
         r"\bdd\b" + _ARGS % 6 + r"of=" + _HEAD + path,
@@ -176,99 +215,139 @@ def _writes(path: str) -> str:
 _CRONTAB = (r"\bcrontab\s+(?:-u\s+\S+\s+)?(?:-[er]\b|-(?=\s*(?:$|[;&|)]))|<|[~/.$][^\s]*|"
             r"[\w.-]+\.(?:txt|cron|crontab|tab)\b)")
 _LAUNCHCTL = r"\blaunchctl\s+(?:load|bootstrap|submit)\b"
+_AUTOSTART = _writes(_STARTUP) + "|" + _CRONTAB + "|" + _LAUNCHCTL
 
 #: A command that reads, copies or uploads what it is given, with a private key among its arguments (not
 #: after `-i`, `--key` or `--identity-file`, which only USE the key); and a reader in code.
 _SSH_READERS = (r"\b(?:cat|less|more|head|tail|strings|xxd|od|hexdump|base64|openssl|pbcopy|cp|mv|tar|zip|ditto|install|"
                 r"tee|dd|gpg|scp|rsync|sftp|curl|wget|nc|ncat|socat)\b")
-_SSH_READ = (_SSH_READERS + _ARGS % 12 + r"(?<!-i[ \t])(?<!--key[ \t])(?<!--identity-file[ \t])" + _HEAD + _SSH_KEY)
-_SSH_ARCHIVE = r"\b(?:tar|zip|cp|rsync|ditto|scp|7z)\b" + _ARGS % 8 + _HEAD + r"\.ssh/?['\"]?(?=\s|$)"
+#: `--exclude .ssh` and `-x .ssh` leave the folder out of an archive.
+_NOT_AN_EXCLUDE = r"(?<!--exclude[ \t])(?<!--exclude-dir[ \t])(?<!--ignore[ \t])(?<!-x[ \t])"
+_SSH_READ = (_SSH_READERS + _ARGS % 12 + r"(?<!-i[ \t])(?<!--key[ \t])(?<!--identity-file[ \t])" + _NOT_AN_EXCLUDE + _HEAD + _SSH_KEY)
+#: The .ssh folder as a whole taken: archived, or copied/uploaded AWAY (something follows it, the destination).
+#: A copy INTO the folder takes nothing out of it.
+_SSH_ARCHIVE = (r"\b(?:tar|zip|7z)\b" + _ARGS % 12 + _NOT_AN_EXCLUDE + _HEAD + r"\.ssh/?['\"]?(?=\s|$|[;&|)])"
+                r"|\b(?:cp|rsync|ditto|scp)\b" + _ARGS % 8 + _NOT_AN_EXCLUDE + _HEAD + r"\.ssh/?['\"]?[ \t]++[^\s;&|)]")
+_SSH = (_SSH_READ + r"|" + _SSH_ARCHIVE
+        + r"|" + _SSH_KEY + r"[^\n]{0,200}?\.read\w*\("
+        + r"|\b(?:readFileSync|readFile|read_text|read_bytes)\s*\([^\n]{0,160}?" + _SSH_KEY
+        + r"|" + _writes(_AUTHORIZED_KEYS))
 
-#: A secret handed over, and the sign that it is how an API is called ("in the x-api-key header", "to the login").
+#: A secret handed over: an API key, a token, a password.
 _SEND_SECRET = (r"\b(?:send|post|upload|forward|transmit|exfiltrat\w*)\s+(?:the\s+|all\s+|any\s+|your\s+|their\s+)?"
                 r"(?:user['\u2019]?s?\s+)?(?:api[_ ]?keys?|access\s+tokens?|auth\w*\s+tokens?|passwords?|secrets?|"
                 r"credentials|ssh\s+keys?)\b")
-_API_USE = (r"(?:\bheaders?\b|\bauthori[sz]ation\b|\bbearer\b|\bx-api-key\b|\blogin\b|\bsign[- ]?in\b|\boauth\b|"
-            r"\bsession\b|\bquery\s+(?:string|param\w*)\b)")
-#: A store of secrets sent to a URL, a host or an address.
+#: A store of secrets: the ssh folder and keys, the keychain, .env, an agent's auth file...
 _SECRET_STORE = (r"(?:~/\.ssh\b|\.ssh/|\bid_(?:rsa|ed25519|ecdsa|dsa)\b|\bkeychains?\b|"
                  r"\.env\b(?!\.(?:example|sample|template|dist))|\.netrc\b|\.aws/credentials|\.npmrc\b|"
-                 r"\.git-credentials|\.gnupg\b)")
+                 r"\.git-credentials|\.gnupg\b|\bauth(?:-profiles)?\.json\b|\.credentials\.json\b)")
 #: Where a secret store is sent. Every part is bounded and an address cannot begin in the middle of a run of
 #: word characters: `[\w.+-]+@` unbounded and tried at each of 81 offsets after each verb-and-store pair of a
 #: run like "send.env.send.env." took hours on 400 KB.
 _DESTINATION = (r"(?:https?://|\bto\s+(?:my|our|their|an?\s+(?:remote|external|outside)|the\s+(?:remote|external))\b|"
                 r"\bto\s+(?:[\w-]{1,63}\.){1,6}[a-z]{2,24}\b|\bto\s+\d{1,3}(?:\.\d{1,3}){3}\b|"
                 r"(?<![\w.+-])[\w.+-]{1,64}@[\w-]{1,63}(?:\.[\w-]{1,63}){1,5})")
+_SEND_STORE = (r"\b(?:send|post|upload|forward|transmit|exfiltrat\w*|copy|attach|email|paste)\b(?>[^\n]{0,50}?" + _SECRET_STORE
+               + r")[^\n]{0,40}" + _DESTINATION)
 
-_HIDDEN_INSTRUCTION = (r"\b(ignore|disregard|forget)\s+(all\s+|any\s+)?(previous|prior|above|earlier)\s+"
-                       r"(instructions|rules|messages)")
-_PIPE_TO_SHELL = r"\b(curl|wget)\b[^|\n]{0,200}\|\s*(ba|z)?sh\b"
-_KEYCHAIN = r"\bsecurity\s+(find-generic-password|find-internet-password|dump-keychain)\b"
+#: The determiner may be "the", "your", "all", "all of the"...; the noun a rule, an instruction, a direction, a prompt...
+_HIDDEN_INSTRUCTION = (r"\b(ignore|disregard|forget)\s+(?:(?:all|any|every)\s+(?:of\s+)?)?(?:(?:the|your|my|these|those)\s+)?"
+                       r"(?:previous|prior|above|earlier|preceding)\s+(?:instructions?|rules?|messages?|directions?|directives?|prompts?|guidelines?)")
+_SHELL = r"(?:ba|z|da|k)?sh"
+#: A download run as it arrives: piped into a shell (also `| sudo bash`, `| env bash`, `| /bin/sh`), or given to one
+#: as an argument: `sh -c "$(curl ...)"`, `eval "$(curl ...)"`, `bash <(curl ...)`, `source <(curl ...)`.
+_PIPE_TO_SHELL = (r"\b(?:curl|wget)\b[^|\n]{0,200}\|[ \t]*(?:sudo(?:[ \t]+-\S{1,20}+){0,3}+[ \t]+|env(?:[ \t]+(?:\w{1,40}=\S{0,60}+|-\S{1,20}+)){0,6}+[ \t]+)?"
+                  r"(?:/(?:usr/)?(?:local/)?bin/)?" + _SHELL + r"\b"
+                  r"|\b(?:" + _SHELL + r"|eval)[ \t]+(?:-c[ \t]+)?[\"']?\$\([ \t]*(?:curl|wget)\b"
+                  r"|(?<![\w.])(?:" + _SHELL + r"|source|\.)[ \t]+<\([ \t]*(?:curl|wget)\b")
+#: `security find-generic-password`: with -w or -g it prints the secret (an existence check does not);
+#: `dump-keychain` dumps. `-q`... may stand before the command.
+_KEYCHAIN = (r"\bsecurity\b(?:[ \t]++-\S{1,20}+){0,3}+[ \t]++(?P<cmd>find-generic-password|find-internet-password|dump-keychain)\b"
+             r"(?P<rest>[^\n;|]{0,200})")
+_PRINTS_IT = re.compile(r"(?<![\w-])-(?=[A-Za-z]*[wg])[A-Za-z]++(?![\w-])")
+_DISCARDED = re.compile(r"(?:&>|>)[ \t]*/dev/null\b")
+#: A recursive remove of the root or the home folder, with the flags in any order and the target quoted, with a
+#: slash or a star after it: `rm -rf ~/`, `rm -rf "$HOME"`, `rm -rf /*`, `rm -r -f /`, `rm --recursive --force /`.
+#: The recursive flag is read in one pass: `-[a-z]*r[a-z]*` was quadratic on `rm -rrrr...`.
+_WIPE = (r"\brm\s++(?:(?:-[a-z]++|--[a-z-]++)\s++){0,3}?(?:-(?=[a-z]*r)[a-z]++|--recursive)\s++"
+         r"(?:(?:-[a-z]++|--[a-z-]*+)\s++){0,3}?[\"']?(?:/|~|\$\{?HOME\}?)/?\*?[\"']?(?=\s|$|[;&|)`'\"]|[.,:](?:\s|$))")
 _SETTINGS_WRITE = _writes(_AGENT_SETTINGS)
 
+
+def _prints_the_secret(line: _Line, m: re.Match) -> bool:
+    """A keychain command that hands the secret over: `-w` or `-g`, output not thrown away; or a dump."""
+    if m.group("cmd").lower() == "dump-keychain":
+        return True
+    rest = m.group("rest")
+    return _PRINTS_IT.search(rest) is not None and _DISCARDED.search(rest) is None
+
+
+def _only_checks_it(line: _Line, m: re.Match) -> bool:
+    return not _prints_the_secret(line, m)
+
+
 RULES = (
-    # Instructions a skill gives the model.
+    # ── Words: SKILL.md and the other prose. A script's full-line comments and every file's name are read by the
+    # `text` rules too, at note level. A match inside a prohibition ("never ...") does not count (`guard`).
     # The words used as an order are dangerous; the same words quoted, in a code span or in a fenced
     # block are mentioned (a skill warning against them) and are a note.
-    _r("hidden_instruction", "high", "text", _HIDDEN_INSTRUCTION, accept=_used),
-    _r("hidden_instruction", "note", "text", _HIDDEN_INSTRUCTION, accept=_mentioned),
+    _r("hidden_instruction", "high", "text", _HIDDEN_INSTRUCTION, accept=_used, needs=r"ignore|disregard|forget", guard=True),
+    _r("hidden_instruction", "note", "text", _HIDDEN_INSTRUCTION, accept=_mentioned, needs=r"ignore|disregard|forget", guard=True),
     # Ordinary advice ("do not tell the user to repeat a step"): never dangerous. A skill cannot act
-    # by itself; whatever it asks for still meets the cards and the ledger.
-    _r("hide_from_user", "note", "text", r"\b(do\s*n[o']?t|never)\s+(tell|show|mention|reveal)\s+(this\s+)?(to\s+)?the\s+user"),
-    # A credential handed over: "in the x-api-key header", "to the login" is how an API is called, a note;
-    # a secret store sent to a URL or an address is not.
-    _r("send_data_out", "high", "text", _SEND_SECRET + r"(?![^\n]{0,120}" + _API_USE + r")"),
-    _r("send_data_out", "note", "text", _SEND_SECRET + r"(?=[^\n]{0,120}" + _API_USE + r")"),
-    _r("send_data_out", "high", "text",
-       r"\b(?:send|post|upload|forward|transmit|exfiltrat\w*|copy|attach|email|paste)\b(?>[^\n]{0,50}?" + _SECRET_STORE
-       + r")[^\n]{0,40}" + _DESTINATION, needs=_SECRET_STORE),
-    _r("url_in_instructions", "note", "text", r"https?://[^\s)>\"']+"),
-    # Code (skill scripts, package files).
+    # by itself; whatever it asks for still meets the cards and the ledger. (No guard: the rule IS a negation.)
+    _r("hide_from_user", "note", "text", r"\b(do\s*n[o'\u2019]?t|never)\s+(tell|show|mention|reveal)\s+(this\s+)?(to\s+)?the\s+user",
+       needs=r"user"),
+    # A credential handed to an API ("in the x-api-key header", "to the login", "over TLS") is how an API is called,
+    # and is a note wherever it goes; a secret STORE sent to a URL, a host or an address is not.
+    _r("send_data_out", "note", "text", _SEND_SECRET, needs=r"send|post|upload|forward|transmit|exfiltrat", guard=True),
+    _r("send_data_out", "high", "text", _SEND_STORE, needs=_SECRET_STORE, guard=True),
+    _r("url_in_instructions", "note", "prose", r"https?://[^\s)>\"']+", needs=r"http"),
+    # ── Acts: a script (and a package file) does them; the same act written out in text is a note.
     # An install line in a document is common and the agent's command card shows it; a skill whose OWN
     # scripts (or package hooks) pipe a download into a shell is a supply-chain risk.
-    _r("pipe_to_shell", "high", "code", _PIPE_TO_SHELL),
-    _r("pipe_to_shell", "high", "manifest", _PIPE_TO_SHELL),
-    _r("pipe_to_shell", "note", "text", _PIPE_TO_SHELL),
+    _r("pipe_to_shell", "high", "code", _PIPE_TO_SHELL, needs=r"curl|wget"),
+    _r("pipe_to_shell", "high", "manifest", _PIPE_TO_SHELL, needs=r"curl|wget"),
+    _r("pipe_to_shell", "note", "text", _PIPE_TO_SHELL, needs=r"curl|wget", guard=True),
     _r("run_decoded_code", "high", "code",
-       r"\b(exec|eval)\s*\(\s*(base64\.b64decode|codecs\.decode|bytes\.fromhex|zlib\.decompress|atob)\b"),
+       r"\b(exec|eval)\s*\(\s*(base64\.b64decode|codecs\.decode|bytes\.fromhex|zlib\.decompress|atob)\b", needs=r"exec|eval"),
     # Persistence is a WRITE: into a shell start file or a launchd folder, a crontab installed, a job loaded.
     # `source ~/.zshrc` and `crontab -l` only read.
-    _r("autostart_write", "high", "code", _writes(_STARTUP) + "|" + _CRONTAB + "|" + _LAUNCHCTL,
-       needs=_STARTUP + r"|crontab|launchctl"),
-    # A script that reads the keychain is high; a commented config example in a document is a note (the
-    # runtime floor refuses `security find-generic-password -w` in every mode).
-    _r("keychain_read", "high", "code", _KEYCHAIN),
-    _r("keychain_read", "high", "manifest", _KEYCHAIN),
-    _r("keychain_read", "note", "text", _KEYCHAIN),
+    _r("autostart_write", "high", "code", _AUTOSTART, needs=_STARTUP + r"|crontab|launchctl"),
+    _r("autostart_write", "note", "text", _AUTOSTART, needs=_STARTUP + r"|crontab|launchctl", guard=True),
+    # A script that prints the keychain's secret is high; a commented config example in a document, or a check that
+    # an item exists, is a note (the runtime floor refuses `security find-generic-password -w` in every mode).
+    _r("keychain_read", "high", "code", _KEYCHAIN, accept=_prints_the_secret, needs=r"security"),
+    _r("keychain_read", "high", "manifest", _KEYCHAIN, accept=_prints_the_secret, needs=r"security"),
+    _r("keychain_read", "note", "code", _KEYCHAIN, accept=_only_checks_it, needs=r"security"),
+    _r("keychain_read", "note", "manifest", _KEYCHAIN, accept=_only_checks_it, needs=r"security"),
+    _r("keychain_read", "note", "text", _KEYCHAIN, needs=r"security", guard=True),
     # Key material taken: a private key read, copied or uploaded (`cat`, `cp`, `base64`, `curl -F`...), the .ssh
-    # folder archived or copied, a key appended to authorized_keys. `ssh-add`, `ssh -i`, `ssh-keygen -l`/`-y`
+    # folder archived or copied away, a key appended to authorized_keys. `ssh-add`, `ssh -i`, `ssh-keygen -l`/`-y`
     # and the .pub half use or describe a key without taking it.
-    _r("ssh_keys", "high", "code",
-       _SSH_READ + r"|" + _SSH_ARCHIVE
-       + r"|" + _SSH_KEY + r"[^\n]{0,200}?\.read\w*\("
-       + r"|\b(?:readFileSync|readFile|read_text|read_bytes)\s*\([^\n]{0,160}?" + _SSH_KEY
-       + r"|" + _writes(_AUTHORIZED_KEYS), needs=r"\.ssh"),
-    # `-(?=[a-z]*r)[a-z]+` is `-[a-z]*r[a-z]*` read in one pass: that one was quadratic on `rm -rrrr…`.
-    _r("wipe", "high", "any", r"\brm\s+-(?=[a-z]*r)[a-z]+\s+(/|~|\$HOME)(\s|$)"),
+    _r("ssh_keys", "high", "code", _SSH, needs=r"\.ssh"),
+    _r("ssh_keys", "note", "text", _SSH, needs=r"\.ssh", guard=True),
+    _r("wipe", "high", "code", _WIPE, needs=r"rm"),
+    _r("wipe", "high", "manifest", _WIPE, needs=r"rm"),
+    _r("wipe", "note", "text", _WIPE, needs=r"rm", guard=True),
     _r("network_in_script", "note", "skill_code", r"\b(requests|urllib|httpx|aiohttp|socket)\b"),
     _r("shell_in_script", "note", "skill_code", r"\b(subprocess|os\.system|os\.popen)\b"),
-    _r("install_hook", "note", "manifest", r"\"(preinstall|install|postinstall)\"\s*:"),
-    # Another agent's settings, written by a script or asked of the model (0.1.61 §C1, Hermes'
-    # skills guard; §A2 "other agents' settings"). The write must TARGET the settings path (see
-    # `_writes`), so reading it, copying it away or printing "… -> path" is not a finding. Telling the
-    # model NOT to edit it is not one either, nor is pointing at it ("see ~/.claude/settings.json").
+    _r("install_hook", "note", "manifest", r"\"(preinstall|install|postinstall)\"\s*:", needs=r"install"),
+    # Another agent's folder, written by a script or asked of the model (0.1.61 §C1, Hermes'
+    # skills guard; §A2 "other agents' settings"). The write must TARGET the path (see `_writes`), so reading it,
+    # copying it away or printing "… -> path" is not a finding. Telling the model NOT to edit it is not one
+    # either, nor is pointing at it ("see ~/.claude/settings.json").
     # Arslan runs a skill's scripts itself, so a skill that writes them is high; a package often bundles a
     # client-registration command next to the server (`install --client cursor`), and a high finding
     # there would remove an install the user chose on its card: a note, the card shows it.
     _r("agent_settings_write", "high", "skill_code", _SETTINGS_WRITE, needs=_AGENT_SETTINGS),
     _r("agent_settings_write", "note", "package", _SETTINGS_WRITE, needs=_AGENT_SETTINGS),
-    # Words telling the model to change them are a note (a cross-agent skill says "add to your Codex
+    _r("agent_settings_write", "note", "text", _SETTINGS_WRITE, needs=_AGENT_SETTINGS, guard=True),
+    # Words telling the model to change a settings file are a note (a cross-agent skill says "add to your Codex
     # config"): the act in code is the high one, and the runtime holds whatever the scan says.
     _r("agent_settings_instruction", "note", "text",
        r"\b(?P<verb>edit|modify|change|update|overwrite|replace|patch|append|merge|write\s+(?:\w+\s+){0,4}?(?:to|into|in)|"
        r"add\s+(?:\w+\s+){0,4}?to)\b(?P<between>[^\n]{0,80}?)(?P<path>" + _AGENT_SETTINGS_TEXT + r")",
-       accept=_is_an_order),
+       accept=_is_an_order, needs=r"edit|modify|change|update|overwrite|replace|patch|append|merge|write|add"),
 )
 
 #: Format characters that only shape text: the byte-order mark, a soft hyphen and the left-to-right and
@@ -282,25 +361,53 @@ _JOINERS = frozenset("\u200c\u200d\u061c")
 #: selector), a digit or an emoji.
 _WORDY = frozenset({"Lu", "Ll", "Lt", "Lm", "Lo", "Mn", "Mc", "Me", "Nd", "Nl", "No", "So", "Sk"})
 #: Taken away from a line before the rules read it: a pattern is matched through the zero-width characters
-#: someone put inside a word ("ig" + ZWNJ + "nore").
-_SQUASH = re.compile(r"[\u00ad\u061c\u200b-\u200f\u2060-\u2064\u206a-\u206f\ufeff\ufe00-\ufe0f]")
+#: someone put inside a word ("ig" + ZWNJ + "nore"), a combining grapheme joiner or a Hangul filler.
+_SQUASH = re.compile(r"[\u00ad\u034f\u061c\u115f\u1160\u200b-\u200f\u2060-\u2064\u206a-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0]")
+#: Bidirectional marks and controls, and the tag block (an invisible copy of ASCII).
+_BIDI_MARKS = frozenset(chr(c) for c in (0x200E, 0x200F, 0x061C, *range(0x202A, 0x202F), *range(0x2066, 0x206A)))
+_TAG_CHARS = re.compile(f"[{chr(0xE0000)}-{chr(0xE007F)}]")
+#: The three flags that are written as a tag sequence (England, Scotland, Wales): a black flag, the tags of
+#: "gbeng", "gbsct" or "gbwls", a cancel tag. Nothing else can ride in them.
+_RGI_FLAGS = re.compile(chr(0x1F3F4) + "(?:" + "|".join("".join(chr(0xE0000 + ord(c)) for c in word) for word in ("gbeng", "gbsct", "gbwls"))
+                        + ")" + chr(0xE007F))
 
 
-def _invisible(text: str) -> tuple[int, int]:
+def _beside_rtl(text: str, i: int) -> bool:
+    """Whether the nearest letter on either side of text[i] — past spaces and other bidirectional marks — is
+    written right to left (Hebrew, Arabic, Syriac...)."""
+    for step in (-1, 1):
+        j, looked = i + step, 0
+        while 0 <= j < len(text) and looked < 6:
+            ch = text[j]
+            if ch != " " and ch not in _BIDI_MARKS:
+                if unicodedata.bidirectional(ch) in ("R", "AL"):
+                    return True
+                break
+            j, looked = j + step, looked + 1
+    return False
+
+
+def _invisible(text: str, code: bool = False) -> tuple[int, int]:
     """(hiding, odd). `hiding`: characters that hide or reorder text, in a document as in code ("Trojan
     Source"): bidirectional controls and isolates (U+202A-202E, U+2066-2069) and tag characters
     (U+E0000-E007F, an invisible ASCII). `odd`: other zero-width characters that are not how a script is
     written: a zero-width space, a word joiner, a joiner that stands beside no letter. A ZWNJ, ZWJ or ALM
     between letters, or after a virama (Indic scripts write one at the end of a syllable or a word), is
-    real orthography (Persian, Indic, Arabic, emoji sequences) and counts for nothing."""
+    real orthography (Persian, Indic, Arabic, emoji sequences) and counts for nothing; so are the three flags
+    written as tag sequences, and — in text, not in `code` — an embedding or an isolate beside Hebrew or Arabic
+    letters (U+202D and U+202E, the overrides, always count)."""
     if text.isascii():
         return 0, 0
+    if _TAG_CHARS.search(text):
+        text = _RGI_FLAGS.sub("", text)
     hiding = odd = 0
     for i, ch in enumerate(text):
         if ch < "\x80":
             continue
         cp = ord(ch)
         if 0x202A <= cp <= 0x202E or 0x2066 <= cp <= 0x2069 or 0xE0000 <= cp <= 0xE007F:
+            if not code and cp not in (0x202D, 0x202E) and cp < 0xE0000 and _beside_rtl(text, i):
+                continue
             hiding += 1
         elif unicodedata.category(ch) != "Cf" or ch in _SHAPING or ch in _SCRIPT_FORMATS:
             continue
@@ -324,55 +431,127 @@ class Finding:
     excerpt: str
 
 
+def _shown(name: str) -> str:
+    """A file name as the user is shown it: a control character, a line break or a bidirectional or other format
+    character becomes a visible escape (`\\x1b`, `\\u202e`), so a name can neither repaint the screen nor pass for another."""
+    if name.isprintable():
+        return name
+    bs = chr(92)
+    return "".join(ch if ch.isprintable() else (f"{bs}x{ord(ch):02x}" if ord(ch) < 0x100 else f"{bs}u{ord(ch):04x}" if ord(ch) < 0x10000
+                                                else f"{bs}U{ord(ch):08x}") for ch in name)
+
+
+def _blank(line: str) -> bool:
+    return not line.replace(_BOM, "").strip()
+
+
 def _prepare(text: str, kind: str) -> list[tuple[int, str, _Line]]:
-    """The lines of a text with what the rules need to know about each: where a fenced block is, and
-    where a SKILL.md's frontmatter is."""
+    """The lines of a text with what the rules need to know about each: where a fenced block is (one that is
+    closed: an unclosed fence is not a code block), where a SKILL.md's frontmatter is (after a byte-order mark or blank
+    lines too), and which lines of a script are comments."""
+    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    read = [line if line.isascii() else _SQUASH.sub("", line) for line in lines]
+    front_from = front_to = -1
+    fenced = [False] * len(lines)
+    if kind == "text":
+        if text.lstrip(string.whitespace + _BOM).startswith("---"):
+            first = next((i for i, line in enumerate(lines) if not _blank(line)), -1)
+            if first >= 0 and lines[first].replace(_BOM, "").strip() == "---":
+                close = next((i for i in range(first + 1, len(lines)) if lines[i].strip() in ("---", "...")), -1)
+                if close > first:
+                    front_from, front_to = first, close
+        opener = None                                   # (line, mark, length) of the fence that is open
+        for i, line in enumerate(read if "```" in text or "~~~" in text else ()):
+            if front_from <= i <= front_to:
+                continue
+            m = _FENCE.match(line)
+            if m is None:
+                continue
+            mark = m.group(1)
+            if opener is None:
+                opener = (i, mark[0], len(mark))
+            elif mark[0] == opener[1] and len(mark) >= opener[2] and not line[m.end():].strip():
+                for j in range(opener[0] + 1, i):
+                    fenced[j] = True
+                opener = None
     out: list[tuple[int, str, _Line]] = []
-    lines = text.splitlines()
-    front_end = 0
-    if kind == "text" and lines and lines[0].strip() == "---":
-        front_end = next((i for i, line in enumerate(lines[1:], 1) if line.strip() in ("---", "...")), 0)
-    fenced = False
-    for n, line in enumerate(lines, 1):
-        read = line if line.isascii() else _SQUASH.sub("", line)
-        front = 0 < n - 1 < front_end
-        if not front and kind == "text" and _FENCE.match(read):
-            fenced = not fenced
-            out.append((n, line, _Line(read)))
-            continue
-        out.append((n, line, _Line(read, fenced=fenced and not front, front=front)))
+    code = kind not in _PROSE
+    for i, line in enumerate(lines):
+        if not read[i] or read[i].isspace():
+            continue                                    # a blank line holds nothing for a rule; the others keep their numbers
+        comment = code and _COMMENT.match(read[i]) is not None and not (i == 0 and read[i].startswith("#!"))
+        out.append((i + 1, line, _Line(read[i], fenced=fenced[i], front=front_from < i < front_to, comment=comment)))
     return out
+
+
+def _reads(rule: Rule, kind: str) -> tuple[bool, bool]:
+    """(whether the rule reads the lines of a file of this kind, whether it reads a script's comment lines). Prose is
+    read by the `text` rules, and by the `prose` ones in a `text` file; a script's code lines by the rules for
+    its kind; its full-line comments by the `text` rules (a skill's script only: a package's comments are its authors')."""
+    where = rule.where
+    if kind in _PROSE:
+        return where == "text" or (where == "prose" and kind == "text"), False
+    if where == "text":
+        return False, kind == "skill_code"
+    return (where == kind or (where == "code" and kind in ("skill_code", "code")) or (where == "package" and kind == "code")), False
+
+
+def _hit(rule: Rule, line: _Line) -> bool:
+    if rule.needs is not None and rule.needs.search(line.text) is None:
+        return False
+    if rule.accept is None and not rule.guard:
+        return rule.pattern.search(line.text) is not None
+    return any((rule.accept is None or rule.accept(line, m)) and not (rule.guard and _prohibited(line, m))
+               for m in rule.pattern.finditer(line.text))
 
 
 def scan_text(name: str, text: str, *, kind: str) -> list[Finding]:
     """`kind`: text (a skill's instructions), skill_code (a skill's script), code (a package
     file), manifest (package.json)."""
     out: list[Finding] = []
+    shown = _shown(name)
     lines = _prepare(text, kind)
+    flat = text if text.isascii() else _SQUASH.sub("", text)
+    pools = (lines, []) if kind in _PROSE else ([x for x in lines if not x[2].comment], [x for x in lines if x[2].comment])
     for rule in RULES:
-        applies = (rule.where == "any" or rule.where == kind
-                   or (rule.where == "code" and kind in ("code", "skill_code"))
-                   or (rule.where == "package" and kind == "code"))
-        if not applies:
-            continue
-        for n, raw, line in lines:
-            if rule.needs is not None and rule.needs.search(line.text) is None:
-                continue
-            if rule.accept is None:
-                hit = rule.pattern.search(line.text) is not None
-            else:
-                hit = any(rule.accept(line, m) for m in rule.pattern.finditer(line.text))
-            if hit:
-                out.append(Finding(rule.id, rule.level, name, n, raw.strip()[:160]))
+        on_lines, on_comments = _reads(rule, kind)
+        pool = pools[0] if on_lines else pools[1] if on_comments else ()
+        if not pool or (rule.needs is not None and rule.needs.search(flat) is None):
+            continue                        # nothing to read, or nothing in the whole text a match could start from
+        for n, raw, line in pool:
+            if _hit(rule, line):
+                out.append(Finding(rule.id, "note" if line.comment else rule.level, shown, n, raw.strip()[:160]))
                 break                       # one finding per rule per file is enough to show
-    hiding, odd = _invisible(text)
+    hiding, odd = _invisible(text, code=kind not in _PROSE)
     if hiding:
-        out.append(Finding("invisible_characters", "high", name, 0, f"{hiding} bidirectional-control or tag characters"))
+        # A skill's bidirectional or tag characters are dangerous (P6); a package's files are judged as before: a note.
+        level = "high" if kind in ("text", "skill_code") else "note"
+        out.append(Finding("invisible_characters", level, shown, 0, f"{hiding} bidirectional-control or tag characters"))
     if odd:
-        out.append(Finding("zero_width_characters", "note", name, 0, f"{odd} zero-width characters"))
+        out.append(Finding("zero_width_characters", "note", shown, 0, f"{odd} zero-width characters"))
     if kind == "text":
         if re.search(r"[A-Za-z0-9+/]{400,}={0,2}", text):
-            out.append(Finding("long_encoded_blob", "note", name, 0, "a long base64-like block"))
+            out.append(Finding("long_encoded_blob", "note", shown, 0, "a long base64-like block"))
+    return out
+
+
+_PLAIN_NAME = re.compile(r"[\w.-]*")
+
+
+def scan_name(rel: str) -> list[Finding]:
+    """A file's or folder's name, read by the `text` rules at note level: the model is shown the list of a skill's
+    files, and a name can say anything. A name of letters, digits, dots and dashes cannot hold what a rule looks for."""
+    base = rel.rstrip("/").rsplit("/", 1)[-1]
+    if _PLAIN_NAME.fullmatch(base):
+        return []
+    shown = _shown(rel)
+    line = _Line(_SQUASH.sub("", base).replace("\n", " ").replace("\r", " "))
+    out = [Finding(rule.id, "note", shown, 0, shown[:160]) for rule in RULES if rule.where == "text" and _hit(rule, line)]
+    hiding, odd = _invisible(base, code=False)
+    if hiding:
+        out.append(Finding("invisible_characters", "note", shown, 0, f"{hiding} bidirectional-control or tag characters"))
+    if odd:
+        out.append(Finding("zero_width_characters", "note", shown, 0, f"{odd} zero-width characters"))
     return out
 
 
@@ -410,10 +589,11 @@ _DEPENDENCY_DIRS = frozenset({".git", "node_modules", "__pycache__", ".venv", "v
 
 
 def _kind_for(rel: str, text: str = "") -> str | None:
-    suffix = PurePosixPath(rel).suffix.lower()
-    if suffix in _TEXT_SUFFIXES:
+    path = PurePosixPath(rel)
+    if path.suffix.lower() in _TEXT_SUFFIXES:
         return "text"
-    if suffix in _CODE_SUFFIXES or rel.startswith("scripts/") or text.startswith("#!"):
+    if (path.suffix.lower() in _CODE_SUFFIXES or text.startswith("#!")
+            or "scripts" in (part.lower() for part in path.parts[:-1])):          # a scripts/ folder, at any depth, in any case
         return "skill_code"
     return None
 
@@ -436,11 +616,12 @@ def same_findings(a: dict | None, b: dict | None) -> bool:
     return key(a) == key(b)
 
 
-def _scan(skill_md: str, items: list[tuple[str, str, str]], unread: list[str], deadline: float | None = None) -> dict:
+def _scan(skill_md: str, items: list[tuple[str, str, str]], unread: list[str], deadline: float | None = None,
+          names: list[str] = ()) -> dict:
     """A skill given as (path, text, kind) items, in the order to scan them (code first): its whole SKILL.md
     (the frontmatter too — a description is read by the model as well) and each file as instructions or as
-    code. What could not be read (`unread`, any text over MAX_FILE_BYTES, read as far as that, and whatever
-    the `deadline` cut off) is one `not_scanned` note."""
+    code; and the `names` of its files and folders. What could not be read (`unread`, any text over MAX_FILE_BYTES, read
+    as far as that, and whatever the `deadline` cut off) is one `not_scanned` note."""
     found = scan_text("SKILL.md", skill_md, kind="text")
     unread = [*unread]
     for i, (rel, text, kind) in enumerate(items):
@@ -450,10 +631,14 @@ def _scan(skill_md: str, items: list[tuple[str, str, str]], unread: list[str], d
         found += scan_text(rel, text[:MAX_FILE_BYTES], kind=kind)
         if len(text) > MAX_FILE_BYTES:
             unread.append(rel)
+    for rel in names:
+        if deadline is not None and time.monotonic() >= deadline:
+            break
+        found += scan_name(rel)
     if unread:
-        found.append(Finding("not_scanned", "note", unread[0], 0,
-                             (f"{len(unread)} not read (too large, too many, a link, dependencies or unreadable): "
-                              + ", ".join(unread[:6]))[:160]))
+        found.append(Finding("not_scanned", "note", _shown(unread[0]), 0,
+                             (f"{len(unread)} not read, and a file that was not read can still run: "
+                              + ", ".join(_shown(name) for name in unread[:6]))[:160]))
     summary = summarise(found)
     summary["verdict"] = verdict(summary)
     return summary
@@ -469,16 +654,18 @@ def scan_texts(skill_md: str, files: dict[str, str], *, unread: list[str] = ()) 
         if kind is not None and rel != "SKILL.md":
             items.append((rel, text, kind))
     items.sort(key=lambda item: (item[2] != "skill_code", item[0]))        # code first, then by name
-    return _scan(skill_md, items, [*unread])
+    return _scan(skill_md, items, [*unread], names=[*files, *unread])
 
 
-def _list_folder(folder: Path, candidates: list[tuple[int, str, str, Path]], unread: list[str], deadline: float) -> None:
+def _list_folder(folder: Path, candidates: list[tuple[int, str, str, Path]], unread: list[str], deadline: float,
+                 names: list[str]) -> None:
     """Walk `folder` top-down WITHOUT recursion (os.walk recurses on Python 3.11) and file every regular
     text or code file under it in `candidates` as (0 code | 1 text, name, kind, path); everything that will
     not be read goes by name into `unread`: a link (never followed), a dependency folder, a folder nested
     deeper than MAX_DEPTH, a folder it cannot list, a pipe, socket or device (opening one can wait for
-    ever), whatever lies past MAX_WALKED files, and whatever the `deadline` stopped it short of. Code is a
-    source file, anything in scripts/, a `#!` file and an executable; the rest that is read is text."""
+    ever), whatever lies past MAX_WALKED files, and whatever the `deadline` stopped it short of. Every name
+    it meets goes into `names`. Code is a source file, anything in a scripts/ folder, a `#!` file and an
+    executable; the rest that is read is text."""
     def relative(path) -> str:
         try:
             return Path(path).relative_to(folder).as_posix()
@@ -505,6 +692,7 @@ def _list_folder(folder: Path, candidates: list[tuple[int, str, str, Path]], unr
                 unread.extend(relative(left) + "/" for left, _ in [*below, *reversed(pending)])
                 return
             rel = relative(entry.path)
+            names.append(rel)
             try:
                 if entry.is_symlink():
                     unread.append(rel + "/" if entry.is_dir() else rel)
@@ -543,13 +731,14 @@ def scan_skill_folder(folder: Path | None, skill_md: str) -> dict:
     deadline = time.monotonic() + MAX_SCAN_SECONDS
     candidates: list[tuple[int, str, str, Path]] = []
     unread: list[str] = []
+    names: list[str] = []
     try:
         walkable = folder is not None and folder.is_dir()
     except OSError:
         walkable = False
         unread.append("./")
     if walkable:
-        _list_folder(folder, candidates, unread, deadline)
+        _list_folder(folder, candidates, unread, deadline, names)
     items: list[tuple[str, str, str]] = []
     spent = 0
     ordered = sorted(candidates, key=lambda candidate: (candidate[0], candidate[1]))
@@ -566,7 +755,7 @@ def scan_skill_folder(folder: Path | None, skill_md: str) -> dict:
             spent += size
         except OSError:
             unread.append(rel)
-    return _scan(skill_md, items, unread, deadline)
+    return _scan(skill_md, items, unread, deadline, names)
 
 
 def _own_files(root: Path) -> list[Path]:
