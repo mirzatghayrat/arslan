@@ -389,7 +389,9 @@ def classify(command: str) -> Classification:
 
 
 def _read(text: str) -> list[Finding]:
-    """The findings of `classify`; raises `_Unreadable` past a parse ceiling."""
+    """The findings of `classify`; raises `_Unreadable` past a parse ceiling. The command is read as
+    zsh runs it (`_without_zsh_modifiers`), whose rewrites only take out or split: no text a floor
+    pattern needs goes (`f()` stays, so `:(){ :|:& };:` is still the fork bomb)."""
     shell, bodies = split_heredocs(text)
     _check_ceilings(shell)
     shell = _without_zsh_modifiers(shell)
@@ -508,10 +510,14 @@ def split_heredocs(text: str) -> tuple[str, list[tuple[str, str]]]:
     return "".join(out), bodies
 
 
-#: zsh precommand modifiers (run_command runs `/bin/zsh -c`): `noglob`, `nocorrect` and `-` run the
-#: command after them, `repeat N` runs it N times, and `=git` is git's own path (review I2).
-_ZSH_MODIFIER = re.compile(r"(?:noglob|nocorrect|-)[ \t]+|repeat[ \t]+\S+[ \t]+|=(?=[\w./~])")
-_ZSH_MODIFIER_WORDS = frozenset({"noglob", "nocorrect", "-"})
+#: zsh precommand modifiers and keywords (run_command runs `/bin/zsh -c`): `noglob`, `nocorrect`, `-`
+#: and `coproc` run the command after them, `=git` is git's own path, `repeat N` runs it N times (and
+#: runs N's own substitutions), and `f() cmd` makes `cmd` a function body (review I2, N2).
+_ZSH_MODIFIER = re.compile(r"(?:noglob|nocorrect|coproc|-)[ \t]+|=(?=[\w./~])")
+_ZSH_REPEAT = re.compile(r"repeat[ \t]+")
+_FUNCTION_HEAD = re.compile(r"(?:function[ \t]+)?[\w.:-]+[ \t]*\([ \t]*\)")
+_ZSH_MODIFIER_WORDS = frozenset({"noglob", "nocorrect", "coproc", "-"})
+_MAX_REWRITES = 16
 
 
 def _heredoc_program(text: str, at: int) -> str:
@@ -539,18 +545,89 @@ def _heredoc_program(text: str, at: int) -> str:
 
 
 def _without_zsh_modifiers(shell: str) -> str:
-    """The command with the zsh modifiers that open a command taken out, so every rule, Hermes'
-    text patterns too, sees the command they run: `noglob sudo ls` is `sudo ls` (review I2)."""
-    edits: list[tuple[int, int, str]] = []
-    cursor = 0
-    for start in sorted(hermes._iter_shell_command_starts(shell)):
-        end = start
-        while (match := _ZSH_MODIFIER.match(shell, end)) is not None:
-            end = match.end()
-        if end > start and start >= cursor:
-            edits.append((start, end, ""))
-            cursor = end
-    return hermes._splice(shell, edits) if edits else shell
+    """The command with what zsh reads before a command word taken out, so every rule, Hermes' text
+    patterns too, sees the command that runs: `noglob sudo ls` is `sudo ls`, `exec noglob git push`
+    is `exec git push`, `repeat $(rm -rf ~) true` is `$(rm -rf ~)` then `true` (zsh runs the count),
+    `f() git push` is `git push`, `{git push}` is `{git push` then `}` (review I2, N2, items 12–13).
+    Read at every command word, a wrapper's too, until nothing changes."""
+    for _ in range(_MAX_REWRITES):
+        rewritten = _rewrite_command_words(shell)
+        if rewritten == shell:
+            return shell
+        shell = rewritten
+    raise _Unreadable("zsh modifiers past the rewrite ceiling")
+
+
+def _rewrite_command_words(shell: str) -> str:
+    edits: set[tuple[int, int, str]] = set()
+    starts = set(hermes._iter_shell_command_starts(shell))
+    for at in starts | {start for start, _end, _word in hermes._iter_shell_command_word_spans(shell)}:
+        end = at
+        while True:
+            if (match := _ZSH_MODIFIER.match(shell, end)) is not None:
+                edits.add((end, match.end(), ""))
+                end = match.end()
+            elif (match := _FUNCTION_HEAD.match(shell, end)) is not None:
+                if shell[match.end():match.end() + 1] != "\n":     # `f()` stays: `:(){ :|:& };:` is read
+                    edits.add((match.end(), match.end(), "\n"))
+                end = match.end()
+            elif (match := _ZSH_REPEAT.match(shell, end)) is not None:
+                count_end = _word_end(shell, match.end())
+                if count_end == match.end():
+                    break
+                edits |= {(end, match.end(), ""), (count_end, count_end, "\n")}
+                end = hermes._skip_shell_whitespace(shell, count_end)
+            else:
+                break
+    for at in starts:                       # `{git push}`: zsh closes the group at a `}` with no space
+        if at and shell[at - 1] == "{":
+            close = _closing_brace(shell, at)
+            if close is not None and not shell[close - 1].isspace() and shell[close - 1] != ";":
+                edits.add((close, close, "\n"))
+    kept, cursor = [], 0
+    for edit in sorted(edits):
+        if edit[0] >= cursor:
+            kept.append(edit)
+            cursor = edit[1]
+    return hermes._splice(shell, kept) if kept else shell
+
+
+def _word_end(text: str, at: int) -> int:
+    """Where the shell word at `at` ends: unquoted whitespace or `;&|<>` outside parentheses and
+    backticks. `$((1))` is one word (`hermes._read_shell_word` ends it one `)` early)."""
+    depth, tick = 0, False
+    for kind, i, _j, quote in hermes._scan_shell(text, at):
+        if kind != "char" or quote is not None:
+            continue
+        ch = text[i]
+        if ch == "`":
+            tick = not tick
+        elif tick:
+            continue
+        elif ch == "(":
+            depth += 1
+        elif ch == ")":
+            if not depth:
+                return i
+            depth -= 1
+        elif not depth and (ch.isspace() or ch in ";&|<>"):
+            return i
+    return len(text)
+
+
+def _closing_brace(text: str, at: int) -> int | None:
+    """The `}` that closes the brace group whose body starts at `at` (`${…}` is not a group)."""
+    depth = 0
+    for kind, i, _j, quote in hermes._scan_shell(text, at, subst="uq", brace=True):
+        if kind != "char" or quote is not None:
+            continue
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            if not depth:
+                return i
+            depth -= 1
+    return None
 
 
 def _check_ceilings(*texts: str) -> None:
@@ -642,7 +719,7 @@ def _commands(text: str, depth: int = 0) -> list[list[str]]:
 
     for segment in hermes._iter_top_level_shell_segments(text):
         for start, _end, word in hermes._iter_shell_command_word_spans(segment):
-            bounded = hermes._shell_command_segment(segment, start)
+            bounded = _command_text(segment, start)
             tokens = hermes._shell_segment_tokens(bounded, 0)
             if tokens is None:              # quoting the shell would refuse: read it word by word
                 tokens = bounded.split()
@@ -658,6 +735,29 @@ def _commands(text: str, depth: int = 0) -> list[list[str]]:
             for inner in _run_by(tokens):
                 add(inner)
     return out
+
+
+def _command_text(segment: str, start: int) -> str:
+    """The simple command starting at `start`: to the first unquoted `;` `&` `|`, newline or comment,
+    or the `)` or backtick closing the substitution it sits in. A `(` opened inside the command
+    (`<(…)`, `>(…)`, `=(…)`, a glob qualifier `*(.)`) closes inside it: its `)` does not end the
+    command, which dropped every later argument (review N1)."""
+    depth, end = 0, len(segment)
+    for kind, i, _j, quote in hermes._scan_shell(segment, start, subst="uq", brace=True, comments=True):
+        if kind == "comment":
+            end = i
+            break
+        if kind != "char" or quote is not None:
+            continue
+        ch = segment[i]
+        if ch == "(":
+            depth += 1
+        elif ch == ")" and depth:
+            depth -= 1
+        elif ch in ";&|\n)`" and not depth:
+            end = i
+            break
+    return segment[start:end].strip()
 
 
 def _run_by(argv: list[str]) -> list[list[str]]:
@@ -994,7 +1094,20 @@ def _uploads(argv: list[str]) -> bool:
                                          for i, a in enumerate(args))
     if name != "curl":
         return False
-    get = data = sends = False
+    transfers: list[list[str]] = [[]]
+    for arg in args:                        # `-:` / `--next`: the next URL has options of its own (review N4)
+        if arg in ("-:", "--next"):
+            transfers.append([])
+        else:
+            transfers[-1].append(arg)
+    return any(_curl_transfer_sends(transfer) for transfer in transfers)
+
+
+def _curl_transfer_sends(args: list[str]) -> bool:
+    """One curl transfer sends: a form or a file upload, a sending method, or data — unless `-G`
+    makes the data the query of a GET, and even then when the data names a file (`-d @f`): its
+    contents leave in the URL."""
+    get = data = files = sends = False
     i = 0
     while i < len(args):
         arg = args[i]
@@ -1006,6 +1119,8 @@ def _uploads(argv: list[str]) -> bool:
                 get = get or _curl_option_stands(args, i)
             elif option in _CURL_DATA:
                 data = True
+                value = value if equals else (args[i + 1] if i + 1 < len(args) else "")
+                files = files or _curl_data_names_a_file(option, value)
             elif option in _CURL_SENDING:
                 sends = True
             elif option == "--request":
@@ -1022,6 +1137,8 @@ def _uploads(argv: list[str]) -> bool:
                     get = get or _curl_option_stands(args, i)
                 elif letter == "d":
                     data = True
+                    value = letters[j + 1:] or (args[i + 1] if i + 1 < len(args) else "")
+                    files = files or _curl_data_names_a_file("--data", value)
                 elif letter in "FT":
                     sends = True
                 elif letter == "X":
@@ -1033,7 +1150,18 @@ def _uploads(argv: list[str]) -> bool:
             i += skip
             continue
         i += 1
-    return sends or (data and not get)
+    return sends or (data and (not get or files))
+
+
+def _curl_data_names_a_file(option: str, value: str) -> bool:
+    """`-d @f`, `--data-binary @f`; `--data-urlencode @f` or `name@f` (an `@` before any `=`).
+    `--data-raw` takes its value as it is."""
+    if option == "--data-raw":
+        return False
+    if option == "--data-urlencode":
+        at, equals = value.find("@"), value.find("=")
+        return at >= 0 and (equals < 0 or at < equals)
+    return value.startswith("@")
 
 
 def _curl_option_stands(args: list[str], i: int) -> bool:
