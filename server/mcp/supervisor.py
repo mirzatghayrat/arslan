@@ -75,7 +75,10 @@ _RUNTIME_NAMES = {"node": "Node.js", "uv": "uv"}
 
 NOT_MCP_LINE = ("this program did not answer as an MCP server — it may need a start flag such as "
                 "`--mcp`")
-SIGN_IN_LINE = ("authorization needed: the saved sign-in expired or was never completed — use "
+#: How an OAuth server's sign-in line begins: such a server is asked to sign in (Authorize), even
+#: when it also sends headers (Task 7 re-review R5).
+SIGN_IN_PREFIX = "authorization needed:"
+SIGN_IN_LINE = (f"{SIGN_IN_PREFIX} the saved sign-in expired or was never completed — use "
                 "Authorize on this server in Capabilities")
 #: How `_give_up`'s line begins: a server that keeps dropping its connection is answered as unstable,
 #: never as failing to start (Task 7 review M-3).
@@ -83,7 +86,7 @@ GAVE_UP_LINE = "the server keeps dropping its connection"
 #: The beginnings of every line `classify` and `_give_up` write. Only such a line may enter the
 #: system prompt (ruling 6); `_describe_failure` text and anything else stays out.
 SAFE_REASON_PREFIXES = (
-    "authorization failed (HTTP ", "authorization needed:", "command `", "program `",
+    "authorization failed (HTTP ", SIGN_IN_PREFIX, "command `", "program `",
     "the URL did not answer as an MCP endpoint", "did not answer tools/list within ",
     "did not start within ", "the connection closed during start",
     "this program did not answer as an MCP server", "the server exited during start",
@@ -752,16 +755,23 @@ class Supervisor:
         with self._verb(server_id):
             gen = self._bump(server_id)      # first, like forget/set_enabled(off): a re-list the
             await self._cancel_plan(server_id)   # drop below wakes sees a deliberate drop (M-5)
-            await mcp_session.manager.drop(server_id)
             self._reconnects.pop(server_id, None)
-            async with db_session.AsyncSessionLocal() as db:
-                row = await db.get(MCPServer, server_id)
-            secrets = _secrets(discovery.runtime_dict(row)) if row is not None else []
-            line = f"{GAVE_UP_LINE} ({MAX_RECONNECTS} reconnects) — Arslan retries it later"
-            tail = mcp_session.manager.stderr_tail(server_id, secrets=secrets)
-            text = line if not tail else f"{line}\n{tail}"
-            await self._set(server_id, gen, "failed",
-                            error=spawn_env.mask(text, secrets)[:LAST_ERROR_CAP])
+            try:
+                async with db_session.AsyncSessionLocal() as db:
+                    row = await db.get(MCPServer, server_id)
+                secrets = _secrets(discovery.runtime_dict(row)) if row is not None else []
+                line = f"{GAVE_UP_LINE} ({MAX_RECONNECTS} reconnects) — Arslan retries it later"
+                tail = mcp_session.manager.stderr_tail(server_id, secrets=secrets)
+                text = line if not tail else f"{line}\n{tail}"
+                # The state before the drop: a call the drop wakes reads why it was cut — the
+                # supervisor gave up for now — never "restarting" (Task 7 re-review).
+                await self._set(server_id, gen, "failed",
+                                error=spawn_env.mask(text, secrets)[:LAST_ERROR_CAP])
+            finally:
+                # Always, even if the write failed — unless a newer plan has started meanwhile: its
+                # attempt drops the old session itself, and this drop must not kill its new one (N12).
+                if self._gen.get(server_id, 0) == gen:
+                    await mcp_session.manager.drop(server_id)
 
     def _on_tools_changed(self, server_id: int) -> None:
         if not self.running:

@@ -38,6 +38,9 @@ _SUMMARY_CAP = 6000       # chars of a tool's text handed to the model
 #: timeout, which fires first once the request is out; the tool loop's `timeout_s` is a backstop.
 CALL_BOUND_S = CALL_TIMEOUT_S + 5.0
 
+#: Closes of replaced sessions still running (strong references: the event loop keeps only weak ones).
+_CLOSING: set[asyncio.Task] = set()
+
 _STATE_WORDS = {"starting": "still starting", "failed": "failing to start",
                 "parked": "stopped until it is fixed", "needs_auth": "waiting for the user to sign in",
                 "off": "switched off by the user"}
@@ -57,11 +60,12 @@ def state_words(srv, st: str) -> str:
     """Arslan's words for a not-ready state; a call's answer and the status line say the same, and
     never a raw state word (Task 7 review M-3). A server with a key or header is asked to re-check it
     (`fix_for`'s fix), never to sign in; one the supervisor gave up on after its reconnects is
-    unstable, not failing to start."""
-    from server.mcp.supervisor import GAVE_UP_LINE
+    unstable, not failing to start. A saved sign-in that expired (OAuth: "authorization needed: …
+    use Authorize") is a sign-in, even for an http server that also sends headers (re-review R5)."""
+    from server.mcp.supervisor import GAVE_UP_LINE, SIGN_IN_PREFIX
     if st == "needs_auth":
         from server.mcp.discovery import runtime_dict
-        if runtime_dict(srv).get("env"):
+        if not (srv.last_error or "").startswith(SIGN_IN_PREFIX) and runtime_dict(srv).get("env"):
             return "waiting for the user to re-check its key/token"
     if st == "failed" and (srv.last_error or "").startswith(GAVE_UP_LINE):
         return "unstable"
@@ -161,29 +165,44 @@ class MCPProxyExecutor:
         prefix = f"[MCP {srv.label} · {server.get('transport') or 'stdio'}] "
         session = manager.cached(self.server_id)        # the session the call below runs on
         try:
-            async with asyncio.timeout(CALL_BOUND_S):
+            async with asyncio.timeout(CALL_BOUND_S) as bound:
                 result = await manager.call_tool(server, self.external_name, args or {})
         except NotStarted:
             supervisor.schedule(self.server_id)            # never waits (spec §B1)
             return not_ready_result(srv, state="starting")
-        except TimeoutError:
+        except TimeoutError as exc:
+            if not bound.expired():                        # raised inside the call: an ordinary failure
+                return await self._fail(f"MCP tool '{self.external_name}' failed: {exc}", prefix, server)
             # Stuck past the SDK's own timeout (a send that never went out): the session that hung
             # is replaced — the fresh start first, then the drop (every verb's order: the generation
             # has moved before the drop wakes anyone), and only while it is still the cached one (a
-            # newer session is a start's healthy one). The drop finishes even if this turn is cut.
+            # newer session is a start's healthy one). The drop is not awaited: it pops the session
+            # and wakes its callers at its first step, and its close (an SDK stdio close may take
+            # ~4 s, an http one sends a DELETE) never eats the bound→backstop margin, nor is it cut
+            # if this turn is (re-review N-2).
             if session is not None and manager.cached(self.server_id) is session:
                 supervisor.schedule(self.server_id, fresh=True)
-                await asyncio.shield(manager.drop(self.server_id))
+                closing = asyncio.ensure_future(manager.drop(self.server_id))
+                _CLOSING.add(closing)
+                closing.add_done_callback(_CLOSING.discard)
             return await self._fail(
                 f"MCP tool '{self.external_name}' timed out after {CALL_BOUND_S:g} s", prefix, server)
         except Exception as exc:  # noqa: BLE001
             if is_dropped_error(exc):
                 # A death: the manager already told the supervisor, which restarts it. A drop the
-                # user caused — switched off, removed — restarts nothing, and the answer says so.
+                # user caused — switched off, removed — restarts nothing, and a give-up retries
+                # later (it writes `failed` before it drops); the answer says which.
+                from server.mcp.supervisor import GAVE_UP_LINE
                 async with db_session.AsyncSessionLocal() as db:
                     now = await db.get(MCPServer, self.server_id)
-                why = ("it was removed" if now is None else "the user switched it off"
-                       if not now.host_allowed else "Arslan is restarting it")
+                if now is None:
+                    why = "it was removed"
+                elif not now.host_allowed:
+                    why = "the user switched it off"
+                elif now.state == "failed" and (now.last_error or "").startswith(GAVE_UP_LINE):
+                    why = "it is unstable: it keeps dropping its connection, and Arslan retries it later"
+                else:
+                    why = "Arslan is restarting it"
                 return {"ok": False, "code": "mcp_dropped", "error": prefix + (
                     f"MCP '{srv.label}' lost its connection during this call; {why}. Whether the "
                     "call ran is unknown.")}

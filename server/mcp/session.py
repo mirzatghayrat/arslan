@@ -504,10 +504,12 @@ class MCPSessionManager:
                 name, args, read_timeout_seconds=timedelta(seconds=CALL_TIMEOUT_S)))
         except McpError as exc:
             if is_dropped_error(exc) or exc.error.code == httpx.codes.REQUEST_TIMEOUT:
-                await self._drop_after_call(sid, exc, entry)
+                # shielded: a caller cut mid-close (the whole-call bound, a stopped turn) never
+                # abandons the close nor the restart (re-review N-1)
+                await asyncio.shield(self._drop_after_call(sid, exc, entry))
             raise
         except Exception as exc:
-            await self._drop_after_call(sid, exc, entry)
+            await asyncio.shield(self._drop_after_call(sid, exc, entry))
             raise
 
     async def _drop_after_call(self, sid: int, exc: BaseException, entry) -> None:
