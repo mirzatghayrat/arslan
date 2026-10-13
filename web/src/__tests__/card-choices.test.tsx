@@ -3,6 +3,7 @@
 import type { ReactElement } from "react";
 import { describe, it, expect, vi, afterEach, type Mock } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { renderToStaticMarkup } from "react-dom/server";
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (k: string, o?: Record<string, unknown>) => (o ? `${k}:${JSON.stringify(o)}` : k) }),
@@ -441,7 +442,7 @@ describe("the action card's words, its icon and its red", () => {
     expect(screen.queryByText(/hands\.grant\./)).toBeNull();
   });
 
-  it("the grants are the two the card must not lose, and a Shortcut has none", () => {
+  it("five kinds have a grant line (what is granted, apart from for how long), and a Shortcut has none", () => {
     expect(Object.keys(handsMessages.en.grant).sort()).toEqual(
       ["browser_site", "desktop_app", "desktop_look", "desktop_risky", "mac_script"]);
   });
@@ -457,6 +458,55 @@ describe("the action card's words, its icon and its red", () => {
   it("a known kind reads its own words even when the frame brings a title", () => {
     render(card({ title: "Something else entirely?" }));
     expect(screen.getByTestId("action-title")).toHaveTextContent('hands.title.desktop_app:{"target":"Notes"}');
+  });
+
+  it("a known kind reads its own words, with its target, even when the model gave a why", () => {
+    // The kind's own title names what is granted (the website, the app); a model's line must not hide it.
+    render(card({ title: "Something else entirely?", why: "To check the weather" }));
+    expect(screen.getByTestId("action-title")).toHaveTextContent('hands.title.desktop_app:{"target":"Notes"}');
+    expect(screen.getByTestId("action-title")).not.toHaveTextContent("weather");
+  });
+
+  it("a kind it has no words for asks the model's why when the frame carries one, ahead of the server's title", () => {
+    render(card({ kind: "app", title: "Use App?", why: "To send Li the notes you wrote" }));
+    expect(screen.getByTestId("action-title")).toHaveTextContent("To send Li the notes you wrote");
+    expect(screen.getByTestId("action-title")).not.toHaveTextContent("Use App?");
+    cleanup();
+    render(card({ kind: "app", title: "", target: "com.example.App", why: "To send Li the notes you wrote" }));
+    expect(screen.getByTestId("action-title")).toHaveTextContent("To send Li the notes you wrote");   // with no title too
+  });
+
+  it("the model's line is not the server's English: only the title is tagged lang=en", () => {
+    render(card({ kind: "app", title: "Use App?", why: "给小李发笔记" }));
+    expect(screen.getByTestId("action-title")).not.toHaveAttribute("lang");
+    cleanup();
+    render(card({ kind: "app", title: "Use App?" }));
+    expect(screen.getByTestId("action-title")).toHaveAttribute("lang", "en");
+  });
+
+  it.each([["spaces", "   "], ["nothing", ""], ["no why at all", undefined]])(
+    "a why of %s asks the title, else the bare target: never a blank question", (_what, why) => {
+    render(card({ kind: "app", title: "Use App?", target: "com.example.App", why }));
+    expect(screen.getByTestId("action-title")).toHaveTextContent("Use App?");
+    cleanup();
+    render(card({ kind: "app", title: "", target: "com.example.App", why }));
+    expect(screen.getByTestId("action-title")).toHaveTextContent("com.example.App");
+  });
+
+  it("does not need Object.hasOwn, which the older WebKit the app still supports (macOS 11) does not have", () => {
+    // Rendered to a string: jsdom itself calls Object.hasOwn on every DOM call, so a DOM render cannot run without it.
+    const original = Object.getOwnPropertyDescriptor(Object, "hasOwn")!;
+    delete (Object as { hasOwn?: unknown }).hasOwn;
+    let known = "", unknown = "";
+    try {
+      known = renderToStaticMarkup(card({ kind: "browser_site", target: "x.com" }));
+      unknown = renderToStaticMarkup(card({ kind: "toString", title: "Use it?" }));   // a key every object has is still not a kind
+    } finally {
+      Object.defineProperty(Object, "hasOwn", original);
+    }
+    expect(known).toContain("hands.title.browser_site");
+    expect(unknown).toContain("Use it?");
+    expect(unknown).not.toContain("hands.title.toString");
   });
 
   it("the server's English question says it is English (R11); the card's own words and a bare target do not", () => {

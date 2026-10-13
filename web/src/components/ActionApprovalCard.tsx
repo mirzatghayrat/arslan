@@ -20,14 +20,15 @@ const GRANTS = new Set(["browser_site", "mac_script", "desktop_look", "desktop_a
  * 0.1.61: a card from the permission layer (a frame with `options`) offers its choices and takes a
  * note on No; a kind this card has no words for reads the frame's own question.
  */
-export default function ActionApprovalCard({ kind, target, detail, expiresAt, options, alwaysLabel, title, permKind,
+export default function ActionApprovalCard({ kind, target, detail, expiresAt, options, alwaysLabel, title, why, permKind,
   background, busy, queue, onOpenContext, onConfirm, onCancel }: {
   kind: string; target: string; detail: string;
   expiresAt?: number | null;
   /** 0.1.61 §A4: a card from the permission layer — its choices, its literal "Always" scope, its
-   *  one-line question (the server's words, used only for a kind this card has no words for) and
-   *  its permission kind (money, app_risky…). All absent on an old frame. */
-  options?: string[]; alwaysLabel?: string; title?: string; permKind?: string; background?: boolean;
+   *  one-line question (the server's words, used only for a kind this card has no words for), the
+   *  model's own reason (`why`: for such a kind it is the question, ahead of the title) and its
+   *  permission kind (money, app_risky…). All absent on an old frame. */
+  options?: string[]; alwaysLabel?: string; title?: string; why?: string; permKind?: string; background?: boolean;
   /** An answer is on its way: the card is inert (its buttons, its keys and its note). */
   busy?: boolean;
   queue?: AskQueuePosition; onOpenContext?: () => void;
@@ -38,7 +39,8 @@ export default function ActionApprovalCard({ kind, target, detail, expiresAt, op
 }) {
   const { t } = useTranslation();
   // Own keys only: a kind named "constructor" or "toString" is a kind this card has no words for.
-  const known = Object.hasOwn(ICONS, kind);
+  // (Object.hasOwn needs WebKit 15.4; the app still runs on macOS 11.)
+  const known = Object.prototype.hasOwnProperty.call(ICONS, kind);
   const Icon = known ? ICONS[kind] : CircleQuestionMark;
   const script = kind === "mac_script";
   const offered = offeredScopes(options, permKind);
@@ -50,9 +52,12 @@ export default function ActionApprovalCard({ kind, target, detail, expiresAt, op
   // The kind's own line says what is granted and for how long. With a choice to pick, only the first is
   // left to say; a kind with nothing but a scope sentence says nothing.
   const grantLine = !known ? null : !choice ? t(`hands.scope.${kind}`) : GRANTS.has(kind) ? t(`hands.grant.${kind}`) : null;
-  // The frame's question is the server's English (plan R11: localised in PR 8); a bare target is not words.
-  const fromFrame = !known && Boolean(title);
-  const heading = known ? t(`hands.title.${kind}`, { target }) : (title || target);
+  // The question for a kind this card has no words for (§A4): the model's own line when it gave one — it writes in
+  // the person's language — else the frame's title, which is the server's English (plan R11: localised in PR 8);
+  // a bare target is not words. A known kind keeps its own title, which names what is granted.
+  const modelLine = (why ?? "").trim();
+  const fromFrame = !known && !modelLine && Boolean(title);
+  const heading = known ? t(`hands.title.${kind}`, { target }) : (modelLine || title || target);
   // Allow is red for a step that pays or cannot be undone (plan R14: the kit's one RED_KINDS, shared with the command card).
   const red = kind === "desktop_risky" || RED_KINDS.has(permKind ?? "");
   return (

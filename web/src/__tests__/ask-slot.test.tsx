@@ -1,5 +1,6 @@
 /** 0.1.55 S2: every pending ask in ONE slot — queued, answered with ⌘⏎ / esc,
- *  the same confirm / cancel frames as before, a countdown from the frame's arrival. */
+ *  the same confirm / cancel frames as before for a frame without choices, a countdown from the
+ *  frame's arrival (its own expires_at when it has one: card-v2.test.tsx). */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, act, cleanup } from "@testing-library/react";
 
@@ -25,7 +26,8 @@ describe("the ask slot", () => {
     expect(screen.getAllByRole("alertdialog")).toHaveLength(1);
     expect(screen.getByTestId("runcmd-card")).toBeInTheDocument();
     expect(screen.getByTestId("ask-queue")).toHaveTextContent('"index":1,"total":2');
-    expect(screen.getByTestId("ask-countdown")).toHaveAccessibleName(/^[45]:\d\d$/);
+    // 0.1.61: a frame without expires_at waits the Mac's 30 minutes (approvals.TIMEOUT_S), not 5.
+    expect(screen.getByTestId("ask-countdown")).toHaveAccessibleName(/^(30:00|29:\d\d)$/);
     fireEvent.keyDown(window, { key: "Enter", metaKey: true });
     expect(send).toHaveBeenCalledWith({ type: "confirm_run_command", call_id: "c1", remember: false });
     // the next one moves up; its risk line is read from the script

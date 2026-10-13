@@ -31,7 +31,7 @@ interface ArslanState {
   roster: RosterMember[];
   // Pending shell command: set when a `propose_run_command` frame arrives; cleared
   // once the user confirms (sends confirm_run_command) or cancels.
-  pendingCommand: { callId: string; pretty: string; reason: string; remoteHost: string; fingerprints: string[]; background?: boolean; sandbox?: "outside" | "retry"; why?: string; receivedAt?: number } | null;
+  pendingCommand: ({ callId: string; pretty: string; reason: string; remoteHost: string; fingerprints: string[]; background?: boolean; sandbox?: "outside" | "retry"; why?: string; receivedAt?: number } & CardV2) | null;
   // 0.1.42 background jobs in this conversation, keyed by job id. Each has a
   // `kind: "job"` item in `items` marking where its live card sits.
   jobs: Record<string, JobCard>;
@@ -40,15 +40,18 @@ interface ArslanState {
   jobNotice: { seq: number; jobId: string; kind: "finished" | "needs_approval"; outcome: JobOutcome | null; goal: string } | null;
   // P3c: Arslan asks to enrol a machine. The card WRITES NOTHING over the socket —
   // its button calls the REST endpoint, which is what makes enrolment a human act.
-  // 0.1.55: receivedAt drives the asking card's countdown (cards expire after 300 s).
+  // 0.1.55: receivedAt drives the asking card's countdown; 0.1.61: a card waits 30 minutes, and counts down
+  // to the frame's own expires_at when it has one.
   pendingEnrollNode: { callId: string; name: string; host: string; user: string; fingerprints: string[]; receivedAt?: number } | null;
-  pendingWorkspaceWrite: { callId: string; workspace: string; action: string; path: string; background?: boolean; receivedAt?: number } | null;
-  pendingSchedule: { callId: string; name: string; when: string; background?: boolean; receivedAt?: number } | null;
+  pendingWorkspaceWrite: ({ callId: string; workspace: string; action: string; path: string; background?: boolean; receivedAt?: number } & CardV2) | null;
+  pendingSchedule: ({ callId: string; name: string; when: string; background?: boolean; receivedAt?: number } & CardV2) | null;
   // 0.1.57: add a capability and retry (only this window answers; the card may carry a key).
   pendingCapability: ({ callId: string; receivedAt?: number } & import("../api/client.types").CapabilityCard) | null;
   clearPendingCapability: () => void;
   // 0.1.45: a background job asks before it acts in the browser or on the Mac.
-  pendingAction: { callId: string; kind: ActionKind; target: string; detail: string; receivedAt?: number } | null;
+  pendingAction: ({ callId: string; kind: ActionKind | (string & {}); target: string; detail: string; background?: boolean; receivedAt?: number } & CardV2) | null;
+  // 0.1.61 §A4: a card here ran out with nobody answering — "waiting for you", never "declined".
+  cardExpired: boolean;
   // NEXT BUILD (conversation-driven MCP, Task 5): set when a `propose_connect_mcp`
   // frame arrives. env_keys carries credential NAMES + metadata only — the card
   // collects VALUES locally and sends them only over REST (addMcpServer). Cleared
@@ -112,6 +115,10 @@ interface ArslanState {
   clearPendingSchedule: () => void;
   clearPendingAction: () => void;
   clearPendingConnectMcp: () => void;
+  /** 0.1.61 §A4: the card `callId` ran out unanswered (the server tells a window nothing for its
+   *  own card): it leaves the slot, and the slot says it is waiting for you. */
+  expireCard: (callId: string) => void;
+  dismissCardExpired: () => void;
   clearError: () => void;
   resetForNewConversation: () => void;
   // Watchdog tick: marks the current turn `stalled` if it is active and no frame
@@ -174,6 +181,46 @@ function _voiceEnd() { _speaker?.end(); }
 function _voiceStop() { _speaker?.cancel(); _speaker = null; }
 
 
+/** 0.1.61 §A4: what a card from the permission layer adds to a pending card. */
+type CardV2 = { options?: string[]; alwaysLabel?: string; title?: string; permKind?: string; why?: string; expiresAt?: number };
+
+/** The v2 fields of a card frame (permissions._ask): its choices, its literal "Always" scope, its
+ *  question (the server's English title, and the model's own why when it gave one: that is the question,
+ *  §A4), its permission kind and the server's own expiry (Unix s → ms). An old frame has none and is
+ *  shown and answered exactly as before. */
+function _cardV2(frame: { options?: unknown; always_label?: unknown; title?: unknown; perm_kind?: unknown; why?: unknown; expires_at?: unknown }): CardV2 {
+  const options = Array.isArray(frame.options) ? frame.options.filter((o): o is string => typeof o === "string") : [];
+  return {
+    ...(options.length ? { options } : {}),
+    ...(typeof frame.always_label === "string" && frame.always_label ? { alwaysLabel: frame.always_label } : {}),
+    ...(typeof frame.title === "string" && frame.title ? { title: frame.title } : {}),
+    ...(typeof frame.perm_kind === "string" && frame.perm_kind ? { permKind: frame.perm_kind } : {}),
+    ...(typeof frame.why === "string" && frame.why.trim() ? { why: frame.why.trim() } : {}),
+    ...(typeof frame.expires_at === "number" && Number.isFinite(frame.expires_at)
+      ? { expiresAt: Math.round(frame.expires_at * 1000) } : {}),
+  };
+}
+
+type CardSlots = { pendingCommand: { callId: string } | null; pendingCapability: { callId: string } | null;
+  pendingWorkspaceWrite: { callId: string } | null; pendingSchedule: { callId: string } | null; pendingAction: { callId: string } | null };
+
+/** Whether the card `id` is one of the pending ones here. */
+function _shows(state: CardSlots, id: string): boolean {
+  return [state.pendingCommand, state.pendingCapability, state.pendingWorkspaceWrite, state.pendingSchedule,
+          state.pendingAction].some((p) => p?.callId === id);
+}
+
+/** The pending slots with the card `id` closed — only that card, never a newer one. */
+function _withoutCard(state: CardSlots, id: string) {
+  return {
+    ...(state.pendingCommand?.callId === id ? { pendingCommand: null } : {}),
+    ...(state.pendingCapability?.callId === id ? { pendingCapability: null } : {}),
+    ...(state.pendingWorkspaceWrite?.callId === id ? { pendingWorkspaceWrite: null } : {}),
+    ...(state.pendingSchedule?.callId === id ? { pendingSchedule: null } : {}),
+    ...(state.pendingAction?.callId === id ? { pendingAction: null } : {}),
+  };
+}
+
 // A background job's card is waiting: which job is not in the frame, so the
 // notice names the running one when there is exactly one.
 function _approvalNotice(state: { jobs: Record<string, JobCard>; jobNotice: { seq: number } | null }) {
@@ -229,6 +276,7 @@ function initialData() {
     stalled: false,
     lastStepAt: null as number | null,
     queued: false,
+    cardExpired: false,
     activeRunId: null as number | null,
     taskState: null as import("../api/tasks").TaskFrame | null,
     taskSequences: {} as Record<string, number>,
@@ -257,6 +305,7 @@ function makeActions(set: SetState, get: GetState) {
       set({
         items: [...get().items, { id: nextClientId(), kind: "message", role: "user", content, ...(attachments?.length ? { attachments } : {}) }],
         pending: true,
+        cardExpired: false,               // the user is back: the "waiting for you" line has done its job
         workStartedAt: runningSince(get()),
         lastFrameAt: Date.now(),
         lastStepAt: Date.now(),
@@ -294,6 +343,11 @@ function makeActions(set: SetState, get: GetState) {
   clearPendingCapability: () => set({ pendingCapability: null }),
     clearPendingAction: () => set({ pendingAction: null }),
     clearPendingConnectMcp: () => set({ pendingConnectMcp: null }),
+    expireCard: (callId: string) => {
+      const s = get();
+      if (_shows(s, callId)) set({ ..._withoutCard(s, callId), cardExpired: true });
+    },
+    dismissCardExpired: () => set({ cardExpired: false }),
     clearError: () => set({ error: null, errorTranslations: null }),
 
     // Clear all conversation state so the incoming `history` frame for the new
@@ -898,6 +952,7 @@ function makeActions(set: SetState, get: GetState) {
                                   // 0.1.51 P3: the card is about leaving the sandbox.
                                   ...(frame.sandbox === "outside" || frame.sandbox === "retry"
                                     ? { sandbox: frame.sandbox, why: frame.why || "" } : {}),
+                                  ..._cardV2(frame),
                                   receivedAt: Date.now() },
                ...(frame.background ? _approvalNotice(state) : {}) });
           break;
@@ -908,7 +963,8 @@ function makeActions(set: SetState, get: GetState) {
           break;
         case "propose_schedule":
           set({ pendingSchedule: { callId: frame.call_id, name: frame.name,
-                                   when: frame.when, background: frame.background === true, receivedAt: Date.now() },
+                                   when: frame.when, background: frame.background === true, ..._cardV2(frame),
+                                   receivedAt: Date.now() },
                ...(frame.background ? _approvalNotice(state) : {}) });
           break;
         case "propose_capability": {
@@ -926,26 +982,22 @@ function makeActions(set: SetState, get: GetState) {
           break;
         case "propose_action":
           set({ pendingAction: { callId: frame.call_id, kind: frame.kind, target: frame.target, detail: frame.detail,
-                                 receivedAt: Date.now() },
+                                 background: frame.background === true, ..._cardV2(frame), receivedAt: Date.now() },
                 ..._approvalNotice(state) });
           break;
         case "card_resolved": {
-          // Whoever answered first (another window, the phone) decided; a copy still
-          // open here closes. Only the card with this call_id — never a newer one.
+          // Whoever answered first (another window, the phone, the Inbox, the island, a message
+          // typed here) decided; a copy still open here closes. Only the card with this call_id —
+          // never a newer one. 0.1.61 §A4: one that ran out says "waiting for you".
           const id = frame.call_id;
-          set({
-            ...(state.pendingCommand?.callId === id ? { pendingCommand: null } : {}),
-            ...(state.pendingCapability?.callId === id ? { pendingCapability: null } : {}),
-            ...(state.pendingWorkspaceWrite?.callId === id ? { pendingWorkspaceWrite: null } : {}),
-            ...(state.pendingSchedule?.callId === id ? { pendingSchedule: null } : {}),
-            ...(state.pendingAction?.callId === id ? { pendingAction: null } : {}),
-          });
+          set({ ..._withoutCard(state, id), ...(frame.outcome === "expired" && _shows(state, id) ? { cardExpired: true } : {}) });
           break;
         }
         case "propose_workspace_write":
           set({ pendingWorkspaceWrite: {
             callId: frame.call_id, workspace: frame.workspace,
-            action: frame.action, path: frame.path, background: frame.background === true, receivedAt: Date.now() },
+            action: frame.action, path: frame.path, background: frame.background === true, ..._cardV2(frame),
+            receivedAt: Date.now() },
                ...(frame.background ? _approvalNotice(state) : {}) });
           break;
         case "propose_connect_mcp":

@@ -32,7 +32,7 @@ export default function AskForFrame({ ask, queue, onAnswer, onOpenContext }: {
     case "propose_run_command":
       return <RunCommandCard callId={ask.call_id} pretty={str("pretty")} reason={str("reason")}
         remoteHost={str("remote_host")} fingerprints={(f.fingerprints as string[]) ?? []}
-        background={f.background === true} why={str("why")}
+        background={f.background === true} why={str("why")} permKind={str("perm_kind") || undefined}
         sandbox={f.sandbox === "outside" || f.sandbox === "retry" ? f.sandbox : undefined}
         {...common} onConfirm={() => onAnswer(true)} onCancel={() => onAnswer(false)} />;
     case "propose_action":

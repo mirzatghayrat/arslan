@@ -725,16 +725,16 @@ export type ArslanServerMessage =
     }
   | { type: "suggest_create"; draft: SuggestDraft; task_brief?: string | null; overlaps?: OverlapInfo | null }
   | { type: "propose_invite"; spawn_id: number; reason: string }
-  | { type: "propose_run_command"; call_id: string; command?: string; argv?: string[]; pretty: string; reason?: string; remote_host?: string; fingerprints?: string[]; background?: boolean; sandbox?: "outside" | "retry"; why?: string }
+  | ({ type: "propose_run_command"; call_id: string; command?: string; argv?: string[]; pretty: string; reason?: string; remote_host?: string; fingerprints?: string[]; background?: boolean; sandbox?: "outside" | "retry"; why?: string } & CardV2Fields)
   | { type: "propose_enroll_node"; call_id: string; name: string; host: string; user: string; fingerprints: string[] }
-  | { type: "propose_workspace_write"; call_id: string; workspace: string; action: string; path: string; background?: boolean }
-  | { type: "propose_schedule"; call_id: string; name: string; when: string; background?: boolean }
+  | ({ type: "propose_workspace_write"; call_id: string; workspace: string; action: string; path: string; background?: boolean } & CardV2Fields)
+  | ({ type: "propose_schedule"; call_id: string; name: string; when: string; background?: boolean } & CardV2Fields)
   // 0.1.57 §3.1: add a capability and retry — answered only in this window (it may carry a key).
   | ({ type: "propose_capability"; call_id: string } & CapabilityCard)
   | { type: "capability_result"; call_id: string | null; source_id: string | null; state: "on" | "failed" | "blocked";
       name: string; tools: number; stage?: string; code?: string; detail?: string }
-  | { type: "propose_action"; call_id: string; kind: ActionKind; target: string;
-      detail: string; background?: boolean }
+  | ({ type: "propose_action"; call_id: string; kind: ActionKind | (string & {}); target: string;
+      detail: string; background?: boolean } & CardV2Fields)
   // NEXT BUILD (conversation-driven MCP, Task 3/5): Arslan proposes connecting a preset
   // MCP server. Emitting this frame connects NOTHING — env_keys carries credential NAMES +
   // metadata only (never a value); requires_path/path_placeholder (Filesystem/Git) flag a
@@ -757,7 +757,7 @@ export type ArslanServerMessage =
       source?: string | null }
   // A card shown in more than one place (a background job's, or a turn the iPhone started)
   // was decided — by this window, another, or the phone — or expired: close this copy.
-  | { type: "card_resolved"; call_id: string; outcome: "approved" | "declined" | "expired"; by?: "phone" | "mac" }
+  | { type: "card_resolved"; call_id: string; outcome: "approved" | "declined" | "expired"; by?: "phone" | "mac" | "inbox" | "island" }
   | { type: "job_update"; job_id: string; conversation_id: string; goal: string;
       phase: "queued" | "running" | "finished"; step: string; outcome: JobOutcome | null;
       detail: string; budget?: JobBudgetStop | null; criteria: JobCriterion[] }
@@ -1415,3 +1415,16 @@ export interface SshAuditEntry {
  * 0.1.53 Mac apps through Arslan Hands: look once per app per conversation,
  * act once per app per job, a risky button every time). */
 export type ActionKind = "browser_site" | "mac_shortcut" | "mac_script" | "desktop_look" | "desktop_app" | "desktop_risky";
+
+/** 0.1.61 §A4: what a card from the permission layer carries (server permissions._ask). All absent
+ *  on an old frame, which is shown and answered exactly as before. `expires_at` is Unix seconds. */
+export interface CardV2Fields {
+  options?: string[];
+  always_label?: string;
+  title?: string;
+  perm_kind?: string;
+  /** The model's one-line reason, if any: for a kind the card has no words for, it is the question (spec §A4). */
+  why?: string;
+  expires_at?: number;
+  dedupe?: string;
+}
