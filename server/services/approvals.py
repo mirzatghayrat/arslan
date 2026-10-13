@@ -205,9 +205,10 @@ def answer(data: dict) -> bool:
             # window's legacy "don't ask again" reads it).
             scope, remember = (options[0] if options else None), False
         elif scope not in options:
-            # 0.1.61 PR 2b: every card UI sends the scope the user chose. A yes with none (a tab
-            # left open from before the update, a script) gets the card's first, narrowest choice:
-            # it is asked again next time, never silently widened to the conversation.
+            # 0.1.61 PR 2b: the window and the Inbox send the scope the user chose; the island and the
+            # phone send none and are clamped to the first choice above. A yes with none from anywhere
+            # else (a tab left open from before the update, a script) gets the card's first, narrowest
+            # choice too: it is asked again next time, never silently widened to the conversation.
             scope = _legacy_scope(options, remember)
         decision = {"approved": ANSWERS[kind], "remember": remember,
                     "scope": scope if ANSWERS[kind] else None,
