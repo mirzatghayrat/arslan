@@ -461,7 +461,12 @@ def _classify(text: str) -> Classification:
         logger.warning("terminal_policy: could not read a command (%d characters); it asks unread",
                        len(text), exc_info=True)
         return Classification(text, _floor_of_unread(text) or (UNREADABLE,))
-    return _unique(text, findings)
+    found = _unique(text, findings)
+    if found.floor is None and UNREADABLE not in found.findings and (acts := _net(text)):
+        logger.info("terminal_policy: the net saw %s; the command asks once, unread",
+                    ", ".join(dict.fromkeys(act.rule for act in acts)))
+        return Classification(text, (*found.findings, UNREADABLE))
+    return found
 
 
 #: A blank run (G4): the characters Python's `\s` takes, as Hermes' patterns read them (space, tab,
@@ -605,6 +610,144 @@ def _floor_shown(text: str) -> list[Finding]:
         return found
     except Exception:  # noqa: BLE001 — the unread card still asks
         return []
+
+
+# ── the net: what cannot be undone never runs silently (R7) ──────────────────
+
+#: A word of a flattened line, for the net: a quote ends one too (`alias x='rm -rf ~'` is `x=`, `rm` …).
+_NET_WORD = re.compile(r"[^\s'\"]+")
+#: An innermost substitution, which the net reads as its own lines and, in its place, as a word known
+#: only when it runs (`$NET`): `concurrently "$(printf 'rm') -rf ~"`.
+_NET_SUBSTITUTION = re.compile(r"\$\([^()]*\)|`[^`]*`")
+_NET_PROGRAMS = ("rm", "security", "diskutil", "dd")
+
+
+def _net(text: str) -> list[Finding]:
+    """The net (R7): the acts that cannot be undone, sought in the command independently of its
+    reading, so that a misread one is a card, never silent.
+
+    `_argv_floor`'s acts that need no privilege — a recursive rm of the home, the root or a system
+    folder, a keychain secret, a disk erased, dd onto a disk — on each flattened line of the
+    subjects the unread floor searches (as written, `$'…'` decoded, the shell with its data bodies
+    and comments out, the values R13 reads filled in) and of the same with every `$'…'` decoded,
+    quoted or not; every quote ends a word, a substitution's body is lines of its own, and a word
+    known only when the command runs (a substitution, a variable) may be any of those programs
+    (`concurrently "$RM -rf ~"`). And where the text tells an app, an AppleScript's power step or an
+    app on the never-list, its strings blanked: in the text, and in each `-e` script an osascript
+    in any quoted layer of it is handed (`concurrently "osascript -e '…shut down'"`).
+
+    Not sudo or shutdown (they need root, and the reading keeps them), not Hermes' other hardline
+    words, not Arslan's data, not a send: `grep -n "rm -rf" build.sh`, `git commit -m "remove the
+    sudo call"` and a README that says sudo stay quiet; prose that names a whole act (`grep -rn
+    "rm -rf ~" docs/`) asks once. A comment both zsh's rule and Hermes' start is no text. Linear;
+    never raises."""
+    subjects = [_agreed_comments_blanked(text)]
+    try:
+        decoded = _decode_ansi_c(text)
+        subjects.append(_agreed_comments_blanked(decoded))
+        shell = _comments_blanked(_decode_ansi_c(split_heredocs(decoded)[0]))
+        subjects.append(shell)
+        subjects.append(_readings(shell))
+    except Exception:  # noqa: BLE001 — what could be built is searched
+        pass
+    subjects += [_every_ansi_c_decoded(subject) for subject in subjects]
+    found: list[Finding] = []
+    for subject in dict.fromkeys(subjects):
+        try:
+            flat = hermes._normalize_command_for_detection(subject)
+        except Exception:  # noqa: BLE001
+            flat = subject
+        for line in _net_lines(flat):
+            words = _NET_WORD.findall(line)
+            found += _argv_floor(words, rooted=False)
+            if any("$" in word or "`" in word for word in words):
+                for name in _NET_PROGRAMS:          # a program known only when it runs
+                    found += _argv_floor([name if ("$" in word or "`" in word) and not _RM_HOME.fullmatch(word)
+                                          else word for word in words], rooted=False)
+        if _FLAT_SCRIPT.search(subject):
+            found += _script_acts(subject)
+            for script in _osascript_scripts(subject):
+                found += _script_acts(script)
+    return list(dict.fromkeys(found))
+
+
+def _net_lines(flat: str) -> list[str]:
+    """`flat` cut at separators, brackets and backticks, each substitution's body read as lines of
+    its own and standing as one word known only when it runs (`$NET`)."""
+    bodies: list[str] = []
+    for _ in range(_MAX_SUBSTITUTION_DEPTH):
+        spans = _NET_SUBSTITUTION.findall(flat)
+        if not spans:
+            break
+        bodies += [span[2:-1] if span.startswith("$(") else span[1:-1] for span in spans]
+        flat = _NET_SUBSTITUTION.sub(" $NET ", flat)
+    return [*_FLAT_LINES.split(flat), *(line for body in bodies for line in _FLAT_LINES.split(body))]
+
+
+def _script_acts(script: str) -> list[Finding]:
+    """An AppleScript's (or JXA's) acts the net looks for: an app on the never-list, a power step
+    outside its strings."""
+    found = [Finding("floor", "never-app", f"Arslan never touches {name} (the never-list)", app=name)
+             for name in app_names(script) if _never_touched(name)]
+    if _SCRIPT_POWER.search(_SCRIPT_STRING.sub('""', script)):
+        found.append(Finding("floor", "shutdown", "shuts down, restarts or logs out the Mac"))
+    return found
+
+
+def _osascript_scripts(text: str) -> list[str]:
+    """The scripts each osascript in `text`, or in any quoted layer of it, is handed by `-e` (each
+    `-e` a line): `concurrently "osascript -e 'tell application \\"System Events\\" to shut down'"`."""
+    scripts: list[str] = []
+    for view in _quoted_layers(text):
+        if "osascript" not in view:
+            continue
+        for segment in re.split(r"[;&|\n]", view):
+            words = _words(segment)
+            for k, word in enumerate(words):
+                if os.path.basename(word).lower() == "osascript":
+                    lines = [words[i + 1] for i in range(k + 1, len(words) - 1) if words[i] == "-e"]
+                    if lines:
+                        scripts.append("\n".join(lines))
+    return scripts
+
+
+def _quoted_layers(text: str, depth: int = 3) -> list[str]:
+    """`text`, and what each quoted string in it holds (a double-quoted one with its escapes taken
+    out), and so on `depth` layers down: the code an unknown runner is handed in quotes. At most 64."""
+    layers, pending = [text], [(text, 0)]
+    while pending and len(layers) < 64:
+        current, level = pending.pop()
+        if level >= depth:
+            continue
+        for match in re.finditer(r"'([^']*)'|\"((?:[^\"\\]|\\.)*)\"", current):
+            inner = match.group(1) if match.group(1) is not None else re.sub(r"\\(.)", r"\1", match.group(2))
+            if inner.strip() and len(layers) < 64:
+                layers.append(inner)
+                pending.append((inner, level + 1))
+    return layers
+
+
+def _every_ansi_c_decoded(text: str) -> str:
+    """`text` with every `$'…'` decoded, quoted or not (the net's over-reading: a runner's shell may
+    decode one zsh passes it as written, `concurrently "$'\\x72m' -rf ~"`)."""
+    if "$'" not in text:
+        return text
+    edits, at = [], text.find("$'")
+    while at >= 0:
+        value, end = _ansi_c_value(text, at + 2)
+        edits.append((at, end, value))
+        at = text.find("$'", end)
+    return hermes._splice(text, edits)
+
+
+def _agreed_comments_blanked(text: str) -> str:
+    """`text` with each comment blanked that zsh's rule (`_zsh_scan`) and Hermes' lenient one both
+    start: a comment says what it likes (`git status # TODO: never "rm -rf /"`), and a `#` only one
+    of them takes for a comment — the very shapes a misread hides behind — stays for the net."""
+    if "#" not in text:
+        return text
+    edits = [(start, end, " ") for start, end in _zsh_scan(text)[0] if hermes._is_shell_comment_start(text, start)]
+    return hermes._splice(text, edits) if edits else text
 
 
 _ANSI_C_SIMPLE = {"n": "\n", "t": "\t", "r": "\r", "a": "\a", "b": "\b", "e": "\x1b", "E": "\x1b", "f": "\f",
@@ -2762,7 +2905,7 @@ def _floor_findings(text: str, shell: str, commands: list[list[str]], payloads=(
     return found
 
 
-def _argv_floor(argv: list[str]) -> list[Finding]:
+def _argv_floor(argv: list[str], *, rooted: bool = True) -> list[Finding]:
     """F4 (b), the backstop that makes a runner Arslan does not know harmless: the acts that need no
     privilege and cannot be undone, at ANY word of one command, as the program receives its words
     (quotes taken out), not only at its command word — `script -q /dev/null security
@@ -2778,7 +2921,7 @@ def _argv_floor(argv: list[str]) -> list[Finding]:
     match only as a command word (G1, G2): the command's own, one a wrapper or runner runs, one in a
     payload. Without a terminal the agent cannot type the password they need, and a program's own
     sub-command (`redis-cli shutdown now`, `grep -rn sudo src/`) is no such act. One pass from the
-    end gathers what each shape needs after a word."""
+    end gathers what each shape needs after a word. `rooted=False` (the net, R7) leaves those out."""
     found: list[Finding] = []
     n = len(argv)
     behind: list[tuple] = [()] * n           # (recursive, rm target, dd onto a disk, -w/-g) after word k
@@ -2804,9 +2947,9 @@ def _argv_floor(argv: list[str]) -> list[Finding]:
         name = os.path.basename(argv[k].lstrip("=")).lower()
         recursive, target, disk, secret = behind[k]
         after = argv[k + 1].lower() if k + 1 < n else ""
-        if name in ("sudo", "doas") and k == 0:                 # root's: as a command word only (G1)
+        if name in ("sudo", "doas") and k == 0 and rooted:      # root's: as a command word only (G1)
             found.append(Finding("floor", "sudo", _WHY["sudo"]))
-        elif name in ("shutdown", "halt", "reboot") and k == 0 and _SHUTDOWN_WHEN.fullmatch(after):   # (G2)
+        elif name in ("shutdown", "halt", "reboot") and k == 0 and rooted and _SHUTDOWN_WHEN.fullmatch(after):   # (G2)
             found.append(Finding("floor", "hardline", "system shutdown/reboot"))
         elif name == "security" and (after in ("dump-keychain", "export") or (
                 after in ("find-generic-password", "find-internet-password") and secret)):
@@ -3599,7 +3742,8 @@ _JS_AFTER = re.compile(r"\s*[,)]")
 _AS_ESCAPES = {'"': '"', "\\": "\\", "n": "\n", "r": "\r", "t": "\t"}
 _JS_ESCAPES = {**_AS_ESCAPES, "'": "'"}
 _SCRIPT_ADMIN = re.compile(r"\bwith\s+administrator\s+privileges\b|\badministratorPrivileges\s*:\s*true\b", re.I)
-_SCRIPT_POWER = re.compile(r"\b(?:shut\s+down|restart|log\s+out)\b", re.I)
+#: An AppleScript's power step, and JXA's (`Application("System Events").shutDown()`, `.logOut()`).
+_SCRIPT_POWER = re.compile(r"\b(?:shut\s*down|restart|log\s*out)\b", re.I)
 #: A step that clicks or types: the strings it names are the labels it acts on, not content.
 _SCRIPT_UI = re.compile(r"\b(?:click|keystroke|key\s+code|perform\s+action|select\s+menu\s+item)\b", re.I)
 _SCRIPT_SENDING_KEY = re.compile(r"\bkeystroke\s+(?:return|enter)\b|\bkey\s+code\s+(?:36|76)\b"

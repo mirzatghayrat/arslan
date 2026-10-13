@@ -1364,7 +1364,6 @@ def test_code_a_shell_reads_from_an_unknown_producer_is_built_code():
 @pytest.mark.parametrize("command", [
     'git status # TODO: never "rm -rf /" in prod', "ls # remember to run 'sudo rm -rf /' tomorrow",
     "echo done # fixed '; DROP TABLE users;'", "x=$(git rev-parse HEAD)#'; sudo reboot'",
-    "echo $(date)#'; sudo rm -rf /'", 'echo $(date)#"; rm -rf ~"',
     "ls # list files", "echo hello # TODO: clean up later", 'git commit -m "ref #42"', "grep '#define' *.c",
     "a#b", '"a # don\'t"',
 ])
@@ -1372,9 +1371,17 @@ def test_quoted_prose_in_a_comment_stays_prose(command):
     """Review 3 Important #1 (F5): blanking only the quote marks of a comment showed the quoted prose
     in it as code (`git status # TODO: never "rm -rf /"` asked as destructive), and Hermes' lenient
     comment rule took `$(cmd)#'…'` — one word to zsh — for a comment. Each reads as it did at
-    79c34fa4: local."""
+    79c34fa4: local. (Quoted prose that names a whole act is the net's: below, R7.)"""
     found = tp.classify(command)
     assert found.category == "local", [(f.category, f.rule) for f in found.findings]
+
+
+@pytest.mark.parametrize("command", ["echo $(date)#'; sudo rm -rf /'", 'echo $(date)#"; rm -rf ~"'])
+def test_quoted_prose_that_names_an_act_is_prose_and_asks_once(command):
+    """F5 and R7: `$(cmd)#'…'` is one word to zsh, and the reading reads the quoted prose as prose
+    (no floor, no delete); prose that names a whole act that cannot be undone asks once, through
+    the net — as `grep -rn "rm -rf ~" docs/` does."""
+    assert tp.classify(command).findings == (tp.UNREADABLE,)
 
 
 @pytest.mark.parametrize("command,category", [
@@ -1898,14 +1905,15 @@ def test_the_code_a_wrapper_runs_is_read_without_its_blank_runs():
 @pytest.mark.parametrize("command,category", [
     ("grep -P '" + "a" * 61 + "' f", "local"), ("grep --perl-regexp '" + "b" * 70 + "' f", "local"),
     ("cat log | grep -P '" + "a" * 70 + "' | wc -l", "local"),
-    ("grep -P 'security find-generic-password -s [A-Za-z0-9_.-]+ -w|dump-keychain' notes/*.md", "local"),
-    ("grep -P '" + "a" * 60 + "|rm -rf ~' f", "local"), ("grep -P '" + "a" * 70 + "' f && git push", "send"),
+    ("grep -P 'security find-generic-password -s [A-Za-z0-9_.-]+ -w|dump-keychain' notes/*.md", "opaque"),
+    ("grep -P '" + "a" * 60 + "|rm -rf ~' f", "opaque"), ("grep -P '" + "a" * 70 + "' f && git push", "send"),
     ("ls;" + " " * 63 + "ls", "local"), ("ls;" + " " * 64 + "ls", "local"),
     ("ls;" + " " * 63 + "echo 'sudo ls'", "local"), ("ls &&" + " " * 64 + "git push", "send"),
 ])
 def test_what_hermes_blanks_itself_is_no_built_run(command, category):
     """Re-review 5: Hermes' grep-safe variant blanks a quoted PCRE pattern whole, and its start markers
-    (`\\n`, ` \\n`) add to the blanks before a command; neither is a run Hermes reads slowly."""
+    (`\\n`, ` \\n`) add to the blanks before a command; neither is a run Hermes reads slowly. A
+    pattern that names a whole act that cannot be undone asks once (the net, R7), never the floor."""
     found = tp.classify(command)
     assert found.category == category, [(f.category, f.rule) for f in found.findings]
 
@@ -2032,3 +2040,93 @@ def test_a_heredoc_in_a_payload_is_read_as_at_the_top(command, category):
     shell, and a data body is data."""
     found = tp.classify(command)
     assert found.category == category, [(f.category, f.rule) for f in found.findings]
+
+
+# ── fix round 6: the net — what cannot be undone never runs silently (R7) ─────────────────────
+
+_BLIND_CASE = ("_case_patterns", lambda shell, at: [])                 # the reader as it was before R3
+_BLIND_SCRIPT = ("_osascript_findings", lambda commands, bodies: [])   # a reader that does not read AppleScript
+
+
+@pytest.mark.parametrize("command,blind", [
+    ("echo \"$(case a in a) rm -rf ~;; esac)\"", _BLIND_CASE),
+    ("echo \"$(case a in a) security find-generic-password -s gh -w;; esac)\"", _BLIND_CASE),
+    ("echo \"$(case a in a) diskutil eraseDisk APFS X disk4;; esac)\"", _BLIND_CASE),
+    ("echo \"$(case a in a) dd if=/dev/zero of=/dev/rdisk4;; esac)\"", _BLIND_CASE),
+    ("osascript -e 'tell application \"System Events\" to shut down'", _BLIND_SCRIPT),
+    ("osascript -e 'tell application \"Keychain Access\" to activate'", _BLIND_SCRIPT),
+], ids=["rm of the home", "a keychain secret", "a disk erased", "dd onto a disk", "a power step", "a never-list app"])
+def test_the_net_cards_an_act_the_reading_misses(monkeypatch, command, blind):
+    """R7: with a blind spot put back in the reader, the reading misses the act — the command
+    would run with no card — and the net, which does not use the reading, still makes it a card:
+    `UNREADABLE`, once only, in every mode."""
+    monkeypatch.setattr(tp, *blind)
+    net = tp._net
+    monkeypatch.setattr(tp, "_net", lambda text: [])
+    missed = tp.classify(command)
+    assert missed.floor is None and tp.UNREADABLE not in missed.findings, [(f.category, f.rule) for f in missed.findings]
+    monkeypatch.setattr(tp, "_net", net)
+    tp.clear_cache()
+    found = tp.classify(command)
+    assert found.floor is None and tp.UNREADABLE in found.findings, [(f.category, f.rule) for f in found.findings]
+
+
+@pytest.mark.parametrize("command", [
+    "concurrently 'rm -rf ~'", "tmux new-session -d 'rm -rf ~'", "concurrently \"$(printf 'rm') -rf ~\"",
+    "concurrently \"$'\\x72m' -rf ~\"", "concurrently \"$RM -rf ~\"", "concurrently 'rm${IFS}-rf${IFS}~'",
+    "concurrently \"rm -rf $'\\x2f'\"", "concurrently \"rm $'-\\x72f' ~\"",
+    "concurrently \"security find-generic-password -s 'my svc' -w\"", "concurrently \"diskutil eraseDisk APFS X disk4\"",
+    "concurrently \"dd if=/dev/zero of=/dev/rdisk4\"",
+    "concurrently \"osascript -e 'tell application \\\"System Events\\\" to shut down'\"",
+    "concurrently \"osascript -e 'tell application \\\"Keychain Access\\\" to activate'\"",
+    "concurrently \"osascript -l JavaScript -e 'Application(\\\"System Events\\\").shutDown()'\"",
+])
+def test_an_act_handed_to_a_runner_arslan_does_not_know_asks(command):
+    """R7: a runner Arslan does not know (`concurrently`, `tmux`) is handed shell code in quotes, which
+    the reading takes for data. The net reads every quoted layer: the act is a card — its program
+    built while it runs too (`$(printf 'rm')`, `$RM`, `$'\\x72m'`), and an osascript's own script."""
+    found = tp.classify(command)
+    assert found.floor is None and tp.UNREADABLE in found.findings, [(f.category, f.rule) for f in found.findings]
+
+
+@pytest.mark.parametrize("command,category", [
+    ("grep -n \"rm -rf\" build.sh", "local"), ("git commit -m \"remove the sudo call\"", "local"),
+    ("echo \"shutdown done\"", "local"), ("git status # TODO: never \"rm -rf /\" in prod", "local"),
+    ("cat >> README.md <<'EOF'\nRun `sudo make install` to install it for every user.\nEOF", "local"),
+    ("osascript -e 'display notification \"restart done\"'", "local"),
+    ("grep -rn \"rm -rf ~\" docs/", "opaque"),
+])
+def test_the_net_is_quiet_on_prose_without_a_whole_act(command, category):
+    """R7: sudo, shutdown and the send words are not the net's; `rm -rf` with no home, root or system
+    folder is no act; a comment is no text; an AppleScript string is content. Prose that names a
+    whole act asks once (`grep -rn "rm -rf ~" docs/`): the accepted false positive, pinned to stay
+    visible."""
+    found = tp.classify(command)
+    assert found.category == category, [(f.category, f.rule) for f in found.findings]
+
+
+def test_the_net_leaves_a_floor_alone_and_makes_a_destructive_card_once_only(caplog):
+    """R7: a reading that is the floor stays exactly that (no `UNREADABLE` added); a destructive
+    reading the net finds a hidden act in gains `UNREADABLE`, so no standing "always allow" for the
+    destructive rules covers it; the log names the act's rule, never the command."""
+    for floor in ("rm -rf ~", "concurrently rm -rf ~", "sudo ls"):
+        assert tp.UNREADABLE not in tp.classify(floor).findings and tp.classify(floor).floor is not None
+    command = "rm -rf build && concurrently 'rm -rf ~'"
+    with caplog.at_level("INFO", logger="server.services.terminal_policy"):
+        found = tp.classify(command)
+    rules = {f.rule for f in found.findings}
+    assert found.floor is None and tp.UNREADABLE in found.findings and "force-delete" in rules, rules
+    assert not tp.standing_allows(command, rules - {"unreadable"})
+    assert not tp.standing_allows(command, rules)
+    messages = [r.getMessage() for r in caplog.records if "the net saw" in r.getMessage()]
+    assert messages and "hardline" in messages[0] and "concurrently" not in messages[0], messages
+
+
+@pytest.mark.parametrize("command", [
+    "osascript -l JavaScript -e 'Application(\"System Events\").shutDown()'",
+    "osascript -l JavaScript -e 'Application(\"System Events\").logOut()'",
+])
+def test_a_jxa_power_step_is_the_floor(command):
+    """R7: JXA spells the power steps `shutDown()` and `logOut()`; they are the floor as AppleScript's
+    `shut down` and `log out` are (the reading and the net share the one pattern)."""
+    assert tp.classify(command).category == "floor"
