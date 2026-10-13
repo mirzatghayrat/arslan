@@ -264,7 +264,8 @@ async def client(tmp_path, monkeypatch):
 
     from server.main import create_app
 
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'app.db'}")
+    engine = db_session.install_cancel_rollback(
+        create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'app.db'}"))
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -405,9 +406,9 @@ def build_ws_client(
 
     importlib.reload(_config)
 
-    engine = create_async_engine(
+    engine = db_session.install_cancel_rollback(create_async_engine(
         f"sqlite+aiosqlite:///{tmp_path/db_name}", poolclass=NullPool
-    )
+    ))
     portal._test_engines.append(engine)  # disposed at portal-fixture teardown
     maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 

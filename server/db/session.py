@@ -32,7 +32,14 @@ def build_engine(db_url: str) -> AsyncEngine:
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
 
-    event.listen(engine.sync_engine, "invalidate", _roll_back_a_cancelled_transaction)
+    return install_cancel_rollback(engine)
+
+
+def install_cancel_rollback(engine: AsyncEngine) -> AsyncEngine:
+    """Give an engine the rollback below (`build_engine` does; so do the tests' own engines, so
+    the app under test behaves as it does in production). Installing it twice is a no-op."""
+    if not event.contains(engine.sync_engine, "invalidate", _roll_back_a_cancelled_transaction):
+        event.listen(engine.sync_engine, "invalidate", _roll_back_a_cancelled_transaction)
     return engine
 
 

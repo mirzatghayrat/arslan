@@ -39,8 +39,9 @@ import pytest
 from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from server.db import session as db_session
 from server.db.models import Base
-from server.db.session import build_engine
+from server.db.session import build_engine, install_cancel_rollback
 from server.services import permission_store
 
 
@@ -302,3 +303,32 @@ async def test_a_rule_removed_after_a_doubly_cancelled_read_is_gone_for_the_next
     con.close()
     async with maker() as session:
         assert await permission_store.find_rule(session, "app", "com.apple.Notes") is None
+
+
+# ── fix round 1 (R3): every engine the app runs on in the tests has the rollback too ──────────
+
+def _has_rollback(engine) -> bool:
+    return event.contains(engine.sync_engine, "invalidate", db_session._roll_back_a_cancelled_transaction)
+
+
+async def test_installing_the_rollback_twice_installs_it_once(tmp_path):
+    from sqlalchemy.ext.asyncio import create_async_engine
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'plain.db'}")
+    try:
+        assert not _has_rollback(engine)
+        assert install_cancel_rollback(install_cancel_rollback(engine)) is engine
+        listeners = list(engine.sync_engine.pool.dispatch.invalidate)
+        assert listeners.count(db_session._roll_back_a_cancelled_transaction) == 1, listeners
+        assert _has_rollback(build_engine(f"sqlite+aiosqlite:///{tmp_path / 'built.db'}"))
+    finally:
+        await engine.dispose()
+
+
+async def test_the_api_tests_engine_runs_the_rollback(client):
+    assert _has_rollback(client.db_maker.kw["bind"])
+
+
+def test_the_window_tests_engine_runs_the_rollback(portal, tmp_path, monkeypatch):
+    from tests.server.conftest import build_ws_client
+    app_client = build_ws_client(portal, tmp_path, monkeypatch, db_name="rollback.db")
+    assert _has_rollback(app_client.db_maker.kw["bind"])
