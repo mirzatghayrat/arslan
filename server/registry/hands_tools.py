@@ -108,14 +108,24 @@ async def _decide_app(app: dict, detail: str, *, step: str = ""):
 
 def _no(decision, what: str) -> dict:
     """What the model is told when a card did not allow it. Only the user's own no is a refusal: a
-    card nobody answered is "no answer", and a run with nobody to ask says so (0.1.61 §A4)."""
+    card nobody answered is "no answer", and a run with nobody to ask says so (0.1.61 §A4). The
+    reviewer of "Approve for me" (§A6, PR 7) says no with its reason, given as it is; any other
+    `by` is passed on as permissions put it, never called the user's no or "nobody to ask"."""
     if decision.by == "user":
         said = f" They said: {decision.note}" if decision.note else ""
         return {"ok": False, "external": False, "code": "declined",
                 "error": f"The user did not allow {what}.{said} Do not retry; report it."}
     if decision.by == "expired":
         return {"ok": False, "external": False, "code": "no_answer", "error": decision.model_text}
-    return {"ok": False, "external": False, "code": "no_one_to_ask", "error": decision.model_text}
+    if decision.by == "policy":
+        return {"ok": False, "external": False, "code": "no_one_to_ask", "error": decision.model_text}
+    if decision.by == "reviewer":
+        reason = decision.model_text or decision.note or "no reason given"
+        return {"ok": False, "external": False, "code": "reviewer_denied",
+                "error": f"The reviewer that approves for the user did not allow {what}: {reason} "
+                         "Do it a safer way, or ask the user; only they can let it run anyway."}
+    return {"ok": False, "external": False, "code": "not_allowed",
+            "error": decision.model_text or f"{what[:1].upper()}{what[1:]} was not allowed."}
 
 
 def forget_job(job_id: str) -> None:

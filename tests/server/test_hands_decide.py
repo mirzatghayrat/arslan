@@ -175,3 +175,21 @@ async def test_the_island_answers_hands_app_site_and_shortcut_cards_and_none_ris
         ("mac_script", "app_risky", False), ("mac_script", "money", False), ("mac_script", "opaque", False),
         ("desktop_risky", "money", False), ("desktop_risky", "app_risky", False),
         ("desktop_takeover", "takeover", False)}, sorted(answered)
+
+
+@pytest.mark.parametrize("by, model_text, note, code, said, not_said", [
+    ("user", "", "use the web version", "declined", "The user did not allow using Notes. They said: use the web version",
+     "nobody to ask"),
+    ("expired", "No answer came: this is NOT a refusal.", "", "no_answer", "NOT a refusal", "did not allow"),
+    ("policy", "This run has nobody to ask.", "", "no_one_to_ask", "nobody to ask", "did not allow"),
+    # §A6 (PR 7): the reviewer's own reason, as it is, and the way on.
+    ("reviewer", "It would delete 40 notes; ask first.", "", "reviewer_denied",
+     "reviewer that approves for the user did not allow using Notes: It would delete 40 notes; ask first.",
+     "The user did not allow"),
+    ("floor", "Money moves always need the user.", "", "not_allowed", "Money moves always need the user.",
+     "nobody to ask"),
+])
+def test_each_kind_of_no_is_told_to_the_model_as_what_it_is(by, model_text, note, code, said, not_said):
+    from server.services import permissions
+    told = hands_tools._no(permissions.Decision(False, by, note=note, model_text=model_text), "using Notes")
+    assert told["code"] == code and said in told["error"] and not_said not in told["error"], told
