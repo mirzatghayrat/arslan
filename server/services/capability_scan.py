@@ -41,7 +41,7 @@ MAX_WALKED = 50_000
 class Rule:
     id: str
     level: str          # high | note
-    where: str          # text (instructions) | code | skill_code | manifest | any
+    where: str          # text (instructions) | skill_code (a skill's script) | package (a package's file) | code (both) | manifest | any
     pattern: re.Pattern
     #: Looks at each match before it counts: (the line, the match) -> counts? A rule with none counts
     #: its first match. Two rules may share an id and differ in level: the id says what was found,
@@ -183,6 +183,8 @@ _DESTINATION = (r"(?:https?://|\bto\s+(?:my|our|their|an?\s+(?:remote|external|o
 _HIDDEN_INSTRUCTION = (r"\b(ignore|disregard|forget)\s+(all\s+|any\s+)?(previous|prior|above|earlier)\s+"
                        r"(instructions|rules|messages)")
 _PIPE_TO_SHELL = r"\b(curl|wget)\b[^|\n]{0,200}\|\s*(ba|z)?sh\b"
+_KEYCHAIN = r"\bsecurity\s+(find-generic-password|find-internet-password|dump-keychain)\b"
+_SETTINGS_WRITE = _writes(_AGENT_SETTINGS)
 
 RULES = (
     # Instructions a skill gives the model.
@@ -212,7 +214,11 @@ RULES = (
     # Persistence is a WRITE: into a shell start file or a launchd folder, a crontab installed, a job loaded.
     # `source ~/.zshrc` and `crontab -l` only read.
     _r("autostart_write", "high", "code", _writes(_STARTUP) + "|" + _CRONTAB + "|" + _LAUNCHCTL),
-    _r("keychain_read", "high", "any", r"\bsecurity\s+(find-generic-password|find-internet-password|dump-keychain)\b"),
+    # A script that reads the keychain is high; a commented config example in a document is a note (the
+    # runtime floor refuses `security find-generic-password -w` in every mode).
+    _r("keychain_read", "high", "code", _KEYCHAIN),
+    _r("keychain_read", "high", "manifest", _KEYCHAIN),
+    _r("keychain_read", "note", "text", _KEYCHAIN),
     # Key material taken: a private key read, copied or uploaded (`cat`, `cp`, `base64`, `curl -F`...), the .ssh
     # folder archived or copied, a key appended to authorized_keys. `ssh-add`, `ssh -i`, `ssh-keygen -l`/`-y`
     # and the .pub half use or describe a key without taking it.
@@ -231,8 +237,14 @@ RULES = (
     # skills guard; §A2 "other agents' settings"). The write must TARGET the settings path (see
     # `_writes`), so reading it, copying it away or printing "… -> path" is not a finding. Telling the
     # model NOT to edit it is not one either, nor is pointing at it ("see ~/.claude/settings.json").
-    _r("agent_settings_write", "high", "code", _writes(_AGENT_SETTINGS)),
-    _r("agent_settings_instruction", "high", "text",
+    # Arslan runs a skill's scripts itself, so a skill that writes them is high; a package often bundles a
+    # client-registration command next to the server (`install --client cursor`), and a high finding
+    # there would remove an install the user chose on its card: a note, the card shows it.
+    _r("agent_settings_write", "high", "skill_code", _SETTINGS_WRITE),
+    _r("agent_settings_write", "note", "package", _SETTINGS_WRITE),
+    # Words telling the model to change them are a note (a cross-agent skill says "add to your Codex
+    # config"): the act in code is the high one, and the runtime holds whatever the scan says.
+    _r("agent_settings_instruction", "note", "text",
        r"\b(?P<verb>edit|modify|change|update|overwrite|replace|patch|append|merge|write\s+(?:\w+\s+){0,4}?(?:to|into|in)|"
        r"add\s+(?:\w+\s+){0,4}?to)\b(?P<between>[^\n]{0,80}?)(?P<path>" + _AGENT_SETTINGS_TEXT + r")",
        accept=_is_an_order),
@@ -318,7 +330,8 @@ def scan_text(name: str, text: str, *, kind: str) -> list[Finding]:
     lines = _prepare(text, kind)
     for rule in RULES:
         applies = (rule.where == "any" or rule.where == kind
-                   or (rule.where == "code" and kind in ("code", "skill_code")))
+                   or (rule.where == "code" and kind in ("code", "skill_code"))
+                   or (rule.where == "package" and kind == "code"))
         if not applies:
             continue
         for n, raw, line in lines:
