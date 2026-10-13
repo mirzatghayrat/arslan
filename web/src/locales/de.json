@@ -738,7 +738,7 @@
     "researchReviewSpendNote": "Jede passende Speicherung sendet mit deinem Schlüssel eine zusätzliche Anfrage mit dem Bericht und seinen Quellen an dein Modell. Derzeit werden nur offizielle DeepSeek- und Anthropic-Verbindungen unterstützt; andere Modelle werden übersprungen.",
     "navDesktop": "Desktop",
     "navProactive": "Proaktivität",
-    "desktopLede": "Das Schließen des Fensters beendet Arslan nicht mehr: Es bleibt in der Menüleiste, Aufgaben und geplante Aufgaben laufen weiter, und Aktionen, die dich brauchen, warten im Fenster (bis zu 30 Minuten; antwortet niemand, passiert es nicht – ein Nein ist das nicht). Eine geplante Aufgabe wartet nie auf eine Antwort: Sie tut nur, was du schon erlaubt hast, alles andere wird abgelehnt und im Posteingang aufgelistet. Beenden mit ⌘Q oder „Arslan beenden“ in der Menüleiste.",
+    "desktopLede": "Das Schließen des Fensters beendet Arslan nicht mehr: Es bleibt in der Menüleiste, Aufgaben und geplante Aufgaben laufen weiter, und Aktionen, die dich brauchen, warten im Fenster (bis zu 30 Minuten; antwortet niemand, passiert es nicht – ein Nein ist das nicht). Eine geplante Aufgabe wartet nie auf eine Antwort: Sie tut nur, was du schon erlaubt hast, alles andere wird abgelehnt (die meisten davon stehen im Posteingang). Beenden mit ⌘Q oder „Arslan beenden“ in der Menüleiste.",
     "labelKeepAwake": "Mac während der Arbeit wach halten",
     "keepAwakeDesc": "Solange eine Aufgabe oder geplante Aufgabe läuft, geht der Mac nicht von selbst in den Ruhezustand. Der Bildschirm kann trotzdem ausgehen; Deckel zu oder schwacher Akku versetzen ihn weiterhin in den Ruhezustand.",
     "labelDesktopNotifications": "Mitteilungen",
