@@ -262,7 +262,7 @@ final class FrameMapperTests: XCTestCase {
         let app = handsCard(["kind": "desktop_app", "target": "Notes", "detail": "Use Notes", "title": "Use Notes?",
                              "perm_kind": "app", "options": ["task", "conversation", "always"]])
         XCTAssertEqual(app?["risk"] as? String, "write", "today's rule: the kind is not browser_site")
-        XCTAssertEqual(app?["action"] as? String, "Use Notes?")
+        XCTAssertEqual(app?["action"] as? String, "Use Notes? (for this task)", "the phone's yes on an app card is for this task, and says so")
         // The phone's yes is the frame it always was and asks for no scope (the Mac takes the first choice).
         let m = FrameMapper(conversationID: "c")
         _ = m.phoneMessages(for: ["type": "propose_action", "call_id": "h2", "kind": "desktop_app", "target": "Notes",
@@ -313,6 +313,67 @@ final class FrameMapperTests: XCTestCase {
         XCTAssertThrowsError(try m.backendFrames(for: "approval.answer", body: ["approval_id": "m", "decision": "deny", "auth": "none"])) {
             XCTAssertEqual(($0 as? BridgeError)?.code, "approval_expired")      // the Mac already answered it
         }
+    }
+
+    /// Final review (PR 2b), M1: a card the Mac's Inbox or island answered is "answered on the Mac" too — the phone is told
+    /// the Mac decided it, not that it did. Only the phone's own answer carries no detail; an expiry has no `by` at all.
+    func testAnInboxOrIslandAnswerIsAnsweredOnTheMacLikeAWindowsAnswer() {
+        let m = FrameMapper(conversationID: "c1")
+        for id in ["w", "i", "s", "p", "n"] { _ = m.phoneMessages(for: ["type": "propose_schedule", "call_id": id, "name": "n", "when": "w"]) }
+        func detail(_ id: String, _ outcome: String, _ by: String?) -> String? {
+            var frame: [String: Any] = ["type": "card_resolved", "call_id": id, "outcome": outcome]
+            if let by = by { frame["by"] = by }
+            return m.phoneMessages(for: frame).first?.body["detail"] as? String
+        }
+        XCTAssertEqual(detail("w", "approved", "mac"), "answered_on_mac")
+        XCTAssertEqual(detail("i", "approved", "inbox"), "answered_on_mac", "the Inbox is the Mac")
+        XCTAssertEqual(detail("s", "declined", "island"), "answered_on_mac", "so is the island")
+        XCTAssertNil(detail("p", "approved", "phone"), "the phone's own answer needs no explaining")
+        XCTAssertNil(detail("n", "expired", nil), "an expiry has no one who answered")
+    }
+
+    /// Final review (PR 2b), M1: a card for several apps (`permissions.decide_many`) joins their bundle ids with U+001E; the
+    /// phone's card is one line, comma-separated, and never shows a control character.
+    func testAManyAppCardsTargetReachesThePhoneAsOneLine() {
+        let target = handsCard(["kind": "app", "target": "com.apple.Notes\u{1e}com.apple.mail", "detail": "· Notes — look and act\n· Mail — look and act",
+                                "title": "Use Notes, Mail for this: tidy?", "perm_kind": "app", "options": ["task", "conversation", "always"]])?["target"] as? String
+        XCTAssertEqual(target, "com.apple.Notes, com.apple.mail")
+        XCTAssertFalse((target ?? "").unicodeScalars.contains { $0.value == 0x1e }, "no control character reaches the card")
+        XCTAssertEqual(handsCard(["kind": "desktop_app", "target": "com.apple.Notes"])?["target"] as? String, "com.apple.Notes", "one app is unchanged")
+    }
+
+    /// Final review (PR 2b), M2: the phone's Approve on an app, a site or a Shortcut card is "for this task" (the Mac takes the first,
+    /// narrowest choice), and the card says so — ending the heading, within the same 200-character cut. Any other kind says nothing.
+    func testATaskFirstCardSaysThePhonesYesIsForThisTask() {
+        func action(_ frame: [String: Any]) -> String? {
+            FrameMapper(conversationID: "c").phoneMessages(for: ["type": "propose_action", "call_id": "k", "kind": "desktop_app", "target": "T"]
+                .merging(frame) { _, new in new }, now: t0).first?.body["action"] as? String
+        }
+        for kind in ["app", "site", "shortcut"] {
+            XCTAssertEqual(action(["title": "Use Notes?", "perm_kind": kind]), "Use Notes? (for this task)", kind)
+        }
+        for kind in ["money", "app_risky", "command", "outside", "schedule", "folder", "workspace_write", "takeover", "send", "destructive", "made_up"] {
+            XCTAssertEqual(action(["title": "Use Notes?", "perm_kind": kind]), "Use Notes?", "\(kind): the phone's yes is not described as for the task")
+        }
+        XCTAssertEqual(action(["title": "Use Notes?"]), "Use Notes?", "an old frame has no permission kind")
+        XCTAssertEqual(action(["perm_kind": "app"]), "desktop_app (for this task)", "no title: the kind's own words, then the scope")
+        XCTAssertEqual(action(["title": "  Use \n Notes?  ", "perm_kind": "site"]), "Use Notes? (for this task)", "one line first")
+        XCTAssertEqual(action(["kind": "", "perm_kind": "app"]), "(for this task)", "nothing to say but the scope: no leading space")
+        // A card of another type that carries the kind says it too (an app card may ride a command frame).
+        XCTAssertEqual(FrameMapper(conversationID: "c").phoneMessages(for: ["type": "propose_run_command", "call_id": "r", "pretty": "ls",
+            "title": "Run `ls`?", "perm_kind": "app"], now: t0).first?.body["action"] as? String, "Run `ls`? (for this task)")
+        // Within the cut: the question gives way, the words stay whole, and the heading is never longer than 200 characters.
+        let suffix = " (for this task)"
+        let long = action(["title": String(repeating: "x", count: 250), "perm_kind": "app"])
+        XCTAssertEqual(long?.count, 200)
+        XCTAssertEqual(long, String(repeating: "x", count: 200 - suffix.count) + suffix)
+        let exact = action(["title": String(repeating: "y", count: 200 - suffix.count), "perm_kind": "shortcut"])
+        XCTAssertEqual(exact, String(repeating: "y", count: 200 - suffix.count) + suffix, "a question that just fits is kept whole")
+        let family = "👨‍👩‍👧‍👦"                                            // one character, seven scalars
+        let emoji = action(["title": String(repeating: family, count: 250), "perm_kind": "site"])
+        XCTAssertEqual(emoji, String(repeating: family, count: 200 - suffix.count) + suffix, "never cut inside a character")
+        XCTAssertEqual(action(["title": String(repeating: "a ", count: 120), "perm_kind": "app"])?.hasSuffix("a (for this task)"), true,
+                       "a cut that ends on a space does not leave two")
     }
 
     func testOutsideTheSandboxSaysSoAndOnlyFaceIDApproves() throws {

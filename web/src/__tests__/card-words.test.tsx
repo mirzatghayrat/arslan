@@ -103,6 +103,21 @@ describe("the support page and the Bridge protocol", () => {
     expect(row).toContain("the card's own");
   });
 
+  it("the protocol says who may have answered a card and what the phone is told (final review, M1)", () => {
+    const spec = flowed(repo("docs/specs/mobile-bridge-protocol.md"));
+    expect(spec).toContain("by?: phone|mac|inbox|island");
+    expect(spec).not.toContain("by?: phone|mac}");
+    expect(spec).toContain('`detail: "answered_on_mac"` when the Mac answered — a window, the Inbox or the island');
+    expect(spec).toContain("several apps in one card arrive in `target` separated by \", \"");
+  });
+
+  it("the protocol says an app, site or Shortcut card ends its `action` with \" (for this task)\" (final review, M2)", () => {
+    const raw = repo("docs/specs/mobile-bridge-protocol.md");
+    const row = raw.split("\n").find((l) => l.startsWith("| `approval.request` |")) ?? "";
+    expect(row).toContain("(for this task)");
+    expect(flowed(raw)).toContain("`action` ends with \" (for this task)\" on a card whose `perm_kind` is `app`, `site` or `shortcut`");
+  });
+
   it("the 0.1.61 spec §A4 gives the Bridge's risk words as built, not 'everything else → write'", () => {
     const spec = repo("docs/specs/2026-10-11-0161-smooth.md");
     const bullet = flowed(spec.slice(spec.indexOf("- **The Bridge** maps the new kinds"), spec.indexOf("**One card for identical requests.**")));

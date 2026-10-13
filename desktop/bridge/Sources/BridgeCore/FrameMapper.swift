@@ -50,8 +50,10 @@ public final class FrameMapper {
             // line (every run of whitespace, newlines too, becomes one space) before it is cut.
             let question = Self.oneLine(frame["title"] as? String ?? "")
             let expires = Self.frameExpiry(frame["expires_at"], now: now) ?? now.addingTimeInterval(Self.cardWait)
-            return [("approval.request", ["approval_id": id, "action": String((question.isEmpty ? Self.oneLine(action) : question).prefix(200)),
-                                          "target": String(target.prefix(300)),
+            return [("approval.request", ["approval_id": id,
+                                          "action": Self.heading(question.isEmpty ? Self.oneLine(action) : question, permKind: frame["perm_kind"] as? String),
+                                          // A card for several apps (permissions.decide_many) joins their ids with U+001E: one line, comma-separated.
+                                          "target": String(target.replacingOccurrences(of: "\u{1e}", with: ", ").prefix(300)),
                                           "risk": Self.permRisk(frame["perm_kind"] as? String) ?? risk,
                                           "task_id": conversationID, "task_title": title ?? "Arslan",
                                           "expires_at": iso.string(from: expires)])]
@@ -150,7 +152,8 @@ public final class FrameMapper {
             answered.remove(id)
             let outcome = ["approved": "done", "declined": "denied"][frame["outcome"] as? String ?? ""] ?? "expired"
             var body: [String: Any] = ["approval_id": id, "outcome": outcome]
-            if frame["by"] as? String == "mac" { body["detail"] = "answered_on_mac" }
+            // Any answer that is not the phone's own came from the Mac: a window, the Inbox or the island (approvals.SOURCES).
+            if let by = frame["by"] as? String, by != "phone" { body["detail"] = "answered_on_mac" }
             return [("approval.result", body)]
         case "job_update":
             if let job = frame["job_id"] as? String, let origin = frame["origin"] as? String { jobOrigins[job] = origin }
@@ -175,6 +178,21 @@ public final class FrameMapper {
         let seconds = number.doubleValue, here = now.timeIntervalSince1970
         guard seconds >= here - 60, seconds <= here + 7200 else { return nil }
         return Date(timeIntervalSince1970: seconds)
+    }
+
+    /// The permission kinds whose card is task-first: the phone's yes takes the card's first, narrowest choice (the Mac's
+    /// `approvals.FIRST_CHOICE_ONLY`), which on these is "for this task" (`permissions._TASK_FIRST`).
+    static let taskFirst: Set<String> = ["app", "site", "shortcut"]
+    static let forThisTask = " (for this task)"
+    /// The phone's card heading is at most this many characters, whatever it says.
+    static let headingLimit = 200
+
+    /// The card's question as the phone's heading: at most 200 characters, and on a task-first card ending with what the phone's yes
+    /// covers (final review, M2). The question gives way to the words, never the other way: they stay whole inside the same cut.
+    static func heading(_ text: String, permKind: String?) -> String {
+        guard let kind = permKind, taskFirst.contains(kind) else { return String(text.prefix(headingLimit)) }
+        let base = String(text.prefix(headingLimit - forThisTask.count)).trimmingCharacters(in: .whitespaces)
+        return base.isEmpty ? String(forThisTask.dropFirst()) : base + forThisTask
     }
 
     /// The text on one line: each run of whitespace (newlines too) is one space, and the ends are trimmed.

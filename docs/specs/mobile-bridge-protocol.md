@@ -246,7 +246,7 @@ never the content. A lock-screen alert shows generic text unless the user turned
 | `chat.send` | phone → Mac | `conversation_id?` (absent = the pocket conversation), `text`, `attachments[]`, `client_msg_id` (UUID) |
 | `chat.event` | Mac → phone | `conversation_id`, `kind` (message/progress/error), `message_id`, `text`, `final`, `job_id?`, `run_id?` |
 | `job.event` | Mac → phone | `id`, `conversation_id`, `state` (running/done/partial/stuck/stopped), `title`, `current_step`, `completed`, `total`, `plan[]`, `summary?`, `files[]`, `run_id?`, `origin?`, `criteria[]?` |
-| `approval.request` | Mac → phone | `approval_id`, `action` (the card's `title` when it has one), `target`, `risk` (write/send/delete/install/payment/publish; the card's `perm_kind` decides the word first, §5.3), `task_id`, `task_title`, `expires_at` (the card's own) |
+| `approval.request` | Mac → phone | `approval_id`, `action` (the card's `title` when it has one; an app, site or Shortcut card ends it with " (for this task)"), `target`, `risk` (write/send/delete/install/payment/publish; the card's `perm_kind` decides the word first, §5.3), `task_id`, `task_title`, `expires_at` (the card's own) |
 | `approval.answer` | phone → Mac | `approval_id`, `decision` (approve/deny), `auth` (`faceid` or `touchid` for approve, `none` for deny; a Mac that counts `touchid` says `touchid` in its hello capabilities, and a phone sends a Touch ID yes only to such a Mac), `ts` |
 | `approval.result` | Mac → phone | `approval_id`, `outcome` (done/denied/expired/failed), `detail?` |
 | `file.offer` / `file.get` | Mac → phone / phone → Mac | `id`, `name`, `size`, `mime_type`, `sha256` (hex of the plaintext) / `file_id` |
@@ -282,7 +282,10 @@ Settled here (open in the proposal):
   card's `perm_kind` decides first: `money` → `payment`, `send` → `send`, `destructive` → `delete`,
   `outside` → `install`; any other kind keeps the rules above. A `capability` card never reaches the
   phone. `action` is the card's `title` when it has one (the Mac's own words, in English for now),
-  and `expires_at` is the card's own.
+  and `expires_at` is the card's own. `action` ends with " (for this task)" on a card whose `perm_kind`
+  is `app`, `site` or `shortcut`: the phone's yes takes the card's first, narrowest choice, which on
+  those cards is the task (the heading is still cut at 200 characters, the words kept whole). A card for
+  several apps (`decide_many`) joins their ids; several apps in one card arrive in `target` separated by ", ".
 - History ids are the Mac's stored message ids, and the final `chat.event` of a turn uses the same id,
   so the phone can merge the two. Arslan's replies list their run's files as `attachments`.
 - Files are a run's artifacts (immutable snapshots, so a reference never goes stale; id =
@@ -441,9 +444,9 @@ the existing `confirm_*` / `cancel_*` frames. Its private keys live in its own K
   `source: "phone"`, to every Mac window open on that conversation (the Bridge ignores it).
 - Cards of a turn the phone started go to every socket on the conversation: the Bridge's (→
   `approval.request`) and each Mac window's. The first answer from either side decides; the backend
-  then broadcasts `card_resolved {call_id, outcome: approved|declined|expired, by?: phone|mac}`, which
+  then broadcasts `card_resolved {call_id, outcome: approved|declined|expired, by?: phone|mac|inbox|island}`, which
   closes the window copies and becomes the phone's `approval.result` (approved → `done`, declined →
-  `denied`, expired → `expired`; `detail: "answered_on_mac"` when a Mac window answered). The phone's
+  `denied`, expired → `expired`; `detail: "answered_on_mac"` when the Mac answered — a window, the Inbox or the island). The phone's
   `confirm_*` / `cancel_*` frames carry `source: "phone"`; a phone answer to a card the Mac already
   decided is dropped quietly (the phone has its `approval.result`). Background-job cards end with the
   same `card_resolved`. A window's own turn keeps its cards private to that window, as before.
