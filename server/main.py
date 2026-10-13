@@ -156,6 +156,16 @@ async def lifespan(app: FastAPI):
     async with AsyncSessionLocal() as ledger_session:
         await memory_deletion_ledger.sync(ledger_session)
 
+    # 0.1.61 §A5: a "for this task" grant ends with its task, and no turn or job survives a
+    # restart: drop every one the last run left, before any request or background work. The
+    # conversation grants stay. Best-effort — a failure is logged and never blocks boot.
+    try:
+        from server.services import permissions
+
+        await permissions.forget_every_task_grant()
+    except Exception as exc:  # noqa: BLE001 — must never block boot
+        logger.warning("task grants of the last run were not dropped at boot (non-fatal): %s", exc)
+
     from server.registry.seeder import seed_registry
 
     await seed_registry()

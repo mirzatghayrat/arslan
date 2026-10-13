@@ -124,11 +124,11 @@ Asker = Callable[[dict], Awaitable[dict]]
 _ASKER: ContextVar[Asker | None] = ContextVar("permissions_asker", default=None)
 #: The tasks (chat turns, jobs) this process gave a "for this task" grant: what `forget_task` has
 #: to delete when one ends. Any other task's end never touches the database — whose write lock a
-#: stopped job's own interrupted transaction can hold for seconds (CI 38293278888). A task whose
-#: delete failed stays here, for the next forget of that id to retry: a job id never comes back, but
-#: a chat task can be resumed under the same id (`task_service.prepare_resume`) and would otherwise
-#: keep the grant it was given before. What a restart leaves behind is removed by the store's
-#: 24-hour prune.
+#: stopped job's own interrupted transaction could hold for seconds (CI 38293278888). A task whose
+#: delete failed stays here, for the next forget of that id to retry. What this registry cannot see
+#: is closed elsewhere (PR 2c): boot drops every task grant the last run left
+#: (`forget_every_task_grant`), and a chat task resumed under its own id drops its grants before it
+#: starts (`drop_task_grants`, from `task_service.prepare_resume`).
 _GRANTED_TASKS: set[str] = set()
 #: The last decision in this context: tool results read it to tell "expired" from "no".
 LAST_DECISION: ContextVar[Decision | None] = ContextVar("permissions_last_decision", default=None)
@@ -255,6 +255,27 @@ async def forget_task(task_id: str | None) -> int:
         _GRANTED_TASKS.add(task_id)             # still stored: it is still owed
         raise
     return gone
+
+
+async def forget_every_task_grant() -> int:
+    """Boot (0.1.61 §A5, PR 2c): no turn or job survives a restart, so neither does any "for this
+    task" grant — those the last run never got to forget (it stopped, or a delete failed) would
+    otherwise wait for the 24-hour prune. Conversation grants stay. Returns how many went; a
+    failure raises, and the caller (`server.main.lifespan`) logs it and boots on."""
+    async with db_session.AsyncSessionLocal() as db:
+        gone = await permission_store.delete_every_task_grant(db)
+        await db.commit()
+    _GRANTED_TASKS.clear()                     # after the commit: a grant still stored is still owed
+    return gone
+
+
+async def drop_task_grants(db, task_id: str) -> int:
+    """A chat task resumed under its own id (`task_service.prepare_resume`) starts with none of the
+    "for this task" grants it was given before, whatever `_GRANTED_TASKS` says (0.1.61 §A5, PR 2c):
+    a grant whose end-of-task delete failed, or that a restart left behind, would answer for the
+    resumed run without a card. In the caller's transaction (the resume's own), so a resume that
+    does not start drops nothing."""
+    return await permission_store.delete_task_grants(db, task_id)
 
 
 def _check(req: Request) -> None:

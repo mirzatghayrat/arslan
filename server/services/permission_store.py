@@ -115,6 +115,13 @@ async def delete_task_grants(db, task_id: str) -> int:
     return result.rowcount or 0
 
 
+async def delete_every_task_grant(db) -> int:
+    """Every "for this task" grant, of every task (task_id not ""): what boot drops, since no turn
+    or job survives a restart. The conversation grants stay."""
+    result = await db.execute(delete(PermissionGrant).where(PermissionGrant.task_id != ""))
+    return result.rowcount or 0
+
+
 async def record(db, **fields) -> ApprovalEvent:
     await _prune(db)
     row = ApprovalEvent(created_at=datetime.utcnow(), **fields)

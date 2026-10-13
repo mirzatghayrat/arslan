@@ -244,7 +244,7 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             for task_id in sorted(turn_tasks):
                 try:
                     await permissions.forget_task(task_id)
-                except Exception as exc:  # noqa: BLE001 — the store's 24-hour prune is the backstop
+                except Exception as exc:  # noqa: BLE001 — a resume or the next boot drops them
                     logger.warning("turn task grants not forgotten: %s", type(exc).__name__)
             turn_tasks.clear()
             desktop_status.push("turn_finished", conversation_id=conversation_id, outcome=outcome, title=title,

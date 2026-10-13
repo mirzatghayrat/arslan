@@ -428,10 +428,28 @@ def test_a_card_answered_after_the_turns_wall_clock_still_finishes_the_turn(app_
 
 # ── review fix round 1 ───────────────────────────────────────────────────────
 
+def _ledger(app_client, conversation_id: str) -> list:
+    from server.db.models import ApprovalEvent
+
+    async def read():
+        async with app_client.db_maker() as db:
+            return (await db.scalars(select(ApprovalEvent).where(
+                ApprovalEvent.conversation_id == conversation_id).order_by(ApprovalEvent.id))).all()
+    return app_client.portal.call(read)
+
+
 def test_once_a_card_in_a_turn_goes_unanswered_the_turns_later_cards_do_not_wait(app_client, monkeypatch, judge):
     """I1: as a job's surface, the window has a "person is away" latch. A turn can never stack
-    30-minute waits; the next turn asks again."""
-    monkeypatch.setattr(approvals, "TIMEOUT_S", 0.5)
+    30-minute waits; the next turn asks again.
+
+    The ledger says it, not the clock (PR 2c): the later three decisions are "away" expiries
+    whose card never opened (`wait_ms` None). The old check, under 2.0 s with a 0.5 s card, failed
+    on a slow CI runner (2.08 s, run 38354283470) and in a loaded local run (2.05 s). Traced, no
+    later card opened or waited in any run: the turn is the one card's wait, plus the final
+    answer's paced reveal (`tool_loop._REVEAL_TOTAL_S`, about 0.5 s for "done"), plus 130-odd
+    statements of turn overhead, 0.15 s idle and up to 1.75 s under background-QoS throttling.
+    The time bound only catches every card waiting its full time, which takes 4 x TIMEOUT_S."""
+    monkeypatch.setattr(approvals, "TIMEOUT_S", 1.5)
     _enable_shell(app_client, policy="ask_all")
     monkeypatch.setattr(tool_loop_mod, "_get_adapter", lambda: _Steps(
         *[("run_command", {"command": "git", "argv": ["log", f"-{n}"]}) for n in range(1, 5)]))
@@ -445,7 +463,10 @@ def test_once_a_card_in_a_turn_goes_unanswered_the_turns_later_cards_do_not_wait
         assert len([f for f in frames if f.get("type") == "propose_run_command"]) == 1
         results = [f["summary"] for f in frames if f.get("type") == "tool_result"]
         assert len(results) == 4 and all("NOT a refusal" in r for r in results), results
-        assert elapsed < 2.0, f"the later cards waited: {elapsed:.2f} s"
+        first, *later = [(e.decided_by, e.decision, e.wait_ms) for e in _ledger(app_client, "conv-u")]
+        assert first[:2] == ("expired", "expired") and first[2] >= 1000, first   # it waited its time
+        assert later == [("away", "expired", None)] * 3, later                   # these never opened
+        assert elapsed < 4 * approvals.TIMEOUT_S, f"the later cards waited: {elapsed:.2f} s"
         # A new turn: the person may be back, and is asked again.
         monkeypatch.setattr(tool_loop_mod, "_get_adapter", lambda: _Steps(
             ("run_command", {"command": "git", "argv": ["log", "-5"]})))

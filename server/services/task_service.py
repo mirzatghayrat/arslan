@@ -560,6 +560,9 @@ async def prepare_resume(task_id, expected_version, conversation_id, ctx, *, ins
                 raise TaskError("task_goal_changed")
         saved = await repo.latest_checkpoint(task_id)
         value = await repo.start(task_id, expected_version, explicit_resume=True)
+        # 0.1.61 §A5: the resumed run is asked again; its old "for this task" grants go with the start.
+        from server.services import permissions
+        await permissions.drop_task_grants(repo.db, task_id)
     ctx = replace(ctx, task_id=task_id, no_learning=ctx.no_learning or ceiling.get("no_learning", True),
                   cloud_memory_allowed=ctx.cloud_memory_allowed and ceiling.get("cloud_memory_allowed", False),
                   # A task never gains on resume what it did not have when created (old tasks: no key = no).
