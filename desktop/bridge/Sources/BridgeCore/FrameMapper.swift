@@ -10,11 +10,26 @@ public enum CardKind: String {
 public final class FrameMapper {
     public static let progressInterval: TimeInterval = 2      // §5.3: at most one progress per 2 s
     public static let cardTimeout: TimeInterval = 300         // the Mac's 5-minute card timeout
+    public static let partialInterval: TimeInterval = 1       // §5.7: at most one partial per second
+    /// §5.7: past this many UTF-8 bytes the answer stops coming as partials (each one carries the
+    /// whole reply so far, and must fit one envelope); the final message still comes.
+    public static let partialLimit = 100_000
     public let conversationID: String
+    /// §5.7: send the answer as it is written (`partial`) — set while a paired phone asked for it.
+    public var partials = false
     var reply = ""
-    var messageID = UUID().uuidString.lowercased()
+    var messageID = UUID().uuidString.lowercased()            // the turn's own id until the stored one is known
     var lastProgress: Date?
     var heldProgress: String?
+    var lastPartial: Date?
+    var sentPartial = ""                                      // the reply as the last partial had it
+    var heldPartial = false                                   // a newer reply waits for its second
+    var turnOpen = false                                      // between a turn's stream_start and its end
+    var phoneSpoke = false                                    // the phone's words came back: its turn is next
+    var macSpoke = false                                      // words typed on the Mac came: their turn is next
+    var turnOrigin: String?                                   // who started the turn now streaming: phone / mac / unknown
+    var jobOrigins: [String: String] = [:]                    // job id → who started it (from job_update)
+    var seenUpTo: Int?                                        // newest stored message id this mapper knows of
     public private(set) var cards: [String: CardKind] = [:]   // open until the Mac says how it ended
     public var title: String?                                  // the conversation's title, for cards
     var answered: Set<String> = []                             // the phone answers a card once
@@ -37,40 +52,76 @@ public final class FrameMapper {
         case "stream_start":
             reply = ""
             messageID = UUID().uuidString.lowercased()
+            (lastPartial, sentPartial, heldPartial, turnOpen) = (nil, "", false, true)
+            // §5.7: whose words came just before says who started this turn; no evidence → unknown.
+            turnOrigin = phoneSpoke ? "phone" : (macSpoke ? "mac" : nil)
+            (phoneSpoke, macSpoke) = (false, false)
             return []
         case "stream_chunk":
-            reply += frame["content"] as? String ?? ""
-            return []
+            let chunk = frame["content"] as? String ?? ""
+            guard !chunk.isEmpty else { return [] }
+            reply += chunk
+            guard partials else { return [] }
+            // §5.7: the reply so far, at most once a second; a newer one waits for `flush`.
+            if let last = lastPartial, now.timeIntervalSince(last) < Self.partialInterval {
+                heldPartial = true
+                return []
+            }
+            return partial(now: now)
         case "stream_end":
-            heldProgress = nil
+            endTurn()
             // The stored message's id, so the phone can merge this answer with `chat.history`.
-            if let stored = frame["message_id"] as? Int { messageID = String(stored) }
+            let partialID = messageID
+            if let stored = frame["message_id"] as? Int { messageID = String(stored); see(stored) }
             var event: [String: Any] = ["conversation_id": conversationID, "kind": "message", "message_id": messageID,
-                                        "text": reply, "final": true]
+                                        "text": reply, "final": true, "partial_id": partialID]
             if let run = frame["run_id"] as? Int { event["run_id"] = run }    // what the reply did, for review
+            if let origin = turnOrigin { event["origin"] = origin }           // who asked (§5.7: who it rings)
             return [("chat.event", event)]
         case "message":
-            // A background task's result (its turn streams nothing). The phone's own words come back
-            // here too — it already has those.
-            guard frame["role"] as? String == "arslan", let id = frame["message_id"] as? Int else { return [] }
-            heldProgress = nil                            // see `endsTurn`
+            guard let id = frame["message_id"] as? Int else { return [] }
+            if frame["role"] as? String == "user" {
+                // The phone's own words come back here (it has them; its turn is next). Words a Mac
+                // window typed (no source "phone") go to the phone, marked, once (§5.7).
+                if frame["source"] as? String == "phone" {
+                    phoneSpoke = true
+                    see(id)
+                    return []
+                }
+                return userWords(id: id, text: frame["content"] as? String ?? "")
+            }
+            // A background task's result (its turn streams nothing).
+            guard frame["role"] as? String == "arslan" else { return [] }
+            endTurn()                                     // see `endsTurn`
+            see(id)
             var event: [String: Any] = ["conversation_id": conversationID, "kind": "message", "message_id": String(id),
                                         "text": frame["content"] as? String ?? "", "final": true]
-            if let job = frame["job_id"] as? String { event["job_id"] = job }
+            if let job = frame["job_id"] as? String {
+                event["job_id"] = job
+                if let origin = jobOrigins[job] { event["origin"] = origin }
+            }
             if let run = frame["run_id"] as? Int { event["run_id"] = run }
             return [("chat.event", event)]
         case "error":
-            heldProgress = nil                            // see `endsTurn`
-            return [("chat.event", ["conversation_id": conversationID, "kind": "error", "message_id": messageID,
-                                    "text": frame["message"] as? String ?? "", "final": true])]
+            endTurn()                                     // see `endsTurn`
+            var event: [String: Any] = ["conversation_id": conversationID, "kind": "error", "message_id": messageID,
+                                        "text": frame["message"] as? String ?? "", "final": true]
+            if let origin = turnOrigin { event["origin"] = origin }
+            return [("chat.event", event)]
+        case "history":
+            // The socket's first frame: everything stored so far is not news (§5.7, the Mac's words).
+            let ids = (frame["messages"] as? [[String: Any]] ?? []).compactMap { $0["message_id"] as? Int }
+            seenUpTo = max(seenUpTo ?? 0, ids.max() ?? 0)
+            return []
         case "tool_call":
-            let text = "\(frame["tool"] as? String ?? ""): \(frame["args_summary"] as? String ?? "")"
-            if let last = lastProgress, now.timeIntervalSince(last) < Self.progressInterval {
-                heldProgress = text                       // newest wins; flushed later
-                return []
-            }
-            lastProgress = now
-            return [progress(text)]
+            return progressLine("\(frame["tool"] as? String ?? ""): \(frame["args_summary"] as? String ?? "")", now: now)
+        case "working":
+            // §5.7: the backend's "still working" beat (every 15 s of a turn). Never after the turn's
+            // end, and never in place of a real step held back.
+            guard turnOpen, heldProgress == nil else { return [] }
+            return progressLine("Working…", now: now)
+        case "queued":
+            return progressLine("Queued behind the current turn", now: now)
         case "propose_run_command":
             let outside = ["outside", "retry"].contains(frame["sandbox"] as? String ?? "")
             let line = frame["pretty"] as? String ?? frame["command"] as? String ?? ""
@@ -94,7 +145,8 @@ public final class FrameMapper {
             if frame["by"] as? String == "mac" { body["detail"] = "answered_on_mac" }
             return [("approval.result", body)]
         case "job_update":
-            if frame["phase"] as? String == "finished" { heldProgress = nil }    // see `endsTurn`
+            if let job = frame["job_id"] as? String, let origin = frame["origin"] as? String { jobOrigins[job] = origin }
+            if frame["phase"] as? String == "finished" { endTurn() }    // see `endsTurn`
             return [("job.event", Self.jobEvent(frame, conversationID: conversationID))]
         default:
             return []
@@ -122,12 +174,74 @@ public final class FrameMapper {
     /// job there loses at most its one held line, and its next step or its end comes anyway.
     static let endsTurn = "stream_end, message, error, finished job_update"
 
-    /// A held progress line, once its 2 seconds have passed.
+    /// What a turn's end drops: the step and the partial it still holds back (`endsTurn`).
+    func endTurn() {
+        heldProgress = nil
+        heldPartial = false
+        turnOpen = false
+    }
+
+    /// A held progress line, once its 2 seconds have passed; a held partial, once its second has.
     public func flush(now: Date = Date()) -> [Message] {
-        guard let text = heldProgress, let last = lastProgress, now.timeIntervalSince(last) >= Self.progressInterval else { return [] }
+        var out: [Message] = []
+        if heldPartial, let last = lastPartial, now.timeIntervalSince(last) >= Self.partialInterval { out += partial(now: now) }
+        guard let text = heldProgress, let last = lastProgress, now.timeIntervalSince(last) >= Self.progressInterval else { return out }
         heldProgress = nil
         lastProgress = now
+        return out + [progress(text)]
+    }
+
+    /// One progress line under the 2-second rule: sent now, or held (newest wins) for `flush`.
+    func progressLine(_ text: String, now: Date) -> [Message] {
+        if let last = lastProgress, now.timeIntervalSince(last) < Self.progressInterval {
+            heldProgress = text                       // newest wins; flushed later
+            return []
+        }
+        lastProgress = now
         return [progress(text)]
+    }
+
+    /// §5.7: the reply so far, under the turn's own id (the final message names it as `partial_id`).
+    /// Only when it changed; never past `partialLimit`.
+    func partial(now: Date) -> [Message] {
+        heldPartial = false
+        guard reply != sentPartial, reply.utf8.count <= Self.partialLimit else { return [] }
+        (lastPartial, sentPartial) = (now, reply)
+        return [("chat.event", ["conversation_id": conversationID, "kind": "partial", "message_id": messageID,
+                                "text": reply, "final": false])]
+    }
+
+    func see(_ id: Int) { seenUpTo = max(seenUpTo ?? id, id) }
+
+    /// Words typed in a Mac window, as the phone shows them ("on the Mac"); each stored message once.
+    func userWords(id: Int, text: String) -> [Message] {
+        if let seen = seenUpTo, id <= seen { return [] }
+        see(id)
+        // Evidence for who started a turn: read once it started (history), or before it (a frame).
+        if turnOpen { turnOrigin = turnOrigin ?? "mac" } else { macSpoke = true }
+        return [("chat.event", ["conversation_id": conversationID, "kind": "message", "message_id": String(id),
+                                "text": text, "final": true, "role": "user", "source": "mac"])]
+    }
+
+    /// §5.7: today's backend sends no frame for words a Mac window typed, so when a turn starts the
+    /// Bridge reads the newest stored messages (`/api/v1/phone/conversations/<id>/history`, oldest
+    /// first) and forwards the user's words typed on the Mac that this mapper has not seen. Without
+    /// the socket's `history` frame to say what is old, only what follows the last answer is news.
+    public func macMessages(from rows: [[String: Any]]) -> [Message] {
+        let parsed = rows.compactMap { row -> (id: Int, row: [String: Any])? in
+            guard let id = Int(row["id"] as? String ?? "") else { return nil }
+            return (id, row)
+        }.sorted { $0.id < $1.id }
+        if seenUpTo == nil, let lastAnswer = parsed.last(where: { $0.row["role"] as? String != "user" }) { seenUpTo = lastAnswer.id }
+        var out: [Message] = []
+        for (id, row) in parsed {
+            if row["role"] as? String == "user", row["source"] as? String == "mac" {
+                out += userWords(id: id, text: row["text"] as? String ?? "")
+            } else {
+                see(id)
+            }
+        }
+        return out
     }
 
     func progress(_ text: String) -> Message {

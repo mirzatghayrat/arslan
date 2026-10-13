@@ -229,7 +229,6 @@ async def _run(job: Job) -> None:
         _inside_job.reset(token)
         from server.registry import hands_tools
         hands_tools.forget_job(job.job_id)      # approvals never outlive their job
-        await _forget_task_grants(job)
         outcome = outcome_of(phase, job.results, reason)
         # Judged before the job reads as finished, so nothing shows "done" in between.
         if outcome == "done" and await _goal_not_reached(job, final_text):
@@ -237,15 +236,25 @@ async def _run(job: Job) -> None:
         job.phase = "finished"
         job.outcome = outcome
         job.detail = reason
-        _emit(job)
-        await _report(job, final_text)
-        await _report_to_project(job)
+        try:
+            _emit(job)
+            await _report(job, final_text)
+            await _report_to_project(job)
+        finally:
+            # Last: bookkeeping nobody waits on (CI 38293278888 — a job stopped mid-write leaves its
+            # interrupted transaction holding SQLite's write lock until the garbage collector frees
+            # it, and this delete waited the 5 s busy timeout for it before the job read finished).
+            # And never skipped, whatever the reporting raised: a job id never comes back, so the
+            # rows would only wait for the store's 24-hour prune.
+            await _forget_task_grants(job)
 
 
 async def _forget_task_grants(job: Job) -> None:
     """0.1.61: what the user allowed "for this task" ends with the job, however it ended (done,
-    failed, stopped, cancelled). The conversation's grants stay. Bookkeeping: a database that
-    cannot be written now leaves the row to the store's 24-hour prune."""
+    failed, stopped, cancelled) — after it reads finished and is reported, and also when the
+    reporting raised. The conversation's grants stay. A job given none touches no database here
+    (`permissions.forget_task`); one that cannot be written now leaves its rows to the store's
+    24-hour prune."""
     from server.services import permissions
     try:
         await permissions.forget_task(job.job_id)

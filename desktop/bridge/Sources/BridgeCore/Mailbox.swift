@@ -58,6 +58,7 @@ public struct MailboxMemory: Codable, Equatable {
     public var awaitingTo: [String: String] = [:]   // awaiting id → its recipient (none for ids saved before 2026-10-07)
     public var toDelete: [String] = []           // acked records not yet deleted (a delete that failed is retried)
     public var heard: [String: Date] = [:]       // phone → when an authenticated message from it was last read
+    public var capabilities: [String: [String]] = [:]   // phone → its hello capabilities (§5.7)
     public var token: Data?
     public init() {}
     static let cap = 4096
@@ -73,6 +74,7 @@ public struct MailboxMemory: Codable, Equatable {
         awaitingTo = try c.decodeIfPresent([String: String].self, forKey: .awaitingTo) ?? [:]
         toDelete = try c.decodeIfPresent([String].self, forKey: .toDelete) ?? []
         heard = try c.decodeIfPresent([String: Date].self, forKey: .heard) ?? [:]
+        capabilities = try c.decodeIfPresent([String: [String]].self, forKey: .capabilities) ?? [:]
         token = try c.decodeIfPresent(Data.self, forKey: .token)
     }
 }
@@ -137,6 +139,7 @@ public final class Mailbox {
         awaitingTo = memory.awaitingTo.filter { awaitingFromBefore.contains($0.key) }
         toDelete = Set(memory.toDelete)
         heard = memory.heard
+        capabilities = memory.capabilities.mapValues { Set($0) }
         token = memory.token
     }
 
@@ -156,6 +159,7 @@ public final class Mailbox {
         for id in memory.awaitingAck { memory.awaitingTo[id] = sentAwaitingAck[id]?.to ?? awaitingTo[id] }
         memory.toDelete = Array(toDelete.sorted().suffix(MailboxMemory.cap))
         memory.heard = heard
+        memory.capabilities = capabilities.mapValues { $0.sorted() }
         memory.token = token
         try memoryStore.save(memory)
     }
@@ -169,7 +173,7 @@ public final class Mailbox {
     /// identity's records in the user's iCloud for good (1,602 waiting for acks that never came).
     /// `sparing` stays in the store (not waited for): the `device.revoked` the phone should still read.
     public func remove(peer deviceID: String, sparing: Set<String> = []) throws {
-        peers[deviceID] = nil; windows[deviceID] = nil; heard[deviceID] = nil
+        peers[deviceID] = nil; windows[deviceID] = nil; heard[deviceID] = nil; capabilities[deviceID] = nil
         let theirs = sentAwaitingAck.values.filter { $0.to == deviceID }.map(\.id)
             + awaitingFromBefore.filter { awaitingTo[$0] == deviceID }
         for id in theirs {
@@ -331,6 +335,19 @@ public final class Mailbox {
     /// remembered across restarts). No entry = paired but not heard from yet ("connecting").
     public private(set) var heard: [String: Date] = [:]
     public static let heardResolution: TimeInterval = 60
+
+    /// Each paired phone's `hello.capabilities`, remembered across restarts (§5.7). A phone that has
+    /// not said hello has none of the new ones: today's iPhone answers an unknown `chat.event` kind
+    /// with `unknown_type`, so `partial` and the Mac's own words go only to a phone that asked.
+    public private(set) var capabilities: [String: Set<String>] = [:]
+
+    public func setCapabilities(_ said: Set<String>, for peer: String) {
+        guard capabilities[peer] != said else { return }
+        capabilities[peer] = said
+        do { try remember() } catch { BridgeLog.error("remembering a phone's capabilities", error) }
+    }
+
+    public func has(_ capability: String, _ peer: String) -> Bool { capabilities[peer]?.contains(capability) == true }
 
     /// Records still waiting for an ack (to re-send, unchanged, with backoff).
     public var unacknowledged: [EnvelopeRecord] { Array(sentAwaitingAck.values) }

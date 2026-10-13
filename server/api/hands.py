@@ -11,8 +11,6 @@ Loopback + the API token, like every router here.
 """
 from __future__ import annotations
 
-import time
-
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
@@ -57,6 +55,7 @@ async def _status(start: bool) -> dict:
 async def get_hands() -> dict:
     status = await _status(start=False) if hands_client.running() else {"running": False}
     return {"available": hands_client.available(), **hands_service.settings(),
+            "always": await hands_service.always_apps(),        # `app` rules (0.1.61 §A5)
             "built_in": hands_service.built_in_lists(), **status}
 
 
@@ -65,7 +64,8 @@ async def put_hands(body: HandsSettings) -> dict:
     updated = hands_service.update_settings(enabled=body.enabled, cursor=body.cursor, never=body.never,
                                             screenshots=body.screenshots, borrow=body.borrow, away=body.away,
                                             no_screenshots=body.no_screenshots)
-    return {"available": hands_client.available(), **updated, "built_in": hands_service.built_in_lists()}
+    return {"available": hands_client.available(), **updated, "always": await hands_service.always_apps(),
+            "built_in": hands_service.built_in_lists()}
 
 
 @router.post("/hands/stop")
@@ -159,17 +159,14 @@ async def add_always(body: AlwaysApp) -> dict:
     if app is None or not app.get("bundle_id"):
         code = failure.code if failure else "app_not_running"
         return {"ok": False, "code": code, "error": "Open the app first; Arslan keeps it by its bundle id."}
-    current = hands_service.settings()["always"]
-    if all(a["bundle_id"] != app["bundle_id"] for a in current):
-        current.append({"bundle_id": app["bundle_id"], "name": str(app.get("name") or ""),
-                        "since": time.strftime("%Y-%m-%d")})
-    return {"ok": True, **hands_service.update_settings(always=current)}
+    await hands_service.allow_always(app["bundle_id"], str(app.get("name") or ""))      # an `app` rule
+    return {"ok": True, **hands_service.settings(), "always": await hands_service.always_apps()}
 
 
 @router.delete("/hands/always/{bundle_id}")
 async def remove_always(bundle_id: str) -> dict:
-    current = [a for a in hands_service.settings()["always"] if a["bundle_id"] != bundle_id]
-    return {"ok": True, **hands_service.update_settings(always=current)}
+    await hands_service.stop_always(bundle_id)
+    return {"ok": True, **hands_service.settings(), "always": await hands_service.always_apps()}
 
 
 @router.get("/hands/trace")

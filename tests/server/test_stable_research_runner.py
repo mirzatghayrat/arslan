@@ -50,7 +50,7 @@ async def test_research_runner_offline(execution_db, monkeypatch, tmp_path, case
         "source": "https://api-docs.deepseek.com/quick_start/pricing/",
         "input_usd_per_million": "0.30", "output_usd_per_million": "1.20"}))
 
-    async def fake_get(url):
+    async def fake_get(url, **kwargs):
         return httpx.Response(200, content=bodies[urls.index(url)], request=httpx.Request("GET", url))
 
     monkeypatch.setattr(net_pin, "pinned_get", fake_get)

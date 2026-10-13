@@ -7,6 +7,7 @@ public final class WebSocketControl: NSObject, ControlChannel {
     let url: URL
     let origin: String
     var task: URLSessionWebSocketTask?
+    var stopped = false
     lazy var session = URLSession(configuration: .ephemeral)
     public var onFrame: (([String: Any]) async -> Void)?
     public var onConnect: (() async -> Void)?
@@ -42,13 +43,23 @@ public final class WebSocketControl: NSObject, ControlChannel {
         return task
     }
 
-    /// Connect, read until the socket fails, reconnect after 1, 2, 4 … 30 s. Never returns.
+    /// Close for good (§5.7: the conversation was deleted, or its link is no longer kept): no reconnect.
+    public func stop() {
+        stopped = true
+        task?.cancel(with: .goingAway, reason: nil)
+        task = nil
+        // The session is not invalidated: `run` may be about to make its next task on it, and a task
+        // on an invalidated session throws. The loop sees `stopped` and makes none.
+    }
+
+    /// Connect, read until the socket fails, reconnect after 1, 2, 4 … 30 s. Returns only after `stop`.
     public func run(startingWith first: URLSessionWebSocketTask? = nil) async {
         var delay: UInt64 = 1
         var next = first
-        while true {
+        while !stopped {
             let task = next ?? connect()
             next = nil
+            if stopped { task.cancel(with: .goingAway, reason: nil); return }    // stopped while it was being made
             do {
                 await onConnect?()
                 while true {
@@ -66,6 +77,7 @@ public final class WebSocketControl: NSObject, ControlChannel {
                 task.cancel(with: .goingAway, reason: nil)
                 self.task = nil
             }
+            if stopped { return }
             try? await Task.sleep(nanoseconds: delay * 1_000_000_000)
             delay = min(delay * 2, 30)
         }

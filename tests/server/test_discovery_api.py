@@ -29,6 +29,7 @@ async def test_evaluate_returns_shape(client, monkeypatch):
         "command": "npx", "args": ["-y", "@scope/x"], "url": None, "reason": "npx"}
     monkeypatch.setattr(github_eval, "fetch_repo", fake_repo)
     monkeypatch.setattr(github_eval, "fetch_readme", fake_readme)
+    monkeypatch.setattr(github_eval, "fetch_file", _no_manifest)
     monkeypatch.setattr(mcp_suggest, "classify_and_suggest", fake_suggest)
     async with c:
         r = await c.post("/api/v1/discovery/evaluate", json={"ref": "o/r"})
@@ -54,6 +55,7 @@ async def test_evaluate_persists_nothing(client, monkeypatch):
         "license": None, "pushed_days": 9, "description": "", "topics": []}
     monkeypatch.setattr(github_eval, "fetch_repo", fake_repo)
     monkeypatch.setattr(github_eval, "fetch_readme", lambda o, r: _empty())
+    monkeypatch.setattr(github_eval, "fetch_file", _no_manifest)
     monkeypatch.setattr(mcp_suggest, "classify_and_suggest", lambda meta, readme: _no_mcp())
     async with c:
         await c.post("/api/v1/discovery/evaluate", json={"ref": "o/r"})
@@ -66,6 +68,9 @@ async def test_evaluate_persists_nothing(client, monkeypatch):
 
 
 async def _empty(): return ""
+# fetch_file is best-effort in production (a missing or unreadable manifest is ""), which is exactly why an
+# unpatched one hid a refused request to api.github.com: these tests say "this repo ships no manifest".
+async def _no_manifest(owner, repo, path): return ""
 async def _no_mcp(): return {"is_mcp": False, "transport": None, "command": None, "args": [], "url": None, "reason": "x"}
 
 
