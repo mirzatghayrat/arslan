@@ -1,6 +1,6 @@
 /** 0.1.61 §A4: the card's choices, the optional note on No, and the keys around them. */
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup, createEvent } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, createEvent, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 
@@ -9,11 +9,11 @@ vi.mock("react-i18next", () => ({
 }));
 
 import {
-  AskCard, AskQueue, CARD_MS, DeclineNote, Dialog, ScopeChoice, scopeToSend, useAnswerKeys, visibleScopes,
+  ANSWER_GUARD_MS, AskCard, AskQueue, CARD_MS, DeclineNote, Dialog, ScopeChoice, scopeToSend, useAnswerKeys, visibleScopes,
 } from "../components/kit";
 import LeftoverSheet from "../components/projects/LeftoverSheet";
 
-afterEach(() => cleanup());
+afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 describe("ScopeChoice", () => {
   it("shows exactly the card's options in its order, the always one with its literal scope", () => {
@@ -336,7 +336,8 @@ describe("the card's keys and a text field", () => {
     expect(CARD_MS).toBe(30 * 60 * 1000);
   });
 
-  it("a held key answers one card: its repeats never reach the card that moves up", () => {
+  it("a held key answers one card: its repeats never reach the card that moves up, even after the answer guard has run out", () => {
+    vi.useFakeTimers();
     const answered: string[] = [], declined: string[] = [];
     function Host() {
       const [keys, setKeys] = useState(["a", "b", "c", "d"]);
@@ -347,10 +348,12 @@ describe("the card's keys and a text field", () => {
     }
     render(<Host />);
     fireEvent.keyDown(window, { key: "Enter", metaKey: true });
+    act(() => { vi.advanceTimersByTime(ANSWER_GUARD_MS); });             // held past the guard: only the repeat flag holds the repeats back now
     fireEvent.keyDown(window, { key: "Enter", metaKey: true, repeat: true });
     fireEvent.keyDown(window, { key: "Enter", metaKey: true, repeat: true });
     expect(answered).toEqual(["a"]);
     fireEvent.keyDown(window, { key: "Escape" });
+    act(() => { vi.advanceTimersByTime(ANSWER_GUARD_MS); });
     fireEvent.keyDown(window, { key: "Escape", repeat: true });
     fireEvent.keyDown(window, { key: "Escape", repeat: true });
     expect(declined).toEqual(["b"]);

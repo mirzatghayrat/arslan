@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode 
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { appleScriptRisk } from "../../lib/scriptRisk";
+import { useAnswerGuard } from "./guard";
 
 /** A context line's icon, sized like the mock (15px, secondary label colour). */
 export const lineIcon = (Icon: (p: { className?: string; "aria-hidden"?: boolean }) => ReactNode) =>
@@ -32,9 +33,10 @@ export function Fingerprints({ label, list, testId }: { label: string; list: str
 /** A checkbox option under the card ("don't ask again …"). */
 export function AskOption({ checked, onChange, label, testId }:
   { checked: boolean; onChange: (v: boolean) => void; label: string; testId: string }) {
+  const guarded = useAnswerGuard();                           // a tick right after the card came up in a queue is not for it
   return (
     <label className="flex items-start gap-2 text-[13px] text-muted-foreground">
-      <input type="checkbox" data-testid={testId} checked={checked} onChange={(e) => onChange(e.target.checked)}
+      <input type="checkbox" data-testid={testId} checked={checked} onChange={(e) => { if (!guarded()) onChange(e.target.checked); }}
         className="mt-[3px] accent-foreground" />
       <span>{label}</span>
     </label>
@@ -90,6 +92,7 @@ export function ScopeChoice({ options, value, onChange, alwaysLabel, testId = "a
 }) {
   const { t } = useTranslation();
   const name = useId();
+  const guarded = useAnswerGuard();                           // a pick right after the card came up in a queue is not for it
   const shown = visibleScopes(options, alwaysLabel);
   if (shown.length < 2 && !shown.includes("always")) return null;
   const ticked = scopeToSend(options, value, alwaysLabel);
@@ -97,7 +100,7 @@ export function ScopeChoice({ options, value, onChange, alwaysLabel, testId = "a
     <div role="radiogroup" aria-label={t("kit.scope.label")} data-testid={testId} className="flex flex-col gap-1.5">
       {shown.map((o) => (
         <label key={o} className="flex items-start gap-2 text-[13px] text-muted-foreground">
-          <input type="radio" name={name} value={o} checked={ticked === o} onChange={() => onChange(o)}
+          <input type="radio" name={name} value={o} checked={ticked === o} onChange={() => { if (!guarded()) onChange(o); }}
             data-testid={`${testId}-${o}`} className="mt-[3px] accent-foreground" />
           <span>{o === "always" ? t("kit.scope.always", { label: alwaysLabel?.trim() ?? "" }) : t(`kit.scope.${o}`)}</span>
         </label>

@@ -10,13 +10,16 @@ vi.mock("react-i18next", () => ({
 }));
 
 import AskSlot from "../components/AskSlot";
+import { ANSWER_GUARD_MS } from "../components/kit";
 import { useArslanStore, initialArslanState } from "../stores/arslanStore";
 
-beforeEach(() => { useArslanStore.setState(initialArslanState(), true); });
+beforeEach(() => { useArslanStore.setState(initialArslanState(), true); clock(); });
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 const frame = (f: Record<string, unknown>) => act(() => { useArslanStore.getState().handleFrame(f as never); });
 const advance = (ms: number) => act(() => { vi.advanceTimersByTime(ms); });
 const clock = () => { vi.useFakeTimers(); vi.setSystemTime(new Date("2026-10-13T10:00:00Z")); };
+/** the card on top changed: it answers once the answer guard has run out */
+const settle = () => advance(ANSWER_GUARD_MS);
 const state = () => useArslanStore.getState();
 
 const CAPABILITY = { type: "propose_capability", kind: "mcp", name: "excel-mcp-server", summary: "Reads .xlsx",
@@ -82,6 +85,7 @@ describe.each(KINDS)("two $name cards", (k) => {
     expect(ids(k)).toEqual(["b"]);
     expect(screen.getByTestId(k.card)).toBeInTheDocument();
     expect(screen.queryByTestId("ask-queue")).toBeNull();                          // one left: no pager
+    settle();
     k.answer();
     expect(ids(k)).toEqual([]);
     expect(screen.queryByTestId("ask-slot")).toBeNull();
@@ -153,6 +157,7 @@ describe("a window's card and a job's card of the same kind", () => {
     expect(screen.getByRole("alertdialog")).toHaveAccessibleName("jobs.askingBadge");        // the job's moves up
     expect((screen.getByTestId("runcmd-scope-once") as HTMLInputElement).checked).toBe(true);
     expect((screen.getByTestId("runcmd-scope-always") as HTMLInputElement).checked).toBe(false);
+    settle();
     fireEvent.click(screen.getByTestId("runcmd-run"));
     expect(send).toHaveBeenLastCalledWith({ type: "confirm_run_command", call_id: "j1", scope: "once" });
     expect(send).toHaveBeenCalledTimes(2);
@@ -166,10 +171,12 @@ describe("a window's card and a job's card of the same kind", () => {
     frame(RULE("j1", { background: true }));
     fireEvent.click(screen.getByLabelText("kit.next"));
     expect(screen.getByRole("alertdialog")).toHaveAccessibleName("jobs.askingBadge");
+    settle();                                                                                // the card paged to answers after the guard
     fireEvent.keyDown(window, { key: "Escape" });
     expect(send).toHaveBeenLastCalledWith({ type: "cancel_run_command", call_id: "j1" });
     expect(state().pendingCommands.map((c) => c.callId)).toEqual(["w1"]);
     expect(screen.getByRole("alertdialog")).toHaveAccessibleName("kit.whoArslan");
+    settle();
     fireEvent.click(screen.getByTestId("runcmd-run"));
     expect(send).toHaveBeenLastCalledWith({ type: "confirm_run_command", call_id: "w1", scope: "once" });
   });

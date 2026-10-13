@@ -14,9 +14,11 @@ import RunCommandCard from "../components/RunCommandCard";
 import { AskQueue } from "../components/kit";
 import { useArslanStore, initialArslanState } from "../stores/arslanStore";
 
-beforeEach(() => useArslanStore.setState(initialArslanState(), true));
+beforeEach(() => { useArslanStore.setState(initialArslanState(), true); vi.useFakeTimers(); });
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 const frame = (f: Record<string, unknown>) => act(() => { useArslanStore.getState().handleFrame(f as never); });
+/** the card on top changed: it answers once the answer guard (500 ms) has run out */
+const settle = () => act(() => { vi.advanceTimersByTime(500); });
 const RULE = { type: "propose_run_command", call_id: "c1", command: "rm", argv: ["-rf", "build"], pretty: "rm -rf build",
   reason: "deletes files", options: ["once", "conversation", "always"], always_label: "deletes files",
   title: "Run `rm -rf build`?", perm_kind: "command" };
@@ -50,6 +52,7 @@ describe("card v2 in the chat", () => {
     fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter", metaKey: true });
     expect(send.mock.calls.at(-1)).toStrictEqual([{ type: "cancel_schedule", call_id: "s1", note: "weekly is enough" }]);
     frame({ type: "propose_schedule", call_id: "s2", name: "x", when: "y", options: ["once", "conversation"] });
+    settle();
     fireEvent.keyDown(window, { key: "Escape" });
     expect(send.mock.calls.at(-1)).toStrictEqual([{ type: "cancel_schedule", call_id: "s2" }]);
     expect(send).toHaveBeenCalledTimes(2);
@@ -74,6 +77,7 @@ describe("card v2 in the chat", () => {
     fireEvent.click(screen.getByTestId("runcmd-run"));
     expect(send.mock.calls.at(-1)).toStrictEqual([{ type: "confirm_run_command", call_id: "c1", scope: "always" }]);
     expect((screen.getByTestId("runcmd-scope-once") as HTMLInputElement).checked).toBe(true);     // c2 moved up, fresh
+    settle();
     fireEvent.click(screen.getByTestId("runcmd-run"));
     expect(send.mock.calls.at(-1)).toStrictEqual([{ type: "confirm_run_command", call_id: "c2", scope: "once" }]);
   });
@@ -238,18 +242,19 @@ describe("a card frame in the store", () => {
 // ── A choice never carries from one ask to another ──────────────────────────────────────────────────────
 
 describe("a choice never carries from one ask to another", () => {
-  // [card, its frame, test-id prefix of its choices, the choice picked, the choice a fresh card starts on, its yes button]
-  const TWO: [string, (id: string) => Record<string, unknown>, string, string, string, string][] = [
+  // [card, its frame, test-id prefix of its choices, the choice picked, the choice a fresh card starts on, its yes button, the frame its yes sends]
+  const TWO: [string, (id: string) => Record<string, unknown>, string, string, string, string, string][] = [
     ["a write card", (id) => ({ type: "propose_workspace_write", call_id: id, workspace: "/w", action: "write_file", path: "a.md",
-      options: ["once", "conversation"] }), "wswrite-scope", "conversation", "once", "wswrite-allow"],
+      options: ["once", "conversation"] }), "wswrite-scope", "conversation", "once", "wswrite-allow", "confirm_workspace_write"],
     ["a schedule card", (id) => ({ type: "propose_schedule", call_id: id, name: "n", when: "every: 60",
-      options: ["once", "conversation"] }), "schedule-choice", "conversation", "once", "schedule-allow"],
+      options: ["once", "conversation"] }), "schedule-choice", "conversation", "once", "schedule-allow", "confirm_schedule"],
     ["an action card", (id) => ({ type: "propose_action", call_id: id, kind: "app", target: "x", detail: "", title: "Use x?",
-      options: ["task", "conversation", "always"], always_label: "x" }), "action-scope", "always", "task", "action-allow"],
+      options: ["task", "conversation", "always"], always_label: "x" }), "action-scope", "always", "task", "action-allow", "confirm_action"],
   ];
 
-  it.each(TWO)("%s: what was picked on one ask is not picked on the ask that moves up, or on one paged to", (_name, make, prefix, picked, fresh, allow) => {
-    render(<AskSlot send={vi.fn()} />);
+  it.each(TWO)("%s: what was picked on one ask is not picked on the ask that moves up, or on one paged to", (_name, make, prefix, picked, fresh, allow, type) => {
+    const send = vi.fn();
+    render(<AskSlot send={send} />);
     frame(make("k1"));
     frame(make("k2"));                                                   // waits behind k1
     fireEvent.click(screen.getByTestId(`${prefix}-${picked}`));
@@ -259,8 +264,10 @@ describe("a choice never carries from one ask to another", () => {
     expect((screen.getByTestId(`${prefix}-${picked}`) as HTMLInputElement).checked).toBe(false);
     fireEvent.click(screen.getByLabelText("kit.previous"));              // and back: k1 starts fresh too
     expect((screen.getByTestId(`${prefix}-${picked}`) as HTMLInputElement).checked).toBe(false);
+    settle();                                                            // the card came up: now it can be picked on and answered
     fireEvent.click(screen.getByTestId(`${prefix}-${picked}`));
     fireEvent.click(screen.getByTestId(allow));                          // k1 answered: k2 takes its place
+    expect(send.mock.calls.at(-1)).toStrictEqual([{ type, call_id: "k1", scope: picked }]);
     expect((screen.getByTestId(`${prefix}-${fresh}`) as HTMLInputElement).checked).toBe(true);
     expect((screen.getByTestId(`${prefix}-${picked}`) as HTMLInputElement).checked).toBe(false);
   });
@@ -334,6 +341,7 @@ describe("each card is given its frame's fields by the slot", () => {
     expect(send.mock.calls.at(-1)).toStrictEqual([{ type: cancel, call_id: "k", note: "use the other one" }]);
     expect(screen.queryByTestId("ask-slot")).toBeNull();
     frame({ ...make, call_id: "k2" });
+    settle();
     fireEvent.keyDown(window, { key: "Escape" });
     expect(send.mock.calls.at(-1)).toStrictEqual([{ type: cancel, call_id: "k2" }]);
     expect(send).toHaveBeenCalledTimes(2);
@@ -452,6 +460,7 @@ describe("an answer given in the chat is never in flight", () => {
       fireEvent.click(screen.getByTestId(`${note}-open`));
       expect(screen.getByTestId(`${note}-send`)).toBeEnabled();
       fireEvent.click(screen.getByTestId(allow));
+      settle();                                                          // the next card answers once the guard has run out
     }
     expect(send).toHaveBeenCalledTimes(4);
     expect(screen.queryByTestId("ask-slot")).toBeNull();
@@ -488,7 +497,9 @@ describe("after the note answers a card", () => {
     expect(screen.queryByTestId("runcmd-card")).toBeNull();
     expect(screen.getByTestId("other")).toHaveFocus();
     frame({ ...RULE, call_id: "c2" });
+    settle();                                                          // c1 has just left: until then a click on Run would answer nothing
     fireEvent.click(screen.getByTestId("runcmd-run"));
+    expect(screen.queryByTestId("runcmd-card")).toBeNull();            // it was answered
     expect(screen.getByTestId("other")).toHaveFocus();
   });
 

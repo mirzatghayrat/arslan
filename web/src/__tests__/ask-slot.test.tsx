@@ -12,12 +12,13 @@ import AskSlot from "../components/AskSlot";
 import { useArslanStore, initialArslanState } from "../stores/arslanStore";
 
 beforeEach(() => useArslanStore.setState(initialArslanState(), true));
-afterEach(() => cleanup());
+afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 const frame = (f: Record<string, unknown>) => act(() => { useArslanStore.getState().handleFrame(f as never); });
 
 describe("the ask slot", () => {
   it("two waiting asks show as ONE card, oldest first, and ⌘⏎ answers it with the same frame as before", () => {
+    vi.useFakeTimers();                                                  // the card that moves up answers after the answer guard (500 ms)
     const send = vi.fn();
     render(<AskSlot send={send} />);
     frame({ type: "propose_run_command", call_id: "c1", command: "git", argv: ["status"], pretty: "git status", reason: "" });
@@ -33,6 +34,7 @@ describe("the ask slot", () => {
     // the next one moves up; its risk line is read from the script
     expect(screen.getByTestId("action-card")).toBeInTheDocument();
     expect(screen.getByTestId("ask-risk")).toHaveTextContent("kit.riskLine");
+    act(() => { vi.advanceTimersByTime(500); });
     fireEvent.keyDown(window, { key: "Escape" });
     expect(send).toHaveBeenLastCalledWith({ type: "cancel_action", call_id: "a1" });
     expect(screen.queryByTestId("ask-slot")).toBeNull();

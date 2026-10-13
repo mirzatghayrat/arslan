@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactElement } from "react";
 import type { AskQueuePosition } from "./AskCard";
+import { AnswerGuardScope, useQueueGuard } from "./guard";
 
 /**
  * Several pending asks shown as ONE card with "‹ 1 / 3 ›" (0.1.55). Before, every
@@ -24,6 +25,14 @@ export function AskQueue({ items }: { items: QueuedAsk[] }) {
     refocus.current = null;
     if (nav) host.current?.querySelector<HTMLElement>(`[data-nav="${nav}"]`)?.focus();
   }, [shown]);
+  // A card left the top (the one before it was answered, resolved elsewhere, ran out or paged away, or the queue itself is gone):
+  // for ANSWER_GUARD_MS nothing answers the card that comes up, so a double-click or a second ⌘⏎ aimed at the one that left never
+  // lands, unread, on the one that moved up (see guard.ts). The first card of a queue that has been empty a while, and the same
+  // card sent again, are not a change.
+  const guard = useQueueGuard();
+  const top = items.length ? items[Math.min(index, items.length - 1)].key : null;
+  useLayoutEffect(() => { guard.shown(top); }, [guard, top]);
+  useLayoutEffect(() => () => guard.shown(null), [guard]);
   if (!items.length) return null;
   const at = Math.min(index, items.length - 1);
   const go = (n: number) => {
@@ -39,8 +48,10 @@ export function AskQueue({ items }: { items: QueuedAsk[] }) {
   // Keyed by the ask: two cards of one kind are one component, so without it ‹ › would carry what the
   // person typed or ticked on the first (an opened note and its text) to the next.
   return (
-    <div ref={host} data-testid="ask-queue-host" className="flex w-full justify-center">
-      <Fragment key={items[at].key}>{items[at].render(queue)}</Fragment>
-    </div>
+    <AnswerGuardScope value={guard}>
+      <div ref={host} data-testid="ask-queue-host" className="flex w-full justify-center">
+        <Fragment key={items[at].key}>{items[at].render(queue)}</Fragment>
+      </div>
+    </AnswerGuardScope>
   );
 }

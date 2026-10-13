@@ -8,7 +8,7 @@ import EnrollNodeCard from "./EnrollNodeCard";
 import RunCommandCard from "./RunCommandCard";
 import ScheduleGrantCard from "./ScheduleGrantCard";
 import WorkspaceWriteCard from "./WorkspaceWriteCard";
-import { AskQueue, CARD_MS, Notice, scopeToSend, type AskQueuePosition, type QueuedAsk } from "./kit";
+import { AnswerGuardScope, AskQueue, CARD_MS, Notice, scopeToSend, useAnswerGuardState, type AskQueuePosition, type QueuedAsk } from "./kit";
 
 /** A window's own card gets no word from the server when it runs out; it leaves this slot
  *  this long after its expiry, so the server has closed it first. */
@@ -30,15 +30,26 @@ function focusComposer() {
  * Same frames in, same confirm / cancel frames out — and, for a card from the
  * permission layer (0.1.61 §A4), its scope on a yes and the user's note on a No.
  *
- * An answer here is a socket write and its card leaves in the same tick, so no card is ever "busy":
- * nothing is in flight to wait for. (The queue keys each ask by its identity: what one card had picked
- * or typed never reaches the ask that moves up into its place.)
+ * An answer here is a socket write and its card leaves in the same tick: nothing is in flight to wait
+ * for, except on the two cards that call the REST API themselves (enrolling a machine, connecting a server),
+ * and while that is in flight their ‹ › are off. (The queue keys each ask by its identity: what one card had
+ * picked or typed never reaches the ask that moves up into its place.)
+ *
+ * One gesture answers one card (0.1.61 §A4, fix round 2): for 500 ms after a card leaves the top — answered,
+ * resolved elsewhere, run out or paged away — nothing answers the one that comes up (kit/guard.ts).
  *
  * Every pending card of every kind is in that queue (0.1.61 §A4, fix round 1): the store keeps a list per kind
  * keyed by call id, so a second card of a kind — a window's own and a job's — waits behind the first and never
  * hides it. An answer, a `card_resolved` and an expiry take a card out by its id, and each runs out on its own clock.
  */
 export default function AskSlot({ send }: { send: (frame: Record<string, unknown>) => void }) {
+  // What holds an answer for a moment after a card leaves (kit/guard.ts) is kept here, above the queue: the queue is not on screen
+  // while no card waits, and the card that comes up in that gap — the next command of the turn — must be held too.
+  const guard = useAnswerGuardState();
+  return <AnswerGuardScope value={guard}><AskCards send={send} /></AnswerGuardScope>;
+}
+
+function AskCards({ send }: { send: (frame: Record<string, unknown>) => void }) {
   const { t } = useTranslation();
   const pendingCommands = useArslanStore((s) => s.pendingCommands);
   const pendingEnrollNodes = useArslanStore((s) => s.pendingEnrollNodes);

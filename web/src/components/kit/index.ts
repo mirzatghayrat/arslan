@@ -7,6 +7,7 @@ export { Button, Kbd, type ButtonTone } from "./Button";
 export { CodeBox } from "./CodeBox";
 export { ConfirmHost, ConfirmSheet, confirmSheet, type ConfirmOptions } from "./ConfirmSheet";
 export { CARD_MS, Countdown } from "./Countdown";
+export { ANSWER_GUARD_MS, AnswerGuardScope, useAnswerGuard, useAnswerGuardState } from "./guard";
 export { Dialog } from "./Dialog";
 export { useAnswerKeys, useLayer } from "./layers";
 export { Notice, type NoticeTone } from "./Notice";

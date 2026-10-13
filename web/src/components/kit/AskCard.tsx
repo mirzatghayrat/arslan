@@ -4,6 +4,7 @@ import { ArrowUpRight, Lock } from "lucide-react";
 import { AskMark } from "./AskMark";
 import { Button } from "./Button";
 import { CARD_MS, Countdown } from "./Countdown";
+import { useAnswerGuard } from "./guard";
 import { useAnswerKeys, useLayer } from "./layers";
 
 export interface AskQueuePosition { index: number; total: number; onPrev?: () => void; onNext?: () => void }
@@ -59,7 +60,10 @@ export function AskCard(p: AskCardProps) {
   const { t } = useTranslation();
   const top = useLayer(p.keys !== false);
   const root = useRef<HTMLElement>(null);
-  useAnswerKeys(top && !p.busy, { onAllow: () => { if (!p.allowDisabled) p.onAllow(); }, onDecline: p.onDecline }, root);
+  // Within ANSWER_GUARD_MS of this card coming up in a queue, no answer is for it (see guard.ts).
+  const guarded = useAnswerGuard();
+  useAnswerKeys(top && !p.busy, { onAllow: () => { if (!p.allowDisabled && !guarded()) p.onAllow(); },
+                                  onDecline: () => { if (!guarded()) p.onDecline(); } }, root);
   return (
     <section ref={root} data-testid={p.testId ?? "ask-card"} role="alertdialog" aria-label={p.who} {...p.attrs}
       className={`flex w-full max-w-[460px] flex-col gap-3.5 rounded-2xl border border-border bg-surface px-5 pb-4 pt-[18px] text-foreground shadow-kit ${p.className ?? ""}`}>
@@ -71,10 +75,10 @@ export function AskCard(p: AskCardProps) {
         <div className="flex items-center gap-2.5">
           {p.queue && p.queue.total > 1 && (
             <span data-testid="ask-queue" className="inline-flex items-center gap-1.5 font-mono text-[12px] text-muted-foreground">
-              <button type="button" data-nav="prev" aria-label={t("kit.previous")} disabled={!p.queue.onPrev} onClick={p.queue.onPrev}
+              <button type="button" data-nav="prev" aria-label={t("kit.previous")} disabled={!p.queue.onPrev || p.busy} onClick={p.queue.onPrev}
                 className="px-0.5 hover:text-foreground disabled:opacity-40">‹</button>
               {t("kit.queueOf", { index: p.queue.index + 1, total: p.queue.total })}
-              <button type="button" data-nav="next" aria-label={t("kit.next")} disabled={!p.queue.onNext} onClick={p.queue.onNext}
+              <button type="button" data-nav="next" aria-label={t("kit.next")} disabled={!p.queue.onNext || p.busy} onClick={p.queue.onNext}
                 className="px-0.5 hover:text-foreground disabled:opacity-40">›</button>
             </span>
           )}
@@ -103,11 +107,11 @@ export function AskCard(p: AskCardProps) {
       )}
       {p.options}
       <div className="flex gap-2.5">
-        <Button tone="secondary" grow={1} kbd="esc" disabled={p.busy} onClick={p.onDecline} data-testid={p.declineTestId ?? "ask-decline"}>
+        <Button tone="secondary" grow={1} kbd="esc" disabled={p.busy} onClick={() => { if (!guarded()) p.onDecline(); }} data-testid={p.declineTestId ?? "ask-decline"}>
           {p.declineLabel ?? t("kit.decline")}
         </Button>
         <Button tone={p.destructive ? "destructive" : "primary"} grow={1.4} kbd="⌘⏎" disabled={p.busy || p.allowDisabled}
-          onClick={p.onAllow} data-testid={p.allowTestId ?? "ask-allow"}>
+          onClick={() => { if (!guarded()) p.onAllow(); }} data-testid={p.allowTestId ?? "ask-allow"}>
           {p.allowLabel ?? t("kit.allow")}
         </Button>
       </div>

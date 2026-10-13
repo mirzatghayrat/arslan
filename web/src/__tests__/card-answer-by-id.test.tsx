@@ -11,12 +11,14 @@ vi.mock("react-i18next", () => ({
 import AskSlot from "../components/AskSlot";
 import { useArslanStore, initialArslanState } from "../stores/arslanStore";
 
-beforeEach(() => { useArslanStore.setState(initialArslanState(), true); });
-afterEach(() => { cleanup(); });
+beforeEach(() => { useArslanStore.setState(initialArslanState(), true); vi.useFakeTimers(); });
+afterEach(() => { cleanup(); vi.useRealTimers(); });
+/** the card on top changed: it answers once the answer guard (500 ms) has run out */
+const settle = () => act(() => { vi.advanceTimersByTime(500); });
 const frame = (f: Record<string, unknown>) => act(() => { useArslanStore.getState().handleFrame(f as never); });
 const state = () => useArslanStore.getState();
 const click = (id: string) => () => { fireEvent.click(screen.getByTestId(id)); };
-const next = () => fireEvent.click(screen.getByLabelText("kit.next"));
+const next = () => { fireEvent.click(screen.getByLabelText("kit.next")); settle(); };
 
 const CAPABILITY = { type: "propose_capability", kind: "mcp", name: "excel-mcp-server", summary: "Reads .xlsx",
   source_url: "https://github.com/a/b", repo: "a/b", version: "1.1.2", license: { spdx: "MIT", read_from: "github:LICENSE" }, stars: 1,
@@ -73,6 +75,7 @@ describe.each(KINDS)("two $name cards, the person pages to the second", (k) => {
     expect(ids(k)).toEqual(["a"]);
     if (k.sentYes) expect(send.mock.calls).toEqual([[k.sentYes("b")]]);
     else expect(send).not.toHaveBeenCalled();
+    settle();                                                                     // a moved up
     k.yes();
     expect(ids(k)).toEqual([]);
     if (k.sentYes) expect(send.mock.calls).toEqual([[k.sentYes("b")], [k.sentYes("a")]]);
