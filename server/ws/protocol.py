@@ -301,11 +301,18 @@ def propose_connect_mcp(*, call_id: str, key: str, label: str, transport: str,
 
 
 def mcp_connect_followup(*, server_id: int, tool_count: int, safe_count: int,
-                         restricted_count: int, assignable: bool) -> dict[str, Any]:
+                         restricted_count: int, assignable: bool,
+                         call_id: str | None = None) -> dict[str, Any]:
     """Honest, tier-aware result after a connect card completed. assignable=False means
-    no tool is safe+wired → connected but must be reviewed in Settings before equipping."""
+    no tool is safe+wired → connected but must be reviewed in Settings before equipping.
+
+    `call_id` is the proposal's (`propose_connect_mcp`) — the card this answers. The frame is
+    fanned out to every window on the conversation, and only the window that connected the
+    server knows which card it was; naming it lets every window close its own copy. Absent
+    (an older client sent no id), the frame is what it always was and names only the server."""
     return {"type": "mcp_connect_followup", "server_id": server_id, "tool_count": tool_count,
-            "safe_count": safe_count, "restricted_count": restricted_count, "assignable": assignable}
+            "safe_count": safe_count, "restricted_count": restricted_count, "assignable": assignable,
+            **({"call_id": call_id} if call_id else {})}
 
 
 def clarify_options(question: str, options: list[dict[str, Any]]) -> dict[str, Any]:

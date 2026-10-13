@@ -75,6 +75,17 @@ describe("a connect-MCP card answers for itself", () => {
     act(() => connect.props!.onApplied(OK));
     expect(send.mock.calls).toStrictEqual([[{ type: "confirm_connect_mcp", call_id: "m2", server_id: 7, tool_count: 3 }]]);
     expect(useArslanStore.getState().pendingConnectMcps.map((c) => [c.callId, c.appliedServerId])).toEqual([["m1", undefined], ["m2", 7]]);
+    // the server echoes the confirm's call id in the follow-up: it names the card, and the card closes by it
+    frame({ type: "mcp_connect_followup", call_id: "m2", server_id: 7, tool_count: 3, safe_count: 3, restricted_count: 0, assignable: true });
+    expect(useArslanStore.getState().pendingConnectMcps.map((c) => c.callId)).toEqual(["m1"]);
+  });
+
+  it("a follow-up from a server that names no card still closes the card that connected the server", () => {
+    render(<AskSlot send={vi.fn()} />);
+    frame(CONNECT("m1"));
+    frame(CONNECT("m2"));
+    act(() => connect.props!.queue.onNext!());
+    act(() => connect.props!.onApplied(OK));
     frame({ type: "mcp_connect_followup", server_id: 7, tool_count: 3, safe_count: 3, restricted_count: 0, assignable: true });
     expect(useArslanStore.getState().pendingConnectMcps.map((c) => c.callId)).toEqual(["m1"]);
   });

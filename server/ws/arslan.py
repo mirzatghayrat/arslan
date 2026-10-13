@@ -34,6 +34,9 @@ _HEARTBEAT_INTERVAL_S = 30
 # (a model writing one long tool call sends nothing for minutes; the window's 90 s watchdog then
 # said "Interrupted" while the server was working — run 160). Module-level so tests can shrink it.
 _WORKING_BEAT_S = 15
+# 0.1.61: the longest card id a window may name in `confirm_connect_mcp`. The id is echoed to every window on the
+# conversation (the connect follow-up), so what is echoed has to look like an id; the server's own are 32 characters.
+_CARD_ID_MAX = 128
 
 # 0.1.59: one turn at a time per conversation. A message that arrives while another turn runs —
 # on the same socket or another window's — waits here and runs next ("queued"), instead of
@@ -271,12 +274,13 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 await _send_or_gone({"type": "dequeued"})
             yield
 
-    async def run_connect_mcp_followup(server_id: int) -> None:
+    async def run_connect_mcp_followup(server_id: int, call_id: str | None = None) -> None:
         """Task 3: after a connect card completes, report the honest tier split —
-        counts are ALWAYS recomputed from the DB here, never trusted from the client."""
+        counts are ALWAYS recomputed from the DB here, never trusted from the client.
+        `call_id` is the proposal's: it rides in the frame so every window closes its copy of the card."""
         async def _followup() -> None:
             counts = await mcp_service.tier_counts(server_id)
-            emit(protocol.mcp_connect_followup(server_id=server_id, **counts))
+            emit(protocol.mcp_connect_followup(server_id=server_id, call_id=call_id, **counts))
         await run_with_live_frames(_followup())
 
     import uuid
@@ -748,7 +752,11 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 except (TypeError, ValueError):
                     await ws.send_json(protocol.error("INVALID_INPUT", "server_id required"))
                     continue
-                await run_connect_mcp_followup(sid)
+                # The card this answers goes out to every window on the conversation, so it has to look like a
+                # card id (a string, not a long one; an empty one names no card — the frame leaves it out);
+                # anything else is dropped, and the follow-up still goes out naming only the server.
+                card = data.get("call_id")
+                await run_connect_mcp_followup(sid, card if isinstance(card, str) and len(card) <= _CARD_ID_MAX else None)
                 continue
 
             if msg_type == "session_ended":
@@ -871,5 +879,5 @@ def _to_frame(ev: dict) -> dict:
         return protocol.mcp_connect_followup(
             server_id=ev.get("server_id"), tool_count=ev.get("tool_count", 0),
             safe_count=ev.get("safe_count", 0), restricted_count=ev.get("restricted_count", 0),
-            assignable=bool(ev.get("assignable")))
+            assignable=bool(ev.get("assignable")), call_id=ev.get("call_id"))
     return ev  # stream_chunk / stream_end / error / spawn_meta already match the wire shape

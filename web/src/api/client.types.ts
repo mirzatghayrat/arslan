@@ -745,8 +745,10 @@ export type ArslanServerMessage =
       prerequisites: string; requires_path: boolean; path_placeholder: string | null }
   // Honest, tier-aware result after a connect card completed — counts are ALWAYS
   // recomputed server-side from the DB, never trusted from the client's apply chain.
+  // `call_id` is the proposal's (the server echoes the confirm's): the card this answers, in every
+  // window on the conversation. An older server sends none, and the follow-up names only the server.
   | { type: "mcp_connect_followup"; server_id: number; tool_count: number; safe_count: number;
-      restricted_count: number; assignable: boolean }
+      restricted_count: number; assignable: boolean; call_id?: string }
   | { type: "spawn_meta"; arslan_message_id: number; spawn_id: number; assistant_message_id: number; task_brief: string; run_id?: number }
   | { type: "fact_saved"; content: string; sensitive: boolean; entry_id?: string | null; version?: number | null }
   | { type: "memory_proposed"; content: string; sensitive: boolean; entry_id?: string | null; version?: number | null }

@@ -1039,15 +1039,21 @@ function makeActions(set: SetState, get: GetState) {
             }),
           });
           break;
-        case "mcp_connect_followup":
+        case "mcp_connect_followup": {
           // Honest, tier-aware result recomputed server-side from the DB (Task 3) —
-          // clears the card that connected that server (the frame names the server; the slot recorded
-          // which card connected it) and appends a plain chat note, same idiom as
-          // attachment_stored below. assignable=false means connected but nothing is
-          // safe+wired yet, so the note points at Settings instead of implying it's
-          // ready to equip.
+          // appends a plain chat note, same idiom as attachment_stored below.
+          // assignable=false means connected but nothing is safe+wired yet, so the note
+          // points at Settings instead of implying it's ready to equip.
+          //
+          // It also closes the card that was connected. The frame is fanned out to every window on the
+          // conversation and names the card (the proposal's call_id, echoed by the server), so each window
+          // closes its own copy — not only the one that connected it and so marked its card. A follow-up that
+          // names no card (an older server) names only the server: the card that recorded connecting it closes.
+          const named = typeof frame.call_id === "string" && frame.call_id !== "";
           set({
-            pendingConnectMcps: state.pendingConnectMcps.filter((c) => c.appliedServerId !== frame.server_id),
+            pendingConnectMcps: state.pendingConnectMcps.filter((c) => !(named
+              ? c.callId === frame.call_id
+              : typeof frame.server_id === "number" && c.appliedServerId === frame.server_id)),
             items: [
               ...state.items,
               {
@@ -1059,6 +1065,7 @@ function makeActions(set: SetState, get: GetState) {
             ],
           });
           break;
+        }
         case "roster_event":
           set({
             items: [

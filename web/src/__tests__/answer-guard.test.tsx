@@ -13,6 +13,7 @@ vi.mock("react-i18next", () => ({
 }));
 
 import * as client from "../api/client";
+import * as mcpApi from "../api/mcp";
 import AskSlot from "../components/AskSlot";
 import { AskCard, AskQueue, ANSWER_GUARD_MS } from "../components/kit";
 import { makeAnswerGuard } from "../components/kit/guard";
@@ -267,6 +268,22 @@ describe("no paging while the card on top is busy (F4)", () => {
     await act(async () => { fail(new Error("no route to host")); });
     expect(screen.getByLabelText("kit.next")).toBeEnabled();
     expect(screen.getByTestId("enroll-error")).toHaveTextContent("no route to host");
+  });
+
+  it("a connect-MCP card whose connect is in flight cannot be paged away from, and can be again once it ended", async () => {
+    let fail: (e: Error) => void = () => {};
+    vi.spyOn(mcpApi, "addMcpServer").mockImplementation(() => new Promise((_ok, no) => { fail = no; }) as never);
+    render(<AskSlot send={vi.fn()} />);
+    const connect = (id: string) => ({ type: "propose_connect_mcp", call_id: id, key: "memory", label: `Memory ${id}`, transport: "stdio", command: "npx",
+      argv: [], url: null, env_keys: [], prerequisites: "", requires_path: false, path_placeholder: null });
+    frame(connect("m1"));
+    frame(connect("m2"));
+    fireEvent.click(screen.getByTestId("connect-mcp-connect"));
+    expect(screen.getByLabelText("kit.next")).toBeDisabled();
+    expect(screen.getByLabelText("kit.previous")).toBeDisabled();
+    await act(async () => { fail(new Error("no")); });
+    expect(screen.getByLabelText("kit.next")).toBeEnabled();                  // it failed: the person may page, or try again
+    expect(screen.getByTestId("connect-mcp-connect")).toBeEnabled();
   });
 });
 
