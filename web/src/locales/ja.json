@@ -1964,7 +1964,9 @@
     "asksEachTime": "毎回確認します",
     "allowedNow": "今後は許可されます",
     "refusedTimes": "{{since}} から {{count}} 回",
-    "undo": "元に戻す"
+    "undo": "元に戻す",
+    "openInArslan": "Arslan で見る",
+    "heldCapability": "Arslan に新しい機能を追加します。Arslan で全体を見てから許可してください。"
   },
   "pendingMemory": {
     "curationFallback": "記憶を整理する提案",

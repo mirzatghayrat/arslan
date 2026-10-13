@@ -1964,7 +1964,9 @@
     "asksEachTime": "每次都会问",
     "allowedNow": "以后都允许",
     "refusedTimes": "自 {{since}} 起共 {{count}} 次",
-    "undo": "撤销"
+    "undo": "撤销",
+    "openInArslan": "在 Arslan 里看",
+    "heldCapability": "这一步会给 Arslan 添加新能力——请在 Arslan 里看完整再批准。"
   },
   "pendingMemory": {
     "curationFallback": "一条整理记忆的建议",

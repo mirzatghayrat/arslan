@@ -1964,7 +1964,9 @@
     "asksEachTime": "Pregunta cada vez",
     "allowedNow": "Permitido a partir de ahora",
     "refusedTimes": "{{count}} veces desde {{since}}",
-    "undo": "Deshacer"
+    "undo": "Deshacer",
+    "openInArslan": "Abrir en Arslan",
+    "heldCapability": "Esto añade una capacidad nueva a Arslan: revísalo en Arslan antes de permitirlo."
   },
   "pendingMemory": {
     "curationFallback": "Una sugerencia para ordenar tu memoria",

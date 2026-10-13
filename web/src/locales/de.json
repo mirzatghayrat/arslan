@@ -1964,7 +1964,9 @@
     "asksEachTime": "Fragt jedes Mal",
     "allowedNow": "Ab jetzt erlaubt",
     "refusedTimes": "{{count}}-mal seit {{since}}",
-    "undo": "Rückgängig"
+    "undo": "Rückgängig",
+    "openInArslan": "In Arslan öffnen",
+    "heldCapability": "Das erweitert Arslan um eine neue Fähigkeit – erst in Arslan ansehen, dann erlauben."
   },
   "pendingMemory": {
     "curationFallback": "Ein Vorschlag zum Aufräumen",

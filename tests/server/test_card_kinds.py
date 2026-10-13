@@ -83,6 +83,16 @@ def test_the_webs_once_only_kinds_are_the_servers():
         f"askParts.tsx ONCE_ONLY_KINDS differs from permissions._ONCE_ONLY in {sorted(once ^ permissions._ONCE_ONLY)}")
 
 
+def test_the_webs_window_only_kinds_are_the_servers():
+    # A card of one of these is answered only where its whole card is shown (PR 2b final review, M6): the server swallows the phone's
+    # yes and refuses the Inbox's and the island's (`approvals.window_only`), so the Inbox must not draw an Allow for it. A kind in one
+    # list and not the other is an Allow the server refuses, or a card the Inbox holds back for nothing.
+    web = _kinds(_read(ASK_PARTS), "WINDOW_ONLY_KINDS")
+    assert web == set(approvals.WINDOW_ONLY_KINDS), (
+        f"askParts.tsx WINDOW_ONLY_KINDS differs from approvals.WINDOW_ONLY_KINDS in {sorted(web ^ approvals.WINDOW_ONLY_KINDS)}")
+    assert web <= permissions.KINDS
+
+
 def test_no_front_end_file_or_test_writes_a_perm_kind_the_server_never_sends():
     seen: dict[str, set[str]] = {}
     files = [*(ROOT / "web/src").rglob("*.ts"), *(ROOT / "web/src").rglob("*.tsx"),

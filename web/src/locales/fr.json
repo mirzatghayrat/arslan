@@ -1964,7 +1964,9 @@
     "asksEachTime": "Demande à chaque fois",
     "allowedNow": "Autorisé désormais",
     "refusedTimes": "{{count}} fois depuis {{since}}",
-    "undo": "Annuler"
+    "undo": "Annuler",
+    "openInArslan": "Ouvrir dans Arslan",
+    "heldCapability": "Cela ajoute une nouvelle capacité à Arslan : lisez-le dans Arslan avant d’autoriser."
   },
   "pendingMemory": {
     "curationFallback": "Une suggestion de rangement",

@@ -1964,7 +1964,9 @@
     "asksEachTime": "Asks each time",
     "allowedNow": "Allowed from now on",
     "refusedTimes": "{{count}} times since {{since}}",
-    "undo": "Undo"
+    "undo": "Undo",
+    "openInArslan": "Open in Arslan",
+    "heldCapability": "This adds a new ability to Arslan — read it in Arslan before allowing."
   },
   "pendingMemory": {
     "curationFallback": "A suggestion to tidy your memory",

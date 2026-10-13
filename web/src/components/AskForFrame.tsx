@@ -1,8 +1,10 @@
 import ActionApprovalCard from "./ActionApprovalCard";
 import RunCommandCard from "./RunCommandCard";
 import ScheduleGrantCard from "./ScheduleGrantCard";
+import WindowOnlyCard from "./WindowOnlyCard";
 import WorkspaceWriteCard from "./WorkspaceWriteCard";
 import type { AskQueuePosition } from "./kit";
+import { WINDOW_ONLY_KINDS } from "./kit/askParts";
 
 /** A pending card as the server keeps it (GET /approvals/pending). */
 export interface PendingAsk {
@@ -25,6 +27,9 @@ export const ANSWERABLE = new Set(["propose_run_command", "propose_action", "pro
  * answers through `onAnswer`, which goes to POST /approvals/{call_id}/answer — never a socket.
  * 0.1.61 §A4: the same card, with the same choices, the same question and the same countdown (the
  * server's own expiry) as in the chat; its permission kind and the model's why reach it too.
+ *
+ * A card that is answered only where its whole card is shown (a new capability: `WINDOW_ONLY_KINDS`) has no Allow here, whatever its type: the
+ * server refuses the Inbox's yes, so "Open in Arslan" stands in its place (WindowOnlyCard) and saying no stays.
  */
 export default function AskForFrame({ ask, queue, onAnswer, onOpenContext }: {
   ask: PendingAsk; queue?: AskQueuePosition;
@@ -37,6 +42,13 @@ export default function AskForFrame({ ask, queue, onAnswer, onOpenContext }: {
   const common = { expiresAt: ask.expires_at * 1000, queue, onOpenContext };
   const yes = (scope?: string) => onAnswer(true, scope ? { scope } : undefined);
   const no = (note?: string) => onAnswer(false, note ? { note } : undefined);
+  if (ANSWERABLE.has(f.type) && typeof f.perm_kind === "string" && WINDOW_ONLY_KINDS.has(f.perm_kind)) {
+    // What it asks, in the frame's own words: its title, else what it names; the literal subject under it unless that is the heading itself.
+    const what = str("target") || str("pretty") || str("path") || str("name");
+    const heading = str("title") || what || str("kind");
+    return <WindowOnlyCard heading={heading} subject={what && what !== heading ? what : ""} background={f.background === true}
+      expiresAt={common.expiresAt} queue={queue} onOpen={() => onOpenContext?.()} onNo={no} onOpenContext={onOpenContext} />;
+  }
   switch (f.type) {
     case "propose_run_command":
       // The server never keeps "remember" from the Inbox: an old card's tick is not offered here.

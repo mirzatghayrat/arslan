@@ -295,7 +295,9 @@ describe("locale parity", () => {
     // machine or to connect a server runs out has a line of its own (those never wait on the server).
     // 1766 → 1769 (0.1.61 PR 2b final review): kit.scope.conversationFor, schedgrant.anyTask, wswrite.anyFile — "In this
     // conversation" says what it covers when that is more than the request on the card.
-    expect(enKeys).toHaveLength(1769);
+    // 1769 → 1771 (0.1.61 PR 2b final review, M6): inbox.openInArslan, inbox.heldCapability — the Inbox's card for a new capability has no Allow
+    // (the server answers it only where its whole card is shown): "Open in Arslan", in the island's words, and the line that says why.
+    expect(enKeys).toHaveLength(1771);
   });
 
   // 0.1.61 PR 2b: a card's "Always" must say what it allows, in every language: the literal scope is interpolated.

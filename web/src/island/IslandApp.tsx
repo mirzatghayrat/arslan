@@ -3,7 +3,7 @@ import {
   answerBorrow, answerCard, continueTakeover, endTakeover, fetchFeed, fetchPending, stopHands, stopJob,
   type Activity, type Feed, type PendingCard,
 } from './feed';
-import { allowKey, askKind, askLine, askWhy, heldNoteKey, knowsKind, mmss, secondsLeft } from './islandAsk';
+import { allowKey, alsoAllowsKey, askKind, askLine, askWhy, heldNoteKey, knowsKind, mmss, secondsLeft } from './islandAsk';
 import IslandMascot from './IslandMascot';
 import {
   applyFeed, bodyTop, countdown, dismiss, focused, handsKey, hitRect, hoverEnter, hoverLeave, initialState, interact, isSearchTool, mood, open,
@@ -264,6 +264,7 @@ function AskView({ card, total, m, lang, clock, onAnswered }: {
   };
   const line = askLine(card);
   const why = askWhy(card);
+  const also = alsoAllowsKey(card);
   const asksWhy = why !== '' && !knowsKind(card);          // a kind without words of its own is asked in the model's why
   const wrap = card.frame.type === 'propose_action' ? ' wrap' : '';
   return (
@@ -275,6 +276,7 @@ function AskView({ card, total, m, lang, clock, onAnswered }: {
         {asksWhy && <div className="ititle wrap" data-testid="island-ask-why" title={why}>{why}</div>}
         {line && <div className={`code${wrap}`} data-testid="island-ask-line" title={line}>{line}</div>}
         {why && !asksWhy && <div className="itext said" data-testid="island-ask-said" title={why}><span>{t(lang, 'arslanSays')}</span>{why}</div>}
+        {also && <div className="itext also" data-testid="island-also">{t(lang, also)}</div>}
         {!card.island_ok && <div className="itext risky" data-testid="island-risky">{t(lang, heldNoteKey(card))}</div>}
         {failed && <div className="itext" role="alert">{t(lang, 'answerFailed')}</div>}
         <div className="btns">

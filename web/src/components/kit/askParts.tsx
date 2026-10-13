@@ -76,6 +76,12 @@ export const RED_KINDS = new Set(["money", "app_risky", "destructive"]);
  *  two in step (plan R14: tests/server/test_card_kinds.py is where the web's kind names meet the server's). */
 export const ONCE_ONLY_KINDS = new Set(["money", "app_risky", "capability", "other_agent", "system", "opaque", "remote", "takeover"]);
 
+/** The kinds whose card is answered only where its whole card is shown (0.1.57: installing code wants the whole card): the server swallows the
+ *  phone's yes and refuses the Inbox's and the island's for a card of one of these, whatever type of frame carries it (`approvals.window_only`),
+ *  so the Inbox draws "Open in Arslan" for it instead of Allow. Keep it equal to the server's `approvals.WINDOW_ONLY_KINDS`
+ *  (tests/server/test_card_kinds.py). */
+export const WINDOW_ONLY_KINDS = new Set(["capability"]);
+
 /** The choices a card is willing to offer. For a once-only kind that is the frame's first alone,
  *  whatever else it lists: the server already clamps, so this only keeps a mistaken frame from
  *  drawing — or sending — a longer yes than the kind allows. */
