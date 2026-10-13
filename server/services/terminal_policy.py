@@ -367,16 +367,18 @@ class _Budget:
     """What one `classify` has read (review N6): the load of the command and of every payload and
     script command read with it, summed against the ceilings, and each payload's commands, read once
     (`read`, by text and depth) — a payload written twice is not read twice. `payloads` keeps the
-    code every shell and `eval` was handed, for the run-time code rules (R11, R13). Code a producer
+    code every shell and `eval` was handed, for the run-time code rules (R11, R13), and `bodies` the
+    heredoc bodies in that code, read as the top level's (R6). Code a producer
     prints for a shell (F3) is read in the same budget (F7): `code_depth` producers deep, at most
     `MAX_COMMAND_CHARS` of it in all (`printed_chars`), each text once (`printed`)."""
-    __slots__ = ("marks", "deepest", "ticks", "nested", "separators", "read", "payloads", "code_depth",
+    __slots__ = ("marks", "deepest", "ticks", "nested", "separators", "read", "payloads", "bodies", "code_depth",
                  "printed_chars", "printed")
 
     def __init__(self) -> None:
         self.marks = self.deepest = self.ticks = self.nested = self.separators = 0
         self.read: dict[tuple[str, int], list[list[str]]] = {}
         self.payloads: dict[str, None] = {}
+        self.bodies: list[tuple[str, str]] = []     # the heredoc bodies the payloads hold (R6)
         self.code_depth = self.printed_chars = 0
         self.printed: dict[str, list[Finding]] = {}
 
@@ -944,19 +946,22 @@ def _read(text: str) -> list[Finding]:
     inner = _with_inner_backticks(shell)
     _charge(inner[len(shell):])
     shell = _without_zsh_modifiers(_readings(inner))
+    # Once a case pattern's `)` is a line (it no longer closes the `$(` it sits in), the `$'…'` and the
+    # comments behind it, which the first pass took for double-quoted text, are read (R3).
+    shell = _comments_blanked(_decode_ansi_c(shell))
     # Hermes' size limit reads the command as written, as `_hardline` did: blanks that pad it past
     # 4,096 characters without a separator keep its floor; its patterns read the runs collapsed,
     # and the ones `$'\n…'` decodes to (G4).
     limit = _size_limit(shell)
     shell = _hermes_text(shell)
-    before = len(budget.payloads)
+    before, before_bodies = len(budget.payloads), len(budget.bodies)
     commands = _commands(shell)
     # Only the payloads this read found are judged here (F7): a read inside another (a script's
     # shell-out, code a producer prints) judged every payload of the command again, and code a
     # producer prints for a shell was read again from inside its own reading, without a bound.
     own = list(budget.payloads)[before:]
     fed, fed_bodies = _fed_code([shell, *own])          # F3, F6; an interpreter fed code reads it as a heredoc (F8)
-    bodies = [*bodies, *fed_bodies]
+    bodies = [*bodies, *budget.bodies[before_bodies:], *fed_bodies]      # the payloads' heredocs too (R6)
     findings: list[Finding] = list(limit)
     findings += _floor_findings(text, shell, commands, own)
     findings += _hermes_findings(shell, raw=text, commands=commands)
@@ -1155,8 +1160,10 @@ def _heredoc_operator(text: str, at: int) -> tuple[int, str, bool, bool] | None:
 
 def _take_bodies(text: str, newline: int, pending, out: list[str], bodies: list[tuple[str, str]]) -> int:
     """The bodies of the heredocs opened on the line ending at `newline`, in order: each is data
-    (taken out, `bodies`) or shell (kept in `out`). Returns where the text resumes."""
+    (taken out, `bodies`) or shell (kept in `out`). Returns where the text resumes. A line that ends
+    in a pipe goes on after the last body (R5): `cat <<'EOF' |`, the body, `EOF`, then `bash`."""
     pos = newline + 1
+    spans = []
     for at, end_of_operator, delimiter, quoted, tabs, command_start in pending:
         start, end, after, closed = pos, len(text), len(text), False
         cursor = pos
@@ -1168,7 +1175,12 @@ def _take_bodies(text: str, newline: int, pending, out: list[str], bodies: list[
                 end, after, closed = cursor, min(stop + 1, len(text)), True
                 break
             cursor = stop + 1
-        head, rest, body = text[command_start:at], text[end_of_operator:newline], text[start:end]
+        spans.append((at, end_of_operator, quoted, command_start, start, end, after, closed))
+        pos = after
+    piped = _PIPE_AT_END.search(text[text.rfind("\n", 0, newline) + 1:newline]) is not None
+    continued = " " + _continued_pipeline(text, pos) if piped else ""
+    for at, end_of_operator, quoted, command_start, start, end, after, closed in spans:
+        head, rest, body = text[command_start:at], text[end_of_operator:newline] + continued, text[start:end]
         if _shell_reads_heredoc(head, rest):
             out.append(text[start:after])
         else:
@@ -1177,8 +1189,28 @@ def _take_bodies(text: str, newline: int, pending, out: list[str], bodies: list[
                 out.extend(f": {expansion}\n" for expansion in _expansions(body))
             if not closed:                      # no closing line: shell as well, never only data
                 out.append(text[start:after])
-        pos = after
     return pos
+
+
+#: A line that ends in a pipe (`|`, `|&`): its pipeline goes on on the next command line. (A `||` there
+#: goes on to a command that does not read the body: `_shell_reads_heredoc` reads only the first pipeline.)
+_PIPE_AT_END = re.compile(r"\|&?[ \t]*$")
+
+
+def _continued_pipeline(text: str, at: int) -> str:
+    """The commands a pipeline that ended its line in a pipe goes on with from `at`: blank lines and
+    comment lines skipped, each command line while the one before it ends in a pipe (R5)."""
+    lines: list[str] = []
+    while at < len(text):
+        stop = text.find("\n", at)
+        stop = len(text) if stop < 0 else stop
+        line, at = text[at:stop], stop + 1
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        lines.append(line)
+        if _PIPE_AT_END.search(line) is None:
+            break
+    return " ".join(lines)
 
 
 def _words(text: str) -> list[str]:
@@ -1284,8 +1316,8 @@ def _rewrite_command_words(shell: str) -> str:
                         at = hermes._skip_shell_whitespace(shell, at)
                         if not shell.startswith(": ", at):
                             edits.add((at, at, ": "))
-                if shell[close:close + 1] != "\n":
-                    edits.add((close, close, "\n"))
+                if shell[close - 1:close] == ")":    # the pattern's `)` closes no `$(` (re-review 5): a line
+                    edits.add((close - 1, close, "\n"))
     for at in starts | {start for start, _end, _word in spans}:
         if _follows_redirect(shell, at):    # Hermes starts a command after `2>&`: `2>&- -d` is no `- -d`
             continue
@@ -1581,9 +1613,13 @@ def _commands(text: str, depth: int = 0) -> list[list[str]]:
         if payload:
             if level >= _MAX_CODE_DEPTH:
                 raise _Unreadable(f"code nested more than {_MAX_CODE_DEPTH} deep")
-            payload = _hermes_text(_comments_blanked(_decode_ansi_c(payload)))   # as the command is (R9, F2, F5, G4)
+            # Read as the command is (R9, F2, F5, G4), its heredocs split as at the top (R6): the body a
+            # program reads is that program's (`python3 <<EOF … requests.post`), one a shell reads is shell.
+            payload, bodies = split_heredocs(_decode_ansi_c(payload))
+            payload = _hermes_text(_comments_blanked(_decode_ansi_c(payload)))
             if budget is not None:
                 budget.payloads[payload] = None
+                budget.bodies += bodies
             out.extend(_commands(payload, depth + 1))
 
     for segment in _top_level_segments(text):
@@ -3546,11 +3582,22 @@ _SCRIPT_REACHES = re.compile(
     r"\b(?:tell|using\s+terms\s+from)\s+(?:application|app)\b|\bapplication\s+(?:id|process)\b"
     r"|\b(?:run|load)\s+script\b|\bdo\s+script\b|\bApplication\s*\(|\bapp\s*\(|\bObjC\b|\$\.NS"
     r"|\b(?:SBApplication|NSAppleScript|System\s+Events)\b", re.I)
-#: Code an AppleScript hands to a shell (`do shell script "…"`, JXA `doShellScript('…')`) or to
-#: Terminal/iTerm (`do script "…"`, `write text "…"`): read as the command it is.
-_SCRIPT_SHELL = re.compile(
-    r"""\b(?:do\s+shell\s+script|do\s+script|write\s+text)\s+"((?:[^"\\\n]|\\.)*)"|"""
-    r"""\bdoShellScript\s*\(\s*(?:"((?:[^"\\\n]|\\.)*)"|'((?:[^'\\\n]|\\.)*)')""", re.I)
+#: What hands a shell its command: AppleScript's `do shell script`, Terminal's `do script`, iTerm's
+#: `write text`, JXA's `doShellScript` — wherever the words stand (R4, `_shell_literals`).
+_SHELL_VERBS = re.compile(r"\bdo\s+shell\s+script\b|\bdo\s+script\b|\bwrite\s+text\b|\bdoShellScript\b", re.I)
+#: Blanks, and AppleScript's line continuation (`¬` then a newline): the statement goes on.
+_AS_BLANKS = re.compile(r"(?:[ \t]|¬[ \t]*\r?\n)*")
+#: What may follow the literal in AppleScript: the statement's end (a line, the script's end, a `)`
+#: closing the expression it is in, a comment) or the verb's parameters (`with administrator
+#: privileges`, `with prompt`, `as`, `user name`, `password`, `altering line endings`, Terminal's
+#: `in`, iTerm's `newline`). In JXA: `)`, or `,` before the options.
+_AS_AFTER = re.compile(r"(?:\r?\n|$|\)|--|#|\(\*|(?:with|without|as|user\s+name|password|altering|in|newline)\b)",
+                       re.I)
+_JS_AFTER = re.compile(r"\s*[,)]")
+#: The escapes a literal may hold, decoded: AppleScript's, and JXA's (`\'` too). Any other escape is
+#: not read (`\x72m` is rm to JavaScript).
+_AS_ESCAPES = {'"': '"', "\\": "\\", "n": "\n", "r": "\r", "t": "\t"}
+_JS_ESCAPES = {**_AS_ESCAPES, "'": "'"}
 _SCRIPT_ADMIN = re.compile(r"\bwith\s+administrator\s+privileges\b|\badministratorPrivileges\s*:\s*true\b", re.I)
 _SCRIPT_POWER = re.compile(r"\b(?:shut\s+down|restart|log\s+out)\b", re.I)
 #: A step that clicks or types: the strings it names are the labels it acts on, not content.
@@ -3591,7 +3638,7 @@ def _applescript_findings(script: str) -> list[Finding]:
         found.append(Finding("floor", "sudo", _WHY["sudo"]))
     if _SCRIPT_POWER.search(steps):
         found.append(Finding("floor", "shutdown", "shuts down, restarts or logs out the Mac"))
-    payloads = [_unescape(next(g for g in m.groups() if g is not None)) for m in _SCRIPT_SHELL.finditer(script)]
+    payloads = [payload for payload in _shell_literals(script) if payload.strip()]   # `do script ""`: a window
     _check_nested(payloads, "an AppleScript")
     for payload in payloads:
         found += [f for f in classify(payload).findings if f.category != "local"]
@@ -3605,6 +3652,54 @@ def _applescript_findings(script: str) -> list[Finding]:
     else:
         found.append(Finding("local", "apple-events", "runs AppleScript that tells no other app"))
     return found
+
+
+def _shell_literals(script: str) -> list[str]:
+    """What each `do shell script`, `do script`, `write text` and JXA `doShellScript` in an
+    AppleScript or JXA text hands the shell (R4, re-review 5 P-2). Its argument must be exactly one
+    string literal — `\\"`, `\\\\`, `\\n`, `\\r`, `\\t` decoded (`\\'` too in JXA), a newline in an
+    AppleScript one allowed (each `-e` is a line) — followed by the statement's end or the verb's
+    parameters. A variable, `&` or `+`, `quoted form of`, a handler, parentheses, a property, any
+    other escape or no closing quote: what the shell runs is built while the script runs, and the
+    command is not read (`_Unreadable`): it asks unread, its floor still the floor. The verb's words
+    in a string or a comment are read the same way (`-- do shell script …` asks once)."""
+    commands = []
+    for verb in _SHELL_VERBS.finditer(script):
+        js = verb.group().lower() == "doshellscript"
+        at = _AS_BLANKS.match(script, verb.end()).end()
+        if js:
+            opened = re.compile(r"\s*\(\s*").match(script, at)
+            literal = _string_literal(script, opened.end(), _JS_ESCAPES, "\"'", lines=False) if opened else None
+        else:
+            literal = _string_literal(script, at, _AS_ESCAPES, '"', lines=True)
+        if literal is None or not (_JS_AFTER if js else _AS_AFTER).match(
+                script, _AS_BLANKS.match(script, literal[1]).end()):
+            raise _Unreadable("an AppleScript hands the shell a command it builds while it runs")
+        commands.append(literal[0])
+    return commands
+
+
+def _string_literal(text: str, at: int, escapes: dict[str, str], quotes: str, *, lines: bool) -> tuple[str, int] | None:
+    """(the value, where it ends) of the string literal opening at `at` — a quote in `quotes`, its
+    `escapes` decoded, a newline in it only where `lines` —, else None."""
+    if at >= len(text) or text[at] not in quotes:
+        return None
+    quote, value, i = text[at], [], at + 1
+    while i < len(text):
+        ch = text[i]
+        if ch == quote:
+            return "".join(value), i + 1
+        if ch == "\\":
+            if text[i + 1:i + 2] not in escapes:
+                return None
+            value.append(escapes[text[i + 1]])
+            i += 2
+            continue
+        if ch == "\n" and not lines:
+            return None
+        value.append(ch)
+        i += 1
+    return None
 
 
 def _app_step_kind(script: str) -> str:
@@ -3830,21 +3925,28 @@ def _pipelines(text: str) -> list[list[str]]:
     """Each pipeline in `text`, as its commands' text in order: split at `|` (`|&` too), and from
     the next pipeline at `;`, `&`, `&&`, `||` and newlines — never inside a substitution, a `( … )`
     subshell or a `{ …; }` group, each one command of its pipeline (F3: `{ printf a; printf b; } |
-    bash`); quotes, comments and redirections such as `2>&1` respected."""
+    bash`); quotes, comments and redirections such as `2>&1` respected. After `|`, `|&`, `&&` and
+    `||` zsh reads on past blank lines and comment lines to the next command (R5): `printf 'git
+    push' |` then `bash` on the next line is one pipeline."""
     pipelines: list[list[str]] = [[]]
     start = skip_to = depth = 0
+    joined = False                          # the last operator wants a command: newlines and comments go by
     for kind, i, j, quote in hermes._scan_shell(text, comments=True, subst="uq", brace=True):
         if i < skip_to or quote is not None:
             continue
         if kind == "comment":
-            if not depth:
+            if not depth and not joined:
                 pipelines[-1].append(text[start:i])
                 pipelines.append([])
                 start = skip_to = j
             continue
         if kind != "char":
+            joined = False
             continue
         ch, nxt = text[i], text[i + 1:i + 2]
+        if joined and ch.isspace():
+            continue
+        joined = False
         if ch == "(" or (ch == "{" and (not nxt or nxt.isspace())):
             depth += 1
         elif ch == ")" or (ch == "}" and depth and (i == 0 or text[i - 1].isspace() or text[i - 1] == ";")):
@@ -3855,10 +3957,10 @@ def _pipelines(text: str) -> list[list[str]]:
             continue                                        # `2>&1`, `<&3`, `&>file`: a redirection
         pipelines[-1].append(text[start:i])
         if ch == "|" and nxt != "|":
-            start = i + 1 + (nxt == "&")
+            start, joined = i + 1 + (nxt == "&"), True
         else:
             pipelines.append([])
-            start = i + 1 + (nxt == ch and ch in "&|")
+            start, joined = i + 1 + (nxt == ch and ch in "&|"), nxt == ch and ch in "&|"
         skip_to = start
     pipelines[-1].append(text[start:])
     return [p for p in pipelines if any(piece.strip() for piece in p)]

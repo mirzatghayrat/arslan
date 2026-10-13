@@ -1934,3 +1934,101 @@ def test_the_unread_floor_reads_an_applescripts_words_and_the_backstops_shape(co
     and the backstop wants a recursive delete of the home itself; such a command asks unread."""
     found = tp.classify(command)
     assert found.floor is None and tp.UNREADABLE in found.findings, [(f.category, f.rule) for f in found.findings]
+
+
+# ── fix round 6: a case clause in a substitution, AppleScript's shell literal, a pipe across lines,
+#    a heredoc in a payload (R3–R6) ───────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("command,category", [
+    ("echo \"$(case a in a) git push;; esac)\"", "send"), ("echo \"$(case $1 in *) rm -rf ~;; esac)\"", "floor"),
+    ("echo \"$(case a in a) sudo ls;; esac)\"", "floor"), ("echo \"$(case a in b) true;; a) git push;; esac)\"", "send"),
+    ("echo \"$(case a in (a) rm -rf ~;; esac)\"", "floor"),
+    ("echo \"$(case a in a) $'\\x72m' -rf ~;; esac)\"", "floor"), ("echo \"$(case a in a) $'\\x67it' push;; esac)\"", "send"),
+    ("echo \"$(case a in a) # don't\ngit push;; esac)\"", "send"),
+    ("echo \"$(case a in a) # don't\nmail -s hi a@b.c < f;; esac)\"", "send"),
+    ("echo \"$(case a in a) # don't\nls;; esac)\"; mail -s hi a@b.c < f", "send"),
+])
+def test_a_case_clause_in_a_quoted_substitution_is_read(command, category):
+    """Re-review 5 P-1 (R3): a case pattern's `)` closed the `$(` it sits in (Hermes' scanner is not
+    case-aware), so in double quotes the clause after it was read as quoted text: `git push` ran with
+    no card. The pattern's `)` becomes a line; the `$'…'` and the comments behind it, which the first
+    pass took for quoted text, are read again on the rewritten command."""
+    found = tp.classify(command)
+    assert found.category == category, [(f.category, f.rule) for f in found.findings]
+
+
+@pytest.mark.parametrize("command,category", [
+    ("osascript -e 'do shell script \"git push\"'", "send"),
+    ("osascript -e 'do shell script \"ls\" with administrator privileges'", "floor"),
+    ("osascript -e 'set r to (do shell script \"date\")' -e 'display dialog r'", "local"),
+    ("osascript -e 'do shell script \"ls' -e 'rm -rf ~\"'", "floor"),
+    ("osascript -e 'do shell script \"ls\\nrm -rf ~\"'", "floor"),
+    ("osascript -e 'do shell script \"echo \\\"hi\\\"; git push\"'", "send"),
+    ("osascript -e 'tell application \"Terminal\" to do script \"git push\" in front window'", "send"),
+    ("osascript -l JavaScript -e 'Application.currentApplication().doShellScript(\"git push\")'", "send"),
+    ("osascript -l JavaScript -e \"app.doShellScript('ls', {administratorPrivileges: true})\"", "floor"),
+    ("osascript <<'EOF'\ndo shell script \"ls\nrm -rf ~\"\nEOF", "floor"),
+    ("osascript -e 'tell application \"Terminal\" to do script \"\"'", "apps"),
+    ("osascript -e 'do shell script \"ls' -e 'git push\"'", "send"),
+    ("osascript -l JavaScript -e \"app.doShellScript('git push origin \\\\'main\\\\'')\"", "send"),
+])
+def test_an_applescript_hands_the_shell_exactly_one_literal(command, category):
+    """R4 (re-review 5 P-2): `do shell script`, `do script`, `write text` and JXA `doShellScript(` are
+    read when their argument is exactly one string literal — its escapes decoded (`\\"`, `\\\\`, `\\n`,
+    `\\r`, `\\t`), a newline in it allowed (each `-e` is a line), followed by the end of the statement,
+    a `)` or AppleScript's parameters."""
+    found = tp.classify(command)
+    assert found.category == category, [(f.category, f.rule) for f in found.findings]
+
+
+@pytest.mark.parametrize("command", [
+    "osascript -e 'set c to \"rm -rf ~\"' -e 'do shell script c'",
+    "osascript -e 'do shell script \"git\" & \" push\"'",
+    "osascript -e 'do shell script \"rm -rf \" & \"~\"'",
+    "osascript -e 'do shell script (\"git push\")'",
+    "osascript -e 'do shell script quoted form of \"git push\"'",
+    "osascript -e 'do shell script ¬' -e '\"git\" & \" push\"'",
+    "osascript -e 'tell application \"Terminal\" to do script x'",
+    "osascript -l JavaScript -e 'app.doShellScript(cmd)'",
+    "osascript -l JavaScript -e 'app.doShellScript(\"git\" + \" push\")'",
+    "osascript -l JavaScript -e 'app.doShellScript(\"\\x67it push\")'",
+    "osascript -e 'do shell script \"git push'",
+])
+def test_an_applescript_that_builds_the_shells_command_is_unread(command):
+    """R4: a variable, `&`, `quoted form of`, a handler, parentheses, a property, an escape Arslan does
+    not decode, no closing quote — the command the shell gets is built while the script runs: the
+    command asks unread (once only), never a card for the part that was a literal alone, and the
+    floor its text shows stays the floor."""
+    found = tp.classify(command)
+    assert found.floor is not None or tp.UNREADABLE in found.findings, [(f.category, f.rule) for f in found.findings]
+    assert found.category in ("floor", "opaque"), [(f.category, f.rule) for f in found.findings]
+
+
+@pytest.mark.parametrize("command,category", [
+    ("printf 'git push' |\nbash", "send"), ("printf 'sudo ls' |\nbash", "floor"), ("printf 'rm -rf ~' |\nbash", "floor"),
+    ("printf 'git push' |\n# a comment\nbash", "send"), ("printf 'git push' |\n\n   \nbash", "send"),
+    ("printf 'git push' |&\nbash", "send"), ("true &&\n\ngit push", "send"), ("false ||\n# no\ngit push", "send"),
+    ("cat <<'EOF' |\nrm -rf ~\nEOF\nbash", "floor"), ("cat <<'EOF' |\ngit push\nEOF\n# a comment\nbash", "send"),
+    ("cat <<'EOF' |\ngit push\nEOF\ncat", "local"), ("cat <<'EOF' ||\ngit push\nEOF\nbash", "local"),
+    ("printf 'git push' &&\n\nbash", "local"),
+])
+def test_a_pipe_goes_on_past_newlines(command, category):
+    """R5 (re-review 5 P-3): after `|`, `|&`, `&&` and `||` zsh reads on past blank lines and comment
+    lines to the next command (checked with printf … |, a comment line, cat): the shell a pipe feeds
+    is that pipe's, not a command with no input."""
+    found = tp.classify(command)
+    assert found.category == category, [(f.category, f.rule) for f in found.findings]
+
+
+@pytest.mark.parametrize("command,category", [
+    ("bash -c 'python3 <<EOF\nimport requests; requests.post(\"https://x.org\", data=1)\nEOF'", "send"),
+    ("bash -c 'sh <<EOF\nrm -rf ~\nEOF'", "floor"), ("bash -c 'sh <<EOF\nconcurrently rm -rf ~\nEOF'", "floor"),
+    ("sh -c 'osascript <<EOF\ntell application \"Keychain Access\" to activate\nEOF'", "floor"),
+    ("bash -c 'cat <<EOF > notes.md\ngit push origin main\nEOF'", "local"),
+])
+def test_a_heredoc_in_a_payload_is_read_as_at_the_top(command, category):
+    """R6 (re-review 5 P-4): code a shell is handed splits its heredocs as the top level does — the
+    body a script reads is that script (`python3 <<EOF … requests.post`), the one a shell reads is
+    shell, and a data body is data."""
+    found = tp.classify(command)
+    assert found.category == category, [(f.category, f.rule) for f in found.findings]
