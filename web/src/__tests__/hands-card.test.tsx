@@ -51,8 +51,20 @@ describe("action approval card", () => {
         const scope = (messages.scope as Record<string, string>)[kind];
         expect(scope, `${lang}.scope.${kind}`).toBeTruthy();
         expect(grant.trim(), `${lang}.grant.${kind}`).not.toBe("");
+        if (kind === "mac_script") continue;       // spec §A5: an AppleScript choice also covers Hands in that app, so its grant says more than its scope — pinned below
         expect(isScopeWithOneStretchCut(scope, grant), `${lang}.grant.${kind} is ${scope} minus one stretch`).toBe(true);
       }
+    }
+  });
+
+  it("an AppleScript card's choice also covers Hands in that app (spec §A5), so its grant line says both, in all six languages", () => {
+    // The script is asked as the app it names (kind "app", the bundle id): one grant for scripts and for Arslan Hands to look, click, type and choose.
+    const script: Record<string, RegExp> = { en: /scripts/, zh: /脚本/, ja: /スクリプト/, es: /scripts/, de: /Skripte/, fr: /scripts/ };
+    for (const [lang, messages] of Object.entries(handsMessages)) {
+      const grant = messages.grant.mac_script;
+      expect(grant, `${lang}.grant.mac_script`).toMatch(script[lang]);
+      expect(grant, `${lang}.grant.mac_script`).toContain("Arslan Hands");
+      expect(grant, `${lang}.grant.mac_script`).toMatch(/macOS/);                // and still says macOS may ask too
     }
   });
 

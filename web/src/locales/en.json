@@ -738,7 +738,7 @@
     "researchReviewSpendNote": "Each qualifying save sends one extra request with the report and its sources to your model, on your key. For now only official DeepSeek and Anthropic connections are supported; other models are skipped.",
     "navDesktop": "Desktop",
     "navProactive": "Proactivity",
-    "desktopLede": "Closing the window no longer quits Arslan: it stays in the menu bar, tasks and scheduled tasks keep running, and actions that need you still wait in the window (for up to 30 minutes; if nobody answers, it is not done — and that is not a no). Quit with ⌘Q or “Quit Arslan” in the menu bar.",
+    "desktopLede": "Closing the window no longer quits Arslan: it stays in the menu bar, tasks and scheduled tasks keep running, and actions that need you still wait in the window (for up to 30 minutes; if nobody answers, it is not done — and that is not a no). A scheduled task never waits for an answer: it does only what you have already allowed, and anything else is refused and listed in the Inbox. Quit with ⌘Q or “Quit Arslan” in the menu bar.",
     "labelKeepAwake": "Keep the Mac awake while working",
     "keepAwakeDesc": "While a task or scheduled task is running, the Mac does not go to sleep on its own. The display can still sleep; closing the lid or low battery still puts it to sleep.",
     "labelDesktopNotifications": "Notifications",

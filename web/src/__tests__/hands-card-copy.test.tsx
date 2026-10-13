@@ -178,3 +178,81 @@ describe("a takeover card is answered in Arslan, never from the island", () => {
     expect(document.body).toHaveTextContent((MESSAGES[lang].ask as Record<string, string>).desktop_takeover);   // it is named, not "Needs your OK"
   });
 });
+
+// ── Fix round 1 ────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** The title joins the two with "and" — a flipped "or" ("Mirar o actuar") keeps both keywords, so the conjunction itself is pinned. */
+const LOOK_AND_ACT = per<RegExp>({ en: /Look at and act in/, zh: /查看并操作/, ja: /見て操作/, es: /Mirar y actuar en/, de: /ansehen und darin handeln/, fr: /Regarder et agir dans/ });
+const SITE_ACTS = per<RegExp>({ en: /clicking, typing and choosing/, zh: /点击、输入和选择/, ja: /クリック・入力・選択/, es: /hacer clic, escribir y elegir/,
+  de: /zu klicken, zu tippen und auszuwählen/, fr: /les clics, la saisie et les choix/ });
+const SITE_READS = per<RegExp>({ en: /reading the page/, zh: /读取页面/, ja: /ページの読み取り/, es: /leer la página/, de: /die Seite zu lesen/, fr: /lecture de la page/ });
+
+describe("fix round 1: the words that carry the meaning", () => {
+  it.each(LANGS)("%s: the app title and the island's name for it join looking and acting with 'and'", (lang) => {
+    expect(handsMessages[lang].title.desktop_app).toMatch(LOOK_AND_ACT[lang]);
+    expect((MESSAGES[lang].ask as Record<string, string>).desktop_app).toMatch(per<RegExp>({
+      en: /Look at and act in/, zh: /查看并操作/, ja: /見て操作/, es: /Mirar y actuar en/, de: /ansehen und darin handeln/, fr: /Regarder et agir dans/ })[lang]);
+  });
+
+  it.each(LANGS)("%s: a site card's grant and scope say what the server grants: reading the page, clicking, typing and choosing", (lang) => {
+    for (const line of [handsMessages[lang].grant.browser_site, handsMessages[lang].scope.browser_site]) {
+      expect(line, lang).toMatch(SITE_READS[lang]);
+      expect(line, lang).toMatch(SITE_ACTS[lang]);
+    }
+  });
+
+  it("German calls the buttons 'Schaltflächen' (not 'Tasten', which are keys); French types nothing into a password field, as the site card says", () => {
+    for (const line of [handsMessages.de.grant.desktop_app, handsMessages.de.scope.desktop_app]) {
+      expect(line).toMatch(/Schaltflächen/);
+      expect(line).not.toMatch(/Text, Tasten/);
+    }
+    for (const line of [handsMessages.fr.grant.desktop_app, handsMessages.fr.scope.desktop_app]) {
+      expect(line).toContain("ne saisit jamais de mot de passe");
+      expect(line).not.toMatch(/ne tape jamais/);
+    }
+  });
+
+  it("the guard itself: the two patterns catch the wording they replace", () => {
+    expect("Mirar o actuar en Notes").not.toMatch(LOOK_AND_ACT.es);
+    expect("Allows clicking and typing on this website for this task only.").not.toMatch(SITE_READS.en);
+  });
+});
+
+describe("fix round 1: a stray frame of the kind that is gone (a pre-0.1.61 desktop_look) is still a card with a label", () => {
+  // A pre-0.1.61 frame has no title, no choices, no permission kind and an empty detail. It must render something readable and be answerable.
+  const stray = { type: "propose_action", kind: "desktop_look", target: "Notes", detail: "" };
+
+  it.each(LANGS)("%s: on the island it is named 'Needs your OK' with the app under it, and can be declined", async (lang) => {
+    vi.useFakeTimers();
+    localStorage.setItem("i18nextLng", lang);
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url.startsWith("/api/v1/island/feed")) return new Response(JSON.stringify({ cursor: 3, awaiting: 1, awaiting_conversations: ["c1"], events: [], enabled: true, active: [] }), { status: 200 });
+      if (url === "/api/v1/approvals/pending") return new Response(JSON.stringify([{ call_id: "s1", conversation_id: "c1", opened_at: 1000, expires_at: 1300, island_ok: false, frame: stray }]), { status: 200 });
+      return new Response("{}", { status: 200 });
+    }));
+    try {
+      render(<IslandApp />);
+      await act(async () => { await vi.advanceTimersByTimeAsync(600); });
+      expect(document.body).toHaveTextContent((MESSAGES[lang].ask as Record<string, string>).other);
+      expect(screen.getByTestId("island-ask-line")).toHaveTextContent("Notes");
+      expect(screen.getByTestId("island-decline")).toBeInTheDocument();
+      expect(screen.getByTestId("island-risky")).toHaveTextContent(islandText(lang, "heldGeneric"));       // a kind it does not know: the neutral line
+    } finally {
+      cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); localStorage.clear();
+    }
+  });
+
+  it("in the Inbox it is a card headed by the app, with Allow and No", async () => {
+    const client = await import("../api/client");
+    vi.spyOn(client, "request").mockImplementation(async (path: string) =>
+      (path === "/approvals/pending" ? [{ call_id: "s1", conversation_id: "conv-1", opened_at: 1000, expires_at: 1300, frame: { ...stray, call_id: "s1" } }] : { ok: true }) as never);
+    const { default: InboxApprovals } = await import("../components/proactive/InboxApprovals");
+    render(<InboxApprovals onOpenConversation={() => {}} />);
+    const card = await screen.findByTestId("action-card");
+    expect(screen.getByTestId("action-title")).toHaveTextContent("Notes");
+    expect(card.textContent?.trim()).not.toBe("");
+    expect(screen.getByTestId("action-allow")).toBeInTheDocument();
+    expect(screen.getByTestId("action-deny")).toBeInTheDocument();
+    vi.restoreAllMocks();
+  });
+});

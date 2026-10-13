@@ -72,6 +72,19 @@ describe("the support page and the Bridge protocol", () => {
     expect(page).not.toContain("expires after five minutes");
   });
 
+  it("the Chinese FAQ on the same page says the same, tagged — the page switches by language, and 五 is not 5", () => {
+    const page = repo("docs/support/index.html");
+    expect(page).toContain("没人回应的批准卡会保持开启 30 分钟，时间到了也不算拒绝：Arslan 会告诉你还有什么在等你。"
+      + '<span class="tag">Mac 0.1.61+</span> 更早的版本会在五分钟后关闭它。');
+    expect(page).not.toContain("五分钟后过期");
+    expect(page.match(/五分钟/g)).toHaveLength(1);                                    // only the sentence about earlier versions
+  });
+
+  it("no other spelling of the old claim is left on the support page: 5 minutes, 300 s, 五分钟, 5 分钟", () => {
+    const page = repo("docs/support/index.html").replace(/Earlier versions close it after five minutes\./, "").replace(/更早的版本会在五分钟后关闭它。/, "");
+    expect(page).not.toMatch(/five minutes|5 minutes|5-minute|五分钟|5 分钟|5分钟|\b300 ?s\b|300 seconds|300 秒/i);
+  });
+
   it("the protocol says an expired card answers 'expired' (30 minutes since 0.1.61), never a refusal", () => {
     const spec = flowed(repo("docs/specs/mobile-bridge-protocol.md"));
     expect(spec).toContain("a card that expired on the Mac (30 min since 0.1.61; 5 min before) answers `expired`, which is never a refusal.");
@@ -239,5 +252,45 @@ describe("the three lines, in six languages", () => {
     expect(kit.expiredEnrollBody, lang).not.toMatch(SERVER[lang]);
     expect(kit.expiredConnectBody, lang).toMatch(SERVER[lang]);
     expect(kit.expiredConnectBody, lang).not.toMatch(MACHINE[lang]);
+  });
+});
+
+// ── Fix round 1 ────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** What the enrol and connect lines say was NOT done. A flipped verb ("已经记住") keeps every keyword above, so these pin the negation. */
+const ENROLL_NOT_DONE: Record<Lang, RegExp> = {
+  en: /was not remembered/, zh: /没有记住/, ja: /記憶していません/, es: /no se recordó/, de: /nicht gemerkt/, fr: /pas été mémorisée/,
+};
+const CONNECT_NOT_DONE: Record<Lang, RegExp> = {
+  en: /was not connected/, zh: /没有连接/, ja: /接続していません/, es: /no se conectó/, de: /nicht verbunden/, fr: /pas été connecté/,
+};
+/** A scheduled task never waits for an answer (spec §A4): the lede says so, after the sentence about cards that wait in the window. */
+const SCHEDULED_NEVER_WAITS: Record<Lang, RegExp> = {
+  en: /A scheduled task never waits for an answer/, zh: /定时任务从不等你回应/, ja: /スケジュールタスクは応答を待ちません/,
+  es: /Una tarea programada nunca espera una respuesta/, de: /Eine geplante Aufgabe wartet nie auf eine Antwort/, fr: /Une tâche planifiée n’attend jamais de réponse/,
+};
+
+describe("fix round 1: the notice lines say what was left undone, and the lede does not make a scheduled task wait", () => {
+  it.each(LANGS)("%s: the enrol line says the machine was NOT remembered and the connect line that the server was NOT connected", (lang) => {
+    const kit = LOCALES[lang].kit;
+    expect(kit.expiredEnrollBody, lang).toMatch(ENROLL_NOT_DONE[lang]);
+    expect(kit.expiredConnectBody, lang).toMatch(CONNECT_NOT_DONE[lang]);
+    expect(kit.expiredEnrollBody, lang).not.toMatch(CONNECT_NOT_DONE[lang]);
+    expect(kit.expiredConnectBody, lang).not.toMatch(ENROLL_NOT_DONE[lang]);
+  });
+
+  it("the German lines ask Arslan again in one plain sentence, not with an adverb that also reads as 'please'", () => {
+    expect(de.kit.expiredEnrollBody).not.toMatch(/Bitte Arslan/);
+    expect(de.kit.expiredConnectBody).not.toMatch(/Bitte Arslan/);
+    expect(de.kit.expiredEnrollBody).toContain("Frag Arslan einfach noch einmal danach, wann immer du willst.");
+    expect(de.kit.expiredConnectBody).toContain("Frag Arslan einfach noch einmal danach, wann immer du willst.");
+  });
+
+  it.each(LANGS)("%s: the Desktop lede says a scheduled task never waits for an answer, after the cards that wait in the window", (lang) => {
+    const lede = LOCALES[lang].settings.desktopLede;
+    expect(lede).toMatch(SCHEDULED_NEVER_WAITS[lang]);
+    expect(lede.search(SCHEDULED_NEVER_WAITS[lang])).toBeGreaterThan(lede.search(NOT_A_NO[lang]));
+    expect(lede).toMatch(/\b30\b/);                                                    // and the 30 minutes are still said
+    expect(lede).toMatch(NOT_A_NO[lang]);
   });
 });
