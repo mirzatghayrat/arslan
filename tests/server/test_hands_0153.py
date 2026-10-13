@@ -15,8 +15,8 @@ import pytest
 
 from server.orchestrator import arslan
 from server.registry import hands_tools
-from server.services import (approvals, background_jobs, desktop_status, hands_client, hands_contract,
-                             hands_service, personal_context as pc, task_service)
+from server.services import (background_jobs, desktop_status, hands_client, hands_contract, hands_service,
+                             personal_context as pc, task_service)
 
 pytestmark = pytest.mark.one_arslan
 
@@ -28,16 +28,18 @@ def _case(name: str) -> dict:
 
 
 @pytest.fixture(autouse=True)
-def isolated(tmp_path, monkeypatch):
+def isolated(tmp_path, monkeypatch, execution_db):
+    """A fresh Hands folder, and a fresh database: since 0.1.61 the grants and "Always" rules a card
+    leaves are the permission store's (§A5)."""
     monkeypatch.setattr(hands_service, "_dir", lambda: tmp_path / "hands")
     hands_service._reset_for_tests()
+    from server.services import permission_store
+    permission_store._reset_for_tests()
     from server.registry import hands_tools as _tools
     _tools._inline.clear()           # per (conversation, turn): tests share one turn id
-    _tools._grants.clear()
     yield
     hands_service._reset_for_tests()
     _tools._inline.clear()
-    _tools._grants.clear()
 
 
 # ── the contract, backend side ───────────────────────────────────────────────
@@ -251,14 +253,24 @@ def hands(monkeypatch):
 
 
 @pytest.fixture
-def asks(monkeypatch):
+def asks():
+    """The card surface bound to the turn or job (0.1.61: `permissions.asking_with`). It records
+    each card and answers it: yes with the card's first choice ("for this task" for an app), unless a
+    test sets answer["value"] to False (no), or to "expired" (nobody answered); answer["scope"]
+    picks another choice, answer["note"] a no's note."""
+    from server.services import permissions
     seen, answer = [], {"value": True}
 
-    async def ask(conversation_id, frame):
+    async def surface(frame):
         seen.append(frame)
-        return answer["value"]
-    monkeypatch.setattr(approvals, "ask", ask)
-    return seen, answer
+        if answer["value"] == "expired":
+            return {"approved": False, "scope": None, "note": "", "by": None}
+        if answer["value"]:
+            options = frame.get("options") or [None]
+            return {"approved": True, "scope": answer.get("scope") or options[0], "note": "", "by": "mac"}
+        return {"approved": False, "scope": None, "note": answer.get("note", ""), "by": "mac"}
+    with permissions.asking_with(surface):
+        yield seen, answer
 
 
 @pytest.fixture
@@ -276,13 +288,17 @@ def in_job():
     hands_tools.forget_job("job-1")
 
 
-async def test_looking_asks_once_per_app_per_conversation(hands, asks, in_turn):
+async def test_using_an_app_asks_once_for_looking_and_acting_alike(hands, asks, in_turn):
+    """0.1.61 §A11: one `app` card covers looking and acting, "for this task" first."""
     seen, _ = asks
     look = hands_tools.DesktopLookExecutor()
     first = await look.execute({"app": "Notes"})
     assert first["ok"] and first["external"] is True and "[@sfixture0:e3]" in first["text"]
     assert (await look.execute({"app": "Notes"}))["ok"]
-    assert [(f["kind"], f["target"]) for f in seen] == [("desktop_look", "Notes")]
+    assert (await hands_tools.DesktopClickExecutor().execute(
+        {"app": "Notes", "element": "Save", "ref": "@sfixture0:e3"}))["ok"], "acting asks no second card"
+    assert [(f["kind"], f["perm_kind"], f["target"]) for f in seen] == [("desktop_app", "app", "Notes")]
+    assert seen[0]["options"][0] == "task" and seen[0]["title"] == "Use Notes?"
     found = await look.execute({"app": "Notes", "text": "Save"})
     assert found["ok"] and "button “Save”" in found["text"]
     assert hands.ops("snapshot", "find") == ["snapshot", "snapshot", "find"]
