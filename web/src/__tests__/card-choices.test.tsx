@@ -442,9 +442,9 @@ describe("the action card's words, its icon and its red", () => {
     expect(screen.queryByText(/hands\.grant\./)).toBeNull();
   });
 
-  it("five kinds have a grant line (what is granted, apart from for how long), and a Shortcut has none", () => {
+  it("four kinds have a grant line (what is granted, apart from for how long), and a Shortcut has none — nor is there a desktop_look card any more", () => {
     expect(Object.keys(handsMessages.en.grant).sort()).toEqual(
-      ["browser_site", "desktop_app", "desktop_look", "desktop_risky", "mac_script"]);
+      ["browser_site", "desktop_app", "desktop_risky", "mac_script"]);
   });
 
   it("a kind it has no words for with no title reads its target, never a blank question", () => {
@@ -659,18 +659,15 @@ describe("the action card's words, its icon and its red", () => {
     expect(screen.getByRole("alertdialog")).toHaveAccessibleName("kit.whoArslan");
   });
 
-  it("an old frame names its asker as before: looking is Arslan, anything else is a job", () => {
-    render(card({ kind: "desktop_look" }));
-    expect(screen.getByRole("alertdialog")).toHaveAccessibleName("kit.whoArslan");
-    cleanup();
+  it("an old frame (no choices) names a job as its asker: no card only looks any more, so there is no kind that is Arslan's own", () => {
     render(card({ kind: "desktop_app", background: false }));
+    expect(screen.getByRole("alertdialog")).toHaveAccessibleName("jobs.askingBadge");
+    cleanup();
+    render(card({ kind: "desktop_look", background: false, title: "Read Notes?" }));           // a stray frame of the kind that is gone
     expect(screen.getByRole("alertdialog")).toHaveAccessibleName("jobs.askingBadge");
   });
 
   it("an old frame the server marked background (approvals.ask stamps it on every plain card) names the same asker", () => {
-    render(card({ kind: "desktop_look", background: true }));
-    expect(screen.getByRole("alertdialog")).toHaveAccessibleName("kit.whoArslan");
-    cleanup();
     render(card({ kind: "desktop_app", background: true }));
     expect(screen.getByRole("alertdialog")).toHaveAccessibleName("jobs.askingBadge");
   });

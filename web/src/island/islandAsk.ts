@@ -21,7 +21,7 @@ const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
 
 /** The action kinds the island has words for (locales/island.ts `ask`). Any other is a kind from
  *  the permission layer (0.1.61 §A11), whose line is the card's own question. */
-const KNOWN_ACTIONS = new Set(['browser_site', 'desktop_look', 'desktop_app', 'desktop_risky', 'mac_shortcut',
+const KNOWN_ACTIONS = new Set(['browser_site', 'desktop_app', 'desktop_risky', 'mac_shortcut',
   'mac_script', 'desktop_takeover']);
 
 /** Whether the island has words of its own for this card's kind. A command, a write and a schedule always have; an action card

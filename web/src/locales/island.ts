@@ -64,7 +64,7 @@ const en = {
   pausedContinue: 'Continue',
   pausedMeNote: '“I’ll do it”: the work waits — finish by hand, then press Continue.',
   thumbAlt: 'The window it is working in',
-  ask: { run_command: 'Run a command', workspace_write: 'Write in your folder', schedule: 'Set up a scheduled task', browser_site: 'Act on a website', desktop_look: 'Look at an app', desktop_app: 'Act in an app', desktop_risky: 'A step that may delete, send or pay', mac_shortcut: 'Run a Shortcut', mac_script: 'Run an AppleScript', desktop_takeover: 'Take over the screen', other: 'Needs your OK' },
+  ask: { run_command: 'Run a command', workspace_write: 'Write in your folder', schedule: 'Set up a scheduled task', browser_site: 'Act on a website', desktop_app: 'Look at and act in an app', desktop_risky: 'A step that may delete, send or pay', mac_shortcut: 'Run a Shortcut', mac_script: 'Run an AppleScript', desktop_takeover: 'Take over the screen', other: 'Needs your OK' },
   step: {
     desktop_apps: 'List the open apps', desktop_look: 'Look at {{t}}', desktop_click: 'Click {{t}}', desktop_type: 'Type in {{t}}', desktop_select: 'Choose in {{t}}', desktop_scroll: 'Scroll {{t}}', desktop_press: 'Press {{t}}',
     desktop_menu: 'Choose {{t}} in the menu', desktop_batch: 'Several steps in {{t}}', desktop_open: 'Open {{t}}', desktop_takeover: 'Take over the screen', desktop_access: 'Ask to use {{t}}',
@@ -132,7 +132,7 @@ const zh: Messages = {
   pausedContinue: '继续',
   pausedMeNote: '我来 = 作业等着，你手动弄完点「继续」',
   thumbAlt: '正在操作的窗口',
-  ask: { run_command: '跑一条命令', workspace_write: '写到你的文件夹', schedule: '建一个定时任务', browser_site: '在网站上操作', desktop_look: '看一个应用', desktop_app: '在应用里操作', desktop_risky: '可能删除、发送或付款的一步', mac_shortcut: '运行快捷指令', mac_script: '运行 AppleScript', desktop_takeover: '接管屏幕', other: '需要你点头' },
+  ask: { run_command: '跑一条命令', workspace_write: '写到你的文件夹', schedule: '建一个定时任务', browser_site: '在网站上操作', desktop_app: '查看并操作应用', desktop_risky: '可能删除、发送或付款的一步', mac_shortcut: '运行快捷指令', mac_script: '运行 AppleScript', desktop_takeover: '接管屏幕', other: '需要你点头' },
   step: {
     desktop_apps: '列出打开的应用', desktop_look: '查看 {{t}}', desktop_click: '点击 {{t}}', desktop_type: '在 {{t}} 输入', desktop_select: '在 {{t}} 选择', desktop_scroll: '滚动 {{t}}', desktop_press: '按键 {{t}}',
     desktop_menu: '在菜单里选 {{t}}', desktop_batch: '在 {{t}} 里做几步', desktop_open: '打开 {{t}}', desktop_takeover: '接管屏幕', desktop_access: '申请使用 {{t}}',
@@ -199,7 +199,7 @@ const ja: Messages = {
   pausedContinue: '続ける',
   pausedMeNote: '「自分でやる」＝作業は待ちます。手で終えたら「続ける」を押してください。',
   thumbAlt: '作業中のウィンドウ',
-  ask: { run_command: 'コマンドを実行', workspace_write: 'フォルダに書き込む', schedule: '定期タスクを作る', browser_site: 'ウェブサイトで操作', desktop_look: 'アプリを見る', desktop_app: 'アプリで操作', desktop_risky: '削除・送信・支払いになりうる操作', mac_shortcut: 'ショートカットを実行', mac_script: 'AppleScript を実行', desktop_takeover: '画面を引き継ぐ', other: '確認が必要です' },
+  ask: { run_command: 'コマンドを実行', workspace_write: 'フォルダに書き込む', schedule: '定期タスクを作る', browser_site: 'ウェブサイトで操作', desktop_app: 'アプリを見て操作', desktop_risky: '削除・送信・支払いになりうる操作', mac_shortcut: 'ショートカットを実行', mac_script: 'AppleScript を実行', desktop_takeover: '画面を引き継ぐ', other: '確認が必要です' },
   step: {
     desktop_apps: '開いているアプリを一覧', desktop_look: '{{t}} を見る', desktop_click: '{{t}} をクリック', desktop_type: '{{t}} に入力', desktop_select: '{{t}} で選択', desktop_scroll: '{{t}} をスクロール', desktop_press: '{{t}} を押す',
     desktop_menu: 'メニューで {{t}} を選ぶ', desktop_batch: '{{t}} で複数の操作', desktop_open: '{{t}} を開く', desktop_takeover: '画面を引き継ぐ', desktop_access: '{{t}} の利用を確認',
@@ -266,7 +266,7 @@ const es: Messages = {
   pausedContinue: 'Continuar',
   pausedMeNote: '«Lo hago yo»: el trabajo espera; termínalo a mano y pulsa Continuar.',
   thumbAlt: 'La ventana en la que trabaja',
-  ask: { run_command: 'Ejecutar un comando', workspace_write: 'Escribir en tu carpeta', schedule: 'Crear una tarea programada', browser_site: 'Actuar en un sitio web', desktop_look: 'Mirar una app', desktop_app: 'Actuar en una app', desktop_risky: 'Un paso que puede borrar, enviar o pagar', mac_shortcut: 'Ejecutar un Atajo', mac_script: 'Ejecutar un AppleScript', desktop_takeover: 'Tomar la pantalla', other: 'Necesita tu visto bueno' },
+  ask: { run_command: 'Ejecutar un comando', workspace_write: 'Escribir en tu carpeta', schedule: 'Crear una tarea programada', browser_site: 'Actuar en un sitio web', desktop_app: 'Mirar y actuar en una app', desktop_risky: 'Un paso que puede borrar, enviar o pagar', mac_shortcut: 'Ejecutar un Atajo', mac_script: 'Ejecutar un AppleScript', desktop_takeover: 'Tomar la pantalla', other: 'Necesita tu visto bueno' },
   step: {
     desktop_apps: 'Listar las apps abiertas', desktop_look: 'Ver {{t}}', desktop_click: 'Clic en {{t}}', desktop_type: 'Escribir en {{t}}', desktop_select: 'Elegir en {{t}}', desktop_scroll: 'Desplazar {{t}}', desktop_press: 'Pulsar {{t}}',
     desktop_menu: 'Elegir {{t}} en el menú', desktop_batch: 'Varios pasos en {{t}}', desktop_open: 'Abrir {{t}}', desktop_takeover: 'Tomar la pantalla', desktop_access: 'Pedir usar {{t}}',
@@ -333,7 +333,7 @@ const de: Messages = {
   pausedContinue: 'Weiter',
   pausedMeNote: '„Ich mach das“: Die Arbeit wartet – erledige es von Hand und drücke dann „Weiter“.',
   thumbAlt: 'Das Fenster, in dem es arbeitet',
-  ask: { run_command: 'Einen Befehl ausführen', workspace_write: 'In deinen Ordner schreiben', schedule: 'Geplante Aufgabe anlegen', browser_site: 'Auf einer Website handeln', desktop_look: 'Eine App ansehen', desktop_app: 'In einer App handeln', desktop_risky: 'Ein Schritt, der löschen, senden oder bezahlen kann', mac_shortcut: 'Kurzbefehl ausführen', mac_script: 'AppleScript ausführen', desktop_takeover: 'Bildschirm übernehmen', other: 'Braucht dein OK' },
+  ask: { run_command: 'Einen Befehl ausführen', workspace_write: 'In deinen Ordner schreiben', schedule: 'Geplante Aufgabe anlegen', browser_site: 'Auf einer Website handeln', desktop_app: 'Eine App ansehen und darin handeln', desktop_risky: 'Ein Schritt, der löschen, senden oder bezahlen kann', mac_shortcut: 'Kurzbefehl ausführen', mac_script: 'AppleScript ausführen', desktop_takeover: 'Bildschirm übernehmen', other: 'Braucht dein OK' },
   step: {
     desktop_apps: 'Offene Apps auflisten', desktop_look: '{{t}} ansehen', desktop_click: '{{t}} klicken', desktop_type: 'In {{t}} tippen', desktop_select: 'In {{t}} auswählen', desktop_scroll: '{{t}} scrollen', desktop_press: '{{t}} drücken',
     desktop_menu: '{{t}} im Menü wählen', desktop_batch: 'Mehrere Schritte in {{t}}', desktop_open: '{{t}} öffnen', desktop_takeover: 'Bildschirm übernehmen', desktop_access: 'Fragen, ob es {{t}} nutzen darf',
@@ -400,7 +400,7 @@ const fr: Messages = {
   pausedContinue: 'Continuer',
   pausedMeNote: '« Je m’en charge » : le travail attend ; terminez à la main puis « Continuer ».',
   thumbAlt: 'La fenêtre où il travaille',
-  ask: { run_command: 'Lancer une commande', workspace_write: 'Écrire dans votre dossier', schedule: 'Créer une tâche planifiée', browser_site: 'Agir sur un site web', desktop_look: 'Regarder une app', desktop_app: 'Agir dans une app', desktop_risky: 'Une étape qui peut supprimer, envoyer ou payer', mac_shortcut: 'Lancer un Raccourci', mac_script: 'Lancer un AppleScript', desktop_takeover: 'Prendre l’écran en main', other: 'Il faut votre accord' },
+  ask: { run_command: 'Lancer une commande', workspace_write: 'Écrire dans votre dossier', schedule: 'Créer une tâche planifiée', browser_site: 'Agir sur un site web', desktop_app: 'Regarder et agir dans une app', desktop_risky: 'Une étape qui peut supprimer, envoyer ou payer', mac_shortcut: 'Lancer un Raccourci', mac_script: 'Lancer un AppleScript', desktop_takeover: 'Prendre l’écran en main', other: 'Il faut votre accord' },
   step: {
     desktop_apps: 'Lister les apps ouvertes', desktop_look: 'Regarder {{t}}', desktop_click: 'Cliquer {{t}}', desktop_type: 'Écrire dans {{t}}', desktop_select: 'Choisir dans {{t}}', desktop_scroll: 'Faire défiler {{t}}', desktop_press: 'Appuyer sur {{t}}',
     desktop_menu: 'Choisir {{t}} dans le menu', desktop_batch: 'Plusieurs étapes dans {{t}}', desktop_open: 'Ouvrir {{t}}', desktop_takeover: 'Prendre l’écran en main', desktop_access: 'Demander à utiliser {{t}}',

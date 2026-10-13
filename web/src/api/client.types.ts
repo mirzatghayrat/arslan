@@ -1433,9 +1433,9 @@ export interface SshAuditEntry {
 }
 
 /** What a confirmation card for an action asks about (0.1.45 browser / Mac;
- * 0.1.53 Mac apps through Arslan Hands: look once per app per conversation,
- * act once per app per job, a risky button every time). */
-export type ActionKind = "browser_site" | "mac_shortcut" | "mac_script" | "desktop_look" | "desktop_app" | "desktop_risky";
+ * 0.1.53 Mac apps through Arslan Hands; 0.1.61: looking at an app and acting in it is one
+ * `desktop_app` card, for this task, the conversation or always; a risky button every time). */
+export type ActionKind = "browser_site" | "mac_shortcut" | "mac_script" | "desktop_app" | "desktop_risky";
 
 /** 0.1.61 §A4: what a card from the permission layer carries (server permissions._ask). All absent
  *  on an old frame, which is shown and answered exactly as before. `expires_at` is Unix seconds. */

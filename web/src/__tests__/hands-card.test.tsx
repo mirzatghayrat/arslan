@@ -71,7 +71,7 @@ describe("action approval card", () => {
     expect(isScopeWithOneStretchCut(scope, "")).toBe(true);                                                                          // everything cut (the caller rejects an empty grant)
   });
 
-  it("a look attaches a window screenshot by default, so neither desktop_look line says there is none, in any language", () => {
+  it("a look attaches a window screenshot by default, so neither desktop_app line (it covers looking too) says there is none, in any language", () => {
     // server/services/hands_service.py (settings: screenshots on unless turned off) and hands_tools.py (a look attaches it).
     const denial: Record<string, RegExp> = {
       en: /no screenshot/i, zh: /不截图/, ja: /スクリーンショットは撮りません/,
@@ -79,8 +79,9 @@ describe("action approval card", () => {
     };
     expect(Object.keys(denial).sort()).toEqual(Object.keys(handsMessages).sort());
     for (const [lang, messages] of Object.entries(handsMessages)) {
-      expect(messages.scope.desktop_look, `${lang}.scope.desktop_look`).not.toMatch(denial[lang]);
-      expect(messages.grant.desktop_look, `${lang}.grant.desktop_look`).not.toMatch(denial[lang]);
+      expect(messages.scope.desktop_app, `${lang}.scope.desktop_app`).not.toMatch(denial[lang]);
+      expect(messages.grant.desktop_app, `${lang}.grant.desktop_app`).not.toMatch(denial[lang]);
+      expect(messages.title.desktop_app, `${lang}.title.desktop_app`).not.toMatch(denial[lang]);
     }
   });
 
