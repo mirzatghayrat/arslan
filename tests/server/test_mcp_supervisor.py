@@ -1968,3 +1968,113 @@ async def test_a_user_restart_never_joins_its_own_start_queued_for_a_slot(sup, m
         gate.set()
     await asyncio.wait_for(asyncio.gather(*[t for t in sup._inflight.values() if not t.done()]), 5)
     assert calls.count(5) == 1                                         # the queued start never ran
+
+
+# ── final re-review: N-1 (the slot a plan gives back), N-2 (the write that lands last) ────────────
+
+async def _a_replaced_plan_still_unwinding(sup, monkeypatch):
+    """A background attempt holds one of the slots while its open runs; a newer plan replaces it, so
+    it is out of `_inflight` and nothing (not `stop()`) waits for it; and its open takes until
+    `unwind` is set to end, as ending a process does. Returns (that attempt, unwind)."""
+    await _seed(sup.maker, 1)
+    monkeypatch.setattr(session.manager, "_sessions", {})
+    opening, unwind = asyncio.Event(), asyncio.Event()
+
+    async def slow_open(server):
+        opening.set()
+        try:
+            await asyncio.sleep(3600)
+        except asyncio.CancelledError:
+            await unwind.wait()
+            raise
+    monkeypatch.setattr(session.manager, "_open_session", slow_open)
+    sup.start(run_loops=False)
+    old = sup._new_plan(1, "refresh")
+    await asyncio.wait_for(opening.wait(), 5)
+    _opener(monkeypatch, [])                   # the newer plan opens a live session at once
+    sup._new_plan(1, "refresh")
+    return old, unwind
+
+
+async def test_a_replaced_plan_still_unwinding_at_stop_ends_cancelled_not_crashed(
+        sup, monkeypatch, caplog):
+    """Re-review N-1: `stop()` sets `_sem` to None while a replaced plan is still unwinding (it is
+    not in `_inflight`, so nothing waits for it). The plan gives back the semaphore it took its slot
+    from — not whatever `self._sem` is by then: an AttributeError there ended it "start plan
+    crashed" instead of cancelled, at every quit with a start in the middle of being replaced."""
+    caplog.set_level(logging.WARNING, logger="server.mcp.supervisor")
+    old, unwind = await _a_replaced_plan_still_unwinding(sup, monkeypatch)
+    try:
+        await asyncio.wait_for(sup.stop(), 10)
+    finally:
+        unwind.set()
+    await asyncio.wait_for(asyncio.gather(old, return_exceptions=True), 5)
+    assert old.cancelled(), "the replaced plan ended with an error, not the cancel it was given"
+    assert not [r.getMessage() for r in caplog.records if "crashed" in r.getMessage()]
+
+
+async def test_a_replaced_plan_unwinding_past_a_restart_gives_back_no_slot_of_the_new_semaphore(
+        sup, monkeypatch):
+    """Re-review N-1, the other face: after `stop()` and `start()` the supervisor has a NEW
+    semaphore with every slot free. The old plan's release goes to the one it acquired from; if it
+    went to the new one, that one would allow MAX_CONCURRENT + 1 attempts at once."""
+    old, unwind = await _a_replaced_plan_still_unwinding(sup, monkeypatch)
+    try:
+        await asyncio.wait_for(sup.stop(), 10)
+        sup.start(run_loops=False)
+    finally:
+        unwind.set()
+    await asyncio.wait_for(asyncio.gather(old, return_exceptions=True), 5)
+    fresh = sup._sem
+    for _ in range(sm.MAX_CONCURRENT):
+        await asyncio.wait_for(fresh.acquire(), 1)
+    assert fresh.locked(), "the new semaphore holds a slot more than MAX_CONCURRENT"
+
+
+def _slow_off_commit(monkeypatch, maker, began):
+    """Sessions of `maker`, except that a commit of the `off` state waits 0.3 s first: a busy SQLite
+    writer. `began` is set once that commit is under way."""
+    from server.db import session as db_session
+
+    def make():
+        db = maker()
+        real_commit = db.commit
+
+        async def commit():
+            if any(isinstance(o, MCPServer) and o.state == "off" for o in db.dirty):
+                began.set()
+                await asyncio.sleep(0.3)
+            return await real_commit()
+        db.commit = commit
+        return db
+    monkeypatch.setattr(db_session, "AsyncSessionLocal", make)
+
+
+async def test_a_switch_off_never_lands_after_the_connect_that_started_during_its_write(
+        sup, monkeypatch):
+    """Re-review N-2: `_set` checked the generation, then ran its transaction; a Connect that began
+    in between wrote `ready` with its session first, and the switch-off's `off` landed after it:
+    a process kept running for a switched-off row, and no tick rule looks at an `off` row. Now one
+    lock per server is held across the check and the transaction, so the two writes are ordered
+    as the verbs were: the row and the process tell the same story."""
+    await _seed(sup.maker, 1)
+    monkeypatch.setattr(session.manager, "_sessions", {})
+    monkeypatch.setattr(sm, "supervisor", sup)
+
+    async def open_(server):
+        return _Live(), _stack()
+    monkeypatch.setattr(session.manager, "_open_session", open_)
+    sup.start(run_loops=False)
+    assert (await sup.restart(1)).state == "ready"
+    began = asyncio.Event()
+    _slow_off_commit(monkeypatch, sup.maker, began)
+    switch_off = asyncio.create_task(mcp_service.set_host_allowed(1, False))
+    await asyncio.wait_for(began.wait(), 5)                # the `off` write is under way …
+    connect = asyncio.create_task(sup.restart(1))          # … when the user presses Connect
+    await asyncio.wait_for(asyncio.gather(switch_off, connect), 10)
+    await _settled(sup)
+    row = await _row(sup.maker, 1)
+    cached = session.manager.cached(1) is not None
+    assert (row.state == "ready") == cached, (
+        f"the row says {row.state!r} (host_allowed={row.host_allowed}) while "
+        f"{'a session runs' if cached else 'no session runs'}")

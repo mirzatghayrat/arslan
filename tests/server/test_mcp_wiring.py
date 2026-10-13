@@ -1068,7 +1068,8 @@ async def test_an_edit_waking_a_probe_is_one_plan_and_no_failure(execution_db, o
         row = await db.get(MCPServer, 1)
     # no failure: ok if the edit's start was already live when the probe answered, else not yet
     # checked (shown, final review M-1) — never `failing`
-    assert plans == ["refresh"] and opens == [1] and out["health_status"] in ("ok", None)
+    assert plans == ["refresh"] and opens == [1]
+    assert (out["state"], out["health_status"]) in (("ready", "ok"), ("starting", None))
     assert (row.state, row.health_status, row.last_error) == ("ready", "ok", None)
 
 

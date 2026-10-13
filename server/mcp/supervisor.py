@@ -313,6 +313,10 @@ class Supervisor:
         # server -> the marker of its attempt while it waits for a slot: `restart` never joins that
         # one (final review M-2).
         self._queued: dict[int, object] = {}
+        # server -> the lock `_set` holds across its generation check AND its transaction: a write
+        # that passed the check can never land after a newer generation's (re-review: a switch-off's
+        # `off` landing after a Connect's `ready` left a process running for a switched-off server).
+        self._set_locks = mcp_session.LoopLocks()
 
     # ── lifecycle ──────────────────────────────────────────────────────────────────────
     def start(self, *, run_loops: bool = True) -> None:
@@ -600,19 +604,20 @@ class Supervisor:
         API request or a test: no queue) or it is the user's own start (`restart`: Connect, the
         install test, add_capability), which never waits behind background attempts (final review
         M-2). The session manager's per-server lock still lets one start of a server open at a time."""
-        if self._sem is None or plan == "restart":
+        sem = self._sem      # the one this attempt acquires is the one it releases (stop() sets None)
+        if sem is None or plan == "restart":
             return await self._attempt(sid, gen, plan)
         mark = object()
         self._queued[sid] = mark
         try:
-            await self._sem.acquire()
+            await sem.acquire()
         finally:
             if self._queued.get(sid) is mark:
                 del self._queued[sid]
         try:
             return await self._attempt(sid, gen, plan)
         finally:
-            self._sem.release()
+            sem.release()
 
     async def _attempt(self, sid: int, gen: int, plan: str) -> StartResult:
         """One fresh process: drop any cached session, fetch the runtime if needed (outside the
@@ -750,6 +755,11 @@ class Supervisor:
         a vanished row — also one deleted between the read and the write (final review M-3).
         last_error changes only with an error or on ready (then it is cleared). fail_count counts
         failed plans; a failed server's next try backs off 30 s → 600 s."""
+        async with self._set_locks.hold(sid):
+            return await self._set_locked(sid, gen, state, error=error, ok=ok, retry_in=retry_in)
+
+    async def _set_locked(self, sid: int, gen: int, state: str, *, error: str | None, ok: bool,
+                          retry_in: float | None) -> datetime | None:
         if self._gen.get(sid, 0) != gen:
             return None
         now = _utcnow()

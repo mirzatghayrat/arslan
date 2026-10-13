@@ -1,6 +1,8 @@
 """The session manager with fakes (0.1.61 §B1). The real SDK: test_mcp_session_real.py."""
 import asyncio
+import gc
 import json
+import logging
 import time
 from datetime import timedelta
 from types import SimpleNamespace
@@ -595,3 +597,56 @@ async def test_a_switch_off_during_an_overtaken_opens_close_returns(execution_db
         process_gone.set()
         await asyncio.wait_for(sup.stop(), 10)
         await asyncio.wait_for(sess.manager.aclose_all(), 10)
+
+
+# ── final re-review: the closes `_close_uncut` holds (fix A) ───────────────────────────────────
+
+async def test_a_close_that_ends_or_fails_is_let_go_of_and_a_failure_is_logged_not_raised(
+        data, caplog):
+    """Each close is held in `_closes` while it runs and let go of when it ends, normally or
+    failing. A failure is logged with its cause; it is never raised at whoever dropped the session,
+    and never left as a task exception nobody retrieves."""
+    caplog.set_level(logging.DEBUG)
+    mgr = sess.MCPSessionManager()
+
+    async def ok_close():
+        await asyncio.sleep(0.05)
+
+    async def failing_close():
+        await asyncio.sleep(0.05)
+        raise RuntimeError("close blew up")
+    mgr._sessions[1] = (object(), SimpleNamespace(aclose=ok_close))
+    await mgr.drop(1)
+    assert mgr._closes == set()
+    mgr._sessions[2] = (object(), SimpleNamespace(aclose=failing_close))
+    await mgr.drop(2)                                    # not raised at the caller
+    assert mgr._closes == set()
+    assert any("close failed" in r.getMessage() and "blew up" in r.getMessage()
+               for r in caplog.records)
+    gc.collect()
+    assert not [r for r in caplog.records if "exception was never retrieved" in r.getMessage()]
+
+
+async def test_a_close_left_running_by_a_cancelled_caller_is_held_and_waited_for_by_aclose_all(
+        data):
+    """A caller cancelled in the middle of a close leaves at once; the close goes on, held strongly
+    in `_closes`; and `aclose_all` returns only once the closes it found have ended (the SDK's
+    terminate step must run before the loop does)."""
+    mgr = sess.MCPSessionManager()
+    closing, release = asyncio.Event(), asyncio.Event()
+
+    async def slow_close():
+        closing.set()
+        await release.wait()
+    mgr._sessions[3] = (object(), SimpleNamespace(aclose=slow_close))
+    dropping = asyncio.create_task(mgr.drop(3))
+    await asyncio.wait_for(closing.wait(), 5)
+    dropping.cancel()                                    # the caller is cut mid-close …
+    await asyncio.gather(dropping, return_exceptions=True)
+    assert len(mgr._closes) == 1                         # … the close is not: it runs on, held
+    waiting = asyncio.create_task(mgr.aclose_all())
+    await asyncio.sleep(0.05)
+    assert not waiting.done()                            # aclose_all waits for it
+    release.set()
+    await asyncio.wait_for(waiting, 5)
+    assert mgr._closes == set()
