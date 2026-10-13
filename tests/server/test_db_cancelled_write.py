@@ -117,12 +117,13 @@ async def _cancel_inside_the_select(maker, gate, *, cancels: int = 1) -> asyncio
 
 
 async def test_a_write_cancelled_mid_select_frees_the_lock_at_once_without_gc(db, no_gc):
-    path, _engine, maker, gate = db
+    path, engine, maker, gate = db
     async with maker() as session:                       # committed before: must survive
         await session.execute(text("INSERT INTO t (v) VALUES ('committed')"))
         await session.commit()
     await _cancel_inside_the_select(maker, gate)
     assert await _lock_within(path, 0.5) == "free"
+    assert engine.sync_engine.pool.checkedout() == 0
     # Another write goes through at once, and only the committed row is there.
     async with maker() as session:
         await asyncio.wait_for(session.execute(text("INSERT INTO t (v) VALUES ('after')")), 1)
@@ -133,10 +134,13 @@ async def test_a_write_cancelled_mid_select_frees_the_lock_at_once_without_gc(db
 
 async def test_a_second_cancel_while_the_rollback_waits_still_frees_the_lock(db, no_gc):
     """Stop, then the socket closes: the task is cancelled again while the rollback waits behind
-    the statement. The rollback is already queued on the worker thread, ahead of the close."""
-    path, _engine, maker, gate = db
+    the statement. The rollback is already queued on the worker thread, ahead of the close. The
+    task still ends cancelled (main ended it with ValueError "Connection closed"), and its
+    connection is back in the pool, not left for the garbage collector."""
+    path, engine, maker, gate = db
     await _cancel_inside_the_select(maker, gate, cancels=2)
     assert await _lock_within(path, 0.5) == "free"
+    assert engine.sync_engine.pool.checkedout() == 0
     async with maker() as session:
         await asyncio.wait_for(session.execute(text("INSERT INTO t (v) VALUES ('after')")), 1)
         await session.commit()
