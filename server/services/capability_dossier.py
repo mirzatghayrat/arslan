@@ -8,6 +8,7 @@ candidate must be one the page's own search returned (kept server-side under PAG
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 from datetime import datetime, timedelta
@@ -171,15 +172,25 @@ async def remove(source_id: str) -> None:
     if row.kind == "skill":
         from server import config
         from server.db.models import SkillPack
-        async with db_session.AsyncSessionLocal() as db:
-            pack = await db.get(SkillPack, row.skill_key) if row.skill_key else None
-            if pack is not None:
-                await db.delete(pack)
-            stored = await db.get(CapabilitySource, source_id)
-            stored.state = "removed"
-            await db.commit()
-        if row.skill_key:
-            capability_install.to_trash(config.data_dir() / "skill_scripts" / row.skill_key)
+        from server.services import skill_files
+        key = row.skill_key
+        folder_key = bool(key) and skill_files.KEY_RE.fullmatch(key) is not None
+        # 0.1.61: the row and the key's whole folder (<data>/skills/<key>/) go together, under the key's
+        # lock (skill_files.key_lock): an import of this key (an update on its way) holds it from its folder
+        # to its row, so a remove waits for it and then takes what the import left — never a row without its
+        # folder, never a folder without its row.
+        async with (skill_files.key_lock(key) if folder_key else contextlib.nullcontext()):
+            async with db_session.AsyncSessionLocal() as db:
+                pack = await db.get(SkillPack, key) if key else None
+                if pack is not None:
+                    await db.delete(pack)
+                stored = await db.get(CapabilitySource, source_id)
+                stored.state = "removed"
+                await db.commit()
+            if folder_key:
+                skill_files.retire(skill_files.folder_for(key))
+        if key:                                  # a skill imported before 0.1.61 kept its scripts apart
+            capability_install.to_trash(config.data_dir() / "skill_scripts" / key)
         return
     await capability_install.remove(source_id)
 

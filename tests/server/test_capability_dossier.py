@@ -200,6 +200,90 @@ async def test_removing_a_skill_moves_its_files_to_the_trash(execution_db, monke
     assert (capability_install.trash_dir() / "Arslan capability csv-tidy").is_dir()   # a temp Trash
 
 
+async def test_removing_an_imported_skill_moves_its_whole_folder_to_the_trash(execution_db, monkeypatch, tmp_path):
+    """0.1.61 §C2: an import is a folder under <data>/skills/<key>/; removing it sends that folder
+    to the Trash under a name a person can find there."""
+    from server import config
+    from server.db.models import CapabilitySource, SkillPack
+    monkeypatch.setattr(config, "data_dir", lambda: tmp_path)
+    (tmp_path / "skills" / "csv-tidy" / "scripts").mkdir(parents=True)
+    (tmp_path / "skills" / "csv-tidy" / "SKILL.md").write_text("x")
+    async with execution_db() as db:
+        db.add(SkillPack(key="csv-tidy", name="c", category="imported", description="d", tier="safe",
+                         status="registered", body="x", origin="imported", folder=str(tmp_path / "skills" / "csv-tidy")))
+        db.add(CapabilitySource(id="sk2", kind="skill", name="c", candidate_id="c", needs={}, grants={},
+                                state="installed", skill_key="csv-tidy", created_at=datetime.utcnow()))
+        await db.commit()
+    await cd.remove("sk2")
+    assert not (tmp_path / "skills" / "csv-tidy").exists()
+    assert (capability_install.trash_dir() / "Arslan capability skill csv-tidy" / "SKILL.md").is_file()   # a temp Trash
+    async with execution_db() as db:
+        assert await db.get(SkillPack, "csv-tidy") is None
+        assert (await db.get(CapabilitySource, "sk2")).state == "removed"
+
+
+async def test_a_remove_racing_an_import_of_the_same_skill_never_leaves_half_of_it(execution_db, monkeypatch, tmp_path):
+    """0.1.61 §C2 (one lock per key): the import holds the key's lock from reading its folder to its
+    row's commit, and a remove takes the same lock for its row AND its folder. Driven with events:
+    the import stops at its database write (its new folder is already live), the remove is started
+    and runs as far as it can, and only then does the import go on. Without the lock the remove
+    deletes the row and trashes the new folder, and the import then writes a row for a folder that is
+    gone."""
+    import asyncio
+
+    from server.db.models import CapabilitySource, SkillPack
+    from server.services import skill_files, skill_import
+    from tests.server.skill_archives import COMMIT, tarball
+    monkeypatch.setenv("ARSLAN_DATA_DIR", str(tmp_path))
+    served = {"text": "---\nname: csv-tidy\ndescription: Tidy CSV\n---\n# Tidy\nSort the rows.\n", "commit": COMMIT}
+
+    async def fetch_repo(owner, repo):
+        return {"full_name": f"{owner}/{repo}", "html_url": "", "stars": 1, "forks": 0, "license": None,
+                "pushed_days": 1, "description": "", "topics": []}
+
+    async def fetch_archive(owner, repo, ref):
+        return tarball({"skills/csv/SKILL.md": served["text"],
+                        "skills/csv/LICENSE.txt": "Permission is hereby granted, free of charge"},
+                       commit=served["commit"])
+    monkeypatch.setattr(skill_import.github_eval, "fetch_repo", fetch_repo)
+    monkeypatch.setattr(skill_import, "_fetch_archive", fetch_archive)
+    first = await skill_import.import_skill("example-org/example-skills", "skills/csv/SKILL.md")
+    folder = skill_files.folder_for("csv-tidy")
+    assert folder.is_dir()
+
+    real_record = skill_import._record_import
+    at_write, go = asyncio.Event(), asyncio.Event()
+
+    async def gated(**kwargs):
+        at_write.set()
+        await go.wait()
+        return await real_record(**kwargs)
+    monkeypatch.setattr(skill_import, "_record_import", gated)
+    served.update(text=served["text"] + "Then check the dates.\n", commit="89abcdef" * 5)
+    importing = asyncio.ensure_future(skill_import.import_skill("example-org/example-skills", "skills/csv/SKILL.md"))
+    await asyncio.wait_for(at_write.wait(), 10)               # the new folder is live; its row is not written yet
+
+    asked, real_lock = asyncio.Event(), skill_files.key_lock
+
+    def spy(key):
+        asked.set()
+        return real_lock(key)
+    monkeypatch.setattr(skill_files, "key_lock", spy)
+    removing = asyncio.ensure_future(cd.remove(first["source_id"]))
+    listening = asyncio.ensure_future(asked.wait())
+    await asyncio.wait_for(asyncio.wait({removing, listening}, return_when=asyncio.FIRST_COMPLETED), 10)
+    listening.cancel()                                        # asked (it waits for the import), or it ran through alone
+    go.set()
+    await asyncio.wait_for(asyncio.gather(importing, removing), 10)
+
+    async with execution_db() as db:
+        pack = await db.get(SkillPack, "csv-tidy")
+        dossier = await db.get(CapabilitySource, first["source_id"])
+    assert folder.exists() == (pack is not None)              # never a row without its folder, nor a folder without a row
+    assert pack is None and not folder.exists()               # the import came first, so the remove then took both
+    assert dossier.state == "removed"
+
+
 # ── using a candidate in a project ───────────────────────────────────────────
 
 async def test_as_material_puts_its_readme_into_the_projects_materials(execution_db, monkeypatch):
