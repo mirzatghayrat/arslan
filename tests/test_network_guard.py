@@ -11,33 +11,49 @@ WHAT IT REFUSES, for every test (the file's tests are the exact list):
  - ``socket.getaddrinfo`` of any NAME but ``localhost``. An address literal needs no network to
    "resolve" and is ANSWERED, so the code under test judges it itself. (It used to be refused, and
    three SSRF tests then passed because the lookup failed, not because net_pin judged the private
-   address: switch the private-address check off and they stayed green.)
+   address: switch the private-address check off and they stayed green.) "Address literal" means
+   what net_pin treats as one (``_is_ip_literal``) and a resolver can read: an address in whatever
+   spelling the OS takes, ``127.1``, ``2130706433``, ``0x7f000001``, ``0177.0.0.1`` and ``10.1`` as
+   well as the dotted quad and IPv6. The guard has the OS read it with ``AI_NUMERICHOST``, which
+   never asks DNS, so a lookup of a literal cannot turn into a query. Text that only starts like an
+   address is refused like any name: ``127.0.0.1.nip.io`` is a name, and ``1.2.3.4.5`` is a string
+   net_pin also calls a literal but no resolver reads, so there is no address to answer with.
+   ``None`` and ``""`` (the empty host) are answered as ``None`` is, loopback, which is no I/O:
+   net_pin's own check must be what refuses that answer.
  - ``socket.socket.connect`` / ``connect_ex`` to an address that is not loopback. That is the path
    under asyncio (``open_connection``, ``sock_connect``), ``socket.create_connection``, urllib,
    http.client and httpcore. Unix sockets and loopback stay open: tests serve from this process and
    from subprocesses (test_profile_activation), so a rule on loopback ports would refuse them.
  - a request by a REAL httpx transport to a host that is not loopback, or through a PROXY, a loopback
    one included: the system proxy listens on 127.0.0.1.
- - the proxy ENVIRONMENT: HTTP(S)_PROXY and ALL_PROXY are removed and NO_PROXY=* is set. With no
-   proxy variable at all (pytest launched from an IDE) urllib on macOS falls back to the SYSTEM
-   proxy, and a real client would send even its loopback requests there.
-Every refusal is RECORDED, and a test that provoked one it did not expect fails at teardown: a code
-path that swallows the refusal (``github_eval.fetch_file`` does) is a silent leak. A test that
-refuses on purpose carries ``network_refusals_expected`` (this whole file), and the opt-in live
-runners are marked ``real_network`` BY PATH in conftest (they are historical acceptance evidence,
-some frozen by digest, so the files stay as they were); the marker lifts the guard and nothing else.
+ - the proxy ENVIRONMENT: HTTP(S)_PROXY and ALL_PROXY, in upper and lower case, are removed and
+   NO_PROXY=* is set. With no proxy variable at all (pytest launched from an IDE) urllib on macOS
+   falls back to the SYSTEM proxy, and a real client would send even its loopback requests there.
+Every refusal is RECORDED, with the thread (and the asyncio task, if there is one) that asked, and a
+test that provoked one it did not expect fails at teardown: a code path that swallows the refusal
+(``github_eval.fetch_file`` does) is a silent leak, and a straggler thread of an earlier test that
+blames a later one is found by its name. A test that refuses on purpose carries
+``network_refusals_expected`` (this whole file), and the opt-in live runners are marked
+``real_network`` BY PATH in conftest (they are historical acceptance evidence, some frozen by
+digest, so the files stay as they were); the marker lifts the guard and nothing else.
 
-NOT covered, and said so: UDP ``sendto``, ``gethostbyname``, and raw loopback sockets to a port that
-is not the test's. It is a net under the fakes, not a sandbox.
+NOT covered, and said so: UDP ``sendto``; ``gethostbyname``, ``getnameinfo`` and ``gethostbyaddr``;
+raw loopback sockets to a port that is not the test's; and CHILD PROCESSES (git, curl, npm, any
+subprocess), which get the scrubbed environment and none of the patches. It is a net under the
+fakes, not a sandbox.
 
-These tests aim only at targets that are safe even if the guard were broken: ``.invalid`` names
-(RFC 6761, never delegated), 0.0.0.1 for TCP (it fails locally, "No route to host", with no packet),
-192.0.2.1 and 2001:db8::1 for UDP (``connect`` on a datagram socket sends nothing), loopback ports
-that nothing listens on.
+These tests aim at targets that a broken guard would still not turn into a real exchange: ``.invalid``
+names (RFC 6761, never delegated), 192.0.2.1 and 2001:db8::1 for UDP (``connect`` on a datagram
+socket sends nothing), loopback ports that nothing listens on, and for TCP 0.0.0.1, in 0.0.0.0/8
+("this network", RFC 1122), which is no destination anyone routes. That last one is the only
+target here that rests on the OS: macOS answers it locally with "No route to host", and these tests
+do not claim every OS does, or that nothing would be sent. The guard refuses before the OS is asked,
+and they assert that.
 """
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import errno
 import os
 import re
@@ -45,6 +61,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import urllib.request
 from pathlib import Path
 
@@ -130,6 +147,63 @@ def test_net_pin_judges_a_private_literal_itself(literal):
     with pytest.raises(net_pin._BlockedHost, match="private or internal address") as caught:
         net_pin._resolve_pinned(f"http://{literal}/")
     assert not isinstance(caught.value, net_pin._Unresolvable)
+
+
+#: Addresses to the OS resolver, and to net_pin (`_is_ip_literal`): the guard has to answer them.
+_NUMERIC_SPELLINGS = ["127.1", "2130706433", "0x7f000001", "0177.0.0.1", "10.1", "0x7f.1",
+                      "１２７.０.０.１"]
+
+
+@pytest.mark.parametrize("spelling", _NUMERIC_SPELLINGS)
+def test_an_address_in_any_spelling_the_os_reads_is_answered(spelling, network_refusals):
+    """No name in it, so no network: the guard used to take only what `ipaddress` parses, and these
+    were refused as if they were names."""
+    assert net_pin._is_ip_literal(net_pin._canonical_host(spelling)), "net_pin calls it a name"
+    try:
+        expected = REAL_GETADDRINFO(spelling, 80, flags=socket.AI_NUMERICHOST)    # reads, never asks DNS
+    except socket.gaierror:
+        pytest.skip(f"this OS does not read {spelling!r} as an address")
+    assert socket.getaddrinfo(spelling, 80) == expected
+    assert network_refusals == []
+
+
+@pytest.mark.parametrize("spelling", ["127.1", "2130706433", "0x7f000001", "10.1"])
+def test_net_pin_judges_a_numeric_spelling_itself(spelling, network_refusals):
+    """The same wrong-reason bug, one spelling over. (`0177.0.0.1` is left out on purpose: macOS reads
+    the leading zero as decimal, 177.0.0.1, which is public, and net_pin judges what the OS says.)"""
+    with pytest.raises(net_pin._BlockedHost, match="private or internal address") as caught:
+        net_pin._resolve_pinned(f"http://{spelling}/")
+    assert not isinstance(caught.value, net_pin._Unresolvable)
+    assert network_refusals == []
+
+
+@pytest.mark.parametrize("name", ["127.0.0.1.nip.io", "1.2.3.4.5", "999.1.1.1", "127.0.0.1 evil.example",
+                                  "0x7f.evil.example", "123.example.com", "1password.com", "1e3"])
+def test_text_that_only_starts_like_an_address_is_refused(name, network_refusals):
+    """The OS is asked to read a numeric spelling and nothing else. Text that merely starts like an
+    address is not one: a name (`127.0.0.1.nip.io`), or a numeric string no resolver reads
+    (`1.2.3.4.5`, which net_pin also calls a literal). It gets no answer, is recorded, and is never
+    looked up."""
+    with pytest.raises(socket.gaierror, match="test guard"):
+        socket.getaddrinfo(name, 80)
+    assert [line.split(" [")[0] for line in network_refusals] == [f"lookup of {name!r}"]
+
+
+@pytest.mark.parametrize("empty", ["", b""], ids=["empty-str", "empty-bytes"])
+def test_an_empty_host_is_answered_as_none_is(empty, network_refusals):
+    """`getaddrinfo("")` looks up nothing (the OS answers loopback, as for None), so there is no I/O
+    and nothing for the guard to refuse: net_pin's `_is_non_public` has to be what refuses it."""
+    for flags in (0, socket.AI_PASSIVE):
+        assert (socket.getaddrinfo(empty, 80, type=socket.SOCK_STREAM, flags=flags)
+                == socket.getaddrinfo(None, 80, type=socket.SOCK_STREAM, flags=flags))
+    assert network_refusals == []
+
+
+def test_net_pin_refuses_an_empty_host_itself(network_refusals):
+    with pytest.raises(net_pin._BlockedHost, match="private or internal address") as caught:
+        net_pin._resolve_pinned("http:///x")
+    assert not isinstance(caught.value, net_pin._Unresolvable)
+    assert network_refusals == []
 
 
 @pytest.mark.parametrize("host", ["127.0.0.1", "::1", "localhost", b"127.0.0.1", None])
@@ -236,9 +310,10 @@ async def test_a_client_built_from_the_environment_reaches_loopback_directly():
         await server.wait_closed()
 
 
-def _child(tmp_path, source, *, proxy_env=None, args=()):
+def _child(tmp_path, source, *, launch=None, plugins=None, args=()):
     """A child pytest session with the root conftest loaded as a plugin (the test file lives outside
-    tests/), a temp HOME, the repo's own pytest config, and exactly the proxy variables given."""
+    tests/), a temp HOME, the repo's own pytest config, exactly the proxy variables `launch` gives,
+    and the `plugins` ({module name: source}) imported before anything else."""
     home = tmp_path / "home"
     home.mkdir(exist_ok=True)
     test_file = tmp_path / "child" / "test_child.py"
@@ -248,10 +323,18 @@ def _child(tmp_path, source, *, proxy_env=None, args=()):
            if not key.startswith(("ARSLAN_", "PYTEST_")) and key not in _PROXY_VARS
            and key not in ("NO_PROXY", "no_proxy")}
     env.update(HOME=str(home), ARSLAN_SECRET_KEY="ci-secret", ARSLAN_API_TOKEN="",
-               ARSLAN_DATA_DIR="data", **(proxy_env or {}))
+               ARSLAN_DATA_DIR="data", **(launch or {}))
+    plugin_args: list[str] = []
+    if plugins:
+        folder = tmp_path / "plugins"
+        folder.mkdir(exist_ok=True)
+        for name, text in plugins.items():
+            (folder / f"{name}.py").write_text(text)
+            plugin_args += ["-p", name]
+        env["PYTHONPATH"] = os.pathsep.join([str(folder), *filter(None, [env.get("PYTHONPATH")])])
     return subprocess.run(
         [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-p", "tests.conftest",
-         "-c", str(REPO / "pyproject.toml"), "--rootdir", str(REPO),
+         *plugin_args, "-c", str(REPO / "pyproject.toml"), "--rootdir", str(REPO),
          "-W", "error::pytest.PytestUnknownMarkWarning", "-rA", *args, str(test_file)],
         cwd=REPO, env=env, capture_output=True, text=True, timeout=110)
 
@@ -268,17 +351,103 @@ def test_the_child_sees_a_scrubbed_environment():
     assert urllib.request.getproxies() == {"no": "*"}
 '''
 
+_UPPER_CASE_LAUNCH = {"HTTP_PROXY": "http://127.0.0.1:7899", "HTTPS_PROXY": "http://127.0.0.1:7899",
+                      "ALL_PROXY": "socks5://127.0.0.1:7899", "NO_PROXY": "localhost,127.0.0.1,::1,.local"}
+_LOWER_CASE_LAUNCH = {"http_proxy": "http://127.0.0.1:7899", "https_proxy": "http://127.0.0.1:7899",
+                      "all_proxy": "socks5://127.0.0.1:7899", "no_proxy": "localhost,127.0.0.1,::1,.local"}
+
 
 @pytest.mark.parametrize("launch", [
-    pytest.param({"HTTP_PROXY": "http://127.0.0.1:7899", "HTTPS_PROXY": "http://127.0.0.1:7899",
-                  "ALL_PROXY": "socks5://127.0.0.1:7899",
-                  "NO_PROXY": "localhost,127.0.0.1,::1,.local"}, id="a-shell-with-the-proxy-exported"),
+    pytest.param(_UPPER_CASE_LAUNCH, id="a-shell-with-the-proxy-exported"),
+    pytest.param(_LOWER_CASE_LAUNCH, id="a-shell-with-the-lowercase-variables-exported"),
+    pytest.param({**_UPPER_CASE_LAUNCH, **_LOWER_CASE_LAUNCH}, id="a-shell-with-both-cases"),
     pytest.param({}, id="an-IDE-with-no-proxy-variable-at-all"),
 ])
 def test_the_scrub_does_not_depend_on_how_pytest_was_launched(tmp_path, launch):
-    proc = _child(tmp_path, _SCRUBBED, proxy_env=launch)
+    proc = _child(tmp_path, _SCRUBBED, launch=launch)
     assert proc.returncode == 0, proc.stdout[-3000:] + proc.stderr[-1500:]
     assert "PASSED" in proc.stdout and "ERROR" not in proc.stdout, proc.stdout[-3000:]
+
+
+_BY_MARKER = '''
+import os
+
+import pytest
+
+LAUNCH = __LAUNCH__
+
+
+@pytest.mark.real_network
+def test_a_live_runner_keeps_the_proxy_environment_it_was_launched_with():
+    for key, value in LAUNCH.items():
+        assert os.environ.get(key) == value, key
+
+
+def test_a_unit_test_does_not():
+    for key in LAUNCH:
+        assert key not in os.environ or os.environ[key] == "*", key
+'''
+
+
+def test_a_live_runner_keeps_the_users_proxy_environment_and_a_unit_test_does_not(tmp_path):
+    """`real_network` lifts the guard and nothing else; the live runners need the user's own proxy
+    to reach the internet from behind it. (The unit test in the same session is scrubbed.)"""
+    launch = {**_UPPER_CASE_LAUNCH, **_LOWER_CASE_LAUNCH}
+    proc = _child(tmp_path, _BY_MARKER.replace("__LAUNCH__", repr(launch)), launch=launch)
+    assert proc.returncode == 0, proc.stdout[-3000:] + proc.stderr[-1500:]
+    passed = set(re.findall(r"^PASSED \S*::(\w+)", proc.stdout, re.M))
+    assert passed == {"test_a_live_runner_keeps_the_proxy_environment_it_was_launched_with",
+                      "test_a_unit_test_does_not"}, proc.stdout[-3000:]
+
+
+_SPY_PLUGIN = '''
+import socket
+
+SEEN = []
+
+
+def spy(host, port, family=0, type=0, proto=0, flags=0):
+    SEEN.append((host, flags))
+    return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.0.2.9", port))]
+
+
+socket.getaddrinfo = spy          # what the guard captures as "the real resolver"
+'''
+
+_NUMERIC_HOST_ONLY = '''
+import socket
+
+import spyplugin
+
+
+def test_the_os_is_only_ever_asked_to_read_an_address():
+    """Past the guard, a lookup of anything that is not loopback or empty reaches the resolver with
+    AI_NUMERICHOST, which reads the text as an address and never asks DNS: a literal in a spelling
+    the guard did not foresee, or a name it did not catch, still cannot become a query."""
+    for host in ("127.1", "0x7f000001", "10.1", "169.254.169.254", "2001:db8::1", "guard-selftest.invalid",
+                 "127.0.0.1 evil.example", b"192.0.2.1"):
+        spyplugin.SEEN.clear()
+        socket.getaddrinfo(host, 80)
+        ((seen, flags),) = spyplugin.SEEN
+        assert seen == host and flags & socket.AI_NUMERICHOST, (host, flags)
+
+
+def test_nothing_to_look_up_is_not_asked_of_dns_either():
+    for host in (None, "", b"", "localhost", "127.0.0.1", "::1"):
+        spyplugin.SEEN.clear()
+        socket.getaddrinfo(host, 80)
+        ((seen, flags),) = spyplugin.SEEN
+        assert seen in (None, host) and not flags & socket.AI_NUMERICHOST, (host, flags)
+'''
+
+
+def test_the_guard_never_lets_a_lookup_reach_dns(tmp_path):
+    """The guard's resolver is replaced by a spy before the guard captures it, in a child session."""
+    proc = _child(tmp_path, _NUMERIC_HOST_ONLY, plugins={"spyplugin": _SPY_PLUGIN})
+    assert proc.returncode == 0, proc.stdout[-3000:] + proc.stderr[-1500:]
+    passed = set(re.findall(r"^PASSED \S*::(\w+)", proc.stdout, re.M))
+    assert passed == {"test_the_os_is_only_ever_asked_to_read_an_address",
+                      "test_nothing_to_look_up_is_not_asked_of_dns_either"}, proc.stdout[-3000:]
 
 
 # ------------------------------------------------------------------ recording, and the loud teardown
@@ -291,18 +460,64 @@ def test_every_refusal_is_recorded(network_refusals):
         with pytest.raises(OSError):
             sock.connect(("192.0.2.1", 9))
         sock.connect_ex(("192.0.2.2", 9))
-    assert network_refusals == ["lookup of 'guard-selftest.invalid'", "connect to '192.0.2.1'",
-                                "connect_ex to '192.0.2.2'"]
+    me = f" [thread {threading.current_thread().name}]"
+    assert network_refusals == ["lookup of 'guard-selftest.invalid'" + me, "connect to '192.0.2.1'" + me,
+                                "connect_ex to '192.0.2.2'" + me]
 
 
 async def test_transport_refusals_are_recorded_too(network_refusals, own_resolver, no_connect):
+    asyncio.current_task().set_name("transport-probe")
     async with httpx.AsyncClient(trust_env=False, timeout=1) as client:
         with pytest.raises(httpx.ConnectError):
             await client.get("http://192.0.2.1/")
     async with httpx.AsyncClient(proxy="http://127.0.0.1:9", trust_env=False, timeout=1) as client:
         with pytest.raises(httpx.ConnectError):
             await client.get("http://127.0.0.1:1/")
-    assert network_refusals == ["HTTP transport to '192.0.2.1'", "HTTP transport through a proxy"]
+    me = f" [thread {threading.current_thread().name}, task transport-probe]"
+    assert network_refusals == ["HTTP transport to '192.0.2.1'" + me, "HTTP transport through a proxy" + me]
+
+
+def test_every_kind_of_refusal_names_the_thread_that_asked(network_refusals):
+    """A straggler thread of an earlier test that blames a later one is found by its name: each of
+    the five kinds of line carries it."""
+    def provoke():
+        with contextlib.suppress(OSError):
+            socket.getaddrinfo("guard-selftest.invalid", 80)
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            with contextlib.suppress(OSError):
+                sock.connect(("192.0.2.1", 9))
+            sock.connect_ex(("192.0.2.2", 9))
+        with contextlib.suppress(httpx.TransportError):
+            with httpx.Client(trust_env=False, timeout=1) as client:
+                client.get("http://192.0.2.3/")
+        with contextlib.suppress(httpx.TransportError):
+            with httpx.Client(proxy="http://127.0.0.1:9", trust_env=False, timeout=1) as client:
+                client.get("http://127.0.0.1:1/")
+
+    worker = threading.Thread(target=provoke, name="straggler-7")
+    worker.start()
+    worker.join(30)
+    assert not worker.is_alive()
+    assert network_refusals == [
+        "lookup of 'guard-selftest.invalid' [thread straggler-7]",
+        "connect to '192.0.2.1' [thread straggler-7]",
+        "connect_ex to '192.0.2.2' [thread straggler-7]",
+        "HTTP transport to '192.0.2.3' [thread straggler-7]",
+        "HTTP transport through a proxy [thread straggler-7]",
+    ]
+
+
+async def test_a_refusal_names_the_asyncio_task_when_there_is_one(network_refusals):
+    asyncio.current_task().set_name("probe-task")
+    with pytest.raises(socket.gaierror):
+        socket.getaddrinfo("guard-selftest.invalid", 80)                    # in the task
+    with pytest.raises(socket.gaierror):
+        await asyncio.get_running_loop().getaddrinfo("guard-selftest.invalid", 80)    # on an executor thread
+    main = threading.current_thread().name
+    in_the_task, on_a_worker = network_refusals
+    assert in_the_task == f"lookup of 'guard-selftest.invalid' [thread {main}, task probe-task]"
+    assert re.fullmatch(r"lookup of 'guard-selftest.invalid' \[thread [^,\]]+\]", on_a_worker), on_a_worker
+    assert f"thread {main}]" not in on_a_worker, "the executor's thread, with no task of its own"
 
 
 _TEARDOWN = '''
@@ -353,6 +568,7 @@ def test_a_refusal_the_test_did_not_expect_fails_it_at_teardown(tmp_path):
                       "test_a_live_runner_is_not_guarded", "test_a_unit_test_is_guarded",
                       "test_that_provokes_nothing"}, (passed, out[-3000:])
     assert "api.example.invalid" in out and "did not expect" in out, out[-3000:]
+    assert "[thread MainThread]" in out, out[-3000:]                # the refusal says who asked
     for hint in ("real_network", "network_refusals_expected"):
         assert hint in out, (hint, out[-3000:])               # the message says what to do
 
@@ -375,10 +591,12 @@ def test_an_unmarked_test_has_all_of_them_patched():
     assert httpx.HTTPTransport.handle_request is not REAL_SYNC
 
 
-def test_every_live_runner_carries_the_real_network_marker(request):
-    """The nine opt-in runners that call a model API or public pages are marked by path in conftest,
-    and that list is exactly this one: no runner missing, no other file in it, none renamed away.
-    `-m real_network` then selects what pytest itself sees on each item, skipped ones included."""
+def test_real_network_is_on_the_nine_runners_and_one_self_test_and_nowhere_else(request):
+    """The marker lifts the whole guard, so where it sits is the guard's attack surface. The nine
+    opt-in runners that call a model API or public pages are marked by path in conftest, that list is
+    exactly this one, and a TREE-WIDE `-m real_network` collection (what pytest itself sees on each
+    item, skipped ones included) finds those nine files, and this file's one self-test, and nothing
+    else: not a unit test somebody marked to get past a refusal."""
     conftest = next(plugin for plugin in request.config.pluginmanager.get_plugins()
                     if str(getattr(plugin, "__file__", "")).endswith("tests/conftest.py"))
     assert sorted(conftest._REAL_NETWORK_RUNNERS) == sorted(LIVE_RUNNERS)
@@ -387,13 +605,17 @@ def test_every_live_runner_carries_the_real_network_marker(request):
         assert (REPO / relative).is_file(), relative
     env = {key: value for key, value in os.environ.items() if not key.startswith(("ARSLAN_", "PYTEST_"))}
     env.update(ARSLAN_SECRET_KEY="ci-secret", ARSLAN_SECRET_KEY_FILE="")
-    proc = subprocess.run(
+    proc = subprocess.run(                      # no path argument: the configured `testpaths`, all of it
         [sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider",
-         "-m", "real_network", *LIVE_RUNNERS],
+         "-m", "real_network"],
         cwd=REPO, env=env, capture_output=True, text=True, timeout=110)
     assert proc.returncode == 0, proc.stdout[-3000:] + proc.stderr[-1500:]
-    collected = {line.split("::")[0] for line in proc.stdout.splitlines() if "::" in line}
-    assert collected == set(LIVE_RUNNERS), sorted(set(LIVE_RUNNERS) ^ collected)
+    ids = [line for line in proc.stdout.splitlines() if "::" in line]
+    own = "tests/test_network_guard.py"
+    files, expected = {item.split("::")[0] for item in ids}, set(LIVE_RUNNERS) | {own}
+    assert files == expected, sorted(files ^ expected)
+    assert [item for item in ids if item.startswith(own + "::")] == [
+        own + "::test_real_network_lifts_the_guard_and_nothing_else"]
 
 
 # ------------------------------------------------------------------ real httpx transports

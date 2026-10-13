@@ -127,27 +127,6 @@ def _session_global_restored():
                     "(repaired now); use monkeypatch.setattr and dispose the engine", pytrace=False)
 
 
-@pytest.fixture(scope="session", autouse=True)
-def _real_data_dir_untouched():
-    """Fail the run if the user's real data dir gained an entry while it ran.
-
-    Reports and never deletes: what is there is the user's, and a false positive (the
-    running app creating a new top-level folder mid-run) must not cost them data."""
-    yield
-    shutil.rmtree(_SUITE_DATA_DIR, ignore_errors=True)
-    leaked = real_data_dir_guard.created(_REAL_DATA_DIR_AT_START, real_data_dir_guard.snapshot())
-    if leaked:
-        root = real_data_dir_guard.REAL_DATA_DIR
-        pytest.fail(
-            f"this test run created {len(leaked)} entr{'y' if len(leaked) == 1 else 'ies'} "
-            f"in the real Arslan data dir {root}:\n"
-            + "\n".join(f"  {root / rel}" for rel in leaked)
-            + "\nA test resolved the platform data dir instead of a temp one. Run with "
-            "HOME pointed at a temp dir to reproduce safely. Nothing was removed.",
-            pytrace=False,
-        )
-
-
 @pytest.fixture(autouse=True)
 def _no_real_network_off_loopback(request):
     """No test reaches the network, whatever code path it takes: a mutant or a regression included.
@@ -159,23 +138,36 @@ def _no_real_network_off_loopback(request):
       * `socket.getaddrinfo` refuses any NAME but `localhost`. An address literal needs no network
         to "resolve" and is answered, so the code under test judges it itself (net_pin's
         private-address check must be what refuses 169.254.169.254, not a failed lookup).
+        "Address literal" means what net_pin treats as one (`_is_ip_literal`) and a resolver can
+        read: an address in whatever spelling the OS takes, `127.1`, `2130706433`, `0x7f000001`,
+        `0177.0.0.1` or `10.1` as well as the dotted quad and IPv6. The OS is asked to read it with
+        AI_NUMERICHOST, which never goes to DNS, so no spelling can turn into a query. Text that
+        only starts like an address is refused like any name: `127.0.0.1.nip.io` is a name, and
+        `1.2.3.4.5` is a string net_pin also calls a literal but no resolver reads, so there is no
+        address to answer with. `None` and `""` (the empty host) are answered as `None` is
+        (loopback): that is no I/O, and net_pin's `_is_non_public` has to be what refuses it.
       * `socket.socket.connect` and `connect_ex` refuse an address that is not loopback: the path
         under asyncio, `socket.create_connection`, urllib, http.client and httpcore. Unix sockets
-        and loopback stay open: tests serve from this process and from subprocesses.
+        and loopback stay open: tests serve from this process and from subprocesses. The address is
+        judged as written, so a loopback in an odd spelling (`127.1`) is refused here, which is
+        conservative: lookups give the canonical form.
       * a request by a real httpx transport (`AsyncHTTPTransport`, `HTTPTransport`) to a host that
         is not loopback, or through a proxy, a loopback one included, is refused.
-      * the proxy environment is scrubbed: HTTP_PROXY, HTTPS_PROXY and ALL_PROXY are removed and
-        NO_PROXY=* is set. With no proxy variable at all (pytest launched from an IDE) urllib on
-        macOS falls back to the SYSTEM proxy, and a real client would send even its loopback
-        requests to 127.0.0.1:7899.
-    Every refusal is recorded (fixture `network_refusals`), and a test that provoked one it did not
-    expect fails at teardown: code that swallows the refusal, as `github_eval.fetch_file` did, is a
-    silent leak. A test that refuses on purpose carries `network_refusals_expected`; an opt-in
-    live runner is marked `real_network` (by path, in `pytest_collection_modifyitems` below),
-    which lifts all of this and nothing else.
+      * the proxy environment is scrubbed: HTTP_PROXY, HTTPS_PROXY and ALL_PROXY, upper and lower
+        case, are removed and NO_PROXY=* is set. With no proxy variable at all (pytest launched
+        from an IDE) urllib on macOS falls back to the SYSTEM proxy, and a real client would send
+        even its loopback requests to 127.0.0.1:7899.
+    Every refusal is recorded (fixture `network_refusals`) with the thread, and the asyncio task if
+    there is one, that asked: a straggler thread of an earlier test that blames a later test is
+    found by its name. A test that provoked a refusal it did not expect fails at teardown: code that
+    swallows the refusal, as `github_eval.fetch_file` did, is a silent leak. A test that refuses on
+    purpose carries `network_refusals_expected`; an opt-in live runner is marked `real_network` (by
+    path, in `pytest_collection_modifyitems` below), which lifts all of this and nothing else.
 
-    NOT covered: UDP `sendto`, `gethostbyname`, and a raw loopback socket to a port that is not the
-    test's (the system proxy's, for one). A net under the fakes, not a sandbox.
+    NOT covered: UDP `sendto`; `gethostbyname`, `getnameinfo` and `gethostbyaddr`; a raw loopback
+    socket to a port that is not the test's (the system proxy's, for one); and CHILD PROCESSES (git,
+    curl, npm, any subprocess), which inherit the scrubbed environment and none of the patches. A
+    net under the fakes, not a sandbox.
 
     Its own `MonkeyPatch.context()`, never the shared `monkeypatch` fixture, for the reasons given
     at `_default_workspace_in_tmp`; and so that a test's own `monkeypatch.undo()` cannot lift it. A
@@ -186,9 +178,11 @@ def _no_real_network_off_loopback(request):
         yield []
         return
 
+    import asyncio
     import errno
     import ipaddress
     import socket
+    import threading
 
     import httpcore
     import httpx
@@ -198,12 +192,14 @@ def _no_real_network_off_loopback(request):
     def text(host) -> str:
         return host.decode("ascii", "replace") if isinstance(host, bytes) else str(host)
 
-    def is_literal(host) -> bool:
+    def where() -> str:
+        """Who asked, for the refusal line: the thread, and the asyncio task if one runs on it."""
         try:
-            ipaddress.ip_address(text(host))
-            return True
-        except ValueError:
-            return False
+            task = asyncio.current_task()
+        except RuntimeError:                       # no event loop is running in this thread
+            task = None
+        who = f"thread {threading.current_thread().name}"
+        return f" [{who}, task {task.get_name()}]" if task is not None else f" [{who}]"
 
     def loopback(host) -> bool:
         host = text(host)
@@ -218,10 +214,21 @@ def _no_real_network_off_loopback(request):
     real_connect = socket.socket.connect
     real_connect_ex = socket.socket.connect_ex
 
-    def lookup(host, *args, **kwargs):
-        if host is None or is_literal(host) or loopback(host):
-            return real_lookup(host, *args, **kwargs)
-        refusals.append(f"lookup of {text(host)!r}")
+    def lookup(host, port, family=0, type=0, proto=0, flags=0):
+        if host is None or text(host) == "":
+            # Nothing to look up. "" is answered as None is (loopback), whatever this OS makes of
+            # it: no I/O on any platform, and net_pin's `_is_non_public` must refuse the answer.
+            return real_lookup(None, port, family, type, proto, flags)
+        if loopback(host):
+            return real_lookup(host, port, family, type, proto, flags)
+        try:
+            # An address in any spelling the OS reads (127.1, 0x7f000001, 2130706433, 10.1) is
+            # answered, and AI_NUMERICHOST is what keeps this from ever being a DNS query: the OS
+            # reads the text as an address or fails, and a name fails.
+            return real_lookup(host, port, family, type, proto, flags | socket.AI_NUMERICHOST)
+        except (socket.gaierror, UnicodeError):
+            pass
+        refusals.append(f"lookup of {text(host)!r}{where()}")
         raise socket.gaierror(socket.EAI_NONAME, f"test guard: a real lookup of {host!r}")
 
     def leaves_the_machine(sock, address):
@@ -234,14 +241,14 @@ def _no_real_network_off_loopback(request):
     def connect(self, address):
         host = leaves_the_machine(self, address)
         if host is not None:
-            refusals.append(f"connect to {text(host)!r}")
+            refusals.append(f"connect to {text(host)!r}{where()}")
             raise OSError(errno.ENETUNREACH, f"test guard: a real connect to {text(host)!r}")
         return real_connect(self, address)
 
     def connect_ex(self, address):
         host = leaves_the_machine(self, address)
         if host is not None:
-            refusals.append(f"connect_ex to {text(host)!r}")
+            refusals.append(f"connect_ex to {text(host)!r}{where()}")
             return errno.ENETUNREACH
         return real_connect_ex(self, address)
 
@@ -252,11 +259,11 @@ def _no_real_network_off_loopback(request):
     def check(transport, http_request) -> None:
         host = http_request.url.host
         if not loopback(host):
-            refusals.append(f"HTTP transport to {host!r}")
+            refusals.append(f"HTTP transport to {host!r}{where()}")
             raise httpx.ConnectError(f"test guard: a real HTTP transport was asked to reach "
                                      f"{host}", request=http_request)
         if isinstance(getattr(transport, "_pool", None), proxy_pools):
-            refusals.append("HTTP transport through a proxy")
+            refusals.append(f"HTTP transport through a proxy{where()}")
             raise httpx.ConnectError("test guard: a real HTTP transport was asked to go through "
                                      "a proxy", request=http_request)
 
@@ -326,3 +333,24 @@ def pytest_collection_modifyitems(items):
     for item in items:
         if item.path.resolve() in runners:
             item.add_marker(pytest.mark.real_network)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _real_data_dir_untouched():
+    """Fail the run if the user's real data dir gained an entry while it ran.
+
+    Reports and never deletes: what is there is the user's, and a false positive (the
+    running app creating a new top-level folder mid-run) must not cost them data."""
+    yield
+    shutil.rmtree(_SUITE_DATA_DIR, ignore_errors=True)
+    leaked = real_data_dir_guard.created(_REAL_DATA_DIR_AT_START, real_data_dir_guard.snapshot())
+    if leaked:
+        root = real_data_dir_guard.REAL_DATA_DIR
+        pytest.fail(
+            f"this test run created {len(leaked)} entr{'y' if len(leaked) == 1 else 'ies'} "
+            f"in the real Arslan data dir {root}:\n"
+            + "\n".join(f"  {root / rel}" for rel in leaked)
+            + "\nA test resolved the platform data dir instead of a temp one. Run with "
+            "HOME pointed at a temp dir to reproduce safely. Nothing was removed.",
+            pytrace=False,
+        )
