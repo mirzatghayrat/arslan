@@ -468,6 +468,9 @@ def _classify(text: str) -> Classification:
 #: no run starts at an escaped blank: that blank belongs to its word.
 _BLANK_RUN = re.compile(r"\\[^\n]|(?:\s|\\\n)+")
 _LONG_BLANKS = re.compile(r"\s{65,}")
+#: A run Hermes built (the guard): longer than a collapsed run (64) and the start marker Hermes adds
+#: after one (`\n`, or ` \n` in its faithful variant) — those two never make a run of their own.
+_BUILT_BLANKS = re.compile(r"\s{67,}")
 
 
 def _blanks_collapsed(text: str) -> str:
@@ -495,10 +498,21 @@ def _hermes_text(text: str) -> str:
     a text where it would build one is past a parse ceiling, and asks unread, with Hermes' size
     limit on the text as written as its floor where it applies (`_hardline` reads that first)."""
     collapsed = _blanks_collapsed(text)
-    if len(collapsed) > 64 and any(_LONG_BLANKS.search(variant) for variant in (
-            hermes._normalize_command_for_detection(collapsed), *hermes._command_detection_variants(collapsed))):
+    if len(collapsed) > 64 and _built_run(collapsed):
         raise _Unreadable("a long blank run Hermes would build", floor=_size_limit(text))
     return collapsed
+
+
+def _built_run(collapsed: str) -> bool:
+    """Whether Hermes would build a long blank run from `collapsed`. Its grep-safe variant blanks a
+    quoted PCRE pattern whole (`grep -P '…'`), mid-command where no command-position pattern reaches
+    it: that variant and its marked form are read as the text they mask (`base`, its starts marked)."""
+    base = hermes._normalize_command_for_detection(hermes._mask_quoted_newlines(collapsed))
+    grep_safe, _ = hermes._grep_safe_detection_variant(base)
+    masked = {grep_safe, hermes._mark_command_starts(grep_safe)} - {base} if grep_safe != base else set()
+    texts = (hermes._normalize_command_for_detection(collapsed), base, hermes._mark_command_starts(base),
+             *(variant for variant in hermes._command_detection_variants(collapsed) if variant not in masked))
+    return any(_BUILT_BLANKS.search(t) for t in texts)
 
 
 def _size_limit(text: str) -> tuple[Finding, ...]:
@@ -532,6 +546,10 @@ _FLAT_KEYCHAIN = re.compile(r"(?<![\w.-])security\s+(?:dump-keychain|export|find
 _FLAT_DISK = re.compile(r"(?<![\w.-])diskutil\s+(?:apfs\s+)?(?:erase\w*|zerodisk|randomdisk|secureerase|reformat"
                         r"|partitiondisk|deletecontainer|deletevolume)\b", re.I)
 _FLAT_DD = re.compile(r"(?<![\w.-])dd\s[^\n]*\bof=/dev/r?disk\d", re.I)
+_FLAT_LINES = re.compile(r"[\n;&|()`{}]")
+#: A text that may tell an app (`app_names` reads it): osascript, `tell app…`, JXA `Application(…)`, and
+#: appscript `app(…)` in a script (`python3 -c "from appscript import app; app('Keychain Access')…"`).
+_FLAT_SCRIPT = re.compile(r"\bosascript\b|\btell\s+app|\bApplication\s*\(|\bapp\s*\(", re.I)
 
 
 def _floor_of_unread(text: str) -> tuple[Finding, ...]:
@@ -575,6 +593,13 @@ def _floor_shown(text: str) -> list[Finding]:
             found.append(Finding("floor", "hardline", "dd to raw block device"))
         if _touches_arslan_data(text):
             found.append(Finding("floor", "arslan-data", "touches Arslan's own data, keys or database"))
+        for line in _FLAT_LINES.split(normalized):          # the argv backstop (F4 b, G3): `concurrently rm -rf ~`
+            found += _argv_floor([word.strip("'\"") for word in line.split()])
+        if _FLAT_SCRIPT.search(text):                       # an AppleScript's never-list app, its power steps
+            found += [Finding("floor", "never-app", f"Arslan never touches {name} (the never-list)", app=name)
+                      for name in app_names(text) if _never_touched(name)]
+            if _SCRIPT_POWER.search(_SCRIPT_STRING.sub('""', text)):
+                found.append(Finding("floor", "shutdown", "shuts down, restarts or logs out the Mac"))
         return found
     except Exception:  # noqa: BLE001 — the unread card still asks
         return []

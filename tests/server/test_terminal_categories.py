@@ -1891,3 +1891,46 @@ def test_the_code_a_wrapper_runs_is_read_without_its_blank_runs():
     found = tp.classify(command)
     assert time.perf_counter() - start < 1.0
     assert found.category == "local", [(f.category, f.rule) for f in found.findings]
+
+
+# ── re-review 5: what Hermes blanks itself is no built run; the unread floor holds every floor ─────────
+
+@pytest.mark.parametrize("command,category", [
+    ("grep -P '" + "a" * 61 + "' f", "local"), ("grep --perl-regexp '" + "b" * 70 + "' f", "local"),
+    ("cat log | grep -P '" + "a" * 70 + "' | wc -l", "local"),
+    ("grep -P 'security find-generic-password -s [A-Za-z0-9_.-]+ -w|dump-keychain' notes/*.md", "local"),
+    ("grep -P '" + "a" * 60 + "|rm -rf ~' f", "local"), ("grep -P '" + "a" * 70 + "' f && git push", "send"),
+    ("ls;" + " " * 63 + "ls", "local"), ("ls;" + " " * 64 + "ls", "local"),
+    ("ls;" + " " * 63 + "echo 'sudo ls'", "local"), ("ls &&" + " " * 64 + "git push", "send"),
+])
+def test_what_hermes_blanks_itself_is_no_built_run(command, category):
+    """Re-review 5: Hermes' grep-safe variant blanks a quoted PCRE pattern whole, and its start markers
+    (`\\n`, ` \\n`) add to the blanks before a command; neither is a run Hermes reads slowly."""
+    found = tp.classify(command)
+    assert found.category == category, [(f.category, f.rule) for f in found.findings]
+
+
+@pytest.mark.parametrize("command", [
+    "concurrently rm -rf ~" + " ''" * 70, "proxychains rm -r ~" + " ''" * 70, "concurrently rm -rf ~ " + "$(:)" * 70,
+    "grep -P '" + "a" * 70 + "' f; concurrently rm -rf ~",
+    "osascript -e 'tell application \"Keychain Access\" to activate'" + " ''" * 70,
+    "osascript -e 'tell application \"System Events\" to shut down'" + " ''" * 70,
+    "python3 -c \"from appscript import app; app('Keychain Access').activate()\"" + " ''" * 70,
+])
+def test_the_unread_floor_holds_the_backstop_and_the_applescript_floor(command):
+    """Re-review 5 (N3): a command read unread still refuses what the reading refuses — the argv
+    backstop's recursive delete of the home under a runner Arslan does not know (F4 b, G3), an app on
+    the never-list (told by AppleScript, JXA or a script's appscript), an AppleScript that shuts the Mac down."""
+    found = tp.classify(command)
+    assert found.category == "floor", [(f.category, f.rule) for f in found.findings]
+
+
+@pytest.mark.parametrize("command", [
+    "osascript -e 'display notification \"restart done\"'" + " ''" * 70,
+    "concurrently rm ~" + " ''" * 70, "concurrently rm -r ~/project" + " ''" * 70,
+])
+def test_the_unread_floor_reads_an_applescripts_words_and_the_backstops_shape(command):
+    """Re-review 5: what an AppleScript string says is content (a notification that says "restart"),
+    and the backstop wants a recursive delete of the home itself; such a command asks unread."""
+    found = tp.classify(command)
+    assert found.floor is None and tp.UNREADABLE in found.findings, [(f.category, f.rule) for f in found.findings]
