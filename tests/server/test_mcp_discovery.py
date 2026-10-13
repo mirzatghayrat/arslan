@@ -56,11 +56,12 @@ async def test_connect_and_discover_naturalizes(maker, monkeypatch):
         assert t.tier == "orchestrator" and t.status == "registered"   # tools locked by default
         assert t.external_name in ("read_file", "delete_file")
         assert t.input_schema == {"type": "object"}
-    assert srv.status == "connected"
+    assert srv.status == "registered"     # 0.1.61: the supervisor writes state, not discovery
     assert len(out) == 2
 
 
-async def test_discover_marks_error_on_failure(maker, monkeypatch):
+async def test_discovery_raises_and_writes_no_state(maker, monkeypatch):
+    """0.1.61 §B1: the supervisor classifies and writes the state; discovery only lists."""
     from server.mcp import discovery, session
     async def boom(server): raise RuntimeError("cannot launch npx")
     monkeypatch.setattr(session.manager, "list_tools", boom)
@@ -69,4 +70,4 @@ async def test_discover_marks_error_on_failure(maker, monkeypatch):
         await discovery.connect_and_discover(1)
     async with maker() as s:
         srv = await s.get(MCPServer, 1)
-    assert srv.status == "error" and "npx" in (srv.last_error or "")
+    assert srv.status == "registered" and srv.last_error is None

@@ -100,13 +100,18 @@ async def _builtin_rows() -> list[dict]:
 
 
 def _runtime_missing(server: dict) -> str | None:
-    """The command a stdio server needs, when it cannot be found on the user's PATH."""
-    from server.mcp.spawn_env import resolve_command
+    """The command a stdio server needs, when it cannot be found — not when Arslan runs it on its
+    own pinned runtime or can fetch that runtime here (0.1.61 §B1)."""
+    from server.mcp import spawn_env
+    from server.services import capability_runtime
     command = (server.get("command") or "").strip()
     if server.get("transport") != "stdio" or not command:
         return None
+    runtime = spawn_env.runtime_for(command)
+    if runtime is not None and (capability_runtime.ready(runtime) or capability_runtime.available()):
+        return None
     try:
-        resolve_command(command)
+        spawn_env.resolve_command(command)
     except Exception:  # noqa: BLE001 — any miss is "not found"; the row says which command
         return command
     return None
@@ -123,6 +128,10 @@ async def _mcp_rows() -> list[dict]:
         elif server.get("status") == "error":
             rows.append(_row(key, "work", "setup", reason="mcp_error", fix="open_tab:mcps", name=name, source="mcp",
                              detail=(server.get("last_error") or "")[:200] or None, switch="mcp"))
+        elif server.get("state") == "starting":
+            # 0.1.61: starting by itself — no Connect fix to press (ruling 5: no new UI words in PR 4).
+            rows.append(_row(key, "work", "setup", reason="not_connected", name=name, source="mcp",
+                             switch="mcp"))
         elif server.get("status") != "connected":
             rows.append(_row(key, "work", "setup", reason="not_connected", fix="connect", name=name, source="mcp",
                              switch="mcp"))

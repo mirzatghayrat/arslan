@@ -115,11 +115,62 @@ def _log_data_location(cfg, *, log: logging.Logger = logger) -> None:
     )
 
 
+async def _start_mcp_supervisor() -> bool:
+    """0.1.61 §B1: every enabled MCP server starts in the background; a chat turn never waits.
+    ARSLAN_MCP_SUPERVISOR=0 (the test suite) leaves it off.
+
+    A `ready` left from the last run is never trusted (migration 0068 maps connected → ready):
+    `reset_for_boot` makes every switched-on server `starting`. If that write fails, the supervisor
+    starts anyway — each plan writes its server's state as it starts — and the reset is retried in
+    the background for the rows nothing in this process has written yet. A deleted server's folder
+    kept under `<data>/mcp/.forgotten/` goes to the user's Trash after 30 days."""
+    import asyncio
+
+    from server.mcp import session as mcp_session
+    from server.mcp import supervisor as mcp_supervisor
+
+    if not mcp_supervisor.switched_on():
+        return False
+    supervisor = mcp_supervisor.supervisor
+    try:
+        await supervisor.reset_for_boot()
+    except Exception:  # noqa: BLE001 — retried in the background; never a reason to keep MCP off
+        logger.warning("MCP boot reset failed; the supervisor starts anyway and retries it",
+                       exc_info=True)
+        supervisor.retry_boot_reset()
+    supervisor.start()
+    try:
+        await asyncio.to_thread(mcp_session.prune_forgotten)
+    except Exception:  # noqa: BLE001 — a folder left for the next boot never blocks this one
+        logger.warning("MCP: moving old forgotten folders to the Trash failed (non-fatal)",
+                       exc_info=True)
+    return True
+
+
+async def _boot_mcp() -> None:
+    """MCP at boot (0.1.61 §B1): the supervisor, or — only when it is off — the opt-in PB-4 health
+    sweep (ARSLAN_MCP_HEALTH_ON_BOOT=1, sequential, 10 s bound each), which would otherwise probe
+    every server while the supervisor starts it. Neither ever breaks boot."""
+    import os
+
+    try:
+        supervised = await _start_mcp_supervisor()
+    except Exception as exc:  # noqa: BLE001 — MCP must never break boot
+        supervised = False
+        logger.warning("MCP supervisor start failed (non-fatal): %s", exc)
+    if os.environ.get("ARSLAN_MCP_HEALTH_ON_BOOT") == "1" and not supervised:
+        try:
+            from server.services import mcp_service
+
+            await mcp_service.check_health_all()
+        except Exception as exc:  # noqa: BLE001 — boot sweep must never break startup
+            logger.warning("MCP boot health sweep failed (non-fatal): %s", exc)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Create tables and run boot migrations/backfills on startup."""
     app.state.shutdown_complete = False
-    import os
     from pathlib import Path
 
     from server import auth, token_bootstrap
@@ -160,18 +211,12 @@ async def lifespan(app: FastAPI):
 
     await seed_registry()
 
+    # 0.1.61 §B1: the MCP supervisor starts every enabled server in the background; the PB-4
+    # opt-in health sweep runs only when the supervisor is off. Never blocks boot.
+    await _boot_mcp()
+
     # 0.1.48: the built-in example experts are no longer seeded — one Arslan does the work.
     # Their prompts stay in server/services/default_spawns.py as material for skills.
-
-    # PB-4 opt-in boot health sweep: probe every registered MCP server once (sequential,
-    # 10s bound each). Default OFF; no background timers. Fail-open — never blocks boot.
-    if os.environ.get("ARSLAN_MCP_HEALTH_ON_BOOT") == "1":
-        try:
-            from server.services import mcp_service
-
-            await mcp_service.check_health_all()
-        except Exception as exc:  # noqa: BLE001 — boot sweep must never break startup
-            logger.warning("MCP boot health sweep failed (non-fatal): %s", exc)
 
     # Non-blocking boot backfill for any fact left with category=NULL (write-time
     # classify failed / process died mid-flight / pre-existing rows). Fire-and-forget;
@@ -349,6 +394,14 @@ async def _shutdown_services(app: FastAPI) -> None:
     except Exception as exc:  # noqa: BLE001 — proactive stop must never block shutdown
         cleanup_complete = False
         logger.warning("proactive loop stop failed (non-fatal): %s", exc)
+
+    try:
+        from server.mcp.supervisor import supervisor as _mcp_supervisor
+
+        await _mcp_supervisor.stop()          # before aclose_all: no retry may reopen a session
+    except Exception as exc:  # noqa: BLE001 — supervisor stop must never block shutdown
+        cleanup_complete = False
+        logger.warning("MCP supervisor stop failed (non-fatal): %s", exc)
 
     from server.api import browser as _browser_api
     await _browser_api.shutdown()

@@ -161,7 +161,7 @@ async def test_mcp_rows_follow_host_consent_and_name_a_missing_runtime(api, exec
     async with execution_db() as db:
         db.add_all([
             MCPServer(id=1, label="Docs", transport="http", command="", url="https://example.test/mcp",
-                      status="connected", host_allowed=True),
+                      status="connected", host_allowed=True, state="ready"),
             MCPServer(id=2, label="Files", transport="stdio", command="definitely-not-a-real-runtime-xyz",
                       args=[], status="registered"),
             MCPServer(id=3, label="Broken", transport="http", command="", url="https://example.test/b",

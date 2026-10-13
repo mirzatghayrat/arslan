@@ -200,15 +200,17 @@ async def test_an_open_that_was_overtaken_is_not_recorded_as_an_error(db, monkey
     assert await _names(db) == [] and session.manager.cached(1) is None
 
 
-async def test_a_real_failure_is_still_recorded_next_to_the_overtaken_case(db, monkeypatch):
+async def test_a_real_failure_is_raised_and_discovery_records_nothing(db, monkeypatch):
+    """0.1.61 §B1 (Task 6): like the overtaken case, discovery writes no state for a failure — it
+    raises, and the supervisor classifies, masks and records it."""
     async def boom(server, cursor=None):
         raise RuntimeError("cannot launch npx")
     monkeypatch.setattr(session.manager, "list_tools", boom)
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError, match="cannot launch npx"):
         await discovery.connect_and_discover(1)
     async with db() as s:
         srv = await s.get(MCPServer, 1)
-    assert srv.status == "error" and "npx" in srv.last_error
+    assert srv.status == "registered" and srv.last_error is None
 
 
 async def test_a_tool_listed_again_is_updated_in_place(db, monkeypatch):

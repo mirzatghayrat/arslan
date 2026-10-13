@@ -171,6 +171,7 @@ async def test_an_install_is_pinned_switched_off_and_sandboxed(execution_db, dat
         server = await db.get(MCPServer, row.mcp_server_id)
         saved = await db.get(CapabilitySource, row.id)
     assert server.host_allowed is False                      # the first test decides (P3)
+    assert server.state == "off"                             # 0.1.61 §B1: off until the user's switch
     assert server.args == ["stdio", "--allow-dir", str(grant.resolve())]
     assert server.sandbox == {"root": str(data / "capabilities" / row.id), "folders": [str(grant.resolve())],
                               "network": False, "read": [str(data / "runtimes")]}

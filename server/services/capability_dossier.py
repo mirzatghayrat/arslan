@@ -143,8 +143,9 @@ async def install(candidate_id: str, *, folders: list[str], keys: dict, owner_id
 
 async def set_folders(source_id: str, folders: list[str]) -> dict:
     """Change what an installed server may touch: the sandbox grants and a folder argument
-    the server takes (e.g. --allow-dir). Takes effect at its next start (restarted now)."""
-    from server.mcp.session import manager
+    the server takes (e.g. --allow-dir). Takes effect at its next start: its session is dropped
+    now and a fresh start scheduled in the background (0.1.61 ruling 3) — never awaited here."""
+    from server.services import mcp_service
     row = await source(source_id)
     if row.kind != "mcp" or not row.mcp_server_id or row.runtime == "remote":
         raise DossierError("no_folders_here")
@@ -159,10 +160,7 @@ async def set_folders(source_id: str, folders: list[str]) -> dict:
         stored = await db.get(CapabilitySource, source_id)
         stored.grants = {**(stored.grants or {}), "folders": grants["folders"]}
         await db.commit()
-    try:
-        await manager._drop(row.mcp_server_id)
-    except Exception:  # noqa: BLE001 — not running
-        pass
+    await mcp_service.restart_after_edit(row.mcp_server_id)     # restarted with the new grants
     return view(await source(source_id))
 
 

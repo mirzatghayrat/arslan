@@ -187,17 +187,17 @@ def forget(server_id: int) -> None:
     _write_locks.forget(server_id)
 
 
-async def _write(server_id: int, tools: list, *, complete: bool, legacy_status: bool) -> list[dict]:
+async def _write(server_id: int, tools: list, *, complete: bool) -> list[dict]:
     """Add, update and prune this server's Tool rows in one short transaction. The caller holds the
     server's lock; a concurrent insert of the same key (another process) is retried once."""
     try:
-        return await _write_once(server_id, tools, complete=complete, legacy_status=legacy_status)
+        return await _write_once(server_id, tools, complete=complete)
     except IntegrityError:
         logger.info("mcp %s: concurrent tool write, retrying once", server_id)
-        return await _write_once(server_id, tools, complete=complete, legacy_status=legacy_status)
+        return await _write_once(server_id, tools, complete=complete)
 
 
-async def _write_once(server_id: int, tools: list, *, complete: bool, legacy_status: bool) -> list[dict]:
+async def _write_once(server_id: int, tools: list, *, complete: bool) -> list[dict]:
     discovered: list[dict] = []
     async with db_session.AsyncSessionLocal() as db:
         ts_key = f"mcp_{server_id}"
@@ -235,9 +235,6 @@ async def _write_once(server_id: int, tools: list, *, complete: bool, legacy_sta
         elif stale:
             logger.warning("mcp %s: listing was %s; kept %d tools it did not name", server_id,
                            "empty" if not tools else f"cut at {MAX_PAGES} pages", len(stale))
-        if legacy_status:
-            srv.status = "connected"
-            srv.last_error = None
         await db.commit()
     return discovered
 
@@ -246,27 +243,15 @@ async def connect_and_discover(server_id: int, *, start_budget_s: float | None =
     """Returns [{key,name,description,suggested_tier}, ...]. Opens the session within
     `start_budget_s` when none is live, lists every page, then adds, updates and prunes the Tool
     rows and stores their hints. Raises whatever the open or the listing raised (ServerGone for an
-    unknown id). Legacy until every caller goes through the supervisor: also marks the row's
-    status connected/error. NotStarted — the open was superseded by a drop or forget — is
-    re-raised without touching the row: the open was overtaken, not failed. The listing and its
-    write run under the server's lock, so they never interleave with another listing's."""
+    unknown id; NotStarted when the open was overtaken by a drop or forget). Writes no state: the
+    supervisor's `_set` does (0.1.61 §B1) — classified and masked. The listing and its write run
+    under the server's lock, so they never interleave with another listing's."""
     async with _write_locks.hold(server_id):
         server = await _runtime(server_id)
         if start_budget_s is not None:
             server["start_budget_s"] = start_budget_s
-        try:
-            tools, complete = await _list_all(server)
-        except NotStarted:
-            raise
-        except Exception as exc:  # noqa: BLE001 — recorded for the old UI, then re-raised
-            async with db_session.AsyncSessionLocal() as db:
-                srv = await db.get(MCPServer, server_id)
-                if srv is not None:
-                    srv.status = "error"
-                    srv.last_error = _describe_failure(exc, has_headers=bool(server.get("env")))
-                    await db.commit()
-            raise
-        return await _write(server_id, tools, complete=complete, legacy_status=True)
+        tools, complete = await _list_all(server)
+        return await _write(server_id, tools, complete=complete)
 
 
 async def relist(server_id: int) -> list[dict] | None:
@@ -284,4 +269,4 @@ async def relist(server_id: int) -> list[dict] | None:
             tools, complete = await _list_all(server)
         except NotStarted:
             return None
-        return await _write(server_id, tools, complete=complete, legacy_status=False)
+        return await _write(server_id, tools, complete=complete)

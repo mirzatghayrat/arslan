@@ -21,6 +21,15 @@ _HEALTH_PROBE_TIMEOUT = 10.0   # 条件3: the probe is bounded — it must never
 _STORED_ERROR_CAP = 500        # matches executor._STORED_ERROR_CAP (PB-2 shape)
 
 
+class MCPStartFailed(RuntimeError):
+    """A Connect whose start did not end `ready`; str() is the classified last_error — or, for a
+    start overtaken twice by a newer one, the state answer. `state` says which (0.1.61 §B1)."""
+
+    def __init__(self, text: str, *, state: str = "failed") -> None:
+        super().__init__(text)
+        self.state = state
+
+
 def _mask_env(env: dict) -> dict:
     return {k: mask_secret(v) for k, v in (env or {}).items()}
 
@@ -44,7 +53,13 @@ def _to_dict(srv: MCPServer, *, mask: bool = True) -> dict:
             "transport": srv.transport,
             "host_allowed": bool(srv.host_allowed),
             "health_status": srv.health_status,
-            "last_checked_at": srv.last_checked_at.isoformat() if srv.last_checked_at else None}
+            "last_checked_at": srv.last_checked_at.isoformat() if srv.last_checked_at else None,
+            # 0.1.61 §B1: the one state the supervisor writes (status/health_status follow it)
+            "state": srv.state,
+            "state_at": srv.state_at.isoformat() if srv.state_at else None,
+            "last_ok_at": srv.last_ok_at.isoformat() if srv.last_ok_at else None,
+            "next_retry_at": srv.next_retry_at.isoformat() if srv.next_retry_at else None,
+            "fail_count": srv.fail_count}
 
 
 async def add_server(label: str, command: str, args: list[str], env: dict,
@@ -79,7 +94,11 @@ async def add_server(label: str, command: str, args: list[str], env: dict,
         db.add(srv)
         await db.commit()
         await db.refresh(srv)
-        return _to_dict(srv)
+        out = _to_dict(srv)
+    from server.mcp.supervisor import supervisor
+
+    supervisor.schedule(out["id"])        # 0.1.61 §B1: adding starts it (in the background)
+    return out
 
 
 async def list_servers() -> list[dict]:
@@ -101,8 +120,31 @@ async def list_servers() -> list[dict]:
         return out
 
 
+async def start_now(server_id: int):
+    """`supervisor.restart` (Connect, the install test), once more when its start was overtaken by
+    a newer one: a drop while it opened (new folders, an edit) is not a failure (carry: Task 4
+    concern 4). Returns the StartResult; ValueError for an unknown id."""
+    from server.mcp.supervisor import supervisor
+
+    result = await supervisor.restart(server_id)
+    if result.state == "starting":
+        result = await supervisor.restart(server_id)
+    return result
+
+
 async def connect(server_id: int) -> list[dict]:
-    return await discovery.connect_and_discover(server_id)
+    """A fresh start now (the Connect button). Returns the discovered tools as before, or raises
+    MCPStartFailed with the classified cause — the old UI's contract (0.1.61 §B1). A start
+    overtaken twice answers with the state (`starting`), never as a failure."""
+    from server.mcp.supervisor import fix_for
+
+    result = await start_now(server_id)        # ValueError for an unknown id → 404
+    if result.state == "starting":
+        raise MCPStartFailed("starting: the start was overtaken by a newer one — "
+                             + fix_for("starting", has_headers=False), state="starting")
+    if result.state != "ready":
+        raise MCPStartFailed(result.last_error or result.state, state=result.state)
+    return result.tools
 
 
 async def list_tools(server_id: int) -> list[dict]:
@@ -183,24 +225,48 @@ async def wire_tool(tool_key: str, tier: str, wired: bool) -> None:
 
 
 async def set_host_allowed(server_id: int, allowed: bool) -> None:
-    """The revocable face of the server-level host consent."""
+    """The revocable face of the server-level host consent. 0.1.61 §B1: off stops the server and
+    its retries; on starts it. Committed first — a background plan reads it to respect the switch."""
     async with db_session.AsyncSessionLocal() as db:
         srv = await db.get(MCPServer, server_id)
         if srv is None:
             raise ValueError(f"mcp server {server_id} not found")
         srv.host_allowed = allowed
         await db.commit()
+    from server.mcp.supervisor import supervisor
+
+    await supervisor.set_enabled(server_id, allowed)   # off stops it; on starts it
+
+
+async def restart_after_edit(server_id: int) -> None:
+    """A server's command, args, env or sandbox changed (new folders, an edit). Its cached session
+    still runs the old ones — call_tool never compares fingerprints — so it is dropped now (a start
+    still opening is overtaken) and a fresh start is scheduled in the background: an edit never
+    waits for a start. Every path that edits a server ends here (carry: the env-only edit)."""
+    from server.mcp.session import manager
+    from server.mcp.supervisor import supervisor
+
+    await manager.drop(server_id)
+    supervisor.schedule(server_id, fresh=True)
 
 
 async def check_health(server_id: int) -> dict:
     """PB-4 on-demand equipment health probe: list_tools with a hard 10s bound.
 
     Writes health_status ("ok"|"failing") + last_checked_at; failures also land in
-    last_error (PB-2 shape: timestamp + context + upstream text). Zero side effects on
-    the server's tools — v1 never test-calls anything.
+    last_error (PB-2 shape: timestamp + context + upstream text, the server's own secrets
+    masked). Zero side effects on the server's tools — v1 never test-calls anything. The
+    answer carries the server's `state` too (0.1.61 §B1).
+
+    0.1.61 §B1 — the probe never kills a start: when it timed out while the supervisor runs a
+    start for this server (it waited on that start's session lock), or its own open was
+    overtaken by one (NotStarted), nothing is written and the answer reports the state (carry
+    2b). A probe that lost the session it ran on — a timeout, or any failure: both drop it —
+    schedules a fresh start, because list_tools never tells the supervisor (carry 2c).
     """
     from server.mcp.discovery import runtime_dict
-    from server.mcp.session import manager
+    from server.mcp.session import NotStarted, manager
+    from server.mcp.supervisor import mask_for, supervisor
 
     async with db_session.AsyncSessionLocal() as db:
         srv = await db.get(MCPServer, server_id)
@@ -209,6 +275,7 @@ async def check_health(server_id: int) -> dict:
         server = runtime_dict(srv)
         label, transport = srv.label, (srv.transport or "stdio")
 
+    had_session = manager.cached(server_id) is not None
     tool_count: int | None = None
     err_text: str | None = None
     try:
@@ -216,15 +283,24 @@ async def check_health(server_id: int) -> dict:
         tool_count = len(listed.tools)
         health = "ok"
     except TimeoutError:
-        # wait_for cancels the probe with CancelledError (BaseException), which
-        # list_tools' `except Exception` does NOT catch — drop the cached session
-        # explicitly so a wedged subprocess can't poison later calls.
-        await manager._drop(server_id)
+        if supervisor.start_in_flight(server_id):
+            # It waited for a start the supervisor runs: a drop now would overtake that start
+            # (cold budget 120 s) for nothing. The state is the answer.
+            return await _health_state_answer(server_id, label, transport)
+        # A wedged session (or the probe's own slow open): drop it so it can't poison later
+        # calls, and let the supervisor bring the server back.
+        await manager.drop(server_id)
+        supervisor.schedule(server_id, fresh=True)
         health = "failing"
         err_text = f"health probe timed out after {_HEALTH_PROBE_TIMEOUT:g}s"
+    except NotStarted:
+        return await _health_state_answer(server_id, label, transport)   # overtaken, not failed
     except Exception as exc:  # noqa: BLE001 — any probe failure = failing, never a 500
         health = "failing"
-        err_text = str(exc)[:_STORED_ERROR_CAP]
+        err_text = mask_for(server, str(exc))[:_STORED_ERROR_CAP]
+        if (had_session and manager.cached(server_id) is None
+                and not supervisor.start_in_flight(server_id)):
+            supervisor.schedule(server_id, fresh=True)    # list_tools dropped the session it ran on
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)   # naive UTC, matches DateTime columns
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -237,16 +313,31 @@ async def check_health(server_id: int) -> dict:
                 srv.last_error = f"{stamp} health probe list_tools: {err_text}"   # PB-2 shape
             elif srv.last_error is not None:
                 srv.last_error = None          # column reflects the LATEST state (executor semantics)
-            last_error = srv.last_error
+            last_error, state = srv.last_error, srv.state
             await db.commit()
         else:
-            last_error = err_text
+            last_error, state = err_text, None
 
     proxy = manager.proxy_source(server_id)    # PB-1 context; None = never launched this process
     return {"id": server_id, "label": label, "transport": transport,
             "health_status": health, "last_checked_at": now.isoformat(),
             "last_error": last_error, "tool_count": tool_count,
-            "proxy_source": proxy or "unknown"}
+            "proxy_source": proxy or "unknown", "state": state}
+
+
+async def _health_state_answer(server_id: int, label: str, transport: str) -> dict:
+    """The probe's answer when a start owned the server: what is stored, untouched, and its state."""
+    from server.mcp.session import manager
+
+    async with db_session.AsyncSessionLocal() as db:
+        srv = await db.get(MCPServer, server_id)
+    checked = srv.last_checked_at if srv is not None else None
+    return {"id": server_id, "label": label, "transport": transport,
+            "health_status": srv.health_status if srv is not None else None,
+            "last_checked_at": checked.isoformat() if checked else None,
+            "last_error": srv.last_error if srv is not None else None, "tool_count": None,
+            "proxy_source": manager.proxy_source(server_id) or "unknown",
+            "state": srv.state if srv is not None else None}
 
 
 async def check_health_all() -> None:
@@ -270,13 +361,18 @@ async def last_error_text(server_id: int) -> str | None:
 
 
 async def reconnect(server_id: int) -> None:
-    from server.mcp.session import manager
-    await manager._drop(server_id)
+    """RECONNECT always starts a fresh process (spec §B1); the row says how it went. ValueError for
+    an unknown id."""
+    from server.mcp.supervisor import supervisor
+
+    await supervisor.restart(server_id)
 
 
 async def delete_server(server_id: int) -> None:
-    from server.mcp.session import manager
-    await manager._drop(server_id)
+    """The row first, then `forget` — which cancels an in-flight start (no orphan process), closes
+    the session and moves the server's folder aside. In the other order a supervisor tick between
+    the two found the row and started the deleted server again (forget's guard covers only its
+    own inside)."""
     async with db_session.AsyncSessionLocal() as db:
         for t in (await db.execute(select(Tool).where(Tool.toolset_key == f"mcp_{server_id}"))).scalars().all():
             await db.delete(t)
@@ -287,3 +383,6 @@ async def delete_server(server_id: int) -> None:
         if srv is not None:
             await db.delete(srv)
         await db.commit()
+    from server.mcp.supervisor import supervisor
+
+    await supervisor.forget(server_id)

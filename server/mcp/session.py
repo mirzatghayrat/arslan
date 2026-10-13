@@ -52,6 +52,8 @@ TAIL_BYTES = 8 * 1024
 TAIL_LINES = 20
 START_MARK = "--- arslan start "
 FORGOTTEN_DIR = ".forgotten"     # <data>/mcp/.forgotten/<id>-<utc>/: a forgotten server's folder
+FORGOTTEN_KEEP_DAYS = 30         # then, at boot, the folder goes to the user's Trash
+_FORGOTTEN_STAMP = "%Y%m%dT%H%M%S%fZ"
 #: The SDK's code for an http 404 on a request ("Session terminated": the server expired the
 #: session). JSON-RPC's invalid-request code is -32600, which stays a server's answer.
 SESSION_TERMINATED = 32600
@@ -181,7 +183,7 @@ def _move_aside(server_id: int) -> Path | None:
     source = root / str(int(server_id))
     if not source.exists():
         return None
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    stamp = datetime.now(timezone.utc).strftime(_FORGOTTEN_STAMP)
     target = root / FORGOTTEN_DIR / f"{int(server_id)}-{stamp}"
     n = 1
     while target.exists():
@@ -194,6 +196,40 @@ def _move_aside(server_id: int) -> Path | None:
         logger.warning("mcp %s: could not move its folder aside", server_id, exc_info=True)
         return None
     return target
+
+
+def prune_forgotten() -> list[str]:
+    """At boot: `<data>/mcp/.forgotten/` entries forgotten more than FORGOTTEN_KEEP_DAYS ago go to
+    the user's Trash (`capability_install.to_trash`; never deleted outright). The age is the UTC
+    stamp `_move_aside` put in the name (`<id>-<stamp>` or `<id>-<stamp>-<n>`); an entry without
+    one is not ours to judge and stays. Best effort; returns the names it moved."""
+    from server import config
+    from server.services import capability_install
+
+    root = config.data_dir() / "mcp" / FORGOTTEN_DIR
+    try:
+        entries = sorted(root.iterdir())
+    except OSError:
+        return []                                   # none yet (or unreadable): nothing to prune
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=FORGOTTEN_KEEP_DAYS)
+    moved: list[str] = []
+    for entry in entries:
+        parts = entry.name.split("-")
+        if len(parts) not in (2, 3) or not parts[0].isdigit():
+            continue
+        try:
+            forgotten_at = datetime.strptime(parts[1], _FORGOTTEN_STAMP)
+        except ValueError:
+            continue
+        if forgotten_at >= cutoff:
+            continue
+        try:
+            capability_install.to_trash(entry)
+        except Exception:  # noqa: BLE001 — the next boot tries again
+            logger.warning("mcp: could not move %s to the Trash", entry.name, exc_info=True)
+            continue
+        moved.append(entry.name)
+    return moved
 
 
 def _fingerprint(server: dict) -> tuple:

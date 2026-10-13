@@ -62,6 +62,7 @@ LIVE_LOG_CAP_BYTES = 1024 * 1024
 LAST_ERROR_CAP = 2000
 OK_WRITE_EVERY_S = 60.0
 STARTING_STALE_S = 60.0          # a `starting` row that no plan owns for this long is restarted
+BOOT_RESET_RETRY_S = (1.0, 2.0, 4.0, 8.0, 16.0)   # a failed boot reset is retried this far apart
 
 LEGACY_STATUS = {"ready": "connected", "starting": "connecting", "failed": "error",
                  "parked": "error", "needs_auth": "error"}
@@ -111,6 +112,13 @@ def _secrets(server: dict) -> list[str]:
     url = str(server.get("url") or "")
     extra = [url, *(pair.partition("=")[2] for pair in url.partition("?")[2].split("&") if "=" in pair)]
     return sorted({*forms, *(value for value in extra if len(value) >= 4)}, key=len, reverse=True)
+
+
+def mask_for(server: dict, text: str) -> str:
+    """`text` with this server's own secrets replaced by ****; never raises. For every `last_error`
+    written outside the supervisor too (the health probe), so a secret never reaches the UI or a
+    tool result through that column."""
+    return spawn_env.mask(text, _secrets(server))
 
 
 @dataclass
@@ -300,17 +308,41 @@ class Supervisor:
         self._loop_task = None
         self._sem = None
 
-    async def reset_for_boot(self) -> None:
+    async def reset_for_boot(self, *, written_before: datetime | None = None) -> None:
         """A `ready` (or a pending retry) from an earlier process is never trusted: every enabled
-        server is `starting` until this process has a live session. last_error is kept."""
+        server is `starting` until this process has a live session. last_error is kept.
+        `written_before` (a retry after a failed boot reset) limits it to the rows nothing has
+        written since then — never stamped, or stamped by an earlier process: a state this process
+        already wrote stands."""
         now = _utcnow()
+        unwritten = [] if written_before is None else [
+            or_(MCPServer.state_at.is_(None), MCPServer.state_at < written_before)]
         async with db_session.AsyncSessionLocal() as db:
-            await db.execute(update(MCPServer).where(MCPServer.host_allowed.is_(False))
+            await db.execute(update(MCPServer).where(MCPServer.host_allowed.is_(False), *unwritten)
                              .values(state="off", state_at=now, next_retry_at=None))
-            await db.execute(update(MCPServer).where(MCPServer.host_allowed.is_(True))
+            await db.execute(update(MCPServer).where(MCPServer.host_allowed.is_(True), *unwritten)
                              .values(state="starting", status="connecting", state_at=now,
                                      next_retry_at=None))
             await db.commit()
+
+    def retry_boot_reset(self) -> None:
+        """reset_for_boot failed at boot (a locked database): retry it in the background,
+        BOOT_RESET_RETRY_S apart, for the rows nothing in this process has written by then — so a
+        `ready` left from the last run (migration 0068 maps connected → ready) never keeps its
+        tools offered with no session behind them. Called before `start()`: nothing in this process
+        has written a state yet."""
+        self._spawn_bg(self._retry_boot_reset(_utcnow()))
+
+    async def _retry_boot_reset(self, since: datetime) -> None:
+        for gap in BOOT_RESET_RETRY_S:
+            await asyncio.sleep(gap)
+            try:
+                await self.reset_for_boot(written_before=since)
+                return
+            except Exception:  # noqa: BLE001 — the next try, or the error below
+                logger.warning("mcp: the boot reset failed again", exc_info=True)
+        logger.error("mcp: the boot reset never succeeded; a `ready` from the last run may remain "
+                     "until its server starts")
 
     async def _boot(self) -> None:
         await asyncio.to_thread(spawn_env.login_shell_path)     # prewarm, off the event loop
@@ -404,6 +436,11 @@ class Supervisor:
     def note(self, server_id: int) -> str | None:
         """What a starting server is doing now, e.g. "downloading Node 24.21.0 (50 MB)"."""
         return self._notes.get(server_id)
+
+    def start_in_flight(self, server_id: int) -> bool:
+        """An attempt for this server is queued or running: it drops the session and opens a new
+        one itself, so nobody else should drop it now (the health probe, carry 2b)."""
+        return server_id in self._attempt_fut
 
     def note_ok(self, server_id: int) -> None:
         """A successful call refreshes last_ok_at, at most once a minute per server (spec §B1:
