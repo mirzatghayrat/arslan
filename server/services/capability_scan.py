@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import os
 import re
+import time
 import unicodedata
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
@@ -35,6 +36,9 @@ MAX_SCAN_BYTES = 64 * 1024 * 1024
 #: RecursionError in os.walk). And at most this many files of one folder are looked at; the rest are counted.
 MAX_DEPTH = 32
 MAX_WALKED = 50_000
+#: A folder scan stops after this many seconds in all; every file it has not reached is named as not read.
+#: A regex holds the GIL, so a scan is a stall of the whole server for as long as it runs.
+MAX_SCAN_SECONDS = 3.0
 
 
 @dataclass(frozen=True)
@@ -47,18 +51,23 @@ class Rule:
     #: its first match. Two rules may share an id and differ in level: the id says what was found,
     #: the level how much it matters in the place it was found.
     accept: Callable[[_Line, re.Match], bool] | None = None
+    #: A cheap pattern the line must hold before `pattern` is tried. Most lines hold none of what a rule looks
+    #: for, and a rule that starts at every `cp` or `>` of a hostile line would otherwise read on from each.
+    needs: re.Pattern | None = None
 
 
-def _r(rule_id, level, where, pattern, flags=re.I, accept=None):
-    return Rule(rule_id, level, where, re.compile(pattern, flags), accept)
+def _r(rule_id, level, where, pattern, flags=re.I, accept=None, needs=None):
+    return Rule(rule_id, level, where, re.compile(pattern, flags), accept, re.compile(needs, flags) if needs else None)
 
 
 # ── the line a rule reads ────────────────────────────────────────────────────────────────────
 #: Quotation marks, each as the span of one quoted passage. A passage is read from its opening mark
 #: to the next closing one, so `"a" ignore "b"` has two passages and the word between is not in one.
+#: A mark whose closer is another character looks for it 300 characters ahead and no further: a run of
+#: openers with no closer was read to the end of the line from each (a 400 KB line took 40 to 100 s).
 _QUOTES = tuple(re.compile(p) for p in (
-    r'"[^"\n]*"', "\u201c[^\u201d\n]*\u201d", "\u201e[^\u201c\u201d\n]*[\u201c\u201d]", "\u2018[^\u2019\n]*\u2019",
-    "\u00ab[^\u00bb\n]*\u00bb", "\u300c[^\u300d\n]*\u300d", "\u300e[^\u300f\n]*\u300f", r"`[^`\n]*`",
+    r'"[^"\n]*"', "\u201c[^\u201d\n]{0,300}+\u201d", "\u201e[^\u201c\u201d\n]{0,300}+[\u201c\u201d]", "\u2018[^\u2019\n]{0,300}+\u2019",
+    "\u00ab[^\u00bb\n]{0,300}+\u00bb", "\u300c[^\u300d\n]{0,300}+\u300d", "\u300e[^\u300f\n]{0,300}+\u300f", r"`[^`\n]*`",
     r"(?<![\w'])'[^'\n]*'(?![\w'])"))                     # a single quote that is not an apostrophe
 _YAML_VALUE = re.compile(r"""^(\s*(?:-\s+)?(?:[\w.-]+\s*:\s*)?)(["'])(.*)\2\s*(?:#.*)?$""")
 _FENCE = re.compile(r"^\s{0,3}(?:`{3,}|~{3,})")
@@ -133,22 +142,28 @@ _AGENT_SETTINGS_TEXT = (r"(?:~|\$\{?HOME\}?)/\.(?:hermes/|claude/settings|claude
 _STARTUP = r"(?:\.bash_profile|\.bashrc|\.zshrc|\.zprofile|LaunchAgents|LaunchDaemons)"
 _SSH_KEY = r"\.ssh" + _SEP + r"id_[a-z0-9_*?]++(?!\.pub|-cert)"           # a private key: not id_x.pub
 _AUTHORIZED_KEYS = r"\.ssh" + _SEP + r"authorized_keys"
+#: What may stand before the named part of a path: `~/`, `$HOME/`, `/Users/x/`, `../` — whole parts, at most 8.
+_HEAD = r"['\"]?/?(?:[\w.${}~@%+=:-]{1,60}+['\"]?/){0,8}"
+#: Up to n more arguments of a command, one token each (a token is at most 200 characters; none is read twice).
+_ARGS = r"(?:[ \t]++\S{1,200}+){0,%d}?[ \t]++"
 
 
 def _writes(path: str) -> str:
     """A write that TARGETS `path` (a regex): a redirect or tee into it, cp/mv/ln/install/rsync with it as the
     destination, a download written to it, an in-place edit, `dd of=`, a write mode or call after it, or a
     write call that names it as its destination. Reading it, copying it away, naming it in a message or
-    pointing an arrow at it ("-> path", "=> path") is not a write. Every quantifier is bounded: a greedy
-    `[^\\s'"]*` or `[^\\n]*` re-read the line from every `>`, `cp` or `tee` in it, so one 400 KB line
-    (a minified bundle, or a hostile file) held the scan for 15 minutes."""
-    gap = r"['\"]?[^\s'\"]{0,120}"                       # the rest of a path token before the named part
+    pointing an arrow at it ("-> path", "=> path") is not a write.
+
+    Linear in the line, on purpose. A command is followed argument by argument (a token is read once), the
+    path is reached through whole path parts, and every other quantifier is bounded: a greedy `[^\\s'"]*` or
+    `[^\\n]{0,200}` re-read the line from every `>`, `cp` or `tee` in it, so one 400 KB line (a minified bundle, or
+    a hostile file) held the scan for minutes."""
     return "(?:" + "|".join((
-        r"(?<![-=])(?:>>?\s*|\btee\s+(?:-a\s+)?)" + gap + path,
-        r"\b(?:cp|mv|ln|install|rsync|ditto)\b[^\n]{0,200}\s" + gap + path + r"[^\s'\"]{0,120}['\"]?\s*(?:$|[;&|)])",
-        r"\b(?:curl|wget)\b[^\n]{0,200}(?:\s-[A-Za-z]*[oO]\s*|\s--output(?:-document)?(?:\s+|=))" + gap + path,
-        r"\b(?:sed|perl)\s+(?:-\S+\s+){0,4}?(?:-[A-Za-z]*i|--in-place)\S*\s[^\n]{0,200}" + path,
-        r"\bdd\b[^\n]{0,100}\bof=" + gap + path,
+        r"(?<![-=])(?:>>?[ \t]{0,16}|\btee[ \t]++(?:-a[ \t]++)?)" + _HEAD + path,
+        r"\b(?:cp|mv|ln|install|rsync|ditto)\b" + _ARGS % 12 + _HEAD + path + r"[^\s'\"]{0,120}['\"]?[ \t]*(?:$|[;&|)])",
+        r"\b(?:curl|wget)\b" + _ARGS % 16 + r"(?:-[A-Za-z]*[oO][ \t]*+|--output(?:-document)?(?:=|[ \t]++))" + _HEAD + path,
+        r"\b(?:sed|perl)\b(?:[ \t]++-\S{1,60}+){0,4}?[ \t]++(?:-[A-Za-z]*i|--in-place)\S{0,20}+" + _ARGS % 8 + _HEAD + path,
+        r"\bdd\b" + _ARGS % 6 + r"of=" + _HEAD + path,
         path + r"[^\n]{0,200}?(?:['\"]\)?\s*,\s*['\"][wa]b?\+?['\"]|\.write_(?:text|bytes)\(|\.open\(\s*['\"][wa])",
         r"\b(?:writeFile(?:Sync)?|appendFile(?:Sync)?|writeTextFile|createWriteStream|Bun\.write)\s*\([^\n]{0,160}?" + path,
         r"\b(?:shutil\.(?:copy2?|copyfile|move)|os\.(?:replace|rename)|copyFile(?:Sync)?|rename(?:Sync)?)\s*"
@@ -166,6 +181,8 @@ _LAUNCHCTL = r"\blaunchctl\s+(?:load|bootstrap|submit)\b"
 #: after `-i`, `--key` or `--identity-file`, which only USE the key); and a reader in code.
 _SSH_READERS = (r"\b(?:cat|less|more|head|tail|strings|xxd|od|hexdump|base64|openssl|pbcopy|cp|mv|tar|zip|ditto|install|"
                 r"tee|dd|gpg|scp|rsync|sftp|curl|wget|nc|ncat|socat)\b")
+_SSH_READ = (_SSH_READERS + _ARGS % 12 + r"(?<!-i[ \t])(?<!--key[ \t])(?<!--identity-file[ \t])" + _HEAD + _SSH_KEY)
+_SSH_ARCHIVE = r"\b(?:tar|zip|cp|rsync|ditto|scp|7z)\b" + _ARGS % 8 + _HEAD + r"\.ssh/?['\"]?(?=\s|$)"
 
 #: A secret handed over, and the sign that it is how an API is called ("in the x-api-key header", "to the login").
 _SEND_SECRET = (r"\b(?:send|post|upload|forward|transmit|exfiltrat\w*)\s+(?:the\s+|all\s+|any\s+|your\s+|their\s+)?"
@@ -177,8 +194,12 @@ _API_USE = (r"(?:\bheaders?\b|\bauthori[sz]ation\b|\bbearer\b|\bx-api-key\b|\blo
 _SECRET_STORE = (r"(?:~/\.ssh\b|\.ssh/|\bid_(?:rsa|ed25519|ecdsa|dsa)\b|\bkeychains?\b|"
                  r"\.env\b(?!\.(?:example|sample|template|dist))|\.netrc\b|\.aws/credentials|\.npmrc\b|"
                  r"\.git-credentials|\.gnupg\b)")
+#: Where a secret store is sent. Every part is bounded and an address cannot begin in the middle of a run of
+#: word characters: `[\w.+-]+@` unbounded and tried at each of 81 offsets after each verb-and-store pair of a
+#: run like "send.env.send.env." took hours on 400 KB.
 _DESTINATION = (r"(?:https?://|\bto\s+(?:my|our|their|an?\s+(?:remote|external|outside)|the\s+(?:remote|external))\b|"
-                r"\bto\s+(?:[\w-]+\.)+[a-z]{2,}\b|\bto\s+\d{1,3}(?:\.\d{1,3}){3}\b|[\w.+-]+@[\w-]+(?:\.[\w-]+)+)")
+                r"\bto\s+(?:[\w-]{1,63}\.){1,6}[a-z]{2,24}\b|\bto\s+\d{1,3}(?:\.\d{1,3}){3}\b|"
+                r"(?<![\w.+-])[\w.+-]{1,64}@[\w-]{1,63}(?:\.[\w-]{1,63}){1,5})")
 
 _HIDDEN_INSTRUCTION = (r"\b(ignore|disregard|forget)\s+(all\s+|any\s+)?(previous|prior|above|earlier)\s+"
                        r"(instructions|rules|messages)")
@@ -200,8 +221,8 @@ RULES = (
     _r("send_data_out", "high", "text", _SEND_SECRET + r"(?![^\n]{0,120}" + _API_USE + r")"),
     _r("send_data_out", "note", "text", _SEND_SECRET + r"(?=[^\n]{0,120}" + _API_USE + r")"),
     _r("send_data_out", "high", "text",
-       r"\b(?:send|post|upload|forward|transmit|exfiltrat\w*|copy|attach|email|paste)\b[^\n]{0,80}" + _SECRET_STORE
-       + r"[^\n]{0,80}" + _DESTINATION),
+       r"\b(?:send|post|upload|forward|transmit|exfiltrat\w*|copy|attach|email|paste)\b(?>[^\n]{0,50}?" + _SECRET_STORE
+       + r")[^\n]{0,40}" + _DESTINATION, needs=_SECRET_STORE),
     _r("url_in_instructions", "note", "text", r"https?://[^\s)>\"']+"),
     # Code (skill scripts, package files).
     # An install line in a document is common and the agent's command card shows it; a skill whose OWN
@@ -213,7 +234,8 @@ RULES = (
        r"\b(exec|eval)\s*\(\s*(base64\.b64decode|codecs\.decode|bytes\.fromhex|zlib\.decompress|atob)\b"),
     # Persistence is a WRITE: into a shell start file or a launchd folder, a crontab installed, a job loaded.
     # `source ~/.zshrc` and `crontab -l` only read.
-    _r("autostart_write", "high", "code", _writes(_STARTUP) + "|" + _CRONTAB + "|" + _LAUNCHCTL),
+    _r("autostart_write", "high", "code", _writes(_STARTUP) + "|" + _CRONTAB + "|" + _LAUNCHCTL,
+       needs=_STARTUP + r"|crontab|launchctl"),
     # A script that reads the keychain is high; a commented config example in a document is a note (the
     # runtime floor refuses `security find-generic-password -w` in every mode).
     _r("keychain_read", "high", "code", _KEYCHAIN),
@@ -223,11 +245,10 @@ RULES = (
     # folder archived or copied, a key appended to authorized_keys. `ssh-add`, `ssh -i`, `ssh-keygen -l`/`-y`
     # and the .pub half use or describe a key without taking it.
     _r("ssh_keys", "high", "code",
-       _SSH_READERS + r"[^\n]{0,200}\s(?<!-i\s)(?<!--key\s)(?<!--identity-file\s)['\"]?[^\s'\"]{0,120}" + _SSH_KEY
-       + r"|\b(?:tar|zip|cp|rsync|ditto|scp|7z)\b[^\n]{0,100}\.ssh/?['\"]?(?=\s|$)"
+       _SSH_READ + r"|" + _SSH_ARCHIVE
        + r"|" + _SSH_KEY + r"[^\n]{0,200}?\.read\w*\("
        + r"|\b(?:readFileSync|readFile|read_text|read_bytes)\s*\([^\n]{0,160}?" + _SSH_KEY
-       + r"|" + _writes(_AUTHORIZED_KEYS)),
+       + r"|" + _writes(_AUTHORIZED_KEYS), needs=r"\.ssh"),
     # `-(?=[a-z]*r)[a-z]+` is `-[a-z]*r[a-z]*` read in one pass: that one was quadratic on `rm -rrrr…`.
     _r("wipe", "high", "any", r"\brm\s+-(?=[a-z]*r)[a-z]+\s+(/|~|\$HOME)(\s|$)"),
     _r("network_in_script", "note", "skill_code", r"\b(requests|urllib|httpx|aiohttp|socket)\b"),
@@ -240,8 +261,8 @@ RULES = (
     # Arslan runs a skill's scripts itself, so a skill that writes them is high; a package often bundles a
     # client-registration command next to the server (`install --client cursor`), and a high finding
     # there would remove an install the user chose on its card: a note, the card shows it.
-    _r("agent_settings_write", "high", "skill_code", _SETTINGS_WRITE),
-    _r("agent_settings_write", "note", "package", _SETTINGS_WRITE),
+    _r("agent_settings_write", "high", "skill_code", _SETTINGS_WRITE, needs=_AGENT_SETTINGS),
+    _r("agent_settings_write", "note", "package", _SETTINGS_WRITE, needs=_AGENT_SETTINGS),
     # Words telling the model to change them are a note (a cross-agent skill says "add to your Codex
     # config"): the act in code is the high one, and the runtime holds whatever the scan says.
     _r("agent_settings_instruction", "note", "text",
@@ -335,6 +356,8 @@ def scan_text(name: str, text: str, *, kind: str) -> list[Finding]:
         if not applies:
             continue
         for n, raw, line in lines:
+            if rule.needs is not None and rule.needs.search(line.text) is None:
+                continue
             if rule.accept is None:
                 hit = rule.pattern.search(line.text) is not None
             else:
@@ -404,19 +427,26 @@ def verdict(scan: dict | None) -> str:
 
 def same_findings(a: dict | None, b: dict | None) -> bool:
     """Whether two scans found the same things (rule, file and line text) — so a skill the user
-    turned on after reading its findings stays on while nothing new turns up (Ruling C)."""
+    turned on after reading its findings stays on while nothing new turns up (Ruling C). It compares the
+    findings a scan KEEPS (at most MAX_FINDINGS, highs first, excerpts of 160 characters), not every hit:
+    equal, not subset, because a different set is a different skill to read."""
     def key(scan):
-        return sorted((f.get("rule"), f.get("file"), f.get("excerpt")) for f in (scan or {}).get("findings") or [])
+        found = ((f.get("rule"), f.get("file"), f.get("excerpt")) for f in (scan or {}).get("findings") or [])
+        return sorted(found, key=repr)                          # a missing file is None: repr orders it, < would raise
     return key(a) == key(b)
 
 
-def _scan(skill_md: str, items: list[tuple[str, str, str]], unread: list[str]) -> dict:
-    """A skill given as (path, text, kind) items: its whole SKILL.md (the frontmatter too — a description
-    is read by the model as well) and each file as instructions or as code. What could not be read
-    (`unread`, and any text over MAX_FILE_BYTES, read as far as that) is one `not_scanned` note."""
+def _scan(skill_md: str, items: list[tuple[str, str, str]], unread: list[str], deadline: float | None = None) -> dict:
+    """A skill given as (path, text, kind) items, in the order to scan them (code first): its whole SKILL.md
+    (the frontmatter too — a description is read by the model as well) and each file as instructions or as
+    code. What could not be read (`unread`, any text over MAX_FILE_BYTES, read as far as that, and whatever
+    the `deadline` cut off) is one `not_scanned` note."""
     found = scan_text("SKILL.md", skill_md, kind="text")
     unread = [*unread]
-    for rel, text, kind in sorted(items):
+    for i, (rel, text, kind) in enumerate(items):
+        if deadline is not None and time.monotonic() >= deadline:
+            unread.extend(later for later, _, _ in items[i:])
+            break
         found += scan_text(rel, text[:MAX_FILE_BYTES], kind=kind)
         if len(text) > MAX_FILE_BYTES:
             unread.append(rel)
@@ -438,16 +468,17 @@ def scan_texts(skill_md: str, files: dict[str, str], *, unread: list[str] = ()) 
         kind = _kind_for(rel, text)
         if kind is not None and rel != "SKILL.md":
             items.append((rel, text, kind))
+    items.sort(key=lambda item: (item[2] != "skill_code", item[0]))        # code first, then by name
     return _scan(skill_md, items, [*unread])
 
 
-def _list_folder(folder: Path, candidates: list[tuple[int, str, str, Path]], unread: list[str]) -> None:
+def _list_folder(folder: Path, candidates: list[tuple[int, str, str, Path]], unread: list[str], deadline: float) -> None:
     """Walk `folder` top-down WITHOUT recursion (os.walk recurses on Python 3.11) and file every regular
     text or code file under it in `candidates` as (0 code | 1 text, name, kind, path); everything that will
     not be read goes by name into `unread`: a link (never followed), a dependency folder, a folder nested
     deeper than MAX_DEPTH, a folder it cannot list, a pipe, socket or device (opening one can wait for
-    ever), whatever lies past MAX_WALKED files. Code is a source file, anything in scripts/, a `#!` file
-    and an executable; the rest that is read is text."""
+    ever), whatever lies past MAX_WALKED files, and whatever the `deadline` stopped it short of. Code is a
+    source file, anything in scripts/, a `#!` file and an executable; the rest that is read is text."""
     def relative(path) -> str:
         try:
             return Path(path).relative_to(folder).as_posix()
@@ -457,6 +488,9 @@ def _list_folder(folder: Path, candidates: list[tuple[int, str, str, Path]], unr
     seen = 0
     pending = [(folder, 0)]
     while pending:
+        if time.monotonic() >= deadline:                                 # out of time: name the folders left
+            unread.extend(relative(left) + "/" for left, _ in reversed(pending))
+            return
         top, depth = pending.pop()
         try:
             with os.scandir(top) as listing:
@@ -465,7 +499,11 @@ def _list_folder(folder: Path, candidates: list[tuple[int, str, str, Path]], unr
             unread.append(relative(top) + "/")
             continue
         below = []
-        for entry in entries:
+        for k, entry in enumerate(entries):
+            if k % 256 == 255 and time.monotonic() >= deadline:          # out of time inside a huge folder
+                unread.extend(relative(rest.path) for rest in entries[k:])
+                unread.extend(relative(left) + "/" for left, _ in [*below, *reversed(pending)])
+                return
             rel = relative(entry.path)
             try:
                 if entry.is_symlink():
@@ -500,7 +538,9 @@ def scan_skill_folder(folder: Path | None, skill_md: str) -> dict:
     files of at most MAX_FILE_BYTES each, MAX_SCAN_BYTES in all, SKILL.md first, then code (scripts, source
     files, executables), then the rest, so a few hundred references can never push the scripts out of the
     budget. What is not read (see `_list_folder`, and whatever is over the limits) is named in a note.
-    A disk error never escapes: what cannot be read is named, never silently clean."""
+    A disk error never escapes: what cannot be read is named, never silently clean. And it never holds the
+    server for long: after MAX_SCAN_SECONDS in all it stops, and every file it has not reached is named."""
+    deadline = time.monotonic() + MAX_SCAN_SECONDS
     candidates: list[tuple[int, str, str, Path]] = []
     unread: list[str] = []
     try:
@@ -509,10 +549,14 @@ def scan_skill_folder(folder: Path | None, skill_md: str) -> dict:
         walkable = False
         unread.append("./")
     if walkable:
-        _list_folder(folder, candidates, unread)
+        _list_folder(folder, candidates, unread, deadline)
     items: list[tuple[str, str, str]] = []
     spent = 0
-    for _, rel, kind, path in sorted(candidates, key=lambda candidate: (candidate[0], candidate[1])):
+    ordered = sorted(candidates, key=lambda candidate: (candidate[0], candidate[1]))
+    for i, (_, rel, kind, path) in enumerate(ordered):
+        if time.monotonic() >= deadline:
+            unread.extend(later for _, later, _, _ in ordered[i:])
+            break
         try:
             size = path.stat().st_size
             if len(items) >= MAX_FILES or size > MAX_FILE_BYTES or spent + size > MAX_SCAN_BYTES:
@@ -522,7 +566,7 @@ def scan_skill_folder(folder: Path | None, skill_md: str) -> dict:
             spent += size
         except OSError:
             unread.append(rel)
-    return _scan(skill_md, items, unread)
+    return _scan(skill_md, items, unread, deadline)
 
 
 def _own_files(root: Path) -> list[Path]:
