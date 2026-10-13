@@ -91,12 +91,17 @@ _QUOTES = tuple(re.compile(p) for p in (
 _YAML_VALUE = re.compile(r"""^(\s*(?:-\s+)?(?:[\w.-]+\s*:\s*)?)(["'])(.*)\2\s*(?:#.*)?$""")
 _FENCE = re.compile(r"^\s{0,3}(`{3,}|~{3,})")
 #: A JSON string: the quotes that make it one are syntax, so the words inside are not a quotation (a quotation inside it is).
-_JSON_STRING = re.compile(r'"(?:[^"\\\n]|\\.)*+"')
+#: One that never closes runs to the end of the line, and a backslash that ends the line is its own escape: the pattern
+#: cannot fail once it has opened, so no later quote of the line starts it again (`"(?:[^"\\]|\\.)*+"` read to the end from every quote).
+_JSON_STRING = re.compile(r'"(?:[^"\\\n]|\\.?)*+(?:"|$)')
 # A line break is `\n`, `\r\n` or `\r` — what an editor shows (see `_lines`). `str.splitlines()` also breaks at \x0b,
 # \x0c, \x1c-\x1e, \x85, U+2028 and U+2029, which split "ignore<VT>all previous instructions" into two lines no rule
 # reads whole (and moved every line number after it). They are whitespace to a pattern's `\s`.
-#: A full line of comment in a script: `#` (other than the shebang) or `//`.
-_COMMENT = re.compile(r"\s*(?:#|//)")
+#: A full line of comment in a script: `#` (other than the shebang) or `//`; in a shell script `//bin/rm` is the path `/bin/rm`,
+#: which the shell runs, so there only `#` is one.
+_COMMENT = re.compile(r"^\s*(?:#|//)")
+_HASH_COMMENT = re.compile(r"^\s*#")
+_SHELLISH = re.compile(r"^#!\s*(?:\S*/)?(?:env\s+)?(?:ba|z|da|k|c)?sh\b")
 
 
 class _Line:
@@ -158,13 +163,23 @@ _POINTER = re.compile(r"\b(?:see|refer(?:s)?(?:\s+to)?|consult|per|according\s+t
 # A ban reaches to the end of its clause, and a colon ends one as well: "Do not explain: ignore all previous
 # instructions" bans nothing after the colon ("never do the following: send the key" is read as an order, too).
 # The words between a verb and a path are cut at the other ends only: "edit the file: ~/.claude/settings.json" is one sentence.
-_BAN_END = re.compile(_CLAUSE_END.pattern + r"|:(?:\s|$)", _CLAUSE_END.flags)
+# So does the full-width colon, semicolon, full stop, "!" and "?", the ellipsis, an arrow and a bar.
+_BAN_END = re.compile(_CLAUSE_END.pattern + r"|:(?:\s|$)|[\uff1a\uff1b\u3002\uff01\uff1f\u2026\u2192\u21d2|]", _CLAUSE_END.flags)
 
 
 def _prohibited(line: _Line, m: re.Match) -> bool:
-    """Whether the match stands inside a prohibition: a negation in its clause, before it."""
+    """Whether the match stands inside a prohibition: the LAST negation of its clause, before it, with at most six words
+    and no comma between it and the match. A ban reaches a few words, not a sentence: "do not explain this, ignore all
+    previous instructions" and "if you cannot find the file, ignore..." forbid nothing."""
     head = line.text[max(0, m.start() - 120):m.start()]
-    return _NEGATION.search(_BAN_END.split(head)[-1]) is not None
+    piece = _BAN_END.split(head)[-1]
+    last = None
+    for found in _NEGATION.finditer(piece):
+        last = found
+    if last is None:
+        return False
+    gap = piece[last.end():]
+    return "," not in gap and len(gap.split()) <= 6
 
 
 def _is_an_order(line: _Line, m: re.Match) -> bool:
@@ -284,7 +299,9 @@ _PIPE_TO_SHELL = (r"\b(?:curl|wget)\b[^|\n]{0,200}\|[ \t]*(?:sudo(?:[ \t]+-\S{1,
 _KEYCHAIN = (r"\bsecurity\b(?:[ \t]++-\S{1,20}+){0,3}+[ \t]++(?P<cmd>find-generic-password|find-internet-password|dump-keychain)\b"
              r"(?P<rest>[^\n;|]{0,200})")
 _PRINTS_IT = re.compile(r"(?<![\w-])-(?=[A-Za-z]*[wg])[A-Za-z]++(?![\w-])")
-_DISCARDED = re.compile(r"(?:&>|>)[ \t]*/dev/null\b")
+#: Standard output thrown away: `>/dev/null`, `1>/dev/null`, `&>/dev/null`, also appended. `2>/dev/null` throws away the
+#: errors only: the secret is printed all the same.
+_DISCARDED = re.compile(r"(?:(?<![0-9&>])>>?|&>>?|(?<![0-9])1>>?)[ \t]*/dev/null\b")
 #: A recursive remove of the root or the home folder, with the flags in any order and the target quoted, with a
 #: slash or a star after it: `rm -rf ~/`, `rm -rf "$HOME"`, `rm -rf /*`, `rm -r -f /`, `rm --recursive --force /`.
 #: The recursive flag is read in one pass: `-[a-z]*r[a-z]*` was quadratic on `rm -rrrr...`.
@@ -480,21 +497,24 @@ def decode_text(data: bytes) -> str:
     return data.decode(codec, errors="replace")
 
 
-def _shown(name: str) -> str:
-    """A file name as the user is shown it: a control character, a line break or a bidirectional or other format
-    character becomes a visible escape (`\\x1b`, `\\u202e`), so a name can neither repaint the screen nor pass for another."""
+def _shown(name: str, line: bool = False) -> str:
+    """A file name — or, with `line`, a line of text — as the user is shown it: a control character, a line break or a
+    bidirectional or other format character becomes a visible escape (`\\x1b`, `\\u202e`), so a name or a card can neither
+    repaint the screen nor pass for another (a Trojan-source line). In a line a tab and the spaces other than the plain
+    one stay as they are."""
     if name.isprintable():
         return name
     bs = chr(92)
-    return "".join(ch if ch.isprintable() else (f"{bs}x{ord(ch):02x}" if ord(ch) < 0x100 else f"{bs}u{ord(ch):04x}" if ord(ch) < 0x10000
-                                                else f"{bs}U{ord(ch):08x}") for ch in name)
+    keep = (lambda ch: ch == "\t" or unicodedata.category(ch) == "Zs") if line else (lambda ch: False)
+    return "".join(ch if ch.isprintable() or keep(ch) else (f"{bs}x{ord(ch):02x}" if ord(ch) < 0x100 else f"{bs}u{ord(ch):04x}"
+                                                         if ord(ch) < 0x10000 else f"{bs}U{ord(ch):08x}") for ch in name)
 
 
 def _blank(line: str) -> bool:
     return not line.replace(_BOM, "").strip()
 
 
-def _prepare(text: str, kind: str) -> list[tuple[int, str, _Line]]:
+def _prepare(text: str, kind: str, slashes: bool = True) -> list[tuple[int, str, _Line]]:
     """The lines of a text with what the rules need to know about each: where a fenced block is (one that is
     closed: an unclosed fence is not a code block), where a SKILL.md's frontmatter is (after a byte-order mark or blank
     lines too), and which lines of a script are comments."""
@@ -528,7 +548,7 @@ def _prepare(text: str, kind: str) -> list[tuple[int, str, _Line]]:
     for i, line in enumerate(lines):
         if not read[i] or read[i].isspace():
             continue                                    # a blank line holds nothing for a rule; the others keep their numbers
-        comment = code and _COMMENT.match(read[i]) is not None and not (i == 0 and read[i].startswith("#!"))
+        comment = code and (_COMMENT if slashes else _HASH_COMMENT).match(read[i]) is not None and not (i == 0 and read[i].startswith("#!"))
         out.append((i + 1, line, _Line(read[i], fenced=fenced[i], front=front_from < i < front_to, comment=comment, data=kind == "data")))
     return out
 
@@ -559,7 +579,8 @@ def scan_text(name: str, text: str, *, kind: str) -> list[Finding]:
     (a skill's script), code (a package file), manifest (package.json)."""
     out: list[Finding] = []
     shown = _shown(name)
-    lines = _prepare(text, kind)
+    shell = name.lower().endswith((".sh", ".bash", ".zsh", ".ksh", ".command", ".tool")) or _SHELLISH.match(text.lstrip(_BOM)[:200]) is not None
+    lines = _prepare(text, kind, slashes=not shell)
     flat = text if text.isascii() else _SQUASH.sub("", text)
     pools = (lines, []) if kind in _PROSE else ([x for x in lines if not x[2].comment], [x for x in lines if x[2].comment])
     for rule in RULES:
@@ -569,7 +590,7 @@ def scan_text(name: str, text: str, *, kind: str) -> list[Finding]:
             continue                        # nothing to read, or nothing in the whole text a match could start from
         for n, raw, line in pool:
             if _hit(rule, line):
-                out.append(Finding(rule.id, "note" if line.comment else rule.level, shown, n, raw.strip()[:160]))
+                out.append(Finding(rule.id, "note" if line.comment else rule.level, shown, n, _shown(raw.strip()[:160], line=True)[:160]))
                 break                       # one finding per rule per file is enough to show
     hiding, odd = _invisible(text, code=kind not in _PROSE)
     if hiding:
@@ -651,13 +672,16 @@ def _classify(rel: str, head: bytes, executable: bool) -> tuple[str, ...]:
     `("program",)` for a program that is not read (a Mach-O, ELF or PE by its first bytes, or a binary file with the
     executable bit), or `()` for binary data that is neither words nor code (an image, a font, bytecode), which is
     skipped without a word. A NUL byte makes a file binary unless it starts with the byte-order mark of UTF-16 or UTF-32
-    and reads as that encoding. Code is a source file by its suffix, a Makefile, anything with the executable bit or a `#!`
+    and reads as that encoding; a binary file named like text, data or code, or kept in a scripts/ folder, is named like a
+    program (a shell runs a script that holds a NUL, and a reader hands the model a document with one). Code is a source file by its suffix, a Makefile, anything with the executable bit or a `#!`
     whatever its suffix, and a file in a scripts/ folder (at any depth, in any case); a text or data file that is code
     too is read both ways."""
-    if _NUL in head and _bom_codec(head) is None:       # a file in UTF-16 or UTF-32 is full of NULs: its byte-order mark says so
-        return ("program",) if executable or head.startswith(_PROGRAM_MAGIC) else ()
     path = PurePosixPath(rel)
     suffix = path.suffix.lower()
+    if _NUL in head and _bom_codec(head) is None:       # a file in UTF-16 or UTF-32 is full of NULs: its byte-order mark says so
+        named_like_words = (suffix in _TEXT_SUFFIXES | _DATA_SUFFIXES | _CODE_SUFFIXES or path.name.lower() in _CODE_NAMES
+                            or "scripts" in (part.lower() for part in path.parts[:-1]))
+        return ("program",) if executable or head.startswith(_PROGRAM_MAGIC) or named_like_words else ()
     words = "text" if suffix in _TEXT_SUFFIXES else "data"
     if suffix in _CODE_SUFFIXES or path.name.lower() in _CODE_NAMES:
         return ("skill_code",)
@@ -692,7 +716,7 @@ def _scan(skill_md: str, items: list[tuple[str, str, str]], unread: list[str], d
     code; and the `names` of its files and folders. What could not be read (`unread`, any text over MAX_FILE_BYTES, read
     as far as that, and whatever the `deadline` cut off) is one `not_scanned` note."""
     found = scan_text("SKILL.md", skill_md, kind="text")
-    unread = [*unread]
+    unread = [*dict.fromkeys(unread)]                    # a symlinked SKILL.md is named by the read and by the walk: once
     named = set(unread)                                  # a file read two ways (code and data) is named once
     for i, (rel, text, kind) in enumerate(items):
         if deadline is not None and time.monotonic() >= deadline:
@@ -737,10 +761,10 @@ def scan_texts(skill_md: str | bytes, files: dict[str, str | bytes], *, unread: 
     return _scan(skill_md, items, unread, names=names)
 
 
-def _list_folder(folder: Path, candidates: list[tuple[int, str, tuple[str, ...], Path]], unread: list[str], deadline: float,
+def _list_folder(folder: Path, candidates: list[tuple[int, int, str, tuple[str, ...], Path]], unread: list[str], deadline: float,
                  names: list[str]) -> None:
     """Walk `folder` top-down WITHOUT recursion (os.walk recurses on Python 3.11) and file every regular
-    file that holds words or code in `candidates` as (0 code | 1 words, name, kinds, path) — see `_classify`;
+    file that holds words or code in `candidates` as (0 code | 1 words, size, name, kinds, path) — see `_classify`;
     everything that will not be read goes by name into `unread`: a link (never followed), a dependency folder, a
     folder nested deeper than MAX_DEPTH, a folder it cannot list, a pipe, socket or device (opening one can wait for
     ever), a program, whatever lies past MAX_WALKED files, and whatever the `deadline` stopped it short of. Every
@@ -789,11 +813,12 @@ def _list_folder(folder: Path, candidates: list[tuple[int, str, tuple[str, ...],
                         return
                     with open(entry.path, "rb") as handle:
                         head = handle.read(SNIFF_BYTES)
-                    kinds = _classify(rel, head, bool(entry.stat(follow_symlinks=False).st_mode & 0o111))
+                    status = entry.stat(follow_symlinks=False)
+                    kinds = _classify(rel, head, bool(status.st_mode & 0o111))
                     if kinds == ("program",):
                         unread.append(rel + " (a program)")
                     elif kinds:                         # () is an image, a font, bytecode: neither words nor code
-                        candidates.append((0 if "skill_code" in kinds else 1, rel, kinds, Path(entry.path)))
+                        candidates.append((0 if "skill_code" in kinds else 1, status.st_size, rel, kinds, Path(entry.path)))
             except OSError:
                 unread.append(rel)
         pending.extend(reversed(below))
@@ -820,14 +845,14 @@ def _read_skill_md(folder: Path, unread: list[str]) -> str:
 def scan_skill_folder(folder: Path | None, skill_md: str | bytes | None) -> dict:
     """A skill's folder (§C1): its SKILL.md and every text or code file under it — at most MAX_FILES
     files of at most MAX_FILE_BYTES each, MAX_SCAN_BYTES in all, SKILL.md first, then code (scripts, source
-    files, executables), then the rest, so a few hundred references can never push the scripts out of the
-    budget. What is not read (see `_list_folder`, and whatever is over the limits) is named in a note.
+    files, executables), then the rest, and within each the smallest first, so a few hundred references (or a few
+    files padded to the limit) can never push the scripts out of the budget. What is not read (see `_list_folder`, and whatever is over the limits) is named in a note.
     A disk error never escapes: what cannot be read is named, never silently clean. And it never holds the
     server for long: after MAX_SCAN_SECONDS in all it stops, and every file it has not reached is named.
     `skill_md` is the text of SKILL.md, the bytes of the file (the way to give one in UTF-16: see `decode_text`), or
     None to have it read from the folder."""
     deadline = time.monotonic() + MAX_SCAN_SECONDS
-    candidates: list[tuple[int, str, tuple[str, ...], Path]] = []
+    candidates: list[tuple[int, int, str, tuple[str, ...], Path]] = []
     unread: list[str] = []
     names: list[str] = []
     if skill_md is None:
@@ -843,10 +868,10 @@ def scan_skill_folder(folder: Path | None, skill_md: str | bytes | None) -> dict
         _list_folder(folder, candidates, unread, deadline, names)
     items: list[tuple[str, str, str]] = []
     spent = read = 0
-    ordered = sorted(candidates, key=lambda candidate: (candidate[0], candidate[1]))
-    for i, (_, rel, kinds, path) in enumerate(ordered):
+    ordered = sorted(candidates, key=lambda candidate: (candidate[0], candidate[1], candidate[2]))      # code first; the smallest first
+    for i, (_, _, rel, kinds, path) in enumerate(ordered):
         if time.monotonic() >= deadline:
-            unread.extend(later for _, later, _, _ in ordered[i:])
+            unread.extend(later for _, _, later, _, _ in ordered[i:])
             break
         try:
             size = path.stat().st_size
