@@ -137,8 +137,8 @@ async def install(candidate_id: str, *, folders: list[str], keys: dict, owner_id
         result = await capability_flow.install_mcp(cand, folders=folders, keys=keys)
     else:
         result = await capability_flow.install_skill(cand)
-    if result["state"] == "on":
-        await _mark_installed(candidate_id, owner_id)
+    if result["state"] == "on" or (result["state"] == "blocked" and cand["kind"] == "skill"):
+        await _mark_installed(candidate_id, owner_id)    # a kept-off skill is in the library now: no longer only "found"
     return result
 
 
@@ -182,14 +182,16 @@ async def remove(source_id: str) -> None:
         async with (skill_files.key_lock(key) if folder_key else contextlib.nullcontext()):
             async with db_session.AsyncSessionLocal() as db:
                 pack = await db.get(SkillPack, key) if key else None
+                stored = await db.get(CapabilitySource, source_id)
+                if pack is not None and stored.state == "removed":
+                    return        # a second remove (a stale page, a retry): a skill under this key is another dossier's now
                 if pack is not None:
                     await db.delete(pack)
-                stored = await db.get(CapabilitySource, source_id)
                 stored.state = "removed"
                 await db.commit()
             if folder_key:
                 skill_files.retire(skill_files.folder_for(key))
-        if key:                                  # a skill imported before 0.1.61 kept its scripts apart
+        if folder_key:                           # a skill imported before 0.1.61 kept its scripts apart
             capability_install.to_trash(config.data_dir() / "skill_scripts" / key)
         return
     await capability_install.remove(source_id)

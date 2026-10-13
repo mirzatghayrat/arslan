@@ -138,7 +138,7 @@ async def test_an_approved_install_that_tests_well_is_on_and_the_loop_refreshes(
     assert out["ok"] and out["refresh"] is True and "read_range" in out["note"]
     assert calls == [(["/g"], {"EXCEL_TOKEN": "s3cr3t-value"})]
     assert frames == [{"type": "capability_result", "call_id": "cap-x", "state": "on", "source_id": "s1",
-                       "name": "excel-mcp-server", "tools": 2}]
+                       "kind": "mcp", "name": "excel-mcp-server", "tools": 2}]
     assert "s3cr3t-value" not in str(out) and "s3cr3t-value" not in str(frames)   # never to the model or the UI
 
 
@@ -289,6 +289,24 @@ def _skill_repo(monkeypatch, tmp_path, *, text=SKILL_MD, commit=None, license_te
     return repo
 
 
+
+def _github_api(monkeypatch, handler):
+    """api.github.com as MockTransport serves it, for the REAL github_eval.fetch_repo."""
+    import httpx
+
+    from server.services import github_eval
+    real = httpx.AsyncClient
+
+    class Client(real):
+        def __init__(self, *a, **kw):
+            kw["transport"] = httpx.MockTransport(handler)
+            super().__init__(*a, **kw)
+
+    async def no_token():
+        return ""
+    monkeypatch.setattr(httpx, "AsyncClient", Client)
+    monkeypatch.setattr(github_eval, "_token", no_token)
+
 async def test_a_reinstall_says_what_changed(execution_db, monkeypatch, tmp_path):
     """Carry 1: the importer's account of an update reaches the card's result (PR 5 copies it, PR 8
     shows it). A first install has none; an update names the file and the line that changed."""
@@ -380,23 +398,37 @@ async def test_a_dangerous_skill_the_user_already_read_and_left_on_stays_on(exec
         assert (await db.get(SkillPack, "csv-tidy")).enabled is True
 
 
-async def test_a_remove_landing_right_after_the_import_does_not_break_the_install(execution_db, monkeypatch, tmp_path):
-    """The card's own bookkeeping is a second step after the import; the user's remove can come between."""
-    from server.db.models import CapabilitySource
-    from server.services import skill_import
+@pytest.mark.parametrize("how", ["removed", "deleted"])
+async def test_a_remove_landing_right_after_the_import_is_a_failed_install(execution_db, monkeypatch, tmp_path, how):
+    """The import is done (its lock let go) when the card makes its own notes, and the user's remove can come
+    in between. Production leaves the dossier `removed` (a row nobody deletes; a missing one is read the same):
+    the card says it was removed, and writes nothing onto it."""
+    from server.db.models import CapabilitySource, SkillPack
+    from server.services import capability_dossier, skill_import
     from tests.server.skill_archives import COMMIT
     _skill_repo(monkeypatch, tmp_path)
     real = skill_import.import_skill
+    made = []
 
     async def import_then_removed(ref, path, **kwargs):
         out = await real(ref, path, **kwargs)
-        async with execution_db() as db:
-            await db.delete(await db.get(CapabilitySource, out["source_id"]))
-            await db.commit()
+        made.append(out["source_id"])
+        if how == "removed":
+            await capability_dossier.remove(out["source_id"])
+        else:
+            async with execution_db() as db:
+                await db.delete(await db.get(CapabilitySource, out["source_id"]))
+                await db.commit()
         return out
     monkeypatch.setattr(skill_import, "import_skill", import_then_removed)
     out = await capability_flow.install_skill({**SKILL, "version": COMMIT[:12]})
-    assert out["state"] == "on" and out["skill"] == "csv-tidy"
+    assert out == {"state": "failed", "stage": "install", "code": "removed",
+                   "detail": "it was removed while it was being added"}
+    if how == "removed":
+        async with execution_db() as db:
+            dossier = await db.get(CapabilitySource, made[0])
+            assert await db.get(SkillPack, "csv-tidy") is None
+        assert dossier.state == "removed" and dossier.candidate_id != SKILL["id"]       # nothing was written onto it
 
 
 async def test_the_model_is_told_a_dangerous_skill_was_kept_off_not_removed(execution_db, monkeypatch, tmp_path):
@@ -409,8 +441,101 @@ async def test_the_model_is_told_a_dangerous_skill_was_kept_off_not_removed(exec
     assert out["ok"] is False and "switched off" in out["error"] and "Capabilities" in out["error"]
     assert "removed" not in out["error"]
     assert "hidden_instruction" in out["error"]                                  # the rule that fired is named
-    assert events[-1]["state"] == "blocked"
+    assert events[-1]["state"] == "blocked" and events[-1]["kind"] == "skill"
 
+
+
+async def test_the_frame_says_what_kind_of_capability_it_is(execution_db, monkeypatch, tmp_path):
+    """The window words a blocked skill (kept, switched off) otherwise than a blocked server (removed)."""
+    from tests.server.skill_archives import COMMIT
+    _skill_repo(monkeypatch, tmp_path, text=SKILL_MD + DANGEROUS_LINE)
+    shown("c-kind", {**SKILL, "version": COMMIT[:12]})
+    events = []
+    await capability_flow.propose({"candidate_id": SKILL["id"], "why": "tidy a CSV"}, conversation_id="c-kind",
+                                  ask=_ask(), emit=events.append)
+    assert events[-1]["state"] == "blocked" and events[-1]["kind"] == "skill" and events[-1]["name"] == "csv-tidy"
+
+
+async def test_reinstalling_a_skill_the_user_switched_off_is_not_reported_on(execution_db, monkeypatch, tmp_path):
+    """The importer keeps the user's on/off for an update, so the skill stays off: `blocked` is "added or left
+    switched off", whatever the cause, and the model is told which (read_skill would refuse a switched-off skill)."""
+    from server.db.models import SkillPack
+    from tests.server.skill_archives import COMMIT
+    repo = _skill_repo(monkeypatch, tmp_path)
+    assert (await capability_flow.install_skill({**SKILL, "version": COMMIT[:12]}))["state"] == "on"
+    async with execution_db() as db:                                  # the user switches it off
+        pack = await db.get(SkillPack, "csv-tidy")
+        pack.enabled = False
+        await db.commit()
+    repo.update(text=SKILL_MD + "Also check the dates.\n", commit=NEWER)
+    shown("c-off", {**SKILL, "version": NEWER[:12]})
+    events = []
+    out = await capability_flow.propose({"candidate_id": SKILL["id"], "why": "tidy a CSV"}, conversation_id="c-off",
+                                        ask=_ask(), emit=events.append)
+    assert events[-1]["state"] == "blocked"
+    assert out["ok"] is False and "refresh" not in out
+    assert "the user had switched it off" in out["error"] and "dangerous" not in out["error"]
+    assert "Capabilities" in out["error"]
+    async with execution_db() as db:
+        assert (await db.get(SkillPack, "csv-tidy")).enabled is False
+
+
+async def test_a_malformed_redirect_is_a_failed_install_not_an_exception(execution_db, monkeypatch):
+    """GitHub's answer to the repository's metadata is a Location with a scheme and no host: httpx raises
+    InvalidURL, which is neither an HTTPError nor a ValueError. The card reports a failed install."""
+    import httpx
+    _github_api(monkeypatch, lambda request: httpx.Response(301, headers={"Location": "data:text/plain,hi"}))
+    out = await capability_flow.install_skill(SKILL)
+    assert (out["state"], out["stage"], out["code"]) == ("failed", "install", "skill_import")
+    assert "an address that is not one" in out["detail"]
+
+
+async def test_a_github_error_status_is_named_by_its_number_not_by_its_url(execution_db, monkeypatch):
+    """httpx's own text for a 503 is two lines and a link to MDN; the user and the model are told the number."""
+    import httpx
+    _github_api(monkeypatch, lambda request: httpx.Response(503))
+    out = await capability_flow.install_skill(SKILL)
+    assert out == {"state": "failed", "stage": "install", "code": "network", "detail": "GitHub answered 503"}
+
+
+async def test_a_full_disk_is_a_failed_install_not_a_crash(execution_db, monkeypatch, tmp_path):
+    """The folder cannot be written (disk full, no permission): `failed` with a plain message, never a 500."""
+    import errno
+
+    from server.db.models import CapabilitySource, SkillPack
+    from server.services import skill_files
+    from tests.server.skill_archives import COMMIT
+    _skill_repo(monkeypatch, tmp_path)
+
+    def full(archive, folder):
+        raise OSError(errno.ENOSPC, "No space left on device")
+    monkeypatch.setattr(skill_files, "stage", full)
+    out = await capability_flow.install_skill({**SKILL, "version": COMMIT[:12]})
+    assert out == {"state": "failed", "stage": "install", "code": "disk",
+                   "detail": "could not write the skill's folder: No space left on device"}
+    async with execution_db() as db:
+        assert (await db.execute(select(SkillPack))).first() is None
+        assert (await db.execute(select(CapabilitySource))).first() is None
+
+
+async def test_a_long_message_is_cut_to_400_characters(execution_db, monkeypatch, tmp_path):
+    import httpx
+
+    from server.services import skill_import
+    from tests.server.skill_archives import COMMIT
+    _skill_repo(monkeypatch, tmp_path)
+
+    async def refuses(owner, repo):
+        raise ValueError("x" * 1000)
+    monkeypatch.setattr(skill_import.github_eval, "fetch_repo", refuses)
+    out = await capability_flow.install_skill({**SKILL, "version": COMMIT[:12]})
+    assert out["code"] == "skill_import" and out["detail"] == "x" * 400
+
+    async def offline(owner, repo):
+        raise httpx.ConnectError("y" * 1000)
+    monkeypatch.setattr(skill_import.github_eval, "fetch_repo", offline)
+    out = await capability_flow.install_skill({**SKILL, "version": COMMIT[:12]})
+    assert out["code"] == "network" and len(out["detail"]) == 400
 
 # ── the loop: the new tool is callable in the same turn ──────────────────────
 

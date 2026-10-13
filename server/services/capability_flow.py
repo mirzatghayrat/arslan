@@ -138,10 +138,11 @@ async def install_mcp(c: dict, *, folders: list[str], keys: dict) -> dict:
 
 async def install_skill(c: dict, owner_id: str = "local") -> dict:
     """Import the skill a card named, at its commit (0.1.61: whole, scanned and recorded by
-    skill_import; `owner_id` is kept for callers, the importer records the one local owner). A
-    dangerous skill is kept but off: the user can read it and turn it on. A license Arslan does not
-    recognise never installs from here: its step is the user's (§C4), and the card has no `license_ok`.
-    An update's `changes` (what the re-import replaced) are passed on."""
+    skill_import; `owner_id` is kept for callers, the importer records the one local owner). A skill
+    that comes out switched off, dangerous or switched off by the user earlier, is `blocked`: it is in
+    the library and the user can read it and turn it on. A license Arslan does not recognise never
+    installs from here: its step is the user's (§C4), and the card has no `license_ok`. An update's
+    `changes` (what the re-import replaced) are passed on."""
     from server.services import skill_import
     sha = c.get("version") if c.get("source") == "library" else None
     try:
@@ -152,18 +153,27 @@ async def install_skill(c: dict, owner_id: str = "local") -> dict:
     except ValueError as exc:
         return {"state": "failed", "stage": "install", "code": "skill_import", "detail": str(exc)[:400]}
     except httpx.HTTPError as exc:                       # GitHub could not be reached (or answered with an error)
-        return {"state": "failed", "stage": "install", "code": "network",
-                "detail": f"could not download it from GitHub: {exc}"[:400]}
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        if isinstance(exc, httpx.HTTPStatusError) and status:      # httpx's own text is two lines and a link
+            what = f"GitHub answered {status}"
+        else:
+            what = f"could not download it from GitHub: {str(exc) or type(exc).__name__}"
+        return {"state": "failed", "stage": "install", "code": "network", "detail": what[:400]}
+    except OSError as exc:                               # the folder could not be written: the disk is full, or no permission
+        return {"state": "failed", "stage": "install", "code": "disk",
+                "detail": f"could not write the skill's folder: {exc.strerror or exc}"[:400]}
     async with db_session.AsyncSessionLocal() as db:
         row = await db.get(CapabilitySource, out["source_id"])
-        if row is not None:                              # (a remove can have taken it since)
-            # The card names the dossier (the Capabilities page finds its row by it). The import read
-            # GitHub just now: its stars and last push stand, a card's older figures only fill a gap.
-            row.candidate_id = c["id"][:300]
-            row.stars = row.stars if row.stars is not None else c.get("stars")
-            row.pushed_days = row.pushed_days if row.pushed_days is not None else c.get("pushed_days")
-            await db.commit()
-    if out["scan"]["verdict"] == "dangerous" and not out["enabled"]:
+        if row is None or row.state != "installed":      # the user's remove came in between: nothing is left to note on
+            return {"state": "failed", "stage": "install", "code": "removed",
+                    "detail": "it was removed while it was being added"}
+        # The card names the dossier (the Capabilities page finds its row by it). The import read
+        # GitHub just now: its stars and last push stand, a card's older figures only fill a gap.
+        row.candidate_id = c["id"][:300]
+        row.stars = row.stars if row.stars is not None else c.get("stars")
+        row.pushed_days = row.pushed_days if row.pushed_days is not None else c.get("pushed_days")
+        await db.commit()
+    if not out["enabled"]:                   # added (or left) switched off: a dangerous scan, or the user had it off
         return {"state": "blocked", "source_id": out["source_id"], "scan": out["scan"]}
     result = {"state": "on", "source_id": out["source_id"], "skill": out["key"], "scan": out["scan"]}
     if out.get("changes") is not None:
@@ -203,7 +213,7 @@ async def propose(args: dict, *, conversation_id: str | None, ask, emit) -> dict
     emit({"type": "capability_result", "call_id": decision.get("call_id"), **{k: v for k, v in result.items()
                                                                             if k in ("state", "source_id", "stage",
                                                                                      "code", "detail")},
-          "name": cand["name"], "tools": len(result.get("tools") or [])})
+          "kind": cand["kind"], "name": cand["name"], "tools": len(result.get("tools") or [])})
     if result["state"] == "on":
         what = (f"its tools: {', '.join(result['tools'][:20])}" if cand["kind"] == "mcp"
                 else f"the skill '{result['skill']}' (read it with read_skill)")
@@ -212,8 +222,9 @@ async def propose(args: dict, *, conversation_id: str | None, ask, emit) -> dict
     if result["state"] == "blocked":
         rules = ", ".join(f["rule"] for f in result["scan"]["findings"] if f["level"] == "high")
         if cand["kind"] == "skill":
-            return {"ok": False, "error": f"the scan found dangerous patterns ({rules}); the skill was added "
-                                          "switched off — the user can read it in Capabilities and turn it on"}
+            why = f"the scan found dangerous patterns ({rules})" if rules else "the user had switched it off"
+            return {"ok": False, "error": f"{why}; the skill is in the library switched off — the user can "
+                                          "read it in Capabilities and turn it on"}
         return {"ok": False, "error": f"the scan found dangerous patterns ({rules}); it was removed again"}
     return {"ok": False, "error": f"it did not pass ({result.get('stage')}: {result.get('code') or ''} "
                                   f"{result.get('detail') or ''})".strip(), "note": "It stays off."}

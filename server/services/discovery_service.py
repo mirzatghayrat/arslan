@@ -12,8 +12,23 @@ from server.db.models import DiscoveryCandidate, SkillPack
 from server.services import github_eval, mcp_suggest, repo_overview, skill_suggest
 
 
+_NAME_PART = re.compile(r"[A-Za-z0-9_.-]{1,100}")
+
+
+def _where_it_lives_now(meta: dict, owner: str, repo: str) -> tuple[str, str]:
+    """The owner and name GitHub gives the repository now. `fetch_repo` follows the redirect of a renamed or
+    transferred repository; `fetch_readme` and `fetch_file` read a redirect as "nothing there", so they are
+    asked under the new name. A `full_name` that is not an owner and a name leaves the name that was asked for."""
+    new_owner, _, new_repo = str(meta.get("full_name") or "").partition("/")
+    if (_NAME_PART.fullmatch(new_owner) and _NAME_PART.fullmatch(new_repo)
+            and new_owner not in (".", "..") and new_repo not in (".", "..")):
+        return new_owner, new_repo
+    return owner, repo
+
+
 async def evaluate_ref(owner: str, repo: str) -> dict:
     meta = await github_eval.fetch_repo(owner, repo)
+    owner, repo = _where_it_lives_now(meta, owner, repo)
     readme = await github_eval.fetch_readme(owner, repo)
     suggestion = await mcp_suggest.classify_and_suggest(meta, readme)
     overview = await repo_overview.explain(meta, readme)
@@ -97,6 +112,7 @@ async def delete_candidate(cand_id: int) -> None:
 async def generate_skill_draft(owner: str, repo: str) -> dict:
     """Read-only: fetch repo + README → LLM skill draft. Persists nothing."""
     meta = await github_eval.fetch_repo(owner, repo)
+    owner, repo = _where_it_lives_now(meta, owner, repo)
     readme = await github_eval.fetch_readme(owner, repo)
     skill = await skill_suggest.generate_skill(meta, readme)
     return {"repo": {"full_name": meta["full_name"], "html_url": meta["html_url"]}, "skill": skill}
