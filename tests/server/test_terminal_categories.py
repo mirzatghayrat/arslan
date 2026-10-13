@@ -1516,17 +1516,17 @@ def test_each_new_runner_is_unwrapped_for_the_floor(command):
     "concurrently diskutil reformat disk4", "concurrently diskutil partitionDisk disk4 1 GPT APFS X 100%",
     "concurrently diskutil apfs deleteVolume disk3s1", "concurrently diskutil eraseVolume APFS X disk4s1",
     "concurrently dd if=/dev/zero of=/dev/disk2", "concurrently dd if=/dev/zero of=/dev/rdisk2 bs=1m",
-    "dd if=/dev/zero of=/dev/disk2", "concurrently shutdown -h now", "concurrently shutdown -r +5", "concurrently reboot now",
-    "concurrently halt -h", "concurrently rm -fr ~/", "concurrently rm -r -f $HOME", "concurrently rm --recursive --force /",
-    "concurrently rm -Rf /*", "concurrently rm -rf /System", 'concurrently rm -rf "$HOME"', "concurrently rm -rf ${HOME}/",
-    "concurrently sudo ls", "concurrently doas ls", "concurrently 's''udo' ls", "mpirun -np 2 sudo ls", "sudo",
-    "echo ls | xargs sudo", "`:` " * 33 + "; dd if=/dev/zero of=/dev/disk2",
+    "dd if=/dev/zero of=/dev/disk2", "concurrently rm -fr ~/", "concurrently rm -r -f $HOME",
+    "concurrently rm --recursive --force /", "concurrently rm -Rf /*", "concurrently rm -rf /System",
+    'concurrently rm -rf "$HOME"', "concurrently rm -rf ${HOME}/", "concurrently rm -r ~", "concurrently rm -r /etc",
+    "concurrently 'r''m' -r ~", "sudo", "echo ls | xargs sudo", "`:` " * 33 + "; dd if=/dev/zero of=/dev/disk2",
 ])
 def test_arslans_floor_shapes_match_at_any_word(command):
-    """F4 (b), the backstop that makes an unknown runner harmless: keychain secrets, a disk erase,
-    `dd` onto a disk, shutting down, `rm -rf` of the home, the root or a system folder, and `sudo`,
-    each a specific shape of several words, match wherever they stand in a command's words — the
-    words the program receives, quotes taken out (`'s''udo'` is sudo to it)."""
+    """F4 (b), the backstop that makes an unknown runner harmless: the acts that need no privilege and
+    cannot be undone — keychain secrets, a disk erase, `dd` onto a disk, a recursive delete of the
+    home, the root or a system folder — each a specific shape of several words, match wherever they
+    stand in a command's words, the words the program receives, quotes taken out (`'r''m'` is rm to
+    it). sudo stays the floor at a command position (G1)."""
     found = tp.classify(command)
     assert found.category == "floor", [(f.category, f.rule) for f in found.findings]
 
@@ -1536,7 +1536,7 @@ def test_arslans_floor_shapes_match_at_any_word(command):
     "script -q /dev/null make test", "gtimeout 5 make", "strace -o t.txt ls", "entr -c make", "hyperfine 'sleep 0.1'",
     "numactl --interleave=all python3 train.py", "concurrently 'npm run a' 'npm run b'", "dd if=a.img of=b.img",
     "security find-generic-password -s gh", "concurrently security find-generic-password -s gh", "diskutil list",
-    "concurrently diskutil info disk2", "concurrently rm -r ~", "concurrently rm -rf build", "rm -rf build", "echo 'sudo ls'",
+    "concurrently diskutil info disk2", "concurrently rm -rf build", "rm -rf build", "echo 'sudo ls'",
     'git commit -m "sudo ls"', "grep -rn 'rm -rf ~' .", "grep -rn shutdown src/",
 ])
 def test_a_floor_word_alone_is_not_the_floor(command):
@@ -1545,10 +1545,10 @@ def test_a_floor_word_alone_is_not_the_floor(command):
     assert found.floor is None, [(f.category, f.rule) for f in found.findings]
 
 
-@pytest.mark.parametrize("command", ["echo sudo ls", "echo rm -rf ~", "xargs echo rm -rf ~", "nice -n 5 echo rm -rf ~"])
+@pytest.mark.parametrize("command", ["echo rm -rf ~", "xargs echo rm -rf ~", "nice -n 5 echo rm -rf ~"])
 def test_echoing_a_floor_shape_unquoted_is_the_floor(command):
-    """F4 (b), the accepted cost: an unquoted `echo sudo ls` reads as the floor. The model can quote
-    prose (`echo 'sudo ls'` is one word)."""
+    """F4 (b), the accepted cost: an unquoted `echo rm -rf ~` reads as the floor. The model can quote
+    prose (`echo 'rm -rf ~'` is one word). `echo sudo ls` is not the floor any more (G1)."""
     assert tp.classify(command).category == "floor"
 
 
@@ -1705,3 +1705,49 @@ def test_an_applescript_fed_on_stdin_names_its_app():
     any app"; the script it is fed is read, as its heredoc's is, and names its app."""
     [app] = tp.classify("printf 'tell application \"Notes\" to activate' | osascript").asking
     assert (app.category, app.app) == ("apps", "Notes")
+
+
+# ── fix round 5: the backstop is for acts that need no privilege (G1, G2, G3) ─────────────────
+
+@pytest.mark.parametrize("command,category", [
+    ("grep -rn sudo scripts/", "local"), ("grep -rn 'sudo' scripts/", "local"), ("git log --grep sudo -p", "local"),
+    ("rg sudo", "local"), ("echo sudo ls", "local"), ("concurrently sudo ls", "local"), ("mpirun -np 2 sudo ls", "local"),
+    ("make reboot now", "local"), ("redis-cli shutdown now", "local"), ("./deploy.sh shutdown now", "local"),
+    ("vagrant halt now", "local"), ("kubectl drain node reboot now", "local"), ("ssh host reboot now", "send"),
+    ("concurrently shutdown -h now", "local"), ("concurrently shutdown -r +5", "local"), ("concurrently reboot now", "local"),
+    ("concurrently halt -h", "local"), ("xargs echo reboot hosts.txt", "local"),
+])
+def test_a_root_only_act_named_inside_another_command_is_not_the_floor(command, category):
+    """G1, G2: sudo, shutdown, halt and reboot need a password the agent cannot type (no TTY), so the
+    backstop does not look for them at every word: a program's own sub-command or argument
+    (`redis-cli shutdown now`, `grep -rn sudo scripts/`) reads as it did before round 4. Under a
+    runner Arslan does not know, they run unprivileged and fail (accepted)."""
+    found = tp.classify(command)
+    assert found.category == category, [(f.category, f.rule) for f in found.findings]
+
+
+@pytest.mark.parametrize("command", [
+    "sudo ls", "nice sudo ls", "bash -c 'sudo ls'", "printf 'sudo ls' | bash", "doas ls", "xargs sudo ls",
+    "echo ls | xargs sudo", "uv run sudo ls", "proxychains sudo ls", "script -q /dev/null sudo ls",
+    "shutdown -h now", "nice shutdown -h now", "reboot", "uv run shutdown -h now", "script /dev/null shutdown -h now",
+    "proxychains reboot", "bash -c 'reboot'", "uv run sudo",
+])
+def test_a_root_only_act_stays_the_floor_where_it_runs(command):
+    """G1, G2: at a command position, through every wrapper and runner Arslan knows, and in payloads,
+    sudo and shutting down stay the floor."""
+    found = tp.classify(command)
+    assert found.category == "floor", [(f.category, f.rule) for f in found.findings]
+
+
+@pytest.mark.parametrize("command,category", [
+    ("concurrently rm -r ~", "floor"), ("mpirun rm -R /", "floor"), ("rm --recursive /System", "floor"),
+    ("concurrently rm --recursive /System", "floor"), ("concurrently rm -r /etc", "floor"),
+    ("rm -rf build", "destructive"), ("rm -r ~/project", "destructive"), ("rm -r /tmp/x", "destructive"),
+])
+def test_a_recursive_delete_of_the_home_or_the_root_is_the_floor_with_or_without_force(command, category):
+    """G3 (review 4 I-2): as Hermes' own hardline, the backstop needs a recursive flag and the home,
+    the root or a system folder — no force flag: `concurrently rm -r ~` deleted the home with no card
+    under Full access."""
+    found = tp.classify(command)
+    assert found.category == category, [(f.category, f.rule) for f in found.findings]
+

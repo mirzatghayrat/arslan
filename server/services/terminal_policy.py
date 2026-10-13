@@ -2621,7 +2621,7 @@ def _unescape_print(text: str) -> str:
 #: `diskutil` verbs that erase or delete (any `erase…`, with or without `apfs` before them).
 _DISK_ERASE = frozenset({"zerodisk", "randomdisk", "secureerase", "reformat", "partitiondisk", "deletecontainer",
                          "deletevolume"})
-#: What `rm -rf` must not take (F4 b): the home, the root, a system folder (Hermes' and macOS's).
+#: What a recursive `rm` must not take (F4 b, G3): the home, the root, a system folder (Hermes' and macOS's).
 _RM_HOME = re.compile(r"(?:~|\$HOME|\$\{HOME\})(?:/|/\*)?")
 _RM_ROOT = re.compile(r"/+\*?")
 _RM_SYSTEM = re.compile(r"/+(?:System(?:/.*)?|(?:Library|Applications|Users|private|Volumes|home|root|etc|usr|var|bin"
@@ -2641,37 +2641,41 @@ def _floor_findings(text: str, shell: str, commands: list[list[str]], payloads=(
         found += _floor_patterns(subject)
     if _touches_arslan_data(text) or _writes_arslan_data(commands):
         found.append(Finding("floor", "arslan-data", "touches Arslan's own data, keys or database"))
-    for argv in commands:                       # `env sudo …`, `script -q /dev/null sudo …`: the words (F4 b)
+    for argv in commands:                       # `proxychains rm -rf ~`, `env sudo …`: the words (F4 b, G1–G3)
         found += _argv_floor(argv)
     return found
 
 
 def _argv_floor(argv: list[str]) -> list[Finding]:
-    """F4 (b), the backstop that makes a runner Arslan does not know harmless: Arslan's own floor
-    shapes at ANY word of one command, as the program receives its words (quotes taken out), not
-    only at its command word — `script -q /dev/null security find-generic-password -s gh -w`,
-    `proxychains rm -rf ~`, a function of the command's own that runs `"$@"`. Each shape is several
-    words, so a word on its own never matches (`which sudo`, `man shutdown`, `brew info diskutil`):
-    `security find-*-password … -w|-g`, `security dump-keychain|export`; `diskutil [apfs] erase…|
-    zeroDisk|randomDisk|secureErase|reformat|partitionDisk|deleteContainer|deleteVolume`; `dd …
-    of=/dev/[r]disk…`; `shutdown|halt|reboot` and `-h`, `-r`, `now` or `+N`; `rm` with a recursive
-    and a force flag and the home, the root or a system folder; `sudo|doas` and another word (alone,
-    only as the command word). The accepted cost: an unquoted `echo sudo ls` is the floor; prose
-    can be quoted. One pass from the end gathers what each shape needs after a word."""
+    """F4 (b), the backstop that makes a runner Arslan does not know harmless: the acts that need no
+    privilege and cannot be undone, at ANY word of one command, as the program receives its words
+    (quotes taken out), not only at its command word — `script -q /dev/null security
+    find-generic-password -s gh -w`, `proxychains rm -rf ~`, a function of the command's own that runs
+    `"$@"`. Each is a shape of several words, so a word on its own never matches (`man security`,
+    `brew info diskutil`): `security find-*-password … -w|-g`, `security dump-keychain|export`;
+    `diskutil [apfs] erase…|zeroDisk|randomDisk|secureErase|reformat|partitionDisk|deleteContainer|
+    deleteVolume`; `dd … of=/dev/[r]disk…`; `rm` with a recursive flag and the home, the root or a
+    system folder (no force flag needed, as Hermes' hardline: G3). The accepted cost: an unquoted
+    `echo rm -rf ~` is the floor; prose can be quoted.
+
+    The acts that need root — `sudo`/`doas`, `shutdown|halt|reboot` with `-h`, `-r`, `now` or `+N` —
+    match only as a command word (G1, G2): the command's own, one a wrapper or runner runs, one in a
+    payload. Without a terminal the agent cannot type the password they need, and a program's own
+    sub-command (`redis-cli shutdown now`, `grep -rn sudo src/`) is no such act. One pass from the
+    end gathers what each shape needs after a word."""
     found: list[Finding] = []
     n = len(argv)
-    behind: list[tuple] = [()] * n           # (recursive, force, rm target, dd onto a disk, -w/-g) after word k
-    recursive = force = disk = secret = False
+    behind: list[tuple] = [()] * n           # (recursive, rm target, dd onto a disk, -w/-g) after word k
+    recursive = disk = secret = False
     target = ""
     for k in range(n - 1, -1, -1):
-        behind[k] = (recursive, force, target, disk, secret)
+        behind[k] = (recursive, target, disk, secret)
         word = argv[k]
-        if word in ("--recursive", "--force"):
-            recursive, force = recursive or word == "--recursive", force or word == "--force"
+        if word == "--recursive":
+            recursive = True
         elif word.startswith("-") and not word.startswith("--") and len(word) > 1:
             letters = word[1:]
             recursive = recursive or "r" in letters or "R" in letters
-            force = force or "f" in letters
             secret = secret or "w" in letters or "g" in letters
         if _RM_HOME.fullmatch(word):
             target = "recursive delete of home directory"
@@ -2682,10 +2686,12 @@ def _argv_floor(argv: list[str]) -> list[Finding]:
         disk = disk or _DD_DISK.match(word) is not None
     for k in range(n):
         name = os.path.basename(argv[k].lstrip("=")).lower()
-        recursive, force, target, disk, secret = behind[k]
+        recursive, target, disk, secret = behind[k]
         after = argv[k + 1].lower() if k + 1 < n else ""
-        if name in ("sudo", "doas") and (k == 0 or after):
+        if name in ("sudo", "doas") and k == 0:                 # root's: as a command word only (G1)
             found.append(Finding("floor", "sudo", _WHY["sudo"]))
+        elif name in ("shutdown", "halt", "reboot") and k == 0 and _SHUTDOWN_WHEN.fullmatch(after):   # (G2)
+            found.append(Finding("floor", "hardline", "system shutdown/reboot"))
         elif name == "security" and (after in ("dump-keychain", "export") or (
                 after in ("find-generic-password", "find-internet-password") and secret)):
             found.append(Finding("floor", "keychain-secrets", _WHY["keychain-secrets"]))
@@ -2695,9 +2701,7 @@ def _argv_floor(argv: list[str]) -> list[Finding]:
                 found.append(Finding("floor", "disk-erase", "erases a disk"))
         elif name == "dd" and disk:
             found.append(Finding("floor", "hardline", "dd to raw block device"))
-        elif name in ("shutdown", "halt", "reboot") and _SHUTDOWN_WHEN.fullmatch(after):
-            found.append(Finding("floor", "hardline", "system shutdown/reboot"))
-        elif name == "rm" and recursive and force and target:
+        elif name == "rm" and recursive and target:            # no force flag needed (G3)
             found.append(Finding("floor", "hardline", target))
     return found
 
