@@ -328,6 +328,13 @@ describe("locale parity", () => {
         expect(d.schedgrant.scope.length).toBeGreaterThan(d.schedgrant.unattended.length);   // and what a yes lasts is still there
       });
 
+      if (lang === "zh" || lang === "ja") {
+        it(`${lang}: schedgrant.scope is written with full-width punctuation throughout, as schedgrant.unattended is`, () => {
+          expect(d.schedgrant.scope).not.toMatch(/[,;:]/);                       // an ASCII , ; : in a sentence here is a slip
+          expect(d.schedgrant.unattended).not.toMatch(/[,;:]/);
+        });
+      }
+
       it(`${lang}: runcmd.remember points, with a ›, to the Settings section that holds the rules (settings.navAbilities)`, () => {
         expect(d.runcmd.remember).toContain(`› ${d.settings.navAbilities}`);
       });

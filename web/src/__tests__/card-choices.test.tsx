@@ -538,6 +538,17 @@ describe("the action card's words, its icon and its red", () => {
     });
   });
 
+  it("a title of spaces handed straight to the card is no title: the heading is the target, and so is the line under the model's", () => {
+    render(card({ kind: "app", target: "com.example.App", title: "   " }));
+    expect(screen.getByTestId("action-title").textContent).toBe("com.example.App");
+    expect(screen.getByTestId("action-title")).not.toHaveAttribute("lang");
+    cleanup();
+    render(card({ kind: "app", target: "com.example.App", title: " \n ", why: "Tidy the notes", detail: "" }));
+    expect(screen.getByTestId("action-title")).toHaveTextContent("Tidy the notes");
+    expect(screen.getByTestId("action-subject").textContent).toBe("com.example.App");
+    expect(screen.getByTestId("action-subject")).not.toHaveAttribute("lang");
+  });
+
   it.each([["spaces", "   "], ["nothing", ""], ["no why at all", undefined]])(
     "a why of %s asks the title, else the bare target: never a blank question", (_what, why) => {
     render(card({ kind: "app", title: "Use App?", target: "com.example.App", why }));

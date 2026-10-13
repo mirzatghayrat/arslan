@@ -56,13 +56,14 @@ export default function ActionApprovalCard({ kind, target, detail, expiresAt, op
   // the person's language — else the frame's title, which is the server's English (plan R11: localised in PR 8);
   // a bare target is not words. A known kind keeps its own title, which names what is granted.
   const modelLine = (why ?? "").trim();
-  const fromFrame = !known && !modelLine && Boolean(title);
-  const heading = known ? t(`hands.title.${kind}`, { target }) : (modelLine || title || target);
+  const frameTitle = (title ?? "").trim();
+  const fromFrame = !known && !modelLine && Boolean(frameTitle);
+  const heading = known ? t(`hands.title.${kind}`, { target }) : (modelLine || frameTitle || target);
   // The model's line may frame the ask; it is never the only description of it (a prompt-injected model could word a
   // harmless-sounding one). So under it the card says what is being approved in the server's own words: the frame's
   // literal title, else the bare target. Not translated and not marked as the model's. Without a model line the title
   // (or the target) is the heading itself, and is not said twice.
-  const subject = known || !modelLine ? "" : (title || target);
+  const subject = known || !modelLine ? "" : (frameTitle || target);
   const detailLine = detail ? <p className="text-[13px] text-muted-foreground">{detail}</p> : null;
   // Allow is red for a step that pays or cannot be undone (plan R14: the kit's one RED_KINDS, shared with the command card).
   const red = kind === "desktop_risky" || RED_KINDS.has(permKind ?? "");
@@ -70,15 +71,15 @@ export default function ActionApprovalCard({ kind, target, detail, expiresAt, op
     <AskCard testId="action-card" attrs={{ "data-kind": kind, "data-risky": String(red) }}
       who={v2 ? (background ? t("jobs.askingBadge") : t("kit.whoArslan"))
         : kind === "desktop_look" ? t("kit.whoArslan") : t("jobs.askingBadge")}
-      title={<span className="inline-flex items-start gap-2">{lineIcon(Icon)}
-        <span data-testid="action-title" lang={fromFrame ? "en" : undefined}>{heading}</span></span>}
+      title={<span className="inline-flex max-w-full items-start gap-2">{lineIcon(Icon)}
+        <span data-testid="action-title" lang={fromFrame ? "en" : undefined} className="min-w-0 [overflow-wrap:anywhere]">{heading}</span></span>}
       risk={script ? scriptRiskLine(detail, t) : null}
       destructive={red}
       detail={script
         ? <div data-testid="action-script"><CodeBox code={detail} marks={["delete", "send", "move", "do shell script", "quit"]} /></div>
         : subject ? (
           <div className="flex flex-col gap-1.5">
-            <p data-testid="action-subject" lang={title ? "en" : undefined}
+            <p data-testid="action-subject" lang={frameTitle ? "en" : undefined}
               className="break-words text-[14px] font-medium text-foreground">{subject}</p>
             {detailLine}
           </div>)

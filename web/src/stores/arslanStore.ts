@@ -193,7 +193,7 @@ function _cardV2(frame: { options?: unknown; always_label?: unknown; title?: unk
   return {
     ...(options.length ? { options } : {}),
     ...(typeof frame.always_label === "string" && frame.always_label ? { alwaysLabel: frame.always_label } : {}),
-    ...(typeof frame.title === "string" && frame.title ? { title: frame.title } : {}),
+    ...(typeof frame.title === "string" && frame.title.trim() ? { title: frame.title.trim() } : {}),
     ...(typeof frame.perm_kind === "string" && frame.perm_kind ? { permKind: frame.perm_kind } : {}),
     ...(typeof frame.why === "string" && frame.why.trim() ? { why: frame.why.trim() } : {}),
     ...(typeof frame.expires_at === "number" && Number.isFinite(frame.expires_at)
@@ -206,12 +206,13 @@ type CardSlots = { pendingCommand: { callId: string } | null; pendingCapability:
 
 /** Whether the card `id` is one of the pending ones here. */
 function _shows(state: CardSlots, id: string): boolean {
-  return [state.pendingCommand, state.pendingCapability, state.pendingWorkspaceWrite, state.pendingSchedule,
+  return !!id && [state.pendingCommand, state.pendingCapability, state.pendingWorkspaceWrite, state.pendingSchedule,
           state.pendingAction].some((p) => p?.callId === id);
 }
 
 /** The pending slots with the card `id` closed — only that card, never a newer one. */
 function _withoutCard(state: CardSlots, id: string) {
+  if (!id) return {};
   return {
     ...(state.pendingCommand?.callId === id ? { pendingCommand: null } : {}),
     ...(state.pendingCapability?.callId === id ? { pendingCapability: null } : {}),

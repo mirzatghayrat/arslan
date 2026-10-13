@@ -54,8 +54,12 @@ export default function AskSlot({ send }: { send: (frame: Record<string, unknown
   // 0.1.61 §A4: the countdown is the server's own expiry (the frame's expires_at, so a reload
   // shows the time really left). A frame without one waits approvals.TIMEOUT_S like every card
   // the Mac waits on: its arrival + 30 minutes.
-  const expires = (p: { receivedAt?: number; expiresAt?: number }) =>
-    p.expiresAt ?? (p.receivedAt ? p.receivedAt + CARD_MS : null);
+  // Capped at arrival + 30 minutes (what the Mac waits): a frame's far-off or zero expires_at must neither overflow
+  // setTimeout (> 24.8 days fires at once) nor close the card at once.
+  const expires = (p: { receivedAt?: number; expiresAt?: number }) => {
+    const wait = p.receivedAt ? p.receivedAt + CARD_MS : null;
+    return p.expiresAt && p.expiresAt > 0 ? (wait === null ? p.expiresAt : Math.min(p.expiresAt, wait)) : wait;
+  };
   // The cards the Mac waits on (approvals.TIMEOUT_S). The soonest to run out leaves the slot then.
   const next = [pendingCommand, pendingWorkspaceWrite, pendingSchedule, pendingAction, pendingCapability]
     .flatMap((p) => { const at = p ? expires(p) : null; return p && at != null ? [{ callId: p.callId, at }] : []; })

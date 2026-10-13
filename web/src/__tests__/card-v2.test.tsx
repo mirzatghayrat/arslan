@@ -195,6 +195,13 @@ describe("a card frame in the store", () => {
     }
   });
 
+  it("keeps a title trimmed, and a title of spaces is no title", () => {
+    frame({ type: "propose_action", call_id: "a", kind: "app", target: "x", detail: "", title: "  Use x?  " });
+    expect(useArslanStore.getState().pendingAction?.title).toBe("Use x?");
+    frame({ type: "propose_action", call_id: "b", kind: "app", target: "x", detail: "", title: "   " });
+    expect(useArslanStore.getState().pendingAction).not.toHaveProperty("title");
+  });
+
   it("closes a card the server says is resolved only if it is the one shown, and only that one", () => {
     frame({ ...RULE, call_id: "c1" });
     frame({ ...RULE, call_id: "c2" });                                   // replaces c1 in the one command slot
