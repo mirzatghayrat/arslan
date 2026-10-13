@@ -1049,3 +1049,35 @@ async def test_the_islands_yes_to_a_site_card_holds_for_the_rest_of_the_task_and
     with permissions.asking_with(other):
         elsewhere = await permissions.decide(site(), Context(conversation_id="conv-1", task_id="job-other"))
     assert elsewhere.allowed is False and len(other.frames) == 1     # another task asks again
+
+
+# ── CI fix wave F4 (③Hands; spec §A8): record_standing records a mode's decision too ─────────────
+
+def _takeover() -> Request:
+    return Request(kind="takeover", target="com.apple.Keynote", title="Take over the screen?",
+                   detail="about 5 minutes: drag 12 photos into Keynote")
+
+
+async def test_a_step_a_mode_let_start_without_a_card_is_recorded_as_the_modes():
+    """③Hands' "while I'm away" takeover starts without a card because of a mode: its ledger row
+    says so (§A8 `decided_by` has "mode") — an allow with no scope, never an "Always" rule's."""
+    asker = Asker()
+    with permissions.asking_with(asker):
+        await permissions.record_standing(_takeover(), Context(conversation_id="conv-1", job_id="job-away"),
+                                          by="mode")
+    async with db_session.AsyncSessionLocal() as db:
+        [event] = await permission_store.recent(db)
+        assert await permission_store.refused_since(db, datetime.utcnow() - timedelta(hours=1)) == []
+    assert (event.kind, event.decided_by, event.decision, event.scope, event.job_id) \
+        == ("takeover", "mode", "allow", None, "job-away")
+    assert (event.rule_id, event.grant_id) == (None, None)
+    assert not permission_store.could_not_ask(event) and asker.frames == []
+    assert await _store_counts() == (0, 0, 1)                # no rule, no grant: just the row
+
+
+@pytest.mark.parametrize("by", ["user", "grant", "policy", "away", "expired", "reviewer", "floor", "",
+                                "Mode", None, ["mode"]])
+async def test_record_standing_is_decided_by_a_rule_or_a_mode_and_nothing_else(by):
+    with pytest.raises(ValueError):
+        await permissions.record_standing(_takeover(), CTX, by=by)
+    assert await _store_counts() == (0, 0, 0)

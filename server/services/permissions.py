@@ -217,12 +217,20 @@ async def would_ask(req: Request, ctx: Context) -> bool:
     return await _standing(req, _filled(ctx), "", record=False) is None
 
 
-async def record_standing(req: Request, ctx: Context) -> None:
-    """A caller that found a standing answer itself (terminal_policy's legacy rules) still
-    writes the ledger row, so the count of decisions stays whole. A kind outside `KINDS` raises,
-    as in `decide`, and writes nothing."""
+#: Who may have decided a standing yes that `record_standing` writes, and the scope it records:
+#: an "Always" rule, or the mode (§A8's `decided_by`), which stores nothing and has no scope.
+_STANDING_BY = {"rule": "always", "mode": None}
+
+
+async def record_standing(req: Request, ctx: Context, *, by: str = "rule") -> None:
+    """A caller that found a standing answer itself still writes the ledger row, so the count of
+    decisions stays whole: `by="rule"` for an "Always" rule it read (terminal_policy's legacy
+    rules), `by="mode"` for a step the mode lets start without a card (③Hands' "while I'm away"
+    takeover). Any other `by`, like a kind outside `KINDS`, raises ValueError and writes nothing."""
+    if not isinstance(by, str) or by not in _STANDING_BY:
+        raise ValueError(f"a standing answer is decided by a rule or the mode, not {by!r}")
     _check(req)
-    await _record(req, _filled(ctx), await _mode(), Decision(True, "rule", "always"))
+    await _record(req, _filled(ctx), await _mode(), Decision(True, by, _STANDING_BY[by]))
 
 
 async def forget_task(task_id: str | None) -> int:
