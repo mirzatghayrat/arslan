@@ -10,6 +10,7 @@ vi.mock("react-i18next", () => ({
 
 import * as client from "../api/client";
 import InboxApprovals from "../components/proactive/InboxApprovals";
+import { ANSWER_GUARD_MS } from "../components/kit";
 
 beforeEach(() => { vi.useFakeTimers(); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); });
@@ -34,6 +35,7 @@ describe("the Inbox: one gesture answers one card", () => {
     const answered = server([ask("b", "rm -rf ~/Documents")]);
     render(<InboxApprovals onOpenConversation={() => {}} />);
     await settle();
+    await settle(ANSWER_GUARD_MS);                                          // the card that just appeared is held for its first 500 ms
     fireEvent.click(screen.getByTestId("runcmd-run"));                    // click 1: answers a
     await settle(50);                                                       // the list is fetched again: b is up
     expect(screen.getByTestId("runcmd-card")).toHaveTextContent("rm -rf ~/Documents");
@@ -48,17 +50,20 @@ describe("the Inbox: one gesture answers one card", () => {
     const answered = server([ask("b", "rm -rf ~/Documents")]);
     render(<InboxApprovals onOpenConversation={() => {}} />);
     await settle();
+    await settle(ANSWER_GUARD_MS);                                          // the card that just appeared is held for its first 500 ms
     fireEvent.click(screen.getByTestId("runcmd-run"));
-    await settle(500);
+    await settle();                                                         // the list is fetched again: b comes up where a was
+    await settle(500);                                                      // 500 ms after a left — and after b came up
     fireEvent.click(screen.getByTestId("runcmd-run"));
     await settle();
     expect(answered).toEqual(["a", "b"]);
   });
 
-  it("a card that comes up in an Inbox that has been empty for a while answers at once", async () => {
+  it("a card that comes up in an Inbox that has been empty for a while answers once its own 500 ms are over", async () => {
     const answered = server([]);
     render(<InboxApprovals onOpenConversation={() => {}} />);
     await settle();
+    await settle(ANSWER_GUARD_MS);                                          // the card that just appeared is held for its first 500 ms
     fireEvent.click(screen.getByTestId("runcmd-run"));
     await settle(600);                                                      // empty for a good while
     expect(screen.queryByTestId("runcmd-card")).toBeNull();

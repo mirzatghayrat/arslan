@@ -29,6 +29,7 @@ describe("the ask slot", () => {
     expect(screen.getByTestId("ask-queue")).toHaveTextContent('"index":1,"total":2');
     // 0.1.61: a frame without expires_at waits the Mac's 30 minutes (approvals.TIMEOUT_S), not 5.
     expect(screen.getByTestId("ask-countdown")).toHaveAccessibleName(/^(30:00|29:\d\d)$/);
+    act(() => { vi.advanceTimersByTime(500); });                         // c1 came up where none was: it answers once the guard has run out
     fireEvent.keyDown(window, { key: "Enter", metaKey: true });
     expect(send).toHaveBeenCalledWith({ type: "confirm_run_command", call_id: "c1", remember: false });
     // the next one moves up; its risk line is read from the script

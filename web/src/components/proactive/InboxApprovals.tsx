@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { request } from "../../api/client";
 import AskForFrame, { ANSWERABLE, type AnswerExtra, type PendingAsk } from "../AskForFrame";
-import { AnswerGuardScope, AskQueue, CARD_MS, Notice, useAnswerGuardState } from "../kit";
+import { AnswerGuardScope, AskQueue, CARD_MS, Notice } from "../kit";
+import { useQueueGuard } from "../kit/guard";
 import { announceProactiveChange } from "../../api/proactive";
 
 const POLL_MS = 5_000;
@@ -42,7 +43,8 @@ export default function InboxApprovals({ onOpenConversation, onCount }: {
   const [error, setError] = useState(false);
   // The guard is kept here, above the queue, which is not on screen while nothing waits: the next command of the turn can come up
   // a moment after the last card was answered, and the second click of a double-click must not answer it (kit/guard.ts).
-  const guard = useAnswerGuardState();
+  // The Inbox's own (ProactiveInbox), shared with the section below this one, whose rows move when this one changes; else one of its own.
+  const guard = useQueueGuard();
   const alive = useRef(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const firstSeen = useRef(new Map<string, number>());
@@ -93,6 +95,11 @@ export default function InboxApprovals({ onOpenConversation, onCount }: {
     announceProactiveChange();
     await load();
   }
+
+  // The section appearing pushes everything under it down: a click aimed at what was there must not land on the card now there.
+  const showing = asks.length > 0;
+  const wasShowing = useRef(false);
+  useLayoutEffect(() => { if (showing && !wasShowing.current) guard.hold(); wasShowing.current = showing; }, [guard, showing]);
 
   if (!asks.length && !error) return null;
   return (

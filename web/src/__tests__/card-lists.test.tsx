@@ -18,7 +18,7 @@ afterEach(() => { cleanup(); vi.useRealTimers(); });
 const frame = (f: Record<string, unknown>) => act(() => { useArslanStore.getState().handleFrame(f as never); });
 const advance = (ms: number) => act(() => { vi.advanceTimersByTime(ms); });
 const clock = () => { vi.useFakeTimers(); vi.setSystemTime(new Date("2026-10-13T10:00:00Z")); };
-/** the card on top changed: it answers once the answer guard has run out */
+/** the card on top changed — one left, or one came up where none was (final review, I3): it answers once the answer guard has run out */
 const settle = () => advance(ANSWER_GUARD_MS);
 const state = () => useArslanStore.getState();
 
@@ -81,6 +81,7 @@ describe.each(KINDS)("two $name cards", (k) => {
     render(<AskSlot send={send} />);
     frame(k.make("a"));
     frame(k.make("b"));
+    settle();                                                                      // a came up where none was
     k.answer();
     expect(ids(k)).toEqual(["b"]);
     expect(screen.getByTestId(k.card)).toBeInTheDocument();
@@ -149,6 +150,7 @@ describe("a window's card and a job's card of the same kind", () => {
     render(<AskSlot send={send} />);
     frame(RULE("w1"));
     frame(RULE("j1", { background: true }));
+    settle();                                                                                // w1 came up where none was
     expect(screen.getByTestId("ask-queue")).toHaveTextContent('"index":1,"total":2');
     expect(screen.getByRole("alertdialog")).toHaveAccessibleName("kit.whoArslan");           // the window's, which came first
     fireEvent.click(screen.getByTestId("runcmd-scope-always"));
@@ -186,6 +188,7 @@ describe("a window's card and a job's card of the same kind", () => {
     render(<AskSlot send={send} />);
     frame(RULE("w1"));
     frame(RULE("j1", { background: true }));
+    settle();
     fireEvent.click(screen.getByTestId("runcmd-note-open"));
     fireEvent.change(screen.getByTestId("runcmd-note-input"), { target: { value: "not this one" } });
     fireEvent.click(screen.getByTestId("runcmd-note-send"));
@@ -263,6 +266,7 @@ describe("the cards of every kind, together", () => {
     frame(KINDS[0].make("c1"));                                                       // ... then a command
     render(<AskSlot send={vi.fn()} />);
     expect(screen.getByTestId("runcmd-card")).toBeInTheDocument();
+    settle();
     fireEvent.click(screen.getByTestId("runcmd-run"));
     expect(screen.getByTestId("connect-mcp-card")).toBeInTheDocument();
   });

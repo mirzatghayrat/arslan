@@ -2,9 +2,11 @@
  *  (the one before it was answered, resolved elsewhere, ran out or was paged away), nothing answers the new one — not a click on
  *  Allow, on No or on a scope, not ⌘⏎, not Esc — so a double-click or a second key press aimed at the card that just left can never
  *  land, unread, on the one that moved up (a double-click confirmed `echo harmless` AND `rm -rf ~/Documents` in a real browser).
- *  The slot being empty for a moment does not end it: a card that comes up within 500 ms of the one that left is held for the rest of
- *  that time (the next command of the same turn is proposed as soon as the first ran). A card that comes up in a slot that has been
- *  empty longer, and paging, are not guarded. Fix round 3: the hold is visible (Allow and No render aria-disabled while it lasts), the
+ *  The slot being empty for a moment does not end it: the card that comes up in the gap is held for 500 ms from when it came up
+ *  (the next command of the same turn is proposed as soon as the first ran). Final review, I3: a card that comes up where NONE was is
+ *  held the same way, however long the slot was empty — the slot opens over the message list whenever a job or a turn asks, not
+ *  because of the person's click, so a click aimed at a link or a job's card in the last messages must never land on Run. Only the
+ *  same card sent again is no change. Fix round 3: the hold is visible (Allow and No render aria-disabled while it lasts), the
  *  note's Say no goes through it, and the Inbox keeps it too (inbox-guard.test.tsx). A busy card turns its own answers off, never the
  *  pager (card-apply.test.tsx). */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -37,6 +39,7 @@ function twoCommands(send = vi.fn()) {
   render(<AskSlot send={send} />);
   frame(cmd("safe-one", "echo harmless"));
   frame(cmd("danger-two", "rm -rf ~/Documents"));
+  advance(ANSWER_GUARD_MS);                                         // safe-one came up where none was: the person has had their 500 ms
   return send;
 }
 
@@ -79,6 +82,7 @@ describe("one gesture answers one card", () => {
     const send = vi.fn();
     render(<AskSlot send={send} />);
     frame(cmd("safe-one", "echo harmless"));
+    advance(ANSWER_GUARD_MS);
     run();                                                           // the first click of the double-click: the slot is empty now
     advance(120);
     frame(cmd("danger-two", "rm -rf ~/Documents"));                  // the next command of the same turn, proposed as soon as the first one ran
@@ -89,18 +93,19 @@ describe("one gesture answers one card", () => {
     expect(screen.getByTestId("runcmd-card")).toHaveTextContent("rm -rf ~/Documents");
   });
 
-  it("the card that comes up in the gap is held until 500 ms after the one that left, not 500 ms after it came up", () => {
+  it("the card that comes up in the gap is held for 500 ms from when it came up — the hold of the one that left no longer ends it early", () => {
     const send = vi.fn();
     render(<AskSlot send={send} />);
     frame(cmd("safe-one", "echo harmless"));
+    advance(ANSWER_GUARD_MS);
     run();                                                           // t = 0: the card leaves
     advance(300);
-    frame(cmd("danger-two", "rm -rf ~/Documents"));                  // t = 300
-    advance(199);
-    run();                                                           // t = 499: still held
+    frame(cmd("danger-two", "rm -rf ~/Documents"));                  // t = 300: it came up where none was — held until t = 800
+    advance(499);
+    run();                                                           // t = 799: still held (and 499 ms after the one that left, which used to end it)
     expect(send).toHaveBeenCalledTimes(1);
     advance(1);
-    run();                                                           // t = 500: 200 ms after it came up, and the person has had the time
+    run();                                                           // t = 800: 500 ms after it came up, and the person has had the time
     expect(send.mock.calls.map(([f]) => f.call_id)).toEqual(["safe-one", "danger-two"]);
   });
 
@@ -110,10 +115,13 @@ describe("one gesture answers one card", () => {
     frame(cmd("safe-one", "echo harmless"));
     frame({ type: "card_resolved", call_id: "safe-one", outcome: "approved", by: "phone" });
     advance(100);
-    frame(cmd("danger-two", "rm -rf ~/Documents"));
+    frame(cmd("danger-two", "rm -rf ~/Documents"));                  // it came up where none was: held for 500 ms from now
     run();
     expect(send).not.toHaveBeenCalled();
-    advance(400);
+    advance(499);
+    run();
+    expect(send).not.toHaveBeenCalled();
+    advance(1);
     run();
     expect(send).toHaveBeenCalledTimes(1);
   });
@@ -180,6 +188,7 @@ describe("one gesture answers one card", () => {
     render(<><AskSlot send={send} /><input id="chat-message-input" data-testid="composer" /></>);
     frame(cmd("safe-one", "echo harmless"));
     frame(cmd("danger-two", "rm -rf ~/Documents"));
+    advance(ANSWER_GUARD_MS);                                        // safe-one came up where none was
     fireEvent.click(screen.getByTestId("runcmd-note-open"));
     fireEvent.change(screen.getByTestId("runcmd-note-input"), { target: { value: "no thanks" } });
     fireEvent.click(screen.getByTestId("runcmd-note-send"));
@@ -192,19 +201,42 @@ describe("one gesture answers one card", () => {
   });
 });
 
-describe("what is not guarded", () => {
-  it("a card that appears in an empty slot answers at once, and so does one that comes up after the slot has been empty for 500 ms", () => {
+describe("a card that comes up where none was (final review, I3)", () => {
+  it("is held for 500 ms too, however long the slot was empty: a click aimed at what was there never lands on it", () => {
     const send = vi.fn();
     render(<AskSlot send={send} />);
-    frame(cmd("a", "ls a"));
+    advance(5_000);                                                    // the slot has been empty a long while
+    frame(cmd("a", "ls a"));                                           // a job asks, over the message list the person is clicking in
+    run();
+    cmdKey({ metaKey: true });
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(send).not.toHaveBeenCalled();
+    advance(ANSWER_GUARD_MS - 1);
+    run();
+    expect(send).not.toHaveBeenCalled();                               // 499 ms: still held
+    advance(1);
+    run();
+    expect(send).toHaveBeenCalledTimes(1);
+    advance(4 * ANSWER_GUARD_MS);                                      // the slot was empty for a long while again
+    frame(cmd("b", "ls b"));                                           // and a card comes up where none was: held again
     run();
     expect(send).toHaveBeenCalledTimes(1);
     advance(ANSWER_GUARD_MS);
-    frame(cmd("b", "ls b"));                                           // the slot was empty for the whole time: a first card again
     run();
     expect(send).toHaveBeenCalledTimes(2);
   });
 
+  it("is shown held from the start, and the hold ends on its own", () => {
+    render(<AskSlot send={vi.fn()} />);
+    advance(5_000);
+    frame(cmd("a", "ls a"));
+    for (const b of [screen.getByTestId("runcmd-run"), screen.getByTestId("runcmd-cancel")]) expect(b).toHaveAttribute("aria-disabled", "true");
+    advance(ANSWER_GUARD_MS);
+    for (const b of [screen.getByTestId("runcmd-run"), screen.getByTestId("runcmd-cancel")]) expect(b).not.toHaveAttribute("aria-disabled");
+  });
+});
+
+describe("what is not guarded", () => {
   it("paging is not guarded, so a person can page through the cards as fast as they like", () => {
     render(<AskSlot send={vi.fn()} />);
     frame(cmd("a", "ls a"));
@@ -264,6 +296,7 @@ describe("the guard outlives a re-render of whoever holds it", () => {
     const send = vi.fn();
     const { rerender } = render(<AskSlot send={send} />);
     frame(cmd("a", "ls a"));
+    advance(ANSWER_GUARD_MS);                                        // a came up where none was
     run();                                                           // a leaves: the slot is empty
     rerender(<AskSlot send={send} />);                               // the chat re-renders (a streamed token, say)
     frame(cmd("b", "ls b"));
@@ -314,7 +347,9 @@ describe("what the guard remembers", () => {
   it("a card that left holds the next one that comes up — now or in a moment — for 500 ms after it left, and no longer", () => {
     const guard = makeAnswerGuard();
     guard.shown("a");
-    expect(guard.held()).toBe(false);                                // the first card of all
+    expect(guard.held()).toBe(true);                                 // the first card of all came up where none was (final review, I3)
+    advance(ANSWER_GUARD_MS);
+    expect(guard.held()).toBe(false);
     guard.shown("a");
     expect(guard.held()).toBe(false);                                // the same card again is not a change
     guard.shown("b");                                                // a left: b moved up
@@ -325,31 +360,37 @@ describe("what the guard remembers", () => {
     expect(guard.held()).toBe(false);
   });
 
-  it("a card that left and none that came up still holds the one that comes up within 500 ms, from the moment it left", () => {
+  it("a card that left and none that came up still holds the one that comes up in the gap — for 500 ms from when it came up", () => {
     const guard = makeAnswerGuard();
     guard.shown("a");
+    advance(ANSWER_GUARD_MS);                                        // a's own hold is over
     guard.shown(null);                                               // t = 0: a left, the slot is empty
+    expect(guard.held()).toBe(true);                                 // what shares the guard (the Inbox's rows below the queue) moved up under the pointer
     advance(300);
-    guard.shown("b");                                                // t = 300
+    guard.shown("b");                                                // t = 300: b came up where none was
     expect(guard.held()).toBe(true);
-    advance(199);
-    expect(guard.held()).toBe(true);                                 // t = 499
+    advance(499);
+    expect(guard.held()).toBe(true);                                 // t = 799: past the 500 ms after a left, but not b's own
     advance(1);
-    expect(guard.held()).toBe(false);                                // t = 500: from when a left, not from when b came up
+    expect(guard.held()).toBe(false);                                // t = 800: 500 ms after b came up
   });
 
-  it("the first card after the slot has been empty a while is not held", () => {
+  it("the first card after the slot has been empty a while IS held (final review, I3), and an empty slot staying empty holds nothing", () => {
     const guard = makeAnswerGuard();
     guard.shown("a");
     guard.shown(null);
     advance(ANSWER_GUARD_MS);
-    guard.shown("b");
-    expect(guard.held()).toBe(false);
-    guard.shown(null);                                               // an empty slot staying empty is not a card leaving
+    expect(guard.held()).toBe(false);                                // a left 500 ms ago
+    guard.shown("b");                                                // b came up where none was
+    expect(guard.held()).toBe(true);
     advance(ANSWER_GUARD_MS);
-    guard.shown(null);
-    guard.shown("c");
     expect(guard.held()).toBe(false);
+    guard.shown(null);                                               // b left: held
+    advance(ANSWER_GUARD_MS);
+    guard.shown(null);                                               // an empty slot staying empty is not a card leaving, or arriving
+    expect(guard.held()).toBe(false);
+    guard.shown("c");
+    expect(guard.held()).toBe(true);
   });
 
   it("goes by a clock that never goes back: the system clock set an hour back or an hour on changes nothing", () => {
@@ -374,19 +415,21 @@ describe("what the guard remembers", () => {
     const told = vi.fn();
     const stop = guard.subscribe(told);
     guard.shown("a");
-    expect(told).not.toHaveBeenCalled();                             // nothing left yet
+    expect(told).toHaveBeenCalledTimes(1);                           // a came up where none was: the hold starts
+    advance(ANSWER_GUARD_MS);
+    expect(told).toHaveBeenCalledTimes(2);                           // and ends
     guard.shown("b");
-    expect(told).toHaveBeenCalledTimes(1);                           // the hold starts
+    expect(told).toHaveBeenCalledTimes(3);                           // a left: the hold starts
     advance(499);
-    expect(told).toHaveBeenCalledTimes(1);
+    expect(told).toHaveBeenCalledTimes(3);
     advance(1);
-    expect(told).toHaveBeenCalledTimes(2);                           // and ends, at 500 ms
+    expect(told).toHaveBeenCalledTimes(4);                           // and ends, at 500 ms
     advance(5_000);
-    expect(told).toHaveBeenCalledTimes(2);
+    expect(told).toHaveBeenCalledTimes(4);
     stop();
     guard.shown("c");
     advance(500);
-    expect(told).toHaveBeenCalledTimes(2);                           // nobody is told once they have left
+    expect(told).toHaveBeenCalledTimes(4);                           // nobody is told once they have left
   });
 
   it("a second card leaving moves the end of the hold: one end, 500 ms after the last", () => {
@@ -476,22 +519,28 @@ describe("the hold is visible (G4)", () => {
     for (const b of buttons()) expect(b).not.toHaveAttribute("aria-disabled");
   });
 
-  it("a card that comes up in a slot that has been idle is never rendered disabled", () => {
+  it("a card that comes up in a slot that has been idle renders disabled too, and comes back on its own when the 500 ms are over", () => {
     render(<AskSlot send={vi.fn()} />);
+    advance(5_000);
     frame(cmd("a", "ls a"));
+    for (const b of buttons()) expect(b).toHaveAttribute("aria-disabled", "true");
+    advance(ANSWER_GUARD_MS - 1);
+    for (const b of buttons()) expect(b).toHaveAttribute("aria-disabled", "true");
+    advance(1);
     for (const b of buttons()) expect(b).not.toHaveAttribute("aria-disabled");
   });
 
-  it("the card that comes up in the gap is disabled from the start, until 500 ms after the one before left", () => {
+  it("the card that comes up in the gap is disabled from the start, until 500 ms after it came up", () => {
     render(<AskSlot send={vi.fn()} />);
     frame(cmd("a", "ls a"));
+    advance(ANSWER_GUARD_MS);
     run();                                                           // t = 0: a leaves
     advance(300);
-    frame(cmd("b", "ls b"));
+    frame(cmd("b", "ls b"));                                         // t = 300
     for (const b of buttons()) expect(b).toHaveAttribute("aria-disabled", "true");
-    advance(199);
+    advance(499);                                                    // t = 799
     for (const b of buttons()) expect(b).toHaveAttribute("aria-disabled", "true");
-    advance(1);                                                      // t = 500
+    advance(1);                                                      // t = 800
     for (const b of buttons()) expect(b).not.toHaveAttribute("aria-disabled");
   });
 

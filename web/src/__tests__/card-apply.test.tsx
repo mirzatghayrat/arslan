@@ -182,6 +182,7 @@ describe("an enrolment in flight never blocks the queue either", () => {
     render(<AskSlot send={send} />);
     frame(enroll("n1"));
     frame(cmd("c1", "ls a"));
+    settle();                                                                      // the enroll card came up where none was
     fireEvent.click(screen.getByTestId("enroll-confirm"));
     return { spy, send, fail: (m = "no route to host") => fail(new Error(m)), done: () => done() };
   }
@@ -229,6 +230,7 @@ describe("an enrolment in flight never blocks the queue either", () => {
     const spy = vi.spyOn(client.api, "enrollSshNode").mockImplementation(() => new Promise(() => {}) as never);
     render(<AskSlot send={vi.fn()} />);
     frame(enroll("n1"));
+    settle();
     const button = screen.getByTestId("enroll-confirm");
     act(() => { button.click(); button.click(); });
     expect(spy).toHaveBeenCalledTimes(1);

@@ -347,6 +347,7 @@ describe("the card's keys and a text field", () => {
           onAllow={() => { answered.push(k); leave(k); }} onDecline={() => { declined.push(k); leave(k); }} />) }))} />;
     }
     render(<Host />);
+    act(() => { vi.advanceTimersByTime(ANSWER_GUARD_MS); });             // the first card came up where none was: it answers 500 ms later
     fireEvent.keyDown(window, { key: "Enter", metaKey: true });
     act(() => { vi.advanceTimersByTime(ANSWER_GUARD_MS); });             // held past the guard: only the repeat flag holds the repeats back now
     fireEvent.keyDown(window, { key: "Enter", metaKey: true, repeat: true });

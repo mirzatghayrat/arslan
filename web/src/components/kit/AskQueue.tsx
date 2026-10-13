@@ -25,10 +25,10 @@ export function AskQueue({ items }: { items: QueuedAsk[] }) {
     refocus.current = null;
     if (nav) host.current?.querySelector<HTMLElement>(`[data-nav="${nav}"]`)?.focus();
   }, [shown]);
-  // A card left the top (the one before it was answered, resolved elsewhere, ran out or paged away, or the queue itself is gone):
-  // for ANSWER_GUARD_MS nothing answers the card that comes up, so a double-click or a second ⌘⏎ aimed at the one that left never
-  // lands, unread, on the one that moved up (see guard.ts). The first card of a queue that has been empty a while, and the same
-  // card sent again, are not a change.
+  // The card on top changed (the one before it was answered, resolved elsewhere, ran out or paged away, or the queue itself is gone, or
+  // a card came up where none was): for ANSWER_GUARD_MS nothing answers the card that comes up, so a double-click or a second ⌘⏎ aimed
+  // at the one that left — or a click aimed at what was there before the slot opened — never lands, unread, on the card now there
+  // (see guard.ts). Only the same card sent again is no change.
   const guard = useQueueGuard();
   const top = items.length ? items[Math.min(index, items.length - 1)].key : null;
   useLayoutEffect(() => { guard.shown(top); }, [guard, top]);

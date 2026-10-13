@@ -55,6 +55,7 @@ describe("Hide is the way out of a card whose apply is in flight", () => {
     const hung = hungConnect();
     render(<AskSlot send={vi.fn()} />);
     frame(connect("m1"));
+    advance(ANSWER_GUARD_MS);                                         // a card that comes up where none was answers 500 ms later
     expect(screen.queryByTestId("connect-mcp-hide")).toBeNull();
     fireEvent.click(screen.getByTestId("connect-mcp-connect"));
     expect(screen.getByTestId("connect-mcp-hide")).toHaveTextContent("kit.hide");
@@ -69,6 +70,7 @@ describe("Hide is the way out of a card whose apply is in flight", () => {
     const send = vi.fn();
     render(<AskSlot send={send} />);
     frame(connect("m1"));
+    advance(ANSWER_GUARD_MS);                                         // a card that comes up where none was answers 500 ms later
     fireEvent.click(screen.getByTestId("connect-mcp-connect"));
     fireEvent.click(screen.getByTestId("connect-mcp-hide"));
     expect(screen.queryByTestId("connect-mcp-card")).toBeNull();
@@ -123,6 +125,7 @@ describe("when a hidden connect settles, the chat says how it ended", () => {
     const send = vi.fn();
     render(<AskSlot send={send} />);
     frame(connect("m1"));
+    advance(ANSWER_GUARD_MS);                                         // a card that comes up where none was answers 500 ms later
     fireEvent.click(screen.getByTestId("connect-mcp-connect"));
     fireEvent.click(screen.getByTestId("connect-mcp-hide"));
     expect(notes()).toEqual([]);
@@ -138,6 +141,7 @@ describe("when a hidden connect settles, the chat says how it ended", () => {
     const send = vi.fn();
     render(<AskSlot send={send} />);
     frame(connect("m1"));
+    advance(ANSWER_GUARD_MS);                                         // a card that comes up where none was answers 500 ms later
     fireEvent.click(screen.getByTestId("connect-mcp-connect"));
     fireEvent.click(screen.getByTestId("connect-mcp-hide"));
     hung.fail();
@@ -151,6 +155,7 @@ describe("when a hidden connect settles, the chat says how it ended", () => {
     const hung = hungConnect();
     render(<AskSlot send={vi.fn()} />);
     frame(connect("m1"));
+    advance(ANSWER_GUARD_MS);                                         // a card that comes up where none was answers 500 ms later
     fireEvent.click(screen.getByTestId("connect-mcp-connect"));
     hung.release();
     await flush();
@@ -163,6 +168,7 @@ describe("when a hidden connect settles, the chat says how it ended", () => {
     const send = vi.fn();
     render(<AskSlot send={send} />);
     frame(connect("m1"));
+    advance(ANSWER_GUARD_MS);                                         // a card that comes up where none was answers 500 ms later
     fireEvent.click(screen.getByTestId("connect-mcp-connect"));
     fireEvent.click(screen.getByTestId("connect-mcp-hide"));
     act(() => { state().resetForNewConversation(); });
@@ -179,6 +185,7 @@ describe("a proposal that is delivered again while its apply is hidden does not 
     const send = vi.fn();
     render(<AskSlot send={send} />);
     frame(connect("m1"));
+    advance(ANSWER_GUARD_MS);                                         // a card that comes up where none was answers 500 ms later
     fireEvent.click(screen.getByTestId("connect-mcp-connect"));
     fireEvent.click(screen.getByTestId("connect-mcp-hide"));
     frame(connect("m1"));                                              // the journal replays the proposal
@@ -195,6 +202,7 @@ describe("a proposal that is delivered again while its apply is hidden does not 
     const hung = hungEnroll();
     render(<AskSlot send={vi.fn()} />);
     frame(enroll("n1"));
+    advance(ANSWER_GUARD_MS);                                         // a card that comes up where none was answers 500 ms later
     fireEvent.click(screen.getByTestId("enroll-confirm"));
     fireEvent.click(screen.getByTestId("enroll-hide"));
     frame(enroll("n1"));
@@ -209,6 +217,7 @@ describe("a proposal that is delivered again while its apply is hidden does not 
     hungConnect();
     render(<AskSlot send={vi.fn()} />);
     frame(connect("m1"));
+    advance(ANSWER_GUARD_MS);                                         // a card that comes up where none was answers 500 ms later
     fireEvent.click(screen.getByTestId("connect-mcp-connect"));
     frame(connect("m1"));
     expect(screen.getByTestId("connect-mcp-card")).toBeInTheDocument();
@@ -219,6 +228,7 @@ describe("a proposal that is delivered again while its apply is hidden does not 
     hungConnect();
     render(<AskSlot send={vi.fn()} />);
     frame(connect("m1"));
+    advance(ANSWER_GUARD_MS);                                         // a card that comes up where none was answers 500 ms later
     fireEvent.click(screen.getByTestId("connect-mcp-connect"));
     fireEvent.click(screen.getByTestId("connect-mcp-hide"));
     frame(connect("m2"));
@@ -232,6 +242,7 @@ describe("an apply that settles in another conversation tells nobody there", () 
     const send = vi.fn();
     render(<AskSlot send={send} />);
     frame(connect("m1"));
+    advance(ANSWER_GUARD_MS);                                         // a card that comes up where none was answers 500 ms later
     fireEvent.click(screen.getByTestId("connect-mcp-connect"));
     fireEvent.click(screen.getByTestId("connect-mcp-hide"));
     act(() => { state().resetForNewConversation(); });
@@ -246,6 +257,7 @@ describe("an apply that settles in another conversation tells nobody there", () 
     const send = vi.fn();
     render(<AskSlot send={send} />);
     frame(connect("m1"));
+    advance(ANSWER_GUARD_MS);                                         // a card that comes up where none was answers 500 ms later
     fireEvent.click(screen.getByTestId("connect-mcp-connect"));
     act(() => { state().resetForNewConversation(); });
     hung.release();
@@ -258,6 +270,7 @@ describe("an apply that settles in another conversation tells nobody there", () 
     const send = vi.fn();
     render(<AskSlot send={send} />);
     frame(connect("m1"));
+    advance(ANSWER_GUARD_MS);                                         // a card that comes up where none was answers 500 ms later
     fireEvent.click(screen.getByTestId("connect-mcp-connect"));
     hung.release();
     await flush();
@@ -268,6 +281,7 @@ describe("an apply that settles in another conversation tells nobody there", () 
     const hung = hungEnroll();
     render(<AskSlot send={vi.fn()} />);
     frame(enroll("n1"));
+    advance(ANSWER_GUARD_MS);                                         // a card that comes up where none was answers 500 ms later
     fireEvent.click(screen.getByTestId("enroll-confirm"));
     fireEvent.click(screen.getByTestId("enroll-hide"));
     act(() => { state().resetForNewConversation(); });
@@ -288,6 +302,7 @@ describe("when a hidden enrolment settles, the chat says how it ended", () => {
     const hung = hungEnroll();
     render(<AskSlot send={vi.fn()} />);
     frame(enroll("n1"));
+    advance(ANSWER_GUARD_MS);                                         // a card that comes up where none was answers 500 ms later
     expect(screen.queryByTestId("enroll-hide")).toBeNull();                 // nothing in flight yet
     fireEvent.click(screen.getByTestId("enroll-confirm"));
     expect(screen.getByTestId("enroll-hide")).toHaveTextContent("kit.hide");
@@ -305,6 +320,7 @@ describe("when a hidden enrolment settles, the chat says how it ended", () => {
     const hung = hungEnroll();
     render(<AskSlot send={vi.fn()} />);
     frame(enroll("n1"));
+    advance(ANSWER_GUARD_MS);                                         // a card that comes up where none was answers 500 ms later
     fireEvent.click(screen.getByTestId("enroll-confirm"));
     fireEvent.click(screen.getByTestId("enroll-hide"));
     hung.fail(new Error("host key mismatch"));
@@ -316,6 +332,7 @@ describe("when a hidden enrolment settles, the chat says how it ended", () => {
     const hung = hungEnroll();
     render(<AskSlot send={vi.fn()} />);
     frame(enroll("n1"));
+    advance(ANSWER_GUARD_MS);                                         // a card that comes up where none was answers 500 ms later
     fireEvent.click(screen.getByTestId("enroll-confirm"));
     fireEvent.click(screen.getByTestId("enroll-hide"));
     hung.fail("boom");
@@ -327,6 +344,7 @@ describe("when a hidden enrolment settles, the chat says how it ended", () => {
     const hung = hungEnroll();
     render(<AskSlot send={vi.fn()} />);
     frame(enroll("n1"));
+    advance(ANSWER_GUARD_MS);                                         // a card that comes up where none was answers 500 ms later
     fireEvent.click(screen.getByTestId("enroll-confirm"));
     hung.fail(new Error("host key mismatch"));
     await flush();

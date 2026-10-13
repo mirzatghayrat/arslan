@@ -88,6 +88,7 @@ describe("the Inbox card closes at its own expiry (M3)", () => {
     const req = serve([ask("a", 10), ask("b", 600)]);
     render(<InboxApprovals onOpenConversation={() => {}} />);
     await advance(0);
+    await advance(ANSWER_GUARD_MS);                                  // the card that just appeared is held for its first 500 ms
     fireEvent.click(screen.getByTestId("runcmd-run"));
     await advance(0);
     expect(req).toHaveBeenCalledWith("/approvals/a/answer", expect.anything());
@@ -169,7 +170,9 @@ describe("Always allow is guarded, and can be undone for ten seconds (M4)", () =
     serve();
     render(<InboxRefused />);
     await advance(0);
-    expect(screen.getByTestId("inbox-refused-allow")).not.toHaveAttribute("aria-disabled");        // the first list: nothing moved
+    expect(screen.getByTestId("inbox-refused-allow")).toHaveAttribute("aria-disabled", "true");     // the first list moved what was under it
+    await advance(ANSWER_GUARD_MS);
+    expect(screen.getByTestId("inbox-refused-allow")).not.toHaveAttribute("aria-disabled");
     list = [entry(2, "b.com"), entry(1, "a.com")];                                                // a new entry comes in on top
     await advance(30_000);                                                                         // the next poll
     expect(rows()[0]).toHaveTextContent("b.com");
@@ -191,6 +194,7 @@ describe("Always allow is guarded, and can be undone for ten seconds (M4)", () =
     serve();
     render(<InboxRefused />);
     await advance(0);
+    await advance(ANSWER_GUARD_MS);                                // the list has just appeared: held for 500 ms
     await advance(30_000);
     expect(screen.getByTestId("inbox-refused-allow")).not.toHaveAttribute("aria-disabled");
   });
@@ -202,6 +206,7 @@ describe("Always allow is guarded, and can be undone for ten seconds (M4)", () =
     post = () => new Promise((ok) => { release = ok; });
     render(<InboxRefused />);
     await advance(0);
+    await advance(ANSWER_GUARD_MS);                                // the list has just appeared: held for 500 ms
     fireEvent.click(screen.getByTestId("inbox-refused-allow"));
     await advance(0);
     expect(screen.getByTestId("inbox-refused-allow")).toBeDisabled();
@@ -218,6 +223,7 @@ describe("Always allow is guarded, and can be undone for ten seconds (M4)", () =
     serve();
     render(<InboxRefused />);
     await advance(0);
+    await advance(ANSWER_GUARD_MS);                                // the list has just appeared: held for 500 ms
     fireEvent.click(screen.getByTestId("inbox-refused-allow"));
     await advance(0);
     expect(screen.getByTestId("inbox-refused-allowed")).toHaveTextContent("inbox.allowedNow");
@@ -235,6 +241,7 @@ describe("Always allow is guarded, and can be undone for ten seconds (M4)", () =
     serve();
     render(<InboxRefused />);
     await advance(0);
+    await advance(ANSWER_GUARD_MS);                                // the list has just appeared: held for 500 ms
     fireEvent.click(screen.getByTestId("inbox-refused-allow"));
     await advance(0);
     fireEvent.click(screen.getByTestId("inbox-refused-undo"));
@@ -252,6 +259,7 @@ describe("Always allow is guarded, and can be undone for ten seconds (M4)", () =
     post = () => ({ id: 77 });
     render(<InboxRefused />);
     await advance(0);
+    await advance(ANSWER_GUARD_MS);                                // the list has just appeared: held for 500 ms
     fireEvent.click(screen.getByTestId("inbox-refused-allow"));
     await advance(0);
     fireEvent.click(screen.getByTestId("inbox-refused-undo"));
@@ -265,6 +273,7 @@ describe("Always allow is guarded, and can be undone for ten seconds (M4)", () =
     del = (path) => { throw new client.ApiError("no such rule", path.endsWith("100") ? 404 : 500); };
     render(<InboxRefused />);
     await advance(0);
+    await advance(ANSWER_GUARD_MS);                                // the list has just appeared: held for 500 ms
     fireEvent.click(screen.getByTestId("inbox-refused-allow"));
     await advance(0);
     fireEvent.click(screen.getByTestId("inbox-refused-undo"));
@@ -282,7 +291,8 @@ describe("Always allow is guarded, and can be undone for ten seconds (M4)", () =
     list = [entry(1, "a.com"), entry(2, "b.com")];
     serve();
     render(<InboxRefused />);
-    await advance(25_000);                                                                        // the first poll was at once; the next is at 30 s
+    await advance(0);                                                                             // the first poll was at once; the next is at 30 s
+    await advance(25_000);
     fireEvent.click(within(rows()[0]).getByTestId("inbox-refused-allow"));
     await advance(0);
     list = [entry(2, "b.com")];                                                                   // a.com is allowed now: the server omits it
@@ -299,6 +309,7 @@ describe("Always allow is guarded, and can be undone for ten seconds (M4)", () =
     serve();
     render(<InboxRefused />);
     await advance(0);
+    await advance(ANSWER_GUARD_MS);                                // the list has just appeared: held for 500 ms
     fireEvent.click(screen.getByTestId("inbox-refused-allow"));
     await advance(0);
     await advance(30_000);                                                                        // a poll that still lists it (the mock does)

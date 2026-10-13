@@ -3,7 +3,7 @@
  *  the model's why with the server's literal subject line under it, a kind with words keeps them and shows the why as "Arslan says",
  *  a title of spaces is no title, one long unbroken line wraps; and a call id is one entry in the queue. */
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, waitFor, act } from "@testing-library/react";
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string, o?: Record<string, unknown>) => (o ? `${key}:${JSON.stringify(o)}` : key) }),
@@ -11,8 +11,11 @@ vi.mock("react-i18next", () => ({
 
 import * as client from "../api/client";
 import InboxApprovals from "../components/proactive/InboxApprovals";
+import { ANSWER_GUARD_MS } from "../components/kit";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+/** A card that has just appeared in the Inbox answers 500 ms later (kit/guard.ts, ProactiveInbox's one guard). */
+const pastGuard = () => act(async () => { await new Promise((r) => setTimeout(r, ANSWER_GUARD_MS + 30)); });
 
 const row = (frame: Record<string, unknown>) => ({ call_id: String(frame.call_id), conversation_id: "conv-1", opened_at: 1000, expires_at: 1300, frame });
 function serve(rows: unknown[]) {
@@ -38,6 +41,7 @@ describe("the command card in the Inbox knows its permission kind", () => {
     await screen.findByTestId("runcmd-run");
     expect(screen.queryByTestId("runcmd-scope-conversation")).toBeNull();
     expect(screen.queryByTestId("runcmd-scope-always")).toBeNull();
+    await pastGuard();
     fireEvent.click(screen.getByTestId("runcmd-run"));
     await waitFor(() => expect(req).toHaveBeenCalledWith("/approvals/r1/answer",
       { method: "POST", body: JSON.stringify({ approve: true, source: "inbox", scope: "once" }) }));
@@ -81,7 +85,9 @@ describe("the write and schedule cards in the Inbox offer their choices and send
     const req = serve([row({ type: "propose_workspace_write", call_id: "w1", workspace: "/w", action: "write_file", path: "a.md",
       options: ["once", "conversation"], perm_kind: "workspace_write" })]);
     render(<InboxApprovals onOpenConversation={() => {}} />);
-    fireEvent.click(await screen.findByTestId("wswrite-scope-conversation"));
+    await screen.findByTestId("wswrite-scope-conversation");
+    await pastGuard();
+    fireEvent.click(screen.getByTestId("wswrite-scope-conversation"));
     fireEvent.click(screen.getByTestId("wswrite-allow"));
     await waitFor(() => expect(req).toHaveBeenCalledWith("/approvals/w1/answer",
       { method: "POST", body: JSON.stringify({ approve: true, source: "inbox", scope: "conversation" }) }));
@@ -92,6 +98,7 @@ describe("the write and schedule cards in the Inbox offer their choices and send
     render(<InboxApprovals onOpenConversation={() => {}} />);
     fireEvent.click(await screen.findByText("kit.noteLink"));
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "not on weekends" } });
+    await pastGuard();
     fireEvent.click(screen.getByText("kit.noteSend"));
     await waitFor(() => expect(req).toHaveBeenCalledWith("/approvals/s1/answer",
       { method: "POST", body: JSON.stringify({ approve: false, source: "inbox", note: "not on weekends" }) }));
@@ -101,7 +108,9 @@ describe("the write and schedule cards in the Inbox offer their choices and send
     const req = serve([row({ type: "propose_workspace_write", call_id: "w2", workspace: "/w", action: "edit_file", path: "a.md" })]);
     render(<InboxApprovals onOpenConversation={() => {}} />);
     expect(screen.queryByTestId("wswrite-scope-conversation")).toBeNull();
-    fireEvent.click(await screen.findByTestId("wswrite-allow"));
+    await screen.findByTestId("wswrite-allow");
+    await pastGuard();
+    fireEvent.click(screen.getByTestId("wswrite-allow"));
     await waitFor(() => expect(req).toHaveBeenCalledWith("/approvals/w2/answer",
       { method: "POST", body: JSON.stringify({ approve: true, source: "inbox" }) }));
   });
@@ -204,7 +213,9 @@ describe("a call id is one entry in the queue", () => {
   it("answering a card takes out that call id and no other", async () => {
     const req = serve([row(CMD), row({ ...CMD, call_id: "r2", pretty: "ls" })]);
     render(<InboxApprovals onOpenConversation={() => {}} />);
-    fireEvent.click(await screen.findByTestId("runcmd-cancel"));
+    await screen.findByTestId("runcmd-cancel");
+    await pastGuard();
+    fireEvent.click(screen.getByTestId("runcmd-cancel"));
     await waitFor(() => expect(req).toHaveBeenCalledWith("/approvals/r1/answer", expect.anything()));
     expect(req.mock.calls.some(([path]) => path === "/approvals/r2/answer")).toBe(false);
   });
@@ -216,6 +227,7 @@ describe("Always is never taken for the person", () => {
     render(<InboxApprovals onOpenConversation={() => {}} />);
     expect(((await screen.findByTestId("action-scope-task")) as HTMLInputElement).checked).toBe(true);
     expect((screen.getByTestId("action-scope-always") as HTMLInputElement).checked).toBe(false);
+    await pastGuard();
     fireEvent.click(screen.getByTestId("action-allow"));
     await waitFor(() => expect(req).toHaveBeenCalledWith("/approvals/a1/answer",
       { method: "POST", body: JSON.stringify({ approve: true, source: "inbox", scope: "task" }) }));

@@ -17,7 +17,7 @@ import { useArslanStore, initialArslanState } from "../stores/arslanStore";
 beforeEach(() => { useArslanStore.setState(initialArslanState(), true); vi.useFakeTimers(); });
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 const frame = (f: Record<string, unknown>) => act(() => { useArslanStore.getState().handleFrame(f as never); });
-/** the card on top changed: it answers once the answer guard (500 ms) has run out */
+/** the card on top changed — one left, or one came up where none was (final review, I3): it answers once the answer guard (500 ms) has run out */
 const settle = () => act(() => { vi.advanceTimersByTime(500); });
 const RULE = { type: "propose_run_command", call_id: "c1", command: "rm", argv: ["-rf", "build"], pretty: "rm -rf build",
   reason: "deletes files", options: ["once", "conversation", "always"], always_label: "deletes files",
@@ -28,6 +28,7 @@ describe("card v2 in the chat", () => {
     const send = vi.fn();
     render(<AskSlot send={send} />);
     frame({ ...RULE, expires_at: Date.now() / 1000 + 1800 });
+    settle();
     fireEvent.click(screen.getByLabelText('kit.scope.always:{"label":"deletes files"}'));
     fireEvent.keyDown(window, { key: "Enter", metaKey: true });
     expect(send.mock.calls).toStrictEqual([[{ type: "confirm_run_command", call_id: "c1", scope: "always" }]]);
@@ -39,6 +40,7 @@ describe("card v2 in the chat", () => {
     frame({ type: "propose_action", call_id: "a1", kind: "app", target: "com.tencent.xinWeChat", detail: "", title: "Use WeChat?",
             options: ["task", "conversation", "always"], always_label: "WeChat", perm_kind: "app", expires_at: Date.now() / 1000 + 1800 });
     expect(screen.getByTestId("action-title")).toHaveTextContent("Use WeChat?");
+    settle();
     fireEvent.click(screen.getByTestId("action-allow"));
     expect(send.mock.calls).toStrictEqual([[{ type: "confirm_action", call_id: "a1", scope: "task" }]]);
   });
@@ -47,6 +49,7 @@ describe("card v2 in the chat", () => {
     const send = vi.fn();
     render(<AskSlot send={send} />);
     frame({ type: "propose_schedule", call_id: "s1", name: "digest", when: "every: 86400", options: ["once", "conversation"] });
+    settle();
     fireEvent.click(screen.getByText("kit.noteLink"));
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "weekly is enough" } });
     fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter", metaKey: true });
@@ -63,6 +66,7 @@ describe("card v2 in the chat", () => {
     render(<AskSlot send={send} />);
     frame({ type: "propose_workspace_write", call_id: "w1", workspace: "/Users/me/Arslan", action: "write_file", path: "a.md",
             options: ["once", "conversation"] });
+    settle();
     fireEvent.click(screen.getByTestId("wswrite-scope-conversation"));
     fireEvent.click(screen.getByTestId("wswrite-allow"));
     expect(send.mock.calls).toStrictEqual([[{ type: "confirm_workspace_write", call_id: "w1", scope: "conversation" }]]);
@@ -72,6 +76,7 @@ describe("card v2 in the chat", () => {
     const send = vi.fn();
     render(<AskSlot send={send} />);
     frame({ ...RULE, call_id: "c1" });
+    settle();
     fireEvent.click(screen.getByTestId("runcmd-scope-always"));
     frame({ ...RULE, call_id: "c2" });                                   // waits behind c1: a second card never replaces the first
     fireEvent.click(screen.getByTestId("runcmd-run"));
@@ -257,6 +262,7 @@ describe("a choice never carries from one ask to another", () => {
     render(<AskSlot send={send} />);
     frame(make("k1"));
     frame(make("k2"));                                                   // waits behind k1
+    settle();                                                            // k1 came up where none was: it can be picked on 500 ms later
     fireEvent.click(screen.getByTestId(`${prefix}-${picked}`));
     expect((screen.getByTestId(`${prefix}-${picked}`) as HTMLInputElement).checked).toBe(true);
     fireEvent.click(screen.getByLabelText("kit.next"));                  // paged to k2
@@ -295,6 +301,7 @@ describe("a choice never carries from one ask to another", () => {
 
   it("in a queue, the ask that moves up into an answered ask's place starts fresh: no Always, no note", () => {
     render(<Queue />);
+    settle();                                                            // the queue's first card came up where none was
     fireEvent.click(screen.getByTestId("runcmd-scope-always"));
     fireEvent.click(screen.getByTestId("runcmd-note-open"));
     fireEvent.change(screen.getByTestId("runcmd-note-input"), { target: { value: "for c1" } });
@@ -325,6 +332,7 @@ describe("each card is given its frame's fields by the slot", () => {
     const send = vi.fn();
     render(<AskSlot send={send} />);
     frame(make);
+    settle();
     fireEvent.click(screen.getByLabelText(`kit.scope.always:{"label":"${label}"}`));
     fireEvent.click(screen.getByTestId(allow));
     expect(send.mock.calls).toStrictEqual([[{ type, call_id: "k", scope: "always" }]]);
@@ -335,6 +343,7 @@ describe("each card is given its frame's fields by the slot", () => {
     const send = vi.fn();
     render(<AskSlot send={send} />);
     frame(make);
+    settle();
     fireEvent.click(screen.getByTestId(`${note}-open`));
     fireEvent.change(screen.getByTestId(`${note}-input`), { target: { value: "use the other one" } });
     fireEvent.click(screen.getByTestId(`${note}-send`));
@@ -427,6 +436,7 @@ describe("a command's permission kind reaches its card", () => {
     render(<AskSlot send={send} />);
     frame({ ...RULE, perm_kind: "money" });
     expect(screen.queryAllByRole("radio")).toHaveLength(0);
+    settle();
     fireEvent.click(screen.getByTestId("runcmd-run"));
     expect(send.mock.calls).toStrictEqual([[{ type: "confirm_run_command", call_id: "c1", scope: "once" }]]);
   });
@@ -452,6 +462,7 @@ describe("an answer given in the chat is never in flight", () => {
     frame({ type: "propose_schedule", call_id: "s1", name: "n", when: "every: 60", options: ["once", "conversation"] });
     frame({ type: "propose_action", call_id: "a1", kind: "app", target: "x", detail: "", title: "Use x?", options: ["task", "conversation"] });
     act(() => { useArslanStore.setState({ pending: true, thinking: true, streaming: true, queued: true, activeRunId: 7 }); });
+    settle();                                                            // the first card came up where none was
     const cards = [["runcmd-card", "runcmd-run", "runcmd-note"], ["wswrite-card", "wswrite-allow", "wswrite-note"],
                    ["schedule-card", "schedule-allow", "schedule-note"], ["action-card", "action-allow", "action-note"]];
     for (let answered = 0; answered < cards.length; answered++) {
@@ -479,6 +490,7 @@ describe("after the note answers a card", () => {
       const send = vi.fn();
       render(<><AskSlot send={send} /><input id={id} data-testid="composer" /></>);
       frame({ ...RULE });
+      settle();
       fireEvent.click(screen.getByTestId("runcmd-note-open"));
       screen.getByTestId("runcmd-note-input").focus();
       fireEvent.change(screen.getByTestId("runcmd-note-input"), { target: { value: "use git rm" } });
@@ -492,6 +504,7 @@ describe("after the note answers a card", () => {
   it("a plain No, and a yes, leave the focus where it was", () => {
     render(<><AskSlot send={vi.fn()} /><input id="chat-message-input" data-testid="composer" /><input data-testid="other" /></>);
     frame({ ...RULE });
+    settle();
     screen.getByTestId("other").focus();
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.queryByTestId("runcmd-card")).toBeNull();
@@ -507,6 +520,7 @@ describe("after the note answers a card", () => {
     const send = vi.fn();
     render(<AskSlot send={send} />);
     frame({ ...RULE });
+    settle();
     fireEvent.click(screen.getByTestId("runcmd-note-open"));
     fireEvent.change(screen.getByTestId("runcmd-note-input"), { target: { value: "no" } });
     fireEvent.click(screen.getByTestId("runcmd-note-send"));

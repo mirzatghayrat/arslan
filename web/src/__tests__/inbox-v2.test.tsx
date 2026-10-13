@@ -24,6 +24,9 @@ import { loadPendingMemory } from "../lib/pendingMemory";
 import { ANSWER_GUARD_MS } from "../components/kit";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+/** One gesture answers one thing (kit/guard.ts): a card or a list that has just appeared, comes up after another left, or is paged to,
+ *  answers 500 ms later. */
+const pastGuard = () => act(async () => { await new Promise((r) => setTimeout(r, ANSWER_GUARD_MS + 30)); });
 
 const ask = {
   call_id: "c1", conversation_id: "conv-9", opened_at: 1000, expires_at: 1300,
@@ -40,6 +43,7 @@ describe("Approve now", () => {
     expect(screen.getByTestId("ask-risk")).toHaveTextContent("pushes to a remote");
     fireEvent.click(screen.getByText("kit.seeContext"));
     expect(opened).toHaveBeenCalledWith("conv-9");
+    await pastGuard();                                                  // a card that has just appeared answers 500 ms later
     fireEvent.click(screen.getByTestId("runcmd-run"));
     await waitFor(() => expect(req).toHaveBeenCalledWith("/approvals/c1/answer",
       { method: "POST", body: JSON.stringify({ approve: true, source: "inbox" }) }));
@@ -54,8 +58,6 @@ describe("Approve now", () => {
   });
 });
 
-/** One gesture answers one card (kit/guard.ts): the card that comes up after another left, or is paged to, answers 500 ms later. */
-const pastGuard = () => act(async () => { await new Promise((r) => setTimeout(r, ANSWER_GUARD_MS + 30)); });
 
 describe("Approve now — a card from the permission layer (0.1.61 §A4)", () => {
   const v2 = { call_id: "k1", conversation_id: "conv-9", opened_at: 1000, expires_at: 2800,
@@ -66,7 +68,9 @@ describe("Approve now — a card from the permission layer (0.1.61 §A4)", () =>
     const req = vi.spyOn(client, "request").mockImplementation(async (path: string) =>
       (path === "/approvals/pending" ? [v2] : { ok: true }) as never);
     render(<InboxApprovals onOpenConversation={() => {}} />);
-    fireEvent.click(await screen.findByTestId("action-scope-conversation"));
+    await screen.findByTestId("action-scope-conversation");
+    await pastGuard();
+    fireEvent.click(screen.getByTestId("action-scope-conversation"));
     fireEvent.click(screen.getByTestId("action-allow"));
     await waitFor(() => expect(req).toHaveBeenCalledWith("/approvals/k1/answer",
       { method: "POST", body: JSON.stringify({ approve: true, source: "inbox", scope: "conversation" }) }));
@@ -78,6 +82,7 @@ describe("Approve now — a card from the permission layer (0.1.61 §A4)", () =>
     render(<InboxApprovals onOpenConversation={() => {}} />);
     fireEvent.click(await screen.findByText("kit.noteLink"));
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "use Bear" } });
+    await pastGuard();
     fireEvent.click(screen.getByText("kit.noteSend"));
     await waitFor(() => expect(req).toHaveBeenCalledWith("/approvals/k1/answer",
       { method: "POST", body: JSON.stringify({ approve: false, source: "inbox", note: "use Bear" }) }));
@@ -132,6 +137,7 @@ describe("Not done while you were away", () => {
     serve();
     render(<InboxRefused onCount={count} />);
     await screen.findAllByTestId("inbox-refused-row");
+    await pastGuard();                                                  // a list that has just appeared is clicked 500 ms later
     expect(row(0)).toHaveTextContent("mail -s hi me@x.com");                  // the command, not "rules:send-mail"
     expect(row(0)).not.toHaveTextContent("rules:send-mail");
     expect(row(0)).toHaveTextContent(`inbox.refusedTimes:${JSON.stringify({ count: 4, since: when("2026-10-12T07:00:00Z") })}`);
@@ -145,6 +151,7 @@ describe("Not done while you were away", () => {
     const req = serve();
     render(<InboxRefused />);
     await screen.findAllByTestId("inbox-refused-row");
+    await pastGuard();                                                  // a list that has just appeared is clicked 500 ms later
     fireEvent.click(within(row(0)).getByTestId("inbox-refused-allow"));
     await waitFor(() => expect(req).toHaveBeenCalledWith("/permissions/rules",
       { method: "POST", body: JSON.stringify({ refused_id: 30 }) }));
@@ -156,6 +163,7 @@ describe("Not done while you were away", () => {
     serve();
     render(<InboxRefused />);
     await screen.findAllByTestId("inbox-refused-row");
+    await pastGuard();                                                  // a list that has just appeared is clicked 500 ms later
     expect(screen.getAllByTestId("inbox-refused-allow")).toHaveLength(1);
     expect(within(row(1)).queryByTestId("inbox-refused-allow")).toBeNull();
     expect(within(row(1)).queryByTestId("inbox-refused-stores")).toBeNull();
@@ -166,6 +174,7 @@ describe("Not done while you were away", () => {
     serve([{ ...mail, always_ok: false }]);
     render(<InboxRefused />);
     await screen.findAllByTestId("inbox-refused-row");
+    await pastGuard();                                                  // a list that has just appeared is clicked 500 ms later
     expect(screen.queryByTestId("inbox-refused-allow")).toBeNull();
     expect(screen.queryByTestId("inbox-refused-stores")).toBeNull();
     expect(within(row(0)).getByTestId("inbox-refused-each-time")).toHaveTextContent("inbox.asksEachTime");
@@ -176,6 +185,7 @@ describe("Not done while you were away", () => {
     serve([{ ...mail, always: [] }]);
     render(<InboxRefused />);
     await screen.findAllByTestId("inbox-refused-row");
+    await pastGuard();                                                  // a list that has just appeared is clicked 500 ms later
     expect(screen.queryByTestId("inbox-refused-allow")).toBeNull();
     expect(screen.queryByTestId("inbox-refused-stores")).toBeNull();
     expect(within(row(0)).getByTestId("inbox-refused-each-time")).toHaveTextContent("inbox.asksEachTime");
@@ -187,6 +197,7 @@ describe("Not done while you were away", () => {
     const req = serve([both]);
     render(<InboxRefused />);
     await screen.findAllByTestId("inbox-refused-row");
+    await pastGuard();                                                  // a list that has just appeared is clicked 500 ms later
     expect(within(row(0)).getAllByTestId("inbox-refused-rule").map((r) => r.textContent)).toEqual(
       ['inbox.alwaysStores:{"what":"Send an email"}', 'inbox.alwaysStores:{"what":"Mail"}']);                  // each rule on a line of its own
     fireEvent.click(within(row(0)).getByTestId("inbox-refused-allow"));
@@ -197,6 +208,7 @@ describe("Not done while you were away", () => {
     serve([{ ...mail, always: [{ kind: "legacy_rule", target: "send-mail", label: "" }] }]);
     render(<InboxRefused />);
     await screen.findAllByTestId("inbox-refused-row");
+    await pastGuard();                                                  // a list that has just appeared is clicked 500 ms later
     expect(within(row(0)).getByTestId("inbox-refused-stores")).toHaveTextContent('inbox.alwaysStores:{"what":"send-mail"}');
   });
 
@@ -204,6 +216,7 @@ describe("Not done while you were away", () => {
     serve([mail], () => { throw new client.ApiError("no_always", 409, { code: "no_always" }); });
     render(<InboxRefused />);
     await screen.findAllByTestId("inbox-refused-row");
+    await pastGuard();                                                  // a list that has just appeared is clicked 500 ms later
     fireEvent.click(screen.getByTestId("inbox-refused-allow"));
     expect(await screen.findByTestId("inbox-refused-each-time")).toHaveTextContent("inbox.asksEachTime");
     expect(screen.queryByTestId("inbox-refused-allow")).toBeNull();
@@ -214,6 +227,7 @@ describe("Not done while you were away", () => {
     const req = serve([mail], () => { throw new client.ApiError("no such refusal", 404); });
     render(<InboxRefused />);
     await screen.findAllByTestId("inbox-refused-row");
+    await pastGuard();                                                  // a list that has just appeared is clicked 500 ms later
     const lists = () => req.mock.calls.filter(([path]) => path === "/approvals/refused?hours=24").length;
     expect(lists()).toBe(1);
     fireEvent.click(screen.getByTestId("inbox-refused-allow"));

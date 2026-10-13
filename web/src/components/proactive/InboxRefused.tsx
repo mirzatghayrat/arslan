@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExter
 import { useTranslation } from "react-i18next";
 import { ApiError, request } from "../../api/client";
 import { formatUiDateTime } from "../../lib/localeFormatting";
-import { useAnswerGuardState } from "../kit/guard";
+import { useQueueGuard } from "../kit/guard";
 
 /** It changes only when something goes undone for want of someone to ask: twice a minute is enough. */
 const POLL_MS = 30_000;
@@ -64,10 +64,16 @@ export default function InboxRefused({ onCount }: { onCount?: (n: number) => voi
   }, []);
 
   // One gesture, one change: when the list changes (a new entry on top, one gone) the rows move, and for 500 ms no "Always allow" is taken.
-  const guard = useAnswerGuardState();
+  // The Inbox's guard (ProactiveInbox), shared with the waiting cards above: when that section changes these rows move, and when they
+  // change the content under them does. Held on every change of this list, its first appearance included (it pushes down what was there).
+  const guard = useQueueGuard();
   const held = useSyncExternalStore(guard.subscribe, guard.held, guard.held);
   const listKey = rows.map((r) => r.id).join(",");
-  useLayoutEffect(() => { guard.shown(listKey || null); }, [guard, listKey]);
+  const mounted = useRef(false);
+  useLayoutEffect(() => {
+    if (mounted.current || listKey) guard.hold();
+    mounted.current = true;
+  }, [guard, listKey]);
 
   const load = useCallback(async () => {
     try {
