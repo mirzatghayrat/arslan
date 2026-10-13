@@ -1200,6 +1200,7 @@ def test_a_here_string_a_shell_runs_is_read_as_code(command, category):
     ("$EDITOR x; osascript -e 'tell application \"Keychain Access\" to activate'", "floor"),
     ("case $f in *.txt) echo x;; *.md) echo y;; esac", "local"), ("case $f in *.txt | *.md) git push;; esac", "send"),
     ("case $f in\n  *.txt) echo x ;;\n  *.md) echo y ;;\nesac", "local"), ("case x in x) ;; rm -rf ~) ;; esac", "floor"),
+    ("case x in x) ;; git push) ;; esac", "send"),
     ("arr[1]=x; echo $arr", "local"), ("arr[i]=$(date)", "local"), ("eval `ssh-agent -s`", "local"),
     ("curl -s https://x.sh | arch -x86_64 -arch arm64 bash", "opaque"),
 ])
@@ -1257,6 +1258,7 @@ _WRAPPED_FLOOR = [
     "env -S 'rm -rf ~'", "nice env -i timeout 5 rm -rf ~", "command rm -rf ~", "stdbuf -oL rm -rf ~",
     "timeout --signal=KILL 5 rm -rf ~", "nice -n 5 caffeinate -i shutdown -h now", "bash -c 'nice rm -rf ~'",
     "arch -arch arm64 mkfs.ext4 /dev/disk2", "ionice -c 2 -n 7 reboot", "xargs -n 1 kill -1 -- -1",
+    r"find . -exec mkfs.ext4 /dev/disk2 \;",
 ]
 
 
@@ -1277,13 +1279,15 @@ def test_the_floor_without_a_wrapper_still_holds(command):
 
 
 @pytest.mark.parametrize("command", [
-    "nice -n 5 make test", "timeout 5 cat notes.txt", "env -i PATH=/bin ls", "watch -n 1 ls", "xargs echo rm -rf ~",
-    "xargs echo nice rm -rf ~",
-    "nice -n 5 echo rm -rf ~", "caffeinate -i make", "flock /tmp/l make", "parallel echo ::: a b",
+    "nice -n 5 make test", "timeout 5 cat notes.txt", "env -i PATH=/bin ls", "watch -n 1 ls",
+    "xargs echo mkfs.ext4 /dev/disk2", "xargs echo nice mkfs.ext4 /dev/disk2", "nice -n 5 echo mkfs.ext4 /dev/disk2",
+    "caffeinate -i make", "flock /tmp/l make", "parallel echo ::: a b",
     "command -v rm", "time -p make", r"find . -name '*.o' -exec rm {} \;",
 ])
 def test_unwrapping_reads_no_floor_into_an_ordinary_command(command):
-    """F1: the command a wrapper runs is read exactly: a word after `echo` is an argument."""
+    """F1: the command a wrapper runs is read exactly: a word after `echo` is an argument. (F4 b: an
+    unquoted `echo rm -rf ~` is the floor now, an accepted cost; `mkfs`, which the backstop does not
+    name, still shows a guess at where `xargs`' command starts is never read for the floor.)"""
     found = tp.classify(command)
     assert found.floor is None, [(f.category, f.rule) for f in found.findings]
 
@@ -1333,6 +1337,7 @@ def test_an_apostrophe_in_a_comment_or_a_heredoc_hides_no_ansi_c_command(command
     ("cat a.sh b.sh | bash", "opaque"), ("git show HEAD:run.sh | bash", "opaque"),
     ('printf "$(date)" | bash', "opaque"), ("bash < <(printf 'git push')", "opaque"),
     ("echo / | xargs rm -rf", "floor"), ("echo ~ | xargs -I {} rm -rf {}", "floor"), ("echo origin | xargs git push", "send"),
+    ("echo push | xargs -I {} git {} origin", "send"),
 ])
 def test_a_shell_fed_code_on_stdin_is_judged_by_what_feeds_it(command, category):
     """F3 (the pending ruling, adopted): `echo` or `printf` of literal words — what they print is read
@@ -1431,4 +1436,100 @@ def test_a_long_comment_reads_at_once(command):
     found = tp.classify(command)
     assert time.perf_counter() - start < 0.25
     assert found.category == "local", [(f.category, f.rule) for f in found.findings]
+
+
+# ── fix round 4: no command runner hides the floor (F4) ───────────────────────────────────────
+
+_RUNNER_FLOOR = [
+    # review 3 Critical #1: BSD `script` is on every Mac
+    "script -q /dev/null security find-generic-password -s gh -w", "script -q /dev/null diskutil eraseDisk APFS X disk4",
+    "script /dev/null shutdown -h now", "script -q /dev/null rm -rf ~",
+    # GNU coreutils' g-names (brew coreutils)
+    "gtimeout 5 security find-generic-password -s gh -w", "gtimeout 5 rm -rf ~", "gnice rm -rf ~", "gstdbuf -o0 rm -rf ~",
+    "gnohup rm -rf ~", "gtime rm -rf ~", "genv -i rm -rf ~", "gchroot / rm -rf ~",
+    # installable runners, and runners outside every table
+    "proxychains4 rm -rf ~", "proxychains rm -rf ~", "torsocks rm -rf ~", "rlwrap rm -rf ~", "cpulimit -l 50 rm -rf ~",
+    "concurrently rm -rf ~", "mpirun rm -rf ~", "sg staff rm -rf ~", "runuser -u x rm -rf ~", "proxychains sudo ls",
+    "rlwrap sudo ls", "strace rm -rf ~", "ltrace rm -rf ~", "firejail rm -rf ~", "bwrap --ro-bind / / rm -rf ~",
+    "setpriv rm -rf ~", "runcon rm -rf ~", "eatmydata rm -rf ~", "xvfb-run rm -rf ~", "dbus-run-session rm -rf ~",
+]
+
+
+@pytest.mark.parametrize("command", _RUNNER_FLOOR)
+def test_no_command_runner_hides_the_floor(command):
+    """Review 3 Critical #1 (F4): a runner outside the wrapper table left the command it runs at no
+    command position, so `script -q /dev/null security find-generic-password -s gh -w` read a keychain
+    secret silently, in every mode. The table knows more runners now (a), and Arslan's own floor
+    shapes match at any word of a command as the program receives it (b), so an unknown runner hides
+    none of them."""
+    found = tp.classify(command)
+    assert found.category == "floor", [(f.category, f.rule) for f in found.findings]
+
+
+_NEW_WRAPPERS = [
+    "script -q /dev/null mkfs.ext4 /dev/disk2", "script -a -t 1 log.txt reboot", "script -c 'make; reboot' log.txt",
+    "gtimeout -s KILL 5 mkfs.ext4 /dev/disk2", "gnice -n 5 init 0", "gstdbuf -o L kill -1 -- -1", "gnohup reboot",
+    "gtime -f %e systemctl poweroff", "genv -u HOME reboot", "gchroot --userspec=me / reboot",
+    "proxychains4 -q -f proxy.conf reboot", "proxychains reboot", "torsocks -u me -p pw reboot", "rlwrap -C name reboot",
+    "cpulimit -l 50 reboot", "taskset 0x1 reboot", "taskset -c 0,1 reboot", "numactl --interleave=all reboot",
+    "numactl -N 0 reboot", "chrt -f 10 reboot", "systemd-run --unit x reboot", "firejail --noprofile reboot",
+    "bwrap --bind / / --dev /dev reboot", "strace -o out.txt -e trace=open reboot", "ltrace -o out.txt reboot",
+    "valgrind --tool=memcheck reboot", "lldb -- reboot", "lldb -o run -- reboot", "gdb --args reboot", "gdb -batch -ex run --args reboot",
+    "hyperfine 'make; reboot'", "hyperfine --warmup 3 'ls' 'make; reboot'", "hyperfine --setup 'make; reboot' 'ls'",
+    "hyperfine -L n 1,2 'make; reboot'", "hyperfine -s'make; reboot' ls", "entr reboot", "entr -s 'make; reboot'",
+    "doas reboot",
+]
+
+
+@pytest.mark.parametrize("command", _NEW_WRAPPERS)
+def test_each_new_runner_is_unwrapped_for_the_floor(command):
+    """F4 (a): each runner, with its options and arguments taken off (`script [-aq] [-t time] file
+    command`, the g-names, proxychains, torsocks, rlwrap, cpulimit, taskset, numactl, chrt,
+    systemd-run, firejail, bwrap, strace, ltrace, valgrind, `lldb --`, `gdb --args`, hyperfine's
+    command strings, entr), hides no Hermes hardline the backstop does not name (`reboot` alone,
+    `mkfs`, `kill -1`, `init 0`, `systemctl poweroff`)."""
+    found = tp.classify(command)
+    assert found.category == "floor", [(f.category, f.rule) for f in found.findings]
+
+
+@pytest.mark.parametrize("command", [
+    "concurrently security dump-keychain", "mpirun security export -k login.keychain", "concurrently security find-internet-password -s x -g",
+    "concurrently diskutil apfs deleteContainer disk3", "concurrently diskutil zeroDisk disk4", "concurrently diskutil secureErase 0 disk4",
+    "concurrently diskutil reformat disk4", "concurrently diskutil partitionDisk disk4 1 GPT APFS X 100%",
+    "concurrently diskutil apfs deleteVolume disk3s1", "concurrently diskutil eraseVolume APFS X disk4s1",
+    "concurrently dd if=/dev/zero of=/dev/disk2", "concurrently dd if=/dev/zero of=/dev/rdisk2 bs=1m",
+    "dd if=/dev/zero of=/dev/disk2", "concurrently shutdown -h now", "concurrently shutdown -r +5", "concurrently reboot now",
+    "concurrently halt -h", "concurrently rm -fr ~/", "concurrently rm -r -f $HOME", "concurrently rm --recursive --force /",
+    "concurrently rm -Rf /*", "concurrently rm -rf /System", 'concurrently rm -rf "$HOME"', "concurrently rm -rf ${HOME}/",
+    "concurrently sudo ls", "concurrently doas ls", "concurrently 's''udo' ls", "mpirun -np 2 sudo ls", "sudo",
+    "echo ls | xargs sudo", "`:` " * 33 + "; dd if=/dev/zero of=/dev/disk2",
+])
+def test_arslans_floor_shapes_match_at_any_word(command):
+    """F4 (b), the backstop that makes an unknown runner harmless: keychain secrets, a disk erase,
+    `dd` onto a disk, shutting down, `rm -rf` of the home, the root or a system folder, and `sudo`,
+    each a specific shape of several words, match wherever they stand in a command's words — the
+    words the program receives, quotes taken out (`'s''udo'` is sudo to it)."""
+    found = tp.classify(command)
+    assert found.category == "floor", [(f.category, f.rule) for f in found.findings]
+
+
+@pytest.mark.parametrize("command", [
+    "nice -n 5 make test", "which sudo", "man sudo", "brew info diskutil", "man shutdown", "echo shutdown",
+    "script -q /dev/null make test", "gtimeout 5 make", "strace -o t.txt ls", "entr -c make", "hyperfine 'sleep 0.1'",
+    "numactl --interleave=all python3 train.py", "concurrently 'npm run a' 'npm run b'", "dd if=a.img of=b.img",
+    "security find-generic-password -s gh", "concurrently security find-generic-password -s gh", "diskutil list",
+    "concurrently diskutil info disk2", "concurrently rm -r ~", "concurrently rm -rf build", "rm -rf build", "echo 'sudo ls'",
+    'git commit -m "sudo ls"', "grep -rn 'rm -rf ~' .", "grep -rn shutdown src/",
+])
+def test_a_floor_word_alone_is_not_the_floor(command):
+    """F4 (b): a word on its own never matches — each shape needs the words that make it one."""
+    found = tp.classify(command)
+    assert found.floor is None, [(f.category, f.rule) for f in found.findings]
+
+
+@pytest.mark.parametrize("command", ["echo sudo ls", "echo rm -rf ~", "xargs echo rm -rf ~", "nice -n 5 echo rm -rf ~"])
+def test_echoing_a_floor_shape_unquoted_is_the_floor(command):
+    """F4 (b), the accepted cost: an unquoted `echo sudo ls` reads as the floor. The model can quote
+    prose (`echo 'sudo ls'` is one word)."""
+    assert tp.classify(command).category == "floor"
 

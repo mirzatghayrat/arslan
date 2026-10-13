@@ -476,6 +476,7 @@ _FLAT_KEYCHAIN = re.compile(r"(?<![\w.-])security\s+(?:dump-keychain|export|find
                             r"[^\n]*\s-[a-zA-Z]*[wg])", re.I)
 _FLAT_DISK = re.compile(r"(?<![\w.-])diskutil\s+(?:apfs\s+)?(?:erase\w*|zerodisk|randomdisk|secureerase|reformat"
                         r"|partitiondisk|deletecontainer|deletevolume)\b", re.I)
+_FLAT_DD = re.compile(r"(?<![\w.-])dd\s[^\n]*\bof=/dev/r?disk\d", re.I)
 
 
 def _floor_of_unread(text: str) -> tuple[Finding, ...]:
@@ -515,6 +516,8 @@ def _floor_shown(text: str) -> list[Finding]:
             found.append(Finding("floor", "keychain-secrets", _WHY["keychain-secrets"]))
         if _FLAT_DISK.search(flat):
             found.append(Finding("floor", "disk-erase", "erases a disk"))
+        if _FLAT_DD.search(flat):
+            found.append(Finding("floor", "hardline", "dd to raw block device"))
         if _touches_arslan_data(text):
             found.append(Finding("floor", "arslan-data", "touches Arslan's own data, keys or database"))
         return found
@@ -1438,7 +1441,11 @@ def _most_wrappers(text: str) -> int:
 
 #: Programs that run the command written after their own options: what they run is read too.
 _RUNS_NEXT = frozenset({"xargs", "watch", "caffeinate", "arch", "ionice", "stdbuf", "unbuffer", "chronic",
-                        "flock", "parallel", "npx", "bunx", "pnpx", "uvx"})
+                        "flock", "parallel", "npx", "bunx", "pnpx", "uvx",
+                        # F4 (a): the runners the wrapper table knows now
+                        "script", "gtimeout", "gnice", "gstdbuf", "gnohup", "gtime", "genv", "gchroot", "proxychains",
+                        "proxychains4", "torsocks", "rlwrap", "cpulimit", "numactl", "systemd-run", "firejail", "bwrap",
+                        "strace", "ltrace", "valgrind", "lldb", "gdb", "hyperfine", "entr"})
 #: Package runners, and the subcommand after which they run a command (`uv run twine upload`).
 _RUNNER_RUNS = {"uv": {"run"}, "poetry": {"run"}, "pdm": {"run"}, "pipx": {"run"}, "npm": {"exec"},
                 "pnpm": {"exec", "dlx"}, "yarn": {"dlx"}, "pipenv": {"run"}, "bundle": {"exec"},
@@ -2501,8 +2508,16 @@ def _unescape_print(text: str) -> str:
 
 # ── the floor ─────────────────────────────────────────────────────────────────
 
-_DISK_ERASE = frozenset({"erasedisk", "erasevolume", "zerodisk", "randomdisk", "secureerase", "reformat",
-                         "partitiondisk"})
+#: `diskutil` verbs that erase or delete (any `erase…`, with or without `apfs` before them).
+_DISK_ERASE = frozenset({"zerodisk", "randomdisk", "secureerase", "reformat", "partitiondisk", "deletecontainer",
+                         "deletevolume"})
+#: What `rm -rf` must not take (F4 b): the home, the root, a system folder (Hermes' and macOS's).
+_RM_HOME = re.compile(r"(?:~|\$HOME|\$\{HOME\})(?:/|/\*)?")
+_RM_ROOT = re.compile(r"/+\*?")
+_RM_SYSTEM = re.compile(r"/+(?:System(?:/.*)?|(?:Library|Applications|Users|private|Volumes|home|root|etc|usr|var|bin"
+                        r"|sbin|boot|lib)(?:/|/\*)?)")
+_DD_DISK = re.compile(r"of=/dev/(?:r?disk\d|sd|nvme|hd|mmcblk|vd|xvd)", re.I)
+_SHUTDOWN_WHEN = re.compile(r"-[a-zA-Z]*[hr][a-zA-Z]*|now|\+\d+")
 
 
 def _floor_findings(text: str, shell: str, commands: list[list[str]]) -> list[Finding]:
@@ -2514,17 +2529,64 @@ def _floor_findings(text: str, shell: str, commands: list[list[str]]) -> list[Fi
         found += _floor_patterns(subject)
     if _touches_arslan_data(text) or _writes_arslan_data(commands):
         found.append(Finding("floor", "arslan-data", "touches Arslan's own data, keys or database"))
-    for argv in commands:
-        name = _name(argv)
-        if name == "diskutil" and len(argv) > 1 and (
-                argv[1].lower() in _DISK_ERASE
-                or (argv[1].lower() == "apfs" and len(argv) > 2
-                    and argv[2].lower() in {"deletecontainer", "deletevolume", "erasevolume"})):
-            found.append(Finding("floor", "disk-erase", "erases a disk"))
-        if name in ("sudo", "doas"):              # `env sudo …`, `nice sudo …`: the regex sees only a start
+    for argv in commands:                       # `env sudo …`, `script -q /dev/null sudo …`: the words (F4 b)
+        found += _argv_floor(argv)
+    return found
+
+
+def _argv_floor(argv: list[str]) -> list[Finding]:
+    """F4 (b), the backstop that makes a runner Arslan does not know harmless: Arslan's own floor
+    shapes at ANY word of one command, as the program receives its words (quotes taken out), not
+    only at its command word — `script -q /dev/null security find-generic-password -s gh -w`,
+    `proxychains rm -rf ~`, a function of the command's own that runs `"$@"`. Each shape is several
+    words, so a word on its own never matches (`which sudo`, `man shutdown`, `brew info diskutil`):
+    `security find-*-password … -w|-g`, `security dump-keychain|export`; `diskutil [apfs] erase…|
+    zeroDisk|randomDisk|secureErase|reformat|partitionDisk|deleteContainer|deleteVolume`; `dd …
+    of=/dev/[r]disk…`; `shutdown|halt|reboot` and `-h`, `-r`, `now` or `+N`; `rm` with a recursive
+    and a force flag and the home, the root or a system folder; `sudo|doas` and another word (alone,
+    only as the command word). The accepted cost: an unquoted `echo sudo ls` is the floor; prose
+    can be quoted. One pass from the end gathers what each shape needs after a word."""
+    found: list[Finding] = []
+    n = len(argv)
+    behind: list[tuple] = [()] * n           # (recursive, force, rm target, dd onto a disk, -w/-g) after word k
+    recursive = force = disk = secret = False
+    target = ""
+    for k in range(n - 1, -1, -1):
+        behind[k] = (recursive, force, target, disk, secret)
+        word = argv[k]
+        if word in ("--recursive", "--force"):
+            recursive, force = recursive or word == "--recursive", force or word == "--force"
+        elif word.startswith("-") and not word.startswith("--") and len(word) > 1:
+            letters = word[1:]
+            recursive = recursive or "r" in letters or "R" in letters
+            force = force or "f" in letters
+            secret = secret or "w" in letters or "g" in letters
+        if _RM_HOME.fullmatch(word):
+            target = "recursive delete of home directory"
+        elif _RM_ROOT.fullmatch(word):
+            target = "recursive delete of root filesystem"
+        elif _RM_SYSTEM.fullmatch(word):
+            target = "recursive delete of system directory"
+        disk = disk or _DD_DISK.match(word) is not None
+    for k in range(n):
+        name = os.path.basename(argv[k].lstrip("=")).lower()
+        recursive, force, target, disk, secret = behind[k]
+        after = argv[k + 1].lower() if k + 1 < n else ""
+        if name in ("sudo", "doas") and (k == 0 or after):
             found.append(Finding("floor", "sudo", _WHY["sudo"]))
-        if name == "security" and _reads_keychain_secret(argv[1:]):
+        elif name == "security" and (after in ("dump-keychain", "export") or (
+                after in ("find-generic-password", "find-internet-password") and secret)):
             found.append(Finding("floor", "keychain-secrets", _WHY["keychain-secrets"]))
+        elif name == "diskutil" and after:
+            verb = argv[k + 2].lower() if after == "apfs" and k + 2 < n else after
+            if verb.startswith("erase") or verb in _DISK_ERASE:
+                found.append(Finding("floor", "disk-erase", "erases a disk"))
+        elif name == "dd" and disk:
+            found.append(Finding("floor", "hardline", "dd to raw block device"))
+        elif name in ("shutdown", "halt", "reboot") and _SHUTDOWN_WHEN.fullmatch(after):
+            found.append(Finding("floor", "hardline", "system shutdown/reboot"))
+        elif name == "rm" and recursive and force and target:
+            found.append(Finding("floor", "hardline", target))
     return found
 
 
@@ -2542,12 +2604,14 @@ def _floor_patterns(shell: str) -> list[Finding]:
     return found
 
 
-#: Wrappers, and what they take before the command they run (F1): the options that take the next
-#: word as their value, and the plain arguments that come first (`timeout 5`, `flock /tmp/x`,
-#: `chroot DIR`). An option glued to its value (`-n5`, `-oL`, `--signal=KILL`) takes no word.
-_WRAPPER_ARGS: dict[str, tuple[frozenset[str], int]] = {name: (frozenset(options.split()), positional)
-                                                         for name, options, positional in (
-    ("nice", "-n --adjustment", 0), ("env", "-u --unset -C --chdir -P", 0),
+#: Wrappers, and what they take before the command they run (F1, F4): the options that take values (as
+#: `option:N` for N words, one by default), and the plain arguments that come first (`timeout 5`, `flock
+#: /tmp/x`, `chroot DIR`, `script FILE`, `taskset MASK`). An option glued to its value (`-n5`, `-oL`,
+#: `--signal=KILL`) takes no word.
+_WRAPPER_ARGS: dict[str, tuple[dict[str, int], int]] = {
+    name: ({option.partition(":")[0]: int(option.partition(":")[2] or 1) for option in options.split()}, positional)
+    for name, options, positional in (
+    ("nice", "-n --adjustment", 0), ("env", "-u --unset -C --chdir -P -a --argv0", 0),
     ("ionice", "-c --class -n --classdata -p --pid -P --pgid -u --uid", 0),
     ("stdbuf", "-i --input -o --output -e --error", 0), ("timeout", "-s --signal -k --kill-after", 1),
     ("flock", "-w --wait --timeout -E --conflict-exit-code", 1), ("caffeinate", "-t -w", 0),
@@ -2558,14 +2622,53 @@ _WRAPPER_ARGS: dict[str, tuple[frozenset[str], int]] = {name: (frozenset(options
     ("parallel", "-j --jobs -N -n --max-args -a --arg-file -S --sshlogin -d --delimiter -I --replace --colsep -C "
                  "--halt --timeout --joblog --results --tmpdir -E", 0),
     ("time", "-f --format -o --output", 0), ("chroot", "--userspec --groups", 1), ("taskset", "", 1),
-    ("chrt", "", 1), ("command", "", 0), ("builtin", "", 0), ("exec", "-a", 0),
-    ("sudo", "-u -g -C -D -h -p -r -t -U -T --user --group", 0), ("doas", "-u -C", 0),
+    ("chrt", "-T --sched-runtime -P --sched-period -D --sched-deadline", 1), ("command", "", 0), ("builtin", "", 0),
+    ("exec", "-a", 0), ("sudo", "-u -g -C -D -h -p -r -t -U -T --user --group", 0), ("doas", "-u -C", 0),
     ("noglob", "", 0), ("nocorrect", "", 0), ("coproc", "", 0), ("npx", "-p --package", 0),
     ("pnpx", "--package", 0), ("bunx", "-p --package", 0), ("uvx", "--from --with -p --python --index-url", 0),
+    # F4 (a): runners outside the first table (review 3 C1). BSD `script [-aeFkqr] [-t time] [file [command …]]`,
+    # always on a Mac (GNU's `-c` string is `_WRAPPER_STRING`'s).
+    ("script", "-t -T", 1), ("proxychains", "-f", 0), ("proxychains4", "-f", 0),
+    ("torsocks", "-u --user -p --pass -a --address -P --port", 0),
+    ("rlwrap", "-b --break-chars -C --command-name -D --history-no-dupes -e --extra-char-after-completion -f --file "
+               "-F --history-format -g --forget-matching -H --history-filename -l --logfile -M --multi-line-ext "
+               "-O --only-cook -P --pre-given -q --quote-characters -s --histsize -S --substitute-prompt "
+               "-t --set-term-name -w --polling -z --filter", 0),
+    ("cpulimit", "-l --limit -p --pid -e --exe -P --path -c --cpu", 0),
+    ("numactl", "-i --interleave -p --preferred -m --membind -N --cpunodebind -C --physcpubind -P --preferred-many "
+                "-w --weighted-interleave", 0),
+    ("systemd-run", "-u --unit -p --property --description --slice --uid --gid --nice --working-directory -E --setenv "
+                    "-H --host -M --machine --on-active --on-boot --on-startup --on-unit-active --on-unit-inactive "
+                    "--on-calendar --timer-property --path-property --socket-property --service-type", 0),
+    ("firejail", "", 0),
+    ("bwrap", "--bind:2 --bind-try:2 --dev-bind:2 --dev-bind-try:2 --ro-bind:2 --ro-bind-try:2 --symlink:2 --file:2 "
+              "--bind-data:2 --ro-bind-data:2 --setenv:2 --chmod:2 --overlay:3 --remount-ro --tmpfs --proc --dev --dir "
+              "--mqueue --chdir --unsetenv --uid --gid --hostname --seccomp --add-seccomp-fd --info-fd "
+              "--json-status-fd --sync-fd --block-fd --userns-block-fd --lock-file --exec-label --file-label "
+              "--cap-add --cap-drop --args --argv0 --perms --size --userns --userns2 --pidns --overlay-src "
+              "--tmp-overlay --ro-overlay", 0),
+    ("strace", "-a -b -e -E -I -o -O -p -P -s -S -u -X -U", 0),
+    ("ltrace", "-a -A -D -e -F -l -n -o -p -s -u -w -x", 0), ("valgrind", "", 0),
+    ("lldb", "-o -O -s -S -k -K -a -c -p -n -f -x -r -l -L -R -w --one-line --one-line-before-file --source "
+             "--source-before-file --one-line-on-crash --source-on-crash --arch --core --attach-pid --attach-name "
+             "--file --repl-language --script-language", 0),
+    ("gdb", "-ex -iex -x -ix -cd -d -s -e -se -c -p --pid --core --exec --symbols --command --init-command "
+            "--eval-command --init-eval-command --directory --cd", 0),
+    ("hyperfine", "-w --warmup -m --min-runs -M --max-runs -r --runs -s --setup -p --prepare -c --cleanup --conclude "
+                  "-P:3 --parameter-scan:3 -D --parameter-step-size -L:2 --parameter-list:2 -S --shell -u --time-unit "
+                  "--style --sort --export-asciidoc --export-csv --export-json --export-markdown --export-orgmode "
+                  "-n --command-name --output --input --reference --min-benchmarking-time", 0),
+    ("entr", "", 0),
 )}
+#: GNU coreutils under their Homebrew names read as the originals (F4 a).
+_WRAPPER_ARGS.update({"g" + name: _WRAPPER_ARGS[name] for name in ("timeout", "nice", "stdbuf", "nohup", "time", "env",
+                                                                    "chroot")})
 #: Wrapper options whose value is a command string, run with `sh -c` or split into words.
 _WRAPPER_STRING = {"flock": frozenset({"-c", "--command"}), "env": frozenset({"-S", "--split-string"}),
-                   "npx": frozenset({"-c", "--call"})}
+                   "genv": frozenset({"-S", "--split-string"}), "npx": frozenset({"-c", "--call"}),
+                   "script": frozenset({"-c", "--command"})}
+#: hyperfine's options whose value is a command it runs, besides each command it benchmarks.
+_HYPERFINE_CODE = frozenset({"-s", "--setup", "-p", "--prepare", "-c", "--cleanup", "--conclude", "--reference"})
 _PARALLEL_SOURCES = frozenset({":::", "::::", ":::+", "::::+"})
 
 
@@ -2583,6 +2686,8 @@ def _unwrap(argv: list[str]) -> tuple[str, bool] | None:
         args, i = words[1:], 0
         if name == "command" and args[:1] in (["-v"], ["-V"]):
             return None                                     # a lookup: it runs nothing
+        if name == "hyperfine":                             # each command it runs, a shell string (F4 a)
+            return _hyperfine_commands(args)
         while i < len(args):
             arg = args[i]
             if arg in _WRAPPER_STRING.get(name, ()):
@@ -2590,20 +2695,23 @@ def _unwrap(argv: list[str]) -> tuple[str, bool] | None:
             if arg == "--":
                 i += 1
                 break
-            if name == "env" and _ASSIGNMENT_WORD.match(arg):
+            if name in ("env", "genv") and _ASSIGNMENT_WORD.match(arg):
                 i += 1
             elif arg.startswith("-") and len(arg) > 1:
-                i += 2 if arg in with_value else 1
+                i += 1 + with_value.get(arg, 0)
             else:
                 break
         i += positional
         while name == "flock" and i < len(args) and args[i].startswith("-"):    # `flock FILE -c CMD`
             if args[i] in _WRAPPER_STRING["flock"]:
                 return (args[i + 1], True) if i + 1 < len(args) else None
-            i += 2 if args[i] in with_value else 1
+            i += 1 + with_value.get(args[i], 0)
         words = args[i:]
         if name == "watch":                                 # the words, joined, for `sh -c`
             return (" ".join(words), True) if words else None
+        if name == "entr" and any(arg.startswith("-") and not arg.startswith("--") and "s" in arg[1:]
+                                  for arg in args[:i]):     # `entr -s 'cmd'`: a shell string
+            return (words[0], True) if words else None
         if name == "parallel" and words:                   # its template, filled with the `:::` values
             cut = next((k for k, word in enumerate(words) if word in _PARALLEL_SOURCES), len(words))
             template = " ".join(words[:cut])
@@ -2612,6 +2720,30 @@ def _unwrap(argv: list[str]) -> tuple[str, bool] | None:
     if not stripped or not words:
         return None
     return shlex.join(words), False
+
+
+def _hyperfine_commands(args: list[str]) -> tuple[str, bool] | None:
+    """Every command `hyperfine` runs, each a shell string: the ones it benchmarks and its set-up,
+    prepare, clean-up and conclude commands, one per line (F4 a)."""
+    with_value = _WRAPPER_ARGS["hyperfine"][0]
+    codes, i = [], 0
+    while i < len(args):
+        arg = args[i]
+        option, equals, value = arg.partition("=")
+        if arg == "--":
+            codes += args[i + 1:]
+            break
+        if arg.startswith("-") and len(arg) > 1:
+            glued = not arg.startswith("--") and len(arg) > 2 and arg[:2] in _HYPERFINE_CODE
+            if option in _HYPERFINE_CODE and equals or glued:
+                codes.append(value if equals else arg[2:])
+            elif option in _HYPERFINE_CODE and i + 1 < len(args):
+                codes.append(args[i + 1])
+            i += 1 if equals or glued else 1 + with_value.get(arg, 0)
+            continue
+        codes.append(arg)
+        i += 1
+    return ("\n".join(codes), True) if codes else None
 
 
 def _unwrapped_codes(commands: list[list[str]]):
@@ -2625,17 +2757,6 @@ def _unwrapped_codes(commands: list[list[str]]):
             yield unwrapped[0]
         elif getattr(argv, "wrapped", False):
             yield shlex.join(argv)
-
-
-def _reads_keychain_secret(args: list[str]) -> bool:
-    """`security find-*-password` with -w or -g anywhere in a short-option cluster (`-wa`, `-gs x`),
-    `dump-keychain`, `export`: the password or key itself is printed."""
-    if not args:
-        return False
-    if args[0] in ("dump-keychain", "export"):
-        return True
-    return args[0] in ("find-generic-password", "find-internet-password") and any(
-        a.startswith("-") and not a.startswith("--") and ({"w", "g"} & set(a[1:])) for a in args[1:])
 
 
 def _hardline(text: str) -> str:
