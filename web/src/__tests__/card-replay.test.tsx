@@ -15,18 +15,20 @@ vi.mock("react-i18next", () => ({
 
 import * as client from "../api/client";
 import AskSlot from "../components/AskSlot";
-import { REPLAY_SETTLE_MS, useArslanStore, initialArslanState } from "../stores/arslanStore";
+import { REPLAY_ASK_TIMEOUT_MS, REPLAY_SETTLE_MS, useArslanStore, initialArslanState } from "../stores/arslanStore";
 
 /** What GET /approvals/pending answers: every card that still waits, shared or private, as the server lists them. */
 let server: (() => Promise<unknown>) | null = null;
 let asked: string[] = [];
+let inits: (RequestInit | undefined)[] = [];
 beforeEach(() => {
   useArslanStore.setState(initialArslanState(), true);
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-10-13T10:00:00Z"));
   asked = [];
+  inits = [];
   server = () => Promise.reject(new Error("the server cannot be asked"));          // by default: the timer's fallback
-  vi.spyOn(client, "request").mockImplementation(((path: string) => { asked.push(path); return server!(); }) as never);
+  vi.spyOn(client, "request").mockImplementation(((path: string, init?: RequestInit) => { asked.push(path); inits.push(init); return server!(); }) as never);
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
@@ -132,7 +134,7 @@ describe("a reconnect drops the shared cards its replay no longer lists (the ser
   it("a new conversation cancels it: its cards are not touched by the old one's replay", async () => {
     frame(cmd("c1"));
     frame(HISTORY);
-    expect(vi.getTimerCount()).toBe(1);                       // the reconnect is settling
+    expect(vi.getTimerCount()).toBe(2);                       // the reconnect is settling: its fallback timer, and the time the request is given
     act(() => { state().resetForNewConversation(); });
     expect(vi.getTimerCount()).toBe(0);                       // and the new conversation has put an end to it
     frame(cmd("c1"));                                         // the new conversation has a card with the same id
@@ -143,7 +145,7 @@ describe("a reconnect drops the shared cards its replay no longer lists (the ser
   it("a store that is made new has no reconnect still settling", async () => {
     frame(cmd("c1"));
     frame(HISTORY);
-    expect(vi.getTimerCount()).toBe(1);
+    expect(vi.getTimerCount()).toBe(2);
     act(() => { useArslanStore.setState(initialArslanState(), true); });
     expect(vi.getTimerCount()).toBe(0);
     frame(cmd("c1"));
@@ -196,6 +198,7 @@ describe("a reconnect asks the server which cards still wait, and drops exactly 
     answers("c1", "a1");                                        // c1 is private: pending_cards leaves it out, GET /approvals/pending lists it
     frame(HISTORY);
     frame(action("a1"));                                        // the replay lists the shared one only
+    await advance(0);                                           // the server's list comes in (a long advance would run the timers before any answer could)
     await advance(REPLAY_SETTLE_MS * 10);
     expect(waiting()).toEqual(["a1", "c1"]);
   });
@@ -257,7 +260,7 @@ describe("a reconnect asks the server which cards still wait, and drops exactly 
     server = () => new Promise((ok) => { reply = ok; });
     frame(HISTORY);
     frame(cmd("c1"));
-    await advance(REPLAY_SETTLE_MS * 5);
+    await advance(REPLAY_ASK_TIMEOUT_MS - 1_000);
     expect(waiting()).toEqual(["a1", "c1"]);                    // still asked, not failed
     reply([{ call_id: "a1" }, { call_id: "c1" }]);
     await advance(0);
@@ -287,6 +290,62 @@ describe("a reconnect asks the server which cards still wait, and drops exactly 
     act(() => { state().resetForNewConversation(); });
     frame(cmd("c1"));
     reply([]);
+    await advance(0);
+    expect(waiting()).toEqual(["c1"]);
+  });
+
+  it("a request that never answers is given 10 s, then counts as a failure: the stale shared cards the replay did not list go, the ones it did stay", async () => {
+    expect(REPLAY_ASK_TIMEOUT_MS).toBe(10_000);
+    frame(cmd("c1")); frame(action("a1")); frame(write("w1"));
+    server = () => new Promise(() => {});                       // the server never answers
+    frame(HISTORY);
+    frame(cmd("c1"));                                           // the replay lists c1 only
+    await advance(REPLAY_SETTLE_MS + 1_000);                    // the fallback timer's time is long up: a request in flight does not trigger it
+    expect(waiting()).toEqual(["a1", "c1", "w1"]);
+    await advance(REPLAY_ASK_TIMEOUT_MS - REPLAY_SETTLE_MS - 1_000 - 100);   // 9.9 s
+    expect(waiting()).toEqual(["a1", "c1", "w1"]);
+    await advance(200);                                         // 10.1 s: given up
+    expect(waiting()).toEqual(["c1"]);
+    expect(vi.getTimerCount()).toBe(0);                         // nothing left to fire
+    expect(state().cardExpired).toBe(false);
+  });
+
+  it("the request carries a signal, which is aborted when it is given up on (the fetch is not left running)", async () => {
+    frame(cmd("c1")); frame(action("a1"));
+    server = () => new Promise(() => {});
+    frame(HISTORY);
+    expect(inits).toHaveLength(1);
+    const signal = inits[0]?.signal as AbortSignal;
+    expect(signal).toBeInstanceOf(AbortSignal);
+    await advance(REPLAY_ASK_TIMEOUT_MS - 100);
+    expect(signal.aborted).toBe(false);
+    await advance(200);
+    expect(signal.aborted).toBe(true);
+  });
+
+  it("an answer inside the 10 s is exact as before, and the time given is not left running", async () => {
+    frame(cmd("c1")); frame(action("a1"));
+    let reply: (rows: unknown[]) => void = () => {};
+    server = () => new Promise((ok) => { reply = ok; });
+    frame(HISTORY);
+    await advance(8_000);
+    reply([{ call_id: "a1" }]);                                 // c1 is gone; a1 (private) still waits
+    await advance(0);
+    expect(waiting()).toEqual(["a1"]);
+    expect(vi.getTimerCount()).toBe(0);
+    await advance(REPLAY_ASK_TIMEOUT_MS * 2);
+    expect(waiting()).toEqual(["a1"]);
+  });
+
+  it("an answer that comes after it was given up on changes nothing", async () => {
+    frame(cmd("c1")); frame(action("a1"));
+    let reply: (rows: unknown[]) => void = () => {};
+    server = () => new Promise((ok) => { reply = ok; });
+    frame(HISTORY);
+    frame(cmd("c1"));
+    await advance(REPLAY_ASK_TIMEOUT_MS + 100);
+    expect(waiting()).toEqual(["c1"]);
+    reply([{ call_id: "a1" }, { call_id: "c1" }]);              // too late: a1 is not brought back by a list
     await advance(0);
     expect(waiting()).toEqual(["c1"]);
   });

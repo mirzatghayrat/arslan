@@ -281,20 +281,24 @@ function _withoutCard(state: CardLists & { cardApply: Record<string, CardApply> 
  *  over. The replay is sent right behind it (ws/arslan.py: history, the journaled frames, the jobs, then `approvals.pending_cards`), in one burst;
  *  there is no frame that ends it. */
 export const REPLAY_SETTLE_MS = 3_000;
+/** How long the request that asks the server which cards wait is given. `request` has no timeout of its own, and one that never answered would leave
+ *  a dead card on screen until its own expiry: past this it counts as a failure, and the fallback applies. */
+export const REPLAY_ASK_TIMEOUT_MS = 10_000;
 /** The cards that are replayed to a socket that connects: the shared ones, which `approvals.pending_cards` lists. A proposal to enrol a machine or to
  *  connect a server is never registered there, and a capability card is the asking window's own. */
 const REPLAYED = new Set(["propose_run_command", "propose_workspace_write", "propose_schedule", "propose_action"]);
 /** After a `history` frame: the shared cards that were on screen, which the replay has not listed (yet). Nothing is waiting when there were none. */
-let _replay: { stale: Set<string>; timer: ReturnType<typeof setTimeout>; due: boolean; failed: boolean } | null = null;
+let _replay: { stale: Set<string>; timer: ReturnType<typeof setTimeout>; giveUp: ReturnType<typeof setTimeout>; due: boolean; failed: boolean } | null = null;
 function _stopReplay() {
-  if (_replay) clearTimeout(_replay.timer);
+  if (_replay) { clearTimeout(_replay.timer); clearTimeout(_replay.giveUp); }
   _replay = null;
 }
 /** A socket has (re)connected: the shared cards on screen are at stake. One whose `card_resolved` went missing while the socket was down is not listed
  *  by the replay and would stay as a dead "1 / 2" entry (an answer to it is swallowed) until its own expiry. But a replay that does not list a card does
  *  not say it is gone: a window's own card is private until the server sees its old socket close, and is never replayed, though the server still waits on
  *  it. So the window asks the server which cards wait (GET /approvals/pending: private and shared, none that is done) and drops the stale ones it does
- *  not list — exactly, and at once. The timer is only the fallback when that request fails: then the cards the replay did not list go when it is up.
+ *  not list — exactly, and at once. The timer is only the fallback when that request fails (or is not answered in `REPLAY_ASK_TIMEOUT_MS`): then the
+ *  cards the replay did not list go when it is up (at once, if its time has passed already).
  *  Never before: a card the replay does list is never taken away and brought back, and a card it brings after all, late, is added again like any other. */
 function _beginReplay(get: GetState, set: SetState) {
   _stopReplay();
@@ -310,6 +314,13 @@ function _beginReplay(get: GetState, set: SetState) {
     set({ pendingCommands: kept(now.pendingCommands), pendingWorkspaceWrites: kept(now.pendingWorkspaceWrites),
           pendingSchedules: kept(now.pendingSchedules), pendingActions: kept(now.pendingActions) });
   };
+  const asking = new AbortController();
+  /** The request failed, was not answered in time, or answered no list: what the replay did not list goes when its time is up (now, if it is). */
+  const fail = () => {
+    if (_replay !== mine) return;
+    mine.failed = true;
+    if (mine.due) { _replay = null; drop(mine); }
+  };
   const mine: NonNullable<typeof _replay> = {
     stale, due: false, failed: false,
     timer: setTimeout(() => {
@@ -317,19 +328,16 @@ function _beginReplay(get: GetState, set: SetState) {
       mine.due = true;                                  // the replay is over; what it did not list goes if the server cannot say better
       if (mine.failed) { _replay = null; drop(mine); }
     }, REPLAY_SETTLE_MS),
+    giveUp: setTimeout(() => { asking.abort(); fail(); }, REPLAY_ASK_TIMEOUT_MS),
   };
   _replay = mine;
   // (An answer that is no list throws below, and is a failure like any other.)
-  void request<{ call_id?: unknown }[]>("/approvals/pending").then((rows) => {
-    if (_replay !== mine) return;                       // another reconnect, a new conversation or a new store came first
+  void request<{ call_id?: unknown }[]>("/approvals/pending", { signal: asking.signal }).then((rows) => {
+    if (_replay !== mine) return;                       // another reconnect, a new conversation, a new store or the time given came first
     const waiting = new Set(rows.flatMap((r) => (typeof r?.call_id === "string" ? [r.call_id] : [])));
     _stopReplay();                                      // exact: no timer left to fire
     drop(mine, waiting);
-  }).catch(() => {
-    if (_replay !== mine) return;
-    mine.failed = true;
-    if (mine.due) { _replay = null; drop(mine); }
-  });
+  }).catch(fail);
 }
 
 // A background job's card is waiting: which job is not in the frame, so the
