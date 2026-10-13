@@ -57,6 +57,27 @@ export function askLine(card: PendingCard): string {
   }
 }
 
+/** The island's note under a card it will not answer, keyed by `locales/island.ts`. The card's permission kind decides: a takeover, a step outside
+ *  the sandbox, a system setting, a new ability, another agent's settings, code that is downloaded or decoded first and another machine each say what
+ *  they are; "may delete, send or pay" is for money, send, destructive and a risky step in an app, which all do one of those. A kind the island does
+ *  not know gets the neutral line — never a wrong risk. A card with no kind, or the plain command kind, is read by what holds it, as before 0.1.61. */
+const HELD_NOTES = { takeover: 'heldTakeover', outside: 'heldOutside', system: 'heldSystem', capability: 'heldCapability',
+  other_agent: 'heldOtherAgent', opaque: 'heldOpaque', remote: 'heldRemote' } as const;
+const RISKY_KINDS = new Set(['money', 'send', 'destructive', 'app_risky']);
+export function heldNoteKey(card: PendingCard):
+    'riskyNote' | 'heldGeneric' | (typeof HELD_NOTES)[keyof typeof HELD_NOTES] {
+  const f = card.frame;
+  const kind = typeof f.perm_kind === 'string' ? f.perm_kind : '';
+  if (Object.prototype.hasOwnProperty.call(HELD_NOTES, kind)) return HELD_NOTES[kind as keyof typeof HELD_NOTES];
+  if (RISKY_KINDS.has(kind)) return 'riskyNote';
+  if (!kind || kind === 'command') {
+    if (!kind && f.kind === 'desktop_risky') return 'riskyNote';
+    if (f.remote_host) return 'heldRemote';
+    if (f.sandbox === 'outside' || f.sandbox === 'retry') return 'heldOutside';
+  }
+  return 'heldGeneric';
+}
+
 /** What Allow says here (0.1.61 §A4). The island answers a card once only — "for this task" on a
  *  card whose first choice is that (the server holds it there, approvals.FIRST_CHOICE_ONLY) — so
  *  on a card that offers more it says which. */

@@ -646,8 +646,11 @@ CARDS = {
     "command": (lambda cid: protocol.propose_run_command(cid, "rm", ["a"], reason="x"), ["once", "conversation", "always"]),
     "app": (lambda cid: protocol.propose_action(cid, "app", "Notes", ""), ["task", "conversation", "always"]),
     # A once-only kind (money, a takeover…): the card offers nothing but "once".
-    "money": (lambda cid: protocol.propose_action(cid, "desktop_risky", "Mail · Pay", ""), ["once"]),
+    "money": (lambda cid: protocol.propose_action(cid, "desktop_risky", "Mail · Pay", "") | {"perm_kind": "money"}, ["once"]),
 }
+#: What a bare yes, or a yes with a scope the card did not offer, becomes on each card: its first choice.
+FIRST_CHOICE = {"command": "once", "app": "task", "write": "once", "schedule": "once", "money": "once"}
+assert FIRST_CHOICE.keys() == CARDS.keys()
 
 
 def _open(kind: str) -> approvals.Pending:
@@ -666,8 +669,7 @@ def _bare_yes(pending: approvals.Pending, source: str, **extra) -> None:
 
 
 @pytest.mark.parametrize("source", ["mac", "inbox"])
-@pytest.mark.parametrize("kind,first", [("command", "once"), ("app", "task"),
-                                        ("write", "once"), ("schedule", "once"), ("money", "once")])
+@pytest.mark.parametrize("kind,first", sorted(FIRST_CHOICE.items()))
 async def test_a_bare_yes_on_any_card_is_its_first_choice(monkeypatch, source, kind, first):
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: (lambda f: None))
     p = _open(kind)
@@ -686,15 +688,18 @@ async def test_a_phone_or_island_yes_on_a_write_or_schedule_card_is_once(monkeyp
 
 
 @pytest.mark.parametrize("source", ["mac", "inbox"])
-@pytest.mark.parametrize("kind,forged", [("write", "always"), ("money", "always"), ("money", "conversation")])
-async def test_an_unoffered_scope_on_a_write_card_is_its_first_choice(monkeypatch, source, kind, forged):
-    """A scope the card did not offer is not "no scope": a write card falls to its first choice, and so does a
-    once-only card, so a forged "always" or "conversation" on a card that offers only "once" stays "once"."""
+@pytest.mark.parametrize("kind,forged", [
+    ("write", "always"), ("schedule", "always"), ("command", "task"), ("app", "once"), ("app", "forever"),
+    # a once-only card offers nothing but "once": a forged wider scope stays "once"
+    ("money", "always"), ("money", "conversation"), ("money", "task"),
+])
+async def test_an_unoffered_scope_on_any_card_is_its_first_choice(monkeypatch, source, kind, forged):
+    """A scope the card did not offer is not "no scope": the card falls to its first choice, on every kind of card."""
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: (lambda f: None))
     p = _open(kind)
     _bare_yes(p, source, scope=forged)
     d = approvals.close_card(p)
-    assert (d["scope"], d["remember"]) == ("once", False)
+    assert (d["scope"], d["remember"]) == (FIRST_CHOICE[kind], False)
 
 
 @pytest.mark.parametrize("source", ["mac", "inbox"])

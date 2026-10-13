@@ -306,8 +306,9 @@ def island_may_answer(frame: dict) -> bool:
             perm_kind = frame["perm_kind"]
             return isinstance(perm_kind, str) and perm_kind in ISLAND_KINDS
         action = frame.get("kind")
-        if action in ("browser_site", "desktop_look", "desktop_app", "mac_shortcut",
-                      "desktop_takeover"):          # Hands v2 §6.4: the island may answer it
+        # A frame with no permission kind (none is sent any more: permissions._ask stamps every card). A takeover is
+        # answered in Arslan whatever the frame carries (spec §A4), and nothing asks with `desktop_look` now: both are "anything new".
+        if action in ("browser_site", "desktop_app", "mac_shortcut"):
             return True
         if action == "mac_script":
             return not _RISKY_SCRIPT.search(str(frame.get("detail") or ""))
