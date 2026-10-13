@@ -1241,3 +1241,47 @@ def test_the_memo_key_holds_the_home_folder(monkeypatch, tmp_path):
     assert tp.classify(command).category == "other_agent"
     monkeypatch.setenv("HOME", str(tmp_path))
     assert tp.classify(command).category == "local"
+
+
+# ── fix round 3: a wrapper never hides the floor (F1) ─────────────────────────────────────────
+
+_WRAPPED_FLOOR = [
+    "nice rm -rf ~", "nice -n 5 rm -rf ~", "env -i rm -rf ~", "xargs rm -rf ~", "caffeinate rm -rf ~",
+    "caffeinate -i rm -rf ~", "arch -arm64 rm -rf ~", "timeout 5 rm -rf ~", "ionice rm -rf ~",
+    "stdbuf -o0 rm -rf ~", "unbuffer rm -rf ~", "flock /tmp/l rm -rf ~", "chronic rm -rf ~", "watch rm -rf ~",
+    "parallel rm -rf ~", "env -i rm -rf /", "nice rm -rf /System", "nice mkfs.ext4 /dev/disk2",
+    "nice kill -1 -- -1", "nice init 0", "nice systemctl poweroff", "nice reboot", "nice shutdown -h now",
+    "watch 'rm -rf ~'", "watch -n 1 'rm -rf ~'", "watch -n 1 'ls; rm -rf ~'", r"find . -exec rm -rf ~ \;",
+    "parallel rm -rf ::: ~", "parallel 'rm -rf {}' ::: ~", "flock -c 'rm -rf ~' /tmp/l", "flock /tmp/l -c 'rm -rf ~'",
+    "env -S 'rm -rf ~'", "nice env -i timeout 5 rm -rf ~", "command rm -rf ~", "stdbuf -oL rm -rf ~",
+    "timeout --signal=KILL 5 rm -rf ~", "nice -n 5 caffeinate -i shutdown -h now", "bash -c 'nice rm -rf ~'",
+    "arch -arch arm64 mkfs.ext4 /dev/disk2", "ionice -c 2 -n 7 reboot", "xargs -n 1 kill -1 -- -1",
+]
+
+
+@pytest.mark.parametrize("command", _WRAPPED_FLOOR)
+def test_a_wrapper_never_hides_the_floor(command):
+    """Review 2 Critical #1 (F1): Hermes' hardline patterns anchor at a command position that skips
+    only `sudo`, `env VAR=VAL`, `exec`, `nohup`, `setsid` and `time`, so `nice rm -rf ~` was an
+    approvable card. Each command is read again with its wrappers, their options and their
+    arguments taken off (`nice -n 5`, `timeout 5`, `flock /tmp/x`, `env -i`, `stdbuf -oL`); what
+    `xargs`, `parallel` and `find -exec` run, and the string `watch` and `flock -c` hand `sh -c`, count."""
+    found = tp.classify(command)
+    assert found.category == "floor", [(f.category, f.rule) for f in found.findings]
+
+
+@pytest.mark.parametrize("command", ["sudo ls", "doas ls", ":(){ :|:& };:", "nice sudo ls", "rm -rf ~"])
+def test_the_floor_without_a_wrapper_still_holds(command):
+    assert tp.classify(command).category == "floor"
+
+
+@pytest.mark.parametrize("command", [
+    "nice -n 5 make test", "timeout 5 cat notes.txt", "env -i PATH=/bin ls", "watch -n 1 ls", "xargs echo rm -rf ~",
+    "xargs echo nice rm -rf ~",
+    "nice -n 5 echo rm -rf ~", "caffeinate -i make", "flock /tmp/l make", "parallel echo ::: a b",
+    "command -v rm", "time -p make", r"find . -name '*.o' -exec rm {} \;",
+])
+def test_unwrapping_reads_no_floor_into_an_ordinary_command(command):
+    """F1: the command a wrapper runs is read exactly: a word after `echo` is an argument."""
+    found = tp.classify(command)
+    assert found.floor is None, [(f.category, f.rule) for f in found.findings]

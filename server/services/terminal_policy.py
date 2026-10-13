@@ -1228,6 +1228,9 @@ def _commands(text: str, depth: int = 0) -> list[list[str]]:
         payload = (" ".join(tokens[1:]) if name == "eval"
                    else hermes._bash_exec_payload(tokens[1:])[1] if name in _SHELLS else None)
         payload = payload or stdin_code
+        if not payload and name in _WRAPPER_ARGS:   # `watch '…'`, `flock -c '…'`, `env -S '…'`: shell code
+            unwrapped = _unwrap(tokens)
+            payload = unwrapped[0] if unwrapped is not None and unwrapped[1] else None
         if payload:
             if depth >= _MAX_CODE_DEPTH:
                 raise _Unreadable(f"code nested more than {_MAX_CODE_DEPTH} deep")
@@ -1252,9 +1255,12 @@ def _commands(text: str, depth: int = 0) -> list[list[str]]:
             argv.dynamic = dynamic and not any(a <= start < b for a, b in quiet)
             add(argv, _here_string_code(bounded))
             for inner in _run_by(argv):
-                if _name(argv) == "find":   # `-exec "$cmd" {} \;` runs a command known only then
-                    inner = _Argv(inner)
+                inner = _Argv(inner)
+                if _name(argv) == "find":   # read exactly; `-exec "$cmd" {} \;` runs a command known only then
                     inner.dynamic = _command_word(inner[0])[1]
+                    inner.wrapped = True
+                else:                       # a guess at where the command starts: an option's value may come first
+                    inner.guessed = True
                 add(inner)
     if budget is not None:
         budget.read[text, depth] = out
@@ -1262,8 +1268,13 @@ def _commands(text: str, depth: int = 0) -> list[list[str]]:
 
 
 class _Argv(list):
-    """One command's words. `dynamic`: its command word is known only at run time (R13 d)."""
+    """One command's words. `dynamic`: its command word is known only at run time (R13 d).
+    `wrapped`: a wrapper runs it (`find -exec`), so the text shows it at no command position (F1).
+    `guessed`: one of `_run_by`'s guesses at where the command after `xargs`, `watch`, a runner …
+    starts (an option's value may come first): read by the asking rules, never for the floor."""
     dynamic = False
+    wrapped = False
+    guessed = False
 
 
 def _spans(segment: str):
@@ -2036,15 +2047,12 @@ _DISK_ERASE = frozenset({"erasedisk", "erasevolume", "zerodisk", "randomdisk", "
 
 
 def _floor_findings(text: str, shell: str, commands: list[list[str]]) -> list[Finding]:
+    """The floor in the command as written, and in each command a wrapper runs, read again with
+    its wrappers taken off (F1): Hermes' hardline and Arslan's own floor patterns anchor at a
+    command position that `nice`, `xargs`, `env -i`, `timeout 5`, `watch '…'` … would hide."""
     found = []
-    hard = _hardline(shell)
-    if hard:
-        found.append(Finding("floor", "hardline", hard))
-    texts = _detection_texts(shell)
-    masked = _masked(texts)
-    for key, pattern, why in _FORBID_C:
-        if _matches(pattern, masked if key in _MASKED_RULES else texts):
-            found.append(Finding("floor", key, why))
+    for subject in (shell, *dict.fromkeys(_unwrapped_codes(commands))):
+        found += _floor_patterns(subject)
     if _touches_arslan_data(text) or _writes_arslan_data(commands):
         found.append(Finding("floor", "arslan-data", "touches Arslan's own data, keys or database"))
     for argv in commands:
@@ -2059,6 +2067,105 @@ def _floor_findings(text: str, shell: str, commands: list[list[str]]) -> list[Fi
         if name == "security" and _reads_keychain_secret(argv[1:]):
             found.append(Finding("floor", "keychain-secrets", _WHY["keychain-secrets"]))
     return found
+
+
+def _floor_patterns(shell: str) -> list[Finding]:
+    """Hermes' hardline and Arslan's own floor patterns over one text."""
+    found = []
+    hard = _hardline(shell)
+    if hard:
+        found.append(Finding("floor", "hardline", hard))
+    texts = _detection_texts(shell)
+    masked = _masked(texts)
+    for key, pattern, why in _FORBID_C:
+        if _matches(pattern, masked if key in _MASKED_RULES else texts):
+            found.append(Finding("floor", key, why))
+    return found
+
+
+#: Wrappers, and what they take before the command they run (F1): the options that take the next
+#: word as their value, and the plain arguments that come first (`timeout 5`, `flock /tmp/x`,
+#: `chroot DIR`). An option glued to its value (`-n5`, `-oL`, `--signal=KILL`) takes no word.
+_WRAPPER_ARGS: dict[str, tuple[frozenset[str], int]] = {name: (frozenset(options.split()), positional)
+                                                         for name, options, positional in (
+    ("nice", "-n --adjustment", 0), ("env", "-u --unset -C --chdir -P", 0),
+    ("ionice", "-c --class -n --classdata -p --pid -P --pgid -u --uid", 0),
+    ("stdbuf", "-i --input -o --output -e --error", 0), ("timeout", "-s --signal -k --kill-after", 1),
+    ("flock", "-w --wait --timeout -E --conflict-exit-code", 1), ("caffeinate", "-t -w", 0),
+    ("arch", "-arch -d -e", 0), ("unbuffer", "", 0), ("chronic", "", 0), ("nohup", "", 0), ("setsid", "", 0),
+    ("watch", "-n --interval -q --equexit", 0),
+    ("xargs", "-I -J -L -n -P -s -d -E -a -R -S --arg-file --delimiter --eof --replace --max-lines --max-args "
+              "--max-procs --max-chars", 0),
+    ("parallel", "-j --jobs -N -n --max-args -a --arg-file -S --sshlogin -d --delimiter -I --replace --colsep -C "
+                 "--halt --timeout --joblog --results --tmpdir -E", 0),
+    ("time", "-f --format -o --output", 0), ("chroot", "--userspec --groups", 1), ("taskset", "", 1),
+    ("chrt", "", 1), ("command", "", 0), ("builtin", "", 0), ("exec", "-a", 0),
+    ("sudo", "-u -g -C -D -h -p -r -t -U -T --user --group", 0), ("doas", "-u -C", 0),
+    ("noglob", "", 0), ("nocorrect", "", 0), ("coproc", "", 0), ("npx", "-p --package", 0),
+    ("pnpx", "--package", 0), ("bunx", "-p --package", 0), ("uvx", "--from --with -p --python --index-url", 0),
+)}
+#: Wrapper options whose value is a command string, run with `sh -c` or split into words.
+_WRAPPER_STRING = {"flock": frozenset({"-c", "--command"}), "env": frozenset({"-S", "--split-string"}),
+                   "npx": frozenset({"-c", "--call"})}
+_PARALLEL_SOURCES = frozenset({":::", "::::", ":::+", "::::+"})
+
+
+def _unwrap(argv: list[str]) -> tuple[str, bool] | None:
+    """The command a run of wrappers in front of `argv` runs, as shell code, and whether the
+    wrapper was handed it as a string (`watch '…'`, `flock -c '…'`, `env -S '…'`, a `parallel`
+    template): None when `argv` starts with no wrapper, or runs no command (`command -v rm`)."""
+    words, stripped = list(argv), False
+    while words:
+        name = os.path.basename(words[0].lstrip("=")).lower()
+        if name not in _WRAPPER_ARGS:
+            break
+        stripped = True
+        with_value, positional = _WRAPPER_ARGS[name]
+        args, i = words[1:], 0
+        if name == "command" and args[:1] in (["-v"], ["-V"]):
+            return None                                     # a lookup: it runs nothing
+        while i < len(args):
+            arg = args[i]
+            if arg in _WRAPPER_STRING.get(name, ()):
+                return (args[i + 1], True) if i + 1 < len(args) else None
+            if arg == "--":
+                i += 1
+                break
+            if name == "env" and _ASSIGNMENT_WORD.match(arg):
+                i += 1
+            elif arg.startswith("-") and len(arg) > 1:
+                i += 2 if arg in with_value else 1
+            else:
+                break
+        i += positional
+        while name == "flock" and i < len(args) and args[i].startswith("-"):    # `flock FILE -c CMD`
+            if args[i] in _WRAPPER_STRING["flock"]:
+                return (args[i + 1], True) if i + 1 < len(args) else None
+            i += 2 if args[i] in with_value else 1
+        words = args[i:]
+        if name == "watch":                                 # the words, joined, for `sh -c`
+            return (" ".join(words), True) if words else None
+        if name == "parallel" and words:                   # its template, filled with the `:::` values
+            cut = next((k for k, word in enumerate(words) if word in _PARALLEL_SOURCES), len(words))
+            template = " ".join(words[:cut])
+            values = " ".join(word for word in words[cut:] if word not in _PARALLEL_SOURCES)
+            return (template.replace("{}", values) if "{}" in template else f"{template} {values}".strip(), True)
+    if not stripped or not words:
+        return None
+    return shlex.join(words), False
+
+
+def _unwrapped_codes(commands: list[list[str]]):
+    """Each command a wrapper runs, as shell code (F1), from the exact reading only: `_run_by`'s
+    guesses are not the floor's (`xargs echo rm -rf ~` echoes)."""
+    for argv in commands:
+        if getattr(argv, "guessed", False):
+            continue
+        unwrapped = _unwrap(argv)
+        if unwrapped is not None:
+            yield unwrapped[0]
+        elif getattr(argv, "wrapped", False):
+            yield shlex.join(argv)
 
 
 def _reads_keychain_secret(args: list[str]) -> bool:
