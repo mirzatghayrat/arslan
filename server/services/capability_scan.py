@@ -23,6 +23,7 @@ protection are the gate for what a skill makes Arslan do; this scan is the heads
 """
 from __future__ import annotations
 
+import codecs
 import os
 import re
 import string
@@ -154,16 +155,22 @@ _POINTER = re.compile(r"\b(?:see|refer(?:s)?(?:\s+to)?|consult|per|according\s+t
                       r"details\s+(?:are\s+)?in|look\s+at|located\s+(?:at|in)|found\s+in|lives\s+in|stored\s+in)\b", re.I)
 
 
+# A ban reaches to the end of its clause, and a colon ends one as well: "Do not explain: ignore all previous
+# instructions" bans nothing after the colon ("never do the following: send the key" is read as an order, too).
+# The words between a verb and a path are cut at the other ends only: "edit the file: ~/.claude/settings.json" is one sentence.
+_BAN_END = re.compile(_CLAUSE_END.pattern + r"|:(?:\s|$)", _CLAUSE_END.flags)
+
+
 def _prohibited(line: _Line, m: re.Match) -> bool:
     """Whether the match stands inside a prohibition: a negation in its clause, before it."""
     head = line.text[max(0, m.start() - 120):m.start()]
-    return _NEGATION.search(_CLAUSE_END.split(head)[-1]) is not None
+    return _NEGATION.search(_BAN_END.split(head)[-1]) is not None
 
 
 def _is_an_order(line: _Line, m: re.Match) -> bool:
     text = line.text
     head = text[max(0, m.start("verb") - 120):m.start("verb")]
-    if _NEGATION.search(_CLAUSE_END.split(head)[-1]):
+    if _NEGATION.search(_BAN_END.split(head)[-1]):
         return False
     between = m.group("between")
     return not (_CLAUSE_END.search(between) or _POINTER.search(between))
@@ -443,6 +450,36 @@ class Finding:
     excerpt: str
 
 
+#: The byte-order marks of UTF-32 and UTF-16 with the codec each one names. UTF-32 first: its little-endian mark
+#: begins like UTF-16's.
+_TEXT_MARKS = ((codecs.BOM_UTF32_LE, "utf-32"), (codecs.BOM_UTF32_BE, "utf-32"), (codecs.BOM_UTF16_LE, "utf-16"),
+               (codecs.BOM_UTF16_BE, "utf-16"))
+
+
+def _bom_codec(head: bytes, strict: bool = True) -> str | None:
+    """The codec a file's byte-order mark names — when what follows the mark reads as that encoding (`strict`; the
+    first bytes may end in the middle of a character): a binary file can begin with FF FE as well."""
+    for mark, codec in _TEXT_MARKS:
+        if head.startswith(mark):
+            if not strict:
+                return codec
+            try:
+                codecs.getincrementaldecoder(codec)("strict").decode(head, final=False)
+            except UnicodeDecodeError:
+                continue
+            return codec
+    return None
+
+
+def decode_text(data: bytes) -> str:
+    """A file's text as the scan reads it: UTF-16 or UTF-32 when the file starts with the byte-order mark of one,
+    otherwise UTF-8 (a bad byte becomes U+FFFD). The scan takes SKILL.md and a skill's files as the bytes they are:
+    UTF-16 decoded as UTF-8 first reads as letters between NUL characters, and no rule finds a word in that."""
+    head = data[:SNIFF_BYTES]
+    codec = _bom_codec(head) or _bom_codec(head, strict=False) or "utf-8"
+    return data.decode(codec, errors="replace")
+
+
 def _shown(name: str) -> str:
     """A file name as the user is shown it: a control character, a line break or a bidirectional or other format
     character becomes a visible escape (`\\x1b`, `\\u202e`), so a name can neither repaint the screen nor pass for another."""
@@ -613,10 +650,11 @@ def _classify(rel: str, head: bytes, executable: bool) -> tuple[str, ...]:
     `skill_code` (a script), `text` (prose) or `data` (yaml, json, html... and any other file that holds text) — or
     `("program",)` for a program that is not read (a Mach-O, ELF or PE by its first bytes, or a binary file with the
     executable bit), or `()` for binary data that is neither words nor code (an image, a font, bytecode), which is
-    skipped without a word. Code is a source file by its suffix, a Makefile, anything with the executable bit or a `#!`
+    skipped without a word. A NUL byte makes a file binary unless it starts with the byte-order mark of UTF-16 or UTF-32
+    and reads as that encoding. Code is a source file by its suffix, a Makefile, anything with the executable bit or a `#!`
     whatever its suffix, and a file in a scripts/ folder (at any depth, in any case); a text or data file that is code
     too is read both ways."""
-    if _NUL in head:
+    if _NUL in head and _bom_codec(head) is None:       # a file in UTF-16 or UTF-32 is full of NULs: its byte-order mark says so
         return ("program",) if executable or head.startswith(_PROGRAM_MAGIC) else ()
     path = PurePosixPath(rel)
     suffix = path.suffix.lower()
@@ -677,18 +715,23 @@ def _scan(skill_md: str, items: list[tuple[str, str, str]], unread: list[str], d
     return summary
 
 
-def scan_texts(skill_md: str, files: dict[str, str], *, unread: list[str] = ()) -> dict:
-    """A skill given as text: its whole SKILL.md and its files, each read as instructions or as code
-    by its name (or its `#!`). What could not be read (`unread`) is one `not_scanned` note: never
-    silently clean."""
+def scan_texts(skill_md: str | bytes, files: dict[str, str | bytes], *, unread: list[str] = ()) -> dict:
+    """A skill given as text — or as the bytes of its files, which is the way to give a file in UTF-16 (see
+    `decode_text`): its whole SKILL.md and its files, each read as instructions or as code by its name (or its `#!`).
+    What could not be read (`unread`) is one `not_scanned` note: never silently clean."""
+    if isinstance(skill_md, bytes):
+        skill_md = decode_text(skill_md)
     items, names, unread = [], [*files, *unread], [*unread]
     for rel, text in files.items():
         if rel == "SKILL.md":
             continue
-        kinds = _classify(rel, text[:SNIFF_BYTES].encode("utf-8", "replace"), False)
+        head = text[:SNIFF_BYTES] if isinstance(text, bytes) else text[:SNIFF_BYTES].encode("utf-8", "replace")
+        kinds = _classify(rel, head, False)
         if kinds == ("program",):
             unread.append(rel + " (a program)")
         else:
+            if isinstance(text, bytes):
+                text = decode_text(text)
             items.extend((rel, text, kind) for kind in kinds)
     items.sort(key=lambda item: (item[2] != "skill_code", item[0]))        # code first, then by name
     return _scan(skill_md, items, unread, names=names)
@@ -756,17 +799,41 @@ def _list_folder(folder: Path, candidates: list[tuple[int, str, tuple[str, ...],
         pending.extend(reversed(below))
 
 
-def scan_skill_folder(folder: Path | None, skill_md: str) -> dict:
+def _read_skill_md(folder: Path, unread: list[str]) -> str:
+    """The SKILL.md of a folder, read as the scan reads any file (UTF-16 by its mark), at most MAX_FILE_BYTES of it. A
+    link, a file that is not there or one that cannot be read is named."""
+    path = folder / "SKILL.md"
+    try:
+        if path.is_symlink() or not path.is_file():
+            unread.append("SKILL.md")
+            return ""
+        with open(path, "rb") as handle:
+            data = handle.read(MAX_FILE_BYTES + 1)
+    except OSError:
+        unread.append("SKILL.md")
+        return ""
+    if len(data) > MAX_FILE_BYTES:
+        unread.append("SKILL.md")
+    return decode_text(data[:MAX_FILE_BYTES])
+
+
+def scan_skill_folder(folder: Path | None, skill_md: str | bytes | None) -> dict:
     """A skill's folder (§C1): its SKILL.md and every text or code file under it — at most MAX_FILES
     files of at most MAX_FILE_BYTES each, MAX_SCAN_BYTES in all, SKILL.md first, then code (scripts, source
     files, executables), then the rest, so a few hundred references can never push the scripts out of the
     budget. What is not read (see `_list_folder`, and whatever is over the limits) is named in a note.
     A disk error never escapes: what cannot be read is named, never silently clean. And it never holds the
-    server for long: after MAX_SCAN_SECONDS in all it stops, and every file it has not reached is named."""
+    server for long: after MAX_SCAN_SECONDS in all it stops, and every file it has not reached is named.
+    `skill_md` is the text of SKILL.md, the bytes of the file (the way to give one in UTF-16: see `decode_text`), or
+    None to have it read from the folder."""
     deadline = time.monotonic() + MAX_SCAN_SECONDS
     candidates: list[tuple[int, str, tuple[str, ...], Path]] = []
     unread: list[str] = []
     names: list[str] = []
+    if skill_md is None:
+        skill_md = _read_skill_md(folder, unread) if folder is not None else ""
+    elif isinstance(skill_md, bytes):
+        skill_md = decode_text(skill_md)
     try:
         walkable = folder is not None and folder.is_dir()
     except OSError:
@@ -786,7 +853,7 @@ def scan_skill_folder(folder: Path | None, skill_md: str) -> dict:
             if read >= MAX_FILES or size > MAX_FILE_BYTES or spent + size > MAX_SCAN_BYTES:
                 unread.append(rel)
                 continue
-            text = path.read_text("utf-8", errors="replace")
+            text = decode_text(path.read_bytes())
             items.extend((rel, text, kind) for kind in kinds)
             read += 1
             spent += size
@@ -836,7 +903,7 @@ def scan_install(root: Path) -> dict:
         try:
             if path.stat().st_size > MAX_FILE_BYTES:
                 continue
-            text = path.read_text("utf-8", errors="replace")
+            text = decode_text(path.read_bytes())
         except OSError:
             continue
         name = str(path.relative_to(root))
