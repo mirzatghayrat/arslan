@@ -1320,6 +1320,25 @@ export interface McpConnectorEnvVar {
   paid: boolean;
 }
 
+/** How a connect card's apply chain ended (add -> connect -> expose -> wire). Kept in the store by call id while the card is paged away
+ *  from, so the card that comes back knows whether it worked (see arslanStore `cardApply`). */
+export interface ApplyConnectMcpResult {
+  ok: boolean;
+  /** Present only on failure — the stage where the chain stopped. */
+  stage?: 'add' | 'connect' | 'expose' | 'wire';
+  serverId?: number;
+  /** Human-readable outcome: on failure, names the stopped state + where to fix it
+   *  (never a bare "failed"); on success, unset (the card renders its own copy from
+   *  the counts below). */
+  message?: string;
+  toolCount?: number;
+  safeCount?: number;
+  restrictedCount?: number;
+  /** False when NO tool was wired "safe" — connected but nothing is usable by a
+   *  spawn until a human reviews tiers in Connections & permissions. */
+  assignable?: boolean;
+}
+
 /** GET /mcp/catalog — the backend's single source of truth for preset MCP connectors
  * (feeds both the Settings recommended list and conversation-driven connect). Static,
  * versioned, reviewed data; `one_click` is true iff `env` is empty. `requires_path` is

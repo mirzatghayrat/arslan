@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { runtimeErrorTranslations, type RuntimeErrorTranslations } from "../lib/runtimeErrorText";
 import { createSpeaker } from "../lib/speech";
-import type { ActionKind, ArslanServerMessage, ArslanThreadItem, JobCard, JobOutcome, ProcessSummary, StoredArtifact, ToolStep, RosterMember } from "../api/client.types";
+import type { ActionKind, ApplyConnectMcpResult, ArslanServerMessage, ArslanThreadItem, JobCard, JobOutcome, ProcessSummary, StoredArtifact, ToolStep, RosterMember } from "../api/client.types";
 import type { MessageAttachment } from "../types";
 
 let _cardSeq = 0;
@@ -36,6 +36,12 @@ export type PendingConnectMcp = {
   /** The server this card connected (set when its apply succeeded): the follow-up frame names the server, not the card. */
   appliedServerId?: number;
 };
+
+/** How a card's own apply stands in this window (0.1.61 §A4, fix round 3): a connect and an enrolment call the REST API from the card and
+ *  take a while. It is kept here by call id, not in the card, because the card is remounted when the person pages away and back: while
+ *  the apply is in flight that card's buttons stay off (never a second apply) though paging and the other cards stay available, and a
+ *  card that comes back knows how the apply ended (a connect's result, an enrolment's error). */
+export type CardApply = { busy: boolean; result?: ApplyConnectMcpResult; error?: string };
 
 interface ArslanState {
   items: ArslanThreadItem[];
@@ -91,6 +97,8 @@ interface ArslanState {
   // collects VALUES locally and sends them only over REST (addMcpServer). A card is cleared
   // once its connect's follow-up (`mcp_connect_followup`, which names the server) lands, or on cancel.
   pendingConnectMcps: PendingConnectMcp[];
+  /** The connect / enrol cards' applies, by call id (see CardApply). */
+  cardApply: Record<string, CardApply>;
   // True from the moment the user sends a message until the first response frame arrives.
   thinking: boolean;
   // Timestamp of the current turn's start (send/confirm) — drives the LiveActivity timer.
@@ -138,6 +146,10 @@ interface ArslanState {
   clearPendingConnectMcp: (callId: string) => void;
   /** The connect card `callId` connected the server `serverId`: the follow-up that names that server closes it. */
   markConnectApplied: (callId: string, serverId: number) => void;
+  /** The card `callId` has started its apply (and forgets how the last one ended). */
+  beginCardApply: (callId: string) => void;
+  /** Its apply ended, with how: nothing, a connect's result or an enrolment's error. A card that is gone keeps nothing. */
+  endCardApply: (callId: string, outcome?: { result?: ApplyConnectMcpResult; error?: string }) => void;
   /** 0.1.61 §A4: the card `callId` ran out unanswered (the server tells a window nothing for its
    *  own card): it leaves the slot, and the slot says it is waiting for you. */
   expireCard: (callId: string) => void;
@@ -239,12 +251,18 @@ function _shows(state: CardLists, id: string): boolean {
   return !!id && CARD_LISTS.some((k) => state[k].some((c) => c.callId === id));
 }
 
-/** The lists that hold the card `id`, without it — only that card, never another of its kind. */
-function _withoutCard(state: CardLists, id: string): Partial<CardLists> {
-  const out: Record<string, unknown[]> = {};
+/** The change that lets go of the applies of the cards `ids` — a card that leaves takes its own entry and no other's; nothing to change if none has one. */
+function _dropApply(state: { cardApply: Record<string, CardApply> }, ids: string[]): { cardApply?: Record<string, CardApply> } {
+  if (!ids.some((id) => id in state.cardApply)) return {};
+  return { cardApply: Object.fromEntries(Object.entries(state.cardApply).filter(([id]) => !ids.includes(id))) };
+}
+
+/** The lists that hold the card `id`, without it — only that card, never another of its kind — and without its apply entry, if it has one. */
+function _withoutCard(state: CardLists & { cardApply: Record<string, CardApply> }, id: string): Partial<CardLists & { cardApply: Record<string, CardApply> }> {
+  const out: Record<string, unknown> = {};
   if (!id) return out;                                  // a frame that names no card resolves none
   for (const k of CARD_LISTS) if (state[k].some((c) => c.callId === id)) out[k] = state[k].filter((c) => c.callId !== id);
-  return out as Partial<CardLists>;
+  return { ...out, ..._dropApply(state, [id]) } as Partial<CardLists & { cardApply: Record<string, CardApply> }>;
 }
 
 // A background job's card is waiting: which job is not in the frame, so the
@@ -284,6 +302,7 @@ function initialData() {
     pendingSchedules: [] as PendingSchedule[],
     pendingActions: [] as PendingAction[],
     pendingConnectMcps: [] as PendingConnectMcp[],
+    cardApply: {} as Record<string, CardApply>,
     thinking: false,
     workStartedAt: null as number | null,
     lastFrameAt: null as number | null,
@@ -351,15 +370,20 @@ function makeActions(set: SetState, get: GetState) {
       const speaker = createSpeaker(lang, { onActive: (a) => useArslanStore.setState({ speaking: a }) });
       void speaker.feed(text).then(() => speaker.end());
     },
-    clearPendingEnrollNode: (callId: string) => set({ pendingEnrollNodes: get().pendingEnrollNodes.filter((c) => c.callId !== callId) }),
+    clearPendingEnrollNode: (callId: string) => set({ pendingEnrollNodes: get().pendingEnrollNodes.filter((c) => c.callId !== callId), ..._dropApply(get(), [callId]) }),
     clearPendingWorkspaceWrite: (callId: string) => set({ pendingWorkspaceWrites: get().pendingWorkspaceWrites.filter((c) => c.callId !== callId) }),
     clearPendingSchedule: (callId: string) => set({ pendingSchedules: get().pendingSchedules.filter((c) => c.callId !== callId) }),
     clearPendingCapability: (callId: string) => set({ pendingCapabilities: get().pendingCapabilities.filter((c) => c.callId !== callId) }),
     clearPendingAction: (callId: string) => set({ pendingActions: get().pendingActions.filter((c) => c.callId !== callId) }),
-    clearPendingConnectMcp: (callId: string) => set({ pendingConnectMcps: get().pendingConnectMcps.filter((c) => c.callId !== callId) }),
+    clearPendingConnectMcp: (callId: string) => set({ pendingConnectMcps: get().pendingConnectMcps.filter((c) => c.callId !== callId), ..._dropApply(get(), [callId]) }),
     markConnectApplied: (callId: string, serverId: number) => set({
       pendingConnectMcps: get().pendingConnectMcps.map((c) => (c.callId === callId ? { ...c, appliedServerId: serverId } : c)),
     }),
+    beginCardApply: (callId: string) => set({ cardApply: { ...get().cardApply, [callId]: { busy: true } } }),
+    endCardApply: (callId: string, outcome = {}) => {
+      if (!(callId in get().cardApply)) return;                                        // its card is gone: nothing to keep
+      set({ cardApply: { ...get().cardApply, [callId]: { busy: false, ...outcome } } });
+    },
     expireCard: (callId: string) => {
       const s = get();
       if (_shows(s, callId)) set({ ..._withoutCard(s, callId), cardExpired: true });
@@ -1050,10 +1074,12 @@ function makeActions(set: SetState, get: GetState) {
           // closes its own copy — not only the one that connected it and so marked its card. A follow-up that
           // names no card (an older server) names only the server: the card that recorded connecting it closes.
           const named = typeof frame.call_id === "string" && frame.call_id !== "";
+          const closes = (c: PendingConnectMcp) => (named
+            ? c.callId === frame.call_id
+            : typeof frame.server_id === "number" && c.appliedServerId === frame.server_id);
           set({
-            pendingConnectMcps: state.pendingConnectMcps.filter((c) => !(named
-              ? c.callId === frame.call_id
-              : typeof frame.server_id === "number" && c.appliedServerId === frame.server_id)),
+            pendingConnectMcps: state.pendingConnectMcps.filter((c) => !closes(c)),
+            ..._dropApply(state, state.pendingConnectMcps.filter(closes).map((c) => c.callId)),
             items: [
               ...state.items,
               {

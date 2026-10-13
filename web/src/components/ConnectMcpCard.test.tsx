@@ -3,9 +3,10 @@ import { describe, test, expect, vi, afterEach, beforeEach } from 'vitest';
 import i18n from '../i18n';
 import { applyConnectMcp } from './ConnectMcpCard';
 import * as mcpApi from '../api/mcp';
+import { useArslanStore, initialArslanState } from '../stores/arslanStore';
 
 afterEach(() => vi.restoreAllMocks());
-beforeEach(() => { void i18n.changeLanguage('en'); });
+beforeEach(() => { void i18n.changeLanguage('en'); useArslanStore.setState(initialArslanState(), true); });   // an apply is the store's, by call id
 
 // ── applyConnectMcp: the load-bearing per-tier apply chain ─────────────────────
 

@@ -31,9 +31,11 @@ function focusComposer() {
  * permission layer (0.1.61 §A4), its scope on a yes and the user's note on a No.
  *
  * An answer here is a socket write and its card leaves in the same tick: nothing is in flight to wait
- * for, except on the two cards that call the REST API themselves (enrolling a machine, connecting a server),
- * and while that is in flight their ‹ › are off. (The queue keys each ask by its identity: what one card had
- * picked or typed never reaches the ask that moves up into its place.)
+ * for, except on the two cards that call the REST API themselves (enrolling a machine, connecting a server).
+ * Their apply is the store's, by call id (`cardApply`), so while it is in flight that card's own buttons
+ * stay off but paging and every other card stay available, and a card paged back to is still busy. (The
+ * queue keys each ask by its identity: what one card had picked or typed never reaches the ask that moves
+ * up into its place.)
  *
  * One gesture answers one card (0.1.61 §A4, fix round 2): for 500 ms after a card leaves the top — answered,
  * resolved elsewhere, run out or paged away — nothing answers the one that comes up (kit/guard.ts).

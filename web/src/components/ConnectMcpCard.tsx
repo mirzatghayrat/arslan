@@ -4,7 +4,8 @@ import { FolderOpen, ExternalLink, KeyRound, Plug } from 'lucide-react';
 import { AskCard, CodeBox, Notice, type AskQueuePosition } from './kit';
 import { lineIcon } from './kit/askParts';
 import { addMcpServer, connectMcpServer, exposeMcpServer, wireMcpTool } from '../api/mcp';
-import type { McpConnectorEnvVar, McpTool } from '../api/client.types';
+import type { ApplyConnectMcpResult, McpConnectorEnvVar, McpTool } from '../api/client.types';
+import { useArslanStore } from '../stores/arslanStore';
 import { catalogText } from '../lib/catalogDisplay';
 
 /** Input to the apply chain: everything addMcpServer needs, PLUS the credential
@@ -18,22 +19,7 @@ export interface ConnectMcpAdd {
   env: Record<string, string>;
 }
 
-export interface ApplyConnectMcpResult {
-  ok: boolean;
-  /** Present only on failure — the stage where the chain stopped. */
-  stage?: 'add' | 'connect' | 'expose' | 'wire';
-  serverId?: number;
-  /** Human-readable outcome: on failure, names the stopped state + where to fix it
-   *  (never a bare "failed"); on success, unset (the card renders its own copy from
-   *  the counts below). */
-  message?: string;
-  toolCount?: number;
-  safeCount?: number;
-  restrictedCount?: number;
-  /** False when NO tool was wired "safe" — connected but nothing is usable by a
-   *  spawn until a human reviews tiers in Connections & permissions. */
-  assignable?: boolean;
-}
+export type { ApplyConnectMcpResult };
 
 /**
  * Pure apply chain for a confirmed ConnectMcpCard: add → connect → expose → wire.
@@ -153,21 +139,25 @@ export default function ConnectMcpCard({
   const { t } = useTranslation();
   const [envValues, setEnvValues] = useState<Record<string, string>>({});
   const [path, setPath] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<ApplyConnectMcpResult | null>(null);
   const [pathError, setPathError] = useState<string | null>(null);
+  // Whether the apply is in flight, and how it ended, are the store's, by call id: this card is remounted when the person pages away and
+  // back. While it is in flight its buttons stay off (never a second apply) though paging and the other cards stay free; a card that
+  // comes back knows how it ended (arslanStore `cardApply`).
+  const apply = useArslanStore((s) => s.cardApply[callId]);
+  const busy = apply?.busy === true;
+  const result = apply?.result ?? null;
 
   const pathMissing = !!requiresPath && !path.trim();
 
   async function handleConnect() {
-    if (busy || result?.ok) return;
+    const now = useArslanStore.getState().cardApply[callId];               // the store's, not this render's: a second click may come first
+    if (now?.busy || now?.result?.ok) return;
     if (pathMissing) {
       setPathError('path_required');
       return;
     }
     setPathError(null);
-    setBusy(true);
-    setResult(null);
+    useArslanStore.getState().beginCardApply(callId);
     // NEVER mutate the frame's args in place — build a new array.
     const finalArgs = requiresPath ? [...args, path.trim()] : args;
     const env: Record<string, string> = {};
@@ -175,9 +165,13 @@ export default function ConnectMcpCard({
       const v = (envValues[e.name] ?? '').trim();
       if (v) env[e.name] = v;
     }
-    const res = await applyConnectMcp({ label, transport, command, args: finalArgs, url, env });
-    setBusy(false);
-    setResult(res);
+    let res: ApplyConnectMcpResult;
+    try {
+      res = await applyConnectMcp({ label, transport, command, args: finalArgs, url, env });
+    } catch {
+      res = { ok: false };                                                  // never left busy for good: a card that is not busy can be tried again
+    }
+    useArslanStore.getState().endCardApply(callId, { result: res });
     onApplied(res);
   }
 

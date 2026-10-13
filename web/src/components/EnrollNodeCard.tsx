@@ -6,10 +6,10 @@
  * honest about two things: only the user can verify the fingerprint (against the
  * machine itself), and enrolling does NOT make future commands run without asking.
  */
-import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ServerCog } from "lucide-react";
 import { api } from "../api/client";
+import { useArslanStore } from "../stores/arslanStore";
 import { AskCard, CodeBox, Notice, type AskQueuePosition } from "./kit";
 import { Fingerprints, lineIcon } from "./kit/askParts";
 
@@ -24,21 +24,23 @@ interface Props {
   onDone: () => void;
 }
 
-export default function EnrollNodeCard({ name, host, user, fingerprints, expiresAt, queue, onDone }: Props) {
+export default function EnrollNodeCard({ callId, name, host, user, fingerprints, expiresAt, queue, onDone }: Props) {
   const { t } = useTranslation();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  // Whether the enrolment is in flight, and why it failed, are the store's, by call id: this card is remounted when the person pages away
+  // and back. While it is in flight its buttons stay off (never a second enrolment) though paging and the other cards stay free.
+  const apply = useArslanStore((s) => s.cardApply[callId]);
+  const busy = apply?.busy === true;
+  const error = apply?.error ?? "";
 
   const enroll = async () => {
-    setBusy(true);
-    setError("");
+    if (useArslanStore.getState().cardApply[callId]?.busy) return;         // the store's, not this render's: a second click may come first
+    useArslanStore.getState().beginCardApply(callId);
     try {
       await api.enrollSshNode({ name, host, user, fingerprints });
+      useArslanStore.getState().endCardApply(callId);
       onDone();
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("enroll.failed"));
-    } finally {
-      setBusy(false);
+      useArslanStore.getState().endCardApply(callId, { error: e instanceof Error ? e.message : t("enroll.failed") });
     }
   };
 

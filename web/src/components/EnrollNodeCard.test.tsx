@@ -3,6 +3,7 @@ import { describe, test, expect, vi, beforeEach } from "vitest";
 import EnrollNodeCard from "./EnrollNodeCard";
 import { api } from "../api/client";
 import "../i18n";
+import { useArslanStore, initialArslanState } from "../stores/arslanStore";
 
 vi.mock("../api/client", () => ({
   api: { enrollSshNode: vi.fn(async () => ({ id: 1 })) },
@@ -17,7 +18,7 @@ const props = {
 };
 
 describe("EnrollNodeCard", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => { vi.clearAllMocks(); useArslanStore.setState(initialArslanState(), true); });        // an apply is the store's, by call id: every test starts clean
 
   test("shows the fingerprint the user has to check", () => {
     render(<EnrollNodeCard {...props} onDone={vi.fn()} />);

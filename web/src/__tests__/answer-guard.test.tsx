@@ -4,8 +4,9 @@
  *  land, unread, on the one that moved up (a double-click confirmed `echo harmless` AND `rm -rf ~/Documents` in a real browser).
  *  The slot being empty for a moment does not end it: a card that comes up within 500 ms of the one that left is held for the rest of
  *  that time (the next command of the same turn is proposed as soon as the first ran). A card that comes up in a slot that has been
- *  empty longer, and paging, are not guarded. F4: while the card on top is busy, ‹ and › are disabled. Fix round 3: the hold is visible
- *  (Allow and No render aria-disabled while it lasts), the note's Say no goes through it, and the Inbox keeps it too (inbox-guard.test.tsx). */
+ *  empty longer, and paging, are not guarded. Fix round 3: the hold is visible (Allow and No render aria-disabled while it lasts), the
+ *  note's Say no goes through it, and the Inbox keeps it too (inbox-guard.test.tsx). A busy card turns its own answers off, never the
+ *  pager (card-apply.test.tsx). */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, act, cleanup } from "@testing-library/react";
 
@@ -13,8 +14,6 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (k: string, o?: Record<string, unknown>) => (o ? `${k}:${JSON.stringify(o)}` : k) }),
 }));
 
-import * as client from "../api/client";
-import * as mcpApi from "../api/mcp";
 import AskSlot from "../components/AskSlot";
 import { AskCard, AskQueue, ANSWER_GUARD_MS } from "../components/kit";
 import { AnswerGuardScope, makeAnswerGuard, useQueueGuard, type AnswerGuardState } from "../components/kit/guard";
@@ -243,48 +242,20 @@ describe("what is not guarded", () => {
   });
 });
 
-describe("no paging while the card on top is busy (F4)", () => {
+describe("a busy card turns its own answers off, never the pager (G2)", () => {
   const card = (busy: boolean) => (
     <AskCard who="w" title="t" busy={busy} queue={{ index: 0, total: 2, onPrev: vi.fn(), onNext: vi.fn() }}
       onAllow={vi.fn()} onDecline={vi.fn()} />);
 
-  it("‹ and › are disabled while the card's answer is in flight, and enabled when it is not", () => {
+  it("while the card's own apply is in flight Allow and No are off, and ‹ and › are not", () => {
     const { rerender } = render(card(true));
-    expect(screen.getByLabelText("kit.previous")).toBeDisabled();
-    expect(screen.getByLabelText("kit.next")).toBeDisabled();
-    rerender(card(false));
+    expect(screen.getByTestId("ask-allow")).toBeDisabled();
+    expect(screen.getByTestId("ask-decline")).toBeDisabled();
     expect(screen.getByLabelText("kit.previous")).toBeEnabled();
     expect(screen.getByLabelText("kit.next")).toBeEnabled();
-  });
-
-  it("an enroll-node card whose enrolment is in flight cannot be paged away from, and can be again if it failed", async () => {
-    let fail: (e: Error) => void = () => {};
-    vi.spyOn(client.api, "enrollSshNode").mockImplementation(() => new Promise((_ok, no) => { fail = no; }) as never);
-    render(<AskSlot send={vi.fn()} />);
-    frame({ type: "propose_enroll_node", call_id: "n1", name: "mini", host: "10.0.0.2", user: "me", fingerprints: ["SHA256:abc"] });
-    frame({ type: "propose_enroll_node", call_id: "n2", name: "mac", host: "10.0.0.3", user: "me", fingerprints: ["SHA256:def"] });
-    fireEvent.click(screen.getByTestId("enroll-confirm"));
-    expect(screen.getByLabelText("kit.next")).toBeDisabled();
-    expect(screen.getByLabelText("kit.previous")).toBeDisabled();
-    await act(async () => { fail(new Error("no route to host")); });
-    expect(screen.getByLabelText("kit.next")).toBeEnabled();
-    expect(screen.getByTestId("enroll-error")).toHaveTextContent("no route to host");
-  });
-
-  it("a connect-MCP card whose connect is in flight cannot be paged away from, and can be again once it ended", async () => {
-    let fail: (e: Error) => void = () => {};
-    vi.spyOn(mcpApi, "addMcpServer").mockImplementation(() => new Promise((_ok, no) => { fail = no; }) as never);
-    render(<AskSlot send={vi.fn()} />);
-    const connect = (id: string) => ({ type: "propose_connect_mcp", call_id: id, key: "memory", label: `Memory ${id}`, transport: "stdio", command: "npx",
-      argv: [], url: null, env_keys: [], prerequisites: "", requires_path: false, path_placeholder: null });
-    frame(connect("m1"));
-    frame(connect("m2"));
-    fireEvent.click(screen.getByTestId("connect-mcp-connect"));
-    expect(screen.getByLabelText("kit.next")).toBeDisabled();
-    expect(screen.getByLabelText("kit.previous")).toBeDisabled();
-    await act(async () => { fail(new Error("no")); });
-    expect(screen.getByLabelText("kit.next")).toBeEnabled();                  // it failed: the person may page, or try again
-    expect(screen.getByTestId("connect-mcp-connect")).toBeEnabled();
+    rerender(card(false));
+    expect(screen.getByTestId("ask-allow")).toBeEnabled();
+    expect(screen.getByTestId("ask-decline")).toBeEnabled();
   });
 });
 
