@@ -614,3 +614,51 @@ def test_a_turns_card_that_never_opened_while_the_person_was_away_is_listed_with
     assert allowed.status_code == 200
     assert [(r["kind"], r["target"]) for r in allowed.json()["rules"]] == [("legacy_rule", "git-push")]
     assert executor.calls == []
+
+
+# ── CI fix wave F1 (CI 38293278888): a turn's end and the grants it never got ──────────────────
+
+class _AsksForNotes:
+    """A tool that asks through permissions.decide once: Notes."""
+    key = "list_dir"
+
+    async def execute(self, args):
+        from server.services import permissions
+        await permissions.decide(permissions.Request(kind="app", target="com.apple.Notes", title="Use Notes?"),
+                                 permissions.Context(conversation_id="conv-f1"))
+        return {"ok": True, "summary": "asked"}
+
+
+def test_a_turn_given_nothing_for_its_task_ends_without_waiting_on_the_database(app_client, monkeypatch):
+    """A turn's end forgets what it was given "for this task", and only that: a turn whose card was
+    answered for the conversation has none, so its end does not wait on the database — whose write
+    lock a stopped run's own interrupted transaction can hold for seconds. Here deleting would
+    wait 10 s."""
+    import server.registry.executors as executors_mod
+    from server.services import desktop_status, permission_store
+    monkeypatch.setattr(task_context, "is_active", AsyncMock(return_value=True))   # the turn is a task
+    patched = dict(executors_mod.EXECUTORS)
+    patched["list_dir"] = _AsksForNotes()
+    monkeypatch.setattr(executors_mod, "EXECUTORS", patched)
+    monkeypatch.setattr(tool_loop_mod, "EXECUTORS", patched)
+    monkeypatch.setattr(tool_loop_mod, "_get_adapter", lambda: _Steps(("list_dir", {"path": "."})))
+    deleting = []
+
+    async def held(db, task_id):
+        deleting.append(task_id)
+        await asyncio.sleep(10)
+        return 0
+    monkeypatch.setattr(permission_store, "delete_task_grants", held)
+    desktop_status._reset_for_tests()
+
+    def ended() -> bool:
+        return any(e["kind"] == "turn_finished" and e["conversation_id"] == "conv-f1"
+                   for e in desktop_status.snapshot()["events"])
+    with app_client.websocket_connect("/ws/arslan/conv-f1") as ws:
+        ws.receive_json()
+        ws.send_json({"type": "user_message", "content": "look at my notes"})
+        card = _collect_until(ws, "propose_action")[-1]
+        ws.send_json({"type": "confirm_action", "call_id": card["call_id"], "scope": "conversation"})
+        _collect_until(ws, "stream_end")
+        _until(ended, seconds=2)
+    assert deleting == []

@@ -1,6 +1,7 @@
 """0.1.61 §3/§A11: one decide() — money, rule, grant, card; nobody to ask means no."""
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import json
 import logging
@@ -51,6 +52,7 @@ def app(bundle="com.apple.Notes"):
 @pytest.fixture(autouse=True)
 def _fresh(execution_db):                   # the fresh-database fixture Task 1's tests use
     permission_store._reset_for_tests()
+    permissions._reset_for_tests()
     yield
 
 
@@ -972,3 +974,49 @@ async def test_the_same_holds_for_a_many_app_card(monkeypatch, breaks):
             await permissions.decide_many([app("com.apple.Notes"), app("com.apple.mail")], CTX,
                                           title="Use Notes and Mail?")
     assert await _store_counts() == (0, 0, 0)
+
+
+# ── CI fix wave F1 (CI 38293278888): forgetting a task's grants ───────────────────────────────
+
+@contextlib.contextmanager
+def _write_lock_held():
+    """Another connection holds SQLite's write lock — as the interrupted transaction of a stopped
+    job did in CI 38293278888, until the garbage collector freed its connection."""
+    import sqlite3
+    holder = sqlite3.connect(db_session.AsyncSessionLocal.kw["bind"].url.database, timeout=0)
+    holder.execute("BEGIN IMMEDIATE")
+    try:
+        yield
+    finally:
+        holder.rollback()
+        holder.close()
+
+
+async def test_a_task_given_no_grant_of_its_own_is_forgotten_without_the_database():
+    """Every chat turn and job forgets its "for this task" grants when it ends. One given none —
+    its card answered for the conversation, or No, or no card at all — has nothing to delete and
+    must not wait on the database for it."""
+    with permissions.asking_with(Asker(yes("conversation"), no())):
+        await permissions.decide(app(), Context(conversation_id="conv-1", task_id="turn-conversation"))
+        await permissions.decide(app("com.apple.mail"), Context(conversation_id="conv-1", task_id="turn-no"))
+    with _write_lock_held():
+        for task_id in ("turn-conversation", "turn-no", "turn-never-asked", "", None):
+            assert await asyncio.wait_for(permissions.forget_task(task_id), 1) == 0
+    async with db_session.AsyncSessionLocal() as db:
+        assert await permission_store.find_grant(db, "conv-1", None, "app", "com.apple.Notes") is not None
+
+
+async def test_a_task_given_grants_forgets_exactly_its_own_and_then_has_nothing_left():
+    asker = Asker(yes("task"), yes("task"), yes("task"), yes("conversation"))
+    with permissions.asking_with(asker):
+        await permissions.decide(app(), Context(conversation_id="conv-1", task_id="turn-a"))
+        await permissions.decide(app("com.apple.mail"), Context(conversation_id="conv-1", task_id="turn-a"))
+        await permissions.decide(app(), Context(conversation_id="conv-1", task_id="turn-b"))
+        await permissions.decide(app("com.apple.reminders"), Context(conversation_id="conv-1", task_id="turn-a"))
+    assert await permissions.forget_task("turn-a") == 2
+    async with db_session.AsyncSessionLocal() as db:
+        left = sorted((g.task_id, g.target) for g in (await db.scalars(sa.select(PermissionGrant))).all())
+    assert left == [("", "com.apple.reminders"), ("turn-b", "com.apple.Notes")]
+    with _write_lock_held():                               # nothing of its own is left to delete
+        assert await asyncio.wait_for(permissions.forget_task("turn-a"), 1) == 0
+    assert await permissions.forget_task("turn-b") == 1

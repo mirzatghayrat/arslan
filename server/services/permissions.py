@@ -121,6 +121,12 @@ class Decision:
 
 Asker = Callable[[dict], Awaitable[dict]]
 _ASKER: ContextVar[Asker | None] = ContextVar("permissions_asker", default=None)
+#: The tasks (chat turns, jobs) this process gave a "for this task" grant: what `forget_task` has
+#: to delete when one ends. Any other task's end never touches the database — whose write lock a
+#: stopped job's own interrupted transaction can hold for seconds (CI 38293278888). A grant left
+#: behind (a restart, a failed delete) is for a task id that never comes back, and the store's
+#: 24-hour prune removes it.
+_GRANTED_TASKS: set[str] = set()
 #: The last decision in this context: tool results read it to tell "expired" from "no".
 LAST_DECISION: ContextVar[Decision | None] = ContextVar("permissions_last_decision", default=None)
 
@@ -220,9 +226,13 @@ async def record_standing(req: Request, ctx: Context) -> None:
 
 async def forget_task(task_id: str | None) -> int:
     """A task's grants end with it (0.1.61 §A5): a job that is done, failed, stopped or cancelled
-    leaves no "for this task" grant behind. Its conversation's grants stay. Returns how many went."""
-    if not task_id:
+    leaves no "for this task" grant behind. Its conversation's grants stay. Returns how many went.
+
+    Only a task this process gave such a grant has any (`_GRANTED_TASKS`): for every other one this
+    returns at once, without the database."""
+    if not task_id or task_id not in _GRANTED_TASKS:
         return 0
+    _GRANTED_TASKS.discard(task_id)
     async with db_session.AsyncSessionLocal() as db:
         gone = await permission_store.delete_task_grants(db, task_id)
         await db.commit()
@@ -340,6 +350,8 @@ async def _ask(req: Request, ctx: Context, mode: str) -> Decision:
                 # id would cover the whole conversation, and one with no conversation, nobody.
                 decision = replace(decision, scope="once")
             else:
+                if task:
+                    _GRANTED_TASKS.add(task)   # before the write: the task's end must not miss it
                 for kind, target in req.grant_as or ((req.kind, req.target),):
                     grant = await permission_store.add_grant(db, ctx.conversation_id, task, kind,
                                                              target, call_id=card_id)
@@ -471,6 +483,10 @@ async def _record_in(db, req: Request, ctx: Context, mode: str, decision: Decisi
         mode=mode, decided_by="away" if away else decision.by,
         decision=("allow" if decision.allowed else "expired" if decision.by == "expired" else "deny"),
         scope=decision.scope, rule_id=rule_id, grant_id=grant_id, wait_ms=wait_ms)
+
+
+def _reset_for_tests() -> None:
+    _GRANTED_TASKS.clear()
 
 
 def _extra(extra: dict) -> dict | None:
