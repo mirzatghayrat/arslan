@@ -114,16 +114,16 @@ do {
 control.onConnect = { try? await runtime.hello() }
 control.onFrame = { frame in try? await runtime.handleControl(frame) }
 let backend = LocalBackend(port: port, token: token)
-let links = ConversationLinks(channels: WebSocketChannels(port: port, token: token), mailbox: runtime.mailbox,
-                              backend: backend)
 let status = StatusReporter(backend: backend, mailbox: runtime.mailbox, deviceName: macName)
-links.status = status
+let links = ConversationLinks(channels: WebSocketChannels(port: port, token: token), mailbox: runtime.mailbox,
+                              backend: backend, status: status)
 Task { await control.run() }
 Task {
     if let cloud = store as? CloudKitStore {
         do { try await cloud.ensureZone() } catch { BridgeLog.error("creating the CloudKit zone", error) }
     }
     await runtime.tidy()                           // §3.3: what still waits for a phone no longer paired
+    await links.linkLive()                         // §5.7: the newest conversations and running jobs, live on the phone
     while true {                                   // §2: every 2 s while the phone app is open, else 10 s
         do { for received in try await runtime.poll() { await links.handle(received) } }
         catch { BridgeLog.error("reading the store", error) }
