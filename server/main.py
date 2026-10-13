@@ -160,6 +160,16 @@ async def lifespan(app: FastAPI):
 
     await seed_registry()
 
+    # 0.1.61 §C2: tidy what a crash left under <data>/skills/, move the imports from before 0.1.61 into
+    # <data>/skills/<key>/, and give the bundled seeds that carry scripts their folder. Before the
+    # scheduler and every loop (nothing can import yet). Never blocks the boot.
+    try:
+        from server.services import skill_boot
+
+        await skill_boot.run()
+    except Exception as exc:  # noqa: BLE001 — a skills step must never break startup
+        logger.warning("skills boot step failed (non-fatal): %s", exc)
+
     # 0.1.48: the built-in example experts are no longer seeded — one Arslan does the work.
     # Their prompts stay in server/services/default_spawns.py as material for skills.
 

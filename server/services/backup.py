@@ -22,7 +22,7 @@ FORMAT = 1
 MAX_FILE = 512 * 1024 * 1024
 MAX_TOTAL = 2 * 1024 * 1024 * 1024
 MAX_FILES = 10_000
-ASSET_DIRS = ("artifacts", "spawns", "skill_scripts", "uploads")
+ASSET_DIRS = ("artifacts", "spawns", "skill_scripts", "skills", "uploads")
 
 
 def _digest(data: bytes) -> str:

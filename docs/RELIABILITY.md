@@ -72,7 +72,7 @@ python -m scripts.backup_data restore --archive /safe/path/arslan-backup.zip --n
 
 If configured separately, supply `--db-path` and/or `--spawns-dir` when creating
 the backup. The archive contains a SQLite backup snapshot (salt and ciphertext
-together) plus `artifacts`, `spawns`, `skill_scripts`, and `uploads`. It excludes
+together) plus `artifacts`, `spawns`, `skill_scripts`, `skills`, and `uploads`. It excludes
 access tokens, the external secret, rebuildable Python environments, shell
 workspace and shell-proxy CA. Preserve any custom workspace separately if needed.
 

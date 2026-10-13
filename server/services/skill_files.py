@@ -55,6 +55,7 @@ _SKIP_NAMES = frozenset({".DS_Store"})
 #: Folders that are never part of a skill: Python's caches, a checkout's history.
 _SKIP_DIRS = frozenset({"__pycache__", ".git"})
 _NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
+_NONBLOCK = getattr(os, "O_NONBLOCK", 0)
 #: Why a file of an archive could not be written, skipped rather than failing the skill: the same
 #: name in another case or normalisation, a file where a folder must be, a path too long for the
 #: disk, a name the disk refuses.
@@ -386,6 +387,47 @@ def stage_tree(src: Path) -> Staged:
     return out
 
 
+def stage_files(pairs: list[tuple[str, Path]]) -> Staged:
+    """Given files of this Mac, each to its relative path in the new folder (an old import's flat
+    scripts into scripts/). Regular files only, opened without following a link; anything else is
+    skipped and named. The same size caps as every other copy."""
+    out = Staged(path=_new_staging(), files={}, skipped=[])
+    try:
+        for rel, src in sorted(pairs):
+            clean = safe_relpath(rel)
+            if (clean is None or clean.rsplit("/", 1)[-1] in _SKIP_NAMES
+                    or _SKIP_DIRS.intersection(clean.split("/")[:-1])):
+                out.skipped.append(_shown(rel))
+                continue
+            try:
+                fd = os.open(src, os.O_RDONLY | _NOFOLLOW | _NONBLOCK)      # a named pipe must not wait for a writer
+            except OSError:                                   # a link (ELOOP), gone, unreadable
+                out.skipped.append(_shown(rel))
+                continue
+            with os.fdopen(fd, "rb") as handle:
+                info = os.fstat(handle.fileno())
+                if not stat.S_ISREG(info.st_mode):
+                    out.skipped.append(_shown(rel))
+                    continue
+                if len(out.files) >= MAX_FOLDER_FILES or out.bytes + info.st_size > MAX_FOLDER_BYTES:
+                    raise FolderTooLarge("the folder is over the skill size limit")
+                data = handle.read(MAX_FOLDER_BYTES + 1)
+            if out.bytes + len(data) > MAX_FOLDER_BYTES:
+                raise FolderTooLarge("the folder is over the skill size limit")
+            try:
+                out.files[clean] = _write(out.path, clean, data, bool(info.st_mode & 0o111))
+            except OSError as exc:
+                if exc.errno not in _SKIPPABLE:
+                    raise
+                out.skipped.append(clean)
+                continue
+            out.bytes += len(data)
+    except BaseException:
+        discard(out)
+        raise
+    return out
+
+
 def discard(staged: Staged) -> None:
     shutil.rmtree(staged.path, ignore_errors=True)        # Arslan's own scratch copy, never a skill
 
@@ -432,6 +474,10 @@ def _trash_name(path: Path) -> str:
     name = path.name
     if name.startswith(OLD_PREFIX):
         return f"skill {name[len(OLD_PREFIX):].rsplit('-', 1)[0]} (replaced)"
+    if name.startswith(NEW_PREFIX):
+        return f"skill {name[len(NEW_PREFIX):].rsplit('-', 1)[0]} (copy not kept)"
+    if name.startswith(STAGING_PREFIX):
+        return "skill (unfinished copy)"
     if path.parent.name == "skill_scripts":
         return f"skill {name} (scripts from before 0.1.61)"
     return f"skill {name.lstrip('.')}"
