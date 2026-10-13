@@ -11,6 +11,10 @@ whole dependency tree — HTTP clients there phone home by design and would drow
 0.1.61: a skill's whole folder is read (`scan_skill_folder`) and a scan speaks in verdicts —
 "dangerous" (a high finding: the skill is off until the user has read why) and "caution" (notes:
 on, with a note). What could not be read is named in a note, so nothing unread is ever "clean".
+"Dangerous" costs the user a click, so it needs the real act: a script that writes, reads or sends, or
+words USED as an order. The same words quoted, advice, a pointer, an install line in a document are a
+note. The runtime cards, the sandbox and the agent-settings protection are the gate for what a skill
+makes Arslan do; this scan is the heads-up at import.
 """
 from __future__ import annotations
 
@@ -27,6 +31,10 @@ MAX_FINDINGS = 20
 #: A folder scan reads at most this much in all (64 MB: the largest archive Arslan downloads). 400
 #: files of 400 KB would be 160 MB; what does not fit is named in the `not_scanned` note.
 MAX_SCAN_BYTES = 64 * 1024 * 1024
+#: A folder is walked this deep; a deeper one is named, not entered (a chain of ~900 folders raised
+#: RecursionError in os.walk). And at most this many files of one folder are looked at; the rest are counted.
+MAX_DEPTH = 32
+MAX_WALKED = 50_000
 
 
 @dataclass(frozen=True)
@@ -230,28 +238,48 @@ RULES = (
        accept=_is_an_order),
 )
 
-_INVISIBLE = {"Cf"}          # format characters: zero-width, bidi overrides
-#: Format characters that only shape text: the byte-order mark, a soft hyphen and the
-#: left-to-right/right-to-left marks (U+FEFF, U+00AD, U+200E, U+200F).
+#: Format characters that only shape text: the byte-order mark, a soft hyphen and the left-to-right and
+#: right-to-left marks (U+FEFF, U+00AD, U+200E, U+200F); and the script-format controls Arabic and Syriac
+#: are written with (number signs, end of ayah).
 _SHAPING = frozenset("\ufeff\u00ad\u200e\u200f")
+_SCRIPT_FORMATS = frozenset("\u0600\u0601\u0602\u0603\u0604\u0605\u06dd\u070f\u0890\u0891\u08e2")
+#: Joiners that real writing needs between letters: ZWNJ (Persian, Indic), ZWJ (Indic, emoji), ALM (Arabic).
+_JOINERS = frozenset("\u200c\u200d\u061c")
+#: What may stand beside such a joiner for it to be orthography: a letter, a mark (a virama, a variation
+#: selector), a digit or an emoji.
+_WORDY = frozenset({"Lu", "Ll", "Lt", "Lm", "Lo", "Mn", "Mc", "Me", "Nd", "Nl", "No", "So", "Sk"})
+#: Taken away from a line before the rules read it: a pattern is matched through the zero-width characters
+#: someone put inside a word ("ig" + ZWNJ + "nore").
+_SQUASH = re.compile(r"[\u00ad\u061c\u200b-\u200f\u2060-\u2064\u206a-\u206f\ufeff\ufe00-\ufe0f]")
 
 
-def _invisible(text: str) -> int:
-    """Format characters that can hide text (zero-width, bidi overrides, tags). 0.1.61: whole
-    folders and other agents' skills are read now, so a zero-width joiner between two emoji
-    (a woman technologist, a rainbow flag: U+200D only joins them) and the shaping marks are
-    not counted."""
-    count = 0
+def _invisible(text: str) -> tuple[int, int]:
+    """(hiding, odd). `hiding`: characters that hide or reorder text, in a document as in code ("Trojan
+    Source"): bidirectional controls and isolates (U+202A-202E, U+2066-2069) and tag characters
+    (U+E0000-E007F, an invisible ASCII). `odd`: other zero-width characters that are not how a script is
+    written: a zero-width space, a word joiner, a joiner that stands beside no letter. A ZWNJ, ZWJ or ALM
+    between letters, or after a virama (Indic scripts write one at the end of a syllable or a word), is
+    real orthography (Persian, Indic, Arabic, emoji sequences) and counts for nothing."""
+    if text.isascii():
+        return 0, 0
+    hiding = odd = 0
     for i, ch in enumerate(text):
-        if unicodedata.category(ch) not in _INVISIBLE or ch in _SHAPING:
+        if ch < "\x80":
             continue
-        if ch == "\u200d" and 0 < i < len(text) - 1:
-            before, after = text[i - 1], text[i + 1]
-            if (unicodedata.category(before) in ("So", "Sk") or before == "\ufe0f") \
-                    and unicodedata.category(after) == "So":
-                continue
-        count += 1
-    return count
+        cp = ord(ch)
+        if 0x202A <= cp <= 0x202E or 0x2066 <= cp <= 0x2069 or 0xE0000 <= cp <= 0xE007F:
+            hiding += 1
+        elif unicodedata.category(ch) != "Cf" or ch in _SHAPING or ch in _SCRIPT_FORMATS:
+            continue
+        elif ch in _JOINERS:
+            before, after = text[i - 1] if i else "", text[i + 1:i + 2]
+            between_letters = (before and after and unicodedata.category(before) in _WORDY
+                               and unicodedata.category(after) in _WORDY)
+            if not (between_letters or (before and unicodedata.combining(before) == 9)):     # 9: a virama
+                odd += 1
+        else:
+            odd += 1
+    return hiding, odd
 
 
 @dataclass
@@ -261,11 +289,6 @@ class Finding:
     file: str
     line: int
     excerpt: str
-
-
-def _lines(text: str):
-    for n, line in enumerate(text.splitlines(), 1):
-        yield n, line
 
 
 def _prepare(text: str, kind: str) -> list[tuple[int, str, _Line]]:
@@ -278,12 +301,13 @@ def _prepare(text: str, kind: str) -> list[tuple[int, str, _Line]]:
         front_end = next((i for i, line in enumerate(lines[1:], 1) if line.strip() in ("---", "...")), 0)
     fenced = False
     for n, line in enumerate(lines, 1):
+        read = line if line.isascii() else _SQUASH.sub("", line)
         front = 0 < n - 1 < front_end
-        if not front and kind == "text" and _FENCE.match(line):
+        if not front and kind == "text" and _FENCE.match(read):
             fenced = not fenced
-            out.append((n, line, _Line(line)))
+            out.append((n, line, _Line(read)))
             continue
-        out.append((n, line, _Line(line, fenced=fenced and not front, front=front)))
+        out.append((n, line, _Line(read, fenced=fenced and not front, front=front)))
     return out
 
 
@@ -305,20 +329,27 @@ def scan_text(name: str, text: str, *, kind: str) -> list[Finding]:
             if hit:
                 out.append(Finding(rule.id, rule.level, name, n, raw.strip()[:160]))
                 break                       # one finding per rule per file is enough to show
+    hiding, odd = _invisible(text)
+    if hiding:
+        out.append(Finding("invisible_characters", "high", name, 0, f"{hiding} bidirectional-control or tag characters"))
+    if odd:
+        out.append(Finding("zero_width_characters", "note", name, 0, f"{odd} zero-width characters"))
     if kind == "text":
-        hidden = _invisible(text)
-        if hidden:
-            out.append(Finding("invisible_characters", "high", name, 0, f"{hidden} invisible characters"))
         if re.search(r"[A-Za-z0-9+/]{400,}={0,2}", text):
             out.append(Finding("long_encoded_blob", "note", name, 0, "a long base64-like block"))
     return out
 
 
 def summarise(findings: list[Finding]) -> dict:
-    """The level is read from EVERY finding; the list kept is cut to MAX_FINDINGS with the high
-    ones first, so a pile of notes can never push a high finding out (0.1.61: whole folders)."""
+    """The level is read from EVERY finding; the list kept is cut to MAX_FINDINGS with the high ones
+    first and then the note of what was not read, so a pile of notes can never push a high finding out,
+    and the cut never hides that part of a skill was not read (0.1.61: whole folders)."""
     level = "blocked" if any(f.level == "high" for f in findings) else ("notes" if findings else "clean")
-    kept = sorted(findings, key=lambda f: f.level != "high")[:MAX_FINDINGS]
+    ordered = sorted(findings, key=lambda f: (f.level != "high", f.rule != "not_scanned"))
+    kept = ordered[:MAX_FINDINGS]
+    unread = next((f for f in ordered if f.rule == "not_scanned"), None)
+    if unread is not None and unread not in kept:
+        kept[-1] = unread
     return {"level": level, "findings": [asdict(f) for f in kept]}
 
 
@@ -366,19 +397,16 @@ def same_findings(a: dict | None, b: dict | None) -> bool:
     return key(a) == key(b)
 
 
-def scan_texts(skill_md: str, files: dict[str, str], *, unread: list[str] = ()) -> dict:
-    """A skill given as text: its whole SKILL.md (the frontmatter too — a description is read by the
-    model as well) and its files, each read as instructions or as code by its name (or its `#!`).
-    What could not be read (`unread`, and any file here over MAX_FILE_BYTES, read as far as that) is
-    one `not_scanned` note: never silently clean."""
+def _scan(skill_md: str, items: list[tuple[str, str, str]], unread: list[str]) -> dict:
+    """A skill given as (path, text, kind) items: its whole SKILL.md (the frontmatter too — a description
+    is read by the model as well) and each file as instructions or as code. What could not be read
+    (`unread`, and any text over MAX_FILE_BYTES, read as far as that) is one `not_scanned` note."""
     found = scan_text("SKILL.md", skill_md, kind="text")
     unread = [*unread]
-    for rel, text in sorted(files.items()):
-        kind = _kind_for(rel, text)
-        if kind is not None and rel != "SKILL.md":
-            found += scan_text(rel, text[:MAX_FILE_BYTES], kind=kind)
-            if len(text) > MAX_FILE_BYTES:
-                unread.append(rel)
+    for rel, text, kind in sorted(items):
+        found += scan_text(rel, text[:MAX_FILE_BYTES], kind=kind)
+        if len(text) > MAX_FILE_BYTES:
+            unread.append(rel)
     if unread:
         found.append(Finding("not_scanned", "note", unread[0], 0,
                              (f"{len(unread)} not read (too large, too many, a link, dependencies or unreadable): "
@@ -388,71 +416,100 @@ def scan_texts(skill_md: str, files: dict[str, str], *, unread: list[str] = ()) 
     return summary
 
 
-def _is_link(path: Path) -> bool:
-    """Whether `path` is a link, or cannot even be asked (a name the disk refuses): not read either way."""
-    try:
-        return path.is_symlink()
-    except OSError:
-        return True
+def scan_texts(skill_md: str, files: dict[str, str], *, unread: list[str] = ()) -> dict:
+    """A skill given as text: its whole SKILL.md and its files, each read as instructions or as code
+    by its name (or its `#!`). What could not be read (`unread`) is one `not_scanned` note: never
+    silently clean."""
+    items = []
+    for rel, text in files.items():
+        kind = _kind_for(rel, text)
+        if kind is not None and rel != "SKILL.md":
+            items.append((rel, text, kind))
+    return _scan(skill_md, items, [*unread])
 
 
-def scan_skill_folder(folder: Path | None, skill_md: str) -> dict:
-    """A skill's folder (§C1): its SKILL.md and every text or code file under it — at most
-    MAX_FILES files of at most MAX_FILE_BYTES each, MAX_SCAN_BYTES in all. Links are never followed
-    and dependency folders never walked; those, a pipe or device (opening one can wait for ever), a
-    folder or file that cannot be opened, and whatever is over the limits are named in a note.
-    A disk error never escapes: what cannot be read is named, never silently clean."""
-    files: dict[str, str] = {}
-    unread: list[str] = []
-    spent = 0
-
+def _list_folder(folder: Path, candidates: list[tuple[int, str, str, Path]], unread: list[str]) -> None:
+    """Walk `folder` top-down WITHOUT recursion (os.walk recurses on Python 3.11) and file every regular
+    text or code file under it in `candidates` as (0 code | 1 text, name, kind, path); everything that will
+    not be read goes by name into `unread`: a link (never followed), a dependency folder, a folder nested
+    deeper than MAX_DEPTH, a folder it cannot list, a pipe, socket or device (opening one can wait for
+    ever), whatever lies past MAX_WALKED files. Code is a source file, anything in scripts/, a `#!` file
+    and an executable; the rest that is read is text."""
     def relative(path) -> str:
         try:
             return Path(path).relative_to(folder).as_posix()
         except ValueError:
             return str(path)
 
-    def unlistable(error: OSError) -> None:         # os.walk skips a folder it cannot list: say so
-        unread.append(relative(error.filename) + "/" if error.filename else "./")
+    seen = 0
+    pending = [(folder, 0)]
+    while pending:
+        top, depth = pending.pop()
+        try:
+            with os.scandir(top) as listing:
+                entries = sorted(listing, key=lambda entry: entry.name)
+        except OSError:
+            unread.append(relative(top) + "/")
+            continue
+        below = []
+        for entry in entries:
+            rel = relative(entry.path)
+            try:
+                if entry.is_symlink():
+                    unread.append(rel + "/" if entry.is_dir() else rel)
+                elif entry.is_dir(follow_symlinks=False):
+                    if entry.name in _DEPENDENCY_DIRS or depth >= MAX_DEPTH:
+                        unread.append(rel + "/")
+                    else:
+                        below.append((Path(entry.path), depth + 1))
+                elif not entry.is_file(follow_symlinks=False):
+                    unread.append(rel)
+                elif rel != "SKILL.md":
+                    seen += 1
+                    if seen > MAX_WALKED:
+                        unread.append(f"(over {MAX_WALKED} files: the rest not listed)")
+                        return
+                    kind = _kind_for(rel)
+                    if kind is None:
+                        with open(entry.path, "rb") as handle:
+                            shebang = handle.read(2) == b"#!"
+                        if not (shebang or entry.stat(follow_symlinks=False).st_mode & 0o111):
+                            continue                    # data, images, fonts: neither instructions nor code
+                        kind = "skill_code"
+                    candidates.append((0 if kind == "skill_code" else 1, rel, kind, Path(entry.path)))
+            except OSError:
+                unread.append(rel)
+        pending.extend(reversed(below))
 
+
+def scan_skill_folder(folder: Path | None, skill_md: str) -> dict:
+    """A skill's folder (§C1): its SKILL.md and every text or code file under it — at most MAX_FILES
+    files of at most MAX_FILE_BYTES each, MAX_SCAN_BYTES in all, SKILL.md first, then code (scripts, source
+    files, executables), then the rest, so a few hundred references can never push the scripts out of the
+    budget. What is not read (see `_list_folder`, and whatever is over the limits) is named in a note.
+    A disk error never escapes: what cannot be read is named, never silently clean."""
+    candidates: list[tuple[int, str, str, Path]] = []
+    unread: list[str] = []
     try:
         walkable = folder is not None and folder.is_dir()
     except OSError:
         walkable = False
         unread.append("./")
     if walkable:
-        for dirpath, dirnames, filenames in os.walk(folder, followlinks=False, onerror=unlistable):
-            here = Path(dirpath)
-            walked = []
-            for name in sorted(dirnames):
-                if name in _DEPENDENCY_DIRS or _is_link(here / name):
-                    unread.append(relative(here / name) + "/")
-                else:
-                    walked.append(name)
-            dirnames[:] = walked
-            for name in sorted(filenames):
-                path = here / name
-                rel = relative(path)
-                if rel == "SKILL.md":
-                    continue
-                try:
-                    if path.is_symlink() or not path.is_file():
-                        unread.append(rel)
-                        continue
-                    kind = _kind_for(rel)
-                    if kind is None:
-                        with path.open("rb") as handle:
-                            if handle.read(2) != b"#!":
-                                continue                # data, images, fonts: neither instructions nor code
-                    size = path.stat().st_size
-                    if len(files) >= MAX_FILES or size > MAX_FILE_BYTES or spent + size > MAX_SCAN_BYTES:
-                        unread.append(rel)
-                        continue
-                    files[rel] = path.read_text("utf-8", errors="replace")
-                    spent += size
-                except OSError:
-                    unread.append(rel)
-    return scan_texts(skill_md, files, unread=unread)
+        _list_folder(folder, candidates, unread)
+    items: list[tuple[str, str, str]] = []
+    spent = 0
+    for _, rel, kind, path in sorted(candidates, key=lambda candidate: (candidate[0], candidate[1])):
+        try:
+            size = path.stat().st_size
+            if len(items) >= MAX_FILES or size > MAX_FILE_BYTES or spent + size > MAX_SCAN_BYTES:
+                unread.append(rel)
+                continue
+            items.append((rel, path.read_text("utf-8", errors="replace"), kind))
+            spent += size
+        except OSError:
+            unread.append(rel)
+    return _scan(skill_md, items, unread)
 
 
 def _own_files(root: Path) -> list[Path]:
