@@ -8,7 +8,7 @@ from typing import Any
 import httpx
 
 from arslan.llm.providers import errors as provider_errors
-from arslan.llm import request_evidence
+from arslan.llm import param_heal, request_evidence
 from arslan.llm.locality import loopback_endpoint
 
 from arslan.llm.providers.base import BaseLLMProvider
@@ -218,14 +218,20 @@ class OpenAIProvider(BaseLLMProvider):
         payload["max_tokens"] = model_request(payload["max_tokens"])
         from arslan.execution_checkpoint import save
         await save("before_model")
-        evidence = await request_evidence.begin(payload)
 
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
 
+        fingerprint = self.endpoint_fingerprint()
         if stream:
-            return await self._chat_streamed(payload, headers, evidence)
+            return await param_heal.send(fingerprint, payload, lambda p: self._chat_streamed(p, headers))
+        return self._parse_response(
+            await param_heal.send(fingerprint, payload, lambda p: self._post(p, headers)))
+
+    async def _post(self, payload: dict[str, Any], headers: dict[str, str]) -> dict[str, Any]:
+        """One non-streamed send; param_heal may resend a changed payload."""
+        evidence = await request_evidence.begin(payload)
         async with self._client() as client:
             response = await client.post(
                 f"{self.base_url}/chat/completions",
@@ -244,12 +250,11 @@ class OpenAIProvider(BaseLLMProvider):
                     provider_errors.with_body(_exc),
                     request=_exc.request, response=_exc.response) from None
             await request_evidence.acknowledge(evidence)
-            data = response.json()
+            return response.json()
 
-        return self._parse_response(data)
-
-    async def _chat_streamed(self, payload: dict[str, Any], headers: dict[str, str], evidence) -> LLMResponse:
+    async def _chat_streamed(self, payload: dict[str, Any], headers: dict[str, str]) -> LLMResponse:
         from arslan.llm import stream_assembly
+        evidence = await request_evidence.begin(payload)
         body = {**payload, "stream": True, "stream_options": {"include_usage": True}}
         async with self._client() as client:
             # The idle watchdog governs reads; httpx's own read timeout only
@@ -338,6 +343,12 @@ class OpenAIProvider(BaseLLMProvider):
         payload = {**payload, "max_tokens": model_request(payload["max_tokens"])}
         from arslan.execution_checkpoint import save
         await save("before_model")
+        async for piece in param_heal.stream(self.endpoint_fingerprint(), payload,
+                                             lambda p: self._sse_attempt(p, headers)):
+            yield piece
+
+    async def _sse_attempt(self, payload: dict[str, Any], headers: dict[str, str]) -> AsyncIterator[str]:
+        """One streamed send; param_heal may resend it before its first byte."""
         evidence = await request_evidence.begin(payload)
         async with self._client() as client:
             async with client.stream(
@@ -350,6 +361,7 @@ class OpenAIProvider(BaseLLMProvider):
                 try:
                     response.raise_for_status()
                 except httpx.HTTPStatusError as _exc:
+                    await provider_errors.read_body(_exc)
                     # Carry the provider's OWN explanation, not just the status
                     # line — see providers/errors.py for why this matters.
                     raise httpx.HTTPStatusError(

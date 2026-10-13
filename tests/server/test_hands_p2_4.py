@@ -28,8 +28,19 @@ def test_new_settings_are_empty_by_default_and_saved():
     s = hands_service.settings()
     assert [a["bundle_id"] for a in s["always"]] == ["com.apple.Notes"]
     assert s["no_screenshots"] == ["Mail", "Messages"]
-    assert hands_service.always_allowed("com.apple.Notes") and not hands_service.always_allowed("com.apple.Mail")
     assert hands_service.no_screenshots("mail", "") and hands_service.no_screenshots("", "messages")
+
+
+async def test_the_old_always_list_becomes_app_rules_once():
+    """0.1.61 §A5: Settings → Hands' apps allowed for good become `app` rules, and the setting is
+    emptied, so the permission store is the only "Always"."""
+    hands_service.update_settings(always=[{"bundle_id": "com.apple.Notes", "name": "Notes"}])
+    assert [a["bundle_id"] for a in await hands_service.always_apps()] == ["com.apple.Notes"]
+    assert hands_service.settings()["always"] == []
+    await hands_service.allow_always("com.apple.Mail", "Mail")
+    assert {a["name"] for a in await hands_service.always_apps()} == {"Notes", "Mail"}
+    await hands_service.stop_always("com.apple.Notes")
+    assert [a["bundle_id"] for a in await hands_service.always_apps()] == ["com.apple.Mail"]
 
 
 async def test_an_app_allowed_for_good_is_not_asked_again_but_risky_steps_still_are(hands, asks, in_job):
@@ -43,8 +54,12 @@ async def test_an_app_allowed_for_good_is_not_asked_again_but_risky_steps_still_
     assert kinds(seen) == ["desktop_risky"]
 
 
-async def test_a_job_inherits_what_its_conversation_allowed(hands, asks):
-    seen, _ = asks
+@pytest.mark.parametrize("scope, job_asks", [("conversation", False), ("task", True)])
+async def test_a_job_inherits_what_its_conversation_allowed(hands, asks, scope, job_asks):
+    """0.1.61 §A4: a job reads the grants of the conversation that started it; "for this task" was
+    the chat reply's own, so a job started later asks again."""
+    seen, answer = asks
+    answer["scope"] = scope
     with pc.bind(pc.TaskMemoryContext(task_id="t", run_id="r1", conversation_id="c1")):
         assert (await hands_tools.DesktopClickExecutor().execute(CLICK))["ok"]          # a chat reply acts
     assert kinds(seen) == ["desktop_app"]
@@ -54,7 +69,7 @@ async def test_a_job_inherits_what_its_conversation_allowed(hands, asks):
             assert (await hands_tools.DesktopClickExecutor().execute(CLICK))["ok"]
     finally:
         background_jobs._inside_job.reset(token)
-    assert kinds(seen) == ["desktop_app"], "the job did not ask again"
+    assert len(seen) == (2 if job_asks else 1), [f["kind"] for f in seen]
 
 
 async def test_an_app_never_screenshotted_is_read_as_text_only(hands, asks, in_turn):
@@ -69,8 +84,8 @@ async def test_one_card_for_several_apps_then_no_more_cards(hands, asks, in_job)
     result = await hands_tools.DesktopAccessExecutor().execute(
         {"apps": ["Notes", "Safari", "Keychain Access"], "why": "copy the list from the web page into a note"})
     assert result["ok"] is True
-    cards = [f for f in seen if f["kind"] == "desktop_app"]
-    assert len(cards) == 1
+    cards = [f for f in seen if f["perm_kind"] == "app"]           # decide_many: one card for every app
+    assert len(cards) == 1 and len(seen) == 1
     assert "· Notes — look and act" in cards[0]["detail"] and "· Safari — look only" in cards[0]["detail"]
     assert "Keychain Access" not in cards[0]["detail"] and "Not included: Keychain Access (app_denied)" in result["text"]
     await hands_tools.DesktopLookExecutor().execute({"app": "Notes"})
@@ -86,7 +101,7 @@ async def test_a_declined_access_card_allows_nothing(hands, asks, in_job):
     assert result["code"] == "declined"
     answer["value"] = True
     await hands_tools.DesktopClickExecutor().execute(CLICK)
-    assert kinds(seen) == ["desktop_app", "desktop_app"], "acting still asks after a declined card"
+    assert [f["perm_kind"] for f in seen] == ["app", "app"], "acting still asks after a declined card"
 
 
 async def test_settings_api_keeps_always_by_bundle_id_and_asks_for_screen_recording(hands, monkeypatch):

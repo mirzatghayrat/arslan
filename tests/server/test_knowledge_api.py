@@ -102,12 +102,14 @@ async def test_post_url_ingests(client, monkeypatch):
 
 
 async def test_post_url_private_rejected_400(client):
+    """The body is asserted too: the private-address check refused it, not a failed lookup."""
     sid = await _spawn(client)
     r = await client.post(
         f"/api/v1/spawns/{sid}/knowledge",
         json={"url": "http://169.254.169.254/latest/meta-data/"},
     )
     assert r.status_code == 400
+    assert r.json() == {"detail": "url refused: blocked address (local network)"}
 
 
 async def test_post_text_compress_passthrough(client, monkeypatch):

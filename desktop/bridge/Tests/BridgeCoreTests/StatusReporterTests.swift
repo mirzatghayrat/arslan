@@ -91,8 +91,7 @@ final class StatusReporterTests: XCTestCase {
     func testAPhoneSayingHelloGetsTheStatusAtOnce() async throws {
         let (mac, phone, backend, reporter) = pair()
         backend.answers["/api/v1/phone/status"] = .success(status(mascot: "idle"))
-        let links = ConversationLinks(channels: FakeChannels(), mailbox: mac, backend: backend)
-        links.status = reporter
+        let links = ConversationLinks(channels: FakeChannels(), mailbox: mac, backend: backend, status: reporter)
         try await phone.send(type: "hello", body: ["app_version": "1", "protocol_version": 1, "capabilities": []], to: "mac-1")
         for received in try await mac.receive() { await links.handle(received) }
         let got = try await phone.receive()

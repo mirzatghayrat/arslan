@@ -45,7 +45,10 @@ public enum Wire {
         case "approval.request", "device.revoked", "error": return true
         case "approval.result": return ["failed", "expired"].contains(body["outcome"] as? String ?? "")
         case "chat.event":
+            // §5.7: never a partial, never words typed on the Mac, never what answers a turn started
+            // on the Mac (`origin: "mac"`: the user is at the Mac). An unknown origin rings, as before.
             let kind = body["kind"] as? String
+            guard body["role"] as? String != "user", body["origin"] as? String != "mac" else { return false }
             return kind == "error" || (kind == "message" && body["final"] as? Bool == true)
         case "job.event": return ["done", "partial", "stuck", "stopped"].contains(body["state"] as? String ?? "")
         default: return false

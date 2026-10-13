@@ -49,12 +49,10 @@ def _clean(tmp_path, monkeypatch):
     approvals._reset_for_tests()
     monkeypatch.setattr(hands_service, "_dir", lambda: tmp_path / "hands")
     hands_service._reset_for_tests()
-    hands_tools._grants.clear()
     hands_tools._inline.clear()
     yield
     approvals._reset_for_tests()
     hands_service._reset_for_tests()
-    hands_tools._grants.clear()
     hands_tools._inline.clear()
 
 
@@ -83,7 +81,8 @@ def test_the_window_that_asked_answers_a_hands_card_in_its_own_turn(app_client, 
         ws.receive_json()                                            # history
         ws.send_json({"type": "user_message", "content": "what does my Notes window show?"})
         card = _collect_until(ws, "propose_action")[-1]
-        assert card["kind"] == "desktop_look" and card["target"] == "Notes"
+        # 0.1.61: one app card for looking and acting, through permissions.decide (§A11).
+        assert card["kind"] == "desktop_app" and card["perm_kind"] == "app" and card["target"] == "Notes"
         ws.send_json({"type": "confirm_action", "call_id": card["call_id"]})
         after = _collect_until(ws, "stream_end", max_frames=80)
     results = [f for f in after if f.get("type") == "tool_result" and f.get("tool") == "desktop_look"]

@@ -240,6 +240,7 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         finally:
             beat.cancel()
             # 0.1.61 §A5: what the user allowed "for this task" ends with the turn, as with a job.
+            # A task given none returns at once, without the database (permissions.forget_task).
             for task_id in sorted(turn_tasks):
                 try:
                     await permissions.forget_task(task_id)

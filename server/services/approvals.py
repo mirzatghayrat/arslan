@@ -270,16 +270,41 @@ _ISLAND_RISKY_RULES = {"delete", "send-mail", "send-message", "upload", "publish
                        "remote-shell", "apple-events", "login-items", "install"}
 _RISKY_SCRIPT = re.compile(r"\b(?:delete|send|move|do\s+shell\s+script|purchase|buy|pay|submit|transfer|empty\s+trash)\b",
                            re.IGNORECASE)
+#: The permission kinds whose `propose_action` card the island answers (0.1.61 §A4: "Once (For
+#: this task) or No for folder, app (look and act, merged), screen, MCP tool, schedule, site and
+#: Shortcut cards"). Everything else opens Arslan: money, send, delete, a risky step in an app, a
+#: takeover, leaving the sandbox, system changes, other agents' settings, new capabilities,
+#: another machine — and any kind this does not know.
+ISLAND_KINDS = frozenset({"folder", "app", "screen", "mcp_tool", "schedule", "site", "shortcut"})
+#: The permission kinds a card of any type may carry and still be answerable from the island: those
+#: of `ISLAND_KINDS`, and the kinds of the cards that are not a `propose_action` — a command (which
+#: its own rules below then decide), a write in the workspace, a schedule.
+_ISLAND_CARD_KINDS = ISLAND_KINDS | {"command", "workspace_write", "schedule"}
 
 
 def island_may_answer(frame: dict) -> bool:
     """0.1.55 decision 3: the island answers every card except a risky one (delete, send,
     pay, buy, transfer, submit) — those are answered in Arslan, with the whole context in
-    view. Fail-closed: a kind this does not know is not answerable from the island."""
+    view. Fail-closed: a kind this does not know is not answerable from the island.
+
+    0.1.61 §A4: a card that permissions.decide shows carries its permission kind (`perm_kind`), and
+    it gates every card type: one outside `_ISLAND_CARD_KINDS` is never answerable, whatever its
+    type or command text says (PR 3a rides send, delete and system cards on `propose_run_command`
+    frames). Past that gate a `propose_action` card is decided by `ISLAND_KINDS` alone — never the
+    legacy `kind` its caller's frame may keep, which would let the island answer a takeover — and
+    the other card types by their own rule. A card without a permission kind is read by the 0.1.55
+    table below."""
     kind = frame.get("type")
+    if "perm_kind" in frame:
+        perm_kind = frame["perm_kind"]
+        if not (isinstance(perm_kind, str) and perm_kind in _ISLAND_CARD_KINDS):
+            return False
     if kind in ("propose_workspace_write", "propose_schedule"):
         return True
     if kind == "propose_action":
+        if "perm_kind" in frame:
+            perm_kind = frame["perm_kind"]
+            return isinstance(perm_kind, str) and perm_kind in ISLAND_KINDS
         action = frame.get("kind")
         if action in ("browser_site", "desktop_look", "desktop_app", "mac_shortcut",
                       "desktop_takeover"):          # Hands v2 §6.4: the island may answer it

@@ -84,11 +84,13 @@ class VerifiedPublicReads:
         self.failed = set()
         self.transport = []
 
-    async def __call__(self, url):
+    async def __call__(self, url, **kwargs):
+        # Keywords reach the real getter: this stands in for `net_pin.pinned_get`, which
+        # `_fetch_text` calls with the page headers.
         if url not in self.hashes or url in self.failed:
             raise RuntimeError("stable_unapproved_or_failed_public_read")
         self.failed.add(url)
-        response = await self.get(url)
+        response = await self.get(url, **kwargs)
         digest = hashlib.sha256(response.content).hexdigest()
         self.transport.append({"url": url, "sha256": digest, "bytes": len(response.content),
             "status": response.status_code, "matches_frozen_input": digest == self.hashes[url],
