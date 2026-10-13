@@ -48,7 +48,9 @@ export default function WorkspaceWriteCard({ callId, workspace, action, path, ba
                 // The old line says a yes lasts the session. A card from the permission layer has the frame's
                 // options to say how long, and they are not always a choice: it never carries the old line.
                 ...(v2 ? [] : [{ icon: lineIcon(LockKeyhole), text: t("wswrite.scope") }])]}
-      options={v2 ? <ScopeChoice options={options} value={scope} onChange={setScope} alwaysLabel={alwaysLabel} testId="wswrite-scope" /> : undefined}
+      // "In this conversation" covers any file in the folder, not the one shown (the grant's target is the folder).
+      options={v2 ? <ScopeChoice options={options} value={scope} onChange={setScope} alwaysLabel={alwaysLabel}
+        conversationLabel={t("wswrite.anyFile")} testId="wswrite-scope" /> : undefined}
       extra={v2 ? <DeclineNote testId="wswrite-note" disabled={busy}
         onDeclineWithNote={(note) => (note ? onCancel(callId, note) : onCancel(callId))} /> : undefined}
       expiresAt={expiresAt} queue={queue} busy={busy} onOpenContext={onOpenContext}

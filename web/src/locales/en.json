@@ -1853,7 +1853,8 @@
     "action": {
       "write": "create or overwrite",
       "edit": "edit"
-    }
+    },
+    "anyFile": "any file in this folder"
   },
   "schedgrant": {
     "label": "Scheduling",
@@ -1867,7 +1868,8 @@
     "every_n_hours": "every {{count}} hours",
     "every_minute": "every minute",
     "every_n_minutes": "every {{count}} minutes",
-    "unattended": "Scheduled runs happen on their own and never wait for you: a step that would need your OK is skipped, not done. What needs no OK still runs: looking things up, ordinary commands in the sandbox, and writing in Arslan's own working folder."
+    "unattended": "Scheduled runs happen on their own and never wait for you: a step that would need your OK is skipped, not done. What needs no OK still runs: looking things up, ordinary commands in the sandbox, and writing in Arslan's own working folder.",
+    "anyTask": "creating any scheduled task"
   },
   "enroll": {
     "label": "Remember {{name}} ({{host}})?",
@@ -1928,6 +1930,7 @@
       "once": "Once",
       "task": "For this task",
       "conversation": "In this conversation",
+      "conversationFor": "In this conversation: {{label}}",
       "always": "Always: {{label}}"
     },
     "noteLink": "No — tell Arslan what to do instead",

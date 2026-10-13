@@ -1853,7 +1853,8 @@
     "action": {
       "write": "创建或覆盖",
       "edit": "修改"
-    }
+    },
+    "anyFile": "这个文件夹里的任何文件"
   },
   "schedgrant": {
     "label": "定时任务",
@@ -1867,7 +1868,8 @@
     "every_n_hours": "每 {{count}} 小时",
     "every_minute": "每分钟",
     "every_n_minutes": "每 {{count}} 分钟",
-    "unattended": "定时运行无人值守，从不等你：需要你点头的步骤会跳过，不会执行。不需要点头的照常进行：查资料、在沙盒里运行普通命令，以及在 Arslan 自己的工作文件夹里写文件。"
+    "unattended": "定时运行无人值守，从不等你：需要你点头的步骤会跳过，不会执行。不需要点头的照常进行：查资料、在沙盒里运行普通命令，以及在 Arslan 自己的工作文件夹里写文件。",
+    "anyTask": "创建任何定时任务"
   },
   "enroll": {
     "label": "记住 {{name}}({{host}})?",
@@ -1928,6 +1930,7 @@
       "once": "仅这一次",
       "task": "本次任务内",
       "conversation": "本对话内",
+      "conversationFor": "本对话内：{{label}}",
       "always": "始终允许：{{label}}"
     },
     "noteLink": "不行，告诉 Arslan 该怎么做",

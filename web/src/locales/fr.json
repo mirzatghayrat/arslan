@@ -1853,7 +1853,8 @@
     "action": {
       "write": "créer ou écraser",
       "edit": "modifier"
-    }
+    },
+    "anyFile": "n’importe quel fichier de ce dossier"
   },
   "schedgrant": {
     "label": "Planification",
@@ -1867,7 +1868,8 @@
     "every_n_hours": "toutes les {{count}} heures",
     "every_minute": "chaque minute",
     "every_n_minutes": "toutes les {{count}} minutes",
-    "unattended": "Les exécutions planifiées tournent seules et ne vous attendent jamais : une étape qui demande votre accord est sautée, pas exécutée. Ce qui n’en demande pas se fait quand même : consulter, lancer des commandes ordinaires dans le bac à sable et écrire dans le dossier de travail d’Arslan."
+    "unattended": "Les exécutions planifiées tournent seules et ne vous attendent jamais : une étape qui demande votre accord est sautée, pas exécutée. Ce qui n’en demande pas se fait quand même : consulter, lancer des commandes ordinaires dans le bac à sable et écrire dans le dossier de travail d’Arslan.",
+    "anyTask": "créer n’importe quelle tâche planifiée"
   },
   "enroll": {
     "label": "Mémoriser {{name}} ({{host}}) ?",
@@ -1928,6 +1930,7 @@
       "once": "Cette fois seulement",
       "task": "Pour cette tâche",
       "conversation": "Dans cette conversation",
+      "conversationFor": "Dans cette conversation : {{label}}",
       "always": "Toujours : {{label}}"
     },
     "noteLink": "Non — dire à Arslan quoi faire à la place",

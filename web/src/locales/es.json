@@ -1853,7 +1853,8 @@
     "action": {
       "write": "crear o sobrescribir",
       "edit": "editar"
-    }
+    },
+    "anyFile": "cualquier archivo de esta carpeta"
   },
   "schedgrant": {
     "label": "Programación",
@@ -1867,7 +1868,8 @@
     "every_n_hours": "cada {{count}} horas",
     "every_minute": "cada minuto",
     "every_n_minutes": "cada {{count}} minutos",
-    "unattended": "Las ejecuciones programadas van solas y nunca te esperan: un paso que necesite tu visto bueno se omite, no se hace. Lo que no lo necesita sí se hace: consultar información, ejecutar comandos habituales en el entorno aislado y escribir en la carpeta de trabajo de Arslan."
+    "unattended": "Las ejecuciones programadas van solas y nunca te esperan: un paso que necesite tu visto bueno se omite, no se hace. Lo que no lo necesita sí se hace: consultar información, ejecutar comandos habituales en el entorno aislado y escribir en la carpeta de trabajo de Arslan.",
+    "anyTask": "crear cualquier tarea programada"
   },
   "enroll": {
     "label": "¿Recordar {{name}} ({{host}})?",
@@ -1928,6 +1930,7 @@
       "once": "Solo esta vez",
       "task": "Durante esta tarea",
       "conversation": "En esta conversación",
+      "conversationFor": "En esta conversación: {{label}}",
       "always": "Siempre: {{label}}"
     },
     "noteLink": "No — dile a Arslan qué hacer en su lugar",

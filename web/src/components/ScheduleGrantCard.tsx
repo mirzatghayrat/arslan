@@ -73,7 +73,9 @@ export default function ScheduleGrantCard({ callId, name, when, background, expi
                 // unattended run does (it never waits: a step that needs you is skipped).
                 v2 ? { icon: lineIcon(Eye), text: <span data-testid="schedule-unattended">{t("schedgrant.unattended")}</span> }
                    : { icon: lineIcon(Eye), text: <span data-testid="schedule-scope">{t("schedgrant.scope")}</span> }]}
-      options={v2 ? <ScopeChoice options={options} value={scope} onChange={setScope} alwaysLabel={alwaysLabel} testId="schedule-choice" /> : undefined}
+      // "In this conversation" lets it create ANY scheduled task here without asking (the grant's target is every schedule).
+      options={v2 ? <ScopeChoice options={options} value={scope} onChange={setScope} alwaysLabel={alwaysLabel}
+        conversationLabel={t("schedgrant.anyTask")} testId="schedule-choice" /> : undefined}
       extra={v2 ? <DeclineNote testId="schedule-note" disabled={busy}
         onDeclineWithNote={(note) => (note ? onCancel(callId, note) : onCancel(callId))} /> : undefined}
       expiresAt={expiresAt} queue={queue} busy={busy} onOpenContext={onOpenContext}

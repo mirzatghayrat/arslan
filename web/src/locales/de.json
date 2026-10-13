@@ -1853,7 +1853,8 @@
     "action": {
       "write": "anlegen oder überschreiben",
       "edit": "bearbeiten"
-    }
+    },
+    "anyFile": "jede Datei in diesem Ordner"
   },
   "schedgrant": {
     "label": "Zeitplanung",
@@ -1867,7 +1868,8 @@
     "every_n_hours": "alle {{count}} Stunden",
     "every_minute": "jede Minute",
     "every_n_minutes": "alle {{count}} Minuten",
-    "unattended": "Geplante Läufe laufen allein und warten nie auf dich: Ein Schritt, der dein OK bräuchte, wird übersprungen, nicht ausgeführt. Was kein OK braucht, läuft weiter: Nachschlagen, gewöhnliche Befehle in der Sandbox und Schreiben in Arslans eigenem Arbeitsordner."
+    "unattended": "Geplante Läufe laufen allein und warten nie auf dich: Ein Schritt, der dein OK bräuchte, wird übersprungen, nicht ausgeführt. Was kein OK braucht, läuft weiter: Nachschlagen, gewöhnliche Befehle in der Sandbox und Schreiben in Arslans eigenem Arbeitsordner.",
+    "anyTask": "beliebige geplante Aufgaben anlegen"
   },
   "enroll": {
     "label": "{{name}} ({{host}}) merken?",
@@ -1928,6 +1930,7 @@
       "once": "Nur dieses Mal",
       "task": "Für diese Aufgabe",
       "conversation": "In diesem Gespräch",
+      "conversationFor": "In diesem Gespräch: {{label}}",
       "always": "Immer: {{label}}"
     },
     "noteLink": "Nein — Arslan sagen, was er stattdessen tun soll",

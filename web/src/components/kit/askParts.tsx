@@ -87,8 +87,11 @@ export function offeredScopes(options: string[] | undefined, permKind?: string):
  *  yes will send (`scopeToSend`), so a value the card does not show ticks its default. One choice
  *  (or none) needs no picker, so nothing is drawn — except Always, which is drawn even alone: it
  *  is only ever sent by being picked where the person can see it. */
-export function ScopeChoice({ options, value, onChange, alwaysLabel, testId = "ask-scope" }: {
-  options: string[] | undefined; value: string; onChange: (v: string) => void; alwaysLabel?: string; testId?: string;
+export function ScopeChoice({ options, value, onChange, alwaysLabel, conversationLabel, testId = "ask-scope" }: {
+  options: string[] | undefined; value: string; onChange: (v: string) => void; alwaysLabel?: string;
+  /** What "In this conversation" covers when that is more than the request on the card (every command of its kind, any
+   *  scheduled task, any file in the folder): said on the choice, as "Always" says its literal scope. */
+  conversationLabel?: string; testId?: string;
 }) {
   const { t } = useTranslation();
   const name = useId();
@@ -102,7 +105,9 @@ export function ScopeChoice({ options, value, onChange, alwaysLabel, testId = "a
         <label key={o} className="flex items-start gap-2 text-[13px] text-muted-foreground">
           <input type="radio" name={name} value={o} checked={ticked === o} onChange={() => { if (!guarded()) onChange(o); }}
             data-testid={`${testId}-${o}`} className="mt-[3px] accent-foreground" />
-          <span>{o === "always" ? t("kit.scope.always", { label: alwaysLabel?.trim() ?? "" }) : t(`kit.scope.${o}`)}</span>
+          <span>{o === "always" ? t("kit.scope.always", { label: alwaysLabel?.trim() ?? "" })
+            : o === "conversation" && conversationLabel?.trim() ? t("kit.scope.conversationFor", { label: conversationLabel.trim() })
+            : t(`kit.scope.${o}`)}</span>
         </label>
       ))}
     </div>
