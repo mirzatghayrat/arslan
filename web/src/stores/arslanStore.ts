@@ -4,16 +4,21 @@ import { createSpeaker } from "../lib/speech";
 import type { ActionKind, ArslanServerMessage, ArslanThreadItem, JobCard, JobOutcome, ProcessSummary, StoredArtifact, ToolStep, RosterMember } from "../api/client.types";
 import type { MessageAttachment } from "../types";
 
+let _cardSeq = 0;
+/** Where a card arrived: the clock (its expiry counts from it) and its place in line, exact even for two cards that arrive in
+ *  the same millisecond, whatever their kinds (`seq` rises with every card, a card sent again included). */
+const _arrived = () => ({ receivedAt: Date.now(), seq: ++_cardSeq });
+
 /** A card waiting on the user in this window, by kind (0.1.61 §A4). Each kind is a list, oldest first, keyed by `callId`: a
  *  second card of a kind (a window's own run-command card and a job's) waits behind the first and never replaces it. */
 export type PendingCommand = { callId: string; pretty: string; reason: string; remoteHost: string; fingerprints: string[]; background?: boolean;
-  sandbox?: "outside" | "retry"; why?: string; receivedAt?: number } & CardV2;
-export type PendingEnrollNode = { callId: string; name: string; host: string; user: string; fingerprints: string[]; receivedAt?: number };
-export type PendingWorkspaceWrite = { callId: string; workspace: string; action: string; path: string; background?: boolean; receivedAt?: number } & CardV2;
-export type PendingSchedule = { callId: string; name: string; when: string; background?: boolean; receivedAt?: number } & CardV2;
-export type PendingCapability = { callId: string; receivedAt?: number } & import("../api/client.types").CapabilityCard;
+  sandbox?: "outside" | "retry"; why?: string; receivedAt?: number; seq?: number } & CardV2;
+export type PendingEnrollNode = { callId: string; name: string; host: string; user: string; fingerprints: string[]; receivedAt?: number; seq?: number };
+export type PendingWorkspaceWrite = { callId: string; workspace: string; action: string; path: string; background?: boolean; receivedAt?: number; seq?: number } & CardV2;
+export type PendingSchedule = { callId: string; name: string; when: string; background?: boolean; receivedAt?: number; seq?: number } & CardV2;
+export type PendingCapability = { callId: string; receivedAt?: number; seq?: number } & import("../api/client.types").CapabilityCard;
 export type PendingAction = { callId: string; kind: ActionKind | (string & {}); target: string; detail: string; background?: boolean;
-  receivedAt?: number } & CardV2;
+  receivedAt?: number; seq?: number } & CardV2;
 export type PendingConnectMcp = {
   callId: string;
   key: string;
@@ -27,7 +32,7 @@ export type PendingConnectMcp = {
   prerequisites: string;
   requiresPath: boolean;
   pathPlaceholder: string | null;
-  receivedAt?: number;
+  receivedAt?: number; seq?: number;
   /** The server this card connected (set when its apply succeeded): the follow-up frame names the server, not the card. */
   appliedServerId?: number;
 };
@@ -965,24 +970,24 @@ function makeActions(set: SetState, get: GetState) {
                                   ...(frame.sandbox === "outside" || frame.sandbox === "retry"
                                     ? { sandbox: frame.sandbox, why: frame.why || "" } : {}),
                                   ..._cardV2(frame),
-                                  receivedAt: Date.now() }),
+                                  ..._arrived() }),
                ...(frame.background ? _approvalNotice(state) : {}) });
           break;
         case "propose_enroll_node":
           set({ pendingEnrollNodes: _added(state.pendingEnrollNodes, { callId: frame.call_id, name: frame.name,
                                      host: frame.host, user: frame.user,
-                                     fingerprints: frame.fingerprints || [], receivedAt: Date.now() }) });
+                                     fingerprints: frame.fingerprints || [], ..._arrived() }) });
           break;
         case "propose_schedule":
           set({ pendingSchedules: _added(state.pendingSchedules, { callId: frame.call_id, name: frame.name,
                                    when: frame.when, background: frame.background === true, ..._cardV2(frame),
-                                   receivedAt: Date.now() }),
+                                   ..._arrived() }),
                ...(frame.background ? _approvalNotice(state) : {}) });
           break;
         case "propose_capability": {
           const { type: _t, call_id, ...card } = frame;
           void _t;
-          set({ pendingCapabilities: _added(state.pendingCapabilities, { callId: call_id, receivedAt: Date.now(), ...card }) });
+          set({ pendingCapabilities: _added(state.pendingCapabilities, { callId: call_id, ...card, ..._arrived() }) });
           break;
         }
         case "capability_result":
@@ -994,7 +999,7 @@ function makeActions(set: SetState, get: GetState) {
           break;
         case "propose_action":
           set({ pendingActions: _added(state.pendingActions, { callId: frame.call_id, kind: frame.kind, target: frame.target, detail: frame.detail,
-                                 background: frame.background === true, ..._cardV2(frame), receivedAt: Date.now() }),
+                                 background: frame.background === true, ..._cardV2(frame), ..._arrived() }),
                 ..._approvalNotice(state) });
           break;
         case "card_resolved": {
@@ -1009,7 +1014,7 @@ function makeActions(set: SetState, get: GetState) {
           set({ pendingWorkspaceWrites: _added(state.pendingWorkspaceWrites, {
             callId: frame.call_id, workspace: frame.workspace,
             action: frame.action, path: frame.path, background: frame.background === true, ..._cardV2(frame),
-            receivedAt: Date.now() }),
+            ..._arrived() }),
                ...(frame.background ? _approvalNotice(state) : {}) });
           break;
         case "propose_connect_mcp":
@@ -1030,7 +1035,7 @@ function makeActions(set: SetState, get: GetState) {
               prerequisites: frame.prerequisites,
               requiresPath: frame.requires_path,
               pathPlaceholder: frame.path_placeholder,
-              receivedAt: Date.now(),
+              ..._arrived(),
             }),
           });
           break;

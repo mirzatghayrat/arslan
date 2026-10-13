@@ -14,6 +14,10 @@ import { AskQueue, CARD_MS, Notice, scopeToSend, type AskQueuePosition, type Que
  *  this long after its expiry, so the server has closed it first. */
 const EXPIRE_GRACE_MS = 2_000;
 
+/** An expires_at more than this long before the card arrived is not a time (a duration sent as an epoch, `1800`): it counts
+ *  as none. One a little in the past is a real time that has gone by — a card the server has already closed. */
+const MAX_PAST_MS = 86_400_000;
+
 /** The chat's message box (OrchestratorChat): the one under an open conversation, or the first-run one. */
 function focusComposer() {
   (document.getElementById("chat-message-input") ?? document.getElementById("landing-message-input"))?.focus();
@@ -63,7 +67,8 @@ export default function AskSlot({ send }: { send: (frame: Record<string, unknown
   // setTimeout (> 24.8 days fires at once) nor close the card at once.
   const expires = (p: { receivedAt?: number; expiresAt?: number }) => {
     const wait = p.receivedAt ? p.receivedAt + CARD_MS : null;
-    return p.expiresAt && p.expiresAt > 0 ? (wait === null ? p.expiresAt : Math.min(p.expiresAt, wait)) : wait;
+    const own = p.expiresAt && p.expiresAt > 0 && (!p.receivedAt || p.expiresAt >= p.receivedAt - MAX_PAST_MS) ? p.expiresAt : null;
+    return own === null ? wait : wait === null ? own : Math.min(own, wait);
   };
   // Every card here runs out on its own clock (the Mac waits 30 minutes: approvals.TIMEOUT_S; a proposal to enrol a
   // machine or connect a server is held as long). The soonest to run out leaves the slot then.
@@ -90,9 +95,11 @@ export default function AskSlot({ send }: { send: (frame: Record<string, unknown
     if (note) focusComposer();
   };
 
-  // 0.1.55 S2: the pending asks, oldest first, for the one AskQueue slot. Keyed by the ask (kind and call id).
-  const items: (QueuedAsk & { at: number })[] = [
-    ...pendingCommands.map((c) => ({ at: c.receivedAt ?? 0, key: `cmd:${c.callId}`, render: (queue: AskQueuePosition) => (
+  // 0.1.55 S2: the pending asks, oldest first, for the one AskQueue slot. Keyed by the ask (kind and call id). Oldest is exact:
+  // by the sequence number each card got on arrival, so two that arrive in one millisecond keep their order whatever their
+  // kinds. A proposal to connect a server (rank 1) waits behind every ask that needs an answer.
+  const items: (QueuedAsk & { rank: number; seq: number })[] = [
+    ...pendingCommands.map((c) => ({ rank: 0, seq: c.seq ?? 0, key: `cmd:${c.callId}`, render: (queue: AskQueuePosition) => (
       <RunCommandCard callId={c.callId} pretty={c.pretty} reason={c.reason}
         remoteHost={c.remoteHost} fingerprints={c.fingerprints}
         background={c.background} sandbox={c.sandbox} why={c.why}
@@ -100,36 +107,36 @@ export default function AskSlot({ send }: { send: (frame: Record<string, unknown
         expiresAt={expires(c)} queue={queue}
         onConfirm={(callId, remember, scope) => { yes('confirm_run_command', callId, c, scope, { remember }); clearPendingCommand(c.callId); }}
         onCancel={(callId, note) => { no('cancel_run_command', callId, note); clearPendingCommand(c.callId); }} />) })),
-    ...pendingEnrollNodes.map((n) => ({ at: n.receivedAt ?? 0, key: `node:${n.callId}`, render: (queue: AskQueuePosition) => (
+    ...pendingEnrollNodes.map((n) => ({ rank: 0, seq: n.seq ?? 0, key: `node:${n.callId}`, render: (queue: AskQueuePosition) => (
       <EnrollNodeCard callId={n.callId} name={n.name} host={n.host}
         user={n.user} fingerprints={n.fingerprints}
         expiresAt={expires(n)} queue={queue} onDone={() => clearPendingEnrollNode(n.callId)} />) })),
-    ...pendingWorkspaceWrites.map((w) => ({ at: w.receivedAt ?? 0, key: `ws:${w.callId}`, render: (queue: AskQueuePosition) => (
+    ...pendingWorkspaceWrites.map((w) => ({ rank: 0, seq: w.seq ?? 0, key: `ws:${w.callId}`, render: (queue: AskQueuePosition) => (
       <WorkspaceWriteCard callId={w.callId} workspace={w.workspace}
         action={w.action} path={w.path} background={w.background}
         options={w.options} alwaysLabel={w.alwaysLabel}
         expiresAt={expires(w)} queue={queue}
         onConfirm={(callId, scope) => { yes('confirm_workspace_write', callId, w, scope); clearPendingWorkspaceWrite(w.callId); }}
         onCancel={(callId, note) => { no('cancel_workspace_write', callId, note); clearPendingWorkspaceWrite(w.callId); }} />) })),
-    ...pendingActions.map((a) => ({ at: a.receivedAt ?? 0, key: `act:${a.callId}`, render: (queue: AskQueuePosition) => (
+    ...pendingActions.map((a) => ({ rank: 0, seq: a.seq ?? 0, key: `act:${a.callId}`, render: (queue: AskQueuePosition) => (
       <ActionApprovalCard kind={a.kind} target={a.target} detail={a.detail}
         options={a.options} alwaysLabel={a.alwaysLabel} title={a.title} why={a.why}
         permKind={a.permKind} background={a.background}
         expiresAt={expires(a)} queue={queue}
         onConfirm={(scope) => { yes('confirm_action', a.callId, a, scope); clearPendingAction(a.callId); }}
         onCancel={(note) => { no('cancel_action', a.callId, note); clearPendingAction(a.callId); }} />) })),
-    ...pendingSchedules.map((s) => ({ at: s.receivedAt ?? 0, key: `sched:${s.callId}`, render: (queue: AskQueuePosition) => (
+    ...pendingSchedules.map((s) => ({ rank: 0, seq: s.seq ?? 0, key: `sched:${s.callId}`, render: (queue: AskQueuePosition) => (
       <ScheduleGrantCard callId={s.callId} name={s.name} when={s.when}
         background={s.background} options={s.options} alwaysLabel={s.alwaysLabel}
         expiresAt={expires(s)} queue={queue}
         onConfirm={(callId, scope) => { yes('confirm_schedule', callId, s, scope); clearPendingSchedule(s.callId); }}
         onCancel={(callId, note) => { no('cancel_schedule', callId, note); clearPendingSchedule(s.callId); }} />) })),
-    ...pendingCapabilities.map((k) => ({ at: k.receivedAt ?? 0, key: `cap:${k.callId}`, render: (queue: AskQueuePosition) => (
+    ...pendingCapabilities.map((k) => ({ rank: 0, seq: k.seq ?? 0, key: `cap:${k.callId}`, render: (queue: AskQueuePosition) => (
       <CapabilityProposeCard card={k} callId={k.callId}
         expiresAt={expires(k)} queue={queue}
         onConfirm={(callId, keys, folders) => { send({ type: 'confirm_capability', call_id: callId, keys, folders }); clearPendingCapability(k.callId); }}
         onCancel={(callId) => { send({ type: 'cancel_capability', call_id: callId }); clearPendingCapability(k.callId); }} />) })),
-    ...pendingConnectMcps.map((m) => ({ at: Number.MAX_SAFE_INTEGER, key: `mcp:${m.callId}`, render: (queue: AskQueuePosition) => (
+    ...pendingConnectMcps.map((m) => ({ rank: 1, seq: m.seq ?? 0, key: `mcp:${m.callId}`, render: (queue: AskQueuePosition) => (
       <ConnectMcpCard callId={m.callId} label={m.label} labelKey={m.labelKey}
         transport={m.transport} command={m.command} args={m.argv}
         url={m.url} envKeys={m.envKeys} prerequisites={m.prerequisites}
@@ -146,7 +153,7 @@ export default function AskSlot({ send }: { send: (frame: Record<string, unknown
           }
         }}
         onCancel={() => clearPendingConnectMcp(m.callId)} />) })),
-  ].sort((a, b) => a.at - b.at);
+  ].sort((a, b) => a.rank - b.rank || a.seq - b.seq);
 
   if (!items.length) {
     // 0.1.61 §A4: a card that ran out unanswered is "waiting for you", never "declined".

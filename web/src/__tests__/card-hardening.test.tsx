@@ -34,6 +34,21 @@ describe("a card that says what it asks, whatever the frame", () => {
   });
 });
 
+describe("the model's own line under \"Arslan says\", whatever it is", () => {
+  const URL_WHY = "https://example.com/" + "a".repeat(200);
+  it("a kind with words of its own shows a long unbroken why that may break anywhere, instead of spilling out of the card", () => {
+    render(<AskSlot send={vi.fn()} />);
+    frame({ ...ACTION, kind: "desktop_app", target: "Notes", title: "Use Notes?", why: URL_WHY });
+    expect(screen.getByTestId("action-said").className).toContain("overflow-wrap:anywhere");
+  });
+
+  it("so does the command card's sandbox why", () => {
+    render(<AskSlot send={vi.fn()} />);
+    frame({ type: "propose_run_command", call_id: "c1", pretty: "mv a ~/b", reason: "", sandbox: "outside", why: URL_WHY, options: ["once", "conversation"] });
+    expect(screen.getByTestId("runcmd-why").className).toContain("overflow-wrap:anywhere");
+  });
+});
+
 describe("a card's time, whatever the frame says", () => {
   const writeCard = (extra: Record<string, unknown>) => ({ type: "propose_workspace_write", call_id: "w1", workspace: "/w", action: "write_file", path: "a", options: ["once", "conversation"], ...extra });
 
@@ -48,6 +63,33 @@ describe("a card's time, whatever the frame says", () => {
     act(() => { vi.advanceTimersByTime(1_799_000); });                  // 30 minutes after it arrived
     expect(screen.getByTestId("wswrite-card")).toBeInTheDocument();     // the server closes it first
     act(() => { vi.advanceTimersByTime(2_100); });
+    expect(screen.queryByTestId("wswrite-card")).toBeNull();
+    expect(screen.getByTestId("ask-expired")).toBeInTheDocument();
+  });
+
+  it.each([["a duration sent as an epoch (1800)", 1800], ["a day and a second before it arrived", -86_401]])(
+    "an expires_at that is %s is no time: the card waits the 30 minutes the Mac does, as if it had none", (_what, value) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-13T10:00:00Z"));
+    render(<AskSlot send={vi.fn()} />);
+    frame(writeCard({ expires_at: value < 0 ? Date.now() / 1000 + value : value }));
+    act(() => { vi.advanceTimersByTime(5_000); });
+    expect(screen.getByTestId("wswrite-card")).toBeInTheDocument();
+    expect(screen.getByTestId("ask-countdown")).toHaveAccessibleName(/^29:5\d$/);     // counting down 30 minutes from its arrival
+    act(() => { vi.advanceTimersByTime(1_795_000); });                                   // 30 minutes after it arrived
+    expect(screen.getByTestId("wswrite-card")).toBeInTheDocument();                      // the server closes it first
+    act(() => { vi.advanceTimersByTime(2_100); });
+    expect(screen.queryByTestId("wswrite-card")).toBeNull();
+    expect(screen.getByTestId("ask-expired")).toBeInTheDocument();
+  });
+
+  it.each([["just inside the day before it arrived", -86_399], ["ten seconds ago", -10]])(
+    "an expires_at that is %s is a real time that has passed: the card leaves at once, as a card the server already closed", (_what, value) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-13T10:00:00Z"));
+    render(<AskSlot send={vi.fn()} />);
+    frame(writeCard({ expires_at: Date.now() / 1000 + value }));
+    act(() => { vi.advanceTimersByTime(10); });
     expect(screen.queryByTestId("wswrite-card")).toBeNull();
     expect(screen.getByTestId("ask-expired")).toBeInTheDocument();
   });

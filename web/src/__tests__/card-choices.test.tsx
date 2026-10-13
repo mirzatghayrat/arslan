@@ -544,6 +544,8 @@ describe("the action card's words, its icon and its red", () => {
       expect(classes).toContain("text-foreground");
       expect(classes).not.toContain("text-muted-foreground");
       expect(classes).not.toMatch(/\btext-\[(?:[0-9]|1[0-4])px\]/);                    // not the 14px (or smaller) print it was
+      expect(classes).not.toMatch(/\btext-(?:xs|sm)\b/);                                // nor the named small sizes
+      expect(classes).not.toMatch(/\bopacity-/);                                        // nor faded
       expect(classes).toContain("font-semibold");
     });
 

@@ -217,6 +217,31 @@ describe("a window's card and a job's card of the same kind", () => {
 });
 
 describe("the cards of every kind, together", () => {
+  it("cards that arrive in the same millisecond keep the order they arrived in, whatever their kind", () => {
+    clock();                                                                          // the clock stands still: all four arrive at one instant
+    frame(KINDS[2].make("s1"));                                                       // a schedule, then an action, then a command, then a write
+    frame(KINDS[3].make("a1"));
+    frame(KINDS[0].make("c1"));
+    frame(KINDS[1].make("w1"));
+    render(<AskSlot send={vi.fn()} />);
+    const cards = ["schedule-card", "action-card", "runcmd-card", "wswrite-card"];
+    const shown = () => cards.find((id) => screen.queryByTestId(id));
+    const order: (string | undefined)[] = [];
+    for (let i = 0; i < 4; i++) { order.push(shown()); fireEvent.click(screen.getByLabelText("kit.next")); }
+    expect(order).toEqual(cards);                                                     // not the order of their kinds
+  });
+
+  it("a card sent again goes to the back of the queue, even in the same millisecond", () => {
+    clock();
+    frame(KINDS[0].make("c1"));
+    frame(KINDS[3].make("a1"));
+    frame(KINDS[0].make("c1"));                                                       // sent again: now the newest
+    render(<AskSlot send={vi.fn()} />);
+    expect(screen.getByTestId("action-card")).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("kit.next"));
+    expect(screen.getByTestId("runcmd-card")).toBeInTheDocument();
+  });
+
   it("a new conversation starts with no card of any kind waiting", () => {
     for (const k of KINDS) frame(k.make("a"));
     expect(KINDS.every((k) => ids(k).length === 1)).toBe(true);

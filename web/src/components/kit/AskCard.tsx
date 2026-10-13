@@ -83,7 +83,7 @@ export function AskCard(p: AskCardProps) {
       </header>
       <h3 className="text-[19px] font-bold leading-[1.35]">{p.title}</h3>
       {p.said ? (
-        <p data-testid={p.saidTestId ?? "ask-said"} className="-mt-1.5 text-[13px] text-muted-foreground">
+        <p data-testid={p.saidTestId ?? "ask-said"} className="-mt-1.5 text-[13px] text-muted-foreground [overflow-wrap:anywhere]">
           <span className="text-subtle-foreground">{t("kit.arslanSays")}</span>{p.said}
         </p>
       ) : null}
