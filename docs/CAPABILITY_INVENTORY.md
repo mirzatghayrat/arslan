@@ -119,9 +119,9 @@ trust decisions; see THIRD_PARTY_NOTICES.md and docs/RELIABILITY.md.
 
 | Source | SHA-256 |
 | --- | --- |
-| `server/registry/executors.py` | `7ae65c56a4e4b611c8ea8f9fba19746c51ba59a2943993a10c9458c7152a868a` |
+| `server/registry/executors.py` | `fdfe5a3c9d626215c652f4507c7a54e54be5a651ff0b11eb2484cc89f46df3cd` |
 | `server/registry/file_tools.py` | `a41416c5c239370a8ef992b5406e066e51dc1101ffdf83683a8d8b4f7b2390fd` |
-| `server/registry/hands_tools.py` | `a7b3838d1704435089dbc96a07814568b271b00ba8ee01f26ed65ddcd9ed6015` |
+| `server/registry/hands_tools.py` | `12905d557a9f0a2069237d5a6eccf232ff8ab78c0f4998cbd5656cc1631637f8` |
 | `server/registry/lan_tools.py` | `34778593e80f8276d545f4ab569803a208a290d5fe4e8d52402f7a876b6f63b1` |
 | `server/registry/memory_executors.py` | `ac4c597d236a3b83420996758bef9003a9e1f0cf26eff2787e4c79c1a391ee1b` |
 | `server/registry/schedule_tools.py` | `13a8698f7e824c1da64cb513b6ebf92de4ab618f75103445e9b12e984ca09a6d` |

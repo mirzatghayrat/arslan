@@ -111,7 +111,7 @@ def render(*, workspace: str | None, writers: list[str], own_folder: bool, saved
         tools = ", ".join(w for w in _WRITERS if w in writers)
         lines.append(f"Workspace: {workspace} — " + (
             f"your own folder: create and edit files here without asking ({tools})." if own_folder else
-            f"you can create and edit files here ({tools}); the user approves writes once per session."))
+            f"you can create and edit files here ({tools}); the user approves writes, each one or for the rest of the conversation."))
     if saved:
         lines.append("Saved this turn: " + ", ".join(saved))
     if plan:

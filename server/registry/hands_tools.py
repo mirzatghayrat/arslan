@@ -3,21 +3,23 @@
 Looking (open a page, read it, go back, list Shortcuts) is free. Acting (click,
 type, choose, press; run a Shortcut or an AppleScript) happens only inside a
 background job, and asks first. Every card goes through `permissions.decide`
-(0.1.61 §A11): a website, a Shortcut and an app are each asked once, "for this
-task" (or this conversation, or always); an AppleScript as the apps it names, or
-every time when it deletes, sends, pays or runs a shell. macOS adds its own
-Automation consent the first time a script controls an app.
+(0.1.61 §A11): an AppleScript is asked every time, with the whole script shown,
+and never remembered (a script runs outside the sandbox and what it does past
+its app is read from its words only, so no app's yes stands for one: release
+gate B1); a website and a Shortcut are asked for this task or this conversation
+(no "Always" yet); an app is asked for this task, this conversation or always.
+macOS adds its own Automation consent the first time a script controls an app.
 
 Arslan never types into a password field: the user logs in themselves in the
 visible browser window, and that profile keeps the session.
 
 0.1.53 adds Mac apps through Arslan Hands (agent-desktop behind a separate
 helper app that alone holds Accessibility; spec
-docs/specs/2026-10-03-0153-hands-agent-desktop.md). Looking at an app asks once
-per app per conversation; acting runs only inside a background job and asks once
-per app per job; an action whose real label deletes, sends, pays, buys,
+docs/specs/2026-10-03-0153-hands-agent-desktop.md). Acting runs only inside a
+background job; an action whose real label deletes, sends, pays, buys,
 transfers or submits asks every time. Since 0.1.61 one `app` card covers both
-looking and acting; the answer is remembered by the permission store (§A5).
+looking and acting, for this task first (or this conversation, or always); the
+answer is remembered by the permission store (§A5).
 """
 from __future__ import annotations
 

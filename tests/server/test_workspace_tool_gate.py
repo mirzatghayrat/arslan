@@ -229,5 +229,8 @@ async def test_write_file_says_ask_once_in_a_chosen_folder(tmp_path, monkeypatch
     ws = tmp_path / "mine"
     ws.mkdir()
     text = await _write_file_text(tmp_path, monkeypatch, str(ws))
-    assert "asked for write permission once per session" in text
+    # 0.1.61: the card offers this write once, or any file in the folder for the conversation —
+    # no longer "once per session"
+    assert "asked for write permission" in text and "once per session" not in text
+    assert "for this write" in text and "rest of the conversation" in text
     assert "needs no permission" not in text

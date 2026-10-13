@@ -74,6 +74,20 @@ async def test_inside_a_job_the_hands_are_offered(execution_db, browser, in_job,
             "mac_run_shortcut", "mac_applescript"} <= keys
 
 
+async def test_the_model_is_told_what_each_card_offers(execution_db, browser, in_job, monkeypatch):
+    """0.1.61 release gate: a Shortcut is asked for this task or this conversation (never "once per
+    Shortcut"), a schedule and a write the same way (never "once per session"), and an AppleScript is
+    asked every time, whole — no app's yes stands for one."""
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(task_service, "current", lambda: object())
+    said = {t["key"]: t["description"] for t in await arslan._arslan_tools()}
+    assert "for this task or this conversation" in said["mac_run_shortcut"]
+    assert "once per Shortcut" not in said["mac_run_shortcut"]
+    assert "must allow it each time" in said["mac_applescript"]
+    assert "once per session" not in said["schedule_task"]
+    assert "rest of the conversation" in said["schedule_task"]
+
+
 async def test_the_first_action_on_a_site_asks_once_then_proceeds(browser, asks, in_job):
     seen, _ = asks
     click = hands_tools.BrowserClickExecutor()

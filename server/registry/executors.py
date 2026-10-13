@@ -940,8 +940,8 @@ EXECUTORS = {e.key: e for e in (
     BrowserOpenExecutor(), BrowserLookExecutor(), BrowserBackExecutor(), BrowserClickExecutor(),
     BrowserTypeExecutor(), BrowserSelectExecutor(), BrowserPressExecutor(),
     MacListShortcutsExecutor(), MacRunShortcutExecutor(), MacAppleScriptExecutor(),
-    # 0.1.53 Mac apps through Arslan Hands: looking asks once per app per
-    # conversation; acting only inside background jobs, asked once per app per job.
+    # 0.1.53 Mac apps through Arslan Hands: one `app` card covers looking and acting, for this
+    # task first (0.1.61); acting only inside background jobs.
     DesktopAppsExecutor(), DesktopLookExecutor(), DesktopClickExecutor(), DesktopTypeExecutor(),
     DesktopSelectExecutor(), DesktopScrollExecutor(), DesktopPressExecutor(), DesktopMenuExecutor(), DesktopBatchExecutor(), DesktopOpenExecutor(), DesktopTakeoverExecutor(), DesktopAccessExecutor(),
     # Workspace file tools (P1). Registered here; whether Arslan is OFFERED them

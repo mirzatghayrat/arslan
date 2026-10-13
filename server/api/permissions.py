@@ -1,6 +1,10 @@
 """Standing answers ("Always" rules), listed and withdrawn — and added from one place (0.1.61 §A5).
 
-Settings → What Arslan may do lists them, each removable. The only way to add one here is the
+This API lists them and withdraws them. The Settings page that lists every kind of rule, each
+removable, is a later PR: in 0.1.61 the command rules are listed in Settings › What Arslan may do
+(`/settings/terminal-rules`) and the `app` rules in Settings › Hands, and no page lists a site's or a
+Shortcut's, so their "Always" is not offered at all (`permissions._NEVER_ALWAYS`) until that page
+exists. The only way to add a rule here is the
 Inbox's "Always allow" on something that could not be asked (§A4: a run with nobody to ask, or a
 card that never opened while the person was away): the POST names that row (`refused_id`), and
 the server stores exactly what "Always" on its card would have stored, as recorded on the ledger
