@@ -363,7 +363,8 @@ def as_shell(command: str, argv=None) -> str:
 
 def classify(command: str) -> Classification:
     """Every finding in a command. It never raises (the tool loop has no catch around it): an
-    error while reading, or a command past a parse ceiling, is `UNREADABLE` alone (review I3)."""
+    error while reading, or a command past a parse ceiling, is the floor its text shows, else
+    `UNREADABLE` alone (review I3, amended by N3)."""
     text = str(command or "")
     if not text.strip():
         return Classification(text, (Finding("floor", "empty", "no command"),))
@@ -373,11 +374,11 @@ def classify(command: str) -> Classification:
         findings = _read(text)
     except _Unreadable as ceiling:
         logger.info("terminal_policy: past a parse ceiling (%s), a command asks unread", ceiling)
-        return Classification(text, (UNREADABLE,))
-    except Exception:  # noqa: BLE001 — never raise, never run it unread, never the floor
+        return Classification(text, _floor_of_unread(text) or (UNREADABLE,))
+    except Exception:  # noqa: BLE001 — never raise, never run it unread
         logger.warning("terminal_policy: could not read a command (%d characters); it asks unread",
                        len(text), exc_info=True)
-        return Classification(text, (UNREADABLE,))
+        return Classification(text, _floor_of_unread(text) or (UNREADABLE,))
     seen: set[tuple] = set()
     unique = []
     for f in findings:
@@ -388,11 +389,51 @@ def classify(command: str) -> Classification:
     return Classification(text, tuple(unique))
 
 
+#: For a command that could not be read: every quote, bracket, brace, backtick and separator is taken
+#: as a command start (a run of them is one start, or `\s*` after `_CMDPOS` goes quadratic).
+_FLAT_STARTS = re.compile(r"(?:\s*[;&|(){}`\n\"']\s*)+")
+_FLAT_SUDO = re.compile(r"(?<![\w.-])(?:sudo|doas)(?![\w.-])", re.I)
+_FLAT_KEYCHAIN = re.compile(r"(?<![\w.-])security\s+(?:dump-keychain|export|find-(?:generic|internet)-password\b"
+                            r"[^\n]*\s-[a-zA-Z]*[wg])", re.I)
+_FLAT_DISK = re.compile(r"(?<![\w.-])diskutil\s+(?:apfs\s+)?(?:erase\w*|zerodisk|randomdisk|secureerase|reformat"
+                        r"|partitiondisk|deletecontainer|deletevolume)\b", re.I)
+
+
+def _floor_of_unread(text: str) -> tuple[Finding, ...]:
+    """The floor a command that could not be read shows in its text (review N3: padding a floor
+    command past a ceiling must not turn "never" into a card asking "run it?"). One linear pass of
+    the raw text, every quote and bracket taken as a command start: it over-reads on purpose, and
+    the floor only refuses. Never raises."""
+    try:
+        normalized = hermes._normalize_command_for_detection(text)
+        flat = _FLAT_STARTS.sub("\n", normalized)
+        found: list[Finding] = []
+        for subject in (normalized.lower(), flat.lower()):
+            hard = next((d for p, d, _ in hermes.HARDLINE_PATTERNS_COMPILED if p.search(subject)), "")
+            if hard:
+                found.append(Finding("floor", "hardline", hard))
+                break
+        found += [Finding("floor", k, w) for k, p, w in _FORBID_C if p.search(flat)]
+        if _FLAT_SUDO.search(flat) or _SCRIPT_ADMIN.search(text):
+            found.append(Finding("floor", "sudo", _WHY["sudo"]))
+        if _FLAT_KEYCHAIN.search(flat):
+            found.append(Finding("floor", "keychain-secrets", _WHY["keychain-secrets"]))
+        if _FLAT_DISK.search(flat):
+            found.append(Finding("floor", "disk-erase", "erases a disk"))
+        if _touches_arslan_data(text):
+            found.append(Finding("floor", "arslan-data", "touches Arslan's own data, keys or database"))
+        return tuple(dict.fromkeys(found))
+    except Exception:  # noqa: BLE001 — the unread card still asks
+        return ()
+
+
 def _read(text: str) -> list[Finding]:
     """The findings of `classify`; raises `_Unreadable` past a parse ceiling. The command is read as
     zsh runs it (`_without_zsh_modifiers`), whose rewrites only take out or split: no text a floor
     pattern needs goes (`f()` stays, so `:(){ :|:& };:` is still the fork bomb)."""
     shell, bodies = split_heredocs(text)
+    _check_ceilings(shell)
+    shell = _with_inner_backticks(shell)
     _check_ceilings(shell)
     shell = _without_zsh_modifiers(shell)
     commands = _commands(shell)
@@ -441,73 +482,239 @@ def risk_grade(command: str) -> str:
 
 # ── heredocs and commands ─────────────────────────────────────────────────────
 
-_HEREDOC_OP = re.compile(r"<<(-?)[ \t]*(?:'([^'\n]+)'|\"([^\"\n]+)\"|\\?([A-Za-z_][\w.-]*))")
-_PIPED_TO_SHELL = re.compile(r"\|\s*(?:\S*/)?(?:bash|sh|zsh|dash|ksh)\b")
+class _Level:
+    """One level of shell text being scanned: the top, a `$(…)`/`<(…)` substitution, arithmetic,
+    `${…}` or a backtick span; the quote open in it, its bracket depth, and where its current simple
+    command started."""
+    __slots__ = ("kind", "quote", "depth", "start")
+
+    def __init__(self, kind: str, start: int, depth: int = 0):
+        self.kind, self.quote, self.depth, self.start = kind, None, depth, start
+
+
+#: What opens a level, longest first: (text, kind, bracket depth). In double quotes only the `$`
+#: forms and the backtick open one.
+_OPENERS = (("$((", "arith", 2), ("$(", "sub", 0), ("${", "brace", 1), ("$[", "bracket", 1), ("`", "tick", 0))
+_UNQUOTED_OPENERS = (("((", "arith", 2), ("<(", "sub", 0), (">(", "sub", 0), ("=(", "sub", 0))
+_CLOSERS = {"arith": "()", "bracket": "[]", "brace": "{}"}
 
 
 def split_heredocs(text: str) -> tuple[str, list[tuple[str, str]]]:
     """(the command with every heredoc body that is data removed, [(program, body)]).
 
-    A body is data for the program that reads it (`cat > README.md <<EOF` writes text, `python3
-    - <<EOF` reads code, `sqlite3 db <<SQL` reads SQL), so shell rules never see it. A body read
-    by a shell (`bash <<EOF`, or piped into one) stays: it is shell. The body ends at the first
-    line that is exactly the delimiter (tabs stripped for `<<-`). A `<<` in a comment or in
-    arithmetic (`$((a<<b))`, `$[a<<b]`) opens no heredoc, and a body with no closing line is read
-    as shell as well: a line wrongly taken for data would run unread (found fixing review C1)."""
+    A heredoc opens where the shell opens one: at the top or in a substitution, quoted or not
+    (`git commit -m "$(cat <<'EOF' …)"`, review N7); never in quotes, a comment, arithmetic
+    (`$((a<<b))`, `$[a<<b]`), `${…}` or a backtick span (item 8). Its delimiter is the shell word
+    after `<<` with the quotes taken out (`E'OF'` and `E\\OF` are `EOF`, `"EOF"x` is `EOFx`), and
+    the body ends at the first line that is exactly the delimiter (tabs stripped for `<<-`).
+
+    A body is data for the program that reads it (`cat > README.md <<EOF` writes text, `python3 -
+    <<EOF` reads code, `sqlite3 db <<SQL` reads SQL) and is taken out, so no shell rule and no
+    ceiling sees it. It stays shell when a shell reads it: any word of its command is a shell, past
+    wrappers and options (`nice -n 5 zsh <<EOF`), or one follows in its pipeline (`cat <<EOF | env
+    zsh`). With an unquoted delimiter the shell still expands the body's `$(…)`, backticks and
+    `${…}`: they stay, each on a line of its own. A body with no closing line stays shell as well."""
     out: list[str] = []
     bodies: list[tuple[str, str]] = []
-    pos, n = 0, len(text)
-    arith = bracket = 0             # parentheses open since `((`, brackets since `$[`: arithmetic
-    while pos < n:
-        ops, newline, skip = [], None, -1
-        for kind, i, _j, quote in hermes._scan_shell(text, pos, comments=True):
-            if kind != "char" or quote is not None or i <= skip:
+    levels = [_Level("top", 0)]
+    pending: list[tuple[int, int, str, bool, bool, int]] = []    # (at, end, delimiter, quoted, tabs, command start)
+    keep = i = 0
+    n = len(text)
+    while i < n:
+        level, ch = levels[-1], text[i]
+        if level.quote in ("'", "$'"):                           # single quotes: only their end counts
+            if ch == "\\" and level.quote == "$'":
+                i += 2
                 continue
-            ch = text[i]
-            if ch == "\n":
-                newline = i
-                break
-            if arith:
-                arith += (ch == "(") - (ch == ")")
-            elif bracket:
-                bracket += (ch == "[") - (ch == "]")
-            elif text.startswith("((", i):
-                arith, skip = 2, i + 1
-            elif text.startswith("$[", i):
-                bracket, skip = 1, i + 1
-            elif text.startswith("<<", i) and not text.startswith("<<<", i) and (i == 0 or text[i - 1] != "<"):
-                match = _HEREDOC_OP.match(text, i)
-                if match:
-                    ops.append(match)
-        if newline is None:
-            out.append(text[pos:])
-            break
-        out.append(text[pos:newline + 1])
-        line_end = newline
-        pos = newline + 1
-        for match in ops:
-            delimiter = match.group(2) or match.group(3) or match.group(4)
-            strip_tabs = match.group(1) == "-"
-            start, end, after, closed = pos, n, n, False
-            cursor = pos
-            while cursor < n:
-                stop = text.find("\n", cursor)
-                stop = n if stop < 0 else stop
-                line = text[cursor:stop]
-                if (line.lstrip("\t") if strip_tabs else line) == delimiter:
-                    end, after, closed = cursor, min(stop + 1, n), True
-                    break
-                cursor = stop + 1
-            program = _heredoc_program(text, match.start())
-            rest_of_line = text[match.end():line_end]
-            if program in _SHELLS or _PIPED_TO_SHELL.search(rest_of_line):
-                out.append(text[start:after])
-            else:
-                bodies.append((program, text[start:end]))
-                if not closed:          # no closing line: shell as well, never only data
-                    out.append(text[start:after])
-            pos = after
+            if ch == "'":
+                level.quote = None
+            i += 1
+            continue
+        if ch == "\\":
+            i += 2
+            continue
+        opened = next(((kind, len(o), depth) for o, kind, depth in _OPENERS if text.startswith(o, i)), None)
+        if level.quote == '"':
+            if ch == '"':
+                level.quote = None
+            elif opened:
+                levels.append(_Level(opened[0], i + opened[1], opened[2]))
+                i += opened[1]
+                continue
+            i += 1
+            continue
+        if level.kind == "tick" and ch == "`":
+            levels.pop()
+            i += 1
+            continue
+        if ch in "'\"":
+            level.quote = "$'" if ch == "'" and i and text[i - 1] == "$" else ch
+            i += 1
+            continue
+        if ch == "#" and level.kind in ("top", "sub") and (i == 0 or text[i - 1].isspace()
+                                                          or text[i - 1] in ";&|()<>"):
+            stop = text.find("\n", i)                           # a comment: up to its newline
+            i = n if stop < 0 else stop
+            continue
+        opened = opened or next(((kind, len(o), depth) for o, kind, depth in _UNQUOTED_OPENERS
+                                 if text.startswith(o, i)), None)
+        if opened:
+            levels.append(_Level(opened[0], i + opened[1], opened[2]))
+            i += opened[1]
+            continue
+        if level.kind in _CLOSERS:                              # arithmetic, `${…}`: their brackets only
+            pair = _CLOSERS[level.kind]
+            level.depth += (ch == pair[0]) - (ch == pair[1])
+            if level.depth <= 0:
+                levels.pop()
+            i += 1
+            continue
+        if level.kind == "tick":
+            i += 1
+            continue
+        if ch == "(":                                           # the top or a substitution: shell
+            level.depth += 1
+            level.start = i + 1
+        elif ch == ")":
+            if level.depth:
+                level.depth -= 1
+            elif level.kind == "sub":
+                levels.pop()
+        elif ch in ";&|":
+            level.start = i + 1
+        elif text.startswith("<<", i) and not text.startswith("<<<", i) and (i == 0 or text[i - 1] != "<"):
+            operator = _heredoc_operator(text, i)
+            if operator is not None:
+                pending.append((i, *operator, level.start))
+                i = operator[0]
+                continue
+        elif ch == "\n":
+            level.start = i + 1
+            if pending:
+                out.append(text[keep:i + 1])
+                keep = i = _take_bodies(text, i, pending, out, bodies)
+                pending = []
+                continue
+        i += 1
+    out.append(text[keep:])
     return "".join(out), bodies
+
+
+def _heredoc_operator(text: str, at: int) -> tuple[int, str, bool, bool] | None:
+    """For the `<<` at `at`: (where its delimiter ends, the delimiter with its quotes taken out,
+    whether any part of it was quoted, whether `<<-` strips tabs); None without a delimiter."""
+    i = at + 2
+    tabs = text.startswith("-", i)
+    i += tabs
+    while i < len(text) and text[i] in " \t":
+        i += 1
+    word, quoted, start = [], False, i
+    while i < len(text) and text[i] not in " \t\n;&|()<>":
+        ch = text[i]
+        if ch == "\\" and i + 1 < len(text):
+            word.append(text[i + 1])
+            quoted, i = True, i + 2
+        elif ch in "'\"":
+            close = text.find(ch, i + 1)
+            close = len(text) if close < 0 else close
+            word.append(text[i + 1:close])
+            quoted, i = True, close + 1
+        else:
+            word.append(ch)
+            i += 1
+    return (i, "".join(word), quoted, tabs) if i > start else None
+
+
+def _take_bodies(text: str, newline: int, pending, out: list[str], bodies: list[tuple[str, str]]) -> int:
+    """The bodies of the heredocs opened on the line ending at `newline`, in order: each is data
+    (taken out, `bodies`) or shell (kept in `out`). Returns where the text resumes."""
+    pos = newline + 1
+    for at, end_of_operator, delimiter, quoted, tabs, command_start in pending:
+        start, end, after, closed = pos, len(text), len(text), False
+        cursor = pos
+        while cursor < len(text):
+            stop = text.find("\n", cursor)
+            stop = len(text) if stop < 0 else stop
+            line = text[cursor:stop]
+            if (line.lstrip("\t") if tabs else line) == delimiter:
+                end, after, closed = cursor, min(stop + 1, len(text)), True
+                break
+            cursor = stop + 1
+        head, rest, body = text[command_start:at], text[end_of_operator:newline], text[start:end]
+        if _shell_reads_heredoc(head, rest):
+            out.append(text[start:after])
+        else:
+            bodies.append((_heredoc_program(head), body))
+            if not quoted:                      # the shell expands these before the program reads it
+                out.extend(f"{expansion}\n" for expansion in _expansions(body))
+            if not closed:                      # no closing line: shell as well, never only data
+                out.append(text[start:after])
+        pos = after
+    return pos
+
+
+def _words(text: str) -> list[str]:
+    try:
+        return shlex.split(text, posix=True)
+    except ValueError:
+        return text.split()
+
+
+def _is_shell(word: str) -> bool:
+    return os.path.basename(word.lstrip("=")).lower() in _SHELLS
+
+
+def _shell_reads_heredoc(head: str, rest: str) -> bool:
+    """Whether a shell reads a heredoc's body: a word of its command is a shell, before or after the
+    `<<` (`nice -n 5 zsh <<EOF`, `<<EOF zsh`), or a shell follows in its pipeline (`| env zsh`)."""
+    pipeline = re.split(r"\|\||&&|;|(?<![<>])&(?!>)", rest, maxsplit=1)[0]
+    pieces = pipeline.split("|")
+    return any(_is_shell(word) for word in _words(head) + _words(pieces[0])) or any(
+        _is_shell(word) for piece in pieces[1:] for word in _words(piece))
+
+
+def _heredoc_program(head: str) -> str:
+    """The program a heredoc feeds: the first word of its command past assignments, wrappers with
+    their options and values, zsh modifiers and `repeat N` (`nice -n 5 python3 -` feeds python3)."""
+    wrappers = hermes._COMMAND_WRAPPER_WORDS | _RUNS_NEXT | _ZSH_MODIFIER_WORDS
+    repeat_count = False
+    for word in _words(head):
+        if repeat_count:
+            repeat_count = False
+            continue
+        name = os.path.basename(word.lstrip("=")).lower()
+        if (re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", word) or name in wrappers or word.startswith("-")
+                or re.fullmatch(r"\d+(?:\.\d+)?[smhd]?", word)):
+            continue
+        if name == "repeat":
+            repeat_count = True
+            continue
+        return name
+    return ""
+
+
+def _expansions(body: str) -> list[str]:
+    """The `$(…)`, backtick and `${…}` spans in an unquoted-delimiter heredoc body, which the shell
+    runs (a `\\$` or `` \\` `` there is literal)."""
+    found, i = [], 0
+    while i < len(body):
+        end = None
+        if body[i] == "\\":
+            i += 2
+            continue
+        if body.startswith("$(", i):
+            end = hermes._scan_dollar_paren_end(body, i)
+        elif body[i] == "`":
+            end = hermes._scan_backtick_end(body, i)
+        elif body.startswith("${", i):
+            close = _closing_brace(body, i + 2)
+            end = None if close is None else close + 1
+        if end is not None:
+            found.append(body[i:end])
+            i = end
+        else:
+            i += 1
+    return found
 
 
 #: zsh precommand modifiers and keywords (run_command runs `/bin/zsh -c`): `noglob`, `nocorrect`, `-`
@@ -518,30 +725,6 @@ _ZSH_REPEAT = re.compile(r"repeat[ \t]+")
 _FUNCTION_HEAD = re.compile(r"(?:function[ \t]+)?[\w.:-]+[ \t]*\([ \t]*\)")
 _ZSH_MODIFIER_WORDS = frozenset({"noglob", "nocorrect", "coproc", "-"})
 _MAX_REWRITES = 16
-
-
-def _heredoc_program(text: str, at: int) -> str:
-    """The program a heredoc at `at` feeds: the command word of its simple command (past
-    assignments, wrappers and zsh modifiers)."""
-    line_start = text.rfind("\n", 0, at) + 1
-    head = re.split(r"\|\||&&|[;&|(]|\$\(", text[line_start:at])[-1]
-    try:
-        words = shlex.split(head, posix=True)
-    except ValueError:
-        words = head.split()
-    repeat_count = False
-    for word in words:
-        if repeat_count:
-            repeat_count = False
-            continue
-        if (re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", word) or word in hermes._COMMAND_WRAPPER_WORDS
-                or word in _ZSH_MODIFIER_WORDS):
-            continue
-        if word == "repeat":
-            repeat_count = True
-            continue
-        return os.path.basename(word.lstrip("=")).lower()
-    return ""
 
 
 def _without_zsh_modifiers(shell: str) -> str:
@@ -561,7 +744,11 @@ def _without_zsh_modifiers(shell: str) -> str:
 def _rewrite_command_words(shell: str) -> str:
     edits: set[tuple[int, int, str]] = set()
     starts = set(hermes._iter_shell_command_starts(shell))
-    for at in starts | {start for start, _end, _word in hermes._iter_shell_command_word_spans(shell)}:
+    spans = list(hermes._iter_shell_command_word_spans(shell))
+    for _start, end, word in spans:         # a case pattern's `)` starts a command (item 10)
+        if hermes._deobfuscate_shell_word_for_detection(word) == "case":
+            edits |= {(p, p, "\n") for p in _case_pattern_ends(shell, end) if shell[p:p + 1] != "\n"}
+    for at in starts | {start for start, _end, _word in spans}:
         end = at
         while True:
             if (match := _ZSH_MODIFIER.match(shell, end)) is not None:
@@ -590,6 +777,79 @@ def _rewrite_command_words(shell: str) -> str:
             kept.append(edit)
             cursor = edit[1]
     return hermes._splice(shell, kept) if kept else shell
+
+
+def _case_pattern_ends(shell: str, at: int) -> list[int]:
+    """Just after each pattern's `)` in the `case` whose subject starts at `at` (`case a in a) sudo
+    ls;; esac`): a command starts there. The clauses end at `;;`, `;&` or `;|`."""
+    _start, pos, _subject = hermes._read_shell_word(shell, at)
+    _start, pos, word = hermes._read_shell_word(shell, pos)
+    ends: list[int] = []
+    if word != "in":
+        return ends
+    while True:
+        pos = hermes._skip_shell_whitespace(shell, pos)
+        if pos >= len(shell) or re.match(r"esac(?![\w-])", shell[pos:pos + 5]):
+            return ends
+        pos += shell[pos] == "("
+        close = _pattern_close(shell, pos)
+        if close is None:
+            return ends
+        ends.append(close + 1)
+        pos = _clause_end(shell, close + 1)
+        if pos is None:
+            return ends
+
+
+def _pattern_close(shell: str, at: int) -> int | None:
+    depth = 0
+    for kind, i, _j, quote in hermes._scan_shell(shell, at, subst="uq", brace=True):
+        if kind != "char" or quote is not None:
+            continue
+        if shell[i] == "(":
+            depth += 1
+        elif shell[i] == ")":
+            if not depth:
+                return i
+            depth -= 1
+        elif shell[i] in ";\n" and not depth:
+            return None
+    return None
+
+
+def _clause_end(shell: str, at: int) -> int | None:
+    depth = 0
+    for kind, i, _j, quote in hermes._scan_shell(shell, at, subst="uq", brace=True, comments=True):
+        if kind != "char" or quote is not None:
+            continue
+        if shell[i] == "(":
+            depth += 1
+        elif shell[i] == ")":
+            depth = max(depth - 1, 0)
+        elif shell[i] == ";" and not depth and shell[i + 1:i + 2] in (";", "&", "|"):
+            return i + 2
+    return None
+
+
+def _with_inner_backticks(shell: str) -> str:
+    """The command with each backtick body that holds an escaped backtick or `$` added again,
+    unescaped, on a line of its own: ``echo "`echo \\`sudo ls\\``"`` runs `sudo ls` (item 10)."""
+    added, pending, seen = [], [shell], set()
+    while pending and len(added) < _MAX_SUBSTITUTIONS:
+        text = pending.pop()
+        for kind, i, j, _quote in hermes._scan_shell(text, subst="uq"):
+            if kind != "subst" or j is None:
+                continue
+            if text[i] == "`":
+                body = text[i + 1:j - 1]
+                inner = body.replace("\\\\", "\0").replace("\\`", "`").replace("\\$", "$").replace("\0", "\\")
+                if inner != body and inner not in seen:
+                    seen.add(inner)
+                    added.append(inner)
+                    pending.append(inner)
+            elif text.startswith("$(", i):
+                pending.append(text[i + 2:j - 1])
+    return shell + "".join(f"\n{line}" for line in added)
 
 
 def _word_end(text: str, at: int) -> int:

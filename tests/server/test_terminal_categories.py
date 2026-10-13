@@ -582,8 +582,9 @@ def test_builtin_command_and_exec_are_already_wrappers_hermes_reads_through():
 
 
 def test_a_command_that_cannot_be_read_asks_once_unread_and_is_logged(monkeypatch, caplog):
-    """Review I3: any error while reading a command fails closed to asking, the `opaque` card
-    (once only), never to running it and never to the floor; the error is logged."""
+    """Review I3, amended by N3 (R3): any error while reading a command fails closed — to the floor
+    its text shows, else to asking, the `opaque` card (once only) — never to running it; the error
+    is logged. It is never the floor merely for being unread."""
     def broken(*args, **kwargs):
         raise RuntimeError("a reader broke")
     monkeypatch.setattr(tp, "_arslan_findings", broken)
@@ -593,7 +594,7 @@ def test_a_command_that_cannot_be_read_asks_once_unread_and_is_logged(monkeypatc
     assert tp.UNREADABLE.why == "Arslan could not read this command — run it?"
     assert tp.assess("git push") == tp.Assessment("ask", "unreadable", tp.UNREADABLE.why)
     assert tp.ask_rules("git push") == {"unreadable"}
-    assert tp.classify("sudo ls").floor is None                      # never the floor either
+    assert tp.classify("sudo ls").floor.rule == "sudo"                # the floor the text shows stays
     assert any("could not read" in r.getMessage() and r.exc_info for r in caplog.records)
 
 
@@ -787,3 +788,119 @@ def test_curl_is_read_one_transfer_at_a_time(command, category):
     data, and a `-G` whose data names a file (`@file`) still sends the file, in the URL."""
     found = tp.classify(command)
     assert found.category == category, [(f.category, f.rule) for f in found.findings]
+
+
+# ── fix round 2: the floor (R3 with R7, R8, R10) ──────────────────────────────────────────────
+
+_PADDED_FLOOR = [
+    "`:` " * 65 + "; sudo rm -rf /", "`:` " * 33 + "; rm -rf ~",
+    "security find-generic-password -wa gh; " + "`:` " * 33,
+    "echo " + "$(" * 17 + ":" + ")" * 17 + "; diskutil eraseDisk APFS B disk4",
+    "cat ~/Library/Application\\ Support/Arslan/arslan.db; " + "`:` " * 33,
+    "rm -rf ~; python3 -c \"import os; " + "os.system('a'); " * 65 + "\"",
+    "sudo ls; osascript " + "-e 'do shell script \"a\"' " * 65,
+    "shutdown -h now; " + "`:` " * 33, "`:` " * 33 + "; {rm -rf ~}",
+    "`:` " * 33 + "; {rm -rf /Applications}",
+]
+
+
+@pytest.mark.parametrize("command", _PADDED_FLOOR)
+def test_a_floor_command_padded_past_a_ceiling_is_still_the_floor(command):
+    """Review N3 (R3, ruling I3 amended): an unreadable command never hides a floor pattern its text
+    shows. Padding a command past a ceiling costs about 200 characters; it must not turn "never"
+    into a card that asks "run it?". Read in one linear pass of the text."""
+    start = time.perf_counter()
+    found = tp.classify(command)
+    assert time.perf_counter() - start < 0.25
+    assert found.category == "floor" and tp.UNREADABLE not in found.findings, found.findings
+
+
+def test_unreadable_alone_is_never_the_floor():
+    start = time.perf_counter()
+    assert tp.classify("echo " + "$(" * 1200 + "ls" + ")" * 1200).findings == (tp.UNREADABLE,)
+    assert time.perf_counter() - start < 0.25
+
+
+_ROUND_1_MESSAGE = """terminal: read what the review found unread; classify never raises (0.1.61 PR 3a, review fix round 1)
+
+C1  A command in a double-quoted substitution (`echo "$(git push)"`, `x="`git push`"`) is read:
+    each command is tokenized to where it ends (`hermes._shell_command_segment`), not to the end
+    of the segment, whose closing quote shlex refused.
+I1  Code a shell or an interpreter is handed that holds a download or a decode (`bash -c "$(curl …)"`,
+    `eval "$(curl …)"`, `python3 -c "$(curl …)"`) is opaque.
+I2  zsh precommand modifiers (`noglob`, `nocorrect`, `repeat N`, `=cmd`, `- cmd`) are taken out where
+    they open a command; `builtin`, `command` and `exec` were already Hermes wrapper words.
+I3  classify never raises: an error, or a parse ceiling, is one `opaque` finding ("Arslan could not
+    read this command — run it?"), logged; never run unread, never the floor. When Hands'
+    never-list cannot be read, an app asks as its own card.
+M1  Fetched or decoded code piped into an interpreter with no script of its own (python, node, ruby,
+    perl), in a substitution too, or sourced from `<(curl …)`, is opaque.
+M2  `uv run`, `poetry run`, `pdm run`, `pipx run`, `npm exec`, `pnpm exec|dlx`, `yarn dlx` run the
+    command after them: it is read.
+M3  Parse ceilings: 64 substitutions that run (backticks and `$(`), 16 deep, backticks × length
+    ≤ 65,536, Σ depth² inside `$(…)` ≤ 32,768, 64 commands per script, code in code 3 deep; past
+    any of them, the unread card at once.
+M4  The data-folder floor reads a spelling split by quotes or `/./`.
+M5  `pkill -0` / `killall -0` only check; `curl -G` with data is a GET (a `-G` that is another
+    option's value does not count).
+Also: a `<<` in arithmetic or in a comment opened a heredoc that hid the lines after it, the floor
+included; it no longer does, and a heredoc with no closing line is read as shell as well.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"""
+
+
+def test_a_heredoc_in_a_substitution_with_a_quoted_delimiter_is_data():
+    """Review N7 (R7): `git commit -m "$(cat <<'EOF' …)"` — the body of a quoted-delimiter heredoc is
+    data, inside `$(…)` too: its backticks never run, so they are neither read nor counted."""
+    assert tp.classify("git commit -m \"$(cat <<'EOF'\n" + _ROUND_1_MESSAGE + "\nEOF\n)\"").category == "local"
+    body = "Use `a` here; never `sudo` it.\n" * 40
+    found = tp.classify("gh pr create --title t --body \"$(cat <<'EOF'\n" + body + "EOF\n)\"")
+    assert found.category == "send" and found.floor is None and tp.UNREADABLE not in found.findings
+    start = time.perf_counter()
+    assert tp.classify("git commit -m \"$(cat <<'EOF'\n" + "- `fix` it\n" * 150 + "EOF\n)\"").category == "local"
+    assert time.perf_counter() - start < 2.0
+
+
+@pytest.mark.parametrize("command,category", [
+    ("cat <<EOF\n$(git push)\nEOF", "send"), ("cat <<EOF\nhello `git push` there\nEOF", "send"),
+    ("cat <<EOF\n${x:-$(sudo ls)}\nEOF", "floor"), ("cat <<'EOF'\n$(git push)\nEOF", "local"),
+    ("git commit -m \"$(cat <<EOF\n" + "`a` " * 40 + "\nEOF\n)\"", "opaque"),
+])
+def test_an_unquoted_delimiter_still_runs_the_bodys_substitutions(command, category):
+    """R7: with an unquoted delimiter the shell expands `$(…)`, backticks and `${…}` in the body."""
+    found = tp.classify(command)
+    assert found.category == category, [(f.category, f.rule) for f in found.findings]
+
+
+@pytest.mark.parametrize("command", [
+    "echo ${x:-<<EOF}\nrm -rf ~\nEOF", "echo `# <<x`\nrm -rf ~\nx", "cat <<E'OF'\nEOF\nrm -rf ~\nE",
+    "echo ${x:-<<EOF}\nrm -rf ~\nEOF}", "echo `# <<x`\nrm -rf ~\nx`",
+    "cat <<\"EOF\"x\nEOFx\nrm -rf ~\nEOF", "cat <<E\\OF\nEOF\nrm -rf ~\nE", "cat <<E'OF'\nEOF\nrm -rf ~\nE'OF'",
+    "nice -n 5 zsh <<EOF\nrm -rf ~\nEOF", "env -i zsh <<EOF\nrm -rf ~\nEOF", "caffeinate -i zsh <<EOF\nrm -rf ~\nEOF",
+    "arch -arm64 zsh <<EOF\nrm -rf ~\nEOF", "cat <<EOF | env zsh\nrm -rf ~\nEOF", "cat <<EOF | command zsh\nrm -rf ~\nEOF",
+])
+def test_a_heredoc_hides_no_floor_command(command):
+    """Item 8 (R8): `<<` in `${…}` or a backtick span opens no heredoc; the delimiter is the shell word
+    with its quotes removed (`E'OF'`, `E\\OF` are `EOF`; `"EOF"x` is `EOFx`); a body is shell when a
+    shell reads it, behind wrappers and options or later in the pipeline."""
+    found = tp.classify(command)
+    assert found.category == "floor", [(f.category, f.rule) for f in found.findings]
+
+
+@pytest.mark.parametrize("command", ["echo \"`echo \\`sudo ls\\``\"", "case a in a) sudo ls;; esac",
+                                     "case a in (a) sudo ls;; b) ls;; esac", "case $x in a|b) ls;& c) sudo ls;; esac"])
+def test_a_nested_backtick_or_a_case_clause_hides_no_floor_command(command):
+    """Item 10 (R10): a backtick body is read with `\\``, `\\\\` and `\\$` unescaped, and a case
+    pattern's `)` starts a command."""
+    found = tp.classify(command)
+    assert found.category == "floor", [(f.category, f.rule) for f in found.findings]
+
+
+@pytest.mark.parametrize("command", [
+    "repeat $n python3 - <<'PY'\nimport smtplib\nPY", "=python3 - <<'PY'\nimport smtplib\nPY",
+    "nice -n 5 python3 - <<'PY'\nimport smtplib\nPY", "timeout 30s python3 - <<'PY'\nimport smtplib\nPY",
+])
+def test_a_heredocs_program_is_read_past_wrappers_and_modifiers(command):
+    """R8 / R16: the body is the script of the program after wrappers, their options and values,
+    `repeat N` and `=` — so `smtplib` there is a script that sends."""
+    assert tp.classify(command).category == "send"
