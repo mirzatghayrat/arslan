@@ -400,6 +400,11 @@ class MCPSessionManager:
     def _generation(self, sid: int) -> tuple[int, int]:
         return self._closing, self._epochs.get(sid, 0)
 
+    def generation(self, server_id: int):
+        """Moves whenever this server's session is dropped or forgotten, or every session is
+        closed: a caller that noted it can tell whether the session it used was dropped since."""
+        return self._generation(server_id)
+
     async def get_session(self, server: dict, *, budget_s: float | None = None):
         """The live session, opened within the start budget when none is cached. Only the
         supervisor and discovery call this (and `list_tools`, which calls this). The budget bounds

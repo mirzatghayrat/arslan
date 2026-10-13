@@ -416,14 +416,19 @@ class Supervisor:
 
     async def set_enabled(self, server_id: int, on: bool) -> None:
         """The user's switch. Off: cancel the plan, stop the process, state `off`. On: `starting`
-        and a start, unless it is already running or starting. The caller commits `host_allowed`
-        first: a background plan reads the row to respect the switch."""
+        and a start, unless it is already running or starting — a session or plan whose row says
+        `starting` or `ready`. A session or plan the state does not account for (any path that
+        cached a session for an `off` server) is replaced by a fresh start, never taken for "already
+        running" (Task 6 fix round 1, F2). The caller commits `host_allowed` first: a background
+        plan reads the row to respect the switch."""
         if on:
             task = self._inflight.get(server_id)
-            if mcp_session.manager.cached(server_id) is not None or (task is not None and not task.done()):
+            running = (mcp_session.manager.cached(server_id) is not None
+                       or (task is not None and not task.done()))
+            if running and await self._state_of(server_id) in ("starting", "ready"):
                 return
             await self._set(server_id, self._bump(server_id), "starting")
-            self.schedule(server_id)
+            self.schedule(server_id, fresh=running)
             return
         with self._verb(server_id):
             gen = self._bump(server_id)
@@ -441,6 +446,16 @@ class Supervisor:
         """An attempt for this server is queued or running: it drops the session and opens a new
         one itself, so nobody else should drop it now (the health probe, carry 2b)."""
         return server_id in self._attempt_fut
+
+    def generation(self, server_id: int) -> int:
+        """Moves with every new plan and every deliberate verb (forget, switch-off, give-up): a
+        caller that noted it before a drop can tell a deliberate drop from a death, like `_relist`."""
+        return self._gen.get(server_id, 0)
+
+    async def _state_of(self, server_id: int) -> str | None:
+        async with db_session.AsyncSessionLocal() as db:
+            row = await db.get(MCPServer, server_id)
+        return row.state if row is not None else None
 
     def note_ok(self, server_id: int) -> None:
         """A successful call refreshes last_ok_at, at most once a minute per server (spec §B1:
@@ -553,6 +568,7 @@ class Supervisor:
                                            .where(Tool.toolset_key == f"mcp_{sid}"))).scalar_one()
         await self._set(sid, gen, "starting")
         await mcp_session.manager.drop(sid)
+        dropped_at = mcp_session.manager.generation(sid)       # any later drop moves it
         secrets = _secrets(server)
         budget = budget_for(row, tool_count)
         began = time.monotonic()
@@ -587,6 +603,15 @@ class Supervisor:
             return StartResult(state, last_error=spawn_env.mask(text, secrets)[:LAST_ERROR_CAP])
         finally:
             self._notes.pop(sid, None)
+        if mcp_session.manager.generation(sid) != dropped_at:
+            # The session this start listed on was dropped before the start ended — another
+            # caller's tools/list failed on it: never `ready` with no session behind it (ruling 11;
+            # Task 6 fix round 1, F1).
+            line = ("the connection closed during start" if (server.get("transport") or "stdio") == "http"
+                    else "the server exited during start — see its log below")
+            tail = mcp_session.manager.stderr_tail(sid, secrets=secrets, since=began)
+            text = line if not tail else f"{line}\n{tail}"
+            return StartResult("failed", last_error=spawn_env.mask(text, secrets)[:LAST_ERROR_CAP])
         return StartResult("ready", tools=tools, tool_count=len(tools))
 
     async def _ensure_runtime(self, sid: int, server: dict) -> bool:

@@ -115,6 +115,28 @@ def _log_data_location(cfg, *, log: logging.Logger = logger) -> None:
     )
 
 
+#: Boot work that must never hold up boot (kept referenced until it ends).
+_background: set = set()
+
+
+async def _prune_forgotten() -> None:
+    """A deleted server's folder kept under `<data>/mcp/.forgotten/` goes to the user's Trash after
+    30 days — off the event loop, behind boot (a move across volumes copies); a failure is logged,
+    never raised, and the folders wait for the next boot."""
+    import asyncio
+
+    from server.mcp import session as mcp_session
+
+    try:
+        moved = await asyncio.to_thread(mcp_session.prune_forgotten)
+    except Exception:  # noqa: BLE001 — a folder left for the next boot never matters to this one
+        logger.warning("MCP: moving old forgotten folders to the Trash failed (non-fatal)",
+                       exc_info=True)
+        return
+    if moved:
+        logger.info("MCP: moved %d forgotten server folder(s) to the Trash", len(moved))
+
+
 async def _start_mcp_supervisor() -> bool:
     """0.1.61 §B1: every enabled MCP server starts in the background; a chat turn never waits.
     ARSLAN_MCP_SUPERVISOR=0 (the test suite) leaves it off.
@@ -122,11 +144,10 @@ async def _start_mcp_supervisor() -> bool:
     A `ready` left from the last run is never trusted (migration 0068 maps connected → ready):
     `reset_for_boot` makes every switched-on server `starting`. If that write fails, the supervisor
     starts anyway — each plan writes its server's state as it starts — and the reset is retried in
-    the background for the rows nothing in this process has written yet. A deleted server's folder
-    kept under `<data>/mcp/.forgotten/` goes to the user's Trash after 30 days."""
+    the background for the rows nothing in this process has written yet. The `.forgotten` prune
+    runs in the background too: boot never waits for it (Task 6 fix round 1, F5)."""
     import asyncio
 
-    from server.mcp import session as mcp_session
     from server.mcp import supervisor as mcp_supervisor
 
     if not mcp_supervisor.switched_on():
@@ -139,11 +160,9 @@ async def _start_mcp_supervisor() -> bool:
                        exc_info=True)
         supervisor.retry_boot_reset()
     supervisor.start()
-    try:
-        await asyncio.to_thread(mcp_session.prune_forgotten)
-    except Exception:  # noqa: BLE001 — a folder left for the next boot never blocks this one
-        logger.warning("MCP: moving old forgotten folders to the Trash failed (non-fatal)",
-                       exc_info=True)
+    task = asyncio.create_task(_prune_forgotten(), name="mcp-forgotten-prune")
+    _background.add(task)
+    task.add_done_callback(_background.discard)
     return True
 
 

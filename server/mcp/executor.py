@@ -1,5 +1,10 @@
 """Proxy executor: routes one MCP tool call through the session manager. MCP output is
-UNTRUSTED external content → result carries NO external:False, so tool_loop wrap_externals it."""
+UNTRUSTED external content → result carries NO external:False, so tool_loop wrap_externals it.
+
+0.1.61 §B1 (Task 6 fix round 1, F3): a failure's text — the tool's own error or a failed call —
+has the server's own secrets masked (`supervisor.mask_for`) before it is stored in last_error and
+before the model reads it: a tool that echoes its key never puts it in the column the UI serves,
+nor in a tool result."""
 from __future__ import annotations
 
 import logging
@@ -40,7 +45,10 @@ class MCPProxyExecutor:
         self.external_name = external_name
         self.key = f"mcp_{server_id}__{external_name}"
 
-    async def _fail(self, err_text: str, prefix: str) -> dict:
+    async def _fail(self, err_text: str, prefix: str, server: dict) -> dict:
+        from server.mcp.supervisor import mask_for
+
+        err_text = mask_for(server, err_text)          # never raises; the server's own secrets → ****
         stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         await _persist_last_error(
             self.server_id,
@@ -65,10 +73,10 @@ class MCPProxyExecutor:
         try:
             result = await manager.call_tool(server, self.external_name, args or {})
         except Exception as exc:  # noqa: BLE001
-            return await self._fail(f"MCP tool '{self.external_name}' failed: {exc}", prefix)
+            return await self._fail(f"MCP tool '{self.external_name}' failed: {exc}", prefix, server)
         text = _summarize_content(getattr(result, "content", None))
         if getattr(result, "isError", False):
-            return await self._fail(text, prefix)
+            return await self._fail(text, prefix, server)
         if srv.last_error is not None:            # column reflects the LATEST state
             await _persist_last_error(self.server_id, None)
         return {"ok": True, "summary": text}      # no external:False → wrap_external applies
