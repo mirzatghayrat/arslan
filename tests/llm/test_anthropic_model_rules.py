@@ -81,10 +81,11 @@ async def test_models_that_refuse_temperature_are_answered(model):
     p = _provider(model, sent)
     resp = await p.chat(_PING, temperature=0.7)
     assert resp.content == "ok"
-    assert "temperature" not in sent[-1]
     async for _ in p.chat_stream(_PING, temperature=0.7):
         pass
-    assert "temperature" not in sent[-1]
+    # Every body, and exactly one per call: param_heal would also get these
+    # answered, by resending — that must not be what makes this test pass.
+    assert len(sent) == 2 and not any("temperature" in b for b in sent)
 
 
 @pytest.mark.parametrize("model", ACCEPTS_SAMPLING)

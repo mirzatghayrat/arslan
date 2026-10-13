@@ -174,6 +174,7 @@ async def test_unresolvable_is_refused(monkeypatch, capture):
 
 async def test_a_redirect_to_a_private_host_is_refused(monkeypatch):
     calls: list[str] = []
+    seen: list[httpx.Request] = []
 
     def fake(host, *a, **k):
         calls.append(host)
@@ -182,6 +183,7 @@ async def test_a_redirect_to_a_private_host_is_refused(monkeypatch):
     monkeypatch.setattr(socket, "getaddrinfo", fake)
 
     def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
         return httpx.Response(302, headers={"location": "http://intranet.test/secret"})
 
     monkeypatch.setattr(
@@ -191,6 +193,14 @@ async def test_a_redirect_to_a_private_host_is_refused(monkeypatch):
 
     res = await executors.EXECUTORS["web_extract"].execute({"url": "http://ok.test/a"})
     assert not res.get("ok")
+    # Why it was refused, and what reached the wire. The handler answers every request with the same
+    # redirect, so with the private-address check off the loop follows it to 127.0.0.1 and ends in
+    # "too many redirects": still `not ok`, so the line above alone cannot tell the check from its
+    # absence. The private hop must be refused BEFORE any request is made to it.
+    assert res.get("error") == "url refused: blocked address (local network)"
+    assert [r.url.host for r in seen] == [PUBLIC], "only the public hop may reach the wire"
+    assert PRIVATE not in {r.url.host for r in seen}
+    assert calls == ["ok.test", "intranet.test"]
 
 
 

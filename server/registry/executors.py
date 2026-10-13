@@ -307,7 +307,9 @@ class WebExtractExecutor:
             # the wrong cause.
             return {"ok": False, "error": f"url refused: {net_pin.categorize(exc)}"}
         except Exception as exc:  # noqa: BLE001
-            category = net_pin._categorize_exc(exc)
+            # The page vocabulary, not search's: a page's 401, 403 or 451 is the SITE refusing,
+            # and `categorize` would call it a rejected API key that does not exist.
+            category = net_pin.categorize_page(exc)
             logger.warning("web_extract failed for %s: %s", url, exc, exc_info=True)
             return {"ok": False, "error": f"fetch failed: {category}{_STEER}"}
         if not text:

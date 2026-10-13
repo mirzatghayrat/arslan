@@ -6,6 +6,7 @@ and the job registry; the HTTP routes are in server/api/phone.py.
 from __future__ import annotations
 
 import difflib
+import json
 import time
 from datetime import UTC, datetime
 from pathlib import PurePosixPath
@@ -24,6 +25,12 @@ STEPS_SHOWN = 40                # the newest steps of a run; `total` says how ma
 DIFF_LINES = 160                # lines of one change sent to the phone
 CONTEXT = 2                     # unchanged lines kept around a change
 PREVIEW = 80
+#: The history body the phone gets in one envelope, as compact UTF-8 JSON. The design asked for
+#: 700 KB, but the Bridge seals the whole envelope (ChaCha20-Poly1305, then base64 inside the
+#: packet JSON: about 4/3 of it) into one CloudKit record capped at 800,000 bytes
+#: (Wire.maxSealedBytes), so a 700 KB body could never be sent. 560 KB leaves room for the
+#: envelope, the headers and JSONSerialization's escaped slashes.
+HISTORY_BUDGET = 560_000
 
 
 def iso(moment) -> str:
@@ -73,6 +80,40 @@ def run_files(run_id: int | None) -> list[dict]:
     if not run_id:
         return []
     return [ref for ref in map(file_reference, artifact_store.list_artifacts(run_id)) if ref]
+
+
+# ------------------------------------------------------------------ history in one envelope
+
+def _json_size(value) -> int:
+    return len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode())
+
+
+def fit_history(conversation_id: str, messages: list[dict]) -> tuple[list[dict], bool]:
+    """The newest messages whose `chat.history.result` body fits HISTORY_BUDGET, oldest first,
+    and whether any were left out (§5.7). The oldest go first; a single message bigger than
+    the whole budget keeps its start, cut with "…", rather than vanishing."""
+    budget = HISTORY_BUDGET
+    sizes = [_json_size(m) for m in messages]
+    total = _json_size({"conversation_id": conversation_id, "messages": []}) + sum(sizes) + max(len(sizes) - 1, 0)
+    if total <= budget:
+        return messages, False
+    start = 0
+    while start < len(messages) - 1 and total > budget:
+        total -= sizes[start] + 1                     # the message and the comma after it
+        start += 1
+    kept = list(messages[start:])
+    if total > budget and kept:
+        last, text = kept[-1], kept[-1].get("text") or ""
+        low, high = 0, len(text)
+        while low < high:                              # the longest start of the text that fits
+            middle = (low + high + 1) // 2
+            trial = kept[:-1] + [{**last, "text": text[:middle] + "…"}]
+            if _json_size({"conversation_id": conversation_id, "messages": trial}) <= budget:
+                low = middle
+            else:
+                high = middle - 1
+        kept[-1] = {**last, "text": text[:low] + "…"}
+    return kept, True
 
 
 # ------------------------------------------------------------------ a run, for review

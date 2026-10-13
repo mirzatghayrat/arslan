@@ -29,7 +29,7 @@ async def test_archived_source_reaches_bounded_conversation_without_hidden_cut(m
         assert metadata["sha256"] == source["sha256"]
     calls = []
 
-    async def archived_response(url):
+    async def archived_response(url, **kwargs):
         assert url == source["url"]
         calls.append(url)
         return httpx.Response(200, content=body, headers={"Content-Type": metadata["content_type"]},

@@ -4,12 +4,20 @@ API token like every setting; accepting is the user's click in Arslan's window.
 
 And what the Bridge reads for a paired phone (§5.3): the status the phone's home screen shows
 (the island's state), the conversation list, a conversation's history, and the files Arslan made — a run's artifacts, immutable snapshots with their size and
-SHA-256, so the reference the phone holds always matches the bytes it later fetches."""
+SHA-256, so the reference the phone holds always matches the bytes it later fetches.
+
+And, the other way (§5.7, 2026-10-13): a file the phone sent, saved into the workspace's
+Inbox/iPhone folder; the conversations the Bridge keeps a live socket on."""
 from __future__ import annotations
 
+import asyncio
 import base64
+import binascii
+import hashlib
 import re
 import time
+from datetime import datetime
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -17,9 +25,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.auth import require_auth
+from server.db.companion_models import ConversationContext
 from server.db.models import ArslanMessage, Run
 from server.db.session import get_session
-from server.services import artifact_store, background_jobs, desktop_status, phone_reads
+from server.services import artifact_store, background_jobs, desktop_status, phone_reads, settings_service
 from server.services.phone_bridge import BridgeUnavailable, hub
 from server.services.phone_reads import PHONE_FILE_MAX, file_reference, iso as _iso, run_files  # noqa: F401
 
@@ -113,11 +122,16 @@ async def phone_history(conversation_id: str, limit: int = Query(50, ge=1, le=20
     rows = (await db.execute(
         select(ArslanMessage).where(ArslanMessage.conversation_id == conversation_id)
         .order_by(ArslanMessage.id.desc()).limit(limit))).scalars().all()
-    return {"conversation_id": conversation_id, "messages": [
+    messages = [
         {"id": str(m.id), "role": "user" if m.role == "user" else "assistant",
          "text": m.display_content or m.content, "ts": _iso(m.timestamp),
-         "attachments": run_files(m.run_id), **({"run_id": m.run_id} if m.run_id else {})}
-        for m in reversed(rows)]}
+         "attachments": run_files(m.run_id), **({"run_id": m.run_id} if m.run_id else {}),
+         # §5.7: who typed it — the phone ("from iPhone") or a Mac window.
+         **({"source": "phone" if m.source == "phone" else "mac"} if m.role == "user" else {})}
+        for m in reversed(rows)]
+    # §5.7: one envelope holds it all; the oldest go first, and the phone is told.
+    messages, truncated = phone_reads.fit_history(conversation_id, messages)
+    return {"conversation_id": conversation_id, "messages": messages, **({"truncated": True} if truncated else {})}
 
 
 @router.get("/phone/runs/{run_id}/files")
@@ -189,3 +203,98 @@ async def phone_stop_task(job_id: str):
     if not phone_reads.stop_task(job_id):
         raise HTTPException(404, "task_not_running")
     return {"job_id": job_id, "stopped": True}
+
+
+# ------------------------------------------------------------------ files from the phone (§5.7)
+
+#: A saved name's length in characters, and in UTF-8 bytes (APFS allows 255; " (12)" must fit).
+INBOX_NAME_MAX = 120
+INBOX_NAME_BYTES = 200
+_UNSAFE_NAME = re.compile(r"[\x00-\x1f\x7f:]")
+
+
+def inbox_name(name: str) -> str:
+    """One plain file name from whatever the phone called it: the last path component, no
+    leading dots or spaces (never hidden, never "..") and no control characters or colons,
+    capped with its extension kept; "file" when nothing is left."""
+    last = re.split(r"[/\\]", name or "")[-1]
+    clean = _UNSAFE_NAME.sub("_", last).strip().lstrip(".").strip()
+    if not clean:
+        return "file"
+    stem, dot, ext = clean.rpartition(".")
+    if not (dot and stem and len(ext) <= 16):
+        stem, ext = clean, ""
+    suffix = "." + ext if ext else ""
+    cut = False
+    while stem and (len(stem) + len(suffix) > INBOX_NAME_MAX or len((stem + suffix).encode()) > INBOX_NAME_BYTES):
+        stem, cut = stem[:-1], True
+    return ((stem.rstrip() if cut else stem) or "file") + suffix
+
+
+def save_inbox_file(workspace: Path, name: str, data: bytes) -> Path:
+    """<workspace>/Inbox/iPhone/<local date>/<name>; a name already there becomes "name (2).ext".
+    Created exclusively, so two files of the same name never overwrite each other."""
+    folder = workspace / "Inbox" / "iPhone" / datetime.now().astimezone().strftime("%Y-%m-%d")
+    folder.mkdir(parents=True, exist_ok=True)
+    folder = folder.resolve()
+    if not folder.is_relative_to(workspace.resolve()):        # a symlink pointing out of the workspace
+        raise OSError("inbox_outside_workspace")
+    plain = Path(name)
+    for n in range(1, 1000):
+        target = folder / (name if n == 1 else f"{plain.stem} ({n}){plain.suffix}")
+        try:
+            with open(target, "xb") as handle:
+                handle.write(data)
+            return target
+        except FileExistsError:
+            continue
+    raise OSError("inbox_name_taken")
+
+
+class InboxFile(BaseModel):
+    name: str
+    mime_type: str = "application/octet-stream"
+    data: str                      # standard base64 of the bytes
+    sha256: str                    # hex of the bytes, as the phone's FileReference says
+
+
+@router.post("/phone/inbox")
+async def phone_inbox(body: InboxFile, db: AsyncSession = Depends(get_session)):
+    """A file the phone sent (`file.offer` with its asset, already decrypted and checked by the
+    Bridge): saved in the workspace so the agent can open the original with its own tools."""
+    if len(body.data) > (PHONE_FILE_MAX + 2) // 3 * 4 + 4:
+        raise HTTPException(413, "too_large")
+    try:
+        data = base64.b64decode(body.data, validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(422, "malformed") from None
+    if len(data) > PHONE_FILE_MAX:
+        raise HTTPException(413, "too_large")
+    if hashlib.sha256(data).hexdigest() != body.sha256.strip().lower():
+        raise HTTPException(422, "sha256_mismatch")
+    workspace = await settings_service.workspace_dir(db)
+    if workspace is None:                      # a chosen folder that is gone: never somewhere else
+        raise HTTPException(503, "workspace_unavailable")
+    try:
+        path = await asyncio.to_thread(save_inbox_file, Path(workspace), inbox_name(body.name), data)
+    except OSError:
+        raise HTTPException(503, "inbox_unavailable") from None
+    return {"path": str(path), "name": path.name, "mime_type": body.mime_type or "application/octet-stream",
+            "size": len(data)}
+
+
+# ------------------------------------------------------------------ live conversations (§5.7)
+
+@router.get("/phone/live")
+async def phone_live(limit: int = Query(20, ge=1, le=50), db: AsyncSession = Depends(get_session)):
+    """The conversations the Bridge keeps a socket open on, so their answers, progress and
+    shared cards reach the phone live: the newest `limit`, then every one with a running job.
+    Never a temporary conversation: closing a socket on one clears its unsaved turn."""
+    from server.api.conversations import list_conversations
+    newest = [r.conversation_id for r in await list_conversations(db)]
+    jobs = [job.conversation_id for job in background_jobs.active()]
+    temporary = set((await db.execute(
+        select(ConversationContext.id).where(ConversationContext.id.in_(newest + jobs),
+                                             ConversationContext.temporary.is_(True)))).scalars())
+    newest = [cid for cid in newest if cid not in temporary][:limit]
+    return {"conversation_ids": list(dict.fromkeys(newest + [cid for cid in jobs if cid not in temporary]))}

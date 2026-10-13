@@ -16,7 +16,7 @@ from server.registry.executors import WebExtractExecutor
 @pytest.mark.parametrize("media_type", ["text/plain; charset=utf-8", "text/markdown", "Text/Plain"])
 async def test_raw_markdown_keeps_angle_brackets_and_install_commands(monkeypatch, media_type):
     text = '# Install\n```bash\ncd <this-repo>\nuv sync\nbash scripts/setup_verl.sh 0.8.0 cu130\n```\n\n## Architecture\nKeep <placeholder> and all following text.\n'
-    async def get(url):
+    async def get(url, **kwargs):
         return httpx.Response(200, text=text, headers={"Content-Type": media_type}, request=httpx.Request("GET", url))
     monkeypatch.setattr(net_pin, "pinned_get", get)
     parser = Mock(return_value="HTML parser must not run")
@@ -28,7 +28,7 @@ async def test_raw_markdown_keeps_angle_brackets_and_install_commands(monkeypatc
 
 
 async def test_plaintext_still_obeys_requested_bound(monkeypatch):
-    async def get(url):
+    async def get(url, **kwargs):
         return httpx.Response(200, text="<item>\n" * 100, headers={"Content-Type": "text/plain"}, request=httpx.Request("GET", url))
     monkeypatch.setattr(net_pin, "pinned_get", get)
     result = await WebExtractExecutor().execute({"url": "https://example.com/README.md", "max_chars": 15})
@@ -38,7 +38,7 @@ async def test_plaintext_still_obeys_requested_bound(monkeypatch):
 
 @pytest.mark.parametrize("media_type", ["text/html", "application/xhtml+xml", ""])
 async def test_html_or_unspecified_content_keeps_article_extraction(monkeypatch, media_type):
-    async def get(url):
+    async def get(url, **kwargs):
         return httpx.Response(200, content=b"<html><body>Article</body></html>",
             headers={"Content-Type": media_type}, request=httpx.Request("GET", url))
     monkeypatch.setattr(net_pin, "pinned_get", get)
@@ -60,7 +60,7 @@ async def test_archived_lightning_readme_keeps_real_installation(monkeypatch):
     assert hashlib.sha256(body).hexdigest() == metadata["sha256"]
     assert metadata["content_type"].split(";")[0] == "text/plain"
 
-    async def get(url):
+    async def get(url, **kwargs):
         assert url == metadata["url"]
         return httpx.Response(200, content=body, headers={"Content-Type": metadata["content_type"]},
                               request=httpx.Request("GET", url))
