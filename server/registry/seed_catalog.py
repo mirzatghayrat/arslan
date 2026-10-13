@@ -272,6 +272,12 @@ SKILLS: list[tuple[str, str, str, str, str, str]] = [
     ("blogwatcher", "blogwatcher", "research", "Monitor blogs/RSS feeds.", _S, _REG),
     ("llm-wiki", "llm-wiki", "research", "Build/query interlinked markdown KB.", _S, _REG),
     ("research-paper-writing", "research-paper-writing", "research", "Write ML papers (NeurIPS/ICML).", _S, _REG),
+    # 0.1.61 §C2: the two seeds that carry a script; their folder is installed at boot.
+    ("research", "research", "research",
+     "Research a topic: break it into angles, cross-check sources, keep facts apart from guesses (outline script).",
+     _S, _REG),
+    ("github-eval", "github-eval", "research",
+     "Judge whether a GitHub repository fits a need: activity, license and trust tier (eval script).", _S, _REG),
     # SOFTWARE-DEVELOPMENT
     ("verification-before-completion", "verification-before-completion", "software-development",
      "Run verification and read output before claiming done/fixed/passing (analysis discipline).", _S, _REG),

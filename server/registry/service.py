@@ -11,20 +11,17 @@ from pathlib import Path
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from server import config
 from server.db import session as db_session
 from server.db.models import SkillPack, SpawnCapability, Tool, Toolset
 
 ASSIGNABLE_STATUSES = ("wired", "registered")
 
 
-def _skill_scripts_root() -> Path:
-    """Root for bundled skill scripts/references: ``<data_dir>/skill_scripts``.
-
-    Resolved from the single ``config.data_dir()`` root (unset ARSLAN_DATA_DIR -> the
-    platform app-data dir, NOT CWD/data) so this stays co-located with the brain and
-    mirrors ``RunPythonExecutor._load_skill_script``'s resolution root."""
-    return config.data_dir() / "skill_scripts"
+def _skills_root() -> Path:
+    """<data_dir>/skills (0.1.61 §C2): one folder per skill, its scripts under scripts/. Same value as
+    skill_files.skills_root() and executors._skills_root()."""
+    from server.services import skill_files
+    return skill_files.skills_root()
 
 # Deterministic, side-effect-free safe tools every spawn may use without per-spawn equipment.
 # The safe+wired filter STILL applies — this cannot be used to bypass the choke point.
@@ -72,14 +69,14 @@ def _toolset_dict(t: Toolset) -> dict:
 
 
 def skill_has_scripts(key: str) -> bool:
-    """True iff data_dir/skill_scripts/<key>/ exists and holds >=1 .py file.
+    """True iff data_dir/skills/<key>/scripts/ holds >=1 .py file.
 
     Mirrors RunPythonExecutor._load_skill_script's resolution root (executors.py) so the
     injected run-hint line fires exactly when a bundled script is actually loadable via
     run_python(skill_script="<key>/<file>.py"). Fail-closed on any FS error → False."""
     if not key:
         return False
-    root = _skill_scripts_root() / key
+    root = _skills_root() / key / "scripts"
     try:
         return any(p.is_file() and p.suffix == ".py" for p in root.iterdir())
     except OSError:

@@ -27,12 +27,13 @@ pytestmark = pytest.mark.asyncio
 
 @pytest.fixture
 def skill_root(tmp_path, monkeypatch):
-    """Point ARSLAN_DATA_DIR at a temp dir and return the skill_scripts/<key> dir factory."""
+    """Point ARSLAN_DATA_DIR at a temp dir and return the skills/<key> dir factory (0.1.61:
+    scripts under scripts/, references under references/)."""
     monkeypatch.setenv("ARSLAN_DATA_DIR", str(tmp_path))
 
     def _make(key: str):
-        d = tmp_path / "skill_scripts" / key
-        d.mkdir(parents=True, exist_ok=True)
+        d = tmp_path / "skills" / key
+        (d / "scripts").mkdir(parents=True, exist_ok=True)
         return d
 
     return _make
@@ -55,7 +56,7 @@ def no_sandbox(monkeypatch):
 
 async def test_non_py_entry_rejected_sandbox_not_invoked(skill_root, no_sandbox):
     d = skill_root("handoff")
-    (d / "tool.sh").write_text("echo hi\n")
+    (d / "scripts" / "tool.sh").write_text("echo hi\n")
     out = await RunPythonExecutor().execute({"skill_script": "handoff/tool.sh"})
     assert out["ok"] is False and out["external"] is False
     assert ".sh" in out["error"] and "只支持 .py" in out["error"] and "未执行" in out["error"]
@@ -64,7 +65,7 @@ async def test_non_py_entry_rejected_sandbox_not_invoked(skill_root, no_sandbox)
 
 async def test_network_marker_rejected_sandbox_not_invoked(skill_root, no_sandbox):
     d = skill_root("handoff")
-    (d / "main.py").write_text("# requires: network\nimport json\nprint('x')\n")
+    (d / "scripts" / "main.py").write_text("# requires: network\nimport json\nprint('x')\n")
     out = await RunPythonExecutor().execute({"skill_script": "handoff/main.py"})
     assert out["ok"] is False and out["external"] is False
     assert "网络" in out["error"] and "未执行" in out["error"]
@@ -73,7 +74,7 @@ async def test_network_marker_rejected_sandbox_not_invoked(skill_root, no_sandbo
 
 async def test_cli_marker_rejected_sandbox_not_invoked(skill_root, no_sandbox):
     d = skill_root("handoff")
-    (d / "main.py").write_text("#   requires:  cli\nprint('x')\n")
+    (d / "scripts" / "main.py").write_text("#   requires:  cli\nprint('x')\n")
     out = await RunPythonExecutor().execute({"skill_script": "handoff/main.py"})
     assert out["ok"] is False and out["external"] is False
     assert "CLI" in out["error"] and "未执行" in out["error"]
@@ -93,8 +94,8 @@ async def test_clean_py_entry_proceeds_to_run(skill_root, monkeypatch):
 
     monkeypatch.setattr(code_sandbox, "run_python", _stub)
     d = skill_root("handoff")
-    (d / "helper.py").write_text("VALUE = 21\n")
-    (d / "main_calc.py").write_text("from helper import VALUE\nprint(VALUE * 2)\n")
+    (d / "scripts" / "helper.py").write_text("VALUE = 21\n")
+    (d / "scripts" / "main_calc.py").write_text("from helper import VALUE\nprint(VALUE * 2)\n")
     out = await RunPythonExecutor().execute({"skill_script": "handoff/main_calc.py"})
     assert out["ok"] is True
     assert "VALUE * 2" in seen["code"]  # the entry code reached the sandbox
@@ -116,7 +117,7 @@ async def test_references_passed_readonly_original_untouched(skill_root, monkeyp
 
     monkeypatch.setattr(code_sandbox, "run_python", _stub)
     d = skill_root("handoff")
-    (d / "main.py").write_text("print(open('references/data.txt').read())\n")
+    (d / "scripts" / "main.py").write_text("print(open('references/data.txt').read())\n")
     ref_dir = d / "references"
     ref_dir.mkdir()
     original = "gold reference body\n"
@@ -148,7 +149,7 @@ async def test_references_readonly_end_to_end(skill_root, monkeypatch):
     (d / "references").mkdir()
     (d / "references" / "data.txt").write_text(original)
     # Read the reference (must work), then TRY to overwrite it (must be denied by 0o444).
-    (d / "main.py").write_text(
+    (d / "scripts" / "main.py").write_text(
         "print('READ=' + open('references/data.txt').read().strip())\n"
         "try:\n"
         "    open('references/data.txt', 'w').write('HACKED')\n"
@@ -179,7 +180,7 @@ async def test_references_chmod_write_bypass_denied(skill_root, monkeypatch):
     (d / "references" / "data.txt").write_text(original)
     # Same-uid owner tries to chmod BOTH the dir and the file back to writable, then write —
     # the classic bypass of 0o444/0o555. The seatbelt deny must refuse it at the kernel.
-    (d / "main.py").write_text(
+    (d / "scripts" / "main.py").write_text(
         "import os\n"
         "for t, m in (('references', 0o755), ('references/data.txt', 0o644)):\n"
         "    try:\n"
@@ -214,7 +215,7 @@ async def test_references_chmod_unlink_bypass_denied(skill_root, monkeypatch):
     original = "gold reference body\n"
     (d / "references").mkdir()
     (d / "references" / "data.txt").write_text(original)
-    (d / "main.py").write_text(
+    (d / "scripts" / "main.py").write_text(
         "import os\n"
         "try:\n"
         "    os.chmod('references', 0o755)\n"
@@ -235,9 +236,32 @@ async def test_references_chmod_unlink_bypass_denied(skill_root, monkeypatch):
     assert (d / "references" / "data.txt").read_text() == original  # stored original unchanged
 
 
+async def test_a_scripts_folder_that_links_out_of_the_skills_root_is_refused(skill_root, no_sandbox, tmp_path):
+    """0.1.61: the entry stays in scripts/, and scripts/ stays inside <data>/skills — a link may not lead out."""
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "main.py").write_text("print('outside')\n")
+    skill = tmp_path / "skills" / "handoff"
+    skill.mkdir(parents=True)
+    (skill / "scripts").symlink_to(outside)
+    out = await RunPythonExecutor().execute({"skill_script": "handoff/main.py"})
+    assert out["ok"] is False and "not found" in out["error"]
+    assert no_sandbox == []
+
+
+async def test_a_script_that_links_to_a_file_elsewhere_is_refused(skill_root, no_sandbox, tmp_path):
+    d = skill_root("handoff")
+    elsewhere = tmp_path / "elsewhere.py"
+    elsewhere.write_text("print('elsewhere')\n")
+    (d / "scripts" / "main.py").symlink_to(elsewhere)
+    out = await RunPythonExecutor().execute({"skill_script": "handoff/main.py"})
+    assert out["ok"] is False and "not found" in out["error"]
+    assert no_sandbox == []
+
+
 async def test_non_utf8_file_returns_honest_error(skill_root, no_sandbox):
     d = skill_root("handoff")
-    (d / "main.py").write_bytes(b"# valid start\n\xff\xfe not utf-8\nprint('x')\n")
+    (d / "scripts" / "main.py").write_bytes(b"# valid start\n\xff\xfe not utf-8\nprint('x')\n")
     out = await RunPythonExecutor().execute({"skill_script": "handoff/main.py"})
     assert out["ok"] is False and out["external"] is False
     assert "UTF-8" in out["error"] and "未执行" in out["error"]

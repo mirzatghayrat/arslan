@@ -14,7 +14,6 @@ import logging
 from pathlib import Path
 
 
-from server import config
 from server.db.session import AsyncSessionLocal
 from server.registry.memory_executors import (
     ConversationSearchExecutor,
@@ -43,13 +42,11 @@ from server.services import chart_echarts, settings_service
 logger = logging.getLogger(__name__)
 
 
-def _skill_scripts_root() -> Path:
-    """Root for bundled skill scripts/references: ``<data_dir>/skill_scripts``.
-
-    Resolved from the single ``config.data_dir()`` root (unset ARSLAN_DATA_DIR -> the
-    platform app-data dir, NOT CWD/data) so scripts co-locate with the brain. Mirrored
-    by ``server.registry.service._skill_scripts_root`` (same value, kept in lockstep)."""
-    return config.data_dir() / "skill_scripts"
+def _skills_root() -> Path:
+    """<data_dir>/skills (0.1.61 §C2): one folder per skill — scripts/ and references/ inside it. Same
+    value as skill_files.skills_root() and registry.service._skills_root()."""
+    from server.services import skill_files
+    return skill_files.skills_root()
 
 
 class _NotUtf8(Exception):
@@ -671,10 +668,10 @@ class RunPythonExecutor:
 
     @staticmethod
     def _load_skill_script(ref: str) -> tuple[str, dict[str, str], dict[str, str]] | str:
-        """Resolve "<skill_key>/<file>.py" inside data_dir/skill_scripts with traversal
+        """Resolve "<skill_key>/<file>.py" inside data_dir/skills/<key>/scripts with traversal
         protection. Returns (entry_code, sibling_files, references) or an error string.
         `references` are the skill's bundled read-only docs (PC-2 storage,
-        data_dir/skill_scripts/<key>/references/*.{md,txt}); the sandbox mounts them
+        data_dir/skills/<key>/references/*.{md,txt}); the sandbox mounts them
         READ-ONLY so a script can read but never mutate them (PC-3 ②).
 
         Fail-closed (PC-3 ①): a well-formed ref whose entry is NOT .py, or a .py entry that
@@ -689,10 +686,12 @@ class RunPythonExecutor:
         ext = "." + m.group(2).rsplit(".", 1)[-1].lower()
         if ext != ".py":
             return f"此脚本需 非python:{ext},当前沙箱只支持 .py,未执行"
-        root = _skill_scripts_root().resolve()
-        skill_dir = (root / m.group(1)).resolve()
+        root = _skills_root().resolve()
+        skill_dir = (root / m.group(1) / "scripts").resolve()
         entry = (skill_dir / m.group(2)).resolve()
-        if not str(entry).startswith(str(root) + "/") or not entry.is_file():
+        # The entry stays in scripts/, and scripts/ stays inside the skills root (a link may not lead out).
+        if (not str(skill_dir).startswith(str(root) + "/") or not str(entry).startswith(str(skill_dir) + "/")
+                or not entry.is_file()):
             return f"skill script not found: {ref}"
 
         # Honest read: a non-UTF-8 file must return {ok:False} (via the error string), never
@@ -715,7 +714,7 @@ class RunPythonExecutor:
             # Bundled references (PC-2): read-only docs the script may need. Only the .md/.txt
             # basenames PC-2 stores; their CONTENT is copied — the stored originals are never
             # handed to the sandbox, and the sandbox places the copies read-only (PC-3 ②).
-            ref_dir = (skill_dir / "references")
+            ref_dir = skill_dir.parent / "references"
             references = {p.name: _read(p)
                           for p in (ref_dir.iterdir() if ref_dir.is_dir() else [])
                           if p.is_file() and p.suffix in (".md", ".txt")}
@@ -842,12 +841,12 @@ class ReadSkillExecutor:
         body = row.body.strip()
         section = (args.get("section") or "").strip()
         if section.startswith("references/"):
-            # Read a bundled reference from data_dir/skill_scripts/<key>/references/ (stored at
+            # Read a bundled reference from data_dir/skills/<key>/references/ (stored at
             # import time, PC-2). Caged: validated basename, resolve() traversal guard, read-only.
             fname = section[len("references/"):]
             if not _re.fullmatch(r"[A-Za-z0-9._-]+\.(md|txt)", fname):
                 return {"ok": False, "external": False, "error": "invalid reference filename"}
-            root = (_skill_scripts_root() / skey / "references").resolve()
+            root = (_skills_root() / skey / "references").resolve()
             target = (root / fname).resolve()
             if not str(target).startswith(str(root) + "/") or not target.is_file():
                 return {"ok": False, "external": False, "error": f"reference not found: {section}"}

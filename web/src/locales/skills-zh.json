@@ -218,5 +218,13 @@
   "test-driven-development": {
     "name": "测试驱动开发",
     "description": "以测试推动开发，会运行测试并编写代码。"
+  },
+  "research": {
+    "name": "调研",
+    "description": "把主题拆成几个角度，多源交叉验证，分清事实与推测。"
+  },
+  "github-eval": {
+    "name": "GitHub 仓库评估",
+    "description": "判断一个 GitHub 仓库是否适合某个需求：活跃度、许可证与可信度。"
   }
 }

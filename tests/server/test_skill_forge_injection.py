@@ -46,7 +46,7 @@ def test_scripts_flag_honest_when_run_python_unknown(tmp_path, monkeypatch):
     """When the candidate has bundled scripts but eval can't know run_python is wired, the
     injected block carries an honest 'needs Code Sandbox' note — never a dead-end run hint."""
     monkeypatch.setenv("ARSLAN_DATA_DIR", str(tmp_path))
-    script_dir = tmp_path / "skill_scripts" / "handoff"
+    script_dir = tmp_path / "skills" / "handoff" / "scripts"
     script_dir.mkdir(parents=True)
     (script_dir / "run.py").write_text("print('hi')", encoding="utf-8")
     out = skill_forge._inject_skill_body(

@@ -119,13 +119,13 @@ trust decisions; see THIRD_PARTY_NOTICES.md and docs/RELIABILITY.md.
 
 | Source | SHA-256 |
 | --- | --- |
-| `server/registry/executors.py` | `aa3849e0d84eddf351f6ba148e2c7dc672ad726c88da38a9ed393a71d6dd1033` |
+| `server/registry/executors.py` | `0c275398315473757eeb6ea14c9c985cac51ddf82bea816174ce702f8dff70f7` |
 | `server/registry/file_tools.py` | `a41416c5c239370a8ef992b5406e066e51dc1101ffdf83683a8d8b4f7b2390fd` |
 | `server/registry/hands_tools.py` | `5f79436e79a29dd48c136c615d5db9367ba843fae78c93e49e7d83a2ff83dcf1` |
 | `server/registry/lan_tools.py` | `34778593e80f8276d545f4ab569803a208a290d5fe4e8d52402f7a876b6f63b1` |
 | `server/registry/memory_executors.py` | `ac4c597d236a3b83420996758bef9003a9e1f0cf26eff2787e4c79c1a391ee1b` |
 | `server/registry/schedule_tools.py` | `13a8698f7e824c1da64cb513b6ebf92de4ab618f75103445e9b12e984ca09a6d` |
-| `server/registry/seed_catalog.py` | `12132e54d9e76aa1e10a437ed99bfc2c03257a485602874089b3e2f31a504b6e` |
+| `server/registry/seed_catalog.py` | `6029caa090e31ea492b44709f72e2e21acf9f47fdeb7d810cc9e752e45ea67cf` |
 | `server/registry/ssh_tools.py` | `a31f56ef47fb8559e0595ab7e0365a3582f3e5b417071bee9b4c072cebd9ce5a` |
 | `server/registry/task_tools.py` | `2704f466610532134da5c639370eedb21bd5d08d51b679fe0190aaa32da6c447` |
 | `server/resources/browser_runtime/package-lock.json` | `6b772b55920dfd4e4aa81b55e6721d7ffb80dc0ea59579d86906fb1f6a9b8de1` |

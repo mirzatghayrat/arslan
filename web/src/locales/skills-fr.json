@@ -218,5 +218,13 @@
   "test-driven-development": {
     "name": "Développement piloté par les tests",
     "description": "Développez par les tests ; exécute des tests et écrit du code."
+  },
+  "research": {
+    "name": "Recherche",
+    "description": "Découper un sujet en angles, recouper les sources et séparer les faits des suppositions."
+  },
+  "github-eval": {
+    "name": "Évaluer un dépôt GitHub",
+    "description": "Juger si un dépôt GitHub répond à un besoin : activité, licence et confiance."
   }
 }

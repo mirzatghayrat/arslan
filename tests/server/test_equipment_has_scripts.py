@@ -1,5 +1,5 @@
 """PC1-c Part B: the equipment skill dict carries has_scripts, computed from the
-data_dir/skill_scripts/<key>/ dir that RunPythonExecutor._load_skill_script resolves
+data_dir/skills/<key>/scripts/ dir that RunPythonExecutor._load_skill_script resolves
 against. So _equipment_block_from emits the run-hint line for script-bearing skills
 and omits it for scriptless ones."""
 from server.db.models import SkillPack
@@ -14,7 +14,7 @@ def _pack(key: str) -> SkillPack:
 
 def test_skill_has_scripts_detects_dir(tmp_path, monkeypatch):
     monkeypatch.setenv("ARSLAN_DATA_DIR", str(tmp_path))
-    d = tmp_path / "skill_scripts" / "withscripts"
+    d = tmp_path / "skills" / "withscripts" / "scripts"
     d.mkdir(parents=True)
     (d / "entry.py").write_text("x = 1", encoding="utf-8")
     assert service.skill_has_scripts("withscripts") is True
@@ -23,14 +23,14 @@ def test_skill_has_scripts_detects_dir(tmp_path, monkeypatch):
 
 def test_skill_has_scripts_empty_dir_is_false(tmp_path, monkeypatch):
     monkeypatch.setenv("ARSLAN_DATA_DIR", str(tmp_path))
-    (tmp_path / "skill_scripts" / "emptydir").mkdir(parents=True)
+    (tmp_path / "skills" / "emptydir" / "scripts").mkdir(parents=True)
     assert service.skill_has_scripts("emptydir") is False
     assert service.skill_has_scripts("") is False
 
 
 def test_equipment_block_run_hint_fires_for_script_bearing_skill(tmp_path, monkeypatch):
     monkeypatch.setenv("ARSLAN_DATA_DIR", str(tmp_path))
-    d = tmp_path / "skill_scripts" / "handoff"
+    d = tmp_path / "skills" / "handoff" / "scripts"
     d.mkdir(parents=True)
     (d / "run.py").write_text("print('hi')", encoding="utf-8")
 
@@ -50,7 +50,7 @@ def test_equipment_block_run_hint_gated_off_when_run_python_unwired(tmp_path, mo
     """PC compat fix: without run_python wired, the script skill gets an honest 'needs Code
     Sandbox' note instead of a dead-end run_python pointer."""
     monkeypatch.setenv("ARSLAN_DATA_DIR", str(tmp_path))
-    d = tmp_path / "skill_scripts" / "handoff"
+    d = tmp_path / "skills" / "handoff" / "scripts"
     d.mkdir(parents=True)
     (d / "run.py").write_text("print('hi')", encoding="utf-8")
 

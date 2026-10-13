@@ -33,7 +33,7 @@ async def test_seed_counts_and_exclusions(maker):
         tools = (await s.execute(select(Tool))).scalars().all()
 
     assert len(toolsets) == 12  # Includes host-only recovery and temporary collaboration.
-    assert len(skills) == 55
+    assert len(skills) == 57
     assert EXCLUDED.isdisjoint({t.key for t in toolsets})
     assert EXCLUDED.isdisjoint({sk.key for sk in skills})
     assert all(t.tier in ("safe", "orchestrator") for t in toolsets + tools)

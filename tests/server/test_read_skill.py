@@ -67,7 +67,7 @@ async def test_non_utf8_reference_does_not_crash(seeded, tmp_path, monkeypatch):
     bytes, never raise UnicodeDecodeError."""
     from server.registry.executors import ReadSkillExecutor
     monkeypatch.setenv("ARSLAN_DATA_DIR", str(tmp_path))
-    refs = tmp_path / "skill_scripts" / "writing-plans" / "references"
+    refs = tmp_path / "skills" / "writing-plans" / "references"
     refs.mkdir(parents=True)
     (refs / "bad.md").write_bytes(b"ok text \xff\xfe more")
     out = await ReadSkillExecutor().execute(

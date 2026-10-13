@@ -30,7 +30,7 @@ it.each(SUPPORTED_LANGUAGES)("renders and searches every builtin in %s without c
   expect(screen.getByText("My unchanged title")).toBeInTheDocument();
   expect(screen.getByText("My unchanged explanation")).toBeInTheDocument();
   expect(screen.getByText("My category (1)")).toBeInTheDocument();
-  expect(screen.getByText(`${skillCategoryMessages[language].creative} (55)`)).toBeInTheDocument();
+  expect(screen.getByText(`${skillCategoryMessages[language].creative} (${Object.keys(copy).length})`)).toBeInTheDocument();
   const search = screen.getByRole("textbox");
   fireEvent.change(search, { target: { value: copy["domain-modeling"].description } });
   expect(screen.getByText(copy["domain-modeling"].name)).toBeInTheDocument();

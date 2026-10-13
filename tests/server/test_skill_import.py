@@ -403,7 +403,7 @@ async def test_skill_script_runs_with_siblings(maker, monkeypatch, tmp_path):
     from server.registry.executors import RunPythonExecutor
     from server.services import code_sandbox
     monkeypatch.setattr(code_sandbox, "_env_cache", (sys.executable, "test-env"))
-    d = tmp_path / "skill_scripts" / "handoff"
+    d = tmp_path / "skills" / "handoff" / "scripts"
     d.mkdir(parents=True)
     (d / "helper.py").write_text("VALUE = 21\n")
     (d / "main_calc.py").write_text("from helper import VALUE\nprint(VALUE * 2)\n")

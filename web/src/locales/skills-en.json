@@ -218,5 +218,13 @@
   "test-driven-development": {
     "name": "Test-driven development",
     "description": "Develop through tests; runs tests and writes code."
+  },
+  "research": {
+    "name": "Research",
+    "description": "Break a topic into angles, cross-check sources, and keep facts apart from guesses."
+  },
+  "github-eval": {
+    "name": "GitHub repository check",
+    "description": "Judge whether a GitHub repository fits a need: activity, license and trust."
   }
 }

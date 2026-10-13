@@ -218,5 +218,13 @@
   "test-driven-development": {
     "name": "テスト駆動開発",
     "description": "テストを軸に開発し、テスト実行とコード記述を行います。"
+  },
+  "research": {
+    "name": "調査",
+    "description": "テーマを観点に分け、複数の情報源で確かめ、事実と推測を分ける。"
+  },
+  "github-eval": {
+    "name": "GitHub リポジトリの評価",
+    "description": "GitHub リポジトリが目的に合うかを判断する：活動状況、ライセンス、信頼性。"
   }
 }

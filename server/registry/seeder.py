@@ -69,6 +69,13 @@ async def _retire_removed_seeds(db: AsyncSession) -> None:
     await db.execute(delete(SkillPack).where(SkillPack.key.in_(RETIRED_SKILL_KEYS)))
 
 
+#: Catalog keys added after a person could already hold a skill of that name (0.1.61): a row that
+#: is not the bundled one is theirs, and the seed gives way (logged).
+_ADDED_LATER = frozenset({"research", "github-eval"})
+#: Shared-folder skills: Arslan's own wins their name (§C1), and what made them that skill goes.
+_SHARED = frozenset({"agents", "claude", "codex"})
+
+
 async def seed_registry_with(db: AsyncSession) -> None:
     """Upsert the full catalog into the given session. Reclassifications ship as
     code changes and are applied on restart; rows are deleted ONLY via the
@@ -95,15 +102,25 @@ async def seed_registry_with(db: AsyncSession) -> None:
             trow.status = tstatus
     for key, name, category, description, tier, status in SKILLS:
         srow = await db.get(SkillPack, key)
+        if srow is not None and srow.origin != "bundled" and (
+                srow.origin == "imported" or (key in _ADDED_LATER and srow.origin == "saved")):
+            # 0.1.61: an import is the person's, and so is a skill they saved under a name the
+            # catalog only now uses. Never overwrite either; the bundled one is not installed.
+            logger.warning("skill %s is the person's own; the bundled skill of that name is not installed", key)
+            continue
         if srow is None:
             srow = SkillPack(key=key)
             db.add(srow)
+        if srow.origin in _SHARED:
+            srow.folder = srow.scan = srow.text_sha256 = srow.frontmatter = None
+            srow.invocable, srow.enabled = True, True
         srow.name = name
         srow.category = category
         srow.description = description
         srow.tier = tier
         srow.status = status
         srow.body = _skill_body(key)
+        srow.origin = "bundled"                        # 0.1.61 §C1: shipped with the app
     await db.commit()
 
 

@@ -218,5 +218,13 @@
   "test-driven-development": {
     "name": "Testgetriebene Entwicklung",
     "description": "Mit Tests entwickeln; führt Tests aus und schreibt Code."
+  },
+  "research": {
+    "name": "Recherche",
+    "description": "Ein Thema in Blickwinkel zerlegen, Quellen abgleichen und Fakten von Vermutungen trennen."
+  },
+  "github-eval": {
+    "name": "GitHub-Repository prüfen",
+    "description": "Beurteilt, ob ein GitHub-Repository zu einem Bedarf passt: Aktivität, Lizenz und Vertrauen."
   }
 }

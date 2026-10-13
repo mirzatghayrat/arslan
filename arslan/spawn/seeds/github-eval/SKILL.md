@@ -17,7 +17,7 @@ credentials:
 
 ## 决策规则
 
-- 第一步永远先取客观数据：`eval <owner/repo>` 获取 stars、forks、license、最近更新时间、open issues。
+- 第一步永远先取客观数据：用 run_command 运行 `python3 "${SKILL_DIR}/scripts/github_eval_cli.py" eval <owner/repo>`，获取 stars、forks、license、最近更新时间、open issues。
 - 信任分级（决定"建议挂载 / 人工确认 / 警告"）：
   - stars ≥ 1000 且 180 天内有更新 → 高信任，可建议挂载或借鉴。
   - stars ≥ 100 → 中等，展示详情，建议使用前人工审查。

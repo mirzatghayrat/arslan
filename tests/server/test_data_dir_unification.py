@@ -61,8 +61,8 @@ def _subsystem_roots(config):
         "code_sandbox.sandbox_env": code_sandbox._data_dir() / "sandbox_env",
         "html_artifact.artifacts": html_artifact.artifacts_dir(),
         "skill_import.data_dir": skill_import._data_dir(),
-        "registry.service.skill_scripts": service._skill_scripts_root(),
-        "registry.executors.skill_scripts": executors._skill_scripts_root(),
+        "registry.service.skills": service._skills_root(),
+        "registry.executors.skills": executors._skills_root(),
     }
 
 
@@ -95,8 +95,8 @@ def test_all_subsystems_honor_dev_data_dir(monkeypatch):
     assert roots["code_sandbox.sandbox_env"] == cwd_data / "sandbox_env"
     assert roots["html_artifact.artifacts"] == cwd_data / "artifacts"
     assert roots["skill_import.data_dir"] == cwd_data
-    assert roots["registry.service.skill_scripts"] == cwd_data / "skill_scripts"
-    assert roots["registry.executors.skill_scripts"] == cwd_data / "skill_scripts"
+    assert roots["registry.service.skills"] == cwd_data / "skills"
+    assert roots["registry.executors.skills"] == cwd_data / "skills"
 
 
 def test_all_subsystems_honor_absolute_data_dir(monkeypatch, tmp_path):

@@ -13,7 +13,7 @@ source: adapted from github:mattpocock/skills · engineering/research (MIT, © M
 
 ## 决策规则
 
-- 先用 `outline <主题>` 把问题拆成结构化角度（背景、现状、参与者、证据、争议、结论），再逐节调研。
+- 先用 run_command 运行 `python3 "${SKILL_DIR}/scripts/research_cli.py" outline <主题>`，把问题拆成结构化角度（背景、现状、参与者、证据、争议、结论），再逐节调研。
 - 实时检索依赖宿主挂载的搜索工具（如 anysearch）；本 skill 负责结构与方法，不绑定单一搜索源。
 - 多源交叉验证：关键结论至少两个独立来源；来源冲突时呈现分歧，而非武断下结论。
 - 永远标注来源；明确区分"事实"与"推测"；不确定的就说不确定，绝不臆造数据或来源。
