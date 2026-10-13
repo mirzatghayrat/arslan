@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Globe2, ShieldAlert, Terminal } from "lucide-react";
 import { AskCard, CodeBox } from "./kit";
-import { AskOption, Fingerprints, lineIcon } from "./kit/askParts";
+import { AskOption, DeclineNote, Fingerprints, RED_KINDS, ScopeChoice, lineIcon, offeredScopes, scopeToSend } from "./kit/askParts";
 
 interface Props {
   callId: string;
@@ -21,10 +21,24 @@ interface Props {
   /** With "outside": Arslan's one-line reason (the model's words). */
   why?: string;
   expiresAt?: number | null;
+  /** 0.1.61 §A4: the choices a card from the permission layer offers. Absent on an old frame
+   *  (leaving the sandbox, another machine), which keeps its checkbox and its "remember". */
+  options?: string[];
+  /** The literal scope "Always" stores (the frame's `always_label`). */
+  alwaysLabel?: string;
+  /** The frame's permission kind (`perm_kind`). A red kind (money, app_risky, destructive) draws Run red,
+   *  as the action card does; a once-only kind offers only the frame's first choice. Absent on an old frame. */
+  permKind?: string;
+  /** The Inbox: the server never keeps "remember" from there, so the old checkbox is not shown. */
+  noRemember?: boolean;
+  /** An answer is on its way: the card is inert (its buttons, its keys and its note). */
+  busy?: boolean;
   queue?: import("./kit").AskQueuePosition;
   onOpenContext?: () => void;
-  onConfirm: (callId: string, remember: boolean) => void;
-  onCancel: (callId: string) => void;
+  /** An old card answers (callId, remember); a v2 card answers (callId, false, scope). */
+  onConfirm: (callId: string, remember: boolean, scope?: string) => void;
+  /** A v2 card's No may carry the user's note. */
+  onCancel: (callId: string, note?: string) => void;
 }
 
 /**
@@ -35,11 +49,19 @@ interface Props {
  * "remember" — the backend refuses it for a remote command, and a checkbox that does
  * nothing would be a lie in a safety dialog. Sandbox: the question is about leaving
  * the sandbox, and the checkbox means "for the rest of this conversation".
+ * 0.1.61: a card from the permission layer (a frame with `options`) shows its choices in place
+ * of the checkbox, and takes a note on No.
  */
 export default function RunCommandCard({ callId, pretty, reason, remoteHost, fingerprints, background,
-                                         sandbox, why, expiresAt, queue, onOpenContext, onConfirm, onCancel }: Props) {
+                                         sandbox, why, expiresAt, options, alwaysLabel, permKind, noRemember, busy, queue,
+                                         onOpenContext, onConfirm, onCancel }: Props) {
   const { t } = useTranslation();
   const [remember, setRemember] = useState(false);
+  // 0.1.61 §A4: a card with options offers them (a job's too: the same choices as the window).
+  const offered = offeredScopes(options, permKind);
+  const v2 = Boolean(offered?.length);
+  // Starts on the narrowest choice the card shows: Always is never the default, whatever its place.
+  const [scope, setScope] = useState(() => scopeToSend(offered, undefined, alwaysLabel) ?? "");
   const isRemote = Boolean(remoteHost);
   const title = isRemote ? t("runcmd.remoteLabel", { host: remoteHost })
     : sandbox === "outside" ? t("runcmd.sandboxOutsideLabel")
@@ -62,15 +84,24 @@ export default function RunCommandCard({ callId, pretty, reason, remoteHost, fin
         {isRemote ? <Fingerprints label={t("runcmd.fingerprint")} list={fingerprints ?? []} testId="runcmd-fingerprints" /> : null}
       </>}
       context={context}
-      options={isRemote || background ? null : (
+      // A command card's "In this conversation" is a grant for its kind of command (the rules it matched: every `rm`, every
+      // `git push`), not for this one text — the same set "Always" names (approvals._command_request). It says so.
+      options={v2 ? <ScopeChoice options={offered} value={scope} onChange={setScope} alwaysLabel={alwaysLabel}
+        conversationLabel={permKind === "command" ? alwaysLabel : undefined} testId="runcmd-scope" />
+        : isRemote || background || noRemember ? null : (
         <AskOption checked={remember} onChange={setRemember} testId="runcmd-remember"
           label={t(sandbox ? "runcmd.sandboxRemember" : "runcmd.remember")} />
       )}
-      expiresAt={expiresAt} queue={queue} onOpenContext={onOpenContext}
+      extra={v2 ? <DeclineNote testId="runcmd-note" disabled={busy}
+        onDeclineWithNote={(note) => (note ? onCancel(callId, note) : onCancel(callId))} /> : undefined}
+      destructive={RED_KINDS.has(permKind ?? "")}
+      expiresAt={expiresAt} queue={queue} busy={busy} onOpenContext={onOpenContext}
+      allowDisabled={v2 && scopeToSend(offered, scope, alwaysLabel) === undefined}
       allowLabel={isRemote ? t("runcmd.runRemote") : sandbox ? t("runcmd.runOutside") : t("runcmd.run")}
       declineLabel={t("runcmd.cancel")}
       allowTestId="runcmd-run" declineTestId="runcmd-cancel"
-      onAllow={() => onConfirm(callId, remember && !background && !isRemote)}
+      onAllow={() => (v2 ? onConfirm(callId, false, scopeToSend(offered, scope, alwaysLabel))
+        : onConfirm(callId, remember && !background && !isRemote && !noRemember))}
       onDecline={() => onCancel(callId)} />
   );
 }

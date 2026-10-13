@@ -42,18 +42,18 @@ describe("the phone in an open window", () => {
 
     handleFrame({ type: "card_resolved", call_id: "elsewhere", outcome: "approved", by: "phone" } as never);
     let s = useArslanStore.getState();
-    expect([s.pendingCommand?.callId, s.pendingSchedule?.callId, s.pendingWorkspaceWrite?.callId, s.pendingAction?.callId])
+    expect([s.pendingCommands[0]?.callId, s.pendingSchedules[0]?.callId, s.pendingWorkspaceWrites[0]?.callId, s.pendingActions[0]?.callId])
       .toEqual(["c1", "s1", "w1", "a1"]);
 
     handleFrame({ type: "card_resolved", call_id: "c1", outcome: "approved", by: "phone" } as never);
     handleFrame({ type: "card_resolved", call_id: "w1", outcome: "expired" } as never);
     s = useArslanStore.getState();
-    expect([s.pendingCommand, s.pendingWorkspaceWrite]).toEqual([null, null]);
-    expect([s.pendingSchedule?.callId, s.pendingAction?.callId]).toEqual(["s1", "a1"]);
+    expect([s.pendingCommands, s.pendingWorkspaceWrites]).toEqual([[], []]);
+    expect([s.pendingSchedules[0]?.callId, s.pendingActions[0]?.callId]).toEqual(["s1", "a1"]);
 
     handleFrame({ type: "card_resolved", call_id: "s1", outcome: "declined", by: "mac" } as never);
     handleFrame({ type: "card_resolved", call_id: "a1", outcome: "declined", by: "phone" } as never);
     s = useArslanStore.getState();
-    expect([s.pendingSchedule, s.pendingAction]).toEqual([null, null]);
+    expect([s.pendingSchedules, s.pendingActions]).toEqual([[], []]);
   });
 });

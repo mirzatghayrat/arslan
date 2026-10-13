@@ -1,9 +1,10 @@
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowUpRight, Lock } from "lucide-react";
 import { AskMark } from "./AskMark";
 import { Button } from "./Button";
-import { Countdown } from "./Countdown";
+import { CARD_MS, Countdown } from "./Countdown";
+import { useAnswerGuard, useAnswerHeld } from "./guard";
 import { useAnswerKeys, useLayer } from "./layers";
 
 export interface AskQueuePosition { index: number; total: number; onPrev?: () => void; onNext?: () => void }
@@ -32,6 +33,7 @@ export interface AskCardProps {
   destructive?: boolean;
   onAllow: () => void;
   onDecline: () => void;
+  /** This card's own answer is in flight (an apply over REST): Allow, No and the keys are off. Never the pager — paging and the other cards stay free. */
   busy?: boolean;
   /** Only the allow answer is not possible yet (e.g. a required key is empty); esc still declines. */
   allowDisabled?: boolean;
@@ -58,9 +60,14 @@ export interface AskCardProps {
 export function AskCard(p: AskCardProps) {
   const { t } = useTranslation();
   const top = useLayer(p.keys !== false);
-  useAnswerKeys(top && !p.busy, { onAllow: () => { if (!p.allowDisabled) p.onAllow(); }, onDecline: p.onDecline });
+  const root = useRef<HTMLElement>(null);
+  // Within ANSWER_GUARD_MS of this card coming up in a queue, no answer is for it (see guard.ts).
+  const guarded = useAnswerGuard();
+  const held = useAnswerHeld();                                     // the same hold, to be seen: Allow and No look disabled while it lasts
+  useAnswerKeys(top && !p.busy, { onAllow: () => { if (!p.allowDisabled && !guarded()) p.onAllow(); },
+                                  onDecline: () => { if (!guarded()) p.onDecline(); } }, root);
   return (
-    <section data-testid={p.testId ?? "ask-card"} role="alertdialog" aria-label={p.who} {...p.attrs}
+    <section ref={root} data-testid={p.testId ?? "ask-card"} role="alertdialog" aria-label={p.who} {...p.attrs}
       className={`flex w-full max-w-[460px] flex-col gap-3.5 rounded-2xl border border-border bg-surface px-5 pb-4 pt-[18px] text-foreground shadow-kit ${p.className ?? ""}`}>
       <header className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2.5">
@@ -70,19 +77,19 @@ export function AskCard(p: AskCardProps) {
         <div className="flex items-center gap-2.5">
           {p.queue && p.queue.total > 1 && (
             <span data-testid="ask-queue" className="inline-flex items-center gap-1.5 font-mono text-[12px] text-muted-foreground">
-              <button type="button" aria-label={t("kit.previous")} disabled={!p.queue.onPrev} onClick={p.queue.onPrev}
+              <button type="button" data-nav="prev" aria-label={t("kit.previous")} disabled={!p.queue.onPrev} onClick={p.queue.onPrev}
                 className="px-0.5 hover:text-foreground disabled:opacity-40">‹</button>
               {t("kit.queueOf", { index: p.queue.index + 1, total: p.queue.total })}
-              <button type="button" aria-label={t("kit.next")} disabled={!p.queue.onNext} onClick={p.queue.onNext}
+              <button type="button" data-nav="next" aria-label={t("kit.next")} disabled={!p.queue.onNext} onClick={p.queue.onNext}
                 className="px-0.5 hover:text-foreground disabled:opacity-40">›</button>
             </span>
           )}
-          {p.expiresAt ? <Countdown expiresAt={p.expiresAt} totalMs={p.totalMs ?? 300_000} /> : null}
+          {p.expiresAt ? <Countdown expiresAt={p.expiresAt} totalMs={p.totalMs ?? CARD_MS} /> : null}
         </div>
       </header>
       <h3 className="text-[19px] font-bold leading-[1.35]">{p.title}</h3>
       {p.said ? (
-        <p data-testid={p.saidTestId ?? "ask-said"} className="-mt-1.5 text-[13px] text-muted-foreground">
+        <p data-testid={p.saidTestId ?? "ask-said"} className="-mt-1.5 text-[13px] text-muted-foreground [overflow-wrap:anywhere]">
           <span className="text-subtle-foreground">{t("kit.arslanSays")}</span>{p.said}
         </p>
       ) : null}
@@ -102,11 +109,12 @@ export function AskCard(p: AskCardProps) {
       )}
       {p.options}
       <div className="flex gap-2.5">
-        <Button tone="secondary" grow={1} kbd="esc" disabled={p.busy} onClick={p.onDecline} data-testid={p.declineTestId ?? "ask-decline"}>
+        <Button tone="secondary" grow={1} kbd="esc" disabled={p.busy} aria-disabled={held || undefined}
+          onClick={() => { if (!guarded()) p.onDecline(); }} data-testid={p.declineTestId ?? "ask-decline"}>
           {p.declineLabel ?? t("kit.decline")}
         </Button>
-        <Button tone={p.destructive ? "destructive" : "primary"} grow={1.4} kbd="⌘⏎" disabled={p.busy || p.allowDisabled}
-          onClick={p.onAllow} data-testid={p.allowTestId ?? "ask-allow"}>
+        <Button tone={p.destructive ? "destructive" : "primary"} grow={1.4} kbd="⌘⏎" disabled={p.busy || p.allowDisabled} aria-disabled={held || undefined}
+          onClick={() => { if (!guarded()) p.onAllow(); }} data-testid={p.allowTestId ?? "ask-allow"}>
           {p.allowLabel ?? t("kit.allow")}
         </Button>
       </div>

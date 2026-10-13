@@ -156,6 +156,17 @@ def test_writes_inside_the_task_folder_are_approved_and_outside_declined():
     assert t.approvals == 3
 
 
+def test_a_write_card_with_choices_is_answered_for_the_conversation():
+    """0.1.61 PR 2b: a scope-less yes is once only, so the bench says "in this conversation" when
+    the card offers it — one write card per run, as the bench measured before."""
+    t = TurnTracker("/runs/a")
+    reply = t.on_frame({"type": "propose_workspace_write", "call_id": "1", "path": "/runs/a/x.md",
+                        "options": ["once", "conversation"]}, 1)
+    assert reply == {"type": "confirm_workspace_write", "call_id": "1", "scope": "conversation"}
+    old = t.on_frame({"type": "propose_workspace_write", "call_id": "2", "path": "/runs/a/y.md"}, 1)
+    assert old == {"type": "confirm_workspace_write", "call_id": "2"}
+
+
 # ── cost accounting ──────────────────────────────────────────────────────────
 
 def test_cost_counts_cached_uncached_and_output_tokens_for_both_api_shapes():

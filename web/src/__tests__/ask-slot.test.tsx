@@ -1,5 +1,6 @@
 /** 0.1.55 S2: every pending ask in ONE slot — queued, answered with ⌘⏎ / esc,
- *  the same confirm / cancel frames as before, a countdown from the frame's arrival. */
+ *  the same confirm / cancel frames as before for a frame without choices, a countdown from the
+ *  frame's arrival (its own expires_at when it has one: card-v2.test.tsx). */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, act, cleanup } from "@testing-library/react";
 
@@ -11,12 +12,13 @@ import AskSlot from "../components/AskSlot";
 import { useArslanStore, initialArslanState } from "../stores/arslanStore";
 
 beforeEach(() => useArslanStore.setState(initialArslanState(), true));
-afterEach(() => cleanup());
+afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 const frame = (f: Record<string, unknown>) => act(() => { useArslanStore.getState().handleFrame(f as never); });
 
 describe("the ask slot", () => {
   it("two waiting asks show as ONE card, oldest first, and ⌘⏎ answers it with the same frame as before", () => {
+    vi.useFakeTimers();                                                  // the card that moves up answers after the answer guard (500 ms)
     const send = vi.fn();
     render(<AskSlot send={send} />);
     frame({ type: "propose_run_command", call_id: "c1", command: "git", argv: ["status"], pretty: "git status", reason: "" });
@@ -25,12 +27,15 @@ describe("the ask slot", () => {
     expect(screen.getAllByRole("alertdialog")).toHaveLength(1);
     expect(screen.getByTestId("runcmd-card")).toBeInTheDocument();
     expect(screen.getByTestId("ask-queue")).toHaveTextContent('"index":1,"total":2');
-    expect(screen.getByTestId("ask-countdown")).toHaveAccessibleName(/^[45]:\d\d$/);
+    // 0.1.61: a frame without expires_at waits the Mac's 30 minutes (approvals.TIMEOUT_S), not 5.
+    expect(screen.getByTestId("ask-countdown")).toHaveAccessibleName(/^(30:00|29:\d\d)$/);
+    act(() => { vi.advanceTimersByTime(500); });                         // c1 came up where none was: it answers once the guard has run out
     fireEvent.keyDown(window, { key: "Enter", metaKey: true });
     expect(send).toHaveBeenCalledWith({ type: "confirm_run_command", call_id: "c1", remember: false });
     // the next one moves up; its risk line is read from the script
     expect(screen.getByTestId("action-card")).toBeInTheDocument();
     expect(screen.getByTestId("ask-risk")).toHaveTextContent("kit.riskLine");
+    act(() => { vi.advanceTimersByTime(500); });
     fireEvent.keyDown(window, { key: "Escape" });
     expect(send).toHaveBeenLastCalledWith({ type: "cancel_action", call_id: "a1" });
     expect(screen.queryByTestId("ask-slot")).toBeNull();

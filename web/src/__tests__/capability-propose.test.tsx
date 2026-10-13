@@ -7,12 +7,15 @@ vi.mock("react-i18next", () => ({
 }));
 
 import AskSlot from "../components/AskSlot";
+import { ANSWER_GUARD_MS } from "../components/kit";
 import CapabilityResultLine from "../components/capabilities/CapabilityResultLine";
 import { useArslanStore, initialArslanState } from "../stores/arslanStore";
 import { toUiMessages } from "../api/adapters";
 
 beforeEach(() => useArslanStore.setState(initialArslanState(), true));
-afterEach(() => cleanup());
+afterEach(() => { cleanup(); vi.useRealTimers(); });
+/** a card that comes up where none was answers once the answer guard (500 ms) has run out (final review, I3): the test runs on fake timers from its start */
+const settle = () => act(() => { vi.advanceTimersByTime(ANSWER_GUARD_MS); });
 
 const frame = (f: Record<string, unknown>) => act(() => { useArslanStore.getState().handleFrame(f as never); });
 const CARD = {
@@ -40,21 +43,25 @@ describe("the capability card", () => {
   });
 
   it("a required key must be typed before it can be added; esc still declines", () => {
+    vi.useFakeTimers();
     const send = vi.fn();
     render(<AskSlot send={send} />);
     frame(CARD);
+    settle();
     expect(screen.getByTestId("capability-card-allow")).toBeDisabled();
     fireEvent.keyDown(window, { key: "Enter", metaKey: true });
     expect(send).not.toHaveBeenCalled();
     fireEvent.keyDown(window, { key: "Escape" });
     expect(send).toHaveBeenCalledWith({ type: "cancel_capability", call_id: "cap-1" });
-    expect(useArslanStore.getState().pendingCapability).toBeNull();
+    expect(useArslanStore.getState().pendingCapabilities).toEqual([]);
   });
 
   it("adding sends the key and the folders the user kept — nothing else", () => {
+    vi.useFakeTimers();
     const send = vi.fn();
     render(<AskSlot send={send} />);
     frame(CARD);
+    settle();
     fireEvent.change(screen.getByTestId("capability-key-EXCEL_TOKEN"), { target: { value: "s3cr3t" } });
     fireEvent.click(screen.getByTestId("capability-folder-drop-/Users/x/Documents"));
     fireEvent.click(screen.getByTestId("capability-card-allow"));

@@ -109,3 +109,18 @@ button { font-family: inherit; }
 .hands-row .ticker { flex: 1; min-width: 0; }
 .thumb { width: 96px; height: 66px; object-fit: cover; object-position: top; border-radius: 6px; flex-shrink: 0;
   box-shadow: 0 0 0 1px rgba(255,255,255,.08); }
+
+/* 0.1.61 §A4: a card from the permission layer asks in words the server or the model chose. One long unbroken line (a URL, a path) breaks
+   anywhere and runs to a few lines instead of being cut off by an ellipsis: what is being asked is never hidden. */
+.ititle.wrap { font-size: 14px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.code.wrap { white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; text-overflow: clip; }
+.itext.said { overflow-wrap: anywhere; -webkit-line-clamp: 2; }
+.itext.said span { color: #8b919c; }
+/* The card is a fixed height. When a note or an error comes under a long question and a long line, the long lines give way (they were clamped
+   anyway) before anything else does: the buttons, the title row, the risky note and the error are never pushed out of the card or cut. */
+.cmain.ask { max-height: 100%; min-height: 0; }
+.cmain.ask > * { flex-shrink: 0; }
+.cmain.ask > .ititle.wrap, .cmain.ask > .code.wrap, .cmain.ask > .itext.said { flex-shrink: 1; min-height: 0; }
+/* One gesture answers one card: both buttons look held for 500 ms after the card shown changes. Not natively disabled, so the focus stays. */
+.btn[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+.btn[aria-disabled="true"]:active { transform: none; }

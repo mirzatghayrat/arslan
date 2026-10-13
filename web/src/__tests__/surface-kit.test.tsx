@@ -76,11 +76,13 @@ describe("AskQueue", () => {
         onDecline={() => {}} />) }))} />;
   }
   it("shows one card with 1 / 3, moves with the arrows, and the next moves up when one is answered", () => {
+    vi.useFakeTimers();                                                  // the card paged to answers after the answer guard (500 ms)
     render(<Host />);
     expect(screen.getAllByRole("alertdialog")).toHaveLength(1);
     expect(screen.getByTestId("ask-queue")).toHaveTextContent('kit.queueOf:{"index":1,"total":3}');
     fireEvent.click(screen.getByLabelText("kit.next"));
     expect(screen.getByText("card b")).toBeInTheDocument();
+    act(() => { vi.advanceTimersByTime(500); });
     fireEvent.click(screen.getByTestId("ask-allow"));
     expect(screen.queryByText("card b")).toBeNull();
     expect(screen.getAllByRole("alertdialog")).toHaveLength(1);

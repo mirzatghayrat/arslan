@@ -866,7 +866,7 @@ async def _user_away() -> bool:
 
 class DesktopTakeoverExecutor:
     """Take the screen over for long foreground work (§6.4): background work only, a card every
-    time (the island may answer it), the edge glows, and the user's first touch pauses it."""
+    time (answered in Arslan, never from the island), the edge glows, and the user's first touch pauses it."""
     key = "desktop_takeover"
     timeout_s = CARD_S + 30
 

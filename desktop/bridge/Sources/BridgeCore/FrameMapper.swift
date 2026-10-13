@@ -9,7 +9,6 @@ public enum CardKind: String {
 
 public final class FrameMapper {
     public static let progressInterval: TimeInterval = 2      // §5.3: at most one progress per 2 s
-    public static let cardTimeout: TimeInterval = 300         // the Mac's 5-minute card timeout
     public static let partialInterval: TimeInterval = 1       // §5.7: at most one partial per second
     /// §5.7: past this many UTF-8 bytes the answer stops coming as partials (each one carries the
     /// whole reply so far, and must fit one envelope); the final message still comes.
@@ -43,10 +42,21 @@ public final class FrameMapper {
         let iso = ISO8601DateFormatter()
         func card(_ kind: CardKind, _ action: String, _ target: String, _ risk: String) -> [Message] {
             guard let id = frame["call_id"] as? String else { return [] }
+            // 0.1.61 §A4: installing code wants the whole card — a new capability never reaches the phone.
+            if frame["perm_kind"] as? String == "capability" { return [] }
             cards[id] = kind
-            return [("approval.request", ["approval_id": id, "action": action, "target": String(target.prefix(300)),
-                                          "risk": risk, "task_id": conversationID, "task_title": title ?? "Arslan",
-                                          "expires_at": iso.string(from: now.addingTimeInterval(Self.cardTimeout))])]
+            // A card from the Mac's permission layer says its own question and when it runs out;
+            // an older frame keeps the kind's words and the Mac's wait from now. The heading is one
+            // line (every run of whitespace, newlines too, becomes one space) before it is cut.
+            let question = Self.oneLine(frame["title"] as? String ?? "")
+            let expires = Self.frameExpiry(frame["expires_at"], now: now) ?? now.addingTimeInterval(Self.cardWait)
+            return [("approval.request", ["approval_id": id,
+                                          "action": Self.heading(question.isEmpty ? Self.oneLine(action) : question, permKind: frame["perm_kind"] as? String),
+                                          // A card for several apps (permissions.decide_many) joins their ids with U+001E: one line, comma-separated.
+                                          "target": String(target.replacingOccurrences(of: "\u{1e}", with: ", ").prefix(300)),
+                                          "risk": Self.permRisk(frame["perm_kind"] as? String) ?? risk,
+                                          "task_id": conversationID, "task_title": title ?? "Arslan",
+                                          "expires_at": iso.string(from: expires)])]
         }
         switch frame["type"] as? String {
         case "stream_start":
@@ -137,12 +147,13 @@ public final class FrameMapper {
             return card(.action, kind, frame["target"] as? String ?? "", kind == "browser_site" ? "send" : "write")
         case "card_resolved":
             // The Mac decided the card — the phone's own answer, a click in a Mac window (first
-            // answer wins), or the 5-minute timeout. This is the phone's business receipt (§5.3).
+            // answer wins), or the 30 minutes running out. This is the phone's business receipt (§5.3).
             guard let id = frame["call_id"] as? String, cards.removeValue(forKey: id) != nil else { return [] }
             answered.remove(id)
             let outcome = ["approved": "done", "declined": "denied"][frame["outcome"] as? String ?? ""] ?? "expired"
             var body: [String: Any] = ["approval_id": id, "outcome": outcome]
-            if frame["by"] as? String == "mac" { body["detail"] = "answered_on_mac" }
+            // Any answer that is not the phone's own came from the Mac: a window, the Inbox or the island (approvals.SOURCES).
+            if let by = frame["by"] as? String, by != "phone" { body["detail"] = "answered_on_mac" }
             return [("approval.result", body)]
         case "job_update":
             if let job = frame["job_id"] as? String, let origin = frame["origin"] as? String { jobOrigins[job] = origin }
@@ -150,6 +161,55 @@ public final class FrameMapper {
             return [("job.event", Self.jobEvent(frame, conversationID: conversationID))]
         default:
             return []
+        }
+    }
+
+    /// How long the Mac waits on a card: 30 minutes since 0.1.61 (the server's `approvals.TIMEOUT_S`).
+    /// A card from the permission layer says its own expiry; any other is counted from now.
+    static let cardWait: TimeInterval = 1800
+
+    /// A frame's `expires_at` is the Mac's own expiry only when it is a number (a JSON `true` is an
+    /// `NSNumber` too, and reads as 1970) between a minute ago and two hours from now; the Mac sends
+    /// "now + 30 minutes". Anything else (also NaN and infinity, which fail both bounds) is nil, and
+    /// the card is counted from now with `cardWait`.
+    static func frameExpiry(_ value: Any?, now: Date) -> Date? {
+        guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
+        // Compared as plain numbers: `Date`'s `>=` is "not <", which a NaN passes.
+        let seconds = number.doubleValue, here = now.timeIntervalSince1970
+        guard seconds >= here - 60, seconds <= here + 7200 else { return nil }
+        return Date(timeIntervalSince1970: seconds)
+    }
+
+    /// The permission kinds whose card is task-first: the phone's yes takes the card's first, narrowest choice (the Mac's
+    /// `approvals.FIRST_CHOICE_ONLY`), which on these is "for this task" (`permissions._TASK_FIRST`).
+    static let taskFirst: Set<String> = ["app", "site", "shortcut"]
+    static let forThisTask = " (for this task)"
+    /// The phone's card heading is at most this many characters, whatever it says.
+    static let headingLimit = 200
+
+    /// The card's question as the phone's heading: at most 200 characters, and on a task-first card ending with what the phone's yes
+    /// covers (final review, M2). The question gives way to the words, never the other way: they stay whole inside the same cut.
+    static func heading(_ text: String, permKind: String?) -> String {
+        guard let kind = permKind, taskFirst.contains(kind) else { return String(text.prefix(headingLimit)) }
+        let base = String(text.prefix(headingLimit - forThisTask.count)).trimmingCharacters(in: .whitespaces)
+        return base.isEmpty ? String(forThisTask.dropFirst()) : base + forThisTask
+    }
+
+    /// The text on one line: each run of whitespace (newlines too) is one space, and the ends are trimmed.
+    static func oneLine(_ text: String) -> String {
+        text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    }
+
+    /// 0.1.61 §A4: a card from the Mac's permission layer names its kind (`perm_kind`), and four of
+    /// them have their own risk word. Any other kind (a command, an app, a write…) keeps the frame's
+    /// own rules below. The words only decide how the phone's card looks.
+    static func permRisk(_ permKind: String?) -> String? {
+        switch permKind {
+        case "money": return "payment"
+        case "send": return "send"
+        case "destructive": return "delete"
+        case "outside": return "install"
+        default: return nil
         }
     }
 

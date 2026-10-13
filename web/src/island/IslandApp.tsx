@@ -1,9 +1,9 @@
-import { useEffect, useReducer, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useReducer, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   answerBorrow, answerCard, continueTakeover, endTakeover, fetchFeed, fetchPending, stopHands, stopJob,
   type Activity, type Feed, type PendingCard,
 } from './feed';
-import { askKind, askLine, mmss, secondsLeft } from './islandAsk';
+import { allowKey, alsoAllowsKey, askKind, askLine, askWhy, heldNoteKey, knowsKind, mmss, secondsLeft } from './islandAsk';
 import IslandMascot from './IslandMascot';
 import {
   applyFeed, bodyTop, countdown, dismiss, focused, handsKey, hitRect, hoverEnter, hoverLeave, initialState, interact, isSearchTool, mood, open,
@@ -12,6 +12,8 @@ import {
 } from './islandMachine';
 import { initialGeometry, inShell, isGeometry, listenShell, openConversation, reportShape } from './islandShell';
 import { askText, pickLang, stepText, t, type Lang } from '../locales/island';
+// Only the guard, not the kit's index: the island loads none of the app bundle.
+import { AnswerGuardScope, useAnswerGuard, useAnswerGuardState, useAnswerHeld, useQueueGuard } from '../components/kit/guard';
 
 type Action =
   | { type: 'feed'; feed: Feed } | { type: 'enter' } | { type: 'leave' } | { type: 'move' } | { type: 'open' }
@@ -59,6 +61,9 @@ export default function IslandApp() {
   const [pending, setPending] = useState<PendingCard[]>([]);
   const stateRef = useRef(s);
   stateRef.current = s;
+  // One gesture answers one card (0.1.61 §A4): what holds an answer for a moment after the card shown changes is kept here, above
+  // the card, which is not on screen while nothing waits (kit/guard.ts).
+  const guard = useAnswerGuardState();
 
   // Feed polling.
   useEffect(() => {
@@ -130,7 +135,7 @@ export default function IslandApp() {
   } as CSSProperties;
 
   return (
-    <>
+    <AnswerGuardScope value={guard}>
       {!inShell() && <DevBackdrop />}
       <div className={`island${geo.notch ? '' : ' flat'}${closing ? ' closing' : ''}`} data-mode={s.mode} style={style}
         role="region" aria-label={t(lang, 'region')}
@@ -157,7 +162,7 @@ export default function IslandApp() {
           <div className="countdown" />
         </div>
       </div>
-    </>
+    </AnswerGuardScope>
   );
 }
 
@@ -210,12 +215,12 @@ const STATE_COLOR: Record<string, string> = {
 
 const titleOf = (lang: Lang, title: string | null, kind: Activity['kind']) => title || t(lang, kind);
 
-function Card({ m, size, children, onClick }: { m: Mood; size: number; children: ReactNode; onClick?: () => void }) {
+function Card({ m, size, children, onClick, main }: { m: Mood; size: number; children: ReactNode; onClick?: () => void; main?: string }) {
   return (
     <div className={`card${onClick ? ' clickable' : ''}`} style={{ '--veil': VEIL[m] ?? 'transparent' } as CSSProperties}
       onClick={onClick}>
       <IslandMascot mood={m} size={size} />
-      <div className="cmain">{children}</div>
+      <div className={`cmain${main ? ` ${main}` : ''}`}>{children}</div>
     </div>
   );
 }
@@ -229,6 +234,11 @@ function Who({ color, title, label, elapsed: time }: { color: string; title: str
  * One waiting card, answerable here (0.1.55 decision 3) — unless the server says it is
  * risky (`island_ok` false): then it says why and offers "Open in Arslan". Declining is
  * always offered: saying no is never the risky answer.
+ *
+ * 0.1.61 §A4: it answers a card once only (the server holds the island's yes to the card's first choice, whatever the card offers),
+ * and says which it is. For a kind it has no words for it asks the model's why, with the server's own title under it; for one it
+ * has, the why is "Arslan says". And one gesture answers one card: for 500 ms after the card shown changes neither button answers,
+ * and both look it, so a double-click aimed at the card that left never lands on the one that moved up.
  */
 function AskView({ card, total, m, lang, clock, onAnswered }: {
   card: PendingCard; total: number; m: Mood; lang: Lang; clock: number; onAnswered: (callId: string) => void;
@@ -236,26 +246,43 @@ function AskView({ card, total, m, lang, clock, onAnswered }: {
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   useEffect(() => { setFailed(false); }, [card.call_id]);
+  const guard = useQueueGuard();
+  const guarded = useAnswerGuard();
+  const held = useAnswerHeld();
+  // Held for half a second from when this view comes up: over another island view (the overview's Open Arslan, a result's buttons sit where
+  // Decline and Allow do now), after the last card was answered, or over nothing — a click aimed at something else must not land here.
+  // (It is also what holds a card that is proposed a moment after the last one left: that one comes up here, and this view is new.)
+  useLayoutEffect(() => { guard.hold(); }, [guard]);
+  // A card replaced by the next one in this same view (the answered one leaves the list): the guard goes by which card is on top.
+  useLayoutEffect(() => { guard.shown(card.call_id); }, [guard, card.call_id]);
   const answer = async (approve: boolean) => {
+    if (guarded()) return;
     setBusy(true); setFailed(false);
     const ok = await answerCard(card.call_id, approve).catch(() => false);
     setBusy(false);
     if (ok) onAnswered(card.call_id); else setFailed(true);
   };
   const line = askLine(card);
+  const why = askWhy(card);
+  const also = alsoAllowsKey(card);
+  const asksWhy = why !== '' && !knowsKind(card);          // a kind without words of its own is asked in the model's why
+  const wrap = card.frame.type === 'propose_action' ? ' wrap' : '';
   return (
     <>
       {total > 1 && <span className="queue" data-testid="island-queue">1 / {total}</span>}
-      <Card m={m} size={58}>
+      <Card m={m} size={58} main="ask">
         <Who color={STATE_COLOR.approval} title={askText(lang, askKind(card))} label={t(lang, 'needsYou')}
           elapsed={mmss(secondsLeft(card, clock * 1000))} />
-        {line && <div className="code" data-testid="island-ask-line" title={line}>{line}</div>}
-        {!card.island_ok && <div className="itext risky" data-testid="island-risky">{t(lang, 'riskyNote')}</div>}
+        {asksWhy && <div className="ititle wrap" data-testid="island-ask-why" title={why}>{why}</div>}
+        {line && <div className={`code${wrap}`} data-testid="island-ask-line" title={line}>{line}</div>}
+        {why && !asksWhy && <div className="itext said" data-testid="island-ask-said" title={why}><span>{t(lang, 'arslanSays')}</span>{why}</div>}
+        {also && <div className="itext also" data-testid="island-also">{t(lang, also)}</div>}
+        {!card.island_ok && <div className="itext risky" data-testid="island-risky">{t(lang, heldNoteKey(card))}</div>}
         {failed && <div className="itext" role="alert">{t(lang, 'answerFailed')}</div>}
         <div className="btns">
-          <button type="button" className="btn" disabled={busy} data-testid="island-decline" onClick={() => void answer(false)}>{t(lang, 'decline')}</button>
+          <button type="button" className="btn" disabled={busy} aria-disabled={held || undefined} data-testid="island-decline" onClick={() => void answer(false)}>{t(lang, 'decline')}</button>
           {card.island_ok
-            ? <button type="button" className="btn primary" disabled={busy} data-testid="island-allow" onClick={() => void answer(true)}>{t(lang, 'allow')}</button>
+            ? <button type="button" className="btn primary" disabled={busy} aria-disabled={held || undefined} data-testid="island-allow" onClick={() => void answer(true)}>{t(lang, allowKey(card))}</button>
             : <button type="button" className="btn primary" data-testid="island-open-in-arslan" onClick={() => openConversation(card.conversation_id)}>{t(lang, 'openInArslan')}</button>}
         </div>
       </Card>

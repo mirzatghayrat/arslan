@@ -35,7 +35,6 @@ def cmd(text: str, **kw) -> dict:
     (protocol.propose_workspace_write("w", "~/Arslan", "write", "notes.md"), True),
     (protocol.propose_schedule("s", "Morning brief", "cron: 0 9 * * *"), True),
     (protocol.propose_action("a", "browser_site", "example.com", ""), True),
-    (protocol.propose_action("a", "desktop_look", "Notes", ""), True),
     (protocol.propose_action("a", "desktop_app", "Notes", ""), True),
     (protocol.propose_action("a", "mac_shortcut", "Morning", ""), True),
     (cmd("git status"), True),                                  # shown under "ask for everything"
@@ -93,6 +92,18 @@ async def test_a_risky_card_is_refused_from_the_island_but_declinable_and_approv
     # Declining a risky card from the island is fine: saying no is always safe.
     assert (await api.post("/api/v1/approvals/r1/answer", json={"approve": False, "source": "island"})).status_code == 200
     assert risky.future.result()["approved"] is False
+
+
+@pytest.mark.parametrize("kind, target", [("desktop_takeover", "5 min · tidy the desktop"), ("desktop_look", "Notes")])
+async def test_a_takeover_frame_with_no_permission_kind_is_still_answered_in_arslan(api, kind, target):
+    """The legacy table (a frame with no `perm_kind`) never lets the island approve a takeover, nor the card kind that is gone."""
+    card = approvals.open_card("c", protocol.propose_action("t1", kind, target, ""), broadcast=False)
+    listed = {row["call_id"]: row for row in (await api.get("/api/v1/approvals/pending")).json()}
+    assert listed["t1"]["island_ok"] is False
+    refused = await api.post("/api/v1/approvals/t1/answer", json={"approve": True, "source": "island"})
+    assert refused.status_code == 403 and refused.json()["detail"]["code"] == "open_in_arslan"
+    assert not card.future.done()                                   # nothing was decided
+    assert (await api.post("/api/v1/approvals/t1/answer", json={"approve": False, "source": "island"})).status_code == 200
 
 
 async def test_the_inbox_inside_arslan_may_approve_a_risky_card(api):
@@ -182,8 +193,10 @@ def test_whatever_legacy_kind_a_decide_card_keeps_its_permission_kind_alone_deci
 
 
 @pytest.mark.parametrize("frame, ok", [
-    # A card without a permission kind: the 0.1.55 table, unchanged (③Hands' legacy cards).
-    (protocol.propose_action("a", "desktop_takeover", "Keynote", "about 5 minutes"), True),
+    # A card without a permission kind: the 0.1.55 table, except that a takeover is answered in Arslan whatever the frame
+    # carries (spec §A4), and nothing asks with `desktop_look` any more (it is "anything new": not answerable).
+    (protocol.propose_action("a", "desktop_takeover", "Keynote", "about 5 minutes"), False),
+    (protocol.propose_action("a", "desktop_look", "Notes", ""), False),
     (protocol.propose_action("a", "mac_script", "Finder", 'tell application "Finder" to delete file "a.txt"'), False),
     (protocol.propose_action("a", "mac_script", "Notes", 'tell application "Notes" to get name'), True),
     # Other card types keep their own rule, whatever permission kind they carry.

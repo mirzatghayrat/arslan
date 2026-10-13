@@ -33,7 +33,7 @@ export function Button({ tone = "secondary", size = "md", kbd, grow, className =
   return (
     <button type="button" {...rest}
       style={grow ? { flex: grow, ...style } : style}
-      className={`inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap font-sans font-semibold transition-opacity disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/25 ${sizing} ${TONE[tone]} ${className}`}>
+      className={`inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap font-sans font-semibold transition-opacity disabled:cursor-not-allowed disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/25 ${sizing} ${TONE[tone]} ${className}`}>
       {children}
       {kbd ? <Kbd onPrimary={tone === "primary"}>{kbd}</Kbd> : null}
     </button>

@@ -54,6 +54,17 @@ ANSWERS = {
 #: Kinds approved only in the Arslan window that asked (never the Inbox, the phone or the
 #: island): the card may carry a key typed on it, and installing code wants the whole card.
 WINDOW_ONLY = {"propose_capability"}
+#: The permission kinds whose card is answered only where its whole card is shown, whatever type of frame carries it (0.1.57: installing
+#: code wants the whole card). The web names the same kinds (`WINDOW_ONLY_KINDS`, askParts.tsx); tests/server/test_card_kinds.py keeps them equal.
+WINDOW_ONLY_KINDS = frozenset({"capability"})
+
+
+def window_only(frame: dict) -> bool:
+    """Whether this card is answered only by the asking window (0.1.61 §A4, PR 2b final review M6): the capability proposal, or any card
+    that carries the `capability` permission kind (a `propose_action` frame rides it). The phone never gets one and the island refuses it;
+    a yes from the phone is swallowed and a yes from the Inbox or the island is "open in Arslan". Saying no is allowed from anywhere."""
+    perm_kind = frame.get("perm_kind")
+    return frame.get("type") in WINDOW_ONLY or (isinstance(perm_kind, str) and perm_kind in WINDOW_ONLY_KINDS)
 
 
 @dataclass
@@ -183,8 +194,9 @@ def answer(data: dict) -> bool:
     (the other side answering too) is swallowed.
 
     The decision carries a scope, one of the card's `options` (0.1.61 §A4): what the
-    reply chose, else the old "remember" checkbox mapped (`_legacy_scope`); the phone and
-    the island give only the first option. A "No" carries the user's note.
+    reply chose, else the old "remember" checkbox mapped (`_legacy_scope`: with no
+    "remember", the card's first, narrowest choice); the phone and the island give only
+    the first option. A "No" carries the user's note.
     """
     call_id = data.get("call_id") if isinstance(data, dict) else None
     kind = data.get("type") if isinstance(data, dict) else None
@@ -194,7 +206,7 @@ def answer(data: dict) -> bool:
     # The Bridge marks what the phone sends; the Inbox and the island mark theirs
     # (0.1.55); anything else is a Mac window.
     by = data.get("source") if data.get("source") in SOURCES else "mac"
-    if ANSWERS[kind] and pending.frame["type"] in WINDOW_ONLY and by != "mac":
+    if ANSWERS[kind] and window_only(pending.frame) and by != "mac":
         return True                         # swallowed: only the asking window approves this one
     if not pending.future.done() and remaining(pending) > 0:      # none after the card's time
         options = [o for o in pending.frame.get("options") or [] if isinstance(o, str)]
@@ -203,13 +215,11 @@ def answer(data: dict) -> bool:
             # Never more than once from there: no wider scope, and no "remember" either (the
             # window's legacy "don't ask again" reads it).
             scope, remember = (options[0] if options else None), False
-        elif (scope is None and not remember and "conversation" in options
-                and pending.frame["type"] in ("propose_workspace_write", "propose_schedule")):
-            # Until PR 2b sends scopes (remove this branch then): today's UI answers these two
-            # cards with neither a scope nor "remember", and such a yes held for the socket or the
-            # job (the per-socket and per-job grants this PR removed): "in this conversation".
-            scope = "conversation"
         elif scope not in options:
+            # 0.1.61 PR 2b: the window and the Inbox send the scope the user chose; the island and the
+            # phone send none and are clamped to the first choice above. A yes with none from anywhere
+            # else (a tab left open from before the update, a script) gets the card's first, narrowest
+            # choice too: it is asked again next time, never silently widened to the conversation.
             scope = _legacy_scope(options, remember)
         decision = {"approved": ANSWERS[kind], "remember": remember,
                     "scope": scope if ANSWERS[kind] else None,
@@ -222,7 +232,8 @@ def answer(data: dict) -> bool:
 
 
 def _legacy_scope(options: list[str], remember: bool) -> str | None:
-    """A reply without a scope (the UI before 0.1.61 PR 2b): the old checkbox, mapped."""
+    """A reply without a scope it offered (a client from before 0.1.61 PR 2b): the old checkbox,
+    mapped — "remember" is the widest choice offered, else the first."""
     if not options:
         return None
     if remember:
@@ -306,8 +317,9 @@ def island_may_answer(frame: dict) -> bool:
             perm_kind = frame["perm_kind"]
             return isinstance(perm_kind, str) and perm_kind in ISLAND_KINDS
         action = frame.get("kind")
-        if action in ("browser_site", "desktop_look", "desktop_app", "mac_shortcut",
-                      "desktop_takeover"):          # Hands v2 §6.4: the island may answer it
+        # A frame with no permission kind (none is sent any more: permissions._ask stamps every card). A takeover is
+        # answered in Arslan whatever the frame carries (spec §A4), and nothing asks with `desktop_look` now: both are "anything new".
+        if action in ("browser_site", "desktop_app", "mac_shortcut"):
             return True
         if action == "mac_script":
             return not _RISKY_SCRIPT.search(str(frame.get("detail") or ""))
@@ -345,7 +357,7 @@ def answer_by_id(call_id: str, approve: bool, *, source: str, remember: bool = F
     pending = _pending.get(call_id)
     if pending is None or (not pending.future.done() and remaining(pending) == 0):
         return False                            # gone, or its time is up: "answered or expired"
-    if approve and pending.frame.get("type") in WINDOW_ONLY:
+    if approve and window_only(pending.frame):
         raise OpenInArslan(call_id)
     if source == "island" and approve and not island_may_answer(pending.frame):
         # Enforced here, not only by hiding the buttons: the island page is a client.

@@ -738,7 +738,7 @@
     "researchReviewSpendNote": "Jede passende Speicherung sendet mit deinem Schlüssel eine zusätzliche Anfrage mit dem Bericht und seinen Quellen an dein Modell. Derzeit werden nur offizielle DeepSeek- und Anthropic-Verbindungen unterstützt; andere Modelle werden übersprungen.",
     "navDesktop": "Desktop",
     "navProactive": "Proaktivität",
-    "desktopLede": "Das Schließen des Fensters beendet Arslan nicht mehr: Es bleibt in der Menüleiste, Aufgaben und geplante Aufgaben laufen weiter, und Aktionen, die dich brauchen, warten im Fenster (nach 5 Minuten werden sie abgelehnt). Beenden mit ⌘Q oder „Arslan beenden“ in der Menüleiste.",
+    "desktopLede": "Das Schließen des Fensters beendet Arslan nicht mehr: Es bleibt in der Menüleiste, Aufgaben und geplante Aufgaben laufen weiter, und Aktionen, die dich brauchen, warten im Fenster (bis zu 30 Minuten; antwortet niemand, passiert es nicht – ein Nein ist das nicht). Eine geplante Aufgabe wartet nie auf eine Antwort: Sie tut nur, was du schon erlaubt hast, alles andere wird abgelehnt und im Posteingang aufgelistet. Beenden mit ⌘Q oder „Arslan beenden“ in der Menüleiste.",
     "labelKeepAwake": "Mac während der Arbeit wach halten",
     "keepAwakeDesc": "Solange eine Aufgabe oder geplante Aufgabe läuft, geht der Mac nicht von selbst in den Ruhezustand. Der Bildschirm kann trotzdem ausgehen; Deckel zu oder schwacher Akku versetzen ihn weiterhin in den Ruhezustand.",
     "labelDesktopNotifications": "Mitteilungen",
@@ -838,7 +838,7 @@
     "labelVoiceEndpointSilence": "Satzende (ms)",
     "voiceEndpointSilenceDesc": "Wie lange du pausierst, bevor das Gesagte gesendet wird. 900 ms sind ein normaler Atemzug; kürzer schneidet dich ab, länger wirkt träge.",
     "terminalRulesTitle": "Nie mehr fragen bei",
-    "terminalRulesEmpty": "Noch nichts. Hake auf einer Befehlskarte „nicht mehr fragen“ an, um die Art Befehl hier hinzuzufügen.",
+    "terminalRulesEmpty": "Noch nichts. Wähle auf einer Befehlskarte „Immer“, um die Art Befehl hier hinzuzufügen.",
     "terminalRulesForget": "Wieder fragen",
     "navGeneral": "Allgemein",
     "navAbilities": "Was Arslan darf",
@@ -1429,7 +1429,7 @@
     "sandboxRemember": "Befehle außerhalb der Sandbox für den Rest dieser Unterhaltung erlauben",
     "runOutside": "Außerhalb der Sandbox ausführen",
     "label": "Diesen Befehl ausführen?",
-    "remember": "Bei dieser Art Befehl nicht mehr fragen (rückgängig unter Einstellungen › Erweitert)",
+    "remember": "Bei dieser Art Befehl nicht mehr fragen (rückgängig unter Einstellungen › Was Arslan darf)",
     "run": "Ausführen",
     "cancel": "Abbrechen",
     "pillLabel": "Befehl",
@@ -1853,12 +1853,13 @@
     "action": {
       "write": "anlegen oder überschreiben",
       "edit": "bearbeiten"
-    }
+    },
+    "anyFile": "jede Datei in diesem Ordner"
   },
   "schedgrant": {
     "label": "Zeitplanung",
     "body": "Arslan möchte eine wiederkehrende Aufgabe einplanen:",
-    "scope": "Mit deiner Zustimmung darf es für den Rest dieser Sitzung geplante Aufgaben anlegen. Geplante Läufe finden unbeaufsichtigt statt — sie können nachschlagen und berichten, aber keine Dateien schreiben und keine Befehle ausführen.",
+    "scope": "Mit deiner Zustimmung darf es für den Rest dieser Sitzung geplante Aufgaben anlegen. Geplante Läufe laufen allein und warten nie auf dich: Ein Schritt, der dein OK bräuchte, wird übersprungen, nicht ausgeführt. Was kein OK braucht, läuft weiter: Nachschlagen, gewöhnliche Befehle in der Sandbox und Schreiben in Arslans eigenem Arbeitsordner.",
     "allow": "Erlauben",
     "deny": "Jetzt nicht",
     "every_day": "jeden Tag",
@@ -1866,7 +1867,9 @@
     "every_hour": "jede Stunde",
     "every_n_hours": "alle {{count}} Stunden",
     "every_minute": "jede Minute",
-    "every_n_minutes": "alle {{count}} Minuten"
+    "every_n_minutes": "alle {{count}} Minuten",
+    "unattended": "Geplante Läufe laufen allein und warten nie auf dich: Ein Schritt, der dein OK bräuchte, wird übersprungen, nicht ausgeführt. Was kein OK braucht, läuft weiter: Nachschlagen, gewöhnliche Befehle in der Sandbox und Schreiben in Arslans eigenem Arbeitsordner.",
+    "anyTask": "beliebige geplante Aufgaben anlegen"
   },
   "enroll": {
     "label": "{{name}} ({{host}}) merken?",
@@ -1921,7 +1924,28 @@
       "save": "Dateien speichern",
       "modify": "Inhalte ändern",
       "quit": "eine App beenden"
-    }
+    },
+    "scope": {
+      "label": "Wie lange dieses Ja gilt",
+      "once": "Nur dieses Mal",
+      "task": "Für diese Aufgabe",
+      "conversation": "In diesem Gespräch",
+      "conversationFor": "In diesem Gespräch: {{label}}",
+      "always": "Immer: {{label}}"
+    },
+    "noteLink": "Nein — Arslan sagen, was er stattdessen tun soll",
+    "notePlaceholder": "Was soll Arslan stattdessen tun? (optional)",
+    "noteSend": "Ablehnen",
+    "expiredTitle": "Wartet auf dich",
+    "expiredBody": "In 30 Minuten hat niemand geantwortet, deshalb ist es nicht passiert. Das ist kein Nein: Arslan sagt dir, was noch wartet.",
+    "expiredEnrollBody": "In 30 Minuten hat niemand geantwortet, deshalb wurde diese Maschine nicht gemerkt. Das ist kein Nein: Frag Arslan einfach noch einmal danach, wann immer du willst.",
+    "expiredConnectBody": "In 30 Minuten hat niemand geantwortet, deshalb wurde der Server nicht verbunden. Das ist kein Nein: Frag Arslan einfach noch einmal danach, wann immer du willst.",
+    "hide": "Ausblenden",
+    "hideHint": "Es läuft weiter. Im Chat steht dann, wie es ausgegangen ist.",
+    "hiddenConnected": "{{name}} ist verbunden.",
+    "hiddenConnectFailed": "{{name}} konnte nicht verbunden werden. {{why}}",
+    "hiddenEnrolled": "{{name}} wurde gemerkt.",
+    "hiddenEnrollFailed": "{{name}} konnte nicht gemerkt werden. {{why}}"
   },
   "inbox": {
     "approveNow": "Jetzt freigeben",
@@ -1933,7 +1957,16 @@
     "memoryOpen": "Erinnerung öffnen",
     "watching": "Beobachtet",
     "muted": "Keine Erinnerung",
-    "addWatch": "Weitere Seite oder Ordner beobachten"
+    "addWatch": "Weitere Seite oder Ordner beobachten",
+    "refusedTitle": "Nicht erledigt, während du weg warst",
+    "alwaysAllow": "Immer erlauben",
+    "alwaysStores": "Das erlaubt künftig immer: {{what}}",
+    "asksEachTime": "Fragt jedes Mal",
+    "allowedNow": "Ab jetzt erlaubt",
+    "refusedTimes": "{{count}}-mal seit {{since}}",
+    "undo": "Rückgängig",
+    "openInArslan": "Gespräch öffnen",
+    "heldCapability": "Das erweitert Arslan um eine neue Fähigkeit. Erlauben lässt es sich nur in seinem Gespräch, wo die ganze Karte zu sehen ist."
   },
   "pendingMemory": {
     "curationFallback": "Ein Vorschlag zum Aufräumen",

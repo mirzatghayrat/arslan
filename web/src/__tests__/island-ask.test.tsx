@@ -29,7 +29,10 @@ afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); localStor
 
 async function mount() {
   render(<IslandApp />);
-  await act(async () => { await vi.advanceTimersByTimeAsync(20); });
+  await act(async () => { await vi.advanceTimersByTimeAsync(20); });       // the poll lands and the card comes up
+  // A card that comes up is held for half a second (kit/guard.ts: one gesture, one card), so the tests that answer it wait that out.
+  // A separate act: React draws what a long one schedules only when it ends, and the hold starts when the card is drawn.
+  await act(async () => { await vi.advanceTimersByTimeAsync(520); });
 }
 
 describe('answering in the island', () => {
@@ -87,6 +90,39 @@ describe('answering in the island', () => {
     serve({ feed: feed({ awaiting: 1, awaiting_conversations: ['c1'] }), pending: { not: 'a list' } });
     await mount();
     expect(screen.getByRole('button', { name: 'Open to approve' })).toBeInTheDocument();
+  });
+});
+
+describe('a card from the permission layer (0.1.61 §A4)', () => {
+  it('Allow says it answers once, a choice it cannot widen: the island still sends only approve', async () => {
+    serve({ feed: feed({ awaiting: 1, awaiting_conversations: ['c1'] }),
+      pending: [card({ call_id: 'v1', frame: { type: 'propose_schedule', name: 'Brief', when: 'every: 3600',
+        options: ['once', 'conversation'], title: 'Schedule “Brief”?' } })] });
+    await mount();
+    expect(screen.getByTestId('island-allow')).toHaveTextContent('Allow once');
+    await act(async () => { fireEvent.click(screen.getByTestId('island-allow')); await vi.advanceTimersByTimeAsync(10); });
+    expect(JSON.parse(String(posted('/approvals/v1/answer')[0].init?.body))).toEqual({ approve: true, source: 'island' });
+  });
+
+  it('an app card says "for this task"; a card with one choice just says Allow', async () => {
+    serve({ feed: feed({ awaiting: 1 }), pending: [card({ call_id: 'a1', frame: { type: 'propose_action', kind: 'app',
+      target: 'com.apple.Notes', title: 'Use Notes?', options: ['task', 'conversation', 'always'] } })] });
+    await mount();
+    expect(screen.getByTestId('island-allow')).toHaveTextContent('Allow for this task');
+    expect(screen.getByTestId('island-ask-line')).toHaveTextContent('Use Notes?');
+    cleanup();
+    serve({ feed: feed({ awaiting: 1 }), pending: [card({ call_id: 'a2', frame: { type: 'propose_workspace_write',
+      path: 'a.md', options: ['once'] } })] });
+    await mount();
+    expect(screen.getByTestId('island-allow')).toHaveTextContent(/^Allow$/);
+  });
+
+  it('a kind the island has no words for reads the card\'s own question; a known kind keeps its line', () => {
+    expect(askLine(card({ frame: { type: 'propose_action', kind: 'mcp_tool', target: 'rea/search', title: 'Use rea’s search?' } })))
+      .toBe('Use rea’s search?');
+    expect(askLine(card({ frame: { type: 'propose_action', kind: 'browser_site', target: 'x.com', title: 'Act on x.com?' } })))
+      .toBe('x.com');
+    expect(askLine(card({ frame: { type: 'propose_action', kind: 'mcp_tool', target: 'rea/search' } }))).toBe('rea/search');
   });
 });
 

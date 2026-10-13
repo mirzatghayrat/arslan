@@ -738,7 +738,7 @@
     "researchReviewSpendNote": "条件に合う保存ごとに、レポートとその出典を含むリクエストがあなたのキーでモデルに 1 回追加送信されます。現在は公式 DeepSeek と Anthropic の接続のみ対応し、その他のモデルではスキップします。",
     "navDesktop": "デスクトップ",
     "navProactive": "先回りの見守り",
-    "desktopLede": "ウィンドウを閉じても Arslan は終了しません。メニューバーに残り、タスクとスケジュールタスクは実行を続けます。確認が必要な操作はウィンドウで待機します（5 分で拒否されます）。終了するには ⌘Q かメニューバーの「Arslan を終了」を使います。",
+    "desktopLede": "ウィンドウを閉じても Arslan は終了しません。メニューバーに残り、タスクとスケジュールタスクは実行を続けます。確認が必要な操作はウィンドウで待機します（最長 30 分。応答がなければ実行しませんが、拒否にはなりません）。スケジュールタスクは応答を待ちません。許可済みのことだけを行い、それ以外は拒否されて受信箱に並びます。終了するには ⌘Q かメニューバーの「Arslan を終了」を使います。",
     "labelKeepAwake": "作業中は Mac をスリープさせない",
     "keepAwakeDesc": "タスクやスケジュールタスクの実行中は、Mac が自動でスリープしません。画面はスリープできます。蓋を閉じたときやバッテリー残量が少ないときはスリープします。",
     "labelDesktopNotifications": "通知",
@@ -838,7 +838,7 @@
     "labelVoiceEndpointSilence": "文の区切り(ミリ秒)",
     "voiceEndpointSilenceDesc": "どれだけ間を置いたら送信するか。900 ミリ秒は普通の息継ぎ程度。短いと途中で切れ、長いと反応が鈍く感じます。",
     "terminalRulesTitle": "今後確認しない",
-    "terminalRulesEmpty": "まだありません。コマンドカードで「今後確認しない」にチェックすると、その種類のコマンドがここに表示されます。",
+    "terminalRulesEmpty": "まだありません。コマンドカードで「常に許可」を選ぶと、その種類のコマンドがここに表示されます。",
     "terminalRulesForget": "再び確認する",
     "navGeneral": "一般",
     "navAbilities": "Arslan ができること",
@@ -1429,7 +1429,7 @@
     "sandboxRemember": "この会話の間はサンドボックスの外での実行を許可する",
     "runOutside": "サンドボックスの外で実行",
     "label": "このコマンドを実行しますか？",
-    "remember": "この種類のコマンドは今後確認しない（設定 › 詳細 で元に戻せます）",
+    "remember": "この種類のコマンドは今後確認しない（設定 › Arslan ができること で元に戻せます）",
     "run": "実行",
     "cancel": "キャンセル",
     "pillLabel": "コマンド",
@@ -1853,12 +1853,13 @@
     "action": {
       "write": "作成・上書き",
       "edit": "編集"
-    }
+    },
+    "anyFile": "このフォルダ内のどのファイルも"
   },
   "schedgrant": {
     "label": "定期実行",
     "body": "Arslan が定期タスクの作成を求めています:",
-    "scope": "許可すると、このセッション中は定期タスクを作成できます。定期実行は無人で行われ、調べて報告することはできますが、ファイルの書き込みやコマンドの実行はできません。",
+    "scope": "許可すると、このセッション中は定期タスクを作成できます。定期実行は無人で行われ、あなたを待ちません。確認が必要な手順は実行せずに飛ばします。確認が要らないことは、そのまま実行されます。調べもの、サンドボックス内の通常のコマンド、Arslan 自身の作業フォルダへの書き込みです。",
     "allow": "許可",
     "deny": "今はしない",
     "every_day": "毎日",
@@ -1866,7 +1867,9 @@
     "every_hour": "1 時間ごと",
     "every_n_hours": "{{count}} 時間ごと",
     "every_minute": "1 分ごと",
-    "every_n_minutes": "{{count}} 分ごと"
+    "every_n_minutes": "{{count}} 分ごと",
+    "unattended": "定期実行は無人で行われ、あなたを待ちません。確認が必要な手順は実行せずに飛ばします。確認が要らないことは、そのまま実行されます。調べもの、サンドボックス内の通常のコマンド、Arslan 自身の作業フォルダへの書き込みです。",
+    "anyTask": "どの定期タスクの作成も"
   },
   "enroll": {
     "label": "{{name}}({{host}})を記憶しますか?",
@@ -1921,7 +1924,28 @@
       "save": "保存します",
       "modify": "内容を変更します",
       "quit": "アプリを終了します"
-    }
+    },
+    "scope": {
+      "label": "この許可の範囲",
+      "once": "今回だけ",
+      "task": "このタスクの間",
+      "conversation": "この会話の間",
+      "conversationFor": "この会話の間：{{label}}",
+      "always": "常に許可：{{label}}"
+    },
+    "noteLink": "いいえ — 代わりにどうするか伝える",
+    "notePlaceholder": "代わりに何をすればいい？（任意）",
+    "noteSend": "断る",
+    "expiredTitle": "あなたを待っています",
+    "expiredBody": "30 分間だれも応答しなかったので、実行していません。拒否ではありません。何が待っているかは Arslan が伝えます。",
+    "expiredEnrollBody": "30 分間だれも応答しなかったので、このマシンは記憶していません。拒否ではありません。使いたいときは、もう一度 Arslan に頼んでください。",
+    "expiredConnectBody": "30 分間だれも応答しなかったので、サーバーには接続していません。拒否ではありません。使いたいときは、もう一度 Arslan に頼んでください。",
+    "hide": "隠す",
+    "hideHint": "処理は続きます。結果はチャットでお知らせします。",
+    "hiddenConnected": "{{name}} に接続しました。",
+    "hiddenConnectFailed": "{{name}} に接続できませんでした。{{why}}",
+    "hiddenEnrolled": "{{name}} を記憶しました。",
+    "hiddenEnrollFailed": "{{name}} を記憶できませんでした。{{why}}"
   },
   "inbox": {
     "approveNow": "今すぐ承認が必要",
@@ -1933,7 +1957,16 @@
     "memoryOpen": "「メモリー」ですべて見る",
     "watching": "見守り中",
     "muted": "通知しない",
-    "addWatch": "ページやフォルダーを追加で見守る"
+    "addWatch": "ページやフォルダーを追加で見守る",
+    "refusedTitle": "不在中にできなかったこと",
+    "alwaysAllow": "常に許可",
+    "alwaysStores": "常に許可される内容：{{what}}",
+    "asksEachTime": "毎回確認します",
+    "allowedNow": "今後は許可されます",
+    "refusedTimes": "{{since}} から {{count}} 回",
+    "undo": "元に戻す",
+    "openInArslan": "会話を開く",
+    "heldCapability": "Arslan に新しい機能を追加します。カード全体が表示される元の会話でだけ許可できます。"
   },
   "pendingMemory": {
     "curationFallback": "記憶を整理する提案",

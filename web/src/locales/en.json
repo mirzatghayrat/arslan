@@ -738,7 +738,7 @@
     "researchReviewSpendNote": "Each qualifying save sends one extra request with the report and its sources to your model, on your key. For now only official DeepSeek and Anthropic connections are supported; other models are skipped.",
     "navDesktop": "Desktop",
     "navProactive": "Proactivity",
-    "desktopLede": "Closing the window no longer quits Arslan: it stays in the menu bar, tasks and scheduled tasks keep running, and actions that need you still wait in the window (they are declined after 5 minutes). Quit with ⌘Q or “Quit Arslan” in the menu bar.",
+    "desktopLede": "Closing the window no longer quits Arslan: it stays in the menu bar, tasks and scheduled tasks keep running, and actions that need you still wait in the window (for up to 30 minutes; if nobody answers, it is not done — and that is not a no). A scheduled task never waits for an answer: it does only what you have already allowed, and anything else is refused and listed in the Inbox. Quit with ⌘Q or “Quit Arslan” in the menu bar.",
     "labelKeepAwake": "Keep the Mac awake while working",
     "keepAwakeDesc": "While a task or scheduled task is running, the Mac does not go to sleep on its own. The display can still sleep; closing the lid or low battery still puts it to sleep.",
     "labelDesktopNotifications": "Notifications",
@@ -838,7 +838,7 @@
     "labelVoiceEndpointSilence": "End of sentence (ms)",
     "voiceEndpointSilenceDesc": "How long you have to pause before what you said is sent. 900 ms is a normal breath; shorter cuts you off, longer feels slow.",
     "terminalRulesTitle": "Never ask again for",
-    "terminalRulesEmpty": "Nothing yet. Tick “don't ask again” on a command card to add a kind of command here.",
+    "terminalRulesEmpty": "Nothing yet. Choose “Always” on a command card to add a kind of command here.",
     "terminalRulesForget": "Ask again",
     "navGeneral": "General",
     "navAbilities": "What Arslan may do",
@@ -1429,7 +1429,7 @@
     "sandboxRemember": "Allow commands outside the sandbox for the rest of this conversation",
     "runOutside": "Run outside the sandbox",
     "label": "Run this command?",
-    "remember": "Don't ask again for this kind of command (undo in Settings › Advanced)",
+    "remember": "Don't ask again for this kind of command (undo in Settings › What Arslan may do)",
     "run": "Run",
     "cancel": "Cancel",
     "pillLabel": "Shell",
@@ -1853,12 +1853,13 @@
     "action": {
       "write": "create or overwrite",
       "edit": "edit"
-    }
+    },
+    "anyFile": "any file in this folder"
   },
   "schedgrant": {
     "label": "Scheduling",
     "body": "Arslan wants to schedule a recurring task:",
-    "scope": "Approving lets it create scheduled tasks for the rest of this session. Scheduled runs happen unattended — they can look things up and report back, but cannot write files or run commands.",
+    "scope": "Approving lets it create scheduled tasks for the rest of this session. Scheduled runs happen on their own and never wait for you: a step that would need your OK is skipped, not done. What needs no OK still runs: looking things up, ordinary commands in the sandbox, and writing in Arslan's own working folder.",
     "allow": "Allow",
     "deny": "Not now",
     "every_day": "every day",
@@ -1866,7 +1867,9 @@
     "every_hour": "every hour",
     "every_n_hours": "every {{count}} hours",
     "every_minute": "every minute",
-    "every_n_minutes": "every {{count}} minutes"
+    "every_n_minutes": "every {{count}} minutes",
+    "unattended": "Scheduled runs happen on their own and never wait for you: a step that would need your OK is skipped, not done. What needs no OK still runs: looking things up, ordinary commands in the sandbox, and writing in Arslan's own working folder.",
+    "anyTask": "creating any scheduled task"
   },
   "enroll": {
     "label": "Remember {{name}} ({{host}})?",
@@ -1921,7 +1924,28 @@
       "save": "save files",
       "modify": "change content",
       "quit": "quit an app"
-    }
+    },
+    "scope": {
+      "label": "How long this yes lasts",
+      "once": "Once",
+      "task": "For this task",
+      "conversation": "In this conversation",
+      "conversationFor": "In this conversation: {{label}}",
+      "always": "Always: {{label}}"
+    },
+    "noteLink": "No — tell Arslan what to do instead",
+    "notePlaceholder": "What should Arslan do instead? (optional)",
+    "noteSend": "Say no",
+    "expiredTitle": "Waiting for you",
+    "expiredBody": "Nobody answered in 30 minutes, so it was not done. That is not a no: Arslan will tell you what is waiting.",
+    "expiredEnrollBody": "Nobody answered in 30 minutes, so this machine was not remembered. That is not a no: ask Arslan again whenever you like.",
+    "expiredConnectBody": "Nobody answered in 30 minutes, so the server was not connected. That is not a no: ask Arslan again whenever you like.",
+    "hide": "Hide",
+    "hideHint": "It keeps going. The chat will say how it ended.",
+    "hiddenConnected": "Connected {{name}}.",
+    "hiddenConnectFailed": "Could not connect {{name}}. {{why}}",
+    "hiddenEnrolled": "Remembered {{name}}.",
+    "hiddenEnrollFailed": "Could not remember {{name}}. {{why}}"
   },
   "inbox": {
     "approveNow": "Approve now",
@@ -1933,7 +1957,16 @@
     "memoryOpen": "Open Memory",
     "watching": "Watching",
     "muted": "Not reminding",
-    "addWatch": "Watch another page or folder"
+    "addWatch": "Watch another page or folder",
+    "refusedTitle": "Not done while you were away",
+    "alwaysAllow": "Always allow",
+    "alwaysStores": "This will always allow: {{what}}",
+    "asksEachTime": "Asks each time",
+    "allowedNow": "Allowed from now on",
+    "refusedTimes": "{{count}} times since {{since}}",
+    "undo": "Undo",
+    "openInArslan": "Open the conversation",
+    "heldCapability": "This adds a new ability to Arslan. It can be allowed only in its conversation, where the whole card is shown."
   },
   "pendingMemory": {
     "curationFallback": "A suggestion to tidy your memory",

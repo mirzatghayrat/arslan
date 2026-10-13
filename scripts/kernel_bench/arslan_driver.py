@@ -83,7 +83,14 @@ class TurnTracker:
         elif t == "propose_workspace_write":
             self.approvals += 1
             ok = self.inside(frame.get("path", ""))
-            return {"type": "confirm_workspace_write" if ok else "cancel_workspace_write", "call_id": frame["call_id"]}
+            if not ok:
+                return {"type": "cancel_workspace_write", "call_id": frame["call_id"]}
+            # 0.1.61 PR 2b: a yes carries its scope. "In this conversation" keeps one card per run, as
+            # before (a scope-less yes is once only now, and every write would ask again).
+            reply = {"type": "confirm_workspace_write", "call_id": frame["call_id"]}
+            if "conversation" in (frame.get("options") or []):
+                reply["scope"] = "conversation"
+            return reply
         elif t == "propose_action":
             self.approvals += 1
             return {"type": "cancel_action" if DECLINE_CARDS else "confirm_action", "call_id": frame["call_id"]}

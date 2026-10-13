@@ -286,7 +286,85 @@ describe("locale parity", () => {
     // +35: Settings in seven sections (0.1.55 §11): nav labels, one-line hints, group titles.
     // 1727 → 1726 (0.1.59 chat liveness): working.summon/context/tools/compose out; thinking/long/queued in.
     // 1726 → 1740 (0.1.60 first run): the tour, outro and capability-score keys out; the film's shots and first tasks in.
-    expect(enKeys).toHaveLength(1740);
+    // 1740 → 1750 (0.1.61 PR 2b): kit.scope.{label,once,task,conversation,always}, kit.note{Link,Placeholder,Send}, kit.expired{Title,Body}.
+    // 1750 → 1751 (0.1.61 PR 2b): schedgrant.unattended — what a scheduled run does, on a card that offers a choice.
+    // 1751 → 1757 (0.1.61 PR 2b): inbox.{refusedTitle,alwaysAllow,alwaysStores,asksEachTime,allowedNow,refusedTimes}.
+    // 1757 → 1763 (0.1.61 PR 2b Task 4): kit.{hide,hideHint,hiddenConnected,hiddenConnectFailed,hiddenEnrolled,hiddenEnrollFailed}.
+    // 1763 → 1764 (0.1.61 PR 2b Task 4, fix round 1): inbox.undo — the Undo beside an "Always allow".
+    // 1764 → 1766 (0.1.61 PR 2b Task 7): kit.expiredEnrollBody, kit.expiredConnectBody — the notice when a proposal to enrol a
+    // machine or to connect a server runs out has a line of its own (those never wait on the server).
+    // 1766 → 1769 (0.1.61 PR 2b final review): kit.scope.conversationFor, schedgrant.anyTask, wswrite.anyFile — "In this
+    // conversation" says what it covers when that is more than the request on the card.
+    // 1769 → 1771 (0.1.61 PR 2b final review, M6): inbox.openInArslan, inbox.heldCapability — the Inbox's card for a new capability has no Allow
+    // (the server answers it only where its whole card is shown): "Open in Arslan", in the island's words, and the line that says why.
+    expect(enKeys).toHaveLength(1771);
+  });
+
+  // 0.1.61 PR 2b: a card's "Always" must say what it allows, in every language: the literal scope is interpolated.
+  it("kit.scope.always keeps its {{label}} in every language", () => {
+    for (const [lang, data] of Object.entries(LOCALES)) {
+      expect((data as { kit: { scope: { always: string } } }).kit.scope.always, lang).toContain("{{label}}");
+    }
+  });
+
+  // 0.1.61 PR 2b: the words on the command and schedule cards point at the app's own places and name its own
+  // things, in every language, so a rewording in one place cannot leave another one lying.
+  describe("the card words", () => {
+    type CardWords = {
+      runcmd: { remember: string; sandboxOutsideLabel: string; sandboxOutsideNote: string };
+      settings: { navAbilities: string; terminalRulesEmpty: string };
+      kit: { scope: { always: string } };
+      schedgrant: { scope: string; unattended: string };
+    };
+    /** The app's own word for the sandbox and for Arslan's working folder (runcmd.sandboxOutside*). */
+    const SANDBOX_AND_FOLDER: Record<string, [string, string]> = {
+      en: ["sandbox", "working folder"], zh: ["沙盒", "工作文件夹"], ja: ["サンドボックス", "作業フォルダ"],
+      es: ["entorno aislado", "carpeta de trabajo"], de: ["Sandbox", "Arbeitsordner"], fr: ["bac à sable", "dossier de travail"],
+    };
+    /** What schedgrant.scope used to say a scheduled run cannot do. It can: scheduler.run_arslan_turn runs what needs no card. */
+    const CANNOT_WRITE_OR_RUN: Record<string, string> = {
+      en: "cannot write files or run commands", zh: "写不了文件、跑不了命令", ja: "ファイルの書き込みやコマンドの実行はできません",
+      es: "no escribir archivos ni ejecutar comandos", de: "keine Dateien schreiben und keine Befehle ausführen",
+      fr: "ne peuvent ni écrire de fichiers ni lancer de commandes",
+    };
+    for (const [lang, data] of Object.entries(LOCALES)) {
+      const d = data as unknown as CardWords;
+
+      it(`${lang}: schedgrant.scope (an old card's line) ends with what schedgrant.unattended says, not that a scheduled run cannot write or run`, () => {
+        expect(Object.keys(CANNOT_WRITE_OR_RUN).sort()).toEqual(Object.keys(LOCALES).sort());
+        expect(d.schedgrant.scope).not.toContain(CANNOT_WRITE_OR_RUN[lang]);
+        expect(d.schedgrant.scope.endsWith(d.schedgrant.unattended)).toBe(true);        // one truthful sentence, said once
+        expect(d.schedgrant.scope.length).toBeGreaterThan(d.schedgrant.unattended.length);   // and what a yes lasts is still there
+      });
+
+      if (lang === "zh" || lang === "ja") {
+        it(`${lang}: schedgrant.scope is written with full-width punctuation throughout, as schedgrant.unattended is`, () => {
+          expect(d.schedgrant.scope).not.toMatch(/[,;:]/);                       // an ASCII , ; : in a sentence here is a slip
+          expect(d.schedgrant.unattended).not.toMatch(/[,;:]/);
+        });
+      }
+
+      it(`${lang}: runcmd.remember points, with a ›, to the Settings section that holds the rules (settings.navAbilities)`, () => {
+        expect(d.runcmd.remember).toContain(`› ${d.settings.navAbilities}`);
+      });
+
+      it(`${lang}: runcmd.remember no longer sends the person to the old Advanced page`, () => {
+        expect(d.runcmd.remember).not.toMatch(/Advanced|高级|詳細|Avanzado|Erweitert|Avancé/);
+      });
+
+      it(`${lang}: terminalRulesEmpty names the card's own "Always" word (kit.scope.always)`, () => {
+        const word = d.kit.scope.always.split(/[:：]/)[0].trim();
+        expect(d.settings.terminalRulesEmpty).toContain(word);
+      });
+
+      it(`${lang}: schedgrant.unattended also says what still runs: the sandbox and the working folder, in the app's own words`, () => {
+        const [sandbox, folder] = SANDBOX_AND_FOLDER[lang];
+        expect(d.runcmd.sandboxOutsideLabel).toContain(sandbox);     // the table is the app's own word, not an invention
+        expect(d.runcmd.sandboxOutsideNote).toContain(folder);
+        expect(d.schedgrant.unattended).toContain(sandbox);
+        expect(d.schedgrant.unattended).toContain(folder);
+      });
+    }
   });
 
   for (const [lang, data] of Object.entries(LOCALES)) {

@@ -725,16 +725,16 @@ export type ArslanServerMessage =
     }
   | { type: "suggest_create"; draft: SuggestDraft; task_brief?: string | null; overlaps?: OverlapInfo | null }
   | { type: "propose_invite"; spawn_id: number; reason: string }
-  | { type: "propose_run_command"; call_id: string; command?: string; argv?: string[]; pretty: string; reason?: string; remote_host?: string; fingerprints?: string[]; background?: boolean; sandbox?: "outside" | "retry"; why?: string }
+  | ({ type: "propose_run_command"; call_id: string; command?: string; argv?: string[]; pretty: string; reason?: string; remote_host?: string; fingerprints?: string[]; background?: boolean; sandbox?: "outside" | "retry"; why?: string } & CardV2Fields)
   | { type: "propose_enroll_node"; call_id: string; name: string; host: string; user: string; fingerprints: string[] }
-  | { type: "propose_workspace_write"; call_id: string; workspace: string; action: string; path: string; background?: boolean }
-  | { type: "propose_schedule"; call_id: string; name: string; when: string; background?: boolean }
+  | ({ type: "propose_workspace_write"; call_id: string; workspace: string; action: string; path: string; background?: boolean } & CardV2Fields)
+  | ({ type: "propose_schedule"; call_id: string; name: string; when: string; background?: boolean } & CardV2Fields)
   // 0.1.57 §3.1: add a capability and retry — answered only in this window (it may carry a key).
   | ({ type: "propose_capability"; call_id: string } & CapabilityCard)
   | { type: "capability_result"; call_id: string | null; source_id: string | null; state: "on" | "failed" | "blocked";
       name: string; tools: number; stage?: string; code?: string; detail?: string }
-  | { type: "propose_action"; call_id: string; kind: ActionKind; target: string;
-      detail: string; background?: boolean }
+  | ({ type: "propose_action"; call_id: string; kind: ActionKind | (string & {}); target: string;
+      detail: string; background?: boolean } & CardV2Fields)
   // NEXT BUILD (conversation-driven MCP, Task 3/5): Arslan proposes connecting a preset
   // MCP server. Emitting this frame connects NOTHING — env_keys carries credential NAMES +
   // metadata only (never a value); requires_path/path_placeholder (Filesystem/Git) flag a
@@ -745,8 +745,10 @@ export type ArslanServerMessage =
       prerequisites: string; requires_path: boolean; path_placeholder: string | null }
   // Honest, tier-aware result after a connect card completed — counts are ALWAYS
   // recomputed server-side from the DB, never trusted from the client's apply chain.
+  // `call_id` is the proposal's (the server echoes the confirm's): the card this answers, in every
+  // window on the conversation. An older server sends none, and the follow-up names only the server.
   | { type: "mcp_connect_followup"; server_id: number; tool_count: number; safe_count: number;
-      restricted_count: number; assignable: boolean }
+      restricted_count: number; assignable: boolean; call_id?: string }
   | { type: "spawn_meta"; arslan_message_id: number; spawn_id: number; assistant_message_id: number; task_brief: string; run_id?: number }
   | { type: "fact_saved"; content: string; sensitive: boolean; entry_id?: string | null; version?: number | null }
   | { type: "memory_proposed"; content: string; sensitive: boolean; entry_id?: string | null; version?: number | null }
@@ -757,7 +759,7 @@ export type ArslanServerMessage =
       source?: string | null }
   // A card shown in more than one place (a background job's, or a turn the iPhone started)
   // was decided — by this window, another, or the phone — or expired: close this copy.
-  | { type: "card_resolved"; call_id: string; outcome: "approved" | "declined" | "expired"; by?: "phone" | "mac" }
+  | { type: "card_resolved"; call_id: string; outcome: "approved" | "declined" | "expired"; by?: "phone" | "mac" | "inbox" | "island" }
   | { type: "job_update"; job_id: string; conversation_id: string; goal: string;
       phase: "queued" | "running" | "finished"; step: string; outcome: JobOutcome | null;
       detail: string; budget?: JobBudgetStop | null; criteria: JobCriterion[] }
@@ -1318,6 +1320,25 @@ export interface McpConnectorEnvVar {
   paid: boolean;
 }
 
+/** How a connect card's apply chain ended (add -> connect -> expose -> wire). Kept in the store by call id while the card is paged away
+ *  from, so the card that comes back knows whether it worked (see arslanStore `cardApply`). */
+export interface ApplyConnectMcpResult {
+  ok: boolean;
+  /** Present only on failure — the stage where the chain stopped. */
+  stage?: 'add' | 'connect' | 'expose' | 'wire';
+  serverId?: number;
+  /** Human-readable outcome: on failure, names the stopped state + where to fix it
+   *  (never a bare "failed"); on success, unset (the card renders its own copy from
+   *  the counts below). */
+  message?: string;
+  toolCount?: number;
+  safeCount?: number;
+  restrictedCount?: number;
+  /** False when NO tool was wired "safe" — connected but nothing is usable by a
+   *  spawn until a human reviews tiers in Connections & permissions. */
+  assignable?: boolean;
+}
+
 /** GET /mcp/catalog — the backend's single source of truth for preset MCP connectors
  * (feeds both the Settings recommended list and conversation-driven connect). Static,
  * versioned, reviewed data; `one_click` is true iff `env` is empty. `requires_path` is
@@ -1412,6 +1433,19 @@ export interface SshAuditEntry {
 }
 
 /** What a confirmation card for an action asks about (0.1.45 browser / Mac;
- * 0.1.53 Mac apps through Arslan Hands: look once per app per conversation,
- * act once per app per job, a risky button every time). */
-export type ActionKind = "browser_site" | "mac_shortcut" | "mac_script" | "desktop_look" | "desktop_app" | "desktop_risky";
+ * 0.1.53 Mac apps through Arslan Hands; 0.1.61: looking at an app and acting in it is one
+ * `desktop_app` card, for this task, the conversation or always; a risky button every time). */
+export type ActionKind = "browser_site" | "mac_shortcut" | "mac_script" | "desktop_app" | "desktop_risky";
+
+/** 0.1.61 §A4: what a card from the permission layer carries (server permissions._ask). All absent
+ *  on an old frame, which is shown and answered exactly as before. `expires_at` is Unix seconds. */
+export interface CardV2Fields {
+  options?: string[];
+  always_label?: string;
+  title?: string;
+  perm_kind?: string;
+  /** The model's one-line reason, if any: for a kind the card has no words for, it is the question (spec §A4). */
+  why?: string;
+  expires_at?: number;
+  dedupe?: string;
+}

@@ -1,11 +1,13 @@
 // 0.1.55 surface kit — one component per family (spec §2).
 export { AskCard, type AskCardProps, type AskQueuePosition } from "./AskCard";
 export { AskQueue, type QueuedAsk } from "./AskQueue";
+export { DeclineNote, HideWhileBusy, ONCE_ONLY_KINDS, RED_KINDS, ScopeChoice, SCOPES, offeredScopes, scopeToSend, visibleScopes } from "./askParts";
 export { AskMark, MascotHead } from "./AskMark";
 export { Button, Kbd, type ButtonTone } from "./Button";
 export { CodeBox } from "./CodeBox";
 export { ConfirmHost, ConfirmSheet, confirmSheet, type ConfirmOptions } from "./ConfirmSheet";
-export { Countdown } from "./Countdown";
+export { CARD_MS, Countdown } from "./Countdown";
+export { ANSWER_GUARD_MS, AnswerGuardScope, useAnswerGuard, useAnswerGuardState, useAnswerHeld } from "./guard";
 export { Dialog } from "./Dialog";
 export { useAnswerKeys, useLayer } from "./layers";
 export { Notice, type NoticeTone } from "./Notice";

@@ -2,9 +2,10 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FolderOpen, ExternalLink, KeyRound, Plug } from 'lucide-react';
 import { AskCard, CodeBox, Notice, type AskQueuePosition } from './kit';
-import { lineIcon } from './kit/askParts';
+import { HideWhileBusy, lineIcon } from './kit/askParts';
 import { addMcpServer, connectMcpServer, exposeMcpServer, wireMcpTool } from '../api/mcp';
-import type { McpConnectorEnvVar, McpTool } from '../api/client.types';
+import type { ApplyConnectMcpResult, McpConnectorEnvVar, McpTool } from '../api/client.types';
+import { useArslanStore } from '../stores/arslanStore';
 import { catalogText } from '../lib/catalogDisplay';
 
 /** Input to the apply chain: everything addMcpServer needs, PLUS the credential
@@ -18,22 +19,7 @@ export interface ConnectMcpAdd {
   env: Record<string, string>;
 }
 
-export interface ApplyConnectMcpResult {
-  ok: boolean;
-  /** Present only on failure — the stage where the chain stopped. */
-  stage?: 'add' | 'connect' | 'expose' | 'wire';
-  serverId?: number;
-  /** Human-readable outcome: on failure, names the stopped state + where to fix it
-   *  (never a bare "failed"); on success, unset (the card renders its own copy from
-   *  the counts below). */
-  message?: string;
-  toolCount?: number;
-  safeCount?: number;
-  restrictedCount?: number;
-  /** False when NO tool was wired "safe" — connected but nothing is usable by a
-   *  spawn until a human reviews tiers in Connections & permissions. */
-  assignable?: boolean;
-}
+export type { ApplyConnectMcpResult };
 
 /**
  * Pure apply chain for a confirmed ConnectMcpCard: add → connect → expose → wire.
@@ -132,6 +118,8 @@ export interface ConnectMcpCardProps {
   pathPlaceholder?: string | null;
   expiresAt?: number | null;
   queue?: AskQueuePosition;
+  /** The apply is in flight and the person hides the card: it leaves, the apply goes on, the chat says how it ended (arslanStore `hideCard`). */
+  onHide?: () => void;
   /** Fired once the apply chain settles (success or failure) so the parent can
    *  send the secret-free confirm_connect_mcp frame on success. */
   onApplied: (result: ApplyConnectMcpResult) => void;
@@ -148,26 +136,31 @@ export interface ConnectMcpCardProps {
  */
 export default function ConnectMcpCard({
   callId, label, labelKey, transport, command, args, url, envKeys, prerequisites, requiresPath,
-  pathPlaceholder, expiresAt, queue, onApplied, onCancel,
+  pathPlaceholder, expiresAt, queue, onHide, onApplied, onCancel,
 }: ConnectMcpCardProps) {
   const { t } = useTranslation();
   const [envValues, setEnvValues] = useState<Record<string, string>>({});
   const [path, setPath] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<ApplyConnectMcpResult | null>(null);
   const [pathError, setPathError] = useState<string | null>(null);
+  // Whether the apply is in flight, and how it ended, are the store's, by call id: this card is remounted when the person pages away and
+  // back. While it is in flight its buttons stay off (never a second apply) though paging and the other cards stay free; a card that
+  // comes back knows how it ended (arslanStore `cardApply`).
+  const apply = useArslanStore((s) => s.cardApply[callId]);
+  const busy = apply?.busy === true;
+  const result = apply?.result ?? null;
 
   const pathMissing = !!requiresPath && !path.trim();
 
   async function handleConnect() {
-    if (busy || result?.ok) return;
+    const now = useArslanStore.getState().cardApply[callId];               // the store's, not this render's: a second click may come first
+    if (now?.busy || now?.result?.ok) return;
     if (pathMissing) {
       setPathError('path_required');
       return;
     }
     setPathError(null);
-    setBusy(true);
-    setResult(null);
+    useArslanStore.getState().beginCardApply(callId);
+    const epoch = useArslanStore.getState().epoch;                         // which conversation this apply belongs to
     // NEVER mutate the frame's args in place — build a new array.
     const finalArgs = requiresPath ? [...args, path.trim()] : args;
     const env: Record<string, string> = {};
@@ -175,9 +168,21 @@ export default function ConnectMcpCard({
       const v = (envValues[e.name] ?? '').trim();
       if (v) env[e.name] = v;
     }
-    const res = await applyConnectMcp({ label, transport, command, args: finalArgs, url, env });
-    setBusy(false);
-    setResult(res);
+    let res: ApplyConnectMcpResult;
+    try {
+      res = await applyConnectMcp({ label, transport, command, args: finalArgs, url, env });
+    } catch {
+      res = { ok: false };                                                  // never left busy for good: a card that is not busy can be tried again
+    }
+    const store = useArslanStore.getState();
+    // The person has moved to another conversation meanwhile: this apply belongs to the one they left, and tells nobody in the new one
+    // (confirm_connect_mcp would go to its socket). Its entry went with the old store, so there is no note to add either.
+    if (store.epoch !== epoch) return;
+    // A card the person hid has nowhere to show how it ended: the chat says so, naming the server (the follow-up, on success, adds the tiers).
+    if (store.endCardApply(callId, { result: res })) {
+      store.addCardNote(res.ok ? t('kit.hiddenConnected', { name: catalogText(t, labelKey, label) })
+        : t('kit.hiddenConnectFailed', { name: catalogText(t, labelKey, label), why: res.stage ? t(`connectionsUI.failed_${res.stage}`) : t('connectionsUI.error') }));
+    }
     onApplied(res);
   }
 
@@ -223,12 +228,15 @@ export default function ConnectMcpCard({
       title={<span className="inline-flex items-center gap-2">{lineIcon(Plug)}<span>{catalogText(t, labelKey, label)}</span></span>}
       detail={form}
       context={needs ? [{ icon: lineIcon(KeyRound), text: needs }] : []}
-      extra={result ? (result.ok
-        ? <Notice tone="info" title={result.assignable
-            ? t('connectionsUI.ready', { safe: result.safeCount, restricted: result.restrictedCount })
-            : t('connectionsUI.needsReview')} />
-        : <Notice tone="error">{result.stage ? t(`connectionsUI.failed_${result.stage}`) : t('connectionsUI.error')}</Notice>)
-        : null}
+      extra={<>
+        {result ? (result.ok
+          ? <Notice tone="info" title={result.assignable
+              ? t('connectionsUI.ready', { safe: result.safeCount, restricted: result.restrictedCount })
+              : t('connectionsUI.needsReview')} />
+          : <Notice tone="error">{result.stage ? t(`connectionsUI.failed_${result.stage}`) : t('connectionsUI.error')}</Notice>)
+          : null}
+        {busy && onHide ? <HideWhileBusy testId="connect-mcp-hide" onHide={onHide} /> : null}
+      </>}
       expiresAt={expiresAt} queue={queue} busy={busy}
       allowLabel={t(busy ? 'connectionsUI.connecting' : 'connectionsUI.connect')} declineLabel={t('common.cancel')}
       allowTestId="connect-mcp-connect" declineTestId="connect-mcp-cancel"

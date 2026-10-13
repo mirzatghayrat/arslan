@@ -738,7 +738,7 @@
     "researchReviewSpendNote": "Cada guardado que cumple las condiciones envía una solicitud adicional con el informe y sus fuentes a tu modelo, usando tu clave. Por ahora solo se admiten conexiones oficiales de DeepSeek y Anthropic; con otros modelos se omite.",
     "navDesktop": "Escritorio",
     "navProactive": "Proactividad",
-    "desktopLede": "Cerrar la ventana ya no cierra Arslan: sigue en la barra de menús, las tareas y tareas programadas siguen ejecutándose y las acciones que necesitan tu confirmación esperan en la ventana (se rechazan a los 5 minutos). Sal con ⌘Q o con «Salir de Arslan» en la barra de menús.",
+    "desktopLede": "Cerrar la ventana ya no cierra Arslan: sigue en la barra de menús, las tareas y tareas programadas siguen ejecutándose y las acciones que necesitan tu confirmación esperan en la ventana (hasta 30 minutos; si nadie responde, no se hacen, y eso no cuenta como un no). Una tarea programada nunca espera una respuesta: solo hace lo que ya has permitido, y todo lo demás se rechaza y aparece en la Bandeja. Sal con ⌘Q o con «Salir de Arslan» en la barra de menús.",
     "labelKeepAwake": "Mantener el Mac despierto mientras trabaja",
     "keepAwakeDesc": "Mientras se ejecuta una tarea o tarea programada, el Mac no entra en reposo por sí solo. La pantalla puede apagarse; cerrar la tapa o la batería baja sí lo ponen en reposo.",
     "labelDesktopNotifications": "Notificaciones",
@@ -838,7 +838,7 @@
     "labelVoiceEndpointSilence": "Fin de frase (ms)",
     "voiceEndpointSilenceDesc": "Cuánto debes pausar antes de que se envíe lo dicho. 900 ms es una respiración normal; menos te corta, más parece lento.",
     "terminalRulesTitle": "No volver a preguntar por",
-    "terminalRulesEmpty": "Nada todavía. Marca «no volver a preguntar» en una tarjeta de comando para añadir ese tipo aquí.",
+    "terminalRulesEmpty": "Nada todavía. Elige «Siempre» en una tarjeta de comando para añadir ese tipo aquí.",
     "terminalRulesForget": "Volver a preguntar",
     "navGeneral": "General",
     "navAbilities": "Lo que Arslan puede hacer",
@@ -1429,7 +1429,7 @@
     "sandboxRemember": "Permitir comandos fuera del entorno aislado durante el resto de esta conversación",
     "runOutside": "Ejecutar fuera del entorno aislado",
     "label": "¿Ejecutar este comando?",
-    "remember": "No volver a preguntar por este tipo de comando (se deshace en Ajustes › Avanzado)",
+    "remember": "No volver a preguntar por este tipo de comando (se deshace en Ajustes › Lo que Arslan puede hacer)",
     "run": "Ejecutar",
     "cancel": "Cancelar",
     "pillLabel": "Comando",
@@ -1853,12 +1853,13 @@
     "action": {
       "write": "crear o sobrescribir",
       "edit": "editar"
-    }
+    },
+    "anyFile": "cualquier archivo de esta carpeta"
   },
   "schedgrant": {
     "label": "Programación",
     "body": "Arslan quiere programar una tarea periódica:",
-    "scope": "Si lo permites, durante el resto de esta sesión podrá crear tareas programadas. Las ejecuciones programadas ocurren sin supervisión: pueden consultar e informar, pero no escribir archivos ni ejecutar comandos.",
+    "scope": "Si lo permites, durante el resto de esta sesión podrá crear tareas programadas. Las ejecuciones programadas van solas y nunca te esperan: un paso que necesite tu visto bueno se omite, no se hace. Lo que no lo necesita sí se hace: consultar información, ejecutar comandos habituales en el entorno aislado y escribir en la carpeta de trabajo de Arslan.",
     "allow": "Permitir",
     "deny": "Ahora no",
     "every_day": "cada día",
@@ -1866,7 +1867,9 @@
     "every_hour": "cada hora",
     "every_n_hours": "cada {{count}} horas",
     "every_minute": "cada minuto",
-    "every_n_minutes": "cada {{count}} minutos"
+    "every_n_minutes": "cada {{count}} minutos",
+    "unattended": "Las ejecuciones programadas van solas y nunca te esperan: un paso que necesite tu visto bueno se omite, no se hace. Lo que no lo necesita sí se hace: consultar información, ejecutar comandos habituales en el entorno aislado y escribir en la carpeta de trabajo de Arslan.",
+    "anyTask": "crear cualquier tarea programada"
   },
   "enroll": {
     "label": "¿Recordar {{name}} ({{host}})?",
@@ -1921,7 +1924,28 @@
       "save": "guardar archivos",
       "modify": "cambiar contenido",
       "quit": "cerrar una app"
-    }
+    },
+    "scope": {
+      "label": "Cuánto dura este sí",
+      "once": "Solo esta vez",
+      "task": "Durante esta tarea",
+      "conversation": "En esta conversación",
+      "conversationFor": "En esta conversación: {{label}}",
+      "always": "Siempre: {{label}}"
+    },
+    "noteLink": "No — dile a Arslan qué hacer en su lugar",
+    "notePlaceholder": "¿Qué debería hacer Arslan en su lugar? (opcional)",
+    "noteSend": "Decir que no",
+    "expiredTitle": "Esperándote",
+    "expiredBody": "Nadie respondió en 30 minutos, así que no se hizo. No es un no: Arslan te dirá qué queda pendiente.",
+    "expiredEnrollBody": "Nadie respondió en 30 minutos, así que no se recordó esta máquina. No es un no: pídeselo de nuevo a Arslan cuando quieras.",
+    "expiredConnectBody": "Nadie respondió en 30 minutos, así que no se conectó el servidor. No es un no: pídeselo de nuevo a Arslan cuando quieras.",
+    "hide": "Ocultar",
+    "hideHint": "Sigue en marcha. El chat dirá cómo terminó.",
+    "hiddenConnected": "{{name}} conectado.",
+    "hiddenConnectFailed": "No se pudo conectar {{name}}. {{why}}",
+    "hiddenEnrolled": "{{name}} recordada.",
+    "hiddenEnrollFailed": "No se pudo recordar {{name}}. {{why}}"
   },
   "inbox": {
     "approveNow": "Aprobar ahora",
@@ -1933,7 +1957,16 @@
     "memoryOpen": "Abrir Memoria",
     "watching": "Vigilando",
     "muted": "Sin recordatorios",
-    "addWatch": "Vigilar otra página o carpeta"
+    "addWatch": "Vigilar otra página o carpeta",
+    "refusedTitle": "Lo que no se hizo mientras no estabas",
+    "alwaysAllow": "Permitir siempre",
+    "alwaysStores": "Esto permitirá siempre: {{what}}",
+    "asksEachTime": "Pregunta cada vez",
+    "allowedNow": "Permitido a partir de ahora",
+    "refusedTimes": "{{count}} veces desde {{since}}",
+    "undo": "Deshacer",
+    "openInArslan": "Abrir la conversación",
+    "heldCapability": "Esto añade una capacidad nueva a Arslan. Solo se puede permitir en su conversación, donde se ve la tarjeta completa."
   },
   "pendingMemory": {
     "curationFallback": "Una sugerencia para ordenar tu memoria",

@@ -35,7 +35,8 @@ export function Dialog({ open, onClose, title, children, footer, width = 520, te
   const panel = useRef<HTMLDivElement>(null);
   const top = useLayer(open);
   const close = () => { if (!busy) onClose(); };
-  useAnswerKeys(open && top, { onDecline: close, onAllow: onSubmit });
+  // 0.1.61 §A4: ⌘⏎ from a text field inside the panel submits; from one outside it (the composer) never does.
+  useAnswerKeys(open && top, { onDecline: close, onAllow: onSubmit }, panel);
 
   useEffect(() => {
     if (!open) return;

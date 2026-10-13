@@ -145,3 +145,97 @@ def test_confirm_connect_mcp_counts_are_from_db_not_client(app_client):
         ws.send_json({"type": "confirm_connect_mcp", "server_id": 9, "tool_count": 999})
         followup = ws.receive_json()
         assert followup["tool_count"] == 2   # DB truth, not the client-supplied 999
+
+
+# ── 0.1.61 §A4 (PR 2b, fix round 2, F3): the follow-up names the card it answers ────────────────────────
+#
+# The proposal and its follow-up are fanned out to EVERY window on the conversation, but only the window that
+# connected the server knew which card it was (it marked the card with the server's id). So the other window's
+# copy of the card stayed for its 30 minutes, and could connect a duplicate. The follow-up now carries the
+# proposal's call_id (the confirm echoes it), and every window closes the card by it.
+
+_FOLLOWUP = dict(server_id=3, tool_count=4, safe_count=3, restricted_count=1, assignable=True)
+
+
+def test_followup_names_the_proposals_card_when_given():
+    assert protocol.mcp_connect_followup(**_FOLLOWUP, call_id="card-1")["call_id"] == "card-1"
+
+
+def test_followup_without_a_card_is_the_old_frame_exactly():
+    assert protocol.mcp_connect_followup(**_FOLLOWUP) == {
+        "type": "mcp_connect_followup", "server_id": 3, "tool_count": 4, "safe_count": 3,
+        "restricted_count": 1, "assignable": True}
+
+
+def test_followup_with_an_empty_card_id_names_no_card():
+    assert "call_id" not in protocol.mcp_connect_followup(**_FOLLOWUP, call_id="")
+    assert "call_id" not in protocol.mcp_connect_followup(**_FOLLOWUP, call_id=None)
+
+
+def test_the_rebuild_for_the_wire_keeps_the_card_it_names():
+    """Every window's frame is rebuilt from the event by `_to_frame` (it is the sink's only door to the socket)."""
+    from server.ws.arslan import _to_frame
+    named = _to_frame(protocol.mcp_connect_followup(**_FOLLOWUP, call_id="card-1"))
+    assert named["call_id"] == "card-1" and named["server_id"] == 3 and named["assignable"] is True
+    assert "call_id" not in _to_frame(protocol.mcp_connect_followup(**_FOLLOWUP))
+
+
+def _until(ws, kind: str, limit: int = 12) -> dict:
+    """The next `kind` frame on this socket, skipping the frames that ride beside it (pings, the roster)."""
+    for _ in range(limit):
+        frame = ws.receive_json()
+        if frame["type"] == kind:
+            return frame
+    raise AssertionError(f"no {kind} frame within {limit} frames")
+
+
+def test_confirm_connect_mcp_followup_carries_the_cards_call_id(app_client):
+    with app_client.websocket_connect("/ws/arslan/main") as ws:
+        ws.receive_json()  # history
+        ws.send_json({"type": "confirm_connect_mcp", "call_id": "card-1", "server_id": 9, "tool_count": 2})
+        followup = _until(ws, "mcp_connect_followup")
+        assert followup["call_id"] == "card-1"
+        assert followup["server_id"] == 9 and followup["tool_count"] == 2 and followup["assignable"] is True
+
+
+def test_confirm_connect_mcp_without_a_call_id_gets_the_old_followup(app_client):
+    """An older client sends no call_id: its follow-up is the frame it always was, naming only the server."""
+    with app_client.websocket_connect("/ws/arslan/main") as ws:
+        ws.receive_json()
+        ws.send_json({"type": "confirm_connect_mcp", "server_id": 9})
+        followup = _until(ws, "mcp_connect_followup")
+        assert followup["server_id"] == 9
+        assert "call_id" not in followup
+
+
+@pytest.mark.parametrize("bad", [None, "", 7, True, ["card-1"], {"id": "card-1"}, "x" * 129],
+                         ids=["null", "empty", "number", "bool", "list", "object", "too-long"])
+def test_a_call_id_that_is_no_card_id_is_not_echoed_to_every_window(app_client, bad):
+    """The id is echoed to every window on the conversation, so it must look like a card id: a non-empty string of at most
+    128 characters. Anything else is dropped — the follow-up still goes out, naming only the server."""
+    with app_client.websocket_connect("/ws/arslan/main") as ws:
+        ws.receive_json()
+        ws.send_json({"type": "confirm_connect_mcp", "call_id": bad, "server_id": 9})
+        followup = _until(ws, "mcp_connect_followup")
+        assert followup["server_id"] == 9
+        assert "call_id" not in followup
+
+
+def test_a_call_id_of_exactly_128_characters_is_echoed(app_client):
+    with app_client.websocket_connect("/ws/arslan/main") as ws:
+        ws.receive_json()
+        ws.send_json({"type": "confirm_connect_mcp", "call_id": "c" * 128, "server_id": 9})
+        assert _until(ws, "mcp_connect_followup")["call_id"] == "c" * 128
+
+
+def test_every_window_on_the_conversation_gets_the_followup_with_the_cards_call_id(app_client):
+    """Window B never connected anything and has no mark on its copy of the card: the card id in the frame is how it closes."""
+    with app_client.websocket_connect("/ws/arslan/main") as ws1, \
+         app_client.websocket_connect("/ws/arslan/main") as ws2:
+        for ws in (ws1, ws2):
+            assert ws.receive_json()["type"] == "history"
+        ws1.send_json({"type": "confirm_connect_mcp", "call_id": "card-1", "server_id": 9})
+        for ws in (ws1, ws2):
+            followup = _until(ws, "mcp_connect_followup")
+            assert followup["call_id"] == "card-1"
+            assert followup["server_id"] == 9 and followup["tool_count"] == 2

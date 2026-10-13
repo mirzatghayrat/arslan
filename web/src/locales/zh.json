@@ -738,7 +738,7 @@
     "researchReviewSpendNote": "每次符合条件的保存，都会用你的 key 多向模型发一次请求，内容是报告和它的来源。目前只支持官方 DeepSeek 和 Anthropic 连接，其他模型会跳过。",
     "navDesktop": "桌面",
     "navProactive": "主动性",
-    "desktopLede": "关窗不再退出 Arslan：它会留在菜单栏，任务和定时任务照常运行；需要你确认的动作仍在窗口里等你（5 分钟没回应会被拒绝）。要彻底退出，请用 ⌘Q 或菜单栏的「退出 Arslan」。",
+    "desktopLede": "关窗不再退出 Arslan：它会留在菜单栏，任务和定时任务照常运行；需要你确认的动作仍在窗口里等你（最多 30 分钟；没人回应就不做，但这不算拒绝）。定时任务从不等你回应：它只做你已经允许的事，其余的会被拒绝并列在收件箱里。要彻底退出，请用 ⌘Q 或菜单栏的「退出 Arslan」。",
     "labelKeepAwake": "工作时防止 Mac 睡眠",
     "keepAwakeDesc": "有任务或定时任务在运行时，Mac 不会自己进入睡眠。屏幕照样可以熄灭；合盖或电量低时仍会睡眠。",
     "labelDesktopNotifications": "系统通知",
@@ -838,7 +838,7 @@
     "labelVoiceEndpointSilence": "一句话的结束(毫秒)",
     "voiceEndpointSilenceDesc": "停顿多久之后把你说的话发出去。900 毫秒约等于正常换气;更短会打断你,更长会显得迟钝。",
     "terminalRulesTitle": "以后不再询问",
-    "terminalRulesEmpty": "还没有。在命令卡上勾选「不再询问」，那一类命令就会出现在这里。",
+    "terminalRulesEmpty": "还没有。在命令卡上选「始终允许」，那一类命令就会出现在这里。",
     "terminalRulesForget": "恢复询问",
     "navGeneral": "通用",
     "navAbilities": "Arslan 能做什么",
@@ -1429,7 +1429,7 @@
     "sandboxRemember": "这次对话里，命令都可以在沙盒外运行",
     "runOutside": "在沙盒外运行",
     "label": "运行这条命令?",
-    "remember": "以后这类命令不再询问（可在 设置 › 高级 里恢复）",
+    "remember": "以后这类命令不再询问（可在 设置 › Arslan 能做什么 里恢复）",
     "run": "运行",
     "cancel": "取消",
     "pillLabel": "命令行",
@@ -1853,12 +1853,13 @@
     "action": {
       "write": "创建或覆盖",
       "edit": "修改"
-    }
+    },
+    "anyFile": "这个文件夹里的任何文件"
   },
   "schedgrant": {
     "label": "定时任务",
     "body": "Arslan 想创建一个定期任务:",
-    "scope": "同意后,本次会话内它可以创建定时任务。定时运行是无人值守的——它可以查资料并汇报,但写不了文件、跑不了命令。",
+    "scope": "同意后，本次会话内它可以创建定时任务。定时运行无人值守，从不等你：需要你点头的步骤会跳过，不会执行。不需要点头的照常进行：查资料、在沙盒里运行普通命令，以及在 Arslan 自己的工作文件夹里写文件。",
     "allow": "允许",
     "deny": "暂不",
     "every_day": "每天",
@@ -1866,7 +1867,9 @@
     "every_hour": "每小时",
     "every_n_hours": "每 {{count}} 小时",
     "every_minute": "每分钟",
-    "every_n_minutes": "每 {{count}} 分钟"
+    "every_n_minutes": "每 {{count}} 分钟",
+    "unattended": "定时运行无人值守，从不等你：需要你点头的步骤会跳过，不会执行。不需要点头的照常进行：查资料、在沙盒里运行普通命令，以及在 Arslan 自己的工作文件夹里写文件。",
+    "anyTask": "创建任何定时任务"
   },
   "enroll": {
     "label": "记住 {{name}}({{host}})?",
@@ -1921,7 +1924,28 @@
       "save": "保存文件",
       "modify": "修改内容",
       "quit": "退出应用"
-    }
+    },
+    "scope": {
+      "label": "这次允许管多久",
+      "once": "仅这一次",
+      "task": "本次任务内",
+      "conversation": "本对话内",
+      "conversationFor": "本对话内：{{label}}",
+      "always": "始终允许：{{label}}"
+    },
+    "noteLink": "不行，告诉 Arslan 该怎么做",
+    "notePlaceholder": "Arslan 应该改做什么？（可不填）",
+    "noteSend": "拒绝",
+    "expiredTitle": "在等你",
+    "expiredBody": "30 分钟内没人回应，所以这一步没有做。这不算拒绝：Arslan 会告诉你还有什么在等你。",
+    "expiredEnrollBody": "30 分钟内没人回应，所以没有记住这台机器。这不算拒绝：想用时再让 Arslan 提一次就行。",
+    "expiredConnectBody": "30 分钟内没人回应，所以没有连接这个服务器。这不算拒绝：想用时再让 Arslan 提一次就行。",
+    "hide": "隐藏",
+    "hideHint": "它会继续进行，结束后会在对话里告诉你结果。",
+    "hiddenConnected": "已连接 {{name}}。",
+    "hiddenConnectFailed": "未能连接 {{name}}。{{why}}",
+    "hiddenEnrolled": "已记住 {{name}}。",
+    "hiddenEnrollFailed": "未能记住 {{name}}。{{why}}"
   },
   "inbox": {
     "approveNow": "现在就要你批准",
@@ -1933,7 +1957,16 @@
     "memoryOpen": "去「记忆」里看全部",
     "watching": "正在盯着",
     "muted": "不再提醒",
-    "addWatch": "再盯一个网页或文件夹"
+    "addWatch": "再盯一个网页或文件夹",
+    "refusedTitle": "你不在时没做的事",
+    "alwaysAllow": "始终允许",
+    "alwaysStores": "这会始终允许：{{what}}",
+    "asksEachTime": "每次都会问",
+    "allowedNow": "以后都允许",
+    "refusedTimes": "自 {{since}} 起共 {{count}} 次",
+    "undo": "撤销",
+    "openInArslan": "打开对话",
+    "heldCapability": "这一步会给 Arslan 添加新能力，只能在它所在的对话里看完整张卡片后批准。"
   },
   "pendingMemory": {
     "curationFallback": "一条整理记忆的建议",
