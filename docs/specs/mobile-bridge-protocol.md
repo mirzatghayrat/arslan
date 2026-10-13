@@ -246,7 +246,7 @@ never the content. A lock-screen alert shows generic text unless the user turned
 | `chat.send` | phone → Mac | `conversation_id?` (absent = the pocket conversation), `text`, `attachments[]`, `client_msg_id` (UUID) |
 | `chat.event` | Mac → phone | `conversation_id`, `kind` (message/progress/error), `message_id`, `text`, `final`, `job_id?`, `run_id?` |
 | `job.event` | Mac → phone | `id`, `conversation_id`, `state` (running/done/partial/stuck/stopped), `title`, `current_step`, `completed`, `total`, `plan[]`, `summary?`, `files[]`, `run_id?`, `origin?`, `criteria[]?` |
-| `approval.request` | Mac → phone | `approval_id`, `action`, `target`, `risk` (write/send/delete/install/payment/publish), `task_id`, `task_title`, `expires_at` |
+| `approval.request` | Mac → phone | `approval_id`, `action` (the card's `title` when it has one), `target`, `risk` (write/send/delete/install/payment/publish; the card's `perm_kind` decides the word first, §5.3), `task_id`, `task_title`, `expires_at` (the card's own) |
 | `approval.answer` | phone → Mac | `approval_id`, `decision` (approve/deny), `auth` (`faceid` or `touchid` for approve, `none` for deny; a Mac that counts `touchid` says `touchid` in its hello capabilities, and a phone sends a Touch ID yes only to such a Mac), `ts` |
 | `approval.result` | Mac → phone | `approval_id`, `outcome` (done/denied/expired/failed), `detail?` |
 | `file.offer` / `file.get` | Mac → phone / phone → Mac | `id`, `name`, `size`, `mime_type`, `sha256` (hex of the plaintext) / `file_id` |
@@ -258,8 +258,8 @@ never the content. A lock-screen alert shows generic text unless the user turned
 
 Settled here (open in the proposal):
 - **`approval.result`** is the business receipt: an `ack` only says "delivered". The phone shows an
-  approval as done only after `approval.result` with `done`; a card that expired on the Mac (5 min)
-  answers `expired`.
+  approval as done only after `approval.result` with `done`; a card that expired on the Mac (30 min since
+  0.1.61; 5 min before) answers `expired`, which is never a refusal.
 - **Deny** carries `auth: "none"`; approving always needs Face ID; voice never approves.
 - `status.snapshot` is built by the Mac from the island feed (`/api/v1/island/feed`); the phone never
   calls the Mac's HTTP API. The Mac sends it when the phone says `hello`, when what the phone shows
@@ -278,7 +278,11 @@ Settled here (open in the proposal):
 - `risk` is one of six values and only decides how the phone's card looks; the decision stays on the
   Mac. A command card maps its words (delete → `delete`, install/brew/pip/npm and anything outside the
   sandbox → `install`, push/publish/deploy/upload → `publish`, curl/ssh/mail or another machine →
-  `send`, else `write`); writes and schedules are `write`; a website action is `send`.
+  `send`, else `write`); writes and schedules are `write`; a website action is `send`. Since 0.1.61 a
+  card's `perm_kind` decides first: `money` → `payment`, `send` → `send`, `destructive` → `delete`,
+  `outside` → `install`; any other kind keeps the rules above. A `capability` card never reaches the
+  phone. `action` is the card's `title` when it has one (the Mac's own words, in English for now),
+  and `expires_at` is the card's own.
 - History ids are the Mac's stored message ids, and the final `chat.event` of a turn uses the same id,
   so the phone can merge the two. Arslan's replies list their run's files as `attachments`.
 - Files are a run's artifacts (immutable snapshots, so a reference never goes stale; id =

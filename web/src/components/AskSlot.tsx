@@ -71,6 +71,7 @@ function AskCards({ send }: { send: (frame: Record<string, unknown>) => void }) 
   const clearPendingSchedule = useArslanStore((s) => s.clearPendingSchedule);
   const clearPendingConnectMcp = useArslanStore((s) => s.clearPendingConnectMcp);
   const cardExpired = useArslanStore((s) => s.cardExpired);
+  const cardExpiredKind = useArslanStore((s) => s.cardExpiredKind);
   const expireCard = useArslanStore((s) => s.expireCard);
   const dismissCardExpired = useArslanStore((s) => s.dismissCardExpired);
 
@@ -170,14 +171,16 @@ function AskCards({ send }: { send: (frame: Record<string, unknown>) => void }) 
   ].sort((a, b) => a.rank - b.rank || a.seq - b.seq);
 
   if (!items.length) {
-    // 0.1.61 §A4: a card that ran out unanswered is "waiting for you", never "declined".
+    // 0.1.61 §A4: a card that ran out unanswered is "waiting for you", never "declined". A proposal to enrol a machine or to connect a
+    // server never waited on the server, so "it was not done… Arslan will tell you what is waiting" is not true of it: it has its own line.
     if (!cardExpired) return null;
+    const body = cardExpiredKind === "enroll" ? "kit.expiredEnrollBody" : cardExpiredKind === "connect" ? "kit.expiredConnectBody" : "kit.expiredBody";
     return (
       <div className="ask-slot" data-testid="ask-slot">
         <Notice testId="ask-expired" title={t("kit.expiredTitle")}
           action={<button type="button" onClick={dismissCardExpired} data-testid="ask-expired-close"
             className="text-[13px] text-muted-foreground hover:text-foreground">{t("kit.close")}</button>}>
-          {t("kit.expiredBody")}
+          {t(body)}
         </Notice>
       </div>
     );

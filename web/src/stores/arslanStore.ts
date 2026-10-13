@@ -95,6 +95,9 @@ interface ArslanState {
   pendingActions: PendingAction[];
   // 0.1.61 §A4: a card here ran out with nobody answering — "waiting for you", never "declined".
   cardExpired: boolean;
+  // Which sort of card ran out, so the notice can say what is true of it: a proposal to enrol a machine or to connect a server
+  // never waits on the server (nothing is held for it), every other card does. "ask" wins over a proposal that ran out beside it.
+  cardExpiredKind: "ask" | "enroll" | "connect" | null;
   // NEXT BUILD (conversation-driven MCP, Task 5): set when a `propose_connect_mcp`
   // frame arrives. env_keys carries credential NAMES + metadata only — the card
   // collects VALUES locally and sends them only over REST (addMcpServer). A card is cleared
@@ -263,6 +266,16 @@ function _shows(state: CardLists, id: string): boolean {
   return !!id && CARD_LISTS.some((k) => state[k].some((c) => c.callId === id));
 }
 
+/** The change that says the card `id` ran out (it is one of the pending ones): "waiting for you", and which sort of card it was. A proposal to
+ *  enrol a machine or to connect a server has a line of its own; any other card says the usual one, and keeps it when a proposal runs out
+ *  after it (the card the server waited on is the one to tell about). */
+function _ranOut(state: CardLists & { cardExpired: boolean; cardExpiredKind: "ask" | "enroll" | "connect" | null }, id: string):
+    { cardExpired: true; cardExpiredKind: "ask" | "enroll" | "connect" } {
+  const kind = state.pendingEnrollNodes.some((c) => c.callId === id) ? "enroll"
+    : state.pendingConnectMcps.some((c) => c.callId === id) ? "connect" : "ask";
+  return { cardExpired: true, cardExpiredKind: state.cardExpired && state.cardExpiredKind === "ask" ? "ask" : kind };
+}
+
 /** The change that lets go of the applies of the cards `ids` — a card that leaves takes its own entry and no other's; nothing to change if none has one. */
 function _dropApply(state: { cardApply: Record<string, CardApply> }, ids: string[]): { cardApply?: Record<string, CardApply> } {
   if (!ids.some((id) => id in state.cardApply)) return {};
@@ -386,6 +399,7 @@ function initialData() {
     lastStepAt: null as number | null,
     queued: false,
     cardExpired: false,
+    cardExpiredKind: null as "ask" | "enroll" | "connect" | null,
     activeRunId: null as number | null,
     taskState: null as import("../api/tasks").TaskFrame | null,
     taskSequences: {} as Record<string, number>,
@@ -415,6 +429,7 @@ function makeActions(set: SetState, get: GetState) {
         items: [...get().items, { id: nextClientId(), kind: "message", role: "user", content, ...(attachments?.length ? { attachments } : {}) }],
         pending: true,
         cardExpired: false,               // the user is back: the "waiting for you" line has done its job
+        cardExpiredKind: null,
         workStartedAt: runningSince(get()),
         lastFrameAt: Date.now(),
         lastStepAt: Date.now(),
@@ -481,9 +496,9 @@ function makeActions(set: SetState, get: GetState) {
     },
     expireCard: (callId: string) => {
       const s = get();
-      if (_shows(s, callId)) set({ ..._withoutCard(s, callId), cardExpired: true });
+      if (_shows(s, callId)) set({ ..._withoutCard(s, callId), ..._ranOut(s, callId) });
     },
-    dismissCardExpired: () => set({ cardExpired: false }),
+    dismissCardExpired: () => set({ cardExpired: false, cardExpiredKind: null }),
     clearError: () => set({ error: null, errorTranslations: null }),
 
     // Clear all conversation state so the incoming `history` frame for the new
@@ -1132,7 +1147,7 @@ function makeActions(set: SetState, get: GetState) {
           // typed here) decided; a copy still open here closes. Only the card with this call_id —
           // never another of its kind. 0.1.61 §A4: one that ran out says "waiting for you".
           const id = frame.call_id;
-          set({ ..._withoutCard(state, id), ...(frame.outcome === "expired" && _shows(state, id) ? { cardExpired: true } : {}) });
+          set({ ..._withoutCard(state, id), ...(frame.outcome === "expired" && _shows(state, id) ? _ranOut(state, id) : {}) });
           break;
         }
         case "propose_workspace_write":

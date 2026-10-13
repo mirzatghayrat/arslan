@@ -291,7 +291,9 @@ describe("locale parity", () => {
     // 1751 → 1757 (0.1.61 PR 2b): inbox.{refusedTitle,alwaysAllow,alwaysStores,asksEachTime,allowedNow,refusedTimes}.
     // 1757 → 1763 (0.1.61 PR 2b Task 4): kit.{hide,hideHint,hiddenConnected,hiddenConnectFailed,hiddenEnrolled,hiddenEnrollFailed}.
     // 1763 → 1764 (0.1.61 PR 2b Task 4, fix round 1): inbox.undo — the Undo beside an "Always allow".
-    expect(enKeys).toHaveLength(1764);
+    // 1764 → 1766 (0.1.61 PR 2b Task 7): kit.expiredEnrollBody, kit.expiredConnectBody — the notice when a proposal to enrol a
+    // machine or to connect a server runs out has a line of its own (those never wait on the server).
+    expect(enKeys).toHaveLength(1766);
   });
 
   // 0.1.61 PR 2b: a card's "Always" must say what it allows, in every language: the literal scope is interpolated.
