@@ -367,13 +367,18 @@ class _Budget:
     """What one `classify` has read (review N6): the load of the command and of every payload and
     script command read with it, summed against the ceilings, and each payload's commands, read once
     (`read`, by text and depth) — a payload written twice is not read twice. `payloads` keeps the
-    code every shell and `eval` was handed, for the run-time code rules (R11, R13)."""
-    __slots__ = ("marks", "deepest", "ticks", "nested", "separators", "read", "payloads")
+    code every shell and `eval` was handed, for the run-time code rules (R11, R13). Code a producer
+    prints for a shell (F3) is read in the same budget (F7): `code_depth` producers deep, at most
+    `MAX_COMMAND_CHARS` of it in all (`printed_chars`), each text once (`printed`)."""
+    __slots__ = ("marks", "deepest", "ticks", "nested", "separators", "read", "payloads", "code_depth",
+                 "printed_chars", "printed")
 
     def __init__(self) -> None:
         self.marks = self.deepest = self.ticks = self.nested = self.separators = 0
         self.read: dict[tuple[str, int], list[list[str]]] = {}
         self.payloads: dict[str, None] = {}
+        self.code_depth = self.printed_chars = 0
+        self.printed: dict[str, list[Finding]] = {}
 
 
 #: The budget of the read in progress; None outside one. A command read inside another (what a
@@ -567,6 +572,7 @@ _KEEPS_COMMAND = frozenset({"if", "elif", "then", "else", "while", "until", "do"
 _ARRAY_HEAD = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:\[[^\]]*\])?\+?=")
 _FUNCTION_PARENS = re.compile(r"\([ \t]*\)")
 _BRACKETS = {"arith": "()", "glob": "()", "brace": "{}", "bracket": "[]"}
+_LEVELS_WITH_COMMENTS = frozenset({"list", "tick", "array"})
 
 
 class _ZshLevel:
@@ -795,9 +801,6 @@ def _zsh_scan(text: str) -> tuple[list[tuple[int, int]], list[int], list[tuple[i
     return comments, hashes, strings
 
 
-_LEVELS_WITH_COMMENTS = frozenset({"list", "tick", "array"})
-
-
 def _zsh_close(levels: list[_ZshLevel]) -> bool:
     """Close the innermost level; whether a word ended with it (the next `#` starts a comment)."""
     closed = levels.pop()
@@ -866,15 +869,22 @@ def _read(text: str) -> list[Finding]:
     inner = _with_inner_backticks(shell)
     _charge(inner[len(shell):])
     shell = _without_zsh_modifiers(_readings(inner))
+    before = len(budget.payloads)
     commands = _commands(shell)
+    # Only the payloads this read found are judged here (F7): a read inside another (a script's
+    # shell-out, code a producer prints) judged every payload of the command again, and code a
+    # producer prints for a shell was read again from inside its own reading, without a bound.
+    own = list(budget.payloads)[before:]
+    fed, fed_bodies = _fed_code([shell, *own])          # F3, F6; an interpreter fed code reads it as a heredoc (F8)
+    bodies = [*bodies, *fed_bodies]
     findings: list[Finding] = []
-    findings += _floor_findings(text, shell, commands)
+    findings += _floor_findings(text, shell, commands, own)
     findings += _hermes_findings(shell, raw=text, commands=commands)
     findings += _arslan_findings(shell, commands, bodies)
     findings += _script_findings(commands, bodies)
     findings += _fetched_code_findings(shell)
-    findings += _code_findings([shell, *budget.payloads])
-    findings += _stdin_findings([shell, *budget.payloads])
+    findings += _code_findings([shell, *own])
+    findings += fed
     # A code word built by a substitution (`eval "$(…)"`) is that code's own card (R13 c).
     if (any(getattr(argv, "dynamic", False) for argv in commands)
             and not {f.rule for f in findings} & {"built-code", "fetched-code"}):
@@ -1306,9 +1316,10 @@ def _with_inner_backticks(shell: str) -> str:
 
 def _word_end(text: str, at: int) -> int:
     """Where the shell word at `at` ends: unquoted whitespace or `;&|<>` outside parentheses and
-    backticks. `$((1))` is one word (`hermes._read_shell_word` ends it one `)` early)."""
+    backticks. `$((1))` is one word (`hermes._read_shell_word` ends it one `)` early). A substitution
+    in double quotes is one step, its own quotes its own: `"$(printf 'a "b c"')"` is one word (F8)."""
     depth, tick = 0, False
-    for kind, i, _j, quote in hermes._scan_shell(text, at):
+    for kind, i, _j, quote in hermes._scan_shell(text, at, subst="q"):
         if kind != "char" or quote is not None:
             continue
         ch = text[i]
@@ -1471,8 +1482,9 @@ def _commands(text: str, depth: int = 0) -> list[list[str]]:
     once per `classify` (review N6). A command word known only at run time marks its argv
     `dynamic` (R13 d): `_read` then asks unread."""
     budget = _BUDGET.get()
-    if budget is not None and (text, depth) in budget.read:
-        return list(budget.read[text, depth])
+    level = depth + (budget.code_depth if budget is not None else 0)   # producers count as code in code (F7)
+    if budget is not None and (text, level) in budget.read:
+        return list(budget.read[text, level])
     if depth:
         _charge(text)
     out: list[list[str]] = []
@@ -1487,8 +1499,9 @@ def _commands(text: str, depth: int = 0) -> list[list[str]]:
             unwrapped = _unwrap(tokens)
             payload = unwrapped[0] if unwrapped is not None and unwrapped[1] else None
         if payload:
-            if depth >= _MAX_CODE_DEPTH:
+            if level >= _MAX_CODE_DEPTH:
                 raise _Unreadable(f"code nested more than {_MAX_CODE_DEPTH} deep")
+            payload = _comments_blanked(_decode_ansi_c(payload))    # read as the command is (R9, F2, F5)
             if budget is not None:
                 budget.payloads[payload] = None
             out.extend(_commands(payload, depth + 1))
@@ -1518,7 +1531,7 @@ def _commands(text: str, depth: int = 0) -> list[list[str]]:
                     inner.guessed = True
                 add(inner)
     if budget is not None:
-        budget.read[text, depth] = out
+        budget.read[text, level] = out
     return list(out)
 
 
@@ -2307,25 +2320,82 @@ def _code_use(command: str) -> list[Finding]:
 _BUILT_CODE = Finding("opaque", "built-code", _WHY["built-code"])
 
 
-def _stdin_findings(texts: list[str]) -> list[Finding]:
-    """F3: a shell (or `source /dev/stdin`) fed code on a pipe is judged by what feeds it, past
-    wrappers and through `cat`/`tee`: `echo` or `printf` of literal words — what they print is read
-    as shell by every rule, the floor too (`printf 'sudo ls' | bash` read local); `cat FILE`, as
-    `bash FILE` is; a download or a decode, `fetched-code` (`_fetched_code_findings`); anything
-    else, `built-code`. `xargs` fed literal words runs its command with them (F1). In the command
-    and in every substitution and payload, which a quote does not stop from running."""
-    found: list[Finding] = []
-    pending, seen = list(texts), set()
+def _code_texts(texts: list[str]):
+    """Each text, and the body of every `{ …; }` group, `( … )` subshell (F6) and substitution in it,
+    as deep as they nest, each with its pipelines: a group is one command of its pipeline (F3), and
+    what runs in it is code like any other. Nested deeper than `_MAX_SUBSTITUTION_DEPTH`, the command
+    is not read."""
+    pending, seen = [(text, 0) for text in texts], set()
     while pending:
-        text = pending.pop()
+        text, depth = pending.pop()
         if text in seen:
             continue
         seen.add(text)
-        for pipeline in _pipelines(text):
-            for k in range(1, len(pipeline)):
+        pipelines = _pipelines(text)
+        yield text, pipelines
+        inner = [body for pipeline in pipelines for piece in pipeline if (body := _group_body(piece)) is not None]
+        inner += _substitution_bodies(text)
+        if inner and depth >= _MAX_SUBSTITUTION_DEPTH:
+            raise _Unreadable(f"groups and substitutions nested more than {_MAX_SUBSTITUTION_DEPTH} deep")
+        pending += [(body, depth + 1) for body in inner]
+
+
+#: zsh's reserved words a group may follow in a command of its own (`time ( … )`, `! { …; }`, `then { …; }`).
+_BEFORE_GROUP = re.compile(r"(?:(?:!|time|if|elif|then|else|while|until|do|coproc)[ \t]+)*")
+
+
+def _group_body(piece: str) -> str | None:
+    """The body of a `{ …; }` group or a `( … )` subshell that is a whole command of its pipeline,
+    after zsh's reserved words and with redirections after it (`time ( … )`, `{ …; } 2>&1`), else
+    None (F6)."""
+    command = piece.strip()
+    command = command[_BEFORE_GROUP.match(command).end():]
+    if command.startswith("("):
+        end = _paren_end(command, 0)
+    elif command.startswith("{"):
+        close = _closing_brace(command, 1)
+        end = None if close is None else close + 1
+    else:
+        return None
+    if end is None or _split_redirections(_raw_words(command[end:]))[0]:
+        return None
+    return command[1:end - 1]
+
+
+def _fed_code(texts: list[str]) -> tuple[list[Finding], list[tuple[str, str]]]:
+    """Code a program reads from its input, in the command, in every payload, substitution (which a
+    quote does not stop from running) and group (F6): (the findings for shells, the bodies for
+    interpreters).
+
+    F3: a shell (or `source /dev/stdin`) fed code on a pipe is judged by what feeds it, past wrappers
+    and through `cat`/`tee`: `echo` or `printf` of literal words — what they print is read as shell
+    by every rule, the floor too (`printf 'sudo ls' | bash` read local); `cat FILE`, as `bash FILE`
+    is; a download or a decode, `fetched-code` (`_fetched_code_findings`); anything else,
+    `built-code`. `xargs` fed literal words runs its command with them (F1).
+
+    F8: what a literal producer feeds python3, node, ruby, perl (Hermes' interpreters) or osascript on
+    a pipe, a here-string or `< <(…)` is the body of a heredoc that program reads: a script is read
+    for sending, other apps and hidden code, an AppleScript for the apps it tells."""
+    found: list[Finding] = []
+    bodies: list[tuple[str, str]] = []
+    for _text, pipelines in _code_texts(texts):
+        for pipeline in pipelines:
+            for k in range(len(pipeline)):
+                if not k and "<<<" not in pipeline[0] and "<(" not in pipeline[0]:
+                    continue                                # the first command: fed by no pipe
                 target = _pipe_target(pipeline[k])
-                if target is None or any(_fetches(argv) or _decodes(argv) for piece in pipeline[:k]
-                                         for argv in _commands(piece)):
+                if isinstance(target, tuple) and target[0] == "script":
+                    code = _input_code(target[2])
+                    if code is None and k:
+                        j = k - 1
+                        while j >= 0 and _passes_input_on(pipeline[j]):
+                            j -= 1
+                        code = _literal_output(pipeline[j]) if j >= 0 else None
+                    if code is not None and code.strip():
+                        bodies.append((target[1], code))
+                    continue
+                if not k or target is None or any(_fetches(argv) or _decodes(argv) for piece in pipeline[:k]
+                                                  for argv in _commands(piece)):
                     continue
                 j = k - 1
                 while j >= 0 and _passes_input_on(pipeline[j]):
@@ -2340,22 +2410,44 @@ def _stdin_findings(texts: list[str]) -> list[Finding]:
                     found += _produced_findings(produced)
                 elif not _reads_one_local_file(pipeline[j]):
                     found.append(_BUILT_CODE)
-        pending += _substitution_bodies(text)
-    return list(dict.fromkeys(found))
+    return list(dict.fromkeys(found)), bodies
 
 
 def _pipe_target(piece: str):
     """What a pipe feeds: "shell" — a shell, or `source /dev/stdin`, that runs its input as code,
-    past wrappers — or ("xargs", the command `xargs` runs), else None."""
+    past wrappers —, ("xargs", the command `xargs` runs), or ("script", the program, its input
+    redirections) — an interpreter or osascript with no script of its own, which runs its input
+    (F8) —, else None."""
     for segment in _top_level_segments(piece):
         for _start, _raw, bounded in _spans(segment):
-            plain, _inputs = _split_redirections(_raw_words(bounded))
+            plain, inputs = _split_redirections(_raw_words(bounded))
             if plain and _program(plain[0]) == "xargs":
                 unwrapped = _unwrap([_unquote(word) for word in plain])
                 return ("xargs", unwrapped[0]) if unwrapped is not None else None
             inner = _unwrapped(plain)
-            if inner and _program(inner[0]) in _SHELLS | {"source", "."} and _reads_stdin_code(inner):
+            if not inner or not _reads_stdin_code(inner):
+                continue
+            name = _program(inner[0])
+            if name in _SHELLS | {"source", "."}:
                 return "shell"
+            if name == "osascript" or hermes._interpreter_family(name) is not None:
+                return "script", name, inputs
+    return None
+
+
+def _input_code(inputs: list[tuple[str, str]]) -> str | None:
+    """The code a here-string or `< <(…)` hands a program (F8): a literal here-string, or what one
+    literal producer prints into it or into the `<(…)`; None for anything else (a file, a variable)."""
+    for operator, target in reversed(inputs):
+        if operator.endswith("<<<"):
+            whole = target[1:-1] if len(target) > 1 and target[0] == target[-1] == '"' else target
+            if whole.startswith("$(") and _paren_end(whole, 1) == len(whole):
+                return _literal_output(whole[2:-1])
+            return None if _last_expansion_end(target) is not None else _unquote(target) + "\n"
+        if operator in ("<", "0<"):
+            if target.startswith("<(") and _paren_end(target, 1) == len(target):
+                return _literal_output(target[2:-1])
+            return None
     return None
 
 
@@ -2398,13 +2490,31 @@ def _split_words(text: str) -> list[str]:
 
 
 def _produced_findings(produced: str) -> list[Finding]:
-    """The findings in code a producer prints (F3), read in this read's budget; what stops that
-    reading stops the command."""
+    """The findings in code a producer prints (F3) — for a shell, or for the command `xargs` runs —
+    read in the command's one budget (F7): each producer is one level of code in code, as `bash -c`
+    is (`_MAX_CODE_DEPTH` in all), what every producer prints is `MAX_COMMAND_CHARS` at most, and
+    each text is read once. Past a limit the command asks unread (`_floor_of_unread` still shows a
+    floor its text spells); nothing recurses without a bound. What stops this reading stops the
+    command."""
     if not produced.strip():
         return []
-    if len(produced) > MAX_COMMAND_CHARS:
+    budget = _BUDGET.get()
+    if budget is None:                      # only ever called inside a read; outside one, read it whole
+        return [f for f in classify(produced).findings if f.category != "local"]
+    if produced in budget.printed:
+        return budget.printed[produced]
+    if budget.code_depth >= _MAX_CODE_DEPTH:
+        raise _Unreadable(f"code a command prints, nested more than {_MAX_CODE_DEPTH} deep")
+    budget.printed_chars += len(produced)
+    if budget.printed_chars > MAX_COMMAND_CHARS:
         raise _Unreadable("the code a command prints is too long to read")
-    return [f for f in classify(produced).findings if f.category != "local"]
+    budget.code_depth += 1
+    try:
+        found = [f for f in classify(produced).findings if f.category != "local"]
+    finally:
+        budget.code_depth -= 1
+    budget.printed[produced] = found
+    return found
 
 
 _PRINT_ESCAPE = re.compile(r"\\(?:([abefnrtv\\])|(c)|x([0-9a-fA-F]{1,2})|u([0-9a-fA-F]{1,4})|U([0-9a-fA-F]{1,8})"
@@ -2520,12 +2630,14 @@ _DD_DISK = re.compile(r"of=/dev/(?:r?disk\d|sd|nvme|hd|mmcblk|vd|xvd)", re.I)
 _SHUTDOWN_WHEN = re.compile(r"-[a-zA-Z]*[hr][a-zA-Z]*|now|\+\d+")
 
 
-def _floor_findings(text: str, shell: str, commands: list[list[str]]) -> list[Finding]:
-    """The floor in the command as written, and in each command a wrapper runs, read again with
-    its wrappers taken off (F1): Hermes' hardline and Arslan's own floor patterns anchor at a
-    command position that `nice`, `xargs`, `env -i`, `timeout 5`, `watch '…'` … would hide."""
+def _floor_findings(text: str, shell: str, commands: list[list[str]], payloads=()) -> list[Finding]:
+    """The floor in the command as written, in each command a wrapper runs, read again with its
+    wrappers taken off (F1): Hermes' hardline and Arslan's own floor patterns anchor at a command
+    position that `nice`, `xargs`, `env -i`, `timeout 5`, `watch '…'` … would hide; and in the code
+    each shell or `eval` is handed, as it is read (F5: Hermes reads a payload's comments by its
+    lenient rule, so `bash -c 'echo $(date)#; mkfs …'` hid the floor)."""
     found = []
-    for subject in (shell, *dict.fromkeys(_unwrapped_codes(commands))):
+    for subject in (shell, *dict.fromkeys([*payloads, *_unwrapped_codes(commands)])):
         found += _floor_patterns(subject)
     if _touches_arslan_data(text) or _writes_arslan_data(commands):
         found.append(Finding("floor", "arslan-data", "touches Arslan's own data, keys or database"))
@@ -3610,23 +3722,18 @@ def _substitution_bodies(code: str) -> list[str]:
 def _fetched_code_findings(shell: str) -> list[Finding]:
     """Fetched or decoded code piped into what runs it, in ways Hermes' shell-only patterns miss
     (review M1, R11): an interpreter or a shell with no script of its own (`curl … | python3`,
-    `| env bash`, `| source /dev/stdin`) — at the top, and in every substitution, which a quote
-    does not stop from running (`echo "$(curl … | python3)"`). Code read from `<(…)`, `<` or a
-    here-string is `_code_findings`'."""
-    pending, seen = [shell], set()
-    while pending:
-        text = pending.pop()
-        if text in seen:
-            continue
-        seen.add(text)
-        if _pipes_fetched_code(text):
+    `| env bash`, `| source /dev/stdin`) — at the top, in every substitution, which a quote does
+    not stop from running (`echo "$(curl … | python3)"`), and in every `{ …; }` group and `( … )`
+    subshell (F6: `{ curl … | bash; }` read local once pipelines stopped splitting in groups). Code
+    read from `<(…)`, `<` or a here-string is `_code_findings`'."""
+    for _text, pipelines in _code_texts([shell]):
+        if _pipes_fetched_code(pipelines):
             return [Finding("opaque", "fetched-code", _WHY["fetched-code"])]
-        pending += _substitution_bodies(text)
     return []
 
 
-def _pipes_fetched_code(text: str) -> bool:
-    for pipeline in _pipelines(text):
+def _pipes_fetched_code(pipelines: list[list[str]]) -> bool:
+    for pipeline in pipelines:
         fed = False
         for piece in pipeline:
             if fed and _runs_its_input(piece):
