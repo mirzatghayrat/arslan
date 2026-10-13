@@ -59,6 +59,7 @@ def known_local_failure(tool_key: str, arguments: dict, result) -> bool:
     and exited with a code (or was refused before running), and a write_file/edit_file that returned
     an error, are known outcomes — treating them as unknown ended every job with a failed probe on
     the way as "needs your review" (seen recording the 0.1.59 promo: nine invoices copied, "Stuck").
+    Also known: an MCP call to a server that was not ready (it never left Arslan; 0.1.61 §B1).
     Still unknown, and still asking: exceptions, cancellations, a command killed by its timeout or a
     signal, any command matching an outbound rule, and every other tool.
     Not covered (said here and in docs/specs/2026-10-10-0159-job-checks.md): a local script that sends
@@ -67,6 +68,8 @@ def known_local_failure(tool_key: str, arguments: dict, result) -> bool:
     """
     if not isinstance(result, dict) or result.get("ok"):
         return False
+    if result.get("code") == "mcp_not_ready":
+        return True       # 0.1.61 §B1: the call never reached the MCP server
     if tool_key in {"write_file", "edit_file"}:
         return True
     if tool_key != "run_command":

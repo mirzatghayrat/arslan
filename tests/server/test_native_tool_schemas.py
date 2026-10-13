@@ -7,11 +7,14 @@ output flows through `_native_tool_schemas` via `run_native`) — must pass that
 through as the OpenAI `function.parameters`, instead of an empty/permissive `{}` that
 forces the model to guess argument names.
 """
+from types import SimpleNamespace
+
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
 from server.db.models import Base, MCPServer, Tool, Toolset
+from server.mcp import session
 from server.orchestrator.tool_loop import _native_tool_schemas
 
 _MCP_SCHEMA = {
@@ -76,12 +79,17 @@ async def host_maker(tmp_path, monkeypatch):
         await conn.run_sync(Base.metadata.create_all)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
     async with m() as s:
-        s.add(MCPServer(id=1, label="docs", command="x", args=[], env=None, status="connected"))
+        s.add(MCPServer(id=1, label="docs", command="x", args=[], env=None, status="connected", state="ready"))
         s.add(Toolset(key="mcp_1", name="docs", description="d", tier="orchestrator", status="registered"))
         s.add(Tool(key="mcp_1__search", toolset_key="mcp_1", description="search docs",
                    tier="orchestrator", status="wired", input_schema=_MCP_SCHEMA,
                    external_name="search", host_enabled=True))
         await s.commit()
+
+    async def closed():
+        return None
+    # 0.1.61 §B1: ready in this process = the state AND the live session its start left behind.
+    monkeypatch.setitem(session.manager._sessions, 1, (object(), SimpleNamespace(aclose=closed)))
     return m
 
 

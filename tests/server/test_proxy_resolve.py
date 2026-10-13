@@ -135,7 +135,7 @@ class _AsyncCM:
 
 
 class _FakeClient:
-    def __init__(self, read, write): pass
+    def __init__(self, read, write, **kwargs): pass
     async def __aenter__(self): return self
     async def __aexit__(self, *a): return False
     async def initialize(self): pass
@@ -150,11 +150,11 @@ async def test_stdio_env_injects_scutil_proxy(monkeypatch):
     captured = {}
 
     class _Params:
-        def __init__(self, command, args, env):
+        def __init__(self, command, args, env, cwd=None):
             captured["env"] = env
 
     monkeypatch.setattr("mcp.StdioServerParameters", _Params)
-    monkeypatch.setattr("mcp.client.stdio.stdio_client", lambda params: _AsyncCM(("r", "w")))
+    monkeypatch.setattr("mcp.client.stdio.stdio_client", lambda params, errlog=None: _AsyncCM(("r", "w")))
     monkeypatch.setattr("mcp.ClientSession", _FakeClient)
 
     mgr = sess.MCPSessionManager()
@@ -172,11 +172,11 @@ async def test_stdio_server_env_stays_highest_precedence(monkeypatch):
     captured = {}
 
     class _Params:
-        def __init__(self, command, args, env):
+        def __init__(self, command, args, env, cwd=None):
             captured["env"] = env
 
     monkeypatch.setattr("mcp.StdioServerParameters", _Params)
-    monkeypatch.setattr("mcp.client.stdio.stdio_client", lambda params: _AsyncCM(("r", "w")))
+    monkeypatch.setattr("mcp.client.stdio.stdio_client", lambda params, errlog=None: _AsyncCM(("r", "w")))
     monkeypatch.setattr("mcp.ClientSession", _FakeClient)
 
     mgr = sess.MCPSessionManager()

@@ -171,6 +171,7 @@ async def test_an_install_is_pinned_switched_off_and_sandboxed(execution_db, dat
         server = await db.get(MCPServer, row.mcp_server_id)
         saved = await db.get(CapabilitySource, row.id)
     assert server.host_allowed is False                      # the first test decides (P3)
+    assert server.state == "off"                             # 0.1.61 §B1: off until the user's switch
     assert server.args == ["stdio", "--allow-dir", str(grant.resolve())]
     assert server.sandbox == {"root": str(data / "capabilities" / row.id), "folders": [str(grant.resolve())],
                               "network": False, "read": [str(data / "runtimes")]}
@@ -258,7 +259,7 @@ async def test_the_launch_wraps_only_installed_servers(monkeypatch):
     class Stop(Exception):
         pass
 
-    def fake_stdio(params):
+    def fake_stdio(params, errlog=None):
         seen.append(params)
         raise Stop
     monkeypatch.setattr("mcp.client.stdio.stdio_client", fake_stdio)
@@ -267,7 +268,7 @@ async def test_the_launch_wraps_only_installed_servers(monkeypatch):
     for server in (base, {**base, "id": 2, "sandbox": {"root": "/tmp/arslan-cap-test", "folders": [], "network": False}}):
         with pytest.raises(Exception):
             await manager._open_session(server)
-    assert seen[0].command.endswith("echo") and seen[0].cwd is None
+    assert seen[0].command.endswith("echo") and seen[0].cwd == str(session.server_dir(1))
     assert seen[1].command == "/usr/bin/sandbox-exec" and seen[1].args[2:] == ["/bin/echo", "hi"]
     assert seen[1].cwd == "/tmp/arslan-cap-test/home"
 

@@ -9,7 +9,6 @@ TWO SHAPES THIS FIXES (spec ③ §0.2):
 from __future__ import annotations
 
 import httpx
-import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -75,18 +74,18 @@ async def maker(tmp_path, monkeypatch):
 
 
 async def test_the_classified_message_reaches_last_error(maker, monkeypatch):
-    """End to end through connect_and_discover, because a classifier nobody calls
-    is the old behaviour with better structure."""
+    """End to end through the supervisor (0.1.61): a 401 is `needs_auth` with the classified line,
+    because a classifier nobody calls is the old behaviour with better structure."""
     from server.mcp import discovery
+    from server.mcp.supervisor import Supervisor
 
     async def fail(server):
         raise _status_error(401)
 
     monkeypatch.setattr(discovery.manager, "list_tools", fail)
-    with pytest.raises(httpx.HTTPStatusError):
-        await discovery.connect_and_discover(1)
-
+    result = await Supervisor().restart(1)
+    assert result.state == "needs_auth"
     async with maker() as s:
         srv = await s.get(MCPServer, 1)
-    assert srv.status == "error"
+    assert (srv.state, srv.status) == ("needs_auth", "error")
     assert "authorization" in (srv.last_error or "").lower()

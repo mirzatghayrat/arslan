@@ -121,13 +121,19 @@ async def oauth_status(server_id: int):
 
 @router.post("/servers/{server_id}/connect")
 async def connect(server_id: int):
+    """0.1.61 §B1: a fresh start through the supervisor. The tool list, or a 502 with the
+    classified cause; a start overtaken twice by a newer one is a 503 naming the state (it is
+    starting), never a failure."""
     try:
         return await mcp_service.connect(server_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except mcp_service.MCPStartFailed as exc:
+        status = 503 if exc.state == "starting" else 502
+        raise HTTPException(status_code=status, detail=str(exc)[:2000] or "start failed") from exc
     except Exception as exc:  # noqa: BLE001 — surface the classified text, not a bare 500
-        # connect_and_discover has just written the classified message into
-        # last_error; that text is strictly better than str(exc) (which can be
+        # Not a start's answer (that is MCPStartFailed above) but something around it, e.g. the
+        # database: the server's stored classification, else the error's own text (which can be
         # empty — spec ⓪ measured str(InvalidToken()) == "").
         detail = (
             await mcp_service.last_error_text(server_id)
@@ -174,7 +180,11 @@ async def check_health(server_id: int):
 
 @router.post("/servers/{server_id}/reconnect")
 async def reconnect(server_id: int):
-    await mcp_service.reconnect(server_id)
+    """A fresh start now (0.1.61 §B1); the server list says how it went."""
+    try:
+        await mcp_service.reconnect(server_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {"ok": True}
 
 

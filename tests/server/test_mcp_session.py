@@ -23,7 +23,7 @@ class _FakeSession:
         self.closed_calls = 0
         self.calls = []
     async def list_tools(self): return _FakeListResult([_FakeTool("read_file", "Read a file", {"type": "object"})])
-    async def call_tool(self, name, arguments):
+    async def call_tool(self, name, arguments, read_timeout_seconds=None):
         self.calls.append((name, arguments))
         return _FakeCallResult([_FakeText("hello")])
 
@@ -64,12 +64,13 @@ async def test_call_failure_drops_cached_session(monkeypatch):
     mgr = sess.MCPSessionManager()
     stacks = []
     class _BoomSession(_FakeSession):
-        async def call_tool(self, name, arguments): raise RuntimeError("pipe broke")
+        async def call_tool(self, name, arguments, read_timeout_seconds=None): raise RuntimeError("pipe broke")
     async def fake_open(server):
         st = _FakeStack()
         stacks.append(st)
         return _BoomSession(), st
     monkeypatch.setattr(mgr, "_open_session", fake_open)
+    await mgr.get_session(_server(5))
     with pytest.raises(RuntimeError):
         await mgr.call_tool(_server(5), "x", {})
     assert stacks[0].closed is True             # dropped on failure

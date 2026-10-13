@@ -1,4 +1,6 @@
 """0.1.55 §14: the Capabilities switches say exactly what the model is offered."""
+from types import SimpleNamespace
+
 import httpx
 import pytest
 import pytest_asyncio
@@ -10,6 +12,7 @@ from server.db.models import Base
 
 from server import auth
 from server.api.capabilities import router
+from server.mcp import session
 from server.services import capability_list, settings_service
 
 # Every tool a switchable built-in row stands for, whatever its state.
@@ -156,12 +159,24 @@ async def test_a_skill_switched_off_leaves_the_index_and_cannot_be_read(api, exe
     assert (await ReadSkillExecutor().execute({"key": "tidy-notes"}))["ok"] is True
 
 
+async def _closed():
+    return None
+
+
+def _live(monkeypatch, sid):
+    """`sid`'s live session, cached as the manager caches one (no fingerprint: used as it is)."""
+    monkeypatch.setattr(session.manager, "_sessions", dict(session.manager._sessions))
+    monkeypatch.delitem(session.manager._fingerprints, sid, raising=False)
+    monkeypatch.setitem(session.manager._sessions, sid, (object(), SimpleNamespace(aclose=_closed)))
+
+
 async def test_mcp_rows_follow_host_consent_and_name_a_missing_runtime(api, execution_db, monkeypatch):
     from server.db.models import MCPServer
+    _live(monkeypatch, 1)                      # "on" means ready in this process: the row AND a session
     async with execution_db() as db:
         db.add_all([
             MCPServer(id=1, label="Docs", transport="http", command="", url="https://example.test/mcp",
-                      status="connected", host_allowed=True),
+                      status="connected", host_allowed=True, state="ready"),
             MCPServer(id=2, label="Files", transport="stdio", command="definitely-not-a-real-runtime-xyz",
                       args=[], status="registered"),
             MCPServer(id=3, label="Broken", transport="http", command="", url="https://example.test/b",
@@ -177,6 +192,55 @@ async def test_mcp_rows_follow_host_consent_and_name_a_missing_runtime(api, exec
     assert (await api.put("/api/v1/capabilities/mcp:1", json={"on": False})).json()["state"] == "off"
     async with execution_db() as db:
         assert (await db.get(MCPServer, 1)).host_allowed is False
+
+
+async def test_an_mcp_row_is_on_only_while_the_server_is_ready_in_this_process(execution_db, monkeypatch):
+    """The row reads the SAME gate `_arslan_tools` applies (`supervisor.ready_now`: `ready` AND a live
+    session). A `ready` left from the last run (a failed boot reset) or whose session died offers the
+    model nothing, so the page must not say "on": it is starting by itself, with no Connect to press."""
+    from server.db.models import MCPServer
+    monkeypatch.setattr(session.manager, "_sessions", {})
+    async with execution_db() as db:
+        db.add_all([
+            MCPServer(id=1, label="Live", transport="http", command="", url="https://example.test/1",
+                      status="connected", state="ready", host_allowed=True),
+            MCPServer(id=2, label="Stale", transport="http", command="", url="https://example.test/2",
+                      status="connected", state="ready", host_allowed=True),
+            MCPServer(id=3, label="Revoked", transport="http", command="", url="https://example.test/3",
+                      status="connected", state="ready", host_allowed=False),
+            MCPServer(id=4, label="Switching on", transport="http", command="", url="https://example.test/4",
+                      status="connected", state="off", host_allowed=True),
+            MCPServer(id=5, label="Off", transport="http", command="", url="https://example.test/5",
+                      status="connected", state="off", host_allowed=False),
+            MCPServer(id=6, label="Never connected", transport="http", command="",
+                      url="https://example.test/6", status="registered", state="off", host_allowed=True),
+            # installs are created off; a failed install test leaves them off with the error kept
+            MCPServer(id=7, label="Failed install", transport="http", command="", url="https://example.test/7",
+                      status="error", state="off", host_allowed=False,
+                      last_error="did not start within 120 s (waiting for tools/list)"),
+            MCPServer(id=8, label="Installed, untested", transport="http", command="",
+                      url="https://example.test/8", status="registered", state="off", host_allowed=False),
+        ])
+        await db.commit()
+    _live(monkeypatch, 1)
+    _live(monkeypatch, 3)
+    rows = {r["key"]: r for r in await capability_list._mcp_rows()}
+    assert rows["mcp:1"]["state"] == "on"
+    assert (rows["mcp:2"]["state"], rows["mcp:2"]["reason"], rows["mcp:2"]["fix"]) == \
+        ("setup", "not_connected", None)
+    assert rows["mcp:3"]["state"] == "off"                  # the user's switch, session or not
+    assert (rows["mcp:4"]["state"], rows["mcp:4"]["reason"], rows["mcp:4"]["fix"]) == \
+        ("setup", "not_connected", None)
+    assert rows["mcp:5"]["state"] == "off"                  # the user's switch: nothing is starting
+    assert (rows["mcp:6"]["state"], rows["mcp:6"]["reason"], rows["mcp:6"]["fix"]) == \
+        ("setup", "not_connected", "connect")               # never connected: Connect is its fix
+    # a switched-off server reads "off" whatever its old status says (review M-1): the same state the
+    # list_my_capabilities entry gives; its old error stays visible as the detail
+    assert (rows["mcp:7"]["state"], rows["mcp:7"]["reason"], rows["mcp:7"]["fix"]) == ("off", None, None)
+    assert rows["mcp:7"]["detail"] == "did not start within 120 s (waiting for tools/list)"
+    assert rows["mcp:8"]["state"] == "off" and rows["mcp:8"]["detail"] is None
+    _live(monkeypatch, 2)                                    # its restart opened a session
+    assert {r["key"]: r["state"] for r in await capability_list._mcp_rows()}["mcp:2"] == "on"
 
 
 async def test_hands_switch_writes_the_hands_setting(api, monkeypatch):

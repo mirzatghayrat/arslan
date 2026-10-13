@@ -44,8 +44,12 @@ async def test_connect_lists_tools_with_suggested_tier(client, monkeypatch):
     monkeypatch.setattr(session.manager, "list_tools", fake_list)
     async with c:
         sid = (await c.post("/api/v1/mcp/servers", json={"label": "fs", "command": "x", "args": [], "env": {}})).json()["id"]
-        await c.post(f"/api/v1/mcp/servers/{sid}/connect")
+        connected = (await c.post(f"/api/v1/mcp/servers/{sid}/connect")).json()
         tools = (await c.get(f"/api/v1/mcp/servers/{sid}/tools")).json()
+    # The old UI reads the Connect answer itself as McpTool[] (McpServers, ConnectMcpCard,
+    # RecommendedMcp) — 0.1.61 keeps that contract through the supervisor.
+    assert {t["name"]: t["suggested_tier"] for t in connected} == {"read_file": "safe",
+                                                                   "delete_file": "orchestrator"}
     by = {t["name"]: t for t in tools}
     assert by["read_file"]["suggested_tier"] == "safe"
     assert by["delete_file"]["suggested_tier"] == "orchestrator"
@@ -115,6 +119,13 @@ async def test_add_http_server_stores_url_transport(client):
 async def test_reconnect_drops_cached_session(client, monkeypatch):
     c, m = client
     from server.mcp import session
+
+    class _Empty:
+        tools: list = []
+
+    async def fake_list(server, cursor=None):         # 0.1.61: Reconnect is a fresh start
+        return _Empty()
+    monkeypatch.setattr(session.manager, "list_tools", fake_list)
     # seed a fake cached session for server id we will create
     async with c:
         sid = (await c.post("/api/v1/mcp/servers", json={"label": "fs", "command": "x", "args": [], "env": {}})).json()["id"]

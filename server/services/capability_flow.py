@@ -91,24 +91,32 @@ async def _update(source_id: str, **fields) -> None:
 
 
 async def test_mcp(source_id: str) -> dict:
-    """Start it in its sandbox and list its tools; on success switch it on."""
-    from server.mcp.discovery import connect_and_discover
+    """Start it in its sandbox and list its tools; on success switch it on (0.1.61: through the
+    supervisor, so the row is `ready` and its tools are offered in the same reply, spec §B3). A
+    start that does not pass leaves it `off`, its process stopped."""
+    from server.mcp.supervisor import supervisor
+    from server.services import mcp_service
     row = await _source(source_id)
+    at = datetime.utcnow().isoformat() + "Z"
     try:
-        tools = await asyncio.wait_for(connect_and_discover(row.mcp_server_id), TEST_TIMEOUT_S)
+        result = await asyncio.wait_for(mcp_service.start_now(row.mcp_server_id), TEST_TIMEOUT_S)
     except Exception as exc:  # noqa: BLE001 — a failed start is the test's answer
+        await supervisor.set_enabled(row.mcp_server_id, False)
         detail = getattr(exc, "detail", None) or str(exc)
-        return {"ok": False, "stage": "start", "detail": detail[-400:] or type(exc).__name__,
-                "at": datetime.utcnow().isoformat() + "Z"}
-    names = [t["name"] for t in tools]
+        return {"ok": False, "stage": "start", "detail": detail[-400:] or type(exc).__name__, "at": at}
+    if result.state != "ready":
+        await supervisor.set_enabled(row.mcp_server_id, False)
+        return {"ok": False, "stage": "start", "detail": (result.last_error or result.state)[-400:],
+                "at": at}
+    names = [t["name"] for t in result.tools]
     if not names:
-        return {"ok": False, "stage": "tools", "detail": "started, but listed no tools",
-                "at": datetime.utcnow().isoformat() + "Z"}
+        await supervisor.set_enabled(row.mcp_server_id, False)
+        return {"ok": False, "stage": "tools", "detail": "started, but listed no tools", "at": at}
     async with db_session.AsyncSessionLocal() as db:
         server = await db.get(MCPServer, row.mcp_server_id)
         server.host_allowed = True
         await db.commit()
-    return {"ok": True, "tools": names[:60], "at": datetime.utcnow().isoformat() + "Z"}
+    return {"ok": True, "tools": names[:60], "at": at}
 
 
 async def install_mcp(c: dict, *, folders: list[str], keys: dict) -> dict:

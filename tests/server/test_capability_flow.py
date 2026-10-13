@@ -144,6 +144,7 @@ async def test_an_approved_install_that_tests_well_is_on_and_the_loop_refreshes(
 
 async def test_install_mcp_switches_on_only_after_scan_and_test(execution_db, monkeypatch, tmp_path):
     from server.db.models import CapabilitySource, MCPServer
+    from server.mcp.supervisor import StartResult, supervisor
     from server.services import capability_scan
 
     async def fake_install(c, *, folders, keys):
@@ -172,8 +173,8 @@ async def test_install_mcp_switches_on_only_after_scan_and_test(execution_db, mo
 
     async def connect(server_id):
         started.append(server_id)
-        return [{"name": "read_range"}]
-    monkeypatch.setattr("server.mcp.discovery.connect_and_discover", connect)
+        return StartResult("ready", tools=[{"name": "read_range"}], tool_count=1)
+    monkeypatch.setattr(supervisor, "restart", connect)
     out = await capability_flow.install_mcp(CAND, folders=[], keys={})
     assert out["state"] == "blocked" and removed == ["src1"] and started == []
 
@@ -185,14 +186,15 @@ async def test_install_mcp_switches_on_only_after_scan_and_test(execution_db, mo
     monkeypatch.setattr(capability_scan, "scan_install", lambda root: {"level": "clean", "findings": []})
 
     async def broken(server_id):
-        raise RuntimeError("Connection closed")
-    monkeypatch.setattr("server.mcp.discovery.connect_and_discover", broken)
+        return StartResult("failed", last_error="the server exited during start — see its log below\nConnection closed")
+    monkeypatch.setattr(supervisor, "restart", broken)
     out = await capability_flow.install_mcp(CAND, folders=[], keys={})
     assert out["state"] == "failed" and out["stage"] == "test" and "Connection closed" in out["detail"]
     async with execution_db() as db:
         row = await db.get(CapabilitySource, "src1")
         assert row.state == "failed" and row.test["ok"] is False
         assert (await db.get(MCPServer, row.mcp_server_id)).host_allowed is False
+        assert (await db.get(MCPServer, row.mcp_server_id)).state == "off"     # 0.1.61: its start stopped
 
     # 2b. It starts but offers nothing: still off.
     async with execution_db() as db:
@@ -200,16 +202,19 @@ async def test_install_mcp_switches_on_only_after_scan_and_test(execution_db, mo
         await db.commit()
 
     async def empty(server_id):
-        return []
-    monkeypatch.setattr("server.mcp.discovery.connect_and_discover", empty)
+        return StartResult("ready", tools=[], tool_count=0)
+    monkeypatch.setattr(supervisor, "restart", empty)
     out = await capability_flow.install_mcp(CAND, folders=[], keys={})
     assert out["state"] == "failed" and out["detail"] == "started, but listed no tools"
+    async with execution_db() as db:
+        server_id = (await db.get(CapabilitySource, "src1")).mcp_server_id
+        assert (await db.get(MCPServer, server_id)).state == "off"
 
     # 3. Clean and it lists tools: switched on.
     async with execution_db() as db:
         await db.delete(await db.get(CapabilitySource, "src1"))
         await db.commit()
-    monkeypatch.setattr("server.mcp.discovery.connect_and_discover", connect)
+    monkeypatch.setattr(supervisor, "restart", connect)      # case 3
     out = await capability_flow.install_mcp(CAND, folders=[], keys={})
     assert out["state"] == "on" and out["tools"] == ["read_range"]
     async with execution_db() as db:

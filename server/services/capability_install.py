@@ -299,7 +299,7 @@ async def install(candidate: dict, *, folders: list[str], keys: dict[str, str] |
         async with db_session.AsyncSessionLocal() as db:
             server = MCPServer(label=row.name[:80], transport=spec["transport"], command=spec.get("command") or "",
                                args=spec.get("args") or [], url=spec.get("url"), status="registered",
-                               host_allowed=False, sandbox=sandbox)
+                               host_allowed=False, state="off", sandbox=sandbox)
             from server import crypto
             server.env = crypto.encrypt(json.dumps(keys or {}))
             db.add(server)

@@ -69,6 +69,18 @@ async def _add_server(c) -> int:
     return r.json()["id"]
 
 
+async def _ready_and_live(m, sid, monkeypatch):
+    """0.1.61 (Task 6 fix round 1): the probe is a report on a `ready` server's live session — it
+    never opens one. A ready server with its session cached, as the supervisor leaves it."""
+    from server.mcp import session
+    async with m() as s:
+        srv = await s.get(MCPServer, sid)
+        srv.state, srv.status = "ready", "connected"
+        await s.commit()
+    monkeypatch.delitem(session.manager._fingerprints, sid, raising=False)
+    monkeypatch.setitem(session.manager._sessions, sid, ("live", _FakeStack()))
+
+
 async def test_health_ok_path_writes_columns(client, monkeypatch):
     c, m = client
     from server.mcp import session
@@ -79,6 +91,7 @@ async def test_health_ok_path_writes_columns(client, monkeypatch):
     monkeypatch.setattr(session.manager, "_proxy_sources", {})
     async with c:
         sid = await _add_server(c)
+        await _ready_and_live(m, sid, monkeypatch)
         r = await c.post(f"/api/v1/mcp/{sid}/health")
     assert r.status_code == 200
     body = r.json()
@@ -92,6 +105,38 @@ async def test_health_ok_path_writes_columns(client, monkeypatch):
     assert srv.health_status == "ok" and srv.last_checked_at is not None
 
 
+async def test_a_successful_probe_refreshes_last_ok_at_and_a_failed_one_does_not(client, monkeypatch):
+    """Final review M-4 (spec §B1: every start, call and probe updates the timestamps): a probe that
+    listed the tools is a sign of life, like a call that reached the server."""
+    from datetime import datetime, timedelta
+
+    c, m = client
+    from server.mcp import session
+    outcomes = [_L([_T("fetch")]), RuntimeError("spawn failed")]
+
+    async def fake_list(server):
+        outcome = outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+    monkeypatch.setattr(session.manager, "list_tools", fake_list)
+    long_ago = datetime(2026, 1, 1)
+    async with c:
+        sid = await _add_server(c)
+        await _ready_and_live(m, sid, monkeypatch)
+        async with m() as s:
+            (await s.get(MCPServer, sid)).last_ok_at = long_ago
+            await s.commit()
+        assert (await c.post(f"/api/v1/mcp/{sid}/health")).json()["health_status"] == "ok"
+        async with m() as s:
+            refreshed = (await s.get(MCPServer, sid)).last_ok_at
+        assert refreshed is not None and refreshed - long_ago > timedelta(days=30)
+        await _ready_and_live(m, sid, monkeypatch)
+        assert (await c.post(f"/api/v1/mcp/{sid}/health")).json()["health_status"] == "failing"
+    async with m() as s:
+        assert (await s.get(MCPServer, sid)).last_ok_at == refreshed
+
+
 async def test_health_ok_clears_stale_last_error_and_reports_proxy_source(client, monkeypatch):
     c, m = client
     from server.mcp import session
@@ -101,6 +146,7 @@ async def test_health_ok_clears_stale_last_error_and_reports_proxy_source(client
     monkeypatch.setattr(session.manager, "list_tools", fake_list)
     async with c:
         sid = await _add_server(c)
+        await _ready_and_live(m, sid, monkeypatch)
         monkeypatch.setattr(session.manager, "_proxy_sources", {sid: "os.environ"})
         async with m() as s:
             srv = await s.get(MCPServer, sid)
@@ -124,6 +170,7 @@ async def test_health_failing_path_persists_last_error(client, monkeypatch):
     monkeypatch.setattr(session.manager, "list_tools", fake_list)
     async with c:
         sid = await _add_server(c)
+        await _ready_and_live(m, sid, monkeypatch)
         r = await c.post(f"/api/v1/mcp/{sid}/health")
     assert r.status_code == 200
     body = r.json()
@@ -150,12 +197,50 @@ async def test_health_timeout_is_bounded_and_drops_session(client, monkeypatch):
     monkeypatch.setattr(session.manager, "list_tools", wedged_list)
     async with c:
         sid = await _add_server(c)
-        session.manager._sessions[sid] = ("fake-session", _FakeStack())
+        await _ready_and_live(m, sid, monkeypatch)
         r = await c.post(f"/api/v1/mcp/{sid}/health")
     body = r.json()
     assert body["health_status"] == "failing"
     assert "timed out" in body["last_error"]
     assert sid not in session.manager._sessions    # wedged subprocess can't poison later calls
+
+
+async def test_health_of_a_server_that_is_not_ready_is_its_stored_state(client, monkeypatch):
+    """0.1.61 (Task 6 fix round 1): health is a report — a server that is not `ready`, or has no
+    live session, is answered with its stored state and classified cause. Nothing is opened (no
+    spawn), nothing is listed, nothing is written."""
+    c, m = client
+    from server.mcp import session
+    cause = "command `uvx` not found — install uv, or let Arslan fetch it"
+    opened, listed = [], []
+
+    async def no_open(server):
+        opened.append(server["id"])
+        raise AssertionError("a health probe never opens a session")
+
+    async def no_list(server):
+        listed.append(server["id"])
+        return _L([_T("fetch")])
+    monkeypatch.setattr(session.manager, "_open_session", no_open)
+    monkeypatch.setattr(session.manager, "list_tools", no_list)
+    async with c:
+        sid = await _add_server(c)
+        async with m() as s:
+            srv = await s.get(MCPServer, sid)
+            srv.state, srv.status, srv.last_error = "parked", "error", cause
+            await s.commit()
+        parked = (await c.post(f"/api/v1/mcp/{sid}/health")).json()
+        async with m() as s:
+            (await s.get(MCPServer, sid)).state = "ready"     # ready, but no session in this process
+            await s.commit()
+        orphan = (await c.post(f"/api/v1/mcp/{sid}/health")).json()
+    assert (parked["state"], parked["last_error"], parked["health_status"]) == ("parked", cause, None)
+    # a `ready` with no session in this process is shown as starting (final review M-1)
+    assert (orphan["state"], orphan["health_status"], orphan["tool_count"]) == ("starting", None, None)
+    assert opened == [] and listed == []
+    async with m() as s:
+        srv = await s.get(MCPServer, sid)
+    assert (srv.health_status, srv.last_checked_at, srv.last_error) == (None, None, cause)
 
 
 async def test_health_unknown_server_404(client):
@@ -204,6 +289,8 @@ async def test_check_health_all_probes_every_server_fail_open(client, monkeypatc
         r = await c.post("/api/v1/mcp/servers",
                          json={"label": "fs", "command": "npx", "args": ["fs"], "env": {}})
         sid2 = r.json()["id"]
+    await _ready_and_live(m, sid1, monkeypatch)
+    await _ready_and_live(m, sid2, monkeypatch)
     await mcp_service.check_health_all()          # one bad server never blocks the next
     async with m() as s:
         s1, s2 = await s.get(MCPServer, sid1), await s.get(MCPServer, sid2)
@@ -265,13 +352,22 @@ async def test_advisory_fails_open_on_lookup_error(maker, monkeypatch):
     assert await _mcp_health_advisory(wired) == ""        # health lookup error → no line
 
 
-async def test_build_spawn_system_appends_advisory_for_failing_server(maker):
-    """End-to-end wiring: a spawn equipped with a wired mcp_* tool on a failing server
-    gets exactly one advisory line inside its assembled system prompt."""
+async def test_build_spawn_system_appends_advisory_for_failing_server(maker, monkeypatch):
+    """End-to-end wiring: a spawn equipped with a wired mcp_* tool on a server whose health probe
+    failed gets exactly one advisory line inside its assembled system prompt.
+
+    0.1.61 Task 8: a spawn is offered a server's tools only while it is ready in this process
+    (`supervisor.ready_now`), so this is a server whose probe failed (e.g. it timed out) while its
+    session is still live — a server that is not ready offers the spawn nothing at all."""
+    from types import SimpleNamespace
+
     from server.db.models import Spawn, SpawnCapability, Tool, Toolset
+    from server.mcp import session
     from server.orchestrator.dispatcher import build_spawn_system
     sid = await _seed_server(maker, health="failing")
+    monkeypatch.setattr(session.manager, "_sessions", {sid: (object(), SimpleNamespace(aclose=None))})
     async with maker() as s:
+        (await s.get(MCPServer, sid)).state = "ready"
         s.add(Toolset(key=f"mcp_{sid}", name="fetch", description="MCP server: uvx",
                       tier="safe", status="registered"))
         s.add(Tool(key=f"mcp_{sid}__fetch", toolset_key=f"mcp_{sid}", description="fetch a url",

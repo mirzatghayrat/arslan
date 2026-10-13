@@ -9,7 +9,7 @@ class _ACM:
 
 
 class _Sess:
-    def __init__(self, *a): pass
+    def __init__(self, *a, **kw): pass
     async def __aenter__(self): return self
     async def __aexit__(self, *a): return False
     async def initialize(self): self.inited = True
@@ -21,7 +21,7 @@ def stub_sdk(monkeypatch):
     import mcp.client.stdio as sstdio
     import mcp.client.streamable_http as shttp
     calls = {}
-    def fake_stdio(params):
+    def fake_stdio(params, errlog=None):
         calls["stdio"] = params
         return _ACM(("r", "w"))
     def fake_http(url, headers=None, auth=None):

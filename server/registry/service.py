@@ -475,9 +475,75 @@ async def replace_user_equipment(session: AsyncSession, spawn_id: int,
     await session.commit()
 
 
+def _mcp_server_id(toolset_key: str | None) -> int | None:
+    """The server behind an `mcp_<id>` toolset key; None for any other key and for an `mcp_*` key no
+    server owns (`mcp_x`)."""
+    suffix = (toolset_key or "")[len("mcp_"):]
+    return (int(suffix) if (toolset_key or "").startswith("mcp_") and suffix.isascii() and suffix.isdigit()
+            else None)
+
+
+async def _only_ready_mcp(db: AsyncSession, tools: list) -> list:
+    """0.1.61 §B1 (Task 8): an MCP server's tools are offered only while it is ready in this process
+    (`supervisor.ready_now`: its row says `ready` AND the session manager holds a live session) — the
+    one rule the host's tool list, `list_my_capabilities` and the Capabilities rows follow. A spawn
+    equipped with a server that is starting, failed, parked, switched off, removed or whose session
+    died is offered nothing from it and is offered it again the moment it is ready. A toolset named
+    `mcp_*` that no server owns is not offered (the execution surface fails closed). Other toolsets
+    are untouched."""
+    from server.db.models import MCPServer
+    from server.mcp.supervisor import ready_now
+
+    def is_mcp(tool) -> bool:
+        return (tool.toolset_key or "").startswith("mcp_")
+
+    if not any(is_mcp(t) for t in tools):
+        return tools
+    wanted = {_mcp_server_id(t.toolset_key) for t in tools if is_mcp(t)} - {None}
+    states = dict((await db.execute(
+        select(MCPServer.id, MCPServer.state).where(MCPServer.id.in_(wanted)))).all()) if wanted else {}
+    ready = {sid for sid in wanted if ready_now(sid, states.get(sid))}
+    return [t for t in tools if not is_mcp(t) or _mcp_server_id(t.toolset_key) in ready]
+
+
+def _active_toolset_keys(caps, current_turn: int) -> list[str]:
+    """The toolsets a spawn holds right now: permanent, or a temporary grant not yet expired."""
+    return [c.ref_key for c in caps
+            if c.grant == "permanent"
+            or (c.expires_turn is not None and c.expires_turn >= current_turn)]
+
+
+async def unready_mcp_servers(toolset_keys) -> list:
+    """The MCP servers behind these toolset keys that are NOT ready in this process
+    (`supervisor.ready_now`), by id — the ones whose tools `wired_tools_for_spawn` withholds. A spawn's
+    prompt and an escalation grant name them (Task 8 fix round 1); a key that is not `mcp_<id>`, and a
+    server that no longer exists, name nothing."""
+    from server.db.models import MCPServer
+    from server.mcp.supervisor import ready_now
+
+    wanted = {_mcp_server_id(k) for k in toolset_keys} - {None}
+    if not wanted:
+        return []
+    async with db_session.AsyncSessionLocal() as db:
+        rows = (await db.execute(
+            select(MCPServer).where(MCPServer.id.in_(wanted)).order_by(MCPServer.id))).scalars().all()
+    return [r for r in rows if not ready_now(r.id, r.state)]
+
+
+async def spawn_unready_mcp_servers(spawn_id: int, *, current_turn: int) -> list:
+    """The servers of this spawn's equipped (permanent or still-active temporary) `mcp_*` toolsets that
+    are not ready — what its prompt tells it about the tools it was equipped with and does not have."""
+    async with db_session.AsyncSessionLocal() as db:
+        caps = (await db.execute(
+            select(SpawnCapability).where(SpawnCapability.spawn_id == spawn_id,
+                                          SpawnCapability.kind == "toolset"))).scalars().all()
+    return await unready_mcp_servers(_active_toolset_keys(caps, current_turn))
+
+
 async def wired_tools_for_spawn(spawn_id: int, *, current_turn: int) -> list[dict]:
     """Layer-3 gate: tools callable by this spawn RIGHT NOW = (equipped toolsets, permanent
-    or unexpired-temporary) ∩ safe ∩ wired, UNION the universal safe tools (also safe ∩ wired)."""
+    or unexpired-temporary) ∩ safe ∩ wired ∩ (MCP only while its server is ready in this process),
+    UNION the universal safe tools (also safe ∩ wired)."""
     async with db_session.AsyncSessionLocal() as db:
         caps = (await db.execute(
             select(SpawnCapability).where(
@@ -485,11 +551,7 @@ async def wired_tools_for_spawn(spawn_id: int, *, current_turn: int) -> list[dic
                 SpawnCapability.kind == "toolset",
             )
         )).scalars().all()
-        active_keys = [
-            c.ref_key for c in caps
-            if c.grant == "permanent"
-            or (c.expires_turn is not None and c.expires_turn >= current_turn)
-        ]
+        active_keys = _active_toolset_keys(caps, current_turn)
         equipped: list = []
         if active_keys:
             equipped = (await db.execute(
@@ -499,6 +561,7 @@ async def wired_tools_for_spawn(spawn_id: int, *, current_turn: int) -> list[dic
                     Tool.status == "wired",
                 )
             )).scalars().all()
+            equipped = await _only_ready_mcp(db, equipped)
         universal = (await db.execute(
             select(Tool).where(
                 Tool.key.in_(_UNIVERSAL_SAFE_TOOLS),

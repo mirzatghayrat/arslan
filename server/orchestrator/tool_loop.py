@@ -1238,7 +1238,15 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
 
     live = {t["key"] for t in await resolve_tools()}
     executor = (await resolve_executor(tool_key)) if tool_key in live else None
-    if executor is None:
+    not_ready = None
+    if executor is None and tool_key.startswith("mcp_"):
+        # 0.1.61 §B1: a server that stopped since this turn's tool list was built answers with its
+        # state and reason, not "not available to you" — the call never left Arslan.
+        from server.mcp.executor import not_ready_for_key
+        not_ready = await not_ready_for_key(tool_key)
+    if not_ready is not None:
+        result = not_ready
+    elif executor is None:
         import difflib
         near = difflib.get_close_matches(tool_key, sorted(live), n=5, cutoff=0.3) or sorted(live)[:5]
         result = {"ok": False, "external": False, "code": "tool_unavailable",

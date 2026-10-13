@@ -73,6 +73,8 @@ async def list_capabilities() -> dict:
             {"key": t["key"], "description": t["description"], "tier": t["tier"]}
             for t in menu["toolsets"]
         ],
+        # the legacy status follows the shown state (`mcp_service._to_dict`, final review M-1):
+        # `connected` only for a server that is ready in this process
         "mcp_servers": [
             {"label": s.get("label"), "status": s.get("status")} for s in servers
         ],
