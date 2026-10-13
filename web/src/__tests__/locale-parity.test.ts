@@ -290,7 +290,8 @@ describe("locale parity", () => {
     // 1750 → 1751 (0.1.61 PR 2b): schedgrant.unattended — what a scheduled run does, on a card that offers a choice.
     // 1751 → 1757 (0.1.61 PR 2b): inbox.{refusedTitle,alwaysAllow,alwaysStores,asksEachTime,allowedNow,refusedTimes}.
     // 1757 → 1763 (0.1.61 PR 2b Task 4): kit.{hide,hideHint,hiddenConnected,hiddenConnectFailed,hiddenEnrolled,hiddenEnrollFailed}.
-    expect(enKeys).toHaveLength(1763);
+    // 1763 → 1764 (0.1.61 PR 2b Task 4, fix round 1): inbox.undo — the Undo beside an "Always allow".
+    expect(enKeys).toHaveLength(1764);
   });
 
   // 0.1.61 PR 2b: a card's "Always" must say what it allows, in every language: the literal scope is interpolated.

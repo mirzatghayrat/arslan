@@ -2,10 +2,20 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { request } from "../../api/client";
 import AskForFrame, { ANSWERABLE, type AnswerExtra, type PendingAsk } from "../AskForFrame";
-import { AnswerGuardScope, AskQueue, Notice, useAnswerGuardState } from "../kit";
+import { AnswerGuardScope, AskQueue, CARD_MS, Notice, useAnswerGuardState } from "../kit";
 import { announceProactiveChange } from "../../api/proactive";
 
 const POLL_MS = 5_000;
+/** An expires_at more than this long before the Inbox first saw the card is not a time (a duration sent as an epoch): it counts as none, as in the chat. */
+const MAX_PAST_MS = 86_400_000;
+
+/** When the card runs out, in ms: the server's own expiry, capped at the 30 minutes the Mac waits from when this Inbox first saw it (as the chat's
+ *  slot does), so a far-off or missing time neither overflows a timer nor outlives the wait. */
+function expiryOf(expiresAt: unknown, firstSeen: number): number {
+  const wait = firstSeen + CARD_MS;
+  const own = typeof expiresAt === "number" && Number.isFinite(expiresAt) && expiresAt > 0 ? expiresAt * 1000 : null;
+  return own === null || own < firstSeen - MAX_PAST_MS ? wait : Math.min(own, wait);
+}
 
 /** A call id is one entry in the queue (it keys the card and what has been typed or picked on it): the first of a card listed twice stays. */
 function onePerCallId(rows: PendingAsk[]): PendingAsk[] {
@@ -35,16 +45,34 @@ export default function InboxApprovals({ onOpenConversation, onCount }: {
   const guard = useAnswerGuardState();
   const alive = useRef(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  const firstSeen = useRef(new Map<string, number>());
 
   const load = useCallback(async () => {
     try {
       const rows = await request<PendingAsk[]>("/approvals/pending");
       if (!alive.current) return;
-      const shown = Array.isArray(rows) ? onePerCallId(rows.filter((r) => ANSWERABLE.has(r.frame?.type))) : [];
+      const now = Date.now();
+      const seen = firstSeen.current;
+      // A card whose time is up is not shown (the server has closed it, and it may still be listed for a moment): each carries its expiry, capped.
+      const shown = (Array.isArray(rows) ? onePerCallId(rows.filter((r) => ANSWERABLE.has(r.frame?.type))) : [])
+        .map((r) => { if (!seen.has(r.call_id)) seen.set(r.call_id, now); return { ...r, expires_at: expiryOf(r.expires_at, seen.get(r.call_id)!) / 1000 }; })
+        .filter((r) => r.expires_at * 1000 > now);
+      for (const id of [...seen.keys()]) if (!shown.some((r) => r.call_id === id)) seen.delete(id);
       setAsks(shown);
       onCount?.(shown.length);
     } catch { /* the rest of the Inbox still works */ }
   }, [onCount]);
+  // A card closes at its own expiry, not at the next poll: at 0:00 its Allow would be live over a card the server no longer waits on.
+  useEffect(() => {
+    if (!asks.length) return;
+    const next = Math.min(...asks.map((a) => a.expires_at * 1000));
+    const timer = setTimeout(() => {
+      const keep = asks.filter((a) => a.expires_at * 1000 > Date.now());
+      setAsks(keep);
+      onCount?.(keep.length);
+    }, Math.max(0, next - Date.now()) + 1);
+    return () => clearTimeout(timer);
+  }, [asks, onCount]);
   useEffect(() => {
     void load();
     const timer = setInterval(() => { if (document.visibilityState !== "hidden") void load(); }, POLL_MS);

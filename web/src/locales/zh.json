@@ -1958,7 +1958,8 @@
     "alwaysStores": "这会始终允许：{{what}}",
     "asksEachTime": "每次都会问",
     "allowedNow": "以后都允许",
-    "refusedTimes": "自 {{since}} 起共 {{count}} 次"
+    "refusedTimes": "自 {{since}} 起共 {{count}} 次",
+    "undo": "撤销"
   },
   "pendingMemory": {
     "curationFallback": "一条整理记忆的建议",

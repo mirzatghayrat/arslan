@@ -1958,7 +1958,8 @@
     "alwaysStores": "This will always allow: {{what}}",
     "asksEachTime": "Asks each time",
     "allowedNow": "Allowed from now on",
-    "refusedTimes": "{{count}} times since {{since}}"
+    "refusedTimes": "{{count}} times since {{since}}",
+    "undo": "Undo"
   },
   "pendingMemory": {
     "curationFallback": "A suggestion to tidy your memory",

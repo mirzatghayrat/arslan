@@ -61,6 +61,21 @@ describe("the action card in the Inbox knows its permission kind", () => {
   });
 });
 
+describe("a card a background job asks is said to be the job's, on every card the Inbox draws (M5)", () => {
+  it.each([
+    ["action", { ...ACT, kind: "app", perm_kind: "app" }],
+    ["command", CMD],
+    ["workspace write", { type: "propose_workspace_write", call_id: "w1", workspace: "/w", action: "write_file", path: "a.md", options: ["once", "conversation"] }],
+    ["schedule", { type: "propose_schedule", call_id: "s1", name: "Brief", when: "every: 3600", options: ["once", "conversation"] }],
+  ])("%s: who asks is the job when the frame says background, and Arslan when it does not", async (_what, frame) => {
+    show([row({ ...frame, background: true })]);
+    expect(await screen.findByRole("alertdialog", { name: "jobs.askingBadge" })).toBeInTheDocument();
+    cleanup();
+    show([row({ ...frame, background: false })]);
+    expect(await screen.findByRole("alertdialog", { name: "kit.whoArslan" })).toBeInTheDocument();
+  });
+});
+
 describe("the write and schedule cards in the Inbox offer their choices and send the one chosen", () => {
   it("a workspace write: In this conversation is a choice, and the yes carries it", async () => {
     const req = serve([row({ type: "propose_workspace_write", call_id: "w1", workspace: "/w", action: "write_file", path: "a.md",

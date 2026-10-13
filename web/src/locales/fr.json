@@ -1958,7 +1958,8 @@
     "alwaysStores": "Cela autorisera toujours : {{what}}",
     "asksEachTime": "Demande à chaque fois",
     "allowedNow": "Autorisé désormais",
-    "refusedTimes": "{{count}} fois depuis {{since}}"
+    "refusedTimes": "{{count}} fois depuis {{since}}",
+    "undo": "Annuler"
   },
   "pendingMemory": {
     "curationFallback": "Une suggestion de rangement",

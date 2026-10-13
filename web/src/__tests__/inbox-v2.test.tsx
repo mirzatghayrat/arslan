@@ -187,7 +187,8 @@ describe("Not done while you were away", () => {
     const req = serve([both]);
     render(<InboxRefused />);
     await screen.findAllByTestId("inbox-refused-row");
-    expect(within(row(0)).getByTestId("inbox-refused-stores")).toHaveTextContent('inbox.alwaysStores:{"what":"Send an email, Mail"}');
+    expect(within(row(0)).getAllByTestId("inbox-refused-rule").map((r) => r.textContent)).toEqual(
+      ['inbox.alwaysStores:{"what":"Send an email"}', 'inbox.alwaysStores:{"what":"Mail"}']);                  // each rule on a line of its own
     fireEvent.click(within(row(0)).getByTestId("inbox-refused-allow"));
     await waitFor(() => expect(req).toHaveBeenCalledWith("/permissions/rules", { method: "POST", body: JSON.stringify({ refused_id: 30 }) }));
   });
@@ -234,10 +235,11 @@ describe("Not done while you were away", () => {
     const NO: Record<string, RegExp> = {
       en: /declin|refus|reject|den(y|ied)/i, zh: /拒绝/, ja: /拒否/, es: /rechaz|deneg/i, de: /ablehn|verweiger/i, fr: /refus|rejet/i,
     };
-    const keys = ["refusedTitle", "alwaysAllow", "alwaysStores", "asksEachTime", "allowedNow", "refusedTimes"];
+    const keys = ["refusedTitle", "alwaysAllow", "alwaysStores", "asksEachTime", "allowedNow", "refusedTimes", "undo"];
     for (const [lang, words] of Object.entries({ en, zh, ja, es, de, fr }) as [string, { inbox: Record<string, string> }][]) {
       for (const key of keys) {
         expect(words.inbox[key], `${lang} inbox.${key}`).toBeTypeOf("string");
+        expect(words.inbox[key].trim().length, `${lang} inbox.${key}`).toBeGreaterThan(0);
         expect(words.inbox[key], `${lang} inbox.${key}`).not.toMatch(NO[lang]);
       }
     }
