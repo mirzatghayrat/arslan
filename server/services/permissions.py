@@ -124,9 +124,11 @@ Asker = Callable[[dict], Awaitable[dict]]
 _ASKER: ContextVar[Asker | None] = ContextVar("permissions_asker", default=None)
 #: The tasks (chat turns, jobs) this process gave a "for this task" grant: what `forget_task` has
 #: to delete when one ends. Any other task's end never touches the database — whose write lock a
-#: stopped job's own interrupted transaction can hold for seconds (CI 38293278888). A grant left
-#: behind (a restart, a failed delete) is for a task id that never comes back, and the store's
-#: 24-hour prune removes it.
+#: stopped job's own interrupted transaction can hold for seconds (CI 38293278888). A task whose
+#: delete failed stays here, for the next forget of that id to retry: a job id never comes back, but
+#: a chat task can be resumed under the same id (`task_service.prepare_resume`) and would otherwise
+#: keep the grant it was given before. What a restart leaves behind is removed by the store's
+#: 24-hour prune.
 _GRANTED_TASKS: set[str] = set()
 #: The last decision in this context: tool results read it to tell "expired" from "no".
 LAST_DECISION: ContextVar[Decision | None] = ContextVar("permissions_last_decision", default=None)
@@ -238,13 +240,20 @@ async def forget_task(task_id: str | None) -> int:
     leaves no "for this task" grant behind. Its conversation's grants stay. Returns how many went.
 
     Only a task this process gave such a grant has any (`_GRANTED_TASKS`): for every other one this
-    returns at once, without the database."""
+    returns at once, without the database. A delete that does not go through — a held write lock
+    gives "database is locked", or the wait itself is cancelled — leaves the task registered, for the
+    next forget of that id to retry: a chat task is resumed under the same id."""
     if not task_id or task_id not in _GRANTED_TASKS:
         return 0
+    # Discarded first: a grant this task is given while the delete runs registers it again.
     _GRANTED_TASKS.discard(task_id)
-    async with db_session.AsyncSessionLocal() as db:
-        gone = await permission_store.delete_task_grants(db, task_id)
-        await db.commit()
+    try:
+        async with db_session.AsyncSessionLocal() as db:
+            gone = await permission_store.delete_task_grants(db, task_id)
+            await db.commit()
+    except BaseException:
+        _GRANTED_TASKS.add(task_id)             # still stored: it is still owed
+        raise
     return gone
 
 

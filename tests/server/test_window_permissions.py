@@ -662,3 +662,41 @@ def test_a_turn_given_nothing_for_its_task_ends_without_waiting_on_the_database(
         _collect_until(ws, "stream_end")
         _until(ended, seconds=2)
     assert deleting == []
+
+
+# ── PR 2 fix wave 2 (M3 X5): a forget that raises is never a turn that does not end ────────────────
+
+def test_a_turns_forget_that_raises_does_not_stop_the_turn_from_ending(app_client, monkeypatch, caplog):
+    """The store's 24-hour prune is the backstop for a turn's grants a locked database would not
+    let go: the turn still ends — `turn_finished` goes out and the socket flushes."""
+    import logging
+
+    import server.registry.executors as executors_mod
+    from server.services import desktop_status, permissions
+    monkeypatch.setattr(task_context, "is_active", AsyncMock(return_value=True))   # the turn is a task
+    patched = dict(executors_mod.EXECUTORS)
+    patched["list_dir"] = _AsksForNotes()
+    monkeypatch.setattr(executors_mod, "EXECUTORS", patched)
+    monkeypatch.setattr(tool_loop_mod, "EXECUTORS", patched)
+    monkeypatch.setattr(tool_loop_mod, "_get_adapter", lambda: _Steps(("list_dir", {"path": "."})))
+    forgetting = []
+
+    async def locked(task_id):
+        forgetting.append(task_id)
+        raise RuntimeError("database is locked")
+    monkeypatch.setattr(permissions, "forget_task", locked)
+    desktop_status._reset_for_tests()
+
+    def ended() -> bool:
+        return any(e["kind"] == "turn_finished" and e["conversation_id"] == "conv-f1"
+                   for e in desktop_status.snapshot()["events"])
+    with caplog.at_level(logging.WARNING, logger="server.ws.arslan"):
+        with app_client.websocket_connect("/ws/arslan/conv-f1") as ws:
+            ws.receive_json()
+            ws.send_json({"type": "user_message", "content": "look at my notes"})
+            card = _collect_until(ws, "propose_action")[-1]
+            ws.send_json({"type": "confirm_action", "call_id": card["call_id"], "scope": "task"})
+            _collect_until(ws, "stream_end")
+            _until(ended, seconds=2)
+    assert len(forgetting) == 1                                       # it was tried, for the turn's task
+    assert "task grants not forgotten" in caplog.text

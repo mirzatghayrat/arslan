@@ -3,6 +3,7 @@
 Offline: a scripted adapter stands in for the model. No paid calls.
 """
 import asyncio
+import logging
 import time
 import uuid
 from unittest.mock import AsyncMock
@@ -871,3 +872,77 @@ async def test_only_a_job_given_a_grant_for_its_task_deletes_one_at_its_end(exec
     assert seen.get("decision") == ((True, answer) if kind else None)
     assert job.outcome == "done"
     assert deleted == ([job.job_id] if answer == "task" else [])
+
+
+# ── PR 2 fix wave 2: the forget is the last of a job's bookkeeping, and nothing before it skips it ──
+
+@pytest.mark.parametrize("failing", ["_emit", "_report", "_report_to_project"])
+async def test_a_job_whose_reporting_raises_still_forgets_its_task_grants(execution_db, active, monkeypatch,
+                                                                         failing):
+    """Whatever raises while a finished job is reported — the frame to the windows, the result
+    message, the project's tick — its "for this task" grants still end with it. A job id never
+    comes back, so rows left behind would only wait for the store's 24-hour prune."""
+    from server.db.models import PermissionGrant
+    from server.orchestrator import arslan as arslan_mod
+    from server.services import permissions
+    seen = {}
+
+    async def body(conversation_id, goal, emit, confirmations):
+        decision = await permissions.decide(
+            permissions.Request(kind="app", target="com.apple.Notes", title="Use Notes?"),
+            permissions.Context(conversation_id=conversation_id))
+        seen["decision"] = (decision.allowed, decision.scope)
+        return f"Done: {PHRASE}"
+    monkeypatch.setattr(arslan_mod, "background_body", body)
+    real_emit = background_jobs._emit
+
+    def emit_failing_when_finished(job):
+        if job.phase == "finished":
+            raise RuntimeError("the window is gone")
+        real_emit(job)
+
+    async def broken(*args, **kwargs):
+        raise RuntimeError("the window is gone")
+    monkeypatch.setattr(background_jobs, failing, emit_failing_when_finished if failing == "_emit" else broken)
+    window = _a_window_answering({"Use Notes?": "task"})
+    run_registry.attach_sink(CID, window)
+    try:
+        job = await background_jobs.start(CID, "Tidy my notes into a report", _criteria())
+        await _wait(lambda: job.task.done())
+    finally:
+        run_registry.detach_sink(CID, window)
+    assert seen["decision"] == (True, "task")                       # it really was given one
+    assert job.phase == "finished" and job.outcome == "done"
+    assert isinstance(job.task.exception(), RuntimeError)           # the reporting's own error still shows
+    async with execution_db() as db:
+        assert (await db.scalars(select(PermissionGrant))).all() == []
+
+
+@pytest.mark.parametrize("ending", ["done", "stopped"])
+async def test_a_forget_that_raises_changes_nothing_about_how_a_job_ends(execution_db, active, frames, monkeypatch,
+                                                                         caplog, ending):
+    """A database that cannot be written at a job's end (its grants stay for the 24-hour prune) never
+    turns the end into a failure: the job reads finished, is reported, and its task ends cleanly."""
+    from server.services import permissions
+    forgetting = []
+
+    async def locked(task_id):
+        forgetting.append(task_id)
+        raise RuntimeError("database is locked")
+    monkeypatch.setattr(permissions, "forget_task", locked)
+    gate = asyncio.Event()
+    adapter = JobAdapter(gate)
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    with caplog.at_level(logging.WARNING, logger="server.services.background_jobs"):
+        job = await background_jobs.start(CID, "Tidy my notes into a report", _criteria())
+        await _wait(lambda: adapter.job_calls == 1)                  # working: at the model
+        if ending == "stopped":
+            assert background_jobs.stop(CID, job.job_id)
+        else:
+            gate.set()
+        await _wait(lambda: job.task.done())
+    assert forgetting == [job.job_id]
+    assert job.task.exception() is None                              # nothing raised into the loop
+    assert job.phase == "finished" and job.outcome == ending
+    assert any(f["type"] == "job_spoken" and f["job_id"] == job.job_id for f in frames)
+    assert "task grants not forgotten" in caplog.text

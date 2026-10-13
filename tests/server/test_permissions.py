@@ -1081,3 +1081,115 @@ async def test_record_standing_is_decided_by_a_rule_or_a_mode_and_nothing_else(b
     with pytest.raises(ValueError):
         await permissions.record_standing(_takeover(), CTX, by=by)
     assert await _store_counts() == (0, 0, 0)
+
+
+# ── PR 2 fix wave 2 (re-review of the F1–F4 wave): a failed delete keeps the task forgettable ──────
+
+def _delete_failing(monkeypatch, times: int = 1) -> list[str]:
+    """`permission_store.delete_task_grants` fails the first `times` times with "database is locked"
+    — as when a stopped run's interrupted transaction still holds SQLite's write lock. Returns the
+    task ids it was asked to delete."""
+    real = permission_store.delete_task_grants
+    calls: list[str] = []
+
+    async def flaky(db, task_id):
+        calls.append(task_id)
+        if len(calls) <= times:
+            raise RuntimeError("database is locked")
+        return await real(db, task_id)
+    monkeypatch.setattr(permission_store, "delete_task_grants", flaky)
+    return calls
+
+
+async def _task_grants() -> list[tuple[str, str]]:
+    async with db_session.AsyncSessionLocal() as db:
+        return sorted((g.task_id, g.target) for g in (await db.scalars(sa.select(PermissionGrant))).all())
+
+
+async def test_a_forget_whose_delete_failed_is_retried_by_the_next_forget_of_that_task(monkeypatch):
+    """A chat task is resumed under the SAME id (task_service.prepare_resume), so a task whose delete
+    failed ("database is locked") has not gone for good: the next forget of that id deletes its
+    grants. Only a delete that went through lets the task be forgotten."""
+    with permissions.asking_with(Asker(yes("task"))):
+        await permissions.decide(app(), Context(conversation_id="conv-1", task_id="turn-locked"))
+    calls = _delete_failing(monkeypatch)
+    with pytest.raises(RuntimeError, match="database is locked"):
+        await permissions.forget_task("turn-locked")
+    assert await _task_grants() == [("turn-locked", "com.apple.Notes")]           # still stored
+    assert await permissions.forget_task("turn-locked") == 1                      # the retry deletes it
+    assert calls == ["turn-locked", "turn-locked"]
+    assert await _task_grants() == []
+    with _write_lock_held():                                  # and now it is forgotten for good
+        assert await asyncio.wait_for(permissions.forget_task("turn-locked"), 1) == 0
+    assert calls == ["turn-locked", "turn-locked"]
+
+
+async def test_a_task_resumed_under_its_id_after_a_failed_forget_is_asked_again_once_it_is_forgotten(
+        monkeypatch):
+    """The user answered "For this task", the run was stopped and its end could not delete the grant.
+    The task is resumed under the same id; when a later end retries the delete, the grant goes and
+    the task is asked again — it is not let in by a grant a locked database kept."""
+    task = Context(conversation_id="conv-1", task_id="turn-resumed")
+    asker = Asker(yes("task"), yes("task"))
+    _delete_failing(monkeypatch)
+    with permissions.asking_with(asker):
+        first = await permissions.decide(app(), task)                       # run 1: "For this task"
+        with pytest.raises(RuntimeError):
+            await permissions.forget_task("turn-resumed")                   # its end: database locked
+        assert await permissions.forget_task("turn-resumed") == 1           # a later end of the task
+        again = await permissions.decide(app(), task)                       # the same id, resumed
+    assert [(d.by, d.scope) for d in (first, again)] == [("user", "task"), ("user", "task")]
+    assert len(asker.frames) == 2                                           # asked again, not "grant"
+
+
+async def test_a_forget_cancelled_while_it_waits_for_the_database_is_still_owed(monkeypatch):
+    """A cancel is not an Exception: the end of a task can itself be cancelled while it waits for a
+    locked database (its job's task, a socket that closed). Its grants are still to be forgotten."""
+    entered, release = asyncio.Event(), asyncio.Event()
+    real = permission_store.delete_task_grants
+
+    async def waiting(db, task_id):
+        entered.set()
+        await release.wait()                                  # the write lock does not free
+        return await real(db, task_id)
+    monkeypatch.setattr(permission_store, "delete_task_grants", waiting)
+    with permissions.asking_with(Asker(yes("task"))):
+        await permissions.decide(app(), Context(conversation_id="conv-1", task_id="turn-cancelled"))
+    forgetting = asyncio.ensure_future(permissions.forget_task("turn-cancelled"))
+    await asyncio.wait_for(entered.wait(), 2)
+    forgetting.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await forgetting
+    release.set()                                             # the lock frees
+    assert await permissions.forget_task("turn-cancelled") == 1
+    assert await _task_grants() == []
+
+
+# ── PR 2 fix wave 2 (M3): pins for what the re-review's mutants showed nothing held ───────────────
+
+async def test_a_many_app_card_answered_for_the_task_is_forgotten_with_the_task_app_by_app():
+    """decide_many's one card stores a task grant per app (`grant_as`), and the task's end has to
+    find them all: its task is registered like a single app's."""
+    apps = [app("com.apple.Notes"), app("com.apple.mail"), app("com.apple.reminders")]
+    with permissions.asking_with(Asker(yes("task"))):
+        decisions = await permissions.decide_many(
+            apps, Context(conversation_id="conv-1", task_id="turn-many"), title="Use Notes, Mail and Reminders?")
+    assert [(d.by, d.scope) for d in decisions] == [("user", "task")] * 3
+    assert len(await _task_grants()) == 3
+    assert await permissions.forget_task("turn-many") == 3
+    assert await _task_grants() == []
+
+
+@pytest.mark.parametrize("own, kind", [("app", "money"), ("site", "takeover"), ("folder", "destructive"),
+                                       ("money", "app")])
+async def test_the_permission_kind_a_card_carries_is_the_requests_never_its_own_frames(own, kind):
+    """A caller's frame is its card's shape; the server decides what the card IS. The permission
+    kind (the island answers by it) is the request's kind, whatever the caller's frame says."""
+    island = {"folder", "app", "screen", "mcp_tool", "schedule", "site", "shortcut"}
+    frame = protocol.propose_action("hostile", "desktop_app", "Notes", "") | {"perm_kind": own}
+    asker = Asker(no())
+    with permissions.asking_with(asker):
+        await permissions.decide(Request(kind=kind, target="com.apple.Notes", title="Go ahead?", frame=frame), CTX)
+    [shown] = asker.frames
+    assert shown["perm_kind"] == kind
+    assert approvals.island_may_answer(shown) is (kind in island)
