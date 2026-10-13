@@ -18,7 +18,7 @@ async def maker(tmp_path, monkeypatch):
     monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
     async with m() as s:
         s.add(MCPServer(id=7, label="fetcher", transport="stdio", command="x",
-                        args=[], env=None, status="connected"))
+                        args=[], env=None, status="connected", state="ready"))
         s.add(Toolset(key="mcp_7", name="fetcher", description="d",
                       tier="orchestrator", status="registered"))
         s.add(Tool(key="mcp_7__fetch", toolset_key="mcp_7", description="fetch",

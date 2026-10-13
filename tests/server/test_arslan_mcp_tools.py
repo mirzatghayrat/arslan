@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 import server.db.session as db_session
 from server.db.models import Base, MCPServer, Tool, Toolset
+from server.mcp import supervisor as sm
 
 
 @pytest_asyncio.fixture
@@ -23,7 +24,9 @@ async def maker(tmp_path, monkeypatch):
         await conn.run_sync(Base.metadata.create_all)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
     async with m() as s:
-        s.add(MCPServer(id=1, label="fs", command="x", args=[], env=None, status="connected"))
+        # 0.1.61 §B1: ready as this process's supervisor writes it (the state and its stamp).
+        s.add(MCPServer(id=1, label="fs", command="x", args=[], env=None, status="connected", state="ready",
+                        state_at=sm._utcnow()))
         s.add(Toolset(key="mcp_1", name="fs", description="d", tier="orchestrator", status="registered"))
         # Deliberately three different per-tool states — under the server-level
         # ruling NONE of them matters for the host dimension.
@@ -56,9 +59,15 @@ async def test_host_allowed_false_excludes_the_whole_server(maker):
     assert not any(k.startswith("mcp_1__") for k in keys)
     assert "web_search" in keys                                   # built-ins unaffected
 
-    await mcp_service.set_host_allowed(1, True)                   # revocable both ways
-    keys = {t["key"] for t in await _arslan_tools()}
-    assert "mcp_1__write" in keys
+    # 0.1.61 §B1: switching it back on starts it; its tools return once it is ready.
+    await mcp_service.set_host_allowed(1, True)
+    async with maker() as s:
+        assert (await s.get(MCPServer, 1)).state == "starting"
+    assert not any(k.startswith("mcp_1__") for k in {t["key"] for t in await _arslan_tools()})
+    async with maker() as s:
+        (await s.get(MCPServer, 1)).state = "ready"
+        await s.commit()
+    assert "mcp_1__write" in {t["key"] for t in await _arslan_tools()}
 
 
 async def test_set_host_allowed_persists_and_lists(maker):

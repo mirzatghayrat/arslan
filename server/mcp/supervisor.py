@@ -20,6 +20,9 @@ States: off | starting | ready | failed | needs_auth | parked.
   overtaken open's budget). A re-list that finds the session dead schedules that fresh start
   itself: `list_tools` never calls `on_dropped`.
 - Masking never raises: `spawn_env.secret_forms` refuses a malformed URL, so `_secrets` falls back.
+- Only a `ready` this process stands behind is offered to the model (`ready_now`: a live session, or
+  written since this process started). The tick restarts a `ready` row with no live session and no
+  start on its way — the safety net for a session that vanished without a drop callback.
 """
 from __future__ import annotations
 
@@ -89,6 +92,24 @@ SAFE_REASON_PREFIXES = (
 def _utcnow() -> datetime:
     """Naive UTC, like every DateTime column here."""
     return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+#: When this process started (naive UTC, like `state_at`). A `ready` stamped before it was written by
+#: an earlier run: migration 0068 maps connected → ready, and a failed boot reset leaves it in place.
+BOOTED_AT = _utcnow()
+
+
+def ready_now(server_id: int, state: str | None, state_at: datetime | None) -> bool:
+    """0.1.61 §B1 exposure (Task 7): a server's tools are offered only when its row says `ready` AND
+    this process stands behind it — the session manager holds a live session for it, or the `ready`
+    was written since this process started. So a `ready` left from the last run offers nothing (a
+    failed boot reset is harmless); one whose session vanished without a drop callback is still
+    offered, a call to it answers "still starting", and the tick restarts it (`_tick`)."""
+    if state != "ready":
+        return False
+    if mcp_session.manager.cached(server_id) is not None:
+        return True
+    return state_at is not None and state_at >= BOOTED_AT
 
 
 def switched_on() -> bool:
@@ -823,6 +844,12 @@ class Supervisor:
                 MCPServer.state == "starting",
                 or_(MCPServer.state_at.is_(None),             # inserted, never started
                     MCPServer.state_at <= now - timedelta(seconds=STARTING_STALE_S))))).scalars().all()
+            # A `ready` row with no live session behind it and no start on its way is dead (Task 7):
+            # its session vanished without a drop callback (a cancelled health probe's listing
+            # dropped it), or it is the last run's `ready` (a failed boot reset). Switched-off rows
+            # too: `refresh` respects the switch and ends them `off`.
+            ready = (await db.execute(select(MCPServer.id).where(
+                MCPServer.state == "ready").order_by(MCPServer.id))).scalars().all()
         for sid, state in due:
             if not await self._still(sid, (state,), gens.get(sid, 0)):    # a verb, a plan, moved on
                 continue
@@ -837,6 +864,14 @@ class Supervisor:
                 logger.warning("mcp %s: starting with no plan for %g s; restarting it", sid,
                                STARTING_STALE_S)
                 self._new_plan(sid, "refresh")
+        for sid in ready:
+            task = self._inflight.get(sid)
+            if (mcp_session.manager.cached(sid) is not None or self.start_in_flight(sid)
+                    or (task is not None and not task.done())):
+                continue                          # alive, or a start (queued or running) is on its way
+            if await self._still(sid, ("ready",), gens.get(sid, 0)):
+                logger.warning("mcp %s: ready with no live session; restarting it", sid)
+                self.schedule(sid, fresh=True)
         mono = time.monotonic()
         for sid, since in list(self._ready_since.items()):
             if mono - since >= RECONNECT_RESET_S:

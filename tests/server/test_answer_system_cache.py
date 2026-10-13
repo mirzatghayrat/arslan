@@ -66,6 +66,12 @@ def test_extra_system_lands_in_volatile_not_stable():
     assert "ADDENDUM-XYZ" not in s.stable
 
 
+def test_the_mcp_status_line_is_volatile():
+    s = _sys(mcp_line="\n\nMCP servers not available right now: rea: still starting.")
+    assert "MCP servers not available" in s.volatile
+    assert "MCP servers not available" not in s.stable
+
+
 def test_all_dynamic_content_present_and_date_line_last():
     s = _sys(roster="- Deck Master (content)", facts="Known facts: uses xhs",
              summary="prior chat", kb_block="\n\nKB block here")

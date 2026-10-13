@@ -13,7 +13,7 @@ async def maker(tmp_path, monkeypatch):
         await conn.run_sync(Base.metadata.create_all)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
     async with m() as s:
-        s.add(MCPServer(id=2, label="fs", command="x", args=[], env=None, status="connected"))
+        s.add(MCPServer(id=2, label="fs", command="x", args=[], env=None, status="connected", state="ready"))
         s.add(Toolset(key="mcp_2", name="fs", description="d", tier="orchestrator", status="registered"))
         s.add(Tool(key="mcp_2__read_file", toolset_key="mcp_2", description="read",
                    tier="safe", status="wired", input_schema={}, external_name="read_file"))

@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 import server.db.session as db_session
 from server.db.models import Base, MCPServer, Tool, Toolset
+from server.mcp import supervisor as sm
 from server.orchestrator.tool_loop import _native_tool_schemas
 
 _MCP_SCHEMA = {
@@ -76,7 +77,8 @@ async def host_maker(tmp_path, monkeypatch):
         await conn.run_sync(Base.metadata.create_all)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
     async with m() as s:
-        s.add(MCPServer(id=1, label="docs", command="x", args=[], env=None, status="connected"))
+        s.add(MCPServer(id=1, label="docs", command="x", args=[], env=None, status="connected", state="ready",
+                        state_at=sm._utcnow()))      # 0.1.61 §B1: ready in this process
         s.add(Toolset(key="mcp_1", name="docs", description="d", tier="orchestrator", status="registered"))
         s.add(Tool(key="mcp_1__search", toolset_key="mcp_1", description="search docs",
                    tier="orchestrator", status="wired", input_schema=_MCP_SCHEMA,
