@@ -183,8 +183,9 @@ def answer(data: dict) -> bool:
     (the other side answering too) is swallowed.
 
     The decision carries a scope, one of the card's `options` (0.1.61 §A4): what the
-    reply chose, else the old "remember" checkbox mapped (`_legacy_scope`); the phone and
-    the island give only the first option. A "No" carries the user's note.
+    reply chose, else the old "remember" checkbox mapped (`_legacy_scope`: with no
+    "remember", the card's first, narrowest choice); the phone and the island give only
+    the first option. A "No" carries the user's note.
     """
     call_id = data.get("call_id") if isinstance(data, dict) else None
     kind = data.get("type") if isinstance(data, dict) else None
@@ -203,13 +204,10 @@ def answer(data: dict) -> bool:
             # Never more than once from there: no wider scope, and no "remember" either (the
             # window's legacy "don't ask again" reads it).
             scope, remember = (options[0] if options else None), False
-        elif (scope is None and not remember and "conversation" in options
-                and pending.frame["type"] in ("propose_workspace_write", "propose_schedule")):
-            # Until PR 2b sends scopes (remove this branch then): today's UI answers these two
-            # cards with neither a scope nor "remember", and such a yes held for the socket or the
-            # job (the per-socket and per-job grants this PR removed): "in this conversation".
-            scope = "conversation"
         elif scope not in options:
+            # 0.1.61 PR 2b: every card UI sends the scope the user chose. A yes with none (a tab
+            # left open from before the update, a script) gets the card's first, narrowest choice:
+            # it is asked again next time, never silently widened to the conversation.
             scope = _legacy_scope(options, remember)
         decision = {"approved": ANSWERS[kind], "remember": remember,
                     "scope": scope if ANSWERS[kind] else None,
@@ -222,7 +220,8 @@ def answer(data: dict) -> bool:
 
 
 def _legacy_scope(options: list[str], remember: bool) -> str | None:
-    """A reply without a scope (the UI before 0.1.61 PR 2b): the old checkbox, mapped."""
+    """A reply without a scope it offered (a client from before 0.1.61 PR 2b): the old checkbox,
+    mapped — "remember" is the widest choice offered, else the first."""
     if not options:
         return None
     if remember:

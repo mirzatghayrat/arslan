@@ -602,16 +602,21 @@ async def test_decline_pending_skips_a_decided_card_and_cuts_the_note(monkeypatc
     approvals.close_card(p)
 
 
-async def test_todays_ui_yes_on_a_write_or_schedule_card_holds_for_the_conversation(job_db, monkeypatch):
-    """Until PR 2b: today's AskSlot answers these cards with neither a scope nor "remember", and
-    such a yes used to hold for the socket or the job. A job writing three files asks once."""
-    shown = []
-
-    def todays_ui(f):
+def _answering(shown: list, scope: str | None):
+    """A card UI that says yes to every card it is shown — with this scope, or with none at all."""
+    def ui(f):
         if f["type"].startswith("propose_"):
             shown.append(f)
-            approvals.answer({"type": "confirm_" + f["type"].removeprefix("propose_"), "call_id": f["call_id"]})
-    monkeypatch.setattr(run_registry, "make_emit", lambda cid: todays_ui)
+            approvals.answer({"type": "confirm_" + f["type"].removeprefix("propose_"), "call_id": f["call_id"],
+                              **({"scope": scope} if scope else {})})
+    return ui
+
+
+async def test_the_card_ui_s_in_this_conversation_holds_for_the_conversation(job_db, monkeypatch):
+    """0.1.61 PR 2b: the UI sends the scope the user chose. "In this conversation" on a write card:
+    a job writing three files asks once; a schedule allowed so in one job holds for the next."""
+    shown: list = []
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: _answering(shown, "conversation"))
     job = approvals.JobConfirmations("conv", job_id="job-1")
     for name in ("a.txt", "b.txt", "c.txt"):
         assert await job.workspace_write("write_file", name) is True
@@ -621,8 +626,20 @@ async def test_todays_ui_yes_on_a_write_or_schedule_card_holds_for_the_conversat
     assert [f["type"] for f in shown] == ["propose_workspace_write", "propose_schedule"]
 
 
-# The edges of that mapping (re-review N1): it is for these two cards only, after the phone and
-# island clamp, and only for a yes that carries no scope at all.
+async def test_a_yes_with_no_scope_on_a_write_card_holds_this_once_only(job_db, monkeypatch):
+    """PR 2b removed the stop-gap that read a scope-less yes on a write or schedule card as "in this
+    conversation": such a yes (a tab from before the update) is the card's first choice, once —
+    narrower, never wider. Each write asks again."""
+    shown: list = []
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: _answering(shown, None))
+    job = approvals.JobConfirmations("conv", job_id="job-1")
+    for name in ("a.txt", "b.txt"):
+        assert await job.workspace_write("write_file", name) is True
+    assert [f["type"] for f in shown] == ["propose_workspace_write", "propose_workspace_write"]
+
+
+# A yes that carries no scope (re-review N1, then PR 2b): the card's first choice on every card,
+# the phone and the island clamped to it first.
 CARDS = {
     "write": (lambda cid: protocol.propose_workspace_write(cid, "/w", "write_file", "a.txt"), ["once", "conversation"]),
     "schedule": (lambda cid: protocol.propose_schedule(cid, "Brief", "daily"), ["once", "conversation"]),
@@ -646,8 +663,9 @@ def _bare_yes(pending: approvals.Pending, source: str, **extra) -> None:
 
 
 @pytest.mark.parametrize("source", ["mac", "inbox"])
-@pytest.mark.parametrize("kind,first", [("command", "once"), ("app", "task")])
-async def test_a_bare_yes_on_any_other_card_is_its_first_choice(monkeypatch, source, kind, first):
+@pytest.mark.parametrize("kind,first", [("command", "once"), ("app", "task"),
+                                        ("write", "once"), ("schedule", "once")])
+async def test_a_bare_yes_on_any_card_is_its_first_choice(monkeypatch, source, kind, first):
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: (lambda f: None))
     p = _open(kind)
     _bare_yes(p, source)
@@ -659,7 +677,7 @@ async def test_a_bare_yes_on_any_other_card_is_its_first_choice(monkeypatch, sou
 async def test_a_phone_or_island_yes_on_a_write_or_schedule_card_is_once(monkeypatch, source, kind):
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: (lambda f: None))
     p = _open(kind)
-    _bare_yes(p, source)                                        # the clamp comes before the mapping
+    _bare_yes(p, source)                                        # the clamp comes first
     d = approvals.close_card(p)
     assert (d["scope"], d["remember"]) == ("once", False)
 
@@ -671,11 +689,13 @@ async def test_an_unoffered_scope_on_a_write_card_is_its_first_choice(monkeypatc
     assert approvals.close_card(p)["scope"] == "once"
 
 
+@pytest.mark.parametrize("source", ["mac", "inbox"])
 @pytest.mark.parametrize("kind", ["write", "schedule"])
-async def test_an_inbox_yes_on_a_write_or_schedule_card_holds_for_the_conversation(monkeypatch, kind):
+async def test_a_yes_with_its_scope_on_a_write_or_schedule_card_keeps_it(monkeypatch, source, kind):
+    """What PR 2b's window and Inbox send: the scope the user picked on the card."""
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: (lambda f: None))
     p = _open(kind)
-    _bare_yes(p, "inbox")                                       # as "Approve" there meant before
+    _bare_yes(p, source, scope="conversation")
     assert approvals.close_card(p)["scope"] == "conversation"
 
 
