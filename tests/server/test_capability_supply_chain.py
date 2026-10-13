@@ -42,15 +42,27 @@ def test_mcp_connectors_come_from_the_static_catalog_only():
 
 
 def test_installing_a_skill_requires_naming_a_repository():
-    """Not a search result, not an index entry: an explicit owner/repo.
+    """Not a search result, not an index entry: an explicit owner/repo and the SKILL.md in it.
 
-    The signature is the boundary. A function that accepted a query here would
-    be the install channel the rule forbids, however carefully it ranked."""
+    The signature is the boundary. A function that accepted a query here would be the install
+    channel the rule forbids, however carefully it ranked. 0.1.61 §C4 adds one keyword: the
+    user's "Use it on this Mac only" for a license Arslan does not recognise — the sha256 of the
+    text they read, never a source."""
     sig = inspect.signature(skill_import.import_skill)
-    assert list(sig.parameters) == ["ref", "path"], (
+    assert list(sig.parameters) == ["ref", "path", "license_ok"], (
         f"import_skill's parameters changed to {list(sig.parameters)} — if a "
         "query or a search result can now reach it, that is the supply-chain "
         "line being crossed")
+    ok = sig.parameters["license_ok"]
+    assert ok.kind is inspect.Parameter.KEYWORD_ONLY and ok.default is None
+
+
+def test_the_importer_reads_only_named_repositories_from_fixed_hosts():
+    """0.1.61 §C2: the importer downloads one archive of a named repository, from
+    codeload.github.com, and asks api.github.com for its metadata — no other host."""
+    source = pathlib.Path(inspect.getfile(skill_import)).read_text()
+    hosts = set(re.findall(r"https://([a-z0-9.-]+)", source))
+    assert hosts <= {"codeload.github.com", "api.github.com", "github.com"}, hosts
 
 
 def test_no_search_endpoint_feeds_the_importer():

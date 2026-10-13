@@ -1,50 +1,76 @@
-"""Faithful SKILL.md importer (P3).
+"""Importing a skill from GitHub, whole (0.1.61 §C2, §C4).
 
-Unlike Tool-Hub's "Add as Skill" (LLM-distills/rewrites a repo into house style), this imports
-standard Agent-Skills-format skills VERBATIM: parse frontmatter + body → registry, with the
-license gate the project treats as a red line, plus bundled `scripts/*.py` stored for the
-P1 sandbox (run_python {"skill_script": "<key>/<file>"}).
-
-Safety/discipline:
-  • Fixed host api.github.com only (same as github_eval — not an SSRF surface).
-  • LICENSE GATE enforced SERVER-SIDE on both scan and import: repo license must be in the
-    permissive allowlist; no license / copyleft / unknown → not importable. 绝不捆绑未核实。
-  • Attribution prepended into the imported body (source repo · license · date).
-  • Scripts: .py only, per-file and per-skill caps, stored under data_dir/skill_scripts/<key>/;
-    they execute ONLY inside the P1 sandbox (network-denied, env-scrubbed, tmpdir).
-  • Import refuses keys that already exist (no silent overwrite of library content).
+One archive of ONE commit (codeload.github.com) → the skill's whole folder into `<data>/skills/<key>/`
+(skill_files); the SkillPack row keeps the index entry. The license is read in that same archive: the
+nearest license file from the skill's folder up to the root decides, by its wording (Ruling A). A
+license Arslan does not recognise imports only with `license_ok` = the sha256 of the text the server
+fetched itself ("Use it on this Mac only"); the skill is then local use only. Re-import is an update.
+Supply chain (test_capability_supply_chain): a named repository and path only, never a query; fixed
+hosts api.github.com and codeload.github.com.
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import hmac
 import re
-from datetime import datetime, timezone
+import time
+import uuid
+from collections import OrderedDict
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
 
 import httpx
 import yaml
 from sqlalchemy import select
 
-from pathlib import Path
-
 from server.db import session as db_session
-from server.db.models import SkillPack
-from server.services import github_eval
+from server.db.models import CapabilitySource, SkillPack
+from server.services import capability_scan, github_eval, skill_files
 from server.services.skill_forge import MAX_SKILL_BYTES
 
-_GITHUB_API = "https://api.github.com"
-_TIMEOUT = 15.0
-_MAX_SKILLS_PER_SCAN = 25
-_MAX_SCRIPTS = 10
-_MAX_SCRIPT_BYTES = 100_000
-# References mirror the script caps exactly: a malicious skill must not write unbounded data.
-_MAX_REFERENCES = 10
-_MAX_REFERENCE_BYTES = 100_000
+_CODELOAD = "https://codeload.github.com"
+_ARCHIVE_TIMEOUT = 60.0
+_ARCHIVE_CACHE_S = 600
+_ARCHIVE_CACHE_MAX = 4
+#: All cached archives together: one large repository is kept, not four of them.
+_ARCHIVE_CACHE_BYTES = 128 * 1024 * 1024
+#: More SKILL.md files than this in one repository are counted ("more"), not listed.
+MAX_SCAN_SKILLS = 500
+MAX_DESCRIPTION = 500
+MAX_LICENSE_BYTES = 256 * 1024
 
-# Permissive licenses we may redistribute with attribution. Copyleft and "NONE" are refused.
+# Permissive licenses Arslan recognises: these import without the license step.
 ALLOWED_LICENSES = {"MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC",
                     "Unlicense", "CC0-1.0", "0BSD"}
+NO_LICENSE_TEXT = "No license file: by default the author keeps all rights."
+#: Skills Arslan reads where other agents keep them (skill_sources): an import takes their name.
+EXTERNAL_ORIGINS = frozenset({"agents", "claude", "codex"})
+#: Skills whose text comes from outside Arslan: read like a web page (0.1.57 decision 5).
+OUTSIDE_ORIGINS = EXTERNAL_ORIGINS | {"imported"}
 
 _FRONTMATTER_RE = re.compile(r"\A---\s*\n(.*?)\n---\s*\n?", re.DOTALL)
+_SHA_RE = re.compile(r"^[0-9a-f]{7,40}$")
+_REF_RE = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
+_TREE_RE = re.compile(r"^(?:https?://)?(?:www\.)?github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?"
+                      r"(?:/(?:tree|blob)/([^/\s]+)(?:/(\S*))?)?/?$")
+#: The license file names 0.1.55 read; the reviewed-library index still uses them, and they are
+#: preferred when a folder holds more than one license file. (This module never names the search:
+#: test_no_installer_imports_the_search reads its source.)
+_LICENSE_NAMES = ("LICENSE", "LICENSE.txt", "LICENSE.md", "LICENCE", "COPYING")
+#: Any license file (Ruling A): LICENSE, LICENCE, COPYING or UNLICENSE in any case, with an extension
+#: or a suffix (license.txt, LICENSE-MIT, COPYING.LESSER). A code file is never a license.
+_LICENSE_FILE_RE = re.compile(r"(?:licen[cs]e|copying|unlicense)(?:[.-][a-z0-9.-]*)?")
+_NOT_A_LICENSE = (".py", ".js", ".mjs", ".cjs", ".ts", ".sh", ".json", ".yaml", ".yml", ".toml", ".html",
+                  ".css", ".rb", ".go")
+#: A frontmatter `license:` naming one of the eight (any spelling of the id) takes nothing away.
+_ALLOWED_NORMALISED = frozenset(re.sub(r"[^a-z0-9.]", "", spdx.lower()) for spdx in ALLOWED_LICENSES)
+_LICENSE_POINTER = re.compile(r"\b(?:licen[cs]e|copying)\b", re.I)
+#: Frontmatter Arslan shows and does not obey (§C1): its own permissions decide.
+_DECLARED = ("allowed-tools", "requires", "metadata")
+
+_archive_cache: OrderedDict[tuple[str, str, str], tuple[float, bytes]] = OrderedDict()
 
 
 def _data_dir() -> Path:
@@ -54,8 +80,21 @@ def _data_dir() -> Path:
     return config.data_dir()
 
 
-def parse_skill_md(raw: str) -> dict | None:
-    """Parse a standard SKILL.md: YAML frontmatter (needs name+description) + markdown body."""
+# ── SKILL.md ──────────────────────────────────────────────────────────────────
+
+def slug(text: str) -> str:
+    """A name as a skill key: lower-case Latin letters, digits and dashes, at most 60."""
+    return re.sub(r"[^a-z0-9]+", "-", str(text).lower()).strip("-")[:60].strip("-")
+
+
+def parse_skill_md(raw: str, *, fallback_key: str = "") -> dict | None:
+    """A standard SKILL.md: YAML frontmatter (name and description) + a Markdown body.
+
+    The key comes from the name, else from `fallback_key` (its folder's name), else from the
+    name's hash, so a name with no Latin letters still has a key. `disable-model-invocation:
+    true` makes it not `invocable`; `allowed-tools`, `requires` and `metadata` are kept to be
+    shown (`declared`), never obeyed. `license` is the frontmatter's own `license:` value: the
+    license step reads it (it can take a recognised license away, never grant one)."""
     m = _FRONTMATTER_RE.match(raw or "")
     if not m:
         return None
@@ -68,21 +107,24 @@ def parse_skill_md(raw: str) -> dict | None:
     body = raw[m.end():].strip()
     if not body:
         return None
-    key = re.sub(r"[^a-z0-9]+", "-", str(meta["name"]).lower()).strip("-")[:60]
+    key = (slug(meta["name"]) or slug(fallback_key)
+           or "skill-" + hashlib.sha256(str(meta["name"]).encode("utf-8")).hexdigest()[:8])
+    flag = meta.get("disable-model-invocation")
     return {"key": key, "name": str(meta["name"])[:100],
-            "description": str(meta["description"])[:300], "body": body}
+            "description": " ".join(str(meta["description"]).split())[:MAX_DESCRIPTION], "body": body,
+            "invocable": not (flag is True or str(flag).strip().lower() == "true"),
+            "declared": {k: meta[k] for k in _DECLARED if k in meta},
+            "license": meta.get("license")}
 
 
 def _license_gate(spdx: str | None) -> str | None:
-    """None when importable; otherwise the human-readable refusal reason."""
+    """None when importable; otherwise the human-readable refusal reason. Kept for
+    capability_install (0.1.57 MCP installs, `capability_install.install`)."""
     if not spdx or spdx == "NOASSERTION":
         return "no license — cannot bundle unverified content"
     if spdx not in ALLOWED_LICENSES:
         return f"license {spdx} is not in the permissive allowlist"
     return None
-
-
-_LICENSE_NAMES = ("LICENSE", "LICENSE.txt", "LICENSE.md", "LICENCE", "COPYING")
 
 
 def detect_license(text: str) -> str | None:
@@ -107,229 +149,427 @@ def detect_license(text: str) -> str | None:
     return None
 
 
-async def _skill_license(owner: str, repo: str, skill_path: str, paths: list[str],
-                         repo_spdx: str | None, sha: str | None = None) -> tuple[str | None, str]:
-    """(SPDX, where it came from) for ONE skill. The skill's own license file wins
-    over the repo's (0.1.55): anthropics/skills has no repo license, but every skill
-    folder has a LICENSE.txt — Apache-2.0 for most, Anthropic's own terms for the
-    document skills. Read at the source, never from frontmatter or package metadata."""
+# ── where from ────────────────────────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class Source:
+    owner: str
+    repo: str
+    ref: str          # a commit, a branch or tag, or "HEAD"
+    subpath: str      # a folder inside the repository ("" = all of it)
+
+
+def parse_source(text: str, subpath: str = "") -> Source | None:
+    """`owner/repo`, `owner/repo@<commit>`, or a github.com link — a `/tree/<ref>/<path>` (or
+    `/blob/…/SKILL.md`) link is followed to that ref and folder. A ref with a slash in it (a
+    branch named feature/x) is not supported in a link. None for anything that is not a
+    repository; ValueError for a bad pin or a path that leaves the repository."""
+    raw = (text or "").strip()
+    base, at, pinned = raw.partition("@")
+    if at and "/" in pinned:                   # an "@" further along a link is not a pin
+        base, pinned = raw, ""
+    ref, path = "", ""
+    m = _TREE_RE.match(base)
+    if m:
+        owner, repo, ref, path = m.group(1), m.group(2), m.group(3) or "", m.group(4) or ""
+    else:
+        parsed = github_eval.parse_repo_ref(base)
+        if parsed is None or base.lower().startswith(("http://", "https://")) and "github.com" not in base:
+            return None
+        owner, repo = parsed
+    if pinned:
+        if not _SHA_RE.fullmatch(pinned.lower()):
+            raise ValueError("not a commit id")
+        ref = pinned.lower()
+    if ref and (not _REF_RE.fullmatch(ref) or ref.startswith(".")):
+        raise ValueError("not a branch, tag or commit")
+    path = (path or subpath or "").strip().strip("/")
+    if path.rsplit("/", 1)[-1] == "SKILL.md":
+        path = path.rsplit("/", 1)[0] if "/" in path else ""
+    if path and skill_files.safe_relpath(path) is None:
+        raise ValueError("not a folder inside the repository")
+    return Source(owner, repo.removesuffix(".git"), ref or "HEAD", path)
+
+
+async def _download(owner: str, repo: str, ref: str) -> bytes:
+    url = f"{_CODELOAD}/{owner}/{repo}/tar.gz/{ref}"
+    chunks: list[bytes] = []
+    size = 0
+    async with httpx.AsyncClient(timeout=_ARCHIVE_TIMEOUT, follow_redirects=True) as client:
+        async with client.stream("GET", url) as response:
+            if response.status_code == 404:
+                raise ValueError("the repository or that commit is not on GitHub")
+            response.raise_for_status()
+            async for chunk in response.aiter_bytes():
+                size += len(chunk)
+                if size > skill_files.MAX_ARCHIVE_BYTES:
+                    raise ValueError("the repository archive is larger than 64 MB")
+                chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def _remember(key: tuple[str, str, str], data: bytes) -> None:
+    _archive_cache[key] = (time.monotonic(), data)
+    _archive_cache.move_to_end(key)
+
+    def held() -> int:                        # one archive may sit under two keys (ref and commit)
+        return sum(len(blob) for blob in {id(v[1]): v[1] for v in _archive_cache.values()}.values())
+    while len(_archive_cache) > _ARCHIVE_CACHE_MAX or (len(_archive_cache) > 1 and held() > _ARCHIVE_CACHE_BYTES):
+        _archive_cache.popitem(last=False)
+
+
+async def _fetch_archive(owner: str, repo: str, ref: str) -> bytes:
+    """GitHub's tar.gz of `ref`. The last few are kept ten minutes, so a scan and the import that
+    follows it download once."""
+    key = (owner.lower(), repo.lower(), ref)
+    hit = _archive_cache.get(key)
+    if hit is not None and time.monotonic() - hit[0] < _ARCHIVE_CACHE_S:
+        return hit[1]
+    data = await _download(owner, repo, ref)
+    _remember(key, data)
+    return data
+
+
+async def _archive(source: Source, *, keep, keep_limit: int | None = None) -> skill_files.Archive:
+    data = await _fetch_archive(source.owner, source.repo, source.ref)
+    archive = await asyncio.to_thread(skill_files.read_archive, data, keep=keep, keep_limit=keep_limit)
+    if not re.fullmatch(r"[0-9a-f]{40}", archive.commit or ""):
+        raise ValueError("GitHub's archive does not say which commit it is")
+    if _SHA_RE.fullmatch(source.ref) and not archive.commit.startswith(source.ref):
+        raise ValueError("GitHub sent another commit than the one pinned")
+    _remember((source.owner.lower(), source.repo.lower(), archive.commit), data)
+    return archive
+
+
+# ── the license (Ruling A) ────────────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class SkillLicense:
+    spdx: str | None
+    recognised: bool
+    read_from: str          # the license file in the repository, "repo" (GitHub's detection) or "none"
+    text: str               # what the user reads in the step
+    sha256: str             # of `text`, UTF-8: what license_ok must equal
+
+    def view(self, *, with_text: bool) -> dict:
+        out = {"spdx": self.spdx, "recognised": self.recognised, "read_from": self.read_from,
+               "sha256": self.sha256}
+        if with_text:
+            out["text"] = self.text
+        return out
+
+
+def license_sha256(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _is_license_name(name: str) -> bool:
+    low = name.lower()
+    return bool(_LICENSE_FILE_RE.fullmatch(low)) and not low.endswith(_NOT_A_LICENSE)
+
+
+def _license_file(archive: skill_files.Archive, folder: str) -> str | None:
+    """The license file directly in `folder` ("" = the root): the 0.1.55 names first, then any."""
+    prefix = f"{folder}/" if folder else ""
+    names = [p[len(prefix):] for p, e in archive.entries.items()
+             if e.kind == "file" and p.startswith(prefix) and "/" not in p[len(prefix):]
+             and _is_license_name(p[len(prefix):])]
+    if not names:
+        return None
+    names.sort(key=lambda n: (n not in _LICENSE_NAMES, n.lower()))
+    return prefix + names[0]
+
+
+def _folders_up(folder: str) -> list[str]:
+    """The skill's folder, each folder above it, then the root ("")."""
+    parts = folder.split("/") if folder else []
+    return ["/".join(parts[:i]) for i in range(len(parts), -1, -1)]
+
+
+def _declared_note(archive: skill_files.Archive, folder: str, value) -> str | None:
+    """The SKILL.md's own `license:` (Agent Skills frontmatter), when the user must read it: it can
+    take a recognised license away, never grant one. Nothing when it names one of the eight, or
+    when it points at a license file the skill's own folder has (that file then decides)."""
+    if value is None or not str(value).strip():
+        return None
+    text = " ".join(str(value).split())[:300]
+    norm = re.sub(r"[^a-z0-9.]", "", text.lower())
+    if norm in _ALLOWED_NORMALISED or norm.removesuffix("license") in _ALLOWED_NORMALISED:
+        return None
+    if _LICENSE_POINTER.search(text) and _license_file(archive, folder) is not None:
+        return None
+    return f"SKILL.md says — license: {text}\n\n"
+
+
+def skill_license(archive: skill_files.Archive, skill_path: str, repo_spdx: str | None,
+                  declared=None) -> SkillLicense:
+    """The license of ONE skill (§C4, Ruling A), read in the archive of the pinned commit.
+
+    The nearest license file on the way from the skill's folder up to the root decides
+    (anthropics/skills keeps a LICENSE.txt in every skill folder; a monorepo may keep one per
+    group), and only its own wording can make it one of the eight. GitHub's detection — made for
+    the default branch, today — is used only when no license file lies on that path. A
+    frontmatter `license:` (`declared`) naming anything else puts its line in front of the text."""
     folder = skill_path.rsplit("/", 1)[0] if "/" in skill_path else ""
-    for name in _LICENSE_NAMES:
-        candidate = f"{folder}/{name}" if folder else name
-        if candidate in paths and folder:
-            return detect_license(await _fetch_raw(owner, repo, candidate, sha)), candidate
-    return repo_spdx, "repo"
+    note = _declared_note(archive, folder, declared)
+    for level in _folders_up(folder):
+        path = _license_file(archive, level)
+        if path is None:
+            continue
+        body = archive.text(path) or ""
+        if not body.strip():
+            body = NO_LICENSE_TEXT                     # an empty license file is no license
+        spdx = detect_license(body)
+        text = (note or "") + body
+        label = spdx or (repo_spdx if level == "" else None)
+        return SkillLicense(label, spdx in ALLOWED_LICENSES and note is None, path, text, license_sha256(text))
+    if repo_spdx in ALLOWED_LICENSES and note is None:
+        return SkillLicense(repo_spdx, True, "repo", "", license_sha256(""))
+    text = (note or "") + NO_LICENSE_TEXT
+    return SkillLicense(repo_spdx or None, False, "none", text, license_sha256(text))
 
 
-def _skill_license_block(spdx: str | None, source: str) -> str | None:
-    if source == "repo":
-        return _license_gate(spdx)
-    if spdx is None:
-        return f"this skill's own {source.rsplit('/', 1)[-1]} is not a permissive license — cannot bundle it"
-    return _license_gate(spdx)
+class LicenseStepNeeded(ValueError):
+    """The license is not one Arslan recognises: the user reads the text and decides (§C4)."""
+
+    def __init__(self, license: SkillLicense, *, key: str, name: str):
+        super().__init__("license_step")
+        self.license, self.key, self.name = license, key, name
 
 
-async def _get(path: str, *, raw: bool = False) -> httpx.Response:
-    token = await github_eval._token()
-    headers = github_eval._headers(token)
-    if raw:
-        headers["Accept"] = "application/vnd.github.raw"
-    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-        return await client.get(f"{_GITHUB_API}{path}", headers=headers)
+def _skill_license_block(lic: SkillLicense, license_ok: str | None, accepted_sha256: str | None) -> str | None:
+    """None when the import may go ahead: a recognised license, or the user's "Use it on this Mac
+    only" for exactly this text — `license_ok` is its sha256, or this skill's earlier acceptance
+    was of the same text. Otherwise "license_step", or why the answer given does not fit."""
+    if lic.recognised:
+        return None
+    if license_ok and hmac.compare_digest(license_ok.strip().lower(), lic.sha256):
+        return None
+    if accepted_sha256 and hmac.compare_digest(accepted_sha256, lic.sha256):
+        return None
+    if license_ok:
+        return "the license text is not the one that was shown (it changed): read it again and decide"
+    return "license_step"
 
 
-async def head_sha(owner: str, repo: str) -> str:
-    """The commit the default branch points at now — what an import pins to (0.1.57 §5.2)."""
-    r = await _get(f"/repos/{owner}/{repo}")
-    r.raise_for_status()
-    branch = r.json().get("default_branch") or "main"
-    r = await _get(f"/repos/{owner}/{repo}/commits/{branch}")
-    r.raise_for_status()
-    return r.json()["sha"]
+# ── scanning a repository ─────────────────────────────────────────────────────
+
+def _same_import(pack: SkillPack, dossier: CapabilitySource | None, full_name: str, path: str) -> bool:
+    """Whether `pack` is this repository's skill at `path`, imported before: then importing it
+    again is an update. A skill imported before 0.1.61 has no dossier; its attribution line names
+    the repository."""
+    if pack.origin != "imported" and pack.category != "imported":
+        return False
+    if dossier is not None and dossier.repo:
+        return dossier.repo.lower() == full_name.lower() and (dossier.candidate_id or "").endswith(f":{path}")
+    first = (pack.body or "").split("\n", 1)[0]
+    return first.startswith(f"> Imported verbatim from https://github.com/{full_name} ")
 
 
-async def _tree_paths(owner: str, repo: str, sha: str | None = None) -> list[str]:
-    """All blob paths at `sha`, or in the default branch (recursive tree)."""
-    if sha is None:
-        r = await _get(f"/repos/{owner}/{repo}")
-        r.raise_for_status()
-        sha = r.json().get("default_branch") or "main"
-    r = await _get(f"/repos/{owner}/{repo}/git/trees/{sha}?recursive=1")
-    if r.status_code == 403 and "rate limit" in (r.text or "").lower():
-        raise ValueError("GitHub rate-limited — set GITHUB_TOKEN in Settings")
-    r.raise_for_status()
-    return [e["path"] for e in r.json().get("tree") or [] if e.get("type") == "blob"]
+def _replaces(existing: SkillPack | None) -> dict | None:
+    """The shared-folder skill an import takes the name of (Ruling 8): said before the click."""
+    if existing is None or existing.origin not in EXTERNAL_ORIGINS:
+        return None
+    return {"source": existing.origin, "folder": existing.folder}
 
 
-async def _fetch_raw(owner: str, repo: str, path: str, sha: str | None = None) -> str:
-    r = await _get(f"/repos/{owner}/{repo}/contents/{path}" + (f"?ref={sha}" if sha else ""), raw=True)
-    r.raise_for_status()
-    return r.text or ""
+def _scan_entry(archive: skill_files.Archive, path: str, meta: dict, packs: dict, dossiers: dict) -> dict:
+    folder = path.rsplit("/", 1)[0] if "/" in path else ""
+    prefix = f"{folder}/" if folder else ""
+    files = [e for e in archive.under(folder) if e.kind == "file"]
+    entry: dict = {"path": path, "files": len(files), "bytes": sum(e.size for e in files),
+                   "has_scripts": any(e.path[len(prefix):].startswith("scripts/") for e in files),
+                   "update": False, "replaces": None}
+    fallback = folder.rsplit("/", 1)[-1] if folder else meta["full_name"].split("/")[-1]
+    info = parse_skill_md(archive.text(path) or "", fallback_key=fallback)
+    if info is None:
+        return {**entry, "importable": False,
+                "reason": "not a valid SKILL.md (frontmatter name and description are needed)"}
+    lic = skill_license(archive, path, meta["license"], info["license"])
+    entry.update(key=info["key"], name=info["name"], description=info["description"],
+                 body_bytes=len(info["body"].encode("utf-8")), invocable=info["invocable"],
+                 license=lic.view(with_text=not lic.recognised))
+    existing = packs.get(info["key"])
+    entry["update"] = bool(existing is not None and _same_import(
+        existing, dossiers.get(existing.source_id or ""), meta["full_name"], path))
+    entry["replaces"] = _replaces(existing)
+    reason = None
+    if not lic.recognised and len(lic.text.encode("utf-8")) > MAX_LICENSE_BYTES:
+        reason = "the license text is too long to show"
+    elif entry["body_bytes"] > MAX_SKILL_BYTES:
+        reason = f"body {entry['body_bytes']}B exceeds the {MAX_SKILL_BYTES}B limit"
+    elif len(files) > skill_files.MAX_FOLDER_FILES or entry["bytes"] > skill_files.MAX_FOLDER_BYTES:
+        reason = "the skill's folder is larger than 20 MB or 2,000 files"
+    elif existing is not None and not entry["update"] and existing.origin not in EXTERNAL_ORIGINS:
+        reason = f"a skill named '{info['key']}' already exists"
+    return {**entry, "importable": reason is None, "reason": reason}
 
 
-def _scripts_for(skill_md_path: str, all_paths: list[str]) -> list[str]:
-    """Bundled python scripts living beside this SKILL.md (scripts/ subdir, .py only)."""
-    base = skill_md_path.rsplit("/", 1)[0] if "/" in skill_md_path else ""
-    prefix = f"{base}/scripts/" if base else "scripts/"
-    return sorted(p for p in all_paths if p.startswith(prefix) and p.endswith(".py"))
-
-
-def _references_for(skill_md_path: str, all_paths: list[str]) -> list[str]:
-    """Bundled text references living beside this SKILL.md (references/ subdir, .md/.txt only).
-    startswith(prefix) also picks up nested references/**/… paths; storage flattens to basename."""
-    base = skill_md_path.rsplit("/", 1)[0] if "/" in skill_md_path else ""
-    prefix = f"{base}/references/" if base else "references/"
-    return sorted(p for p in all_paths if p.startswith(prefix) and p.endswith((".md", ".txt")))
+def _keep_for_scan(path: str) -> bool:
+    name = path.rsplit("/", 1)[-1]
+    return name == "SKILL.md" or _is_license_name(name)
 
 
 async def scan_skills(ref: str, subpath: str = "") -> dict:
-    """Find standard SKILL.md skills in a repo and report per-skill importability.
-    0.1.55: the license gate is per skill — its own license file, else the repo's."""
-    parsed = github_eval.parse_repo_ref(ref)
-    if parsed is None:
+    """Every SKILL.md in a repository (or under a `/tree/…` folder), each with its license, its
+    folder's size and whether importing it would be an update. Reads one archive."""
+    source = parse_source(ref, subpath)
+    if source is None:
         raise ValueError("not a GitHub repo reference (owner/name)")
-    owner, repo = parsed
-    meta = await github_eval.fetch_repo(owner, repo)
-    license_block = _license_gate(meta["license"])
-
-    paths = await _tree_paths(owner, repo)
-    sub = (subpath or "").strip("/")
-    skill_paths = [p for p in paths if p.endswith("SKILL.md")
-                   and (not sub or p.startswith(sub + "/") or p == f"{sub}/SKILL.md")]
-    skill_paths = skill_paths[:_MAX_SKILLS_PER_SCAN]
-
+    meta = await github_eval.fetch_repo(source.owner, source.repo)
+    archive = await _archive(source, keep=_keep_for_scan, keep_limit=skill_files.MAX_ARCHIVE_BYTES)
+    paths = archive.skill_mds(source.subpath)
     async with db_session.AsyncSessionLocal() as db:
-        existing = {k for (k,) in (await db.execute(select(SkillPack.key))).all()}
-
-    skills = []
-    for p in skill_paths:
-        raw = await _fetch_raw(owner, repo, p)
-        info = parse_skill_md(raw)
-        entry: dict = {"path": p, "scripts": _scripts_for(p, paths),
-                       "references": _references_for(p, paths)}
-        if info is None:
-            entry.update(importable=False, reason="not a valid SKILL.md (frontmatter name+description required)")
-        else:
-            entry.update(key=info["key"], name=info["name"], description=info["description"],
-                         body_bytes=len(info["body"].encode("utf-8")))
-            spdx, source = await _skill_license(owner, repo, p, paths, meta["license"])
-            block = _skill_license_block(spdx, source)
-            entry.update(license=spdx, license_source=source)
-            if block:
-                entry.update(importable=False, reason=block)
-            elif info["key"] in existing:
-                entry.update(importable=False, reason="already in the library")
-            elif entry["body_bytes"] > MAX_SKILL_BYTES:
-                entry.update(importable=False,
-                             reason=f"body {entry['body_bytes']}B exceeds the {MAX_SKILL_BYTES}B limit")
-            else:
-                entry.update(importable=True, reason=None)
-        skills.append(entry)
+        packs = {p.key: p for p in (await db.execute(select(SkillPack))).scalars().all()}
+        dossiers = {d.id: d for d in (await db.execute(
+            select(CapabilitySource).where(CapabilitySource.kind == "skill"))).scalars().all()}
     return {"repo": {"full_name": meta["full_name"], "html_url": meta["html_url"],
                      "license": meta["license"], "stars": meta["stars"]},
-            "license_ok": license_block is None or any(e.get("importable") for e in skills),
-            "license_note": license_block if not any(e.get("license_source", "repo") != "repo" for e in skills) else None,
-            "skills": skills}
+            "commit": archive.commit, "subpath": source.subpath,
+            "skills": [_scan_entry(archive, p, meta, packs, dossiers) for p in paths[:MAX_SCAN_SKILLS]],
+            "more": max(0, len(paths) - MAX_SCAN_SKILLS)}
 
 
-_SHA_RE = re.compile(r"^[0-9a-f]{7,40}$")
+# ── importing one skill ───────────────────────────────────────────────────────
+
+def _attribution(full_name: str, commit: str, lic: SkillLicense, today: str) -> str:
+    if lic.recognised:
+        terms = lic.spdx + ("" if lic.read_from in ("repo", "none") else f", {lic.read_from}")
+    else:
+        terms = "license not recognised: used on this Mac only, not redistributable"
+    return f"> Imported verbatim from https://github.com/{full_name} at {commit[:12]} ({terms}) on {today}.\n\n"
 
 
-async def import_skill(ref: str, path: str) -> dict:
-    """Import ONE skill faithfully. Re-validates everything server-side (never trust the UI).
+def _read_md(folder: Path) -> str:
+    path = folder / "SKILL.md"
+    return path.read_text("utf-8", errors="replace") if path.is_file() else ""
 
-    0.1.57 §5.2: pinned. `ref` may name the commit (`owner/repo@<sha>`, what a dossier
-    recorded); without one, the import pins to the commit the default branch points at now.
-    Every file is fetched AT that commit and its SHA-256 returned, so the dossier can say
-    exactly what was installed."""
-    ref, _, sha = (ref or "").partition("@")
-    parsed = github_eval.parse_repo_ref(ref)
-    if parsed is None:
+
+async def import_skill(ref: str, path: str, *, license_ok: str | None = None) -> dict:
+    """Import ONE skill, whole and pinned to one commit (§C2, §C4). Everything is re-checked here,
+    on the server: no client can skip the license step.
+
+    `ref` names the repository, optionally a commit (`owner/repo@<sha>`, what a scan returned),
+    or is a github.com link. `path` is the SKILL.md inside it. `license_ok` is the sha256 of the
+    license text the user read and accepted for local use."""
+    source = parse_source(ref)
+    if source is None:
         raise ValueError("not a GitHub repo reference")
-    if sha and not _SHA_RE.fullmatch(sha.lower()):
-        raise ValueError("not a commit id")
-    owner, repo = parsed
-    meta = await github_eval.fetch_repo(owner, repo)
-    sha = sha.lower() or await head_sha(owner, repo)
-    paths = await _tree_paths(owner, repo, sha)
-    spdx, source = await _skill_license(owner, repo, path, paths, meta["license"], sha)
-    block = _skill_license_block(spdx, source)
-    if block:
-        raise ValueError(block)
-    files: dict[str, str] = {}
-
-    def _keep(file_path: str, content: str) -> str:
-        files[file_path] = hashlib.sha256(content.encode("utf-8")).hexdigest()
-        return content
-
-    raw = _keep(path, await _fetch_raw(owner, repo, path, sha))
-    info = parse_skill_md(raw)
+    skill_path = (path or "").strip().strip("/")
+    if skill_files.safe_relpath(skill_path) is None or skill_path.rsplit("/", 1)[-1] != "SKILL.md":
+        raise ValueError("path must name a SKILL.md inside the repository")
+    folder = skill_path.rsplit("/", 1)[0] if "/" in skill_path else ""
+    prefix = f"{folder}/" if folder else ""
+    meta = await github_eval.fetch_repo(source.owner, source.repo)
+    archive = await _archive(source, keep=lambda p: p.startswith(prefix) or _is_license_name(p.rsplit("/", 1)[-1]))
+    raw = archive.text(skill_path)
+    if raw is None:
+        raise ValueError(f"{skill_path} is not in the repository at {archive.commit[:12]}")
+    info = parse_skill_md(raw, fallback_key=folder.rsplit("/", 1)[-1] if folder else source.repo)
     if info is None:
-        raise ValueError("not a valid SKILL.md (frontmatter name+description required)")
+        raise ValueError("not a valid SKILL.md (frontmatter name and description are needed)")
     if len(info["body"].encode("utf-8")) > MAX_SKILL_BYTES:
         raise ValueError(f"body exceeds the {MAX_SKILL_BYTES}B limit")
-
+    lic = skill_license(archive, skill_path, meta["license"], info["license"])
+    if not lic.recognised and len(lic.text.encode("utf-8")) > MAX_LICENSE_BYTES:
+        raise ValueError("the license text is too long to show")
     key = info["key"]
     async with db_session.AsyncSessionLocal() as db:
-        if await db.get(SkillPack, key) is not None:
-            raise ValueError(f"skill '{key}' already exists in the library")
+        existing = await db.get(SkillPack, key)
+        dossier = (await db.get(CapabilitySource, existing.source_id)
+                   if existing is not None and existing.source_id else None)
+    update = existing is not None and _same_import(existing, dossier, meta["full_name"], skill_path)
+    if existing is not None and not update and existing.origin not in EXTERNAL_ORIGINS:
+        raise ValueError(f"a skill named '{key}' already exists")
+    replaces = _replaces(existing)
+    accepted = existing.license_sha256 if update and existing.local_only else None
+    block = _skill_license_block(lic, license_ok, accepted)
+    if block == "license_step":
+        raise LicenseStepNeeded(lic, key=key, name=info["name"])
+    if block:
+        raise ValueError(block)
 
-    # bundled scripts → data_dir/skill_scripts/<key>/ (flat names, .py only, capped)
-    script_paths = _scripts_for(path, paths)[:_MAX_SCRIPTS]
-    stored: list[str] = []
-    if script_paths:
-        script_dir = _data_dir() / "skill_scripts" / key
-        script_dir.mkdir(parents=True, exist_ok=True)
-        for sp in script_paths:
-            content = await _fetch_raw(owner, repo, sp, sha)
-            if len(content.encode("utf-8")) > _MAX_SCRIPT_BYTES:
-                continue
-            fname = sp.rsplit("/", 1)[-1]
-            if not re.fullmatch(r"[A-Za-z0-9._-]+\.py", fname):
-                continue
-            (script_dir / fname).write_text(_keep(sp, content), encoding="utf-8")
-            stored.append(fname)
+    final = skill_files.folder_for(key)
+    old_files = skill_files.checksums(final) if update else {}
+    old_md = _read_md(final) if update else ""
+    staged = await asyncio.to_thread(skill_files.stage, archive, folder)
+    try:
+        scan = await asyncio.to_thread(capability_scan.scan_skill_folder, staged.path, raw)
+        aside = skill_files.swap_in(staged, key)
+    except BaseException:
+        skill_files.discard(staged)
+        raise
+    try:
+        recorded = await _record_import(key=key, info=info, raw=raw, lic=lic, scan=scan, meta=meta,
+                                        commit=archive.commit, skill_path=skill_path, folder=folder,
+                                        files=staged.files, newly_accepted=accepted != lic.sha256)
+    except BaseException:
+        skill_files.swap_back(key, aside)
+        raise
+    skill_files.retire(aside)                     # never raises: a Trash it cannot reach is logged
+    return {"key": key, "name": info["name"], "description": info["description"], "update": update,
+            "replaces": replaces, "commit": archive.commit,
+            "files": {prefix + rel: sha for rel, sha in staged.files.items()},
+            "skipped": staged.skipped, "license": lic.spdx, "license_source": lic.read_from,
+            "recognised": lic.recognised, "local_only": not lic.recognised, "scan": scan,
+            "enabled": recorded["enabled"], "source_id": recorded["source_id"],
+            "has_scripts": skill_files.has_scripts(final),
+            "changes": skill_files.changes(old_files, staged.files, old_md, raw) if update else None}
 
-    # bundled references → data_dir/skill_scripts/<key>/references/ (flat basenames,
-    # .md/.txt only, same per-file + per-skill caps as scripts; PC-3 mounts these read-only).
-    ref_paths = _references_for(path, paths)[:_MAX_REFERENCES]
-    stored_refs: list[str] = []
-    if ref_paths:
-        ref_dir = _data_dir() / "skill_scripts" / key / "references"
-        ref_dir.mkdir(parents=True, exist_ok=True)
-        for rp in ref_paths:
-            content = await _fetch_raw(owner, repo, rp, sha)
-            if len(content.encode("utf-8")) > _MAX_REFERENCE_BYTES:
-                continue
-            fname = rp.rsplit("/", 1)[-1]
-            if not re.fullmatch(r"[A-Za-z0-9._-]+\.(md|txt)", fname):
-                continue
-            if fname in stored_refs:  # basename collision from a nested ref — keep the first
-                continue
-            (ref_dir / fname).write_text(_keep(rp, content), encoding="utf-8")
-            stored_refs.append(fname)
 
-    today = datetime.now(timezone.utc).date().isoformat()
-    attribution = (f"> Imported verbatim from https://github.com/{meta['full_name']} at {sha[:12]} "
-                   f"({spdx}{'' if source == 'repo' else ', ' + source}) on {today}.\n\n")
-    body = attribution + info["body"]
-    if stored:
-        body += ("\n\n## Bundled scripts\n"
-                 "Run inside the sandbox via the run_python tool with "
-                 f'{{"skill_script": "{key}/<file>"}} (no network; results via print):\n'
-                 + "\n".join(f"- `{key}/{f}`" for f in stored))
-    if stored_refs:
-        body += ("\n\n## Bundled references\n"
-                 "Reference docs shipped with this skill. Read one via the read_skill tool with "
-                 '{"key": "' + key + '", "section": "references/<file>"}:\n'
-                 + "\n".join(f"- `references/{f}`" for f in stored_refs))
-
+async def _record_import(*, key: str, info: dict, raw: str, lic: SkillLicense, scan: dict, meta: dict,
+                         commit: str, skill_path: str, folder: str, files: dict[str, str],
+                         newly_accepted: bool) -> dict:
+    """The skill's row and its dossier, in one transaction. An update keeps the user's on/off,
+    unless the new version scans dangerous with something the user has not read (Ruling C):
+    then it is off."""
+    now = datetime.utcnow()
+    full = meta["full_name"]
+    prefix = f"{folder}/" if folder else ""
+    dangerous = scan.get("verdict") == "dangerous"
     async with db_session.AsyncSessionLocal() as db:
-        row = SkillPack(key=key, name=info["name"], category="imported",
-                        description=info["description"], tier="safe",
-                        status="registered", body=body)
-        db.add(row)
+        pack = await db.get(SkillPack, key)
+        if pack is not None and pack.origin in EXTERNAL_ORIGINS:
+            await db.delete(pack)              # Arslan's own import takes the name (§C1 precedence)
+            await db.flush()
+            pack = None
+        dossier = await db.get(CapabilitySource, pack.source_id) if pack is not None and pack.source_id else None
+        if pack is None:
+            pack = SkillPack(key=key, enabled=not dangerous)
+            db.add(pack)
+        elif dangerous:
+            if (pack.scan or {}).get("accepted") and capability_scan.same_findings(pack.scan, scan):
+                scan = {**scan, "accepted": True}      # nothing new since the user read it: stays as it was
+            else:
+                pack.enabled = False
+        if dossier is None:
+            dossier = CapabilitySource(id=uuid.uuid4().hex, owner_id="local", kind="skill",
+                                       candidate_id=f"github:{full}:{skill_path}"[:300], needs={}, grants={},
+                                       created_at=now)
+            db.add(dossier)
+        pack.name, pack.category, pack.description = info["name"], "imported", info["description"]
+        pack.tier, pack.status, pack.origin = "safe", "registered", "imported"
+        pack.body = _attribution(full, commit, lic, now.date().isoformat()) + info["body"]
+        pack.folder = str(skill_files.folder_for(key))
+        pack.text_sha256 = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+        pack.scan, pack.frontmatter, pack.invocable = scan, info["declared"] or None, info["invocable"]
+        pack.source_id = dossier.id
+        pack.local_only, pack.license_spdx = not lic.recognised, lic.spdx
+        pack.license_sha256 = None if lic.recognised else lic.sha256
+        if lic.recognised:
+            pack.license_accepted_at = None
+        elif newly_accepted or pack.license_accepted_at is None:
+            pack.license_accepted_at = now
+        dossier.name = info["name"][:120]
+        dossier.source_url = f"https://github.com/{full}/tree/{commit}/{folder}".rstrip("/")[:500]
+        dossier.repo, dossier.version, dossier.commit_sha = full, commit[:12], commit
+        dossier.license_spdx, dossier.license_path = lic.spdx, lic.read_from[:300]
+        dossier.stars, dossier.pushed_days, dossier.checked_at = meta.get("stars"), meta.get("pushed_days"), now
+        dossier.runtime, dossier.scan = "skill", scan
+        dossier.test = {"ok": not dangerous, "stage": "scan", "at": now.isoformat() + "Z"}
+        dossier.files = {prefix + rel: sha for rel, sha in files.items()}
+        dossier.state, dossier.skill_key = "installed", key
+        dossier.error = "scan" if dangerous else None
+        dossier.installed_at = now
         await db.commit()
-    return {"key": key, "name": info["name"], "description": info["description"],
-            "scripts": stored, "references": stored_refs, "license": spdx,
-            "license_source": source, "commit": sha, "files": files}
+        return {"enabled": pack.enabled is not False, "source_id": dossier.id}
