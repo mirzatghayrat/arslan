@@ -36,7 +36,7 @@ def build_engine(db_url: str) -> AsyncEngine:
     return engine
 
 
-def _roll_back_a_cancelled_transaction(dbapi_conn, _record, exception) -> None:  # noqa: ANN001
+def _roll_back_a_cancelled_transaction(dbapi_conn, record, exception) -> None:  # noqa: ANN001
     """A task cancelled mid-statement frees SQLite's write lock at once, not when GC runs.
 
     On the cancel SQLAlchemy invalidates the connection and closes it, without a rollback. But
@@ -50,15 +50,24 @@ def _roll_back_a_cancelled_transaction(dbapi_conn, _record, exception) -> None: 
     worker thread behind the cancelled statement, and the close SQLAlchemy queues next comes after
     it, so the lock is free as soon as that statement ends. Nothing committed is touched: a COMMIT
     already queued runs first, and the rollback then finds no transaction. An invalidated
-    connection never commits, so nothing is lost that the close would have kept. If the task is
-    cancelled again while the rollback waits, that CancelledError goes up as it is: the rollback is
-    already queued, and SQLAlchemy then hands the connection back to the pool after its own
-    rollback instead of closing it (it is never closed twice). Outside a greenlet (the garbage
-    collector's cleanup) no IO is possible, and nothing is done."""
+    connection never commits, so nothing is lost that the close would have kept.
+
+    If the task is cancelled again while the rollback waits (Stop pressed twice, Stop then the
+    socket closing, or an anyio scope, which re-delivers its cancel at every await), that
+    CancelledError goes up as it is. The rollback is already queued and still frees the lock, but
+    SQLAlchemy then skips the close and checks the connection back in with the cancelled statement
+    alive until GC: a statement that read a table keeps its read snapshot, so the next sessions on
+    that connection would read stale rows and their writes would fail at once ("database is
+    locked"). So it is soft-invalidated first: recycled (closed, once) at its next checkout, never
+    handed out again (PR 2c fix round 1). Outside a greenlet (the garbage collector's cleanup) no
+    IO is possible, and nothing is done."""
     if not isinstance(exception, asyncio.CancelledError) or not in_greenlet():
         return
     try:
         dbapi_conn.rollback()
+    except asyncio.CancelledError:
+        record.invalidate(soft=True)           # cancelled again: recycle it at its next checkout
+        raise
     except Exception:  # noqa: BLE001 — the close that follows still runs, as before
         logger.warning("rollback of a cancelled transaction failed", exc_info=True)
 

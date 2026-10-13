@@ -13,6 +13,14 @@ cancelled, the transaction is rolled back before the connection is closed. The r
 behind the cancelled statement on aiosqlite's worker thread, so the lock is free as soon as that
 statement ends, with no garbage collection.
 
+A SECOND CANCEL (fix round 1). If the task is cancelled again while that rollback waits (Stop
+pressed twice, Stop then the socket closing, or an anyio scope, which re-delivers its cancel at
+every await), SQLAlchemy skips the close and checks the connection back in, with the cancelled
+statement still alive. A statement that read a TABLE keeps its read snapshot open: every later
+session on that connection would read frozen data, and its writes would fail at once with
+"database is locked". So the connection is soft-invalidated: it is recycled at its next checkout
+and never handed out again. The tests that pin this read a table; `SELECT held()` reads none.
+
 The cancelled statement here is a SELECT that waits on a gate the test holds, so the cancel lands
 inside it for certain, and the test decides when it ends. The garbage collector is off throughout:
 the lock must not depend on it.
@@ -26,11 +34,14 @@ import threading
 import time
 
 import aiosqlite
+import anyio
 import pytest
 from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from server.db.models import Base
 from server.db.session import build_engine
+from server.services import permission_store
 
 
 class _Gate:
@@ -134,9 +145,10 @@ async def test_a_write_cancelled_mid_select_frees_the_lock_at_once_without_gc(db
 
 async def test_a_second_cancel_while_the_rollback_waits_still_frees_the_lock(db, no_gc):
     """Stop, then the socket closes: the task is cancelled again while the rollback waits behind
-    the statement. The rollback is already queued on the worker thread, ahead of the close. The
-    task still ends cancelled (main ended it with ValueError "Connection closed"), and its
-    connection is back in the pool, not left for the garbage collector."""
+    the statement. The rollback is already queued on the worker thread, so the lock is still freed,
+    and the task still ends cancelled (main ended it with ValueError "Connection closed"). Nothing
+    is left checked out for the garbage collector; the connection itself is soft-invalidated and
+    recycled at its next checkout (the table-reading tests below pin what that prevents)."""
     path, engine, maker, gate = db
     await _cancel_inside_the_select(maker, gate, cancels=2)
     assert await _lock_within(path, 0.5) == "free"
@@ -180,7 +192,10 @@ async def test_a_commit_already_on_its_way_is_kept_when_its_task_is_cancelled(db
         assert (await session.execute(text("SELECT v FROM t"))).scalars().all() == ["committing"]
 
 
-async def test_no_connection_is_closed_twice(db, no_gc, monkeypatch):
+@pytest.mark.parametrize("cancels", [1, 2])
+async def test_no_connection_is_closed_twice(db, no_gc, monkeypatch, cancels):
+    """One cancel: the invalidated connection is closed once. Two: it is recycled at the next
+    checkout, also closed once. Then `dispose` closes the rest, each once."""
     path, engine, maker, gate = db
     closes: dict[int, int] = {}
     real_close = aiosqlite.Connection.close
@@ -190,7 +205,7 @@ async def test_no_connection_is_closed_twice(db, no_gc, monkeypatch):
         return await real_close(self)
 
     monkeypatch.setattr(aiosqlite.Connection, "close", counting_close)
-    await _cancel_inside_the_select(maker, gate)
+    await _cancel_inside_the_select(maker, gate, cancels=cancels)
     assert await _lock_within(path, 0.5) == "free"
     async with maker() as session:
         await session.execute(text("SELECT 1"))
@@ -202,3 +217,88 @@ async def test_the_busy_timeout_stays_five_seconds(db):
     _path, engine, _maker, _gate = db
     async with engine.connect() as conn:
         assert (await conn.execute(text("PRAGMA busy_timeout"))).scalar_one() == 5000
+
+
+# ── fix round 1: a second cancel never hands out a connection that holds a read snapshot ──────
+
+async def _cancelled_while_reading(maker, gate, engine, *, kind: str, how: str,
+                                   table: str = "t") -> None:
+    """A session (a writer that INSERTed first, or a plain reader) is cancelled while its SELECT
+    reads a TABLE: twice by `task.cancel()`, or once by an anyio deadline, which re-delivers the
+    cancel at every await until its scope is left. Waits until the session's shielded close ends."""
+    async def work():
+        async with maker() as session:
+            if kind == "writer":
+                await session.execute(text("INSERT INTO t (v) VALUES ('uncommitted')"))
+            await session.execute(text(f"SELECT held() FROM {table}"))      # a table read
+
+    if how == "two_cancels":
+        task = asyncio.create_task(work())
+        assert await asyncio.to_thread(gate.inside.wait, 5), "the SELECT never started"
+        for _ in range(2):
+            task.cancel()
+            await asyncio.sleep(0.05)
+        gate.open.set()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, 5)
+    else:
+        async def opener():
+            assert await asyncio.to_thread(gate.inside.wait, 5), "the SELECT never started"
+            await asyncio.sleep(0.15)            # the deadline passes while the SELECT runs
+            gate.open.set()
+        opening = asyncio.create_task(opener())
+        with anyio.move_on_after(0.05) as scope:
+            await work()
+        assert scope.cancelled_caught
+        await opening
+    for _ in range(100):
+        if engine.sync_engine.pool.checkedout() == 0:
+            break
+        await asyncio.sleep(0.02)
+    assert engine.sync_engine.pool.checkedout() == 0
+
+
+@pytest.mark.parametrize("how", ["two_cancels", "anyio_deadline"])
+@pytest.mark.parametrize("kind", ["writer", "reader"])
+async def test_the_pool_never_hands_out_a_cancelled_statements_snapshot(db, no_gc, kind, how):
+    """After the cancel, another connection commits a row. The next users of the pool must see it,
+    and their writes must go through (on the poisoned connection they read the old snapshot and
+    failed at once with "database is locked")."""
+    path, engine, maker, gate = db
+    async with maker() as session:                       # one committed row, so the SELECT reads it
+        await session.execute(text("INSERT INTO t (v) VALUES ('committed')"))
+        await session.commit()
+    await _cancelled_while_reading(maker, gate, engine, kind=kind, how=how)
+    assert await _lock_within(path, 0.5) == "free"
+    con = sqlite3.connect(path)                          # another task commits meanwhile
+    con.execute("INSERT INTO t (v) VALUES ('external')")
+    con.commit()
+    con.close()
+    for _ in range(2):                                   # the next users of the pool
+        async with maker() as session:
+            seen = (await session.execute(text("SELECT v FROM t ORDER BY id"))).scalars().all()
+            assert seen[:2] == ["committed", "external"], seen
+            await asyncio.wait_for(session.execute(text("INSERT INTO t (v) VALUES ('next')")), 2)
+            await session.commit()
+
+
+async def test_a_rule_removed_after_a_doubly_cancelled_read_is_gone_for_the_next_check(db, no_gc):
+    """What the poisoned connection meant for permissions: an "Always" rule exists, a read session
+    is cancelled twice mid-SELECT, then the user removes the rule (another connection commits the
+    delete). The next permission check must not find the removed rule — on the stale snapshot it
+    did, and the step went ahead without a card."""
+    path, engine, maker, gate = db
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    async with maker() as session:
+        await permission_store.add_rule(session, "app", "com.apple.Notes", label="Notes",
+                                        created_from="settings")
+        await session.commit()
+    await _cancelled_while_reading(maker, gate, engine, kind="reader", how="two_cancels",
+                                   table="permission_rules")
+    con = sqlite3.connect(path)                          # the user removes the rule in Settings
+    con.execute("DELETE FROM permission_rules WHERE kind = 'app' AND target = 'com.apple.Notes'")
+    con.commit()
+    con.close()
+    async with maker() as session:
+        assert await permission_store.find_rule(session, "app", "com.apple.Notes") is None

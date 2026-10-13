@@ -237,3 +237,34 @@ async def test_a_resume_that_cannot_start_keeps_the_grants_it_did_not_get_to_dro
     assert await _grants(execution_db) == [("live", "live-task", "com.apple.Notes")]
     async with execution_db() as db:
         assert await db.scalar(sa.select(sa.func.count()).select_from(PermissionGrant)) == 1
+
+
+async def test_a_resume_whose_grant_drop_fails_is_not_started(execution_db, monkeypatch):
+    """The other half (fix round 1, the reviewer's M1): a drop that fails refuses the resume. The
+    task is not started without it — no run, and its version and phase are unchanged — and the
+    grant is still there for the next resume or the next boot."""
+    from server.services.task_repository import TaskError
+    version = await _a_task_given_notes_for_this_task_then_lost(execution_db, monkeypatch, "restarted")
+    async with repository() as repo:
+        phase_before = (await repo.get("live-task")).phase
+    real = permission_store.delete_task_grants
+
+    async def locked(db, task_id):
+        raise OperationalError("DELETE FROM permission_grants", {}, Exception("database is locked"))
+
+    ran = []
+
+    async def answer(conversation, message, emit, **kwargs):
+        ran.append(message)
+        return "continued"
+
+    monkeypatch.setattr(permission_store, "delete_task_grants", locked)
+    monkeypatch.setattr(arslan, "_handle_answer", answer)
+    with pytest.raises(TaskError):
+        await task_service.resume_turn("live-task", version, "live", lambda event: None)
+    assert ran == [], "the resumed run started without its grants dropped"
+    async with repository() as repo:
+        row = await repo.get("live-task")
+        assert (row.version, row.phase) == (version, phase_before), "the start was committed"
+    monkeypatch.setattr(permission_store, "delete_task_grants", real)
+    assert await _grants(execution_db) == [("live", "live-task", "com.apple.Notes")]
