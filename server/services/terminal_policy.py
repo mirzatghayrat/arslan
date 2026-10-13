@@ -487,9 +487,9 @@ def _floor_of_unread(text: str) -> tuple[Finding, ...]:
     subjects = [text]
     try:
         subjects = [_decode_ansi_c(text)]
-        reading = _readings(subjects[0])
-        if reading != subjects[0]:
-            subjects.append(reading)
+        shell = _comments_quieted(_decode_ansi_c(split_heredocs(subjects[0])[0]))     # (F2)
+        reading = _readings(shell)
+        subjects += [subject for subject in (shell, reading) if subject not in subjects]
     except Exception:  # noqa: BLE001 — what could be built is searched
         pass
     found: list[Finding] = []
@@ -530,7 +530,8 @@ def _decode_ansi_c(text: str) -> str:
     """Every `$'…'` outside quotes decoded as zsh decodes it (`\\'`, `\\\\`, `\\n`, `\\xHH`, `\\uHHHH`,
     `\\NNN` …) and written as a plain single-quoted word: `$'\\x67it' push` is `'git' push`, and
     `$'don\\'t'` no longer leaves the scanners in a quote that never closes (item 9). In double quotes
-    `$'` is literal; a `$(…)` opens a fresh quoting level. Never raises."""
+    `$'` is literal; a `$(…)` opens a fresh quoting level; a `#` comment is copied to its newline, so
+    its "don't" opens no quote (F2). Never raises."""
     if "$'" not in text:
         return text
     out: list[str] = []
@@ -543,6 +544,12 @@ def _decode_ansi_c(text: str) -> str:
         elif ch == "\\":
             out.append(text[i:i + 2])
             i += 2
+            continue
+        elif quote is None and _comment_at(text, i):
+            stop = text.find("\n", i)                   # a comment, to its newline: "don't" opens no quote (F2)
+            stop = n if stop < 0 else stop
+            out.append(text[i:stop])
+            i = stop
             continue
         elif quote is None and text.startswith("$'", i):
             value, i = _ansi_c_value(text, i + 2)
@@ -560,6 +567,57 @@ def _decode_ansi_c(text: str) -> str:
         elif ch == ")" and quote is None and len(quotes) > 1:
             quotes.pop()
         out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def _comment_at(text: str, i: int) -> bool:
+    """Whether the `#` at `i` starts a comment as zsh reads it: at the start of a word — after a blank,
+    `;`, `&`, `|`, `<`, `>` or `)`, or after a `(` that opens a subshell or a substitution (in `*(#q)`
+    the `(` belongs to a glob, and with zsh's extended glob what follows runs)."""
+    if text[i] != "#":
+        return False
+    if i == 0 or text[i - 1].isspace() or text[i - 1] in ";&|<>)":
+        return True
+    return text[i - 1] == "(" and (i == 1 or text[i - 2].isspace() or text[i - 2] in ";&|(<>=$")
+
+
+def _comments_quieted(text: str) -> str:
+    """`text` with the quote marks inside each `#` comment blanked (F2). A comment is
+    no code, but Hermes' detection reads none, so the apostrophe in "# don't" opened a quote there
+    and the next lines read as quoted prose: `ls # don't\nrm -rf ~` was not the floor. Hermes' own
+    comment rule, which may take a little more for a comment than zsh does: blanking a quote mark
+    only ever shows more text as code."""
+    if "#" not in text:
+        return text
+    out = list(text)
+    quotes: list[str | None] = [None]                    # the quote open at each `$(` level
+    i, n = 0, len(text)
+    while i < n:
+        ch, quote = text[i], quotes[-1]
+        if quote == "'":
+            quotes[-1] = None if ch == "'" else quote
+        elif ch == "\\":
+            i += 2
+            continue
+        elif quote is None and hermes._is_shell_comment_start(text, i):
+            stop = text.find("\n", i)
+            stop = n if stop < 0 else stop
+            for k in range(i, stop):
+                if out[k] in "'\"":
+                    out[k] = " "
+            i = stop
+            continue
+        elif ch == '"':
+            quotes[-1] = None if quote == '"' else '"'
+        elif ch == "'" and quote is None:
+            quotes[-1] = "'"
+        elif text.startswith("$(", i):
+            quotes.append(None)
+            i += 2
+            continue
+        elif ch == ")" and quote is None and len(quotes) > 1:
+            quotes.pop()
         i += 1
     return "".join(out)
 
@@ -612,6 +670,7 @@ def _read(text: str) -> list[Finding]:
             _BUDGET.reset(token)
     text = _decode_ansi_c(text)
     shell, bodies = split_heredocs(text)
+    shell = _comments_quieted(_decode_ansi_c(shell))   # what a data body or a comment's "don't" hid (F2)
     _charge(shell)
     inner = _with_inner_backticks(shell)
     _charge(inner[len(shell):])

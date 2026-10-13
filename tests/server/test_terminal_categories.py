@@ -1034,6 +1034,7 @@ def test_the_cache_sees_a_change_to_hands_never_list():
     ("git commit -m $'don\\'t' && git push", "send"), ("$'git' push", "send"), ("$'\\x67it' push", "send"),
     ("$'\\147it' push", "send"), ("$'\\u0067it' push", "send"), ("$'\\x73udo' ls", "floor"),
     ("echo $'it\\'s' ; rm -rf ~", "floor"), ("echo \"$'git' push\"", "local"),
+    ("cat ~/Library/Application\\ Support/$'Arsl\\x61n'/config.json", "floor"),
 ])
 def test_an_ansi_c_string_is_read_as_zsh_decodes_it(command, category):
     """Item 9 (R9): `$'…'` is decoded first (`\\'`, `\\\\`, `\\n`, `\\xHH`, `\\uHHHH`, `\\NNN`), so it
@@ -1285,3 +1286,27 @@ def test_unwrapping_reads_no_floor_into_an_ordinary_command(command):
     """F1: the command a wrapper runs is read exactly: a word after `echo` is an argument."""
     found = tp.classify(command)
     assert found.floor is None, [(f.category, f.rule) for f in found.findings]
+
+
+# ── fix round 3: the ANSI-C decoder skips comments (F2) ───────────────────────────────────────
+
+@pytest.mark.parametrize("command,category", [
+    ("ls # don't\n$'\\x72m' -rf ~", "floor"), ("ls # won't do it\n$'\\x73udo' ls", "floor"),
+    ("ls # can't\n$'git' push", "send"), ("ls;# it's\n$'\\x73udo' ls", "floor"),
+    ("x=$(ls # it's\n); $'\\x73udo' ls", "floor"), ("cat <<EOF\ndon't\nEOF\n$'\\x73udo' ls", "floor"),
+    ("echo \"a # don't\" && $'\\x73udo' ls", "floor"), ("echo a#b && $'\\x73udo' ls", "floor"),
+    ("echo 'a # b' && $'\\x73udo' ls", "floor"), ("echo $# && $'\\x73udo' ls", "floor"),
+    ("ls # don't\nrm -rf ~", "floor"), ("ls # it's fine\nmkfs.ext4 /dev/disk2", "floor"),
+    ("ls # don't\nshutdown -h now", "floor"), ("ls # don't\n:(){ :|:& };:", "floor"),
+    ("ls # don't\ncat x > /dev/sda", "floor"), ("git commit -m \"fix #12: don't\" && rm -rf ~", "floor"),
+    ("ls # a \\\nrm -rf ~", "floor"), ("ls *(#q); $'\\x73udo' ls", "floor"), ("ls # a \"quote\nrm -rf ~", "floor"),
+])
+def test_an_apostrophe_in_a_comment_or_a_heredoc_hides_no_ansi_c_command(command, category):
+    """Review 2 Important #2 (F2): `_decode_ansi_c` skips a `#` comment wherever the shell starts one
+    (at the start of a word), so "don't" there does not open a quote and leave a later `$'…'`
+    undecoded; a heredoc body is data, and the shell text around it is decoded again. Hermes'
+    detection reads no comments either, so `ls # don't\\nrm -rf ~` was no floor even without
+    `$'…'`: a comment's quote marks are blanked before the rules read the text. A `#` in quotes,
+    inside a word (`a#b`) or in `$#` starts no comment."""
+    found = tp.classify(command)
+    assert found.category == category, [(f.category, f.rule) for f in found.findings]
