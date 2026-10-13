@@ -1858,7 +1858,7 @@
   "schedgrant": {
     "label": "Planification",
     "body": "Arslan souhaite planifier une tâche récurrente :",
-    "scope": "En acceptant, il pourra créer des tâches planifiées pour le reste de cette session. Les exécutions planifiées ont lieu sans surveillance : elles peuvent consulter et rendre compte, mais ne peuvent ni écrire de fichiers ni lancer de commandes.",
+    "scope": "En acceptant, il pourra créer des tâches planifiées pour le reste de cette session. Les exécutions planifiées tournent seules et ne vous attendent jamais : une étape qui demande votre accord est sautée, pas exécutée. Ce qui n’en demande pas se fait quand même : consulter, lancer des commandes ordinaires dans le bac à sable et écrire dans le dossier de travail d’Arslan.",
     "allow": "Autoriser",
     "deny": "Pas maintenant",
     "every_day": "chaque jour",

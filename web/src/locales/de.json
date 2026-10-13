@@ -1858,7 +1858,7 @@
   "schedgrant": {
     "label": "Zeitplanung",
     "body": "Arslan möchte eine wiederkehrende Aufgabe einplanen:",
-    "scope": "Mit deiner Zustimmung darf es für den Rest dieser Sitzung geplante Aufgaben anlegen. Geplante Läufe finden unbeaufsichtigt statt — sie können nachschlagen und berichten, aber keine Dateien schreiben und keine Befehle ausführen.",
+    "scope": "Mit deiner Zustimmung darf es für den Rest dieser Sitzung geplante Aufgaben anlegen. Geplante Läufe laufen allein und warten nie auf dich: Ein Schritt, der dein OK bräuchte, wird übersprungen, nicht ausgeführt. Was kein OK braucht, läuft weiter: Nachschlagen, gewöhnliche Befehle in der Sandbox und Schreiben in Arslans eigenem Arbeitsordner.",
     "allow": "Erlauben",
     "deny": "Jetzt nicht",
     "every_day": "jeden Tag",

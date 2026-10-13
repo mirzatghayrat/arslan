@@ -1858,7 +1858,7 @@
   "schedgrant": {
     "label": "Programación",
     "body": "Arslan quiere programar una tarea periódica:",
-    "scope": "Si lo permites, durante el resto de esta sesión podrá crear tareas programadas. Las ejecuciones programadas ocurren sin supervisión: pueden consultar e informar, pero no escribir archivos ni ejecutar comandos.",
+    "scope": "Si lo permites, durante el resto de esta sesión podrá crear tareas programadas. Las ejecuciones programadas van solas y nunca te esperan: un paso que necesite tu visto bueno se omite, no se hace. Lo que no lo necesita sí se hace: consultar información, ejecutar comandos habituales en el entorno aislado y escribir en la carpeta de trabajo de Arslan.",
     "allow": "Permitir",
     "deny": "Ahora no",
     "every_day": "cada día",

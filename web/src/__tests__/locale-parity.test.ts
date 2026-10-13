@@ -305,15 +305,28 @@ describe("locale parity", () => {
       runcmd: { remember: string; sandboxOutsideLabel: string; sandboxOutsideNote: string };
       settings: { navAbilities: string; terminalRulesEmpty: string };
       kit: { scope: { always: string } };
-      schedgrant: { unattended: string };
+      schedgrant: { scope: string; unattended: string };
     };
     /** The app's own word for the sandbox and for Arslan's working folder (runcmd.sandboxOutside*). */
     const SANDBOX_AND_FOLDER: Record<string, [string, string]> = {
       en: ["sandbox", "working folder"], zh: ["沙盒", "工作文件夹"], ja: ["サンドボックス", "作業フォルダ"],
       es: ["entorno aislado", "carpeta de trabajo"], de: ["Sandbox", "Arbeitsordner"], fr: ["bac à sable", "dossier de travail"],
     };
+    /** What schedgrant.scope used to say a scheduled run cannot do. It can: scheduler.run_arslan_turn runs what needs no card. */
+    const CANNOT_WRITE_OR_RUN: Record<string, string> = {
+      en: "cannot write files or run commands", zh: "写不了文件、跑不了命令", ja: "ファイルの書き込みやコマンドの実行はできません",
+      es: "no escribir archivos ni ejecutar comandos", de: "keine Dateien schreiben und keine Befehle ausführen",
+      fr: "ne peuvent ni écrire de fichiers ni lancer de commandes",
+    };
     for (const [lang, data] of Object.entries(LOCALES)) {
       const d = data as unknown as CardWords;
+
+      it(`${lang}: schedgrant.scope (an old card's line) ends with what schedgrant.unattended says, not that a scheduled run cannot write or run`, () => {
+        expect(Object.keys(CANNOT_WRITE_OR_RUN).sort()).toEqual(Object.keys(LOCALES).sort());
+        expect(d.schedgrant.scope).not.toContain(CANNOT_WRITE_OR_RUN[lang]);
+        expect(d.schedgrant.scope.endsWith(d.schedgrant.unattended)).toBe(true);        // one truthful sentence, said once
+        expect(d.schedgrant.scope.length).toBeGreaterThan(d.schedgrant.unattended.length);   // and what a yes lasts is still there
+      });
 
       it(`${lang}: runcmd.remember points, with a ›, to the Settings section that holds the rules (settings.navAbilities)`, () => {
         expect(d.runcmd.remember).toContain(`› ${d.settings.navAbilities}`);
