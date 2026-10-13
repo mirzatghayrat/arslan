@@ -109,9 +109,9 @@ async def test_looking_is_free_and_page_text_is_marked_external(browser, asks, i
     assert bad["ok"] is False
 
 
-async def test_a_script_asks_once_per_app_it_names_a_risky_one_every_time_shortcuts_once(asks, in_job, monkeypatch):
-    """0.1.61 §A11: an AppleScript is asked as the apps it names (one grant per app, like Hands); one
-    that deletes, sends or pays is asked every time, in full."""
+async def test_a_script_asks_every_time_shortcuts_once(asks, in_job, monkeypatch):
+    """0.1.61 release gate: an AppleScript runs outside the sandbox and what it does past its app is read
+    from words only, so every script is asked, in full, every time — none rides an app's grant."""
     seen, _ = asks
     ran = []
 
@@ -126,8 +126,9 @@ async def test_a_script_asks_once_per_app_it_names_a_risky_one_every_time_shortc
         assert (await shortcut.execute({"name": "Log water"}))["ok"]
         assert (await script.execute({"script": 'tell application "Reminders" to delete reminder 1'}))["ok"]
     kinds = [(f["kind"], f["perm_kind"]) for f in seen]
-    assert kinds.count(("mac_script", "app")) == 1, kinds
-    assert kinds.count(("mac_script", "app_risky")) == 2, kinds
+    assert kinds.count(("mac_script", "app")) == 0, kinds
+    assert kinds.count(("mac_script", "app_risky")) == 4, kinds
+    assert all(f["options"] == ["once"] for f in seen if f["kind"] == "mac_script"), seen
     assert kinds.count(("mac_shortcut", "shortcut")) == 1, kinds
     assert seen[0]["detail"].startswith('tell application "Reminders"'), "the full script is shown"
     assert len(ran) == 6

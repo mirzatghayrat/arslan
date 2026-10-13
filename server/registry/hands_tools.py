@@ -334,32 +334,22 @@ class MacAppleScriptExecutor:
             return {"ok": False, "external": False, "error": "script required (max 4000 characters)"}
         if _conversation_and_job()[1] is None:
             return _not_in_job()
-        from server.services import hands_contract, hands_service, permissions
+        from server.services import hands_contract, hands_service
         denied = [app for app in hands_service.script_apps(script) if hands_service.never_touched(app)]
         if denied:                        # the never-list holds for scripts too (0.1.61 §A11)
             return _failed(hands_contract.Result(ok=False, code="app_denied", refused=True), app=denied[0])
         kind, named = hands_service.script_kind(script)
+        # 0.1.61 release gate: a script runs outside the command sandbox, and script_kind reads what it
+        # does past the app it names from its words only. A raw Apple event («event sysoexec» is
+        # `do shell script`), AppleScriptObjC (NSTask) and Standard Additions' `write` are not among
+        # them. So no grant or rule stands for a script — not an app's "for this task", "in this
+        # conversation" or "Always", Hands' included: every script is asked, in full, in Arslan, as
+        # in 0.1.60. One that names apps is `app_risky` (once, never remembered).
         if kind == "app":
-            # Asked as the apps it names, like Hands: one grant per app, the script shown in full.
-            apps = []
-            for name in named:
-                identity = hands_service.app_identity(name) or {}
-                apps.append({"name": identity.get("name") or name, "bundle_id": identity.get("bundle_id") or name})
-            requests = [_app_request(a, script, step="AppleScript", frame_kind="mac_script",
-                                     frame_target=f"AppleScript · {a['name']}") for a in apps]
-            await hands_service.migrate_always()
-            if len(requests) == 1:
-                decisions = [await permissions.decide(requests[0], _context())]
-            else:
-                decisions = await permissions.decide_many(
-                    requests, _context(), title=f"Let an AppleScript use {', '.join(a['name'] for a in apps)}?"[:300])
-            refused = next((d for d in decisions if not d.allowed), None)
-        else:
-            # Money, delete / send / submit, a step past the app (a shell, keystrokes…), a high-reach
-            # app, or no app named: asked every time, in full.
-            decision = await _decide(kind, ", ".join(named) or "AppleScript", "Run this AppleScript?", script,
-                                     "mac_script", "AppleScript", extra={"apps": named[:8]})
-            refused = None if decision.allowed else decision
+            kind = "app_risky"
+        decision = await _decide(kind, ", ".join(named) or "AppleScript", "Run this AppleScript?", script,
+                                 "mac_script", "AppleScript", extra={"apps": named[:8]})
+        refused = None if decision.allowed else decision
         if refused is not None:
             return _no(refused, "this AppleScript")
         return await _run(["/usr/bin/osascript", "-e", script])

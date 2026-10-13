@@ -147,6 +147,31 @@ async def test_a_risky_script_is_never_sent_as_an_app_card_and_asks_each_time(as
     assert all(f["kind"] == "mac_script" and f["options"] == ["once"] for f in seen)
 
 
+@pytest.mark.parametrize("past_the_app", [
+    '«event sysoexec» "echo hi"',                                   # `do shell script`, raw
+    'use framework "Foundation"\ncurrent application\'s NSTask\'s launchedTaskWithLaunchPath:"/bin/echo" arguments:{"hi"}',
+    'set f to open for access POSIX file "/tmp/x" with write permission\nwrite "x" to f',
+    '',                                                                       # a plain script too
+])
+async def test_no_grant_or_rule_for_an_app_stands_for_a_script(in_job, monkeypatch, past_the_app):
+    """Release gate 0.1.61: an app's "Always" (what 0.1.60's Settings → Hands list becomes) and its "for
+    this task" grant are Hands' — a script naming that app still needs its own card. With no card surface
+    bound, needing one means it is not run."""
+    ran = []
+
+    async def fake_run(argv, *, timeout=120):
+        ran.append(argv)
+        return {"ok": True, "external": True, "text": "", "summary": ""}
+    monkeypatch.setattr(hands_tools, "_run", fake_run)
+    async with db_session.AsyncSessionLocal() as db:
+        await permission_store.add_rule(db, "app", "com.apple.Notes", label="Notes", created_from="migration")
+        await permission_store.add_grant(db, "c1", "job-1", "app", "com.apple.Notes")
+        await db.commit()
+    script = 'tell application "Notes" to get name of every note\n' + past_the_app
+    result = await hands_tools.MacAppleScriptExecutor().execute({"script": script})
+    assert ran == [] and result["code"] == "no_one_to_ask", result
+
+
 async def test_the_island_answers_hands_app_site_and_shortcut_cards_and_none_riskier(
         hands, asks, in_job, browser, monkeypatch):  # noqa: F811
     """0.1.61 §A4, from the Hands side: the island decides a card by its `perm_kind` alone. Every card
@@ -171,7 +196,6 @@ async def test_the_island_answers_hands_app_site_and_shortcut_cards_and_none_ris
     answered = {(f["kind"], f["perm_kind"], approvals.island_may_answer(f)) for f in seen}
     assert answered == {
         ("desktop_app", "app", True), ("browser_site", "site", True), ("mac_shortcut", "shortcut", True),
-        ("mac_script", "app", True),
         ("mac_script", "app_risky", False), ("mac_script", "money", False), ("mac_script", "opaque", False),
         ("desktop_risky", "money", False), ("desktop_risky", "app_risky", False),
         ("desktop_takeover", "takeover", False)}, sorted(answered)
