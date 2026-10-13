@@ -2078,3 +2078,245 @@ async def test_a_switch_off_never_lands_after_the_connect_that_started_during_it
     assert (row.state == "ready") == cached, (
         f"the row says {row.state!r} (host_allowed={row.host_allowed}) while "
         f"{'a session runs' if cached else 'no session runs'}")
+
+
+# ── a switched-off or replaced start never leaves a process behind (races a and b) ──────────────
+
+def _processes(monkeypatch, *, gate=None, opening=None):
+    """A fake `_open_session` with a "process" behind each session: alive until its close runs (or
+    its open is cancelled). With `gate`, an open sets `opening` and waits for the gate."""
+    procs = []
+
+    async def open_(server):
+        proc = SimpleNamespace(alive=True)
+        procs.append(proc)
+        if gate is not None:
+            opening.set()
+            try:
+                await gate.wait()
+            except BaseException:
+                proc.alive = False
+                raise
+
+        async def aclose():
+            proc.alive = False
+        return _Live(), SimpleNamespace(aclose=aclose)
+    monkeypatch.setattr(session.manager, "_open_session", open_)
+    return procs
+
+
+async def _connected_while_switched_off(sup, monkeypatch):
+    """A Connect is allowed on a switched-off server and leaves a ready session. Returns its
+    process."""
+    await _seed(sup.maker, 1, host_allowed=False)
+    monkeypatch.setattr(session.manager, "_sessions", {})
+    procs = _processes(monkeypatch)
+    sup.start(run_loops=False)
+    assert (await sup.restart(1)).state == "ready"
+    assert session.manager.cached(1) is not None and procs[0].alive
+    return procs[0]
+
+
+async def test_a_background_plan_that_finds_the_switch_off_drops_the_session_a_connect_left(
+        sup, monkeypatch):
+    """Race (a): a background start (a fresh start, a retry) that finds the switch off wrote `off`
+    and returned without dropping the session an earlier Connect had opened: a row that says `off`
+    over a process that runs. Like the ServerGone path, it leaves no session behind."""
+    proc = await _connected_while_switched_off(sup, monkeypatch)
+    result = await sup._new_plan(1, "refresh")
+    assert result.state == "off" and (await _row(sup.maker, 1)).state == "off"
+    assert session.manager.cached(1) is None and not proc.alive
+
+
+async def test_a_stale_plan_that_finds_the_server_switched_off_leaves_the_session_alone(
+        sup, monkeypatch):
+    """Race (a), the guard: only the plan of the current generation drops. A stale one (a newer
+    plan or a verb moved the generation) has no say over a session that is not its own."""
+    proc = await _connected_while_switched_off(sup, monkeypatch)
+    result = await sup._attempt(1, sup.generation(1) - 1, "refresh")
+    assert result.state == "off"
+    assert session.manager.cached(1) is not None and proc.alive
+
+
+async def test_a_plan_whose_generation_moved_during_its_open_caches_nothing(sup, monkeypatch):
+    """Race (b): a plan the generation has left behind (a verb moved it) must not leave the session
+    it opened: it drops it and returns `starting`, writing nothing."""
+    await _seed(sup.maker, 1)
+    monkeypatch.setattr(session.manager, "_sessions", {})
+    gate, opening = asyncio.Event(), asyncio.Event()
+    procs = _processes(monkeypatch, gate=gate, opening=opening)
+    sup.start(run_loops=False)
+    plan = sup._new_plan(1, "refresh")
+    await asyncio.wait_for(opening.wait(), 5)
+    sup._bump(1)                               # moved under it, without cancelling it
+    gate.set()
+    result = await asyncio.wait_for(plan, 5)
+    row = await _row(sup.maker, 1)
+    assert result.state == "starting"
+    assert (row.state, row.last_error, row.fail_count) == ("starting", None, 0)
+    assert session.manager.cached(1) is None and not procs[0].alive
+
+
+async def test_a_stale_plan_leaves_the_session_to_the_newer_plan_in_flight(sup, monkeypatch):
+    """Race (b), the guard: while a newer plan is in flight the session is its to keep or replace
+    (it drops and opens afresh itself); the stale one writes nothing and drops nothing."""
+    await _seed(sup.maker, 1)
+    monkeypatch.setattr(session.manager, "_sessions", {})
+    gate, opening = asyncio.Event(), asyncio.Event()
+    procs = _processes(monkeypatch, gate=gate, opening=opening)
+    sup.start(run_loops=False)
+    plan = sup._new_plan(1, "refresh")
+    await asyncio.wait_for(opening.wait(), 5)
+    newer = asyncio.create_task(asyncio.Event().wait())
+    sup._inflight[1] = newer                   # the newer plan, in flight
+    sup._bump(1)
+    gate.set()
+    try:
+        result = await asyncio.wait_for(plan, 5)
+        assert result.state == "starting"
+        assert session.manager.cached(1) is not None and procs[0].alive
+    finally:
+        sup._inflight.pop(1, None)
+        newer.cancel()
+        await asyncio.gather(newer, return_exceptions=True)
+
+
+# The final review's M-2 ("a user's start never queues for a slot") and everything around it: 20
+# overlapping verbs on six servers (Connects and bursts of them, fresh starts, edits, switch-off and
+# on, the tick), through the real session manager with a fake process. Checked at every step: one
+# server never has two opens at once, and background attempts never exceed MAX_CONCURRENT. At
+# quiescence: no live process but the cached one, `ready` exactly when a session is cached, nothing
+# left queued. It found the late `off` write (N-2), a start that found the switch off over a
+# Connect's session (race a) and a replaced start that ran on after a swallowed cancel (race b):
+# 0 failures in 1800 seeds with their fixes. Six seeds here (about 0.75 s each, as in the hot-tick
+# fuzz above); a wider run when the supervisor changes:
+# M2_SEEDS=300 pytest tests/server/test_mcp_supervisor.py -k user_starts_bursting
+FUZZ_SEEDS = range(int(os.environ.get("M2_SEEDS", "6")))
+FUZZ_SERVERS = 6
+
+
+class _FuzzProc:
+    def __init__(self, sid):
+        self.sid, self.alive = sid, True
+
+
+@pytest.mark.parametrize("seed", FUZZ_SEEDS)
+async def test_user_starts_bursting_over_background_starts_leave_the_row_and_the_process_agreeing(
+        sup, monkeypatch, seed):
+    import random
+
+    n = FUZZ_SERVERS
+    monkeypatch.setattr(sm, "supervisor", sup)
+    monkeypatch.setattr(session.manager, "_sessions", {})
+    monkeypatch.setattr(session.manager, "_fingerprints", {})
+    monkeypatch.setattr(session.manager, "_wakes", {})
+    rng = random.Random(seed)
+    procs: list[_FuzzProc] = []
+    opening = {sid: 0 for sid in range(1, n + 1)}
+    problems = []
+    background = {"now": 0, "max": 0}
+
+    class FuzzSession:
+        def __init__(self, proc):
+            self.proc = proc
+
+        async def list_tools(self, params=None):
+            await asyncio.sleep(rng.choice([0, 0.002, 0.01]))
+            return _listing("a")
+
+    async def fake_open(server):
+        sid = server["id"]
+        opening[sid] += 1
+        if opening[sid] > 1:
+            problems.append(("two opens at once", sid))
+        proc = _FuzzProc(sid)
+        procs.append(proc)
+        try:
+            await asyncio.sleep(rng.choice([0, 0.005, 0.02, 0.05]))
+        except BaseException:
+            proc.alive = False
+            raise
+        finally:
+            opening[sid] -= 1
+
+        async def aclose():
+            await asyncio.sleep(rng.choice([0, 0.003, 0.01]))
+            proc.alive = False
+        return FuzzSession(proc), SimpleNamespace(aclose=aclose)
+    monkeypatch.setattr(session.manager, "_open_session", fake_open)
+
+    real_attempt = sup._attempt
+
+    async def counted(sid, gen, plan):
+        if plan == "restart":
+            return await real_attempt(sid, gen, plan)
+        background["now"] += 1
+        background["max"] = max(background["max"], background["now"])
+        if background["now"] > sm.MAX_CONCURRENT:
+            problems.append(("background over the limit", background["now"]))
+        try:
+            return await real_attempt(sid, gen, plan)
+        finally:
+            background["now"] -= 1
+    monkeypatch.setattr(sup, "_attempt", counted)
+
+    for sid in range(1, n + 1):
+        await _seed(sup.maker, sid)
+    sup.start(run_loops=False)
+
+    async def op(name, sid):
+        try:
+            if name == "restart":
+                await sup.restart(sid)
+            elif name == "burst":
+                await asyncio.gather(*(sup.restart(s) for s in range(1, n + 1)))
+            elif name == "schedule":
+                sup.schedule(sid)
+            elif name == "fresh":
+                sup.schedule(sid, fresh=True)
+            elif name == "edit":
+                await mcp_service.restart_after_edit(sid)
+            elif name == "off":
+                await mcp_service.set_host_allowed(sid, False)
+            elif name == "on":
+                await mcp_service.set_host_allowed(sid, True)
+            elif name == "tick":
+                await sup._tick()
+        except ValueError:
+            pass
+        except Exception as exc:  # noqa: BLE001
+            problems.append(("error", name, sid, repr(exc)))
+
+    names = ["restart", "restart", "burst", "schedule", "schedule", "fresh", "edit", "off", "on",
+             "tick"]
+    tasks = []
+    for _ in range(20):
+        tasks.append(asyncio.create_task(op(rng.choice(names), rng.randint(1, n))))
+        await asyncio.sleep(rng.choice([0, 0, 0.002, 0.01]))
+    await asyncio.wait_for(asyncio.gather(*tasks), 60)
+    monkeypatch.setattr(sm, "STARTING_STALE_S", 0.0)
+    for _ in range(10):
+        for _ in range(5):
+            pending = [t for t in (*sup._inflight.values(), *sup._bg) if not t.done()]
+            if not pending:
+                break
+            await asyncio.wait_for(asyncio.gather(*pending, return_exceptions=True), 20)
+        await asyncio.sleep(0.05)
+        await sup._tick()
+    pending = [t for t in (*sup._inflight.values(), *sup._bg) if not t.done()]
+    await asyncio.wait_for(asyncio.gather(*pending, return_exceptions=True), 20)
+    await asyncio.sleep(0.05)
+    for sid in range(1, n + 1):
+        row = await _row(sup.maker, sid)
+        cached = session.manager.cached(sid)
+        alive = [p for p in procs if p.sid == sid and p.alive]
+        if (len(alive) != (1 if cached is not None else 0)
+                or (cached is not None and cached.proc not in alive)):
+            problems.append(("process vs session", sid, len(alive), cached is not None))
+        if (row.state == "ready") != (cached is not None):
+            problems.append(("ready vs session", sid, row.state, row.host_allowed))
+        if row.host_allowed and row.state in ("off", "starting"):
+            problems.append(("switched on but", sid, row.state))
+    if sup._queued or sup._busy:
+        problems.append(("left over", dict(sup._queued), dict(sup._busy)))
+    assert not problems, (seed, problems[:6], background)

@@ -441,6 +441,14 @@ class MCPSessionManager:
                 self._non_json.pop(sid, None)
                 generation = self._generation(sid)
                 entry = await asyncio.wait_for(self._open_session(server), timeout=budget)
+                current = asyncio.current_task()
+                if current is not None and current.cancelling():
+                    # CPython 3.11's wait_for returns the open's result when the cancel is delivered
+                    # in the loop iteration in which the open finishes (bpo-42130, gh-86296; 3.12
+                    # rewrote it on asyncio.timeout()): the cancel is lost and a start that was
+                    # replaced would cache its session. Close what was opened and cancel.
+                    await self._close_uncut(sid, entry)
+                    raise asyncio.CancelledError()
                 if self._generation(sid) != generation or sid in self._sessions:
                     # Dropped or forgotten while it opened (set_folders, a delete, shutdown), or
                     # cached by someone else: never undo that, never overwrite an entry.

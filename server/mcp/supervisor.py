@@ -629,11 +629,19 @@ class Supervisor:
             row = await db.get(MCPServer, sid)
             if row is None:
                 return StartResult("off", last_error="removed")
-            if not row.host_allowed and plan != "restart":
-                return StartResult("off")
-            server = discovery.runtime_dict(row)
-            tool_count = (await db.execute(select(func.count()).select_from(Tool)
-                                           .where(Tool.toolset_key == f"mcp_{sid}"))).scalar_one()
+            switched_off = not row.host_allowed and plan != "restart"
+            if not switched_off:
+                server = discovery.runtime_dict(row)
+                tool_count = (await db.execute(select(func.count()).select_from(Tool)
+                                               .where(Tool.toolset_key == f"mcp_{sid}"))).scalar_one()
+        if switched_off:
+            # Never a live process behind an `off` row: a Connect is allowed on a switched-off
+            # server and leaves its session, which this start must not leave running under the
+            # `off` it is about to write. Only the current generation drops; a stale plan has no
+            # say over a session that is not its own.
+            if self._gen.get(sid, 0) == gen:
+                await mcp_session.manager.drop(sid)
+            return StartResult("off")
         await self._set(sid, gen, "starting")
         await mcp_session.manager.drop(sid)
         dropped_at = mcp_session.manager.generation(sid)       # any later drop moves it
@@ -672,6 +680,15 @@ class Supervisor:
             return StartResult(state, last_error=spawn_env.mask(text, secrets)[:LAST_ERROR_CAP])
         finally:
             self._notes.pop(sid, None)
+        if self._gen.get(sid, 0) != gen:
+            # Superseded while it opened (a verb moved the generation; a replaced plan whose cancel
+            # was lost lands here too): a stale plan never caches. What it opened is closed and
+            # nothing is written — unless a newer plan is in flight, which drops and opens afresh
+            # itself and must not find its session closed under it.
+            newer = self._inflight.get(sid)
+            if newer is None or newer.done() or newer is asyncio.current_task():
+                await mcp_session.manager.drop(sid)
+            return StartResult("starting")
         if mcp_session.manager.generation(sid) != dropped_at:
             # The session this start listed on was dropped before the start ended — another
             # caller's tools/list failed on it: never `ready` with no session behind it (ruling 11;
