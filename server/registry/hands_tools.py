@@ -335,7 +335,8 @@ class MacAppleScriptExecutor:
                     requests, _context(), title=f"Let an AppleScript use {', '.join(a['name'] for a in apps)}?"[:300])
             refused = next((d for d in decisions if not d.allowed), None)
         else:
-            # Money, delete / send / submit, a shell, or no app named: asked every time, in full.
+            # Money, delete / send / submit, a step past the app (a shell, keystrokes…), a high-reach
+            # app, or no app named: asked every time, in full.
             decision = await _decide(kind, ", ".join(named) or "AppleScript", "Run this AppleScript?", script,
                                      "mac_script", "AppleScript", extra={"apps": named[:8]})
             refused = None if decision.allowed else decision

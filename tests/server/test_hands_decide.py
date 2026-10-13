@@ -100,3 +100,47 @@ async def test_every_decision_is_a_ledger_row_with_the_app(hands, asks, in_job):
 ])
 def test_how_an_applescript_is_asked(script, kind, apps):
     assert hands_service.script_kind(script) == (kind, apps)
+
+
+# The island answers an `app` card by its kind alone (0.1.61), no longer reading the script as
+# approvals._RISKY_SCRIPT did. So every word that rule caught — and every other way a script reaches
+# past the app it names — must make the card something the island does not answer.
+_PAST_THE_APP = [
+    'delete note 1', 'send message 1', 'move file "a" to folder "b"', 'do shell script "ls"',
+    'purchase item 1', 'buy track 1', 'pay invoice 1', 'submit form 1', 'transfer funds', 'empty trash',
+    'do script "ls"', 'run script "x"', 'load script file "x"', 'do JavaScript "x" in document 1',
+    'execute javascript "x"', 'write text "ls"', 'keystroke "a"', 'key code 36',
+    'DELETE note 1', 'Do Shell Script "ls"',
+]
+
+
+@pytest.mark.parametrize("body", _PAST_THE_APP)
+def test_a_script_that_deletes_sends_pays_or_reaches_past_its_app_is_never_an_app_card(body):
+    kind, apps = hands_service.script_kind(f'tell application "Notes" to {body}')
+    assert kind in ("app_risky", "money") and apps == ["Notes"], (body, kind)
+
+
+@pytest.mark.parametrize("script", [
+    'tell application "System Events" to tell process "Notes" to click button 1 of window 1',
+    'tell application "Terminal" to activate', 'tell application "iTerm" to activate',
+    'tell application "Finder" to get name of every window', 'tell application "Script Editor" to activate',
+    'tell application id "com.apple.systemevents" to get name of every process',
+    'tell application id "com.apple.terminal" to activate',
+])
+def test_a_script_for_an_app_that_reaches_every_other_app_is_asked_every_time(script):
+    assert hands_service.script_kind(script)[0] == "app_risky"
+
+
+async def test_a_risky_script_is_never_sent_as_an_app_card_and_asks_each_time(asks, in_job, monkeypatch):
+    seen, _ = asks
+
+    async def fake_run(argv, *, timeout=120):
+        return {"ok": True, "external": True, "text": "done", "summary": "done"}
+    monkeypatch.setattr(hands_tools, "_run", fake_run)
+    scripts = ['tell application "Notes" to move note 1 to folder "Old"',
+               'tell application "System Events" to keystroke "a"',
+               'tell application "Terminal" to do script "ls"']
+    for script in scripts * 2:
+        assert (await hands_tools.MacAppleScriptExecutor().execute({"script": script}))["ok"]
+    assert [f["perm_kind"] for f in seen] == ["app_risky"] * 6
+    assert all(f["kind"] == "mac_script" and f["options"] == ["once"] for f in seen)

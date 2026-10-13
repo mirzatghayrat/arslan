@@ -311,22 +311,41 @@ def always_label(bundle_id: str, name: str) -> str:
     return "" if bundle_id in HIGH_REACH else (name or bundle_id)
 
 
-_SHELL_SCRIPT = re.compile(r"\bdo\s+shell\s+script\b", re.I)
+# What a script can do past the app it names: run a shell outside the sandbox (`do shell script`,
+# Terminal's `do script`, iTerm's `write text`), run other script text, run JavaScript in a page
+# with the user's logins, type or click into whatever is in front (`keystroke`, `key code`), or move
+# files. The island answers an `app` card by its kind alone (0.1.61), not by reading the script as
+# approvals._RISKY_SCRIPT did, so this covers at least every word that rule caught (delete, send,
+# move, do shell script, purchase, buy, pay, submit, transfer, empty trash).
+_SCRIPT_REACH = re.compile(
+    r"\b(?:do\s+shell\s+script|do\s+script|run\s+script|load\s+script|store\s+script|do\s+javascript|"
+    r"execute\s+javascript|write\s+text|keystroke|key\s+code|move|empty\s+trash)\b", re.I)
+# A script for one of these is a script for every app (System Events drives any process, and is
+# how a script reaches an app the never-list names without naming it), the shell, or the files.
+_HIGH_REACH_NAMES = frozenset({"system events", "terminal", "iterm", "iterm2", "finder", "system settings",
+                               "system preferences", "script editor"})
+
+
+def _high_reach(app: str) -> bool:
+    name = app.strip().lower()
+    return name in _HIGH_REACH_NAMES or name in {b.lower() for b in HIGH_REACH}
 
 
 def script_kind(script: str) -> tuple[str, list[str]]:
     """How an AppleScript is asked (0.1.61 §A11; `mac_applescript`, and run_command's osascript in
     the "apps" category): (kind, the apps it names).
     - money words → `money` (every time, every mode);
-    - delete / send / submit… words, or `do shell script` (a shell outside the sandbox) →
-      `app_risky` (every time, shown in full);
+    - delete / send / submit… words, a step past the app it names (a shell, other script text,
+      JavaScript, keystrokes, moving files), or a high-reach app (System Events, Terminal, iTerm,
+      Finder, System Settings, Script Editor) → `app_risky` (every time, shown in full; the island
+      does not answer it);
     - otherwise, a script that names apps → `app` (once per app, like Hands);
     - one that names no app → `opaque` (every time).
     The never-list is checked before any of this (`never_touched` on each named app)."""
     apps = script_apps(script)
     if money_label(script):
         return "money", apps
-    if _RISKY_WORDS.search(script) or _SHELL_SCRIPT.search(script):
+    if _RISKY_WORDS.search(script) or _SCRIPT_REACH.search(script) or any(_high_reach(a) for a in apps):
         return "app_risky", apps
     return ("app" if apps else "opaque"), apps
 
