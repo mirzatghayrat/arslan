@@ -43,8 +43,10 @@ _REDIRECTS = frozenset({301, 302, 303, 307, 308})
 _ARCHIVE_HEADERS = {"Accept-Encoding": "identity", "User-Agent": "arslan-toolhub"}   # the bytes are the tar.gz, not a layer on it
 _ARCHIVE_TIMEOUT = 60.0
 #: The whole download, every hop and every chunk: httpx's timeout is per read, and a body that drips a byte
-#: a second keeps every read inside it.
-_ARCHIVE_DEADLINE_S = 120
+#: a second keeps every read inside it. 300 s: a 64 MB archive fits a link of about 1.8 Mbit/s. And a stall
+#: limit: 30 s without a new byte ends the download, however much time is left.
+_ARCHIVE_DEADLINE_S = 300
+_ARCHIVE_STALL_S = 30
 _ARCHIVE_CACHE_S = 600
 _ARCHIVE_CACHE_MAX = 4
 #: All cached archives together: one large repository is kept, not four of them.
@@ -151,6 +153,15 @@ def _text(value) -> str:
         return value
     plain = _plain(value, [_DECLARED_NODES])
     return plain if isinstance(plain, str) else json.dumps(plain, ensure_ascii=False)
+
+
+def _not_a_skill_md(raw: str) -> str:
+    """Why a SKILL.md did not parse, in the words the user reads: too big a frontmatter says so."""
+    if len(raw or "") > _MAX_FRONTMATTER:
+        m = _FRONTMATTER_RE.match(raw)
+        if m and len(m.group(1)) > _MAX_FRONTMATTER:
+            return f"not a valid SKILL.md (the frontmatter is over {_MAX_FRONTMATTER // 1024} KB)"
+    return "not a valid SKILL.md (frontmatter name and description are needed)"
 
 
 def parse_skill_md(raw: str, *, fallback_key: str = "") -> dict | None:
@@ -289,15 +300,18 @@ def _require_codeload(url: httpx.URL) -> None:
 async def _download(owner: str, repo: str, ref: str, *, transport: httpx.AsyncBaseTransport | None = None) -> bytes:
     """GitHub's tar.gz of `ref`, from codeload.github.com and nowhere else: redirects are followed by
     hand, up to _MAX_REDIRECTS, each one only if it stays on that host; the whole download has
-    _ARCHIVE_DEADLINE_S; and the body is taken as it came (`aiter_raw`), never decoded by whatever
-    `Content-Encoding` an intermediary put on it. `transport` is how a test serves the request
-    (httpx.MockTransport); production leaves it None."""
+    _ARCHIVE_DEADLINE_S and a stall of _ARCHIVE_STALL_S ends it (both are a network failure, an
+    httpx.ReadTimeout: the API answers 502); and the body is taken as it came (`aiter_raw`), never
+    decoded by whatever `Content-Encoding` an intermediary put on it. `transport` is how a test serves
+    the request (httpx.MockTransport); production leaves it None."""
     url = _codeload_url(owner, repo, ref)
     try:
-        async with asyncio.timeout(_ARCHIVE_DEADLINE_S):
+        async with asyncio.timeout(_ARCHIVE_DEADLINE_S) as deadline:
             return await _get_archive(url, transport)
     except TimeoutError:
-        raise ValueError(f"GitHub took longer than {_ARCHIVE_DEADLINE_S:g} s to send the repository") from None
+        if not deadline.expired():
+            raise                                      # a timeout of someone else's keeps its own message
+        raise httpx.ReadTimeout(f"the download took longer than {_ARCHIVE_DEADLINE_S / 60:g} minutes") from None
 
 
 async def _get_archive(url: httpx.URL, transport: httpx.AsyncBaseTransport | None) -> bytes:
@@ -316,7 +330,17 @@ async def _get_archive(url: httpx.URL, transport: httpx.AsyncBaseTransport | Non
                 if response.status_code == 404:
                     raise ValueError("the repository or that commit is not on GitHub")
                 response.raise_for_status()
-                async for chunk in response.aiter_raw():
+                body = response.aiter_raw().__aiter__()
+                while True:
+                    try:
+                        async with asyncio.timeout(_ARCHIVE_STALL_S) as stall:
+                            chunk = await anext(body)
+                    except StopAsyncIteration:
+                        break
+                    except TimeoutError:
+                        if not stall.expired():
+                            raise
+                        raise httpx.ReadTimeout(f"the download stopped: no new bytes for {_ARCHIVE_STALL_S:g} seconds") from None
                     size += len(chunk)
                     if size > skill_files.MAX_ARCHIVE_BYTES:
                         raise ValueError("the repository archive is larger than 64 MB")
@@ -368,6 +392,7 @@ class SkillLicense:
     read_from: str          # the license file in the repository, "repo" (GitHub's detection) or "none"
     text: str               # what the user reads in the step
     sha256: str             # of `text`, UTF-8: what license_ok must equal
+    too_long: bool = False  # the license file is over MAX_LICENSE_BYTES: it was not read, there is no text
 
     def view(self, *, with_text: bool) -> dict:
         out = {"spdx": self.spdx, "recognised": self.recognised, "read_from": self.read_from,
@@ -451,6 +476,12 @@ def skill_license(archive: skill_files.Archive, skill_path: str, repo_spdx: str 
         path = _license_file(archive, level)
         if path is None:
             continue
+        shown = archive.entries[path]
+        if shown.data is not None and len(shown.data) > MAX_LICENSE_BYTES:
+            # Not decoded, not split, not hashed: a repository of 500 skills under one 40 MB license file
+            # would do all of that 500 times and hold 500 copies (1.6 GB at 160 skills x 4 MB, measured).
+            # Such a file is never "recognised", whatever it says: it is too long to show, and too long to read.
+            return SkillLicense(None, False, path, "", license_sha256(""), too_long=True)
         body = _text_of(archive, path) or ""
         if not body.strip():
             body = NO_LICENSE_TEXT                     # an empty license file is no license
@@ -560,10 +591,10 @@ def _scan_entry(archive: skill_files.Archive, index: _FolderIndex, path: str, me
     entry: dict = {"path": path, "files": count, "bytes": size, "has_scripts": scripts,
                    "update": False, "replaces": None}
     fallback = folder.rsplit("/", 1)[-1] if folder else meta["full_name"].split("/")[-1]
-    info = parse_skill_md(_text_of(archive, path) or "", fallback_key=fallback)
+    raw = _text_of(archive, path) or ""
+    info = parse_skill_md(raw, fallback_key=fallback)
     if info is None:
-        return {**entry, "importable": False,
-                "reason": "not a valid SKILL.md (frontmatter name and description are needed)"}
+        return {**entry, "importable": False, "reason": _not_a_skill_md(raw)}
     lic = skill_license(archive, path, meta["license"], info["license"])
     entry.update(key=info["key"], name=info["name"], description=info["description"],
                  body_bytes=len(info["body"].encode("utf-8")), invocable=info["invocable"],
@@ -573,7 +604,7 @@ def _scan_entry(archive: skill_files.Archive, index: _FolderIndex, path: str, me
         existing, dossiers.get(existing.source_id or ""), meta["full_name"], path))
     entry["replaces"] = _replaces(existing)
     reason = None
-    if not lic.recognised and len(lic.text.encode("utf-8")) > MAX_LICENSE_BYTES:
+    if lic.too_long or (not lic.recognised and len(lic.text.encode("utf-8")) > MAX_LICENSE_BYTES):
         reason = "the license text is too long to show"
     elif entry["body_bytes"] > MAX_SKILL_BYTES:
         reason = f"body {entry['body_bytes']}B exceeds the {MAX_SKILL_BYTES}B limit"
@@ -693,13 +724,14 @@ async def import_skill(ref: str, path: str, *, license_ok: str | None = None) ->
     raw = _text_of(archive, skill_path)
     if raw is None:
         raise ValueError(f"{skill_path} is not in the repository at {archive.commit[:12]}")
-    info = parse_skill_md(raw, fallback_key=folder.rsplit("/", 1)[-1] if folder else source.repo)
+    info = await asyncio.to_thread(               # the YAML reader is Python all the way down
+        parse_skill_md, raw, fallback_key=folder.rsplit("/", 1)[-1] if folder else source.repo)
     if info is None:
-        raise ValueError("not a valid SKILL.md (frontmatter name and description are needed)")
+        raise ValueError(_not_a_skill_md(raw))
     if len(info["body"].encode("utf-8")) > MAX_SKILL_BYTES:
         raise ValueError(f"body exceeds the {MAX_SKILL_BYTES}B limit")
     lic = skill_license(archive, skill_path, meta["license"], info["license"])
-    if not lic.recognised and len(lic.text.encode("utf-8")) > MAX_LICENSE_BYTES:
+    if lic.too_long or (not lic.recognised and len(lic.text.encode("utf-8")) > MAX_LICENSE_BYTES):
         raise ValueError("the license text is too long to show")
     key = info["key"]
     async with skill_files.key_lock(key):

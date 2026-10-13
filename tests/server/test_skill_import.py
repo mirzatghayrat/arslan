@@ -1178,18 +1178,53 @@ class Dripping(httpx.AsyncByteStream):
             yield chunk
 
 
-async def test_a_download_that_drips_is_given_up_on():
-    assert skill_import._ARCHIVE_DEADLINE_S == 120
-    skill_import_deadline = pytest.MonkeyPatch()
-    skill_import_deadline.setattr(skill_import, "_ARCHIVE_DEADLINE_S", 0.3)
-    try:
-        started = time.monotonic()
-        with pytest.raises(ValueError, match="took longer than"):
-            await skill_import._download("o", "r", "main", transport=served(
-                lambda request: httpx.Response(200, stream=Dripping([b"x"] * 10, pause=0.1))))
-        assert time.monotonic() - started < 0.9                     # not the full second the body would take
-    finally:
-        skill_import_deadline.undo()
+async def test_the_download_has_five_minutes_and_gives_up_on_a_stall_after_thirty_seconds():
+    assert (skill_import._ARCHIVE_DEADLINE_S, skill_import._ARCHIVE_STALL_S) == (300, 30)      # 64 MB at about 1.8 Mbit/s
+
+
+async def test_a_download_that_drips_slower_than_the_stall_limit_is_given_up_on(monkeypatch):
+    monkeypatch.setattr(skill_import, "_ARCHIVE_STALL_S", 0.2)           # 30 s, scaled
+    started = time.monotonic()
+    with pytest.raises(httpx.ReadTimeout, match="no new bytes for 0.2 seconds") as caught:
+        await skill_import._download("o", "r", "main", transport=served(
+            lambda request: httpx.Response(200, stream=Dripping([b"x"] * 10, pause=0.5))))
+    assert not isinstance(caught.value, ValueError)                      # a network failure: the API answers 502, not 400
+    assert time.monotonic() - started < 1.5
+
+
+async def test_a_download_that_streams_steadily_for_longer_than_the_stall_limit_completes(monkeypatch):
+    monkeypatch.setattr(skill_import, "_ARCHIVE_STALL_S", 0.3)           # 30 s, scaled; the body takes 0.8 s
+    monkeypatch.setattr(skill_import, "_ARCHIVE_DEADLINE_S", 5)          # 300 s, scaled
+    got = await skill_import._download("o", "r", "main", transport=served(
+        lambda request: httpx.Response(200, stream=Dripping([b"x"] * 8, pause=0.1))))
+    assert got == b"x" * 8
+
+
+async def test_a_download_that_goes_on_for_longer_than_the_deadline_is_given_up_on(monkeypatch):
+    monkeypatch.setattr(skill_import, "_ARCHIVE_DEADLINE_S", 0.3)        # 300 s, scaled; the stall limit stays at 30 s
+    started = time.monotonic()
+    with pytest.raises(httpx.ReadTimeout, match="the download took longer than") as caught:
+        await skill_import._download("o", "r", "main", transport=served(
+            lambda request: httpx.Response(200, stream=Dripping([b"x"] * 10, pause=0.1))))
+    assert not isinstance(caught.value, ValueError) and "GitHub" not in str(caught.value)    # nobody is blamed
+    assert time.monotonic() - started < 0.9                              # not the full second the body would take
+
+
+async def test_a_timeout_the_transport_raises_keeps_its_own_message():
+    def handler(request):
+        raise TimeoutError("the proxy gave up")
+    with pytest.raises(TimeoutError, match="the proxy gave up"):
+        await skill_import._download("o", "r", "main", transport=served(handler))
+
+    async def stalls():
+        yield b"x"
+        raise TimeoutError("the proxy gave up mid-body")
+
+    class Raising(httpx.AsyncByteStream):
+        def __aiter__(self):
+            return stalls()
+    with pytest.raises(TimeoutError, match="the proxy gave up mid-body"):
+        await skill_import._download("o", "r", "main", transport=served(lambda request: httpx.Response(200, stream=Raising())))
 
 
 async def test_the_archive_is_taken_as_it_came_not_decoded():
@@ -1197,3 +1232,153 @@ async def test_the_archive_is_taken_as_it_came_not_decoded():
     got = await skill_import._download("o", "r", "main", transport=served(lambda request: httpx.Response(
         200, headers={"content-encoding": "gzip"}, stream=Dripping([raw]))))      # an intermediary says gzip on top
     assert got == raw
+
+
+# ── fix round 2 (the re-review of d52d5eb8) ────────────────────────────────────────────────────
+# N1 — a license file over the limit is never decoded, split or hashed: not once, and not once per skill.
+
+async def test_a_license_over_the_limit_is_not_read_again_for_every_skill(maker, monkeypatch):
+    big = "GNU GENERAL PUBLIC LICENSE\n" + "x" * (skill_import.MAX_LICENSE_BYTES + 10)
+    files = {f"skills/s{i:02d}/SKILL.md": VALID_MD.replace("handoff", f"s{i:02d}").replace("description:", "license: Proprietary\ndescription:")
+             for i in range(20)}
+    files["LICENSE"] = big
+    mock_github(monkeypatch, license=None, files=files)
+    read = []
+    real = skill_import._text_of
+    monkeypatch.setattr(skill_import, "_text_of", lambda archive, path: read.append(path) or real(archive, path))
+    out = await skill_import.scan_skills(REPO)
+    assert "LICENSE" not in read                                  # not decoded, not split, not hashed, not held 20 times
+    assert all(not s["importable"] and "too long" in s["reason"] for s in out["skills"])
+    with pytest.raises(ValueError, match="too long"):
+        await skill_import.import_skill(REPO, "skills/s00/SKILL.md", license_ok="0" * 64)
+    assert "LICENSE" not in read
+
+
+async def test_a_license_at_the_limit_is_still_shown_and_decided(maker, monkeypatch):
+    ok = "GNU GENERAL PUBLIC LICENSE\n" + "x" * (skill_import.MAX_LICENSE_BYTES - 100)
+    mock_github(monkeypatch, license=None, files={"SKILL.md": VALID_MD, "LICENSE": ok})
+    with pytest.raises(skill_import.LicenseStepNeeded) as step:
+        await skill_import.import_skill(REPO, "SKILL.md")
+    assert step.value.license.text == ok and not step.value.license.too_long
+
+
+async def test_a_license_over_the_limit_is_never_recognised_even_with_a_permissive_wording(maker, monkeypatch):
+    mock_github(monkeypatch, license=None, files={"SKILL.md": VALID_MD, "LICENSE": MIT + "x" * skill_import.MAX_LICENSE_BYTES})
+    with pytest.raises(ValueError, match="too long to show"):
+        await skill_import.import_skill(REPO, "SKILL.md")
+    [skill] = (await skill_import.scan_skills(REPO))["skills"]
+    assert skill["importable"] is False and skill["license"]["recognised"] is False
+
+
+async def test_a_scan_of_40_skills_under_a_4_mb_license_stays_small(maker, monkeypatch):
+    """636 MB at 40 skills x 4 MB before (about 10 MB a skill); the measure is Python's own allocations."""
+    import tracemalloc
+    big = ("GNU GENERAL PUBLIC LICENSE\n" + ("x" * 79 + "\n") * (4 * 1024 * 1024 // 80)).encode()
+    entries = {"LICENSE": skill_files.Entry("LICENSE", "file", len(big), 0o644, big)}
+    for i in range(40):
+        md = f"---\nname: s{i:03d}\ndescription: d\nlicense: Proprietary\n---\n\nbody\n".encode()
+        entries[f"skills/s{i:03d}/SKILL.md"] = skill_files.Entry(f"skills/s{i:03d}/SKILL.md", "file", len(md), 0o644, md)
+    archive = skill_files.Archive(commit=COMMIT, entries=entries)
+
+    async def fetch_repo(owner, repo):
+        return {"full_name": f"{owner}/{repo}", "html_url": "", "stars": 1, "forks": 0, "license": None,
+                "pushed_days": 1, "description": "", "topics": []}
+
+    async def read(source, *, keep, keep_limit=None):
+        return archive
+    monkeypatch.setattr(skill_import.github_eval, "fetch_repo", fetch_repo)
+    monkeypatch.setattr(skill_import, "_archive", read)
+    tracemalloc.start()
+    try:
+        out = await skill_import.scan_skills(REPO)
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    assert len(out["skills"]) == 40 and not any(s["importable"] for s in out["skills"])
+    assert peak < 32 * 1024 * 1024, peak
+
+
+# m1 — three pins the 90 mutants of round 1 did not have.
+
+def test_a_directory_named_like_a_license_is_not_the_license():
+    """A git archive lists the directories too: skills/x/LICENSE/ (a folder) is not skills/x's license file."""
+    entry = skill_files.Entry
+    md = VALID_MD.encode()
+    archive = skill_files.Archive(commit=COMMIT, entries={
+        "skills/x": entry("skills/x", "dir", 0, 0o755), "skills/x/SKILL.md": entry("skills/x/SKILL.md", "file", len(md), 0o644, md),
+        "skills/x/LICENSE": entry("skills/x/LICENSE", "dir", 0, 0o755),
+        "skills/x/LICENSE/notes.txt": entry("skills/x/LICENSE/notes.txt", "file", 1, 0o644, b"n"),
+        "LICENSE": entry("LICENSE", "file", len(MIT), 0o644, MIT.encode())})
+    lic = skill_import.skill_license(archive, "skills/x/SKILL.md", None)
+    assert (lic.spdx, lic.read_from, lic.recognised) == ("MIT", "LICENSE", True)
+
+
+async def test_a_second_cancel_while_the_import_waits_for_its_write_changes_nothing(maker, monkeypatch, tmp_path, trashed):
+    mock_github(monkeypatch, files={"SKILL.md": VALID_MD, "scripts/a.py": "print('a')\n"})
+    await skill_import.import_skill(REPO, "SKILL.md")
+    mock_github(monkeypatch, files={"SKILL.md": VALID_MD + "\nV2\n", "scripts/b.py": "x"}, commit="c" * 40)
+    real = skill_import._record_import
+
+    async def slow(**kw):
+        await asyncio.sleep(0.5)                                  # the write is still running when both cancels arrive
+        return await real(**kw)
+    monkeypatch.setattr(skill_import, "_record_import", slow)
+    task = asyncio.create_task(skill_import.import_skill(REPO, "SKILL.md"))
+    await asyncio.sleep(0.3)
+    task.cancel()
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    async with maker() as db:
+        row = await db.get(SkillPack, "handoff")
+        src = await db.get(CapabilitySource, row.source_id)
+    assert src.commit_sha == "c" * 40
+    assert sorted(skill_files.checksums(tmp_path / "skills" / "handoff")) == sorted(src.files) == ["SKILL.md", "scripts/b.py"]
+    assert not skill_files.key_lock("handoff").locked()
+
+
+@pytest.mark.parametrize("target", [
+    "https://xcodeload.github.com/o/r/tar.gz/main",              # another name that ends the same way
+    "https://sub.codeload.github.com/o/r/tar.gz/main",           # a host below it
+    "https://codeload.github.com./o/r/tar.gz/main",              # the dot of a fully qualified name
+    "https://api.github.com/repos/o/r/tarball/main",             # another GitHub host
+    "https://raw.githubusercontent.com/o/r/main/SKILL.md",
+])
+async def test_only_the_one_host_not_its_neighbours(target):
+    seen = []
+
+    def handler(request):
+        seen.append(str(request.url))
+        if len(seen) == 1:
+            return httpx.Response(302, headers={"location": target})
+        return httpx.Response(200, stream=httpx.ByteStream(b"elsewhere"))
+    with pytest.raises(ValueError):
+        await skill_import._download("o", "r", "main", transport=served(handler))
+    assert len(seen) == 1
+
+
+# m2 — a frontmatter over its size says so, and is read off the event loop.
+
+async def test_a_frontmatter_over_32kb_says_so(maker, monkeypatch):
+    big = "---\nname: big\ndescription: d\nx: " + "a" * 40_000 + "\n---\n\nbody\n"
+    mock_github(monkeypatch, files={"skills/big/SKILL.md": big, "skills/bad/SKILL.md": "# no frontmatter\n",
+                                    "skills/open/SKILL.md": "---\nname: open\ndescription: d\n" + "a" * 40_000})
+    with pytest.raises(ValueError, match=r"the frontmatter is over 32 KB"):
+        await skill_import.import_skill(REPO, "skills/big/SKILL.md")
+    with pytest.raises(ValueError, match=r"frontmatter name and description are needed"):
+        await skill_import.import_skill(REPO, "skills/bad/SKILL.md")
+    with pytest.raises(ValueError, match=r"frontmatter name and description are needed"):          # never closed: not "over 32 KB"
+        await skill_import.import_skill(REPO, "skills/open/SKILL.md")
+    by_path = {s["path"]: s for s in (await skill_import.scan_skills(REPO))["skills"]}
+    assert "the frontmatter is over 32 KB" in by_path["skills/big/SKILL.md"]["reason"]
+    assert "frontmatter name and description are needed" in by_path["skills/bad/SKILL.md"]["reason"]
+
+
+async def test_the_frontmatter_is_parsed_off_the_event_loop(maker, monkeypatch):
+    mock_github(monkeypatch, files={"SKILL.md": VALID_MD})
+    where = []
+    real = skill_import.parse_skill_md
+    monkeypatch.setattr(skill_import, "parse_skill_md", lambda *a, **k: where.append(threading.current_thread()) or real(*a, **k))
+    await skill_import.import_skill(REPO, "SKILL.md")
+    assert where and where[0] is not threading.main_thread()
