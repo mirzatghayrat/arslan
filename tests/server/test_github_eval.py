@@ -149,7 +149,8 @@ async def test_the_token_goes_only_to_api_github_com(monkeypatch):
     monkeypatch.setattr(ge, "_token", secret)
     with pytest.raises(ValueError):
         await ge.fetch_repo("o", "r")
-    assert [r.url.host for r in seen] == ["api.github.com"]
+    assert [r.url.host for r in seen] == ["api.github.com"]          # evil.example was never asked...
+    assert seen[0].headers["Authorization"] == "Bearer not-a-real-token"      # ...and the token did go to the API
 
 
 async def test_at_most_three_redirects_are_followed(monkeypatch):
