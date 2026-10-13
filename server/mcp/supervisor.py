@@ -20,9 +20,10 @@ States: off | starting | ready | failed | needs_auth | parked.
   overtaken open's budget). A re-list that finds the session dead schedules that fresh start
   itself: `list_tools` never calls `on_dropped`.
 - Masking never raises: `spawn_env.secret_forms` refuses a malformed URL, so `_secrets` falls back.
-- Only a `ready` this process stands behind is offered to the model (`ready_now`: a live session, or
-  written since this process started). The tick restarts a `ready` row with no live session and no
-  start on its way — the safety net for a session that vanished without a drop callback.
+- Only a `ready` with a live session in this process is offered to the model (`ready_now`). The tick
+  restarts a `ready` row with no live session and no start on its way — the safety net for a session
+  that vanished without a drop callback — and starts a switched-on row still `off` (a switch-on whose
+  `starting` write failed).
 """
 from __future__ import annotations
 
@@ -76,6 +77,9 @@ NOT_MCP_LINE = ("this program did not answer as an MCP server — it may need a 
                 "`--mcp`")
 SIGN_IN_LINE = ("authorization needed: the saved sign-in expired or was never completed — use "
                 "Authorize on this server in Capabilities")
+#: How `_give_up`'s line begins: a server that keeps dropping its connection is answered as unstable,
+#: never as failing to start (Task 7 review M-3).
+GAVE_UP_LINE = "the server keeps dropping its connection"
 #: The beginnings of every line `classify` and `_give_up` write. Only such a line may enter the
 #: system prompt (ruling 6); `_describe_failure` text and anything else stays out.
 SAFE_REASON_PREFIXES = (
@@ -84,7 +88,7 @@ SAFE_REASON_PREFIXES = (
     "did not start within ", "the connection closed during start",
     "this program did not answer as an MCP server", "the server exited during start",
     "speaks an MCP version", "the server refused to start (MCP error ",
-    "could not reach the MCP URL", "the server keeps dropping its connection",
+    "could not reach the MCP URL", GAVE_UP_LINE,
     "the MCP URL answered HTTP ", "the connection ended the start without a reason",
 )
 
@@ -94,22 +98,14 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
-#: When this process started (naive UTC, like `state_at`). A `ready` stamped before it was written by
-#: an earlier run: migration 0068 maps connected → ready, and a failed boot reset leaves it in place.
-BOOTED_AT = _utcnow()
-
-
-def ready_now(server_id: int, state: str | None, state_at: datetime | None) -> bool:
-    """0.1.61 §B1 exposure (Task 7): a server's tools are offered only when its row says `ready` AND
-    this process stands behind it — the session manager holds a live session for it, or the `ready`
-    was written since this process started. So a `ready` left from the last run offers nothing (a
-    failed boot reset is harmless); one whose session vanished without a drop callback is still
-    offered, a call to it answers "still starting", and the tick restarts it (`_tick`)."""
-    if state != "ready":
-        return False
-    if mcp_session.manager.cached(server_id) is not None:
-        return True
-    return state_at is not None and state_at >= BOOTED_AT
+def ready_now(server_id: int, state: str | None) -> bool:
+    """0.1.61 §B1 exposure (Task 7, amended after its review): a server is ready in this process —
+    its tools offered, its calls made — only when its row says `ready` AND the session manager holds
+    a live session for it. Every `ready` this process writes has its session cached first, so this
+    loses nothing; a `ready` with nothing behind it (the last run's, after a failed boot reset; one
+    whose session died while its restart waits for a start slot) offers nothing, is told as still
+    starting, and the tick restarts it (`_tick`)."""
+    return state == "ready" and mcp_session.manager.cached(server_id) is not None
 
 
 def switched_on() -> bool:
@@ -761,8 +757,7 @@ class Supervisor:
             async with db_session.AsyncSessionLocal() as db:
                 row = await db.get(MCPServer, server_id)
             secrets = _secrets(discovery.runtime_dict(row)) if row is not None else []
-            line = (f"the server keeps dropping its connection ({MAX_RECONNECTS} reconnects) — "
-                    "Arslan retries it later")
+            line = f"{GAVE_UP_LINE} ({MAX_RECONNECTS} reconnects) — Arslan retries it later"
             tail = mcp_session.manager.stderr_tail(server_id, secrets=secrets)
             text = line if not tail else f"{line}\n{tail}"
             await self._set(server_id, gen, "failed",
@@ -850,6 +845,18 @@ class Supervisor:
             # too: `refresh` respects the switch and ends them `off`.
             ready = (await db.execute(select(MCPServer.id).where(
                 MCPServer.state == "ready").order_by(MCPServer.id))).scalars().all()
+            # A switched-on server is never left `off`: the user's switch-on committed host_allowed,
+            # then its `starting` write failed (a locked database) — nothing else ever looks at an
+            # `off` row (Task 7 review M-3). Only once it has been `off` for STARTING_STALE_S (or
+            # was never stamped), like a stale `starting`: a switch-off whose host_allowed commit
+            # lands after its `off` write is never started behind its back. A cached session is no
+            # reason to wait.
+            off_long_enough = or_(MCPServer.state_at.is_(None),
+                                  MCPServer.state_at <= now - timedelta(seconds=STARTING_STALE_S))
+            still_off = (await db.execute(
+                select(MCPServer.id)
+                .where(MCPServer.state == "off", MCPServer.host_allowed.is_(True), off_long_enough)
+                .order_by(MCPServer.id))).scalars().all()
         for sid, state in due:
             if not await self._still(sid, (state,), gens.get(sid, 0)):    # a verb, a plan, moved on
                 continue
@@ -871,6 +878,13 @@ class Supervisor:
                 continue                          # alive, or a start (queued or running) is on its way
             if await self._still(sid, ("ready",), gens.get(sid, 0)):
                 logger.warning("mcp %s: ready with no live session; restarting it", sid)
+                self.schedule(sid, fresh=True)
+        for sid in still_off:
+            task = self._inflight.get(sid)
+            if self.start_in_flight(sid) or (task is not None and not task.done()):
+                continue                          # its start (queued or running) writes the state
+            if await self._still(sid, ("off",), gens.get(sid, 0)):
+                logger.warning("mcp %s: switched on but still off; starting it", sid)
                 self.schedule(sid, fresh=True)
         mono = time.monotonic()
         for sid, since in list(self._ready_since.items()):
