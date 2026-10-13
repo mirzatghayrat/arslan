@@ -258,6 +258,9 @@ class MCPSessionManager:
         # server_id -> (entry, future): set when that entry is dropped, so its pending requests
         # end at once (the SDK never wakes them when the session closes).
         self._wakes: dict[int, tuple[object, asyncio.Future]] = {}
+        # Closes still running, held strongly (the loop keeps only weak references): a cancel of
+        # whoever awaits a close never cuts it (`_close_uncut`), and `aclose_all` waits for them.
+        self._closes: set[asyncio.Task] = set()
         # Set by the supervisor. Both are SYNC and only schedule work: the message handler runs
         # inside the session's receive loop, and awaiting session I/O there deadlocks it.
         self.on_tools_changed: Callable[[int], None] | None = None
@@ -441,7 +444,7 @@ class MCPSessionManager:
                 if self._generation(sid) != generation or sid in self._sessions:
                     # Dropped or forgotten while it opened (set_folders, a delete, shutdown), or
                     # cached by someone else: never undo that, never overwrite an entry.
-                    await self._close(sid, entry)
+                    await self._close_uncut(sid, entry)
                     raise NotStarted(sid)
                 self._sessions[sid] = entry
                 self._fingerprints[sid] = fingerprint
@@ -544,9 +547,22 @@ class MCPSessionManager:
         if wake is not None and not wake[1].done():
             wake[1].set_result(None)
         if entry is not None:
-            await self._close(server_id, entry)
+            await self._close_uncut(server_id, entry)
 
     _drop = drop
+
+    async def _close_uncut(self, server_id: int, entry) -> None:
+        """`_close`, never cut by a cancel of whoever awaits it (final review, fix A). The SDK's stdio
+        close is "stdin closed → up to 2 s for the process → terminate it"; a cancel landing in that
+        wait skips the terminate, and anyio's Process.aclose() then waits for the process with no
+        bound — whoever awaits the cancelled task (a switch-off, a delete, an edit's fresh start,
+        shutdown) hangs until the server exits by itself, and a server that ignores stdin EOF never
+        does. So the close runs as its own task, held in `_closes`: a cancelled caller leaves at once,
+        the close finishes (the terminate runs), and `aclose_all` waits for the ones still running."""
+        closing = asyncio.ensure_future(self._close(server_id, entry))
+        self._closes.add(closing)
+        closing.add_done_callback(self._closes.discard)
+        await asyncio.shield(closing)
 
     async def forget(self, server_id: int) -> None:
         """drop + every per-id record + its folder moved aside (never deleted): a deleted server,
@@ -577,6 +593,15 @@ class MCPSessionManager:
         self._closing += 1
         for sid in list(self._sessions):
             await self.drop(sid)
+        # A close a cancelled caller left running (fix A) ends before the loop does: the SDK's
+        # terminate step must run, or a server that ignores stdin EOF outlives Arslan. Only this
+        # loop's: the module-level manager outlives a test's loop, and a task of a closed loop never
+        # finishes (it is let go).
+        loop = asyncio.get_running_loop()
+        pending = [task for task in self._closes if not task.done() and task.get_loop() is loop]
+        self._closes.difference_update([task for task in self._closes if task.get_loop() is not loop])
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
         self._non_json.clear()
         self._log_marks.clear()
 

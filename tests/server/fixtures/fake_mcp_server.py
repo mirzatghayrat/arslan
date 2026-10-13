@@ -13,6 +13,9 @@ tools/call runs on its own thread, so a call can be pending while another arrive
   list_changed      first tools/list → [a]; then sends tools/list_changed; later lists → [a, b]
   garbage_then_ok   prints one non-JSON line, then like ok
   paged             tools/list in two pages: [a] with nextCursor "p2", then [b]
+  linger            like ok, but when stdin closes it does NOT exit: it lingers $LINGER_S
+                    seconds (default 5), as many servers do, so the SDK's close waits its 2 s
+                    grace and then terminates it — a close that takes time (final review, fix A)
 """
 import json
 import os
@@ -101,6 +104,8 @@ def main():
                              daemon=True).start()
         elif mid is not None:
             send({"jsonrpc": "2.0", "id": mid, "result": {}})
+    if MODE == "linger":                  # stdin closed: stay up, like a server that ignores EOF
+        time.sleep(float(os.environ.get("LINGER_S", "5")))
 
 
 if __name__ == "__main__":

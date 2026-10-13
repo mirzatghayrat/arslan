@@ -3,6 +3,7 @@
 Only a real process shows how the SDK really fails; fakes cannot. The `real_mcp` marker lifts the
 unit-test spawn guard and nothing else: these tests run on CI and on the Mac."""
 import asyncio
+import json
 import os
 import re
 import sys
@@ -13,8 +14,12 @@ import pytest
 from mcp import types
 from mcp.shared.exceptions import McpError
 
+from server import crypto
+from server.db.models import MCPServer
 from server.mcp import session as sess
 from server.mcp import spawn_env
+from server.mcp import supervisor as sm
+from server.services import mcp_service
 
 pytestmark = pytest.mark.real_mcp
 SERVER = Path(__file__).parent / "fixtures" / "fake_mcp_server.py"
@@ -236,3 +241,99 @@ async def test_forget_during_a_start_leaves_one_process_and_no_old_folder(mgr, t
     [moved] = (tmp_path / "mcp" / sess.FORGOTTEN_DIR).iterdir()
     assert f"pid is {first_pid}" in (moved / "stderr.log").read_text()
     assert f"pid is {first_pid}" not in log.read_text()
+
+
+# ── final review, fix A: a session's close is never cut by a cancel of whoever awaits it ──────────
+#
+# The SDK's stdio close is: close stdin → wait up to 2 s for the process → terminate it. A cancel
+# landing in that 2 s wait skips the terminate, and anyio's `Process.aclose()` then waits for the
+# process with no bound: whoever awaits the cancelled task (a switch-off, a delete, shutdown) hangs
+# until the server exits by itself, and a Reconnect cut by an edit never answers. The server here
+# lingers 120 s after stdin EOF (many servers never exit on EOF).
+
+
+def _alive(pid):
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+@pytest.fixture
+async def lingering(execution_db, tmp_path, monkeypatch):
+    """A ready server that lingers 120 s after stdin EOF, its newest pid, and the supervisor."""
+    monkeypatch.setenv("ARSLAN_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(sess.manager, "_sessions", {})
+    sup = sm.Supervisor()
+    monkeypatch.setattr(sm, "supervisor", sup)
+    sup.start(run_loops=False)
+    async with execution_db() as db:
+        db.add(MCPServer(id=1, label="lingering", command=sys.executable, args=[str(SERVER), "linger"],
+                         env=crypto.encrypt(json.dumps({"LINGER_S": "120"})),
+                         status="registered", state="starting"))
+        await db.commit()
+    assert (await sup.restart(1)).state == "ready"
+    pids = []
+
+    def pid_now():
+        found = [int(p) for p in re.findall(r"pid is (\d+)", sess.log_path(1).read_text())]
+        pids.extend(p for p in found if p not in pids)
+        return found[-1]
+    yield sup, pid_now
+    pid_now()
+    for pid in pids:                                   # only the processes this test started
+        if _alive(pid):
+            os.kill(pid, 9)
+    await asyncio.wait_for(sup.stop(), 10)
+    await asyncio.wait_for(sess.manager.aclose_all(), 15)
+    for pid in pids:
+        assert await _gone(pid, within=5), f"pid {pid} outlived its test"
+
+
+async def test_a_switch_off_during_a_reconnects_close_returns_and_ends_the_old_process(lingering):
+    sup, pid_now = lingering
+    old = pid_now()
+    reconnect = asyncio.create_task(sup.restart(1))   # its attempt drops (closes) the old session
+    await asyncio.sleep(0.4)                           # … the close now waits for the process
+    began = time.monotonic()
+    await asyncio.wait_for(mcp_service.set_host_allowed(1, False), 8)
+    assert time.monotonic() - began < 6, "the switch-off waited for the server to exit by itself"
+    await asyncio.wait_for(reconnect, 8)
+    assert await _gone(old, within=6), "the cut close never terminated the old process"
+
+
+async def test_a_reconnect_cut_by_an_edit_answers_and_the_old_process_ends(lingering):
+    sup, pid_now = lingering
+    old = pid_now()
+    reconnect = asyncio.create_task(sup.restart(1))
+    await asyncio.sleep(0.4)
+    await mcp_service.restart_after_edit(1)
+    result = await asyncio.wait_for(reconnect, 8)      # follows the edit's fresh start
+    assert result.state == "ready"
+    assert await _gone(old, within=6)
+
+
+async def test_shutdown_during_a_reconnects_close_does_not_wait_for_the_server(lingering):
+    sup, pid_now = lingering
+    old = pid_now()
+    reconnect = asyncio.create_task(sup.restart(1))
+    await asyncio.sleep(0.4)
+    began = time.monotonic()
+    await asyncio.wait_for(sup.stop(), 8)
+    assert time.monotonic() - began < 6
+    assert await _gone(old, within=6)
+    await asyncio.gather(reconnect, return_exceptions=True)
+
+
+async def test_shutdown_waits_for_a_close_left_running_before_the_loop_ends(lingering):
+    """The lifespan's order: supervisor.stop(), then manager.aclose_all(), then the loop ends. A close
+    a cancelled plan left running must have terminated its process by then."""
+    sup, pid_now = lingering
+    old = pid_now()
+    reconnect = asyncio.create_task(sup.restart(1))
+    await asyncio.sleep(0.4)
+    await asyncio.wait_for(sup.stop(), 8)
+    await asyncio.wait_for(sess.manager.aclose_all(), 8)
+    assert not _alive(old), "aclose_all returned with a close still running"
+    await asyncio.gather(reconnect, return_exceptions=True)

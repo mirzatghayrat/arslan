@@ -1,15 +1,20 @@
 """The session manager with fakes (0.1.61 §B1). The real SDK: test_mcp_session_real.py."""
 import asyncio
+import json
 import time
 from datetime import timedelta
+from types import SimpleNamespace
 
 import anyio
 import pytest
 from mcp import types
 from mcp.shared.exceptions import McpError
 
+from server import crypto
+from server.db.models import MCPServer
 from server.mcp import session as sess
 from server.mcp import spawn_env
+from server.mcp import supervisor as sm
 
 
 class _Stack:
@@ -513,3 +518,80 @@ async def test_a_live_only_request_naming_a_session_refuses_any_other(monkeypatc
     with pytest.raises(sess.NotStarted):
         await mgr.list_tools(_server(live_only=old))
     assert (await mgr.list_tools(_server(live_only=new))).tools[0].name == "a"
+
+
+# ── final review, fix A (the real-process half is in test_mcp_session_real.py) ─────────────────
+
+
+async def test_a_pending_call_fails_before_a_slow_close_ends(data):
+    """`drop` wakes the requests pending on a session BEFORE its close runs — a close may take seconds
+    (the SDK's 2 s grace, a terminate), and a call must not wait for it (carries: wake-before-close)."""
+    mgr = sess.MCPSessionManager()
+    entered = asyncio.Event()
+
+    class _Pending:
+        async def call_tool(self, name, args, read_timeout_seconds=None):
+            entered.set()
+            await asyncio.sleep(3600)
+
+    async def slow_close():
+        await asyncio.sleep(1.0)
+    mgr._sessions[1] = (_Pending(), SimpleNamespace(aclose=slow_close))
+    call = asyncio.create_task(mgr.call_tool({"id": 1}, "t", {}))
+    await asyncio.wait_for(entered.wait(), 5)
+    began = time.monotonic()
+    dropping = asyncio.create_task(mgr.drop(1))
+    with pytest.raises(McpError):
+        await asyncio.wait_for(call, 5)
+    assert time.monotonic() - began < 0.5            # woken at once, not after the 1 s close
+    await asyncio.wait_for(dropping, 5)
+
+
+class _Listed:
+    async def list_tools(self, params=None):
+        return types.ListToolsResult(tools=[types.Tool(name="a", inputSchema={})])
+
+
+async def test_a_switch_off_during_an_overtaken_opens_close_returns(execution_db, data, monkeypatch):
+    """An open overtaken by a drop closes what it opened (`_entry`), and that close is the plan's own
+    await. A switch-off that cancels the plan in that close must not wait for the server to exit by
+    itself. The fake close behaves as the SDK's does when cut (measured with real processes in
+    test_mcp_session_real.py): a cancel in its 2 s grace leaves anyio's Process.aclose() waiting for
+    the process with no bound."""
+    monkeypatch.setattr(sess.manager, "_sessions", {})
+    monkeypatch.setattr(spawn_env, "login_shell_path", lambda: "")
+    async with execution_db() as db:
+        db.add(MCPServer(id=1, label="s1", command="x", args=[], status="registered", state="starting",
+                         env=crypto.encrypt(json.dumps({}))))
+        await db.commit()
+    opened, release, closing, process_gone = (asyncio.Event() for _ in range(4))
+
+    async def cut_sensitive_close():
+        closing.set()
+        try:
+            await asyncio.sleep(1.0)                 # the SDK's grace before it terminates
+        except asyncio.CancelledError:
+            await process_gone.wait()                # cut: Process.aclose() waits for the process
+            raise
+        process_gone.set()
+
+    async def open_(server):
+        opened.set()
+        await release.wait()
+        return _Listed(), SimpleNamespace(aclose=cut_sensitive_close)
+    monkeypatch.setattr(sess.manager, "_open_session", open_)
+    sup = sm.Supervisor()
+    sup.start(run_loops=False)
+    try:
+        plan = sup._new_plan(1, "refresh")
+        await asyncio.wait_for(opened.wait(), 5)
+        await sess.manager.drop(1)                   # overtakes the open (an edit, a bound expiry …)
+        release.set()
+        await asyncio.wait_for(closing.wait(), 5)    # the open closes what it opened …
+        await asyncio.wait_for(sup.set_enabled(1, False), 3)   # … and the switch-off cancels it there
+        assert plan.done()
+        await asyncio.wait_for(process_gone.wait(), 3)          # the close still ends the process
+    finally:
+        process_gone.set()
+        await asyncio.wait_for(sup.stop(), 10)
+        await asyncio.wait_for(sess.manager.aclose_all(), 10)
