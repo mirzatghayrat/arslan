@@ -3,6 +3,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 import server.db.session as db_session
 from server.db.models import Base, SkillPack
+from server.orchestrator.dispatcher import (
+    _TECHNIQUE_HONESTY_PREAMBLE,
+    _equipment_block_from,
+)
+from server.registry import service
 
 
 @pytest_asyncio.fixture
@@ -56,3 +61,32 @@ def test_equipment_block_truncates_long_body():
     # this kind of conscious change — do not edit it without re-measuring the
     # seed sizes the way the dispatcher.py comment records them.
     assert _SKILL_BLOCK_LIMIT == 3000
+
+
+# ── PC-4: the one-time anti-fabrication preamble at the top of the techniques section
+# (moved here from test_skill_compatibility.py when the badge it shared a file with went)
+
+def _pack(key: str, body: str = "## X\nuse it") -> SkillPack:
+    return SkillPack(key=key, name=key.title(), category="x", description="d",
+                     tier="safe", status="registered", body=body)
+
+
+def test_preamble_present_exactly_once_when_skills_equipped(tmp_path, monkeypatch):
+    monkeypatch.setenv("ARSLAN_DATA_DIR", str(tmp_path))
+    equipment = {"toolsets": [], "skills": [
+        service._skill_dict(_pack("a")),
+        service._skill_dict(_pack("b")),
+    ]}
+    bodies = {"a": "## X\nalpha technique", "b": "## Y\nbeta technique"}
+    block = _equipment_block_from(equipment, [], bodies)
+    assert block.count(_TECHNIQUE_HONESTY_PREAMBLE) == 1
+    # preamble sits above the per-skill blocks
+    assert block.index(_TECHNIQUE_HONESTY_PREAMBLE) < block.index("alpha technique")
+
+
+def test_preamble_absent_when_no_skills_equipped(tmp_path, monkeypatch):
+    monkeypatch.setenv("ARSLAN_DATA_DIR", str(tmp_path))
+    equipment = {"toolsets": [], "skills": []}
+    block = _equipment_block_from(equipment, [], {})
+    assert _TECHNIQUE_HONESTY_PREAMBLE not in block
+    assert "Your techniques:" not in block

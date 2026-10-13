@@ -62,7 +62,7 @@ async def test_the_spawn_era_skill_badges_are_gone(client):
     """0.1.61 §C6: no FULL / PARTIAL / TEXT-ONLY badge and no health probe on a skill."""
     skills = (await client.get("/api/v1/registry")).json()["skills"]
     assert skills and all("compatibility" not in s for s in skills)
-    assert (await client.post("/api/v1/registry/skills/plan/health")).status_code in (404, 405)
+    assert (await client.post("/api/v1/registry/skills/plan/health")).status_code == 404
     from server.db.models import SkillPack
     from server.registry import service
     assert not hasattr(service, "skill_health") and not hasattr(service, "skill_compatibility")
