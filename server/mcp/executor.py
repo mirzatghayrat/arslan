@@ -43,17 +43,74 @@ _CLOSING: set[asyncio.Task] = set()
 
 _STATE_WORDS = {"starting": "still starting", "failed": "failing to start",
                 "parked": "stopped until it is fixed", "needs_auth": "waiting for the user to sign in",
-                "off": "switched off by the user"}
+                "off": "switched off"}      # not "by the user": an install whose test failed is left off
+
+
+def _answered(st: str, host_allowed: bool) -> str:
+    """A `ready` with no live session, and a switched-on row that still says `off` (its `starting`
+    write has not landed, or failed: the tick starts it), are still starting (Task 7 review I-1, M-3)."""
+    if st == "ready" or (st == "off" and host_allowed):
+        return "starting"
+    return st
 
 
 def answer_state(srv, state: str | None = None) -> str:
-    """The state a call or the model is told for a server that is not ready in this process. A
-    `ready` with no live session, and a switched-on row that still says `off` (its `starting` write
-    has not landed, or failed: the tick starts it), are still starting (Task 7 review I-1, M-3)."""
-    st = state or srv.state or "starting"
-    if st == "ready" or (st == "off" and srv.host_allowed):
-        return "starting"
-    return st
+    """The state a call or the model is told for a server that is not ready in this process."""
+    return _answered(state or srv.state or "starting", bool(srv.host_allowed))
+
+
+def shown_state(server_id: int, state: str | None, host_allowed: bool) -> str:
+    """The one state a server is shown in (`list_my_capabilities`), decided once: `ready` only for a
+    switched-on server that is ready in this process (`supervisor.ready_now`); `off` while the user's
+    switch is off — the host is refused before the supervisor has written `off`; otherwise the state a
+    call to it is answered with."""
+    from server.mcp.supervisor import ready_now
+    if not host_allowed:
+        return "off"
+    if ready_now(server_id, state):
+        return "ready"
+    return _answered(state or "starting", True)
+
+
+def label_of(srv) -> str:
+    """A server's name as the prompt prints it: one line, cut."""
+    return " ".join(str(srv.label or f"MCP {srv.id}").split())[:80]
+
+
+def status_clauses(servers) -> list[str]:
+    """One clause per server that is not ready in this process (`supervisor.ready_now`), in Arslan's
+    own words for the system prompt: the state as a call to it is answered (`state_words`), never a raw
+    state word, and a reason only when it is in the supervisor's vocabulary (`safe_reason`, ruling 6).
+    The host's status line and a spawn's share it (Task 8 fix round 1)."""
+    from server.mcp.supervisor import ready_now, safe_reason, supervisor
+    clauses = []
+    for srv in servers:
+        if ready_now(srv.id, srv.state):
+            continue
+        state = answer_state(srv)
+        words = state_words(srv, state)
+        if state == "starting":
+            note = supervisor.note(srv.id)
+            clauses.append(f"{label_of(srv)}: {words}" + (f" ({note})" if note else ""))
+            continue
+        reason = safe_reason(srv.last_error)
+        clauses.append(f"{label_of(srv)}: {words}" + (f" — {reason}" if reason else ""))
+    return clauses
+
+
+async def error_line(server_id: int, text: str | None) -> str:
+    """The first line of a stored `last_error` for the model, with the server's own secrets masked
+    over the whole text BEFORE the line is taken and cut to 200 characters: a key straddling the cut
+    is masked whole, and a pre-0.1.61 unmasked row never shows its key (Task 8 review M-5)."""
+    if not (text or "").strip():
+        return ""
+    from server.mcp.discovery import runtime_dict
+    from server.mcp.supervisor import mask_for
+    async with db_session.AsyncSessionLocal() as db:
+        row = await db.get(MCPServer, server_id)
+    if row is None:
+        return ""
+    return mask_for(runtime_dict(row), text).split("\n", 1)[0].strip()[:200]
 
 
 def rechecks_key(last_error: str | None, env) -> bool:

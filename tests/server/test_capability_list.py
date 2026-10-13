@@ -214,6 +214,12 @@ async def test_an_mcp_row_is_on_only_while_the_server_is_ready_in_this_process(e
                       status="connected", state="off", host_allowed=False),
             MCPServer(id=6, label="Never connected", transport="http", command="",
                       url="https://example.test/6", status="registered", state="off", host_allowed=True),
+            # installs are created off; a failed install test leaves them off with the error kept
+            MCPServer(id=7, label="Failed install", transport="http", command="", url="https://example.test/7",
+                      status="error", state="off", host_allowed=False,
+                      last_error="did not start within 120 s (waiting for tools/list)"),
+            MCPServer(id=8, label="Installed, untested", transport="http", command="",
+                      url="https://example.test/8", status="registered", state="off", host_allowed=False),
         ])
         await db.commit()
     _live(monkeypatch, 1)
@@ -228,6 +234,11 @@ async def test_an_mcp_row_is_on_only_while_the_server_is_ready_in_this_process(e
     assert rows["mcp:5"]["state"] == "off"                  # the user's switch: nothing is starting
     assert (rows["mcp:6"]["state"], rows["mcp:6"]["reason"], rows["mcp:6"]["fix"]) == \
         ("setup", "not_connected", "connect")               # never connected: Connect is its fix
+    # a switched-off server reads "off" whatever its old status says (review M-1): the same state the
+    # list_my_capabilities entry gives; its old error stays visible as the detail
+    assert (rows["mcp:7"]["state"], rows["mcp:7"]["reason"], rows["mcp:7"]["fix"]) == ("off", None, None)
+    assert rows["mcp:7"]["detail"] == "did not start within 120 s (waiting for tools/list)"
+    assert rows["mcp:8"]["state"] == "off" and rows["mcp:8"]["detail"] is None
     _live(monkeypatch, 2)                                    # its restart opened a session
     assert {r["key"]: r["state"] for r in await capability_list._mcp_rows()}["mcp:2"] == "on"
 

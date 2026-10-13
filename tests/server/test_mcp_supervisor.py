@@ -537,7 +537,9 @@ def test_fix_for_names_the_users_way_out():
     assert "sign in" in sm.fix_for("needs_auth", has_headers=False)
     assert "command `npx` not found" in sm.fix_for("parked", has_headers=False,
                                                     reason="command `npx` not found")
-    assert sm.fix_for("off", has_headers=False) == "the user turned it off in Capabilities"
+    # "off" is the state, not a verdict on who did it: an install whose test failed is left off too
+    # (Task 8 review I-1), so it never says "the user"
+    assert sm.fix_for("off", has_headers=False) == "switched off; it can be switched on in Capabilities"
     assert "starting by itself" in sm.fix_for("starting", has_headers=False)
     assert "retries by itself" in sm.fix_for("failed", has_headers=False)
 

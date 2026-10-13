@@ -397,8 +397,7 @@ async def _mcp_status_line() -> str:
     state is said in the words a call to it is answered with (`executor.state_words`), never a raw
     state word. A `ready` with no live session (`ready_now`) is still starting."""
     from server.db.models import MCPServer
-    from server.mcp.executor import answer_state, state_words
-    from server.mcp.supervisor import ready_now, safe_reason, supervisor
+    from server.mcp.executor import status_clauses
     try:
         async with db_session.AsyncSessionLocal() as db:
             rows = (await db.execute(select(MCPServer).where(MCPServer.host_allowed.is_(True))
@@ -406,19 +405,7 @@ async def _mcp_status_line() -> str:
     except Exception:  # noqa: BLE001 — a status line is context, never a reason to fail a turn
         logger.warning("mcp status line unavailable", exc_info=True)
         return ""
-    clauses = []
-    for srv in rows:
-        if ready_now(srv.id, srv.state):
-            continue
-        name = " ".join(str(srv.label or f"MCP {srv.id}").split())[:80]
-        state = answer_state(srv)
-        words = state_words(srv, state)
-        if state == "starting":
-            note = supervisor.note(srv.id)
-            clauses.append(f"{name}: {words}" + (f" ({note})" if note else ""))
-            continue
-        reason = safe_reason(srv.last_error)
-        clauses.append(f"{name}: {words}" + (f" — {reason}" if reason else ""))
+    clauses = status_clauses(rows)
     if not clauses:
         return ""
     return ("\n\nMCP servers not available right now: " + "; ".join(clauses) + ". Their tools are "
@@ -1409,6 +1396,7 @@ async def _handle_escalation(  # noqa: ANN001
         return None
 
     granted = False
+    grant_note = ""
     if esc.get("kind") == "capability":
         match = await _match_safe_toolset(esc.get("need", ""))
         if match is not None:
@@ -1419,11 +1407,20 @@ async def _handle_escalation(  # noqa: ANN001
             if match not in already_held:
                 current_turn = await memory.user_turn_count(conversation_id)
                 await registry_service.grant_temporary(spawn_id, match, current_turn=current_turn)
+                # a granted MCP toolset whose server is not ready brings the spawn no tools yet:
+                # say so, in the shared words, to the event and to the spawn (Task 8 fix round 1)
+                detail = match
+                for srv in await registry_service.unready_mcp_servers([match]):
+                    from server.mcp.executor import answer_state, label_of, state_words
+                    phrase = f"{label_of(srv)} is {state_words(srv, answer_state(srv))}"
+                    detail = f"{match}: granted, but {phrase}"
+                    grant_note = (f"\n\nArslan granted you {label_of(srv)}'s tools, but {phrase}: its "
+                                  "tools are not in your list yet. Say so in your answer if you need them.")
                 emit({"type": "escalation_resolved", "spawn_id": spawn_id,
-                      "how": "granted", "detail": match})
+                      "how": "granted", "detail": detail})
                 granted = True
 
-    data_block = ""
+    data_block = grant_note
     if not granted:
         emit({"type": "orchestrator_action", "tool": "web_search",
               "reason": f"fetching what {spawn_name} needs: {esc.get('need', '')}"})

@@ -271,7 +271,9 @@ def fix_for(state: str, *, has_headers: bool, reason: str = "", next_retry_at=No
         cause = f": {reason}" if reason else ""
         return f"it is stopped until the cause is fixed{cause}; then the user can press Reconnect in Capabilities"
     if state == "off":
-        return "the user turned it off in Capabilities"
+        # `off` is the state, not a verdict on who did it: the user's switch, or an install whose test
+        # failed (installs are created off and left off). Never "the user" (Task 8 review I-1).
+        return "switched off; it can be switched on in Capabilities"
     return ""
 
 

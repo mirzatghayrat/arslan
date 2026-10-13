@@ -283,6 +283,25 @@ async def _mcp_health_advisory(wired: list[dict]) -> str:
         return ""
 
 
+async def _spawn_mcp_line(spawn_id: int, current_turn: int) -> str:
+    """0.1.61 §B1 (Task 8 fix round 1): which of the spawn's equipped MCP servers are not ready, so it
+    knows why their tools are missing from its list — the same words as the host's status line
+    (`mcp.executor.status_clauses`), Arslan's own vocabulary only. Fail-open: it is context, never a
+    reason to fail a dispatch."""
+    from server.mcp.executor import status_clauses
+    try:
+        clauses = status_clauses(await registry_service.spawn_unready_mcp_servers(
+            spawn_id, current_turn=current_turn))
+    except Exception:  # noqa: BLE001
+        logger.warning("spawn mcp status line unavailable", exc_info=True)
+        return ""
+    if not clauses:
+        return ""
+    return ("\n\nMCP servers you are equipped with are not available right now: " + "; ".join(clauses)
+            + ". Their tools are not in your list this turn. Don't try to start or repair them; say in "
+            "your answer what is wrong.")
+
+
 async def build_spawn_system(spawn, *, retrieval_query: str, current_turn: int,
                              attached_context: str | None = None,
                              system_prompt_override: str | None = None,
@@ -385,6 +404,10 @@ async def build_spawn_system(spawn, *, retrieval_query: str, current_turn: int,
     system += _equipment_block_from(equipment, wired, skill_body_map)
     system += await _mcp_health_advisory(wired)
     system += _SPAWN_TOOL_GUIDANCE
+    if not replay:
+        # the volatile tail, after everything static: it changes with the servers' state, not the persona.
+        # A hermetic replay offers no MCP tool at all and both arms must stay identical.
+        system += await _spawn_mcp_line(spawn.id, current_turn)
 
     from server.orchestrator import run_trace
     run_trace.record_prompt(system_prompt=system, injected_kb=None, injected_kb_sources=_kb_sources)

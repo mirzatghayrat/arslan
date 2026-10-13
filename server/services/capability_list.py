@@ -137,6 +137,11 @@ async def _mcp_rows() -> list[dict]:
             allowed and connected and not ready_now(server["id"], server.get("state")))
         if missing:
             rows.append(_row(key, "work", "na", reason="runtime_missing", detail=missing, name=name, source="mcp"))
+        elif not allowed and server.get("state") == "off":
+            # switched off reads "off" whatever its old status says (an install whose test failed is
+            # left off with `status` error); the old error stays visible as the detail (Task 8 review M-1)
+            rows.append(_row(key, "work", "off", name=name, source="mcp", switch="mcp",
+                             detail=(server.get("last_error") or "")[:200] or None))
         elif server.get("status") == "error":
             rows.append(_row(key, "work", "setup", reason="mcp_error", fix="open_tab:mcps", name=name, source="mcp",
                              detail=(server.get("last_error") or "")[:200] or None, switch="mcp"))

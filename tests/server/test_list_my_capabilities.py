@@ -99,6 +99,7 @@ async def test_host_allowed_server_reports_every_tool_usable(maker, monkeypatch)
     assert srv["host_allowed"] is True
     assert srv["state"] == "ready"
     assert "reason" not in srv and "fix" not in srv    # nothing to explain or fix
+    assert "last_error" not in srv                      # none stored, none shown
 
 
 async def test_a_switched_off_server_says_so_and_offers_nothing(maker):
@@ -109,9 +110,26 @@ async def test_a_switched_off_server_says_so_and_offers_nothing(maker):
     out = await ListMyCapabilitiesExecutor().execute({})
     (srv,) = out["mcp"]
     assert srv["usable_by_me"] == [] and srv["state"] == "off"
-    assert srv["fix"] == "the user turned it off in Capabilities"
-    assert "reason" not in srv
+    assert srv["fix"] == "switched off; it can be switched on in Capabilities"
+    assert "reason" not in srv                          # not given as why it is off …
+    assert srv["last_error"] == "the server exited during start (code 1)"      # … but still visible
     assert "note" not in out                           # the stale "Capabilities → MCPS" note is gone
+
+
+async def test_a_server_left_off_by_a_failed_install_test_is_not_blamed_on_the_user(maker):
+    """Review I-1 (probe P5): installs are created `off`, and a failed install test leaves them so
+    (`capability_flow.test_mcp`). The model must not be told the user turned it off, and the real
+    failure must reach it: under its own key, not as why it is off."""
+    await _seed_server(maker, status="error", state="off", host_allowed=False,
+                       tools=[("browser_click", True, True)])
+    async with maker() as s:
+        (await s.get(MCPServer, 1)).last_error = "did not start within 120 s (waiting for tools/list)\nstderr…"
+        await s.commit()
+    (srv,) = (await ListMyCapabilitiesExecutor().execute({}))["mcp"]
+    assert srv["state"] == "off" and srv["usable_by_me"] == [] and srv["tool_count"] == 1
+    assert srv["last_error"] == "did not start within 120 s (waiting for tools/list)"
+    assert "switched off" in srv["fix"] and "reason" not in srv
+    assert "the user" not in json.dumps(srv)
 
 
 async def test_no_note_for_default_allowed_server(maker):
@@ -139,7 +157,10 @@ async def test_a_failed_servers_tools_are_not_usable_and_its_reason_is_given(mak
     (srv,) = out["mcp"]
     assert srv["usable_by_me"] == [] and srv["tool_count"] == 1
     assert srv["reason"] == "command `npx` not found — install Node.js"
-    assert "command `npx` not found" in srv["fix"]
+    assert srv["last_error"] == srv["reason"]
+    # the cause is said once (the `reason`), not again inside the fix (review M-3)
+    assert srv["fix"] == ("it is stopped until the cause is fixed; then the user can press Reconnect "
+                          "in Capabilities")
 
 
 # ── 0.1.61 Task 8: one readiness rule (carries.md "Task 8") ───────────────────────────────
@@ -183,7 +204,7 @@ async def test_a_server_the_user_just_switched_off_is_off_before_its_state_says_
     await _seed_server(maker, host_allowed=False, state="ready", tools=[("browser_click", True, True)])
     (srv,) = (await ListMyCapabilitiesExecutor().execute({}))["mcp"]
     assert srv["state"] == "off" and srv["usable_by_me"] == [] and srv["host_allowed"] is False
-    assert srv["fix"] == "the user turned it off in Capabilities"
+    assert srv["fix"] == "switched off; it can be switched on in Capabilities"
 
 
 async def test_a_starting_server_says_what_it_is_doing(maker, monkeypatch):
@@ -227,6 +248,37 @@ async def test_the_fix_for_a_server_that_needs_auth_asks_what_it_is_asked_to_do(
     assert await fix(env={}, last_error="HTTP 401 Unauthorized") == sign_in
     assert await fix(env={"API_KEY": "k-12345"}, last_error="HTTP 401 Unauthorized") == recheck
     assert await fix(env={"API_KEY": "k-12345"}, last_error=f"{sm.SIGN_IN_PREFIX} expired") == sign_in
+
+
+async def test_a_long_reason_is_cut_at_200_characters(maker):
+    """Review M-4: the model-sized payload — the reason and the stored error line are cut at 200."""
+    await _seed_server(maker, status="error", state="failed", tools=[("t", True, True)])
+    async with maker() as s:
+        (await s.get(MCPServer, 1)).last_error = "x" * 300 + "\nsecond line"
+        await s.commit()
+    (srv,) = (await ListMyCapabilitiesExecutor().execute({}))["mcp"]
+    assert srv["reason"] == "x" * 200 and srv["last_error"] == "x" * 200
+
+
+async def test_the_reason_and_the_stored_error_never_carry_the_servers_own_secret(maker):
+    """Review M-5: a pre-0.1.61 `failed` row can hold an unmasked error until the boot reset ends. The
+    server's own key is masked in both lines — before the line is cut, so a key straddling the cut
+    is masked whole, never left with its head."""
+    secret = "-".join(["s3cr3t", "value", "789"])
+    await _seed_server(maker, status="error", state="failed", tools=[("t", True, True)])
+    async with maker() as s:
+        row = await s.get(MCPServer, 1)
+        row.env = crypto.encrypt(json.dumps({"API_KEY": secret}))
+        row.last_error = f"invalid key {secret}\nmore"
+        await s.commit()
+    (srv,) = (await ListMyCapabilitiesExecutor().execute({}))["mcp"]
+    assert srv["reason"] == "invalid key ****" and srv["last_error"] == "invalid key ****"
+    async with maker() as s:
+        (await s.get(MCPServer, 1)).last_error = "a" * 196 + secret + " tail"       # straddles the cut
+        await s.commit()
+    (srv,) = (await ListMyCapabilitiesExecutor().execute({}))["mcp"]
+    assert srv["reason"] == "a" * 196 + "****" and srv["last_error"] == srv["reason"]
+    assert secret[:4] not in json.dumps(srv)
 
 
 def test_registered_in_executors():

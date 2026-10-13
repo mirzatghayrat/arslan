@@ -333,11 +333,12 @@ class ListMyCapabilitiesExecutor:
     this process has usable tools — the row says `ready` AND the session manager holds a live session
     (`supervisor.ready_now`, the rule that also decides which tools the model is offered, which row
     the Capabilities page shows as "on" and which tools a spawn gets). Every other server says why
-    (the first line of its classified last_error) and what fixes it: the connection, never a switch
-    the user has not touched. The state is the one a call to the server is answered with
-    (`executor.answer_state`): a `ready` with no live session, and a switched-on server whose row
-    still says `off`, are still starting; a switch the user just turned off is `off` before the
-    supervisor has written it."""
+    (`reason`: the first line of its classified last_error) and what fixes it. The state is the one a
+    call to the server is answered with (`executor.shown_state`): a `ready` with no live session, and
+    a switched-on server whose row still says `off`, are still starting; a switch the user just turned
+    off is `off` before the supervisor has written it. `off` never says who did it (an install whose
+    test failed is left off too), and a stored failure shows under its own key, `last_error` — masked,
+    its first line — whatever the state."""
     key = "list_my_capabilities"
 
     _LIST_CAP = 40   # keep the payload model-sized; counts stay exact either way
@@ -345,10 +346,8 @@ class ListMyCapabilitiesExecutor:
     async def execute(self, args: dict) -> dict:
         # Function-level imports: orchestrator.arslan imports EXECUTORS from this module (inside
         # _arslan_tools), and mcp.executor imports from registry, so module-level would cycle.
-        from types import SimpleNamespace
-
-        from server.mcp.executor import answer_state, rechecks_key
-        from server.mcp.supervisor import fix_for, ready_now, supervisor
+        from server.mcp.executor import error_line, rechecks_key, shown_state
+        from server.mcp.supervisor import fix_for, supervisor
         from server.orchestrator.arslan import _arslan_tools
         from server.services import mcp_service
 
@@ -362,28 +361,29 @@ class ListMyCapabilitiesExecutor:
             # Server-level ruling (2026-08-18): connect = usable by Arslan — while the user's
             # switch (host_allowed) is on and the server is ready in this process.
             allowed = bool(s.get("host_allowed", True))
-            ready = allowed and ready_now(s["id"], s.get("state"))
-            if ready:
-                state = "ready"
-            elif not allowed:
-                state = "off"
-            else:
-                state = answer_state(SimpleNamespace(state=s.get("state"), host_allowed=True))
+            state = shown_state(s["id"], s.get("state"), allowed)
+            ready = state == "ready"
+            stored = await error_line(s["id"], s.get("last_error"))     # masked, first line, cut
             names = sorted(t["name"] for t in rows)
             entry = {"label": s.get("label"), "state": state, "status": s.get("status"),
                      "host_allowed": allowed, "tool_count": len(rows),
                      "usable_by_me": names[: self._LIST_CAP] if ready else []}
+            if stored:
+                # whatever the state, so a server left `off` by a failed install test still shows
+                # why it failed — `reason` stays the cause of the state (Task 8 review I-1)
+                entry["last_error"] = stored
             if not ready:
                 if state == "starting":
                     reason = supervisor.note(s["id"]) or ""          # what it is doing now
                 elif state == "off":
-                    reason = ""                                       # an old cause is not why it is off
+                    reason = ""                                       # an old failure is not why it is off
                 else:
-                    reason = (s.get("last_error") or "").split("\n", 1)[0].strip()[:200]
+                    reason = stored
                 if reason:
                     entry["reason"] = reason
+                # the reason is said once (`reason`), never again inside the fix (review M-3)
                 entry["fix"] = fix_for(state, has_headers=rechecks_key(s.get("last_error"), s.get("env")),
-                                       reason=reason, next_retry_at=s.get("next_retry_at"))
+                                       next_retry_at=s.get("next_retry_at"))
                 if s.get("next_retry_at"):
                     entry["next_retry_at"] = s["next_retry_at"]
             mcp.append(entry)
