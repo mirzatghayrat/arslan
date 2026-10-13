@@ -76,3 +76,100 @@ async def test_fetch_repo_rate_limited(monkeypatch):
 
 async def _noop_token():
     return ""
+
+
+# ── a renamed or transferred repository (0.1.61 PR 6): GitHub answers its old name with a 301 ──────────
+
+def _github(monkeypatch, handler):
+    """api.github.com as MockTransport serves it; `seen` is every request that was made, in order."""
+    seen: list[httpx.Request] = []
+
+    def record(request):
+        seen.append(request)
+        return handler(request)
+    real = httpx.AsyncClient
+
+    class Client(real):
+        def __init__(self, *a, **kw):
+            kw.setdefault("transport", httpx.MockTransport(record))
+            super().__init__(*a, **kw)
+    monkeypatch.setattr(httpx, "AsyncClient", Client)
+    monkeypatch.setattr(ge, "_token", lambda: _noop_token())
+    return seen
+
+
+def _repo_json(full_name="new-owner/new-name"):
+    return {"full_name": full_name, "html_url": f"https://github.com/{full_name}", "stargazers_count": 5,
+            "forks_count": 1, "license": {"spdx_id": "MIT"}, "pushed_at": "2026-06-01T00:00:00Z",
+            "description": "", "topics": []}
+
+
+async def test_a_renamed_repository_resolves_through_its_redirect(monkeypatch):
+    def handler(request):
+        if request.url.path == "/repos/old-owner/old-name":
+            return httpx.Response(301, headers={"Location": "https://api.github.com/repositories/42"})
+        assert request.url.path == "/repositories/42"
+        return httpx.Response(200, json=_repo_json())
+    seen = _github(monkeypatch, handler)
+    meta = await ge.fetch_repo("old-owner", "old-name")
+    assert meta["full_name"] == "new-owner/new-name"                    # the name it has now
+    assert [r.url.path for r in seen] == ["/repos/old-owner/old-name", "/repositories/42"]
+
+
+async def test_a_relative_redirect_stays_on_the_api_host(monkeypatch):
+    def handler(request):
+        if request.url.path == "/repos/o/r":
+            return httpx.Response(308, headers={"Location": "/repositories/7"})
+        return httpx.Response(200, json=_repo_json())
+    seen = _github(monkeypatch, handler)
+    assert (await ge.fetch_repo("o", "r"))["full_name"] == "new-owner/new-name"
+    assert [(r.url.host, r.url.path) for r in seen] == [("api.github.com", "/repos/o/r"),
+                                                         ("api.github.com", "/repositories/7")]
+
+
+@pytest.mark.parametrize("target", [
+    "https://evil.example/repositories/42",                  # another host
+    "http://api.github.com/repositories/42",                 # a downgrade to plain http
+    "https://api.github.com.evil.example/repositories/42",   # a host that only starts like it
+    "https://api.github.com:8443/repositories/42",           # another port
+    "https://user@api.github.com/repositories/42",           # credentials in the address
+    "https://codeload.github.com/o/r/tar.gz/HEAD",           # GitHub's other host: not for metadata
+])
+async def test_a_redirect_off_api_github_com_is_refused_and_not_followed(monkeypatch, target):
+    seen = _github(monkeypatch, lambda request: httpx.Response(301, headers={"Location": target}))
+    with pytest.raises(ValueError, match="api.github.com"):
+        await ge.fetch_repo("old-owner", "old-name")
+    assert len(seen) == 1                                           # the other address was never asked
+
+
+async def test_the_token_goes_only_to_api_github_com(monkeypatch):
+    async def secret():
+        return "not-a-real-token"
+    seen = _github(monkeypatch, lambda request: httpx.Response(301, headers={"Location": "https://evil.example/x"}))
+    monkeypatch.setattr(ge, "_token", secret)
+    with pytest.raises(ValueError):
+        await ge.fetch_repo("o", "r")
+    assert [r.url.host for r in seen] == ["api.github.com"]
+
+
+async def test_at_most_three_redirects_are_followed(monkeypatch):
+    def chain(hops):
+        def handler(request):
+            n = int(request.url.path.rsplit("/", 1)[-1]) if request.url.path.startswith("/hop/") else 0
+            if n < hops:
+                return httpx.Response(301, headers={"Location": f"https://api.github.com/hop/{n + 1}"})
+            return httpx.Response(200, json=_repo_json())
+        return handler
+    seen = _github(monkeypatch, chain(3))
+    assert (await ge.fetch_repo("o", "r"))["full_name"] == "new-owner/new-name"
+    assert len(seen) == 4                                           # the request and its three redirects
+    seen = _github(monkeypatch, chain(4))
+    with pytest.raises(ValueError, match="too many"):
+        await ge.fetch_repo("o", "r")
+    assert len(seen) == 4                                           # the fourth redirect was not followed
+
+
+async def test_a_redirect_without_a_location_is_still_an_error(monkeypatch):
+    _github(monkeypatch, lambda request: httpx.Response(301))
+    with pytest.raises(httpx.HTTPStatusError):
+        await ge.fetch_repo("o", "r")

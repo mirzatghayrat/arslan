@@ -80,10 +80,39 @@ def _pushed_days(pushed: str | None) -> int | None:
 _SEARCH_LIMIT = 15
 
 
+#: A renamed or transferred repository answers its old name with a redirect to /repositories/<id>.
+_API_REDIRECTS = frozenset({301, 302, 303, 307, 308})
+_API_HOST = httpx.URL(_GITHUB_API).host
+_MAX_API_REDIRECTS = 3
+
+
+def _is_api_address(url: httpx.URL) -> bool:
+    return url.scheme == "https" and url.host == _API_HOST and url.port in (None, 443) and not url.userinfo
+
+
+async def _get_following_on_api(client: httpx.AsyncClient, url: str, headers: dict) -> httpx.Response:
+    """GET `url`, following at most _MAX_API_REDIRECTS redirects, by hand, and only while they stay on
+    https://api.github.com: the token in `headers` goes nowhere else, and metadata is never read from
+    another address (a redirect elsewhere is refused before it is asked)."""
+    for hop in range(_MAX_API_REDIRECTS + 1):
+        r = await client.get(url, headers=headers)
+        location = r.headers.get("location") if r.status_code in _API_REDIRECTS else None
+        if not location:
+            return r
+        if hop == _MAX_API_REDIRECTS:
+            break
+        target = httpx.URL(url).join(location)           # (httpx has already refused a Location that is no address)
+        if not _is_api_address(target):
+            raise ValueError("GitHub sent the repository's details somewhere other than api.github.com; "
+                             "it was not followed")
+        url = str(target)
+    raise ValueError("GitHub redirected the repository too many times")
+
+
 async def fetch_repo(owner: str, repo: str) -> dict:
     token = await _token()
     async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-        r = await client.get(f"{_GITHUB_API}/repos/{owner}/{repo}", headers=_headers(token))
+        r = await _get_following_on_api(client, f"{_GITHUB_API}/repos/{owner}/{repo}", _headers(token))
     if r.status_code == 404:
         raise ValueError("repo not found on GitHub")
     if r.status_code == 403 and "rate limit" in (r.text or "").lower():
