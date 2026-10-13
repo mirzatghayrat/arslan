@@ -389,7 +389,7 @@ async def test_an_edit_drops_the_old_session_and_schedules_a_fresh_start(executi
         await db.commit()
     await mcp_service.restart_after_edit(1)
     assert closed == [1] and session.manager.cached(1) is None
-    assert scheduled == [(1, {"fresh": True})]
+    assert scheduled == [(1, {"fresh": True, "cold": True})]         # an edit's start is cold (fix C)
 
 
 async def test_a_failed_boot_reset_never_leaves_the_last_runs_ready_rows(execution_db, own_supervisor, monkeypatch):

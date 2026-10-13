@@ -118,7 +118,7 @@ async def test_changing_folders_updates_the_sandbox_and_the_folder_argument(exec
     new = tmp_path / "New"
     new.mkdir()
     out = await cd.set_folders(row.id, [str(new)])
-    assert scheduled == [(row.mcp_server_id, {"fresh": True})]
+    assert scheduled == [(row.mcp_server_id, {"fresh": True, "cold": True})]     # cold: final review fix C
     assert out["grants"]["folders"] == [str(new.resolve())]
     async with execution_db() as db:
         server = await db.get(MCPServer, row.mcp_server_id)

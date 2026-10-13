@@ -386,6 +386,46 @@ async def test_pages_after_the_first_never_come_from_a_replacement_session(db, m
     assert len(opens) == 2 and await _names(db) == []
 
 
+async def test_page_two_never_opens_a_session_when_page_one_lost_its_own(db, monkeypatch):
+    """The later pages ask for the live session as it is (`live_only`) — and, when none is cached any
+    more after page 1 (dropped right after it answered), for no session at all (`True`), never an
+    open: pages from two sessions never mix (Task 4 re-review M-3, folded in by the final fix)."""
+    opens = _fake_open(monkeypatch, names=None)
+    real = session.manager.list_tools
+
+    async def drop_after_page_one(server, cursor=None):
+        out = await real(server, cursor)
+        if cursor is None:
+            await session.manager.drop(1)
+        return out
+    monkeypatch.setattr(session.manager, "list_tools", drop_after_page_one)
+    with pytest.raises(session.NotStarted):
+        await discovery.connect_and_discover(1)
+    assert len(opens) == 1 and await _names(db) == []
+
+
+async def test_a_waiting_listing_reads_the_row_when_it_runs_not_when_it_queued(db, monkeypatch):
+    """`connect_and_discover` reads the row inside the server's lock, so a listing queued behind
+    another runs with the row as it is when its turn comes. Read before the lock, a waiter built from
+    a stale row hands the manager a stale fingerprint: it drops the newer session and reopens with
+    the old settings (Task 4 re-review M-2, folded in by the final fix)."""
+    seen, gate = [], asyncio.Event()
+
+    async def listing(server, cursor=None):
+        seen.append(list(server["args"]))
+        gate.set()
+        await asyncio.sleep(0.1)
+        return SimpleNamespace(tools=[_tool("a")], nextCursor=None)
+    monkeypatch.setattr(session.manager, "list_tools", listing)
+    first = asyncio.create_task(discovery.connect_and_discover(1))
+    await gate.wait()
+    second = asyncio.create_task(discovery.connect_and_discover(1))    # queued on the server's lock
+    await asyncio.sleep(0.02)
+    await _edit_row(db, args=["--edited"])
+    await asyncio.gather(first, second)
+    assert seen == [[], ["--edited"]]
+
+
 async def test_an_older_listing_finishing_last_never_undoes_a_newer_one(db, monkeypatch):
     calls = {"n": 0}
 

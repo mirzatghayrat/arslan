@@ -18,6 +18,7 @@ from server.db.models import MCPServer, Tool, Toolset
 from server.mcp import discovery, session, spawn_env
 from server.mcp import supervisor as sm
 from server.mcp.oauth_flow import NeedsInteractiveAuth
+from server.services import mcp_service
 
 
 @pytest.fixture
@@ -1850,3 +1851,120 @@ async def test_the_hot_tick_against_the_verbs_seeded(sup, monkeypatch, seed):
         await asyncio.wait_for(stale, 5)
     assert not problems, problems[:5]
     assert sup._busy == {}
+
+
+# ── final review, fix C: a server that once worked gets its cold start again when it needs it ───
+
+def test_budget_for_is_cold_after_a_failed_plan_or_when_asked():
+    row = SimpleNamespace(last_ok_at=sm._utcnow(), fail_count=0)
+    assert sm.budget_for(row, 3) == 60
+    assert sm.budget_for(SimpleNamespace(last_ok_at=sm._utcnow(), fail_count=1), 3) == 120
+    assert sm.budget_for(row, 3, cold=True) == 120
+
+
+def _scaled_budgets(monkeypatch):
+    monkeypatch.setattr(session, "DEFAULT_START_BUDGET_S", 0.3)    # 60 s, scaled
+    monkeypatch.setattr(session, "COLD_START_BUDGET_S", 1.5)       # 120 s, scaled
+
+
+async def _worked_before(maker, sid=1):
+    """rea as it is after it has worked once: tools listed, a last_ok_at, no failure."""
+    await _seed(maker, sid, tools=("a",), last_ok_at=sm._utcnow() - timedelta(days=3))
+
+
+def _starts_in(monkeypatch, seconds):
+    """Its package is no longer cached: every open takes `seconds` (a download), then answers."""
+    opens = []
+
+    async def downloading_then_ok(server):
+        opens.append(server["id"])
+        await asyncio.sleep(seconds)
+        return _Live(), _stack()
+    monkeypatch.setattr(session.manager, "_open_session", downloading_then_ok)
+    return opens
+
+
+async def test_a_retry_after_a_start_timeout_gets_the_cold_budget(sup, monkeypatch):
+    """Final review I-3: `budget_for` gave the cold budget (120 s) only to a server with no tools, no
+    last_ok_at or a runtime fetched in this start. A server that worked before (rea, `npx -y …`) whose
+    package left the npm cache needs its cold start again — 30–110 s for rea — but every attempt and
+    every retry got 60 s, was killed mid-download, and it never started again."""
+    monkeypatch.setattr(session.manager, "_sessions", {})
+    _scaled_budgets(monkeypatch)
+    await _worked_before(sup.maker)
+    _starts_in(monkeypatch, 0.8)
+    sup.start(run_loops=False)
+    first = await sup._new_plan(1, "first")              # boot: four attempts, all warm
+    assert first.state == "failed" and first.last_error.startswith("did not start within 0.3 s")
+    retry = await sup._new_plan(1, "retry")              # the tick's retry after the backoff
+    assert retry.state == "ready", retry.last_error
+
+
+async def test_an_edits_fresh_start_is_cold_until_it_is_ready(sup, monkeypatch):
+    """An edit (new args, env or folders — an update may change the package) starts the server
+    afresh with the cold budget: a flag passed by `restart_after_edit`, never a cleared last_ok_at.
+    Once that start is ready, the next one is warm again."""
+    monkeypatch.setattr(session.manager, "_sessions", {})
+    monkeypatch.setattr(sm, "supervisor", sup)
+    _scaled_budgets(monkeypatch)
+    await _worked_before(sup.maker)
+    _starts_in(monkeypatch, 0.8)
+    sup.start(run_loops=False)
+    await mcp_service.restart_after_edit(1)
+    plan = sup._inflight[1]
+    assert (await plan).state == "ready"
+    row = await _row(sup.maker, 1)
+    assert row.last_ok_at is not None and row.fail_count == 0       # nothing was cleared to get there
+    again = await sup.restart(1)                                     # warm again: 0.3 s, killed
+    assert again.state == "failed" and again.last_error.startswith("did not start within 0.3 s")
+
+
+# ── final review M-2: a user's start never queues behind background attempts ─────────────────────
+
+def _slots_held_by_background_starts(monkeypatch, gate, user_sid):
+    """Every server but `user_sid` lists only once `gate` is set: their attempts hold the slots."""
+    async def behaviour(server):
+        if server["id"] != user_sid:
+            await gate.wait()
+        return _listing("a")
+    return _fake_list(monkeypatch, behaviour)
+
+
+async def test_a_user_restart_starts_at_once_while_background_starts_hold_every_slot(sup, monkeypatch):
+    """Connect, the install test and add_capability (`restart`) skip the MAX_CONCURRENT slots: at boot
+    each queued attempt can hold a slot for 60–120 s, and the install test gives up after 90 s."""
+    for sid in range(1, 6):
+        await _seed(sup.maker, sid)
+    gate = asyncio.Event()
+    calls = _slots_held_by_background_starts(monkeypatch, gate, user_sid=5)
+    sup.start(run_loops=False)
+    try:
+        for sid in range(1, 5):
+            sup.schedule(sid)
+        await _until(lambda: sorted(calls) == [1, 2, 3, 4])           # four attempts, four slots
+        result = await asyncio.wait_for(sup.restart(5), 3)
+        assert result.state == "ready" and calls.count(5) == 1
+    finally:
+        gate.set()
+
+
+async def test_a_user_restart_never_joins_its_own_start_queued_for_a_slot(sup, monkeypatch):
+    """At boot a Connect on a server whose own first start still waits for a slot replaces that
+    queued start (one process), instead of joining it at the back of the queue."""
+    for sid in range(1, 6):
+        await _seed(sup.maker, sid)
+    gate = asyncio.Event()
+    calls = _slots_held_by_background_starts(monkeypatch, gate, user_sid=5)
+    sup.start(run_loops=False)
+    try:
+        for sid in range(1, 5):
+            sup.schedule(sid)
+        await _until(lambda: sorted(calls) == [1, 2, 3, 4])
+        sup.schedule(5)                                                # queued behind the four
+        await _until(lambda: sup.start_in_flight(5))
+        result = await asyncio.wait_for(sup.restart(5), 3)
+        assert result.state == "ready"
+    finally:
+        gate.set()
+    await asyncio.wait_for(asyncio.gather(*[t for t in sup._inflight.values() if not t.done()]), 5)
+    assert calls.count(5) == 1                                         # the queued start never ran

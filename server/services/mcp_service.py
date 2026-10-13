@@ -277,7 +277,8 @@ async def restart_after_edit(server_id: int) -> None:
     """A server's command, args, env or sandbox changed (new folders, an edit). Its cached session
     still runs the old ones — call_tool never compares fingerprints — so it is dropped now and a
     fresh start is scheduled in the background: an edit never waits for a start. Every path that
-    edits a server ends here (carry: the env-only edit).
+    edits a server ends here (carry: the env-only edit). That start gets the cold budget (a flag,
+    never a cleared last_ok_at): an update may mean a download (final review, fix C).
 
     The fresh start is scheduled FIRST, the order of every supervisor verb (Task 6 fix round 2,
     N-1/N-2): the generation has moved before the drop wakes anyone — a probe pending on the old
@@ -286,7 +287,7 @@ async def restart_after_edit(server_id: int) -> None:
     from server.mcp.session import manager
     from server.mcp.supervisor import supervisor
 
-    supervisor.schedule(server_id, fresh=True)
+    supervisor.schedule(server_id, fresh=True, cold=True)   # the update may have changed the package
     await manager.drop(server_id)
 
 

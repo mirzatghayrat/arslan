@@ -6,9 +6,12 @@ States: off | starting | ready | failed | needs_auth | parked.
 - A start is a *plan* of attempts — `first` (an attempt, then up to 3 more after 1/2/4 s),
   `retry`, `probe`, `refresh` and `restart` (one attempt each). One plan is in flight per server.
   `restart` (Connect, Reconnect, the install test) joins an attempt that is running — one process —
-  and otherwise replaces the pending plan; it is the only plan that starts a switched-off server.
+  and otherwise replaces the pending plan (an attempt still queued for a slot included); it is the
+  only plan that starts a switched-off server.
 - The supervisor holds no per-server lock: the session manager's lock guards only the open, and
-  the semaphore (MAX_CONCURRENT) is held around one attempt, never across a backoff sleep.
+  the semaphore (MAX_CONCURRENT) is held around one background attempt, never across a backoff
+  sleep. A `restart` is the user's own start and skips it (final review M-2): it never queues behind
+  background attempts that may hold every slot for 60–120 s.
 - Every write goes through `_set`: one short transaction, dropped when a newer plan (generation)
   has started since, or when the row is gone. The legacy status/health_status follow the state.
 - A failed server is retried after 30 s, doubling to 600 s (counted per plan); parked and
@@ -243,11 +246,16 @@ def classify(exc: BaseException, *, server: dict, non_json: int, budget_s: float
     return "failed", discovery._describe_failure(leaf, has_headers=bool(server.get("env")))
 
 
-def budget_for(row, tool_count: int, *, fetched: bool = False) -> float:
+def budget_for(row, tool_count: int, *, fetched: bool = False, cold: bool = False) -> float:
     """COLD_START_BUDGET_S for a first start (no tools listed yet), a server that never answered,
-    or when its runtime was fetched in this start; DEFAULT_START_BUDGET_S otherwise. Every plan
-    uses it."""
-    if tool_count == 0 or getattr(row, "last_ok_at", None) is None or fetched:
+    when its runtime was fetched in this start, after a failed plan, or when the caller asks
+    (`cold`: an edit's fresh start, `Supervisor._cold`); DEFAULT_START_BUDGET_S otherwise. Every plan
+    uses it. After a failed plan (final review I-3): a server that worked once and whose package is
+    no longer cached — an npm cache cleaned, a new version of an unpinned `npx -y pkg` — needs its
+    cold start again; at the warm budget every attempt and every retry is killed mid-download and it
+    never starts. fail_count goes back to 0 on `ready`."""
+    if (tool_count == 0 or getattr(row, "last_ok_at", None) is None or fetched or cold
+            or (getattr(row, "fail_count", 0) or 0) > 0):
         return mcp_session.COLD_START_BUDGET_S
     return mcp_session.DEFAULT_START_BUDGET_S
 
@@ -298,6 +306,13 @@ class Supervisor:
         # takes the plan out of _inflight and then awaits its unwinding; the tick must not read
         # that window as "starting, no plan" and start the server again.
         self._busy: dict[int, int] = {}
+        # Servers whose next starts get the cold budget until one is ready: an edit's fresh start
+        # (`schedule(cold=True)`: the update may have changed the package). A flag, never a cleared
+        # last_ok_at (final review, fix C).
+        self._cold: set[int] = set()
+        # server -> the marker of its attempt while it waits for a slot: `restart` never joins that
+        # one (final review M-2).
+        self._queued: dict[int, object] = {}
 
     # ── lifecycle ──────────────────────────────────────────────────────────────────────
     def start(self, *, run_loops: bool = True) -> None:
@@ -326,6 +341,7 @@ class Supervisor:
         self._bg.clear()
         self._inflight.clear()
         self._attempt_fut.clear()
+        self._queued.clear()
         self._relisting.clear()       # a re-list cancelled before its first step never ran its finally
         self._relist_wanted.clear()
         self._loop_task = None
@@ -385,12 +401,15 @@ class Supervisor:
             await asyncio.gather(*tasks, return_exceptions=True)
 
     # ── the public verbs ───────────────────────────────────────────────────────────────
-    def schedule(self, server_id: int, *, fresh: bool = False) -> None:
+    def schedule(self, server_id: int, *, fresh: bool = False, cold: bool = False) -> None:
         """Start this server soon, in the background; never waits; a no-op unless running.
         fresh=True (a drop, new folders, a dead re-list) replaces whatever plan is in flight —
         a running attempt included: its open was overtaken, and the replacement must never wait
         out that open's budget — with one fresh attempt that respects the user's switch;
-        otherwise a plan in flight or a live session is left alone."""
+        otherwise a plan in flight or a live session is left alone. cold=True (an edit) gives its
+        starts the cold budget until one is ready — also a Connect's, and when nothing runs."""
+        if cold:
+            self._cold.add(server_id)
         if not self.running:
             return
         if fresh:
@@ -403,12 +422,19 @@ class Supervisor:
 
     async def restart(self, server_id: int) -> StartResult:
         """A fresh start now — Connect, Reconnect, the install test. Joins an attempt already
-        running (one process); otherwise replaces whatever plan is pending. Works whether or not
-        the background supervisor runs; raises ValueError for an unknown id."""
+        running (one process); otherwise replaces whatever plan is pending, an attempt still queued
+        for a slot included, and never waits for a slot itself (M-2). Works whether or not the
+        background supervisor runs; raises ValueError for an unknown id."""
         async with db_session.AsyncSessionLocal() as db:
             if await db.get(MCPServer, server_id) is None:
                 raise ValueError(f"mcp server {server_id} not found")
-        waitable = self._attempt_fut.get(server_id) or self._new_plan(server_id, "restart")
+        running = self._attempt_fut.get(server_id)
+        if running is None or server_id in self._queued:
+            # nothing running, or an attempt still queued for a slot: the user's start goes now
+            # (M-2) and replaces it, never joining it at the back of the queue
+            waitable = self._new_plan(server_id, "restart")
+        else:
+            waitable = running
         for _ in range(3):
             try:
                 return await asyncio.shield(waitable)
@@ -436,6 +462,7 @@ class Supervisor:
                            self._ok_written):
                 per_id.pop(server_id, None)
             self._relist_wanted.discard(server_id)
+            self._cold.discard(server_id)
 
     async def set_enabled(self, server_id: int, on: bool) -> None:
         """The user's switch. Off: cancel the plan, stop the process, state `off`. On: `starting`
@@ -569,10 +596,23 @@ class Supervisor:
             attempt += 1
 
     async def _attempt_limited(self, sid: int, gen: int, plan: str) -> StartResult:
-        if self._sem is None:              # not running (an API request or a test): no queue
+        """One attempt, in one of the MAX_CONCURRENT slots — unless the supervisor is not running (an
+        API request or a test: no queue) or it is the user's own start (`restart`: Connect, the
+        install test, add_capability), which never waits behind background attempts (final review
+        M-2). The session manager's per-server lock still lets one start of a server open at a time."""
+        if self._sem is None or plan == "restart":
             return await self._attempt(sid, gen, plan)
-        async with self._sem:
+        mark = object()
+        self._queued[sid] = mark
+        try:
+            await self._sem.acquire()
+        finally:
+            if self._queued.get(sid) is mark:
+                del self._queued[sid]
+        try:
             return await self._attempt(sid, gen, plan)
+        finally:
+            self._sem.release()
 
     async def _attempt(self, sid: int, gen: int, plan: str) -> StartResult:
         """One fresh process: drop any cached session, fetch the runtime if needed (outside the
@@ -593,11 +633,12 @@ class Supervisor:
         await mcp_session.manager.drop(sid)
         dropped_at = mcp_session.manager.generation(sid)       # any later drop moves it
         secrets = _secrets(server)
-        budget = budget_for(row, tool_count)
+        cold = sid in self._cold
+        budget = budget_for(row, tool_count, cold=cold)
         began = time.monotonic()
         try:
             if await self._ensure_runtime(sid, server):
-                budget = budget_for(row, tool_count, fetched=True)
+                budget = budget_for(row, tool_count, fetched=True, cold=cold)
             tools = await discovery.connect_and_discover(sid, start_budget_s=budget)
         except discovery.ServerGone:
             await mcp_session.manager.drop(sid)          # never a live process for a vanished row
@@ -691,6 +732,7 @@ class Supervisor:
         if result.state == "ready":
             self._ready_since[sid] = time.monotonic()
             self._fetch_error.pop(sid, None)
+            self._cold.discard(sid)                 # an edit's cold start is done
             await self._set(sid, gen, "ready", ok=True)
             if sid in self._relist_wanted:
                 self._relist_wanted.discard(sid)

@@ -71,10 +71,10 @@ async def test_a_program_that_prints_usage_is_parked_as_not_mcp(sup):
 
 async def test_a_slow_start_is_a_timeout_within_its_budget(sup, monkeypatch):
     await _seed(sup.maker, "slow_init", SLOW_INIT_S="3")
-    monkeypatch.setattr(sm, "budget_for", lambda row, tool_count, *, fetched=False: 0.5)
+    monkeypatch.setattr(sm, "budget_for", lambda row, tool_count, **_: 0.5)
     result = await sup.restart(1)
     assert result.state == "failed" and result.last_error.startswith("did not start within 0.5 s")
-    monkeypatch.setattr(sm, "budget_for", lambda row, tool_count, *, fetched=False: 10.0)
+    monkeypatch.setattr(sm, "budget_for", lambda row, tool_count, **_: 10.0)
     assert (await sup.restart(1)).state == "ready"
 
 
