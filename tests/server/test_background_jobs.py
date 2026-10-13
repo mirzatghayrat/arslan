@@ -3,6 +3,7 @@
 Offline: a scripted adapter stands in for the model. No paid calls.
 """
 import asyncio
+import logging
 import time
 import uuid
 from unittest.mock import AsyncMock
@@ -103,6 +104,21 @@ async def test_a_job_runs_as_its_own_task_and_posts_one_result(execution_db, act
     assert not any(f["type"] in {"stream_start", "stream_chunk"} for f in frames), "a job never types into the chat"
     assert any(f["type"] == "job_spoken" and f["outcome"] == "done" for f in frames)
     assert desktop_status.snapshot()["events"][-1]["kind"] == "turn_finished"
+
+
+async def test_a_job_gives_its_id_to_its_cards(execution_db, active, monkeypatch):
+    """0.1.61 §A8: a job's decisions are written with its job id (the ledger's `job_id`)."""
+    made = []
+    real = approvals.JobConfirmations
+
+    def recording(*args, **kwargs):
+        made.append(real(*args, **kwargs))
+        return made[-1]
+    monkeypatch.setattr(approvals, "JobConfirmations", recording)
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: JobAdapter())
+    job = await background_jobs.start(CID, "Tidy my notes into a report", _criteria())
+    await _wait(lambda: job.phase == "finished")
+    assert [(c.conversation_id, c.job_id) for c in made] == [(CID, job.job_id)]
 
 
 async def test_the_starting_turn_ends_before_the_job_and_shares_nothing_with_it(execution_db, active, monkeypatch):
@@ -214,12 +230,20 @@ async def test_background_tools_exist_only_in_a_turn_never_inside_a_job(executio
     assert not keys & seen["job"] and not keys & seen["body"] and "ask_user_choice" not in seen["body"]
 
 
+async def _job_ask(conversation_id: str, frame: dict) -> bool:
+    """`approvals.ask` as a job calls it: with the job's card surface bound (0.1.61: with no
+    surface — a scheduled run — it is refused at once, with no card)."""
+    from server.services import permissions
+    with permissions.asking_with(approvals.BroadcastAsker(conversation_id)):
+        return await approvals.ask(conversation_id, frame)
+
+
 async def test_cards_are_answered_by_call_id_and_kind_and_time_out_to_no(monkeypatch):
     sent = []
     run_registry.attach_sink(CID, sent.append)
     try:
-        waiting = asyncio.create_task(approvals.ask(CID, {"type": "propose_schedule", "call_id": "c1",
-                                                          "name": "n", "when": "daily"}))
+        waiting = asyncio.create_task(_job_ask(CID, {"type": "propose_schedule", "call_id": "c1",
+                                                     "name": "n", "when": "daily"}))
         await _wait(lambda: sent)
         assert approvals.pending_cards(CID) == [sent[0]]
         assert desktop_status.snapshot()["awaiting"] == 1
@@ -229,38 +253,41 @@ async def test_cards_are_answered_by_call_id_and_kind_and_time_out_to_no(monkeyp
         assert await waiting is True
         assert approvals.pending_cards(CID) == [] and desktop_status.snapshot()["awaiting"] == 0
         monkeypatch.setattr(approvals, "TIMEOUT_S", 0.05)
-        assert await approvals.ask(CID, {"type": "propose_schedule", "call_id": "c2",
-                                         "name": "n", "when": "daily"}) is False
+        assert await _job_ask(CID, {"type": "propose_schedule", "call_id": "c2",
+                                    "name": "n", "when": "daily"}) is False
     finally:
         run_registry.detach_sink(CID, sent.append)
+
+
+def _declining(asked: list, field: str):
+    """Every window on the conversation, played by the test: it notes `field` of each card a job
+    shows and answers No (0.1.61: a job's cards are its BroadcastAsker's, not `approvals.ask`)."""
+    def window(frame):
+        if frame["type"].startswith("propose_"):
+            asked.append(frame.get(field))
+            approvals.answer({"type": "cancel_" + frame["type"].removeprefix("propose_"),
+                              "call_id": frame["call_id"]})
+    return window
 
 
 async def test_job_commands_never_reuse_session_grants_and_remote_always_asks(monkeypatch):
     from server.services import settings_service
     monkeypatch.setattr(settings_service, "shell_confirm_policy", AsyncMock(return_value="ask_risky"))
     asked = []
-
-    async def ask(cid, frame):
-        asked.append(frame["type"])
-        return False
-    monkeypatch.setattr(approvals, "ask", ask)
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: _declining(asked, "type"))
     confirm = approvals.JobConfirmations(CID)
     assert await confirm.command("git", ["status"]) is True          # LOW under ask_risky, as in the foreground
     assert await confirm.command("git", ["status"], remote_host="box") is False
     assert asked == ["propose_run_command"]
 
 
-async def test_a_job_honours_the_users_standing_answer_but_never_adds_one(monkeypatch):
-    """0.1.48: "don't ask again" given in a conversation holds for jobs too; a job has
-    no "remember" of its own (it cannot add a standing answer)."""
+async def test_a_job_honours_the_users_standing_answer(execution_db, monkeypatch):
+    """0.1.48: "don't ask again" given in a conversation holds for jobs too. (0.1.61: a job's card
+    offers the window's choices, so a job may now add one as well — test_approvals_v2.)"""
     from server.services import settings_service, terminal_policy
     monkeypatch.setattr(settings_service, "shell_confirm_policy", AsyncMock(return_value="ask_risky"))
     asked = []
-
-    async def ask(cid, frame):
-        asked.append(frame.get("reason"))
-        return False
-    monkeypatch.setattr(approvals, "ask", ask)
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: _declining(asked, "reason"))
     monkeypatch.setattr(terminal_policy, "always_allowed", AsyncMock(return_value={"install"}))
     confirm = approvals.JobConfirmations(CID)
     assert await confirm.command("brew install remindctl", []) is True      # standing answer
@@ -268,17 +295,13 @@ async def test_a_job_honours_the_users_standing_answer_but_never_adds_one(monkey
     assert asked == ["deletes files"]
 
 
-async def test_a_standing_answer_for_one_rule_does_not_carry_a_second_risk(monkeypatch):
+async def test_a_standing_answer_for_one_rule_does_not_carry_a_second_risk(execution_db, monkeypatch):
     """A remembered "apple-events" must not wave through an upload chained after it:
     assess() names only the first matching rule, so the job checks every rule."""
     from server.services import settings_service, terminal_policy
     monkeypatch.setattr(settings_service, "shell_confirm_policy", AsyncMock(return_value="ask_risky"))
     asked = []
-
-    async def ask(cid, frame):
-        asked.append(frame["command"])
-        return False
-    monkeypatch.setattr(approvals, "ask", ask)
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: _declining(asked, "command"))
     monkeypatch.setattr(terminal_policy, "always_allowed", AsyncMock(return_value={"apple-events"}))
     confirm = approvals.JobConfirmations(CID)
     alone = "osascript -e 'tell application \"Finder\" to activate'"
@@ -376,7 +399,7 @@ def test_a_background_card_is_answered_over_the_socket_and_resent_on_reconnect(a
     frame = {"type": "propose_schedule", "call_id": "bg-card", "name": "Weekly digest", "when": "weekly"}
     with app_client.websocket_connect("/ws/arslan/main") as ws:
         ws.receive_json()
-        waiting = app_client.portal.start_task_soon(approvals.ask, "main", frame)
+        waiting = app_client.portal.start_task_soon(_job_ask, "main", frame)
         # broadcast at once, marked as a job's card (the UI hides "remember" for it)
         assert ws.receive_json() == frame | {"background": True}
     with app_client.websocket_connect("/ws/arslan/main") as ws:   # a tab that opened later
@@ -413,7 +436,7 @@ def test_a_reconnecting_tab_gets_running_job_cards_but_not_finished_ones(app_cli
         job.phase = phase
         background_jobs._jobs[job_id] = job
     frame = {"type": "propose_schedule", "call_id": "marker", "name": "n", "when": "w"}
-    waiting = app_client.portal.start_task_soon(approvals.ask, "main", frame)
+    waiting = app_client.portal.start_task_soon(_job_ask, "main", frame)
     with app_client.websocket_connect("/ws/arslan/main") as ws:
         seen = []
         while not seen or seen[-1].get("call_id") != "marker":
@@ -693,3 +716,233 @@ async def test_a_job_with_its_own_checks_is_not_asked_again(execution_db, active
     job = await background_jobs.start(CID, "Tidy my notes into a report", _criteria())
     await _wait(lambda: job.phase == "finished")
     assert job.outcome == "done" and seen == []
+
+
+# ── 0.1.61 (Task 4 carries): a job asks through decide; its task grants end with it; its
+# cards' waits are not its working time ──────────────────────────────────────────────
+
+def _a_window_answering(scopes: dict[str, str], after: float = 0.0):
+    """Every window on the conversation, answering the job's app cards by title (after a while)."""
+    def window(frame: dict) -> None:
+        if frame.get("type") == "propose_action" and frame.get("title") in scopes:
+            asyncio.get_running_loop().call_later(after, approvals.answer, {
+                "type": "confirm_action", "call_id": frame["call_id"], "scope": scopes[frame["title"]]})
+    return window
+
+
+@pytest.mark.parametrize("ending", ["done", "stopped"])
+async def test_a_jobs_task_grants_end_with_it_and_its_conversation_grants_stay(execution_db, active, monkeypatch,
+                                                                                ending):
+    from server.db.models import PermissionGrant
+    from server.orchestrator import arslan as arslan_mod
+    from server.services import permissions
+
+    async def grants():
+        async with execution_db() as db:
+            return sorted((g.task_id, g.target) for g in (await db.scalars(select(PermissionGrant))).all())
+
+    seen = {}
+
+    async def body(conversation_id, goal, emit, confirmations):
+        for title, app in (("Use Notes?", "com.apple.Notes"), ("Use Reminders?", "com.apple.reminders")):
+            decision = await permissions.decide(permissions.Request(kind="app", target=app, title=title),
+                                                permissions.Context(conversation_id=conversation_id))
+            seen[title] = (decision.allowed, decision.scope)
+        seen["during"] = await grants()
+        if ending == "stopped":
+            await asyncio.Event().wait()                  # still working when it is stopped
+        return f"Done: {PHRASE}"
+    monkeypatch.setattr(arslan_mod, "background_body", body)
+    window = _a_window_answering({"Use Notes?": "task", "Use Reminders?": "conversation"})
+    run_registry.attach_sink(CID, window)
+    try:
+        job = await background_jobs.start(CID, "Tidy my notes into a report", _criteria())
+        await _wait(lambda: "during" in seen)
+        if ending == "stopped":
+            assert background_jobs.stop(CID, job.job_id)
+        # The job's run ends with the forgetting, just after it reads finished and is reported (F1).
+        await _wait(lambda: job.task.done())
+    finally:
+        run_registry.detach_sink(CID, window)
+    # The job asked on its own card surface (no surface would have been a refusal at once).
+    assert (seen["Use Notes?"], seen["Use Reminders?"]) == ((True, "task"), (True, "conversation"))
+    assert seen["during"] == [("", "com.apple.reminders"), (job.job_id, "com.apple.Notes")]
+    assert job.outcome == {"done": "done", "stopped": "stopped"}[ending]
+    assert await grants() == [("", "com.apple.reminders")], "the task's grant ends with it, the conversation's stays"
+
+
+async def test_a_card_answered_after_the_jobs_wall_clock_does_not_stop_the_job(execution_db, active, monkeypatch):
+    from arslan import execution_budget
+    from server.orchestrator import arslan as arslan_mod
+    from server.services import permissions
+    monkeypatch.setattr(execution_budget, "job_budget",
+                        lambda tier: execution_budget.Budget(execution_budget.Limits(wall_seconds=2.0)))
+    seen = {}
+
+    async def body(conversation_id, goal, emit, confirmations):
+        decision = await permissions.decide(permissions.Request(kind="app", target="com.apple.Notes",
+                                                                title="Use Notes?"),
+                                            permissions.Context(conversation_id=conversation_id))
+        seen["allowed"] = decision.allowed
+        return f"Done: {PHRASE}"
+    monkeypatch.setattr(arslan_mod, "background_body", body)
+    window = _a_window_answering({"Use Notes?": "once"}, after=3.0)   # the user takes their time
+    run_registry.attach_sink(CID, window)
+    try:
+        job = await background_jobs.start(CID, "Tidy my notes into a report", _criteria())
+        await _wait(lambda: job.phase == "finished", seconds=15)
+    finally:
+        run_registry.detach_sink(CID, window)
+    assert seen == {"allowed": True}
+    assert (job.outcome, job.budget_stop) == ("done", None), (job.detail, job.budget_stop)
+    async with execution_db() as db:
+        used = (await db.get(CompanionTask, job.job_id)).budget["used"]["wall_seconds"]
+    assert used < 2.0, "the three seconds the card waited are not the job's working time"
+
+
+# ── F1 (CI 38293278888): a job's end never waits on forgetting its task grants ───────────────
+# A job stopped while its own transaction was writing leaves that transaction's connection to the
+# garbage collector, still holding SQLite's write lock; the forget waited 5 s on it (the busy
+# timeout) before the job read "finished".
+
+@pytest.mark.parametrize("ending", ["done", "stopped"])
+async def test_a_job_reads_finished_and_is_reported_while_forgetting_its_task_grants_waits(
+        execution_db, active, frames, monkeypatch, ending):
+    """Forgetting a job's "for this task" grants is bookkeeping nobody waits on: the job reads
+    finished and is reported first. Here the forget is held for 10 s."""
+    from server.services import permissions
+    release, forgetting = asyncio.Event(), []
+
+    async def held(task_id):
+        forgetting.append(task_id)
+        await asyncio.wait_for(release.wait(), 10)
+        return 0
+    monkeypatch.setattr(permissions, "forget_task", held)
+    gate = asyncio.Event()
+    adapter = JobAdapter(gate)
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    job = await background_jobs.start(CID, "Tidy my notes into a report", _criteria())
+    await _wait(lambda: adapter.job_calls == 1)                  # working: at the model
+    if ending == "stopped":
+        assert background_jobs.stop(CID, job.job_id)
+    else:
+        gate.set()
+    await _wait(lambda: job.phase == "finished", seconds=2)
+    await _wait(lambda: any(f["type"] == "job_spoken" and f["job_id"] == job.job_id for f in frames),
+                seconds=2)
+    assert job.outcome == ending
+    await _wait(lambda: forgetting == [job.job_id], seconds=2)  # still forgotten — after
+    assert not job.task.done()
+    release.set()
+    await asyncio.wait_for(job.task, 2)
+
+
+@pytest.mark.parametrize("kind, answer", [(None, None), ("folder", "once"), ("folder", "conversation"),
+                                          ("app", "conversation"), ("app", "task")])
+async def test_only_a_job_given_a_grant_for_its_task_deletes_one_at_its_end(execution_db, active, monkeypatch,
+                                                                            kind, answer):
+    """A job given no "for this task" grant — no card, or a card answered once or for the
+    conversation — ends without touching the grants table: there is nothing of its own to wait
+    for. Only a job given one deletes it."""
+    from server.orchestrator import arslan as arslan_mod
+    from server.services import permission_store, permissions
+    deleted, seen = [], {}
+    real = permission_store.delete_task_grants
+
+    async def recording(db, task_id):
+        deleted.append(task_id)
+        return await real(db, task_id)
+    monkeypatch.setattr(permission_store, "delete_task_grants", recording)
+    target = "/Users/me/Notes" if kind == "folder" else "com.apple.Notes"
+
+    async def body(conversation_id, goal, emit, confirmations):
+        if kind:
+            decision = await permissions.decide(permissions.Request(kind=kind, target=target, title="Use Notes?"),
+                                                permissions.Context(conversation_id=conversation_id))
+            seen["decision"] = (decision.allowed, decision.scope)
+        return f"Done: {PHRASE}"
+    monkeypatch.setattr(arslan_mod, "background_body", body)
+    window = _a_window_answering({"Use Notes?": answer} if answer else {})
+    run_registry.attach_sink(CID, window)
+    try:
+        job = await background_jobs.start(CID, "Tidy my notes into a report", _criteria())
+        await _wait(lambda: job.task.done())
+    finally:
+        run_registry.detach_sink(CID, window)
+    assert seen.get("decision") == ((True, answer) if kind else None)
+    assert job.outcome == "done"
+    assert deleted == ([job.job_id] if answer == "task" else [])
+
+
+# ── PR 2 fix wave 2: the forget is the last of a job's bookkeeping, and nothing before it skips it ──
+
+@pytest.mark.parametrize("failing", ["_emit", "_report", "_report_to_project"])
+async def test_a_job_whose_reporting_raises_still_forgets_its_task_grants(execution_db, active, monkeypatch,
+                                                                         failing):
+    """Whatever raises while a finished job is reported — the frame to the windows, the result
+    message, the project's tick — its "for this task" grants still end with it. A job id never
+    comes back, so rows left behind would only wait for the store's 24-hour prune."""
+    from server.db.models import PermissionGrant
+    from server.orchestrator import arslan as arslan_mod
+    from server.services import permissions
+    seen = {}
+
+    async def body(conversation_id, goal, emit, confirmations):
+        decision = await permissions.decide(
+            permissions.Request(kind="app", target="com.apple.Notes", title="Use Notes?"),
+            permissions.Context(conversation_id=conversation_id))
+        seen["decision"] = (decision.allowed, decision.scope)
+        return f"Done: {PHRASE}"
+    monkeypatch.setattr(arslan_mod, "background_body", body)
+    real_emit = background_jobs._emit
+
+    def emit_failing_when_finished(job):
+        if job.phase == "finished":
+            raise RuntimeError("the window is gone")
+        real_emit(job)
+
+    async def broken(*args, **kwargs):
+        raise RuntimeError("the window is gone")
+    monkeypatch.setattr(background_jobs, failing, emit_failing_when_finished if failing == "_emit" else broken)
+    window = _a_window_answering({"Use Notes?": "task"})
+    run_registry.attach_sink(CID, window)
+    try:
+        job = await background_jobs.start(CID, "Tidy my notes into a report", _criteria())
+        await _wait(lambda: job.task.done())
+    finally:
+        run_registry.detach_sink(CID, window)
+    assert seen["decision"] == (True, "task")                       # it really was given one
+    assert job.phase == "finished" and job.outcome == "done"
+    assert isinstance(job.task.exception(), RuntimeError)           # the reporting's own error still shows
+    async with execution_db() as db:
+        assert (await db.scalars(select(PermissionGrant))).all() == []
+
+
+@pytest.mark.parametrize("ending", ["done", "stopped"])
+async def test_a_forget_that_raises_changes_nothing_about_how_a_job_ends(execution_db, active, frames, monkeypatch,
+                                                                         caplog, ending):
+    """A database that cannot be written at a job's end (its grants stay for the 24-hour prune) never
+    turns the end into a failure: the job reads finished, is reported, and its task ends cleanly."""
+    from server.services import permissions
+    forgetting = []
+
+    async def locked(task_id):
+        forgetting.append(task_id)
+        raise RuntimeError("database is locked")
+    monkeypatch.setattr(permissions, "forget_task", locked)
+    gate = asyncio.Event()
+    adapter = JobAdapter(gate)
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    with caplog.at_level(logging.WARNING, logger="server.services.background_jobs"):
+        job = await background_jobs.start(CID, "Tidy my notes into a report", _criteria())
+        await _wait(lambda: adapter.job_calls == 1)                  # working: at the model
+        if ending == "stopped":
+            assert background_jobs.stop(CID, job.job_id)
+        else:
+            gate.set()
+        await _wait(lambda: job.task.done())
+    assert forgetting == [job.job_id]
+    assert job.task.exception() is None                              # nothing raised into the loop
+    assert job.phase == "finished" and job.outcome == ending
+    assert any(f["type"] == "job_spoken" and f["job_id"] == job.job_id for f in frames)
+    assert "task grants not forgotten" in caplog.text

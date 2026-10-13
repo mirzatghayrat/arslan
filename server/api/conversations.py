@@ -13,6 +13,7 @@ from server.db.models import (
     ConversationEvent,
     ConversationSpawn,
     DistilledSession,
+    PermissionGrant,
     SpawnPhase,
 )
 from server.schemas import (
@@ -206,7 +207,9 @@ async def delete_conversation(
     """Purge a conversation's OWN rows across the FK-less `conversation_id` tables.
     Deliberately KEEPS `runs` + `router_decisions` + `usage_ledger` (audit/diagnosis
     and cost-accounting data must survive conversation deletion, mirroring how audit
-    rows survive spawn deletion).
+    rows survive spawn deletion; so does the permission ledger, `approval_events`, which
+    keeps its own 90 days). The conversation's permission grants go with it: they were
+    only ever for this conversation.
     Auth-gated (inherited from the router-level require_auth dependency)."""
     deleted: dict[str, int] = {}
     # Injected session — see list_conversations for why. With this endpoint on
@@ -223,6 +226,7 @@ async def delete_conversation(
             ConversationSpawn,
             SpawnPhase,
             DistilledSession,
+            PermissionGrant,
         ):
             res = await db.execute(
                 delete(model).where(model.conversation_id == conversation_id))

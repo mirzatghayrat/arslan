@@ -236,9 +236,30 @@ async def _run(job: Job) -> None:
         job.phase = "finished"
         job.outcome = outcome
         job.detail = reason
-        _emit(job)
-        await _report(job, final_text)
-        await _report_to_project(job)
+        try:
+            _emit(job)
+            await _report(job, final_text)
+            await _report_to_project(job)
+        finally:
+            # Last: bookkeeping nobody waits on (CI 38293278888 — a job stopped mid-write leaves its
+            # interrupted transaction holding SQLite's write lock until the garbage collector frees
+            # it, and this delete waited the 5 s busy timeout for it before the job read finished).
+            # And never skipped, whatever the reporting raised: a job id never comes back, so the
+            # rows would only wait for the store's 24-hour prune.
+            await _forget_task_grants(job)
+
+
+async def _forget_task_grants(job: Job) -> None:
+    """0.1.61: what the user allowed "for this task" ends with the job, however it ended (done,
+    failed, stopped, cancelled) — after it reads finished and is reported, and also when the
+    reporting raised. The conversation's grants stay. A job given none touches no database here
+    (`permissions.forget_task`); one that cannot be written now leaves its rows to the store's
+    24-hour prune."""
+    from server.services import permissions
+    try:
+        await permissions.forget_task(job.job_id)
+    except Exception as exc:  # noqa: BLE001 — the job's own result is still reported
+        logger.warning("background job %s task grants not forgotten: %s", job.job_id, type(exc).__name__)
 
 
 async def _report_to_project(job: Job) -> None:
@@ -273,15 +294,15 @@ async def _execute(job: Job) -> tuple[str, str, str | None]:
     from server.orchestrator import arslan
     from arslan.execution_budget import job_budget
     from server.db import session as db_session
-    from server.services import (approvals, host_run, personal_context, settings_service, task_context,
-                                 task_service)
+    from server.services import (approvals, host_run, permissions, personal_context, settings_service,
+                                 task_context, task_service)
     from server.services.task_repository import repository
     async with db_session.AsyncSessionLocal() as db:
         tier = await settings_service.background_job_budget(db)
     ctx = await task_context.load(job.conversation_id, user_message=job.goal)
     ctx = replace(ctx, task_id=job.job_id, run_id=f"job-{job.job_id}", explicit_save_digest=None,
                   explicit_save_ref=None, allow_global_save=False)
-    confirmations = approvals.JobConfirmations(job.conversation_id)
+    confirmations = approvals.JobConfirmations(job.conversation_id, job_id=job.job_id)
     downstream = run_registry.make_emit(job.conversation_id)
 
     async def function(conversation_id, instruction, emit):
@@ -289,8 +310,10 @@ async def _execute(job: Job) -> tuple[str, str, str | None]:
             return await arslan.background_body(conversation_id, instruction, _job_sink(job, sink), confirmations)
         return await host_run.execute(conversation_id, instruction, emit, body, announce=False)
 
+    # 0.1.61: everything the job asks (permissions.decide, Hands too) asks on its own card surface.
     with personal_context.bind(ctx), desktop_status.working(job.conversation_id, title=job.goal, kind="job",
-                                                                     job_id=job.job_id):
+                                                                     job_id=job.job_id), \
+            permissions.asking_with(confirmations.asker):
         try:
             output = await task_service.run_turn(function, job.conversation_id, job.goal,
                                                  _job_sink(job, downstream), _driver={"kind": "background"},

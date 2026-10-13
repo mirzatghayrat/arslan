@@ -26,6 +26,8 @@ import time
 import uuid
 from urllib.parse import urlsplit
 
+from server.services import approvals
+
 _PASSWORD = re.compile(r"pass(word|code|phrase)|密码|口令|パスワード|contraseña|mot de passe|passwort|\bpin\b", re.I)
 _OUTPUT_LIMIT = 8_000
 # job id -> things already approved for that job
@@ -48,7 +50,7 @@ def _not_in_job() -> dict:
 # These tools wait for the user's card (approvals.TIMEOUT_S each) and for slow apps, so 20 s cut
 # them off mid-card. Measured on the user's Mac, 2026-10-05: a Notes look died twice while its
 # card was open; an unanswered AppleScript card expired after 20 s and the model asked again.
-CARD_S = 300                       # approvals.TIMEOUT_S; a test keeps the two equal
+CARD_S = approvals.TIMEOUT_S       # the card window (30 min, 0.1.61); a test pins the two equal
 RUN_S = 120                        # _run's default; a Hands call is 60 s, a read is tried twice
 
 

@@ -441,6 +441,70 @@ class ConversationModel(Base):
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
+class PermissionRule(Base):
+    """0.1.61 §A5: a standing answer ("Always"): this kind of boundary, this target, no card."""
+
+    __tablename__ = "permission_rules"
+    # AUTOINCREMENT: the ledger keeps `rule_id` as a plain number, so an id is never given out twice.
+    __table_args__ = (UniqueConstraint("kind", "target"), {"sqlite_autoincrement": True})
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    kind = Column(String(30), nullable=False)
+    target = Column(Text, nullable=False)
+    label = Column(Text, nullable=False, default="")
+    created_from = Column(String(80), nullable=False, default="")
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    last_used_at = Column(DateTime, nullable=True)
+    use_count = Column(Integer, nullable=False, default=0)
+
+
+class PermissionGrant(Base):
+    """0.1.61 §A5: an answer for one task (task_id = the turn or job) or one conversation
+    (task_id = ""). A job started from the conversation reads its conversation grants."""
+
+    __tablename__ = "permission_grants"
+    # AUTOINCREMENT, as for the rules: the ledger keeps `grant_id`.
+    __table_args__ = (UniqueConstraint("conversation_id", "task_id", "kind", "target"),
+                      {"sqlite_autoincrement": True})
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    conversation_id = Column(String(100), nullable=False, index=True)
+    task_id = Column(String(100), nullable=False, default="")
+    kind = Column(String(30), nullable=False)
+    target = Column(Text, nullable=False)
+    call_id = Column(String(64), nullable=False, default="")
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class ApprovalEvent(Base):
+    """0.1.61 §A8: one decision that crossed a boundary — who decided, how, how long the card
+    waited. The number this round is judged by (cards per task) comes from here."""
+
+    __tablename__ = "approval_events"
+    __table_args__ = {"sqlite_autoincrement": True}
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    conversation_id = Column(String(100), nullable=True, index=True)
+    job_id = Column(String(100), nullable=True)
+    run_id = Column(String(100), nullable=True)
+    kind = Column(String(30), nullable=False)
+    target = Column(Text, nullable=False)
+    detail = Column(Text, nullable=False, default="")
+    extra = Column(JSON, nullable=True)
+    mode = Column(String(20), nullable=False)
+    # floor | mode | rule | grant | reviewer | user | expired | policy (§A8), and "away": a card
+    # that never opened because an earlier one of its job or turn went unanswered — an expiry
+    # (decision "expired"), listed in the Inbox with a policy refusal (permission_store.NOT_ASKED).
+    decided_by = Column(String(20), nullable=False)
+    decision = Column(String(10), nullable=False)       # allow | deny | expired
+    scope = Column(String(20), nullable=True)
+    rule_id = Column(Integer, nullable=True)
+    grant_id = Column(Integer, nullable=True)
+    reviewer = Column(JSON, nullable=True)
+    wait_ms = Column(Integer, nullable=True)
+
+
 class ModelCatalogCache(Base):
     """P2: cached dynamic model list per provider config (Settings-only surface).
 

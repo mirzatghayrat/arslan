@@ -882,13 +882,16 @@ async def _read_saved(rel: str) -> str | None:
 
 
 def _declined(refused: str, subject: str) -> str:
-    """What a "no" from a card tells the model. A card nobody answered before it expired is not
-    a refusal: the model must not tell the user they said no (seen 2026-10-04 on a phone task)."""
-    from server.services import approvals
+    """What a "no" from a card tells the model (0.1.61): the decision's own text when there is
+    one (the user's note, or "nobody answered — NOT a refusal"), never "declined" for a card
+    that simply ran out (seen 2026-10-04 on a phone task)."""
+    from server.services import approvals, permissions
+    decision = permissions.LAST_DECISION.get()
+    if decision is not None and not decision.allowed and decision.model_text:
+        return decision.model_text
     if approvals.LAST_OUTCOME.get() == "expired":
-        return (f"nobody answered the approval card for {subject} before it expired: the user did not "
-                "decline it, they are away. Do not ask for it again in this task. Finish now: say the card "
-                "expired unanswered, what is left undone, and that they can run the task again.")
+        return (f"Nobody answered the card for {subject} in 30 minutes. This is NOT a refusal. "
+                "Don't retry it in this turn. Finish what you can and tell the user what is waiting.")
     return refused
 
 

@@ -143,14 +143,23 @@ def test_the_card_frame_says_which_sandbox_question_it_is():
     assert "sandbox" not in protocol.propose_run_command("id", "ls", [], sandbox="sideways")
 
 
-async def test_a_background_job_asks_with_a_card_and_never_grants(monkeypatch):
+def _window(frames: list, approve: bool):
+    """Every window on the conversation, played by the test: it keeps each card a job shows and
+    answers it (0.1.61: a job's cards are its BroadcastAsker's, not `approvals.ask`)."""
     from server.services import approvals
-    frames = []
 
-    async def ask(cid, frame):
-        frames.append(frame)
-        return True
-    monkeypatch.setattr(approvals, "ask", ask)
+    def window(frame):
+        if frame["type"].startswith("propose_"):
+            frames.append(frame)
+            approvals.answer({"type": ("confirm_" if approve else "cancel_") + frame["type"].removeprefix("propose_"),
+                              "call_id": frame["call_id"], "remember": True})
+    return window
+
+
+async def test_a_background_job_asks_with_a_card_and_never_grants(monkeypatch):
+    from server.services import approvals, run_registry
+    frames = []
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: _window(frames, True))
     job = approvals.JobConfirmations("c9")
     assert await job.command("mv a ~/b", [], sandbox="retry") is True
     assert frames[0]["sandbox"] == "retry" and not command_sandbox.granted("c9")
@@ -159,13 +168,9 @@ async def test_a_background_job_asks_with_a_card_and_never_grants(monkeypatch):
 async def test_a_background_job_never_inherits_the_conversations_sandbox_grant(monkeypatch):
     """The grant ("for the rest of this conversation") belongs to the chat window that
     gave it; a background job on the same conversation still asks, every time."""
-    from server.services import approvals
+    from server.services import approvals, run_registry
     frames = []
-
-    async def ask(cid, frame):
-        frames.append(frame)
-        return False
-    monkeypatch.setattr(approvals, "ask", ask)
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: _window(frames, False))
     command_sandbox.grant("c9")
     job = approvals.JobConfirmations("c9")
     assert await job.command("mv a ~/b", [], sandbox="retry") is False
@@ -173,15 +178,11 @@ async def test_a_background_job_never_inherits_the_conversations_sandbox_grant(m
 
 
 async def test_a_job_on_a_granted_conversation_starts_inside_the_sandbox(monkeypatch):
-    from server.services import approvals, settings_service
+    from server.services import approvals, run_registry, settings_service
     from unittest.mock import AsyncMock
     monkeypatch.setattr(settings_service, "shell_confirm_policy", AsyncMock(return_value="ask_risky"))
     frames = []
-
-    async def ask(cid, frame):
-        frames.append(frame)
-        return False
-    monkeypatch.setattr(approvals, "ask", ask)
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: _window(frames, False))
     command_sandbox.grant("c9")
     ex = _Exec()
     r = await _dispatch(monkeypatch, {"command": "ls"}, executor=ex,
