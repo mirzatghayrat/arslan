@@ -89,6 +89,23 @@ async def _until(predicate, *, tries=500):
     raise AssertionError("condition never met")
 
 
+def _record_plans(monkeypatch, sup):
+    plans = []
+    real_new_plan = sup._new_plan
+
+    def record(sid, plan):
+        plans.append(plan)
+        return real_new_plan(sid, plan)
+    monkeypatch.setattr(sup, "_new_plan", record)
+    return plans
+
+
+async def _plans_done(sup):
+    pending = [t for t in sup._inflight.values() if not t.done()]
+    if pending:
+        await asyncio.wait_for(asyncio.gather(*pending, return_exceptions=True), 5)
+
+
 def _live_session(monkeypatch, sid, live=None, aclose=_closed):
     """`sid`'s live session, cached as the manager caches one (no fingerprint: used as it is)."""
     monkeypatch.delitem(session.manager._fingerprints, sid, raising=False)
@@ -1000,3 +1017,250 @@ async def test_boot_never_waits_for_the_forgotten_prune_and_logs_its_failure(own
             release.set()
         await _boot_background_done()
     assert "forgotten folders to the Trash failed" in caplog.text
+
+
+# ── fix round 2 (task-6-fix-round-2.md, N-1 … N-5) ───────────────────────────────────────
+
+async def test_an_edit_waking_a_probe_is_one_plan_and_no_failure(execution_db, own_supervisor, monkeypatch):
+    """N-1 (re-review D1, D1-running): an edit moves the generation before it drops the old session
+    — the order of every supervisor verb — so a probe pending on that session, woken while the
+    drop's close still runs, takes it for what it is: nothing written, nothing scheduled. One plan,
+    the edit's own, starts the server with its new settings."""
+    await _seed(execution_db, state="ready", status="connected", health_status="ok")
+    pending, closing, release_close = asyncio.Event(), asyncio.Event(), asyncio.Event()
+
+    class _Blocking:
+        async def list_tools(self, params=None):
+            pending.set()
+            await asyncio.Event().wait()
+
+    async def slow_close():                        # a stdio process exiting, an http DELETE
+        closing.set()
+        await release_close.wait()
+    _live_session(monkeypatch, 1, _Blocking(), aclose=slow_close)
+    monkeypatch.setattr(mcp_service, "_HEALTH_PROBE_TIMEOUT", 5.0)
+    opens = []
+
+    async def open_(server):
+        opens.append(server["id"])
+        return _Live(), SimpleNamespace(aclose=_closed)
+    monkeypatch.setattr(session.manager, "_open_session", open_)
+    plans = _record_plans(monkeypatch, own_supervisor)
+    own_supervisor.start(run_loops=False)
+    probe = asyncio.create_task(mcp_service.check_health(1))
+    await asyncio.wait_for(pending.wait(), 5)
+    edit = asyncio.create_task(mcp_service.restart_after_edit(1))      # new folders / an env edit
+    try:
+        await asyncio.wait_for(closing.wait(), 5)
+        out = await asyncio.wait_for(probe, 5)
+    finally:
+        release_close.set()
+    await asyncio.wait_for(edit, 5)
+    await _plans_done(own_supervisor)
+    async with execution_db() as db:
+        row = await db.get(MCPServer, 1)
+    assert plans == ["refresh"] and opens == [1] and out["health_status"] == "ok"
+    assert (row.state, row.health_status, row.last_error) == ("ready", "ok", None)
+
+
+@pytest.mark.parametrize("slow_close", [True, False], ids=["slow-close", "instant-close"])
+async def test_an_edit_during_a_connects_tool_write_is_followed_not_failed(execution_db, own_supervisor,
+                                                                          monkeypatch, slow_close):
+    """N-2 (re-review D2, D2-running): an edit that lands while a Connect's start writes its tools
+    replaces that start before the start can find its session gone (the edit's plan first, then
+    the drop): the Connect follows the edit's start and answers with its tools — never "the server
+    exited during start", never `failed` with a backoff."""
+    await _seed(execution_db, state="ready", status="connected")
+    listed, write_gate, closing, release_close = (asyncio.Event(), asyncio.Event(), asyncio.Event(),
+                                                  asyncio.Event())
+
+    async def slow():
+        closing.set()
+        await release_close.wait()
+
+    async def open_(server):
+        return _Live(), SimpleNamespace(aclose=slow if slow_close else _closed)
+    monkeypatch.setattr(session.manager, "_open_session", open_)
+    real_write = discovery._write
+
+    async def gated_write(server_id, tools, *, complete):
+        listed.set()
+        await write_gate.wait()
+        return await real_write(server_id, tools, complete=complete)
+    monkeypatch.setattr(discovery, "_write", gated_write)
+    own_supervisor.start(run_loops=False)
+    connect = asyncio.create_task(mcp_service.connect(1))
+    edit = None
+    try:
+        await asyncio.wait_for(listed.wait(), 5)
+        edit = asyncio.create_task(mcp_service.restart_after_edit(1))
+        if slow_close:
+            await asyncio.wait_for(closing.wait(), 5)
+        else:
+            await asyncio.wait_for(edit, 5)
+        write_gate.set()
+        tools = await asyncio.wait_for(connect, 5)
+    finally:
+        write_gate.set()
+        release_close.set()
+    await asyncio.wait_for(edit, 5)
+    await _plans_done(own_supervisor)
+    async with execution_db() as db:
+        row = await db.get(MCPServer, 1)
+    assert [t["name"] for t in tools] == ["a"]
+    assert (row.state, row.fail_count, row.next_retry_at) == ("ready", 0, None)
+
+
+async def test_a_probe_resuming_after_a_new_plan_never_schedules_over_it(execution_db, own_supervisor, monkeypatch):
+    """N-3 (re-review D3): the probe notes the generation before it reads the row. A plan created
+    while it reads — a Connect's restart, whose first step has not run yet, so no start is "in
+    flight" — has moved the generation by the time the probe lists, and the probe never schedules a
+    fresh start over that start when its attempt drops the old session."""
+    from server.db import session as db_session
+    await _seed(execution_db, state="ready", status="connected")
+    pending = asyncio.Event()
+
+    class _Blocking:
+        async def list_tools(self, params=None):
+            pending.set()
+            await asyncio.Event().wait()
+    _live_session(monkeypatch, 1, _Blocking())
+    monkeypatch.setattr(mcp_service, "_HEALTH_PROBE_TIMEOUT", 5.0)
+    opening, release_open = asyncio.Event(), asyncio.Event()
+
+    async def slow_open(server):
+        opening.set()
+        await release_open.wait()
+        return _Live(), SimpleNamespace(aclose=_closed)
+    monkeypatch.setattr(session.manager, "_open_session", slow_open)
+    scheduled = []
+    monkeypatch.setattr(own_supervisor, "schedule", lambda sid, **kw: scheduled.append((sid, kw)))
+    real_maker = db_session.AsyncSessionLocal
+    reached, release = asyncio.Event(), asyncio.Event()
+    armed = [True]
+
+    class _Gated:                                  # the probe's row read; it resumes on `release`
+        def __init__(self):
+            self.cm = real_maker()
+
+        async def __aenter__(self):
+            return await self.cm.__aenter__()
+
+        async def __aexit__(self, *exc):
+            out = await self.cm.__aexit__(*exc)
+            reached.set()
+            await release.wait()
+            return out
+
+    def maker():
+        if armed[0]:
+            armed[0] = False
+            return _Gated()
+        return real_maker()
+    monkeypatch.setattr(db_session, "AsyncSessionLocal", maker)
+    probe = asyncio.create_task(mcp_service.check_health(1))
+    await asyncio.wait_for(reached.wait(), 5)          # it has read `ready`
+    release.set()                                       # its wake-up is queued ...
+    own_supervisor._new_plan(1, "restart")             # ... then a restart's plan, in the same turn
+    try:
+        await asyncio.wait_for(opening.wait(), 5)       # the attempt dropped the old session; it opens
+        out = await asyncio.wait_for(probe, 5)
+    finally:
+        release_open.set()
+    await _plans_done(own_supervisor)
+    assert out["state"] in ("starting", "ready") and scheduled == []
+
+
+async def test_a_key_straddling_the_6000_character_cut_never_reaches_the_model(execution_db, monkeypatch):
+    """N-4 (re-review D4): the executor masks a tool's error before it cuts it to 6000 characters,
+    so a key straddling the cut is masked whole — its head never reaches the tool result. The cut
+    itself still holds."""
+    from server.mcp import executor
+    secret = "-".join(["s3cr3t", "value", "abcdefghijkl"])          # 26 characters
+    await _seed(execution_db, state="ready", status="connected",
+                env=crypto.encrypt(json.dumps({"API_KEY": secret})))
+    texts = []
+
+    async def tool_error(server, name, args):
+        return SimpleNamespace(isError=True, content=[SimpleNamespace(text=texts[-1])])
+    monkeypatch.setattr(session.manager, "call_tool", tool_error)
+    texts.append("x" * (6000 - 20) + secret)                       # cut first, 20 of 26 would stay
+    out = await executor.MCPProxyExecutor(1, "t").execute({})
+    assert secret[:20] not in out["error"] and out["error"].endswith("x****")
+    texts.append("z" * 7000)
+    out = await executor.MCPProxyExecutor(1, "t").execute({})
+    assert out["error"].split("] ", 1)[1] == "z" * 6000
+
+
+async def test_switching_on_a_starting_server_with_a_plan_is_a_no_op(execution_db, own_supervisor, monkeypatch):
+    """N-5 (re-review Q4): the `starting` half of switch-on's state rule — a server starting with
+    its plan in flight (here between two first-start attempts) is left alone: no new plan."""
+    await _seed(execution_db, state="starting", status="connecting")
+    plans = _record_plans(monkeypatch, own_supervisor)
+    own_supervisor.running = True                 # schedule() acts; no loop, no boot
+    sleeper = asyncio.create_task(asyncio.sleep(3600))
+    own_supervisor._inflight[1] = sleeper        # a first plan between its attempts
+    try:
+        await mcp_service.set_host_allowed(1, True)
+        await asyncio.sleep(0)
+        assert plans == [] and not sleeper.cancelled()
+    finally:
+        own_supervisor.running = False
+        if own_supervisor._inflight.get(1) is sleeper:
+            del own_supervisor._inflight[1]
+        sleeper.cancel()
+        await asyncio.gather(sleeper, return_exceptions=True)
+
+
+async def test_an_http_start_whose_session_died_under_another_lister_says_the_connection_closed(
+        execution_db, own_supervisor, monkeypatch):
+    """N-5 (re-review Q8): the epoch guard's http line names the connection, not a process."""
+    await _seed(execution_db, transport="http", command="", url="https://example.test/mcp")
+    listed, write_gate, calls = asyncio.Event(), asyncio.Event(), []
+
+    class _DiesOnSecondList:
+        async def list_tools(self, params=None):
+            calls.append(1)
+            if len(calls) == 1:
+                return _listing("a")
+            raise McpError(types.ErrorData(code=types.CONNECTION_CLOSED, message="Connection closed"))
+
+    async def open_(server):
+        return _DiesOnSecondList(), SimpleNamespace(aclose=_closed)
+    monkeypatch.setattr(session.manager, "_open_session", open_)
+    real_write = discovery._write
+
+    async def gated_write(server_id, tools, *, complete):
+        listed.set()
+        await write_gate.wait()
+        return await real_write(server_id, tools, complete=complete)
+    monkeypatch.setattr(discovery, "_write", gated_write)
+    start = asyncio.create_task(own_supervisor.restart(1))
+    try:
+        await asyncio.wait_for(listed.wait(), 5)
+        with pytest.raises(McpError):
+            await session.manager.list_tools({"id": 1, "live_only": True})
+    finally:
+        write_gate.set()
+    result = await asyncio.wait_for(start, 5)
+    async with execution_db() as db:
+        row = await db.get(MCPServer, 1)
+    assert result.state == "failed" and row.last_error.startswith("the connection closed during start")
+
+
+async def test_a_key_straddling_the_500_character_stored_cut_never_reaches_last_error(execution_db, monkeypatch):
+    """N-5 (re-review Q7): the stored copy is masked before it is cut to 500 characters — a key
+    straddling that cut never leaves its head in last_error."""
+    from server.mcp import executor
+    secret = "-".join(["s3cr3t", "value", "abcdefghijkl"])
+    await _seed(execution_db, state="ready", status="connected",
+                env=crypto.encrypt(json.dumps({"API_KEY": secret})))
+    text = "y" * (500 - 10) + secret + " and more"
+
+    async def tool_error(server, name, args):
+        return SimpleNamespace(isError=True, content=[SimpleNamespace(text=text)])
+    monkeypatch.setattr(session.manager, "call_tool", tool_error)
+    out = await executor.MCPProxyExecutor(1, "t").execute({})
+    async with execution_db() as db:
+        stored = (await db.get(MCPServer, 1)).last_error
+    assert secret[:10] not in stored and secret not in out["error"] and "****" in out["error"]

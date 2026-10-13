@@ -4,7 +4,8 @@ UNTRUSTED external content → result carries NO external:False, so tool_loop wr
 0.1.61 §B1 (Task 6 fix round 1, F3): a failure's text — the tool's own error or a failed call —
 has the server's own secrets masked (`supervisor.mask_for`) before it is stored in last_error and
 before the model reads it: a tool that echoes its key never puts it in the column the UI serves,
-nor in a tool result."""
+nor in a tool result. It masks, then cuts (fix round 2, N-4): a key straddling a cut is masked
+whole, never left with its head in the text."""
 from __future__ import annotations
 
 import logging
@@ -19,11 +20,14 @@ from server.mcp.session import manager
 logger = logging.getLogger(__name__)
 
 _STORED_ERROR_CAP = 500   # chars of upstream error text kept in mcp_servers.last_error
+_SUMMARY_CAP = 6000       # chars of a tool's text handed to the model
 
 
-def _summarize_content(content) -> str:
+def _summarize_content(content, *, cap: int | None = _SUMMARY_CAP) -> str:
+    """The tool's text blocks, joined; cut to `cap` (None: uncut — an error text is masked first)."""
     parts = [t for t in (getattr(b, "text", None) for b in (content or [])) if t]
-    return ("\n".join(parts))[:6000] or "(no text content)"
+    text = "\n".join(parts)
+    return (text if cap is None else text[:cap]) or "(no text content)"
 
 
 async def _persist_last_error(server_id: int, err: str | None) -> None:
@@ -48,7 +52,7 @@ class MCPProxyExecutor:
     async def _fail(self, err_text: str, prefix: str, server: dict) -> dict:
         from server.mcp.supervisor import mask_for
 
-        err_text = mask_for(server, err_text)          # never raises; the server's own secrets → ****
+        err_text = mask_for(server, err_text)[:_SUMMARY_CAP]     # never raises; masked, then cut
         stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         await _persist_last_error(
             self.server_id,
@@ -74,9 +78,10 @@ class MCPProxyExecutor:
             result = await manager.call_tool(server, self.external_name, args or {})
         except Exception as exc:  # noqa: BLE001
             return await self._fail(f"MCP tool '{self.external_name}' failed: {exc}", prefix, server)
-        text = _summarize_content(getattr(result, "content", None))
+        content = getattr(result, "content", None)
         if getattr(result, "isError", False):
-            return await self._fail(text, prefix, server)
+            return await self._fail(_summarize_content(content, cap=None), prefix, server)
+        text = _summarize_content(content)
         if srv.last_error is not None:            # column reflects the LATEST state
             await _persist_last_error(self.server_id, None)
         return {"ok": True, "summary": text}      # no external:False → wrap_external applies

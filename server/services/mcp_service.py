@@ -240,14 +240,19 @@ async def set_host_allowed(server_id: int, allowed: bool) -> None:
 
 async def restart_after_edit(server_id: int) -> None:
     """A server's command, args, env or sandbox changed (new folders, an edit). Its cached session
-    still runs the old ones — call_tool never compares fingerprints — so it is dropped now (a start
-    still opening is overtaken) and a fresh start is scheduled in the background: an edit never
-    waits for a start. Every path that edits a server ends here (carry: the env-only edit)."""
+    still runs the old ones — call_tool never compares fingerprints — so it is dropped now and a
+    fresh start is scheduled in the background: an edit never waits for a start. Every path that
+    edits a server ends here (carry: the env-only edit).
+
+    The fresh start is scheduled FIRST, the order of every supervisor verb (Task 6 fix round 2,
+    N-1/N-2): the generation has moved before the drop wakes anyone — a probe pending on the old
+    session sees a deliberate drop, not a death, and a start writing its tools is replaced (its
+    Connect follows the edit's start) instead of ending `failed` over the dropped session."""
     from server.mcp.session import manager
     from server.mcp.supervisor import supervisor
 
-    await manager.drop(server_id)
     supervisor.schedule(server_id, fresh=True)
+    await manager.drop(server_id)
 
 
 async def check_health(server_id: int) -> dict:
@@ -272,6 +277,9 @@ async def check_health(server_id: int) -> dict:
     from server.mcp.session import NotStarted, manager
     from server.mcp.supervisor import mask_for, supervisor
 
+    # Noted BEFORE the row read (fix round 2, N-3): a plan created while the read awaits — whose
+    # first step has not run, so no start is "in flight" yet — has moved it by the time it matters.
+    gen_before = supervisor.generation(server_id)       # a verb or a new plan moves it
     async with db_session.AsyncSessionLocal() as db:
         srv = await db.get(MCPServer, server_id)
         if srv is None:
@@ -279,7 +287,6 @@ async def check_health(server_id: int) -> dict:
         server = runtime_dict(srv)
         label, transport, state = srv.label, (srv.transport or "stdio"), srv.state
 
-    gen_before = supervisor.generation(server_id)       # a verb or a new plan moves it
     if state != "ready" or supervisor.start_in_flight(server_id):
         return await _health_state_answer(server_id, label, transport)
     try:
