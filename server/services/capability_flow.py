@@ -136,17 +136,21 @@ async def install_mcp(c: dict, *, folders: list[str], keys: dict) -> dict:
     return {"state": "on", "source_id": row.id, "tools": test["tools"], "scan": scan}
 
 
-async def install_skill(c: dict, owner_id: str = "local") -> dict:
+async def install_skill(c: dict, owner_id: str = "local", *, license_ok: str | None = None) -> dict:
     """Import the skill a card named, at its commit (0.1.61: whole, scanned and recorded by
     skill_import; `owner_id` is kept for callers, the importer records the one local owner). A skill
     that comes out switched off, dangerous or switched off by the user earlier, is `blocked`: it is in
     the library and the user can read it and turn it on. A license Arslan does not recognise never
-    installs from here: its step is the user's (§C4), and the card has no `license_ok`. An update's
+    installs from the card: its step is the user's (§C4). `license_ok`, the sha256 of the license text
+    a person read and accepted, is passed on to the importer as it came — and only a person's action
+    supplies it (the Add box's apply, the import API's own body): the capability card, the dossier
+    install and `propose` never do, and no tool argument or model-written field reaches it. An update's
     `changes` (what the re-import replaced) are passed on."""
     from server.services import skill_import
     sha = c.get("version") if c.get("source") == "library" else None
     try:
-        out = await skill_import.import_skill(f"{c['repo']}@{sha}" if sha else c["repo"], c["path"])
+        out = await skill_import.import_skill(f"{c['repo']}@{sha}" if sha else c["repo"], c["path"],
+                                              license_ok=license_ok)
     except skill_import.LicenseStepNeeded:
         return {"state": "failed", "stage": "install", "code": "license_step",
                 "detail": "its license is not one Arslan recognises: the user has to read it and decide, so it was not added"}
