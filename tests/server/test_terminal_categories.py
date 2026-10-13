@@ -1751,3 +1751,143 @@ def test_a_recursive_delete_of_the_home_or_the_root_is_the_floor_with_or_without
     found = tp.classify(command)
     assert found.category == category, [(f.category, f.rule) for f in found.findings]
 
+
+# ── fix round 5: long blank runs never reach Hermes' patterns (G4) ────────────────────────────
+
+_BLANK_RUNS = [
+    ("spaces x7000, ls", " " * 7000 + "ls"), ("ls, newline, spaces x7000, ls", "ls\n" + " " * 7000 + "ls"),
+    ("tabs x7000, ls", "\t" * 7000 + "ls"), ("newlines x7000, ls", "\n" * 7000 + "ls"),
+    ("newlines x5000, ls", "\n" * 5000 + "ls"), ("CR x7000, ls", "\r" * 7000 + "ls"),
+    ("space-tab x3500, ls", " \t" * 3500 + "ls"), ("FF and VT x3500, ls", "\f\v" * 3500 + "ls"),
+]
+
+
+@pytest.mark.parametrize("command", [c for _, c in _BLANK_RUNS], ids=[label for label, _ in _BLANK_RUNS])
+def test_a_long_blank_run_reads_at_once(command):
+    """G4 (review 4 M-1): a long run of blanks at a line start cost Hermes' command-position patterns
+    time quadratic in its length (13–35 s for 7,000, on the event loop). A run longer than 64 is read
+    as one blank, or as one newline when it holds one."""
+    tp.classify("ls")
+    tp.clear_cache()
+    start = time.perf_counter()
+    tp.classify(command)
+    assert tp.runs_freely_in_sandbox(command) is False
+    assert time.perf_counter() - start < 2.0
+
+
+@pytest.mark.parametrize("command,category", [
+    (" " * 7000 + "rm -rf ~", "floor"), ("\n" * 7000 + "rm -rf ~", "floor"),
+    ("echo a" + " " * 30 + "\n" + " " * 40 + "git push", "send"), ("rm -rf \\" + " " * 70 + "~", "floor"),
+    ("echo a" + " " * 100 + "git push", "local"), ("ls" + "\n" * 100 + "sudo ls", "floor"),
+    ("git push" + " " * 40 + "\\\n" + " " * 40 + "origin main", "send"), ("r" + "\\\n" * 40 + "m -rf ~", "floor"),
+    ("r" + "''" * 40 + "m -rf ~", "floor"),
+], ids=["spaces then rm -rf ~", "newlines then rm -rf ~", "a run with a newline ends a command", "an escaped blank opens a run",
+        "a run without a newline ends no command", "newlines then sudo", "a line continuation inside a run",
+        "line continuations only join the word", "empty quotes join the word"])
+def test_a_collapsed_blank_run_keeps_what_the_command_does(command, category):
+    """G4: a run that holds a newline becomes a newline, never a blank (two commands stay two); an
+    escaped blank opening a run stays escaped (`rm -rf \\<blanks>~` deletes ' ' and the home); a line
+    continuation is part of a run (the shell and Hermes both take it out), and a run of nothing else
+    joins the word as the shell does (`r\\<newline>…m` is rm)."""
+    found = tp.classify(command)
+    assert found.category == category, [(f.category, f.rule) for f in found.findings]
+
+
+def test_blank_runs_of_64_or_fewer_are_left_as_they_are():
+    """G4: only a run longer than 64 is collapsed; the memo key is the command as written."""
+    assert tp._blanks_collapsed(" " * 64 + "ls") == " " * 64 + "ls"
+    assert tp._blanks_collapsed(" " * 65 + "ls") == " ls"
+    assert tp._blanks_collapsed("a" + " \t" * 40 + "\n" + " " * 40 + "b") == "a\nb"
+    assert tp._blanks_collapsed("a" + " " * 40 + "\\\n" + " " * 40 + "b") == "a b"
+    assert tp._blanks_collapsed("r" + "\\\n" * 40 + "m") == "rm"
+    assert tp._blanks_collapsed("x\\" + " " * 70 + "y") == "x\\  y"            # the escaped blank stays
+    assert tp._blanks_collapsed("x\\\\" + " " * 70 + "y") == "x\\\\ y"       # an escaped backslash
+    command = " " * 7000 + "ls"
+    tp.clear_cache()
+    assert tp.classify(command).command == command
+
+
+# Runs Hermes' normalization, a decoded `$'…'` or a payload builds, and Hermes' size limit (G4, the hunt)
+
+_PIECES = ("'\n" + " " * 60 + "'\"" + " " * 60 + '"') * 50       # quoted blank pieces: one word, no long run
+_BUILT_RUNS = [
+    ("NBSP and space x3500, ls", " \u00a0" * 3500 + "ls"), ("line separators x7000, ls", "\u2028" * 7000 + "ls"),
+    ("newline and '' x2600, ls", "\n''" * 2600 + "ls"), ("space and '' x1300, ls", " ''" * 1300 + "ls"),
+    ('space and "" x1300, ls', ' ""' * 1300 + "ls"), ("space and NUL x3990, ls", " \x00" * 3990 + "ls"),
+    ("escaped blanks x1900, ls", "\\ " * 1900 + "ls"), ("$IFS x1990, ls", "$IFS" * 1990 + "ls"),
+    ("${IFS} x1300, ls", "${IFS}" * 1300 + "ls"), ("space and ANSI reset x1300, ls", " \x1b[0m" * 1300 + "ls"),
+    ("newline and fullwidth quotes x2600, ls", "\n\uff07\uff07" * 2600 + "ls"),
+    ("fullwidth backslash and space x3900, ls", "\uff3c " * 3900 + "ls"),
+    ("line continuations x3990, ls", "\\\n" * 3990 + "ls"),
+    ("bash -c $'\\n' x3000", "bash -c $'" + "\\n" * 3000 + "ls'"),
+    ("bash -c $'\\t' x3000", "bash -c $'" + "\\t" * 3000 + "ls'"),
+    ("$'\\n' x3000, ls", "$'" + "\\n" * 3000 + "'ls"),
+    ("cat <<EOF, newline and '' x2600", "cat <<EOF\n" + "\n''" * 2600 + "\nEOF"),
+    ("a command word of quoted blank pieces x50", _PIECES),
+]
+
+
+@pytest.mark.parametrize("command", [c for _, c in _BUILT_RUNS], ids=[label for label, _ in _BUILT_RUNS])
+def test_a_blank_run_built_on_the_way_to_hermes_reads_at_once(command):
+    """G4, the hunt: Hermes' normalization builds blank runs of its own (it takes out `''`, `""`,
+    NUL, ANSI sequences and escapes, reads `$IFS` as a blank, folds fullwidth forms), and so does
+    decoding `$'…'` for a payload; Hermes read those as slowly (`\\n''` ×600 over a minute, `bash -c
+    $'\\n…'` over a minute, `" \\x00"` ×1,900 1.6 s). Unicode blanks are blanks to its `\\s`."""
+    tp.classify("ls")
+    tp.clear_cache()
+    start = time.perf_counter()
+    tp.classify(command)
+    assert tp.runs_freely_in_sandbox(command) is False
+    assert time.perf_counter() - start < 2.0
+
+
+@pytest.mark.parametrize("command,category", [
+    (" ''" * 1300 + "rm -rf ~", "floor"), ("\n''" * 2600 + "rm -rf ~", "floor"),
+    ("bash -c $'" + "\\n" * 3000 + "rm -rf ~'", "floor"), ("watch $'" + "\\n" * 3000 + "rm -rf ~'", "floor"),
+    ("bash <<EOF\n" + "\n''" * 2600 + "\nrm -rf ~\nEOF", "floor"),
+    (" " * 7000 + "ls", "floor"), (" " * 3000 + "git push", "send"), (" " * 4000 + " ''" * 70 + "ls", "floor"),
+], ids=["space and '' then rm -rf ~", "newline and '' then rm -rf ~", "bash -c $'\\n…rm -rf ~'",
+        "watch $'\\n…rm -rf ~'", "bash <<EOF, newline and '' then rm -rf ~",
+        "padded past Hermes' size limit", "padded under Hermes' size limit",
+        "padded past Hermes' size limit, unread"])
+def test_a_built_blank_run_keeps_the_floor(command, category):
+    """G4: what a built run hides is still read, at once — the floor through the reading or, where
+    Hermes' normalization would build the run, through the unread floor; and Hermes' size limit (no
+    separator in more than 4,096 characters) reads the command as written: collapsing the blanks
+    that padded it there changes what its patterns read, not what it refuses."""
+    tp.clear_cache()
+    start = time.perf_counter()
+    found = tp.classify(command)
+    assert time.perf_counter() - start < 2.0
+    assert found.category == category, [(f.category, f.rule) for f in found.findings]
+
+
+@pytest.mark.parametrize("command", [
+    " ''" * 1300 + "ls", "\\ " * 1900 + "ls", "\n''" * 2600 + "ls", _PIECES,
+    "bash -c $'" + ("\\'\\n" + " " * 60 + "\\'\"" + " " * 60 + '"') * 50 + "'",
+], ids=["space and '' x1300", "escaped blanks x1900", "newline and '' x2600", "a command word of quoted blank pieces",
+        "a payload's command word of quoted blank pieces"])
+def test_a_blank_run_only_hermes_would_build_asks_unread(command):
+    """G4: a run Hermes would build — its normalization, or its variant that takes the quotes out
+    of every command word (a payload's too) — cannot be mapped back to the words the shell reads,
+    so the command is past a parse ceiling: it asks unread (the floor still shows, above), and the
+    0.1.52 exemption never reads it."""
+    tp.clear_cache()
+    found = tp.classify(command)
+    assert tp.UNREADABLE in found.findings, [(f.category, f.rule) for f in found.findings]
+    start = time.perf_counter()
+    assert tp._runs_freely(command) is False
+    assert time.perf_counter() - start < 2.0
+
+
+def test_the_code_a_wrapper_runs_is_read_without_its_blank_runs():
+    """G4: the code a wrapper Arslan knows (and Hermes does not) runs is rebuilt from its words
+    (F4), and a word of quoted pieces holds a blank run none of its pieces does: Hermes read it
+    from that code in 1.5 s at 50 pieces (quadratic). Read at once, as the command it is."""
+    command = "proxychains " + ("'\n" + " " * 60 + "'\"" + " " * 60 + '"') * 63
+    assert len(command) <= tp.MAX_COMMAND_CHARS
+    tp.clear_cache()
+    start = time.perf_counter()
+    found = tp.classify(command)
+    assert time.perf_counter() - start < 1.0
+    assert found.category == "local", [(f.category, f.rule) for f in found.findings]

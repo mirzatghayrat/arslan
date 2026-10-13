@@ -462,6 +462,56 @@ def _classify(text: str) -> Classification:
     return _unique(text, findings)
 
 
+#: A blank run (G4): the characters Python's `\s` takes, as Hermes' patterns read them (space, tab,
+#: newline, CR, FF, VT and the Unicode blanks), with the line continuations in it (`\` newline, which
+#: the shell and Hermes both take out). An escaped character (`\x`, `\ `) is matched on its own, so
+#: no run starts at an escaped blank: that blank belongs to its word.
+_BLANK_RUN = re.compile(r"\\[^\n]|(?:\s|\\\n)+")
+_LONG_BLANKS = re.compile(r"\s{65,}")
+
+
+def _blanks_collapsed(text: str) -> str:
+    """`text` with each blank run longer than 64 characters read as one (G4): a newline when the run
+    holds one the shell does not escape (two commands stay two), else a blank, else nothing (line
+    continuations only: the word goes on, as the shell reads it). Shorter runs are left as they are.
+    Hermes' command-position patterns (`(?:^|\\n|…)\\s*…\\s*`) backtrack over a long run at a line
+    start: 7,000 blanks took 13–35 s, and newlines minutes (review 4 M-1). The answer and the memo
+    keep the command as written."""
+    if len(text) <= 64:
+        return text
+    edits = []
+    for match in _BLANK_RUN.finditer(text):
+        if match.end() - match.start() > 64:
+            run = match.group().replace("\\\n", "")
+            edits.append((match.start(), match.end(), "\n" if "\n" in run else " " if run else ""))
+    return hermes._splice(text, edits) if edits else text
+
+
+def _hermes_text(text: str) -> str:
+    """`text` as Hermes' patterns read it (G4): its blank runs collapsed. Hermes builds runs of its
+    own — its normalization takes out `''`, `""`, NUL, ANSI sequences and escapes (`\\ ` is a blank),
+    reads `$IFS` as a blank and folds fullwidth forms (`＇＇`); a variant takes the quotes out of
+    every command word (`'\\n  '"  "`…) — and reads those as slowly (`\\n''` ×600 took over a minute):
+    a text where it would build one is past a parse ceiling, and asks unread, with Hermes' size
+    limit on the text as written as its floor where it applies (`_hardline` reads that first)."""
+    collapsed = _blanks_collapsed(text)
+    if len(collapsed) > 64 and any(_LONG_BLANKS.search(variant) for variant in (
+            hermes._normalize_command_for_detection(collapsed), *hermes._command_detection_variants(collapsed))):
+        raise _Unreadable("a long blank run Hermes would build", floor=_size_limit(text))
+    return collapsed
+
+
+def _size_limit(text: str) -> tuple[Finding, ...]:
+    """Hermes' parser size limit (more than 4,096 characters without a separator), as its floor."""
+    if hermes._command_parser_limit_exceeded(text):
+        return (Finding("floor", "hardline", hermes._PARSER_LIMIT_DESCRIPTION),)
+    return ()
+
+
+def _one_blank(match: re.Match) -> str:
+    return "\n" if "\n" in match.group() else " "
+
+
 def _unique(text: str, findings: list[Finding]) -> Classification:
     seen: set[tuple] = set()
     unique = []
@@ -506,7 +556,7 @@ def _floor_of_unread(text: str) -> tuple[Finding, ...]:
 
 def _floor_shown(text: str) -> list[Finding]:
     try:
-        normalized = hermes._normalize_command_for_detection(text)
+        normalized = _LONG_BLANKS.sub(_one_blank, hermes._normalize_command_for_detection(text))   # (G4)
         flat = _FLAT_STARTS.sub("\n", normalized)
         found: list[Finding] = []
         for subject in (normalized.lower(), flat.lower()):
@@ -869,6 +919,11 @@ def _read(text: str) -> list[Finding]:
     inner = _with_inner_backticks(shell)
     _charge(inner[len(shell):])
     shell = _without_zsh_modifiers(_readings(inner))
+    # Hermes' size limit reads the command as written, as `_hardline` did: blanks that pad it past
+    # 4,096 characters without a separator keep its floor; its patterns read the runs collapsed,
+    # and the ones `$'\n…'` decodes to (G4).
+    limit = _size_limit(shell)
+    shell = _hermes_text(shell)
     before = len(budget.payloads)
     commands = _commands(shell)
     # Only the payloads this read found are judged here (F7): a read inside another (a script's
@@ -877,7 +932,7 @@ def _read(text: str) -> list[Finding]:
     own = list(budget.payloads)[before:]
     fed, fed_bodies = _fed_code([shell, *own])          # F3, F6; an interpreter fed code reads it as a heredoc (F8)
     bodies = [*bodies, *fed_bodies]
-    findings: list[Finding] = []
+    findings: list[Finding] = list(limit)
     findings += _floor_findings(text, shell, commands, own)
     findings += _hermes_findings(shell, raw=text, commands=commands)
     findings += _arslan_findings(shell, commands, bodies)
@@ -1501,7 +1556,7 @@ def _commands(text: str, depth: int = 0) -> list[list[str]]:
         if payload:
             if level >= _MAX_CODE_DEPTH:
                 raise _Unreadable(f"code nested more than {_MAX_CODE_DEPTH} deep")
-            payload = _comments_blanked(_decode_ansi_c(payload))    # read as the command is (R9, F2, F5)
+            payload = _hermes_text(_comments_blanked(_decode_ansi_c(payload)))   # as the command is (R9, F2, F5, G4)
             if budget is not None:
                 budget.payloads[payload] = None
             out.extend(_commands(payload, depth + 1))
@@ -2637,7 +2692,7 @@ def _floor_findings(text: str, shell: str, commands: list[list[str]], payloads=(
     each shell or `eval` is handed, as it is read (F5: Hermes reads a payload's comments by its
     lenient rule, so `bash -c 'echo $(date)#; mkfs …'` hid the floor)."""
     found = []
-    for subject in (shell, *dict.fromkeys([*payloads, *_unwrapped_codes(commands)])):
+    for subject in (shell, *dict.fromkeys([*payloads, *map(_hermes_text, _unwrapped_codes(commands))])):
         found += _floor_patterns(subject)
     if _touches_arslan_data(text) or _writes_arslan_data(commands):
         found.append(Finding("floor", "arslan-data", "touches Arslan's own data, keys or database"))
@@ -3829,7 +3884,13 @@ def runs_freely_in_sandbox(command: str) -> bool:
 
 def _runs_freely(command: str) -> bool:
     text = str(command or "")
-    if not text.strip() or len(text) > MAX_COMMAND_CHARS or hermes.detect_hardline_command(text)[0]:
+    if not text.strip() or len(text) > MAX_COMMAND_CHARS:
+        return False
+    try:
+        text = _hermes_text(text)       # (G4) Hermes reads no long blank run
+    except _Unreadable:
+        return False
+    if hermes.detect_hardline_command(text)[0]:
         return False
     dangerous, key, _description = hermes.detect_dangerous_command(text)
     if not dangerous or f"hermes:{key}" not in _SCRIPT_RULES:
