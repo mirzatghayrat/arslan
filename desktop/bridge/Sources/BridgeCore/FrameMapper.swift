@@ -9,7 +9,6 @@ public enum CardKind: String {
 
 public final class FrameMapper {
     public static let progressInterval: TimeInterval = 2      // §5.3: at most one progress per 2 s
-    public static let cardTimeout: TimeInterval = 300         // the Mac's 5-minute card timeout
     public static let partialInterval: TimeInterval = 1       // §5.7: at most one partial per second
     /// §5.7: past this many UTF-8 bytes the answer stops coming as partials (each one carries the
     /// whole reply so far, and must fit one envelope); the final message still comes.
@@ -43,10 +42,19 @@ public final class FrameMapper {
         let iso = ISO8601DateFormatter()
         func card(_ kind: CardKind, _ action: String, _ target: String, _ risk: String) -> [Message] {
             guard let id = frame["call_id"] as? String else { return [] }
+            // 0.1.61 §A4: installing code wants the whole card — a new capability never reaches the phone.
+            if frame["perm_kind"] as? String == "capability" { return [] }
             cards[id] = kind
-            return [("approval.request", ["approval_id": id, "action": action, "target": String(target.prefix(300)),
-                                          "risk": risk, "task_id": conversationID, "task_title": title ?? "Arslan",
-                                          "expires_at": iso.string(from: now.addingTimeInterval(Self.cardTimeout))])]
+            // A card from the Mac's permission layer says its own question and when it runs out;
+            // an older frame keeps the kind's words and the Mac's wait from now.
+            let question = (frame["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let expires = (frame["expires_at"] as? NSNumber).map { Date(timeIntervalSince1970: $0.doubleValue) }
+                ?? now.addingTimeInterval(Self.cardWait)
+            return [("approval.request", ["approval_id": id, "action": String((question.isEmpty ? action : question).prefix(200)),
+                                          "target": String(target.prefix(300)),
+                                          "risk": Self.permRisk(frame["perm_kind"] as? String) ?? risk,
+                                          "task_id": conversationID, "task_title": title ?? "Arslan",
+                                          "expires_at": iso.string(from: expires)])]
         }
         switch frame["type"] as? String {
         case "stream_start":
@@ -137,7 +145,7 @@ public final class FrameMapper {
             return card(.action, kind, frame["target"] as? String ?? "", kind == "browser_site" ? "send" : "write")
         case "card_resolved":
             // The Mac decided the card — the phone's own answer, a click in a Mac window (first
-            // answer wins), or the 5-minute timeout. This is the phone's business receipt (§5.3).
+            // answer wins), or the 30 minutes running out. This is the phone's business receipt (§5.3).
             guard let id = frame["call_id"] as? String, cards.removeValue(forKey: id) != nil else { return [] }
             answered.remove(id)
             let outcome = ["approved": "done", "declined": "denied"][frame["outcome"] as? String ?? ""] ?? "expired"
@@ -150,6 +158,23 @@ public final class FrameMapper {
             return [("job.event", Self.jobEvent(frame, conversationID: conversationID))]
         default:
             return []
+        }
+    }
+
+    /// How long the Mac waits on a card: 30 minutes since 0.1.61 (the server's `approvals.TIMEOUT_S`).
+    /// A card from the permission layer says its own expiry; any other is counted from now.
+    static let cardWait: TimeInterval = 1800
+
+    /// 0.1.61 §A4: a card from the Mac's permission layer names its kind (`perm_kind`), and four of
+    /// them have their own risk word. Any other kind (a command, an app, a write…) keeps the frame's
+    /// own rules below. The words only decide how the phone's card looks.
+    static func permRisk(_ permKind: String?) -> String? {
+        switch permKind {
+        case "money": return "payment"
+        case "send": return "send"
+        case "destructive": return "delete"
+        case "outside": return "install"
+        default: return nil
         }
     }
 
