@@ -155,10 +155,30 @@ def test_a_decide_card_is_answerable_from_the_island_by_its_permission_kind(kind
     ("browser_site", "site", True),
     ("mac_shortcut", "shortcut", True),
     ("browser_site", "send", False),
+    # A legacy kind that is itself a permission kind's name never stands in for the card's own.
+    ("app", "money", False),
+    ("app", "takeover", False),
+    ("site", "send", False),
+    ("folder", "destructive", False),
+    ("app", "command", False),                        # and a card kind that passes the gate, but is no island kind
+    ("site", "workspace_write", False),
+    ("money", "app", True),
 ])
 def test_on_a_decide_card_the_permission_kind_decides_never_the_legacy_kind(legacy, perm_kind, ok):
     frame = decided(perm_kind, legacy, 'tell application "Notes" to get name of every note')
     assert approvals.island_may_answer(frame) is ok
+
+
+LEGACY_KINDS = sorted(permissions.KINDS) + ["desktop_takeover", "desktop_risky", "desktop_app", "desktop_look",
+                                            "browser_site", "mac_shortcut", "mac_script", "made_up"]
+
+
+def test_whatever_legacy_kind_a_decide_card_keeps_its_permission_kind_alone_decides():
+    """Every legacy kind a caller's frame may keep, with every permission kind — including a legacy
+    kind that is itself a permission kind's name (the generic frame's own)."""
+    wrong = [(legacy, perm_kind) for legacy in LEGACY_KINDS for perm_kind in sorted(permissions.KINDS)
+             if approvals.island_may_answer(decided(perm_kind, legacy)) is not (perm_kind in ISLAND_KINDS)]
+    assert wrong == []
 
 
 @pytest.mark.parametrize("frame, ok", [
@@ -177,6 +197,66 @@ def test_on_a_decide_card_the_permission_kind_decides_never_the_legacy_kind(lega
 ])
 def test_what_else_the_island_may_answer_is_unchanged(frame, ok):
     assert approvals.island_may_answer(frame) is ok
+
+
+# ── PR 2 fix wave 2 (M4): a card's permission kind gates every card type ─────────────────────────
+# PR 3a routes category cards (send, destructive, system, opaque, other_agent, …) through
+# `propose_run_command` frames. Their permission kind refuses the island whatever the command
+# text reads like — and the same for the other frame types a caller may attach.
+
+CARD_OWN_KINDS = {"command", "workspace_write"}        # besides the island's seven: those cards' own
+NOT_THE_ISLANDS = sorted(permissions.KINDS - ISLAND_KINDS - CARD_OWN_KINDS)
+CARD_TYPES = {
+    "write": lambda: protocol.propose_workspace_write("w", "~/Arslan", "write", "notes.md"),
+    "schedule": lambda: protocol.propose_schedule("s", "Morning brief", "cron: 0 9 * * *"),
+    "harmless_command": lambda: cmd("git status"),
+}
+
+
+def test_the_cards_below_run_over_the_kinds_the_spec_sends_to_arslan():
+    # Not vacuous: money, send, delete, a risky step, a takeover, leaving the sandbox, system changes,
+    # other agents' settings, new capabilities, another machine, opaque code (§A4).
+    assert {"money", "send", "destructive", "app_risky", "takeover", "outside", "system", "other_agent",
+            "capability", "remote", "opaque"} <= set(NOT_THE_ISLANDS)
+    assert not set(NOT_THE_ISLANDS) & (ISLAND_KINDS | CARD_OWN_KINDS)
+
+
+@pytest.mark.parametrize("card_type", sorted(CARD_TYPES))
+@pytest.mark.parametrize("kind", NOT_THE_ISLANDS)
+def test_a_card_of_a_kind_the_island_does_not_answer_is_not_answerable_whatever_its_type(kind, card_type):
+    frame = CARD_TYPES[card_type]() | {"perm_kind": kind}
+    assert approvals.island_may_answer(frame) is False
+
+
+@pytest.mark.parametrize("card_type, kind", [
+    ("write", "workspace_write"), ("schedule", "schedule"), ("harmless_command", "command"),
+    # A folder, site or app card may ride on a command frame: the command's own rule then decides.
+    *[("harmless_command", kind) for kind in sorted(ISLAND_KINDS)],
+])
+def test_a_card_of_a_kind_the_island_may_answer_keeps_its_types_own_rule(card_type, kind):
+    frame = CARD_TYPES[card_type]() | {"perm_kind": kind}
+    assert approvals.island_may_answer(frame) is True
+
+
+@pytest.mark.parametrize("perm_kind", [None, "", 0, False, ["command"], {"app": 1}, b"command", "Command",
+                                       " command", "command\u200b", float("nan")])
+@pytest.mark.parametrize("card_type", sorted(CARD_TYPES))
+def test_a_permission_kind_that_is_no_kinds_name_is_never_answerable_on_any_card_type(card_type, perm_kind):
+    """Fail-closed, and never an error (a list is not hashable): a card that carries a permission
+    kind says what it is, or the island does not answer it."""
+    assert approvals.island_may_answer(CARD_TYPES[card_type]() | {"perm_kind": perm_kind}) is False
+
+
+@pytest.mark.parametrize("kind", sorted(ISLAND_KINDS | CARD_OWN_KINDS))
+@pytest.mark.parametrize("frame", [
+    cmd("rm notes.txt"),
+    cmd("git push origin main"),
+    cmd("ls", remote_host="192.168.1.8"),
+    cmd("mv a.txt ~/Desktop/", sandbox="outside", why="move it"),
+    {"type": "propose_something_new", "call_id": "n"},
+], ids=["delete", "push", "remote", "outside", "unknown-type"])
+def test_a_permission_kind_the_island_answers_does_not_open_what_the_types_own_rule_closes(kind, frame):
+    assert approvals.island_may_answer(frame | {"perm_kind": kind}) is False
 
 
 async def _waiting_card(decision_call) -> tuple[asyncio.Task, dict]:
@@ -248,3 +328,42 @@ async def test_the_island_cannot_approve_a_takeover_a_risky_step_or_money(execut
     decision = await asyncio.wait_for(asked, 2)
     assert (decision.allowed, decision.by) == (False, "user")
     assert await _grants(execution_db) == []
+
+
+# ── PR 2 fix wave 2 (M3 Z2, M4): the same, through the real card and the real endpoint ─────────────
+
+async def _island_cannot_approve_but_can_decline(execution_db, api, asked, row, kind) -> None:
+    assert row["frame"]["perm_kind"] == kind and row["island_ok"] is False
+    refused = await api.post(f"/api/v1/approvals/{row['call_id']}/answer",
+                             json={"approve": True, "source": "island"})
+    assert refused.status_code == 403 and refused.json()["detail"]["code"] == "open_in_arslan"
+    assert not asked.done()                                          # nothing was decided
+    declined = await api.post(f"/api/v1/approvals/{row['call_id']}/answer",
+                              json={"approve": False, "source": "island"})
+    assert declined.status_code == 200                               # saying no is always safe
+    decision = await asyncio.wait_for(asked, 2)
+    assert (decision.allowed, decision.by) == (False, "user")
+    assert await _grants(execution_db) == []
+
+
+@pytest.mark.parametrize("kind, own", [("money", "app"), ("takeover", "site"), ("app_risky", "folder")])
+async def test_a_callers_own_frame_cannot_give_its_card_a_permission_kind_the_island_answers(
+        execution_db, api, kind, own):
+    frame = protocol.propose_action("h1", "desktop_app", "Keynote", "click Buy") | {"perm_kind": own}
+    request = permissions.Request(kind=kind, target="com.apple.Keynote", title="Go ahead?", frame=frame)
+    asked, row = await _waiting_card(lambda: permissions.decide(
+        request, permissions.Context(conversation_id="conv-i", job_id="job-i")))
+    await _island_cannot_approve_but_can_decline(execution_db, api, asked, row, kind)
+
+
+@pytest.mark.parametrize("card_type", sorted(CARD_TYPES))
+@pytest.mark.parametrize("kind", ["send", "destructive", "system", "opaque", "other_agent", "capability",
+                                  "outside", "remote", "money", "takeover", "app_risky"])
+async def test_the_island_cannot_approve_a_category_card_whatever_frame_it_rides_on(
+        execution_db, api, kind, card_type):
+    """PR 3a: a send, delete or system card rides on a `propose_run_command` frame, and the command
+    may read harmlessly ("git status"). The card's permission kind decides: it opens Arslan."""
+    request = permissions.Request(kind=kind, target=f"t-{kind}", title="Go ahead?", frame=CARD_TYPES[card_type]())
+    asked, row = await _waiting_card(lambda: permissions.decide(
+        request, permissions.Context(conversation_id="conv-i", job_id="job-i")))
+    await _island_cannot_approve_but_can_decline(execution_db, api, asked, row, kind)
