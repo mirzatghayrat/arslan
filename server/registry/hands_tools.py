@@ -62,19 +62,27 @@ def _context():
     return permissions.Context(conversation_id, job_id=job_id)
 
 
-async def _decide(kind: str, target: str, title: str, detail: str, frame_kind: str, frame_target: str, *,
-                  always_label: str = "", extra: dict | None = None):
-    """One card through `permissions.decide`: the money rung, an "Always" rule, a grant for this task
-    or conversation, else the card on the surface bound to this turn or job. The card keeps Hands'
-    own frame kinds (desktop_app, desktop_risky, desktop_takeover, mac_shortcut, mac_script,
-    browser_site), which the island and the phone already know."""
+def _request(kind: str, target: str, title: str, detail: str, frame_kind: str, frame_target: str, *,
+             always_label: str = "", extra: dict | None = None):
+    """A `permissions.Request` whose card keeps Hands' own frame kinds (desktop_app, desktop_risky,
+    desktop_takeover, mac_shortcut, mac_script, browser_site), which the island and the phone
+    already know; `perm_kind` on the card is the request's kind."""
     from server.services import permissions
     from server.ws import protocol
-    request = permissions.Request(
+    return permissions.Request(
         kind=kind, target=target, title=title[:300], detail=detail, always_label=always_label,
         frame=protocol.propose_action(uuid.uuid4().hex, frame_kind, frame_target[:300], detail),
         extra=extra or {})
-    return await permissions.decide(request, _context())
+
+
+async def _decide(kind: str, target: str, title: str, detail: str, frame_kind: str, frame_target: str, *,
+                  always_label: str = "", extra: dict | None = None):
+    """One card through `permissions.decide`: the money rung, an "Always" rule, a grant for this task
+    or conversation, else the card on the surface bound to this turn or job."""
+    from server.services import permissions
+    return await permissions.decide(
+        _request(kind, target, title, detail, frame_kind, frame_target, always_label=always_label, extra=extra),
+        _context())
 
 
 def _app_request(app: dict, detail: str, *, step: str = "", frame_kind: str = "desktop_app",
@@ -867,15 +875,21 @@ class DesktopTakeoverExecutor:
                     "error": "Taking the screen over runs in background work only. Call start_background_work."}
         if not desktop_available():
             return {"ok": False, "external": False, "error": "Arslan Hands is not available on this Mac."}
+        from server.services import permissions
         started = time.monotonic()
         away = await _user_away()
-        if not away:
-            decision = await _decide(
-                "takeover", "screen", f"Take over the screen for about {minutes} minutes?",
-                f"Arslan wants to take over the screen for about {minutes} minutes: {why}. Please keep off the "
-                "keyboard and mouse meanwhile — touching either pauses it at once, and Esc stops it. Deleting, "
-                "sending and the like still ask you each time.",
-                "desktop_takeover", f"{minutes} min · {why}", extra={"minutes": minutes})
+        request = _request(
+            "takeover", "screen", f"Take over the screen for about {minutes} minutes?",
+            f"Arslan wants to take over the screen for about {minutes} minutes: {why}. Please keep off the "
+            "keyboard and mouse meanwhile — touching either pauses it at once, and Esc stops it. Deleting, "
+            "sending and the like still ask you each time.",
+            "desktop_takeover", f"{minutes} min · {why}", extra={"minutes": minutes, **({"away_mode": True} if away else {})})
+        if away:
+            # "While I'm away" (§6.5) lets it start without a card; it is still a ledger row, decided by
+            # the mode (0.1.61 §A8). `away_mode` tells it apart: the row's `mode` is the permission mode.
+            await permissions.record_standing(request, _context(), by="mode")
+        else:
+            decision = await permissions.decide(request, _context())
             if not decision.allowed:
                 _trace("takeover", "screen", "declined" if decision.by == "user" else decision.by, started)
                 return _no(decision, "taking the screen over")

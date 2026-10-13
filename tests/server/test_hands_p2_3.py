@@ -78,7 +78,8 @@ async def test_a_takeover_is_background_work_only_and_needs_why_and_minutes(hand
     assert hands.ops("takeover_begin") == []
 
 
-async def test_a_takeover_asks_every_time_and_the_island_may_answer(hands, asks, in_job):
+async def test_a_takeover_asks_every_time_and_is_answered_in_arslan_not_the_island(hands, asks, in_job):
+    """0.1.61 §A4: a takeover card opens Arslan; the island no longer answers it (it did in v2 §6.4)."""
     from server.services import approvals
     seen, _ = asks
     for _ in range(2):
@@ -87,7 +88,8 @@ async def test_a_takeover_asks_every_time_and_the_island_may_answer(hands, asks,
         assert result["ok"] is True and "up to 5 minutes" in result["text"]
     cards = [f for f in seen if f.get("kind") == "desktop_takeover"]
     assert len(cards) == 2 and "about 5 minutes: drag 12 photos into Keynote" in cards[0]["detail"]
-    assert approvals.island_may_answer(cards[0]) is True
+    assert [f["perm_kind"] for f in cards] == ["takeover", "takeover"]
+    assert approvals.island_may_answer(cards[0]) is False
     assert [a["minutes"] for op, a in hands.calls if op == "takeover_begin"] == [5, 5]
     bad = await hands_tools.DesktopTakeoverExecutor().execute({"why": "x", "minutes": 31})
     assert bad["code"] == "bad_request"
@@ -151,6 +153,21 @@ async def test_a_takeover_skips_its_card_only_when_the_user_is_away_and_allowed_
     assert result["ok"] is True
     assert bool([f for f in seen if f.get("kind") == "desktop_takeover"]) is asked
     assert ("The user is away" in result["text"]) is (not asked)
+
+
+async def test_an_away_takeover_is_still_a_ledger_row_decided_by_the_mode(hands, asks, in_job):
+    """0.1.61 §A8: no card, but the decision is counted — by the mode, marked `away_mode` (the row's
+    own `mode` is the permission mode). A takeover the user allowed on its card is theirs."""
+    from server.db import session as db_session
+    from server.services import permission_store
+    hands_service.update_settings(away=True)
+    for idle_ms in (181_000, 1_000):
+        hands.user_idle_ms = idle_ms
+        assert (await hands_tools.DesktopTakeoverExecutor().execute({"why": "drag", "minutes": 5}))["ok"]
+    async with db_session.AsyncSessionLocal() as db:
+        rows = sorted(await permission_store.recent(db), key=lambda r: r.id)
+    assert [(r.kind, r.decided_by, r.decision, (r.extra or {}).get("away_mode"), r.job_id) for r in rows] == [
+        ("takeover", "mode", "allow", True, "job-1"), ("takeover", "user", "allow", None, "job-1")]
 
 
 async def test_away_is_off_by_default():

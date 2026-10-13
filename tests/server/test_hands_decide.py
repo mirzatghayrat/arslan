@@ -9,6 +9,7 @@ from server.registry import hands_tools
 from server.services import background_jobs, hands_service, permission_store
 from server.services import personal_context as pc
 from tests.server import test_hands_0153 as base
+from tests.server.test_hands_0145 import browser  # noqa: F401  (a fixture: the browser, faked)
 
 isolated, hands, asks, in_turn, in_job = base.isolated, base.hands, base.asks, base.in_turn, base.in_job
 
@@ -144,3 +145,33 @@ async def test_a_risky_script_is_never_sent_as_an_app_card_and_asks_each_time(as
         assert (await hands_tools.MacAppleScriptExecutor().execute({"script": script}))["ok"]
     assert [f["perm_kind"] for f in seen] == ["app_risky"] * 6
     assert all(f["kind"] == "mac_script" and f["options"] == ["once"] for f in seen)
+
+
+async def test_the_island_answers_hands_app_site_and_shortcut_cards_and_none_riskier(
+        hands, asks, in_job, browser, monkeypatch):  # noqa: F811
+    """0.1.61 §A4, from the Hands side: the island decides a card by its `perm_kind` alone. Every card
+    Hands sends, made by the tools themselves, and whether the island may answer it."""
+    from server.services import approvals
+    seen, _ = asks
+
+    async def fake_run(argv, *, timeout=120):
+        return {"ok": True, "external": True, "text": "done", "summary": "done"}
+    monkeypatch.setattr(hands_tools, "_run", fake_run)
+    await hands_tools.DesktopLookExecutor().execute({"app": "Notes"})
+    await hands_tools.BrowserClickExecutor().execute({"element": "Star", "ref": "e1"})
+    await hands_tools.MacRunShortcutExecutor().execute({"name": "Log water"})
+    for script in ('tell application "Reminders" to count reminders', 'tell application "Reminders" to delete reminder 1',
+                   'tell application "Music" to buy track 1', 'tell application "System Events" to keystroke "a"',
+                   'display dialog "hello"'):
+        await hands_tools.MacAppleScriptExecutor().execute({"script": script})
+    for label in ("Pay now", "Delete"):
+        hands.target = {**hands.target, "name": label}
+        await hands_tools.DesktopClickExecutor().execute(CLICK)
+    await hands_tools.DesktopTakeoverExecutor().execute({"why": "drag", "minutes": 5})
+    answered = {(f["kind"], f["perm_kind"], approvals.island_may_answer(f)) for f in seen}
+    assert answered == {
+        ("desktop_app", "app", True), ("browser_site", "site", True), ("mac_shortcut", "shortcut", True),
+        ("mac_script", "app", True),
+        ("mac_script", "app_risky", False), ("mac_script", "money", False), ("mac_script", "opaque", False),
+        ("desktop_risky", "money", False), ("desktop_risky", "app_risky", False),
+        ("desktop_takeover", "takeover", False)}, sorted(answered)
