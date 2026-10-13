@@ -148,6 +148,97 @@ final class FrameMapperTests: XCTestCase {
         }
     }
 
+    /// The guard keys on `perm_kind`, not on the Hands/web `kind`, and on every card type (fix round 1, M2).
+    func testACapabilityIsKeyedOnPermKindOnAnyCardType() {
+        let frames: [(String, [String: Any])] = [
+            ("a mac_script action", ["type": "propose_action", "call_id": "cap2", "kind": "mac_script", "perm_kind": "capability"]),
+            ("a run-command card", ["type": "propose_run_command", "call_id": "cap3", "pretty": "ls", "perm_kind": "capability"]),
+        ]
+        for (name, frame) in frames {
+            let m = FrameMapper(conversationID: "c1")
+            XCTAssertTrue(m.phoneMessages(for: frame, now: t0).isEmpty, "\(name): never on the phone")
+            XCTAssertTrue(m.cards.isEmpty, "\(name): and no card is registered")
+        }
+        // The same frames without the capability kind are cards: the guard is not keyed on the card type.
+        XCTAssertEqual(FrameMapper(conversationID: "c").phoneMessages(for: ["type": "propose_action", "call_id": "k", "kind": "mac_script",
+                                                                          "perm_kind": "app"], now: t0).count, 1)
+    }
+
+    func testAQuestionIsCutAt200CharactersNeverInsideOne() {
+        func action(_ frame: [String: Any]) -> String? {
+            FrameMapper(conversationID: "c").phoneMessages(for: ["type": "propose_action", "call_id": "k", "kind": "app",
+                                                                   "target": "T"].merging(frame) { _, new in new }, now: t0).first?.body["action"] as? String
+        }
+        XCTAssertEqual(action(["title": String(repeating: "x", count: 201)]), String(repeating: "x", count: 200))
+        XCTAssertEqual(action(["title": String(repeating: "x", count: 200)])?.count, 200, "exactly 200 is kept")
+        let family = "👨‍👩‍👧‍👦"                                    // one character, seven scalars
+        XCTAssertEqual(action(["title": String(repeating: family, count: 250)]), String(repeating: family, count: 200))
+        let accented = "e\u{301}"                              // a base and its combining mark
+        XCTAssertEqual(action(["title": String(repeating: accented, count: 250)]), String(repeating: accented, count: 200))
+        XCTAssertEqual(action(["title": "   \n\t "]), "app", "a blank question is no question: the kind's words")
+        XCTAssertEqual(action(["title": "  Use Notes?  "]), "Use Notes?")
+        for odd: Any in ["1790987000", NSNull()] {                           // not a number: the Mac's wait from now
+            let at = FrameMapper(conversationID: "c").phoneMessages(for: ["type": "propose_action", "call_id": "k", "kind": "app",
+                                                                          "expires_at": odd], now: t0).first?.body["expires_at"] as? String
+            XCTAssertEqual(at, ISO8601DateFormatter().string(from: t0 + 1800))
+        }
+    }
+
+    /// Fix round 1, M4: the phone's card heading is one line, whatever the Mac's title held.
+    func testAQuestionReachesThePhoneAsOneLine() {
+        func action(_ frame: [String: Any]) -> String? {
+            FrameMapper(conversationID: "c").phoneMessages(for: ["call_id": "k"].merging(frame) { _, new in new }, now: t0)
+                .first?.body["action"] as? String
+        }
+        let base: [String: Any] = ["type": "propose_action", "kind": "app", "target": "T"]
+        XCTAssertEqual(action(base.merging(["title": "Run `a\nb`?"]) { _, new in new }), "Run `a b`?")
+        XCTAssertEqual(action(base.merging(["title": "  Use \t Notes \r\n\n now?  "]) { _, new in new }), "Use Notes now?")
+        // Collapsed before the cut: 100 words of "x" and three spaces are 400 characters raw, 199 once collapsed.
+        let words = String(repeating: "x   ", count: 100)
+        XCTAssertEqual(action(base.merging(["title": words]) { _, new in new }), Array(repeating: "x", count: 100).joined(separator: " "),
+                       "the whole 199-character line, not the first 200 raw characters")
+        // The kind's own words are one line too (a schedule's name is the user's text).
+        XCTAssertEqual(action(["type": "propose_schedule", "name": "a\n\nb", "when": "w"]), "Schedule “a b”")
+    }
+
+    /// Fix round 1, M3: only a plausible Unix time is the Mac's own expiry; anything else is the Mac's wait from now.
+    func testAnExpiryThatCannotBeTheMacsOwnIsTheMacsWaitFromNow() throws {
+        func expires(_ value: Any?) -> String? {
+            var frame: [String: Any] = ["type": "propose_action", "call_id": "k", "kind": "app", "target": "T"]
+            frame["expires_at"] = value
+            return FrameMapper(conversationID: "c").phoneMessages(for: frame, now: t0).first?.body["expires_at"] as? String
+        }
+        let iso = ISO8601DateFormatter()
+        let now = t0.timeIntervalSince1970
+        let fallback = iso.string(from: t0 + 1800)
+        XCTAssertEqual(expires(now + 1234), iso.string(from: t0 + 1234), "a valid expiry is the Mac's own")
+        XCTAssertEqual(expires(now + 7200), iso.string(from: t0 + 7200), "two hours ahead is the most")
+        XCTAssertEqual(expires(now - 60), iso.string(from: t0 - 60), "a minute behind is the least")
+        for (name, value) in [("true", true), ("false", false)] as [(String, Any)] {
+            XCTAssertEqual(expires(value), fallback, "a JSON \(name) is no time")
+        }
+        let parsed = try JSONSerialization.jsonObject(with: Data(#"{"expires_at": true}"#.utf8)) as? [String: Any]
+        XCTAssertEqual(expires(parsed?["expires_at"]), fallback, "a parsed JSON true is no time (it would read as 1970)")
+        XCTAssertEqual(expires(0), fallback)
+        XCTAssertEqual(expires(-5), fallback)
+        XCTAssertEqual(expires(now + 10 * 86_400), fallback, "ten days ahead is not a card's wait")
+        XCTAssertEqual(expires(now + 7201), fallback, "just past two hours")
+        XCTAssertEqual(expires(now - 61), fallback, "just past a minute behind")
+        XCTAssertEqual(expires(now - 3600), fallback, "long over")
+        XCTAssertEqual(expires(Double.nan), fallback)
+        XCTAssertEqual(expires(Double.infinity), fallback)
+        // Near the epoch the bounds alone would let a bool through (`true` reads as one second), so it is
+        // refused as a bool: a clock at 1970 is the one place only the bool check can tell.
+        let epoch = Date(timeIntervalSince1970: 0)
+        func atEpoch(_ value: Any?) -> String? {
+            FrameMapper(conversationID: "c").phoneMessages(for: ["type": "propose_action", "call_id": "k", "kind": "app",
+                                                                  "expires_at": value as Any], now: epoch).first?.body["expires_at"] as? String
+        }
+        XCTAssertEqual(atEpoch(true), iso.string(from: epoch + 1800), "true is not one second past 1970")
+        XCTAssertEqual(atEpoch(parsed?["expires_at"]), iso.string(from: epoch + 1800), "nor is a parsed JSON true")
+        XCTAssertEqual(atEpoch(1), iso.string(from: epoch + 1), "while a real 1 is a number")
+    }
+
     /// ③Hands asks through `decide()` since #179: its cards are `propose_action` frames of the Hands
     /// action kinds (`desktop_app`, `desktop_risky`…) carrying the permission layer's `perm_kind`.
     /// Only a payment has a risk word of its own on the phone.

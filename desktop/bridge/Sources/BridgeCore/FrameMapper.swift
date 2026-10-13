@@ -46,11 +46,11 @@ public final class FrameMapper {
             if frame["perm_kind"] as? String == "capability" { return [] }
             cards[id] = kind
             // A card from the Mac's permission layer says its own question and when it runs out;
-            // an older frame keeps the kind's words and the Mac's wait from now.
-            let question = (frame["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            let expires = (frame["expires_at"] as? NSNumber).map { Date(timeIntervalSince1970: $0.doubleValue) }
-                ?? now.addingTimeInterval(Self.cardWait)
-            return [("approval.request", ["approval_id": id, "action": String((question.isEmpty ? action : question).prefix(200)),
+            // an older frame keeps the kind's words and the Mac's wait from now. The heading is one
+            // line (every run of whitespace, newlines too, becomes one space) before it is cut.
+            let question = Self.oneLine(frame["title"] as? String ?? "")
+            let expires = Self.frameExpiry(frame["expires_at"], now: now) ?? now.addingTimeInterval(Self.cardWait)
+            return [("approval.request", ["approval_id": id, "action": String((question.isEmpty ? Self.oneLine(action) : question).prefix(200)),
                                           "target": String(target.prefix(300)),
                                           "risk": Self.permRisk(frame["perm_kind"] as? String) ?? risk,
                                           "task_id": conversationID, "task_title": title ?? "Arslan",
@@ -164,6 +164,23 @@ public final class FrameMapper {
     /// How long the Mac waits on a card: 30 minutes since 0.1.61 (the server's `approvals.TIMEOUT_S`).
     /// A card from the permission layer says its own expiry; any other is counted from now.
     static let cardWait: TimeInterval = 1800
+
+    /// A frame's `expires_at` is the Mac's own expiry only when it is a number (a JSON `true` is an
+    /// `NSNumber` too, and reads as 1970) between a minute ago and two hours from now; the Mac sends
+    /// "now + 30 minutes". Anything else (also NaN and infinity, which fail both bounds) is nil, and
+    /// the card is counted from now with `cardWait`.
+    static func frameExpiry(_ value: Any?, now: Date) -> Date? {
+        guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
+        // Compared as plain numbers: `Date`'s `>=` is "not <", which a NaN passes.
+        let seconds = number.doubleValue, here = now.timeIntervalSince1970
+        guard seconds >= here - 60, seconds <= here + 7200 else { return nil }
+        return Date(timeIntervalSince1970: seconds)
+    }
+
+    /// The text on one line: each run of whitespace (newlines too) is one space, and the ends are trimmed.
+    static func oneLine(_ text: String) -> String {
+        text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    }
 
     /// 0.1.61 §A4: a card from the Mac's permission layer names its kind (`perm_kind`), and four of
     /// them have their own risk word. Any other kind (a command, an app, a write…) keeps the frame's
