@@ -59,10 +59,18 @@ def test_installing_a_skill_requires_naming_a_repository():
 
 def test_the_importer_reads_only_named_repositories_from_fixed_hosts():
     """0.1.61 §C2: the importer downloads one archive of a named repository, from
-    codeload.github.com, and asks api.github.com for its metadata — no other host."""
+    codeload.github.com, and asks api.github.com for its metadata (through github_eval) — no other host.
+
+    Read from what is used, not only from the text: the URL builder and the constant the redirect check
+    compares against, and every address written in the module."""
     source = pathlib.Path(inspect.getfile(skill_import)).read_text()
     hosts = set(re.findall(r"https://([a-z0-9.-]+)", source))
     assert hosts <= {"codeload.github.com", "api.github.com", "github.com"}, hosts
+    assert "codeload.github.com" in hosts                      # it is written where this test can see it
+    assert skill_import._CODELOAD_HOST == "codeload.github.com"
+    url = skill_import._codeload_url("example-org", "example-skills", "main")
+    assert (url.scheme, url.host, url.port, str(url.path)) == (
+        "https", "codeload.github.com", None, "/example-org/example-skills/tar.gz/main")
 
 
 def test_no_search_endpoint_feeds_the_importer():
