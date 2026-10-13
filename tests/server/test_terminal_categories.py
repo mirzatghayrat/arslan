@@ -856,6 +856,7 @@ _PADDED_FLOOR = [
     "sudo ls; osascript " + "-e 'do shell script \"a\"' " * 65,
     "shutdown -h now; " + "`:` " * 33, "`:` " * 33 + "; {rm -rf ~}",
     "`:` " * 33 + "; {rm -rf /Applications}",
+    "`:` " * 33 + "; (mkfs.ext4 /dev/disk2)", "`:` " * 33 + "; {security -v find-generic-password -s gh -w}",
 ]
 
 
@@ -1677,6 +1678,11 @@ def test_groups_are_read_as_deep_as_the_depth_limit():
     assert tp.classify(nested(tp._MAX_SUBSTITUTION_DEPTH)).category == "send"
     assert tp.classify(nested(tp._MAX_SUBSTITUTION_DEPTH + 1)).findings == (tp.UNREADABLE,)
 
+    def listed(depth):                  # one group per segment: no opener ceiling stops it first (R8)
+        return "{ ls; " * depth + "printf 'git push' | bash" + "; }" * depth
+    assert tp.classify(listed(tp._MAX_SUBSTITUTION_DEPTH)).category == "send"
+    assert tp.classify(listed(tp._MAX_SUBSTITUTION_DEPTH + 1)).findings == (tp.UNREADABLE,)
+
 
 # ── fix round 4: an interpreter fed code on stdin is read like its heredoc (F8) ───────────────
 
@@ -2089,6 +2095,146 @@ def test_an_act_handed_to_a_runner_arslan_does_not_know_asks(command):
     assert found.floor is None and tp.UNREADABLE in found.findings, [(f.category, f.rule) for f in found.findings]
 
 
+_USER = Path.home().name
+_SHUT_DOWN = "\"osascript -e 'tell application \\\"System Events\\\" to shut down'\""
+
+
+@pytest.mark.parametrize("command", [
+    "concurrently \"rm -rf $(echo ~)\"", "X=$(echo ~); rm -rf \"$X\"", "concurrently \"$(printf '\\x72m') -rf ~\"",
+    "concurrently \"$(printf '%.1s%s' rx m) -rf ~\"",
+    "concurrently 'rm -rf ${HOME}'", "concurrently 'rm -rf ${HOME:?}'", "concurrently 'rm -rf ${TARGET:-~}'",
+    "rm -rf {~,/tmp/x}", "concurrently 'rm -rf {a,{b,~}}'",
+    "x=$HOME; concurrently \"rm -rf ${x}\"", "x=\"$HOME\"; concurrently \"rm -rf $x/\"",
+    "for d in ~ /tmp/x; do rm -rf \"$d\"; done", "cd ~ && rm -rf *", "cd && rm -rf ./*", "pushd ~; rm -rf \"$PWD\"",
+    "set -- -rf ~; rm \"$@\"", "f() { security \"$@\"; }; f find-generic-password -s x -w",
+    "concurrently 'echo ~ | xargs rm -rf'", "concurrently 'find ~ -exec rm -rf {} +'",
+    "concurrently \"r'm' -rf ~\"", "concurrently \"se'cur'ity find-generic-password -s x -w\"", "concurrently '/bin/r[m] -rf ~'", f"concurrently 'rm -rf /Us*/{_USER}'",
+    f"concurrently 'rm -rf ~/../{_USER}'", f"concurrently 'rm -rf /USERS/{_USER.upper()}/'", "concurrently 'rm -rf /tmp/../'",
+    "concurrently 'rm -rf /S*'", "concurrently 'rm -rf /**'", "concurrently 'cd ~ && rm -rf \"$(pwd)\"'",
+    "concurrently 'cd; rm -rf ~+'",
+    "concurrently 'cd / && rm -rf *'", "concurrently 'x=/; rm -rf $x'", "concurrently 'a=(~); rm -rf \"${a[@]}\"'",
+    "concurrently 'a=(~); rm -rf $a[1]'", "concurrently 'echo ~ | read x; rm -rf $x'", "concurrently 'printf -v x %s ~; rm -rf $x'",
+    "concurrently 'find ~ -delete'", "concurrently 'fd . ~ -X rm -rf'", "concurrently 'rsync -a --delete empty/ ~/'",
+    f"concurrently 'rm -rf /Users/**/{_USER}'", "concurrently 'rm -rf /library'", "concurrently 'x=/Users; rm -rf $x'",
+    "concurrently \"printf 'dump-keychain\\n' | security -i\"", "concurrently 'dd if=/dev/zero of=/dev/disk${N}'",
+    "concurrently " + _SHUT_DOWN.replace("to shut down", "to «event aevtrsdn»").replace("System Events", "loginwindow"),
+    "concurrently \"printf '\\\\x72\\\\x6d -rf ~' | sh\"", "concurrently \"printf '\\\\162\\\\155 -rf ~' | sh\"",
+    "concurrently 'IFS=,; x=rm,-rf,~; $x'", "concurrently 'shopt -s expand_aliases\nalias x=\"rm -rf\"\nx ~'",
+    "hash -p /bin/rm x; x -rf ~", "ln -s /bin/rm x; ./x -rf ~", "cp /bin/rm ./x && ./x -rf ~", "ln -s $(which rm) x; ./x -rf ~",
+    "osascript -e 'run script \"tell application \\\"System Events\\\" to shut down\"'",
+    "osascript -e 'run script \"tell application \\\"Keychain Access\\\" to activate\"'",
+    "osascript -e 'tell application (\"Keychain\" & \" Access\") to activate'",
+    "osascript -l JavaScript -e 'Application(\"Keychain\" + \" Access\").activate()'",
+    "osascript -e 'set a to \"Keychain Access\"' -e 'tell application a to activate'",
+    "osascript -l JavaScript -e 'var n = \"Keychain Access\"; Application(n).activate()'",
+    "osascript -e 'tell application \"System Events\" to tell process \"Keychain Access\" to set frontmost to true'",
+    "concurrently 'D=/dev/rdisk4; dd if=/dev/zero of=\"$D\" bs=1m'",
+    "osascript -e 'tell application \"System Events\" to click menu item \"Shut Down…\" of menu 1 of menu bar item 1"
+    " of menu bar 1 of process \"Finder\"'",
+    "osascript -e 'tell application \"System Events\" to keystroke \"q\" using {command down, option down, shift down}'",
+    f"concurrently 'rm -rf ~{_USER}/'", "concurrently \"rm -rf \\\\$HOME\"",
+    "concurrently \"security -v find-generic-password -s gh -w\"",
+    "concurrently " + _SHUT_DOWN.replace("osascript", "OSASCRIPT"),
+    " ".join(["concurrently", *(f"'a{i}'" for i in range(70)), _SHUT_DOWN]),
+], ids=["what echo prints", "a name set by echo", "what printf prints, still a run-time word",
+        "what printf prints otherwise than read", "${HOME}", "${HOME:?}",
+        "a default of ~", "braces", "nested braces", "${x} set to the home", "x set to a quoted $HOME", "a for loop",
+        "cd ~ then *", "a bare cd then ./*", "pushd ~ then $PWD", "set -- then $@", "a function's $@ for security",
+        "what a pipe feeds xargs", "the paths find hands -exec",
+        "quotes joined", "quotes joined in security", "a glob for the program", "a glob for the home", "~/../ and the user's name", "the home in capitals",
+        "/tmp/../", "a glob for a system folder", "/**", "$(pwd) after cd ~", "~+ after cd",
+        "* after cd /", "a name set to the root", "an array's ${a[@]}", "an array's $a[1]", "a name read from a pipe",
+        "printf -v", "find -delete", "fd -X rm", "rsync --delete",
+        "** for no folder", "a system folder in lower case", "a name set to a system folder", "security -i's input",
+        "dd onto a disk known only when it runs", "a raw shut-down event",
+        "printf's hex escapes", "printf's octal escapes", "IFS splits a value", "an alias", "hash -p", "a linked program",
+        "a copied program", "a program linked from a substitution", "run script's power step", "run script's app",
+        "an app name joined", "a JXA app name joined", "an app name in a variable", "a JXA app name in a variable",
+        "a process System Events drives", "dd onto a disk a name holds", "a UI script's Shut Down menu item",
+        "a UI script's log-out shortcut",
+        "~ and the user's name", "an escaped $HOME", "security's own option", "OSASCRIPT", "past 64 quoted strings"])
+def test_the_net_reads_what_the_shell_fills_in(command):
+    """R7 (re-running round 6): the shell fills words in before it runs a command, and the net reads
+    them as it will — what a literal `echo`/`printf` prints (and, as it may print something else, a
+    word known only when it runs), a braced parameter, braces (nested too), a name the text sets to
+    the home or a `for` loop goes through, the working folder after a `cd` to the home, the words a
+    function or `set --` hands on, what a pipe feeds `xargs` and the paths `find` hands `-exec`, the
+    home by the user's name, a word past its backslashes and with its quoted pieces joined, a path
+    with `..`, `//` or capitals (macOS folders are case-insensitive), a glob that may name the home,
+    a folder at the root or the program; a name or working folder set to the root or a system folder
+    as to the home, an array, `read`, `printf -v`; what `find -delete`, `fd -X` and `rsync --delete`
+    delete; the commands `security -i` reads; `dd` onto a disk known only when it runs or a name
+    holds; the escapes
+    `printf` decodes, a value `IFS` splits, a name an alias, `hash -p`, `ln` or `cp` makes run a
+    program; an osascript in any case and behind any number of quoted strings, its raw power events
+    (`«event aevtrsdn»`), a power step a UI script clicks or types, what `run script` runs, and an
+    app it names by joined pieces, a variable or a process."""
+    found = tp.classify(command)
+    assert found.floor is None and tp.UNREADABLE in found.findings, [(f.category, f.rule) for f in found.findings]
+
+
+@pytest.mark.parametrize("command,category", [
+    ("concurrently 'rm -rf ${HOME:+/tmp/x}'", "local"), ("concurrently 'rm -rf ${HOME}/project'", "local"),
+    ("f() { rm \"$@\"; }; f build.log", "local"), ("x=$HOME; echo \"$x\"", "local"),
+    ("cd ~/project && rm -rf *", "destructive"), ("for d in build dist; do rm -rf \"$d\"; done", "destructive"),
+    ("rm -rf {build,dist}", "destructive"), ("tmp=$(mktemp -d); rm -rf \"$tmp\"", "destructive"),
+    ("git ls-files -d | xargs rm -rf", "destructive"), ("find build -exec rm -rf {} +", "destructive"),
+    ("jq '{}' a.json | xargs echo", "local"),
+    ("rm -rf /tmp/build*", "destructive"), ("rm -rf ~/proj*", "destructive"), ("ls /Us*", "local"),
+    ("rm -rf ./build/../dist", "destructive"), ("rm -rf /tmp/x/../y", "destructive"), ("rm -rf ~/Projects/App", "destructive"),
+    ("concurrently 'rm -rf /a/**'", "local"),
+    ("cd /tmp && rm -rf *", "destructive"), ("read x; rm -rf \"$x\"", "destructive"), ("x=/tmp/build; rm -rf $x", "destructive"),
+    ("a=(build dist); rm -rf $a", "destructive"), ("find ~ -name '*.log' -print", "local"),
+    ("rsync -av ~/Documents/ /Volumes/Backup/Docs/", "local"), ("find . -name '*.pyc' -delete", "destructive"),
+    ("alias ll='ls -la'; ll ~", "local"), ("alias rm='rm -i'; rm build.log", "local"),
+    ("ln -sf $(pwd)/bin/tool ~/bin/tool; tool --help", "local"), ("IFS=,; read -ra parts <<< \"$line\"", "local"),
+    ("printf '\\x1b[1mbold\\x1b[0m\\n'", "local"), ("osascript -e 'set t to \"Keychain Access\"' -e 'display dialog t'", "local"),
+    ("osascript -e 'display notification \u201crestart done\u201d'", "local"),
+    ("OUT=/tmp/x.img; dd if=/dev/zero of=$OUT bs=1m count=1", "local"),
+    ("osascript -e 'tell application \"System Events\" to keystroke \"q\" using command down'", "apps"),
+    ("osascript -e 'tell application \"System Events\" to click menu item \"Copy\" of menu 1 of process \"Notes\"'", "apps"),
+])
+def test_the_net_reads_no_home_the_text_does_not_put_there(command, category):
+    """R7: `${HOME:+…}` is not the home, a folder in it is not it, a name set to it but never deleted is
+    quiet, and a `cd` into a folder of it leaves `*` that folder's: these stay as the reading says."""
+    found = tp.classify(command)
+    assert found.category == category and tp.UNREADABLE not in found.findings, [(f.category, f.rule) for f in found.findings]
+
+
+def test_the_net_asks_past_its_bounds_and_on_an_error(monkeypatch):
+    """R7: no act hides behind the net's bounds — past `_NET_WORDS` words for the positional
+    parameters, past 64 app names in a script, or with an osascript deeper than the quoted layers it
+    reads, the text asks unread; so does an error while it searches."""
+    quiet = ["f() { rm \"$@\"; }; f build.log", "concurrently \"osascript -e 'display dialog \\\"hi\\\"'\""]
+    assert all(tp.classify(command).category == "local" for command in quiet)
+    told = "osascript " + " ".join(f"-e 'tell application \"App{i}\" to activate'" for i in range(65))
+    assert tp.UNREADABLE in tp.classify(told).findings                      # past 64 names a script tells
+    assert tp.UNREADABLE not in tp.classify(told.replace("App6", "App1")).findings      # 59 names
+    monkeypatch.setattr(tp, "_NET_WORDS", 8)
+    monkeypatch.setattr(tp._quoted_layers, "__defaults__", (0,))
+    tp.clear_cache()
+    for command in quiet:
+        assert tp.UNREADABLE in tp.classify(command).findings, command
+    monkeypatch.setattr(tp, "_net_lines", lambda flat: 1 / 0)
+    tp.clear_cache()
+    assert tp.UNREADABLE in tp.classify("ls -la").findings
+
+
+@pytest.mark.parametrize("text", ["a" * 7990, "rm $@;" * 1331, "cd " * 2660,
+                                  "x" * 3000 + "{" + ",".join(["b"] * 2400) + "}"],
+                         ids=["one long word", "a positional on every line", "cd on every word", "a long brace prefix"])
+def test_the_net_reads_a_long_text_at_once(text):
+    """R7: the net is linear — a long word scanned once for braces, each distinct positional
+    command against each distinct line, one scan past a `cd`, a brace prefix copied at most 4,096
+    characters (each took 0.25 s to 11 s before its bound). The least CPU time of three, so machine
+    load does not fail it."""
+    def cpu() -> float:
+        start = time.process_time()
+        tp._net(text)
+        return time.process_time() - start
+    assert min(cpu() for _ in range(3)) < 0.1
+
+
 @pytest.mark.parametrize("command,category", [
     ("grep -n \"rm -rf\" build.sh", "local"), ("git commit -m \"remove the sudo call\"", "local"),
     ("echo \"shutdown done\"", "local"), ("git status # TODO: never \"rm -rf /\" in prod", "local"),
@@ -2125,8 +2271,101 @@ def test_the_net_leaves_a_floor_alone_and_makes_a_destructive_card_once_only(cap
 @pytest.mark.parametrize("command", [
     "osascript -l JavaScript -e 'Application(\"System Events\").shutDown()'",
     "osascript -l JavaScript -e 'Application(\"System Events\").logOut()'",
+    "osascript -e 'tell application \"loginwindow\" to «event aevtrsdn»'",
+    "osascript -e 'tell application \"loginwindow\" to «event aevtrrst»'",
 ])
 def test_a_jxa_power_step_is_the_floor(command):
-    """R7: JXA spells the power steps `shutDown()` and `logOut()`; they are the floor as AppleScript's
-    `shut down` and `log out` are (the reading and the net share the one pattern)."""
+    """R7: JXA spells the power steps `shutDown()` and `logOut()`, and AppleScript has them as raw
+    events (`«event aevtrsdn»`, `aevtrrst`, `aevtrlgo`, `aevtlogo`); they are the floor as `shut down`
+    and `log out` are (the reading and the net share the one pattern)."""
     assert tp.classify(command).category == "floor"
+
+
+@pytest.mark.parametrize("command", [
+    "osascript -e 'tell application \"/System/Applications/Utilities/Keychain Access.app\" to activate'",
+    "osascript -e 'tell application \u201cKeychain Access\u201d to activate'",
+])
+def test_a_never_list_app_by_its_path_or_in_curly_quotes_is_the_floor(command):
+    """Re-running round 6: an app on the never-list told by its path, or in the curly quotes
+    AppleScript takes as quotes, is the floor as by its name (an app card had let it through)."""
+    assert tp.classify(command).category == "floor"
+
+
+# ── fix round 6: the opener and wrapper counters; root's acts by their path; the surviving mutants
+#    (R8, R9, R10) ────────────────────────────────────────────────────────────────────────────────
+
+_OPENERS = [
+    ("brace ' {{' x2333", " {{" * 2333), ("brace '{ ' x2600", "{ " * 2600), ("then x900", "if true; then" + " then" * 900 + " ls; fi"),
+    ("IFS( x900", "ls\n" + "$IFS(ls\r" * 900 + "ls"), ("escaped blank $'\\n'( x875", "\\ $'\\n'(" * 875),
+    ("python3 heredoc exec( x1500", "python3 <<PY\n" + "exec(" * 1500 + "\nPY"),
+    ("a wrapper ending each line x800", "\nnohup " * 800 + "ls"), ("an escaped wrapper ending each line x800", "\nnice\\ " * 800 + "ls"),
+    ("a brace after each escaped newline x800", "cat <<EOF\n" + "{\\\n" * 800 + "ls"),
+]
+
+
+@pytest.mark.parametrize("command", [c for _, c in _OPENERS], ids=[label for label, _ in _OPENERS])
+def test_many_command_starts_in_one_segment_read_at_once(command):
+    """R8 (re-review 5 (b)): each command start in a segment was read to the segment's end when nothing
+    closed it — 2,333 ` {{` 19 s, 900 `then` 5 s, 900 `$IFS(` 6 s, a wrapper ending each line 45 s, the
+    0.1.52 exemption 4 s on a heredoc. More than 16 starts between two separators, or 16 wrappers in a
+    chain (a newline after a wrapper ends none), is past a parse ceiling. Timed in CPU seconds: the
+    slowest reads in about 0.5 s, and a loaded machine must not fail it."""
+    tp.classify("ls")
+    tp.clear_cache()
+    start = time.process_time()
+    tp.classify(command)
+    tp.runs_freely_in_sandbox(command)
+    assert time.process_time() - start < 2.0
+
+
+@pytest.mark.parametrize("command,category", [
+    ("/sbin/reboot", "floor"), ("/sbin/halt", "floor"), ("/sbin/poweroff", "floor"), ("nice /sbin/reboot", "floor"),
+    ("env /sbin/reboot", "floor"), ("/sbin/init 0", "floor"), ("/usr/bin/sudo ls", "floor"),
+    ("ls -l /sbin/reboot", "local"), ("file /sbin/halt", "local"), ("/sbin/reboot -q", "floor"),
+    ("echo /sbin/init 0", "local"),
+    ("xargs echo /sbin/reboot hosts.txt", "local"),
+])
+def test_a_root_only_act_named_by_its_path_is_the_floor(command, category):
+    """R9 (re-review 5 P-5): a command word named by its path is that program: `/sbin/reboot` is
+    `reboot`, the floor as a command word (Hermes' rule reads only the bare word), its options only
+    (`reboot hosts.txt` reboots nothing). A path that is an argument (`ls -l /sbin/reboot`) is no
+    command."""
+    found = tp.classify(command)
+    assert found.category == category, [(f.category, f.rule) for f in found.findings]
+
+
+@pytest.mark.parametrize("command,category", [
+    ("\r" * 100 + "git push", "send"), ("bash <<EOF\n" + "\n''" * 2600 + "\nmkfs.ext4 /dev/disk2\nEOF", "floor"),
+    ("xargs echo shutdown nowish", "local"), ("xargs echo shutdown -h now extra", "floor"),
+    ("redis-cli shutdown nowish", "local"), ("printf '\\x72m -rf ~' | bash; $CMD", "floor"),
+    ("concurrently security -v find-generic-password -s gh -w", "floor"),
+])
+def test_what_the_surviving_mutants_changed_is_pinned(command, category):
+    """R10 (re-review 5's survivors): a run of 100 CRs is a blank run the collapse reads (only ASCII
+    blanks would leave it to the guard: unread); the unread floor reads a run Hermes builds with a
+    newline in it as a newline (`mkfs` stays at a command position, the floor); `shutdown`'s
+    when-argument is a whole word (`nowish` is none, `-h` is one) — at a guessed runner start, where
+    nothing else reads it. Re-running the earlier mutants on the final module: the floor a reading
+    found before a word known only at run time stopped it stays (the fed `printf` decodes `\\x72m`,
+    which the unread floor cannot); `security`'s own options come before its command (`-v`)."""
+    found = tp.classify(command)
+    assert found.category == category, [(f.category, f.rule) for f in found.findings]
+
+
+def test_the_home_by_its_path_is_the_home():
+    """Re-running round 6: the home spelled by its absolute path is `~` to the backstop and the net —
+    `rm -rf /Users/me` was destructive (a card an "always allow" could cover), the same with a trailing
+    `/` the floor; in capitals too, and a system folder in any case (macOS folders are case-insensitive);
+    a folder in it stays destructive."""
+    home = str(Path.home())
+    assert tp.classify(f"rm -rf {home}").category == "floor"
+    assert tp.classify(f"rm -rf {home.upper()}/").category == "floor"          # macOS folders: any case
+    assert tp.classify("rm -rf /library").category == "floor"
+    assert tp.classify(f"concurrently rm -rf {home}/*").category == "floor"
+    assert tp.classify(f"rm -rf {home}/project").category == "destructive"
+
+
+def test_a_delete_without_a_recursive_flag_is_not_the_backstops():
+    """R10: the argv backstop wants a recursive flag (G3): `concurrently rm ~` (which fails on a
+    folder) is no floor."""
+    assert tp.classify("concurrently rm ~").floor is None

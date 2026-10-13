@@ -36,6 +36,7 @@ Everything here is a function of the command text; the sandbox holds the rest.
 from __future__ import annotations
 
 import contextvars
+import fnmatch
 import functools
 import logging
 import os
@@ -462,11 +463,21 @@ def _classify(text: str) -> Classification:
                        len(text), exc_info=True)
         return Classification(text, _floor_of_unread(text) or (UNREADABLE,))
     found = _unique(text, findings)
-    if found.floor is None and UNREADABLE not in found.findings and (acts := _net(text)):
+    if found.floor is None and UNREADABLE not in found.findings and (acts := _net_of(text)):
         logger.info("terminal_policy: the net saw %s; the command asks once, unread",
                     ", ".join(dict.fromkeys(act.rule for act in acts)))
         return Classification(text, (*found.findings, UNREADABLE))
     return found
+
+
+def _net_of(text: str) -> list[Finding]:
+    """The net's acts in `text`; an error while it searches asks too (never run it unsearched)."""
+    try:
+        return _net(text)
+    except Exception:  # noqa: BLE001
+        logger.warning("terminal_policy: the net could not search a command (%d characters); it asks unread",
+                       len(text), exc_info=True)
+        return [Finding("opaque", "net-error", "the net could not search the command")]
 
 
 #: A blank run (G4): the characters Python's `\s` takes, as Hermes' patterns read them (space, tab,
@@ -630,17 +641,23 @@ def _net(text: str) -> list[Finding]:
     folder, a keychain secret, a disk erased, dd onto a disk — on each flattened line of the
     subjects the unread floor searches (as written, `$'…'` decoded, the shell with its data bodies
     and comments out, the values R13 reads filled in) and of the same with every `$'…'` decoded,
-    quoted or not; every quote ends a word, a substitution's body is lines of its own, and a word
-    known only when the command runs (a substitution, a variable) may be any of those programs
-    (`concurrently "$RM -rf ~"`). And where the text tells an app, an AppleScript's power step or an
-    app on the never-list, its strings blanked: in the text, and in each `-e` script an osascript
-    in any quoted layer of it is handed (`concurrently "osascript -e '…shut down'"`).
+    quoted or not; every quote ends a word and a word is read past its backslashes; what the shell
+    fills in is filled in (`_net_lines`, `_net_names_filled`): braced parameters, braces, what a
+    literal `echo`/`printf` prints, a name the text sets to the home, the working folder after a
+    `cd` to it; a substitution's body is lines of its own, a word known only when the command runs
+    (a substitution, a variable) may be any of those programs (`concurrently "$RM -rf ~"`), and the
+    words a function or `set --` hands on may be any of the text's (`_positional_acts`). And where
+    the text tells an app, an AppleScript's power step or an app on the never-list, its strings
+    blanked: in the text, and in each `-e` script an osascript in any quoted layer of it is handed
+    (`concurrently "osascript -e '…shut down'"`).
 
     Not sudo or shutdown (they need root, and the reading keeps them), not Hermes' other hardline
     words, not Arslan's data, not a send: `grep -n "rm -rf" build.sh`, `git commit -m "remove the
     sudo call"` and a README that says sudo stay quiet; prose that names a whole act (`grep -rn
-    "rm -rf ~" docs/`) asks once. A comment both zsh's rule and Hermes' start is no text. Linear;
-    never raises."""
+    "rm -rf ~" docs/`) asks once. A comment both zsh's rule and Hermes' start is no text. Not a
+    target known only when the command runs (`rm -rf "$d"` with `d` from the environment or
+    `$(cd; pwd)`): the reading's destructive card. Linear, with each bound a card (`_NET_TOO_MANY`);
+    `_net_of` makes an error a card too."""
     subjects = [_agreed_comments_blanked(text)]
     try:
         decoded = _decode_ansi_c(text)
@@ -651,77 +668,459 @@ def _net(text: str) -> list[Finding]:
     except Exception:  # noqa: BLE001 — what could be built is searched
         pass
     subjects += [_every_ansi_c_decoded(subject) for subject in subjects]
+    subjects += [_NET_ESCAPE.sub(_escape_char, subject) for subject in subjects if _NET_ESCAPE.search(subject)]
     found: list[Finding] = []
+    known: dict[str, bool] = {}
+
+    def never(name: str) -> bool:                       # the never-list, asked once a name for the text
+        if name not in known:
+            known[name] = _never_touched(name)
+        return known[name]
+
     for subject in dict.fromkeys(subjects):
         try:
             flat = hermes._normalize_command_for_detection(subject)
         except Exception:  # noqa: BLE001
             flat = subject
-        for line in _net_lines(flat):
-            words = _NET_WORD.findall(line)
-            found += _argv_floor(words, rooted=False)
-            if any("$" in word or "`" in word for word in words):
-                for name in _NET_PROGRAMS:          # a program known only when it runs
-                    found += _argv_floor([name if ("$" in word or "`" in word) and not _RM_HOME.fullmatch(word)
-                                          else word for word in words], rooted=False)
+        for view in dict.fromkeys((flat, flat.replace("'", "").replace('"', ""))):   # `'r''m'` is `rm`
+            lines = _net_names_filled([[_net_word(word) for word in _NET_WORD.findall(line)]
+                                        for line in _net_lines(view)])
+            for words in lines:
+                found += _argv_floor(words, rooted=False) + _finder_acts(words)
+                for name in _NET_PROGRAMS:          # a program known only when it runs, or a glob (`/bin/r?`)
+                    if any(_may_run(word, name) for word in words):
+                        found += _argv_floor([name if _may_run(word, name) else word for word in words], rooted=False)
+            found += _positional_acts(lines) + _security_input_acts(lines)
         if _FLAT_SCRIPT.search(subject):
-            found += _script_acts(subject)
-            for script in _osascript_scripts(subject):
-                found += _script_acts(script)
+            found += _script_acts(subject, never=never)
+            scripts = _osascript_scripts(subject)
+            if scripts is None:
+                found.append(_NET_TOO_MANY)
+            for script in dict.fromkeys(scripts or ()):
+                found += _script_acts(script, never=never)
     return list(dict.fromkeys(found))
 
 
+#: The words the net reads for the positional parameters of one text: past it, the text asks unread.
+_NET_WORDS = 1 << 16
+_NET_TOO_MANY = Finding("opaque", "net-bound", "too many words for the net to search")
+
+
+def _positional_acts(lines: list[list[str]]) -> list[Finding]:
+    """A command whose words come from elsewhere: a function's or `set --`'s (`f() { rm "$@"; }; f -rf
+    ~`, `set -- -rf ~; rm "$@"`), what a pipe or file feeds `xargs`/`parallel` (`echo ~ | xargs rm
+    -rf`): any word of the text, and the words of any line after its first, may be them (the paths
+    `find -exec` and `fd -X` hand on are `_finder_acts`'). Each distinct such command, against each
+    distinct line; past `_NET_WORDS` words read, the text asks unread (`_NET_TOO_MANY`), so no act
+    hides behind the bound."""
+    owns = list(dict.fromkeys(tuple(word for word in words if not _NET_POSITIONAL.fullmatch(word))
+                              for words in lines if any(_is_fed(word) for word in words)))
+    if not owns:
+        return []
+    everything = [word for words in lines for word in words if not _NET_POSITIONAL.fullmatch(word)]
+    others = list(dict.fromkeys(tuple(words[1:]) for words in lines))
+    found: list[Finding] = []
+    spent = 0
+    for own in owns:
+        spent += len(own) + len(everything) + sum(len(own) + len(other) for other in others)
+        if spent > _NET_WORDS:
+            return [*found, _NET_TOO_MANY]
+        found += _argv_floor([*own, *everything], rooted=False)
+        for other in others:
+            found += _argv_floor([*own, *other], rooted=False)
+    return found
+
+
+#: An escape `printf` or `echo -e` decodes (`\x72`, `\162`, `\u0072`), behind any number of backslashes.
+_NET_ESCAPE = re.compile(r"\\+(?:x([0-9a-fA-F]{1,2})|([0-7]{1,3})|u([0-9a-fA-F]{4}))")
+
+
+def _escape_char(match: re.Match) -> str:
+    hexa, octal, uni = match.groups()
+    code = int(hexa, 16) if hexa else int(octal, 8) if octal else int(uni, 16)
+    return chr(code) if 0 < code < 0x110000 else ""
+
+
+def _finder_acts(words: list[str]) -> list[Finding]:
+    """A recursive delete by a program that finds or syncs what it deletes: `find ~ -delete`, `rsync -a
+    --delete empty/ ~/` (a recursive rm of what the line names), and the paths `find`/`fd` hand the rm
+    they run after them (`fd . ~ -X rm -rf`: the line's words again, after it)."""
+    names = {os.path.basename(word).lower() for word in words}
+    found: list[Finding] = []
+    if names & {"find", "gfind", "fd", "fdfind"}:
+        found += _argv_floor([*words, *words], rooted=False)
+        if "-delete" in words:
+            found += _argv_floor(["rm", "-r", *words], rooted=False)
+    if "rsync" in names and any(word.startswith("--del") for word in words):
+        found += _argv_floor(["rm", "-r", *words], rooted=False)
+    return found
+
+
+#: `dd`'s disk named by a number known only when it runs, or a glob (`of=/dev/rdisk$N`, `of=/dev/disk*`).
+_NET_DD = re.compile(r"(of=/dev/r?disk)(?=[$*?\[`])\S*", re.I)
+
+
+def _net_word(word: str) -> str:
+    """A word as the net reads it: past its backslashes, `dd`'s disk known only when it runs as a disk, a
+    path as the shell resolves it (`_net_path`)."""
+    return _net_path(_NET_DD.sub(r"\g<1>0", word.replace("\\", "")))
+
+
+def _may_run(word: str, name: str) -> bool:
+    """Whether `word` may run `name`: a word known only when it runs (a variable, a substitution), or a
+    glob its file name matches (`/bin/r[m]`)."""
+    if "$" in word or "`" in word:
+        return not _RM_HOME.fullmatch(word)
+    return bool(_GLOB.search(word)) and fnmatch.fnmatchcase(name, os.path.basename(word).lower())
+
+
+_GLOB = re.compile(r"[*?\[]")
+#: The folders at the root a recursive rm must not take (`_RM_SYSTEM`'s), for a glob to be matched against.
+_SYSTEM_FOLDERS = ("system", "library", "applications", "users", "private", "volumes", "home", "root", "etc", "usr",
+                   "var", "bin", "sbin", "boot", "lib")
+
+
+def _net_path(word: str) -> str:
+    """A path word as the shell resolves it, for the net (macOS folders are case-insensitive): `~/`,
+    `$HOME/`, `//`, `/./` and `..` read (`~/../me` and `/USERS/me` are `~`, `/tmp/../` is `/`), and a
+    glob that may name the home, a folder at the root or the root's contents is that folder
+    (`/Us*/me` is `~`, `/S*` is `/System`, `/**` is `~`)."""
+    if len(word) < 2 or not word.startswith(("/", "~/", "$HOME/")):
+        return word
+    home = str(Path.home()).rstrip("/")
+    path = home + word[1:] if word.startswith("~/") else home + word[5:] if word.startswith("$HOME/") else word
+    if not path.startswith("/") or not (_GLOB.search(path) or "//" in path or "/." in path):
+        return word
+    contents = path.endswith("/*")
+    path = os.path.normpath(path[:-2] if contents else path).lower()
+    path = "/" + path.lstrip("/")
+    tail = "/*" if contents else ""
+    if path.rstrip("/") == home.lower() or _is_home_path(path):
+        return "~" + tail
+    if not _GLOB.search(path):
+        return path.rstrip("/") + tail if path != "/" else "/" + ("*" if contents else "")
+    segments = path.split("/")[1:]
+    segments = [segment for i, segment in enumerate(segments) if segment != "**" or segments[i - 1:i] != ["**"]]
+    if _segments_match(segments, home.lower().split("/")[1:]):
+        return "~" + tail
+    if fnmatch.fnmatchcase("system", segments[0]) or len(segments) == 1 and any(
+            fnmatch.fnmatchcase(folder, segments[0]) for folder in _SYSTEM_FOLDERS):
+        return "/System" + tail
+    return word
+
+
+def _segments_match(pattern: list[str], path: list[str]) -> bool:
+    """Whether a glob's segments may name `path`'s (each segment matched on its own; `**` any number)."""
+    at = {0}
+    for segment in pattern:
+        if segment == "**":
+            at = set(range(min(at), len(path) + 1)) if at else at
+        else:
+            at = {i + 1 for i in at if i < len(path) and fnmatch.fnmatchcase(path[i], segment)}
+        if not at:
+            return False
+    return len(path) in at
+
+
+def _security_input_acts(lines: list[list[str]]) -> list[Finding]:
+    """`security -i` runs the commands its input holds (`echo 'find-generic-password -s x -w' | security -i`,
+    a here-string, a heredoc): where a line holds one, each `security` command word on any line is read
+    as `security` running it."""
+    if not any("-i" in words and any(os.path.basename(word).lower() == "security" for word in words) for words in lines):
+        return []
+    return [finding for words in lines for j, word in enumerate(words) for command in _SECURITY_COMMANDS
+            if word.lower().startswith(command)             # `printf 'dump-keychain\n'` is `dump-keychainn` here
+            for finding in _argv_floor(["security", command, *words[j + 1:]], rooted=False)]
+
+
+_SECURITY_COMMANDS = ("dump-keychain", "export", "find-generic-password", "find-internet-password")
+
+
+def _is_fed(word: str) -> bool:
+    return bool(_NET_POSITIONAL.fullmatch(word)) or os.path.basename(word).lower() in ("xargs", "parallel")
+
+
 def _net_lines(flat: str) -> list[str]:
-    """`flat` cut at separators, brackets and backticks, each substitution's body read as lines of
-    its own and standing as one word known only when it runs (`$NET`)."""
+    """`flat` cut at separators, brackets and backticks: its braced parameters read first (`${HOME:?}`
+    is `~`, `${x}` is `$x`, `${x:-~}` a word known only when it runs or `~`), then its braces expanded
+    (`rm -rf {~,/tmp/x}` is `rm -rf ~ /tmp/x`), each substitution's body read as lines of its own and
+    standing as one word known only when it runs (`$NET`) — after what it prints, when that is a
+    literal `echo` or `printf` (`$(echo ~)` is `~`)."""
+    for _ in range(_MAX_SUBSTITUTION_DEPTH):
+        read = _NET_PARAMETER.sub(_parameter_word, flat)
+        if read == flat:
+            break
+        flat = read
+    for _ in range(_MAX_SUBSTITUTION_DEPTH):
+        expanded = _NET_BRACES.sub(_braces_expanded, flat)
+        if expanded == flat:
+            break
+        flat = expanded
     bodies: list[str] = []
     for _ in range(_MAX_SUBSTITUTION_DEPTH):
         spans = _NET_SUBSTITUTION.findall(flat)
         if not spans:
             break
         bodies += [span[2:-1] if span.startswith("$(") else span[1:-1] for span in spans]
-        flat = _NET_SUBSTITUTION.sub(" $NET ", flat)
+        flat = _NET_SUBSTITUTION.sub(_substitution_word, flat)
     return [*_FLAT_LINES.split(flat), *(line for body in bodies for line in _FLAT_LINES.split(body))]
 
 
-def _script_acts(script: str) -> list[Finding]:
+#: A braced parameter (`${HOME:?}`, `${x}`, `${1}`), innermost first: the cut at braces would break it apart.
+_NET_PARAMETER = re.compile(r"\$\{([^{}]*)\}")
+#: The forms of one that are the home (`${HOME}`, `${HOME:?}`, `${HOME:-x}`, `${HOME%/}`), as `_RM_HOME` reads them.
+_HOME_PARAMETER = re.compile(r"HOME(?::?[-=?][^}]*|%[^}]*)?")
+_PARAMETER_NAME = re.compile(r"(?:[A-Za-z_][A-Za-z0-9_]*)(?:\[[^\]]*\])?|[@*\d]")
+_PARAMETER_WORD = re.compile(r"(?:[A-Za-z_][A-Za-z0-9_]*|[@*\d]):?[-=?+](.*)", re.S)
+#: A brace alternation in a word (`{~,/tmp/x}`, `r{m,}`, `/{System,Library}`), innermost first.
+#: Its prefix starts after a blank, a brace, a comma or a quote (one scan of each stretch: no backtracking over
+#: a long word), and stops at one: `{a,{b,~}}` gives the words `a`, `b` and `~`.
+_NET_BRACES = re.compile(r"(?<![^\s{}'\",])([^\s{}'\",]*)\{([^{}\s'\"]*,[^{}\s'\"]*)\}([^\s{}'\",]*)")
+#: A positional parameter: the words a function or `set --` hands on.
+_NET_POSITIONAL = re.compile(r"\$(?:[@*]|\d|\{[@*\d]\})")
+
+
+def _parameter_word(match: re.Match) -> str:
+    """A braced parameter as the net reads it: the home, a plain parameter (`$x`, `$@`), or a word known
+    only when it runs, followed by the word it may stand for instead (`${x:-~}`, `${HOME:+/tmp}`)."""
+    body = match.group(1)
+    if _HOME_PARAMETER.fullmatch(body):
+        return "~"
+    if _PARAMETER_NAME.fullmatch(body):
+        return "$" + body                           # `${a[@]}` is `$a[@]`, which `_NET_NAMED` reads as `$a`
+    other = _PARAMETER_WORD.fullmatch(body)
+    return " $NET " + (other.group(1) if other else "") + " "
+
+
+def _braces_expanded(match: re.Match) -> str:
+    """One alternation's words: joined by commas inside another (`{a,{b,~}}` is `{a,b,~}`), else by
+    blanks. A prefix and suffix that would be copied past 4,096 characters stand once, as words of
+    their own (over-read: `x{~,y}` then holds `~`)."""
+    prefix, choices, suffix = match.group(1), match.group(2).split(","), match.group(3)
+    text, start, end = match.string, match.start(), match.end()
+    if len(choices) * (len(prefix) + len(suffix)) > 4096:
+        return f" {prefix} {' '.join(choices)} {suffix} "
+    words = [prefix + choice + suffix for choice in choices]
+    if start and text[start - 1] in "{," and end < len(text) and text[end] in "},":
+        return ",".join(words)
+    return " " + " ".join(words) + " "
+
+
+def _substitution_word(match: re.Match) -> str:
+    span = match.group()
+    body = span[2:-1] if span.startswith("$(") else span[1:-1]
+    try:
+        printed = _literal_output(body)
+    except Exception:  # noqa: BLE001
+        printed = None
+    if printed is not None and printed.strip() and "\n" not in printed.strip():
+        return f" {printed.strip()} $NET "          # and still a word known only when it runs (`printf '\\x72m'`)
+    if body.split()[:1] == ["pwd"]:
+        return " $PWD $NET "                        # the working folder (`cd ~ && rm -rf "$(pwd)"`)
+    return " $NET "
+
+
+#: A name a command sets (`x=…`, `export x=…`, `x=(…)`), and a name used (`$x`, `$x/`, `$x/*`, `$x[1]`).
+_NET_ASSIGNED = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)=(.*)", re.S)
+_NET_NAMED = re.compile(r"\$([A-Za-z_][A-Za-z0-9_]*)(?:\[[^\]]*\])?((?:/|/\*)?)")
+_NET_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def _net_names_filled(lines: list[list[str]]) -> list[list[str]]:
+    """The net's lines with what the text puts in a name or the working folder filled in, where it is
+    the home, the root or a system folder (`_net_target`): a name set to it (`x=$HOME`, `x="$HOME"`,
+    `x=$(echo ~)`, `x=(~)`, `for d in ~ /tmp/x`, `printf -v x %s ~`; a name `read` sets, when the
+    text holds one) is it where it is used (`$x`, `$x/`, `$x/*`, `$x[1]`); after a `cd` or `pushd` to
+    it (or a bare `cd`: the home), `*`, `./*`, `$PWD` and `~+` are it or its contents. A name that
+    runs something else (`_aliases_set`) is what it runs, and `dd`'s `of=$d` the disk `d` is set to;
+    with `IFS` set, a value is also read as the words it splits into (`IFS=,; x=rm,-rf,~; $x`).
+    Over-read on purpose: a name set to one anywhere is it everywhere (the first one: any makes the
+    act), and the first such `cd` holds for the text. Linear: one `read`, `printf -v`, `alias` and
+    `hash -p` a line."""
+    names: dict[str, str] = {}
+    disks: dict[str, str] = {}
+    aliases: dict[str, list[str]] = {}
+    readers: list[str] = []
+    first = ""
+    folder = ""
+    previous: list[str] = []
+    separators = "".join(word[4:] for words in lines for word in words if word.startswith("IFS="))
+    split = [re.split("[" + re.escape(separators) + "]", word.partition("=")[2]) for words in lines for word in words
+             if separators and _NET_ASSIGNED.fullmatch(word) and any(c in word.partition("=")[2] for c in separators)]
+    for words in lines:
+        if previous and _NET_ASSIGNED.fullmatch(previous[-1]) and previous[-1].endswith("="):   # `x=(~ /tmp)`
+            if value := next(filter(None, map(_net_target, words)), ""):
+                names.setdefault(previous[-1][:-1], value)
+        targets = [_net_target(word) for word in words]
+        first = first or next(filter(None, targets), "")
+        for i, word in enumerate(words):
+            assigned = _NET_ASSIGNED.fullmatch(word)
+            if assigned:
+                value = assigned.group(2) or (words[i + 1] if i + 1 < len(words) else "")
+                if value_target := _net_target(value):
+                    names.setdefault(assigned.group(1), value_target)
+                elif _DD_DISK.match("of=" + value):            # `D=/dev/rdisk4; dd … of=$D`
+                    disks.setdefault(assigned.group(1), value)
+            elif word in ("cd", "pushd") and not folder:
+                j = i + 1
+                while j < len(words) and words[j].startswith("-"):
+                    j += 1
+                folder = "~" if j == len(words) else _net_target(words[j])
+        if "read" in words:
+            readers += [w for w in words[words.index("read") + 1:] if _NET_NAME.fullmatch(w)]
+        _aliases_set(words, aliases)
+        if "-v" in words and words.index("-v") and words[words.index("-v") - 1] == "printf":
+            k = words.index("-v")
+            if k + 1 < len(words) and (value := next(filter(None, targets[k + 2:]), "")):
+                names.setdefault(words[k + 1], value)
+        if len(words) > 3 and words[0] == "for" and words[2] == "in" and (value := next(filter(None, targets[3:]), "")):
+            names.setdefault(words[1], value)
+        previous = words
+    for name in readers if first else ():
+        names.setdefault(name, first)
+    if not names and not folder and not aliases and not disks:
+        return lines + split
+    filled = []
+    for words in lines:
+        line: list[str] = []
+        for word in words:
+            named = _NET_NAMED.fullmatch(word)
+            if aliases and os.path.basename(word) in aliases:
+                line += aliases[os.path.basename(word)]
+            elif disks and word.startswith("of=$") and word[4:] in disks:
+                line.append("of=" + disks[word[4:]])
+            elif named and named.group(1) in names:
+                line.append(_net_within(names[named.group(1)], named.group(2)))
+            elif folder and word in ("*", "./*", "~+/*"):
+                line.append(_net_within(folder, "/*"))
+            elif folder and word in ("$PWD", "~+", "~+/"):
+                line.append(folder)
+            else:
+                line.append(word)
+        filled.append(line)
+    return filled + split
+
+
+def _aliases_set(words: list[str], aliases: dict[str, list[str]]) -> None:
+    """The names a line makes run something else: `alias x='rm -rf'` (its value's words), `hash -p
+    /bin/rm x`, a program copied or linked under another name (`ln -s /bin/rm x`, `cp /bin/rm ./x`)."""
+    if not words:
+        return
+    if "alias" in words:
+        k = words.index("alias") + 1
+        if k < len(words) and _NET_ASSIGNED.fullmatch(words[k]):
+            name, _, value = words[k].partition("=")
+            aliases.setdefault(name, [value, *words[k + 1:]] if value else words[k + 1:])
+    if "hash" in words and "-p" in words:
+        k = words.index("-p")
+        if k + 2 < len(words):
+            aliases.setdefault(os.path.basename(words[k + 2]), [words[k + 1]])
+    k = next((i for i, w in enumerate(words) if os.path.basename(w) in ("ln", "cp", "install", "mv", "ditto")), -1)
+    if k >= 0 and len(words) > k + 2:
+        source = next((w for w in words[k + 1:-1] if os.path.basename(w).lower() in _NET_PROGRAMS
+                       or "$" in w or "`" in w), "")         # `ln -s $(which rm) x`: a program known when it runs
+        if source:
+            aliases.setdefault(os.path.basename(words[-1].rstrip("/")), [source])
+
+
+def _net_target(word: str) -> str:
+    """The home, the root or a system folder `word` names, as `_argv_floor` reads it (`~`, `/`, `/Users`), or ""."""
+    if _is_home_word(word):
+        return "~"
+    if _RM_ROOT.fullmatch(word):
+        return "/"
+    if _RM_SYSTEM.fullmatch(word):
+        return word.rstrip("/*") or "/"
+    return ""
+
+
+def _net_within(target: str, tail: str) -> str:
+    """`target` with a name's tail (`/`, `/*`): `~/*`, `/*`, `/Users/*`."""
+    return target if not tail else ("" if target == "/" else target) + tail
+
+
+def _is_home_word(word: str) -> bool:
+    return bool(_RM_HOME.fullmatch(word)) or _is_home_path(word)
+
+
+def _script_acts(script: str, depth: int = 0, never=None) -> list[Finding]:
     """An AppleScript's (or JXA's) acts the net looks for: an app on the never-list, a power step
-    outside its strings."""
+    outside its strings. The app as the script names it once its string pieces are joined
+    (`application ("Keychain" & " Access")`, `Application("Keychain" + " Access")`), a process
+    System Events drives (`tell process "Keychain Access"`); a power step a UI script clicks or types
+    (`click menu item "Shut Down…"`, ⇧⌘Q), a name it keeps in a variable it then tells (`set a to "Keychain
+    Access"` … `tell application a`); and what `run script` runs from a string, read as a script
+    (4 deep). Past 64 such names the script asks unread (`_NET_TOO_MANY`)."""
+    never = never or _never_touched
+    joined = _NET_SCRIPT_JOIN.sub("", script.replace("\u201c", '"').replace("\u201d", '"'))
+    names = [*app_names(joined), *(match.group(1) for match in _NET_TOLD.finditer(joined))]
+    values = {match.group(1): match.group(2) for match in _NET_SCRIPT_SET.finditer(joined)}
+    names += [values[match.group(1) or match.group(2)] for match in _NET_TOLD_NAME.finditer(joined)
+              if (match.group(1) or match.group(2)) in values]
+    names = list(dict.fromkeys(names))
+    if len(names) > 64:
+        return [_NET_TOO_MANY]
     found = [Finding("floor", "never-app", f"Arslan never touches {name} (the never-list)", app=name)
-             for name in app_names(script) if _never_touched(name)]
-    if _SCRIPT_POWER.search(_SCRIPT_STRING.sub('""', script)):
+             for name in names if never(name)]
+    if _SCRIPT_POWER.search(_SCRIPT_STRING.sub('""', script)) or _SCRIPT_UI.search(script) and (
+            _SCRIPT_POWER.search(script) or _ui_power_keys(script)):     # by its menu item or shortcut (UI)
         found.append(Finding("floor", "shutdown", "shuts down, restarts or logs out the Mac"))
-    return found
+    if depth < 4:
+        for match in _NET_RUN_SCRIPT.finditer(joined):
+            found += _script_acts(re.sub(r"\\(.)", r"\1", match.group(1)), depth + 1, never)
+    return list(dict.fromkeys(found))
 
 
-def _osascript_scripts(text: str) -> list[str]:
+#: A keystroke a UI script types, with its modifiers: ⇧⌘Q (with ⌥ or not) logs out.
+_NET_KEYS = re.compile(r'(?:keystroke\s+"q"|key\s+code\s+12)\s+using\s+\{?([^}\n]*)\}?', re.I)
+
+
+def _ui_power_keys(script: str) -> bool:
+    return any("command" in m.group(1).lower() and "shift" in m.group(1).lower() for m in _NET_KEYS.finditer(script))
+
+
+#: Two string pieces joined (`"a" & "b"`, `'a' + 'b'`): the net reads them as one string.
+_NET_SCRIPT_JOIN = re.compile(r'(["\'])\s*[&+]\s*(["\'])')
+#: An app or a process told by its name, in parentheses too (`tell application ("Keychain Access")`).
+_NET_TOLD = re.compile(r'\b(?:application|app|process)\s+(?:id\s+)?\(?\s*"([^"\n]{1,120})"', re.I)
+#: A string kept in a variable (`set a to "X"`, `var a = "X"`, `a = 'X'`), and a variable an app is told by.
+_NET_SCRIPT_SET = re.compile(r"""\b(?:set\s+)?([A-Za-z_]\w*)\s*(?:\bto\b|=)\s*\(?\s*["']([^"'\n]{1,120})["']""", re.I)
+_NET_TOLD_NAME = re.compile(r"\b(?:application|app|process)\s+(?:id\s+)?\(?\s*([A-Za-z_]\w*)\b|\b(?:Application|app)\(\s*([A-Za-z_]\w*)\s*\)")
+#: What `run script` runs from a string.
+_NET_RUN_SCRIPT = re.compile(r'\brun\s+script\s+\(?\s*"((?:[^"\\\n]|\\.)*)"', re.I)
+
+
+def _osascript_scripts(text: str) -> list[str] | None:
     """The scripts each osascript in `text`, or in any quoted layer of it, is handed by `-e` (each
-    `-e` a line): `concurrently "osascript -e 'tell application \\"System Events\\" to shut down'"`."""
+    `-e` a line): `concurrently "osascript -e 'tell application \\"System Events\\" to shut down'"`.
+    None when an osascript sits deeper than the net reads (the text asks unread)."""
     scripts: list[str] = []
-    for view in _quoted_layers(text):
-        if "osascript" not in view:
-            continue
-        for segment in re.split(r"[;&|\n]", view):
-            words = _words(segment)
-            for k, word in enumerate(words):
-                if os.path.basename(word).lower() == "osascript":
-                    lines = [words[i + 1] for i in range(k + 1, len(words) - 1) if words[i] == "-e"]
-                    if lines:
-                        scripts.append("\n".join(lines))
+    layers = _quoted_layers(text)
+    if layers is None:
+        return None
+    for view in layers:
+        words = _words(view)            # quoted: a `;` or `&` in a script is the script's (`"a" & "b"`)
+        starts = [k for k, word in enumerate(words) if os.path.basename(word).lower() == "osascript"]
+        for k, end in zip(starts, [*starts[1:], len(words)]):
+            lines = [words[i + 1] for i in range(k + 1, end - 1) if words[i] == "-e"]
+            if lines:
+                scripts.append("\n".join(lines))
     return scripts
 
 
-def _quoted_layers(text: str, depth: int = 3) -> list[str]:
-    """`text`, and what each quoted string in it holds (a double-quoted one with its escapes taken
-    out), and so on `depth` layers down: the code an unknown runner is handed in quotes. At most 64."""
+def _quoted_layers(text: str, depth: int = 8) -> list[str] | None:
+    """`text`, and what each quoted string in it that names osascript holds (a double-quoted one with
+    its escapes taken out), and so on down: the code an unknown runner is handed in quotes. One
+    layer's strings are disjoint, so all of them hold at most `depth` + 1 times the text. None when
+    one `depth` layers down still names osascript in a quoted string."""
     layers, pending = [text], [(text, 0)]
-    while pending and len(layers) < 64:
+    while pending:
         current, level = pending.pop()
-        if level >= depth:
-            continue
         for match in re.finditer(r"'([^']*)'|\"((?:[^\"\\]|\\.)*)\"", current):
             inner = match.group(1) if match.group(1) is not None else re.sub(r"\\(.)", r"\1", match.group(2))
-            if inner.strip() and len(layers) < 64:
+            if "osascript" in inner.lower():
+                if level >= depth:
+                    return None
                 layers.append(inner)
                 pending.append((inner, level + 1))
     return layers
@@ -1088,10 +1487,12 @@ def _read(text: str) -> list[Finding]:
     _charge(shell)
     inner = _with_inner_backticks(shell)
     _charge(inner[len(shell):])
-    shell = _without_zsh_modifiers(_readings(inner))
-    # Once a case pattern's `)` is a line (it no longer closes the `$(` it sits in), the `$'…'` and the
-    # comments behind it, which the first pass took for double-quoted text, are read (R3).
-    shell = _comments_blanked(_decode_ansi_c(shell))
+    reading = _readings(inner)
+    shell = _without_zsh_modifiers(reading)
+    if shell != reading:
+        # Once a case pattern's `)` is a line (it no longer closes the `$(` it sits in), the `$'…'`
+        # and the comments behind it, which the first pass took for double-quoted text, are read (R3).
+        shell = _comments_blanked(_decode_ansi_c(shell))
     # Hermes' size limit reads the command as written, as `_hardline` did: blanks that pad it past
     # 4,096 characters without a separator keep its floor; its patterns read the runs collapsed,
     # and the ones `$'\n…'` decodes to (G4).
@@ -1621,9 +2022,12 @@ def _charge(*texts: str) -> None:
         budget.ticks += backticks * len(text)
         budget.nested += nested
         budget.separators += separators
-        wrappers = _most_wrappers(text)
+        wrappers = max(_most_wrappers(text), _most_wrappers(hermes._normalize_command_for_detection(text)))
         if wrappers > _MAX_WRAPPERS:
             raise _Unreadable(f"{wrappers} wrapper words in one command")
+        openers = _most_openers(text)
+        if openers > _MAX_OPENERS:
+            raise _Unreadable(f"{openers} command starts between two separators")
     if budget.marks > _MAX_SUBSTITUTIONS:
         raise _Unreadable(f"{budget.marks} substitutions")
     if budget.deepest > _MAX_SUBSTITUTION_DEPTH:
@@ -1691,17 +2095,45 @@ def _substitution_load(text: str) -> tuple[int, int, int, int, int]:
     return marks, deepest, backticks, nested, separators
 
 
+#: R8 (re-review 5 (b)): each command start between two separators is read to the end of its segment
+#: when nothing closes it (`(`, `{`, `then` …: 2,333 ` {{` took 19 s, 900 `then` 5 s). zsh refuses those
+#: commands (an unclosed group, a bad pattern); real ones start a few commands per segment.
+_MAX_OPENERS = 16
+_OPENER_WORDS = frozenset(hermes._SHELL_COMMAND_TRANSITIONS)
+
+
+def _most_openers(text: str) -> int:
+    """The most command starts — `(`, a word opening with `{`, `if`/`then`/`do`/`!` … — between two
+    unquoted `;` `&` `|` or newlines, in one linear pass."""
+    most = count = 0
+    text = text.replace("\\\n", " ")         # Hermes starts a command at a `{` after an escaped newline
+    for token in _SHELL_TOKEN.finditer(text):
+        word, at = token.group(), token.start()
+        if word in (";", "&", "|", "\n"):
+            count = 0
+        elif (word == "(" and text[at - 1:at] not in ("$", "<", ">", "=")    # a substitution: `_MAX_SUBSTITUTIONS`
+              or word.startswith("{") or word in _OPENER_WORDS):
+            count += 1
+            most = max(most, count)
+    return most
+
+
 def _most_wrappers(text: str) -> int:
     """The most wrapper words any one simple command of `text` holds, quoted words as data, in one
-    linear pass (review N6: 1,990 `env` read in 17 s). A redirection (`2>&1`) ends no command."""
+    linear pass (review N6: 1,990 `env` read in 17 s). A redirection (`2>&1`) ends no command, and
+    nor does a newline right after a wrapper word: Hermes reads on past it (R8, `\\nnohup ` × 800 45 s)."""
     most = count = 0
+    after = False                               # the last word was a wrapper
     for token in _SHELL_TOKEN.finditer(text):
         word = token.group()
         if word in _COMMAND_ENDS:
-            count = 0
+            if word != "\n" or not after:
+                count, after = 0, False
         elif os.path.basename(word.strip("'\"").lstrip("=")).lower() in _WRAPPER_NAMES:
-            count += 1
+            count, after = count + 1, True
             most = max(most, count)
+        else:
+            after = False
     return most
 
 
@@ -2881,10 +3313,10 @@ def _unescape_print(text: str) -> str:
 _DISK_ERASE = frozenset({"zerodisk", "randomdisk", "secureerase", "reformat", "partitiondisk", "deletecontainer",
                          "deletevolume"})
 #: What a recursive `rm` must not take (F4 b, G3): the home, the root, a system folder (Hermes' and macOS's).
-_RM_HOME = re.compile(r"(?:~|\$HOME|\$\{HOME\})(?:/|/\*)?")
+_RM_HOME = re.compile(r"(?:~|\$HOME|\$\{HOME(?::?[-=?][^}]*|%[^}]*)?\})(?:/|/\*)?")
 _RM_ROOT = re.compile(r"/+\*?")
 _RM_SYSTEM = re.compile(r"/+(?:System(?:/.*)?|(?:Library|Applications|Users|private|Volumes|home|root|etc|usr|var|bin"
-                        r"|sbin|boot|lib)(?:/|/\*)?)")
+                        r"|sbin|boot|lib)(?:/|/\*)?)", re.I)                 # (macOS folders: any case)
 _DD_DISK = re.compile(r"of=/dev/(?:r?disk\d|sd|nvme|hd|mmcblk|vd|xvd)", re.I)
 _SHUTDOWN_WHEN = re.compile(r"-[a-zA-Z]*[hr][a-zA-Z]*|now|\+\d+")
 
@@ -2936,7 +3368,7 @@ def _argv_floor(argv: list[str], *, rooted: bool = True) -> list[Finding]:
             letters = word[1:]
             recursive = recursive or "r" in letters or "R" in letters
             secret = secret or "w" in letters or "g" in letters
-        if _RM_HOME.fullmatch(word):
+        if _RM_HOME.fullmatch(word) or _is_home_path(word):
             target = "recursive delete of home directory"
         elif _RM_ROOT.fullmatch(word):
             target = "recursive delete of root filesystem"
@@ -2951,8 +3383,13 @@ def _argv_floor(argv: list[str], *, rooted: bool = True) -> list[Finding]:
             found.append(Finding("floor", "sudo", _WHY["sudo"]))
         elif name in ("shutdown", "halt", "reboot") and k == 0 and rooted and _SHUTDOWN_WHEN.fullmatch(after):   # (G2)
             found.append(Finding("floor", "hardline", "system shutdown/reboot"))
-        elif name == "security" and (after in ("dump-keychain", "export") or (
-                after in ("find-generic-password", "find-internet-password") and secret)):
+        elif k == 0 and rooted and "/" in argv[k] and (                 # by its path: Hermes reads the bare word (R9)
+                name in ("reboot", "halt", "poweroff") and all(word.startswith("-") for word in argv[1:])
+                or name in ("init", "telinit") and after in ("0", "6")
+                or name == "systemctl" and after in ("poweroff", "reboot", "halt", "kexec")):
+            found.append(Finding("floor", "hardline", "system shutdown/reboot"))
+        elif name == "security" and (_security_command(argv, k) in ("dump-keychain", "export") or (
+                _security_command(argv, k) in ("find-generic-password", "find-internet-password") and secret)):
             found.append(Finding("floor", "keychain-secrets", _WHY["keychain-secrets"]))
         elif name == "diskutil" and after:
             verb = argv[k + 2].lower() if after == "apfs" and k + 2 < n else after
@@ -2963,6 +3400,36 @@ def _argv_floor(argv: list[str], *, rooted: bool = True) -> list[Finding]:
         elif name == "rm" and recursive and target:            # no force flag needed (G3)
             found.append(Finding("floor", "hardline", target))
     return found
+
+
+def _is_home_path(word: str) -> bool:
+    """The user's home by its absolute path (`/Users/me`, `/Users/me/`, `/Users/me/*`) or by the user's
+    name (`~me`, `~me/`, `~me/*`): what `~` is."""
+    if word.startswith("~") and len(word) > 1:
+        user, _, rest = word[1:].partition("/")
+        home = str(Path.home())
+        return rest in ("", "*") and user.lower() == os.path.basename(home.rstrip("/")).lower() != ""
+    if not word.startswith("/"):
+        return False
+    path = (word[:-2] if word.endswith("/*") else word).rstrip("/").lower()      # (macOS folders: any case)
+    return bool(path) and path in _home_spellings(str(Path.home()))
+
+
+@functools.lru_cache(maxsize=4)
+def _home_spellings(home: str) -> frozenset[str]:
+    try:
+        return frozenset({home.rstrip("/").lower(), os.path.realpath(home).rstrip("/").lower()} - {""})
+    except Exception:  # noqa: BLE001
+        return frozenset({home.rstrip("/").lower()} - {""})
+
+
+def _security_command(argv: list[str], k: int) -> str:
+    """The command `security` at `argv[k]` runs, past its own options (`security -v find-generic-password
+    …`; `-p` takes a prompt)."""
+    i = k + 1
+    while i < len(argv) and argv[i].startswith("-"):
+        i += 2 if argv[i] == "-p" else 1
+    return argv[i].lower() if i < len(argv) else ""
 
 
 def _floor_patterns(shell: str) -> list[Finding]:
@@ -3717,7 +4184,7 @@ def _terminal_app(argv: list[str]) -> str:
 
 _JXA_APP = re.compile(r"""\bApplication\(\s*['"]([^'"\n]{1,120})['"]\s*\)""")
 _APPSCRIPT_APP = re.compile(r"""\bapp\(\s*['"]([^'"\n]{1,120})['"]\s*\)""")
-_SCRIPT_STRING = re.compile(r'"(?:[^"\\\n]|\\.)*"')
+_SCRIPT_STRING = re.compile(r'"(?:[^"\\\n]|\\.)*"|\u201c[^\u201d\n]*\u201d')     # AppleScript takes “…” too
 #: Outside its strings, an AppleScript that says none of these tells no other app (display a
 #: notification, say, delay…); one that does but names no app by a literal reaches an app it builds
 #: at run time (`tell application x`, `run script`): it asks as an unknown app.
@@ -3743,7 +4210,7 @@ _AS_ESCAPES = {'"': '"', "\\": "\\", "n": "\n", "r": "\r", "t": "\t"}
 _JS_ESCAPES = {**_AS_ESCAPES, "'": "'"}
 _SCRIPT_ADMIN = re.compile(r"\bwith\s+administrator\s+privileges\b|\badministratorPrivileges\s*:\s*true\b", re.I)
 #: An AppleScript's power step, and JXA's (`Application("System Events").shutDown()`, `.logOut()`).
-_SCRIPT_POWER = re.compile(r"\b(?:shut\s*down|restart|log\s*out)\b", re.I)
+_SCRIPT_POWER = re.compile(r"\b(?:shut\s*down|restart|log\s*out)\b|aevt(?:rsdn|rrst|rlgo|logo)", re.I)   # and the raw events
 #: A step that clicks or types: the strings it names are the labels it acts on, not content.
 _SCRIPT_UI = re.compile(r"\b(?:click|keystroke|key\s+code|perform\s+action|select\s+menu\s+item)\b", re.I)
 _SCRIPT_SENDING_KEY = re.compile(r"\bkeystroke\s+(?:return|enter)\b|\bkey\s+code\s+(?:36|76)\b"
@@ -3865,6 +4332,7 @@ def app_names(script: str) -> list[str]:
     """The apps a script names: AppleScript `tell application "X"` (Hands' own reading),
     JavaScript `Application("X")`, appscript `app('X')`."""
     from server.services import hands_service
+    script = script.replace("\u201c", '"').replace("\u201d", '"')      # AppleScript takes “…” as "…"
     names = list(hands_service.script_apps(script))
     for pattern in (_JXA_APP, _APPSCRIPT_APP):
         names += [m.group(1) for m in pattern.finditer(script) if m.group(1) not in names]
@@ -3889,8 +4357,10 @@ def _never_touched(name: str) -> bool:
     """Hands' never-list. When it cannot be read (Hands' policy file is missing), the app is not
     refused unseen and the command is not unread: the app asks, as its own card (review I3)."""
     from server.services import hands_service
+    base = os.path.basename(name.strip().rstrip("/"))           # by its path: `/System/…/Keychain Access.app`
+    base = base[:-4] if base.lower().endswith(".app") else base
     try:
-        return hands_service.never_touched(name)
+        return any(hands_service.never_touched(each) for each in dict.fromkeys((name, base)) if each.strip())
     except Exception:  # noqa: BLE001 — fail closed to the app's card
         logger.warning("terminal_policy: Hands' never-list could not be read; %r asks as its app card", name,
                        exc_info=True)
@@ -4155,8 +4625,8 @@ def runs_freely_in_sandbox(command: str) -> bool:
 
 def _runs_freely(command: str) -> bool:
     text = str(command or "")
-    if not text.strip() or len(text) > MAX_COMMAND_CHARS:
-        return False
+    if not text.strip() or len(text) > MAX_COMMAND_CHARS or _most_openers(text) > _MAX_OPENERS:
+        return False                    # heredoc bodies included: Hermes reads them here (R8)
     try:
         text = _hermes_text(text)       # (G4) Hermes reads no long blank run
     except _Unreadable:
