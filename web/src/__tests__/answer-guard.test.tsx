@@ -289,6 +289,28 @@ describe("the guard outlives a re-render of whoever holds it", () => {
 });
 
 describe("what the guard remembers", () => {
+  it("hold() holds answers for 500 ms from now whatever was or was not on top (a card that first comes up over another view), and tells the cards once each way", () => {
+    const guard = makeAnswerGuard();
+    const told = vi.fn();
+    guard.subscribe(told);
+    expect(guard.held()).toBe(false);
+    guard.hold();
+    expect(guard.held()).toBe(true);
+    expect(told).toHaveBeenCalledTimes(1);
+    advance(499);
+    expect(guard.held()).toBe(true);
+    advance(2);
+    expect(guard.held()).toBe(false);
+    expect(told).toHaveBeenCalledTimes(2);
+    guard.hold(); advance(300); guard.hold();                        // a second hold moves the end; no stale timer ends it early
+    advance(300);
+    expect(guard.held()).toBe(true);
+    advance(210);
+    expect(guard.held()).toBe(false);
+    advance(2_000);
+    expect(told).toHaveBeenCalledTimes(5);                          // three holds told and two ends: no stale timer tells an end a second time
+  });
+
   it("a card that left holds the next one that comes up — now or in a moment — for 500 ms after it left, and no longer", () => {
     const guard = makeAnswerGuard();
     guard.shown("a");

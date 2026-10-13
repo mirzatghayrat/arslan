@@ -28,13 +28,13 @@ const schedule = (id: string, name = NAMES[id] ?? id) => card({ call_id: id, fra
 /** a server whose pending list moves: an answer takes its card out of it */
 let live: { pending: PendingCard[] };
 let calls: { url: string; init?: RequestInit }[] = [];
-function serve(pending: PendingCard[]) {
+function serve(pending: PendingCard[], active: Record<string, unknown>[] = []) {
   live = { pending };
   calls = [];
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     calls.push({ url, init });
     if (url.startsWith('/api/v1/island/feed')) {
-      return new Response(JSON.stringify(feed({ awaiting: live.pending.length, awaiting_conversations: live.pending.map((c) => c.conversation_id) })), { status: 200 });
+      return new Response(JSON.stringify(feed({ active, awaiting: live.pending.length, awaiting_conversations: live.pending.map((c) => c.conversation_id) })), { status: 200 });
     }
     if (url === '/api/v1/approvals/pending') return new Response(JSON.stringify(live.pending), { status: 200 });
     const m = /^\/api\/v1\/approvals\/([^/]+)\/answer$/.exec(url);
@@ -141,11 +141,15 @@ describe('what Allow says here', () => {
     expect(allowKey(card({ frame: { type: 'propose_workspace_write', options: ['once'] } }))).toBe('allow');
     expect(allowKey(card({ frame: { type: 'propose_run_command' } }))).toBe('allow');
     expect(allowKey(card({ frame: { type: 'propose_action', options: 'task' as never } }))).toBe('allow');
+    // the island's yes is the FIRST choice, whatever else is offered: a "task" further down the list is not what it grants
+    expect(allowKey(card({ frame: { type: 'propose_action', options: ['once', 'task'] } }))).toBe('allowOnce');
+    expect(allowKey(card({ frame: { type: 'propose_action', options: ['once', 'conversation', 'task'] } }))).toBe('allowOnce');
   });
 
   it('whatever is on the card, the island sends only approve and its source', async () => {
     serve([card({ call_id: 'w1', frame: { type: 'propose_action', kind: 'app', target: 'Notes', options: ['task', 'conversation', 'always'], always_label: 'Notes' } })]);
     await mount();
+    await advance(500);                                              // a card that comes up is held for half a second
     await click('island-allow');
     expect(JSON.parse(String(calls.find((c) => c.url.includes('/approvals/w1/answer'))?.init?.body))).toEqual({ approve: true, source: 'island' });
   });
@@ -155,6 +159,7 @@ describe('one gesture answers one card, here too', () => {
   it('the card that moves up under the pointer is not answered by the second click of a double-click', async () => {
     serve([schedule('a'), schedule('b')]);
     await mount();
+    await advance(500);
     expect(screen.getByTestId('island-ask-line')).toHaveTextContent('Alpha');
     await click('island-allow');                                     // click 1 answers a; b moves up
     expect(screen.getByTestId('island-ask-line')).toHaveTextContent('Bravo');
@@ -167,7 +172,8 @@ describe('one gesture answers one card, here too', () => {
   it('the hold is shown on both buttons, and they answer again 500 ms after the card changed', async () => {
     serve([schedule('a'), schedule('b')]);
     await mount();
-    expect(screen.getByTestId('island-allow')).not.toHaveAttribute('aria-disabled');      // the first card of an idle island answers at once
+    await advance(500);                                                                      // a card that comes up over nothing is held too, for half a second
+    expect(screen.getByTestId('island-allow')).not.toHaveAttribute('aria-disabled');
     expect(screen.getByTestId('island-decline')).not.toHaveAttribute('aria-disabled');
     await click('island-allow');
     for (const id of ['island-allow', 'island-decline']) {
@@ -186,6 +192,7 @@ describe('one gesture answers one card, here too', () => {
   it('No is held like Allow', async () => {
     serve([schedule('a'), schedule('b')]);
     await mount();
+    await advance(500);
     await click('island-decline');
     await click('island-decline');
     expect(answers()).toEqual(['a']);
@@ -194,31 +201,36 @@ describe('one gesture answers one card, here too', () => {
     expect(answers()).toEqual(['a', 'b']);
   });
 
-  it('a card proposed a moment after the last one was answered is held for the rest of that time, counted from when the last one left', async () => {
+  it('a card proposed a moment after the last one was answered is held for half a second from when it came up', async () => {
     serve([schedule('a')]);
     await mount();
     // The first poll is followed by one 2.5 s later (the state that tells it to hurry is not drawn yet), then they come every second.
     await advance(2060);
     await click('island-allow');                                     // a answered ~2.08 s in
     live.pending = [schedule('b')];                                  // the next command of the turn is proposed at once
-    await advance(430);                                              // the poll brings b ~2.5 s in: a left ~420 ms ago
+    await advance(430);                                              // the poll brings b ~2.5 s in
     expect(screen.getByTestId('island-ask-line')).toHaveTextContent('Bravo');
     expect(screen.getByTestId('island-allow')).toHaveAttribute('aria-disabled', 'true');
     await click('island-allow');
     expect(answers()).toEqual(['a']);
-    await advance(100);                                              // ~540 ms after a left: the 500 ms are up, though b came up only ~30 ms ago
+    await advance(100);                                              // ~540 ms after a left, b came up only ~30 ms ago: still held
+    expect(screen.getByTestId('island-allow')).toHaveAttribute('aria-disabled', 'true');
+    await advance(500);
     expect(screen.getByTestId('island-allow')).not.toHaveAttribute('aria-disabled');
     await click('island-allow');
     expect(answers()).toEqual(['a', 'b']);
   });
 
-  it('a card that comes up after the island has been idle for a while answers at once', async () => {
+  it('a card that comes up after the island has been idle for a while is held for half a second too, and then answers', async () => {
     serve([schedule('a')]);
     await mount();
+    await advance(500);
     await click('island-allow');
     await advance(1500);                                             // nothing waits for a good while
     live.pending = [schedule('b')];
-    await advance(1100);
+    await advance(1100);                                             // the poll brings b: it comes up over the "open to approve" nothing
+    expect(screen.getByTestId('island-allow')).toHaveAttribute('aria-disabled', 'true');
+    await advance(500);
     expect(screen.getByTestId('island-allow')).not.toHaveAttribute('aria-disabled');
     await click('island-allow');
     expect(answers()).toEqual(['a', 'b']);
@@ -227,6 +239,7 @@ describe('one gesture answers one card, here too', () => {
   it('the hold is not the wall clock: a clock set back does not hold the card until it catches up', async () => {
     serve([schedule('a'), schedule('b')]);
     await mount();
+    await advance(500);
     await click('island-allow');
     vi.setSystemTime(Date.now() - 3_600_000);                       // the system clock is set an hour back
     await advance(520);
@@ -252,5 +265,40 @@ describe('the island’s own words for a card from the permission layer, in ever
   it('English says what they grant', () => {
     expect(MESSAGES.en.allowOnce).toBe('Allow once');
     expect(MESSAGES.en.allowTask).toBe('Allow for this task');
+  });
+});
+
+describe('a card that comes up over another island view is held', () => {
+  // The island's overview (a running job: Stop, Open Arslan) flips to the ask view when a card arrives, and the ask view's Decline and Allow
+  // sit where the overview's buttons were: a click aimed at "Open Arslan" must not become an approve of a card nobody has read. (The dev
+  // server hides this: StrictMode's double effect arms the guard at mount; a production build does not.)
+  const JOB = { id: 1, conversation_id: 'c1', kind: 'job', title: 'Tidy notes', started_at: 1, step: null, plan: null, job_id: 'job-1' };
+  async function overviewThenCard() {
+    serve([], [JOB]);
+    await mount();
+    fireEvent.mouseEnter(screen.getByRole('region', { name: 'Arslan Island' }));
+    await advance(600);
+    expect(screen.getByTestId('island-open')).toBeInTheDocument();                           // the overview, with its buttons
+    live.pending = [schedule('a')];
+    for (let i = 0; i < 60 && !screen.queryByTestId('island-allow'); i++) await advance(50);
+    expect(screen.getByTestId('island-allow')).toBeInTheDocument();                         // the ask view has taken its place
+  }
+
+  it('a click right after the flip answers nothing, and both buttons look held', async () => {
+    await overviewThenCard();
+    expect(screen.getByTestId('island-allow')).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByTestId('island-decline')).toHaveAttribute('aria-disabled', 'true');
+    await click('island-allow');
+    await click('island-decline');
+    expect(answers()).toEqual([]);
+    expect(screen.getByTestId('island-ask-line')).toHaveTextContent('Alpha');
+  });
+
+  it('500 ms after it came up the same click answers', async () => {
+    await overviewThenCard();
+    await advance(600);
+    expect(screen.getByTestId('island-allow')).not.toHaveAttribute('aria-disabled');
+    await click('island-allow');
+    expect(answers()).toEqual(['a']);
   });
 });

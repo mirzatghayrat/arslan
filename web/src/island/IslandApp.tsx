@@ -249,9 +249,12 @@ function AskView({ card, total, m, lang, clock, onAnswered }: {
   const guard = useQueueGuard();
   const guarded = useAnswerGuard();
   const held = useAnswerHeld();
-  // Which card is on top, and that one has just left it (answered, resolved elsewhere, run out), is what the guard goes by.
+  // Held for half a second from when this view comes up: over another island view (the overview's Open Arslan, a result's buttons sit where
+  // Decline and Allow do now), after the last card was answered, or over nothing — a click aimed at something else must not land here.
+  // (It is also what holds a card that is proposed a moment after the last one left: that one comes up here, and this view is new.)
+  useLayoutEffect(() => { guard.hold(); }, [guard]);
+  // A card replaced by the next one in this same view (the answered one leaves the list): the guard goes by which card is on top.
   useLayoutEffect(() => { guard.shown(card.call_id); }, [guard, card.call_id]);
-  useLayoutEffect(() => () => guard.shown(null), [guard]);
   const answer = async (approve: boolean) => {
     if (guarded()) return;
     setBusy(true); setFailed(false);

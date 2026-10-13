@@ -29,7 +29,10 @@ afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); localStor
 
 async function mount() {
   render(<IslandApp />);
-  await act(async () => { await vi.advanceTimersByTimeAsync(20); });
+  await act(async () => { await vi.advanceTimersByTimeAsync(20); });       // the poll lands and the card comes up
+  // A card that comes up is held for half a second (kit/guard.ts: one gesture, one card), so the tests that answer it wait that out.
+  // A separate act: React draws what a long one schedules only when it ends, and the hold starts when the card is drawn.
+  await act(async () => { await vi.advanceTimersByTimeAsync(520); });
 }
 
 describe('answering in the island', () => {

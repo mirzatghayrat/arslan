@@ -10,6 +10,8 @@ export const ANSWER_GUARD_MS = 500;
 export interface AnswerGuardState {
   /** The card now on top (its key), or null when there is none. */
   shown(key: string | null): void;
+  /** Hold answers for the guard time from now: a card that first comes up where something else was showing (the island's overview) is not for the click aimed at it. */
+  hold(): void;
   /** Whether an answer must be ignored right now. */
   held(): boolean;
   /** Told when the hold starts and when it ends, so the cards can show it. Returns the way to stop being told. */
@@ -32,7 +34,14 @@ export function makeAnswerGuard(): AnswerGuardState {
     if (left > 0) ends = setTimeout(finish, left + 1);
     else tell();
   };
+  const arm = () => {
+    until = now() + ANSWER_GUARD_MS;
+    clearTimeout(ends);
+    ends = setTimeout(finish, ANSWER_GUARD_MS);
+    tell();
+  };
   return {
+    hold: arm,
     shown(key) {
       // A card left (a different one, or none, is on top now): the one that comes up now, or in a moment, is held. The same card
       // again, and the first card after the slot has been empty a while, are not a change.
@@ -52,7 +61,7 @@ export function makeAnswerGuard(): AnswerGuardState {
   };
 }
 
-const NEVER: AnswerGuardState = { shown: () => {}, held: () => false, subscribe: () => () => {} };
+const NEVER: AnswerGuardState = { shown: () => {}, hold: () => {}, held: () => false, subscribe: () => () => {} };
 const GuardContext = createContext<AnswerGuardState | null>(null);
 
 /** Provides a guard to the queues and cards below it. The owner of a slot that is empty between cards (AskSlot, the Inbox) provides one
