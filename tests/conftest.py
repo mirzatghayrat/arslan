@@ -354,3 +354,14 @@ def _real_data_dir_untouched():
             "HOME pointed at a temp dir to reproduce safely. Nothing was removed.",
             pytrace=False,
         )
+
+
+@pytest.fixture(autouse=True)
+def _param_heal_forgotten():
+    """0.1.61: providers remember, per process, the parameters an endpoint refused.
+    A test must start without another test's lessons — and a lesson must not hide
+    a regression (a provider sending `temperature` again would be healed silently)."""
+    from arslan.llm import param_heal
+    param_heal.forget()
+    yield
+    param_heal.forget()

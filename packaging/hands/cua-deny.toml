@@ -14,6 +14,13 @@ ignore = [
   # overlay (fontdue) parses only the font it ships, never a font from the user or a
   # page. Re-checked at every monthly sync.
   { id = "RUSTSEC-2026-0192", reason = "unmaintained, no upgrade; parses only Cua's own bundled cursor font" },
+  # unsafe-libyaml (via serde_yaml / serde_yaml_ng) is unmaintained: the repository was archived;
+  # the advisory names no vulnerability and has no patched release. Cua parses YAML with it for
+  # its policy files, MCP skill front matter, session manifests and perception runtime sources,
+  # all read from local disk (the fork compiles out skill downloads). Advisory published
+  # 2026-10-12; it turned every CI run red without any change on our side. Revisit at the next
+  # monthly sync: move the fork to a maintained YAML parser if upstream has not.
+  { id = "RUSTSEC-2024-0449", reason = "unmaintained (archived), no known vulnerability, no upgrade; YAML read from local files only" },
 ]
 
 [licenses]

@@ -93,7 +93,7 @@ class LLMAdapter:
         max_tokens: int | None = None,
     ) -> LLMResponse:
         """Build messages and delegate to the underlying provider. `max_tokens`
-        (OpenAI-compatible only) raises this one request after a length cut."""
+        (OpenAI-compatible and Anthropic) raises this one request after a length cut."""
         messages = self._provider.build_messages(system, user, history)
         extra = {"max_tokens": max_tokens} if max_tokens else {}
         resp = await self._provider.chat(messages, tools=tools, temperature=temperature, **extra)

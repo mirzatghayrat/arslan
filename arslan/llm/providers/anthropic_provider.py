@@ -22,17 +22,44 @@ cheap — do not start echoing native blocks back without pricing the round-trip
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
 
 from arslan.llm.providers import errors as provider_errors
-from arslan.llm import request_evidence
+from arslan.llm import param_heal, request_evidence
 
 from arslan.llm.cached_system import CachedSystem
 from arslan.llm.providers.base import BaseLLMProvider
 from arslan.models import LLMResponse
+
+# Claude generation from the model id, both naming styles, platform prefixes
+# ("anthropic.", "us.anthropic.") passing through: claude-sonnet-5-5,
+# claude-opus-4-1-20250805, claude-sonnet-4-20250514 (4.0: the date is not a
+# minor), claude-3-7-sonnet-20250219, claude-3-opus-20240229.
+_CLAUDE_NEW = re.compile(r"claude-(?:opus|sonnet|haiku|fable|mythos)-(\d+)(?:-(\d{1,2}))?(?!\d)")
+_CLAUDE_OLD = re.compile(r"claude-(\d+)(?:-(\d{1,2}))?-(?:opus|sonnet|haiku)")
+
+# Claude 5 and later think when `thinking` is omitted. The switch that turns it
+# off, per model (claude-api model-migration guide, 2026-10): Sonnet 5.5 answers
+# "disabled" with a 400 and takes "between_tools"; Opus 5.5 and Fable refuse
+# every off switch, so they are absent on purpose. Only the default effort is
+# ever sent with these, which is "high" or below on all four — the ceiling for
+# both switches.
+_THINKING_OFF = {
+    "claude-sonnet-5-5": {"type": "between_tools"},
+    "claude-sonnet-5": {"type": "disabled"},
+    "claude-opus-5": {"type": "disabled"},
+    "claude-haiku-5-5": {"type": "disabled"},
+}
+
+
+def _claude_version(model: str) -> tuple[int, int] | None:
+    """(major, minor) of a Claude model id; None when it cannot be placed."""
+    m = _CLAUDE_NEW.search(model) or _CLAUDE_OLD.search(model)
+    return (int(m.group(1)), int(m.group(2) or 0)) if m else None
 
 
 
@@ -65,7 +92,9 @@ def _translate(content: Any) -> Any:
 class AnthropicProvider(BaseLLMProvider):
     DEFAULT_BASE_URL = "https://api.anthropic.com/v1"
     ANTHROPIC_VERSION = "2023-06-01"
-    DEFAULT_MAX_TOKENS = 4096
+    # A non-streamed reply: same first-byte bound as the OpenAI-compatible path
+    # (model_call.py relies on it). Was 60 s, short for a model that thinks first.
+    TIMEOUT = httpx.Timeout(300.0, connect=15.0)
 
     def __init__(
         self,
@@ -76,14 +105,49 @@ class AnthropicProvider(BaseLLMProvider):
     ) -> None:
         super().__init__(model=model, api_key=api_key, base_url=base_url or self.DEFAULT_BASE_URL)
         self._transport = transport
+        # Thinking and the answer share max_tokens on Claude 5+, so the old flat
+        # 4096 could be spent before the reply was written. Same opening budget
+        # and length-cut ceiling as the OpenAI-compatible path; tool_loop's
+        # _recover_truncation raises a cut request via chat(max_tokens=...).
+        from arslan.llm.output_budget import for_endpoint
+        budget = for_endpoint(self.base_url, model)
+        self.max_tokens = budget.initial
+        self.output_ceiling = max(self.max_tokens, budget.ceiling)
 
     @property
     def provider_name(self) -> str:
         return "anthropic"
 
+    def _is_claude(self) -> bool:
+        return "claude" in self.model.lower()
+
+    def _sends_sampling(self) -> bool:
+        """Claude 4.6 and earlier take `temperature`. Opus 4.7 and every later
+        Claude answer it with a 400 ("`temperature` is deprecated for this
+        model.": Sonnet 5.x / Haiku 5.5 for any value but the default, the rest
+        for any value), while all of them accept it omitted — so a Claude id that
+        cannot be placed omits it too. A non-Claude model behind this protocol is
+        not governed by Anthropic's rules and keeps what it was sent before."""
+        if not self._is_claude():
+            return True
+        version = _claude_version(self.model.lower())
+        return version is not None and version <= (4, 6)
+
+    def _thinking_off(self) -> dict[str, str] | None:
+        """The `thinking` value that provably keeps reasoning off: {} when nothing
+        has to be sent (Claude 4.x and earlier think only when asked), the model's
+        switch, or None when no switch exists (Opus 5.5, Fable) or the model
+        cannot be placed."""
+        if not self._is_claude():
+            return None
+        model = self.model.lower()
+        version = _claude_version(model)
+        if version is not None and version < (5, 0):
+            return {}
+        return _THINKING_OFF.get(model[model.find("claude-"):])
+
     def supports_bounded_critique(self) -> bool:
-        # Extended thinking is opt-in on this API and this provider never sends it.
-        return True
+        return self._thinking_off() is not None
 
     def _client(self) -> httpx.AsyncClient:
         if self._transport is not None:
@@ -193,17 +257,25 @@ class AnthropicProvider(BaseLLMProvider):
         system, convo = self._split_system(messages)
         payload: dict[str, Any] = {
             "model": self.model,
-            "max_tokens": self.DEFAULT_MAX_TOKENS,
+            "max_tokens": self.max_tokens,
             "messages": convo,
-            "temperature": temperature,
         }
+        if self._sends_sampling():
+            payload["temperature"] = temperature
         if system:
             payload["system"] = system
         from arslan.llm.request_policy import (
             CRITIQUE_MAX_OUTPUT_TOKENS, CRITIQUE_TEMPERATURE, bounded_critique)
         if bounded_critique.get() and not tools:
-            payload["temperature"] = CRITIQUE_TEMPERATURE
-            payload["max_tokens"] = CRITIQUE_MAX_OUTPUT_TOKENS
+            if "temperature" in payload:
+                payload["temperature"] = CRITIQUE_TEMPERATURE
+            off = self._thinking_off()
+            # Only a model that provably does not think gets the short cap; a
+            # thinking model would spend it on reasoning and return nothing (0.1.40).
+            if off is not None:
+                payload["max_tokens"] = min(self.max_tokens, CRITIQUE_MAX_OUTPUT_TOKENS)
+                if off:
+                    payload["thinking"] = off
         # Order matters for the cache, not just for readability: Anthropic renders
         # tools -> system -> messages, and the breakpoint sits at the system
         # prefix, so anything unstable in `tools` invalidates everything after it.
@@ -219,19 +291,28 @@ class AnthropicProvider(BaseLLMProvider):
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
         temperature: float = 0.7,
+        max_tokens: int | None = None,
     ) -> LLMResponse:
+        """`max_tokens` raises this one request after a length cut."""
         from arslan.execution_budget import model_request
         payload = self._payload(messages, temperature, tools)
+        if max_tokens:
+            payload["max_tokens"] = max_tokens
         payload["max_tokens"] = model_request(payload["max_tokens"])
         from arslan.execution_checkpoint import save
         await save("before_model")
+        data = await param_heal.send(self.endpoint_fingerprint(), payload, self._post)
+        return self._parse_response(data)
+
+    async def _post(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """One non-streamed send; param_heal may resend a changed payload."""
         evidence = await request_evidence.begin(payload)
         async with self._client() as client:
             response = await client.post(
                 f"{self.base_url}/messages",
                 json=payload,
                 headers=self._headers(),
-                timeout=60.0,
+                timeout=self.TIMEOUT,
             )
             try:
                 response.raise_for_status()
@@ -242,8 +323,7 @@ class AnthropicProvider(BaseLLMProvider):
                     provider_errors.with_body(_exc),
                     request=_exc.request, response=_exc.response) from None
             await request_evidence.acknowledge(evidence)
-            data = response.json()
-        return self._parse_response(data)
+            return response.json()
 
     async def chat_stream(
         self,
@@ -265,6 +345,11 @@ class AnthropicProvider(BaseLLMProvider):
         payload["max_tokens"] = model_request(payload["max_tokens"])
         from arslan.execution_checkpoint import save
         await save("before_model")
+        async for piece in param_heal.stream(self.endpoint_fingerprint(), payload, self._stream_attempt):
+            yield piece
+
+    async def _stream_attempt(self, payload: dict[str, Any]) -> AsyncIterator[str]:
+        """One streamed send; param_heal may resend it before its first byte."""
         evidence = await request_evidence.begin(payload)
         # S3-M3: real usage from the SSE events — input_tokens arrives on
         # message_start (nested under "message"), output_tokens on message_delta.
@@ -287,6 +372,7 @@ class AnthropicProvider(BaseLLMProvider):
                 try:
                     response.raise_for_status()
                 except httpx.HTTPStatusError as _exc:
+                    await provider_errors.read_body(_exc)
                     # Carry the provider's OWN explanation, not just the status
                     # line — see providers/errors.py for why this matters.
                     raise httpx.HTTPStatusError(
