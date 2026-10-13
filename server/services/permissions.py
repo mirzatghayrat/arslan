@@ -53,8 +53,9 @@ _STORED_ONLY = frozenset({"legacy_rule"})
 #: Kinds a card answers for this one time only: never a grant, never a rule.
 _ONCE_ONLY = frozenset({"money", "app_risky", "capability", "other_agent", "system", "opaque",
                         "remote", "takeover"})
-#: Kinds whose first choice is "for this task": work in an app is many steps.
-_TASK_FIRST = frozenset({"app", "shortcut"})
+#: Kinds whose first choice is "for this task": work in an app, or on a site, is many steps — and
+#: the island and the phone answer only the first choice (§A4).
+_TASK_FIRST = frozenset({"app", "shortcut", "site"})
 #: Kinds that never offer "Always".
 _NEVER_ALWAYS = _ONCE_ONLY | frozenset({"destructive", "screen", "workspace_write", "schedule"})
 # The scope sets name kinds of KINDS only: a kind mistyped there would protect nothing.

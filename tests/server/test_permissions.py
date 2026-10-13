@@ -243,13 +243,13 @@ def test_these_kinds_never_offer_always_even_with_a_label(kind):
     assert permissions.options_for(req) == ["once", "conversation"]
 
 
-@pytest.mark.parametrize("kind", ["app", "shortcut"])
-def test_an_app_or_a_shortcut_asks_for_the_task_first(kind):
+@pytest.mark.parametrize("kind", ["app", "shortcut", "site"])
+def test_an_app_a_shortcut_or_a_site_asks_for_the_task_first(kind):
     req = Request(kind=kind, target="x", title="t", always_label="x")
     assert permissions.options_for(req) == ["task", "conversation", "always"]
 
 
-@pytest.mark.parametrize("kind", ["command", "site", "mcp_tool", "folder"])
+@pytest.mark.parametrize("kind", ["command", "mcp_tool", "folder"])
 def test_the_other_kinds_ask_once_first_and_offer_always_with_a_label(kind):
     assert permissions.options_for(Request(kind=kind, target="x", title="t", always_label="x")) \
         == ["once", "conversation", "always"]
@@ -1020,3 +1020,32 @@ async def test_a_task_given_grants_forgets_exactly_its_own_and_then_has_nothing_
     with _write_lock_held():                               # nothing of its own is left to delete
         assert await asyncio.wait_for(permissions.forget_task("turn-a"), 1) == 0
     assert await permissions.forget_task("turn-b") == 1
+
+
+# ── CI fix wave F2 (③Hands; spec §A4): a site card's first choice is "For this task" ──────────
+
+def site(host="example.com"):
+    return Request(kind="site", target=host, title=f"Act on {host}?", always_label=host)
+
+
+async def test_the_islands_yes_to_a_site_card_holds_for_the_rest_of_the_task_and_no_other():
+    """Acting on a site is many steps, as in an app (0.1.60 asked once per site per job). The
+    island and the phone answer only the first choice: were it "Once", every click on the site
+    would ask again, and they could never make it stop."""
+    island = {"approved": True, "scope": "always", "note": "", "by": "island"}
+    asker = Asker(island)
+    with permissions.asking_with(asker):
+        first = await permissions.decide(site(), Context(conversation_id="conv-1", task_id="job-site"))
+        again = await permissions.decide(site(), Context(conversation_id="conv-1", task_id="job-site"))
+    [frame] = asker.frames                                 # the next step on the site: no card
+    assert frame["options"][0] == "task"
+    assert (first.allowed, first.by, first.scope) == (True, "user", "task")
+    assert (again.allowed, again.by, again.scope) == (True, "grant", "task")
+    async with db_session.AsyncSessionLocal() as db:
+        assert await permission_store.find_rule(db, "site", "example.com") is None
+        grants = (await db.scalars(sa.select(PermissionGrant))).all()
+    assert [(g.task_id, g.kind, g.target) for g in grants] == [("job-site", "site", "example.com")]
+    other = Asker(no())
+    with permissions.asking_with(other):
+        elsewhere = await permissions.decide(site(), Context(conversation_id="conv-1", task_id="job-other"))
+    assert elsewhere.allowed is False and len(other.frames) == 1     # another task asks again
