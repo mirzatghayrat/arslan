@@ -56,16 +56,25 @@ def answer_state(srv, state: str | None = None) -> str:
     return st
 
 
+def rechecks_key(last_error: str | None, env) -> bool:
+    """Whether a `needs_auth` server is asked to re-check its key or header (True) or to sign in
+    (False). A server with a key or header re-checks it; a saved sign-in that expired (OAuth:
+    "authorization needed: … use Authorize") is a sign-in, even for an http server that also sends
+    headers (Task 7 re-review R5). One rule for the status line, a call's answer and the capability
+    list's `fix` (Task 8)."""
+    from server.mcp.supervisor import SIGN_IN_PREFIX
+    return bool(env) and not (last_error or "").startswith(SIGN_IN_PREFIX)
+
+
 def state_words(srv, st: str) -> str:
     """Arslan's words for a not-ready state; a call's answer and the status line say the same, and
     never a raw state word (Task 7 review M-3). A server with a key or header is asked to re-check it
-    (`fix_for`'s fix), never to sign in; one the supervisor gave up on after its reconnects is
-    unstable, not failing to start. A saved sign-in that expired (OAuth: "authorization needed: …
-    use Authorize") is a sign-in, even for an http server that also sends headers (re-review R5)."""
-    from server.mcp.supervisor import GAVE_UP_LINE, SIGN_IN_PREFIX
+    (`fix_for`'s fix), never to sign in (`rechecks_key`); one the supervisor gave up on after its
+    reconnects is unstable, not failing to start."""
+    from server.mcp.supervisor import GAVE_UP_LINE
     if st == "needs_auth":
         from server.mcp.discovery import runtime_dict
-        if not (srv.last_error or "").startswith(SIGN_IN_PREFIX) and runtime_dict(srv).get("env"):
+        if rechecks_key(srv.last_error, runtime_dict(srv).get("env")):
             return "waiting for the user to re-check its key/token"
     if st == "failed" and (srv.last_error or "").startswith(GAVE_UP_LINE):
         return "unstable"

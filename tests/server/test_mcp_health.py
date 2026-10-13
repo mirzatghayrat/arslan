@@ -319,13 +319,22 @@ async def test_advisory_fails_open_on_lookup_error(maker, monkeypatch):
     assert await _mcp_health_advisory(wired) == ""        # health lookup error → no line
 
 
-async def test_build_spawn_system_appends_advisory_for_failing_server(maker):
-    """End-to-end wiring: a spawn equipped with a wired mcp_* tool on a failing server
-    gets exactly one advisory line inside its assembled system prompt."""
+async def test_build_spawn_system_appends_advisory_for_failing_server(maker, monkeypatch):
+    """End-to-end wiring: a spawn equipped with a wired mcp_* tool on a server whose health probe
+    failed gets exactly one advisory line inside its assembled system prompt.
+
+    0.1.61 Task 8: a spawn is offered a server's tools only while it is ready in this process
+    (`supervisor.ready_now`), so this is a server whose probe failed (e.g. it timed out) while its
+    session is still live — a server that is not ready offers the spawn nothing at all."""
+    from types import SimpleNamespace
+
     from server.db.models import Spawn, SpawnCapability, Tool, Toolset
+    from server.mcp import session
     from server.orchestrator.dispatcher import build_spawn_system
     sid = await _seed_server(maker, health="failing")
+    monkeypatch.setattr(session.manager, "_sessions", {sid: (object(), SimpleNamespace(aclose=None))})
     async with maker() as s:
+        (await s.get(MCPServer, sid)).state = "ready"
         s.add(Toolset(key=f"mcp_{sid}", name="fetch", description="MCP server: uvx",
                       tier="safe", status="registered"))
         s.add(Tool(key=f"mcp_{sid}__fetch", toolset_key=f"mcp_{sid}", description="fetch a url",

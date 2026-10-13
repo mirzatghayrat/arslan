@@ -327,19 +327,28 @@ class ListMyCapabilitiesExecutor:
     from real data instead of guessing.
 
     `builtin` DERIVES from the live host tool list (_arslan_tools) — the previous
-    hand-copied list had already drifted (recall/remember missing). Each MCP server
-    reports its tools split into usable-by-me vs not-yet-equipped: connected-but-
-    unequipped was indistinguishable from broken here, and Arslan guessed wrong at
-    the user for three turns in the v0.1.23 field report. The equip switches
-    (wire + host, both default OFF) are the execute-closed ruling, not a defect —
-    the note tells the user exactly where they live."""
+    hand-copied list had already drifted (recall/remember missing).
+
+    Each MCP server reports its one state (0.1.61 §B1). Only a switched-on server that is ready in
+    this process has usable tools — the row says `ready` AND the session manager holds a live session
+    (`supervisor.ready_now`, the rule that also decides which tools the model is offered, which row
+    the Capabilities page shows as "on" and which tools a spawn gets). Every other server says why
+    (the first line of its classified last_error) and what fixes it: the connection, never a switch
+    the user has not touched. The state is the one a call to the server is answered with
+    (`executor.answer_state`): a `ready` with no live session, and a switched-on server whose row
+    still says `off`, are still starting; a switch the user just turned off is `off` before the
+    supervisor has written it."""
     key = "list_my_capabilities"
 
     _LIST_CAP = 40   # keep the payload model-sized; counts stay exact either way
 
     async def execute(self, args: dict) -> dict:
-        # Function-level import: orchestrator.arslan imports EXECUTORS from this
-        # module (inside _arslan_tools), so a module-level import here would cycle.
+        # Function-level imports: orchestrator.arslan imports EXECUTORS from this module (inside
+        # _arslan_tools), and mcp.executor imports from registry, so module-level would cycle.
+        from types import SimpleNamespace
+
+        from server.mcp.executor import answer_state, rechecks_key
+        from server.mcp.supervisor import fix_for, ready_now, supervisor
         from server.orchestrator.arslan import _arslan_tools
         from server.services import mcp_service
 
@@ -350,24 +359,35 @@ class ListMyCapabilitiesExecutor:
         mcp = []
         for s in await mcp_service.list_servers():
             rows = await mcp_service.list_tools(s["id"])
-            # Server-level ruling (2026-08-18): connect = usable by Arslan.
+            # Server-level ruling (2026-08-18): connect = usable by Arslan — while the user's
+            # switch (host_allowed) is on and the server is ready in this process.
             allowed = bool(s.get("host_allowed", True))
+            ready = allowed and ready_now(s["id"], s.get("state"))
+            if ready:
+                state = "ready"
+            elif not allowed:
+                state = "off"
+            else:
+                state = answer_state(SimpleNamespace(state=s.get("state"), host_allowed=True))
             names = sorted(t["name"] for t in rows)
-            mcp.append({"label": s.get("label"), "status": s.get("status"),
-                        "host_allowed": allowed,
-                        "tool_count": len(rows),
-                        "usable_by_me": names[: self._LIST_CAP] if allowed else []})
-
-        out = {"ok": True, "builtin": builtin, "mcp": mcp}
-        # Only for CONNECTED servers: an errored server's problem is the
-        # connection, and pointing the user at the switch would mislead.
-        if any(s["status"] == "connected" and s["tool_count"] and not s["host_allowed"]
-               for s in mcp):
-            out["note"] = (
-                "An MCP server is connected but my access to it is switched off: turn on \"Allow Arslan\" "
-                "on its card in Capabilities → MCPS, and I can use all its tools from the next message."
-            )
-        return out
+            entry = {"label": s.get("label"), "state": state, "status": s.get("status"),
+                     "host_allowed": allowed, "tool_count": len(rows),
+                     "usable_by_me": names[: self._LIST_CAP] if ready else []}
+            if not ready:
+                if state == "starting":
+                    reason = supervisor.note(s["id"]) or ""          # what it is doing now
+                elif state == "off":
+                    reason = ""                                       # an old cause is not why it is off
+                else:
+                    reason = (s.get("last_error") or "").split("\n", 1)[0].strip()[:200]
+                if reason:
+                    entry["reason"] = reason
+                entry["fix"] = fix_for(state, has_headers=rechecks_key(s.get("last_error"), s.get("env")),
+                                       reason=reason, next_retry_at=s.get("next_retry_at"))
+                if s.get("next_retry_at"):
+                    entry["next_retry_at"] = s["next_retry_at"]
+            mcp.append(entry)
+        return {"ok": True, "builtin": builtin, "mcp": mcp}
 
 
 class FindCapabilityExecutor:

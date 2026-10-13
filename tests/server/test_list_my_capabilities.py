@@ -9,12 +9,25 @@ could not see WHY nothing was callable and guessed wrong at the user for
 three turns. The contract pinned here: builtin derives from the live host
 tool list, and each server reports its tools split into usable-by-me vs
 not-yet-equipped, with an actionable note when everything is unequipped.
+
+0.1.61 §B1/§B2 replaced the equip note: each server reports its one state, and its tools are
+usable only when it is ready in this process (`supervisor.ready_now`: the row says `ready` AND
+the session manager holds a live session) — the same rule that decides which tools the model is
+offered. Every other server says why (the first line of its classified last_error) and what fixes
+it.
 """
+import json
+from datetime import timedelta
+from types import SimpleNamespace
+
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
+from server import crypto
 from server.db.models import Base, MCPServer, Tool, Toolset
+from server.mcp import session
+from server.mcp import supervisor as sm
 from server.registry.executors import EXECUTORS, ListMyCapabilitiesExecutor
 
 
@@ -25,13 +38,24 @@ async def maker(tmp_path, monkeypatch):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
+    monkeypatch.setattr(session.manager, "_sessions", {})    # no live session left by another test
     yield m
     await engine.dispose()
 
 
-async def _seed_server(m, *, status="connected", host_allowed=True, tools=()):
+async def _closed():
+    return None
+
+
+def _live(monkeypatch, sid=1):
+    """`sid`'s live session, cached as the manager caches one (no fingerprint: used as it is)."""
+    monkeypatch.delitem(session.manager._fingerprints, sid, raising=False)
+    monkeypatch.setitem(session.manager._sessions, sid, (object(), SimpleNamespace(aclose=_closed)))
+
+
+async def _seed_server(m, *, status="connected", state="ready", host_allowed=True, tools=()):
     async with m() as s:
-        s.add(MCPServer(id=1, label="playwright", command="npx", status=status,
+        s.add(MCPServer(id=1, label="playwright", command="npx", status=status, state=state,
                         host_allowed=host_allowed))
         s.add(Toolset(key="mcp_1", name="playwright", description="MCP server: playwright",
                       tier="orchestrator", status="registered"))
@@ -58,9 +82,10 @@ async def test_equipped_mcp_tool_is_not_misfiled_into_builtin(maker):
     assert not any(b["key"].startswith("mcp_") for b in out["builtin"])
 
 
-async def test_host_allowed_server_reports_every_tool_usable(maker):
+async def test_host_allowed_server_reports_every_tool_usable(maker, monkeypatch):
     """Server-level ruling (2026-08-18): connect = usable by Arslan. Per-tool
     wire/host states no longer split the host dimension."""
+    _live(monkeypatch)                                  # ready in this process: row + live session
     await _seed_server(maker, tools=[
         ("browser_click", True, True),
         ("browser_navigate", True, False),
@@ -72,15 +97,21 @@ async def test_host_allowed_server_reports_every_tool_usable(maker):
     assert srv["tool_count"] == 3
     assert srv["usable_by_me"] == ["browser_click", "browser_navigate", "browser_snapshot"]
     assert srv["host_allowed"] is True
+    assert srv["state"] == "ready"
+    assert "reason" not in srv and "fix" not in srv    # nothing to explain or fix
 
 
-async def test_host_disallowed_server_yields_actionable_note(maker):
-    await _seed_server(maker, host_allowed=False, tools=[("browser_click", False, False)])
+async def test_a_switched_off_server_says_so_and_offers_nothing(maker):
+    await _seed_server(maker, host_allowed=False, state="off", tools=[("browser_click", False, False)])
+    async with maker() as s:                            # an old failure is not why it is off
+        (await s.get(MCPServer, 1)).last_error = "the server exited during start (code 1)"
+        await s.commit()
     out = await ListMyCapabilitiesExecutor().execute({})
     (srv,) = out["mcp"]
-    assert srv["usable_by_me"] == [] and srv["host_allowed"] is False
-    assert "note" in out
-    assert "MCPS" in out["note"]                        # points at the server-level switch
+    assert srv["usable_by_me"] == [] and srv["state"] == "off"
+    assert srv["fix"] == "the user turned it off in Capabilities"
+    assert "reason" not in srv
+    assert "note" not in out                           # the stale "Capabilities → MCPS" note is gone
 
 
 async def test_no_note_for_default_allowed_server(maker):
@@ -92,9 +123,110 @@ async def test_no_note_for_default_allowed_server(maker):
 async def test_error_server_gets_no_equip_note(maker):
     """An errored server's problem is the connection, not the switches — the
     note must not send the user to the wrong surface."""
-    await _seed_server(maker, status="error", tools=[("browser_click", False, False)])
+    await _seed_server(maker, status="error", state="failed", tools=[("browser_click", False, False)])
     out = await ListMyCapabilitiesExecutor().execute({})
     assert "note" not in out
+    assert out["mcp"][0]["state"] == "failed" and "retries by itself" in out["mcp"][0]["fix"]
+
+
+async def test_a_failed_servers_tools_are_not_usable_and_its_reason_is_given(maker):
+    await _seed_server(maker, status="error", state="parked", tools=[("browser_click", True, True)])
+    async with maker() as s:
+        srv = await s.get(MCPServer, 1)
+        srv.last_error = "command `npx` not found — install Node.js\nnpm ERR! enoent"
+        await s.commit()
+    out = await ListMyCapabilitiesExecutor().execute({})
+    (srv,) = out["mcp"]
+    assert srv["usable_by_me"] == [] and srv["tool_count"] == 1
+    assert srv["reason"] == "command `npx` not found — install Node.js"
+    assert "command `npx` not found" in srv["fix"]
+
+
+# ── 0.1.61 Task 8: one readiness rule (carries.md "Task 8") ───────────────────────────────
+
+async def test_a_ready_row_without_a_live_session_is_starting_and_offers_nothing(maker):
+    """`ready` is ready in this process: the row AND a live session (`supervisor.ready_now`). The
+    last run's `ready` (a failed boot reset), or one whose session died while its restart waits for a
+    start slot, is not offered to the model — so the list must not call its tools usable, and says
+    what a call to it is answered with: still starting."""
+    await _seed_server(maker, tools=[("browser_click", True, True)])        # ready, no session cached
+    out = await ListMyCapabilitiesExecutor().execute({})
+    (srv,) = out["mcp"]
+    assert srv["usable_by_me"] == [] and srv["tool_count"] == 1
+    assert srv["state"] == "starting" and srv["status"] == "connected"
+    assert srv["fix"] == "wait a moment; it is starting by itself"
+    assert "reason" not in srv
+
+
+async def test_a_failed_row_is_not_usable_even_with_a_session_still_cached(maker, monkeypatch):
+    """The state counts as much as the session: a session that outlives its row's `failed` (the
+    drop callback has not landed yet) is not a usable server."""
+    _live(monkeypatch)
+    await _seed_server(maker, status="error", state="failed", tools=[("browser_click", True, True)])
+    (srv,) = (await ListMyCapabilitiesExecutor().execute({}))["mcp"]
+    assert srv["usable_by_me"] == [] and srv["state"] == "failed"
+
+
+async def test_a_switched_on_server_whose_row_still_says_off_is_starting_not_off(maker):
+    """Task 7 review M-3: its `starting` write has not landed (or failed; the tick starts it). The
+    user did not turn it off — never tell the model so."""
+    await _seed_server(maker, state="off", host_allowed=True, tools=[("browser_click", True, True)])
+    (srv,) = (await ListMyCapabilitiesExecutor().execute({}))["mcp"]
+    assert srv["state"] == "starting" and srv["usable_by_me"] == []
+    assert srv["fix"] == "wait a moment; it is starting by itself"
+
+
+async def test_a_server_the_user_just_switched_off_is_off_before_its_state_says_so(maker, monkeypatch):
+    """`set_host_allowed` commits the switch first and the supervisor writes `off` after: in between
+    the row says `ready` with its session live, yet the host is already refused (`_arslan_tools`)."""
+    _live(monkeypatch)
+    await _seed_server(maker, host_allowed=False, state="ready", tools=[("browser_click", True, True)])
+    (srv,) = (await ListMyCapabilitiesExecutor().execute({}))["mcp"]
+    assert srv["state"] == "off" and srv["usable_by_me"] == [] and srv["host_allowed"] is False
+    assert srv["fix"] == "the user turned it off in Capabilities"
+
+
+async def test_a_starting_server_says_what_it_is_doing(maker, monkeypatch):
+    await _seed_server(maker, status="connecting", state="starting", tools=[])
+    monkeypatch.setitem(sm.supervisor._notes, 1, "downloading Node 24.21.0 (50 MB)")
+    (srv,) = (await ListMyCapabilitiesExecutor().execute({}))["mcp"]
+    assert srv["state"] == "starting" and srv["reason"] == "downloading Node 24.21.0 (50 MB)"
+    assert srv["usable_by_me"] == []
+
+
+async def test_a_failed_servers_next_try_is_given(maker):
+    await _seed_server(maker, status="error", state="failed", tools=[("browser_click", True, True)])
+    when = sm._utcnow() + timedelta(seconds=90)
+    async with maker() as s:
+        row = await s.get(MCPServer, 1)
+        row.next_retry_at, row.last_error = when, "the server exited during start (code 1)"
+        await s.commit()
+    (srv,) = (await ListMyCapabilitiesExecutor().execute({}))["mcp"]
+    assert srv["next_retry_at"] == when.isoformat()
+    assert srv["fix"] == (f"it retries by itself (next try {when.isoformat()}); "
+                          "the user can press Reconnect in Capabilities")
+    assert srv["reason"] == "the server exited during start (code 1)"
+
+
+async def test_the_fix_for_a_server_that_needs_auth_asks_what_it_is_asked_to_do(maker):
+    """A server with a key or header is asked to re-check it; one without signs in. A saved sign-in
+    that expired (OAuth) is a sign-in even for a server that also sends headers (Task 7 re-review
+    R5) — the same rule `executor.state_words` and the status line follow."""
+    await _seed_server(maker, status="error", state="needs_auth", tools=[("t", True, True)])
+    sign_in = "the user must sign in from Capabilities (Authorize)"
+    recheck = "re-check the key/token on this server in Capabilities"
+
+    async def fix(*, env, last_error):
+        async with maker() as s:
+            row = await s.get(MCPServer, 1)
+            row.env = crypto.encrypt(json.dumps(env)) if env else None
+            row.last_error = last_error
+            await s.commit()
+        return (await ListMyCapabilitiesExecutor().execute({}))["mcp"][0]["fix"]
+
+    assert await fix(env={}, last_error="HTTP 401 Unauthorized") == sign_in
+    assert await fix(env={"API_KEY": "k-12345"}, last_error="HTTP 401 Unauthorized") == recheck
+    assert await fix(env={"API_KEY": "k-12345"}, last_error=f"{sm.SIGN_IN_PREFIX} expired") == sign_in
 
 
 def test_registered_in_executors():

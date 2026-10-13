@@ -805,3 +805,119 @@ async def test_a_cancelled_probe_that_dropped_a_healthy_session_is_restarted_by_
     row = await _row(db, 1)
     assert plans == [(1, "refresh")] and opens == [1] and row.state == "ready"
     assert session.manager.cached(1) is not None
+
+
+# ── Task 8: one readiness rule everywhere a server's readiness is shown or its tools offered ───────
+#
+# The rule is `supervisor.ready_now(sid, state)`: the row says `ready` AND the session manager holds
+# a live session. Five surfaces answer to it: the model's tool list (`_arslan_tools`), what
+# `list_my_capabilities` calls usable, the Capabilities row ("on"), the status line, and the tools a
+# spawn is offered (`wired_tools_for_spawn`). A surface that says "usable" while another withholds
+# the tools is the silent disappearance these pages exist to end.
+
+# (case, state, status, host_allowed, live session, ready in this process)
+_READINESS = [
+    ("ready with its session", "ready", "connected", True, True, True),
+    ("ready, no session (the last run's)", "ready", "connected", True, False, False),
+    ("starting", "starting", "connecting", True, False, False),
+    ("failed, a stale session still cached", "failed", "error", True, True, False),
+    ("parked", "parked", "error", True, False, False),
+    ("needs auth", "needs_auth", "error", True, False, False),
+    ("switched off", "off", "connected", False, False, False),
+    ("switched on, its row still says off", "off", "connected", True, False, False),
+]
+
+
+@pytest.fixture
+async def readiness(execution_db, monkeypatch):
+    """One server per case (id = index + 1), each with one safe, wired tool, all equipped to spawn 1."""
+    from server.db.models import Spawn, SpawnCapability
+    monkeypatch.setattr(session.manager, "_sessions", {})
+    now = sm._utcnow()
+    async with execution_db() as s:
+        s.add(Spawn(id=1, name="worker", domain_category="d", system_prompt="p"))
+        for sid, (case, state, status, allowed, live, _ready) in enumerate(_READINESS, start=1):
+            s.add(MCPServer(id=sid, label=f"srv{sid}", transport="http", command="",
+                            url=f"https://example.test/{sid}", args=[], status=status, state=state,
+                            state_at=now, host_allowed=allowed))
+            s.add(Toolset(key=f"mcp_{sid}", name=f"s{sid}", description="d", tier="safe", status="wired"))
+        await s.flush()
+        for sid in range(1, len(_READINESS) + 1):
+            s.add(Tool(key=f"mcp_{sid}__t", toolset_key=f"mcp_{sid}", description="t", tier="safe",
+                       status="wired", input_schema={}, external_name="t"))
+            s.add(SpawnCapability(spawn_id=1, kind="toolset", ref_key=f"mcp_{sid}"))
+        await s.commit()
+    for sid, (_case, _state, _status, _allowed, live, _ready) in enumerate(_READINESS, start=1):
+        if live:
+            _live_session(monkeypatch, sid)
+    return execution_db
+
+
+async def test_every_surface_agrees_which_servers_are_ready(readiness):
+    from server.registry.executors import ListMyCapabilitiesExecutor
+    from server.registry.service import wired_tools_for_spawn
+    from server.services import capability_list
+
+    offered = await _offered()
+    spawn = {t["key"] for t in await wired_tools_for_spawn(1, current_turn=0)}
+    rows = {r["key"]: r for r in await capability_list._mcp_rows()}
+    listed = {s["label"]: s for s in (await ListMyCapabilitiesExecutor().execute({}))["mcp"]}
+    status_line = await arslan._mcp_status_line()
+    for sid, (case, _state, _status, allowed, _live, ready) in enumerate(_READINESS, start=1):
+        host_ready = ready and allowed                  # the host also needs the user's switch
+        assert (f"mcp_{sid}__t" in offered) is host_ready, case
+        assert bool(listed[f"srv{sid}"]["usable_by_me"]) is host_ready, case
+        assert (rows[f"mcp:{sid}"]["state"] == "on") is host_ready, case
+        assert (f"mcp_{sid}__t" in spawn) is ready, case              # a spawn needs no host switch
+        # the status line names every switched-on server that is not ready, and no other
+        assert (f"srv{sid}: " in status_line) is (allowed and not ready), case
+
+
+async def test_a_spawn_is_offered_the_tools_of_ready_servers_only(readiness):
+    from server.registry.service import wired_tools_for_spawn
+    keys = {t["key"] for t in await wired_tools_for_spawn(1, current_turn=0)}
+    assert keys == {"mcp_1__t"}
+
+
+async def test_a_spawn_keeps_its_other_toolsets_whatever_its_mcp_servers_do(readiness):
+    from server.db.models import SpawnCapability
+    from server.registry.service import wired_tools_for_spawn
+    async with readiness() as s:
+        s.add(Toolset(key="extra_ts", name="Extra", description="d", tier="safe", status="wired"))
+        await s.flush()
+        s.add(Tool(key="extra_tool", toolset_key="extra_ts", description="d", tier="safe",
+                   status="wired", input_schema={}))
+        s.add(SpawnCapability(spawn_id=1, kind="toolset", ref_key="extra_ts"))
+        await s.commit()
+    keys = {t["key"] for t in await wired_tools_for_spawn(1, current_turn=0)}
+    assert "extra_tool" in keys and "mcp_2__t" not in keys
+
+
+async def test_a_toolset_named_mcp_that_no_server_owns_is_not_offered_to_a_spawn(readiness):
+    from server.db.models import SpawnCapability
+    from server.registry.service import wired_tools_for_spawn
+    async with readiness() as s:
+        s.add(Toolset(key="mcp_x", name="User MCP", description="d", tier="safe", status="wired"))
+        await s.flush()
+        s.add(Tool(key="mcp_x__do", toolset_key="mcp_x", description="d", tier="safe", status="wired",
+                   input_schema={}))
+        s.add(SpawnCapability(spawn_id=1, kind="toolset", ref_key="mcp_x"))
+        await s.commit()
+    assert "mcp_x__do" not in {t["key"] for t in await wired_tools_for_spawn(1, current_turn=0)}
+
+
+async def test_a_spawn_is_not_offered_a_tool_of_a_server_that_no_longer_exists(readiness):
+    from server.registry.service import wired_tools_for_spawn
+    async with readiness() as s:
+        await s.delete(await s.get(MCPServer, 1))          # its tools linger until the cleanup runs
+        await s.commit()
+    keys = {t["key"] for t in await wired_tools_for_spawn(1, current_turn=0)}
+    assert not {k for k in keys if k.startswith("mcp_")}
+
+
+async def test_a_spawn_is_offered_a_server_again_the_moment_it_is_ready_in_this_process(readiness,
+                                                                                         monkeypatch):
+    from server.registry.service import wired_tools_for_spawn
+    assert "mcp_2__t" not in {t["key"] for t in await wired_tools_for_spawn(1, current_turn=0)}
+    _live_session(monkeypatch, 2)                           # its restart opened a session: ready
+    assert "mcp_2__t" in {t["key"] for t in await wired_tools_for_spawn(1, current_turn=0)}

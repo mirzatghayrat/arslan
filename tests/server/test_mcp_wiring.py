@@ -246,6 +246,7 @@ async def test_capability_rows_say_starting_without_connect_and_trust_the_pinned
     await _seed(execution_db, 1, transport="http", command="", url="https://example.test/mcp",
                 state="starting", status="connecting")
     await _seed(execution_db, 2, command="npx", state="ready", status="connected", host_allowed=True)
+    _live_session(monkeypatch, 2)                              # "on" is ready in this process (Task 8)
     monkeypatch.setattr(capability_runtime, "available", lambda: True)
 
     def nowhere(c):

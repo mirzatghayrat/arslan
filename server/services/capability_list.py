@@ -118,26 +118,38 @@ def _runtime_missing(server: dict) -> str | None:
 
 
 async def _mcp_rows() -> list[dict]:
+    """"on" is the same gate `_arslan_tools` applies to a server's tools: the row says `ready` AND the
+    session manager holds a live session for it (`supervisor.ready_now`, 0.1.61 §B1). A `ready` left
+    from the last run, or whose session died while its restart waits, is starting by itself — the
+    page must not say "on" while the model is offered none of its tools."""
+    from server.mcp.supervisor import ready_now
     from server.services import mcp_service
     rows = []
     for server in await mcp_service.list_servers():
         key, name = f"mcp:{server['id']}", server.get("label") or f"MCP {server['id']}"
         missing = _runtime_missing(server)
+        allowed = bool(server.get("host_allowed"))
+        connected = server.get("status") == "connected"
+        # starting by itself: the supervisor says so, or the row says it is connected and switched on
+        # but nothing live stands behind it (a `ready` with no session; a switched-on `off` whose
+        # `starting` write has not landed)
+        starting = server.get("state") == "starting" or (
+            allowed and connected and not ready_now(server["id"], server.get("state")))
         if missing:
             rows.append(_row(key, "work", "na", reason="runtime_missing", detail=missing, name=name, source="mcp"))
         elif server.get("status") == "error":
             rows.append(_row(key, "work", "setup", reason="mcp_error", fix="open_tab:mcps", name=name, source="mcp",
                              detail=(server.get("last_error") or "")[:200] or None, switch="mcp"))
-        elif server.get("state") == "starting":
+        elif starting:
             # 0.1.61: starting by itself — no Connect fix to press (ruling 5: no new UI words in PR 4).
             rows.append(_row(key, "work", "setup", reason="not_connected", name=name, source="mcp",
                              switch="mcp"))
-        elif server.get("status") != "connected":
+        elif not connected:
             rows.append(_row(key, "work", "setup", reason="not_connected", fix="connect", name=name, source="mcp",
                              switch="mcp"))
         else:
-            rows.append(_row(key, "work", "on" if server.get("host_allowed") else "off", name=name, source="mcp",
-                             switch="mcp"))
+            # connected: switched on means ready in this process (`starting` above), else the user's off
+            rows.append(_row(key, "work", "on" if allowed else "off", name=name, source="mcp", switch="mcp"))
     return rows
 
 

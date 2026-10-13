@@ -475,9 +475,37 @@ async def replace_user_equipment(session: AsyncSession, spawn_id: int,
     await session.commit()
 
 
+async def _only_ready_mcp(db: AsyncSession, tools: list) -> list:
+    """0.1.61 §B1 (Task 8): an MCP server's tools are offered only while it is ready in this process
+    (`supervisor.ready_now`: its row says `ready` AND the session manager holds a live session) — the
+    one rule the host's tool list, `list_my_capabilities` and the Capabilities rows follow. A spawn
+    equipped with a server that is starting, failed, parked, switched off, removed or whose session
+    died is offered nothing from it and is offered it again the moment it is ready. A toolset named
+    `mcp_*` that no server owns is not offered (the execution surface fails closed). Other toolsets
+    are untouched."""
+    from server.db.models import MCPServer
+    from server.mcp.supervisor import ready_now
+
+    def is_mcp(tool) -> bool:
+        return (tool.toolset_key or "").startswith("mcp_")
+
+    def server_id(tool) -> int | None:
+        suffix = tool.toolset_key[len("mcp_"):]
+        return int(suffix) if suffix.isdigit() else None
+
+    if not any(is_mcp(t) for t in tools):
+        return tools
+    wanted = {server_id(t) for t in tools if is_mcp(t)} - {None}
+    states = dict((await db.execute(
+        select(MCPServer.id, MCPServer.state).where(MCPServer.id.in_(wanted)))).all()) if wanted else {}
+    ready = {sid for sid in wanted if ready_now(sid, states.get(sid))}
+    return [t for t in tools if not is_mcp(t) or server_id(t) in ready]
+
+
 async def wired_tools_for_spawn(spawn_id: int, *, current_turn: int) -> list[dict]:
     """Layer-3 gate: tools callable by this spawn RIGHT NOW = (equipped toolsets, permanent
-    or unexpired-temporary) ∩ safe ∩ wired, UNION the universal safe tools (also safe ∩ wired)."""
+    or unexpired-temporary) ∩ safe ∩ wired ∩ (MCP only while its server is ready in this process),
+    UNION the universal safe tools (also safe ∩ wired)."""
     async with db_session.AsyncSessionLocal() as db:
         caps = (await db.execute(
             select(SpawnCapability).where(
@@ -499,6 +527,7 @@ async def wired_tools_for_spawn(spawn_id: int, *, current_turn: int) -> list[dic
                     Tool.status == "wired",
                 )
             )).scalars().all()
+            equipped = await _only_ready_mcp(db, equipped)
         universal = (await db.execute(
             select(Tool).where(
                 Tool.key.in_(_UNIVERSAL_SAFE_TOOLS),
