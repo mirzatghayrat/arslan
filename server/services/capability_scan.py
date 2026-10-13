@@ -46,9 +46,12 @@ MAX_WALKED = 50_000
 #: A regex holds the GIL, so a scan is a stall of the whole server for as long as it runs.
 MAX_SCAN_SECONDS = 3.0
 
-#: The kinds of file the rules read: `text` (SKILL.md and prose references) is read line by line as words; a skill's
-#: scripts (`skill_code`), a package's files (`code`) and its package.json (`manifest`) as code.
-_PROSE = ("text",)
+#: The kinds of file the rules read: `text` (SKILL.md and prose references) and `data` (a skill's other files that hold
+#: text: yaml, json, html, csv... and any file that is neither) are read line by line as words; a skill's scripts
+#: (`skill_code`), a package's files (`code`) and its package.json (`manifest`) as code.
+_PROSE = ("text", "data")
+#: How much of a file is looked at to tell words from a program from other binary data.
+SNIFF_BYTES = 8192
 _BOM = chr(0xFEFF)
 
 
@@ -86,6 +89,8 @@ _QUOTES = tuple(re.compile(p) for p in (
     r"(?<![\w'])'[^'\n]*'(?![\w'])"))                     # a single quote that is not an apostrophe
 _YAML_VALUE = re.compile(r"""^(\s*(?:-\s+)?(?:[\w.-]+\s*:\s*)?)(["'])(.*)\2\s*(?:#.*)?$""")
 _FENCE = re.compile(r"^\s{0,3}(`{3,}|~{3,})")
+#: A JSON string: the quotes that make it one are syntax, so the words inside are not a quotation (a quotation inside it is).
+_JSON_STRING = re.compile(r'"(?:[^"\\\n]|\\.)*+"')
 # A line break is `\n`, `\r\n` or `\r` — what an editor shows (see `_lines`). `str.splitlines()` also breaks at \x0b,
 # \x0c, \x1c-\x1e, \x85, U+2028 and U+2029, which split "ignore<VT>all previous instructions" into two lines no rule
 # reads whole (and moved every line number after it). They are whitespace to a pattern's `\s`.
@@ -96,11 +101,12 @@ _COMMENT = re.compile(r"\s*(?:#|//)")
 class _Line:
     """One line of a text, as the rules read it. `fenced`: inside a ``` block. `front`: inside the
     frontmatter, where a quoted value is a YAML string, not a quotation. `comment`: a full line of comment
-    in a script, which the rules for acts do not read and the rules for words read at note level."""
-    __slots__ = ("text", "fenced", "front", "comment", "_inside")
+    in a script, which the rules for acts do not read and the rules for words read at note level. `data`: a line of a
+    yaml or json file, where a quoted value is a string, not a quotation."""
+    __slots__ = ("text", "fenced", "front", "comment", "data", "_inside")
 
-    def __init__(self, text: str, fenced: bool = False, front: bool = False, comment: bool = False):
-        self.text, self.fenced, self.front, self.comment, self._inside = text, fenced, front, comment, None
+    def __init__(self, text: str, fenced: bool = False, front: bool = False, comment: bool = False, data: bool = False):
+        self.text, self.fenced, self.front, self.comment, self.data, self._inside = text, fenced, front, comment, data, None
 
     def quoted(self, m: re.Match) -> bool:
         """Whether the match lies wholly inside a quotation, a code span or a fenced block: the words
@@ -109,10 +115,16 @@ class _Line:
             return True
         if self._inside is None:
             text = self.text
-            if self.front:
+            syntax = set()                                 # the quotes that make a value a string are not a quotation
+            if self.front or self.data:
                 value = _YAML_VALUE.match(text)
-                if value:                                  # the quotes that make the value a string are not a quotation
-                    text = "".join(" " if i in (value.end(1), value.end(3)) else c for i, c in enumerate(text))
+                if value:
+                    syntax.update((value.end(1), value.end(3)))
+            if self.data:
+                for string in _JSON_STRING.finditer(text):
+                    syntax.update((string.start(), string.end() - 1))
+            if syntax:
+                text = "".join(" " if i in syntax else c for i, c in enumerate(text))
             inside = bytearray(len(text))
             for quote in _QUOTES:
                 for span in quote.finditer(text):
@@ -480,7 +492,7 @@ def _prepare(text: str, kind: str) -> list[tuple[int, str, _Line]]:
         if not read[i] or read[i].isspace():
             continue                                    # a blank line holds nothing for a rule; the others keep their numbers
         comment = code and _COMMENT.match(read[i]) is not None and not (i == 0 and read[i].startswith("#!"))
-        out.append((i + 1, line, _Line(read[i], fenced=fenced[i], front=front_from < i < front_to, comment=comment)))
+        out.append((i + 1, line, _Line(read[i], fenced=fenced[i], front=front_from < i < front_to, comment=comment, data=kind == "data")))
     return out
 
 
@@ -506,8 +518,8 @@ def _hit(rule: Rule, line: _Line) -> bool:
 
 
 def scan_text(name: str, text: str, *, kind: str) -> list[Finding]:
-    """`kind`: text (a skill's instructions), skill_code (a skill's script), code (a package
-    file), manifest (package.json)."""
+    """`kind`: text (a skill's instructions), data (its other files that hold text: yaml, json, html...), skill_code
+    (a skill's script), code (a package file), manifest (package.json)."""
     out: list[Finding] = []
     shown = _shown(name)
     lines = _prepare(text, kind)
@@ -525,7 +537,7 @@ def scan_text(name: str, text: str, *, kind: str) -> list[Finding]:
     hiding, odd = _invisible(text, code=kind not in _PROSE)
     if hiding:
         # A skill's bidirectional or tag characters are dangerous (P6); a package's files are judged as before: a note.
-        level = "high" if kind in ("text", "skill_code") else "note"
+        level = "high" if kind in ("text", "data", "skill_code") else "note"
         out.append(Finding("invisible_characters", level, shown, 0, f"{hiding} bidirectional-control or tag characters"))
     if odd:
         out.append(Finding("zero_width_characters", "note", shown, 0, f"{odd} zero-width characters"))
@@ -580,22 +592,41 @@ def scan_skill(body: str, scripts: dict[str, str], references: dict[str, str]) -
 # ── 0.1.61 §C1: a skill's whole folder, and the verdicts the skills list speaks ─────────────
 
 _TEXT_SUFFIXES = frozenset({".md", ".markdown", ".txt", ".rst"})
+#: Data files that hold text. They are read as words (a file that is neither code nor prose is read so, too, unless
+#: it is binary), and a script that is named like one is read as code as well.
+_DATA_SUFFIXES = frozenset({".yaml", ".yml", ".json", ".toml", ".html", ".htm", ".csv", ".xml", ".ini", ".cfg"})
 _CODE_SUFFIXES = frozenset({".py", ".sh", ".bash", ".zsh", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx",
                             ".rb", ".pl", ".php", ".applescript", ".swift", ".go", ".rs", ".lua", ".ps1",
-                            ".r", ".jl", ".java", ".kt", ".c", ".cc", ".cpp", ".cs"})
+                            ".r", ".jl", ".java", ".kt", ".c", ".cc", ".cpp", ".cs",
+                            ".command", ".bat", ".cmd", ".tool"})
+_CODE_NAMES = frozenset({"makefile", "gnumakefile", "justfile"})
+#: The first bytes of a program: ELF, Mach-O (32 and 64 bit, both byte orders), a universal binary or Java class, a PE ("MZ").
+_PROGRAM_MAGIC = tuple(bytes.fromhex(h) for h in ("7f454c46", "feedface", "feedfacf", "cefaedfe", "cffaedfe", "cafebabe", "4d5a"))
+_NUL = bytes(1)
 #: Folders a skill's folder may hold that are not the skill's own text: dependencies, a
 #: checkout's history, caches. They are not walked — and are named as not read.
 _DEPENDENCY_DIRS = frozenset({".git", "node_modules", "__pycache__", ".venv", "venv"})
 
 
-def _kind_for(rel: str, text: str = "") -> str | None:
+def _classify(rel: str, head: bytes, executable: bool) -> tuple[str, ...]:
+    """What a file of a skill's folder is, from its name, its first bytes and its mode: the kinds to read it as —
+    `skill_code` (a script), `text` (prose) or `data` (yaml, json, html... and any other file that holds text) — or
+    `("program",)` for a program that is not read (a Mach-O, ELF or PE by its first bytes, or a binary file with the
+    executable bit), or `()` for binary data that is neither words nor code (an image, a font, bytecode), which is
+    skipped without a word. Code is a source file by its suffix, a Makefile, anything with the executable bit or a `#!`
+    whatever its suffix, and a file in a scripts/ folder (at any depth, in any case); a text or data file that is code
+    too is read both ways."""
+    if _NUL in head:
+        return ("program",) if executable or head.startswith(_PROGRAM_MAGIC) else ()
     path = PurePosixPath(rel)
-    if path.suffix.lower() in _TEXT_SUFFIXES:
-        return "text"
-    if (path.suffix.lower() in _CODE_SUFFIXES or text.startswith("#!")
-            or "scripts" in (part.lower() for part in path.parts[:-1])):          # a scripts/ folder, at any depth, in any case
-        return "skill_code"
-    return None
+    suffix = path.suffix.lower()
+    words = "text" if suffix in _TEXT_SUFFIXES else "data"
+    if suffix in _CODE_SUFFIXES or path.name.lower() in _CODE_NAMES:
+        return ("skill_code",)
+    in_scripts = suffix not in _TEXT_SUFFIXES and "scripts" in (part.lower() for part in path.parts[:-1])
+    if executable or head.startswith(b"#!") or in_scripts:
+        return ("skill_code", words) if suffix in _TEXT_SUFFIXES | _DATA_SUFFIXES else ("skill_code",)
+    return (words,)
 
 
 def verdict(scan: dict | None) -> str:
@@ -624,12 +655,14 @@ def _scan(skill_md: str, items: list[tuple[str, str, str]], unread: list[str], d
     as far as that, and whatever the `deadline` cut off) is one `not_scanned` note."""
     found = scan_text("SKILL.md", skill_md, kind="text")
     unread = [*unread]
+    named = set(unread)                                  # a file read two ways (code and data) is named once
     for i, (rel, text, kind) in enumerate(items):
         if deadline is not None and time.monotonic() >= deadline:
-            unread.extend(later for later, _, _ in items[i:])
+            unread.extend(dict.fromkeys(later for later, _, _ in items[i:] if later not in named))
             break
         found += scan_text(rel, text[:MAX_FILE_BYTES], kind=kind)
-        if len(text) > MAX_FILE_BYTES:
+        if len(text) > MAX_FILE_BYTES and rel not in named:
+            named.add(rel)
             unread.append(rel)
     for rel in names:
         if deadline is not None and time.monotonic() >= deadline:
@@ -648,24 +681,27 @@ def scan_texts(skill_md: str, files: dict[str, str], *, unread: list[str] = ()) 
     """A skill given as text: its whole SKILL.md and its files, each read as instructions or as code
     by its name (or its `#!`). What could not be read (`unread`) is one `not_scanned` note: never
     silently clean."""
-    items = []
+    items, names, unread = [], [*files, *unread], [*unread]
     for rel, text in files.items():
-        kind = _kind_for(rel, text)
-        if kind is not None and rel != "SKILL.md":
-            items.append((rel, text, kind))
+        if rel == "SKILL.md":
+            continue
+        kinds = _classify(rel, text[:SNIFF_BYTES].encode("utf-8", "replace"), False)
+        if kinds == ("program",):
+            unread.append(rel + " (a program)")
+        else:
+            items.extend((rel, text, kind) for kind in kinds)
     items.sort(key=lambda item: (item[2] != "skill_code", item[0]))        # code first, then by name
-    return _scan(skill_md, items, [*unread], names=[*files, *unread])
+    return _scan(skill_md, items, unread, names=names)
 
 
-def _list_folder(folder: Path, candidates: list[tuple[int, str, str, Path]], unread: list[str], deadline: float,
+def _list_folder(folder: Path, candidates: list[tuple[int, str, tuple[str, ...], Path]], unread: list[str], deadline: float,
                  names: list[str]) -> None:
     """Walk `folder` top-down WITHOUT recursion (os.walk recurses on Python 3.11) and file every regular
-    text or code file under it in `candidates` as (0 code | 1 text, name, kind, path); everything that will
-    not be read goes by name into `unread`: a link (never followed), a dependency folder, a folder nested
-    deeper than MAX_DEPTH, a folder it cannot list, a pipe, socket or device (opening one can wait for
-    ever), whatever lies past MAX_WALKED files, and whatever the `deadline` stopped it short of. Every name
-    it meets goes into `names`. Code is a source file, anything in a scripts/ folder, a `#!` file and an
-    executable; the rest that is read is text."""
+    file that holds words or code in `candidates` as (0 code | 1 words, name, kinds, path) — see `_classify`;
+    everything that will not be read goes by name into `unread`: a link (never followed), a dependency folder, a
+    folder nested deeper than MAX_DEPTH, a folder it cannot list, a pipe, socket or device (opening one can wait for
+    ever), a program, whatever lies past MAX_WALKED files, and whatever the `deadline` stopped it short of. Every
+    name it meets goes into `names`."""
     def relative(path) -> str:
         try:
             return Path(path).relative_to(folder).as_posix()
@@ -708,14 +744,13 @@ def _list_folder(folder: Path, candidates: list[tuple[int, str, str, Path]], unr
                     if seen > MAX_WALKED:
                         unread.append(f"(over {MAX_WALKED} files: the rest not listed)")
                         return
-                    kind = _kind_for(rel)
-                    if kind is None:
-                        with open(entry.path, "rb") as handle:
-                            shebang = handle.read(2) == b"#!"
-                        if not (shebang or entry.stat(follow_symlinks=False).st_mode & 0o111):
-                            continue                    # data, images, fonts: neither instructions nor code
-                        kind = "skill_code"
-                    candidates.append((0 if kind == "skill_code" else 1, rel, kind, Path(entry.path)))
+                    with open(entry.path, "rb") as handle:
+                        head = handle.read(SNIFF_BYTES)
+                    kinds = _classify(rel, head, bool(entry.stat(follow_symlinks=False).st_mode & 0o111))
+                    if kinds == ("program",):
+                        unread.append(rel + " (a program)")
+                    elif kinds:                         # () is an image, a font, bytecode: neither words nor code
+                        candidates.append((0 if "skill_code" in kinds else 1, rel, kinds, Path(entry.path)))
             except OSError:
                 unread.append(rel)
         pending.extend(reversed(below))
@@ -729,7 +764,7 @@ def scan_skill_folder(folder: Path | None, skill_md: str) -> dict:
     A disk error never escapes: what cannot be read is named, never silently clean. And it never holds the
     server for long: after MAX_SCAN_SECONDS in all it stops, and every file it has not reached is named."""
     deadline = time.monotonic() + MAX_SCAN_SECONDS
-    candidates: list[tuple[int, str, str, Path]] = []
+    candidates: list[tuple[int, str, tuple[str, ...], Path]] = []
     unread: list[str] = []
     names: list[str] = []
     try:
@@ -740,18 +775,20 @@ def scan_skill_folder(folder: Path | None, skill_md: str) -> dict:
     if walkable:
         _list_folder(folder, candidates, unread, deadline, names)
     items: list[tuple[str, str, str]] = []
-    spent = 0
+    spent = read = 0
     ordered = sorted(candidates, key=lambda candidate: (candidate[0], candidate[1]))
-    for i, (_, rel, kind, path) in enumerate(ordered):
+    for i, (_, rel, kinds, path) in enumerate(ordered):
         if time.monotonic() >= deadline:
             unread.extend(later for _, later, _, _ in ordered[i:])
             break
         try:
             size = path.stat().st_size
-            if len(items) >= MAX_FILES or size > MAX_FILE_BYTES or spent + size > MAX_SCAN_BYTES:
+            if read >= MAX_FILES or size > MAX_FILE_BYTES or spent + size > MAX_SCAN_BYTES:
                 unread.append(rel)
                 continue
-            items.append((rel, path.read_text("utf-8", errors="replace"), kind))
+            text = path.read_text("utf-8", errors="replace")
+            items.extend((rel, text, kind) for kind in kinds)
+            read += 1
             spent += size
         except OSError:
             unread.append(rel)
