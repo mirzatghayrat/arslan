@@ -488,3 +488,23 @@ def test_a_jobs_card_after_one_went_unanswered_is_listed_and_always_allow_makes_
                     for e in reversed(await permission_store.recent(db))]
     # Both are expiries; neither is the user's "no".
     assert client.portal.call(ledger) == [("job-1", "expired", "expired"), ("job-1", "away", "expired")]
+
+
+# ── CI fix wave F4 (③Hands; spec §A8): a mode's decision is no refusal ──────────────────────────
+
+def test_a_step_a_mode_allowed_is_not_listed_and_gives_nothing_to_always_allow(client):
+    """③Hands' "while I'm away" takeover starts without a card because of a mode, and its ledger
+    row says so: an allow — never listed as "Not done while you were away", and no row "Always
+    allow" may be given for."""
+    async def record():
+        await permissions.record_standing(
+            permissions.Request(kind="takeover", target="com.apple.Keynote", title="Take over the screen?"),
+            permissions.Context(conversation_id="c", job_id="job-away"), by="mode")
+        async with client.db_maker() as db:
+            return [(e.id, e.decided_by, e.decision) for e in await permission_store.recent(db)]
+    [(row_id, decided_by, decision)] = client.portal.call(record)
+    assert (decided_by, decision) == ("mode", "allow")
+    assert _refused(client) == []
+    r = _allow(client, row_id)
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "not_a_refusal"
+    assert _rule_rows(client) == []

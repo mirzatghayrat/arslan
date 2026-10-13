@@ -53,8 +53,9 @@ _STORED_ONLY = frozenset({"legacy_rule"})
 #: Kinds a card answers for this one time only: never a grant, never a rule.
 _ONCE_ONLY = frozenset({"money", "app_risky", "capability", "other_agent", "system", "opaque",
                         "remote", "takeover"})
-#: Kinds whose first choice is "for this task": work in an app is many steps.
-_TASK_FIRST = frozenset({"app", "shortcut"})
+#: Kinds whose first choice is "for this task": work in an app, or on a site, is many steps — and
+#: the island and the phone answer only the first choice (§A4).
+_TASK_FIRST = frozenset({"app", "shortcut", "site"})
 #: Kinds that never offer "Always".
 _NEVER_ALWAYS = _ONCE_ONLY | frozenset({"destructive", "screen", "workspace_write", "schedule"})
 # The scope sets name kinds of KINDS only: a kind mistyped there would protect nothing.
@@ -121,6 +122,14 @@ class Decision:
 
 Asker = Callable[[dict], Awaitable[dict]]
 _ASKER: ContextVar[Asker | None] = ContextVar("permissions_asker", default=None)
+#: The tasks (chat turns, jobs) this process gave a "for this task" grant: what `forget_task` has
+#: to delete when one ends. Any other task's end never touches the database — whose write lock a
+#: stopped job's own interrupted transaction can hold for seconds (CI 38293278888). A task whose
+#: delete failed stays here, for the next forget of that id to retry: a job id never comes back, but
+#: a chat task can be resumed under the same id (`task_service.prepare_resume`) and would otherwise
+#: keep the grant it was given before. What a restart leaves behind is removed by the store's
+#: 24-hour prune.
+_GRANTED_TASKS: set[str] = set()
 #: The last decision in this context: tool results read it to tell "expired" from "no".
 LAST_DECISION: ContextVar[Decision | None] = ContextVar("permissions_last_decision", default=None)
 
@@ -210,22 +219,41 @@ async def would_ask(req: Request, ctx: Context) -> bool:
     return await _standing(req, _filled(ctx), "", record=False) is None
 
 
-async def record_standing(req: Request, ctx: Context) -> None:
-    """A caller that found a standing answer itself (terminal_policy's legacy rules) still
-    writes the ledger row, so the count of decisions stays whole. A kind outside `KINDS` raises,
-    as in `decide`, and writes nothing."""
+#: Who may have decided a standing yes that `record_standing` writes, and the scope it records:
+#: an "Always" rule, or the mode (§A8's `decided_by`), which stores nothing and has no scope.
+_STANDING_BY = {"rule": "always", "mode": None}
+
+
+async def record_standing(req: Request, ctx: Context, *, by: str = "rule") -> None:
+    """A caller that found a standing answer itself still writes the ledger row, so the count of
+    decisions stays whole: `by="rule"` for an "Always" rule it read (terminal_policy's legacy
+    rules), `by="mode"` for a step the mode lets start without a card (③Hands' "while I'm away"
+    takeover). Any other `by`, like a kind outside `KINDS`, raises ValueError and writes nothing."""
+    if not isinstance(by, str) or by not in _STANDING_BY:
+        raise ValueError(f"a standing answer is decided by a rule or the mode, not {by!r}")
     _check(req)
-    await _record(req, _filled(ctx), await _mode(), Decision(True, "rule", "always"))
+    await _record(req, _filled(ctx), await _mode(), Decision(True, by, _STANDING_BY[by]))
 
 
 async def forget_task(task_id: str | None) -> int:
     """A task's grants end with it (0.1.61 §A5): a job that is done, failed, stopped or cancelled
-    leaves no "for this task" grant behind. Its conversation's grants stay. Returns how many went."""
-    if not task_id:
+    leaves no "for this task" grant behind. Its conversation's grants stay. Returns how many went.
+
+    Only a task this process gave such a grant has any (`_GRANTED_TASKS`): for every other one this
+    returns at once, without the database. A delete that does not go through — a held write lock
+    gives "database is locked", or the wait itself is cancelled — leaves the task registered, for the
+    next forget of that id to retry: a chat task is resumed under the same id."""
+    if not task_id or task_id not in _GRANTED_TASKS:
         return 0
-    async with db_session.AsyncSessionLocal() as db:
-        gone = await permission_store.delete_task_grants(db, task_id)
-        await db.commit()
+    # Discarded first: a grant this task is given while the delete runs registers it again.
+    _GRANTED_TASKS.discard(task_id)
+    try:
+        async with db_session.AsyncSessionLocal() as db:
+            gone = await permission_store.delete_task_grants(db, task_id)
+            await db.commit()
+    except BaseException:
+        _GRANTED_TASKS.add(task_id)             # still stored: it is still owed
+        raise
     return gone
 
 
@@ -340,6 +368,8 @@ async def _ask(req: Request, ctx: Context, mode: str) -> Decision:
                 # id would cover the whole conversation, and one with no conversation, nobody.
                 decision = replace(decision, scope="once")
             else:
+                if task:
+                    _GRANTED_TASKS.add(task)   # before the write: the task's end must not miss it
                 for kind, target in req.grant_as or ((req.kind, req.target),):
                     grant = await permission_store.add_grant(db, ctx.conversation_id, task, kind,
                                                              target, call_id=card_id)
@@ -471,6 +501,10 @@ async def _record_in(db, req: Request, ctx: Context, mode: str, decision: Decisi
         mode=mode, decided_by="away" if away else decision.by,
         decision=("allow" if decision.allowed else "expired" if decision.by == "expired" else "deny"),
         scope=decision.scope, rule_id=rule_id, grant_id=grant_id, wait_ms=wait_ms)
+
+
+def _reset_for_tests() -> None:
+    _GRANTED_TASKS.clear()
 
 
 def _extra(extra: dict) -> dict | None:
