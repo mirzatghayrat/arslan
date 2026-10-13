@@ -616,6 +616,20 @@ async def test_a_redirect_within_codeload_is_followed_but_not_for_ever():
     assert len(hops) == skill_import._MAX_REDIRECTS + 1
 
 
+@pytest.mark.parametrize("location", ["javascript:alert(1)", "data:text/plain,hi", "mailto:a@b.c", "https:evil.example/x"])
+async def test_a_redirect_to_a_scheme_with_no_host_is_a_refusal_not_an_InvalidURL(location):
+    """httpx builds the next request itself, followed or not, and raises InvalidURL (not an HTTPError, not
+    a ValueError) for a Location with a scheme and no host: the download answers it as a plain refusal."""
+    seen = []
+
+    def handler(request):
+        seen.append(str(request.url))
+        return httpx.Response(302, headers={"location": location})
+    with pytest.raises(ValueError, match="an address that is not one"):
+        await skill_import._download("example-org", "example-skills", "main", transport=served(handler))
+    assert len(seen) == 1
+
+
 @pytest.mark.parametrize("owner, repo, ref", [
     ("evil.example", "r", "main"), ("o/../x", "r", "main"), ("o@evil.example", "r", "main"), ("", "r", "main"),
     ("o", "..", "main"), ("o", ".", "main"), ("o", "r/x", "main"), ("o", "", "main"), ("o", "r?x=1", "main"),

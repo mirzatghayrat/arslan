@@ -116,10 +116,11 @@ async def test_a_renamed_repository_resolves_through_its_redirect(monkeypatch):
     assert [r.url.path for r in seen] == ["/repos/old-owner/old-name", "/repositories/42"]
 
 
-async def test_a_relative_redirect_stays_on_the_api_host(monkeypatch):
+@pytest.mark.parametrize("status", [301, 302, 303, 307, 308])
+async def test_a_relative_redirect_stays_on_the_api_host(monkeypatch, status):
     def handler(request):
         if request.url.path == "/repos/o/r":
-            return httpx.Response(308, headers={"Location": "/repositories/7"})
+            return httpx.Response(status, headers={"Location": "/repositories/7"})
         return httpx.Response(200, json=_repo_json())
     seen = _github(monkeypatch, handler)
     assert (await ge.fetch_repo("o", "r"))["full_name"] == "new-owner/new-name"
@@ -151,6 +152,31 @@ async def test_the_token_goes_only_to_api_github_com(monkeypatch):
         await ge.fetch_repo("o", "r")
     assert [r.url.host for r in seen] == ["api.github.com"]          # evil.example was never asked...
     assert seen[0].headers["Authorization"] == "Bearer not-a-real-token"      # ...and the token did go to the API
+
+
+async def test_the_token_is_on_every_hop_to_the_api(monkeypatch):
+    """A renamed PRIVATE repository must still resolve: the redirected request carries the token too."""
+    async def secret():
+        return "not-a-real-token"
+
+    def handler(request):
+        if request.url.path == "/repos/o/r":
+            return httpx.Response(301, headers={"Location": "/repositories/9"})
+        return httpx.Response(200, json=_repo_json())
+    seen = _github(monkeypatch, handler)
+    monkeypatch.setattr(ge, "_token", secret)
+    await ge.fetch_repo("o", "r")
+    assert [r.headers.get("authorization") for r in seen] == ["Bearer not-a-real-token"] * 2
+
+
+@pytest.mark.parametrize("location", ["javascript:alert(1)", "data:text/plain,hi", "mailto:a@b.c", "https:evil.example/x"])
+async def test_a_location_with_a_scheme_and_no_host_is_a_refusal_not_an_InvalidURL(monkeypatch, location):
+    """httpx builds the next request itself, followed or not, and raises InvalidURL (not an HTTPError, not
+    a ValueError) for a Location that has a scheme and no host: that must come out as a plain refusal."""
+    seen = _github(monkeypatch, lambda request: httpx.Response(301, headers={"Location": location}))
+    with pytest.raises(ValueError, match="an address that is not one"):
+        await ge.fetch_repo("o", "r")
+    assert len(seen) == 1
 
 
 async def test_at_most_three_redirects_are_followed(monkeypatch):

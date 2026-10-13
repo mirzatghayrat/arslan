@@ -308,6 +308,8 @@ async def _download(owner: str, repo: str, ref: str, *, transport: httpx.AsyncBa
     try:
         async with asyncio.timeout(_ARCHIVE_DEADLINE_S) as deadline:
             return await _get_archive(url, transport)
+    except httpx.InvalidURL:                           # httpx builds the next request itself: a Location with a scheme and no host
+        raise ValueError("GitHub sent the download to an address that is not one") from None
     except TimeoutError:
         if not deadline.expired():
             raise                                      # a timeout of someone else's keeps its own message

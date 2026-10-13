@@ -94,18 +94,21 @@ async def _get_following_on_api(client: httpx.AsyncClient, url: str, headers: di
     """GET `url`, following at most _MAX_API_REDIRECTS redirects, by hand, and only while they stay on
     https://api.github.com: the token in `headers` goes nowhere else, and metadata is never read from
     another address (a redirect elsewhere is refused before it is asked)."""
-    for hop in range(_MAX_API_REDIRECTS + 1):
-        r = await client.get(url, headers=headers)
-        location = r.headers.get("location") if r.status_code in _API_REDIRECTS else None
-        if not location:
-            return r
-        if hop == _MAX_API_REDIRECTS:
-            break
-        target = httpx.URL(url).join(location)           # (httpx has already refused a Location that is no address)
-        if not _is_api_address(target):
-            raise ValueError("GitHub sent the repository's details somewhere other than api.github.com; "
-                             "it was not followed")
-        url = str(target)
+    try:
+        for hop in range(_MAX_API_REDIRECTS + 1):
+            r = await client.get(url, headers=headers)
+            location = r.headers.get("location") if r.status_code in _API_REDIRECTS else None
+            if not location:
+                return r
+            if hop == _MAX_API_REDIRECTS:
+                break
+            target = httpx.URL(url).join(location)
+            if not _is_api_address(target):
+                raise ValueError("GitHub sent the repository's details somewhere other than api.github.com; "
+                                 "it was not followed")
+            url = str(target)
+    except httpx.InvalidURL:       # httpx builds the next request itself, followed or not: a Location with a scheme and no host
+        raise ValueError("GitHub sent the repository's details to an address that is not one") from None
     raise ValueError("GitHub redirected the repository too many times")
 
 
