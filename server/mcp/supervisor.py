@@ -40,6 +40,7 @@ import httpx
 from mcp import types
 from mcp.shared.exceptions import McpError
 from sqlalchemy import func, or_, select, update
+from sqlalchemy.orm.exc import StaleDataError
 
 from server.db import session as db_session
 from server.db.models import MCPServer, Tool
@@ -704,34 +705,38 @@ class Supervisor:
     async def _set(self, sid: int, gen: int, state: str, *, error: str | None = None, ok: bool = False,
                    retry_in: float | None = None) -> datetime | None:
         """The one writer of `state`. One short transaction; a no-op for a superseded generation or
-        a vanished row. last_error changes only with an error or on ready (then it is cleared).
-        fail_count counts failed plans; a failed server's next try backs off 30 s → 600 s."""
+        a vanished row — also one deleted between the read and the write (final review M-3).
+        last_error changes only with an error or on ready (then it is cleared). fail_count counts
+        failed plans; a failed server's next try backs off 30 s → 600 s."""
         if self._gen.get(sid, 0) != gen:
             return None
         now = _utcnow()
-        async with db_session.AsyncSessionLocal() as db:
-            row = await db.get(MCPServer, sid)
-            if row is None:
-                return None
-            row.state, row.state_at = state, now
-            if state in LEGACY_STATUS:
-                row.status = LEGACY_STATUS[state]
-            if state in LEGACY_HEALTH:
-                row.health_status, row.last_checked_at = LEGACY_HEALTH[state], now
-            if ok:
-                row.last_ok_at, row.last_error, row.fail_count, row.next_retry_at = now, None, 0, None
-            elif error is not None:
-                row.last_error = error
-            if state in ("failed", "parked", "needs_auth"):
-                row.fail_count = (row.fail_count or 0) + 1
-                if retry_in is None:
-                    retry_in = min(RETRY_BASE_S * 2 ** (row.fail_count - 1), RETRY_CAP_S)
-                row.next_retry_at = now + timedelta(seconds=retry_in)
-            elif state in ("starting", "off"):
-                row.next_retry_at = None
-            next_at = row.next_retry_at
-            await db.commit()
-        return next_at
+        try:
+            async with db_session.AsyncSessionLocal() as db:
+                row = await db.get(MCPServer, sid)
+                if row is None:
+                    return None
+                row.state, row.state_at = state, now
+                if state in LEGACY_STATUS:
+                    row.status = LEGACY_STATUS[state]
+                if state in LEGACY_HEALTH:
+                    row.health_status, row.last_checked_at = LEGACY_HEALTH[state], now
+                if ok:
+                    row.last_ok_at, row.last_error, row.fail_count, row.next_retry_at = now, None, 0, None
+                elif error is not None:
+                    row.last_error = error
+                if state in ("failed", "parked", "needs_auth"):
+                    row.fail_count = (row.fail_count or 0) + 1
+                    if retry_in is None:
+                        retry_in = min(RETRY_BASE_S * 2 ** (row.fail_count - 1), RETRY_CAP_S)
+                    row.next_retry_at = now + timedelta(seconds=retry_in)
+                elif state in ("starting", "off"):
+                    row.next_retry_at = None
+                next_at = row.next_retry_at
+                await db.commit()
+            return next_at
+        except StaleDataError:              # the UPDATE matched no row: deleted meanwhile
+            return None
 
     async def _write_ok(self, sid: int) -> None:
         async with db_session.AsyncSessionLocal() as db:

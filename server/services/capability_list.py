@@ -125,7 +125,9 @@ async def _mcp_rows() -> list[dict]:
     from server.mcp.supervisor import ready_now
     from server.services import mcp_service
     rows = []
-    for server in await mcp_service.list_servers():
+    # the stored legacy status: "never connected" (registered) and an old error decide the row below;
+    # `last_error` comes masked (final review I-2)
+    for server in await mcp_service.list_servers(stored_status=True):
         key, name = f"mcp:{server['id']}", server.get("label") or f"MCP {server['id']}"
         missing = _runtime_missing(server)
         allowed = bool(server.get("host_allowed"))

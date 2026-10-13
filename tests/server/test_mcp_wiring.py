@@ -11,7 +11,10 @@ from httpx import ASGITransport, AsyncClient
 from mcp import types
 from mcp.shared.exceptions import McpError
 
+from sqlalchemy import delete
+
 from server import crypto, main
+from server.db import session as db_session
 from server.db.models import MCPServer
 from server.mcp import discovery, session
 from server.mcp import supervisor as sm
@@ -289,7 +292,8 @@ async def test_a_probe_during_a_start_answers_at_once_and_never_touches_its_sess
     finally:
         release.set()
     result = await asyncio.wait_for(start, 5)
-    assert (out["state"], out["health_status"], out["tool_count"]) == ("starting", "ok", None)
+    # the state it is shown in, and never `ok` while it is not ready (final review M-1)
+    assert (out["state"], out["health_status"], out["tool_count"]) == ("starting", None, None)
     assert result.state == "ready" and opens == [1] and calls == [1]
     async with execution_db() as db:
         row = await db.get(MCPServer, 1)
@@ -344,7 +348,8 @@ async def test_a_probe_that_lost_the_session_it_ran_on_schedules_a_fresh_start(e
         raise FileNotFoundError("command 'x' was not found on PATH")
     monkeypatch.setattr(session.manager, "_open_session", no_such_command)
     out = await mcp_service.check_health(1)
-    assert (out["state"], out["health_status"]) == ("ready", "failing")      # what is stored
+    # what is stored, shown as it is in this process: a `ready` with no session is starting (M-1)
+    assert (out["state"], out["health_status"]) == ("starting", "failing")
     assert opens == [] and scheduled == [(1, {"fresh": True})]               # no open, no second
 
 
@@ -684,7 +689,8 @@ async def test_a_probe_woken_by_a_deliberate_drop_writes_nothing(execution_db, o
     async with execution_db() as db:
         row = await db.get(MCPServer, 1)
     assert (row.state, row.health_status, row.last_error) == ("ready", "ok", None)
-    assert scheduled == [] and (out["state"], out["health_status"]) == ("ready", "ok")
+    # its session is gone: shown as starting, never `ok` while not ready (final review M-1)
+    assert scheduled == [] and (out["state"], out["health_status"]) == ("starting", None)
 
 
 async def test_a_probe_writes_nothing_once_the_state_left_ready(execution_db, own_supervisor, monkeypatch):
@@ -1060,7 +1066,9 @@ async def test_an_edit_waking_a_probe_is_one_plan_and_no_failure(execution_db, o
     await _plans_done(own_supervisor)
     async with execution_db() as db:
         row = await db.get(MCPServer, 1)
-    assert plans == ["refresh"] and opens == [1] and out["health_status"] == "ok"
+    # no failure: ok if the edit's start was already live when the probe answered, else not yet
+    # checked (shown, final review M-1) — never `failing`
+    assert plans == ["refresh"] and opens == [1] and out["health_status"] in ("ok", None)
     assert (row.state, row.health_status, row.last_error) == ("ready", "ok", None)
 
 
@@ -1265,3 +1273,57 @@ async def test_a_key_straddling_the_500_character_stored_cut_never_reaches_last_
     async with execution_db() as db:
         stored = (await db.get(MCPServer, 1)).last_error
     assert secret[:10] not in stored and secret not in out["error"] and "****" in out["error"]
+
+
+# ── final review M-3: a switch or a health probe racing a delete is not a 500 ───────────────────
+
+def _deleted_before_the_write(monkeypatch, maker, sid):
+    """Another request deletes server `sid` (and commits) just before the next commit of a session
+    that changed that row: the read saw the row, the UPDATE matches none (SQLAlchemy StaleDataError).
+    Returns the list the delete is recorded in."""
+    fired = []
+
+    def make():
+        db = maker()
+        real_commit = db.commit
+
+        async def commit():
+            if not fired and any(isinstance(o, MCPServer) and o.id == sid for o in db.dirty):
+                fired.append(sid)
+                async with maker() as other:
+                    await other.execute(delete(MCPServer).where(MCPServer.id == sid))
+                    await other.commit()
+            return await real_commit()
+        db.commit = commit
+        return db
+    monkeypatch.setattr(db_session, "AsyncSessionLocal", make)
+    return fired
+
+
+async def test_a_switch_racing_a_delete_answers_404(execution_db, own_supervisor, api, monkeypatch):
+    await _seed(execution_db, state="ready", status="connected")
+    fired = _deleted_before_the_write(monkeypatch, execution_db, 1)
+    response = await api.patch("/api/v1/mcp/servers/1/host", json={"allowed": False})
+    assert fired == [1] and response.status_code == 404
+
+
+async def test_a_health_probe_racing_a_delete_answers_404_and_restarts_nothing(execution_db, own_supervisor,
+                                                                               api, monkeypatch):
+    await _seed(execution_db, state="ready", status="connected")
+    _live_session(monkeypatch, 1)
+    plans = _record_plans(monkeypatch, own_supervisor)
+    own_supervisor.start(run_loops=False)
+    fired = _deleted_before_the_write(monkeypatch, execution_db, 1)
+    response = await api.post("/api/v1/mcp/1/health")
+    assert fired == [1] and response.status_code == 404
+    assert plans == []
+
+
+async def test_a_supervisor_write_racing_a_delete_is_a_no_op(execution_db, own_supervisor, monkeypatch):
+    await _seed(execution_db, state="starting")
+    fired = _deleted_before_the_write(monkeypatch, execution_db, 1)
+    gen = own_supervisor._bump(1)
+    assert await own_supervisor._set(1, gen, "failed", error="did not start within 60 s") is None
+    assert fired == [1]
+    async with execution_db() as db:
+        assert await db.get(MCPServer, 1) is None

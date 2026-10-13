@@ -174,7 +174,7 @@ async def test_a_ready_row_without_a_live_session_is_starting_and_offers_nothing
     out = await ListMyCapabilitiesExecutor().execute({})
     (srv,) = out["mcp"]
     assert srv["usable_by_me"] == [] and srv["tool_count"] == 1
-    assert srv["state"] == "starting" and srv["status"] == "connected"
+    assert srv["state"] == "starting" and srv["status"] == "connecting"     # status follows (M-1)
     assert srv["fix"] == "wait a moment; it is starting by itself"
     assert "reason" not in srv
 

@@ -105,6 +105,38 @@ async def test_health_ok_path_writes_columns(client, monkeypatch):
     assert srv.health_status == "ok" and srv.last_checked_at is not None
 
 
+async def test_a_successful_probe_refreshes_last_ok_at_and_a_failed_one_does_not(client, monkeypatch):
+    """Final review M-4 (spec §B1: every start, call and probe updates the timestamps): a probe that
+    listed the tools is a sign of life, like a call that reached the server."""
+    from datetime import datetime, timedelta
+
+    c, m = client
+    from server.mcp import session
+    outcomes = [_L([_T("fetch")]), RuntimeError("spawn failed")]
+
+    async def fake_list(server):
+        outcome = outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+    monkeypatch.setattr(session.manager, "list_tools", fake_list)
+    long_ago = datetime(2026, 1, 1)
+    async with c:
+        sid = await _add_server(c)
+        await _ready_and_live(m, sid, monkeypatch)
+        async with m() as s:
+            (await s.get(MCPServer, sid)).last_ok_at = long_ago
+            await s.commit()
+        assert (await c.post(f"/api/v1/mcp/{sid}/health")).json()["health_status"] == "ok"
+        async with m() as s:
+            refreshed = (await s.get(MCPServer, sid)).last_ok_at
+        assert refreshed is not None and refreshed - long_ago > timedelta(days=30)
+        await _ready_and_live(m, sid, monkeypatch)
+        assert (await c.post(f"/api/v1/mcp/{sid}/health")).json()["health_status"] == "failing"
+    async with m() as s:
+        assert (await s.get(MCPServer, sid)).last_ok_at == refreshed
+
+
 async def test_health_ok_clears_stale_last_error_and_reports_proxy_source(client, monkeypatch):
     c, m = client
     from server.mcp import session
@@ -203,7 +235,8 @@ async def test_health_of_a_server_that_is_not_ready_is_its_stored_state(client, 
             await s.commit()
         orphan = (await c.post(f"/api/v1/mcp/{sid}/health")).json()
     assert (parked["state"], parked["last_error"], parked["health_status"]) == ("parked", cause, None)
-    assert (orphan["state"], orphan["health_status"], orphan["tool_count"]) == ("ready", None, None)
+    # a `ready` with no session in this process is shown as starting (final review M-1)
+    assert (orphan["state"], orphan["health_status"], orphan["tool_count"]) == ("starting", None, None)
     assert opened == [] and listed == []
     async with m() as s:
         srv = await s.get(MCPServer, sid)

@@ -1056,3 +1056,98 @@ async def test_an_escalation_grant_of_an_ordinary_toolset_is_unchanged(readiness
         await s.commit()
     resolved, briefs = await _escalate(readiness, monkeypatch, "extra_ts")
     assert [(e["how"], e["detail"]) for e in resolved] == [("granted", "extra_ts")] and briefs == ["brief"]
+
+
+# ── final review, fix B: every shown `last_error` is masked first and cut second ─────────────────
+
+_LEGACY_KEY = "-".join(["sk", "live", "abcdefgh12345678"])     # built at runtime (no literal for scanners)
+#: as a row written before 0.1.61 stored httpx's text: as is, with the key in the URL
+_LEGACY_TEXT = f"Client error '401 Unauthorized' for url 'https://api.example.invalid/v1?key={_LEGACY_KEY}'\nmore"
+
+
+@pytest.fixture
+async def legacy_rows(execution_db, monkeypatch):
+    """Rows whose `last_error` holds the server's own key, as a pre-0.1.61 writer left it: one failed
+    (switched on), one off, and one whose key straddles the 200-character cut of a shown line."""
+    monkeypatch.setattr(session.manager, "_sessions", {})
+    rows = ((1, "failed", True, "error", _LEGACY_TEXT), (2, "off", False, "error", _LEGACY_TEXT),
+            (3, "failed", True, "error", "x" * 190 + _LEGACY_KEY + "\nmore"))
+    async with execution_db() as s:
+        for sid, state, allowed, status, text in rows:
+            s.add(MCPServer(id=sid, label=f"s{sid}", command="x", args=[], status=status, state=state,
+                            host_allowed=allowed, last_error=text,
+                            env=crypto.encrypt(json.dumps({"API_KEY": _LEGACY_KEY}))))
+            s.add(Toolset(key=f"mcp_{sid}", name=f"s{sid}", description="d", tier="orchestrator",
+                          status="registered"))
+        await s.flush()
+        for sid, *_ in rows:
+            s.add(Tool(key=f"mcp_{sid}__t", toolset_key=f"mcp_{sid}", description="t",
+                       tier="orchestrator", status="registered", input_schema={}, external_name="t"))
+        await s.commit()
+    return execution_db
+
+
+async def test_no_reader_of_last_error_shows_the_servers_own_key(legacy_rows):
+    """Final review I-2: a row written before 0.1.61 kept httpx's text with the key in it, and a
+    switched-off server keeps its `last_error` for ever. Every reader that shows it — to the model,
+    the UI or the API — masks the whole text before it takes a line or cuts it."""
+    from server.mcp_server import tools as own_mcp
+    from server.registry.executors import ListMyCapabilitiesExecutor
+    from server.services import capability_list
+    seen = {"GET /mcp/servers (list_servers)": await mcp_service.list_servers(),
+            "Capabilities rows (detail)": await capability_list._mcp_rows(),
+            "list_my_capabilities": await ListMyCapabilitiesExecutor().execute({}),
+            "Arslan's own MCP server": await own_mcp.list_capabilities(),
+            "status line": await arslan._mcp_status_line()}
+    for sid in (1, 2, 3):
+        srv = await _row(legacy_rows, sid)
+        seen[f"not_ready_result {sid}"] = executor.not_ready_result(srv)
+        seen[f"execute {sid}"] = await executor.MCPProxyExecutor(sid, "t").execute({})
+        seen[f"not_ready_for_key {sid}"] = await executor.not_ready_for_key(f"mcp_{sid}__t")
+        seen[f"check_health {sid}"] = await mcp_service.check_health(sid)
+        seen[f"last_error_text {sid}"] = await mcp_service.last_error_text(sid)
+    head = _LEGACY_KEY[:10]                  # a key cut before it was masked leaves its head behind
+    leaks = [name for name, shown in seen.items() if head in json.dumps(shown)]
+    assert leaks == []
+    assert "****" in executor.not_ready_result(await _row(legacy_rows, 1))["error"]
+    assert executor.not_ready_result(await _row(legacy_rows, 3))["error"].endswith("****. It was not called.")
+    assert (await mcp_service.last_error_text(1)).endswith("key=****'\nmore")     # the whole text, masked
+
+
+# ── final review M-1: one readiness rule on every surface ───────────────────────────────────────
+
+async def test_a_ready_row_with_no_live_session_reads_starting_on_every_surface(db, monkeypatch):
+    """GET /mcp/servers, the health answer and Arslan's own MCP server said ready / connected / ok for
+    a `ready` row with no session in this process, while the model and the Capabilities rows said
+    still starting. The stored `state` stays (PR 8 and the Capabilities rows read it); `shown` is new,
+    and the legacy `status` / `health_status` follow it."""
+    from server.mcp_server import tools as own_mcp
+    await _stamp(db, 1, health_status="ok")              # server 1: `ready`, no session in this process
+    servers = {s["id"]: s for s in await mcp_service.list_servers()}
+    assert (servers[1]["state"], servers[1]["shown"], servers[1]["status"]) == ("ready", "starting", "connecting")
+    assert servers[1]["health_status"] != "ok"
+    health = await mcp_service.check_health(1)
+    assert health["state"] == "starting" and health["health_status"] != "ok"
+    own = {s["label"]: s["status"] for s in (await own_mcp.list_capabilities())["mcp_servers"]}
+    assert own["good"] == "connecting"
+    _live_session(monkeypatch, 1)                         # its session, live: ready on every surface
+    servers = {s["id"]: s for s in await mcp_service.list_servers()}
+    assert (servers[1]["shown"], servers[1]["status"], servers[1]["health_status"]) == ("ready", "connected", "ok")
+    own = {s["label"]: s["status"] for s in (await own_mcp.list_capabilities())["mcp_servers"]}
+    assert own["good"] == "connected"
+
+
+@pytest.mark.parametrize("case", [c[0] for c in _READINESS])
+async def test_get_mcp_servers_shows_the_same_readiness_as_the_model(readiness, case):
+    """`shown` is the state `list_my_capabilities` gives the model, for every readiness case; the
+    legacy status says `connected` only for a server that is ready in this process."""
+    from server.registry.executors import ListMyCapabilitiesExecutor
+    sid = [c[0] for c in _READINESS].index(case) + 1
+    servers = {s["id"]: s for s in await mcp_service.list_servers()}
+    listed = {s["label"]: s for s in (await ListMyCapabilitiesExecutor().execute({}))["mcp"]}
+    assert servers[sid]["shown"] == listed[f"srv{sid}"]["state"]
+    if servers[sid]["host_allowed"]:
+        assert (servers[sid]["status"] == "connected") is (servers[sid]["shown"] == "ready")
+    else:                   # switched off: never a connection it no longer has, whatever it said before
+        assert servers[sid]["shown"] == "off"
+        assert servers[sid]["status"] not in ("connected", "connecting")

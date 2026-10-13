@@ -98,19 +98,36 @@ def status_clauses(servers) -> list[str]:
     return clauses
 
 
-async def error_line(server_id: int, text: str | None) -> str:
-    """The first line of a stored `last_error` for the model, with the server's own secrets masked
-    over the whole text BEFORE the line is taken and cut to 200 characters: a key straddling the cut
-    is masked whole, and a pre-0.1.61 unmasked row never shows its key (Task 8 review M-5)."""
-    if not (text or "").strip():
-        return ""
+def masked_error(srv, text: str | None = None) -> str | None:
+    """`text` (by default the row's own `last_error`) with the server's own secrets masked over the
+    WHOLE text — the one helper every reader that shows a stored `last_error` goes through, to the
+    model, the UI or the API, before it takes a line or cuts anything (final review I-2). A row
+    written before 0.1.61 stored the upstream text as is (httpx puts a URL's `?key=` in it), and a
+    switched-off server keeps its `last_error` for ever; 0.1.61's writers mask already, and masking
+    twice changes nothing. Never raises (`mask_for`)."""
+    text = srv.last_error if text is None else text
+    if not text:
+        return text
     from server.mcp.discovery import runtime_dict
     from server.mcp.supervisor import mask_for
+    return mask_for(runtime_dict(srv), text)
+
+
+def first_error_line(srv, text: str | None = None) -> str:
+    """`masked_error`'s first line, cut to 200 characters: masked first, cut second, so a key
+    straddling the cut is masked whole (Task 8 review M-5)."""
+    return (masked_error(srv, text) or "").split("\n", 1)[0].strip()[:200]
+
+
+async def error_line(server_id: int, text: str | None) -> str:
+    """`first_error_line` for a server known by its id (the row is read for its secrets)."""
+    if not (text or "").strip():
+        return ""
     async with db_session.AsyncSessionLocal() as db:
         row = await db.get(MCPServer, server_id)
     if row is None:
         return ""
-    return mask_for(runtime_dict(row), text).split("\n", 1)[0].strip()[:200]
+    return first_error_line(row, text)
 
 
 def rechecks_key(last_error: str | None, env) -> bool:
@@ -140,7 +157,8 @@ def state_words(srv, st: str) -> str:
 
 def not_ready_result(srv, *, state: str | None = None) -> dict:
     """The answer for a call to a server that is not ready: its state and the classified line.
-    A tool result (wrapped as external content by the tool loop), so the line may be raw."""
+    A tool result (wrapped as external content by the tool loop), so the line may be raw — but never
+    the server's own secrets (`first_error_line`)."""
     from server.mcp.supervisor import supervisor
     st = answer_state(srv, state)
     if st == "starting":
@@ -148,7 +166,7 @@ def not_ready_result(srv, *, state: str | None = None) -> dict:
         detail = f" ({note})" if note else ""
         text = f"MCP '{srv.label}' is {state_words(srv, st)}{detail}. It was not called."
     else:
-        reason = (srv.last_error or "").split("\n", 1)[0].strip()[:200] if st != "off" else ""
+        reason = first_error_line(srv) if st != "off" else ""      # masked, then cut (fix B)
         text = (f"MCP '{srv.label}' is {state_words(srv, st)}" + (f": {reason}" if reason else "")
                 + ". It was not called.")
     return {"ok": False, "code": "mcp_not_ready", "state": st, "error": text}

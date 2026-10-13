@@ -7,6 +7,7 @@ import logging
 from datetime import datetime, timezone
 
 from sqlalchemy import select
+from sqlalchemy.orm.exc import StaleDataError
 
 from server import crypto
 from server.db import session as db_session
@@ -34,7 +35,33 @@ def _mask_env(env: dict) -> dict:
     return {k: mask_secret(v) for k, v in (env or {}).items()}
 
 
-def _to_dict(srv: MCPServer, *, mask: bool = True) -> dict:
+def _legacy_words(srv: MCPServer, shown: str) -> tuple[str | None, str | None]:
+    """The legacy `status` and `health_status`, from the SHOWN state (final review M-1): `connected`
+    and `ok` only for a server that is ready in this process — the old UI (until PR 8) reads them,
+    and a `ready` row with no live session behind it is starting, not connected. A switched-off
+    server keeps what it said before (registered, error …), except a connection it no longer has."""
+    from server.mcp.supervisor import LEGACY_HEALTH, LEGACY_STATUS
+    status = LEGACY_STATUS.get(shown, srv.status)
+    if shown == "off" and status in ("connected", "connecting"):
+        status = "disconnected"
+    health = srv.health_status
+    if shown != "ready" and health == "ok":
+        health = LEGACY_HEALTH.get(shown)            # failing, or None (= not checked) while starting/off
+    return status, health
+
+
+def _shown(srv: MCPServer) -> str:
+    from server.mcp.executor import shown_state
+    return shown_state(srv.id, srv.state, bool(srv.host_allowed))
+
+
+def _to_dict(srv: MCPServer, *, mask: bool = True, stored_status: bool = False) -> dict:
+    """The API's view of a server. `state` is the stored state (PR 8 and the Capabilities rows read
+    it); `shown` is the state it is shown in — the one readiness rule (`executor.shown_state`) — and
+    the legacy `status`/`health_status` follow `shown` (final review M-1). `stored_status` keeps the
+    stored legacy status, for the Capabilities rows only: they tell "never connected" (registered)
+    from a switched-on row whose start is pending. `last_error` is masked (final review I-2)."""
+    from server.mcp.executor import masked_error
     env = {}
     if srv.env:
         try:
@@ -47,15 +74,18 @@ def _to_dict(srv: MCPServer, *, mask: bool = True) -> dict:
     # token — a symptom that points at the wrong thing entirely. Same three-state
     # vocabulary as the settings secrets and the provider rows; one word, not three
     # dialects.
+    shown = _shown(srv)
+    status, health = _legacy_words(srv, shown)
     return {"id": srv.id, "label": srv.label, "command": srv.command, "args": srv.args or [],
-            "url": srv.url, "env": _mask_env(env) if mask else env, "status": srv.status,
-            "env_status": secret_state(srv.env), "last_error": srv.last_error,
+            "url": srv.url, "env": _mask_env(env) if mask else env,
+            "status": srv.status if stored_status else status,
+            "env_status": secret_state(srv.env), "last_error": masked_error(srv),
             "transport": srv.transport,
             "host_allowed": bool(srv.host_allowed),
-            "health_status": srv.health_status,
+            "health_status": health,
             "last_checked_at": srv.last_checked_at.isoformat() if srv.last_checked_at else None,
-            # 0.1.61 §B1: the one state the supervisor writes (status/health_status follow it)
-            "state": srv.state,
+            # 0.1.61 §B1: the one state the supervisor writes, and the state it is shown in
+            "state": srv.state, "shown": shown,
             "state_at": srv.state_at.isoformat() if srv.state_at else None,
             "last_ok_at": srv.last_ok_at.isoformat() if srv.last_ok_at else None,
             "next_retry_at": srv.next_retry_at.isoformat() if srv.next_retry_at else None,
@@ -101,7 +131,8 @@ async def add_server(label: str, command: str, args: list[str], env: dict,
     return out
 
 
-async def list_servers() -> list[dict]:
+async def list_servers(*, stored_status: bool = False) -> list[dict]:
+    """GET /mcp/servers. `stored_status`: see `_to_dict` (the Capabilities rows only)."""
     async with db_session.AsyncSessionLocal() as db:
         rows = (await db.execute(select(MCPServer).order_by(MCPServer.id))).scalars().all()
         # Real expose state, batch-derived from the toolset tier — the frontend
@@ -114,7 +145,7 @@ async def list_servers() -> list[dict]:
             exposed = {ts.key: ts.tier == "safe" for ts in ts_rows}
         out = []
         for r in rows:
-            d = _to_dict(r)
+            d = _to_dict(r, stored_status=stored_status)
             d["exposed"] = exposed.get(f"mcp_{r.id}", False)
             out.append(d)
         return out
@@ -226,13 +257,17 @@ async def wire_tool(tool_key: str, tier: str, wired: bool) -> None:
 
 async def set_host_allowed(server_id: int, allowed: bool) -> None:
     """The revocable face of the server-level host consent. 0.1.61 §B1: off stops the server and
-    its retries; on starts it. Committed first — a background plan reads it to respect the switch."""
-    async with db_session.AsyncSessionLocal() as db:
-        srv = await db.get(MCPServer, server_id)
-        if srv is None:
-            raise ValueError(f"mcp server {server_id} not found")
-        srv.host_allowed = allowed
-        await db.commit()
+    its retries; on starts it. Committed first — a background plan reads it to respect the switch.
+    A delete that lands between the read and the write is "not found" (final review M-3), never a 500."""
+    try:
+        async with db_session.AsyncSessionLocal() as db:
+            srv = await db.get(MCPServer, server_id)
+            if srv is None:
+                raise ValueError(f"mcp server {server_id} not found")
+            srv.host_allowed = allowed
+            await db.commit()
+    except StaleDataError as exc:          # the UPDATE matched no row: deleted meanwhile
+        raise ValueError(f"mcp server {server_id} not found") from exc
     from server.mcp.supervisor import supervisor
 
     await supervisor.set_enabled(server_id, allowed)   # off stops it; on starts it
@@ -315,14 +350,20 @@ async def check_health(server_id: int) -> dict:
     now = datetime.now(timezone.utc).replace(tzinfo=None)   # naive UTC, matches DateTime columns
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     line = f"{stamp} health probe list_tools: {err_text}" if err_text is not None else None   # PB-2
-    async with db_session.AsyncSessionLocal() as db:
-        srv = await db.get(MCPServer, server_id)
-        written = (srv is not None and srv.state == "ready"
-                   and supervisor.generation(server_id) == gen_before)
-        if written:
-            # The columns reflect the LATEST state (executor semantics): ok clears a stale error.
-            srv.health_status, srv.last_checked_at, srv.last_error = health, now, line
-            await db.commit()
+    try:
+        async with db_session.AsyncSessionLocal() as db:
+            srv = await db.get(MCPServer, server_id)
+            if srv is None:
+                raise ValueError(f"mcp server {server_id} not found")   # deleted while it probed
+            written = srv.state == "ready" and supervisor.generation(server_id) == gen_before
+            if written:
+                # The columns reflect the LATEST state (executor semantics): ok clears a stale error.
+                srv.health_status, srv.last_checked_at, srv.last_error = health, now, line
+                if health == "ok":
+                    srv.last_ok_at = now      # a probe that listed the tools is a sign of life (§B1, M-4)
+                await db.commit()
+    except StaleDataError as exc:          # deleted between the read and the write (final review M-3)
+        raise ValueError(f"mcp server {server_id} not found") from exc
     if (err_text is not None and manager.cached(server_id) is None
             and supervisor.generation(server_id) == gen_before):
         supervisor.schedule(server_id, fresh=True)    # a real death: list_tools never tells the supervisor
@@ -337,18 +378,24 @@ async def check_health(server_id: int) -> dict:
 
 async def _health_state_answer(server_id: int, label: str, transport: str) -> dict:
     """The probe's answer when it has nothing of its own to report: what is stored, untouched —
-    the state and the classified cause."""
+    the cause (masked, final review I-2) and the state it is SHOWN in (final review M-1): a `ready`
+    row with no live session is starting, and its health is never `ok`. A row deleted meanwhile is
+    "not found"."""
+    from server.mcp.executor import masked_error
     from server.mcp.session import manager
 
     async with db_session.AsyncSessionLocal() as db:
         srv = await db.get(MCPServer, server_id)
-    checked = srv.last_checked_at if srv is not None else None
+    if srv is None:
+        raise ValueError(f"mcp server {server_id} not found")
+    shown = _shown(srv)
+    checked = srv.last_checked_at
     return {"id": server_id, "label": label, "transport": transport,
-            "health_status": srv.health_status if srv is not None else None,
+            "health_status": _legacy_words(srv, shown)[1],
             "last_checked_at": checked.isoformat() if checked else None,
-            "last_error": srv.last_error if srv is not None else None, "tool_count": None,
+            "last_error": masked_error(srv), "tool_count": None,
             "proxy_source": manager.proxy_source(server_id) or "unknown",
-            "state": srv.state if srv is not None else None}
+            "state": shown}
 
 
 async def check_health_all() -> None:
@@ -367,10 +414,11 @@ async def check_health_all() -> None:
 
 
 async def last_error_text(server_id: int) -> str | None:
-    """The classified last_error for a server, for API error shaping."""
+    """The classified last_error for a server, for API error shaping — masked (final review I-2)."""
+    from server.mcp.executor import masked_error
     async with db_session.AsyncSessionLocal() as db:
         srv = await db.get(MCPServer, server_id)
-        return srv.last_error if srv is not None else None
+    return masked_error(srv) if srv is not None else None
 
 
 async def reconnect(server_id: int) -> None:
