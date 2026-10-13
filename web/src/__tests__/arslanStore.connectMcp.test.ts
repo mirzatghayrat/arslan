@@ -25,8 +25,8 @@ describe("propose_connect_mcp frame", () => {
       path_placeholder: null,
     } as any);
 
-    const pc = (useArslanStore.getState() as any).pendingConnectMcp;
-    expect(pc).not.toBeNull();
+    const pc = (useArslanStore.getState() as any).pendingConnectMcps[0];
+    expect(pc).toBeDefined();
     expect(pc.callId).toBe("c1");
     expect(pc.label).toBe("GitHub");
     expect(pc.argv).toEqual(["-y", "@modelcontextprotocol/server-github"]);
@@ -58,23 +58,27 @@ describe("propose_connect_mcp frame", () => {
       path_placeholder: "/absolute/path/to/expose",
     } as any);
 
-    const pc = (useArslanStore.getState() as any).pendingConnectMcp;
+    const pc = (useArslanStore.getState() as any).pendingConnectMcps[0];
     expect(pc.requiresPath).toBe(true);
     expect(pc.pathPlaceholder).toBe("/absolute/path/to/expose");
   });
 
-  it("clearPendingConnectMcp resets to null", () => {
-    useArslanStore.getState().handleFrame({
-      type: "propose_connect_mcp", call_id: "c3", key: "memory", label: "Memory",
+  it("clearPendingConnectMcp(id) removes that card and only it", () => {
+    const frame = (id: string) => ({
+      type: "propose_connect_mcp", call_id: id, key: "memory", label: "Memory",
       transport: "stdio", command: "npx", argv: [], url: null, env_keys: [],
       prerequisites: "", requires_path: false, path_placeholder: null,
     } as any);
-    (useArslanStore.getState() as any).clearPendingConnectMcp();
-    expect((useArslanStore.getState() as any).pendingConnectMcp).toBeNull();
+    useArslanStore.getState().handleFrame(frame("c3"));
+    useArslanStore.getState().handleFrame(frame("c3b"));
+    (useArslanStore.getState() as any).clearPendingConnectMcp("c3");
+    expect((useArslanStore.getState() as any).pendingConnectMcps.map((c: any) => c.callId)).toEqual(["c3b"]);
+    (useArslanStore.getState() as any).clearPendingConnectMcp("c3b");
+    expect((useArslanStore.getState() as any).pendingConnectMcps).toEqual([]);
   });
 
-  it("pendingConnectMcp starts as null", () => {
-    expect((useArslanStore.getState() as any).pendingConnectMcp).toBeNull();
+  it("pendingConnectMcps starts empty", () => {
+    expect((useArslanStore.getState() as any).pendingConnectMcps).toEqual([]);
   });
 
   it("clears thinking when the frame arrives", () => {
@@ -89,9 +93,9 @@ describe("propose_connect_mcp frame", () => {
 });
 
 describe("mcp_connect_followup frame", () => {
-  it("clears pendingConnectMcp and appends an honest tier-aware chat note", () => {
+  it("clears the connect card that connected the server and appends an honest tier-aware chat note", () => {
     useArslanStore.setState({
-      pendingConnectMcp: { callId: "c1" } as any,
+      pendingConnectMcps: [{ callId: "c1", appliedServerId: 7 }, { callId: "c2" }] as any,
     } as any, false);
 
     useArslanStore.getState().handleFrame({
@@ -104,7 +108,7 @@ describe("mcp_connect_followup frame", () => {
     } as any);
 
     const state = useArslanStore.getState() as any;
-    expect(state.pendingConnectMcp).toBeNull();
+    expect(state.pendingConnectMcps.map((c: any) => c.callId)).toEqual(["c2"]);       // the card that connected it; not the other
     const note = state.items[state.items.length - 1];
     expect(note.kind).toBe("system");
     expect(note.role).toBe("arslan");

@@ -38,7 +38,7 @@ describe("action approval card", () => {
   it("the store holds a job's action card and raises the spoken notice", () => {
     useArslanStore.getState().handleFrame({ type: "propose_action", call_id: "a1", kind: "mac_shortcut",
       target: "Log water", detail: "Run the Shortcut", background: true });
-    expect(useArslanStore.getState().pendingAction).toMatchObject({ callId: "a1", kind: "mac_shortcut" });
+    expect(useArslanStore.getState().pendingActions).toMatchObject([{ callId: "a1", kind: "mac_shortcut" }]);
     expect(useArslanStore.getState().jobNotice).toMatchObject({ kind: "needs_approval" });
   });
 

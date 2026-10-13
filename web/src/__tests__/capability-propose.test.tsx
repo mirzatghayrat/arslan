@@ -48,7 +48,7 @@ describe("the capability card", () => {
     expect(send).not.toHaveBeenCalled();
     fireEvent.keyDown(window, { key: "Escape" });
     expect(send).toHaveBeenCalledWith({ type: "cancel_capability", call_id: "cap-1" });
-    expect(useArslanStore.getState().pendingCapability).toBeNull();
+    expect(useArslanStore.getState().pendingCapabilities).toEqual([]);
   });
 
   it("adding sends the key and the folders the user kept — nothing else", () => {

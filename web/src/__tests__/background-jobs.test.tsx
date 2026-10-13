@@ -63,7 +63,7 @@ describe("store", () => {
     useArslanStore.getState().handleFrame(update());
     useArslanStore.getState().handleFrame({ type: "propose_schedule", call_id: "k", name: "n", when: "w", background: true });
     expect(useArslanStore.getState().jobNotice).toMatchObject({ kind: "needs_approval", jobId: "job-1", seq: 1 });
-    expect(useArslanStore.getState().pendingSchedule?.background).toBe(true);
+    expect(useArslanStore.getState().pendingSchedules[0]?.background).toBe(true);
     useArslanStore.getState().handleFrame({ type: "job_spoken", job_id: "job-1", outcome: "done", goal: "Tidy my notes" });
     expect(useArslanStore.getState().jobNotice).toMatchObject({ kind: "finished", outcome: "done", seq: 2 });
   });
@@ -82,17 +82,19 @@ describe("store", () => {
   });
 
   it.each([
-    ["propose_schedule", { name: "n", when: "w" }, "pendingSchedule"],
-    ["propose_run_command", { pretty: "ls" }, "pendingCommand"],
-    ["propose_workspace_write", { workspace: "/w", action: "write", path: "a" }, "pendingWorkspaceWrite"],
+    ["propose_schedule", { name: "n", when: "w" }, "pendingSchedules"],
+    ["propose_run_command", { pretty: "ls" }, "pendingCommands"],
+    ["propose_workspace_write", { workspace: "/w", action: "write", path: "a" }, "pendingWorkspaceWrites"],
   ] as const)("%s: only a background card raises a job notice", (type, fields, slot) => {
     const h = useArslanStore.getState().handleFrame;
     h({ type, call_id: "fg", ...fields } as never);
     expect(useArslanStore.getState().jobNotice).toBeNull();
-    expect((useArslanStore.getState()[slot] as { background?: boolean }).background).toBe(false);
+    const card = (id: string) => (useArslanStore.getState()[slot] as { callId: string; background?: boolean }[]).find((c) => c.callId === id);
+    expect(card("fg")?.background).toBe(false);
     h({ type, call_id: "bg", background: true, ...fields } as never);
     expect(useArslanStore.getState().jobNotice).toMatchObject({ kind: "needs_approval" });
-    expect((useArslanStore.getState()[slot] as { background?: boolean }).background).toBe(true);
+    expect(card("bg")?.background).toBe(true);
+    expect(card("fg")?.background).toBe(false);                      // the job's card did not replace the window's
   });
 });
 
@@ -201,7 +203,7 @@ describe("spoken notices", () => {
     act(() => useArslanStore.getState().handleFrame({ type: "propose_schedule", call_id: "k", name: "n", when: "w", background: true }));
     expect(speak).toHaveBeenCalledTimes(2);
     expect(speak.mock.calls[1][0]).toBe("jobs.spokenApproval");
-    expect(useArslanStore.getState().pendingSchedule).not.toBeNull();   // still waiting on a click
+    expect(useArslanStore.getState().pendingSchedules).toHaveLength(1);   // still waiting on a click
   });
 
   it("says each notice once, even when the conversation toggle changes afterwards", async () => {

@@ -1,7 +1,7 @@
 /** 0.1.61 §A4 (review of PR 2b Task 3): a frame the server should never send must not leave a card that says nothing, closes at once,
  *  spills out of its box, or reads as resolved when nothing was shown. */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, act, cleanup } from "@testing-library/react";
+import { render, screen, act, cleanup, fireEvent } from "@testing-library/react";
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (k: string, o?: Record<string, unknown>) => (o ? `${k}:${JSON.stringify(o)}` : k) }),
@@ -21,6 +21,7 @@ describe("a card that says what it asks, whatever the frame", () => {
     frame({ ...ACTION, title: "   " });
     expect(screen.getByTestId("action-title").textContent).toBe("com.tencent.xinWeChat");
     frame({ ...ACTION, call_id: "a2", title: "\n", why: "Send Li the notes" });
+    fireEvent.click(screen.getByLabelText("kit.next"));                                              // a2 waits behind a1
     expect(screen.getByTestId("action-title")).toHaveTextContent("Send Li the notes");
     expect(screen.getByTestId("action-subject").textContent).toBe("com.tencent.xinWeChat");        // the server's words, not a blank line
     expect(screen.getByTestId("action-subject")).not.toHaveAttribute("lang");                       // a bare target is not English words
@@ -59,6 +60,16 @@ describe("a card's time, whatever the frame says", () => {
     frame({ type: "card_resolved", outcome: "approved" });
     expect(screen.getByTestId("wswrite-card")).toBeInTheDocument();     // not this one: it names no card
     act(() => { useArslanStore.getState().expireCard(undefined as never); });
+    expect(useArslanStore.getState().cardExpired).toBe(false);
+  });
+
+  it("a card that itself came with no call id is not matched by one that names none: nothing is closed, nothing ran out", () => {
+    render(<AskSlot send={vi.fn()} />);
+    frame({ type: "propose_workspace_write", workspace: "/w", action: "write_file", path: "a", options: ["once", "conversation"] });   // malformed: no call_id
+    expect(useArslanStore.getState().pendingWorkspaceWrites).toHaveLength(1);
+    frame({ type: "card_resolved", outcome: "expired" });
+    act(() => { useArslanStore.getState().expireCard(undefined as never); });
+    expect(useArslanStore.getState().pendingWorkspaceWrites).toHaveLength(1);
     expect(useArslanStore.getState().cardExpired).toBe(false);
   });
 });

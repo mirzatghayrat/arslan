@@ -70,8 +70,10 @@ describe("card v2 in the chat", () => {
     render(<AskSlot send={send} />);
     frame({ ...RULE, call_id: "c1" });
     fireEvent.click(screen.getByTestId("runcmd-scope-always"));
-    frame({ ...RULE, call_id: "c2" });                                   // replaces c1 in the one command slot
-    expect((screen.getByTestId("runcmd-scope-once") as HTMLInputElement).checked).toBe(true);
+    frame({ ...RULE, call_id: "c2" });                                   // waits behind c1: a second card never replaces the first
+    fireEvent.click(screen.getByTestId("runcmd-run"));
+    expect(send.mock.calls.at(-1)).toStrictEqual([{ type: "confirm_run_command", call_id: "c1", scope: "always" }]);
+    expect((screen.getByTestId("runcmd-scope-once") as HTMLInputElement).checked).toBe(true);     // c2 moved up, fresh
     fireEvent.click(screen.getByTestId("runcmd-run"));
     expect(send.mock.calls.at(-1)).toStrictEqual([{ type: "confirm_run_command", call_id: "c2", scope: "once" }]);
   });
@@ -130,8 +132,8 @@ describe("card v2 in the chat", () => {
     frame({ type: "propose_workspace_write", call_id: "w1", workspace: "/w", action: "write_file", path: "a.md",
             options: ["once", "conversation"], expires_at: Date.now() / 1000 + 1800 });
     act(() => { vi.advanceTimersByTime(62_000); });                       // the command's expiry + the 2 s grace
-    expect(useArslanStore.getState().pendingCommand).toBeNull();
-    expect(useArslanStore.getState().pendingWorkspaceWrite?.callId).toBe("w1");
+    expect(useArslanStore.getState().pendingCommands).toEqual([]);
+    expect(useArslanStore.getState().pendingWorkspaceWrites.map((c) => c.callId)).toEqual(["w1"]);
     expect(screen.getByTestId("wswrite-card")).toBeInTheDocument();      // the one left to answer
     expect(screen.queryByTestId("ask-expired")).toBeNull();
     act(() => { vi.advanceTimersByTime(1_740_000); });                    // to the write card's own expiry + 2 s
@@ -163,7 +165,7 @@ describe("a card frame in the store", () => {
                  why: "to save your notes", expiresAt: 1_900_000_000_250 };           // the expiry in ms
   const slots = () => {
     const s = useArslanStore.getState();
-    return { command: s.pendingCommand, write: s.pendingWorkspaceWrite, schedule: s.pendingSchedule, action: s.pendingAction };
+    return { command: s.pendingCommands.at(-1), write: s.pendingWorkspaceWrites.at(-1), schedule: s.pendingSchedules.at(-1), action: s.pendingActions.at(-1) };
   };
 
   it("keeps every v2 field on every kind of card: choices, literal scope, question, kind, the model's why, expiry in ms", () => {
@@ -185,40 +187,43 @@ describe("a card frame in the store", () => {
   it("reads a frame defensively: only strings in the choices, only words, only a finite expiry", () => {
     frame({ type: "propose_schedule", call_id: "s", name: "n", when: "w",
             options: ["once", 3, null, "conversation"], always_label: "", title: 7, perm_kind: "", why: "   ", expires_at: "soon" });
-    const card = useArslanStore.getState().pendingSchedule!;
+    const card = useArslanStore.getState().pendingSchedules.find((c) => c.callId === "s")!;
     expect(card.options).toEqual(["once", "conversation"]);
     for (const k of ["alwaysLabel", "title", "permKind", "why", "expiresAt"]) expect(card, k).not.toHaveProperty(k);
     for (const odd of [{ options: "once" }, { options: [] }, { options: [4, null] }, { expires_at: Infinity }, { expires_at: NaN }]) {
       frame({ type: "propose_schedule", call_id: "s2", name: "n", when: "w", ...odd });
-      const next = useArslanStore.getState().pendingSchedule!;
+      const next = useArslanStore.getState().pendingSchedules.find((c) => c.callId === "s2")!;
       expect(next, JSON.stringify(odd)).not.toHaveProperty(Object.keys(odd)[0] === "options" ? "options" : "expiresAt");
     }
   });
 
   it("keeps a title trimmed, and a title of spaces is no title", () => {
     frame({ type: "propose_action", call_id: "a", kind: "app", target: "x", detail: "", title: "  Use x?  " });
-    expect(useArslanStore.getState().pendingAction?.title).toBe("Use x?");
+    expect(useArslanStore.getState().pendingActions.find((c) => c.callId === "a")?.title).toBe("Use x?");
     frame({ type: "propose_action", call_id: "b", kind: "app", target: "x", detail: "", title: "   " });
-    expect(useArslanStore.getState().pendingAction).not.toHaveProperty("title");
+    expect(useArslanStore.getState().pendingActions.find((c) => c.callId === "b")).not.toHaveProperty("title");
   });
 
-  it("closes a card the server says is resolved only if it is the one shown, and only that one", () => {
+  it("closes a card the server says is resolved only if it is pending here, and only that one", () => {
     frame({ ...RULE, call_id: "c1" });
-    frame({ ...RULE, call_id: "c2" });                                   // replaces c1 in the one command slot
-    frame({ type: "card_resolved", call_id: "c1", outcome: "expired" }); // c1 is not shown here any more
-    expect(useArslanStore.getState().pendingCommand?.callId).toBe("c2");
-    expect(useArslanStore.getState().cardExpired).toBe(false);
-    frame({ type: "card_resolved", call_id: "c2", outcome: "expired" });
-    expect(useArslanStore.getState()).toMatchObject({ pendingCommand: null, cardExpired: true });
+    frame({ ...RULE, call_id: "c2" });                                   // c2 waits behind c1
+    frame({ type: "card_resolved", call_id: "not-pending", outcome: "expired" });
+    expect(useArslanStore.getState().pendingCommands.map((c) => c.callId)).toEqual(["c1", "c2"]);
+    expect(useArslanStore.getState().cardExpired).toBe(false);          // nothing shown here ran out
+    frame({ type: "card_resolved", call_id: "c1", outcome: "expired" });
+    expect(useArslanStore.getState().pendingCommands.map((c) => c.callId)).toEqual(["c2"]);
+    expect(useArslanStore.getState().cardExpired).toBe(true);
+    frame({ type: "card_resolved", call_id: "c2", outcome: "approved", by: "phone" });
+    expect(useArslanStore.getState().pendingCommands).toEqual([]);
   });
 
   it("expireCard closes a card that is shown here and says it ran out; for any other id it does nothing", () => {
     frame({ ...RULE });
     act(() => { useArslanStore.getState().expireCard("not-this-one"); });
-    expect(useArslanStore.getState().pendingCommand).not.toBeNull();
+    expect(useArslanStore.getState().pendingCommands).toHaveLength(1);
     expect(useArslanStore.getState().cardExpired).toBe(false);
     act(() => { useArslanStore.getState().expireCard("c1"); });
-    expect(useArslanStore.getState()).toMatchObject({ pendingCommand: null, cardExpired: true });
+    expect(useArslanStore.getState()).toMatchObject({ pendingCommands: [], cardExpired: true });
     act(() => { useArslanStore.getState().dismissCardExpired(); });
     expect(useArslanStore.getState().cardExpired).toBe(false);
   });
@@ -233,22 +238,29 @@ describe("a card frame in the store", () => {
 // ── A choice never carries from one ask to another ──────────────────────────────────────────────────────
 
 describe("a choice never carries from one ask to another", () => {
-  // [card, its frame, test-id prefix of its choices, the choice picked, the choice a fresh card starts on]
-  const REPLACED: [string, (id: string) => Record<string, unknown>, string, string, string][] = [
+  // [card, its frame, test-id prefix of its choices, the choice picked, the choice a fresh card starts on, its yes button]
+  const TWO: [string, (id: string) => Record<string, unknown>, string, string, string, string][] = [
     ["a write card", (id) => ({ type: "propose_workspace_write", call_id: id, workspace: "/w", action: "write_file", path: "a.md",
-      options: ["once", "conversation"] }), "wswrite-scope", "conversation", "once"],
+      options: ["once", "conversation"] }), "wswrite-scope", "conversation", "once", "wswrite-allow"],
     ["a schedule card", (id) => ({ type: "propose_schedule", call_id: id, name: "n", when: "every: 60",
-      options: ["once", "conversation"] }), "schedule-choice", "conversation", "once"],
+      options: ["once", "conversation"] }), "schedule-choice", "conversation", "once", "schedule-allow"],
     ["an action card", (id) => ({ type: "propose_action", call_id: id, kind: "app", target: "x", detail: "", title: "Use x?",
-      options: ["task", "conversation", "always"], always_label: "x" }), "action-scope", "always", "task"],
+      options: ["task", "conversation", "always"], always_label: "x" }), "action-scope", "always", "task", "action-allow"],
   ];
 
-  it.each(REPLACED)("%s: what was picked on one ask is not picked on the ask that replaces it", (_name, make, prefix, picked, fresh) => {
+  it.each(TWO)("%s: what was picked on one ask is not picked on the ask that moves up, or on one paged to", (_name, make, prefix, picked, fresh, allow) => {
     render(<AskSlot send={vi.fn()} />);
     frame(make("k1"));
+    frame(make("k2"));                                                   // waits behind k1
     fireEvent.click(screen.getByTestId(`${prefix}-${picked}`));
     expect((screen.getByTestId(`${prefix}-${picked}`) as HTMLInputElement).checked).toBe(true);
-    frame(make("k2"));
+    fireEvent.click(screen.getByLabelText("kit.next"));                  // paged to k2
+    expect((screen.getByTestId(`${prefix}-${fresh}`) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByTestId(`${prefix}-${picked}`) as HTMLInputElement).checked).toBe(false);
+    fireEvent.click(screen.getByLabelText("kit.previous"));              // and back: k1 starts fresh too
+    expect((screen.getByTestId(`${prefix}-${picked}`) as HTMLInputElement).checked).toBe(false);
+    fireEvent.click(screen.getByTestId(`${prefix}-${picked}`));
+    fireEvent.click(screen.getByTestId(allow));                          // k1 answered: k2 takes its place
     expect((screen.getByTestId(`${prefix}-${fresh}`) as HTMLInputElement).checked).toBe(true);
     expect((screen.getByTestId(`${prefix}-${picked}`) as HTMLInputElement).checked).toBe(false);
   });
@@ -256,9 +268,10 @@ describe("a choice never carries from one ask to another", () => {
   it("an opened note and what was typed in it do not carry either", () => {
     render(<AskSlot send={vi.fn()} />);
     frame({ ...RULE, call_id: "c1" });
+    frame({ ...RULE, call_id: "c2" });
     fireEvent.click(screen.getByTestId("runcmd-note-open"));
     fireEvent.change(screen.getByTestId("runcmd-note-input"), { target: { value: "for the first one" } });
-    frame({ ...RULE, call_id: "c2" });
+    fireEvent.click(screen.getByLabelText("kit.next"));                  // paged to c2
     expect(screen.queryByTestId("runcmd-note-input")).toBeNull();
     fireEvent.click(screen.getByTestId("runcmd-note-open"));
     expect(screen.getByTestId("runcmd-note-input")).toHaveValue("");
@@ -350,7 +363,8 @@ describe("the model's why is the question (§A4)", () => {
     frame({ ...ACTION, why: "把你写的笔记发给小李" });
     expect(screen.getByTestId("action-title")).toHaveTextContent("把你写的笔记发给小李");
     expect(screen.getByTestId("action-title")).not.toHaveAttribute("lang");    // the model writes in the person's language
-    frame({ ...ACTION, call_id: "a2" });                                       // no why: the server's English title
+    frame({ ...ACTION, call_id: "a2" });                                       // no why: the server's English title (waits behind a1)
+    fireEvent.click(screen.getByLabelText("kit.next"));
     expect(screen.getByTestId("action-title")).toHaveTextContent("Use WeChat?");
     expect(screen.getByTestId("action-title")).toHaveAttribute("lang", "en");
   });
@@ -367,6 +381,7 @@ describe("the model's why is the question (§A4)", () => {
     expect(screen.getByTestId("action-title")).toHaveTextContent('hands.title.desktop_app:{"target":"Notes"}');
     expect(screen.getByTestId("action-said")).toHaveTextContent("Tidy the notes");
     frame({ ...ACTION, call_id: "a2", kind: "desktop_app", target: "Notes", why: "   " });
+    fireEvent.click(screen.getByLabelText("kit.next"));                        // a2 waits behind a1
     expect(screen.queryByTestId("action-said")).toBeNull();
   });
 
@@ -376,6 +391,7 @@ describe("the model's why is the question (§A4)", () => {
     expect(screen.getByTestId("action-title")).toHaveTextContent("Tidy the notes");
     expect(screen.getByTestId("action-subject")).toHaveTextContent("Delete ~/Notes/2025");
     frame({ ...ACTION, call_id: "a2", target: "~/Notes/2025", title: "Delete ~/Notes/2025" });     // no why: said once, as the heading
+    fireEvent.click(screen.getByLabelText("kit.next"));                                              // a2 waits behind a1
     expect(screen.getAllByText("Delete ~/Notes/2025")).toHaveLength(1);
     expect(screen.queryByTestId("action-subject")).toBeNull();
   });

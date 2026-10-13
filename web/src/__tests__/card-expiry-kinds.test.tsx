@@ -1,6 +1,7 @@
 /** 0.1.61 §A4 (review of PR 2b Task 3): a card of EVERY kind the chat slot holds runs out the same way — it leaves 2 s after its
  *  expiry and the slot says it is waiting for you; the server's `card_resolved: expired` says the same; a re-sent card's later
- *  expiry replaces the old one. card-v2.test.tsx pins this for the command and write cards only. */
+ *  expiry replaces the old one. card-v2.test.tsx pins this for the command and write cards only. Fix round 1 (R5): the
+ *  enroll-node and connect-MCP cards are in the table too — they used to sit at 0:00 for good. */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, act, cleanup } from "@testing-library/react";
 
@@ -21,6 +22,10 @@ const CAPABILITY = { type: "propose_capability", call_id: "k1", kind: "mcp", nam
   source_url: "https://github.com/a/b", repo: "a/b", version: "1.1.2", license: { spdx: "MIT", read_from: "github:LICENSE" }, stars: 1,
   pushed_days: 10, runtime: "uv", runtime_download: null, remote_host: null, network: false, folders: [], keys: [], why: "w", retry: "r" };
 
+const ENROLL = { type: "propose_enroll_node", call_id: "n1", name: "mini", host: "10.0.0.2", user: "me", fingerprints: ["SHA256:abc"] };
+const CONNECT = { type: "propose_connect_mcp", call_id: "m1", key: "memory", label: "Memory", transport: "stdio", command: "npx", argv: [],
+  url: null, env_keys: [], prerequisites: "", requires_path: false, path_placeholder: null };
+
 // [name, the card's frame (with an optional expiry), its test id]
 const KINDS: [string, (expires?: number) => Record<string, unknown>, string][] = [
   ["a command card", (e) => ({ type: "propose_run_command", call_id: "c1", pretty: "ls", reason: "", options: ["once", "conversation"], ...(e ? { expires_at: e } : {}) }), "runcmd-card"],
@@ -28,8 +33,11 @@ const KINDS: [string, (expires?: number) => Record<string, unknown>, string][] =
   ["a schedule card", (e) => ({ type: "propose_schedule", call_id: "s1", name: "n", when: "every: 60", options: ["once", "conversation"], ...(e ? { expires_at: e } : {}) }), "schedule-card"],
   ["an action card", (e) => ({ type: "propose_action", call_id: "a1", kind: "app", target: "x", detail: "", title: "Use x?", options: ["task", "conversation"], ...(e ? { expires_at: e } : {}) }), "action-card"],
   ["a capability card", () => CAPABILITY, "capability-card"],
+  ["an enroll-node card", () => ENROLL, "enroll-node-card"],
+  ["a connect-MCP card", () => CONNECT, "connect-mcp-card"],
 ];
-const IDS: Record<string, string> = { "runcmd-card": "c1", "wswrite-card": "w1", "schedule-card": "s1", "action-card": "a1", "capability-card": "k1" };
+const IDS: Record<string, string> = { "runcmd-card": "c1", "wswrite-card": "w1", "schedule-card": "s1", "action-card": "a1", "capability-card": "k1",
+  "enroll-node-card": "n1", "connect-mcp-card": "m1" };
 
 describe("a card of every kind runs out", () => {
   it.each(KINDS)("%s leaves 2 s after its expiry (30 minutes after it arrived, when the frame says no time) and the slot says it is waiting for you", (_n, make, id) => {
@@ -94,8 +102,8 @@ describe("a card whose time moves", () => {
     frame({ type: "propose_workspace_write", call_id: "w1", workspace: "/w", action: "write_file", path: "a", options: ["once", "conversation"], expires_at: at });
     advance(62_000);
     advance(10);                                                       // the next card to run out is timed once the first has left
-    expect(useArslanStore.getState().pendingCommand).toBeNull();
-    expect(useArslanStore.getState().pendingWorkspaceWrite).toBeNull();
+    expect(useArslanStore.getState().pendingCommands).toEqual([]);
+    expect(useArslanStore.getState().pendingWorkspaceWrites).toEqual([]);
     expect(screen.getByTestId("ask-expired")).toBeInTheDocument();
   });
 });

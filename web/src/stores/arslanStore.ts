@@ -4,6 +4,34 @@ import { createSpeaker } from "../lib/speech";
 import type { ActionKind, ArslanServerMessage, ArslanThreadItem, JobCard, JobOutcome, ProcessSummary, StoredArtifact, ToolStep, RosterMember } from "../api/client.types";
 import type { MessageAttachment } from "../types";
 
+/** A card waiting on the user in this window, by kind (0.1.61 §A4). Each kind is a list, oldest first, keyed by `callId`: a
+ *  second card of a kind (a window's own run-command card and a job's) waits behind the first and never replaces it. */
+export type PendingCommand = { callId: string; pretty: string; reason: string; remoteHost: string; fingerprints: string[]; background?: boolean;
+  sandbox?: "outside" | "retry"; why?: string; receivedAt?: number } & CardV2;
+export type PendingEnrollNode = { callId: string; name: string; host: string; user: string; fingerprints: string[]; receivedAt?: number };
+export type PendingWorkspaceWrite = { callId: string; workspace: string; action: string; path: string; background?: boolean; receivedAt?: number } & CardV2;
+export type PendingSchedule = { callId: string; name: string; when: string; background?: boolean; receivedAt?: number } & CardV2;
+export type PendingCapability = { callId: string; receivedAt?: number } & import("../api/client.types").CapabilityCard;
+export type PendingAction = { callId: string; kind: ActionKind | (string & {}); target: string; detail: string; background?: boolean;
+  receivedAt?: number } & CardV2;
+export type PendingConnectMcp = {
+  callId: string;
+  key: string;
+  label: string;
+  labelKey?: string;
+  transport: string;
+  command: string;
+  argv: string[];
+  url: string | null;
+  envKeys: { name: string; description: string; get_it_url: string; paid: boolean }[];
+  prerequisites: string;
+  requiresPath: boolean;
+  pathPlaceholder: string | null;
+  receivedAt?: number;
+  /** The server this card connected (set when its apply succeeded): the follow-up frame names the server, not the card. */
+  appliedServerId?: number;
+};
+
 interface ArslanState {
   items: ArslanThreadItem[];
   streaming: boolean;
@@ -29,9 +57,10 @@ interface ArslanState {
   pendingProposalSpawnId: number | null;
   // Active conversation roster: spawns currently joined to this conversation thread.
   roster: RosterMember[];
-  // Pending shell command: set when a `propose_run_command` frame arrives; cleared
-  // once the user confirms (sends confirm_run_command) or cancels.
-  pendingCommand: ({ callId: string; pretty: string; reason: string; remoteHost: string; fingerprints: string[]; background?: boolean; sandbox?: "outside" | "retry"; why?: string; receivedAt?: number } & CardV2) | null;
+  // Pending shell commands: one is added when a `propose_run_command` frame arrives (the same call id again replaces
+  // it, a new one waits behind); a card leaves once the user confirms (sends confirm_run_command) or cancels. Every
+  // kind below is such a list (0.1.61 §A4), oldest first: nothing a second card could hide stays unanswerable.
+  pendingCommands: PendingCommand[];
   // 0.1.42 background jobs in this conversation, keyed by job id. Each has a
   // `kind: "job"` item in `items` marking where its live card sits.
   jobs: Record<string, JobCard>;
@@ -42,34 +71,21 @@ interface ArslanState {
   // its button calls the REST endpoint, which is what makes enrolment a human act.
   // 0.1.55: receivedAt drives the asking card's countdown; 0.1.61: a card waits 30 minutes, and counts down
   // to the frame's own expires_at when it has one.
-  pendingEnrollNode: { callId: string; name: string; host: string; user: string; fingerprints: string[]; receivedAt?: number } | null;
-  pendingWorkspaceWrite: ({ callId: string; workspace: string; action: string; path: string; background?: boolean; receivedAt?: number } & CardV2) | null;
-  pendingSchedule: ({ callId: string; name: string; when: string; background?: boolean; receivedAt?: number } & CardV2) | null;
+  pendingEnrollNodes: PendingEnrollNode[];
+  pendingWorkspaceWrites: PendingWorkspaceWrite[];
+  pendingSchedules: PendingSchedule[];
   // 0.1.57: add a capability and retry (only this window answers; the card may carry a key).
-  pendingCapability: ({ callId: string; receivedAt?: number } & import("../api/client.types").CapabilityCard) | null;
-  clearPendingCapability: () => void;
+  pendingCapabilities: PendingCapability[];
+  clearPendingCapability: (callId: string) => void;
   // 0.1.45: a background job asks before it acts in the browser or on the Mac.
-  pendingAction: ({ callId: string; kind: ActionKind | (string & {}); target: string; detail: string; background?: boolean; receivedAt?: number } & CardV2) | null;
+  pendingActions: PendingAction[];
   // 0.1.61 §A4: a card here ran out with nobody answering — "waiting for you", never "declined".
   cardExpired: boolean;
   // NEXT BUILD (conversation-driven MCP, Task 5): set when a `propose_connect_mcp`
   // frame arrives. env_keys carries credential NAMES + metadata only — the card
-  // collects VALUES locally and sends them only over REST (addMcpServer). Cleared
-  // once the connect card's follow-up (`mcp_connect_followup`) lands, or on cancel.
-  pendingConnectMcp: {
-    callId: string;
-    key: string;
-    label: string;
-    labelKey?: string;
-    transport: string;
-    command: string;
-    argv: string[];
-    url: string | null;
-    envKeys: { name: string; description: string; get_it_url: string; paid: boolean }[];
-    prerequisites: string;
-    requiresPath: boolean;
-    pathPlaceholder: string | null;
-  } | null;
+  // collects VALUES locally and sends them only over REST (addMcpServer). A card is cleared
+  // once its connect's follow-up (`mcp_connect_followup`, which names the server) lands, or on cancel.
+  pendingConnectMcps: PendingConnectMcp[];
   // True from the moment the user sends a message until the first response frame arrives.
   thinking: boolean;
   // Timestamp of the current turn's start (send/confirm) — drives the LiveActivity timer.
@@ -105,16 +121,18 @@ interface ArslanState {
   // PA-3: flip a clarify card to its answered (disabled) state once the user picked
   // an option — a stale re-click can never send a second user_message.
   markClarifyAnswered: (itemId: number) => void;
-  clearPendingCommand: () => void;
+  clearPendingCommand: (callId: string) => void;
   setVoice: (v: { enabled: boolean; lang: string }) => void;
   /** Say one line aloud (a background job finished, or is waiting on a card).
    *  Never interrupts a reply being read; the line is dropped instead. */
   speakLine: (text: string, lang: string) => void;
-  clearPendingEnrollNode: () => void;
-  clearPendingWorkspaceWrite: () => void;
-  clearPendingSchedule: () => void;
-  clearPendingAction: () => void;
-  clearPendingConnectMcp: () => void;
+  clearPendingEnrollNode: (callId: string) => void;
+  clearPendingWorkspaceWrite: (callId: string) => void;
+  clearPendingSchedule: (callId: string) => void;
+  clearPendingAction: (callId: string) => void;
+  clearPendingConnectMcp: (callId: string) => void;
+  /** The connect card `callId` connected the server `serverId`: the follow-up that names that server closes it. */
+  markConnectApplied: (callId: string, serverId: number) => void;
   /** 0.1.61 §A4: the card `callId` ran out unanswered (the server tells a window nothing for its
    *  own card): it leaves the slot, and the slot says it is waiting for you. */
   expireCard: (callId: string) => void;
@@ -201,25 +219,27 @@ function _cardV2(frame: { options?: unknown; always_label?: unknown; title?: unk
   };
 }
 
-type CardSlots = { pendingCommand: { callId: string } | null; pendingCapability: { callId: string } | null;
-  pendingWorkspaceWrite: { callId: string } | null; pendingSchedule: { callId: string } | null; pendingAction: { callId: string } | null };
+/** Every list of cards waiting on the user in this window: a card of any of them runs out, or is resolved elsewhere, by its id. */
+const CARD_LISTS = ["pendingCommands", "pendingEnrollNodes", "pendingWorkspaceWrites", "pendingSchedules", "pendingActions",
+                    "pendingCapabilities", "pendingConnectMcps"] as const;
+type CardLists = Pick<ArslanState, typeof CARD_LISTS[number]>;
 
-/** Whether the card `id` is one of the pending ones here. */
-function _shows(state: CardSlots, id: string): boolean {
-  return !!id && [state.pendingCommand, state.pendingCapability, state.pendingWorkspaceWrite, state.pendingSchedule,
-          state.pendingAction].some((p) => p?.callId === id);
+/** The list with `card` added at the end — the newest — replacing the card of the same call id if it is sent again. */
+function _added<T extends { callId: string }>(list: T[], card: T): T[] {
+  return [...list.filter((c) => c.callId !== card.callId), card];
 }
 
-/** The pending slots with the card `id` closed — only that card, never a newer one. */
-function _withoutCard(state: CardSlots, id: string) {
-  if (!id) return {};
-  return {
-    ...(state.pendingCommand?.callId === id ? { pendingCommand: null } : {}),
-    ...(state.pendingCapability?.callId === id ? { pendingCapability: null } : {}),
-    ...(state.pendingWorkspaceWrite?.callId === id ? { pendingWorkspaceWrite: null } : {}),
-    ...(state.pendingSchedule?.callId === id ? { pendingSchedule: null } : {}),
-    ...(state.pendingAction?.callId === id ? { pendingAction: null } : {}),
-  };
+/** Whether the card `id` is one of the pending ones here. */
+function _shows(state: CardLists, id: string): boolean {
+  return !!id && CARD_LISTS.some((k) => state[k].some((c) => c.callId === id));
+}
+
+/** The lists that hold the card `id`, without it — only that card, never another of its kind. */
+function _withoutCard(state: CardLists, id: string): Partial<CardLists> {
+  const out: Record<string, unknown[]> = {};
+  if (!id) return out;                                  // a frame that names no card resolves none
+  for (const k of CARD_LISTS) if (state[k].some((c) => c.callId === id)) out[k] = state[k].filter((c) => c.callId !== id);
+  return out as Partial<CardLists>;
 }
 
 // A background job's card is waiting: which job is not in the frame, so the
@@ -250,27 +270,15 @@ function initialData() {
     activitySteps: [] as ToolStep[],
     pendingProposalSpawnId: null as number | null,
     roster: [] as RosterMember[],
-    pendingCommand: null as { callId: string; pretty: string; reason: string; remoteHost: string; fingerprints: string[]; background?: boolean; sandbox?: "outside" | "retry"; why?: string } | null,
+    pendingCommands: [] as PendingCommand[],
     jobs: {} as Record<string, JobCard>,
     jobNotice: null as { seq: number; jobId: string; kind: "finished" | "needs_approval"; outcome: JobOutcome | null; goal: string } | null,
-    pendingEnrollNode: null as { callId: string; name: string; host: string; user: string; fingerprints: string[] } | null,
-    pendingWorkspaceWrite: null as { callId: string; workspace: string; action: string; path: string; background?: boolean } | null,
-    pendingCapability: null,
-  pendingSchedule: null as { callId: string; name: string; when: string; background?: boolean } | null,
-    pendingAction: null as { callId: string; kind: ActionKind; target: string; detail: string } | null,
-    pendingConnectMcp: null as {
-      callId: string;
-      key: string;
-      label: string;
-      transport: string;
-      command: string;
-      argv: string[];
-      url: string | null;
-      envKeys: { name: string; description: string; get_it_url: string; paid: boolean }[];
-      prerequisites: string;
-      requiresPath: boolean;
-      pathPlaceholder: string | null;
-    } | null,
+    pendingEnrollNodes: [] as PendingEnrollNode[],
+    pendingWorkspaceWrites: [] as PendingWorkspaceWrite[],
+    pendingCapabilities: [] as PendingCapability[],
+    pendingSchedules: [] as PendingSchedule[],
+    pendingActions: [] as PendingAction[],
+    pendingConnectMcps: [] as PendingConnectMcp[],
     thinking: false,
     workStartedAt: null as number | null,
     lastFrameAt: null as number | null,
@@ -327,7 +335,7 @@ function makeActions(set: SetState, get: GetState) {
             ? { ...it, clarifyOptions: { ...it.clarifyOptions, answered: true } }
             : it),
       }),
-    clearPendingCommand: () => set({ pendingCommand: null }),
+    clearPendingCommand: (callId: string) => set({ pendingCommands: get().pendingCommands.filter((c) => c.callId !== callId) }),
     setVoice: ({ enabled, lang }) => {
       _voiceEnabled = enabled;
       _voiceLang = lang;
@@ -338,12 +346,15 @@ function makeActions(set: SetState, get: GetState) {
       const speaker = createSpeaker(lang, { onActive: (a) => useArslanStore.setState({ speaking: a }) });
       void speaker.feed(text).then(() => speaker.end());
     },
-    clearPendingEnrollNode: () => set({ pendingEnrollNode: null }),
-    clearPendingWorkspaceWrite: () => set({ pendingWorkspaceWrite: null }),
-    clearPendingSchedule: () => set({ pendingSchedule: null }),
-  clearPendingCapability: () => set({ pendingCapability: null }),
-    clearPendingAction: () => set({ pendingAction: null }),
-    clearPendingConnectMcp: () => set({ pendingConnectMcp: null }),
+    clearPendingEnrollNode: (callId: string) => set({ pendingEnrollNodes: get().pendingEnrollNodes.filter((c) => c.callId !== callId) }),
+    clearPendingWorkspaceWrite: (callId: string) => set({ pendingWorkspaceWrites: get().pendingWorkspaceWrites.filter((c) => c.callId !== callId) }),
+    clearPendingSchedule: (callId: string) => set({ pendingSchedules: get().pendingSchedules.filter((c) => c.callId !== callId) }),
+    clearPendingCapability: (callId: string) => set({ pendingCapabilities: get().pendingCapabilities.filter((c) => c.callId !== callId) }),
+    clearPendingAction: (callId: string) => set({ pendingActions: get().pendingActions.filter((c) => c.callId !== callId) }),
+    clearPendingConnectMcp: (callId: string) => set({ pendingConnectMcps: get().pendingConnectMcps.filter((c) => c.callId !== callId) }),
+    markConnectApplied: (callId: string, serverId: number) => set({
+      pendingConnectMcps: get().pendingConnectMcps.map((c) => (c.callId === callId ? { ...c, appliedServerId: serverId } : c)),
+    }),
     expireCard: (callId: string) => {
       const s = get();
       if (_shows(s, callId)) set({ ..._withoutCard(s, callId), cardExpired: true });
@@ -943,7 +954,7 @@ function makeActions(set: SetState, get: GetState) {
           });
           break;
         case "propose_run_command":
-          set({ pendingCommand: { callId: frame.call_id, pretty: frame.pretty,
+          set({ pendingCommands: _added(state.pendingCommands, { callId: frame.call_id, pretty: frame.pretty,
                                   reason: frame.reason || "",
                                   // Present only for P3b: this command runs on ANOTHER
                                   // machine, and the card has to lead with that.
@@ -954,24 +965,24 @@ function makeActions(set: SetState, get: GetState) {
                                   ...(frame.sandbox === "outside" || frame.sandbox === "retry"
                                     ? { sandbox: frame.sandbox, why: frame.why || "" } : {}),
                                   ..._cardV2(frame),
-                                  receivedAt: Date.now() },
+                                  receivedAt: Date.now() }),
                ...(frame.background ? _approvalNotice(state) : {}) });
           break;
         case "propose_enroll_node":
-          set({ pendingEnrollNode: { callId: frame.call_id, name: frame.name,
+          set({ pendingEnrollNodes: _added(state.pendingEnrollNodes, { callId: frame.call_id, name: frame.name,
                                      host: frame.host, user: frame.user,
-                                     fingerprints: frame.fingerprints || [], receivedAt: Date.now() } });
+                                     fingerprints: frame.fingerprints || [], receivedAt: Date.now() }) });
           break;
         case "propose_schedule":
-          set({ pendingSchedule: { callId: frame.call_id, name: frame.name,
+          set({ pendingSchedules: _added(state.pendingSchedules, { callId: frame.call_id, name: frame.name,
                                    when: frame.when, background: frame.background === true, ..._cardV2(frame),
-                                   receivedAt: Date.now() },
+                                   receivedAt: Date.now() }),
                ...(frame.background ? _approvalNotice(state) : {}) });
           break;
         case "propose_capability": {
           const { type: _t, call_id, ...card } = frame;
           void _t;
-          set({ pendingCapability: { callId: call_id, receivedAt: Date.now(), ...card } });
+          set({ pendingCapabilities: _added(state.pendingCapabilities, { callId: call_id, receivedAt: Date.now(), ...card }) });
           break;
         }
         case "capability_result":
@@ -982,23 +993,23 @@ function makeActions(set: SetState, get: GetState) {
           });
           break;
         case "propose_action":
-          set({ pendingAction: { callId: frame.call_id, kind: frame.kind, target: frame.target, detail: frame.detail,
-                                 background: frame.background === true, ..._cardV2(frame), receivedAt: Date.now() },
+          set({ pendingActions: _added(state.pendingActions, { callId: frame.call_id, kind: frame.kind, target: frame.target, detail: frame.detail,
+                                 background: frame.background === true, ..._cardV2(frame), receivedAt: Date.now() }),
                 ..._approvalNotice(state) });
           break;
         case "card_resolved": {
           // Whoever answered first (another window, the phone, the Inbox, the island, a message
           // typed here) decided; a copy still open here closes. Only the card with this call_id —
-          // never a newer one. 0.1.61 §A4: one that ran out says "waiting for you".
+          // never another of its kind. 0.1.61 §A4: one that ran out says "waiting for you".
           const id = frame.call_id;
           set({ ..._withoutCard(state, id), ...(frame.outcome === "expired" && _shows(state, id) ? { cardExpired: true } : {}) });
           break;
         }
         case "propose_workspace_write":
-          set({ pendingWorkspaceWrite: {
+          set({ pendingWorkspaceWrites: _added(state.pendingWorkspaceWrites, {
             callId: frame.call_id, workspace: frame.workspace,
             action: frame.action, path: frame.path, background: frame.background === true, ..._cardV2(frame),
-            receivedAt: Date.now() },
+            receivedAt: Date.now() }),
                ...(frame.background ? _approvalNotice(state) : {}) });
           break;
         case "propose_connect_mcp":
@@ -1006,7 +1017,7 @@ function makeActions(set: SetState, get: GetState) {
           // NAMES + metadata only (never a value) — the ConnectMcpCard collects values
           // locally and sends them ONLY over REST (addMcpServer's body).
           set({
-            pendingConnectMcp: {
+            pendingConnectMcps: _added(state.pendingConnectMcps, {
               callId: frame.call_id,
               key: frame.key,
               label: frame.label,
@@ -1019,17 +1030,19 @@ function makeActions(set: SetState, get: GetState) {
               prerequisites: frame.prerequisites,
               requiresPath: frame.requires_path,
               pathPlaceholder: frame.path_placeholder,
-            },
+              receivedAt: Date.now(),
+            }),
           });
           break;
         case "mcp_connect_followup":
           // Honest, tier-aware result recomputed server-side from the DB (Task 3) —
-          // clears the card and appends a plain chat note, same idiom as
+          // clears the card that connected that server (the frame names the server; the slot recorded
+          // which card connected it) and appends a plain chat note, same idiom as
           // attachment_stored below. assignable=false means connected but nothing is
           // safe+wired yet, so the note points at Settings instead of implying it's
           // ready to equip.
           set({
-            pendingConnectMcp: null,
+            pendingConnectMcps: state.pendingConnectMcps.filter((c) => c.appliedServerId !== frame.server_id),
             items: [
               ...state.items,
               {
