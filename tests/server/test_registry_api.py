@@ -55,3 +55,18 @@ async def test_registry_is_idempotent(client):
     body2 = resp2.json()
     assert body1 == body2
     assert len(body1["toolsets"]) == 12
+
+
+@pytest.mark.asyncio
+async def test_the_spawn_era_skill_badges_are_gone(client):
+    """0.1.61 §C6: no FULL / PARTIAL / TEXT-ONLY badge and no health probe on a skill."""
+    skills = (await client.get("/api/v1/registry")).json()["skills"]
+    assert skills and all("compatibility" not in s for s in skills)
+    assert (await client.post("/api/v1/registry/skills/plan/health")).status_code in (404, 405)
+    from server.db.models import SkillPack
+    from server.registry import service
+    assert not hasattr(service, "skill_health") and not hasattr(service, "skill_compatibility")
+    # the shape equipment and the spawn menu use: the same badge must not live there either
+    pack = SkillPack(key="plan", name="plan", category="c", description="d",
+                     tier="safe", status="registered", body="b")
+    assert "compatibility" not in service._skill_dict(pack)
