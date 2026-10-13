@@ -172,6 +172,117 @@ describe("when a hidden connect settles, the chat says how it ended", () => {
   });
 });
 
+describe("a proposal that is delivered again while its apply is hidden does not bring the card back", () => {
+  // A proposal is journaled and replayed to a socket that re-attaches (ws/arslan.py): a reconnect during a hung hidden apply delivers it again.
+  it("a connect: the card stays gone, the apply is not started twice, and when it settles the chat says so", async () => {
+    const hung = hungConnect();
+    const send = vi.fn();
+    render(<AskSlot send={send} />);
+    frame(connect("m1"));
+    fireEvent.click(screen.getByTestId("connect-mcp-connect"));
+    fireEvent.click(screen.getByTestId("connect-mcp-hide"));
+    frame(connect("m1"));                                              // the journal replays the proposal
+    expect(screen.queryByTestId("connect-mcp-card")).toBeNull();
+    expect(state().pendingConnectMcps).toEqual([]);
+    hung.release();
+    await flush();
+    expect(screen.queryByTestId("connect-mcp-card")).toBeNull();      // and it is not there with Connect live once the apply has settled
+    expect(hung.add).toHaveBeenCalledTimes(1);
+    expect(notes()).toEqual(['kit.hiddenConnected:{"name":"Memory m1"}']);
+  });
+
+  it("an enrolment: the same", async () => {
+    const hung = hungEnroll();
+    render(<AskSlot send={vi.fn()} />);
+    frame(enroll("n1"));
+    fireEvent.click(screen.getByTestId("enroll-confirm"));
+    fireEvent.click(screen.getByTestId("enroll-hide"));
+    frame(enroll("n1"));
+    expect(screen.queryByTestId("enroll-node-card")).toBeNull();
+    hung.release();
+    await flush();
+    expect(screen.queryByTestId("enroll-node-card")).toBeNull();
+    expect(hung.call).toHaveBeenCalledTimes(1);
+  });
+
+  it("a card whose apply is in flight but not hidden is shown again, busy, as before", () => {
+    hungConnect();
+    render(<AskSlot send={vi.fn()} />);
+    frame(connect("m1"));
+    fireEvent.click(screen.getByTestId("connect-mcp-connect"));
+    frame(connect("m1"));
+    expect(screen.getByTestId("connect-mcp-card")).toBeInTheDocument();
+    expect(screen.getByTestId("connect-mcp-connect")).toBeDisabled();
+  });
+
+  it("a proposal with another id is a new card, hidden apply or not", () => {
+    hungConnect();
+    render(<AskSlot send={vi.fn()} />);
+    frame(connect("m1"));
+    fireEvent.click(screen.getByTestId("connect-mcp-connect"));
+    fireEvent.click(screen.getByTestId("connect-mcp-hide"));
+    frame(connect("m2"));
+    expect(state().pendingConnectMcps.map((c) => c.callId)).toEqual(["m2"]);
+  });
+});
+
+describe("an apply that settles in another conversation tells nobody there", () => {
+  it("a hidden connect: no confirm_connect_mcp goes to the new conversation's socket, and no note is added to its chat", async () => {
+    const hung = hungConnect();
+    const send = vi.fn();
+    render(<AskSlot send={send} />);
+    frame(connect("m1"));
+    fireEvent.click(screen.getByTestId("connect-mcp-connect"));
+    fireEvent.click(screen.getByTestId("connect-mcp-hide"));
+    act(() => { state().resetForNewConversation(); });
+    hung.release();
+    await flush();
+    expect(send).not.toHaveBeenCalled();
+    expect(notes()).toEqual([]);
+  });
+
+  it("a connect nobody hid: the same", async () => {
+    const hung = hungConnect();
+    const send = vi.fn();
+    render(<AskSlot send={send} />);
+    frame(connect("m1"));
+    fireEvent.click(screen.getByTestId("connect-mcp-connect"));
+    act(() => { state().resetForNewConversation(); });
+    hung.release();
+    await flush();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("in the same conversation it still tells the server, as before", async () => {
+    const hung = hungConnect();
+    const send = vi.fn();
+    render(<AskSlot send={send} />);
+    frame(connect("m1"));
+    fireEvent.click(screen.getByTestId("connect-mcp-connect"));
+    hung.release();
+    await flush();
+    expect(send).toHaveBeenCalledWith({ type: "confirm_connect_mcp", call_id: "m1", server_id: 7, tool_count: 1 });
+  });
+
+  it("a hidden enrolment: no note is added to the new conversation's chat (its entry went with the old one)", async () => {
+    const hung = hungEnroll();
+    render(<AskSlot send={vi.fn()} />);
+    frame(enroll("n1"));
+    fireEvent.click(screen.getByTestId("enroll-confirm"));
+    fireEvent.click(screen.getByTestId("enroll-hide"));
+    act(() => { state().resetForNewConversation(); });
+    hung.release();
+    await flush();
+    expect(notes()).toEqual([]);
+  });
+
+  it("each new conversation counts: the epoch only goes up", () => {
+    const before = state().epoch;
+    act(() => { state().resetForNewConversation(); state().resetForNewConversation(); });
+    expect(state().epoch).toBe(before + 2);
+  });
+});
+
 describe("when a hidden enrolment settles, the chat says how it ended", () => {
   it("it worked: a note names the machine", async () => {
     const hung = hungEnroll();

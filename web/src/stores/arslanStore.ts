@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { request } from "../api/client";
 import { runtimeErrorTranslations, type RuntimeErrorTranslations } from "../lib/runtimeErrorText";
 import { createSpeaker } from "../lib/speech";
 import type { ActionKind, ApplyConnectMcpResult, ArslanServerMessage, ArslanThreadItem, JobCard, JobOutcome, ProcessSummary, StoredArtifact, ToolStep, RosterMember } from "../api/client.types";
@@ -101,6 +102,9 @@ interface ArslanState {
   pendingConnectMcps: PendingConnectMcp[];
   /** The connect / enrol cards' applies, by call id (see CardApply). */
   cardApply: Record<string, CardApply>;
+  /** Which conversation this is: it goes up with every `resetForNewConversation`. An apply that settles after it has changed belongs to a
+   *  conversation the person has left, and tells nobody in this one. */
+  epoch: number;
   // True from the moment the user sends a message until the first response frame arrives.
   thinking: boolean;
   // Timestamp of the current turn's start (send/confirm) — drives the LiveActivity timer.
@@ -273,40 +277,59 @@ function _withoutCard(state: CardLists & { cardApply: Record<string, CardApply> 
   return { ...out, ..._dropApply(state, [id]) } as Partial<CardLists & { cardApply: Record<string, CardApply> }>;
 }
 
-/** How long after a (re)connect's `history` frame the server's replay of the waiting cards is taken to be over. The replay is sent right behind it
- *  (ws/arslan.py: history, the journaled frames, the jobs, then `approvals.pending_cards`), in one burst; there is no frame that ends it. */
+/** The fallback when the server cannot be asked: how long after a (re)connect's `history` frame the server's replay of the waiting cards is taken to be
+ *  over. The replay is sent right behind it (ws/arslan.py: history, the journaled frames, the jobs, then `approvals.pending_cards`), in one burst;
+ *  there is no frame that ends it. */
 export const REPLAY_SETTLE_MS = 3_000;
 /** The cards that are replayed to a socket that connects: the shared ones, which `approvals.pending_cards` lists. A proposal to enrol a machine or to
  *  connect a server is never registered there, and a capability card is the asking window's own. */
 const REPLAYED = new Set(["propose_run_command", "propose_workspace_write", "propose_schedule", "propose_action"]);
 /** After a `history` frame: the shared cards that were on screen, which the replay has not listed (yet). Nothing is waiting when there were none. */
-let _replay: { stale: Set<string>; timer: ReturnType<typeof setTimeout> } | null = null;
+let _replay: { stale: Set<string>; timer: ReturnType<typeof setTimeout>; due: boolean; failed: boolean } | null = null;
 function _stopReplay() {
   if (_replay) clearTimeout(_replay.timer);
   _replay = null;
 }
-/** A socket has (re)connected: the shared cards on screen are at stake until the replay that follows lists them again. One whose `card_resolved`
- *  went missing while the socket was down is not listed, and would stay as a dead "1 / 2" entry (an answer to it is swallowed) until its own expiry;
- *  once the replay is over it is dropped. Not before: a card the replay does list is never taken away and brought back. A card the replay brings
- *  after all, late, is added again like any other. */
+/** A socket has (re)connected: the shared cards on screen are at stake. One whose `card_resolved` went missing while the socket was down is not listed
+ *  by the replay and would stay as a dead "1 / 2" entry (an answer to it is swallowed) until its own expiry. But a replay that does not list a card does
+ *  not say it is gone: a window's own card is private until the server sees its old socket close, and is never replayed, though the server still waits on
+ *  it. So the window asks the server which cards wait (GET /approvals/pending: private and shared, none that is done) and drops the stale ones it does
+ *  not list — exactly, and at once. The timer is only the fallback when that request fails: then the cards the replay did not list go when it is up.
+ *  Never before: a card the replay does list is never taken away and brought back, and a card it brings after all, late, is added again like any other. */
 function _beginReplay(get: GetState, set: SetState) {
   _stopReplay();
   const s = get();
   const stale = new Set([...s.pendingCommands, ...s.pendingWorkspaceWrites, ...s.pendingSchedules, ...s.pendingActions].map((c) => c.callId));
   if (!stale.size) return;
-  const mine = {
-    stale,
+  /** Drop the stale cards that are not in `waiting` (the server's list), from the four lists. */
+  const drop = (mine: NonNullable<typeof _replay>, waiting?: Set<string>) => {
+    const now = get();
+    const gone = (c: { callId: string }) => mine.stale.has(c.callId) && !waiting?.has(c.callId);
+    if (![...now.pendingCommands, ...now.pendingWorkspaceWrites, ...now.pendingSchedules, ...now.pendingActions].some(gone)) return;
+    const kept = <T extends { callId: string }>(list: T[]) => list.filter((c) => !gone(c));
+    set({ pendingCommands: kept(now.pendingCommands), pendingWorkspaceWrites: kept(now.pendingWorkspaceWrites),
+          pendingSchedules: kept(now.pendingSchedules), pendingActions: kept(now.pendingActions) });
+  };
+  const mine: NonNullable<typeof _replay> = {
+    stale, due: false, failed: false,
     timer: setTimeout(() => {
       if (_replay !== mine) return;
-      _replay = null;
-      const now = get();
-      if (![...now.pendingCommands, ...now.pendingWorkspaceWrites, ...now.pendingSchedules, ...now.pendingActions].some((c) => mine.stale.has(c.callId))) return;
-      const kept = <T extends { callId: string }>(list: T[]) => list.filter((c) => !mine.stale.has(c.callId));
-      set({ pendingCommands: kept(now.pendingCommands), pendingWorkspaceWrites: kept(now.pendingWorkspaceWrites),
-            pendingSchedules: kept(now.pendingSchedules), pendingActions: kept(now.pendingActions) });
+      mine.due = true;                                  // the replay is over; what it did not list goes if the server cannot say better
+      if (mine.failed) { _replay = null; drop(mine); }
     }, REPLAY_SETTLE_MS),
   };
   _replay = mine;
+  // (An answer that is no list throws below, and is a failure like any other.)
+  void request<{ call_id?: unknown }[]>("/approvals/pending").then((rows) => {
+    if (_replay !== mine) return;                       // another reconnect, a new conversation or a new store came first
+    const waiting = new Set(rows.flatMap((r) => (typeof r?.call_id === "string" ? [r.call_id] : [])));
+    _stopReplay();                                      // exact: no timer left to fire
+    drop(mine, waiting);
+  }).catch(() => {
+    if (_replay !== mine) return;
+    mine.failed = true;
+    if (mine.due) { _replay = null; drop(mine); }
+  });
 }
 
 // A background job's card is waiting: which job is not in the frame, so the
@@ -347,6 +370,7 @@ function initialData() {
     pendingActions: [] as PendingAction[],
     pendingConnectMcps: [] as PendingConnectMcp[],
     cardApply: {} as Record<string, CardApply>,
+    epoch: 0,
     thinking: false,
     workStartedAt: null as number | null,
     lastFrameAt: null as number | null,
@@ -456,7 +480,7 @@ function makeActions(set: SetState, get: GetState) {
 
     // Clear all conversation state so the incoming `history` frame for the new
     // conversation_id repopulates from scratch with no stale carry-over.
-    resetForNewConversation: () => { _voiceStop(); _stopReplay(); set({ ...initialData() }); },
+    resetForNewConversation: () => { _voiceStop(); _stopReplay(); set({ ...initialData(), epoch: get().epoch + 1 }); },
 
     checkStall: () => {
       const s = get();
@@ -1064,6 +1088,9 @@ function makeActions(set: SetState, get: GetState) {
                ...(frame.background ? _approvalNotice(state) : {}) });
           break;
         case "propose_enroll_node":
+          // A proposal is journaled and replayed to a socket that re-attaches: one whose apply the person hid is not brought back (it would be a card
+          // with a live button over an apply that goes on, and a second apply on the next click).
+          if (state.cardApply[frame.call_id]?.hidden) break;
           set({ pendingEnrollNodes: _added(state.pendingEnrollNodes, { callId: frame.call_id, name: frame.name,
                                      host: frame.host, user: frame.user,
                                      fingerprints: frame.fingerprints || [], ..._arrived() }) });
@@ -1108,6 +1135,7 @@ function makeActions(set: SetState, get: GetState) {
                ...(frame.background ? _approvalNotice(state) : {}) });
           break;
         case "propose_connect_mcp":
+          if (state.cardApply[frame.call_id]?.hidden) break;              // as above: a hidden apply's card does not come back
           // NEXT BUILD (conversation-driven MCP, Task 5): env_keys carries credential
           // NAMES + metadata only (never a value) — the ConnectMcpCard collects values
           // locally and sends them ONLY over REST (addMcpServer's body).

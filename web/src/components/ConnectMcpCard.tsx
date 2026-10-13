@@ -160,6 +160,7 @@ export default function ConnectMcpCard({
     }
     setPathError(null);
     useArslanStore.getState().beginCardApply(callId);
+    const epoch = useArslanStore.getState().epoch;                         // which conversation this apply belongs to
     // NEVER mutate the frame's args in place — build a new array.
     const finalArgs = requiresPath ? [...args, path.trim()] : args;
     const env: Record<string, string> = {};
@@ -174,6 +175,9 @@ export default function ConnectMcpCard({
       res = { ok: false };                                                  // never left busy for good: a card that is not busy can be tried again
     }
     const store = useArslanStore.getState();
+    // The person has moved to another conversation meanwhile: this apply belongs to the one they left, and tells nobody in the new one
+    // (confirm_connect_mcp would go to its socket). Its entry went with the old store, so there is no note to add either.
+    if (store.epoch !== epoch) return;
     // A card the person hid has nowhere to show how it ended: the chat says so, naming the server (the follow-up, on success, adds the tiers).
     if (store.endCardApply(callId, { result: res })) {
       store.addCardNote(res.ok ? t('kit.hiddenConnected', { name: catalogText(t, labelKey, label) })
