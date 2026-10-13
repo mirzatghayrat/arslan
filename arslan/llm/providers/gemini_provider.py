@@ -17,7 +17,7 @@ from typing import Any
 import httpx
 
 from arslan.llm.providers import errors as provider_errors
-from arslan.llm import request_evidence
+from arslan.llm import param_heal, request_evidence
 
 from arslan.llm.providers.base import BaseLLMProvider
 from arslan.models import LLMResponse
@@ -132,6 +132,12 @@ class GeminiProvider(BaseLLMProvider):
         payload["generationConfig"]["maxOutputTokens"] = model_request(8192)
         from arslan.execution_checkpoint import save
         await save("before_model")
+        data = await param_heal.send(self.endpoint_fingerprint(), payload,
+                                     lambda p: self._post(url, p, timeout))
+        return self._parse_response(data)
+
+    async def _post(self, url: str, payload: dict[str, Any], timeout: httpx.Timeout) -> dict[str, Any]:
+        """One non-streamed send; param_heal may resend a changed payload."""
         evidence = await request_evidence.begin(payload)
         async with self._client() as client:
             response = await client.post(
@@ -147,8 +153,7 @@ class GeminiProvider(BaseLLMProvider):
                     provider_errors.with_body(_exc),
                     request=_exc.request, response=_exc.response) from None
             await request_evidence.acknowledge(evidence)
-            data = response.json()
-        return self._parse_response(data)
+            return response.json()
 
     async def chat_stream(
         self,
@@ -176,13 +181,20 @@ class GeminiProvider(BaseLLMProvider):
         # usageMetadata also has totalTokenCount; deliberately unused — pricing
         # needs the in/out split, and a total without the split is uncheckable.
         self._last_stream_usage = None
-        tin: int | None = None
-        tout: int | None = None
         from arslan.execution_budget import model_request
         payload = self._payload(messages, temperature)
         payload["generationConfig"]["maxOutputTokens"] = model_request(8192)
         from arslan.execution_checkpoint import save
         await save("before_model")
+        async for piece in param_heal.stream(self.endpoint_fingerprint(), payload,
+                                             lambda p: self._stream_attempt(url, p, timeout)):
+            yield piece
+
+    async def _stream_attempt(self, url: str, payload: dict[str, Any],
+                              timeout: httpx.Timeout) -> AsyncIterator[str]:
+        """One streamed send; param_heal may resend it before its first byte."""
+        tin: int | None = None
+        tout: int | None = None
         evidence = await request_evidence.begin(payload)
         async with self._client() as client:
             async with client.stream(
@@ -192,6 +204,7 @@ class GeminiProvider(BaseLLMProvider):
                 try:
                     response.raise_for_status()
                 except httpx.HTTPStatusError as _exc:
+                    await provider_errors.read_body(_exc)
                     # Carry the provider's OWN explanation, not just the status
                     # line — see providers/errors.py for why this matters.
                     raise httpx.HTTPStatusError(

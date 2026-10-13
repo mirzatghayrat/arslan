@@ -46,7 +46,7 @@ p=String(p).toLowerCase().indexOf("zh")===0?"zh":"en";d.classList.add("js",p);d.
 <div class="eyebrow">Privacy policy</div>
 <h1>No servers.<br><span class="g">Nothing collected.</span></h1>
 <p class="lead">Your iPhone talks only to your own Mac, through your own iCloud, end-to-end encrypted. The AI works on your Mac, with the model service and key you chose. We, the developer, are not in the path.</p>
-<p class="meta">Last updated 8 October 2026 · Arslan for iPhone 1.0 · Arslan for Mac 0.1.54</p>
+<p class="meta">Last updated 13 October 2026 · Arslan for iPhone 1.0 · Arslan for Mac 0.1.61</p>
 
 <div class="cards">
   <div class="card"><div class="dot d1">0</div><b>We collect nothing</b><p>No analytics, no tracking, no ads, no account. We never receive your messages, files, tasks or how you use the app.</p></div>
@@ -73,6 +73,7 @@ p=String(p).toLowerCase().indexOf("zh")===0?"zh":"en";d.classList.add("js",p);d.
 
 <h2><span class="n">02</span>How your messages travel</h2>
 <p>When you send a message, a task or an approval from your iPhone, it is encrypted on the iPhone and saved as a record in <strong>your own iCloud private database</strong> (Apple CloudKit), under your Apple ID. Arslan for Mac, signed in to the same Apple ID, reads and decrypts it. Replies, progress and files travel back the same way.</p>
+<p>Photos and files you attach to a message (up to 20 MB each) travel the same way, each encrypted with its own key and checked when it arrives. Arslan for Mac saves them in its work folder, under <span class="k">~/Arslan/Inbox/iPhone</span>, so the task can use them. Each record is deleted from your iCloud once the other device has it.</p>
 <p>The encryption keys are created when you pair the two devices and stay in the keychains of your iPhone and your Mac, so neither Apple nor we can read the contents. To deliver records, iCloud does see a few routing details next to the ciphertext: which of your devices sent a record and which should receive it, a sequence number, a coarse kind, whether it should notify you, and the time. Apple stores the encrypted records for you under <a href="https://www.apple.com/legal/privacy/">Apple's privacy policy</a>.</p>
 
 <h2><span class="n">03</span>AI processing happens on your Mac</h2>
@@ -91,7 +92,8 @@ p=String(p).toLowerCase().indexOf("zh")===0?"zh":"en";d.classList.add("js",p);d.
 
 <h2><span class="n">05</span>Permissions on your iPhone</h2>
 <ul>
-  <li><strong>Camera</strong> — only to scan the pairing code shown on your Mac. Images are not stored or sent.</li>
+  <li><strong>Camera</strong> — to scan the pairing code shown on your Mac, and to take a photo when you choose to send one to your Mac. Pairing-code images are not stored or sent.</li>
+  <li><strong>Photos</strong> — the app reads only the photos you pick in the system picker; it has no access to the rest of your library. Saving an image from a preview asks for add-only access.</li>
   <li><strong>Microphone and speech recognition</strong> — to turn your voice into the text of a message, in the app's language. Recognition runs on your iPhone; recordings are not stored or sent.</li>
   <li><strong>Face ID or Touch ID</strong> — to confirm an approval. iOS handles it; the app only learns whether it succeeded.</li>
   <li><strong>Notifications</strong> — to tell you when your Mac needs an approval or has finished a task. Previews are decrypted on your iPhone, and you can turn them off in the app's settings.</li>
@@ -99,7 +101,7 @@ p=String(p).toLowerCase().indexOf("zh")===0?"zh":"en";d.classList.add("js",p);d.
 
 <h2><span class="n">06</span>What each device keeps</h2>
 <h3>On your iPhone</h3>
-<p>The pairing keys (in the iOS keychain), an encrypted local record of recent messages and tasks so the app can show them offline, your settings, and the device IDs this iPhone used in earlier pairings with each Mac (at most 8; not secret), so that pairing again replaces the old entry on your Mac instead of adding one. Unpairing removes the pairing keys and the local record.</p>
+<p>The pairing keys (in the iOS keychain), an encrypted local record of recent messages and tasks so the app can show them offline, an encrypted list of the files you sent and received with a cache of the ones you opened, drafts you shared into Arslan from other apps until you send or clear them, your settings, and the device IDs this iPhone used in earlier pairings with each Mac (at most 8; not secret), so that pairing again replaces the old entry on your Mac instead of adding one. Unpairing removes the pairing keys, the local record and the file list and cache.</p>
 <h3>On your Mac, about your phone</h3>
 <p>The phone's name, its public keys, when it was paired, and when the Mac last heard from it (to the minute). Settings › Connections › iPhone shows this as <em>Connecting…</em> or <em>Connected · last seen …</em>.</p>
 
@@ -129,7 +131,7 @@ p=String(p).toLowerCase().indexOf("zh")===0?"zh":"en";d.classList.add("js",p);d.
 <div class="eyebrow">隐私政策</div>
 <h1>没有服务器，<br><span class="g">什么都不收集。</span></h1>
 <p class="lead">你的 iPhone 只和你自己的 Mac 通信，经由你自己的 iCloud，端到端加密。AI 在你的 Mac 上工作，用的是你选的模型服务和你自己的 key。开发者不在这条路径上。</p>
-<p class="meta">最后更新：2026 年 10 月 8 日 · Arslan iPhone 版 1.0 · Arslan Mac 版 0.1.54</p>
+<p class="meta">最后更新：2026 年 10 月 13 日 · Arslan iPhone 版 1.0 · Arslan Mac 版 0.1.61</p>
 
 <div class="cards">
   <div class="card"><div class="dot d1">0</div><b>我们什么都不收集</b><p>没有统计分析、没有跟踪、没有广告、没有账号。我们收不到你的消息、文件、任务，也不知道你怎么用这个 App。</p></div>
@@ -156,6 +158,7 @@ p=String(p).toLowerCase().indexOf("zh")===0?"zh":"en";d.classList.add("js",p);d.
 
 <h2><span class="n">02</span>消息怎么传</h2>
 <p>你在 iPhone 上发出的消息、任务或批准，会先在 iPhone 上加密，再作为一条记录存进<strong>你自己的 iCloud 私有数据库</strong>（Apple CloudKit），归属于你的 Apple ID。登录同一个 Apple ID 的 Arslan Mac 版读取并解密它。回复、进度和文件按同样的路径传回来。</p>
+<p>你附在消息里的照片和文件（每个最多 20 MB）走同样的路径，每个文件用自己的密钥加密，到达时校验。Arslan Mac 版把它们存进工作文件夹的 <span class="k">~/Arslan/Inbox/iPhone</span>，供任务使用。对方设备收到后，这条记录就会从你的 iCloud 里删除。</p>
 <p>加密密钥在你配对两台设备时生成，只保存在 iPhone 和 Mac 的钥匙串里，所以苹果和我们都读不到内容。为了投递，iCloud 能看到密文旁边的少量路由信息：哪台设备发出、该由哪台接收、序号、粗略的类别、是否需要通知你，以及时间。苹果依照<a href="https://www.apple.com/legal/privacy/">其隐私政策</a>替你保存这些加密记录。</p>
 
 <h2><span class="n">03</span>AI 处理发生在你的 Mac 上</h2>
@@ -174,7 +177,8 @@ p=String(p).toLowerCase().indexOf("zh")===0?"zh":"en";d.classList.add("js",p);d.
 
 <h2><span class="n">05</span>iPhone 上的权限</h2>
 <ul>
-  <li><strong>相机</strong>：只用来扫描 Mac 上显示的配对码。图像不保存，也不发送。</li>
+  <li><strong>相机</strong>：扫描 Mac 上显示的配对码；以及在你选择拍照发给 Mac 时拍照。配对码的图像不保存，也不发送。</li>
+  <li><strong>照片</strong>：App 只读取你在系统选择器里选中的照片，看不到图库里的其它内容。从预览里存图到相册时，只申请“添加”权限。</li>
   <li><strong>麦克风与语音识别</strong>：把你说的话转成消息文字，识别语言跟随 App 的语言。识别在 iPhone 本机完成；录音不保存，也不发送。</li>
   <li><strong>面容 ID 或触控 ID</strong>：用来确认批准。由 iOS 处理，App 只知道验证是否通过。</li>
   <li><strong>通知</strong>：在 Mac 需要你批准、或任务做完时提醒你。通知预览在 iPhone 上解密，你可以在 App 设置里关闭预览。</li>
@@ -182,7 +186,7 @@ p=String(p).toLowerCase().indexOf("zh")===0?"zh":"en";d.classList.add("js",p);d.
 
 <h2><span class="n">06</span>每台设备保存什么</h2>
 <h3>iPhone 上</h3>
-<p>配对密钥（保存在 iOS 钥匙串里）、一份加密的近期消息和任务记录（方便离线时显示）、你的设置，以及这台 iPhone 以前和每台 Mac 配对时用过的设备 ID（最多 8 个，不是机密）——这样再次配对时，Mac 上会替换旧条目，而不是多出一条。解除配对会移除配对密钥和本机记录。</p>
+<p>配对密钥（保存在 iOS 钥匙串里）、一份加密的近期消息和任务记录（方便离线时显示）、一份加密的文件列表（你发出和收到的文件）及打开过的文件缓存、你从其它 App 分享进来但还没发送或清空的草稿、你的设置，以及这台 iPhone 以前和每台 Mac 配对时用过的设备 ID（最多 8 个，不是机密）——这样再次配对时，Mac 上会替换旧条目，而不是多出一条。解除配对会移除配对密钥、本机记录、文件列表和缓存。</p>
 <h3>Mac 上关于你手机的信息</h3>
 <p>手机的名称、公钥、配对时间，以及 Mac 最后一次收到它消息的时间（精确到分钟）。设置 › 连接 › iPhone 中显示为<em>连接中…</em>或<em>已连接 · 某时在线</em>。</p>
 

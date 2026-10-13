@@ -65,10 +65,12 @@ async def test_evaluate_ref_composes(monkeypatch):
     async def fr(o, r): return {"full_name": "o/r", "html_url": "u", "stars": 1500, "forks": 1,
         "license": "MIT", "pushed_days": 10, "description": "d", "topics": []}
     async def frd(o, r): return "readme"
+    async def nofile(o, r, p): return ""         # no arslan.plugin.json: fetch_file would otherwise call GitHub
     async def fcs(meta, readme): return {"is_mcp": True, "transport": "stdio", "command": "npx",
         "args": [], "url": None, "reason": "x"}
     monkeypatch.setattr(github_eval, "fetch_repo", fr)
     monkeypatch.setattr(github_eval, "fetch_readme", frd)
+    monkeypatch.setattr(github_eval, "fetch_file", nofile)
     monkeypatch.setattr(mcp_suggest, "classify_and_suggest", fcs)
     out = await ds.evaluate_ref("o", "r")
     assert out["repo"]["stars"] == 1500 and out["trust"]["tier"] == "high"
