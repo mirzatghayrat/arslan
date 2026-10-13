@@ -270,16 +270,30 @@ _ISLAND_RISKY_RULES = {"delete", "send-mail", "send-message", "upload", "publish
                        "remote-shell", "apple-events", "login-items", "install"}
 _RISKY_SCRIPT = re.compile(r"\b(?:delete|send|move|do\s+shell\s+script|purchase|buy|pay|submit|transfer|empty\s+trash)\b",
                            re.IGNORECASE)
+#: The permission kinds whose `propose_action` card the island answers (0.1.61 §A4: "Once (For
+#: this task) or No for folder, app (look and act, merged), screen, MCP tool, schedule, site and
+#: Shortcut cards"). Everything else opens Arslan: money, send, delete, a risky step in an app, a
+#: takeover, leaving the sandbox, system changes, other agents' settings, new capabilities,
+#: another machine — and any kind this does not know.
+ISLAND_KINDS = frozenset({"folder", "app", "screen", "mcp_tool", "schedule", "site", "shortcut"})
 
 
 def island_may_answer(frame: dict) -> bool:
     """0.1.55 decision 3: the island answers every card except a risky one (delete, send,
     pay, buy, transfer, submit) — those are answered in Arslan, with the whole context in
-    view. Fail-closed: a kind this does not know is not answerable from the island."""
+    view. Fail-closed: a kind this does not know is not answerable from the island.
+
+    0.1.61 §A4: a `propose_action` card that permissions.decide shows carries its permission kind
+    (`perm_kind`), and that alone decides (`ISLAND_KINDS`) — never the legacy `kind` its caller's
+    frame may keep, which would let the island answer a takeover. A card without one is read by
+    the 0.1.55 table below. Other card types keep their own rule, whatever kind they carry."""
     kind = frame.get("type")
     if kind in ("propose_workspace_write", "propose_schedule"):
         return True
     if kind == "propose_action":
+        if "perm_kind" in frame:
+            perm_kind = frame["perm_kind"]
+            return isinstance(perm_kind, str) and perm_kind in ISLAND_KINDS
         action = frame.get("kind")
         if action in ("browser_site", "desktop_look", "desktop_app", "mac_shortcut",
                       "desktop_takeover"):          # Hands v2 §6.4: the island may answer it
