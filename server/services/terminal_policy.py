@@ -669,6 +669,8 @@ def _net(text: str) -> list[Finding]:
         pass
     subjects += [_every_ansi_c_decoded(subject) for subject in subjects]
     subjects += [_NET_ESCAPE.sub(_escape_char, subject) for subject in subjects if _NET_ESCAPE.search(subject)]
+    # What `printf` and `echo -e` print for a shell are lines (`printf 'cd ~/x\\nrm -rf ../*' | bash`).
+    subjects += [subject.replace("\\n", "\n").replace("\\t", "\t") for subject in subjects if "\\n" in subject]
     found: list[Finding] = []
     known: dict[str, bool] = {}
 
@@ -679,12 +681,17 @@ def _net(text: str) -> list[Finding]:
 
     for subject in dict.fromkeys(subjects):
         try:
-            flat = hermes._normalize_command_for_detection(subject)
+            # Code an interpreter runs names the home as an argument: read as `~` where it is one (re-review 6).
+            flat = _net_code_homes(hermes._normalize_command_for_detection(subject))
         except Exception:  # noqa: BLE001
             flat = subject
         for view in dict.fromkeys((flat, flat.replace("'", "").replace('"', ""))):   # `'r''m'` is `rm`
             lines = _net_names_filled([[_net_word(word) for word in _NET_WORD.findall(line)]
                                         for line in _net_lines(view)])
+            resolved, cwds = _net_paths_resolved(lines)
+            lines += resolved
+            if view is flat:
+                found += _code_acts(subject, cwds) + _code_acts(flat, cwds)
             for words in lines:
                 found += _argv_floor(words, rooted=False) + _finder_acts(words)
                 for name in _NET_PROGRAMS:          # a program known only when it runs, or a glob (`/bin/r?`)
@@ -699,6 +706,208 @@ def _net(text: str) -> list[Finding]:
             for script in dict.fromkeys(scripts or ()):
                 found += _script_acts(script, never=never)
     return list(dict.fromkeys(found))
+
+
+#: The commands that move the working folder (re-review 6): a literal one is followed by the net.
+_NET_CD = frozenset({"cd", "pushd", "chdir"})
+_NET_VARIABLE_AT = re.compile(r"\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))")
+
+
+def _net_paths_resolved(lines: list[list[str]]) -> tuple[list[list[str]], list[str]]:
+    """The lines whose words the text alone places at the home, the root or a system folder once the
+    working folder is followed (re-review 6), each word read as that target: a literal `cd`, `pushd`
+    or `chdir` (to a path, `~`, `$HOME/…`, a name the text sets to a literal path, or relative to where
+    an earlier one went; a bare `cd` is the home) moves it, and a relative word (`..`, `../*`,
+    `../../me`, `me`, `*`), `~+/…`, `$PWD/…` and a name set to a literal path with more after it
+    (`x=~/x; rm -rf $x/../*`) are read from there, `..` and `.` resolved: `cd ~/x && rm -rf ../*` is
+    `rm -rf ~/*`. Over-read on purpose: one working folder for the whole text, as written (a
+    subshell's leaks out of it, a `cd` that fails still moves it). Also every working folder it went
+    to, for the code an interpreter runs there (`_code_acts`)."""
+    home = str(Path.home()).rstrip("/") or "/"
+    paths: dict[str, str] = {}
+    values: dict[str, dict[str, None]] = {}    # every literal value a name is set to: its distinct words
+    cwd: str | None = None
+    previous_cwd: str | None = None
+    stack: list[str | None] = []
+    cwds: list[str] = []
+    out: list[list[str]] = []
+    previous: list[str] = []
+    for words in lines:
+        if previous and _NET_ASSIGNED.fullmatch(previous[-1]) and previous[-1].endswith("="):   # `a=(-r -f)`
+            _net_value_words(values, previous[-1][:-1], [w for w in words if "$" not in w and "`" not in w])
+        for i, word in enumerate(words):
+            assigned = _NET_ASSIGNED.fullmatch(word)
+            if not assigned:
+                continue
+            value = assigned.group(2) or (words[i + 1] if i + 1 < len(words) else "")
+            if value and "$" not in value and "`" not in value:
+                _net_value_words(values, assigned.group(1), value.split())
+            if path := _net_literal_path(assigned.group(2), paths, cwd, home):
+                paths.setdefault(assigned.group(1), path)
+        line, changed = [], False
+        for word in words:
+            named = _NET_VARIABLE_AT.fullmatch(word)
+            if named and (filled := values.get(named.group(1) or named.group(2))):
+                line += filled                  # `f=-rf; rm $f ~`: the name's words, every value it is set to
+                changed = True
+                continue
+            path = None if word.startswith("-") else _net_literal_path(word, paths, cwd, home)
+            target = _net_path_target(path, home) if path else ""
+            changed = changed or bool(target) and target != word
+            line.append(target or word)
+        if changed:
+            out.append(line)
+        previous = words
+        k = next((i for i, word in enumerate(words) if word in _NET_CD or word == "popd"), -1)
+        if k >= 0:
+            j = k + 1
+            while j < len(words) and words[j].startswith("-") and words[j] != "-":
+                j += 1
+            before = cwd
+            if words[k] == "popd":                       # back to where the last `pushd` left
+                cwd = stack.pop() if stack else None
+            elif j < len(words) and words[j] == "-":     # `cd -`: back to the folder before
+                cwd = previous_cwd
+            else:
+                cwd = home if j == len(words) else _net_literal_path(words[j], paths, cwd, home)
+                if words[k] == "pushd":
+                    stack.append(before)
+            previous_cwd = before
+            if cwd is not None:
+                cwds.append(cwd)
+    return out, cwds
+
+
+def _net_value_words(values: dict[str, dict[str, None]], name: str, words: list[str]) -> None:
+    """Add a literal value's words to a name's (distinct, at most 64: the net stays linear)."""
+    held = values.setdefault(name, {})
+    for word in words:
+        if len(held) >= 64:
+            break
+        held.setdefault(word, None)
+
+
+def _net_literal_path(word: str, paths: dict[str, str], cwd: str | None, home: str) -> str | None:
+    """`word` as an absolute path where the text alone says where it is (not yet normalized), else None."""
+    if not word or "`" in word or word == "-":
+        return None
+    if word == "~" or word.startswith("~/"):
+        path = home + word[1:]
+    elif word == "~+" or word.startswith("~+/"):
+        path = None if cwd is None else cwd + word[2:]
+    elif word.startswith("~"):
+        user, _, rest = word[1:].partition("/")
+        path = home + ("/" + rest if rest else "") if user.lower() == os.path.basename(home).lower() else None
+    elif word.startswith("$"):
+        named = _NET_VARIABLE_AT.match(word)
+        name = named and (named.group(1) or named.group(2))
+        base = home if name == "HOME" else cwd if name == "PWD" else paths.get(name) if name else None
+        path = None if base is None else base + word[named.end():]
+    elif word.startswith("/"):
+        path = word
+    else:
+        path = None if cwd is None else cwd + "/" + word
+    return None if path is None or "$" in path else path
+
+
+def _net_path_target(path: str, home: str) -> str:
+    """The home, the root or a system folder (or their contents, `/*`) an absolute path is, `..` and `.`
+    resolved, in `_argv_floor`'s spelling (`~`, `~/*`, `/`, `/*`, `/Users`), else ""."""
+    contents = path.endswith("/*")
+    base = path[:-2] if contents else path
+    if not base.startswith("/") or _GLOB.search(base):
+        return ""
+    norm = "/" + os.path.normpath(base).lstrip("/")
+    tail = "/*" if contents else ""
+    if norm.rstrip("/").lower() == home.lower() or _is_home_path(norm):
+        return "~" + tail
+    if norm == "/":
+        return "/*" if contents else "/"
+    return norm + tail if _RM_SYSTEM.fullmatch(norm + tail) else ""
+
+
+#: A home folder an interpreter names (re-review 6): Python's `Path.home()`, `os.path.expanduser('~')`,
+#: `os.environ['HOME']`, `os.getenv('HOME')`; Node's and Bun's `os.homedir()`, `process.env.HOME`; Ruby's
+#: `Dir.home`, `ENV['HOME']`, `File.expand_path('~')`; Perl's `$ENV{HOME}`, `glob('~')`; Deno's; Cocoa's
+#: `NSHomeDirectory()` — in `str(…)`, and in an f-string's braces.
+_NET_HOME_EXPRESSION = (
+    r"(?:\b__import__\(\s*['\"]pathlib['\"]\s*\)\.|\bpathlib\.)?\bPath\.home\(\)(?:\.(?:resolve|absolute|expanduser)\(\))?"
+    r"|\bPath\(\s*['\"]~/?['\"]\s*\)\.expanduser\(\)"
+    r"|(?:\b__import__\(\s*['\"]os['\"]\s*\)|\bos)\.path\.(?:expanduser|realpath|abspath)\(\s*['\"]~/?['\"]\s*\)"
+    r"|(?:\b__import__\(\s*['\"]os['\"]\s*\)|\bos)\.(?:environ\[\s*['\"]HOME['\"]\s*\]|environ\.get\(\s*['\"]HOME['\"]\s*\)"
+    r"|getenv\(\s*['\"]HOME['\"]\s*\))"
+    r"|(?:\brequire\(\s*['\"](?:node:)?os['\"]\s*\)\.|\bos\.|(?<![\w.]))homedir\(\)"
+    r"|\bprocess\.env(?:\.HOME\b|\[\s*['\"]HOME['\"]\s*\])"
+    r"|\bDir\.home\b|\bENV\[\s*['\"]HOME['\"]\s*\]|\bFile\.expand_path\(\s*['\"]~/?['\"]\s*\)"
+    r"|\$ENV\{\s*['\"]?HOME['\"]?\s*\}|\bglob\(\s*['\"]~/?['\"]\s*\)"
+    r"|\bDeno\.env\.get\(\s*['\"]HOME['\"]\s*\)|\bDeno\.homeDir\(\)|\$?\.?\bNSHomeDirectory\(\)"
+    r"|\bgetenv\(\s*['\"]HOME['\"]\s*\)|\$_(?:SERVER|ENV)\[\s*['\"]HOME['\"]\s*\]")
+_NET_HOME_CODE = re.compile(
+    r"\{\s*(?:" + _NET_HOME_EXPRESSION + r")\s*\}"
+    r"|(?:\b(?:str|String)\(\s*(?:" + _NET_HOME_EXPRESSION + r")\s*\)|(?:" + _NET_HOME_EXPRESSION + r"))"
+    r"(?:\s*\+\s*(['\"])/?\1)?"
+    r"(?=\s*(?:[,)\]};\n%'\"`!]|$))")
+#: A name the code sets to the home (`h = Path.home()`, `const h = os.homedir()`, `my $h = $ENV{HOME}`),
+#: once each expression is `~`.
+_NET_HOME_NAME = re.compile(r"(?<![\w$])\$?([A-Za-z_]\w*)\s*=\s*~\s*(?=[;\n,)]|$)")
+#: A call that deletes a folder and all it holds: Python's `shutil.rmtree`, Ruby's `FileUtils.rm_rf` …,
+#: Perl's `remove_tree`/`rmtree`, Node's `fs.rmSync`/`rmdirSync`/`fs.rm`/`fs.promises.rm`, fs-extra's
+#: `remove`, `rimraf`, Deno's `Deno.remove`, Cocoa's `removeItemAtPath:` — its first argument after it.
+_NET_DELETE_CALL = re.compile(
+    r"(?:\b(?:shutil\.|__import__\(\s*['\"]shutil['\"]\s*\)\.)?rmtree|\bFileUtils\.(?:rm_rf|rm_r|remove_dir|remove_entry(?:_secure)?)|\brm_rf|\bremove_tree"
+    r"|\b(?:rmSync|rmdirSync|removeSync|emptyDirSync)|(?:\)|\b(?:fs|fsp|fse|fsExtra|promises))\.(?:rm|rmdir|remove|emptyDir)"
+    r"|\brimraf(?:\.sync|Sync)?|\bDeno\.remove(?:Sync)?|\bremoveItemAt(?:Path|URL)\w*)"
+    r"\s*(?:\(\s*|[ \t]+)")
+_NET_CODE_ARGUMENT = re.compile(r"(?:[A-Za-z_]\w*\s*=(?!=)\s*)?(~|'[^'\n]*'|\"[^\"\n]*\"|\$?[A-Za-z_]\w*)\s*(?=[,)\n;'\"`]|$)")
+
+
+def _net_code_homes(text: str) -> str:
+    """`text` with each home folder interpreter code names as a whole argument read as `~` (a `/` or `+`
+    after one is a path under it): `os.system('rm -rf ' + os.path.expanduser('~'))` is `rm -rf ~` to
+    the net's lines, and `shutil.rmtree(Path.home())` a delete of `~` to `_code_acts`."""
+    if "home" not in text.lower() and "~" not in text:
+        return text
+    text = _NET_HOME_CODE.sub(" ~ ", text)
+    for _ in range(3):                          # `os.path.realpath(os.path.expanduser('~'))`
+        wrapped = _NET_HOME_WRAPPED.sub(" ~ ", text)
+        if wrapped == text:
+            break
+        text = wrapped
+    return _NET_FORMAT_HOME.sub(lambda m: m.group(1) + m.group(2) + " ~ " + m.group(3) + m.group(1), text)
+
+
+#: A call that hands the home on as it is (once it is `~`): `os.path.realpath(~)`, `Path(~)`, `path.resolve(~)`.
+_NET_HOME_WRAPPED = re.compile(
+    r"(?:\bos\.path\.(?:realpath|abspath|normpath|expanduser)|\b(?:str|String)|(?:\bpathlib\.)?\bPath|\bFile\.expand_path"
+    r"|(?:\bpath|\brequire\(\s*['\"](?:node:)?path['\"]\s*\))\.(?:resolve|normalize))\(\s*~\s*\)")
+#: `'rm -rf {}'.format(~)` (once the home is `~`): the placeholder is the home.
+_NET_FORMAT_HOME = re.compile(r"(['\"])([^'\"\n]*)\{\}([^'\"\n]*)\1\.format\(\s*~\s*\)")
+
+
+def _code_acts(text: str, cwds: list[str] = ()) -> list[Finding]:
+    """A recursive delete an interpreter is handed in its code (re-review 6): a delete call whose first
+    argument is the home (an expression `_net_code_homes` reads, or a name the code sets to one), or a
+    string literal naming the home, the root or a system folder: `shutil.rmtree(Path.home())`,
+    `fs.rmSync(os.homedir(), {recursive: true})`, `FileUtils.rm_rf Dir.home`, `rmtree('/')`."""
+    found: list[Finding] = []
+    home = str(Path.home()).rstrip("/") or "/"
+    homes = set(_NET_HOME_NAME.findall(text))
+    for call in _NET_DELETE_CALL.finditer(text):
+        argument = _NET_CODE_ARGUMENT.match(text, call.end())
+        if argument is None:
+            continue
+        word = argument.group(1)
+        if word == "~" or word.lstrip("$") in homes:
+            target = "~"
+        elif word[:1] in "'\"":
+            literal = word[1:-1].strip()
+            target = _net_target(_net_word(literal)) or next(filter(None, (     # relative, where a `cd` went
+                _net_path_target(cwd + "/" + literal, home) for cwd in cwds if literal and literal[0] not in "/~$")), "")
+        else:
+            target = ""
+        if target:
+            found += _argv_floor(["rm", "-r", target], rooted=False)
+    return found
 
 
 #: The words the net reads for the positional parameters of one text: past it, the text asks unread.
@@ -763,7 +972,10 @@ _NET_DD = re.compile(r"(of=/dev/r?disk)(?=[$*?\[`])\S*", re.I)
 def _net_word(word: str) -> str:
     """A word as the net reads it: past its backslashes, `dd`'s disk known only when it runs as a disk, a
     path as the shell resolves it (`_net_path`)."""
-    return _net_path(_NET_DD.sub(r"\g<1>0", word.replace("\\", "")))
+    word = word.replace("\\", "")
+    if modified := _NET_HOME_MODIFIED.fullmatch(word):
+        return "~" + (modified.group(1) or "")
+    return _net_path(_NET_DD.sub(r"\g<1>0", word))
 
 
 def _may_run(word: str, name: str) -> bool:
@@ -840,12 +1052,20 @@ def _is_fed(word: str) -> bool:
     return bool(_NET_POSITIONAL.fullmatch(word)) or os.path.basename(word).lower() in ("xargs", "parallel")
 
 
+def _net_heads(path: str, count: int) -> str:
+    """`path`'s folder, `count` levels up (`~/x(:h)` is `~`)."""
+    for _ in range(count):
+        path = os.path.dirname(path.rstrip("/")) or "/"
+    return path
+
+
 def _net_lines(flat: str) -> list[str]:
     """`flat` cut at separators, brackets and backticks: its braced parameters read first (`${HOME:?}`
     is `~`, `${x}` is `$x`, `${x:-~}` a word known only when it runs or `~`), then its braces expanded
     (`rm -rf {~,/tmp/x}` is `rm -rf ~ /tmp/x`), each substitution's body read as lines of its own and
     standing as one word known only when it runs (`$NET`) — after what it prints, when that is a
     literal `echo` or `printf` (`$(echo ~)` is `~`)."""
+    flat = _NET_QUALIFIER_HEAD.sub(lambda m: _net_heads(m.group(1), m.group(2).count(":h")), flat)
     for _ in range(_MAX_SUBSTITUTION_DEPTH):
         read = _NET_PARAMETER.sub(_parameter_word, flat)
         if read == flat:
@@ -869,7 +1089,11 @@ def _net_lines(flat: str) -> list[str]:
 #: A braced parameter (`${HOME:?}`, `${x}`, `${1}`), innermost first: the cut at braces would break it apart.
 _NET_PARAMETER = re.compile(r"\$\{([^{}]*)\}")
 #: The forms of one that are the home (`${HOME}`, `${HOME:?}`, `${HOME:-x}`, `${HOME%/}`), as `_RM_HOME` reads them.
-_HOME_PARAMETER = re.compile(r"HOME(?::?[-=?][^}]*|%[^}]*)?")
+_HOME_PARAMETER = re.compile(r"(?:\([^)]*\))?[~=^]*HOME(?::?[-=?][^}]*|%[^}]*|(?::[A-Za-z&]+|:\d+)+)?")
+#: The home with zsh's modifiers (`$HOME:A`, `$HOME:h` is its folder, `/Users`): the home or above it.
+_NET_HOME_MODIFIED = re.compile(r"\$HOME(?::[A-Za-z&]+)+(/\*?)?")
+#: A glob qualifier that takes a path's head (`~/x(:h)` is `~`): the path read as its folder.
+_NET_QUALIFIER_HEAD = re.compile(r"(?<![\w$])([~/][^\s()'\"]*)\(([^()\s]*:h[^()\s]*)\)")
 _PARAMETER_NAME = re.compile(r"(?:[A-Za-z_][A-Za-z0-9_]*)(?:\[[^\]]*\])?|[@*\d]")
 _PARAMETER_WORD = re.compile(r"(?:[A-Za-z_][A-Za-z0-9_]*|[@*\d]):?[-=?+](.*)", re.S)
 #: A brace alternation in a word (`{~,/tmp/x}`, `r{m,}`, `/{System,Library}`), innermost first.
@@ -917,6 +1141,8 @@ def _substitution_word(match: re.Match) -> str:
         return f" {printed.strip()} $NET "          # and still a word known only when it runs (`printf '\\x72m'`)
     if body.split()[:1] == ["pwd"]:
         return " $PWD $NET "                        # the working folder (`cd ~ && rm -rf "$(pwd)"`)
+    if body.split()[:1] in (["echo"], ["printf"]):   # a glob it prints (`$(echo ~/*)`): its words (re-review 6)
+        return " " + " ".join(body.split()[1:]) + " $NET "
     return " $NET "
 
 
@@ -1052,6 +1278,7 @@ def _script_acts(script: str, depth: int = 0, never=None) -> list[Finding]:
     Access"` … `tell application a`); and what `run script` runs from a string, read as a script
     (4 deep). Past 64 such names the script asks unread (`_NET_TOO_MANY`)."""
     never = never or _never_touched
+    script = _AS_CONTINUATION.sub(" ", script)
     joined = _NET_SCRIPT_JOIN.sub("", script.replace("\u201c", '"').replace("\u201d", '"'))
     names = [*app_names(joined), *(match.group(1) for match in _NET_TOLD.finditer(joined))]
     values = {match.group(1): match.group(2) for match in _NET_SCRIPT_SET.finditer(joined)}
@@ -1062,7 +1289,8 @@ def _script_acts(script: str, depth: int = 0, never=None) -> list[Finding]:
         return [_NET_TOO_MANY]
     found = [Finding("floor", "never-app", f"Arslan never touches {name} (the never-list)", app=name)
              for name in names if never(name)]
-    if _SCRIPT_POWER.search(_SCRIPT_STRING.sub('""', script)) or _SCRIPT_UI.search(script) and (
+    if _SCRIPT_POWER.search(_SCRIPT_STRING.sub('""', script)) or any(      # JXA `se["shutDown"]()` (re-review 6)
+            _SCRIPT_POWER.search(member) for member in _NET_MEMBER.findall(joined)) or _SCRIPT_UI.search(script) and (
             _SCRIPT_POWER.search(script) or _ui_power_keys(script)):     # by its menu item or shortcut (UI)
         found.append(Finding("floor", "shutdown", "shuts down, restarts or logs out the Mac"))
     if depth < 4:
@@ -1071,6 +1299,8 @@ def _script_acts(script: str, depth: int = 0, never=None) -> list[Finding]:
     return list(dict.fromkeys(found))
 
 
+#: A member a JavaScript object is asked for by a string (`Application("System Events")["shutDown"]`).
+_NET_MEMBER = re.compile(r"""\[\s*["']([^"'\n]{1,60})["']\s*\]""")
 #: A keystroke a UI script types, with its modifiers: ⇧⌘Q (with ⌥ or not) logs out.
 _NET_KEYS = re.compile(r'(?:keystroke\s+"q"|key\s+code\s+12)\s+using\s+\{?([^}\n]*)\}?', re.I)
 
@@ -3392,7 +3622,9 @@ def _argv_floor(argv: list[str], *, rooted: bool = True) -> list[Finding]:
                 _security_command(argv, k) in ("find-generic-password", "find-internet-password") and secret)):
             found.append(Finding("floor", "keychain-secrets", _WHY["keychain-secrets"]))
         elif name == "diskutil" and after:
-            verb = argv[k + 2].lower() if after == "apfs" and k + 2 < n else after
+            verbs = [w.lower() for w in argv[k + 1:] if not _NET_REDIRECT.fullmatch(w)]    # past a redirection
+            verbs = verbs[1:] if verbs[:1] == ["quiet"] else verbs                          # `diskutil [quiet] verb`
+            verb = verbs[1] if verbs[:1] in (["apfs"], ["ap"]) and len(verbs) > 1 else verbs[0] if verbs else ""
             if verb.startswith("erase") or verb in _DISK_ERASE:
                 found.append(Finding("floor", "disk-erase", "erases a disk"))
         elif name == "dd" and disk:
@@ -3427,9 +3659,13 @@ def _security_command(argv: list[str], k: int) -> str:
     """The command `security` at `argv[k]` runs, past its own options (`security -v find-generic-password
     …`; `-p` takes a prompt)."""
     i = k + 1
-    while i < len(argv) and argv[i].startswith("-"):
+    while i < len(argv) and (argv[i].startswith("-") or _NET_REDIRECT.fullmatch(argv[i])):
         i += 2 if argv[i] == "-p" else 1
     return argv[i].lower() if i < len(argv) else ""
+
+
+#: A redirection as one word (`2>/dev/null`, `>/tmp/o`, `&>log`): no program's argument.
+_NET_REDIRECT = re.compile(r"\d*(?:[<>]{1,2}|&>>?|>&|<&)\S*")
 
 
 def _floor_patterns(shell: str) -> list[Finding]:
@@ -4210,7 +4446,10 @@ _AS_ESCAPES = {'"': '"', "\\": "\\", "n": "\n", "r": "\r", "t": "\t"}
 _JS_ESCAPES = {**_AS_ESCAPES, "'": "'"}
 _SCRIPT_ADMIN = re.compile(r"\bwith\s+administrator\s+privileges\b|\badministratorPrivileges\s*:\s*true\b", re.I)
 #: An AppleScript's power step, and JXA's (`Application("System Events").shutDown()`, `.logOut()`).
-_SCRIPT_POWER = re.compile(r"\b(?:shut\s*down|restart|log\s*out)\b|aevt(?:rsdn|rrst|rlgo|logo)", re.I)   # and the raw events
+_SCRIPT_POWER = re.compile(r"\b(?:shut\s*down|restart|log\s*out)\b|aevt(?:rsdn|rrst|rlgo|logo)"      # and the raw events
+                           r"|(?:«|<<)\s*event\s+\w{4}(?:shut|rest|rsdn|rrst|rlgo|logo)\s*(?:»|>>)", re.I)
+#: AppleScript's line continuation (`¬` then a newline): the words go on (`shut ¬` / `down`).
+_AS_CONTINUATION = re.compile(r"¬[ \t]*\r?\n[ \t]*")
 #: A step that clicks or types: the strings it names are the labels it acts on, not content.
 _SCRIPT_UI = re.compile(r"\b(?:click|keystroke|key\s+code|perform\s+action|select\s+menu\s+item)\b", re.I)
 _SCRIPT_SENDING_KEY = re.compile(r"\bkeystroke\s+(?:return|enter)\b|\bkey\s+code\s+(?:36|76)\b"
@@ -4244,6 +4483,7 @@ def _applescript_findings(script: str) -> list[Finding]:
     """One AppleScript (or JXA) text: the apps it tells (by name, else one unknown app), the
     commands it hands to a shell or a terminal, and the floor for admin rights and shutting down."""
     found: list[Finding] = []
+    script = _AS_CONTINUATION.sub(" ", script)
     steps = _SCRIPT_STRING.sub('""', script)
     if _SCRIPT_ADMIN.search(script):
         found.append(Finding("floor", "sudo", _WHY["sudo"]))

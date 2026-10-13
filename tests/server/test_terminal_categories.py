@@ -2369,3 +2369,124 @@ def test_a_delete_without_a_recursive_flag_is_not_the_backstops():
     """R10: the argv backstop wants a recursive flag (G3): `concurrently rm ~` (which fails on a
     folder) is no floor."""
     assert tp.classify("concurrently rm ~").floor is None
+
+
+# ── re-review 6: an R7 act the text alone places never runs silently (the refined closure) ─────────
+
+def _carded(command: str) -> bool:
+    found = tp.classify(command)
+    return found.floor is not None or tp.UNREADABLE in found.findings
+
+
+_ME = Path.home().name
+
+
+@pytest.mark.parametrize("command", [
+    "cd ~/x && rm -rf ../*", f"cd ~/x && rm -rf ../../{_ME}", "cd ~/x/y && rm -rf ../../*", "cd ~/x; rm -rf ../*",
+    "cd ~/x\nrm -rf ../*", "cd /tmp && rm -rf ../*", f"cd /Users && rm -rf {_ME}", f"cd / && rm -rf Users/{_ME}",
+    "pushd ~/x && rm -rf ../*", "cd ~/x && cd .. && rm -rf *", "(cd ~/x && rm -rf ../*)", "cd ~/x && find .. -delete",
+    "cd ~/x && rsync -a --delete /tmp/empty/ ../", "cd -P ~/x && rm -rf -- ../*", 'cd "$HOME/x" && rm -rf ../*',
+    "d=~/x; cd $d && rm -rf ../*", "cd ~/x && rm -rf ./../*", "cd ~/x && bash -c 'rm -rf ../*'",
+    "pushd ~/x; pushd /tmp/a/b; popd; rm -rf ../*", "cd ~/x; cd /tmp/a/b; cd -; rm -rf ../*",
+    "x=~/x/..; rm -rf $x/*", "printf 'cd ~/x\\nrm -rf ../*' | bash", "bash <<'EOF'\ncd ~/x\nrm -rf ../*\nEOF",
+    "cd ~/x && rm -rf $(echo ../*)", "cd ~/x && python3 -c \"import shutil; shutil.rmtree('..')\"",
+])
+def test_the_net_follows_where_a_cd_goes(command):
+    """Re-review 6: a literal `cd` (or `pushd`, `popd`, `cd -`) moves the working folder, and a relative
+    word, `..` resolved, may name the home, the root or a system folder: `cd ~/x && rm -rf ../*` deletes
+    the home's contents; it read destructive (a card a conversation grant can cover, Full access none)."""
+    assert _carded(command), [(f.category, f.rule) for f in tp.classify(command).findings]
+
+
+@pytest.mark.parametrize("command", [
+    "python3 -c \"import shutil, pathlib; shutil.rmtree(pathlib.Path.home())\"",
+    "python3 -c \"import shutil, os; shutil.rmtree(os.path.expanduser('~'))\"",
+    "python3 -c \"import shutil, os; shutil.rmtree(os.environ['HOME'])\"",
+    f"python3 -c \"import shutil; shutil.rmtree('{Path.home()}')\"", "python3 -c \"import shutil; shutil.rmtree('/')\"",
+    "python3 -c \"import shutil, pathlib; shutil.rmtree(str(pathlib.Path.home()), ignore_errors=True)\"",
+    "python3 -c \"import shutil, pathlib; h = pathlib.Path.home(); shutil.rmtree(h)\"",
+    "python3 -c \"__import__('shutil').rmtree(__import__('pathlib').Path.home())\"",
+    "python3 -c \"import shutil; from pathlib import Path; shutil.rmtree(path=Path.home())\"",
+    "python3 -c \"import shutil, os; shutil.rmtree(os.path.realpath(os.path.expanduser('~')))\"",
+    "python3 <<EOF\nimport shutil, pathlib\nshutil.rmtree(pathlib.Path.home())\nEOF",
+    "python3 -c \"import os; os.system('rm -rf ' + os.path.expanduser('~'))\"",
+    "python3 -c \"import os; os.system('rm -rf {}'.format(os.path.expanduser('~')))\"",
+    "node -e \"require('fs').rmSync(require('os').homedir(), {recursive: true, force: true})\"",
+    "node -e \"require('fs/promises').rm(require('os').homedir(), {recursive: true})\"",
+    "node --input-type=module -e \"import {rmSync} from 'fs'; import {homedir} from 'os'; rmSync(homedir(), {recursive: true})\"",
+    "node -e \"require('fs').rmSync(require('path').resolve(require('os').homedir()), {recursive: true})\"",
+    "node -e \"require('child_process').execSync(`rm -rf ${require('os').homedir()}`)\"",
+    "deno eval \"Deno.removeSync(Deno.env.get('HOME'), {recursive: true})\"",
+    "ruby -e 'require \"fileutils\"; FileUtils.rm_rf(Dir.home)'", "ruby -e 'require \"fileutils\"; FileUtils.rm_rf Dir.home'",
+    "ruby -e 'require \"fileutils\"; FileUtils.rm_rf(Dir.home + \"/\")'",
+    "perl -MFile::Path=remove_tree -e 'remove_tree($ENV{HOME})'", "perl -MFile::Path -e 'rmtree(\"$ENV{HOME}\")'",
+    "perl -e '`rm -rf $ENV{HOME}`'", "php -r 'exec(\"rm -rf \" . getenv(\"HOME\"));'",
+    "osascript -l JavaScript -e 'ObjC.import(\"Foundation\"); $.NSFileManager.defaultManager.removeItemAtPathError($.NSHomeDirectory(), null)'",
+])
+def test_the_net_reads_an_interpreters_delete_of_the_home(command):
+    """Re-review 6: a delete call an interpreter is handed — `shutil.rmtree`, `fs.rmSync`, `FileUtils.rm_rf`,
+    `remove_tree`, `Deno.removeSync`, `removeItemAtPath` — whose first argument is the home (as the
+    language names it) or a literal home, root or system folder; and a shell-out that builds `rm -rf`
+    with the home. Each read local (or destructive)."""
+    assert _carded(command), [(f.category, f.rule) for f in tp.classify(command).findings]
+
+
+@pytest.mark.parametrize("command", [
+    "ls; f=-rf; rm $f ~", "ls; opts='-rf'; rm $opts ~", "a=(-r -f); rm $a ~", "ls; a=(-r -f); rm $a ~",
+    "rm -rf ${~HOME}", "rm -rf ${(L)HOME}", "rm -rf $HOME:h", "rm -rf ${HOME:A}", "rm -rf ${HOME:0}", "rm -rf ~/x(:h)",
+    "diskutil quiet eraseDisk APFS X disk2", "concurrently diskutil quiet zeroDisk disk2",
+    "concurrently security 2>/dev/null dump-keychain",
+    "osascript -e 'tell application \"System Events\" to «event aevtshut»'",
+    "osascript -e 'tell application \"System Events\" to «event fndrrest»'",
+    "osascript -e 'tell application \"System Events\" to shut ¬\n down'",
+    "osascript -l JavaScript -e 'Application(\"System Events\")[\"shutDown\"]()'",
+    "osascript -l JavaScript -e 'Application(\"System Events\")[\"shut\" + \"Down\"]()'",
+])
+def test_the_net_reads_flags_a_name_holds_zsh_home_forms_and_quiet_verbs(command):
+    """Re-review 6: a name set to the flags (`f=-rf; rm $f ~`, an array), zsh's flags and modifiers on
+    the home (`${~HOME}`, `$HOME:h` is `/Users`), `diskutil [quiet] verb` as its man page writes it, a
+    redirection before `security`'s command, raw power events of any class, a power step split by `¬`,
+    and JXA's members asked by a string: each read local, destructive or an apps card."""
+    assert _carded(command), [(f.category, f.rule) for f in tp.classify(command).findings]
+
+
+@pytest.mark.parametrize("command", [
+    "cd build && rm -rf *", "cd ~/project && rm -rf node_modules dist", "cd ~/project && rm -rf ../project-old",
+    "cd /tmp/work && rm -rf ./*", "pushd /tmp && rm -rf scratch && popd", "cd src && cd .. && rm -rf build",
+    "cd ~/project && rsync -a --delete dist/ ../site/", "mkdir -p build && cd build && cmake .. && make && cd .. && rm -rf build",
+    "python3 -c \"import shutil; shutil.rmtree('build')\"",
+    "python3 -c \"import shutil; from pathlib import Path; shutil.rmtree(Path.home() / '.cache' / 'pip')\"",
+    "python3 -c \"import shutil, os; shutil.rmtree(os.path.join(os.path.expanduser('~'), '.cache', 'x'))\"",
+    "node -e \"require('fs').rmSync('dist', {recursive: true, force: true})\"",
+    "node -e \"require('fs').rmSync(require('path').join(require('os').homedir(), '.cache', 'x'), {recursive: true})\"",
+    "ruby -e 'require \"fileutils\"; FileUtils.rm_rf(File.join(Dir.home, \".cache\", \"x\"))'",
+    "npx rimraf dist", "for d in build dist; do rm -rf \"$d\"; done", "f=-rf; rm $f build", "diskutil quiet list",
+    "cd / && ls", "cd /Users && ls", "cd ~/project && /bin/rm -rf build",
+])
+def test_the_net_stays_quiet_on_developer_work(command):
+    """Re-review 6: the same building blocks stay quiet on everyday work — a cleanup in a project after a
+    `cd`, a path under the home built from it, an rm in a project folder."""
+    found = tp.classify(command)
+    assert found.floor is None and tp.UNREADABLE not in found.findings, [(f.category, f.rule) for f in found.findings]
+
+
+def test_diskutil_quiet_is_the_floor_read_or_unread():
+    """Re-review 6: `diskutil [quiet] verb` (its man page's synopsis) erases a disk as the bare verb
+    does — the reading's floor, and the unread floor's past a ceiling."""
+    assert tp.classify("diskutil quiet eraseDisk APFS X disk2").floor is not None
+    assert tp.classify("diskutil quiet eraseDisk APFS X disk2" + " ''" * 70).floor is not None
+
+
+@pytest.mark.parametrize("text", [
+    ("cd ~/a; cd ..; " * 600)[:7990], ("pushd ~/a; popd; " * 500)[:7990], ("f=-rf; rm $f x; " * 500)[:7990],
+    ("a=(-r -f); rm $a x; " * 400)[:7990], ("shutil.rmtree(Path.home() / 'x'); " * 220)[:7990],
+    "os.path.realpath(" * 300 + "Path.home()" + ")" * 300, ("~/x(:h:h:h) " * 600)[:7990],
+])
+def test_the_nets_reading_of_cds_names_and_code_is_linear(text):
+    """Re-review 6: what the net adds reads each line once — a name's values are distinct and bounded,
+    a nested wrapper is read a few times at most. The least CPU time of three."""
+    def cpu() -> float:
+        start = time.process_time()
+        tp._net(text)
+        return time.process_time() - start
+    assert min(cpu() for _ in range(3)) < 0.1
