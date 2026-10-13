@@ -49,6 +49,7 @@ sys.path.insert(0, str(ROOT))
 os.environ.setdefault("ARSLAN_SECRET_KEY", "hands-smoke")
 _DATA = tempfile.mkdtemp(prefix="hands-smoke-data-")
 os.environ["ARSLAN_DATA_DIR"] = _DATA            # trace and settings stay out of real data
+os.environ["ARSLAN_DB_PATH"] = os.path.join(_DATA, "arslan.db")   # and so do the cards' answers
 
 REF = re.compile(r"\[(@s[a-z0-9]+:e\d+)\]")
 results: list[tuple[str, bool, str]] = []
@@ -94,7 +95,9 @@ async def find_in(look, app: str, window: str, seen: dict, needle: str, role: st
 
 async def main() -> int:
     from server.registry import hands_tools as tools
-    from server.services import approvals, background_jobs, hands_client, hands_service
+    from server.db import session as db_session
+    from server.db.models import Base
+    from server.services import background_jobs, hands_client, hands_service, permissions
     from server.services import personal_context as pc
     from server.services import terminal_exec
 
@@ -112,10 +115,16 @@ async def main() -> int:
         return reply
     hands_client.call = recording_call
 
-    async def allow(conversation_id, frame):
-        cards.append({"kind": frame.get("kind"), "target": frame.get("target")})
-        return True
-    approvals.ask = allow
+    # 0.1.61: Hands asks through permissions.decide, which remembers answers in the database (the
+    # smoke's own, in its temporary data folder) and asks on the surface bound to the run, as a chat
+    # turn or a job binds its own. This one records each card and answers yes with its first choice
+    # ("for this task" for an app). It is bound after the check that a run with none is refused.
+    async with db_session.engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+
+    async def allow(frame):
+        cards.append({"kind": frame.get("kind"), "perm_kind": frame.get("perm_kind"), "target": frame.get("target")})
+        return {"approved": True, "scope": (frame.get("options") or [None])[0], "note": "", "by": "mac"}
 
     status = await hands_client.call("status", {})
     if not status.get("accessibility"):
@@ -132,10 +141,12 @@ async def main() -> int:
     watch = PrivacyWatch(hands_client)
     watch.start()
 
-    # ── with no conversation to ask in, acting is refused (a chat reply may act: see v2_checks) ──
+    # ── with nobody to ask (no card surface bound, as a scheduled run), acting is refused ──
     outside = await click.execute({"app": "Finder", "element": "x", "ref": "@sx1y2z3:e1"})
-    record("acting with no conversation to ask in is refused", outside.get("code") == "no_one_to_ask",
+    record("acting with nobody to ask is refused", outside.get("code") == "no_one_to_ask" and not cards,
            str(outside.get("code")))
+    asking = contextlib.ExitStack()
+    asking.enter_context(permissions.asking_with(allow))
 
     token = background_jobs._inside_job.set("smoke-job")
     try:
@@ -163,9 +174,10 @@ async def main() -> int:
     await sandbox_check(terminal_exec, hands_client)
     inner_binary_check(hands_client)
 
+    asking.close()
     failed = [r for r in results if not r[1]]
     print(f"\n{len(results) - len(failed)} passed, {len(failed)} failed; cards asked: "
-          + ", ".join(f"{c['kind']}:{c['target']}" for c in cards))
+          + ", ".join(f"{c['perm_kind']}/{c['kind']}:{c['target']}" for c in cards))
     return 1 if failed else 0
 
 
@@ -448,14 +460,14 @@ async def v2_checks(tools, hands_service, front: str) -> None:
             await look.execute({"app": "Finder"})
             await press.execute({"app": app, "keys": "tab"})
         record("one card for several apps, then no card to look or act in them",
-               asked.get("ok") is True and [c["kind"] for c in cards] == ["desktop_app"],
-               f"cards: {[(c['kind'], c['target']) for c in cards]}")
+               asked.get("ok") is True and [c["perm_kind"] for c in cards] == ["app"],
+               f"cards: {[(c['perm_kind'], c['target']) for c in cards]}")
 
         # An app allowed for good asks nothing (in a fresh conversation); risky steps still ask.
         apps = await tools.DesktopAppsExecutor().execute({})
         bundle = next((a.get("bundle_id") for a in (apps.get("apps") or [])
                        if a.get("name") == app), "com.arslan.hands-fixture")
-        hands_service.update_settings(always=[{"bundle_id": bundle, "name": app, "since": "smoke"}])
+        await hands_service.allow_always(bundle, app)             # an `app` rule (0.1.61 §A5)
         cards.clear()
         with job("v2-always", "v2-always"):
             seen = await look.execute({"app": app})
@@ -463,7 +475,7 @@ async def v2_checks(tools, hands_service, front: str) -> None:
             await click.execute({"app": app, "element": "Delete", "ref": ref_of(seen.get("text", ""), "Delete")})
         record("an app allowed for good asks nothing, except its risky step",
                [c["kind"] for c in cards] == ["desktop_risky"], f"cards: {[c['kind'] for c in cards]}")
-        hands_service.update_settings(always=[])
+        await hands_service.stop_always(bundle)
 
         # An app never screenshotted is read as text only.
         hands_service.update_settings(no_screenshots=[app])

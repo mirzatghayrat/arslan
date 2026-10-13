@@ -4,7 +4,7 @@ faked (the contract fixtures). Nothing is sent to a model."""
 import pytest
 
 from server.registry import hands_tools
-from server.services import hands_client
+from server.services import hands_client, hands_service
 from tests.server import test_hands_0153 as base
 
 _case = base._case
@@ -95,7 +95,7 @@ async def test_a_batch_runs_its_steps_with_every_check_and_ends_with_a_look(hand
     assert result["text"].startswith("Batch in Notes: 3 of 3 steps went through.")
     assert "The window now:" in result["text"]
     assert result["images"] == [{"mime_type": "image/jpeg", "data": "AAAA"}]
-    assert [f["kind"] for f in seen] == ["desktop_app"]          # one card for the app, as single calls
+    assert seen == [], "the look's card covers acting in the same task (0.1.61: one app card)"
     assert hands.ops("set_value", "click", "menu", "snapshot") == ["set_value", "click", "menu", "snapshot"]
 
 
@@ -152,8 +152,13 @@ def opener(monkeypatch, hands):
     return ran
 
 
-async def test_an_app_is_opened_in_the_background_and_that_answer_is_its_acting_grant(hands, asks, in_job, opener):
+async def test_an_app_is_opened_in_the_background_and_that_answer_is_its_acting_grant(hands, asks, in_job, opener,
+                                                                                       monkeypatch):
     seen, _ = asks
+    # The installed app's bundle id (Info.plist) is the running app's: the open card's grant is kept
+    # under it, so acting next asks nothing (on any machine, whatever is installed there).
+    monkeypatch.setattr(hands_service, "app_identity",
+                        lambda name: {"name": name, "bundle_id": f"com.example.{name.lower()}"})
     result = await hands_tools.DesktopOpenExecutor().execute({"app": "TextEdit"})
     assert result["ok"] and result["outcome"] == "done", result
     assert opener == [["/usr/bin/open", "-g", "-a", "TextEdit"]]          # -g: never brought to the front

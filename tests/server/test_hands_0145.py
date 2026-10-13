@@ -30,14 +30,21 @@ def browser(monkeypatch):
 
 
 @pytest.fixture
-def asks(monkeypatch):
+def asks(execution_db):
+    """The card surface bound to the job (0.1.61: `permissions.asking_with`): records each card and
+    answers yes with its first choice, or no when a test sets answer["value"] to False. The grants
+    an answer leaves are the permission store's, in a fresh database."""
+    from server.services import permission_store, permissions
+    permission_store._reset_for_tests()
     seen, answer = [], {"value": True}
 
-    async def ask(conversation_id, frame):
+    async def surface(frame):
         seen.append(frame)
-        return answer["value"]
-    monkeypatch.setattr(approvals, "ask", ask)
-    return seen, answer
+        if answer["value"]:
+            return {"approved": True, "scope": (frame.get("options") or [None])[0], "note": "", "by": "mac"}
+        return {"approved": False, "scope": None, "note": "", "by": "mac"}
+    with permissions.asking_with(surface):
+        yield seen, answer
 
 
 @pytest.fixture
@@ -102,7 +109,9 @@ async def test_looking_is_free_and_page_text_is_marked_external(browser, asks, i
     assert bad["ok"] is False
 
 
-async def test_scripts_ask_every_time_shortcuts_once(asks, in_job, monkeypatch):
+async def test_a_script_asks_once_per_app_it_names_a_risky_one_every_time_shortcuts_once(asks, in_job, monkeypatch):
+    """0.1.61 §A11: an AppleScript is asked as the apps it names (one grant per app, like Hands); one
+    that deletes, sends or pays is asked every time, in full."""
     seen, _ = asks
     ran = []
 
@@ -115,10 +124,13 @@ async def test_scripts_ask_every_time_shortcuts_once(asks, in_job, monkeypatch):
     for _ in range(2):
         assert (await script.execute({"script": 'tell application "Reminders" to count reminders'}))["ok"]
         assert (await shortcut.execute({"name": "Log water"}))["ok"]
-    kinds = [f["kind"] for f in seen]
-    assert kinds.count("mac_script") == 2 and kinds.count("mac_shortcut") == 1
+        assert (await script.execute({"script": 'tell application "Reminders" to delete reminder 1'}))["ok"]
+    kinds = [(f["kind"], f["perm_kind"]) for f in seen]
+    assert kinds.count(("mac_script", "app")) == 1, kinds
+    assert kinds.count(("mac_script", "app_risky")) == 2, kinds
+    assert kinds.count(("mac_shortcut", "shortcut")) == 1, kinds
     assert seen[0]["detail"].startswith('tell application "Reminders"'), "the full script is shown"
-    assert len(ran) == 4
+    assert len(ran) == 6
 
 
 async def test_approvals_do_not_outlive_their_job(browser, asks):

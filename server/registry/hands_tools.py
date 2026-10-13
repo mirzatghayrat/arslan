@@ -2,9 +2,10 @@
 
 Looking (open a page, read it, go back, list Shortcuts) is free. Acting (click,
 type, choose, press; run a Shortcut or an AppleScript) happens only inside a
-background job, and asks first through that job's confirmation cards
-(approvals.ask): once per website per job for the browser, once per Shortcut
-per job, and every time for an AppleScript (shown in full). macOS adds its own
+background job, and asks first. Every card goes through `permissions.decide`
+(0.1.61 §A11): a website, a Shortcut and an app are each asked once, "for this
+task" (or this conversation, or always); an AppleScript as the apps it names, or
+every time when it deletes, sends, pays or runs a shell. macOS adds its own
 Automation consent the first time a script controls an app.
 
 Arslan never types into a password field: the user logs in themselves in the
@@ -15,7 +16,8 @@ helper app that alone holds Accessibility; spec
 docs/specs/2026-10-03-0153-hands-agent-desktop.md). Looking at an app asks once
 per app per conversation; acting runs only inside a background job and asks once
 per app per job; an action whose real label deletes, sends, pays, buys,
-transfers or submits asks every time.
+transfers or submits asks every time. Since 0.1.61 one `app` card covers both
+looking and acting; the answer is remembered by the permission store (§A5).
 """
 from __future__ import annotations
 
@@ -30,8 +32,6 @@ from server.services import approvals
 
 _PASSWORD = re.compile(r"pass(word|code|phrase)|密码|口令|パスワード|contraseña|mot de passe|passwort|\bpin\b", re.I)
 _OUTPUT_LIMIT = 8_000
-# job id -> things already approved for that job
-_grants: dict[str, set[str]] = {}
 
 
 def _conversation_and_job() -> tuple[str | None, str | None]:
@@ -54,32 +54,63 @@ CARD_S = approvals.TIMEOUT_S       # the card window (30 min, 0.1.61); a test pi
 RUN_S = 120                        # _run's default; a Hands call is 60 s, a read is tried twice
 
 
-async def _ask_once(grant: str, kind: str, target: str, detail: str) -> bool:
-    """True if already granted for this job (or, in a chat reply, this conversation), else ask the
-    user (card + notification)."""
-    from server.services import approvals
-    from server.ws import protocol
-    from server.services import hands_service
+# ── asking (0.1.61 §A11): every card here goes through permissions.decide ────────
+
+def _context():
+    from server.services import permissions
     conversation_id, job_id = _conversation_and_job()
-    if conversation_id is None:
-        return False
-    granted = _grants.setdefault(job_id or f"conversation:{conversation_id}", set())
-    if grant in granted:
-        return True
-    # §7.2: a job inherits what its conversation already allowed, and an app the user allowed for good
-    # in Settings is not asked again (risky steps have unique grant keys: still asked every time).
-    if job_id and grant in _grants.get(f"conversation:{conversation_id}", set()):
-        return True
-    if grant.startswith("desktop:") and hands_service.always_allowed(grant.removeprefix("desktop:")):
-        return True
-    ok = await approvals.ask(conversation_id, protocol.propose_action(uuid.uuid4().hex, kind, target, detail))
-    if ok:                                     # a script's grant key is unique: asked every time
-        granted.add(grant)
-    return ok
+    return permissions.Context(conversation_id, job_id=job_id)
+
+
+async def _decide(kind: str, target: str, title: str, detail: str, frame_kind: str, frame_target: str, *,
+                  always_label: str = "", extra: dict | None = None):
+    """One card through `permissions.decide`: the money rung, an "Always" rule, a grant for this task
+    or conversation, else the card on the surface bound to this turn or job. The card keeps Hands'
+    own frame kinds (desktop_app, desktop_risky, desktop_takeover, mac_shortcut, mac_script,
+    browser_site), which the island and the phone already know."""
+    from server.services import permissions
+    from server.ws import protocol
+    request = permissions.Request(
+        kind=kind, target=target, title=title[:300], detail=detail, always_label=always_label,
+        frame=protocol.propose_action(uuid.uuid4().hex, frame_kind, frame_target[:300], detail),
+        extra=extra or {})
+    return await permissions.decide(request, _context())
+
+
+def _app_request(app: dict, detail: str, *, step: str = "", frame_kind: str = "desktop_app",
+                 frame_target: str = ""):
+    """Looking at and acting in one app is one `app` request (0.1.61 §A11): kept by bundle id, "for
+    this task" first, "Always" unless the app reaches every other app."""
+    from server.services import hands_service, permissions
+    from server.ws import protocol
+    bundle = str(app.get("bundle_id") or app.get("name") or "")
+    name = str(app.get("name") or bundle)
+    return permissions.Request(
+        kind="app", target=bundle, title=f"Use {name}?", detail=detail,
+        always_label=hands_service.always_label(bundle, name),
+        frame=protocol.propose_action(uuid.uuid4().hex, frame_kind, (frame_target or name)[:300], detail),
+        extra={"app": name, "bundle_id": bundle, **({"step": step[:200]} if step else {})})
+
+
+async def _decide_app(app: dict, detail: str, *, step: str = ""):
+    from server.services import hands_service, permissions
+    await hands_service.migrate_always()          # the old Settings list becomes `app` rules, once
+    return await permissions.decide(_app_request(app, detail, step=step), _context())
+
+
+def _no(decision, what: str) -> dict:
+    """What the model is told when a card did not allow it. Only the user's own no is a refusal: a
+    card nobody answered is "no answer", and a run with nobody to ask says so (0.1.61 §A4)."""
+    if decision.by == "user":
+        said = f" They said: {decision.note}" if decision.note else ""
+        return {"ok": False, "external": False, "code": "declined",
+                "error": f"The user did not allow {what}.{said} Do not retry; report it."}
+    if decision.by == "expired":
+        return {"ok": False, "external": False, "code": "no_answer", "error": decision.model_text}
+    return {"ok": False, "external": False, "code": "no_one_to_ask", "error": decision.model_text}
 
 
 def forget_job(job_id: str) -> None:
-    _grants.pop(job_id, None)
     _session_locks.pop(job_id, None)
     if job_id in _takeovers:                     # a job's takeover ends with it (§6.4)
         _takeovers.discard(job_id)
@@ -136,10 +167,12 @@ class _BrowserTool:
                 return {"ok": False, "external": False, "error": "Open a page with browser_open first."}
             summary = {"click": "click", "type": "type text", "select": "choose options",
                        "press": "press keys"}[self.action]
-            if not await _ask_once(f"site:{origin}", "browser_site", origin,
-                                   f"Arslan wants to {summary} on {origin} ({args.get('element') or args.get('key') or ''})"):
-                return {"ok": False, "external": False, "code": "declined",
-                        "error": "The user did not allow acting on this website. Do not retry; report it."}
+            decision = await _decide(
+                "site", origin, f"Act on {origin}?",
+                f"Arslan wants to {summary} on {origin} ({args.get('element') or args.get('key') or ''})",
+                "browser_site", origin, always_label=origin, extra={"site": origin, "action": self.action})
+            if not decision.allowed:
+                return _no(decision, "acting on this website")
         try:
             text = await _run_setting_up_once(self.action, args)
         except agent_browser.BrowserUnavailable as exc:
@@ -254,9 +287,12 @@ class MacRunShortcutExecutor:
         if _conversation_and_job()[1] is None:
             return _not_in_job()
         text_input = (args or {}).get("input")
-        if not await _ask_once(f"shortcut:{name}", "mac_shortcut", name,
-                               f"Run the Shortcut “{name}”" + (f" with input: {str(text_input)[:300]}" if text_input else "")):
-            return {"ok": False, "external": False, "code": "declined", "error": "The user did not allow it."}
+        decision = await _decide(
+            "shortcut", name, f"Run the Shortcut “{name}”?",
+            f"Run the Shortcut “{name}”" + (f" with input: {str(text_input)[:300]}" if text_input else ""),
+            "mac_shortcut", name, always_label=name, extra={"shortcut": name})
+        if not decision.allowed:
+            return _no(decision, f"running the Shortcut “{name}”")
         argv = ["/usr/bin/shortcuts", "run", name]
         if not text_input:
             return await _run(argv)
@@ -278,12 +314,33 @@ class MacAppleScriptExecutor:
             return {"ok": False, "external": False, "error": "script required (max 4000 characters)"}
         if _conversation_and_job()[1] is None:
             return _not_in_job()
-        from server.services import hands_contract, hands_service
+        from server.services import hands_contract, hands_service, permissions
         denied = [app for app in hands_service.script_apps(script) if hands_service.never_touched(app)]
         if denied:                        # the never-list holds for scripts too (0.1.61 §A11)
             return _failed(hands_contract.Result(ok=False, code="app_denied", refused=True), app=denied[0])
-        if not await _ask_once(f"script:{uuid.uuid4().hex}", "mac_script", "AppleScript", script):
-            return {"ok": False, "external": False, "code": "declined", "error": "The user did not allow it."}
+        kind, named = hands_service.script_kind(script)
+        if kind == "app":
+            # Asked as the apps it names, like Hands: one grant per app, the script shown in full.
+            apps = []
+            for name in named:
+                identity = hands_service.app_identity(name) or {}
+                apps.append({"name": identity.get("name") or name, "bundle_id": identity.get("bundle_id") or name})
+            requests = [_app_request(a, script, step="AppleScript", frame_kind="mac_script",
+                                     frame_target=f"AppleScript · {a['name']}") for a in apps]
+            await hands_service.migrate_always()
+            if len(requests) == 1:
+                decisions = [await permissions.decide(requests[0], _context())]
+            else:
+                decisions = await permissions.decide_many(
+                    requests, _context(), title=f"Let an AppleScript use {', '.join(a['name'] for a in apps)}?"[:300])
+            refused = next((d for d in decisions if not d.allowed), None)
+        else:
+            # Money, delete / send / submit, a shell, or no app named: asked every time, in full.
+            decision = await _decide(kind, ", ".join(named) or "AppleScript", "Run this AppleScript?", script,
+                                     "mac_script", "AppleScript", extra={"apps": named[:8]})
+            refused = None if decision.allowed else decision
+        if refused is not None:
+            return _no(refused, "this AppleScript")
         return await _run(["/usr/bin/osascript", "-e", script])
 
 
@@ -597,8 +654,7 @@ class DesktopLookExecutor:
     timeout_s = CARD_S + 2 * RUN_S        # one card; window lookup + the look, tried twice
 
     async def execute(self, args: dict) -> dict:
-        from server.services import approvals, hands_contract, hands_service, look_diff
-        from server.ws import protocol
+        from server.services import hands_contract, hands_service, look_diff
         args = dict(args or {})
         name = _app_arg(args)
         if name is None:
@@ -611,19 +667,13 @@ class DesktopLookExecutor:
         if app is None:
             return _failed(failure, app=name)
         bundle = str(app.get("bundle_id") or app.get("name"))
-        if not (conversation_id and (hands_service.looked(conversation_id, bundle)
-                                     or hands_service.always_allowed(bundle))):
-            if conversation_id is None:
-                return {"ok": False, "external": False, "code": "no_one_to_ask",
-                        "error": "Looking at an app needs the user's OK in a conversation."}
-            detail = (f"Arslan wants to read what is in {app['name']}'s window (text, buttons, fields) "
-                      "to help with this. It asks once per app in a conversation.")
-            if not await approvals.ask(conversation_id, protocol.propose_action(
-                    uuid.uuid4().hex, "desktop_look", str(app["name"]), detail)):
-                _trace("look", app, "declined", started)
-                return {"ok": False, "external": False, "code": "declined",
-                        "error": f"The user did not allow looking at {app['name']}. Do not retry; ask them."}
-            hands_service.allow_look(conversation_id, bundle)
+        # One card for looking and acting (0.1.61 §A11), remembered by the permission store.
+        decision = await _decide_app(
+            app, f"Arslan wants to use {app['name']} for this: read what is in its window (text, buttons, "
+                 f"fields), and click, type and choose there. Deleting, sending and paying still ask every time.", step="look")
+        if not decision.allowed:
+            _trace("look", app, "declined" if decision.by == "user" else decision.by, started)
+            return _no(decision, f"using {app['name']}")
         call = {"app": _target(app)}
         not_seen = ""
         window_note = ""
@@ -818,15 +868,16 @@ class DesktopTakeoverExecutor:
             return {"ok": False, "external": False, "error": "Arslan Hands is not available on this Mac."}
         started = time.monotonic()
         away = await _user_away()
-        if not away and not await _ask_once(f"takeover:{uuid.uuid4().hex}", "desktop_takeover",
-                                            f"{minutes} min · {why}",
-                               f"Arslan wants to take over the screen for about {minutes} minutes: {why}. Please "
-                               "keep off the keyboard and mouse meanwhile — touching either pauses it at once, and "
-                               "Esc stops it. Deleting, sending and the like still ask you each time."):
-            _trace("takeover", "screen", "declined", started)
-            return {"ok": False, "external": False, "code": "declined",
-                    "error": "The user did not allow taking the screen over. Do not retry; work in the background "
-                             "or report it."}
+        if not away:
+            decision = await _decide(
+                "takeover", "screen", f"Take over the screen for about {minutes} minutes?",
+                f"Arslan wants to take over the screen for about {minutes} minutes: {why}. Please keep off the "
+                "keyboard and mouse meanwhile — touching either pauses it at once, and Esc stops it. Deleting, "
+                "sending and the like still ask you each time.",
+                "desktop_takeover", f"{minutes} min · {why}", extra={"minutes": minutes})
+            if not decision.allowed:
+                _trace("takeover", "screen", "declined" if decision.by == "user" else decision.by, started)
+                return _no(decision, "taking the screen over")
         try:
             reply = await hands_client.call("takeover_begin", {"minutes": minutes}, timeout=10)
         except hands_client.HandsUnavailable as exc:
@@ -935,20 +986,28 @@ class _DesktopAct:
                 _inline.clear()
             _inline[turn] = (count + 1, first)
         verb = _VERBS.get(self.op, self.op)
-        if not await _ask_once(f"desktop:{bundle}", "desktop_app", str(app.get("name")),
-                               f"Arslan wants to click, type and choose in {app.get('name')} for this piece of "
-                               f"work. First: {verb} “{label or args.get('keys', '')}”."):
-            _trace(self.op, app, "declined", started)
-            return {"ok": False, "external": False, "code": "declined",
-                    "error": f"The user did not allow acting in {app.get('name')}. Do not retry; report it."}
+        first = f"{verb} “{label or args.get('keys', '')}”"
+        decision = await _decide_app(
+            app, f"Arslan wants to use {app.get('name')} for this: read what is in its window, and click, type "
+                 f"and choose there. First: {first}. Deleting, sending and paying still ask every time.", step=first)
+        if not decision.allowed:
+            _trace(self.op, app, "declined" if decision.by == "user" else decision.by, started)
+            return _no(decision, f"acting in {app.get('name')}")
         why = self._risky(args, target, app)
-        if why and not await _ask_once(f"risky:{uuid.uuid4().hex}", "desktop_risky",
-                                       f"{app.get('name')} · {why}"[:300],
-                                       f"Arslan wants to {_ASKS.get(self.op, self.op)} {why} in "
-                                       f"{app.get('name')}. This may delete, send, pay or submit something."):
-            _trace(self.op, app, "declined", started, target=label)
-            return {"ok": False, "external": False, "code": "declined",
-                    "error": f"The user did not allow {why}. Do not retry; report it."}
+        if why:
+            # Money moves ask in every mode; deleting, sending, submitting ask every time (0.1.61 §A11).
+            name = str(app.get("name") or bundle)
+            ask = _ASKS.get(self.op, self.op)
+            decision = await _decide(
+                "money" if hands_service.money_label(why) else "app_risky", bundle,
+                f"{ask[:1].upper()}{ask[1:]} {why} in {name}?",
+                f"Arslan wants to {ask} {why} in {name}. This may delete, send, pay or submit something.",
+                "desktop_risky", f"{name} · {why}",
+                extra={"app": name, "bundle_id": bundle, "op": self.op, "label": str(label)[:200],
+                       "role": str(target.get("role") or "")[:40]})
+            if not decision.allowed:
+                _trace(self.op, app, "declined" if decision.by == "user" else decision.by, started, target=label)
+                return _no(decision, why)
         session = hands_service.session_for(job_id)
         if session:
             shown = await _label_verb(self.op)
@@ -1236,12 +1295,16 @@ class DesktopOpenExecutor:
             reopen = True                       # running with no window: ask it for one
         started = time.monotonic()
         shown = f"{path.name} in {name}" if path is not None else name
-        if not await _ask_once(f"open:{name.lower()}", "desktop_app", name,
-                               f"Arslan wants to open {shown} in the background (behind your windows) for this "
-                               "piece of work, and then click, type and choose in it."):
-            _trace("open", name, "declined", started)
-            return {"ok": False, "external": False, "code": "declined",
-                    "error": f"The user did not allow opening {name}. Do not retry; report it."}
+        # Opening is using the app: the same `app` card and grant as a look or an action, kept by the
+        # bundle id (of the running app, else of the installed one), so the next step asks nothing.
+        identity = running or hands_service.app_identity(name) or {}
+        decision = await _decide_app(
+            {"name": str(identity.get("name") or name), "bundle_id": str(identity.get("bundle_id") or name)},
+            f"Arslan wants to open {shown} in the background (behind your windows) for this, and then look, "
+            f"click, type and choose in it. Deleting, sending and paying still ask every time.", step="open")
+        if not decision.allowed:
+            _trace("open", name, "declined" if decision.by == "user" else decision.by, started)
+            return _no(decision, f"opening {name}")
         if turn is not None:
             _inline[turn] = (_inline.get(turn, (0, name))[0] + 1, _inline.get(turn, (0, name))[1])
         argv = ["/usr/bin/open", "-g", "-a", name] + ([str(path)] if path is not None else [])
@@ -1262,8 +1325,6 @@ class DesktopOpenExecutor:
             _trace("open", name, "not_listed", started)
             return {"ok": True, "external": False, "outcome": "sent_unconfirmed",
                     "text": f"Asked macOS to open {shown}; it is not running yet. Look again in a moment."}
-        _grants.setdefault(job_id or f"conversation:{conversation_id}", set()).add(
-            f"desktop:{app.get('bundle_id') or app.get('name')}")
         _trace("open", app, "ok", started)
         what = (f"Opened {path.name} in {app['name']}" if path is not None
                 else f"Asked {app['name']} for a window" if reopen else f"Opened {app['name']}")
@@ -1285,8 +1346,7 @@ class DesktopAccessExecutor:
     timeout_s = CARD_S + 2 * RUN_S
 
     async def execute(self, args: dict) -> dict:
-        from server.services import approvals, hands_service
-        from server.ws import protocol
+        from server.services import hands_service, permissions
         args = dict(args or {})
         names = [str(n).strip()[:120] for n in args.get("apps") or [] if str(n).strip()][:8] \
             if isinstance(args.get("apps"), list) else []
@@ -1310,20 +1370,18 @@ class DesktopAccessExecutor:
         if not found:
             return {"ok": False, "external": False, "code": "no_apps",
                     "error": "None of these can be used: " + "; ".join(skipped)}
-        lines = "\n".join(f"· {a['name']} — {_TIER_WORDS.get(str(a.get('tier') or 'full'), 'look and act')}"
-                          for a in found)
-        detail = (f"Arslan wants to use these apps for this: {why}\n{lines}\n"
-                  "Allowing lets it look at them in this conversation and act in them for this piece of work; "
-                  "deleting, sending, paying and the like still ask every time.")
-        if not await approvals.ask(conversation_id, protocol.propose_action(
-                uuid.uuid4().hex, "desktop_app", ", ".join(a["name"] for a in found)[:300], detail)):
-            return {"ok": False, "external": False, "code": "declined",
-                    "error": "The user did not allow these apps. Do not retry; ask them or work another way."}
-        scope = _grants.setdefault(job_id or f"conversation:{conversation_id}", set())
-        for a in found:
-            bundle = str(a.get("bundle_id") or a.get("name"))
-            hands_service.allow_look(conversation_id, bundle)
-            scope.add(f"desktop:{bundle}")
+        # One card for the apps not allowed yet (decide_many: one kind; those a rule or grant already
+        # allows are left off it); one answer covers every app shown (0.1.61 §A11).
+        await hands_service.migrate_always()
+        requests = [_app_request(a, f"· {a['name']} — {_TIER_WORDS.get(str(a.get('tier') or 'full'), 'look and act')}",
+                                 step="access") for a in found]
+        decisions = await permissions.decide_many(
+            requests, _context(),
+            title=f"Use {', '.join(a['name'] for a in found)[:100]} for this: {why[:150]}? Deleting, sending and "
+                  "paying still ask every time.")
+        refused = next((d for d in decisions if not d.allowed), None)
+        if refused is not None:
+            return _no(refused, "these apps")
         text = "Allowed: " + ", ".join(a["name"] for a in found) + "."
         if skipped:
             text += " Not included: " + "; ".join(skipped) + "."

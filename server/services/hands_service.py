@@ -8,8 +8,9 @@ so Settings shows exactly the list Hands enforces. The backend can only add to
 it (the user's own "never touch" entries); Hands enforces the built-in list on
 its own side regardless of what the backend sends.
 
-Grants are in memory only: looking at an app is asked once per conversation,
-acting in an app once per background job; a high-risk action every time.
+Asking goes through `permissions.decide` (0.1.61 §A11): one `app` card covers looking and acting,
+"for this task" first; its grants and "Always" rules are the permission store's, not this module's.
+What is risky (`app_risky`) or money (`money`) is decided here, and asks every time.
 """
 from __future__ import annotations
 
@@ -26,8 +27,6 @@ TRACE_DAYS = 7
 MAX_NEVER = 200
 
 _lock = threading.Lock()
-_looked: set[tuple[str, str]] = set()          # (conversation id, bundle id)
-_acting: dict[str, set[str]] = {}              # job id → bundle ids allowed
 _sessions: dict[str, str] = {}                 # job id → agent-desktop session (cursor)
 _stopped: set[str] = set()                     # job ids that were running at a Stop
 _permission_asked = False
@@ -84,9 +83,48 @@ def _always(raw) -> list[dict]:
     return out[:MAX_ALWAYS]
 
 
-def always_allowed(bundle_id: str) -> bool:
-    """§7.2: the user allowed this app for good in Settings (bundle id, exact)."""
-    return bool(bundle_id) and any(a["bundle_id"] == bundle_id for a in settings()["always"])
+async def migrate_always() -> None:
+    """0.1.61 §A5: the apps allowed for good in Settings → Hands (the `always` setting before 0.1.61)
+    become `app` rules in the permission store, once; the setting is emptied afterwards, so the store
+    is the only "Always" — what Settings lists, and what `permissions.decide` reads."""
+    old = settings()["always"]
+    if not old:
+        return
+    from server.db import session as db_session
+    from server.services import permission_store
+    async with db_session.AsyncSessionLocal() as db:
+        for app in old:
+            await permission_store.add_rule(db, "app", app["bundle_id"], label=app["name"] or app["bundle_id"],
+                                            created_from="migration")
+        await db.commit()
+    update_settings(always=[])
+
+
+async def always_apps() -> list[dict]:
+    """The apps allowed for good (`app` rules), as Settings → Hands lists them."""
+    from server.db import session as db_session
+    from server.services import permission_store
+    await migrate_always()
+    async with db_session.AsyncSessionLocal() as db:
+        rules = await permission_store.list_rules(db, "app")
+    return [{"bundle_id": r.target, "name": r.label or r.target,
+             "since": r.created_at.strftime("%Y-%m-%d") if r.created_at else ""} for r in rules]
+
+
+async def allow_always(bundle_id: str, name: str) -> None:
+    from server.db import session as db_session
+    from server.services import permission_store
+    async with db_session.AsyncSessionLocal() as db:
+        await permission_store.add_rule(db, "app", bundle_id, label=name or bundle_id, created_from="settings")
+        await db.commit()
+
+
+async def stop_always(bundle_id: str) -> None:
+    from server.db import session as db_session
+    from server.services import permission_store
+    async with db_session.AsyncSessionLocal() as db:
+        await permission_store.delete_rule_by(db, "app", bundle_id)
+        await db.commit()
 
 
 def no_screenshots(name: str, bundle_id: str) -> bool:
@@ -235,11 +273,16 @@ def built_in_lists() -> dict:
 
 # ── when to ask ──────────────────────────────────────────────────────────────
 
+# 0.1.61 §A11: money moves (`money`: a card every time, in every mode) and the other risky steps
+# (`app_risky`: delete, send, submit… — a card every time, never remembered) are told apart.
+_MONEY_WORDS = re.compile(
+    r"\b(pay|purchase|buy|order|checkout|check out|transfer|pagar|comprar|transferir|bezahlen|kaufen|"
+    r"überweisen|payer|acheter|virement)\b|付款|支付|购买|下单|转账|汇款|確認購入|支払|購入|振込",
+    re.I)
 _RISKY_WORDS = re.compile(
-    r"\b(delete|remove|erase|trash|discard|send|submit|pay|purchase|buy|order|checkout|check out|transfer|"
-    r"sign|post|publish|confirm|eliminar|borrar|enviar|pagar|comprar|transferir|löschen|entfernen|senden|"
-    r"absenden|bezahlen|kaufen|überweisen|supprimer|effacer|envoyer|payer|acheter|virement|soumettre|publier)\b"
-    r"|删除|移除|清空|发送|提交|付款|支付|购买|下单|转账|汇款|发布|確認購入|削除|送信|支払|購入|振込|提出|投稿",
+    r"\b(delete|remove|erase|trash|discard|send|submit|sign|post|publish|confirm|eliminar|borrar|enviar|"
+    r"löschen|entfernen|senden|absenden|supprimer|effacer|envoyer|soumettre|publier)\b"
+    r"|删除|移除|清空|发送|提交|发布|削除|送信|提出|投稿",
     re.I)
 _RISKY_KEYS = {"cmd+delete", "cmd+backspace", "cmd+shift+delete", "cmd+shift+backspace", "cmd+shift+d",
                "cmd+return", "cmd+enter", "cmd+option+delete", "cmd+alt+delete"}
@@ -248,7 +291,44 @@ _RISKY_KEYS = {"cmd+delete", "cmd+backspace", "cmd+shift+delete", "cmd+shift+bac
 def risky_label(label: str | None) -> bool:
     """A button or menu item whose real label (read from the app, not the model's
     words) deletes, sends, pays, buys, transfers or submits."""
-    return bool(label) and bool(_RISKY_WORDS.search(str(label)))
+    return money_label(label) or (bool(label) and bool(_RISKY_WORDS.search(str(label))))
+
+
+def money_label(label: str | None) -> bool:
+    """A label that moves money: pay, buy, purchase, order, check out, transfer (0.1.61 §A11).
+    Such a step is `money`: a card every time, in every mode, Full access included."""
+    return bool(label) and bool(_MONEY_WORDS.search(str(label)))
+
+
+# Apps that reach every other app or the whole Mac (0.1.61 §A4): their card never offers
+# "Always". System Settings is on the never-list besides.
+HIGH_REACH = frozenset({"com.apple.systemevents", "com.apple.Terminal", "com.googlecode.iterm2",
+                        "com.apple.finder", "com.apple.systempreferences", "com.apple.ScriptEditor2"})
+
+
+def always_label(bundle_id: str, name: str) -> str:
+    """What an app card's "Always" stores ("" hides "Always": a high-reach app)."""
+    return "" if bundle_id in HIGH_REACH else (name or bundle_id)
+
+
+_SHELL_SCRIPT = re.compile(r"\bdo\s+shell\s+script\b", re.I)
+
+
+def script_kind(script: str) -> tuple[str, list[str]]:
+    """How an AppleScript is asked (0.1.61 §A11; `mac_applescript`, and run_command's osascript in
+    the "apps" category): (kind, the apps it names).
+    - money words → `money` (every time, every mode);
+    - delete / send / submit… words, or `do shell script` (a shell outside the sandbox) →
+      `app_risky` (every time, shown in full);
+    - otherwise, a script that names apps → `app` (once per app, like Hands);
+    - one that names no app → `opaque` (every time).
+    The never-list is checked before any of this (`never_touched` on each named app)."""
+    apps = script_apps(script)
+    if money_label(script):
+        return "money", apps
+    if _RISKY_WORDS.search(script) or _SHELL_SCRIPT.search(script):
+        return "app_risky", apps
+    return ("app" if apps else "opaque"), apps
 
 
 def risky_keys(keys: str, *, bundle_id: str, app: str) -> bool:
@@ -263,26 +343,6 @@ def risky_text(text: str, *, bundle_id: str, app: str) -> bool:
     return text.endswith("\n") and sends_on_return(bundle_id, app)
 
 
-def looked(conversation_id: str, bundle_id: str) -> bool:
-    with _lock:
-        return (conversation_id, bundle_id) in _looked
-
-
-def allow_look(conversation_id: str, bundle_id: str) -> None:
-    with _lock:
-        _looked.add((conversation_id, bundle_id))
-
-
-def may_act(job_id: str, bundle_id: str) -> bool:
-    with _lock:
-        return bundle_id in _acting.get(job_id, set())
-
-
-def allow_act(job_id: str, bundle_id: str) -> None:
-    with _lock:
-        _acting.setdefault(job_id, set()).add(bundle_id)
-
-
 def session_for(job_id: str) -> str | None:
     with _lock:
         return _sessions.get(job_id)
@@ -294,9 +354,9 @@ def remember_session(job_id: str, session: str) -> None:
 
 
 def forget_job(job_id: str) -> str | None:
-    """A job ended: its grants and Stop mark go; returns its cursor session to end."""
+    """A job ended: its Stop mark goes; returns its cursor session to end. (Its "for this task"
+    grants are the permission store's: `permissions.forget_task`.)"""
     with _lock:
-        _acting.pop(job_id, None)
         _stopped.discard(job_id)
         return _sessions.pop(job_id, None)
 
@@ -383,8 +443,6 @@ def read_trace(days: int = TRACE_DAYS, limit: int = 500) -> list[dict]:
 def _reset_for_tests() -> None:
     global _permission_asked
     with _lock:
-        _looked.clear()
-        _acting.clear()
         _sessions.clear()
         _stopped.clear()
         _permission_asked = False
