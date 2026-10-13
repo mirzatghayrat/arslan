@@ -17,6 +17,7 @@ from __future__ import annotations
 import os
 import re
 import unicodedata
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path, PurePosixPath
 
@@ -32,62 +33,201 @@ MAX_SCAN_BYTES = 64 * 1024 * 1024
 class Rule:
     id: str
     level: str          # high | note
-    where: str          # text (instructions) | code
+    where: str          # text (instructions) | code | skill_code | manifest | any
     pattern: re.Pattern
+    #: Looks at each match before it counts: (the line, the match) -> counts? A rule with none counts
+    #: its first match. Two rules may share an id and differ in level: the id says what was found,
+    #: the level how much it matters in the place it was found.
+    accept: Callable[[_Line, re.Match], bool] | None = None
 
 
-def _r(rule_id, level, where, pattern, flags=re.I):
-    return Rule(rule_id, level, where, re.compile(pattern, flags))
+def _r(rule_id, level, where, pattern, flags=re.I, accept=None):
+    return Rule(rule_id, level, where, re.compile(pattern, flags), accept)
 
 
+# ── the line a rule reads ────────────────────────────────────────────────────────────────────
+#: Quotation marks, each as the span of one quoted passage. A passage is read from its opening mark
+#: to the next closing one, so `"a" ignore "b"` has two passages and the word between is not in one.
+_QUOTES = tuple(re.compile(p) for p in (
+    r'"[^"\n]*"', "\u201c[^\u201d\n]*\u201d", "\u201e[^\u201c\u201d\n]*[\u201c\u201d]", "\u2018[^\u2019\n]*\u2019",
+    "\u00ab[^\u00bb\n]*\u00bb", "\u300c[^\u300d\n]*\u300d", "\u300e[^\u300f\n]*\u300f", r"`[^`\n]*`",
+    r"(?<![\w'])'[^'\n]*'(?![\w'])"))                     # a single quote that is not an apostrophe
+_YAML_VALUE = re.compile(r"""^(\s*(?:-\s+)?(?:[\w.-]+\s*:\s*)?)(["'])(.*)\2\s*(?:#.*)?$""")
+_FENCE = re.compile(r"^\s{0,3}(?:`{3,}|~{3,})")
+
+
+class _Line:
+    """One line of a text, as the rules read it. `fenced`: inside a ``` block. `front`: inside the
+    frontmatter, where a quoted value is a YAML string, not a quotation."""
+    __slots__ = ("text", "fenced", "front", "_inside")
+
+    def __init__(self, text: str, fenced: bool = False, front: bool = False):
+        self.text, self.fenced, self.front, self._inside = text, fenced, front, None
+
+    def quoted(self, m: re.Match) -> bool:
+        """Whether the match lies wholly inside a quotation, a code span or a fenced block: the words
+        are mentioned (a skill warning about them), not used."""
+        if self.fenced:
+            return True
+        if self._inside is None:
+            text = self.text
+            if self.front:
+                value = _YAML_VALUE.match(text)
+                if value:                                  # the quotes that make the value a string are not a quotation
+                    text = "".join(" " if i in (value.end(1), value.end(3)) else c for i, c in enumerate(text))
+            inside = bytearray(len(text))
+            for quote in _QUOTES:
+                for span in quote.finditer(text):
+                    inside[span.start() + 1:span.end() - 1] = b"\x01" * (span.end() - span.start() - 2)
+            self._inside = inside
+        return self._inside.find(0, m.start(), m.end()) == -1
+
+
+def _used(line: _Line, m: re.Match) -> bool:
+    return not line.quoted(m)
+
+
+def _mentioned(line: _Line, m: re.Match) -> bool:
+    return line.quoted(m)
+
+
+# A negation in the clause before a verb ("do not", "don't" with either apostrophe, "never", "cannot", "must not",
+# "do not use this skill to") makes the sentence a ban, not an order. A clause ends at a full stop,
+# a semicolon, "but"/"instead"..., or a comma that begins a new order (", just", ", then").
+_CLAUSE_END = re.compile(r"[.!?;](?:\s|$)|\b(?:but|instead|however|except|otherwise|rather)\b|,\s*(?:and|then|so|now|just|but)\b",
+                         re.I)
+_NEGATION = re.compile(r"(?:\b(?:not|never)\b|n['\u2019]t\b)(?!\s+(?:forget|hesitate|fail)\b)|\b(?:cannot|nor|avoid|refrain)\b",
+                       re.I)                  # "don't forget to edit" is an order
+#: Words that point at a file instead of ordering a change to it ("see ~/.claude/settings.json").
+_POINTER = re.compile(r"\b(?:see|refer(?:s)?(?:\s+to)?|consult|per|according\s+to|documented\s+in|described\s+in|"
+                      r"details\s+(?:are\s+)?in|look\s+at|located\s+(?:at|in)|found\s+in|lives\s+in|stored\s+in)\b", re.I)
+
+
+def _is_an_order(line: _Line, m: re.Match) -> bool:
+    text = line.text
+    head = text[max(0, m.start("verb") - 120):m.start("verb")]
+    if _NEGATION.search(_CLAUSE_END.split(head)[-1]):
+        return False
+    between = m.group("between")
+    return not (_CLAUSE_END.search(between) or _POINTER.search(between))
+
+
+# ── where the rules look ─────────────────────────────────────────────────────────────────────
+#: Between two parts of a path: `/`, or what code writes instead (`", "` of os.path.join, `" / "` of pathlib).
+_SEP = r"""(?:/|['"]\s*[,/]\s*['"])"""
 #: Other agents' settings files (§A2): Hermes, Claude Code, Codex, Cursor, OpenClaw.
-_AGENT_SETTINGS = r"(?:\.hermes/|\.claude/settings|\.claude\.json|\.codex/config|\.cursor/mcp\.json|\.openclaw/)"
+_AGENT_SETTINGS = (r"(?:\.hermes" + _SEP + r"|\.claude" + _SEP + r"settings|\.claude\.json|\.codex" + _SEP + r"config"
+                   + r"|\.cursor" + _SEP + r"mcp\.json|\.openclaw" + _SEP + r")")
+#: The same, as a person writes them in an instruction.
+_AGENT_SETTINGS_TEXT = (r"(?:~|\$\{?HOME\}?)/\.(?:hermes/|claude/settings|claude\.json|codex/config|"
+                        r"cursor/mcp\.json|openclaw/)")
+#: Where a shell or macOS starts programs.
+_STARTUP = r"(?:\.bash_profile|\.bashrc|\.zshrc|\.zprofile|LaunchAgents|LaunchDaemons)"
+_SSH_KEY = r"\.ssh" + _SEP + r"id_[a-z0-9_*?]++(?!\.pub|-cert)"           # a private key: not id_x.pub
+_AUTHORIZED_KEYS = r"\.ssh" + _SEP + r"authorized_keys"
+
+
+def _writes(path: str) -> str:
+    """A write that TARGETS `path` (a regex): a redirect or tee into it, cp/mv/ln/install/rsync with it as the
+    destination, a download written to it, an in-place edit, `dd of=`, a write mode or call after it, or a
+    write call that names it as its destination. Reading it, copying it away, naming it in a message or
+    pointing an arrow at it ("-> path", "=> path") is not a write. Every quantifier is bounded: a greedy
+    `[^\\s'"]*` or `[^\\n]*` re-read the line from every `>`, `cp` or `tee` in it, so one 400 KB line
+    (a minified bundle, or a hostile file) held the scan for 15 minutes."""
+    gap = r"['\"]?[^\s'\"]{0,120}"                       # the rest of a path token before the named part
+    return "(?:" + "|".join((
+        r"(?<![-=])(?:>>?\s*|\btee\s+(?:-a\s+)?)" + gap + path,
+        r"\b(?:cp|mv|ln|install|rsync|ditto)\b[^\n]{0,200}\s" + gap + path + r"[^\s'\"]{0,120}['\"]?\s*(?:$|[;&|)])",
+        r"\b(?:curl|wget)\b[^\n]{0,200}(?:\s-[A-Za-z]*[oO]\s*|\s--output(?:-document)?(?:\s+|=))" + gap + path,
+        r"\b(?:sed|perl)\s+(?:-\S+\s+){0,4}?(?:-[A-Za-z]*i|--in-place)\S*\s[^\n]{0,200}" + path,
+        r"\bdd\b[^\n]{0,100}\bof=" + gap + path,
+        path + r"[^\n]{0,200}?(?:['\"]\)?\s*,\s*['\"][wa]b?\+?['\"]|\.write_(?:text|bytes)\(|\.open\(\s*['\"][wa])",
+        r"\b(?:writeFile(?:Sync)?|appendFile(?:Sync)?|writeTextFile|createWriteStream|Bun\.write)\s*\([^\n]{0,160}?" + path,
+        r"\b(?:shutil\.(?:copy2?|copyfile|move)|os\.(?:replace|rename)|copyFile(?:Sync)?|rename(?:Sync)?)\s*"
+        r"\([^\n,]{0,160},[^\n]{0,80}?" + path,
+    )) + ")"
+
+
+#: What starts a crontab or a launchd job, as a command: `crontab -e` / `-r` / `-` / `< file` / a file, and
+#: `launchctl load` / `bootstrap`. `crontab -l` only lists.
+_CRONTAB = (r"\bcrontab\s+(?:-u\s+\S+\s+)?(?:-[er]\b|-(?=\s*(?:$|[;&|)]))|<|[~/.$][^\s]*|"
+            r"[\w.-]+\.(?:txt|cron|crontab|tab)\b)")
+_LAUNCHCTL = r"\blaunchctl\s+(?:load|bootstrap|submit)\b"
+
+#: A command that reads, copies or uploads what it is given, with a private key among its arguments (not
+#: after `-i`, `--key` or `--identity-file`, which only USE the key); and a reader in code.
+_SSH_READERS = (r"\b(?:cat|less|more|head|tail|strings|xxd|od|hexdump|base64|openssl|pbcopy|cp|mv|tar|zip|ditto|install|"
+                r"tee|dd|gpg|scp|rsync|sftp|curl|wget|nc|ncat|socat)\b")
+
+#: A secret handed over, and the sign that it is how an API is called ("in the x-api-key header", "to the login").
+_SEND_SECRET = (r"\b(?:send|post|upload|forward|transmit|exfiltrat\w*)\s+(?:the\s+|all\s+|any\s+|your\s+|their\s+)?"
+                r"(?:user['\u2019]?s?\s+)?(?:api[_ ]?keys?|access\s+tokens?|auth\w*\s+tokens?|passwords?|secrets?|"
+                r"credentials|ssh\s+keys?)\b")
+_API_USE = (r"(?:\bheaders?\b|\bauthori[sz]ation\b|\bbearer\b|\bx-api-key\b|\blogin\b|\bsign[- ]?in\b|\boauth\b|"
+            r"\bsession\b|\bquery\s+(?:string|param\w*)\b)")
+#: A store of secrets sent to a URL, a host or an address.
+_SECRET_STORE = (r"(?:~/\.ssh\b|\.ssh/|\bid_(?:rsa|ed25519|ecdsa|dsa)\b|\bkeychains?\b|"
+                 r"\.env\b(?!\.(?:example|sample|template|dist))|\.netrc\b|\.aws/credentials|\.npmrc\b|"
+                 r"\.git-credentials|\.gnupg\b)")
+_DESTINATION = (r"(?:https?://|\bto\s+(?:my|our|their|an?\s+(?:remote|external|outside)|the\s+(?:remote|external))\b|"
+                r"\bto\s+(?:[\w-]+\.)+[a-z]{2,}\b|\bto\s+\d{1,3}(?:\.\d{1,3}){3}\b|[\w.+-]+@[\w-]+(?:\.[\w-]+)+)")
+
+_HIDDEN_INSTRUCTION = (r"\b(ignore|disregard|forget)\s+(all\s+|any\s+)?(previous|prior|above|earlier)\s+"
+                       r"(instructions|rules|messages)")
+_PIPE_TO_SHELL = r"\b(curl|wget)\b[^|\n]{0,200}\|\s*(ba|z)?sh\b"
 
 RULES = (
     # Instructions a skill gives the model.
-    _r("hidden_instruction", "high", "text",
-       r"\b(ignore|disregard|forget)\s+(all\s+|any\s+)?(previous|prior|above|earlier)\s+(instructions|rules|messages)"),
-    _r("hide_from_user", "high", "text",
-       r"\b(do\s*n[o']?t|never)\s+(tell|show|mention|reveal)\s+(this\s+)?(to\s+)?the\s+user"),
+    # The words used as an order are dangerous; the same words quoted, in a code span or in a fenced
+    # block are mentioned (a skill warning against them) and are a note.
+    _r("hidden_instruction", "high", "text", _HIDDEN_INSTRUCTION, accept=_used),
+    _r("hidden_instruction", "note", "text", _HIDDEN_INSTRUCTION, accept=_mentioned),
+    # Ordinary advice ("do not tell the user to repeat a step"): never dangerous. A skill cannot act
+    # by itself; whatever it asks for still meets the cards and the ledger.
+    _r("hide_from_user", "note", "text", r"\b(do\s*n[o']?t|never)\s+(tell|show|mention|reveal)\s+(this\s+)?(to\s+)?the\s+user"),
+    # A credential handed over: "in the x-api-key header", "to the login" is how an API is called, a note;
+    # a secret store sent to a URL or an address is not.
+    _r("send_data_out", "high", "text", _SEND_SECRET + r"(?![^\n]{0,120}" + _API_USE + r")"),
+    _r("send_data_out", "note", "text", _SEND_SECRET + r"(?=[^\n]{0,120}" + _API_USE + r")"),
     _r("send_data_out", "high", "text",
-       # The secret right after the verb ("send the user's API key"): API docs say "POST
-       # /v1/messages/count_tokens", which a looser rule flagged (anthropics/skills claude-api).
-       r"\b(send|post|upload|forward|transmit|exfiltrat\w*)\s+(the\s+|all\s+|any\s+|your\s+|their\s+)?"
-       r"(user'?s?\s+)?(api[_ ]?keys?|access\s+tokens?|auth\w*\s+tokens?|passwords?|secrets?|credentials|ssh\s+keys?)\b"),
+       r"\b(?:send|post|upload|forward|transmit|exfiltrat\w*|copy|attach|email|paste)\b[^\n]{0,80}" + _SECRET_STORE
+       + r"[^\n]{0,80}" + _DESTINATION),
     _r("url_in_instructions", "note", "text", r"https?://[^\s)>\"']+"),
     # Code (skill scripts, package files).
-    _r("pipe_to_shell", "high", "any", r"\b(curl|wget)\b[^|\n]{0,200}\|\s*(ba|z)?sh\b"),
+    # An install line in a document is common and the agent's command card shows it; a skill whose OWN
+    # scripts (or package hooks) pipe a download into a shell is a supply-chain risk.
+    _r("pipe_to_shell", "high", "code", _PIPE_TO_SHELL),
+    _r("pipe_to_shell", "high", "manifest", _PIPE_TO_SHELL),
+    _r("pipe_to_shell", "note", "text", _PIPE_TO_SHELL),
     _r("run_decoded_code", "high", "code",
        r"\b(exec|eval)\s*\(\s*(base64\.b64decode|codecs\.decode|bytes\.fromhex|zlib\.decompress|atob)\b"),
-    _r("autostart_write", "high", "code",
-       r"(LaunchAgents|LaunchDaemons|\.bash_profile|\.bashrc|\.zshrc|\.zprofile|crontab\s+-)"),
+    # Persistence is a WRITE: into a shell start file or a launchd folder, a crontab installed, a job loaded.
+    # `source ~/.zshrc` and `crontab -l` only read.
+    _r("autostart_write", "high", "code", _writes(_STARTUP) + "|" + _CRONTAB + "|" + _LAUNCHCTL),
     _r("keychain_read", "high", "any", r"\bsecurity\s+(find-generic-password|find-internet-password|dump-keychain)\b"),
-    _r("ssh_keys", "high", "code", r"\.ssh/(id_[a-z0-9]+|authorized_keys)"),
+    # Key material taken: a private key read, copied or uploaded (`cat`, `cp`, `base64`, `curl -F`...), the .ssh
+    # folder archived or copied, a key appended to authorized_keys. `ssh-add`, `ssh -i`, `ssh-keygen -l`/`-y`
+    # and the .pub half use or describe a key without taking it.
+    _r("ssh_keys", "high", "code",
+       _SSH_READERS + r"[^\n]{0,200}\s(?<!-i\s)(?<!--key\s)(?<!--identity-file\s)['\"]?[^\s'\"]{0,120}" + _SSH_KEY
+       + r"|\b(?:tar|zip|cp|rsync|ditto|scp|7z)\b[^\n]{0,100}\.ssh/?['\"]?(?=\s|$)"
+       + r"|" + _SSH_KEY + r"[^\n]{0,200}?\.read\w*\("
+       + r"|\b(?:readFileSync|readFile|read_text|read_bytes)\s*\([^\n]{0,160}?" + _SSH_KEY
+       + r"|" + _writes(_AUTHORIZED_KEYS)),
     # `-(?=[a-z]*r)[a-z]+` is `-[a-z]*r[a-z]*` read in one pass: that one was quadratic on `rm -rrrr…`.
     _r("wipe", "high", "any", r"\brm\s+-(?=[a-z]*r)[a-z]+\s+(/|~|\$HOME)(\s|$)"),
     _r("network_in_script", "note", "skill_code", r"\b(requests|urllib|httpx|aiohttp|socket)\b"),
     _r("shell_in_script", "note", "skill_code", r"\b(subprocess|os\.system|os\.popen)\b"),
     _r("install_hook", "note", "manifest", r"\"(preinstall|install|postinstall)\"\s*:"),
     # Another agent's settings, written by a script or asked of the model (0.1.61 §C1, Hermes'
-    # skills guard; §A2 "other agents' settings"). The write must TARGET the settings path — a
-    # redirect, tee, cp/mv with it last, sed -i, open(…, "w"|"a"), write_text — so reading it,
-    # copying it away or printing "… -> path" is not a finding. Telling the model NOT to edit it
-    # is not one either.
-    #
-    # Every quantifier is bounded (a path prefix 120 characters, the rest of a command 200): a
-    # greedy `[^\s'"]*` or `[^\n]*` re-read the line from every `>`, `cp` or `tee` in it, so one
-    # 400 KB line (a minified bundle, or a hostile file) held the scan for 15 minutes.
-    _r("agent_settings_write", "high", "code",
-       r"(?:>>?\s*|\btee\s+(?:-a\s+)?)['\"]?[^\s'\"]{0,120}" + _AGENT_SETTINGS
-       + r"|\b(?:cp|mv)\b[^\n]{0,200}\s['\"]?[^\s'\"]{0,120}" + _AGENT_SETTINGS
-       + r"[^\s'\"]{0,120}['\"]?\s*(?:$|[;&|)])"
-       + r"|\bsed\s+-i\S*\s[^\n]{0,200}" + _AGENT_SETTINGS
-       + r"|" + _AGENT_SETTINGS
-       + r"[^\n]{0,200}?(?:['\"]\)?\s*,\s*['\"][wa]b?\+?['\"]|\.write_(?:text|bytes)\(|\.open\(\s*['\"][wa])"),
+    # skills guard; §A2 "other agents' settings"). The write must TARGET the settings path (see
+    # `_writes`), so reading it, copying it away or printing "… -> path" is not a finding. Telling the
+    # model NOT to edit it is not one either, nor is pointing at it ("see ~/.claude/settings.json").
+    _r("agent_settings_write", "high", "code", _writes(_AGENT_SETTINGS)),
     _r("agent_settings_instruction", "high", "text",
-       r"(?<!\bnot\s)(?<!n't\s)(?<!never\s)"
-       r"\b(edit|modify|change|update|overwrite|write\s+to|add\s+(?:it\s+|this\s+\w+\s+)?to)\b[^\n]{0,80}"
-       r"(~/\.hermes/|~/\.claude/settings|~/\.claude\.json|~/\.codex/config|~/\.cursor/mcp\.json|~/\.openclaw/)"),
+       r"\b(?P<verb>edit|modify|change|update|overwrite|replace|patch|append|merge|write\s+(?:\w+\s+){0,4}?(?:to|into|in)|"
+       r"add\s+(?:\w+\s+){0,4}?to)\b(?P<between>[^\n]{0,80}?)(?P<path>" + _AGENT_SETTINGS_TEXT + r")",
+       accept=_is_an_order),
 )
 
 _INVISIBLE = {"Cf"}          # format characters: zero-width, bidi overrides
@@ -128,18 +268,42 @@ def _lines(text: str):
         yield n, line
 
 
+def _prepare(text: str, kind: str) -> list[tuple[int, str, _Line]]:
+    """The lines of a text with what the rules need to know about each: where a fenced block is, and
+    where a SKILL.md's frontmatter is."""
+    out: list[tuple[int, str, _Line]] = []
+    lines = text.splitlines()
+    front_end = 0
+    if kind == "text" and lines and lines[0].strip() == "---":
+        front_end = next((i for i, line in enumerate(lines[1:], 1) if line.strip() in ("---", "...")), 0)
+    fenced = False
+    for n, line in enumerate(lines, 1):
+        front = 0 < n - 1 < front_end
+        if not front and kind == "text" and _FENCE.match(line):
+            fenced = not fenced
+            out.append((n, line, _Line(line)))
+            continue
+        out.append((n, line, _Line(line, fenced=fenced and not front, front=front)))
+    return out
+
+
 def scan_text(name: str, text: str, *, kind: str) -> list[Finding]:
     """`kind`: text (a skill's instructions), skill_code (a skill's script), code (a package
     file), manifest (package.json)."""
     out: list[Finding] = []
+    lines = _prepare(text, kind)
     for rule in RULES:
         applies = (rule.where == "any" or rule.where == kind
                    or (rule.where == "code" and kind in ("code", "skill_code")))
         if not applies:
             continue
-        for n, line in _lines(text):
-            if rule.pattern.search(line):
-                out.append(Finding(rule.id, rule.level, name, n, line.strip()[:160]))
+        for n, raw, line in lines:
+            if rule.accept is None:
+                hit = rule.pattern.search(line.text) is not None
+            else:
+                hit = any(rule.accept(line, m) for m in rule.pattern.finditer(line.text))
+            if hit:
+                out.append(Finding(rule.id, rule.level, name, n, raw.strip()[:160]))
                 break                       # one finding per rule per file is enough to show
     if kind == "text":
         hidden = _invisible(text)
