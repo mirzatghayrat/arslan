@@ -361,6 +361,15 @@ describe("the model's why is the question (§A4)", () => {
     expect(screen.getByTestId("action-title")).toHaveTextContent("Use WeChat?");
   });
 
+  it("a card with words of its own keeps them and shows the frame's why as Arslan says; a blank why shows nothing", () => {
+    render(<AskSlot send={vi.fn()} />);
+    frame({ ...ACTION, kind: "desktop_app", target: "Notes", why: "Tidy the notes" });
+    expect(screen.getByTestId("action-title")).toHaveTextContent('hands.title.desktop_app:{"target":"Notes"}');
+    expect(screen.getByTestId("action-said")).toHaveTextContent("Tidy the notes");
+    frame({ ...ACTION, call_id: "a2", kind: "desktop_app", target: "Notes", why: "   " });
+    expect(screen.queryByTestId("action-said")).toBeNull();
+  });
+
   it("the model's line never stands alone: the frame's own title is said under it, in the server's words", () => {
     render(<AskSlot send={vi.fn()} />);
     frame({ ...ACTION, target: "~/Notes/2025", title: "Delete ~/Notes/2025", why: "Tidy the notes" });

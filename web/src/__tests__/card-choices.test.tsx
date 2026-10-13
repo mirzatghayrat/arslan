@@ -460,11 +460,35 @@ describe("the action card's words, its icon and its red", () => {
     expect(screen.getByTestId("action-title")).toHaveTextContent('hands.title.desktop_app:{"target":"Notes"}');
   });
 
-  it("a known kind reads its own words, with its target, even when the model gave a why", () => {
-    // The kind's own title names what is granted (the website, the app); a model's line must not hide it.
+  it("a known kind keeps its own words, with its target, and shows the model's why as 'Arslan says', as the command card does", () => {
+    // The kind's own title names what is granted (the website, the app); a model's line must not hide it, and must not be lost.
     render(card({ title: "Something else entirely?", why: "To check the weather" }));
     expect(screen.getByTestId("action-title")).toHaveTextContent('hands.title.desktop_app:{"target":"Notes"}');
     expect(screen.getByTestId("action-title")).not.toHaveTextContent("weather");
+    const said = screen.getByTestId("action-said");
+    expect(said).toHaveTextContent("kit.arslanSays");
+    expect(said).toHaveTextContent("To check the weather");
+    expect(said).not.toHaveAttribute("lang");                                           // the model writes in the person's language
+  });
+
+  it.each(Object.keys(handsMessages.en.title))("%s: the card's own words are the heading and the model's why is its 'Arslan says' line", (kind) => {
+    render(card({ kind, why: "  Tidy the notes  " }));
+    expect(screen.getByTestId("action-title")).toHaveTextContent(`hands.title.${kind}`);
+    expect(screen.getByTestId("action-said").textContent).toBe("kit.arslanSaysTidy the notes");   // "Arslan says: " + the line, trimmed
+  });
+
+  it.each([["spaces", "   "], ["nothing", ""], ["no why at all", undefined]])(
+    "a known kind with a why of %s shows no 'Arslan says' line", (_what, why) => {
+    render(card({ why }));
+    expect(screen.queryByTestId("action-said")).toBeNull();
+    expect(screen.queryByText(/kit\.arslanSays/)).toBeNull();
+  });
+
+  it("a kind it has no words for puts the why in the heading and not also in an 'Arslan says' line", () => {
+    render(card({ kind: "app", title: "Use App?", why: "Tidy the notes" }));
+    expect(screen.getByTestId("action-title")).toHaveTextContent("Tidy the notes");
+    expect(screen.queryByTestId("action-said")).toBeNull();
+    expect(screen.getAllByText("Tidy the notes")).toHaveLength(1);
   });
 
   it("a kind it has no words for asks the model's why when the frame carries one, ahead of the server's title", () => {
@@ -502,8 +526,25 @@ describe("the action card's words, its icon and its red", () => {
       expect(subject.textContent).toBe("Delete ~/Notes/2025");                       // nothing added, nothing looked up
       expect(subject).toHaveAttribute("lang", "en");
       expect(screen.queryByText(/kit\.arslanSays/)).toBeNull();                       // no "Arslan says:" on it
-      expect(screen.queryByTestId("ask-said")).toBeNull();
+      expect(screen.queryByTestId("action-said")).toBeNull();
       expect(screen.getByTestId("action-title")).not.toHaveAttribute("lang");        // the model's own line is not tagged English
+    });
+
+    it("it is primary text in the same raised block the command card puts its exact command in: not muted, not small print", () => {
+      render(card(ASK));
+      const subject = screen.getByTestId("action-subject");
+      const classes = subject.className;
+      cleanup();
+      render(<RunCommandCard callId="r" pretty="rm -rf ~/Notes/2025" onConfirm={vi.fn()} onCancel={vi.fn()} />);
+      const block = screen.getByTestId("ask-code").className.split(/\s+/);
+      for (const cls of ["rounded-[10px]", "bg-surface-raised", "px-3", "py-2.5"]) {
+        expect(block, `the command card's block has ${cls}`).toContain(cls);
+        expect(classes.split(/\s+/), `the line under the model's has ${cls}`).toContain(cls);
+      }
+      expect(classes).toContain("text-foreground");
+      expect(classes).not.toContain("text-muted-foreground");
+      expect(classes).not.toMatch(/\btext-\[(?:[0-9]|1[0-4])px\]/);                    // not the 14px (or smaller) print it was
+      expect(classes).toContain("font-semibold");
     });
 
     it("with no title it is the bare target, which is not words and so is not tagged", () => {

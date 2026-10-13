@@ -26,8 +26,9 @@ export default function ActionApprovalCard({ kind, target, detail, expiresAt, op
   expiresAt?: number | null;
   /** 0.1.61 §A4: a card from the permission layer — its choices, its literal "Always" scope, its
    *  one-line question (the server's words, used only for a kind this card has no words for), the
-   *  model's own reason (`why`: for such a kind it is the question, ahead of the title) and its
-   *  permission kind (money, app_risky…). All absent on an old frame. */
+   *  model's own reason (`why`: for such a kind it is the question, ahead of the title; for a kind with
+   *  words of its own it is shown as "Arslan says") and its permission kind (money, app_risky…). All
+   *  absent on an old frame. */
   options?: string[]; alwaysLabel?: string; title?: string; why?: string; permKind?: string; background?: boolean;
   /** An answer is on its way: the card is inert (its buttons, its keys and its note). */
   busy?: boolean;
@@ -54,7 +55,8 @@ export default function ActionApprovalCard({ kind, target, detail, expiresAt, op
   const grantLine = !known ? null : !choice ? t(`hands.scope.${kind}`) : GRANTS.has(kind) ? t(`hands.grant.${kind}`) : null;
   // The question for a kind this card has no words for (§A4): the model's own line when it gave one — it writes in
   // the person's language — else the frame's title, which is the server's English (plan R11: localised in PR 8);
-  // a bare target is not words. A known kind keeps its own title, which names what is granted.
+  // a bare target is not words. A known kind keeps its own title, which names what is granted, and shows the model's
+  // line as "Arslan says" (the way the command card shows a sandbox why) so it is not lost.
   const modelLine = (why ?? "").trim();
   const frameTitle = (title ?? "").trim();
   const fromFrame = !known && !modelLine && Boolean(frameTitle);
@@ -73,6 +75,7 @@ export default function ActionApprovalCard({ kind, target, detail, expiresAt, op
         : kind === "desktop_look" ? t("kit.whoArslan") : t("jobs.askingBadge")}
       title={<span className="inline-flex max-w-full items-start gap-2">{lineIcon(Icon)}
         <span data-testid="action-title" lang={fromFrame ? "en" : undefined} className="min-w-0 [overflow-wrap:anywhere]">{heading}</span></span>}
+      said={known && modelLine ? modelLine : null} saidTestId="action-said"
       risk={script ? scriptRiskLine(detail, t) : null}
       destructive={red}
       detail={script
@@ -80,7 +83,7 @@ export default function ActionApprovalCard({ kind, target, detail, expiresAt, op
         : subject ? (
           <div className="flex flex-col gap-1.5">
             <p data-testid="action-subject" lang={frameTitle ? "en" : undefined}
-              className="break-words text-[14px] font-medium text-foreground">{subject}</p>
+              className="break-words rounded-[10px] bg-surface-raised px-3 py-2.5 text-[15px] font-semibold leading-[1.4] text-foreground">{subject}</p>
             {detailLine}
           </div>)
         : detailLine}
