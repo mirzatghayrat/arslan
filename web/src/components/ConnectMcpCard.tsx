@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FolderOpen, ExternalLink, KeyRound, Plug } from 'lucide-react';
 import { AskCard, CodeBox, Notice, type AskQueuePosition } from './kit';
-import { lineIcon } from './kit/askParts';
+import { HideWhileBusy, lineIcon } from './kit/askParts';
 import { addMcpServer, connectMcpServer, exposeMcpServer, wireMcpTool } from '../api/mcp';
 import type { ApplyConnectMcpResult, McpConnectorEnvVar, McpTool } from '../api/client.types';
 import { useArslanStore } from '../stores/arslanStore';
@@ -118,6 +118,8 @@ export interface ConnectMcpCardProps {
   pathPlaceholder?: string | null;
   expiresAt?: number | null;
   queue?: AskQueuePosition;
+  /** The apply is in flight and the person hides the card: it leaves, the apply goes on, the chat says how it ended (arslanStore `hideCard`). */
+  onHide?: () => void;
   /** Fired once the apply chain settles (success or failure) so the parent can
    *  send the secret-free confirm_connect_mcp frame on success. */
   onApplied: (result: ApplyConnectMcpResult) => void;
@@ -134,7 +136,7 @@ export interface ConnectMcpCardProps {
  */
 export default function ConnectMcpCard({
   callId, label, labelKey, transport, command, args, url, envKeys, prerequisites, requiresPath,
-  pathPlaceholder, expiresAt, queue, onApplied, onCancel,
+  pathPlaceholder, expiresAt, queue, onHide, onApplied, onCancel,
 }: ConnectMcpCardProps) {
   const { t } = useTranslation();
   const [envValues, setEnvValues] = useState<Record<string, string>>({});
@@ -171,7 +173,12 @@ export default function ConnectMcpCard({
     } catch {
       res = { ok: false };                                                  // never left busy for good: a card that is not busy can be tried again
     }
-    useArslanStore.getState().endCardApply(callId, { result: res });
+    const store = useArslanStore.getState();
+    // A card the person hid has nowhere to show how it ended: the chat says so, naming the server (the follow-up, on success, adds the tiers).
+    if (store.endCardApply(callId, { result: res })) {
+      store.addCardNote(res.ok ? t('kit.hiddenConnected', { name: catalogText(t, labelKey, label) })
+        : t('kit.hiddenConnectFailed', { name: catalogText(t, labelKey, label), why: res.stage ? t(`connectionsUI.failed_${res.stage}`) : t('connectionsUI.error') }));
+    }
     onApplied(res);
   }
 
@@ -217,12 +224,15 @@ export default function ConnectMcpCard({
       title={<span className="inline-flex items-center gap-2">{lineIcon(Plug)}<span>{catalogText(t, labelKey, label)}</span></span>}
       detail={form}
       context={needs ? [{ icon: lineIcon(KeyRound), text: needs }] : []}
-      extra={result ? (result.ok
-        ? <Notice tone="info" title={result.assignable
-            ? t('connectionsUI.ready', { safe: result.safeCount, restricted: result.restrictedCount })
-            : t('connectionsUI.needsReview')} />
-        : <Notice tone="error">{result.stage ? t(`connectionsUI.failed_${result.stage}`) : t('connectionsUI.error')}</Notice>)
-        : null}
+      extra={<>
+        {result ? (result.ok
+          ? <Notice tone="info" title={result.assignable
+              ? t('connectionsUI.ready', { safe: result.safeCount, restricted: result.restrictedCount })
+              : t('connectionsUI.needsReview')} />
+          : <Notice tone="error">{result.stage ? t(`connectionsUI.failed_${result.stage}`) : t('connectionsUI.error')}</Notice>)
+          : null}
+        {busy && onHide ? <HideWhileBusy testId="connect-mcp-hide" onHide={onHide} /> : null}
+      </>}
       expiresAt={expiresAt} queue={queue} busy={busy}
       allowLabel={t(busy ? 'connectionsUI.connecting' : 'connectionsUI.connect')} declineLabel={t('common.cancel')}
       allowTestId="connect-mcp-connect" declineTestId="connect-mcp-cancel"

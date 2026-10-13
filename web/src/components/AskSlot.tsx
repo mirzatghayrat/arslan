@@ -63,6 +63,7 @@ function AskCards({ send }: { send: (frame: Record<string, unknown>) => void }) 
   // Security-load-bearing: secrets never leave this card except over REST (ConnectMcpCard.tsx).
   const pendingConnectMcps = useArslanStore((s) => s.pendingConnectMcps);
   const markConnectApplied = useArslanStore((s) => s.markConnectApplied);
+  const hideCard = useArslanStore((s) => s.hideCard);
   const clearPendingCommand = useArslanStore((s) => s.clearPendingCommand);
   const clearPendingEnrollNode = useArslanStore((s) => s.clearPendingEnrollNode);
   const clearPendingWorkspaceWrite = useArslanStore((s) => s.clearPendingWorkspaceWrite);
@@ -123,7 +124,7 @@ function AskCards({ send }: { send: (frame: Record<string, unknown>) => void }) 
     ...pendingEnrollNodes.map((n) => ({ rank: 0, seq: n.seq ?? 0, key: `node:${n.callId}`, render: (queue: AskQueuePosition) => (
       <EnrollNodeCard callId={n.callId} name={n.name} host={n.host}
         user={n.user} fingerprints={n.fingerprints}
-        expiresAt={expires(n)} queue={queue} onDone={() => clearPendingEnrollNode(n.callId)} />) })),
+        expiresAt={expires(n)} queue={queue} onHide={() => hideCard(n.callId)} onDone={() => clearPendingEnrollNode(n.callId)} />) })),
     ...pendingWorkspaceWrites.map((w) => ({ rank: 0, seq: w.seq ?? 0, key: `ws:${w.callId}`, render: (queue: AskQueuePosition) => (
       <WorkspaceWriteCard callId={w.callId} workspace={w.workspace}
         action={w.action} path={w.path} background={w.background}
@@ -154,7 +155,7 @@ function AskCards({ send }: { send: (frame: Record<string, unknown>) => void }) 
         transport={m.transport} command={m.command} args={m.argv}
         url={m.url} envKeys={m.envKeys} prerequisites={m.prerequisites}
         requiresPath={m.requiresPath} pathPlaceholder={m.pathPlaceholder}
-        expiresAt={expires(m)} queue={queue}
+        expiresAt={expires(m)} queue={queue} onHide={() => hideCard(m.callId)}
         onApplied={(res) => {
           // Secret-free confirm: server_id + tool_count only — no env values, no
           // client-computed tier counts (the backend recomputes the honest tier split

@@ -11,7 +11,7 @@ import { ServerCog } from "lucide-react";
 import { api } from "../api/client";
 import { useArslanStore } from "../stores/arslanStore";
 import { AskCard, CodeBox, Notice, type AskQueuePosition } from "./kit";
-import { Fingerprints, lineIcon } from "./kit/askParts";
+import { Fingerprints, HideWhileBusy, lineIcon } from "./kit/askParts";
 
 interface Props {
   callId: string;
@@ -21,10 +21,12 @@ interface Props {
   fingerprints: string[];
   expiresAt?: number | null;
   queue?: AskQueuePosition;
+  /** The enrolment is in flight and the person hides the card: it leaves, the enrolment goes on, the chat says how it ended (arslanStore `hideCard`). */
+  onHide?: () => void;
   onDone: () => void;
 }
 
-export default function EnrollNodeCard({ callId, name, host, user, fingerprints, expiresAt, queue, onDone }: Props) {
+export default function EnrollNodeCard({ callId, name, host, user, fingerprints, expiresAt, queue, onHide, onDone }: Props) {
   const { t } = useTranslation();
   // Whether the enrolment is in flight, and why it failed, are the store's, by call id: this card is remounted when the person pages away
   // and back. While it is in flight its buttons stay off (never a second enrolment) though paging and the other cards stay free.
@@ -37,11 +39,16 @@ export default function EnrollNodeCard({ callId, name, host, user, fingerprints,
     useArslanStore.getState().beginCardApply(callId);
     try {
       await api.enrollSshNode({ name, host, user, fingerprints });
-      useArslanStore.getState().endCardApply(callId);
-      onDone();
     } catch (e) {
-      useArslanStore.getState().endCardApply(callId, { error: e instanceof Error ? e.message : t("enroll.failed") });
+      const why = e instanceof Error ? e.message : t("enroll.failed");
+      const store = useArslanStore.getState();
+      // A card the person hid has nowhere to show the error: the chat says so, naming the machine.
+      if (store.endCardApply(callId, { error: why })) store.addCardNote(t("kit.hiddenEnrollFailed", { name, why }));
+      return;
     }
+    const store = useArslanStore.getState();
+    if (store.endCardApply(callId)) store.addCardNote(t("kit.hiddenEnrolled", { name }));
+    onDone();
   };
 
   return (
@@ -49,7 +56,10 @@ export default function EnrollNodeCard({ callId, name, host, user, fingerprints,
       detail={<><CodeBox code={`${user}@${host}`} numbered={false} />
         <Fingerprints label={t("enroll.checkFingerprint")} list={fingerprints} testId="enroll-fingerprints" /></>}
       context={[{ icon: lineIcon(ServerCog), text: t("enroll.stillAsks") }]}
-      extra={error ? <Notice tone="error" testId="enroll-error">{error}</Notice> : null}
+      extra={<>
+        {error ? <Notice tone="error" testId="enroll-error">{error}</Notice> : null}
+        {busy && onHide ? <HideWhileBusy testId="enroll-hide" onHide={onHide} /> : null}
+      </>}
       expiresAt={expiresAt} queue={queue} busy={busy}
       allowLabel={t("enroll.confirm")} declineLabel={t("enroll.cancel")}
       allowTestId="enroll-confirm" declineTestId="enroll-cancel"

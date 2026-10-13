@@ -1934,7 +1934,13 @@
     "notePlaceholder": "代わりに何をすればいい？（任意）",
     "noteSend": "断る",
     "expiredTitle": "あなたを待っています",
-    "expiredBody": "30 分間だれも応答しなかったので、実行していません。拒否ではありません。何が待っているかは Arslan が伝えます。"
+    "expiredBody": "30 分間だれも応答しなかったので、実行していません。拒否ではありません。何が待っているかは Arslan が伝えます。",
+    "hide": "隠す",
+    "hideHint": "処理は続きます。結果はチャットでお知らせします。",
+    "hiddenConnected": "{{name}} に接続しました。",
+    "hiddenConnectFailed": "{{name}} に接続できませんでした。{{why}}",
+    "hiddenEnrolled": "{{name}} を記憶しました。",
+    "hiddenEnrollFailed": "{{name}} を記憶できませんでした。{{why}}"
   },
   "inbox": {
     "approveNow": "今すぐ承認が必要",

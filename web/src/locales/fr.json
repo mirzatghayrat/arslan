@@ -1934,7 +1934,13 @@
     "notePlaceholder": "Que doit faire Arslan à la place ? (facultatif)",
     "noteSend": "Refuser",
     "expiredTitle": "En attente de vous",
-    "expiredBody": "Personne n’a répondu en 30 minutes, donc rien n’a été fait. Ce n’est pas un refus : Arslan vous dira ce qui attend."
+    "expiredBody": "Personne n’a répondu en 30 minutes, donc rien n’a été fait. Ce n’est pas un refus : Arslan vous dira ce qui attend.",
+    "hide": "Masquer",
+    "hideHint": "Cela continue. La conversation dira comment cela s’est terminé.",
+    "hiddenConnected": "{{name}} est connecté.",
+    "hiddenConnectFailed": "Impossible de connecter {{name}}. {{why}}",
+    "hiddenEnrolled": "{{name}} est mémorisée.",
+    "hiddenEnrollFailed": "Impossible de mémoriser {{name}}. {{why}}"
   },
   "inbox": {
     "approveNow": "À approuver maintenant",

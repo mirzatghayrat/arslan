@@ -1934,7 +1934,13 @@
     "notePlaceholder": "Was soll Arslan stattdessen tun? (optional)",
     "noteSend": "Ablehnen",
     "expiredTitle": "Wartet auf dich",
-    "expiredBody": "In 30 Minuten hat niemand geantwortet, deshalb ist es nicht passiert. Das ist kein Nein: Arslan sagt dir, was noch wartet."
+    "expiredBody": "In 30 Minuten hat niemand geantwortet, deshalb ist es nicht passiert. Das ist kein Nein: Arslan sagt dir, was noch wartet.",
+    "hide": "Ausblenden",
+    "hideHint": "Es läuft weiter. Im Chat steht dann, wie es ausgegangen ist.",
+    "hiddenConnected": "{{name}} ist verbunden.",
+    "hiddenConnectFailed": "{{name}} konnte nicht verbunden werden. {{why}}",
+    "hiddenEnrolled": "{{name}} wurde gemerkt.",
+    "hiddenEnrollFailed": "{{name}} konnte nicht gemerkt werden. {{why}}"
   },
   "inbox": {
     "approveNow": "Jetzt freigeben",

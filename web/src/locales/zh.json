@@ -1934,7 +1934,13 @@
     "notePlaceholder": "Arslan 应该改做什么？（可不填）",
     "noteSend": "拒绝",
     "expiredTitle": "在等你",
-    "expiredBody": "30 分钟内没人回应，所以这一步没有做。这不算拒绝：Arslan 会告诉你还有什么在等你。"
+    "expiredBody": "30 分钟内没人回应，所以这一步没有做。这不算拒绝：Arslan 会告诉你还有什么在等你。",
+    "hide": "隐藏",
+    "hideHint": "它会继续进行，结束后会在对话里告诉你结果。",
+    "hiddenConnected": "已连接 {{name}}。",
+    "hiddenConnectFailed": "未能连接 {{name}}。{{why}}",
+    "hiddenEnrolled": "已记住 {{name}}。",
+    "hiddenEnrollFailed": "未能记住 {{name}}。{{why}}"
   },
   "inbox": {
     "approveNow": "现在就要你批准",

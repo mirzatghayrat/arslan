@@ -1934,7 +1934,13 @@
     "notePlaceholder": "What should Arslan do instead? (optional)",
     "noteSend": "Say no",
     "expiredTitle": "Waiting for you",
-    "expiredBody": "Nobody answered in 30 minutes, so it was not done. That is not a no: Arslan will tell you what is waiting."
+    "expiredBody": "Nobody answered in 30 minutes, so it was not done. That is not a no: Arslan will tell you what is waiting.",
+    "hide": "Hide",
+    "hideHint": "It keeps going. The chat will say how it ended.",
+    "hiddenConnected": "Connected {{name}}.",
+    "hiddenConnectFailed": "Could not connect {{name}}. {{why}}",
+    "hiddenEnrolled": "Remembered {{name}}.",
+    "hiddenEnrollFailed": "Could not remember {{name}}. {{why}}"
   },
   "inbox": {
     "approveNow": "Approve now",

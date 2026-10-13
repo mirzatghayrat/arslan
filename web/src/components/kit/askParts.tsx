@@ -110,6 +110,23 @@ export function ScopeChoice({ options, value, onChange, alwaysLabel, testId = "a
 }
 
 /**
+ * 0.1.61 §A4: while a card's own apply is in flight (connecting a server, enrolling a machine) its Allow, No and keys are off, and a REST call
+ * has no client timeout. This is the way out that is not an answer: the apply goes on, the card leaves, and the chat says how it ended.
+ */
+export function HideWhileBusy({ onHide, testId }: { onHide: () => void; testId: string }) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex flex-col items-center gap-0.5 text-center">
+      <button type="button" data-testid={testId} onClick={onHide}
+        className="text-[12px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">
+        {t("kit.hide")}
+      </button>
+      <span className="text-[12px] text-subtle-foreground">{t("kit.hideHint")}</span>
+    </div>
+  );
+}
+
+/**
  * "No — tell Arslan what to do instead" (0.1.61 §A4): a link that opens one optional line.
  * A plain No stays the card's own button. The line owns its keys (the input's and its Say no button's),
  * so nothing typed in it is lost or turned into a yes: ⏎ or ⌘⏎ says No with the note; esc closes the

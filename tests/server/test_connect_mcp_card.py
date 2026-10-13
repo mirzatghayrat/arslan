@@ -66,6 +66,21 @@ def test_to_frame_preserves_requires_path_and_path_placeholder():
     assert frame["path_placeholder"] == "/absolute/path/to/expose"
 
 
+def test_to_frame_keeps_the_connectors_label_key():
+    """The same live path must keep `label_key` (tool_loop passes the connector's) — dropping it means the connector's
+    localised name never reaches the wire and the card shows the English label whatever the person's language."""
+    from server.ws.arslan import _to_frame
+
+    ev = {"type": "propose_connect_mcp", "call_id": "c4", "key": "github", "label": "GitHub", "label_key": "connectors.github.name",
+          "transport": "stdio", "command": "npx", "argv": ["-y", "x"], "url": None, "env_keys": [], "prerequisites": ""}
+    frame = _to_frame(ev)
+    assert frame["label_key"] == "connectors.github.name"
+    assert frame == protocol.propose_connect_mcp(call_id="c4", key="github", label="GitHub", label_key="connectors.github.name",
+                                                 transport="stdio", command="npx", argv=["-y", "x"], url=None, env_keys=[])
+    # an event without one rebuilds exactly as before: no key on the wire
+    assert "label_key" not in _to_frame({k: v for k, v in ev.items() if k != "label_key"})
+
+
 @pytest_asyncio.fixture
 async def maker(tmp_path, monkeypatch):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'card.db'}")

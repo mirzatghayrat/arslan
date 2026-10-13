@@ -1934,7 +1934,13 @@
     "notePlaceholder": "¿Qué debería hacer Arslan en su lugar? (opcional)",
     "noteSend": "Decir que no",
     "expiredTitle": "Esperándote",
-    "expiredBody": "Nadie respondió en 30 minutos, así que no se hizo. No es un no: Arslan te dirá qué queda pendiente."
+    "expiredBody": "Nadie respondió en 30 minutos, así que no se hizo. No es un no: Arslan te dirá qué queda pendiente.",
+    "hide": "Ocultar",
+    "hideHint": "Sigue en marcha. El chat dirá cómo terminó.",
+    "hiddenConnected": "{{name}} conectado.",
+    "hiddenConnectFailed": "No se pudo conectar {{name}}. {{why}}",
+    "hiddenEnrolled": "{{name}} recordada.",
+    "hiddenEnrollFailed": "No se pudo recordar {{name}}. {{why}}"
   },
   "inbox": {
     "approveNow": "Aprobar ahora",

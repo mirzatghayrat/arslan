@@ -41,7 +41,9 @@ export type PendingConnectMcp = {
  *  take a while. It is kept here by call id, not in the card, because the card is remounted when the person pages away and back: while
  *  the apply is in flight that card's buttons stay off (never a second apply) though paging and the other cards stay available, and a
  *  card that comes back knows how the apply ended (a connect's result, an enrolment's error). */
-export type CardApply = { busy: boolean; result?: ApplyConnectMcpResult; error?: string };
+export type CardApply = { busy: boolean; result?: ApplyConnectMcpResult; error?: string;
+  /** The person hid the card while the apply was in flight (`hideCard`): it goes on with no card, and the chat says how it ended. */
+  hidden?: boolean };
 
 interface ArslanState {
   items: ArslanThreadItem[];
@@ -148,8 +150,14 @@ interface ArslanState {
   markConnectApplied: (callId: string, serverId: number) => void;
   /** The card `callId` has started its apply (and forgets how the last one ended). */
   beginCardApply: (callId: string) => void;
-  /** Its apply ended, with how: nothing, a connect's result or an enrolment's error. A card that is gone keeps nothing. */
-  endCardApply: (callId: string, outcome?: { result?: ApplyConnectMcpResult; error?: string }) => void;
+  /** Its apply ended, with how: nothing, a connect's result or an enrolment's error. A card that is gone keeps nothing. Returns whether the card had
+   *  been hidden (`hideCard`): then there is no card to show how it ended, and whoever ended it says so in the chat (`addCardNote`). */
+  endCardApply: (callId: string, outcome?: { result?: ApplyConnectMcpResult; error?: string }) => boolean;
+  /** The card `callId`, a connect or an enrolment whose apply is in flight, leaves the slot; the apply goes on. Nothing else can be hidden: a card
+   *  that is not busy is answered. */
+  hideCard: (callId: string) => void;
+  /** A plain note in the chat (the way a hidden apply ends). */
+  addCardNote: (text: string) => void;
   /** 0.1.61 §A4: the card `callId` ran out unanswered (the server tells a window nothing for its
    *  own card): it leaves the slot, and the slot says it is waiting for you. */
   expireCard: (callId: string) => void;
@@ -263,6 +271,42 @@ function _withoutCard(state: CardLists & { cardApply: Record<string, CardApply> 
   if (!id) return out;                                  // a frame that names no card resolves none
   for (const k of CARD_LISTS) if (state[k].some((c) => c.callId === id)) out[k] = state[k].filter((c) => c.callId !== id);
   return { ...out, ..._dropApply(state, [id]) } as Partial<CardLists & { cardApply: Record<string, CardApply> }>;
+}
+
+/** How long after a (re)connect's `history` frame the server's replay of the waiting cards is taken to be over. The replay is sent right behind it
+ *  (ws/arslan.py: history, the journaled frames, the jobs, then `approvals.pending_cards`), in one burst; there is no frame that ends it. */
+export const REPLAY_SETTLE_MS = 3_000;
+/** The cards that are replayed to a socket that connects: the shared ones, which `approvals.pending_cards` lists. A proposal to enrol a machine or to
+ *  connect a server is never registered there, and a capability card is the asking window's own. */
+const REPLAYED = new Set(["propose_run_command", "propose_workspace_write", "propose_schedule", "propose_action"]);
+/** After a `history` frame: the shared cards that were on screen, which the replay has not listed (yet). Nothing is waiting when there were none. */
+let _replay: { stale: Set<string>; timer: ReturnType<typeof setTimeout> } | null = null;
+function _stopReplay() {
+  if (_replay) clearTimeout(_replay.timer);
+  _replay = null;
+}
+/** A socket has (re)connected: the shared cards on screen are at stake until the replay that follows lists them again. One whose `card_resolved`
+ *  went missing while the socket was down is not listed, and would stay as a dead "1 / 2" entry (an answer to it is swallowed) until its own expiry;
+ *  once the replay is over it is dropped. Not before: a card the replay does list is never taken away and brought back. A card the replay brings
+ *  after all, late, is added again like any other. */
+function _beginReplay(get: GetState, set: SetState) {
+  _stopReplay();
+  const s = get();
+  const stale = new Set([...s.pendingCommands, ...s.pendingWorkspaceWrites, ...s.pendingSchedules, ...s.pendingActions].map((c) => c.callId));
+  if (!stale.size) return;
+  const mine = {
+    stale,
+    timer: setTimeout(() => {
+      if (_replay !== mine) return;
+      _replay = null;
+      const now = get();
+      if (![...now.pendingCommands, ...now.pendingWorkspaceWrites, ...now.pendingSchedules, ...now.pendingActions].some((c) => mine.stale.has(c.callId))) return;
+      const kept = <T extends { callId: string }>(list: T[]) => list.filter((c) => !mine.stale.has(c.callId));
+      set({ pendingCommands: kept(now.pendingCommands), pendingWorkspaceWrites: kept(now.pendingWorkspaceWrites),
+            pendingSchedules: kept(now.pendingSchedules), pendingActions: kept(now.pendingActions) });
+    }, REPLAY_SETTLE_MS),
+  };
+  _replay = mine;
 }
 
 // A background job's card is waiting: which job is not in the frame, so the
@@ -381,8 +425,27 @@ function makeActions(set: SetState, get: GetState) {
     }),
     beginCardApply: (callId: string) => set({ cardApply: { ...get().cardApply, [callId]: { busy: true } } }),
     endCardApply: (callId: string, outcome = {}) => {
-      if (!(callId in get().cardApply)) return;                                        // its card is gone: nothing to keep
+      const entry = get().cardApply[callId];
+      if (!entry) return false;                                                        // its card is gone: nothing to keep
+      if (entry.hidden) {                                                              // no card to come back to: let go, and tell the caller to say how it ended
+        set(_dropApply(get(), [callId]));
+        return true;
+      }
       set({ cardApply: { ...get().cardApply, [callId]: { busy: false, ...outcome } } });
+      return false;
+    },
+    hideCard: (callId: string) => {
+      const s = get();
+      const entry = s.cardApply[callId];
+      if (!entry?.busy || entry.hidden) return;                                        // only an apply in flight can be hidden
+      set({
+        pendingConnectMcps: s.pendingConnectMcps.filter((c) => c.callId !== callId),
+        pendingEnrollNodes: s.pendingEnrollNodes.filter((c) => c.callId !== callId),
+        cardApply: { ...s.cardApply, [callId]: { ...entry, hidden: true } },
+      });
+    },
+    addCardNote: (text: string) => {
+      if (text) set({ items: [...get().items, { id: nextClientId(), kind: "system", role: "arslan", content: text }] });
     },
     expireCard: (callId: string) => {
       const s = get();
@@ -393,7 +456,7 @@ function makeActions(set: SetState, get: GetState) {
 
     // Clear all conversation state so the incoming `history` frame for the new
     // conversation_id repopulates from scratch with no stale carry-over.
-    resetForNewConversation: () => { _voiceStop(); set({ ...initialData() }); },
+    resetForNewConversation: () => { _voiceStop(); _stopReplay(); set({ ...initialData() }); },
 
     checkStall: () => {
       const s = get();
@@ -416,6 +479,8 @@ function makeActions(set: SetState, get: GetState) {
       // flags below, ending the turn entirely. 0.1.59: the server's "working" beat
       // (every 15 s of a turn) is alive but not a step — it never resets lastStepAt.
       const now = Date.now();
+      // The replay lists a card by proposing it again: it is no longer at stake (see _beginReplay).
+      if (_replay && REPLAYED.has(frame.type)) _replay.stale.delete((frame as { call_id?: string }).call_id ?? "");
       set(frame.type === "working" || frame.type === "queued"
         ? { lastFrameAt: now, stalled: false }
         : { lastFrameAt: now, lastStepAt: now, stalled: false });
@@ -500,6 +565,7 @@ function makeActions(set: SetState, get: GetState) {
             streaming: false, streamingText: "", thinking: false, workStartedAt: null, queued: false,
             streamSource: null, streamSpawnId: null, streamSpawnName: null,
           });
+          _beginReplay(get, set);
           break;
         }
         case "message": {
@@ -1168,6 +1234,7 @@ export const useArslanStore = create<ArslanState>((set, get) => ({
 // Returns a full state object (data + actions) so it can be used with
 // `setState(initialArslanState(), true)` without dropping the action methods.
 export function initialArslanState(): ArslanState {
+  _stopReplay();                       // a reset is a fresh store: no reconnect from before it is still settling
   return {
     ...initialData(),
     ...makeActions(

@@ -871,6 +871,7 @@ def _to_frame(ev: dict) -> dict:
     if t == "propose_connect_mcp":
         return protocol.propose_connect_mcp(
             call_id=ev.get("call_id", ""), key=ev.get("key", ""), label=ev.get("label", ""),
+            label_key=ev.get("label_key"),
             transport=ev.get("transport", ""), command=ev.get("command", ""),
             argv=ev.get("argv") or [], url=ev.get("url"), env_keys=ev.get("env_keys") or [],
             prerequisites=ev.get("prerequisites", ""),
