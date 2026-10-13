@@ -151,9 +151,11 @@ async def install_skill(c: dict, owner_id: str = "local", *, license_ok: str | N
     try:
         out = await skill_import.import_skill(f"{c['repo']}@{sha}" if sha else c["repo"], c["path"],
                                               license_ok=license_ok)
-    except skill_import.LicenseStepNeeded:
-        return {"state": "failed", "stage": "install", "code": "license_step",
-                "detail": "its license is not one Arslan recognises: the user has to read it and decide, so it was not added"}
+    except skill_import.LicenseStepNeeded as step:
+        what = ("the license text changed since it was read: the user has to read it again and decide, so it was not added"
+                if step.stale else
+                "its license is not one Arslan recognises: the user has to read it and decide, so it was not added")
+        return {"state": "failed", "stage": "install", "code": "license_step", "detail": what}
     except ValueError as exc:
         return {"state": "failed", "stage": "install", "code": "skill_import", "detail": str(exc)[:400]}
     except httpx.HTTPError as exc:                       # GitHub could not be reached (or answered with an error)
@@ -165,7 +167,7 @@ async def install_skill(c: dict, owner_id: str = "local", *, license_ok: str | N
         return {"state": "failed", "stage": "install", "code": "network", "detail": what[:400]}
     except OSError as exc:                               # the folder could not be written: the disk is full, or no permission
         return {"state": "failed", "stage": "install", "code": "disk",
-                "detail": f"could not write the skill's folder: {exc.strerror or exc}"[:400]}
+                "detail": f"could not write the skill's folder: {exc.strerror or type(exc).__name__}"[:400]}
     async with db_session.AsyncSessionLocal() as db:
         row = await db.get(CapabilitySource, out["source_id"])
         if row is None or row.state != "installed":      # the user's remove came in between: nothing is left to note on

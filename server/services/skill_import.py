@@ -401,6 +401,8 @@ class SkillLicense:
                "sha256": self.sha256}
         if with_text:
             out["text"] = self.text
+        if self.too_long:               # not "unrecognised with an empty text": there is nothing to read, so nothing to accept
+            out["too_long"] = True
         return out
 
 
@@ -497,27 +499,30 @@ def skill_license(archive: skill_files.Archive, skill_path: str, repo_spdx: str 
     return SkillLicense(repo_spdx or None, False, "none", text, license_sha256(text))
 
 
-class LicenseStepNeeded(ValueError):
-    """The license is not one Arslan recognises: the user reads the text and decides (§C4)."""
+_STALE_LICENSE = "the license text is not the one that was shown (it changed): read it again and decide"
 
-    def __init__(self, license: SkillLicense, *, key: str, name: str):
-        super().__init__("license_step")
-        self.license, self.key, self.name = license, key, name
+
+class LicenseStepNeeded(ValueError):
+    """The license is not one Arslan recognises: the user reads the text and decides (§C4). `stale` is
+    the step asked again because the answer given (`license_ok`) is not the sha256 of the text that is
+    there now: `license` is the current text, and the person reads that one. Nothing was imported."""
+
+    def __init__(self, license: SkillLicense, *, key: str, name: str, stale: bool = False):
+        super().__init__(_STALE_LICENSE if stale else "license_step")
+        self.license, self.key, self.name, self.stale = license, key, name, stale
 
 
 def _skill_license_block(lic: SkillLicense, license_ok: str | None, accepted_sha256: str | None) -> str | None:
     """None when the import may go ahead: a recognised license, or the user's "Use it on this Mac
     only" for exactly this text — `license_ok` is its sha256, or this skill's earlier acceptance
-    was of the same text. Otherwise "license_step", or why the answer given does not fit."""
+    was of the same text. Otherwise "license_step" (no answer yet), or "stale" (an answer to some other text)."""
     if lic.recognised:
         return None
     if license_ok and hmac.compare_digest(license_ok.strip().lower().encode("utf-8"), lic.sha256.encode("ascii")):
         return None
     if accepted_sha256 and hmac.compare_digest(accepted_sha256, lic.sha256):
         return None
-    if license_ok:
-        return "the license text is not the one that was shown (it changed): read it again and decide"
-    return "license_step"
+    return "stale" if license_ok else "license_step"
 
 
 # ── scanning a repository ─────────────────────────────────────────────────────
@@ -692,6 +697,24 @@ def _require_copied_as_itself(staged: skill_files.Staged, archive: skill_files.A
                              "same name in another case)")
 
 
+def skill_reference(ref: str, path: str, *, commit: str | None = None) -> tuple[str, str]:
+    """(where, detail) for a ledger row: `owner/repo/path` and `owner/repo@<commit> path`, from what the
+    reference NAMES, never the text the person typed (a link can carry a query string or a token). The
+    commit is the one imported, or the pin the reference carries; none for the default branch. Raises
+    ValueError for a reference or a path that does not name a skill, as `import_skill` does."""
+    source = parse_source(ref)
+    if source is None:
+        raise ValueError("not a GitHub repo reference")
+    skill_path = (path or "").strip().strip("/")
+    if skill_files.safe_relpath(skill_path) is None or skill_path.rsplit("/", 1)[-1] != "SKILL.md":
+        raise ValueError("path must name a SKILL.md inside the repository")
+    pin = commit or ("" if source.ref == "HEAD" else source.ref)
+    if _SHA_RE.fullmatch(pin):
+        pin = pin[:12]
+    repo = f"{source.owner}/{source.repo}"
+    return f"{repo}/{skill_path}", f"{repo}{'@' + pin if pin else ''} {skill_path}"
+
+
 async def import_skill(ref: str, path: str, *, license_ok: str | None = None) -> dict:
     """Import ONE skill, whole and pinned to one commit (§C2, §C4). Everything is re-checked here,
     on the server: no client can skip the license step.
@@ -747,10 +770,8 @@ async def import_skill(ref: str, path: str, *, license_ok: str | None = None) ->
         replaces = _replaces(existing)
         accepted = existing.license_sha256 if update and existing.local_only else None
         block = _skill_license_block(lic, license_ok, accepted)
-        if block == "license_step":
-            raise LicenseStepNeeded(lic, key=key, name=info["name"])
         if block:
-            raise ValueError(block)
+            raise LicenseStepNeeded(lic, key=key, name=info["name"], stale=block == "stale")
 
         final = skill_files.folder_for(key)
         old_files = await asyncio.to_thread(skill_files.checksums, final) if update else {}
@@ -797,6 +818,7 @@ async def import_skill(ref: str, path: str, *, license_ok: str | None = None) ->
             "files": {prefix + rel: sha for rel, sha in staged.files.items()},
             "skipped": staged.skipped, "license": lic.spdx, "license_source": lic.read_from,
             "recognised": lic.recognised, "local_only": not lic.recognised, "scan": scan,
+            "license_sha256": None if lic.recognised else lic.sha256,      # the text accepted for this Mac, for the ledger
             "enabled": recorded["enabled"], "source_id": recorded["source_id"],
             "has_scripts": scripts,
             "changes": changed}

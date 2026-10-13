@@ -122,13 +122,16 @@ async def fetch_repo(owner: str, repo: str) -> dict:
         raise ValueError("GitHub rate-limited — set GITHUB_TOKEN in Settings to raise the limit")
     r.raise_for_status()
     d = r.json()
+    if not isinstance(d, dict):
+        raise ValueError("GitHub sent something that is not a repository")
+    lic = d.get("license")
     pushed_days = _pushed_days(d.get("pushed_at"))
     return {
         "full_name": d.get("full_name") or f"{owner}/{repo}",
         "html_url": d.get("html_url") or f"https://github.com/{owner}/{repo}",
         "stars": d.get("stargazers_count", 0),
         "forks": d.get("forks_count", 0),
-        "license": (d.get("license") or {}).get("spdx_id"),
+        "license": lic.get("spdx_id") if isinstance(lic, dict) else None,
         "pushed_days": pushed_days,
         "description": d.get("description") or "",
         "topics": d.get("topics") or [],

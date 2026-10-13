@@ -2,6 +2,7 @@
 409 with the text to read — and every import a person makes is one ledger row (§A8)."""
 from __future__ import annotations
 
+import asyncio
 import errno
 import inspect
 import json
@@ -14,13 +15,14 @@ import pytest
 from sqlalchemy import select
 
 from server.db.models import ApprovalEvent, SkillPack
-from server.services import capability_flow, permission_store, permissions, skill_files, skill_import
+from server.services import capability_flow, github_eval, permission_store, permissions, skill_files, skill_import
 from tests.server.skill_archives import COMMIT, tarball
 
 MD = "---\nname: handoff\ndescription: Hand work over.\n---\n\n# Handoff\nSteps.\n"
 GPL = "GNU GENERAL PUBLIC LICENSE\nVersion 3, 29 June 2007\n"
 REF = "example-org/example-skills"
 IMPORT = "/api/v1/discovery/skills/import"
+REAL_FETCH_REPO = github_eval.fetch_repo          # before the `github` fixture replaces it
 
 
 @pytest.fixture
@@ -101,13 +103,49 @@ async def test_a_skill_decision_row_is_shaped_like_the_ones_pr2_writes(client, g
     assert refused.status_code == 409 and refused.json()["detail"] == {"code": "not_a_refusal"}
 
 
-async def test_a_stale_decision_or_a_bad_path_is_a_400(client, github):
-    body = {"ref": "example-org/example-skills", "path": "SKILL.md", "license_ok": "0" * 64}
-    stale = await client.post("/api/v1/discovery/skills/import", json=body)
-    assert stale.status_code == 400 and "not the one that was shown" in stale.json()["detail"]
+async def test_a_bad_path_is_a_400(client, github):
     bad = await client.post("/api/v1/discovery/skills/import",
                             json={"ref": "example-org/example-skills", "path": "../SKILL.md"})
     assert bad.status_code == 400
+
+
+async def test_a_wrong_or_stale_answer_is_the_license_step_again_with_the_text_that_is_there_now(client, github,
+                                                                                                monkeypatch):
+    """0.1.61 §C4 (the plan: "without a matching license_ok answers 409"): the person reads what is actually
+    there. The body is the current step plus `stale: true`; nothing is imported on a mismatch. No answer at all
+    (absent, or "") is the step without `stale`."""
+    sha = skill_import.license_sha256(GPL)
+    wrong = ["0" * 64, sha[:63], sha[:8], sha + "0", sha[1:], "é" * 64, "İ" * 64, sha[:10] + "\x00" + sha[11:]]
+    for answer in wrong:
+        r = await client.post(IMPORT, json={"ref": REF, "path": "SKILL.md", "license_ok": answer})
+        assert r.status_code == 409, answer
+        detail = r.json()["detail"]
+        assert detail["stale"] is True and detail["code"] == "license_step" and detail["key"] == "handoff"
+        assert detail["license"]["text"] == GPL and detail["license"]["sha256"] == sha
+    for no_answer in ({}, {"license_ok": ""}, {"license_ok": None}):
+        r = await client.post(IMPORT, json={"ref": REF, "path": "SKILL.md", **no_answer})
+        assert r.status_code == 409 and "stale" not in r.json()["detail"], no_answer
+    # the realistic one: the person read the text that was served, and it changed before they said yes
+    amended = GPL + "\nAdditional terms: none.\n"
+    serves(monkeypatch, {"SKILL.md": MD, "LICENSE": amended})
+    r = await client.post(IMPORT, json={"ref": REF, "path": "SKILL.md", "license_ok": sha})
+    detail = r.json()["detail"]
+    assert r.status_code == 409 and detail["stale"] is True
+    assert detail["license"]["text"] == amended and detail["license"]["sha256"] == skill_import.license_sha256(amended)
+    async with client.db_maker() as db:
+        assert await db.get(SkillPack, "handoff") is None
+        assert (await db.execute(select(ApprovalEvent))).scalars().all() == []
+
+
+async def test_a_license_too_long_to_show_stays_a_400_and_a_non_string_answer_is_a_422(client, github, monkeypatch):
+    """There is no text to show for the first, and the second is not an answer."""
+    serves(monkeypatch, {"SKILL.md": MD, "LICENSE": "x" * (skill_import.MAX_LICENSE_BYTES + 1)})
+    for answer in (None, "", skill_import.license_sha256(""), "0" * 64):
+        r = await client.post(IMPORT, json={"ref": REF, "path": "SKILL.md", "license_ok": answer})
+        assert r.status_code == 400 and "too long" in r.json()["detail"], answer
+    for answer in (123, 1.5, True, ["x"], {"sha": "x"}):
+        assert (await client.post(IMPORT, json={"ref": REF, "path": "SKILL.md", "license_ok": answer})
+                ).status_code == 422, answer
 
 
 async def test_the_scan_returns_the_commit_and_the_text_to_read(client, github):
@@ -140,7 +178,7 @@ async def test_a_recognised_license_imports_without_a_step_and_is_one_row(client
     async with client.db_maker() as db:
         [event] = (await db.execute(select(ApprovalEvent))).scalars().all()
     assert (event.target, event.decision, event.extra["local_only"]) == ("skill:handoff", "allow", False)
-    assert event.detail == f"{REF} SKILL.md" and event.extra["commit"] == COMMIT[:12]
+    assert event.detail == f"{REF}@{COMMIT[:12]} SKILL.md" and event.extra["commit"] == COMMIT[:12]
 
 
 async def test_a_refused_import_writes_no_ledger_row(client, github):
@@ -186,7 +224,7 @@ async def test_the_license_text_travels_as_a_json_string_and_is_in_no_log_or_mes
         stale = await client.post(IMPORT, json={"ref": REF, "path": "SKILL.md", "license_ok": "0" * 64})
     assert r.status_code == 409 and r.headers["content-type"].startswith("application/json")
     assert r.json()["detail"]["license"]["text"] == HOSTILE                       # as it is: escaped by the reader (Task 12)
-    assert stale.status_code == 400 and "alert" not in stale.json()["detail"]
+    assert stale.status_code == 409 and stale.json()["detail"]["stale"] is True       # the text is its body, as data
     for record in caplog.records:                                                   # no log line quotes the text
         assert "alert(" not in record.getMessage() and "gnp.exe" not in record.getMessage()
 
@@ -379,3 +417,188 @@ def test_no_tool_the_model_is_given_offers_a_license_ok():
     for folder in ("registry", "orchestrator"):                              # nor is a tool's code a way to it
         for source in sorted((root / folder).rglob("*.py")):
             assert "license_ok" not in source.read_text(), f"{source.relative_to(root)} names license_ok"
+
+
+# ═══ fix round 1 (review of 96623fd7) ════════════════════════════════════════
+
+DECLINE = IMPORT + "/decline"
+SHA = skill_import.license_sha256(GPL)
+
+
+# m1 — the scan answers a transport's own TimeoutError as the import does: 502, not an unhandled 500.
+async def test_the_scan_maps_a_transports_timeout_as_the_import_does(client, github, monkeypatch):
+    def timing_out(request):
+        raise TimeoutError("the proxy gave up")
+
+    async def fetch_archive(owner, repo, ref):
+        return await skill_import._download(owner, repo, ref, transport=httpx.MockTransport(timing_out))
+    monkeypatch.setattr(skill_import, "_fetch_archive", fetch_archive)
+    r = await client.post("/api/v1/discovery/skills/scan", json={"ref": REF})
+    assert (r.status_code, r.json()["detail"]) == (502, "GitHub did not answer: the request timed out")
+
+
+# m2 — the 409 names the skill's key and its name, each in its place.
+async def test_the_409_carries_the_key_and_the_name_each_in_its_place(client, github, monkeypatch):
+    serves(monkeypatch, {"SKILL.md": "---\nname: Hand Off Work\ndescription: Hand work over.\n---\n# Handoff\nSteps.\n",
+                         "LICENSE": GPL})
+    r = await client.post(IMPORT, json={"ref": REF, "path": "SKILL.md"})
+    assert r.status_code == 409
+    assert (r.json()["detail"]["key"], r.json()["detail"]["name"]) == ("hand-off-work", "Hand Off Work")
+
+
+# m3 — "No" on the license step is a decision too (§A8): one deny row, nothing imported.
+async def test_declining_the_license_step_writes_one_deny_row_and_imports_nothing(client, github, monkeypatch):
+    calls = []
+
+    async def spy(*args, **kwargs):
+        calls.append(args)
+        raise AssertionError("a decline reads nothing from GitHub")
+    for name in ("import_skill", "scan_skills", "_fetch_archive"):
+        monkeypatch.setattr(skill_import, name, spy)
+    monkeypatch.setattr(skill_import.github_eval, "fetch_repo", spy)
+    r = await client.post(DECLINE, json={"ref": f"{REF}@{COMMIT}", "path": "SKILL.md", "license_sha256": SHA.upper()})
+    assert r.status_code == 200 and r.json() == {"declined": True} and calls == []
+    async with client.db_maker() as db:
+        [event] = (await db.execute(select(ApprovalEvent))).scalars().all()
+        assert await db.get(SkillPack, "handoff") is None
+        assert not permission_store.could_not_ask(event)                       # a person's no, not a refusal for want of a surface
+    assert (event.kind, event.decided_by, event.decision, event.scope, event.mode, event.conversation_id) == (
+        "capability", "user", "deny", None, "standard", None)
+    assert event.target == "skill:example-org/example-skills/SKILL.md"
+    assert event.detail == f"example-org/example-skills@{COMMIT[:12]} SKILL.md"
+    assert event.extra == {"license_sha256": SHA}                                # the text that was read, lower-cased
+    assert (await client.get("/api/v1/approvals/refused")).json() == []
+
+
+async def test_a_decline_that_is_not_one_writes_no_row(client, github):
+    bodies = [
+        ({"ref": REF, "path": "SKILL.md"}, 422),                                           # no sha
+        ({"ref": REF, "path": "SKILL.md", "license_sha256": "abc"}, 422),
+        ({"ref": REF, "path": "SKILL.md", "license_sha256": "g" * 64}, 422),
+        ({"ref": REF, "path": "SKILL.md", "license_sha256": SHA + "0"}, 422),
+        ({"ref": REF, "path": "SKILL.md", "license_sha256": 5}, 422),
+        ({"ref": REF, "license_sha256": SHA}, 422),                                         # no path
+        ({"path": "SKILL.md", "license_sha256": SHA}, 422),                                 # no ref
+        ({"ref": "not a repository", "path": "SKILL.md", "license_sha256": SHA}, 400),
+        ({"ref": REF, "path": "../SKILL.md", "license_sha256": SHA}, 400),
+        ({"ref": REF, "path": "README.md", "license_sha256": SHA}, 400),
+    ]
+    for body, status in bodies:
+        r = await client.post(DECLINE, json=body)
+        assert r.status_code == status, (body, r.status_code, r.text)
+    async with client.db_maker() as db:
+        assert (await db.execute(select(ApprovalEvent))).scalars().all() == []
+
+
+# m5 — once the import is done, its row is written even if the request is cancelled meanwhile.
+async def test_a_cancel_after_the_import_still_writes_its_row(client, github, monkeypatch):
+    from server.api import discovery
+    from server.services import skill_ledger
+    real, gate, started = skill_ledger.record, asyncio.Event(), asyncio.Event()
+
+    async def held(**kw):
+        started.set()
+        await gate.wait()
+        await real(**kw)
+    monkeypatch.setattr(skill_ledger, "record", held)
+    task = asyncio.ensure_future(discovery.import_skill(discovery.SkillImportBody(ref=REF, path="SKILL.md",
+                                                                                  license_ok=SHA)))
+    await asyncio.wait_for(started.wait(), 10)
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+    gate.set()
+    for _ in range(50):
+        await asyncio.sleep(0.02)
+        async with client.db_maker() as db:
+            rows = (await db.execute(select(ApprovalEvent))).scalars().all()
+        if rows:
+            break
+    async with client.db_maker() as db:
+        assert await db.get(SkillPack, "handoff") is not None
+    assert [(e.target, e.decision) for e in rows] == [("skill:handoff", "allow")]
+
+
+# m6 — GitHub's metadata that is not a JSON object is a refusal, not an unhandled 500.
+async def test_repository_metadata_that_is_not_an_object_is_a_400(client, github, monkeypatch):
+    async def no_token():
+        return ""
+    monkeypatch.setattr(github_eval, "_token", no_token)
+    monkeypatch.setattr(skill_import.github_eval, "fetch_repo", REAL_FETCH_REPO)
+    for payload in (["not", "an", "object"], "MIT", None, {"full_name": "a/b", "license": "MIT"},
+                    {"full_name": "a/b", "license": ["MIT"]}):
+        async def odd(client_, url, headers, payload=payload):
+            return httpx.Response(200, content=json.dumps(payload).encode(), request=httpx.Request("GET", url))
+        monkeypatch.setattr(github_eval, "_get_following_on_api", odd)
+        r = await client.post(IMPORT, json={"ref": REF, "path": "SKILL.md"})
+        if isinstance(payload, dict):                       # a repository whose license is no object has no license
+            assert r.status_code == 409, (payload, r.status_code)
+        else:
+            assert r.status_code == 400 and "not a repository" in r.json()["detail"], (payload, r.status_code)
+
+
+# m7 — the ledger row names the source as it is, never as typed, and keeps the text that was accepted.
+async def test_the_ledger_row_names_the_canonical_source_and_the_accepted_text(client, github, monkeypatch):
+    ref = "https://github.com/example-org/example-skills?token=ghp_not_a_real_token#frag"
+    r = await client.post(IMPORT, json={"ref": ref, "path": "/SKILL.md", "license_ok": SHA})
+    assert r.status_code == 200 and r.json()["license_sha256"] == SHA
+    again = await client.post(IMPORT, json={"ref": f"{REF}@{COMMIT}", "path": "SKILL.md"})          # an update: accepted before
+    assert again.status_code == 200 and again.json()["update"] is True
+    async with client.db_maker() as db:
+        first, second = (await db.execute(select(ApprovalEvent).order_by(ApprovalEvent.id))).scalars().all()
+    assert first.detail == f"example-org/example-skills@{COMMIT[:12]} SKILL.md"
+    assert second.detail == first.detail
+    assert "ghp_" not in first.detail and "token" not in repr(first.extra) and "?" not in first.detail
+    assert first.extra["license_sha256"] == SHA and second.extra["license_sha256"] == SHA
+    assert (first.extra["local_only"], first.extra["update"], second.extra["update"]) == (True, False, True)
+
+
+async def test_a_recognised_license_leaves_no_accepted_text_in_the_row(client, github, monkeypatch):
+    serves(monkeypatch, {"SKILL.md": MD, "LICENSE": "MIT License\n\nPermission is hereby granted, free of charge, "
+                                                     "to any person obtaining a copy\n"})
+    r = await client.post(IMPORT, json={"ref": REF, "path": "SKILL.md"})
+    assert r.status_code == 200 and r.json()["license_sha256"] is None
+    async with client.db_maker() as db:
+        [event] = (await db.execute(select(ApprovalEvent))).scalars().all()
+    assert "license_sha256" not in event.extra
+
+
+# m8 — a license over the limit says so in its view, so the scan can tell it from an unrecognised one.
+def test_a_license_over_the_limit_says_so_in_its_view():
+    over = skill_import.SkillLicense(None, False, "LICENSE", "", skill_import.license_sha256(""), too_long=True)
+    assert over.view(with_text=True)["too_long"] is True and over.view(with_text=False)["too_long"] is True
+    plain = skill_import.SkillLicense(None, False, "LICENSE", GPL, SHA)
+    assert "too_long" not in plain.view(with_text=True) and "too_long" not in plain.view(with_text=False)
+
+
+async def test_the_scan_says_a_license_is_too_long_to_show(client, github, monkeypatch):
+    serves(monkeypatch, {"SKILL.md": MD, "LICENSE": "x" * (skill_import.MAX_LICENSE_BYTES + 1)})
+    [skill] = (await client.post("/api/v1/discovery/skills/scan", json={"ref": REF})).json()["skills"]
+    assert skill["license"]["too_long"] is True and skill["license"]["recognised"] is False
+    assert skill["license"]["text"] == ""
+
+
+# N3 — the card's disk message is the system's words for it, never an error's own text (which can be a path).
+async def test_the_cards_disk_message_never_carries_a_path(monkeypatch):
+    cand = _candidate()
+    importer_raises(monkeypatch, OSError(errno.ENOSPC, "No space left on device", "/Users/x/Arslan/skills/handoff"))
+    out = await capability_flow.install_skill(cand)
+    assert out["code"] == "disk" and out["detail"] == "could not write the skill's folder: No space left on device"
+    importer_raises(monkeypatch, OSError("cannot write /Users/x/Arslan/skills/handoff"))
+    out = await capability_flow.install_skill(cand)
+    assert out["code"] == "disk" and out["detail"] == "could not write the skill's folder: OSError"
+
+
+# m4 on the card path — a stale answer is still the user's step, and it says why.
+async def test_a_stale_answer_through_install_skill_says_the_text_changed(monkeypatch):
+    lic = skill_import.SkillLicense(None, False, "LICENSE", GPL, SHA)
+    cand = _candidate()
+    importer_raises(monkeypatch, skill_import.LicenseStepNeeded(lic, key="handoff", name="handoff", stale=True))
+    stale = await capability_flow.install_skill(cand, license_ok="0" * 64)
+    importer_raises(monkeypatch, skill_import.LicenseStepNeeded(lic, key="handoff", name="handoff"))
+    undecided = await capability_flow.install_skill(cand)
+    assert stale["code"] == undecided["code"] == "license_step"
+    assert "changed" in stale["detail"] and "changed" not in undecided["detail"]
+    assert "not one Arslan recognises" in undecided["detail"]

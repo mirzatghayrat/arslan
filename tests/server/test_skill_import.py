@@ -197,10 +197,12 @@ async def test_an_unrecognised_license_needs_the_users_decision_for_exactly_that
     mock_github(monkeypatch, license="GPL-3.0", files={"SKILL.md": VALID_MD, "LICENSE": GPL})
     with pytest.raises(skill_import.LicenseStepNeeded) as step:
         await skill_import.import_skill(REPO, "SKILL.md")
-    assert step.value.license.text == GPL and step.value.key == "handoff"
+    assert step.value.license.text == GPL and step.value.key == "handoff" and step.value.stale is False
     assert not (tmp_path / "skills" / "handoff").exists()
-    with pytest.raises(ValueError, match="not the one that was shown"):
+    with pytest.raises(skill_import.LicenseStepNeeded, match="not the one that was shown") as stale:    # the step again, §C4
         await skill_import.import_skill(REPO, "SKILL.md", license_ok="0" * 64)
+    assert stale.value.stale is True and stale.value.license.text == GPL and stale.value.key == "handoff"
+    assert not (tmp_path / "skills" / "handoff").exists()
     out = await skill_import.import_skill(REPO, "SKILL.md", license_ok=skill_import.license_sha256(GPL))
     assert out["local_only"] is True and out["recognised"] is False
     async with maker() as db:
@@ -940,16 +942,18 @@ async def test_license_ok_is_the_whole_sha_not_a_prefix_of_it(maker, monkeypatch
     mock_github(monkeypatch, license="GPL-3.0", files={"SKILL.md": VALID_MD, "LICENSE": GPL})
     sha = skill_import.license_sha256(GPL)
     for wrong in (sha[:8], sha[:63], sha + "0", sha[1:]):
-        with pytest.raises(ValueError, match="not the one that was shown"):
+        with pytest.raises(skill_import.LicenseStepNeeded, match="not the one that was shown") as stale:
             await skill_import.import_skill(REPO, "SKILL.md", license_ok=wrong)
+        assert stale.value.stale is True and stale.value.license.sha256 == sha
     assert (await skill_import.import_skill(REPO, "SKILL.md", license_ok=f"  {sha.upper()} "))["local_only"] is True
 
 
 async def test_a_license_ok_that_is_not_ascii_is_a_wrong_answer(maker, monkeypatch):
     mock_github(monkeypatch, license="GPL-3.0", files={"SKILL.md": VALID_MD, "LICENSE": GPL})
     for bad in ("é" * 64, "İ" * 64):
-        with pytest.raises(ValueError, match="not the one that was shown"):
+        with pytest.raises(skill_import.LicenseStepNeeded, match="not the one that was shown") as stale:
             await skill_import.import_skill(REPO, "SKILL.md", license_ok=bad)
+        assert stale.value.stale is True
 
 
 async def test_another_repositorys_skill_of_the_same_name_is_not_an_update(maker, monkeypatch, trashed):
