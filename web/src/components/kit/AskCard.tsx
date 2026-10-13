@@ -4,7 +4,7 @@ import { ArrowUpRight, Lock } from "lucide-react";
 import { AskMark } from "./AskMark";
 import { Button } from "./Button";
 import { CARD_MS, Countdown } from "./Countdown";
-import { useAnswerGuard } from "./guard";
+import { useAnswerGuard, useAnswerHeld } from "./guard";
 import { useAnswerKeys, useLayer } from "./layers";
 
 export interface AskQueuePosition { index: number; total: number; onPrev?: () => void; onNext?: () => void }
@@ -62,6 +62,7 @@ export function AskCard(p: AskCardProps) {
   const root = useRef<HTMLElement>(null);
   // Within ANSWER_GUARD_MS of this card coming up in a queue, no answer is for it (see guard.ts).
   const guarded = useAnswerGuard();
+  const held = useAnswerHeld();                                     // the same hold, to be seen: Allow and No look disabled while it lasts
   useAnswerKeys(top && !p.busy, { onAllow: () => { if (!p.allowDisabled && !guarded()) p.onAllow(); },
                                   onDecline: () => { if (!guarded()) p.onDecline(); } }, root);
   return (
@@ -107,10 +108,11 @@ export function AskCard(p: AskCardProps) {
       )}
       {p.options}
       <div className="flex gap-2.5">
-        <Button tone="secondary" grow={1} kbd="esc" disabled={p.busy} onClick={() => { if (!guarded()) p.onDecline(); }} data-testid={p.declineTestId ?? "ask-decline"}>
+        <Button tone="secondary" grow={1} kbd="esc" disabled={p.busy} aria-disabled={held || undefined}
+          onClick={() => { if (!guarded()) p.onDecline(); }} data-testid={p.declineTestId ?? "ask-decline"}>
           {p.declineLabel ?? t("kit.decline")}
         </Button>
-        <Button tone={p.destructive ? "destructive" : "primary"} grow={1.4} kbd="⌘⏎" disabled={p.busy || p.allowDisabled}
+        <Button tone={p.destructive ? "destructive" : "primary"} grow={1.4} kbd="⌘⏎" disabled={p.busy || p.allowDisabled} aria-disabled={held || undefined}
           onClick={() => { if (!guarded()) p.onAllow(); }} data-testid={p.allowTestId ?? "ask-allow"}>
           {p.allowLabel ?? t("kit.allow")}
         </Button>

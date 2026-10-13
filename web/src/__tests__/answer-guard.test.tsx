@@ -4,7 +4,8 @@
  *  land, unread, on the one that moved up (a double-click confirmed `echo harmless` AND `rm -rf ~/Documents` in a real browser).
  *  The slot being empty for a moment does not end it: a card that comes up within 500 ms of the one that left is held for the rest of
  *  that time (the next command of the same turn is proposed as soon as the first ran). A card that comes up in a slot that has been
- *  empty longer, and paging, are not guarded. F4: while the card on top is busy, ‹ and › are disabled. */
+ *  empty longer, and paging, are not guarded. F4: while the card on top is busy, ‹ and › are disabled. Fix round 3: the hold is visible
+ *  (Allow and No render aria-disabled while it lasts), the note's Say no goes through it, and the Inbox keeps it too (inbox-guard.test.tsx). */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, act, cleanup } from "@testing-library/react";
 
@@ -16,7 +17,7 @@ import * as client from "../api/client";
 import * as mcpApi from "../api/mcp";
 import AskSlot from "../components/AskSlot";
 import { AskCard, AskQueue, ANSWER_GUARD_MS } from "../components/kit";
-import { makeAnswerGuard } from "../components/kit/guard";
+import { AnswerGuardScope, makeAnswerGuard, useQueueGuard, type AnswerGuardState } from "../components/kit/guard";
 import { useArslanStore, initialArslanState } from "../stores/arslanStore";
 
 beforeEach(() => {
@@ -375,6 +376,64 @@ describe("what the guard remembers", () => {
     expect(on.held()).toBe(true);                                    // b is still not the person's to answer yet
   });
 
+  it("tells its listeners when a hold starts and when it ends, once each, and stops when they leave", () => {
+    const guard = makeAnswerGuard();
+    const told = vi.fn();
+    const stop = guard.subscribe(told);
+    guard.shown("a");
+    expect(told).not.toHaveBeenCalled();                             // nothing left yet
+    guard.shown("b");
+    expect(told).toHaveBeenCalledTimes(1);                           // the hold starts
+    advance(499);
+    expect(told).toHaveBeenCalledTimes(1);
+    advance(1);
+    expect(told).toHaveBeenCalledTimes(2);                           // and ends, at 500 ms
+    advance(5_000);
+    expect(told).toHaveBeenCalledTimes(2);
+    stop();
+    guard.shown("c");
+    advance(500);
+    expect(told).toHaveBeenCalledTimes(2);                           // nobody is told once they have left
+  });
+
+  it("a second card leaving moves the end of the hold: one end, 500 ms after the last", () => {
+    const guard = makeAnswerGuard();
+    const told = vi.fn();
+    guard.subscribe(told);
+    guard.shown("a");
+    guard.shown("b");                                                // t = 0
+    advance(300);
+    guard.shown("c");                                                // t = 300: the end moves to 800
+    told.mockClear();
+    advance(499);                                                    // t = 799: the first end (500) has passed, and told nothing
+    expect(told).not.toHaveBeenCalled();
+    expect(guard.held()).toBe(true);
+    advance(1);                                                      // t = 800
+    expect(told).toHaveBeenCalledTimes(1);
+    expect(guard.held()).toBe(false);
+    advance(1_000);                                                  // and told once: the first card's timer did not stay behind to tell again
+    expect(told).toHaveBeenCalledTimes(1);
+  });
+
+  it("a timer that fires a hair before the clock says the time is up does not end the hold early: the listeners are told when it is over", () => {
+    const guard = makeAnswerGuard();
+    const told = vi.fn();
+    guard.subscribe(told);
+    guard.shown("a");
+    guard.shown("b");
+    told.mockClear();
+    const clock = vi.spyOn(performance, "now");
+    const base = performance.now();
+    clock.mockReturnValue(base + 499.5);                             // the timer fires, the clock says half a millisecond is left
+    advance(500);
+    expect(told).not.toHaveBeenCalled();
+    expect(guard.held()).toBe(true);
+    clock.mockReturnValue(base + 501);
+    advance(2);                                                      // it waited the hair out
+    expect(told).toHaveBeenCalledTimes(1);
+    expect(guard.held()).toBe(false);
+  });
+
   it("each card that leaves starts the 500 ms again", () => {
     const guard = makeAnswerGuard();
     guard.shown("a");
@@ -385,5 +444,105 @@ describe("what the guard remembers", () => {
     expect(guard.held()).toBe(true);                                 // t = 800: 400 ms after b left
     advance(100);
     expect(guard.held()).toBe(false);
+  });
+});
+
+describe("the note's Say no goes through the guard like every other door (G3)", () => {
+  it("a note sent within 500 ms of its card coming up is not sent, by the button or by ⏎; 500 ms later it is", () => {
+    const send = vi.fn();
+    render(<AskSlot send={send} />);
+    frame(cmd("a", "ls a"));
+    frame(cmd("b", "ls b"));
+    fireEvent.click(screen.getByLabelText("kit.next"));              // paged to b: b is held for 500 ms
+    fireEvent.click(screen.getByTestId("runcmd-note-open"));
+    fireEvent.change(screen.getByTestId("runcmd-note-input"), { target: { value: "no thanks" } });
+    fireEvent.click(screen.getByTestId("runcmd-note-send"));
+    fireEvent.keyDown(screen.getByTestId("runcmd-note-input"), { key: "Enter" });
+    expect(send).not.toHaveBeenCalled();
+    expect(useArslanStore.getState().pendingCommands.map((c) => c.callId)).toEqual(["a", "b"]);
+    advance(ANSWER_GUARD_MS);
+    fireEvent.click(screen.getByTestId("runcmd-note-send"));
+    expect(send.mock.calls).toStrictEqual([[{ type: "cancel_run_command", call_id: "b", note: "no thanks" }]]);
+  });
+});
+
+describe("the hold is visible (G4)", () => {
+  const buttons = () => [screen.getByTestId("runcmd-run"), screen.getByTestId("runcmd-cancel")];
+
+  it("right after a card change Allow and No render disabled, and they come back on their own when the 500 ms are over", () => {
+    twoCommands();
+    run();                                                           // the first card is answered: the second moves up, held
+    for (const b of buttons()) {
+      expect(b).toHaveAttribute("aria-disabled", "true");
+      expect(b.className).toContain("aria-disabled:opacity-50");     // the disabled style
+      expect(b).toBeEnabled();                                       // not natively disabled: it keeps the focus, its click is just ignored
+    }
+    advance(ANSWER_GUARD_MS - 1);
+    for (const b of buttons()) expect(b).toHaveAttribute("aria-disabled", "true");
+    advance(1);
+    for (const b of buttons()) expect(b).not.toHaveAttribute("aria-disabled");
+  });
+
+  it("a card that comes up in a slot that has been idle is never rendered disabled", () => {
+    render(<AskSlot send={vi.fn()} />);
+    frame(cmd("a", "ls a"));
+    for (const b of buttons()) expect(b).not.toHaveAttribute("aria-disabled");
+  });
+
+  it("the card that comes up in the gap is disabled from the start, until 500 ms after the one before left", () => {
+    render(<AskSlot send={vi.fn()} />);
+    frame(cmd("a", "ls a"));
+    run();                                                           // t = 0: a leaves
+    advance(300);
+    frame(cmd("b", "ls b"));
+    for (const b of buttons()) expect(b).toHaveAttribute("aria-disabled", "true");
+    advance(199);
+    for (const b of buttons()) expect(b).toHaveAttribute("aria-disabled", "true");
+    advance(1);                                                      // t = 500
+    for (const b of buttons()) expect(b).not.toHaveAttribute("aria-disabled");
+  });
+
+  it("paging to a card holds it, and shows it", () => {
+    render(<AskSlot send={vi.fn()} />);
+    frame(cmd("a", "ls a"));
+    frame(cmd("b", "ls b"));
+    fireEvent.click(screen.getByLabelText("kit.next"));
+    for (const b of buttons()) expect(b).toHaveAttribute("aria-disabled", "true");
+    advance(ANSWER_GUARD_MS);
+    for (const b of buttons()) expect(b).not.toHaveAttribute("aria-disabled");
+  });
+
+  it("the kit's own card, outside any queue, is never rendered disabled", () => {
+    render(<AskCard who="w" title="t" onAllow={vi.fn()} onDecline={vi.fn()} />);
+    expect(screen.getByTestId("ask-allow")).not.toHaveAttribute("aria-disabled");
+    expect(screen.getByTestId("ask-decline")).not.toHaveAttribute("aria-disabled");
+  });
+});
+
+describe("a queue builds no guard of its own when a scope above provides one (G5)", () => {
+  function Probe({ build, seen }: { build: () => AnswerGuardState; seen: AnswerGuardState[] }) {
+    seen.push(useQueueGuard(build));
+    return null;
+  }
+
+  it("under a scope: the scope's guard, and nothing built", () => {
+    const build = vi.fn(makeAnswerGuard);
+    const scope = makeAnswerGuard();
+    const seen: AnswerGuardState[] = [];
+    const tree = <AnswerGuardScope value={scope}><Probe build={build} seen={seen} /></AnswerGuardScope>;
+    const { rerender } = render(tree);
+    rerender(tree);
+    expect(build).not.toHaveBeenCalled();
+    expect(new Set(seen)).toEqual(new Set([scope]));
+  });
+
+  it("with no scope: one guard of its own, built once and kept across renders", () => {
+    const build = vi.fn(makeAnswerGuard);
+    const seen: AnswerGuardState[] = [];
+    const { rerender } = render(<Probe build={build} seen={seen} />);
+    rerender(<Probe build={build} seen={seen} />);
+    rerender(<Probe build={build} seen={seen} />);
+    expect(build).toHaveBeenCalledTimes(1);
+    expect(new Set(seen).size).toBe(1);
   });
 });

@@ -119,6 +119,7 @@ export function DeclineNote({ onDeclineWithNote, disabled = false, testId = "ask
   onDeclineWithNote: (note: string) => void; disabled?: boolean; testId?: string;
 }) {
   const { t } = useTranslation();
+  const guarded = useAnswerGuard();                           // a note sent right after its card came up in a queue is not for it
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState("");
   const link = useRef<HTMLButtonElement>(null);
@@ -127,7 +128,7 @@ export function DeclineNote({ onDeclineWithNote, disabled = false, testId = "ask
     if (wasOpen.current && !open) link.current?.focus();    // back where the user was
     wasOpen.current = open;
   }, [open]);
-  const send = () => { if (!disabled) onDeclineWithNote(note.trim()); };
+  const send = () => { if (!disabled && !guarded()) onDeclineWithNote(note.trim()); };
   const onKey = (e: KeyboardEvent<HTMLElement>) => {
     if (e.nativeEvent.isComposing || e.keyCode === 229) return;      // an input method's ⏎ / esc
     if (e.key === "Escape") {

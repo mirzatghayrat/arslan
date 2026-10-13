@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { request } from "../../api/client";
 import AskForFrame, { ANSWERABLE, type PendingAsk } from "../AskForFrame";
-import { AskQueue, Notice } from "../kit";
+import { AnswerGuardScope, AskQueue, Notice, useAnswerGuardState } from "../kit";
 import { announceProactiveChange } from "../../api/proactive";
 
 const POLL_MS = 5_000;
@@ -19,6 +19,9 @@ export default function InboxApprovals({ onOpenConversation, onCount }: {
   const { t } = useTranslation();
   const [asks, setAsks] = useState<PendingAsk[]>([]);
   const [error, setError] = useState(false);
+  // The guard is kept here, above the queue, which is not on screen while nothing waits: the next command of the turn can come up
+  // a moment after the last card was answered, and the second click of a double-click must not answer it (kit/guard.ts).
+  const guard = useAnswerGuardState();
   const alive = useRef(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
 
@@ -58,9 +61,11 @@ export default function InboxApprovals({ onOpenConversation, onCount }: {
         <span className="font-mono text-[12px] text-subtle-foreground">{asks.length}</span>
       </h2>
       {error && <Notice tone="warn">{t("inbox.answerFailed")}</Notice>}
-      <AskQueue items={asks.map((ask) => ({ key: ask.call_id, render: (queue) => (
-        <AskForFrame ask={ask} queue={queue} onAnswer={(approve) => void answer(ask, approve)}
-          onOpenContext={() => onOpenConversation(ask.conversation_id)} />) }))} />
+      <AnswerGuardScope value={guard}>
+        <AskQueue items={asks.map((ask) => ({ key: ask.call_id, render: (queue) => (
+          <AskForFrame ask={ask} queue={queue} onAnswer={(approve) => void answer(ask, approve)}
+            onOpenContext={() => onOpenConversation(ask.conversation_id)} />) }))} />
+      </AnswerGuardScope>
     </section>
   );
 }
