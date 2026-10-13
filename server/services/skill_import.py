@@ -6,13 +6,16 @@ nearest license file from the skill's folder up to the root decides, by its word
 license Arslan does not recognise imports only with `license_ok` = the sha256 of the text the server
 fetched itself ("Use it on this Mac only"); the skill is then local use only. Re-import is an update.
 Supply chain (test_capability_supply_chain): a named repository and path only, never a query; fixed
-hosts api.github.com and codeload.github.com.
+hosts api.github.com (the repository's metadata) and codeload.github.com (its archive — the only
+address an archive is ever asked of, a redirect included).
 """
 from __future__ import annotations
 
 import asyncio
 import hashlib
 import hmac
+import json
+import math
 import re
 import time
 import uuid
@@ -30,7 +33,12 @@ from server.db.models import CapabilitySource, SkillPack
 from server.services import capability_scan, github_eval, skill_files
 from server.services.skill_forge import MAX_SKILL_BYTES
 
-_CODELOAD = "https://codeload.github.com"
+_CODELOAD_HOST = "codeload.github.com"
+_CODELOAD = f"https://{_CODELOAD_HOST}"
+#: Redirects of an archive request followed (codeload sends a renamed repository to its new name).
+_MAX_REDIRECTS = 5
+_REDIRECTS = frozenset({301, 302, 303, 307, 308})
+_ARCHIVE_HEADERS = {"Accept-Encoding": "identity", "User-Agent": "arslan-toolhub"}   # the bytes are the tar.gz, not a layer on it
 _ARCHIVE_TIMEOUT = 60.0
 _ARCHIVE_CACHE_S = 600
 _ARCHIVE_CACHE_MAX = 4
@@ -53,6 +61,10 @@ OUTSIDE_ORIGINS = EXTERNAL_ORIGINS | {"imported"}
 _FRONTMATTER_RE = re.compile(r"\A---\s*\n(.*?)\n---\s*\n?", re.DOTALL)
 _SHA_RE = re.compile(r"^[0-9a-f]{7,40}$")
 _REF_RE = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
+#: GitHub's own rules, loosely: an owner is letters, digits, dashes (and the underscore of a managed
+#: account); a repository adds dots. Nothing that could make a URL mean another address.
+_OWNER_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,99}")
+_REPO_RE = re.compile(r"[A-Za-z0-9_.-]{1,100}")
 _TREE_RE = re.compile(r"^(?:https?://)?(?:www\.)?github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?"
                       r"(?:/(?:tree|blob)/([^/\s]+)(?:/(\S*))?)?/?$")
 #: The license file names 0.1.55 read; the reviewed-library index still uses them, and they are
@@ -87,34 +99,81 @@ def slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", str(text).lower()).strip("-")[:60].strip("-")
 
 
+#: A frontmatter's `allowed-tools`, `requires` and `metadata` are shown, never obeyed (§C1): kept as plain
+#: JSON, and small. YAML can alias one list into itself nine ways nine times over (a 400-byte file is a
+#: 2 GB string once written out) and writes dates, binary data and numbers that JSON has no word for.
+_DECLARED_NODES = 200
+_DECLARED_TEXT = 500
+
+
+def _plain(value, left: list[int]):
+    """`value` as JSON can keep it. `left` counts the values still allowed (shared references are
+    counted every time they are met, and a list that holds itself runs out of them), so the result
+    is small however the YAML was written."""
+    left[0] -= 1
+    if value is None or isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return value if value.bit_length() < 63 else f"a number of {value.bit_length()} bits"
+    if isinstance(value, float):
+        return value if math.isfinite(value) else str(value)
+    if isinstance(value, str):
+        return value[:_DECLARED_TEXT]
+    if isinstance(value, dict):
+        out = {}
+        for k, v in value.items():
+            if left[0] <= 0:
+                break
+            out[str(k)[:100]] = _plain(v, left)
+        return out
+    if isinstance(value, (list, tuple, set, frozenset)):
+        items = []
+        for item in (sorted(value, key=str) if isinstance(value, (set, frozenset)) else value):
+            if left[0] <= 0:
+                break
+            items.append(_plain(item, left))
+        return items
+    return str(value)[:_DECLARED_TEXT]                  # a date, binary data...
+
+
+def _text(value) -> str:
+    """A frontmatter value as the short text it is shown as (a list or a mapping as bounded JSON)."""
+    if isinstance(value, str):
+        return value
+    plain = _plain(value, [_DECLARED_NODES])
+    return plain if isinstance(plain, str) else json.dumps(plain, ensure_ascii=False)
+
+
 def parse_skill_md(raw: str, *, fallback_key: str = "") -> dict | None:
     """A standard SKILL.md: YAML frontmatter (name and description) + a Markdown body.
 
     The key comes from the name, else from `fallback_key` (its folder's name), else from the
     name's hash, so a name with no Latin letters still has a key. `disable-model-invocation:
     true` makes it not `invocable`; `allowed-tools`, `requires` and `metadata` are kept to be
-    shown (`declared`), never obeyed. `license` is the frontmatter's own `license:` value: the
-    license step reads it (it can take a recognised license away, never grant one)."""
+    shown (`declared`, small and fit for JSON), never obeyed. `license` is the frontmatter's own
+    `license:` value: the license step reads it (it can take a recognised license away, never
+    grant one)."""
     m = _FRONTMATTER_RE.match(raw or "")
     if not m:
         return None
     try:
         meta = yaml.safe_load(m.group(1)) or {}
-    except yaml.YAMLError:
+    except (yaml.YAMLError, ValueError, OverflowError, RecursionError):    # 2024-13-45; a number of 5,000 digits; [[[[…
         return None
     if not isinstance(meta, dict) or not meta.get("name") or not meta.get("description"):
         return None
     body = raw[m.end():].strip()
     if not body:
         return None
-    key = (slug(meta["name"]) or slug(fallback_key)
-           or "skill-" + hashlib.sha256(str(meta["name"]).encode("utf-8")).hexdigest()[:8])
+    name = _text(meta["name"])
+    key = (slug(name) or slug(fallback_key)
+           or "skill-" + hashlib.sha256(name.encode("utf-8", "replace")).hexdigest()[:8])
     flag = meta.get("disable-model-invocation")
-    return {"key": key, "name": str(meta["name"])[:100],
-            "description": " ".join(str(meta["description"]).split())[:MAX_DESCRIPTION], "body": body,
-            "invocable": not (flag is True or str(flag).strip().lower() == "true"),
-            "declared": {k: meta[k] for k in _DECLARED if k in meta},
-            "license": meta.get("license")}
+    return {"key": key, "name": name[:100],
+            "description": " ".join(_text(meta["description"]).split())[:MAX_DESCRIPTION], "body": body,
+            "invocable": not (flag is True or (isinstance(flag, str) and flag.strip().lower() == "true")),
+            "declared": _plain({k: meta[k] for k in _DECLARED if k in meta}, [_DECLARED_NODES]),
+            "license": None if meta.get("license") is None else _text(meta["license"])}
 
 
 def _license_gate(spdx: str | None) -> str | None:
@@ -159,6 +218,10 @@ class Source:
     subpath: str      # a folder inside the repository ("" = all of it)
 
 
+def _valid_repo(repo: str) -> bool:
+    return bool(_REPO_RE.fullmatch(repo)) and repo not in (".", "..")
+
+
 def parse_source(text: str, subpath: str = "") -> Source | None:
     """`owner/repo`, `owner/repo@<commit>`, or a github.com link — a `/tree/<ref>/<path>` (or
     `/blob/…/SKILL.md`) link is followed to that ref and folder. A ref with a slash in it (a
@@ -177,6 +240,8 @@ def parse_source(text: str, subpath: str = "") -> Source | None:
         if parsed is None or base.lower().startswith(("http://", "https://")) and "github.com" not in base:
             return None
         owner, repo = parsed
+    if not _OWNER_RE.fullmatch(owner) or not _valid_repo(repo.removesuffix(".git")):
+        return None                            # "evil.example/o/r" is no GitHub repository
     if pinned:
         if not _SHA_RE.fullmatch(pinned.lower()):
             raise ValueError("not a commit id")
@@ -191,21 +256,49 @@ def parse_source(text: str, subpath: str = "") -> Source | None:
     return Source(owner, repo.removesuffix(".git"), ref or "HEAD", path)
 
 
-async def _download(owner: str, repo: str, ref: str) -> bytes:
-    url = f"{_CODELOAD}/{owner}/{repo}/tar.gz/{ref}"
+def _codeload_url(owner: str, repo: str, ref: str) -> httpx.URL:
+    """The one address an archive is asked of. The names are checked here, on the way to the request,
+    whoever calls: nothing in them can make the URL mean another host or another path."""
+    if (not _OWNER_RE.fullmatch(owner or "") or not _valid_repo(repo or "") or not _REF_RE.fullmatch(ref or "")
+            or ref.startswith(".")):
+        raise ValueError("not a GitHub repository")
+    return httpx.URL(f"{_CODELOAD}/{owner}/{repo}/tar.gz/{ref}")
+
+
+def _require_codeload(url: httpx.URL) -> None:
+    """Refuse an address that is not codeload.github.com over https: checked on every request the
+    download makes, the first and each redirect, before it is sent."""
+    if url.scheme != "https" or url.host != _CODELOAD_HOST or url.port not in (None, 443) or url.userinfo:
+        raise ValueError("GitHub sent the download somewhere other than codeload.github.com; it was not followed")
+
+
+async def _download(owner: str, repo: str, ref: str, *, transport: httpx.AsyncBaseTransport | None = None) -> bytes:
+    """GitHub's tar.gz of `ref`, from codeload.github.com and nowhere else: redirects are followed by
+    hand, up to _MAX_REDIRECTS, each one only if it stays on that host. `transport` is how a test
+    serves the request (httpx.MockTransport); production leaves it None."""
+    url = _codeload_url(owner, repo, ref)
     chunks: list[bytes] = []
     size = 0
-    async with httpx.AsyncClient(timeout=_ARCHIVE_TIMEOUT, follow_redirects=True) as client:
-        async with client.stream("GET", url) as response:
-            if response.status_code == 404:
-                raise ValueError("the repository or that commit is not on GitHub")
-            response.raise_for_status()
-            async for chunk in response.aiter_bytes():
-                size += len(chunk)
-                if size > skill_files.MAX_ARCHIVE_BYTES:
-                    raise ValueError("the repository archive is larger than 64 MB")
-                chunks.append(chunk)
-    return b"".join(chunks)
+    async with httpx.AsyncClient(timeout=_ARCHIVE_TIMEOUT, follow_redirects=False, transport=transport) as client:
+        for _ in range(_MAX_REDIRECTS + 1):
+            _require_codeload(url)
+            async with client.stream("GET", url, headers=_ARCHIVE_HEADERS) as response:
+                if response.status_code in _REDIRECTS and response.headers.get("location"):
+                    try:
+                        url = response.url.join(response.headers["location"])
+                    except httpx.InvalidURL:
+                        raise ValueError("GitHub sent the download to an address that is not one") from None
+                    continue
+                if response.status_code == 404:
+                    raise ValueError("the repository or that commit is not on GitHub")
+                response.raise_for_status()
+                async for chunk in response.aiter_bytes():
+                    size += len(chunk)
+                    if size > skill_files.MAX_ARCHIVE_BYTES:
+                        raise ValueError("the repository archive is larger than 64 MB")
+                    chunks.append(chunk)
+                return b"".join(chunks)
+    raise ValueError("GitHub redirected the download too many times")
 
 
 def _remember(key: tuple[str, str, str], data: bytes) -> None:
@@ -268,6 +361,16 @@ def _is_license_name(name: str) -> bool:
     return bool(_LICENSE_FILE_RE.fullmatch(low)) and not low.endswith(_NOT_A_LICENSE)
 
 
+def _text_of(archive: skill_files.Archive, path: str) -> str | None:
+    """A file read from the archive as the scan reads it (`capability_scan.decode_text`): UTF-16 or
+    UTF-32 by its byte-order mark, otherwise UTF-8. Never `archive.text`, which reads UTF-8 only: a
+    UTF-16 SKILL.md would come out as letters between NULs, and no rule finds a word in that."""
+    entry = archive.entries.get(path)
+    if entry is None or entry.kind != "file" or entry.data is None:
+        return None
+    return capability_scan.decode_text(entry.data)
+
+
 def _license_file(archive: skill_files.Archive, folder: str) -> str | None:
     """The license file directly in `folder` ("" = the root): the 0.1.55 names first, then any."""
     prefix = f"{folder}/" if folder else ""
@@ -316,7 +419,7 @@ def skill_license(archive: skill_files.Archive, skill_path: str, repo_spdx: str 
         path = _license_file(archive, level)
         if path is None:
             continue
-        body = archive.text(path) or ""
+        body = _text_of(archive, path) or ""
         if not body.strip():
             body = NO_LICENSE_TEXT                     # an empty license file is no license
         spdx = detect_license(body)
@@ -381,7 +484,7 @@ def _scan_entry(archive: skill_files.Archive, path: str, meta: dict, packs: dict
                    "has_scripts": any(e.path[len(prefix):].startswith("scripts/") for e in files),
                    "update": False, "replaces": None}
     fallback = folder.rsplit("/", 1)[-1] if folder else meta["full_name"].split("/")[-1]
-    info = parse_skill_md(archive.text(path) or "", fallback_key=fallback)
+    info = parse_skill_md(_text_of(archive, path) or "", fallback_key=fallback)
     if info is None:
         return {**entry, "importable": False,
                 "reason": "not a valid SKILL.md (frontmatter name and description are needed)"}
@@ -426,7 +529,8 @@ async def scan_skills(ref: str, subpath: str = "") -> dict:
     return {"repo": {"full_name": meta["full_name"], "html_url": meta["html_url"],
                      "license": meta["license"], "stars": meta["stars"]},
             "commit": archive.commit, "subpath": source.subpath,
-            "skills": [_scan_entry(archive, p, meta, packs, dossiers) for p in paths[:MAX_SCAN_SKILLS]],
+            "skills": await asyncio.to_thread(     # a repository of hundreds of skills is a lot of listing
+                lambda: [_scan_entry(archive, p, meta, packs, dossiers) for p in paths[:MAX_SCAN_SKILLS]]),
             "more": max(0, len(paths) - MAX_SCAN_SKILLS)}
 
 
@@ -440,9 +544,20 @@ def _attribution(full_name: str, commit: str, lic: SkillLicense, today: str) -> 
     return f"> Imported verbatim from https://github.com/{full_name} at {commit[:12]} ({terms}) on {today}.\n\n"
 
 
+#: How much of the SKILL.md already in the folder is read to say what an update changed.
+_MAX_OLD_MD = 1024 * 1024
+
+
 def _read_md(folder: Path) -> str:
+    """The SKILL.md of the folder an update replaces, as the scan reads a file (`decode_text`)."""
     path = folder / "SKILL.md"
-    return path.read_text("utf-8", errors="replace") if path.is_file() else ""
+    try:
+        if path.is_symlink() or not path.is_file():
+            return ""
+        with path.open("rb") as handle:
+            return capability_scan.decode_text(handle.read(_MAX_OLD_MD))
+    except OSError:
+        return ""
 
 
 async def import_skill(ref: str, path: str, *, license_ok: str | None = None) -> dict:
@@ -451,7 +566,16 @@ async def import_skill(ref: str, path: str, *, license_ok: str | None = None) ->
 
     `ref` names the repository, optionally a commit (`owner/repo@<sha>`, what a scan returned),
     or is a github.com link. `path` is the SKILL.md inside it. `license_ok` is the sha256 of the
-    license text the user read and accepted for local use."""
+    license text the user read and accepted for local use.
+
+    The result's `files` maps each file to its sha256 under the name it was COPIED as: the skill's
+    folder in the repository plus the file's path on this disk. On a Mac's case-insensitive disk
+    `s/Docs/b.md` and `s/docs/a.md` land in one folder, and `files` says so (`Docs/b.md`,
+    `Docs/a.md`); it is never translated back to the archive's spelling, because the dossier is
+    compared with the folder on disk (`skill_files.checksums`) and must name the same files.
+
+    The folder of `key` is swapped under `skill_files.key_lock(key)`, from reading the folder it
+    replaces to its `retire` or `swap_back`: two imports of one key follow each other."""
     source = parse_source(ref)
     if source is None:
         raise ValueError("not a GitHub repo reference")
@@ -462,7 +586,7 @@ async def import_skill(ref: str, path: str, *, license_ok: str | None = None) ->
     prefix = f"{folder}/" if folder else ""
     meta = await github_eval.fetch_repo(source.owner, source.repo)
     archive = await _archive(source, keep=lambda p: p.startswith(prefix) or _is_license_name(p.rsplit("/", 1)[-1]))
-    raw = archive.text(skill_path)
+    raw = _text_of(archive, skill_path)
     if raw is None:
         raise ValueError(f"{skill_path} is not in the repository at {archive.commit[:12]}")
     info = parse_skill_md(raw, fallback_key=folder.rsplit("/", 1)[-1] if folder else source.repo)
@@ -474,46 +598,50 @@ async def import_skill(ref: str, path: str, *, license_ok: str | None = None) ->
     if not lic.recognised and len(lic.text.encode("utf-8")) > MAX_LICENSE_BYTES:
         raise ValueError("the license text is too long to show")
     key = info["key"]
-    async with db_session.AsyncSessionLocal() as db:
-        existing = await db.get(SkillPack, key)
-        dossier = (await db.get(CapabilitySource, existing.source_id)
-                   if existing is not None and existing.source_id else None)
-    update = existing is not None and _same_import(existing, dossier, meta["full_name"], skill_path)
-    if existing is not None and not update and existing.origin not in EXTERNAL_ORIGINS:
-        raise ValueError(f"a skill named '{key}' already exists")
-    replaces = _replaces(existing)
-    accepted = existing.license_sha256 if update and existing.local_only else None
-    block = _skill_license_block(lic, license_ok, accepted)
-    if block == "license_step":
-        raise LicenseStepNeeded(lic, key=key, name=info["name"])
-    if block:
-        raise ValueError(block)
+    async with skill_files.key_lock(key):
+        async with db_session.AsyncSessionLocal() as db:
+            existing = await db.get(SkillPack, key)
+            dossier = (await db.get(CapabilitySource, existing.source_id)
+                       if existing is not None and existing.source_id else None)
+        update = existing is not None and _same_import(existing, dossier, meta["full_name"], skill_path)
+        if existing is not None and not update and existing.origin not in EXTERNAL_ORIGINS:
+            raise ValueError(f"a skill named '{key}' already exists")
+        replaces = _replaces(existing)
+        accepted = existing.license_sha256 if update and existing.local_only else None
+        block = _skill_license_block(lic, license_ok, accepted)
+        if block == "license_step":
+            raise LicenseStepNeeded(lic, key=key, name=info["name"])
+        if block:
+            raise ValueError(block)
 
-    final = skill_files.folder_for(key)
-    old_files = skill_files.checksums(final) if update else {}
-    old_md = _read_md(final) if update else ""
-    staged = await asyncio.to_thread(skill_files.stage, archive, folder)
-    try:
-        scan = await asyncio.to_thread(capability_scan.scan_skill_folder, staged.path, raw)
-        aside = skill_files.swap_in(staged, key)
-    except BaseException:
-        skill_files.discard(staged)
-        raise
-    try:
-        recorded = await _record_import(key=key, info=info, raw=raw, lic=lic, scan=scan, meta=meta,
-                                        commit=archive.commit, skill_path=skill_path, folder=folder,
-                                        files=staged.files, newly_accepted=accepted != lic.sha256)
-    except BaseException:
-        skill_files.swap_back(key, aside)
-        raise
-    skill_files.retire(aside)                     # never raises: a Trash it cannot reach is logged
+        final = skill_files.folder_for(key)
+        old_files = await asyncio.to_thread(skill_files.checksums, final) if update else {}
+        old_md = _read_md(final) if update else ""
+        staged = await asyncio.to_thread(skill_files.stage, archive, folder)
+        try:
+            # SKILL.md is read from the staged folder, as the file it is: the scan decodes it by its
+            # byte-order mark and caps it, and it is the file that will be there to be read.
+            scan = await asyncio.to_thread(capability_scan.scan_skill_folder, staged.path, None)
+            aside = skill_files.swap_in(staged, key)
+        except BaseException:
+            skill_files.discard(staged)
+            raise
+        try:
+            recorded = await _record_import(key=key, info=info, raw=raw, lic=lic, scan=scan, meta=meta,
+                                            commit=archive.commit, skill_path=skill_path, folder=folder,
+                                            files=staged.files, newly_accepted=accepted != lic.sha256)
+        except BaseException:
+            skill_files.swap_back(key, aside)
+            raise
+        skill_files.retire(aside)                 # never raises: a Trash it cannot reach is logged
+        scripts = skill_files.has_scripts(final)
     return {"key": key, "name": info["name"], "description": info["description"], "update": update,
             "replaces": replaces, "commit": archive.commit,
             "files": {prefix + rel: sha for rel, sha in staged.files.items()},
             "skipped": staged.skipped, "license": lic.spdx, "license_source": lic.read_from,
             "recognised": lic.recognised, "local_only": not lic.recognised, "scan": scan,
             "enabled": recorded["enabled"], "source_id": recorded["source_id"],
-            "has_scripts": skill_files.has_scripts(final),
+            "has_scripts": scripts,
             "changes": skill_files.changes(old_files, staged.files, old_md, raw) if update else None}
 
 
@@ -548,6 +676,7 @@ async def _record_import(*, key: str, info: dict, raw: str, lic: SkillLicense, s
                                        created_at=now)
             db.add(dossier)
         pack.name, pack.category, pack.description = info["name"], "imported", info["description"]
+        # `origin` is set on every write, a new row and an old one: the column's default is "saved".
         pack.tier, pack.status, pack.origin = "safe", "registered", "imported"
         pack.body = _attribution(full, commit, lic, now.date().isoformat()) + info["body"]
         pack.folder = str(skill_files.folder_for(key))
