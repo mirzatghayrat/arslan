@@ -80,6 +80,17 @@ def _legacy_expert_path(request):
 
 
 @pytest.fixture(autouse=True)
+def _terminal_policy_fresh():
+    """`terminal_policy.classify` is memoized (0.1.61 review N6) by the text and the files and
+    folders it reads; a test that patches one of its functions or Hands' helpers instead must not
+    get an answer an earlier test memoized. Cleared before and after, without `monkeypatch`."""
+    from server.services import terminal_policy
+    terminal_policy.clear_cache()
+    yield
+    terminal_policy.clear_cache()
+
+
+@pytest.fixture(autouse=True)
 def _testclient_models_loopback(monkeypatch):
     """In-process clients model a local dev connection unless a test specifies a peer.
 

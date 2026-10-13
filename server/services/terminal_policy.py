@@ -5,7 +5,9 @@
   floor        never, even with a click: wiping disks or the home folder, shutting down, fork
                bombs, sudo, reading passwords out of the keychain, Arslan's own data, keys and
                database, an app on the never-list.
-  opaque       code that is downloaded or decoded and then run.
+  opaque       code that is downloaded or decoded, or built while the command runs, and then
+               run; a command Arslan could not read (past a parse ceiling, or a command word
+               known only at run time).
   other_agent  a write into another agent's settings (Hermes, Codex, Claude, Cursor, OpenClaw).
   system       changes how the Mac behaves: launchd, preferences, crontab, power, network,
                keychain items, shell start files.
@@ -33,6 +35,8 @@ Everything here is a function of the command text; the sandbox holds the rest.
 """
 from __future__ import annotations
 
+import contextvars
+import functools
 import logging
 import os
 import re
@@ -273,6 +277,7 @@ _FORBID_C = [(k, re.compile(p, re.I), w) for k, p, w in _FORBID]
 _ASK_C = [(k, re.compile(p, re.I), w) for k, p, w in _ASK if p is not None]
 _WHY = {k: w for k, _, w in _FORBID + _ASK}
 _WHY.update({"fetched-code": "runs code it downloads or decodes",
+             "built-code": "runs code it builds while it runs",
              "unreadable": "Arslan could not read this command — run it?"})
 _ARSLAN_DATA = re.compile(
     r"(?P<folder>Application\s*Support[\"']?/+[\"']?Arslan(?![\w.-]))"   # the data folder (and Hands')
@@ -332,21 +337,49 @@ class Assessment:
 #: asks as the `opaque` card, which is once only: never run unread, and never the floor, which no
 #: click can lift. Its words are the card's title.
 UNREADABLE = Finding("opaque", "unreadable", _WHY["unreadable"])
-#: The parse ceilings (review M3). Reading a command costs more with every substitution that runs:
-#: with their number, their depth, and the text they span. Measured with none (loaded machine):
-#: 300 backticks 2.7 s, 64 deep 3.7 s, 64 backticks spread over 8 KB 2.8 s, 16 deep around 7 KB
-#: 26 s; each command a script hands the system is a full read too. Real commands open a handful
-#: of substitutions, one or two deep, and a script runs a few commands. Within these ceilings the
-#: worst shapes measured read in about half a second; past any of them a command is not read.
-_MAX_SUBSTITUTIONS = 64           # backticks and `$(` that run; and the commands one script runs
-_MAX_SUBSTITUTION_DEPTH = 16      # `$(` inside `$(`
+#: The parse ceilings (review M3, N6). Reading a command costs more with every substitution that
+#: runs: with their number, their depth, and the text they span; with every command it holds, and
+#: every wrapper word in front of one. Measured with none (loaded machine): 300 backticks 2.7 s,
+#: 64 deep 3.7 s, 16 deep around 7 KB 26 s, 1,990 `env` words 17 s, 2,655 `(a)` 18 s. Real commands
+#: open a handful of substitutions, one or two deep, run a few commands and wrap them once or
+#: twice. One budget holds them all (`_Budget`): the command, each payload it hands a shell or
+#: `eval`, each command a script runs. Past any ceiling a command is not read (the R3 path).
+_MAX_SUBSTITUTIONS = 64           # backticks, `$(`, `<(`, `>(`, `=(` that run; and the commands one script runs
+_MAX_SUBSTITUTION_DEPTH = 16      # a substitution inside a substitution
 _MAX_BACKTICK_WORK = 64 * 1024    # backticks × the length of the text: 64 in 1 KB, 8 in 8 KB
-_MAX_NESTED_WORK = 32 * 1024      # Σ depth² over the characters inside `$(…)`: any length 1 deep, 128 at 16
+_MAX_NESTED_WORK = 32 * 1024      # Σ depth² over the characters inside substitutions: any length 1 deep, 128 at 16
+_MAX_SEPARATORS = 1024            # unquoted `;` `&` `|`, newlines and parentheses
+_MAX_WRAPPERS = 16                # wrapper words in one simple command (`env`, `nohup`, `nice`, `xargs` …)
 _MAX_CODE_DEPTH = 3               # code handed to a shell within code handed to a shell (`bash -c`, `eval`)
+_MAX_READING = 4 * MAX_COMMAND_CHARS   # a command with the values R13 fills in
 
 
 class _Unreadable(Exception):
-    """A parse ceiling: the command is not read, and asks (`UNREADABLE`)."""
+    """A parse ceiling, or a command word known only at run time: the command is not read, and asks
+    (`UNREADABLE`) unless a floor shows: `floor` holds what the reading found before it stopped."""
+
+    def __init__(self, reason: str, floor: tuple[Finding, ...] = ()):
+        super().__init__(reason)
+        self.floor = floor
+
+
+class _Budget:
+    """What one `classify` has read (review N6): the load of the command and of every payload and
+    script command read with it, summed against the ceilings, and each payload's commands, read once
+    (`read`, by text and depth) — a payload written twice is not read twice. `payloads` keeps the
+    code every shell and `eval` was handed, for the run-time code rules (R11, R13)."""
+    __slots__ = ("marks", "deepest", "ticks", "nested", "separators", "read", "payloads")
+
+    def __init__(self) -> None:
+        self.marks = self.deepest = self.ticks = self.nested = self.separators = 0
+        self.read: dict[tuple[str, int], list[list[str]]] = {}
+        self.payloads: dict[str, None] = {}
+
+
+#: The budget of the read in progress; None outside one. A command read inside another (what a
+#: script or an AppleScript hands the shell) shares it, and is not memoized.
+_BUDGET: contextvars.ContextVar[_Budget | None] = contextvars.ContextVar("terminal_policy_budget",
+                                                                         default=None)
 
 
 def as_shell(command: str, argv=None) -> str:
@@ -364,21 +397,67 @@ def as_shell(command: str, argv=None) -> str:
 def classify(command: str) -> Classification:
     """Every finding in a command. It never raises (the tool loop has no catch around it): an
     error while reading, or a command past a parse ceiling, is the floor its text shows, else
-    `UNREADABLE` alone (review I3, amended by N3)."""
+    `UNREADABLE` alone (review I3, amended by N3).
+
+    Memoized (review N6: the live path classifies one command six times or more, on the event
+    loop): by the text and by everything else a reading depends on (`_environment`); the answer is
+    immutable. A command read inside another shares that read's budget and is read afresh."""
     text = str(command or "")
+    if _BUDGET.get() is not None:
+        return _classify(text)
+    try:
+        environment = _environment()
+    except Exception:  # noqa: BLE001 — no key, no memo: read it afresh
+        return _classify(text)
+    return _classify_memoized(text, environment)
+
+
+@functools.lru_cache(maxsize=512)
+def _classify_memoized(text: str, environment: tuple) -> Classification:
+    return _classify(text)
+
+
+def clear_cache() -> None:
+    """Forget every memoized classification (a test that patches what a reading depends on)."""
+    _classify_memoized.cache_clear()
+
+
+def _environment() -> tuple:
+    """Everything besides its text that a reading depends on: the home folder (other agents' and
+    start files), Arslan's data and working folders, and the files Hands' never-list is read from
+    (the user's settings and the shipped policy), by path, modification time and size."""
+    from server.services import hands_service
+    key: list = [str(Path.home()), _data_dir_literal(), tuple(_data_roots())]
+    for path in (hands_service._dir() / "settings.json", hands_service._policy_path()):
+        try:
+            stat = os.stat(path)
+            key.append((str(path), stat.st_mtime_ns, stat.st_size))
+        except OSError:
+            key.append((str(path), None, None))
+    return tuple(key)
+
+
+def _classify(text: str) -> Classification:
     if not text.strip():
         return Classification(text, (Finding("floor", "empty", "no command"),))
     if len(text) > MAX_COMMAND_CHARS:
         return Classification(text, (Finding("floor", "too-long", "command is too long to review"),))
+    if _BUDGET.get() is not None:       # read inside another command: what stops it stops that one
+        return _unique(text, _read(text))
     try:
         findings = _read(text)
     except _Unreadable as ceiling:
         logger.info("terminal_policy: past a parse ceiling (%s), a command asks unread", ceiling)
-        return Classification(text, _floor_of_unread(text) or (UNREADABLE,))
+        return Classification(text, tuple(dict.fromkeys(_floor_of_unread(text) + ceiling.floor))
+                              or (UNREADABLE,))
     except Exception:  # noqa: BLE001 — never raise, never run it unread
         logger.warning("terminal_policy: could not read a command (%d characters); it asks unread",
                        len(text), exc_info=True)
         return Classification(text, _floor_of_unread(text) or (UNREADABLE,))
+    return _unique(text, findings)
+
+
+def _unique(text: str, findings: list[Finding]) -> Classification:
     seen: set[tuple] = set()
     unique = []
     for f in findings:
@@ -401,9 +480,25 @@ _FLAT_DISK = re.compile(r"(?<![\w.-])diskutil\s+(?:apfs\s+)?(?:erase\w*|zerodisk
 
 def _floor_of_unread(text: str) -> tuple[Finding, ...]:
     """The floor a command that could not be read shows in its text (review N3: padding a floor
-    command past a ceiling must not turn "never" into a card asking "run it?"). One linear pass of
+    command past a ceiling must not turn "never" into a card asking "run it?"). Linear passes of
     the raw text, every quote and bracket taken as a command start: it over-reads on purpose, and
-    the floor only refuses. Never raises."""
+    the floor only refuses. The text is searched as written (`$'…'` decoded) and with the values
+    R13 reads filled in (`${a:-rm} ${b:--rf} ~` is `rm -rf ~`). Never raises."""
+    subjects = [text]
+    try:
+        subjects = [_decode_ansi_c(text)]
+        reading = _readings(subjects[0])
+        if reading != subjects[0]:
+            subjects.append(reading)
+    except Exception:  # noqa: BLE001 — what could be built is searched
+        pass
+    found: list[Finding] = []
+    for subject in subjects:
+        found += _floor_shown(subject)
+    return tuple(dict.fromkeys(found))
+
+
+def _floor_shown(text: str) -> list[Finding]:
     try:
         normalized = hermes._normalize_command_for_detection(text)
         flat = _FLAT_STARTS.sub("\n", normalized)
@@ -422,27 +517,118 @@ def _floor_of_unread(text: str) -> tuple[Finding, ...]:
             found.append(Finding("floor", "disk-erase", "erases a disk"))
         if _touches_arslan_data(text):
             found.append(Finding("floor", "arslan-data", "touches Arslan's own data, keys or database"))
-        return tuple(dict.fromkeys(found))
+        return found
     except Exception:  # noqa: BLE001 — the unread card still asks
-        return ()
+        return []
+
+
+_ANSI_C_SIMPLE = {"n": "\n", "t": "\t", "r": "\r", "a": "\a", "b": "\b", "e": "\x1b", "E": "\x1b", "f": "\f",
+                  "v": "\v", "\\": "\\", "'": "'", '"': '"', "?": "?"}
+
+
+def _decode_ansi_c(text: str) -> str:
+    """Every `$'…'` outside quotes decoded as zsh decodes it (`\\'`, `\\\\`, `\\n`, `\\xHH`, `\\uHHHH`,
+    `\\NNN` …) and written as a plain single-quoted word: `$'\\x67it' push` is `'git' push`, and
+    `$'don\\'t'` no longer leaves the scanners in a quote that never closes (item 9). In double quotes
+    `$'` is literal; a `$(…)` opens a fresh quoting level. Never raises."""
+    if "$'" not in text:
+        return text
+    out: list[str] = []
+    quotes: list[str | None] = [None]
+    i, n = 0, len(text)
+    while i < n:
+        ch, quote = text[i], quotes[-1]
+        if quote == "'":
+            quotes[-1] = None if ch == "'" else quote
+        elif ch == "\\":
+            out.append(text[i:i + 2])
+            i += 2
+            continue
+        elif quote is None and text.startswith("$'", i):
+            value, i = _ansi_c_value(text, i + 2)
+            out.append("'" + value.replace("'", "'\\''") + "'")
+            continue
+        elif ch == '"':
+            quotes[-1] = None if quote == '"' else '"'
+        elif ch == "'" and quote is None:
+            quotes[-1] = "'"
+        elif text.startswith("$(", i):
+            quotes.append(None)
+            out.append("$(")
+            i += 2
+            continue
+        elif ch == ")" and quote is None and len(quotes) > 1:
+            quotes.pop()
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def _ansi_c_value(text: str, at: int) -> tuple[str, int]:
+    """The decoded value of the `$'…'` whose content starts at `at`, and where the text resumes."""
+    value: list[str] = []
+    i, n = at, len(text)
+    while i < n and text[i] != "'":
+        if text[i] != "\\" or i + 1 >= n:
+            value.append(text[i])
+            i += 1
+            continue
+        c = text[i + 1]
+        if c in _ANSI_C_SIMPLE:
+            value.append(_ANSI_C_SIMPLE[c])
+            i += 2
+            continue
+        digits, base, j = "", 16, i + 2
+        if c in "xuU":
+            width = {"x": 2, "u": 4, "U": 8}[c]
+            while j < n and len(digits) < width and text[j] in "0123456789abcdefABCDEF":
+                digits += text[j]
+                j += 1
+        elif c in "01234567":
+            base, j = 8, i + 1
+            while j < n and len(digits) < 3 and text[j] in "01234567":
+                digits += text[j]
+                j += 1
+        try:
+            value.append(chr(int(digits, base)) if digits else "\\" + c)
+        except (ValueError, OverflowError):
+            value.append("\\" + c)
+        i = j if digits else i + 2
+    return "".join(value), min(i + 1, n)
 
 
 def _read(text: str) -> list[Finding]:
-    """The findings of `classify`; raises `_Unreadable` past a parse ceiling. The command is read as
-    zsh runs it (`_without_zsh_modifiers`), whose rewrites only take out or split: no text a floor
-    pattern needs goes (`f()` stays, so `:(){ :|:& };:` is still the fork bomb)."""
+    """The findings of `classify`. Raises `_Unreadable` past a parse ceiling, and for a command word
+    known only at run time (R13 d) once the whole command is read, with the floor it found. The
+    command is read as zsh runs it (`_without_zsh_modifiers`), whose rewrites only take out or
+    split: no text a floor pattern needs goes (`f()` stays, so `:(){ :|:& };:` is still the fork
+    bomb); with the values R13 fills in read beside it (`_readings`)."""
+    budget = _BUDGET.get()
+    if budget is None:
+        token = _BUDGET.set(_Budget())
+        try:
+            return _read(text)
+        finally:
+            _BUDGET.reset(token)
+    text = _decode_ansi_c(text)
     shell, bodies = split_heredocs(text)
-    _check_ceilings(shell)
-    shell = _with_inner_backticks(shell)
-    _check_ceilings(shell)
-    shell = _without_zsh_modifiers(shell)
+    _charge(shell)
+    inner = _with_inner_backticks(shell)
+    _charge(inner[len(shell):])
+    shell = _without_zsh_modifiers(_readings(inner))
     commands = _commands(shell)
     findings: list[Finding] = []
     findings += _floor_findings(text, shell, commands)
-    findings += _hermes_findings(shell, raw=text)
+    findings += _hermes_findings(shell, raw=text, commands=commands)
     findings += _arslan_findings(shell, commands, bodies)
     findings += _script_findings(commands, bodies)
     findings += _fetched_code_findings(shell)
+    findings += _code_findings([shell, *budget.payloads])
+    # A code word built by a substitution (`eval "$(…)"`) is that code's own card (R13 c).
+    if (any(getattr(argv, "dynamic", False) for argv in commands)
+            and not {f.rule for f in findings} & {"built-code", "fetched-code"}):
+        raise _Unreadable("a command word known only at run time",
+                          floor=tuple(f for f in findings if f.category == "floor"))
     return findings
 
 
@@ -472,7 +658,7 @@ def standing_allows(command: str, allowed: set[str]) -> bool:
     must be one of them. `osascript …; curl -d @file …` is "apple-events" to `assess`, but a
     standing answer for apple-events must not wave the upload through."""
     rules = ask_rules(command)
-    return bool(rules) and rules <= allowed
+    return bool(rules) and not rules & _NEVER_REMEMBERED and rules <= allowed
 
 
 def risk_grade(command: str) -> str:
@@ -513,7 +699,8 @@ def split_heredocs(text: str) -> tuple[str, list[tuple[str, str]]]:
     ceiling sees it. It stays shell when a shell reads it: any word of its command is a shell, past
     wrappers and options (`nice -n 5 zsh <<EOF`), or one follows in its pipeline (`cat <<EOF | env
     zsh`). With an unquoted delimiter the shell still expands the body's `$(…)`, backticks and
-    `${…}`: they stay, each on a line of its own. A body with no closing line stays shell as well."""
+    `${…}`: they stay, each on a line of its own as an argument of `:` (expanded, not run as a
+    command word). A body with no closing line stays shell as well."""
     out: list[str] = []
     bodies: list[tuple[str, str]] = []
     levels = [_Level("top", 0)]
@@ -646,7 +833,7 @@ def _take_bodies(text: str, newline: int, pending, out: list[str], bodies: list[
         else:
             bodies.append((_heredoc_program(head), body))
             if not quoted:                      # the shell expands these before the program reads it
-                out.extend(f"{expansion}\n" for expansion in _expansions(body))
+                out.extend(f": {expansion}\n" for expansion in _expansions(body))
             if not closed:                      # no closing line: shell as well, never only data
                 out.append(text[start:after])
         pos = after
@@ -730,9 +917,9 @@ _MAX_REWRITES = 16
 def _without_zsh_modifiers(shell: str) -> str:
     """The command with what zsh reads before a command word taken out, so every rule, Hermes' text
     patterns too, sees the command that runs: `noglob sudo ls` is `sudo ls`, `exec noglob git push`
-    is `exec git push`, `repeat $(rm -rf ~) true` is `$(rm -rf ~)` then `true` (zsh runs the count),
-    `f() git push` is `git push`, `{git push}` is `{git push` then `}` (review I2, N2, items 12–13).
-    Read at every command word, a wrapper's too, until nothing changes."""
+    is `exec git push`, `repeat $(rm -rf ~) true` is `: $(rm -rf ~)` then `true` (zsh expands the
+    count), `f() git push` is `git push`, `{git push}` is `{git push` then `}` (review I2, N2, items
+    12–13). Read at every command word, a wrapper's too, until nothing changes."""
     for _ in range(_MAX_REWRITES):
         rewritten = _rewrite_command_words(shell)
         if rewritten == shell:
@@ -745,10 +932,22 @@ def _rewrite_command_words(shell: str) -> str:
     edits: set[tuple[int, int, str]] = set()
     starts = set(hermes._iter_shell_command_starts(shell))
     spans = list(hermes._iter_shell_command_word_spans(shell))
-    for _start, end, word in spans:         # a case pattern's `)` starts a command (item 10)
+    for _start, end, word in spans:         # a case pattern is no command; after its `)` one starts (item 10)
         if hermes._deobfuscate_shell_word_for_detection(word) == "case":
-            edits |= {(p, p, "\n") for p in _case_pattern_ends(shell, end) if shell[p:p + 1] != "\n"}
+            for start, close in _case_patterns(shell, end):
+                pattern = re.sub(r"\s*\|\s*", "|", shell[start:close - 1].strip()).replace(": ", "")
+                if not re.search(r"\s", pattern):                 # each alternative an argument of `:`
+                    for at in [start] + [j for kind, i, j, quote in
+                                         hermes._scan_shell(shell, start, close - 1, subst="uq", brace=True)
+                                         if kind == "char" and quote is None and shell[i] == "|"]:
+                        at = hermes._skip_shell_whitespace(shell, at)
+                        if not shell.startswith(": ", at):
+                            edits.add((at, at, ": "))
+                if shell[close:close + 1] != "\n":
+                    edits.add((close, close, "\n"))
     for at in starts | {start for start, _end, _word in spans}:
+        if _follows_redirect(shell, at):    # Hermes starts a command after `2>&`: `2>&- -d` is no `- -d`
+            continue
         end = at
         while True:
             if (match := _ZSH_MODIFIER.match(shell, end)) is not None:
@@ -761,8 +960,8 @@ def _rewrite_command_words(shell: str) -> str:
             elif (match := _ZSH_REPEAT.match(shell, end)) is not None:
                 count_end = _word_end(shell, match.end())
                 if count_end == match.end():
-                    break
-                edits |= {(end, match.end(), ""), (count_end, count_end, "\n")}
+                    break                   # the count is expanded, not run: `: C` then the command
+                edits |= {(end, match.end(), ": "), (count_end, count_end, "\n")}
                 end = hermes._skip_shell_whitespace(shell, count_end)
             else:
                 break
@@ -779,26 +978,28 @@ def _rewrite_command_words(shell: str) -> str:
     return hermes._splice(shell, kept) if kept else shell
 
 
-def _case_pattern_ends(shell: str, at: int) -> list[int]:
-    """Just after each pattern's `)` in the `case` whose subject starts at `at` (`case a in a) sudo
-    ls;; esac`): a command starts there. The clauses end at `;;`, `;&` or `;|`."""
+def _case_patterns(shell: str, at: int) -> list[tuple[int, int]]:
+    """(where each pattern starts, just after its `)`) in the `case` whose subject starts at `at`
+    (`case a in a) sudo ls;; esac`): a pattern is no command (`*.md)` is no glob run as one), and a
+    command starts after its `)`. A pattern with a blank in it is left as it is (zsh refuses it,
+    and it is read as the command it looks like). The clauses end at `;;`, `;&` or `;|`."""
     _start, pos, _subject = hermes._read_shell_word(shell, at)
     _start, pos, word = hermes._read_shell_word(shell, pos)
-    ends: list[int] = []
+    patterns: list[tuple[int, int]] = []
     if word != "in":
-        return ends
+        return patterns
     while True:
         pos = hermes._skip_shell_whitespace(shell, pos)
         if pos >= len(shell) or re.match(r"esac(?![\w-])", shell[pos:pos + 5]):
-            return ends
+            return patterns
         pos += shell[pos] == "("
         close = _pattern_close(shell, pos)
         if close is None:
-            return ends
-        ends.append(close + 1)
+            return patterns
+        patterns.append((pos, close + 1))
         pos = _clause_end(shell, close + 1)
         if pos is None:
-            return ends
+            return patterns
 
 
 def _pattern_close(shell: str, at: int) -> int | None:
@@ -890,38 +1091,51 @@ def _closing_brace(text: str, at: int) -> int | None:
     return None
 
 
-def _check_ceilings(*texts: str) -> None:
-    """Raise `_Unreadable` when the texts, read together, pass a parse ceiling (review M3)."""
-    marks = deepest = ticks = nested = 0
+def _charge(*texts: str) -> None:
+    """Add what reading the texts costs to the read's one budget, and raise `_Unreadable` once it
+    passes a ceiling (review M3, N6): the command, then each payload before `_commands` reads it,
+    then each command a script runs — a cost split over many payloads is still one cost. Outside a
+    read the texts are measured alone."""
+    budget = _BUDGET.get() or _Budget()
     for text in texts:
-        text_marks, text_depth, text_backticks, text_nested = _substitution_load(text)
-        marks, deepest = marks + text_marks, max(deepest, text_depth)
-        ticks, nested = ticks + text_backticks * len(text), nested + text_nested
-    if marks > _MAX_SUBSTITUTIONS:
-        raise _Unreadable(f"{marks} substitutions")
-    if deepest > _MAX_SUBSTITUTION_DEPTH:
-        raise _Unreadable(f"substitutions {deepest} deep")
-    if ticks > _MAX_BACKTICK_WORK:
-        raise _Unreadable(f"backticks over {ticks} characters")
-    if nested > _MAX_NESTED_WORK:
-        raise _Unreadable(f"nested substitutions weighing {nested}")
+        marks, depth, backticks, nested, separators = _substitution_load(text)
+        budget.marks += marks
+        budget.deepest = max(budget.deepest, depth)
+        budget.ticks += backticks * len(text)
+        budget.nested += nested
+        budget.separators += separators
+        wrappers = _most_wrappers(text)
+        if wrappers > _MAX_WRAPPERS:
+            raise _Unreadable(f"{wrappers} wrapper words in one command")
+    if budget.marks > _MAX_SUBSTITUTIONS:
+        raise _Unreadable(f"{budget.marks} substitutions")
+    if budget.deepest > _MAX_SUBSTITUTION_DEPTH:
+        raise _Unreadable(f"substitutions {budget.deepest} deep")
+    if budget.ticks > _MAX_BACKTICK_WORK:
+        raise _Unreadable(f"backticks over {budget.ticks} characters")
+    if budget.nested > _MAX_NESTED_WORK:
+        raise _Unreadable(f"nested substitutions weighing {budget.nested}")
+    if budget.separators > _MAX_SEPARATORS:
+        raise _Unreadable(f"{budget.separators} separators")
 
 
 def _check_nested(commands: list[str], what: str) -> None:
-    """The commands a script hands the system are each read in full: in their number, and in the
-    substitutions they open between them, they share the ceilings."""
+    """The commands a script hands the system are each read in full (`classify`, in this read's
+    budget): at most `_MAX_SUBSTITUTIONS` of them."""
     if len(commands) > _MAX_SUBSTITUTIONS:
         raise _Unreadable(f"{what} runs {len(commands)} commands")
-    _check_ceilings(*commands)
 
 
-def _substitution_load(text: str) -> tuple[int, int, int, int]:
-    """(the backticks and `$(` that run, how deep the `$(` nest, the backticks, Σ depth² over the
-    characters inside `$(…)`), in one pass that never raises. Nothing in single quotes runs; in
-    double quotes it does, and each `$(` opens a fresh quoting level until its `)`. Approximate
-    on purpose: it only bounds the reading, it never decides a card."""
-    marks = deepest = backticks = nested = 0
-    quotes: list[str | None] = [None]           # the quote open at each `$(` level
+def _substitution_load(text: str) -> tuple[int, int, int, int, int]:
+    """(the backticks and substitutions that run — `$(`, and unquoted `<(`, `>(`, `=(` —, how deep
+    the substitutions nest, the backticks, Σ depth² over the characters inside substitutions, the
+    separators: unquoted `;` `&` `|`, newlines and parentheses), in one pass that never raises.
+    Nothing in single quotes runs; in double quotes `$(` does, and each substitution opens a fresh
+    quoting level until its `)` (a `(` opened inside it closes first). Approximate on purpose: it
+    only bounds the reading, it never decides a card."""
+    marks = deepest = backticks = nested = separators = 0
+    quotes: list[str | None] = [None]           # the quote open at each substitution level
+    parens = [0]                                # the `(` open at each level, closed before it
     i, n = 0, len(text)
     while i < n:
         ch, quote = text[i], quotes[-1]
@@ -938,15 +1152,40 @@ def _substitution_load(text: str) -> tuple[int, int, int, int]:
         elif ch == "`":
             marks += 1
             backticks += 1
-        elif text.startswith("$(", i):
+        elif text.startswith("$(", i) or (quote is None and ch in "<>=" and text.startswith("(", i + 1)):
             marks += 1
             quotes.append(None)
+            parens.append(0)
             deepest = max(deepest, len(quotes) - 1)
             i += 1
-        elif ch == ")" and quote is None and len(quotes) > 1:
-            quotes.pop()
+        elif quote is None and ch == "(":
+            parens[-1] += 1
+            separators += 1
+        elif quote is None and ch == ")":
+            separators += 1
+            if parens[-1]:
+                parens[-1] -= 1
+            elif len(quotes) > 1:
+                quotes.pop()
+                parens.pop()
+        elif quote is None and ch in ";&|\n":
+            separators += 1
         i += 1
-    return marks, deepest, backticks, nested
+    return marks, deepest, backticks, nested, separators
+
+
+def _most_wrappers(text: str) -> int:
+    """The most wrapper words any one simple command of `text` holds, quoted words as data, in one
+    linear pass (review N6: 1,990 `env` read in 17 s). A redirection (`2>&1`) ends no command."""
+    most = count = 0
+    for token in _SHELL_TOKEN.finditer(text):
+        word = token.group()
+        if word in _COMMAND_ENDS:
+            count = 0
+        elif os.path.basename(word.strip("'\"").lstrip("=")).lower() in _WRAPPER_NAMES:
+            count += 1
+            most = max(most, count)
+    return most
 
 
 #: Programs that run the command written after their own options: what they run is read too.
@@ -954,8 +1193,14 @@ _RUNS_NEXT = frozenset({"xargs", "watch", "caffeinate", "arch", "ionice", "stdbu
                         "flock", "parallel", "npx", "bunx", "pnpx", "uvx"})
 #: Package runners, and the subcommand after which they run a command (`uv run twine upload`).
 _RUNNER_RUNS = {"uv": {"run"}, "poetry": {"run"}, "pdm": {"run"}, "pipx": {"run"}, "npm": {"exec"},
-                "pnpm": {"exec", "dlx"}, "yarn": {"dlx"}}
+                "pnpm": {"exec", "dlx"}, "yarn": {"dlx"}, "pipenv": {"run"}, "bundle": {"exec"},
+                "mise": {"exec", "x"}, "rye": {"run"}, "pixi": {"run"}, "hatch": {"run"}, "conda": {"run"},
+                "asdf": {"exec"}, "direnv": {"exec"}}
 _FIND_RUNS = ("-exec", "-execdir", "-ok", "-okdir")
+#: The words that run the command after them, which a command may stack (`env env … git push`).
+_WRAPPER_NAMES = hermes._COMMAND_WRAPPER_WORDS | _RUNS_NEXT | {"noglob", "nocorrect", "coproc", "repeat"}
+_SHELL_TOKEN = re.compile(r"""'[^']*'|"(?:\\.|[^"\\])*"|\d*[<>]&|&>>?|[^\s;&|()<>`'"]+|[;&|()`\n<>]""")
+_COMMAND_ENDS = frozenset({";", "&", "|", "(", ")", "`", "\n"})
 
 
 def _commands(text: str, depth: int = 0) -> list[list[str]]:
@@ -965,36 +1210,101 @@ def _commands(text: str, depth: int = 0) -> list[list[str]]:
     their own commands. Each command is read to where it ends (`;` `|` `&`, or the `)` or backtick
     closing the substitution it is in): from `git`, the rest of `echo "$(git push)"` ends in the
     enclosing quote, which shlex refused, and the command was dropped (review C1). Code handed to a
-    shell is read `_MAX_CODE_DEPTH` levels down; deeper, the command asks unread."""
+    shell is read `_MAX_CODE_DEPTH` levels down; deeper, the command asks unread.
+
+    A payload is charged to the read's budget before it is read, and each (text, depth) is read
+    once per `classify` (review N6). A command word known only at run time marks its argv
+    `dynamic` (R13 d): `_read` then asks unread."""
+    budget = _BUDGET.get()
+    if budget is not None and (text, depth) in budget.read:
+        return list(budget.read[text, depth])
+    if depth:
+        _charge(text)
     out: list[list[str]] = []
 
-    def add(tokens: list[str]) -> None:
+    def add(tokens: list[str], stdin_code: str | None = None) -> None:
         out.append(tokens)
-        payload = (" ".join(tokens[1:]) if _name(tokens) == "eval"
-                   else hermes._bash_exec_payload(tokens[1:])[1] if _name(tokens) in _SHELLS else None)
+        name = _name(tokens)
+        payload = (" ".join(tokens[1:]) if name == "eval"
+                   else hermes._bash_exec_payload(tokens[1:])[1] if name in _SHELLS else None)
+        payload = payload or stdin_code
         if payload:
             if depth >= _MAX_CODE_DEPTH:
                 raise _Unreadable(f"code nested more than {_MAX_CODE_DEPTH} deep")
+            if budget is not None:
+                budget.payloads[payload] = None
             out.extend(_commands(payload, depth + 1))
 
-    for segment in hermes._iter_top_level_shell_segments(text):
-        for start, _end, word in hermes._iter_shell_command_word_spans(segment):
-            bounded = _command_text(segment, start)
-            tokens = hermes._shell_segment_tokens(bounded, 0)
+    for segment in _top_level_segments(text):
+        quiet = _quiet_ranges(segment)
+        for start, raw, bounded in _spans(segment):
+            rest = bounded[len(raw):] if bounded.startswith(raw) else bounded
+            tokens = hermes._shell_segment_tokens(rest, 0)
             if tokens is None:              # quoting the shell would refuse: read it word by word
-                tokens = bounded.split()
-            if not tokens:
-                continue
-            # No closer sticks to the last word any more (`(git push)` is read as `git push`), and
+                tokens = rest.split()
+            # The command word is read as written (`$(which git)` is one word, which the tokenizer
+            # split); no closer sticks to the last word any more (`(git push)` is `git push`), and
             # stripping one would cut a substitution argument short (`bash -c "$(curl …)"`).
-            tokens = [hermes._deobfuscate_shell_word_for_detection(word), *tokens[1:]]
-            tokens = [t for t in tokens if t]
-            if not tokens:              # `''` alone: no command word, nothing runs (an empty argv raised)
+            word, dynamic = _command_word(raw)
+            argv = _Argv(t for t in [word, *tokens] if t)
+            if not argv:                # `''` alone: no command word, nothing runs (an empty argv raised)
                 continue
-            add(tokens)
-            for inner in _run_by(tokens):
+            argv.dynamic = dynamic and not any(a <= start < b for a, b in quiet)
+            add(argv, _here_string_code(bounded))
+            for inner in _run_by(argv):
+                if _name(argv) == "find":   # `-exec "$cmd" {} \;` runs a command known only then
+                    inner = _Argv(inner)
+                    inner.dynamic = _command_word(inner[0])[1]
                 add(inner)
-    return out
+    if budget is not None:
+        budget.read[text, depth] = out
+    return list(out)
+
+
+class _Argv(list):
+    """One command's words. `dynamic`: its command word is known only at run time (R13 d)."""
+    dynamic = False
+
+
+def _spans(segment: str):
+    """Hermes' command words in `segment`, each as (start, the word as written, its command's text
+    as written), clipped at the backtick that closes the backtick span the word sits in: Hermes
+    reads ``a` `b` `` as the word in ``echo `a` `b` ``, and its command on into the next span."""
+    ticks = _tick_spans(segment)
+    for start, end, _word in hermes._iter_shell_command_word_spans(segment):
+        bounded = _command_text(segment, start)
+        close = next((b for a, b in ticks if a < start < b), None)
+        if close is not None:
+            end = min(end, close)
+            bounded = bounded[:close - start].rstrip()
+        yield start, segment[start:end], bounded
+
+
+def _tick_spans(text: str) -> list[tuple[int, int]]:
+    """(opening, closing) backtick of each backtick span in `text`: outside them single quotes hide
+    a backtick; inside, the first one no backslash escapes closes the span."""
+    spans: list[tuple[int, int]] = []
+    quote, i, n = None, 0, len(text)
+    while i < n:
+        ch = text[i]
+        if quote == "'":
+            if ch == "'":
+                quote = None
+        elif ch == "\\":
+            i += 1
+        elif ch == "'" and quote is None:
+            quote = "'"
+        elif ch == '"':
+            quote = None if quote == '"' else '"'
+        elif ch == "`":
+            end = hermes._scan_backtick_end(text, i)
+            if end is None:
+                break
+            spans.append((i, end - 1))
+            i = end
+            continue
+        i += 1
+    return spans
 
 
 def _command_text(segment: str, start: int) -> str:
@@ -1014,10 +1324,37 @@ def _command_text(segment: str, start: int) -> str:
             depth += 1
         elif ch == ")" and depth:
             depth -= 1
-        elif ch in ";&|\n)`" and not depth:
+        elif ch in ";&|\n)`" and not depth and not _redirect_amp(segment, i):
             end = i
             break
     return segment[start:end].strip()
+
+
+def _redirect_amp(text: str, i: int) -> bool:
+    """Whether the `&` at `i` belongs to a redirection (`2>&1`, `>&2`, `<&3`, `>&-`, `&>f`, `&>>f`),
+    which ends no command (item 14)."""
+    return text[i] == "&" and ((i > 0 and text[i - 1] in "<>") or text[i + 1:i + 2] == ">")
+
+
+def _follows_redirect(text: str, at: int) -> bool:
+    j = at - 1
+    while j >= 0 and text[j] in " \t":
+        j -= 1
+    return j >= 0 and _redirect_amp(text, j)
+
+
+def _top_level_segments(text: str):
+    """Hermes' top-level command segments, except that a redirection's `&` splits nothing:
+    `curl URL 2>&1 -d @f` is one command, not `curl URL 2>` and `1 -d @f` (item 14)."""
+    start = 0
+    for kind, i, j, quote in hermes._scan_shell(text, comments=True):
+        if kind == "comment" or (kind == "char" and quote is None and text[i] in ";&|\n"
+                                 and not _redirect_amp(text, i)):
+            if start < i:
+                yield text[start:i]
+            start = j
+    if start < len(text):
+        yield text[start:]
 
 
 def _run_by(argv: list[str]) -> list[list[str]]:
@@ -1065,6 +1402,631 @@ def _masked(texts: tuple[str, ...]) -> tuple[str, ...]:
 
 def _matches(pattern, texts) -> bool:
     return any(pattern.search(t) for t in texts)
+
+
+# ── what is known only at run time: names, values, code (R11, R13) ────────────
+
+_NAME_AT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_DEFAULT_AT = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(:?[-=+])")
+_PLAIN_AT = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+_VALUE = r"""(?:'[^'\n]*'|"[^"\\$`\n]*"|[^\s;&|()<>'"`$\\]*)"""
+_ASSIGNMENTS_AT = re.compile(r"[ \t]*(?:export[ \t]+)?((?:[A-Za-z_][A-Za-z0-9_]*=" + _VALUE + r"[ \t]+)*"
+                             r"[A-Za-z_][A-Za-z0-9_]*=" + _VALUE + r")[ \t]*(?:;|&&|\n)")
+_ONE_ASSIGNMENT = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)=(" + _VALUE + ")")
+_SAFE_VALUE = re.compile(r"[A-Za-z0-9_./:@%+,-]*")
+
+
+def _readings(text: str) -> str:
+    """The command as the rules read it when words come from variables (R13 a, b), else `text`.
+
+    (a) `${name<op>word}` (op `:-` `-` `:=` `=` `:+` `+`) is `word` — or, since the variable may be
+    set (zsh sets `ZSH_NAME`; the home is always set), the variable itself: `${name}`, or nothing
+    for `:+`/`+`. Both readings are read, one after the other, so `git ${x:-push}` is a push and
+    `${ZSH_NAME:-true} -c 'git push'` keeps a command word known only at run time.
+    (b) `$name` and `${name}` are the value a literal one-word assignment opening the command
+    gives them (`_known_values`: `x=git; $x push`, `export x=git && ${x} push`)."""
+    if "$" not in text:
+        return text
+    known = _known_values(text)
+    as_name = _with_values(text, known, as_word=False)
+    as_word = _with_values(text, known, as_word=True)
+    reading = as_name if as_name == as_word else as_name + "\n" + as_word
+    if len(reading) > _MAX_READING:
+        raise _Unreadable("the values read into the command make it too long")
+    return reading
+
+
+def _known_values(text: str) -> dict[str, str]:
+    """(R13 b) The variables the command sets first, to a literal word: only the assignments that
+    open it (assignments alone, `export` too, joined by `;`, `&&` or a newline: they always run),
+    and only names the rest of the command never sets again (`for x`, `read x`, `x+=`, `${x:=…}` …)
+    — anything else leaves the variable unknown, and a command word built from it asks."""
+    known: dict[str, str] = {}
+    pos = 0
+    while (opening := _ASSIGNMENTS_AT.match(text, pos)) is not None:
+        for name, value in _ONE_ASSIGNMENT.findall(opening.group(1)):
+            value = value[1:-1] if value[:1] in ("'", '"') else value
+            if _SAFE_VALUE.fullmatch(value):
+                known[name] = value
+            else:
+                known.pop(name, None)
+        pos = opening.end()
+    rest = text[pos:]
+    for name in list(known):
+        if (re.search(r"""(?:^|[\s;&|(){}`'"])""" + name + r"""(?:\+?=|\[|(?=[\s;&|()`'"]|$))""", rest)
+                or re.search(r"\$\{" + name + r":{0,2}=", rest)):
+            del known[name]
+    return known
+
+
+def _with_values(text: str, known: dict[str, str], *, as_word: bool) -> str:
+    """`text` with each default form read as its word (`as_word`) or as its variable, and each known
+    variable as its value. Nothing in single quotes expands; `$(…)` and `${…}` quote afresh. One
+    linear pass: a default form read as its word drops its `${name<op>` and its `}`."""
+    out: list[str] = []
+    levels: list[list] = [[None, "top", 0]]             # [quote, kind, open brackets]
+    i, n = 0, len(text)
+    while i < n:
+        level, ch = levels[-1], text[i]
+        if level[0] == "'":
+            level[0] = None if ch == "'" else "'"
+            out.append(ch)
+            i += 1
+            continue
+        if ch == "\\":
+            out.append(text[i:i + 2])
+            i += 2
+            continue
+        if ch == "$":
+            default = _DEFAULT_AT.match(text, i)
+            if default is not None and as_word:
+                levels.append([None, "default", 0])
+                i = default.end()
+                continue
+            if default is not None:
+                close = _closing_brace(text, default.end())
+                if close is None:                           # zsh refuses it: nothing runs
+                    out.append(text[i:])
+                    break
+                name, op = default.groups()
+                out.append("" if op.endswith("+") else known.get(name, "${" + name + "}"))
+                i = close + 1
+                continue
+            plain = _PLAIN_AT.match(text, i)
+            if plain is not None and plain.group(1) in known:
+                out.append(known[plain.group(1)])
+                i = plain.end()
+                continue
+            name = _NAME_AT.match(text, i + 1)
+            if name is not None and name.group() in known and text[name.end():name.end() + 1] not in ("[", ":"):
+                out.append(known[name.group()])             # not `$x[1]` or `$x:t`: zsh reads those apart
+                i = name.end()
+                continue
+            if text.startswith(("$(", "${"), i):
+                levels.append([None, "sub" if text[i + 1] == "(" else "brace", 0])
+                out.append(text[i:i + 2])
+                i += 2
+                continue
+        elif ch == '"':
+            level[0] = None if level[0] == '"' else '"'
+        elif ch == "'" and level[0] is None:
+            level[0] = "'"
+        elif level[0] is None and ch in "({":
+            level[2] += 1
+        elif level[0] is None and ch in ")}":
+            if level[2]:
+                level[2] -= 1
+            elif (ch == ")") == (level[1] == "sub") and level[1] != "top":
+                levels.pop()
+                if level[1] == "default":
+                    i += 1
+                    continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+#: Set-up commands whose output a shell runs as it starts (R13 c): `eval "$(brew shellenv)"` needs
+#: no card. Exactly these, by name and subcommand.
+_SET_UP = (("ssh-agent",), ("brew", "shellenv"), ("pyenv", "init"), ("pyenv", "virtualenv-init"),
+           ("rbenv", "init"), ("nodenv", "init"), ("goenv", "init"), ("jenv", "init"), ("direnv", "hook"),
+           ("direnv", "export"), ("fnm", "env"), ("mise", "activate"), ("mise", "env"), ("starship", "init"),
+           ("zoxide", "init"), ("opam", "env"))
+_WHICH = re.compile(r"(?:\$\(|`)[ \t]*(?:which|command[ \t]+-v)[ \t]+([A-Za-z0-9_.+-]+)[ \t]*(?:\)|`)")
+_ASSIGNMENT_AT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:\[[^\]]*\])?\+?=")
+_GLOB = re.compile(r"[*?]|\[.*\]|\{[^{}]*(?:,|\.\.)[^{}]*\}")
+
+
+def _command_word(raw: str) -> tuple[str, bool]:
+    """The program a command word names, and whether it is known only at run time (R13 d). Hermes
+    reads `\\git` and `g"it"` as `git`. A word the shell computes — `$x`, `"$cmd"`, `$(…)`, a backtick
+    span, a glob — is read by the literal name after a `/` that follows its last expansion
+    (`"$VIRTUAL_ENV/bin/python"` is python), as X for `$(which X)` / `$(command -v X)` /
+    `` `which X` ``, and as the set-up a shell runs for `$(brew shellenv)` and its kind; anything
+    else is dynamic."""
+    word = hermes._deobfuscate_shell_word_for_detection(raw)
+    last = _last_expansion_end(raw)
+    if last is None or _ASSIGNMENT_AT.match(raw):      # `arr[1]=$(date)` assigns: no command word
+        return word, False
+    bare = raw[1:-1] if len(raw) > 1 and raw[0] == raw[-1] == '"' else raw
+    which = _WHICH.fullmatch(bare)
+    if which is not None:
+        return which.group(1), False
+    if (bare.startswith("$(") and _paren_end(bare, 1) == len(bare) and _sets_up_environment(bare[2:-1])
+            or bare.startswith("`") and hermes._scan_backtick_end(bare, 0) == len(bare)
+            and _sets_up_environment(bare[1:-1])):
+        return word, False
+    tail = raw[last:].replace('"', "").replace("'", "").replace("\\", "")
+    name = tail.rpartition("/")[2]
+    return word, not ("/" in tail and name and not _GLOB.search(name))
+
+
+def _last_expansion_end(word: str) -> int | None:
+    """Where the last part of `word` the shell computes ends (a parameter, a substitution, a glob
+    outside quotes), or None when it computes none."""
+    last, quote, i, n = None, None, 0, len(word)
+    while i < n:
+        ch = word[i]
+        if quote == "'":
+            quote = None if ch == "'" else "'"
+            i += 1
+            continue
+        if ch == "\\":
+            i += 2
+            continue
+        end = None
+        if ch == '"':
+            quote = None if quote == '"' else '"'
+        elif ch == "'" and quote is None:
+            quote = "'"
+        elif ch == "$" and word.startswith("$(", i):
+            end = _paren_end(word, i + 1) or n
+        elif ch == "$" and word.startswith("${", i):
+            close = _closing_brace(word, i + 2)
+            end = n if close is None else close + 1
+        elif ch == "$" and word.startswith("$[", i):
+            close = word.find("]", i)
+            end = n if close < 0 else close + 1
+        elif ch == "$" and i + 1 < n and (word[i + 1].isalnum() or word[i + 1] in "_#?@*!$-"):
+            name = _NAME_AT.match(word, i + 1)
+            end = name.end() if name is not None and not word[i + 1].isdigit() else i + 2
+        elif ch == "`":
+            end = hermes._scan_backtick_end(word, i) or n
+        elif quote is None and ch in "<>=" and i == 0 and word.startswith("(", 1):
+            end = _paren_end(word, 1) or n
+        elif quote is None and (ch in "*?" or (ch == "[" and "]" in word[i + 1:])
+                                or (ch == "{" and _GLOB.match(word, i))):
+            end = i + 1
+        if end is not None:
+            last = i = max(end, i + 1)
+            continue
+        i += 1
+    return last
+
+
+def _paren_end(text: str, at: int) -> int | None:
+    """Just past the `)` closing the `(` at `at`, or None. Quotes are read per level: in double
+    quotes only `$(` opens one, and its quotes are its own."""
+    levels = [[None, 0]]                                # [quote, open parentheses]
+    i, n = at + 1, len(text)
+    while i < n:
+        level, ch = levels[-1], text[i]
+        if level[0] == "'":
+            if ch == "'":
+                level[0] = None
+        elif ch == "\\":
+            i += 1
+        elif ch == "`":
+            end = hermes._scan_backtick_end(text, i)
+            if end is None:
+                return None
+            i = end
+            continue
+        elif text.startswith("$(", i):
+            levels.append([None, 0])
+            i += 2
+            continue
+        elif level[0] == '"':
+            if ch == '"':
+                level[0] = None
+        elif ch in "'\"":
+            level[0] = ch
+        elif ch == "(":
+            level[1] += 1
+        elif ch == ")":
+            if level[1]:
+                level[1] -= 1
+            elif len(levels) > 1:
+                levels.pop()
+            else:
+                return i + 1
+        i += 1
+    return None
+
+
+_QUIET = {"arith": "()", "bracket": "[]", "brace": "{}", "array": "()"}
+_OPENED = {"(": "sub", "{": "brace", "[": "bracket"}
+
+
+def _quiet_ranges(text: str) -> list[tuple[int, int]]:
+    """Where `text` holds no command: arithmetic (`$((…))`, `((…))`, `$[…]`), `${…}` and an array
+    `name=(…)`, minus the substitutions opened inside them, which run (`$(( $(git push) ))`).
+    Hermes takes `$a` in `$(( $a + 1 ))` for a command word; R13 (d) must not ask for it."""
+    ranges: list[tuple[int, int]] = []
+    levels: list[list] = [["top", None, 0]]            # [kind, quote, open brackets]
+    begun: int | None = None
+    i, n = 0, len(text)
+    while i < n:
+        level, ch = levels[-1], text[i]
+        kind, quote, step = level[0], level[1], 1
+        if quote == "'":
+            if ch == "'":
+                level[1] = None
+        elif ch == "\\":
+            step = 2
+        elif text.startswith("$((", i):
+            levels.append(["arith", None, 2])
+            step = 3
+        elif text.startswith(("$(", "${", "$["), i):
+            opened = _OPENED[text[i + 1]]
+            levels.append([opened, None, 0 if opened == "sub" else 1])
+            step = 2
+        elif ch == "`":
+            if kind == "tick":
+                levels.pop()
+            else:
+                levels.append(["tick", None, 0])
+        elif quote == '"':
+            if ch == '"':
+                level[1] = None
+        elif ch in "'\"":
+            level[1] = ch
+        elif kind in _QUIET:
+            level[2] += (ch == _QUIET[kind][0]) - (ch == _QUIET[kind][1])
+            if level[2] <= 0:
+                levels.pop()
+        elif text.startswith("((", i):
+            levels.append(["arith", None, 2])
+            step = 2
+        elif ch == "=" and text.startswith("(", i + 1) and i and (text[i - 1].isalnum() or text[i - 1] in "_]+"):
+            levels.append(["array", None, 1])
+            step = 2
+        elif ch in "<>=" and text.startswith("(", i + 1):
+            levels.append(["sub", None, 0])
+            step = 2
+        elif ch == "(":
+            level[2] += 1
+        elif ch == ")":
+            if level[2]:
+                level[2] -= 1
+            elif kind == "sub":
+                levels.pop()
+        i += step
+        if levels[-1][0] in _QUIET and begun is None:
+            begun = i
+        elif levels[-1][0] not in _QUIET and begun is not None:
+            ranges.append((begun, i))
+            begun = None
+    if begun is not None:
+        ranges.append((begun, n))
+    return ranges
+
+
+_REDIRECTION = re.compile(r"\d*(?:<<<|<<-?|<>|<&|>&|>>|>\||&>>|&>|<|>)")
+
+
+def _raw_words(text: str) -> list[str]:
+    """One simple command's words as written — quotes and substitutions kept, `<(…)` one word — with
+    each redirection operator a word of its own (`<`, `3<`, `<<<`, `2>&` …)."""
+    words: list[str] = []
+    i, n = 0, len(text)
+    while i < n:
+        if text[i] in " \t\n":
+            i += 1
+            continue
+        if text.startswith(("<(", ">("), i):
+            end = _paren_end(text, i + 1) or n
+            end = max(end, _word_end(text, end)) if end < n and not text[end].isspace() else end
+        elif (operator := _REDIRECTION.match(text, i)) is not None:
+            end = operator.end()
+        else:
+            end = max(_word_end(text, i), i + 1)
+        words.append(text[i:end])
+        i = end
+    return words
+
+
+def _split_redirections(words: list[str]) -> tuple[list[str], list[tuple[str, str]]]:
+    """(the words without their redirections, [(operator, target)] for each input redirection:
+    `<`, `N<`, `<>`, `<&`, a here-string `<<<`). A heredoc's `<<` and its delimiter are left out."""
+    plain: list[str] = []
+    inputs: list[tuple[str, str]] = []
+    i = 0
+    while i < len(words):
+        if _REDIRECTION.fullmatch(words[i]):
+            operator, target = words[i], words[i + 1] if i + 1 < len(words) else ""
+            if "<" in operator and not operator.rstrip("-").endswith("<<") or operator.endswith("<<<"):
+                inputs.append((operator, target))
+            i += 2
+            continue
+        plain.append(words[i])
+        i += 1
+    return plain, inputs
+
+
+def _unquote(word: str) -> str:
+    """A simple word's text as the program sees it (`"-c"`, `'git push'`, `git\\ push`)."""
+    try:
+        parts = shlex.split(word, posix=True)
+    except ValueError:
+        return word
+    return parts[0] if len(parts) == 1 else word
+
+
+def _program(word: str) -> str:
+    return os.path.basename(_unquote(word).lstrip("=")).lower()
+
+
+def _outer_substitutions(text: str) -> list[str]:
+    """The bodies of the substitutions the shell runs in `text` as written, outermost: `$(…)` and
+    backtick spans outside single quotes; `<(…)`, `>(…)` and zsh's `=(…)` outside any quotes (an
+    array's `name=(…)` is no substitution). Arithmetic `$((…))` is no body, the ones in it are."""
+    bodies: list[str] = []
+    quote, i, n = None, 0, len(text)
+    while i < n:
+        ch = text[i]
+        if quote == "'":
+            quote = None if ch == "'" else "'"
+            i += 1
+            continue
+        if ch == "\\":
+            i += 2
+            continue
+        if ch == '"':
+            quote = None if quote == '"' else '"'
+        elif ch == "'" and quote is None:
+            quote = "'"
+        elif text.startswith("$((", i):
+            i += 3
+            continue
+        elif text.startswith("$(", i) or (quote is None and ch in "<>=" and text.startswith("(", i + 1)
+                                          and not (ch == "=" and i and (text[i - 1].isalnum() or text[i - 1] in "_]"))):
+            end = _paren_end(text, i + 1)
+            bodies.append(text[i + 2:(end or n + 1) - 1])
+            if end is None:
+                break
+            i = end
+            continue
+        elif ch == "`":
+            end = hermes._scan_backtick_end(text, i)
+            bodies.append(text[i + 1:(end or n + 1) - 1])
+            if end is None:
+                break
+            i = end
+            continue
+        i += 1
+    return bodies
+
+
+_DURATION = re.compile(r"\d+(?:\.\d+)?[smhd]?")
+_ASSIGNMENT_WORD = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=", re.S)
+
+
+def _unwrapped(plain: list[str]) -> list[str]:
+    """The words from the command a run of wrappers runs (R11: `nice -n 5 bash`, `caffeinate -i
+    bash`, `arch -arch arm64 bash` run bash): wrapper words, options, numbers, assignments and the
+    value after an option are read past; a code reader never counts as a value."""
+    if not plain or _program(plain[0]) not in _WRAPPER_NAMES:
+        return plain
+    i, after_option = 0, False
+    while i < len(plain):
+        word, name = _unquote(plain[i]), _program(plain[i])
+        if name in _CODE_READERS or hermes._interpreter_family(name) is not None:
+            break
+        if (name in _WRAPPER_NAMES or word.startswith(("-", "+")) or _DURATION.fullmatch(word)
+                or _ASSIGNMENT_WORD.match(word) or after_option):
+            after_option = word.startswith(("-", "+"))
+            i += 1
+            continue
+        break
+    return plain[i:]
+
+
+_STDIN = "<stdin>"                  # `_script_operand`: the program reads its code from stdin
+_STDIN_PATH = re.compile(r"-|/dev/stdin|/dev/fd/\d+")
+
+
+def _script_operand(plain: list[str]) -> str | None:
+    """Where a code reader takes its code when no `-c`/`-e` hands it any: the script word as written,
+    `_STDIN`, or None (inline code, `python -m`, or not a code reader). Code readers: the shells,
+    `source`/`.`, osascript and the interpreters Hermes knows."""
+    name = _program(plain[0])
+    args = [_unquote(word) for word in plain[1:]]
+    if name in ("source", "."):
+        return plain[1] if len(plain) > 1 else None
+    i = 0
+    if name in _SHELLS:
+        while i < len(args):
+            arg = args[i]
+            if arg == "--":
+                return plain[i + 2] if i + 1 < len(args) else _STDIN
+            if arg in hermes._BASH_OPTIONS_WITH_ARG:
+                i += 2
+                continue
+            if arg.startswith(("-", "+")) and len(arg) > 1:
+                letters = "" if arg.startswith("--") else arg[1:]
+                if "c" in letters:
+                    return None
+                if "s" in letters:
+                    return _STDIN
+                i += 1 + ("o" in letters or "O" in letters)
+                continue
+            return _STDIN if arg == "-" else plain[i + 1]
+        return _STDIN
+    if name == "osascript":
+        while i < len(args):
+            if args[i] == "-e":
+                return None
+            if args[i] in ("-l", "-s"):
+                i += 2
+                continue
+            if not args[i].startswith("-") or args[i] == "-":
+                return _STDIN if args[i] == "-" else plain[i + 1]
+            i += 1
+        return _STDIN
+    family = hermes._interpreter_family(name)
+    if family is None or hermes._interpreter_exec_flag(family, args):
+        return None
+    with_value = hermes._INTERPRETER_WITH_ARG.get(family, set())
+    while i < len(args):
+        arg = args[i]
+        if arg == "-":
+            return _STDIN
+        if family == "python" and arg.startswith("-m"):
+            return None
+        if not arg.startswith("-"):
+            return plain[i + 1]
+        i += 2 if arg in with_value else 1
+    return _STDIN
+
+
+def _reads_stdin_code(plain: list[str]) -> bool:
+    """A code reader that runs what it is fed (a pipe, `<`, a here-string): `bash`, `bash -s`,
+    `env bash` (read past its wrapper by `_commands`), `python3`, `python3 -`, `python3 /dev/stdin`,
+    `source /dev/stdin`, `osascript` with no script of its own."""
+    script = _script_operand(plain) if plain else None
+    return script == _STDIN or (script is not None and _STDIN_PATH.fullmatch(_unquote(script)) is not None)
+
+
+def _code_word(plain: list[str]) -> str | None:
+    """The word holding the code a shell's `-c` or an interpreter's `-c`/`-e` is handed, as written."""
+    name = _program(plain[0])
+    args = [_unquote(word) for word in plain[1:]]
+    if name in _SHELLS:
+        i = 0
+        while i < len(args):
+            arg = args[i]
+            if arg == "--" or not arg.startswith(("-", "+")):
+                return None
+            if arg in hermes._BASH_OPTIONS_WITH_ARG:
+                i += 2
+                continue
+            letters = arg[1:]
+            if arg.startswith("--") or not set(letters) <= hermes._BASH_SHORT_OPTION_LETTERS:
+                i += 1
+                continue
+            skip = int("O" in letters or "o" in letters)
+            if "c" in letters:
+                at = i + 1 + skip
+                return plain[at + 1] if at < len(args) else None
+            i += 1 + skip
+        return None
+    family = hermes._interpreter_family(name)
+    flag = hermes._interpreter_exec_flag(family, args) if family else None
+    if flag is None:
+        return None
+    at = next((i for i, arg in enumerate(args) if arg == flag or arg.startswith(flag)), None)
+    if at is None:
+        return None
+    return plain[at + 1] if args[at] != flag else (plain[at + 2] if at + 1 < len(args) else None)
+
+
+def _here_string_code(command: str) -> str | None:
+    """The code a shell reads from a literal here-string (`bash <<< "git push"`, `source /dev/stdin
+    <<< …`): read like `bash -c`. One built by a substitution is `_code_findings`' to judge."""
+    if "<<<" not in command:
+        return None
+    plain, inputs = _split_redirections(_raw_words(command))
+    plain = _unwrapped(plain)
+    if not plain or _program(plain[0]) not in _SHELLS | {"source", "."} or not _reads_stdin_code(plain):
+        return None
+    words = [target for operator, target in inputs if operator.endswith("<<<")]
+    if not words or _outer_substitutions(words[-1]):
+        return None
+    return _unquote(words[-1])
+
+
+def _runs_its_input(piece: str) -> bool:
+    """A pipe target that runs what it is fed (R11), past wrappers: `| bash`, `| env bash`, `| nice
+    -n 5 bash`, `| command bash`, `| source /dev/stdin`, `| python3 /dev/stdin`, `| python3 -W ignore`."""
+    for segment in _top_level_segments(piece):
+        for _start, _raw, bounded in _spans(segment):
+            plain, _inputs = _split_redirections(_raw_words(bounded))
+            if _reads_stdin_code(_unwrapped(plain)):
+                return True
+    return False
+
+
+def _sets_up_environment(body: str) -> bool:
+    """(R13 c) A substitution that is exactly one set-up command on `_SET_UP` (or `conda
+    shell.<shell> hook`): nothing nested, no pipe, no variable."""
+    pipelines = _pipelines(body)
+    if len(pipelines) != 1 or len(pipelines[0]) != 1 or _outer_substitutions(body):
+        return False
+    plain, _inputs = _split_redirections(_raw_words(pipelines[0][0]))
+    words = [_unquote(word) for word in plain]
+    if not words or any("$" in word or "`" in word for word in words):
+        return False
+    words[0] = os.path.basename(words[0])
+    if words[0] == "conda":
+        return len(words) > 2 and re.fullmatch(r"shell\.\w+", words[1]) is not None and words[2] == "hook"
+    return any(tuple(words[:len(entry)]) == entry for entry in _SET_UP)
+
+
+def _fetches_or_decodes(body: str) -> bool:
+    return any(_fetches(argv) or _decodes(argv) for argv in _commands(body))
+
+
+def _code_findings(texts: list[str]) -> list[Finding]:
+    """Code a shell or an interpreter runs that nobody can read in the command (R11, R13 c), in the
+    command and in each payload it hands a shell: from a download or a decode (opaque,
+    `fetched-code`), or — for `eval`, `source`/`.` and a shell — built while it runs (opaque,
+    `built-code`), unless every substitution building it is a set-up on `_SET_UP`. An
+    AppleScript built while it runs asks as an app it names only then."""
+    found: list[Finding] = []
+    for text in texts:
+        for segment in _top_level_segments(text):
+            for _start, raw, bounded in _spans(segment):
+                name = _name([hermes._deobfuscate_shell_word_for_detection(raw) or "-"])
+                if (name in _CODE_READERS or name in _WRAPPER_NAMES
+                        or hermes._interpreter_family(name) is not None):
+                    found += _code_use(bounded)
+    return list(dict.fromkeys(found))
+
+
+_CODE_READERS = _SHELLS | {"eval", "source", ".", "osascript"}
+
+
+def _code_use(command: str) -> list[Finding]:
+    plain, inputs = _split_redirections(_raw_words(command))
+    plain = _unwrapped(plain)
+    if not plain:
+        return []
+    name = _program(plain[0])
+    builds = name in _SHELLS or name in ("eval", "source", ".")
+    if name == "eval":
+        sources = plain[1:]
+    elif name == "osascript" and "-e" in (lines := [_unquote(word) for word in plain]):
+        sources = [plain[i + 1] for i, word in enumerate(lines[:-1]) if word == "-e"]
+    elif (code := _code_word(plain)) is not None:
+        sources = [code]
+    else:
+        script = _script_operand(plain)
+        if script is None:
+            return []
+        reads_input = script == _STDIN or _STDIN_PATH.fullmatch(_unquote(script)) is not None
+        sources = [target for _operator, target in inputs] if reads_input else [script]
+    bodies = [body for source in sources for body in _outer_substitutions(source)]
+    if not bodies:
+        return []
+    if any(_fetches_or_decodes(body) for body in bodies):
+        return [Finding("opaque", "fetched-code", _WHY["fetched-code"])]
+    if builds and not all(_sets_up_environment(body) for body in bodies):
+        return [Finding("opaque", "built-code", _WHY["built-code"])]
+    if name == "osascript":
+        return [Finding("apps", "apple-events", "runs AppleScript that can control an app it names only at "
+                                                "run time", kind="app")]
+    return []
 
 
 # ── the floor ─────────────────────────────────────────────────────────────────
@@ -1205,17 +2167,18 @@ def _data_dir_literal() -> str:
 
 # ── Hermes' findings ──────────────────────────────────────────────────────────
 
-def _hermes_findings(shell: str, *, raw: str) -> list[Finding]:
+def _hermes_findings(shell: str, *, raw: str, commands: list[list[str]]) -> list[Finding]:
     """Every Hermes finding for the command, where `detect_dangerous_command` stops at the first,
-    each placed by HERMES_CATEGORIES."""
+    each placed by HERMES_CATEGORIES. Whether a database client runs is read once, from the
+    command's own commands (each variant re-read cost a full read: review N6)."""
     if hermes._is_verification_artifact_cleanup(shell):
         return []
     found: list[str] = []
+    sql_client = any(_name(argv) in _SQL_CLIENTS for argv in commands)
     for variant in hermes._command_detection_variants(shell):
         lowered = hermes._lower_preserving_flags(variant)
         carrier = hermes._contains_shell_carrier(variant)
         masked = hermes._lower_preserving_flags(hermes._mask_quoted_prose(variant))
-        sql_client = any(_name(argv) in _SQL_CLIENTS for argv in _commands(variant))
         for pattern_re, description in hermes.DANGEROUS_PATTERNS_COMPILED:
             if description in hermes._QUOTE_MASKED_DANGEROUS_DESCRIPTIONS:
                 subject = masked
@@ -1430,12 +2393,9 @@ def _curl_option_stands(args: list[str], i: int) -> bool:
     if i == 0:
         return True
     before = args[i - 1]
-    if before.startswith("--"):
-        return "=" in before or before in _CURL_FLAGS
-    if before.startswith("-") and len(before) > 1:
-        owner = next((j for j, letter in enumerate(before[1:]) if letter in _CURL_VALUE_SHORT), None)
-        return owner is None or owner < len(before) - 2         # a value-taking letter last takes the word
-    return True
+    # A short option taking the next word as its value (`-H -G`) never reaches here: the caller
+    # skips that word. A long one does (`--data-urlencode -G`).
+    return not before.startswith("--") or "=" in before or before in _CURL_FLAGS
 
 
 def _rsync_remote(argv: list[str]) -> bool:
@@ -1961,17 +2921,18 @@ def _substitution_bodies(code: str) -> list[str]:
 
 
 def _fetched_code_findings(shell: str) -> list[Finding]:
-    """Fetched or decoded code run in ways Hermes' shell-only patterns miss (review M1): piped
-    into an interpreter that has no script of its own (`curl … | python3`, `| node`, `| ruby`,
-    `| perl`), or sourced from a process substitution (`source <(curl …)`) — at the top, and in
-    every substitution, which a quote does not stop from running (`echo "$(curl … | python3)"`)."""
+    """Fetched or decoded code piped into what runs it, in ways Hermes' shell-only patterns miss
+    (review M1, R11): an interpreter or a shell with no script of its own (`curl … | python3`,
+    `| env bash`, `| source /dev/stdin`) — at the top, and in every substitution, which a quote
+    does not stop from running (`echo "$(curl … | python3)"`). Code read from `<(…)`, `<` or a
+    here-string is `_code_findings`'."""
     pending, seen = [shell], set()
     while pending:
         text = pending.pop()
         if text in seen:
             continue
         seen.add(text)
-        if _pipes_fetched_code(text) or _sources_fetched_code(text):
+        if _pipes_fetched_code(text):
             return [Finding("opaque", "fetched-code", _WHY["fetched-code"])]
         pending += _substitution_bodies(text)
     return []
@@ -1981,20 +2942,9 @@ def _pipes_fetched_code(text: str) -> bool:
     for pipeline in _pipelines(text):
         fed = False
         for piece in pipeline:
-            argvs = _commands(piece)
-            if fed and any(_reads_code_from_stdin(argv) for argv in argvs):
+            if fed and _runs_its_input(piece):
                 return True
-            fed = fed or any(_fetches(argv) or _decodes(argv) for argv in argvs)
-    return False
-
-
-def _sources_fetched_code(text: str) -> bool:
-    for _start, end, word in hermes._iter_shell_command_word_spans(text):
-        if hermes._deobfuscate_shell_word_for_detection(word) in ("source", "."):
-            at = hermes._skip_shell_whitespace(text, end)
-            close = hermes._scan_dollar_paren_end(text, at) if text.startswith("<(", at) else None
-            if close is not None and any(_fetches(a) or _decodes(a) for a in _commands(text[at + 2:close - 1])):
-                return True
+            fed = fed or any(_fetches(argv) or _decodes(argv) for argv in _commands(piece))
     return False
 
 
@@ -2026,26 +2976,6 @@ def _pipelines(text: str) -> list[list[str]]:
         skip_to = start
     pipelines[-1].append(text[start:])
     return [p for p in pipelines if any(piece.strip() for piece in p)]
-
-
-def _reads_code_from_stdin(argv: list[str]) -> bool:
-    """An interpreter with no script of its own (`python3`, `python3 -`, `node`, `perl`): it runs what
-    the pipe feeds it. With a script file, `-c`/`-e` code or `-m module`, the pipe is its data."""
-    family = hermes._interpreter_family(argv[0]) if argv else None
-    if family is None or hermes._interpreter_exec_flag(family, argv[1:]):
-        return False
-    with_value = hermes._INTERPRETER_WITH_ARG.get(family, set())
-    args, i = argv[1:], 0
-    while i < len(args):
-        arg = args[i]
-        if arg == "-":
-            return True
-        if family == "python" and arg.startswith("-m"):
-            return False
-        if not arg.startswith("-"):
-            return False                                    # a script file
-        i += 2 if arg in with_value else 1
-    return True
 
 
 # ── 0.1.52's script exemption, kept until its caller goes (Task 3 deletes this block) ────────
@@ -2080,11 +3010,14 @@ _SCRIPT_REACH = re.compile("|".join((
 
 def runs_freely_in_sandbox(command: str) -> bool:
     """0.1.52's exemption, exactly as before; Task 3 removes it with its caller (tool_loop). It
-    never raises and reads nothing past the parse ceilings: such a command gets its card."""
+    never raises, and never reads a command `classify` (memoized) could not read or found the
+    floor in (review N6: Hermes' own detection is slow on the shapes the ceilings stop)."""
     try:
-        _check_ceilings(str(command or ""))
+        found = classify(command)
+        if found.floor is not None or UNREADABLE in found.findings:
+            return False
         return _runs_freely(command)
-    except Exception:  # noqa: BLE001 — `_Unreadable` included: the card comes back
+    except Exception:  # noqa: BLE001 — the card comes back
         return False
 
 
@@ -2114,14 +3047,16 @@ async def always_allowed(db) -> set[str]:
     store). Unreadable means none: ask."""
     from server.services import permission_store
     try:
-        return {r.target for r in await permission_store.list_rules(db, "legacy_rule")}
+        return {r.target for r in await permission_store.list_rules(db, "legacy_rule")} - _NEVER_REMEMBERED
     except Exception:  # noqa: BLE001 — a standing permission is never inferred from an error
         return set()
 
 
-#: Rules that can never be remembered: the floor, and a command nobody could read.
+#: Rules that can never be remembered, and that no stored rule stands for (review N5): the floor; a
+#: command nobody could read; code downloaded, decoded or built at run time (once-only cards).
 _NEVER_REMEMBERED = frozenset({k for k, _, _ in _FORBID} | {"hardline", "empty", "too-long", "arslan-data",
-                                                           "never-app", "disk-erase", "shutdown", "unreadable"})
+                                                           "never-app", "disk-erase", "shutdown", "unreadable",
+                                                           "fetched-code", "built-code"})
 
 
 async def allow_always(db, rule: str) -> None:
