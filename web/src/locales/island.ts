@@ -354,7 +354,7 @@ const de: Messages = {
   heldOpaque: 'Das führt Code aus, der erst heruntergeladen oder dekodiert wird – erst in Arslan ansehen, dann erlauben.',
   heldRemote: 'Das läuft auf einer anderen Maschine – erst in Arslan ansehen, dann erlauben.',
   heldGeneric: 'Erst in Arslan ansehen, dann erlauben.',
-  scriptAlsoHands: 'Ein Ja erlaubt Arslan auch, diese App anzusehen und darin zu handeln – für diese Aufgabe.',
+  scriptAlsoHands: 'Ein Ja lässt Arslan diese App für diese Aufgabe auch ansehen und bedienen.',
   answerFailed: 'Hier ließ sich nicht antworten. Öffne Arslan.',
   stopJob: 'Stoppen',
   stoppingJob: 'Wird gestoppt…',

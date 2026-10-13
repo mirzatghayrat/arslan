@@ -244,6 +244,7 @@ describe("Always allow is guarded, and can be undone for ten seconds (M4)", () =
     await advance(ANSWER_GUARD_MS);                                // the list has just appeared: held for 500 ms
     fireEvent.click(screen.getByTestId("inbox-refused-allow"));
     await advance(0);
+    await advance(ANSWER_GUARD_MS);                                // Undo came up where "Always allow" was: it answers 500 ms later
     fireEvent.click(screen.getByTestId("inbox-refused-undo"));
     await advance(0);
     expect(deletes.sort()).toEqual(["/permissions/rules/100", "/permissions/rules/101"]);
@@ -262,6 +263,7 @@ describe("Always allow is guarded, and can be undone for ten seconds (M4)", () =
     await advance(ANSWER_GUARD_MS);                                // the list has just appeared: held for 500 ms
     fireEvent.click(screen.getByTestId("inbox-refused-allow"));
     await advance(0);
+    await advance(ANSWER_GUARD_MS);                                // Undo came up where "Always allow" was: it answers 500 ms later
     fireEvent.click(screen.getByTestId("inbox-refused-undo"));
     await advance(0);
     expect(deletes).toEqual(["/permissions/rules/77"]);
@@ -276,6 +278,7 @@ describe("Always allow is guarded, and can be undone for ten seconds (M4)", () =
     await advance(ANSWER_GUARD_MS);                                // the list has just appeared: held for 500 ms
     fireEvent.click(screen.getByTestId("inbox-refused-allow"));
     await advance(0);
+    await advance(ANSWER_GUARD_MS);                                // Undo came up where "Always allow" was: it answers 500 ms later
     fireEvent.click(screen.getByTestId("inbox-refused-undo"));
     await advance(0);
     expect(screen.getByTestId("inbox-refused-undo")).toBeInTheDocument();                         // 101 failed: still allowed, still undoable

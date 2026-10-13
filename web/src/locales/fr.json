@@ -1965,8 +1965,8 @@
     "allowedNow": "Autorisé désormais",
     "refusedTimes": "{{count}} fois depuis {{since}}",
     "undo": "Annuler",
-    "openInArslan": "Ouvrir dans Arslan",
-    "heldCapability": "Cela ajoute une nouvelle capacité à Arslan : lisez-le dans Arslan avant d’autoriser."
+    "openInArslan": "Ouvrir la conversation",
+    "heldCapability": "Cela ajoute une nouvelle capacité à Arslan. Cela ne peut être autorisé que dans sa conversation, où la carte s’affiche en entier."
   },
   "pendingMemory": {
     "curationFallback": "Une suggestion de rangement",

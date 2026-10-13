@@ -68,12 +68,7 @@ export default function InboxRefused({ onCount }: { onCount?: (n: number) => voi
   // change the content under them does. Held on every change of this list, its first appearance included (it pushes down what was there).
   const guard = useQueueGuard();
   const held = useSyncExternalStore(guard.subscribe, guard.held, guard.held);
-  const listKey = rows.map((r) => r.id).join(",");
   const mounted = useRef(false);
-  useLayoutEffect(() => {
-    if (mounted.current || listKey) guard.hold();
-    mounted.current = true;
-  }, [guard, listKey]);
 
   const load = useCallback(async () => {
     try {
@@ -105,6 +100,7 @@ export default function InboxRefused({ onCount }: { onCount?: (n: number) => voi
       if (!alive.current) return;
       const rules = Array.isArray(made?.rules) ? made.rules.map((rule) => rule.id) : typeof made?.id === "number" ? [made.id] : [];
       setAllowed((m) => new Map(m).set(r.id, { row: r, at: Math.max(0, rows.findIndex((x) => x.id === r.id)), rules }));
+      guard.hold();                                                     // Undo comes up where "Always allow" was: not for the second click
       if (rules.length) {
         setUndoable((s) => new Set(s).add(r.id));
         timers.current.set(r.id, setTimeout(() => closeUndo(r.id), UNDO_MS));
@@ -120,6 +116,7 @@ export default function InboxRefused({ onCount }: { onCount?: (n: number) => voi
 
   /** Delete exactly the rules the click created. A rule that is gone already counts as undone; any other failure keeps Undo for a retry. */
   async function undo(r: Refusal) {
+    if (guard.held()) return;
     const made = allowed.get(r.id);
     if (!made) return;
     setBusy(r.id);
@@ -133,6 +130,7 @@ export default function InboxRefused({ onCount }: { onCount?: (n: number) => voi
     if (failed) return;
     closeUndo(r.id);
     setAllowed((m) => { const n = new Map(m); n.delete(r.id); return n; });
+    guard.hold();                                                       // "Always allow" comes back where Undo was: not for the second click
     void load();                                                        // the server lists it again
   }
 
@@ -141,6 +139,13 @@ export default function InboxRefused({ onCount }: { onCount?: (n: number) => voi
   for (const made of [...allowed.values()].sort((a, b) => a.at - b.at)) {
     if (undoable.has(made.row.id) && !shown.some((r) => r.id === made.row.id)) shown.splice(Math.min(made.at, shown.length), 0, made.row);
   }
+  // Held on every change of the rows drawn, their first appearance included: a new list from the server, and also a row that was kept in
+  // place for its Undo leaving when the Undo ends or is pressed (the rows below move up into its place; the server's list did not change).
+  const shownKey = shown.map((r) => r.id).join(",");
+  useLayoutEffect(() => {
+    if (mounted.current || shownKey) guard.hold();
+    mounted.current = true;
+  }, [guard, shownKey]);
   if (!shown.length) return null;
   return (
     <section data-testid="inbox-refused" aria-label={t("inbox.refusedTitle")} className="flex flex-col gap-2">
@@ -178,8 +183,8 @@ export default function InboxRefused({ onCount }: { onCount?: (n: number) => voi
               {done
                 ? <span className="flex shrink-0 items-center gap-2">
                     <span data-testid="inbox-refused-allowed" className="text-[12px] text-muted-foreground">{t("inbox.allowedNow")}</span>
-                    {undoable.has(row.id) && <button type="button" disabled={busy === row.id} onClick={() => void undo(row)} data-testid="inbox-refused-undo"
-                      className="rounded-lg bg-fill px-2.5 py-1 text-[12px] font-semibold hover:bg-fill-strong disabled:opacity-50">{t("inbox.undo")}</button>}
+                    {undoable.has(row.id) && <button type="button" disabled={busy === row.id} aria-disabled={held || undefined} onClick={() => void undo(row)} data-testid="inbox-refused-undo"
+                      className="rounded-lg bg-fill px-2.5 py-1 text-[12px] font-semibold hover:bg-fill-strong disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50">{t("inbox.undo")}</button>}
                   </span>
                 : offered
                   ? <button type="button" disabled={busy === row.id} aria-disabled={held || undefined} onClick={() => void allowAlways(row)} data-testid="inbox-refused-allow"

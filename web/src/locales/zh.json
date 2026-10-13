@@ -1965,8 +1965,8 @@
     "allowedNow": "以后都允许",
     "refusedTimes": "自 {{since}} 起共 {{count}} 次",
     "undo": "撤销",
-    "openInArslan": "在 Arslan 里看",
-    "heldCapability": "这一步会给 Arslan 添加新能力——请在 Arslan 里看完整再批准。"
+    "openInArslan": "打开对话",
+    "heldCapability": "这一步会给 Arslan 添加新能力，只能在它所在的对话里看完整张卡片后批准。"
   },
   "pendingMemory": {
     "curationFallback": "一条整理记忆的建议",

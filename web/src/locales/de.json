@@ -1965,8 +1965,8 @@
     "allowedNow": "Ab jetzt erlaubt",
     "refusedTimes": "{{count}}-mal seit {{since}}",
     "undo": "Rückgängig",
-    "openInArslan": "In Arslan öffnen",
-    "heldCapability": "Das erweitert Arslan um eine neue Fähigkeit – erst in Arslan ansehen, dann erlauben."
+    "openInArslan": "Gespräch öffnen",
+    "heldCapability": "Das erweitert Arslan um eine neue Fähigkeit. Erlauben lässt es sich nur in seinem Gespräch, wo die ganze Karte zu sehen ist."
   },
   "pendingMemory": {
     "curationFallback": "Ein Vorschlag zum Aufräumen",

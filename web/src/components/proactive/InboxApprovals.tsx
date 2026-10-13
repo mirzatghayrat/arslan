@@ -96,8 +96,9 @@ export default function InboxApprovals({ onOpenConversation, onCount }: {
     await load();
   }
 
-  // The section appearing pushes everything under it down: a click aimed at what was there must not land on the card now there.
-  const showing = asks.length > 0;
+  // The section appearing pushes everything under it down: a click aimed at what was there must not land on the card now there. It also
+  // appears as its error notice alone (an answer refused after the last card left), which moves the rows below just the same.
+  const showing = asks.length > 0 || error;
   const wasShowing = useRef(false);
   useLayoutEffect(() => { if (showing && !wasShowing.current) guard.hold(); wasShowing.current = showing; }, [guard, showing]);
 

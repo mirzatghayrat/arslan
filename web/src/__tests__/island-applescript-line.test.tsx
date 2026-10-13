@@ -57,7 +57,7 @@ describe('what the island prints', () => {
   it.each(LANGS)('%s: the line is about looking AND acting, in this app, for this task', (lang) => {
     const topic: Record<(typeof LANGS)[number], RegExp[]> = {
       en: [/look at/, /act in/, /this app/, /this task/], zh: [/查看/, /操作/, /这个 App/, /本次任务/], ja: [/見て/, /操作/, /このアプリ/, /このタスク/],
-      es: [/mire/, /actúe/, /esta app/, /esta tarea/], de: [/anzusehen/, /handeln/, /diese App/, /diese Aufgabe/], fr: [/regarder/, /agir/, /cette app/, /cette tâche/],
+      es: [/mire/, /actúe/, /esta app/, /esta tarea/], de: [/ansehen/, /bedienen/, /diese App/, /diese Aufgabe/], fr: [/regarder/, /agir/, /cette app/, /cette tâche/],
     };
     const line = MESSAGES[lang].scriptAlsoHands as string;
     for (const part of topic[lang]) expect(line, `${lang}: ${part}`).toMatch(part);

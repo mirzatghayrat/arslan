@@ -1965,8 +1965,8 @@
     "allowedNow": "Permitido a partir de ahora",
     "refusedTimes": "{{count}} veces desde {{since}}",
     "undo": "Deshacer",
-    "openInArslan": "Abrir en Arslan",
-    "heldCapability": "Esto añade una capacidad nueva a Arslan: revísalo en Arslan antes de permitirlo."
+    "openInArslan": "Abrir la conversación",
+    "heldCapability": "Esto añade una capacidad nueva a Arslan. Solo se puede permitir en su conversación, donde se ve la tarjeta completa."
   },
   "pendingMemory": {
     "curationFallback": "Una sugerencia para ordenar tu memoria",

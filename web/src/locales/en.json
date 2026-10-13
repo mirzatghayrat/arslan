@@ -1965,8 +1965,8 @@
     "allowedNow": "Allowed from now on",
     "refusedTimes": "{{count}} times since {{since}}",
     "undo": "Undo",
-    "openInArslan": "Open in Arslan",
-    "heldCapability": "This adds a new ability to Arslan — read it in Arslan before allowing."
+    "openInArslan": "Open the conversation",
+    "heldCapability": "This adds a new ability to Arslan. It can be allowed only in its conversation, where the whole card is shown."
   },
   "pendingMemory": {
     "curationFallback": "A suggestion to tidy your memory",
