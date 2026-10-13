@@ -1946,7 +1946,13 @@
     "memoryOpen": "Open Memory",
     "watching": "Watching",
     "muted": "Not reminding",
-    "addWatch": "Watch another page or folder"
+    "addWatch": "Watch another page or folder",
+    "refusedTitle": "Not done while you were away",
+    "alwaysAllow": "Always allow",
+    "alwaysStores": "This will always allow: {{what}}",
+    "asksEachTime": "Asks each time",
+    "allowedNow": "Allowed from now on",
+    "refusedTimes": "{{count}} times since {{since}}"
   },
   "pendingMemory": {
     "curationFallback": "A suggestion to tidy your memory",

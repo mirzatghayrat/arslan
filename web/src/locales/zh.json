@@ -1946,7 +1946,13 @@
     "memoryOpen": "去「记忆」里看全部",
     "watching": "正在盯着",
     "muted": "不再提醒",
-    "addWatch": "再盯一个网页或文件夹"
+    "addWatch": "再盯一个网页或文件夹",
+    "refusedTitle": "你不在时没做的事",
+    "alwaysAllow": "始终允许",
+    "alwaysStores": "这会始终允许：{{what}}",
+    "asksEachTime": "每次都会问",
+    "allowedNow": "以后都允许",
+    "refusedTimes": "自 {{since}} 起共 {{count}} 次"
   },
   "pendingMemory": {
     "curationFallback": "一条整理记忆的建议",

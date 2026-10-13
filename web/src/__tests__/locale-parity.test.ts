@@ -288,7 +288,8 @@ describe("locale parity", () => {
     // 1726 → 1740 (0.1.60 first run): the tour, outro and capability-score keys out; the film's shots and first tasks in.
     // 1740 → 1750 (0.1.61 PR 2b): kit.scope.{label,once,task,conversation,always}, kit.note{Link,Placeholder,Send}, kit.expired{Title,Body}.
     // 1750 → 1751 (0.1.61 PR 2b): schedgrant.unattended — what a scheduled run does, on a card that offers a choice.
-    expect(enKeys).toHaveLength(1751);
+    // 1751 → 1757 (0.1.61 PR 2b): inbox.{refusedTitle,alwaysAllow,alwaysStores,asksEachTime,allowedNow,refusedTimes}.
+    expect(enKeys).toHaveLength(1757);
   });
 
   // 0.1.61 PR 2b: a card's "Always" must say what it allows, in every language: the literal scope is interpolated.

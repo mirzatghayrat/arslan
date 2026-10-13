@@ -10,6 +10,7 @@ import { useDismissable } from "../../hooks/useDismissable";
 import EmptyState from "../EmptyState";
 import InboxApprovals from "./InboxApprovals";
 import InboxMemory from "./InboxMemory";
+import InboxRefused from "./InboxRefused";
 import WatchesPanel from "./WatchesPanel";
 import { Notice } from "../kit";
 
@@ -158,6 +159,7 @@ export default function ProactiveInbox({ onOpenSettings, onOpenModelSettings, on
 
   const [waiting, setWaiting] = useState(0);
   const [memoryWaiting, setMemoryWaiting] = useState(0);
+  const [refused, setRefused] = useState(0);
   const emptyBody = scope === "open" ? t("proactive.page.emptyBody") : t(scope === "snoozed" ? "proactive.page.emptySnoozed" : "proactive.page.emptyDone");
   const card = (item: ProactiveItem) => <li key={item.id}>
     <Card item={item} busy={busyId === item.id} language={i18n.language}
@@ -178,7 +180,7 @@ export default function ProactiveInbox({ onOpenSettings, onOpenModelSettings, on
       <span className="font-mono text-[12px] text-subtle-foreground">{list.length}</span></h2>
     <ul className="space-y-3">{list.map(card)}</ul>
   </section>;
-  const nothing = !loading && !failed && items.length === 0 && waiting === 0 && memoryWaiting === 0;
+  const nothing = !loading && !failed && items.length === 0 && waiting === 0 && memoryWaiting === 0 && refused === 0;
   return <section data-testid="proactive-inbox" className="h-full overflow-y-auto px-5 py-6 sm:px-8">
     <div className="mx-auto flex max-w-6xl gap-7">
     <div className="min-w-0 max-w-[700px] flex-1 space-y-5">
@@ -199,6 +201,7 @@ export default function ProactiveInbox({ onOpenSettings, onOpenModelSettings, on
         {notice.text}</Notice>}
       {failed && <p role="alert" className="text-sm text-danger-strong">{t("proactive.page.loadFailed")} <button className="underline" onClick={() => void load(scope)}>{t("proactive.page.retry")}</button></p>}
       {open && <InboxApprovals onCount={setWaiting} onOpenConversation={(id) => onOpenConversation(id, false)} />}
+      {open && <InboxRefused onCount={setRefused} />}
       {loading && !failed && <p role="status" className="text-sm text-muted-foreground">{t("companion.loading")}</p>}
       {nothing && <EmptyState icon={open ? Inbox : BellOff} title={t("proactive.page.emptyTitle")} body={emptyBody}
         action={open ? <button className={primaryClass} onClick={onOpenSettings}>{t("proactive.page.emptyAction")}</button> : undefined} testId="proactive-empty" />}

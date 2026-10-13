@@ -5,6 +5,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "../i18n";
+import * as client from "../api/client";
 import { ApiError } from "../api/client";
 import type { ProactiveItem } from "../api/proactive";
 import ProactiveInbox from "../components/proactive/ProactiveInbox";
@@ -35,6 +36,26 @@ beforeEach(() => {
   void i18n.changeLanguage("en");
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); });
+
+describe("what could not be asked while nobody was there", () => {
+  it("is listed in real words with what Always allow will store, and the inbox is not empty while it is", async () => {
+    const asked = vi.spyOn(client, "request").mockImplementation(async (path: string) =>
+      (path === "/approvals/refused?hours=24" ? [{ id: 30, created_at: "2026-10-12T09:00:00Z", first_at: "2026-10-12T09:00:00Z",
+        count: 1, conversation_id: "c", kind: "command", target: "rules:send-mail", detail: "mail -s hi me@x.com",
+        always_ok: true, always: [{ kind: "legacy_rule", target: "send-mail", label: "Send an email" }] }] : []) as never);
+    try {
+      await show([]);
+      const section = await screen.findByTestId("inbox-refused");
+      expect(within(section).getByRole("heading", { name: /Not done while you were away/ })).toBeTruthy();
+      expect(within(section).getByText("mail -s hi me@x.com")).toBeTruthy();
+      expect(within(section).getByText("This will always allow: Send an email")).toBeTruthy();
+      expect(within(section).getByRole("button", { name: "Always allow" })).toBeTruthy();
+      expect(screen.queryByTestId("proactive-empty")).toBeNull();
+    } finally {
+      asked.mockRestore();
+    }
+  });
+});
 
 describe("what is shown", () => {
   it("shows the title, the sentence and the outside text in quotation marks", async () => {

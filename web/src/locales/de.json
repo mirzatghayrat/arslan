@@ -1946,7 +1946,13 @@
     "memoryOpen": "Erinnerung öffnen",
     "watching": "Beobachtet",
     "muted": "Keine Erinnerung",
-    "addWatch": "Weitere Seite oder Ordner beobachten"
+    "addWatch": "Weitere Seite oder Ordner beobachten",
+    "refusedTitle": "Nicht erledigt, während du weg warst",
+    "alwaysAllow": "Immer erlauben",
+    "alwaysStores": "Das erlaubt künftig immer: {{what}}",
+    "asksEachTime": "Fragt jedes Mal",
+    "allowedNow": "Ab jetzt erlaubt",
+    "refusedTimes": "{{count}}-mal seit {{since}}"
   },
   "pendingMemory": {
     "curationFallback": "Ein Vorschlag zum Aufräumen",

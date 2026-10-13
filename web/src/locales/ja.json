@@ -1946,7 +1946,13 @@
     "memoryOpen": "「メモリー」ですべて見る",
     "watching": "見守り中",
     "muted": "通知しない",
-    "addWatch": "ページやフォルダーを追加で見守る"
+    "addWatch": "ページやフォルダーを追加で見守る",
+    "refusedTitle": "不在中にできなかったこと",
+    "alwaysAllow": "常に許可",
+    "alwaysStores": "常に許可される内容：{{what}}",
+    "asksEachTime": "毎回確認します",
+    "allowedNow": "今後は許可されます",
+    "refusedTimes": "{{since}} から {{count}} 回"
   },
   "pendingMemory": {
     "curationFallback": "記憶を整理する提案",

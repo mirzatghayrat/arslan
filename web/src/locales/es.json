@@ -1946,7 +1946,13 @@
     "memoryOpen": "Abrir Memoria",
     "watching": "Vigilando",
     "muted": "Sin recordatorios",
-    "addWatch": "Vigilar otra página o carpeta"
+    "addWatch": "Vigilar otra página o carpeta",
+    "refusedTitle": "Lo que no se hizo mientras no estabas",
+    "alwaysAllow": "Permitir siempre",
+    "alwaysStores": "Esto permitirá siempre: {{what}}",
+    "asksEachTime": "Pregunta cada vez",
+    "allowedNow": "Permitido a partir de ahora",
+    "refusedTimes": "{{count}} veces desde {{since}}"
   },
   "pendingMemory": {
     "curationFallback": "Una sugerencia para ordenar tu memoria",

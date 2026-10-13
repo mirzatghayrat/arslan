@@ -1946,7 +1946,13 @@
     "memoryOpen": "Ouvrir Mémoire",
     "watching": "Sous surveillance",
     "muted": "Plus de rappel",
-    "addWatch": "Surveiller une autre page ou un dossier"
+    "addWatch": "Surveiller une autre page ou un dossier",
+    "refusedTitle": "Pas fait pendant votre absence",
+    "alwaysAllow": "Toujours autoriser",
+    "alwaysStores": "Cela autorisera toujours : {{what}}",
+    "asksEachTime": "Demande à chaque fois",
+    "allowedNow": "Autorisé désormais",
+    "refusedTimes": "{{count}} fois depuis {{since}}"
   },
   "pendingMemory": {
     "curationFallback": "Une suggestion de rangement",
