@@ -683,6 +683,7 @@ def _read(text: str) -> list[Finding]:
     findings += _script_findings(commands, bodies)
     findings += _fetched_code_findings(shell)
     findings += _code_findings([shell, *budget.payloads])
+    findings += _stdin_findings([shell, *budget.payloads])
     # A code word built by a substitution (`eval "$(…)"`) is that code's own card (R13 c).
     if (any(getattr(argv, "dynamic", False) for argv in commands)
             and not {f.rule for f in findings} & {"built-code", "fetched-code"}):
@@ -1025,9 +1026,9 @@ def _rewrite_command_words(shell: str) -> str:
             else:
                 break
     for at in starts:                       # `{git push}`: zsh closes the group at a `}` with no space
-        if at and shell[at - 1] == "{":
+        if at and shell[at - 1] == "{":     # (`{}`, xargs' and find's slot, holds no command)
             close = _closing_brace(shell, at)
-            if close is not None and not shell[close - 1].isspace() and shell[close - 1] != ";":
+            if close is not None and close > at and not shell[close - 1].isspace() and shell[close - 1] != ";":
                 edits.add((close, close, "\n"))
     kept, cursor = [], 0
     for edit in sorted(edits):
@@ -2091,12 +2092,220 @@ def _code_use(command: str) -> list[Finding]:
         return []
     if any(_fetches_or_decodes(body) for body in bodies):
         return [Finding("opaque", "fetched-code", _WHY["fetched-code"])]
+    found: list[Finding] = []
+    if builds:                  # F3: what `echo`/`printf` of literal words print is that code, read as such
+        for body in bodies:
+            produced = _literal_output(body)
+            if produced is not None:
+                found += _produced_findings(produced)
     if builds and not all(_sets_up_environment(body) for body in bodies):
-        return [Finding("opaque", "built-code", _WHY["built-code"])]
-    if name == "osascript":
-        return [Finding("apps", "apple-events", "runs AppleScript that can control an app it names only at "
-                                                "run time", kind="app")]
-    return []
+        found.append(_BUILT_CODE)
+    elif name == "osascript":
+        found.append(Finding("apps", "apple-events", "runs AppleScript that can control an app it names only at "
+                                                     "run time", kind="app"))
+    return found
+
+
+_BUILT_CODE = Finding("opaque", "built-code", _WHY["built-code"])
+
+
+def _stdin_findings(texts: list[str]) -> list[Finding]:
+    """F3: a shell (or `source /dev/stdin`) fed code on a pipe is judged by what feeds it, past
+    wrappers and through `cat`/`tee`: `echo` or `printf` of literal words — what they print is read
+    as shell by every rule, the floor too (`printf 'sudo ls' | bash` read local); `cat FILE`, as
+    `bash FILE` is; a download or a decode, `fetched-code` (`_fetched_code_findings`); anything
+    else, `built-code`. `xargs` fed literal words runs its command with them (F1). In the command
+    and in every substitution and payload, which a quote does not stop from running."""
+    found: list[Finding] = []
+    pending, seen = list(texts), set()
+    while pending:
+        text = pending.pop()
+        if text in seen:
+            continue
+        seen.add(text)
+        for pipeline in _pipelines(text):
+            for k in range(1, len(pipeline)):
+                target = _pipe_target(pipeline[k])
+                if target is None or any(_fetches(argv) or _decodes(argv) for piece in pipeline[:k]
+                                         for argv in _commands(piece)):
+                    continue
+                j = k - 1
+                while j >= 0 and _passes_input_on(pipeline[j]):
+                    j -= 1
+                if j < 0:
+                    continue                                # fed only what `cat`/`tee` read themselves
+                produced = _literal_output(pipeline[j])
+                if target != "shell":
+                    if produced is not None:
+                        found += _produced_findings(_xargs_run(target[1], produced))
+                elif produced is not None:
+                    found += _produced_findings(produced)
+                elif not _reads_one_local_file(pipeline[j]):
+                    found.append(_BUILT_CODE)
+        pending += _substitution_bodies(text)
+    return list(dict.fromkeys(found))
+
+
+def _pipe_target(piece: str):
+    """What a pipe feeds: "shell" — a shell, or `source /dev/stdin`, that runs its input as code,
+    past wrappers — or ("xargs", the command `xargs` runs), else None."""
+    for segment in _top_level_segments(piece):
+        for _start, _raw, bounded in _spans(segment):
+            plain, _inputs = _split_redirections(_raw_words(bounded))
+            if plain and _program(plain[0]) == "xargs":
+                unwrapped = _unwrap([_unquote(word) for word in plain])
+                return ("xargs", unwrapped[0]) if unwrapped is not None else None
+            inner = _unwrapped(plain)
+            if inner and _program(inner[0]) in _SHELLS | {"source", "."} and _reads_stdin_code(inner):
+                return "shell"
+    return None
+
+
+def _passes_input_on(piece: str) -> bool:
+    """`cat` with no file, and `tee`: what they read goes on down the pipe."""
+    plain, inputs = _split_redirections(_raw_words(piece))
+    plain = _unwrapped(plain)
+    if not plain:
+        return False
+    name = _program(plain[0])
+    return name == "tee" or (name == "cat" and not inputs and all(_unquote(word) in ("-", "--") for word in plain[1:]))
+
+
+def _reads_one_local_file(piece: str) -> bool:
+    """`cat FILE` (or `cat < FILE`) of one literal file: a shell reading it runs that file, as
+    `bash FILE` does, which is not read here."""
+    plain, inputs = _split_redirections(_raw_words(piece))
+    plain = _unwrapped(plain)
+    if not plain or _program(plain[0]) != "cat" or any(_last_expansion_end(word) is not None for word in plain):
+        return False
+    files = [_unquote(word) for word in plain[1:] if _unquote(word) != "--"]
+    if inputs:
+        return not files and len(inputs) == 1 and inputs[0][0] == "<" and _last_expansion_end(inputs[0][1]) is None
+    return len(files) == 1 and not files[0].startswith("-")
+
+
+def _xargs_run(code: str, produced: str) -> str:
+    """The command `xargs` runs with the words it reads: where `{}` stands, else after it."""
+    args, words = _split_words(produced), _split_words(code)
+    if any("{}" in word for word in words):
+        return shlex.join([word.replace("{}", " ".join(args)) for word in words])
+    return shlex.join(words + args)
+
+
+def _split_words(text: str) -> list[str]:
+    try:
+        return shlex.split(text)
+    except ValueError:
+        return text.split()
+
+
+def _produced_findings(produced: str) -> list[Finding]:
+    """The findings in code a producer prints (F3), read in this read's budget; what stops that
+    reading stops the command."""
+    if not produced.strip():
+        return []
+    if len(produced) > MAX_COMMAND_CHARS:
+        raise _Unreadable("the code a command prints is too long to read")
+    return [f for f in classify(produced).findings if f.category != "local"]
+
+
+_PRINT_ESCAPE = re.compile(r"\\(?:([abefnrtv\\])|(c)|x([0-9a-fA-F]{1,2})|u([0-9a-fA-F]{1,4})|U([0-9a-fA-F]{1,8})"
+                           r"|0?([0-7]{1,3}))")
+_PRINT_SIMPLE = {"a": "\a", "b": "\b", "e": "\x1b", "f": "\f", "n": "\n", "r": "\r", "t": "\t", "v": "\v",
+                 "\\": "\\"}
+_PRINTF_DIRECTIVE = re.compile(r"%(?:%|[-+ #0]*(?:\d+|\*)?(?:\.(?:\d+|\*)?)?[a-zA-Z])")
+
+
+def _literal_output(text: str) -> str | None:
+    """What `text` prints when it is only `echo`, `printf` or `cat <<< word` of literal words — past
+    wrappers, one or more of them, a `{ …; }` or `( … )` around them — else None (F3)."""
+    body = text.strip()
+    if body[:1] in ("{", "(") and body[-1:] == {"{": "}", "(": ")"}[body[0]]:
+        body = body[1:-1]
+    out: list[str] = []
+    for segment in _top_level_segments(body):
+        plain, inputs = _split_redirections(_raw_words(segment))
+        plain = _unwrapped([word for word in plain if word not in ("{", "}")])
+        if not plain:
+            continue
+        if any(_last_expansion_end(word) is not None for word in plain):
+            return None
+        words = [_unquote(word) for word in plain]
+        name = os.path.basename(words[0])
+        here = [target for operator, target in inputs if operator.endswith("<<<")]
+        if name == "echo":
+            out.append(_echo_output(words[1:]))
+        elif name == "printf":
+            out.append(_printf_output(words[1:]))
+        elif name == "cat" and len(words) == 1 and len(here) == 1 and _last_expansion_end(here[0]) is None:
+            out.append(_unquote(here[0]) + "\n")
+        else:
+            return None
+        if sum(map(len, out)) > MAX_COMMAND_CHARS:
+            break
+    return "".join(out) if out else None
+
+
+def _echo_output(args: list[str]) -> str:
+    """What zsh's `echo` prints: the words joined, their escapes read unless `-E`, a newline unless `-n`."""
+    newline, escapes, i = True, True, 0
+    while i < len(args) and re.fullmatch(r"-[neE]+", args[i]):
+        for flag in args[i][1:]:
+            newline = newline and flag != "n"
+            escapes = True if flag == "e" else False if flag == "E" else escapes
+        i += 1
+    text = " ".join(args[i:])
+    return (_unescape_print(text) if escapes else text) + ("\n" if newline else "")
+
+
+def _printf_output(args: list[str]) -> str:
+    """What `printf FORMAT WORD…` prints, at best effort: the format's escapes read, each directive
+    filled with the next word (`%b` with its escapes read), the format again while words remain."""
+    if args[:1] == ["--"]:
+        args = args[1:]
+    if not args or args[0].startswith("-v"):
+        return ""                                       # `printf -v NAME …` prints nothing
+    fmt, values = args[0], list(args[1:])
+    out: list[str] = []
+    while True:
+        used, at = 0, 0
+        for match in _PRINTF_DIRECTIVE.finditer(fmt):
+            out.append(_unescape_print(fmt[at:match.start()]))
+            if match.group() == "%%":
+                out.append("%")
+            else:
+                value = values[used] if used < len(values) else ""
+                used += 1
+                out.append(_unescape_print(value) if match.group().endswith("b") else value)
+            at = match.end()
+        out.append(_unescape_print(fmt[at:]))
+        values = values[used:]
+        if not values or not used or sum(map(len, out)) > MAX_COMMAND_CHARS:
+            return "".join(out)
+
+
+def _unescape_print(text: str) -> str:
+    """Backslash escapes as `echo` and `printf` print them, at best effort (`\\n`, `\\t`, `\\x64`,
+    `\\0144`, `\\144`, `\\u2028`); `\\c` ends the output."""
+    if "\\" not in text:
+        return text
+    out, at = [], 0
+    for match in _PRINT_ESCAPE.finditer(text):
+        out.append(text[at:match.start()])
+        simple, stop, hex2, u4, u8, octal = match.groups()
+        if stop:
+            return "".join(out)
+        if simple:
+            out.append(_PRINT_SIMPLE[simple])
+        else:
+            digits, base = (octal, 8) if octal else (hex2 or u4 or u8, 16)
+            try:
+                out.append(chr(int(digits, base)))
+            except (ValueError, OverflowError):
+                out.append(match.group())
+        at = match.end()
+    out.append(text[at:])
+    return "".join(out)
 
 
 # ── the floor ─────────────────────────────────────────────────────────────────
@@ -3116,21 +3325,29 @@ def _pipes_fetched_code(text: str) -> bool:
 
 def _pipelines(text: str) -> list[list[str]]:
     """Each pipeline in `text`, as its commands' text in order: split at `|` (`|&` too), and from
-    the next pipeline at `;`, `&`, `&&`, `||` and newlines; quotes, comments and redirections such
-    as `2>&1` respected."""
+    the next pipeline at `;`, `&`, `&&`, `||` and newlines — never inside a substitution, a `( … )`
+    subshell or a `{ …; }` group, each one command of its pipeline (F3: `{ printf a; printf b; } |
+    bash`); quotes, comments and redirections such as `2>&1` respected."""
     pipelines: list[list[str]] = [[]]
-    start = skip_to = 0
-    for kind, i, j, quote in hermes._scan_shell(text, comments=True):
-        if i < skip_to:
+    start = skip_to = depth = 0
+    for kind, i, j, quote in hermes._scan_shell(text, comments=True, subst="uq", brace=True):
+        if i < skip_to or quote is not None:
             continue
         if kind == "comment":
-            pipelines[-1].append(text[start:i])
-            pipelines.append([])
-            start = skip_to = j
+            if not depth:
+                pipelines[-1].append(text[start:i])
+                pipelines.append([])
+                start = skip_to = j
             continue
-        if kind != "char" or quote is not None or text[i] not in ";&|\n":
+        if kind != "char":
             continue
         ch, nxt = text[i], text[i + 1:i + 2]
+        if ch == "(" or (ch == "{" and (not nxt or nxt.isspace())):
+            depth += 1
+        elif ch == ")" or (ch == "}" and depth and (i == 0 or text[i - 1].isspace() or text[i - 1] == ";")):
+            depth = max(depth - 1, 0)
+        if depth or ch not in ";&|\n":
+            continue
         if ch == "&" and ((i and text[i - 1] in "<>") or nxt == ">"):
             continue                                        # `2>&1`, `<&3`, `&>file`: a redirection
         pipelines[-1].append(text[start:i])
