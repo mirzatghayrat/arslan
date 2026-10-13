@@ -487,7 +487,7 @@ def _floor_of_unread(text: str) -> tuple[Finding, ...]:
     subjects = [text]
     try:
         subjects = [_decode_ansi_c(text)]
-        shell = _comments_quieted(_decode_ansi_c(split_heredocs(subjects[0])[0]))     # (F2)
+        shell = _comments_blanked(_decode_ansi_c(split_heredocs(subjects[0])[0]))     # (F2, F5)
         reading = _readings(shell)
         subjects += [subject for subject in (shell, reading) if subject not in subjects]
     except Exception:  # noqa: BLE001 — what could be built is searched
@@ -529,97 +529,285 @@ _ANSI_C_SIMPLE = {"n": "\n", "t": "\t", "r": "\r", "a": "\a", "b": "\b", "e": "\
 def _decode_ansi_c(text: str) -> str:
     """Every `$'…'` outside quotes decoded as zsh decodes it (`\\'`, `\\\\`, `\\n`, `\\xHH`, `\\uHHHH`,
     `\\NNN` …) and written as a plain single-quoted word: `$'\\x67it' push` is `'git' push`, and
-    `$'don\\'t'` no longer leaves the scanners in a quote that never closes (item 9). In double quotes
-    `$'` is literal; a `$(…)` opens a fresh quoting level; a `#` comment is copied to its newline, so
-    its "don't" opens no quote (F2). Never raises."""
+    `$'don\\'t'` no longer leaves the scanners in a quote that never closes (item 9). Which `$'…'` is
+    one is `_zsh_scan`'s to say: not in double quotes, and not in a comment, whose "don't" opens no
+    quote (F2) — a comment as zsh starts one (F5). Never raises."""
     if "$'" not in text:
         return text
-    out: list[str] = []
-    quotes: list[str | None] = [None]
-    i, n = 0, len(text)
-    while i < n:
-        ch, quote = text[i], quotes[-1]
-        if quote == "'":
-            quotes[-1] = None if ch == "'" else quote
-        elif ch == "\\":
-            out.append(text[i:i + 2])
-            i += 2
-            continue
-        elif quote is None and _comment_at(text, i):
-            stop = text.find("\n", i)                   # a comment, to its newline: "don't" opens no quote (F2)
-            stop = n if stop < 0 else stop
-            out.append(text[i:stop])
-            i = stop
-            continue
-        elif quote is None and text.startswith("$'", i):
-            value, i = _ansi_c_value(text, i + 2)
-            out.append("'" + value.replace("'", "'\\''") + "'")
-            continue
-        elif ch == '"':
-            quotes[-1] = None if quote == '"' else '"'
-        elif ch == "'" and quote is None:
-            quotes[-1] = "'"
-        elif text.startswith("$(", i):
-            quotes.append(None)
-            out.append("$(")
-            i += 2
-            continue
-        elif ch == ")" and quote is None and len(quotes) > 1:
-            quotes.pop()
-        out.append(ch)
-        i += 1
-    return "".join(out)
+    edits = []
+    for start, end in _zsh_scan(text)[2]:
+        value, _ = _ansi_c_value(text, start + 2)
+        edits.append((start, end, "'" + value.replace("'", "'\\''") + "'"))
+    return hermes._splice(text, edits) if edits else text
 
 
-def _comment_at(text: str, i: int) -> bool:
-    """Whether the `#` at `i` starts a comment as zsh reads it: at the start of a word — after a blank,
-    `;`, `&`, `|`, `<`, `>` or `)`, or after a `(` that opens a subshell or a substitution (in `*(#q)`
-    the `(` belongs to a glob, and with zsh's extended glob what follows runs)."""
-    if text[i] != "#":
-        return False
-    if i == 0 or text[i - 1].isspace() or text[i - 1] in ";&|<>)":
-        return True
-    return text[i - 1] == "(" and (i == 1 or text[i - 2].isspace() or text[i - 2] in ";&|(<>=$")
-
-
-def _comments_quieted(text: str) -> str:
-    """`text` with the quote marks inside each `#` comment blanked (F2). A comment is
-    no code, but Hermes' detection reads none, so the apostrophe in "# don't" opened a quote there
-    and the next lines read as quoted prose: `ls # don't\nrm -rf ~` was not the floor. Hermes' own
-    comment rule, which may take a little more for a comment than zsh does: blanking a quote mark
-    only ever shows more text as code."""
+def _comments_blanked(text: str) -> str:
+    """`text` with each comment blanked whole, from its `#` to the end of its line (F5), where `zsh -c`
+    starts one (`_zsh_scan`). A comment is no code, but Hermes' detection reads none: the apostrophe
+    in "# don't" opened a quote there and hid the next lines (`ls # don't\\nrm -rf ~` was not the
+    floor, F2). Blanking only the quote marks showed quoted prose in a comment as code (`git status
+    # TODO: never "rm -rf /"` asked as destructive, review 3 I1). A comment becomes one blank, not a
+    blank per character: a long run of blanks at a line start costs Hermes' command-position patterns
+    time quadratic in its length (`#` × 7,999 read in 9 s). A `#` zsh reads inside a word where
+    Hermes would start a comment (`$(date)#`, `x\\ #`, `(#c)`) is escaped, so Hermes' scanners do not
+    drop what follows it: `echo $(date)#; sudo ls` runs sudo."""
     if "#" not in text:
         return text
-    out = list(text)
-    quotes: list[str | None] = [None]                    # the quote open at each `$(` level
+    comments, hashes, _strings = _zsh_scan(text)
+    edits = sorted([(start, end, " ") for start, end in comments] + [(at, at, "\\") for at in hashes])
+    return hermes._splice(text, edits) if edits else text
+
+
+#: zsh's reserved words after which a command word still comes (`if (true)`, `! (…)`, `time (…)`, `{`):
+#: a `(` there opens a subshell. After any other command word it is a glob (`noglob echo (#c)`).
+_KEEPS_COMMAND = frozenset({"if", "elif", "then", "else", "while", "until", "do", "!", "time", "coproc", "{"})
+_ARRAY_HEAD = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:\[[^\]]*\])?\+?=")
+_FUNCTION_PARENS = re.compile(r"\([ \t]*\)")
+_BRACKETS = {"arith": "()", "glob": "()", "brace": "{}", "bracket": "[]"}
+
+
+class _ZshLevel:
+    """One level of `_zsh_scan`. A comment can start in `list` (the top, `$(…)`, `<(…)`, a subshell),
+    `tick` (a backtick body) and `array` (`name=(…)`); none in `arith` (`$((…))`, `((…))`), `brace`
+    (`${…}`), `bracket` (`$[…]`) or `glob` (a `(` in a word or among the arguments). `after`: the
+    `)` closing it ends a word (a subshell, an array, `((…))`), so a `#` right after it is a comment;
+    otherwise the word goes on (`$(date)#x` is one word)."""
+    __slots__ = ("kind", "quote", "depth", "after", "command", "word", "first", "redirect", "repeat")
+
+    def __init__(self, kind: str, depth: int = 0, after: bool = False):
+        self.kind, self.depth, self.after = kind, depth, after
+        self.quote: str | None = None
+        self.command = kind in ("list", "tick")     # the next word is a command word
+        self.word: list[str] | None = None          # the word being read: its first characters, "\0" not literal
+        self.first = False                          # that word is a command word
+        self.redirect = self.repeat = False         # the next word is a redirection's target / `repeat`'s count
+
+
+def _zsh_scan(text: str) -> tuple[list[tuple[int, int]], list[int], list[tuple[int, int]]]:
+    """How `zsh -c` reads the comments and the ANSI-C strings of `text`, in one linear pass (F5):
+    (each comment as (start, end) — to its newline, or in a backtick body to the closing backtick —;
+    each `#` zsh reads inside a word where Hermes' lenient rule would start a comment; each `$'…'`
+    outside quotes and comments as (start, end)).
+
+    A `#` starts a comment only at the start of a word: at the start of the text or of a line, after
+    a blank, after `;` `&` `|` `<` `>`, after the `(` or `{` opening a subshell, a substitution, an
+    array or a group, and after the `)` closing a subshell, an array, `((…))`, a case pattern or a
+    function's `()`. Never inside a word — after the `)` of `$(…)`, `$((…))` or `<(…)`, after an
+    escaped blank or a line continuation, after `!` —, in quotes, in `${…}`, arithmetic or a glob's
+    parentheses (`*(#q)`, `noglob echo (#c)`). Each case checked in /bin/zsh -f -c with echo."""
+    comments: list[tuple[int, int]] = []
+    hashes: list[int] = []
+    strings: list[tuple[int, int]] = []
+    levels = [_ZshLevel("list")]
+    boundary = True                         # the next character starts a word
+    tick_end: int | None = None             # the backtick closing the open backtick body
+    string_at = 0
     i, n = 0, len(text)
+
+    def in_word(lv: _ZshLevel, ch: str) -> None:
+        if lv.word is None:
+            lv.word, lv.first = [], lv.command and not lv.redirect
+        if len(lv.word) < 64:
+            lv.word.append(ch)
+
+    def end_word(lv: _ZshLevel) -> None:
+        if lv.word is None:
+            return
+        word, first = "".join(lv.word), lv.first
+        lv.word = None
+        if lv.redirect:                     # a redirection's target: the command position stays as it was
+            lv.redirect = False
+        elif lv.repeat:                     # `repeat N`: after the count, a command word
+            lv.repeat, lv.command = False, True
+        elif first and word == "repeat":
+            lv.repeat, lv.command = True, False
+        elif first:
+            lv.command = word in _KEEPS_COMMAND or _ASSIGNMENT_WORD.match(word) is not None
+
+    def opener(at: int) -> tuple[_ZshLevel, int] | None:
+        if text[at] == "`":
+            return (_ZshLevel("tick"), 1) if tick_end is None else None
+        if text.startswith("$((", at):
+            return _ZshLevel("arith", 2), 3
+        if text.startswith("$(", at):
+            return _ZshLevel("list"), 2
+        if text.startswith("${", at):
+            return _ZshLevel("brace", 1), 2
+        if text.startswith("$[", at):
+            return _ZshLevel("bracket", 1), 2
+        return None
+
+    def push(level: _ZshLevel, at: int) -> None:
+        nonlocal tick_end
+        if level.kind == "tick":
+            close = hermes._scan_backtick_end(text, at)
+            tick_end = n if close is None else close - 1
+        levels.append(level)
+
     while i < n:
-        ch, quote = text[i], quotes[-1]
+        lv, ch = levels[-1], text[i]
+        if i == tick_end:                   # the closing backtick ends the body and all it opened
+            while levels[-1].kind != "tick":
+                levels.pop()
+            levels.pop()
+            tick_end, boundary = None, False
+            if levels[-1].kind in _LEVELS_WITH_COMMENTS:
+                in_word(levels[-1], "\0")
+            i += 1
+            continue
+        quote = lv.quote
         if quote == "'":
-            quotes[-1] = None if ch == "'" else quote
-        elif ch == "\\":
+            lv.quote = None if ch == "'" else quote
+            i += 1
+            continue
+        if quote == "$'":
+            if ch == "'":
+                lv.quote = None
+                strings.append((string_at, i + 1))
+            i += 2 if ch == "\\" else 1
+            continue
+        if ch == "\\":
+            if text.startswith("\\\n", i):          # a line continuation is no character at all
+                i += 2
+                continue
+            if quote is None and lv.kind in _LEVELS_WITH_COMMENTS:
+                in_word(lv, "\0")
+                boundary = False
             i += 2
             continue
-        elif quote is None and hermes._is_shell_comment_start(text, i):
-            stop = text.find("\n", i)
-            stop = n if stop < 0 else stop
-            for k in range(i, stop):
-                if out[k] in "'\"":
-                    out[k] = " "
-            i = stop
+        if quote == '"':
+            if ch == '"':
+                lv.quote = None
+            elif ch in "`$" and (opened := opener(i)) is not None:
+                push(opened[0], i)
+                boundary = opened[0].kind in ("list", "tick")
+                i += opened[1]
+                continue
+            i += 1
             continue
-        elif ch == '"':
-            quotes[-1] = None if quote == '"' else '"'
-        elif ch == "'" and quote is None:
-            quotes[-1] = "'"
-        elif text.startswith("$(", i):
-            quotes.append(None)
+        listing = lv.kind in _LEVELS_WITH_COMMENTS
+        if ch in "'\"" or text.startswith("$'", i):
+            lv.quote, string_at = ("$'", i) if ch == "$" else (ch, string_at)
+            if listing:
+                in_word(lv, "\0")
+                boundary = False
+            i += 2 if ch == "$" else 1
+            continue
+        if ch in "`$" and (opened := opener(i)) is not None:
+            if listing:
+                in_word(lv, "\0")
+            push(opened[0], i)
+            boundary = opened[0].kind in ("list", "tick")
+            i += opened[1]
+            continue
+        if not listing:                     # arithmetic, `${…}`, `$[…]`, a glob: brackets, no comment
+            if ch == "#" and hermes._is_shell_comment_start(text, i):
+                hashes.append(i)
+            elif ch in _BRACKETS[lv.kind]:
+                lv.depth += 1 if ch == _BRACKETS[lv.kind][0] else -1
+                if lv.depth <= 0:
+                    boundary = _zsh_close(levels)
+            i += 1
+            continue
+        if ch == "#":
+            if boundary:
+                end = text.find("\n", i)
+                end = n if end < 0 else end
+                if tick_end is not None:    # in a backtick body: to the closing (or an escaped) backtick
+                    stop = text.find("`", i, min(end, tick_end) + 1)
+                    if stop >= 0:
+                        end = stop - (text[stop - 1] == "\\")
+                comments.append((i, end))
+                i = end
+                continue
+            if hermes._is_shell_comment_start(text, i):
+                hashes.append(i)
+            in_word(lv, ch)
+            i += 1
+            continue
+        if ch in " \t\n":
+            end_word(lv)
+            if ch == "\n" and lv.kind != "array":
+                lv.command, lv.redirect = True, False
+            boundary = True
+        elif ch in ";&|":
+            if ch == "&" and (text[i - 1:i] in ("<", ">") or text[i + 1:i + 2] == ">") or ch == "|" and text[i - 1:i] == ">":
+                end_word(lv)
+                lv.redirect = True          # `>&2`, `&>f`, `<&3`, `>|f`: a redirection
+            else:
+                end_word(lv)
+                lv.command, lv.redirect = True, False
+            boundary = True
+        elif ch in "<>" and text.startswith("(", i + 1):        # `<(…)` `>(…)`: a substitution in a word
+            in_word(lv, "\0")
+            push(_ZshLevel("list"), i)
+            boundary = True
             i += 2
             continue
-        elif ch == ")" and quote is None and len(quotes) > 1:
-            quotes.pop()
+        elif ch in "<>":
+            if lv.word is not None and "".join(lv.word).isdigit():
+                lv.word = None              # `2>`: the descriptor it redirects
+            else:
+                end_word(lv)
+            lv.redirect, boundary = True, True
+        elif ch == "(":
+            word = "".join(lv.word) if lv.word is not None else None
+            if (parens := _FUNCTION_PARENS.match(text, i)) is not None:    # `f()`, `a b ()`: a function
+                end_word(lv)
+                lv.command, lv.redirect, lv.repeat = True, False, False
+                boundary = True
+                i = parens.end()
+                continue
+            if boundary and lv.command and lv.kind != "array":
+                arithmetic = text.startswith("((", i)
+                push(_ZshLevel("arith", 2, after=True) if arithmetic else _ZshLevel("list", after=True), i)
+                boundary = not arithmetic
+                i += 2 if arithmetic else 1
+                continue
+            if word is not None and lv.first and _ARRAY_HEAD.fullmatch(word):
+                push(_ZshLevel("array", after=True), i)
+                boundary = True
+            elif word == "=":               # `=(…)`: zsh's substitution
+                push(_ZshLevel("list"), i)
+                boundary = True
+            else:
+                in_word(lv, "\0")
+                push(_ZshLevel("glob", 1), i)
+                boundary = False
+        elif ch == ")":
+            if lv.kind in ("list", "array") and len(levels) > 1:
+                boundary = _zsh_close(levels)
+            else:                           # a case pattern's `)`: a command comes next
+                end_word(lv)
+                lv.command, lv.redirect = True, False
+                boundary = True
+        elif ch == "{" and boundary and lv.command:
+            boundary = True                 # a group: a command comes next (`{#c` is a comment)
+        else:
+            in_word(lv, ch)
+            boundary = False
         i += 1
-    return "".join(out)
+    if levels[-1].quote == "$'":
+        strings.append((string_at, n))
+    return comments, hashes, strings
+
+
+_LEVELS_WITH_COMMENTS = frozenset({"list", "tick", "array"})
+
+
+def _zsh_close(levels: list[_ZshLevel]) -> bool:
+    """Close the innermost level; whether a word ended with it (the next `#` starts a comment)."""
+    closed = levels.pop()
+    outer = levels[-1]
+    if closed.after:                        # a subshell, `((…))`, an array: a command or an assignment ends
+        outer.word = None
+        outer.command = closed.kind == "array"
+        return True
+    if outer.kind in _LEVELS_WITH_COMMENTS:
+        if outer.word is None:
+            outer.word, outer.first = [], outer.command and not outer.redirect
+        outer.word.append("\0")
+    return False
 
 
 def _ansi_c_value(text: str, at: int) -> tuple[str, int]:
@@ -670,7 +858,7 @@ def _read(text: str) -> list[Finding]:
             _BUDGET.reset(token)
     text = _decode_ansi_c(text)
     shell, bodies = split_heredocs(text)
-    shell = _comments_quieted(_decode_ansi_c(shell))   # what a data body or a comment's "don't" hid (F2)
+    shell = _comments_blanked(_decode_ansi_c(shell))   # what a data body or a comment hid (F2, F5)
     _charge(shell)
     inner = _with_inner_backticks(shell)
     _charge(inner[len(shell):])
@@ -1342,7 +1530,10 @@ def _spans(segment: str):
     as written), clipped at the backtick that closes the backtick span the word sits in: Hermes
     reads ``a` `b` `` as the word in ``echo `a` `b` ``, and its command on into the next span."""
     ticks = _tick_spans(segment)
+    closers = {close for _open, close in ticks}
     for start, end, _word in hermes._iter_shell_command_word_spans(segment):
+        if start in closers:            # the backtick closing an empty body (`` ` ` ``, a blanked comment): no command
+            continue
         bounded = _command_text(segment, start)
         close = next((b for a, b in ticks if a < start < b), None)
         if close is not None:
