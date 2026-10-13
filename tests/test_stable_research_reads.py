@@ -21,6 +21,15 @@ async def test_successful_source_is_really_refetched():
     assert not reader.failed
 
 
+async def test_keyword_arguments_reach_the_real_getter():
+    """It stands in for `net_pin.pinned_get`, which `_fetch_text` calls with the page headers."""
+    get = AsyncMock(return_value=httpx.Response(200, content=BODY,
+                                                request=httpx.Request("GET", URL)))
+    reader = VerifiedPublicReads({URL: DIGEST}, get, lambda _: False)
+    assert (await reader(URL, headers={"Accept": "text/html"})).content == BODY
+    get.assert_awaited_once_with(URL, headers={"Accept": "text/html"})
+
+
 @pytest.mark.parametrize("failure", ["network", "status", "body"])
 async def test_failed_source_cannot_be_retried(failure):
     get = AsyncMock()

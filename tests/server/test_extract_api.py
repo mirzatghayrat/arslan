@@ -59,12 +59,16 @@ async def test_extract_url_endpoint(client, monkeypatch):
 
 
 async def test_extract_url_private_400(client):
-    """End-to-end SSRF rejection: no stub — real executor path must return 400."""
+    """End-to-end SSRF rejection: no stub — real executor path must return 400.
+
+    The body is asserted too: net_pin's private-address check is what refused it. A 400 alone also
+    comes from a failed lookup ("cannot resolve"), and then the check could be off and this green."""
     r = await client.post(
         "/api/v1/extract",
         json={"url": "http://169.254.169.254/latest/meta-data/"},
     )
     assert r.status_code == 400
+    assert r.json() == {"detail": "url refused: blocked address (local network)"}
 
 
 async def test_extract_file_upload(client, monkeypatch):
