@@ -56,8 +56,13 @@ _ONCE_ONLY = frozenset({"money", "app_risky", "capability", "other_agent", "syst
 #: Kinds whose first choice is "for this task": work in an app, or on a site, is many steps — and
 #: the island and the phone answer only the first choice (§A4).
 _TASK_FIRST = frozenset({"app", "shortcut", "site"})
-#: Kinds that never offer "Always".
-_NEVER_ALWAYS = _ONCE_ONLY | frozenset({"destructive", "screen", "workspace_write", "schedule"})
+#: Kinds that never offer "Always". A site's and a Shortcut's are here for 0.1.61 only: the Settings
+#: page that lists and removes such rules is a later PR, and until it exists an "Always" for either
+#: could be taken back only with the Inbox's 10-second Undo. Take them out of this set, and out of
+#: nowhere else, when that page ships: the card, the Inbox's "Always allow" (`always_from`) and the
+#: rule lookup (`_standing`) all follow it.
+_NEVER_ALWAYS = (_ONCE_ONLY
+                 | frozenset({"destructive", "screen", "workspace_write", "schedule", "site", "shortcut"}))
 # The scope sets name kinds of KINDS only: a kind mistyped there would protect nothing.
 if not (_ONCE_ONLY | _TASK_FIRST | _NEVER_ALWAYS) <= KINDS:
     raise AssertionError(f"scope sets name unknown kinds: "

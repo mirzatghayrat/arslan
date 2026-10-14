@@ -1088,13 +1088,13 @@ async def _arslan_tools() -> list[dict]:
         if in_job:
             tools += [
                 {"key": "mac_run_shortcut", "description": "Run one of the user's Shortcuts by exact name "
-                 "(optional text input). Asks the user once per Shortcut."},
+                 "(optional text input). Asks the user, for this task or this conversation."},
                 {"key": "mac_applescript", "description": "Run an AppleScript to control a Mac app (Calendar, "
                  "Reminders, Notes, Finder, Mail drafts…). The user sees the full script and must allow it each "
                  "time; prefer a Shortcut when one exists. Never send, delete or pay without the user asking."}]
     # 0.1.53 Mac apps through Arslan Hands (agent-desktop, accessibility tree; Hands v2: plus a
-    # screenshot of the window). Looking: any turn, asked once per app per conversation.
-    # Acting: background jobs only, asked once per app per job.
+    # screenshot of the window). One `app` card covers looking and acting, for this task first
+    # (0.1.61); looking: any turn, acting: background jobs only.
     from server.registry import hands_tools
     if hands_tools.desktop_available():
         tools += [
@@ -1248,7 +1248,8 @@ async def _arslan_tools() -> list[dict]:
                             "not Desktop/Documents. " + (
                                 "The workspace is your own folder: saving there needs no "
                                 "permission — just write the file." if own_folder else
-                                "The user is asked for write permission once per session.")},
+                                "The user is asked for write permission: for this write, or for "
+                                "any file in the folder for the rest of the conversation.")},
             {"key": "edit_file",
              "description": "Replace a UNIQUE occurrence of `old` with `new` in a WORKSPACE "
                             "file. args: {path, old, new}. An ambiguous `old` is refused with "
@@ -1303,8 +1304,9 @@ async def _arslan_tools() -> list[dict]:
         {"key": "schedule_task",
          "description": "Schedule a recurring task that YOU will run later. args: "
                         "{name, prompt, when} where when is 'every: 3600' (seconds) or "
-                        "'cron: 0 9 * * *'. The user is asked for permission once per "
-                        "session. Scheduled runs are read-only: they cannot write files "
+                        "'cron: 0 9 * * *'. The user is asked for permission: for this one "
+                        "task, or for any scheduled task for the rest of the conversation. "
+                        "Scheduled runs are read-only: they cannot write files "
                         "or run commands."},
         {"key": "list_my_tasks",
          "description": "List the recurring tasks that exist, with their ids and schedules."},

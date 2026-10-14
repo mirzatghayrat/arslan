@@ -150,6 +150,37 @@ def test_kinds_that_are_never_remembered_cannot_become_rules(client, kind):
     assert _rules(client) == set()
 
 
+@pytest.mark.parametrize("kind,target", [("site", "example.com"), ("shortcut", "Morning")])
+def test_a_refused_site_or_shortcut_row_offers_no_always_allow_in_0161(client, kind, target):
+    """0.1.61 hides "Always" on a site and a Shortcut card until the Settings page that lists and
+    removes such rules exists. The Inbox must not offer it either, and a POST for the row is
+    refused: the row says `always_ok: false`, lists nothing under `always`, and stores no rule."""
+    assert permissions.ALWAYS_KEY == "always"
+    _decide(client, permissions.Request(kind=kind, target=target, title=f"{kind}?", always_label=target))
+    [row] = _refused(client)
+    assert (row["kind"], row["always_ok"], row["always"]) == (kind, False, [])
+    r = _allow(client, row["id"])
+    assert r.status_code == 409 and r.json()["detail"] == {"code": "no_always"}
+    assert _rules(client) == set()
+
+
+@pytest.mark.parametrize("kind", ["site", "shortcut"])
+def test_a_ledger_row_that_recorded_always_for_a_site_or_shortcut_allows_nothing(client, kind):
+    """A row an earlier build wrote (its "Always" set names a site or a Shortcut) is no longer
+    allowed from the Inbox: the whole set is refused, as for any kind that is never remembered."""
+    async def seed():
+        async with client.db_maker() as db:
+            await permission_store.record(db, kind=kind, target="x", mode="standard",
+                                          decided_by="policy", decision="deny", conversation_id="c",
+                                          extra={permissions.ALWAYS_KEY: [[kind, "x", "x"]]})
+            await db.commit()
+    client.portal.call(seed)
+    [row] = _refused(client)
+    assert row["always_ok"] is False and row["always"] == []
+    assert _allow(client, row["id"]).status_code == 409
+    assert _rules(client) == set()
+
+
 @pytest.mark.parametrize("kind,target", [("command", "rules:git-push"),
                                          ("legacy_rule", "hardline"), ("send", "*"),
                                          ("outside", "/"), ("nonsense", "x")])

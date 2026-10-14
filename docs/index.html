@@ -498,7 +498,7 @@ footer p{margin-top:22px;font-size:12px;max-width:70em;line-height:1.7}
 <div class="proof"><div class="wrap">
   <div class="p rv"><b>0</b><span>Arslan servers in the middle</span></div>
   <div class="p rv d1"><b>3</b><span>answers for every command</span></div>
-  <div class="p rv d1"><b>300 s</b><span>to approve, Mac or iPhone</span></div>
+  <div class="p rv d1"><b>30 min</b><span>to approve, Mac or iPhone (0.1.61+; 300 s before)</span></div>
   <div class="p rv d2"><b>153</b><span>service modules, all open</span></div>
   <div class="p rv d3"><b>911</b><span>test files guarding them</span></div>
 </div></div>
@@ -558,7 +558,7 @@ footer p{margin-top:22px;font-size:12px;max-width:70em;line-height:1.7}
       <div class="lane"><span>you</span><div class="tr"><i class="blk" style="left:0;width:9%;background:#e9ecf1"></i><i class="blk" style="left:24%;width:8%;background:#e9ecf1"></i><i class="blk" style="left:48%;width:9%;background:#e9ecf1"></i><i class="blk" style="left:74%;width:8%;background:#e9ecf1"></i><span class="tg" style="left:0">keep talking</span></div></div>
       <div class="lane"><span>loop</span><div class="tr"><i class="blk" style="left:10%;width:6%;background:var(--work)"></i><span class="tg" style="left:10%">starts a job, ends its turn</span></div></div>
       <div class="lane"><span>job</span><div class="tr"><i class="blk" style="left:16%;width:68%;background:linear-gradient(90deg,var(--work),var(--done))"></i><span class="tg" style="left:16%">→ done</span></div></div>
-      <div class="lane"><span>approval</span><div class="tr"><i class="blk" style="left:40%;width:5%;background:var(--ask)"></i><span class="tg" style="left:40%">waits for you · 300 s</span></div></div>
+      <div class="lane"><span>approval</span><div class="tr"><i class="blk" style="left:40%;width:5%;background:var(--ask)"></i><span class="tg" style="left:40%">waits for you · 30 min (0.1.61+)</span></div></div>
       <div class="lane"><span>schedule</span><div class="tr"><i class="blk" style="left:5%;width:1.4%;background:var(--cyan)"></i><i class="blk" style="left:38%;width:1.4%;background:var(--cyan)"></i><i class="blk" style="left:71%;width:1.4%;background:var(--cyan)"></i><span class="tg" style="left:5%">≥ 15 min apart · up to 10</span></div></div>
       <div class="lane"><span>inbox</span><div class="tr"><i class="blk" style="left:60%;width:6%;background:var(--search)"></i><span class="tg" style="left:60%">noticed → you decide</span></div></div>
       <div class="outc"><span class="badge"><span class="dot" style="color:var(--done)"></span>done</span><span class="badge"><span class="dot" style="color:var(--work)"></span>partial</span><span class="badge"><span class="dot" style="color:var(--ask)"></span>blocked</span><span class="badge"><span class="dot" style="color:var(--stop)"></span>stopped</span></div>
@@ -621,7 +621,7 @@ footer p{margin-top:22px;font-size:12px;max-width:70em;line-height:1.7}
     <div class="card b-appr rv d1">
       <h3>First answer wins</h3>
       <p>The same approval card shows on both. Whichever you tap first decides.</p>
-      <div class="race"><div class="w"><span>iPhone · Approve</span><span>0:41</span></div><div><span>Mac · same card</span><span>closed</span></div><div><span>nobody answers</span><span>declined at 5:00</span></div></div>
+      <div class="race"><div class="w"><span>iPhone · Approve</span><span>0:41</span></div><div><span>Mac · same card</span><span>closed</span></div><div><span>nobody answers</span><span title="Earlier versions declined it at 5:00">30:00, not a no · 0.1.61+</span></div></div>
     </div>
     <div class="card b-is rv d2">
       <h3>Always one glance away</h3>
@@ -833,7 +833,7 @@ addEventListener('scroll',function(){var h=document.documentElement.scrollHeight
 var LOOP=[
  ['01','Message','window · iPhone · voice','/ws/arslan','You ask from the window, from your iPhone, or by voice. Every surface feeds the same conversation and the same loop.',[['host','server/orchestrator/arslan.py'],['iPhone link','server/services/phone_bridge.py'],['voice','desktop/src-tauri/src/voice.rs']]],
  ['02','Loop','model ⇄ tools','75 s per model call','One native tool-calling loop. The plan is kept by the host, not the model, and a reply cut off half-way continues instead of guessing.',[['loop','server/orchestrator/tool_loop.py'],['model call cap','_CHAT_TIMEOUT_S = 75.0'],['plan','turn_plan.py']]],
- ['03','Policy','run · ask · forbid','a pure function','Before anything runs, a fixed function of the command text answers run, ask or forbid. Not another model — the same command always gets the same answer.',[['policy','server/services/terminal_policy.py'],['detection','arslan/vendor/hermes (MIT)'],['approval window','approvals.py · 300 s']]],
+ ['03','Policy','run · ask · forbid','a pure function','Before anything runs, a fixed function of the command text answers run, ask or forbid. Not another model — the same command always gets the same answer.',[['policy','server/services/terminal_policy.py'],['detection','arslan/vendor/hermes (MIT)'],['approval window','approvals.py · 30 min since 0.1.61 (300 s before)']]],
  ['04','Sandbox','macOS seatbelt','20 s per tool call','Commands may write only to the work folder, temp and caches. SSH keys, the keychain and Arslan’s own data stay closed, and model keys never reach a command.',[['sandbox','server/services/command_sandbox.py'],['tool call cap','TOOL_TIMEOUT_S = 20.0'],['keys','terminal_exec.py']]],
  ['05','Result','wrapped as untrusted','then shown','Whatever comes back — a web page, a file, a command’s output — is wrapped as untrusted data, so instructions hidden inside it are read, not obeyed.',[['wrap','server/orchestrator/untrusted.py'],['guard','promise_guard.py'],['ledger','usage ledger · every call']]]
 ];

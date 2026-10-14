@@ -27,7 +27,9 @@ def test_own_folder_says_no_asking_and_names_only_wired_writers():
 
 def test_a_chosen_folder_says_writes_are_approved_once():
     out = _render(workspace="~/proj", writers=["write_file", "edit_file"], own_folder=False)
-    assert "approves writes once per session" in out and "without asking" not in out
+    # 0.1.61: a write card offers this write once or the rest of the conversation, not "per session"
+    assert "approves writes" in out and "once per session" not in out and "rest of the conversation" in out
+    assert "without asking" not in out
 
 
 def test_no_writers_means_no_workspace_line():

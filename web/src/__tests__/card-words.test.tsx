@@ -309,3 +309,39 @@ describe("fix round 1: the notice lines say what was left undone, and the lede d
     expect(lede).toMatch(NOT_A_NO[lang]);
   });
 });
+
+// ── 0.1.61 release: the Inbox does not list every refusal yet ───────────────────────────────────────────────────
+
+/** What the lede says now about a scheduled task's refusals: most of them are in the Inbox. A command's is not listed yet (0.1.62). */
+const MOST_ARE_IN_THE_INBOX: Record<Lang, RegExp> = {
+  en: /refused \(most of those are listed in the Inbox\)\./, zh: /其余的会被拒绝（其中大多数会列在收件箱里）。/,
+  ja: /それ以外は拒否されます（その多くは受信箱に並びます）。/, es: /se rechaza \(la mayoría aparece en la Bandeja\)\./,
+  de: /abgelehnt \(die meisten davon stehen im Posteingang\)\./, fr: /refusé \(la plupart de ces refus sont listés dans la Boîte de réception\)\./,
+};
+/** What it said before: every refusal "listed in the Inbox" — true for an app, a site, a write and a schedule, not yet for a command. */
+const EVERY_ONE_IS_IN_THE_INBOX: Record<Lang, RegExp> = {
+  en: /refused and listed in the Inbox/, zh: /被拒绝并列在收件箱里/, ja: /拒否されて受信箱に並びます/,
+  es: /se rechaza y aparece en la Bandeja/, de: /abgelehnt und im Posteingang aufgelistet/, fr: /refusé et listé dans la Boîte de réception/,
+};
+
+describe("Settings › Desktop does not say every refusal of a scheduled task is listed in the Inbox", () => {
+  it.each(LANGS)("%s: 'most of those are listed', and the rest of the sentence is kept", (lang) => {
+    const lede = LOCALES[lang].settings.desktopLede;
+    expect(lede).toMatch(MOST_ARE_IN_THE_INBOX[lang]);
+    expect(lede).not.toMatch(EVERY_ONE_IS_IN_THE_INBOX[lang]);
+    expect(lede).toMatch(SCHEDULED_NEVER_WAITS[lang]);
+    expect(lede).toMatch(/⌘Q/);
+  });
+
+  it("the guard itself: each language's old wording is caught by its pattern and misses the new one", () => {
+    const old: Record<Lang, string> = {
+      en: "anything else is refused and listed in the Inbox.", zh: "其余的会被拒绝并列在收件箱里。", ja: "それ以外は拒否されて受信箱に並びます。",
+      es: "todo lo demás se rechaza y aparece en la Bandeja.", de: "alles andere wird abgelehnt und im Posteingang aufgelistet.",
+      fr: "tout le reste est refusé et listé dans la Boîte de réception.",
+    };
+    for (const lang of LANGS) {
+      expect(old[lang], lang).toMatch(EVERY_ONE_IS_IN_THE_INBOX[lang]);
+      expect(old[lang], lang).not.toMatch(MOST_ARE_IN_THE_INBOX[lang]);
+    }
+  });
+});

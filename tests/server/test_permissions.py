@@ -246,7 +246,10 @@ def test_these_kinds_never_offer_always_even_with_a_label(kind):
 @pytest.mark.parametrize("kind", ["app", "shortcut", "site"])
 def test_an_app_a_shortcut_or_a_site_asks_for_the_task_first(kind):
     req = Request(kind=kind, target="x", title="t", always_label="x")
-    assert permissions.options_for(req) == ["task", "conversation", "always"]
+    # 0.1.61: only an app offers "Always"; a site's and a Shortcut's is hidden until the Settings
+    # page that lists and removes such rules exists (see the tests at the end of this file).
+    assert permissions.options_for(req) == (["task", "conversation", "always"] if kind == "app"
+                                            else ["task", "conversation"])
 
 
 @pytest.mark.parametrize("kind", ["command", "mcp_tool", "folder"])
@@ -1193,3 +1196,55 @@ async def test_the_permission_kind_a_card_carries_is_the_requests_never_its_own_
     [shown] = asker.frames
     assert shown["perm_kind"] == kind
     assert approvals.island_may_answer(shown) is (kind in island)
+
+
+# ── 0.1.61 release: no "Always" on a site or a Shortcut card ─────────────────────────────────
+# The Settings page that lists and removes such rules is a later PR: until it exists, an "Always"
+# for a site or a Shortcut could be taken back only with the Inbox's 10-second Undo.
+
+def shortcut(name="Morning"):
+    return Request(kind="shortcut", target=name, title=f"Run the Shortcut “{name}”?", always_label=name)
+
+
+@pytest.mark.parametrize("make", [site, shortcut], ids=["site", "shortcut"])
+async def test_a_site_and_a_shortcut_card_offer_the_task_and_the_conversation_and_never_always(make):
+    req = make()
+    assert permissions.options_for(req) == ["task", "conversation"]
+    asker = Asker(no())
+    with permissions.asking_with(asker):
+        await permissions.decide(req, CTX)
+    [frame] = asker.frames
+    assert frame["options"] == ["task", "conversation"]
+    assert frame["always_label"] == ""                       # nothing for the card to show as "Always"
+
+
+@pytest.mark.parametrize("make", [site, shortcut], ids=["site", "shortcut"])
+async def test_a_yes_that_says_always_to_a_site_or_shortcut_card_is_clamped_and_stores_no_rule(make):
+    """A surface that sends `scope: "always"` (an old client, a crafted POST) gets the card's first
+    choice: this task. No rule is written, and another task is asked again."""
+    req = make()
+    asker = Asker(yes("always"), no())
+    with permissions.asking_with(asker):
+        first = await permissions.decide(req, Context(conversation_id="conv-1", task_id="job-a"))
+        elsewhere = await permissions.decide(req, Context(conversation_id="conv-1", task_id="job-b"))
+    assert (first.allowed, first.by, first.scope) == (True, "user", "task")
+    assert elsewhere.allowed is False and len(asker.frames) == 2
+    assert await _store_counts() == (0, 1, 2)                # no rule; the one task grant; two rows
+    async with db_session.AsyncSessionLocal() as db:
+        assert await permission_store.find_rule(db, req.kind, req.target) is None
+
+
+@pytest.mark.parametrize("make", [site, shortcut], ids=["site", "shortcut"])
+async def test_a_rule_stored_for_a_site_or_a_shortcut_decides_nothing(make):
+    """Defence in depth: whatever put such a rule in the store (an earlier build, a hand-edited
+    database), the card still opens, and a run with nobody to ask is still refused."""
+    req = make()
+    async with db_session.AsyncSessionLocal() as db:
+        await permission_store.add_rule(db, req.kind, req.target, label=req.always_label)
+        await db.commit()
+    asker = Asker(no())
+    with permissions.asking_with(asker):
+        decision = await permissions.decide(req, CTX)
+    assert (decision.allowed, decision.by) == (False, "user") and len(asker.frames) == 1
+    assert await permissions.would_ask(req, CTX)
+    assert (await permissions.decide(req, CTX)).by == "policy"          # no surface bound
