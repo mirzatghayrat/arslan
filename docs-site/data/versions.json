@@ -2397,5 +2397,30 @@
       }
     ],
     "commit_count_no_merges_since_previous_tag": 90
+  },
+  {
+    "version": "v0.1.61",
+    "title": "一张审批卡到处一样",
+    "date": "2026-10-14",
+    "date_kind": "published_at_Asia_Shanghai",
+    "published_at_utc": "2026-10-14T02:43:34Z",
+    "published_at_shanghai": "2026-10-14T10:43:34+08:00",
+    "summary": "聊天窗口、收件箱、灵动岛和 iPhone 上同一张卡片（本次/本任务、本对话、始终、带备注的“不”），等 30 分钟，超时不算拒绝；MCP 服务器自动在后台启动；Claude Opus 4.7 及更新的模型重新可用；iPhone 的文件进入 Inbox/iPhone 并可跟随实时对话。",
+    "status": "published_stable",
+    "tagged_commit": "fb6d7230d36dee3603c0b47f6246972a4fd0d058",
+    "evidence": [
+      {
+        "type": "github_release",
+        "url": "https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.61",
+        "published_at": "2026-10-14T02:43:34Z",
+        "draft": false,
+        "prerelease": false
+      },
+      {
+        "type": "comparison",
+        "url": "https://github.com/mirzatghayrat/arslan/compare/v0.1.60...v0.1.61"
+      }
+    ],
+    "commit_count_no_merges_since_previous_tag": 148
   }
 ]
