@@ -53,14 +53,13 @@
 
 就这样。不用注册账号，也没有 Arslan 服务器。
 
-## 0.1.60 新功能：Hands v2
+## 0.1.61 新功能：各处都是同一张审批卡
 
-Arslan 用起 Mac 上的应用更像你自己了。除了窗口里的文字，它还可以看它正在操作的那一个窗口的画面——从不截整个屏幕，也从不保存。同一个应用里的几个步骤一批完成，菜单项直接选择，应用在后台打开。一张卡片可以覆盖多个应用，你信任的应用可以在 设置 › Hands 里永久允许；删除、发送、付款和提交仍然每次都问。有些操作只有应用在前台才能完成时，Arslan 会借用前台约一秒（屏幕边缘亮起蓝光，这期间你按的键会先保留、之后补上）；窗口在另一个桌面上时，它会过去、做完再回来。较长的工作，它可以接管屏幕最多 30 分钟——只有你同意才会开始，你一碰键盘或鼠标它就暂停。首次设置现在是一段简短的影片。[完整发布说明 →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.60)
+Arslan 问你的每个问题现在都长得一样——在聊天里、收件箱里、Island 里和你的 iPhone 上。选项是“一次”或“本任务”、“在本次对话中”（会说明它覆盖什么）、“始终”，以及“否…”，后者附一条发给 Arslan 的备注。一张卡片会等 30 分钟，时间到了也不算拒绝。你不在时无法询问的事会列在收件箱里，并准确写出“始终允许”将会保存什么。每个 AppleScript 仍然每次都问，在 Arslan 里，并展示完整脚本。你打开的 MCP server 会在后台自己启动，它们在做什么是一个状态，“能力”页和模型读取的是同一个。Claude Opus 4.7 及之后的模型重新能够回答，供应商不再接受的设置会被去掉，不需要发新版本。你从 iPhone 发来的文件和照片会放进 Mac 上的 Inbox/iPhone，网页和浏览器在 fake-IP 代理之后也能工作，停止任务也不再让数据库保持锁定。[完整发布说明 →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.61)
 
 最近几版：
+- **[0.1.60](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.60)**——Hands v2：它正在操作的那一个窗口的画面、批量执行、一张卡片覆盖多个应用、借用前台、去另一个桌面，以及只有你同意才接管屏幕。
 - **[0.1.59](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.59)**——对话跟得上：长回答不再显示“已中断”，第二条消息排队等待，Arslan 用你写的语言回答，“桌面、文稿、下载：关”对命令同样生效。
-- **[0.1.58](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.58)**——回复读得懂、文件打得开：做过的事收成安静的一行，写出的文件以卡片返回，工作台里有阅读器，每个对话可以选任意服务商的任意模型。
-- **[0.1.57](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.57)**——能力自己长：缺工具时 Arslan 会去找、问你、固定版本并在沙箱里安装、测试后重试那一步。
 
 <div align="center">
   <img src="docs/assets/readme/devices.jpg" alt="Mac 上的 Arslan 正在后台整理发票；iPhone 上的 Arslan 显示一条待批准" width="100%">

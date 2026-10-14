@@ -54,14 +54,13 @@ You keep talking while it works. Anything that deletes, sends, installs or touch
 
 That's it. No account, no sign-up, no Arslan server.
 
-## What's new in 0.1.60 — Hands v2
+## What's new in 0.1.61 — one approval card everywhere
 
-Arslan uses your Mac apps more like you would. Besides a window's text, it can look at a picture of the one window it works in — never the whole screen, never saved. Several steps in one app run as one batch, menu items are chosen directly and apps open in the background. One card can cover several apps, and apps you trust can be allowed for good in Settings › Hands; deleting, sending, paying and submitting still ask every time. When something only works with the app in front, Arslan borrows the front for about a second (the screen edge glows blue; the keys you press meanwhile are held and given back), and if the window is on another desktop it goes there and comes back. For longer work it can take over the screen for up to 30 minutes — only with your yes, and it pauses the moment you touch the keyboard or mouse. Setting up is now a short first-run film. [Full release notes →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.60)
+Every question Arslan asks you now looks the same — in the chat, the Inbox, the island and on your iPhone. The choices are Once or For this task, In this conversation (it says what it covers), Always, and No… with a note that goes to Arslan. A card waits 30 minutes, and running out is not a no. What could not be asked while you were away is listed in the Inbox, with exactly what "Always allow" would store. Every AppleScript still asks every time, with the whole script shown, in Arslan. MCP servers you switched on start by themselves in the background, and what they are doing is one state the Capabilities page and the model both read. Claude Opus 4.7 and later answer again, and a setting a provider stops accepting is dropped without a new release. Files and photos you send from your iPhone land in Inbox/iPhone on the Mac, web pages and the browser work behind a fake-IP proxy, and stopping a task no longer leaves the database locked. [Full release notes →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.61)
 
 Recently:
+- **[0.1.60](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.60)** — Hands v2: a picture of the one window it works in, batches, one card for several apps, borrowing the front, visiting another desktop, and taking over the screen only with your yes.
 - **[0.1.59](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.59)** — a chat that keeps up: a long answer is not "Interrupted", a second message waits its turn, Arslan answers in the language you write in, and "Desktop, Documents, Downloads: Off" closes them to commands too.
-- **[0.1.58](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.58)** — replies you can read and files you can open: one quiet line of what Arslan did, files back as cards, a reader in the workbench, and any model of any provider for each conversation.
-- **[0.1.57](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.57)** — capabilities that grow: Arslan finds a missing tool, asks, installs it pinned and sandboxed, tests it and retries the step.
 
 <div align="center">
   <img src="docs/assets/readme/devices.jpg" alt="Arslan on a Mac — a background job gathering invoices — and Arslan for iPhone showing an approval waiting" width="100%">
