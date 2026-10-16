@@ -375,6 +375,9 @@
 3. **R2：终端里的 osascript 能「总是允许」**。这是安全问题，发布说明也写错了。改成终端里的 AppleScript 只给「这一次」，同时更正 v0.1.61 的说明。
 4. **R1：写文件会跟着符号链接写到工作区外**。这是安全问题；按代码读法成立，没有运行验证。位置在 `server/services/workspace_paths.py:70-82`，2026-08-20（#45）就有了。
 5. **CI 变红**：删掉 Cua Driver 就能解决（§4.1）。在那之前，每个 PR 都会被卡住。
+   - 另：本规划分支只改了文档，第一次推送的 CI（run 38941957575）里，frontend 有 1 个测试失败：`web/src/__tests__/inbox-v2.test.tsx` 里的「a choice made on one card is not carried to the next one in the queue」。
+   - 同样的代码在 main（run 38489348597）和 #185 上都通过了，所以疑似是跟时间有关的不稳定测试。
+   - 这是一个 CI 健康项，交给阶段 3 的 ②Main 跟进。
 6. **R7：定时任务能借后台任务弹卡**。`inside_job()` 对定时任务返回 false。用户没有定时任务，所以排在后面。
 7. **一个推理得出、没跑过的问题：** iPhone 发起的对话里，「添加能力」卡只发给 Bridge，而 Bridge 会丢掉这类卡（`ws/arslan.py:636`、`FrameMapper.swift:162`）。卡可能一直没人看见，直到过期。要先复现。
 
