@@ -510,8 +510,14 @@ async def test_a_real_write_snapshot_with_only_an_answer_check_still_holds(execu
     from server import config
     from server.db.models import Run
     from server.registry.file_tools import WriteFileExecutor
-    from server.services import execution_context
+    from server.services import artifact_validation, execution_context
     monkeypatch.setattr(config, "data_dir", lambda: tmp_path / "data")
+
+    async def parsed_as_on_a_mac(data, suffix):
+        # The file parser runs inside macOS' seatbelt; without one (Linux CI) it reports not_run and
+        # the snapshot would not pass, so the old bug would not show. Arslan ships on macOS.
+        return {"status": "passed", "code": "artifact_parsed"}
+    monkeypatch.setattr(artifact_validation, "inspect_bytes", parsed_as_on_a_mac)
     seen = {}
 
     async def body(emit):
