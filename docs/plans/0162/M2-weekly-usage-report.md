@@ -25,9 +25,9 @@
 | 运行数 | `runs`（`server/db/models.py:539-585`）：按 `started_at` 分周，只数 `kind = 'live'` |
 | 任务停在「等你」的占比，以及按原因分布 | `companion_tasks.phase = 'waiting_user'`，原因是 `pause_reason`（`server/db/task_models.py:13-38`）。原因是 `task_reconciliation_required` 这类固定代码，可以原样输出 |
 | 工具调用失败率 | `run_steps` 里 `kind = 'tool_call'` 的行，读 `ref` 里的 `tool` 和 `ok`（`models.py:591-601`；写入在 `server/services/run_recorder.py:241`、`:485-487`）。MCP 工具合并成一行 `mcp`，不输出各自的名字 |
-| `run_command` 的时限类失败 | `ref.tool = 'run_command'` 且 `ok` 为假，再在 SQL 里拿 `detail` 的 `$.error`（来自 `server/orchestrator/tool_loop.py:345-346`）和产品自己的固定文字比：`tool 'run_command' timed out`（20 秒截断），`stopped after %`（命令自己的时限）；F1 合并后再加它新加的那句固定文字 `stopped by the time limit; no output was captured`（外层兜底超时，见 F1 卡），并按 `code = time_limit` 计。只返回计数。`duration_ms` 落在 19,500–21,500 之间作为旁证 |
+| `run_command` 的时限类失败 | `ref.tool = 'run_command'` 且 `ok` 为假，再在 SQL 里拿 `detail` 的 `$.error`（`tool_loop.py:345-346` 只是转写；文字本身出自 `tool_loop.py:1303` 和 `terminal_exec.py:149`）和产品自己的固定文字比：`tool 'run_command' timed out`（20 秒截断），`stopped after %`（命令自己的时限）；F1 合并后再加它新加的那句固定文字 `stopped by the time limit; no output was captured`（外层兜底超时，见 F1 卡）。只按固定文字数：`code` 只存在 `result_raw` 里，本卡不读它（实现时核过，PR #193）。只返回计数。`duration_ms` 落在 19,500–21,500 之间作为旁证 |
 | MCP 引起的整轮失败 | **F3 合并前：** `runs.error_kind = 'ModelCallError'`，且 `error_text` 在 SQL 里匹配出「HTTP 400 + 工具参数表」的形状，只返回计数，标「按文字推断」。**F3 合并后：** 另外数 `conversation_events.kind = 'mcp_schema_relaxed'` 的行数（`models.py:751-758`） |
-| 卡片数（按种类） | 账本 `approval_events`（`models.py:492-514`）：`decided_by` 是 `user` 或 `expired` 的，算「真的出过卡」，按 `kind` 分；其余的（rule、grant、floor、mode、policy）算「自动决定」，单独一列 |
+| 卡片数（按种类） | 账本 `approval_events`（`models.py:492-514`）：`decided_by` 是 `user` 或 `expired` 的，算「真的出过卡」，按 `kind` 分；其余的（rule、grant、floor、mode、policy，以及 reviewer、away）算「自动决定」，单独一列 |
 | 账本之外的命令卡 | `judgments` 里 `point = 'tool.approval'` 的行（`models.py:896-914`），只读 `state` 里的 `sandboxed` 和 `rule` 两个键，再加 `outcome`。出沙箱卡不写账本，它们只留在这里 |
 | 回合后的额外模型调用 | `usage_ledger`（`models.py:926-938`）里 `scope` 为 `memory_facts`（抽事实，`server/services/turn_facts.py:105`）和 `memory`（摘要，`server/orchestrator/memory.py:165`）的行数 |
 
