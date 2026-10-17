@@ -38,6 +38,7 @@ from server.registry import net_pin
 from server.registry.net_pin import _BlockedHost
 from server.registry.search_providers import (DeepSeekNativeProvider, DuckDuckGoHtmlProvider, SearchBlocked,
                                               deepseek_native_base, get_provider)
+from server.services import terminal_exec as _terminal_exec
 from server.services import chart_echarts, settings_service
 
 logger = logging.getLogger(__name__)
@@ -772,6 +773,11 @@ class RunPythonExecutor:
         return {"ok": True, "external": False, "summary": summary, **result}
 
 
+# 0.1.62 F1: what a command leaves of the turn's remaining time: the model call that reads its
+# result and replies (a long answer from a slow model takes about this long).
+_COMMAND_TURN_RESERVE_S = 30
+
+
 class RunCommandExecutor:
     """Arslan's terminal (0.1.48): one shell command in the user's folder.
 
@@ -781,14 +787,31 @@ class RunCommandExecutor:
     loop wraps them as untrusted, like web pages."""
 
     key = "run_command"
+    # 0.1.62 F1: the tool loop's 20 s default no longer applies; the command's own limit (at
+    # most 600 s, bounded below by what the turn has left) is the one that stops it. This is
+    # only the loop's backstop, kept for good: if terminal_exec itself hangs (a read that never
+    # ends), it brings the turn back. Not an old path; it has no removal version.
+    timeout_s = _terminal_exec.MAX_TIMEOUT_S + 15
 
     async def execute(self, args: dict) -> dict:
+        from arslan import execution_budget
         from server.db import session as db_session
         from server.services import settings_service, terminal_exec, terminal_policy
         command = terminal_policy.as_shell(args.get("command"), args.get("argv"))
         verdict = terminal_policy.assess(command)
         if verdict.level == "forbid":
             return {"ok": False, "error": f"Arslan never runs this: {verdict.reason}"}
+        # 0.1.62 F1: never past what the turn or job has left, so the command's own limit stops
+        # it (with its output) before the turn's does (with nothing), as delegate_work does.
+        limit = terminal_exec.timeout_of(args.get("timeout_s"))
+        budget = execution_budget.current()
+        if budget is not None:
+            left = budget.remaining_seconds()
+            limit = min(limit, int(left - _COMMAND_TURN_RESERVE_S))
+            if limit < terminal_exec.MIN_TIMEOUT_S:
+                return {"ok": False, "code": "time_limit", "executed": False,
+                        "error": f"not started: {int(left)} s are left in this run, too little "
+                                 "for a command and the reply after it"}
         async with db_session.AsyncSessionLocal() as db:
             cwd = await settings_service.workspace_dir(db)
             sandboxed = await settings_service.terminal_sandbox_enabled(db)
@@ -805,8 +828,7 @@ class RunCommandExecutor:
             readable = await _project_folders()
         # 0.1.51 P3: inside the workspace sandbox unless the user turned it off or
         # the loop says they clicked to let THIS command out (never the model's args).
-        result = await terminal_exec.run(command, cwd=cwd,
-                                         timeout_s=terminal_exec.timeout_of(args.get("timeout_s")),
+        result = await terminal_exec.run(command, cwd=cwd, timeout_s=limit,
                                          offline=terminal_exec.OFFLINE.get(),
                                          sandbox=sandboxed and not terminal_exec.OUTSIDE_SANDBOX.get(),
                                          closed=closed, readable=readable)
