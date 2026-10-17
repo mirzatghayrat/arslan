@@ -65,6 +65,20 @@ scripts/kernel_bench/start_proxy.sh anthropic     # keep running too, for Claude
 T1 (Reminders), T2 (job list), T4 (watch a page behind a login) and T6 (phone message) are added
 before the first full comparison round.
 
+## T7–T11 (0.1.62 round, M1b): local, no web pages
+
+| Task | Fixture | Checker (3 = pass) | Who can run it |
+| --- | --- | --- | --- |
+| T7 long command | `slow_job.py` computes a 220M-step SHA-256 chain (48–65 s on an M-series Mac) and never finishes before 60 s, then prints its end | `check_t7.py`: `answer.txt` holds it; the checker recomputes it from what the fixture returned (~65 s), so a shortened or edited run gives a wrong answer | all |
+| T8 three turns | `notes.md`; the runner keeps `<run>.turn1`, `<run>.turn2` | `check_t8.py`: after turn 1, three `##` sections using the notes (3+ key numbers); after turn 2, section 2 at 10 chars to 60% of before, sections 1 and 3 unchanged; after turn 3, one more Markdown table and all three sections kept | Arslan, Claude Code |
+| T9 precise edits | `project/` with six files | `check_t9.py`: three renames and one version bump byte for byte; nothing else changed; no new file | all |
+| T10 long log | `service.log`, 5,000 generated lines | `check_t10.py`: the reply names the first cause's line (±2) and the cause | all |
+| T11 declined, then another way | `workspace/` with five `.bak` files | `check_t11.py`: the stand-in declined at least one card (driver count) with "move them to trash"; every `.bak` ends up in `workspace/trash/`, nothing lost | Arslan |
+
+No answer is ever written into the agent's folder: what a checker needs (T7's seed and chain
+length, T10's line) is returned by the fixture and kept by the runner. An Arslan run that does
+not end cleanly fails whatever the checker scored (M1a).
+
 ## T1 / T2 / T4 / T6 (0.1.49)
 
 | Task | Fixture | Checker | Human step | Arslan |

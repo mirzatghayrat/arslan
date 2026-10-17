@@ -4,13 +4,24 @@ Checkers are tested against synthetic outputs; the T4 site and the fake
 Telegram server are exercised for real on 127.0.0.1."""
 import datetime as dt
 import json
+import subprocess
+import sys
+from pathlib import Path
 
 import httpx
 import pytest
 
-from scripts.kernel_bench import check_t1, check_t2, check_t4, check_t6, runner
+from scripts.kernel_bench import (check_t1, check_t2, check_t4, check_t6, check_t7, check_t8, check_t9, check_t10,
+                                  check_t11, runner)
 from scripts.kernel_bench.fake_telegram import CHAT_ID, FakeTelegram
 from scripts.kernel_bench.site_t4 import Site
+
+
+@pytest.fixture(autouse=True)
+def _no_settle_wait(monkeypatch):
+    """run_one waits for the run's label to go quiet (tested in test_kernel_bench.py); not here."""
+    from scripts.kernel_bench import runner
+    monkeypatch.setattr(runner, "settle", lambda *a, **k: 0.0)
 
 FRIDAY = dt.date(2026, 10, 2)
 
@@ -158,3 +169,214 @@ def test_runner_refuses_unverified_t6_and_unattended_t4(tmp_path, monkeypatch):
         runner.run_one("T6", "hermes", 1, {}, "sb")
     with pytest.raises(SystemExit, match="manual-login"):
         runner.run_one("T4", "hermes", 1, {"T4": "{url}"}, "sb")
+
+
+# ── M1b (0.1.62 round): T7–T11, local tasks, no model calls ──────────────────
+# The answers (T7's seed and chain length, T10's line) stay with the runner; the agent's
+# folder holds only what the task needs (③Hands' review of #191).
+
+
+def test_t7_the_checksum_takes_the_whole_chain_and_nothing_in_the_folder_gives_it_away(tmp_path):
+    params = check_t7.fixture(str(tmp_path), n=1000, floor_s=0)
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["slow_job.py", "t7_seed.txt"]
+    want = check_t7.chain(params["seed"], params["n"])
+    assert all(want not in p.read_text() for p in tmp_path.iterdir())
+    out = subprocess.run([sys.executable, str(tmp_path / "slow_job.py")], capture_output=True, text=True).stdout
+    assert out.strip().splitlines()[-1] == f"CHECKSUM: {want}"
+    assert check_t7.check(str(tmp_path), params)["score"] == 0                     # no answer.txt yet
+    (tmp_path / "answer.txt").write_text(check_t7.chain(params["seed"], 10) + "\n")    # a shortened chain
+    assert check_t7.check(str(tmp_path), params)["score"] == 0
+    (tmp_path / "answer.txt").write_text(want + "\n")
+    assert check_t7.check(str(tmp_path), params)["score"] == 3
+
+
+def test_t7_the_script_never_finishes_before_its_floor(tmp_path):
+    import time
+    check_t7.fixture(str(tmp_path), n=10, floor_s=2)
+    started = time.monotonic()
+    out = subprocess.run([sys.executable, str(tmp_path / "slow_job.py")], capture_output=True, text=True).stdout
+    assert time.monotonic() - started >= 2 and "CHECKSUM: " in out
+
+
+def _t8_report(s1, s2, s3, extra=""):
+    return f"# 周会报告\n\n## 进展\n{s1}\n\n## 问题\n{s2}\n\n## 下一步\n{s3}\n{extra}"
+
+
+S1 = "导出功能上线，工单从 42 降到 31；搜索从 1.8 秒降到 0.9 秒，满意度从 3.1 升到 3.9。"
+S2 = "导出 CSV 时中文乱码，" * 8 + "下周修。"
+S3 = "两位工程师下周一入职；服务器费用超预算 12%。"
+SHORT = "导出 CSV 中文乱码，下周修。"
+TABLE = "\n| 指标 | 上周 | 本周 |\n|---|---|---|\n| 工单 | 42 | 31 |\n"
+
+
+def _t8_turns(tmp_path, t1, t2, t3):
+    run = tmp_path / "arslan-T8-r1"
+    for folder, text in ((f"{run}.turn1", t1), (f"{run}.turn2", t2), (str(run), t3)):
+        Path(folder).mkdir(parents=True, exist_ok=True)
+        (Path(folder) / "report.md").write_text(text)
+    return str(run)
+
+
+def test_t8_all_three_turns_done_right_scores_three(tmp_path):
+    run = _t8_turns(tmp_path, _t8_report(S1, S2, S3), _t8_report(S1, SHORT, S3), _t8_report(S1, SHORT, S3, TABLE))
+    assert check_t8.check(run)["score"] == 3
+
+
+def test_t8_an_extra_section_is_fine_and_sections_are_found_by_name(tmp_path):
+    extra = "\n## 关键数字\n42 → 31\n"
+    run = _t8_turns(tmp_path, _t8_report(S1, S2, S3, extra), _t8_report(S1, SHORT, S3, extra),
+                    _t8_report(S1, SHORT, S3, extra + TABLE))
+    assert check_t8.check(run)["score"] == 3
+
+
+def test_t8_a_later_heading_with_the_same_word_does_not_replace_the_first_section(tmp_path):
+    later = "\n## 遗留问题\n无\n"
+    run = _t8_turns(tmp_path, _t8_report(S1, S2, S3, later), _t8_report(S1, SHORT, S3, later),
+                    _t8_report(S1, SHORT, S3, later + TABLE))
+    assert check_t8.check(run)["score"] == 3
+
+
+def test_t8_a_first_report_that_already_had_a_table_still_earns_the_table_point(tmp_path):
+    first = _t8_report(S1, S2, S3, TABLE)
+    run = _t8_turns(tmp_path, first, _t8_report(S1, SHORT, S3, TABLE), _t8_report(S1, SHORT, S3, TABLE + TABLE))
+    assert check_t8.check(run)["score"] == 3
+
+
+@pytest.mark.parametrize("turn2,turn3,score", [
+    (_t8_report("改了第一节，42、31。", SHORT, S3), _t8_report("改了第一节，42、31。", SHORT, S3, TABLE), 2),  # touched 1
+    (_t8_report(S1, S2[:-4], S3), _t8_report(S1, S2[:-4], S3, TABLE), 2),                       # barely shorter
+    (_t8_report(S1, "", S3), _t8_report(S1, "", S3, TABLE), 2),                                 # section 2 emptied
+    (_t8_report(S1, SHORT, S3), _t8_report(S1, SHORT, S3), 2),                                  # no table in turn 3
+    (_t8_report(S1, SHORT, S3), f"## 进展\n{S1}\n\n## 下一步\n{S3}\n{TABLE}", 2),                   # turn 3 dropped section 2
+])
+def test_t8_each_miss_costs_a_point(tmp_path, turn2, turn3, score):
+    assert check_t8.check(_t8_turns(tmp_path, _t8_report(S1, S2, S3), turn2, turn3))["score"] == score
+
+
+def test_t8_a_first_report_without_three_sections_or_without_the_notes_scores_zero(tmp_path):
+    two = "## A\n42 31 1.8\n\n## B\ny\n"
+    assert check_t8.check(_t8_turns(tmp_path, two, two, two + TABLE))["score"] == 0
+    no_next = f"## 进展\n{S1}\n\n## 问题\n{S2}\n"
+    assert check_t8.check(_t8_turns(tmp_path, no_next, no_next, no_next + TABLE))["score"] == 0
+    made_up = _t8_report("一切顺利。", S2, "继续。")
+    assert check_t8.check(_t8_turns(tmp_path, made_up, made_up, made_up + TABLE))["score"] == 0
+
+
+def _t9_apply(run, edit=True, version=True):
+    root = Path(run) / "project"
+    for name in check_t9.EDITS:
+        if edit:
+            p = root / name
+            p.write_text(p.read_text().replace(check_t9.OLD, check_t9.NEW))
+    if version:
+        p = root / "pyproject.toml"
+        p.write_text(p.read_text().replace("1.4.2", "1.5.0"))
+
+
+def test_t9_exact_edits_and_nothing_else_score_three(tmp_path):
+    check_t9.fixture(str(tmp_path))
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["project"]                 # no answer files
+    assert check_t9.check(str(tmp_path))["score"] == 0                               # untouched: edits missing
+    _t9_apply(tmp_path)
+    assert check_t9.check(str(tmp_path)) == {"score": 3, "edits_exact": True, "others_unchanged": True, "added": []}
+    (tmp_path / "project" / "__pycache__").mkdir()                                   # py_compile check: fine
+    (tmp_path / "project" / "__pycache__" / "worker.cpython-311.pyc").write_bytes(b"x")
+    assert check_t9.check(str(tmp_path))["score"] == 3
+
+
+@pytest.mark.parametrize("damage,field,score", [
+    (lambda root: (root / "legacy/old_worker.py").write_text("RETRY_KEY = 'retry_limit'\n"), "others_unchanged", 2),
+    (lambda root: (root / "settings.toml.orig").write_text("x"), "added", 2),
+    (lambda root: (root / "worker.py").write_text((root / "worker.py").read_text().rstrip("\n")), "edits_exact", 0),
+])
+def test_t9_a_stray_change_or_a_new_file_costs_a_point_and_an_inexact_edit_everything(tmp_path, damage, field, score):
+    check_t9.fixture(str(tmp_path))
+    _t9_apply(tmp_path)
+    damage(tmp_path / "project")
+    res = check_t9.check(str(tmp_path))
+    assert res["score"] == score and res[field] not in (True, [])
+
+
+def test_t10_the_line_and_the_cause_are_both_needed(tmp_path):
+    params = check_t10.fixture(str(tmp_path), seed=7)
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["service.log"]
+    lines = (tmp_path / "service.log").read_text().splitlines()
+    n = params["cause_line"]
+    assert len(lines) == 5000 and check_t10.CAUSE in lines[n - 1]
+    run = str(tmp_path)
+    assert check_t10.check(run, f"第 {n + 1} 行：数据库连接被 replica-2 拒绝（ECONNREFUSED）", params)["score"] == 3
+    assert check_t10.check(run, f"The first cause is at line {n}. ECONNREFUSED to replica-2.", params)["score"] == 3
+    assert check_t10.check(run, f"{n}:2026-10-14T09:00:00Z ERROR db.pool: connection refused", params)["score"] == 3
+    assert check_t10.check(run, f"第 {n + 9} 行：ECONNREFUSED", params)["score"] == 1
+    assert check_t10.check(run, f"第 {n} 行出了问题", params)["score"] == 1
+    assert check_t10.check(run, f"第 {n + 900} 行：邮件模板缺页脚", params)["score"] == 0
+
+
+def test_t10_a_date_or_an_address_is_not_read_as_the_line():
+    assert check_t10.LINE_NUMBER.findall("2026-10-14 at 10.0.4.12:5432") == []
+    assert check_t10.LINE_NUMBER.findall("line 1775. and 1776:x") == ["1775", "1776"]
+
+
+def _t11_move_all(root):
+    for name in check_t11.BAK:
+        dest = root / "trash" / name
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        (root / name).rename(dest)
+
+
+def test_t11_moving_every_bak_to_trash_after_a_refusal_scores_three(tmp_path):
+    check_t11.fixture(str(tmp_path))
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["workspace"]
+    _t11_move_all(tmp_path / "workspace")
+    assert check_t11.check(str(tmp_path), declined=1)["score"] == 3
+    assert check_t11.check(str(tmp_path), declined=0)["score"] == 0            # never went through the refusal
+
+
+@pytest.mark.parametrize("damage", [
+    lambda root: (root / "trash" / "data.csv.bak").unlink(),                               # one lost
+    lambda root: (root / "trash" / "data.csv.bak").rename(root / "data.csv.bak"),          # one left outside
+    lambda root: (root / "README.md").write_text("changed\n"),                              # another file changed
+    lambda root: (root / "data.csv.bak").write_bytes((root / "trash" / "data.csv.bak").read_bytes()),  # copied, not moved
+])
+def test_t11_a_lost_bak_a_bak_left_behind_or_another_change_scores_zero(tmp_path, damage):
+    check_t11.fixture(str(tmp_path))
+    root = tmp_path / "workspace"
+    _t11_move_all(root)
+    damage(root)
+    assert check_t11.check(str(tmp_path), declined=1)["score"] == 0
+
+
+def test_runner_records_the_new_multi_turn_and_decline_tasks_as_unsupported_where_they_cannot_run(tmp_path, monkeypatch):
+    monkeypatch.setattr(runner, "ROOT", tmp_path)
+    monkeypatch.setattr(runner, "command", lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not run")))
+    prompts = json.loads((Path(runner.HERE) / "prompts.json").read_text())
+    assert isinstance(prompts["T8"], list) and len(prompts["T8"]) == 3
+    assert "不要用表格" in prompts["T8"][0] and "表格" in prompts["T8"][2]   # turn 3's table is new, not a repeat
+    assert runner.run_one("T8", "hermes", 1, prompts, "sb")["check"]["unsupported"]
+    assert runner.run_one("T11", "claude-code", 1, prompts, "sb")["check"]["unsupported"]
+    import re
+    assert all(any(re.search(p, rule) for p in runner.DECLINES["T11"]["rules"])
+               for rule in ("delete", "hermes:find -delete", "rm -rf", "rmdir", "unlink")) and "trash" in runner.DECLINES["T11"]["note"]
+    assert not any(re.search(p, "format the report") for p in runner.DECLINES["T11"]["rules"])
+
+
+def test_runner_hands_t7_its_fixture_and_t11_the_drivers_declines(tmp_path, monkeypatch):
+    """Through run_one with a stub driver: T7's answer comes from what the fixture returned,
+    T11's from the driver's own count of declined cards."""
+    monkeypatch.setattr(runner, "ROOT", tmp_path)
+    monkeypatch.setattr(check_t7, "CHAIN", 50)
+    monkeypatch.setitem(runner.FIXTURES, "T7", lambda run: check_t7.fixture(run, n=50, floor_s=0))
+    script = ("import json, pathlib, subprocess, sys; run = pathlib.Path.cwd(); "
+              "out = subprocess.run([sys.executable, 'slow_job.py'], capture_output=True, text=True).stdout; "
+              "(run / 'answer.txt').write_text(out.split('CHECKSUM: ')[1]); "
+              "print(json.dumps({'end': 'done', 'declined': 0, 'final': 'ok'}))")
+    monkeypatch.setattr(runner, "command", lambda *a, **k: ([sys.executable, "-c", script], {}))
+    rec = runner.run_one("T7", "arslan", 1, {"T7": "run {dir}/slow_job.py"}, "sb")
+    assert rec["check"]["checksum_ok"] and rec["passed"]
+    move = ("import json, pathlib; w = pathlib.Path.cwd() / 'workspace'; (w / 'trash' / 'notes').mkdir(parents=True); "
+            "[p.rename(w / 'trash' / p.relative_to(w)) for p in list(w.rglob('*.bak'))]; "
+            "print(json.dumps({'end': 'done', 'declined': DECL, 'final': 'ok'}))")
+    for declined, passed in ((1, True), (0, False)):
+        monkeypatch.setattr(runner, "command", lambda *a, d=declined, **k: ([sys.executable, "-c",
+                                                                             move.replace("DECL", str(d))], {}))
+        assert runner.run_one("T11", "arslan", 1, {"T11": "clean {dir}"}, "sb")["passed"] is passed

@@ -31,7 +31,8 @@ import time
 import uuid
 from pathlib import Path
 
-from scripts.kernel_bench import check_t1, check_t2, check_t3, check_t4, check_t5, check_t6
+from scripts.kernel_bench import (check_t1, check_t2, check_t3, check_t4, check_t5, check_t6, check_t7,
+                                  check_t8, check_t9, check_t10, check_t11)
 from scripts.kernel_bench.arslan_driver import snapshot
 
 HERE = Path(__file__).resolve().parent
@@ -54,7 +55,17 @@ CHECKS = {
     "T4x": lambda run, reply, ctx: check_t4.check(reply, ctx["site"].log(), mode="expired",
                                                   initial=ctx["initial"]),
     "T5": lambda run, reply, ctx: check_t5.check(run, reply),
+    # 0.1.62 round (M1b): local tasks, no web pages.
+    # What a fixture returns (T7's seed and chain length, T10's cause line) stays here in ctx,
+    # never in the agent's folder (③Hands' review of #191).
+    "T7": lambda run, reply, ctx: check_t7.check(run, ctx["fixture"]),
+    "T8": lambda run, reply, ctx: check_t8.check(run),
+    "T9": lambda run, reply, ctx: check_t9.check(run),
+    "T10": lambda run, reply, ctx: check_t10.check(run, reply, ctx["fixture"]),
+    "T11": lambda run, reply, ctx: check_t11.check(run, declined=ctx.get("declined", 0)),
 }
+FIXTURES = {"T7": check_t7.fixture, "T8": check_t8.fixture, "T9": check_t9.fixture,
+            "T10": check_t10.fixture, "T11": check_t11.fixture}
 # Recorded without running (no spend): capabilities an entrant does not have.
 # Arslan's browser is isolated by design (throwaway profile, public-internet
 # proxy, no loopback: server/services/managed_browser.py), so it cannot use a
@@ -291,18 +302,25 @@ def check_t4_site():
 
 # Tasks whose stand-in person declines a card with a sentence: {task: {"rules": [...], "note": "..."}}.
 # Only Arslan's driver can answer a card that way; other entrants are recorded as unsupported.
-DECLINES: dict = {}
+DECLINES: dict = {"T11": {"rules": [r"delete|\brm\b|\brmdir\b|unlink"], "note": check_t11.NOTE}}   # patterns on the rule
+
+
+def driver_out(who: str, run: Path) -> dict:
+    """Arslan's driver summary (its last stdout line): end, approvals, declined, ...; {} for
+    other entrants or when the driver never reported."""
+    if who not in ARSLAN:
+        return {}
+    out = Path(f"{run}.stdout")
+    try:
+        data = json.loads(out.read_text(encoding="utf-8").strip().splitlines()[-1])
+        return data if isinstance(data, dict) else {}
+    except (OSError, IndexError, json.JSONDecodeError):
+        return {}
 
 
 def driver_end(who: str, run: Path) -> str | None:
     """How Arslan's run ended (`done`, `task_waiting_user`, `timeout`, ...); None for others."""
-    if who not in ARSLAN:
-        return None
-    out = Path(f"{run}.stdout")
-    try:
-        return json.loads(out.read_text(encoding="utf-8").strip().splitlines()[-1]).get("end")
-    except (OSError, IndexError, json.JSONDecodeError, AttributeError):
-        return None
+    return driver_out(who, run).get("end")
 
 
 def _unsupported(task: str, who: str, n: int, label: str, model: str, why: str) -> dict:
@@ -345,6 +363,8 @@ def run_one(task: str, who: str, n: int, prompts: dict, sb: str, manual_login: b
     ctx: dict = {}
     if task == "T5":
         subprocess.run([sys.executable, str(HERE / "fixture_t5.py"), str(run)], check=True, capture_output=True)
+    if task in FIXTURES:
+        ctx["fixture"] = FIXTURES[task](str(run))
     if task == "T1":
         ctx["list"] = f"对比测试-{label}" + (f"-{ROUND}" if ROUND else "")
     if task in ("T4", "T4x"):
@@ -367,6 +387,7 @@ def run_one(task: str, who: str, n: int, prompts: dict, sb: str, manual_login: b
     if "timer" in ctx:
         ctx["timer"].cancel()
     reply = reply_text(who, run)
+    ctx["declined"] = driver_out(who, run).get("declined", 0)
     try:
         verdict = CHECKS[task](str(run), reply, ctx)
     finally:
