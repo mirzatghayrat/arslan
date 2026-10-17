@@ -29,6 +29,7 @@ CREATE TABLE judgments (id INTEGER PRIMARY KEY, point TEXT, state TEXT, outcome 
 CREATE TABLE conversation_events (id INTEGER PRIMARY KEY, kind TEXT, ref TEXT, summary TEXT,
                                   created_at TEXT);
 CREATE TABLE usage_ledger (id INTEGER PRIMARY KEY, ts TEXT, scope TEXT, model TEXT);
+CREATE TABLE tools (key TEXT PRIMARY KEY, toolset_key TEXT);
 """
 A = "2026-09-30 12:00:00.000000"    # Wednesday, week of Monday 2026-09-28
 B = "2026-10-07 12:00:00.123456"    # Wednesday, week of Monday 2026-10-05
@@ -58,12 +59,18 @@ def _detail(error):
                        "result_raw": "SECRET-RESULT"})
 
 
-def make_db(path, *, wal_writer=False):
+def make_db(path, *, wal=False, keep_open=False):
+    """The synthetic DB. wal: journal_mode=WAL, like the app (server/db/session.py:29);
+    keep_open: return the writer still open with its WAL not checkpointed (the app running)."""
     con = sqlite3.connect(path)
-    if wal_writer:
+    if wal:
         con.execute("PRAGMA journal_mode=WAL")
+    if keep_open:
         con.execute("PRAGMA wal_autocheckpoint=0")
     con.executescript(SCHEMA)
+    # registered tools: a seeded catalog tool that is not a built-in executor, and an MCP tool
+    con.executemany("INSERT INTO tools VALUES (?, ?)", [
+        ("todo", "hermes_core"), ("web_search", "web"), ("mcp_6__inspect_page", "mcp_6")])
     runs = [(1, "live", A, None, None), (2, "live", A, "ModelCallError", ANTHROPIC_400),
             (3, "live", A, "ModelCallError", OTHER_400), (4, "live", A, "ModelCallError", RATE_429),
             (5, "replay", A, "ModelCallError", ANTHROPIC_400),
@@ -74,6 +81,7 @@ def make_db(path, *, wal_writer=False):
     steps = [  # (run, kind, tool, ok, error, ms)
         (1, "tool_call", "read_file", True, None, 40),
         (1, "tool_call", "read_file", False, "SECRET-ERROR no such file", 40),
+        (1, "tool_call", "todo", True, None, 30),                    # registered via `tools`
         (1, "tool_call", "mcp_6__inspect_page", True, None, 900),
         (1, "tool_call", "mcp_6__secret_tool_name", False, "SECRET-ERROR", 900),
         (1, "tool_call", "mcp_12__fetch", False, "SECRET-ERROR", 900),
@@ -88,6 +96,7 @@ def make_db(path, *, wal_writer=False):
         (7, "tool_call", "run_command", False, CUT, 19800),
         (7, "tool_call", "web_search", True, None, 2000),
         (7, "tool_call", "Open SECRET.app /Users/SECRET-PATH", False, "SECRET", 10),
+        (7, "tool_call", "read_tax_2025", False, "SECRET unknown tool", 5),   # model-invented
         (10, "tool_call", "run_command", False, CUT, 20000),         # after the window
     ]
     con.executemany("INSERT INTO run_steps (run_id, kind, ref, detail, duration_ms) "
@@ -131,7 +140,7 @@ def make_db(path, *, wal_writer=False):
     con.executemany("INSERT INTO usage_ledger (ts, scope, model) VALUES (?, ?, 'secret-model')",
                     ledger)
     con.commit()
-    if wal_writer:
+    if keep_open:
         return con          # left open, WAL not checkpointed: the app is still running
     con.close()
     return None
@@ -201,11 +210,19 @@ def test_runs_tasks_and_waiting_reasons(db):
 def test_tool_failures_fold_mcp_and_skip_other_step_kinds(db):
     data = collect(db)
     weekly = data["weekly"]
-    assert [(w["calls"], w["failed"]) for w in weekly] == [(9, 6), (4, 3)]
+    assert [(w["calls"], w["failed"]) for w in weekly] == [(10, 6), (5, 4)]
     assert [(w["mcp_calls"], w["mcp_failed"]) for w in weekly] == [(3, 2), (0, 0)]
+    # a name prints only when the product registered it (built-in list or the `tools` table);
+    # the free-text name and the model-invented `read_tax_2025` are both `other`
     assert data["tools"] == {"mcp": [(3, 2), (0, 0)], "read_file": [(2, 1), (0, 0)],
-                             "run_command": [(4, 3), (2, 2)], "web_search": [(0, 0), (1, 0)],
-                             "other": [(0, 0), (1, 1)]}
+                             "todo": [(1, 0), (0, 0)], "run_command": [(4, 3), (2, 2)],
+                             "web_search": [(0, 0), (1, 0)], "other": [(0, 0), (2, 2)]}
+
+
+def test_the_built_in_tool_list_covers_every_executor():
+    """A built-in tool missing from BUILT_IN_TOOLS would print as `other`: add it there."""
+    from server.registry.executors import EXECUTORS
+    assert set(EXECUTORS) <= usage_report.BUILT_IN_TOOLS
 
 
 def test_run_command_time_limits_by_fixed_text_and_by_duration(db):
@@ -248,7 +265,7 @@ def test_the_printed_tables(db, capsys):
     assert row(cards, WEEK_A) == ["3", "4", "2"]          # side by side, never summed
     assert any(line.startswith("Do not add") for line in out.splitlines())
     assert row(table(out, "## Runs and tasks"), WEEK_A) == ["4", "5", "3", "60%"]
-    assert row(table(out, "## Tool calls"), WEEK_B) == ["4", "3", "75%", "0", "0"]
+    assert row(table(out, "## Tool calls"), WEEK_B) == ["5", "4", "80%", "0", "0"]
     assert row(table(out, "## run_command time limits"), WEEK_A) == ["3", "1", "1", "0", "≈1"]
     assert row(table(out, "## MCP whole-turn failures"), WEEK_B) == ["≈1", "2"]
     assert row(table(out, "## Post-turn model calls"), WEEK_A) == ["3", "1"]
@@ -265,7 +282,7 @@ def test_nothing_but_numbers_and_fixed_codes_leaks(db, capsys):
     assert "secret" not in out.lower()
     for text in ("Finder", "/Users", "/Applications", "rm -rf", "curl", "anyOf", "top level",
                  "tools.137", "inspect_page", "mcp_6", "mcp_12", "apple-events", "git-push",
-                 "Application Support"):
+                 "Application Support", "read_tax_2025", "tax"):
         assert text not in out
 
 
@@ -284,16 +301,38 @@ def test_the_database_file_is_never_written(db, capsys):
         con.close()
 
 
+def test_a_closed_wal_database_gains_no_side_files(tmp_path, capsys):
+    """The app closed: its WAL database has no -wal/-shm. A plain mode=ro reader would create
+    both and leave them behind; the report must leave the folder exactly as it found it."""
+    path = tmp_path / "arslan.db"
+    make_db(path, wal=True)
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["arslan.db"]   # the app is closed
+    before = os.stat(path)
+    out = run(path, capsys)
+    assert row(table(out, "## Runs and tasks"), WEEK_A)[0] == "4"
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["arslan.db"]
+    after = os.stat(path)
+    assert (after.st_mtime_ns, after.st_size) == (before.st_mtime_ns, before.st_size)
+
+
 def test_reads_a_wal_database_while_the_app_holds_it_open(tmp_path, capsys):
     path = tmp_path / "arslan.db"
-    writer = make_db(path, wal_writer=True)
+    writer = make_db(path, wal=True, keep_open=True)
     try:
+        listing = sorted(p.name for p in tmp_path.iterdir())
         before = os.stat(path)
         wal = os.stat(f"{path}-wal").st_size
         out = run(path, capsys)
         assert row(table(out, "## Runs and tasks"), WEEK_A)[0] == "4"     # rows still in the WAL
         assert os.stat(path).st_mtime_ns == before.st_mtime_ns          # no checkpoint
         assert os.stat(f"{path}-wal").st_size == wal
+        assert sorted(p.name for p in tmp_path.iterdir()) == listing
+        con = usage_report.connect_ro(path)       # not immutable here: mode=ro must refuse
+        try:
+            with pytest.raises(sqlite3.OperationalError, match="readonly"):
+                con.execute("INSERT INTO runs (kind, started_at) VALUES ('live', ?)", (A,))
+        finally:
+            con.close()
     finally:
         writer.close()
 

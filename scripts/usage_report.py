@@ -4,12 +4,15 @@
 
 One row per week (Monday to Sunday, local time) for each line of the §5.2 table in
 docs/plans/2026-10-17-0162-execution-first.md. Without --db the database is found the way
-the server finds it: ARSLAN_DB_PATH, else <data dir>/arslan.db. It is opened with SQLite
-mode=ro, so nothing is written and nothing is checkpointed; the app may be running.
+the server finds it: ARSLAN_DB_PATH, else <data dir>/arslan.db. It is opened read-only:
+SQLite refuses every write and never checkpoints, the database and its WAL are not touched,
+and no side file is left behind (see connect_ro). The app may be running.
 
 Only counts and fixed product codes come back from SQLite. Text is matched inside SQL;
 every MCP tool (key `mcp_<server id>__<name>`, server/mcp/discovery.py:56-64) is folded
-into one `mcp` row; any value that is not a short lowercase code prints as `other`.
+into one `mcp` row; any other tool name prints only when the product registered it
+(BUILT_IN_TOOLS or the `tools` table), since a refused call keeps whatever name the model
+made up; any other code that is not a short lowercase code prints as `other`.
 Conversation text, commands, paths, app names, error text and tool arguments never reach
 Python.
 """
@@ -28,6 +31,21 @@ OWN_LIMIT = "stopped after %"                 # terminal_exec.py:149: the comman
 OUTER_LIMIT = "stopped by the time limit; no output was captured%"   # F1's outer limit
 CUT_MS = (19_500, 21_500)                     # a failed run_command that ran about 20 s
 SHOWN = "('user', 'expired')"                 # approval_events.decided_by: the card opened
+# Tool names the product defines but never stores in `tools`: every key of
+# server/registry/executors.py EXECUTORS (a test keeps this in step) and the host's own
+# bookkeeping tools (server/orchestrator/arslan.py). `tools` adds the seeded catalog and MCP.
+BUILT_IN_TOOLS = frozenset("""
+    background_status browser_back browser_click browser_look browser_open browser_press
+    browser_select browser_type cancel_task conversation_search create_skill delegate_work
+    desktop_access desktop_apps desktop_batch desktop_click desktop_look desktop_menu
+    desktop_open desktop_press desktop_scroll desktop_select desktop_takeover desktop_type
+    edit_file enroll_node find_capability list_dir list_my_capabilities list_my_tasks list_nodes
+    mac_applescript mac_list_shortcuts mac_run_shortcut memory_note read_file read_skill recall
+    remember render_chart render_deck run_command run_python scan_local_network schedule_task
+    search_files ssh_probe ssh_run start_background_work stop_background_work task_progress
+    web_extract web_search whats_new write_file
+    ask_user_choice propose_capability propose_plan_change suggest_connector update_plan
+""".split())
 
 
 def _lit(text: str) -> str:
@@ -57,6 +75,8 @@ def _week(col: str) -> str:
 TOOL, ERROR = _json("s.ref", "tool"), _json("s.detail", "error")   # run_recorder.py:241, :485-487
 FAILED = _json("s.ref", "ok") + " = 0"
 IS_MCP = f"substr({TOOL}, 1, 4) = 'mcp_'"
+REGISTERED = (f"({TOOL} IN ({', '.join(map(_lit, sorted(BUILT_IN_TOOLS)))}) "
+              f"OR {TOOL} IN (SELECT key FROM tools))")
 STEPS = ("FROM run_steps s JOIN runs r ON r.id = s.run_id "
          f"WHERE s.kind = 'tool_call' AND r.kind = 'live' AND {_week('r.started_at')}")
 CUT, OWN = f"{ERROR} = {_lit(CUT_TEXT)}", f"{ERROR} LIKE {_lit(OWN_LIMIT)}"
@@ -97,8 +117,8 @@ WEEKLY = [
 BREAKDOWNS = {
     "waiting_reasons": f"SELECT {_code('pause_reason')}, COUNT(*) FROM companion_tasks "
                        f"WHERE {WAITING} AND {_week('created_at')} GROUP BY 1",
-    "tools": f"SELECT CASE WHEN {IS_MCP} THEN 'mcp' ELSE {_code(TOOL)} END, COUNT(*), "
-             f"{_n(FAILED)} {STEPS} GROUP BY 1",
+    "tools": f"SELECT CASE WHEN {IS_MCP} THEN 'mcp' WHEN {REGISTERED} THEN {TOOL} "
+             f"ELSE 'other' END, COUNT(*), {_n(FAILED)} {STEPS} GROUP BY 1",
     "shown_by_kind": f"SELECT {_code('kind')}, COUNT(*) FROM approval_events "
                      f"WHERE decided_by IN {SHOWN} AND {_week('created_at')} GROUP BY 1",
     "judged_kind": f"SELECT CASE WHEN {SANDBOXED} = 0 THEN 'sandbox exit' WHEN {SANDBOXED} "
@@ -116,8 +136,18 @@ def default_db() -> Path:
 
 
 def connect_ro(path) -> sqlite3.Connection:
-    """SQLite refuses every write on this connection, and a reader never checkpoints."""
-    return sqlite3.connect(f"{Path(path).resolve().as_uri()}?mode=ro", uri=True)
+    """Read-only, leaving the folder as it was found.
+
+    The app keeps the database in WAL mode (server/db/session.py:29), and SQLite deletes its
+    -wal and -shm files when the last connection closes. A plain mode=ro reader of a WAL
+    database creates both when they are missing, and leaves them behind. So with no -wal,
+    -shm or -journal (nobody has it open) it is opened immutable=1: no locks, no side files.
+    Otherwise the app is running and mode=ro reads through the app's own -shm index (taking
+    a read slot there, as any reader does) without writing the database or its WAL. Either
+    way SQLite refuses every write and never checkpoints."""
+    path = Path(path).resolve()
+    in_use = any(Path(f"{path}{side}").exists() for side in ("-wal", "-shm", "-journal"))
+    return sqlite3.connect(f"{path.as_uri()}?mode=ro{'' if in_use else '&immutable=1'}", uri=True)
 
 
 def week_starts(today: date, weeks: int | None, since: date | None) -> list[date]:
@@ -208,7 +238,7 @@ def render(weeks: list[date], data: dict) -> str:
            lambda w: [w["calls"], w["failed"], _pct(w["failed"], w["calls"]), w["mcp_calls"],
                       w["mcp_failed"]],
            "Tool steps of live runs, by the run's start. Every mcp_<server>__<name> tool is "
-           "one `mcp` row.")
+           "one `mcp` row; a name the product never registered is `other`.")
     split("### Tool calls by tool (failed/calls)",
           [[code, *(f"{c[1]}/{c[0]}" for c in cells)] for code, cells in _ordered(data["tools"])])
     weekly("## run_command time limits",
