@@ -20,6 +20,8 @@
 | 聊天回合预算会把长操作截断 | **部分是** | 聊天回合预算是 24 次工具、600 秒（`arslan/execution_budget.py:26-30`；`task_service.py:130-133` 的注释说聊天回合的钟约 15 分钟，两处没对上，**未核**哪个生效）。等卡时钟停走（0.1.61，`execution_budget.py:226-254`、`task_service.py:128-136`）。Hands 工具自己声明 `timeout_s`，不受 20 秒那道限制（`server/orchestrator/tool_loop.py:1266-1272`）。没有 5 次上限时，一个回合可以在预算耗尽时停在半路；但这正是 K4「一个停止策略、同样的工作换个地方继续」要统一处理的，不是 Hands 特有的。L3 试点的 4 个完成任务用了 7–15 次工具、26–81 秒（`docs/specs/hands-v2-bakeoff/2026-10-11-l3-pilot.md:9-17`），都在聊天预算之内，但都会被 5 次上限挡（**未核**这几次是聊天还是后台跑的）。 |
 | 灵动岛和 iPhone 上看不到进度 | **灵动岛：不是；iPhone：未核** | 聊天回合在灵动岛上是一份「turn」类的工作（`server/services/desktop_status.py:53`、`:111-112`），当前步骤是 `desktop_*` 时显示 Stop 按钮（`web/src/island/IslandApp.tsx:459-471`），不分聊天还是后台。iPhone 上显示到哪一步，没核。 |
 
+> **⓪Plan 补注（2026-10-18，据 ①iOS，不改上面的原文）：** 「iPhone：未核」这一格可以填上，**iPhone：是（显示当前步骤）**。Mac 端 Bridge 把每个 `tool_call` 转成一行「工具: 参数摘要」（`desktop/bridge/Sources/BridgeCore/FrameMapper.swift:126-127`），每 15 秒一行「Working…」（`:128-132`），排队时一行「Queued behind the current turn」（`:133-134`）。iPhone 把这行显示在打开的对话底部，也显示在对话列表那一行的副标题里（这两处在 iOS 仓库）。⓪Plan 核过 Mac 端这几行。
+
 另外两点：
 
 - **它不限制总量。** 聊天里 App 卡给的是「这个对话」的授权，后面的回合都算数；5 次是每个回合重新计（`hands_tools.py:928-933` 按（对话, run）计数）。所以它不是对暴露面的上限。

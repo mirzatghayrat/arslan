@@ -237,7 +237,7 @@ K9（回合中从 iPhone 插话）如果发现必须改，②Main 会先来问�
 - 收窄「本轮读过外部内容后命令断网」：今天 `read_file` 读本地文件也算读过外部内容，网络卡可能偏多，看 M2 的数据再定（S2a）。
 - 脚本里通过 XPC 或快捷指令绕过 Apple Events 限制的口子（S2a）。
 - 灵动岛加输入，回合中也能从灵动岛插话（K9；今天灵动岛没有输入，更正 E12）。
-- iPhone 在插话被并入当前回合后，步骤行仍显示「Queued behind the current turn」，直到下一条工具行出现；要改成「已加入当前回合」，是 iOS 端 `FrameMapper` 的改动（①iOS 2026-10-18 核 K9 时提出）。
+- iPhone 在插话被并入当前回合后，步骤行仍显示「Queued behind the current turn」，直到下一条工具行出现；要改成「已加入当前回合」，是 Mac 端 Bridge（`desktop/bridge/Sources/BridgeCore/FrameMapper.swift:133-134`）的改动，iPhone 不用改；动 Bridge 文件前先问 ①iOS（①iOS 2026-10-18 核 K9 时提出）。
 - 聊天回合也开 Arslan 光标会话：今天光标只跟后台任务走，聊天里 Hands 动作变多以后看不出在点哪里（H1 回答第 5 条）。
 - 聊天窗口自己的「停止」也给 Hands 发 `stop`：今天只有 Hands 的 Stop 发，窗口停止后正在跑的那一步会跑完（≤30 秒），要改 `server/api/runs.py`（H1 回答第 5 条）。
 - 从真实失败里挑题，建私有题库（领先路线 §6 第 3 项；审查 §5）。
