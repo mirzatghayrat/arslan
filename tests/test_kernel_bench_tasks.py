@@ -16,6 +16,13 @@ from scripts.kernel_bench import (check_t1, check_t2, check_t4, check_t6, check_
 from scripts.kernel_bench.fake_telegram import CHAT_ID, FakeTelegram
 from scripts.kernel_bench.site_t4 import Site
 
+
+@pytest.fixture(autouse=True)
+def _no_settle_wait(monkeypatch):
+    """run_one waits for the run's label to go quiet (tested in test_kernel_bench.py); not here."""
+    from scripts.kernel_bench import runner
+    monkeypatch.setattr(runner, "settle", lambda *a, **k: 0.0)
+
 FRIDAY = dt.date(2026, 10, 2)
 
 
@@ -349,7 +356,8 @@ def test_runner_records_the_new_multi_turn_and_decline_tasks_as_unsupported_wher
     assert runner.run_one("T11", "claude-code", 1, prompts, "sb")["check"]["unsupported"]
     import re
     assert all(any(re.search(p, rule) for p in runner.DECLINES["T11"]["rules"])
-               for rule in ("delete", "hermes:find -delete")) and "trash" in runner.DECLINES["T11"]["note"]
+               for rule in ("delete", "hermes:find -delete", "rm -rf", "rmdir", "unlink")) and "trash" in runner.DECLINES["T11"]["note"]
+    assert not any(re.search(p, "format the report") for p in runner.DECLINES["T11"]["rules"])
 
 
 def test_runner_hands_t7_its_fixture_and_t11_the_drivers_declines(tmp_path, monkeypatch):
