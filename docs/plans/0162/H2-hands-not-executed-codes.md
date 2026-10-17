@@ -45,19 +45,35 @@ F2 看到 `executed: False`，就把它记成已知失败，不再让任务以�
 - **动作送达了、App 拒绝了：** `outcome == "refused"` 时返回 `ok: False`，说「nothing was delivered」（`hands_tools.py:1053-1055`、`:1072`）。
 - **批量操作停在第几步时，前面的步骤已经做了**（`:1249-1260`，`batch_stopped`）。
 
-## 候选清单（③Hands 逐个核对 Rust 端在哪里发出，定稿后改这一节）
+## 定稿清单（③Hands 逐个在 Rust 端核过发出位置，2026-10-18，PR #189；⓪Plan 照录）
 
-| 归类 | 码 | 依据 |
-|---|---|---|
-| 没执行 | `declined` `no_answer` `no_one_to_ask` `reviewer_denied` `not_allowed` | 卡在动作之前（`:1009-1029`） |
-| 没执行 | `act_in_background` `stopped_by_user` `bad_request` `no_such_file` `app_not_found` `no_apps` | Python 端的前置检查 |
-| 没执行（补码） | `hands_unavailable`（`:498` 已有这个码，那 6 处只有文字的也改用它；但见表下第一条）、`bad_request`（给「app required」补上） | 同上 |
-| 没执行（待核） | `app_denied` `app_look_only` `app_click_only` `ref_wrong_app` `ref_unknown` `bad_ref` `password_field` `borrow_off` `waiting_for_pause` `secure_input` `window_elsewhere` `window_unreachable` `borrow_declined` `screen_locked` `takeover_unsafe` `target_unreadable` `app_not_running` `apps_unreadable` `app_ambiguous` `append_unreadable` `append_needs_set_value` `op_not_allowed` | 文字表多数写着「Nothing was done」，要在 Rust 端核对是不是在动作之前发出 |
-| 没执行（待核） | `outcome == "refused"` | 「nothing was delivered」 |
-| **不标**（可能做了） | `unknown` `TIMEOUT` `submit_unsure` `takeover_paused` `bad_output` `bad_reply` `batch_stopped`；agent-desktop 的错误码（`ACTION_FAILED` 等）；`_run` 超时（`:286`） | 回复丢失、半途停止、执行中报错 |
+**没执行（`NOT_EXECUTED`，标 `executed: False`）：**
 
-表下第一条：`hands_unavailable` 有一种情况要分开：连接 helper 之前就失败，是没执行；请求发出之后连接断了，就不能算。
-`_hands` 里的 `HandsUnavailable` 是哪一种（`:495-499`）要核，核不清就不标。
+| 码 | 依据 |
+|---|---|
+| `declined` `no_answer` `no_one_to_ask` `reviewer_denied` `not_allowed` | 卡在动作之前（`_no`） |
+| `act_in_background` `bad_request` `no_such_file` `app_not_found` `no_apps` `no_passwords` `no_page` `too_long` `append_unreadable` `window_not_found` | Python 端的前置检查；`app_not_found` 是 `open -g` 返回非 0（没打开） |
+| `hands_unavailable` | 只在请求没送到 Hands 时抛（没送出、没装、没启动）；送出后丢了回复走 `_recover`，答 `unknown` |
+| `app_denied` `app_look_only` `app_click_only` `op_not_allowed` `app_not_running` `app_ambiguous` `apps_unreadable` | Hands 端在执行动作之前的检查（`guarded`、`which_app`、`resolve_app`） |
+| `bad_ref` `ref_unknown` `ref_wrong_app` `password_field` `target_unreadable` | `guarded` 读 ref 和字段状态，在动作之前 |
+| `window_elsewhere` `window_unreachable` `screen_locked` | 去窗口、锁屏检查，都在动作之前 |
+| `changed` | 动作之前；原文就写「Nothing was done」 |
+| `borrow_off` `borrow_declined` `waiting_for_pause` `secure_input` `takeover_unsafe` | 借前台、接管开始之前 |
+| `menu_unreadable` `menu_disabled` `menu_ambiguous` `menu_not_found` | 按下菜单之前；`menu_not_found` 是没找到、没按 |
+| `bad_token` `peer_not_allowed` `no_takeover` `not_paused` | 请求进入派发之前 / 接管 API |
+| `screen_recording_off` `window_not_capturable` `needs_macos_14` `not_supported` `capture_failed` | 截图没拍成（只读） |
+| `app_refused` | 动作的结果是 `refused`（App 拒收） |
+| `arg_not_allowed` `borrow_not_allowed` `element_required` `engine_missing` | Cua 路径自己的前置检查（正式版不编；F5b 删掉以后，③Hands 把这几个码从集合里删） |
+
+**可能做了（`MAYBE_EXECUTED`，不标）：** `unknown` `TIMEOUT` `submit_unsure` `takeover_paused` `takeover_resumed` `takeover_ended` `stopped_by_user` `busy` `helper_failed` `bad_output` `bad_reply` `refused` `batch_stopped` `menu_press_failed` `append_needs_set_value` `browser_unavailable` `engine_error` `engine_refused` `engine_unknown`，以及 agent-desktop 的全部错误码。
+
+**和原候选清单不同的地方：**
+
+- `stopped_by_user`、`takeover_paused` 改为「可能做了」：Hands 在动作中途被 Stop 或接管暂停杀掉时，也说这两个码。Python 自己在发请求之前的那次 Stop 检查，单独标 `executed: False`。
+- `append_needs_set_value`、`menu_press_failed`、`helper_failed`、`busy` 改为「可能做了」：动作可能已经送达。
+- `hands_unavailable` 核过，归「没执行」：送出后丢了回复不会报它，走 `unknown`。
+- 新补的码 `no_page`、`app_refused` 归「没执行」。
+- 完整性测试保证：Hands 端和 Python 端出现的每个码都必须落在两个集合之一，两集合不相交。新码不归类，CI 就红。
 
 ## 怎么做（要点）
 
@@ -76,7 +92,7 @@ F2 看到 `executed: False`，就把它记成已知失败，不再让任务以�
   - 新文件 `tests/server/test_hands_not_executed.py`。
   - 有改了措辞的现有测试，就同步改，比如 `test_hands_0145.py:66` 断言了 `act_in_background`。
 - **`docs/CAPABILITY_INVENTORY.md`：** rebase 到目标分支后重新生成（`.venv/bin/python -m scripts.capability_inventory > docs/CAPABILITY_INVENTORY.md`）。`hands_tools.py` 的哈希在里面。冲突时随便取一边，再重新生成，不手工合。
-- **本卡的「候选清单」：** 改成定稿版。
+- **本卡的清单：** 已按 PR #189 改成定稿版（⓪Plan 代改，`docs/plans/**` 归 ⓪Plan）。
 
 ## 不许碰
 
