@@ -62,7 +62,7 @@ F2 看到 `executed: False`，就把它记成已知失败，不再让任务以�
 | `menu_unreadable` `menu_disabled` `menu_ambiguous` `menu_not_found` | 按下菜单之前；`menu_not_found` 是没找到、没按 |
 | `bad_token` `peer_not_allowed` `no_takeover` `not_paused` | 请求进入派发之前 / 接管 API |
 | `screen_recording_off` `window_not_capturable` `needs_macos_14` `not_supported` `capture_failed` | 截图没拍成（只读） |
-| `app_refused` | 动作的结果是 `refused`（App 拒收） |
+| `app_refused` | 动作的结果是 `refused`（App 拒收）；今天只有 Cua Driver 路径会这么回，agent-desktop 不会 |
 | `arg_not_allowed` `borrow_not_allowed` `element_required` `engine_missing` | Cua 路径自己的前置检查（正式版不编；F5b 删掉以后，③Hands 把这几个码从集合里删） |
 
 **可能做了（`MAYBE_EXECUTED`，不标）：** `unknown` `TIMEOUT` `submit_unsure` `takeover_paused` `takeover_resumed` `takeover_ended` `stopped_by_user` `busy` `helper_failed` `bad_output` `bad_reply` `refused` `batch_stopped` `menu_press_failed` `append_needs_set_value` `browser_unavailable` `engine_error` `engine_refused` `engine_unknown`，以及 agent-desktop 的全部错误码。

@@ -36,6 +36,8 @@ H1 列出的那些保护都要留着：每个 App 一张卡、危险步骤每次
   - 删 `INLINE_ACTIONS`、`_inline` 计数和上面两处检查，删「一轮只在一个 App」（`:1000-1006`），删 `_inline_refusal`；
   - 聊天回合调用 Hands 时，先查这个（对话, run）有没有被 Stop 停住。
 - **`server/services/hands_service.py`：** `stop_running_jobs`（`:385-392`）旁边，把按下 Stop 时正在跑的聊天回合（对话, run）也记成已停；`stopped()` 认这两种。
+  - **认哪些回合：** 按下 Stop 时**所有**在跑的聊天回合，不只限已经调过 Hands 的，和 `stop_running_jobs` 标所有在跑的后台任务一致。名单用 `server/services/desktop_status.py` 的 `_working`（它记着在跑的回合和对话），不在 `hands_tools` 里另记一份。
+  - **什么时候清：** 回合结束就删掉标记，挂在回合结束的回调上（`desktop_status.when_work_ends`），不然标记越攒越多。同一对话的下一个回合 run 不同，不受影响（③Hands 审 #188）。
 - **Hands 的 trace：** 加 `mode_used` 字段（只加字段），M2 用它数一个聊天回合里借前台的次数（H1 回答第 5 条）。
 - **`scripts/hands_smoke.py:423-428`：** 冒烟项按新规则改。
 - **测试：**
