@@ -41,6 +41,10 @@
 | E1 | 热修发「0.1.61.1」（D2、§0.3、§4.1、§5.1、领先路线 L6） | **这不是合法的版本号，发不出去。** 三条依据：<br>• Tauri 读配置时，要求 `tauri.conf.json > version` 是 semver 字符串，否则直接报错（`tauri-utils` 2.9.3 `config.rs:3488-3500`）。「0.1.61.1」有四段，不是 semver。<br>• 更新器按 semver 比较版本（`tauri-plugin-updater` 2.10.1 `updater.rs:27,140`）。<br>• 改用带 `-` 的写法也不行，比如 0.1.62-hotfix.1：`release.yml:227-228` 会把带 `-` 的 tag 发成预发布版，并且不标为 latest；而更新地址只读 `releases/latest/download/latest.json`（`tauri.conf.json:49-50`）。这样老用户永远收不到。 | 本文暂时写作「热修版」。<br>想让 0.1.61 的用户自动收到热修，只能用一个更大的三段版本号，最小是 **v0.1.62**。<br>那样的话：执行内核版顺延为 v0.1.63；领先路线里的 0.1.63、0.1.64 顺延为 v0.1.64、v0.1.65。<br>**版本号要用户定。** 定之前，本文和任务卡里的「0.1.62」都指执行内核那一版的计划。 |
 | E2 | K-2 说「从第 2 轮起几乎每轮都多一次摘要调用」；§5.2 的基线写着「每轮的摘要调用：几乎每轮一次」 | 机制本身属实（`server/orchestrator/memory.py:146-168`）。但本机数据不支持「几乎每轮」：<br>• 近 30 天 219 次运行里，摘要调用只有 12 次（记账分类 `memory`，`memory.py:165`）；<br>• 几乎每轮都会多出来的，是回合后的抽事实：144 次（记账分类 `memory_facts`，`server/services/turn_facts.py:105`）；<br>• 两者都在回合锁里执行。<br>以上都是只读计数，不含任何内容。 | K-2 和 §5.2 的基线已改。<br>§5.2 这一行的门槛请用户重定；建议改成看「回合后的调用不再挡住下一条消息」。<br>跨轮只放约 3,000 估算 token 这一条不受影响（`memory.py:100-108`）：不管有没有摘要，进提示词的历史都受这个上限约束。 |
 | E3 | 两处行号 | • `tool_loop.py:1266-1270` 实际在 `:1268-1271`。<br>• 回合锁除了 `server/ws/arslan.py:708`、`:801`，还有 `:740` 一处。 | 已改 |
+| E4 | S2「受保护路径补上 Arslan 数据目录」（⓪Plan 提案 §5.2 也这么写） | 数据目录**早已**在沙箱的保护名单里（`server/services/command_sandbox.py:91-93`，包括 `config.data_dir()` 和 `~/Library/Application Support/Arslan`）。真正的缺口是**出了沙箱**的命令：点一次「出沙箱」后，命令不受 Seatbelt 约束（handover §7.4）。凭据目录（`~/.aws` 等）确实不在名单里 | S2a 卡改为：禁止层新增「命令里直接点名 Arslan 数据目录就拒绝」，覆盖出了沙箱的情形；受保护路径只补凭据目录 |
+| E5 | K-7「cargo-deny 报 4 个公告」；§1.3「驱动把停在『等你』也算正常结束（`arslan_driver.py:21`）」；K-4 第 4 条与 §9 的 `task_service.py:72-74`；F2 边界的 `task_service.py:64-66` | • 截至 10-17（run 39026566961），同一步报了 **7** 个公告：除了 rustls 的 RUSTSEC-2026-0346…0349，还有 `zip` 的 RUSTSEC-2026-0367…0369，经 `cursor-theme-cli` 引入。依赖树都落在 `cua-driver v0.34.0` 下，所以 F5a 的解法不变。<br>• 跑分这一条更准确的说法是：判分只看检查器给的分数（`scripts/kernel_bench/runner.py:213`），所以停在「等你」的运行也算过。驱动把 `waiting_user` 当作结束（`arslan_driver.py:23`），它等的阶段名 `completed` 与服务端的 `succeeded` 对不上。M1 卡已按此改。<br>• 「被自己的时限停掉算未知」在 `task_service.py:78-79`；边界说明在 `:65-67`。 | 已改正文里的行号；K-7 的数字以本行为准 |
+| E6 | D4「请 ③Hands 说明 5 步上限防什么」 | Hands v2 spec §5.7（`docs/specs/2026-10-08-0157-hands-v2.md:350-354`）只写了规则，没写理由。这条规则是用户 2026-10-08 的决定「D-inline」（同一文件 `:122`）。 | H1 照样请 ③Hands 回答；**放宽多少，最后要用户点头**（H3 卡已写明） |
+| E7 | C3「降级（默认不给模型）：浏览器点击类、`run_python`、`create_skill` / `propose_*` …」，出自 ⓪Plan 提案 §2「每轮都在工具表里，从没用过」；D10「没登记机器时，不把远程工具给模型」；提案 §4.2「23 处 `is_active`、10 个文件」与「16 组翻译」 | • 提案 §2 的说法对这几个工具不准：`run_python`、`create_skill` 今天就不在主 agent 的工具表里（`server/orchestrator/arslan.py:982-1369`）；`propose_plan_change` 只在项目对话里给；浏览器点击类只在后台任务里给。C3b 的活因此比计划少。<br>• D10 若照字面执行，就没有办法登记第一台机器：设置页只能列出和撤销机器（`web/src/components/settings/SshNodesPanel.tsx:24`、`:39`）。C3b 的折中是保留 `ssh_probe`、`enroll_node`，只去掉 `ssh_run`、`list_nodes`。<br>• 记忆 v1：`is_active` 的调用共 32 处、14 个文件（另有 9 处带参数的写法）。没用的翻译是 21 组、265 个 key。 | C2a、C1c、C3 卡已按实际写；**D10 的折中请用户确认** |
 | 已核属实 | 见右栏 | • K-1、K-3、K-4 的全部条目，以及 K-2 里除 E2 以外的条目。<br>• K-4 第 3 条：旧分类器把整条命令字符串当成程序名，拿去和只读程序名单比较，比不上就判 HIGH（`server/services/command_policy.py:81-106`）。`ls -la ~/Downloads`、`git status` 都会这样。<br>• §9 中：空参数表；外部内容标记；守卫词表（`tool_loop.py:104-106`）；`search_files` 只做子串匹配（`server/registry/file_tools.py:230`）；后台验收用的是严格 `json.loads`（`task_validation.py:339`）；基准文档都在（`docs/plans/2026-10-02-*.md`、`2026-10-03-p3-acceptance.md`）。 | — |
 | 未能核 | §9「没有验证的」各项 | 包括：没跑测试、预期位置、门槛建议值、Claude Code 跑分成本、对标做法。这些只能靠实际运行，不能靠读代码核。<br>默认工具数「28 / 约 45」和静态提示「10,303 字符」要把提示词构建出来才能量，本轮没量。 | 照旧标「未验证」 |
 
@@ -162,7 +166,7 @@ agent 循环、工具调用、并行工具调用、流式输出、中断与插�
 
 **这套基准还看不见今天的主要问题：**
 
-- 驱动把停在「等你」也算正常结束（`scripts/kernel_bench/arslan_driver.py:21`）；
+- 判分只看检查器的分数，停在「等你」的运行也算过（`scripts/kernel_bench/runner.py:213`；驱动在 `arslan_driver.py:23`，见更正 E5）；
 - 7 道题里没有超过 20 秒的命令；
 - 没有多轮追问的题；
 - 没有 Claude Code 参赛。
@@ -223,7 +227,7 @@ agent 循环、工具调用、并行工具调用、流式输出、中断与插�
 1. **命令被 20 秒掐掉，** 抛出 `TimeoutError`。模型只收到一句「tool 'run_command' timed out」，**一行输出都没有**（`tool_loop.py:1302-1303`）。
 2. **出错的调用被记成「结果不明」：** 只要它不是「只读」（`task_service.py:300-305`）。
 3. **几乎所有命令都算「对外写」：** 判断是否只读用的是老的 argv 分类器，而模型只传命令字符串（`task_service.py:101-105`）。我实测：`ls -la ~/Downloads`、`cat notes.txt`、`git status` 都被判为 HIGH，于是都算 `external_write`。
-4. **出错调用按设计也算未知：** 命令被自己的 `timeout_s` 停掉，`known_local_failure` 有意把它算成未知（`:72-74`）。被拒或没人答的 Hands 卡同样走这条路（子任务）。
+4. **出错调用按设计也算未知：** 命令被自己的 `timeout_s` 停掉，`known_local_failure` 有意把它算成未知（`:78-79`，见更正 E5）。被拒或没人答的 Hands 卡同样走这条路（子任务）。
 5. **这个标记是黏住的。** 任务只能以「需要你核对」收场。同一个调用再试会被拒，模型还会被要求「告诉用户去核对」（`tool_loop.py:1293-1299`）。
 6. **另有两处：** 已经保存了交付物的回合，仍会因为「没有进展」或「预算」挂成等你（`tool_loop.py:2280-2283`）。后台任务的模型判定用严格 `json.loads`，回复带代码围栏就判成「检查没跑」（`task_validation.py:339`，子任务）。
 
@@ -344,7 +348,7 @@ v0.1.61 tag 的 run 38498094635 是绿的。之后的每次 run（38588404451、
 | F4 | R2：终端里的 osascript / `shortcuts run` 只给「这一次」，忽略已存的 apple-events 规则，并改掉断言相反行为的 2 个测试；R1：写入不跟随符号链接（`O_NOFOLLOW`）；更正 v0.1.61 发布说明 | agent review §4.8 R1/R2 | ~60 行 + 测试 | 新测试：osascript 卡只给「这一次」；工作区里指向 `~/.zshrc` 的链接写入被拒 |
 | F5 | 删 Cua Driver 引擎和它的 cargo-deny 步骤 | K-7；⓪Plan §4.1 | −1,200 行 Rust | CI 全绿 |
 
-**F2 的边界：** 本地脚本自己联网发了东西再失败，仍按本地处理。这个限制原文已写（`task_service.py:64-66`），保持不变。
+**F2 的边界：** 本地脚本自己联网发了东西再失败，仍按本地处理。这个限制原文已写（`task_service.py:65-67`），保持不变。
 
 ### 4.2 M 尺子（必须，和 F 同时开始，先定基线）
 
