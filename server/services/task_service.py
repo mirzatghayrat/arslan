@@ -10,6 +10,8 @@ import contextlib
 import hashlib
 import json
 import logging
+import re
+import shlex
 from collections.abc import Awaitable, Callable, Iterator
 from contextvars import ContextVar
 from dataclasses import asdict, replace
@@ -82,6 +84,37 @@ def known_local_failure(tool_key: str, arguments: dict, result) -> bool:
     return not (terminal_policy.ask_rules(command) & _OUTBOUND_RULES)
 
 
+# 0.1.62 F2 ①: a single simple command whose program the command policy grades LOW is a read.
+# Anything with shell syntax is not judged. The LOW list also lets through a few forms that write
+# or run something else; those are not reads. Everything else stays external_write (not
+# local_write: a local_write that failed may be repeated, and a command killed by a signal or
+# stopped outside the sandbox has an unknown outcome).
+_SHELL_SYNTAX = re.compile(r"[|&;<>`$()\n\\]")
+_FIND_WRITES = ("-delete", "-exec", "-ok", "-fprint", "-fls")
+
+
+def _reads_only(arguments: dict) -> bool:
+    from server.services import command_policy, terminal_policy
+    text = terminal_policy.as_shell(arguments.get("command"), arguments.get("argv"))
+    if not text or _SHELL_SYNTAX.search(text):
+        return False
+    try:
+        words = shlex.split(text)
+    except ValueError:
+        return False
+    if not words:
+        return False
+    name, args = words[0], words[1:]
+    if command_policy.classify(name, args) != "LOW":
+        return False
+    if name == "find" and any(a.startswith(_FIND_WRITES) for a in args):
+        return False
+    if name == "git" and (any(a.startswith("--output") for a in args)
+                          or (args[:1] in (["branch"], ["remote"]) and len(args) > 1)):
+        return False
+    return not (name == "rg" and any(a == "--pre" or a.startswith("--pre=") for a in args))
+
+
 async def effect_of(tool_key: str, arguments: dict) -> str:
     """What one call can change, from what the tool really is (0.1.44).
 
@@ -99,11 +132,7 @@ async def effect_of(tool_key: str, arguments: dict) -> str:
     if tool_key in _LOCAL_WRITE_TOOLS:
         return "local_write"
     if tool_key == "run_command":   # local only; remote execution is ssh_run (always external)
-        from server.services import command_policy
-        argv = arguments.get("argv") if isinstance(arguments.get("argv"), list) else []
-        if command_policy.classify(str(arguments.get("command") or "").strip(), argv) == "LOW":
-            return "read"
-        return "external_write"
+        return "read" if _reads_only(arguments) else "external_write"
     if tool_key.startswith("mcp_") and "__" in tool_key:
         try:
             server_id = int(tool_key.split("__", 1)[0].removeprefix("mcp_"))

@@ -258,6 +258,28 @@ def test_which_failures_are_known_and_local():
     assert not known("run_command", {"command": "cp a b"}, "not a dict")
 
 
+@pytest.mark.parametrize("arguments,effect", [
+    ({"command": "ls -la x"}, "read"),
+    ({"command": "git status"}, "read"),
+    ({"command": "git", "argv": ["log", "-3"]}, "read"),
+    ({"command": "grep -r foo ."}, "read"),
+    ({"command": "find . -name '*.md'"}, "read"),
+    ({"command": "find . -delete"}, "external_write"),
+    ({"command": "find . -exec rm {} ;"}, "external_write"),
+    ({"command": "find . -fprint out.txt"}, "external_write"),
+    ({"command": "git branch -D x"}, "external_write"),
+    ({"command": "git remote add o https://x"}, "external_write"),
+    ({"command": "git log --output=x"}, "external_write"),
+    ({"command": "rg --pre ./decode foo"}, "external_write"),
+    ({"command": "ls > out.txt"}, "external_write"),
+    ({"command": "ls; rm x"}, "external_write"),
+    ({"command": "cat $(echo x)"}, "external_write"),
+    ({"command": "python3 build.py"}, "external_write"),
+])
+async def test_a_read_command_is_a_read(arguments, effect):
+    assert await task_service.effect_of("run_command", arguments) == effect
+
+
 # --- C: an answered run is not replayed --------------------------------------------------------
 
 class _Recorder:
