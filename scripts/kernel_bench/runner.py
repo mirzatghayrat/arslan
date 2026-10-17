@@ -1,6 +1,8 @@
 """Kernel bench runner: tasks x entrants x repeats, each run in a fresh folder.
 
     python -m scripts.kernel_bench.runner --tasks T3,T5 --entrants arslan,hermes --repeats 3
+    python -m scripts.kernel_bench.runner --tasks T5 --entrants arslan,claude-code \
+        --models arslan=claude-sonnet-5-5,claude-code=claude-sonnet-5-5
 
 Every entrant talks to the metering proxy (scripts/kernel_bench/meter.py) under a label
 `<entrant>-<task>-r<n>`, so each run's cost is exact and capped. Entrants other than
@@ -10,8 +12,9 @@ shell and cannot nest, so it runs without ours; the T5 sentinel still checks it)
 
 Environment:
   BENCH_ROOT   work folder (default /tmp/arslan-kernel-bench); holds homes, runs, pkgs, node24
-  BENCH_PROXY  metering proxy base (default http://127.0.0.1:8900/c)
-  BENCH_MODEL  default deepseek-v4-pro
+  BENCH_PROXY  metering proxy base (default http://127.0.0.1:8900/c), DeepSeek upstream
+  BENCH_ANTHROPIC_PROXY  second metering proxy for Claude models (default http://127.0.0.1:8901/c)
+  BENCH_MODEL  default deepseek-v4-pro; --models sets one per entrant
   ARSLAN_API   Arslan test instance (default http://127.0.0.1:8762/api/v1)
   HERMES_BIN   default ~/.local/bin/hermes
 """
@@ -25,13 +28,16 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 from pathlib import Path
 
 from scripts.kernel_bench import check_t1, check_t2, check_t3, check_t4, check_t5, check_t6
+from scripts.kernel_bench.arslan_driver import snapshot
 
 HERE = Path(__file__).resolve().parent
 ROOT = Path(os.environ.get("BENCH_ROOT", "/tmp/arslan-kernel-bench")).resolve()
 PROXY = os.environ.get("BENCH_PROXY", "http://127.0.0.1:8900/c")
+ANTHROPIC_PROXY = os.environ.get("BENCH_ANTHROPIC_PROXY", "http://127.0.0.1:8901/c")
 MODEL = os.environ.get("BENCH_MODEL", "deepseek-v4-pro")
 ARSLAN_API = os.environ.get("ARSLAN_API", "http://127.0.0.1:8762/api/v1")
 # Paired attribution: a second Arslan instance started with ARSLAN_TOOL_PROTOCOL=legacy.
@@ -53,7 +59,14 @@ CHECKS = {
 # Arslan's browser is isolated by design (throwaway profile, public-internet
 # proxy, no loopback: server/services/managed_browser.py), so it cannot use a
 # page the user logged into; it has no phone/messaging channel.
-UNSUPPORTED = {"arslan": {"T4", "T4x", "T6"}, "arslan-legacy": {"T4", "T4x", "T6"}}
+UNSUPPORTED = {"arslan": {"T4", "T4x", "T6"}, "arslan-legacy": {"T4", "T4x", "T6"},
+               # No browser of its own and no phone channel.
+               "claude-code": {"T4", "T4x", "T6"}}
+ARSLAN = ("arslan", "arslan-legacy")
+# Entrants that can take a task of several turns: Arslan keeps one conversation, Claude
+# Code resumes its session. The others are recorded as unsupported for such tasks.
+MULTI_TURN = {"arslan", "arslan-legacy", "claude-code"}
+CLAUDE_ON = {"arslan", "arslan-legacy", "claude-code"}       # entrants that can run on a Claude model
 T4_CHANGE_AFTER_S = 60
 # T1's Reminders list is named after the run label; labels repeat across rounds, and a
 # list left over from an earlier round would be read as this run's (BENCH_ROUND keeps them apart).
@@ -74,7 +87,43 @@ def env(extra: dict, node: bool = False) -> dict:
     return e
 
 
-def command(who: str, label: str, run: Path, prompt: str, sb: str) -> tuple[list, dict]:
+def parse_models(spec: str) -> dict:
+    """`arslan=claude-sonnet-5-5,claude-code=claude-sonnet-5-5` -> {entrant: model}."""
+    return dict(item.split("=", 1) for item in spec.split(",") if "=" in item) if spec else {}
+
+
+def model_for(who: str, models: dict) -> str:
+    return models.get(who, MODEL)
+
+
+def is_claude(model: str) -> bool:
+    return model.startswith("claude-")
+
+
+def proxy_for(model: str) -> str:
+    return ANTHROPIC_PROXY if is_claude(model) else PROXY
+
+
+# Bumped when the pass rule changes; report.py keeps rows judged by different rules apart.
+JUDGE_VERSION = 2
+
+
+def judge(check: dict, end: str | None, who: str = "arslan") -> bool:
+    """A run passes when the checker gives 3 and, for Arslan, the run ended cleanly ("done"):
+    a task left on "needs you", failed, cancelled, timed out, a background job that ended
+    blocked or out of budget, or a driver that never reported (killed, crashed) is not a pass,
+    whatever the files say. Other entrants report no end; their checker score decides."""
+    if check.get("score") != 3:
+        return False
+    return end == "done" if who in ARSLAN else True
+
+
+def command(who: str, label: str, run: Path, prompt, sb: str, *, model: str = MODEL, turn: int = 0,
+            session: str | None = None, decline: dict | None = None) -> tuple[list, dict]:
+    """The command for one entrant. `prompt` is a string, or (Arslan only) a list of turns;
+    Claude Code gets one turn at a time (`turn`, resuming `session` after the first)."""
+    if is_claude(model) and who not in CLAUDE_ON:
+        raise SystemExit(f"{who} runs on DeepSeek only; {model} is for {sorted(CLAUDE_ON)}")
     home = ROOT / "home" / who
     home.mkdir(parents=True, exist_ok=True)
     jail = ["sandbox-exec", "-f", sb]
@@ -102,19 +151,59 @@ def command(who: str, label: str, run: Path, prompt: str, sb: str) -> tuple[list
         (home / ".openclaw/openclaw.json").write_text(json.dumps(cfg, indent=1))
         return jail + [str(ROOT / "pkgs/openclaw/node_modules/.bin/openclaw"), "agent", "--local", "-m", prompt,
                        "--json", "--timeout", str(TIMEOUT - 30)], env({"HOME": str(home)}, node=True)
-    if who in ("arslan", "arslan-legacy"):
+    if who == "claude-code":
+        # --bare: no hooks, no CLAUDE.md discovery, no keychain; the key is only the dummy one
+        # (the metering proxy swaps in the real key). HOME is the bench's, so the user's
+        # ~/.claude is never read; no MCP servers. Writes are limited by the sandbox, so
+        # permissions are skipped (flags as of 2.1.96, `claude --help`).
+        cmd = jail + [str(ROOT / "pkgs/claude-code/node_modules/.bin/claude"), "--bare", "-p", prompt,
+                      "--output-format", "json", "--model", model, "--dangerously-skip-permissions",
+                      "--strict-mcp-config", "--mcp-config", '{"mcpServers": {}}']
+        cmd += ["--resume", session] if turn else ["--session-id", session or str(uuid.uuid4())]
+        # Claude models go to the Anthropic proxy; a DeepSeek model through the DeepSeek
+        # proxy's Anthropic-compatible path (the one DeepSeek Harness uses).
+        base = f"{ANTHROPIC_PROXY}/{label}" if is_claude(model) else f"{PROXY}/{label}/anthropic"
+        return cmd, env({"HOME": str(home), "ANTHROPIC_BASE_URL": base,
+                         "ANTHROPIC_API_KEY": "bench-dummy", "DISABLE_AUTOUPDATER": "1",
+                         "DISABLE_TELEMETRY": "1", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"}, node=True)
+    if who in ARSLAN:
         pf = Path(f"{run}.prompt")
-        pf.write_text(prompt)
+        pf.write_text(json.dumps(prompt, ensure_ascii=False) if isinstance(prompt, list) else prompt)
         api = ARSLAN_API if who == "arslan" else ARSLAN_LEGACY_API
-        return [sys.executable, "-m", "scripts.kernel_bench.arslan_driver", api, str(run), str(pf),
-                f"{PROXY}/{label}", MODEL], dict(os.environ)
+        claude = is_claude(model)
+        base = f"{ANTHROPIC_PROXY}/{label}/v1" if claude else f"{PROXY}/{label}"
+        cmd = [sys.executable, "-m", "scripts.kernel_bench.arslan_driver", api, str(run), str(pf), base, model,
+               "--provider", "anthropic" if claude else "openai"]
+        for rule in (decline or {}).get("rules", ()):
+            cmd += ["--decline-rule", rule]
+        if decline and decline.get("note"):
+            cmd += ["--decline-note", decline["note"]]
+        return cmd, dict(os.environ)
     raise SystemExit(f"unknown entrant {who}")
+
+
+def entrant_version(who: str) -> str | None:
+    """The installed version, recorded with each result (flags change between versions)."""
+    if who != "claude-code":
+        return None
+    try:
+        return subprocess.run([str(ROOT / "pkgs/claude-code/node_modules/.bin/claude"), "--version"],
+                              capture_output=True, text=True, timeout=30, env=env({}, node=True)).stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        return None
 
 
 def reply_text(who: str, run: Path) -> str:
     out = Path(f"{run}.stdout")
     text = out.read_text(encoding="utf-8", errors="ignore") if out.exists() else ""
-    if who in ("arslan", "arslan-legacy"):
+    if who == "claude-code":                    # one JSON result per turn, appended; the last is the answer
+        for line in reversed(text.strip().splitlines()):
+            try:
+                return json.loads(line).get("result", "") or ""
+            except (json.JSONDecodeError, AttributeError):
+                continue
+        return text
+    if who in ARSLAN:
         try:
             return json.loads(text.strip().splitlines()[-1]).get("final", "")
         except Exception:
@@ -128,10 +217,12 @@ def reply_text(who: str, run: Path) -> str:
     return text
 
 
-def usage(label: str) -> dict:
+def usage(label: str, since: float = 0.0) -> dict:
+    """This run's model calls: its label, from when it started (the same label comes back in
+    later rounds and on other models; usage.jsonl keeps them all)."""
     log = ROOT / "usage.jsonl"
     rows = [json.loads(line) for line in log.open()] if log.exists() else []
-    mine = [r for r in rows if r["cand"] == label and r["model"] != "?"]
+    mine = [r for r in rows if r["cand"] == label and r["model"] != "?" and r["t"] >= since]
     if not mine:
         return {"model_calls": 0, "usd_peak": 0.0, "span_s": 0.0}
     start = min(r["t"] - r["secs"] for r in mine)
@@ -167,19 +258,57 @@ def check_t4_site():
     return Site()
 
 
-def run_one(task: str, who: str, n: int, prompts: dict, sb: str, manual_login: bool = False) -> dict:
+# Tasks whose stand-in person declines a card with a sentence: {task: {"rules": [...], "note": "..."}}.
+# Only Arslan's driver can answer a card that way; other entrants are recorded as unsupported.
+DECLINES: dict = {}
+
+
+def driver_end(who: str, run: Path) -> str | None:
+    """How Arslan's run ended (`done`, `task_waiting_user`, `timeout`, ...); None for others."""
+    if who not in ARSLAN:
+        return None
+    out = Path(f"{run}.stdout")
+    try:
+        return json.loads(out.read_text(encoding="utf-8").strip().splitlines()[-1]).get("end")
+    except (OSError, IndexError, json.JSONDecodeError, AttributeError):
+        return None
+
+
+def _unsupported(task: str, who: str, n: int, label: str, model: str, why: str) -> dict:
+    record = {"run": label, "task": task, "entrant": who, "repeat": n, "model": model, "rc": None,
+              "wall_s": 0, "prompt": None, "usage": usage(label, time.time()), "passed": False,
+              "judge": JUDGE_VERSION,
+              "check": check_t6.unsupported(who) if task == "T6" else {"score": 0, "unsupported": True, "note": why}}
+    with open(ROOT / "results.jsonl", "a") as f:
+        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    return record
+
+
+def _run(cmd: list, e: dict, run: Path, mode: str = "w"):
+    with open(f"{run}.stdout", mode) as out, open(f"{run}.stderr", mode) as err:
+        try:
+            return subprocess.run(cmd, cwd=run, env=e, stdout=out, stderr=err, timeout=TIMEOUT).returncode
+        except subprocess.TimeoutExpired:
+            return "timeout"
+
+
+def run_one(task: str, who: str, n: int, prompts: dict, sb: str, manual_login: bool = False,
+            models: dict | None = None) -> dict:
     label = f"{who}-{task}-r{n}"
     run = ROOT / "runs" / label
+    model = model_for(who, models or {})
     shutil.rmtree(run, ignore_errors=True)
+    for old in run.parent.glob(f"{label}.turn*"):     # snapshots of an earlier round of this label
+        shutil.rmtree(old, ignore_errors=True)
     run.mkdir(parents=True)
+    raw = prompts.get(task, "")              # unsupported tasks are recorded without a prompt
+    turns_raw = raw if isinstance(raw, list) else [raw]
     if task in UNSUPPORTED.get(who, set()):
-        record = {"run": label, "task": task, "entrant": who, "repeat": n, "model": MODEL, "rc": None,
-                  "wall_s": 0, "prompt": None, "usage": usage(label), "passed": False,
-                  "check": check_t6.unsupported(who) if task == "T6" else
-                  {"score": 0, "unsupported": True, "note": f"{who} cannot use a page the user logged into"}}
-        with open(ROOT / "results.jsonl", "a") as f:
-            f.write(json.dumps(record, ensure_ascii=False) + "\n")
-        return record
+        return _unsupported(task, who, n, label, model, f"{who} cannot use a page the user logged into")
+    if len(turns_raw) > 1 and who not in MULTI_TURN:
+        return _unsupported(task, who, n, label, model, f"{who}: several turns in one session not set up")
+    if task in DECLINES and who not in ARSLAN:
+        return _unsupported(task, who, n, label, model, f"{who}: no way to decline a card with a note")
     if task == "T6":
         raise SystemExit(f"T6 for {who}: the gateway launch (fake Telegram base_url) is not verified yet")
     ctx: dict = {}
@@ -189,14 +318,20 @@ def run_one(task: str, who: str, n: int, prompts: dict, sb: str, manual_login: b
         ctx["list"] = f"对比测试-{label}" + (f"-{ROUND}" if ROUND else "")
     if task in ("T4", "T4x"):
         _t4_setup(task, who, ctx, manual_login)
-    prompt = prompts[task].format(dir=run, list=ctx.get("list", ""), url=ctx["site"].url if "site" in ctx else "")
-    cmd, e = command(who, label, run, prompt, sb)
+    fill = {"dir": run, "list": ctx.get("list", ""), "url": ctx["site"].url if "site" in ctx else ""}
+    turns = [t.format(**fill) for t in turns_raw]
     started = time.time()
-    with open(f"{run}.stdout", "w") as out, open(f"{run}.stderr", "w") as err:
-        try:
-            rc = subprocess.run(cmd, cwd=run, env=e, stdout=out, stderr=err, timeout=TIMEOUT).returncode
-        except subprocess.TimeoutExpired:
-            rc = "timeout"
+    if who == "claude-code":                       # one process per turn, resuming the same session
+        session = str(uuid.uuid4())
+        for i, prompt in enumerate(turns):
+            cmd, e = command(who, label, run, prompt, sb, model=model, turn=i, session=session)
+            rc = _run(cmd, e, run, "w" if i == 0 else "a")
+            if i + 1 < len(turns):
+                snapshot(str(run), i + 1)
+    else:
+        prompt = turns if (len(turns) > 1 and who in ARSLAN) else turns[0]
+        cmd, e = command(who, label, run, prompt, sb, model=model, decline=DECLINES.get(task))
+        rc = _run(cmd, e, run)
     if "timer" in ctx:
         ctx["timer"].cancel()
     reply = reply_text(who, run)
@@ -205,12 +340,14 @@ def run_one(task: str, who: str, n: int, prompts: dict, sb: str, manual_login: b
     finally:
         if "site" in ctx:
             ctx["site"].stop()
-    record = {"run": label, "task": task, "entrant": who, "repeat": n, "model": MODEL, "rc": rc,
-              "wall_s": round(time.time() - started), "prompt": prompt,
-              "check": verdict, "usage": usage(label),
+    end = driver_end(who, run)
+    record = {"run": label, "task": task, "entrant": who, "repeat": n, "model": model, "rc": rc,
+              "entrant_version": entrant_version(who), "end": end,
+              "wall_s": round(time.time() - started), "prompt": turns if len(turns) > 1 else turns[0],
+              "check": verdict, "usage": usage(label, started), "judge": JUDGE_VERSION,
               "artifacts": {"stdout": f"{run}.stdout", "stderr": f"{run}.stderr", "folder": str(run)},
               "reply_tail": reply[-1500:]}
-    record["passed"] = record["check"].get("score") == 3
+    record["passed"] = judge(verdict, end, who)
     Path(f"{run}.record.json").write_text(json.dumps(record, ensure_ascii=False, indent=1))
     with open(ROOT / "results.jsonl", "a") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
@@ -223,6 +360,7 @@ def main() -> None:
     ap.add_argument("--entrants", required=True)
     ap.add_argument("--repeats", type=int, default=1)
     ap.add_argument("--manual-login", action="store_true", help="T4: a person logs in once per entrant")
+    ap.add_argument("--models", default="", help="per entrant, e.g. arslan=claude-sonnet-5-5,claude-code=claude-sonnet-5-5")
     args = ap.parse_args()
     (ROOT / "tmp").mkdir(parents=True, exist_ok=True)
     prompts = json.loads((HERE / "prompts.json").read_text())
@@ -230,8 +368,8 @@ def main() -> None:
     for n in range(1, args.repeats + 1):            # interleave entrants within each repeat
         for task in args.tasks.split(","):
             for who in args.entrants.split(","):
-                rec = run_one(task, who, n, prompts, sb, args.manual_login)
-                print(json.dumps({k: rec[k] for k in ("run", "passed", "rc")} | {"score": rec["check"].get("score"),
+                rec = run_one(task, who, n, prompts, sb, args.manual_login, parse_models(args.models))
+                print(json.dumps({k: rec[k] for k in ("run", "model", "passed", "rc")} | {"score": rec["check"].get("score"),
                       "usd_peak": rec["usage"]["usd_peak"], "span_s": rec["usage"]["span_s"]}), flush=True)
 
 

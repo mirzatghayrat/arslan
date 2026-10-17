@@ -240,3 +240,248 @@ def test_sandboxed_rounds_answer_cards_like_a_user_and_never_let_commands_out(mo
     t1 = TurnTracker("/b/runs/arslan-T1-r2")
     assert t1.on_frame({"type": "propose_run_command", "call_id": "c", "rule": "apple-events"}, 1.0)["type"] == \
         "confirm_run_command"
+
+
+# ── M1a (0.1.62 round): waiting counts as failure, turns, a decline with a note, two models ──
+
+def test_an_arslan_run_passes_only_when_it_ended_cleanly_and_the_checker_gives_three():
+    from scripts.kernel_bench import runner
+    assert runner.judge({"score": 3}, end="done") is True
+    assert runner.judge({"score": 2}, end="done") is False
+    for end in ("task_waiting_user", "task_failed", "task_cancelled", "timeout", "job_blocked",
+                "job_out_of_budget", None):                       # None: the driver never reported
+        assert runner.judge({"score": 3}, end=end, who="arslan") is False, end
+    assert runner.judge({"score": 3}, end=None, who="hermes") is True        # outside entrants report no end
+
+
+def test_succeeded_is_the_phase_that_ends_a_run_cleanly_and_completed_is_not_a_phase():
+    t = TurnTracker("/r")
+    t.on_frame({"type": "task_state", "phase": "completed"}, now=1)
+    assert not t.turn_done
+    t.on_frame({"type": "task_state", "phase": "succeeded"}, now=5)
+    assert t.finished(now=5 + IDLE_AFTER_TURN_S, started=0) and t.end_reason == "done"
+
+
+def test_a_task_turn_is_over_only_at_its_final_state_even_after_the_answer_ended():
+    t = TurnTracker("/r")
+    t.on_frame({"type": "task_state", "phase": "running"}, now=1)
+    t.on_frame({"type": "stream_end"}, now=2)
+    assert not t.finished(now=2 + IDLE_AFTER_TURN_S * 3, started=0)      # the review runs after the answer
+    t.on_frame({"type": "task_state", "phase": "waiting_user"}, now=100)
+    assert t.finished(now=100 + IDLE_AFTER_TURN_S, started=0) and t.end_reason == "task_waiting_user"
+
+
+def test_a_background_job_that_ends_blocked_or_out_of_budget_is_how_the_run_ended():
+    for outcome in ("blocked", "out_of_budget", "partial", "stopped"):
+        t = TurnTracker("/r")
+        t.on_frame({"type": "job_update", "job_id": "j", "phase": "running"}, now=1)
+        t.on_frame({"type": "stream_end"}, now=2)
+        t.on_frame({"type": "job_update", "job_id": "j", "phase": "finished", "outcome": outcome}, now=50)
+        assert t.finished(now=50 + IDLE_AFTER_TURN_S, started=0) and t.end_reason == f"job_{outcome}"
+    ok = TurnTracker("/r")
+    ok.on_frame({"type": "job_update", "job_id": "j", "phase": "finished", "outcome": "done"}, now=1)
+    ok.on_frame({"type": "stream_end"}, now=2)
+    assert ok.finished(now=2 + IDLE_AFTER_TURN_S, started=0) and ok.end_reason == "done"
+
+
+def test_a_turn_that_ended_waiting_still_counts_after_a_later_turn_succeeds():
+    t = TurnTracker("/r")
+    t.on_frame({"type": "task_state", "phase": "waiting_user"}, now=1)
+    t.next_turn(now=2)
+    t.on_frame({"type": "task_state", "phase": "succeeded"}, now=3)
+    assert t.finished(now=3 + IDLE_AFTER_TURN_S, started=0) and t.end_reason == "task_waiting_user"
+
+
+def test_by_default_the_stand_in_declines_apple_events_except_for_reminders_in_t1():
+    t = TurnTracker("/b/runs/arslan-T5-r1")
+    assert t.on_frame({"type": "propose_run_command", "call_id": "c", "rule": "apple-events"}, 1)["type"] == \
+        "cancel_run_command"
+    assert t.on_frame({"type": "propose_run_command", "call_id": "c", "rule": "delete"}, 1)["type"] == \
+        "confirm_run_command"
+    t1 = TurnTracker("/b/runs/arslan-T1-r1")
+    assert t1.on_frame({"type": "propose_run_command", "call_id": "c", "rule": "apple-events"}, 1)["type"] == \
+        "confirm_run_command"
+
+
+def test_run_one_judges_with_the_end_the_driver_printed(tmp_path, monkeypatch):
+    """The end has to travel from Arslan's driver output into the judge (a stub driver here)."""
+    import sys
+    from scripts.kernel_bench import runner
+    monkeypatch.setattr(runner, "ROOT", tmp_path)
+    monkeypatch.setitem(runner.CHECKS, "T9", lambda run, reply, ctx: {"score": 3})
+    for end, passed in (("task_waiting_user", False), ("done", True)):
+        script = f"import json; print(json.dumps({{'end': '{end}', 'final': 'ok'}}))"
+        monkeypatch.setattr(runner, "command", lambda *a, **k: ([sys.executable, "-c", script], {}))
+        rec = runner.run_one("T9", "arslan", 1, {"T9": "edit {dir}"}, "sb")
+        assert (rec["end"], rec["passed"], rec["judge"]) == (end, passed, runner.JUDGE_VERSION)
+
+
+def test_a_runs_usage_is_its_own_label_from_when_it_started(tmp_path, monkeypatch):
+    from scripts.kernel_bench import runner
+    monkeypatch.setattr(runner, "ROOT", tmp_path)
+    row = {"cand": "arslan-T9-r1", "model": "deepseek-v4-pro", "secs": 1.0, "out": 1, "hit": 0, "miss": 1}
+    (tmp_path / "usage.jsonl").write_text("\n".join(json.dumps(row | {"t": t, "usd_peak": u})
+                                                    for t, u in ((100.0, 0.5), (200.0, 0.01), (201.0, 0.02))) + "\n")
+    assert runner.usage("arslan-T9-r1", since=150.0)["usd_peak"] == 0.03          # an earlier round's 0.5 left out
+    assert runner.usage("arslan-T9-r1")["model_calls"] == 3
+
+
+def test_the_report_keeps_rows_judged_by_the_old_rule_apart():
+    old = _rec("T5", "arslan", 1, True) | {"model": "m"}
+    new = _rec("T5", "arslan", 1, False) | {"model": "m", "judge": 2}
+    rows = report.summarise([old, new])
+    assert sorted((r["passes"], r["old_rule"]) for r in rows) == [(0, False), (1, True)]
+    assert "arslan (old rule)" in report.render(rows)
+
+
+def test_a_declined_card_can_carry_the_users_note():
+    t = TurnTracker("/r", decline_rules=frozenset({"delete"}), decline_note="改成移到 trash 文件夹")
+    assert t.on_frame({"type": "propose_run_command", "call_id": "c1", "rule": "delete"}, 1.0) == {
+        "type": "cancel_run_command", "call_id": "c1", "note": "改成移到 trash 文件夹"}
+    assert t.on_frame({"type": "propose_run_command", "call_id": "c2", "rule": ""}, 1.0)["type"] == \
+        "confirm_run_command"
+    assert (t.approvals, t.declined) == (2, 1)
+
+
+def test_prompts_are_one_text_or_a_json_list_of_turns(tmp_path):
+    from scripts.kernel_bench import arslan_driver
+    (tmp_path / "one.prompt").write_text("  do it \n")
+    (tmp_path / "many.prompt").write_text(json.dumps(["write", "shorten", "add a table"]))
+    assert arslan_driver.load_prompts(str(tmp_path / "one.prompt")) == ["do it"]
+    assert arslan_driver.load_prompts(str(tmp_path / "many.prompt")) == ["write", "shorten", "add a table"]
+
+
+class _FakeArslan:
+    """A stand-in for the Arslan socket: every user message starts a turn that rewrites
+    report.md, streams one chunk and ends. Records how many frames had been delivered
+    when each message was sent."""
+
+    def __init__(self, run_dir):
+        self.run_dir = Path(run_dir)
+        self.queue = [{"type": "history", "messages": []}]
+        self.sent, self.delivered = [], []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def send(self, raw):
+        msg = json.loads(raw)
+        self.sent.append((msg, len(self.delivered)))
+        if msg["type"] == "user_message":
+            n = sum(1 for m, _ in self.sent if m["type"] == "user_message")
+            (self.run_dir / "report.md").write_text(f"turn {n}\n")
+            self.queue += [{"type": "stream_chunk", "content": f"answer {n}"}, {"type": "stream_end"}]
+
+    async def recv(self):
+        import asyncio
+        if not self.queue:
+            await asyncio.sleep(10)
+        frame = self.queue.pop(0)
+        self.delivered.append(frame)
+        return json.dumps(frame)
+
+
+def test_the_next_turn_is_sent_only_after_the_last_one_ended_and_the_folder_is_kept_between(tmp_path):
+    import asyncio
+    from scripts.kernel_bench import arslan_driver
+    run_dir = tmp_path / "arslan-T8-r1"
+    run_dir.mkdir()
+    fake = _FakeArslan(run_dir)
+    out = asyncio.run(arslan_driver.run("http://x/api/v1", str(run_dir), ["write", "shorten"],
+                                        str(tmp_path / "frames.jsonl"), connect=lambda *a, **k: fake,
+                                        idle_after_s=0, recv_timeout=0.01))
+    users = [(m["content"], seen) for m, seen in fake.sent if m["type"] == "user_message"]
+    assert [c for c, _ in users] == ["write", "shorten"]
+    first_end = next(i for i, f in enumerate(fake.delivered) if f["type"] == "stream_end")
+    assert users[1][1] > first_end                    # turn 1's end was read before turn 2 went out
+    assert out["replies"] == ["answer 1", "answer 2"] and out["final"] == "answer 2"
+    assert (tmp_path / "arslan-T8-r1.turn1" / "report.md").read_text() == "turn 1\n"
+    assert (run_dir / "report.md").read_text() == "turn 2\n"
+
+
+def test_the_test_instance_is_pointed_at_claude_through_the_anthropic_provider():
+    from scripts.kernel_bench import arslan_driver
+    body = arslan_driver.provider_body("anthropic", "claude-sonnet-5-5", "http://127.0.0.1:8901/c/l/v1")
+    assert body == {"label": "bench", "provider": "anthropic", "model": "claude-sonnet-5-5",
+                    "base_url": "http://127.0.0.1:8901/c/l/v1", "api_key": "bench-dummy"}
+    assert arslan_driver.provider_body("openai", "deepseek-v4-pro", "http://p/c/l")["provider"] == "openai"
+
+
+def test_each_entrant_gets_its_own_model_and_claude_models_go_through_the_anthropic_proxy():
+    from scripts.kernel_bench import runner
+    models = runner.parse_models("arslan=claude-sonnet-5-5,claude-code=claude-sonnet-5-5")
+    assert runner.model_for("arslan", models) == "claude-sonnet-5-5"
+    assert runner.model_for("hermes", models) == runner.MODEL
+    assert runner.proxy_for("claude-sonnet-5-5") == runner.ANTHROPIC_PROXY
+    assert runner.proxy_for("deepseek-v4-pro") == runner.PROXY
+
+
+def test_arslan_on_claude_uses_the_anthropic_provider_and_the_second_proxy(tmp_path):
+    from scripts.kernel_bench import runner
+    run = tmp_path / "arslan-T7-r1"
+    cmd, _ = runner.command("arslan", "arslan-T7-r1", run, ["go"], "sb", model="claude-sonnet-5-5")
+    assert cmd[cmd.index("--provider") + 1] == "anthropic"
+    assert f"{runner.ANTHROPIC_PROXY}/arslan-T7-r1/v1" in cmd
+    assert json.loads(Path(f"{run}.prompt").read_text()) == ["go"]
+
+
+def test_claude_code_runs_bare_in_the_sandbox_with_a_dummy_key_and_resumes_its_session(tmp_path):
+    from scripts.kernel_bench import runner
+    run = tmp_path / "claude-code-T8-r1"
+    first, env = runner.command("claude-code", "claude-code-T8-r1", run, "write", "sb",
+                                model="claude-sonnet-5-5", turn=0, session="s-1")
+    later, _ = runner.command("claude-code", "claude-code-T8-r1", run, "shorten", "sb",
+                              model="claude-sonnet-5-5", turn=1, session="s-1")
+    assert first[:3] == ["sandbox-exec", "-f", "sb"]
+    for flag in ("--bare", "-p", "--strict-mcp-config", "--dangerously-skip-permissions"):
+        assert flag in first
+    assert first[first.index("--model") + 1] == "claude-sonnet-5-5"
+    assert first[first.index("--session-id") + 1] == "s-1" and "--resume" not in first
+    assert later[later.index("--resume") + 1] == "s-1" and "--session-id" not in later
+    assert env["ANTHROPIC_BASE_URL"] == f"{runner.ANTHROPIC_PROXY}/claude-code-T8-r1"
+    _, on_deepseek = runner.command("claude-code", "claude-code-T7-r1", run, "go", "sb", model="deepseek-v4-pro")
+    assert on_deepseek["ANTHROPIC_BASE_URL"] == f"{runner.PROXY}/claude-code-T7-r1/anthropic"
+    assert env["ANTHROPIC_API_KEY"] == "bench-dummy"
+    assert env["HOME"].startswith(str(runner.ROOT))
+
+
+def test_claude_codes_reply_is_the_result_of_its_last_turn(tmp_path):
+    from scripts.kernel_bench import runner
+    run = tmp_path / "claude-code-T8-r1"
+    Path(f"{run}.stdout").write_text(json.dumps({"type": "result", "result": "first"}) + "\n"
+                                     + json.dumps({"type": "result", "result": "second"}) + "\n")
+    assert runner.reply_text("claude-code", run) == "second"
+
+
+def test_the_report_keeps_two_models_apart():
+    a = _rec("T5", "arslan", 1, True) | {"model": "deepseek-v4-pro"}
+    b = _rec("T5", "arslan", 1, False) | {"model": "claude-sonnet-5-5"}
+    rows = report.summarise([a, b])
+    assert [(r["model"], r["passes"]) for r in rows] == [("claude-sonnet-5-5", 0), ("deepseek-v4-pro", 1)]
+    assert "| claude-sonnet-5-5 |" in report.render(rows)
+
+
+def test_claude_prices_and_cache_writes_cost_more_than_plain_input():
+    from scripts.kernel_bench import meter
+    acc = {"hit": 0, "miss": 0, "out": 0}
+    meter.scan({"type": "message_start", "message": {"usage": {
+        "input_tokens": 100_000, "cache_creation_input_tokens": 400_000,
+        "cache_read_input_tokens": 500_000, "output_tokens": 0}}}, acc)
+    assert acc == {"hit": 500_000, "miss": 500_000, "out": 0, "write": 400_000}
+    plain = meter.cost("claude-sonnet-5-5", 500_000, 500_000, 0)
+    assert meter.cost("claude-sonnet-5-5", 500_000, 500_000, 0, write=400_000) > plain
+    assert meter.PRICE["claude-sonnet-5-5"] == (0.20, 2.00, 10.00)
+
+
+def test_the_anthropic_upstream_gets_only_its_key_header_and_no_openai_stream_option():
+    from scripts.kernel_bench import meter
+    h = meter.auth_headers({"anthropic-version": "2023-06-01"}, "k", anthropic=True)
+    assert h == {"anthropic-version": "2023-06-01", "x-api-key": "k", "accept-encoding": "identity"}
+    assert meter.auth_headers({}, "k", anthropic=False) == {"authorization": "Bearer k", "x-api-key": "k",
+                                                             "accept-encoding": "identity"}
+    assert meter.cost("claude-unlisted-9", 0, 1_000_000, 0) == meter.PRICE["claude-fable-5-1"][1]
+    assert meter.wants_usage_option(True, {"messages": []}, "/v1/messages", anthropic=True) is False
+    assert meter.wants_usage_option(True, {"messages": []}, "/v1/chat/completions", anthropic=False) is True

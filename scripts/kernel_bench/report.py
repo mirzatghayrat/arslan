@@ -1,10 +1,11 @@
-"""Summarise a bench run: Pass^k per task and entrant, plus cost, model time and calls.
+"""Summarise a bench run: Pass^k per task, entrant and model, plus cost, model time and calls.
 
     python -m scripts.kernel_bench.report [results.jsonl] [--offpeak]
 
 Pass^k = every one of the k repeats passed (score 3). That is the reliability bar; a
-single success only shows a task is possible. Cost is shown at DeepSeek peak price, or
-halved with --offpeak (Chinese public holidays and off-peak hours).
+single success only shows a task is possible. The same entrant on two models is two rows.
+Cost is shown at peak price, or halved with --offpeak (DeepSeek off-peak hours; it does not
+apply to Claude models, so compare those rows without it).
 """
 from __future__ import annotations
 
@@ -22,13 +23,14 @@ def load(path: str) -> list[dict]:
 def summarise(records: list[dict], offpeak: bool = False) -> list[dict]:
     groups: dict = defaultdict(list)
     for r in records:
-        groups[(r["task"], r["entrant"])].append(r)
+        # Rows judged by an older pass rule (score only, before M1a) never mix with newer ones.
+        groups[(r["task"], r["entrant"], r.get("model", "?"), r.get("judge", 1))].append(r)
     rows = []
-    for (task, who), rs in sorted(groups.items()):
+    for (task, who, model, judged), rs in sorted(groups.items()):
         k = len(rs)
         passes = sum(1 for r in rs if r.get("passed"))
         usd = sum(r["usage"]["usd_peak"] for r in rs) / k / (2 if offpeak else 1)
-        rows.append({"task": task, "entrant": who, "k": k, "passes": passes, "pass_all": passes == k,
+        rows.append({"task": task, "entrant": who, "old_rule": judged < 2, "model": model, "k": k, "passes": passes, "pass_all": passes == k,
                      "mean_usd": round(usd, 4),
                      "mean_span_s": round(sum(r["usage"]["span_s"] for r in rs) / k, 1),
                      "mean_calls": round(sum(r["usage"]["model_calls"] for r in rs) / k, 1),
@@ -45,10 +47,12 @@ def paired(records: list[dict]) -> dict:
 
 
 def render(rows: list[dict]) -> str:
-    lines = ["| task | entrant | Pass^k | passes | mean $ | model time | calls |",
-             "| --- | --- | --- | --- | --- | --- | --- |"]
+    lines = ["| task | entrant | model | Pass^k | passes | mean $ | model time | calls |",
+             "| --- | --- | --- | --- | --- | --- | --- | --- |"]
     for r in rows:
-        lines.append(f"| {r['task']} | {r['entrant']} | {'yes' if r['pass_all'] else 'no'} | {r['passes']}/{r['k']} | "
+        who = r["entrant"] + (" (old rule)" if r.get("old_rule") else "")
+        lines.append(f"| {r['task']} | {who} | {r['model']} | {'yes' if r['pass_all'] else 'no'} | "
+                     f"{r['passes']}/{r['k']} | "
                      f"{r['mean_usd']:.3f} | {r['mean_span_s']}s | {r['mean_calls']} |")
     return "\n".join(lines)
 

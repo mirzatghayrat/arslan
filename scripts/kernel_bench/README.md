@@ -11,12 +11,34 @@ and goose. Built for the 2026-10 kernel comparison; see `docs/plans/2026-10-01-k
   run ended. Claiming success without doing it, and touching anything outside the task folder, are
   scored as failures by the checkers.
 
+## 0.1.62 round (M1a): what changed
+
+- **An Arslan run passes only if it ended cleanly (`done`) and the checker gave 3** (`runner.judge`).
+  A task left on "needs you", failed or cancelled, a background job that ended blocked, partial or
+  out of budget, a timeout, or a driver that never reported are all failures, whatever the files
+  say. The driver waits for a task turn's final `task_state` (it comes after the answer), and for
+  the server's `succeeded` phase (it used to wait for a `completed` the server never sends).
+  Rows record `judge: 2`; `report.py` marks rows from before this rule `(old rule)` and never
+  mixes them with new ones.
+- **Usage per run** counts only the run's own label from when it started, so a label reused in a
+  later round or on another model does not add the earlier spend.
+- **Several turns.** A prompt in `prompts.json` may be a list: Arslan gets each turn in the same
+  conversation once the previous one is over; Claude Code resumes its session. The run folder is
+  copied to `<run>.turn<N>` between turns for the checker. Other entrants are recorded as
+  unsupported for such tasks.
+- **A decline with a sentence.** `DECLINES` in `runner.py` names a task's card rules the stand-in
+  person declines and the note they add (the card's `note`); only Arslan can be answered that way.
+- **One model per entrant** (`--models`), and **Claude Code** as an entrant (pinned in
+  `install_entrants.sh`, version recorded per run). Claude models go through a second metering
+  proxy (`start_proxy.sh anthropic`, :8901); `report.py` keeps each model on its own row.
+
 ## Safety
 
-- Only the metering proxy holds the real DeepSeek key (from `ARSLAN_SPIKE_DEEPSEEK_KEY`); entrants get
-  a dummy key. Caps per run and in total, priced at DeepSeek peak rates; requests are refused at the cap.
+- Only the metering proxies hold the real keys (`ARSLAN_SPIKE_DEEPSEEK_KEY`, and
+  `ARSLAN_SPIKE_ANTHROPIC_KEY` for the Claude proxy); entrants get a dummy key. Caps per run and in total, priced at DeepSeek peak rates; requests are refused at the cap.
 - Outside entrants run in a macOS sandbox (`sandbox.sb.template`): writes only under `BENCH_ROOT`; no
-  reads of `~/.ssh`, keychains, Arslan's data or the user's real Hermes/OpenClaw config.
+  reads of `~/.ssh`, keychains, Arslan's data or the user's real Hermes/OpenClaw/Claude Code config.
+  Claude Code also runs `--bare` (no hooks, no CLAUDE.md, no keychain) with no MCP servers.
   DeepSeek Harness sandboxes its own shell and cannot nest, so it runs without ours.
 - Arslan runs as a separate test instance with a throwaway HOME and data dir.
 
@@ -24,9 +46,12 @@ and goose. Built for the 2026-10 kernel comparison; see `docs/plans/2026-10-01-k
 
 ```bash
 scripts/kernel_bench/install_entrants.sh          # once; installs into $BENCH_ROOT only
-scripts/kernel_bench/start_proxy.sh               # keep running
+scripts/kernel_bench/start_proxy.sh               # keep running (DeepSeek)
+scripts/kernel_bench/start_proxy.sh anthropic     # keep running too, for Claude models
 # start an Arslan test instance on :8762 with HOME/ARSLAN_DATA_DIR under $BENCH_ROOT
 .venv/bin/python -m scripts.kernel_bench.runner --tasks T3,T5 --entrants arslan,hermes --repeats 3
+.venv/bin/python -m scripts.kernel_bench.runner --tasks T5 --entrants arslan,claude-code --repeats 3 \
+  --models arslan=claude-sonnet-5-5,claude-code=claude-sonnet-5-5
 .venv/bin/python -m scripts.kernel_bench.report --offpeak
 ```
 

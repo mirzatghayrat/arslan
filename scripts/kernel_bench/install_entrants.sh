@@ -1,6 +1,6 @@
 #!/bin/bash
 # Install the outside entrants into $BENCH_ROOT only: Node 24 (checksum-verified), OpenClaw,
-# DeepSeek Harness, goose. Nothing global is changed. Hermes is used from its normal install,
+# DeepSeek Harness, goose, Claude Code (pinned). Nothing global is changed. Hermes is used from its normal install,
 # run with its own HOME under $BENCH_ROOT so the user's ~/.hermes is never read or written.
 set -euo pipefail
 ROOT=${BENCH_ROOT:-/tmp/arslan-kernel-bench}
@@ -19,6 +19,9 @@ mkdir -p "$ROOT/pkgs/goose" && cd "$ROOT/pkgs/goose"
 gh release download "${GOOSE_VERSION:-$(gh release view --repo block/goose --json tagName -q .tagName)}" \
   --repo block/goose --pattern "goose-aarch64-apple-darwin.tar.gz" --clobber
 tar xzf goose-aarch64-apple-darwin.tar.gz
+# Claude Code is pinned: its flags change between versions, and runner.py records the version with
+# every result. It runs with the bench's own HOME, so the user's ~/.claude is never read.
+npm install --prefix "$ROOT/pkgs/claude-code" "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION:-2.1.96}" --no-fund --no-audit
 # DeepSeek Harness defaults to deepseek-flash; every entrant must use the same model.
 mkdir -p "$ROOT/home/dsh/.dsh/profiles/headless"
 cat > "$ROOT/home/dsh/.dsh/profiles/headless/cordis.patch.yml" <<YML
