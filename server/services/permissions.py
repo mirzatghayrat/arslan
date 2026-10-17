@@ -100,6 +100,9 @@ class Request:
     #: An entry without a label stores `always_label`.
     remember_as: tuple[tuple[str, str] | tuple[str, str, str], ...] = ()
     grant_as: tuple[tuple[str, str], ...] = ()      # what a task/conversation grant stores
+    #: 0.1.62 F4a: this card answers for this one time only, whatever its kind: only "once" is
+    #: offered, and no stored rule or grant answers it (S1, S2a and S5 use this name).
+    once_only: bool = False
 
 
 @dataclass(frozen=True)
@@ -156,6 +159,8 @@ def current_asker() -> Asker | None:
 
 
 def options_for(req: Request) -> list[str]:
+    if req.once_only:
+        return ["once"]
     opts = ["task" if req.kind in _TASK_FIRST else "once"]
     if req.conversation_ok and req.kind not in _ONCE_ONLY:
         opts.append("conversation")
@@ -299,7 +304,7 @@ def _check(req: Request) -> None:
 # ── the ladder ────────────────────────────────────────────────────────────────
 
 async def _standing(req: Request, ctx: Context, mode: str, *, record: bool = True) -> Decision | None:
-    if req.kind in _ONCE_ONLY:
+    if req.kind in _ONCE_ONLY or req.once_only:
         return None
     async with db_session.AsyncSessionLocal() as db:
         # Only a kind whose card offers "Always" has rules: a stray row for any other is not one.
@@ -439,11 +444,13 @@ def _dedupe(req: Request) -> str:
     under one rule, two schedules, two writes in one folder, writing vs editing one file, or one
     app vs that app plus another under "Always" are not identical: one answer must never approve
     or store what its card did not show. JSON with sorted keys, so no separator inside a field can
-    make two different asks read the same. (The model's `why` is not in it.)"""
+    make two different asks read the same. (The model's `why` is not in it.) A once-only ask
+    (0.1.62 F4a) adds one last item, so every other ask's key is what it was."""
     shown = {k: v for k, v in (req.frame or {}).items() if k != "call_id"}
     return json.dumps([req.kind, req.target, req.title, req.detail, shown, req.always_label,
                        req.conversation_ok, [list(e) for e in req.remember_as],
-                       [list(e) for e in req.grant_as]], sort_keys=True, default=str)
+                       [list(e) for e in req.grant_as]] + (["once_only"] if req.once_only else []),
+                      sort_keys=True, default=str)
 
 
 def _generic_frame(req: Request) -> dict:

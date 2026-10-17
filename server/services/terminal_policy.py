@@ -51,9 +51,15 @@ _FORBID = [
                           r"[\"']?/(?:System|Library|Applications|Users|private|Volumes)/?[\"']?(?:\s|$|[;&|)])",
      "recursive delete of a macOS system folder"),
 ]
+# 0.1.62 F4a (R2): how osascript and `shortcuts run` are reached in command position however
+# they are written: through `command` (not `command -v`, which only looks it up), `exec` (with
+# options), or `xargs` (with its options, `-I {}` and `-n 1` included; the command-start pass splits
+# `{}` across a line), named by a path or not.
+_LAUNCHED = (r"(?:(?:command\s+(?:-p\s+)?|exec\s+(?:-\S+\s+)*"
+             r"|xargs(?:\s+(?:-[IJLPRSEdins]\s*(?:\{\s*\}|\S+)|-\S+))*\s+))*(?:\S*/)?")
 _ASK = [
-    ("apple-events", _POS + r"osascript\b", "controls other apps (it could send, delete or buy)"),
-    ("shortcuts", _POS + r"shortcuts\s+run\b", "runs one of your Shortcuts"),
+    ("apple-events", _POS + _LAUNCHED + r"osascript\b", "controls other apps (it could send, delete or buy)"),
+    ("shortcuts", _POS + _LAUNCHED + r"shortcuts\s+run\b", "runs one of your Shortcuts"),
     ("send-mail", _POS + r"(?:mail|mailx|sendmail|msmtp|mutt|himalaya\s+(?:send|write|reply|forward))\b",
      "sends email"),
     ("send-message", _POS + r"(?:imsg\s+send|xurl\b[^\n]*(?:post|tweet|/2/tweets))",
@@ -161,12 +167,20 @@ def ask_rules(command: str) -> set[str]:
     return {verdict.rule} | _hermes_ask_rules(text) | {key for key, pattern, _why in _ASK_C if _matches(pattern, texts)}
 
 
+# 0.1.62 F4a: rules a card answers for this one time only. Another app, or one of your Shortcuts,
+# can send, delete or buy; no answer stands for the next one. The `legacy_rule` rows already
+# stored for these two stay (Settings still lists them) but no longer allow anything; v0.1.64
+# removes them (docs/plans/0162/README.md §8).
+ONCE_ONLY_RULES = frozenset({"apple-events", "shortcuts"})
+
+
 def standing_allows(command: str, allowed: set[str]) -> bool:
     """Whether the user's "don't ask again" answers cover this command: every rule it matches
     must be one of them. `osascript …; curl -d @file …` is "apple-events" to `assess`, but a
-    standing answer for apple-events must not wave the upload through."""
+    standing answer for apple-events must not wave the upload through. A command matching a
+    once-only rule is never covered."""
     rules = ask_rules(command)
-    return bool(rules) and rules <= allowed
+    return bool(rules) and rules <= allowed and not rules & ONCE_ONLY_RULES
 
 
 # 0.1.52: inside the workspace sandbox a plain script can only write to the working
