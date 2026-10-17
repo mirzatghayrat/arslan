@@ -53,20 +53,30 @@ _FORBID = [
 ]
 # 0.1.62 F4a (R2): how osascript and `shortcuts run` are reached in command position however
 # they are written: through `command` (not `command -v`, which only looks it up), `exec` (with
-# -a NAME, -c, -l), or `xargs` with its options, named by a path or not. Every alternative starts
-# differently, so the pattern never backtracks over a long option list (an overlapping first
-# version took ~3x longer per xargs option: a frozen event loop). An xargs option that takes a
-# value is written with it attached (-n1, -I{}) or after spaces (-n 1, -I {}; the command-start
-# pass splits {} across a line).
+# -a NAME, -c, -l), or `xargs` with its options, named by a path or not. Built so it never
+# backtracks: every alternative starts differently, and no blank between words crosses a line
+# break (`_H`), so many lines of launchers are tried line by line (an overlapping first version
+# took ~3x longer per xargs option; one that let `exec` match in two places and across lines took
+# cubic time). Its own command position for that reason: Hermes' `_CMDPOS` also consumes `exec`
+# and lets blanks cross lines. An xargs option that takes a value is case-sensitive (-r and -p
+# are flags; -R and -P take values) and has the value attached (-n1, -I{}) or after blanks (-n 1,
+# -I {}; the command-start pass splits {} across a line).
+_H = r"[^\S\n]"
+_ONCE_POS = (r"(?:^|[\n`]|\$\()" + _H + r"*(?:sudo" + _H + r"+(?:-\S+" + _H + r"+)*)?"
+             r"(?:env" + _H + r"+(?:\w+=\S*" + _H + r"+)*)?(?:(?:nohup|setsid|time)" + _H + r"+)*")
 _XARGS_VALUE = r"(?:\{\s*\}|[^\s{-]\S*)"
-_XARGS_OPT = r"(?:--\S+|-[IJLPRSEdins](?:\s+" + _XARGS_VALUE + r"|[^\s]+)|-[^\sIJLPRSEdins-]\S*)"
-_LAUNCHED = (r"(?:command\s+(?:-p\s+)?|exec\s+(?:-a\s+\S+\s+|-[cl]+\s+)*"
-             r"|xargs(?:\s+" + _XARGS_OPT + r")*\s+)*(?:\S*/)?")
-# The program itself, not a longer name that starts with it (osascript.sh, osascriptx).
-_END = r"(?=$|[\s;&|)`'\"])"
+_XARGS_OPT = (r"(?:--\S+|(?-i:-[IJLPRSEdins])(?:" + _H + r"+" + _XARGS_VALUE + r"|\S+)"
+              r"|(?-i:-[^\sIJLPRSEdins-])\S*)")
+_LAUNCHED = (r"(?:command" + _H + r"+(?:-p" + _H + r"+)?"
+             r"|exec" + _H + r"+(?:-a" + _H + r"+\S+" + _H + r"+|-[cl]+" + _H + r"+)*"
+             r"|xargs(?:" + _H + r"+" + _XARGS_OPT + r")*" + _H + r"+)*"
+             r"(?:[^\s=]*/)?")         # a path, never a VAR=value assignment
+# The program itself, not a longer name that starts with it (osascript.sh, osascriptx); a
+# redirection may follow it directly (osascript<<EOF, osascript>/dev/null).
+_END = r"(?=$|[\s;&|)`'\"<>])"
 _ASK = [
-    ("apple-events", _POS + _LAUNCHED + r"osascript" + _END, "controls other apps (it could send, delete or buy)"),
-    ("shortcuts", _POS + _LAUNCHED + r"shortcuts\s+run" + _END, "runs one of your Shortcuts"),
+    ("apple-events", _ONCE_POS + _LAUNCHED + r"osascript" + _END, "controls other apps (it could send, delete or buy)"),
+    ("shortcuts", _ONCE_POS + _LAUNCHED + r"shortcuts" + _H + r"+run" + _END, "runs one of your Shortcuts"),
     ("send-mail", _POS + r"(?:mail|mailx|sendmail|msmtp|mutt|himalaya\s+(?:send|write|reply|forward))\b",
      "sends email"),
     ("send-message", _POS + r"(?:imsg\s+send|xurl\b[^\n]*(?:post|tweet|/2/tweets))",

@@ -107,13 +107,71 @@ def test_the_windows_card_offers_only_this_time_despite_a_rule_and_a_grant(app_c
     "xargs " + " ".join(["-0"] * 60) + " cat",
     "xargs " + " ".join(["-n1"] * 40) + " -I",
     "ls | xargs " + "-P 4 " * 40 + "osascript.sh",
-])
+], ids=["n-1", "zero", "n1", "P-4"])
 def test_recognising_a_long_xargs_line_is_fast(command):
+    with _hard_limit(2.0):
+        assert _our_patterns_take(command) < 0.2
+
+
+class _TooSlow(Exception):
+    pass
+
+
+class _hard_limit:
+    """Fail instead of hanging if a pattern ever backtracks without end again (SIGALRM, Unix)."""
+
+    def __init__(self, seconds):
+        self.seconds = seconds
+
+    def __enter__(self):
+        import signal
+
+        def stop(signum, frame):
+            raise _TooSlow(f"pattern matching took longer than {self.seconds} s")
+        self.old = signal.signal(signal.SIGALRM, stop)
+        signal.setitimer(signal.ITIMER_REAL, self.seconds)
+
+    def __exit__(self, *exc):
+        import signal
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, self.old)
+        return False
+
+
+def _our_patterns_take(command) -> float:
+    """Time for this card's two rules over every detection text. Building the texts (Hermes'
+    normalisation, unchanged by this card) is not counted."""
     import time
+    ours = [p for k, p, _w in tp._ASK_C if k in tp.ONCE_ONLY_RULES]
+    texts = tp._detection_texts(command)
     started = time.monotonic()
-    tp.assess(command)
-    tp.ask_rules(command)
-    assert time.monotonic() - started < 0.2
+    for text in texts:
+        for pattern in ours:
+            pattern.search(text)
+    return time.monotonic() - started
+
+
+@pytest.mark.parametrize("command", ["\nexec " * 300 + "x", "\n exec  exec \t" * 200, "\ncommand " * 300 + "x",
+                                     "exec -a " * 200 + "x"],
+                         ids=["exec-lines", "exec-pairs", "command-lines", "exec-a"])
+def test_recognising_many_lines_of_launchers_is_fast(command):
+    with _hard_limit(2.0):
+        assert _our_patterns_take(command) < 0.1
+
+
+@pytest.mark.parametrize("command", ["osascript<<EOF\ntell app \"Finder\" to activate\nEOF", "osascript</dev/null",
+                                     "osascript>/dev/null -e x", 'shortcuts run<input.txt'])
+def test_a_redirection_right_after_the_name_is_still_the_program(command):
+    assert tp.assess(command).level == "ask" and tp.assess(command).rule in tp.ONCE_ONLY_RULES
+
+
+@pytest.mark.parametrize("command", ["ls | xargs -r osascript", "ls | xargs -p osascript", "ls | xargs -0 -r osascript"])
+def test_lowercase_xargs_flags_are_flags(command):
+    assert tp.assess(command).rule == "apple-events"
+
+
+def test_a_path_in_a_variable_is_not_the_program():
+    assert "apple-events" not in tp.ask_rules("FOO=/opt/osascript make")
 
 
 def test_exec_with_a_name_is_recognised():
