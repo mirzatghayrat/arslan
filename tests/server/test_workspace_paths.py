@@ -174,3 +174,38 @@ def test_secret_refusal_is_distinct_from_escape(ws):
         resolve_in_workspace("id_rsa", ws)
     with pytest.raises(PathEscape):
         resolve_in_workspace("../x", ws)
+
+
+# ── 0.1.62 F4b (R1): the last segment of a write may be a link ──────────────────────
+
+def test_write_through_a_file_link_to_outside_refused(ws, tmp_path):
+    decoy = tmp_path / "zshrc"
+    decoy.write_text("mine")
+    (ws / "link.txt").symlink_to(decoy)
+    with pytest.raises(PathEscape):
+        resolve_in_workspace("link.txt", ws, for_write=True)
+
+
+def test_write_through_a_dangling_link_to_outside_refused(ws, tmp_path):
+    # exists() is False for a dangling link; writing would still create the file outside.
+    (ws / "dangling.txt").symlink_to(tmp_path / "not-yet.txt")
+    with pytest.raises(PathEscape):
+        resolve_in_workspace("dangling.txt", ws, for_write=True)
+
+
+def test_write_through_a_link_inside_lands_on_its_target(ws):
+    (ws / "alias.md").symlink_to(ws / "notes.md")
+    assert resolve_in_workspace("alias.md", ws, for_write=True) == ws / "notes.md"
+
+
+def test_a_link_with_a_harmless_name_to_a_secret_is_refused(ws):
+    (ws / ".env").write_text("SECRET=1")
+    (ws / "notes.txt").symlink_to(ws / ".env")
+    with pytest.raises(SecretFile):
+        resolve_in_workspace("notes.txt", ws, for_write=True)
+
+
+def test_a_link_named_like_a_secret_is_refused_even_to_a_harmless_target(ws):
+    (ws / ".env").symlink_to(ws / "notes.md")
+    with pytest.raises(SecretFile):
+        resolve_in_workspace(".env", ws, for_write=True)
