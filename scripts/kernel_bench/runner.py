@@ -234,6 +234,22 @@ def usage(label: str, since: float = 0.0) -> dict:
             "cache_hit_tokens": sum(r["hit"] for r in mine), "cache_miss_tokens": sum(r["miss"] for r in mine)}
 
 
+def settle(label: str, since: float, quiet_s: float = 10.0, max_s: float = 90.0) -> float:
+    """Wait until this run's label has had no model call for `quiet_s` (at most `max_s`) and
+    return the seconds waited. Arslan makes a few small calls right after a turn ends (memory
+    and learning); those are part of what the run costs, and reading usage at once missed them.
+    Calls much later (idle-time work) are not waited for; the round report shows them apart."""
+    log, waited = ROOT / "usage.jsonl", 0.0
+    while waited < max_s:
+        rows = [json.loads(line) for line in log.open()] if log.exists() else []
+        last = max((r["t"] for r in rows if r["cand"] == label and r["t"] >= since), default=0.0)
+        if time.time() - last >= quiet_s:
+            break
+        time.sleep(1.0)
+        waited += 1.0
+    return waited
+
+
 def _t4_setup(task: str, who: str, ctx: dict, manual_login: bool) -> None:
     """Start the local site and have the human log in, in this entrant's own
     browser. The password goes to this terminal only, never into the run folder."""
@@ -343,10 +359,11 @@ def run_one(task: str, who: str, n: int, prompts: dict, sb: str, manual_login: b
         if "site" in ctx:
             ctx["site"].stop()
     end = driver_end(who, run)
+    settled = settle(label, started)
     record = {"run": label, "task": task, "entrant": who, "repeat": n, "model": model, "rc": rc,
               "entrant_version": entrant_version(who), "end": end,
               "wall_s": round(time.time() - started), "prompt": turns if len(turns) > 1 else turns[0],
-              "check": verdict, "usage": usage(label, started), "judge": JUDGE_VERSION,
+              "check": verdict, "usage": usage(label, started), "settled_s": settled, "judge": JUDGE_VERSION,
               "artifacts": {"stdout": f"{run}.stdout", "stderr": f"{run}.stderr", "folder": str(run)},
               "reply_tail": reply[-1500:]}
     record["passed"] = judge(verdict, end, who)

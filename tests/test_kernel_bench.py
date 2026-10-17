@@ -326,6 +326,21 @@ def test_a_runs_usage_is_its_own_label_from_when_it_started(tmp_path, monkeypatc
     assert runner.usage("arslan-T9-r1")["model_calls"] == 3
 
 
+def test_usage_is_read_only_once_the_runs_label_has_gone_quiet(tmp_path, monkeypatch):
+    import time
+    from scripts.kernel_bench import runner
+    monkeypatch.setattr(runner, "ROOT", tmp_path)
+    now = time.time()
+    row = {"model": "deepseek-v4-pro", "secs": 1.0, "out": 1, "hit": 0, "miss": 1, "usd_peak": 0.01}
+    log = tmp_path / "usage.jsonl"
+    log.write_text(json.dumps(row | {"cand": "arslan-T9-r1", "t": now - 60}) + "\n"
+                   + json.dumps(row | {"cand": "hermes-T9-r1", "t": now}) + "\n")
+    assert runner.settle("arslan-T9-r1", since=now - 120, quiet_s=5) == 0      # another label's call ignored
+    log.write_text(log.read_text() + json.dumps(row | {"cand": "arslan-T9-r1", "t": now}) + "\n")
+    assert runner.settle("arslan-T9-r1", since=now - 120, quiet_s=1.5, max_s=10) >= 1   # after-turn call waited for
+    assert runner.settle("arslan-T9-r1", since=now - 120, quiet_s=60, max_s=2) == 2     # never past max_s
+
+
 def test_the_report_keeps_rows_judged_by_the_old_rule_apart():
     old = _rec("T5", "arslan", 1, True) | {"model": "m"}
     new = _rec("T5", "arslan", 1, False) | {"model": "m", "judge": 2}
