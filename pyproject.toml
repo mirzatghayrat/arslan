@@ -4,6 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "arslan"
+# Not the app version: that lives only in desktop/src-tauri/tauri.conf.json (CONTRIBUTING.md, "Version").
 version = "0.1.0"
 description = "An open-source Meta-Agent that helps non-technical users build domain-specific AI agents through conversation."
 readme = "README.md"

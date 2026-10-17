@@ -36,6 +36,7 @@ def render() -> str:
     executors = executor_sources()
     version = json.loads((ROOT / "desktop/src-tauri/tauri.conf.json").read_text())["version"]
     lines = ["# Generated capability inventory", "", f"Desktop configuration version: `{version}`.", "",
+             "Generated in the release PR; between two releases it may not match the code.", "",
              "Regenerate with `uv run python -m scripts.capability_inventory`. This is static",
              "source evidence, not an installed-account probe or proof of model quality.", "",
              "`wired` is a catalog declaration; `executor present` means an implementation",

@@ -442,7 +442,9 @@ async def _shutdown_services(app: FastAPI) -> None:
 
 def create_app() -> FastAPI:
     """Construct and configure the FastAPI application."""
-    app = FastAPI(title="Arslan Server", version="0.1.0", lifespan=lifespan)
+    # C5b: the one app version (desktop/src-tauri/tauri.conf.json, read by server.config).
+    from server.config import settings
+    app = FastAPI(title="Arslan Server", version=settings.app_version, lifespan=lifespan)
 
     # S1 OSS safety: any secret-write path (provider api_key, settings secrets, MCP
     # env) that would encrypt under the PUBLIC dev fallback key raises
