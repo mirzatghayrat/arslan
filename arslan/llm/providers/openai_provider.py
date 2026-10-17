@@ -2,17 +2,32 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
 
 from arslan.llm.providers import errors as provider_errors
-from arslan.llm import param_heal, request_evidence
+from arslan.llm import param_heal, request_evidence, tool_schema
 from arslan.llm.locality import loopback_endpoint
 
 from arslan.llm.providers.base import BaseLLMProvider
 from arslan.models import LLMResponse
+
+
+# 0.1.62 F3: how a compatible endpoint points at a tool: OpenAI's "Invalid schema for function
+# 'x'", or a position in `tools`. Other vendors' wording is not known (not checked).
+_FUNCTION_NAMED = re.compile(r"""function ['"`]([\w.\-]+)['"`]""")
+_TOOL_INDEX = re.compile(r"\btools\[(\d+)\]")
+
+
+def _reshaped(tool: dict[str, Any]) -> dict[str, Any]:
+    fn = tool.get("function")
+    if not isinstance(fn, dict) or "parameters" not in fn:
+        return tool
+    params = tool_schema.for_tool(fn.get("name"), fn["parameters"], "openai")
+    return tool if params is fn["parameters"] else {**tool, "function": {**fn, "parameters": params}}
 
 
 class OpenAIProvider(BaseLLMProvider):
@@ -63,6 +78,16 @@ class OpenAIProvider(BaseLLMProvider):
         base = self.base_url.rstrip("/")
         return (base in {"https://api.deepseek.com", "https://api.deepseek.com/v1", "https://api.openai.com/v1"}
                 or "openrouter.ai" in base)
+
+    def named_tool(self, tools: list[dict[str, Any]] | None, error_text: str) -> str | None:
+        named = _FUNCTION_NAMED.search(error_text or "")
+        if named:
+            return named.group(1)
+        index = tool_schema.index_in(error_text, _TOOL_INDEX)        # payload["tools"] is `tools`
+        tools = tools or []
+        if index is None or index >= len(tools):
+            return None
+        return (tools[index].get("function") or {}).get("name")
 
     def supports_native_trajectory(self) -> bool:
         # The OpenAI chat-completions tool protocol is the compatible baseline.
@@ -171,7 +196,8 @@ class OpenAIProvider(BaseLLMProvider):
             "max_tokens": self.max_tokens,
         }
         if tools:
-            payload["tools"] = tools
+            # 0.1.62 F3: MCP schemas reshaped (e.g. no `pattern`: DeepSeek refused one, 10-14).
+            payload["tools"] = [_reshaped(t) for t in tools]
             if tool_choice:
                 payload["tool_choice"] = tool_choice
         # Keep the configured model/endpoint. Only this task-local, tool-free

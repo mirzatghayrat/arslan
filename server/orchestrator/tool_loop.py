@@ -479,9 +479,69 @@ TRUNCATED_CALL_ERROR = (
 _REFUSES_IMAGES: set[tuple[str, str, str]] = set()
 
 
+# 0.1.62 F3: (model, tool key, sha256 of the schema as the server wrote it) for MCP schemas a
+# provider refused this process. A changed schema hashes differently and is tried again.
+_BAD_TOOLS: set[tuple[tuple[str, str, str], str, str]] = set()
+
+
 def _model_key(a) -> tuple[str, str, str]:
     provider = getattr(a, "_provider", None)
     return (type(provider).__name__, str(getattr(provider, "model", "")), str(getattr(provider, "base_url", "")))
+
+
+# ── 0.1.62 F3: a refused MCP schema costs that tool, at worst every MCP tool, never the turn ──
+# A fallback for what arslan/llm/tool_schema.normalise does not cover. Delete with _BAD_TOOLS
+# once the M2 weekly report shows zero `mcp_schema_relaxed` four weeks running (v0.1.65 at the
+# earliest; docs/plans/0162/F3-mcp-schema.md).
+_SCHEMA_WORDS = re.compile(r"\b(tools?|functions?|schema|parameters)\b", re.I)
+
+
+def _schema_hash(params) -> str:
+    return hashlib.sha256(json.dumps(params, sort_keys=True, default=str).encode()).hexdigest()
+
+
+class _SchemaDrops:
+    """The MCP tools one turn leaves out: refused by name this turn, every one after a second
+    refusal, and any this model refused earlier in this process (_BAD_TOOLS)."""
+
+    def __init__(self, a):
+        self.model = _model_key(a)
+        self.names: set[str] = set()
+        self.every = False
+        self.changed = False
+
+    def hides(self, key: str, params) -> bool:
+        return key.startswith("mcp_") and (
+            self.every or key in self.names or (self.model, key, _schema_hash(params)) in _BAD_TOOLS)
+
+    def keep(self, wired: list[dict]) -> list[dict]:
+        return [t for t in wired if not self.hides(t["key"], _tool_params(t))]
+
+    def keep_schemas(self, schemas):
+        if schemas is None:
+            return None
+        return [t for t in schemas
+                if not self.hides(t["function"]["name"], t["function"].get("parameters"))] or None
+
+
+def _hiding(resolve_tools: ResolveTools, drops: _SchemaDrops) -> ResolveTools:
+    """resolve_tools as this turn sees it: the step's tool list, the capability refresh and the
+    executor's `live` check all go through it, so a left-out tool answers `tool_unavailable`."""
+    async def resolve() -> list[dict]:
+        return drops.keep(await resolve_tools())
+    return resolve
+
+
+def _refused_tool(a, sent: list[dict], text: str) -> str | None:
+    """The MCP tool a refusal points at, only ever one this request carried: the provider reads
+    its own error against its own payload order, else the longest MCP name the text mentions."""
+    mcp = {t["function"]["name"] for t in sent if t["function"]["name"].startswith("mcp_")}
+    named = getattr(getattr(a, "_provider", None), "named_tool", None)
+    name = named(sent, text) if callable(named) else None
+    if name in mcp:
+        return name
+    mentioned = [n for n in mcp if n in text]
+    return max(mentioned, key=len) if mentioned else None
 
 
 async def _images_to_text(convo: list[dict]) -> int:
@@ -515,7 +575,8 @@ async def _images_to_text(convo: list[dict]) -> int:
 
 
 async def _model_call(a, system: str, convo: list[dict], current_request: dict, *,
-                      tools, schemas, forced: bool, state, status: str = ""):
+                      tools, schemas, forced: bool, state, status: str = "",
+                      drops: _SchemaDrops | None = None, conversation_id: str | None = None):
     """The one model call of a run_native step, with recovery (0.1.49 S6).
 
     Native adapters (OpenAI-compatible, ARSLAN_TOOL_PROTOCOL not "legacy") get
@@ -563,7 +624,45 @@ async def _model_call(a, system: str, convo: list[dict], current_request: dict, 
         rendered = _render_request(convo, current_request, status) + trajectory.to_legacy(list(extra or []))
         return await a.chat(system, rendered[-1]["content"], history=rendered[:-1], tools=tools, **kwargs)
 
+    async def relax(exc, *, last: bool = False) -> bool:
+        """0.1.62 F3: an `input` refusal of a request carrying MCP tools that names one (or reads
+        like a schema problem): leave it out (`last`, or none named: every MCP tool) and say so."""
+        nonlocal tools, schemas, status
+        sent = ((schemas if forced else tools) if native else tools) or []
+        if (drops is None or exc.kind != "input" or state.exhausted
+                or not any(t["function"]["name"].startswith("mcp_") for t in sent)):
+            return False
+        text = f"{exc.excerpt} {exc}"
+        name = _refused_tool(a, sent, text)
+        if name is None and not _SCHEMA_WORDS.search(text):
+            return False
+        if name is None or last:
+            drops.every, left_out = True, "all"
+        else:
+            params = next(t["function"].get("parameters") for t in sent if t["function"]["name"] == name)
+            drops.names.add(name)
+            _BAD_TOOLS.add((drops.model, name, _schema_hash(params)))
+            left_out = name
+        drops.changed = True
+        tools, schemas = drops.keep_schemas(tools), drops.keep_schemas(schemas)
+        what = "every MCP tool" if left_out == "all" else f"the MCP tool {left_out}"
+        state.note(f"left out {what} (the provider refused its parameter schema)")
+        status = (f"{status}\n\n" if status else "") + (
+            f"Note: {what} is not available in this turn: the model provider refused its parameter "
+            "schema. Use the other tools, or tell the user that capability cannot be used right now.")
+        provider = getattr(a, "_provider", None)
+        try:
+            from server.services import recap_service
+            await recap_service.log_event(
+                conversation_id, "mcp_schema_relaxed",
+                {"tool_key": left_out, "provider": str(getattr(provider, "provider_name", type(provider).__name__))},
+                f"left out {what}: the provider refused its parameter schema")
+        except Exception:  # noqa: BLE001 — observability is never fatal
+            pass
+        return True
+
     remaining = _remaining_seconds()
+    relaxed = False
     try:
         resp = await mc.call_with_recovery(request, state, remaining_s=remaining)
     except mc.ModelCallError as exc:
@@ -579,6 +678,8 @@ async def _model_call(a, system: str, convo: list[dict], current_request: dict, 
             await _images_to_text(convo)
             messages = build_messages()
             state.note("read screenshots as text (this model cannot take images)")
+        elif await relax(exc):
+            relaxed = True
         elif exc.kind == "protocol" and native and not state.exhausted:
             native = False
             state.legacy, state.reason = True, f"endpoint rejected native history: {exc.excerpt[:200]}"
@@ -592,7 +693,13 @@ async def _model_call(a, system: str, convo: list[dict], current_request: dict, 
             state.note("compacted context")
         else:
             raise
-        resp = await mc.call_with_recovery(request, state, remaining_s=remaining)
+        try:
+            resp = await mc.call_with_recovery(request, state, remaining_s=remaining)
+        except mc.ModelCallError as again:
+            # Refused again after one tool was left out: every MCP tool goes, for one last try.
+            if not (relaxed and await relax(again, last=True)):
+                raise
+            resp = await mc.call_with_recovery(request, state, remaining_s=remaining)
     return await _recover_truncation(a, resp, request, state, remaining)
 
 
@@ -2141,6 +2248,8 @@ async def _run_native(
     if max_tool_calls is not None and (type(max_tool_calls) is not int or max_tool_calls < 0):
         raise ValueError("max_tool_calls must be a non-negative explicit ceiling")
 
+    drops = _SchemaDrops(a)
+    resolve_tools = _hiding(resolve_tools, drops)
     wired = await resolve_tools()
     wired_keys = {t["key"] for t in wired}
     if stream_without_tools:
@@ -2363,7 +2472,14 @@ async def _run_native(
             plan=plan.render(), tool_calls=budget.tool_calls, model_calls=budget.model_requests,
             wrap_up_at=budget.soft.tool_calls if budget.soft is not None else None, notes=lesson_notes + notes)
         resp = await _model_call(a, system, convo, current_request, tools=step_tools,
-                                 schemas=schemas, forced=forced, state=turn_state, status=status)
+                                 schemas=schemas, forced=forced, state=turn_state, status=status,
+                                 drops=drops, conversation_id=conversation_id)
+        if drops.changed:              # a refused MCP schema was left out: the rest of the turn too
+            drops.changed = False
+            wired = drops.keep(wired)
+            wired_keys = {t["key"] for t in wired}
+            schemas = _native_tool_schemas(wired, allow_escalation=allow_escalation)
+            params_by_key = {t["key"]: _tool_params(t) for t in wired}
         # A context-overflow recovery compacted convo in place (S6).
         history_compacted = history_compacted or turn_state.context_retry_used
         tool_calls = list(getattr(resp, "tool_calls", None) or [])
