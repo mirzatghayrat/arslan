@@ -9,22 +9,28 @@ Servers write full JSON Schema; providers accept a subset, and each a different 
 are sent: what discovery stored stays verbatim. Built-in tools are never passed through it.
 For every provider family:
 
-- a top-level anyOf / oneOf / allOf becomes one object: properties joined, `required` the
-  keys every branch requires (allOf: any branch requires), the lost rule kept in words;
-- local `$ref`s (`#/$defs/…`, `#/definitions/…`) are inlined; a cycle ends in a loose object;
+- a top-level anyOf / oneOf / allOf becomes one object: properties joined (a field the branches
+  shape differently keeps every shape: its const/enum values merged into one enum, otherwise an
+  anyOf at the field), `required` the keys every branch requires (allOf: any branch requires), the
+  shapes kept in words;
+- local `$ref`s (`#/$defs/…`, `#/definitions/…`) are inlined within a depth and size budget; a
+  cycle, a ref it cannot resolve, or one past the budget becomes a loose object, said in words;
+  `$defs` go everywhere;
 - `type: [X, "null"]` becomes X ("may be null" in the description); two or more non-null
   types drop `type` and name them in the description;
 - `$schema` goes.
 
-OpenAI-compatible endpoints (DeepSeek and others) also lose every `pattern`, written into the
-description instead. Which other keywords a given endpoint refuses is not known (not checked
+OpenAI-compatible endpoints (DeepSeek and others) also lose every `pattern` and
+`patternProperties` (both regular expressions), written into the description instead. Which other keywords a given endpoint refuses is not known (not checked
 against each vendor); `pattern` is the one seen in the field.
 
 The same input always gives the same output, keys sorted: a changed tool block changes the
-prompt-cache prefix.
+prompt-cache prefix. Results are cached by the schema's hash (every request reshapes every MCP
+tool, on the event loop).
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Any
 
@@ -54,11 +60,26 @@ def normalise(schema: Any, provider: str) -> dict:
     object, never raises. Anything that is not a non-empty object becomes an empty object."""
     if not isinstance(schema, dict) or not schema:
         return {"type": "object", "properties": {}}
-    schema = json.loads(json.dumps(schema))           # a private copy; the input stays as it was
+    raw = json.dumps(schema, sort_keys=True, default=str)
+    key = (provider, hashlib.sha256(raw.encode()).hexdigest())
+    if key not in _CACHE:
+        if len(_CACHE) >= _CACHE_MAX:
+            _CACHE.pop(next(iter(_CACHE)))
+        _CACHE[key] = json.dumps(_normalise(json.loads(raw), provider))
+    return json.loads(_CACHE[key])                   # a private copy each time
+
+
+_CACHE: dict[tuple[str, str], str] = {}
+_CACHE_MAX = 2048
+# `$ref` inlining budget: how many refs deep one path may go, and how many nodes the inlined schema
+# may hold in all. A 1.8 KB schema whose levels each referenced the next twice grew to 17 MB.
+_REF_DEPTH = 8
+_NODE_BUDGET = 5_000
+
+
+def _normalise(schema: dict, provider: str) -> dict:
     defs = {**(schema.get("definitions") or {}), **(schema.get("$defs") or {})}
-    out = _inline(schema, defs, ())
-    out.pop("$defs", None)
-    out.pop("definitions", None)
+    out = _inline(schema, defs, (), [_NODE_BUDGET])
     out = _merge_top(out)
     out = _walk(out, provider)
     out.setdefault("type", "object")
@@ -69,21 +90,55 @@ def _note(schema: dict, text: str) -> None:
     schema["description"] = f"{schema.get('description', '')} {text}".strip()
 
 
-def _inline(node: Any, defs: dict, seen: tuple[str, ...]) -> Any:
+def _loose(why: str) -> dict:
+    return {"type": "object", "description": f"({why}; any shape accepted)"}
+
+
+def _inline(node: Any, defs: dict, seen: tuple[str, ...], budget: list[int]) -> Any:
+    budget[0] -= 1
+    if budget[0] < 0:
+        return _loose("too large to spell out")
     if isinstance(node, list):
-        return [_inline(item, defs, seen) for item in node]
+        return [_inline(item, defs, seen, budget) for item in node]
     if not isinstance(node, dict):
         return node
     ref = node.get("$ref")
     if isinstance(ref, str):
-        name = ref.rsplit("/", 1)[-1]
-        if ref.startswith(("#/$defs/", "#/definitions/")) and name in defs:
-            if name in seen:
-                return {"type": "object", "description": f"(recursive: another {name}, any shape accepted)"}
-            target = _inline(defs[name], defs, (*seen, name))
-            rest = {k: _inline(v, defs, seen) for k, v in node.items() if k != "$ref"}
-            return {**target, **rest} if isinstance(target, dict) else target
-    return {k: _inline(v, defs, seen) for k, v in node.items()}
+        prefix, _, name = ref.rpartition("/")
+        if prefix not in ("#/$defs", "#/definitions") or name not in defs:
+            return _loose(f"a reference that cannot be followed here: {ref[:80]}")
+        if name in seen:
+            return _loose(f"recursive: another {name}")
+        if len(seen) >= _REF_DEPTH:
+            return _loose(f"nested too deep: {name}")
+        target = _inline(defs[name], defs, (*seen, name), budget)
+        rest = {k: _inline(v, defs, seen, budget) for k, v in node.items() if k != "$ref"}
+        return {**target, **rest} if isinstance(target, dict) else target
+    return {k: _inline(v, defs, seen, budget) for k, v in node.items() if k not in ("$defs", "definitions")}
+
+
+def _same_field(shapes: list) -> Any:
+    """One field the branches describe differently: their const/enum values as one enum when that
+    is all they say, otherwise every distinct shape under anyOf."""
+    distinct = []
+    for shape in shapes:
+        if shape not in distinct:
+            distinct.append(shape)
+    if len(distinct) == 1:
+        return distinct[0]
+    if all(isinstance(d, dict) and ("const" in d or "enum" in d)
+           and set(d) <= {"const", "enum", "type", "description"} for d in distinct):
+        values = []
+        for d in distinct:
+            for value in ([d["const"]] if "const" in d else list(d.get("enum") or [])):
+                if value not in values:
+                    values.append(value)
+        merged = {"enum": values}
+        kinds = {d.get("type") for d in distinct}
+        if len(kinds) == 1 and None not in kinds:
+            merged["type"] = kinds.pop()
+        return merged
+    return {"anyOf": distinct}
 
 
 def _merge_top(schema: dict) -> dict:
@@ -91,14 +146,14 @@ def _merge_top(schema: dict) -> dict:
     if not found:
         return schema
     out = {k: v for k, v in schema.items() if k not in _COMBINERS}
-    properties = dict(out.get("properties") or {})
+    shapes: dict[str, list] = {name: [sub] for name, sub in (out.get("properties") or {}).items()}
     required = list(out.get("required") or [])
     words = []
     for key in found:
         branches = [b for b in schema[key] if isinstance(b, dict)]
         for branch in branches:
             for name, sub in (branch.get("properties") or {}).items():
-                properties.setdefault(name, sub)
+                shapes.setdefault(name, []).append(sub)
         sets = [list(b.get("required") or []) for b in branches]
         if key == "allOf":
             joined = [name for s in sets for name in s]
@@ -106,9 +161,18 @@ def _merge_top(schema: dict) -> dict:
             joined = [name for name in (sets[0] if sets else []) if all(name in s for s in sets[1:])]
         required += [name for name in joined if name not in required]
         if key != "allOf" and branches:
-            shapes = " | ".join(", ".join(s) or "(nothing required)" for s in sets)
-            words.append(f"Give exactly the fields of one of these shapes ({'any' if key == 'anyOf' else 'one'} "
-                         f"of): {shapes}.")
+            described = []
+            for branch, needed in zip(branches, sets):
+                optional = [n for n in (branch.get("properties") or {}) if n not in needed]
+                text = ", ".join(needed) or "nothing required"
+                if optional:
+                    text += f" (optional: {', '.join(optional)})"
+                described.append(text)
+            words.append(f"Accepts one of these shapes ({key}): {' | '.join(described)}.")
+    properties = {name: _same_field(subs) for name, subs in shapes.items()}
+    for name, merged in properties.items():
+        if isinstance(merged, dict) and "enum" in merged and len(shapes[name]) > 1:
+            words.append(f"`{name}` is one of: {', '.join(json.dumps(v) for v in merged['enum'])}.")
     out["type"], out["properties"] = "object", properties
     if required:
         out["required"] = required
@@ -122,12 +186,13 @@ def _merge_top(schema: dict) -> dict:
 def _walk(node: Any, provider: str) -> Any:
     if not isinstance(node, dict):
         return node
-    out = dict(node)
-    out.pop("$schema", None)
+    out = {k: v for k, v in node.items() if k not in ("$schema", "$defs", "definitions")}
     kind = out.get("type")
     if isinstance(kind, list):
         others = [t for t in kind if t != "null"]
-        if len(others) == 1:
+        if not others:
+            out["type"] = "null"
+        elif len(others) == 1:
             out["type"] = others[0]
             if "null" in kind:
                 _note(out, "May be null.")
@@ -138,6 +203,9 @@ def _walk(node: Any, provider: str) -> Any:
         for key in _OPENAI_DROPPED:
             if isinstance(out.get(key), str):
                 _note(out, f"Must match the regular expression {out.pop(key)}.")
+        if isinstance(out.get("patternProperties"), dict):
+            names = ", ".join(out.pop("patternProperties"))
+            _note(out, f"Extra fields whose names match {names} are accepted.")
     for key in _ONE:
         if isinstance(out.get(key), dict):
             out[key] = _walk(out[key], provider)

@@ -618,8 +618,10 @@ async def _model_call(a, system: str, convo: list[dict], current_request: dict, 
         sent = agent_status.attach(messages, status) + list(extra or [])
         kwargs = {"max_tokens": max_tokens} if max_tokens else {}
         if native:
-            return await a.chat_trajectory(system, sent, tools=schemas if forced else tools,
-                                           tool_choice="none" if forced else None, **kwargs)
+            step_tools = schemas if forced else tools
+            # tool_choice only with tools: leaving every MCP tool out (0.1.62 F3) can empty the list.
+            return await a.chat_trajectory(system, sent, tools=step_tools,
+                                           tool_choice="none" if forced and step_tools else None, **kwargs)
         # One legacy entry point (_render_request) for every request of the step.
         rendered = _render_request(convo, current_request, status) + trajectory.to_legacy(list(extra or []))
         return await a.chat(system, rendered[-1]["content"], history=rendered[:-1], tools=tools, **kwargs)
@@ -632,16 +634,17 @@ async def _model_call(a, system: str, convo: list[dict], current_request: dict, 
         if (drops is None or exc.kind != "input" or state.exhausted
                 or not any(t["function"]["name"].startswith("mcp_") for t in sent)):
             return False
-        text = f"{exc.excerpt} {exc}"
+        text = exc.excerpt or ""        # the provider's own words; str(exc) also carries our recovery notes
         name = _refused_tool(a, sent, text)
         if name is None and not _SCHEMA_WORDS.search(text):
             return False
-        if name is None or last:
-            drops.every, left_out = True, "all"
-        else:
+        if name is not None:            # remembered even when this is the last try and every tool goes
             params = next(t["function"].get("parameters") for t in sent if t["function"]["name"] == name)
             drops.names.add(name)
             _BAD_TOOLS.add((drops.model, name, _schema_hash(params)))
+        if name is None or last:
+            drops.every, left_out = True, "all"
+        else:
             left_out = name
         drops.changed = True
         tools, schemas = drops.keep_schemas(tools), drops.keep_schemas(schemas)
@@ -651,11 +654,11 @@ async def _model_call(a, system: str, convo: list[dict], current_request: dict, 
             f"Note: {what} is not available in this turn: the model provider refused its parameter "
             "schema. Use the other tools, or tell the user that capability cannot be used right now.")
         provider = getattr(a, "_provider", None)
+        reported = getattr(a, "report_provider", None) or getattr(provider, "provider_name", type(provider).__name__)
         try:
             from server.services import recap_service
             await recap_service.log_event(
-                conversation_id, "mcp_schema_relaxed",
-                {"tool_key": left_out, "provider": str(getattr(provider, "provider_name", type(provider).__name__))},
+                conversation_id, "mcp_schema_relaxed", {"tool_key": left_out, "provider": str(reported)},
                 f"left out {what}: the provider refused its parameter schema")
         except Exception:  # noqa: BLE001 — observability is never fatal
             pass

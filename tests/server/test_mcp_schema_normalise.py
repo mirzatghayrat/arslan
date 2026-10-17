@@ -133,6 +133,76 @@ def test_no_schema_becomes_an_empty_object(bad):
     assert normalise(bad, "anthropic") == {"type": "object", "properties": {}}
 
 
+# ── review fixes (⓪Plan on #198) ───────────────────────────────────────────────────────
+
+DISCRIMINATED = {"oneOf": [
+    {"type": "object", "properties": {"action": {"const": "create"}, "name": {"type": "string"}},
+     "required": ["action", "name"]},
+    {"type": "object", "properties": {"action": {"const": "delete"}, "id": {"type": "integer"}},
+     "required": ["action", "id"]},
+]}
+
+
+@pytest.mark.parametrize("provider", PROVIDERS)
+def test_a_discriminator_keeps_every_value(provider):
+    action = normalise(DISCRIMINATED, provider)["properties"]["action"]
+    assert action.get("enum") == ["create", "delete"] and "const" not in action
+    assert normalise(DISCRIMINATED, provider)["required"] == ["action"]
+
+
+@pytest.mark.parametrize("provider", PROVIDERS)
+def test_a_shared_field_with_different_shapes_keeps_them_all(provider):
+    out = normalise({"anyOf": [{"properties": {"x": {"type": "string"}}}, {"properties": {"x": {"type": "integer"}}}]},
+                    provider)
+    assert out["properties"]["x"] == {"anyOf": [{"type": "string"}, {"type": "integer"}]}
+
+
+def test_the_shapes_are_described_with_their_optional_fields_and_without_exactly():
+    words = normalise(TOP_ANYOF, "anthropic")["description"]
+    assert "exactly" not in words and "wait" in words and "selector" in words
+
+
+@pytest.mark.parametrize("ref", ["#/$defs/Missing", "#", "#/$defs/Target/properties/pid", "other.json#/x"])
+def test_a_ref_that_cannot_be_inlined_becomes_a_loose_object(ref):
+    out = normalise({"type": "object", "properties": {"p": {"$ref": ref}},
+                     "$defs": {"Target": {"type": "object", "properties": {"pid": {"type": "integer"}}}}}, "anthropic")
+    assert "$ref" not in _keys(out) and "$defs" not in _keys(out)
+    assert out["properties"]["p"]["type"] == "object" and "description" in out["properties"]["p"]
+
+
+def test_nested_defs_are_dropped_too():
+    out = normalise({"type": "object", "properties": {"p": {"type": "object", "$defs": {"X": {"type": "string"}}}}},
+                    "anthropic")
+    assert "$defs" not in _keys(out)
+
+
+def test_null_alone_is_the_null_type():
+    out = normalise({"type": "object", "properties": {"n": {"type": ["null"]}}}, "anthropic")
+    assert out["properties"]["n"]["type"] == "null" and "Type: ," not in json.dumps(out)
+
+
+def test_pattern_properties_go_for_openai_compatible_endpoints():
+    schema = {"type": "object", "patternProperties": {"^x-": {"type": "string"}}}
+    out = normalise(schema, "openai")
+    assert "patternProperties" not in out and "^x-" in out["description"]
+    assert "patternProperties" in normalise(schema, "anthropic")
+
+
+def test_a_ref_bomb_is_bounded_and_fast():
+    import time
+    defs = {f"L{i}": {"type": "object", "properties": {"a": {"$ref": f"#/$defs/L{i + 1}"},
+                                                      "b": {"$ref": f"#/$defs/L{i + 1}"}}} for i in range(24)}
+    defs["L24"] = {"type": "string"}
+    bomb = {"type": "object", "properties": {"root": {"$ref": "#/$defs/L0"}}, "$defs": defs}
+    started = time.monotonic()
+    out = normalise(bomb, "anthropic")
+    assert time.monotonic() - started < 1.0
+    assert len(json.dumps(out)) < 200_000
+    again = time.monotonic()
+    assert normalise(bomb, "anthropic") == out                        # cached by the schema's hash
+    assert time.monotonic() - again < 0.05
+
+
 # ── the providers: MCP tools reshaped, built-in tools untouched, errors read back ────
 
 from arslan.llm.providers.anthropic_provider import AnthropicProvider  # noqa: E402
@@ -318,3 +388,91 @@ async def test_a_refusal_with_nothing_to_do_with_tools_is_not_retried(events):
     with pytest.raises(mc.ModelCallError):
         await _turn(adapter)
     assert len(adapter.calls) == 1 and events == []
+
+
+
+# ── review fixes, the turn ─────────────────────────────────────────────────────────────
+
+class Scripted(Refuser):
+    """Answers each request from a script: an exception text to raise, or a reply."""
+
+    def __init__(self, script, **kw):
+        super().__init__(**kw)
+        self.script = list(script)
+
+    async def chat(self, system, user, history=None, tools=None, **kw):
+        self.calls.append([t["function"]["name"] for t in tools or []])
+        step = self.script.pop(0)
+        if isinstance(step, str) and step.startswith("400:"):
+            raise _refusal(step[4:])
+        return golden._Resp(step) if isinstance(step, str) else step
+
+
+async def test_an_unrelated_refusal_after_a_schema_one_is_not_read_as_one(events):
+    # Our own recovery note ("…refused its parameter schema") is in str(exc); only the provider's
+    # words decide.
+    adapter = Scripted([f"400:{ANTHROPIC_REFUSAL.format(n=5)}", "400:invalid x-api-key", "done"])
+    with pytest.raises(mc.ModelCallError):
+        await _turn(adapter)
+    assert len(adapter.calls) == 2
+    assert [ref["tool_key"] for kind, ref in events if kind == "mcp_schema_relaxed"] == ["mcp_1__bad"]
+
+
+async def test_both_refused_tools_are_remembered(events):
+    await _turn(Refuser({"mcp_1__bad", "mcp_1__worse"}))
+    same = Refuser({"mcp_1__bad", "mcp_1__worse"})
+    await _turn(same, cid="c2")
+    assert len(same.calls) == 1 and _mcp(same.calls[0]) == {"mcp_1__good"}
+
+
+async def test_a_capability_refresh_does_not_bring_a_left_out_tool_back(events, monkeypatch):
+    from server.services import capability_flow
+
+    async def installed(args, **kw):
+        return {"ok": True, "refresh": True}
+    monkeypatch.setattr(capability_flow, "propose", installed)
+
+    async def tools():
+        return [*(await _tools()), {"key": "propose_capability", "description": "install"}]
+    call = golden._tc("propose_capability", '{"candidate_id": "c1", "why": "needed"}')
+    adapter = Refuser({"mcp_1__bad"}, replies=[golden._Resp(None, [call]), "done"])
+    result = await tool_loop.run_native(system="S", user_content="t", history=[], emit=lambda e: None,
+                                        on_chunk=lambda c: None, resolve_tools=tools, adapter_override=adapter,
+                                        conversation_id="c1")
+    assert result["final"] == "done" and len(adapter.calls) == 3
+    assert result["tool_trace"][0]["result"]["ok"] is True          # the refresh really ran
+    assert "mcp_1__bad" not in adapter.calls[2] and "mcp_1__good" in adapter.calls[2]
+
+
+class OpenAIRefuser:
+    """A model behind an OpenAI-compatible endpoint on the native protocol (chat_trajectory)."""
+
+    def __init__(self, bad, *, by_name):
+        from arslan.llm.providers.openai_provider import OpenAIProvider
+        self._provider = OpenAIProvider(model="deepseek-chat", api_key="k", base_url="https://api.deepseek.com")
+        self.report_provider = "deepseek"
+        self.bad, self.by_name = set(bad), by_name
+        self.calls: list[list[str]] = []
+
+    def native_trajectory(self):
+        return True
+
+    async def chat_trajectory(self, system, messages, tools=None, tool_choice=None, **kw):
+        from types import SimpleNamespace
+        names = [t["function"]["name"] for t in tools or []]
+        self.calls.append(names)
+        hit = [i for i, name in enumerate(names) if name in self.bad]
+        if hit:
+            raise _refusal(f"Invalid schema for function '{names[hit[0]]}': bad" if self.by_name
+                           else f"Invalid 'tools[{hit[0]}].function.parameters': is not a regex")
+        return SimpleNamespace(content="done", tool_calls=[], finish_reason="stop", continuation=None,
+                               provider_content=None)
+
+
+@pytest.mark.parametrize("by_name", [True, False])
+async def test_an_openai_compatible_refusal_on_the_native_protocol_leaves_the_tool_out(events, by_name):
+    adapter = OpenAIRefuser({"mcp_1__bad"}, by_name=by_name)
+    result = await _turn(adapter)
+    assert result["final"] == "done"
+    assert "mcp_1__bad" in adapter.calls[0] and _mcp(adapter.calls[1]) == {"mcp_1__good", "mcp_1__worse"}
+    assert ("mcp_schema_relaxed", {"tool_key": "mcp_1__bad", "provider": "deepseek"}) in events
