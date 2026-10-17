@@ -201,3 +201,11 @@ async def test_a_long_file_name_still_writes(ws, length):
     assert r["ok"] is True, r
     assert (ws / name).read_text() == "x"
     assert sorted(p.name for p in ws.iterdir()) == [name]
+
+
+async def test_a_link_named_like_a_secret_is_not_written_through(ws):
+    (ws / "notes.txt").write_text("plain")
+    (ws / ".env").symlink_to(ws / "notes.txt")
+    r = await write({"path": ".env", "content": "SECRET=1"})
+    assert r["ok"] is False and "credential" in r["error"]
+    assert (ws / "notes.txt").read_text() == "plain"

@@ -203,3 +203,9 @@ def test_a_link_with_a_harmless_name_to_a_secret_is_refused(ws):
     (ws / "notes.txt").symlink_to(ws / ".env")
     with pytest.raises(SecretFile):
         resolve_in_workspace("notes.txt", ws, for_write=True)
+
+
+def test_a_link_named_like_a_secret_is_refused_even_to_a_harmless_target(ws):
+    (ws / ".env").symlink_to(ws / "notes.md")
+    with pytest.raises(SecretFile):
+        resolve_in_workspace(".env", ws, for_write=True)
