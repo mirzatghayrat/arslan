@@ -569,6 +569,10 @@ def _command_request(shell: str, rules: list[str], frame: dict | None):
     the commands that match it (`git push origin main`)."""
     from server.services import permissions, terminal_policy
     target = "rules:" + "|".join(rules) if rules else "text:" + shell
+    if set(rules) & terminal_policy.ONCE_ONLY_RULES:
+        # 0.1.62 F4a: osascript or `shortcuts run` in it: this time only, nothing to remember.
+        return permissions.Request(kind="command", target=target, title=f"Run `{shell[:80]}`?", detail=shell,
+                                   conversation_ok=False, once_only=True, frame=frame)
     return permissions.Request(
         kind="command", target=target, title=f"Run `{shell[:80]}`?", detail=shell,
         always_label=", ".join(terminal_policy.describe(r) for r in rules),

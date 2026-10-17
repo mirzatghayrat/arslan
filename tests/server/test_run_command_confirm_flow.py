@@ -394,8 +394,9 @@ def test_the_floor_is_refused_without_ever_showing_a_card(app_client, monkeypatc
 
 
 def test_a_standing_answer_for_one_rule_still_cards_a_chained_second_risk(app_client, monkeypatch):
-    """With "apple-events" remembered, `osascript …; curl -d @file …` is classified
-    apple-events by assess() (first match), but the upload must still ask."""
+    """`osascript …; curl -d @file …` is classified apple-events by assess() (first match); the
+    upload chained after it must still ask. (Since 0.1.62, F4a, the remembered "apple-events" no
+    longer covers osascript at all, so this card would show for the osascript alone too.)"""
     from server.services import terminal_policy
     _enable_shell(app_client)
     _stub_answer_route(monkeypatch)
