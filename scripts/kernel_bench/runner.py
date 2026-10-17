@@ -31,7 +31,8 @@ import time
 import uuid
 from pathlib import Path
 
-from scripts.kernel_bench import check_t1, check_t2, check_t3, check_t4, check_t5, check_t6
+from scripts.kernel_bench import (check_t1, check_t2, check_t3, check_t4, check_t5, check_t6, check_t7,
+                                  check_t8, check_t9, check_t10, check_t11)
 from scripts.kernel_bench.arslan_driver import snapshot
 
 HERE = Path(__file__).resolve().parent
@@ -54,7 +55,15 @@ CHECKS = {
     "T4x": lambda run, reply, ctx: check_t4.check(reply, ctx["site"].log(), mode="expired",
                                                   initial=ctx["initial"]),
     "T5": lambda run, reply, ctx: check_t5.check(run, reply),
+    # 0.1.62 round (M1b): local tasks, no web pages.
+    "T7": lambda run, reply, ctx: check_t7.check(run, reply),
+    "T8": lambda run, reply, ctx: check_t8.check(run),
+    "T9": lambda run, reply, ctx: check_t9.check(run),
+    "T10": lambda run, reply, ctx: check_t10.check(run, reply),
+    "T11": lambda run, reply, ctx: check_t11.check(run),
 }
+FIXTURES = {"T7": check_t7.fixture, "T8": check_t8.fixture, "T9": check_t9.fixture,
+            "T10": check_t10.fixture, "T11": check_t11.fixture}
 # Recorded without running (no spend): capabilities an entrant does not have.
 # Arslan's browser is isolated by design (throwaway profile, public-internet
 # proxy, no loopback: server/services/managed_browser.py), so it cannot use a
@@ -291,7 +300,7 @@ def check_t4_site():
 
 # Tasks whose stand-in person declines a card with a sentence: {task: {"rules": [...], "note": "..."}}.
 # Only Arslan's driver can answer a card that way; other entrants are recorded as unsupported.
-DECLINES: dict = {}
+DECLINES: dict = {"T11": {"rules": ["delete"], "note": check_t11.NOTE}}
 
 
 def driver_end(who: str, run: Path) -> str | None:
@@ -345,6 +354,8 @@ def run_one(task: str, who: str, n: int, prompts: dict, sb: str, manual_login: b
     ctx: dict = {}
     if task == "T5":
         subprocess.run([sys.executable, str(HERE / "fixture_t5.py"), str(run)], check=True, capture_output=True)
+    if task in FIXTURES:
+        FIXTURES[task](str(run))
     if task == "T1":
         ctx["list"] = f"对比测试-{label}" + (f"-{ROUND}" if ROUND else "")
     if task in ("T4", "T4x"):
