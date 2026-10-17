@@ -62,7 +62,7 @@
 | [C5a](C5a-process-docs-privacy.md) | 过程文档移到存档分支；从文件里删隐私段落 | ②Main | v0.1.63 | 应该 | — | 待开工 |
 | [C5b](C5b-version-source-inventory.md) | 唯一版本来源；能力清单只在发版时生成（越早合越好） | ②Main | v0.1.63 | 应该 | — | 待开工 |
 | [C6](C6-ci-parallel-coverage.md) | CI 并行与覆盖率 | ②Main | v0.1.63 | 应该 | F5a | 待开工 |
-| [K1](K1-native-tool-protocol.md) | Claude、Gemini 走原生工具协议；保留思考块，支持 `tool_choice` | ②Main | v0.1.63 | 必须 | C1；合并等 M1B | 待开工 |
+| [K1](K1-native-tool-protocol.md) | Claude、Gemini 走原生工具协议；保留思考块，支持 `tool_choice`；Anthropic 回合内发出后不改前文（服务端清理旧结果） | ②Main | v0.1.63 | 必须 | C1；合并等 M1B | 待开工 |
 | [K2](K2-context-by-window.md) | 跨轮上下文按窗口；工具摘要放进 `content`；回合后工作挪出锁 | ②Main | v0.1.63 | 必须 | K1；C2a | 待开工 |
 | [K3](K3-prompt-layout-cache.md) | 提示词布局与缓存断点 | ②Main | v0.1.63 | 必须 | K2 | 待开工 |
 | [K4](K4-one-stop-policy.md) | 一个停止策略；保留花费上限，美元上限默认开；拆 K4a、K4b | ②Main | v0.1.63 | 必须 | K3、H1 | 待开工 |

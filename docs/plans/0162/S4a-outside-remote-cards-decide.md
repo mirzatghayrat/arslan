@@ -31,7 +31,7 @@
 - **出沙箱：**
   - `Request(kind="outside", target="*", conversation_ok=True, always_label="")`，选项是「这一次 / 本对话」；
   - 「本对话」= 这段对话里的命令都可以在沙箱外跑（套 S2a-1 的最小配置），和今天的复选框同义；
-  - 有了这个授权，本轮读过外部内容后的联网卡只给「这一次」，已有的 `network:*` 本对话授权对沙箱外的命令不算数（S2a-1 第 2 条；那条测试改成用这里存库的授权，继续通过）；
+  - 有了这个授权（沙箱设置关着、第③层 `unsandboxed:*` 的本对话授权也一样），本轮读过外部内容后的联网卡只给「这一次」，已有的 `network:*` 本对话授权对沙箱外的命令不算数（S2a-1 第 2 条；那条测试改成用这里存库的授权，继续通过）；
   - 沙箱拦下后的重跑卡（`tool_loop.py:1283-1290`）走同一个请求。
 - **远程：** `Request(kind="remote", …)`。`remote` 本来就只给「这一次」（`server/services/permissions.py:54-55`）。
 - `server/orchestrator/tool_loop.py`

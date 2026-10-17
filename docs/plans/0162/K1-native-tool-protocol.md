@@ -8,7 +8,7 @@
 | 依赖 | C1；**合并要等 M1B**（v0.1.62 发布后的基线跑完，A4）。可以先开发 |
 | 合并位置 | K 线第 1 个（C1 → **K1** → K2 …）。v0.1.62 发布前不合：那之前 `tool_loop.py`、`task_service.py` 只给热修线 |
 | 推动的门槛 | §5.1「不退步」；§5.1「Claude 上对 Claude Code：差距缩小一半以上」；§5.3 第 3 条 |
-| 分支 | `claude/0162-k1-native-tools` |
+| 分支 | `claude/0162-k1-native-tools`；超过 800 行时拆成 `claude/0162-k1a-native-protocol`、`claude/0162-k1b-anthropic-context`（要点 12） |
 | 迁移号 | 无 |
 
 ## 目标
@@ -37,12 +37,14 @@
   - `chat()`（`:120-137`）接受 `tool_choice`：`"none"` 发 `toolConfig.functionCallingConfig.mode = "NONE"`。
   - 新增 `build_trajectory_messages`；`supports_native_trajectory()` 返回 True。
 - `server/orchestrator/agent_status.py:126-141`，以及 `tool_loop.py` 里 `_model_call` 发状态块的几行（`:556-561`）：原生 Claude 下状态块改成「追加、不删」（要点 3）。`tool_loop.py` 只动这几行。
+- **Anthropic 回合内的上下文（要点 12）：** `arslan/llm/trajectory.py`（`IMAGES_KEPT = 2`，`:35`；`keep_latest_images`，`:95`）；`tool_loop.py:378`（截图换占位）、`:2334-2336`（`bounded_history`）在 Anthropic 原生路径上不再调用；`anthropic_provider.py` 的 `_payload` 加服务端上下文管理。
 - `server/orchestrator/model_call.py:41`：`_PROTOCOL` 今天只认 OpenAI 的报错用词。补上 Anthropic、Gemini 的（`tool_use`、`tool_result`、`thinking`、`functionResponse`），原生请求被拒时本回合退回旧渲染，而不是整轮失败。
 - 测试：见验收。
 
 ## 不许碰
 
-- 提示词与工具说明（K3、K5）；流式（K8）；`tool_loop.py` 里除状态块那几行以外的地方。
+- 提示词与工具说明（K3、K5）；流式（K8）；`tool_loop.py` 里除状态块那几行、`:378` 和 `:2334-2336` 以外的地方。
+- 其他服务商的本地裁剪：OpenAI 兼容和 Gemini 照旧用 `keep_latest_images`、`bounded_history`。
 - OpenAI 兼容端点的轨迹（`openai_provider.py:71-122`）：它是 M1B 基线的一部分。
 - Bridge 帧格式（`desktop/bridge/**`、`server/ws/bridge.py`、`spec/mobile-bridge/**`）。
 
@@ -63,8 +65,11 @@
      - 轮内按字符裁剪（`bounded_history`，`tool_loop.py:2334-2336`）；
      - 收尾时只给收尾工具，工具表变了（`tool_loop.py:2353-2354`）；
      - 上下文超长时的压缩（`model_call.py` 的 context 恢复）。
-   - **处理：** 第 3 条消掉第一处；其余四处靠要点 9 的 `drop_block` 兜住，每处补一条测试。
-   - 彻底的修法（回合内工具表不变、前缀只追加）在 K3。
+   - **处理：** `drop_block` 只是不报 400，被丢的块后面的思考全都没了。截图换占位（只留 2 张）和轮内裁剪，在屏幕任务和长任务里每一步都会改前文，所以不能靠它兜：
+     - 第一处：第 3 条消掉；
+     - 截图、轮内裁剪：要点 12，Anthropic 这条路发出后不再改；
+     - 收尾换工具表：K3 让回合内工具表不变后消掉。K3 合并前，强制收尾那一步还会丢块，运行记录照样标出；
+     - 上下文压缩：**唯一允许丢块的地方**，丢了在运行记录里标出来。
 5. **强制收尾那一步：** Anthropic 发 `{"type": "none"}`，Gemini 用 NONE。工具表照旧带上，和 OpenAI 路径一样（`tool_loop.py:560`），前缀不变。
 6. **Gemini：** `functionResponse.response` 放结构化结果。截断沿用现有的落盘逻辑（`tool_loop.py:329-337`）。
 7. **回退：** 沿用 `ARSLAN_TOOL_PROTOCOL=legacy`。代码注释写明「Claude、Gemini 的旧文本渲染 v0.1.64 删」（见「风险与回退」）。
@@ -72,6 +77,13 @@
 9. **对 Claude 5.5 一代和 Fable 5.1 默认带 `drop_block`**（字段和 beta 头见要点 4）。响应里的 `input_transformations` 记进运行记录（只记被丢了几个块、在哪一步，不记内容）。
 10. **字段被拒时去掉重发。** 照 `arslan/llm/param_heal.py` 的做法：`block_binding` 或 beta 头被某个端点拒收，就去掉重发，并记住这个端点。它是嵌套字段，要补测试确认能去掉。
 11. **（可以，归 K8）工具调用之间的进度说明：** Opus 5.5、Sonnet 5.5 在工具调用之间的进度说明以思考块返回，默认为空。拿文字、在窗口里显示，见 K8 卡「可以」一项。K1 不发相关参数，只保证这些思考块照要点 2 原样带回。
+12. **Anthropic 回合内的上下文：发出后不再改**（来源：Anthropic 官方文档 platform.claude.com 的 context-editing 页和 preserved-thinking 页，2026-10-17 读）。
+    - **第一次发出前就缩小：** 截图在附上时就缩到最终尺寸；工具结果在第一次发出时按现有的落盘规矩截断（`tool_loop.py:329-337`）。之后不换占位、不再裁剪。
+    - **清理旧结果改用服务端：** 策略 `clear_tool_uses_20250919`，beta 头 `context-management-2025-06-27`，参数 `trigger`、`keep`、`clear_at_least`、`exclude_tools`。官方原文：Fable 5.1 和 5.5 一代上，服务端的上下文管理不会让思考块失效。
+    - **`clear_at_least` 设大一些，一次多清：** 每清一次，缓存从那里往后作废；一次多清，作废的次数少。`trigger` 对齐今天本地裁剪的 64k / 96k 字符；`exclude_tools` 放结果不能丢的工具，名单开工时定。
+    - **被拒时：** 端点不接受这个 beta（例如经代理转发），照要点 10 去掉重发，并在这一回合退回本地裁剪 + `drop_block`，运行记录标出。
+    - **其他服务商照旧在本地裁剪。**
+    - 超过 800 行时拆成 K1a（要点 1–11）和 K1b（本条），连着合；K1b 合并前，Anthropic 默认仍走旧渲染，两个都合了才切到原生。
 
 ## 验收
 
@@ -80,7 +92,9 @@
   - 「有思考 + 有工具」往返：第二次请求里的思考块和签名，与第一次响应逐字节相同；
   - `tool_choice="none"`：Anthropic 发 `{"type": "none"}`，Gemini 发 NONE，都不再 TypeError；
   - 状态块：是 `tool_result` 之后的单独文本块；下一步请求里，上一步的状态块还在原处；
-  - 截图换占位、轮内裁剪、上下文压缩之后的下一步请求，都带 `drop_block`；带 `block_binding` 的请求，思考是 adaptive，没有 `between_tools`；
+  - 对 Claude 5.5 一代和 Fable 5.1 的请求都带 `drop_block`；带 `block_binding` 的请求，思考是 adaptive，没有 `between_tools`；
+  - Anthropic 原生路径：截图第一次发出时已经缩小，之后的请求里逐字节不变（不换占位）；轮内不再本地裁剪，请求里带 `clear_tool_uses_20250919` 和设好的 `clear_at_least`；其他服务商照旧本地裁剪；
+  - 上下文压缩丢块时，运行记录里有标记；服务端上下文管理被拒时，去掉重发、退回本地裁剪，也有标记；
   - `block_binding` 被拒时，去掉重发能过，下一次不再带；
   - 下一轮的请求里没有上一轮的思考块；端点指纹换了钥匙，思考块不回放；
   - Anthropic 的协议类 400 让本回合退回旧渲染；
@@ -88,18 +102,19 @@
 - **M1（贴在 PR 里）：**
   - claude-sonnet-5 上，逐题不差于 M1B（v0.1.62 基线）；
   - 三轮追问题看轨迹，确认模型引用了上一步的参数；
-  - 再用 Claude 5.5 一代（或 Fable 5.1）跑两道多步题：不出 400；运行记录里的 `input_transformations` 在正常路径上为 **0**。不为 0，说明还有地方改了前文，要找出来。
+  - 再用 Claude 5.5 一代（或 Fable 5.1）跑：两道多步题、**一道截图任务**（Hands，超过 2 张截图）、**一道长任务**（会触发清理旧结果）。都不出 400；运行记录里的 `input_transformations` 在正常路径上为 **0**。不为 0，说明还有地方改了前文，要找出来。只有上下文压缩（和 K3 合并前的强制收尾）允许不为 0，且要有标记。
 - **手动：** 用 Claude 跑「先写文件、再改其中一节」，第二步不再整份重写。
 
 ## 量级
 
-产品代码约 +300～400 行。审查估 +300，这里另加了状态块只追加和要点 4 的处理两处。不删代码；v0.1.64 删旧渲染时再量行数。
+产品代码约 +450～600 行。审查估 +300，这里另加了状态块只追加、要点 4 的处理和要点 12（约 +150～200）。超过 800 行就按要点 12 拆成 K1a、K1b。不删代码；v0.1.64 删旧渲染时再量行数。
 
 ## 风险与回退
 
 - **风险：配对错位，Anthropic 回 400。** 配对测试覆盖每种组合；被拒时本回合退回旧渲染（`model_call.py:41` 补词之后）。
-- **风险：前文被改，思考块被丢（已核，见要点 4）。** 第 3 条消掉一处，`drop_block` 兜住其余，不再 400；但被丢的块意味着那一步思考没带上，所以 M1 断言正常路径上 `input_transformations` 为 0。
-- **风险：状态块都留在轨迹里，长回合多占 token。** 由轮内裁剪兜底；M1 里贴多步题的输入 token 前后对比。
+- **风险：前文被改，思考块被丢（已核，见要点 4）。** `drop_block` 只保证不报 400；第 3 条和要点 12 让正常路径不改前文，M1 在截图任务和长任务上断言 `input_transformations` 为 0。
+- **风险：服务端清理让缓存作废。** 用 `clear_at_least` 一次多清；M1 贴长任务的缓存命中前后对比（配合 K3）。
+- **风险：状态块都留在轨迹里，长回合多占 token。** Anthropic 上由服务端清理旧结果兜底，其他服务商由轮内裁剪兜底；M1 里贴多步题的输入 token 前后对比。
 - **回退：** 设 `ARSLAN_TOOL_PROTOCOL=legacy` 即回到旧渲染，不需要回滚代码。
 - **留着的旧路径与删除条件**（代码注释里同样写）：
   - Claude、Gemini 的旧文本渲染，以及它们走回退开关的那条路：**v0.1.64 删**。条件：v0.1.63 装上后 7 天，M2 里 Claude、Gemini 没有协议类 400，且 M1 不退步。
