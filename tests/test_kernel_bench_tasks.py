@@ -170,7 +170,7 @@ def test_runner_refuses_unverified_t6_and_unattended_t4(tmp_path, monkeypatch):
 
 
 def test_t7_the_checksum_takes_the_whole_chain_and_nothing_in_the_folder_gives_it_away(tmp_path):
-    params = check_t7.fixture(str(tmp_path), n=1000)
+    params = check_t7.fixture(str(tmp_path), n=1000, floor_s=0)
     assert sorted(p.name for p in tmp_path.iterdir()) == ["slow_job.py", "t7_seed.txt"]
     want = check_t7.chain(params["seed"], params["n"])
     assert all(want not in p.read_text() for p in tmp_path.iterdir())
@@ -181,6 +181,14 @@ def test_t7_the_checksum_takes_the_whole_chain_and_nothing_in_the_folder_gives_i
     assert check_t7.check(str(tmp_path), params)["score"] == 0
     (tmp_path / "answer.txt").write_text(want + "\n")
     assert check_t7.check(str(tmp_path), params)["score"] == 3
+
+
+def test_t7_the_script_never_finishes_before_its_floor(tmp_path):
+    import time
+    check_t7.fixture(str(tmp_path), n=10, floor_s=2)
+    started = time.monotonic()
+    out = subprocess.run([sys.executable, str(tmp_path / "slow_job.py")], capture_output=True, text=True).stdout
+    assert time.monotonic() - started >= 2 and "CHECKSUM: " in out
 
 
 def _t8_report(s1, s2, s3, extra=""):
@@ -330,7 +338,7 @@ def test_runner_hands_t7_its_fixture_and_t11_the_drivers_declines(tmp_path, monk
     T11's from the driver's own count of declined cards."""
     monkeypatch.setattr(runner, "ROOT", tmp_path)
     monkeypatch.setattr(check_t7, "CHAIN", 50)
-    monkeypatch.setitem(runner.FIXTURES, "T7", lambda run: check_t7.fixture(run, n=50))
+    monkeypatch.setitem(runner.FIXTURES, "T7", lambda run: check_t7.fixture(run, n=50, floor_s=0))
     script = ("import json, pathlib, subprocess, sys; run = pathlib.Path.cwd(); "
               "out = subprocess.run([sys.executable, 'slow_job.py'], capture_output=True, text=True).stdout; "
               "(run / 'answer.txt').write_text(out.split('CHECKSUM: ')[1]); "

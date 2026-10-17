@@ -1,4 +1,4 @@
-"""T7 long command: run a ~60–90 s script and save the checksum it prints last.
+"""T7 long command: run a 60–90 s script and save the checksum it prints last.
 
 The checksum is the end of a long SHA-256 chain from a seed, so the only way to get it is
 to compute that chain: running the script, or anything equivalent, is itself a long
@@ -13,7 +13,8 @@ import hashlib
 import secrets
 from pathlib import Path
 
-CHAIN = 220_000_000                 # about 65 s on an Apple M-series Mac (3.4 M hashes/s)
+CHAIN = 220_000_000                 # 48–65 s on an Apple M-series Mac, by Python build (3.4–4.6 M hashes/s)
+FLOOR_S = 60                        # the script never finishes sooner, so the command always runs a minute
 
 SCRIPT = '''import hashlib, pathlib, time
 seed = pathlib.Path(__file__).with_name("t7_seed.txt").read_text().strip().encode()
@@ -25,6 +26,10 @@ while done < n:
         h = hashlib.sha256(h).digest()
     done += min(step, n - done)
     print(f"working... {{done * 100 // n}}% ({{time.time() - start:.0f}} s)", flush=True)
+left = {floor} - (time.time() - start)
+if left > 0:
+    print(f"waiting {{left:.0f}} s more...", flush=True)
+    time.sleep(left)
 print("CHECKSUM: " + h.hex()[:16], flush=True)
 '''
 
@@ -36,10 +41,10 @@ def chain(seed: str, n: int) -> str:
     return h.hex()[:16]
 
 
-def fixture(run: str, n: int = CHAIN) -> dict:
+def fixture(run: str, n: int = CHAIN, floor_s: int = FLOOR_S) -> dict:
     seed = secrets.token_hex(8)
     (Path(run) / "t7_seed.txt").write_text(seed + "\n")
-    (Path(run) / "slow_job.py").write_text(SCRIPT.format(n=n))
+    (Path(run) / "slow_job.py").write_text(SCRIPT.format(n=n, floor=floor_s))
     return {"seed": seed, "n": n}
 
 
