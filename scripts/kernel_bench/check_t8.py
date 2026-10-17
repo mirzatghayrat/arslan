@@ -1,8 +1,9 @@
 """T8 three turns on one report: write it, shorten section 2, add a table.
 
 The runner copies the run folder after turns 1 and 2 (`<run>.turn1`, `<run>.turn2`).
-Turn 1 must leave a report with exactly three `## ` sections that uses the notes (at least
-three of their key numbers). Then one point each:
+Turn 1 must leave a report with the three `## ` sections the prompt names (进展, 问题,
+下一步; an extra section is fine) that uses the notes (at least three of their key numbers).
+Then one point each:
 - turn 2 shortened section 2 to at most 60% of its turn-1 length, but kept something there
   (at least 10 characters);
 - turn 2 left sections 1 and 3 as they were;
@@ -32,10 +33,19 @@ def fixture(run: str) -> None:
     (Path(run) / "notes.md").write_text(NOTES)
 
 
-def sections(text: str) -> list[str]:
-    """Bodies of the `## ` sections, whitespace-normalised, in order."""
-    parts = re.split(r"(?m)^##\s+.*$", text)[1:]
-    return [" ".join(p.split()) for p in parts]
+NAMES = ("进展", "问题", "下一步")
+
+
+def sections(text: str) -> list[str] | None:
+    """Bodies of the three named `## ` sections (进展, 问题, 下一步), whitespace-normalised, in
+    that order; None when one is missing. Other sections are ignored (the 0.1.61 reference
+    round added a fourth, 关键数字, which a count of sections would have failed)."""
+    found: dict[str, str] = {}
+    for m in re.finditer(r"(?ms)^##[ \t]+(.*?)$\n?(.*?)(?=^##[ \t]|\Z)", text):
+        name = next((n for n in NAMES if n in m.group(1)), None)
+        if name and name not in found:
+            found[name] = " ".join(m.group(2).split())
+    return [found[n] for n in NAMES] if len(found) == 3 else None
 
 
 def _report(folder: str) -> str:
@@ -47,13 +57,14 @@ def check(run: str) -> dict:
     t1, t2, t3 = _report(f"{run}.turn1"), _report(f"{run}.turn2"), _report(run)
     s1, s2 = sections(t1), sections(t2)
     facts = sum(1 for k in KEY_NUMBERS if k in t1)
-    if len(s1) != 3 or facts < 3:
-        return {"score": 0, "turn1_sections": len(s1), "turn1_key_numbers": facts}
+    if s1 is None or facts < 3:
+        return {"score": 0, "turn1_sections": s1 is not None, "turn1_key_numbers": facts}
+    s2 = s2 or []
     shorter = len(s2) == 3 and 10 <= len(s2[1]) <= 0.6 * len(s1[1])
     others_kept = len(s2) == 3 and s2[0] == s1[0] and s2[2] == s1[2]
     flat3 = " ".join(t3.split())
     table = len(TABLE_RULE.findall(t3)) > len(TABLE_RULE.findall(t2))
     kept_in_3 = len(s2) == 3 and all(part in flat3 for part in s2)
     points = int(shorter) + int(others_kept) + int(table and kept_in_3)
-    return {"score": points, "turn1_sections": 3, "turn1_key_numbers": facts, "section2_shortened": shorter,
+    return {"score": points, "turn1_sections": True, "turn1_key_numbers": facts, "section2_shortened": shorter,
             "sections_1_3_kept": others_kept, "table_added": table, "turn3_kept_text": kept_in_3}

@@ -215,6 +215,20 @@ def test_t8_all_three_turns_done_right_scores_three(tmp_path):
     assert check_t8.check(run)["score"] == 3
 
 
+def test_t8_an_extra_section_is_fine_and_sections_are_found_by_name(tmp_path):
+    extra = "\n## 关键数字\n42 → 31\n"
+    run = _t8_turns(tmp_path, _t8_report(S1, S2, S3, extra), _t8_report(S1, SHORT, S3, extra),
+                    _t8_report(S1, SHORT, S3, extra + TABLE))
+    assert check_t8.check(run)["score"] == 3
+
+
+def test_t8_a_later_heading_with_the_same_word_does_not_replace_the_first_section(tmp_path):
+    later = "\n## 遗留问题\n无\n"
+    run = _t8_turns(tmp_path, _t8_report(S1, S2, S3, later), _t8_report(S1, SHORT, S3, later),
+                    _t8_report(S1, SHORT, S3, later + TABLE))
+    assert check_t8.check(run)["score"] == 3
+
+
 def test_t8_a_first_report_that_already_had_a_table_still_earns_the_table_point(tmp_path):
     first = _t8_report(S1, S2, S3, TABLE)
     run = _t8_turns(tmp_path, first, _t8_report(S1, SHORT, S3, TABLE), _t8_report(S1, SHORT, S3, TABLE + TABLE))
@@ -235,6 +249,8 @@ def test_t8_each_miss_costs_a_point(tmp_path, turn2, turn3, score):
 def test_t8_a_first_report_without_three_sections_or_without_the_notes_scores_zero(tmp_path):
     two = "## A\n42 31 1.8\n\n## B\ny\n"
     assert check_t8.check(_t8_turns(tmp_path, two, two, two + TABLE))["score"] == 0
+    no_next = f"## 进展\n{S1}\n\n## 问题\n{S2}\n"
+    assert check_t8.check(_t8_turns(tmp_path, no_next, no_next, no_next + TABLE))["score"] == 0
     made_up = _t8_report("一切顺利。", S2, "继续。")
     assert check_t8.check(_t8_turns(tmp_path, made_up, made_up, made_up + TABLE))["score"] == 0
 
@@ -330,7 +346,9 @@ def test_runner_records_the_new_multi_turn_and_decline_tasks_as_unsupported_wher
     assert isinstance(prompts["T8"], list) and len(prompts["T8"]) == 3
     assert runner.run_one("T8", "hermes", 1, prompts, "sb")["check"]["unsupported"]
     assert runner.run_one("T11", "claude-code", 1, prompts, "sb")["check"]["unsupported"]
-    assert runner.DECLINES["T11"]["rules"] == ["delete"] and "trash" in runner.DECLINES["T11"]["note"]
+    import re
+    assert all(any(re.search(p, rule) for p in runner.DECLINES["T11"]["rules"])
+               for rule in ("delete", "hermes:find -delete")) and "trash" in runner.DECLINES["T11"]["note"]
 
 
 def test_runner_hands_t7_its_fixture_and_t11_the_drivers_declines(tmp_path, monkeypatch):

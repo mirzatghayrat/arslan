@@ -302,7 +302,7 @@ def check_t4_site():
 
 # Tasks whose stand-in person declines a card with a sentence: {task: {"rules": [...], "note": "..."}}.
 # Only Arslan's driver can answer a card that way; other entrants are recorded as unsupported.
-DECLINES: dict = {"T11": {"rules": ["delete"], "note": check_t11.NOTE}}
+DECLINES: dict = {"T11": {"rules": [r"delete|\brm\b|unlink"], "note": check_t11.NOTE}}   # patterns on the rule
 
 
 def driver_out(who: str, run: Path) -> dict:
