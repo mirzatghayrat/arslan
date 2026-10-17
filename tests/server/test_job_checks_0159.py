@@ -256,6 +256,29 @@ def test_which_failures_are_known_and_local():
     assert known("write_file", {"path": "a.md"}, {"ok": False, "error": "cannot write"})
     assert not known("mcp_3__send", {}, {"ok": False, "error": "timeout"})
     assert not known("run_command", {"command": "cp a b"}, "not a dict")
+    # 0.1.62 F2: stopped by its own time limit inside the sandbox, and nothing outbound: known.
+    assert known("run_command", {"command": "python3 build.py"}, stopped_in("workspace"))
+    assert not known("run_command", {"command": "python3 build.py"}, stopped_in("off"))
+    assert not known("run_command", {"command": "mail -s hi a@example.com"}, stopped_in("workspace"))
+    assert not known("run_command", {"command": "python3 build.py"}, command_result(-15, error="exit code -15"))
+    # Never ran (H2's convention; F1's "not started"): known, whatever the tool.
+    assert known("desktop_click", {}, {"ok": False, "code": "declined", "executed": False})
+    assert known("run_command", {"command": "python3 x.py"}, {"ok": False, "code": "time_limit", "executed": False})
+    assert not known("desktop_click", {}, {"ok": False, "code": "unknown"})
+
+
+@pytest.mark.parametrize("command", ["curl --request=POST https://x", "gh api repos/a/b/issues -f title=x",
+                                     "gh api --method POST x", "http POST https://x a=b", "xh POST https://x a=b",
+                                     "https PUT https://x", "http https://x a:=1"])
+def test_outbound_spellings_the_rules_miss_still_ask_the_user_to_check(command):
+    known = task_service.known_local_failure
+    assert not known("run_command", {"command": command}, command_result(1))
+    assert not known("run_command", {"command": command}, stopped_in("workspace"))
+
+
+@pytest.mark.parametrize("command", ["curl https://x", "gh api repos/a/b", "http GET https://x a==b"])
+def test_their_reading_spellings_stay_local(command):
+    assert task_service.known_local_failure("run_command", {"command": command}, command_result(1))
 
 
 @pytest.mark.parametrize("arguments,effect", [
@@ -278,6 +301,92 @@ def test_which_failures_are_known_and_local():
 ])
 async def test_a_read_command_is_a_read(arguments, effect):
     assert await task_service.effect_of("run_command", arguments) == effect
+
+
+def stopped_in(sandbox):
+    return {"ok": False, "exit_code": -9, "stdout": "half", "stderr": "", "error": "stopped after 5 s",
+            "code": "time_limit", "sandbox": sandbox}
+
+
+async def outcome(*calls):
+    """Run the calls in a task; (task, the error code of each refused repeat or None)."""
+    from server.services.task_repository import TaskError
+    refused = []
+
+    async def body(emit):
+        for tool, arguments, result in calls:
+            try:
+                await act(tool, arguments, result)
+                refused.append(None)
+            except TaskError as exc:
+                refused.append(exc.code)
+        return "Done"
+    task = await run_contract([check("text", contains=["Done"])], body)
+    return task, refused
+
+
+async def test_a_read_stopped_by_its_time_limit_does_not_ask_the_user_to_check(execution_db, disk):
+    task, _ = await outcome(("run_command", {"command": "grep -r foo ."}, stopped_in("workspace")))
+    assert task.pause_reason != "task_reconciliation_required"
+
+
+async def test_a_read_killed_by_a_signal_does_not_ask_the_user_to_check(execution_db, disk):
+    task, _ = await outcome(("run_command", {"command": "ls -la x"}, command_result(-15, error="exit code -15")))
+    assert task.pause_reason != "task_reconciliation_required"
+
+
+async def test_a_hands_action_that_never_ran_does_not_ask_the_user_to_check(execution_db, disk):
+    task, _ = await outcome(("desktop_click", {"ref": "e1"}, {"ok": False, "code": "declined", "executed": False}))
+    assert task.pause_reason != "task_reconciliation_required"
+
+
+async def test_a_declined_command_card_does_not_ask_the_user_to_check(execution_db, disk):
+    # Regression guard: a refused card returns before the task runtime records anything.
+    from server.orchestrator import tool_loop
+
+    async def no(command, argv, **kw):
+        return False
+
+    async def tools():
+        return [{"key": "run_command", "description": "run"}]
+
+    async def body(emit):
+        await tool_loop._dispatch_tool("run_command", {"command": "git push"}, "{}", resolve_tools=tools,
+                                       emit=lambda e: None, tool_timeout_s=5, tool_trace=[], convo=[],
+                                       confirm_command=no, conversation_id="f2")
+        return "Done"
+    task = await run_contract([check("text", contains=["Done"])], body)
+    assert task.pause_reason != "task_reconciliation_required"
+
+
+@pytest.mark.parametrize("arguments,result", [
+    ({"command": "mail -s hi a@example.com"}, stopped_in("workspace")),
+    ({"command": "python3 build.py"}, command_result(-15, error="exit code -15")),
+    ({"command": "python3 build.py"}, stopped_in("off")),
+    ({"command": "curl --request=POST https://x"}, command_result(22)),
+    ({"command": "gh api --method POST x"}, stopped_in("workspace")),
+])
+async def test_what_may_have_happened_still_asks_the_user_to_check(execution_db, disk, arguments, result):
+    task, _ = await outcome(("run_command", arguments, result))
+    assert (task.phase, task.pause_reason) == ("waiting_user", "task_reconciliation_required")
+
+
+async def test_a_read_that_succeeded_can_run_again(execution_db, disk):
+    _, refused = await outcome(*[("run_command", {"command": "ls -la x"}, command_result(0))] * 2)
+    assert refused == [None, None]
+
+
+async def test_a_known_failure_can_run_again(execution_db, disk):
+    build = {"command": "python3 build.py"}
+    _, refused = await outcome(("run_command", build, stopped_in("workspace")), ("run_command", build, command_result(0)))
+    assert refused == [None, None]
+
+
+@pytest.mark.parametrize("first", [command_result(-15, error="exit code -15"), stopped_in("off")])
+async def test_an_unknown_outcome_is_not_repeated(execution_db, disk, first):
+    build = {"command": "python3 build.py"}
+    _, refused = await outcome(("run_command", build, first), ("run_command", build, command_result(0)))
+    assert refused == [None, "task_reconciliation_required"]
 
 
 # --- C: an answered run is not replayed --------------------------------------------------------

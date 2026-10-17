@@ -54,6 +54,33 @@ _OUTBOUND_RULES = frozenset({"apple-events", "shortcuts", "send-mail", "send-mes
                              "remote-shell", "git-push", "publish"})
 
 
+# 0.1.62 F2 ②a: outbound spellings the terminal rules do not match yet (they run without a card
+# today): curl --request=POST, gh api with fields or a non-GET method, HTTPie and xh sending.
+# Only this file reads them: a failure of one may have left something behind elsewhere. Delete
+# when S2a adds them to terminal_policy's outbound group, in that same PR (v0.1.63).
+def _outbound_extra_rules():
+    from server.services import terminal_policy
+    pos = terminal_policy._POS
+    return [re.compile(pos + pattern, re.I) for pattern in (
+        r"curl\b[^\n]*--request=(?:POST|PUT|PATCH|DELETE)\b",
+        r"gh\s+api\b[^\n]*(?:\s(?:-f|-F|--field|--raw-field|--input)(?:[\s=]|$)|\s--method[\s=](?!GET\b)\w)",
+        r"(?:https?|xhs?)\s+(?:-\S+\s+)*(?:POST|PUT|PATCH|DELETE)\b",
+        r"(?:https?|xhs?)\s+[^\n]*\s[A-Za-z_][\w.\-\[\]]*:?=(?!=)",
+    )]
+
+
+_OUTBOUND_EXTRA: list = []
+
+
+def _outbound(command: str) -> bool:
+    from server.services import terminal_policy
+    if terminal_policy.ask_rules(command) & _OUTBOUND_RULES:
+        return True
+    if not _OUTBOUND_EXTRA:
+        _OUTBOUND_EXTRA.extend(_outbound_extra_rules())
+    return any(terminal_policy._matches(rule, terminal_policy._detection_texts(command)) for rule in _OUTBOUND_EXTRA)
+
+
 def known_local_failure(tool_key: str, arguments: dict, result) -> bool:
     """A failed action whose outcome is KNOWN and stayed on this Mac (0.1.59).
 
@@ -72,16 +99,22 @@ def known_local_failure(tool_key: str, arguments: dict, result) -> bool:
         return False
     if result.get("code") == "mcp_not_ready":
         return True       # 0.1.61 §B1: the call never reached the MCP server
+    if result.get("executed") is False:
+        return True       # 0.1.62 F2 ③: it never ran (Hands' fixed list, H2; run_command with no time left, F1)
     if tool_key in {"write_file", "edit_file"}:
         return True
     if tool_key != "run_command":
         return False
+    from server.services import terminal_policy
+    command = terminal_policy.as_shell(arguments.get("command"), arguments.get("argv"))
+    if result.get("code") == "time_limit" and result.get("sandbox") == "workspace":
+        # 0.1.62 F2 ②: stopped by its own time limit inside the workspace sandbox. Before the signal
+        # check below: the stop is a SIGKILL too. Outside the sandbox it stays unknown.
+        return not _outbound(command)
     code = result.get("exit_code")
     if str(result.get("error") or "").startswith("stopped") or (code is not None and (type(code) is not int or code < 0)):
         return False
-    from server.services import terminal_policy
-    command = terminal_policy.as_shell(arguments.get("command"), arguments.get("argv"))
-    return not (terminal_policy.ask_rules(command) & _OUTBOUND_RULES)
+    return not _outbound(command)
 
 
 # 0.1.62 F2 ①: a single simple command whose program the command policy grades LOW is a read.
