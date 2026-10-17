@@ -10,6 +10,8 @@
   (literal "{HOME}/.hermes/.env")
   (literal "{HOME}/.hermes/auth.json")
   (subpath "{HOME}/.openclaw")
+  (subpath "{HOME}/.claude")
+  (literal "{HOME}/.claude.json")
   (subpath "{HOME}/.ssh")
   (subpath "{HOME}/Library/Keychains")
   (subpath "{HOME}/Library/Application Support/Arslan"))
