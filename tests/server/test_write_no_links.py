@@ -137,9 +137,10 @@ async def test_a_file_swapped_for_a_link_before_the_write_is_replaced_not_follow
         return out
     monkeypatch.setattr(file_tools, "_snapshot_write", snapshot_then_swap)
     r = await write({"path": "notes.txt", "content": "new"})
+    # The second resolve sees the link to outside and refuses before anything is opened.
+    assert r["ok"] is False and "outside" in r["error"]
     assert decoy.read_text() == "export MINE=1\n"
-    if r["ok"]:
-        assert not (ws / "notes.txt").is_symlink() and (ws / "notes.txt").read_text() == "new"
+    assert (ws / "notes.txt").is_symlink()                 # left as it was found
 
 
 @pytest.mark.macos
@@ -177,3 +178,26 @@ async def test_overwriting_keeps_the_files_mode(ws):
     r = await write({"path": "run.sh", "content": "#!/bin/sh\necho hi\n"})
     assert r["ok"] is True
     assert script.stat().st_mode & 0o777 == 0o755
+
+
+# ── review fixes (⓪Plan on #197) ───────────────────────────────────────────────────────
+
+async def test_a_failed_write_leaves_the_old_file_and_no_temp_file(ws, monkeypatch):
+    (ws / "notes.txt").write_text("old")
+
+    def broken_replace(src, dst):
+        raise OSError(28, "No space left on device")
+    monkeypatch.setattr(file_tools.os, "replace", broken_replace)
+    r = await write({"path": "notes.txt", "content": "new"})
+    assert r["ok"] is False and "cannot write" in r["error"]
+    assert (ws / "notes.txt").read_text() == "old"
+    assert sorted(p.name for p in ws.iterdir()) == ["notes.txt"]
+
+
+@pytest.mark.parametrize("length", [200, 242, 250, 255])
+async def test_a_long_file_name_still_writes(ws, length):
+    name = "n" * (length - 3) + ".md"
+    r = await write({"path": name, "content": "x"})
+    assert r["ok"] is True, r
+    assert (ws / name).read_text() == "x"
+    assert sorted(p.name for p in ws.iterdir()) == [name]

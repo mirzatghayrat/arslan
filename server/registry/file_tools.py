@@ -115,7 +115,10 @@ def _write_inside(root: Path, path: Path, text: str) -> None:
         keep = stat.S_IMODE(st.st_mode) if stat.S_ISREG(st.st_mode) else None
     except FileNotFoundError:
         keep = None
-    tmp = path.with_name(f".{path.name}.{secrets.token_hex(4)}.tmp")
+    # A name already near the 255-byte limit cannot take the temp prefix and suffix: keep at most
+    # 200 bytes of it (cut on a character boundary).
+    stem = path.name.encode("utf-8")[:200].decode("utf-8", errors="ignore")
+    tmp = path.with_name(f".{stem}.{secrets.token_hex(4)}.tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW, 0o666)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
