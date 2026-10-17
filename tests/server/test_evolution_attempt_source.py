@@ -24,12 +24,12 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from server.db.models import EvolutionAttempt, Setting
-from server.services import evolution_loop, evolution_watcher
+from server.db.models import EvolutionAttempt
+from server.services import evolution_watcher
 
 # `wdb` is a conftest fixture (shared with test_evolution_watcher.py); only the plain
 # helpers are imported here.
-from .test_evolution_watcher import _attempts, _drain, _fail_propose, _seed_runs, _spawn
+from .test_evolution_watcher import _attempts, _seed_runs, _spawn
 
 
 async def _add(Session, spawn_id, *, outcome, source, minutes_ago=0):
@@ -41,33 +41,6 @@ async def _add(Session, spawn_id, *, outcome, source, minutes_ago=0):
 
 
 # ── P1/P2: the column exists and is actually written ──────────────────────────────
-
-
-async def _enable_auto(Session) -> None:
-    """🔴 Auto-evolution is OFF by default (it spends the user's API credits and there is
-    no working cap — see settings_service.evolution_auto). Tests that exercise the AUTO
-    path opt in explicitly; never relax an assertion instead."""
-    async with Session() as db:
-        db.add(Setting(key="evolution_auto", value="on"))
-        await db.commit()
-
-
-async def test_manual_and_auto_attempts_are_distinguishable(wdb, monkeypatch):
-    """The whole point: after this, a row knows where it came from."""
-    Session = wdb
-    monkeypatch.setattr(evolution_loop, "propose_improvement", _fail_propose)
-    sid = await _spawn(Session)
-
-    await evolution_watcher.enqueue_attempt(sid, manual=True)
-    await _drain()
-    await _seed_runs(Session, sid, 20)
-    await _enable_auto(Session)          # manual needs no opt-in; the auto leg does
-    await evolution_watcher.trigger_spawn(sid)
-    await _drain()
-
-    rows = await _attempts(Session, sid)
-    assert [r.source for r in rows] == ["manual", "auto"]
-
 
 async def test_legacy_rows_keep_null_meaning_unknown(wdb):
     """Rows written before the column existed are NOT backfilled to 'auto'. They predate
@@ -218,79 +191,3 @@ async def test_a_real_verdict_still_advances_the_cursor(wdb):
         since = await evolution_watcher._last_attempt_started_at(db, sid)
         assert since is not None
         assert await evolution_watcher._new_replayable_run_count(db, sid, since) == 0
-
-
-async def test_repeated_budget_refusals_are_rate_limited(wdb, monkeypatch):
-    """Judgment call, flagged: with the cursor no longer advanced by `skipped_budget`, an
-    over-budget spawn would otherwise write one attempt row every tick (300s) forever —
-    zero LLM cost but unbounded row growth.
-
-    The wall is a COOLDOWN rather than the eligibility gate, deliberately: an attempt row
-    is still written, so `_verdict_code`'s skipped_budget branch still fires and the panel
-    still tells the user why. (Moving the refusal into the gate instead would have made it
-    invisible — that was a BLOCKER in my first plan.)
-    """
-    Session = wdb
-    sid = await _spawn(Session)
-    async with Session() as db:
-        db.add(Setting(key="evolution_auto", value="on"))
-        # dispatch units now, not tokens — 1 is below any real corpus's ceiling
-        db.add(Setting(key="evolution_max_dispatches", value="1"))
-        await db.commit()
-    await _seed_runs(Session, sid, 20)
-
-    first = await evolution_watcher.trigger_spawn(sid)
-    await _drain()
-    assert first is not None
-    rows = await _attempts(Session, sid)
-    assert [r.outcome for r in rows] == ["skipped_budget"]
-
-    second = await evolution_watcher.trigger_spawn(sid)
-    await _drain()
-    assert second is None, "a second refusal inside the cooldown must not write a row"
-    assert len(await _attempts(Session, sid)) == 1
-
-
-async def test_over_budget_spawn_cannot_exceed_the_daily_refusal_ceiling(wdb, monkeypatch):
-    """The bound the cooldown actually buys, pinned as a number rather than left implicit.
-
-    Without it the cursor change (skipped_budget no longer advances the cursor) would let
-    an over-budget spawn stay eligible forever and write one refusal row per tick — 288 a
-    day at the 300s interval, and more with notify_spawn firing on every scored run.
-
-    Simulated by walking a 24h day in tick-sized steps with a controllable clock, so the
-    assertion is about the POLICY (a refusal per cooldown window) and not about wall time.
-    """
-    Session = wdb
-    sid = await _spawn(Session)
-    async with Session() as db:
-        db.add(Setting(key="evolution_auto", value="on"))
-        # dispatch units now, not tokens — 1 is below any real corpus's ceiling
-        db.add(Setting(key="evolution_max_dispatches", value="1"))
-        await db.commit()
-    await _seed_runs(Session, sid, 20)
-
-    now = datetime.utcnow()
-    ticks = int(86_400 // evolution_watcher.DEFAULT_INTERVAL)   # a full day of ticks
-
-    for i in range(ticks):
-        fake_now = now + timedelta(seconds=i * evolution_watcher.DEFAULT_INTERVAL)
-
-        class _Clock(datetime):
-            @classmethod
-            def utcnow(cls):
-                return fake_now
-
-        monkeypatch.setattr(evolution_watcher, "datetime", _Clock)
-        await evolution_watcher.trigger_spawn(sid)
-        await _drain()
-
-    monkeypatch.undo()
-    rows = await _attempts(Session, sid)
-    assert all(r.outcome == "skipped_budget" for r in rows), [r.outcome for r in rows]
-    assert len(rows) <= evolution_watcher.MAX_BUDGET_REFUSALS_PER_DAY, (
-        f"{len(rows)} refusal rows in a simulated day — the cooldown is not bounding "
-        f"growth (ceiling is {evolution_watcher.MAX_BUDGET_REFUSALS_PER_DAY})")
-    assert len(rows) >= 2, (
-        "a spawn that stays over budget all day should still leave MORE than one record "
-        "— the cooldown rate-limits the refusal, it does not silence it")

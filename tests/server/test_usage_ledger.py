@@ -8,7 +8,7 @@ Contract under test:
     ledger row PER (model, provider) bucket (estimate paths stay honest);
   - a ledger/DB failure NEVER breaks the wrapped business call;
   - NESTING SAFETY: the judge task is created (via schedule_scoring) INSIDE
-    _dispatch_spawn's active collecting scope and inherits its contextvars — the
+    a Run's active collecting scope and inherits its contextvars — the
     judge's own scope() must open a FRESH bucket (stealing nothing, seeing nothing),
     so the dispatch Run's usage is neither diminished nor is the judge row inflated.
 """

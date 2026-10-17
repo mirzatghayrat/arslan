@@ -40,18 +40,14 @@ utc-naive for storage, so `next_due_at`/`due_tasks` comparisons against
 `utcnow()` are untouched. Interval tasks are pure durations and unaffected.
 (Task 4 UI: label cron inputs "按本地时间解释".)
 
-Execution (Task 2): `watch_loop` ticks every 60s; each due task `_fire`s as a
-SUPERVISED asyncio task (evolution_watcher's pattern — done-callback logs, never a
-bare fire-and-forget). A fire is HEADLESS: deliberately NOT arslan._dispatch_spawn
-(its roster-join / routing-announcement side effects are wrong here) but the M1-M3
-seam directly — RunRecorder.start(kind='scheduled') + dispatcher.dispatch(run_id=…)
-with frames fanned out through run_registry.make_emit (online users see the stream
-live; offline it lands in the conversation for next open). Task-2 review I3: the
-dispatch coroutine runs as a run_registry-REGISTERED task, so POST /runs/{id}/cancel
-reaches a hung fire and WS reattach replays mid-fire frames; a user cancel finalizes
-the Run as 'cancelled' and records error/'cancelled by user' WITHOUT counting toward
-the 3-fail auto-pause. kind='scheduled' NEVER enters the evolution corpus —
-replay_set/evolution_watcher filter kind=='live' (structurally pinned in tests).
+Execution: `watch_loop` ticks every 60s; each due task `_fire`s as a SUPERVISED
+asyncio task (done-callback logs, never a bare fire-and-forget). A fire is one
+HEADLESS Arslan turn (`run_arslan_turn`): frames fan out through
+run_registry.make_emit (online users see the stream live; offline it lands in the
+conversation for next open), and no confirm callback is bound, so anything that
+needs a card is refused. A user cancel records error/'cancelled by user' WITHOUT
+counting toward the 3-fail auto-pause. 0.1.63 (C1) removed the expert fire (a
+recorded `dispatcher.dispatch` of the task's spawn): every fire is an Arslan turn.
 """
 from __future__ import annotations
 
@@ -61,12 +57,10 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 
-from arslan.llm import usage_sink
-from arslan.execution_budget import governed
 from server.db import session as db_session
 from server.db.models import ScheduledTask, ScheduledTaskRun
-from server.orchestrator import dispatcher, memory, run_trace
-from server.services import recap_service, run_recorder, run_registry
+from server.orchestrator import memory
+from server.services import recap_service, run_registry
 
 logger = logging.getLogger(__name__)
 
@@ -385,91 +379,6 @@ def _supervise(coro) -> asyncio.Task:
     return task
 
 
-@governed
-async def _dispatch_recorded(recorder, cid: str, spawn_id: int, prompt: str) -> dict:
-    """One recorded headless dispatch: frames fan out to whatever sinks are attached
-    (run_registry.make_emit — online users see the stream live, zero sinks drop
-    silently, the recorder journal keeps everything via tee), usage/trace collected
-    per-run exactly like _dispatch_spawn, recorder finalized on ALL exits (ok /
-    error / user cancel via run_registry — Task-2 review I3)."""
-    from server.orchestrator.arslan import _usage_frame  # local: keep import light
-
-    from server.services.task_service import current as current_task
-    runtime = current_task()
-    emit = recorder.tee(runtime.capture if runtime else run_registry.make_emit(cid))
-    emit({"type": "stream_start", "source": "spawn", "spawn_id": spawn_id,
-          "run_id": recorder.run_id})
-    # Per-run scoping mirrors arslan._dispatch_spawn: one fresh usage bucket + tool
-    # trace per Run, both still open at finalize time so detail lands on the row.
-    with usage_sink.collecting(), run_trace.collecting():
-        try:
-            out = await dispatcher.dispatch(
-                cid, spawn_id=spawn_id, task_brief=prompt,
-                on_chunk=lambda c: emit({"type": "stream_chunk", "content": c}),
-                on_event=emit,
-                # Headless: nobody is present to resolve an escalation mid-fire, so
-                # the spawn is never offered the protocol — it must complete or fail.
-                allow_escalation=False,
-                run_id=recorder.run_id,
-            )
-        except asyncio.CancelledError:
-            # Task-2 review I3 — user cancel (run_registry.cancel), mirroring
-            # arslan._run_turn's cancel path: handled HERE, still inside the
-            # collecting scopes, so usage detail is readable. Headless → no partial
-            # message to persist; finalize as 'cancelled' (skips scoring → can never
-            # enter the corpus), emit the terminal frame, then RE-RAISE so the
-            # awaiting _fire tells user-cancel apart via task.cancelled().
-            _usage = usage_sink.detail()
-            _prompt = run_trace.prompt()
-            await recorder.finalize(
-                summary_message_id=None, full_output="",
-                model=_usage["model"], provider=_usage["provider"],
-                tokens_in=_usage["tokens_in"], tokens_out=_usage["tokens_out"],
-                tokens_estimated=(_usage["tokens_in"] is None),
-                status_override="cancelled",
-                system_prompt=_prompt["system_prompt"], injected_kb=_prompt["injected_kb"],
-                injected_kb_sources=_prompt.get("injected_kb_sources"),
-            )
-            emit({"type": "run_cancelled", "run_id": recorder.run_id})
-            raise
-        except Exception as exc:  # noqa: BLE001 — finalize with error fields, then re-raise
-            emit({"type": "error", "code": "SPAWN_ERROR", "message": str(exc),
-                  "recoverable": True})
-            _usage = usage_sink.detail()
-            _prompt = run_trace.prompt()
-            await recorder.finalize(
-                summary_message_id=None, full_output="",
-                model=_usage["model"], provider=_usage["provider"],
-                tokens_in=_usage["tokens_in"], tokens_out=_usage["tokens_out"],
-                tokens_estimated=(_usage["tokens_in"] is None),
-                error_kind=type(exc).__name__, error_text=str(exc),
-                system_prompt=_prompt["system_prompt"], injected_kb=_prompt["injected_kb"],
-                injected_kb_sources=_prompt.get("injected_kb_sources"),
-            )
-            raise
-        _usage = usage_sink.detail()
-        _prompt = run_trace.prompt()
-        # Task-2 review I2 (成本只可见): the stream_end below is emitted AFTER this
-        # collecting scope closes — build the frame payload NOW, from the SAME
-        # _usage snapshot finalize persists (frame chip and Run row can never
-        # disagree). Exactly the live path's contract (arslan._run_turn).
-        usage_frame = _usage_frame(_usage)
-        await recorder.finalize(
-            summary_message_id=out["summary_message_id"],
-            full_output=out["full_output"],
-            model=_usage["model"], provider=_usage["provider"],
-            tokens_in=_usage["tokens_in"], tokens_out=_usage["tokens_out"],
-            tokens_estimated=(_usage["tokens_in"] is None),
-            system_prompt=_prompt["system_prompt"], injected_kb=_prompt["injected_kb"],
-            injected_kb_sources=_prompt.get("injected_kb_sources"),
-        )
-    # Post-finalize close frame, exactly like _dispatch_spawn's tail: live sinks get
-    # their stream closed (the persisted summary message is the durable copy).
-    emit({"type": "stream_end", "message_id": out["summary_message_id"],
-          "usage": usage_frame})
-    return out
-
-
 async def run_arslan_turn(conversation_id: str, prompt: str) -> None:
     """One Arslan turn with no socket behind it (P2 §1.1).
 
@@ -505,13 +414,6 @@ async def run_arslan_turn(conversation_id: str, prompt: str) -> None:
     await arslan_mod._handle_answer(conversation_id, prompt, emit)
 
 
-def _target(task: ScheduledTask) -> str:
-    """Who runs a fire. 0.1.44: with experts off, always Arslan (migration 0056
-    also rewrote stored rows; this covers any row written by an older build)."""
-    from server.orchestrator import arslan as arslan_mod
-    return (task.target or "spawn") if arslan_mod.EXPERTS_ENABLED else "arslan"
-
-
 async def _fire(task: ScheduledTask) -> None:
     from server.services import task_context
     cid = task.conversation_id or f"scheduled-{task.id}"
@@ -521,14 +423,16 @@ async def _fire(task: ScheduledTask) -> None:
         return await _fire_body(task)
     with desktop_status.working(cid, title=task.name, kind="scheduled"):   # keeps the Mac awake while the fire runs (0.1.41)
         return await task_context.execute_entry(cid, task.prompt, run_registry.make_emit(cid), body,
-            driver={"kind": "expert", "id": task.spawn_id} if _target(task) != "arslan" and task.spawn_id else None,
-            headless=True)
+                                                headless=True)
 
 
 async def _fire_body(task: ScheduledTask) -> None:
-    """One scheduled fire. Deliberately NOT arslan._dispatch_spawn — its roster-join /
-    routing-announcement side effects are wrong for a headless fire; the plan pins
-    RunRecorder + dispatcher.dispatch directly.
+    """One scheduled fire: one Arslan turn with no socket behind it.
+
+    0.1.63 (C1): every fire is an Arslan turn. `task.target` and `task.spawn_id`
+    are no longer read here; migration 0056 rewrote stored rows to "arslan", and a
+    row an older build wrote with target="spawn" runs as an Arslan turn too. The
+    columns stay (no migration in this change).
 
     Order matters: the in-flight scheduled_task_runs row is inserted FIRST (it IS the
     single-flight gate) and, in the SAME commit, next_due_at advances past now
@@ -536,12 +440,10 @@ async def _fire_body(task: ScheduledTask) -> None:
     outliving one 60s tick never looks due — no spurious skipped_overlap rows;
     record_outcome's ok path re-computes forward from finish time, forward-only).
     EVERY exit records an outcome against that exact row (S6) — ok advances the
-    cadence, any exception becomes outcome='error' and counts toward the 3-fail
-    auto-pause, a user cancel (review I3) is error/'cancelled by user' and does NOT
-    count."""
-    task_id, name = task.id, task.name
-    spawn_id, prompt = task.spawn_id, task.prompt
-    target = _target(task)
+    cadence, any exception or a turn that saw an error becomes outcome='error' and
+    counts toward the 3-fail auto-pause, a user cancel is error/'cancelled by user'
+    and does NOT count."""
+    task_id, name, prompt = task.id, task.name, task.prompt
     cid = task.conversation_id or f"scheduled-{task_id}"
     now = datetime.utcnow()
     async with db_session.AsyncSessionLocal() as db:
@@ -557,79 +459,26 @@ async def _fire_body(task: ScheduledTask) -> None:
                 _pause_no_future(db_task, exc)
         await db.commit()
 
-    run_id: int | None = None
+    from server.services.task_service import current as current_task
     try:
-        # P2 §1.1: target says WHO runs this. Deliberately NOT `spawn_id is
-        # None` — that is also what a DELETED spawn looks like (ondelete SET
-        # NULL), and those two need opposite outcomes. Branching on the absent
-        # value would have turned "your worker is gone" into a silent success.
-        if target == "arslan":
-            await run_arslan_turn(cid, prompt)
-            from server.services.task_service import current as current_task
-            runtime = current_task()
-            if runtime and (runtime.saw_error or runtime.pause_reason or runtime.cancelled):
-                await record_outcome(task_id, False, row_id=row_id,
-                    reason=runtime.pause_reason or ("cancelled by user" if runtime.cancelled else "execution failed"),
-                    count_failure=not runtime.cancelled)
-                return
-            await record_outcome(task_id, True, row_id=row_id, run_id=None)
-            await recap_service.log_event(
-                cid, "scheduled_fire", {"task_id": task_id, "run_id": None},
-                f"定时任务「{name}」已执行")
-            return
-
-        spawn_name = await dispatcher.get_spawn_name(spawn_id)
-        if spawn_name is None:
-            # S8: ondelete SET NULL (spawn deleted) or a dangling id — a clean error
-            # outcome that self-heals via the 3-fail auto-pause, never a supervisor
-            # crash. Checked BEFORE RunRecorder.start (a dangling spawn_id FK would
-            # crash the Run insert).
-            raise ValueError("spawn 已删除")
-        recorder = await run_recorder.RunRecorder.start(
-            conversation_id=cid, spawn_id=spawn_id, spawn_name=spawn_name,
-            user_message=prompt, kind="scheduled")
-        run_id = recorder.run_id
-        # Task-2 review I3: the dispatch runs as its OWN registered task (mirrors
-        # arslan's live-turn registration) — POST /runs/{id}/cancel can target a
-        # hung fire, and a reattaching WS replays mid-fire frames via the recorder
-        # journal run_registry now holds.
-        inner = asyncio.create_task(_dispatch_recorded(recorder, cid, spawn_id, prompt))
-        run_registry.register(recorder.run_id, cid, inner, recorder=recorder)
-        try:
-            await inner
-        except asyncio.CancelledError:
-            # Same discrimination as arslan's awaiter (review I2 there): when THIS
-            # supervised fire is cancelled while suspended at `await inner`, asyncio
-            # delegates the cancellation INTO inner — cancelling() > 0 means the
-            # CancelledError was aimed at US (shutdown/teardown), so propagate; only
-            # a direct user cancel of the INNER task is handled as an outcome.
-            cur = asyncio.current_task()
-            if (cur is not None and cur.cancelling() > 0) or not inner.cancelled():
-                inner.cancel()    # teardown aimed at us — don't orphan the dispatch
-                raise
-            # User cancel via run_registry: the recorder already finalized the Run
-            # as 'cancelled' inside _dispatch_recorded. A deliberate user action is
-            # not a task failure — record the outcome WITHOUT advancing the 3-fail
-            # auto-pause counter (count_failure=False).
-            await record_outcome(task_id, False, row_id=row_id, run_id=run_id,
-                                 reason="cancelled by user", count_failure=False)
-            return
-        finally:
-            run_registry.unregister(recorder.run_id, cid)
+        await run_arslan_turn(cid, prompt)
     except Exception as exc:  # noqa: BLE001 — a failed fire is an error outcome, not a crash
-        from server.services.task_service import current as current_task
         if current_task():
             current_task().saw_error = True
         logger.warning("scheduled task %s fire failed: %s", task_id, exc)
-        await record_outcome(task_id, False, row_id=row_id, run_id=run_id,
-                             reason=str(exc))
+        await record_outcome(task_id, False, row_id=row_id, run_id=None, reason=str(exc))
         return
-
-    await record_outcome(task_id, True, row_id=row_id, run_id=run_id)
+    runtime = current_task()
+    if runtime and (runtime.saw_error or runtime.pause_reason or runtime.cancelled):
+        await record_outcome(task_id, False, row_id=row_id,
+            reason=runtime.pause_reason or ("cancelled by user" if runtime.cancelled else "execution failed"),
+            count_failure=not runtime.cancelled)
+        return
+    await record_outcome(task_id, True, row_id=row_id, run_id=None)
     # Best-effort timeline entry (log_event never raises) — the recap shows the fire
     # even when nobody was online to see the stream.
     await recap_service.log_event(
-        cid, "scheduled_fire", {"task_id": task_id, "run_id": run_id},
+        cid, "scheduled_fire", {"task_id": task_id, "run_id": None},
         f"定时任务「{name}」已执行")
 
 

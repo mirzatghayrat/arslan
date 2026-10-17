@@ -347,9 +347,8 @@ def network_refusals(_no_real_network_off_loopback):
 #: `freeze_contract` list in evals/companion/stable_retest.py, stable-0140-acceptance.json), and an
 #: edit to one would muddle the audit trail. `real_network` lifts the network guard
 #: (`_no_real_network_off_loopback`) and nothing else. tests/test_network_guard.py holds this list
-#: to the nine runners it names, and checks with `-m real_network` that pytest sees the marker.
+#: to the eight runners it names, and checks with `-m real_network` that pytest sees the marker.
 _REAL_NETWORK_RUNNERS = (
-    "tests/server/test_escalation_eval.py",
     "tests/server/test_stable_document_live.py",
     "tests/server/test_stable_memory_live.py",
     "tests/server/test_stable_research_live.py",

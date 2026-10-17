@@ -444,24 +444,12 @@ async def _in_budget_refusal_cooldown(db, spawn_id: int) -> bool:
 
 
 async def trigger_spawn(spawn_id: int) -> int | None:
-    """Auto path: gate on evolution_auto + the run-count/backoff threshold + concurrency,
-    then enqueue. Returns the attempt_id if one was started, else None."""
-    if spawn_id in _running_spawns:
-        return None
-    # 0.1.44 one Arslan: experts are not a runtime path, so rewriting an expert's
-    # prompt in the background would spend on something nothing reads. A user
-    # who had this switched on must not keep paying for it.
-    from server.orchestrator import arslan
-    if not arslan.EXPERTS_ENABLED:
-        return None
-    async with db_session.AsyncSessionLocal() as db:
-        if not await settings_service.evolution_auto(db):
-            return None
-        if await _in_budget_refusal_cooldown(db, spawn_id):
-            return None
-        if not await _is_eligible(db, spawn_id):
-            return None
-    return await enqueue_attempt(spawn_id, manual=False)
+    """Auto path. Always None since 0.1.44 (one Arslan): experts are not a runtime
+    path, so rewriting an expert's prompt in the background would spend on
+    something nothing reads, and a user who had evolution_auto on must not keep
+    paying for it. C2b deletes the whole automatic path (this function, tick's
+    loop over spawns, _is_eligible and _in_budget_refusal_cooldown)."""
+    return None
 
 
 # ── living-proposal refresh (wired into the loop) ─────────────────────────────────────
