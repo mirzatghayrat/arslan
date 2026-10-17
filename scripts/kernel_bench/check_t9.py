@@ -8,7 +8,6 @@ other file and an added file each cost a point.
 from __future__ import annotations
 
 import hashlib
-import json
 from pathlib import Path
 
 OLD, NEW = "max_retry_count", "retry_limit"
@@ -45,14 +44,15 @@ def fixture(run: str) -> None:
     for name, text in FILES.items():
         (root / name).parent.mkdir(parents=True, exist_ok=True)
         (root / name).write_text(text)
-    (Path(run) / ".t9_manifest.json").write_text(json.dumps({n: _sha(b) for n, b in expected().items()}))
 
 
 def check(run: str) -> dict:
     root = Path(run) / "project"
-    want = json.loads((Path(run) / ".t9_manifest.json").read_text())
+    want = {n: _sha(b) for n, b in expected().items()}
+    # Byte-compiled files from an agent checking its edit (`python -m py_compile`) are not
+    # new files the task made.
     have = {str(p.relative_to(root)): _sha(p.read_bytes()) for p in root.rglob("*")
-            if p.is_file() and p.name != ".DS_Store"}
+            if p.is_file() and p.name != ".DS_Store" and "__pycache__" not in p.parts}
     changed_ok = all(have.get(n) == want[n] for n in (*EDITS, "pyproject.toml"))
     others_ok = all(have.get(n) == want[n] for n in want if n not in EDITS and n != "pyproject.toml")
     added = sorted(set(have) - set(want))

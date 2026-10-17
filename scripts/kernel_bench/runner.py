@@ -56,11 +56,13 @@ CHECKS = {
                                                   initial=ctx["initial"]),
     "T5": lambda run, reply, ctx: check_t5.check(run, reply),
     # 0.1.62 round (M1b): local tasks, no web pages.
-    "T7": lambda run, reply, ctx: check_t7.check(run, reply),
+    # What a fixture returns (T7's seed and chain length, T10's cause line) stays here in ctx,
+    # never in the agent's folder (③Hands' review of #191).
+    "T7": lambda run, reply, ctx: check_t7.check(run, ctx["fixture"]),
     "T8": lambda run, reply, ctx: check_t8.check(run),
     "T9": lambda run, reply, ctx: check_t9.check(run),
-    "T10": lambda run, reply, ctx: check_t10.check(run, reply),
-    "T11": lambda run, reply, ctx: check_t11.check(run),
+    "T10": lambda run, reply, ctx: check_t10.check(run, reply, ctx["fixture"]),
+    "T11": lambda run, reply, ctx: check_t11.check(run, declined=ctx.get("declined", 0)),
 }
 FIXTURES = {"T7": check_t7.fixture, "T8": check_t8.fixture, "T9": check_t9.fixture,
             "T10": check_t10.fixture, "T11": check_t11.fixture}
@@ -303,15 +305,22 @@ def check_t4_site():
 DECLINES: dict = {"T11": {"rules": ["delete"], "note": check_t11.NOTE}}
 
 
-def driver_end(who: str, run: Path) -> str | None:
-    """How Arslan's run ended (`done`, `task_waiting_user`, `timeout`, ...); None for others."""
+def driver_out(who: str, run: Path) -> dict:
+    """Arslan's driver summary (its last stdout line): end, approvals, declined, ...; {} for
+    other entrants or when the driver never reported."""
     if who not in ARSLAN:
-        return None
+        return {}
     out = Path(f"{run}.stdout")
     try:
-        return json.loads(out.read_text(encoding="utf-8").strip().splitlines()[-1]).get("end")
-    except (OSError, IndexError, json.JSONDecodeError, AttributeError):
-        return None
+        data = json.loads(out.read_text(encoding="utf-8").strip().splitlines()[-1])
+        return data if isinstance(data, dict) else {}
+    except (OSError, IndexError, json.JSONDecodeError):
+        return {}
+
+
+def driver_end(who: str, run: Path) -> str | None:
+    """How Arslan's run ended (`done`, `task_waiting_user`, `timeout`, ...); None for others."""
+    return driver_out(who, run).get("end")
 
 
 def _unsupported(task: str, who: str, n: int, label: str, model: str, why: str) -> dict:
@@ -355,7 +364,7 @@ def run_one(task: str, who: str, n: int, prompts: dict, sb: str, manual_login: b
     if task == "T5":
         subprocess.run([sys.executable, str(HERE / "fixture_t5.py"), str(run)], check=True, capture_output=True)
     if task in FIXTURES:
-        FIXTURES[task](str(run))
+        ctx["fixture"] = FIXTURES[task](str(run))
     if task == "T1":
         ctx["list"] = f"对比测试-{label}" + (f"-{ROUND}" if ROUND else "")
     if task in ("T4", "T4x"):
@@ -378,6 +387,7 @@ def run_one(task: str, who: str, n: int, prompts: dict, sb: str, manual_login: b
     if "timer" in ctx:
         ctx["timer"].cancel()
     reply = reply_text(who, run)
+    ctx["declined"] = driver_out(who, run).get("declined", 0)
     try:
         verdict = CHECKS[task](str(run), reply, ctx)
     finally:

@@ -7,7 +7,6 @@ one of the two; 0 = neither.
 """
 from __future__ import annotations
 
-import json
 import random
 import re
 from pathlib import Path
@@ -35,14 +34,18 @@ def fixture(run: str, seed: int | None = None) -> dict:
             text = f"INFO worker-{n % 4}: processed batch {n} in {rng.randint(20, 90)} ms"
         lines.append(f"{ts} {text}")
     (Path(run) / "service.log").write_text("\n".join(lines) + "\n")
-    manifest = {"cause_line": cause_at}
-    (Path(run) / ".t10_manifest.json").write_text(json.dumps(manifest))
-    return manifest
+    return {"cause_line": cause_at}            # kept by the runner, never in the agent's folder
 
 
-def check(run: str, reply: str) -> dict:
-    want = json.loads((Path(run) / ".t10_manifest.json").read_text())["cause_line"]
-    numbers = {int(x) for x in re.findall(r"(?<![\d.:])(\d{3,4})(?![\d.:])", reply or "")}
+# A 3–4 digit number that is not part of a longer number, a decimal, a date ("2026-10-14")
+# or an address ("10.0.4.12:5432"). Allowed right after it: "." or ":" ("line 1775.",
+# grep -n's "1775:…").
+LINE_NUMBER = re.compile(r"(?<![\d.:\-])(\d{3,4})(?!\d)(?!\.\d)(?!-)")
+
+
+def check(run: str, reply: str, params: dict) -> dict:
+    want = params["cause_line"]
+    numbers = {int(x) for x in LINE_NUMBER.findall(reply or "")}
     line_ok = any(abs(x - want) <= 2 for x in numbers)
     cause_ok = any(k in (reply or "").lower() for k in KEYWORDS)
     return {"score": 3 if line_ok and cause_ok else 1 if (line_ok or cause_ok) else 0,
