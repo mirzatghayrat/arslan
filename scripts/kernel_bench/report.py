@@ -23,13 +23,14 @@ def load(path: str) -> list[dict]:
 def summarise(records: list[dict], offpeak: bool = False) -> list[dict]:
     groups: dict = defaultdict(list)
     for r in records:
-        groups[(r["task"], r["entrant"], r.get("model", "?"))].append(r)
+        # Rows judged by an older pass rule (score only, before M1a) never mix with newer ones.
+        groups[(r["task"], r["entrant"], r.get("model", "?"), r.get("judge", 1))].append(r)
     rows = []
-    for (task, who, model), rs in sorted(groups.items()):
+    for (task, who, model, judged), rs in sorted(groups.items()):
         k = len(rs)
         passes = sum(1 for r in rs if r.get("passed"))
         usd = sum(r["usage"]["usd_peak"] for r in rs) / k / (2 if offpeak else 1)
-        rows.append({"task": task, "entrant": who, "model": model, "k": k, "passes": passes, "pass_all": passes == k,
+        rows.append({"task": task, "entrant": who, "old_rule": judged < 2, "model": model, "k": k, "passes": passes, "pass_all": passes == k,
                      "mean_usd": round(usd, 4),
                      "mean_span_s": round(sum(r["usage"]["span_s"] for r in rs) / k, 1),
                      "mean_calls": round(sum(r["usage"]["model_calls"] for r in rs) / k, 1),
@@ -49,7 +50,8 @@ def render(rows: list[dict]) -> str:
     lines = ["| task | entrant | model | Pass^k | passes | mean $ | model time | calls |",
              "| --- | --- | --- | --- | --- | --- | --- | --- |"]
     for r in rows:
-        lines.append(f"| {r['task']} | {r['entrant']} | {r['model']} | {'yes' if r['pass_all'] else 'no'} | "
+        who = r["entrant"] + (" (old rule)" if r.get("old_rule") else "")
+        lines.append(f"| {r['task']} | {who} | {r['model']} | {'yes' if r['pass_all'] else 'no'} | "
                      f"{r['passes']}/{r['k']} | "
                      f"{r['mean_usd']:.3f} | {r['mean_span_s']}s | {r['mean_calls']} |")
     return "\n".join(lines)

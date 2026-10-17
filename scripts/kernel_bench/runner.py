@@ -104,10 +104,18 @@ def proxy_for(model: str) -> str:
     return ANTHROPIC_PROXY if is_claude(model) else PROXY
 
 
-def judge(check: dict, end: str | None) -> bool:
-    """A run passes when the checker gives 3 and Arslan did not stop waiting for the user:
-    a file written while the task hangs on "needs you" is not a finished task."""
-    return check.get("score") == 3 and end != "task_waiting_user"
+# Bumped when the pass rule changes; report.py keeps rows judged by different rules apart.
+JUDGE_VERSION = 2
+
+
+def judge(check: dict, end: str | None, who: str = "arslan") -> bool:
+    """A run passes when the checker gives 3 and, for Arslan, the run ended cleanly ("done"):
+    a task left on "needs you", failed, cancelled, timed out, a background job that ended
+    blocked or out of budget, or a driver that never reported (killed, crashed) is not a pass,
+    whatever the files say. Other entrants report no end; their checker score decides."""
+    if check.get("score") != 3:
+        return False
+    return end == "done" if who in ARSLAN else True
 
 
 def command(who: str, label: str, run: Path, prompt, sb: str, *, model: str = MODEL, turn: int = 0,
@@ -152,7 +160,10 @@ def command(who: str, label: str, run: Path, prompt, sb: str, *, model: str = MO
                       "--output-format", "json", "--model", model, "--dangerously-skip-permissions",
                       "--strict-mcp-config", "--mcp-config", '{"mcpServers": {}}']
         cmd += ["--resume", session] if turn else ["--session-id", session or str(uuid.uuid4())]
-        return cmd, env({"HOME": str(home), "ANTHROPIC_BASE_URL": f"{ANTHROPIC_PROXY}/{label}",
+        # Claude models go to the Anthropic proxy; a DeepSeek model through the DeepSeek
+        # proxy's Anthropic-compatible path (the one DeepSeek Harness uses).
+        base = f"{ANTHROPIC_PROXY}/{label}" if is_claude(model) else f"{PROXY}/{label}/anthropic"
+        return cmd, env({"HOME": str(home), "ANTHROPIC_BASE_URL": base,
                          "ANTHROPIC_API_KEY": "bench-dummy", "DISABLE_AUTOUPDATER": "1",
                          "DISABLE_TELEMETRY": "1", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"}, node=True)
     if who in ARSLAN:
@@ -206,10 +217,12 @@ def reply_text(who: str, run: Path) -> str:
     return text
 
 
-def usage(label: str) -> dict:
+def usage(label: str, since: float = 0.0) -> dict:
+    """This run's model calls: its label, from when it started (the same label comes back in
+    later rounds and on other models; usage.jsonl keeps them all)."""
     log = ROOT / "usage.jsonl"
     rows = [json.loads(line) for line in log.open()] if log.exists() else []
-    mine = [r for r in rows if r["cand"] == label and r["model"] != "?"]
+    mine = [r for r in rows if r["cand"] == label and r["model"] != "?" and r["t"] >= since]
     if not mine:
         return {"model_calls": 0, "usd_peak": 0.0, "span_s": 0.0}
     start = min(r["t"] - r["secs"] for r in mine)
@@ -263,7 +276,8 @@ def driver_end(who: str, run: Path) -> str | None:
 
 def _unsupported(task: str, who: str, n: int, label: str, model: str, why: str) -> dict:
     record = {"run": label, "task": task, "entrant": who, "repeat": n, "model": model, "rc": None,
-              "wall_s": 0, "prompt": None, "usage": usage(label), "passed": False,
+              "wall_s": 0, "prompt": None, "usage": usage(label, time.time()), "passed": False,
+              "judge": JUDGE_VERSION,
               "check": check_t6.unsupported(who) if task == "T6" else {"score": 0, "unsupported": True, "note": why}}
     with open(ROOT / "results.jsonl", "a") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
@@ -284,6 +298,8 @@ def run_one(task: str, who: str, n: int, prompts: dict, sb: str, manual_login: b
     run = ROOT / "runs" / label
     model = model_for(who, models or {})
     shutil.rmtree(run, ignore_errors=True)
+    for old in run.parent.glob(f"{label}.turn*"):     # snapshots of an earlier round of this label
+        shutil.rmtree(old, ignore_errors=True)
     run.mkdir(parents=True)
     raw = prompts.get(task, "")              # unsupported tasks are recorded without a prompt
     turns_raw = raw if isinstance(raw, list) else [raw]
@@ -328,10 +344,10 @@ def run_one(task: str, who: str, n: int, prompts: dict, sb: str, manual_login: b
     record = {"run": label, "task": task, "entrant": who, "repeat": n, "model": model, "rc": rc,
               "entrant_version": entrant_version(who), "end": end,
               "wall_s": round(time.time() - started), "prompt": turns if len(turns) > 1 else turns[0],
-              "check": verdict, "usage": usage(label),
+              "check": verdict, "usage": usage(label, started), "judge": JUDGE_VERSION,
               "artifacts": {"stdout": f"{run}.stdout", "stderr": f"{run}.stderr", "folder": str(run)},
               "reply_tail": reply[-1500:]}
-    record["passed"] = judge(verdict, end)
+    record["passed"] = judge(verdict, end, who)
     Path(f"{run}.record.json").write_text(json.dumps(record, ensure_ascii=False, indent=1))
     with open(ROOT / "results.jsonl", "a") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")

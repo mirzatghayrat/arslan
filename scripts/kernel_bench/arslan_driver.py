@@ -50,6 +50,9 @@ RUN_TIMEOUT_S = 15 * 60
 class TurnTracker:
     run_dir: str
     turn_done: bool = False
+    # A task turn is over at its final task_state, which can come well after stream_end (the
+    # post-turn review runs first): until then the run is not over (③Hands' review of #190).
+    task_open: bool = False
     jobs_open: set = field(default_factory=set)
     final_text: list = field(default_factory=list)
     approvals: int = 0
@@ -77,13 +80,19 @@ class TurnTracker:
         elif t == "stream_end":
             self.turn_done = True
         elif t == "task_state" and frame.get("phase") in TERMINAL_TASK_PHASES:
-            self.turn_done = True
+            self.turn_done, self.task_open = True, False
             if frame.get("phase") != "succeeded":
                 self.end_reason = f"task_{frame.get('phase')}"
+        elif t == "task_state":
+            self.task_open = True
         elif t == "job_update":
             job = frame.get("job_id")
             if frame.get("phase") == "finished":
                 self.jobs_open.discard(job)
+                # A background job never sends task_state to the chat; how it ended is only
+                # its outcome (server/services/background_jobs.py outcome_of).
+                if frame.get("outcome") not in (None, "done"):
+                    self.end_reason = f"job_{frame.get('outcome')}"
             else:
                 self.jobs_open.add(job)
         elif t == "propose_run_command":
@@ -118,7 +127,9 @@ class TurnTracker:
         if DECLINE_CARDS:
             return False
         if CARDS != "sandboxed":
-            return True
+            # Apple Events reach other apps (Finder would move files to the user's real Trash,
+            # outside the bench folder): declined, except Reminders for T1, which is the task.
+            return frame.get("rule") != "apple-events" or "-T1-" in self.run_dir
         if frame.get("sandbox"):
             self.sandbox_cards += 1
             return False
@@ -129,7 +140,7 @@ class TurnTracker:
         if now - started >= RUN_TIMEOUT_S:
             self.end_reason = self.end_reason or "timeout"
             return True
-        if self.turn_done and not self.jobs_open and now - self.last_activity >= self.idle_after_s:
+        if self.turn_done and not self.task_open and not self.jobs_open and now - self.last_activity >= self.idle_after_s:
             self.end_reason = self.end_reason or "done"
             return True
         return False

@@ -13,10 +13,15 @@ and goose. Built for the 2026-10 kernel comparison; see `docs/plans/2026-10-01-k
 
 ## 0.1.62 round (M1a): what changed
 
-- **A run that ends waiting for the user fails.** Arslan's driver reports how a run ended; a run
-  whose task stopped on "needs you" (`task_waiting_user`) is not a pass, whatever the checker
-  scored (`runner.judge`). The driver now waits for the server's `succeeded` phase (it used to
-  wait for a `completed` the server never sends).
+- **An Arslan run passes only if it ended cleanly (`done`) and the checker gave 3** (`runner.judge`).
+  A task left on "needs you", failed or cancelled, a background job that ended blocked, partial or
+  out of budget, a timeout, or a driver that never reported are all failures, whatever the files
+  say. The driver waits for a task turn's final `task_state` (it comes after the answer), and for
+  the server's `succeeded` phase (it used to wait for a `completed` the server never sends).
+  Rows record `judge: 2`; `report.py` marks rows from before this rule `(old rule)` and never
+  mixes them with new ones.
+- **Usage per run** counts only the run's own label from when it started, so a label reused in a
+  later round or on another model does not add the earlier spend.
 - **Several turns.** A prompt in `prompts.json` may be a list: Arslan gets each turn in the same
   conversation once the previous one is over; Claude Code resumes its session. The run folder is
   copied to `<run>.turn<N>` between turns for the checker. Other entrants are recorded as
