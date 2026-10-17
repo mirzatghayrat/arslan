@@ -262,6 +262,9 @@ class TaskRuntime:
         self.run_ids: set[int] = set()
         self.closed = False
         self.pause_reason: str | None = None
+        # 0.1.62 F2 ④: a work limit (no progress, budget) reached after a deliverable was saved. It
+        # holds the task only if the finish-time checks do not pass a saved file (_run). In memory only.
+        self.limit_reason: str | None = None
         self.worker_slots = asyncio.Semaphore(2)
         self.validation_results = ()
         self.validation_report = None
@@ -404,6 +407,14 @@ class TaskRuntime:
         return result
 
 
+def _file_checked(runtime) -> bool:
+    """A finish-time check passed on a saved file: a passing `file_saved` check or an artifact check.
+    "An answer was delivered" alone never counts (chat turns have only that one; K4 widens them)."""
+    file_checks = {c.id for c in runtime.spec.acceptance if c.rule is not None and c.rule.kind == "file_saved"}
+    return (any(r.check_id in file_checks and r.status == "passed" for r in runtime.validation_results)
+            or bool((runtime.validation_report or {}).get("artifacts")))
+
+
 async def _run(value: dict, emit, body, *, progress=None, context=None):
     runtime = TaskRuntime(value, emit, progress)
     budget = Budget.from_snapshot(value["budget"])
@@ -445,6 +456,8 @@ async def _run(value: dict, emit, body, *, progress=None, context=None):
                 verified = (bool(runtime.validation_results) and any(item.evaluator != "model" for item in runtime.validation_results)
                     and all(item.status in {"passed", "not_applicable"} for item in runtime.validation_results)
                     and all(item["status"] in {"passed", "not_applicable"} for item in (runtime.validation_report or {}).get("artifacts", [])))
+                if runtime.limit_reason and not runtime.pause_reason and not (verified and _file_checked(runtime)):
+                    runtime.pause_reason = runtime.limit_reason      # 0.1.62 F2 ④: nothing saved was checked
                 succeeded = verified and not (runtime.saw_error or runtime.pause_reason or runtime.reconciliation_required)
                 checks_missing = (any(item.evaluator != "human" and item.status in {"not_run", "unverified"}
                     for item in runtime.validation_results) or

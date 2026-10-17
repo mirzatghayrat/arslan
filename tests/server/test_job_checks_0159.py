@@ -389,6 +389,45 @@ async def test_an_unknown_outcome_is_not_repeated(execution_db, disk, first):
     assert refused == [None, "task_reconciliation_required"]
 
 
+# 0.1.62 F2 ④: a saved deliverable whose file check passed is not held by a work limit.
+
+async def test_a_saved_and_checked_deliverable_finishes_despite_a_work_limit(execution_db, disk):
+    async def body(emit):
+        (disk / "report.md").write_text("# Report")
+        await act("write_file", {"path": "report.md"}, {"ok": True, "path": "report.md"})
+        task_service.current().limit_reason = "task_no_progress"
+        return "Saved report.md"
+    task = await run_contract([check("file_saved", "saved", target="report.md")], body)
+    assert (task.phase, task.pause_reason) == ("succeeded", None)
+
+
+@pytest.mark.parametrize("checks", [[check("file_saved", "saved", target="missing.md")],
+                                    [check("text", contains=["Saved"])]])
+async def test_without_a_passing_file_check_the_limit_still_holds(execution_db, disk, checks):
+    async def body(emit):
+        (disk / "report.md").write_text("# Report")
+        await act("write_file", {"path": "report.md"}, {"ok": True, "path": "report.md"})
+        task_service.current().limit_reason = "task_no_progress"
+        return "Saved report.md"
+    task = await run_contract(checks, body)
+    assert (task.phase, task.pause_reason) == ("waiting_user", "task_no_progress")
+
+
+class _Runtime:
+    pause_reason = None
+    limit_reason = None
+
+
+def test_the_loop_holds_a_limit_only_once_something_was_saved():
+    from server.orchestrator import tool_loop
+    saved, unsaved = _Runtime(), _Runtime()
+    tool_loop._stop_for_limit(saved, "task_no_progress",
+                              [{"tool": "write_file", "result": {"ok": True}}, {"tool": "web_search", "result": {}}])
+    tool_loop._stop_for_limit(unsaved, "task_no_progress", [{"tool": "write_file", "result": {"ok": False}}])
+    assert (saved.pause_reason, saved.limit_reason) == (None, "task_no_progress")
+    assert (unsaved.pause_reason, unsaved.limit_reason) == ("task_no_progress", None)
+
+
 # --- C: an answered run is not replayed --------------------------------------------------------
 
 class _Recorder:
