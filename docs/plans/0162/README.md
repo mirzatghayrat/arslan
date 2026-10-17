@@ -1,0 +1,261 @@
+# 0162 轮：任务卡清单与分道表（v0.1.62 热修 + v0.1.63 执行内核）
+
+- **状态：用户已看过，按任务卡审查改完（2026-10-17）。** 这份只改文档的 PR 合进 main 之后开工。
+- **版本号（U1）：** 热修 **v0.1.62** → 执行内核 **v0.1.63** → 执行领先 v0.1.64 → 其余追平 v0.1.65。文件名和分支名里的 `0162` 是这一轮规划的编号，不是版本号。
+- **总计划：** `docs/plans/2026-10-17-0162-execution-first.md`，先看开头的「决定记录」（D1–D15、U1–U7）和「更正记录」（E1–E14）。
+- **补充：** `docs/plans/2026-10-17-0162-lead-roadmap.md`；任务卡审查 `docs/plans/2026-10-17-0162-card-review.md`。
+- **规矩：** `docs/sessions.md`。特别是 §8「完成证据」和 §9「旧路径要写删除条件」。
+
+---
+
+## 1. 开工顺序（按审查 §6）
+
+1. **用户合并这份只改文档的 PR**，再把 §7 的简报发给各会话。
+2. **热修线（v0.1.62），在 `release/0.1.62` 分支上：**
+   - 从 tag v0.1.61 拉出 `release/0.1.62`。F 线的 PR 都以它为目标分支。
+   - F5a 先合；合了马上把 `release/0.1.62` 合回 main 一次，main 的 CI 也恢复。
+   - 然后 F1、F2、F3、F4a（扩大范围）、F4b；H2 尽量赶上。
+   - FR 发版，然后把整个分支合回 main。
+   - **热修发布前，`server/orchestrator/tool_loop.py`、`server/services/task_service.py` 不接别的 PR。**
+3. **同时进行：**
+   - ⓪Plan：M1、M2（**在 FR 之前合**）、M3；
+   - ②Main：C5b；C1 可以先开发、先开 PR，但它改 `task_service.py`，合并等热修合回 main；
+   - ③Hands：H1。
+4. **热修发布后：** 用户跑 M1B 基线 → K1 合并 → K 线开始。C 线的 Aegis 试点也从这时开始（§9）。
+
+## 2. 任务卡清单
+
+- 一张卡可以对应几个 PR，拆法写在卡里（审查 A7）。卡里写了：目标、改哪些文件、不许碰、怎么做、验收、量级、风险与回退。
+- 「状态」列由 ②Main 维护：待开工 → 开发中 → 待合并（附 PR 号）→ 已合并（附合并提交）。
+- **分级总数（审查 A5）：** 49 张卡，**必须 40 张**、应该 8 张、可以 1 张。
+  - 必须里：v0.1.62 热修 8 张，M 线 4 张，v0.1.63 28 张。
+  - 比 D3 的「必须 23 项」多，是因为按卡数算：F4、F5、C1–C3、S2、S4 拆成了几张，又加了 H1、H2、M1B、S4a、S7、R63。
+
+| 卡 | 做什么 | 道 | 版本 | 分级 | 依赖 | 状态 |
+|---|---|---|---|---|---|---|
+| [F5a](F5a-ci-unblock.md) | CI 解堵：去掉 Cua Driver 的 CI 步骤；合了马上把发版分支合回 main 一次 | ②Main | v0.1.62 | 必须 | — | 待开工 |
+| [F1](F1-command-timeout.md) | `run_command` 时限跟参数走、不超过回合剩余时间；超时带输出 | ②Main | v0.1.62 | 必须 | F5a | 待开工 |
+| [F2](F2-unknown-outcome-chain.md) | 「结果不明」链四处修正；读命令判成 `read` | ②Main | v0.1.62 | 必须 | F5a、F1（要认 `code: "time_limit"`）；H2（软） | 待开工 |
+| [F3](F3-mcp-schema.md) | MCP schema 规整（三家都做顶层合并）；坏工具降级，再失败去掉全部 MCP 工具 | ②Main | v0.1.62 | 必须 | F5a | 待开工 |
+| [F4a](F4a-terminal-osascript-once.md) | 终端 osascript / `shortcuts run`（含带路径、`command`、`xargs` 的写法）只给「这一次」；更正 v0.1.61 说明 | ②Main | v0.1.62 | 必须 | F5a | 待开工 |
+| [F4b](F4b-write-no-symlink.md) | 写文件不跟随符号链接，也防硬链接 | ②Main | v0.1.62 | 必须 | F5a | 待开工 |
+| [H2](H2-hands-not-executed-codes.md) | Hands 没执行时的明确结果代码（尽量进热修） | ③Hands | v0.1.62 | 必须 | — | 待开工 |
+| [FR](FR-hotfix-release.md) | 在 `release/0.1.62` 上发 v0.1.62；发版后合回 main | ②Main | v0.1.62 | 必须 | F5a、F1–F4b（H2 若已合）；M1、M2 最好先合 | 待开工 |
+| [M1](M1-bench-upgrade.md) | 基准升级：「等你」算失败、5 道新题、Claude Code 参赛；拆 M1a、M1b 两个 PR | ⓪Plan | 脚本 | 必须 | —（FR 之前合） | 待开工 |
+| [M2](M2-weekly-usage-report.md) | 本机用量周报脚本（只读、只出数字） | ⓪Plan | 脚本 | 必须 | —（FR 之前合） | 待开工 |
+| [M3](M3-acceptance-checklist.md) | 体感验收清单（§5.3 的 11 条） | ⓪Plan | 文档 | 必须 | — | 待开工 |
+| [M1B](M1B-baseline.md) | 在 v0.1.62 上跑基线；K1 合并要等它 | ⓪Plan + 用户 | 脚本 | 必须 | M1、FR | 待开工 |
+| [F5b](F5b-delete-cua-engine.md) | 删 Cua Driver 引擎代码（③Hands 审）；文件内改动约 600 行，超出 U2 的 50 行，默认拆 F5b-1 断开接线、F5b-2 按 U2 删整文件（更正 E14） | ②Main | v0.1.63 | 必须 | F5a | 待开工 |
+| [H1](H1-hands-chat-cap-answer.md) | 书面回答：聊天里 5 步上限防什么（⓪Plan 代为提交） | ③Hands | v0.1.63 | 必须 | —（K4 开工前交） | 待开工 |
+| [H3](H3-hands-chat-cap-change.md) | 按 H1 的结论改聊天上限（U6） | ③Hands | v0.1.63 | 应该 | H1 且用户点头、K4b | 待开工 |
+| [C1](C1-tests-test-product.md) | 让测试测产品：删打开专家的 fixture 和只在专家开启时跑的路径 | ②Main | v0.1.63 | 必须 | F5a；合并等热修合回 main | 待开工 |
+| [C1b](C1b-expert-modules.md) | 删 9 个不可达的专家模块 | ②Main | v0.1.63 | 必须 | C1 | 待开工 |
+| [C1c](C1c-expert-leftovers-web.md) | 专家残留（函数、网页帧、翻译）；拆 C1c-1 服务端、C1c-2 网页 | ②Main | v0.1.63 | 必须 | C1 | 待开工 |
+| [C2a](C2a-memory-v1.md) | 删记忆 v1 死分支（超 800 行时拆两个） | ②Main | v0.1.63 | 必须 | C1（K2 开工前合） | 待开工 |
+| [C2b](C2b-evolution-first-batch.md) | 删进化第一批；拆 C2b-1 接口、C2b-2 自动路径 | ②Main | v0.1.63 | 必须 | C1 | 待开工 |
+| [C2c](C2c-0161-leftovers.md) | 0.1.61 遗留死代码 | ②Main | v0.1.63 | 必须 | C1 | 待开工 |
+| [C2d](C2d-legacy-cli.md) | 删旧命令行 | ②Main | v0.1.63 | 必须 | C1 | 待开工 |
+| [C2e](C2e-misc-python.md) | Python 杂项死代码；拆 C2e-1 杂项、C2e-2 媒体与 MCP 探测 | ②Main | v0.1.63 | 必须 | C1 | 待开工 |
+| [C2f](C2f-misc-web-repo.md) | 网页杂项与误提交文件 | ②Main | v0.1.63 | 必须 | C1 | 待开工 |
+| [C3](C3-tool-exposure.md) | 删 / 降级没人用的工具；拆 C3a 删除、C3b 降级 | ②Main | v0.1.63 | 必须 | C1、K5（K7 之前合；C1b 最好先合） | 待开工 |
+| [C4](C4-remove-shadow-judgment.md) | 删影子评判；记录撤回决定② | ②Main | v0.1.63 | 必须 | C1、C2c | 待开工 |
+| [C5a](C5a-process-docs-privacy.md) | 过程文档移到存档分支；从文件里删隐私段落 | ②Main | v0.1.63 | 应该 | — | 待开工 |
+| [C5b](C5b-version-source-inventory.md) | 唯一版本来源；能力清单只在发版时生成（越早合越好） | ②Main | v0.1.63 | 应该 | — | 待开工 |
+| [C6](C6-ci-parallel-coverage.md) | CI 并行与覆盖率 | ②Main | v0.1.63 | 应该 | F5a | 待开工 |
+| [K1](K1-native-tool-protocol.md) | Claude、Gemini 走原生工具协议；保留思考块，支持 `tool_choice` | ②Main | v0.1.63 | 必须 | C1；合并等 M1B | 待开工 |
+| [K2](K2-context-by-window.md) | 跨轮上下文按窗口；工具摘要放进 `content`；回合后工作挪出锁 | ②Main | v0.1.63 | 必须 | K1；C2a | 待开工 |
+| [K3](K3-prompt-layout-cache.md) | 提示词布局与缓存断点 | ②Main | v0.1.63 | 必须 | K2 | 待开工 |
+| [K4](K4-one-stop-policy.md) | 一个停止策略；保留花费上限，美元上限默认开；拆 K4a、K4b | ②Main | v0.1.63 | 必须 | K3、H1 | 待开工 |
+| [K5](K5-working-method-tool-docs.md) | 工作方法与工具说明；多步骤任务结束时给用户四行收尾 | ②Main | v0.1.63 | 必须 | K4b、F1 | 待开工 |
+| [K7](K7-tools-on-demand.md) | MCP 和少用的工具按需取用 | ②Main | v0.1.63 | 必须 | K5、C3、F3 | 待开工 |
+| [K8](K8-true-streaming-guards-after.md) | 真流式，守卫改为事后；按供应商拆 K8a、K8b、K8c | ②Main | v0.1.63 | 必须 | K7 | 待开工 |
+| [K9](K9-parallel-reads-steering.md) | 只读工具并行 + 回合中插话（窗口、iPhone、按住说话各一条测试；灵动岛输入挪到 v0.1.64） | ②Main | v0.1.63 | 必须 | K8c | 待开工 |
+| [K10](K10-agents-md.md) | 读 AGENTS.md | ②Main | v0.1.63 | 应该 | K9 | 待开工 |
+| [K6](K6-file-tools.md) | 文件工具补齐（不进严格链） | ②Main | v0.1.63 | 应该 | K7 | 待开工 |
+| [S1](S1-mcp-approval-by-hints.md) | MCP 按标注审批（R6）；定时任务不给后台工具（R7） | ②Main | v0.1.63 | 必须 | C1、F4a、F2（H2） | 待开工 |
+| [S2a](S2a-command-three-layers.md) | 命令「沙箱优先」三层，同时收紧沙箱；受保护路径补全；拆 S2a-1 收紧沙箱、S2a-2 三层 | ②Main | v0.1.63 | 必须 | F4a、C1、C4 | 待开工 |
+| [S2b](S2b-drop-vendored-hermes.md) | 删整份引入的 Hermes 规则；拆 S2b-1 换上自有的文本处理（约 150 行）、S2b-2 按 U2 只删文件 | ②Main | v0.1.63 | 必须 | S2a | 待开工 |
+| [S3](S3-checkpoints.md) | 检查点：文件和命令都能撤销；每回合克隆一次；拆 S3a 检查点、S3b 撤销界面 | ②Main | v0.1.63 | 必须 | C1、F4b（最好在 S2a-2 之前合） | 待开工 |
+| [S4a](S4a-outside-remote-cards-decide.md) | 出沙箱卡、远程卡走 `decide()` 并写账本；两份确认流程合成一份 | ②Main | v0.1.63 | 必须 | C4、S2a | 待开工 |
+| [S4b](S4b-allowed-folders.md) | 「允许的文件夹」（不接受别的卷上的文件夹：S3 撤销不了） | ②Main | v0.1.63 | 应该 | S3、S4a | 待开工 |
+| [S5](S5-mode-setting.md) | 一个模式设置（含计划模式）；完全访问下照问的种类按 U4 | ②Main | v0.1.63 | 应该 | S2a、S1、C4、F4a、S3（S4b 软） | 待开工 |
+| [S6](S6-remembered-answers-page.md) | 「记住的回答」页 | ②Main | v0.1.63 | 可以 | S4b、S2a | 待开工 |
+| [S7](S7-capability-card-ledger.md) | 安装能力卡也写一行账本（§5.4 门槛） | ②Main | v0.1.63 | 必须 | S4a、C4 | 待开工 |
+| [R63](R63-release.md) | 发 v0.1.63：最后一轮 M1、7 天本机数据、M3、发布说明对测试 | ⓪Plan 判定 + ②Main 发版 | v0.1.63 | 必须 | v0.1.63 全部「必须」卡 | 待开工 |
+
+## 3. 合并顺序
+
+**热修线**（目标分支 `release/0.1.62`，从 tag v0.1.61 拉出）：
+
+```
+F5a ──→ 先把 release/0.1.62 合回 main 一次（main 的 CI 恢复）
+ ├─ F1 ──┐
+ ├─ H2 ───┴─ F2
+ ├─ F3
+ ├─ F4a
+ └─ F4b ──→ FR（v0.1.62）──→ 整个 release/0.1.62 合回 main
+```
+
+- 热修发布前，`tool_loop.py`、`task_service.py` 不接别的 PR。
+- `docs/CAPABILITY_INVENTORY.md` 冲突时随便取一边，最后统一重新生成一次。
+
+**K 线：严格按顺序，一次只开一个。**
+
+```
+C1 → K1 → K2 → K3 → K4a → K4b → K5 → K7 → K8a → K8b → K8c → K9 → K10
+      ↑ K1 可以先开发，合并等 M1B（v0.1.62 发布后的基线）
+```
+
+- **K6 不进严格链**（审查 A1）：K7 合并后，在 K 线 PR 之间的空档合；赶不上 v0.1.63 就顺延。
+- 固定位置：C2a 在 K2 开工前合（都改 `memory.py`）；H1 在 K4 开工前交，H3 在 K4b 之后合；C3a、C3b 在 K5 之后、K7 之前合。
+
+**C、S 两线：并行，但有先后：**
+
+- C2c → C4 → S2a → S4a → S7（都改 `server/services/approvals.py` 和 `server/ws/arslan.py` 的确认阶梯）；
+- S3 → S4b，S4a → S4b，S4b → S6；
+- S2a → S2b；S2a、S1、S3 → S5；
+- S2a-1 → S2a-2，S2b-1 → S2b-2，S3a → S3b；
+- S3 最好在 S2a-2 之前合（S2a-2 之后，工作文件夹里的删除不再出卡，要靠撤销）；
+- 其余 C 卡都在 C1 之后，什么时候合都行。
+
+**M 线：** 随时，不进 App。M1、M2 在 FR 之前合；M1B 等 M1 和 v0.1.62。
+
+**规则：**
+
+- 同一时间，改同一个热点文件的打开 PR 最多一个。K 线优先。
+- 其他 PR 等当前这个 K 线 PR 合了，再 rebase。
+- **800 行的例外（U2，已定）：** 只做整份删除的 PR 可以超过 800 行。条件：只删不可达或第三方的整个文件；别处只去掉引用，合计 ≤50 行；不改行为；PR 描述列出删了哪些文件、怎么确认不可达；CI 全绿。C1b 因此不拆。F5b 和 S2b 不满足「别处 ≤50 行」（F5b 文件内要改约 600 行；S2b 要先换上一个约 150 行的自有模块），所以照旧各拆两个 PR，第二个按 U2 只删整文件（更正 E14）。用户要是放宽 U2，这两张可以各合成一个 PR。
+
+## 4. 分道表
+
+| 道 | 负责的卡 | 拥有的文件 | 不许碰 |
+|---|---|---|---|
+| ⓪Plan | M1、M1B（和用户一起）、M2、M3；R63 的门槛判定；代为提交 H1 的回答；维护总计划、本表和任务卡 | `scripts/kernel_bench/**`、M2 新增的周报脚本、`docs/plans/**`、`docs/sessions.md` | 产品代码 |
+| ②Main | F5a、F1、F2、F3、F4a、F4b、FR、F5b；全部 C、K、S 卡；R63 的发版准备；合并队列、本表的「状态」列、迁移号登记、CI 健康 | `server/**`、`arslan/**`、`web/**`、`.github/**`、`packaging/**`、`docs/releases/**`、`docs/CAPABILITY_INVENTORY.md`。<br>以下除外：③Hands 的文件；Bridge 契约文件的帧格式 | ③Hands 的文件（要改须由 ③Hands 审，例如 F5b、C2c 里 AppleScript 那两行）；Bridge 帧格式 |
+| ③Hands | H1、H2、H3；审 F5b 和任何改 Hands 文件的卡 | `desktop/hands/**`、`server/registry/hands_tools.py`、`server/services/hands_service.py`、`server/api/hands.py`、`scripts/hands_smoke.py` | 其他所有文件。本轮不新增 Hands 能力 |
+| ①iOS | 无 | iOS 仓库 | 本轮 Mac 端不改 Bridge 帧格式（`desktop/bridge/**`、`server/ws/bridge.py`、`spec/mobile-bridge/**`）。哪张卡如果发现需要改（最可能是 K9），先停下来找 ②Main 和 ①iOS |
+| C 线试点会话 | v0.1.62 发布后的 C 卡（§9） | 同 ②Main 的 C 卡 | 同 ②Main；不装 superpowers |
+
+## 5. 迁移号登记表
+
+- 原来 PR 3、6、5、7 的 0069–0072 预留**全部作废**。
+- skills v2 分支上的 `_0070_skills_v2` 随该分支不合并，一起作废。
+
+| 号 | 归属 | 状态 |
+|---|---|---|
+| 0067 | 0.1.61 权限核心 | 已发布（v0.1.61），冻结 |
+| 0068 | 0.1.61 MCP 状态 | 已发布（v0.1.61），冻结 |
+| 0069 | 空 | 下一个可用的号 |
+
+- v0.1.62 热修线不带迁移。
+- v0.1.63 预计只有 S3（检查点索引）可能需要 1 个迁移号。S3 优先用数据目录里的清单文件，不建表。
+- 其他卡都设计成不要迁移：K2 的工具摘要放进现有消息的 `content`；S1、S4a、S4b 用现有的权限规则表和授权表；S5 用设置键值；K4 的美元上限用设置键值。
+- 需要迁移号时，向 ②Main 申请，②Main 在上表登记，规则见 `docs/sessions.md` §4。
+
+## 6. 已定的事（不用再问）
+
+- 版本号、800 行例外、D10 折中、完全访问下照问的种类、§5.2 那一行门槛、H3 改「应该」、F5b 不进热修：U1–U7，见总计划「决定记录（续）」。
+- 仍待定、本轮不碰：公开历史里的隐私内容（先只从文件里删，C5a）；App Store Connect 写入链路（本版不动）。
+
+## 7. 开工简报（用户合并本 PR 后，复制粘贴给对应的会话）
+
+### ②Main
+
+```
+你是 ②Main，负责 Arslan v0.1.62（热修）和 v0.1.63（执行内核）的实现和合并协调。
+
+开工前读：docs/sessions.md；docs/plans/0162/README.md；
+docs/plans/2026-10-17-0162-execution-first.md（先看「决定记录」和「更正记录」）。
+
+顺序（README §1）：
+- 从 tag v0.1.61 拉出 release/0.1.62。F 线的 PR 都以它为目标分支。
+- 第一个做 F5a；合了马上把 release/0.1.62 合回 main 一次。
+- 然后 F1、F2、F3、F4a、F4b；最后 FR。发版后把 release/0.1.62 整个合回 main。
+- 热修发布前，tool_loop.py、task_service.py 不接别的 PR。
+- 同时可做 C5b；C1 可以先开发，合并等热修合回 main。
+- K 线等 M1B 跑完、K1 合并后开始，严格按 README §3，一次只开一个；每个 K 线 PR 贴 M1 前后对比。
+
+规矩：
+- 一个 PR 只做一件事，产品代码不超过约 800 行（整份删除按 U2）。
+- 每个 PR 和每次说「做完了」，写完成证据四项（sessions §8）。
+- 留着的旧路径写明删除条件（sessions §9）。
+- 合并、打 tag、发布由用户点。你维护 README 的「状态」列和迁移号登记表。
+- 要改 ③Hands 的文件或 Bridge 帧格式时，先停下来问。
+- 新想法记进 README §8「v0.1.64 候选」。不写本机路径和隐私；草稿区不算交接。
+- 方法包照旧用 superpowers。v0.1.62 发布后的 C 线试点见 README §9。
+```
+
+### ③Hands
+
+```
+你是 ③Hands。这一轮你做三件事，加上审稿。
+
+开工前读：docs/sessions.md；docs/plans/0162/README.md。
+
+1. H1：书面回答「聊天里 Hands 最多 5 步（hands_tools.py 的 INLINE_ACTIONS）防的是什么」，
+   建议放宽到多少、或改成按时长。K4 开工前交给 ⓪Plan，由 ⓪Plan 写进 H1 卡并提交。
+2. H2：所有没执行的 Hands 结果，返回固定列表里的代码和 executed: false。
+   尽量赶上 v0.1.62：以 release/0.1.62 为目标分支，在 F2 之前合。
+3. H3（应该）：用户对 H1 点头、K4b 合了以后，按结论改聊天上限。
+
+另外审 F5b（删 Cua Driver 引擎），以及任何改你文件的卡。
+本轮不新增 Hands 能力。每个 PR 写完成证据四项（sessions §8）。合并由用户点。
+```
+
+### ⓪Plan（M 线）
+
+```
+你是 ⓪Plan。按 docs/plans/0162/M1、M2、M3 三张卡做跑分升级、本机周报脚本和体感验收清单。
+M1、M2 要在 FR 之前合。M1B 的基线等 v0.1.62 发布后，由用户在本机用自己的 key 跑；K1 合并要等它。
+另外：维护总计划和本表；代为提交 ③Hands 的 H1 回答；审 Aegis 的启动脚本并锁定版本（README §9）；
+按 R63 卡判定 v0.1.63 的发版门槛。
+```
+
+### ①iOS
+
+```
+告知：Mac 端 v0.1.62、v0.1.63 都不改 Bridge 帧格式。
+K9（回合中从 iPhone 插话）如果发现必须改，②Main 会先来问你。你这边照常推进。
+```
+
+## 8. v0.1.64 候选（范围冻结后的新想法）
+
+- 旧的扁平 `llm_*` 设置键：要先写数据迁移才能删（C2c 发现）。
+- 读 `~/.agents/skills`：总计划 §3.1 决定放到 v0.1.64。
+- `click`、`rich` 两个依赖只有旧命令行在用（C2d 发现），删旧命令行后可以去掉。
+- 专家时代剩下的 REST 接口：`spawns`、`recipes`、`expert_conversion` 等（C1 发现，本版不动）。做的时候，连同 C1、C1c 卡里留着的专家兼容路径和专家表一起删。
+- 记忆 v1 的旧表、兼容视图和触发器：数据并进 v2 或确认为空后再删（C2a）。
+- 设置页加「添加机器」的入口：有了它，没登记机器时连 `ssh_probe` / `enroll_node` 也可以不给（C3b 的折中，U3）。
+- 命令卡改用 `send` / `destructive` / `system` 等种类，手机上的风险词会更准（S2a）。
+- 沙箱挡读凭据目录以后，`aws`、`kubectl`、`npm` 等可能读不到配置，按 M2 的数据再细分（S2a）。
+- 「不信某个 MCP 服务器的标注」开关（S1）。
+- 「记住的回答」页上线后，网站卡和快捷指令卡恢复「总是」（S6，③Hands 审）。
+- 计划模式下，允许在只读沙箱里跑命令（S5）。
+- 放宽「已成功的同一条命令不能再跑」（F2）。
+- 清理旧的 `legacy_rule` 权限行，要一个迁移（S2a）。
+- 检查点存在和工作文件夹同一个卷上，这样别的卷上的文件夹也能撤销（S3、S4b）。
+- 收窄「本轮读过外部内容后命令断网」：今天 `read_file` 读本地文件也算读过外部内容，网络卡可能偏多，看 M2 的数据再定（S2a）。
+- 脚本里通过 XPC 或快捷指令绕过 Apple Events 限制的口子（S2a）。
+- 灵动岛加输入，回合中也能从灵动岛插话（K9；今天灵动岛没有输入，更正 E12）。
+- 从真实失败里挑题，建私有题库（领先路线 §6 第 3 项；审查 §5）。
+- **Aegis 试点的结论**（§9）：写在这里，v0.1.64 开工前由用户决定要不要全面换。
+- 其余见领先路线 §3、§4 的 v0.1.64 列：卡片界面与文案大合并（D1）；diff 预览；网络出口控制；子 agent 统一成一个工具；后台进程与进程工具；目标模式；ACP。
+
+## 9. 流程试点：Aegis 方法包（v0.1.62 发布后再做）
+
+- **在哪试：** 只在 ②Main 的 C 线，也就是删死代码那批卡。用 Aegis 方法包（github.com/GanyuanRan/Aegis，MIT）替换 superpowers。
+- **怎么分开：** 一个会话里不要两套同时装。所以 C 线试点单独开一个会话，在 §4 分道表里登记为「C 线试点会话」。这个会话只装 Aegis；②Main 继续做 K、S 线，照旧用 superpowers。
+- **准备（装之前）：**
+  - 锁定一个版本：记下具体的 tag 或提交号，写进本节；
+  - ⓪Plan 先审一遍它在会话启动时运行的脚本（钩子等），把审查结论写进本节；
+  - 用户看过审查结论、点头之后再装。
+- **对比：** 和继续用 superpowers 的 K 线比四个数，每合一个 PR 记一次：
+  - PR 大小（产品代码行数）；
+  - 评审轮数；
+  - CI 变红的次数；
+  - 「说的和做的对不上」的次数：PR 描述或汇报里的完成证据（sessions §8），被评审或 CI 发现和实际不符。
+- **注意：** C 线以删为主，K 线以改为主，两边的活不一样。这四个数只能作参考，结论里要写上这一点。
+- **结论：** 写进 §8，v0.1.64 开工前由用户决定要不要全面换。
+- **在那之前：** 其他会话照旧用 superpowers。
+- **锁定的版本：**（待填）
+- **启动脚本的审查结论：**（待填）
