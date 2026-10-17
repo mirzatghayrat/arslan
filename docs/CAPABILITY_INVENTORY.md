@@ -2,6 +2,8 @@
 
 Desktop configuration version: `0.1.61`.
 
+Generated in the release PR; between two releases it may not match the code.
+
 Regenerate with `uv run python -m scripts.capability_inventory`. This is static
 source evidence, not an installed-account probe or proof of model quality.
 

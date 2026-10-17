@@ -158,6 +158,12 @@ Schema changes are **not** run via `alembic upgrade` (alembic is gone). They are
 
 Larger changes are designed before they're coded: a written **spec** (what/why, constraints, invariants touched, acceptance criteria), then an ordered implementation **plan**, then the code. The specs and plans behind the existing subsystems are internal research records and are **not published with the open-source release**; `docs/ARCHITECTURE.md` is the public account of how the system fits together, and the invariants it lists are the ones to preserve.
 
+## Version
+
+- The app's version has one source: `desktop/src-tauri/tauri.conf.json` (`version`, three-part semver). The backend reads it (`server/config.py`), and so do its OpenAPI page and `/api/v1/health`. The release workflow checks the tag against it.
+- The `0.1.0` / `0.0.0` in `pyproject.toml`, `arslan/__init__.py`, `web/package.json`, `desktop/package.json` and the Cargo manifests is not the app version. Packaging tools need a value there; leave it.
+- A release changes only `tauri.conf.json`. The release PR also regenerates `docs/CAPABILITY_INVENTORY.md` (`.venv/bin/python -m scripts.capability_inventory > docs/CAPABILITY_INVENTORY.md`). Ordinary PRs do not: the release workflow refuses a stale inventory before it builds.
+
 ## The workflow this repo uses
 
 Non-trivial work follows a **brainstorm → spec → plan → implement** arc:

@@ -100,6 +100,8 @@ jobs:
         # this Linux job is the only place it ever executes, and a
         # -m "not macos" filter would silently drop the one test proving the
         # fail-closed path works. Measured: it is 1 of exactly 1 Linux-only test.
+        # Never set ARSLAN_RELEASE_CHECK here: the capability inventory is compared in the release
+        # workflow only (C5b); comparing it on every PR brings back the daily regenerate-and-conflict.
         run: .venv/bin/pytest tests/ -q -rfEs
 
       # ── 0.1.53 Arslan Hands: the contract and the supply chain, on Linux ────

@@ -108,6 +108,15 @@ jobs:
         # useful message.
         run: uv sync --frozen --extra server --extra build
 
+      # C5b: the capability inventory is regenerated in the release PR only (ordinary CI no longer
+      # compares it). A stale one stops the release here, before anything is built.
+      - name: The capability inventory matches the code
+        run: |
+          if ! PYTHONPATH=. .venv/bin/python scripts/capability_inventory.py | diff -u docs/CAPABILITY_INVENTORY.md -; then
+            echo "::error::docs/CAPABILITY_INVENTORY.md is stale: regenerate it in the release PR (.venv/bin/python -m scripts.capability_inventory > docs/CAPABILITY_INVENTORY.md)"
+            exit 1
+          fi
+
       - name: Install the Tauri CLI
         working-directory: desktop
         run: npm ci
