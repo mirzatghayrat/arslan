@@ -42,7 +42,7 @@ v0.1.63 发出去之前，用数字确认「真的变好了」，并让发布说
 
 - `desktop/src-tauri/tauri.conf.json`：版本号改成 `0.1.63`（唯一来源，见 `docs/sessions.md` §7）。
 - 新建 `docs/releases/v0.1.63.md`：发布说明。
-- `docs/CAPABILITY_INVENTORY.md`：重新生成（C5b 合并后只在发版 PR 里生成）。
+- `docs/CAPABILITY_INVENTORY.md`：重新生成（C5b 合并后只在发版 PR 里生成）。用 release 那台机器的两组依赖（`uv sync --frozen --extra server --extra build`）跑一遍 `scripts/capability_inventory.py`，确认输出和提交的一致，再写进 PR（更正 E19）。
 - 新建 `docs/plans/0162/R63-gate-report.md`：第 6 步的门槛判定，由 ⓪Plan 提交。
 
 ## 发布说明的写法
