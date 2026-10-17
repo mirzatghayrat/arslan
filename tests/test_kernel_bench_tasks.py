@@ -344,6 +344,7 @@ def test_runner_records_the_new_multi_turn_and_decline_tasks_as_unsupported_wher
     monkeypatch.setattr(runner, "command", lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not run")))
     prompts = json.loads((Path(runner.HERE) / "prompts.json").read_text())
     assert isinstance(prompts["T8"], list) and len(prompts["T8"]) == 3
+    assert "不要用表格" in prompts["T8"][0] and "表格" in prompts["T8"][2]   # turn 3's table is new, not a repeat
     assert runner.run_one("T8", "hermes", 1, prompts, "sb")["check"]["unsupported"]
     assert runner.run_one("T11", "claude-code", 1, prompts, "sb")["check"]["unsupported"]
     import re
