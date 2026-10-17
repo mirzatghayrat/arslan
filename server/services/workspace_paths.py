@@ -80,6 +80,15 @@ def resolve_in_workspace(user_path, ws_root: Path | None, *, for_write: bool = F
         if not _contained(parent, root):
             raise PathEscape(f"path is outside the workspace: {user_path}")
         resolved = parent.joinpath(*reversed(missing), candidate.name)
+        if resolved.is_symlink():
+            # 0.1.62 F4b (R1): the last segment may itself be a link (is_symlink, not exists: a
+            # dangling one would still create its target outside). Judge, and write, its target;
+            # a credential name on either side is refused.
+            if is_secret_name(resolved.name):
+                raise SecretFile(f"refusing to touch a credential-shaped file: {resolved.name}")
+            resolved = resolved.resolve()
+            if not _contained(resolved, root):
+                raise PathEscape(f"path is outside the workspace: {user_path}")
     else:
         resolved = candidate.resolve()
         if not _contained(resolved, root):

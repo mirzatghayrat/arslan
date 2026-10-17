@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import os
 import hashlib
+import secrets
+import stat
 
 import logging
 from pathlib import Path
@@ -90,6 +92,45 @@ async def _resolved(args: dict, *, for_write: bool = False, make_parents: bool =
                                           make_parents=make_parents), None
     except (PathEscape, SecretFile) as exc:
         return root, None, _refusal(exc)
+
+
+# macOS 11+: no segment of the path may be a link at the moment of the open. Where it is
+# missing (Linux CI), O_NOFOLLOW covers the last segment and the second resolve in
+# _write_inside the folders. Never both: macOS refuses O_NOFOLLOW | O_NOFOLLOW_ANY (EINVAL).
+_NOFOLLOW = getattr(os, "O_NOFOLLOW_ANY", 0) or os.O_NOFOLLOW
+
+
+def _write_inside(root: Path, path: Path, text: str) -> None:
+    """0.1.62 F4b (R1): write `text` to `path` without following a link out of the workspace.
+
+    The path is resolved again now that its folders exist (a segment swapped for a link since
+    the first check is caught), the text goes to a new file next to it (O_EXCL, and O_NOFOLLOW_ANY
+    where there is one, else O_NOFOLLOW), and os.replace swaps the directory entry: a link
+    there is replaced, not followed, and a hard link's other name keeps its old content. A new
+    file is 0o666 under the umask (never executable); an overwritten one keeps its mode.
+    Raises PathEscape, SecretFile or OSError; on failure the old file is untouched."""
+    resolve_in_workspace(str(path), root, for_write=True)
+    try:
+        st = os.stat(path, follow_symlinks=False)
+        keep = stat.S_IMODE(st.st_mode) if stat.S_ISREG(st.st_mode) else None
+    except FileNotFoundError:
+        keep = None
+    tmp = path.with_name(f".{path.name}.{secrets.token_hex(4)}.tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW, 0o666)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            if keep is not None:
+                os.fchmod(f.fileno(), keep)
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def _rel(path: Path, root: Path) -> str:
@@ -259,7 +300,9 @@ class WriteFileExecutor:
             return {"ok": False, "error": f"cannot create folder {_rel(path.parent, root)}: {exc}"}
         artifact = _snapshot_write(root, path, content)
         try:
-            path.write_text(content, encoding="utf-8")
+            _write_inside(root, path, content)
+        except (PathEscape, SecretFile) as exc:
+            return _refusal(exc)
         except OSError as exc:
             return {"ok": False, "error": f"cannot write {_rel(path, root)}: {exc}"}
         return {"ok": True, "path": _rel(path, root), "bytes": len(content.encode("utf-8")),
@@ -301,7 +344,9 @@ class EditFileExecutor:
         updated = text.replace(old, new, 1)
         artifact = _snapshot_write(root, path, updated)
         try:
-            path.write_text(updated, encoding="utf-8")
+            _write_inside(root, path, updated)
+        except (PathEscape, SecretFile) as exc:
+            return _refusal(exc)
         except OSError as exc:
             return {"ok": False, "error": f"cannot write {_rel(path, root)}: {exc}"}
         return {"ok": True, "path": _rel(path, root), **({"artifact": artifact} if artifact else {})}

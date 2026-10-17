@@ -120,7 +120,7 @@ trust decisions; see THIRD_PARTY_NOTICES.md and docs/RELIABILITY.md.
 | Source | SHA-256 |
 | --- | --- |
 | `server/registry/executors.py` | `1a4500c9321e9e62a01b4aeb1a4dc0cb9dc810d56a2540c4df97020affd4f478` |
-| `server/registry/file_tools.py` | `a41416c5c239370a8ef992b5406e066e51dc1101ffdf83683a8d8b4f7b2390fd` |
+| `server/registry/file_tools.py` | `55f692bea63204a93ee47ac2c633f5a620dc4a394fa751caab9bf4e117a20c31` |
 | `server/registry/hands_tools.py` | `212715bb18c3744bf04c98595a02803f3bbac5a232da7c7373ece29c935684ac` |
 | `server/registry/lan_tools.py` | `34778593e80f8276d545f4ab569803a208a290d5fe4e8d52402f7a876b6f63b1` |
 | `server/registry/memory_executors.py` | `ac4c597d236a3b83420996758bef9003a9e1f0cf26eff2787e4c79c1a391ee1b` |
