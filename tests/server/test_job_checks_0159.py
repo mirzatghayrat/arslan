@@ -269,7 +269,8 @@ def test_which_failures_are_known_and_local():
 
 @pytest.mark.parametrize("command", ["curl --request=POST https://x", "curl --request=\"POST\" https://x",
                                      "curl --request='PUT' https://x", "curl -sXDELETE https://x/1",
-                                     "curl -sX PATCH https://x/1", "gh api repos/a/b/issues -f title=x",
+                                     "curl -sX PATCH https://x/1", "curl --request \"POST\" https://x",
+                                     "curl --request 'DELETE' https://x/1", "gh api repos/a/b/issues -f title=x",
                                      "gh api --method POST x", "http POST https://x a=b", "xh POST https://x a=b",
                                      "https PUT https://x", "http https://x a:=1"])
 def test_outbound_spellings_the_rules_miss_still_ask_the_user_to_check(command):
@@ -495,3 +496,150 @@ async def test_a_run_whose_answer_ended_is_not_replayed_on_reconnect():
         for run_id, task in ((14, answered), (16, streaming)):
             run_registry.unregister(run_id, "ghost")
             task.cancel()
+
+
+# ── F2 ④ end to end (⓪Plan's re-review probes for #200, adopted) ──────────────────────
+
+def _answer_check():
+    return AcceptanceCheck.model_validate(task_service.ANSWER_DELIVERED)
+
+
+async def test_a_real_write_snapshot_with_only_an_answer_check_still_holds(execution_db, disk, monkeypatch, tmp_path):
+    # A real write_file in an owned Run leaves a snapshot that passes as a report artifact; with only
+    # "an answer was delivered" checked, a noted work limit still holds the task.
+    from server import config
+    from server.db.models import Run
+    from server.registry.file_tools import WriteFileExecutor
+    from server.services import execution_context
+    monkeypatch.setattr(config, "data_dir", lambda: tmp_path / "data")
+    seen = {}
+
+    async def body(emit):
+        runtime = task_service.current()
+        async with repository() as repo:
+            row = await repo.get(runtime.task_id)
+            run = Run(conversation_id=row.conversation_id, user_message="t")
+            repo.db.add(run)
+            await repo.db.flush()
+            run_id = run.id
+        await runtime.link_run(run_id)
+        with execution_context.bind_run(run_id):
+            seen["write"] = await runtime.execute_tool("write_file", {"path": "report.md", "content": "# Report\n"},
+                                                       WriteFileExecutor().execute)
+        runtime.limit_reason = "task_budget_exhausted"
+        seen["runtime"] = runtime
+        return "Saved report.md"
+    task = await run_contract([_answer_check()], body)
+    artifacts = (seen["runtime"].validation_report or {}).get("artifacts")
+    assert seen["write"].get("artifact") and artifacts and all(a["status"] == "passed" for a in artifacts)
+    assert (task.phase, task.pause_reason) == ("waiting_user", "task_budget_exhausted")
+
+
+class _Blocked:
+    async def execute(self, args):
+        return {"ok": False, "error": "blocked by the site"}
+
+
+def _search(i):
+    from tests.server import test_trajectory_golden as golden
+    return golden._Resp(None, [golden._tc("web_search", {"query": f"q{i}"}, f"s{i}")])
+
+
+def _write():
+    from tests.server import test_trajectory_golden as golden
+    return golden._Resp(None, [golden._tc("write_file", {"path": "jobs.csv", "content": "a,b\n1,2\n"}, "w1")])
+
+
+async def _native_in_task(monkeypatch, disk, replies, checks):
+    from server.orchestrator import tool_loop
+    from server.registry import executors
+    from tests.server import test_trajectory_golden as golden
+    adapter = golden._Recorder(replies)
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    golden._pin_workspace(monkeypatch)
+
+    async def own():
+        return True
+    monkeypatch.setattr(tool_loop, "_writing_in_own_folder", own)
+
+    class DiskWrite:
+        async def execute(self, args):
+            (disk / args["path"]).write_text(args["content"])
+            return {"ok": True, "path": args["path"], "bytes": len(args["content"])}
+    monkeypatch.setitem(executors.EXECUTORS, "web_search", _Blocked())
+    monkeypatch.setitem(executors.EXECUTORS, "write_file", DiskWrite())
+
+    async def resolve():
+        return [{"key": "web_search", "description": "search"}, {"key": "write_file", "description": "write"}]
+    state = {}
+
+    async def body(emit):
+        result = await tool_loop.run_native(system="S", user_content="find 10 jobs and save a table", history=[],
+                                            emit=lambda e: None, on_chunk=lambda c: None, resolve_tools=resolve)
+        runtime = task_service.current()
+        state.update(pause=runtime.pause_reason, limit=runtime.limit_reason)
+        return result["final"]
+    task = await run_contract(checks, body)
+    return task, state, adapter.calls
+
+
+def _stop_then_save():
+    from tests.server import test_trajectory_golden as golden
+    return [_search(i) for i in range(4)] + [_write(), golden._Resp("Saved jobs.csv; 4 sites blocked.")]
+
+
+async def test_no_progress_then_saving_with_a_passing_file_check_succeeds(execution_db, disk, monkeypatch):
+    # 0.1.50's wrap-up order through run_native: no progress -> finishing -> save -> answer.
+    task, state, calls = await _native_in_task(monkeypatch, disk, _stop_then_save(),
+                                               [check("file_saved", "saved", target="jobs.csv")])
+    assert "research has stopped" in calls[4]["user"]          # it really went through the finishing step
+    assert (state["pause"], state["limit"]) == (None, "task_no_progress")
+    assert (task.phase, task.pause_reason) == ("succeeded", None)
+
+
+async def test_no_progress_then_saving_with_only_an_answer_check_holds(execution_db, disk, monkeypatch):
+    task, _, _ = await _native_in_task(monkeypatch, disk, _stop_then_save(), [_answer_check()])
+    assert (task.phase, task.pause_reason) == ("waiting_user", "task_no_progress")
+
+
+async def test_no_progress_then_an_answer_without_saving_holds(execution_db, disk, monkeypatch):
+    from tests.server import test_trajectory_golden as golden
+    replies = [_search(i) for i in range(4)] + [golden._Resp("Could not find anything.")]
+    task, _, _ = await _native_in_task(monkeypatch, disk, replies, [check("file_saved", "saved", target="jobs.csv")])
+    assert (task.phase, task.pause_reason) == ("waiting_user", "task_no_progress")
+
+
+async def test_finishing_steps_that_never_save_hold_in_the_loop(execution_db, disk, monkeypatch):
+    from tests.server import test_trajectory_golden as golden
+    replies = [_search(i) for i in range(4)] + [_search(10), _search(11), _search(12), golden._Resp("Here is what I have.")]
+    task, state, _ = await _native_in_task(monkeypatch, disk, replies, [_answer_check()])
+    assert state["pause"] == "task_no_progress"
+    assert (task.phase, task.pause_reason) == ("waiting_user", "task_no_progress")
+
+
+# ── F2 ③ against H2's real results (③Hands' review of #200) ───────────────────────────
+
+def _decision(by, note=""):
+    from types import SimpleNamespace
+    return SimpleNamespace(by=by, note=note, model_text="nobody answered")
+
+
+@pytest.mark.parametrize("result", [
+    pytest.param(lambda h, c: h._no(_decision("user"), "clicking Send"), id="card-declined"),
+    pytest.param(lambda h, c: h._no(_decision("expired"), "clicking Send"), id="card-unanswered"),
+    pytest.param(lambda h, c: h._failed(c.Result(ok=False, code="app_denied", refused=True)), id="app-denied"),
+    pytest.param(lambda h, c: h._failed(c.Result(ok=False, code="unknown"), nothing_sent=True), id="nothing-sent"),
+])
+def test_what_hands_says_never_ran_is_a_known_failure(result):
+    from server.registry import hands_tools
+    from server.services import hands_contract
+    assert task_service.known_local_failure("desktop_click", {"ref": "e1"}, result(hands_tools, hands_contract))
+
+
+@pytest.mark.parametrize("code", ["unknown", "submit_unsure", "TIMEOUT", "takeover_paused", "ACTION_FAILED"])
+def test_what_hands_says_may_have_run_still_asks(code):
+    from server.registry import hands_tools
+    from server.services import hands_contract
+    result = hands_tools._failed(hands_contract.Result(ok=False, code=code))
+    assert "executed" not in result
+    assert not task_service.known_local_failure("desktop_click", {"ref": "e1"}, result)

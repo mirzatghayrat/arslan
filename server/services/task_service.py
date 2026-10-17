@@ -62,7 +62,7 @@ def _outbound_extra_rules():
     from server.services import terminal_policy
     pos = terminal_policy._POS
     return [re.compile(pos + pattern, re.I) for pattern in (
-        r"curl\b[^\n]*(?:--request=[\"']?|\s-[a-zA-Z]*X\s*[\"']?)(?:POST|PUT|PATCH|DELETE)\b",
+        r"curl\b[^\n]*(?:--request(?:=|\s+)[\"']?|\s-[a-zA-Z]*X\s*[\"']?)(?:POST|PUT|PATCH|DELETE)\b",
         r"gh\s+api\b[^\n]*(?:\s(?:-f|-F|--field|--raw-field|--input)(?:[\s=]|$)|\s--method[\s=](?!GET\b)\w)",
         r"(?:https?|xhs?)\s+(?:-\S+\s+)*(?:POST|PUT|PATCH|DELETE)\b",
         r"(?:https?|xhs?)\s+[^\n]*\s[A-Za-z_][\w.\-\[\]]*:?=(?!=)",
@@ -102,7 +102,10 @@ def known_local_failure(tool_key: str, arguments: dict, result) -> bool:
     if result.get("code") == "mcp_not_ready":
         return True       # 0.1.61 §B1: the call never reached the MCP server
     if result.get("executed") is False:
-        return True       # 0.1.62 F2 ③: it never ran (Hands' fixed list, H2; run_command with no time left, F1)
+        # 0.1.62 F2 ③: it never ran (Hands' fixed list, H2; run_command with no time left, F1). Only
+        # Arslan's own executors write this field; a tool that ever spreads a third party's JSON onto
+        # the top level of its result must drop `executed` first, or that party could claim "not run".
+        return True
     if tool_key in {"write_file", "edit_file"}:
         return True
     if tool_key != "run_command":
