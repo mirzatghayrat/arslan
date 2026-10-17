@@ -46,6 +46,7 @@
 - **K8c：Gemini**
   - `gemini_provider.py`：解析流里的 `functionCall` 部件和 `thoughtSignature`，按原顺序保留全部部件，作为 `provider_content` 回传（`tool_loop.py:2372-2380`）。
   - 三家都能流以后，删 `_reveal_streamed` 和它的三处调用（`:2043`、`:2165`、`:2639`）。不能流的端点整段一次显示。
+- **（可以，有余力再做，放在 K8b）工具调用之间的进度说明：** Opus 5.5、Sonnet 5.5 在工具调用之间的进度说明以思考块返回，默认为空。请求里加 `display: "updates"`（beta 头 `thinking-display-updates-2026-08-18`）就能拿到文字（来源：Anthropic 官方文档 platform.claude.com 的 thinking 页，2026-10-17 读）。在窗口里用现有的 `note` 显示，不读出声，也不进 iPhone（帧不改）。被拒时照 `param_heal` 去掉重发。和 K1 的 `block_binding` 一起发，开工时先确认可行。没做完就记进 README §8。
 - **词表误伤：** `_CLAIMS_SEARCH_RE`（`:104-106`）的 `查到了?` 也匹配「没查到」；没成功用过 `web_search` 时，读本地文件的回答说「查到了」也会被打回（`_unverified_claim`，`:1801-1812`）。
 
 ## 不许碰
