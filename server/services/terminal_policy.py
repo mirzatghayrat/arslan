@@ -53,13 +53,20 @@ _FORBID = [
 ]
 # 0.1.62 F4a (R2): how osascript and `shortcuts run` are reached in command position however
 # they are written: through `command` (not `command -v`, which only looks it up), `exec` (with
-# options), or `xargs` (with its options, `-I {}` and `-n 1` included; the command-start pass splits
-# `{}` across a line), named by a path or not.
-_LAUNCHED = (r"(?:(?:command\s+(?:-p\s+)?|exec\s+(?:-\S+\s+)*"
-             r"|xargs(?:\s+(?:-[IJLPRSEdins]\s*(?:\{\s*\}|\S+)|-\S+))*\s+))*(?:\S*/)?")
+# -a NAME, -c, -l), or `xargs` with its options, named by a path or not. Every alternative starts
+# differently, so the pattern never backtracks over a long option list (an overlapping first
+# version took ~3x longer per xargs option: a frozen event loop). An xargs option that takes a
+# value is written with it attached (-n1, -I{}) or after spaces (-n 1, -I {}; the command-start
+# pass splits {} across a line).
+_XARGS_VALUE = r"(?:\{\s*\}|[^\s{-]\S*)"
+_XARGS_OPT = r"(?:--\S+|-[IJLPRSEdins](?:\s+" + _XARGS_VALUE + r"|[^\s]+)|-[^\sIJLPRSEdins-]\S*)"
+_LAUNCHED = (r"(?:command\s+(?:-p\s+)?|exec\s+(?:-a\s+\S+\s+|-[cl]+\s+)*"
+             r"|xargs(?:\s+" + _XARGS_OPT + r")*\s+)*(?:\S*/)?")
+# The program itself, not a longer name that starts with it (osascript.sh, osascriptx).
+_END = r"(?=$|[\s;&|)`'\"])"
 _ASK = [
-    ("apple-events", _POS + _LAUNCHED + r"osascript\b", "controls other apps (it could send, delete or buy)"),
-    ("shortcuts", _POS + _LAUNCHED + r"shortcuts\s+run\b", "runs one of your Shortcuts"),
+    ("apple-events", _POS + _LAUNCHED + r"osascript" + _END, "controls other apps (it could send, delete or buy)"),
+    ("shortcuts", _POS + _LAUNCHED + r"shortcuts\s+run" + _END, "runs one of your Shortcuts"),
     ("send-mail", _POS + r"(?:mail|mailx|sendmail|msmtp|mutt|himalaya\s+(?:send|write|reply|forward))\b",
      "sends email"),
     ("send-message", _POS + r"(?:imsg\s+send|xurl\b[^\n]*(?:post|tweet|/2/tweets))",

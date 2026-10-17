@@ -98,3 +98,51 @@ def test_the_windows_card_offers_only_this_time_despite_a_rule_and_a_grant(app_c
             ws.send_json({"type": "cancel_run_command", "call_id": frames[-1]["call_id"]})
             _collect_until(ws, "stream_end")
         assert executor.calls == []
+
+
+# ── review fixes (⓪Plan on #199) ───────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("command", [
+    "xargs " + " ".join(["-n 1"] * 40) + " not-osascript",
+    "xargs " + " ".join(["-0"] * 60) + " cat",
+    "xargs " + " ".join(["-n1"] * 40) + " -I",
+    "ls | xargs " + "-P 4 " * 40 + "osascript.sh",
+])
+def test_recognising_a_long_xargs_line_is_fast(command):
+    import time
+    started = time.monotonic()
+    tp.assess(command)
+    tp.ask_rules(command)
+    assert time.monotonic() - started < 0.2
+
+
+def test_exec_with_a_name_is_recognised():
+    assert tp.assess(f"exec -a quiet osascript {OSA}").rule == "apple-events"
+    assert tp.assess(f"exec -a quiet /usr/bin/osascript {OSA}").rule == "apple-events"
+
+
+@pytest.mark.parametrize("command", ["osascript.sh run", "./osascript-helper x", "/opt/bin/osascriptx"])
+def test_only_osascript_itself_is_the_program(command):
+    assert "apple-events" not in tp.ask_rules(command) and tp.assess(command).rule != "apple-events"
+
+
+def test_a_once_only_request_offers_once_whatever_its_kind():
+    req = permissions.Request(kind="command", target="rules:install", title="t", always_label="installs software",
+                              once_only=True)
+    assert permissions.options_for(req) == ["once"]
+    assert permissions.options_for(permissions.Request(kind="command", target="rules:install", title="t",
+                                                       always_label="installs software")) == [
+        "once", "conversation", "always"]
+
+
+async def test_no_rule_or_grant_answers_a_once_only_request(execution_db):
+    from server.db import session as db_session
+    from server.services import permission_store
+    async with db_session.AsyncSessionLocal() as db:
+        await permission_store.add_rule(db, "command", "rules:install", label="installs software", created_from="t")
+        await permission_store.add_grant(db, "c-once", "", "command", "rules:install")
+        await db.commit()
+    ctx = permissions.Context(conversation_id="c-once")
+    base = dict(kind="command", target="rules:install", title="t", always_label="installs software")
+    assert await permissions._standing(permissions.Request(**base, once_only=True), ctx, "", record=False) is None
+    assert await permissions._standing(permissions.Request(**base), ctx, "", record=False) is not None
