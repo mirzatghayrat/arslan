@@ -55,7 +55,7 @@
 
 - ④ **存过交付物，并且验收通过，才不挂起**（审查 §3）。
   - `:2280-2283`：本轮已有成功的 `write_file` / `edit_file`（`WRAP_UP_TOOLS`，`:1999`；看整个 `tool_trace`）时，不直接写 `runtime.pause_reason`，改记一个只在内存里的 `runtime.limit_reason`。`:2039-2042` 同理。
-  - `task_service._run` 验收之后：至少有一项检查的是存下的文件（`task_validation.py:106` 的「文件已存盘」，或 `validation_report["artifacts"]` 里的项），而且全部通过，才算成功；否则照旧挂成「等你」，原因用 `limit_reason`。
+  - `task_service._run` 验收之后：至少有一项检查的是存下的文件（`task_validation.py:106` 的「文件已存盘」，或某条验收检查指名的那个交付物；每次保存留下的快照本身不算，更正 E15），而且全部通过，才算成功；否则照旧挂成「等你」，原因用 `limit_reason`。
   - 只有「有回答」那一项（`ANSWER_DELIVERED`，`task_service.py:458-459`）不算。聊天回合默认只有这一项（`:513`），所以聊天回合照旧挂起，放宽归 K4。
 
 **测试：** `tests/server/test_job_checks_0159.py` 加用例，沿用 `run_contract` / `command_result` / `act` 的写法（`:162-182`）。`test_a_command_stopped_by_its_timeout_still_asks_the_user_to_check`（`:231-236`）和 `:254` 那条断言保留，用来覆盖「不在沙箱里」。

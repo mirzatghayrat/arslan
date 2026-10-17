@@ -56,6 +56,7 @@
 - **E1–E8：** 开工前，⓪Plan 逐行抽查了 §2 的 K-1 到 K-4，以及 §9 里能用代码或本机数据核对的项。
 - **E9–E11：** 本文作者在任务卡审查（`2026-10-17-0162-card-review.md` §4）里对本文的自查，用户已同意。
 - **E12–E14：** ⓪Plan 按审查改卡时，对照代码发现的。
+- **E15–E19：** 2026-10-18 夜里，⓪Plan 在审 F 线 PR 和跑参考轮 R0 时发现的，按用户的夜间授权（U9 及同夜的第二条授权）当场定了。
 
 | # | 原文 | 核对结果 | 处理 |
 |---|---|---|---|
@@ -73,6 +74,11 @@
 | E12 | §4.4 K9、审查 A6「窗口、iPhone、灵动岛、按住说话四个入口都能插话」 | 写 K9 卡时核对代码：灵动岛今天**没有**发消息的入口（`web/src/island/feed.ts:91-153` 只有动态、回答卡片、停止和 Hands 按钮）；按住说话只是把文字填进窗口的输入框，走的就是窗口那条路。iPhone 回合中已经能发，今天走排队（`server/ws/arslan.py:340-342`），不用改 Bridge 帧 | K9 测窗口、iPhone、按住说话三条；灵动岛输入是新功能，按范围冻结记进 README §8「v0.1.64 候选」（⓪Plan 定）。领先路线 L5「四个入口」相应变成三个 |
 | E13 | §4.4 K10「用 `untrusted.py` 的规则扫描注入」 | `untrusted.py` 不做注入扫描：文件开头写明有意不做词语过滤（`:1-10`），它只清掉伪造的标记（`_strip_injection`，`:28-34`） | K10 卡改为：清掉伪造的标记，内容当数据；读到它算「本轮读过外部内容」（⓪Plan 定） |
 | E14 | U2「F5b、C1b、S2b 因此不用再拆」 | 按 U2 的条件逐张核：C1b 满足。F5b 不满足：除了删整文件，还要在文件里改约 600 行（Rust 约 450 行，其中 `server.rs` 的 Cua 段 355 行；`build_hands.sh` 约 70 行；测试台的 `Cua` 类约 74 行），超出「别处 ≤50 行」。S2b 也不满足：要先换上一个约 150 行的自有模块 | U2 的条件不变。F5b、S2b 照旧各拆两个 PR，第二个按 U2 只删整文件。用户要是放宽 U2，这两张可以各合成一个 PR |
+| E15 | F2 卡 ④「`validation_report["artifacts"]` 里的项」算查过存下的文件 | 每次 `write_file` / `edit_file` 成功都会留下一个快照（`server/registry/file_tools.py:260-266`、`:302-307`），快照会进到报告的 artifacts。按字面实现，聊天回合几乎总能过这一条，和同卡「聊天回合照旧挂起」矛盾（F2 #200 审查） | 只认通过的 `file_saved` 验收检查，或某条验收检查指名的那个交付物；写入快照本身不算。聊天回合在 v0.1.62 照旧挂起，放宽归 K4 |
+| E16 | FR 卡：H2「赶上的话」进热修；冒烟在发版那一步跑 | H2 的 CI 绿、证据齐、审过，但开发版 Hands 没有辅助功能授权，冒烟要用户在场 | H2 先合进 `release/0.1.62`（`44337393`），冒烟挪成 FR 的门槛：每项要么通过、要么是 v0.1.61 基线那两项已知失败之一，出现别的失败就不发（比基线好不算不一致）。发布说明三处写准确：F2（沙箱里、认不出是对外的命令，到时限被杀后可能再跑一次）；F4a（「还不会问」的写法是举例）；F4b（写文件要文件夹的写权限，属主、ACL、Finder 标签不跟过去） |
+| E17 | S2a 卡只为 `$(which osascript)`、`open shortcuts://` 和三条带路径的写法补测试 | F2、F4a 审查实测，下面这些今天仍判成 `run`：osascript 前面带 `FOO=1`、`env`、`nice`、`timeout`、`caffeinate`、`xcrun`、`arch`，以及 `exec -a NAME`、`builtin command`、`eval`、`find … -exec`、`parallel`、`s=osascript; $s`；对外的 `http … DELETE`、`http --form`、`cat x \| http`、`gh api … -ftitle=x`、`wget --method PUT`、`docker push`、`aws s3 cp`、`terraform apply`、`kubectl apply`、`vercel deploy`；`terminal_policy.py:65` 的 rsync 正则要求冒号后面是单词字符，`rsync -a d host:/d` 漏掉 | S2a 卡的测试清单逐条补上（`(deny appleevent-send)` 从机制上盖住 osascript 那组，测试证明它）；rsync 正则在 S2a 里修 |
+| E18 | M1B 卡没写测试实例的卫生 | 参考轮 R0 发现：Arslan 每轮结束后还有一两次小调用（记忆、学习），runner 读用量太早漏掉了；实例闲着约 9 分钟后自己调模型，还把作废那轮留下的任务续跑了 3 步；T8 第 1 轮 Arslan 自己加了表格，第 3 轮再要表格就不成立 | M1a 加「读用量前等安静」：从驱动退出和最后一条用量两者中较晚的那一刻起 20 秒（最多 120 秒）；M1b 的 T8 第 1 轮写明「先不要用表格」。M1B 卡加两条：实例从空数据目录起、跑完就关；代理用含 gzip 修复的 meter 重启。R0 有效次数的结果贴在 #191 |
+| E19 | R63 卡「重新生成能力清单」 | C5b（#201）以后清单只在发版时比对，release 那台机器只装 `server`、`build` 两组依赖 | R63 的发版 PR 用这两组依赖跑一遍 `scripts/capability_inventory.py`，确认输出和提交的一致；FR（v0.1.62）不受影响：`release/0.1.62` 上没有 C5b |
 | 已核属实 | 见右栏 | • K-1、K-3、K-4 的全部条目，以及 K-2 里除 E2 以外的条目。<br>• K-4 第 3 条：旧分类器把整条命令字符串当成程序名，拿去和只读程序名单比较，比不上就判 HIGH（`server/services/command_policy.py:81-106`）。`ls -la ~/Downloads`、`git status` 都会这样。<br>• §9 中：空参数表；外部内容标记；守卫词表（`tool_loop.py:104-106`）；`search_files` 只做子串匹配（`server/registry/file_tools.py:230`）；后台验收用的是严格 `json.loads`（`task_validation.py:339`）；基准文档都在（`docs/plans/2026-10-02-*.md`、`2026-10-03-p3-acceptance.md`）。 | — |
 | 未能核 | §9「没有验证的」各项 | 包括：没跑测试、预期位置、门槛建议值、Claude Code 跑分成本、对标做法。这些只能靠实际运行，不能靠读代码核。<br>默认工具数「28 / 约 45」和静态提示「10,303 字符」要把提示词构建出来才能量，本轮没量。 | 照旧标「未验证」 |
 

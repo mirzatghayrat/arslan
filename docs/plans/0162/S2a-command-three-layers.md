@@ -84,6 +84,10 @@
   - `approvals.py:280-281` 的 `_ISLAND_RISKY_RULES`：从 `terminal_policy` 引用第②层全集加 `unreadable`、`network`，不再手抄。灵动岛按规则判断命令卡（`:327-333`）。
   - `task_service.py:51-52`：`_OUTBOUND_RULES` 改为引用「发出去」组加 F4a 那两条。F2 在热修里临时加的 `_OUTBOUND_EXTRA`（`curl --request=POST`、`gh api -f` 等写法）收进「发出去」组以后删掉（F2 卡写的删除条件）。
 - **F4a 卡列出的、今天仍不出卡的写法，本卡逐条补测试：** `$(which osascript)`、`open "shortcuts://run-shortcut?…"`、带路径或 `command` 前缀的其它规则（`/usr/bin/curl -d`、`/usr/bin/git push`、`command git push`）。`(deny appleevent-send)` 挡不挡得住 `open` 拉起别的 App，在 Mac 上实测后写进 PR。
+- **F2、F4a 审查实测、今天仍判成 `run` 的写法，也逐条补测试（更正 E17）：**
+  - osascript 前面带东西：`FOO=1 osascript`、`/usr/bin/env osascript`、`env -i osascript`、`nice` / `timeout` / `caffeinate` / `xcrun` / `arch` 开头、`exec -a NAME osascript`、`builtin command osascript`、`eval osascript`、`find … -exec osascript {} \;`、`parallel osascript`、`s=osascript; $s`。`(deny appleevent-send)` 从机制上盖住它们，测试要证明这一点，不必每种写法都加文字规则。
+  - 对外：`http … DELETE url`、`http --form url f@file`、`cat d.json | http url`、`http url < d.json`、`gh api … -ftitle=x`、`wget --method PUT`（中间是空格）、`curl -sXDELETE`；以及没有任何规则的 `docker push`、`aws s3 cp`、`terraform apply`、`kubectl apply`、`vercel deploy`，放进「发出去」组或写明为什么不放。
+  - `terminal_policy.py:65` 的 rsync 正则（`\S+:)\b` 要求冒号后面是单词字符）漏掉 `rsync -a d host:/d`，本卡修掉。
 - **测试：** `tests/server/test_terminal_policy.py`、`test_sandbox_script_cards.py`、`test_approvals_v2.py`、`test_terminal_offline.py` 里断言旧行为的改掉；从 3a 分支（`claude/0161-terminal-categories`）的 `tests/server/test_terminal_categories.py` 挑实测过的命令做回归。
 
 ## 不许碰
