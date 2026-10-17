@@ -203,6 +203,26 @@ def test_a_ref_bomb_is_bounded_and_fast():
     assert time.monotonic() - again < 0.05
 
 
+@pytest.mark.parametrize("provider", PROVIDERS)
+def test_a_large_schema_without_refs_is_kept_whole(provider):
+    # The budget is for expanding refs only: a big but plain schema must come through intact.
+    schema = {"type": "object", "required": ["p0"],
+              "properties": {f"p{i}": {"type": "string"} for i in range(2000)}}
+    schema["properties"]["choice"] = {"type": "string", "enum": [f"v{i}" for i in range(6000)]}
+    out = normalise(schema, provider)
+    assert out["type"] == "object" and out["required"] == ["p0"]
+    assert len(out["properties"]) == 2001 and out["properties"]["p1999"] == {"type": "string"}
+    assert out["properties"]["choice"]["enum"][-1] == "v5999"
+
+
+@pytest.mark.parametrize("provider", PROVIDERS)
+def test_a_field_named_definitions_is_kept(provider):
+    schema = {"type": "object", "required": ["definitions", "$defs"],
+              "properties": {"definitions": {"type": "string"}, "$defs": {"type": "string"}}}
+    out = normalise(schema, provider)
+    assert set(out["properties"]) == {"definitions", "$defs"} and out["required"] == ["definitions", "$defs"]
+
+
 # ── the providers: MCP tools reshaped, built-in tools untouched, errors read back ────
 
 from arslan.llm.providers.anthropic_provider import AnthropicProvider  # noqa: E402

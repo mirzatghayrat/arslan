@@ -72,7 +72,8 @@ def normalise(schema: Any, provider: str) -> dict:
 _CACHE: dict[tuple[str, str], str] = {}
 _CACHE_MAX = 2048
 # `$ref` inlining budget: how many refs deep one path may go, and how many nodes the inlined schema
-# may hold in all. A 1.8 KB schema whose levels each referenced the next twice grew to 17 MB.
+# may copy in all (each expansion costs its definition's size). A 1.8 KB schema whose levels each
+# referenced the next twice grew to 17 MB.
 _REF_DEPTH = 8
 _NODE_BUDGET = 5_000
 
@@ -94,10 +95,17 @@ def _loose(why: str) -> dict:
     return {"type": "object", "description": f"({why}; any shape accepted)"}
 
 
+def _size(node: Any) -> int:
+    if isinstance(node, dict):
+        return 1 + sum(_size(v) for v in node.values())
+    if isinstance(node, list):
+        return 1 + sum(_size(v) for v in node)
+    return 1
+
+
 def _inline(node: Any, defs: dict, seen: tuple[str, ...], budget: list[int]) -> Any:
-    budget[0] -= 1
-    if budget[0] < 0:
-        return _loose("too large to spell out")
+    """`$ref`s replaced by what they name. Only an expansion spends the budget (the size of the
+    definition it copies): a large schema with no refs is never cut."""
     if isinstance(node, list):
         return [_inline(item, defs, seen, budget) for item in node]
     if not isinstance(node, dict):
@@ -111,10 +119,13 @@ def _inline(node: Any, defs: dict, seen: tuple[str, ...], budget: list[int]) -> 
             return _loose(f"recursive: another {name}")
         if len(seen) >= _REF_DEPTH:
             return _loose(f"nested too deep: {name}")
+        budget[0] -= _size(defs[name])
+        if budget[0] < 0:
+            return _loose(f"too large to spell out: {name}")
         target = _inline(defs[name], defs, (*seen, name), budget)
         rest = {k: _inline(v, defs, seen, budget) for k, v in node.items() if k != "$ref"}
         return {**target, **rest} if isinstance(target, dict) else target
-    return {k: _inline(v, defs, seen, budget) for k, v in node.items() if k not in ("$defs", "definitions")}
+    return {k: _inline(v, defs, seen, budget) for k, v in node.items()}
 
 
 def _same_field(shapes: list) -> Any:
