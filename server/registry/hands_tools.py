@@ -42,10 +42,62 @@ def _conversation_and_job() -> tuple[str | None, str | None]:
     return (ctx.conversation_id if ctx is not None else None), background_jobs._inside_job.get()
 
 
+# H2 (0.1.62): a result that stopped before anything reached an app says `executed: False`, so a task
+# counts it as a known failure, not as something the user must check (docs/plans/0162/H2). The code
+# decides it: NOT_EXECUTED codes are only ever said before the action (Hands' own checks in
+# desktop/hands/src/server.rs `guarded` run before `run_envelope`; a card, a front that was not
+# borrowed, a locked screen; `hands_unavailable` is raised only when the request never reached Hands,
+# hands_client._NotSent). MAYBE_EXECUTED codes may come after part or all of it ran: a lost reply,
+# a time-out, Stop or a takeover pause killing agent-desktop mid-action, typed text without Return,
+# and every agent-desktop error. A code in neither set gets no `executed` (taken as "maybe"); a test
+# fails when a code anywhere in Hands or here is in neither. A few paths here also say it whatever
+# the code, because no action request had been sent yet in that call (`_failed(nothing_sent=True)`).
+NOT_EXECUTED = frozenset({
+    # cards (`_no`) and checks in this file
+    "declined", "no_answer", "no_one_to_ask", "reviewer_denied", "not_allowed", "act_in_background",
+    "bad_request", "no_such_file", "app_not_found", "no_apps", "hands_unavailable", "no_passwords", "no_page",
+    "too_long", "append_unreadable", "window_not_found", "app_refused",
+    # Hands' refusals before the action (server.rs, borrow.rs, visit.rs, takeover.rs, argv.rs)
+    "app_denied", "app_look_only", "app_click_only", "ref_wrong_app", "ref_unknown", "bad_ref", "password_field",
+    "borrow_off", "waiting_for_pause", "secure_input", "window_elsewhere", "window_unreachable", "borrow_declined",
+    "screen_locked", "takeover_unsafe", "target_unreadable", "app_not_running", "apps_unreadable", "app_ambiguous",
+    "op_not_allowed", "changed", "menu_unreadable", "menu_disabled", "menu_ambiguous", "menu_not_found",
+    "bad_token", "peer_not_allowed", "no_takeover", "not_paused",
+    # a screenshot that was not taken (capture.m via server.rs capture_code)
+    "screen_recording_off", "window_not_capturable", "needs_macos_14", "not_supported", "capture_failed",
+    # the Cua Driver path's own checks (not in a release build; F5b deletes them)
+    "arg_not_allowed", "borrow_not_allowed", "element_required", "engine_missing",
+})
+MAYBE_EXECUTED = frozenset({
+    "unknown", "TIMEOUT", "submit_unsure", "takeover_paused", "takeover_resumed", "takeover_ended",
+    "stopped_by_user", "busy", "helper_failed", "bad_output", "bad_reply", "refused", "batch_stopped",
+    "menu_press_failed", "append_needs_set_value", "browser_unavailable",
+    "engine_error", "engine_refused", "engine_unknown",
+    # agent-desktop's error codes (hands_contract.HINTS), and its fallback
+    "STALE_REF", "SNAPSHOT_NOT_FOUND", "AMBIGUOUS_TARGET", "ELEMENT_NOT_FOUND", "APP_NOT_FOUND",
+    "WINDOW_NOT_FOUND", "PERM_DENIED", "POLICY_DENIED", "ACTION_NOT_SUPPORTED", "ACTION_FAILED",
+    "APP_UNRESPONSIVE", "INTERNAL",
+})
+
+
+def _not_run(result: dict) -> dict:
+    """A result for a call that stopped before anything was sent to an app (H2)."""
+    return {**result, "executed": False}
+
+
 def _not_in_job() -> dict:
-    return {"ok": False, "external": False, "code": "act_in_background",
-            "error": "Actions (clicking, typing, running Shortcuts or scripts) run as background work. "
-                     "Call start_background_work with this goal; looking at pages is fine here."}
+    return _not_run({"ok": False, "external": False, "code": "act_in_background",
+                     "error": "Actions (clicking, typing, running Shortcuts or scripts) run as background work. "
+                              "Call start_background_work with this goal; looking at pages is fine here."})
+
+
+def _unavailable() -> dict:
+    return _not_run({"ok": False, "external": False, "code": "hands_unavailable",
+                     "error": "Arslan Hands is not available on this Mac."})
+
+
+def _bad_request(error: str) -> dict:
+    return _not_run({"ok": False, "external": False, "code": "bad_request", "error": error})
 
 
 # The tool loop stops a tool after TOOL_TIMEOUT_S (20 s) unless the tool declares `timeout_s`.
@@ -113,23 +165,24 @@ def _no(decision, what: str) -> dict:
     card nobody answered is "no answer", and a run with nobody to ask says so (0.1.61 §A4). The
     reviewer of "Approve for me" (§A6, PR 7) says no in a whole sentence of its own (its reason and
     "find a safer way, or ask the user"), passed on as it is; any other `by` is passed on as
-    permissions put it, never called the user's no or "nobody to ask"."""
+    permissions put it, never called the user's no or "nobody to ask". Every card comes before its
+    action, so none of these ran (H2)."""
     if decision.by == "user":
         said = f" They said: {decision.note}" if decision.note else ""
-        return {"ok": False, "external": False, "code": "declined",
-                "error": f"The user did not allow {what}.{said} Do not retry; report it."}
+        return _not_run({"ok": False, "external": False, "code": "declined",
+                         "error": f"The user did not allow {what}.{said} Do not retry; report it."})
     if decision.by == "expired":
-        return {"ok": False, "external": False, "code": "no_answer", "error": decision.model_text}
+        return _not_run({"ok": False, "external": False, "code": "no_answer", "error": decision.model_text})
     if decision.by == "policy":
-        return {"ok": False, "external": False, "code": "no_one_to_ask", "error": decision.model_text}
+        return _not_run({"ok": False, "external": False, "code": "no_one_to_ask", "error": decision.model_text})
     if decision.by == "reviewer":
-        return {"ok": False, "external": False, "code": "reviewer_denied",
-                "error": decision.model_text or (
-                    f"The reviewer that approves for the user did not allow {what}: "
-                    f"{decision.note or 'no reason given'} Find a safer way to do what the user asked, or ask "
-                    "the user; only they can let it run anyway.")}
-    return {"ok": False, "external": False, "code": "not_allowed",
-            "error": decision.model_text or f"{what[:1].upper()}{what[1:]} was not allowed."}
+        return _not_run({"ok": False, "external": False, "code": "reviewer_denied",
+                         "error": decision.model_text or (
+                             f"The reviewer that approves for the user did not allow {what}: "
+                             f"{decision.note or 'no reason given'} Find a safer way to do what the user asked, "
+                             "or ask the user; only they can let it run anyway.")})
+    return _not_run({"ok": False, "external": False, "code": "not_allowed",
+                     "error": decision.model_text or f"{what[:1].upper()}{what[1:]} was not allowed."})
 
 
 def forget_job(job_id: str) -> None:
@@ -181,12 +234,13 @@ class _BrowserTool:
             if job_id is None:
                 return _not_in_job()
             if self.action == "type" and _PASSWORD.search(str(args.get("element", ""))):
-                return {"ok": False, "external": False, "code": "no_passwords",
-                        "error": "Arslan never types passwords. Ask the user to log in themselves in the "
-                                 "Arslan browser window, then continue."}
+                return _not_run({"ok": False, "external": False, "code": "no_passwords",
+                                 "error": "Arslan never types passwords. Ask the user to log in themselves in "
+                                          "the Arslan browser window, then continue."})
             origin = _origin(agent_browser.current_url())
             if origin is None:
-                return {"ok": False, "external": False, "error": "Open a page with browser_open first."}
+                return _not_run({"ok": False, "external": False, "code": "no_page",
+                                 "error": "Open a page with browser_open first."})
             summary = {"click": "click", "type": "type text", "select": "choose options",
                        "press": "press keys"}[self.action]
             decision = await _decide(
@@ -305,7 +359,7 @@ class MacRunShortcutExecutor:
     async def execute(self, args: dict) -> dict:
         name = str((args or {}).get("name") or "").strip()
         if not name or len(name) > 200:
-            return {"ok": False, "external": False, "error": "name required"}
+            return _bad_request("name required")
         if _conversation_and_job()[1] is None:
             return _not_in_job()
         text_input = (args or {}).get("input")
@@ -333,7 +387,7 @@ class MacAppleScriptExecutor:
     async def execute(self, args: dict) -> dict:
         script = str((args or {}).get("script") or "")
         if not script.strip() or len(script) > 4000:
-            return {"ok": False, "external": False, "error": "script required (max 4000 characters)"}
+            return _bad_request("script required (max 4000 characters)")
         if _conversation_and_job()[1] is None:
             return _not_in_job()
         from server.services import hands_contract, hands_service
@@ -513,10 +567,13 @@ async def _hands(op: str, args: dict, *, job_id: str | None = None, timeout: flo
     return result
 
 
-def _failed(result, *, app: str = "") -> dict:
+def _failed(result, *, app: str = "", nothing_sent: bool = False) -> dict:
+    """A Hands failure for the model. `executed: False` when its code is only said before the action,
+    or when the caller knows no action request was sent in this call (`nothing_sent`: the app was being
+    resolved or the target described, both reads), whatever the code (H2)."""
     text = result.advice()
-    return {"ok": False, "external": False, "code": result.code,
-            "error": text.replace("<App>", app or "the app")}
+    out = {"ok": False, "external": False, "code": result.code, "error": text.replace("<App>", app or "the app")}
+    return _not_run(out) if nothing_sent or result.code in NOT_EXECUTED else out
 
 
 def _trace(op: str, app: dict | str, outcome: str, started: float, **extra) -> None:
@@ -646,7 +703,7 @@ class DesktopAppsExecutor:
 
     async def execute(self, args: dict) -> dict:
         if not desktop_available():
-            return {"ok": False, "external": False, "error": "Arslan Hands is not available on this Mac."}
+            return _unavailable()
         result = await _hands("list_apps", {})
         if not result.ok:
             return _failed(result)
@@ -671,9 +728,9 @@ class DesktopLookExecutor:
         args = dict(args or {})
         name = _app_arg(args)
         if name is None:
-            return {"ok": False, "external": False, "error": "app required (a name from desktop_apps)"}
+            return _bad_request("app required (a name from desktop_apps)")
         if not desktop_available():
-            return {"ok": False, "external": False, "error": "Arslan Hands is not available on this Mac."}
+            return _unavailable()
         started = time.monotonic()
         conversation_id, job_id = _conversation_and_job()
         app, failure = await _resolve_app(name, job_id)
@@ -695,11 +752,11 @@ class DesktopLookExecutor:
             window, titles, only = await _window_id(_target(app), args["window"], job_id)
             if window is None:
                 listed = ", ".join(f"“{t[:60]}”" for t in titles[:8])
-                return {"ok": False, "external": False, "code": "window_not_found",
-                        "error": f"{app['name']} has no window titled like “{asked}” on this screen. "
-                                 + (f"Its windows here: {listed}. Look with one of these titles, or without "
-                                    "`window` to see its front window." if listed else
-                                    "Look without `window` to see its front window.")}
+                return _not_run({"ok": False, "external": False, "code": "window_not_found",
+                                 "error": f"{app['name']} has no window titled like “{asked}” on this screen. "
+                                          + (f"Its windows here: {listed}. Look with one of these titles, or "
+                                             "without `window` to see its front window." if listed else
+                                             "Look without `window` to see its front window.")})
             if only:
                 shown = f", “{titles[0][:60]}”" if titles and titles[0] else ""
                 window_note = (f"No window of {app['name']} is titled like “{asked}”; this is its only "
@@ -871,14 +928,14 @@ class DesktopTakeoverExecutor:
         except (TypeError, ValueError):
             minutes = 0
         if not why or not 1 <= minutes <= 30:
-            return {"ok": False, "external": False, "code": "bad_request",
-                    "error": "why (what you will do, in words) and minutes (1 to 30) are required"}
+            return _bad_request("why (what you will do, in words) and minutes (1 to 30) are required")
         conversation_id, job_id = _conversation_and_job()
         if job_id is None:
-            return {"ok": False, "external": False, "code": "act_in_background",
-                    "error": "Taking the screen over runs in background work only. Call start_background_work."}
+            return _not_run({"ok": False, "external": False, "code": "act_in_background",
+                             "error": "Taking the screen over runs in background work only. Call "
+                                      "start_background_work."})
         if not desktop_available():
-            return {"ok": False, "external": False, "error": "Arslan Hands is not available on this Mac."}
+            return _unavailable()
         from server.services import permissions
         started = time.monotonic()
         away = await _user_away()
@@ -899,8 +956,9 @@ class DesktopTakeoverExecutor:
                 return _no(decision, "taking the screen over")
         try:
             reply = await hands_client.call("takeover_begin", {"minutes": minutes}, timeout=10)
-        except hands_client.HandsUnavailable as exc:
-            return {"ok": False, "external": False, "error": f"Arslan Hands is not available ({exc})."}
+        except hands_client.HandsUnavailable as exc:      # never reached Hands (hands_client._NotSent)
+            return _not_run({"ok": False, "external": False, "code": "hands_unavailable",
+                             "error": f"Arslan Hands is not available ({exc})."})
         result = hands_contract.parse(reply)
         if not result.ok:
             return _failed(result)
@@ -921,8 +979,8 @@ _inline: dict[tuple[str, str], tuple[int, str]] = {}      # (conversation, turn)
 
 
 def _inline_refusal(why: str) -> dict:
-    return {"ok": False, "external": False, "code": "act_in_background",
-            "error": f"{why} Call start_background_work with this goal; the work continues there."}
+    return _not_run({"ok": False, "external": False, "code": "act_in_background",
+                     "error": f"{why} Call start_background_work with this goal; the work continues there."})
 
 
 def _inline_turn() -> tuple[str, str] | None:
@@ -957,27 +1015,27 @@ class _DesktopAct:
         args = dict(args or {})
         name = _app_arg(args)
         if name is None:
-            return {"ok": False, "external": False, "error": "app required (a name from desktop_apps)"}
+            return _bad_request("app required (a name from desktop_apps)")
         conversation_id, job_id = _conversation_and_job()
         turn = _inline_turn() if job_id is None else None
         if job_id is None:
             if turn is None:
-                return {"ok": False, "external": False, "code": "no_one_to_ask",
-                        "error": "Acting in a Mac app needs a conversation to ask the user in."}
+                return _not_run({"ok": False, "external": False, "code": "no_one_to_ask",
+                                 "error": "Acting in a Mac app needs a conversation to ask the user in."})
             if _inline.get(turn, (0, ""))[0] >= INLINE_ACTIONS:
                 return _inline_refusal(f"This reply has already acted {INLINE_ACTIONS} times, the most a chat "
                                        "reply may.")
         if not desktop_available():
-            return {"ok": False, "external": False, "error": "Arslan Hands is not available on this Mac."}
+            return _unavailable()
         if job_id is not None and hands_service.stopped(job_id):
-            return {"ok": False, "external": False, "code": "stopped_by_user",
-                    "error": hands_contract.REFUSALS["stopped_by_user"]}
+            return _not_run({"ok": False, "external": False, "code": "stopped_by_user",   # before any request
+                             "error": hands_contract.REFUSALS["stopped_by_user"]})
         started = time.monotonic()
         target: dict = {}
         if self.op in ("press", "menu"):
             app, failure = await _resolve_app(name, job_id)
             if app is None:
-                return _failed(failure, app=name)
+                return _failed(failure, app=name, nothing_sent=True)
             if app.get("tier") in _TIER_ALLOWS:
                 return _failed(hands_contract.Result(ok=False, code=f"app_{app['tier']}", refused=True))
         else:
@@ -985,7 +1043,7 @@ class _DesktopAct:
             described = await _hands("describe", {"app": name, "ref": ref}, job_id=job_id)
             if not described.ok:
                 _trace(self.op, name, described.code or "error", started)
-                return _failed(described, app=name)
+                return _failed(described, app=name, nothing_sent=True)
             app = described.data.get("app") or {"name": name}
             target = described.data.get("target") or {}
             tier = described.data.get("tier")
@@ -1069,8 +1127,11 @@ class _DesktopAct:
         note = _take_visit_note()
         if note:
             text += " " + note.strip()
-        return {"ok": outcome != "refused", "external": False, "outcome": outcome, "text": text,
-                "summary": f"{self.op} · {app.get('name')} · {label}"[:200]}
+        out = {"ok": outcome != "refused", "external": False, "outcome": outcome, "text": text,
+               "summary": f"{self.op} · {app.get('name')} · {label}"[:200]}
+        # `refused` is "nothing was delivered" in the outcome vocabulary (desktop/hands/src/outcome.rs);
+        # only the Cua Driver path says it today.
+        return _not_run({**out, "code": "app_refused"}) if outcome == "refused" else out
 
     def trace_extra(self, args: dict) -> dict:
         return {}
@@ -1228,18 +1289,19 @@ class DesktopBatchExecutor:
         name = _app_arg(args)
         steps = args.get("steps")
         if name is None:
-            return {"ok": False, "external": False, "error": "app required (a name from desktop_apps)"}
+            return _bad_request("app required (a name from desktop_apps)")
         if not isinstance(steps, list) or not 1 <= len(steps) <= BATCH_MAX:
-            return {"ok": False, "external": False, "code": "bad_request",
-                    "error": f"steps: 1 to {BATCH_MAX} steps, each {{action, …that action's args}}"}
+            return _bad_request(f"steps: 1 to {BATCH_MAX} steps, each {{action, …that action's args}}")
         lines: list[str] = []
         stopped = None
         done = 0
+        nothing_ran = False                 # H2: the batch stopped before its first step reached the app
         for number, step in enumerate(steps, 1):
             action = str(step.get("action") or "") if isinstance(step, dict) else ""
             executor = _BATCH_STEPS.get(action)
             if executor is None:
                 stopped = f"step {number}: unknown action “{action[:40]}” ({', '.join(_BATCH_STEPS)})"
+                nothing_ran = done == 0
                 break
             call = {k: v for k, v in step.items() if k != "action"}
             call["app"] = name                      # one app per batch, whatever a step says
@@ -1248,6 +1310,7 @@ class DesktopBatchExecutor:
             lines.append(f"{number}. {action}: {said}")
             if not result.get("ok") or result.get("outcome") not in _BATCH_GOES_ON:
                 stopped = f"stopped at step {number} ({result.get('code') or result.get('outcome') or 'not done'})"
+                nothing_ran = done == 0 and result.get("executed") is False
                 break
             done += 1
         look = await DesktopLookExecutor().execute({"app": name})
@@ -1258,6 +1321,8 @@ class DesktopBatchExecutor:
                "summary": f"batch · {name} · {done}/{len(steps)}"[:200]}
         if stopped is not None:
             out["code"] = "batch_stopped"
+            if nothing_ran:                 # every step before it went through is "done"; there were none
+                out["executed"] = False
         if look.get("images"):
             out["images"], out["image_label"] = look["images"], look.get("image_label")
         return out
@@ -1278,24 +1343,25 @@ class DesktopOpenExecutor:
         args = dict(args or {})
         name = _app_arg(args)
         if name is None:
-            return {"ok": False, "external": False, "error": "app required (the app's name, as in /Applications)"}
+            return _bad_request("app required (the app's name, as in /Applications)")
         path = None
         if args.get("path"):
             path = Path(str(args["path"])).expanduser()
             if not path.exists():
-                return {"ok": False, "external": False, "code": "no_such_file",
-                        "error": f"There is no file or folder at {path}. Check the path (list_dir shows a folder)."}
+                return _not_run({"ok": False, "external": False, "code": "no_such_file",
+                                 "error": f"There is no file or folder at {path}. Check the path (list_dir shows "
+                                          "a folder)."})
         conversation_id, job_id = _conversation_and_job()
         turn = _inline_turn() if job_id is None else None
         if job_id is None:
             if turn is None:
-                return {"ok": False, "external": False, "code": "no_one_to_ask",
-                        "error": "Opening a Mac app needs a conversation to ask the user in."}
+                return _not_run({"ok": False, "external": False, "code": "no_one_to_ask",
+                                 "error": "Opening a Mac app needs a conversation to ask the user in."})
             if _inline.get(turn, (0, ""))[0] >= INLINE_ACTIONS:
                 return _inline_refusal(f"This reply has already acted {INLINE_ACTIONS} times, the most a chat "
                                        "reply may.")
         if not desktop_available():
-            return {"ok": False, "external": False, "error": "Arslan Hands is not available on this Mac."}
+            return _unavailable()
         if hands_service.never_touched(name):
             return _failed(hands_contract.Result(ok=False, code="app_denied", refused=True), app=name)
         running, _ = await _resolve_app(name, job_id)
@@ -1331,9 +1397,9 @@ class DesktopOpenExecutor:
             *argv, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
         if await process.wait() != 0:
             _trace("open", name, "not_found", started)
-            return {"ok": False, "external": False, "code": "app_not_found",
-                    "error": f"macOS could not open {shown}. Check the app's name (desktop_apps lists running "
-                             "apps) and the path."}
+            return _not_run({"ok": False, "external": False, "code": "app_not_found",
+                             "error": f"macOS could not open {shown}. Check the app's name (desktop_apps lists "
+                                      "running apps) and the path."})
         app = running
         for _ in range(40 if running is None else 0):     # up to ten seconds for a new app to start
             app, failure = await _resolve_app(name, job_id)
@@ -1371,14 +1437,13 @@ class DesktopAccessExecutor:
             if isinstance(args.get("apps"), list) else []
         why = " ".join(str(args.get("why") or "").split())[:300]
         if not names or not why:
-            return {"ok": False, "external": False, "code": "bad_request",
-                    "error": "apps (1 to 8 app names) and why (what you will do, in words) are required"}
+            return _bad_request("apps (1 to 8 app names) and why (what you will do, in words) are required")
         if not desktop_available():
-            return {"ok": False, "external": False, "error": "Arslan Hands is not available on this Mac."}
+            return _unavailable()
         conversation_id, job_id = _conversation_and_job()
         if conversation_id is None:
-            return {"ok": False, "external": False, "code": "no_one_to_ask",
-                    "error": "Asking for apps needs a conversation to ask the user in."}
+            return _not_run({"ok": False, "external": False, "code": "no_one_to_ask",
+                             "error": "Asking for apps needs a conversation to ask the user in."})
         found, skipped = [], []
         for name in names:
             app, failure = await _resolve_app(name, job_id)
@@ -1387,8 +1452,8 @@ class DesktopAccessExecutor:
             elif all(a["bundle_id"] != app.get("bundle_id") for a in found):
                 found.append(app)
         if not found:
-            return {"ok": False, "external": False, "code": "no_apps",
-                    "error": "None of these can be used: " + "; ".join(skipped)}
+            return _not_run({"ok": False, "external": False, "code": "no_apps",
+                             "error": "None of these can be used: " + "; ".join(skipped)})
         # One card for the apps not allowed yet (decide_many: one kind; those a rule or grant already
         # allows are left off it); one answer covers every app shown (0.1.61 §A11).
         await hands_service.migrate_always()
