@@ -16,7 +16,7 @@
 | ③Hands | 负责 Hands：`desktop/hands/**`、`server/registry/hands_tools.py`、`server/services/hands_service.py`、`server/api/hands.py`、`scripts/hands_smoke.py` |
 
 - 新开的会话往后编号（④、⑤……），开工前先在当轮 README 的分道表里登记。
-- 版本号、打 tag、发布、合并，都由用户拍板、用户点。
+- 版本号、打 tag、发布、合并，都由用户拍板、用户点。例外：决定 U9（2026-10-18），⓪Plan 可以合并同时满足四条的 PR（CI 绿、完成证据四项齐、另一个会话审过、按当轮 README §3 的顺序）；打 tag 和发布仍只归用户。
 
 ## 2. 文件归属
 
