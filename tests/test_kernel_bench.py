@@ -309,11 +309,14 @@ def test_run_one_judges_with_the_end_the_driver_printed(tmp_path, monkeypatch):
     from scripts.kernel_bench import runner
     monkeypatch.setattr(runner, "ROOT", tmp_path)
     monkeypatch.setitem(runner.CHECKS, "T9", lambda run, reply, ctx: {"score": 3})
+    waits = []
+    monkeypatch.setattr(runner, "settle", lambda label, since, ended=0.0, **k: waits.append((since, ended)) or 0.0)
     for end, passed in (("task_waiting_user", False), ("done", True)):
         script = f"import json; print(json.dumps({{'end': '{end}', 'final': 'ok'}}))"
         monkeypatch.setattr(runner, "command", lambda *a, **k: ([sys.executable, "-c", script], {}))
         rec = runner.run_one("T9", "arslan", 1, {"T9": "edit {dir}"}, "sb")
         assert (rec["end"], rec["passed"], rec["judge"]) == (end, passed, runner.JUDGE_VERSION)
+    assert len(waits) == 2 and all(ended > since > 0 for since, ended in waits)   # quiet counts from the exit
 
 
 def test_a_runs_usage_is_its_own_label_from_when_it_started(tmp_path, monkeypatch):
@@ -336,9 +339,21 @@ def test_usage_is_read_only_once_the_runs_label_has_gone_quiet(tmp_path, monkeyp
     log.write_text(json.dumps(row | {"cand": "arslan-T9-r1", "t": now - 60}) + "\n"
                    + json.dumps(row | {"cand": "hermes-T9-r1", "t": now}) + "\n")
     assert runner.settle("arslan-T9-r1", since=now - 120, quiet_s=5) == 0      # another label's call ignored
-    log.write_text(log.read_text() + json.dumps(row | {"cand": "arslan-T9-r1", "t": now}) + "\n")
+    # A call still running when the driver exits has no row yet: quiet counts from the exit too.
+    assert runner.settle("arslan-T9-r1", since=now - 120, ended=time.time(), quiet_s=1.5, max_s=10) >= 1
+    log.write_text(log.read_text() + json.dumps(row | {"cand": "arslan-T9-r1", "t": time.time()}) + "\n")
     assert runner.settle("arslan-T9-r1", since=now - 120, quiet_s=1.5, max_s=10) >= 1   # after-turn call waited for
     assert runner.settle("arslan-T9-r1", since=now - 120, quiet_s=60, max_s=2) == 2     # never past max_s
+
+
+def test_a_line_the_meter_is_still_writing_is_skipped(tmp_path, monkeypatch):
+    from scripts.kernel_bench import runner
+    monkeypatch.setattr(runner, "ROOT", tmp_path)
+    row = {"cand": "arslan-T9-r1", "model": "deepseek-v4-pro", "secs": 1.0, "out": 1, "hit": 0, "miss": 1,
+           "t": 100.0, "usd_peak": 0.5}
+    (tmp_path / "usage.jsonl").write_text(json.dumps(row) + "\n" + '{"cand": "arslan-T9-r1", "mod')
+    assert runner.usage("arslan-T9-r1")["model_calls"] == 1
+    assert runner.settle("arslan-T9-r1", since=0.0, quiet_s=1) == 0
 
 
 def test_the_report_keeps_rows_judged_by_the_old_rule_apart():

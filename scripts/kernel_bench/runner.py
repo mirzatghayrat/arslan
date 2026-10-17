@@ -219,11 +219,21 @@ def reply_text(who: str, run: Path) -> str:
     return text
 
 
+def _usage_rows() -> list[dict]:
+    """usage.jsonl as rows; a line the meter is still writing is skipped, not fatal."""
+    log, rows = ROOT / "usage.jsonl", []
+    for line in (log.open() if log.exists() else ()):
+        try:
+            rows.append(json.loads(line))
+        except ValueError:
+            continue
+    return rows
+
+
 def usage(label: str, since: float = 0.0) -> dict:
     """This run's model calls: its label, from when it started (the same label comes back in
     later rounds and on other models; usage.jsonl keeps them all)."""
-    log = ROOT / "usage.jsonl"
-    rows = [json.loads(line) for line in log.open()] if log.exists() else []
+    rows = _usage_rows()
     mine = [r for r in rows if r["cand"] == label and r["model"] != "?" and r["t"] >= since]
     if not mine:
         return {"model_calls": 0, "usd_peak": 0.0, "span_s": 0.0}
@@ -234,16 +244,19 @@ def usage(label: str, since: float = 0.0) -> dict:
             "cache_hit_tokens": sum(r["hit"] for r in mine), "cache_miss_tokens": sum(r["miss"] for r in mine)}
 
 
-def settle(label: str, since: float, quiet_s: float = 10.0, max_s: float = 90.0) -> float:
-    """Wait until this run's label has had no model call for `quiet_s` (at most `max_s`) and
-    return the seconds waited. Arslan makes a few small calls right after a turn ends (memory
-    and learning); those are part of what the run costs, and reading usage at once missed them.
-    Calls much later (idle-time work) are not waited for; the round report shows them apart."""
-    log, waited = ROOT / "usage.jsonl", 0.0
+def settle(label: str, since: float, ended: float = 0.0, quiet_s: float = 20.0, max_s: float = 120.0) -> float:
+    """Wait until `quiet_s` has passed since the later of the driver's exit (`ended`) and this
+    run's last model call (at most `max_s`), and return the seconds waited. Arslan makes a few
+    calls right after a turn ends (memory, learning); those are part of what the run costs.
+    The meter writes a row only when a call finishes, so a call still running when the driver
+    exits is invisible until then: quiet is counted from the exit too (③Hands' review), long
+    enough for a slow after-turn call to land. Calls much later (idle-time work) are not waited
+    for; the round report shows them apart."""
+    waited = 0.0
     while waited < max_s:
-        rows = [json.loads(line) for line in log.open()] if log.exists() else []
+        rows = _usage_rows()
         last = max((r["t"] for r in rows if r["cand"] == label and r["t"] >= since), default=0.0)
-        if time.time() - last >= quiet_s:
+        if time.time() - max(last, ended) >= quiet_s:
             break
         time.sleep(1.0)
         waited += 1.0
@@ -350,6 +363,7 @@ def run_one(task: str, who: str, n: int, prompts: dict, sb: str, manual_login: b
         prompt = turns if (len(turns) > 1 and who in ARSLAN) else turns[0]
         cmd, e = command(who, label, run, prompt, sb, model=model, decline=DECLINES.get(task))
         rc = _run(cmd, e, run)
+    ended = time.time()
     if "timer" in ctx:
         ctx["timer"].cancel()
     reply = reply_text(who, run)
@@ -359,7 +373,7 @@ def run_one(task: str, who: str, n: int, prompts: dict, sb: str, manual_login: b
         if "site" in ctx:
             ctx["site"].stop()
     end = driver_end(who, run)
-    settled = settle(label, started)
+    settled = settle(label, started, ended)
     record = {"run": label, "task": task, "entrant": who, "repeat": n, "model": model, "rc": rc,
               "entrant_version": entrant_version(who), "end": end,
               "wall_s": round(time.time() - started), "prompt": turns if len(turns) > 1 else turns[0],
