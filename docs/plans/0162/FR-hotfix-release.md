@@ -62,7 +62,7 @@
 
 1. **发版 PR：** F 线各卡都合进 `release/0.1.62` 之后，从它拉 `claude/0162-fr-hotfix-release`，做上面的改动，开 PR，由用户合。
 2. **等 CI：** 发版分支最新提交（就是要打 tag 的 sha）的 CI 必须是 success，记下 run id。`release.yml:45-64` 会再查一遍，查不到就拒绝出包。
-3. **冒烟（门槛）：** ③Hands 在这个 sha 上跑 `scripts/hands_smoke.py`，结果写进发版 PR 的评论，打 tag 前给用户看。H2 是在冒烟之前合的（更正 E16），所以这一步是门槛：和 v0.1.61 的基线（28/30，同样那两项已知失败）不一致，就不打 tag。开发版 Hands 要用户在 Mac 前给辅助功能授权。
+3. **冒烟（门槛）：** ③Hands 在这个 sha 上跑 `scripts/hands_smoke.py`，结果写进发版 PR 的评论，打 tag 前给用户看。H2 是在冒烟之前合的（更正 E16），所以这一步是门槛：每一项要么通过，要么是 v0.1.61 基线里那两项已知失败之一；出现任何别的失败，就不打 tag。比基线好（例如 29/30，G8′ 是计时阈值，上次 396–413 ms）不算不一致。开发版 Hands 要用户在 Mac 前给辅助功能授权。
 4. **打 tag：** 用户说 go 之后，在这个 sha 上打带注解的 tag `v0.1.62` 并推送。`release.yml` 会出一个 draft。
 5. **核 draft：** DMG、`latest.json`、签名、正文都核过，然后交给用户。**由用户点 Publish。** 发布后核对它成了 Latest。
 6. **合回 main：** 开 PR，head 是 `release/0.1.62`，base 是 main，用 merge commit。
