@@ -11,6 +11,7 @@ the user clicked to let it out.
 from __future__ import annotations
 
 import asyncio
+import collections
 import contextvars
 import os
 import signal
@@ -29,8 +30,17 @@ OFFLINE: contextvars.ContextVar[bool] = contextvars.ContextVar("terminal_offline
 OUTSIDE_SANDBOX: contextvars.ContextVar[bool] = contextvars.ContextVar("terminal_outside_sandbox", default=False)
 
 DEFAULT_TIMEOUT_S = 120
+MIN_TIMEOUT_S = 5
 MAX_TIMEOUT_S = 600
 MAX_OUTPUT_CHARS = 30_000
+# 0.1.62 F1: what one stream (stdout or stderr) may hold in memory while a command runs. Output
+# used to be read whole at the end, so a command that floods its output could take all the
+# memory. 8 MB keeps a long build or test log whole (the model sees 30,000 characters of it; the
+# rest goes to disk) and bounds a runaway; past it the head and the tail are kept.
+MAX_BUFFER_BYTES = 8 * 1024 * 1024
+# After a time limit kills the process group, how long to wait for the output still in the
+# pipes. A child that left the group can hold a pipe open forever; never wait on it unbounded.
+DRAIN_AFTER_KILL_S = 5.0
 
 
 def clip(text: str, limit: int = MAX_OUTPUT_CHARS) -> tuple[str, bool]:
@@ -66,7 +76,61 @@ def timeout_of(value) -> int:
         seconds = int(value)
     except (TypeError, ValueError):
         return DEFAULT_TIMEOUT_S
-    return max(5, min(seconds, MAX_TIMEOUT_S))
+    return max(MIN_TIMEOUT_S, min(seconds, MAX_TIMEOUT_S))
+
+
+class _Capped:
+    """One stream's output, read as it comes, at most MAX_BUFFER_BYTES in memory: the head
+    and the tail, and how many bytes in between were dropped."""
+
+    def __init__(self, limit: int = MAX_BUFFER_BYTES):
+        self.half = limit // 2
+        self.head = bytearray()
+        self.tail: collections.deque[bytes] = collections.deque()
+        self.tail_len = 0
+        self.dropped = 0
+
+    def add(self, chunk: bytes) -> None:
+        room = self.half - len(self.head)
+        if room > 0:
+            self.head += chunk[:room]
+            chunk = chunk[room:]
+        if not chunk:
+            return
+        self.tail.append(chunk)
+        self.tail_len += len(chunk)
+        while self.tail_len > self.half:
+            excess, first = self.tail_len - self.half, self.tail[0]
+            if len(first) <= excess:
+                self.tail.popleft()
+                cut = len(first)
+            else:
+                self.tail[0] = first[excess:]
+                cut = excess
+            self.tail_len -= cut
+            self.dropped += cut
+
+    def data(self) -> bytes:
+        gap = f"\n… [{self.dropped} bytes dropped while running] …\n".encode() if self.dropped else b""
+        return bytes(self.head) + gap + b"".join(self.tail)
+
+
+async def _pump(stream: asyncio.StreamReader, into: _Capped) -> None:
+    while chunk := await stream.read(65536):
+        into.add(chunk)
+
+
+def _kill_group(proc) -> None:
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+
+
+async def _cancel(tasks) -> None:
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 
 def _shell() -> str:
@@ -110,26 +174,27 @@ async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
         *prefix, _shell(), "-c", command, cwd=str(cwd), env=env,
         stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         start_new_session=True)          # its own process group, so a timeout can stop children too
+    # 0.1.62 F1: output is read while the command runs (it used to be read in one go at the
+    # end), so a time limit keeps what was already printed instead of losing it with the read.
+    out_buf, err_buf = _Capped(), _Capped()
+    tasks = [asyncio.ensure_future(proc.wait()), asyncio.ensure_future(_pump(proc.stdout, out_buf)),
+             asyncio.ensure_future(_pump(proc.stderr, err_buf))]
     timed_out = False
     try:
-        out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout_s)
-    except TimeoutError:
-        timed_out = True
-        try:
-            os.killpg(proc.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        out, err = await proc.communicate()
+        _, pending = await asyncio.wait(tasks, timeout=timeout_s)
     except asyncio.CancelledError:
         # The job or turn was stopped (from the phone or the window): the command stops with it,
         # children included, instead of running on where nobody sees it.
-        try:
-            os.killpg(proc.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+        _kill_group(proc)
+        await asyncio.shield(_cancel(tasks))
         raise
-    full_out = out.decode("utf-8", errors="replace")
-    full_err = err.decode("utf-8", errors="replace")
+    if pending:
+        timed_out = True
+        _kill_group(proc)
+        _, pending = await asyncio.wait(pending, timeout=DRAIN_AFTER_KILL_S)
+        await _cancel(pending)
+    full_out = out_buf.data().decode("utf-8", errors="replace")
+    full_err = err_buf.data().decode("utf-8", errors="replace")
     stdout, cut_out = clip(fold_repeats(full_out))
     stderr, cut_err = clip(fold_repeats(full_err))
     result = {"ok": proc.returncode == 0 and not timed_out, "exit_code": proc.returncode,
@@ -145,8 +210,11 @@ async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
             result["full_output_path"] = str(saved)
         except OSError:
             pass
+    if out_buf.dropped or err_buf.dropped:
+        result["dropped_bytes"] = out_buf.dropped + err_buf.dropped
     if timed_out:
-        result["error"] = f"stopped after {timeout_s} s"
+        result["error"] = f"stopped after {timeout_s} s"     # M2 counts this exact text: keep it
+        result["code"] = "time_limit"
     elif proc.returncode != 0:
         result["error"] = f"exit code {proc.returncode}"
     if cut_out or cut_err:

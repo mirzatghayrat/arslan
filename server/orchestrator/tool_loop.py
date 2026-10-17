@@ -29,6 +29,9 @@ if TYPE_CHECKING:
     from server.orchestrator.tool_caller import ToolCaller
 
 TOOL_TIMEOUT_S = 20.0
+# 0.1.62 F1: run_command's backstop stops this much before the turn's own timeout, so the order
+# is fixed: the command's limit first (with its output), this backstop next, the turn last.
+_RUN_COMMAND_BACKSTOP_RESERVE_S = 10.0
 
 # The T1 write tools, gated as a category (P1b). Kept as a set here — the tool
 # list in _arslan_tools decides what is OFFERED, this decides what is GATED, and
@@ -1267,8 +1270,13 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                 # A tool that waits for the user's card or a slow app declares its own limit
                 # (`timeout_s`): the default cut a Notes look mid-card on a real Mac (0.1.53).
                 own = getattr(executor, "timeout_s", None)
-                timeout = (budget.remaining_seconds() if tool_key == "delegate_work" and budget
-                           else max(tool_timeout_s, float(own)) if isinstance(own, (int, float)) else tool_timeout_s)
+                if tool_key == "run_command" and isinstance(own, (int, float)):
+                    # 0.1.62 F1: the command's own limit decides, not the loop's 20 s default.
+                    timeout = (max(0.0, min(float(own), budget.remaining_seconds() - _RUN_COMMAND_BACKSTOP_RESERVE_S))
+                               if budget else float(own))
+                else:
+                    timeout = (budget.remaining_seconds() if tool_key == "delegate_work" and budget
+                               else max(tool_timeout_s, float(own)) if isinstance(own, (int, float)) else tool_timeout_s)
                 return await asyncio.wait_for(executor.execute(admitted_args), timeout=timeout)
             runtime = current_task()
 
@@ -1300,7 +1308,9 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
         except BudgetExceeded:
             raise
         except TimeoutError:
-            result = {"ok": False, "error": f"tool '{tool_key}' timed out"}
+            # M2 counts the run_command wording (0.1.62 F1): keep it as it is.
+            result = ({"ok": False, "code": "time_limit", "error": "stopped by the time limit; no output was captured"}
+                      if tool_key == "run_command" else {"ok": False, "error": f"tool '{tool_key}' timed out"})
         except Exception as exc:  # noqa: BLE001
             result = {"ok": False, "error": f"tool '{tool_key}' failed: {exc}"}
         finally:
