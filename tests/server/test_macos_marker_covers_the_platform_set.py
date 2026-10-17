@@ -79,12 +79,15 @@ EXPECTED_FILES: dict[str, int] = {
     # only its folder and the granted one, a protected folder stays closed inside a grant,
     # the network only when declared. Seatbelt is macOS-only. Appended boundary case.
     "server/test_capability_sandbox.py": 3,
+    # 0.1.62 F4b (R1): a parent folder swapped for a link at the open is refused by the kernel
+    # (O_NOFOLLOW_ANY exists on macOS 11+ only; elsewhere the second resolve is the guard).
+    "server/test_write_no_links.py": 1,
 }
 #: 🔴 MIRRORED in .github/workflows/ci.yml ("Assert they RAN, and did not skip").
 #: That step re-derives this number from the junit XML, so changing one without
 #: the other turns a green local run into a red CI run, or worse, hides drift
 #: from the guard meant to catch it. Both, same commit, or neither.
-EXPECTED_TOTAL = 54  # +2 0.1.59: closed Desktop/Documents/Downloads; +3 0.1.57: installed capability sandbox; +1 0.1.53 Hands: protected socket; +6 0.1.51 P3: run_command workspace sandbox; +2 0.1.50: run_command offline mode (seatbelt deny network*);
+EXPECTED_TOTAL = 55  # +1 0.1.62 F4b: write_file refused by O_NOFOLLOW_ANY; +2 0.1.59: closed Desktop/Documents/Downloads; +3 0.1.57: installed capability sandbox; +1 0.1.53 Hands: protected socket; +6 0.1.51 P3: run_command workspace sandbox; +2 0.1.50: run_command offline mode (seatbelt deny network*);
 #                     −4 0.1.48: the unused command sandbox and its tests were deleted
 # The external-file test has six attack cases under one marked function.
 PARAMETERIZED_EXTRA_CASES = 5
