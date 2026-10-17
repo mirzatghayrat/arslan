@@ -29,7 +29,8 @@ CAND_CAP = float(os.environ.get("BENCH_RUN_CAP_USD", "1"))
 LOG = os.environ.get("BENCH_LOG", "usage.jsonl")
 # $/1M tokens as (cache read, uncached input, output). DeepSeek: PEAK (conservative);
 # off-peak is exactly half.
-# Claude: first-party list prices from the claude-api skill's model table (cached 2026-10-06),
+# Claude: first-party list prices from the claude-api skill's model table (cached 2026-10-06; cache
+# reads as that table lists them: Fable 5.1 $0.25, Opus 5.5 and Sonnet 5.5 $0.20),
 # entered 2026-10-18 — check the live pricing page before a paid round. Claude Haiku 5.5 is
 # priced up to 100K-token prompts. Cache writes cost more than plain input: see WRITE_UPLIFT.
 PRICE = {
@@ -48,6 +49,8 @@ PRICE = {
 # (conservative, like the rest of the caps).
 WRITE_UPLIFT = 1.0
 DEFAULT_PRICE = PRICE["deepseek-v4-pro"]
+# A Claude model missing from the table is priced as the dearest one, so caps stay conservative.
+CLAUDE_DEFAULT_PRICE = PRICE["claude-fable-5-1"]
 spent = {"total": 0.0}
 per_cand = {}
 lock = asyncio.Lock()
@@ -71,7 +74,7 @@ def withhold_tools(cand, j):
 
 
 def cost(model, hit, miss, out, write=0):
-    h, m, o = PRICE.get(model, DEFAULT_PRICE)
+    h, m, o = PRICE.get(model, CLAUDE_DEFAULT_PRICE if str(model).startswith("claude-") else DEFAULT_PRICE)
     return (hit * h + miss * m + write * m * WRITE_UPLIFT + out * o) / 1e6
 
 
@@ -79,6 +82,10 @@ def auth_headers(incoming: dict, key: str, anthropic: bool) -> dict:
     """The upstream's credentials in place of the candidate's dummy key. Anthropic takes only
     x-api-key: a Bearer header there means an OAuth token, not an API key."""
     headers = dict(incoming)
+    # Uncompressed answers: a streamed body is passed through as raw bytes with its
+    # content-encoding header dropped, so a gzip stream reached the candidate undecodable
+    # (Hermes: "'utf-8' codec can't decode byte 0x8b").
+    headers["accept-encoding"] = "identity"
     if not anthropic:
         headers["authorization"] = f"Bearer {key}"
     headers["x-api-key"] = key

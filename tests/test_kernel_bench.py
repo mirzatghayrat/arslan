@@ -244,12 +244,14 @@ def test_sandboxed_rounds_answer_cards_like_a_user_and_never_let_commands_out(mo
 
 # ── M1a (0.1.62 round): waiting counts as failure, turns, a decline with a note, two models ──
 
-def test_a_run_that_ends_waiting_for_the_user_fails_even_when_the_checker_gives_three():
+def test_an_arslan_run_passes_only_when_it_ended_cleanly_and_the_checker_gives_three():
     from scripts.kernel_bench import runner
-    assert runner.judge({"score": 3}, end="task_waiting_user") is False
     assert runner.judge({"score": 3}, end="done") is True
     assert runner.judge({"score": 2}, end="done") is False
-    assert runner.judge({"score": 3}, end=None) is True          # outside entrants report no end
+    for end in ("task_waiting_user", "task_failed", "task_cancelled", "timeout", "job_blocked",
+                "job_out_of_budget", None):                       # None: the driver never reported
+        assert runner.judge({"score": 3}, end=end, who="arslan") is False, end
+    assert runner.judge({"score": 3}, end=None, who="hermes") is True        # outside entrants report no end
 
 
 def test_succeeded_is_the_phase_that_ends_a_run_cleanly_and_completed_is_not_a_phase():
@@ -258,6 +260,78 @@ def test_succeeded_is_the_phase_that_ends_a_run_cleanly_and_completed_is_not_a_p
     assert not t.turn_done
     t.on_frame({"type": "task_state", "phase": "succeeded"}, now=5)
     assert t.finished(now=5 + IDLE_AFTER_TURN_S, started=0) and t.end_reason == "done"
+
+
+def test_a_task_turn_is_over_only_at_its_final_state_even_after_the_answer_ended():
+    t = TurnTracker("/r")
+    t.on_frame({"type": "task_state", "phase": "running"}, now=1)
+    t.on_frame({"type": "stream_end"}, now=2)
+    assert not t.finished(now=2 + IDLE_AFTER_TURN_S * 3, started=0)      # the review runs after the answer
+    t.on_frame({"type": "task_state", "phase": "waiting_user"}, now=100)
+    assert t.finished(now=100 + IDLE_AFTER_TURN_S, started=0) and t.end_reason == "task_waiting_user"
+
+
+def test_a_background_job_that_ends_blocked_or_out_of_budget_is_how_the_run_ended():
+    for outcome in ("blocked", "out_of_budget", "partial", "stopped"):
+        t = TurnTracker("/r")
+        t.on_frame({"type": "job_update", "job_id": "j", "phase": "running"}, now=1)
+        t.on_frame({"type": "stream_end"}, now=2)
+        t.on_frame({"type": "job_update", "job_id": "j", "phase": "finished", "outcome": outcome}, now=50)
+        assert t.finished(now=50 + IDLE_AFTER_TURN_S, started=0) and t.end_reason == f"job_{outcome}"
+    ok = TurnTracker("/r")
+    ok.on_frame({"type": "job_update", "job_id": "j", "phase": "finished", "outcome": "done"}, now=1)
+    ok.on_frame({"type": "stream_end"}, now=2)
+    assert ok.finished(now=2 + IDLE_AFTER_TURN_S, started=0) and ok.end_reason == "done"
+
+
+def test_a_turn_that_ended_waiting_still_counts_after_a_later_turn_succeeds():
+    t = TurnTracker("/r")
+    t.on_frame({"type": "task_state", "phase": "waiting_user"}, now=1)
+    t.next_turn(now=2)
+    t.on_frame({"type": "task_state", "phase": "succeeded"}, now=3)
+    assert t.finished(now=3 + IDLE_AFTER_TURN_S, started=0) and t.end_reason == "task_waiting_user"
+
+
+def test_by_default_the_stand_in_declines_apple_events_except_for_reminders_in_t1():
+    t = TurnTracker("/b/runs/arslan-T5-r1")
+    assert t.on_frame({"type": "propose_run_command", "call_id": "c", "rule": "apple-events"}, 1)["type"] == \
+        "cancel_run_command"
+    assert t.on_frame({"type": "propose_run_command", "call_id": "c", "rule": "delete"}, 1)["type"] == \
+        "confirm_run_command"
+    t1 = TurnTracker("/b/runs/arslan-T1-r1")
+    assert t1.on_frame({"type": "propose_run_command", "call_id": "c", "rule": "apple-events"}, 1)["type"] == \
+        "confirm_run_command"
+
+
+def test_run_one_judges_with_the_end_the_driver_printed(tmp_path, monkeypatch):
+    """The end has to travel from Arslan's driver output into the judge (a stub driver here)."""
+    import sys
+    from scripts.kernel_bench import runner
+    monkeypatch.setattr(runner, "ROOT", tmp_path)
+    monkeypatch.setitem(runner.CHECKS, "T9", lambda run, reply, ctx: {"score": 3})
+    for end, passed in (("task_waiting_user", False), ("done", True)):
+        script = f"import json; print(json.dumps({{'end': '{end}', 'final': 'ok'}}))"
+        monkeypatch.setattr(runner, "command", lambda *a, **k: ([sys.executable, "-c", script], {}))
+        rec = runner.run_one("T9", "arslan", 1, {"T9": "edit {dir}"}, "sb")
+        assert (rec["end"], rec["passed"], rec["judge"]) == (end, passed, runner.JUDGE_VERSION)
+
+
+def test_a_runs_usage_is_its_own_label_from_when_it_started(tmp_path, monkeypatch):
+    from scripts.kernel_bench import runner
+    monkeypatch.setattr(runner, "ROOT", tmp_path)
+    row = {"cand": "arslan-T9-r1", "model": "deepseek-v4-pro", "secs": 1.0, "out": 1, "hit": 0, "miss": 1}
+    (tmp_path / "usage.jsonl").write_text("\n".join(json.dumps(row | {"t": t, "usd_peak": u})
+                                                    for t, u in ((100.0, 0.5), (200.0, 0.01), (201.0, 0.02))) + "\n")
+    assert runner.usage("arslan-T9-r1", since=150.0)["usd_peak"] == 0.03          # an earlier round's 0.5 left out
+    assert runner.usage("arslan-T9-r1")["model_calls"] == 3
+
+
+def test_the_report_keeps_rows_judged_by_the_old_rule_apart():
+    old = _rec("T5", "arslan", 1, True) | {"model": "m"}
+    new = _rec("T5", "arslan", 1, False) | {"model": "m", "judge": 2}
+    rows = report.summarise([old, new])
+    assert sorted((r["passes"], r["old_rule"]) for r in rows) == [(0, False), (1, True)]
+    assert "arslan (old rule)" in report.render(rows)
 
 
 def test_a_declined_card_can_carry_the_users_note():
@@ -368,6 +442,8 @@ def test_claude_code_runs_bare_in_the_sandbox_with_a_dummy_key_and_resumes_its_s
     assert first[first.index("--session-id") + 1] == "s-1" and "--resume" not in first
     assert later[later.index("--resume") + 1] == "s-1" and "--session-id" not in later
     assert env["ANTHROPIC_BASE_URL"] == f"{runner.ANTHROPIC_PROXY}/claude-code-T8-r1"
+    _, on_deepseek = runner.command("claude-code", "claude-code-T7-r1", run, "go", "sb", model="deepseek-v4-pro")
+    assert on_deepseek["ANTHROPIC_BASE_URL"] == f"{runner.PROXY}/claude-code-T7-r1/anthropic"
     assert env["ANTHROPIC_API_KEY"] == "bench-dummy"
     assert env["HOME"].startswith(str(runner.ROOT))
 
@@ -403,7 +479,9 @@ def test_claude_prices_and_cache_writes_cost_more_than_plain_input():
 def test_the_anthropic_upstream_gets_only_its_key_header_and_no_openai_stream_option():
     from scripts.kernel_bench import meter
     h = meter.auth_headers({"anthropic-version": "2023-06-01"}, "k", anthropic=True)
-    assert h == {"anthropic-version": "2023-06-01", "x-api-key": "k"}
-    assert meter.auth_headers({}, "k", anthropic=False) == {"authorization": "Bearer k", "x-api-key": "k"}
+    assert h == {"anthropic-version": "2023-06-01", "x-api-key": "k", "accept-encoding": "identity"}
+    assert meter.auth_headers({}, "k", anthropic=False) == {"authorization": "Bearer k", "x-api-key": "k",
+                                                             "accept-encoding": "identity"}
+    assert meter.cost("claude-unlisted-9", 0, 1_000_000, 0) == meter.PRICE["claude-fable-5-1"][1]
     assert meter.wants_usage_option(True, {"messages": []}, "/v1/messages", anthropic=True) is False
     assert meter.wants_usage_option(True, {"messages": []}, "/v1/chat/completions", anthropic=False) is True
