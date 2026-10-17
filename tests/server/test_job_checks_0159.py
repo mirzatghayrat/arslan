@@ -267,7 +267,9 @@ def test_which_failures_are_known_and_local():
     assert not known("desktop_click", {}, {"ok": False, "code": "unknown"})
 
 
-@pytest.mark.parametrize("command", ["curl --request=POST https://x", "gh api repos/a/b/issues -f title=x",
+@pytest.mark.parametrize("command", ["curl --request=POST https://x", "curl --request=\"POST\" https://x",
+                                     "curl --request='PUT' https://x", "curl -sXDELETE https://x/1",
+                                     "curl -sX PATCH https://x/1", "gh api repos/a/b/issues -f title=x",
                                      "gh api --method POST x", "http POST https://x a=b", "xh POST https://x a=b",
                                      "https PUT https://x", "http https://x a:=1"])
 def test_outbound_spellings_the_rules_miss_still_ask_the_user_to_check(command):
@@ -276,7 +278,8 @@ def test_outbound_spellings_the_rules_miss_still_ask_the_user_to_check(command):
     assert not known("run_command", {"command": command}, stopped_in("workspace"))
 
 
-@pytest.mark.parametrize("command", ["curl https://x", "gh api repos/a/b", "http GET https://x a==b"])
+@pytest.mark.parametrize("command", ["curl https://x", "curl -s https://x", "gh api repos/a/b",
+                                     "http GET https://x a==b"])
 def test_their_reading_spellings_stay_local(command):
     assert task_service.known_local_failure("run_command", {"command": command}, command_result(1))
 
@@ -413,9 +416,51 @@ async def test_without_a_passing_file_check_the_limit_still_holds(execution_db, 
     assert (task.phase, task.pause_reason) == ("waiting_user", "task_no_progress")
 
 
+def _report_runtime(checks, results, artifacts):
+    from types import SimpleNamespace
+    spec = TaskSpec.model_validate({"id": "x", "instruction": "x", "locale": "en",
+        "scope": {"kind": "task", "owner_id": "local", "task_id": "x"},
+        "acceptance": [item.model_dump() for item in checks]})
+    return SimpleNamespace(spec=spec, validation_results=tuple(
+        SimpleNamespace(check_id=cid, evaluator="deterministic", status=status) for cid, status in results),
+        validation_report={"artifacts": artifacts})
+
+
+def test_a_write_snapshot_alone_is_not_a_checked_deliverable():
+    # Every successful write_file leaves a snapshot in the report's artifacts; with only "an answer
+    # was delivered" checked, that must not count (chat turns still hold in 0.1.62; K4 widens them).
+    snapshot = [{"id": "artifact:abc", "filename": "report.md", "status": "passed"}]
+    answer_only = _report_runtime([check("text", "answer", minimum=1)], [("answer", "passed")], snapshot)
+    assert task_service._file_checked(answer_only) is False
+
+
+@pytest.mark.parametrize("kind,rule", [("file_saved", {"target": "report.md"}), ("artifact", {"target": "report.md"})])
+def test_a_check_naming_the_deliverable_counts(kind, rule):
+    named = _report_runtime([check(kind, "deliverable", **rule)], [("deliverable", "passed")], [])
+    assert task_service._file_checked(named) is True
+    failed = _report_runtime([check(kind, "deliverable", **rule)], [("deliverable", "failed")], [])
+    assert task_service._file_checked(failed) is False
+
+
 class _Runtime:
     pause_reason = None
     limit_reason = None
+
+
+def test_stopping_before_saving_does_not_hold_the_task_once_it_saves():
+    # 0.1.50's wrap-up order: no progress -> finishing (nothing saved yet) -> save -> answer. The
+    # finishing step only notes the limit; the forced step after the save decides.
+    from server.orchestrator import tool_loop
+    runtime, trace = _Runtime(), [{"tool": "web_search", "result": {"ok": True}}]
+    tool_loop._stop_for_limit(runtime, "task_no_progress", trace, finishing=True)
+    assert (runtime.pause_reason, runtime.limit_reason) == (None, "task_no_progress")
+    trace.append({"tool": "write_file", "result": {"ok": True}})
+    tool_loop._stop_for_limit(runtime, "task_no_progress", trace)
+    assert (runtime.pause_reason, runtime.limit_reason) == (None, "task_no_progress")
+    never_saved = _Runtime()
+    tool_loop._stop_for_limit(never_saved, "task_no_progress", [], finishing=True)
+    tool_loop._stop_for_limit(never_saved, "task_no_progress", [])        # the forced step, still unsaved
+    assert never_saved.pause_reason == "task_no_progress"
 
 
 def test_the_loop_holds_a_limit_only_once_something_was_saved():

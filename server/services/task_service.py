@@ -55,14 +55,14 @@ _OUTBOUND_RULES = frozenset({"apple-events", "shortcuts", "send-mail", "send-mes
 
 
 # 0.1.62 F2 ②a: outbound spellings the terminal rules do not match yet (they run without a card
-# today): curl --request=POST, gh api with fields or a non-GET method, HTTPie and xh sending.
+# today): curl --request=POST (quoted too) or -sXDELETE, gh api with fields or a non-GET method, HTTPie and xh sending.
 # Only this file reads them: a failure of one may have left something behind elsewhere. Delete
 # when S2a adds them to terminal_policy's outbound group, in that same PR (v0.1.63).
 def _outbound_extra_rules():
     from server.services import terminal_policy
     pos = terminal_policy._POS
     return [re.compile(pos + pattern, re.I) for pattern in (
-        r"curl\b[^\n]*--request=(?:POST|PUT|PATCH|DELETE)\b",
+        r"curl\b[^\n]*(?:--request=[\"']?|\s-[a-zA-Z]*X\s*[\"']?)(?:POST|PUT|PATCH|DELETE)\b",
         r"gh\s+api\b[^\n]*(?:\s(?:-f|-F|--field|--raw-field|--input)(?:[\s=]|$)|\s--method[\s=](?!GET\b)\w)",
         r"(?:https?|xhs?)\s+(?:-\S+\s+)*(?:POST|PUT|PATCH|DELETE)\b",
         r"(?:https?|xhs?)\s+[^\n]*\s[A-Za-z_][\w.\-\[\]]*:?=(?!=)",
@@ -89,8 +89,10 @@ def known_local_failure(tool_key: str, arguments: dict, result) -> bool:
     an error, are known outcomes — treating them as unknown ended every job with a failed probe on
     the way as "needs your review" (seen recording the 0.1.59 promo: nine invoices copied, "Stuck").
     Also known: an MCP call to a server that was not ready (it never left Arslan; 0.1.61 §B1).
-    Still unknown, and still asking: exceptions, cancellations, a command killed by its timeout or a
-    signal, any command matching an outbound rule, and every other tool.
+    Also known (0.1.62 F2): a result that says it never ran (`executed: False`), and a command stopped
+    by its own time limit inside the workspace sandbox.
+    Still unknown, and still asking: exceptions, cancellations, a command killed by a signal or by a
+    time limit outside the sandbox, any command matching an outbound rule, and every other tool.
     Not covered (said here and in docs/specs/2026-10-10-0159-job-checks.md): a local script that sends
     something over the network itself and then fails is treated as local — the terminal policy cannot
     see inside the script.
@@ -407,12 +409,16 @@ class TaskRuntime:
         return result
 
 
+# Acceptance rules that name a deliverable on disk or among the run's files.
+_DELIVERABLE_RULES = frozenset({"file_saved", "artifact", "image_dimensions"})
+
+
 def _file_checked(runtime) -> bool:
-    """A finish-time check passed on a saved file: a passing `file_saved` check or an artifact check.
-    "An answer was delivered" alone never counts (chat turns have only that one; K4 widens them)."""
-    file_checks = {c.id for c in runtime.spec.acceptance if c.rule is not None and c.rule.kind == "file_saved"}
-    return (any(r.check_id in file_checks and r.status == "passed" for r in runtime.validation_results)
-            or bool((runtime.validation_report or {}).get("artifacts")))
+    """A finish-time check that names the deliverable passed (`file_saved`, `artifact`,
+    `image_dimensions`). A write's snapshot in the report is not one: every successful write leaves
+    one. "An answer was delivered" alone never counts, so chat turns still hold (K4 widens them)."""
+    named = {c.id for c in runtime.spec.acceptance if c.rule is not None and c.rule.kind in _DELIVERABLE_RULES}
+    return any(r.check_id in named and r.status == "passed" for r in runtime.validation_results)
 
 
 async def _run(value: dict, emit, body, *, progress=None, context=None):

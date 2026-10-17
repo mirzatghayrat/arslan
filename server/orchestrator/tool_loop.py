@@ -2119,11 +2119,14 @@ async def _reveal_streamed(text: str, on_chunk: Callable[[str], None]) -> None:
 WRAP_UP_TOOLS = frozenset({"write_file", "edit_file"})
 
 
-def _stop_for_limit(runtime, reason: str, trace: list[dict]) -> None:
+def _stop_for_limit(runtime, reason: str, trace: list[dict], *, finishing: bool = False) -> None:
     """0.1.62 F2 ④: a work limit stops this turn. With a deliverable saved this turn, it is only
     noted (`limit_reason`): the task holds for it only if the finish-time checks do not pass a
-    saved file (task_service._run). Otherwise it holds the task, as before."""
-    if any(item.get("tool") in WRAP_UP_TOOLS and (item.get("result") or {}).get("ok") is True for item in trace):
+    saved file (task_service._run). Otherwise it holds the task, as before. `finishing`: the limit
+    opened the wrap-up steps, which are there to save; only noted, and the forced step after them
+    (or _run) decides."""
+    if finishing or any(item.get("tool") in WRAP_UP_TOOLS and (item.get("result") or {}).get("ok") is True
+                        for item in trace):
         runtime.limit_reason = reason
     else:
         runtime.pause_reason = reason
@@ -2412,7 +2415,7 @@ async def _run_native(
         if forced or (finishing and no_progress):
             stop_reason = "task_no_progress" if no_progress or truncation_stop else "task_budget_exhausted"
             if runtime:
-                _stop_for_limit(runtime, stop_reason, tool_trace)
+                _stop_for_limit(runtime, stop_reason, tool_trace, finishing=finishing and no_progress and not forced)
         # 0.1.50 S1: the system prompt stays byte-identical for the whole turn
         # (prefix cache); this step's notes go to the <agent_status> block.
         notes: list[str] = []
