@@ -3,10 +3,10 @@
 | 项 | 内容 |
 |---|---|
 | 道 | ②Main（列出 Hands 的「总是允许」App：③Hands 审） |
-| 版本 | 0.1.62 |
-| 分级 | 可以（D14 第二条承诺；可能顺延到 0.1.63） |
-| 依赖 | S4（出沙箱授权要先存进库）；S2a（命令的「总是」从此不起作用，页面要这样标） |
-| 合并位置 | S3 → S4 → S6。不碰确认阶梯；改 `server/api/settings.py` 和 `web/src/components/settings/AdvancedSection.tsx`，和 S4、S5 的网页改动可能挨着，谁后合谁 rebase |
+| 版本 | v0.1.63 |
+| 分级 | 可以（D14 第二条承诺；可能顺延到 v0.1.64） |
+| 依赖 | S4b（页面列出允许的文件夹；它依赖 S4a，出沙箱授权由 S4a 存进库）；S2a（命令的「总是」从此不起作用，页面要这样标；联网、不进沙箱两种本对话授权也来自它） |
+| 合并位置 | S3 → S4a → S4b → S6。不碰确认阶梯；改 `server/api/settings.py` 和 `web/src/components/settings/AdvancedSection.tsx`，和 S4b、S5 的网页改动可能挨着，谁后合谁 rebase |
 | 推动的门槛 | D14 第二条：v0.1.61 发布说明承诺的「能列出、撤销的设置页」；附录 A「允许/拒绝规则」 |
 | 分支 | `claude/0162-s6-remembered-answers` |
 | 迁移号 | 无 |
@@ -16,12 +16,14 @@
 - **今天「记住的回答」分在几处，大多看不见。**
   - 规则表：有 `GET /permissions/rules`（`server/api/permissions.py:39-41`），但网页从没调过。网页只用了同一个文件里的「总是允许」（POST，`:44-64`）和收件箱的 10 秒撤销（DELETE，`:67-72`），见 `web/src/components/proactive/InboxRefused.tsx:99`、`:125`。
   - 本对话授权：`permission_store` 只有查、加、按任务删（`server/services/permission_store.py:81-122`），没有列出的接口。只有删掉整段对话，它们才会消失。
-  - 出沙箱授权：S4 之后存成 `kind="outside"` 的本对话授权，同上。
+  - 出沙箱授权：S4a 之后存成 `kind="outside"` 的本对话授权，同上。S2a 的联网卡（目标 `network:*`）、不进沙箱卡（`unsandboxed:*`）的「本对话」也一样。
+  - 允许的文件夹（S4b）：在设置里，但它也是一种「不再问」。
 - **做一个设置页，列出全部，每条都能删：**
   - **「总是」规则：** 按种类分组。
     - Hands 的「总是允许」App 在同一张表里（`kind="app"`，`server/services/hands_service.py:103-111`），一起列出。
     - 0.1.61 以前的命令规则（`legacy_rule`）在 S2a 之后不再起作用，标「旧规则，已无作用」，可以删。
   - **本对话授权：** 按对话分组，写出对话标题、种类、目标。「为这个任务」的授权随任务结束就删，不列。
+  - **允许的文件夹：** 列出来，每个能移除；改的是 S4b 的设置键，和设置页里那张列表是同一份。
 - **它取代单独的终端规则面板**：`web/src/components/settings/TerminalRulesPanel.tsx`，在 `web/src/components/settings/AdvancedSection.tsx:347` 使用，读 `/settings/terminal-rules`（`server/api/settings.py:181-195`）。
 
 ## 改哪些文件
@@ -49,7 +51,7 @@
 
 - **`permissions._NEVER_ALWAYS`**（`server/services/permissions.py:59-65`）。
   - 那里的注释说：这个页面上线后，就把 `site`、`shortcut` 移出去，让它们的卡重新给「总是」。
-  - 这是卡片行为的变化，而且是 Hands 的卡，单独做一个小 PR（③Hands 审）。记进 README §8「0.1.63 候选」，本卡不做。
+  - 这是卡片行为的变化，而且是 Hands 的卡，单独做一个小 PR（③Hands 审）。记进 README §8「v0.1.64 候选」，本卡不做。
 - **Hands 设置页自己的名单**（`web/src/components/settings/HandsSection.tsx:43-45`，读写 `/hands/always`）：保留不动。两边删的是同一张表里的同一行，`stop_always`（`server/services/hands_service.py:122-127`）只做这一件事。
 - 加规则的入口：仍然只有收件箱的「总是允许」（`server/api/permissions.py:1-14` 的约定）。本页只列、只删，不加。
 - Bridge 帧格式；③Hands 的文件。
@@ -59,17 +61,20 @@
 1. **先写接口和测试**（列出、删除；删一个不存在的 id 返回 404），再做页面。
 2. **每条用大白话写它允许什么。** 规则沿用 `_out` 的标签（`server/api/permissions.py:75-80`）；授权按种类给一句：
    - 「这段对话里的命令可以在沙箱外跑」；
+   - 「这段对话里，读过网页之后的命令也可以联网」；
    - 「这段对话里可以用某 MCP 工具」；
    - ……
 3. **删除之后立刻生效**：下一次同样的请求就会出卡。
 4. **页面上说清楚两件事：**
-   - 付款、删除、发送这类，本来就每次都问，从不记住，所以这里没有它们；
+   - 付款、发送、文件夹以外的删除这类，本来就每次都问，从不记住，所以这里没有它们；
    - 「为这个任务」的授权随任务结束就没了，所以这里也不列。
+5. **「旧规则」栏的代码注释写删除条件：** 「v0.1.64 清掉全部 `legacy_rule` 行之后删」。
 
 ## 验收
 
 - **测试：**
-  - 列出：规则（含 `app` 和 `legacy_rule`）、本对话授权（含 S4 的 `outside`）都在；
+  - 列出：规则（含 `app` 和 `legacy_rule`）、本对话授权（含 S4a 的 `outside`、S2a 的 `network:*`）、允许的文件夹都在；
+  - 从本页移除一个允许的文件夹后，在那里写东西又会出卡；
   - 删一条授权后，同一对话再做同样的事会出卡；
   - 删一条 `app` 规则后，Hands 设置页里也没有它；
   - `/settings/terminal-rules` 已经不存在。
@@ -84,6 +89,7 @@
 
 ## 风险与回退
 
-- **用户以为删的是「总是」，其实删的是本对话授权**，或者反过来。页面分两栏，标题写清楚。
+- **用户以为删的是「总是」，其实删的是本对话授权**，或者反过来。页面分三栏（总是、本对话、允许的文件夹），标题写清楚。
 - **旧的 `legacy_rule` 出现在列表里，会让人困惑。** 标「已无作用」，并给一个「全部删除旧规则」的按钮。
+- **留着的旧东西：** 「旧规则」这一栏和那个按钮是兼容显示。删除条件：v0.1.64 用一个迁移清掉全部 `legacy_rule` 行之后，一起删（记进 README §8「v0.1.64 候选」，由 ⓪Plan 加）。代码注释写同样的话。
 - **回退：** 整个 PR revert。旧面板和接口随之回来；数据没有任何改动。

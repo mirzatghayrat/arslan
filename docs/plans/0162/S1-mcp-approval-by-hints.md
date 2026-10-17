@@ -3,10 +3,10 @@
 | 项 | 内容 |
 |---|---|
 | 道 | ②Main |
-| 版本 | 0.1.62 |
+| 版本 | v0.1.63 |
 | 分级 | 必须 |
 | 依赖 | C1；F4a（`Request.once_only`）；F2、H2（`executed: False` 的约定）；F3 先合更好（同一条 MCP 调用链） |
-| 合并位置 | C1 之后随时。K4 若同时开着，排在 K4 之后：两张都改 `server/orchestrator/arslan.py:1040-1052`。不碰 C2c / C4 / S4 改的确认阶梯 |
+| 合并位置 | C1 之后，热修版 v0.1.62 发布之后（改 `server/services/task_service.py`，发布前它不接别的 PR）。K4 若同时开着，排在 K4 之后：两张都改 `server/orchestrator/arslan.py:1040-1052`。不碰 C2c / C4 / S2a / S4a 改的确认阶梯 |
 | 推动的门槛 | §5.4：R6、R7 各一个回归测试；MCP 的卡都写账本。附录 A「MCP 工具逐次审批」落后 → 追平，「定时任务」保持追平 |
 | 分支 | `claude/0162-s1-mcp-approval` |
 | 迁移号 | 无。标注已存在 `tools.annotations`；授权用现有的 `permission_grants` |
@@ -40,8 +40,7 @@
 - `server/registry/task_tools.py:49`：执行器同样拒绝（双保险）。
 - `server/services/task_service.py`
   - MCP 卡被拒、过期、没人可问时，调用没离开 Arslan，要算已知失败。
-    - 结果带 `executed: False`（H2 的约定）。F2 合了以后，任何工具的这种结果都算已知失败（F2 卡第 ③ 条），`known_local_failure`（`:55-82`）就不用再改。
-    - F2 还没合时，在 `:71-72`（`mcp_not_ready`）旁加一个码。
+    - 结果带 `executed: False`（H2 的约定）。F2 随 v0.1.62 先发，任何工具的这种结果都已算已知失败（F2 卡第 ③ 条），所以 `known_local_failure`（`:55-82`）不用改。开工前核一遍 F2 合并后的代码。
   - `effect_of` 的 MCP 分支（`:107-119`）：`readOnlyHint` 为真的也算 `read`。
 - 网页（只改窗口卡的默认勾选）
   - `web/src/components/ActionApprovalCard.tsx:48-51`：初始 scope；
@@ -60,7 +59,7 @@
   - 灵动岛的按钮文字看 `options[0]`（`web/src/island/islandAsk.ts:92-96`）。
   - 排到第一位，手机上的「允许」就会悄悄变成整段对话的授权。
 - 本卡不给「总是」。和 site、shortcut 同理（`permissions.py:59-63`）：能列出、删除它的页面是 S6，排在「可以」。
-- ③Hands 的文件；确认阶梯（C2c、C4、S4 的地盘）；F3 的 schema 规整。
+- ③Hands 的文件；确认阶梯（C2c、C4、S2a、S4a 的地盘）；F3 的 schema 规整。
 
 ## 怎么做（要点）
 
@@ -103,8 +102,9 @@
 
 - **标注是服务器自报的。** 谎报「只读」的写操作会免卡。
   - 只有用户自己打开的服务器（`host_allowed`）才会被调用，所以把只读放行视为对服务器的信任。
-  - 「不信这个服务器的标注」的开关记进 0.1.63 候选。
+  - 「不信这个服务器的标注」的开关记进 v0.1.64 候选。
 - **MCP 规范里 `destructiveHint` 缺省为 true**（只在 `readOnlyHint` 为 false 时有意义）。
   - 本卡按计划，把「没写标注」算「其余」（本对话），不按规范缺省算破坏性。
   - 若 ⓪Plan 要按规范：只改 `destructive()` 一行；代价是没写标注的工具每次都问。
-- **回退：** 整个 PR revert；或者临时让 `read_only()` 恒为 False，所有 MCP 调用都出卡。
+- **本卡不留旧路径。**
+- **回退：** 整个 PR revert；或者用一个改一行的 PR 让 `read_only()` 恒为 False，所有 MCP 调用都出卡（不做成开关）。

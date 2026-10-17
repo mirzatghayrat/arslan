@@ -3,7 +3,7 @@
 | 项 | 内容 |
 |---|---|
 | 道 | ②Main |
-| 版本 | 0.1.62 |
+| 版本 | v0.1.63 |
 | 分级 | 必须 |
 | 依赖 | C1 |
 | 合并位置 | C1 之后随时。不碰 K 线热点 |
@@ -41,7 +41,7 @@
 
 - `arslan/core/chunking.py`：`server/services/ingest.py:12` 在用。
 - `arslan/core/evolution.py`、`arslan/spawn/*`、`arslan/templates/*`、`arslan/models.py`：`cli.py` 用到它们，但它们在服务端各有调用者，已用 `rg` 核过。
-- `click`、`rich` 两个依赖：全仓库只有 `cli.py` 用它们（已核）。删依赖要重生成 `uv.lock`、改 `THIRD_PARTY_NOTICES.md`，不在本卡，记进 README §8「0.1.63 候选」。
+- `click`、`rich` 两个依赖：全仓库只有 `cli.py` 用它们（已核）。删依赖要重生成 `uv.lock`、改 `THIRD_PARTY_NOTICES.md`，不在本卡，记进 README §8「v0.1.64 候选」。
 - `arslan/__init__.py` 的 `__version__`：`cli.py` 删掉后就没人读了，由 C5b 处理。
 - `arslan/config/settings.py`、`__init__.py`：归 C2e。
 

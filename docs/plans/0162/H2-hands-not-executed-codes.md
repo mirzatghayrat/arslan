@@ -3,12 +3,12 @@
 | 项 | 内容 |
 |---|---|
 | 道 | ③Hands |
-| 版本 | 热修版 |
+| 版本 | v0.1.62（赶不上则 v0.1.63） |
 | 分级 | 必须 |
-| 依赖 | — |
-| 合并位置 | F2 之前（软依赖：F2 没等到也能先合，见 F2 卡） |
+| 依赖 | 赶热修时：F5a（`release/0.1.62` 的 CI 靠它才绿） |
+| 合并位置 | **尽量赶上 v0.1.62**（审查 §6）：开进 `release/0.1.62`，排在 F2 之前，F2 就直接认 `executed: False`。赶不上，就等 v0.1.62 发布、分支合回 main 之后，开进 main（v0.1.63），F2 先用它的回落（见 F2 卡） |
 | 推动的门槛 | §5.2「其中『需要你核对』≤5%」 |
-| 分支 | `claude/0162-h2-hands-not-executed-codes` |
+| 分支 | `claude/0162-h2-hands-not-executed-codes`（赶热修时从 `release/0.1.62` 拉、base 是它；否则从 main 拉） |
 | 迁移号 | 无 |
 
 ## 目标
@@ -75,7 +75,7 @@ F2 看到 `executed: False`，就把它记成已知失败，不再让任务以�
 - **测试：**
   - 新文件 `tests/server/test_hands_not_executed.py`。
   - 有改了措辞的现有测试，就同步改，比如 `test_hands_0145.py:66` 断言了 `act_in_background`。
-- **`docs/CAPABILITY_INVENTORY.md`：** rebase 后重新生成（`.venv/bin/python -m scripts.capability_inventory > docs/CAPABILITY_INVENTORY.md`）。
+- **`docs/CAPABILITY_INVENTORY.md`：** rebase 到目标分支后重新生成（`.venv/bin/python -m scripts.capability_inventory > docs/CAPABILITY_INVENTORY.md`）。`hands_tools.py` 的哈希在里面。冲突时随便取一边，再重新生成，不手工合。
 - **本卡的「候选清单」：** 改成定稿版。
 
 ## 不许碰
@@ -105,4 +105,6 @@ F2 看到 `executed: False`，就把它记成已知失败，不再让任务以�
 - **风险：** 把「可能做了」错标成「没执行」，F2 就会放过一个真的需要核对的动作。
   - 拿不准的一律归到 `MAYBE_EXECUTED`。
   - 宁可多问一次，不能漏问。
-- **回退：** revert 合并提交。F2 有回落：只认 `_no` 那 5 个码。
+- **赶不上热修：** 定稿清单的核对（第 1、2 步）多半是工期的大头。FR 要开发版 PR 时还没合，就不等，转 main。
+- **留着的东西：** 无。F2 里「只认 `_no` 那 5 个码」的回落归 F2 卡管：本卡赶上热修，F2 就不写它；赶不上，本卡合进 main 之后由 ②Main 删（v0.1.63 内）。
+- **回退：** revert 合并提交。F2 的回落不受影响（只认 `_no` 那 5 个码）。

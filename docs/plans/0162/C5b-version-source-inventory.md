@@ -3,7 +3,7 @@
 | 项 | 内容 |
 |---|---|
 | 道 | ②Main |
-| 版本 | 0.1.62 |
+| 版本 | v0.1.63 |
 | 分级 | 应该 |
 | 依赖 | —。C2d 合了以后，`arslan/__init__.py` 的 `__version__` 就没人读了，本卡直接删它 |
 | 合并位置 | 随时，**越早越好**：合了以后，C2a、C3、S1、S3、S5 都不用再为 `docs/CAPABILITY_INVENTORY.md` 重新生成、解冲突。`server/main.py` 只改 `:445` 一行 |
@@ -44,7 +44,7 @@
 ## 不许碰
 
 - `desktop/hands/Cargo.toml:3`：③Hands 的文件。如果要加注释，请 ③Hands 来改。
-- `tauri.conf.json` 的版本值本身：热修版的版本号等用户定，见更正 E1。
+- `tauri.conf.json` 的版本值本身：由各版的发版卡改（FR 改成 0.1.62，R63 改成 0.1.63）。
 - `scripts/capability_inventory.py` 的输出格式：本卡只改什么时候检查，不改内容。
 - `docs/sessions.md`、README：⓪Plan 的文件。
   - `docs/sessions.md` §3 已经写了新规矩；

@@ -3,7 +3,7 @@
 | 项 | 内容 |
 |---|---|
 | 道 | ②Main |
-| 版本 | 0.1.62 |
+| 版本 | v0.1.63 |
 | 分级 | 必须 |
 | 依赖 | C1。C1 之后，自动路径里的开关检查已经变成直接 `return None` |
 | 合并位置 | C1 之后随时。拆成两个 PR，先 C2b-1 后 C2b-2。<br>• 不碰 K 线热点；<br>• 都只在 `server/main.py` 删几行，按 `docs/sessions.md` §3，不重排 |
@@ -54,7 +54,7 @@
 
 - `replay_gate`、`replay_run`、`compare_judge`、`skill_forge`、`evaluator`；`server/main.py:310-328` 的 `replay_gate` 开机自检。
 - `evolution_watcher` 的手动路径：`enqueue_attempt`、`_perform_attempt*`、`_running_spawns`、`_tasks`。
-  - C2b-1 之后它没人调用了，但和 `replay_*` 缠在一起，留给「进化第二批」，记进 README §8「0.1.63 候选」。
+  - C2b-1 之后它没人调用了，但和 `replay_*` 缠在一起，留给「进化第二批」，记进 README §8「v0.1.64 候选」。
 - `evolution_estimate`、`optimizer`、`synthetic_corpus`，以及 `server/api/usage.py` 的 `NOT_COVERED` 里的对应项。
 - 6 种语言的翻译：本卡不动 locales。`evolution.*` 里变成没人用的 key，留给第二批。
 - 库里已存的 `evolution_auto` 等设置值：不删、不迁移。读的代码没了，它们也就没人读了。

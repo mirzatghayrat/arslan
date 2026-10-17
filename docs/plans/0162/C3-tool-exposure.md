@@ -3,7 +3,7 @@
 | 项 | 内容 |
 |---|---|
 | 道 | ②Main |
-| 版本 | 0.1.62 |
+| 版本 | v0.1.63 |
 | 分级 | 必须（和 K7 一起） |
 | 依赖 | C1；C1b 最好先合，因为 C1b 和 C3a 都改 `tests/server/test_deck_html_default.py` |
 | 合并位置 | 两个 PR，都在 K5 合并之后、K7 开工之前合（README §3「C3 紧挨在 K7 之前」）：<br>• C3a 先合；<br>• C3b 紧挨着 K7。<br>C3a 改 `arslan.py`、`tool_loop.py`，C3b 只改 `arslan.py`，都是 K 线热点，按 `docs/sessions.md` §3 排在打开的 K 线 PR 之后。C3b 合并到 K7 合并之间不发版 |
@@ -70,7 +70,7 @@
 - `delegate_work`（`:1015-1020`）、`suggest_connector`（`:1163-1168`）、`propose_capability`（`:1187-1193`）。
 - SSH（D10），在 `:1273-1297` 判断已登记的机器数（`server/services/ssh_nodes.py:33` 的 `list_nodes`）：
   - 0 台时，不给 `ssh_run`、`list_nodes`；
-  - `ssh_probe`、`enroll_node` 保留，因为它们是登记第一台机器的唯一入口。设置页只能列出和撤销机器（`web/src/components/settings/SshNodesPanel.tsx:24`、`:39`），不能添加。
+  - `ssh_probe`、`enroll_node` 保留（用户已确认，U3），因为它们是登记第一台机器的唯一入口。设置页只能列出和撤销机器（`web/src/components/settings/SshNodesPanel.tsx:24`、`:39`），不能添加。
   - 如果用户要的是全部不给，就得先在设置页加「添加机器」的入口。那超出本卡，交给 ⓪Plan。
 
 本卡不改、只加断言测试的（计划和代码对不上，见风险）：

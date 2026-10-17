@@ -6,7 +6,7 @@
 | 版本 | —（只改脚本，不随 App 发布） |
 | 分级 | 必须 |
 | 依赖 | — |
-| 合并位置 | M 线随时；要在 FR 发布前合，M1B 才能在热修版上跑基线 |
+| 合并位置 | M 线随时；要在 FR 发布前合，M1B 才能在 v0.1.62 上跑基线 |
 | 推动的门槛 | §5.1 全部（不退步、对 Hermes、对 Claude Code、新题 3/3） |
 | 分支 | `claude/0162-m1-bench-upgrade`（拆成两个 PR 时：`claude/0162-m1a-bench-judging-entrants`、`claude/0162-m1b-bench-new-tasks`） |
 | 迁移号 | 无 |

@@ -3,10 +3,10 @@
 | 项 | 内容 |
 |---|---|
 | 道 | ②Main |
-| 版本 | 0.1.62 |
+| 版本 | v0.1.63 |
 | 分级 | 必须 |
 | 依赖 | C1、C2c |
-| 合并位置 | README §3 的链：C2c → **C4** → S4。<br>也在 S2a 之前：S2a 卡写明要排在 C2c、C4 之后。<br>`server/ws/arslan.py` 不是 K 线热点，但 K2 改它的回合锁；K2 开着时，本卡排在 K2 后面 |
+| 合并位置 | README §3 的链：C2c → **C4** → S2a → S4a。<br>也在 S2a 之前：S2a 卡写明要排在 C2c、C4 之后。<br>`server/ws/arslan.py` 不是 K 线热点，但 K2 改它的回合锁；K2 开着时，本卡排在 K2 后面 |
 | 推动的门槛 | 无直接门槛；净减代码。间接：每张命令卡少一次后台模型调用。近 30 天的本机汇总里，52 张命令卡有 25 张影子评判没给出结论，其中 24 次是超时（reduce-proposal §1） |
 | 分支 | `claude/0162-c4-remove-shadow-judgment` |
 | 迁移号 | 无（`judgments` 表、`approval_events.reviewer` 列都保留） |
@@ -17,7 +17,7 @@
 
 删掉影子评判的全部接线，以及「活动」页里它的那一类行。spec 里写一句「已撤回」，免得以后有人照旧 spec 去做。
 
-0.1.64 要做的窄版审批员（D7），本卡不做，但给它留着：账本的 `reviewer` 列（`server/db/models.py:513`）。
+v0.1.65 要做的窄版审批员（D7），本卡不做，但给它留着：账本的 `reviewer` 列（`server/db/models.py:513`）。
 
 ## 改哪些文件
 
@@ -47,7 +47,7 @@
   - 6 种语言的 `pointApproval`（`web/src/locales/panel.ts:40`、`:102`、`:164` 等）。
 - 「活动」页不再显示旧的 `tool.approval` 行。在 `GET /judgments`（`server/api/judgments.py:13-17`）或 `judgment.recent()` 里过滤掉它。旧行留在库里，按 `KEEP_DAYS = 90` 自然清掉。
 - spec：`docs/specs/2026-10-11-0161-smooth.md`
-  - §12.1 第 2 条（`:1369`）下面加一行：「2026-10-17 用户撤回（0.1.62 决定 D8）：不做『替我审批』，影子评判已删。窄版审批员见 0.1.64（D7）。」
+  - §12.1 第 2 条（`:1369`）下面加一行：「2026-10-17 用户撤回（v0.1.63 决定 D8）：不做『替我审批』，影子评判已删。窄版审批员见 v0.1.65（D7）。」
   - §A6 标题下（`:627`）加同样一行，并注明 `:663` 那句「影子评判继续」不再成立。
   - 只加这两处注记，不改写 spec 正文。
 - 测试：删影子评判的测试；改 `approvals` 和 `ws` 里断言 `judgment.shadow` 被调用的测试。
@@ -57,7 +57,7 @@
 - 其他决策点及它们的调用方：`memory.*`、`job.accomplished`、`project.progress*`；`turn.completion` 是关着的，也不动。
 - `judgments` 表、`judgment.judge`、`recent`、`prune`；`approval_events.reviewer` 列（D7 要用）。
 - 确认阶梯本身：
-  - 合并两份流程、出沙箱卡改走 `decide` 是 S4；
+  - 合并两份流程、出沙箱卡改走 `decide` 是 S4a；
   - 三层命令规则是 S2a。
 - Bridge 契约文件。
 
@@ -87,7 +87,8 @@
 
 ## 风险与回退
 
+- **留着的旧路径和删除条件**（`docs/sessions.md` §9；代码注释里也写）：`judgments` 表和 `approval_events.reviewer` 列，留给 v0.1.65 的窄版审批员（D7）。v0.1.65 做了就接着用；那一版决定不做，就在那一版删列、删表。
 - **风险：** M2 周报里 `judgments` 那一列会归零。这是预期的，M2 卡里已写明。
-- **风险：** C2c、S2a、S4 都改同一组阶梯。按 README 的顺序合，后合的 rebase。
+- **风险：** C2c、S2a、S4a 都改同一组阶梯。按 README 的顺序合，后合的 rebase。
 - **风险：** C5a 也改这份 spec，删的是 `:3`、`:8-12` 和 §0.1–0.2，和本卡加注的两处不重叠。后合的那个 rebase。
 - **回退：** revert 本 PR。表没删，回退后影子评判照旧写入。

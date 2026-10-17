@@ -3,11 +3,11 @@
 | 项 | 内容 |
 |---|---|
 | 道 | ②Main（AppleScript 那一处：③Hands 审） |
-| 版本 | 0.1.62 |
+| 版本 | v0.1.63 |
 | 分级 | 必须 |
 | 依赖 | C1 |
-| 合并位置 | C1 之后，**C4 之前**（README §3：C2c → C4 → S4）。也排在 S2a 之前：三张卡都改 `server/services/approvals.py` 和 `server/ws/arslan.py`。这两个文件不是 K 线热点；但 K2 改 `ws/arslan.py` 的回合锁（`:708`、`:740`、`:801`），K2 开着时排在它后面 |
-| 推动的门槛 | 无直接门槛；净减代码。间接：C4、S2a、S4 改确认阶梯时，面对的是一套干净的代码 |
+| 合并位置 | C1 之后，**C4 之前**（README §3：C2c → C4 → S2a → S4a）。也排在 S2a 之前：三张卡都改 `server/services/approvals.py` 和 `server/ws/arslan.py`。这两个文件不是 K 线热点；但 K2 改 `ws/arslan.py` 的回合锁（`:708`、`:740`、`:801`），K2 开着时排在它后面 |
+| 推动的门槛 | 无直接门槛；净减代码。间接：C4、S2a、S4a 改确认阶梯时，面对的是一套干净的代码 |
 | 分支 | `claude/0162-c2c-0161-leftovers` |
 | 迁移号 | 无 |
 
@@ -64,9 +64,9 @@
 ## 不许碰
 
 - `terminal_policy.allow_always`（`server/services/terminal_policy.py:230`，零调用）：S2a 要重写 `terminal_policy`，留给它。
-- 旧的扁平 `llm_*` 设置键（`settings_service.py:21-22`、`:45`）：要先写数据迁移才能删，已记进 README §8「0.1.63 候选」。
+- 旧的扁平 `llm_*` 设置键（`settings_service.py:21-22`、`:45`）：要先写数据迁移才能删，已记进 README §8「v0.1.64 候选」。
 - 影子评判：C4 的范围。`server/services/approvals.py:523-557`、`server/ws/arslan.py:533-548`、`:600-626` 本卡不动。
-- 确认阶梯本身的合并、出沙箱卡改走 `decide`：S2a、S4 的范围。
+- 确认阶梯本身的合并、出沙箱卡改走 `decide`：S2a、S4a 的范围。
 - Bridge 契约文件。`FrameMapper.swift` 认的 `propose_*` 帧格式不变。
 
 ## 怎么做（要点）

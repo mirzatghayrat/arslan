@@ -3,11 +3,11 @@
 | 项 | 内容 |
 |---|---|
 | 道 | ②Main |
-| 版本 | 0.1.62 |
+| 版本 | v0.1.63 |
 | 分级 | 必须 |
 | 依赖 | C1。C1 删掉专家路径以后，下面好几项才变成零调用 |
 | 合并位置 | C1 之后。拆成两个 PR：<br>• **C1c-1 服务端**：随时合；<br>• **C1c-2 网页**：建议在 K8 之前合。K8（真流式）、K9（插话）可能改 `web/src/stores/arslanStore.ts`，未核。<br>两个都不碰 K 线热点文件。C1c-2 和 C2c 都改 6 个 locale JSON 和 `locale-parity.test.ts`，后合的那个 rebase |
-| 推动的门槛 | 无直接门槛；净减代码。间接：`locale-parity.test.ts:300` 写死的 key 总数没了，以后 S3、S4、S5、S6 并行加文案不再在同一行冲突 |
+| 推动的门槛 | 无直接门槛；净减代码。间接：`locale-parity.test.ts:300` 写死的 key 总数没了，以后 S3、S4a、S4b、S5、S6 并行加文案不再在同一行冲突 |
 | 分支 | `claude/0162-c1c1-expert-leftovers-server`、`claude/0162-c1c2-expert-leftovers-web` |
 | 迁移号 | 无 |
 
@@ -70,7 +70,7 @@
 - `stream_start_src`（`protocol.py:81`）：Arslan 自己的流还在用。
 - `server/services/run_recorder.py`、`server/api/runs.py` 对旧 Run 里 `routing` 步骤的处理：旧数据还要能看。
 - `server/api/runs.py` 的异常提示接口和 `anomaly` 翻译。
-  - 网页现在没有组件调用 `getRunAnomalies`（`web/src/api/client.ts:508`）。要不要连接口一起删，记进 README §8「0.1.63 候选」。
+  - 网页现在没有组件调用 `getRunAnomalies`（`web/src/api/client.ts:508`）。要不要连接口一起删，记进 README §8「v0.1.64 候选」。
 
 ## 怎么做（要点）
 
@@ -107,5 +107,6 @@
 
 ## 风险与回退
 
+- **留着的旧路径和删除条件**（`docs/sessions.md` §9；代码注释里也写）：`rowToItem` 的 `spawn_summary` 分支，和 C1 卡里的专家表同一次删。删之前，旧对话里的专家回答要先转成普通回答，或者确认库里已经没有。
 - **计划数字与代码不符：** 计划说 16 组、约 216 个 key；用上面的命令实测是 21 组、265 个。多出来的 5 组（`conversation`、`artifact`、`facts`、`escalation`、`spawn`）名字太常见，所以前一次统计没算进去，可整 key 搜索也零命中。
 - **回退：** 各 PR 单独 revert，没有数据变化。

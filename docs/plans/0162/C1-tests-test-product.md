@@ -3,10 +3,10 @@
 | 项 | 内容 |
 |---|---|
 | 道 | ②Main |
-| 版本 | 0.1.62（执行内核版的计划名；正式版本号未定，见更正 E1） |
+| 版本 | v0.1.63 |
 | 分级 | 必须 |
-| 依赖 | F5a（CI 恢复绿色；本卡的验收是「全量测试绿」，CI 红着就没法判） |
-| 合并位置 | K 线第一个：C1 → K1。依赖 C1 的卡（K 线、C1b–C4、S1–S3）都等它合了再合；C5a、C5b、C6 不依赖它 |
+| 依赖 | F5a（CI 恢复绿色；本卡的验收是「全量测试绿」，CI 红着就没法判。F5a 合进 `release/0.1.62` 后会马上合回 main 一次） |
+| 合并位置 | K 线第一个：C1 → K1。本卡改 `task_service.py`，而热修发布前这个文件不接别的 PR（FR 卡），所以**可以先开发、先开 PR，合并等 v0.1.62 发布、`release/0.1.62` 合回 main 之后**。K 线反正要等 M1B，不损失时间。依赖 C1 的卡（K 线、C1b–C4、S1–S3）都等它合了再合；C5a、C5b、C6 不依赖它 |
 | 推动的门槛 | 无直接门槛；净减代码。间接：§5.4「CI 全绿」从此说的是产品配置；K 线每个 PR 的测试结果才可信（计划 §4.3「为什么 C1 必须第一个」） |
 | 分支 | `claude/0162-c1-tests-test-product` |
 | 迁移号 | 无（`scheduled_tasks.target`、专家相关表都保留） |
@@ -51,7 +51,7 @@
 
 - `_team_roster()`（`server/orchestrator/arslan.py:416-426`、`:726`、`:759`）：K3 删。`spawn_service` 的 import 因此先留着。
 - `server/api/usage.py:42-61` 的 `NOT_COVERED`（C1b 统一修）；web store 的专家帧、`server/ws/protocol.py`、`server/ws/arslan.py` 的 `_to_frame`（C1c）。
-- 专家时代其余的 REST 面：`spawns`、`create`、`seeds`、`templates`、`recipes`、`expert_conversion`。`recipes` 仍在用 `dispatcher.dispatch`，`expert_conversion` 是老用户把专家转成技能的入口。要动就记进 README §8「0.1.63 候选」。
+- 专家时代其余的 REST 面：`spawns`、`create`、`seeds`、`templates`、`recipes`、`expert_conversion`。`recipes` 仍在用 `dispatcher.dispatch`，`expert_conversion` 是老用户把专家转成技能的入口。要动就记进 README §8「v0.1.64 候选」。
 - `dispatcher.py` 本身：`server/services/recipes.py:174`、`server/services/replay_run.py:66` 仍在用。
 - 不加迁移、不删表。`conversations.py:226-227` 照旧清掉 `ConversationSpawn`、`SpawnPhase` 的行。
 - ③Hands 的产品文件。
@@ -86,6 +86,10 @@
 
 ## 风险与回退
 
-- **热点：** `arslan.py`、`task_service.py`。F2（热修）也改 `task_service.py`，在 `:55-78`、`:101-105`、`:300-305`，和本卡的 `:605-608` 不重叠。
+- **留着的旧路径和删除条件**（`docs/sessions.md` §9；代码注释里也写同样的话）：
+  - `checked_driver` 接受 `"expert"`：做 README §8「专家时代剩下的 REST 接口」那一项时删。先用一个迁移把库里残留的 `driver = expert` 任务标成已结束，再删这条接受。
+  - 专家相关的表：和上一条同一个迁移里清，本版不动。
+  - `spawn_service` 的 import：K3 删 `_team_roster()` 时一起删。
+- **热点：** `arslan.py`、`task_service.py`。F2（热修）也改 `task_service.py`，在 `:55-78`、`:101-105`、`:300-305`，和本卡的 `:605-608` 不重叠。但热修发布前这个文件冻结，本卡照样等热修合回 main 之后再合，再 rebase 一次。
 - **行为变化：** 唯一的用户可见变化，是老专家任务恢复时由 Arslan 接手。这是 D12 已定的，写进发布说明。
 - **回退：** revert 这一个 PR。没有迁移，数据不受影响。
