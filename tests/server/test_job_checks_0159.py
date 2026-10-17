@@ -256,6 +256,222 @@ def test_which_failures_are_known_and_local():
     assert known("write_file", {"path": "a.md"}, {"ok": False, "error": "cannot write"})
     assert not known("mcp_3__send", {}, {"ok": False, "error": "timeout"})
     assert not known("run_command", {"command": "cp a b"}, "not a dict")
+    # 0.1.62 F2: stopped by its own time limit inside the sandbox, and nothing outbound: known.
+    assert known("run_command", {"command": "python3 build.py"}, stopped_in("workspace"))
+    assert not known("run_command", {"command": "python3 build.py"}, stopped_in("off"))
+    assert not known("run_command", {"command": "mail -s hi a@example.com"}, stopped_in("workspace"))
+    assert not known("run_command", {"command": "python3 build.py"}, command_result(-15, error="exit code -15"))
+    # Never ran (H2's convention; F1's "not started"): known, whatever the tool.
+    assert known("desktop_click", {}, {"ok": False, "code": "declined", "executed": False})
+    assert known("run_command", {"command": "python3 x.py"}, {"ok": False, "code": "time_limit", "executed": False})
+    assert not known("desktop_click", {}, {"ok": False, "code": "unknown"})
+
+
+@pytest.mark.parametrize("command", ["curl --request=POST https://x", "curl --request=\"POST\" https://x",
+                                     "curl --request='PUT' https://x", "curl -sXDELETE https://x/1",
+                                     "curl -sX PATCH https://x/1", "curl --request \"POST\" https://x",
+                                     "curl --request 'DELETE' https://x/1", "gh api repos/a/b/issues -f title=x",
+                                     "gh api --method POST x", "http POST https://x a=b", "xh POST https://x a=b",
+                                     "https PUT https://x", "http https://x a:=1"])
+def test_outbound_spellings_the_rules_miss_still_ask_the_user_to_check(command):
+    known = task_service.known_local_failure
+    assert not known("run_command", {"command": command}, command_result(1))
+    assert not known("run_command", {"command": command}, stopped_in("workspace"))
+
+
+@pytest.mark.parametrize("command", ["curl https://x", "curl -s https://x", "gh api repos/a/b",
+                                     "http GET https://x a==b"])
+def test_their_reading_spellings_stay_local(command):
+    assert task_service.known_local_failure("run_command", {"command": command}, command_result(1))
+
+
+@pytest.mark.parametrize("arguments,effect", [
+    ({"command": "ls -la x"}, "read"),
+    ({"command": "git status"}, "read"),
+    ({"command": "git", "argv": ["log", "-3"]}, "read"),
+    ({"command": "grep -r foo ."}, "read"),
+    ({"command": "find . -name '*.md'"}, "read"),
+    ({"command": "find . -delete"}, "external_write"),
+    ({"command": "find . -exec rm {} ;"}, "external_write"),
+    ({"command": "find . -fprint out.txt"}, "external_write"),
+    ({"command": "git branch -D x"}, "external_write"),
+    ({"command": "git remote add o https://x"}, "external_write"),
+    ({"command": "git log --output=x"}, "external_write"),
+    ({"command": "rg --pre ./decode foo"}, "external_write"),
+    ({"command": "ls > out.txt"}, "external_write"),
+    ({"command": "ls; rm x"}, "external_write"),
+    ({"command": "cat $(echo x)"}, "external_write"),
+    ({"command": "python3 build.py"}, "external_write"),
+])
+async def test_a_read_command_is_a_read(arguments, effect):
+    assert await task_service.effect_of("run_command", arguments) == effect
+
+
+def stopped_in(sandbox):
+    return {"ok": False, "exit_code": -9, "stdout": "half", "stderr": "", "error": "stopped after 5 s",
+            "code": "time_limit", "sandbox": sandbox}
+
+
+async def outcome(*calls):
+    """Run the calls in a task; (task, the error code of each refused repeat or None)."""
+    from server.services.task_repository import TaskError
+    refused = []
+
+    async def body(emit):
+        for tool, arguments, result in calls:
+            try:
+                await act(tool, arguments, result)
+                refused.append(None)
+            except TaskError as exc:
+                refused.append(exc.code)
+        return "Done"
+    task = await run_contract([check("text", contains=["Done"])], body)
+    return task, refused
+
+
+async def test_a_read_stopped_by_its_time_limit_does_not_ask_the_user_to_check(execution_db, disk):
+    task, _ = await outcome(("run_command", {"command": "grep -r foo ."}, stopped_in("workspace")))
+    assert task.pause_reason != "task_reconciliation_required"
+
+
+async def test_a_read_killed_by_a_signal_does_not_ask_the_user_to_check(execution_db, disk):
+    task, _ = await outcome(("run_command", {"command": "ls -la x"}, command_result(-15, error="exit code -15")))
+    assert task.pause_reason != "task_reconciliation_required"
+
+
+async def test_a_hands_action_that_never_ran_does_not_ask_the_user_to_check(execution_db, disk):
+    task, _ = await outcome(("desktop_click", {"ref": "e1"}, {"ok": False, "code": "declined", "executed": False}))
+    assert task.pause_reason != "task_reconciliation_required"
+
+
+async def test_a_declined_command_card_does_not_ask_the_user_to_check(execution_db, disk):
+    # Regression guard: a refused card returns before the task runtime records anything.
+    from server.orchestrator import tool_loop
+
+    async def no(command, argv, **kw):
+        return False
+
+    async def tools():
+        return [{"key": "run_command", "description": "run"}]
+
+    async def body(emit):
+        await tool_loop._dispatch_tool("run_command", {"command": "git push"}, "{}", resolve_tools=tools,
+                                       emit=lambda e: None, tool_timeout_s=5, tool_trace=[], convo=[],
+                                       confirm_command=no, conversation_id="f2")
+        return "Done"
+    task = await run_contract([check("text", contains=["Done"])], body)
+    assert task.pause_reason != "task_reconciliation_required"
+
+
+@pytest.mark.parametrize("arguments,result", [
+    ({"command": "mail -s hi a@example.com"}, stopped_in("workspace")),
+    ({"command": "python3 build.py"}, command_result(-15, error="exit code -15")),
+    ({"command": "python3 build.py"}, stopped_in("off")),
+    ({"command": "curl --request=POST https://x"}, command_result(22)),
+    ({"command": "gh api --method POST x"}, stopped_in("workspace")),
+])
+async def test_what_may_have_happened_still_asks_the_user_to_check(execution_db, disk, arguments, result):
+    task, _ = await outcome(("run_command", arguments, result))
+    assert (task.phase, task.pause_reason) == ("waiting_user", "task_reconciliation_required")
+
+
+async def test_a_read_that_succeeded_can_run_again(execution_db, disk):
+    _, refused = await outcome(*[("run_command", {"command": "ls -la x"}, command_result(0))] * 2)
+    assert refused == [None, None]
+
+
+async def test_a_known_failure_can_run_again(execution_db, disk):
+    build = {"command": "python3 build.py"}
+    _, refused = await outcome(("run_command", build, stopped_in("workspace")), ("run_command", build, command_result(0)))
+    assert refused == [None, None]
+
+
+@pytest.mark.parametrize("first", [command_result(-15, error="exit code -15"), stopped_in("off")])
+async def test_an_unknown_outcome_is_not_repeated(execution_db, disk, first):
+    build = {"command": "python3 build.py"}
+    _, refused = await outcome(("run_command", build, first), ("run_command", build, command_result(0)))
+    assert refused == [None, "task_reconciliation_required"]
+
+
+# 0.1.62 F2 ④: a saved deliverable whose file check passed is not held by a work limit.
+
+async def test_a_saved_and_checked_deliverable_finishes_despite_a_work_limit(execution_db, disk):
+    async def body(emit):
+        (disk / "report.md").write_text("# Report")
+        await act("write_file", {"path": "report.md"}, {"ok": True, "path": "report.md"})
+        task_service.current().limit_reason = "task_no_progress"
+        return "Saved report.md"
+    task = await run_contract([check("file_saved", "saved", target="report.md")], body)
+    assert (task.phase, task.pause_reason) == ("succeeded", None)
+
+
+@pytest.mark.parametrize("checks", [[check("file_saved", "saved", target="missing.md")],
+                                    [check("text", contains=["Saved"])]])
+async def test_without_a_passing_file_check_the_limit_still_holds(execution_db, disk, checks):
+    async def body(emit):
+        (disk / "report.md").write_text("# Report")
+        await act("write_file", {"path": "report.md"}, {"ok": True, "path": "report.md"})
+        task_service.current().limit_reason = "task_no_progress"
+        return "Saved report.md"
+    task = await run_contract(checks, body)
+    assert (task.phase, task.pause_reason) == ("waiting_user", "task_no_progress")
+
+
+def _report_runtime(checks, results, artifacts):
+    from types import SimpleNamespace
+    spec = TaskSpec.model_validate({"id": "x", "instruction": "x", "locale": "en",
+        "scope": {"kind": "task", "owner_id": "local", "task_id": "x"},
+        "acceptance": [item.model_dump() for item in checks]})
+    return SimpleNamespace(spec=spec, validation_results=tuple(
+        SimpleNamespace(check_id=cid, evaluator="deterministic", status=status) for cid, status in results),
+        validation_report={"artifacts": artifacts})
+
+
+def test_a_write_snapshot_alone_is_not_a_checked_deliverable():
+    # Every successful write_file leaves a snapshot in the report's artifacts; with only "an answer
+    # was delivered" checked, that must not count (chat turns still hold in 0.1.62; K4 widens them).
+    snapshot = [{"id": "artifact:abc", "filename": "report.md", "status": "passed"}]
+    answer_only = _report_runtime([check("text", "answer", minimum=1)], [("answer", "passed")], snapshot)
+    assert task_service._file_checked(answer_only) is False
+
+
+@pytest.mark.parametrize("kind,rule", [("file_saved", {"target": "report.md"}), ("artifact", {"target": "report.md"})])
+def test_a_check_naming_the_deliverable_counts(kind, rule):
+    named = _report_runtime([check(kind, "deliverable", **rule)], [("deliverable", "passed")], [])
+    assert task_service._file_checked(named) is True
+    failed = _report_runtime([check(kind, "deliverable", **rule)], [("deliverable", "failed")], [])
+    assert task_service._file_checked(failed) is False
+
+
+class _Runtime:
+    pause_reason = None
+    limit_reason = None
+
+
+def test_stopping_before_saving_does_not_hold_the_task_once_it_saves():
+    # 0.1.50's wrap-up order: no progress -> finishing (nothing saved yet) -> save -> answer. The
+    # finishing step only notes the limit; the forced step after the save decides.
+    from server.orchestrator import tool_loop
+    runtime, trace = _Runtime(), [{"tool": "web_search", "result": {"ok": True}}]
+    tool_loop._stop_for_limit(runtime, "task_no_progress", trace, finishing=True)
+    assert (runtime.pause_reason, runtime.limit_reason) == (None, "task_no_progress")
+    trace.append({"tool": "write_file", "result": {"ok": True}})
+    tool_loop._stop_for_limit(runtime, "task_no_progress", trace)
+    assert (runtime.pause_reason, runtime.limit_reason) == (None, "task_no_progress")
+    never_saved = _Runtime()
+    tool_loop._stop_for_limit(never_saved, "task_no_progress", [], finishing=True)
+    tool_loop._stop_for_limit(never_saved, "task_no_progress", [])        # the forced step, still unsaved
+    assert never_saved.pause_reason == "task_no_progress"
+
+
+def test_the_loop_holds_a_limit_only_once_something_was_saved():
+    from server.orchestrator import tool_loop
+    saved, unsaved = _Runtime(), _Runtime()
+    tool_loop._stop_for_limit(saved, "task_no_progress",
+                              [{"tool": "write_file", "result": {"ok": True}}, {"tool": "web_search", "result": {}}])
+    tool_loop._stop_for_limit(unsaved, "task_no_progress", [{"tool": "write_file", "result": {"ok": False}}])
+    assert (saved.pause_reason, saved.limit_reason) == (None, "task_no_progress")
+    assert (unsaved.pause_reason, unsaved.limit_reason) == ("task_no_progress", None)
 
 
 # --- C: an answered run is not replayed --------------------------------------------------------
@@ -280,3 +496,156 @@ async def test_a_run_whose_answer_ended_is_not_replayed_on_reconnect():
         for run_id, task in ((14, answered), (16, streaming)):
             run_registry.unregister(run_id, "ghost")
             task.cancel()
+
+
+# ── F2 ④ end to end (⓪Plan's re-review probes for #200, adopted) ──────────────────────
+
+def _answer_check():
+    return AcceptanceCheck.model_validate(task_service.ANSWER_DELIVERED)
+
+
+async def test_a_real_write_snapshot_with_only_an_answer_check_still_holds(execution_db, disk, monkeypatch, tmp_path):
+    # A real write_file in an owned Run leaves a snapshot that passes as a report artifact; with only
+    # "an answer was delivered" checked, a noted work limit still holds the task.
+    from server import config
+    from server.db.models import Run
+    from server.registry.file_tools import WriteFileExecutor
+    from server.services import artifact_validation, execution_context
+    monkeypatch.setattr(config, "data_dir", lambda: tmp_path / "data")
+
+    async def parsed_as_on_a_mac(data, suffix):
+        # The file parser runs inside macOS' seatbelt; without one (Linux CI) it reports not_run and
+        # the snapshot would not pass, so the old bug would not show. Arslan ships on macOS.
+        return {"status": "passed", "code": "artifact_parsed"}
+    monkeypatch.setattr(artifact_validation, "inspect_bytes", parsed_as_on_a_mac)
+    seen = {}
+
+    async def body(emit):
+        runtime = task_service.current()
+        async with repository() as repo:
+            row = await repo.get(runtime.task_id)
+            run = Run(conversation_id=row.conversation_id, user_message="t")
+            repo.db.add(run)
+            await repo.db.flush()
+            run_id = run.id
+        await runtime.link_run(run_id)
+        with execution_context.bind_run(run_id):
+            seen["write"] = await runtime.execute_tool("write_file", {"path": "report.md", "content": "# Report\n"},
+                                                       WriteFileExecutor().execute)
+        runtime.limit_reason = "task_budget_exhausted"
+        seen["runtime"] = runtime
+        return "Saved report.md"
+    task = await run_contract([_answer_check()], body)
+    artifacts = (seen["runtime"].validation_report or {}).get("artifacts")
+    assert seen["write"].get("artifact") and artifacts and all(a["status"] == "passed" for a in artifacts)
+    assert (task.phase, task.pause_reason) == ("waiting_user", "task_budget_exhausted")
+
+
+class _Blocked:
+    async def execute(self, args):
+        return {"ok": False, "error": "blocked by the site"}
+
+
+def _search(i):
+    from tests.server import test_trajectory_golden as golden
+    return golden._Resp(None, [golden._tc("web_search", {"query": f"q{i}"}, f"s{i}")])
+
+
+def _write():
+    from tests.server import test_trajectory_golden as golden
+    return golden._Resp(None, [golden._tc("write_file", {"path": "jobs.csv", "content": "a,b\n1,2\n"}, "w1")])
+
+
+async def _native_in_task(monkeypatch, disk, replies, checks):
+    from server.orchestrator import tool_loop
+    from server.registry import executors
+    from tests.server import test_trajectory_golden as golden
+    adapter = golden._Recorder(replies)
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    golden._pin_workspace(monkeypatch)
+
+    async def own():
+        return True
+    monkeypatch.setattr(tool_loop, "_writing_in_own_folder", own)
+
+    class DiskWrite:
+        async def execute(self, args):
+            (disk / args["path"]).write_text(args["content"])
+            return {"ok": True, "path": args["path"], "bytes": len(args["content"])}
+    monkeypatch.setitem(executors.EXECUTORS, "web_search", _Blocked())
+    monkeypatch.setitem(executors.EXECUTORS, "write_file", DiskWrite())
+
+    async def resolve():
+        return [{"key": "web_search", "description": "search"}, {"key": "write_file", "description": "write"}]
+    state = {}
+
+    async def body(emit):
+        result = await tool_loop.run_native(system="S", user_content="find 10 jobs and save a table", history=[],
+                                            emit=lambda e: None, on_chunk=lambda c: None, resolve_tools=resolve)
+        runtime = task_service.current()
+        state.update(pause=runtime.pause_reason, limit=runtime.limit_reason)
+        return result["final"]
+    task = await run_contract(checks, body)
+    return task, state, adapter.calls
+
+
+def _stop_then_save():
+    from tests.server import test_trajectory_golden as golden
+    return [_search(i) for i in range(4)] + [_write(), golden._Resp("Saved jobs.csv; 4 sites blocked.")]
+
+
+async def test_no_progress_then_saving_with_a_passing_file_check_succeeds(execution_db, disk, monkeypatch):
+    # 0.1.50's wrap-up order through run_native: no progress -> finishing -> save -> answer.
+    task, state, calls = await _native_in_task(monkeypatch, disk, _stop_then_save(),
+                                               [check("file_saved", "saved", target="jobs.csv")])
+    assert "research has stopped" in calls[4]["user"]          # it really went through the finishing step
+    assert (state["pause"], state["limit"]) == (None, "task_no_progress")
+    assert (task.phase, task.pause_reason) == ("succeeded", None)
+
+
+async def test_no_progress_then_saving_with_only_an_answer_check_holds(execution_db, disk, monkeypatch):
+    task, _, _ = await _native_in_task(monkeypatch, disk, _stop_then_save(), [_answer_check()])
+    assert (task.phase, task.pause_reason) == ("waiting_user", "task_no_progress")
+
+
+async def test_no_progress_then_an_answer_without_saving_holds(execution_db, disk, monkeypatch):
+    from tests.server import test_trajectory_golden as golden
+    replies = [_search(i) for i in range(4)] + [golden._Resp("Could not find anything.")]
+    task, _, _ = await _native_in_task(monkeypatch, disk, replies, [check("file_saved", "saved", target="jobs.csv")])
+    assert (task.phase, task.pause_reason) == ("waiting_user", "task_no_progress")
+
+
+async def test_finishing_steps_that_never_save_hold_in_the_loop(execution_db, disk, monkeypatch):
+    from tests.server import test_trajectory_golden as golden
+    replies = [_search(i) for i in range(4)] + [_search(10), _search(11), _search(12), golden._Resp("Here is what I have.")]
+    task, state, _ = await _native_in_task(monkeypatch, disk, replies, [_answer_check()])
+    assert state["pause"] == "task_no_progress"
+    assert (task.phase, task.pause_reason) == ("waiting_user", "task_no_progress")
+
+
+# ── F2 ③ against H2's real results (③Hands' review of #200) ───────────────────────────
+
+def _decision(by, note=""):
+    from types import SimpleNamespace
+    return SimpleNamespace(by=by, note=note, model_text="nobody answered")
+
+
+@pytest.mark.parametrize("result", [
+    pytest.param(lambda h, c: h._no(_decision("user"), "clicking Send"), id="card-declined"),
+    pytest.param(lambda h, c: h._no(_decision("expired"), "clicking Send"), id="card-unanswered"),
+    pytest.param(lambda h, c: h._failed(c.Result(ok=False, code="app_denied", refused=True)), id="app-denied"),
+    pytest.param(lambda h, c: h._failed(c.Result(ok=False, code="unknown"), nothing_sent=True), id="nothing-sent"),
+])
+def test_what_hands_says_never_ran_is_a_known_failure(result):
+    from server.registry import hands_tools
+    from server.services import hands_contract
+    assert task_service.known_local_failure("desktop_click", {"ref": "e1"}, result(hands_tools, hands_contract))
+
+
+@pytest.mark.parametrize("code", ["unknown", "submit_unsure", "TIMEOUT", "takeover_paused", "ACTION_FAILED"])
+def test_what_hands_says_may_have_run_still_asks(code):
+    from server.registry import hands_tools
+    from server.services import hands_contract
+    result = hands_tools._failed(hands_contract.Result(ok=False, code=code))
+    assert "executed" not in result
+    assert not task_service.known_local_failure("desktop_click", {"ref": "e1"}, result)

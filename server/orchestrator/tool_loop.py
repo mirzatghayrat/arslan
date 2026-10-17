@@ -2117,6 +2117,19 @@ async def _reveal_streamed(text: str, on_chunk: Callable[[str], None]) -> None:
 
 # Tools a job may still use while wrapping up: saving the deliverable.
 WRAP_UP_TOOLS = frozenset({"write_file", "edit_file"})
+
+
+def _stop_for_limit(runtime, reason: str, trace: list[dict], *, finishing: bool = False) -> None:
+    """0.1.62 F2 ④: a work limit stops this turn. With a deliverable saved this turn, it is only
+    noted (`limit_reason`): the task holds for it only if the finish-time checks do not pass a
+    saved file (task_service._run). Otherwise it holds the task, as before. `finishing`: the limit
+    opened the wrap-up steps, which are there to save; only noted, and the forced step after them
+    (or _run) decides."""
+    if finishing or any(item.get("tool") in WRAP_UP_TOOLS and (item.get("result") or {}).get("ok") is True
+                        for item in trace):
+        runtime.limit_reason = reason
+    else:
+        runtime.pause_reason = reason
 # What a wrapping-up run may still call (0.1.50): the save tools, plus run_command
 # to process files it already fetched — run without network (terminal_exec.OFFLINE).
 FINISH_TOOLS = WRAP_UP_TOOLS | {"run_command"}
@@ -2159,7 +2172,7 @@ async def run_native(**kwargs) -> dict:
         from server.services.task_service import current as current_task
         task = current_task()
         if task is not None:
-            task.pause_reason = "task_budget_exhausted"
+            _stop_for_limit(task, "task_budget_exhausted", trace)
         await _reveal_streamed(text, kwargs["on_chunk"])
         return {"final": text, "escalation": None, "tool_trace": trace,
                 "stop_reason": "task_budget_exhausted", "history_compacted": False,
@@ -2402,7 +2415,7 @@ async def _run_native(
         if forced or (finishing and no_progress):
             stop_reason = "task_no_progress" if no_progress or truncation_stop else "task_budget_exhausted"
             if runtime:
-                runtime.pause_reason = stop_reason
+                _stop_for_limit(runtime, stop_reason, tool_trace, finishing=finishing and no_progress and not forced)
         # 0.1.50 S1: the system prompt stays byte-identical for the whole turn
         # (prefix cache); this step's notes go to the <agent_status> block.
         notes: list[str] = []
