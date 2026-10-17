@@ -20,6 +20,7 @@ import argparse
 import asyncio
 import json
 import os
+import re
 import shutil
 import time
 import uuid
@@ -60,8 +61,9 @@ class TurnTracker:
     declined: int = 0
     last_activity: float = 0.0
     end_reason: str = ""
-    # A stand-in person who says no to these command rules, with a sentence (the card's
-    # note: server/services/approvals.py reads it), e.g. "move them to trash instead".
+    # A stand-in person who says no to command cards whose rule matches one of these patterns
+    # (regular expressions: the same deletion comes as `delete`, `hermes:find -delete`, ...),
+    # with a sentence (the card's note: server/services/approvals.py reads it).
     decline_rules: frozenset = frozenset()
     decline_note: str = ""
     idle_after_s: float = IDLE_AFTER_TURN_S
@@ -97,7 +99,7 @@ class TurnTracker:
                 self.jobs_open.add(job)
         elif t == "propose_run_command":
             self.approvals += 1
-            if (frame.get("rule") or "") in self.decline_rules:
+            if any(re.search(p, frame.get("rule") or "") for p in self.decline_rules):
                 self.declined += 1
                 return {"type": "cancel_run_command", "call_id": frame["call_id"], "note": self.decline_note}
             if self._approve_command(frame):
@@ -241,7 +243,7 @@ if __name__ == "__main__":
     ap.add_argument("base_url")
     ap.add_argument("model")
     ap.add_argument("--provider", default="openai", choices=("openai", "anthropic"))
-    ap.add_argument("--decline-rule", action="append", default=[])
+    ap.add_argument("--decline-rule", action="append", default=[], help="regular expression on the card's rule")
     ap.add_argument("--decline-note", default="")
     a = ap.parse_args()
     configure(a.api, a.run_dir, a.base_url, a.model, a.provider)

@@ -178,7 +178,9 @@ def command(who: str, label: str, run: Path, prompt, sb: str, *, model: str = MO
             cmd += ["--decline-rule", rule]
         if decline and decline.get("note"):
             cmd += ["--decline-note", decline["note"]]
-        return cmd, dict(os.environ)
+        # The driver runs in the task folder; without this it is imported from wherever the
+        # environment's editable install points, which may be another checkout on another branch.
+        return cmd, dict(os.environ, PYTHONPATH=str(HERE.parents[1]))
     raise SystemExit(f"unknown entrant {who}")
 
 

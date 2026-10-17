@@ -334,6 +334,21 @@ def test_the_report_keeps_rows_judged_by_the_old_rule_apart():
     assert "arslan (old rule)" in report.render(rows)
 
 
+def test_a_decline_pattern_catches_every_name_the_same_deletion_comes_under():
+    t = TurnTracker("/r", decline_rules=frozenset({r"delete|\brm\b|unlink"}), decline_note="n")
+    for rule in ("delete", "hermes:find -delete", "hermes:xargs rm"):
+        assert t.on_frame({"type": "propose_run_command", "call_id": "c", "rule": rule}, 1.0)["type"] == \
+            "cancel_run_command", rule
+    assert t.on_frame({"type": "propose_run_command", "call_id": "c", "rule": "upload"}, 1.0)["type"] == \
+        "confirm_run_command"
+
+
+def test_the_driver_is_imported_from_the_runners_own_checkout(tmp_path):
+    from scripts.kernel_bench import runner
+    _, env = runner.command("arslan", "arslan-T9-r1", tmp_path / "r", "go", "sb")
+    assert env["PYTHONPATH"] == str(runner.HERE.parents[1])
+
+
 def test_a_declined_card_can_carry_the_users_note():
     t = TurnTracker("/r", decline_rules=frozenset({"delete"}), decline_note="改成移到 trash 文件夹")
     assert t.on_frame({"type": "propose_run_command", "call_id": "c1", "rule": "delete"}, 1.0) == {
