@@ -10,7 +10,6 @@ from tests.server import test_hands_0153 as base
 _case = base._case
 isolated, hands, asks, in_turn, in_job = base.isolated, base.hands, base.asks, base.in_turn, base.in_job
 
-pytestmark = pytest.mark.one_arslan
 
 CHANGED = {"ok": False, "refused": {"code": "changed", "message": (
     "Notes changed since your look: a sheet or popover opened on “Groceries”. Nothing was done; look again")}}

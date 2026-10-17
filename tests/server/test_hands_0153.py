@@ -18,7 +18,6 @@ from server.registry import hands_tools
 from server.services import (background_jobs, desktop_status, hands_client, hands_contract, hands_service,
                              personal_context as pc, task_service)
 
-pytestmark = pytest.mark.one_arslan
 
 CASES = sorted((Path(__file__).resolve().parents[1] / "fixtures" / "hands_contract").glob("*.json"))
 
