@@ -36,6 +36,12 @@ class BaseLLMProvider(ABC):
         raw = f"{(self.base_url or '').rstrip('/')}\n{self.model}"
         return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
+    def named_tool(self, tools: list[dict[str, Any]] | None, error_text: str) -> str | None:
+        """0.1.62 F3: the name of the tool a refusal of this provider's request points at, read
+        against THIS provider's final payload order (`tools` as given to chat), or None. A
+        provider whose error shapes are not known names none; the caller then matches names."""
+        return None
+
     def supports_bounded_critique(self) -> bool:
         """Whether a tool-free critique request can be sent with hidden reasoning
         provably OFF. Default False: a provider/model that may think by default

@@ -29,6 +29,9 @@ if TYPE_CHECKING:
     from server.orchestrator.tool_caller import ToolCaller
 
 TOOL_TIMEOUT_S = 20.0
+# 0.1.62 F1: run_command's backstop stops this much before the turn's own timeout, so the order
+# is fixed: the command's limit first (with its output), this backstop next, the turn last.
+_RUN_COMMAND_BACKSTOP_RESERVE_S = 10.0
 
 # The T1 write tools, gated as a category (P1b). Kept as a set here — the tool
 # list in _arslan_tools decides what is OFFERED, this decides what is GATED, and
@@ -479,9 +482,69 @@ TRUNCATED_CALL_ERROR = (
 _REFUSES_IMAGES: set[tuple[str, str, str]] = set()
 
 
+# 0.1.62 F3: (model, tool key, sha256 of the schema as the server wrote it) for MCP schemas a
+# provider refused this process. A changed schema hashes differently and is tried again.
+_BAD_TOOLS: set[tuple[tuple[str, str, str], str, str]] = set()
+
+
 def _model_key(a) -> tuple[str, str, str]:
     provider = getattr(a, "_provider", None)
     return (type(provider).__name__, str(getattr(provider, "model", "")), str(getattr(provider, "base_url", "")))
+
+
+# ── 0.1.62 F3: a refused MCP schema costs that tool, at worst every MCP tool, never the turn ──
+# A fallback for what arslan/llm/tool_schema.normalise does not cover. Delete with _BAD_TOOLS
+# once the M2 weekly report shows zero `mcp_schema_relaxed` four weeks running (v0.1.65 at the
+# earliest; docs/plans/0162/F3-mcp-schema.md).
+_SCHEMA_WORDS = re.compile(r"\b(tools?|functions?|schema|parameters)\b", re.I)
+
+
+def _schema_hash(params) -> str:
+    return hashlib.sha256(json.dumps(params, sort_keys=True, default=str).encode()).hexdigest()
+
+
+class _SchemaDrops:
+    """The MCP tools one turn leaves out: refused by name this turn, every one after a second
+    refusal, and any this model refused earlier in this process (_BAD_TOOLS)."""
+
+    def __init__(self, a):
+        self.model = _model_key(a)
+        self.names: set[str] = set()
+        self.every = False
+        self.changed = False
+
+    def hides(self, key: str, params) -> bool:
+        return key.startswith("mcp_") and (
+            self.every or key in self.names or (self.model, key, _schema_hash(params)) in _BAD_TOOLS)
+
+    def keep(self, wired: list[dict]) -> list[dict]:
+        return [t for t in wired if not self.hides(t["key"], _tool_params(t))]
+
+    def keep_schemas(self, schemas):
+        if schemas is None:
+            return None
+        return [t for t in schemas
+                if not self.hides(t["function"]["name"], t["function"].get("parameters"))] or None
+
+
+def _hiding(resolve_tools: ResolveTools, drops: _SchemaDrops) -> ResolveTools:
+    """resolve_tools as this turn sees it: the step's tool list, the capability refresh and the
+    executor's `live` check all go through it, so a left-out tool answers `tool_unavailable`."""
+    async def resolve() -> list[dict]:
+        return drops.keep(await resolve_tools())
+    return resolve
+
+
+def _refused_tool(a, sent: list[dict], text: str) -> str | None:
+    """The MCP tool a refusal points at, only ever one this request carried: the provider reads
+    its own error against its own payload order, else the longest MCP name the text mentions."""
+    mcp = {t["function"]["name"] for t in sent if t["function"]["name"].startswith("mcp_")}
+    named = getattr(getattr(a, "_provider", None), "named_tool", None)
+    name = named(sent, text) if callable(named) else None
+    if name in mcp:
+        return name
+    mentioned = [n for n in mcp if n in text]
+    return max(mentioned, key=len) if mentioned else None
 
 
 async def _images_to_text(convo: list[dict]) -> int:
@@ -515,7 +578,8 @@ async def _images_to_text(convo: list[dict]) -> int:
 
 
 async def _model_call(a, system: str, convo: list[dict], current_request: dict, *,
-                      tools, schemas, forced: bool, state, status: str = ""):
+                      tools, schemas, forced: bool, state, status: str = "",
+                      drops: _SchemaDrops | None = None, conversation_id: str | None = None):
     """The one model call of a run_native step, with recovery (0.1.49 S6).
 
     Native adapters (OpenAI-compatible, ARSLAN_TOOL_PROTOCOL not "legacy") get
@@ -557,13 +621,54 @@ async def _model_call(a, system: str, convo: list[dict], current_request: dict, 
         sent = agent_status.attach(messages, status) + list(extra or [])
         kwargs = {"max_tokens": max_tokens} if max_tokens else {}
         if native:
-            return await a.chat_trajectory(system, sent, tools=schemas if forced else tools,
-                                           tool_choice="none" if forced else None, **kwargs)
+            step_tools = schemas if forced else tools
+            # tool_choice only with tools: leaving every MCP tool out (0.1.62 F3) can empty the list.
+            return await a.chat_trajectory(system, sent, tools=step_tools,
+                                           tool_choice="none" if forced and step_tools else None, **kwargs)
         # One legacy entry point (_render_request) for every request of the step.
         rendered = _render_request(convo, current_request, status) + trajectory.to_legacy(list(extra or []))
         return await a.chat(system, rendered[-1]["content"], history=rendered[:-1], tools=tools, **kwargs)
 
+    async def relax(exc, *, last: bool = False) -> bool:
+        """0.1.62 F3: an `input` refusal of a request carrying MCP tools that names one (or reads
+        like a schema problem): leave it out (`last`, or none named: every MCP tool) and say so."""
+        nonlocal tools, schemas, status
+        sent = ((schemas if forced else tools) if native else tools) or []
+        if (drops is None or exc.kind != "input" or state.exhausted
+                or not any(t["function"]["name"].startswith("mcp_") for t in sent)):
+            return False
+        text = exc.excerpt or ""        # the provider's own words; str(exc) also carries our recovery notes
+        name = _refused_tool(a, sent, text)
+        if name is None and not _SCHEMA_WORDS.search(text):
+            return False
+        if name is not None:            # remembered even when this is the last try and every tool goes
+            params = next(t["function"].get("parameters") for t in sent if t["function"]["name"] == name)
+            drops.names.add(name)
+            _BAD_TOOLS.add((drops.model, name, _schema_hash(params)))
+        if name is None or last:
+            drops.every, left_out = True, "all"
+        else:
+            left_out = name
+        drops.changed = True
+        tools, schemas = drops.keep_schemas(tools), drops.keep_schemas(schemas)
+        what = "every MCP tool" if left_out == "all" else f"the MCP tool {left_out}"
+        state.note(f"left out {what} (the provider refused its parameter schema)")
+        status = (f"{status}\n\n" if status else "") + (
+            f"Note: {what} is not available in this turn: the model provider refused its parameter "
+            "schema. Use the other tools, or tell the user that capability cannot be used right now.")
+        provider = getattr(a, "_provider", None)
+        reported = getattr(a, "report_provider", None) or getattr(provider, "provider_name", type(provider).__name__)
+        try:
+            from server.services import recap_service
+            await recap_service.log_event(
+                conversation_id, "mcp_schema_relaxed", {"tool_key": left_out, "provider": str(reported)},
+                f"left out {what}: the provider refused its parameter schema")
+        except Exception:  # noqa: BLE001 — observability is never fatal
+            pass
+        return True
+
     remaining = _remaining_seconds()
+    relaxed = False
     try:
         resp = await mc.call_with_recovery(request, state, remaining_s=remaining)
     except mc.ModelCallError as exc:
@@ -579,6 +684,8 @@ async def _model_call(a, system: str, convo: list[dict], current_request: dict, 
             await _images_to_text(convo)
             messages = build_messages()
             state.note("read screenshots as text (this model cannot take images)")
+        elif await relax(exc):
+            relaxed = True
         elif exc.kind == "protocol" and native and not state.exhausted:
             native = False
             state.legacy, state.reason = True, f"endpoint rejected native history: {exc.excerpt[:200]}"
@@ -592,7 +699,13 @@ async def _model_call(a, system: str, convo: list[dict], current_request: dict, 
             state.note("compacted context")
         else:
             raise
-        resp = await mc.call_with_recovery(request, state, remaining_s=remaining)
+        try:
+            resp = await mc.call_with_recovery(request, state, remaining_s=remaining)
+        except mc.ModelCallError as again:
+            # Refused again after one tool was left out: every MCP tool goes, for one last try.
+            if not (relaxed and await relax(again, last=True)):
+                raise
+            resp = await mc.call_with_recovery(request, state, remaining_s=remaining)
     return await _recover_truncation(a, resp, request, state, remaining)
 
 
@@ -1267,8 +1380,13 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                 # A tool that waits for the user's card or a slow app declares its own limit
                 # (`timeout_s`): the default cut a Notes look mid-card on a real Mac (0.1.53).
                 own = getattr(executor, "timeout_s", None)
-                timeout = (budget.remaining_seconds() if tool_key == "delegate_work" and budget
-                           else max(tool_timeout_s, float(own)) if isinstance(own, (int, float)) else tool_timeout_s)
+                if tool_key == "run_command" and isinstance(own, (int, float)):
+                    # 0.1.62 F1: the command's own limit decides, not the loop's 20 s default.
+                    timeout = (max(0.0, min(float(own), budget.remaining_seconds() - _RUN_COMMAND_BACKSTOP_RESERVE_S))
+                               if budget else float(own))
+                else:
+                    timeout = (budget.remaining_seconds() if tool_key == "delegate_work" and budget
+                               else max(tool_timeout_s, float(own)) if isinstance(own, (int, float)) else tool_timeout_s)
                 return await asyncio.wait_for(executor.execute(admitted_args), timeout=timeout)
             runtime = current_task()
 
@@ -1300,7 +1418,9 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
         except BudgetExceeded:
             raise
         except TimeoutError:
-            result = {"ok": False, "error": f"tool '{tool_key}' timed out"}
+            # M2 counts the run_command wording (0.1.62 F1): keep it as it is.
+            result = ({"ok": False, "code": "time_limit", "error": "stopped by the time limit; no output was captured"}
+                      if tool_key == "run_command" else {"ok": False, "error": f"tool '{tool_key}' timed out"})
         except Exception as exc:  # noqa: BLE001
             result = {"ok": False, "error": f"tool '{tool_key}' failed: {exc}"}
         finally:
@@ -1997,6 +2117,19 @@ async def _reveal_streamed(text: str, on_chunk: Callable[[str], None]) -> None:
 
 # Tools a job may still use while wrapping up: saving the deliverable.
 WRAP_UP_TOOLS = frozenset({"write_file", "edit_file"})
+
+
+def _stop_for_limit(runtime, reason: str, trace: list[dict], *, finishing: bool = False) -> None:
+    """0.1.62 F2 ④: a work limit stops this turn. With a deliverable saved this turn, it is only
+    noted (`limit_reason`): the task holds for it only if the finish-time checks do not pass a
+    saved file (task_service._run). Otherwise it holds the task, as before. `finishing`: the limit
+    opened the wrap-up steps, which are there to save; only noted, and the forced step after them
+    (or _run) decides."""
+    if finishing or any(item.get("tool") in WRAP_UP_TOOLS and (item.get("result") or {}).get("ok") is True
+                        for item in trace):
+        runtime.limit_reason = reason
+    else:
+        runtime.pause_reason = reason
 # What a wrapping-up run may still call (0.1.50): the save tools, plus run_command
 # to process files it already fetched — run without network (terminal_exec.OFFLINE).
 FINISH_TOOLS = WRAP_UP_TOOLS | {"run_command"}
@@ -2039,7 +2172,7 @@ async def run_native(**kwargs) -> dict:
         from server.services.task_service import current as current_task
         task = current_task()
         if task is not None:
-            task.pause_reason = "task_budget_exhausted"
+            _stop_for_limit(task, "task_budget_exhausted", trace)
         await _reveal_streamed(text, kwargs["on_chunk"])
         return {"final": text, "escalation": None, "tool_trace": trace,
                 "stop_reason": "task_budget_exhausted", "history_compacted": False,
@@ -2141,6 +2274,8 @@ async def _run_native(
     if max_tool_calls is not None and (type(max_tool_calls) is not int or max_tool_calls < 0):
         raise ValueError("max_tool_calls must be a non-negative explicit ceiling")
 
+    drops = _SchemaDrops(a)
+    resolve_tools = _hiding(resolve_tools, drops)
     wired = await resolve_tools()
     wired_keys = {t["key"] for t in wired}
     if stream_without_tools:
@@ -2280,7 +2415,7 @@ async def _run_native(
         if forced or (finishing and no_progress):
             stop_reason = "task_no_progress" if no_progress or truncation_stop else "task_budget_exhausted"
             if runtime:
-                runtime.pause_reason = stop_reason
+                _stop_for_limit(runtime, stop_reason, tool_trace, finishing=finishing and no_progress and not forced)
         # 0.1.50 S1: the system prompt stays byte-identical for the whole turn
         # (prefix cache); this step's notes go to the <agent_status> block.
         notes: list[str] = []
@@ -2363,7 +2498,14 @@ async def _run_native(
             plan=plan.render(), tool_calls=budget.tool_calls, model_calls=budget.model_requests,
             wrap_up_at=budget.soft.tool_calls if budget.soft is not None else None, notes=lesson_notes + notes)
         resp = await _model_call(a, system, convo, current_request, tools=step_tools,
-                                 schemas=schemas, forced=forced, state=turn_state, status=status)
+                                 schemas=schemas, forced=forced, state=turn_state, status=status,
+                                 drops=drops, conversation_id=conversation_id)
+        if drops.changed:              # a refused MCP schema was left out: the rest of the turn too
+            drops.changed = False
+            wired = drops.keep(wired)
+            wired_keys = {t["key"] for t in wired}
+            schemas = _native_tool_schemas(wired, allow_escalation=allow_escalation)
+            params_by_key = {t["key"]: _tool_params(t) for t in wired}
         # A context-overflow recovery compacted convo in place (S6).
         history_compacted = history_compacted or turn_state.context_retry_used
         tool_calls = list(getattr(resp, "tool_calls", None) or [])

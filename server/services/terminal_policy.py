@@ -51,9 +51,32 @@ _FORBID = [
                           r"[\"']?/(?:System|Library|Applications|Users|private|Volumes)/?[\"']?(?:\s|$|[;&|)])",
      "recursive delete of a macOS system folder"),
 ]
+# 0.1.62 F4a (R2): how osascript and `shortcuts run` are reached in command position however
+# they are written: through `command` (not `command -v`, which only looks it up), `exec` (with
+# -a NAME, -c, -l), or `xargs` with its options, named by a path or not. Built so it never
+# backtracks: every alternative starts differently, and no blank between words crosses a line
+# break (`_H`), so many lines of launchers are tried line by line (an overlapping first version
+# took ~3x longer per xargs option; one that let `exec` match in two places and across lines took
+# cubic time). Its own command position for that reason: Hermes' `_CMDPOS` also consumes `exec`
+# and lets blanks cross lines. An xargs option that takes a value is case-sensitive (-r and -p
+# are flags; -R and -P take values) and has the value attached (-n1, -I{}) or after blanks (-n 1,
+# -I {}; the command-start pass splits {} across a line).
+_H = r"[^\S\n]"
+_ONCE_POS = (r"(?:^|[\n`]|\$\()" + _H + r"*(?:sudo" + _H + r"+(?:-\S+" + _H + r"+)*)?"
+             r"(?:env" + _H + r"+(?:\w+=\S*" + _H + r"+)*)?(?:(?:nohup|setsid|time)" + _H + r"+)*")
+_XARGS_VALUE = r"(?:\{\s*\}|[^\s{-]\S*)"
+_XARGS_OPT = (r"(?:--\S+|(?-i:-[IJLPRSEdins])(?:" + _H + r"+" + _XARGS_VALUE + r"|\S+)"
+              r"|(?-i:-[^\sIJLPRSEdins-])\S*)")
+_LAUNCHED = (r"(?:command" + _H + r"+(?:-p" + _H + r"+)?"
+             r"|exec" + _H + r"+(?:-a" + _H + r"+\S+" + _H + r"+|-[cl]+" + _H + r"+)*"
+             r"|xargs(?:" + _H + r"+" + _XARGS_OPT + r")*" + _H + r"+)*"
+             r"(?:[^\s=]*/)?")         # a path, never a VAR=value assignment
+# The program itself, not a longer name that starts with it (osascript.sh, osascriptx); a
+# redirection may follow it directly (osascript<<EOF, osascript>/dev/null).
+_END = r"(?=$|[\s;&|)`'\"<>])"
 _ASK = [
-    ("apple-events", _POS + r"osascript\b", "controls other apps (it could send, delete or buy)"),
-    ("shortcuts", _POS + r"shortcuts\s+run\b", "runs one of your Shortcuts"),
+    ("apple-events", _ONCE_POS + _LAUNCHED + r"osascript" + _END, "controls other apps (it could send, delete or buy)"),
+    ("shortcuts", _ONCE_POS + _LAUNCHED + r"shortcuts" + _H + r"+run" + _END, "runs one of your Shortcuts"),
     ("send-mail", _POS + r"(?:mail|mailx|sendmail|msmtp|mutt|himalaya\s+(?:send|write|reply|forward))\b",
      "sends email"),
     ("send-message", _POS + r"(?:imsg\s+send|xurl\b[^\n]*(?:post|tweet|/2/tweets))",
@@ -161,12 +184,20 @@ def ask_rules(command: str) -> set[str]:
     return {verdict.rule} | _hermes_ask_rules(text) | {key for key, pattern, _why in _ASK_C if _matches(pattern, texts)}
 
 
+# 0.1.62 F4a: rules a card answers for this one time only. Another app, or one of your Shortcuts,
+# can send, delete or buy; no answer stands for the next one. The `legacy_rule` rows already
+# stored for these two stay (Settings still lists them) but no longer allow anything; v0.1.64
+# removes them (docs/plans/0162/README.md §8).
+ONCE_ONLY_RULES = frozenset({"apple-events", "shortcuts"})
+
+
 def standing_allows(command: str, allowed: set[str]) -> bool:
     """Whether the user's "don't ask again" answers cover this command: every rule it matches
     must be one of them. `osascript …; curl -d @file …` is "apple-events" to `assess`, but a
-    standing answer for apple-events must not wave the upload through."""
+    standing answer for apple-events must not wave the upload through. A command matching a
+    once-only rule is never covered."""
     rules = ask_rules(command)
-    return bool(rules) and rules <= allowed
+    return bool(rules) and rules <= allowed and not rules & ONCE_ONLY_RULES
 
 
 # 0.1.52: inside the workspace sandbox a plain script can only write to the working

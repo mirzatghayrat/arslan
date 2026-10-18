@@ -29,7 +29,7 @@ from typing import Any
 import httpx
 
 from arslan.llm.providers import errors as provider_errors
-from arslan.llm import param_heal, request_evidence
+from arslan.llm import param_heal, request_evidence, tool_schema
 
 from arslan.llm.cached_system import CachedSystem
 from arslan.llm.providers.base import BaseLLMProvider
@@ -88,6 +88,9 @@ def _translate(content: Any) -> Any:
         else:
             out.append(b)
     return out
+
+_TOOL_INDEX = re.compile(r"\btools\.(\d+)\b")
+
 
 class AnthropicProvider(BaseLLMProvider):
     DEFAULT_BASE_URL = "https://api.anthropic.com/v1"
@@ -231,9 +234,18 @@ class AnthropicProvider(BaseLLMProvider):
             out.append({
                 "name": name,
                 "description": fn.get("description", t.get("description", "")),
-                "input_schema": fn.get("parameters") or t.get("input_schema") or {},
+                # 0.1.62 F3: an MCP server's schema reshaped to what Anthropic accepts.
+                "input_schema": tool_schema.for_tool(
+                    name, fn.get("parameters") or t.get("input_schema") or {}, "anthropic"),
             })
         return out or None
+
+    def named_tool(self, tools: list[dict[str, Any]] | None, error_text: str) -> str | None:
+        # "tools.137.custom.input_schema: …" (field report 2026-10-14): the position in the
+        # translated list, where tools without a name were skipped.
+        index = tool_schema.index_in(error_text, _TOOL_INDEX)
+        sent = self._translate_tools(tools) or []
+        return sent[index]["name"] if index is not None and index < len(sent) else None
 
     def _payload(self, messages: list[dict[str, Any]], temperature: float,
                  tools: list[dict[str, Any]] | None = None) -> dict[str, Any]:

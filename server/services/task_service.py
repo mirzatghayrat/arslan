@@ -10,6 +10,8 @@ import contextlib
 import hashlib
 import json
 import logging
+import re
+import shlex
 from collections.abc import Awaitable, Callable, Iterator
 from contextvars import ContextVar
 from dataclasses import asdict, replace
@@ -52,6 +54,33 @@ _OUTBOUND_RULES = frozenset({"apple-events", "shortcuts", "send-mail", "send-mes
                              "remote-shell", "git-push", "publish"})
 
 
+# 0.1.62 F2 ②a: outbound spellings the terminal rules do not match yet (they run without a card
+# today): curl --request=POST (quoted too) or -sXDELETE, gh api with fields or a non-GET method, HTTPie and xh sending.
+# Only this file reads them: a failure of one may have left something behind elsewhere. Delete
+# when S2a adds them to terminal_policy's outbound group, in that same PR (v0.1.63).
+def _outbound_extra_rules():
+    from server.services import terminal_policy
+    pos = terminal_policy._POS
+    return [re.compile(pos + pattern, re.I) for pattern in (
+        r"curl\b[^\n]*(?:--request(?:=|\s+)[\"']?|\s-[a-zA-Z]*X\s*[\"']?)(?:POST|PUT|PATCH|DELETE)\b",
+        r"gh\s+api\b[^\n]*(?:\s(?:-f|-F|--field|--raw-field|--input)(?:[\s=]|$)|\s--method[\s=](?!GET\b)\w)",
+        r"(?:https?|xhs?)\s+(?:-\S+\s+)*(?:POST|PUT|PATCH|DELETE)\b",
+        r"(?:https?|xhs?)\s+[^\n]*\s[A-Za-z_][\w.\-\[\]]*:?=(?!=)",
+    )]
+
+
+_OUTBOUND_EXTRA: list = []
+
+
+def _outbound(command: str) -> bool:
+    from server.services import terminal_policy
+    if terminal_policy.ask_rules(command) & _OUTBOUND_RULES:
+        return True
+    if not _OUTBOUND_EXTRA:
+        _OUTBOUND_EXTRA.extend(_outbound_extra_rules())
+    return any(terminal_policy._matches(rule, terminal_policy._detection_texts(command)) for rule in _OUTBOUND_EXTRA)
+
+
 def known_local_failure(tool_key: str, arguments: dict, result) -> bool:
     """A failed action whose outcome is KNOWN and stayed on this Mac (0.1.59).
 
@@ -60,8 +89,10 @@ def known_local_failure(tool_key: str, arguments: dict, result) -> bool:
     an error, are known outcomes — treating them as unknown ended every job with a failed probe on
     the way as "needs your review" (seen recording the 0.1.59 promo: nine invoices copied, "Stuck").
     Also known: an MCP call to a server that was not ready (it never left Arslan; 0.1.61 §B1).
-    Still unknown, and still asking: exceptions, cancellations, a command killed by its timeout or a
-    signal, any command matching an outbound rule, and every other tool.
+    Also known (0.1.62 F2): a result that says it never ran (`executed: False`), and a command stopped
+    by its own time limit inside the workspace sandbox.
+    Still unknown, and still asking: exceptions, cancellations, a command killed by a signal or by a
+    time limit outside the sandbox, any command matching an outbound rule, and every other tool.
     Not covered (said here and in docs/specs/2026-10-10-0159-job-checks.md): a local script that sends
     something over the network itself and then fails is treated as local — the terminal policy cannot
     see inside the script.
@@ -70,16 +101,56 @@ def known_local_failure(tool_key: str, arguments: dict, result) -> bool:
         return False
     if result.get("code") == "mcp_not_ready":
         return True       # 0.1.61 §B1: the call never reached the MCP server
+    if result.get("executed") is False:
+        # 0.1.62 F2 ③: it never ran (Hands' fixed list, H2; run_command with no time left, F1). Only
+        # Arslan's own executors write this field; a tool that ever spreads a third party's JSON onto
+        # the top level of its result must drop `executed` first, or that party could claim "not run".
+        return True
     if tool_key in {"write_file", "edit_file"}:
         return True
     if tool_key != "run_command":
         return False
+    from server.services import terminal_policy
+    command = terminal_policy.as_shell(arguments.get("command"), arguments.get("argv"))
+    if result.get("code") == "time_limit" and result.get("sandbox") == "workspace":
+        # 0.1.62 F2 ②: stopped by its own time limit inside the workspace sandbox. Before the signal
+        # check below: the stop is a SIGKILL too. Outside the sandbox it stays unknown.
+        return not _outbound(command)
     code = result.get("exit_code")
     if str(result.get("error") or "").startswith("stopped") or (code is not None and (type(code) is not int or code < 0)):
         return False
-    from server.services import terminal_policy
-    command = terminal_policy.as_shell(arguments.get("command"), arguments.get("argv"))
-    return not (terminal_policy.ask_rules(command) & _OUTBOUND_RULES)
+    return not _outbound(command)
+
+
+# 0.1.62 F2 ①: a single simple command whose program the command policy grades LOW is a read.
+# Anything with shell syntax is not judged. The LOW list also lets through a few forms that write
+# or run something else; those are not reads. Everything else stays external_write (not
+# local_write: a local_write that failed may be repeated, and a command killed by a signal or
+# stopped outside the sandbox has an unknown outcome).
+_SHELL_SYNTAX = re.compile(r"[|&;<>`$()\n\\]")
+_FIND_WRITES = ("-delete", "-exec", "-ok", "-fprint", "-fls")
+
+
+def _reads_only(arguments: dict) -> bool:
+    from server.services import command_policy, terminal_policy
+    text = terminal_policy.as_shell(arguments.get("command"), arguments.get("argv"))
+    if not text or _SHELL_SYNTAX.search(text):
+        return False
+    try:
+        words = shlex.split(text)
+    except ValueError:
+        return False
+    if not words:
+        return False
+    name, args = words[0], words[1:]
+    if command_policy.classify(name, args) != "LOW":
+        return False
+    if name == "find" and any(a.startswith(_FIND_WRITES) for a in args):
+        return False
+    if name == "git" and (any(a.startswith("--output") for a in args)
+                          or (args[:1] in (["branch"], ["remote"]) and len(args) > 1)):
+        return False
+    return not (name == "rg" and any(a == "--pre" or a.startswith("--pre=") for a in args))
 
 
 async def effect_of(tool_key: str, arguments: dict) -> str:
@@ -99,11 +170,7 @@ async def effect_of(tool_key: str, arguments: dict) -> str:
     if tool_key in _LOCAL_WRITE_TOOLS:
         return "local_write"
     if tool_key == "run_command":   # local only; remote execution is ssh_run (always external)
-        from server.services import command_policy
-        argv = arguments.get("argv") if isinstance(arguments.get("argv"), list) else []
-        if command_policy.classify(str(arguments.get("command") or "").strip(), argv) == "LOW":
-            return "read"
-        return "external_write"
+        return "read" if _reads_only(arguments) else "external_write"
     if tool_key.startswith("mcp_") and "__" in tool_key:
         try:
             server_id = int(tool_key.split("__", 1)[0].removeprefix("mcp_"))
@@ -200,6 +267,9 @@ class TaskRuntime:
         self.run_ids: set[int] = set()
         self.closed = False
         self.pause_reason: str | None = None
+        # 0.1.62 F2 ④: a work limit (no progress, budget) reached after a deliverable was saved. It
+        # holds the task only if the finish-time checks do not pass a saved file (_run). In memory only.
+        self.limit_reason: str | None = None
         self.worker_slots = asyncio.Semaphore(2)
         self.validation_results = ()
         self.validation_report = None
@@ -342,6 +412,18 @@ class TaskRuntime:
         return result
 
 
+# Acceptance rules that name a deliverable on disk or among the run's files.
+_DELIVERABLE_RULES = frozenset({"file_saved", "artifact", "image_dimensions"})
+
+
+def _file_checked(runtime) -> bool:
+    """A finish-time check that names the deliverable passed (`file_saved`, `artifact`,
+    `image_dimensions`). A write's snapshot in the report is not one: every successful write leaves
+    one. "An answer was delivered" alone never counts, so chat turns still hold (K4 widens them)."""
+    named = {c.id for c in runtime.spec.acceptance if c.rule is not None and c.rule.kind in _DELIVERABLE_RULES}
+    return any(r.check_id in named and r.status == "passed" for r in runtime.validation_results)
+
+
 async def _run(value: dict, emit, body, *, progress=None, context=None):
     runtime = TaskRuntime(value, emit, progress)
     budget = Budget.from_snapshot(value["budget"])
@@ -383,6 +465,8 @@ async def _run(value: dict, emit, body, *, progress=None, context=None):
                 verified = (bool(runtime.validation_results) and any(item.evaluator != "model" for item in runtime.validation_results)
                     and all(item.status in {"passed", "not_applicable"} for item in runtime.validation_results)
                     and all(item["status"] in {"passed", "not_applicable"} for item in (runtime.validation_report or {}).get("artifacts", [])))
+                if runtime.limit_reason and not runtime.pause_reason and not (verified and _file_checked(runtime)):
+                    runtime.pause_reason = runtime.limit_reason      # 0.1.62 F2 ④: nothing saved was checked
                 succeeded = verified and not (runtime.saw_error or runtime.pause_reason or runtime.reconciliation_required)
                 checks_missing = (any(item.evaluator != "human" and item.status in {"not_run", "unverified"}
                     for item in runtime.validation_results) or

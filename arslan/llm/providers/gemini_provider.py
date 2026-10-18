@@ -11,13 +11,14 @@ Streaming with tools remains explicitly unsupported; run_native uses chat().
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
 
 from arslan.llm.providers import errors as provider_errors
-from arslan.llm import param_heal, request_evidence
+from arslan.llm import param_heal, request_evidence, tool_schema
 
 from arslan.llm.providers.base import BaseLLMProvider
 from arslan.models import LLMResponse
@@ -52,6 +53,10 @@ def _parts(content: Any) -> list[dict[str, Any]]:
         else:
             parts.append({"text": str(b)})
     return parts
+
+# 0.1.62 F3: a position in the one functionDeclarations list (Gemini's wording not checked).
+_DECLARATION_INDEX = re.compile(r"function_?declarations\[(\d+)\]", re.I)
+
 
 class GeminiProvider(BaseLLMProvider):
     DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
@@ -95,6 +100,13 @@ class GeminiProvider(BaseLLMProvider):
             contents.append({"role": role, "parts": _parts(m["content"])})
         return system, contents
 
+    def named_tool(self, tools: list[dict[str, Any]] | None, error_text: str) -> str | None:
+        index = tool_schema.index_in(error_text, _DECLARATION_INDEX)   # declarations are `tools`, in order
+        tools = tools or []
+        if index is None or index >= len(tools):
+            return None
+        return (tools[index].get("function") or {}).get("name")
+
     def _payload(self, messages: list[dict[str, Any]], temperature: float,
                  tools: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         system, contents = self._to_contents(messages)
@@ -112,7 +124,9 @@ class GeminiProvider(BaseLLMProvider):
                     raise ValueError("Gemini tools require a named function declaration")
                 declarations.append({
                     "name": function["name"], "description": function.get("description") or "",
-                    "parametersJsonSchema": function.get("parameters") or {"type": "object"},
+                    # 0.1.62 F3: an MCP server's schema reshaped to what all providers accept.
+                    "parametersJsonSchema": tool_schema.for_tool(
+                        function["name"], function.get("parameters") or {"type": "object"}, "gemini"),
                 })
             payload["tools"] = [{"functionDeclarations": declarations}]
         return payload

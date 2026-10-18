@@ -138,9 +138,12 @@ def test_every_rule_a_command_matches_is_named_not_only_the_first():
 
 
 def test_a_standing_answer_covers_a_command_only_when_it_covers_every_rule():
-    assert tp.standing_allows("osascript -e 'tell application \"Finder\" to activate'", {"apple-events"})
+    # 0.1.62 F4a: apple-events is answered for one time only, so no standing answer covers
+    # osascript any more, alone or chained (it used to, here and on the third line).
+    assert not tp.standing_allows("osascript -e 'tell application \"Finder\" to activate'", {"apple-events"})
     assert not tp.standing_allows(_OSA_UPLOAD, {"apple-events"})
-    assert tp.standing_allows(_OSA_UPLOAD, {"apple-events", "upload"})
+    assert not tp.standing_allows(_OSA_UPLOAD, {"apple-events", "upload"})
+    assert tp.standing_allows("brew install x && git push", {"install", "git-push"})
     assert not tp.standing_allows("brew install x && git push", {"install"})
     assert not tp.standing_allows("ls", {"install"})                # nothing to answer
     assert not tp.standing_allows("sudo rm -rf /tmp/x", {"sudo"})   # the floor is never answered
