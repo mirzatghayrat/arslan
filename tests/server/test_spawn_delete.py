@@ -50,3 +50,33 @@ async def test_delete_spawn_with_thread_refs_and_equipment(maker):
         # spawn-scoped rows are gone
         assert (await s.execute(select(ChatMessage))).scalars().all() == []
         assert (await s.execute(select(SpawnCapability))).scalars().all() == []
+
+
+# Moved from test_default_spawns.py when C1b deleted default_spawns.py: they test spawn_service,
+# which stays. Installs from before 0.1.48 still hold is_default=True rows, and
+# DELETE /api/v1/spawns/{id} answers 403 for them (server/api/spawns.py).
+def test_to_summary_carries_is_default():
+    sp = Spawn(id=1, name="B", domain_category="x", capabilities=[], system_prompt="x", is_default=True)
+    assert spawn_service.to_summary(sp).is_default is True
+
+
+@pytest.mark.asyncio
+async def test_delete_rejects_builtin(maker):
+    async with maker() as s:
+        sp = Spawn(name="Built-In", domain_category="x", capabilities=[], system_prompt="x", is_default=True)
+        s.add(sp)
+        await s.commit()
+        await s.refresh(sp)
+        with pytest.raises(spawn_service.BuiltInSpawnError):
+            await spawn_service.delete_spawn(s, sp.id)
+        assert await s.get(Spawn, sp.id) is not None   # not deleted
+
+
+@pytest.mark.asyncio
+async def test_delete_allows_normal_spawn(maker):
+    async with maker() as s:
+        sp = Spawn(name="Normal", domain_category="x", capabilities=[], system_prompt="x", is_default=False)
+        s.add(sp)
+        await s.commit()
+        await s.refresh(sp)
+        assert await spawn_service.delete_spawn(s, sp.id) is True
