@@ -1735,6 +1735,13 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
         },
         "required": ["question", "options"],
     },
+    # 0.1.63 D1: hand an existing file to the user (window card + paired iPhone).
+    "attach_file": {"type": "object", "properties": {
+        "path": {"type": "string", "minLength": 1,
+                 "description": "The file: absolute, ~/ or relative to the workspace, in a readable folder."},
+        "title": {"type": "string", "maxLength": 200,
+                  "description": "Optional name the user sees; the file's extension is kept."}},
+        "required": ["path"], "additionalProperties": False},
 }
 
 # PA-3: ask_user_choice is a TERMINAL tool (same pattern as `escalate`): a VALID call
@@ -2237,6 +2244,7 @@ async def _run_native(
     adapter_override=None,
     stream_without_tools: bool = False,
     progress_lane=None,
+    turn_notes: list[str] | None = None,
 ) -> dict:
     """Canonical native tool loop. Same signature and core return shape
     ({"final": str|None, "escalation": dict|None, "tool_trace": list}).
@@ -2491,12 +2499,15 @@ async def _run_native(
         # Nothing done, planned or noted yet (a plain chat turn, or step 0): no
         # block — the request goes out as the user wrote it. Step 0's write
         # facts live in the tool descriptions (S5); the block starts with work.
-        status = "" if not (tool_trace or notes or plan.items or lesson_notes) else agent_status.render(
+        # 0.1.63 D1: turn_notes are host facts about this whole turn (a turn from the iPhone).
+        turn_lines = list(turn_notes or ())
+        status = "" if not (tool_trace or notes or plan.items or lesson_notes or turn_lines) else agent_status.render(
             workspace=agent_status.home_relative(ws_root) if ws_root is not None else None,
             writers=[k for k in ("write_file", "edit_file", "run_command") if k in offered],
             own_folder=own_folder, saved=agent_status.owned_outputs(tool_trace, ws_root, turn_started),
             plan=plan.render(), tool_calls=budget.tool_calls, model_calls=budget.model_requests,
-            wrap_up_at=budget.soft.tool_calls if budget.soft is not None else None, notes=lesson_notes + notes)
+            wrap_up_at=budget.soft.tool_calls if budget.soft is not None else None,
+            notes=lesson_notes + turn_lines + notes)
         resp = await _model_call(a, system, convo, current_request, tools=step_tools,
                                  schemas=schemas, forced=forced, state=turn_state, status=status,
                                  drops=drops, conversation_id=conversation_id)

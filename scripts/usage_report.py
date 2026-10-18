@@ -35,7 +35,7 @@ SHOWN = "('user', 'expired')"                 # approval_events.decided_by: the 
 # server/registry/executors.py EXECUTORS (a test keeps this in step) and the host's own
 # bookkeeping tools (server/orchestrator/arslan.py). `tools` adds the seeded catalog and MCP.
 BUILT_IN_TOOLS = frozenset("""
-    background_status browser_back browser_click browser_look browser_open browser_press
+    attach_file background_status browser_back browser_click browser_look browser_open browser_press
     browser_select browser_type cancel_task conversation_search create_skill delegate_work
     desktop_access desktop_apps desktop_batch desktop_click desktop_look desktop_menu
     desktop_open desktop_press desktop_scroll desktop_select desktop_takeover desktop_type
