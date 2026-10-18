@@ -188,19 +188,35 @@ def test_pattern_properties_go_for_openai_compatible_endpoints():
     assert "patternProperties" in normalise(schema, "anthropic")
 
 
-def test_a_ref_bomb_is_bounded_and_fast():
+def test_a_ref_bomb_is_bounded_and_fast(monkeypatch):
+    # Counted, not timed: a 1.0 s wall-clock limit failed on a slow CI runner (1.03 s). Here the
+    # depth limit bounds the output (the size check) and the node budget bounds the work: about
+    # 3,700 expansions with it, about 46,000 without (the count check).
     import time
+    from arslan.llm import tool_schema
     defs = {f"L{i}": {"type": "object", "properties": {"a": {"$ref": f"#/$defs/L{i + 1}"},
                                                       "b": {"$ref": f"#/$defs/L{i + 1}"}}} for i in range(24)}
     defs["L24"] = {"type": "string"}
     bomb = {"type": "object", "properties": {"root": {"$ref": "#/$defs/L0"}}, "$defs": defs}
+    calls = {"inline": 0, "normalise": 0}
+    inline, normalise_once = tool_schema._inline, tool_schema._normalise
+
+    def counted_inline(*args):
+        calls["inline"] += 1
+        return inline(*args)
+
+    def counted_normalise(*args):
+        calls["normalise"] += 1
+        return normalise_once(*args)
+    monkeypatch.setattr(tool_schema, "_CACHE", {})
+    monkeypatch.setattr(tool_schema, "_inline", counted_inline)
+    monkeypatch.setattr(tool_schema, "_normalise", counted_normalise)
     started = time.monotonic()
     out = normalise(bomb, "anthropic")
-    assert time.monotonic() - started < 1.0
+    assert time.monotonic() - started < 10.0                          # a hang guard only
     assert len(json.dumps(out)) < 200_000
-    again = time.monotonic()
-    assert normalise(bomb, "anthropic") == out                        # cached by the schema's hash
-    assert time.monotonic() - again < 0.05
+    assert calls["inline"] < 20_000
+    assert normalise(bomb, "anthropic") == out and calls["normalise"] == 1   # cached by the schema's hash
 
 
 @pytest.mark.parametrize("provider", PROVIDERS)
