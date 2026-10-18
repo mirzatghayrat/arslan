@@ -12,7 +12,6 @@ import pytest
 from arslan import execution_budget
 from arslan.llm import param_heal, trajectory
 from arslan.llm.adapter import LLMAdapter
-from arslan.llm.providers import anthropic_provider
 from arslan.llm.providers.anthropic_provider import AnthropicProvider
 from arslan.llm.providers.gemini_provider import GeminiProvider
 from server.orchestrator import model_call as mc
@@ -64,7 +63,6 @@ async def _resolve():
 @pytest.fixture(autouse=True)
 def native(monkeypatch):
     monkeypatch.delenv("ARSLAN_TOOL_PROTOCOL", raising=False)
-    monkeypatch.setattr(anthropic_provider, "NATIVE_TRAJECTORY", True, raising=False)
     param_heal.forget()
     yield
     param_heal.forget()
@@ -175,7 +173,7 @@ async def test_native_requests_ask_to_drop_invalidated_blocks(monkeypatch, model
 
 async def test_earlier_models_get_no_binding_field(monkeypatch):
     _, sent, headers = await claude_turn(monkeypatch, [tool_reply(("toolu_01", "one")), END], model="claude-sonnet-5")
-    assert "thinking" not in sent[0] and "anthropic-beta" not in headers[0]
+    assert "thinking" not in sent[0] and BINDING_BETA not in headers[0].get("anthropic-beta", "")
 
 
 async def test_a_refused_binding_field_is_dropped_and_remembered(monkeypatch):

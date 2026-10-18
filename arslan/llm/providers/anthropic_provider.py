@@ -18,9 +18,11 @@ each assistant turn is replayed as the API returned it (thinking, redacted_think
 text and tool_use, byte for byte, only to the endpoint+model+key that produced it), and
 the next user message carries every ``tool_result`` of that batch, then the step's status
 as its own text block. Nothing already sent is edited later (preserved thinking: an
-edited prefix invalidates every later thinking block). Until K1b moves the in-turn
-context trimming server-side, this stays off by default (``NATIVE_TRAJECTORY``); the
-legacy text rendering (``trajectory.to_legacy``) is what Claude gets meanwhile.
+edited prefix invalidates every later thinking block): old tool results are cleared by
+the API (context editing, K1b), not trimmed by the host, unless the endpoint refuses it.
+The legacy text rendering (``trajectory.to_legacy``) is the ARSLAN_TOOL_PROTOCOL=legacy
+rollback and the per-turn fallback after a protocol rejection; it goes in v0.1.64 once
+v0.1.63 has run 7 days with no protocol-class 400 from Claude in M2 and M1 holds.
 """
 from __future__ import annotations
 
@@ -59,10 +61,6 @@ _THINKING_OFF = {
 }
 
 
-# 0.1.63 K1a: Claude's native trajectory, built but off until K1b moves in-turn context trimming
-# server-side (card point 12). K1b turns it on and deletes this switch.
-NATIVE_TRAJECTORY = False
-
 # Preserved thinking (claude-api model-migration guide, 2026-10): from the 5.5 generation and
 # Fable / Mythos 5.1 a replayed thinking block whose conversation prefix changed is rejected (new
 # accounts) or must be opted out of. "drop_block" asks the API to drop such blocks instead; it needs
@@ -72,6 +70,19 @@ _DROP_BLOCK = {"type": "adaptive", "block_binding": {"prefix_mismatch_behavior":
 _FAMILY = re.compile(r"claude-(opus|sonnet|haiku|fable|mythos)-")
 # Marks the system entry of a message list built by build_trajectory_messages (never sent).
 _TRAJECTORY = "_trajectory"
+
+# 0.1.63 K1b: on the native path the API clears old tool results (context editing; it never
+# invalidates thinking on Fable 5.1 and the 5.5 generation), so the host never edits what it sent.
+# Clearing costs the cache from the cleared point on: clear rarely, and a lot at once. Measured in
+# input tokens (the host's 64k / 96k-character trim is about 16-24k tokens of history; this clears
+# later, to keep the cache). Results of the tools below are never cleared: the model's own plan,
+# saved progress and the skill it is following.
+CONTEXT_BETA = "context-management-2025-06-27"
+_CLEAR = {"type": "clear_tool_uses_20250919",
+          "trigger": {"type": "input_tokens", "value": 60_000},
+          "keep": {"type": "tool_uses", "value": 6},
+          "clear_at_least": {"type": "input_tokens", "value": 20_000}}
+_KEEP_RESULTS = ("update_plan", "task_progress", "read_skill")
 
 
 def _claude_version(model: str) -> tuple[int, int] | None:
@@ -196,7 +207,11 @@ class AnthropicProvider(BaseLLMProvider):
         return self._thinking_off() is not None
 
     def supports_native_trajectory(self) -> bool:
-        return NATIVE_TRAJECTORY
+        return True
+
+    def trims_context_server_side(self) -> bool:
+        """The API clears old tool results itself, unless this endpoint refused it (a proxy)."""
+        return not param_heal.refused(self.endpoint_fingerprint(), "context_management")
 
     APPENDS_STATUS = True        # the step status is kept in the trajectory, never re-attached (K1)
 
@@ -400,10 +415,17 @@ class AnthropicProvider(BaseLLMProvider):
         translated = self._translate_tools(tools)
         if translated:
             payload["tools"] = translated
-        if native and self._binds_thinking() and "thinking" not in payload:
+        if native:
             # 0.1.63 K1: only native requests replay thinking; the legacy request stays as it was.
-            payload["thinking"] = json.loads(json.dumps(_DROP_BLOCK))
-            payload["_betas"] = [BINDING_BETA]
+            betas = []
+            if self._binds_thinking() and "thinking" not in payload:
+                payload["thinking"] = json.loads(json.dumps(_DROP_BLOCK))
+                betas.append(BINDING_BETA)
+            names = {t["name"] for t in translated or []}
+            edit = {**json.loads(json.dumps(_CLEAR)),
+                    **({"exclude_tools": kept} if (kept := [n for n in _KEEP_RESULTS if n in names]) else {})}
+            payload["context_management"] = {"edits": [edit]}
+            payload["_betas"] = [*betas, CONTEXT_BETA]
         return payload
 
     async def chat(
@@ -427,7 +449,9 @@ class AnthropicProvider(BaseLLMProvider):
         await save("before_model")
         data = await param_heal.send(self.endpoint_fingerprint(), payload, self._post)
         response = self._parse_response(data)
-        _note_transformations(response.input_transformations)
+        native = any(m.get(_TRAJECTORY) for m in messages if m.get("role") == "system")
+        _note_context(response.input_transformations, data.get("context_management"),
+                      clearing_off=native and not self.trims_context_server_side())
         return response
 
     async def _post(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -571,18 +595,24 @@ _ANTHROPIC_FINISH = {"end_turn": "stop", "stop_sequence": "stop", "max_tokens": 
                      "tool_use": "tool_calls", "refusal": "content_filter"}
 
 
-def _note_transformations(entries: list[dict[str, Any]] | None) -> None:
-    """Dropped thinking blocks go to the run record as counts per reason, never their content."""
-    if not entries:
-        return
+def _note_context(entries: list[dict[str, Any]] | None, management: Any, *, clearing_off: bool) -> None:
+    """What the API changed in the conversation, for the run record, as counts (never content):
+    thinking blocks it dropped, per reason; tool uses it cleared (K1b); and, once per run, that
+    this endpoint refused context editing, so the host trims locally again (K1b)."""
     from arslan.execution_budget import current
     budget = current()
     if budget is None:
         return
     counts: dict[str, int] = {}
-    for entry in entries:
+    for entry in entries or []:
         if isinstance(entry, dict) and entry.get("type") == "thinking_dropped":
             reason = str(entry.get("reason") or "unknown")
             counts[reason] = counts.get(reason, 0) + 1
     for reason, count in counts.items():
         budget.note_context("thinking_dropped", reason=reason, count=count)
+    edits = management.get("applied_edits") if isinstance(management, dict) else None
+    for edit in edits if isinstance(edits, list) else []:
+        if isinstance(edit, dict) and isinstance(edit.get("cleared_tool_uses"), int):
+            budget.note_context("tool_uses_cleared", reason=str(edit.get("type")), count=edit["cleared_tool_uses"])
+    if clearing_off and not any(e["kind"] == "server_clearing_off" for e in budget.context_events):
+        budget.note_context("server_clearing_off", reason="endpoint refused context_management", count=1)
