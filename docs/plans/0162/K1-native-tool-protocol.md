@@ -80,7 +80,13 @@
 12. **Anthropic 回合内的上下文：发出后不再改**（来源：Anthropic 官方文档 platform.claude.com 的 context-editing 页和 preserved-thinking 页，2026-10-17 读）。
     - **第一次发出前就缩小：** 截图在附上时就缩到最终尺寸；工具结果在第一次发出时按现有的落盘规矩截断（`tool_loop.py:329-337`）。之后不换占位、不再裁剪。
     - **清理旧结果改用服务端：** 策略 `clear_tool_uses_20250919`，beta 头 `context-management-2025-06-27`，参数 `trigger`、`keep`、`clear_at_least`、`exclude_tools`。官方原文：Fable 5.1 和 5.5 一代上，服务端的上下文管理不会让思考块失效。
-    - **`clear_at_least` 设大一些，一次多清：** 每清一次，缓存从那里往后作废；一次多清，作废的次数少。`trigger` 对齐今天本地裁剪的 64k / 96k 字符；`exclude_tools` 放结果不能丢的工具，名单开工时定。
+    - **`clear_at_least` 设大一些，一次多清：** 每清一次，缓存从那里往后作废；一次多清，作废的次数少。起始值（⓪Plan 定，更正 E22）：
+      - `trigger`：`{"type": "input_tokens", "value": 60000}`。API 按输入 token 计，不是字符；原文写的「64k / 96k 字符」不对。API 默认是 100k。
+      - `keep`：`{"type": "tool_uses", "value": 6}`。默认是 3，多步任务要看得到最近几步的结果。
+      - `clear_at_least`：`{"type": "input_tokens", "value": 20000}`。是 trigger 的三分之一，保证每作废一次缓存都清掉足够多。
+      - `exclude_tools`：`update_plan`、`task_progress`、`read_skill`。计划、进度和技能说明不能消失。
+      - `clear_tool_inputs` 保持默认 `false`：清掉的只是结果，模型仍看得到自己调过什么。
+      - 这些是起始值。M1 用 Claude 跑时贴三样：`context_management.applied_edits` 里的清理次数和清掉的 token 数，以及长任务前后的缓存命中。长任务上如果约每 10 次模型调用就清一次以上，或者缓存写入的花费超过省下的，R63 之前调整。
     - **被拒时：** 端点不接受这个 beta（例如经代理转发），照要点 10 去掉重发，并在这一回合退回本地裁剪 + `drop_block`，运行记录标出。
     - **其他服务商照旧在本地裁剪。**
     - 超过 800 行时拆成 K1a（要点 1–11）和 K1b（本条），连着合；K1b 合并前，Anthropic 默认仍走旧渲染，两个都合了才切到原生。
