@@ -34,21 +34,21 @@
 | 卡 | 做什么 | 道 | 版本 | 分级 | 依赖 | 状态 |
 |---|---|---|---|---|---|---|
 | [F5a](F5a-ci-unblock.md) | CI 解堵：去掉 Cua Driver 的 CI 步骤；合了马上把发版分支合回 main 一次 | ②Main | v0.1.62 | 必须 | — | 已合并（release/0.1.62：#195 = `daf0f12b`；合回 main：#196 = `ad7d7ff1`） |
-| [F1](F1-command-timeout.md) | `run_command` 时限跟参数走、不超过回合剩余时间；超时带输出 | ②Main | v0.1.62 | 必须 | F5a | 已合并（release/0.1.62：#194 = `f579d190`） |
-| [F2](F2-unknown-outcome-chain.md) | 「结果不明」链四处修正；读命令判成 `read` | ②Main | v0.1.62 | 必须 | F5a、F1（要认 `code: "time_limit"`）；H2（软） | 待合并 #200 |
-| [F3](F3-mcp-schema.md) | MCP schema 规整（三家都做顶层合并）；坏工具降级，再失败去掉全部 MCP 工具 | ②Main | v0.1.62 | 必须 | F5a | 待合并 #198 |
-| [F4a](F4a-terminal-osascript-once.md) | 终端 osascript / `shortcuts run`（含带路径、`command`、`xargs` 的写法）只给「这一次」；更正 v0.1.61 说明 | ②Main | v0.1.62 | 必须 | F5a | 待合并 #199 |
-| [F4b](F4b-write-no-symlink.md) | 写文件不跟随符号链接，也防硬链接 | ②Main | v0.1.62 | 必须 | F5a | 待合并 #197 |
-| [H2](H2-hands-not-executed-codes.md) | Hands 没执行时的明确结果代码（尽量进热修） | ③Hands | v0.1.62 | 必须 | — | 已合并（release/0.1.62：#189 = `44337393`） |
-| [FR](FR-hotfix-release.md) | 在 `release/0.1.62` 上发 v0.1.62；发版后合回 main | ②Main | v0.1.62 | 必须 | F5a、F1–F4b（H2 若已合）；M1、M2 最好先合 | 待开工（`release/0.1.62` 已开 = v0.1.61 `fb6d7230`；发版 PR 草稿在本地，F2–F4b 合后开） |
-| [M1](M1-bench-upgrade.md) | 基准升级：「等你」算失败、5 道新题、Claude Code 参赛；拆 M1a、M1b 两个 PR | ⓪Plan | 脚本 | 必须 | —（FR 之前合） | 待合并 #190（M1a）、#191（M1b） |
+| [F1](F1-command-timeout.md) | `run_command` 时限跟参数走、不超过回合剩余时间；超时带输出 | ②Main | v0.1.62 | 必须 | F5a | 已合并（release/0.1.62：#194 = `f579d190`；随 v0.1.62 发布，经 #206 合回 main） |
+| [F2](F2-unknown-outcome-chain.md) | 「结果不明」链四处修正；读命令判成 `read` | ②Main | v0.1.62 | 必须 | F5a、F1（要认 `code: "time_limit"`）；H2（软） | 已合并（release/0.1.62：#200 = `5fdaa8fd`；随 v0.1.62 发布，经 #206 合回 main） |
+| [F3](F3-mcp-schema.md) | MCP schema 规整（三家都做顶层合并）；坏工具降级，再失败去掉全部 MCP 工具 | ②Main | v0.1.62 | 必须 | F5a | 已合并（release/0.1.62：#198 = `59b4dc09`；随 v0.1.62 发布，经 #206 合回 main） |
+| [F4a](F4a-terminal-osascript-once.md) | 终端 osascript / `shortcuts run`（含带路径、`command`、`xargs` 的写法）只给「这一次」；更正 v0.1.61 说明 | ②Main | v0.1.62 | 必须 | F5a | 已合并（release/0.1.62：#199 = `c6889f83`；随 v0.1.62 发布，经 #206 合回 main） |
+| [F4b](F4b-write-no-symlink.md) | 写文件不跟随符号链接，也防硬链接 | ②Main | v0.1.62 | 必须 | F5a | 已合并（release/0.1.62：#197 = `4a2c2731`；随 v0.1.62 发布，经 #206 合回 main） |
+| [H2](H2-hands-not-executed-codes.md) | Hands 没执行时的明确结果代码（尽量进热修） | ③Hands | v0.1.62 | 必须 | — | 已合并（release/0.1.62：#189 = `44337393`；随 v0.1.62 发布，经 #206 合回 main） |
+| [FR](FR-hotfix-release.md) | 在 `release/0.1.62` 上发 v0.1.62；发版后合回 main | ②Main | v0.1.62 | 必须 | F5a、F1–F4b（H2 若已合）；M1、M2 最好先合 | 已发布：#205 = `a4fca23b`；tag v0.1.62 → `a4fca23b`（CI 39112567104、release.yml 39114206588 均 success；冒烟 29/30）；2026-10-18 13:16Z 发布为 Latest；合回 main：#206 = `2bb62939` |
+| [M1](M1-bench-upgrade.md) | 基准升级：「等你」算失败、5 道新题、Claude Code 参赛；拆 M1a、M1b 两个 PR | ⓪Plan | 脚本 | 必须 | —（FR 之前合） | 已合并（#190 = `70a39558`、#191 = `0b7124eb`） |
 | [M2](M2-weekly-usage-report.md) | 本机用量周报脚本（只读、只出数字） | ⓪Plan | 脚本 | 必须 | —（FR 之前合） | 已合并（#193 = `d76d79d6`） |
 | [M3](M3-acceptance-checklist.md) | 体感验收清单（§5.3 的 11 条） | ⓪Plan | 文档 | 必须 | — | 已合并（#192 = `adadd569`） |
 | [M1B](M1B-baseline.md) | 在 v0.1.62 上跑基线；K1 合并要等它 | ⓪Plan + 用户 | 脚本 | 必须 | M1、FR | 待开工 |
 | [F5b](F5b-delete-cua-engine.md) | 删 Cua Driver 引擎代码（③Hands 审）；文件内改动约 600 行，超出 U2 的 50 行，默认拆 F5b-1 断开接线、F5b-2 按 U2 删整文件（更正 E14） | ②Main | v0.1.63 | 必须 | F5a | 待开工 |
 | [H1](H1-hands-chat-cap-answer.md) | 书面回答：聊天里 5 步上限防什么（⓪Plan 代为提交） | ③Hands | v0.1.63 | 必须 | —（K4 开工前交） | 已合并（#188 = `d74869f5`） |
 | [H3](H3-hands-chat-cap-change.md) | 去掉聊天里 Hands 的 5 次和「一轮一个 App」，并进 K4；Stop 对聊天回合也停住（U8） | ③Hands | v0.1.63 | 应该 | H1（已同意，U8）、K4b | 待开工 |
-| [C1](C1-tests-test-product.md) | 让测试测产品：删打开专家的 fixture 和只在专家开启时跑的路径 | ②Main | v0.1.63 | 必须 | F5a；合并等热修合回 main | 开发中：draft #203（热修合回 main 后再 rebase 一次才合） |
+| [C1](C1-tests-test-product.md) | 让测试测产品：删打开专家的 fixture 和只在专家开启时跑的路径 | ②Main | v0.1.63 | 必须 | F5a；合并等热修合回 main | 待合并 #203（已 rebase 到含 v0.1.62 的 main，等 ⓪Plan 审） |
 | [C1b](C1b-expert-modules.md) | 删 9 个不可达的专家模块 | ②Main | v0.1.63 | 必须 | C1 | 待开工 |
 | [C1c](C1c-expert-leftovers-web.md) | 专家残留（函数、网页帧、翻译）；拆 C1c-1 服务端、C1c-2 网页 | ②Main | v0.1.63 | 必须 | C1 | 待开工 |
 | [C2a](C2a-memory-v1.md) | 删记忆 v1 死分支（超 800 行时拆两个） | ②Main | v0.1.63 | 必须 | C1（K2 开工前合） | 待开工 |
@@ -60,7 +60,7 @@
 | [C3](C3-tool-exposure.md) | 删 / 降级没人用的工具；拆 C3a 删除、C3b 降级 | ②Main | v0.1.63 | 必须 | C1、K5（K7 之前合；C1b 最好先合） | 待开工 |
 | [C4](C4-remove-shadow-judgment.md) | 删影子评判；记录撤回决定② | ②Main | v0.1.63 | 必须 | C1、C2c | 待开工 |
 | [C5a](C5a-process-docs-privacy.md) | 过程文档移到存档分支；从文件里删隐私段落 | ②Main | v0.1.63 | 应该 | — | 待开工 |
-| [C5b](C5b-version-source-inventory.md) | 唯一版本来源；能力清单只在发版时生成（越早合越好） | ②Main | v0.1.63 | 应该 | — | 待合并 #201 |
+| [C5b](C5b-version-source-inventory.md) | 唯一版本来源；能力清单只在发版时生成（越早合越好） | ②Main | v0.1.63 | 应该 | — | 已合并（#201 = `90fd3c11`） |
 | [C6](C6-ci-parallel-coverage.md) | CI 并行与覆盖率 | ②Main | v0.1.63 | 应该 | F5a | 待开工 |
 | [K1](K1-native-tool-protocol.md) | Claude、Gemini 走原生工具协议；保留思考块，支持 `tool_choice`；Anthropic 回合内发出后不改前文（服务端清理旧结果） | ②Main | v0.1.63 | 必须 | C1；合并等 M1B | 待开工 |
 | [K2](K2-context-by-window.md) | 跨轮上下文按窗口；工具摘要放进 `content`；回合后工作挪出锁 | ②Main | v0.1.63 | 必须 | K1；C2a | 待开工 |
