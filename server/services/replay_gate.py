@@ -58,7 +58,7 @@ TIER_MEDIUM_P = 0.20
 # VERIFIED 2026-07-11 against the code:
 #   - server/orchestrator/router.py `_spawn_registry()` feeds the router LLM: name,
 #     domain (domain_category[.domain_subcategory]), persona_role, capabilities.
-#   - server/services/spawn_match_service.py `score_spawns()` reads: domain_category /
+#   - the spawn matcher (removed in 0.1.63) read: domain_category /
 #     domain_subcategory (structural) and capabilities (LLM coverage).
 # NEITHER reads `system_prompt`. So an evolution diff that only rewrites system_prompt does
 # NOT touch a routing-consumed field → gate 8 is skipped and the 3 compare dims stand.

@@ -51,12 +51,6 @@ async def _fake_curate(need):
     return {"toolsets": [], "skills": [], "mcps": [], "gaps": []}
 
 
-async def _ready_slots(history_text):
-    """Hermetic stub for staffing_gather.extract_slots returning a READY slot set —
-    drives the spine's ready path (match-and-propose / suggest_create card)."""
-    return {"domain": "x.y", "capability": "do-x", "first_task": "run x", "recurrence": True}
-
-
 class _LLMResp:
     """Native LLMResponse stub: separate content (prose) + tool_calls (structured)."""
     def __init__(self, content=None, tool_calls=None):

@@ -14,6 +14,7 @@ Contract under test:
 from __future__ import annotations
 
 import importlib
+import importlib.util
 from datetime import datetime, timedelta
 
 import pytest
@@ -290,14 +291,16 @@ async def test_usage_summary_not_covered_footnote(client):
     r = await client.get("/api/v1/usage/summary", headers=AUTH)
     body = r.json()
     nc = body["not_covered"]
-    assert "_route_announcement" in nc
     assert "compare_judge" in nc
-    assert "sandbox_service" in nc
+    # Every listed name must still be a real module — a deleted call site left on the
+    # list is the same dishonesty in the other direction.
+    for name in nc:
+        assert importlib.util.find_spec(f"server.services.{name}") is not None, name
     # distill_service LEFT this list in 整理层#10 段 A4: its two LLM calls (the distill
     # itself and the meta-upflow) now run inside usage_ledger.scope("distill"), so
     # claiming it is unaccounted would itself be the dishonest statement.
     assert "distill_service" not in nc
-    assert len(nc) == 18
+    assert len(nc) == 12
 
 
 # ---------------------------------------------------------------------------

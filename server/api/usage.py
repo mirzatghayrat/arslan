@@ -40,24 +40,18 @@ router = APIRouter(dependencies=[Depends(require_auth)])
 # LLM call sites NOT ledgered yet — mirrors spec §S3-D's 未计入清单 annotation
 # (2026-07-11-s3-table-stakes-design.md). Update BOTH places when wiring a new scope.
 NOT_COVERED = [
-    "_route_announcement",
     "compare_judge",
     "optimizer",
     "synthetic_corpus",
     "spawn_drafter",
-    "spawn_match_service",
-    "staffing_gather",
-    "update_drafter",
     "equipment_service",
     "fact_classify",
     "ingest",
-    "storage_intent",
     "tool_intent",
     "mcp_suggest",
     "skill_suggest",
     "learning_service",
     "note_service",
-    "sandbox_service",
 ]
 
 _WINDOWS = {"24h": timedelta(hours=24), "7d": timedelta(days=7), "30d": timedelta(days=30)}

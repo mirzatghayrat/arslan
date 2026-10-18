@@ -1,14 +1,13 @@
 """deck-authoring seed skill: the default presentation deliverable is a designed
 single-file HTML deck (raw-document rendering contract, Ember tokens, print-to-PDF),
 with render_deck (.pptx) reserved for explicit editable-PowerPoint asks. The skill
-seeds with a real body, is assignable, and the deck-capable default spawns carry it."""
+seeds with a real body and is assignable."""
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.registry.seeder as seeder
 from server.db.models import Base, SkillPack
 from server.registry.service import skill_is_assignable
-from server.services.default_spawns import DEFAULT_SPAWNS
 
 
 async def _seeded_row(tmp_path) -> SkillPack:
@@ -41,19 +40,3 @@ async def test_seeds_with_html_default_body_and_is_assignable(tmp_path):
     assert "design.md" in body
     assert skill_is_assignable(row.tier, row.status, body)
 
-
-def test_deck_capable_defaults_equip_it():
-    by_name = {s["name"]: s for s in DEFAULT_SPAWNS}
-    for name in ("Deck Master", "Financial Research Analyst"):
-        assert "deck-authoring" in by_name[name]["equipment"]["skills"], name
-        # render_deck stays wired for explicit .pptx asks.
-        assert "deck" in by_name[name]["equipment"]["toolsets"], name
-
-
-def test_deck_master_persona_defaults_to_html():
-    dm = next(s for s in DEFAULT_SPAWNS if s["name"] == "Deck Master")
-    role = dm["persona_role"]
-    # Identity says HTML-by-default, pptx-on-request — not "always ships .pptx".
-    assert "HTML" in role
-    assert "render_deck" in role
-    assert "default" in role

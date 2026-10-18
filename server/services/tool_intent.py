@@ -1,6 +1,6 @@
 """LLM judgment: does the task need a tool first, and which one (with a query)?
 
-Same conservative pattern as storage_intent — any error/unparseable/uncertain → needs=False."""
+Conservative: any error/unparseable/uncertain → needs=False."""
 from __future__ import annotations
 
 import logging

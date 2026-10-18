@@ -245,7 +245,6 @@ async def lifespan(app: FastAPI):
     await _boot_mcp()
 
     # 0.1.48: the built-in example experts are no longer seeded — one Arslan does the work.
-    # Their prompts stay in server/services/default_spawns.py as material for skills.
 
     # Non-blocking boot backfill for any fact left with category=NULL (write-time
     # classify failed / process died mid-flight / pre-existing rows). Fire-and-forget;
