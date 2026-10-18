@@ -130,12 +130,14 @@ from tests.server.test_arslan_loop import _LLMResp, _events, maker  # noqa: E402
 class _Seeing:
     """chat()-based stub that records what the model is shown."""
 
-    def __init__(self):
+    def __init__(self, replies=None):
         self.seen = []
+        self.replies = list(replies or [])
 
     async def chat(self, system, user, history=None, tools=None, temperature=0.7):
-        self.seen.append({"system": system, "user": user, "tools": [t["function"]["name"] for t in tools or []]})
-        return _LLMResp(content="ok")
+        self.seen.append({"system": system, "user": user, "tools": [t["function"]["name"] for t in tools or []],
+                          "params": {t["function"]["name"]: t["function"]["parameters"] for t in tools or []}})
+        return self.replies.pop(0) if self.replies else _LLMResp(content="ok")
 
 
 async def _no_facts(conv, msg):
@@ -149,7 +151,130 @@ async def test_only_a_phone_turn_tells_the_model_a_mac_path_is_no_use(maker, mon
     monkeypatch.setattr(turn_facts, "extract", _no_facts)
     await arslan.handle_user_message("c-d1", "send me a screenshot of my Mac", _events([]), source=source)
     first = model.seen[0]
-    assert "attach_file" in first["tools"]
+    assert first["tools"][-1] == "attach_file"                # appended after every other built-in
     told = "on their iPhone" in str(first["user"])
     assert told is (source == "phone")
     assert "on their iPhone" not in first["system"]          # never the cached system prompt
+
+
+# ── review fixes (#217) ──────────────────────────────────────────────────────────────
+
+import asyncio  # noqa: E402
+import threading  # noqa: E402
+
+from arslan import execution_budget  # noqa: E402
+from server.orchestrator import tool_loop as _tool_loop  # noqa: E402
+from server.services import task_service  # noqa: E402
+
+
+def test_a_fifo_is_refused_without_waiting_for_a_writer(ws):
+    # Opening a FIFO for reading blocks until someone writes: the whole event loop would freeze.
+    os.mkfifo(ws / "shot.png")
+    done: dict = {}
+    worker = threading.Thread(target=lambda: done.update(result=asyncio.run(attach({"path": "shot.png"}))),
+                              daemon=True)
+    worker.start()
+    worker.join(timeout=5)
+    if worker.is_alive():                                   # release the blocked open, then fail
+        os.close(os.open(ws / "shot.png", os.O_WRONLY | os.O_NONBLOCK))
+        worker.join(timeout=5)
+        pytest.fail("attach_file blocked on a FIFO")
+    assert done["result"]["ok"] is False and "not a file" in done["result"]["error"]
+
+
+@pytest.mark.parametrize("setup,args", [
+    (None, {"path": "missing.png"}),
+    ("secret", {"path": "id_rsa"}),
+    ("big", {"path": "big.mov"}),
+])
+async def test_every_refusal_says_it_never_ran(ws, setup, args):
+    # A refused attach is a known outcome that stayed on this Mac, not "needs your review".
+    if setup == "secret":
+        (ws / "id_rsa").write_bytes(b"k")
+    if setup == "big":
+        with open(ws / "big.mov", "wb") as f:
+            f.truncate(phone_reads.PHONE_FILE_MAX + 1)
+    result = await attach(args)
+    assert result["ok"] is False and result["executed"] is False
+    assert task_service.known_local_failure("attach_file", args, result)
+
+
+async def test_no_run_says_it_never_ran(ws):
+    result = await attach({"path": "x.png"}, run=None)
+    assert result["executed"] is False
+
+
+async def test_a_file_past_the_turns_artifact_budget_is_refused_and_the_turn_goes_on(ws):
+    (ws / "shot.png").write_bytes(PNG)
+    budget = execution_budget.Budget(execution_budget.Limits(artifact_bytes=len(PNG) - 1))
+    with execution_budget.scope(budget):
+        result = await attach({"path": "shot.png"})
+    assert result["ok"] is False and result["executed"] is False and "budget" in result["error"]
+    assert budget.stop_reason is None and budget.artifact_bytes == 0
+    assert artifact_store.list_artifacts(RUN) == []
+
+
+async def test_arslans_own_data_is_never_attached(ws, monkeypatch):
+    from server import config
+    data = ws / "arslan-data"
+    data.mkdir()
+    (data / "arslan.db").write_bytes(b"SQLite format 3\x00")
+    monkeypatch.setattr(config, "data_dir", lambda: data)
+    result = await attach({"path": "arslan-data/arslan.db"})
+    assert result["ok"] is False and "protected" in result["error"]
+    assert artifact_store.list_artifacts(RUN) == []
+
+
+async def test_a_link_swapped_in_after_the_check_is_not_followed(ws, tmp_path, monkeypatch):
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    (outside / "private.png").write_bytes(PNG)
+    os.symlink(outside / "private.png", ws / "shot.png")
+
+    def checked_then_swapped(raw, roots):        # the check saw a file; a link is there now
+        return ws / "shot.png", ws.resolve()
+    monkeypatch.setattr(file_reader, "resolve", checked_then_swapped)
+    result = await attach({"path": "shot.png"})
+    assert result["ok"] is False
+    assert artifact_store.list_artifacts(RUN) == []
+
+
+async def test_a_file_that_grew_after_it_was_measured_is_refused(ws, monkeypatch):
+    with open(ws / "grows.png", "wb") as f:
+        f.truncate(phone_reads.PHONE_FILE_MAX + 1)
+    real = os.fstat
+
+    def small(fd):                                # measured while it was still small
+        st = real(fd)
+        return os.stat_result((st.st_mode, st.st_ino, st.st_dev, st.st_nlink, st.st_uid, st.st_gid,
+                               10, st.st_atime, st.st_mtime, st.st_ctime))
+    monkeypatch.setattr(file_tools.os, "fstat", small)
+    result = await attach({"path": "grows.png"})
+    monkeypatch.setattr(file_tools.os, "fstat", real)
+    assert result["ok"] is False and "20 MB" in result["error"]
+    assert artifact_store.list_artifacts(RUN) == []
+
+
+async def test_attach_file_is_a_local_write():
+    assert await task_service.effect_of("attach_file", {"path": "shot.png"}) == "local_write"
+
+
+def test_attach_file_has_its_own_parameter_schema():
+    params = _tool_loop._tool_params({"key": "attach_file"})
+    assert params["required"] == ["path"] and set(params["properties"]) == {"path", "title"}
+
+
+async def test_a_multi_part_extension_is_kept(ws):
+    (ws / "backup.tar.gz").write_bytes(b"x")
+    result = await attach({"path": "backup.tar.gz", "title": "backup"})
+    assert result["artifact"]["title"] == "backup.tar.gz"
+
+
+async def test_the_phone_line_stays_on_every_step(maker, monkeypatch):  # noqa: F811
+    plan = _LLMResp(tool_calls=[{"id": "c1", "type": "function", "function": {
+        "name": "update_plan", "arguments": {"items": [{"text": "find the file", "status": "in_progress"}]}}}])
+    model = _Seeing([plan, _LLMResp(content="ok")])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: model)
+    monkeypatch.setattr(turn_facts, "extract", _no_facts)
+    await arslan.handle_user_message("c-d1b", "send me the report", _events([]), source="phone")
+    assert len(model.seen) >= 2 and all("on their iPhone" in str(step["user"]) for step in model.seen)

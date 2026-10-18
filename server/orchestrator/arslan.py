@@ -1252,9 +1252,11 @@ async def _arslan_tools() -> list[dict]:
         tools.append({"key": "attach_file", "description":
             "Attach an existing file to your answer so the user gets the file itself: a file card in the "
             "Mac window and the file on their iPhone. args: {path, title?} — absolute, ~/ or "
-            "workspace-relative, in a readable folder; up to 20 MB, at most 32 files per answer. Use it "
-            "whenever the user asks for a file (a screenshot, chart, export or document) instead of only "
-            "naming its path. A screenshot must first be saved as a file (for example with screencapture)."})
+            "workspace-relative, in a readable folder; up to 20 MB a file, at most 32 files and 100 MB in "
+            "all per answer (files saved with write_file count too). Use it whenever the user asks for a "
+            "file (a screenshot, chart, export or document) instead of only naming its path. A screenshot "
+            "must first be saved as a file (for example with screencapture); save a new capture under a "
+            "new name, since the same call is not repeated."})
     # Host MCP tools: SERVER-level consent (user ruling 2026-08-18), and only of servers that are
     # ready in THIS process (0.1.61 §B1) — the state is read, never awaited. Ready here means the
     # row says `ready` AND the session manager holds a live session for it (`ready_now`), so the
