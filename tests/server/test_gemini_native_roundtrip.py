@@ -25,11 +25,17 @@ async def test_signed_parallel_function_responses_roundtrip(monkeypatch):
             assert payload["tools"][0]["functionDeclarations"][0]["name"] == "web_search"
             return httpx.Response(200, json={"candidates": [{"content": {"parts": parts}}]})
         assert payload["contents"][-2] == {"role": "model", "parts": parts}
-        results = payload["contents"][-1]["parts"]
+        turn = payload["contents"][-1]["parts"]
+        results = [p for p in turn if "functionResponse" in p]
+        # The step's status follows the function responses in the same user turn, as text.
+        assert turn[:2] == results and all("text" in p for p in turn[2:])
         assert [r["functionResponse"]["id"] for r in results] == ["fc1", "fc2"]
         assert all(r["functionResponse"]["name"] == "web_search" for r in results)
-        assert "result-one" in results[0]["functionResponse"]["response"]["result"]
-        assert "result-two" in results[1]["functionResponse"]["response"]["result"]
+        # 0.1.63 K1: the response is the result itself; this tool's output is untrusted, so it
+        # arrives as {"output": <framed text>} rather than the old "TOOL RESULT for X" rendering.
+        assert "result-one" in results[0]["functionResponse"]["response"]["output"]
+        assert "result-two" in results[1]["functionResponse"]["response"]["output"]
+        assert "TOOL RESULT for" not in json.dumps(results)
         return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": "Both searches completed."}]}}]})
 
     adapter = LLMAdapter("gemini", "test-model")

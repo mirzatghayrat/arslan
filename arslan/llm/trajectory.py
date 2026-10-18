@@ -92,6 +92,14 @@ def tool_result(call_id: str, name: str, content: str, *, synthetic: bool = Fals
     return msg
 
 
+def status(text: str) -> dict:
+    """0.1.63 K1: a step's <agent_status>, kept in the trajectory for providers that must never see
+    their history edited (Anthropic preserved thinking). Rendered after that step's results as its own
+    text block, never inside a tool result; later steps leave it where it is. The legacy rendering
+    skips it (it attaches the current status itself)."""
+    return {"role": "user", "content": text, "_status": True}
+
+
 def keep_latest_images(messages: list[dict], keep: int = IMAGES_KEPT) -> int:
     """Turn every image but the newest `keep` into a stub in its result's text (§4.5).
     In place; returns how many were dropped."""
@@ -218,6 +226,8 @@ def to_legacy(messages: list[dict], *, images: bool = True) -> list[dict]:
     out: list[dict] = []
     for group in groups(messages):
         head = group[0]
+        if head.get("_status"):
+            continue
         if not is_call_group_start(head):
             if head.get("role") == "tool":  # synthetic, host-run
                 out.append({"role": "assistant", "content": head.get("_legacy_call") or json.dumps(

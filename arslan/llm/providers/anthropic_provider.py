@@ -13,11 +13,14 @@ some time (only ``run_native`` is reachable). The disclosure outlived its reason
 which is worse than no disclosure: it reads as a considered trade-off rather than
 a gap, so nobody rechecks it.
 
-Tool RESULTS still go back as neutral text (``trajectory.to_legacy`` renders the
-in-turn trajectory for this provider),
-so no ``tool_use`` block ever re-enters the wire history and Anthropic's
-tool_use/tool_result pairing constraint never activates. That is what keeps this
-cheap — do not start echoing native blocks back without pricing the round-trip.
+0.1.63 K1: the in-turn trajectory goes back natively (``build_trajectory_messages``):
+each assistant turn is replayed as the API returned it (thinking, redacted_thinking,
+text and tool_use, byte for byte, only to the endpoint+model+key that produced it), and
+the next user message carries every ``tool_result`` of that batch, then the step's status
+as its own text block. Nothing already sent is edited later (preserved thinking: an
+edited prefix invalidates every later thinking block). Until K1b moves the in-turn
+context trimming server-side, this stays off by default (``NATIVE_TRAJECTORY``); the
+legacy text rendering (``trajectory.to_legacy``) is what Claude gets meanwhile.
 """
 from __future__ import annotations
 
@@ -56,6 +59,21 @@ _THINKING_OFF = {
 }
 
 
+# 0.1.63 K1a: Claude's native trajectory, built but off until K1b moves in-turn context trimming
+# server-side (card point 12). K1b turns it on and deletes this switch.
+NATIVE_TRAJECTORY = False
+
+# Preserved thinking (claude-api model-migration guide, 2026-10): from the 5.5 generation and
+# Fable / Mythos 5.1 a replayed thinking block whose conversation prefix changed is rejected (new
+# accounts) or must be opted out of. "drop_block" asks the API to drop such blocks instead; it needs
+# this beta and goes only with adaptive thinking (never with Sonnet 5.5's between_tools).
+BINDING_BETA = "thinking-binding-controls-2026-08-01"
+_DROP_BLOCK = {"type": "adaptive", "block_binding": {"prefix_mismatch_behavior": "drop_block"}}
+_FAMILY = re.compile(r"claude-(opus|sonnet|haiku|fable|mythos)-")
+# Marks the system entry of a message list built by build_trajectory_messages (never sent).
+_TRAJECTORY = "_trajectory"
+
+
 def _claude_version(model: str) -> tuple[int, int] | None:
     """(major, minor) of a Claude model id; None when it cannot be placed."""
     m = _CLAUDE_NEW.search(model) or _CLAUDE_OLD.search(model)
@@ -83,11 +101,36 @@ def _translate(content: Any) -> Any:
                     "data": b["data"],
                 },
             })
-        elif isinstance(b, dict) and b.get("type") == "text":
-            out.append({"type": "text", "text": b.get("text", "")})
+        elif isinstance(b, dict) and b.get("type") == "text" and "text" not in b:
+            out.append({"type": "text", "text": ""})
         else:
+            # A text block passes through as it is: a replayed one may carry more than its text
+            # (citations), and replayed assistant content must stay byte for byte (K1).
             out.append(b)
     return out
+
+def _tool_input(call: dict[str, Any]) -> dict[str, Any]:
+    if isinstance(call.get("arguments"), dict):
+        return call["arguments"]
+    try:
+        parsed = json.loads(call.get("arguments_raw") or "{}")
+    except ValueError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _result_content(text: str, images: list[dict] | None) -> Any:
+    """A tool_result's content: its text, plus its screenshots as image blocks."""
+    if not images:
+        return text
+    return [{"type": "text", "text": text}, *_translate(images)]
+
+
+def _blocks(content: Any) -> list[dict[str, Any]]:
+    if isinstance(content, list):
+        return list(content)
+    return [{"type": "text", "text": str(content)}] if content not in (None, "") else []
+
 
 _TOOL_INDEX = re.compile(r"\btools\.(\d+)\b")
 
@@ -152,18 +195,79 @@ class AnthropicProvider(BaseLLMProvider):
     def supports_bounded_critique(self) -> bool:
         return self._thinking_off() is not None
 
+    def supports_native_trajectory(self) -> bool:
+        return NATIVE_TRAJECTORY
+
+    APPENDS_STATUS = True        # the step status is kept in the trajectory, never re-attached (K1)
+
+    def _binds_thinking(self) -> bool:
+        """Whether this model checks the conversation prefix of replayed thinking blocks."""
+        model = self.model.lower()
+        version, family = _claude_version(model), _FAMILY.search(model)
+        if version is None or family is None:
+            return False
+        return version >= (5, 5) or (family.group(1) in ("fable", "mythos") and version >= (5, 1))
+
+    def build_trajectory_messages(self, system: Any, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Neutral trajectory (arslan/llm/trajectory.py) -> Anthropic messages, append-only.
+
+        assistant: the content blocks the API returned, verbatim (thinking and its signature
+        included), when they came from this endpoint+model+key and their tool_use ids are the
+        calls run; otherwise rebuilt from text + tool_use, without thinking. Tool results: one
+        tool_result per call, in the user message right after, before anything else. A host-run
+        result was never requested by the model: user text. A step status (trajectory.status):
+        its own text block after that step's results. Consecutive same-role messages merge."""
+        endpoint = self.endpoint_fingerprint()
+        turns: list[tuple[str, Any]] = []
+        for m in messages:
+            role = m.get("role")
+            if role == "assistant":
+                calls = m.get("tool_calls") or []
+                cont = m.get("_continuation") or {}
+                verbatim = cont.get("content") if (cont.get("protocol") == "anthropic"
+                                                   and cont.get("endpoint") == endpoint) else None
+                if isinstance(verbatim, list) and [b.get("id") for b in verbatim if b.get("type") == "tool_use"] \
+                        == [c["id"] for c in calls]:
+                    turns.append(("assistant", list(verbatim)))
+                elif calls:
+                    turns.append(("assistant", [*_blocks(m.get("content")), *[
+                        {"type": "tool_use", "id": c["id"], "name": c["name"], "input": _tool_input(c)}
+                        for c in calls]]))
+                else:
+                    turns.append(("assistant", m.get("content") or ""))
+            elif role == "tool" and m.get("_synthetic"):
+                text = f"Automatic pre-search (not requested by you) — RESULT for {m['name']}:\n{m['content']}"
+                turns.append(("user", [{"type": "text", "text": text}, *_translate(m.get("_images") or [])]))
+            elif role == "tool":
+                turns.append(("user", [{"type": "tool_result", "tool_use_id": m["tool_call_id"],
+                                        "content": _result_content(m["content"], m.get("_images"))}]))
+            elif m.get("_status"):
+                turns.append(("user", [{"type": "text", "text": m["content"]}]))
+            else:
+                turns.append((role or "user", _translate(m.get("content"))))
+        out: list[dict[str, Any]] = [{"role": "system", "content": system, _TRAJECTORY: True}]
+        for role, content in turns:
+            last = out[-1]
+            if last["role"] == role and role != "system":
+                last["content"] = [*_blocks(last["content"]), *_blocks(content)]
+            else:
+                out.append({"role": role, "content": content})
+        return out
+
     def _client(self) -> httpx.AsyncClient:
         if self._transport is not None:
             return httpx.AsyncClient(transport=self._transport)
         return httpx.AsyncClient()
 
-    def _headers(self) -> dict[str, str]:
+    def _headers(self, betas: list[str] | None = None) -> dict[str, str]:
         headers = {
             "content-type": "application/json",
             "anthropic-version": self.ANTHROPIC_VERSION,
         }
         if self.api_key:
             headers["x-api-key"] = self.api_key
+        if betas:
+            headers["anthropic-beta"] = ",".join(betas)
         return headers
 
     @staticmethod
@@ -263,9 +367,9 @@ class AnthropicProvider(BaseLLMProvider):
         #   Claude 5 family — do not trust it; the live doc above is authoritative.) The code is
         #   correct regardless of the exact number: it always emits the breakpoint and Anthropic
         #   honors it iff the prefix clears that model's floor (else a silent zero-side-effect no-op).
-        # Tools: Arslan's Anthropic path is intentionally text-in/text-out (native tool-use
-        # is not implemented — see the module docstring), so `tools` are not serialized into
-        # this payload; D3's "cache_control on the last tool" therefore does not apply here.
+        # Tools are serialized below (G1) and render before the system prefix; no cache_control
+        # is put on the last tool (D3), so a changed tool list costs the whole prefix.
+        native = any(m.get(_TRAJECTORY) for m in messages if m.get("role") == "system")
         system, convo = self._split_system(messages)
         payload: dict[str, Any] = {
             "model": self.model,
@@ -296,6 +400,10 @@ class AnthropicProvider(BaseLLMProvider):
         translated = self._translate_tools(tools)
         if translated:
             payload["tools"] = translated
+        if native and self._binds_thinking() and "thinking" not in payload:
+            # 0.1.63 K1: only native requests replay thinking; the legacy request stays as it was.
+            payload["thinking"] = json.loads(json.dumps(_DROP_BLOCK))
+            payload["_betas"] = [BINDING_BETA]
         return payload
 
     async def chat(
@@ -304,26 +412,34 @@ class AnthropicProvider(BaseLLMProvider):
         tools: list[dict[str, Any]] | None = None,
         temperature: float = 0.7,
         max_tokens: int | None = None,
+        tool_choice: str | None = None,
     ) -> LLMResponse:
-        """`max_tokens` raises this one request after a length cut."""
+        """`max_tokens` raises this one request after a length cut. `tool_choice="none"`: the
+        forced wrap-up step keeps the same tools (same prefix) and may not call one (K1)."""
         from arslan.execution_budget import model_request
         payload = self._payload(messages, temperature, tools)
+        if tool_choice == "none" and payload.get("tools"):
+            payload["tool_choice"] = {"type": "none"}
         if max_tokens:
             payload["max_tokens"] = max_tokens
         payload["max_tokens"] = model_request(payload["max_tokens"])
         from arslan.execution_checkpoint import save
         await save("before_model")
         data = await param_heal.send(self.endpoint_fingerprint(), payload, self._post)
-        return self._parse_response(data)
+        response = self._parse_response(data)
+        _note_transformations(response.input_transformations)
+        return response
 
     async def _post(self, payload: dict[str, Any]) -> dict[str, Any]:
         """One non-streamed send; param_heal may resend a changed payload."""
+        betas = payload.get("_betas") or []
+        payload = {k: v for k, v in payload.items() if k != "_betas"}
         evidence = await request_evidence.begin(payload)
         async with self._client() as client:
             response = await client.post(
                 f"{self.base_url}/messages",
                 json=payload,
-                headers=self._headers(),
+                headers=self._headers(betas),
                 timeout=self.TIMEOUT,
             )
             try:
@@ -362,6 +478,8 @@ class AnthropicProvider(BaseLLMProvider):
 
     async def _stream_attempt(self, payload: dict[str, Any]) -> AsyncIterator[str]:
         """One streamed send; param_heal may resend it before its first byte."""
+        betas = payload.get("_betas") or []
+        payload = {k: v for k, v in payload.items() if k != "_betas"}
         evidence = await request_evidence.begin(payload)
         # S3-M3: real usage from the SSE events — input_tokens arrives on
         # message_start (nested under "message"), output_tokens on message_delta.
@@ -378,7 +496,7 @@ class AnthropicProvider(BaseLLMProvider):
                 "POST",
                 f"{self.base_url}/messages",
                 json=payload,
-                headers=self._headers(),
+                headers=self._headers(betas),
                 timeout=60.0,
             ) as response:
                 try:
@@ -418,8 +536,7 @@ class AnthropicProvider(BaseLLMProvider):
                                 "tokens_out": int(usage["output_tokens"]),
                             }
 
-    @staticmethod
-    def _parse_response(data: dict[str, Any]) -> LLMResponse:
+    def _parse_response(self, data: dict[str, Any]) -> LLMResponse:
         blocks = data.get("content") or []
         text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text")
         # G1. `tool_use` blocks become the SAME normalised shape openai_provider
@@ -434,14 +551,38 @@ class AnthropicProvider(BaseLLMProvider):
             for b in blocks if b.get("type") == "tool_use"
         ]
         stop = data.get("stop_reason")
+        # 0.1.63 K1: the whole assistant content, order unchanged, for replay within this turn to
+        # this endpoint+model+key only (thinking blocks must come back byte for byte).
+        replay = any(b.get("type") in ("tool_use", "thinking", "redacted_thinking") for b in blocks)
+        transformations = data.get("input_transformations")
         return LLMResponse(
             role=data.get("role", "assistant"),
             content=text or None,
             tool_calls=tool_calls,
             usage=data.get("usage", {}) or {},
             finish_reason=_ANTHROPIC_FINISH.get(stop, str(stop).lower()) if stop else None,
+            continuation=({"protocol": "anthropic", "endpoint": self.endpoint_fingerprint(),
+                           "content": json.loads(json.dumps(blocks))} if replay else None),
+            input_transformations=transformations if isinstance(transformations, list) else None,
         )
 
 
 _ANTHROPIC_FINISH = {"end_turn": "stop", "stop_sequence": "stop", "max_tokens": "length",
                      "tool_use": "tool_calls", "refusal": "content_filter"}
+
+
+def _note_transformations(entries: list[dict[str, Any]] | None) -> None:
+    """Dropped thinking blocks go to the run record as counts per reason, never their content."""
+    if not entries:
+        return
+    from arslan.execution_budget import current
+    budget = current()
+    if budget is None:
+        return
+    counts: dict[str, int] = {}
+    for entry in entries:
+        if isinstance(entry, dict) and entry.get("type") == "thinking_dropped":
+            reason = str(entry.get("reason") or "unknown")
+            counts[reason] = counts.get(reason, 0) + 1
+    for reason, count in counts.items():
+        budget.note_context("thinking_dropped", reason=reason, count=count)

@@ -582,10 +582,10 @@ async def _model_call(a, system: str, convo: list[dict], current_request: dict, 
                       drops: _SchemaDrops | None = None, conversation_id: str | None = None):
     """The one model call of a run_native step, with recovery (0.1.49 S6).
 
-    Native adapters (OpenAI-compatible, ARSLAN_TOOL_PROTOCOL not "legacy") get
-    the trajectory in their own tool protocol; a forced step keeps the SAME
-    tools with tool_choice "none". Everything else (test doubles, Anthropic,
-    Gemini, rollback) gets the legacy rendering, unchanged.
+    Native adapters (OpenAI-compatible and Gemini; Claude from K1b;
+    ARSLAN_TOOL_PROTOCOL not "legacy") get the trajectory in their own tool
+    protocol; a forced step keeps the SAME tools with tool_choice "none".
+    Everything else (test doubles, rollback) gets the legacy rendering, unchanged.
 
     Recovery (server/orchestrator/model_call.py): classified transport retries;
     a protocol rejection switches this turn to the legacy rendering; a context
@@ -594,7 +594,8 @@ async def _model_call(a, system: str, convo: list[dict], current_request: dict, 
     returned as is: run_native never executes it. `state` is per turn.
 
     `status` (0.1.50 S1) is appended to the last message of the step's base
-    messages in both renderings; continuation turns follow it, so a
+    messages in both renderings (on a provider with APPENDS_STATUS natively: stored
+    once in the trajectory as its own block, K1); continuation turns follow it, so a
     continuation request shares the original request's exact prefix."""
     from server.orchestrator import agent_status
     from server.orchestrator import model_call as mc
@@ -616,9 +617,18 @@ async def _model_call(a, system: str, convo: list[dict], current_request: dict, 
             # same trajectory is always well-formed. Sticky for this turn.
             state.legacy, state.reason = True, f"invalid trajectory: {exc}"
             logger.warning("native tool protocol degraded to legacy: %s", exc)
+    # 0.1.63 K1: a provider that must never see history edited (Claude's preserved thinking; Gemini
+    # too) keeps each step's status in the trajectory, as its own block after the step's results,
+    # instead of having it glued onto the last message for one request and gone the next.
+    status_record = None
+    if native and status and getattr(getattr(a, "_provider", None), "APPENDS_STATUS", False):
+        status_record = trajectory.status(status)
+        convo.append(status_record)
+        messages = build_messages()
 
     async def request(extra=None, max_tokens=None):
-        sent = agent_status.attach(messages, status) + list(extra or [])
+        base = list(messages) if status_record is not None and native else agent_status.attach(messages, status)
+        sent = base + list(extra or [])
         kwargs = {"max_tokens": max_tokens} if max_tokens else {}
         if native:
             step_tools = schemas if forced else tools
@@ -632,7 +642,7 @@ async def _model_call(a, system: str, convo: list[dict], current_request: dict, 
     async def relax(exc, *, last: bool = False) -> bool:
         """0.1.62 F3: an `input` refusal of a request carrying MCP tools that names one (or reads
         like a schema problem): leave it out (`last`, or none named: every MCP tool) and say so."""
-        nonlocal tools, schemas, status
+        nonlocal tools, schemas, status, status_record, messages
         sent = ((schemas if forced else tools) if native else tools) or []
         if (drops is None or exc.kind != "input" or state.exhausted
                 or not any(t["function"]["name"].startswith("mcp_") for t in sent)):
@@ -656,6 +666,12 @@ async def _model_call(a, system: str, convo: list[dict], current_request: dict, 
         status = (f"{status}\n\n" if status else "") + (
             f"Note: {what} is not available in this turn: the model provider refused its parameter "
             "schema. Use the other tools, or tell the user that capability cannot be used right now.")
+        if status_record is not None:
+            status_record["content"] = status       # not accepted by the provider yet: still editable
+        elif native and getattr(getattr(a, "_provider", None), "APPENDS_STATUS", False):
+            status_record = trajectory.status(status)
+            convo.append(status_record)
+            messages = build_messages()
         provider = getattr(a, "_provider", None)
         reported = getattr(a, "report_provider", None) or getattr(provider, "provider_name", type(provider).__name__)
         try:

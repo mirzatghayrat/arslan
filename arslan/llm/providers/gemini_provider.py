@@ -6,6 +6,8 @@ the ``x-goog-api-key`` header, ``temperature`` lives under ``generationConfig``,
 and streaming uses ``:streamGenerateContent?alt=sse``. Native function declarations
 use the documented parametersJsonSchema field; functionCall responses normalize
 to Arslan tools. Opaque continuation parts preserve Gemini thought signatures.
+0.1.63 K1: the in-turn trajectory goes back natively (build_trajectory_messages);
+function responses carry the result itself, not the old "TOOL RESULT for X" text.
 Streaming with tools remains explicitly unsupported; run_native uses chat().
 """
 from __future__ import annotations
@@ -100,6 +102,56 @@ class GeminiProvider(BaseLLMProvider):
             contents.append({"role": role, "parts": _parts(m["content"])})
         return system, contents
 
+    def supports_native_trajectory(self) -> bool:
+        return True              # 0.1.63 K1
+
+    APPENDS_STATUS = True        # the step status is its own part after the results, kept (K1)
+
+    def build_trajectory_messages(self, system: Any, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Neutral trajectory (arslan/llm/trajectory.py) -> Gemini turns (0.1.63 K1).
+
+        A model turn that called functions is replayed as its own parts (thought signatures
+        included). Each result answers its call with a functionResponse whose `response` is the
+        result itself: the JSON object a tool returned, or {"output": text} for anything else
+        (an untrusted result keeps its data frame). Screenshots, host-run results and the step's
+        status follow as their own parts in the same user turn; same-role turns merge."""
+        calls: dict[str, dict] = {}
+        turns: list[tuple[str, list[dict[str, Any]]]] = []
+        for m in messages:
+            role = m.get("role")
+            if role == "assistant":
+                for call in m.get("tool_calls") or []:
+                    calls[call["id"]] = call
+                cont = m.get("_continuation") or {}
+                if cont.get("protocol") == "gemini":
+                    turns.append(("assistant", [{"type": "provider_content", **cont["provider_content"]}]))
+                else:
+                    turns.append(("assistant", [{"type": "text", "text": m.get("content") or ""}]))
+            elif role == "tool" and not m.get("_synthetic"):
+                response = {"type": "function_response", "name": m["name"], "response": _structured(m["content"])}
+                provider_id = (calls.get(m.get("tool_call_id")) or {}).get("provider_id")
+                if provider_id:
+                    response["id"] = provider_id
+                turns.append(("user", [response]))
+                if m.get("_images"):
+                    turns.append(("user", [{"type": "text", "text": f"Screenshot from {m['name']}"}, *m["_images"]]))
+            elif role == "tool":
+                text = f"Automatic pre-search (not requested by you) — RESULT for {m['name']}:\n{m['content']}"
+                turns.append(("user", [{"type": "text", "text": text}, *(m.get("_images") or [])]))
+            elif m.get("_status"):
+                turns.append(("user", [{"type": "text", "text": m["content"]}]))
+            else:
+                content = m.get("content")
+                turns.append((role or "user", content if isinstance(content, list)
+                              else [{"type": "text", "text": str(content or "")}]))
+        out: list[dict[str, Any]] = [{"role": "system", "content": system}]
+        for role, parts in turns:
+            if out[-1]["role"] == role:
+                out[-1]["content"] = [*out[-1]["content"], *parts]
+            else:
+                out.append({"role": role, "content": list(parts)})
+        return out
+
     def named_tool(self, tools: list[dict[str, Any]] | None, error_text: str) -> str | None:
         index = tool_schema.index_in(error_text, _DECLARATION_INDEX)   # declarations are `tools`, in order
         tools = tools or []
@@ -136,6 +188,7 @@ class GeminiProvider(BaseLLMProvider):
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
         temperature: float = 0.7,
+        tool_choice: str | None = None,
     ) -> LLMResponse:
         url = f"{self.base_url}/models/{self.model}:generateContent"
         # Use a generous read timeout — Gemini thinking models (e.g. 2.5 Pro) can
@@ -143,6 +196,9 @@ class GeminiProvider(BaseLLMProvider):
         timeout = httpx.Timeout(connect=10.0, read=300.0, write=10.0, pool=5.0)
         from arslan.execution_budget import model_request
         payload = self._payload(messages, temperature, tools)
+        if tool_choice == "none" and payload.get("tools"):
+            # The forced wrap-up keeps the same declarations and may not call one (K1).
+            payload["toolConfig"] = {"functionCallingConfig": {"mode": "NONE"}}
         payload["generationConfig"]["maxOutputTokens"] = model_request(8192)
         from arslan.execution_checkpoint import save
         await save("before_model")
@@ -283,6 +339,15 @@ class GeminiProvider(BaseLLMProvider):
 
 
 _GEMINI_FILTERED = {"SAFETY", "RECITATION", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII"}
+
+
+def _structured(text: str) -> dict[str, Any]:
+    """A function response is an object: the result's own JSON object, else {"output": text}."""
+    try:
+        value = json.loads(text)
+    except (TypeError, ValueError):
+        value = None
+    return value if isinstance(value, dict) else {"output": text}
 
 
 def _first_text(obj: dict[str, Any]) -> str:
