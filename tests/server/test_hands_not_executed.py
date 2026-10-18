@@ -13,8 +13,6 @@ from tests.server import test_hands_0153 as base
 _case = base._case
 isolated, hands, asks, in_turn, in_job = base.isolated, base.hands, base.asks, base.in_turn, base.in_job
 
-pytestmark = pytest.mark.one_arslan
-
 ROOT = Path(__file__).resolve().parents[2]
 CLICK = {"app": "Notes", "element": "Save", "ref": "@sfixture0:e3"}
 
