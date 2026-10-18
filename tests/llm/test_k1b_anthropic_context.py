@@ -19,10 +19,11 @@ from server.orchestrator import tool_loop
 from server.registry import executors
 
 CONTEXT_BETA = "context-management-2025-06-27"
+# E23: interim values until K3 adds message-level cache breakpoints (then E22's 60k / 20k).
 CLEAR = {"type": "clear_tool_uses_20250919",
-         "trigger": {"type": "input_tokens", "value": 60_000},
+         "trigger": {"type": "input_tokens", "value": 24_000},
          "keep": {"type": "tool_uses", "value": 6},
-         "clear_at_least": {"type": "input_tokens", "value": 20_000}}
+         "clear_at_least": {"type": "input_tokens", "value": 8_000}}
 
 
 def tool_reply(call_id, query, sig):
@@ -75,7 +76,7 @@ def tight_history(monkeypatch):
     monkeypatch.setattr(tool_loop, "bounded_history", tight)
 
 
-async def claude_turn(monkeypatch, replies, *, model="claude-opus-5-5", search=None):
+async def claude_turn(monkeypatch, replies, *, model="claude-opus-5-5", search=None, base_url=""):
     sent, headers = [], []
 
     def handler(request):
@@ -84,7 +85,8 @@ async def claude_turn(monkeypatch, replies, *, model="claude-opus-5-5", search=N
         reply = replies[len(sent) - 1]
         return reply if isinstance(reply, httpx.Response) else httpx.Response(200, json=reply)
     adapter = LLMAdapter("anthropic", model)
-    adapter._provider = AnthropicProvider(model, api_key="k", transport=httpx.MockTransport(handler))
+    adapter._provider = AnthropicProvider(model, api_key="k", base_url=base_url,
+                                          transport=httpx.MockTransport(handler))
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
     monkeypatch.setitem(executors.EXECUTORS, "web_search", search or Search())
     result = await tool_loop.run_native(system="S", user_content="Find three sources", history=[],
@@ -207,3 +209,47 @@ async def test_a_context_overflow_compaction_is_marked(monkeypatch):
     assert result["final"] == "Done."
     assert any(e["kind"] == "compacted" and e["reason"] == "context_overflow"
                for e in budget.snapshot()["context_events"])
+
+
+# ── review fixes (#213) ──────────────────────────────────────────────────────────────
+
+async def test_a_third_party_anthropic_endpoint_keeps_local_trimming(monkeypatch, tight_history):
+    # A compatible host may ignore context_management silently: no server clearing would mean no
+    # trimming at all. Only Claude on Anthropic's own host gets it; everything else trims here.
+    _, sent, headers = await claude_turn(monkeypatch, THREE_STEPS, search=Search(images=True),
+                                         base_url="https://api.example-llm.test/anthropic")
+    assert all("context_management" not in body for body in sent)
+    assert all(CONTEXT_BETA not in head.get("anthropic-beta", "") for head in headers)
+    assert "result-one" not in results_text(sent[3])                      # trimmed locally
+
+
+async def test_a_non_claude_model_on_anthropics_host_gets_no_server_clearing(monkeypatch):
+    _, sent, _ = await claude_turn(monkeypatch, [tool_reply("toolu_01", "one", "s1"), END], model="other-model")
+    assert all("context_management" not in body for body in sent)
+
+
+def _assistant_after(request):
+    return [m for m in request["messages"] if m["role"] == "assistant"][-1]
+
+
+async def test_replaced_tool_call_text_is_not_replayed(monkeypatch):
+    # The host replaces tool-call text with a notice; replaying the original blocks verbatim would
+    # put the malformed call back in front of the model as an example to imitate.
+    leak = {"role": "assistant", "stop_reason": "end_turn", "usage": {"input_tokens": 1, "output_tokens": 1},
+            "content": [{"type": "thinking", "thinking": "", "signature": "s1"},
+                        {"type": "text", "text": '<tool_call>{"name": "web_search"}</tool_call>'}]}
+    _, sent, _ = await claude_turn(monkeypatch, [leak, END])
+    replayed = json.dumps(_assistant_after(sent[1]))
+    assert "Non-executable tool-call text omitted." in replayed
+    assert "<tool_call>" not in replayed and '"thinking"' not in replayed
+
+
+async def test_a_stripped_status_echo_is_not_replayed(monkeypatch):
+    echo = {"role": "assistant", "stop_reason": "end_turn", "usage": {"input_tokens": 1, "output_tokens": 1},
+            "content": [{"type": "thinking", "thinking": "", "signature": "s1"},
+                        {"type": "text", "text": '<agent_status note="x">Work so far: 1 tool call.</agent_status>'
+                                                 "I'll search for that now."}]}
+    _, sent, _ = await claude_turn(monkeypatch, [echo, END])
+    replayed = json.dumps(_assistant_after(sent[1]))
+    assert "I'll search for that now." in replayed
+    assert "agent_status" not in replayed and '"thinking"' not in replayed

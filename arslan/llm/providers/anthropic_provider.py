@@ -30,6 +30,7 @@ import json
 import re
 from collections.abc import AsyncIterator
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
@@ -73,18 +74,23 @@ _TRAJECTORY = "_trajectory"
 
 # 0.1.63 K1b: on the native path the API clears old tool results (context editing; it never
 # invalidates thinking on Fable 5.1 and the 5.5 generation), so the host never edits what it sent.
-# Clearing costs the cache from the cleared point on: clear rarely, and a lot at once. Measured in
-# input tokens (the host's 64k / 96k-character trim is about 16-24k tokens of history; this clears
-# later, to keep the cache). Results of the tools below are never cleared: the model's own plan,
-# saved progress and the skill it is following. clear_tool_inputs stays at its default (false).
-# Starting values for v0.1.63: K1 card point 12 / correction E22. M1 on Claude reports the cleared
-# counts and tokens (run record) and the long task's cache hits; they are adjusted before R63 if
-# clearing runs more than about once per 10 model calls or cache writes cost more than it saves.
+# Measured in input tokens. Results of the tools below are never cleared: the model's own plan, saved
+# progress and the skill it is following. clear_tool_inputs stays at its default (false).
+# Values: K1 card point 12, corrections E22 / E23. Until K3 adds message-level cache breakpoints only
+# the system prefix is cached, so clearing invalidates no extra cache while every uncleared token is
+# paid in full each step (a long Claude turn would hit the 128k chat token budget within a few steps):
+# trigger 24k, clear_at_least 8k, the same order as today's local trim (E23). K3, in the PR that adds
+# the breakpoints, restores E22's 60k / 20k (clear rarely, a lot at once, to keep the cache). M1 on
+# Claude reports cleared counts and tokens (run record), per-task input and charged tokens, stop
+# reasons and the long task's cache hits.
 CONTEXT_BETA = "context-management-2025-06-27"
 _CLEAR = {"type": "clear_tool_uses_20250919",
-          "trigger": {"type": "input_tokens", "value": 60_000},
+          "trigger": {"type": "input_tokens", "value": 24_000},
           "keep": {"type": "tool_uses", "value": 6},
-          "clear_at_least": {"type": "input_tokens", "value": 20_000}}
+          "clear_at_least": {"type": "input_tokens", "value": 8_000}}
+# Context editing goes only to Claude on Anthropic's own host: an Anthropic-protocol endpoint elsewhere
+# may ignore the field silently, which would leave the turn with no trimming at all.
+_OFFICIAL_HOST = "api.anthropic.com"
 _KEEP_RESULTS = ("update_plan", "task_progress", "read_skill")
 
 
@@ -212,9 +218,14 @@ class AnthropicProvider(BaseLLMProvider):
     def supports_native_trajectory(self) -> bool:
         return True
 
+    def _clears_server_side(self) -> bool:
+        """Claude on Anthropic's own host: the only endpoint asked to clear old tool results."""
+        return self._is_claude() and urlparse(self.base_url).hostname == _OFFICIAL_HOST
+
     def trims_context_server_side(self) -> bool:
-        """The API clears old tool results itself, unless this endpoint refused it (a proxy)."""
-        return not param_heal.refused(self.endpoint_fingerprint(), "context_management")
+        """The API clears old tool results itself: Claude on Anthropic's host, unless it refused."""
+        return self._clears_server_side() and not param_heal.refused(self.endpoint_fingerprint(),
+                                                                     "context_management")
 
     APPENDS_STATUS = True        # the step status is kept in the trajectory, never re-attached (K1)
 
@@ -424,11 +435,14 @@ class AnthropicProvider(BaseLLMProvider):
             if self._binds_thinking() and "thinking" not in payload:
                 payload["thinking"] = json.loads(json.dumps(_DROP_BLOCK))
                 betas.append(BINDING_BETA)
-            names = {t["name"] for t in translated or []}
-            edit = {**json.loads(json.dumps(_CLEAR)),
-                    **({"exclude_tools": kept} if (kept := [n for n in _KEEP_RESULTS if n in names]) else {})}
-            payload["context_management"] = {"edits": [edit]}
-            payload["_betas"] = [*betas, CONTEXT_BETA]
+            if self._clears_server_side():
+                names = {t["name"] for t in translated or []}
+                edit = {**json.loads(json.dumps(_CLEAR)),
+                        **({"exclude_tools": kept} if (kept := [n for n in _KEEP_RESULTS if n in names]) else {})}
+                payload["context_management"] = {"edits": [edit]}
+                betas.append(CONTEXT_BETA)
+            if betas:
+                payload["_betas"] = betas
         return payload
 
     async def chat(
@@ -454,7 +468,7 @@ class AnthropicProvider(BaseLLMProvider):
         response = self._parse_response(data)
         native = any(m.get(_TRAJECTORY) for m in messages if m.get("role") == "system")
         _note_context(response.input_transformations, data.get("context_management"),
-                      clearing_off=native and not self.trims_context_server_side())
+                      clearing_off=native and self._clears_server_side() and not self.trims_context_server_side())
         return response
 
     async def _post(self, payload: dict[str, Any]) -> dict[str, Any]:

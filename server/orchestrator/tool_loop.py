@@ -2765,6 +2765,9 @@ async def _run_native(
         # Even a provider ignoring tools=None still marks narration with tool_calls.
         # Never turn that narration into a final answer on a forced synthesis step.
         final_text = "" if tool_calls else agent_status.strip_echo((resp.content or "").strip())
+        # The reply's continuation replays its own text verbatim (Claude: byte for byte); once the host
+        # changed that text (an echo stripped, tool-call text replaced) it goes, as at the repair below.
+        own_continuation = getattr(resp, "continuation", None) if final_text == (resp.content or "").strip() else None
         claimed = _unverified_claim(final_text, tool_trace, wired_keys)
         deferred = _is_deferral_stub(final_text)
         protocol_text = _embeds_protocol(final_text)
@@ -2776,7 +2779,7 @@ async def _run_native(
         if denied:
             turn_state.capability_bounced = True
             policy.observe("answer_validation", {}, {"ok": False, "code": "denied_capability"})
-            convo.extend([trajectory.assistant(final_text, continuation=getattr(resp, "continuation", None)),
+            convo.extend([trajectory.assistant(final_text, continuation=own_continuation),
                           {"role": "user", "content": capability_truth.correction(denied, wired_keys)}])
             continue
         if not forced and (claimed or ((deferred or protocol_text) and wired_keys)):
@@ -2786,7 +2789,7 @@ async def _run_native(
             # the normal tool resolver, permission gate and existing budgets.
             convo.extend([trajectory.assistant(
                 "Non-executable tool-call text omitted." if protocol_text else final_text,
-                continuation=getattr(resp, "continuation", None)), {"role": "user", "content":
+                continuation=None if protocol_text else own_continuation), {"role": "user", "content":
                 ("The proposed answer was tool-call text, not a native tool request; it executed no action. " if protocol_text else
                  f"The proposed answer lacks a successful {claimed} receipt. " if claimed else
                  "The proposed answer only promises future action. ") +
