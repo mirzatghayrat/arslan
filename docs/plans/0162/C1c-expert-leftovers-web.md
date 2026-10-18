@@ -31,7 +31,16 @@
   - `evolution_service.record_verdict`（`:89-118`）。
   - `persona_seed_service.import_from_repo`（`:152-186`），连同只被它用的 `_list_md_paths`、`_fetch_md`、`_parse_persona`、`_is_persona_path`。
   - `learning_service.distill_from_event`（`:160-165`）。同文件的 `distill_from_feedback` 归 C2e。
-  - C1 后：`server/registry/service.py` 的 `unready_mcp_servers`（`:516-530`）、`grant_temporary`（`:579-600`）。
+  - C1 后：`server/registry/service.py` 的 `grant_temporary`（`:579-600`）。
+    - **`unready_mcp_servers` 不删**（更正 E20）：`recipes.py:174`、`replay_run.py:66` 经 `dispatcher.dispatch` → `_spawn_mcp_line` → `spawn_unready_mcp_servers` 还在用它。等 dispatcher 那条路整体删掉时再删。
+  - C1（#203）交过来、合并后已零引用的（更正 E20；删除条件都是「本卡 C1c-1 删」，合前逐个 `rg` 确认仍为零引用）：
+    - `server/orchestrator/dispatcher.py` 的 `get_spawn_name`；
+    - `server/services/task_context.py` 的 `scoped_dispatch`，连同唯一用它的测试 `tests/server/test_task_entrypoints.py:74` 那一段；
+    - `server/services/runtime_messages.py` 6 种语言里的 `expert_unavailable` 键；
+    - `arslan/llm/routing.py` `JUDGMENT_ROLES` 里的 `"critical"`；
+    - `RunRecorder.start(kind="scheduled")` 的**创建**路径。读 `kind='scheduled'` 的地方（用量范围、清理）要留着：旧的 Run 行还在；
+    - 三处 `if True:` 去缩进（C1 卡挪过来的，约 70 行）：`server/api/conversations.py:55`、`:221`，`server/orchestrator/arslan.py:1119`；
+    - 文档：`docs-site/sections/{de,en,es,ja,tr,zh}/06-runtime.html:2` 里的 `EXPERTS_ENABLED=False`、`docs/tech-debt/2026-08-08-source-text-assertions.md:20,36` 引用的已删测试文件、`run_recorder.py`、`run_registry.py`、`usage_ledger.py`、`run_eval_service.py` 文档字符串里的 `_dispatch_spawn`。
 - `server/ws/protocol.py` 里从不发出的帧构造函数：
   - 今天就零调用：`question`（`:7`）、`progress`（`:24`）、`build_complete`（`:28`）、`spawn_meta`（`:91`）、`spawn_created`（`:115`）、`proposal`（`:166`）、`attachment_stored`（`:174`）、`spawn_updated`（`:178`）；
   - C1 后零调用：`routing`（`:69`）、`escalation`、`escalation_refused`、`escalation_resolved`、`orchestrator_action`（`:149-163`）、`roster_update`（`:170`）、`roster_event`（`:332`）；
