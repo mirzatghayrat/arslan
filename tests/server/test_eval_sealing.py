@@ -44,7 +44,8 @@
 # Boundary check (Step 2 below): the scheduler mints REAL conversation ids that must NOT be
 # swept up as hermetic. Confirmed via grep "scheduled-" in server/services/scheduler.py: the
 # actual literal is `f"scheduled-{task.id}"` / `f"scheduled-{task_id}"` (scheduler.py:330 and
-# :480, used by `_fire` at :480,505 for a REAL `dispatcher.dispatch` via `_dispatch_recorded`)
+# :480, used by `_fire` for REAL work — since 0.1.63 (C1) an Arslan turn, before that a
+# `dispatcher.dispatch` of the task's spawn)
 # — i.e. "scheduled-42", NOT "scheduled-task-42". `test_scheduled_and_real_conversation_ids_
 # are_not_hermetic` below pins the REAL format plus a near-miss variant, a real user id, and
 # empty string as all non-hermetic.
@@ -309,7 +310,7 @@ def test_scheduled_and_real_conversation_ids_are_not_hermetic():
     """Guard against over-sealing — the biggest adjacent mis-seal surface is the S3-M4
     scheduler, which mints conversation ids as f"scheduled-{task_id}" (scheduler.py:330,480,
     confirmed by grep — NOT "scheduled-task-{id}"). Those LOOK sentinel-ish but are REAL work
-    dispatched via `_fire`/`_dispatch_recorded` and MUST run real tools. Pin the exact format
+    run via `_fire` (an Arslan turn since 0.1.63) and MUST run real tools. Pin the exact format
     plus a near-miss variant and a real user id as non-hermetic."""
     from server.services import replay_safety
     # Exact scheduler format (scheduler.py:330,480) + a couple ids — all must be live:

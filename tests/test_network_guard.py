@@ -85,9 +85,8 @@ REAL_SYNC = httpx.HTTPTransport.handle_request
 _PROXY_VARS = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy")
 
 #: The opt-in runners that call a model API or public pages when their own environment opt-in is set.
-#: The same nine paths as `_REAL_NETWORK_RUNNERS` in tests/conftest.py, which this file holds to.
+#: The same eight paths as `_REAL_NETWORK_RUNNERS` in tests/conftest.py, which this file holds to.
 LIVE_RUNNERS = [
-    "tests/server/test_escalation_eval.py",
     "tests/server/test_stable_document_live.py",
     "tests/server/test_stable_memory_live.py",
     "tests/server/test_stable_research_live.py",
@@ -591,11 +590,11 @@ def test_an_unmarked_test_has_all_of_them_patched():
     assert httpx.HTTPTransport.handle_request is not REAL_SYNC
 
 
-def test_real_network_is_on_the_nine_runners_and_one_self_test_and_nowhere_else(request):
-    """The marker lifts the whole guard, so where it sits is the guard's attack surface. The nine
+def test_real_network_is_on_the_eight_runners_and_one_self_test_and_nowhere_else(request):
+    """The marker lifts the whole guard, so where it sits is the guard's attack surface. The eight
     opt-in runners that call a model API or public pages are marked by path in conftest, that list is
     exactly this one, and a TREE-WIDE `-m real_network` collection (what pytest itself sees on each
-    item, skipped ones included) finds those nine files, and this file's one self-test, and nothing
+    item, skipped ones included) finds those eight files, and this file's one self-test, and nothing
     else: not a unit test somebody marked to get past a refusal."""
     conftest = next(plugin for plugin in request.config.pluginmanager.get_plugins()
                     if str(getattr(plugin, "__file__", "")).endswith("tests/conftest.py"))

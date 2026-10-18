@@ -15,9 +15,9 @@ redefinition (ruff F811). conftest is the mechanism pytest provides for exactly 
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from server.db.models import EvolutionAttempt, Run, Setting, Spawn
 from server.services import evolution_loop, evolution_watcher
@@ -73,69 +73,12 @@ async def _drain() -> None:
     await asyncio.sleep(0)
 
 
-async def _enable_auto(Session) -> None:
-    """🔴 Auto-evolution is OFF by default (it spends the user's API credits and there is
-    no working cap — see settings_service.evolution_auto). Every test that exercises the
-    AUTO path must therefore opt in explicitly. Do NOT relax an assertion instead: a
-    trigger_spawn test that silently stops firing still goes green while proving nothing.
-    """
-    async with Session() as db:
-        db.add(Setting(key="evolution_auto", value="on"))
-        await db.commit()
-
-
 # ── backoff schedule (pure) ────────────────────────────────────────────────────────────
 
 def test_backoff_schedule():
     t = evolution_watcher._threshold
     # 10 → 20 → 40 → 80, then capped at 80 (base * MAX_BACKOFF_MULT).
     assert [t(0), t(1), t(2), t(3), t(4), t(5)] == [10, 20, 40, 80, 80, 80]
-
-
-# ── CRITICAL C4 ─────────────────────────────────────────────────────────────────────────
-
-async def test_C4_failed_attempt_backs_off_and_records(wdb, monkeypatch):
-    Session = wdb
-    monkeypatch.setattr(evolution_loop, "propose_improvement", _fail_propose)
-
-    sid = await _spawn(Session)
-    past = datetime.utcnow() - timedelta(hours=1)
-    await _seed_runs(Session, sid, 10, created_at=past, tag="a")
-    await _enable_auto(Session)
-
-    # Tick 1: 10 new runs (no prior attempt) ≥ threshold 10 → an attempt fires and FAILS.
-    aid = await evolution_watcher.trigger_spawn(sid)
-    assert aid is not None
-    await _drain()
-
-    attempts = await _attempts(Session, sid)
-    assert len(attempts) == 1
-    assert attempts[0].outcome == "failed"          # gate failed → durable 'failed' record
-    assert attempts[0].finished_at is not None
-    assert attempts[0].reason == "holdout_winrate"
-    t1 = attempts[0].started_at
-
-    # Tick 2: the SAME 10 runs are now BEHIND the attempt (0 new since t1) AND the threshold
-    # doubled to 20 → NOT eligible. This is the anti-runaway property: no re-trigger.
-    assert await evolution_watcher.trigger_spawn(sid) is None
-    async with Session() as db:
-        n = (await db.execute(select(func.count()).select_from(EvolutionAttempt)
-                              .where(EvolutionAttempt.spawn_id == sid))).scalar()
-    assert n == 1   # still exactly one attempt — no unbounded 5-min retry loop
-
-    # 19 fresh runs after the attempt: still one short of the backed-off threshold of 20.
-    await _seed_runs(Session, sid, 19, created_at=t1 + timedelta(seconds=5), tag="b")
-    assert await evolution_watcher.trigger_spawn(sid) is None
-
-    # The 20th fresh run tips it over the doubled threshold → a SECOND attempt requires 20.
-    await _seed_runs(Session, sid, 1, created_at=t1 + timedelta(seconds=6), tag="c")
-    aid2 = await evolution_watcher.trigger_spawn(sid)
-    assert aid2 is not None
-    await _drain()
-
-    attempts = await _attempts(Session, sid)
-    assert len(attempts) == 2
-    assert [a.outcome for a in attempts] == ["failed", "failed"]
 
 
 # ── E9-b (a): structural-fail transparency ───────────────────────────────────────────────
@@ -277,28 +220,6 @@ async def test_evolution_auto_off_never_runs(wdb, monkeypatch):
     assert await _attempts(Session, sid) == []
 
 
-async def test_evolution_auto_on_does_run(wdb, monkeypatch):
-    """🔴 The other half. Without it, the off-test above passes even if the gate were
-    DELETED — an eligible spawn returns an attempt either way, so "off returns None" only
-    discriminates when paired with "on returns an attempt".
-
-    It matters more now that OFF is the default: every other trigger_spawn test in this
-    file has to opt in explicitly, and if the opt-in itself silently stopped working, this
-    is the test that notices.
-    """
-    Session = wdb
-    monkeypatch.setattr(evolution_loop, "propose_improvement", _pass_propose)
-    sid = await _spawn(Session)
-    await _seed_runs(Session, sid, 10)
-    async with Session() as db:
-        db.add(Setting(key="evolution_auto", value="on"))
-        await db.commit()
-
-    assert await evolution_watcher.trigger_spawn(sid) is not None
-    await _drain()
-    assert [a.outcome for a in await _attempts(Session, sid)] == ["passed"]
-
-
 # ── budget cap ──────────────────────────────────────────────────────────────────────────
 
 async def test_over_budget_records_skipped_budget(wdb, monkeypatch):
@@ -313,12 +234,13 @@ async def test_over_budget_records_skipped_budget(wdb, monkeypatch):
     sid = await _spawn(Session)
     await _seed_runs(Session, sid, 10)
     async with Session() as db:   # estimate est_tokens=1000 (fixture) > 500 budget
-        db.add(Setting(key="evolution_auto", value="on"))
         # dispatch units now, not tokens
         db.add(Setting(key="evolution_max_dispatches", value="1"))
         await db.commit()
 
-    aid = await evolution_watcher.trigger_spawn(sid)
+    # 0.1.63 (C1): the automatic trigger always returns None now (C2b deletes it); the
+    # budget cap is still enforced on the one live entry, the manual Evolve button.
+    aid = await evolution_watcher.enqueue_attempt(sid, manual=True)
     assert aid is not None        # an attempt row IS created (honest record of the skip)
     await _drain()
 
@@ -328,58 +250,25 @@ async def test_over_budget_records_skipped_budget(wdb, monkeypatch):
     assert called["propose"] is False   # propose_improvement was NOT run
 
 
-# ── passed attempt resets backoff ───────────────────────────────────────────────────────
-
-async def test_passed_attempt_resets_threshold(wdb, monkeypatch):
-    Session = wdb
-    monkeypatch.setattr(evolution_loop, "propose_improvement", _pass_propose)
-    sid = await _spawn(Session)
-    past = datetime.utcnow() - timedelta(hours=1)
-    await _seed_runs(Session, sid, 10, created_at=past, tag="a")
-    await _enable_auto(Session)
-
-    aid = await evolution_watcher.trigger_spawn(sid)
-    assert aid is not None
-    await _drain()
-
-    attempts = await _attempts(Session, sid)
-    assert len(attempts) == 1
-    assert attempts[0].outcome == "passed"
-    assert attempts[0].proposal_id == 123
-    t1 = attempts[0].started_at
-
-    # After a PASS the streak is 0 → threshold is back to the base 10, so 10 fresh runs
-    # (NOT 20) are enough to be eligible again.
-    await _seed_runs(Session, sid, 10, created_at=t1 + timedelta(seconds=5), tag="b")
-    async with Session() as db:
-        assert await evolution_watcher._consecutive_fails(db, sid) == 0
-        assert evolution_watcher._threshold(0) == 10
-        assert await evolution_watcher._is_eligible(db, sid) is True
-
-
 # ── concurrency = 1 per spawn ───────────────────────────────────────────────────────────
 
 async def test_concurrency_one_per_spawn(wdb, monkeypatch):
+    # 0.1.63 (C1): rewritten from the automatic trigger (always None now, C2b deletes it)
+    # to the manual entry, which is where the concurrency check lives.
     Session = wdb
     monkeypatch.setattr(evolution_loop, "propose_improvement", _fail_propose)
     sid = await _spawn(Session)
     await _seed_runs(Session, sid, 10)
-    # 🔴 The opt-in is load-bearing HERE in a way it is not elsewhere. Auto is off by
-    # default, and the auto gate sits BEFORE the concurrency check in trigger_spawn — so
-    # without this line the call returns None at the gate, the assertion below passes,
-    # and the test proves nothing about concurrency at all. It would be a permanent false
-    # positive that looks exactly like a passing test.
-    await _enable_auto(Session)
 
-    # Mark the spawn as already running → a second trigger must not enqueue anything.
+    # Mark the spawn as already running → a second attempt must not enqueue anything.
     evolution_watcher._running_spawns.add(sid)
-    assert await evolution_watcher.trigger_spawn(sid) is None
+    assert await evolution_watcher.enqueue_attempt(sid, manual=True) is None
     evolution_watcher._running_spawns.discard(sid)
     await _drain()
     assert await _attempts(Session, sid) == []
 
     # The control: with the spawn NOT marked running, the same call DOES enqueue. Without
-    # this, "returns None" is satisfied by any reason at all, including the gate above.
-    aid = await evolution_watcher.trigger_spawn(sid)
-    assert aid is not None, "concurrency test never proved the trigger works at all"
+    # this, "returns None" is satisfied by any reason at all.
+    aid = await evolution_watcher.enqueue_attempt(sid, manual=True)
+    assert aid is not None, "concurrency test never proved the entry works at all"
     await _drain()

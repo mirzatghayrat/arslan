@@ -340,7 +340,7 @@ async def lifespan(app: FastAPI):
 
     # S3-M4 scheduler: a second supervised loop (60s tick, own task set — independent
     # of the evolution watcher's) that fires due scheduled tasks headless
-    # (RunRecorder kind='scheduled' + dispatcher.dispatch). It sweeps orphaned
+    # (one Arslan turn per fire, scheduler.run_arslan_turn). It sweeps orphaned
     # in-flight rows before its first tick. Best-effort start — never blocks boot.
     try:
         from server.services import scheduler

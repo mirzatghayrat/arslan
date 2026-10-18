@@ -13,7 +13,6 @@ from tests.server import test_hands_0153 as base
 _case = base._case
 isolated, hands, asks, in_turn, in_job = base.isolated, base.hands, base.asks, base.in_turn, base.in_job
 
-pytestmark = pytest.mark.one_arslan
 
 PIXELS = "c2NyZWVuc2hvdA" * 30
 # The fixture window at (240, 417) points, 460×592, captured at 2 px per point.

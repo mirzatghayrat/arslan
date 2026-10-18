@@ -25,7 +25,6 @@ _case = base._case
 # The 0.1.53 fixtures (a faked Hands, auto-answered cards, a job), shared rather than copied.
 isolated, hands, asks, in_turn, in_job = base.isolated, base.hands, base.asks, base.in_turn, base.in_job
 
-pytestmark = pytest.mark.one_arslan
 
 
 # ── D1: at most once ─────────────────────────────────────────────────────────

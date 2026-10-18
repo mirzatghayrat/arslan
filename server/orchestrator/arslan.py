@@ -1,8 +1,6 @@
 """The orchestration loop for one user turn (transport-agnostic; emits event dicts)."""
 from __future__ import annotations
 
-import asyncio
-import json
 import logging
 import re
 from collections.abc import Callable
@@ -15,7 +13,6 @@ from server.orchestrator import llm_errors
 from server.services import ocr_fallback
 from server.db import session as db_session
 from server.orchestrator import (
-    dispatcher,
     memory,
     promise_guard,
     run_trace,
@@ -23,20 +20,13 @@ from server.orchestrator import (
 )
 from server.orchestrator.answer_contract import GROUNDED_ANSWER_RULES
 from server.orchestrator.tool_caller import ToolCaller
-from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
 from server.ws import protocol
 from arslan.llm import prices, usage_sink
 from arslan.execution_budget import governed
 from arslan.llm.cached_system import build_cached_system
-from server.registry import service as registry_service
-from server.services import (
-    phase_service,
-    roster_service,
-    run_recorder,
-    run_registry,
-    spawn_service,
-)
-from server.services.task_context import scoped_dispatch, scoped_turn
+# Only _team_roster() still reads spawns. K3 deletes _team_roster() and this import with it.
+from server.services import spawn_service
+from server.services.task_context import scoped_turn
 from server.services.task_repository import TaskError
 from server.services import runtime_messages
 
@@ -44,83 +34,6 @@ logger = logging.getLogger(__name__)
 
 EventSink = Callable[[dict], None]
 
-
-
-
-def _is_cjk(text: str) -> bool:
-    return any("一" <= ch <= "鿿" for ch in (text or ""))
-
-
-# Deterministic second-stage alias groups: when the task brief mentions any token of a
-# group AND another real spawn's domain/name/capabilities mention any token of the SAME
-# group, that spawn is a plausible next stage (e.g. 生成PPT → the deck/presentation
-# spawn). Purely lexical — no extra LLM call, zero fabrication risk.
-_STAGE_ALIAS_GROUPS: tuple[tuple[str, ...], ...] = (
-    ("ppt", "pptx", "deck", "slide", "slides", "presentation", "幻灯", "演示"),
-    ("chart", "图表", "可视化", "visualization", "visualisation"),
-)
-
-
-def _spawn_terms(s) -> str:  # noqa: ANN001
-    """Lower-cased searchable text for one spawn (name + domain + capabilities)."""
-    fields = [
-        getattr(s, "name", "") or "",
-        getattr(s, "domain_category", "") or "",
-        getattr(s, "domain_subcategory", "") or "",
-        *(getattr(s, "capabilities", None) or []),
-    ]
-    return " ".join(str(f) for f in fields).lower()
-
-
-def _find_second_stage(task_brief: str, spawns: list, primary_id: int, roster_ids: set[int]):  # noqa: ANN001
-    """The one other REAL spawn the task clearly implies as a follow-up stage, or None.
-    Conversation-roster members are preferred over the rest of the registry."""
-    brief_l = (task_brief or "").lower()
-    candidates = sorted(
-        (s for s in spawns if getattr(s, "id", None) != primary_id),
-        key=lambda s: (0 if getattr(s, "id", None) in roster_ids else 1, getattr(s, "id", 0)),
-    )
-    for s in candidates:
-        terms = _spawn_terms(s)
-        for group in _STAGE_ALIAS_GROUPS:
-            if any(tok in brief_l for tok in group) and any(tok in terms for tok in group):
-                return s
-    return None
-
-
-async def _route_announcement(
-    conversation_id: str, spawn_id: int, spawn_name: str, task_brief: str
-) -> str:
-    """Deterministic routing brief shown when Arslan hands a task to a spawn:
-    one sentence restating the need (the router's task_brief), then one line per
-    involved spawn as an @-mention. Every mentioned name comes from the REAL spawn
-    registry/roster — nothing is invented, and no extra LLM call is made."""
-    cjk = _is_cjk(task_brief) or _is_cjk(spawn_name)
-    lines: list[str] = []
-    need = (task_brief or "").strip()
-    if need:
-        lines.append(need)
-
-    primary_role = ""
-    second = None
-    try:
-        spawns = await spawn_service.load_all_spawns()
-        roster = await roster_service.list_roster(conversation_id)
-        roster_ids = {int(m["spawn_id"]) for m in roster if m.get("spawn_id") is not None}
-        primary = next((s for s in spawns if getattr(s, "id", None) == spawn_id), None)
-        primary_role = (getattr(primary, "persona_role", None) or "").strip()
-        second = _find_second_stage(task_brief or "", spawns, spawn_id, roster_ids)
-    except Exception as exc:  # noqa: BLE001 — enrichment is best-effort; the primary line never fails
-        logger.warning("route announcement enrichment failed (non-fatal): %s", exc)
-
-    own = primary_role or ("执行这项任务" if cjk else "handle this task")
-    lines.append(f"@{spawn_name} — 负责:{own}" if cjk else f"@{spawn_name} — owns: {own}")
-    if second is not None:
-        why = ((getattr(second, "persona_role", None) or "").strip()
-               or (getattr(second, "domain_category", "") or ""))
-        lines.append(f"@{second.name} — 可能接力:{why}" if cjk
-                     else f"@{second.name} — may follow up: {why}")
-    return "\n".join(lines)
 
 _ARSLAN_SYSTEM = (
     "You are Arslan, a personal agent that lives on the user's Mac. You talk with the user and you get "
@@ -485,13 +398,6 @@ def persisted_user_text(user_message: str, images: list[dict] | None) -> str:
     return f"{user_message}\n{names}" if user_message else names
 
 
-# 0.1.44 one Arslan: experts are no longer a runtime path. Arslan does the work
-# itself (background jobs for multi-step work); expert definitions live on only as
-# skills converted from them. Step two deletes the expert code; until then the
-# legacy tests exercise it with this switch on.
-EXPERTS_ENABLED = False
-
-
 @governed
 @scoped_turn
 async def handle_user_message(
@@ -532,7 +438,6 @@ async def handle_user_message(
     # this replaces was the expert-era dispatcher: an extra model call per message that
     # could answer in the agent's place. "Add today's to-dos to Reminders" came back as
     # a canned "no preset for that connector" and never reached a tool.
-    await phase_service.clear(conversation_id)       # expert-era parked state, if any
     await _handle_answer(conversation_id, user_message, emit, attached_context=attached_context,
                          images=images, confirm_command=confirm_command,
                          confirm_workspace_write=confirm_workspace_write, confirm_schedule=confirm_schedule)
@@ -952,13 +857,6 @@ async def _handle_answer_body(
 
 
 
-def _arslan_fetch_executor():
-    """Indirection so tests can stub Arslan's own fetch tool."""
-    from server.registry.executors import EXECUTORS
-
-    return EXECUTORS["web_search"]
-
-
 async def _skill_index(limit: int = 80) -> str:
     """One line per registered skill: key — name: what it is for.
 
@@ -1367,347 +1265,3 @@ async def _arslan_tools() -> list[dict]:
     tools += [{"key": t.key, "description": t.description, "input_schema": t.input_schema or {}}
               for t in rows]
     return tools
-
-
-async def _match_safe_toolset(need: str) -> str | None:
-    """Keyword-match a capability need against the safe menu (deterministic v1)."""
-
-    menu = await registry_service.safe_menu()
-    need_l = need.lower()
-    for t in menu["toolsets"]:
-        words = [w for w in (t["name"].lower().split() + t["key"].split("_")) if len(w) > 3]
-        if any(w in need_l for w in words):
-            return t["key"]
-    return None
-
-
-async def _handle_escalation(  # noqa: ANN001
-    conversation_id, spawn_id, spawn_name, task_brief, esc, emit: EventSink, *, run_id: int | None = None
-) -> dict | None:
-    """Spec §3.2: refused actions stop here; allowed needs get satisfied and
-    the spawn is re-dispatched ONCE with escalation disabled (depth-1)."""
-    from server.orchestrator import escalation as esc_guard
-
-    emit({"type": "escalation", "spawn_id": spawn_id, "spawn_name": spawn_name,
-          "kind": esc.get("kind", "data"), "need": esc.get("need", "")})
-
-    verdict = await esc_guard.classify(esc)
-    if not verdict["allowed"]:
-        emit({"type": "escalation_refused", "spawn_id": spawn_id, "why": verdict["why"]})
-        emit({"type": "stream_end", "message_id": None})
-        return None
-
-    granted = False
-    grant_note = ""
-    if esc.get("kind") == "capability":
-        match = await _match_safe_toolset(esc.get("need", ""))
-        if match is not None:
-            # Skip the grant if the spawn already holds this toolset — the real need
-            # is unsatisfied and would silently die under depth-1. Fall through to fetch.
-            eq = await registry_service.equipment_for_spawn(spawn_id)
-            already_held = {t["key"] for t in eq["toolsets"]}
-            if match not in already_held:
-                current_turn = await memory.user_turn_count(conversation_id)
-                await registry_service.grant_temporary(spawn_id, match, current_turn=current_turn)
-                # a granted MCP toolset whose server is not ready brings the spawn no tools yet:
-                # say so, in the shared words, to the event and to the spawn (Task 8 fix round 1)
-                detail = match
-                for srv in await registry_service.unready_mcp_servers([match]):
-                    from server.mcp.executor import answer_state, label_of, state_words
-                    phrase = f"{label_of(srv)} is {state_words(srv, answer_state(srv))}"
-                    detail = f"{match}: granted, but {phrase}"
-                    grant_note = (f"\n\nArslan granted you {label_of(srv)}'s tools, but {phrase}: its "
-                                  "tools are not in your list yet. Say so in your answer if you need them.")
-                emit({"type": "escalation_resolved", "spawn_id": spawn_id,
-                      "how": "granted", "detail": detail})
-                granted = True
-
-    data_block = grant_note
-    if not granted:
-        emit({"type": "orchestrator_action", "tool": "web_search",
-              "reason": f"fetching what {spawn_name} needs: {esc.get('need', '')}"})
-        try:
-            result = await _arslan_fetch_executor().execute({"query": esc.get("need", "")})
-        except Exception as exc:  # noqa: BLE001
-            result = {"ok": False, "error": str(exc)}
-        if result.get("ok"):
-            # data_block carries untrusted web content into the spawn brief (prompt-injection
-            # surface). Mitigations now in place: wrap_external() frames it data-only AND strips
-            # forged delimiters; SSRF redirect re-checking guards the fetch (executors.py). The
-            # permission tier remains the strongest backstop.
-            raw = json.dumps(result.get("results", []), ensure_ascii=False)[:6000]
-            data_block = (
-                f"\n\n{GUARD_NOTE}\n\n"
-                "Arslan provides this data for your need "
-                f"({esc.get('need', '')}):\n{wrap_external(raw)}"
-            )
-            emit({"type": "escalation_resolved", "spawn_id": spawn_id,
-                  "how": "data_provided", "detail": esc.get("need", "")})
-        else:
-            emit({"type": "escalation_resolved", "spawn_id": spawn_id,
-                  "how": "unresolved", "detail": str(result.get("error", ""))})
-
-    out = await dispatcher.dispatch(
-        conversation_id,
-        spawn_id=spawn_id,
-        task_brief=task_brief + data_block,
-        on_chunk=lambda c: emit({"type": "stream_chunk", "content": c}),
-        on_event=emit,
-        allow_escalation=False,
-        run_id=run_id,
-    )
-    emit({
-        "type": "spawn_meta",
-        "arslan_message_id": out["summary_message_id"],
-        "spawn_id": spawn_id,
-        "spawn_name": spawn_name,
-        "assistant_message_id": out["assistant_message_id"],
-        "task_brief": task_brief,
-        "run_id": run_id,
-    })
-    # S3-M3 Task 5: _handle_escalation is only called from inside _dispatch_spawn's
-    # usage_sink.collecting() scope, so the run's usage (dispatch + this re-dispatch)
-    # is readable here — same frame shape as the main dispatch stream_end.
-    emit({"type": "stream_end", "message_id": out["summary_message_id"],
-          "usage": _usage_frame(usage_sink.detail()),
-          **({"artifact": out["artifact"]} if out.get("artifact") else {})})
-    return out
-
-
-@governed
-@scoped_dispatch
-async def _dispatch_spawn(  # noqa: ANN001
-    conversation_id,
-    spawn_id,
-    task_brief,
-    emit: EventSink,
-    *,
-    prior_output: str | None = None,
-    instruction: str | None = None,
-    mode: str = "execute",
-    user_message: str = "",
-    route_ms: int | None = None,
-    attached_context: str | None = None, images: list[dict] | None = None,
-    announce: bool = True,
-) -> None:
-    """Run one expert attempt under the shared native execution policy.
-
-    Model-authored output and historical digest labels never trigger recursion.
-    The task runtime owns progress, remaining budget and explicit resumption.
-    """
-    spawn_name = await dispatcher.get_spawn_name(spawn_id)
-    if spawn_name is None:
-        # The spawn no longer exists (deleted mid-conversation, or a stale id from any
-        # entry point). Bail BEFORE RunRecorder.start() — recording a Run with a
-        # dangling spawn_id would raise sqlite3.IntegrityError (FK constraint) and
-        # crash the turn. Surface a recoverable in-chat error instead.
-        logger.warning("_dispatch_spawn: spawn_id=%s not found — skipping dispatch", spawn_id)
-        emit({"type": "error", "code": "SPAWN_NOT_FOUND",
-              "message": runtime_messages.render("expert_unavailable", await runtime_messages.selected_locale()),
-              "recoverable": True})
-        return
-    recorder = await run_recorder.RunRecorder.start(
-        conversation_id=conversation_id, spawn_id=spawn_id, spawn_name=spawn_name,
-        user_message=user_message or task_brief, route_ms=route_ms,
-        # T11: recorded so build_corpus can keep this run out of the exam. An
-        # image lives for one turn (③A), so a replay arm could never see it.
-        has_images=bool(images),
-    )
-    tee = recorder.tee(emit)
-    chunks: list[str] = []  # streamed partial — the ONLY output a cancelled run can persist
-
-    async def _run_turn() -> None:
-        # Pre-stream cancel guard (review I3): the roster join and _route_announcement
-        # (an LLM call) run BEFORE the collecting-scope handler below — a cancel landing
-        # here would otherwise propagate unfinalized and rot the row at 'recording' until
-        # the next boot reap. Nothing ran yet, so finalize bare (no usage/prompt detail).
-        try:
-            # Join FIRST (DB state) so the announcement's roster lookup sees the routed spawn,
-            # but EMIT the routing frame (with the announcement) BEFORE the roster join notice:
-            # the user reads "user message → Arslan's brief → X joined → spawn work" in order.
-            # (User feedback: the brief showing up above an anonymous join divider read as a
-            # bare system line, not Arslan speaking.)
-            newly_joined = await roster_service.join(conversation_id, spawn_id, via="routed")
-            # Routing brief: restate the need + @-mention each involved spawn (grounded in the
-            # real roster). A dispatch produces one announcement; loop continuation is
-            # owned by the task runtime, never inferred from output text.
-            # `announce=False` when the brief was ALREADY shown before an invite card (accepted
-            # inline invite): Arslan spoke first, so the post-accept dispatch skips re-announcing.
-            announcement = None
-            if announce:
-                announcement = await _route_announcement(conversation_id, spawn_id, spawn_name, task_brief)
-            tee({"type": "routing", "spawn_id": spawn_id, "spawn_name": spawn_name,
-                 **({"announcement": announcement} if announcement else {})})
-            if newly_joined:
-                tee({"type": "roster_event", "action": "joined", "spawn_id": spawn_id, "spawn_name": spawn_name})
-            tee({"type": "roster_update", "members": await roster_service.list_roster(conversation_id)})
-            tee({"type": "stream_start", "source": "spawn", "spawn_id": spawn_id,
-                 "run_id": recorder.run_id})
-        except asyncio.CancelledError:
-            await recorder.finalize(summary_message_id=None, full_output="",
-                                    status_override="cancelled")
-            emit({"type": "run_cancelled", "run_id": recorder.run_id})
-            raise
-        # usage_sink.collecting() is scoped HERE — one fresh bucket per Run — not around the
-        # whole user turn. This is the S0 hemostasis fix: EVERY dispatch path funnels through
-        # _dispatch_spawn, so opening the scope here means route_to/redo/refine/confirm_direction/
-        # roster_invite-accept/confirm_create (which call dispatch_spawn/dispatch_routed/
-        # confirm_and_execute WITHOUT a turn-level scope) all capture their own model/provider/
-        # tokens automatically. Per-Run scoping prevents cumulative double-counting:
-        # each explicit dispatch reads only its own usage, never a prior Run's.
-        # An escalation re-dispatch stays INSIDE this same block, so its usage folds into the SAME
-        # Run, which is correct (one escalation resolution = one Run).
-        # run_trace.collecting() spans the dispatch call (and any escalation re-dispatch) AND
-        # every finalize() below, so tool_loop's run_trace.record(...) calls and the assembled
-        # system prompt (build_spawn_system → run_trace.record_prompt) are both still readable
-        # via snapshot()/prompt() at finalize time — draining happens inside RunRecorder.finalize
-        # (_merge_tool_trace calls run_trace.snapshot()), before this context exits.
-        with usage_sink.collecting(), run_trace.collecting():
-            try:
-                try:
-                    out = await dispatcher.dispatch(
-                        conversation_id, spawn_id=spawn_id, task_brief=task_brief,
-                        on_chunk=lambda c: (chunks.append(c),
-                                            tee({"type": "stream_chunk", "content": c}))[1],
-                        on_event=tee, prior_output=prior_output, instruction=instruction, mode=mode,
-                        attached_context=attached_context, images=images, run_id=recorder.run_id,
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    # Decision ②A: we never gated on the (unreliable) vision
-                    # capability flag, so a model that cannot see fails HERE.
-                    # Translate that one case into something actionable; every
-                    # other error keeps its original text, because mislabelling a
-                    # rate limit as a vision problem sends the user off changing
-                    # models over an unrelated fault.
-                    tee(await llm_errors.error_frame(exc, code="SPAWN_ERROR", had_images=bool(images)))
-                    _usage = usage_sink.detail()
-                    _prompt = run_trace.prompt()
-                    await recorder.finalize(
-                        summary_message_id=None, full_output="",
-                        model=_usage["model"], provider=_usage["provider"],
-                        tokens_in=_usage["tokens_in"], tokens_out=_usage["tokens_out"],
-                        tokens_estimated=(_usage["tokens_in"] is None),
-                        error_kind=type(exc).__name__, error_text=str(exc),
-                        system_prompt=_prompt["system_prompt"], injected_kb=_prompt["injected_kb"],
-                        injected_kb_sources=_prompt.get("injected_kb_sources"),
-                    )
-                    return
-
-                if out.get("escalation"):
-                    esc_out = await _handle_escalation(
-                        conversation_id, spawn_id, spawn_name, task_brief, out["escalation"], tee,
-                        run_id=recorder.run_id,
-                    )
-                    final = esc_out or out
-                    _usage = usage_sink.detail()
-                    _prompt = run_trace.prompt()
-                    await recorder.finalize(
-                        summary_message_id=final.get("summary_message_id"),
-                        full_output=final.get("full_output", ""),
-                        model=_usage["model"], provider=_usage["provider"],
-                        tokens_in=_usage["tokens_in"], tokens_out=_usage["tokens_out"],
-                        tokens_estimated=(_usage["tokens_in"] is None),
-                        system_prompt=_prompt["system_prompt"], injected_kb=_prompt["injected_kb"],
-                        injected_kb_sources=_prompt.get("injected_kb_sources"),
-                    )
-                    return
-
-                _usage = usage_sink.detail()
-                _prompt = run_trace.prompt()
-                # S3-M3 Task 5: the stream_end below is emitted AFTER this collecting
-                # scope closes — build the frame payload NOW, from the SAME _usage
-                # snapshot finalize persists (frame chip and Run row can never disagree).
-                usage_frame = _usage_frame(_usage)
-                await recorder.finalize(
-                    summary_message_id=out["summary_message_id"], full_output=out["full_output"],
-                    model=_usage["model"], provider=_usage["provider"],
-                    tokens_in=_usage["tokens_in"], tokens_out=_usage["tokens_out"],
-                    tokens_estimated=(_usage["tokens_in"] is None),
-                    system_prompt=_prompt["system_prompt"], injected_kb=_prompt["injected_kb"],
-                    injected_kb_sources=_prompt.get("injected_kb_sources"),
-                )
-            except asyncio.CancelledError:
-                # S3-M1 user cancel — handled HERE, still inside the collecting scopes, so
-                # usage/prompt detail is readable. Persist the streamed partial (an aborted
-                # run must not silently eat output the user already saw), finalize as
-                # 'cancelled' (skips scoring → can never enter the corpus), then RE-RAISE
-                # so the task ends cancelled — the awaiter below tells user-cancel apart
-                # from its own teardown via task.cancelled().
-                partial = "".join(chunks)
-                summary_id = None
-                # recorder._finalized (private, but this function owns the recorder): a
-                # cancel that landed AFTER the commit means the real summary is already
-                # persisted — a 已中断 partial here would be a duplicate.
-                if partial.strip() and not recorder._finalized:
-                    summary_id = await memory.add_message(
-                        conversation_id, "spawn_summary",
-                        f"[{spawn_name}] {task_brief} -> 已中断",
-                        display_content=partial + "\n\n_(已中断)_", spawn_id=spawn_id,
-                    )
-                _usage = usage_sink.detail()
-                _prompt = run_trace.prompt()
-                await recorder.finalize(
-                    summary_message_id=summary_id, full_output=partial,
-                    model=_usage["model"], provider=_usage["provider"],
-                    tokens_in=_usage["tokens_in"], tokens_out=_usage["tokens_out"],
-                    tokens_estimated=(_usage["tokens_in"] is None),
-                    status_override="cancelled",
-                    system_prompt=_prompt["system_prompt"], injected_kb=_prompt["injected_kb"],
-                    injected_kb_sources=_prompt.get("injected_kb_sources"),
-                )
-                # Via emit, NOT tee (review S7): finalize already derived the steps —
-                # a tee'd post-finalize event would be a dead entry in recorder._events.
-                emit({"type": "run_cancelled", "run_id": recorder.run_id,
-                      **({"message_id": summary_id} if summary_id else {})})
-                raise
-        tee({
-            "type": "spawn_meta", "arslan_message_id": out["summary_message_id"],
-            "spawn_id": spawn_id, "spawn_name": spawn_name,
-            "assistant_message_id": out["assistant_message_id"],
-            "task_brief": task_brief, "run_id": recorder.run_id,
-        })
-        # HX-2: a packaged HTML deliverable rides the stream_end frame (the frame the
-        # store turns into the chat item) so the frontend can render the preview card live.
-        tee({"type": "stream_end", "message_id": out["summary_message_id"],
-             "usage": usage_frame,
-             **({"artifact": out["artifact"]} if out.get("artifact") else {})})
-
-    # S3-M1: the turn runs as its OWN task so POST /runs/{id}/cancel can target it via
-    # run_registry. A user cancel is already fully handled inside _run_turn
-    # (finalize+persist+frame) — swallow it so the WS turn survives; OUR OWN teardown
-    # (WS disconnect/shutdown) must propagate the CancelledError contract.
-    task = asyncio.create_task(_run_turn())
-    run_registry.register(recorder.run_id, conversation_id, task, recorder=recorder)
-    try:
-        await task
-    except asyncio.CancelledError:
-        # task.cancelled() ALONE cannot discriminate (review I2): when THIS coroutine is
-        # cancelled while suspended at `await task`, asyncio delegates the cancellation
-        # INTO the inner task — it finalizes as if user-cancelled and task.cancelled()
-        # comes back True. current_task().cancelling() > 0 (py3.11+) is the real signal:
-        # nonzero means the CancelledError was aimed at US — propagate regardless of
-        # what the inner task did.
-        cur = asyncio.current_task()
-        if cur is not None and cur.cancelling() > 0:
-            task.cancel()  # teardown aimed at us — don't orphan a still-running turn
-            raise
-        if not task.cancelled():
-            task.cancel()  # inner still running yet we got cancelled — same teardown case
-            raise
-        # else: user cancel via run_registry — fully handled inside _run_turn
-    finally:
-        run_registry.unregister(recorder.run_id, conversation_id)
-
-
-
-
-
-
-
-
-
-
-
-
-
-

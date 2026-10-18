@@ -8,23 +8,20 @@ from server.orchestrator import arslan, tool_loop
 from server.services import phase_service
 from tests.server.test_promise_guard import _SeqAdapter, maker  # noqa: F401
 
-pytestmark = pytest.mark.one_arslan
 
 
 @pytest.fixture
 def no_dispatch(monkeypatch):
+    """0.1.63 (C1): the expert entry point is gone from arslan; the one place an
+    expert turn could still start is dispatcher.dispatch, so refuse it there."""
+    from server.orchestrator import dispatcher
     dispatched = []
 
     async def refuse(*args, **kwargs):
         dispatched.append(args)
         raise AssertionError("an expert was dispatched")
-    for name in ("_dispatch_spawn",):  # 0.1.48: the other entry points were deleted
-        monkeypatch.setattr(arslan, name, refuse)
+    monkeypatch.setattr(dispatcher, "dispatch", refuse)
     return dispatched
-
-
-def test_the_product_default_is_off():
-    assert arslan.EXPERTS_ENABLED is False
 
 
 @pytest.mark.asyncio
@@ -48,7 +45,9 @@ async def test_a_parked_invite_from_an_earlier_version_cannot_fire(maker, no_dis
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _SeqAdapter(["Sure."]))
     await arslan.handle_user_message("main", "好", lambda e: None)   # a bare confirm used to accept it
     assert no_dispatch == []
-    assert await phase_service.get_pending_invite("main") is None
+    # 0.1.63 (C1): the turn no longer clears the parked row (nothing reads it any more);
+    # what matters is that it did not fire.
+    assert await phase_service.get_pending_invite("main") is not None
     assert db_session  # the maker fixture points the session factory at the test database
 
 
@@ -65,12 +64,6 @@ def test_migration_0056_hands_every_scheduled_task_to_arslan_and_keeps_the_rest(
         upgrade_sync(connection)
         rows = connection.execute(sa.text("SELECT id, name, prompt, spawn_id, target FROM scheduled_tasks ORDER BY id")).all()
     assert rows == [(1, "digest", "summarize", 6, "arslan"), (2, "mine", "check", None, "arslan")]
-
-
-def test_an_old_expert_scheduled_row_still_fires_as_arslan():
-    from server.db.models import ScheduledTask
-    from server.services import scheduler
-    assert scheduler._target(ScheduledTask(name="x", prompt="y", spawn_id=6, target="spawn")) == "arslan"
 
 
 @pytest.mark.asyncio
@@ -143,8 +136,6 @@ async def test_background_evolution_never_spends_while_experts_are_off(execution
         return True
     monkeypatch.setattr(evolution_watcher, "_is_eligible", eligible)
     assert await evolution_watcher.trigger_spawn(6) is None and started == []
-    monkeypatch.setattr(arslan, "EXPERTS_ENABLED", True)          # the legacy path still works when on
-    assert await evolution_watcher.trigger_spawn(6) == 1 and started == [6]
 
 
 @pytest.mark.asyncio

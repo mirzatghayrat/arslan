@@ -3,7 +3,6 @@ here with Hands faked (the contract fixtures). Nothing is sent to a model."""
 import asyncio
 import itertools
 
-import pytest
 
 from server.registry import hands_tools
 from server.services import hands_client
@@ -11,7 +10,6 @@ from tests.server import test_hands_0153 as base
 
 isolated, hands, asks, in_job = base.isolated, base.hands, base.asks, base.in_job
 
-pytestmark = pytest.mark.one_arslan
 
 SHOT = {"ok": True, "capture": {"ok": True, "window_id": 85125, "title": "Groceries", "onscreen": True,
                                 "frame": {"x": 0, "y": 0, "width": 10, "height": 10}, "scale": 1.0,

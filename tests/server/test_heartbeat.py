@@ -54,7 +54,7 @@ async def test_enabling_without_a_checklist_still_creates_nothing(db):
 
 
 # ── enabling ──────────────────────────────────────────────────────────────
-async def test_enabling_with_a_checklist_creates_one_arslan_task(db):
+async def test_enabling_with_a_checklist_creates_an_arslan_task(db):
     await _set(db, heartbeat_enabled="true", heartbeat_checklist="- watch CI\n- chase invoices")
     await heartbeat.sync_task()
     async with db() as s:

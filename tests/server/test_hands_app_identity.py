@@ -11,7 +11,6 @@ from tests.server import test_hands_0153 as base
 
 isolated, hands, asks, in_turn, in_job = base.isolated, base.hands, base.asks, base.in_turn, base.in_job
 
-pytestmark = pytest.mark.one_arslan
 
 
 @pytest.fixture

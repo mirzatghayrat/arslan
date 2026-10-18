@@ -10,7 +10,6 @@ from server.orchestrator import arslan
 from server.registry import hands_tools
 from server.services import agent_browser, approvals, background_jobs, personal_context as pc, task_service
 
-pytestmark = pytest.mark.one_arslan
 
 
 @pytest.fixture

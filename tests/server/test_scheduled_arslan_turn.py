@@ -11,6 +11,7 @@ makes writes and commands impossible in an unattended run. That is precisely
 the unattended-exec surface the two arXiv analyses of OpenClaw are about, and
 here it closes by construction.
 """
+import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -86,7 +87,7 @@ async def test_no_listener_is_not_an_error(db, monkeypatch):
     await scheduler.run_arslan_turn("nobody-here", "hi")   # must not raise
 
 
-# ── the fire path chooses by spawn_id ─────────────────────────────────────
+# ── every fire is an Arslan turn ──────────────────────────────────────────
 async def _task(m, **kw):
     from datetime import datetime
     async with m() as s:
@@ -117,37 +118,42 @@ async def test_a_task_without_a_spawn_fires_an_arslan_turn(db, monkeypatch):
     assert called == [("conv-x", "check the news")]
 
 
-async def test_a_task_with_a_spawn_still_takes_the_old_path(db, monkeypatch):
-    """Regression pin: the dispatcher path is untouched by the new branch."""
+@pytest.mark.parametrize("spawn_id", [42, None], ids=["spawn-kept", "spawn-deleted"])
+async def test_an_old_expert_row_fires_as_an_arslan_turn(db, monkeypatch, spawn_id):
+    """0.1.63 (C1): a row an older build wrote with target="spawn" (migration 0056
+    rewrites stored rows; this is one it missed) runs as an Arslan turn, whether
+    its spawn still exists or was deleted (spawn_id SET NULL). No expert is
+    dispatched, and the fire is an ordinary ok outcome."""
+    from sqlalchemy import select
+
+    from server.orchestrator import dispatcher
     from server.services import scheduler
 
     arslan_turns, dispatches = [], []
 
     async def fake_turn(cid, prompt):
-        arslan_turns.append(cid)
+        arslan_turns.append((cid, prompt))
     monkeypatch.setattr(scheduler, "run_arslan_turn", fake_turn)
 
-    async def fake_name(spawn_id):
-        return "worker"
-    monkeypatch.setattr(scheduler.dispatcher, "get_spawn_name", fake_name)
+    async def fake_dispatch(*args, **kwargs):
+        dispatches.append(args)
+        raise AssertionError("an expert was dispatched")
+    monkeypatch.setattr(dispatcher, "dispatch", fake_dispatch)
 
-    async def fake_dispatch(recorder, cid, spawn_id, prompt):
-        dispatches.append((cid, spawn_id, prompt))
-    monkeypatch.setattr(scheduler, "_dispatch_recorded", fake_dispatch)
-
-    class _Rec:
-        run_id = 7
-    async def fake_start(**kw):
-        return _Rec()
-    monkeypatch.setattr(scheduler.run_recorder.RunRecorder, "start", fake_start)
-
-    tid = await _task(db, spawn_id=42, prompt="do it", cid="conv-y")
+    tid = await _task(db, prompt="do it", cid="conv-y")
     async with db() as s:
+        task = await s.get(ScheduledTask, tid)
+        task.target, task.spawn_id = "spawn", spawn_id
+        await s.commit()
         task = await s.get(ScheduledTask, tid)
     await scheduler._fire(task)
 
-    assert dispatches and dispatches[0][1] == 42
-    assert arslan_turns == []                 # the Arslan branch stayed out of it
+    assert arslan_turns == [("conv-y", "do it")]
+    assert dispatches == []
+    async with db() as s:
+        rows = (await s.execute(
+            select(ScheduledTaskRun).where(ScheduledTaskRun.task_id == tid))).scalars().all()
+    assert [r.outcome for r in rows] == ["ok"]
 
 
 async def test_the_arslan_fire_records_an_outcome(db, monkeypatch):
@@ -190,47 +196,6 @@ async def test_a_failing_arslan_turn_is_an_error_outcome_not_a_crash(db, monkeyp
         rows = (await s.execute(
             select(ScheduledTaskRun).where(ScheduledTaskRun.task_id == tid))).scalars().all()
     assert rows[0].outcome == "error"
-
-
-# ── the distinction that a NULL spawn_id cannot make on its own ───────────
-async def test_a_deleted_spawn_still_fails_cleanly_rather_than_becoming_an_arslan_turn(db, monkeypatch):
-    """The regression this column exists for.
-
-    `spawn_id` is ondelete SET NULL, so a task whose spawn was deleted looks
-    exactly like a task that never had one. Branching on the absent value turned
-    "your worker is gone" into a silent success — the 3-fail auto-pause would
-    never retire the task, and the user would keep getting Arslan's answers to a
-    prompt written for a specialist. `target` records the intention instead.
-    """
-    from sqlalchemy import select
-
-    from server.services import scheduler
-    from server.db.models import ScheduledTaskRun
-
-    # Recorded, not raised: _fire catches everything into an 'error' outcome, so
-    # an exception here would be indistinguishable from the clean spawn-gone
-    # failure we want — the assertion would pass either way. (Measured: it did.)
-    took_arslan_path = []
-
-    async def note(cid, prompt):
-        took_arslan_path.append(cid)
-    monkeypatch.setattr(scheduler, "run_arslan_turn", note)
-
-    # target='spawn' (the user chose a specialist) but spawn_id is now NULL
-    tid = await _task(db, spawn_id=None, cid="conv-gone")
-    async with db() as s:
-        task = await s.get(ScheduledTask, tid)
-        task.target = "spawn"
-        await s.commit()
-        task = await s.get(ScheduledTask, tid)
-
-    await scheduler._fire(task)
-
-    async with db() as s:
-        rows = (await s.execute(
-            select(ScheduledTaskRun).where(ScheduledTaskRun.task_id == tid))).scalars().all()
-    assert rows[0].outcome == "error"
-    assert took_arslan_path == [], "a deleted spawn silently became an Arslan turn"
 
 
 async def test_migration_backfills_existing_tasks_to_spawn(tmp_path):

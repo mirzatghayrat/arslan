@@ -1002,62 +1002,6 @@ async def test_a_temporary_grant_counts_while_it_is_active_and_not_after(readine
     assert _LINE_HEAD not in await _spawn_system(2, current_turn=2)
 
 
-# ── an escalation grant of a toolset whose server is not ready says so ───────────────────────────────
-
-async def _escalate(readiness, monkeypatch, toolset):
-    from server.orchestrator import arslan, dispatcher, escalation
-    await _equip(readiness, 2)                           # a spawn with nothing to hold the match yet
-    briefs = []
-
-    async def fake_dispatch(conversation_id, *, spawn_id, task_brief, **kw):
-        briefs.append(task_brief)
-        return {"full_output": "done", "spawn_name": "spawn2", "summary_message_id": 2,
-                "assistant_message_id": 2, "escalation": None}
-
-    async def allowed(esc):
-        return {"allowed": True, "why": "outcome"}
-
-    async def match(need):
-        return toolset
-
-    async def turn(conversation_id):
-        return 1
-    monkeypatch.setattr(dispatcher, "dispatch", fake_dispatch)
-    monkeypatch.setattr(escalation, "classify", allowed)
-    monkeypatch.setattr(arslan, "_match_safe_toolset", match)
-    monkeypatch.setattr(arslan.memory, "user_turn_count", turn)
-    events = []
-    await arslan._handle_escalation("c", 2, "spawn2", "brief", {"kind": "capability", "need": "n"},
-                                    events.append)
-    resolved = [e for e in events if e["type"] == "escalation_resolved"]
-    return resolved, briefs
-
-
-async def test_an_escalation_grant_of_a_toolset_whose_server_is_not_ready_says_so(readiness, monkeypatch):
-    resolved, briefs = await _escalate(readiness, monkeypatch, "mcp_3")              # srv3: starting
-    assert [(e["how"], e["detail"]) for e in resolved] == [
-        ("granted", "mcp_3: granted, but srv3 is still starting")]
-    assert briefs == ["brief\n\nArslan granted you srv3's tools, but srv3 is still starting: its tools "
-                      "are not in your list yet. Say so in your answer if you need them."]
-
-
-async def test_an_escalation_grant_of_a_ready_servers_toolset_adds_nothing(readiness, monkeypatch):
-    resolved, briefs = await _escalate(readiness, monkeypatch, "mcp_1")              # srv1: ready, live
-    assert [(e["how"], e["detail"]) for e in resolved] == [("granted", "mcp_1")]
-    assert briefs == ["brief"]
-
-
-async def test_an_escalation_grant_of_an_ordinary_toolset_is_unchanged(readiness, monkeypatch):
-    async with readiness() as s:
-        s.add(Toolset(key="extra_ts", name="Extra", description="d", tier="safe", status="wired"))
-        await s.flush()
-        s.add(Tool(key="extra_tool", toolset_key="extra_ts", description="d", tier="safe",
-                   status="wired", input_schema={}))
-        await s.commit()
-    resolved, briefs = await _escalate(readiness, monkeypatch, "extra_ts")
-    assert [(e["how"], e["detail"]) for e in resolved] == [("granted", "extra_ts")] and briefs == ["brief"]
-
-
 # ── final review, fix B: every shown `last_error` is masked first and cut second ─────────────────
 
 _LEGACY_KEY = "-".join(["sk", "live", "abcdefgh12345678"])     # built at runtime (no literal for scanners)
