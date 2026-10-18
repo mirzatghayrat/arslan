@@ -6,7 +6,7 @@
 | 版本 | v0.1.63 |
 | 分级 | 必须（用户报告：在 iPhone 上要一张 Mac 截图，只收到一个 Mac 上的路径） |
 | 依赖 | — |
-| 合并位置 | **不进 K 线串行链。** 改 `tool_loop.py`（原生参数表）和 `arslan.py` 两个热点文件。K1 合并后的第一个空档合；如果 D1 已经就绪而 M1B 还没跑（K1 合不了），D1 可以先于 K1 合，K1 rebase（⓪Plan 定） |
+| 合并位置 | **不进 K 线串行链。** 改 `tool_loop.py`（原生参数表 `_NATIVE_PARAM_SCHEMAS`，约 `:1477`）和 `arslan.py` 两个热点文件。K1 改的是 `_model_call`、步骤循环和 `_record_tool_result`，没有文字上的重叠，谁先合另一个都能干净地 rebase（②Main 核过）。K1 合并后的第一个空档合；如果 D1 已经就绪而 M1B 还没跑（K1 合不了），D1 可以先于 K1 合（⓪Plan 定） |
 | 推动的门槛 | §5.3 新增一条手机上的体感验收（见「验收」） |
 | 分支 | `claude/0162-d1-deliver-files` |
 | 迁移号 | 无 |
@@ -27,17 +27,26 @@
 - 聊天回合里用命令做出来的文件（例如 `screencapture` 存的 PNG），或任何二进制文件，都不会登记，所以手机收不到，窗口里也没有文件卡。
 - 模型不知道这条消息来自 iPhone：`source == "phone"` 只用来在窗口里标「来自 iPhone」（`server/orchestrator/arslan.py:420-423`），没有传进提示词。所以它会回一个对手机用户毫无用处的 Mac 路径。
 - iPhone 那边已经好了：build 18 会显示并能打开收到的 `file.offer`（①iOS 报告）。**不改 Bridge 帧。**
+- **截图从哪来：** 服务端和 Hands 都不调 `screencapture`。Hands 的 `desktop_look` 截的图按 Hands 规格 §4.2 只给模型、不落盘（`_record_tool_result` 的注释），所以没有可附的文件。模型今天唯一的路是 `run_command` 跑 `screencapture -x <文件>`：
+  - 这要「屏幕录制」权限，给的是跑命令的那个进程（Arslan.app 下的服务端），不是 Hands 那个有自己授权的助手进程。没授权时，macOS 只给一张桌面背景，或者直接失败。
+  - 用户报告里那张图有 1.34 MB，还附了 OCR 摘要，说明 0.1.62 上这条路在用户的 Mac 上已经能截到图（⓪Plan 没有逐字核 OCR 的内容）。缺的只是送到手机这一步。
+  - **⓪Plan 定：走这条路（②Main 审查时列的选项 a）。** 卡里写明要「屏幕录制」权限；M3 第 12 条在真 Mac 上验。
+  - 不选「让 Hands 按需把截图存进工作区」：它改 ③Hands 的文件，也改 §4.2 的隐私规矩，要 ③Hands 和用户拍板。真要做，记进 README §8。
 
 ## 改哪些文件
 
 - `server/registry/file_tools.py`：新工具 `attach_file(path, title?)`，把一个现有文件登记成本次运行的产物。
   - 用 `artifact_store.store_bytes(run_id, title, data)`。
   - 路径照读文件的规矩走 `file_reader.resolve`：只认可读的文件夹，拒绝隐藏文件和像凭据的名字，不跟随链接出去。
-  - 大小上限：照 Bridge 现有的文件传输上限，开工时核。超了就明确拒绝并说明原因。
-  - 效果按「本地」算，不出卡。文件只到用户自己配对的设备和本机窗口。
+  - 上限（②Main 核过）：
+    - 每个文件 20 MB，和 Bridge 的 `ConversationLinks.fileLimit` 一致（`ConversationLinks.swift:34`）。`artifact_store` 自己允许 50 MB，但超过 20 MB 手机收不到。
+    - 每次运行最多 32 个产物，和 `artifact_store` 的 `MAX_FILES` 一致。`store_bytes` 只查大小，这个数要由工具自己查。
+    - 超了都明确拒绝，并说明是哪一条。
+  - 没有运行（`current_run_id()` 为空，例如旧的直接执行器）时，明确报错，不能悄悄什么都不做。聊天回合跑在 `host_run.execute` 下、有 `bind_run`，所以来自手机的回合都有运行。
+  - 效果按「本地」算，不出卡。但要说清楚：文件会离开这台 Mac，送到用户自己配对的 iPhone。今天 `write_file` 的快照就是这样到手机的。
 - 工具注册：注册处和 `tool_loop.py` 的 `_NATIVE_PARAM_SCHEMAS`。工具只追加在最后，不挪别的工具（K3、K7 的约定）。
-- `server/orchestrator/arslan.py`：把 `source` 带进回合。来自 iPhone 时，在本回合的上下文里加一句：用户在手机上，Mac 上的路径对用户没用；用户要的文件用 `attach_file` 附上。
-  - 这句放在本回合会变的那一段，不放进固定前缀（K3 的缓存约定）。
+- `server/orchestrator/arslan.py`：把 `source` 带进回合。来自 iPhone 时，加一句：用户在手机上，Mac 上的路径对用户没用；用户要的文件用 `attach_file` 附上。
+  - **这句放成一条 `agent_status` 提示**（每一步的状态块里；在 Claude、Gemini 上每步只存一次），或者放进本回合的用户消息。**不能放进系统提示词**：K3 要它固定不变，K1 之后原生路径也是只追加。
 - 测试，见「验收」。
 
 ## 不许碰
@@ -56,9 +65,9 @@
 
 - **测试：**
   - 命令做出的 PNG 附上之后，成为本次运行的产物，手机能读到；
-  - 拒绝：可读文件夹之外的路径、像凭据的名字、指向外面的链接、超过上限的文件，都有明确的错误；
+  - 拒绝：可读文件夹之外的路径、像凭据的名字、指向外面的链接、超过 20 MB 的文件、本次运行已有 32 个产物、没有运行，都有明确的错误；
   - 来自 iPhone 的回合，上下文里有那一句；来自窗口的回合没有。
-- **体感（加进 M3）：** 在 iPhone 上让 Arslan 截一张 Mac 的图，图片出现在回答下面，能打开；在窗口里同样要，回答下面有文件卡。
+- **体感（加进 M3）：** 在 iPhone 上让 Arslan 截一张 Mac 的图，图片出现在回答下面，能打开，而且是真实的屏幕，不只是桌面背景；在窗口里同样要，回答下面有文件卡。第一次截屏时，如果 macOS 弹出「屏幕录制」的授权，在验收记录里写下来。
 - 完成证据四项（`docs/sessions.md` §8）。
 
 ## 量级
