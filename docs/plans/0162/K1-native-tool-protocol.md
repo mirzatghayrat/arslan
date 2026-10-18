@@ -86,6 +86,8 @@
       - `clear_at_least`：`{"type": "input_tokens", "value": 20000}`。是 trigger 的三分之一，保证每作废一次缓存都清掉足够多。
       - `exclude_tools`：`update_plan`、`task_progress`、`read_skill`。计划、进度和技能说明不能消失。只发这三个里本次请求工具表中确实有的（文档没说名单里能不能有工具表外的名字，所以不发）。
       - `clear_tool_inputs` 保持默认 `false`：清掉的只是结果，模型仍看得到自己调过什么。
+      - **K3 之前先用过渡值（更正 E23）：** `trigger` 24k 输入 token、`clear_at_least` 8k；`keep`、`exclude_tools`、`clear_tool_inputs` 不变。原因：K3 加消息级缓存断点之前，只有系统前缀有 `cache_control`，清理不多作废任何缓存；而 60k 以下什么都不裁，每步都全价付这部分输入，128k 的聊天计费上限几步就会碰到。**K3 加消息级断点时改回上面的 60k / 20k**，`_CLEAR` 旁边的注释写这个条件。
+      - **只对真正的 Claude 发：** `context_management` 和 `trims_context_server_side()` 都限定 `_is_claude()` 并且是官方 host。第三方 Anthropic 协议端点（例如经 `llm_base_url` 指到别家的 `/anthropic`）可能悄悄忽略这个字段，照旧本地裁剪（K1b 审查发现，更正 E23）。
       - 这些是起始值。M1 用 Claude 跑时贴三样：清理次数和清掉的 token 数（运行记录里的 `tool_uses_cleared`、`input_tokens_cleared`，来自 `context_management.applied_edits`），以及长任务前后的缓存命中。长任务上如果约每 10 次模型调用就清一次以上，或者缓存写入的花费超过省下的，R63 之前调整。
     - **被拒时：** 端点不接受这个 beta（例如经代理转发），照要点 10 去掉重发，退回本地裁剪 + `drop_block`。param_heal 会按端点记住这次拒绝，直到进程退出，所以之后在这个端点上的回合也都走本地裁剪，不只是这一回合；每个这样的运行，运行记录里标一次 `server_clearing_off`。
     - **其他服务商照旧在本地裁剪。**
@@ -120,7 +122,9 @@
 - **风险：配对错位，Anthropic 回 400。** 配对测试覆盖每种组合；被拒时本回合退回旧渲染（`model_call.py:41` 补词之后）。
 - **风险：前文被改，思考块被丢（已核，见要点 4）。** `drop_block` 只保证不报 400；第 3 条和要点 12 让正常路径不改前文，M1 在截图任务和长任务上断言 `input_transformations` 为 0。
 - **风险：服务端清理让缓存作废。** 用 `clear_at_least` 一次多清；M1 贴长任务的缓存命中前后对比（配合 K3）。
-- **风险：状态块都留在轨迹里，长回合多占 token。** Anthropic 上由服务端清理旧结果兜底，其他服务商由轮内裁剪兜底；M1 里贴多步题的输入 token 前后对比。
+- **风险：状态块都留在轨迹里，长回合多占 token。** `clear_tool_uses` 不清状态块，它们是文字，不是工具结果（原文说「由服务端清理兜底」不对，更正 E23）。Anthropic 上靠清掉旧的工具结果腾出空间；其他服务商由轮内裁剪兜底，`_rendered_size` 要把状态块算进去。M1 里贴多步题的输入 token、计费 token 和停下的原因。
+- **风险：`drop_block` 对老账号更严。** 2026-08-31 之前建的账号，只有设了 `block_binding` 才做前缀检查。设了以后，前缀一有改动，思考块就被丢掉；例如 K3 之前收尾那一步工具表变窄，或者压缩。M1 看 `input_transformations`。
+- **风险：代理拒绝 beta 头却不点名字段。** 这时 param_heal 认不出该去掉什么，这个端点上的 Claude 回合会一直失败。已知，留作剩余风险。
 - **回退：** 设 `ARSLAN_TOOL_PROTOCOL=legacy` 即回到旧渲染，不需要回滚代码。
 - **留着的旧路径与删除条件**（代码注释里同样写）：
   - Claude、Gemini 的旧文本渲染，以及它们走回退开关的那条路：**v0.1.64 删**。条件：v0.1.63 装上后 7 天，M2 里 Claude、Gemini 没有协议类 400，且 M1 不退步。
