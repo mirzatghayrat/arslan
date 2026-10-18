@@ -53,14 +53,13 @@ Du redest weiter, während er arbeitet. Alles, was löscht, sendet, installiert 
 
 Das war's. Kein Konto, keine Anmeldung, kein Arslan-Server.
 
-## Neu in 0.1.60 — Hands v2
+## Neu in 0.1.62 — lange Befehle laufen durch, weniger „Bitte prüfen“, MCP-Tools legen keinen Chat mehr lahm
 
-Arslan bedient deine Mac-Apps jetzt mehr so, wie du es tun würdest. Neben dem Text eines Fensters kann es ein Bild des einen Fensters ansehen, in dem es arbeitet — nie den ganzen Bildschirm, nie gespeichert. Mehrere Schritte in einer App laufen als ein Stapel, Menüpunkte werden direkt gewählt, und Apps öffnen sich im Hintergrund. Eine Karte kann mehrere Apps abdecken, und Apps, denen du vertraust, lassen sich unter Einstellungen › Hands dauerhaft erlauben; Löschen, Senden, Bezahlen und Absenden fragen weiterhin jedes Mal. Geht etwas nur mit der App im Vordergrund, leiht sich Arslan den Vordergrund für etwa eine Sekunde (der Bildschirmrand leuchtet blau; Tasten, die du in der Zeit drückst, werden gehalten und danach nachgereicht), und liegt das Fenster auf einem anderen Schreibtisch, geht es dorthin und kommt zurück. Für längere Arbeit kann es den Bildschirm bis zu 30 Minuten übernehmen — nur mit deinem Ja, und es hält an, sobald du Tastatur oder Maus berührst. Die Einrichtung ist jetzt ein kurzer Film beim ersten Start. [Alle Release Notes →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.60)
+Ein Korrektur-Release: Es gibt nichts Neues zu lernen, was schiefging, geht nicht mehr schief. Ein Terminalbefehl läuft jetzt so lange, wie er angefordert hat (standardmäßig 2 Minuten, höchstens 10), statt nach 20 Sekunden abgebrochen zu werden, nie über das hinaus, was der Antwort bleibt, und wenn ihn ein Limit stoppt, sieht Arslan trotzdem, was er ausgegeben hat. Eine Aufgabe endet nur dann mit „Bitte prüfen“, wenn eine Aktion wirklich eine Spur außerhalb deines Macs hinterlassen haben könnte: Ein Befehl, der nur liest, oder eine Aktion, die gar nicht lief, verlangt keine Prüfung mehr. Ein MCP-Server, dessen Tool-Beschreibungen ein Anbieter ablehnt, legt nicht mehr jeden Chat lahm: Arslan formt sie um, und ein Tool, das trotzdem abgelehnt wird, wird für diese Antwort ausgelassen. `osascript` und `shortcuts run` fragen im Terminal in ihren gängigen Schreibweisen jedes Mal nach, und Schreiben folgt keinem Link mehr aus deinem Arbeitsordner hinaus. [Alle Release Notes →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.62)
 
 Zuletzt:
-- **[0.1.59](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.59)** — ein Chat, der mithält: eine lange Antwort ist nicht mehr „Unterbrochen“, eine zweite Nachricht wartet, bis sie dran ist, Arslan antwortet in der Sprache, in der du schreibst, und „Schreibtisch, Dokumente, Downloads: Aus“ sperrt sie auch für Befehle.
-- **[0.1.58](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.58)** — Antworten, die man lesen kann, Dateien, die man öffnen kann: eine ruhige Zeile mit dem, was Arslan getan hat, Dateien als Karten, ein Reader in der Werkbank und jedes Modell jedes Anbieters pro Unterhaltung.
-- **[0.1.57](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.57)** — Fähigkeiten, die wachsen: Arslan findet ein fehlendes Werkzeug, fragt, installiert es gepinnt und in einer Sandbox, testet es und wiederholt den Schritt.
+- **[0.1.61](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.61)** — eine Freigabekarte überall: dieselbe Karte im Chat, im Posteingang, in der Island und auf deinem iPhone; MCP-Server starten von selbst; Claudes neueste Modelle antworten wieder.
+- **[0.1.60](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.60)** — Hands v2: ein Bild des einen Fensters, in dem es arbeitet, Stapel, eine Karte für mehrere Apps, den Vordergrund ausleihen, einen anderen Schreibtisch besuchen und den Bildschirm nur mit deinem Ja übernehmen.
 
 <div align="center">
   <img src="docs/assets/readme/devices.jpg" alt="Arslan auf dem Mac — ein Hintergrundauftrag sammelt Rechnungen — und Arslan für iPhone mit einer wartenden Freigabe" width="100%">
@@ -91,7 +90,7 @@ Zuletzt:
 | **Nachricht** | Aus dem Fenster, vom iPhone oder per Stimme — eine Unterhaltung, eine Schleife | `server/orchestrator/arslan.py`, `server/services/phone_bridge.py` |
 | **Schleife** | Native Tool-Calls; der Plan liegt beim Host; eine abgeschnittene Antwort wird fortgesetzt statt erraten; 75 s pro Modellaufruf | `server/orchestrator/tool_loop.py` |
 | **Policy** | `run` · `ask` · `forbid`, eine reine Funktion des Befehlstexts | `server/services/terminal_policy.py` (Erkennung destruktiver Befehle aus Hermes Agent, MIT) |
-| **Sandbox** | macOS-Seatbelt: Befehle schreiben nur in den Arbeitsordner, Temp und Caches; SSH-Schlüssel, Schlüsselbund und Arslans Daten bleiben zu; Modellschlüssel erreichen nie einen Befehl; 20 s pro Tool-Aufruf | `server/services/command_sandbox.py`, `terminal_exec.py` |
+| **Sandbox** | macOS-Seatbelt: Befehle schreiben nur in den Arbeitsordner, Temp und Caches; SSH-Schlüssel, Schlüsselbund und Arslans Daten bleiben zu; Modellschlüssel erreichen nie einen Befehl; ein Befehl läuft standardmäßig bis zu 2 min (höchstens 10) | `server/services/command_sandbox.py`, `terminal_exec.py` |
 | **Ergebnis** | Als nicht vertrauenswürdig verpackt und geprüft, bevor es dich erreicht; Behauptungen über nie erledigte Arbeit fängt ein deterministischer Wächter ab | `server/orchestrator/untrusted.py`, `promise_guard.py` |
 
 ## Das Tor

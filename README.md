@@ -54,14 +54,13 @@ You keep talking while it works. Anything that deletes, sends, installs or touch
 
 That's it. No account, no sign-up, no Arslan server.
 
-## What's new in 0.1.60 — Hands v2
+## What's new in 0.1.62 — long commands finish, fewer “needs your check”, MCP tools can't break a chat
 
-Arslan uses your Mac apps more like you would. Besides a window's text, it can look at a picture of the one window it works in — never the whole screen, never saved. Several steps in one app run as one batch, menu items are chosen directly and apps open in the background. One card can cover several apps, and apps you trust can be allowed for good in Settings › Hands; deleting, sending, paying and submitting still ask every time. When something only works with the app in front, Arslan borrows the front for about a second (the screen edge glows blue; the keys you press meanwhile are held and given back), and if the window is on another desktop it goes there and comes back. For longer work it can take over the screen for up to 30 minutes — only with your yes, and it pauses the moment you touch the keyboard or mouse. Setting up is now a short first-run film. [Full release notes →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.60)
+A fix release: nothing new to learn, things that went wrong stop going wrong. A terminal command now runs as long as it asked for (2 minutes by default, at most 10) instead of being cut off after 20 seconds, never past what the reply has left, and when a limit stops it Arslan still sees what it printed. A task ends with “needs your check” only when an action may really have left a trace outside your Mac: a command that only reads, or an action that never ran, no longer asks. An MCP server whose tool descriptions a provider refuses no longer breaks every chat: Arslan reshapes them, and a tool that is still refused is left out for that reply. `osascript` and `shortcuts run` in a terminal ask every time in their common spellings, and writing a file never follows a link out of your working folder. [Full release notes →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.62)
 
 Recently:
-- **[0.1.59](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.59)** — a chat that keeps up: a long answer is not "Interrupted", a second message waits its turn, Arslan answers in the language you write in, and "Desktop, Documents, Downloads: Off" closes them to commands too.
-- **[0.1.58](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.58)** — replies you can read and files you can open: one quiet line of what Arslan did, files back as cards, a reader in the workbench, and any model of any provider for each conversation.
-- **[0.1.57](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.57)** — capabilities that grow: Arslan finds a missing tool, asks, installs it pinned and sandboxed, tests it and retries the step.
+- **[0.1.61](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.61)** — one approval card everywhere: the same card in the chat, Inbox, island and on your iPhone; MCP servers start themselves; Claude's newest models answer again.
+- **[0.1.60](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.60)** — Hands v2: a picture of the one window it works in, batches, one card for several apps, borrowing the front, visiting another desktop, and taking over the screen only with your yes.
 
 <div align="center">
   <img src="docs/assets/readme/devices.jpg" alt="Arslan on a Mac — a background job gathering invoices — and Arslan for iPhone showing an approval waiting" width="100%">
@@ -92,7 +91,7 @@ Recently:
 | **Message** | From the window, your iPhone or your voice — one conversation, one loop | `server/orchestrator/arslan.py`, `server/services/phone_bridge.py` |
 | **Loop** | Native tool calls; the plan is kept by the host; a cut-off reply continues instead of guessing; 75 s per model call | `server/orchestrator/tool_loop.py` |
 | **Policy** | `run` · `ask` · `forbid`, a pure function of the command text | `server/services/terminal_policy.py` (destructive-command detection vendored from Hermes Agent, MIT) |
-| **Sandbox** | macOS seatbelt: commands write only to the working folder, temp and caches; SSH keys, keychain and Arslan's data stay closed; model keys never reach a command; 20 s per tool call | `server/services/command_sandbox.py`, `terminal_exec.py` |
+| **Sandbox** | macOS seatbelt: commands write only to the working folder, temp and caches; SSH keys, keychain and Arslan's data stay closed; model keys never reach a command; a command runs up to 2 min by default (10 at most) | `server/services/command_sandbox.py`, `terminal_exec.py` |
 | **Result** | Wrapped as untrusted data and checked before it reaches you; claims of work that never ran are caught by a deterministic guard | `server/orchestrator/untrusted.py`, `promise_guard.py` |
 
 ## The gate

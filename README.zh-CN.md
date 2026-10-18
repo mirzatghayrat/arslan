@@ -53,14 +53,13 @@
 
 就这样。不用注册账号，也没有 Arslan 服务器。
 
-## 0.1.60 新功能：Hands v2
+## 0.1.62 新功能：长命令能跑完、少一些“需要你确认”、MCP 工具不再弄坏对话
 
-Arslan 用起 Mac 上的应用更像你自己了。除了窗口里的文字，它还可以看它正在操作的那一个窗口的画面——从不截整个屏幕，也从不保存。同一个应用里的几个步骤一批完成，菜单项直接选择，应用在后台打开。一张卡片可以覆盖多个应用，你信任的应用可以在 设置 › Hands 里永久允许；删除、发送、付款和提交仍然每次都问。有些操作只有应用在前台才能完成时，Arslan 会借用前台约一秒（屏幕边缘亮起蓝光，这期间你按的键会先保留、之后补上）；窗口在另一个桌面上时，它会过去、做完再回来。较长的工作，它可以接管屏幕最多 30 分钟——只有你同意才会开始，你一碰键盘或鼠标它就暂停。首次设置现在是一段简短的影片。[完整发布说明 →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.60)
+这是一次修补发布：没有新东西要学，出过问题的地方不再出问题。终端命令现在按它申请的时长运行（默认 2 分钟，最长 10 分钟），不再在 20 秒后被截断，也绝不超过这条回复剩下的时间；被时限停止时，Arslan 仍能看到它已打印的内容。任务只有在某个动作可能真的在你的 Mac 之外留下痕迹时，才会以“需要你确认”收尾：只读的命令、根本没运行的动作都不再要求确认。MCP 服务器的工具描述被服务商拒绝时，不再让每次对话都失败：Arslan 会重新整理这些描述，仍被拒绝的工具只在这条回复里被略去。终端里的 `osascript` 和 `shortcuts run` 在常见写法下每次都询问，写文件也不会再顺着链接跑出你的工作文件夹。 [完整发布说明 →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.62)
 
 最近几版：
-- **[0.1.59](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.59)**——对话跟得上：长回答不再显示“已中断”，第二条消息排队等待，Arslan 用你写的语言回答，“桌面、文稿、下载：关”对命令同样生效。
-- **[0.1.58](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.58)**——回复读得懂、文件打得开：做过的事收成安静的一行，写出的文件以卡片返回，工作台里有阅读器，每个对话可以选任意服务商的任意模型。
-- **[0.1.57](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.57)**——能力自己长：缺工具时 Arslan 会去找、问你、固定版本并在沙箱里安装、测试后重试那一步。
+- **[0.1.61](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.61)**——各处都是同一张审批卡：聊天、收件箱、Island 和 iPhone 上是同一张卡片；MCP 服务器自己启动；Claude 最新的模型又能回答了。
+- **[0.1.60](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.60)**——Hands v2：它正在操作的那一个窗口的画面、批量执行、一张卡片覆盖多个应用、借用前台、去另一个桌面，以及只有你同意才接管屏幕。
 
 <div align="center">
   <img src="docs/assets/readme/devices.jpg" alt="Mac 上的 Arslan 正在后台整理发票；iPhone 上的 Arslan 显示一条待批准" width="100%">
@@ -91,7 +90,7 @@ Arslan 用起 Mac 上的应用更像你自己了。除了窗口里的文字，�
 | **消息** | 来自窗口、iPhone 或语音——同一个对话，同一条回路 | `server/orchestrator/arslan.py`, `server/services/phone_bridge.py` |
 | **回路** | 原生工具调用；计划由宿主保管；回复被截断时接着写而不是猜；每次模型调用上限 75 秒 | `server/orchestrator/tool_loop.py` |
 | **策略** | `run` · `ask` · `forbid`，命令文本的纯函数 | `server/services/terminal_policy.py`（危险命令检测取自 Hermes Agent，MIT） |
-| **沙箱** | macOS seatbelt：命令只能写工作文件夹、临时目录和缓存；SSH 密钥、钥匙串和 Arslan 数据一律关闭；模型 key 永远不会交给命令；每次工具调用上限 20 秒 | `server/services/command_sandbox.py`, `terminal_exec.py` |
+| **沙箱** | macOS seatbelt：命令只能写工作文件夹、临时目录和缓存；SSH 密钥、钥匙串和 Arslan 数据一律关闭；模型 key 永远不会交给命令；命令默认最长运行 2 分钟（上限 10 分钟） | `server/services/command_sandbox.py`, `terminal_exec.py` |
 | **结果** | 包裹成不可信数据、检查后才给你；没真正做过的事被确定性守卫拦下 | `server/orchestrator/untrusted.py`, `promise_guard.py` |
 
 ## 闸门

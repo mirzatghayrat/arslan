@@ -53,14 +53,13 @@ Sigues hablando mientras trabaja. Todo lo que borra, envía, instala o toca otra
 
 Y ya está. Sin cuenta, sin registro, sin servidor de Arslan.
 
-## Novedades de 0.1.60 — Hands v2
+## Novedades de 0.1.62 — los comandos largos terminan, menos «necesita tu revisión», las herramientas MCP ya no rompen un chat
 
-Arslan usa las apps de tu Mac más como lo harías tú. Además del texto de una ventana, puede ver una imagen de la única ventana en la que trabaja — nunca la pantalla entera, nunca guardada. Varios pasos en una app se ejecutan como un lote, los elementos de menú se eligen directamente y las apps se abren en segundo plano. Una tarjeta puede cubrir varias apps, y las apps en las que confías se pueden permitir para siempre en Ajustes › Hands; borrar, enviar, pagar y confirmar un envío siguen preguntando siempre. Cuando algo solo funciona con la app al frente, Arslan toma prestado el primer plano durante un segundo aproximadamente (el borde de la pantalla brilla en azul; las teclas que pulses mientras tanto se guardan y se devuelven después), y si la ventana está en otro escritorio, va allí y vuelve. Para trabajos más largos puede tomar el control de la pantalla hasta 30 minutos — solo con tu sí, y se pausa en cuanto tocas el teclado o el ratón. La configuración es ahora un breve vídeo de primer inicio. [Notas completas →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.60)
+Una versión de correcciones: no hay nada nuevo que aprender, lo que fallaba deja de fallar. Un comando de terminal se ejecuta ahora durante el tiempo que pidió (2 minutos por defecto, 10 como máximo) en lugar de cortarse a los 20 segundos, nunca más allá de lo que le queda a la respuesta, y cuando un límite lo detiene Arslan sigue viendo lo que imprimió. Una tarea termina con «necesita tu revisión» solo cuando una acción pudo dejar de verdad una huella fuera de tu Mac: un comando que solo lee, o una acción que no llegó a ejecutarse, ya no pide revisión. Un servidor MCP cuyas descripciones de herramientas rechaza un proveedor ya no rompe todos los chats: Arslan las reformula, y una herramienta que aun así se rechaza se deja fuera en esa respuesta. `osascript` y `shortcuts run` en una terminal preguntan siempre en sus formas habituales de escribirse, y escribir un archivo nunca sigue un enlace fuera de tu carpeta de trabajo. [Notas completas →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.62)
 
 Recientemente:
-- **[0.1.59](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.59)** — un chat que no se queda atrás: una respuesta larga ya no aparece como «Interrumpida», un segundo mensaje espera su turno, Arslan responde en el idioma en que escribes y «Escritorio, Documentos, Descargas: desactivado» las cierra también a los comandos.
-- **[0.1.58](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.58)** — respuestas que se leen y archivos que se abren: una línea discreta con lo que hizo Arslan, archivos de vuelta como tarjetas, un lector en el banco de trabajo y cualquier modelo de cualquier proveedor en cada conversación.
-- **[0.1.57](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.57)** — capacidades que crecen: Arslan encuentra una herramienta que falta, pregunta, la instala fijada y en un sandbox, la prueba y reintenta el paso.
+- **[0.1.61](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.61)** — una tarjeta de aprobación en todas partes: la misma tarjeta en el chat, el Inbox, la Island y tu iPhone; los servidores MCP arrancan solos; los modelos más recientes de Claude vuelven a responder.
+- **[0.1.60](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.60)** — Hands v2: una imagen de la única ventana en la que trabaja, lotes, una tarjeta para varias apps, tomar prestado el primer plano, visitar otro escritorio y tomar el control de la pantalla solo con tu sí.
 
 <div align="center">
   <img src="docs/assets/readme/devices.jpg" alt="Arslan en un Mac — un trabajo en segundo plano reúne facturas — y Arslan para iPhone con una aprobación pendiente" width="100%">
@@ -91,7 +90,7 @@ Recientemente:
 | **Mensaje** | Desde la ventana, tu iPhone o tu voz — una conversación, un bucle | `server/orchestrator/arslan.py`, `server/services/phone_bridge.py` |
 | **Bucle** | Llamadas nativas a herramientas; el plan lo guarda el host; una respuesta cortada continúa en vez de adivinar; 75 s por llamada al modelo | `server/orchestrator/tool_loop.py` |
 | **Política** | `run` · `ask` · `forbid`, una función pura del texto del comando | `server/services/terminal_policy.py` (detección de comandos destructivos tomada de Hermes Agent, MIT) |
-| **Sandbox** | Seatbelt de macOS: los comandos solo escriben en la carpeta de trabajo, temporales y cachés; claves SSH, llavero y datos de Arslan quedan cerrados; las claves del modelo nunca llegan a un comando; 20 s por llamada a herramienta | `server/services/command_sandbox.py`, `terminal_exec.py` |
+| **Sandbox** | Seatbelt de macOS: los comandos solo escriben en la carpeta de trabajo, temporales y cachés; claves SSH, llavero y datos de Arslan quedan cerrados; las claves del modelo nunca llegan a un comando; un comando corre hasta 2 min por defecto (10 como máximo) | `server/services/command_sandbox.py`, `terminal_exec.py` |
 | **Resultado** | Envuelto como no confiable y revisado antes de llegarte; un guardián determinista detecta afirmaciones de trabajo que nunca se hizo | `server/orchestrator/untrusted.py`, `promise_guard.py` |
 
 ## La puerta

@@ -53,14 +53,13 @@ O çalışırken sen konuşmaya devam edersin. Silen, gönderen, kuran ya da ba�
 
 Bu kadar. Hesap yok, kayıt yok, Arslan sunucusu yok.
 
-## 0.1.60'ta yeni — Hands v2
+## 0.1.62'de yeni — uzun komutlar sonuna kadar çalışır, daha az “kontrolün gerekir”, MCP araçları sohbeti bozamaz
 
-Arslan Mac uygulamalarını artık daha çok senin kullandığın gibi kullanıyor. Bir pencerenin metninin yanında, üzerinde çalıştığı tek pencerenin bir görüntüsüne de bakabilir — asla tüm ekrana değil, asla kaydedilmez. Bir uygulamadaki birkaç adım tek bir toplu iş olarak çalışır, menü öğeleri doğrudan seçilir ve uygulamalar arka planda açılır. Tek bir kart birden çok uygulamayı kapsayabilir ve güvendiğin uygulamalara Ayarlar › Hands'ten kalıcı izin verebilirsin; silme, gönderme, ödeme ve gönderim yapma her seferinde yine sorar. Bir şey yalnızca uygulama öndeyken yapılabiliyorsa Arslan önü yaklaşık bir saniye ödünç alır (ekran kenarı mavi parlar; bu sırada bastığın tuşlar tutulur ve sonra geri verilir); pencere başka bir masaüstündeyse oraya gider ve geri döner. Daha uzun işlerde ekranı en fazla 30 dakika devralabilir — yalnızca senin onayınla ve klavyeye ya da fareye dokunduğun anda duraklar. Kurulum artık kısa bir ilk açılış filmi. [Tüm sürüm notları →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.60)
+Bir düzeltme sürümü: öğrenilecek yeni bir şey yok, ters giden şeyler artık ters gitmiyor. Bir terminal komutu artık 20 saniyede kesilmek yerine istediği süre kadar çalışıyor (varsayılan 2 dakika, en fazla 10), yanıtın kalan süresini asla aşmıyor ve bir sınır onu durdurduğunda Arslan yine de yazdırdıklarını görüyor. Bir görev “kontrolün gerekir” ile yalnızca bir eylem Mac'inin dışında gerçekten iz bırakmış olabileceğinde bitiyor: yalnızca okuyan bir komut ya da hiç çalışmamış bir eylem artık kontrol istemiyor. Araç açıklamalarını bir sağlayıcının reddettiği bir MCP sunucusu artık her sohbeti bozmuyor: Arslan açıklamaları yeniden biçimlendiriyor ve yine de reddedilen araç yalnızca o yanıt için dışarıda bırakılıyor. Terminaldeki `osascript` ve `shortcuts run` yaygın yazılışlarında her seferinde soruyor, bir dosyayı yazmak da bir bağlantıyı izleyip çalışma klasörünün dışına çıkmıyor. [Tüm sürüm notları →](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.62)
 
 Son sürümler:
-- **[0.1.59](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.59)** — yetişen bir sohbet: uzun bir yanıt artık "Kesildi" olmuyor, ikinci mesaj sırasını bekliyor, Arslan senin yazdığın dilde yanıtlıyor ve "Masaüstü, Belgeler, İndirilenler: Kapalı" bunları komutlara da kapatıyor.
-- **[0.1.58](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.58)** — okunabilen yanıtlar, açılabilen dosyalar: Arslan'ın yaptıkları sakin tek bir satırda, yazdığı dosyalar kart olarak geri geliyor, çalışma tezgâhında bir okuyucu var ve her sohbet için herhangi bir sağlayıcının herhangi bir modeli seçilebiliyor.
-- **[0.1.57](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.57)** — büyüyen yetenekler: Arslan eksik bir aracı bulur, sorar, sabitlenmiş ve sanal alanda kurar, test eder ve adımı yeniden dener.
+- **[0.1.61](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.61)** — her yerde tek onay kartı: sohbette, Inbox'ta, Island'da ve iPhone'unda aynı kart; MCP sunucuları kendiliğinden başlıyor; Claude'un en yeni modelleri yine yanıt veriyor.
+- **[0.1.60](https://github.com/mirzatghayrat/arslan/releases/tag/v0.1.60)** — Hands v2: üzerinde çalıştığı tek pencerenin görüntüsü, toplu adımlar, birkaç uygulama için tek kart, önü ödünç alma, başka bir masaüstünü ziyaret etme ve ekranı yalnızca senin onayınla devralma.
 
 <div align="center">
   <img src="docs/assets/readme/devices.jpg" alt="Mac'te Arslan — arka planda faturaları toplayan bir iş — ve bekleyen bir onayı gösteren iPhone için Arslan" width="100%">
@@ -91,7 +90,7 @@ Son sürümler:
 | **Mesaj** | Pencereden, iPhone'undan ya da sesinle — tek sohbet, tek döngü | `server/orchestrator/arslan.py`, `server/services/phone_bridge.py` |
 | **Döngü** | Yerel araç çağrıları; planı ana süreç tutar; yarıda kesilen yanıt tahmin yerine devam eder; model çağrısı başına 75 sn | `server/orchestrator/tool_loop.py` |
 | **Politika** | `run` · `ask` · `forbid`, komut metninin saf bir fonksiyonu | `server/services/terminal_policy.py` (yıkıcı komut algılama Hermes Agent'tan, MIT) |
-| **Sanal alan** | macOS seatbelt: komutlar yalnızca çalışma klasörüne, geçici klasörlere ve önbelleklere yazar; SSH anahtarları, anahtar zinciri ve Arslan'ın verileri kapalı kalır; model anahtarları bir komuta asla ulaşmaz; araç çağrısı başına 20 sn | `server/services/command_sandbox.py`, `terminal_exec.py` |
+| **Sanal alan** | macOS seatbelt: komutlar yalnızca çalışma klasörüne, geçici klasörlere ve önbelleklere yazar; SSH anahtarları, anahtar zinciri ve Arslan'ın verileri kapalı kalır; model anahtarları bir komuta asla ulaşmaz; bir komut varsayılan olarak en fazla 2 dk çalışır (üst sınır 10 dk) | `server/services/command_sandbox.py`, `terminal_exec.py` |
 | **Sonuç** | Güvenilmez veri olarak sarılır ve sana ulaşmadan kontrol edilir; hiç yapılmamış işle ilgili iddiaları deterministik bir koruma yakalar | `server/orchestrator/untrusted.py`, `promise_guard.py` |
 
 ## Kapı
