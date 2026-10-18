@@ -644,11 +644,15 @@ async def _model_call(a, system: str, convo: list[dict], current_request: dict, 
         like a schema problem): leave it out (`last`, or none named: every MCP tool) and say so."""
         nonlocal tools, schemas, status, status_record, messages
         sent = ((schemas if forced else tools) if native else tools) or []
-        if (drops is None or exc.kind != "input" or state.exhausted
+        if (drops is None or exc.kind not in ("input", "protocol") or state.exhausted
                 or not any(t["function"]["name"].startswith("mcp_") for t in sent)):
             return False
         text = exc.excerpt or ""        # the provider's own words; str(exc) also carries our recovery notes
         name = _refused_tool(a, sent, text)
+        # 0.1.63 K1a: a refusal naming an MCP tool whose name holds a protocol word
+        # (mcp_1__get_tool_result) classifies as "protocol"; it is still that tool's schema.
+        if exc.kind == "protocol" and name is None:
+            return False
         if name is None and not _SCHEMA_WORDS.search(text):
             return False
         if name is not None:            # remembered even when this is the last try and every tool goes
@@ -786,9 +790,11 @@ async def _recover_truncation(a, resp, request, state, remaining):
 
 
 def _rendered_size(messages: list[dict]) -> int:
-    """Context size of what is actually sent, not of local bookkeeping."""
+    """Context size of what is actually sent, not of local bookkeeping. Kept status blocks
+    (trajectory.status, K1) are sent natively though the legacy rendering leaves them out."""
+    kept = sum(len(m.get("content") or "") for m in messages if m.get("_status"))
     return (len(json.dumps(trajectory.to_legacy(messages, images=False), ensure_ascii=False, default=str))
-            + trajectory.IMAGE_SIZE_CHARS * trajectory.image_count(messages))
+            + trajectory.IMAGE_SIZE_CHARS * trajectory.image_count(messages) + kept)
 
 
 async def _log_degrade_hint(conversation_id, tool_key, count) -> None:

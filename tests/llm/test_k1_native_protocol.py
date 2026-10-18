@@ -309,3 +309,64 @@ async def test_gemini_status_is_its_own_part_and_stays(monkeypatch):
     step1 = sent[1]["contents"][-1]["parts"]
     assert "functionResponse" in step1[0] and step1[-1]["text"].startswith("<agent_status")
     assert sent[2]["contents"][:3] == sent[1]["contents"][:3]
+
+
+# ── review fixes (#212) ──────────────────────────────────────────────────────────────
+
+from arslan.llm.providers.openai_provider import OpenAIProvider  # noqa: E402
+
+OPENAI_END = {"choices": [{"message": {"role": "assistant", "content": "Done."}, "finish_reason": "stop"}],
+              "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+
+
+@pytest.mark.parametrize("name", ["mcp_1__get_tool_result", "mcp_1__tool_use_log"])
+async def test_a_refused_mcp_tool_named_like_a_protocol_word_is_left_out(monkeypatch, name):
+    # F3 on the native path: DeepSeek names the refused function; "tool_result" / "tool_use" in that
+    # name read as a protocol word, but it is still one MCP tool's schema: leave it out, carry on.
+    from server.mcp import executor
+    from server.services import recap_service
+
+    async def quiet(*a, **k):
+        return None
+    monkeypatch.setattr(executor, "not_ready_for_key", quiet)
+    monkeypatch.setattr(recap_service, "log_event", quiet)
+    tool_loop._BAD_TOOLS.clear()
+    sent = []
+
+    def handler(request):
+        body = json.loads(request.content)
+        sent.append(body)
+        if name in [t["function"]["name"] for t in body.get("tools") or []]:
+            return httpx.Response(400, json={"error": {"message": (
+                f"Invalid schema for function '{name}': 'pattern' is not permitted"), "type": "invalid_request_error"}})
+        return httpx.Response(200, json=OPENAI_END)
+
+    async def resolve():
+        return [{"key": "web_search", "description": "Search the web"},
+                {"key": name, "description": "x", "input_schema": {"type": "object", "properties": {}}}]
+    adapter = LLMAdapter("openai", "deepseek-chat", api_key="k", base_url="https://llm.example/v1")
+    adapter._provider = OpenAIProvider(model="deepseek-chat", api_key="k", base_url="https://llm.example/v1",
+                                       transport=httpx.MockTransport(handler))
+    assert adapter.native_trajectory()
+    try:
+        result = await tool_loop.run_native(system="S", user_content="t", history=[], emit=lambda e: None,
+                                            on_chunk=lambda c: None, resolve_tools=resolve,
+                                            adapter_override=adapter, conversation_id="c1")
+    finally:
+        tool_loop._BAD_TOOLS.clear()
+    assert result["final"] == "Done." and len(sent) == 2
+    assert name not in json.dumps(sent[1]["tools"]) and "web_search" in json.dumps(sent[1]["tools"])
+
+
+def test_kept_status_blocks_count_toward_the_rendered_size():
+    status = "x" * 5_000
+    messages = [{"role": "user", "content": "hi"}, trajectory.status(status)]
+    assert tool_loop._rendered_size(messages) >= 5_000
+
+
+def test_the_legacy_rendering_leaves_kept_status_blocks_out():
+    calls = [{"id": "c1", "name": "web_search", "arguments": {"query": "one"}, "arguments_raw": '{"query": "one"}'}]
+    messages = [{"role": "user", "content": "hi"}, trajectory.assistant(None, calls),
+                trajectory.tool_result("c1", "web_search", "result-one"), trajectory.status("<agent_status>old")]
+    rendered = json.dumps(trajectory.to_legacy(messages))
+    assert "result-one" in rendered and "<agent_status>old" not in rendered

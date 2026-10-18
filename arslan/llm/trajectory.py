@@ -2,10 +2,13 @@
 docs/specs/2026-10-01-0149-p1-execution-layer.md section 3).
 
 run_native keeps one representation and renders it per request:
-- native OpenAI-compatible: the provider translates these dicts directly
-  (assistant tool_calls + role "tool" + verbatim continuation fields);
-- legacy (test doubles, Anthropic, ARSLAN_TOOL_PROTOCOL=legacy): `to_legacy`,
-  byte-identical to the pre-0.1.49 text format, Gemini provider pairs included.
+- native (OpenAI-compatible, Gemini; Claude from 0.1.63 K1b): the provider translates
+  these dicts into its own tool protocol (`build_trajectory_messages`);
+- legacy (test doubles, Claude until K1b, ARSLAN_TOOL_PROTOCOL=legacy, and the rest of
+  a turn whose endpoint rejected the native history): `to_legacy`, byte-identical to
+  the pre-0.1.49 text format, Gemini provider pairs included. For Claude and Gemini it
+  goes in v0.1.64, once v0.1.63 has run 7 days with no protocol-class 400 from them in
+  M2 and M1 holds (sessions §9).
 
 Messages:
   {"role": "user", "content": ...}

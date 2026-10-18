@@ -8,6 +8,9 @@ use the documented parametersJsonSchema field; functionCall responses normalize
 to Arslan tools. Opaque continuation parts preserve Gemini thought signatures.
 0.1.63 K1: the in-turn trajectory goes back natively (build_trajectory_messages);
 function responses carry the result itself, not the old "TOOL RESULT for X" text.
+The legacy text rendering (trajectory.to_legacy) stays as the ARSLAN_TOOL_PROTOCOL=legacy
+rollback and the per-turn fallback after a protocol rejection; both go in v0.1.64, once
+v0.1.63 has run 7 days with no protocol-class 400 from Gemini in M2 and M1 holds.
 Streaming with tools remains explicitly unsupported; run_native uses chat().
 """
 from __future__ import annotations
