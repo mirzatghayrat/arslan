@@ -38,8 +38,8 @@
   2. 之前历史的末尾，也就是本轮用户消息之前；
   3. 滚动的尾部，也就是这一步最后一个块。
   - TTL：人在聊天时，①② 用 1 小时，③ 用 5 分钟；后台任务全用 5 分钟。**1 小时的断点要排在 5 分钟的前面。**
-  - 写法是 `cache_control: {"type": "ephemeral", "ttl": "1h"}`。
-  - **同一个 PR 里把 K1b 的服务端清理值改回 E22：** `trigger` 60k、`clear_at_least` 20k（K1b 在 K3 之前用的是过渡值 24k / 8k，更正 E23）。有了消息级断点，少清几次才能多命中缓存。这个写法、最多 4 个断点、1 小时排在 5 分钟前面，都已核过（来源：Anthropic 官方文档 platform.claude.com 的 prompt-caching 页，2026-10-17 读）。
+  - 写法是 `cache_control: {"type": "ephemeral", "ttl": "1h"}`。这个写法、最多 4 个断点、1 小时排在 5 分钟前面，都已核过（来源：Anthropic 官方文档 platform.claude.com 的 prompt-caching 页，2026-10-17 读）。
+  - **同一个 PR 里把 K1b 的服务端清理值改回 E22：** `trigger` 60k、`clear_at_least` 20k（K1b 在 K3 之前用的是过渡值 24k / 8k，更正 E23）。有了消息级断点，少清几次才能多命中缓存。
 - 工具表（和 K7 的约定）：
   - 常驻表顺序固定，按名排序（`_native_tool_schemas`，`tool_loop.py:1713-1728`）。K7 加载的工具只追加在末尾、不重排（K7 卡已写）。
   - **回合内工具表不变。** 收尾阶段不再换成只剩收尾工具（`tool_loop.py:2353-2354`）。收尾要求写在状态块里；越界的调用由分发拒绝，并说明原因。
