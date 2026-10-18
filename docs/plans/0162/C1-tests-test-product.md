@@ -63,7 +63,7 @@
 2. 再删产品路径。每删一块就 `rg` 一次它的符号，确认产品代码里没有调用者，剩下的只在测试里。
 3. 删完列出新变成零引用的函数，写进 PR 描述交给 C1c。已知会有：
    - `roster_service`、`phase_service` 整个模块；
-   - `registry_service.grant_temporary`、`unready_mcp_servers`。
+   - `registry_service.grant_temporary`。`unready_mcp_servers` 其实还被 dispatcher 那条路用着，不会变成零引用（#203 写了更正，见更正 E20）。
 4. 推送前跑 ruff 和 gitleaks。
 
 ## 验收

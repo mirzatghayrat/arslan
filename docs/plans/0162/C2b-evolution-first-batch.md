@@ -31,7 +31,7 @@
   - `web/src/api/client.ts`：`getEvolution`（`:361`）和 `:590-617` 那一组。组件里的调用都是 0，只有测试在用；
   - `web/src/api/client.types.ts`：对应的类型，在 `:474-486`、`:901-1116`。删前逐个 `rg`，别的地方在用的保留。
 - `server/services/evolution_watcher.py`：
-  - 自动路径：`_in_budget_refusal_cooldown`（`:429-443`）、`trigger_spawn`（`:446-464`）；
+  - 自动路径：`_in_budget_refusal_cooldown`（`:429-443`）、`trigger_spawn`（`:446-464`），以及 `_is_eligible`（`:209`；C1 合并后已零调用，只在 `trigger_spawn` 的文档字符串里提到，更正 E20）；
   - 循环：`tick`、`watch_loop`、`start`、`stop`（`:484-537`）；
   - `notify_spawn`（`:540-552`）。
 - 调用点：
