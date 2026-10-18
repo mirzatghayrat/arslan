@@ -57,7 +57,7 @@ async def _builtin_rows() -> list[dict]:
     # "files" is reading the Desktop, Documents and Downloads (default_read). Arslan's own
     # working folder stays readable and writable either way, so the off row says so
     # rather than claiming file tools vanished.
-    file_tools = ("read_file", "list_dir", "search_files") + (("write_file", "edit_file") if workspace else ())
+    file_tools = ("read_file", "list_dir", "search_files", "attach_file") + (("write_file", "edit_file") if workspace else ())
     rows.append(_row("files", "mac", "on" if default_read else "off", switch="setting",
                      tools=file_tools if default_read else (),
                      detail=None if default_read else ("own_folder_only" if workspace is not None else None)))

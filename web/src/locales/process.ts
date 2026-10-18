@@ -4,6 +4,8 @@ export const processMessages = {
   en: {
       "convGroup": "Conversation",
       "t_ask_user_choice": "Asked you to choose",
+      "t_attach_file": "Attached a file",
+      "t_attach_file_x": "Attached {{x}}",
       "t_ask_user_choice_x": "Asked you: {{x}}",
       "t_background_status": "Checked a background job",
       "t_browser_back": "Went back a page",
@@ -147,6 +149,8 @@ export const processMessages = {
   zh: {
       "convGroup": "对话",
       "t_ask_user_choice": "请你选一下",
+      "t_attach_file": "附上了一个文件",
+      "t_attach_file_x": "附上了 {{x}}",
       "t_ask_user_choice_x": "请你选：{{x}}",
       "t_background_status": "看了后台作业进度",
       "t_browser_back": "浏览器后退一页",
@@ -290,6 +294,8 @@ export const processMessages = {
   ja: {
       "convGroup": "会話",
       "t_ask_user_choice": "選択をお願いした",
+      "t_attach_file": "ファイルを添付した",
+      "t_attach_file_x": "{{x}} を添付した",
       "t_ask_user_choice_x": "選択をお願いした：{{x}}",
       "t_background_status": "バックグラウンド作業を確認した",
       "t_browser_back": "ページを戻った",
@@ -433,6 +439,8 @@ export const processMessages = {
   es: {
       "convGroup": "Conversación",
       "t_ask_user_choice": "Te pidió elegir",
+      "t_attach_file": "Adjuntó un archivo",
+      "t_attach_file_x": "Adjuntó {{x}}",
       "t_ask_user_choice_x": "Te preguntó: {{x}}",
       "t_background_status": "Revisó un trabajo en segundo plano",
       "t_browser_back": "Volvió una página",
@@ -576,6 +584,8 @@ export const processMessages = {
   de: {
       "convGroup": "Unterhaltung",
       "t_ask_user_choice": "Hat dich um eine Wahl gebeten",
+      "t_attach_file": "Eine Datei angehängt",
+      "t_attach_file_x": "{{x}} angehängt",
       "t_ask_user_choice_x": "Hat dich gefragt: {{x}}",
       "t_background_status": "Einen Hintergrundauftrag geprüft",
       "t_browser_back": "Eine Seite zurück",
@@ -719,6 +729,8 @@ export const processMessages = {
   fr: {
       "convGroup": "Conversation",
       "t_ask_user_choice": "T’a demandé de choisir",
+      "t_attach_file": "A joint un fichier",
+      "t_attach_file_x": "A joint {{x}}",
       "t_ask_user_choice_x": "T’a demandé : {{x}}",
       "t_background_status": "A vérifié un travail en arrière-plan",
       "t_browser_back": "Est revenu d’une page",

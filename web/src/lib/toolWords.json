@@ -1,6 +1,7 @@
 {
   "_comment": "0.1.58 §1: every built-in tool's family and the one argument its words name. Words: process.t_<tool> (no argument) and process.t_<tool>_x (with it). Guarded by tests/server/test_tool_words.py (every tool has an entry) and web tool-words test (every word exists in six languages).",
   "ask_user_choice": { "family": "plan", "arg": "question" },
+  "attach_file": { "family": "write", "arg": "path" },
   "background_status": { "family": "plan" },
   "browser_back": { "family": "web" },
   "browser_click": { "family": "web", "arg": "element" },

@@ -944,6 +944,7 @@ from server.registry.schedule_tools import (  # noqa: E402 — registry assembly
     ScheduleTaskExecutor,
 )
 from server.registry.file_tools import (  # noqa: E402 — registry assembly
+    AttachFileExecutor,
     EditFileExecutor,
     ListDirExecutor,
     ReadFileExecutor,
@@ -970,6 +971,8 @@ EXECUTORS = {e.key: e for e in (
     # depends on a configured workspace — see _arslan_tools.
     ReadFileExecutor(), ListDirExecutor(), SearchFilesExecutor(),
     WriteFileExecutor(), EditFileExecutor(),
+    # 0.1.63 D1: hand an existing file to the user (window card + paired iPhone).
+    AttachFileExecutor(),
     # Self-scheduling (P2). Registered here; whether Arslan is OFFERED them, and
     # behind which grant, is decided in _arslan_tools + the tool loop.
     ScheduleTaskExecutor(), ListTasksExecutor(), CancelTaskExecutor(),

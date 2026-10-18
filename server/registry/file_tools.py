@@ -355,6 +355,95 @@ class EditFileExecutor:
         return {"ok": True, "path": _rel(path, root), **({"artifact": artifact} if artifact else {})}
 
 
+# 0.1.63 D1: why a file was not attached, by file_reader's refusal code.
+_ATTACH_REFUSED = {
+    "invalid_path": "give the path of a file (absolute, ~/ or relative to the workspace)",
+    "outside": "it is outside the folders Arslan can read",
+    "hidden": "a hidden or credential-shaped file is never attached",
+    "missing": "there is no such file",
+}
+
+
+class AttachFileExecutor:
+    """0.1.63 D1: attach an existing file to the answer as this run's deliverable: a file card in
+    the window, and the file itself on the user's paired iPhone (phone_reads.run_files). Only what
+    the model attaches is registered, within the window reader's rules (file_reader.resolve:
+    readable folders, no hidden or credential-shaped names, no link leading out), never anything
+    under the command sandbox's protected folders (Arslan's own data, keychains, ssh keys), and the
+    limits: PHONE_FILE_MAX a file, artifact_store.MAX_FILES a run, and the turn's artifact budget.
+    A local effect: the file goes to this Mac's window and the user's own paired iPhone, as
+    write_file's snapshots do. Every refusal says it never ran (`executed: False`)."""
+    key = "attach_file"
+
+    async def execute(self, args: dict) -> dict:
+        from arslan.execution_budget import current
+        from server.services import artifact_store, command_sandbox, execution_context, file_reader
+        from server.services.phone_reads import PHONE_FILE_MAX
+
+        def refused(error: str) -> dict:
+            return {"ok": False, "executed": False, "error": error}
+        run_id = execution_context.current_run_id()
+        if run_id is None:
+            return refused("no run to attach the file to: attach_file works inside a conversation turn "
+                           "or background work")
+        raw = args.get("path")
+        if not isinstance(raw, str) or not raw.strip():
+            return refused("path must be a non-empty string")
+        path = Path(raw.strip()).expanduser()
+        if not path.is_absolute():
+            ws = await _workspace_root()
+            if ws is None:
+                return refused("a relative path needs a workspace; give an absolute or ~/ path")
+            path = ws / path
+        try:
+            path, _ = file_reader.resolve(str(path), await file_reader.roots())
+        except file_reader.NotReadable as exc:
+            return refused(f"cannot attach {raw.strip()}: {_ATTACH_REFUSED.get(exc.code, exc.code)}")
+        # The bytes leave this Mac: a wide workspace (~) must not hand over Arslan's database or a keychain.
+        if any(path == folder or folder in path.parents for folder in command_sandbox.default_protected()):
+            return refused(f"cannot attach {_home_rel(path)}: it is in a protected folder "
+                           "(Arslan's own data, keychains, ssh keys)")
+        if len(artifact_store.list_artifacts(run_id)) >= artifact_store.MAX_FILES:
+            return refused(f"this answer already has {artifact_store.MAX_FILES} files, the most one run can hold")
+        too_big = f"{_home_rel(path)} is over 20 MB, the most the iPhone can receive"
+        try:
+            # The resolved path, opened without following a link that replaced it since, and without
+            # waiting: a FIFO would block the event loop until someone wrote to it.
+            fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | _NOFOLLOW)
+        except OSError as exc:
+            return refused(f"cannot read {_home_rel(path)}: {exc.strerror or exc}")
+        budget = current()
+
+        def over_budget(size: int) -> str | None:
+            if budget is None or budget.artifact_bytes + size <= budget.limits.artifact_bytes:
+                return None
+            left = max(0, budget.limits.artifact_bytes - budget.artifact_bytes)
+            return (f"{_home_rel(path)} does not fit this turn's file budget "
+                    f"({budget.limits.artifact_bytes // 2**20} MB in all, saved files included; "
+                    f"{left // 2**20} MB left)")
+        st = os.fstat(fd)
+        problem = (f"{_home_rel(path)} is not a file" if not stat.S_ISREG(st.st_mode) else
+                   too_big if st.st_size > PHONE_FILE_MAX else over_budget(st.st_size))
+        if problem:
+            os.close(fd)
+            return refused(problem)
+        with os.fdopen(fd, "rb") as stream:
+            data = stream.read(PHONE_FILE_MAX + 1)          # one byte past: it grew since
+        if len(data) > PHONE_FILE_MAX:
+            return refused(too_big)
+        if (problem := over_budget(len(data))) is not None:
+            return refused(problem)
+        given = args.get("title")
+        title = given.strip() if isinstance(given, str) and given.strip() else path.name
+        # The extension decides the media type; keep a two-part one (.tar.gz) whole.
+        suffix = "".join(path.suffixes[-2:]) if path.suffixes[-2:-1] == [".tar"] else path.suffix
+        if suffix and not title.lower().endswith(suffix.lower()):
+            title += suffix
+        artifact = artifact_store.store_bytes(run_id, title, data)
+        return {"ok": True, "path": _home_rel(path), "attached": artifact["title"], "bytes": len(data),
+                "media_type": artifact["media_type"], "artifact": artifact}
+
+
 def _snapshot_write(root: Path, path: Path, content: str):
     """Preserve this output before applying it; a failed snapshot prevents a write.
 
