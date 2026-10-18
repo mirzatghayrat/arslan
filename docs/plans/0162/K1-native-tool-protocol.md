@@ -84,10 +84,10 @@
       - `trigger`：`{"type": "input_tokens", "value": 60000}`。API 按输入 token 计，不是字符；原文写的「64k / 96k 字符」不对。API 默认是 100k。
       - `keep`：`{"type": "tool_uses", "value": 6}`。默认是 3，多步任务要看得到最近几步的结果。
       - `clear_at_least`：`{"type": "input_tokens", "value": 20000}`。是 trigger 的三分之一，保证每作废一次缓存都清掉足够多。
-      - `exclude_tools`：`update_plan`、`task_progress`、`read_skill`。计划、进度和技能说明不能消失。
+      - `exclude_tools`：`update_plan`、`task_progress`、`read_skill`。计划、进度和技能说明不能消失。只发这三个里本次请求工具表中确实有的（文档没说名单里能不能有工具表外的名字，所以不发）。
       - `clear_tool_inputs` 保持默认 `false`：清掉的只是结果，模型仍看得到自己调过什么。
-      - 这些是起始值。M1 用 Claude 跑时贴三样：`context_management.applied_edits` 里的清理次数和清掉的 token 数，以及长任务前后的缓存命中。长任务上如果约每 10 次模型调用就清一次以上，或者缓存写入的花费超过省下的，R63 之前调整。
-    - **被拒时：** 端点不接受这个 beta（例如经代理转发），照要点 10 去掉重发，并在这一回合退回本地裁剪 + `drop_block`，运行记录标出。
+      - 这些是起始值。M1 用 Claude 跑时贴三样：清理次数和清掉的 token 数（运行记录里的 `tool_uses_cleared`、`input_tokens_cleared`，来自 `context_management.applied_edits`），以及长任务前后的缓存命中。长任务上如果约每 10 次模型调用就清一次以上，或者缓存写入的花费超过省下的，R63 之前调整。
+    - **被拒时：** 端点不接受这个 beta（例如经代理转发），照要点 10 去掉重发，退回本地裁剪 + `drop_block`。param_heal 会按端点记住这次拒绝，直到进程退出，所以之后在这个端点上的回合也都走本地裁剪，不只是这一回合；每个这样的运行，运行记录里标一次 `server_clearing_off`。
     - **其他服务商照旧在本地裁剪。**
     - 超过 800 行时拆成 K1a（要点 1–11）和 K1b（本条），连着合；K1b 合并前，Anthropic 默认仍走旧渲染，两个都合了才切到原生。
 
