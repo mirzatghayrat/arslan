@@ -76,7 +76,10 @@ _TRAJECTORY = "_trajectory"
 # Clearing costs the cache from the cleared point on: clear rarely, and a lot at once. Measured in
 # input tokens (the host's 64k / 96k-character trim is about 16-24k tokens of history; this clears
 # later, to keep the cache). Results of the tools below are never cleared: the model's own plan,
-# saved progress and the skill it is following.
+# saved progress and the skill it is following. clear_tool_inputs stays at its default (false).
+# Starting values for v0.1.63: K1 card point 12 / correction E22. M1 on Claude reports the cleared
+# counts and tokens (run record) and the long task's cache hits; they are adjusted before R63 if
+# clearing runs more than about once per 10 model calls or cache writes cost more than it saves.
 CONTEXT_BETA = "context-management-2025-06-27"
 _CLEAR = {"type": "clear_tool_uses_20250919",
           "trigger": {"type": "input_tokens", "value": 60_000},
@@ -597,7 +600,7 @@ _ANTHROPIC_FINISH = {"end_turn": "stop", "stop_sequence": "stop", "max_tokens": 
 
 def _note_context(entries: list[dict[str, Any]] | None, management: Any, *, clearing_off: bool) -> None:
     """What the API changed in the conversation, for the run record, as counts (never content):
-    thinking blocks it dropped, per reason; tool uses it cleared (K1b); and, once per run, that
+    thinking blocks it dropped, per reason; tool uses and input tokens it cleared (K1b); and, once per run, that
     this endpoint refused context editing, so the host trims locally again (K1b)."""
     from arslan.execution_budget import current
     budget = current()
@@ -612,7 +615,10 @@ def _note_context(entries: list[dict[str, Any]] | None, management: Any, *, clea
         budget.note_context("thinking_dropped", reason=reason, count=count)
     edits = management.get("applied_edits") if isinstance(management, dict) else None
     for edit in edits if isinstance(edits, list) else []:
-        if isinstance(edit, dict) and isinstance(edit.get("cleared_tool_uses"), int):
-            budget.note_context("tool_uses_cleared", reason=str(edit.get("type")), count=edit["cleared_tool_uses"])
+        if not isinstance(edit, dict):
+            continue
+        for field, kind in (("cleared_tool_uses", "tool_uses_cleared"), ("cleared_input_tokens", "input_tokens_cleared")):
+            if isinstance(edit.get(field), int):
+                budget.note_context(kind, reason=str(edit.get("type")), count=edit[field])
     if clearing_off and not any(e["kind"] == "server_clearing_off" for e in budget.context_events):
         budget.note_context("server_clearing_off", reason="endpoint refused context_management", count=1)

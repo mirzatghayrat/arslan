@@ -141,7 +141,8 @@ async def test_cleared_tool_uses_are_counted_in_the_run_record(monkeypatch):
     with execution_budget.scope() as budget:
         await claude_turn(monkeypatch, [tool_reply("toolu_01", "one", "s1"), end])
     assert budget.snapshot()["context_events"] == [
-        {"kind": "tool_uses_cleared", "reason": "clear_tool_uses_20250919", "count": 8, "request": 2}]
+        {"kind": "tool_uses_cleared", "reason": "clear_tool_uses_20250919", "count": 8, "request": 2},
+        {"kind": "input_tokens_cleared", "reason": "clear_tool_uses_20250919", "count": 50_000, "request": 2}]
 
 
 # ── other providers trim locally, as before ───────────────────────────────────────────
