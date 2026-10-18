@@ -58,6 +58,7 @@
 - **E12–E14：** ⓪Plan 按审查改卡时，对照代码发现的。
 - **E15–E19：** 2026-10-18 夜里，⓪Plan 在审 F 线 PR 和跑参考轮 R0 时发现的，按用户的夜间授权（U9 及同夜的第二条授权）当场定了。
 - **E20：** 2026-10-18，⓪Plan 审 C1（#203）时发现的。
+- **E21：** 2026-10-18，C1b（#210）开 PR 时 ②Main 请 ⓪Plan 对 U2 的口径做裁定。
 
 | # | 原文 | 核对结果 | 处理 |
 |---|---|---|---|
@@ -81,6 +82,7 @@
 | E18 | M1B 卡没写测试实例的卫生 | 参考轮 R0 发现：Arslan 每轮结束后还有一两次小调用（记忆、学习），runner 读用量太早漏掉了；实例闲着约 9 分钟后自己调模型，还把作废那轮留下的任务续跑了 3 步；T8 第 1 轮 Arslan 自己加了表格，第 3 轮再要表格就不成立 | M1a 加「读用量前等安静」：从驱动退出和最后一条用量两者中较晚的那一刻起 20 秒（最多 120 秒）；M1b 的 T8 第 1 轮写明「先不要用表格」。M1B 卡加两条：实例从空数据目录起、跑完就关；代理用含 gzip 修复的 meter 重启。R0 有效次数的结果贴在 #191 |
 | E19 | R63 卡「重新生成能力清单」 | C5b（#201）以后清单只在发版时比对，release 那台机器只装 `server`、`build` 两组依赖 | R63 的发版 PR 用这两组依赖跑一遍 `scripts/capability_inventory.py`，确认输出和提交的一致；FR（v0.1.62）不受影响：`release/0.1.62` 上没有 C5b |
 | E20 | C1 卡、C1c 卡：C1 之后 `unready_mcp_servers` 变成零引用，交 C1c 删 | C1 审查实测：它还被 `recipes.py:174`、`replay_run.py:66` 经 `dispatcher.dispatch` → `_spawn_mcp_line` → `spawn_unready_mcp_servers` 调用（#203 自己的更正）。另外 C1 交出来、已零引用的 7 项（`get_spawn_name`、`scoped_dispatch`、`expert_unavailable`、`JUDGMENT_ROLES` 的 `"critical"`、`kind="scheduled"` 的创建路径、`if True:` 去缩进、几处过时文档）和已零调用的 `evolution_watcher._is_eligible` 不在任何卡里；旧专家任务改由 Arslan 续跑（D12）没写进 R63 的发布说明要点 | `unready_mcp_servers` 从 C1c 的清单里拿掉，等 dispatcher 那条路整体删时再删；那 7 项写进 C1c-1，`_is_eligible` 写进 C2b，删除条件都写在卡里；R63 发布说明加一句「旧的专家任务恢复时由 Arslan 接着做」 |
+| E21 | U2「别处的改动……合计 ≤50 行」没写按什么算 | C1b（#210）：删掉的文件之外，产品代码改 11 行，另外为删掉「测试被删模块的测试」改了测试 +9/−50，合计 70 行 | **按产品代码算**，和 `docs/sessions.md` §2 里 800 行的口径一致（测试、翻译、生成的文件不算）。只删掉「测试被删模块的测试」是删文件带出来的结果，不改行为，不计入（⓪Plan 定） |
 | 已核属实 | 见右栏 | • K-1、K-3、K-4 的全部条目，以及 K-2 里除 E2 以外的条目。<br>• K-4 第 3 条：旧分类器把整条命令字符串当成程序名，拿去和只读程序名单比较，比不上就判 HIGH（`server/services/command_policy.py:81-106`）。`ls -la ~/Downloads`、`git status` 都会这样。<br>• §9 中：空参数表；外部内容标记；守卫词表（`tool_loop.py:104-106`）；`search_files` 只做子串匹配（`server/registry/file_tools.py:230`）；后台验收用的是严格 `json.loads`（`task_validation.py:339`）；基准文档都在（`docs/plans/2026-10-02-*.md`、`2026-10-03-p3-acceptance.md`）。 | — |
 | 未能核 | §9「没有验证的」各项 | 包括：没跑测试、预期位置、门槛建议值、Claude Code 跑分成本、对标做法。这些只能靠实际运行，不能靠读代码核。<br>默认工具数「28 / 约 45」和静态提示「10,303 字符」要把提示词构建出来才能量，本轮没量。 | 照旧标「未验证」 |
 
