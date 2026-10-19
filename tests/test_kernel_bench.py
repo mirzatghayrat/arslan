@@ -4,8 +4,10 @@ The sample bake-off found three bugs in its own tooling — a date glued to a nu
 unreadable .xlsx, and heartbeats resetting the driver's idle timer. Each has a test here.
 """
 import json
+import os
 import subprocess
 import sys
+import time
 import zipfile
 from pathlib import Path
 
@@ -591,3 +593,139 @@ def test_the_anthropic_upstream_gets_only_its_key_header_and_no_openai_stream_op
     assert meter.cost("claude-unlisted-9", 0, 1_000_000, 0) == meter.PRICE["claude-fable-5-1"][1]
     assert meter.wants_usage_option(True, {"messages": []}, "/v1/messages", anthropic=True) is False
     assert meter.wants_usage_option(True, {"messages": []}, "/v1/chat/completions", anthropic=False) is True
+
+
+def test_a_fresh_instance_answers_during_the_run_and_is_gone_after(tmp_path, monkeypatch):
+    """U10: each run gets an Arslan on an empty data folder; nothing it learns reaches the next run."""
+    import socket
+    from scripts.kernel_bench import runner
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    site = tmp_path / "site"
+    (site / "api/v1").mkdir(parents=True)
+    (site / "api/v1/health").write_text("ok")
+    script = tmp_path / "start.sh"                 # stands in for start_arslan.sh <name> <port>
+    script.write_text(f'#!/bin/bash\necho "$1" > {tmp_path}/name\n'
+                      f'exec {sys.executable} -m http.server "$2" --bind 127.0.0.1 --directory {site}\n')
+    script.chmod(0o755)
+    monkeypatch.setattr(runner, "ROOT", tmp_path)
+    monkeypatch.setattr(runner, "START_ARSLAN", script)
+    monkeypatch.setattr(runner, "ARSLAN_API", f"http://127.0.0.1:{port}/api/v1")
+    left = tmp_path / "data" / "fresh-arslan-T9-r1"
+    left.mkdir(parents=True)
+    (left / "arslan.db").write_text("an earlier attempt")
+    with runner.fresh_instance("arslan-T9-r1", "arslan") as data:
+        assert runner._healthy(runner.ARSLAN_API)
+        assert data == left and not (left / "arslan.db").exists()       # wiped before the start
+        leaving = time.monotonic()
+    assert time.monotonic() - leaving < 10                                # SIGTERM, not the 30 s fallback
+    assert (tmp_path / "name").read_text().strip() == "fresh-arslan-T9-r1"
+    assert not runner._healthy(runner.ARSLAN_API)                         # stopped with its group
+
+
+def test_a_fresh_instance_refuses_a_port_that_already_answers(tmp_path, monkeypatch):
+    """A leftover instance on the port would silently be the one under test."""
+    import pytest
+    from scripts.kernel_bench import runner
+    monkeypatch.setattr(runner, "ROOT", tmp_path)
+    monkeypatch.setattr(runner, "_healthy", lambda api: True)
+    started = []
+    monkeypatch.setattr(runner.subprocess, "Popen", lambda *a, **k: started.append(a))
+    with pytest.raises(SystemExit):
+        with runner.fresh_instance("arslan-T9-r1", "arslan"):
+            pass
+    assert started == []
+
+
+def test_with_fresh_instances_each_arslan_run_has_its_own_until_it_settles(tmp_path, monkeypatch):
+    import contextlib
+    from scripts.kernel_bench import runner
+    monkeypatch.setattr(runner, "ROOT", tmp_path)
+    events = []
+
+    @contextlib.contextmanager
+    def fake(label, who):
+        events.append(("up", label))
+        yield tmp_path / "data" / f"fresh-{label}"
+        events.append(("down", label))
+    monkeypatch.setattr(runner, "fresh_instance", fake)
+    monkeypatch.setattr(runner, "settle", lambda label, *a, **k: events.append(("settle", label)) or 0.0)
+    seen = []
+    monkeypatch.setitem(runner.CHECKS, "T9", lambda run, reply, ctx: seen.append(ctx.get("arslan_data")) or {"score": 3})
+    script = "import json; print(json.dumps({'end': 'done', 'final': 'ok'}))"
+    monkeypatch.setattr(runner, "command", lambda *a, **k: ([sys.executable, "-c", script], {}))
+    monkeypatch.setattr(runner, "FRESH", True)
+    for n in (1, 2):
+        runner.run_one("T9", "arslan", n, {"T9": "edit {dir}"}, "sb")
+    assert events == [("up", "arslan-T9-r1"), ("settle", "arslan-T9-r1"), ("down", "arslan-T9-r1"),
+                      ("up", "arslan-T9-r2"), ("settle", "arslan-T9-r2"), ("down", "arslan-T9-r2")]
+    assert seen == [str(tmp_path / "data" / "fresh-arslan-T9-r1"), str(tmp_path / "data" / "fresh-arslan-T9-r2")]
+    monkeypatch.setattr(runner, "FRESH", False)
+    runner.run_one("T9", "arslan", 3, {"T9": "edit {dir}"}, "sb")
+    assert events[6:] == [("settle", "arslan-T9-r3")] and seen[-1] is None     # off: the shared instance
+
+
+def test_rerun_passes_the_model_through(monkeypatch, capsys):
+    """U10 reruns single cells on Claude too; without --models they ran on the default model."""
+    from scripts.kernel_bench import rerun, runner
+    calls = []
+    monkeypatch.setattr(runner, "sandbox_profile", lambda: "sb")
+    monkeypatch.setattr(runner, "run_one", lambda task, who, n, prompts, sb, models=None: calls.append(
+        (task, who, n, models)) or {"run": f"{who}-{task}-r{n}", "model": (models or {}).get(who, "default"),
+                                    "passed": True, "rc": 0, "check": {"score": 3}, "usage": {"usd_peak": 0, "span_s": 0}})
+    rerun.main(["--models", "arslan=claude-sonnet-5", "T5:arslan:2", "T9:arslan:3"])
+    rerun.main(["T1:arslan:1"])
+    assert calls == [("T5", "arslan", 2, {"arslan": "claude-sonnet-5"}), ("T9", "arslan", 3, {"arslan": "claude-sonnet-5"}),
+                     ("T1", "arslan", 1, {})]
+    assert '"model": "claude-sonnet-5"' in capsys.readouterr().out
+
+
+def test_a_command_in_its_own_session_does_not_outlive_its_fresh_instance(tmp_path, monkeypatch):
+    """Arslan starts commands with start_new_session: the group signal misses them, and a slow one
+    would keep running into the next run (③Hands' review of #228)."""
+    import socket
+    from scripts.kernel_bench import runner
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    site = tmp_path / "site"
+    (site / "api/v1").mkdir(parents=True)
+    (site / "api/v1/health").write_text("ok")
+    server = tmp_path / "server.py"                # stands in for uvicorn with a command in flight
+    server.write_text(
+        "import http.server, functools, subprocess, sys\n"
+        "child = subprocess.Popen(['sleep', '300'], start_new_session=True)\n"
+        f"open({str(tmp_path / 'child')!r}, 'w').write(str(child.pid))\n"
+        f"handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory={str(site)!r})\n"
+        "http.server.ThreadingHTTPServer(('127.0.0.1', int(sys.argv[1])), handler).serve_forever()\n")
+    script = tmp_path / "start.sh"
+    script.write_text(f'#!/bin/bash\nexec {sys.executable} {server} "$2"\n')
+    script.chmod(0o755)
+    monkeypatch.setattr(runner, "ROOT", tmp_path)
+    monkeypatch.setattr(runner, "START_ARSLAN", script)
+    monkeypatch.setattr(runner, "ARSLAN_API", f"http://127.0.0.1:{port}/api/v1")
+    with runner.fresh_instance("arslan-T7-r1", "arslan"):
+        child = int((tmp_path / "child").read_text())
+        assert runner._alive(child) and os.getpgid(child) == child           # its own session
+    time.sleep(0.2)
+    assert not runner._alive(child) or _zombie(child)
+    assert "killed 1 process" in (tmp_path / "runs" / "arslan-T7-r1.instance.log").read_text()
+
+
+def _zombie(pid: int) -> bool:
+    out = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True).stdout
+    return out.strip().startswith("Z")
+
+
+def test_a_reused_pid_is_not_killed(monkeypatch):
+    """Only a leftover whose start time still matches is killed: a pid recycled during the stop
+    may be one of the user's own processes (③Hands' review of #228)."""
+    from scripts.kernel_bench import runner
+    snapshots = iter([{10: (1, "Mon Oct 19 10:00:00 2026"), 11: (10, "Mon Oct 19 10:00:01 2026"),
+                       12: (10, "Mon Oct 19 10:00:02 2026")},
+                      {11: (1, "Mon Oct 19 10:00:01 2026"), 12: (1, "Mon Oct 19 10:09:59 2026")}])
+    monkeypatch.setattr(runner, "_processes", lambda: next(snapshots))
+    tree = runner._descendants(10)
+    assert tree == {11: "Mon Oct 19 10:00:01 2026", 12: "Mon Oct 19 10:00:02 2026"}
+    assert runner._survivors(tree) == [11]          # 12 is a new process on a recycled pid

@@ -21,13 +21,17 @@ Environment:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import threading
 import time
+import urllib.parse
+import urllib.request
 import uuid
 from pathlib import Path
 
@@ -64,7 +68,8 @@ CHECKS = {
     "T10": lambda run, reply, ctx: check_t10.check(run, reply, ctx["fixture"]),
     "T11": lambda run, reply, ctx: check_t11.check(run, declined=ctx.get("declined", 0)),
     # The Hands trace lives in the instance's data folder (start_arslan.sh: $BENCH_ROOT/data/<name>).
-    "T12": lambda run, reply, ctx: check_t12.check(reply, os.environ.get("BENCH_ARSLAN_DATA"), ctx["started"]),
+    "T12": lambda run, reply, ctx: check_t12.check(reply, ctx.get("arslan_data") or os.environ.get("BENCH_ARSLAN_DATA"),
+                                                   ctx["started"]),
 }
 FIXTURES = {"T7": check_t7.fixture, "T8": check_t8.fixture, "T9": check_t9.fixture,
             "T10": check_t10.fixture, "T11": check_t11.fixture}
@@ -89,6 +94,12 @@ T4_CHANGE_AFTER_S = 60
 # It also keeps T1's Reminders lists apart: a list left from an earlier round would be read as
 # this run's. One round per model when two models share a round's tasks.
 ROUND = os.environ.get("BENCH_ROUND", "")
+# BENCH_FRESH_INSTANCE=1: a brand-new Arslan for every run, stopped after it (U10). One instance
+# kept learning between repeats (K1's after-runs: a lesson saved in T11 r1 changed r2 and r3) and
+# makes model calls when idle (E18). Started with start_arslan.sh, so BENCH_REPO,
+# ARSLAN_HANDS_APP and ARSLAN_ANTHROPIC_FIRST_PARTY_HOSTS pass through as they do by hand.
+FRESH = os.environ.get("BENCH_FRESH_INSTANCE") == "1"
+START_ARSLAN = HERE / "start_arslan.sh"
 
 
 def sandbox_profile() -> str:
@@ -184,7 +195,7 @@ def command(who: str, label: str, run: Path, prompt, sb: str, *, model: str = MO
         # Its Bash tool makes a working folder under /tmp/claude-<uid>, outside what the bench's
         # sandbox lets it write, so every command failed and it reported "no network" (M1B,
         # T2/T3/T5/T7 invalid). CLAUDE_CODE_TMPDIR moves that folder under the bench root.
-        tmp = ROOT / "tmp" / "claude-code"
+        tmp = ROOT / "tmp" / "claude-code" / label      # one per run (③Hands' review of #227)
         tmp.mkdir(parents=True, exist_ok=True)
         return cmd, env({"HOME": str(home), "ANTHROPIC_BASE_URL": base, "CLAUDE_CODE_TMPDIR": str(tmp),
                          "ANTHROPIC_API_KEY": "bench-dummy", "DISABLE_AUTOUPDATER": "1",
@@ -353,6 +364,100 @@ def _run(cmd: list, e: dict, run: Path, mode: str = "w"):
             return "timeout"
 
 
+def _healthy(api: str) -> bool:
+    try:
+        with urllib.request.urlopen(f"{api}/health", timeout=2) as response:
+            return response.status == 200
+    except OSError:
+        return False
+
+
+def _processes() -> dict[int, tuple[int, str]]:
+    """pid -> (parent pid, start time), from ps (no extra dependency)."""
+    out = subprocess.run(["ps", "-Ao", "pid=,ppid=,lstart="], capture_output=True, text=True).stdout
+    table = {}
+    for line in out.splitlines():
+        pid, ppid, started = line.split(None, 2)
+        table[int(pid)] = (int(ppid), started.strip())
+    return table
+
+
+def _descendants(pid: int) -> dict[int, str]:
+    """Every process under `pid` now, whatever session it started, with its start time. A process
+    already handed to launchd (its parent gone) before this snapshot is not found."""
+    table = _processes()
+    children: dict[int, list[int]] = {}
+    for child, (parent, _) in table.items():
+        children.setdefault(parent, []).append(child)
+    found, todo = {}, [pid]
+    while todo:
+        for child in children.get(todo.pop(), []):
+            found[child] = table[child][1]
+            todo.append(child)
+    return found
+
+
+def _survivors(tree: dict[int, str]) -> list[int]:
+    """Those of `tree` still running as the same process: a pid with another start time is reused."""
+    now = _processes()
+    return [pid for pid, started in tree.items() if pid in now and now[pid][1] == started]
+
+
+def _alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+
+@contextlib.contextmanager
+def fresh_instance(label: str, who: str, ready_s: float = 90.0):
+    """Start Arslan on an empty data folder for this run; stop it (whole process group) after."""
+    api = ARSLAN_API if who == "arslan" else ARSLAN_LEGACY_API
+    if _healthy(api):
+        raise SystemExit(f"{api} already answers: stop that instance first, or this run would use it")
+    name = f"fresh-{label}"
+    for sub in ("data", "home"):
+        shutil.rmtree(ROOT / sub / name, ignore_errors=True)
+    (ROOT / "runs").mkdir(parents=True, exist_ok=True)
+    log = open(ROOT / "runs" / f"{label}.instance.log", "w")
+    proc = subprocess.Popen([str(START_ARSLAN), name, str(urllib.parse.urlparse(api).port)],
+                            stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+    try:
+        deadline = time.time() + ready_s
+        while not _healthy(api):
+            if proc.poll() is not None:
+                raise SystemExit(f"{name}: Arslan exited ({proc.returncode}) before it answered; see {log.name}")
+            if time.time() > deadline:
+                raise SystemExit(f"{name}: no answer from {api}/health after {ready_s:.0f} s")
+            time.sleep(0.5)
+        yield ROOT / "data" / name
+    finally:
+        # Arslan starts commands, sandboxes, parsers and browsers in sessions of their own
+        # (start_new_session), out of reach of the group signal: a command still running at the
+        # stop would keep going into the next run (③Hands' review). Take the tree first, while
+        # their parent is alive to name them; whatever outlives the stop gets SIGKILL.
+        tree = _descendants(proc.pid)
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(proc.pid, signal.SIGTERM)
+        try:
+            proc.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(proc.pid, signal.SIGKILL)
+            proc.wait()
+        left = _survivors(tree)
+        for pid in left:
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.kill(pid, signal.SIGKILL)
+        if left:
+            log.write(f"\n[bench] killed {len(left)} process(es) left after the stop: {left}\n")
+        log.close()
+
+
 def run_one(task: str, who: str, n: int, prompts: dict, sb: str, manual_login: bool = False,
             models: dict | None = None) -> dict:
     label = f"{who}-{task}-r{n}" + (f"-{ROUND}" if ROUND else "")
@@ -387,31 +492,35 @@ def run_one(task: str, who: str, n: int, prompts: dict, sb: str, manual_login: b
         _t4_setup(task, who, ctx, manual_login)
     fill = {"dir": run, "list": ctx.get("list", ""), "url": ctx["site"].url if "site" in ctx else ""}
     turns = [t.format(**fill) for t in turns_raw]
-    started = time.time()
-    ctx["started"] = started
-    if who == "claude-code":                       # one process per turn, resuming the same session
-        session = str(uuid.uuid4())
-        for i, prompt in enumerate(turns):
-            cmd, e = command(who, label, run, prompt, sb, model=model, turn=i, session=session)
-            rc = _run(cmd, e, run, "w" if i == 0 else "a")
-            if i + 1 < len(turns):
-                snapshot(str(run), i + 1)
-    else:
-        prompt = turns if (len(turns) > 1 and who in ARSLAN) else turns[0]
-        cmd, e = command(who, label, run, prompt, sb, model=model, decline=DECLINES.get(task))
-        rc = _run(cmd, e, run)
-    ended = time.time()
-    if "timer" in ctx:
-        ctx["timer"].cancel()
-    reply = reply_text(who, run)
-    ctx["declined"] = driver_out(who, run).get("declined", 0)
-    try:
-        verdict = CHECKS[task](str(run), reply, ctx)
-    finally:
-        if "site" in ctx:
-            ctx["site"].stop()
-    end = driver_end(who, run)
-    settled = settle(label, started, ended)
+    instance = fresh_instance(label, who) if FRESH and who in ARSLAN else contextlib.nullcontext()
+    with instance as data:              # a fresh instance stays up until its after-turn calls settle
+        if data is not None:
+            ctx["arslan_data"] = str(data)
+        started = time.time()
+        ctx["started"] = started
+        if who == "claude-code":                       # one process per turn, resuming the same session
+            session = str(uuid.uuid4())
+            for i, prompt in enumerate(turns):
+                cmd, e = command(who, label, run, prompt, sb, model=model, turn=i, session=session)
+                rc = _run(cmd, e, run, "w" if i == 0 else "a")
+                if i + 1 < len(turns):
+                    snapshot(str(run), i + 1)
+        else:
+            prompt = turns if (len(turns) > 1 and who in ARSLAN) else turns[0]
+            cmd, e = command(who, label, run, prompt, sb, model=model, decline=DECLINES.get(task))
+            rc = _run(cmd, e, run)
+        ended = time.time()
+        if "timer" in ctx:
+            ctx["timer"].cancel()
+        reply = reply_text(who, run)
+        ctx["declined"] = driver_out(who, run).get("declined", 0)
+        try:
+            verdict = CHECKS[task](str(run), reply, ctx)
+        finally:
+            if "site" in ctx:
+                ctx["site"].stop()
+        end = driver_end(who, run)
+        settled = settle(label, started, ended)
     record = {"run": label, "task": task, "entrant": who, "repeat": n, "model": model, "rc": rc,
               "entrant_version": entrant_version(who), "end": end,
               "wall_s": round(time.time() - started), "prompt": turns if len(turns) > 1 else turns[0],
