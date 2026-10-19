@@ -716,3 +716,16 @@ def test_a_command_in_its_own_session_does_not_outlive_its_fresh_instance(tmp_pa
 def _zombie(pid: int) -> bool:
     out = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True).stdout
     return out.strip().startswith("Z")
+
+
+def test_a_reused_pid_is_not_killed(monkeypatch):
+    """Only a leftover whose start time still matches is killed: a pid recycled during the stop
+    may be one of the user's own processes (③Hands' review of #228)."""
+    from scripts.kernel_bench import runner
+    snapshots = iter([{10: (1, "Mon Oct 19 10:00:00 2026"), 11: (10, "Mon Oct 19 10:00:01 2026"),
+                       12: (10, "Mon Oct 19 10:00:02 2026")},
+                      {11: (1, "Mon Oct 19 10:00:01 2026"), 12: (1, "Mon Oct 19 10:09:59 2026")}])
+    monkeypatch.setattr(runner, "_processes", lambda: next(snapshots))
+    tree = runner._descendants(10)
+    assert tree == {11: "Mon Oct 19 10:00:01 2026", 12: "Mon Oct 19 10:00:02 2026"}
+    assert runner._survivors(tree) == [11]          # 12 is a new process on a recycled pid

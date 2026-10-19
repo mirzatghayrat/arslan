@@ -372,19 +372,35 @@ def _healthy(api: str) -> bool:
         return False
 
 
-def _descendants(pid: int) -> list[int]:
-    """Every process under `pid` now, whatever session it started (ps, so no extra dependency)."""
-    out = subprocess.run(["ps", "-Ao", "pid=,ppid="], capture_output=True, text=True).stdout
-    children: dict[int, list[int]] = {}
+def _processes() -> dict[int, tuple[int, str]]:
+    """pid -> (parent pid, start time), from ps (no extra dependency)."""
+    out = subprocess.run(["ps", "-Ao", "pid=,ppid=,lstart="], capture_output=True, text=True).stdout
+    table = {}
     for line in out.splitlines():
-        child, parent = (int(x) for x in line.split())
+        pid, ppid, started = line.split(None, 2)
+        table[int(pid)] = (int(ppid), started.strip())
+    return table
+
+
+def _descendants(pid: int) -> dict[int, str]:
+    """Every process under `pid` now, whatever session it started, with its start time. A process
+    already handed to launchd (its parent gone) before this snapshot is not found."""
+    table = _processes()
+    children: dict[int, list[int]] = {}
+    for child, (parent, _) in table.items():
         children.setdefault(parent, []).append(child)
-    found, todo = [], [pid]
+    found, todo = {}, [pid]
     while todo:
         for child in children.get(todo.pop(), []):
-            found.append(child)
+            found[child] = table[child][1]
             todo.append(child)
     return found
+
+
+def _survivors(tree: dict[int, str]) -> list[int]:
+    """Those of `tree` still running as the same process: a pid with another start time is reused."""
+    now = _processes()
+    return [pid for pid, started in tree.items() if pid in now and now[pid][1] == started]
 
 
 def _alive(pid: int) -> bool:
@@ -433,7 +449,7 @@ def fresh_instance(label: str, who: str, ready_s: float = 90.0):
             with contextlib.suppress(ProcessLookupError):
                 os.killpg(proc.pid, signal.SIGKILL)
             proc.wait()
-        left = [pid for pid in tree if _alive(pid)]
+        left = _survivors(tree)
         for pid in left:
             with contextlib.suppress(ProcessLookupError, PermissionError):
                 os.kill(pid, signal.SIGKILL)
