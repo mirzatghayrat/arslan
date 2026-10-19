@@ -582,13 +582,6 @@ class GateOut(BaseModel):
     aggregate: dict | None = None
 
 
-class EvolveProposalOut(BaseModel):
-    proposal_id: int | None
-    candidate_prompt: str | None
-    gate: GateOut
-    evidence: dict | None = None
-
-
 class ConfirmProposalOut(BaseModel):
     ok: bool
     reason: str | None = None

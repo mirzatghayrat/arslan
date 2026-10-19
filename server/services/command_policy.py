@@ -12,7 +12,6 @@ guarantees no element can smuggle shell syntax that a downstream tool might re-p
 from __future__ import annotations
 
 import re
-from urllib.parse import urlparse
 
 # v1 whitelist: high-value, non-code-fetching binaries. Extend HERE to add commands.
 # Read-only inspectors (P1 §1.4). They observe and never mutate, so they grade LOW
@@ -111,68 +110,3 @@ def _is_probe(args) -> bool:
     verbose flag riding on a real operation can never masquerade as a probe."""
     probe = {"--version", "-version", "version", "--help", "-h", "-v"}
     return len(args) == 1 and args[0] in probe
-
-
-# git subcommands that touch the network (vs local-only status/log/commit/…).
-_GIT_NETWORK = frozenset({"push", "pull", "fetch", "clone", "submodule", "ls-remote"})
-
-
-def is_network_command(command: str, argv) -> bool:
-    """True if this command needs the network (gh always; git only for network subcommands).
-    Local commands (local git, ffmpeg, pandoc) run fully offline as today."""
-    args = [a for a in (argv if isinstance(argv, list) else []) if isinstance(a, str)]
-    if command == "gh":
-        return True
-    if command == "git":
-        return bool(args) and args[0] in _GIT_NETWORK
-    return False
-
-
-def _url_host(s: str) -> str | None:
-    if "://" in s:
-        return (urlparse(s).hostname or "").lower() or None
-    if "@" in s and ":" in s:                    # scp-like: git@github.com:owner/repo.git
-        return s.split("@", 1)[1].split(":", 1)[0].lower() or None
-    return None
-
-
-def resolve_target_host(command: str, argv, *, repo_remotes: dict) -> str | None:
-    """Best-effort target host of a network command. `repo_remotes` maps remote-name→url
-    (the caller resolves it from the repo config). Returns a lowercased host or None."""
-    if command == "gh":
-        return "github.com"
-    args = [a for a in (argv if isinstance(argv, list) else []) if isinstance(a, str)]
-    for a in args[1:]:                            # skip subcommand
-        if a.startswith("-"):
-            continue
-        h = _url_host(a)
-        if h:
-            return h
-        if a in repo_remotes:
-            return _url_host(repo_remotes[a])
-    return _url_host(repo_remotes["origin"]) if "origin" in repo_remotes else None
-
-
-_GITHUB_HOSTS = frozenset({"github.com", "api.github.com"})
-
-
-def is_host_allowed(host, *, repo_remote_hosts: set) -> bool:
-    """v1 allowlist: GitHub + the hosts of THIS repo's configured remotes. Everything else refused."""
-    if not host:
-        return False
-    h = host.lower()
-    return h in _GITHUB_HOSTS or h in {str(r).lower() for r in repo_remote_hosts}
-
-
-def push_targets_current_branch(argv, current_branch: str) -> bool:
-    """Guard: a `git push` may only push the CURRENT branch (or HEAD) — never an arbitrary ref.
-    Deterministic; `current_branch` is resolved host-side. Non-push commands pass through."""
-    args = [a for a in (argv if isinstance(argv, list) else []) if isinstance(a, str)]
-    if not args or args[0] != "push":
-        return True
-    refs = [a for a in args[1:] if not a.startswith("-")]
-    refspecs = refs[1:] if refs else []                # first non-flag is the remote
-    if not refspecs:
-        return True                                    # `git push [origin]` pushes current branch
-    allowed = {current_branch, "HEAD", f"+{current_branch}"}
-    return all(r in allowed for r in refspecs)

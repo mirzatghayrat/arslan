@@ -163,10 +163,3 @@ async def distill_from_event(*, conversation_id: str, spawn_id: int | None,
         signal_text, label=f"{spawn_name or '分身'} 心得", source_kind="distill",
         source_ref={"conversation_id": conversation_id, "spawn_id": spawn_id},
         spawn_id=spawn_id)
-
-
-async def distill_from_feedback(*, feedback_id: int, correction_text: str,
-                                spawn_id: int | None = None) -> int:
-    return await _distill_one(
-        correction_text, label="用户纠正", source_kind="feedback",
-        source_ref={"feedback_id": feedback_id}, spawn_id=spawn_id)

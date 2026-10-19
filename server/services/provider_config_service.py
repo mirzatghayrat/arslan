@@ -220,15 +220,6 @@ async def delete_config(session: AsyncSession, config_id: int) -> bool:
     return True
 
 
-async def get_primary(session: AsyncSession) -> ProviderConfig | None:
-    row = (await session.execute(
-        select(ProviderConfig).where(ProviderConfig.is_primary.is_(True)).limit(1))).scalar_one_or_none()
-    if row is not None:
-        return row
-    return (await session.execute(
-        select(ProviderConfig).order_by(ProviderConfig.id).limit(1))).scalar_one_or_none()
-
-
 async def get_decrypted_key(session: AsyncSession, config_id: int) -> str:
     row = await session.get(ProviderConfig, config_id)
     return _safe(row.api_key) if row else ""

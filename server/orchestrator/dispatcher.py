@@ -92,18 +92,6 @@ async def get_spawn_name(spawn_id: int) -> str | None:
     return spawn.name if spawn else None
 
 
-async def last_spawn_output(spawn_id: int) -> str | None:
-    """The spawn's most recent assistant output (e.g. the direction it proposed)."""
-    async with db_session.AsyncSessionLocal() as db:
-        row = await db.execute(
-            select(ChatMessage.content)
-            .where(ChatMessage.spawn_id == spawn_id, ChatMessage.role == "assistant")
-            .order_by(ChatMessage.id.desc())
-            .limit(1)
-        )
-        return row.scalar_one_or_none()
-
-
 async def _spawn_history(spawn_id: int) -> list[dict]:
     async with db_session.AsyncSessionLocal() as db:
         rows = await db.execute(
