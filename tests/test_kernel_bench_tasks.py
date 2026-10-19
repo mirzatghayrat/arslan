@@ -411,3 +411,17 @@ def test_t12_is_arslans_alone():
     import json as _json
     prompts = _json.loads((runner.HERE / "prompts.json").read_text())
     assert "Hands Fixture" in prompts["T12"] and "Delete" in prompts["T12"]
+
+
+def test_t1_lists_are_apart_per_model(tmp_path, monkeypatch):
+    """M1B 2026-10-19: arslan-T1-r1 ran on DeepSeek, then on Claude; without the model in the list
+    name the Claude run added its three reminders to the DeepSeek run's list and scored 0."""
+    import sys
+    from scripts.kernel_bench import runner
+    monkeypatch.setattr(runner, "ROOT", tmp_path)
+    seen = []
+    monkeypatch.setitem(runner.CHECKS, "T1", lambda run, reply, ctx: seen.append(ctx["list"]) or {"score": 3})
+    monkeypatch.setattr(runner, "command", lambda *a, **k: ([sys.executable, "-c", "print('{}')"], {}))
+    for model in ("deepseek-v4-pro", "claude-sonnet-5"):
+        runner.run_one("T1", "arslan", 1, {"T1": "list {list}"}, "sb", models={"arslan": model})
+    assert len(set(seen)) == 2 and all(model in name for name, model in zip(seen, ("deepseek-v4-pro", "claude-sonnet-5")))
