@@ -11,6 +11,13 @@
 | 分支 | `claude/0162-c2b1-evolution-api`、`claude/0162-c2b2-evolution-auto` |
 | 迁移号 | 无（进化相关的表和设置值都留在库里） |
 
+## 决定（⓪Plan 2026-10-20）
+
+- **Tier-1 进化规则不进 v2 的提示词。**
+  - v2 从 v0.1.40 起就是在用的路径，一直没拼过这些规则（`dispatcher.py:371` 只在没有 v2 时拼）。这是保持今天的行为，不算用户的设计决定。
+  - C2b 删进化第一批；`dispatcher.py` 里只有 v1 才走的拼接，随 C2a-2 删 v1 分支时一起删。
+  - C2a 实施记录里提出的问题，到此定了。
+
 ## 目标
 
 「进化」在网页上没有入口。删掉它对外的接口、开机自启的自动路径和诊断工具。`replay_gate`、`replay_run`、`compare_judge` 和 `skill_forge`、`evaluator` 共用，本批不动。
@@ -21,7 +28,7 @@
 
 - `server/api/evolution.py`：整文件删，450 行，14 个路由。
 - `server/main.py:520-522`：路由注册。
-- `server/schemas.py`：只被 `api/evolution.py` 用的响应模型，大致在 `:579-790`，删前逐个 `rg`。
+- `server/schemas.py`：只被 `api/evolution.py` 用的响应模型，大致在 `:579-790`，删前逐个 `git grep -nw`。
   - `EvolveProposalOut`（`:585`）归 C2e，别重复删。
 - 测试：进化接口的测试。
 
@@ -29,7 +36,7 @@
 
 - 网页客户端：
   - `web/src/api/client.ts`：`getEvolution`（`:361`）和 `:590-617` 那一组。组件里的调用都是 0，只有测试在用；
-  - `web/src/api/client.types.ts`：对应的类型，在 `:474-486`、`:901-1116`。删前逐个 `rg`，别的地方在用的保留。
+  - `web/src/api/client.types.ts`：对应的类型，在 `:474-486`、`:901-1116`。删前逐个 `git grep -nw`，别的地方在用的保留。
 - `server/services/evolution_watcher.py`：
   - 自动路径：`_in_budget_refusal_cooldown`（`:429-443`）、`trigger_spawn`（`:446-464`），以及 `_is_eligible`（`:209`；C1 合并后已零调用，只在 `trigger_spawn` 的文档字符串里提到，更正 E20）；
   - 循环：`tick`、`watch_loop`、`start`、`stop`（`:484-537`）；
@@ -67,17 +74,17 @@
 1. **删接口前**，确认谁在调这些地址：
 
    ```bash
-   rg -n "/evolution|evolve/estimate|/evolve\b" web/src desktop scripts evals docs-site
+   git grep -nE "/evolution|evolve/estimate|/evolve([^A-Za-z0-9_]|$)" -- web/src desktop scripts evals docs-site
    ```
 
-   今天只有 `scripts/diagnose_evolution.py`，它在 C2b-2 删。
+   今天命中四个文件。除了本卡要删的网页客户端（`web/src/api/client.ts`、`client.types.ts`）和它的测试（`web/src/__tests__/knowledge-client.test.ts`），只剩 `scripts/diagnose_evolution.py`，它在 C2b-2 删。
 2. **删设置项**会让 `GET /settings` 少两个字段。确认网页不读它们：
 
    ```bash
-   rg -n "evolution_auto|evolutionAuto|evolution_max" web/src
+   git grep -nE "evolution_auto|evolutionAuto|evolution_max" -- web/src
    ```
 
-   今天只有一个测试。
+   今天命中一个测试（`settings-put-carries-only-what-was-touched.test.ts:135-136`，本卡改），另有 `locale-parity.test.ts:118-119` 两行注释，只是记录翻译 key 数量的变化，不读设置，不用改。
 3. 两个 PR 各自跑 ruff 和全量测试。
 
 ## 验收
@@ -87,7 +94,7 @@
   - 下面这条命令无结果：
 
     ```bash
-    rg -n "evolution_watcher\.start|trigger_spawn|notify_spawn|evolution_diagnostics|api import evolution" server scripts
+    git grep -nE "evolution_watcher\.start|trigger_spawn|notify_spawn|evolution_diagnostics|api import evolution" -- server scripts
     ```
 
   - 启动日志里没有 evolution watcher 的启动行。

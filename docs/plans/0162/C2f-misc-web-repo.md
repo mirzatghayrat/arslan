@@ -58,7 +58,7 @@
 1. 删依赖之前先确认：
 
    ```bash
-   rg -n "from ['\"](motion|ogl|autoprefixer)" web/src web/scripts web/vite.config.ts
+   git grep -nE "from ['\"](motion|ogl|autoprefixer)" -- web/src web/scripts web/vite.config.ts
    ```
 
    应该无结果。
