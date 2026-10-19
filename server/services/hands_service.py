@@ -320,6 +320,12 @@ def always_label(bundle_id: str, name: str) -> str:
 _SCRIPT_REACH = re.compile(
     r"\b(?:do\s+shell\s+script|do\s+script|run\s+script|load\s+script|store\s+script|do\s+javascript|"
     r"execute\s+javascript|write\s+text|keystroke|key\s+code|move|empty\s+trash)\b", re.I)
+# The same steps without those words (0.1.63, found reviewing D4): a raw Apple event in chevrons
+# («event sysoexec» is `do shell script`), AppleScriptObjC (`use framework`, `current application's
+# NSTask`), and Standard Additions writing a file from the script itself (`open for access`, `write`,
+# `set eof`). A plain word such as a reminder named "write report" also matches: that only asks more.
+_SCRIPT_REACH_OTHERWISE = re.compile(
+    r"«|\b(?:current\s+application|use\s+framework|open\s+for\s+access|write|set\s+eof)\b", re.I)
 # A script for one of these is a script for every app (System Events drives any process, and is
 # how a script reaches an app the never-list names without naming it), the shell, or the files.
 _HIGH_REACH_NAMES = frozenset({"system events", "terminal", "iterm", "iterm2", "finder", "system settings",
@@ -336,7 +342,8 @@ def script_kind(script: str) -> tuple[str, list[str]]:
     the "apps" category): (kind, the apps it names).
     - money words → `money` (every time, every mode);
     - delete / send / submit… words, a step past the app it names (a shell, other script text,
-      JavaScript, keystrokes, moving files), or a high-reach app (System Events, Terminal, iTerm,
+      JavaScript, keystrokes, moving files; also raw «events», AppleScriptObjC and Standard
+      Additions' file writes), or a high-reach app (System Events, Terminal, iTerm,
       Finder, System Settings, Script Editor) → `app_risky` (every time, shown in full; the island
       does not answer it);
     - otherwise, a script that names apps → `app` (once per app, like Hands);
@@ -345,7 +352,8 @@ def script_kind(script: str) -> tuple[str, list[str]]:
     apps = script_apps(script)
     if money_label(script):
         return "money", apps
-    if _RISKY_WORDS.search(script) or _SCRIPT_REACH.search(script) or any(_high_reach(a) for a in apps):
+    if (_RISKY_WORDS.search(script) or _SCRIPT_REACH.search(script) or _SCRIPT_REACH_OTHERWISE.search(script)
+            or any(_high_reach(a) for a in apps)):
         return "app_risky", apps
     return ("app" if apps else "opaque"), apps
 
