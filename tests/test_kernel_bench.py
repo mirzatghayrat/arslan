@@ -348,6 +348,26 @@ def test_run_one_judges_with_the_end_the_driver_printed(tmp_path, monkeypatch):
     assert len(waits) == 2 and all(ended > since > 0 for since, ended in waits)   # quiet counts from the exit
 
 
+def test_the_round_is_in_the_run_label_so_a_later_round_starts_fresh(tmp_path, monkeypatch):
+    """The meter caps a label over its whole life: a reused label was refused with 402 (K1 after-runs).
+    The round names the label, its folder and the meter's key; T1's list carries the model once."""
+    import sys
+    from scripts.kernel_bench import runner
+    monkeypatch.setattr(runner, "ROOT", tmp_path)
+    monkeypatch.setattr(runner, "settle", lambda *a, **k: 0.0)
+    seen = {}
+    monkeypatch.setitem(runner.CHECKS, "T1", lambda run, reply, ctx: seen.update(run=run, list=ctx["list"]) or {"score": 3})
+    labels = []
+    script = "import json; print(json.dumps({'end': 'done', 'final': 'ok'}))"
+    monkeypatch.setattr(runner, "command", lambda who, label, *a, **k: labels.append(label) or ([sys.executable, "-c", script], {}))
+    for round_, label in (("", "arslan-T1-r1"), ("k1after", "arslan-T1-r1-k1after")):
+        monkeypatch.setattr(runner, "ROUND", round_)
+        rec = runner.run_one("T1", "arslan", 1, {"T1": "make {list}"}, "sb", models={"arslan": "claude-sonnet-5"})
+        assert (rec["run"], labels[-1], Path(seen["run"]).name) == (label, label, label)
+        assert seen["list"] == f"对比测试-{label}-claude-sonnet-5"
+    assert (tmp_path / "runs" / "arslan-T1-r1").is_dir() and (tmp_path / "runs" / "arslan-T1-r1-k1after").is_dir()
+
+
 def test_a_runs_usage_is_its_own_label_from_when_it_started(tmp_path, monkeypatch):
     from scripts.kernel_bench import runner
     monkeypatch.setattr(runner, "ROOT", tmp_path)

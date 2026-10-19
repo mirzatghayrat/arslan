@@ -10,6 +10,8 @@
 # BENCH_REPO starts another checkout (e.g. a release tag's worktree) with this script.
 # ARSLAN_HANDS_APP passes through for T12 (Hands on the synthetic fixture app): the backend finds
 # the running Hands helper by its account-wide folder, not by $HOME.
+# ARSLAN_ANTHROPIC_FIRST_PARTY_HOSTS passes through so K1's server-side clearing runs behind the
+# Claude metering proxy (start_proxy.sh anthropic, :8901), which forwards to api.anthropic.com as is.
 set -euo pipefail
 NAME=$1; PORT=$2; PROTOCOL=${3:-native}
 ROOT=${BENCH_ROOT:-/tmp/arslan-kernel-bench}
@@ -19,5 +21,6 @@ cd "$REPO"
 exec env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin HOME="$ROOT/home/$NAME" TMPDIR="$ROOT/tmp" \
   ARSLAN_DATA_DIR="$ROOT/data/$NAME" ARSLAN_SECRET_KEY=bench-only-not-a-real-secret ARSLAN_API_TOKEN= \
   ARSLAN_TOOL_PROTOCOL="$PROTOCOL" ${ARSLAN_HANDS_APP:+ARSLAN_HANDS_APP="$ARSLAN_HANDS_APP"} \
+  ${ARSLAN_ANTHROPIC_FIRST_PARTY_HOSTS:+ARSLAN_ANTHROPIC_FIRST_PARTY_HOSTS="$ARSLAN_ANTHROPIC_FIRST_PARTY_HOSTS"} \
   $( [ "${BENCH_SANDBOX:-}" = none ] || echo sandbox-exec -f "${BENCH_SANDBOX:-$ROOT/sandbox.sb}" ) \
   .venv/bin/uvicorn server.main:app --host 127.0.0.1 --port "$PORT"
