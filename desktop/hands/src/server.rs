@@ -734,6 +734,32 @@ fn looks_like_password(target: &refmap::Target, states: &[String]) -> bool {
     PASSWORD_WORDS.iter().any(|w| name.contains(w))
 }
 
+/// In tests: the answer the focused-element question gets (None: ask accessibility).
+static FOCUSED_STAND_IN: std::sync::Mutex<Option<Option<bool>>> = std::sync::Mutex::new(None);
+
+pub fn focused_password_stand_in_for_tests(answer: Option<Option<bool>>) {
+    *FOCUSED_STAND_IN.lock().unwrap_or_else(|p| p.into_inner()) = answer;
+}
+
+/// Whether app `pid`'s focused element is a password field, asked of accessibility now. None when
+/// it cannot say (no focused element, no grant, not macOS): policy::press_refusal decides then.
+fn focused_password_field(pid: i64) -> Option<bool> {
+    if let Some(answer) = *FOCUSED_STAND_IN.lock().unwrap_or_else(|p| p.into_inner()) {
+        return answer;
+    }
+    ask_focused_secure(pid)
+}
+
+#[cfg(target_os = "macos")]
+fn ask_focused_secure(pid: i64) -> Option<bool> {
+    crate::macos::focused_secure(i32::try_from(pid).ok()?)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn ask_focused_secure(_pid: i64) -> Option<bool> {
+    None
+}
+
 fn live_states(ctx: &Ctx, reference: &str, session: Option<&str>) -> Result<Vec<String>, Refusal> {
     let argv = argv::build(
         "get",
@@ -970,6 +996,14 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
     // is given one of this app's windows instead — always one of this app's, never the caller's word.
     if shared {
         by_window(ctx, op, &app, &mut call)?;
+    }
+    // 0.1.63: keys go to the app's focused element, which no ref names, so that element is asked
+    // (type and set_value check their target above).
+    if op == "press" {
+        let keys = args.get("keys").and_then(Value::as_str).unwrap_or("");
+        if let Some(why) = policy::press_refusal(keys, focused_password_field(app.pid)) {
+            return Err(refuse("password_field", why));
+        }
     }
     let argv = argv::build(op, &call, session.as_deref())?;
     let key = (session.clone().unwrap_or_default(), app.pid);

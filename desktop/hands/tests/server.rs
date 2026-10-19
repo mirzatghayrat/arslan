@@ -799,6 +799,40 @@ fn a_menu_item_is_pressed_by_its_path_under_the_action_rules() {
 }
 
 #[test]
+fn keys_never_go_into_a_focused_password_field() {
+    let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    let hands = start("presspw");
+    let press = |keys: &str| hands.ask("press", json!({"app": "Hands Fixture", "keys": keys}));
+    // The focused element is a password field: no key goes, typing or not.
+    arslan_hands::server::focused_password_stand_in_for_tests(Some(Some(true)));
+    for keys in ["a", "cmd+v", "tab", "return"] {
+        assert_eq!(code(&press(keys)), "password_field", "{keys}");
+    }
+    assert!(
+        hands.acted().is_empty(),
+        "nothing pressed: {:?}",
+        hands.calls()
+    );
+    // The app does not say: keys that may type are refused, the others go.
+    arslan_hands::server::focused_password_stand_in_for_tests(Some(None));
+    for keys in ["a", "shift+a", "option+e", "space", "cmd+v"] {
+        assert_eq!(code(&press(keys)), "password_field", "{keys}");
+    }
+    assert!(
+        hands.acted().is_empty(),
+        "nothing pressed: {:?}",
+        hands.calls()
+    );
+    assert_eq!(press("tab")["ok"], true);
+    assert_eq!(press("cmd+b")["ok"], true);
+    // Not a password field: letters go too.
+    arslan_hands::server::focused_password_stand_in_for_tests(Some(Some(false)));
+    assert_eq!(press("a")["ok"], true);
+    assert_eq!(hands.acted(), ["press", "press", "press"]);
+    arslan_hands::server::focused_password_stand_in_for_tests(None);
+}
+
+#[test]
 fn a_key_combo_with_nothing_focused_presses_its_menu_item_instead() {
     let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
     with_menus();
