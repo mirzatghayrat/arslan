@@ -90,14 +90,16 @@ async def test_stable_research_host(case, execution_db, monkeypatch, tmp_path):
     async def confirm_write(tool, path):
         return tool == "write_file" and path == "comparison.md"
 
+    # A real turn's shape (handle_user_message's): with memory v2 active, as every launch leaves it,
+    # scoped_turn runs it as a task and hands it the task's emit (C2a).
     @task_context.scoped_turn
-    async def turn(conversation_id, user_message):
+    async def turn(conversation_id, user_message, emit):
         message_id = await memory.add_message(conversation_id, "user", user_message)
         task_context.source_message(message_id)
-        return await arslan._handle_answer(conversation_id, user_message, events.append,
+        return await arslan._handle_answer(conversation_id, user_message, emit,
                                           confirm_workspace_write=confirm_write)
 
-    result = await turn(case, value["prompt"])
+    result = await turn(case, value["prompt"], events.append)
     async with execution_db() as db:
         answers = (await db.scalars(select(ArslanMessage).where(
             ArslanMessage.conversation_id == case, ArslanMessage.role == "arslan"))).all()

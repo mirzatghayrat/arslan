@@ -85,9 +85,10 @@ async def test_response_cannot_acknowledge_memory_before_transaction_finishes(ex
 async def test_deletion_manifest_export_requires_auth_and_contains_no_memory_text(api):
     path = "/api/v1/memory/deletion-manifest"
     assert (await api.get(path, headers={"Authorization": "Bearer wrong"})).status_code == 401
+    # The store exists from the first launch (memory v2 is activated at every boot), so an empty
+    # manifest exports; deletion_store_not_initialized (409) needs a store no launch leaves (C2a).
     empty = await api.get(path)
-    assert empty.status_code == 409
-    assert empty.json() == {"detail": {"code": "deletion_store_not_initialized"}}
+    assert empty.status_code == 200 and empty.json()["deletions"] == []
     content = "Synthetic private preference to erase"
     created = await api.post("/api/v1/memory/entries", json={"content": content, "scope": {"kind": "global"}})
     assert created.status_code == 201
@@ -107,7 +108,7 @@ async def test_deletion_manifest_export_requires_auth_and_contains_no_memory_tex
 async def test_deletion_record_status_requires_auth_and_reports_committed_mirror(api):
     path = "/api/v1/memory/deletion-record-status"
     assert (await api.get(path, headers={"Authorization": "Bearer wrong"})).status_code == 401
-    assert (await api.get(path)).json()["status"] == "unavailable"
+    assert (await api.get(path)).json()["status"] == "missing"       # activated store, no record yet (C2a)
     response = await api.post("/api/v1/memory/entries", json={
         "content": "Synthetic status API preference", "scope": {"kind": "global"}})
     entry = response.json()

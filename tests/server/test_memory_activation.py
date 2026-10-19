@@ -8,6 +8,10 @@ from server.services.memory_activation import activate_sync
 from server.services.memory_migration import migrate_legacy_sync
 from server.services.memory_repository import is_active, repository
 
+# Activation is what this file tests, so its databases start on memory v1. Permanent: kept while
+# activation exists (marker memory_v1 in pyproject.toml).
+pytestmark = pytest.mark.memory_v1
+
 
 async def activate(maker):
     async with maker.kw["bind"].begin() as db:
