@@ -104,7 +104,8 @@ async def test_stable_research_host(case, execution_db, monkeypatch, tmp_path):
         answers = (await db.scalars(select(ArslanMessage).where(
             ArslanMessage.conversation_id == case, ArslanMessage.role == "arslan"))).all()
     persist(budget.EVIDENCE / f"{case}-result.json", {"case": case, "answer": result, "events": events,
-        "persisted_in_isolated_db": any(answer.content == result for answer in answers),
+        # K2: content carries the turn's tool summary after the reply; display_content is the reply.
+        "persisted_in_isolated_db": any((answer.display_content or answer.content) == result for answer in answers),
         "preflight_sha256": value["preflight_sha256"], "runner_plan": value,
         "source_sha": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=budget.ROOT, text=True).strip(),
         "quality_status": "not_run", "native_status": "not_run", "tool_trace": trace, "transport": verified_get.transport})

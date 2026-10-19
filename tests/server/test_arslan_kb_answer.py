@@ -2,7 +2,7 @@
 
 
 def _patch_common(monkeypatch, arslan_mod):
-    async def fake_assemble(cid):
+    async def fake_assemble(cid, **kwargs):          # K2 passes the turn's budget
         return {"summary": "", "history": [{"role": "user", "content": "hi"}]}
     async def fake_facts(**kwargs):
         return ""

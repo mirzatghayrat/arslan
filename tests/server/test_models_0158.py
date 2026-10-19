@@ -141,7 +141,9 @@ async def test_a_chat_turn_reaches_the_turn_adapter_with_its_conversation(db, mo
         await arslan._handle_answer("c-model", "你好", lambda e: None)
     except Stop:
         pass
-    assert seen == ["c-model"]
+    # K2: the history budget resolves the turn's adapter the same way first (memory.turn_budget,
+    # which swallows the spy's Stop and falls back); every resolution carries the conversation.
+    assert seen and set(seen) == {"c-model"}
 
 
 async def test_the_turns_usage_frame_carries_the_last_calls_input(db, monkeypatch):

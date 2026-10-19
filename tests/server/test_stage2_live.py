@@ -78,7 +78,7 @@ async def live_host(execution_db, monkeypatch, tmp_path):
         async with execution_db() as db:
             answers = (await db.scalars(select(ArslanMessage).where(
                 ArslanMessage.conversation_id == case_id, ArslanMessage.role == "arslan"))).all()
-        assert any(message.content == result for message in answers)
+        assert any((message.display_content or message.content) == result for message in answers)
         return result
     return run
 
