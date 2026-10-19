@@ -2,6 +2,13 @@
 
 基线卡：[M1B-baseline.md](M1B-baseline.md)。这张表是 v0.1.63 每个 K 线 PR 比较的「前」。只放数字和必要的说明。
 
+> **更正（2026-10-20，⓪Plan）：** 下面 Arslan 停在「等你」、原因是 `task_checks_not_run` 的格子，**大部分是 bench 造成的**，不是产品行为。
+> - bench 用 `sandbox-exec` 包住整个 Arslan，macOS 不允许在里面再起沙箱。于是 Arslan 的产物检查一律 `not_run`，命令沙箱是 `unavailable`。
+> - 实测：同一个 v0.1.62 + D2 构建，在 bench 沙箱里 `.swift`、`.md` 都是 `not_run`，在外面都是 `passed`。
+> - D2 修的是真机上也有的那一半：没有解析器的类型。
+> - 用户 2026-10-20 选 A：bench 里 Arslan 不再套外层沙箱（`BENCH_SANDBOX=none`），每格一个全新实例；Hermes、Claude Code 照旧套。U10 ① 按这个重跑，结果写在 [U10-rerun-results.md](U10-rerun-results.md)，从那以后的 K 线对比都用新基线。
+> - 本表保留原样作记录。K1 合并前后的对照两边条件相同，结论不受影响，只是绝对的「等你」次数偏高。
+
 ## 设置
 
 | 项 | 值 |

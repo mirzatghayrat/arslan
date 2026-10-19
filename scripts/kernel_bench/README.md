@@ -48,7 +48,15 @@ and goose. Built for the 2026-10 kernel comparison; see `docs/plans/2026-10-01-k
   reads of `~/.ssh`, keychains, Arslan's data or the user's real Hermes/OpenClaw/Claude Code config.
   Claude Code also runs `--bare` (no hooks, no CLAUDE.md, no keychain) with no MCP servers.
   DeepSeek Harness sandboxes its own shell and cannot nest, so it runs without ours.
-- Arslan runs as a separate test instance with a throwaway HOME and data dir.
+- Arslan runs as a separate test instance with a throwaway HOME and data dir. **For baselines and
+  comparisons, start it with `BENCH_SANDBOX=none`** (U10, user's choice A, 2026-10-20). Like DeepSeek
+  Harness, Arslan sandboxes its own commands and its artifact checks, and macOS cannot start a
+  sandbox inside `sandbox-exec`: under ours, its commands ran with `sandbox: unavailable` and every
+  saved file's check came back `not_run`, so tasks stopped at "needs you" for the bench's sake
+  (`.swift` and `.md` alike, checked on v0.1.62 + D2). Still in place without the outer sandbox: `env -i`,
+  the bench HOME, a fresh instance per run (`BENCH_FRESH_INSTANCE=1`), the dummy key, and Arslan's own
+  command sandbox. Not in place: Arslan's file-reading tools can reach the user's files by absolute
+  path; the bench prompts never ask for them.
 
 ## Run
 
