@@ -33,6 +33,9 @@
 - `server/registry/file_tools.py`
   - `edit_file`（`EditFileExecutor`，`:269-307`）的参数改成 `old_string` / `new_string`。旧名 `old` / `new` 再兼容一版，v0.1.64 删。
   - `read_file` 的说明写上它支持的 `offset` / `limit`（`:121-132` 已支持）。
+- `run_command` 的说明加一句：读存下来的工具输出（`tool_outputs/` 下的文件）用 `read_file`，不用 `cat`。
+  - 起因：⓪Plan 10-20 跑分里，模型用 `cat` 读，撞沙箱出卡。
+  - 这里只改措辞，根本的修在 S2a-1 第 5 条。
 - 工具说明与实际一致：`run_command` 的时限（F1 之后是 120 / 600 秒）。
 - 首轮附一份环境快照：系统版本、可用的命令行工具、工作文件夹的顶层概况。
   - 每个对话缓存一次。
