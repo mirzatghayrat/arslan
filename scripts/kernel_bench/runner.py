@@ -181,7 +181,12 @@ def command(who: str, label: str, run: Path, prompt, sb: str, *, model: str = MO
         # Claude models go to the Anthropic proxy; a DeepSeek model through the DeepSeek
         # proxy's Anthropic-compatible path (the one DeepSeek Harness uses).
         base = f"{ANTHROPIC_PROXY}/{label}" if is_claude(model) else f"{PROXY}/{label}/anthropic"
-        return cmd, env({"HOME": str(home), "ANTHROPIC_BASE_URL": base,
+        # Its Bash tool makes a working folder under /tmp/claude-<uid>, outside what the bench's
+        # sandbox lets it write, so every command failed and it reported "no network" (M1B,
+        # T2/T3/T5/T7 invalid). CLAUDE_CODE_TMPDIR moves that folder under the bench root.
+        tmp = ROOT / "tmp" / "claude-code"
+        tmp.mkdir(parents=True, exist_ok=True)
+        return cmd, env({"HOME": str(home), "ANTHROPIC_BASE_URL": base, "CLAUDE_CODE_TMPDIR": str(tmp),
                          "ANTHROPIC_API_KEY": "bench-dummy", "DISABLE_AUTOUPDATER": "1",
                          "DISABLE_TELEMETRY": "1", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"}, node=True)
     if who in ARSLAN:
