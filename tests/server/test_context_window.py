@@ -140,3 +140,27 @@ async def test_a_real_turn_carries_history_by_its_models_window(execution_db, mo
         await arslan.handle_user_message(cid, "and next?", lambda event: None)
         carried[model] = len(adapter.histories[0])
     assert carried["claude-sonnet-5-5"] > carried["some-unknown-model"] > 0
+
+
+def test_a_model_served_by_ollama_gets_a_small_window_whatever_its_name():
+    # ③Hands' review: deepseek-r1:8b through Ollama matched the 128k family; Ollama serves far less.
+    assert cw.window_for("deepseek-r1:8b", provider="ollama") == (cw.LOCAL_WINDOW, "local")
+    assert cw.window_for("deepseek-chat", provider="deepseek") == (128_000, "table")
+
+
+async def test_a_turn_on_ollama_gets_the_small_budget(execution_db, monkeypatch):
+    from server.orchestrator import memory, tool_loop
+    monkeypatch.delenv("ARSLAN_WORKING_TOKEN_BUDGET", raising=False)
+    adapter = _Adapter("deepseek-r1:8b")
+    adapter.provider_name = "ollama"
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    assert await memory.turn_budget("c") == cw.history_budget(cw.LOCAL_WINDOW)
+
+
+async def test_a_malformed_fixed_budget_is_ignored(execution_db, monkeypatch):
+    from server.orchestrator import memory, tool_loop
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _Adapter("claude-sonnet-5-5"))
+    for value in ("lots", "0", "-5"):
+        monkeypatch.setenv("ARSLAN_WORKING_TOKEN_BUDGET", value)
+        assert await memory.turn_budget("c") == cw.history_budget(200_000)
+        assert memory._token_budget() == cw.FLOOR

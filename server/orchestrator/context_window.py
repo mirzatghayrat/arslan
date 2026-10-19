@@ -18,6 +18,10 @@ CAP = 24_000
 # Small on purpose: too small only costs history (the floor still holds), too large overflows a
 # small model, and the cap already handles big windows.
 DEFAULT_WINDOW = 32_000
+# Ollama serves a model with a small context unless the user raised it, whatever the model's own
+# window (③Hands' review: deepseek-r1:8b matched the 128k family). Any Ollama connection, LAN
+# included: the limit comes from how it serves, not from where it runs.
+LOCAL_WINDOW = 8_192
 
 # Substrings of the lower-cased model id; the longest match wins. Only windows the vendors publish.
 # The local families (served through Ollama and the like) are listed at the window they are
@@ -38,8 +42,10 @@ _FAMILIES: dict[str, int] = {
 }
 
 
-def window_for(model: str | None) -> tuple[int, str]:
-    """(window, "table" | "default") for a model id, provider prefixes and case ignored."""
+def window_for(model: str | None, *, provider: str | None = None) -> tuple[int, str]:
+    """(window, "table" | "default" | "local") for a model id, provider prefixes and case ignored."""
+    if (provider or "").casefold() == "ollama":
+        return LOCAL_WINDOW, "local"
     name = (model or "").lower()
     matches = [family for family in _FAMILIES if family in name]
     if not matches:

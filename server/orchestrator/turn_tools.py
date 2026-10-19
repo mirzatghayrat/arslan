@@ -19,6 +19,7 @@ _COMMAND_CHARS = 80
 # Bounds one turn's block (about 3.5k estimated tokens at most): a long tool run must not eat the
 # next turns' history budget. The rest is counted, not listed.
 MAX_LINES = 20
+BLOCK_TOKENS = 800             # and by estimated tokens: CJK lines are dense (③Hands' review)
 # Result TEXT is kept only for these: their output is the user's own file names. Every other tool is
 # recorded by its outcome. An allowlist, not a blocklist (③Hands' review of K2a): untrusted's fixed
 # list has no Mac or Hands tool, so window text, AppleScript and Shortcut output, and command or
@@ -27,6 +28,9 @@ _RESULT_TOOLS = frozenset({"list_dir", "search_files"})
 # Arguments recorded: identifiers, never bodies (a script, code, text typed or written, a label).
 _KEY_ARGS = ("path", "url", "query", "name", "title")
 _HANDS = ("desktop_", "mac_")
+# Their query is often the user's own memory or need ("user's diagnosis: …"): stored here it would be
+# replayed to a cloud model later, past the memory gate (③Hands' review). Not recorded.
+_PRIVATE_QUERY = frozenset({"recall", "conversation_search", "search_files", "web_search"})
 
 
 def enabled() -> bool:
@@ -60,6 +64,8 @@ def _key_arg(tool: str, args: dict) -> str:
     if tool == "run_command" and isinstance(args.get("command"), str):
         return _arg("command", args["command"], _COMMAND_CHARS)
     for key in _KEY_ARGS:
+        if key == "query" and tool in _PRIVATE_QUERY:
+            continue
         if isinstance(args.get(key), str) and args[key].strip():
             return _arg(key, args[key], _ARG_CHARS)
     return ""
@@ -88,8 +94,11 @@ def _line(call: dict) -> str:
     result = call.get("result") if isinstance(call.get("result"), dict) else {}
     key = _key_arg(tool, args)
     head = f"- {tool}" + (f" {key}" if key else "")
-    if result.get("ok", True) and (result.get("external") is True or counts_as_external(tool, args)):
-        return head + ": external content, source only"
+    if result.get("external") is True or counts_as_external(tool, args):
+        if result.get("ok", True):
+            return head + ": external content, source only"
+        # An external tool's error text can carry the outside's words: its code only.
+        return head + ": failed: " + _clip(str(result.get("code") or "error"), 80)
     return f"{head}: {_outcome(tool, result)}"
 
 
@@ -98,7 +107,13 @@ def block(tool_trace: list[dict] | None) -> str:
     calls = [call for call in tool_trace or [] if isinstance(call, dict)]
     if not calls or not enabled():
         return ""
-    lines = [_line(call) for call in calls[:MAX_LINES]]
-    if len(calls) > MAX_LINES:
-        lines.append(f"- … {len(calls) - MAX_LINES} more tool calls")
+    from arslan.context_budget import estimate_tokens
+    lines: list[str] = []
+    for call in calls[:MAX_LINES]:
+        line = _line(call)
+        if lines and estimate_tokens("\n".join([*lines, line])) > BLOCK_TOKENS:
+            break
+        lines.append(line)
+    if len(calls) > len(lines):
+        lines.append(f"- … {len(calls) - len(lines)} more tool calls")
     return "\n".join([OPEN, *lines, CLOSE])

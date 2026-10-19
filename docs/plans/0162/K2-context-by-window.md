@@ -20,6 +20,10 @@
 - **拆成两个 PR：**
   - **K2a**：按窗口给历史、工具摘要、约 75% 时压缩、搜索片段。推动「三轮追问 3/3」。
   - **K2b**：抽事实和压缩挪到回合锁外（U5 ①②、M3 第 11 条）。K2a 合后单独出计划，因为它要碰回合锁、任务租约和 `stream_end` 之后的帧。
+- **本地服务的窗口（③Hands 审，未做完）：**
+  - 由 Ollama 提供的模型一律按 8k 窗口算（`LOCAL_WINDOW`，来源记 `local`）。
+  - LM Studio、llama.cpp 服务、本地 vLLM 默认上下文也小，但它们以 openai 兼容方式接入，现在认不出，会按家族表或默认值给预算，可能被静默截断。
+  - 后续：建 adapter 时从 provider config 的 `base_url` 带上 locality（`llm_factory` 手里有），再给它们小窗口。
 - **回退开关用环境变量，不加界面设置：**
   - 旧固定预算：`ARSLAN_WORKING_TOKEN_BUDGET`，本来就有。
   - 关掉工具摘要：`ARSLAN_TURN_TOOL_SUMMARY=off`。
