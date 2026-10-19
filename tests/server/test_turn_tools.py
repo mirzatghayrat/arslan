@@ -166,3 +166,21 @@ def test_no_registered_tool_persists_its_text_by_default():
         assert secret not in line, tool
         if tool not in turn_tools._RESULT_TOOLS:
             assert minimal.search(line), (tool, line)
+
+
+def test_a_credential_in_a_persisted_argument_is_omitted():
+    # ③Hands' review: a command's first 80 characters can carry a token. The secret-looking strings are
+    # assembled here so the source never holds a literal key (gitleaks scans all history).
+    token = "sk-" + "live-SECRET"
+    block = turn_tools.block([
+        {"tool": "run_command", "args": {"command": "curl -H 'Authorization: " + "Bearer " + token + "123' https://x"},
+         "result": {"ok": True, "exit_code": 0}},
+        {"tool": "web_extract", "args": {"url": "https://x.example/?api" + "_key=" + token + "456"},
+         "result": {"ok": True, "text": "page"}},
+        {"tool": "run_command", "args": {"command": "ls notes"}, "result": {"ok": True, "exit_code": 0}}])
+    assert "SECRET123" not in block and "SECRET456" not in block
+    assert "command=<credential omitted>" in block and "url=<credential omitted>" in block
+    assert "command=ls notes" in block
+    failed = turn_tools.block([{"tool": "run_command", "args": {"command": "make"},
+                                "result": {"ok": False, "error": "401 for header Authorization: " + "Bearer " + token + "789"}}])
+    assert "SECRET789" not in failed and "failed: <credential omitted>" in failed

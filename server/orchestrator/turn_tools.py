@@ -40,6 +40,13 @@ def _clip(text: str, limit: int) -> str:
     return flat if len(flat) <= limit else flat[:limit] + "…"
 
 
+def _arg(key: str, value: str, limit: int) -> str:
+    """One persisted argument; a value carrying a credential is omitted (③Hands' review: a command's
+    first characters can hold a token). content_policy is a screen, not a guarantee."""
+    from arslan.companion.content_policy import contains_credential
+    return f"{key}=<credential omitted>" if contains_credential(value) else f"{key}={_clip(value, limit)}"
+
+
 def _key_arg(tool: str, args: dict) -> str:
     if tool == "mac_applescript":
         from server.services.hands_service import script_kind
@@ -49,18 +56,20 @@ def _key_arg(tool: str, args: dict) -> str:
         app = args.get("app")
         key = "app" if isinstance(app, str) and app.strip() else "name"
         value = args.get(key)
-        return f"{key}={_clip(value, 60)}" if isinstance(value, str) and value.strip() else ""
+        return _arg(key, value, 60) if isinstance(value, str) and value.strip() else ""
     if tool == "run_command" and isinstance(args.get("command"), str):
-        return f"command={_clip(args['command'], _COMMAND_CHARS)}"
+        return _arg("command", args["command"], _COMMAND_CHARS)
     for key in _KEY_ARGS:
         if isinstance(args.get(key), str) and args[key].strip():
-            return f"{key}={_clip(args[key], _ARG_CHARS)}"
+            return _arg(key, args[key], _ARG_CHARS)
     return ""
 
 
 def _outcome(tool: str, result: dict) -> str:
     if not result.get("ok", True):
-        return "failed: " + _clip(result.get("code") or result.get("error") or "error", 80)
+        from arslan.companion.content_policy import contains_credential
+        reason = str(result.get("code") or result.get("error") or "error")
+        return "failed: " + ("<credential omitted>" if contains_credential(reason) else _clip(reason, 80))
     exit_code = f" (exit {result['exit_code']})" if isinstance(result.get("exit_code"), int) else ""
     saved = result.get("full_output_path")
     if saved:
