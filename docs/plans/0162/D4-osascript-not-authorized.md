@@ -31,9 +31,13 @@ osascript 发给某个 App 的 Apple Events 被系统或那个 App 以「没有�
 ## 改哪些文件
 
 - **`server/services/task_service.py` 的 `known_local_failure`：** 在外发判断之前，加一条窄的已知失败。四个条件同时满足才算：
-  1. 整条命令只有一个 `osascript` 调用。脚本可以从 `-e`、here-doc 或一个文件来，前后不能接别的命令（`&&`、`;`、`|` 等）。
-  2. 脚本只对**一个** App 说话：只有一个 `tell application "X"` 或 `application id "…"`，没有 `do shell script`。JavaScript（`-l JavaScript`）和看不出目标的脚本，照旧不算。
-  3. 退出码不是 0，stderr 最后一行是 `… execution error: X got an error: … (-1743)` 或 `(-10004)`，`X` 就是第 2 条那个 App。
+  1. 整条命令只有一个 `osascript` 调用，脚本写在命令里：`-e` 或 here-doc。前后不能接别的命令（`&&`、`;`、`|` 等）。`osascript 某个文件.scpt` 不算：脚本不在命令里，第 2 条没法核，读那个文件时它也可能已经变了。
+  2. 脚本只对**一个** App 说话：数脚本里**每一个** `tell application "名字"`，嵌套的也算（比如里面再 `tell application "System Events"`），去重后正好一个名字。
+     - 只认 `tell application "名字"` 这一种写法。`tell app "…"` 的简写、`application id "…"`（stderr 里是 App 名，不是 bundle id，第 3 条对不上）、JavaScript（`-l JavaScript`）、看不出目标的，都不算。
+     - 脚本里有 `do shell script`、`run script`、`load script` 的不算：它们会跑别的命令或脚本。
+  3. 退出码不是 0，stderr 最后一行是下面两种之一，`X` 就是第 2 条那个 App：
+     - `-1743`：`… execution error: Not authorized to send Apple events to X. (-1743)`
+     - `-10004`：`… execution error: X got an error: A privilege violation occurred. (-10004)`
   4. 没有被信号杀掉，也没有被时间上限停下。
 - **开工时先核实 `-10004` 是不是对这一对「发送方、App」一律拒：**
   - 用一个只读一句、再写一句的脚本，和一个连写两句的脚本，在没授权的状态下各跑一次；
@@ -44,7 +48,7 @@ osascript 发给某个 App 的 Apple Events 被系统或那个 App 以「没有�
 ## 不许碰
 
 - 其他外发规则（发信、发消息、上传、`git push`、快捷指令等）的失败照旧不算已知。
-- 对两个以上 App 说话的脚本、带 `do shell script` 的脚本、`-1743` / `-10004` 以外的错误号，照旧不算已知。
+- 对两个以上 App 说话的脚本、带 `do shell script` / `run script` / `load script` 的脚本、`-1743` / `-10004` 以外的错误号，照旧不算已知。
 - 命令卡和 Apple Events 的批准规则不改：这里只决定「失败了要不要核对」。
 - F4a 的 osascript「只问一次」不改。
 
@@ -53,7 +57,7 @@ osascript 发给某个 App 的 Apple Events 被系统或那个 App 以「没有�
 - **测试：**
   - 上面那条原样的命令和 stderr → 已知失败，任务不进「需要你核对」。
   - `-1743` 的原文 → 已知失败。
-  - 两个 App 的脚本、带 `do shell script` 的、`osascript … && echo ok`、错误号 `-1728`、被时间上限停下的 → 都不算已知。
+  - 两个 App 的脚本（包括嵌套的 `tell application "System Events"`）、`tell app` 简写、`application id`、`osascript 文件.scpt`、带 `do shell script` / `run script` / `load script` 的、`osascript … && echo ok`、错误号 `-1728`、被时间上限停下的 → 都不算已知。
   - stderr 里的 App 名和 `tell` 的 App 不一样 → 不算已知。
   - Mutation：去掉「只有一个 App」、去掉「App 名对得上」、去掉「只有一个 osascript」，各自有测试抓到。
 - **M1：** T1 不再因为 osascript 被拒停在「需要你核对」。贴前后的「等你」次数。
@@ -66,5 +70,6 @@ osascript 发给某个 App 的 Apple Events 被系统或那个 App 以「没有�
 ## 风险与回退
 
 - **风险：脚本自己抛出同一个错误号。** AppleScript 可以写 `error number -1743`，在前面几句已经改了东西之后再报错，就会被当成「什么都没做」。今天的模型不会这样写；条件 2、3 已经把范围收得很窄。这条风险写进代码注释。
+- **风险：here-doc 里的脚本再去跑别的脚本。** `run script`、`load script` 会执行另一个脚本，`do shell script` 会跑命令，它们做的事第 2 条看不到，所以这三种一律不算（条件 2）。
 - **风险：`-10004` 不是一律拒。** 开工先核实，核实不了只认 `-1743`。
 - **回退：** revert 这一个 PR。

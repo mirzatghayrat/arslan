@@ -28,15 +28,15 @@
 
 - **`server/services/task_service.py` 的 `_reads_only`：** 认得简单的组合，每一段都按今天的规则判：
   - 用 `&&`、`||`、`;`、`|` 连起来的几条命令，每一条都单独过今天的判断（`command_policy.classify` 为 LOW，`find` 不带 `_FIND_WRITES`，`git` 的那几条例外，`rg --pre`）；
-  - 重定向只认丢掉输出的几种：`2>/dev/null`、`>/dev/null`、`&>/dev/null`、`2>&1`；
+  - 重定向只认丢掉输出的几种：`2>/dev/null`、`>/dev/null`、`&>/dev/null`、`2>&1`。按**整个记号**认，`>` 和 `/dev/null` 之间有没有空格都行；`2>` 里的 `2` 不能算成前一条命令的参数（`shlex` 的 punctuation 模式会把 `2>/dev/null` 切成 `2`、`>`、`/dev/null`，要先把这几种整体认出来再切）；
   - 其余照旧不判，记 `external_write`：`$( )`、反引号、here-doc、`>` 或 `>>` 写到文件、`tee`、`xargs`、`sh -c`、`eval`、子 shell `( )`、换行和反斜杠续行。
   - 拆分用 `shlex` 的 punctuation 模式，或者一个只认上面几种记号的小切分。拆不准的一律不判。
+  - **新加一项检查：** 组合里任何一段命中外发规则（`_OUTBOUND_RULES`、`_OUTBOUND_EXTRA`），整条都不是读。`_reads_only` 今天不看外发规则，只有 `known_local_failure` 看。
 - 测试，见「验收」。
 
 ## 不许碰
 
 - 写东西的命令仍然不是读：`find -delete`、`sed -i`、`> file`、`tee`、`| xargs rm`、`| sh`。每一种都要有测试。
-- 外发规则（`_OUTBOUND_RULES` 和 `_OUTBOUND_EXTRA`）照旧优先：组合里有任何一段命中外发，整条都不是读。
 - `known_local_failure` 和 F2 ② 的沙箱条件不改。
 - 命令卡和沙箱的判断（`terminal_policy`、`command_policy`）不改。这里只决定「失败了要不要核对」，不决定「能不能跑」。
 
