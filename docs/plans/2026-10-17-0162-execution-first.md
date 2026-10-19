@@ -61,6 +61,7 @@
 - **E21：** 2026-10-18，C1b（#210）开 PR 时 ②Main 请 ⓪Plan 对 U2 的口径做裁定。
 - **E22：** 2026-10-18，K1b（#213）开 PR 时，②Main 请 ⓪Plan 定服务端清理的参数。
 - **E23：** 2026-10-19，⓪Plan 审 K1a、K1b（#212、#213）时发现的。
+- **E24：** 2026-10-19，M1B 基线跑 T1 时发现的。
 
 | # | 原文 | 核对结果 | 处理 |
 |---|---|---|---|
@@ -87,6 +88,7 @@
 | E21 | U2「别处的改动……合计 ≤50 行」没写按什么算 | C1b（#210）：删掉的文件之外，产品代码改 11 行，另外为删掉「测试被删模块的测试」改了测试 +9/−50，合计 70 行 | **按产品代码算**，和 `docs/sessions.md` §2 里 800 行的口径一致（测试、翻译、生成的文件不算）。只删掉「测试被删模块的测试」是删文件带出来的结果，不改行为，不计入（⓪Plan 定） |
 | E22 | K1 卡要点 12：服务端清理的 `trigger`「对齐今天本地裁剪的 64k / 96k 字符」，`exclude_tools`「名单开工时定」 | `clear_tool_uses_20250919` 的 `trigger` 和 `clear_at_least` 按输入 token 计，不按字符（platform.claude.com 的 context-editing 页，2026-10-18 核；默认 trigger 100k token、keep 3）。名单要在 K1b 开 PR 时定 | 起始值写进 K1 卡：trigger 60k token、keep 6、clear_at_least 20k、exclude_tools 为 `update_plan`/`task_progress`/`read_skill`、`clear_tool_inputs` 关。M1 用 Claude 跑时贴清理次数、清掉的 token 数和缓存命中，R63 之前按数字调整（⓪Plan 定） |
 | E23 | E22 的 60k / 20k 从 K1b 起就生效；K1 卡说状态块由服务端清理兜底 | K3 加消息级缓存断点之前，只有系统前缀有 `cache_control`：清理不多作废缓存，60k 以下的输入每步全价付，128k 的聊天计费上限几步就碰到。`clear_tool_uses` 不清状态块。`trims_context_server_side()` 不检查是不是 Claude，第三方 Anthropic 协议端点会既不清理也不裁剪 | K1b 先用过渡值 24k / 8k，K3 加断点时改回 60k / 20k（写进 K1、K3 卡和代码注释）；`context_management` 只对真正的 Claude 和官方 host 发；状态块那条风险改准，加上 `drop_block` 对老账号更严和代理拒 beta 头两条风险（⓪Plan 定） |
+| E24 | 计划默认「做完的事不会停在等你」，除了 F2 处理的「需要你核对」 | M1B 基线 T1：Arslan 在两个模型上 6 跑全部 `waiting_user`，原因是 `task_checks_not_run`，不是卡，也不是 F2 那一类。Arslan 存下的辅助脚本 `.swift` 也成了交付物，产物检查只认固定的类型表，表外一律 `not_run / artifact_parser_unavailable`，于是挡住成功。另外，Claude 上 Arslan T1 判 0 分是 bench 的错：列表名没带模型，Claude 那一跑把提醒加进了 DeepSeek 那一跑的列表（创建时间对得上；Arslan 每跑只运行一次脚本、exit 0） | 新卡 D2（v0.1.63，必须，②Main）：常见代码和配置文本按文本解析，没有解析器的类型记 `not_applicable`，真正的失败仍然挡住。bench 修列表名（#219），Claude 上的 Arslan T1 重跑。T1 列为 K1 合并前后的对照题（⓪Plan 定，用户要求） |
 | 已核属实 | 见右栏 | • K-1、K-3、K-4 的全部条目，以及 K-2 里除 E2 以外的条目。<br>• K-4 第 3 条：旧分类器把整条命令字符串当成程序名，拿去和只读程序名单比较，比不上就判 HIGH（`server/services/command_policy.py:81-106`）。`ls -la ~/Downloads`、`git status` 都会这样。<br>• §9 中：空参数表；外部内容标记；守卫词表（`tool_loop.py:104-106`）；`search_files` 只做子串匹配（`server/registry/file_tools.py:230`）；后台验收用的是严格 `json.loads`（`task_validation.py:339`）；基准文档都在（`docs/plans/2026-10-02-*.md`、`2026-10-03-p3-acceptance.md`）。 | — |
 | 未能核 | §9「没有验证的」各项 | 包括：没跑测试、预期位置、门槛建议值、Claude Code 跑分成本、对标做法。这些只能靠实际运行，不能靠读代码核。<br>默认工具数「28 / 约 45」和静态提示「10,303 字符」要把提示词构建出来才能量，本轮没量。 | 照旧标「未验证」 |
 
