@@ -542,6 +542,18 @@ def test_claude_code_runs_bare_in_the_sandbox_with_a_dummy_key_and_resumes_its_s
     assert env["HOME"].startswith(str(runner.ROOT))
 
 
+def test_claude_codes_temporary_folder_is_inside_what_the_sandbox_lets_it_write(tmp_path, monkeypatch):
+    """Its Bash tool makes a folder under /tmp/claude-<uid> by default, which the bench sandbox
+    refuses: every command failed and four M1B cells were invalid. CLAUDE_CODE_TMPDIR moves it
+    under the bench root, the one place the profile lets it write."""
+    from scripts.kernel_bench import runner
+    monkeypatch.setattr(runner, "ROOT", tmp_path)
+    _, env = runner.command("claude-code", "claude-code-T3-r1", tmp_path / "run", "go", "sb", model="claude-sonnet-5")
+    folder = Path(env["CLAUDE_CODE_TMPDIR"])
+    assert folder.is_dir() and tmp_path in folder.parents
+    assert '(subpath "{ROOT}")' in (runner.HERE / "sandbox.sb.template").read_text()
+
+
 def test_claude_codes_reply_is_the_result_of_its_last_turn(tmp_path):
     from scripts.kernel_bench import runner
     run = tmp_path / "claude-code-T8-r1"
