@@ -273,6 +273,36 @@ def test_sandboxed_rounds_answer_cards_like_a_user_and_never_let_commands_out(mo
         "confirm_run_command"
 
 
+def test_without_the_outer_sandbox_no_card_may_let_a_command_out(monkeypatch, tmp_path):
+    """Option A (BENCH_SANDBOX=none): Arslan's sandbox is all that stands between a command and the real
+    disk, so the driver answers cards the sandboxed way whatever BENCH_CARDS says (③Hands, #234)."""
+    import importlib
+    from scripts.kernel_bench import arslan_driver, runner
+    try:
+        for cards in ("", "anything"):
+            monkeypatch.setenv("BENCH_SANDBOX", "none")
+            monkeypatch.setenv("BENCH_CARDS", cards)
+            monkeypatch.delenv("BENCH_DECLINE_CARDS", raising=False)
+            driver = importlib.reload(arslan_driver)
+            assert driver.CARDS == "sandboxed"
+            t = driver.TurnTracker("/b/runs/arslan-T2-r1-base")
+            for frame in ({"sandbox": "outside"}, {"sandbox": "retry"}, {"rule": "delete", "sandbox": "retry"}):
+                answer = t.on_frame({"type": "propose_run_command", "call_id": "c", **frame}, 1.0)["type"]
+                assert answer == "cancel_run_command", frame
+            t1 = driver.TurnTracker("/b/runs/arslan-T1-r2-base")
+            assert t1.on_frame({"type": "propose_run_command", "call_id": "c", "rule": "apple-events",
+                                "sandbox": "outside"}, 1.0)["type"] == "cancel_run_command"
+        monkeypatch.delenv("BENCH_SANDBOX")
+        monkeypatch.setenv("BENCH_CARDS", "")
+        assert importlib.reload(arslan_driver).CARDS == ""                     # with the outer sandbox: as before
+        monkeypatch.setenv("BENCH_SANDBOX", "none")
+        _, env = runner.command("arslan", "arslan-T2-r1", tmp_path, "go", "sb")
+        assert env.get("BENCH_SANDBOX") == "none"                              # the driver sees it
+    finally:
+        monkeypatch.undo()
+        importlib.reload(arslan_driver)
+
+
 # ── M1a (0.1.62 round): waiting counts as failure, turns, a decline with a note, two models ──
 
 def test_an_arslan_run_passes_only_when_it_ended_cleanly_and_the_checker_gives_three():
