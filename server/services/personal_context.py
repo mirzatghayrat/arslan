@@ -118,6 +118,14 @@ def bind(context: TaskMemoryContext):
             _registered.reset(receipts_token)
 
 
+def worker_context(parent: TaskMemoryContext, expert_id: str) -> TaskMemoryContext:
+    """The one narrowing for a specialist working inside a host turn: its expert scope, without the
+    host's sensitive-memory permission or write authority, whatever the conversation allows. Every
+    specialist path uses it (for_worker below, memory_tools_v2's recall/remember)."""
+    return replace(parent, expert_id=expert_id, explicit_save_ref=None, explicit_save_digest=None,
+                   allow_global_save=False, allow_sensitive=False)
+
+
 @contextmanager
 def for_worker(expert_id: str):
     """Narrow a worker's expert scope and remove host-only write authority."""
@@ -125,8 +133,7 @@ def for_worker(expert_id: str):
     if parent is None:
         yield None
         return
-    with bind(replace(parent, expert_id=expert_id, explicit_save_ref=None, explicit_save_digest=None,
-                      allow_global_save=False, allow_sensitive=False)) as child:
+    with bind(worker_context(parent, expert_id)) as child:
         yield child
 
 
