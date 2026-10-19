@@ -32,12 +32,13 @@
   - `src/paths.rs:17-20`，以及只给 `host_bundle_id` 用的 `own_bundle_id`（`:73` 起）；
   - `src/outcome.rs:25-26` 的 `from_cua`，以及它在 `:56-64` 的单元测试；
   - `tests/server.rs:107-109`、`:195-197`（Config 字段）。
+  - `src/macos.rs` 的 `app_of_pid`、`secure_at`、`focused_secure`（和只给后两个用的 `secure`、`AXUIElementCopyElementAtPosition` 声明）：只有 `server.rs` 的 Cua 段在调。它们是 `pub`，编译器不报未使用，F5b-1 一起删（更正：原卡漏列）。
 - **打包和脚本里的触点：**
   - `build_hands.sh:27-32`、`:88-127`、`:161-166`、`:176-185`、`:232-237`、`:241-242`；
   - `scripts/hands_harness/engines.py:140` 起的 `Cua` 类；
   - `scripts/hands_harness/run.py:6`、`:8`、`:30`、`:77`、`:84`、`:204`、`:234-238`；
   - `scripts/hands_harness/cases.py:75` 的注释。
-- **文档：** `docs-site/sections/{en,de,es,ja,tr,zh}/09-security.html` 各有一句「Cua Driver 那条路径留在代码里，不进正式版」。这句描述的是已发布的版本，等 v0.1.63 发布后的文档同步再改，本卡不改。
+- **文档：** `docs-site/sections/{en,de,es,ja,tr,zh}/09-security.html` 各有一句「Cua Driver 那条路径留在代码里，不进正式版」。这句描述的是已发布的版本，等 v0.1.63 发布后的文档同步再改，本卡不改。同一句也在 `docs/docs/{,de,es,ja,tr}/index.html:476` 和 `docs/docs/zh/index.html:475`（更正：原卡漏列），删除条件相同。
 
 ## 改哪些文件
 
@@ -94,6 +95,7 @@
 - **风险：** 以后想重新评估 Cua 时，要从 git 历史里取回来。fork、pin 和评估记录都留在历史和 `docs/specs/` 里。
 - **风险：** 测试台少了一个引擎，对照实验只剩 agent-desktop（和 Arc，见第 4 步）。
 - **留着的东西和删除条件**（`docs/sessions.md` §9）：
-  - docs-site 那 6 句：v0.1.63 发布后的文档同步里改掉。
+  - docs-site 那 6 句和 `docs/docs` 里同样的 6 句：v0.1.63 发布后的文档同步里改掉。
+  - `server/registry/hands_tools.py:68` 的四个拒绝码和 `:1137` 那条 `refused` 分支：F5b 之后没有引擎再发它们。本卡不碰服务端 Python，交 ③Hands 在 F5b-2 合并后清掉。
   - `Arc` 引擎：见第 4 步，由 ③Hands 定删除条件。
 - **回退：** revert 合并提交（拆成两个时，按顺序 revert F5b-2、F5b-1）。

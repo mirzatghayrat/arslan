@@ -22,20 +22,6 @@ pub fn from_agent_desktop(envelope: &Value) -> &'static str {
     }
 }
 
-/// From a Cua Driver action result: `structuredContent.effect`.
-pub fn from_cua(result: &Value) -> &'static str {
-    match result
-        .pointer("/structuredContent/effect")
-        .and_then(Value::as_str)
-    {
-        Some("confirmed") => "done",
-        Some("partial") => "partly_done",
-        Some("suspected_noop") => "no_effect",
-        Some("refused") => "refused",
-        _ => "sent_unconfirmed",
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -50,17 +36,5 @@ mod tests {
             "sent_unconfirmed"
         );
         assert_eq!(from_agent_desktop(&json!({"data": {}})), "sent_unconfirmed");
-    }
-
-    #[test]
-    fn cua_effects_map_and_unknown_is_never_done() {
-        let res = |e: &str| json!({"structuredContent": {"effect": e}});
-        assert_eq!(from_cua(&res("confirmed")), "done");
-        assert_eq!(from_cua(&res("partial")), "partly_done");
-        assert_eq!(from_cua(&res("suspected_noop")), "no_effect");
-        assert_eq!(from_cua(&res("refused")), "refused");
-        assert_eq!(from_cua(&res("unverifiable")), "sent_unconfirmed");
-        assert_eq!(from_cua(&res("something-new")), "sent_unconfirmed");
-        assert_eq!(from_cua(&json!({})), "sent_unconfirmed");
     }
 }

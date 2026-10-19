@@ -6,8 +6,6 @@
 //! kills the command in flight.
 
 use crate::argv::{self, refuse, Refusal};
-use crate::cua::{self, Completion, Cua};
-use crate::cua_policy::{self, Kind};
 use crate::paths;
 use crate::policy::{self, Tier, PASSWORD_WORDS};
 use crate::refmap;
@@ -42,11 +40,6 @@ pub struct Config {
     pub idle: Duration,
     /// Hands' own Team ID; Some = only `arslan-server` signed by it may connect.
     pub team: Option<String>,
-    /// Cua Driver beside the bundle (Hands v2), with its recorded sha256 and Hands'
-    /// bundle id. None: this Hands has no Cua Driver.
-    pub cua_driver: Option<PathBuf>,
-    pub cua_driver_sha256: Option<String>,
-    pub host_bundle_id: String,
 }
 
 /// One request: the state, and the Stop generation it started in.
@@ -65,14 +58,6 @@ struct State {
     busy: AtomicU64,
     sessions: Mutex<HashSet<String>>,
     answers: Answers,
-    cua: Option<Cua>,
-    /// Element tokens of the window states relayed from Cua Driver (cua_policy.rs).
-    tokens: Mutex<cua_policy::Tokens>,
-    /// Cua sessions end (1 h at most, set at initialize): a label whose session ended is
-    /// replaced by `label-N`, counted here.
-    cua_sessions: Mutex<HashMap<String, u32>>,
-    /// Cua Driver's running apps, briefly, to resolve a pid to an app.
-    cua_apps: Mutex<Option<(Instant, Vec<App>)>>,
     /// Each app's structure at its latest look, per (session, pid): the structural-change
     /// check (structure.rs) compares it before every action.
     structures: Mutex<HashMap<(String, i64), crate::structure::Structure>>,
@@ -291,21 +276,6 @@ pub fn serve(
         busy: AtomicU64::new(0),
         sessions: Mutex::new(HashSet::new()),
         answers: Answers::default(),
-        cua: config.cua_driver.as_ref().map(|binary| {
-            Cua::new(cua::Config {
-                binary: binary.clone(),
-                pinned: config
-                    .cua_driver_sha256
-                    .as_deref()
-                    .map(|sha| Arc::new(crate::integrity::Pinned::new(binary.clone(), sha))),
-                home: config.folder.join(paths::CUA_HOME),
-                log: config.folder.join(paths::CUA_LOG),
-                host_bundle_id: config.host_bundle_id.clone(),
-            })
-        }),
-        tokens: Mutex::new(cua_policy::Tokens::default()),
-        cua_sessions: Mutex::new(HashMap::new()),
-        cua_apps: Mutex::new(None),
         structures: Mutex::new(HashMap::new()),
     });
     // The token is published only now that the socket listens, mode 0600.
@@ -339,9 +309,6 @@ pub fn serve(
 
 fn shutdown(state: &State) -> ! {
     end_sessions(state);
-    if let Some(cua) = &state.cua {
-        cua.shutdown();
-    }
     let _ = fs::remove_file(state.folder.join(paths::READY));
     let _ = fs::remove_file(state.folder.join(paths::SOCKET));
     std::process::exit(0)
@@ -873,7 +840,6 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
         "session_end" => return session_end(ctx, args),
         "list_apps" => return list_apps(ctx, args),
         "which_app" => return which_app(ctx, args),
-        "cua" => return cua_op(ctx, args),
         "menu" => return menu_op(ctx, args),
         // Development builds only: drive the key hold for the Q2 spike (spec §12).
         #[cfg(feature = "dev-unverified-peer")]
@@ -1545,12 +1511,9 @@ fn stop(state: &State) -> Value {
     // visit to another desktop (§15 A18).
     let took_over = crate::takeover::end();
     let visited = crate::visit::end("stop").is_some();
-    // kill_all moves the Stop generation even when no agent-desktop runs, so a Cua
-    // request in flight learns it was stopped.
     let killed = runner::kill_all() || took_over || visited;
-    let cua_killed = state.cua.as_ref().is_some_and(Cua::stop);
     end_sessions(state);
-    json!({"ok": true, "killed": killed || cua_killed})
+    json!({"ok": true, "killed": killed})
 }
 
 fn status(state: &State) -> Value {
@@ -1564,8 +1527,6 @@ fn status(state: &State) -> Value {
         "team": state.team,
         "agent_desktop": state.runner.binary.exists(),
         "agent_desktop_pinned": state.runner.pinned.as_ref().map(|p| p.check().is_ok()),
-        "cua_driver": state.cua.as_ref().map(Cua::present),
-        "cua_driver_pinned": state.cua.as_ref().and_then(Cua::pinned),
         // §6.5: how long since the user's last key or mouse event (the key tap's watch, which
         // Hands' own events never touch); null until the tap has seen one.
         "user_idle_ms": user_idle_ms(),
@@ -1622,360 +1583,4 @@ fn request_permission() -> bool {
 #[cfg(not(target_os = "macos"))]
 fn request_permission() -> bool {
     false
-}
-
-// ── Cua Driver (Hands v2, spec docs/specs/2026-10-08-0157-hands-v2.md §3) ────
-
-/// The label Hands gives Cua's session (its cursor, its snapshots): the backend's
-/// choice when it is a plain label, else "arslan".
-fn cua_session(args: &Value) -> String {
-    args.get("session")
-        .and_then(Value::as_str)
-        .filter(|s| {
-            !s.is_empty()
-                && s.len() <= 64
-                && s.bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
-        })
-        .unwrap_or("arslan")
-        .to_string()
-}
-
-fn cua_deadline(kind: Kind) -> Duration {
-    match kind {
-        Kind::Act => Duration::from_secs(30),
-        Kind::Global | Kind::Read => Duration::from_secs(20),
-    }
-}
-
-/// The code of a refusal Cua put in a result (`structuredContent.refusal.code` or `error.code`).
-fn cua_refusal_code(result: &Value) -> Option<String> {
-    result
-        .pointer("/structuredContent/refusal/code")
-        .or_else(|| result.pointer("/structuredContent/error/code"))
-        .and_then(Value::as_str)
-        .map(str::to_string)
-}
-
-/// A refusal that also says whether what was asked may have happened.
-fn refused_after(r: Refusal, completion: Completion) -> Value {
-    json!({"ok": false, "refused": {"code": r.code, "message": r.message},
-           "completion": completion.name()})
-}
-
-/// Running apps as Cua Driver lists them (`structuredContent.apps`).
-fn cua_running_apps(result: &Value) -> Vec<App> {
-    result
-        .pointer("/structuredContent/apps")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter(|a| a.get("running").and_then(Value::as_bool) != Some(false))
-        .filter_map(|a| {
-            Some(App {
-                name: a.get("name")?.as_str()?.to_string(),
-                bundle_id: a
-                    .get("bundle_id")
-                    .and_then(Value::as_str)
-                    .unwrap_or("")
-                    .to_string(),
-                pid: a.get("pid")?.as_i64()?,
-            })
-        })
-        .collect()
-}
-
-#[cfg(target_os = "macos")]
-fn app_of_pid(pid: i64) -> Option<App> {
-    i32::try_from(pid)
-        .ok()
-        .and_then(crate::macos::app_of_pid)
-        .map(|(name, bundle_id)| App {
-            name,
-            bundle_id,
-            pid,
-        })
-}
-
-#[cfg(not(target_os = "macos"))]
-fn app_of_pid(_pid: i64) -> Option<App> {
-    None
-}
-
-/// The app `pid` belongs to: asked of macOS directly (NSRunningApplication, fast); only when
-/// macOS does not know it (the tests' fake pids), from Cua's own list, kept two seconds —
-/// that list scans installed apps too and took ~0.9 s a call (measured 2026-10-09).
-fn cua_app(ctx: &Ctx, cua: &Cua, pid: i64, session: &str) -> Result<App, Refusal> {
-    if let Some(app) = app_of_pid(pid) {
-        return Ok(app);
-    }
-    let cached = ctx
-        .state
-        .cua_apps
-        .lock()
-        .unwrap_or_else(|p| p.into_inner())
-        .as_ref()
-        .filter(|(at, _)| at.elapsed() < Duration::from_secs(2))
-        .and_then(|(_, list)| list.iter().find(|a| a.pid == pid).cloned());
-    if let Some(app) = cached {
-        return Ok(app);
-    }
-    let answer = cua
-        .call(
-            "list_apps",
-            json!({"session": session}),
-            Duration::from_secs(20),
-        )
-        .map_err(|f| f.refusal)?;
-    let list = cua_running_apps(&answer.result);
-    let found = list.iter().find(|a| a.pid == pid).cloned();
-    *ctx.state.cua_apps.lock().unwrap_or_else(|p| p.into_inner()) = Some((Instant::now(), list));
-    found.ok_or_else(|| refuse("app_not_running", format!("no running app has pid {pid}")))
-}
-
-/// Cua Driver's app list without the never-list, and without its text part (which
-/// names every app).
-fn cua_filtered_apps(result: &Value, never: &[String]) -> Value {
-    let apps: Vec<Value> = result
-        .pointer("/structuredContent/apps")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(|a| {
-            let name = a.get("name").and_then(Value::as_str).unwrap_or("");
-            let bundle_id = a.get("bundle_id").and_then(Value::as_str).unwrap_or("");
-            let tier = policy::tier(bundle_id, name, never);
-            (tier != Tier::Denied).then(|| {
-                json!({"name": name, "bundle_id": bundle_id, "pid": a.get("pid"),
-                       "running": a.get("running"), "active": a.get("active"),
-                       "tier": policy::tier_name(tier)})
-            })
-        })
-        .collect();
-    json!({"structuredContent": {"apps": apps}})
-}
-
-#[cfg(target_os = "macos")]
-fn live_secure_at(pid: i64, x: f64, y: f64) -> Option<bool> {
-    crate::macos::secure_at(i32::try_from(pid).ok()?, x, y)
-}
-
-#[cfg(not(target_os = "macos"))]
-fn live_secure_at(_pid: i64, _x: f64, _y: f64) -> Option<bool> {
-    None
-}
-
-#[cfg(target_os = "macos")]
-fn live_focused_secure(pid: i64) -> Option<bool> {
-    crate::macos::focused_secure(i32::try_from(pid).ok()?)
-}
-
-#[cfg(not(target_os = "macos"))]
-fn live_focused_secure(_pid: i64) -> Option<bool> {
-    None
-}
-
-/// `{tool, args, session?, never?}`: one Cua Driver tool call, through Hands' rules.
-fn cua_op(ctx: &Ctx, args: &Value) -> Result<Value, Refusal> {
-    let cua = ctx.state.cua.as_ref().ok_or_else(|| {
-        refuse(
-            "engine_missing",
-            "Cua Driver is not installed with this Arslan Hands",
-        )
-    })?;
-    let tool = args
-        .get("tool")
-        .and_then(Value::as_str)
-        .ok_or_else(|| refuse("bad_request", "`tool` is required"))?;
-    let kind = cua_policy::kind(tool)?;
-    let session = cua_session(args);
-    let call = cua_policy::sanitize(
-        tool,
-        kind,
-        args.get("args").unwrap_or(&Value::Null),
-        &session,
-    )?;
-    let never = never_list(args);
-    let mut app = None;
-    let mut secure_check = "none";
-    if kind != Kind::Global {
-        let pid = call.get("pid").and_then(Value::as_i64).unwrap_or_default();
-        let found = cua_app(ctx, cua, pid, &session)?;
-        let tier = policy::tier(&found.bundle_id, &found.name, &never);
-        if tier == Tier::Denied || (kind == Kind::Act && !cua_policy::tier_allows(tier, tool)) {
-            return Err(tier_refusal(tier, tool, &found));
-        }
-        if kind == Kind::Act {
-            if let Some(token) = call.get("element_token").and_then(Value::as_str) {
-                let element = ctx
-                    .state
-                    .tokens
-                    .lock()
-                    .unwrap_or_else(|p| p.into_inner())
-                    .get(token, pid)?
-                    .clone();
-                if cua_policy::types(tool) {
-                    if element.looks_secure() {
-                        return Err(refuse(
-                            "password_field",
-                            "Arslan never types into password fields",
-                        ));
-                    }
-                    secure_check = match element
-                        .center()
-                        .and_then(|(x, y)| live_secure_at(pid, x, y))
-                    {
-                        Some(true) => {
-                            return Err(refuse(
-                                "password_field",
-                                "Arslan never types into password fields",
-                            ))
-                        }
-                        Some(false) => "live",
-                        None => "label_only",
-                    };
-                }
-            }
-            if matches!(tool, "press_key" | "hotkey") {
-                // Keys go to whatever has the app's focus.
-                match live_focused_secure(pid) {
-                    Some(true) => {
-                        return Err(refuse(
-                            "password_field",
-                            "Arslan never sends keys to a password field",
-                        ))
-                    }
-                    Some(false) => secure_check = "live",
-                    None if secure_check == "none" => secure_check = "label_only",
-                    None => {}
-                }
-            }
-        }
-        app = Some(found);
-    }
-    if runner::generation() != ctx.generation {
-        return Err(refuse("stopped_by_user", "stopped before it started"));
-    }
-    let pid = app.as_ref().map(|a| a.pid);
-    let front_before = if kind == Kind::Act {
-        frontmost_pid()
-    } else {
-        None
-    };
-    let mut call = call;
-    let mut renewed = false;
-    let answer = loop {
-        let round = *ctx
-            .state
-            .cua_sessions
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .get(&session)
-            .unwrap_or(&0);
-        let label = if round == 0 {
-            session.clone()
-        } else {
-            format!("{session}-{round}")
-        };
-        call.insert("session".into(), Value::String(label));
-        let answer = match cua.call(tool, Value::Object(call.clone()), cua_deadline(kind)) {
-            Ok(answer) => answer,
-            Err(failed) => {
-                let refusal = if runner::generation() != ctx.generation {
-                    refuse("stopped_by_user", "stopped")
-                } else {
-                    failed.refusal
-                };
-                return Ok(refused_after(refusal, failed.completion));
-            }
-        };
-        // A session that ended refuses before doing anything: start a fresh label, once.
-        if !renewed && cua_refusal_code(&answer.result).as_deref() == Some("session_ended") {
-            renewed = true;
-            *ctx.state
-                .cua_sessions
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .entry(session.clone())
-                .or_insert(0) += 1;
-            continue;
-        }
-        break answer;
-    };
-    let focus_restored = match (kind, pid) {
-        (Kind::Act, Some(pid)) => front_back(front_before, pid),
-        _ => false,
-    };
-    let front_after = if kind == Kind::Act {
-        frontmost_pid()
-    } else {
-        None
-    };
-    if !answer.ok {
-        return Ok(refused_after(
-            refuse(
-                "engine_error",
-                format!(
-                    "{}: {}",
-                    answer.error_code.unwrap_or_default(),
-                    answer.error.unwrap_or_default()
-                ),
-            ),
-            Completion::Completed,
-        ));
-    }
-    // Cua's own "no" (isError): said as a refusal, never relayed as a success — an empty app
-    // list in place of "session ended" hid every app from the harness (2026-10-09).
-    if answer.result.get("isError").and_then(Value::as_bool) == Some(true) {
-        let code = cua_refusal_code(&answer.result).unwrap_or_else(|| "error".into());
-        let text = answer
-            .result
-            .pointer("/content/0/text")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .chars()
-            .take(500)
-            .collect::<String>();
-        let mut refused = refused_after(
-            refuse("engine_refused", format!("{code}: {text}")),
-            Completion::Completed,
-        );
-        if kind == Kind::Act {
-            // Cua refused it: nothing was delivered, unless its result says otherwise.
-            let said = crate::outcome::from_cua(&answer.result);
-            refused["outcome"] = json!(if said == "sent_unconfirmed" {
-                "refused"
-            } else {
-                said
-            });
-        }
-        return Ok(refused);
-    }
-    let result = match tool {
-        "list_apps" => cua_filtered_apps(&answer.result, &never),
-        "get_window_state" => {
-            let mut answer_result = answer.result;
-            cua_policy::without_system_menu(&mut answer_result);
-            ctx.state
-                .tokens
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .record(&answer_result);
-            answer_result
-        }
-        _ => answer.result,
-    };
-    Ok(json!({
-        "ok": true,
-        "engine": "cua",
-        "tool": tool,
-        "completion": Completion::Completed.name(),
-        "result": result,
-        "app": app.as_ref().map(app_json),
-        "secure_check": secure_check,
-        "outcome": (kind == Kind::Act).then(|| crate::outcome::from_cua(&result)),
-        "mode_used": (kind == Kind::Act).then_some("background"),
-        "focus_restored": focus_restored,
-        "front": {"before": front_before, "after": front_after},
-    }))
 }

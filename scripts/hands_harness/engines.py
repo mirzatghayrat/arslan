@@ -1,7 +1,8 @@
-"""The two engines behind Arslan Hands, behind one small interface for the harness:
+"""The engine behind Arslan Hands (agent-desktop), behind one small interface for the harness:
 `look()` the fixture's window into elements, then `click / set_value / type_text / press /
-hotkey` one of them. Both go through the real Hands socket (a development Hands, peer check
-off), so Hands' own rules apply exactly as in the product.
+hotkey` one of them. It goes through the real Hands socket (a development Hands, peer check
+off), so Hands' own rules apply exactly as in the product. `Arc` below is a bake-off
+candidate outside Hands.
 """
 from __future__ import annotations
 
@@ -135,72 +136,6 @@ class AgentDesktop:
         if element is not None:
             self.hands.call("click", {"app": self.app, "ref": element.id})
         return _act(self.hands.call("press", {"app": self.app, "keys": keys}), started)
-
-
-class Cua:
-    name = "cua"
-
-    def __init__(self, hands: Hands, app: str):
-        self.hands, self.app = hands, app
-        self.pid: int | None = None
-        self.window: int | None = None
-
-    def _call(self, tool: str, args: dict) -> dict:
-        return self.hands.call("cua", {"tool": tool, "args": args, "session": "harness"})
-
-    def _target(self) -> None:
-        app = None
-        deadline = time.monotonic() + 3          # a just-started app takes a moment to be listed
-        while app is None and time.monotonic() < deadline:
-            listed = self._call("list_apps", {})
-            if listed.get("ok") is not True:
-                raise RuntimeError(f"list_apps failed: {listed.get('refused')} ({listed.get('completion')})")
-            apps = (listed.get("result") or {}).get("structuredContent", {}).get("apps", [])
-            app = next((a for a in apps if a.get("name") == self.app and a.get("running")), None)
-            if app is None:
-                time.sleep(0.3)
-        if app is None:
-            names = sorted({str(a.get("name")) for a in apps if a.get("running")})
-            raise RuntimeError(f"{self.app} is not in Cua's app list ({len(apps)} apps; running: {names[:30]})")
-        self.pid = int(app["pid"])
-        windows = ((self._call("list_windows", {"pid": self.pid}).get("result") or {})
-                   .get("structuredContent") or {}).get("windows") or []
-        self.window = int(windows[0]["window_id"]) if windows else None
-
-    def look(self) -> tuple[list[Element], int]:
-        self._target()
-        started = time.monotonic()
-        reply = self._call("get_window_state", {"pid": self.pid, "window_id": self.window, "max_image_dimension": 800})
-        ms = round((time.monotonic() - started) * 1000)
-        if reply.get("ok") is not True:
-            raise RuntimeError(f"look failed: {reply.get('refused')}")
-        elements = ((reply.get("result") or {}).get("structuredContent") or {}).get("elements") or []
-        return [Element(str(e["element_token"]), str(e.get("role") or ""), str(e.get("label") or ""))
-                for e in elements if e.get("element_token")], ms
-
-    def click(self, element: Element) -> Act:
-        started = time.monotonic()
-        return _act(self._call("click", {"pid": self.pid, "element_token": element.id}), started)
-
-    def set_value(self, element: Element, text: str) -> Act:
-        started = time.monotonic()
-        return _act(self._call("set_value", {"pid": self.pid, "element_token": element.id, "value": text}), started)
-
-    def type_text(self, element: Element, text: str) -> Act:
-        started = time.monotonic()
-        return _act(self._call("type_text", {"pid": self.pid, "element_token": element.id, "text": text}), started)
-
-    def select(self, element: Element, value: str) -> Act:
-        return self.set_value(element, value)
-
-    def press(self, keys: str, element: Element | None = None) -> Act:
-        """Cua aims keys at an element itself (`element_token`)."""
-        parts = [k.strip() for k in keys.split("+") if k.strip()]
-        aim = {"element_token": element.id} if element is not None else {}
-        started = time.monotonic()
-        if len(parts) == 1:
-            return _act(self._call("press_key", {"pid": self.pid, "key": parts[0], **aim}), started)
-        return _act(self._call("hotkey", {"pid": self.pid, "keys": parts, **aim}), started)
 
 
 def find(elements: list[Element], label: str, role: str = "") -> Element | None:

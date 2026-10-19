@@ -72,7 +72,7 @@ class Fixture:
 
 @dataclass
 class Ctx:
-    engine: object                  # engines.AgentDesktop | engines.Cua
+    engine: object                  # engines.AgentDesktop | engines.Arc
     fixture: Fixture
     observe: Callable               # () -> context manager yielding .before/.samples/.after
     typist: object | None = None    # run.TypistDriver when the user's stand-in is typing
@@ -286,7 +286,7 @@ def slow_button(ctx: Ctx) -> Result:
 
 def sheet_after_look(ctx: Ctx) -> Result:
     """Look, open a sheet 0.3 s after a press, then act on the OLD look: the press must not
-    land under the sheet (arc-cua's benchmark: cua-driver 0.32 did, 5 of 5)."""
+    land under the sheet (arc-driver's own benchmark: an engine without this check did, 5 of 5)."""
     ctx.fixture.command("reset")
     elements, look_ms = ctx.engine.look()
     sheet, save = find(elements, "Sheet 0.3"), find(elements, "Save")

@@ -91,12 +91,6 @@ extern "C" {
         attribute: CFTypeRef,
         value: *mut CFTypeRef,
     ) -> i32;
-    fn AXUIElementCopyElementAtPosition(
-        application: CFTypeRef,
-        x: f32,
-        y: f32,
-        element: *mut CFTypeRef,
-    ) -> i32;
     fn AXUIElementGetPid(element: CFTypeRef, pid: *mut i32) -> i32;
     fn AXUIElementPerformAction(element: CFTypeRef, action: CFTypeRef) -> i32;
 }
@@ -162,34 +156,6 @@ fn ax_text(element: CFTypeRef, attribute: &str) -> Option<String> {
     (rc == 0).then(|| rust_string(value.0)).flatten()
 }
 
-/// A password field by what macOS itself says of it: the role or subrole
-/// `AXSecureTextField` (agent-desktop and Cua Driver both type into them).
-fn secure(element: CFTypeRef) -> bool {
-    ["AXRole", "AXSubrole"]
-        .iter()
-        .any(|a| ax_text(element, a).is_some_and(|v| v.contains("SecureTextField")))
-}
-
-/// Whether the element of app `pid` at screen point (x, y) is a password field.
-/// None when there is no element of that app there to ask (covered, gone).
-pub fn secure_at(pid: i32, x: f64, y: f64) -> Option<bool> {
-    let app = Owned(unsafe { AXUIElementCreateApplication(pid) });
-    if app.0.is_null() {
-        return None;
-    }
-    let mut hit: CFTypeRef = std::ptr::null();
-    let rc = unsafe { AXUIElementCopyElementAtPosition(app.0, x as f32, y as f32, &mut hit) };
-    let hit = Owned(hit);
-    if rc != 0 || hit.0.is_null() {
-        return None;
-    }
-    let mut owner = 0;
-    if unsafe { AXUIElementGetPid(hit.0, &mut owner) } != 0 || owner != pid {
-        return None;
-    }
-    Some(secure(hit.0))
-}
-
 /// The pid of the app with the keyboard focus, asked of accessibility now (the system-wide
 /// AXFocusedApplication). Some apps leave it unanswered (kAXErrorCannotComplete with Codex in
 /// front, measured), so a visit (src/visit.rs) asks it only when NSWorkspace has no front app.
@@ -204,22 +170,6 @@ pub fn focused_app_pid() -> Option<i32> {
     }
     let mut pid = 0;
     (unsafe { AXUIElementGetPid(app.0, &mut pid) } == 0 && pid > 0).then_some(pid)
-}
-
-/// Whether app `pid`'s focused element is a password field. None when it has none.
-pub fn focused_secure(pid: i32) -> Option<bool> {
-    let app = Owned(unsafe { AXUIElementCreateApplication(pid) });
-    if app.0.is_null() {
-        return None;
-    }
-    let name = cf_string("AXFocusedUIElement");
-    let mut focused: CFTypeRef = std::ptr::null();
-    let rc = unsafe { AXUIElementCopyAttributeValue(app.0, name.0, &mut focused) };
-    let focused = Owned(focused);
-    if rc != 0 || focused.0.is_null() {
-        return None;
-    }
-    Some(secure(focused.0))
 }
 
 /// An attribute's value, owned (null when absent).
@@ -456,7 +406,7 @@ extern "C" {
     fn CGRequestScreenCaptureAccess() -> u8;
 }
 
-/// Hands holds Screen Recording (Cua Driver's window screenshots are Hands').
+/// Whether Hands holds Screen Recording (its window screenshots, src/capture.rs, are Hands').
 pub fn screen_recording() -> bool {
     unsafe { CGPreflightScreenCaptureAccess() != 0 }
 }
@@ -608,41 +558,6 @@ pub fn is_regular_app(pid: i32) -> bool {
             pid,
         );
         !app.is_null() && send_policy(app, sel(c"activationPolicy")) == 0
-    }
-}
-
-/// The running app `pid` belongs to: (name, bundle id), straight from
-/// NSRunningApplication. Hands resolves a pid this way before every Cua call: Cua's own
-/// app list scans installed apps too and took ~0.9 s (measured 2026-10-09).
-pub fn app_of_pid(pid: i32) -> Option<(String, String)> {
-    type MsgWithPid = unsafe extern "C" fn(*mut c_void, *mut c_void, i32) -> *mut c_void;
-    type MsgUtf8 = unsafe extern "C" fn(*mut c_void, *mut c_void) -> *const c_char;
-    unsafe {
-        let send0: Msg0 = std::mem::transmute(objc_msgSend as *const ());
-        let send_with_pid: MsgWithPid = std::mem::transmute(objc_msgSend as *const ());
-        let send_utf8: MsgUtf8 = std::mem::transmute(objc_msgSend as *const ());
-        let app = send_with_pid(
-            class(c"NSRunningApplication"),
-            sel(c"runningApplicationWithProcessIdentifier:"),
-            pid,
-        );
-        if app.is_null() {
-            return None;
-        }
-        let text = |object: *mut c_void| -> String {
-            if object.is_null() {
-                return String::new();
-            }
-            let raw = send_utf8(object, sel(c"UTF8String"));
-            if raw.is_null() {
-                String::new()
-            } else {
-                CStr::from_ptr(raw).to_string_lossy().into_owned()
-            }
-        };
-        let name = text(send0(app, sel(c"localizedName")));
-        let bundle = text(send0(app, sel(c"bundleIdentifier")));
-        (!name.is_empty()).then_some((name, bundle))
     }
 }
 
