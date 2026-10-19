@@ -153,6 +153,24 @@ async def test_a_risky_script_is_never_sent_as_an_app_card_and_asks_each_time(as
     assert all(f["kind"] == "mac_script" and f["options"] == ["once"] for f in seen)
 
 
+async def test_a_plain_one_app_script_is_classed_app_yet_never_offers_or_keeps_an_app_grant(asks, in_job, monkeypatch):
+    """C2c (⓪Plan 2026-10-21): script_kind still tells a plain script for one app (`app`) from a risky one;
+    the release gate at the call site turns it into a once-only card. An "Always" answer keeps nothing, so
+    the same script asks again and no app rule is written."""
+    seen, answer = asks
+    answer["scope"] = "always"
+
+    async def fake_run(argv, *, timeout=120):
+        return {"ok": True, "external": True, "text": "3", "summary": "3"}
+    monkeypatch.setattr(hands_tools, "_run", fake_run)
+    script = 'tell application "Reminders" to count reminders'
+    assert hands_service.script_kind(script) == ("app", ["Reminders"])
+    for _ in range(2):
+        assert (await hands_tools.MacAppleScriptExecutor().execute({"script": script}))["ok"]
+    assert [(f["kind"], f["perm_kind"], f["options"]) for f in seen] == [("mac_script", "app_risky", ["once"])] * 2
+    assert await hands_service.always_apps() == []
+
+
 @pytest.mark.parametrize("past_the_app", [
     '«event sysoexec» "echo hi"',                                   # `do shell script`, raw
     'use framework "Foundation"\ncurrent application\'s NSTask\'s launchedTaskWithLaunchPath:"/bin/echo" arguments:{"hi"}',

@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 道 | ②Main（AppleScript 那一处：③Hands 审） |
+| 道 | ②Main（AppleScript 那一处：服务端③Hands 自己改、②Main 审；网页②Main） |
 | 版本 | v0.1.63 |
 | 分级 | 必须 |
 | 依赖 | C1 |
@@ -55,11 +55,12 @@
 - `web/src/__tests__/locale-parity.test.ts:324-345` 里检查 `schedgrant.scope` 的断言跟着删；
 - `web/src/__tests__/card-choices.test.tsx:71` 跟着改。
 
-**AppleScript 的 `app` 死路（③Hands 审，单独一个提交）**
-- `server/registry/hands_tools.py:350-351` 把 `script_kind` 返回的 `app` 一律改成 `app_risky`。所以灵动岛的 `scriptAlsoHands` 永远不会出现。
-- 改法：把这次改写并进 `server/services/hands_service.py:334-350` 的 `script_kind`，让「点名了 App」直接返回 `app_risky`，再删掉 `hands_tools.py:350-351`。行为不变。
-- 网页这一半：删 `web/src/island/islandAsk.ts:81-87` 的 `alsoAllowsKey`、`web/src/island/IslandApp.tsx:267` 对它的使用，以及 `web/src/locales/island.ts` 里 6 种语言的 `scriptAlsoHands`。
-- ③Hands 如果要自己改，就把服务端这一半从本卡挪走；网页那一半照做。
+**AppleScript 的 `app` 死路（服务端：③Hands 的 PR，②Main 审；网页：②Main）**
+- `server/registry/hands_tools.py:404-405` 把 `script_kind` 返回的 `app` 一律改成 `app_risky`（0.1.61 发版门：每个脚本都问）。所以灵动岛的 `scriptAlsoHands` 永远不会出现。
+- 服务端不搬（⓪Plan 2026-10-21 同意③Hands 的改法）：`script_kind` 照旧分 `app` 和 `app_risky`。改写是策略，留在它唯一的调用处。并进 `script_kind` 会让到达分析（#232 的 `_SCRIPT_REACH_OTHERWISE`、高到达 App、删除/发送词）不再影响任何结果，可放开发版门要的正是这层区分；K2a 的 `turn_tools` 标签也会跟着变。
+  - 改写处的注释写明删除条件：0.1.61「每个脚本都问」的门放开时删，由它自己的卡来删，`scriptAlsoHands` 那时一起回来。
+  - 加一条行为测试：只对一个 App 的普通脚本，`script_kind` 仍是 `app`；卡是 `app_risky`、只给「这一次」；答「总是」也不留规则，第二次照样问。
+- 网页这一半（②Main）：删 `web/src/island/islandAsk.ts:84-87` 的 `alsoAllowsKey`、`web/src/island/IslandApp.tsx:267` 对它的使用（和 `:6` 的 import）、`web/src/locales/island.ts` 里 6 种语言的 `scriptAlsoHands`，以及只测它的 `web/src/__tests__/island-applescript-line.test.tsx`。卡或注释里写一句：发版门放开时这些要回来。
 
 ## 不许碰
 
@@ -72,9 +73,9 @@
 ## 怎么做（要点）
 
 1. 每删一项，先跑 `rg -n "<名字>" server arslan web/src`，确认产品调用者为 0。把结果贴进 PR。
-2. AppleScript 那一处单独一个提交，PR 里 @③Hands 审；它和 H2、H3 都改 `hands_tools.py`，行不重叠。
+2. AppleScript 那一处：服务端在③Hands 的 PR 里（只改注释和测试）；网页那一半在本卡的 PR 里，单独一个提交。两半都在 C4 之前合。
 3. 6 种语言同一个提交删 key；`locale-parity.test.ts` 通过才算完。
-4. 推送前跑 ruff。C5b 没合时，改了 `hands_tools.py` 要重新生成 `docs/CAPABILITY_INVENTORY.md`。
+4. 推送前跑 ruff。
 
 ## 验收
 
