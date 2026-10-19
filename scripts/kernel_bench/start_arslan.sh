@@ -7,14 +7,17 @@
 # runs without sandbox-exec — the only way Arslan's browser can start (Chromium's
 # own seatbelt cannot nest inside ours); pair it with BENCH_DECLINE_CARDS=1 for the
 # driver, so nothing that needs a confirmation runs.
+# BENCH_REPO starts another checkout (e.g. a release tag's worktree) with this script.
+# ARSLAN_HANDS_APP passes through for T12 (Hands on the synthetic fixture app): the backend finds
+# the running Hands helper by its account-wide folder, not by $HOME.
 set -euo pipefail
 NAME=$1; PORT=$2; PROTOCOL=${3:-native}
 ROOT=${BENCH_ROOT:-/tmp/arslan-kernel-bench}
-REPO=$(cd "$(dirname "$0")/../.." && pwd)
+REPO=${BENCH_REPO:-$(cd "$(dirname "$0")/../.." && pwd)}
 mkdir -p "$ROOT/home/$NAME" "$ROOT/data/$NAME" "$ROOT/tmp"
 cd "$REPO"
 exec env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin HOME="$ROOT/home/$NAME" TMPDIR="$ROOT/tmp" \
   ARSLAN_DATA_DIR="$ROOT/data/$NAME" ARSLAN_SECRET_KEY=bench-only-not-a-real-secret ARSLAN_API_TOKEN= \
-  ARSLAN_TOOL_PROTOCOL="$PROTOCOL" \
+  ARSLAN_TOOL_PROTOCOL="$PROTOCOL" ${ARSLAN_HANDS_APP:+ARSLAN_HANDS_APP="$ARSLAN_HANDS_APP"} \
   $( [ "${BENCH_SANDBOX:-}" = none ] || echo sandbox-exec -f "${BENCH_SANDBOX:-$ROOT/sandbox.sb}" ) \
   .venv/bin/uvicorn server.main:app --host 127.0.0.1 --port "$PORT"

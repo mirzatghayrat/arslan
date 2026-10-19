@@ -32,7 +32,7 @@ import uuid
 from pathlib import Path
 
 from scripts.kernel_bench import (check_t1, check_t2, check_t3, check_t4, check_t5, check_t6, check_t7,
-                                  check_t8, check_t9, check_t10, check_t11)
+                                  check_t8, check_t9, check_t10, check_t11, check_t12)
 from scripts.kernel_bench.arslan_driver import snapshot
 
 HERE = Path(__file__).resolve().parent
@@ -63,6 +63,8 @@ CHECKS = {
     "T9": lambda run, reply, ctx: check_t9.check(run),
     "T10": lambda run, reply, ctx: check_t10.check(run, reply, ctx["fixture"]),
     "T11": lambda run, reply, ctx: check_t11.check(run, declined=ctx.get("declined", 0)),
+    # The Hands trace lives in the instance's data folder (start_arslan.sh: $BENCH_ROOT/data/<name>).
+    "T12": lambda run, reply, ctx: check_t12.check(reply, os.environ.get("BENCH_ARSLAN_DATA"), ctx["started"]),
 }
 FIXTURES = {"T7": check_t7.fixture, "T8": check_t8.fixture, "T9": check_t9.fixture,
             "T10": check_t10.fixture, "T11": check_t11.fixture}
@@ -71,8 +73,9 @@ FIXTURES = {"T7": check_t7.fixture, "T8": check_t8.fixture, "T9": check_t9.fixtu
 # proxy, no loopback: server/services/managed_browser.py), so it cannot use a
 # page the user logged into; it has no phone/messaging channel.
 UNSUPPORTED = {"arslan": {"T4", "T4x", "T6"}, "arslan-legacy": {"T4", "T4x", "T6"},
-               # No browser of its own and no phone channel.
-               "claude-code": {"T4", "T4x", "T6"}}
+               # No browser of its own and no phone channel; no Hands (T12 is a Hands task).
+               "claude-code": {"T4", "T4x", "T6", "T12"},
+               "hermes": {"T12"}}
 ARSLAN = ("arslan", "arslan-legacy")
 # Entrants that can take a task of several turns: Arslan keeps one conversation, Claude
 # Code resumes its session. The others are recorded as unsupported for such tasks.
@@ -363,6 +366,8 @@ def run_one(task: str, who: str, n: int, prompts: dict, sb: str, manual_login: b
     ctx: dict = {}
     if task == "T5":
         subprocess.run([sys.executable, str(HERE / "fixture_t5.py"), str(run)], check=True, capture_output=True)
+    if task == "T12":
+        check_t12.fixture_up()
     if task in FIXTURES:
         ctx["fixture"] = FIXTURES[task](str(run))
     if task == "T1":
@@ -372,6 +377,7 @@ def run_one(task: str, who: str, n: int, prompts: dict, sb: str, manual_login: b
     fill = {"dir": run, "list": ctx.get("list", ""), "url": ctx["site"].url if "site" in ctx else ""}
     turns = [t.format(**fill) for t in turns_raw]
     started = time.time()
+    ctx["started"] = started
     if who == "claude-code":                       # one process per turn, resuming the same session
         session = str(uuid.uuid4())
         for i, prompt in enumerate(turns):

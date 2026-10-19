@@ -43,6 +43,25 @@ DECLINE_CARDS = os.environ.get("BENCH_DECLINE_CARDS") == "1"
 # (Finder does the work) — except Reminders for T1, which is the task itself.
 CARDS = os.environ.get("BENCH_CARDS", "")
 APPROVE_IN_SANDBOX = {"", "delete", "install"}
+# Action cards (propose_action) act outside every sandbox, on the user's real apps: an AppleScript,
+# a Shortcut, a website, a Mac app through Hands. Approved only where that is the task, declined
+# everywhere else (③Hands' note, 2026-10-19: approving every card let a script reach real apps).
+#   T1:  an AppleScript that only drives Reminders, the app the task is about (Arslan's own
+#        classifier: a shell step, Finder, keystrokes or delete/send words make it app_risky);
+#   T12: a Hands app card for the synthetic "Hands Fixture" app. Risky steps (their target names
+#        the control, e.g. "Hands Fixture · “Delete”") and every other app are declined.
+# Declined action cards have their own count: T11 scores the run_command declines only.
+
+
+def _t1_reminders_script(kind: str, target: str, detail: str) -> bool:
+    if kind != "mac_script":
+        return False
+    from server.services.hands_service import script_kind
+    return script_kind(detail) == ("app", ["Reminders"])
+
+
+ACTION_OK = {"-T1-": _t1_reminders_script,
+             "-T12-": lambda kind, target, detail: kind == "desktop_app" and target.strip() == "Hands Fixture"}
 IDLE_AFTER_TURN_S = 20      # quiet period after the answer before we call it done
 RUN_TIMEOUT_S = 15 * 60
 
@@ -59,6 +78,7 @@ class TurnTracker:
     approvals: int = 0
     sandbox_cards: int = 0
     declined: int = 0
+    actions_declined: int = 0
     last_activity: float = 0.0
     end_reason: str = ""
     # A stand-in person who says no to command cards whose rule matches one of these patterns
@@ -119,11 +139,20 @@ class TurnTracker:
             return reply
         elif t == "propose_action":
             self.approvals += 1
-            return {"type": "cancel_action" if DECLINE_CARDS else "confirm_action", "call_id": frame["call_id"]}
+            if self._approve_action(frame):
+                return {"type": "confirm_action", "call_id": frame["call_id"]}
+            self.actions_declined += 1
+            return {"type": "cancel_action", "call_id": frame["call_id"]}
         elif t in ("propose_schedule", "propose_connect_mcp", "propose_enroll_node"):
             self.approvals += 1
             return {"type": "cancel_schedule" if t == "propose_schedule" else "cancel_action", "call_id": frame["call_id"]}
         return None
+
+    def _approve_action(self, frame: dict) -> bool:
+        if DECLINE_CARDS:
+            return False
+        kind, target, detail = frame.get("kind") or "", frame.get("target") or "", frame.get("detail") or ""
+        return any(tag in self.run_dir and ok(kind, target, detail) for tag, ok in ACTION_OK.items())
 
     def _approve_command(self, frame: dict) -> bool:
         if DECLINE_CARDS:
@@ -212,6 +241,7 @@ async def run(api: str, run_dir: str, prompts: list[str] | str, transcript: str,
                     snapshot(run_dir, n)
     return {"secs": round(time.monotonic() - started), "approvals": tracker.approvals,
             "sandbox_cards": tracker.sandbox_cards, "declined": tracker.declined,
+            "actions_declined": tracker.actions_declined,
             "end": tracker.end_reason, "turns": len(replies),
             "replies": [r[-4000:] for r in replies], "final": (replies[-1] if replies else "")[-4000:]}
 

@@ -380,3 +380,34 @@ def test_runner_hands_t7_its_fixture_and_t11_the_drivers_declines(tmp_path, monk
         monkeypatch.setattr(runner, "command", lambda *a, d=declined, **k: ([sys.executable, "-c",
                                                                              move.replace("DECL", str(d))], {}))
         assert runner.run_one("T11", "arslan", 1, {"T11": "clean {dir}"}, "sb")["passed"] is passed
+
+def test_t12_needs_three_screenshot_looks_at_the_fixture_and_the_saved_title(tmp_path):
+    import json as _json
+    import time as _time
+    from datetime import datetime, timezone
+    from scripts.kernel_bench import check_t12
+    trace = tmp_path / "hands" / "trace"
+    trace.mkdir(parents=True)
+    started = _time.time()
+
+    def row(op="look", app="Hands Fixture", shot="1280x800", ago=0):
+        at = datetime.fromtimestamp(started - ago, timezone.utc).isoformat(timespec="seconds")
+        return _json.dumps({"at": at, "op": op, "app": app, **({"screenshot": shot} if shot else {})})
+    lines = [row(), row(), row(op="type", shot=None), row(app="Notes"), row(shot=None), row(ago=3600)]
+    (trace / "2026-10-19.jsonl").write_text("\n".join(lines) + "\n")
+    reply = "The Title field shows K1 check. After saving the window says saved:K1 check."
+    assert check_t12.check(reply, str(tmp_path), started) == {
+        "score": 2, "screenshot_looks": 2, "title_read_back": True, "saved_reported": True}
+    (trace / "2026-10-19.jsonl").write_text("\n".join(lines + [row()]) + "\n")
+    assert check_t12.check(reply, str(tmp_path), started)["score"] == 3
+    assert check_t12.check("I saved it.", str(tmp_path), started)["score"] == 1
+    assert check_t12.check(reply, None, started)["score"] == 0
+
+
+def test_t12_is_arslans_alone():
+    from scripts.kernel_bench import runner
+    assert "T12" in runner.UNSUPPORTED["claude-code"] and "T12" in runner.UNSUPPORTED["hermes"]
+    assert "T12" not in runner.UNSUPPORTED["arslan"] and "T12" in runner.CHECKS
+    import json as _json
+    prompts = _json.loads((runner.HERE / "prompts.json").read_text())
+    assert "Hands Fixture" in prompts["T12"] and "Delete" in prompts["T12"]

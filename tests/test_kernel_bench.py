@@ -220,6 +220,35 @@ def test_outside_the_sandbox_the_driver_declines_every_card(monkeypatch):
     assert t.on_frame({"type": "propose_run_command", "call_id": "c3"}, 3.0)["type"] == "confirm_run_command"
 
 
+def test_action_cards_are_approved_only_where_that_app_is_the_task(monkeypatch):
+    """③Hands, 2026-10-19: approving every propose_action let an AppleScript or Hands reach the
+    user's real apps. Only T1's Reminders script and T12's synthetic fixture app are approved."""
+    from scripts.kernel_bench import arslan_driver
+    monkeypatch.setattr(arslan_driver, "DECLINE_CARDS", False)
+
+    def ans(run_dir, kind, target, detail=""):
+        t = TurnTracker(run_dir)
+        return t.on_frame({"type": "propose_action", "call_id": "c", "kind": kind, "target": target,
+                           "detail": detail}, 1.0)["type"]
+    reminders = 'tell application "Reminders"\n  make new list with properties {name:"x"}\nend tell'
+    assert ans("/b/runs/arslan-T1-r1", "mac_script", "Reminders", reminders) == "confirm_action"
+    assert ans("/b/runs/arslan-T1-r1", "mac_script", "Reminders",
+               reminders + '\ndo shell script "ls ~"') == "cancel_action"          # a step past Reminders
+    assert ans("/b/runs/arslan-T1-r1", "mac_script", "Reminders",
+               reminders + '\ntell application "Finder" to get name of home') == "cancel_action"
+    assert ans("/b/runs/arslan-T1-r1", "mac_shortcut", "Reminders", "Add to Reminders") == "cancel_action"
+    assert ans("/b/runs/arslan-T5-r1", "mac_script", "Reminders", reminders) == "cancel_action"
+    assert ans("/b/runs/arslan-T12-r1", "desktop_app", "Hands Fixture") == "confirm_action"
+    assert ans("/b/runs/arslan-T12-r1", "desktop_risky", "Hands Fixture · “Delete”") == "cancel_action"
+    assert ans("/b/runs/arslan-T12-r1", "desktop_app", "Notes") == "cancel_action"
+    assert ans("/b/runs/arslan-T12-r1", "mac_script", "Hands Fixture") == "cancel_action"
+    assert ans("/b/runs/arslan-T2-r1", "browser_site", "example.com") == "cancel_action"
+    assert ans("/b/runs/arslan-T2-r1", "desktop_takeover", "screen") == "cancel_action"
+    t = TurnTracker("/b/runs/arslan-T11-r1")
+    t.on_frame({"type": "propose_action", "call_id": "c", "kind": "mac_shortcut", "target": "x"}, 1.0)
+    assert (t.approvals, t.actions_declined, t.declined) == (1, 1, 0)     # T11 scores `declined` only
+
+
 def test_sandboxed_rounds_answer_cards_like_a_user_and_never_let_commands_out(monkeypatch):
     """0.1.51 P3: inside Arslan's sandbox, deleting/installing are approved; leaving the
     sandbox, outward actions and other apps are declined — Reminders only for T1."""
