@@ -19,7 +19,9 @@ _INSPECTOR = Path(__file__).resolve().parent.parent / "resources" / "artifact_in
 @cache
 def checked_suffixes() -> frozenset[str]:
     """The suffixes the isolated inspector has a parser for: its own CHECKED_SUFFIXES, read from
-    its file (it ships as a resource file, not an importable module, packaging/arslan-server.spec)."""
+    its file (it ships as a resource file, not an importable module, packaging/arslan-server.spec).
+    This executes the inspector's top level in the host process, outside the sandbox: that top
+    level must stay definitions only (constants, functions, the __main__ guard), never work."""
     spec = importlib.util.spec_from_file_location("arslan_artifact_inspector", _INSPECTOR)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -33,6 +35,7 @@ async def inspect_bytes(data: bytes, suffix: str) -> dict:
     (the isolated result is only ever passed / failed / not_run). "No parser" is not "the check did
     not run": a helper .swift a turn saved held finished work as task_checks_not_run (M1B, T1).
     Real failures stay not_run or failed: no host Python, no isolation, a timeout, a crash."""
+    suffix = suffix.lower()          # ".PDF" from a direct caller is still checked, not skipped
     if suffix not in checked_suffixes():
         return {"status": "not_applicable", "code": "artifact_type_not_checked"}
     return await _inspect_isolated(data, suffix)

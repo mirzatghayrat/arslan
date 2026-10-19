@@ -68,6 +68,12 @@ async def test_undecodable_code_text_still_fails_through_inspect_bytes(monkeypat
     assert (await artifact_validation.inspect_bytes(b"\xff\xfe\x00 not utf-8 \x9f", ".sh"))["status"] == "failed"
 
 
+async def test_an_upper_case_suffix_is_still_checked(monkeypatch):
+    # A direct caller passing ".PDF" or ".SWIFT" must not skip the check as not_applicable.
+    monkeypatch.setattr(artifact_validation, "_inspect_isolated", as_on_a_mac)
+    assert (await artifact_validation.inspect_bytes(b"import EventKit\n", ".SWIFT"))["status"] == "passed"
+
+
 async def test_a_known_type_without_isolation_is_still_not_run(monkeypatch):
     monkeypatch.setattr(code_sandbox, "_seatbelt_wrapper", lambda profile: None)
     result = await artifact_validation.inspect_bytes(b"import EventKit\n", ".swift")
