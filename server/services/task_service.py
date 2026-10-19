@@ -584,7 +584,10 @@ async def _after(first: asyncio.Task | None, then):
     if first is not None:
         try:
             await first
-        except BaseException:  # noqa: BLE001 — its failure is logged by _kept; the checkpoint still runs
+        except asyncio.CancelledError:
+            if asyncio.current_task().cancelling():
+                raise                  # this step itself is cancelled (loop shutdown), not the record
+        except Exception:  # noqa: BLE001 — its failure is logged by _kept; the checkpoint still runs
             pass
     return await then
 

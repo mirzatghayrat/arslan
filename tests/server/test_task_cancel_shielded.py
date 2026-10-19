@@ -112,3 +112,34 @@ async def test_the_runtime_is_cleaned_up_and_the_stop_checkpointed_too(execution
             kinds = (await db.scalars(select(TaskEvent.kind).where(TaskEvent.task_id == runtime.task_id))).all()
         return "attempt_stopped" in kinds
     assert await _eventually(stopped)
+
+
+async def test_the_stop_step_still_runs_when_the_cancel_record_was_cancelled():
+    from server.services import task_service
+    record, ran = asyncio.get_running_loop().create_future(), []
+
+    async def checkpoint():
+        ran.append(True)
+    record.cancel()
+    await task_service._after(record, checkpoint())
+    assert ran == [True]
+
+
+async def test_a_cancel_aimed_at_the_stop_step_itself_is_not_swallowed():
+    # ③Hands' re-review: _after swallowed every exception from the cancel record, including a
+    # cancel of its own task (loop shutdown), and then ran the checkpoint anyway.
+    import pytest
+
+    from server.services import task_service
+    record, ran = asyncio.get_running_loop().create_future(), []
+
+    async def checkpoint():
+        ran.append(True)
+    then = checkpoint()
+    step = asyncio.ensure_future(task_service._after(record, then))
+    await asyncio.sleep(0)                       # waiting for the record
+    step.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await step
+    then.close()
+    assert ran == []
