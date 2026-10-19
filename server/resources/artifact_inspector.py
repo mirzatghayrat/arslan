@@ -9,12 +9,23 @@ import zipfile
 from xml.etree import ElementTree
 
 MAX_EXPANDED = 50 * 1024 * 1024
+IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff"})
+OFFICE_SUFFIXES = frozenset({".docx", ".pptx", ".xlsx"})
+TEXT_SUFFIXES = frozenset({".txt", ".md", ".json", ".csv", ".tsv", ".html", ".css", ".js", ".ts", ".py", ".svg"})
+# 0.1.63 D2: code and config text a turn saves on the way (a helper .swift for Reminders). Decoded as
+# UTF-8 only, never structurally parsed: whoever parses .xml must deny DOCTYPE/ENTITY as .svg does.
+DECODED_SUFFIXES = frozenset({
+    ".swift", ".sh", ".zsh", ".bash", ".applescript", ".rb", ".go", ".rs", ".java", ".kt", ".c", ".h",
+    ".cpp", ".m", ".yaml", ".yml", ".toml", ".xml", ".ini", ".cfg", ".conf", ".sql", ".log"})
+# Every suffix inspect() has a parser for. artifact_validation reads this one list (by file: this
+# module ships as a resource) and calls a suffix outside it not_applicable without starting a sandbox.
+CHECKED_SUFFIXES = IMAGE_SUFFIXES | {".pdf"} | OFFICE_SUFFIXES | TEXT_SUFFIXES | DECODED_SUFFIXES
 
 
 def inspect(data, suffix):
     if not data:
         return {"status": "failed", "code": "artifact_empty"}
-    if suffix in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff"}:
+    if suffix in IMAGE_SUFFIXES:
         from PIL import Image
         Image.MAX_IMAGE_PIXELS = 25_000_000
         with warnings.catch_warnings():
@@ -36,7 +47,7 @@ def inspect(data, suffix):
             if contents is not None and len(contents.get_data()) > MAX_EXPANDED:
                 return {"status": "failed", "code": "artifact_expansion_limit"}
         return {"status": "passed", "code": "pdf_parsed", "pages": len(reader.pages)}
-    if suffix in {".docx", ".pptx", ".xlsx"}:
+    if suffix in OFFICE_SUFFIXES:
         required = {".docx": "word/document.xml", ".pptx": "ppt/presentation.xml", ".xlsx": "xl/workbook.xml"}[suffix]
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
             items = archive.infolist()
@@ -71,7 +82,9 @@ def inspect(data, suffix):
             finally:
                 workbook.close()
         return {"status": "passed", "code": "office_document_parsed"}
-    if suffix in {".txt", ".md", ".json", ".csv", ".tsv", ".html", ".css", ".js", ".ts", ".py", ".svg"}:
+    if suffix in DECODED_SUFFIXES:
+        return {"status": "passed", "code": "text_parsed", "characters": len(data.decode("utf-8-sig"))}
+    if suffix in TEXT_SUFFIXES:
         text = data.decode("utf-8-sig")
         if suffix == ".json":
             json.loads(text)
@@ -84,6 +97,8 @@ def inspect(data, suffix):
                 return {"status": "failed", "code": "xml_entities_denied"}
             ElementTree.fromstring(text)
         return {"status": "passed", "code": "text_parsed", "characters": len(text)}
+    # Not reached through artifact_validation.inspect_bytes (a suffix outside CHECKED_SUFFIXES is
+    # not_applicable there); a direct call still never claims a check it did not make.
     return {"status": "not_run", "code": "artifact_parser_unavailable"}
 
 

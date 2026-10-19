@@ -79,7 +79,7 @@ def test_rule_fields_cannot_be_silently_ignored_and_artifact_count_is_checked():
 @pytest.mark.parametrize("suffix,data,status", [
     (".txt", b"", "failed"), (".json", b"{broken", "failed"),
     (".png", b"not PNG", "failed"), (".pdf", b"not PDF", "failed"),
-    (".docx", b"broken", "failed"), (".unknown", b"unparsed", "not_run"),
+    (".docx", b"broken", "failed"), (".unknown", b"unparsed", "not_applicable"),   # D2: no parser for it
     (".csv", b"a,b\n1,2", "passed"),
 ])
 async def test_file_parse_distinguishes_corrupt_empty_and_unsupported(monkeypatch, tmp_path, suffix, data, status):
@@ -89,7 +89,8 @@ async def test_file_parse_distinguishes_corrupt_empty_and_unsupported(monkeypatc
             return inspect(content, extension)
         except Exception:
             return {"status": "failed", "code": "artifact_parse_failed"}
-    monkeypatch.setattr(artifact_validation, "inspect_bytes", parser)
+    # The isolated half only: inspect_bytes itself decides a type nothing parses (D2).
+    monkeypatch.setattr(artifact_validation, "_inspect_isolated", parser, raising=False)
     artifact = artifact_store.store_bytes(7, "fixture" + suffix, data)
     assert (await artifact_validation.validate(7, artifact["filename"]))["status"] == status
 
