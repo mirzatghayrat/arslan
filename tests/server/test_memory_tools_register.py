@@ -175,51 +175,6 @@ async def _recall(monkeypatch, query="fact"):
     return await RecallExecutor().execute({"query": query, "kind": "fact"})
 
 
-async def test_recall_host_sees_sensitive_facts(maker, monkeypatch):
-    """include_sensitive=True (host) skips the sensitive filter entirely — same
-    discipline as memory.facts_text(include_sensitive=True): a NULL-sensitive
-    legacy row is included too, since no filter is applied at all for host."""
-    await _seed_facts(maker)
-    token = set_caller(ToolCaller(actor="host", spawn_id=None, conversation_id="c1"))
-    try:
-        out = await _recall(monkeypatch)
-    finally:
-        reset_caller(token)
-    assert out["ok"] is True
-    contents = {h["content"] for h in out["hits"]}
-    assert "user's dog is named Rex" in contents
-    assert "user's SSN is 123-45-6789" in contents          # host sees sensitive
-    assert "unclassified legacy fact" in contents            # host: no filter applied at all
-
-
-async def test_recall_spawn_never_sees_sensitive_facts(maker, monkeypatch):
-    await _seed_facts(maker)
-    token = set_caller(ToolCaller(actor="spawn", spawn_id=7, conversation_id="c1"))
-    try:
-        out = await _recall(monkeypatch)
-    finally:
-        reset_caller(token)
-    assert out["ok"] is True
-    contents = {h["content"] for h in out["hits"]}
-    assert "user's dog is named Rex" in contents              # non-sensitive: visible
-    assert "user's SSN is 123-45-6789" not in contents         # sensitive: hidden
-    assert "unclassified legacy fact" not in contents          # NULL treated as sensitive: hidden
-
-
-async def test_recall_caller_none_fails_closed_on_sensitive_facts(maker, monkeypatch):
-    """No caller set at all (current_caller() is None) must ALSO exclude sensitive
-    facts — fail-closed, not 'guess host'."""
-    await _seed_facts(maker)
-    from server.orchestrator import tool_caller
-    assert tool_caller.current_caller() is None
-    out = await _recall(monkeypatch)
-    assert out["ok"] is True
-    contents = {h["content"] for h in out["hits"]}
-    assert "user's dog is named Rex" in contents
-    assert "user's SSN is 123-45-6789" not in contents
-    assert "unclassified legacy fact" not in contents
-
-
 async def test_recall_only_returns_active_facts(maker, monkeypatch):
     """list_facts() defaults to active-only (superseded_by IS NULL) — a superseded
     fact must not resurface via recall."""
@@ -261,29 +216,6 @@ async def test_remember_refuses_when_caller_is_none(maker):
 # negatives) and tests/server/test_memory_scope_isolation.py (spawn scope,
 # cross-well rejection, preference ownership, fail-closed identity) for the
 # real coverage.
-
-
-async def test_remember_host_append_fact_direct_writes_with_provenance(maker):
-    from sqlalchemy import select
-
-    from server.registry.memory_executors import RememberExecutor
-    token = set_caller(ToolCaller(actor="host", spawn_id=None, conversation_id="conv-1"))
-    try:
-        out = await RememberExecutor().execute(
-            {"kind": "fact", "action": "append", "content": "prefers dark mode"})
-    finally:
-        reset_caller(token)
-    assert out["ok"] is True
-    assert isinstance(out.get("id"), int)
-
-    async with maker() as db:
-        rows = (await db.execute(select(UserFact))).scalars().all()
-    matches = [r for r in rows if r.content == "prefers dark mode"]
-    assert len(matches) == 1
-    prov = matches[0].provenance
-    assert prov["source_kind"] == "agentic"
-    assert prov["actor"] == "host"
-    assert prov["conversation_id"] == "conv-1"
 
 
 async def test_remember_host_append_note_direct_writes(maker):

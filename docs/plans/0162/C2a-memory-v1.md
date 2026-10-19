@@ -86,3 +86,28 @@
   - `learning_service.py`：C1c（`:160-165`）、C2e（`:168-172`）也改，行不重叠，后合的 rebase。
   - `server/main.py`：只删几行，按 `docs/sessions.md` §3。
 - **回退：** revert 本 PR。没有数据变化。
+
+## 实施记录（C2a-1）
+
+- **K2 只等 C2a-1。** C2a-2 不碰 `memory.py`，K2 不用等它。
+- **测试库的建法要和启动一致。** 夹具改成 `tests/server/conftest.py` 的 `boot_schema`：建表 → 跑迁移 → 激活 v2，和 `storage_boot.initialize` 同序（不含加密步骤）。
+  - 只建表就激活（本卡原写法：`create_all` 加 `activate_sync`）会留下指向还不存在的表的视图，下次真启动报 `view learnings already exists`。
+- **先修了一个产品 bug（#233）。** 测试库处于 v2 后，每个聊天回合都按任务跑。窗口在回合收尾时断开，任务会卡在「运行中」，这个对话后面的消息全被拒，要重启才恢复。#233 修好之前本卡不能合。
+- **`memory_v1` 标记**（`pyproject.toml` 登记了删除条件）：标了的文件，共享测试库停在 v1。哪些文件能标，由 `tests/server/test_memory_v1_marker_scope.py` 钉死，同一个文件里也断言四个共享夹具建出来的库 `is_active()` 为真。
+  - 到 C2a-2 删：`test_brain_payload_shape`、`test_brain_undo_supersede`、`test_curation_proposals`、`test_memory_proposals_api`、`test_spawn_preferences_api`。它们测的 brain、提案、专家偏好代码还有 v1 分支，C2a-2 删分支时一起删标记。
+  - 永久：`test_memory_activation`，以及 `test_memory_deletion_manifest` 的 `legacy` 一例。激活和从 v1 迁移本身就是它们要测的。
+- **删了什么。**
+  - `memory.py` 的 v1 分支：`save_facts`、`list_facts`、`add_manual_fact`、`update_fact`、`delete_fact`、`facts_text` 只剩 v2 那条路。另删 `existing_norms_safe` 和 `_FACTS_MAX_COUNT`。
+  - `fact_dedup` 只被它用的 `existing_norms`、`exact_norm_dup`、`find_near_dup`、`is_stale`。删前用 `git grep -nE` 加正对照核过零调用者。`similar`、`fuzzy_kind`、`norm` 还有 v2 或 `learning_service` 在用，保留。
+- **恢复备份后的窗口（风险一节「未核」那条），已核。**
+  - `backup.restore` 只在 app 停着时运行，装到新路径。
+  - 下次启动 `storage_boot` 先激活 v2，再跑种子和后台任务。`test_memory_activation` 的启动顺序测试钉住了这个顺序。
+  - 所以恢复出来的库没有「没激活就被用」的窗口。
+- **对 C2a-2 的影响。** 有几处 v1 分支调 `memory.py` 的函数，C2a-1 之后它们走到 v2：`memory_executors.py` 的 recall/remember，`distill_service.py` 的 upflow，`brain.py` 收下 user_facts 提案。这些分支在产品里本来就走不到，C2a-2 删。
+- **原表漏了一处（C2a-2 要一起删）：** `server/orchestrator/dispatcher.py:325-337` 用别名 `memory_v2_active` 调 `is_active`。本卡按 `await is_active(` 数没数到它，实际是 27 处、14 个文件。
+  - 同一个分支里还有一件事：v2 下 `:371` 的 Tier-1 进化规则后缀不拼进专家提示词，只有 v1 拼。
+  - C2a-2 删 v1 分支前，要先定这些规则在 v2 下是不是该进提示词（和 C2b 进化卡相关）。本卡不改行为。
+- **测试的处置。** 自建 v1 库、经过 `memory.py` v1 路径的测试（先读的 4 个文件，加上跑出来的 16 个文件 45 个），先全部改成启动建法跑一遍分类：
+  - v1 下挂、v2 下过的，搬到 v2。
+  - 测通用行为的，改到 v2：facts 接口带版本号、`facts_text` 的敏感门、记忆往返、contextvar 不残留、预算不被超长首条绕过。
+  - 只测 v1 的删掉，PR 里逐组写了理由和 v2 对应的测试。

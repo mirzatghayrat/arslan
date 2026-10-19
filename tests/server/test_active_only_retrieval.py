@@ -1,16 +1,14 @@
-"""Active-only retrieval (superseded_by IS NULL) + the six dedup scanners that
-must never collide a new write with a dead (superseded) row (brain-P1 Task 3,
-BLOCKER #2). Also covers list_facts(include_superseded=), _to_out field
-population (BLOCKER: else valid_from/superseded_by/provenance are null forever),
-_learnings_route filtering, POST /facts/dedup's temporal safety guard, and the
-#12 hermetic regression.
+"""Active-only retrieval (superseded_by IS NULL) on the v1 tables (brain-P1 Task 3, BLOCKER #2):
+learning_service._write's scan, _learnings_route filtering, POST /facts/dedup's temporal safety
+guard, and the #12 hermetic regression.
+
+C2a removed the tests of memory.py's v1 fact paths (list_facts / facts_text active-only, the
+save_facts and add_manual_fact scanners, the facts API's _to_out over them): every launch runs
+memory v2, which has no superseded_by. The rest test v1 code that C2a-2 deletes.
 """
 from __future__ import annotations
 
-import importlib
-
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -34,86 +32,12 @@ async def maker(tmp_path, monkeypatch):
     return m
 
 
-async def _seed_superseded_fact(maker, content: str) -> tuple[int, int]:
-    """Insert an old (soon-superseded) UserFact + a throwaway winner, execute the
-    supersede pointer, return (old_id, new_id)."""
-    async with maker() as s:
-        old = UserFact(content=content, source="auto")
-        winner = UserFact(content="totally unrelated other fact", source="auto")
-        s.add_all([old, winner])
-        await s.commit()
-        old_id, new_id = old.id, winner.id
-    await execute_supersede("user_facts", new_id, old_id, provenance=_PROV)
-    return old_id, new_id
-
-
 # ---------------------------------------------------------------------------
-# list_facts / facts_text default to active-only (P0 throat — all 5 injection
-# sites inherit this for free via facts_text -> list_facts)
+# Scanner #5 (BLOCKER #2): a write matching a SUPERSEDED row's exact content must
+# insert a fresh ACTIVE row — never merge/skip/collide with the dead row.
+# Scanners #1-#4 were memory.py's v1 fact writes (gone in C2a); #6, upflow's own
+# local scan, is gone entirely — see BLOCKER #1 / distill_service.
 # ---------------------------------------------------------------------------
-
-async def test_list_facts_excludes_superseded_by_default(maker):
-    from server.orchestrator import memory
-    old_id, new_id = await _seed_superseded_fact(maker, "旧偏好")
-    facts = await memory.list_facts()
-    ids = [f.id for f in facts]
-    assert old_id not in ids
-    assert new_id in ids
-
-
-async def test_list_facts_include_superseded_true_includes_it(maker):
-    from server.orchestrator import memory
-    old_id, _new_id = await _seed_superseded_fact(maker, "旧偏好2")
-    facts = await memory.list_facts(include_superseded=True)
-    assert old_id in [f.id for f in facts]
-
-
-async def test_facts_text_excludes_superseded(maker):
-    """P0 throat anchor: facts_text() -> list_facts() active-only, so the ONE
-    render function feeding all 5 injection sites drops dead facts for free."""
-    from server.orchestrator import memory
-    await _seed_superseded_fact(maker, "旧偏好三三三三")
-    text = await memory.facts_text()
-    assert "旧偏好三三三三" not in text
-    assert "totally unrelated other fact" in text
-
-
-# ---------------------------------------------------------------------------
-# Six-scanner active-only coverage (BLOCKER #2): a write matching a SUPERSEDED
-# row's exact content must insert a fresh ACTIVE row — never merge/skip/collide
-# with the dead row. Three production paths, one test each (scanners #1+#2 via
-# save_facts, #3+#4 via add_manual_fact, #5 via learning_service._write; #6
-# upflow's own local scan is gone entirely — see BLOCKER #1 / distill_service).
-# ---------------------------------------------------------------------------
-
-async def test_save_facts_same_content_as_superseded_inserts_new_active_row(maker):
-    """Scanners #1 exact_norm_dup + #2 find_near_dup: save_facts's write-time
-    two-phase dedup must not treat a superseded row as a duplicate target."""
-    from server.orchestrator import memory
-    old_id, _new_id = await _seed_superseded_fact(maker, "喜欢猫")
-    created = await memory.save_facts([{"content": "喜欢猫"}], provenance=_PROV)
-    assert len(created) == 1                        # inserted, not merged/skipped
-    assert created[0].id != old_id
-    assert created[0].superseded_by is None          # fresh row is active
-    async with maker() as s:
-        rows = (await s.execute(
-            select(UserFact).where(UserFact.content == "喜欢猫"))).scalars().all()
-    assert len(rows) == 2                             # dead old row + new active row coexist
-
-
-async def test_add_manual_fact_same_content_as_superseded_inserts_new_active_row(maker):
-    """Scanners #3 fact_dedup.existing_norms + #4 add_manual_fact's inline
-    rescan (memory.py ~273-276)."""
-    from server.orchestrator import memory
-    old_id, _new_id = await _seed_superseded_fact(maker, "建 GitHub 分身")
-    row = await memory.add_manual_fact("建 GitHub 分身")
-    assert row.id != old_id
-    assert row.superseded_by is None
-    async with maker() as s:
-        rows = (await s.execute(
-            select(UserFact).where(UserFact.content == "建 GitHub 分身"))).scalars().all()
-    assert len(rows) == 2
-
 
 async def test_learnings_same_content_as_superseded_inserts_new_active_row(maker):
     """Scanner #5: learning_service._write's existing-scan must exclude
@@ -215,53 +139,8 @@ async def test_dedup_merge_facts_preserves_supersede_target(maker):
 
 
 # ---------------------------------------------------------------------------
-# _to_out BLOCKER anchor: valid_from/superseded_by/provenance must actually be
-# populated on the API response, not left null forever.
-# ---------------------------------------------------------------------------
-
-async def test_to_out_populates_temporal_fields_via_api(tmp_path, monkeypatch):
-    monkeypatch.setenv("ARSLAN_API_TOKEN", "test-token")
-    monkeypatch.setenv("ARSLAN_DB_PATH", str(tmp_path / "facts.db"))
-    monkeypatch.setenv("ARSLAN_SPAWNS_DIR", str(tmp_path / "spawns"))
-    import server.config as config
-    importlib.reload(config)
-
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'facts.db'}")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-    monkeypatch.setattr(db_session, "AsyncSessionLocal", maker)
-
-    from server.orchestrator import memory
-    created = await memory.save_facts([{"content": "旧值"}], provenance=_PROV)
-    old_id = created[0].id
-    winner = await memory.add_manual_fact("新值")
-    await execute_supersede("user_facts", winner.id, old_id, provenance=_PROV)
-
-    from server.main import create_app
-    app = create_app()
-    transport = ASGITransport(app=app)
-    auth = {"Authorization": "Bearer test-token"}
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
-        r = await c.get("/api/v1/facts", headers=auth)
-        assert r.status_code == 200
-        assert all(row["id"] != old_id for row in r.json())  # default excludes superseded
-
-        r2 = await c.get("/api/v1/facts?include_superseded=true", headers=auth)
-        assert r2.status_code == 200
-        by_id = {row["id"]: row for row in r2.json()}
-        assert old_id in by_id
-        assert by_id[old_id]["superseded_by"] == winner.id   # _to_out anchor: real value
-        assert by_id[old_id]["provenance"] == _PROV
-        assert by_id[old_id]["valid_from"] is not None
-
-    await engine.dispose()
-
-
-# ---------------------------------------------------------------------------
 # #12 hermetic regression: record_usage=False still writes zero brain_usage
-# (pre-existing invariant), independently confirmed alongside this round's
-# facts_text active-only filtering — both must hold post-P1.
+# (pre-existing invariant). Its facts_text half went with memory.py's v1 path (C2a).
 # ---------------------------------------------------------------------------
 
 @pytest_asyncio.fixture
@@ -278,9 +157,8 @@ async def memdb(tmp_path, monkeypatch):
     return m
 
 
-async def test_hermetic_record_usage_false_and_facts_text_active_only(memdb):
+async def test_hermetic_record_usage_false_writes_no_usage(memdb):
     from server.db.models import BrainUsage, Spawn
-    from server.orchestrator import memory
     from server.services import ingest, knowledge
 
     async with memdb() as s:
@@ -296,7 +174,3 @@ async def test_hermetic_record_usage_false_and_facts_text_active_only(memdb):
     async with memdb() as s:
         rows = (await s.execute(select(BrainUsage))).scalars().all()
     assert rows == []  # unchanged hermetic guarantee: no usage rows on record_usage=False
-
-    await _seed_superseded_fact(memdb, "旧偏好四四四四")
-    text = await memory.facts_text()
-    assert "旧偏好四四四四" not in text

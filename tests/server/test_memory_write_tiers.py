@@ -67,17 +67,6 @@ async def _remember(args: dict, caller: ToolCaller = _HOST) -> dict:
 # Tier1 direct-write appends (host)
 # ---------------------------------------------------------------------------
 
-async def test_host_append_fact_direct_write_with_provenance(maker):
-    out = await _remember({"kind": "fact", "action": "append", "content": "喜欢暗色主题"})
-    assert out["ok"] is True and isinstance(out["id"], int)
-    async with maker() as db:
-        row = await db.get(UserFact, out["id"])
-    assert row.content == "喜欢暗色主题"
-    assert row.provenance["source_kind"] == "agentic"
-    assert row.provenance["actor"] == "host"
-    assert row.provenance["conversation_id"] == "conv-tiers"
-
-
 async def test_host_append_learning_returns_real_id_and_writes(maker):
     out = await _remember({"kind": "learning", "action": "append",
                             "content": "先写测试再实现,红绿分明"})
@@ -103,28 +92,6 @@ async def test_host_append_note_direct_write(maker):
 # ---------------------------------------------------------------------------
 # Tier1 supersede (host) — old row preserved, never deleted
 # ---------------------------------------------------------------------------
-
-async def test_host_supersede_fact_preserves_old_row(maker):
-    async with maker() as db:
-        old = UserFact(content="旧偏好:亮色主题", source="manual",
-                       provenance={"source_kind": "manual"})
-        db.add(old)
-        await db.commit()
-        old_id = old.id
-
-    out = await _remember({"kind": "fact", "action": "supersede", "target_id": old_id,
-                            "content": "新偏好:暗色主题"})
-    assert out["ok"] is True
-    new_id = out["id"]
-    assert new_id != old_id
-
-    async with maker() as db:
-        old_row = await db.get(UserFact, old_id)
-        new_row = await db.get(UserFact, new_id)
-    assert old_row is not None                          # preserved, not deleted
-    assert old_row.superseded_by == new_id
-    assert new_row.content == "新偏好:暗色主题"
-
 
 async def test_host_supersede_learning_preserves_old_row(maker):
     async with maker() as db:

@@ -6,8 +6,8 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
-from server.db.models import Base, ConversationEvent, Spawn
-from tests.server.conftest import MockAdapter
+from server.db.models import ConversationEvent, Spawn
+from tests.server.conftest import MockAdapter, boot_schema
 
 
 @pytest_asyncio.fixture
@@ -16,7 +16,7 @@ async def maker(tmp_path, monkeypatch):
     m = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(boot_schema)  # as a launch leaves it: memory v2 (C2a)
     async with m() as s:
         s.add(
             Spawn(
