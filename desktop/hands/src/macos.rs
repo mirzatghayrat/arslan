@@ -156,6 +156,14 @@ fn ax_text(element: CFTypeRef, attribute: &str) -> Option<String> {
     (rc == 0).then(|| rust_string(value.0)).flatten()
 }
 
+/// A password field by what macOS itself says of it: the role or subrole
+/// `AXSecureTextField`.
+fn secure(element: CFTypeRef) -> bool {
+    ["AXRole", "AXSubrole"]
+        .iter()
+        .any(|a| ax_text(element, a).is_some_and(|v| v.contains("SecureTextField")))
+}
+
 /// The pid of the app with the keyboard focus, asked of accessibility now (the system-wide
 /// AXFocusedApplication). Some apps leave it unanswered (kAXErrorCannotComplete with Codex in
 /// front, measured), so a visit (src/visit.rs) asks it only when NSWorkspace has no front app.
@@ -170,6 +178,25 @@ pub fn focused_app_pid() -> Option<i32> {
     }
     let mut pid = 0;
     (unsafe { AXUIElementGetPid(app.0, &mut pid) } == 0 && pid > 0).then_some(pid)
+}
+
+/// Whether app `pid`'s focused element is a password field. None when it has none.
+///
+/// Kept for the agent-desktop `press` password-field guard (③Hands card, v0.1.63/64);
+/// deleted with that card if it's dropped.
+pub fn focused_secure(pid: i32) -> Option<bool> {
+    let app = Owned(unsafe { AXUIElementCreateApplication(pid) });
+    if app.0.is_null() {
+        return None;
+    }
+    let name = cf_string("AXFocusedUIElement");
+    let mut focused: CFTypeRef = std::ptr::null();
+    let rc = unsafe { AXUIElementCopyAttributeValue(app.0, name.0, &mut focused) };
+    let focused = Owned(focused);
+    if rc != 0 || focused.0.is_null() {
+        return None;
+    }
+    Some(secure(focused.0))
 }
 
 /// An attribute's value, owned (null when absent).

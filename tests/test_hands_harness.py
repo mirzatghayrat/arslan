@@ -56,10 +56,10 @@ def test_done_and_refused_must_be_true():
 
 def test_the_summary_counts_passes_per_case_and_engine():
     from scripts.hands_harness.run import summarize
-    rows = [Result("click_save_once", "cua", "pass", "done", ms=80), Result("click_save_once", "cua", "fail", "done", ms=120,
+    rows = [Result("click_save_once", "other", "pass", "done", ms=80), Result("click_save_once", "other", "fail", "done", ms=120,
             violations=["O6 happened 2 times, expected 1"]), Result("click_save_once", "agent-desktop", "pass", ms=900)]
     table = summarize(rows)
-    assert "| click_save_once | cua | 1/2 | 100.0 |" in table
+    assert "| click_save_once | other | 1/2 | 100.0 |" in table
     assert "O6 happened 2 times" in table
     assert "| click_save_once | agent-desktop | 1/1 | 900 |" in table
 

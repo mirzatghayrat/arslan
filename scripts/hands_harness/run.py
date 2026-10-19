@@ -1,7 +1,6 @@
 """Hands engine harness, L1 (spec docs/specs/2026-10-08-0157-hands-v2.md §8): drives a
-development Arslan Hands directly over its socket, with agent-desktop (or arc-driver, outside
-Hands: engines.Arc), against the HarnessFixture app, judging every case by ground truth and
-the observer.
+development Arslan Hands directly over its socket, with agent-desktop, against the
+HarnessFixture app, judging every case by ground truth and the observer.
 
     .venv/bin/python -m scripts.hands_harness.run --hands-app ".../Arslan Hands DEV.app" \\
         [--engines agent-desktop] [--cases a,b] [--runs 3] [--typist] [--out DIR]
@@ -28,7 +27,7 @@ from pathlib import Path
 
 from scripts.hands_harness import cases as C
 from scripts.hands_harness import oracles
-from scripts.hands_harness.engines import AgentDesktop, Arc, Hands
+from scripts.hands_harness.engines import AgentDesktop, Hands
 from scripts.hands_harness.observer import Observer
 
 HERE = Path(__file__).resolve().parent
@@ -221,7 +220,7 @@ def main() -> int:
     try:
         if not fixture.wait(lambda s: "title" in s, timeout=10):
             sys.exit("the fixture did not start")
-        time.sleep(3)          # its window's accessibility tree is not ready at once (arc: measured)
+        time.sleep(3)          # its window's accessibility tree is not ready at once (measured)
         hands = start_hands(args.hands_app)
         typist = None
         if args.typist:
@@ -231,12 +230,10 @@ def main() -> int:
         ignore = engine_pids()
         results: list[C.Result] = []
         for engine_name in [e.strip() for e in args.engines.split(",") if e.strip()]:
-            if engine_name == "arc":
-                engine = Arc(os.environ["ARC_CUA"], FIXTURE_NAME)
-            elif engine_name == "agent-desktop":
+            if engine_name == "agent-desktop":
                 engine = AgentDesktop(hands, FIXTURE_NAME)
             else:
-                sys.exit(f"unknown engine {engine_name!r} (agent-desktop, arc)")
+                sys.exit(f"unknown engine {engine_name!r} (agent-desktop)")
             for run in range(args.runs):
                 for name in [c.strip() for c in args.cases.split(",") if c.strip()]:
                     ctx = C.Ctx(engine=engine, fixture=fixture, observe=lambda: Observer(ignore | engine_pids()),

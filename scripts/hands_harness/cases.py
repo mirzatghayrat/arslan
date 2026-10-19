@@ -72,7 +72,7 @@ class Fixture:
 
 @dataclass
 class Ctx:
-    engine: object                  # engines.AgentDesktop | engines.Arc
+    engine: object                  # engines.AgentDesktop
     fixture: Fixture
     observe: Callable               # () -> context manager yielding .before/.samples/.after
     typist: object | None = None    # run.TypistDriver when the user's stand-in is typing
