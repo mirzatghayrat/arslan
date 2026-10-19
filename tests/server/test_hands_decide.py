@@ -93,6 +93,7 @@ async def test_every_decision_is_a_ledger_row_with_the_app(hands, asks, in_job):
 
 @pytest.mark.parametrize("script, kind, apps", [
     ('tell application "Notes" to activate', "app", ["Notes"]),
+    ('tell application "Reminders" to make new reminder with properties {name:"milk"}', "app", ["Reminders"]),
     ('tell application "Mail" to send message 1', "app_risky", ["Mail"]),
     ('tell application "Music" to buy track 1', "money", ["Music"]),
     ('do shell script "ls ~"', "app_risky", []),
@@ -111,6 +112,12 @@ _PAST_THE_APP = [
     'do script "ls"', 'run script "x"', 'load script file "x"', 'do JavaScript "x" in document 1',
     'execute javascript "x"', 'write text "ls"', 'keystroke "a"', 'key code 36',
     'DELETE note 1', 'Do Shell Script "ls"',
+    # The same steps without those words (found reviewing D4, 0.1.63): a raw event, AppleScriptObjC,
+    # Standard Additions writing a file.
+    '«event sysoexec» "touch /tmp/x"', 'count notes\n«event sysoexec» "touch /tmp/x"',
+    "current application's NSTask's launchedTaskWithLaunchPath:\"/usr/bin/touch\" arguments:{\"/tmp/x\"}",
+    'count notes\nuse framework "Foundation"', 'open for access POSIX file "/tmp/x" with write permission',
+    'write "a" to f', 'set eof f to 0',
 ]
 
 
